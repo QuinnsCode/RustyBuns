@@ -344,6 +344,22 @@ describe("the tour", () => {
   });
 });
 
+// The explorer's search box filters the whole tree by path.
+describe("explorer search", () => {
+  const src = html.slice(html.indexOf("function treeMatches"), html.indexOf("async function mountExplorer"));
+  const treeMatches = new Function(`${src}; return treeMatches;`)();
+  const f = (path: string) => ({ path, name: path.split("/").pop(), type: "file" });
+
+  test("the box sits at the top of the explorer", () => {
+    expect(html).toContain(`Explorer</div><label class="tree-find">`);
+  });
+
+  test("any case, name matches first, then shorter paths", () => {
+    const files = ["test/slow.test.ts", "src/testing/a.ts", "sum.test.ts", "README.md"].map(f);
+    expect(treeMatches(files, "TEST").map((h: any) => [h.e.path, h.at])).toEqual([["sum.test.ts", 4], ["test/slow.test.ts", 5], ["src/testing/a.ts", -1]]);
+  });
+});
+
 // The profile's pulse, drawn as an isometric block of the week's hours: a pillar per busy hour, a floor tile per quiet one.
 describe("the isometric pulse", () => {
   const src = html.slice(html.indexOf("const pulseIso = "), html.indexOf("/** Fill each [data-pulse=name]"));
@@ -366,6 +382,6 @@ describe("a file page loads in one round trip", () => {
     expect(f.indexOf("let early = reads(picked)")).toBeLessThan(f.indexOf("await Promise.all([branchHere(owner, repo)"));
   });
   test("the explorer draws the last page's tree at once, then reads it fresh", () => {
-    expect(html).toContain("await draw(); cache.clear(); repoTrees.set(key, cache);");
+    expect(html).toContain("await draw(); cache.clear(); every = null; repoTrees.set(key, cache);");
   });
 });

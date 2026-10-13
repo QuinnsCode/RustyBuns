@@ -126,6 +126,11 @@
   .explorer .label { display: flex; align-items: center; }
   .tree-add { margin-left: auto; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--muted); cursor: pointer; }
   .tree-add:hover { background: var(--select); color: var(--fg); } .tree-add svg.lucide { width: 14px; height: 14px; }
+  /* The explorer's search: every file whose path has what you type, the name's match in bold. */
+  .tree-find { position: sticky; top: 0; z-index: 1; display: block; padding: 4px 8px 6px; background: var(--canvas); }
+  .tree-find svg.lucide { position: absolute; left: 16px; top: 50%; translate: 0 -55%; width: 13px; height: 13px; color: var(--muted); pointer-events: none; }
+  .tree-find input { width: 100%; height: 26px; padding: 2px 8px 2px 26px; font-size: 12.5px; }
+  .tree a .in { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; } .tree a mark { background: none; color: inherit; font-weight: 700; }
   /* The explorer's menu (right-click or ctrl-click on the tree): new file, copy path. */
   .ctx { position: fixed; z-index: 50; min-width: 220px; padding: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; box-shadow: 0 12px 32px -8px rgba(0,0,0,.18); display: grid; font-size: 13px; }
   .ctx button { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border: 0; border-radius: 4px; background: none; color: var(--fg); text-align: left; cursor: pointer; font: inherit; }
@@ -1689,7 +1694,14 @@ function crumbs(base, root, path) {
 }
 /** The explorer: the whole repo as a tree. Folders open in place; the ones on
  *  the way to what you're looking at start open, and stay open as you move. */
-const openDirs = new Map(), treeCache = new Map(), repoTrees = new Map();
+const openDirs = new Map(), treeCache = new Map(), treeQuery = new Map(), repoTrees = new Map();
+/** The files whose path has `q` (any case): name matches first, then shorter paths; `at` is where the name matches, or -1. */
+function treeMatches(files, q) {
+  const l = q.toLowerCase();
+  return files.filter((e) => e.path.toLowerCase().includes(l))
+    .map((e) => ({ e, at: e.name.toLowerCase().indexOf(l) }))
+    .sort((a, b) => (a.at < 0) - (b.at < 0) || a.e.path.length - b.e.path.length || a.e.path.localeCompare(b.e.path));
+}
 async function mountExplorer(el, key, load, href, current, onNew) {
   const open = openDirs.get(key) ?? new Set(); openDirs.set(key, open);
   const segs = current.split("/").filter(Boolean);
@@ -1705,7 +1717,32 @@ async function mountExplorer(el, key, load, href, current, onNew) {
       : `<a href="${href(e)}" data-path="${esc(e.path)}" class="${e.path === current ? "on" : ""}" style="--d:${d}" title="${esc(e.path)}">${icon("file", "ic-file")}${esc(e.name)}</a>`).join("")
       || (d ? "" : '<p class="muted pad" style="margin:0">nothing here yet</p>');
   };
-  const draw = async () => { el.innerHTML = await rows("", 0); icons(); el.querySelector("a.on")?.scrollIntoView({ block: "nearest" }); };
+  // Search walks the whole tree once (folders read in parallel, at most 400 of them), then filters as you type.
+  let every = null;
+  const walk = async (dir, budget) => {
+    const t = await get(dir), dirs = t.entries.filter((e) => e.type === "dir" && budget.n-- > 0);
+    return [...t.entries.filter((e) => e.type !== "dir"), ...(await Promise.all(dirs.map((e) => walk(e.path, budget)))).flat()];
+  };
+  const find = el.parentElement.querySelector("#tree-find");
+  const found = async (q) => {
+    const hits = treeMatches(await (every ??= walk("", { n: 400 })), q);
+    return hits.map(({ e, at }) => `<a href="${href(e)}" data-path="${esc(e.path)}" class="${e.path === current ? "on" : ""}" title="${esc(e.path)}">${icon("file", "ic-file")}<span>${at < 0 ? esc(e.name) : esc(e.name.slice(0, at)) + "<mark>" + esc(e.name.slice(at, at + q.length)) + "</mark>" + esc(e.name.slice(at + q.length))}</span>${e.path.includes("/") ? `<span class="in">${esc(e.path.slice(0, e.path.lastIndexOf("/")))}</span>` : ""}</a>`).join("")
+      || '<p class="muted pad" style="margin:0">no file matches</p>';
+  };
+  const draw = async () => {
+    const q = find?.value.trim() ?? "";
+    const out = q ? await found(q) : await rows("", 0);
+    if ((find?.value.trim() ?? "") !== q) return;
+    el.innerHTML = out; icons(); el.querySelector("a.on")?.scrollIntoView({ block: "nearest" });
+  };
+  if (find) {
+    find.value = treeQuery.get(key) ?? "";
+    find.addEventListener("input", () => { treeQuery.set(key, find.value); draw(); });
+    find.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && find.value) { e.stopPropagation(); find.value = ""; treeQuery.delete(key); draw(); }
+      if (e.key === "Enter") { const a = el.querySelector("a[href]"); if (a) location.href = a.href; }
+    });
+  }
   el.addEventListener("click", (e) => {
     const a = e.target.closest("[data-dir]"); if (!a) return;
     const p = a.dataset.dir; open.has(p) ? open.delete(p) : open.add(p); draw();
@@ -1725,7 +1762,7 @@ async function mountExplorer(el, key, load, href, current, onNew) {
   }
   icons();
   if (level || !repoTrees.has(key)) { repoTrees.set(key, cache); return draw(); }
-  await draw(); cache.clear(); repoTrees.set(key, cache);
+  await draw(); cache.clear(); every = null; repoTrees.set(key, cache);
   return draw();
 }
 /** The explorer's menu: a new file in `dir` (typed in place, Enter makes it), and copying the path under the pointer. */
@@ -1902,7 +1939,7 @@ function wireHunks(el, owner, repo, hunksOf, then) {
 function workbench(head, { tab, bar, body, details, status }) {
   document.body.classList.add("ide-mode");
   queueMicrotask(dock); queueMicrotask(explorerGrip); queueMicrotask(sheets);
-  return `${head}<div class="wb"><aside class="explorer" aria-label="Explorer"><div class="label pad" aria-hidden="true">Explorer</div><nav class="tree" id="tree" aria-label="Files"></nav></aside>
+  return `${head}<div class="wb"><aside class="explorer" aria-label="Explorer"><div class="label pad" aria-hidden="true">Explorer</div><label class="tree-find">${icon("search")}<input type="search" id="tree-find" placeholder="Search files" aria-label="Search files" autocomplete="off" spellcheck="false"></label><nav class="tree" id="tree" aria-label="Files"></nav></aside>
     <section class="editor">${tab ? `<div class="tabs"><span class="tab">${tab}</span></div>` : ""}<div class="crumbbar">${bar}</div><div class="scroll">${body}</div></section>
     <aside class="details" aria-label="Details">${details}</aside></div><nav class="sheets" id="sheets" aria-label="Recent repos"></nav><footer class="status"><span title="the dig site: this repo's files, its crew and its vein">${icon("shovel")}dig site</span>${status}</footer>`;
 }
