@@ -547,7 +547,7 @@ const LOCK_ONLY: Record<PM, string[]> = {
   yarn: ["yarn", "install", "--ignore-scripts"],
 };
 
-type Run = (cmd: string[]) => Promise<{ code: number; out: string }>;
+type Run = (cmd: string[], at?: string) => Promise<{ code: number; out: string }>;
 
 /**
  * A clone of `remote` in a temp dir with `files` swapped in, handed to `work`,
@@ -562,8 +562,8 @@ async function inClone<T>(remote: string, files: Record<string, string>, depth: 
   const { dirname, join } = await import("node:path");
   const dir = mkdtempSync(join(tmpdir(), "codesplitter-deps-"));
   const env = bare ? { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR } : { ...process.env };
-  const run = (cwd: string): Run => async (cmd) => {
-    const p = Bun.spawn(cmd, { cwd, stdout: "pipe", stderr: "pipe", timeout: timeoutMs, env: { ...env, CI: "1", YARN_ENABLE_IMMUTABLE_INSTALLS: "false" } });
+  const run = (cwd: string): Run => async (cmd, at = cwd) => {
+    const p = Bun.spawn(cmd, { cwd: at, stdout: "pipe", stderr: "pipe", timeout: timeoutMs, env: { ...env, CI: "1", YARN_ENABLE_IMMUTABLE_INSTALLS: "false" } });
     const [o, e] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
     return { code: await p.exited, out: `$ ${cmd.join(" ")}\n${o}${e}` };
   };
@@ -612,6 +612,24 @@ export const localTester = (timeoutMs = 10 * 60_000): Tester => (remote, files, 
     const locked = lock && lock !== "bun.lockb" && existsSync(join(repo, lock)) ? { lock: readFileSync(join(repo, lock), "utf8") } : {};
     if (!test) return { ok: true, out: install.out, ...locked };
     return { ...(await runTests(run, repo, files, pm, install.out, only)), ...locked };
+  }, (out) => ({ ok: false, out }));
+
+/**
+ * Runs a generated region's command (#1154) in a clone with `files` swapped in, from the folder `cwd`, and
+ * reads back the files in `read`. A full install first, in the bare env, as the command is the repo's code.
+ */
+export type Regenerator = (remote: string, files: Record<string, string>, opts: { pm: PM; cwd: string; command: string; read: string[] }) => Promise<{ ok: boolean; out: string; files?: Record<string, string> }>;
+
+/** The same on the desktop. */
+export const localRegenerator = (timeoutMs = 10 * 60_000): Regenerator => (remote, files, { pm, cwd, command, read }) =>
+  inClone(remote, files, 1, timeoutMs, true, async (repo, run) => {
+    const { existsSync, readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const install = await run(INSTALL[pm]);
+    if (install.code !== 0) return { ok: false, out: install.out };
+    const r = await run(command.split(/\s+/), join(repo, cwd));
+    if (r.code !== 0) return { ok: false, out: r.out };
+    return { ok: true, out: r.out, files: Object.fromEntries(read.filter((p) => existsSync(join(repo, p))).map((p) => [p, readFileSync(join(repo, p), "utf8")])) };
   }, (out) => ({ ok: false, out }));
 
 const LOCKFILES = /(^|\/)(bun\.lockb?|package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$/;
@@ -770,6 +788,21 @@ export async function regenerateLock(env: Env, owner: string, repo: string, lock
   if ("skipped" in c) return c;
   if (!installer) return { skipped: `lockfiles are regenerated on the desktop app: run \`${c.pm.pm} install\` on the branch` };
   return installer(c.remote, files, { pm: c.pm.pm, lock, test: false });
+}
+
+/**
+ * Generated text a merge kept main's copy of (#1154), rebuilt: `files` (the merged tree's changed files) in a
+ * throwaway clone, the region's `command` run from `cwd`, and `read` read back. It runs the repo's code, so
+ * only where its merges may (the test merges setting), on the desktop; otherwise `skipped` says why not.
+ */
+export async function regenerateDocs(env: Env, owner: string, repo: string, files: Record<string, string>, cwd: string, command: string, read: string[]): Promise<{ ok: boolean; out: string; files?: Record<string, string> } | { skipped: string }> {
+  const by = `run \`${command}\`${cwd ? ` in ${cwd}` : ""} on main`;
+  if (!(await settings(env, owner, repo)).test_merges) return { skipped: `this repo's merges don't run its code (its test merges setting): ${by}` };
+  const runner = (env.DOCS_REGENERATOR as Regenerator | undefined) ?? (onDesktop(env) ? localRegenerator() : null);
+  if (!runner) return { skipped: `generated text is rebuilt on the desktop app: ${by}` };
+  const c = await cloneOf(env, owner, repo, files);
+  if ("skipped" in c) return c;
+  return runner(c.remote, files, { pm: c.pm.pm, cwd, command, read });
 }
 
 /**

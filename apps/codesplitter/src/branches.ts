@@ -24,7 +24,7 @@ import { apply, empty, explain, fromText, merge, PICKS, text, type Conflict, typ
 import { lintMerge } from "./lint.ts";
 import { policyOf, type Policy, type Rule } from "./policy.ts";
 import { conflictNote, conflictRound } from "./budget.ts";
-import { regenerateLock, tryInClone } from "./deps.ts";
+import { regenerateDocs, regenerateLock, tryInClone } from "./deps.ts";
 import { catalogueBlob, materialize, toFile, uncatalogue } from "./archive.ts";
 import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { mergeBlock, refChecks } from "./checks.ts";
@@ -182,7 +182,7 @@ async function mergeFile(env: Env, owner: string, repo: string, branch: { name: 
   const [base, doc, policy] = await Promise.all([read("base"), read("file"), pathPolicy(env, owner, repo, path, user)]);
   // Text the merger writes is theirs; deleted lines are the branch's doing.
   const res = await toFile(env, owner, repo, path, user, "merge", { method: "POST", body: JSON.stringify({ base, branch: doc, resolve, dry, deleter: branch.by, path, writer: user, rule: policy.merge }) });
-  return { status: res.status, policy, ...(await res.json() as { rev: number; ops?: Op[]; conflicts: Conflict[] }) };
+  return { status: res.status, policy, ...(await res.json() as { rev: number; ops?: Op[]; conflicts: Conflict[]; regenerate?: string[] }) };
 }
 
 /**
@@ -385,6 +385,40 @@ async function regenerated(env: Env, owner: string, repo: string, branch: Branch
 }
 
 /**
+ * Generated text both sides touched kept main's copy in the merge (#1154): each region's command, run once
+ * the merge lands, from the folder of the file holding it, on the merged tree in a throwaway clone (deps.ts).
+ * What it rewrote goes onto main's copies. One line per command: rebuilt, or why not.
+ */
+async function rebuilt(env: Env, owner: string, repo: string, paths: string[], dry: { path: string; regenerate?: string[] }[], user: string) {
+  const runs = new Map<string, { cwd: string; command: string; read: string[] }>();
+  for (const d of dry) for (const command of d.regenerate ?? []) {
+    const cwd = d.path.includes("/") ? d.path.slice(0, d.path.lastIndexOf("/")) : "";
+    const r = runs.get(`${cwd}\n${command}`) ?? runs.set(`${cwd}\n${command}`, { cwd, command, read: [] }).get(`${cwd}\n${command}`)!;
+    r.read.push(d.path);
+  }
+  if (!runs.size) return [];
+  const files: Record<string, string> = {};
+  for (const path of paths) {
+    const res = await toFile(env, owner, repo, path, user, "file");
+    if (res.ok) files[path] = text(await res.json() as Doc) + "\n";
+  }
+  const out: { paths: string[]; command: string; cwd?: string; note?: string }[] = [];
+  for (const { cwd, command, read } of runs.values()) {
+    const said = (note?: string) => out.push({ paths: read, command, ...(cwd && { cwd }), ...(note && { note }) });
+    const t = await regenerateDocs(env, owner, repo, files, cwd, command, read);
+    if ("skipped" in t) { said(`not rebuilt: ${t.skipped}`); continue; }
+    if (!t.ok || !t.files) { said(`couldn't be rebuilt: ${t.out.trim().slice(-300)}`); continue; }
+    for (const [path, next] of Object.entries(t.files)) {
+      const doc = await (await toFile(env, owner, repo, path, user, "file")).json() as Doc;
+      const ops = diffToOps(doc.lines, next.replace(/\n$/, "").split("\n"));
+      if (ops.length) await toFile(env, owner, repo, path, user, "ops", { method: "POST", body: JSON.stringify({ ops, ifRev: doc.rev }) });
+    }
+    said();
+  }
+  return out;
+}
+
+/**
  * A merge that settled with no card, checked further where the file's policy says `tests` (#1096): the lint
  * can't see a key or string one side renamed and the other still uses. Each such file both sides changed
  * since the branch forked runs the repo's tests on the merged tree in a throwaway clone, as an agent's answer
@@ -517,7 +551,8 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
       files: merged.map((m) => m.path),
     });
   }
-  return json({ status: conflicts.length ? "open" : "merged", merged, conflicts }, conflicts.length ? 409 : 200);
+  const docs = conflicts.length ? [] : await rebuilt(env, owner, repo, merged.filter((m) => !m.deleted && !m.binary).map((m) => m.path), dry, user);
+  return json({ status: conflicts.length ? "open" : "merged", merged, conflicts, ...(docs.length && { regenerated: docs }) }, conflicts.length ? 409 : 200);
 }
 
 /**
