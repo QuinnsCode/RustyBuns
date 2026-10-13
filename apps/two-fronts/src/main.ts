@@ -4,8 +4,8 @@
 // is one seat at it.
 import { GALAXIES, SECTOR_NAMES, FACTION_NAMES, galaxyOf, type GalaxyId } from "./war/galaxy.ts";
 import {
-  COST, ORBIT, enemy, heroReady, income, incomeBreakdown, keyShare, planOrders, supplied,
-  type Campaign, type Order, type Orders, type Where,
+  COST, ORBIT, checkRetreats, enemy, fogged, heroReady, income, incomeBreakdown, keyShare, planOrders, supplied,
+  type Attack, type Campaign, type Order, type Orders, type Retreat, type Where,
 } from "./war/rules.ts";
 import { handIn, heroFaction, humans, newTable, report, waitingOn, type Seats, type Table } from "./war/table.ts";
 import { fetchView, linkInHash, seatLink, sendBattle, sendOrders, startOnline, type Online, type View } from "./net.ts";
@@ -18,7 +18,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 // v2 gained the cannon sectors, v3 renamed the factions, v4 had a galaxy per campaign, v5 had
 // canyon and jungle sectors and a vehicle pool per battle, v6 was a table with seats and a hero a
 // side, v7 can pause on a space hero battle.
-const SAVE = "two-fronts:v7", ONLINE = "two-fronts:online";
+const SAVE = "two-fronts:v7", ONLINE = "two-fronts:online", SENT = "two-fronts:sent";
 const POLL_MS = 5000;
 
 type Game = { kind: "local"; table: Table } | { kind: "online"; link: Online; view: View };
@@ -31,6 +31,8 @@ let c: Campaign = game.table.campaign;
 let me: Faction = c.player;
 let mine: Orders = read<{ orders: Orders }>(SAVE)?.orders ?? { faction: me, orders: [] };
 let selected: string | null = null;
+// The moves this seat handed in online, to check its retreats against (the server keeps them hidden).
+let sent = read<{ id: string; turn: number; orders: Orders }>(SENT);
 let busy = false; // a call to the server, or a battle, is under way
 
 const online = () => (game.kind === "online" ? game : null);
@@ -42,6 +44,15 @@ const save = () => {
   if (game.kind === "local") write(SAVE, { table: game.table, orders: mine });
   else write(ONLINE, { ...game.link, draft: { turn: c.turn, orders: mine } });
 };
+// What this seat sees: the enemy's numbers only where it has someone to count them. Online, the
+// server has done that already.
+const seen = () => (game.kind === "local" ? fogged(c, me) : c);
+// This seat's moves this turn, while the attacks wait on retreats.
+const ownMoves = (): Orders | null => {
+  if (game.kind === "local") return game.table.moves?.find((m) => m.faction === me) ?? null;
+  return sent && sent.id === game.link.id && sent.turn === c.turn && sent.orders.faction === me ? sent.orders : null;
+};
+const sameWhere = (a: Where, b: Where) => a.system === b.system && a.sector === b.sector;
 const myTurn = () => !c.winner && !c.pending && waiting().includes(me);
 
 const systemDef = (id: string) => galaxyOf(c).system(id), neighbours = (id: string) => galaxyOf(c).neighbours(id);
@@ -52,10 +63,16 @@ const placeName = (w: Where) => {
   if (w.sector === ORBIT) return `${d.name} · Orbit`;
   return d.sectors.length > 1 ? `${d.name} · ${SECTOR_NAMES[d.sectors[w.sector]!]}` : d.name;
 };
-const describe = (o: Order) =>
+// A move into the enemy's ground or orbit is an attack, and says so.
+const attacking = (o: Order) => {
+  if (o.kind === "build") return false;
+  const foe = enemy(me), s = c.systems[o.kind === "fleet" ? o.to : o.to.system]!;
+  return o.kind === "fleet" ? s.orbit === foe || s.sectors.some((x) => x.owner === foe) : s.sectors[o.to.sector]!.owner === foe;
+};
+const describe = (o: Order) => (attacking(o) ? "Attack: " : "") + (
   o.kind === "build" ? `Build ${o.unit === "fleet" ? "a ship" : "an army"} at ${placeName(o.at)}`
   : o.kind === "fleet" ? `${o.count} ${o.count === 1 ? "ship" : "ships"}: ${systemDef(o.from).name} → ${systemDef(o.to).name}`
-  : `${o.count} ${o.count === 1 ? "army" : "armies"}: ${placeName(o.from)} → ${placeName(o.to)}`;
+  : `${o.count} ${o.count === 1 ? "army" : "armies"}: ${placeName(o.from)} → ${placeName(o.to)}`);
 
 // Queues an order if the rules take it, and says why not if they don't.
 function order(o: Order) {
@@ -73,8 +90,8 @@ function flash(msg: string) {
 }
 
 function render() {
-  const draft = planOrders(c, [mine]).c, foe = enemy(me), g = online();
-  $("map").innerHTML = drawMap(c, mine.orders, selected, mine.hero);
+  const draft = planOrders(c, [mine]).c, foe = enemy(me), g = online(), v = seen(), answering = !!c.attacks;
+  $("map").innerHTML = drawMap(v, mine.orders, selected, mine.hero, { me, attacks: c.attacks ?? [], retreats: mine.retreats ?? [] });
   const share = keyShare(c, me);
   $("status").innerHTML = `
     <div class="row"><b>Turn ${c.turn}</b><span title="Credits now, and next turn's income">◈ ${draft.credits[me]} <small>+${income(c, me)}/turn</small></span></div>
@@ -89,7 +106,9 @@ function render() {
   // The selected system: what's there, and what you can order.
   let html = `<p class="hint">Pick a system on the map.</p>`;
   if (selected) {
-    const d = systemDef(selected), s = c.systems[selected]!, ds = draft.systems[selected]!;
+    const d = systemDef(selected), s = v.systems[selected]!, ds = draft.systems[selected]!;
+    // Their numbers, or a question mark where nobody of ours is here to count them.
+    const theirs = (n: number, there: boolean) => (s.fog && there ? "?" : n);
     const opts = (n: number) => Array.from({ length: n }, (_, i) => `<option${i === n - 1 ? " selected" : ""}>${i + 1}</option>`).join("");
     const can = (o: Order) => planOrders(c, [{ ...mine, orders: [...mine.orders, o] }]).errors.at(-1);
     // One hero battle a turn: a sector's ground battle, or the space battle over the system.
@@ -106,43 +125,81 @@ function render() {
       ...neighbours(selected).flatMap((n) => c.systems[n]!.sectors.map((_, i) => ({ system: n, sector: i }))),
     ];
     html = `<h2>${d.name}</h2>
-      <p class="orbit">Orbit: ${s.orbit ? `<b class="${s.orbit}">${FACTION_NAMES[s.orbit]}</b>` : "nobody"} · ▲ ${s.fleets[me]} yours, ${s.fleets[foe]} theirs
+      <p class="orbit">Orbit: ${s.orbit ? `<b class="${s.orbit}">${FACTION_NAMES[s.orbit]}</b>` : "nobody"} · ▲ ${s.fleets[me]} yours, ${theirs(s.fleets[foe], s.orbit === foe)} theirs
         ${heroButton(ORBIT, "Fly the space battle here yourself, if one happens this turn")}</p>
       ${s.sectors.some((x) => x.armies[me]) && !supplied(c, me).has(selected) ? `<p class="warn">Cut off from supply: your armies here lose one a turn. Clear the enemy orbit on the way back to a capital.</p>` : ""}
       ${s.sectors.some((x) => x.kind === "cannon") ? `<p class="small">The anti-ship cannon knocks a ship a turn out of an enemy fleet in orbit.</p>` : ""}
       ${s.sectors.some((x) => x.kind === "canyon") ? `<p class="small">The mining canyon's ore pays its holder as well as a capital.</p>` : ""}
       ${s.sectors.some((x) => x.kind === "jungle") ? `<p class="small">Whoever holds the jungle fights from the trees: they defend it as if they held the orbit.</p>` : ""}
-      ${ds.fleets[me] ? `<div class="act">Send <select id="ship-n">${opts(ds.fleets[me])}</select> ships to
+      ${ds.fleets[me] && !answering ? `<div class="act">Send <select id="ship-n">${opts(ds.fleets[me])}</select> ships to
         <select id="ship-to">${neighbours(selected).map((n) => `<option value="${n}">${systemDef(n).name}</option>`).join("")}</select>
         <button type="button" id="send-ships">Go</button></div>` : ""}
       <ul class="sectors">${s.sectors.map((x, i) => {
         const at = { system: selected!, sector: i }, here = ds.sectors[i]!;
-        const builds = x.owner === me ? [
+        const builds = x.owner === me && !answering ? [
           (x.kind === "spaceport" || (x.kind === "capital" && !s.sectors.some((y) => y.kind === "spaceport"))) && btn(`+ Ship ◈${COST.fleet}`, { kind: "build", unit: "fleet", at }),
           x.kind === "capital" && btn(`+ Army ◈${COST.army}`, { kind: "build", unit: "army", at }),
         ].filter(Boolean).join("") : "";
         return `<li>
           <div class="sector"><i class="dot ${x.owner}"></i><b>${SECTOR_NAMES[x.kind]}</b>
-            <span class="armies"><span class="marines">■${x.armies.marines}</span> <span class="wooka">■${x.armies.wooka}</span></span>
+            <span class="armies"><span class="marines">■${foe === "marines" ? theirs(x.armies.marines, x.owner === foe) : x.armies.marines}</span> <span class="wooka">■${foe === "wooka" ? theirs(x.armies.wooka, x.owner === foe) : x.armies.wooka}</span></span>
             ${heroButton(i, "Play the battle here yourself, if one happens this turn")}</div>
           ${builds ? `<div class="act">${builds}</div>` : ""}
-          ${here.armies[me] && x.owner === me ? `<div class="act">Send <select data-army-n="${i}">${opts(here.armies[me])}</select> armies to
+          ${here.armies[me] && x.owner === me && !answering ? `<div class="act">Send <select data-army-n="${i}">${opts(here.armies[me])}</select> armies to
             <select data-army-to="${i}">${targets.filter((t) => !(t.system === selected && t.sector === i)).map((t) => `<option value="${t.system}:${t.sector}">${placeName(t)}</option>`).join("")}</select>
             <button type="button" data-army-go="${i}">Go</button></div>` : ""}
         </li>`;
       }).join("")}</ul>`;
   }
-  $("detail").innerHTML = html;
+  $("detail").innerHTML = (answering && myTurn() ? retreatPanel() : "") + html;
 
-  $("orders").innerHTML = mine.orders.length || mine.hero
+  const rs = mine.retreats ?? [];
+  $("orders").innerHTML = answering
+    ? rs.length
+      ? rs.map((r, i) => `<li>${r.kind === "calloff" ? `Call off the attack on ${placeName(r.to)}` : `Pull out of ${placeName(r.from)} to ${placeName(r.to)}`} <button type="button" class="x" data-drop-retreat="${i}" title="Cancel">✕</button></li>`).join("")
+      : `<li class="hint">${myTurn() ? "Holding everywhere. Pull out where you'd rather not fight, or call an attack off." : "Your moves are in."}</li>`
+    : mine.orders.length || mine.hero
     ? `${mine.orders.map((o, i) => `<li>${describe(o)} <button type="button" class="x" data-drop="${i}" title="Cancel">✕</button></li>`).join("")}
        ${mine.hero ? `<li class="hero-order">⚔ Hero ${mine.hero.sector === ORBIT ? "flies" : "leads"} at ${placeName(mine.hero)} <button type="button" class="x" data-drop="hero" title="Cancel">✕</button></li>` : ""}`
     : `<li class="hint">No orders yet. Build, send ships to take an orbit, land armies under it, and pick one battle to lead (⚔).</li>`;
   $("log").innerHTML = c.log.map((l) => `<li>${esc(l)}</li>`).join("");
   const end = $("end-turn");
   end.toggleAttribute("disabled", busy || !myTurn());
-  end.textContent = g ? (myTurn() ? "Send orders" : waitingLine()) : hotseat() ? "Hand in orders" : "End turn";
+  end.textContent = answering && myTurn() ? (rs.length ? "Confirm retreats" : "Hold everywhere")
+    : g ? (myTurn() ? "Send orders" : waitingLine()) : hotseat() ? "Hand in orders" : "End turn";
   if (c.winner) showModal(`<h2>${hotseat() ? `${FACTION_NAMES[c.winner]} win` : c.winner === me ? "Victory" : "Defeat"}</h2><p>${FACTION_NAMES[c.winner]} wins the war on turn ${c.turn - 1}.</p><button type="button" id="new-war" class="primary">New campaign</button>`);
+}
+
+// Once the attacks are declared: each one against you, with where you could pull back to, and
+// each of yours, which you can call off. Nobody sees how many are coming.
+function retreatPanel() {
+  const attacks = c.attacks ?? [], foe = enemy(me), own = ownMoves(), rs = mine.retreats ?? [];
+  const after = planOrders(c, [own ?? { faction: me, orders: [] }]).c, g = galaxyOf(c);
+  const key = (w: Where) => `${w.system}:${w.sector}`;
+  const group = (list: Attack[]) => [...new Map(list.map((a) => [key(a.to), list.filter((b) => sameWhere(b.to, a.to))])).values()];
+  const touched = (w: Where) => w.sector === ORBIT ? after.systems[w.system]!.fleets[me] > 0 : after.systems[w.system]!.sectors[w.sector]!.armies[me] > 0;
+  const fits = (r: Retreat) => !own || !checkRetreats(c, own, [...rs, r]).at(-1);
+  const from = (list: Attack[]) => list.map((a) => systemDef(a.from).name).join(", ");
+  const against = group(attacks.filter((a) => a.faction === foe && touched(a.to))).map((list) => {
+    const to = list[0]!.to, out = rs.find((r) => r.kind === "withdraw" && sameWhere(r.from, to));
+    const places: Where[] = to.sector === ORBIT
+      ? g.neighbours(to.system).map((n) => ({ system: n, sector: ORBIT }))
+      : [to.system, ...g.neighbours(to.system)].flatMap((id) => c.systems[id]!.sectors.map((_, i) => ({ system: id, sector: i })));
+    const options = out ? [] : places.filter((p) => fits({ kind: "withdraw", from: to, to: p }));
+    return `<li><div><b>${placeName(to)}</b> <span class="small">from ${from(list)}, strength unknown</span></div>
+      ${out ? `<div class="small">Pulling out to ${placeName(out.to)}</div>`
+        : options.length ? `<div class="act"><select data-withdraw-to="${key(to)}">${options.map((p) => `<option value="${key(p)}">${placeName(p)}</option>`).join("")}</select>
+          <button type="button" data-withdraw="${key(to)}">Pull out</button></div>` : `<div class="small">Nowhere to pull back to: they stand.</div>`}</li>`;
+  }).join("");
+  const ours = group(attacks.filter((a) => a.faction === me)).map((list) => {
+    const to = list[0]!.to, off = rs.some((r) => r.kind === "calloff" && sameWhere(r.to, to));
+    return `<li><div><b>${placeName(to)}</b> <span class="small">from ${from(list)}</span></div>
+      ${off ? `<div class="small">Called off</div>` : `<div class="act"><button type="button" data-calloff="${key(to)}">Call it off</button></div>`}</li>`;
+  }).join("");
+  return `<div class="attacks"><h2>Attacks declared</h2>
+    ${against ? `<h3>Against you</h3><ul class="sectors">${against}</ul>` : ""}
+    ${ours ? `<h3>Yours</h3><ul class="sectors">${ours}</ul>` : ""}
+    <p class="small">Hold, and the fight happens. Pull out, and the ground is theirs but your troops live.</p></div>`;
 }
 
 // Next turn's income, counted out like reinforcements: sectors, each region held, broken morale.
@@ -159,8 +216,8 @@ function waitingLine() {
   if (c.winner) return "The war is over";
   const h = heroFaction(c);
   if (h) return h === me ? "Your hero battle" : `${FACTION_NAMES[h]} are fighting a hero battle`;
-  if (waiting().includes(me)) return "Your move";
-  return `Waiting for the ${waiting().map((f) => FACTION_NAMES[f]).join(" and ")}`;
+  if (waiting().includes(me)) return c.attacks ? "Answer the attacks" : "Your move";
+  return `Waiting for the ${waiting().map((f) => FACTION_NAMES[f]).join(" and ")}${c.attacks ? " to answer the attacks" : ""}`;
 }
 
 // Clicks, delegated.
@@ -184,6 +241,18 @@ document.addEventListener("click", (e) => {
     else mine.orders.splice(+t.dataset.drop, 1);
     save(); render(); return;
   }
+  if (t.dataset.withdraw) {
+    const [system, sector] = document.querySelector<HTMLSelectElement>(`[data-withdraw-to="${t.dataset.withdraw}"]`)!.value.split(":");
+    const [fs, fx] = t.dataset.withdraw.split(":");
+    mine.retreats = [...(mine.retreats ?? []), { kind: "withdraw", from: { system: fs!, sector: +fx! }, to: { system: system!, sector: +sector! } }];
+    save(); render(); return;
+  }
+  if (t.dataset.calloff) {
+    const [system, sector] = t.dataset.calloff.split(":");
+    mine.retreats = [...(mine.retreats ?? []), { kind: "calloff", to: { system: system!, sector: +sector! } }];
+    save(); render(); return;
+  }
+  if (t.dataset.dropRetreat) { mine.retreats?.splice(+t.dataset.dropRetreat, 1); save(); render(); return; }
   if (t.id === "end-turn") return endTurn();
   if (t.id === "new-war" || t.id === "restart") return chooseGame();
   if (t.dataset.start) return startGame(t.dataset.start as "ai" | "hotseat" | "online");
@@ -237,6 +306,8 @@ function useGame(g: Game, draft?: { turn: number; orders: Orders }) {
   c = g.kind === "local" ? g.table.campaign : g.view.campaign;
   me = seatUp();
   mine = draft?.turn === c.turn && draft.orders.faction === me ? draft.orders : { faction: me, orders: [] };
+  // Moves before the attacks are declared, retreats after.
+  mine = c.attacks ? { faction: me, orders: [], retreats: mine.retreats ?? [], ...(mine.hero && { hero: mine.hero }) } : { faction: me, orders: mine.orders, ...(mine.hero && { hero: mine.hero }) };
   selected = galaxyOf(c).systems.find((d) => c.systems[d.id]!.sectors.some((x) => x.owner === me))?.id ?? null;
   save(); render();
 }
@@ -256,6 +327,7 @@ async function endTurn() {
   const g = online();
   if (g) {
     busy = true; render();
+    if (!c.attacks) write(SENT, (sent = { id: g.link.id, turn: c.turn, orders: structuredClone(mine) }));
     try { g.view = await sendOrders(g.link, mine); } catch (e) { flash((e as Error).message); }
     busy = false;
     useGame(g);
@@ -267,13 +339,14 @@ async function endTurn() {
   useGame({ kind: "local", table: step.table });
   // Hotseat: the screen goes to the next player before they see anything.
   if (hotseat() && !c.winner && seatUp() !== before) return passTo(seatUp());
+  if (c.attacks && myTurn()) flash("Attacks declared: hold, or pull back");
   afterTurn();
 }
 
 function passTo(f: Faction) {
   const battle = heroFaction(c) === f;
   showModal(`<h2>${FACTION_NAMES[f]}, you're up</h2>
-    <p>${battle ? "Your hero has a battle to fight." : `Turn ${c.turn}: give your orders.`} Hand the screen over.</p>
+    <p>${battle ? "Your hero has a battle to fight." : c.attacks ? "The attacks are declared. Decide where to stand and where to pull back." : `Turn ${c.turn}: give your orders.`} Hand the screen over.</p>
     <button type="button" id="pass-on" class="primary">I'm the ${FACTION_NAMES[f]}</button>`);
 }
 

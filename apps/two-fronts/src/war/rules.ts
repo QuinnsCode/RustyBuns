@@ -1,6 +1,10 @@
-// The strategy layer: a deterministic rules engine over plain JSON. A turn is income and
-// building, simultaneous moves, space battles, landings, ground battles, then upkeep (cannon
-// fire, bombardment, supply, income). One battle a turn, on the ground or in orbit, can be
+// The strategy layer: a deterministic rules engine over plain JSON. A turn goes like a board game
+// of territories and armies, both sides at once and blind to each other's numbers: raise troops
+// and ships, move them, and any move into the enemy's orbit or sectors is an attack. The attacks
+// are then declared (where, and from where, but not with how many), and each side declares its
+// retreats: a defender can pull out to a world it holds next door, an attacker can call an attack
+// off. Then it all resolves: space battles, landings, ground battles, upkeep (cannon fire,
+// bombardment, supply, income). One battle a turn, on the ground or in orbit, can be
 // handed to the player as a hero battle; the turn pauses on it until the result comes back.
 import type { BattleResult, BattleSpec, Faction, SectorKind, SpaceBattleResult, SpaceBattleSpec, VehicleKind, VehiclePool } from "../battle/contract.ts";
 import { other as otherSide } from "../battle/contract.ts";
@@ -12,7 +16,10 @@ export const enemy = (f: Faction): Faction => (f === "marines" ? "wooka" : "mari
 const zero = (): Count => ({ marines: 0, wooka: 0 });
 
 export interface Sector { kind: SectorKind; owner: Faction; armies: Count }
-export interface SystemState { id: string; orbit: Faction | null; fleets: Count; sectors: Sector[] }
+export interface SystemState {
+  id: string; orbit: Faction | null; fleets: Count; sectors: Sector[];
+  fog?: true; // in a seat's view: the enemy's numbers here are hidden (and zeroed), as nobody of theirs is here to see
+}
 export interface Hero { level: number; xp: number; woundedUntil: number }
 export interface Where { system: string; sector: number }
 // A hero pick with this sector flies in the space battle over the system instead.
@@ -32,6 +39,8 @@ export interface Campaign {
   systems: Record<string, SystemState>;
   heroes: Record<Faction, Hero>; // each side's hero, though only the human sides send one in
   pending: Pending | null;
+  // Set while the turn waits on retreats: every attack this turn, declared without its numbers.
+  attacks?: Attack[] | null;
   winner: Faction | null;
   log: string[]; // this turn's events, newest last
 }
@@ -41,7 +50,14 @@ export type Order =
   | { kind: "fleet"; from: string; to: string; count: number }
   | { kind: "army"; from: Where; to: Where; count: number };
 
-export interface Orders { faction: Faction; orders: Order[]; hero?: Where }
+// An attack, as the other side learns of it: who, from which system, on which sector (or ORBIT).
+export interface Attack { faction: Faction; from: string; to: Where }
+// The answer to the declared attacks: call one of your own off (its troops stay home), or pull
+// everything out of a place under attack to one you hold in the same system or next door.
+export type Retreat = { kind: "calloff"; to: Where } | { kind: "withdraw"; from: Where; to: Where };
+
+// A side's turn: what it raises and moves, then once the attacks are declared, its retreats.
+export interface Orders { faction: Faction; orders: Order[]; hero?: Where; retreats?: Retreat[] }
 
 export const COST = { fleet: 3, army: 2 } as const;
 export const START_CREDITS = 6;
@@ -128,6 +144,7 @@ export function regionHolder(c: Campaign, region: string): Faction | null {
 export function incomeBreakdown(c: Campaign, f: Faction) {
   let sectors = 0;
   for (const s of Object.values(c.systems)) for (const x of s.sectors) if (x.owner === f) sectors += SECTOR_INCOME[x.kind];
+  sectors = Math.floor(sectors * (galaxyOf(c).pay ?? 1)); // spread thin over a big map
   const regions = galaxyOf(c).regions.filter((r) => regionHolder(c, r.id) === f).map((r) => ({ name: r.name, bonus: r.bonus }));
   const gross = sectors + regions.reduce((n, r) => n + r.bonus, 0);
   const total = keyShare(c, f) < MORALE_SHARE ? Math.floor(gross / 2) : gross;
@@ -225,6 +242,8 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
   const d = planOrders(c0, all);
   const c = d.c, r = rng(c.seed * 1000 + c.turn);
   c.log = [];
+  c.attacks = null;
+  retreat(d, c0, all);
   const startOrbit = Object.fromEntries(Object.values(c.systems).map((s) => [s.id, s.orbit]));
   // One hero battle a turn, on the ground or in orbit. With two players picking, it's the first
   // pick the sweep reaches, and the other side's AI fights it.
@@ -289,6 +308,106 @@ function landAndFight(c: Campaign, landings: Transit[], picks: Orders[], r: () =
     if (a) x.owner = att;
   });
   return c.pending ? c : upkeep(c);
+}
+
+// --- Declared attacks, and the retreats that answer them ---
+
+const same = (a: Where, b: Where) => a.system === b.system && a.sector === b.sector;
+const isOrbit = (w: Where) => w.sector < 0;
+
+// Every attack in this turn's moves: a fleet into a system where the enemy holds the orbit or any
+// ground, troops into a sector the enemy holds. One per side, source and target, however many go.
+export function declareAttacks(c: Campaign, all: Orders[]): Attack[] {
+  const d = planOrders(c, all), out: Attack[] = [];
+  for (const t of d.transit) {
+    const foe = enemy(t.faction), s = c.systems[t.to.system]!;
+    const to = isOrbit(t.to) ? { system: t.to.system, sector: ORBIT } : t.to;
+    const hit = isOrbit(t.to) ? s.orbit === foe || s.fleets[foe] > 0 || s.sectors.some((x) => x.owner === foe) : sectorAt(c, t.to)!.owner === foe;
+    if (hit && !out.some((a) => a.faction === t.faction && a.from === t.from.system && same(a.to, to))) out.push({ faction: t.faction, from: t.from.system, to });
+  }
+  return out;
+}
+
+// Whether a side has a say in the retreats: it made an attack, or something of its is attacked.
+export function involved(c: Campaign, f: Faction) {
+  return (c.attacks ?? []).some((a) => {
+    if (a.faction === f) return true;
+    const s = c.systems[a.to.system]!;
+    return isOrbit(a.to) ? s.orbit === f || s.fleets[f] > 0 : sectorAt(c, a.to)!.owner === f || sectorAt(c, a.to)!.armies[f] > 0;
+  });
+}
+
+// Checks a side's retreats against the declared attacks and where its own moves left it, applying
+// each to the draft so the next is checked against what this one left. Null for each that's fine.
+export function checkRetreats(c: Campaign, own: Orders, retreats: Retreat[]): (string | null)[] {
+  const d = planOrders(c, [{ ...own, retreats: undefined }]).c, f = own.faction, attacks = c.attacks ?? [];
+  return retreats.map((r) => {
+    const err = retreatError(c, d, f, r, attacks);
+    if (!err && r.kind === "withdraw") move(d, f, r);
+    return err;
+  });
+}
+
+function retreatError(c: Campaign, d: Campaign, f: Faction, r: Retreat, attacks: Attack[]): string | null {
+  if (!r || typeof r !== "object" || !r.to || typeof r.to.system !== "string" || !Number.isInteger(r.to.sector)) return "That isn't a retreat";
+  if (r.kind === "calloff") return attacks.some((a) => a.faction === f && same(a.to, r.to)) ? null : "No attack of yours there";
+  if (r.kind !== "withdraw" || !r.from || typeof r.from.system !== "string" || !Number.isInteger(r.from.sector)) return "That isn't a retreat";
+  if (!attacks.some((a) => a.faction === enemy(f) && same(a.to, r.from))) return "Nobody is attacking there";
+  if (isOrbit(r.from)) {
+    if (!isOrbit(r.to) || !galaxyOf(c).adjacent(r.from.system, r.to.system)) return "Ships pull back along a hyperlane";
+    return d.systems[r.from.system]!.fleets[f] ? null : "No ships of yours there";
+  }
+  const to = sectorAt(d, r.to);
+  if (!to || isOrbit(r.to)) return "No such sector";
+  if (same(r.from, r.to)) return "Already there";
+  if (to.owner !== f) return "Pull back to a sector you hold";
+  if (r.from.system !== r.to.system && !galaxyOf(c).adjacent(r.from.system, r.to.system)) return "Pull back to the same world or one next door";
+  return sectorAt(d, r.from)!.armies[f] ? null : "No troops of yours there";
+}
+
+function move(c: Campaign, f: Faction, r: Extract<Retreat, { kind: "withdraw" }>) {
+  if (isOrbit(r.from)) {
+    c.systems[r.to.system]!.fleets[f] += c.systems[r.from.system]!.fleets[f];
+    c.systems[r.from.system]!.fleets[f] = 0;
+  } else {
+    sectorAt(c, r.to)!.armies[f] += sectorAt(c, r.from)!.armies[f];
+    sectorAt(c, r.from)!.armies[f] = 0;
+  }
+}
+
+// Before anyone arrives: the attacks called off come home, and the withdrawals pull out.
+function retreat(d: Draft, c0: Campaign, all: Orders[]) {
+  const attacks = c0.attacks ?? [];
+  for (const o of all) for (const r of o.retreats ?? []) {
+    const f = o.faction;
+    if (retreatError(c0, d.c, f, r, attacks)) continue;
+    if (r.kind === "calloff") {
+      d.transit = d.transit.filter((t) => {
+        if (t.faction !== f || !(isOrbit(r.to) ? isOrbit(t.to) && t.to.system === r.to.system : same(t.to, r.to))) return true;
+        if (isOrbit(t.from)) d.c.systems[t.from.system]!.fleets[f] += t.count;
+        else sectorAt(d.c, t.from)!.armies[f] += t.count;
+        return false;
+      });
+      d.c.log.push(`${FACTION_NAMES[f]} call off the attack on ${isOrbit(r.to) ? `${name(d.c, r.to.system)}'s orbit` : where(d.c, r.to)}.`);
+    } else {
+      move(d.c, f, r);
+      d.c.log.push(`${FACTION_NAMES[f]} pull out of ${isOrbit(r.from) ? `${name(d.c, r.from.system)}'s orbit` : where(d.c, r.from)} to ${isOrbit(r.to) ? name(d.c, r.to.system) : where(d.c, r.to)}.`);
+    }
+  }
+}
+
+// What a side sees of the map: who holds what everywhere, but the enemy's numbers only where it
+// has someone to count them. Elsewhere they read as nothing, and the system is marked fogged.
+export function fogged(c: Campaign, f: Faction): Campaign {
+  const v = structuredClone(c), foe = enemy(f);
+  for (const s of Object.values(v.systems)) {
+    if (s.fleets[f] > 0 || s.sectors.some((x) => x.owner === f || x.armies[f] > 0)) continue;
+    s.fleets[foe] = 0;
+    for (const x of s.sectors) x.armies[foe] = 0;
+    s.fog = true;
+  }
+  if (v.pending?.kind === "space") v.pending.landings = v.pending.landings.filter((t) => t.faction === f);
+  return v;
 }
 
 export const heroReady = (c: Campaign, f: Faction = c.player) => c.heroes[f].woundedUntil <= c.turn;

@@ -18,13 +18,14 @@ export interface RegionDef { id: string; name: string; bonus: number; label: [nu
 // Armies are per sector.
 export interface Start { owner: Faction; fleets: number; armies: number }
 
-export type GalaxyId = "short" | "full";
+export type GalaxyId = "short" | "full" | "horde";
 
 export interface GalaxyDef {
   id: GalaxyId;
   name: string;
   blurb: string;
   width: number; // the map is width by 100
+  pay?: number;  // the share of its sectors' income a side is paid, so a big map doesn't drown in armies (1 if unset)
   regions: RegionDef[];
   systems: SystemDef[];
   lanes: [string, string][];
@@ -197,7 +198,62 @@ const FULL = galaxy({
   },
 });
 
-export const GALAXIES: Record<GalaxyId, Galaxy> = { short: SHORT, full: FULL };
+
+// The Horde: sixty worlds, twelve columns of five, the Marines' half to the west and the Wooka's to
+// the east. The map is point-symmetric like the others, but the forces aren't: the Wooka come in
+// force, two or three armies to a world against the Marines' one or two, and the Marines hold the
+// sky with more ships. Fend them off, then push back. Doren, the forest moon, is the Wooka's home.
+const HORDE_NAMES = [
+  ["Brill", "Corva", "Pell", "Quarry", "Halden", "Vesk", "Rook", "Sable", "Bracken", "Nyx", "Orin", "Thistle"],
+  ["Harrow", "Ivo", "Dun", "Tarn", "Kessa", "Lumen", "Umber", "Vey", "Morrow", "Cinder", "Moss", "Wend"],
+  ["Aster", "Keel", "Jessup", "Garrick", "Selby", "Corran", "Xan", "Yarrow", "Dell", "Glade", "Hollow", "Doren"],
+  ["Tolle", "Fenwick", "Ostra", "Calder", "Wick", "Lisle", "Zell", "Pinewatch", "Burrow", "Sorrel", "Thorn", "Fernhome"],
+  ["Iona", "Reave", "Castor", "Merrin", "Hale", "Bastia", "Briar", "Loam", "Sedge", "Rushmere", "Gorse", "Bramble"],
+];
+// The worlds with more than a capital, by their index in the first half (the second half mirrors it).
+const HORDE_SECTORS: Record<number, SectorKind[]> = {
+  24: ["spaceport", "capital"], 2: ["spaceport", "capital"], 9: ["spaceport", "capital"],
+  14: ["shield", "capital"], 12: ["shield", "capital"], 17: ["shield", "spaceport", "capital"],
+  5: ["cannon", "capital"], 29: ["cannon", "capital"],
+  6: ["jungle", "capital"], 22: ["jungle", "capital"], 20: ["canyon", "capital"], 27: ["canyon", "capital"],
+};
+const HORDE_REGIONS: Record<string, string> = {
+  "0n": "Thunder Reach", "0s": "Iron Coast", "1n": "Bastion March", "1s": "Glass Fields", "2n": "The Ramparts", "2s": "Ashfall",
+  "3n": "Ember Belt", "3s": "The Narrows", "4n": "Bramblewild", "4s": "Mossdeep", "5n": "Fernhold", "5s": "Wooka Wilds",
+};
+function hordeGalaxy(): Galaxy {
+  const COLS = 12, ROWS = 5, W = 239, ROW_Y = [15, 32, 49, 66, 83];
+  const hash = (i: number, k: number) => { const h = Math.sin(i * 127.1 + k * 311.7) * 43758.5453; return h - Math.floor(h); };
+  const systems: SystemDef[] = [], start: Record<string, Start> = {}, lanes: [string, string][] = [];
+  const idOf = (row: number, col: number) => HORDE_NAMES[row]![col]!.toLowerCase();
+  for (let i = 0; i < COLS * ROWS; i++) {
+    const row = Math.floor(i / COLS), col = i % COLS, n = COLS * ROWS;
+    // A world in the second half is its twin's mirror: across the centre, the jitter turned round too.
+    const first = i < n / 2, k = first ? i : n - 1 - i;
+    const kRow = Math.floor(k / COLS), kCol = k % COLS;
+    // In quarter steps, which add and subtract exactly, so a twin sits exactly on its mirror.
+    const jx = Math.round((hash(k, 1) - 0.5) * 32) / 4, jy = Math.round((hash(k, 2) - 0.5) * 24) / 4;
+    const x = first ? 15 + kCol * 19 + jx : W - (15 + kCol * 19 + jx), y = first ? ROW_Y[kRow]! + jy : 98 - (ROW_Y[kRow]! + jy);
+    const cp = Math.floor(col / 2), half = row < 2 ? "n" : row > 2 ? "s" : col < 6 ? "n" : "s";
+    systems.push({ id: idOf(row, col), name: HORDE_NAMES[row]![col]!, region: `${cp}${half}`, x, y, sectors: HORDE_SECTORS[k] ?? ["capital"] });
+    const marines = col < COLS / 2, front = col === 5 || col === 6, home = k === 24;
+    start[idOf(row, col)] = marines
+      ? { owner: "marines", armies: home || front ? 2 : 1, fleets: home ? 3 : front ? 2 : 1 }
+      : { owner: "wooka", armies: home || front ? 3 : 2, fleets: home ? 2 : 1 };
+    if (col + 1 < COLS) lanes.push([idOf(row, col), idOf(row, col + 1)]);
+    if (row + 1 < ROWS) lanes.push([idOf(row, col), idOf(row + 1, col)]);
+    // Diagonals on a pattern that turns into itself half a turn round.
+    if (row + 1 < ROWS && col + 1 < COLS && Math.abs(2 * (row + col) - 13) % 4 === 1) lanes.push([idOf(row, col), idOf(row + 1, col + 1)]);
+  }
+  const regions: RegionDef[] = Object.entries(HORDE_REGIONS).map(([id, name]) => {
+    const mine = systems.filter((s) => s.region === id), xs = mine.map((s) => s.x);
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+    return { id, name, bonus: (mine.length >= 6 ? 3 : 2) + (id[0] === "2" || id[0] === "3" ? 1 : 0), label: [cx, id[1] === "n" ? 3 : 97.5] as [number, number] };
+  });
+  return galaxy({ id: "horde", name: "The Horde", blurb: "60 worlds, and the Wooka come in force", width: W, pay: 0.3, regions, systems, lanes, start });
+}
+
+export const GALAXIES: Record<GalaxyId, Galaxy> = { short: SHORT, full: FULL, horde: hordeGalaxy() };
 export const galaxyOf = (c: { galaxy: GalaxyId }) => GALAXIES[c.galaxy];
 
 export const SECTOR_NAMES: Record<SectorKind, string> = { capital: "Capital", spaceport: "Spaceport", shield: "Shield generator", cannon: "Anti-ship cannon", canyon: "Mining canyon", jungle: "Jungle" };
