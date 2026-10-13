@@ -129,7 +129,7 @@ export class LocalDurableObjectState {
         const r = v(...a);
         if (!(r instanceof Promise)) return r;
         this.inflight++;
-        r.finally(() => { if (--this.inflight === 0) setImmediate(() => this.release()); }).catch(() => {});
+        r.finally(() => { if (--this.inflight === 0) setTimeout(() => this.release(), 0); }).catch(() => {});
         return r;
       };
     }
@@ -150,8 +150,15 @@ export class LocalDurableObjectState {
    */
   turn<T>(fn: () => T): T {
     this.inflight++;
-    setImmediate(() => { if (--this.inflight === 0) this.release(); });
-    return fn();
+    let held = true;
+    const free = () => { if (held) { held = false; if (--this.inflight === 0) this.release(); } };
+    // Freed when the event settles, or on a later task if it's still awaiting I/O by then. A timer,
+    // not setImmediate: in codeSplitter's suite one setImmediate never ran, and a claim hung on it.
+    const t = setTimeout(free, 0);
+    let out: T;
+    try { out = fn(); } catch (e) { clearTimeout(t); free(); throw e; }
+    Promise.resolve(out).finally(() => { clearTimeout(t); free(); }).catch(() => {});
+    return out;
   }
 
   waitUntil(p: Promise<unknown>) {
