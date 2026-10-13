@@ -146,7 +146,7 @@ jobs:
           # A half-built app (say, Windows failed) isn't dropped; its artifacts are still on the run.
           ls -la bins
           want=$(bun -e 'const m=JSON.parse(process.argv[1]).include.filter(e=>e.app===process.argv[2]);console.log(m.length)' "$BUILD" "$APP")
-          got=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq "[.artifacts[].name | select(startswith(\"$APP-\"))] | length")
+          got=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" --jq "[.artifacts[].name | select(startswith(\"$APP-\"))] | length")
           echo "artifacts: $got of $want"
           [ "$got" = "$want" ]
         env:
