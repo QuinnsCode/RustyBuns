@@ -374,6 +374,8 @@ function showLooks(net: Net) {
 function board(game: Game, net: Net) {
   const rows = [...net.mirror.roster].sort((a, b) => b.score - a.score || a.deaths - b.deaths);
   const t = $("board");
+  // Past 32 a board at full size runs off the screen.
+  t.classList.toggle("long", rows.length > 32);
   t.innerHTML = "<tr><th>soldier</th><th></th><th>downed</th><th>went down</th></tr>";
   for (const r of rows) {
     const tr = document.createElement("tr");
