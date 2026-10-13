@@ -456,6 +456,12 @@ ${LAUNCH_CHECK}${appCheck(c, true)}${h.launch}`;
 /** import(`x`) with no ${...} in it, as import("x"), so the bundler resolves it statically. */
 export const plainDynamicImports = (js: string) => js.replace(/\bimport\(`([^`$\\]+)`\)/g, (_, spec: string) => `import(${JSON.stringify(spec)})`);
 
+/** A .wasm file the built Worker imports, as workerd hands it over: a compiled WebAssembly.Module
+ *  (Prisma's query engine instantiates it), not the file path Bun's default loader gives. The bytes
+ *  ride in the bundle, so a compiled binary carries them (#909). */
+export const wasmModuleSource = (bytes: Uint8Array) =>
+  `export default new WebAssembly.Module(Buffer.from(${JSON.stringify(Buffer.from(bytes).toString("base64"))}, "base64"));`;
+
 /** desktop.workers: each module's absolute path -> its bundle's name in workers/ beside the host
  *  (src/rig/worker.ts -> src-rig-worker.js). Bun.build leaves `new URL("./w.ts", import.meta.url)`
  *  alone and doesn't emit the module, so each is bundled on its own. */
@@ -811,6 +817,10 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
         const dir = join(process.cwd(), dirname(c.worker.builtMain)).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         b.onLoad({ filter: new RegExp(`^${dir}[\\\\/].*\\.m?js$`) }, async (args: { path: string }) => ({
           contents: plainDynamicImports(await Bun.file(args.path).text()), loader: "js",
+        }));
+        // Only the Worker build's own .wasm: the host entry imports PGlite's as files.
+        b.onLoad({ filter: new RegExp(`^${dir}[\\\\/].*\\.wasm$`) }, async (args: { path: string }) => ({
+          contents: wasmModuleSource(await Bun.file(args.path).bytes()), loader: "js",
         }));
       }
       // The app's own code: a worker module it names by URL points at that worker's bundle.

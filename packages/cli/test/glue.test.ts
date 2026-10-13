@@ -4,7 +4,7 @@ import { analyze, plan } from "../src/glue/boundary.ts";
 import { parseWrangler, wranglerToConfig } from "../src/wrangler.ts";
 import { generateAlchemy } from "../src/gen/alchemy.ts";
 import { generateWrangler } from "../src/gen/wrangler.ts";
-import { desktopEntry, spaEntry, builtEntry, embeddedDirs, plainDynamicImports } from "../src/build.ts";
+import { desktopEntry, spaEntry, builtEntry, embeddedDirs, plainDynamicImports, wasmModuleSource } from "../src/build.ts";
 
 // Some tests spawn the CLI, which takes seconds under --parallel load; bun ignores bunfig's timeout.
 setDefaultTimeout(30_000);
@@ -888,6 +888,21 @@ test("plainDynamicImports: import(`x`) becomes import(\"x\") so the shim resolve
   expect(plainDynamicImports("const { env: e } = await import(`cloudflare:workers`);")).toBe('const { env: e } = await import("cloudflare:workers");');
   expect(plainDynamicImports("import(`./page-${id}.js`)")).toBe("import(`./page-${id}.js`)");
   expect(plainDynamicImports('import("rwsdk/worker")')).toBe('import("rwsdk/worker")');
+});
+
+test("wasmModuleSource: a Worker's .wasm import bundles to a WebAssembly.Module, as on workerd (#909)", async () => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "rb-wasm-"));
+  // The smallest module: magic and version, no sections.
+  writeFileSync(join(dir, "engine.wasm"), new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
+  writeFileSync(join(dir, "worker.js"), `import m from "./engine.wasm"; export const ok = m instanceof WebAssembly.Module && new WebAssembly.Instance(m) instanceof WebAssembly.Instance;`);
+  const r = await Bun.build({ entrypoints: [join(dir, "worker.js")], outdir: join(dir, "out"), target: "bun", plugins: [{ name: "wasm", setup(b) {
+    b.onLoad({ filter: /\.wasm$/ }, async (a) => ({ contents: wasmModuleSource(await Bun.file(a.path).bytes()), loader: "js" }));
+  } }] });
+  expect(r.success).toBe(true);
+  expect((await import(join(dir, "out", "worker.js"))).ok).toBe(true);
 });
 
 test("desktop.workers: each module gets a bundle beside the host, and host code's URL for it points there", async () => {
