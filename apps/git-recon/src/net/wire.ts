@@ -15,7 +15,7 @@ import type { VehicleKind } from "../sim/vehicles.ts";
 import { ORDER, type WeaponId } from "../sim/weapons.ts";
 
 /** Snapshots a second, and players a room holds. */
-export const SNAP_HZ = 20, MAX_PLAYERS = 32;
+export const SNAP_HZ = 20, MAX_PLAYERS = 64;
 /** How far off a soldier or a round still comes in your snapshot, in metres. */
 export const VIEW = 90;
 
