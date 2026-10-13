@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { loadRepo, LoadError, parseSlug } from "../src/levels/github.ts";
 import { LEVELS } from "../src/levels/levels.ts";
-import { checkHits, churnGuards, mapRepo, type RepoSnapshot } from "../src/sim/codemap.ts";
+import { checkHits, churnGuards, mapRepo, structureOf, type RepoSnapshot } from "../src/sim/codemap.ts";
 import { addWin, UNLOCKABLE as HEADS, unlocked, winKey } from "../src/sim/heads.ts";
 import { HEADS as ALL_HEADS, isOpen } from "../src/ui/heads.ts";
 import { folderLinks, importsOf, isAgentCommit, resolveImport, tally, workspacePackages } from "../src/sim/intel.ts";
@@ -62,6 +62,19 @@ describe("intel", () => {
     ]);
     expect(files).toEqual([{ path: "a.ts", lines: 10, churn: 3, agent: 0.67 }, { path: "b.ts", lines: 10, churn: 1, agent: 1 }]);
   });
+});
+
+test("files are built as the structure their kind calls for", () => {
+  expect(structureOf("apps/web/src/game.ts")).toBe("tower");
+  expect(structureOf("apps/web/tests/game.test.ts")).toBe("bunker");
+  expect(structureOf("src/foo.spec.tsx")).toBe("bunker");
+  expect(structureOf("README.md")).toBe("house");
+  expect(structureOf("LICENSE")).toBe("house");
+  expect(structureOf("package.json")).toBe("silo");
+  expect(structureOf("bun.lock")).toBe("silo");
+  expect(structureOf("vite.config.ts")).toBe("silo");
+  expect(structureOf("src/ui/styles.css")).toBe("stack");
+  expect(structureOf("public/heads/bun.png")).toBe("stack");
 });
 
 describe("the richer map", () => {

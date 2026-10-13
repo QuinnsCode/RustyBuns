@@ -12,7 +12,7 @@
 // it as it refills.
 
 import * as THREE from "three";
-import type { CodeMap } from "../sim/codemap.ts";
+import { structureOf, type CodeMap, type Structure } from "../sim/codemap.ts";
 import { contourStep } from "../sim/terrain.ts";
 import type { Game, GameEvent } from "../sim/game.ts";
 import { HEIGHT, ROLL_TIME, type Soldier } from "../sim/game.ts";
@@ -138,6 +138,51 @@ function ghost(): THREE.Mesh {
   return m;
 }
 
+/** Pieces joined into one geometry (positions and normals), so a structure is one mesh to aim at and sink. */
+function joined(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  const flat = parts.map((p) => (p.index ? p.toNonIndexed() : p));
+  const g = new THREE.BufferGeometry();
+  for (const name of ["position", "normal"]) {
+    const arrays = flat.map((p) => p.getAttribute(name).array as Float32Array);
+    const out = new Float32Array(arrays.reduce((n, a) => n + a.length, 0));
+    arrays.reduce((at, a) => (out.set(a, at), at + a.length), 0);
+    g.setAttribute(name, new THREE.BufferAttribute(out, 3));
+  }
+  return g;
+}
+
+/** A file's building, w by h by d and centred on the origin, inside the box that is its hitbox. */
+function structure(kind: Structure, w: number, h: number, d: number): THREE.BufferGeometry {
+  if (kind === "house") {
+    // Walls and a pitched roof, the ridge running along the longer side.
+    const wall = h * 0.62, roof = new THREE.Shape([new THREE.Vector2(-w / 2, 0), new THREE.Vector2(w / 2, 0), new THREE.Vector2(0, h - wall)]);
+    const top = new THREE.ExtrudeGeometry(roof, { depth: d, bevelEnabled: false }).translate(0, wall - h / 2, -d / 2);
+    return joined([new THREE.BoxGeometry(w, wall, d).translate(0, (wall - h) / 2, 0), top]);
+  }
+  if (kind === "silo") {
+    // A drum with a cone cap.
+    const r = Math.min(w, d) / 2, cap = Math.min(r * 0.8, h * 0.3), body = h - cap;
+    return joined([
+      new THREE.CylinderGeometry(r, r, body, 16).translate(0, (body - h) / 2, 0),
+      new THREE.ConeGeometry(r, cap, 16).translate(0, h / 2 - cap / 2, 0),
+    ]);
+  }
+  if (kind === "bunker") {
+    // Sunk walls under an overhanging slab, a dark slit between them.
+    const slab = Math.max(0.25, h * 0.22);
+    return joined([
+      new THREE.BoxGeometry(w * 0.84, h - slab, d * 0.84).translate(0, -slab / 2, 0),
+      new THREE.BoxGeometry(w, slab, d).translate(0, h / 2 - slab / 2, 0),
+    ]);
+  }
+  if (kind === "stack") {
+    // Three tiers stepping in as they rise.
+    const t = h / 3;
+    return joined([0, 1, 2].map((i) => new THREE.BoxGeometry(w * (1 - i * 0.22), t, d * (1 - i * 0.22)).translate(0, -h / 2 + t * (i + 0.5), 0)));
+  }
+  return new THREE.BoxGeometry(w, h, d);
+}
+
 /** How long a downed soldier kneels with its hands up, then sinks away. */
 const SURRENDER = 1.4, SINK = 0.8;
 /** Half the width of ground the sun's shadows cover, round you. */
@@ -240,7 +285,7 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
   }
   scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(ringPts), new THREE.LineBasicMaterial({ color: ORANGE })));
 
-  // Blocks: white boxes with hairline edges. Compound edges are orange until merged.
+  // Blocks: white buildings with hairline edges, shaped by the kind of file. Compound edges are orange until merged.
   const solids: THREE.Object3D[] = [terrainMesh];
   const boxMat = new THREE.MeshLambertMaterial({ color: PAPER });
   const glassMat = new THREE.MeshStandardMaterial({ color: 0x16191c, roughness: 0.18, metalness: 0.6 });
@@ -248,13 +293,13 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
   const compoundEdges = map.compounds.map(() => new THREE.LineBasicMaterial({ color: ORANGE }));
   const files: { b: (typeof map.blocks)[number]; m: THREE.Mesh; tall: number; h: number }[] = [];
   for (const b of map.blocks) {
-    const box = new THREE.BoxGeometry(b.w, b.h, b.d);
+    const box = structure(structureOf(b.path), b.w, b.h, b.d);
     const m = new THREE.Mesh(box, b.agent ? glassMat : boxMat);
     m.position.set(b.x, b.y + b.h / 2, b.z);
     m.castShadow = m.receiveShadow = true;
     m.userData.block = b;
     files.push({ b, m, tall: b.h, h: b.h });
-    const e = new THREE.LineSegments(new THREE.EdgesGeometry(box), b.compound >= 0 ? compoundEdges[b.compound]! : b.agent ? edgeGrey : edgeInk);
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(box, 30), b.compound >= 0 ? compoundEdges[b.compound]! : b.agent ? edgeGrey : edgeInk);
     m.add(e);
     scene.add(m);
     solids.push(m);
