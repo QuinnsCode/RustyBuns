@@ -6,8 +6,10 @@
 // Only what git tracks at HEAD, only source-ish text, the biggest files first. Alongside them,
 // what src/sim/intel.ts works out: which folders import which, and the last hundred commits'
 // churn per file and how much of it agents did, and the opening lines of the biggest scripts for the ground. src/levels/github.ts does the same for a live repo.
+// If origin is on GitHub and `gh` is signed in, the check runs failing at HEAD too, which set compounds on fire.
 
 import { resolve } from "node:path";
+import { failingChecks, parseSlug, type CheckRun } from "../src/levels/github.ts";
 import { folderOf } from "../src/sim/codemap.ts";
 import { excerpts, folderLinks, isAgentCommit, isScript, MAX_FILES, SKIP, SOURCE, tally, workspacePackages } from "../src/sim/intel.ts";
 
@@ -41,7 +43,17 @@ const commits = log.split("\x01").filter(Boolean).map((c) => {
   return { agent: isAgentCommit(message, author), paths: touched.split("\n").filter(Boolean) };
 });
 
+// The checks failing at HEAD, when origin is a GitHub repo and gh can ask; none otherwise.
+const slug = parseSlug((await Bun.$`git -C ${repo} remote get-url origin`.nothrow().quiet().text()).trim());
+let failing: string[] = [];
+if (slug) {
+  const sha = (await Bun.$`git -C ${repo} rev-parse HEAD`.text()).trim();
+  const res = await Bun.$`gh api ${`repos/${slug}/commits/${sha}/check-runs?per_page=100`}`.nothrow().quiet();
+  if (res.exitCode === 0) failing = failingChecks((JSON.parse(res.text()) as { check_runs: CheckRun[] }).check_runs);
+  else console.warn(`couldn't read ${slug}'s checks at ${ref} with gh, so none are on fire`);
+}
+
 const kept = tally(files.slice(0, Number(max)), commits).sort((a, b) => a.path.localeCompare(b.path));
 const out = resolve(import.meta.dir, `../src/levels/repos/${name}.json`);
-await Bun.write(out, JSON.stringify({ name, ref, files: kept, links: folderLinks(sources, workspacePackages(manifests), new Set(files.map((f) => folderOf(f.path)))), text: excerpts(sources) }) + "\n");
-console.log(`${name}@${ref}: ${kept.length} of ${files.length} files, ${commits.length} commits -> ${out}`);
+await Bun.write(out, JSON.stringify({ name, ref, files: kept, links: folderLinks(sources, workspacePackages(manifests), new Set(files.map((f) => folderOf(f.path)))), failing, text: excerpts(sources) }) + "\n");
+console.log(`${name}@${ref}: ${kept.length} of ${files.length} files, ${commits.length} commits, ${failing.length} failing checks -> ${out}`);

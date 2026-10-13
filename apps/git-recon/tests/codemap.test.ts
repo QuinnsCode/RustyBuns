@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { loadRepo, LoadError, parseSlug } from "../src/levels/github.ts";
+import { failingChecks, loadRepo, LoadError, parseSlug } from "../src/levels/github.ts";
 import { LEVELS } from "../src/levels/levels.ts";
 import { checkHits, churnGuards, mapRepo, structureOf, type RepoSnapshot } from "../src/sim/codemap.ts";
 import { addWin, UNLOCKABLE as HEADS, unlocked, winKey } from "../src/sim/heads.ts";
@@ -136,7 +136,18 @@ describe("any repo from GitHub", () => {
   test("owner/repo from a slug or a URL", () => {
     expect(parseSlug(" oven-sh/bun ")).toBe("oven-sh/bun");
     expect(parseSlug("https://github.com/QuinnsCode/RustyBuns.git")).toBe("QuinnsCode/RustyBuns");
+    expect(parseSlug("git@github.com:QuinnsCode/RustyBuns.git")).toBe("QuinnsCode/RustyBuns");
     expect(parseSlug("bun")).toBeNull();
+  });
+
+  test("failing checks: failed or timed out, once each, sorted", () => {
+    expect(failingChecks([
+      { name: "typecheck", conclusion: "failure" },
+      { name: "apps", conclusion: "timed_out" },
+      { name: "typecheck", conclusion: "failure" },
+      { name: "docs", conclusion: "success" },
+      { name: "site", conclusion: null },
+    ])).toEqual(["apps", "typecheck"]);
   });
 
   /** A fake GitHub for one small repo; counts the API calls it takes. */
