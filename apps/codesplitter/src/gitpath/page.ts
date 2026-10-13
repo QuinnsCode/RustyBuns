@@ -4,7 +4,7 @@
 // taps. build.ts bundles it, three.js and all, to /gitpath.js for gitpath.html.
 import {
   CURVES, RIDE, STACK, curveById, warpQ, buildNotes, clampQ, clockAt, currentIndex, eventPush, filterRange, formatAge, formatClock, geometry, gustRide,
-  layoutGraph, newRide, qAtFrac, readInput, remount, rideEvents, scoreAt, stepQ, stepRide, tapRide, timeFracAt, timeTicks, breeze,
+  layoutGraph, newRide, qAtFrac, readInput, remount, rideEvents, scoreAt, stepQ, stepRide, tapRide, timeFracAt, timeTicks, breeze, topFriends, veinChart,
   type Geometry, type Input, type Layout, type Note, type RideEvent, type Side,
 } from "./gitpath.ts";
 import { createScene } from "./scene.ts";
@@ -99,6 +99,7 @@ function pick(p: string, keepRange = false) {
   if (!kept.length) { toast("No commits between those days"); from$.value = ""; to$.value = ""; kept = full; }
   $("unrange").hidden = !from$.value && !to$.value;
   notes = buildNotes(kept);
+  drawFriends(kept);
   lay = layoutGraph(notes);
   events = rideEvents(notes, lay);
   eventAt = new Map(events.map((e) => [e.i, e]));
@@ -113,6 +114,26 @@ function pick(p: string, keepRange = false) {
   $("empty").hidden = true;
   icons(); refresh();
 }
+
+// -- friends: the top 8 authors of this file, each with a small vein chart on one shared clock ----------
+
+const friends$ = $("friends"), friendsBtn = $<HTMLButtonElement>("friendsbtn");
+
+function drawFriends(commits: Parameters<typeof topFriends>[0]) {
+  const from = Date.parse(commits[0]?.date ?? ""), to = Date.parse(commits[commits.length - 1]?.date ?? "");
+  const rows = topFriends(commits).map((f, k) => {
+    const v = veinChart(f.commits, from, to);
+    const X = (x: number) => (3 + x * 94).toFixed(1), Y = (y: number) => (14 + y * 9).toFixed(1);
+    const links = v.links.map((l) => `<line class="link${l.hot ? " hot" : ""}" x1="${X(v.dots[l.lo]!.x)}" y1="${Y(v.dots[l.lo]!.y)}" x2="${X(v.dots[l.hi]!.x)}" y2="${Y(v.dots[l.hi]!.y)}"/>`).join("");
+    const dots = v.dots.map((d) => `<circle class="dot ${d.kind}" cx="${X(d.x)}" cy="${Y(d.y)}" r="${(1.4 + d.r * 2.4).toFixed(1)}"/>`).join("");
+    return `<div class="f"><span class="n">${k + 1}</span><span class="who" title="${esc(f.name)}">${esc(f.name)}<small>${f.commits.length} commit${f.commits.length === 1 ? "" : "s"}, +${f.added} -${f.removed}</small></span>` +
+      `<svg viewBox="0 0 100 28" role="img" aria-label="${esc(f.name)}'s vein chart">${links}${dots}</svg></div>`;
+  });
+  friends$.innerHTML = `<h2>Top 8 friends</h2>${rows.join("")}`;
+}
+
+const showFriends = (on: boolean) => { friends$.hidden = !on; friendsBtn.setAttribute("aria-pressed", String(on)); };
+friendsBtn.onclick = () => showFriends(!!friends$.hidden);
 
 // -- the rail: time, oldest at the bottom ----------------------------------------------------------
 
@@ -554,10 +575,11 @@ window.addEventListener("keydown", (e) => {
     "]": () => faster(1), "[": () => faster(-1), "+": () => faster(1), "-": () => faster(-1),
     f: () => $("file").focus(), F: () => $("file").focus(),
     o: openFile, O: openFile, p: openPaste, P: openPaste,
+    t: () => showFriends(!!friends$.hidden), T: () => showFriends(!!friends$.hidden),
     v: openVideo, V: openVideo,
     a: openFace, A: resetFace, g: () => setGame(!gameOn), G: () => setGame(!gameOn),
     "?": () => showTip(!!tip.hidden), "/": () => showTip(!!tip.hidden),
-    Escape: () => { showTip(false); if (gameOn) setGame(false); },
+    Escape: () => { showTip(false); showFriends(false); if (gameOn) setGame(false); },
   };
   const fn = act[k];
   if (!fn) return;
