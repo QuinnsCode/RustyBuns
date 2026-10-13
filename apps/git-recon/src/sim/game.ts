@@ -1244,6 +1244,7 @@ export class Game {
 
   /** Deletes a file's lines: it sinks with what it loses, and with nothing left it's gone. A stash just takes the damage. */
   private wreck(b: Block, damage: number, by: number) {
+    if (b.wall) return;
     if (damage <= 0) return;
     if ("ttl" in b) return void ((b as Stash).hp -= damage);
     let w = this.wrecks.get(b);

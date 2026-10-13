@@ -101,10 +101,13 @@ describe("the richer map", () => {
   });
 
   test("files agents mostly wrote are glass", () => {
-    const web = map.blocks.filter((b) => b.path.startsWith("apps/web/"));
+    // Walls and towers share the folder's path prefix but aren't files, so they're never glass.
+    const files = map.blocks.filter((b) => !b.wall);
+    const web = files.filter((b) => b.path.startsWith("apps/web/"));
     expect(web.length).toBeGreaterThan(0);
     expect(web.every((b) => b.agent)).toBe(true);
-    expect(map.blocks.filter((b) => !b.path.startsWith("apps/web/")).some((b) => b.agent)).toBe(false);
+    expect(files.filter((b) => !b.path.startsWith("apps/web/")).some((b) => b.agent)).toBe(false);
+    expect(map.blocks.filter((b) => b.wall).some((b) => b.agent)).toBe(false);
   });
 
   test("imports between compounds are roads; links to folders off the map are dropped", () => {
