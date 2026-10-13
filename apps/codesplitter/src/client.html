@@ -113,6 +113,9 @@
   .gfiles { flex-basis: 100%; display: flex; gap: 4px 10px; flex-wrap: wrap; padding: 2px 0 4px; color: var(--muted); }
   .gfiles[hidden] { display: none; }
   .repohead .btn { padding: 2px 10px; }
+  .flow { display: inline-flex; gap: 4px; flex-wrap: wrap; padding-right: 8px; margin-right: 4px; border-right: 1px solid var(--border); }
+  .flow .btn { padding: 2px 9px; }
+  @media (max-width: 900px) { .flow .flow-step span { display: none; } }
   /* The branch you're editing on (#701): the switcher names it, and an orange bar says edits land there, not main. */
   .branch-pop > .panel { left: 0; right: auto; width: 320px; }
   #branch-switch span { max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1764,6 +1767,7 @@ async function signOut() {
   await refreshSession(); drawer.close(); header(); route();
 }
 /** A button that opens the panel next to it; a click elsewhere closes it. */
+let flowNext = null;   // a flow-bar step carried to the next page (see views.wireFlow)
 function popover(btn) {
   const panel = btn.nextElementSibling;
   btn.addEventListener("click", (e) => {
@@ -3095,7 +3099,7 @@ const views = {
           <div class="est">Est. 2026 · git for the agentic era</div>
           <h1 class="headline">Git, <em>split apart</em>.<br>And put back together.</h1>
           <p class="lede">Every file tears into lines, and every line keeps its own author and history. People and their agents work in the same code at the same moment, without stepping on each other, and it all closes back up as a real git commit.</p>
-          <div class="row"><button class="btn primary" id="hero-tour" title="sign in, dig up a repo, then a walk round its code page and every panel on the right">${icon("compass")}Let's show you around!</button><button class="btn" id="hero-cmd">${icon("command")}Open the command palette</button><a class="btn" href="/play.html#l/mitt">${icon("gamepad-2")}Play: lines off the walls</a></div>
+          <div class="row">${!me() && session.providers?.includes("google") ? `<button class="btn primary" id="hero-google" title="sign in with Google, then dig up a repo from its link">${GOOGLE}Continue with Google</button>` : ""}<button class="btn${me() || !session.providers?.includes("google") ? " primary" : ""}" id="hero-tour" title="sign in, dig up a repo, then a walk round its code page and every panel on the right">${icon("compass")}Let's show you around!</button><button class="btn" id="hero-cmd">${icon("command")}Open the command palette</button><a class="btn" href="/play.html#l/mitt">${icon("gamepad-2")}Play: lines off the walls</a></div>
         </div>
         <div><div class="stage" id="stage" aria-label="A file splitting into lines, being edited by agents, and rejoining as a git commit"></div>
           <ol class="phases" id="phases"><li>a file</li><li>split into lines</li><li>everyone edits at once</li><li>back together as git</li></ol></div>
@@ -3164,6 +3168,10 @@ const views = {
       </div></section>${siteFoot()}`;
     $("#hero-cmd").addEventListener("click", () => palette.open());
     $("#hero-tour").addEventListener("click", () => { tourStart(); tour(); });
+    $("#hero-google")?.addEventListener("click", async () => {
+      try { const r = await api("/auth/sign-in/social", { provider: "google", callbackURL: location.origin + "/#/me" }); location.href = r.url; }
+      catch (err) { signInDrawer("in"); toast(String(err.message || err)); }
+    });
     wireDig();
     wireFoot();
     intro($("#stage"), $("#phases"));
@@ -3379,6 +3387,7 @@ const views = {
       ${visBadge(r.visibility, isOwner)}
       ${views.branchSwitch(owner, repo, r)}
       <span class="grow"></span>
+      ${views.flowBar(owner, repo, r)}
       <button class="btn ghost" id="tour-here" title="Let's show you around: this page, a step at a time">${icon("compass")}</button>
       ${playButton(`r/${owner}/${repo}`)}
       <a class="btn ghost" href="/gitpath?repo=${encodeURIComponent(owner)}/${encodeURIComponent(repo)}" title="gitpath: this repo's busiest files as a git graph, with a runner on the hot path" aria-label="gitpath">${icon("route")}</a>
@@ -4260,7 +4269,50 @@ const views = {
     }));
     icons();
   },
+  /** The daily path in one row, same on every repo page: edit, commit, make private, share, invite, deploy. Each lands on the real control. */
+  flowBar(owner, repo, r) {
+    if (!me()) return "";
+    const w = r.canWrite, own = owner === me();
+    const step = (k, ic, word, tip, on = true) => on ? `<button type="button" class="btn flow-step" data-flow="${k}" title="${esc(tip)}">${icon(ic)}<span>${word}</span></button>` : "";
+    return `<span class="flow" id="flow" role="group" aria-label="Your usual path">`
+      + step("edit", "pencil", "Edit", "double-click any line to change it", w)
+      + step("commit", "git-commit-horizontal", "Commit", "commit this file to git, then push or open a PR from the git bar", w && !r.here?.on)
+      + step("private", "lock", "Private", "select lines, then make them private to the crew", w && !r.here?.on)
+      + step("share", "share-2", "Share", "select lines, then get a live link to them")
+      + step("invite", "user-plus", "Collab", "invite a person or an agent to the crew", own)
+      + step("deploy", "send", "Deploy", "the Deploy panel: your key, then a reviewed deploy", own)
+      + `</span>`;
+  },
+  wireFlow(owner, repo, r) {
+    const bar = $("#flow");
+    if (!bar) return;
+    // Wanted control is on this page: use it. Otherwise open the repo's first file and try once more there.
+    let cur = null;
+    const go = async (id, then) => {
+      const t = document.getElementById(id);
+      if (t) return then(t);
+      const first = readmeOf(await api(treeQ(owner, repo, "")).catch(() => ({ entries: [] })));
+      if (!first) return toast("Add a file first");
+      flowNext = cur;
+      location.hash = `#/f/${owner}/${repo}/${encodeURIComponent(first.path)}`;
+    };
+    const needSel = (id, say) => go(id, (t) => (t.disabled ? toast(say) : t.click()));
+    const SEL = "Click a line number first (shift-click for a range)";
+    const acts = {
+      edit: () => go("lines", (t) => { t.scrollIntoView({ block: "center" }); toast("Double-click a line to edit it"); }),
+      commit: () => go("commit", (t) => t.click()),
+      private: () => needSel("lock", SEL),
+      share: () => needSel("share", SEL),
+      invite: () => $("#invite")?.click(),
+      deploy: () => go("deploy", (t) => t.scrollIntoView({ block: "center", behavior: "smooth" })),
+    };
+    bar.querySelectorAll("[data-flow]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); cur = b.dataset.flow; acts[cur]?.(); }));
+    // Carried here from another page: do the step now the controls exist.
+    const carried = flowNext; flowNext = null;
+    if (carried && acts[carried] && carried !== "invite") setTimeout(() => { cur = carried; acts[carried](); }, 400);
+  },
   wireRepoHead(owner, repo, r) {
+    views.wireFlow(owner, repo, r);
     $("#tour-here")?.addEventListener("click", () => { tourStart(owner, repo); tour(); });
     fillPulses();
     views.wireBranchSwitch(owner, repo);
