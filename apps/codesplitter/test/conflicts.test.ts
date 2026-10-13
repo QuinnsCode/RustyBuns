@@ -195,6 +195,45 @@ describe("settled without asking (#933)", () => {
     expect(merged(was, inFile, onBranch)).toBe(onBranch.replace("  return post(path, dry);", "  log(dry);\n  return post(path, dry);"));
   });
 
+  test("a local whose lines moved into a new function reads as a field of its call there (#1265, branches.ts)", () => {
+    // The branch moved mergeBranch's dry run, by line, into dryRun(), which returns { dry }; mergeBranch keeps `run`.
+    const was = [
+      "async function mergeBranch(rows) {",
+      "  const under = await stacked(rows);",
+      "  if (under) return under;",
+      "  // A dry run first, so a conflict anywhere merges nothing.",
+      "  const dry = await Promise.all(rows.map((f) => mergeFile(f, true)));",
+      "  for (const d of dry) check(d);",
+      "  const left = dry.filter((d) => d.conflicts.length);",
+      "  if (left.length) return left;",
+      "  await apply(rows);",
+      "  return done();",
+      "}",
+    ].join("\n");
+    const onBranch = [
+      "async function dryRun(rows) {",
+      "  const dry = await Promise.all(rows.map((f) => mergeFile(f, true)));",
+      "  for (const d of dry) check(d);",
+      "  const left = dry.filter((d) => d.conflicts.length);",
+      "  return left.length ? { blocked: left } : { dry };",
+      "}",
+      "async function mergeBranch(rows) {",
+      "  const under = await stacked(rows);",
+      "  if (under) return under;",
+      "  // A dry run first, so a conflict anywhere merges nothing.",
+      "  const run = await dryRun(rows);",
+      "  if (\"blocked\" in run) return run.blocked;",
+      "  await apply(rows);",
+      "  return done();",
+      "}",
+    ].join("\n");
+    const onMain = was.replace("  return done();", "  const docs = rebuilt(dry);\n  return done(docs);");
+    expect(merged(was, onMain, onBranch)).toBe(onBranch.replace("  return done();", "  const docs = rebuilt(run.dry);\n  return done(docs);"));
+    // Without the `{ dry }` return the extract says nothing about `run`: main's line keeps `dry`.
+    const noReturn = onBranch.replace("{ blocked: left } : { dry }", "{ blocked: left } : null");
+    expect(merged(was, onMain, noReturn)).toContain("rebuilt(dry)");
+  });
+
   test("an expression hoisted into a const is swapped in the other side's new lines in that function (#1257, cli index.ts)", () => {
     const was = [
       "async function alchemy(args) {",
