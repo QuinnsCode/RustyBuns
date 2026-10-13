@@ -234,7 +234,7 @@ function featurePages(reference: string): Page[] {
 
 export const codesplitter: Site = {
   name: "codeSplitter",
-  tagline: "A code host for the agentic era: every line is its own record, and git keeps going when other gits don't.",
+  tagline: "Git for the agentic era: every line is its own record, and git keeps going when other gits don't.",
   repo: "QuinnsCode/RustyBuns",
   pages(src) {
     const readme = src.read(`${APP}/README.md`) ?? "# codeSplitter\n";

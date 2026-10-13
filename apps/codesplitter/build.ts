@@ -3,6 +3,7 @@
 import { mkdir, copyFile, readFile, writeFile } from "node:fs/promises";
 import { headersFile, inlineScriptHashes } from "./src/security.ts";
 import { features } from "./features.ts";
+import { buildGitpath } from "./src/gitpath/build.ts";
 
 await mkdir("dist/client", { recursive: true });
 await copyFile("src/client.html", "dist/client/index.html");
@@ -12,6 +13,8 @@ await copyFile("src/city.js", "dist/client/city.js");
 // The QR code for the desktop's phone pairing link, drawn here so a desktop offline still makes one.
 const qr = await Bun.build({ entrypoints: ["src/qr.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "qr.js" });
 if (!qr.success) { for (const l of qr.logs) console.error(l); process.exit(1); }
+// gitpath: a file's history played down a highway (src/gitpath/): its page, script and sample.
+await buildGitpath("dist/client");
 await copyFile("src/features.html", "dist/client/features.html");
 // Built from src/features/, one file per feature (features.ts).
 await writeFile("dist/client/features.json", JSON.stringify(features()) + "\n");

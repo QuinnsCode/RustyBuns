@@ -298,6 +298,7 @@ export const GROUPS: Group[] = [
     endpoints: [
       { method: "GET", path: "/api/admin/limits", who: ADMINS, does: "every rate-limit rule with this window's traffic, the week's log, who's flagged" },
       { method: "PUT", path: "/api/admin/limits", body: "{rules: [{name, max, window_s, enabled, on_fail?}]}", who: ADMINS, does: "tune the rules" },
+      { method: "PUT", path: "/api/admin/limits/tier", body: "{who, tier}", who: ADMINS, does: "put a person on a paid tier (tanzanite 2x, alexandrite 5x, painite 10x their per-person limits) or off it with tier null; GET /api/admin/limits lists the tiers and who is on one" },
       { method: "POST", path: "/api/admin/limits/reset", body: "{who, rule?}", who: ADMINS, does: "clear a caller's counts" },
       { method: "GET", path: "/api/admin/handles", who: ADMINS, does: "handles granted to emails" },
       { method: "POST", path: "/api/admin/handles", body: "{handle, email}", who: ADMINS, does: "give a handle to whoever signs in with that email" },

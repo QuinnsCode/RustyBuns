@@ -746,6 +746,16 @@
   .feed .evs a { overflow-wrap: anywhere; }
   .limits .savebar { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 10px 0; margin-bottom: 16px; background: var(--bg); border-top: 1px solid var(--border); }
   .limits .ev .btn { margin-left: auto; padding: 2px 4px; color: var(--muted); }
+  /* Paid tiers (src/tiers.ts): a gem-coloured stamp beside a name. The colours are the stones' own, so they hold in both themes. */
+  .tier { --g1: #7c8cf0; --g2: #3b4cc0; display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px 1px 6px; border-radius: 999px; font: 600 11px/16px var(--sans); color: #fff; vertical-align: 2px; white-space: nowrap;
+    background: linear-gradient(135deg, var(--g1), var(--g2)); box-shadow: 0 0 0 1px rgba(255,255,255,.25) inset, 0 1px 6px color-mix(in srgb, var(--g2) 55%, transparent); text-shadow: 0 1px 1px rgba(0,0,0,.3); }
+  .tier svg { width: 12px; height: 12px; }
+  .tier.tanzanite { --g1: #8a7ff0; --g2: #3a3fb8; } .tier.alexandrite { --g1: #2ecf9b; --g2: #b0306a; } .tier.painite { --g1: #f0644c; --g2: #7d0f2b; }
+  .tier.painite, .tier.alexandrite { background-size: 160% 100%; animation: tier-glint 6s ease-in-out infinite alternate; }
+  @keyframes tier-glint { to { background-position: 100% 0; } } @media (prefers-reduced-motion: reduce) { .tier { animation: none !important; } }
+  .tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin: 0 0 12px; }
+  .tiers .card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; color: var(--muted); } .tiers .card b { display: block; margin: 6px 0 2px; font-size: 18px; color: var(--fg); }
+  #tier-add { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 8px; } #tier-add input { width: 11em; }
   .limits .log { margin: 0 0 18px; } .limits .log h2 { margin: 0 0 4px; font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
   .limits .log .ev { padding: 5px 0; } .limits .log .ev b { font: 500 12.5px var(--mono); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 22em; }
   .limits .ev, .jobs .ev { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px; border-top: 1px solid var(--border); font-size: 13px; }
@@ -835,6 +845,37 @@
   .flap-cell b.go { animation: flip .07s linear; }
   .flap-cell.st b { color: var(--accent-glow); }
   @keyframes flip { 50% { transform: scaleY(.15); } }
+
+  /* The whole map: one big card, a tab per area, a picture and every feature of that area. */
+  .fmap { margin-top: 18px; border: 1px solid var(--border-2); border-radius: 8px; background: var(--grain), var(--paper); overflow: hidden; box-shadow: 0 24px 48px -32px rgba(0,0,0,.25); }
+  .fmap-tabs { display: flex; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border-2); background: var(--canvas); }
+  .fmap-tabs::-webkit-scrollbar { display: none; }
+  .fmap-tabs button { flex: none; display: flex; align-items: center; gap: 7px; padding: 12px 18px; font: 500 14px var(--sans); color: var(--muted); background: none; border: 0; border-right: 1px solid var(--border); border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; white-space: nowrap; }
+  .fmap-tabs button svg { width: 16px; height: 16px; }
+  .fmap-tabs button small { font: 500 11px var(--mono); color: var(--faint); }
+  .fmap-tabs button:hover { color: var(--fg); background: var(--bg); }
+  .fmap-tabs button[aria-selected="true"] { color: var(--fg); background: var(--bg); border-bottom-color: var(--accent); }
+  .fmap-tabs button:focus-visible { outline: 0; box-shadow: inset 0 0 0 2px var(--accent); }
+  .fmap-top { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 28px; align-items: center; padding: 26px 26px 8px; }
+  .fmap-h { font: 600 26px/1.15 var(--sans); letter-spacing: -0.035em; margin: 6px 0 8px; } .fmap-h em { font-style: normal; color: var(--accent-ink); }
+  .fmap-top p { margin: 0; color: var(--muted); max-width: 46ch; }
+  .fmap-art { border: 1px solid var(--border-2); border-radius: 6px; background: #fff; padding: 8px; }
+  .fmap-art svg { display: block; width: 100%; height: auto; font: 500 10px var(--mono); }
+  .fmap-art .ln { fill: #e3e3e3; } .fmap-art .ln.o { fill: var(--accent); } .fmap-art .ln.k { fill: var(--fg); } .fmap-art .ln.g { fill: #bdbdbd; }
+  .fmap-art .st { fill: none; stroke: var(--fg); stroke-width: 2; } .fmap-art .st.o { stroke: var(--accent); } .fmap-art .st.g { stroke: #bdbdbd; stroke-width: 1.5; } .fmap-art .st.d { stroke-dasharray: 4 4; }
+  .fmap-art .bx { fill: #fff; stroke: var(--fg); stroke-width: 1.5; } .fmap-art .bx.o { stroke: var(--accent); fill: var(--accent-soft); } .fmap-art .bx.k { fill: var(--fg); }
+  .fmap-art .fl { fill: var(--fg); } .fmap-art .fl.o { fill: var(--accent); } .fmap-art .fl.w { fill: #fff; }
+  .fmap-art text { fill: var(--fg); } .fmap-art text.m { fill: var(--muted); } .fmap-art text.w { fill: #fff; } .fmap-art text.o { fill: var(--accent-ink); }
+  .fmap-art .pulse { animation: fmap-pulse 2.4s ease-in-out infinite; } .fmap-art .pulse.b { animation-delay: .8s; } .fmap-art .pulse.c { animation-delay: 1.6s; }
+  @keyframes fmap-pulse { 50% { opacity: .25; } }
+  .fmap-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1px; margin: 22px 0 0; background: var(--border); border-top: 1px solid var(--border); }
+  .fmap-item { display: grid; grid-template-columns: 28px 1fr; gap: 2px 11px; align-content: start; padding: 13px 16px; background: var(--paper); }
+  .fmap-item .ico { grid-row: span 2; width: 28px; height: 28px; border-radius: 5px; background: #fff; border: 1px solid var(--border-2); display: grid; place-items: center; }
+  .fmap-item .ico svg { width: 15px; height: 15px; }
+  .fmap-item b { font-weight: 600; line-height: 1.3; font-size: 13.5px; } .fmap-item span { color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+  .fmap-item b + span { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  @media (max-width: 860px) { .fmap-top { grid-template-columns: 1fr; padding: 20px 16px 6px; gap: 18px; } .fmap-h { font-size: 22px; } }
+  @media (prefers-reduced-motion: reduce) { .fmap-art .pulse { animation: none; } }
   @media (max-width: 860px) { .flapboard { grid-template-columns: 1fr; } }
   @media (max-width: 560px) { .flap-cell b { width: .95em; font-size: 11px; } .flap-cols, .flap-row { gap: 8px; } .flap-side { padding: 12px; } }
   @media (prefers-reduced-motion: reduce) { .flap-cell b.go { animation: none; } }
@@ -924,6 +965,8 @@
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const icon = (name, cls = "") => `<i data-lucide="${name}"${cls ? ` class="${cls}"` : ""}></i>`;
+// A paid tier's stamp ({id, label, mult}, src/tiers.ts) beside a name.
+const tierStamp = (t) => t ? ` <span class="tier ${esc(t.id)}" title="${esc(t.label)} tier: ${t.mult}× the usual rate limits">${icon("gem")}${esc(t.label)}</span>` : "";
 const icons = () => {
   try { lucide.createIcons(); } catch {}
   // Icons are decoration: the words or title beside them say what a control does.
@@ -1223,7 +1266,7 @@ function header() {
   drawRail();
   const u = me();
   if (u) {
-    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a><a class="btn ghost" href="#/admin/scale" title="survey: how close each scaling wall is">${icon("map")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" id="invited" href="#/u/${u}" hidden>${icon("mail")}<span></span></a><a class="btn ghost" href="#/feed" title="your feed">${icon("rss")}</a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
+    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a><a class="btn ghost" href="#/admin/scale" title="survey: how close each scaling wall is">${icon("map")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" id="invited" href="#/u/${u}" hidden>${icon("mail")}<span></span></a><a class="btn ghost" href="#/feed" title="your feed">${icon("rss")}</a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}${tierStamp(session.tier)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
     $("#out").addEventListener("click", signOut);
     $("#phone")?.addEventListener("click", () => phoneDrawer());
     $("#verify")?.addEventListener("click", sendVerification);
@@ -1499,8 +1542,12 @@ const ON_FAIL = [["reject", "reject", "turn the call away with a 429"], ["log", 
 const DID = { reject: "rejected", log: "logged", flag: "flagged", queue: "queued" };
 const ago = (t) => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? "just now" : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`; };
 async function limitsPage() {
-  const { rules, events, flagged } = await api("/admin/limits");
+  const { rules, events, flagged, tiers, tiered } = await api("/admin/limits");
   const label = (name) => rules.find((r) => r.name === name)?.label ?? name;
+  const tierOf = (id) => tiers.find((t) => t.id === id);
+  // Who's on a tier, to stamp beside their name in the lists below.
+  const stampFor = (who) => tierStamp(tierOf(tiered.find((u) => `@${u.name}` === who)?.tier));
+  const tierOptions = (on) => `<option value="">free</option>${tiers.map((t) => `<option value="${t.id}"${t.id === on ? " selected" : ""}>${esc(t.label)} · ${t.mult}×</option>`).join("")}`;
   const row = (r) => {
     const d = r.defaults, changed = d && (d.max !== r.max || d.window_s !== r.window_s || d.on_fail !== r.on_fail || !r.enabled);
     const opts = (WINDOWS.some(([w]) => w === r.window_s) ? WINDOWS : [...WINDOWS, [r.window_s, every(r.window_s)]])
@@ -1523,11 +1570,16 @@ async function limitsPage() {
   app.innerHTML = `<div class="wrap limits" style="padding-top:24px">
     <h1>${icon("gauge")} Rate limits</h1>
     <p class="muted" style="margin:0 0 18px">Most allowed per window, and what happens past it. Hover a name for details. Admins and the desktop app aren't counted.</p>
-    ${flagged.length ? `<section class="log"><h2>Flagged this week</h2>${flagged.map((f) => `<div class="ev"><b>${esc(f.who)}</b><span>${f.rules.map(label).map(esc).join(", ")}</span><span class="tag flag">${f.times}×</span><span class="muted">${ago(f.last)}</span>${reset(f.who)}</div>`).join("")}</section>` : ""}
+    <section class="log"><h2>Paid tiers</h2>
+      <div class="tiers">${tiers.map((t) => `<div class="card">${tierStamp(t)}<b>${t.mult}×</b>${esc(t.about)}</div>`).join("")}</div>
+      <p class="muted small" style="margin:0 0 8px">A tier multiplies a person's cap on every per-person rule below. Free is 1×. Their stamp shows beside their name.</p>
+      <form id="tier-add"><input name="who" placeholder="@handle" aria-label="handle" required><select name="tier" aria-label="tier">${tierOptions("tanzanite")}</select><button class="btn" type="submit">${icon("gem")}Set tier</button></form>
+      ${tiered.map((u) => `<div class="ev"><b>@${esc(u.name)}</b>${tierStamp(tierOf(u.tier))}<select data-tier-of="${esc(u.name)}" aria-label="tier for ${esc(u.name)}">${tierOptions(u.tier)}</select></div>`).join("") || '<div class="ev muted">Nobody is on a tier yet.</div>'}</section>
+    ${flagged.length ? `<section class="log"><h2>Flagged this week</h2>${flagged.map((f) => `<div class="ev"><b>${esc(f.who)}</b>${stampFor(f.who)}<span>${f.rules.map(label).map(esc).join(", ")}</span><span class="tag flag">${f.times}×</span><span class="muted">${ago(f.last)}</span>${reset(f.who)}</div>`).join("")}</section>` : ""}
     <form id="limits-form" class="rgroups">${groups.map((g) => `<section><h2>${esc(g)}</h2>${rules.filter((r) => r.group === g).map(row).join("")}</section>`).join("")}</form>
     <div class="savebar"><span class="muted small" id="limits-msg"></span><span class="grow"></span><button class="btn primary" id="limits-save">${icon("save")}Save</button></div>
     <section class="log"><h2>Went over this week</h2>
-      ${events.map((e) => `<div class="ev"><b>${esc(e.who)}</b><span>${esc(label(e.rule))}</span><span class="tag ${e.action}">${DID[e.action] ?? e.action}</span><span class="muted">${ago(e.at)}</span>${reset(e.who, e.rule)}</div>`).join("") || '<div class="ev muted">Nobody yet.</div>'}</section>
+      ${events.map((e) => `<div class="ev"><b>${esc(e.who)}</b>${stampFor(e.who)}<span>${esc(label(e.rule))}</span><span class="tag ${e.action}">${DID[e.action] ?? e.action}</span><span class="muted">${ago(e.at)}</span>${reset(e.who, e.rule)}</div>`).join("") || '<div class="ev muted">Nobody yet.</div>'}</section>
   </div>`;
   const form = $("#limits-form");
   form.addEventListener("change", (e) => { const r = e.target.closest(".rule"); r?.classList.toggle("off", !r.querySelector("[name=enabled]").checked); $("#limits-msg").textContent = "Unsaved changes"; });
@@ -1537,6 +1589,12 @@ async function limitsPage() {
     el.querySelector("[name=max]").value = d.max; el.querySelector("[name=window_s]").value = d.window_s; el.querySelector("[name=on_fail]").value = d.on_fail; el.querySelector("[name=enabled]").checked = true;
     form.dispatchEvent(new Event("change"));
   });
+  const setTier = async (who, tier) => {
+    try { await api("/admin/limits/tier", { who, tier: tier || null }, "PUT"); toast(tier ? `@${who} is on ${tierOf(tier).label}` : `@${who} is free`); limitsPage(); }
+    catch (err) { toast(String(err.message || err)); }
+  };
+  for (const s of app.querySelectorAll("[data-tier-of]")) s.addEventListener("change", () => setTier(s.dataset.tierOf, s.value));
+  $("#tier-add").addEventListener("submit", (e) => { e.preventDefault(); const f = e.target; setTier(f.who.value.trim().replace(/^@/, ""), f.tier.value); });
   for (const b of app.querySelectorAll("[data-reset]")) b.addEventListener("click", async () => {
     try { await api("/admin/limits/reset", { who: b.dataset.reset, rule: b.dataset.rule }); toast(`Reset ${b.dataset.reset}`); limitsPage(); }
     catch (err) { toast(String(err.message || err)); }
@@ -3001,7 +3059,7 @@ const views = {
     app.innerHTML = `
       <section class="hero"><div class="wrap">
         <div>
-          <div class="est">Est. 2026 · the agentic code host</div>
+          <div class="est">Est. 2026 · git for the agentic era</div>
           <h1 class="headline">Git, <em>split apart</em>.<br>And put back together.</h1>
           <p class="lede">Every file tears into lines, and every line keeps its own author and history. People and their agents work in the same code at the same moment, without stepping on each other, and it all closes back up as a real git commit.</p>
           <div class="row"><button class="btn primary" id="hero-tour" title="sign in, dig up a repo, then a walk round its code page and every panel on the right">${icon("compass")}Let's show you around!</button><button class="btn" id="hero-cmd">${icon("command")}Open the command palette</button><a class="btn" href="/play.html#l/mitt">${icon("gamepad-2")}Play: lines off the walls</a></div>
@@ -3010,7 +3068,12 @@ const views = {
           <ol class="phases" id="phases"><li>a file</li><li>split into lines</li><li>everyone edits at once</li><li>back together as git</li></ol></div>
       </div></section>
       <section class="section"><div class="wrap">
-        <div class="label">the agentic code host</div><h2>Every direction, all at once</h2>
+        <div class="label">the whole map</div><h2>Everything it does, by what you're doing</h2>
+        <p class="muted">Pick where you're standing. Every feature is on one of these tabs, with a picture of how it fits.</p>
+        <div class="fmap" id="fmap"><div class="fmap-tabs" role="tablist" aria-label="Feature areas"></div><div class="fmap-body"></div></div>
+      </div></section>
+      <section class="section"><div class="wrap">
+        <div class="label">the agentic code host</div><h2>Git it, get it, share it, agent it, socialize it</h2>
         <p class="muted">Human to human, human to agent, agent to agent, and everyone to the computer. Your agents don't get a sandbox off to the side: they work in the same repo as you, live, line by line, each line signed by whoever wrote it, and nothing ships until a person says so.</p>
         <div class="flapboard" id="flapboard" aria-label="Who's handing what to whom, on a departures and arrivals board"></div>
       </div></section>
@@ -3029,7 +3092,7 @@ const views = {
           <div class="home"><b>Yours first, syncing out</b><p>Bare repos in <code>~/.codesplitters</code>, mirrored both ways to GitHub, GitLab or any git remote. Upstream goes down: keep editing, committing, branching, checking and merging. It catches up by itself, and never force-pushes.</p>
             <div class="flow">you → <em>GitHub, GitLab, anywhere</em><br>cloud ✕ → you keep going</div></div>
         </div>
-        <div class="quits"><span>Own your git and put it wherever you want</span><span>Don't let your git quit on you or your agents</span><span>Never let a git commit quit</span><span>Your git history never goes extinct</span></div>
+        <div class="quits"><span>What if you can't git to your get? Do you have a plan?</span><span>Git that's only gone if you are.</span></div>
       </div></section>
       <section class="section"><div class="wrap">
         <div class="label">everything it does</div><h2>All of it, on one strip</h2>
@@ -3060,6 +3123,7 @@ const views = {
     wireDig();
     wireFoot();
     intro($("#stage"), $("#phases"));
+    featureMap($("#fmap"));
     featureStrip($("#feats"));
     flapBoard($("#flapboard"));
     flapWord($("#flapword"));
@@ -3192,7 +3256,7 @@ const views = {
     // A person's code city (play.html#c/…): a quiet door at the foot of their profile, not a box. Its owner can close it to visitors.
     const cityLink = agent || !(user.city_public || mine) ? "" : `<a href="/play.html#c/${encodeURIComponent(name)}" title="walk @${esc(name)}'s code city">${icon("building")}the city</a>${mine ? `<label title="let others walk your city"><input type="checkbox" id="citypub"${user.city_public ? " checked" : ""}>open</label>` : ""}`;
     app.innerHTML = `<div class="wrap prof">
-      <div class="prof-head"><h1>${icon(agent ? "bot" : "user")}@${esc(name)}</h1><span class="muted">${agent ? `a coding agent on ${esc(agent.harness)}${agent.run_by.length ? `, run by ${agent.run_by.map((o) => `<a href="#/u/${esc(o.name)}">@${esc(o.name)}</a>`).join(", ")}` : ""}` : esc(user.bio) || "no notes yet"}</span><span class="grow"></span>
+      <div class="prof-head"><h1>${icon(agent ? "bot" : "user")}@${esc(name)}${tierStamp(user.tier)}</h1><span class="muted">${agent ? `a coding agent on ${esc(agent.harness)}${agent.run_by.length ? `, run by ${agent.run_by.map((o) => `<a href="#/u/${esc(o.name)}">@${esc(o.name)}</a>`).join(", ")}` : ""}` : esc(user.bio) || "no notes yet"}</span><span class="grow"></span>
         <span class="stat">${agent ? `${n(shown.length, "repo")} · ${n(agent.run_count, "run")} · ${n(agent.lines, "line edit")}` : `${n(repos.length, "repo")} · ${n(playlists.length, "collection")}`} · ${following} following · ${n(followers, "follower")}</span>
         ${followButton({ name, kind: name.startsWith("agent-") ? "agent" : "user" })}
         ${mine ? `<button class="btn ghost" id="editpage">${icon("palette")}Edit page</button>` : ""}</div>
@@ -5372,7 +5436,7 @@ function flapBoard(el) {
 
 // "What if git was your ___", one word at a time, slower than the board. The shouted ones land orange.
 const WHATIF = ["deploy", "build", "friends", "hobbies", "YOURS", "history", "ONLY YOURS", "agentic", "human", "social", "here", "there", "everywhere"];
-const TAKE_CONTROL = ["Git in control of your git", "What if your git did more for you", "Git to taking control of your git", "Git over your old relationship with git", "Git in charge of your history"];
+const TAKE_CONTROL = ["What if your git was <em>more</em>?", "What if your git got good?", "codeSplitter: where the git got good.", "AI has evolved the field, so why can't git evolve with it?", "Innovate on git? Nah, I'm here for the games, but while I'm here I might as well git to it."];
 let stopWord = () => {};
 function flapWord(el) {
   if (!el) return;
@@ -5606,6 +5670,61 @@ async function featureStrip(el) {
   el.addEventListener("pointerup", release); el.addEventListener("pointercancel", release);
   const io = new IntersectionObserver(([e]) => (seen = e.isIntersecting)); io.observe(el);
   stopStrip = () => { cancelAnimationFrame(raf); io.disconnect(); stopStrip = () => {}; };
+}
+
+// The whole map on the home page: a tab per area, each with a picture and its features. Features come from
+// features.json by id; a feature no tab names lands on a "More" tab, so a new one never goes missing.
+const FMAP = [
+  { id: "git", icon: "git-branch", name: "Git", head: "Real git, <em>split finer</em>", what: "Every line is its own record, and it all closes back up as a commit a stock git clone can fetch. Branches, merges, blame and time travel work by line, not by file.",
+    ids: ["rethink-repo", "commit-to-git", "clone", "branches", "smart-merges", "git-map", "blame", "time-travel", "cut", "monorepos", "gitpath", "same-line"],
+    art: `<svg viewBox="0 0 360 220" role="img" aria-label="A branch leaves main, makes three commits and merges back, with an upstream line dashed above"><path class="st g d" d="M20 34H340"/><text class="m" x="20" y="24">upstream</text><path class="st" d="M20 100H340"/><text class="m" x="20" y="90">main</text><path class="st o" d="M96 100C116 100 116 160 136 160H224C244 160 244 100 264 100"/><text class="o" x="136" y="186">feature/lines</text><g class="fl"><circle cx="50" cy="100" r="5"/><circle cx="96" cy="100" r="5"/><circle cx="264" cy="100" r="5"/><circle cx="320" cy="100" r="5"/></g><g class="fl o"><circle cx="150" cy="160" r="5"/><circle cx="180" cy="160" r="5"/><circle cx="210" cy="160" r="5"/></g><g class="fl w"><circle cx="50" cy="34" r="4" stroke="#bdbdbd"/><circle cx="170" cy="34" r="4" stroke="#bdbdbd"/></g><path class="st g d" d="M170 34C170 60 150 70 130 90"/><rect class="bx k" x="296" y="116" width="48" height="18" rx="3"/><text class="w" x="303" y="129">v1.0</text></svg>` },
+  { id: "collab", icon: "users-round", name: "Collaborate", head: "Everyone in the <em>same file</em>", what: "People and agents edit the same file at the same moment. Two on different lines never collide, and you can see who is where, hold lines, and share just the ones you choose.",
+    ids: ["multiplayer", "live-together", "presence", "activity", "claims", "share-lines", "playlists", "cards", "levels", "dig", "temp-digs"],
+    art: `<svg viewBox="0 0 360 220" role="img" aria-label="A file whose lines are being edited by three cursors at once"><rect class="bx" x="40" y="22" width="280" height="176" rx="6"/><g class="ln"><rect x="62" y="44" width="150" height="8" rx="2"/><rect x="62" y="68" width="190" height="8" rx="2"/><rect x="62" y="92" width="120" height="8" rx="2"/><rect x="62" y="116" width="210" height="8" rx="2"/><rect x="62" y="140" width="140" height="8" rx="2"/><rect x="62" y="164" width="170" height="8" rx="2"/></g><rect class="ln o pulse" x="62" y="68" width="190" height="8" rx="2"/><rect class="ln k pulse b" x="62" y="116" width="210" height="8" rx="2"/><rect class="ln g pulse c" x="62" y="164" width="170" height="8" rx="2"/><g><rect class="fl o" x="256" y="56" width="46" height="16" rx="3"/><text class="w" x="262" y="67">agent</text><rect class="fl" x="276" y="104" width="38" height="16" rx="3"/><text class="w" x="283" y="115">you</text><rect class="fl" style="fill:#8a8a8a" x="236" y="152" width="50" height="16" rx="3"/><text class="w" x="243" y="163">sam</text></g></svg>` },
+  { id: "agentic", icon: "bot", name: "Agentic", head: "Agents that <em>can't ship</em> alone", what: "Agents work in the same repo as you, live, in their own containers, and plan first. Each line is signed by whoever wrote it, and nothing ships until a person says so.",
+    ids: ["agents", "hosted-agents", "agents-rebase", "agents-cant-ship", "agent-cli", "api-tokens", "plan-first", "palette", "limits"],
+    art: `<svg viewBox="0 0 360 220" role="img" aria-label="You hand a plan to three agents, each holding its own lines, and a person approves the result"><circle class="bx" cx="34" cy="110" r="18"/><text x="25" y="114">you</text><path class="st" d="M52 110H88"/><rect class="bx" x="88" y="90" width="50" height="40" rx="5"/><text x="97" y="114">plan</text><g class="st"><path d="M138 100C160 100 160 44 184 44"/><path d="M138 110H184"/><path d="M138 120C160 120 160 176 184 176"/></g><g class="bx o"><rect x="184" y="28" width="78" height="32" rx="5"/><rect x="184" y="94" width="78" height="32" rx="5"/><rect x="184" y="160" width="78" height="32" rx="5"/></g><g class="o"><text x="196" y="48">agent a</text><text x="196" y="114">agent b</text><text x="196" y="180">agent c</text></g><g class="st o"><path d="M262 44C286 44 286 100 300 106"/><path d="M262 110H300"/><path d="M262 176C286 176 286 120 300 114"/></g><rect class="bx k" x="300" y="90" width="48" height="40" rx="5"/><text class="w" x="308" y="108">you</text><text class="w" x="308" y="121">ship?</text></svg>` },
+  { id: "human", icon: "mouse-pointer-click", name: "Human", head: "Made to be <em>used by a person</em>", what: "A command palette, a tour, search, a code page with tests in the gutter, and a profile that is your own HTML. Everything an agent can call, you can press.",
+    ids: ["show-around", "profile", "search", "test-gutter", "accounts", "your-mods"],
+    art: `<svg viewBox="0 0 360 220" role="img" aria-label="A command palette with a search box and three results"><rect class="bx" x="40" y="26" width="280" height="168" rx="8"/><path class="st g" d="M40 70H320"/><text x="58" y="53">⌘K</text><text class="m" x="92" y="53">split the file…</text><rect class="fl o pulse" x="196" y="44" width="2" height="14"/><g><rect class="ln o" x="52" y="80" width="256" height="30" rx="4" style="opacity:.18"/><text x="64" y="99">Dig up a GitHub repo</text><text class="m" x="236" y="99">↵</text><text x="64" y="129">Search code</text><text class="m" x="236" y="129">/</text><text x="64" y="159">Let's show you around</text><text class="m" x="236" y="159">?</text><text class="m" x="64" y="183">each one is a single API call</text></g></svg>` },
+  { id: "pipelines", icon: "workflow", name: "Pipelines", head: "From commit to <em>production</em>", what: "Webhooks, CI on your own hardware, preview deploys, ship-on-commit and a guard on production, with every deploy on the record and every secret behind Touch ID.",
+    ids: ["webhooks", "own-hardware-ci", "repo-builds-itself", "deploy", "deploy-all-over", "preview-deploys", "ship-on-commit", "deploy-keys", "prod-guard", "deploy-log", "adopt-live", "varlock", "build-changes", "safe-updates", "doctor"],
+    art: `<svg viewBox="0 0 360 220" role="img" aria-label="A commit goes through checks and a preview to a guarded production deploy, with a webhook fired at each step"><g class="bx"><rect x="14" y="88" width="56" height="44" rx="5"/><rect x="92" y="88" width="56" height="44" rx="5"/><rect x="170" y="88" width="56" height="44" rx="5"/></g><rect class="bx o" x="248" y="88" width="56" height="44" rx="5"/><g><text x="22" y="114">commit</text><text x="102" y="114">checks</text><text x="176" y="114">preview</text><text class="o" x="262" y="108">prod</text><text class="o" x="258" y="121">guard</text></g><g class="st"><path d="M70 110H92"/><path d="M148 110H170"/><path d="M226 110H248"/><path d="M304 110H328"/></g><circle class="fl o" cx="338" cy="110" r="8"/><g class="st g d"><path d="M42 88C42 50 120 50 120 88"/><path d="M120 88C120 40 198 40 198 88"/><path d="M198 88C198 30 276 30 276 88"/></g><text class="m" x="60" y="52">webhook · signed · retried</text><path class="st g" d="M276 132C276 170 200 170 120 170"/><text class="m" x="130" y="190">every deploy logged</text></svg>` },
+  { id: "private", icon: "lock-keyhole", name: "Private", head: "Private lines in a <em>public repo</em>", what: "Privacy is per line. Keep a repo private, make one public, or hide only the lines that need hiding, and your git history stays yours whatever happens upstream.",
+    ids: ["private-lines", "visibility", "private-github", "git-truth", "own-history"],
+    art: `<svg viewBox="0 0 360 220" role="img" aria-label="A public file with some lines locked away"><rect class="bx" x="40" y="22" width="280" height="176" rx="6"/><g class="ln"><rect x="62" y="44" width="170" height="8" rx="2"/><rect x="62" y="68" width="120" height="8" rx="2"/><rect x="62" y="116" width="150" height="8" rx="2"/><rect x="62" y="164" width="190" height="8" rx="2"/></g><g class="ln k"><rect x="62" y="92" width="190" height="8" rx="2"/><rect x="62" y="140" width="130" height="8" rx="2"/></g><g class="fl o"><rect x="268" y="85" width="22" height="20" rx="3"/><rect x="268" y="133" width="22" height="20" rx="3"/></g><g class="st o"><path d="M273 85V78a6 6 0 0 1 12 0v7"/><path d="M273 133V126a6 6 0 0 1 12 0v7"/></g><text class="m" x="62" y="38">public</text><text class="o" x="296" y="99">private</text></svg>` },
+  { id: "yours", icon: "laptop", name: "Yours", head: "Your git, <em>wherever you put it</em>", what: "The desktop app keeps the real repo on your machine and syncs out to any cloud. A binary for every OS, and files on the server that are one Durable Object each.",
+    ids: ["desktop", "every-os", "file-is-a-do", "cheap-big-repos", "fit"],
+    art: `<svg viewBox="0 0 360 220" role="img" aria-label="A laptop holding the real repo, mirrored out to GitHub, GitLab and any remote"><rect class="bx o" x="24" y="70" width="104" height="72" rx="6"/><text class="o" x="42" y="102">your laptop</text><text class="m" x="42" y="120">the real repo</text><path class="st o" d="M10 152H142"/><g class="bx"><rect x="236" y="26" width="104" height="38" rx="6"/><rect x="236" y="91" width="104" height="38" rx="6"/><rect x="236" y="156" width="104" height="38" rx="6"/></g><g><text x="256" y="49">GitHub</text><text x="256" y="114">GitLab</text><text x="256" y="179">any remote</text></g><g class="st o"><path d="M128 96C180 96 190 45 236 45"/><path d="M128 106H236"/><path d="M128 116C180 116 190 175 236 175" class="d"/></g><path class="st g" d="M276 186l16 -16m0 16l-16 -16" transform="translate(40 -10)"/><text class="m" x="150" y="206">cloud down? keep going</text></svg>` },
+];
+async function featureMap(el) {
+  const feats = await fetch("/features.json").then((r) => r.json()).catch(() => []);
+  if (!feats.length || !el.isConnected) return;
+  const byId = new Map(feats.map((f) => [f.id, f]));
+  const named = new Set(FMAP.flatMap((t) => t.ids));
+  const rest = feats.filter((f) => !named.has(f.id)).map((f) => f.id);
+  const tabs = [...FMAP, ...(rest.length ? [{ id: "more", icon: "ellipsis", name: "More", head: "And <em>the rest</em>", what: "Everything else it does.", ids: rest, art: "" }] : [])]
+    .map((t) => ({ ...t, items: t.ids.map((id) => byId.get(id)).filter(Boolean) })).filter((t) => t.items.length);
+  const bar = $(".fmap-tabs", el), body = $(".fmap-body", el);
+  bar.innerHTML = tabs.map((t, i) => `<button type="button" role="tab" id="fmap-t-${t.id}" aria-controls="fmap-body" data-i="${i}">${icon(t.icon)}${t.name}<small>${t.items.length}</small></button>`).join("");
+  body.id = "fmap-body"; body.setAttribute("role", "tabpanel");
+  const pick = (i, focus) => {
+    const t = tabs[i];
+    bar.querySelectorAll("button").forEach((b, j) => { b.setAttribute("aria-selected", String(i === j)); b.tabIndex = i === j ? 0 : -1; });
+    body.setAttribute("aria-labelledby", `fmap-t-${t.id}`);
+    body.innerHTML = `<div class="fmap-top"><div><div class="label">${t.name}</div><div class="fmap-h">${t.head}</div><p>${t.what}</p></div>${t.art ? `<div class="fmap-art">${t.art}</div>` : ""}</div>
+      <div class="fmap-list">${t.items.map((f) => `<div class="fmap-item"><span class="ico">${icon(f.icon)}</span><b>${esc(f.title)}</b><span>${esc(f.what)}</span></div>`).join("")}</div>`;
+    icons();
+    if (focus) bar.children[i].focus();
+  };
+  bar.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) pick(Number(b.dataset.i)); });
+  bar.addEventListener("keydown", (e) => {
+    const cur = Number(document.activeElement?.dataset?.i ?? 0);
+    const to = e.key === "ArrowRight" ? (cur + 1) % tabs.length : e.key === "ArrowLeft" ? (cur + tabs.length - 1) % tabs.length : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : -1;
+    if (to < 0) return;
+    e.preventDefault(); pick(to, true);
+  });
+  pick(0);
 }
 
 // Easter eggs. ↑↑↓↓←→←→BA anywhere sets the page flapping; five quick clicks on the

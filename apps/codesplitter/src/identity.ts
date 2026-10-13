@@ -15,6 +15,7 @@ import { betterAuth } from "better-auth";
 import { json, NAME, type Env, readBody } from "./env.ts";
 import { privacyNotice } from "./privacy.ts";
 import { turnstileOn } from "./security.ts";
+import { tierOf } from "./tiers.ts";
 
 export const accountsOn = (env: Env) => !!env.BETTER_AUTH_SECRET;
 
@@ -273,6 +274,9 @@ async function handleRoutes(req: Request, env: Env, url: URL) {
 }
 
 /** /api/session, /api/login and /api/logout (alias mode), and /api/auth/* (Better Auth). */
+/** `{tier}` for a person on a paid tier (tiers.ts), to spread into the session. */
+const tierStamp = async (env: Env, user: string | null) => { const tier = await tierOf(env, user); return tier ? { tier } : {}; };
+
 export async function identityRoutes(req: Request, env: Env, p: string[]): Promise<Response | null> {
   const grants = await grantRoutes(req, env, p);
   if (grants) return grants;
@@ -283,14 +287,14 @@ export async function identityRoutes(req: Request, env: Env, p: string[]): Promi
     const privacy = { ...(env.PRIVACY_EMAIL ? { privacy: env.PRIVACY_EMAIL } : {}), ...(notice ? { notice } : {}) };
     if (!accountsOn(env)) {
       const user = await aliasSeen(req, env);
-      return json({ mode: "alias", user, providers: [], ...(isAdmin(env, user) ? { admin: true } : {}), ...(aliasesClosed(env) ? { closed: true } : {}), ...privacy });
+      return json({ mode: "alias", user, providers: [], ...(isAdmin(env, user) ? { admin: true } : {}), ...(await tierStamp(env, user)),...(aliasesClosed(env) ? { closed: true } : {}), ...privacy });
     }
     // Signed in but no handle yet: the page asks for one, with a free one to start from.
     const a = await account(req, env);
     const user = a?.handle ?? null;
     // mail: the page offers a reset link. unverified: an email account that hasn't opened its link yet.
     const unverified = mailOn(env) && a && a.user.email && !a.user.emailVerified ? { unverified: a.user.email } : {};
-    return json({ mode: "accounts", user, providers: providers(env), ...(isAdmin(env, user) ? { admin: true } : {}),
+    return json({ mode: "accounts", user, providers: providers(env), ...(isAdmin(env, user) ? { admin: true } : {}), ...(await tierStamp(env, user)),
       ...(mailOn(env) ? { mail: true } : {}), ...unverified, ...privacy,
       // turnstile: the site key for the bot check on sign-up, reset and joining a crew (security.ts).
       ...(turnstileOn(env) ? { turnstile: env.TURNSTILE_SITE_KEY } : {}),
