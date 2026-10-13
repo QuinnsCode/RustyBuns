@@ -327,6 +327,8 @@ On Cloudflare, Artifacts needs the Workers Paid plan (10k operations and 1 GB a 
 
 `bun run stress` (`scripts/stress.ts`) runs the app in-process on the local twins, with webhook sends caught by a stub, so nothing leaves the machine and nothing is billed. It fires `cap + 25` concurrent requests at each rule that costs nothing to hit (repos, files, branches, search, hooks, commits, line edits) and checks that exactly `cap` get past the limiter, the rest get a 429 with `retry-after`, none is a 5xx, and the counters agree. Then it puts ten hooks on a repo and storms them with branches and commits: every event must reach every hook once and signed, a receiver that answers 500 or throws must book a retry, and a pile of redelivers at once must each go out once. Dig, GitHub lookups, hosted agents, previews, deploys, container checks, the dependency doctor and fresh starts are left out because they cost money in the cloud. Run on 2026-10-13 it held on every rule; line-level commits are the slow one (about 250 ms each).
 
+The plan for testing the paid paths without a bill, and the capped live smoke, is in [docs/smoke-and-stress.md](docs/smoke-and-stress.md).
+
 ### Deploying (Cloudflare)
 
 `rustybuns deploy` owns the live site: Alchemy took over the wrangler-made Worker `codesplitter` and D1 `codesplitters-db` on 2026-10-09 (`targets.edge.adopt`), Durable Object storage intact.
