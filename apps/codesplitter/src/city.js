@@ -33,7 +33,7 @@ document.body.insertAdjacentHTML("beforeend", `
   <p class="muted" id="city-sum" style="margin:6px 0 0">…</p>
   <div class="legend"><span><i class="stone"></i>people's lines</span><span><i class="glass"></i>agents' lines</span><span><i class="lit"></i>lines landed lately</span></div>
   <div class="row"><button class="primary" id="city-walk">walk in</button><a class="btn" id="city-card" target="_blank" rel="noopener">postcard</a><span class="muted" id="city-msg"></span></div>
-  <div class="keys"><kbd>WASD</kbd> walk · <kbd>mouse</kbd> look · <kbd>shift</kbd> run · <kbd>esc</kbd> back up to the skyline<br>a district per public repo, a building per file: tall is long, lit is lately<br>busy streets are a week of commits; traffic chaos is failing checks</div>
+  <div class="keys"><kbd>WASD</kbd> walk · <kbd>mouse</kbd> look · <kbd>shift</kbd> run · <kbd>space</kbd> jump · <kbd>esc</kbd> back up to the skyline<br>a district per public repo, a building per file: tall is long, lit is lately<br>busy streets are a week of commits; traffic chaos is failing checks</div>
   <p class="exits"><a href="/#/u/${encodeURIComponent(name)}">← @${esc(name)}'s profile</a></p>
 </div></div>`);
 $("#title").textContent = `@${name}'s city`;
@@ -108,7 +108,7 @@ const WHITE = std("#f4f5f5", { roughness: 0.5 }), METAL = std("#2c3238", { rough
 kit("white", BOX, WHITE); kit("metal", BOX, METAL); kit("grey", BOX, GREY); kit("tint", BOX, std("#ffffff", { roughness: 0.55 }));
 kit("cyl", CYL, WHITE); kit("cylMetal", CYL, METAL); kit("cylTint", CYL, std("#ffffff", { roughness: 0.5 }));
 kit("dome", DOME, std("#1d2328", { roughness: 0.08, metalness: 0.9, transparent: true, opacity: 0.85 }));
-kit("cone", CONE, WHITE); kit("gable", GABLE, std("#3a4148", { roughness: 0.5, metalness: 0.3 }));
+kit("cone", CONE, WHITE); kit("pyramid", new THREE.ConeGeometry(0.5, 1, 4), std("#c9d0d8", { roughness: 0.3, metalness: 0.6 })); kit("gable", GABLE, std("#3a4148", { roughness: 0.5, metalness: 0.3 }));
 kit("leaf", TREE, std("#ffffff", { roughness: 0.85, flatShading: true }));
 kit("grass", BOX, std("#7f9a82", { roughness: 0.95 }));
 kit("water", CYL, std("#5d7686", { roughness: 0.05, metalness: 0.4 }));
@@ -132,17 +132,49 @@ const SHOPS = {
   video: { sign: "ビデオ VIDEO", neon: "#19d3ff", spines: ["#101214", "#16181b", "#1c1f23"], style: "tapes" },
   comics: { sign: "COMICS", neon: "#ff7a1a", spines: ["#e8302a", "#2a6ae8", "#f4d03a", "#2ac86a", "#ff6aa8", "#ffffff"], style: "spines" },
   records: { sign: "RECORDS", neon: "#8a5cff", spines: ["#d8402a", "#2a8ad8", "#e8c83a", "#f0f0f0", "#3a3a3a", "#9a3ad8"], style: "sleeves" },
+  lava: { sign: "LAVA LAMPS", neon: "#ff7a1a", style: "lava" },
+  hall: { sign: "役所 CITY HALL", neon: "#e8e0cc", style: "columns" },
+  hq: { sign: "CLOUDFLARE HQ", neon: "#ff7a1a", style: "lava" },
   archive: { sign: "ARCHIVE", neon: "#19d3ff", spines: ["#5a6670", "#6c7882", "#4a545c"], style: "cabinets" },
 };
 const shopTex = new Map();
+// The lava lamps are alive: one shared wall of them, blobs rising and sinking, redrawn a few times a second.
+const lava = (() => {
+  const c = document.createElement("canvas"); c.width = 256; c.height = 128;
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const tints = [["#ff5a0a", "#ffb020"], ["#ff2f9a", "#ff9ac8"], ["#19d3ff", "#a8f0ff"], ["#8a5cff", "#cbb8ff"], ["#ff7a1a", "#ffd29a"]];
+  let last = -1;
+  const draw = (time) => {
+    if (time - last < 0.05) return; last = time;
+    const g = c.getContext("2d"); g.fillStyle = "#120a08"; g.fillRect(0, 0, 256, 128);
+    for (let i = 0; i < 5; i++) {
+      const x = 8 + i * 49, [a, b] = tints[i];
+      const body = g.createLinearGradient(0, 0, 0, 128); body.addColorStop(0, "#1c0f10"); body.addColorStop(1, a + "55"); g.fillStyle = body;
+      g.beginPath(); g.roundRect(x, 8, 34, 112, 14); g.fill();
+      for (let k = 0; k < 4; k++) {
+        const f = (time * (0.06 + k * 0.018) + i * 0.21 + k * 0.27) % 1, y = 112 - Math.abs(Math.sin(f * Math.PI)) * 96, rad = 6 + (k % 2) * 3 + Math.sin(time * 0.8 + k + i) * 1.5;
+        const gr = g.createRadialGradient(x + 17, y, 0, x + 17, y, rad + 4); gr.addColorStop(0, b); gr.addColorStop(0.6, a); gr.addColorStop(1, a + "00"); g.fillStyle = gr;
+        g.beginPath(); g.arc(x + 17 + Math.sin(time * 0.5 + k * 2 + i) * 5, y, rad + 4, 0, 7); g.fill();
+      }
+      g.fillStyle = "#2a2a30"; g.fillRect(x - 2, 4, 38, 6); g.fillRect(x - 2, 118, 38, 8);
+    }
+    t.needsUpdate = true;
+  };
+  return { t, draw, mat: new THREE.MeshBasicMaterial({ map: t, toneMapped: false }) };
+})();
 function shopShelves(key) {
   if (shopTex.has(key)) return shopTex.get(key);
   const sh = SHOPS[key], r = rng(hash(key));
+  if (sh.style === "lava") { shopTex.set(key, lava.mat); return lava.mat; }
   const t = canvasTex(256, 128, (g, w, h) => {
     g.fillStyle = "#1a1208"; g.fillRect(0, 0, w, h);
     const rows = 3, rh = h / rows;
     for (let j = 0; j < rows; j++) {
       const y = j * rh;
+      if (sh.style === "columns") {
+        if (j === 0) { g.fillStyle = "#2a2a2e"; g.fillRect(0, 0, w, h); g.fillStyle = "#c9c4b4"; for (let i = 0; i < 7; i++) g.fillRect(14 + i * 34, 14, 14, h - 24); g.fillRect(4, 6, w - 8, 10); g.fillStyle = "#e8590c"; g.fillRect(w / 2 - 10, 38, 20, 14); }
+        continue;
+      }
       if (sh.style === "cabinets") {
         for (let i = 0; i < 8; i++) for (let d = 0; d < 3; d++) { g.fillStyle = pick(r, sh.spines); g.fillRect(i * 32 + 2, y + d * 13 + 3, 28, 11); g.fillStyle = "#e9d9bd"; g.fillRect(i * 32 + 12, y + d * 13 + 7, 8, 2); }
         continue;
@@ -177,13 +209,17 @@ function shopSign(key) {
 }
 const PLANE = new THREE.PlaneGeometry(1, 1);
 /** A themed shop on the face (fx, fz) of a podium pw wide: shelves behind the glass, a sign over it, neon on the wet pavement. */
-function stock(b, repo, r, pw, ph, y0, [fx, fz], hall) {
-  const key = hall && r() < 0.7 ? "library" : pick(r, Object.keys(SHOPS)), ry = Math.atan2(fx, fz);
-  const shelves = new THREE.Mesh(PLANE, shopShelves(key));
-  shelves.scale.set(pw * 0.86, ph * 0.62, 1); shelves.position.set(b.x + fx * (pw / 2 + 0.012), y0 + ph * 0.45, b.z + fz * (pw / 2 + 0.012)); shelves.rotation.y = ry;
-  const sign = new THREE.Mesh(PLANE, shopSign(key));
-  sign.scale.set(Math.min(pw * 0.9, 2.4), Math.min(pw * 0.9, 2.4) * 0.19, 1); sign.position.set(b.x + fx * (pw / 2 + 0.04), y0 + ph + 0.3, b.z + fz * (pw / 2 + 0.04)); sign.rotation.y = ry;
-  scene.add(shelves, sign);
+function stock(b, repo, r, pw, ph, y0, [fx, fz], hall, hq) {
+  const key = hq ? "hq" : hall && r() < 0.7 ? "library" : pick(r, ["lava", "lava", "lava", "library", "library", "books", "books", "used", "hall", "video", "comics", "records", "archive"]), ry = Math.atan2(fx, fz);
+  // Every face of the ground floor is the shop: shelves behind the glass and a sign over it.
+  for (const [gx, gz] of [[fx, fz], [-fx, -fz], [fz, fx], [-fz, -fx]]) {
+    const gy = Math.atan2(gx, gz);
+    const shelves = new THREE.Mesh(PLANE, shopShelves(key));
+    shelves.scale.set(pw * 0.86, ph * 0.62, 1); shelves.position.set(b.x + gx * (pw / 2 + 0.012), y0 + ph * 0.45, b.z + gz * (pw / 2 + 0.012)); shelves.rotation.y = gy;
+    const sign = new THREE.Mesh(PLANE, shopSign(key));
+    sign.scale.set(Math.min(pw * 0.9, 2.4), Math.min(pw * 0.9, 2.4) * 0.19, 1); sign.position.set(b.x + gx * (pw / 2 + 0.04), y0 + ph + 0.3, b.z + gz * (pw / 2 + 0.04)); sign.rotation.y = gy;
+    scene.add(shelves, sign);
+  }
   put("pool", b.x + fx * (pw / 2 + 1.1), CURB + 0.02, b.z + fz * (pw / 2 + 1.1), 3.2, 1, 3.2, 0, SHOPS[key].neon);
 }
 
@@ -460,7 +496,7 @@ function raise(b, repo, r) {
       put("metal", b.x + fx * (pw / 2 + 0.22) + fz * t, y0 + ph + 0.55, b.z + fz * (pw / 2 + 0.22) + fx * t, fx ? 0.4 : 0.06, 1.0, fz ? 0.4 : 0.06);
       put(k, b.x + fx * (pw / 2 + 0.22) + fz * t, y0 + ph + 0.55, b.z + fz * (pw / 2 + 0.22) + fx * t, fx ? 0.34 : 0.08, 0.9, fz ? 0.34 : 0.08, 0, k === "neon" ? nc : undefined);
     }
-    stock(b, repo, r, pw, ph, y0, face, kind === "hall");
+    stock(b, repo, r, pw, ph, y0, face, kind === "hall", b.h >= maxH - 0.01);
     top += ph;
   }
 
@@ -510,6 +546,8 @@ function raise(b, repo, r) {
   // Lines landing now: a ring of orange light round the roofline.
   if (b.glow > 0.6) for (const [sx, sz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) put("orange", b.x + sx * (tw / 2 + 0.07), top + 0.17, b.z + sz * (tw / 2 + 0.07), sx ? 0.04 : tw + 0.14, 0.05, sz ? 0.04 : tw + 0.14);
   // Up on the tallest towers, a red light for the aircraft.
+  // The tallest is the pyramid-crowned tower of the bay.
+  if (b.h >= maxH - 0.01 && b.h > 6 && kind === "tower") put("pyramid", b.x, top + 2.2, b.z, tw * 0.62, 4.4, tw * 0.62, Math.PI / 4);
   if (b.h > 14) put("redLight", b.x, top + (b.h >= maxH - 0.01 ? 4.3 : 1.6), b.z, 0.22, 0.22, 0.22);
 }
 
@@ -958,9 +996,9 @@ function updateVisitors(dt) {
 // ---- looking and walking ----------------------------------------------------------------
 // Up on the skyline the camera circles the city; walk in and you're on the street.
 const EYE = 1.7, keys = new Set();
-const player = { pos: new THREE.Vector3(0, EYE, z1 + 2), yaw: 0, pitch: 0 };
+const player = { pos: new THREE.Vector3(0, EYE, z1 + 2), yaw: 0, pitch: 0, air: 0, vy: 0 };
 let walking = false, lastSent = 0;
-addEventListener("keydown", (e) => keys.add(e.code));
+addEventListener("keydown", (e) => { if (e.code === "Space" && walking) e.preventDefault(); keys.add(e.code); });
 addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("blur", () => keys.clear());
 addEventListener("mousemove", (e) => {
@@ -1001,7 +1039,10 @@ function updateWalk(dt, now) {
   player.pos.x = Math.max(x0 - MARGIN + 1, Math.min(x1 + MARGIN - 1, player.pos.x)); player.pos.z = Math.max(z0 - MARGIN + 1, Math.min(z1 + MARGIN - 1, player.pos.z));
   collide();
   const floor = onBlock(player.pos.x, player.pos.z) ? CURB : 0;
-  player.pos.y += (EYE + floor - player.pos.y) * Math.min(1, dt * 14);
+  // Space jumps: up fast, back down under gravity.
+  if (keys.has("Space") && player.air === 0 && player.vy === 0) player.vy = 6.5;
+  if (player.vy !== 0 || player.air > 0) { player.vy -= 18 * dt; player.air = Math.max(0, player.air + player.vy * dt); if (player.air === 0) player.vy = 0; }
+  player.pos.y += (EYE + floor + player.air - player.pos.y) * Math.min(1, dt * (player.air > 0 ? 30 : 14));
   camera.position.copy(player.pos);
   camera.rotation.set(player.pitch, player.yaw, 0);
   if (ws?.readyState === 1 && now - lastSent > 100) { lastSent = now; ws.send(JSON.stringify({ t: "pos", p: [player.pos.x, floor, player.pos.z], yaw: player.yaw })); }
@@ -1029,6 +1070,7 @@ function frame(now) {
   const dt = Math.min(0.05, (now - prev) / 1000), time = now / 1000;
   prev = now;
   if (walking) updateWalk(dt, now); else updateSkyline(time);
+  lava.draw(time);
   updateWalkers(time);
   updateVisitors(dt);
   updateSignals(time);
