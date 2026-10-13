@@ -162,7 +162,7 @@
   @container (min-width: 620px) { .dpanels { columns: 300px; column-gap: 0; } .dpanels .sec { break-inside: avoid; } }
   .sec h2 { cursor: grab; user-select: none; } .sec h2 .fold { margin-left: auto; transition: transform .12s; }
   .sec.shut { margin: 6px 10px; padding: 3px 12px; border: 1px solid var(--border-2); border-radius: 999px; background: var(--canvas); }
-  .sec.shut h2 { margin: 0; } .sec.shut > :not(h2) { display: none; } .sec.shut h2 .fold { transform: rotate(-90deg); }
+  .sec.shut h2 { margin: 0; } .sec.shut > :not(h2) { display: none !important; } .sec.shut h2 .fold { transform: rotate(-90deg); }
   .sec.dragging { opacity: .4; } .sec.drop-before { box-shadow: inset 0 2px var(--accent); } .sec.drop-after { box-shadow: inset 0 -2px var(--accent); }
   /* The Wow me tour: a card in the corner, and a ring round whatever it's showing. */
   .tour { position: fixed; left: 16px; bottom: 56px; z-index: 60; width: min(360px, calc(100vw - 32px)); display: grid; gap: 8px; padding: 14px; background: var(--bg); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.18); font-size: 14px; }
@@ -390,16 +390,23 @@
   .ln.intent:not(.claim) .t { box-shadow: none; border-left: 3px dashed var(--who); }
   /* Who's in the file, over the code: a few faces, then counts, so a thousand agents is still one row. */
   .crew { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 4px 12px; min-height: 30px; box-sizing: border-box; background: var(--bg); border-bottom: 1px solid var(--border); font-size: 12px; overflow: hidden; }
-  .crew .faces { display: flex; gap: 4px; min-width: 0; overflow: hidden; flex: 0 1 auto; }
   .who { display: inline-flex; align-items: center; gap: 4px; max-width: 150px; padding: 1px 7px 1px 5px; border: 1px solid color-mix(in srgb, var(--who) 45%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--who) 10%, transparent); color: var(--fg); font: 500 11.5px/18px var(--sans); white-space: nowrap; cursor: pointer; flex: none; }
   .who span { overflow: hidden; text-overflow: ellipsis; }
   .who svg { width: 12px; height: 12px; color: var(--who); flex: none; }
   a.who { text-decoration: none; }
   .who-prof { display: inline-flex; color: var(--muted); flex: none; } .who-prof:hover { color: var(--accent-ink); }
   .who-prof svg { width: 14px; height: 14px; }
-  .crew .counts { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font: 500 11.5px/1 var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .crew .counts span { display: inline-flex; align-items: center; gap: 3px; } .crew .counts svg { width: 12px; height: 12px; }
   .crew .above { margin-left: auto; padding: 1px 8px; border: 1px solid var(--accent); border-radius: 10px; background: var(--accent-soft); color: var(--accent-ink); font: 500 11.5px/18px var(--sans); cursor: pointer; white-space: nowrap; }
+  .crew:empty { display: none; }
+  .editor { position: relative; }
+  .here-dock { position: absolute; right: 16px; bottom: 12px; z-index: 6; display: flex; align-items: center; gap: 4px; }
+  .here-dock .faces { display: flex; gap: 4px; }
+  .here-n { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 13px; background: var(--bg); color: var(--fg); font: 600 12px/1 var(--mono); font-variant-numeric: tabular-nums; box-shadow: 0 4px 14px -6px rgba(0,0,0,.25); cursor: pointer; }
+  .here-n svg { width: 14px; height: 14px; color: var(--accent); }
+  .here-dock .pop > .panel { top: auto; bottom: calc(100% + 6px); width: min(360px, calc(100vw - 32px)); max-height: min(70vh, 640px); overflow: auto; }
+  .here-h { padding-top: 6px; border-top: 1px solid var(--border); }
+  @media (max-width: 1199px) { .here-dock { position: fixed; bottom: 40px; } }
+  @media (max-width: 860px) { .here-dock .faces { display: none; } }
   .here-list { display: grid; gap: 2px; max-height: 320px; overflow: auto; margin-top: 6px; }
   .here-list .row { display: flex; align-items: center; gap: 6px; min-height: 24px; }
   .here-list .row .what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
@@ -2311,13 +2318,16 @@ function dock() {
   const placed = slots.map((i) => secs[i]).sort((a, b) => d.order.indexOf(a.dataset.key) - d.order.indexOf(b.dataset.key));
   slots.forEach((i, j) => (secs[i] = placed[j]));
   secs.forEach((s) => { s.classList.toggle("shut", d.shut.includes(s.dataset.key)); panels.append(s); });
+  // One panel open at a time, an accordion: opening one folds the rest. (Agents use the palette's WebMCP tools, not the panels.)
+  const only = (s) => { for (const x of panels.children) x.classList.toggle("shut", x !== s); };
+  only(secs.find((s) => !s.classList.contains("shut")));
   const rail = document.createElement("div"); rail.className = "drail";
   const widths = [["290px", "panel-right", "Narrow"], ["66.667%", "columns-2", "Two-thirds of the screen"], ["full", "maximize-2", "Whole screen"]];
   const drawRail = () => {
     rail.innerHTML = widths.map(([w, ic, t]) => `<button type="button" class="dw${(d.w || "290px") === w ? " on" : ""}" data-w="${w}" title="${t}">${icon(ic)}</button>`).join("")
       + `<span class="sep dw"></span><button type="button" class="dscroll" data-scroll="-1" title="more panels" hidden>${icon("chevron-left")}</button>`
       + `<div class="dstrip">${[...panels.children].map((s) => `<button type="button" class="${s.classList.contains("shut") ? "shut" : ""}" data-jump="${s.dataset.key}" title="${esc(s.querySelector("h2").textContent)}">${icon(s.dataset.ic)}</button>`).join("")}</div>`
-      + `<button type="button" class="dscroll" data-scroll="1" title="more panels" hidden>${icon("chevron-right")}</button><button type="button" data-fold title="Fold every panel, or open them all">${icon("chevrons-down-up")}</button>`;
+      + `<button type="button" class="dscroll" data-scroll="1" title="more panels" hidden>${icon("chevron-right")}</button><button type="button" data-fold title="Fold every panel">${icon("chevrons-down-up")}</button>`;
     icons();
     const strip = $(".dstrip", rail), keep = stripAt;
     strip.scrollLeft = keep; strip.addEventListener("scroll", arrows); arrows();
@@ -2349,13 +2359,13 @@ function dock() {
     const b = e.target.closest("button"); if (!b) return;
     if (b.dataset.scroll) { const strip = $(".dstrip", rail); return strip.scrollBy({ left: Math.sign(+b.dataset.scroll) * strip.clientWidth * 0.8, behavior: "smooth" }); }
     if (b.dataset.w) { setWidth(b.dataset.w); return save(); }
-    if ("fold" in b.dataset) { const all = [...panels.children], shut = all.some((s) => !s.classList.contains("shut")); all.forEach((s) => s.classList.toggle("shut", shut)); return save(); }
+    if ("fold" in b.dataset) { only(null); return save(); }
     const s = panels.querySelector(`[data-key="${b.dataset.jump}"]`); if (!s) return;
-    s.classList.remove("shut"); save();
+    only(s); save();
     s.scrollIntoView({ block: "nearest", behavior: "smooth" }); s.classList.remove("flash"); void s.offsetWidth; s.classList.add("flash");
   });
   // A click on a title folds the panel; a drag carries it above or below another.
-  panels.addEventListener("click", (e) => { const h = e.target.closest(".sec > h2"); if (!h || e.target.closest("a, button")) return; h.parentElement.classList.toggle("shut"); save(); });
+  panels.addEventListener("click", (e) => { const h = e.target.closest(".sec > h2"); if (!h || e.target.closest("a, button")) return; const s = h.parentElement; only(s.classList.contains("shut") ? s : null); save(); });
   let dragged = null;
   const clearDrop = () => panels.querySelectorAll(".drop-before, .drop-after").forEach((s) => s.classList.remove("drop-before", "drop-after"));
   panels.addEventListener("dragstart", (e) => { dragged = e.target.closest?.(".sec"); if (!dragged) return; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", dragged.dataset.key); dragged.classList.add("dragging"); });
@@ -4241,10 +4251,8 @@ const views = {
         ${owner === me() && r.canWrite ? `<div class="pop"><button class="btn" id="agent" title="give a coding agent a task on this file">${icon("bot")}Agent</button><form class="panel" id="agent-form" hidden style="width:380px"><b>Give a coding agent a task</b><span class="muted" id="agent-why" style="font-size:13px">It runs on this machine with its CLI's own login, edits this file as <code>agent-&lt;name&gt;</code>, and its lines land here live.</span><select name="harness"></select><textarea name="task" rows="4" placeholder="add a doc comment to every function" required></textarea><label id="agent-only" class="muted" style="font-size:13px" hidden><input type="checkbox" name="only" checked> Only <span></span>: they're held for it while it works</label><input name="model" placeholder="model (optional: the CLI's default)"><div><button class="btn primary">${icon("play")}Run</button></div></form></div>` : ""}
         ${r.canWrite && !branch ? `<div class="pop"><button class="btn primary" id="commit" title="commit this file to git">${icon("git-commit-horizontal")}Commit</button><form class="panel" id="commit-form" hidden><b>Commit to git</b><span class="muted" style="font-size:13px">Pushes this file to the repo's Artifact as a real commit.</span><input id="msg" placeholder="what changed"><button class="btn primary">Commit</button></form></div>` : ""}`,
       // A push to the repo's git (the desktop's Push back) that clashed with edits here: its commit waits on a pick (#788).
-      body: `${r.canWrite && !branch && r.home === "local" ? `<div class="notice" id="pushclash" hidden>${icon("git-pull-request-arrow")}<span class="grow">A push to this repo's git changed the same lines as edits here, so committing waits till ${owner === me() ? "you pick" : `@${esc(owner)} picks`} a side.</span>${owner === me() ? `<button class="btn" style="white-space:nowrap" data-take="mine" title="keep the edits here: the next commit writes them over what was pushed">${icon("user")}Keep mine</button><button class="btn" style="white-space:nowrap" data-take="pushed" title="put the pushed lines in place of the edits here">${icon("download")}Take pushed</button>` : ""}</div>` : ""}<div class="crew" id="crew"></div><div class="code" id="lines"></div>`,
-      details: sec("radio", "Here now", `<p id="who-here" class="muted">just you</p><input id="here-filter" type="search" placeholder="find someone" hidden><div class="here-list" id="here-list"></div>`)
-        + sec("activity", "Activity", `<div class="act-bar"><div class="seg" id="act-kinds" role="group" aria-label="show">${[["all", "All"], ["people", "People"], ["agents", "Agents"], ["holds", "Holds"]].map(([k, t]) => `<button type="button" data-k="${k}" aria-pressed="${k === "all"}"${k === "all" ? ' class="on"' : ""}>${t}</button>`).join("")}</div><input id="act-find" type="search" placeholder="who" aria-label="filter by who"></div><div class="acts" id="acts"></div>`)
-        + (r.canWrite ? sec("pencil", "Editing", `<p class="muted">Double-click a line to edit it. Enter saves, Shift+Enter adds a line below, an empty line + Enter deletes it. Click a line number to select; shift-click for a range, ⌘-click a line to add it, or drag down the numbers. Right-click the code for what you can do with the lines. Keys as in VS Code: ↑/↓, shift+↑/↓, ⌘A, ⌘L, ⌘C, Esc.</p>`) : sec("share-2", "Sharing", `<p class="muted">Click a line number, shift-click another, and share just those lines.</p>`))
+      body: `${r.canWrite && !branch && r.home === "local" ? `<div class="notice" id="pushclash" hidden>${icon("git-pull-request-arrow")}<span class="grow">A push to this repo's git changed the same lines as edits here, so committing waits till ${owner === me() ? "you pick" : `@${esc(owner)} picks`} a side.</span>${owner === me() ? `<button class="btn" style="white-space:nowrap" data-take="mine" title="keep the edits here: the next commit writes them over what was pushed">${icon("user")}Keep mine</button><button class="btn" style="white-space:nowrap" data-take="pushed" title="put the pushed lines in place of the edits here">${icon("download")}Take pushed</button>` : ""}</div>` : ""}<div class="crew" id="crew"></div><div class="code" id="lines"></div><div class="here-dock" id="here"><span class="faces" id="here-faces"></span><div class="pop"><button type="button" class="here-n" id="here-n" title="who's here">${icon("users")}<b>1</b></button><div class="panel" hidden><b id="who-here">just you</b><input id="here-filter" type="search" placeholder="find someone" hidden><div class="here-list" id="here-list"></div><b class="here-h">Activity</b><div class="act-bar"><div class="seg" id="act-kinds" role="group" aria-label="show">${[["all", "All"], ["people", "People"], ["agents", "Agents"], ["holds", "Holds"]].map(([k, t]) => `<button type="button" data-k="${k}" aria-pressed="${k === "all"}"${k === "all" ? ' class="on"' : ""}>${t}</button>`).join("")}</div><input id="act-find" type="search" placeholder="who" aria-label="filter by who"></div><div class="acts" id="acts"></div></div></div></div>`,
+      details: (r.canWrite ? sec("pencil", "Editing", `<p class="muted">Double-click a line to edit it. Enter saves, Shift+Enter adds a line below, an empty line + Enter deletes it. Click a line number to select; shift-click for a range, ⌘-click a line to add it, or drag down the numbers. Right-click the code for what you can do with the lines. Keys as in VS Code: ↑/↓, shift+↑/↓, ⌘A, ⌘L, ⌘C, Esc.</p>`) : sec("share-2", "Sharing", `<p class="muted">Click a line number, shift-click another, and share just those lines.</p>`))
         + (owner === me() && r.canWrite ? sec("bot", "Agents", `<div id="agent-runs"></div>`) : "")
         + sec("scroll-text", "Commits", `<div id="commits"></div>`)
         + views.repoDetails(owner, repo, r),
@@ -4565,15 +4573,18 @@ const views = {
       const tag = c ? "button" : "a";
       return `<${tag} class="who${(beating.get(c ? c.who : who) ?? 0) > Date.now() ? " beat" : ""}" style="--who:${hueOf(c?.bot ? c.id : who ?? c.who)}"${c ? ` data-claim="${esc(c.id)}"` : ` href="#/u/${esc(who)}"`} title="${esc(c ? `${bot ? "agent" : "@" + c.who} on ${c.lines.length} line${c.lines.length > 1 ? "s" : ""}${c.task ? `: ${c.task}` : ""}` : `@${who} has this file open: open ${bot ? "its page" : "their profile"}`)}">${glyph(bot ? "bot" : "user")}<span>${esc(name)}</span></${tag}>`;
     };
-    const FACES = 6, LISTED = 200;
+    const FACES = 4, LISTED = 200;
     const drawCrew = () => {
       const cs = standing(), bots = cs.filter((c) => c.bot), holds = cs.filter((c) => !c.bot && !c.soft);
       const humans = people.filter((w) => !w.startsWith("agent-")), openBots = people.filter((w) => w.startsWith("agent-"));
       const nBots = bots.length + openBots.length;
       const faces = [...humans.map((w) => face(null, w)), ...bots.map((c) => face(c)), ...openBots.map((w) => face(null, w))];
-      $("#crew").innerHTML = `<span class="faces">${faces.slice(0, FACES).join("")}</span>`
-        + `<span class="counts" title="people with the file open · agents working on it">${faces.length > FACES ? `<span>+${faces.length - FACES}</span>` : ""}<span>${glyph("user")}${humans.length}</span><span>${glyph("bot")}${nBots}</span>${holds.length ? `<span title="lines people are holding">${glyph("hand")}${holds.reduce((n, c) => n + c.lines.length, 0)}</span>` : ""}</span>`
-        + (above.size ? `<button class="above" id="above">↑ ${above.size} change${above.size > 1 ? "s" : ""} above</button>` : "");
+      // Who's here sits in the editor's corner: their chips beside a live count, till there are more than
+      // FACES of them (or the screen is a phone's) and only the count is left. The count opens the whole list.
+      $("#crew").innerHTML = above.size ? `<button class="above" id="above">↑ ${above.size} change${above.size > 1 ? "s" : ""} above</button>` : "";
+      $("#here-faces").innerHTML = faces.length > FACES ? "" : faces.join("");
+      $("#here-n b").textContent = faces.length;
+      $("#here-n").title = `${humans.length} ${humans.length === 1 ? "person" : "people"} with the file open, ${nBots} agent${nBots === 1 ? "" : "s"} on it${holds.length ? `, ${holds.reduce((n, c) => n + c.lines.length, 0)} lines held` : ""}: the list`;
       $("#who-here").textContent = humans.length > 1 || nBots ? `${humans.length} ${humans.length === 1 ? "person" : "people"}, ${nBots} agent${nBots === 1 ? "" : "s"}${holds.length ? `, ${holds.length} hold${holds.length > 1 ? "s" : ""}` : ""}` : "just you";
       const f = $("#here-filter"), needle = f.value.trim().toLowerCase();
       f.hidden = cs.length + humans.length < 12;
@@ -4703,15 +4714,17 @@ const views = {
         above.clear(); drawCrew();
         return go(els.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0]);
       }
-      const c = claims.get(e.target.closest("[data-claim]")?.dataset.claim);
-      if (c) go([...box.children].find((el) => claimOf.get(el.dataset.id) === c));
     });
-    $("#here-list").addEventListener("click", async (e) => {
+    $(".editor").append($("#here"));
+    popover($("#here-n"));
+    // The panel keeps its clicks to itself (popover), so the chips and the list each get this.
+    const onHere = async (e) => {
       const lift = e.target.closest("[data-lift]");
       if (lift) { lift.disabled = true; try { await api(`${base}/release${q}`, { id: lift.dataset.lift }); } catch (err) { toast(err.message); lift.disabled = false; } return; }
       const c = claims.get(e.target.closest("[data-claim]")?.dataset.claim);
       if (c) [...box.children].find((el) => claimOf.get(el.dataset.id) === c)?.scrollIntoView({ block: "center" });
-    });
+    };
+    $("#here-faces").addEventListener("click", onHere); $("#here-list").addEventListener("click", onHere);
     $("#here-filter").addEventListener("input", drawCrew);
     (box.closest(".scroll") ?? window).addEventListener("scroll", () => { if (above.size && (scroller()?.scrollTop ?? scrollY) === 0) { above.clear(); drawCrew(); } }, { passive: true });
     setClaims(await api(`${base}/claims${q}`).catch(() => []));
@@ -6101,8 +6114,6 @@ const tourState = () => { try { return JSON.parse(sessionStorage.getItem(TOUR_KE
 const tourSave = (t) => { try { t ? sessionStorage.setItem(TOUR_KEY, JSON.stringify(t)) : sessionStorage.removeItem(TOUR_KEY); } catch {} };
 // What each panel on the right is for, and what to try in it, by its data-key: a step each.
 const PANEL_SAY = {
-  "here-now": ["radio", "Who has this file open right now, people and agents apart. Open it in a second tab and you'll show up twice."],
-  activity: ["activity", "Every edit and hold as it lands, one row per person or agent run. Try the People / Agents / Holds filter, or click a row to jump to its lines."],
   editing: ["pencil", "Double-click any line to edit it. Enter saves, and every open page patches itself. Try it on a line of this file."],
   agents: ["bot", "Your coding agents' runs on this repo. Give one a task with the Agent button up top and its lines land here, blamed on the agent."],
   commits: ["scroll-text", "Real git commits, built in the Worker with no git library. Edit a line, press Commit up top, and it shows here."],
