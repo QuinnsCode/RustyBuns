@@ -36,9 +36,9 @@ async function app(heal = true) {
   await send("ryan", "/api/repos/ryan/lab/do/ops?path=a.ts&branch=tidy", { ops: [{ kind: "set", line: doc[0]!.id, text: "ONE", base: doc[0]!.rev }] });
   await send("ryan", "/api/repos/ryan/lab/checks/settings", { required: ["test"] }, "PUT");
   /** `test` fails on tidy at `at`, its log naming the file. */
-  const fail = async (at: string) => {
+  const fail = async (at: string, log = "a.ts:1 expected one, got ONE\n1 fail\n") => {
     const run = await (await send("ryan", "/api/repos/ryan/lab/checks", { ref: "tidy", sha: at, name: "test" })).json() as { id: number };
-    await send("ryan", `/api/repos/ryan/lab/checks/${run.id}`, { status: "failed", append: "a.ts:1 expected one, got ONE\n1 fail\n" }, "PUT");
+    await send("ryan", `/api/repos/ryan/lab/checks/${run.id}`, { status: "failed", append: log }, "PUT");
   };
   const runs = async () => (await (await call("ryan", "/api/repos/ryan/lab/agents")).json()) as any[];
   const settled = () => until(async () => (await runs()).every((r) => r.status !== "running"));
@@ -174,6 +174,18 @@ test("a fix task gets the branch's other changed files too, and can fix a test a
   expect((await file("tidy")).map((l) => l.text)).toEqual(["one", "two"]);
   const b = (await (await call("ryan", "/api/repos/ryan/lab/do/file?path=a.test.ts&branch=tidy")).json() as { lines: { text: string; by: string }[] }).lines;
   expect(b.map((l) => [l.text, l.by])).toEqual([["expect(two)", "agent-claude"]]);
+});
+
+test("a check that hung: the fix task is on the test file it hung in, however often the log names others (#1218)", async () => {
+  const { call, send, fail, runs, settled } = await app();
+  await send("ryan", "/api/repos/ryan/lab/files", { path: "test/a.test.ts", content: "expect(one)" });
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=test/a.test.ts", { message: "its test" });
+  const t = (await (await call("ryan", "/api/repos/ryan/lab/do/file?path=test/a.test.ts&branch=tidy")).json() as { lines: { id: string; rev: number }[] }).lines;
+  await send("ryan", "/api/repos/ryan/lab/do/ops?path=test/a.test.ts&branch=tidy", { ops: [{ kind: "set", line: t[0]!.id, text: "await never()", base: t[0]!.rev }] });
+  await fail(sha("a"), "a.ts a.ts a.ts\ntest/a.test.ts:\n::error title=hung::Still running after 10 min, killed. last to report: test/a.test.ts\nexit 124\n");
+  await until(async () => (await runs()).length > 0);
+  await settled();
+  expect((await runs())[0]).toMatchObject({ path: "test/a.test.ts", also: ["a.ts"] });
 });
 
 test("blame: the file the log names most; alsoFor: the rest, those it names first", () => {

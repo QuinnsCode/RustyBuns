@@ -1,9 +1,9 @@
 import { beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import path from "node:path";
 import { checksBarClient, checkTallyServer, SERVER_IMPORT } from "../checks/patch.ts";
-import { countOf as annotated, TestCounts } from "../checks/server.ts";
+import { countOf as annotated, hungOf, TestCounts } from "../checks/server.ts";
 import { barWidth, describe, tally, took } from "../checks/tally.ts";
-import { countOf, notice } from "../../../scripts/ci-test-count.ts";
+import { countOf, hung, notice } from "../../../scripts/ci-test-count.ts";
 import { askOf, read, unpackPinned } from "./pinned.ts";
 
 // the first run downloads the pinned release into .cache, as rustybunsify.ts does
@@ -80,8 +80,28 @@ test("a failed call is asked again on the next list", async () => {
   await Bun.sleep(0);
   expect(counts.of(c)).toBeUndefined();
   await Bun.sleep(0);
-  expect(counts.of(c)).toEqual({ pass: 5, fail: 0, skip: 0 });
+  expect(counts.of(c)).toEqual({ count: { pass: 5, fail: 0, skip: 0 } });
   expect(calls).toBe(2);
+});
+
+test("a job that ran out of time: the bar says which test file it hung in (#1218)", async () => {
+  const out = "test/a.test.ts:\n(pass) one\ntest/b.test.ts:\n";
+  const said = (line: string) => ({ title: "hung", message: line.split("::")[2] });
+  expect(hungOf([said(hung(out, ["test/a.test.ts", "test/b.test.ts"], 10, false))])).toBe("test/b.test.ts");
+  expect(hungOf([said(hung(out, ["test/a.test.ts", "test/b.test.ts", "test/c.test.ts"], 10, true))])).toBe("test/b.test.ts");
+  expect(hungOf([said(hung("", ["test/c.test.ts", "test/d.test.ts"], 10, true))])).toBe("test/c.test.ts");
+  expect(hungOf([said(hung("", [], 10, false))])).toBe("setup");
+  expect(hungOf([{ title: "tests", message: "1 pass, 0 fail, 0 skip" }])).toBeUndefined();
+
+  // hung before bun's summary, so no count: the check still shows where
+  const counts = new TestCounts(async () => JSON.stringify([said(hung(out, [], 10, false))]));
+  const c = { ...run("FAILURE", "2026-10-11T08:00:00Z", "2026-10-11T08:10:00Z"), detailsUrl: "https://github.com/o/r/actions/runs/1/job/2" };
+  counts.of(c);
+  await Bun.sleep(0);
+  const t = tally([c, run("SUCCESS", "2026-10-11T08:00:00Z", "2026-10-11T08:01:00Z")], counts.of)!;
+  expect(t).toMatchObject({ fail: 1, pass: 1, hung: ["test/b.test.ts"] });
+  expect(t.tests).toBeUndefined();
+  expect(describe(t)).toBe("2 checks: 1 passed, 1 failed · 10m · hung in test/b.test.ts");
 });
 
 test("the pinned release's PR list gains each PR's tally", async () => {
