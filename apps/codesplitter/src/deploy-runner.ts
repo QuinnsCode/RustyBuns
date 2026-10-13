@@ -30,16 +30,43 @@
 //   POST /start {owner, repo, by, trigger}   from deploy.ts, after its checks
 //   GET  /run                                the run going now, or the last one
 //   POST /reseal {owner, repo}               seal the kept state under the current DEPLOY_SECRETS_KEY (deploy-keys.ts)
+//   POST /preview {owner, repo, dir, files}  the dependency doctor's preview (deps.ts, #900), below
+//   GET  /preview                            the doctor's preview going now, or the last one
+//
+// The dependency doctor's previews run here too, when the repo has a deploy key: main's
+// checked tip with the doctor's files laid over it (the container's POST /files), deployed
+// to a preview-<id> stage, checked and destroyed, in an alarm of its own, like a deploy. A deploy
+// and a preview share the container, so one waits for the other. Each counts against the owner's
+// `preview` rule and the site's `containers` minutes, as a check in a container does
+// (ci-runner.ts). The doctor doesn't wait: it asks again on its next run, with the same files,
+// and gets the result, kept here by commit, folder and files. A preview keeps no Alchemy state:
+// it stands up and comes down in the one container.
 
 import { begin, finish, remoteFor, stateSuffix } from "./deploy.ts";
 import { isCleared, review, waitingNote } from "./deploy-review.ts";
 import { deployKeys, keyEnv, keysInfo, keysLabel, resealState, sealState, unsealState, type Provider } from "./deploy-keys.ts";
 import { json, type Env } from "./env.ts";
-import { preview, type Run, type Runner } from "./preview.ts";
+import { isAdmin } from "./identity.ts";
+import { charge, SITE } from "./limits.ts";
+import { logEnd, logStart, preview, STEPS as PREVIEW_STEPS, type Run, type Runner } from "./preview.ts";
 import { portFetch, type ContainerApi } from "./sandbox.ts";
 import { CRATES, gate, hostList, hostOf, PROVIDER_HOSTS, REGISTRIES, type GateExports } from "./egress.ts";
 
-interface Job { owner: string; repo: string; run: Run; production: boolean; dir?: string; again?: string; started?: number }
+interface Job { owner: string; repo: string; run: Run; production: boolean; dir?: string; again?: string; started?: number; preview?: { key: string; tip: string; files: Record<string, string> } }
+
+/** How a doctor's preview went, kept for the doctor to ask about: `out`, the end of the step that failed. */
+export interface PreviewResult { id: string; stage: string; ok: boolean; url?: string; failed?: string; note?: string; out?: string }
+/** What POST /preview answers: the result, the run it's waiting on, or why it can't go now. */
+export type PreviewAnswer = { result: PreviewResult } | { running: Run } | { busy: string };
+/** Results kept, newest last. */
+const KEEP_RESULTS = 20;
+
+/** A preview's key: the commit it deploys, the app's folder and the files laid over it. */
+async function previewKey(tip: string, dir: string | undefined, files: Record<string, string>) {
+  const text = JSON.stringify([tip, dir ?? "", Object.entries(files).sort(([a], [b]) => a.localeCompare(b))]);
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 /** A run's share of the alarm's 15 minutes, leaving room to clean up after it. */
 export const RUN_BUDGET_MS = 13 * 60_000;
@@ -145,16 +172,47 @@ export class DeployRunner {
     return out;
   }
 
+  /** The doctor's preview of `files` over main: its result if there is one, else the run it starts or waits on. */
+  private async preview(owner: string, repo: string, dir: string | undefined, files: Record<string, string>): Promise<PreviewAnswer> {
+    const job = await this.load();
+    // The keys run main, so main has to be cleared as for a deploy, and the result is for that commit.
+    const checked = await review(this.env, owner, repo);
+    if (!isCleared(checked)) return { busy: waitingNote(checked) };
+    const key = await previewKey(checked.tip!, dir, files);
+    const done = (await this.ctx.storage.get<Record<string, PreviewResult>>("previews"))?.[key];
+    if (done) return { result: done };
+    if (job && !job.run.done) return job.preview?.key === key ? { running: job.run } : { busy: job.preview ? "another preview is running in this repo's deploy container" : "a deploy is running in this repo's deploy container" };
+    // Its first container minute comes off the site's budget up front, as a check's does (ci-runner.ts).
+    const over = (this.env.ADMINS && isAdmin(this.env, owner) ? null : await charge(this.env, "preview", `@${owner}`))
+      ?? await charge(this.env, "containers", SITE);
+    if (over) return { busy: over };
+    const id = crypto.randomUUID().slice(0, 8);
+    const run: Run = { id, at: Date.now(), stage: `preview-${id}`, steps: PREVIEW_STEPS.map((key) => ({ key, status: "waiting", out: "" })), done: false };
+    await logStart(this.env, owner, repo, run, "agent-deps", "preview", "hosted", keysLabel(await keysInfo(this.env, owner, repo)));
+    // The deploy panel keeps showing the last deploy while a preview holds the slot.
+    if (job && !job.preview) await this.ctx.storage.put("last", job.run);
+    this.job = { owner, repo, run, production: false, dir, preview: { key, tip: checked.tip!, files }, ...(job?.again && { again: job.again }) };
+    await this.save();
+    await this.ctx.storage.setAlarm(Date.now());
+    return { running: run };
+  }
+
   async fetch(req: Request): Promise<Response> {
-    if (new URL(req.url).pathname === "/reseal") {
+    const path = new URL(req.url).pathname;
+    if (path === "/reseal") {
       const { owner, repo } = (await req.json()) as { owner: string; repo: string };
       return json(await this.reseal(owner, repo));
     }
+    if (path === "/preview" && req.method === "GET") { const job = await this.load(); return json({ run: job?.preview ? job.run : null }); }
+    if (path === "/preview") {
+      const { owner, repo, dir, files } = (await req.json()) as { owner: string; repo: string; dir?: string; files: Record<string, string> };
+      return json(await this.preview(owner, repo, dir, files));
+    }
     const job = await this.load();
-    if (req.method === "GET") return json({ run: job?.run ?? null });
+    if (req.method === "GET") return json({ run: job?.preview ? (await this.ctx.storage.get<Run>("last")) ?? null : job?.run ?? null });
     const { owner, repo, by, trigger } = (await req.json()) as { owner: string; repo: string; by: string; trigger: "button" | "commit" };
     if (job && !job.run.done) {
-      if (trigger === "button") return json({ error: "a deploy is already running", status: 409 });
+      if (trigger === "button") return json({ error: job.preview ? "the dependency doctor's preview is running: deploy when it's done" : "a deploy is already running", status: 409 });
       job.again = by;
       await this.save();
       return json({ queued: true });
@@ -187,6 +245,10 @@ export class DeployRunner {
       const secrets = Object.values(keys).map((k) => k.token);
       const runner: Runner = {
         workdir: `/work/${run.id}`,
+        write: async (cwd, files) => {
+          const res = await portFetch(c, "/files", JSON.stringify({ cwd, files }));
+          if (!res.ok) throw new Error(`the container's /files: ${res.status} ${await res.text()}`);
+        },
         // The image has cargo (deploy-sandbox/Dockerfile) and no Docker: x86 crates build, arm64 ones can't.
         nativeArches: ["linux-x64"],
         exec: async (cmd, cwd, out) => {
@@ -201,7 +263,8 @@ export class DeployRunner {
           return code;
         },
         fetch: (u) => fetch(u, { redirect: "manual" }),
-        state: {
+        // A preview comes down in this same container, so it keeps no state.
+        state: job.preview ? undefined : {
           restore: async (app) => {
             const sealed = await this.ctx.storage.get<string>(`state${stateSuffix(job.dir)}`);
             if (sealed) await call(c, { cwd: app, files: await unsealState(this.env, owner, repo, sealed) });
@@ -215,16 +278,37 @@ export class DeployRunner {
           },
         },
       };
-      await preview(runner, remote, run, { keep: true, allowAdopt: job.production, dir: job.dir, expect: checked.tip! });
+      if (job.preview) await preview(runner, remote, run, { dir: job.dir, files: job.preview.files, expect: job.preview.tip });
+      else await preview(runner, remote, run, { keep: true, allowAdopt: job.production, dir: job.dir, expect: checked.tip! });
       if (run.note?.includes("wasn't logged in")) run.note = "the deploy wasn't logged in: store a deploy key for each provider its targets use (Cloudflare, Railway, Hetzner)";
+      // The clone it names went with the container.
+      if (run.kept) run.note = `destroy failed, and the container is gone: take stage ${run.stage} down by hand in the provider's dashboard`;
     } catch (e) {
       run.note = `failed: ${(e as Error).message}`;
     } finally {
       run.done = true;
       await c?.destroy().catch(() => {});
-      await finish(this.env, run);
+      if (job.preview) await this.previewDone(job);
+      else await finish(this.env, run);
       await this.save();
       if (job.again) await this.begin(owner, repo, job.again, "commit");
     }
+  }
+
+  /** Log a doctor's preview, keep its result for the doctor's next run, and charge the rest of its container minutes. */
+  private async previewDone(job: Job) {
+    const { run } = job;
+    await logEnd(this.env, run);
+    const failed = run.steps.find((x) => x.status === "failed");
+    const result: PreviewResult = { id: run.id, stage: run.stage, ok: run.steps.every((x) => x.status === "done"),
+      ...(run.url && { url: run.url }), ...(failed && { failed: failed.key, out: failed.out.slice(-1500) }), ...(run.note && { note: run.note }) };
+    // One that didn't get as far as the deploy (main moved, the keys went) isn't a result: the next ask tries again.
+    if (job.started && !run.note?.startsWith("failed:") && failed?.key !== "clone") {
+      const kept = Object.entries((await this.ctx.storage.get<Record<string, PreviewResult>>("previews")) ?? {}).filter(([k]) => k !== job.preview!.key);
+      await this.ctx.storage.put("previews", Object.fromEntries([...kept, [job.preview!.key, result]].slice(-KEEP_RESULTS)));
+    }
+    // It ran already, so going over only stops the next one.
+    const rest = job.started ? Math.ceil((Date.now() - job.started) / 60_000) - 1 : 0;
+    if (rest > 0) await charge(this.env, "containers", SITE, rest).catch(() => null);
   }
 }

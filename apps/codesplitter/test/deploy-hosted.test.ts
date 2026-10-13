@@ -42,6 +42,8 @@ const origin = "http://codesplitter.local";
 /** A deploy container: its server answers each command like deploy.test.ts's fake machine, echoing the token once to check it's hidden. */
 function fakeContainers(cfg = { adopt: false, edge: true, box: false }) {
   const seen = { env: [] as Record<string, string>[], lists: [] as string[][], internet: [] as (boolean | undefined)[], ran: [] as string[], limits: [] as number[], destroyed: 0, stacks: [] as string[],
+    /** What POST /files laid over a clone: the dependency doctor's files (#900). */
+    laid: [] as { cwd: string; files: Record<string, string> }[],
     /** Set, the deploy streams its output in two pieces with this between them, as a real one does. */
     gate: null as Promise<void> | null,
     /** The commit the clone lands on: the remote's tip, once hosted() knows the app. */
@@ -56,6 +58,11 @@ function fakeContainers(cfg = { adopt: false, edge: true, box: false }) {
       async destroy() { running = false; seen.destroyed++; files = {}; },
       getTcpPort: () => ({
         async fetch(u, init) {
+          if (String(u).endsWith("/files")) {
+            const b = JSON.parse(String(init!.body)) as { cwd: string; files: Record<string, string> };
+            seen.laid.push(b);
+            return Response.json({ files: Object.keys(b.files).length });
+          }
           if (String(u).endsWith("/state")) {
             const b = JSON.parse(String(init!.body)) as { files?: Record<string, string> };
             if (b.files) { files = { ...b.files }; return Response.json({ files: Object.keys(files).length }); }
@@ -123,7 +130,7 @@ function runnerNamespace(env: any, make: () => ContainerApi, budgetMs?: number) 
   };
 }
 
-async function hosted(extra: Record<string, string> = {}, cfg?: { adopt: boolean; edge: boolean; box: boolean }, budgetMs?: number) {
+async function hosted(extra: Record<string, string> = {}, cfg?: { adopt: boolean; edge: boolean; box: boolean }, budgetMs?: number, pkg = "{}") {
   const booted = await boot({ GH_CLI: "off", BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: origin, ADMINS: "ryan-quinn", DEPLOY_SECRETS_KEY: SECRETS, ...extra });
   opened.push(booted);
   const c = fakeContainers(cfg);
@@ -146,7 +153,7 @@ async function hosted(extra: Record<string, string> = {}, cfg?: { adopt: boolean
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
   for (const who of ["ryan-quinn", "sam-sample"]) {
     await send(who, "/api/repos", { name: "lab", visibility: "public" });
-    await send(who, `/api/repos/${who}/lab/files`, { path: "package.json", content: "{}" });
+    await send(who, `/api/repos/${who}/lab/files`, { path: "package.json", content: pkg });
     await send(who, `/api/repos/${who}/lab/do/commit?path=package.json`, { message: "package.json" });
   }
   await send("ryan-quinn", "/api/repos/ryan-quinn/lab/collaborators", { name: "pat-person" });
@@ -620,6 +627,58 @@ describe("code that isn't the owner's waits for them (#646)", () => {
     const d2 = await settle(call, 2);
     expect(d2.history[0]).toMatchObject({ status: "failed", note: expect.stringContaining("main moved") });
     expect(seen.ran.some((l) => l.includes("bun install"))).toBe(false);
+  });
+});
+
+describe("the dependency doctor's preview on the site (#900)", () => {
+  /** The owner's package.json with one dependency a major behind, the doctor's previews on, and a fake npm. */
+  async function doctor() {
+    const h = await hosted({}, undefined, undefined, `{\n  "dependencies": {\n    "kleur": "^3.0.0"\n  }\n}`);
+    h.env.DEPS_REGISTRY = async (name: string) => name === "kleur"
+      ? { versions: ["3.0.0", "4.1.5"], time: { "3.0.0": new Date(Date.now() - 900 * 86_400_000).toISOString(), "4.1.5": new Date(Date.now() - 30 * 86_400_000).toISOString() } } : null;
+    h.env.DEPS_ADVISORIES = async () => new Map();
+    await h.send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");
+    await h.send("ryan-quinn", "/api/repos/ryan-quinn/lab/deps", { max_level: "major", preview: true }, "PUT");
+    return h;
+  }
+  const P = "/api/repos/ryan-quinn/lab/preview";
+
+  test("it runs in the deploy container in an alarm of its own; the branch waits, and the next run picks up the result", async () => {
+    const { call, send, seen } = await doctor();
+    expect(await (await call("ryan-quinn", "/api/repos/ryan-quinn/lab/deps")).json()).toMatchObject({ can_preview: true });
+    const first = await (await send("ryan-quinn", "/api/repos/ryan-quinn/lab/deps/run", {})).json() as any;
+    expect(first.branch).toBeUndefined();
+    expect(first.waiting).toMatchObject({ stage: expect.stringMatching(/^preview-/), names: ["kleur"] });
+    expect(first.note).toContain("the branch waits for it");
+    const { id } = first.waiting, stage = `preview-${id}`;
+
+    let h: any;
+    for (const end = performance.now() + 15_000; performance.now() < end && (h = await (await call("ryan-quinn", P)).json()).history[0]?.status === "running";) await Bun.sleep(10);
+    expect(h.history[0]).toMatchObject({ id: id, by: "agent-deps", trigger: "preview", runner: "hosted", status: "done", key_last4: "…WXYZ" });
+    // The doctor's package.json went over the clone through the container's /files, then up and down on its own stage.
+    expect(seen.laid).toHaveLength(1);
+    expect(seen.laid[0]!.cwd).toBe(`/work/${id}/repo`);
+    expect(seen.laid[0]!.files["package.json"]).toContain(`"kleur": "^4.1.5"`);
+    expect(seen.ran.filter((l) => /rustybuns (deploy|destroy)/.test(l))).toEqual([`bun x rustybuns deploy --yes --stage ${stage}`, `bun x rustybuns destroy --yes --stage ${stage}`]);
+    expect(seen.destroyed).toBe(1);
+    // A preview keeps no Alchemy state, and the deploy panel still shows no deploy.
+    expect((await (await call("ryan-quinn", D)).json() as any).run).toBeNull();
+
+    // The next run asks with the same files and gets the result: no second container, and the branch goes up.
+    const second = await (await send("ryan-quinn", "/api/repos/ryan-quinn/lab/deps/run", {})).json() as any;
+    expect(second.waiting).toBeUndefined();
+    expect(second.previews).toEqual([{ id: id, stage: stage, ok: true, names: ["kleur"], url: "https://lab.ryan.workers.dev" }]);
+    expect(second.branch).toMatch(/^deps-/);
+    expect(seen.env).toHaveLength(1);
+  });
+
+  test("with the site's container minutes spent, it doesn't start, and nothing unchecked goes on a branch", async () => {
+    const { send, seen, env } = await doctor();
+    await env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled, on_fail) VALUES ('containers', 0, 86400, 1, 'reject')").run();
+    const r = await (await send("ryan-quinn", "/api/repos/ryan-quinn/lab/deps/run", {})).json() as any;
+    expect(r.note).toContain("a preview deploy couldn't go (The site's container minutes");
+    expect(r.branch).toBeUndefined();
+    expect(seen.env).toEqual([]);
   });
 });
 
