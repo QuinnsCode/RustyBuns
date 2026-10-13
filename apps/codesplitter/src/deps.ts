@@ -734,6 +734,14 @@ export const containerTester = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Tester =
   return (await res.json()) as { ok: boolean; out: string; lock?: string };
 };
 
+/** A merge's generated text rebuilt in a container of its own (sandbox/server.mjs, POST /regenerate), torn down after. */
+export const containerRegenerator = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Regenerator => async (remote, files, { pm, cwd, command, read }) => {
+  const stub = ns.get(ns.idFromName(crypto.randomUUID()));
+  const res = await stub.fetch(new Request("http://sandbox/regenerate", { method: "POST", body: JSON.stringify({ remote, files, pm, cwd, command, read }) }));
+  if (!res.ok) return { ok: false, out: `sandbox: ${res.status} ${(await res.text()).replaceAll(remote, "<remote>")}` };
+  return (await res.json()) as { ok: boolean; out: string; files?: Record<string, string> };
+};
+
 /** Where this owner's tests can run: a container for the site's admins, else the desktop. */
 function testerAt(env: Env, owner: string): Tester | null {
   if (env.DEPS_TESTER) return env.DEPS_TESTER as Tester;
@@ -793,13 +801,15 @@ export async function regenerateLock(env: Env, owner: string, repo: string, lock
 /**
  * Generated text a merge kept main's copy of (#1154), rebuilt: `files` (the merged tree's changed files) in a
  * throwaway clone, the region's `command` run from `cwd`, and `read` read back. It runs the repo's code, so
- * only where its merges may (the test merges setting), on the desktop; otherwise `skipped` says why not.
+ * only where its merges may (the test merges setting), as the tests do: on the desktop, or in a container for the
+ * site's admins (#1192); otherwise `skipped` says why not.
  */
 export async function regenerateDocs(env: Env, owner: string, repo: string, files: Record<string, string>, cwd: string, command: string, read: string[]): Promise<{ ok: boolean; out: string; files?: Record<string, string> } | { skipped: string }> {
   const by = `run \`${command}\`${cwd ? ` in ${cwd}` : ""} on main`;
   if (!(await settings(env, owner, repo)).test_merges) return { skipped: `this repo's merges don't run its code (its test merges setting): ${by}` };
-  const runner = (env.DOCS_REGENERATOR as Regenerator | undefined) ?? (onDesktop(env) ? localRegenerator() : null);
-  if (!runner) return { skipped: `generated text is rebuilt on the desktop app: ${by}` };
+  const runner = (env.DOCS_REGENERATOR as Regenerator | undefined)
+    ?? (env.AGENT_SANDBOX ? (env.ADMINS && isAdmin(env, owner) ? containerRegenerator(env.AGENT_SANDBOX) : null) : onDesktop(env) ? localRegenerator() : null);
+  if (!runner) return { skipped: `${env.AGENT_SANDBOX ? "generated text on Cloudflare is rebuilt for this site's admins (ADMINS)" : "generated text is rebuilt on the desktop app"}: ${by}` };
   const c = await cloneOf(env, owner, repo, files);
   if ("skipped" in c) return c;
   return runner(c.remote, files, { pm: c.pm.pm, cwd, command, read });
