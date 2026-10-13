@@ -276,6 +276,22 @@ describe("settled without asking (#933)", () => {
     expect(mergeWords("Use the map. Click a dot.", "Use the vein. Click a dot.", "Use the map. The map has tags. Click a dot.", false, true)).toBeNull();
   });
 
+  test("a sentence both sides edited in different words merges word by word; a number one changed that the other's new words quote is a conflict (#1222, git-recon README)", () => {
+    // #1205 added "or online…" to the sentence, #1221 raised 32 to 64 in it: git conflicts, these don't.
+    const was = "> Play on your own, or by up to 32 players in one battle that the desktop app opens to the LAN. One of the examples.";
+    const onMain = was.replace("LAN.", "LAN, or online in a Durable Object per room.");
+    const onBranch = was.replace("32", "64");
+    expect(merged(was, onMain, onBranch, "README.md")).toBe("> Play on your own, or by up to 64 players in one battle that the desktop app opens to the LAN, or online in a Durable Object per room. One of the examples.");
+    // The room.ts bullet: the branch rewrote numbers inside it and left the 32-player test at 32, main added to it.
+    const bullet = "- `room.ts` sends snapshots as binary frames. On a 32-player test a delta averages under 1 KB, 16 KB/s a player (before, 60 KB/s). The page acks with each input. On a 32-player test a second of battle packs in well under a second of CPU.";
+    const grown = bullet.replace("(before, 60 KB/s).", "(before, 60 KB/s); at the 64-player cap, 25 KB/s.").replace("On a 32-player test a second of battle packs in well under", "At 64 players a second of battle packs in about a fifth of");
+    const added = bullet.replace("frames.", "frames (your ammo and clocks too).");
+    expect(merged(bullet, added, grown, "README.md")).toBe(grown.replace("frames.", "frames (your ammo and clocks too)."));
+    // Main's new words quote the 32 the branch made 64: merged, they'd say both.
+    expect(mergeWords(was, was.replace("LAN.", "LAN, so a room of 32 is cheap."), onBranch, false, true)).toBeNull();
+    expect(conflicts(sides(was, was.replace("LAN.", "LAN, so a room of 32 is cheap."), onBranch), "README.md")).toHaveLength(1);
+  });
+
   test("real rewrites stay conflicts: code hung under a line the other side removed, or one item rewritten two ways", () => {
     // drawGraph in client.html: the branch dropped the call, main hung the pulse code under it.
     expect(conflicts(sides("  };\n  drawGraph(graph);\n  el.on();", "  };\n  drawGraph(graph);\n  let beatAt = 0;\n  el.on();", "  };\n  el.on();"), "client.html")).toHaveLength(1);
