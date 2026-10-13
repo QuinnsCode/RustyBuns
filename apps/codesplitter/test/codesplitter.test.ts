@@ -187,8 +187,10 @@ describe("merge", () => {
     expect([m.conflicts[0]!.main, m.conflicts[0]!.branch].some((t) => t?.includes("merge(up"))).toBe(false);
     const moved = at("  ", [...tail.slice(0, 4), "await drop(squashRef(ref));", "await forget(name);"]).join("\n");
     const pick = (p: Pick) => { const d = structuredClone(main), r = merge(base, branch, main, { [m.conflicts[0]!.line]: p }, "bot"); expect(r.conflicts).toEqual([]); return land(d, r); };
-    expect(pick("branch")).toBe(`${onBranch.split("\n").slice(0, 6).join("\n")}\n  }\n  if (tip !== had || pullOnly) continue;\n${moved}\n}`);
-    expect(pick({ text: "  if (open) {\n    await sync(ref);" })).toBe(`for (const br of rows) {\n  if (open) {\n    await sync(ref);\n  }\n  if (tip !== had || pullOnly) continue;\n${moved}\n}`);
+    // Main's `continue;` sits outside the card on the id of the `catchUp` line the branch moved into it: it stays whatever the pick (#1248).
+    expect(pick("main")).toBe(`${onMain.split("\n").slice(0, 8).join("\n")}\n${moved}\n}`);
+    expect(pick("branch")).toBe(`${onBranch.split("\n").slice(0, 6).join("\n")}\n    continue;\n  }\n  if (tip !== had || pullOnly) continue;\n${moved}\n}`);
+    expect(pick({ text: "  if (open) {\n    await sync(ref);" })).toBe(`for (const br of rows) {\n  if (open) {\n    await sync(ref);\n    continue;\n  }\n  if (tip !== had || pullOnly) continue;\n${moved}\n}`);
   });
 
   test("the same new line added at the same spot on both sides lands once", () => {
