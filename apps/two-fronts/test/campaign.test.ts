@@ -36,12 +36,15 @@ test("an async game: each side hands in orders from its own link, and the turn r
   // The Marines see that the Wooka are in, but not what they ordered.
   const peek = await (await call(`/api/campaigns/${id}`, tokens.marines)).text();
   expect(peek).not.toContain('"build"');
-  expect(JSON.parse(peek).campaign.systems.nyx.sectors[0].armies.wooka).toBe(2);
+  // Nor how many Wooka hold Nyx: no Marine is there to count them.
+  expect(JSON.parse(peek).campaign.systems.nyx).toMatchObject({ fog: true, sectors: [{ owner: "wooka", armies: { wooka: 0 } }] });
+  const own = (await (await call(`/api/campaigns/${id}`, tokens.wooka)).json()) as View;
+  expect(own.campaign.systems.nyx!.sectors[0]!.armies.wooka).toBe(2);
 
   const resolved = (await (await call(`/api/campaigns/${id}/orders`, tokens.marines, { faction: "marines", orders: [] })).json()) as View;
   expect(resolved.campaign.turn).toBe(2);
   expect(resolved.waiting).toEqual(["marines", "wooka"]);
-  expect(resolved.campaign.systems.nyx!.sectors[0]!.armies.wooka).toBe(3);
+  expect((await (await call(`/api/campaigns/${id}`, tokens.wooka)).json() as View).campaign.systems.nyx!.sectors[0]!.armies.wooka).toBe(3);
 
   const history = (await (await call(`/api/campaigns/${id}/history`, tokens.wooka)).json()) as TurnRecord[];
   expect(history).toHaveLength(1);
@@ -66,7 +69,9 @@ test("a seat can only speak for itself, and only with its own link", async () =>
 test("against the AI online, there's one seat and every turn resolves at once", async () => {
   const { id, tokens } = await start({ marines: "ai", wooka: "human" });
   expect(Object.keys(tokens)).toEqual(["wooka"]);
-  const v = (await (await call(`/api/campaigns/${id}/orders`, tokens.wooka, { faction: "wooka", orders: [] })).json()) as View;
+  let v = (await (await call(`/api/campaigns/${id}/orders`, tokens.wooka, { faction: "wooka", orders: [] })).json()) as View;
+  // The AI attacks on its first turn: the Wooka hold their ground, and the turn resolves.
+  if (v.campaign.attacks) v = (await (await call(`/api/campaigns/${id}/orders`, tokens.wooka, { faction: "wooka", orders: [], retreats: [] })).json()) as View;
   expect(v.campaign.turn).toBe(2);
 });
 

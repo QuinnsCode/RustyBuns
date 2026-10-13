@@ -5,7 +5,7 @@
 // page runs for a game against the AI or a hotseat game.
 import type { BattleResult, Faction, SpaceBattleResult } from "../battle/contract.ts";
 import { GALAXIES, type GalaxyId } from "../war/galaxy.ts";
-import type { Campaign, Orders } from "../war/rules.ts";
+import { fogged, type Campaign, type Orders } from "../war/rules.ts";
 import { handIn, humans, newTable, report, waitingOn, type Seats, type Step, type Table, type TurnRecord } from "../war/table.ts";
 
 // Cloudflare's SqlStorage, and the in-process one Rusty Buns hosts locally, as far as this uses them.
@@ -83,9 +83,10 @@ export class CampaignRoom {
     return json(this.view(s.table, seat));
   }
 
-  // A seat sees the whole map, but not what the other side has ordered until the turn resolves.
+  // A seat sees who holds what, but the other side's numbers only where it has someone to count
+  // them, and never what they've ordered until the turn resolves (attacks are declared without numbers).
   private view(t: Table, seat: Faction): View {
-    return { seat, seats: t.seats, campaign: t.campaign, waiting: waitingOn(t), handedIn: !!t.handedIn[seat] };
+    return { seat, seats: t.seats, campaign: fogged(t.campaign, seat), waiting: waitingOn(t), handedIn: !!t.handedIn[seat] };
   }
 
   private load(): Table | null {
