@@ -584,10 +584,29 @@ export interface RustyBunsConfig {
        * theirs start empty. Inert once the move is done, so it can stay.
        */
       renamedFrom?: string;
+      /**
+       * The Cloudflare account to deploy to (wrangler's `account_id`). Unset, it's the
+       * login's: CLOUDFLARE_ACCOUNT_ID, or the one account wrangler's login reaches.
+       * An exported CLOUDFLARE_ACCOUNT_ID that names another account is refused.
+       */
+      accountId?: string;
+      /** Serve the Worker at `<name>.<subdomain>.workers.dev` (wrangler's `workers_dev`). @default true */
+      workersDev?: boolean;
+      /** A preview URL on workers.dev for each uploaded version (wrangler's `preview_urls`). @default true */
+      previewUrls?: boolean;
     };
     box?: BoxTarget;
     desktop?: DesktopTarget;
   };
+  /**
+   * What changes per Alchemy stage, by stage name: `rustybuns deploy --stage staging`
+   * deploys the config with `stages.staging` laid over it. A stage with no entry here
+   * gets the config as written. `init` writes one per wrangler `env.<name>` block.
+   *   stages: { staging: { workerName: "app-staging", bindings: { DB: { databaseName: "app-staging" }, API_URL: { value: "https://staging.example.com" } } } }
+   * With `targets.edge.adopt`, give each stage its own resource names, or the stages
+   * take over the same Worker and databases.
+   */
+  stages?: Record<string, Stage>;
   /**
    * Where Alchemy keeps this app's deploy state. "shared" (the default) links
    * `.alchemy/state` into the repo's git dir, so every worktree and the main
@@ -630,3 +649,51 @@ export function workerName(c: Pick<RustyBunsConfig, "name" | "targets">): string
 
 /** The env var a hyperdrive binding's desktop and box twin reads its Postgres URL from. */
 export function hyperdriveUrlEnv(name: string, b: { urlSecret?: string }): string { return b.urlSecret ?? `${name}_URL`; }
+
+/**
+ * One stage's overrides. Each key replaces the config's; `bindings` merges into each
+ * binding by key (`{ databaseName }`, `{ value }` for a var), or adds a whole binding.
+ */
+export interface Stage {
+  /** targets.edge.workerName in this stage. */
+  workerName?: string;
+  accountId?: string;
+  /** targets.edge.domain; `[]` serves on none. */
+  domain?: string | string[];
+  /** targets.edge.routes; `[]` has none. */
+  routes?: { pattern: string; zoneName?: string; zoneId?: string }[];
+  workersDev?: boolean;
+  previewUrls?: boolean;
+  /** worker.crons; `[]` has none. */
+  crons?: string[];
+  bindings?: Record<string, StageBinding>;
+}
+
+/** Fields laid over a binding of the same key, or (with a `type` it doesn't have) a binding of its own. */
+export type StageBinding = Binding | {
+  type?: undefined;
+  value?: string; databaseName?: string; bucketName?: string; queueName?: string;
+  indexName?: string; dataset?: string; namespaceId?: string; configName?: string;
+};
+
+/** The config as stage `stage` deploys it: `stages[stage]` laid over the rest, and `stages` gone. */
+export function forStage(c: RustyBunsConfig, stage: string): RustyBunsConfig {
+  const { stages, ...base } = c;
+  const s = stages?.[stage];
+  if (!s) return base;
+  const bindings = { ...base.bindings };
+  for (const [k, o] of Object.entries(s.bindings ?? {})) {
+    const b = bindings[k];
+    bindings[k] = (o.type && o.type !== b?.type) || !b ? o as Binding : { ...b, ...o } as Binding;
+  }
+  const edge = base.targets.edge && { ...base.targets.edge };
+  if (edge) {
+    for (const k of ["workerName", "accountId", "workersDev", "previewUrls", "domain", "routes"] as const)
+      if (s[k] !== undefined) (edge as Record<string, unknown>)[k] = s[k];
+    if (Array.isArray(edge.domain) && !edge.domain.length) delete edge.domain;
+    if (edge.routes && !edge.routes.length) delete edge.routes;
+  }
+  let worker = base.worker;
+  if (worker && s.crons !== undefined) { const { crons: _, ...w } = worker; worker = s.crons.length ? { ...w, crons: s.crons } : w; }
+  return { ...base, ...(worker ? { worker } : {}), bindings, targets: { ...base.targets, ...(edge ? { edge } : {}) } };
+}

@@ -234,6 +234,8 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     if (typeof domain === "string") wb.push(`  domain: ${JSON.stringify(domain)},`);
     else if (domain) wb.push(`  domain: ${JSON.stringify({ name: domain[0], ...(domain.length > 1 ? { aliases: domain.slice(1) } : {}) })},`);
     if (c.targets.edge?.routes?.length) wb.push(`  routes: ${JSON.stringify(c.targets.edge.routes)},`);
+    const dev = JSON.parse(JSON.stringify({ enabled: c.targets.edge?.workersDev, previewsEnabled: c.targets.edge?.previewUrls }));
+    if (Object.keys(dev).length) wb.push(`  workersDev: ${JSON.stringify(dev)},  // targets.edge.workersDev / previewUrls`);
     wb.push(`  env: { ${envEntries.join(", ")} },`);
     // A wrangler-made Worker has no Alchemy tags, so plan and deploy refuse it as
     // someone else's unless this Worker opts in to taking it over.

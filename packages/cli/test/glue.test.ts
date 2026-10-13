@@ -168,6 +168,15 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
   const stack = await Bun.file(r + "/.rustybuns/alchemy.run.ts").text();
   expect(stack).toContain('command: process.env.RUSTYBUNS_BUILT ? "true" : "echo BUILD worker');
   expect(stack).toContain("declare const process");
+  // --stage plans that stage's stack; without it, the config as written (#1211)
+  const plain = await Bun.file(r + "/rustybuns.config.ts").text();
+  writeFileSync(r + "/rustybuns.config.ts", plain.replace(/\}\);\n$/, `, stages: { staging: { bindings: { MODE: { type: "var", value: "staging" } } } } });\n`));
+  expect(run("plan", "--stage", "staging").exitCode).toBe(0);
+  expect(await Bun.file(r + "/.rustybuns/alchemy.run.ts").text()).toContain(`MODE: "staging"`);
+  expect(await Bun.file(r + "/calls.log").text()).toMatch(/STUB alchemy plan .*--stage staging/);
+  expect(run("plan").exitCode).toBe(0);
+  expect(await Bun.file(r + "/.rustybuns/alchemy.run.ts").text()).not.toContain("MODE");
+  writeFileSync(r + "/rustybuns.config.ts", plain);
   // config change invalidates the plan
   writeFileSync(r + "/rustybuns.config.ts", (await Bun.file(r + "/rustybuns.config.ts").text()).replace('"name": "g"', '"name": "g2"'));
   const d2 = run("deploy");
