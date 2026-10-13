@@ -53,6 +53,7 @@
 
   /* The stage: the canvas fills it, the key and the lane note sit on top. */
   .stage { position: relative; flex: 1; min-height: 280px; background: var(--bg); overflow: hidden; }
+  #hud { pointer-events: none; }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: pointer; touch-action: none; }
   .pill { position: absolute; top: 12px; display: inline-flex; align-items: center; gap: 7px; padding: 0 9px; height: 26px; font: 500 12px/1 var(--sans); color: var(--muted); background: var(--grain), var(--paper); border: 1px solid var(--border-2); border-radius: 13px; white-space: nowrap; pointer-events: none; }
   #lanenote { left: 14px; } #key { right: 14px; gap: 12px; }
@@ -153,6 +154,7 @@
 
 <main class="stage" id="stage">
   <canvas id="board" aria-label="The file's commit graph coming down a highway toward the strum line, with the hot path in orange"></canvas>
+  <canvas id="hud" aria-hidden="true"></canvas>
   <div class="pill" id="lanenote"></div>
   <div class="pill" id="key"><span><i class="k-add"></i>add</span><span><i class="k-remove"></i>remove</span><span><i class="k-rewrite"></i>rewrite</span><span><i class="k-hot"></i>hot path</span></div>
   <div class="rail" id="rail" role="slider" tabindex="0" aria-label="Time: drag from the oldest commit at the bottom to the newest at the top" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
@@ -201,6 +203,7 @@
     <li><i class="k-rewrite" style="display:inline-block;width:12px;height:12px;border-radius:50%;border:1px solid"></i>split coin: a rewrite, both at once</li>
     <li><i data-lucide="maximize-2"></i>a bigger, glowing coin changed more lines</li>
     <li><i data-lucide="gamepad-2"></i>the faint controller at the top right is the game: a unicyclist rides the hot path</li>
+    <li><i data-lucide="box"></i><span style="color:inherit">a commit that names a stack piece turns into its 3D model: <b id="stacklist" style="font-weight:500"></b></span></li>
     <li><i data-lucide="flame"></i>combo: commits in a row on the hot path. A side-branch commit breaks it; every four is another x, up to x4</li>
   </ul>
   <h2>The ride (G)</h2>
