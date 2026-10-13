@@ -140,6 +140,7 @@ const SHOPS = {
   lava: { sign: "LAVA LAMPS", neon: "#ff7a1a", style: "lava" },
   hall: { sign: "役所 CITY HALL", neon: "#e8e0cc", style: "columns" },
   hq: { sign: "CLOUDFLARE HQ", neon: "#ff7a1a", style: "lava" },
+  coffee: { sign: "珈琲 COFFEE", neon: "#ffb020", spines: ["#3a2418", "#5a3a26", "#8a5a3c", "#e8e0cc", "#2a1a10"], style: "spines" },
   archive: { sign: "ARCHIVE", neon: "#19d3ff", spines: ["#5a6670", "#6c7882", "#4a545c"], style: "cabinets" },
 };
 const shopTex = new Map();
@@ -149,7 +150,7 @@ const shopTex = new Map();
 // (and kind, for a module that serves several). put() is the kit's put, into that room's own instanced
 // meshes; scene is the room's Group. It may return { aisles: [[x, z]..], clerk: [x, z] } (world coords) for
 // the shoppers' route and the clerk's post. A kind with no entry here, or a module that fails, gets generic.js.
-const SHOP_MODULES = { video: "media", comics: "media", records: "media", lava: "media" };
+const SHOP_MODULES = { video: "media", comics: "media", records: "media", lava: "media", coffee: "coffee" };
 const rooms = [];
 // The lava lamps are alive: one shared wall of them, blobs rising and sinking, redrawn a few times a second.
 const lava = (() => {
@@ -222,7 +223,7 @@ function shopSign(key) {
 }
 /** A themed shop on the face (fx, fz) of a podium pw wide: shelves behind the glass, a sign over it, neon on the wet pavement. */
 function stock(b, repo, r, pw, ph, y0, [fx, fz], hall, hq) {
-  const key = hq ? "hq" : hall && r() < 0.7 ? "library" : pick(r, ["lava", "lava", "lava", "library", "library", "books", "books", "used", "hall", "video", "comics", "records", "archive"]), ry = Math.atan2(fx, fz);
+  const key = hq ? "hq" : hall && r() < 0.7 ? "library" : pick(r, ["lava", "lava", "lava", "library", "library", "books", "books", "used", "hall", "video", "comics", "records", "archive", "coffee", "coffee"]), ry = Math.atan2(fx, fz);
   // Every face of the ground floor is the shop: shelves behind the glass and a sign over it.
   for (const [gx, gz] of [[fx, fz], [-fx, -fz], [fz, fx], [-fz, -fx]]) {
     const gy = Math.atan2(gx, gz);
