@@ -40,7 +40,7 @@ import { ADMINS_ONLY, adminsOnly, agentsUnavailable, hostedBudget, installedHarn
 import { askAgent, cheapest } from "./conflict-agent.ts";
 import { guardTripped, healUnavailable } from "./heal.ts";
 import { hunks, revertOps } from "./review.ts";
-import { clashIn, waves, type Clash, type Side } from "./merge-plan.ts";
+import { busyOn, clashIn, taskFiles, waves, type Busy, type Clash, type Side } from "./merge-plan.ts";
 
 const TEXT_MAX = 20_000;
 
@@ -560,6 +560,19 @@ async function mergePlan(env: Env, owner: string, repo: string, user: string) {
   return { order, held: [...held], waves: waves(order, [...clashes.values()]) };
 }
 
+/**
+ * The dispatch hint (#1163): before a task starts, the files it will likely touch (`files`, plus those its
+ * text names, merge-plan.ts taskFiles) and the open branches already rewriting any of them. A queue can
+ * hold the task till those merge, or stack it on the first (POST .../branches {name, parent}).
+ */
+export async function dispatchHint(env: Env, owner: string, repo: string, task: string, files: string[] = []): Promise<{ files: string[]; busy: Busy[] }> {
+  const changed = (await env.DB.prepare("SELECT b.name AS branch, f.path FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch WHERE f.owner = ? AND f.repo = ? AND f.merged = 0 AND b.status = 'open'").bind(owner, repo).all()).results as { branch: string; path: string }[];
+  const onMain = (await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, repo).all()).results as { path: string }[];
+  const paths = [...new Set([...onMain.map((f) => f.path), ...changed.map((c) => c.path)])];
+  const guess = [...new Set([...files, ...taskFiles(task, paths)])].sort();
+  return { files: guess, busy: busyOn(guess, changed) };
+}
+
 export async function branchRoutes(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null, a: Access): Promise<Response | null> {
   // POST /api/repos/:o/:r/merges {branches?, build_ok?}  merge every open branch (or those named) that
   // merges clean, oldest first. Each merges against main as the last one left it, so two that change
@@ -588,6 +601,11 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   }
   // GET /api/repos/:o/:r/merge-plan  the open branches in waves (merge-plan.ts).
   if (p[4] === "merge-plan" && !p[5] && req.method === "GET") return json(await mergePlan(env, owner, repo, user ?? "anon"));
+  // GET /api/repos/:o/:r/dispatch-hint?task=&paths=a,b  which open branches a new task's files are already on (dispatchHint).
+  if (p[4] === "dispatch-hint" && !p[5] && req.method === "GET") {
+    const q = new URL(req.url).searchParams;
+    return json(await dispatchHint(env, owner, repo, (q.get("task") ?? "").slice(0, 20_000), (q.get("paths") ?? "").split(",").filter(Boolean)));
+  }
   if (p[4] !== "branches") return null;
   const name = p[5];
 
