@@ -4,7 +4,7 @@
 // (BUN_BE_BUN), so a compiled binary needs no Node or Bun on the machine.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { WebSocketPair } from "./bindings/durable-object.ts";
 
 export interface AppServerOptions {
@@ -66,9 +66,11 @@ setInterval(() => { if (process.ppid !== ppid) process.exit(0); }, 1000).unref()
 const sendable = (code: number) => code === 1000 || (code >= 3000 && code <= 4999) ? code : 1000;
 
 export async function appServer(o: AppServerOptions): Promise<AppServer> {
-  let file = o.file;
+  // The child runs with its cwd in dataDir, so every path it's handed is absolute (#1269).
+  const dataDir = resolve(o.dataDir);
+  let file = resolve(o.file);
   const name = o.name ?? basename(o.file);
-  const dir = join(o.dataDir, ".rb-server");
+  const dir = join(dataDir, ".rb-server");
   mkdirSync(dir, { recursive: true });
   // A compiled binary's files live in its own $bunfs, which the child (a fresh process) can't read.
   // Its native addons (.node files) go with it: the build lists them beside it, in
@@ -85,8 +87,8 @@ export async function appServer(o: AppServerOptions): Promise<AppServer> {
   const owns = proxyMatcher(o.paths);
   let exited: number | null = null;
   const child = Bun.spawn([process.execPath, "--preload", watchdog, file], {
-    cwd: o.dataDir,
-    env: { ...process.env, BUN_BE_BUN: "1", PORT: String(port), DATA_DIR: o.dataDir, ...o.env },
+    cwd: dataDir,
+    env: { ...process.env, BUN_BE_BUN: "1", PORT: String(port), DATA_DIR: dataDir, ...o.env },
     stdio: ["ignore", "inherit", "inherit"],
   });
   child.exited.then((code) => { exited = code; console.error(`[server] ${name} exited (${code}); ${o.paths.join(", ")} now answer 502`); });

@@ -54,7 +54,9 @@ function hostParts(c: RustyBunsConfig, host: HostKind, desktopDataDir: string) {
     box,
     dataDir: box
       ? `process.env.DATA_DIR ?? ${JSON.stringify(`/var/lib/${c.name}`)}`
-      : `${JSON.stringify(desktopDataDir)}.replace(/^~/, homedir())`,
+      // Absolute, so a relative one ("./data", from the cwd) still lands when desktop.server's
+      // child runs with its cwd in it (#1269).
+      : `resolve(${JSON.stringify(desktopDataDir)}.replace(/^~/, homedir()))`,
     // A dev host takes RB_TOKEN from `run desktop --watch`, so a restart keeps the window logged in.
     token: box ? "undefined" : `(typeof RB_DEV === "boolean" && RB_DEV && process.env.RB_TOKEN) || mintToken()`,
     listen: box ? `, hostname: "0.0.0.0", port: Number(process.env.PORT ?? 3000)` : `, hostname: listen.hostname, port: listen.port`,
