@@ -445,7 +445,9 @@ function heads(lines: Line[]): string[] {
  * added kept whole, main's first at a shared spot. The same line added on both
  * sides lands once. Null, a conflict, when a pair won't merge, or a base line
  * is gone on one side and changed on the other, or gone at all in code
- * (`strict`), where the other side's new lines may lean on it.
+ * (`strict`), where the other side's new lines may lean on it, or when in code
+ * both sides edited links of one `? :` or `&&` chain: each side's clauses can
+ * come out whole and the merge still skip one (#1168, config-schema.ts).
  */
 function blend(bl: Line[], ms: Line[], bs: Line[], strict: boolean, loose: (t: string) => boolean) {
   // Its own id, unless a line the side rewrote it into is more alike (a one-liner reflowed, an id handed to the wrong line).
@@ -461,6 +463,11 @@ function blend(bl: Line[], ms: Line[], bs: Line[], strict: boolean, loose: (t: s
       return best;
     });
   };
+  if (strict) {
+    const was = new Map(bl.map((b) => [b.id, b.text]));
+    const relinked = (side: Line[]) => side.some((l) => was.get(l.id) !== l.text && LINK.test(l.text));
+    if (relinked(ms) && relinked(bs)) return null;
+  }
   const pm = pair(ms), pb = pair(bs), out: { m?: Line; text: string; by: string }[] = [];
   // Main's lines no base line paired with: a branch line that's the same lands once.
   const mainOnly = new Map<string, number>();
@@ -492,6 +499,9 @@ function blend(bl: Line[], ms: Line[], bs: Line[], strict: boolean, loose: (t: s
   upTo(ms.length, bs.length);
   return out;
 }
+
+/** A link of a multi-line `? :`, `&&`, `||` or `??` chain: a line that opens with one, or ends on one. */
+const LINK = /^\s*(\?\s|:\s|&&|\|\||\?\?)|(\s\?|&&|\|\||\?\?)\s*$/;
 
 /** Both changed a lockfile: keep main's, swap in the branch's whole, or report it. Either way it's regenerated after. */
 function wholeFile(branch: Doc, main: Doc, pick: "branch" | "main" | undefined, deleter: string) {
@@ -785,8 +795,17 @@ function renames(base: Doc, side: Doc, loose: (t: string) => boolean): Rename[] 
 const carry = (t: string, rs: Rename[], loose: boolean) =>
   rs.reduce((s, r) => loose && (r.from.length < 3 || STOP.has(r.from.toLowerCase())) ? s : renamed(s, r), t);
 
-/** One line both changed: word by word, else as a list both added items to (see mergeWords). */
-const blendLine = (base: string, a: string, b: string, loose: boolean) => mergeWords(base, a, b, false, loose) ?? mergeWords(base, a, b, true, loose);
+/**
+ * One line both changed: word by word, else as a list both added items to (see mergeWords).
+ * An `import type { … }` one side turned into `import { x, type … }` is read that way on
+ * the other side too, so the names it added keep their `type` (#1168, build.ts).
+ */
+function blendLine(base: string, a: string, b: string, loose: boolean) {
+  if (TYPE_ONLY.test(base) && TYPE_ONLY.test(a) !== TYPE_ONLY.test(b)) [base, a, b] = [base, a, b].map(inlineTypes) as [string, string, string];
+  return mergeWords(base, a, b, false, loose) ?? mergeWords(base, a, b, true, loose);
+}
+const TYPE_ONLY = /^(\s*import\s+)type\s*\{([^}]*)\}/;
+const inlineTypes = (t: string) => t.replace(TYPE_ONLY, (_, at: string, list: string) => `${at}{${list.split(",").map((n) => n.replace(/^(\s*)(?=\S)/, "$1type ")).join(",")}}`);
 
 /**
  * A conflict as the review shows it: which picks settle it (`text` is
