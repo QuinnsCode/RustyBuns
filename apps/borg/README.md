@@ -27,7 +27,7 @@ Every run uses fresh keys, so it's safe against a store that already has data in
 | `memory` | 128 MB per isolate |
 | `cpu` | 10 ms per request on the Free plan (30 s on Paid, so it passes there) |
 
-The twins refuse the first four, with the edge's message, and still accept `memory` and `cpu`. The local test pins that list, so tightening a twin means updating it.
+The twins refuse the first four with the edge's message. The desktop and box hosts measure each request for the last two and answer the edge's 503 when it goes over: RSS growth past 128 MB, or CPU time past `worker.cpuMs` (`RB_CPU_MS` overrides it, so `RB_CPU_MS=10` tries the Free plan's). The local test runs with `RB_CPU_MS=250` and pins all six, so loosening a twin fails it.
 
 ## Run it
 
@@ -57,7 +57,7 @@ It's off until the owner sets the repo variable `BORG_EDGE=1` and creates the `b
 
 ## Where it's going
 
-Slim borg checks each primitive once. What's left for it: the edge run on a Free-plan account ([#865](https://github.com/QuinnsCode/RustyBuns/issues/865)), and twins that enforce the memory and CPU limits ([#894](https://github.com/QuinnsCode/RustyBuns/issues/894)). Two bigger rigs are planned:
+Slim borg checks each primitive once. What's left for it: the edge run on a Free-plan account ([#865](https://github.com/QuinnsCode/RustyBuns/issues/865)). Two bigger rigs are planned:
 
 - **thick borg** ([#856](https://github.com/QuinnsCode/RustyBuns/issues/856)): a decent-sized app per common migration story (keep the database and move the code, leave a PaaS for a box, go all-edge).
 - **fatty borg** ([#857](https://github.com/QuinnsCode/RustyBuns/issues/857)): the chunky examples (codeSplitter, tscircuit-desktop, park-hide-seek, agent-office) run through build, deploy and teardown.

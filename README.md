@@ -111,7 +111,7 @@ Bun is the one runtime that has every piece built in:
 | `bun:ffi` | Rust cdylibs called directly, nanosecond calls, with a TypeScript fallback |
 | `Bun.spawn` with a terminal | real PTYs without node-gyp (see [agent-office](apps/agent-office/README.md)) |
 
-The twins refuse what the edge refuses, with the edge's error: more than 100 bound parameters in a D1 query, a KV key over 512 bytes, a queue message over 128 KB, a Durable Object value over 2 MiB. So a query that works locally doesn't fail on the first deploy. Memory and CPU limits aren't enforced yet.
+The twins refuse what the edge refuses, with the edge's error: more than 100 bound parameters in a D1 query, a KV key over 512 bytes, a queue message over 128 KB, a Durable Object value over 2 MiB. So a query that works locally doesn't fail on the first deploy. The desktop and box hosts also measure each request: one that grows the process by more than 128 MB, or uses more CPU than `worker.cpuMs` (`RB_CPU_MS=10` tries the Free plan's), gets the edge's 503.
 
 A Postgres app (Supabase, Neon, RDS) keeps its database: a `hyperdrive` binding puts Cloudflare Hyperdrive in front of it on the edge, and the desktop and box connect to the same `DATABASE_URL` directly. `init` adds one when the app uses `pg`, `postgres`, or Drizzle or Prisma on postgresql. With `local: "pglite"` an offline desktop gets Postgres too: PGlite runs in the data dir, served on 127.0.0.1, with your Drizzle or Prisma migrations applied at boot. Or the stack owns the database: `origin: { neon: { branch: "prod" } }` makes a Neon project and branch at deploy and fronts that, and a box in the same stack gets the branch's URL.
 

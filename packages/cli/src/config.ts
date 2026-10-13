@@ -515,7 +515,8 @@ export interface RustyBunsConfig {
     /**
      * CPU time one invocation may use, in ms (`limits.cpu_ms`). Workers Paid
      * defaults to 30,000 and allows up to 300,000; the free plan is fixed at 10.
-     * Billed per CPU ms used, not per ms allowed. The desktop has no limit.
+     * Billed per CPU ms used, not per ms allowed. The desktop and box hosts
+     * refuse a request over it with the edge's 503 (RB_CPU_MS overrides it there).
      */
     cpuMs?: number;
     /**

@@ -145,11 +145,11 @@ const limits: Record<string, (env: Env) => Promise<string>> = {
     return `${held.length} MB held`;
   },
   // 10 ms of CPU on the Free plan, 30 s by default on Paid. Clocks stand still while a Worker
-  // computes, so this counts work, not time: a few hundred ms on a laptop.
+  // computes, so this counts work, not time: about a second on a laptop.
   async cpu() {
     let x = 1;
-    for (let i = 0; i < 30_000_000; i++) x = (x * 1103515245 + 12345) | 0;
-    return `30M steps done (${x & 1})`;
+    for (let i = 0; i < 100_000_000; i++) x = (x * 1103515245 + 12345) | 0;
+    return `100M steps done (${x & 1})`;
   },
 };
 

@@ -13,21 +13,25 @@ const token = "borg-local-token";
 
 // The edge limits each host refuses today (✓ in the limits grid). The rest it accepts, looser
 // than the edge. Tighten a twin and add its limit here.
-const ENFORCED = ["d1-params", "kv-key", "queue-size", "do-value"];
+const ENFORCED = ["d1-params", "kv-key", "queue-size", "do-value", "memory", "cpu"];
+// The hosts cap a request's CPU at RB_CPU_MS. The edge's Free plan is 10 ms, but the twins'
+// bindings run in-process and count too, so the suite's own requests get room; the cpu probe
+// takes about a second.
+const CPU_MS = "250";
 
 const HOSTS = [
   {
     name: "desktop",
     build: ["../../packages/cli/src/index.ts", "build", "desktop", "--dev"],
     run: ".rustybuns/dev/desktop.js",
-    env: (data: string) => ({ HOME: data, RB_NO_BROWSER: "1", RB_TOKEN: token }),
+    env: (data: string) => ({ HOME: data, RB_NO_BROWSER: "1", RB_TOKEN: token, RB_CPU_MS: CPU_MS }),
     target: (url: string): Target => ({ url, headers: { cookie: `rb_token_${new URL(url).port}=${token}` } }),
   },
   {
     name: "box",
     build: ["test/build-box.ts"],
     run: ".rustybuns/railway/box.js",
-    env: (data: string) => ({ DATA_DIR: data, PORT: "0" }),
+    env: (data: string) => ({ DATA_DIR: data, PORT: "0", RB_CPU_MS: CPU_MS }),
     target: (url: string): Target => ({ url }),
   },
 ];

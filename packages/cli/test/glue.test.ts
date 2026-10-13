@@ -427,7 +427,7 @@ test("box.webmcp: off by default; on, both box hosts add the script tag to their
     expect(src).toContain("head: WEBMCP_TAG");
   }
   expect(spa).toContain("const script = webmcp(req);");
-  expect(worker).toContain(`(await prof(req)) ?? webmcp(req) ?? within("request", () => (worker as any).fetch(req, e, ctx))`);
+  expect(worker).toContain(`(await prof(req)) ?? webmcp(req) ?? within("request", () => capped(limits, () => (worker as any).fetch(req, e, ctx)))`);
 });
 
 test("box: honors desktop.host and headers; a box-only app needs no worker section", () => {
@@ -549,7 +549,7 @@ test("artifacts: wrangler, alchemy and the desktop host all get the binding", ()
   expect(host).toContain(`open: { "/__rb/git/": (req: Request) => gitHttp(req, [env.ARTIFACTS as any]) },`);
   expect(host).toContain(`(env.ARTIFACTS as any).remoteBase = shell.url;`);
   // Worker mode watches its memory as well, ahead of the Worker's own routes.
-  expect(host).toContain(`p === "/__rb/mem" ? Response.json(mem.stats()) : p === "/__rb/usage" ? Response.json(usageSnapshot()) : within("request", () => (worker as any).fetch(req, e, ctx))`);
+  expect(host).toContain(`p === "/__rb/mem" ? Response.json(mem.stats()) : p === "/__rb/usage" ? Response.json(usageSnapshot()) : within("request", () => capped(limits, () => (worker as any).fetch(req, e, ctx)))`);
 });
 
 test("images: wrangler, alchemy and the desktop host all get the binding; wrangler's carries over", () => {

@@ -6,6 +6,7 @@ import { kv } from "../src/bindings/kv.ts";
 import { LocalQueue } from "../src/bindings/queue.ts";
 import { storage } from "../src/bindings/storage.ts";
 import { DO_MAX_VALUE_BYTES, LocalDurableObjectNamespace, LocalDurableObjectState } from "../src/bindings/durable-object.ts";
+import { capped, edgeLimits } from "../src/edge-limits.ts";
 
 test("D1: 100 bound parameters pass, 101 are refused", async () => {
   const db = d1();
@@ -41,4 +42,27 @@ test("Durable Objects: a value over 2 MiB is refused and not stored", async () =
   await state.storage.put("ok", "x".repeat(1_000_000));
   await expect(state.storage.put("big", "x".repeat(3_000_000))).rejects.toThrow(`Values cannot be larger than ${DO_MAX_VALUE_BYTES} bytes`);
   expect(await state.storage.get("big")).toBeUndefined();
+});
+
+// Memory and CPU (#894): the host can't cap an isolate, so it measures the request and swaps the
+// Worker's answer for the edge's 503.
+test("a request that grows memory past 128 MB gets the edge's 503", async () => {
+  let held: Uint8Array[] = [];
+  const res = await capped({}, () => { held = Array.from({ length: 200 }, () => new Uint8Array(1 << 20).fill(1)); return new Response("ok"); });
+  expect(held.length).toBe(200);
+  expect(res.status).toBe(503);
+  expect(await res.text()).toContain("Error 1102: Worker exceeded resource limits (memory grew");
+});
+
+test("CPU over cpuMs is refused, under it passes, and unset is no cap", async () => {
+  const spin = () => { const end = performance.now() + 60; while (performance.now() < end); return new Response("ok"); };
+  expect((await capped({ cpuMs: 20 }, spin)).status).toBe(503);
+  expect((await capped({ cpuMs: 5_000 }, spin)).status).toBe(200);
+  expect((await capped({}, spin)).status).toBe(200);
+});
+
+test("RB_CPU_MS wins over the config's cpuMs", () => {
+  expect(edgeLimits(30_000, { RB_CPU_MS: "10" }).cpuMs).toBe(10);
+  expect(edgeLimits(30_000, {}).cpuMs).toBe(30_000);
+  expect(edgeLimits(undefined, {}).cpuMs).toBeUndefined();
 });

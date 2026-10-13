@@ -586,7 +586,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
 // First: workerd's globalThis.Cloudflare, read by nodejs_compat builds as they load.
 import "@rustybuns/shell-bun/workerd-global";
-import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch, within, metered, usageSnapshot${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
+import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch, within, metered, usageSnapshot, capped, edgeLimits${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
 // Bun's own process: a Worker built with nodejs_compat (unenv) swaps globalThis.process for
 // one whose cwd() is "/" and argv is empty, and that would move assets and flags (#741).
 import process from "node:process";
@@ -659,9 +659,11 @@ const shell = serve<typeof env>({
 ${artifacts.map((n) => `(env.${n} as any).remoteBase = shell.url;`).join("\n")}${c.worker!.assets ? `
 // env.ASSETS, as the edge binds it: the Worker can fetch its own static files.
 env.ASSETS ??= shell.assets;` : ""}
+// The edge's memory and CPU limits, measured per request (RB_CPU_MS=10 tries the Free plan's).
+const limits = edgeLimits(${c.worker!.cpuMs ?? "undefined"});
 ${h.box
-  ? `shell.mount({ fetch: async (req: Request, e: any, ctx: any) => { const p = new URL(req.url).pathname; return p === "/health" ? new Response("ok") : p === "/__rb/mem" ? Response.json(mem.stats()) : p === "/__rb/usage" ? Response.json(usageSnapshot()) : (await prof(req)) ?? ${webmcpOn(c, true) ? "webmcp(req) ?? " : ""}within("request", () => (worker as any).fetch(req, e, ctx)); } } as any, env);`
-  : `shell.mount({ fetch: (req: Request, e: any, ctx: any) => { const p = new URL(req.url).pathname; return p === "/__rb/mem" ? Response.json(mem.stats()) : p === "/__rb/usage" ? Response.json(usageSnapshot()) : within("request", () => (worker as any).fetch(req, e, ctx)); } } as any, env);`}
+  ? `shell.mount({ fetch: async (req: Request, e: any, ctx: any) => { const p = new URL(req.url).pathname; return p === "/health" ? new Response("ok") : p === "/__rb/mem" ? Response.json(mem.stats()) : p === "/__rb/usage" ? Response.json(usageSnapshot()) : (await prof(req)) ?? ${webmcpOn(c, true) ? "webmcp(req) ?? " : ""}within("request", () => capped(limits, () => (worker as any).fetch(req, e, ctx))); } } as any, env);`
+  : `shell.mount({ fetch: (req: Request, e: any, ctx: any) => { const p = new URL(req.url).pathname; return p === "/__rb/mem" ? Response.json(mem.stats()) : p === "/__rb/usage" ? Response.json(usageSnapshot()) : within("request", () => capped(limits, () => (worker as any).fetch(req, e, ctx))); } } as any, env);`}
 console.log(\`[${c.name}] serving \${shell.url}\`);${crons.length ? `
 // Cron Triggers: the edge runs scheduled() on these; here a minute timer does, each run a low job
 // on the host's scheduler (RB_PERSONA sets its budget).
