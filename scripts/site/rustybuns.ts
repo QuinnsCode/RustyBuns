@@ -2,7 +2,7 @@
 // root guides. Old tags from before the feature-list README get their README as one page.
 import { type Page, type Site, slug, titleOf } from "./lib.ts";
 
-const GUIDES = ["GETTING_STARTED.md", "AGENT_PROMPTS.md", "REFERENCE.md", "ADOPTION.md", "EXAMPLES.md", "COSTS.md", "FRAMEWORKS.md", "FRAMEWORK_COVERAGE.md", "SECURITY.md", "LICENSING.md", "APPLE_SIGNING.md"];
+const GUIDES = ["GETTING_STARTED.md", "AGENT_PROMPTS.md", "REFERENCE.md", "ADOPTION.md", "EXAMPLES.md", "COSTS.md", "FRAMEWORKS.md", "FRAMEWORK_COVERAGE.md", "SECURITY.md", "LICENSING.md", "PRIVACY.md", "APPLE_SIGNING.md"];
 
 export const rustybuns: Site = {
   name: "Rusty Buns",

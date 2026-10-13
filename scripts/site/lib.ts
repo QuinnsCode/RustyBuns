@@ -106,7 +106,14 @@ function layout(site: Site, page: Page, pages: Page[], body: string, src: Source
     .join("");
   const root = posix.join(posix.relative(here, ".") || ".", ".."); // the site root, above the version folders
   const options = versions.map((v) => `<option value="${esc(v)}"${v === src.version ? " selected" : ""}>${esc(v)}</option>`).join("");
-  const edit = `https://github.com/${site.repo}/blob/${src.ref}/${page.from}`;
+  const blob = (file: string) => `https://github.com/${site.repo}/blob/${src.ref}/${file}`;
+  const edit = blob(page.from);
+  // Legal links: a site page when the site has one for the file, else the file on GitHub.
+  const legal = [["Privacy", "PRIVACY.md"], ["Security", "SECURITY.md"]]
+    .map(([label, file]) => [label, pages.find((p) => p.from === file && !p.anchor)] as const)
+    .filter(([label, p]) => p || label === "Security")
+    .map(([label, p]) => ` · <a href="${esc(p ? href(p) : blob("SECURITY.md"))}">${label}</a>`)
+    .join("");
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -114,6 +121,8 @@ function layout(site: Site, page: Page, pages: Page[], body: string, src: Source
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(page.title === site.name ? site.name : `${page.title} · ${site.name}`)}</title>
 <meta name="description" content="${esc(site.tagline)}">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="${esc(posix.join(root, "favicon.svg"))}" type="image/svg+xml">
 <link rel="alternate" type="text/markdown" href="${esc(posix.basename(page.path).replace(/\.html$/, ".md"))}">
 <script>try{var t=localStorage.getItem("theme");document.documentElement.dataset.theme=t==="light"||t==="dark"?t:matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}catch(e){}</script>
 <link rel="stylesheet" href="${esc(posix.join(root, "site.css"))}">
@@ -129,7 +138,10 @@ function layout(site: Site, page: Page, pages: Page[], body: string, src: Source
   <nav>${nav}</nav>
   <main>
 ${body}
-    <footer>Built from <a href="https://github.com/${site.repo}/tree/${src.ref}">${esc(src.ref)}</a> · <a href="${esc(edit)}">Source on GitHub</a></footer>
+    <footer>
+      <p>&copy; <span class="year">${new Date().getUTCFullYear()}</span> QuinnsCode (Ryan Quinn) · <a href="${esc(blob("LICENSE"))}">Apache-2.0</a>${legal}</p>
+      <p>Built from <a href="https://github.com/${site.repo}/tree/${src.ref}">${esc(src.ref)}</a> · <a href="${esc(edit)}">Source on GitHub</a></p>
+    </footer>
   </main>
 </div>
 <script src="${esc(posix.join(root, "site.js"))}"></script>
@@ -177,7 +189,8 @@ export function buildSite(site: Site, out: string, sources: Source[]): string[] 
   for (const src of sources) manifest[src.version] = buildVersion(site, src, out, versions, problems);
   const assets = join(import.meta.dir, "assets");
   mkdirSync(out, { recursive: true });
-  for (const f of ["site.css", "site.js"]) writeFileSync(join(out, f), readFileSync(join(assets, f)));
+  for (const f of ["site.css", "site.js", "favicon.svg"]) writeFileSync(join(out, f), readFileSync(join(assets, f)));
+  writeFileSync(join(out, "robots.txt"), "User-agent: *\nAllow: /\n");
   writeFileSync(join(out, "versions.json"), JSON.stringify(manifest));
   // llms.txt (the index) and llms-full.txt (everything) for the newest version, so an agent reads the
   // site in one fetch instead of crawling it.
