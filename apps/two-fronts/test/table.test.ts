@@ -8,8 +8,9 @@ import { runSpace, startSpaceBattle, stepSpace } from "../src/battle/space.ts";
 
 const ok = (s: Step): Extract<Step, { ok: true }> => {
   if (!s.ok) throw new Error(s.error);
-  // Once attacks are declared, every human with a say holds their ground.
-  const asked = waitingOn(s.table).filter(() => s.table.campaign.attacks);
+  // Once attacks are declared, every human with a say holds their ground, and after the fighting,
+  // every human who took somewhere stays put.
+  const asked = waitingOn(s.table).filter(() => s.table.campaign.attacks || s.table.campaign.deploying);
   return asked.length ? ok(handIn(s.table, asked[0]!, { faction: asked[0]!, orders: [] })) : s;
 };
 // The page's side of a played battle: ten seconds charging ahead firing, then the AI takes over.
@@ -195,8 +196,7 @@ test("attacks are declared, and the turn waits on the retreats of the sides they
   const w = handIn(asked.table, "wooka", out);
   if (!w.ok) throw new Error(w.error);
   expect(handIn(w.table, "wooka", out)).toEqual({ ok: false, error: "Retreats already in for this turn" });
-  const done = handIn(w.table, "marines", empty("marines"));
-  if (!done.ok) throw new Error(done.error);
+  const done = ok(handIn(w.table, "marines", empty("marines")));
   expect(done.table.campaign).toMatchObject({ turn: 2, attacks: null });
   expect(done.table.campaign.systems.kessa!.sectors[0]!.owner).toBe("marines");
   expect(done.done!.orders[1]).toMatchObject({ faction: "wooka", retreats: out.retreats });
@@ -238,4 +238,31 @@ test("a split vote goes the same way on every screen", () => {
   expect([...picks].sort()).toEqual(["escort", "hill"]);
   expect(tally("m1", split)).toBe(tally("m1", { ...split }));
   expect(tally("m1", { marines: "assault", wooka: "assault" })).toBe("assault");
+});
+
+test("after the fighting, a side that took somewhere deploys, and its deploys are in the history row", () => {
+  const t = newTable({ marines: "human", wooka: "ai" }, "short", 7);
+  const k = t.campaign.systems.kessa!;
+  k.fleets = { marines: 2, wooka: 0 };
+  k.orbit = "marines";
+  k.sectors[0]!.armies.wooka = 0; // the shield generator stands empty
+  const attack = { faction: "marines" as const, orders: [{ kind: "army" as const, from: { system: "corva", sector: 1 }, to: { system: "kessa", sector: 0 }, count: 2 }] };
+  const declared = handIn(t, "marines", attack);
+  if (!declared.ok) throw new Error(declared.error);
+  expect(declared.table.campaign.attacks).toContainEqual({ faction: "marines", from: "corva", to: { system: "kessa", sector: 0 } });
+  const fought = handIn(declared.table, "marines", empty("marines")); // no retreats
+  if (!fought.ok) throw new Error(fought.error);
+  expect(fought.table.campaign.turn).toBe(1);
+  expect(fought.table.campaign.deploying).toContain("marines");
+  expect(waitingOn(fought.table)).toEqual(["marines"]);
+  expect(handIn(fought.table, "marines", { ...attack, deploys: [{ kind: "army", from: { system: "kessa", sector: 0 }, to: { system: "nyx", sector: 0 }, count: 1 }] }))
+    .toEqual({ ok: false, error: "Armies redeploy between sectors you hold" });
+  const deploys = [{ kind: "army" as const, from: { system: "kessa", sector: 0 }, to: { system: "corva", sector: 1 }, count: 1 }];
+  const done = ok(handIn(fought.table, "marines", { faction: "marines", orders: [], deploys }));
+  expect(done.table.campaign).toMatchObject({ turn: 2, deploying: null });
+  expect(done.table.campaign.systems.kessa!.sectors[0]!.armies.marines).toBe(1);
+  expect(done.done).toMatchObject({ turn: 1, battle: null });
+  expect(done.done!.orders[0]).toMatchObject({ faction: "marines", deploys });
+  // Deploys wait for the fighting.
+  expect(handIn(t, "marines", { ...attack, deploys })).toEqual({ ok: false, error: "Deploys come after the fighting" });
 });

@@ -1,17 +1,19 @@
 // The table a campaign is played at: who sits in each seat, the orders handed in this turn, and
 // the turn that resolves once every human seat has handed theirs in. The AI's seat gives its
-// orders then. A turn with attacks in it takes two hand-ins: the moves, then (once the attacks are
-// declared) the retreats of each side with a say in them. The rules stay pure; this only stores and sequences them, so the page runs it for
-// a game against the AI or a hotseat game, and the campaign's Durable Object runs the same code
-// for a game played a turn at a time over days.
+// orders then. A turn can take up to three hand-ins, one per phase that needs a say: the orders
+// (garrison, cards and moves), then once the attacks are declared, the retreats of each side with
+// a say in them, and after the fighting, the deploys of each side that took somewhere. The rules
+// stay pure; this only stores and sequences them, so the page runs it for a game against the AI or
+// a hotseat game, and the campaign's Durable Object runs the same code for a game played a turn at
+// a time over days.
 import { MATCH_MODES, type BattleResult, type Faction, type MatchMode, type SpaceBattleResult } from "../battle/contract.ts";
 import { replayGround, replaySpace } from "../battle/replay.ts";
 import { run } from "../battle/sim.ts";
 import { runSpace } from "../battle/space.ts";
-import { aiOrders, aiRetreats } from "./ai.ts";
+import { aiDeploys, aiOrders, aiRetreats } from "./ai.ts";
 import type { GalaxyId } from "./galaxy.ts";
 import {
-  FACTIONS, ORBIT, applyBattleResult, applySpaceResult, checkRetreats, declareAttacks, heroReady, involved, newCampaign, planOrders, resolveTurn, sectorAt,
+  CARDS, FACTIONS, ORBIT, applyBattleResult, applySpaceResult, checkRetreats, declareAttacks, deployTurn, heroReady, involved, newCampaign, planDeploys, planOrders, resolveTurn, sectorAt,
   type Campaign, type Orders,
 } from "./rules.ts";
 
@@ -22,8 +24,10 @@ export interface Table {
   seats: Seats;
   campaign: Campaign;
   handedIn: Partial<Record<Faction, Orders>>;
-  // While the turn waits on a hero battle: every side's orders, for the history row.
+  // While the turn waits on a hero battle or the deploys: every side's orders, for the history row.
   resolving: Orders[] | null;
+  // While the turn waits on the deploys: the hero battle fought this turn, for the history row.
+  fought?: BattleResult | SpaceBattleResult | null;
   // While the turn waits on retreats: every side's moves, kept here and never shown to the other seat.
   moves?: Orders[] | null;
   // After a ground battle: each side's one vote for how the next is fought. It never holds the turn up.
@@ -41,6 +45,7 @@ export type Step = { ok: true; table: Table; done: TurnRecord | null } | { ok: f
 
 const MAX_ORDERS = 200;
 const MAX_RETREATS = 100;
+const MAX_DEPLOYS = 200;
 // Ten minutes of ground battle with the mouse never still logs about 48 KB; this is well past that.
 export const MAX_INPUTS = 192 * 1024;
 
@@ -60,9 +65,11 @@ export function waitingOn(t: Table): Faction[] {
   const h = heroFaction(t.campaign);
   if (h) return [h];
   const c = t.campaign;
+  if (c.deploying) return humans(t).filter((f) => !t.handedIn[f] && c.deploying!.includes(f));
   return humans(t).filter((f) => !t.handedIn[f] && (!c.attacks || involved(c, f)));
 }
 export const retreating = (c: Campaign) => !!c.attacks;
+export const deploying = (c: Campaign) => !!c.deploying;
 
 // A seat hands in its orders for the turn. The last one in resolves it.
 export function handIn(t: Table, f: Faction, o: Orders): Step {
@@ -70,7 +77,8 @@ export function handIn(t: Table, f: Faction, o: Orders): Step {
   if (c.winner) return { ok: false, error: "The war is over" };
   if (c.pending) return { ok: false, error: "A hero battle has to be fought first" };
   if (t.seats[f] !== "human") return { ok: false, error: "That side isn't yours" };
-  if (t.handedIn[f]) return { ok: false, error: c.attacks ? "Retreats already in for this turn" : "Orders already in for this turn" };
+  if (t.handedIn[f]) return { ok: false, error: c.deploying ? "Deploys already in for this turn" : c.attacks ? "Retreats already in for this turn" : "Orders already in for this turn" };
+  if (c.deploying) return handInDeploys(t, f, o);
   if (c.attacks) return handInRetreats(t, f, o);
   const error = checkOrders(c, f, o);
   if (error) return { ok: false, error };
@@ -98,6 +106,19 @@ function handInRetreats(t: Table, f: Faction, o: Orders): Step {
   return waitingOn(next).length ? { ok: true, table: next, done: null } : resolve(next);
 }
 
+// A seat that took somewhere moves into it, and moves what's left.
+function handInDeploys(t: Table, f: Faction, o: Orders): Step {
+  const c = t.campaign;
+  if (!c.deploying!.includes(f)) return { ok: false, error: "Nothing to deploy this turn" };
+  if (!o || o.faction !== f || !Array.isArray(o.deploys ?? [])) return { ok: false, error: "Those aren't deploys" };
+  const deploys = o.deploys ?? [];
+  if (deploys.length > MAX_DEPLOYS) return { ok: false, error: "Too many deploys" };
+  const error = planDeploys(c, f, deploys).errors.find((e) => e);
+  if (error) return { ok: false, error };
+  const next: Table = { ...t, handedIn: { ...t.handedIn, [f]: { faction: f, orders: [], deploys } } };
+  return waitingOn(next).length ? { ok: true, table: next, done: null } : deploy(next);
+}
+
 // Every side's moves with its retreats (the AI's own, for a side nobody is answering for), then the turn.
 function resolve(t: Table): Step {
   const c = t.campaign, moves = t.moves ?? [];
@@ -106,10 +127,29 @@ function resolve(t: Table): Step {
     const retreats = said ? said.retreats ?? [] : t.seats[m.faction] === "ai" ? aiRetreats(c, m) : [];
     return { ...m, ...(said?.hero && { hero: said.hero }), ...(retreats.length && { retreats }) };
   });
-  const after = resolveTurn(c, all);
-  const table: Table = { ...t, campaign: after, handedIn: {}, moves: null };
-  if (after.pending) return { ok: true, table: { ...table, resolving: all }, done: null };
-  return { ok: true, table, done: { turn: c.turn, orders: all, battle: null, log: after.log } };
+  return fought({ ...t, campaign: resolveTurn(c, all), handedIn: {}, moves: null, resolving: all }, null);
+}
+
+// After a turn's combat, or its pause for a hero battle: wait on the battle, or on the humans with
+// a deploy to make, or finish the turn with the AI's.
+function fought(t: Table, battle: BattleResult | SpaceBattleResult | null): Step {
+  if (t.campaign.pending) return { ok: true, table: t, done: null };
+  const next: Table = { ...t, fought: battle };
+  return t.campaign.deploying && waitingOn(next).length ? { ok: true, table: next, done: null } : deploy(next);
+}
+
+// The deploy phase's moves (the AI's own, for its side), then the turn's end. The history row has
+// the whole turn.
+function deploy(t: Table): Step {
+  const c = t.campaign;
+  const all = (t.resolving ?? []).map((o): Orders => {
+    if (!c.deploying?.includes(o.faction)) return o;
+    const said = t.handedIn[o.faction], deploys = said ? said.deploys ?? [] : t.seats[o.faction] === "ai" ? aiDeploys(c, o.faction) : [];
+    return deploys.length ? { ...o, deploys } : o;
+  });
+  // The turn's end counts the turn on, here or already in its combat if nobody took anything.
+  const after = deployTurn(c, all);
+  return { ok: true, table: { ...t, campaign: after, handedIn: {}, resolving: null, fought: null }, done: { turn: after.turn - 1, orders: all, battle: t.fought ?? null, log: after.log } };
 }
 
 // The hero's side reports how their battle went, on the ground or in orbit, and the turn finishes.
@@ -136,9 +176,10 @@ export function report(t: Table, f: Faction, res: BattleResult | SpaceBattleResu
     const clean = { id: r.id, winner: r.winner, tickets: { attacker: r.tickets.attacker, defender: r.tickets.defender }, heroDown: r.heroDown, ...(res.auto && { auto: true as const }) };
     after = applyBattleResult(c, clean);
     battle = clean;
-    return { ok: true, table: { ...t, campaign: after, resolving: null, vote: openVote(t, r.id) }, done: { turn: c.turn, orders: t.resolving ?? [], battle, log: after.log } };
+    // A ground battle ends in the vote for how the next one is fought.
+    return fought({ ...t, campaign: after, vote: openVote(t, r.id) }, battle);
   }
-  return { ok: true, table: { ...t, campaign: after, resolving: null }, done: { turn: c.turn, orders: t.resolving ?? [], battle, log: after.log } };
+  return fought({ ...t, campaign: after }, battle);
 }
 
 // The AI's vote: any mode but the one just fought, picked from the match id so it's the same every time.
@@ -179,8 +220,9 @@ export function castVote(t: Table, f: Faction, match: string, mode: MatchMode): 
 function checkOrders(c: Campaign, f: Faction, o: Orders): string | null {
   if (!o || o.faction !== f || !Array.isArray(o.orders)) return "Those aren't orders";
   if (o.orders.length > MAX_ORDERS) return "Too many orders";
-  if (o.orders.some((x) => !x || typeof x !== "object" || !["build", "fleet", "army"].includes(x.kind) || (x.kind === "build" && x.unit !== "fleet" && x.unit !== "army"))) return "Those aren't orders";
+  if (o.orders.some((x) => !x || typeof x !== "object" || !["build", "fleet", "army", "card"].includes(x.kind) || (x.kind === "build" && x.unit !== "fleet" && x.unit !== "army") || (x.kind === "card" && !CARDS.includes(x.card)))) return "Those aren't orders";
   if (o.retreats?.length) return "Retreats come after the attacks are declared";
+  if (o.deploys?.length) return "Deploys come after the fighting";
   if (o.hero) {
     const err = checkHero(c, f, o.hero);
     if (err) return err;

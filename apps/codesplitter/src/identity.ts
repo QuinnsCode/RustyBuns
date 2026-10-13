@@ -181,11 +181,46 @@ async function account(req: Request, env: Env) {
  */
 export const actingAs = new WeakMap<Request, string>();
 
+/**
+ * Who a session cookie was a moment ago, per isolate (#1313). Looking it up is Better Auth's
+ * session and user reads plus our handle's, each a trip to D1's primary, and a file switch
+ * makes ~20 calls. Only a handle is kept (no handle yet changes when one is claimed), for
+ * SEEN_MS, and signing out, claiming a handle or deleting the account here forgets it at once;
+ * a session revoked from another isolate lasts there SEEN_MS at most.
+ */
+const seen = new WeakMap<object, Map<string, { handle: string; at: number }>>();
+export const SEEN_MS = 10_000;
+const SEEN_MAX = 2_000;
+const sessionOf = (req: Request) => /(?:^|;\s*)(?:__Secure-)?better-auth\.session_token=([^;]+)/.exec(req.headers.get("cookie") ?? "")?.[1] ?? null;
+
+/** Forget the cached handle for this request's session cookie, in this isolate. */
+export function forgetSession(req: Request, env: Env) {
+  const s = sessionOf(req);
+  if (s) seen.get(env.DB)?.delete(s);
+}
+
+/** Requests that change who a session cookie is: signing in or out, a handle claimed, the account deleted. */
+export const changesSession = (method: string, p: string[]) =>
+  method !== "GET" && method !== "HEAD" && (p[1] === "auth" || p[1] === "handle" || (p[1] === "me" && !p[2]));
+
 export async function identify(req: Request, env: Env): Promise<string | null> {
   const inner = actingAs.get(req);
   if (inner !== undefined) return inner;
   if (!accountsOn(env)) return aliasOf(req, env);
-  return (await account(req, env))?.handle ?? null;
+  const s = sessionOf(req);
+  if (!s) return null;
+  let m = seen.get(env.DB);
+  if (!m) seen.set(env.DB, m = new Map());
+  const hit = m.get(s);
+  if (hit && Date.now() - hit.at < SEEN_MS) return hit.handle;
+  const handle = (await account(req, env))?.handle ?? null;
+  m.delete(s);
+  if (handle) {
+    // Oldest first, so a full map drops the longest-held.
+    if (m.size >= SEEN_MAX) m.delete(m.keys().next().value!);
+    m.set(s, { handle, at: Date.now() });
+  }
+  return handle;
 }
 
 /** Admins import levels: ADMINS when set, else anyone in alias mode (your own desktop). */

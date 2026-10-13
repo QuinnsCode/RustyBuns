@@ -4,8 +4,8 @@
 // is one seat at it.
 import { GALAXIES, SECTOR_NAMES, FACTION_NAMES, galaxyOf, type GalaxyId } from "./war/galaxy.ts";
 import {
-  COST, FACTIONS, ORBIT, checkRetreats, enemy, fogged, heroReady, income, incomeBreakdown, keyShare, planOrders, regionHolder, supplied,
-  type Attack, type Campaign, type Order, type Orders, type Retreat, type Where,
+  CARDS, CARD_NAMES, COST, FACTIONS, ORBIT, TROOP_CARD, checkRetreats, enemy, fogged, handOf, heroReady, income, incomeBreakdown, keyShare, planDeploys, planOrders, regionHolder, supplied,
+  type Attack, type Campaign, type Card, type Order, type Orders, type Retreat, type Where,
 } from "./war/rules.ts";
 import { aiVote, castVote, handIn, heroFaction, humans, newTable, report, tally, waitingOn, type Seats, type Table, type Vote } from "./war/table.ts";
 import { fetchView, linkInHash, pointerSocket, seatLink, sendBattle, sendOrders, sendVote, startOnline, type Online, type View } from "./net.ts";
@@ -19,8 +19,8 @@ import { VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction,
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 // v2 gained the cannon sectors, v3 renamed the factions, v4 had a galaxy per campaign, v5 had
 // canyon and jungle sectors and a vehicle pool per battle, v6 was a table with seats and a hero a
-// side, v7 can pause on a space hero battle.
-const SAVE = "two-fronts:v7", ONLINE = "two-fronts:online", SENT = "two-fronts:sent";
+// side, v7 can pause on a space hero battle, v8 has cards and a deploy phase.
+const SAVE = "two-fronts:v8", ONLINE = "two-fronts:online", SENT = "two-fronts:sent";
 const POLL_MS = 5000;
 
 type Game = { kind: "local"; table: Table } | { kind: "online"; link: Online; view: View };
@@ -57,6 +57,13 @@ const ownMoves = (): Orders | null => {
 };
 const sameWhere = (a: Where, b: Where) => a.system === b.system && a.sector === b.sector;
 const myTurn = () => !c.winner && !c.pending && waiting().includes(me);
+const deploying = () => !!c.deploying && myTurn();
+const CARD_ICONS: Record<Card, string> = { guns: "crosshair", troops: "user-plus", trap: "bomb" };
+const CARD_TIPS: Record<Card, string> = {
+  guns: "Weapon upgrade: every die your side rolls defending this sector is a d8, until it's taken",
+  troops: `Troop bonus: ${TROOP_CARD} armies here, free`,
+  trap: "Trap: blows up half of whatever attacks here this turn, and everyone of yours there with it. For a place you hold with one army or ship",
+};
 
 const systemDef = (id: string) => galaxyOf(c).system(id), neighbours = (id: string) => galaxyOf(c).neighbours(id);
 
@@ -68,17 +75,24 @@ const placeName = (w: Where) => {
 };
 // A move into the enemy's ground or orbit is an attack, and says so.
 const attacking = (o: Order) => {
-  if (o.kind === "build") return false;
+  if (o.kind === "build" || o.kind === "card") return false;
   const foe = enemy(me), s = c.systems[o.kind === "fleet" ? o.to : o.to.system]!;
   return o.kind === "fleet" ? s.orbit === foe || s.sectors.some((x) => x.owner === foe) : s.sectors[o.to.sector]!.owner === foe;
 };
 const describe = (o: Order) => (attacking(o) ? "Attack: " : "") + (
   o.kind === "build" ? `Build ${o.unit === "fleet" ? "a ship" : "an army"} at ${placeName(o.at)}`
+  : o.kind === "card" ? `${CARD_NAMES[o.card]} at ${placeName(o.at)}`
   : o.kind === "fleet" ? `${o.count} ${o.count === 1 ? "ship" : "ships"}: ${systemDef(o.from).name} → ${systemDef(o.to).name}`
   : `${o.count} ${o.count === 1 ? "army" : "armies"}: ${placeName(o.from)} → ${placeName(o.to)}`);
 
-// Queues an order if the rules take it, and says why not if they don't.
+// Queues an order (or in the deploy phase, a deploy) if the rules take it, and says why not if they don't.
 function order(o: Order) {
+  if (c.deploying) {
+    const deploys = [...(mine.deploys ?? []), o], err = planDeploys(c, me, deploys).errors.at(-1);
+    if (err) return flash(err);
+    mine.deploys = deploys;
+    save(); render(); return;
+  }
   const err = planOrders(c, [{ ...mine, orders: [...mine.orders, o] }]).errors.at(-1);
   if (err) return flash(err);
   mine.orders.push(o);
@@ -93,8 +107,9 @@ function flash(msg: string) {
 }
 
 function render() {
-  const draft = planOrders(c, [mine]).c, foe = enemy(me), g = online(), v = seen(), answering = !!c.attacks;
-  $("map").innerHTML = drawMap(v, mine.orders, selected, mine.hero, { me, attacks: c.attacks ?? [], retreats: mine.retreats ?? [] });
+  const moving = deploying(), foe = enemy(me), g = online(), v = seen(), answering = !!c.attacks || !!c.deploying;
+  const draft = moving ? planDeploys(c, me, mine.deploys ?? []).c : planOrders(c, [mine]).c;
+  $("map").innerHTML = drawMap(v, moving ? mine.deploys ?? [] : mine.orders, selected, mine.hero, { me, attacks: c.attacks ?? [], retreats: mine.retreats ?? [] });
   const share = keyShare(c, me), gx = galaxyOf(c);
   const count = (f: Faction) => Object.values(c.systems).reduce((n, s) => ({ armies: n.armies + s.sectors.reduce((a, x) => a + x.armies[f], 0), ships: n.ships + s.fleets[f] }), { armies: 0, ships: 0 });
   const forces = count(me), held = gx.regions.filter((r) => regionHolder(c, r.id) === me).length;
@@ -106,6 +121,7 @@ function render() {
     <span class="res" title="Your armies">${icon("users")}<b>${forces.armies}</b></span>
     <span class="res" title="Your ships">${icon("rocket")}<b>${forces.ships}</b></span>
     <span class="res" title="Regions you hold every capital in">${icon("map")}<b>${held}</b><small>/${gx.regions.length}</small></span>
+    ${CARDS.map((k) => ({ k, n: handOf(draft, me).filter((x) => x === k).length })).filter((h) => h.n).map((h) => `<span class="res card" title="In your hand: ${CARD_TIPS[h.k]}">${icon(CARD_ICONS[h.k])}<b>${h.n}</b></span>`).join("")}
     <span class="res${heroReady(c, me) ? "" : " bad"}" title="${heroReady(c, me) ? `Your hero, level ${c.heroes[me].level}` : `Your hero is wounded until turn ${c.heroes[me].woundedUntil}`}">${icon("swords")}<b>${heroReady(c, me) ? `Lv ${c.heroes[me].level}` : `T${c.heroes[me].woundedUntil}`}</b></span>`;
   // The overview: every world you hold ground on, with what you have there.
   const fed = supplied(c, me);
@@ -121,6 +137,7 @@ function render() {
     }).join("")}</ul>` : ""}`;
   $("turn-n").textContent = `Turn ${c.turn}`;
   $("status").innerHTML = `
+    ${phases()}
     ${reinforcements()}
     ${g || hotseat() ? `<div class="row small seat"><span><i class="dot ${me}"></i>${g ? "Online" : "Hotseat"}: ${FACTION_NAMES[me]}</span>
       ${g ? `<span>${waitingLine()}</span>${g.link.invite ? `<button type="button" id="invite" class="icon-btn" title="The other side's link" aria-label="The other side's link">${icon("link")}</button>` : ""}` : ""}</div>` : ""}`;
@@ -142,6 +159,9 @@ function render() {
       const err = can(o);
       return `<button type="button" data-order="${esc(JSON.stringify(o))}" ${err ? `disabled title="${esc(err)}"` : ""} ${extra}>${label}</button>`;
     };
+    // A button per card in hand that can go here, the card's icon with its rules as the tooltip.
+    const cardButtons = (at: Where, kinds: Card[]) => kinds.filter((k) => handOf(draft, me).includes(k))
+      .map((k) => btn(icon(CARD_ICONS[k], 15), { kind: "card", card: k, at }, `class="build card" title="${CARD_TIPS[k]}" aria-label="Play ${CARD_NAMES[k]}"`)).join("");
     // A send row: what's moving, how many, an arrow, where to, and a send button.
     const sendRow = (what: string, n: string, to: string, go: string) =>
       `<div class="act send"><span class="what">${what}</span>${n}${icon("arrow-right", 14)}${to}${go}</div>`;
@@ -162,27 +182,41 @@ function render() {
       ${ds.fleets[me] && !answering ? sendRow(icon("rocket", 15), `<select id="ship-n" title="Ships to send">${opts(ds.fleets[me])}</select>`,
         `<select id="ship-to" title="Send them to">${neighbours(selected).map((n) => `<option value="${n}">${systemDef(n).name}</option>`).join("")}</select>`,
         goBtn('id="send-ships"', "Send the ships")) : ""}
+      ${moving && ds.orbit === me && ds.fleets[me] > 1 && neighbours(selected).some((n) => draft.systems[n]!.orbit === me) ? sendRow(icon("rocket", 15), `<select id="ship-n" title="Ships to move">${opts(ds.fleets[me] - 1)}</select>`,
+        `<select id="ship-to" title="Move them to">${neighbours(selected).filter((n) => draft.systems[n]!.orbit === me).map((n) => `<option value="${n}">${systemDef(n).name}</option>`).join("")}</select>`,
+        goBtn('id="send-ships"', "Move the ships")) : ""}
+      ${s.orbit === me && !answering ? `<div class="act">${cardButtons({ system: selected, sector: ORBIT }, ["trap"])}</div>` : ""}
       <ul class="sectors">${s.sectors.map((x, i) => {
         const at = { system: selected!, sector: i }, here = ds.sectors[i]!;
         const builds = x.owner === me && !answering ? [
           (x.kind === "spaceport" || (x.kind === "capital" && !s.sectors.some((y) => y.kind === "spaceport"))) && btn(`${icon("plus", 13)}${icon("rocket", 15)}<small>${icon("coins", 12)}${COST.fleet}</small>`, { kind: "build", unit: "fleet", at }, `class="build" title="Build a ship for ${COST.fleet} credits" aria-label="Build a ship"`),
           x.kind === "capital" && btn(`${icon("plus", 13)}${icon("users", 15)}<small>${icon("coins", 12)}${COST.army}</small>`, { kind: "build", unit: "army", at }, `class="build" title="Raise an army for ${COST.army} credits" aria-label="Raise an army"`),
+          cardButtons(at, CARDS),
         ].filter(Boolean).join("") : "";
+        // In the deploy phase: move what's spare (all but one) to a place you hold, here or next door.
+        const deployTo = moving && x.owner === me && here.armies[me] > 1 ? targets.filter((t) => !sameWhere(t, at) && draft.systems[t.system]!.sectors[t.sector]!.owner === me && !planDeploys(draft, me, [{ kind: "army", from: at, to: t, count: 1 }]).errors[0]) : [];
         return `<li>
-          <div class="sector"><i class="dot ${x.owner}"></i><b>${SECTOR_NAMES[x.kind]}</b>
+          <div class="sector"><i class="dot ${x.owner}"></i><b>${SECTOR_NAMES[x.kind]}</b>${x.guns ? `<i class="mark" title="Upgraded guns: its holder rolls d8s defending it">${icon("crosshair", 13)}</i>` : ""}${(v.traps ?? []).some((t) => sameWhere(t.at, at)) ? `<i class="mark" title="Your trap is set here">${icon("bomb", 13)}</i>` : ""}
             <span class="count armies" title="Armies here: Marines, then Wooka">${icon("users", 14)}<b class="marines">${foe === "marines" ? theirs(x.armies.marines, x.owner === foe) : x.armies.marines}</b><b class="wooka">${foe === "wooka" ? theirs(x.armies.wooka, x.owner === foe) : x.armies.wooka}</b></span>
             ${heroButton(i, "Play the battle here yourself, if one happens this turn")}</div>
           ${builds ? `<div class="act">${builds}</div>` : ""}
           ${here.armies[me] && x.owner === me && !answering ? sendRow(icon("users", 15), `<select data-army-n="${i}" title="Armies to send">${opts(here.armies[me])}</select>`,
             `<select data-army-to="${i}" title="Send them to">${targets.filter((t) => !(t.system === selected && t.sector === i)).map((t) => `<option value="${t.system}:${t.sector}">${placeName(t)}</option>`).join("")}</select>`,
             goBtn(`data-army-go="${i}"`, "Send the armies")) : ""}
+          ${deployTo.length ? sendRow(icon("users", 15), `<select data-army-n="${i}" title="Armies to move">${opts(here.armies[me] - 1)}</select>`,
+            `<select data-army-to="${i}" title="Move them to">${deployTo.map((t) => `<option value="${t.system}:${t.sector}">${placeName(t)}</option>`).join("")}</select>`,
+            goBtn(`data-army-go="${i}"`, "Move the armies")) : ""}
         </li>`;
       }).join("")}</ul>`;
   }
-  $("detail").innerHTML = (answering && myTurn() ? retreatPanel() : "") + html;
+  $("detail").innerHTML = (c.attacks && myTurn() ? retreatPanel() : "") + html;
 
-  const rs = mine.retreats ?? [];
-  $("orders").innerHTML = answering
+  const rs = mine.retreats ?? [], ds = mine.deploys ?? [];
+  $("orders").innerHTML = c.deploying
+    ? ds.length
+      ? ds.map((o, i) => `<li>Move ${describe(o)} <button type="button" class="x" data-drop-deploy="${i}" title="Cancel" aria-label="Cancel">${icon("x", 14)}</button></li>`).join("")
+      : `<li class="hint">${moving ? "Staying put. Move troops into what you took, or up to the front." : "Waiting for the deploys."}</li>`
+    : answering
     ? rs.length
       ? rs.map((r, i) => `<li>${r.kind === "calloff" ? `Call off the attack on ${placeName(r.to)}` : `Pull out of ${placeName(r.from)} to ${placeName(r.to)}`} <button type="button" class="x" data-drop-retreat="${i}" title="Cancel" aria-label="Cancel">${icon("x", 14)}</button></li>`).join("")
       : `<li class="hint">${myTurn() ? "Holding everywhere. Pull out where you'd rather not fight, or call an attack off." : "Your moves are in."}</li>`
@@ -193,7 +227,8 @@ function render() {
   $("log").innerHTML = c.log.map((l) => `<li>${esc(l)}</li>`).join("");
   const end = $("end-turn");
   end.toggleAttribute("disabled", busy || !myTurn());
-  end.innerHTML = (answering && myTurn() ? (rs.length ? "Confirm retreats" : "Hold everywhere")
+  end.innerHTML = (moving ? (ds.length ? "Confirm moves" : "Stay put")
+    : answering && myTurn() ? (rs.length ? "Confirm retreats" : "Hold everywhere")
     : g ? (myTurn() ? "Send orders" : waitingLine()) : hotseat() ? "Hand in orders" : "Next turn") + icon("chevrons-right", 18);
   if (c.winner) showModal(`<h2>${hotseat() ? `${FACTION_NAMES[c.winner]} win` : c.winner === me ? "Victory" : "Defeat"}</h2><p>${FACTION_NAMES[c.winner]} wins the war on turn ${c.turn - 1}.</p><button type="button" id="new-war" class="primary">New campaign</button>`);
 }
@@ -230,6 +265,22 @@ function retreatPanel() {
     <p class="small">Hold, and the fight happens. Pull out, and the ground is theirs but your troops live.</p></div>`;
 }
 
+// The turn's six phases, the one we're in lit: draw and place happen with the orders, declare
+// while the retreats are out, combat while a hero battle waits, deploy after the fighting, and
+// collect at the turn's end.
+function phases() {
+  const now = c.pending ? 3 : c.deploying ? 4 : c.attacks ? 2 : 1;
+  const list: [string, string][] = [
+    ["layers", "Draw: a card each turn"],
+    ["map-pin", "Place: raise troops and ships, then play cards"],
+    ["megaphone", "Declare: move, and answer the attacks declared"],
+    ["dices", "Combat: cannon barrages. The leader rolls a d8, the rest d6s, highest against highest, ties to the attacker"],
+    ["move", "Deploy: move into what you took, and move what's left"],
+    ["gift", "Collect: income, region bonuses, and a card for taking 3 or more places"],
+  ];
+  return `<div class="phases" role="list">${list.map(([name, tip], i) => `<span role="listitem" class="${i === now ? "on" : i < now ? "done" : ""}" title="${tip}">${icon(name, 14)}</span>`).join("")}</div>`;
+}
+
 // Next turn's income, counted out like reinforcements: sectors, each region held, broken morale.
 function reinforcements() {
   const b = incomeBreakdown(c, me);
@@ -244,8 +295,8 @@ function waitingLine() {
   if (c.winner) return "The war is over";
   const h = heroFaction(c);
   if (h) return h === me ? "Your hero battle" : `${FACTION_NAMES[h]} are fighting a hero battle`;
-  if (waiting().includes(me)) return c.attacks ? "Answer the attacks" : "Your move";
-  return `Waiting for the ${waiting().map((f) => FACTION_NAMES[f]).join(" and ")}${c.attacks ? " to answer the attacks" : ""}`;
+  if (waiting().includes(me)) return c.deploying ? "Deploy" : c.attacks ? "Answer the attacks" : "Your move";
+  return `Waiting for the ${waiting().map((f) => FACTION_NAMES[f]).join(" and ")}${c.deploying ? " to deploy" : c.attacks ? " to answer the attacks" : ""}`;
 }
 
 // Clicks, delegated.
@@ -282,6 +333,7 @@ document.addEventListener("click", (e) => {
     save(); render(); return;
   }
   if (t.dataset.dropRetreat) { mine.retreats?.splice(+t.dataset.dropRetreat, 1); save(); render(); return; }
+  if (t.dataset.dropDeploy) { mine.deploys?.splice(+t.dataset.dropDeploy, 1); save(); render(); return; }
   if (t.id === "end-turn") return endTurn();
   if (t.id === "overview-toggle") { overviewOpen = !overviewOpen; render(); return; }
   if (t.id === "new-war" || t.id === "restart") return chooseGame();
@@ -336,8 +388,10 @@ function useGame(g: Game, draft?: { turn: number; orders: Orders }) {
   c = g.kind === "local" ? g.table.campaign : g.view.campaign;
   me = seatUp();
   mine = draft?.turn === c.turn && draft.orders.faction === me ? draft.orders : { faction: me, orders: [] };
-  // Moves before the attacks are declared, retreats after.
-  mine = c.attacks ? { faction: me, orders: [], retreats: mine.retreats ?? [], ...(mine.hero && { hero: mine.hero }) } : { faction: me, orders: mine.orders, ...(mine.hero && { hero: mine.hero }) };
+  // Moves before the attacks are declared, retreats after, and deploys after the fighting.
+  mine = c.deploying ? { faction: me, orders: [], deploys: mine.deploys ?? [] }
+    : c.attacks ? { faction: me, orders: [], retreats: mine.retreats ?? [], ...(mine.hero && { hero: mine.hero }) }
+    : { faction: me, orders: mine.orders, ...(mine.hero && { hero: mine.hero }) };
   selected = galaxyOf(c).systems.find((d) => c.systems[d.id]!.sectors.some((x) => x.owner === me))?.id ?? null;
   save(); render();
 }
@@ -357,7 +411,7 @@ async function endTurn() {
   const g = online();
   if (g) {
     busy = true; render();
-    if (!c.attacks) write(SENT, (sent = { id: g.link.id, turn: c.turn, orders: structuredClone(mine) }));
+    if (!c.attacks && !c.deploying) write(SENT, (sent = { id: g.link.id, turn: c.turn, orders: structuredClone(mine) }));
     try { g.view = await sendOrders(g.link, mine); } catch (e) { flash((e as Error).message); }
     busy = false;
     useGame(g);
@@ -370,13 +424,14 @@ async function endTurn() {
   // Hotseat: the screen goes to the next player before they see anything.
   if (hotseat() && !c.winner && seatUp() !== before) return passTo(seatUp());
   if (c.attacks && myTurn()) flash("Attacks declared: hold, or pull back");
+  if (c.deploying && myTurn()) flash("Deploy: move into what you took");
   afterTurn();
 }
 
 function passTo(f: Faction) {
   const battle = heroFaction(c) === f;
   showModal(`<h2>${FACTION_NAMES[f]}, you're up</h2>
-    <p>${battle ? "Your hero has a battle to fight." : c.attacks ? "The attacks are declared. Decide where to stand and where to pull back." : `Turn ${c.turn}: give your orders.`} Hand the screen over.</p>
+    <p>${battle ? "Your hero has a battle to fight." : c.deploying ? "The fighting's over. Move into what you took, and move what's left." : c.attacks ? "The attacks are declared. Decide where to stand and where to pull back." : `Turn ${c.turn}: give your orders.`} Hand the screen over.</p>
     <button type="button" id="pass-on" class="primary">I'm the ${FACTION_NAMES[f]}</button>`);
 }
 
@@ -451,7 +506,7 @@ async function poll() {
   if (document.visibilityState !== "visible") return schedulePoll();
   try {
     const v = await fetchView(g.link);
-    const moved = v.campaign.turn !== c.turn || !!v.campaign.pending !== !!c.pending || v.waiting.join() !== g.view.waiting.join();
+    const moved = v.campaign.turn !== c.turn || !!v.campaign.pending !== !!c.pending || !!v.campaign.deploying !== !!c.deploying || v.waiting.join() !== g.view.waiting.join();
     g.view = v;
     if (moved) useGame(g, { turn: c.turn, orders: mine });
   } catch { /* try again next time */ }

@@ -25,6 +25,8 @@ import {
 import {
   accountsOn,
   actingAs,
+  changesSession,
+  forgetSession,
   identityRoutes,
   identify,
   isAdmin,
@@ -198,6 +200,7 @@ import {
   wantsTurnstile,
 } from "./security.ts";
 import { worktreeRoute } from "./worktrees.ts";
+import { timed, withTiming } from "./timing.ts";
 import { beamRoutes } from "./beam.ts";
 import {
   kickMirror,
@@ -285,12 +288,12 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (token instanceof Response) return token;
   const ident = token ? null : await identityRoutes(req, env, p);
   if (ident) return ident;
-  const user = token ? token.user : await identify(req, env);
+  const user = token ? token.user : await timed(req, "identify", () => identify(req, env));
   const admin = !token && isAdmin(env, user);
   callers.set(req, user);
   via.set(req, actingAs.has(req) ? "job" : token ? (token.oauth ? "oauth" : "token") : "cookie");
   if (token && p[1] === "session") return json({ mode: "token", user, token: { id: token.id, label: token.label, scope: token.scope, expires_at: token.expires_at } });
-  const slow = byIp ? null : await limit(req, env, rule, user, admin);
+  const slow = byIp ? null : await timed(req, "limit", () => limit(req, env, rule, user, admin));
   if (slow) return slow;
   const tokens = await tokenRoutes(req, env, p, user);
   if (tokens) return tokens;
@@ -775,11 +778,16 @@ const app = {
   // Each answer to the internet is tallied for the admins' insights page (insights.ts), after it's sent.
   async fetch(req: Request, env: Env, ctx?: { waitUntil(p: Promise<unknown>): void }): Promise<Response> {
     hearPushes(env);
+    const start = performance.now(), p = new URL(req.url).pathname.split("/").filter(Boolean);
+    // Signing in or out, claiming a handle or deleting the account forgets the cookie's cached handle, before and after (identity.ts).
+    const churn = p[0] === "api" && changesSession(req.method, p);
+    if (churn) forgetSession(req, env);
     let res: Response;
     try { res = secured(await route(req, env)); }
-    catch (e) { if (tallied(req)) { const t = record(env, req, 500, !!ctx); if (ctx) ctx.waitUntil(t); else await t; } throw e; }
+    catch (e) { if (churn) forgetSession(req, env); if (tallied(req)) { const t = record(env, req, 500, !!ctx); if (ctx) ctx.waitUntil(t); else await t; } throw e; }
+    if (churn) forgetSession(req, env);
     if (tallied(req)) { const t = record(env, req, res.status, !!ctx); if (ctx) ctx.waitUntil(t); else await t; }
-    return res;
+    return p[0] === "api" ? withTiming(req, res, start) : res;
   },
 
   // The Cron Triggers (rustybuns.config.ts crons). Hourly: each repo's dependency doctor runs
