@@ -13,8 +13,10 @@ export interface Graph { branch: string; commits: GraphCommit[]; more: boolean; 
 /** How far up a merge's other parent to walk looking for main, and how many commits in all. */
 const SIDE = 20, MAX = 200;
 
-/** `limit` of main's commits, newest first, each followed by the side branch it merged (if any). */
-export async function commitGraph(h: Pick<ArtifactsRepo, "log" | "readCommit">, branch: string, upstreamCommit: string | null, limit = 60): Promise<Graph> {
+/** What the walk found: `limit` of main's commits, newest first, each followed by the side branch it merged (if any), as git has them. */
+export interface GraphRows { rows: { c: CommitMeta; side?: string }[]; known: Map<string, CommitMeta>; more: boolean }
+
+export async function graphRows(h: Pick<ArtifactsRepo, "log" | "readCommit">, branch: string, limit = 60): Promise<GraphRows> {
   const main = await h.log({ ref: branch, limit: limit + 1 });
   const more = main.length > limit;
   main.length = Math.min(main.length, limit);
@@ -34,6 +36,12 @@ export async function commitGraph(h: Pick<ArtifactsRepo, "log" | "readCommit">, 
       }
     }
   }
+  return { rows, known, more };
+}
+
+/** `limit` of main's commits, newest first, each followed by the side branch it merged (if any). */
+export async function commitGraph(h: Pick<ArtifactsRepo, "log" | "readCommit">, branch: string, upstreamCommit: string | null, limit = 60): Promise<Graph> {
+  const { rows, known, more } = await graphRows(h, branch, limit);
   const up = upstreamOf(known, upstreamCommit);
   return {
     branch, more, upstream: upstreamCommit,

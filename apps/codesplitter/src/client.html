@@ -3357,6 +3357,7 @@ const views = {
       <span class="grow"></span>
       <button class="btn ghost" id="tour-here" title="Let's show you around: this page, a step at a time">${icon("compass")}</button>
       ${playButton(`r/${owner}/${repo}`)}
+      <a class="btn ghost" href="/gitpath?repo=${encodeURIComponent(owner)}/${encodeURIComponent(repo)}" title="gitpath: this repo's busiest files as a git graph, with a runner on the hot path" aria-label="gitpath">${icon("route")}</a>
       ${followButton({ owner, repo })}
       <a class="btn" href="#/m/${owner}/${repo}" title="this repo's agents and branches, laid out for a phone">${icon("smartphone")}Phone</a>
       ${isOwner ? `<div class="pop"><button class="btn" id="invite">${icon("user-plus")}Invite</button><form class="panel" id="invite-form" hidden><b>Invite to the crew</b><span class="muted" style="font-size:13px">Crew can edit, commit and share. A handle or an email lets that person in; leave it empty for a link anyone can use once, a person or an agent.</span><input name="who" placeholder="@handle, email, or empty for a link"><input name="note" placeholder="a note for them (optional)" maxlength="280"><button class="btn primary">${icon("link")}Make the invite</button><div id="invite-made"></div></form></div>` : ""}

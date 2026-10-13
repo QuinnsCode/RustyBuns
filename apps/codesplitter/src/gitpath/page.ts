@@ -3,9 +3,9 @@
 // loads a pasted or uploaded file or picture, and runs the game: a unicyclist on the hot path, pedalled with
 // taps. build.ts bundles it, three.js and all, to /gitpath.js for gitpath.html.
 import {
-  CURVES, LIVES, RIDE, STACK, curveById, warpQ, buildNotes, clampQ, clockAt, currentIndex, eventPush, filterRange, formatAge, formatClock, geometry, gustRide,
+  CURVES, LIVES, RIDE, STACK, curveById, dataUrl, repoOf, warpQ, buildNotes, clampQ, clockAt, currentIndex, eventPush, filterRange, formatAge, formatClock, geometry, gustRide,
   layoutGraph, newRide, qAtFrac, readInput, remount, rideEvents, runOver, scoreAt, stepQ, stepRide, tapRide, timeFracAt, timeTicks, breeze, topFriends, veinChart,
-  type Geometry, type Input, type Layout, type Note, type RideEvent, type Side,
+  type Geometry, type Input, type Layout, type Note, type RepoRef, type RideEvent, type Side,
 } from "./gitpath.ts";
 import { createScene } from "./scene.ts";
 
@@ -36,6 +36,8 @@ const INK = tok("--fg", "#0a0a0a"), PAPER = tok("--paper", "#fcfbf8"), ACCENT = 
 const MONO = tok("--mono", "monospace");
 
 let input: Input | null = null;
+// Opened on a codeSplitter repo (/gitpath?repo=owner/name): its files load as they are picked, from the API.
+const hosted: RepoRef | null = repoOf(location.search);
 let path = "";
 let notes: Note[] = [];
 let lay: Layout = layoutGraph([]);
@@ -89,7 +91,7 @@ const dayOf = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 /** Shows file `p`, cropped to the dates in the two boxes when `keepRange` (a new file starts with the whole history). */
 function pick(p: string, keepRange = false) {
   const full = input?.histories[p];
-  if (!full) return;
+  if (!full) { if (hosted && input) void loadFile(p, keepRange); return; }
   path = p;
   $<HTMLSelectElement>("file").value = p;
   if (!keepRange) { from$.value = ""; to$.value = ""; }
@@ -134,6 +136,49 @@ function drawFriends(commits: Parameters<typeof topFriends>[0]) {
 
 const showFriends = (on: boolean) => { friends$.hidden = !on; friendsBtn.setAttribute("aria-pressed", String(on)); };
 friendsBtn.onclick = () => showFriends(!!friends$.hidden);
+
+// -- a hosted repo ---------------------------------------------------------------------------------
+
+const waiting = (text: string) => { $("empty").textContent = text; $("empty").hidden = false; };
+
+/** What the API says, or a sentence for why not (and null). */
+async function fetchJson(url: string, what: string): Promise<any | null> {
+  try {
+    const res = await fetch(url);
+    if (res.status === 202) { toast(`${what} is still being set up. Try again in a moment`); return null; }
+    if (!res.ok) { toast(res.status === 401 || res.status === 403 || res.status === 404 ? `Couldn't open ${what}: sign in to codeSplitter first if it's private` : `Couldn't read ${what} (${res.status})`); return null; }
+    return await res.json();
+  } catch { toast(`Couldn't reach ${what}`); return null; }
+}
+
+/** The repo's busiest files, then the first one's history. */
+async function loadRepo(r: RepoRef) {
+  const name = `${r.owner}/${r.repo}`;
+  waiting(`Reading ${name}'s history`);
+  const j = await fetchJson(dataUrl(r), name);
+  const files: { path: string; commits: number }[] = Array.isArray(j?.files) ? j.files : [];
+  if (r.path && !files.some((f) => f.path === r.path)) files.unshift({ path: r.path, commits: 0 });
+  if (!files.length) { waiting(j ? `${name} has no edits to replay yet` : `Couldn't read ${name}. Open or paste a history instead (O, P)`); return; }
+  input = { repo: name, files, histories: {} };
+  $("repo").textContent = name;
+  document.title = `gitpath: ${name}`;
+  $<HTMLSelectElement>("file").innerHTML = files.map((f) => `<option value="${esc(f.path)}">${esc(f.path)}${f.commits ? ` (${f.commits})` : ""}</option>`).join("");
+  pick(files[0]!.path);
+}
+
+/** A file's history from the API, then on to showing it. */
+async function loadFile(p: string, keepRange: boolean) {
+  waiting(`Reading ${p}'s history`);
+  const j = await fetchJson(dataUrl(hosted!, p), p);
+  let one: ReturnType<typeof readInput> | null = null;
+  try { one = j ? readInput(j) : null; } catch { toast(`No recent commits of ${hosted!.repo} touch ${p}`); }
+  const commits = one && Object.values(one.histories)[0];
+  if (!commits || !input) { waiting(`Nothing to replay for ${p}`); return; }
+  input.histories[p] = commits;
+  const opt = [...$<HTMLSelectElement>("file").options].find((o) => o.value === p);
+  if (opt) opt.textContent = `${p} (${commits.length})`;
+  pick(p, keepRange);
+}
 
 // -- the rail: time, oldest at the bottom ----------------------------------------------------------
 
@@ -601,8 +646,14 @@ $("empty").hidden = false;
 refresh();
 icons();
 try { const saved = localStorage.getItem(AVATAR_KEY); if (saved) setAvatar(saved); } catch {}
-fetch("/gitpath-sample.json").then((r) => r.json()).then((j) => { load(j, "the sample"); resize(); })
-  .catch(() => { $("empty").textContent = "Open or paste a history to begin (O, P)"; });
+if (hosted) {
+  $("home").setAttribute("href", `/#/r/${hosted.owner}/${hosted.repo}`);
+  $("home").title = `${hosted.owner}/${hosted.repo}`;
+  void loadRepo(hosted).then(resize);
+} else {
+  fetch("/gitpath-sample.json").then((r) => r.json()).then((j) => { load(j, "the sample"); resize(); })
+    .catch(() => { $("empty").textContent = "Open or paste a history to begin (O, P)"; });
+}
 
 // A handle for the console (window.gitpath.seek(40)).
 (window as unknown as { gitpath: unknown }).gitpath = { seek, play, setGame, pedal, get q() { return q; }, get notes() { return notes; }, get layout() { return lay; } };

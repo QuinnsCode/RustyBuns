@@ -115,6 +115,12 @@ const OPS: Record<string, Record<string, Op>> = {
     query: { limit: int("how many of main's commits, default 60, up to 200") },
     ok: obj({ branch: str(), upstream: { type: ["string", "null"], description: "the upstream commit this repo last took" }, more: bool("main goes back further"),
       commits: arr(obj({ hash: str(), parents: arr(str()), message: str("the first line"), author: str(), at: int("ms"), up: bool(), side: str("the merge this branch commit lands in") })) }) } },
+  [`${repo}/gitpath`]: { get: { id: "gitpath_data", summary: "gitpath's data: a file's commits with line counts and parents, or the repo's busiest files", tag: "Repos", open: true,
+    description: "With `path`: of main's last `limit` commits (and the side branches merged into them), the ones that changed that file, newest first. `added` and `removed` are its lines (0 for a file too big or not text), and `parents` are the nearest earlier commits that changed the file too, so a branch that merged shows as a fork and a join. The file is followed by its path: a rename starts a new history. Without `path`: the files changed most often in main's last `limit` commits (a commit that changes hundreds of files, and lockfiles, don't count).",
+    query: { path: str("the file, for its history; leave out for the busiest files"), limit: int("how many of main's commits to read: default 100 with a path, 60 without, up to 200") },
+    ok: obj({ repo: str("owner/name"), branch: str(), path: str(), more: bool("main goes back further than limit"),
+      commits: arr(obj({ hash: str(), author: str(), date: str("ISO 8601"), subject: str(), added: int(), removed: int(), parents: arr(str()), refs: arr(str("branch names, main's tip commit only")) })),
+      files: arr(obj({ path: str(), commits: int() })) }) } },
   [`${repo}/tags`]: {
     get: { id: "list_tags", summary: "A repo's tags, each with the commit it names", tag: "Repos", open: true,
       description: "Version tags first, the highest first, then the rest by name. An annotated tag names the commit it points at.",

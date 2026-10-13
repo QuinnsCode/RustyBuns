@@ -123,6 +123,7 @@ import { clearOwn } from "./deploy-review.ts";
 import { resealRoutes } from "./deploy-keys.ts";
 import { repoFit } from "./fit.ts";
 import { commitGraph } from "./graph.ts";
+import { busiestFiles, fileHistory } from "./gitpath-data.ts";
 import { tagRoutes } from "./tags.ts";
 import { pickRoute } from "./pick.ts";
 import {
@@ -501,6 +502,20 @@ async function route(req: Request, env: Env): Promise<Response> {
       } catch (e) {
         if (code(e) === "FORK_IN_PROGRESS" || code(e) === "IMPORT_IN_PROGRESS") return json({ forking: true, commits: [] }, 202);
         if (code(e) === "NOT_FOUND") return json({ lost: true, commits: [] });
+        throw e;
+      }
+    }
+    // GET /api/repos/:o/:r/gitpath[?path=&limit=]  gitpath's data: a file's commits with parents and line counts, or the busiest files (gitpath-data.ts)
+    if (p[4] === "gitpath" && !p[5] && req.method === "GET") {
+      const path = (url.searchParams.get("path") ?? "").replace(/^\/+|\/+$/g, "");
+      const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit")) || (path ? 100 : 60)));
+      try {
+        const h = await handleFor(env, owner, repo);
+        if (!h) return json({ repo: `${owner}/${repo}`, ...(path ? { path, commits: [] } : { files: [] }) });
+        return json({ repo: `${owner}/${repo}`, ...(path ? await fileHistory(h.handle, h.branch, path, limit) : await busiestFiles(h.handle, h.branch, limit)) });
+      } catch (e) {
+        if (code(e) === "FORK_IN_PROGRESS" || code(e) === "IMPORT_IN_PROGRESS") return json({ forking: true, commits: [], files: [] }, 202);
+        if (code(e) === "NOT_FOUND") return json({ lost: true, commits: [], files: [] });
         throw e;
       }
     }
