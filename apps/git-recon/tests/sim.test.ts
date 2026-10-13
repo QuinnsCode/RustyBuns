@@ -116,6 +116,20 @@ describe("codemap", () => {
     }
   });
 
+  test("each compound is a walled compound: four towers, a gate toward HEAD, its files inside", () => {
+    const m = mapRepo(flat, repo, 9);
+    m.compounds.forEach((c, ci) => {
+      const mine = m.blocks.filter((b) => b.compound === ci);
+      expect(mine.filter((b) => b.wall && b.h > 4)).toHaveLength(4);
+      const gx = m.spawn.x - c.x, gz = m.spawn.z - c.z;
+      expect(c.gate).toBe(Math.abs(gx) > Math.abs(gz) ? (gx > 0 ? 0 : 1) : gz > 0 ? 2 : 3);
+      for (const b of mine.filter((b) => !b.wall)) {
+        expect(Math.abs(b.x - c.x)).toBeLessThan(c.half!);
+        expect(Math.abs(b.z - c.z)).toBeLessThan(c.half!);
+      }
+    });
+  });
+
   test("no two blocks overlap, and nothing lands on the spawn", () => {
     const m = mapRepo(flat, repo, 9);
     for (const [i, p] of m.blocks.entries()) {

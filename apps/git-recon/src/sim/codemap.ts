@@ -44,6 +44,8 @@ export interface Block {
   h: number;
   /** Agents mostly wrote it (its recent commits were at least half agents'). */
   agent?: boolean;
+  /** Part of a compound's mud-brick wall or a corner tower, not a file: solid, but nothing to raze. */
+  wall?: boolean;
 }
 
 export interface Compound {
@@ -58,6 +60,9 @@ export interface Compound {
   churn?: number;
   /** A failing check is about this folder. */
   burning?: boolean;
+  /** Half the side of the walled square inside the yard, and which side its gate is in (0 +x, 1 -x, 2 +z, 3 -z). */
+  half?: number;
+  gate?: number;
 }
 
 /** Two compounds whose folders import each other, and how many files do. */
@@ -193,7 +198,7 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
   for (const f of ranked) {
     if (compounds.length >= COMPOUNDS) break;
     const shown = f.files.slice(0, PER_COMPOUND);
-    const r = Math.min(14, 7 + Math.sqrt(shown.length) * 1.6);
+    const r = Math.min(16, 8 + Math.sqrt(shown.length) * 1.9);
     // Farthest-point: of the spots that fit, the one farthest from everything already placed.
     let best: { x: number; z: number } | null = null, bestGap = 0;
     for (const p of spots) {
@@ -206,7 +211,10 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
     const churn = allChurn ? Math.round((f.files.reduce((s, x) => s + (x.churn ?? 0), 0) / allChurn) * 100) / 100 : 0;
     const guards = 2 + Math.min(3, Math.floor(f.lines / 6000)) + churnGuards(churn);
     const burning = (repo.failing ?? []).some((check) => checkHits(f.folder, check));
-    compounds.push({ folder: f.folder, x: best.x, z: best.z, r, files: f.files.length, lines: f.lines, guards, churn, burning });
+    // The gate faces HEAD, the way you come in.
+    const gx = spawn.x - best.x, gz = spawn.z - best.z;
+    const gate = Math.abs(gx) > Math.abs(gz) ? (gx > 0 ? 0 : 1) : gz > 0 ? 2 : 3;
+    compounds.push({ folder: f.folder, x: best.x, z: best.z, r, files: f.files.length, lines: f.lines, guards, churn, burning, half: Math.round(r * 0.66 * 10) / 10, gate });
     pads.push({ x: best.x, z: best.z, r });
     taken.push({ x: best.x, z: best.z, r });
   }
@@ -216,7 +224,26 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
   const overlaps = (x: number, z: number, w: number, d: number, gap: number) =>
     blocks.some((b) => Math.abs(b.x - x) < (b.w + w) / 2 + gap && Math.abs(b.z - z) < (b.d + d) / 2 + gap);
 
-  // Each compound's files spiral out from an open yard at its centre.
+  const walls: Block[] = [];
+  // Each compound is a walled qalat: mud-brick curtain walls round a square, a tower at every corner, one gate.
+  compounds.forEach((c, ci) => {
+    const y = terrain.height(c.x, c.z), h = c.half!, t = 0.9, gap = 1.9;
+    const wall = (x: number, z: number, w: number, d: number, bh: number) => walls.push({ path: `${c.folder}/wall`, lines: 0, compound: ci, x, z, y, w, d, h: bh, wall: true });
+    // Sides as [axis, sign]: 0 +x, 1 -x, 2 +z, 3 -z.
+    for (let side = 0; side < 4; side++) {
+      const alongX = side >= 2, sign = side % 2 === 0 ? 1 : -1;
+      const cx = alongX ? c.x : c.x + sign * h, cz = alongX ? c.z + sign * h : c.z;
+      const len = h * 2 - 2.5;
+      const put = (off: number, l: number) => (alongX ? wall(cx + off, cz, l, t, 2.8) : wall(cx, cz + off, t, l, 2.8));
+      if (side === c.gate) {
+        const seg = (len - gap * 2) / 2;
+        put(-(gap + seg / 2), seg), put(gap + seg / 2, seg);
+      } else put(0, len);
+    }
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) wall(c.x + sx * h, c.z + sz * h, 2.4, 2.4, 4.6);
+  });
+
+  // Inside, its files spiral out from an open courtyard at the centre, leaving the way from the gate clear.
   compounds.forEach((c, ci) => {
     const files = byFolder.get(c.folder)!.slice(0, PER_COMPOUND);
     let i = 0;
@@ -224,8 +251,12 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
       const w = footOf(f.lines), d = footOf(f.lines);
       for (let tries = 0; tries < 60; tries++, i++) {
         const a = i * 2.39996, dist = 4 + Math.sqrt(i) * 1.9;
-        if (dist > c.r - 1) break;
+        if (dist > c.half! * 1.5) break;
         const x = c.x + Math.cos(a) * dist, z = c.z + Math.sin(a) * dist;
+        const room = c.half! - w / 2 - 1.8, dx = x - c.x, dz = z - c.z;
+        if (Math.abs(dx) > room || Math.abs(dz) > room) continue;
+        const along = c.gate! < 2 ? dx * (c.gate === 0 ? 1 : -1) : dz * (c.gate === 2 ? 1 : -1), across = c.gate! < 2 ? dz : dx;
+        if (along > 0 && Math.abs(across) < 2.6 + w / 2) continue;
         if (overlaps(x, z, w, d, 1.4)) continue;
         blocks.push({ path: f.path, lines: f.lines, compound: ci, x, z, y: terrain.height(c.x, c.z), w, d, h: heightOf(f.lines), agent: (f.agent ?? 0) >= 0.5 });
         break;
@@ -246,6 +277,8 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
       break;
     }
   }
+
+  blocks.push(...walls);
 
   // Roads: one between each pair of compounds whose folders import each other.
   const at = new Map(compounds.map((c, i) => [c.folder, i]));

@@ -204,7 +204,7 @@ function codePrint(map: CodeMap, text: RepoSnapshot["text"]): THREE.CanvasTextur
   g.fillStyle = "#ffffff";
   g.fillRect(0, 0, n, n);
   const cols = 4, lh = 16, rows = n / lh, colW = n / cols, perCol = rows;
-  const files = text?.length ? text : [{ path: "files", lines: map.blocks.map((b) => `${b.path}  ${b.lines.toLocaleString()} lines`) }];
+  const files = text?.length ? text : [{ path: "files", lines: map.blocks.filter((b) => !b.wall).map((b) => `${b.path}  ${b.lines.toLocaleString()} lines`) }];
   const each = Math.max(4, Math.floor((cols * perCol) / files.length) - 2);
   const out: { s: string; head: boolean }[] = [];
   for (const f of files) {
@@ -333,7 +333,24 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
   const edgeInk = new THREE.LineBasicMaterial({ color: INK }), edgeGrey = new THREE.LineBasicMaterial({ color: GREY });
   const compoundEdges = map.compounds.map(() => new THREE.LineBasicMaterial({ color: ORANGE }));
   const files: { b: (typeof map.blocks)[number]; m: THREE.Mesh; tall: number; h: number }[] = [];
+  const mud = new THREE.MeshLambertMaterial({ color: 0xc9ae82 }), mudEdge = new THREE.LineBasicMaterial({ color: 0x8a6d44 });
   for (const b of map.blocks) {
+    if (b.wall) {
+      // Mud-brick: a plain slab, with a lip of battlements on top of the curtain walls and a flat cap on the towers.
+      const m = new THREE.Mesh(new THREE.BoxGeometry(b.w, b.h, b.d), mud);
+      m.position.set(b.x, b.y + b.h / 2, b.z);
+      m.castShadow = m.receiveShadow = true;
+      m.add(new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), mudEdge));
+      const tower = b.h > 4;
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(b.w + (tower ? 0.5 : 0.2), 0.35, b.d + (tower ? 0.5 : 0.2)), mud);
+      cap.position.y = b.h / 2 + 0.17;
+      cap.castShadow = true;
+      cap.add(new THREE.LineSegments(new THREE.EdgesGeometry(cap.geometry), mudEdge));
+      m.add(cap);
+      scene.add(m);
+      solids.push(m);
+      continue;
+    }
     const box = structure(structureOf(b.path), b.w, b.h, b.d);
     const m = new THREE.Mesh(box, b.agent ? glassMat : boxMat);
     m.position.set(b.x, b.y + b.h / 2, b.z);
