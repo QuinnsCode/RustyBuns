@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { Box3, PerspectiveCamera, Vector3 } from "three";
 import { join } from "node:path";
 import {
-  AHEAD, CURVES, curveById, warpQ, FOV, LANE_W, RIDE, SPACING, STACK, TILT, boardHalf, edgeSamples, fitDistance, stackOf, worldX, worldZ, buildNotes, eventPush, filterRange, gustRide, newRide, qAtFrac, qAtTime, remount, rideEvents, runOver, stepRide, tapGrade, tapRide, timeFracAt, timeTicks, type Side,
+  AHEAD, CURVES, curveById, warpQ, FOV, LANE_W, RIDE, SPACING, STACK, dataUrl, repoOf, TILT, boardHalf, edgeSamples, fitDistance, stackOf, worldX, worldZ, buildNotes, eventPush, filterRange, gustRide, newRide, qAtFrac, qAtTime, remount, rideEvents, runOver, stepRide, tapGrade, tapRide, timeFracAt, timeTicks, type Side,
   breeze, cleanRefs, clockAt, currentIndex, edgeSlotAt, formatAge, formatClock, geometry,
   keptAncestors, kindOf, layoutGraph, multiplier, orderCommits, parseDag, parsePatchLog, pathSlotAt, qToScrub,
   readInput, scoreAt, scrubToIndex, scrubToQ, simplifyParents, slotOf, stepQ, topFiles, topFriends, veinChart,
@@ -729,5 +729,29 @@ describe("the menu", () => {
   test("a second fall with nobody at the pedals ends the run", () => {
     expect(runOver(1, 1)).toBe(false);
     expect(runOver(2, 2)).toBe(true);
+  });
+});
+
+describe("a hosted repo", () => {
+  test("the repo and file a page was opened on", () => {
+    expect(repoOf("?repo=ana/p")).toEqual({ owner: "ana", repo: "p", path: "" });
+    expect(repoOf("?repo=ana/my.repo-2&path=src/a.ts")).toEqual({ owner: "ana", repo: "my.repo-2", path: "src/a.ts" });
+    expect(repoOf("?path=/lead/slash.ts&repo=ana/p")?.path).toBe("lead/slash.ts");
+    for (const bad of ["", "?repo=", "?repo=ana", "?repo=ana/p/extra", "?repo=../x", "?repo=a b/c", "?other=1"]) expect(repoOf(bad)).toBeNull();
+  });
+  test("where its data is, with a path made safe to send", () => {
+    expect(dataUrl({ owner: "ana", repo: "p" })).toBe("/api/repos/ana/p/gitpath");
+    expect(dataUrl({ owner: "ana", repo: "p" }, "src/a b.ts")).toBe("/api/repos/ana/p/gitpath?path=src%2Fa%20b.ts");
+    expect(dataUrl({ owner: "a/b", repo: "p?x" })).toBe("/api/repos/a%2Fb/p%3Fx/gitpath");
+  });
+});
+
+describe("the repo page", () => {
+  test("its header links to gitpath on that repo, as an icon with the word as its tooltip", () => {
+    const html = readFileSync(join(import.meta.dir, "../src/client.html"), "utf8");
+    const link = /<a class="btn ghost" href="\/gitpath\?repo=\$\{encodeURIComponent\(owner\)\}\/\$\{encodeURIComponent\(repo\)\}"[^>]*>/.exec(html)?.[0];
+    expect(link).toBeDefined();
+    expect(link).toContain('aria-label="gitpath"');
+    expect(link).toContain('title="gitpath:');
   });
 });

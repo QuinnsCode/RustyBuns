@@ -501,6 +501,21 @@ export function scoreAt(notes: Note[], onHot: boolean[], idx: number): Score {
   return { passed, combo, mult: multiplier(combo), score, added, removed };
 }
 
+// -- a hosted repo ------------------------------------------------------------------------------------
+// The page can read a codeSplitter repo instead of the sample: `/gitpath?repo=owner/name[&path=src/a.ts]`.
+
+export interface RepoRef { owner: string; repo: string; path: string }
+
+/** The repo (and file) a page was opened on, from its query string, or null for no (or a malformed) one. */
+export function repoOf(search: string): RepoRef | null {
+  const q = new URLSearchParams(search), m = /^(\w[\w.-]*)\/(\w[\w.-]*)$/.exec(q.get("repo") ?? "");
+  return m ? { owner: m[1]!, repo: m[2]!, path: (q.get("path") ?? "").replace(/^\/+/, "") } : null;
+}
+
+/** Where a repo's gitpath data is: its busiest files, or with `path` that file's commits. */
+export const dataUrl = (r: Pick<RepoRef, "owner" | "repo">, path?: string) =>
+  `/api/repos/${encodeURIComponent(r.owner)}/${encodeURIComponent(r.repo)}/gitpath${path ? `?path=${encodeURIComponent(path)}` : ""}`;
+
 // -- words -------------------------------------------------------------------------------------------
 
 const p2 = (n: number) => String(n).padStart(2, "0");
