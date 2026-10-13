@@ -13,7 +13,8 @@ import { buildDesktop } from "./build.ts";
 import { signDarwin } from "./sign.ts";
 import { buildBox, checkBox } from "./box.ts";
 import { watchDesktop } from "./watch.ts";
-import { buildEnv, emptyHome, hostCommand, hostEnv, wantsSandbox } from "./sandbox.ts";
+import { codeSecrets, wranglerNames } from "./glue/secrets.ts";
+import { buildEnv, emptyHome, hostCommand, withLocalBins, hostEnv, wantsSandbox } from "./sandbox.ts";
 import { desktopServers, type RustyBunsConfig } from "./config.ts";
 import { Effect } from "effect";
 import { decodeConfig } from "./config-schema.ts";
@@ -248,6 +249,12 @@ async function init() {
   const secrets = Object.keys(readDevVars()).filter((k) => !cfg.bindings[k]);
   for (const k of secrets) cfg.bindings[k] = { type: "secret" };
   if (secrets.length) console.log(`secrets:  ${secrets.join(" ")}  (names from .dev.vars)`);
+  // and the ones its code reads that nothing declares: they live in Cloudflare, not in the clone
+  const read = codeSecrets(inf.srcDir ?? "src", new Set([...Object.keys(cfg.bindings), ...wranglerNames(w)]), inf.framework);
+  for (const k of read.required) cfg.bindings[k] = { type: "secret" };
+  for (const k of read.optional) cfg.bindings[k] = { type: "secret", optional: true };
+  if (read.required.length) console.log(`secrets:  ${read.required.join(" ")}  (rwsdk's session store needs it; put it in .dev.vars)`);
+  if (read.optional.length) console.log(`secrets:  ${read.optional.join(" ")}  (optional: read in src/, bound when .dev.vars or the shell has a value)`);
   // Postgres: Hyperdrive in front of it on the edge; the desktop and box connect to the URL itself.
   if (inf.postgres && !Object.values(cfg.bindings).some((b) => b.type === "hyperdrive")) {
     const name = cfg.bindings["HYPERDRIVE"] ? "PG" : "HYPERDRIVE";
@@ -727,7 +734,7 @@ const buildWorker = (build: string, sandbox: boolean) => Effect.gen(function* ()
   // a monorepo app's unbuilt workspace packages first (glue/workspace-build.ts)
   const command = [...workspacePrebuild(process.cwd()), build].join(" && ");
   console.log(`building the worker${sandbox ? " (empty HOME)" : ""}: ${command}`);
-  let env = buildEnv({ ...readDevVars(), ...process.env });
+  let env = withLocalBins(buildEnv({ ...readDevVars(), ...process.env }), process.cwd());
   if (sandbox) {
     const home = join(process.cwd(), ".rustybuns/home");
     mkdirSync(home, { recursive: true });

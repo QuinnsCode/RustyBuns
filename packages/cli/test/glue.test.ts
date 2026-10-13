@@ -201,6 +201,12 @@ test("infer worker build from the release script", async () => {
   // A deploy script that is only the deploy says nothing: the build script is read next, else the fallback.
   expect(inferWorkerBuild({ deploy: "wrangler deploy", build: "tsc -b && vite build" })).toEqual({ build: "tsc -b && vite build", from: "build" });
   expect(inferWorkerBuild({ deploy: "wrangler deploy" }, null)).toEqual({ build: null, from: "default" });
+  // the app's own gates (a pre-deploy test run, a target assert) and a release banner are no build
+  expect(inferWorkerBuild({
+    build: "rm -rf dist && vite build",
+    release: `echo "Release started at $(date)" && node scripts/pre-deploy-gate.mjs && npm run clean && npm run build && node scripts/assert-deploy-target.mjs app && node scripts/check-tdz.mjs && wrangler deploy`,
+  })).toEqual({ build: "rm -rf dist && vite build", from: "release" });
+  expect(inferWorkerBuild({ release: "node scripts/generate-routes.mjs && vite build && wrangler deploy" }).build).toBe("node scripts/generate-routes.mjs && vite build");
 });
 
 test("isRemoteStep: migrations, schema pushes, seeds and deploys never run in a local build", async () => {
@@ -1007,4 +1013,18 @@ test("hyperdrive local pglite: with the URL unset, PGlite in the data dir, its f
   // Without local, nothing of PGlite's is imported: the app needn't install it.
   const url = { ...c, bindings: { ...c.bindings, PG: { type: "hyperdrive", urlSecret: "DATABASE_URL" } } };
   expect(desktopEntry(url)).not.toContain("pglite");
+});
+
+test("worker host: DO bindings exist before the Worker loads, for top-level createDb(env.X)", () => {
+  const src = desktopEntry({
+    name: "w", worker: { main: "src/worker.ts", assets: "dist/client", crons: ["* * * * *"] },
+    bindings: { GLOBAL_DATABASE: { type: "durable_object", className: "GlobalDatabase" } },
+    targets: { desktop: { mode: "worker" } },
+  } as any);
+  const standIn = src.indexOf(`env.GLOBAL_DATABASE = doLater("GLOBAL_DATABASE");`), load = src.indexOf("await import(");
+  expect(standIn).toBeGreaterThan(0);
+  expect(standIn).toBeLessThan(load);
+  expect(src.indexOf(`(env.GLOBAL_DATABASE as any).__rbBind(local.durableObject(GlobalDatabase as any, env, "GLOBAL_DATABASE"));`)).toBeGreaterThan(load);
+  // a rejected cron or queue promise is logged, not fatal, as on workerd
+  expect(src).toContain(`process.on("unhandledRejection"`);
 });
