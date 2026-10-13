@@ -2,9 +2,12 @@
 // that looks like it so the scene and the HUD draw it the way they draw a game on your own.
 // Everyone else is drawn INTERP seconds behind the newest snapshot, eased between the two
 // around then, so they glide rather than jump 20 times a second. Your own soldier moves the
-// moment you press a key (Game.predict) and is pulled back to the world's word on it only as
-// far as it drifts past what the lag explains. Shots stay the world's call. Each snapshot is a
-// delta against one this page acked, so the page keeps the frames it built until they're past.
+// moment you press a key (Game.predict). Each frame's input goes out numbered; a snapshot says
+// the newest the world had, so your soldier is put where the world has it and the frames since
+// are played again on top, then eased there. Shots stay the world's call; each input says what
+// time everyone was drawn at, so the world checks your rounds against where they were then.
+// Each snapshot is a delta against one this page acked, so the page keeps the frames it built
+// until they're past.
 
 import { Game, type GameEvent, type Input, type Soldier, type Stash } from "../sim/game.ts";
 import { ORDER } from "../sim/weapons.ts";
@@ -15,12 +18,15 @@ import { rebuild, unpackSoldier, type Frame, type FromWorld, type Private, type 
 export const INTERP = 0.1;
 /** Past this far off the world's word, your soldier jumps there rather than eases. */
 export const SNAP_DIST = 3;
-/** The lag a snapshot of your own soldier is taken to be behind you by, in seconds. */
-const LAG = 0.15;
+/** Of what's left between your soldier and the world's word (with your frames since played again), the share closed per snapshot. */
+const EASE = 0.5;
+/** Your frames kept for playing again: a few seconds of a stalled link. */
+const KEEP_PLAYED = 240;
 /** Frames kept to build deltas on; the world never goes back further than it keeps (64). */
 const FRAMES = 64;
 
 type Sample = { t: number; s: SoldierState };
+type Played = { seq: number; input: Input; dt: number };
 
 export class Mirror {
   readonly game: Game;
@@ -34,6 +40,9 @@ export class Mirror {
   private frames = new Map<number, Frame>();
   /** The newest snapshot applied: what the page acks with its inputs. */
   acked = 0;
+  private inputs = 0;
+  /** Your frames the world hadn't heard as of the newest snapshot. */
+  private unheard: Played[] = [];
 
   constructor(welcome: Extract<FromWorld, { t: "welcome" }>) {
     this.setup = welcome.setup;
@@ -69,7 +78,7 @@ export class Mirror {
       const id = st[0]!;
       seen.add(id);
       const s = g.soldiers[id] ?? g.ensurePlayer(id, "you", "");
-      if (id === g.me) this.reconcile(s, st, frame.you, first);
+      if (id === g.me) this.reconcile(s, st, frame.you, snap.input, first);
       else {
         const list = this.samples.get(id) ?? [];
         list.push({ t: snap.time, s: st });
@@ -90,24 +99,27 @@ export class Mirror {
     return true;
   }
 
-  /** Your own soldier: the world's say on what you can't predict (HP, ammo, fire, going down), and where you are only if you've drifted. */
-  private reconcile(s: Soldier, st: SoldierState, you: Private | null, first: boolean) {
-    const was = s.alive, local = { x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz, yaw: s.yaw, pitch: s.pitch, crouch: s.crouch, prone: s.prone, roll: s.roll, grounded: s.grounded };
+  /**
+   * Your own soldier: the world's word on it as of the newest input it had (HP, ammo, fire, going
+   * down, where you are), with your frames since played again on top. That's where you'd be had
+   * the world heard them, so a correction only takes out real drift, never the strafe you're in.
+   */
+  private reconcile(s: Soldier, st: SoldierState, you: Private | null, heard: number, first: boolean) {
+    const was = s.alive, local = { x: s.x, y: s.y, z: s.z, yaw: s.yaw, pitch: s.pitch };
     unpackSoldier(st, s);
+    this.unheard = this.unheard.filter((f) => f.seq > heard);
     if (you) {
       ORDER.forEach((w, i) => ((s.ammo[w] = you.ammo[i] ?? s.ammo[w]), (s.loaded[w] = you.loaded[i] ?? s.loaded[w])));
       s.reload = you.reload, s.cd = you.cd, s.heat = you.heat, s.shieldT = you.shieldT, s.rollCd = you.rollCd;
     }
     // Down, just back, or only just here: the world's word on everything.
     if (first || !s.alive || !was) return;
+    for (const f of this.unheard) this.game.predict(s.id, f.input, f.dt);
+    // Where you look is yours alone.
+    s.yaw = local.yaw, s.pitch = local.pitch;
     const ex = s.x - local.x, ey = s.y - local.y, ez = s.z - local.z, e = Math.hypot(ex, ey, ez);
-    Object.assign(s, local);
-    if (e > SNAP_DIST) return void Object.assign(s, { x: local.x + ex, y: local.y + ey, z: local.z + ez });
-    // The snapshot is a little behind you: as far as you'd have moved in that time isn't drift.
-    const allow = Math.hypot(local.vx, local.vz) * LAG + 0.05;
-    if (e <= allow) return;
-    const k = (0.25 * (e - allow)) / e;
-    s.x += ex * k, s.y += ey * k, s.z += ez * k;
+    if (e > SNAP_DIST || e < 0.01) return;
+    s.x = local.x + ex * EASE, s.y = local.y + ey * EASE, s.z = local.z + ez * EASE;
   }
 
   /** The events that came in since the last frame, to play once. */
@@ -117,14 +129,19 @@ export class Mirror {
     return out;
   }
 
-  /** A frame: your soldier moves on your keys, everyone else is drawn from INTERP ago, the rounds fly on. */
-  frame(dt: number, input: Input) {
+  /**
+   * A frame: your soldier moves on your keys, everyone else is drawn from INTERP ago, the rounds
+   * fly on. Hands back the input to send, numbered and stamped with the time everyone's drawn at.
+   */
+  frame(dt: number, input: Input): Input {
     const g = this.game;
     // Run the clock on, never more than a snapshot's gap past the newest (a stalled link freezes, not races).
     this.clock = Math.min(this.clock + dt, this.latest + 0.25);
     g.time = this.clock;
+    const at = this.clock - INTERP, sent: Input = { ...input, seq: ++this.inputs, view: Math.round(at * 1000) / 1000 };
     g.predict(g.me, input, dt);
-    const at = this.clock - INTERP;
+    this.unheard.push({ seq: sent.seq!, input, dt });
+    if (this.unheard.length > KEEP_PLAYED) this.unheard.shift();
     for (const [id, list] of this.samples) {
       const s = g.soldiers[id];
       if (!s || s.hidden || !list.length) continue;
@@ -139,5 +156,6 @@ export class Mirror {
       Object.assign(s, { x: lerp(1), y: lerp(2), z: lerp(3), vx: lerp(4), vy: lerp(5), vz: lerp(6), yaw: a.s[7]! + dy * k, pitch: lerp(8) });
     }
     for (const p of g.shots) p.x += p.vx * dt, p.y += p.vy * dt, p.z += p.vz * dt, p.age += dt;
+    return sent;
   }
 }

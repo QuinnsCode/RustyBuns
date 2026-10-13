@@ -127,6 +127,8 @@ export interface Shot {
   vx: number; vy: number; vz: number;
   age: number;
   dead: boolean;
+  /** Seconds back in time its hits on soldiers are checked: the shooter's view of them (a battle player's lag). */
+  rewind?: number;
   /** The soldier a cherry-pick picked. */
   target?: number;
 }
@@ -185,6 +187,9 @@ export interface Input {
   /** What the crosshair is on; shots go from the muzzle to here. Without it, straight along yaw and pitch. */
   aim?: { x: number; y: number; z: number };
   weapon?: WeaponId;
+  /** In a battle: the page's count of its inputs, which the world echoes, and the battle time it drew everyone else at. */
+  seq?: number;
+  view?: number;
 }
 
 export type GameEvent =
@@ -227,6 +232,8 @@ export const MAX_SHIELD = 70, HEAVY_SHIELD = 80, SHIELD_DELAY = 4, SHIELD_RATE =
 export const SIGHT = 55, LEASH = 45;
 /** git revert sends a guard back this many seconds (as far as its trail goes). */
 export const TRAIL_EVERY = 0.25, TRAIL_SECONDS = 3;
+/** The furthest back a battle player's rounds are checked against where soldiers were, in seconds. */
+export const MAX_REWIND = 0.3;
 export const STASH_HP = 150, STASH_TTL = 30, STASHES = 2, BLAME_SECONDS = 20;
 /** What a crate gives. */
 export const HEALTH_CRATE = 40;
@@ -283,6 +290,8 @@ export class Game {
   winner: string | null = null;
   /** The soldier this page plays: 0 on your own, your player in a battle. */
   me = 0;
+  /** In a battle, how far behind the battle each player sees everyone else, in seconds, by soldier id. */
+  readonly lags = new Map<number, number>();
   /** Where the theirs side comes in: the reachable flat ground farthest from HEAD. */
   private far: { x: number; z: number; yaw: number } | null = null;
   readonly cleared: boolean[];
@@ -292,6 +301,8 @@ export class Game {
   private nextId = 1;
   private acc = 0;
   private trailT = 0;
+  /** In a battle, where each soldier has been over the last MAX_REWIND seconds: [time, x, y, z, height] per tick. */
+  private past = new Map<number, number[]>();
 
   constructor(map: CodeMap, seed = 1, mission: Mission = { kind: "clear" }, mode?: Mode, role: RoleId | null = null) {
     // Files get knocked down: the game's own copies, so the map it was given stays whole.
@@ -381,6 +392,7 @@ export class Game {
     if (!s || s.brain || s.gone) return;
     this.dropCommit(s);
     s.gone = true, s.alive = false;
+    this.lags.delete(id);
     this.events.push({ kind: "left", id });
   }
 
@@ -560,6 +572,7 @@ export class Game {
     this.fly(dt);
     this.fuses(dt);
     this.record(dt);
+    if (this.mode) this.remember();
     for (const st of this.stashes) st.ttl -= dt;
     this.stashes = this.stashes.filter((st) => st.hp > 0 && st.ttl > 0);
     this.collect();
@@ -589,6 +602,31 @@ export class Game {
       s.trail.push({ x: s.x, y: s.y, z: s.z });
       if (s.trail.length > keep) s.trail.shift();
     }
+  }
+
+  private remember() {
+    for (const s of this.soldiers) {
+      if (!s.alive) {
+        this.past.delete(s.id);
+        continue;
+      }
+      let p = this.past.get(s.id);
+      if (!p) this.past.set(s.id, (p = []));
+      p.push(this.time, s.x, s.y, s.z, bodyHeight(s));
+      // Keep one sample from before the window, to ease from.
+      while (p.length >= 10 && p[5]! <= this.time - MAX_REWIND) p.splice(0, 5);
+    }
+  }
+
+  /** Where s was at time t, eased between ticks: now's, past what it remembers. */
+  private where(s: Soldier, t: number): { x: number; y: number; z: number; h: number } {
+    const p = this.past.get(s.id);
+    if (!p?.length || t >= p[p.length - 5]!) return { x: s.x, y: s.y, z: s.z, h: bodyHeight(s) };
+    let i = 0;
+    while (p[i + 5]! <= t) i += 5;
+    const k = Math.max(0, Math.min(1, (t - p[i]!) / (p[i + 5]! - p[i]!)));
+    const at = (j: number) => p[i + j]! + (p[i + 5 + j]! - p[i + j]!) * k;
+    return { x: at(1), y: at(2), z: at(3), h: k < 0.5 ? p[i + 4]! : p[i + 9]! };
   }
 
   private control(s: Soldier, input: Input, dt: number) {
@@ -878,6 +916,8 @@ export class Game {
       ux /= n, uy /= n, uz /= n;
       const shot: Shot = { id: this.nextId++, owner: s.id, team: s.team, weapon, x: m.x, y: m.y, z: m.z, vx: ux * w.speed, vy: uy * w.speed, vz: uz * w.speed, age: 0, dead: false };
       if (w.homing > 0) shot.target = this.pickTarget(s, m, ux, uy, uz);
+      const lag = s.brain ? 0 : Math.min(MAX_REWIND, this.lags.get(s.id) ?? 0);
+      if (lag > 0) shot.rewind = lag;
       this.shots.push(shot);
     }
   }
@@ -950,14 +990,18 @@ export class Game {
     this.shots = this.shots.filter((p) => !p.dead);
   }
 
-  /** A body the shot is inside, other than its own side's (and never the shooter's, by a direct hit). */
+  /**
+   * A body the shot is inside, other than its own side's (and never the shooter's, by a direct hit).
+   * A battle player's round is checked against where everyone was when the shooter saw them.
+   */
   private soldierAt(p: Shot): Soldier | null {
     for (const s of this.soldiers) {
       if (!s.alive || s.vehicle >= 0 || !this.hostile(s, { id: p.owner, team: p.team })) continue;
       // Rolling: direct hits pass through.
       if (s.roll > 0) continue;
-      if (p.y < s.y || p.y > s.y + bodyHeight(s)) continue;
-      if (Math.hypot(p.x - s.x, p.z - s.z) < RADIUS + 0.1) return s;
+      const b = p.rewind ? this.where(s, this.time - p.rewind) : { x: s.x, y: s.y, z: s.z, h: bodyHeight(s) };
+      if (p.y < b.y || p.y > b.y + b.h) continue;
+      if (Math.hypot(p.x - b.x, p.z - b.z) < RADIUS + 0.1) return s;
     }
     return null;
   }
@@ -1242,6 +1286,7 @@ export class Game {
     const back = s.trail[0];
     if (back) Object.assign(s, { x: back.x, y: back.y, z: back.z, vx: 0, vy: 0, vz: 0 });
     s.trail = back ? [back] : [];
+    this.past.delete(s.id);
     if (s.brain) Object.assign(s.brain, { alert: false, seen: null, wait: 1.5, cover: null, coverT: 0, burst: 0 });
     this.events.push({ kind: "reverted", id: s.id });
   }

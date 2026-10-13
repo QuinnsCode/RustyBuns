@@ -2,13 +2,14 @@
 // LAN), the welcome (JSON) and snapshots (binary) coming in, this page's Input going out. Inputs
 // go about 30 times a second, and straight away when a key is tapped, so a quick click is never
 // lost. Each carries the newest snapshot the page applied, which the world sends deltas against.
+// They go even when nothing changed: the world echoes the newest one's number to replay from.
 
 import { worldSocket } from "@rustybuns/shell-bun/client";
 import type { Input } from "../sim/game.ts";
 import { decodeSnap, type FromWorld, type Setup, type ToWorld } from "../net/wire.ts";
 
-/** An Input at most this often; an unchanged one every IDLE_MS, or ACK_MS when there's a newer snapshot to ack. */
-const SEND_MS = 33, ACK_MS = 100, IDLE_MS = 250;
+/** An Input at most this often. */
+const SEND_MS = 33;
 
 export class Battle {
   onMessage: (m: FromWorld) => void = () => {};
@@ -19,7 +20,6 @@ export class Battle {
   private queue: string[] = [];
   private sentAt = 0;
   private lastSent = "";
-  private ackSent = 0;
 
   /** host: this machine's world (target "/ws"). guest: `http://ip:port/ws`, with the join passphrase in params. Online, both are "/ws" with the room code in params. */
   constructor(readonly kind: "host" | "guest", target: string, params: Record<string, string | undefined>) {
@@ -59,8 +59,7 @@ export class Battle {
     const tap = i.jump || i.roll || i.weapon !== undefined || (i.fire && !this.lastSent.includes('"fire":true'));
     if (!tap && now - this.sentAt < SEND_MS) return;
     const s = JSON.stringify(i);
-    if (!tap && s === this.lastSent && now - this.sentAt < (ack > this.ackSent ? ACK_MS : IDLE_MS)) return;
-    this.sentAt = now, this.lastSent = s, this.ackSent = ack;
+    this.sentAt = now, this.lastSent = s;
     this.raw({ t: "in", i, ack });
   }
 

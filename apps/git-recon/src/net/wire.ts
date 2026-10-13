@@ -65,6 +65,8 @@ export interface Snap {
   t: "snap";
   seq: number;
   base: number;
+  /** The newest of your inputs the world had heard (its seq): your frames after it get played again. */
+  input: number;
   time: number;
   status: Status;
   soldiers: SoldierDelta[];
@@ -185,12 +187,14 @@ export function cleanInput(raw: unknown): Input | null {
     yaw: num(i.yaw, -1e6, 1e6), pitch: num(i.pitch, -1.6, 1.6),
     jump: i.jump === true, roll: i.roll === true, crouch: i.crouch === true, prone: i.prone === true, scope: i.scope === true, fire: i.fire === true, reload: i.reload === true,
     aim, weapon: ORDER.includes(i.weapon as WeaponId) ? (i.weapon as WeaponId) : undefined,
+    ...(typeof i.seq === "number" && Number.isInteger(i.seq) && i.seq >= 0 ? { seq: i.seq } : {}),
+    ...(typeof i.view === "number" && Number.isFinite(i.view) ? { view: i.view } : {}),
   };
 }
 
 // ---- the binary frame -------------------------------------------------------
 //
-//   u8 1 · u32 seq · u32 base · f64 time · u8 status
+//   u8 1 · u32 seq · u32 base · u32 input · f64 time · u8 status
 //   u16 n · n × (u16 id · u16 mask · the fields the mask names, as SOLDIER says)
 //   u16 n · n × u16 gone id
 //   u16 n · n × shot (u32 id · u16 owner · u8 team · u8 weapon · i32 x y z vx vy vz in cm · u16 age in cs)
@@ -246,7 +250,7 @@ const text = new TextEncoder(), untext = new TextDecoder();
 
 export function encodeSnap(s: Snap): Uint8Array {
   const o = new Out();
-  o.put("u8", TAG), o.put("u32", s.seq), o.put("u32", s.base), o.put("f64", s.time), o.put("u8", STATUS.indexOf(s.status));
+  o.put("u8", TAG), o.put("u32", s.seq), o.put("u32", s.base), o.put("u32", s.input), o.put("f64", s.time), o.put("u8", STATUS.indexOf(s.status));
   o.put("u16", s.soldiers.length);
   for (const d of s.soldiers) {
     let mask = 0;
@@ -284,7 +288,7 @@ export function decodeSnap(bytes: ArrayBuffer | Uint8Array): Snap | null {
   const r = new In(b);
   try {
     if (r.get("u8") !== TAG) return null;
-    const seq = r.get("u32"), base = r.get("u32"), time = r.get("f64"), status = STATUS[r.get("u8")] ?? "playing";
+    const seq = r.get("u32"), base = r.get("u32"), input = r.get("u32"), time = r.get("f64"), status = STATUS[r.get("u8")] ?? "playing";
     const soldiers: SoldierDelta[] = [];
     for (let n = r.get("u16"); n > 0; n--) {
       const id = r.get("u16"), mask = r.get("u16");
@@ -303,7 +307,7 @@ export function decodeSnap(bytes: ArrayBuffer | Uint8Array): Snap | null {
     const stashes: StashState[] = [];
     for (let n = r.get("u16"); n > 0; n--) stashes.push([r.get("u32"), r.num(100, "i32"), r.num(100, "i32"), r.num(100, "i32")]);
     const tail = r.at < b.length ? JSON.parse(untext.decode(b.subarray(r.at))) : {};
-    const snap: Snap = { t: "snap", seq, base, time, status, soldiers, gone, shots, spent, stashes, files: tail.files ?? [], events: tail.events ?? [] };
+    const snap: Snap = { t: "snap", seq, base, input, time, status, soldiers, gone, shots, spent, stashes, files: tail.files ?? [], events: tail.events ?? [] };
     for (const k of TAIL) if (tail[k] !== undefined) (snap as any)[k] = tail[k];
     return snap;
   } catch {
