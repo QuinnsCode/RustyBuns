@@ -1,0 +1,9 @@
+[package]
+name = "rb_genome"
+version = "0.0.1"
+edition = "2021"
+
+[lib]
+# cdylib -> bun:ffi on the server AND wasm32 (no wasm-bindgen: plain extern "C", so
+# both sides run the exact same code over the same bytes).
+crate-type = ["cdylib", "rlib"]
