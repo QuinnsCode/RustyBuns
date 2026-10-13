@@ -98,7 +98,7 @@ function fakeGitHub(sha: string, tgz: string, o: { subs?: Record<string, string>
       return Response.json({ sha, truncated: false, tree });
     }
     if (url.pathname === "/repos/o/big") return Response.json({ full_name: "o/big", private: false, default_branch: "main" });
-    if (url.pathname === "/repos/o/big/commits/main") return Response.json({ sha, commit: { message: "the tip", author: { name: "Up Stream", email: "up@stream.dev", date: "2026-10-01T00:00:00Z" } } });
+    if (["/repos/o/big/commits/HEAD", "/repos/o/big/commits/main"].includes(url.pathname)) return Response.json({ sha, commit: { message: "the tip", author: { name: "Up Stream", email: "up@stream.dev", date: "2026-10-01T00:00:00Z" } } });
     if (url.pathname === `/repos/o/big/tarball/${sha}`) return new Response(Bun.file(tgz));
     if (url.pathname === "/repos/o/big/contents/.gitmodules" && Object.keys(subs).length)
       return Response.json({ content: btoa(Object.keys(subs).map((p) => `[submodule "${p}"]\n\tpath = ${p}\n\turl = https://github.com/o/${p}\n`).join("")) });
