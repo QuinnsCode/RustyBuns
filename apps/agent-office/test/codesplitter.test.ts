@@ -111,3 +111,26 @@ test("the dispatch hint: a queued task's text goes to codeSplitter, and stacking
   expect((await hint("?repo=ryan/down&task=x"))!.body).toEqual({ files: [], busy: [] });
   expect((await hint("?task=x"))!.status).toBe(400);
 });
+
+test("Wait holds the task on the office until its busy branches have merged, and releases it once", async () => {
+  let branches: unknown = [{ name: "fix-mirror", status: "open" }, { name: "other", status: "open" }];
+  const route = codesplitterRoute({ url: "http://cs" }, (async () => branches ? Response.json(branches) : new Response("no", { status: 502 })) as unknown as typeof fetch);
+  const call = (m: string, p: string, q: string) => route(m, new URL(`http://office/__rb/codesplitter/${p}?${q}`))!;
+  const msg = JSON.stringify({ t: "queue.add", prompt: "Work on GitHub issue #7", issue: 7 });
+  const q = new URLSearchParams({ repo: "ryan/lab", msg, branches: "fix-mirror" });
+
+  expect((await call("POST", "hold", "repo=ryan/lab&msg=nope&branches=a")).status).toBe(400);
+  const { id } = (await call("POST", "hold", q.toString())).body as { id: string };
+  const list = async () => (await call("GET", "hold", "repo=ryan/lab")).body as { held: unknown[]; ready: string[] };
+  expect((await list()).held).toHaveLength(1);
+  expect((await list()).ready).toEqual([]);
+  expect((await call("POST", "hold/take", `id=${id}`)).status).toBe(409);
+
+  branches = null; // codeSplitter can't say: it keeps waiting
+  expect((await list()).ready).toEqual([]);
+  branches = [{ name: "fix-mirror", status: "merged" }, { name: "other", status: "open" }];
+  expect((await list()).ready).toEqual([id]);
+  expect((await call("POST", "hold/take", `id=${id}`)).body).toEqual(JSON.parse(msg));
+  expect((await call("POST", "hold/take", `id=${id}`)).status).toBe(409);
+  expect((await list()).held).toEqual([]);
+});
