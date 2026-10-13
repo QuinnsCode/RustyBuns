@@ -614,7 +614,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/checks.ts` | checks: runs, the merge gate, what runs here (per workspace in a monorepo), the claim protocol, GitHub's results |
 | `src/chunks.ts` | levels too big for Artifacts at all: their text files as chunks in R2, read through the cache |
 | `src/ci-runner.ts` | the built-in check runners: the desktop draining its own queue, and the per-repo `CiRunner` that runs each check in a container |
-| `src/conflict-agent.ts` | one merge conflict handed to a coding agent: git's markers in, the settled lines out |
+| `src/conflict-agent.ts` | one merge conflict (or a settled stretch to fact-check) handed to a coding agent: git's markers in, the settled lines out |
 | `src/cuts.ts` | cuts: picking lines and following what they use across files, the cut's branch, running its tests, the share page |
 | `src/deploy-keys.ts` | hosted deploys' write-only keys: sealing, the owner's routes, who may deploy |
 | `src/deploy-review.ts` | what a deploy (hosted or desktop) may run with the owner's keys: the owner's own commits, or what they approved after reading the diff |
