@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { Box3, PerspectiveCamera, Vector3 } from "three";
 import { join } from "node:path";
 import {
-  AHEAD, CURVES, curveById, warpQ, FOV, LANE_W, RIDE, SPACING, STACK, TILT, boardHalf, edgeSamples, fitDistance, stackOf, worldX, worldZ, buildNotes, eventPush, filterRange, gustRide, newRide, qAtFrac, qAtTime, remount, rideEvents, stepRide, tapGrade, tapRide, timeFracAt, timeTicks, type Side,
+  AHEAD, CURVES, curveById, warpQ, FOV, LANE_W, RIDE, SPACING, STACK, TILT, boardHalf, edgeSamples, fitDistance, stackOf, worldX, worldZ, buildNotes, eventPush, filterRange, gustRide, newRide, qAtFrac, qAtTime, remount, rideEvents, runOver, stepRide, tapGrade, tapRide, timeFracAt, timeTicks, type Side,
   breeze, cleanRefs, clockAt, currentIndex, edgeSlotAt, formatAge, formatClock, geometry,
   keptAncestors, kindOf, layoutGraph, multiplier, orderCommits, parseDag, parsePatchLog, pathSlotAt, qToScrub,
   readInput, scoreAt, scrubToIndex, scrubToQ, simplifyParents, slotOf, stepQ, topFiles, topFriends, veinChart,
@@ -718,5 +718,16 @@ describe("the video's speed curves", () => {
     expect(warpQ(curveById("steady"), 2, 40)).toBe(40);
     expect(warpQ(curveById("steady"), -1, 40)).toBe(0);
     expect(curveById("nope").id).toBe("steady");
+  });
+});
+
+describe("the menu", () => {
+  test("five lost lives end the run", () => {
+    expect(runOver(4, 0)).toBe(false);
+    expect(runOver(5, 0)).toBe(true);
+  });
+  test("a second fall with nobody at the pedals ends the run", () => {
+    expect(runOver(1, 1)).toBe(false);
+    expect(runOver(2, 2)).toBe(true);
   });
 });

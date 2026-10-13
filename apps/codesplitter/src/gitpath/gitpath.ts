@@ -620,6 +620,13 @@ export function tapRide(r: Ride, side: Side): number {
 /** Blows a gust: an acceleration on the lean that dies down. */
 export const gustRide = (r: Ride, push: number) => { r.gust += push; };
 
+/** Five lives. */
+export const LIVES = 5;
+/** Falls with no pedal tap since the last fall that send the rider back to the menu. */
+export const IDLE_FALLS = 2;
+/** True once a run is over: out of lives, or it keeps falling over with nobody at the pedals. */
+export const runOver = (falls: number, idleFalls: number) => falls >= LIVES || idleFalls >= IDLE_FALLS;
+
 /** Moves the ride on by dt seconds. True if the rider went over. */
 export function stepRide(r: Ride, dt: number, wind = breeze(r.t)): boolean {
   r.omega += (RIDE.gravity * r.lean + wind + r.gust - RIDE.damping * r.omega) * dt;
