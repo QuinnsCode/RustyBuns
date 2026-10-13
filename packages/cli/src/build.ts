@@ -713,6 +713,13 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   if (mode === "spa" && !opts.noCompile && normalize(clientDir).replace(/\/$/, "") === "dist" && !opts.outfile) {
     throw new Error(`the client build is in dist/, which is also where binaries go (and vite empties it on every build). Build the UI into dist/ui: clientBuild "vite build --outDir dist/ui", clientDir "dist/ui".`);
   }
+  // init points the desktop at files only `add desktop` writes, and its hint to run that can
+  // scroll away under a long boundary report. Say so here, not with vite's "config not found".
+  if (mode === "spa") {
+    const missing = [d.clientBuild?.match(/--config\s+(\S+)/)?.[1], d.world === false ? undefined : d.world || "packages/desktop/world.ts"]
+      .filter((f): f is string => !!f && !existsSync(f));
+    if (missing.length) throw new Error(`the desktop isn't scaffolded yet: ${missing.join(" and ")} ${missing.length > 1 ? "are" : "is"} missing. Run \`rustybuns add desktop\` first (it keeps files that already exist).`);
+  }
   const src = sourceLayout(process.cwd(), c);
   await step("boundary glue", async () => {
     // Boundary glue is regenerated on every build: stubs, action proxies, host table.
