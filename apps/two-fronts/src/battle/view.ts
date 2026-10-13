@@ -7,7 +7,7 @@ import { FACTION_COLORS, type BattleResult, type BattleSpec, type Side } from ".
 import { groundRecorder } from "./replay.ts";
 import { animate, gunship, marine, speeder, tank, turret, walker, wooka } from "./models.ts";
 import { buildWorld } from "./terrain.ts";
-import { CHAMP_AT, DT, POST_RADIUS, STRIKE_RADIUS, TIME_LIMIT, TROOPERS, altitude, facing, heroUnit, isHorde, startBattle, statsOf, step, type Fx, type Trooper, type Unit } from "./sim.ts";
+import { CHAMP_AT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TIME_LIMIT, TROOPERS, altitude, facing, heroUnit, isHorde, startBattle, statsOf, step, type Fx, type Trooper, type Unit } from "./sim.ts";
 
 export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTMLElement): Promise<BattleResult> {
   const b = startBattle(spec);
@@ -148,6 +148,19 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   hud.onpointerdown = (e) => { if ((e.target as HTMLElement).id === "b-auto") handOver = true; };
 
   const champName = isHorde(b, heroSide) ? "Warbur" : "Gumpert";
+  // Feel, over the canvas and outside the HUD it redraws: the hit marker on the crosshair, the
+  // blaster's heat under it, a red edge when you're hit, and a toast for each kill in a streak.
+  const cross = document.querySelector<HTMLElement>(".crosshair");
+  const feel = document.createElement("div");
+  feel.className = "b-feel";
+  feel.innerHTML = `<div class="b-hurt"></div><div class="b-heat"><i></i></div><div class="b-toast"></div>`;
+  canvas.parentElement!.append(feel);
+  const hurtEl = feel.querySelector<HTMLElement>(".b-hurt")!, heatEl = feel.querySelector<HTMLElement>(".b-heat")!, toastEl = feel.querySelector<HTMLElement>(".b-toast")!;
+  const foeHorde = isHorde(b, heroSide === "attacker" ? "defender" : "attacker");
+  const STREAK: Record<number, string> = foeHorde
+    ? { 2: "Two in a row", 3: "Three. Fluff everywhere", 5: "Five. They'll sing about you. Badly", 8: "Eight. The forest has gone quiet", 12: "Twelve. Command is concerned about you" }
+    : { 2: "Two backpacks", 3: "Three. Start a collection", 5: "Five. The totems need helmets", 8: "Eight. The shiny ones are all crying", 12: "Twelve. The chieftain wants a word" };
+  let hurt = 0, shake = 0, lastHp = Infinity, lastKills = 0, toastT = 0, markT = 0;
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
   const drawHud = () => {
     const hero = heroUnit(b), mine = heroSide, foe = mine === "attacker" ? "defender" : "attacker";
@@ -224,6 +237,9 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         const fy = ground(f.x, f.z);
         if (!spawned.has(f)) {
           spawned.add(f);
+          const me = heroUnit(b);
+          if (f.from !== undefined && f.from === b.hero.id && (f.hit || f.kind === "blast")) markT = 0.15;
+          if (f.kind === "blast" && me) shake = Math.max(shake, (f.big ? 1.2 : 0.4) * Math.max(0, 1 - Math.hypot(f.x - me.x, f.z - me.z) / 35));
           if (f.kind === "gore") burst(f.x, fy + 0.8 + (f.y ?? 0), f.z, f.big ? 46 : 16, GORE[spec.factions[f.side ?? "attacker"]]!, f.big ? 9 : 6);
           if (f.kind === "blast") burst(f.x, fy + 0.3, f.z, f.big ? 60 : 14, DIRT, f.big ? 14 : 7);
         }
@@ -270,6 +286,26 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       b.strikes.forEach((s, i) => { const m = pooled(marks, i, () => { const x = new THREE.Mesh(markGeo, markMat); x.rotation.x = -Math.PI / 2; return x; }); m.position.set(s.x, 0.15 + ground(s.x, s.z), s.z); });
       for (let i = b.strikes.length; i < marks.length; i++) marks[i]!.visible = false;
 
+      // Feel: the hit marker, heat, the red edge, a kill toast, and the sprint's wider view.
+      const me = heroUnit(b);
+      if (me) { if (me.hp < lastHp && lastHp !== Infinity) hurt = Math.min(1, hurt + (lastHp - me.hp) / 60); lastHp = me.hp; } else lastHp = Infinity;
+      hurt = Math.max(0, hurt - dt * 1.5);
+      hurtEl.style.opacity = String(hurt);
+      cross?.classList.toggle("hit", (markT -= dt) > 0);
+      heatEl.style.opacity = b.hero.heat > 0.05 || b.hero.overheated > 0 ? "1" : "0";
+      heatEl.classList.toggle("hot", b.hero.overheated > 0);
+      heatEl.firstElementChild!.setAttribute("style", `width:${Math.round(b.hero.heat * 100)}%`);
+      if (b.hero.kills > lastKills) {
+        toastEl.textContent = STREAK[b.hero.streak] ?? `+${b.hero.kills - lastKills}`;
+        toastEl.classList.remove("show"); void toastEl.offsetWidth; toastEl.classList.add("show");
+        toastT = 1.5;
+      }
+      lastKills = b.hero.kills;
+      if ((toastT -= dt) <= 0) toastEl.classList.remove("show");
+      const fov = b.hero.run > SPRINT_AFTER ? 74 : 65;
+      if (Math.abs(camera.fov - fov) > 0.1) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 6); camera.updateProjectionMatrix(); }
+      shake = Math.max(0, shake - dt * 2.5);
+
       // Third-person camera over the hero's shoulder (or the vehicle's), or over the spawn while down.
       const hero = heroUnit(b);
       const body = (b.hero.inVehicle !== null && b.units.find((u) => u.id === b.hero.inVehicle)) || hero;
@@ -281,6 +317,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       // Never under the floor behind you.
       camera.position.y = Math.max(camera.position.y, ground(camera.position.x, camera.position.z) + 0.6);
       camera.lookAt(at.x + f.x * 20, floor + (body ? altitude(body) : 0) + 1.6 + Math.sin(pitch) * 20, at.z + f.z * 20);
+      if (shake > 0) camera.position.add(new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake));
       world.update(now / 1000, camera.position, { x: at.x + f.x * 30, z: at.z + f.z * 30 });
 
       renderer.render(scene, camera);
@@ -290,6 +327,8 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         removeEventListener("keydown", kd); removeEventListener("keyup", ku); removeEventListener("mouseup", mu); removeEventListener("mousemove", mm); removeEventListener("resize", resize);
         canvas.removeEventListener("mousedown", md);
         if (document.pointerLockElement === canvas) document.exitPointerLock();
+        feel.remove();
+        cross?.classList.remove("hit");
         renderer.dispose();
         hud.onpointerdown = null;
         resolve({ ...b.over, inputs: rec.log() });

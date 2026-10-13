@@ -32,12 +32,13 @@ export interface Unit {
   champ?: Champ;      // the hero, or an AI champion, once their side has earned one
   kit?: Kit;          // Gumpert's kit
   toss?: number;      // seconds till Warbur can throw another Wooka
+  hitBy?: number;     // who hit it last, for the hero's kill count
 }
 export interface Post { name: string; x: number; z: number; owner: Side | null; progress: number } // progress: +1 attacker, -1 defender
 export interface Strike { side: Side; x: number; z: number; t: number }
 // Shots, spears and hexes fly; blasts go off; gore is something coming apart, in its side's
 // colours (big: torn apart, or a vehicle going up); a toss is Warbur throwing a Wooka.
-export interface Fx { kind: "shot" | "spear" | "hex" | "blast" | "gore" | "toss"; x: number; z: number; tx: number; tz: number; t: number; y?: number; ty?: number; side?: Side; big?: boolean }
+export interface Fx { kind: "shot" | "spear" | "hex" | "blast" | "gore" | "toss"; x: number; z: number; tx: number; tz: number; t: number; y?: number; ty?: number; side?: Side; big?: boolean; from?: number; hit?: boolean }
 
 // What the player does this step. Movement is relative to where the hero faces.
 export interface Input { forward: number; right: number; yaw: number; fire: boolean; strike?: { x: number; z: number }; use?: boolean }
@@ -60,7 +61,9 @@ export interface Battle {
   strikesLeft: PerSide<number>;
   vehiclesLeft: PerSide<Record<VehicleKind, number>>;
   reinforced: PerSide<boolean>;
-  hero: { id: number | null; lives: number; respawn: number; inVehicle: number | null };
+  // The hero: their blaster's heat (overheated: seconds till it fires again), how long they've
+  // run straight ahead (past SPRINT_AFTER they sprint), and what they've killed.
+  hero: { id: number | null; lives: number; respawn: number; inVehicle: number | null; heat: number; overheated: number; run: number; kills: number; streak: number };
   fx: Fx[];
   events: string[]; // for the HUD feed, newest last
   over: BattleResult | null;
@@ -115,6 +118,12 @@ const MAUL = 25;                   // hp a second a mob takes off whoever it's o
 const HEAL = 6;                    // hp a second a Shanti puts back into each Wooka near it
 const FLANK = 30;                  // how wide a flanking pack swings
 const TOSS_EVERY = 3;
+// The hero's blaster heats with each shot and cools when it's quiet; full, it locks up a while.
+export const HEAT_PER_SHOT = 0.12;
+const COOL_RATE = 0.45;
+const OVERHEAT = 1.8;
+export const SPRINT_AFTER = 0.8;   // seconds running straight ahead, not firing, before you sprint
+export const SPRINT = 1.55;
 
 // What the Marines' radio says about the Wooka. They are not cuddly.
 export const FLAVOR = [
@@ -233,7 +242,7 @@ export function startBattle(spec: BattleSpec): Battle {
     strikesLeft: { ...spec.strikes },
     vehiclesLeft: { attacker: pool("attacker"), defender: pool("defender") },
     reinforced: { attacker: false, defender: false },
-    hero: { id: null, lives: HERO_LIVES, respawn: 0, inVehicle: null },
+    hero: { id: null, lives: HERO_LIVES, respawn: 0, inVehicle: null, heat: 0, overheated: 0, run: 0, kills: 0, streak: 0 },
     over: null, seed: spec.seed >>> 0, nextId: 1,
     aiStrikeAt: { attacker: 20, defender: 25 },
     spawnAt: { attacker: 0, defender: 0 },
@@ -476,12 +485,12 @@ function shoot(b: Battle, u: Unit, t: Unit | null, yaw = u.yaw) {
   }
   u.yaw = yawTo(u, t);
   const hit = rand(b) < hitChance(b, u, t);
-  if (!melee(u)) b.fx.push({ kind, x: u.x, z: u.z, tx: t.x + (hit ? 0 : (rand(b) - 0.5) * 6), tz: t.z + (hit ? 0 : (rand(b) - 0.5) * 6), t: kind === "shot" ? 0.08 : 0.3, y: altitude(u), ty: altitude(t) });
+  if (!melee(u)) b.fx.push({ kind, x: u.x, z: u.z, tx: t.x + (hit ? 0 : (rand(b) - 0.5) * 6), tz: t.z + (hit ? 0 : (rand(b) - 0.5) * 6), t: kind === "shot" ? 0.08 : 0.3, y: altitude(u), ty: altitude(t), from: u.id, hit });
   if (u.role === "sticky") u.back = 1.6; // throw, then get out of there
   if (!hit) return;
   const splash = splashOf(u);
-  if (splash) blast(b, u.side, t.x, t.z, splash, s.dmg);
-  else damage(b, t, (u.kind === "heavy" || u.kit === "rockets") && armoured(t.kind) ? s.dmg * ARMOUR_BANE : s.dmg);
+  if (splash) blast(b, u.side, t.x, t.z, splash, s.dmg, 0, u.id);
+  else damage(b, t, (u.kind === "heavy" || u.kit === "rockets") && armoured(t.kind) ? s.dmg * ARMOUR_BANE : s.dmg, u.id);
   if (u.kit === "baton") t.stun = 2;
 }
 
@@ -490,7 +499,7 @@ function swing(b: Battle, u: Unit, yaw: number) {
   const s = statsOf(u), f = facing(yaw), at = { x: u.x + f.x * s.range * 0.6, z: u.z + f.z * s.range * 0.6 };
   const near = b.units.filter((v) => v.side !== u.side && v.hp > 0 && !hidden(b, v) && dist(v, at) < s.range * 0.8);
   for (const v of near.slice(0, u.champ ? 4 : 1)) {
-    damage(b, v, s.dmg);
+    damage(b, v, s.dmg, u.id);
     if (u.kit === "baton") v.stun = 2;
   }
 }
@@ -505,7 +514,7 @@ function toss(b: Battle, u: Unit, at: { x: number; z: number }) {
   b.fx.push({ kind: "toss", x: ammo.x, z: ammo.z, tx: x, tz: z, t: 0.6, side: u.side });
   ammo.x = x; ammo.z = z; unstick(b, ammo);
   ammo.hp -= 20; // it'll live. Probably.
-  blast(b, u.side, x, z, 4, ammo.role === "boomie" ? 160 : 60);
+  blast(b, u.side, x, z, 4, ammo.role === "boomie" ? 160 : 60, 0, u.id);
   if (ammo.role === "boomie") { ammo.hp = 0; ammo.back = -1; } // a thrown Boomie goes off where it lands
   if (rand(b) < 0.3) b.events.push(ammo.role === "boomie" ? "Warbur threw a Boomie. Of course he did." : "Warbur threw a Wooka. It got up again, delighted.");
   return true;
@@ -513,14 +522,15 @@ function toss(b: Battle, u: Unit, at: { x: number; z: number }) {
 
 // A blast hurts the other side. A Boomie's hurts everyone, its own included, a bit less: it
 // doesn't care, and neither do they.
-function blast(b: Battle, side: Side, x: number, z: number, r: number, dmg: number, own = 0) {
-  b.fx.push({ kind: "blast", x, z, tx: x, tz: z, t: r > 6 ? 0.6 : 0.25, big: r > 6 });
-  for (const v of b.units) if (v.hp > 0 && dist(v, { x, z }) <= r && (v.side !== side || own)) damage(b, v, v.side === side ? dmg * own : dmg);
+function blast(b: Battle, side: Side, x: number, z: number, r: number, dmg: number, own = 0, from?: number) {
+  b.fx.push({ kind: "blast", x, z, tx: x, tz: z, t: r > 6 ? 0.6 : 0.25, big: r > 6, from });
+  for (const v of b.units) if (v.hp > 0 && dist(v, { x, z }) <= r && (v.side !== side || own)) damage(b, v, v.side === side ? dmg * own : dmg, from);
 }
 
-function damage(b: Battle, v: Unit, dmg: number) {
+function damage(b: Battle, v: Unit, dmg: number, from?: number) {
   if (hidden(b, v)) return;
   v.hp -= dmg;
+  if (from !== undefined) v.hitBy = from;
 }
 
 // The side the player isn't on, and the player's own squadmates, think for themselves. Every so
@@ -712,10 +722,21 @@ export function step(b: Battle, input: Input | null) {
     const body = ride ?? hero, s = statsOf(body);
     const f = facing(input.yaw), r = { x: -f.z, z: f.x };
     const fwd = clamp(input.forward, -1, 1), rt = clamp(input.right, -1, 1);
-    move(b, body, f.x * fwd + r.x * rt, f.z * fwd + r.z * rt, s.speed * Math.min(1, hypot(fwd, rt)), false);
+    // Run straight ahead without firing and you break into a sprint.
+    b.hero.run = !ride && fwd > 0 && !rt && !input.fire ? b.hero.run + DT : 0;
+    const sprint = b.hero.run > SPRINT_AFTER ? SPRINT : 1;
+    move(b, body, f.x * fwd + r.x * rt, f.z * fwd + r.z * rt, s.speed * sprint * Math.min(1, hypot(fwd, rt)), false);
     body.yaw = input.yaw;
     body.cool -= DT;
-    if (input.fire && body.cool <= 0) shoot(b, body, aimTarget(b, body, input.yaw, s.range), input.yaw);
+    // The blaster heats as it fires and cools when it's quiet. Run it dry and it locks up.
+    // Vehicles, and the champions' heavier kit, don't overheat.
+    const blaster = !ride && !melee(body) && body.kit !== "rockets";
+    if (b.hero.overheated > 0 && (b.hero.overheated -= DT) <= 0) b.hero.heat = 0.4;
+    else b.hero.heat = Math.max(0, b.hero.heat - COOL_RATE * DT * (input.fire ? 0.3 : 1));
+    if (input.fire && body.cool <= 0 && b.hero.overheated <= 0) {
+      shoot(b, body, aimTarget(b, body, input.yaw, s.range), input.yaw);
+      if (blaster && (b.hero.heat += HEAT_PER_SHOT) >= 1) { b.hero.heat = 1; b.hero.overheated = OVERHEAT; }
+    }
     if (input.strike) callStrike(b, hero.side, input.strike.x, input.strike.z);
     if (hero.toss !== undefined) hero.toss -= DT;
     // As a champion, E is Warbur's throw or Gumpert's change of kit; otherwise it's a vehicle.
@@ -744,7 +765,7 @@ export function step(b: Battle, input: Input | null) {
   for (const s of sides) if (!(input && s === b.spec.hero)) aiStrike(b, s);
 
   // Strikes land.
-  for (const st of b.strikes) if ((st.t -= DT) <= 0) blast(b, st.side, st.x, st.z, STRIKE_RADIUS, 260);
+  for (const st of b.strikes) if ((st.t -= DT) <= 0) blast(b, st.side, st.x, st.z, STRIKE_RADIUS, 260, 0, st.side === b.spec.hero && input ? b.hero.id ?? undefined : undefined);
   b.strikes = b.strikes.filter((st) => st.t > 0);
 
   // A vehicle going up throws its driver out hurt; the dead cost their side tickets.
@@ -771,9 +792,11 @@ export function step(b: Battle, input: Input | null) {
   }
   for (const u of b.units) if (u.hp <= 0) {
     b.tickets[u.side] -= statsOf(u).cost;
-    b.kills[other(u.side)] += statsOf(u).cost; // a Chub counts for more than a Fodder, a walker for more than both
+    b.kills[other(u.side)] += statsOf(u).cost;
+    if (b.hero.id !== null && u.hitBy === b.hero.id && u.side !== b.spec.hero) { b.hero.kills++; b.hero.streak++; } // a Chub counts for more than a Fodder, a walker for more than both
     die(b, u);
     if (u.id === b.hero.id) {
+      b.hero.streak = 0;
       b.hero.lives--;
       b.hero.id = null;
       b.hero.respawn = 5;

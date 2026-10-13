@@ -1,8 +1,12 @@
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import type { BattleSpec } from "../src/battle/contract.ts";
 import {
-  CHAMP_AT, DT, FLAVOR, HALF, LAYOUTS, ROLES, ROLE_STATS, STATS, STRIKE_RADIUS, TROOPERS, aimTarget, flies, heroUnit, hitChance, inCover, isVehicle, run, sees, startBattle, statsOf, step, type UnitKind, type WookaRole,
+  CHAMP_AT, DT, SPRINT_AFTER, FLAVOR, HALF, LAYOUTS, ROLES, ROLE_STATS, STATS, STRIKE_RADIUS, TROOPERS, aimTarget, flies, heroUnit, hitChance, inCover, isVehicle, run, sees, startBattle, statsOf, step, type UnitKind, type WookaRole,
 } from "../src/battle/sim.ts";
+
+// Whole battles run here, and a CI runner is slower than a laptop. bunfig's timeout is ignored,
+// so it's set per file.
+setDefaultTimeout(30_000);
 
 // A fixture straight from the contract: the ground layer never needs the strategy layer to run.
 const spec = (over: Partial<BattleSpec> = {}): BattleSpec => ({
@@ -319,4 +323,51 @@ test("an AI side earns its champion too, and it walks in", () => {
   step(b, null);
   expect(b.units.some((u) => u.kind === "champion" && u.champ === "warbur" && u.side === "defender")).toBe(true);
   expect(b.events.some((e) => e.includes("WARBUR"))).toBe(true);
+});
+
+test("hold the trigger and the blaster overheats, then locks up a while", () => {
+  const b = bare();
+  const hero = unit(b, "attacker", "hero", 0, 0);
+  b.hero.id = hero.id;
+  hero.cool = 0;
+  let shots = 0;
+  for (let i = 0; i < 30 * 8; i++) {
+    const before = b.fx.length;
+    step(b, { ...idle, fire: true });
+    shots += b.fx.slice(before).filter((f) => f.kind === "shot").length;
+    if (b.hero.overheated > 0) break;
+  }
+  expect(b.hero.overheated).toBeGreaterThan(0);
+  expect(shots).toBeGreaterThan(5);
+  const locked = b.fx.length;
+  for (let i = 0; i < 20; i++) step(b, { ...idle, fire: true });
+  expect(b.fx.slice(locked).some((f) => f.kind === "shot" && f.from === hero.id)).toBe(false);
+});
+
+test("run straight ahead and you sprint; fire and you stop", () => {
+  const pace = (fire: boolean) => {
+    const b = bare();
+    const hero = unit(b, "attacker", "hero", 0, 60);
+    b.hero.id = hero.id;
+    for (let i = 0; i < 60; i++) step(b, { ...idle, forward: 1, fire });
+    return 60 - hero.z;
+  };
+  expect(pace(false)).toBeGreaterThan(pace(true) * 1.2);
+  expect(SPRINT_AFTER).toBeLessThan(2);
+});
+
+test("the hero's kills are counted, and a streak ends when they go down", () => {
+  const b = bare();
+  const hero = unit(b, "attacker", "hero", 0, 0);
+  b.hero.id = hero.id;
+  b.hero.lives = 1;
+  const foe = wookaOf(b, "defender", "fodder", 0, -10);
+  foe.hp = 1;
+  hero.cool = 0;
+  for (let i = 0; i < 10 && b.units.includes(foe); i++) step(b, { ...idle, yaw: 0, fire: true });
+  expect(b.hero.kills).toBe(1);
+  expect(b.hero.streak).toBe(1);
+  hero.hp = 0;
+  step(b, idle);
+  expect(b.hero.streak).toBe(0);
 });

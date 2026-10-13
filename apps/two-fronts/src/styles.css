@@ -234,3 +234,18 @@ body.space-2d #battle-view { cursor: crosshair; }
 .champ { position: relative; overflow: hidden; padding: 2px 8px 4px; border-radius: 4px; background: rgb(255 255 255 / 0.08); font-weight: 700; letter-spacing: 0.04em; }
 .champ i { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--gold); }
 .champ-on { padding: 2px 8px; border-radius: 4px; background: var(--gold); color: #111; font-weight: 800; letter-spacing: 0.04em; }
+
+/* Ground battle feel: a hit marker on the crosshair, the blaster's heat, a red edge when you're
+   hit, and kill-streak toasts. */
+.crosshair.hit { border-color: #ff4b3e; transform: rotate(45deg) scale(1.3); }
+.crosshair.hit::before, .crosshair.hit::after { content: ""; position: absolute; left: 50%; top: -6px; bottom: -6px; width: 2px; margin-left: -1px; background: #ff4b3e; }
+.crosshair.hit::after { transform: rotate(90deg); }
+.b-feel { position: absolute; inset: 0; pointer-events: none; }
+.b-hurt { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 55%, rgb(180 0 0 / 0.65) 100%); }
+.b-heat { position: absolute; left: 50%; top: calc(50% + 18px); width: 64px; height: 4px; margin-left: -32px; background: rgb(0 0 0 / 0.45); border-radius: 2px; overflow: hidden; opacity: 0; transition: opacity 0.2s; }
+.b-heat i { display: block; height: 100%; background: linear-gradient(90deg, #ffd65a, #ff7a1a); }
+.b-heat.hot i { background: #ff3b3b; animation: hot-blink 0.25s steps(2) infinite; }
+@keyframes hot-blink { 50% { opacity: 0.3; } }
+.b-toast { position: absolute; left: 50%; top: 32%; transform: translateX(-50%); color: #fff; font-weight: 900; font-size: 22px; letter-spacing: 0.06em; text-transform: uppercase; text-shadow: 0 2px 6px #000, 0 0 12px rgb(255 122 26 / 0.8); opacity: 0; white-space: nowrap; }
+.b-toast.show { animation: toast 1.5s ease-out forwards; }
+@keyframes toast { 0% { opacity: 0; transform: translateX(-50%) scale(1.6); } 12% { opacity: 1; transform: translateX(-50%) scale(1); } 75% { opacity: 1; } 100% { opacity: 0; transform: translateX(-50%) translateY(-14px); } }

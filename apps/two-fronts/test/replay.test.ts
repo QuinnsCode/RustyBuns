@@ -1,10 +1,14 @@
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import type { BattleSpec, SpaceBattleSpec } from "../src/battle/contract.ts";
 import { acos, atan2, cos, hypot, sin } from "../src/battle/fmath.ts";
 import { groundInputs, groundRecorder, replayGround, replaySpace, spaceRecorder } from "../src/battle/replay.ts";
 import { startBattle, step, type Battle, type Input } from "../src/battle/sim.ts";
 import { startSpaceBattle, stepSpace, type SpaceBattle, type SpaceInput } from "../src/battle/space.ts";
 import { MAX_INPUTS } from "../src/war/table.ts";
+
+// Whole battles run here, and a CI runner is slower than a laptop. bunfig's timeout is ignored,
+// so it's set per file.
+setDefaultTimeout(30_000);
 
 const ground = (over: Partial<BattleSpec> = {}): BattleSpec => ({
   id: "1-kessa-0", turn: 1, system: "Kessa", sector: "shield",
