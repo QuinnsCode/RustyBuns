@@ -638,3 +638,51 @@ export function rideEvents(notes: Note[], lay: Layout): RideEvent[] {
 
 /** The push on the lean an event gives: away from the side it came from. */
 export const eventPush = (e: RideEvent) => -e.side * e.power;
+
+// -- friends and their vein charts ---------------------------------------------------------------------
+// A file's friends are the people who edited it: the top 8 by commits. Each one's vein chart is the file's
+// graph cut down to their own commits, drawn small and on one shared clock so the charts line up side by side.
+
+export const MAX_FRIENDS = 8;
+
+export interface Friend { name: string; commits: Commit[]; added: number; removed: number }
+
+/** The `limit` people with the most commits in `commits` (ties by name), each with their own commits, parents cut down to their own. */
+export function topFriends(commits: Commit[], limit = MAX_FRIENDS): Friend[] {
+  const dag = new Map(commits.map((c) => [c.hash, c.parents ?? []]));
+  const by = new Map<string, Commit[]>();
+  for (const c of commits) by.set(c.author, [...(by.get(c.author) ?? []), c]);
+  return [...by]
+    .sort(([a, x], [b, y]) => y.length - x.length || (a < b ? -1 : a > b ? 1 : 0))
+    .slice(0, limit)
+    .map(([name, mine]) => {
+      // A history with no parents reads as one line (buildNotes), so it stays that way for them too.
+      const parents = commits.some((c) => c.parents) ? simplifyParents(dag, new Set(mine.map((c) => c.hash))) : null;
+      return {
+        name, added: mine.reduce((s, c) => s + c.added, 0), removed: mine.reduce((s, c) => s + c.removed, 0),
+        commits: mine.map((c) => {
+          const { parents: _own, ...rest } = c;
+          const p = parents?.get(c.hash);
+          return p ? { ...rest, parents: p } : rest;
+        }),
+      };
+    });
+}
+
+export interface Vein {
+  /** Each commit's place on the chart: x 0..1 along the shared clock, y -1..1 across its lane, r 0..1 its size. */
+  dots: { x: number; y: number; r: number; kind: Kind; hot: boolean }[];
+  /** Pairs of dot indices, oldest first. */
+  links: { lo: number; hi: number; hot: boolean }[];
+}
+
+/** A friend's commits as a small chart. `from` and `to` (ms) are the clock shared by every chart in the row. */
+export function veinChart(commits: Commit[], from: number, to: number): Vein {
+  const notes = buildNotes(commits), lay = layoutGraph(notes);
+  const span = to - from;
+  const hotEdge = new Set(lay.hot.slice(1).map((hi, k) => `${lay.hot[k]}-${hi}`));
+  return {
+    dots: notes.map((n, i) => ({ x: span > 0 ? Math.min(1, Math.max(0, (n.t - from) / span)) : 0.5, y: slotX(lay.slot[i]!, lay.extent), r: n.size, kind: n.kind, hot: lay.onHot[i]! })),
+    links: lay.edges.map((e) => ({ ...e, hot: hotEdge.has(`${e.lo}-${e.hi}`) })),
+  };
+}

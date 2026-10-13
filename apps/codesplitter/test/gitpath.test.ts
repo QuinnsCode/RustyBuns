@@ -5,7 +5,7 @@ import {
   AHEAD, FALLOFF, RIDE, buildNotes, eventPush, filterRange, gustRide, newRide, qAtFrac, qAtTime, remount, rideEvents, stepRide, tapGrade, tapRide, timeFracAt, timeTicks, type Side,
   breeze, cleanRefs, clockAt, currentIndex, depthAtY, edgeSlotAt, formatAge, formatClock, geometry,
   keptAncestors, kindOf, layoutGraph, multiplier, orderCommits, parseDag, parsePatchLog, pathSlotAt, project, qToScrub,
-  readInput, scaleAt, scoreAt, scrubToIndex, scrubToQ, simplifyParents, slotOf, slotX, stepQ, topFiles,
+  readInput, topFriends, veinChart, scaleAt, scoreAt, scrubToIndex, scrubToQ, simplifyParents, slotOf, slotX, stepQ, topFiles,
   type Commit,
 } from "../src/gitpath/gitpath.ts";
 
@@ -533,5 +533,45 @@ describe("what git does to the rider", () => {
     let over = false;
     for (let k = 0; k < 300 && !over; k++) over = stepRide(r, 1 / 60, 0);
     expect(over).toBe(true);
+  });
+});
+
+describe("friends and their vein charts", () => {
+  const log = [
+    at(1, { author: "ada", parents: [] }), at(2, { author: "bo", parents: [at(1).hash] }), at(3, { author: "ada", parents: [at(2).hash] }),
+    at(4, { author: "cy", parents: [at(3).hash] }), at(5, { author: "ada", parents: [at(4).hash] }), at(6, { author: "bo", parents: [at(5).hash] }),
+  ];
+
+  test("the top friends are the most frequent authors, ties by name, capped at the limit", () => {
+    expect(topFriends(log).map((f) => [f.name, f.commits.length])).toEqual([["ada", 3], ["bo", 2], ["cy", 1]]);
+    expect(topFriends(log, 2).map((f) => f.name)).toEqual(["ada", "bo"]);
+    const nine = Array.from({ length: 9 }, (_, i) => at(i + 1, { author: `p${i}` }));
+    expect(topFriends(nine)).toHaveLength(8);
+  });
+
+  test("a friend's commits point at their own earlier commits, skipping everyone else's", () => {
+    const ada = topFriends(log)[0]!;
+    expect(ada.commits.map((c) => c.parents)).toEqual([[], [at(1).hash], [at(3).hash]]);
+  });
+
+  test("a history with no parents stays one line, and the totals add up", () => {
+    const f = topFriends([at(1, { author: "ada", added: 4, removed: 1 }), at(2, { author: "ada", added: 2 })])[0]!;
+    expect([f.added, f.removed, f.commits.every((c) => c.parents === undefined)]).toEqual([6, 1, true]);
+    expect(buildNotes(f.commits).map((n) => n.parents)).toEqual([[], [0]]);
+  });
+
+  test("a vein chart puts commits on the shared clock, so a late starter begins part-way along", () => {
+    const from = Date.parse(at(1).date), to = Date.parse(at(6).date);
+    const cy = veinChart(topFriends(log)[2]!.commits, from, to);
+    expect(cy.dots).toHaveLength(1);
+    expect(cy.dots[0]!.x).toBeCloseTo(3 / 5);
+    const ada = veinChart(topFriends(log)[0]!.commits, from, to);
+    expect(ada.dots.map((d) => d.x)).toEqual([0, 2 / 5, 4 / 5]);
+    expect(ada.links).toHaveLength(2);
+    expect(ada.dots.every((d) => d.hot)).toBe(true);
+  });
+
+  test("an empty clock span doesn't divide by zero", () => {
+    expect(veinChart([at(1)], 5, 5).dots[0]!.x).toBe(0.5);
   });
 });
