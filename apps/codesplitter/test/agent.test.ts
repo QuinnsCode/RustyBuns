@@ -408,10 +408,10 @@ describe("claims", () => {
   test("an agent whose claim lapses before its cap (or that lets go) may claim the lines again at once", async () => {
     const call = await local();
     await setup(call, "a\nb");
-    const t0 = Date.now();
     try {
       await post(call, "agent-x", "claims", { id: "run-1", lines: ["L1"] });
-      setSystemTime(t0 + LEASE_MS + 1);
+      // Read the clock after the claim lands: under --parallel it can take longer than a lease's slack, and the lease starts when it lands.
+      setSystemTime(Date.now() + LEASE_MS + 1);
       expect((await post(call, "agent-x", "claims", { id: "run-2", lines: ["L1"] })).status).toBe(201);
       await post(call, "agent-x", "release", { id: "run-2" });
       expect((await post(call, "agent-x", "claims", { id: "run-3", lines: ["L1"] })).status).toBe(201);

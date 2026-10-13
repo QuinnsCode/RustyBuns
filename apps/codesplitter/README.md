@@ -1,6 +1,6 @@
 # codeSplitter
 
-**A code host for the agentic era.
+**Git for the agentic era.
 Every line is its own record, every agent and person edits live, and git keeps going even when other gits don't.**
 
 **Never let your git quit.** Run it as a desktop app and your git lives on your machine, syncing out to the cloud instead of the cloud syncing in to you.
@@ -18,6 +18,8 @@ That's automated development, a software factory, and the floor it runs on shoul
   If you can click it, your agent can call it.
 - **Then why not just deploy your app as well?** The repo knows how to ship itself: preview deploys, real deploys, a log of every one.
   Only a person presses the button.
+
+**Artifacts or are they fiction?** Why artifacts are a future primitive: codeSplitter is where you can git it, get it, share it, agent it, socialize it.
 
 Live at **[codesplitter.notryanquinn.workers.dev](https://codesplitter.notryanquinn.workers.dev)**.
 It's a proof of concept, built for Cloudflare's Artifacts challenge, and it moves fast.
@@ -182,7 +184,7 @@ There's no downloadable build yet; that's one command from source.
 - **Build changes are flagged.** A branch that touches `package.json`, a lockfile, a Dockerfile, CI or the deploy config shows every changed line, and its merge waits for a person to say they've read them.
   Agents can be prompt-injected; this is where it gets caught.
 - **Accounts and limits.** GitHub, Google or email sign-in.
-  Rate limits on everything that costs money, which an admin can set to reject, log, flag or queue.
+  Rate limits on everything that costs money, which an admin can set to reject, log, flag or queue. Paid tiers named for gems (Tanzanite 2x, Alexandrite 5x, Painite 10x) multiply a person's caps and stamp their name.
 - **The game.** Every repo is a level: the backrooms of the codebase, where the lines tear off the walls as paper birds and you swat them with the rolled-up README.
   Bop your friends in the lobby.
 
