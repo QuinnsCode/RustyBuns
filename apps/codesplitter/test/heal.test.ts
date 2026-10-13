@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { local as boot } from "../src/local.ts";
 import type { Exec } from "../src/agent-run.ts";
-import { alsoFor, blame, healUnavailable, MAX_ALSO, MAX_ATTEMPTS } from "../src/heal.ts";
+import { alsoFor, blame, engineLines, healUnavailable, MAX_ALSO, MAX_ATTEMPTS } from "../src/heal.ts";
 
 // End to end, with real git and the in-process queue: a full run on a busy machine can stretch one past bun's 5s default.
 setDefaultTimeout(20_000);
@@ -165,4 +165,12 @@ test("blame: the file the log names most; alsoFor: the rest, those it names firs
   expect(blame(["a.ts", "b.ts"], "nothing")).toBe("a.ts");
   expect(alsoFor(["a.ts", "b.ts", "c.ts"], "a.ts", "c.ts:1")).toEqual(["c.ts", "b.ts"]);
   expect(alsoFor(Array.from({ length: MAX_ALSO + 5 }, (_, i) => `f${i}.ts`), "f0.ts").length).toBe(MAX_ALSO);
+});
+
+test("a rebuild task's ENGINE lines: one per clash, the last said counts, markdown around them ignored (#1226)", () => {
+  const out = ["Put main's call back beside the branch's.", "ENGINE a.ts L2 no: first try", "- `ENGINE a.ts L2 yes: both added a call; keep both`", "> ENGINE b.ts L9 NO", "ENGINE c.ts maybe: not a verdict"].join("\n");
+  expect(engineLines(out)).toEqual([
+    { path: "a.ts", line: "L2", yes: true, how: "both added a call; keep both" },
+    { path: "b.ts", line: "L9", yes: false, how: "" },
+  ]);
 });
