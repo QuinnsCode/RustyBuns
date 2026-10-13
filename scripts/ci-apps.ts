@@ -82,7 +82,7 @@ if (cmd === "drop") {
   let names: string[];
   if (arg === "pr") {
     if (!base) throw new Error("drop pr needs a base ref");
-    const pipeline = (await changedFiles(base)).some((f) => /^(scripts\/drop\.ts|\.github\/workflows\/desktop-drop\.yml)$/.test(f));
+    const pipeline = (await changedFiles(base)).some((f) => /^(scripts\/drop\.ts$|scripts\/mac\/|\.github\/workflows\/desktop-drop\.yml$)/.test(f));
     const rows = pipeline ? "all" : await rowChanges(base);
     names = rows === "all" ? Object.keys(APPS) : [...rows];
   } else names = arg === "all" || !arg ? Object.keys(APPS) : arg.split(/[\s,]+/).filter(Boolean);
