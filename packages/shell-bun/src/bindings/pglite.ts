@@ -77,6 +77,8 @@ function concat(parts: Uint8Array[]): Uint8Array {
  * - named prepared statements get a per-connection prefix, at the protocol level (Parse, Bind,
  *   Describe, Close) and in SQL (PREPARE, EXECUTE, DEALLOCATE), so two pooled connections can
  *   both prepare "s1" (42P05 otherwise, #1145); DEALLOCATE ALL drops only the connection's own;
+ * - DISCARD ALL, a pooler's reset on release, does the same and leaves the shared session's temp
+ *   tables, settings and locks alone; DISCARD TEMP is refused, as there's no telling whose they are (#1167);
  * - COPY ... FROM STDIN (a simple query) is answered here and its data held until CopyDone,
  *   then run in one go: PGlite reads a message's input to the end, so copy-in can't stream (#1150);
  * - a connection that leaves gets its batch synced, its transaction rolled back and its
@@ -191,7 +193,7 @@ export class SessionQueue {
     const to = m.indexOf(0, from);
     if (from <= 0 || to < from) return { msg: m };
     const sql = dec.decode(m.subarray(from, to));
-    if (!/prepare|execute|deallocate|copy/i.test(sql)) return { msg: m };
+    if (!/prepare|execute|deallocate|copy|discard/i.test(sql)) return { msg: m };
     const r = rewriteSql(sql, handlerId);
     if (r.named) this.named.add(handlerId);
     const lone = type === "Q" && r.copyIn && r.statements === 1;
@@ -205,6 +207,8 @@ export class SessionQueue {
 
 /** Fails at parse with a readable error, so a COPY FROM STDIN the queue can't hold doesn't kill PGlite. */
 const COPY_REFUSED = `SELECT "rustybuns: use a simple query for COPY FROM STDIN"`;
+/** The same for DISCARD TEMP: every connection's temp tables live in the one session. */
+const DISCARD_TEMP_REFUSED = `SELECT "rustybuns: DROP temp tables by name, not DISCARD TEMP"`;
 
 /** DEALLOCATE ALL for one connection: its own prefixed statements, not everyone's. */
 function deallocateAll(handlerId: number): string {
@@ -258,7 +262,7 @@ export function sqlTokens(sql: string): Tok[] {
   return out;
 }
 
-/** Prefix the names in PREPARE, EXECUTE and DEALLOCATE, scope DEALLOCATE ALL, and spot COPY ... FROM STDIN. */
+/** Prefix the names in PREPARE, EXECUTE and DEALLOCATE, scope DEALLOCATE ALL and DISCARD, and spot COPY ... FROM STDIN. */
 export function rewriteSql(sql: string, handlerId: number) {
   const edits: { at: number; end: number; text: string }[] = [];
   const prefix = `rb${handlerId}_`;
@@ -284,6 +288,11 @@ export function rewriteSql(sql: string, handlerId: number) {
       const t = second?.s === "prepare" && !second.quoted ? third : second;
       if (t?.s === "all" && !t.quoted) edits.push({ at: first!.at, end: t.end, text: deallocateAll(handlerId) });
       else name(t);
+    }
+    else if (first!.s === "discard" && !second?.quoted) {
+      // ALL also resets temp tables, settings and locks, shared by every connection; PLANS and SEQUENCES only drop caches
+      if (second?.s === "all") edits.push({ at: first!.at, end: second.end, text: deallocateAll(handlerId) });
+      else if (second?.s === "temp" || second?.s === "temporary") edits.push({ at: first!.at, end: second.end, text: DISCARD_TEMP_REFUSED });
     }
     else if (first!.s === "explain" || first!.s === "create") {
       // EXPLAIN [ANALYZE] EXECUTE s, CREATE TABLE t AS EXECUTE s; not GRANT-style EXECUTE ON / EXECUTE FUNCTION
