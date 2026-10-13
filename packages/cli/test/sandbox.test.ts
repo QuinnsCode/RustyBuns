@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildEnv, emptyHome, HOST_FLAGS, hostCommand, hostEnv, seatbeltProfile, wantsSandbox } from "../src/sandbox.ts";
+import { buildEnv, emptyHome, withLocalBins, HOST_FLAGS, hostCommand, hostEnv, seatbeltProfile, wantsSandbox } from "../src/sandbox.ts";
 
 test("buildEnv drops the deploy's logins and keeps what a build reads (#1114)", () => {
   const env = buildEnv({
@@ -87,4 +87,12 @@ test.if(process.platform === "darwin")("under Seatbelt a host can't read a denie
     const r = Bun.spawnSync(cmd, { cwd: dir, stdout: "pipe", stderr: "pipe" });
     expect(r.stdout.toString().trim()).toBe("denied fine");
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("withLocalBins: the app's node_modules/.bin, nearest first, ahead of PATH", () => {
+  const root = mkdtempSync(join(tmpdir(), "rb-bins-")), app = join(root, "apps/web");
+  mkdirSync(join(root, "node_modules/.bin"), { recursive: true });
+  mkdirSync(join(app, "node_modules/.bin"), { recursive: true });
+  const { PATH } = withLocalBins({ PATH: "/usr/bin" }, app);
+  expect(PATH.split(":").slice(0, 3)).toEqual([join(app, "node_modules/.bin"), join(root, "node_modules/.bin"), "/usr/bin"]);
 });

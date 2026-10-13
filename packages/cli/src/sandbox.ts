@@ -12,7 +12,7 @@
 // and runs without one.
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 
 export const HOST_FLAGS = ["--no-env-file", "--no-install"];
 
@@ -39,6 +39,17 @@ export function buildEnv(env: Record<string, string | undefined>): Record<string
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(env)) if (v !== undefined && !DEPLOY_LOGIN.test(k)) out[k] = v;
   return out;
+}
+
+/** env with every node_modules/.bin from `dir` up to / ahead on PATH, as `pnpm exec` and `npm run` give a
+ *  script: a build of "vite build" fails with `vite: command not found` from a global `rustybuns plan`. */
+export function withLocalBins(env: Record<string, string>, dir: string): Record<string, string> {
+  const bins: string[] = [];
+  for (let d = resolve(dir); ; d = dirname(d)) {
+    if (existsSync(join(d, "node_modules/.bin"))) bins.push(join(d, "node_modules/.bin"));
+    if (dirname(d) === d) break;
+  }
+  return { ...env, PATH: [...bins, env.PATH].filter(Boolean).join(delimiter) };
 }
 
 // With --sandbox the build also gets an empty HOME (#1128), as scripts/trial-github.ts gives a stranger's

@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, te
 import { LEVELS } from "../src/levels/levels.ts";
 import { groundAt } from "../src/levels/place.ts";
 import type { Block } from "../src/sim/codemap.ts";
-import { FFA_SCORE, Game, RESPAWN, type Input, type Mode } from "../src/sim/game.ts";
+import { FFA_SCORE, Game, MAX_REWIND, RESPAWN, type GameEvent, type Input, type Mode } from "../src/sim/game.ts";
 import { Mirror } from "../src/net/mirror.ts";
 import { battleGame, cleanSetup, Room } from "../src/net/room.ts";
 import { cleanInput, decodeSnap, encodeSnap, MAX_PLAYERS, packSoldier, unpackSoldier, VIEW, type FromWorld, type Setup, type Snap } from "../src/net/wire.ts";
@@ -100,6 +100,26 @@ describe("a battle", () => {
     expect(a.hp + a.shield).toBe(a.maxHp + a.maxShield);
   });
 
+  test("a lagging player's rounds hit where the target was when they saw it", () => {
+    for (const lag of [0, 0.25]) {
+      const g = field("ffa"), a = g.join("a"), b = g.join("b");
+      Object.assign(a, { x: 0, z: 0 }), Object.assign(b, { x: 0, z: -8 });
+      run(g, 0.5, new Map());
+      Object.assign(b, { x: 3 }); // stepped out of the line of fire, after the shooter saw it
+      g.lags.set(a.id, lag);
+      g.step(0.1, new Map([[a.id, { ...idle, fire: true, aim: { x: 0, y: 1.2, z: -8 } }]]));
+      expect(b.hp < b.maxHp || b.shield < b.maxShield).toBe(lag > 0);
+    }
+  });
+
+  test("no further back than MAX_REWIND, and guards' rounds never rewind", () => {
+    const g = field("ffa", [{ x: 0, z: -30, guards: 1 }]), a = g.join("a"), guard = g.soldiers.find((s) => s.brain)!;
+    g.lags.set(a.id, 5), g.lags.set(guard.id, 5);
+    g.fire(a, { x: 0, y: 1, z: -10 }), g.fire(guard, { x: 0, y: 1, z: 0 });
+    expect(g.shots.find((p) => p.owner === a.id)!.rewind).toBe(MAX_REWIND);
+    expect(g.shots.find((p) => p.owner === guard.id)!.rewind).toBeUndefined();
+  });
+
   test("each player's input moves only their soldier", () => {
     const g = field("coop"), a = g.join("a"), b = g.join("b"), bz = b.z;
     run(g, 1, new Map([[a.id, { ...idle, forward: 1 }]]));
@@ -118,21 +138,43 @@ describe("the wire", () => {
 
   test("a snapshot goes through the binary frame and back the same", () => {
     const snap: Snap = {
-      t: "snap", seq: 70_000, base: 69_998, time: 12.345, status: "won", winner: "ada",
+      t: "snap", seq: 70_000, base: 69_998, input: 1_234, time: 12.345, status: "won", winner: "ada",
       soldiers: [[3, 1.25, null, -80.5, null, null, null, 6.283, null, 100, null, 5, 2, null], [9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
       gone: [4, 7], shots: [[123_456, 3, "theirs", "push", 1.5, 2, -3.25, 110, 0, -5.5, 0.42]], spent: [200_000], stashes: [[99, 1, 2, 3]],
       cleared: [true, false], files: [["src/a.ts", 0, 0]], events: [{ kind: "cleared", compound: 1 }],
+      you: { ammo: [-1, 30, 0], loaded: [-1, 12, 0], reload: 1.25, cd: 0.08, heat: 0.3, shieldT: 4, rollCd: 0 },
     };
     const bytes = encodeSnap(snap);
     expect(decodeSnap(bytes)).toEqual(snap);
+    expect(decodeSnap(encodeSnap({ ...snap, you: null }))!.you).toBeNull();
     // Nothing optional, nothing in the tail: just the header and the counts.
-    expect(encodeSnap({ ...snap, winner: undefined, cleared: undefined, files: [], events: [], soldiers: [], gone: [], shots: [], spent: [], stashes: [] }).length).toBe(28);
+    expect(encodeSnap({ ...snap, winner: undefined, cleared: undefined, you: undefined, files: [], events: [], soldiers: [], gone: [], shots: [], spent: [], stashes: [] }).length).toBe(35);
     expect(decodeSnap(new Uint8Array([9, 9, 9]))).toBeNull();
+  });
+
+  test("every kind of event goes through the frame and back, to the centimetre", () => {
+    const events: GameEvent[] = [
+      { kind: "fire", id: 3, weapon: "push" }, { kind: "hit", target: 3, by: -1, damage: 12.5, shield: true },
+      { kind: "shield", id: 3, state: "charging" }, { kind: "boom", x: 1.25, y: -2, z: 300.5, r: 4.5 }, { kind: "down", id: 3, by: 9 },
+      { kind: "respawn", id: 3, lives: -1 }, { kind: "cleared", compound: 2 }, { kind: "pickup", id: 3, item: "reset" },
+      { kind: "blamed", id: 4 }, { kind: "reverted", id: 4 }, { kind: "stashed", x: 1, y: 2, z: 3 }, { kind: "impact", x: 0.01, y: 0, z: -9.99, weapon: "fetch" },
+      { kind: "razed", path: "src/ünïcode.ts", lines: 120, by: 3, x: 1, y: 0, z: 2, w: 4.5, h: 12, d: 6 },
+      { kind: "objective", text: "main held" }, { kind: "reload", id: 3, weapon: "add" }, { kind: "streak", vehicle: "heli", kills: 5 },
+      { kind: "board", vehicle: "buggy", on: false }, { kind: "vehicleHit", id: 100_000, damage: 40 }, { kind: "wrecked", id: 100_000, vehicle: "heli" },
+      { kind: "won" }, { kind: "lost" }, { kind: "joined", id: 7 }, { kind: "left", id: 7 },
+    ];
+    const snap: Snap = { t: "snap", seq: 1, base: 0, input: 0, time: 0, status: "playing", soldiers: [], gone: [], shots: [], spent: [], stashes: [], files: [], events };
+    expect(decodeSnap(encodeSnap(snap))!.events).toEqual(events);
+    // A fire event is 4 bytes, where its JSON was about 35.
+    expect(encodeSnap({ ...snap, events: [events[0]!] }).length - encodeSnap({ ...snap, events: [] }).length).toBe(4);
   });
 
   test("inputs are cleaned: numbers in range, real weapons, a finite aim", () => {
     expect(cleanInput({ right: 9, forward: "x", yaw: 1, pitch: 9, fire: 1, weapon: "rm -rf", aim: { x: 1, y: NaN, z: 0 } }))
       .toEqual({ right: 1, forward: 0, yaw: 1, pitch: 1.6, jump: false, roll: false, crouch: false, prone: false, scope: false, fire: false, reload: false, aim: undefined, weapon: undefined });
+    expect(cleanInput({ seq: 7, view: 12.5 })).toMatchObject({ seq: 7, view: 12.5 });
+    const bad = cleanInput({ seq: -1.5, view: Infinity })!;
+    expect("seq" in bad || "view" in bad).toBe(false);
     expect(cleanInput(null)).toBeNull();
   });
 
@@ -464,8 +506,10 @@ describe("the page's mirror", () => {
     const z0 = m.me.z;
     for (let i = 0; i < 30; i++) m.frame(1 / 60, { ...idle, forward: 1 });
     expect(m.me.z).toBeLessThan(z0 - 2);
-    // The world never moved you: a far-off you is put back.
-    for (let i = 0; i < 60; i++) m.frame(1 / 60, { ...idle, forward: 1 });
+    // The world had every input and never moved you: a far-off you is put back.
+    let last = idle;
+    for (let i = 0; i < 60; i++) last = m.frame(1 / 60, { ...idle, forward: 1 });
+    room.input("a", { ...idle, seq: last.seq });
     m.apply(send(room, "a"));
     expect(m.me.z).toBeCloseTo(room.game.soldiers[m.game.me]!.z, 0);
   });
@@ -511,5 +555,40 @@ describe("the page's mirror", () => {
     expect(m.game.map.blocks.some((x) => x.path === b.path)).toBe(false);
     expect(m.take()).toEqual([{ kind: "cleared", compound: 0 }]);
     expect(m.take()).toEqual([]);
+  });
+
+  test("inputs go out numbered and stamped; the world echoes the number and reckons the lag from the stamp", () => {
+    const { room, m, a } = battle();
+    const one = m.frame(1 / 60, idle), two = m.frame(1 / 60, idle);
+    expect([one.seq, two.seq]).toEqual([1, 2]);
+    expect(two.view).toBeCloseTo(room.game.time + 2 / 60 - 0.1, 3); // INTERP behind the page's clock
+    room.game.time += 0.15;
+    room.input("a", two);
+    expect(send(room, "a").input).toBe(2);
+    expect(room.game.lags.get(a)).toBeCloseTo(0.15 - 2 / 60 + 0.1, 3);
+    room.input("a", { ...idle, view: -100 });
+    expect(room.game.lags.get(a)).toBe(MAX_REWIND);
+  });
+
+  test("a correction plays your frames since on top, so it doesn't fight a fast strafe", () => {
+    const { room, m } = battle();
+    // The same page with no world: where your keys alone put you.
+    const alone = battle().m;
+    const ONE_WAY = 6; // frames each way: a 200 ms round trip
+    const up: Input[][] = [], down: Snap[][] = [];
+    let t = 0;
+    room.tick(t);
+    let worst = 0;
+    for (let f = 0; f < 180; f++) {
+      const keys = { ...idle, right: f < 120 ? 1 : -1 };
+      up[f + ONE_WAY] = [m.frame(1 / 60, keys)];
+      alone.frame(1 / 60, keys);
+      for (const i of up[f] ?? []) room.input("a", i);
+      room.tick((t += 1000 / 60));
+      if (f % 3 === 0) (down[f + ONE_WAY] ??= []).push(send(room, "a"));
+      for (const snap of down[f] ?? []) m.apply(snap);
+      worst = Math.max(worst, Math.hypot(m.me.x - alone.me.x, m.me.z - alone.me.z));
+    }
+    expect(worst).toBeLessThan(0.3);
   });
 });

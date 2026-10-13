@@ -735,8 +735,7 @@ function frame(now: number) {
   let events: GameEvent[];
   if (net) {
     // A battle: your soldier moves now, the world says what happened; a roster change re-dresses everyone.
-    net.mirror.frame(dt, input);
-    net.battle.input(input, now, net.mirror.acked);
+    net.battle.input(net.mirror.frame(dt, input), now, net.mirror.acked);
     events = net.mirror.take();
     if (net.roster !== net.mirror.roster) showLooks(net);
     if (!$("board").hidden) board(game, net);
