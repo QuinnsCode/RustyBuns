@@ -2,11 +2,11 @@
 // four sides, drawn in ink lines like the files. A head is a row here:
 //   { id, name, mark }  a monogram drawn on the block (no file needed)
 //   { id, name, src }   an image, e.g. "heads/<id>.svg" in public/heads/; any square-ish logo works
-//   { id, name, toy }   a toy head from characters.ts, locked until enough levels are won (src/sim/heads.ts)
+//   { id, name, toy }   a toy head from characters.ts, open from the start (wins: 0) or locked until enough levels are won (src/sim/heads.ts)
 // Adding one is a row and, for src, a file.
 
 import * as THREE from "three";
-import { UNLOCKABLE } from "../sim/heads.ts";
+import { STARTERS, UNLOCKABLE } from "../sim/heads.ts";
 import { headModel, headThumbs } from "./characters.ts";
 import { ballHead } from "./figure.ts";
 
@@ -26,6 +26,7 @@ export const HEADS: HeadDef[] = [
   { id: "ball", name: "Plain" },
   { id: "rustybuns", name: "Rusty Buns", mark: { text: "rb", ink: "#1f1f1f" } },
   { id: "codesplitter", name: "codeSplitter", mark: { text: "cs", ink: "#e8590c" } },
+  ...STARTERS.map((h) => ({ id: h.id, name: h.name, toy: h.id, wins: 0, nod: h.nod })),
   ...UNLOCKABLE.map((h, i) => ({ id: h.id, name: h.name, toy: h.id, wins: i + 1, nod: h.nod })),
 ];
 
@@ -47,7 +48,7 @@ export function headCanvas(def: HeadDef, onLoad?: () => void): HTMLCanvasElement
   g.fillRect(0, 0, SIZE, SIZE);
   if (def.toy) {
     // A toy head's picture, drawn once for all of them.
-    thumbs ??= headThumbs(UNLOCKABLE.map((h) => h.id), SIZE / 2);
+    thumbs ??= headThumbs([...STARTERS, ...UNLOCKABLE].map((h) => h.id), SIZE / 2);
     const img = new Image();
     img.onload = () => (g.drawImage(img, 0, 0, SIZE, SIZE), onLoad?.());
     img.src = thumbs.get(def.toy) ?? "";

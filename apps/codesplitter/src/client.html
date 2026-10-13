@@ -752,6 +752,16 @@
   .feed .evs a { overflow-wrap: anywhere; }
   .limits .savebar { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 10px 0; margin-bottom: 16px; background: var(--bg); border-top: 1px solid var(--border); }
   .limits .ev .btn { margin-left: auto; padding: 2px 4px; color: var(--muted); }
+  /* Paid tiers (src/tiers.ts): a gem-coloured stamp beside a name. The colours are the stones' own, so they hold in both themes. */
+  .tier { --g1: #7c8cf0; --g2: #3b4cc0; display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px 1px 6px; border-radius: 999px; font: 600 11px/16px var(--sans); color: #fff; vertical-align: 2px; white-space: nowrap;
+    background: linear-gradient(135deg, var(--g1), var(--g2)); box-shadow: 0 0 0 1px rgba(255,255,255,.25) inset, 0 1px 6px color-mix(in srgb, var(--g2) 55%, transparent); text-shadow: 0 1px 1px rgba(0,0,0,.3); }
+  .tier svg { width: 12px; height: 12px; }
+  .tier.tanzanite { --g1: #8a7ff0; --g2: #3a3fb8; } .tier.alexandrite { --g1: #2ecf9b; --g2: #b0306a; } .tier.painite { --g1: #f0644c; --g2: #7d0f2b; }
+  .tier.painite, .tier.alexandrite { background-size: 160% 100%; animation: tier-glint 6s ease-in-out infinite alternate; }
+  @keyframes tier-glint { to { background-position: 100% 0; } } @media (prefers-reduced-motion: reduce) { .tier { animation: none !important; } }
+  .tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin: 0 0 12px; }
+  .tiers .card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; color: var(--muted); } .tiers .card b { display: block; margin: 6px 0 2px; font-size: 18px; color: var(--fg); }
+  #tier-add { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 8px; } #tier-add input { width: 11em; }
   .limits .log { margin: 0 0 18px; } .limits .log h2 { margin: 0 0 4px; font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
   .limits .log .ev { padding: 5px 0; } .limits .log .ev b { font: 500 12.5px var(--mono); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 22em; }
   .limits .ev, .jobs .ev { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px; border-top: 1px solid var(--border); font-size: 13px; }
@@ -930,6 +940,8 @@
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const icon = (name, cls = "") => `<i data-lucide="${name}"${cls ? ` class="${cls}"` : ""}></i>`;
+// A paid tier's stamp ({id, label, mult}, src/tiers.ts) beside a name.
+const tierStamp = (t) => t ? ` <span class="tier ${esc(t.id)}" title="${esc(t.label)} tier: ${t.mult}× the usual rate limits">${icon("gem")}${esc(t.label)}</span>` : "";
 const icons = () => {
   try { lucide.createIcons(); } catch {}
   // Icons are decoration: the words or title beside them say what a control does.
@@ -1229,7 +1241,7 @@ function header() {
   drawRail();
   const u = me();
   if (u) {
-    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a><a class="btn ghost" href="#/admin/scale" title="survey: how close each scaling wall is">${icon("map")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" id="invited" href="#/u/${u}" hidden>${icon("mail")}<span></span></a><a class="btn ghost" href="#/feed" title="your feed">${icon("rss")}</a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
+    $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a><a class="btn ghost" href="#/admin/scale" title="survey: how close each scaling wall is">${icon("map")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" id="invited" href="#/u/${u}" hidden>${icon("mail")}<span></span></a><a class="btn ghost" href="#/feed" title="your feed">${icon("rss")}</a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}${tierStamp(session.tier)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
     $("#out").addEventListener("click", signOut);
     $("#phone")?.addEventListener("click", () => phoneDrawer());
     $("#verify")?.addEventListener("click", sendVerification);
@@ -1505,8 +1517,12 @@ const ON_FAIL = [["reject", "reject", "turn the call away with a 429"], ["log", 
 const DID = { reject: "rejected", log: "logged", flag: "flagged", queue: "queued" };
 const ago = (t) => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? "just now" : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`; };
 async function limitsPage() {
-  const { rules, events, flagged } = await api("/admin/limits");
+  const { rules, events, flagged, tiers, tiered } = await api("/admin/limits");
   const label = (name) => rules.find((r) => r.name === name)?.label ?? name;
+  const tierOf = (id) => tiers.find((t) => t.id === id);
+  // Who's on a tier, to stamp beside their name in the lists below.
+  const stampFor = (who) => tierStamp(tierOf(tiered.find((u) => `@${u.name}` === who)?.tier));
+  const tierOptions = (on) => `<option value="">free</option>${tiers.map((t) => `<option value="${t.id}"${t.id === on ? " selected" : ""}>${esc(t.label)} · ${t.mult}×</option>`).join("")}`;
   const row = (r) => {
     const d = r.defaults, changed = d && (d.max !== r.max || d.window_s !== r.window_s || d.on_fail !== r.on_fail || !r.enabled);
     const opts = (WINDOWS.some(([w]) => w === r.window_s) ? WINDOWS : [...WINDOWS, [r.window_s, every(r.window_s)]])
@@ -1529,11 +1545,16 @@ async function limitsPage() {
   app.innerHTML = `<div class="wrap limits" style="padding-top:24px">
     <h1>${icon("gauge")} Rate limits</h1>
     <p class="muted" style="margin:0 0 18px">Most allowed per window, and what happens past it. Hover a name for details. Admins and the desktop app aren't counted.</p>
-    ${flagged.length ? `<section class="log"><h2>Flagged this week</h2>${flagged.map((f) => `<div class="ev"><b>${esc(f.who)}</b><span>${f.rules.map(label).map(esc).join(", ")}</span><span class="tag flag">${f.times}×</span><span class="muted">${ago(f.last)}</span>${reset(f.who)}</div>`).join("")}</section>` : ""}
+    <section class="log"><h2>Paid tiers</h2>
+      <div class="tiers">${tiers.map((t) => `<div class="card">${tierStamp(t)}<b>${t.mult}×</b>${esc(t.about)}</div>`).join("")}</div>
+      <p class="muted small" style="margin:0 0 8px">A tier multiplies a person's cap on every per-person rule below. Free is 1×. Their stamp shows beside their name.</p>
+      <form id="tier-add"><input name="who" placeholder="@handle" aria-label="handle" required><select name="tier" aria-label="tier">${tierOptions("tanzanite")}</select><button class="btn" type="submit">${icon("gem")}Set tier</button></form>
+      ${tiered.map((u) => `<div class="ev"><b>@${esc(u.name)}</b>${tierStamp(tierOf(u.tier))}<select data-tier-of="${esc(u.name)}" aria-label="tier for ${esc(u.name)}">${tierOptions(u.tier)}</select></div>`).join("") || '<div class="ev muted">Nobody is on a tier yet.</div>'}</section>
+    ${flagged.length ? `<section class="log"><h2>Flagged this week</h2>${flagged.map((f) => `<div class="ev"><b>${esc(f.who)}</b>${stampFor(f.who)}<span>${f.rules.map(label).map(esc).join(", ")}</span><span class="tag flag">${f.times}×</span><span class="muted">${ago(f.last)}</span>${reset(f.who)}</div>`).join("")}</section>` : ""}
     <form id="limits-form" class="rgroups">${groups.map((g) => `<section><h2>${esc(g)}</h2>${rules.filter((r) => r.group === g).map(row).join("")}</section>`).join("")}</form>
     <div class="savebar"><span class="muted small" id="limits-msg"></span><span class="grow"></span><button class="btn primary" id="limits-save">${icon("save")}Save</button></div>
     <section class="log"><h2>Went over this week</h2>
-      ${events.map((e) => `<div class="ev"><b>${esc(e.who)}</b><span>${esc(label(e.rule))}</span><span class="tag ${e.action}">${DID[e.action] ?? e.action}</span><span class="muted">${ago(e.at)}</span>${reset(e.who, e.rule)}</div>`).join("") || '<div class="ev muted">Nobody yet.</div>'}</section>
+      ${events.map((e) => `<div class="ev"><b>${esc(e.who)}</b>${stampFor(e.who)}<span>${esc(label(e.rule))}</span><span class="tag ${e.action}">${DID[e.action] ?? e.action}</span><span class="muted">${ago(e.at)}</span>${reset(e.who, e.rule)}</div>`).join("") || '<div class="ev muted">Nobody yet.</div>'}</section>
   </div>`;
   const form = $("#limits-form");
   form.addEventListener("change", (e) => { const r = e.target.closest(".rule"); r?.classList.toggle("off", !r.querySelector("[name=enabled]").checked); $("#limits-msg").textContent = "Unsaved changes"; });
@@ -1543,6 +1564,12 @@ async function limitsPage() {
     el.querySelector("[name=max]").value = d.max; el.querySelector("[name=window_s]").value = d.window_s; el.querySelector("[name=on_fail]").value = d.on_fail; el.querySelector("[name=enabled]").checked = true;
     form.dispatchEvent(new Event("change"));
   });
+  const setTier = async (who, tier) => {
+    try { await api("/admin/limits/tier", { who, tier: tier || null }, "PUT"); toast(tier ? `@${who} is on ${tierOf(tier).label}` : `@${who} is free`); limitsPage(); }
+    catch (err) { toast(String(err.message || err)); }
+  };
+  for (const s of app.querySelectorAll("[data-tier-of]")) s.addEventListener("change", () => setTier(s.dataset.tierOf, s.value));
+  $("#tier-add").addEventListener("submit", (e) => { e.preventDefault(); const f = e.target; setTier(f.who.value.trim().replace(/^@/, ""), f.tier.value); });
   for (const b of app.querySelectorAll("[data-reset]")) b.addEventListener("click", async () => {
     try { await api("/admin/limits/reset", { who: b.dataset.reset, rule: b.dataset.rule }); toast(`Reset ${b.dataset.reset}`); limitsPage(); }
     catch (err) { toast(String(err.message || err)); }
@@ -3040,7 +3067,7 @@ const views = {
     app.innerHTML = `
       <section class="hero"><div class="wrap">
         <div>
-          <div class="est">Est. 2026 · the agentic code host</div>
+          <div class="est">Est. 2026 · git for the agentic era</div>
           <h1 class="headline">Git, <em>split apart</em>.<br>And put back together.</h1>
           <p class="lede">Every file tears into lines, and every line keeps its own author and history. People and their agents work in the same code at the same moment, without stepping on each other, and it all closes back up as a real git commit.</p>
           <div class="row"><button class="btn primary" id="hero-tour" title="sign in, dig up a repo, then a walk round its code page and every panel on the right">${icon("compass")}Let's show you around!</button><button class="btn" id="hero-cmd">${icon("command")}Open the command palette</button><a class="btn" href="/play.html#l/mitt">${icon("gamepad-2")}Play: lines off the walls</a></div>
@@ -3049,7 +3076,7 @@ const views = {
           <ol class="phases" id="phases"><li>a file</li><li>split into lines</li><li>everyone edits at once</li><li>back together as git</li></ol></div>
       </div></section>
       <section class="section"><div class="wrap">
-        <div class="label">the agentic code host</div><h2>Every direction, all at once</h2>
+        <div class="label">the agentic code host</div><h2>Git it, get it, share it, agent it, socialize it</h2>
         <p class="muted">Human to human, human to agent, agent to agent, and everyone to the computer. Your agents don't get a sandbox off to the side: they work in the same repo as you, live, line by line, each line signed by whoever wrote it, and nothing ships until a person says so.</p>
         <div class="flapboard" id="flapboard" aria-label="Who's handing what to whom, on a departures and arrivals board"></div>
       </div></section>
@@ -3068,7 +3095,7 @@ const views = {
           <div class="home"><b>Yours first, syncing out</b><p>Bare repos in <code>~/.codesplitters</code>, mirrored both ways to GitHub, GitLab or any git remote. Upstream goes down: keep editing, committing, branching, checking and merging. It catches up by itself, and never force-pushes.</p>
             <div class="flow">you → <em>GitHub, GitLab, anywhere</em><br>cloud ✕ → you keep going</div></div>
         </div>
-        <div class="quits"><span>Own your git and put it wherever you want</span><span>Don't let your git quit on you or your agents</span><span>Never let a git commit quit</span><span>Your git history never goes extinct</span></div>
+        <div class="quits"><span>What if you can't git to your get? Do you have a plan?</span><span>Git that's only gone if you are.</span></div>
       </div></section>
       <section class="section"><div class="wrap">
         <div class="label">everything it does</div><h2>All of it, on one strip</h2>
@@ -3231,7 +3258,7 @@ const views = {
     // A person's code city (play.html#c/…): a quiet door at the foot of their profile, not a box. Its owner can close it to visitors.
     const cityLink = agent || !(user.city_public || mine) ? "" : `<a href="/play.html#c/${encodeURIComponent(name)}" title="walk @${esc(name)}'s code city">${icon("building")}the city</a>${mine ? `<label title="let others walk your city"><input type="checkbox" id="citypub"${user.city_public ? " checked" : ""}>open</label>` : ""}`;
     app.innerHTML = `<div class="wrap prof">
-      <div class="prof-head"><h1>${icon(agent ? "bot" : "user")}@${esc(name)}</h1><span class="muted">${agent ? `a coding agent on ${esc(agent.harness)}${agent.run_by.length ? `, run by ${agent.run_by.map((o) => `<a href="#/u/${esc(o.name)}">@${esc(o.name)}</a>`).join(", ")}` : ""}` : esc(user.bio) || "no notes yet"}</span><span class="grow"></span>
+      <div class="prof-head"><h1>${icon(agent ? "bot" : "user")}@${esc(name)}${tierStamp(user.tier)}</h1><span class="muted">${agent ? `a coding agent on ${esc(agent.harness)}${agent.run_by.length ? `, run by ${agent.run_by.map((o) => `<a href="#/u/${esc(o.name)}">@${esc(o.name)}</a>`).join(", ")}` : ""}` : esc(user.bio) || "no notes yet"}</span><span class="grow"></span>
         <span class="stat">${agent ? `${n(shown.length, "repo")} · ${n(agent.run_count, "run")} · ${n(agent.lines, "line edit")}` : `${n(repos.length, "repo")} · ${n(playlists.length, "collection")}`} · ${following} following · ${n(followers, "follower")}</span>
         ${followButton({ name, kind: name.startsWith("agent-") ? "agent" : "user" })}
         ${mine ? `<button class="btn ghost" id="editpage">${icon("palette")}Edit page</button>` : ""}</div>
@@ -5411,7 +5438,7 @@ function flapBoard(el) {
 
 // "What if git was your ___", one word at a time, slower than the board. The shouted ones land orange.
 const WHATIF = ["deploy", "build", "friends", "hobbies", "YOURS", "history", "ONLY YOURS", "agentic", "human", "social", "here", "there", "everywhere"];
-const TAKE_CONTROL = ["Git in control of your git", "What if your git did more for you", "Git to taking control of your git", "Git over your old relationship with git", "Git in charge of your history"];
+const TAKE_CONTROL = ["What if your git was <em>more</em>?", "What if your git got good?", "codeSplitter: where the git got good.", "AI has evolved the field, so why can't git evolve with it?", "Innovate on git? Nah, I'm here for the games, but while I'm here I might as well git to it."];
 let stopWord = () => {};
 function flapWord(el) {
   if (!el) return;
