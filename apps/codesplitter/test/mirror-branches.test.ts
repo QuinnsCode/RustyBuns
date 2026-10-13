@@ -152,6 +152,7 @@ describe("mirrors: branches and this copy's own git", () => {
     await sh(`git checkout -q main && git merge -q --squash parent && git commit -qm "parent (#1)" && printf 'export const p = 2\\n' > src/p.ts && git commit -qam "p again" && git push -q origin main`, work);
     expect((await git(["merge-tree", "--write-tree", "main", "child"], up)).code).toBe(1);
     // The next sync moves the open one onto the squash: the parent's files are main's again.
+    const prev = await sh(`git --git-dir ${up} rev-parse child`);
     expect(await sync(call)).toMatchObject({ state: "ok" });
     expect(await files("child")).toEqual([["README", 0]]);
     expect((await file(call, "README")).lines.map((l: any) => l.text)).toEqual(["hello", "world"]);
@@ -159,9 +160,9 @@ describe("mirrors: branches and this copy's own git", () => {
     // Opened after, it starts from the parent's head.
     expect(await (await post(call, "/api/repos/ana/up/mirror/branches", { ref: "late" })).json()).toMatchObject({ files: ["README"] });
     expect(await upstreamMessages(call.env, "ana", "up", "late", "README")).toEqual(["child"]);
-    // Pushed, it's a merge of main's tip: main's copy of the parent's files, its own change on top.
-    const prev = await sh(`git --git-dir ${up} rev-parse child`);
-    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/child/push")).json()).toMatchObject({ pushed: true });
+    // It clashed with main only in git, so that sync pushed it too (#1190): a merge of main's tip, main's copy
+    // of the parent's files, its own change on top. Pushing again has nothing new.
+    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/child/push")).json()).toMatchObject({ pushed: false });
     expect(await sh(`git --git-dir ${up} log -1 --format=%P child`)).toBe(`${prev} ${await upLog("%H")}`);
     expect(await sh(`git --git-dir ${up} show child:src/p.ts`)).toBe("export const p = 2");
     expect(await sh(`git --git-dir ${up} show child:README`)).toBe("hello\nworld, child");
