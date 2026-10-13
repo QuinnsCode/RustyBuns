@@ -204,6 +204,20 @@ export interface DoMigration {
 
 export type DesktopOs = "darwin-arm64" | "darwin-x64" | "linux-x64" | "linux-arm64" | "windows-x64";
 
+/** One of desktop.server's servers. */
+export interface DesktopServer {
+  entry: string;
+  /** vite server.proxy keys: "/api" is a prefix, "^/ws/.*" a regex. */
+  paths: string[];
+  /** A server that ignores PORT: the port it always listens on. */
+  port?: number;
+  /** More env for it (ORIGIN, say). The host's own env and PORT, DATA_DIR come first. */
+  env?: Record<string, string>;
+}
+
+/** desktop.server as a list, empty when there's none. */
+export const desktopServers = (d: DesktopTarget | undefined): DesktopServer[] => d?.server ? [d.server].flat() : [];
+
 export interface DesktopTarget {
   /**
    * "spa": your own Vite SPA build + a world class; the RWSDK worker never runs.
@@ -232,20 +246,13 @@ export interface DesktopTarget {
    * spa: the app's own Node server, run beside the host. The build bundles `entry` with Bun
    * (its imports and node_modules with it) into the binary; the host starts it as a child with
    * PORT (a free port, or `port`) and DATA_DIR (the host's data dir), and proxies `paths` to it,
-   * as the Vite dev server's server.proxy did:
+   * WebSocket upgrades too, as the Vite dev server's server.proxy did:
    *   server: { entry: "../api/server.js", paths: ["/api"] }
+   * A list when the proxy sent paths to more than one server; the first whose paths match wins:
+   *   server: [{ entry: "../api/server.js", paths: ["/api"] }, { entry: "../media/index.js", paths: ["/img", "/gif"] }]
    * Desktop and box only: a Worker can't run a node:http server, so the edge needs it ported.
-   * Plain HTTP; a WebSocket upgrade on those paths isn't proxied.
    */
-  server?: {
-    entry: string;
-    /** vite server.proxy keys: "/api" is a prefix, "^/ws/.*" a regex. */
-    paths: string[];
-    /** A server that ignores PORT: the port it always listens on. */
-    port?: number;
-    /** More env for it (ORIGIN, say). The host's own env and PORT, DATA_DIR come first. */
-    env?: Record<string, string>;
-  };
+  server?: DesktopServer | DesktopServer[];
   /**
    * Response header overrides. The default is full cross-origin isolation
    * (COEP require-corp) for SharedArrayBuffer; apps that load CDN resources
