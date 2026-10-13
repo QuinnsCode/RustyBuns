@@ -7,6 +7,7 @@
     "agents": "bun agents.ts",
     "layout": "bun layout.ts",
     "phone": "bun scripts/phone.ts",
+    "stress": "bun scripts/stress.ts",
     "gitpath": "bun src/gitpath/serve.ts",
     "cli": "bun cli.ts",
     "test": "bun test --parallel test",
