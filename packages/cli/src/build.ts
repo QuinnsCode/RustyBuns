@@ -851,7 +851,8 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
     // embedded; assets and migrations are read from the working tree.
     const outdir = opts.outdir ?? ".rustybuns/dev";
     if (workers.size) await bundleWorkers(outdir, opts.outdir ? "none" : "linked");
-    if (d.server) await bundleServers(outdir);
+    // The dev host runs here; a Railway box (host "box" without a compile) runs in its linux-x64 container.
+    if (d.server) await bundleServers(outdir, host === "box" ? ["linux-x64"] : undefined);
     const r = await step("bundle dev host", () => Bun.build({ entrypoints: [entry], outdir, target: "bun", define: defineMap, plugins, sourcemap: opts.outdir ? "none" : "linked", throw: false } as any));
     await prof?.finish();
     if (!r.success) throw new Error(buildErrors(r));
