@@ -102,6 +102,16 @@
   .repohead { background: var(--bg); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 12px; }
   .repohead h1 { margin: 0; font: 400 15px/1.3 var(--sans); letter-spacing: -0.015em; display: flex; align-items: center; gap: 6px; }
   .repohead h1 b { font-weight: 600; }
+  /* The git bar under a repo's header: every git state as a pill, quiet when fine, orange when it wants you, red when it's stuck. */
+  .gitbar { background: var(--bg); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 5px 12px; font-size: 12.5px; }
+  .gitbar:empty { display: none; }
+  .gpill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); color: var(--muted); font: inherit; white-space: nowrap; cursor: pointer; text-decoration: none; }
+  .gpill i, .gpill svg { width: 14px; height: 14px; }
+  .gpill b { font-weight: 600; color: var(--fg); }
+  .gpill[data-s="warn"] { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft, var(--bg)); } .gpill[data-s="warn"] b { color: var(--accent-ink); }
+  .gpill[data-s="bad"] { color: #fff; border-color: var(--del-fg); background: var(--del-fg); font-weight: 600; } .gpill[data-s="bad"] b { color: #fff; }
+  .gfiles { flex-basis: 100%; display: flex; gap: 4px 10px; flex-wrap: wrap; padding: 2px 0 4px; color: var(--muted); }
+  .gfiles[hidden] { display: none; }
   .repohead .btn { padding: 2px 10px; }
   /* The branch you're editing on (#701): the switcher names it, and an orange bar says edits land there, not main. */
   .branch-pop > .panel { left: 0; right: auto; width: 320px; }
@@ -3363,6 +3373,7 @@ const views = {
   /** The header every repo page shares: name, visibility, and its main actions. */
   repoHead(owner, repo, r) {
     const isOwner = owner === me();
+    setTimeout(() => views.wireGitBar(owner, repo), 0);   // the head is on the page by then
     return `<div class="repohead">
       <h1>${icon(r.visibility === "private" ? "lock" : "book")}<a href="#/u/${owner}">${esc(owner)}</a><span class="muted">/</span><b><a href="#/r/${owner}/${repo}">${esc(repo)}</a></b></h1>
       ${visBadge(r.visibility, isOwner)}
@@ -3378,7 +3389,51 @@ const views = {
       ${me() ? `<div class="pop"><button class="btn" id="limits" title="what this repo and you may do, and how close you are">${icon("gauge")}Limits</button><div class="panel" id="limits-panel" hidden style="width:380px;max-height:70vh;overflow:auto"><span class="muted">…</span></div></div>` : ""}
       ${r.clone ? `<div class="pop"><button class="btn primary" id="clone">${icon("code")}Clone</button><div class="panel" hidden><b>${icon("terminal")} Clone with git</b><span class="muted" style="font-size:13px">A real git remote in Cloudflare Artifacts. The token in it is read-only and lasts an hour.</span><div class="copyline"><input readonly value="${esc(maskedUrl(r.clone))}" title="the token is hidden: the button copies it whole"><button class="btn" id="clone-copy">${icon("copy")}</button></div>${r.crewClone ? `<b>${icon("lock")} The crew's remote</b><span class="muted" style="font-size:13px">Private lines are blank in the remote above. This one has their real text, for the crew only; previews and deploys clone it.</span><div class="copyline"><input readonly value="${esc(maskedUrl(r.crewClone))}" title="the token is hidden: the button copies it whole"><button class="btn" id="crew-clone-copy">${icon("copy")}</button></div>` : ""}${r.push ? `<b>${icon("upload")} Push back</b><span class="muted" style="font-size:13px">This repo's git is on this machine: add it as a remote and push to it. The token writes, lasts a day, and goes when the app restarts.</span><div class="copyline"><input readonly value="${esc(maskedUrl(r.push))}" title="the token is hidden: the button copies it whole"><button class="btn" id="push-copy">${icon("copy")}</button></div>` : ""}</div></div>` : ""}
     </div>${r.here?.on ? `<div class="on-branch" id="on-branch">${icon("git-branch")}<span>On branch <code title="${esc(r.here.on)}">${esc(r.here.on)}</code> · <span class="muted">edits land here, not main</span></span><span class="grow"></span>
-      <a class="btn" href="#/b/${esc(owner)}/${esc(repo)}/${encodeURIComponent(r.here.on)}" title="review it against main, then merge">${icon("git-merge")}Merge</a><button class="btn ghost" id="branch-main" title="read and edit main again; the branch stays open">${icon("undo-2")}Back to main</button></div>` : ""}`;
+      <a class="btn" href="#/b/${esc(owner)}/${esc(repo)}/${encodeURIComponent(r.here.on)}" title="review it against main, then merge">${icon("git-merge")}Merge</a><button class="btn ghost" id="branch-main" title="read and edit main again; the branch stays open">${icon("undo-2")}Back to main</button></div>` : ""}<div class="gitbar" id="gitbar"></div>`;
+  },
+  /** The git bar: mirrored? pushing out? pulling in? changes to commit? clashes? One pill each, from GET .../git-state. */
+  async wireGitBar(owner, repo) {
+    const el = $("#gitbar");
+    if (!el) return;
+    const g = await api(`/repos/${owner}/${repo}/git-state`).catch(() => null);
+    if (!document.body.contains(el)) return;
+    if (!g) { el.innerHTML = ""; return; }
+    const n = (k, one, many = one + "s") => `${k} ${k === 1 ? one : many}`;
+    const m = g.mirror, jump = (id) => `data-jump="${id}"`;
+    const pills = [];
+    const pill = (s, ic, html, tip, extra = "") => pills.push(`<button type="button" class="gpill" data-s="${s}" title="${esc(tip)}" ${extra}>${icon(ic)}${html}</button>`);
+    // Mirrored?
+    if (m) {
+      const say = { ok: ["ok", "refresh-cw", "in step"], down: ["bad", "cloud-off", "upstream down"], refused: ["bad", "ban", "push refused"], held: ["warn", "lock", "held: private lines"], rewritten: ["bad", "history", "history rewritten"], clash: ["bad", "triangle-alert", "clash"] }[m.state] ?? ["warn", "refresh-cw", m.state];
+      pill(say[0], say[1], `<b>Mirrored</b> ${esc(say[2])}`, `${m.url} ${m.branch}${m.syncedAt ? ` · checked ${ago(m.syncedAt)}` : ""}${m.primary === "here" ? " · this copy leads" : " · upstream leads"}`, jump("mirror"));
+    } else if (g.dug) pill("ok", "shovel", "<b>Dug up</b> from GitHub", "Dug from GitHub, not mirrored: it listens for new commits", jump("listen"));
+    else pill("ok", "git-fork", "Not mirrored", "This repo's git lives here only");
+    // Pushing out?
+    if (m?.pullOnly) pill("ok", "lock", "Pull-only", "Syncs hear from upstream and nothing goes back up", jump("mirror"));
+    else if (m) pill(m.ahead ? "warn" : "ok", "arrow-up", m.ahead ? `<b>${n(m.ahead, "commit")}</b> to push` : "Nothing to push", m.ahead ? "Commits here that upstream doesn't have yet. Sync now sends them." : "Upstream has everything committed here", jump("mirror"));
+    if (g.waitingForGit.length) pill("warn", "hourglass", `<b>${n(g.waitingForGit.length, "file")}</b> waiting for git`, `Committed here, and land with the next push that does: ${g.waitingForGit.join(", ")}`);
+    if (g.gitError) pill("bad", "triangle-alert", "Last git push failed", g.gitError);
+    // Pulling in?
+    const behind = m ? m.behind : g.dug?.moved ? (g.dug.behind ?? 1) : 0;
+    if (m || g.dug) pill(behind ? "warn" : "ok", "arrow-down", behind ? (m || g.dug.behind != null ? `<b>${n(behind, "commit")}</b> to pull` : "<b>New commits</b> to pull") : "Up to date", behind ? "Upstream has commits that aren't here yet" : "Nothing new upstream", jump(m ? "mirror" : "listen"));
+    // Changes to commit?
+    const u = g.uncommitted;
+    pill(u.count ? "warn" : "ok", "pencil", u.count ? `<b>${n(u.count, "file")}</b> to commit` : "All committed", u.count ? "Edited since the last commit: click to list them" : "Every edit is in a commit", u.count ? 'data-files="1"' : "");
+    // Conflicts?
+    const c = g.conflicts, cm = c.mirror;
+    const clashed = [...(cm?.files ?? []), ...c.push];
+    if (cm || c.push.length) pill("bad", "triangle-alert", cm?.state === "rewritten" ? "<b>Conflict:</b> upstream rewrote history" : `<b>Conflict</b> in ${esc(clashed.slice(0, 3).join(", "))}${clashed.length > 3 ? ` +${clashed.length - 3}` : ""}`, "Both sides changed the same lines. Nothing moves until you pick a side.", jump("mirror"));
+    else pill("ok", "circle-check", "No conflicts", "Git has nothing to settle");
+    const open = el.querySelector(".gfiles") && !el.querySelector(".gfiles").hidden;
+    el.innerHTML = pills.join("") + `<div class="gfiles"${open && u.count ? "" : " hidden"}>${u.files.map((f) => `<a href="#/f/${esc(owner)}/${esc(repo)}/${encodeURIComponent(f.path)}" title="edited ${ago(f.since)}"><code>${esc(f.path)}</code></a>`).join("")}${u.count > u.files.length ? `<span>+${u.count - u.files.length} more</span>` : ""}</div>`;
+    icons();
+    el.querySelector("[data-files]")?.addEventListener("click", () => { const f = el.querySelector(".gfiles"); f.hidden = !f.hidden; });
+    el.querySelectorAll("[data-jump]").forEach((b) => b.addEventListener("click", () => {
+      const t = document.getElementById(b.dataset.jump);
+      if (t) t.scrollIntoView({ block: "center", behavior: "smooth" }); else location.hash = `#/r/${owner}/${repo}`;
+    }));
+    clearTimeout(el._t);
+    el._t = setTimeout(() => views.wireGitBar(owner, repo), 10_000);
   },
   /** The branch switcher (#701): main or an open branch to read and edit, and a box to start one. */
   branchSwitch(owner, repo, r) {
@@ -3456,6 +3511,7 @@ const views = {
       + sec("rocket", "Rusty Buns", `<div id="fit"><span class="muted">…</span></div>`)
       + (owner === me() ? sec("package", "Dependencies", `<a class="btn ghost" href="#/health/${owner}/${repo}" title="Repo health: your versions against the latest" aria-label="repo health">${icon("heart-pulse")}</a><div id="deps"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("send", "Deploy", `<div id="deploy"><span class="muted">…</span></div>`) : "")
+      + (owner === me() ? sec("flask-conical", "Try Rusty Buns", `<div id="try"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("rocket", "Preview deploy", `<div id="preview"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("webhook", "Webhooks", `<div id="hooks"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("shield", "Audit log", `<details id="audit"><summary class="muted" style="font-size:12px;cursor:pointer">tokens, crew, invites, visibility, webhooks and deploy keys: who changed them</summary><div></div></details>`) : "")
@@ -3963,6 +4019,51 @@ const views = {
     }));
     icons();
   },
+  /** Try Rusty Buns on main or an agent's branch: clone, install, init, an offline plan. Nothing deploys. Click a step for its log. */
+  async wireTry(owner, repo) {
+    const el = $("#try"), base = `/repos/${owner}/${repo}/try`;
+    if (!el) return;
+    const STEPS = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["init", "sparkles", "init"], ["plan", "list-checks", "plan"]];
+    const open = (await api(`/repos/${owner}/${repo}/branches`).catch(() => [])).filter((b) => b.status === "open");
+    let sel = null, timer = null, branch = "";
+    const draw = (d) => {
+      const run = d.run, by = Object.fromEntries((run?.steps ?? []).map((s) => [s.key, s]));
+      sel ??= run?.steps.find((s) => s.status === "running")?.key ?? null;
+      const shown = sel && by[sel], busy = run && !run.done;
+      const pre = el.querySelector("pre"), stick = !pre || pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
+      el.innerHTML = `${flowRow(STEPS, by, sel)}${runTicker(run)}
+        ${run ? `<p class="muted" style="font-size:12px">${run.stage === "main" ? "main" : `branch <code>${esc(run.stage)}</code>`}${run.commit ? ` at <code>${esc(run.commit.slice(0, 7))}</code>` : ""}</p>` : ""}
+        ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
+        ${shown ? `<pre style="max-height:260px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(shown.out || "(waiting)")}</pre>` : ""}
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <select id="try-branch"${busy ? " disabled" : ""} title="main, or an agent's branch: its files are laid over the clone"><option value="">main</option>${open.map((b) => `<option value="${esc(b.name)}"${b.name === branch ? " selected" : ""}>${esc(b.name)}</option>`).join("")}</select>
+          <button class="btn primary" id="try-run"${!d.can_run || busy ? " disabled" : ""} title="${d.can_run ? "" : "Runs on the desktop app"}">${icon("flask-conical")}${busy ? "Running…" : "Try it"}</button>
+        </div>
+        <p class="muted" style="font-size:12px;margin-top:4px">Runs <code>rustybuns init</code> on a throwaway clone (skipped if the repo has a config), then <code>plan --offline</code>: no login, nothing deployed, nothing saved. Pick an agent's branch to try its edits before you merge them.</p>`;
+      const np = el.querySelector("pre");
+      if (np && stick) np.scrollTop = np.scrollHeight;
+      el.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => { sel = sel === b.dataset.step ? null : b.dataset.step; draw(d); }));
+      $("#try-branch").addEventListener("change", (e) => { branch = e.target.value; });
+      $("#try-run").addEventListener("click", async () => {
+        sel = null;
+        try { await api(base, { branch: $("#try-branch").value || undefined }); } catch (err) { toast(err.message); }
+        poll();
+      });
+      icons();
+    };
+    const poll = async () => {
+      clearTimeout(timer);
+      if (!document.body.contains(el)) return;
+      const d = await api(base).catch(() => null);
+      if (!d) { el.innerHTML = '<span class="muted">unavailable</span>'; return; }
+      const running = d.run?.steps.find((s) => s.status === "running")?.key;
+      if (running && !el.dataset.picked) sel = running;
+      draw(d);
+      if (d.run && !d.run.done) timer = setTimeout(poll, 1000);
+    };
+    el.addEventListener("click", (e) => { if (e.target.closest("[data-step]")) el.dataset.picked = "1"; if (e.target.closest("#try-run")) delete el.dataset.picked; });
+    poll();
+  },
   /** A preview deploy: five steps that go green as the stack goes up and comes down. Click one for its log. */
   async wirePreview(owner, repo) {
     const el = $("#preview"), base = `/repos/${owner}/${repo}/preview`;
@@ -4190,6 +4291,7 @@ const views = {
     views.wireBeams(owner, repo, r);
     views.wireMirrorTurn(owner, repo);
     views.wirePreview(owner, repo);
+    views.wireTry(owner, repo);
     views.wireDeploy(owner, repo);
     views.wireHooks(owner, repo);
     $("#audit")?.addEventListener("toggle", (e) => { if (e.target.open) wireAudit(e.target.lastElementChild, `/repos/${owner}/${repo}/audit`); }, { once: true });
@@ -5777,7 +5879,7 @@ const FMAP = [
     ids: ["show-around", "profile", "search", "test-gutter", "accounts", "your-mods"],
     art: `<svg viewBox="0 0 360 220" role="img" aria-label="A command palette with a search box and three results"><rect class="bx" x="40" y="26" width="280" height="168" rx="8"/><path class="st g" d="M40 70H320"/><text x="58" y="53">⌘K</text><text class="m" x="92" y="53">split the file…</text><rect class="fl o pulse" x="196" y="44" width="2" height="14"/><g><rect class="ln o" x="52" y="80" width="256" height="30" rx="4" style="opacity:.18"/><text x="64" y="99">Dig up a GitHub repo</text><text class="m" x="236" y="99">↵</text><text x="64" y="129">Search code</text><text class="m" x="236" y="129">/</text><text x="64" y="159">Let's show you around</text><text class="m" x="236" y="159">?</text><text class="m" x="64" y="183">each one is a single API call</text></g></svg>` },
   { id: "pipelines", icon: "workflow", name: "Pipelines", head: "From commit to <em>production</em>", what: "Webhooks, CI on your own hardware, preview deploys, ship-on-commit and a guard on production, with every deploy on the record and every secret behind Touch ID.",
-    ids: ["webhooks", "own-hardware-ci", "repo-builds-itself", "deploy", "deploy-all-over", "preview-deploys", "ship-on-commit", "deploy-keys", "prod-guard", "deploy-log", "adopt-live", "varlock", "build-changes", "safe-updates", "doctor"],
+    ids: ["webhooks", "own-hardware-ci", "repo-builds-itself", "deploy", "deploy-all-over", "git-bar", "try-rusty-buns", "preview-deploys", "ship-on-commit", "deploy-keys", "prod-guard", "deploy-log", "adopt-live", "varlock", "build-changes", "safe-updates", "doctor"],
     art: `<svg viewBox="0 0 360 220" role="img" aria-label="A commit goes through checks and a preview to a guarded production deploy, with a webhook fired at each step"><g class="bx"><rect x="14" y="88" width="56" height="44" rx="5"/><rect x="92" y="88" width="56" height="44" rx="5"/><rect x="170" y="88" width="56" height="44" rx="5"/></g><rect class="bx o" x="248" y="88" width="56" height="44" rx="5"/><g><text x="22" y="114">commit</text><text x="102" y="114">checks</text><text x="176" y="114">preview</text><text class="o" x="262" y="108">prod</text><text class="o" x="258" y="121">guard</text></g><g class="st"><path d="M70 110H92"/><path d="M148 110H170"/><path d="M226 110H248"/><path d="M304 110H328"/></g><circle class="fl o" cx="338" cy="110" r="8"/><g class="st g d"><path d="M42 88C42 50 120 50 120 88"/><path d="M120 88C120 40 198 40 198 88"/><path d="M198 88C198 30 276 30 276 88"/></g><text class="m" x="60" y="52">webhook · signed · retried</text><path class="st g" d="M276 132C276 170 200 170 120 170"/><text class="m" x="130" y="190">every deploy logged</text></svg>` },
   { id: "private", icon: "lock-keyhole", name: "Private", head: "Private lines in a <em>public repo</em>", what: "Privacy is per line. Keep a repo private, make one public, or hide only the lines that need hiding, and your git history stays yours whatever happens upstream.",
     ids: ["private-lines", "visibility", "private-github", "git-truth", "own-history"],
@@ -6340,6 +6442,7 @@ const PANEL_SAY = {
   "rusty-buns": ["rocket", "How easily this repo ships as a desktop binary, a Cloudflare Worker or a server."],
   dependencies: ["package", "The dependency doctor: aged updates on a branch, known vulnerabilities, and the supply-chain watch."],
   deploy: ["send", "Ship the repo for real. Only a person presses the button; agents never deploy."],
+  "try-rusty-buns": ["flask-conical", "Init and plan a repo or an agent's branch, offline."],
   "preview-deploy": ["rocket", "A throwaway preview of the repo before anything ships."],
   webhooks: ["webhook", "GitHub-shaped, HMAC-signed webhooks for your CI/CD, retried on a queue."],
   "audit-log": ["shield", "Who changed tokens, crew, invites, visibility and deploy keys."],
@@ -6401,6 +6504,8 @@ const TOUR = [
     say: () => "Commit pushes a real git commit. Clone it with plain git, or point your AI at it: claude mcp add codesplitter." },
   { ch: "panels", ic: "panel-right", t: "What's on the right", at: ".drail", on: "repo",
     say: () => "The right bar: tabs for the code, the repo as hosted here, and what it can do. Next walks the panels. Up here you switch tab or widen the side." },
+  { ch: "panels", ic: "git-compare-arrows", t: "The git bar", at: "#gitbar", on: "repo",
+    say: () => "Mirrored, push, pull, uncommitted and conflicts, as pills across the top of the repo." },
   ...Object.entries(PANEL_SAY).map(([key, [ic, say]]) => ({ ch: "panels", ic, panel: key, at: `.dpanels > .sec[data-key="${key}"]`, on: "repo", say: () => say })),
   { ch: "play", ic: "building", t: "Your code city", at: null, on: "any", href: () => `/play.html#c/${encodeURIComponent(me())}`, open: true,
     say: () => "Every repo you own is a district, every file a building: white stone where people wrote it, black glass where agents did. It opens in a new tab." },

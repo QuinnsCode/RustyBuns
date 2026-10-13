@@ -632,6 +632,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/deploy.ts` | deploys: settings, the log, the desktop runner |
 | `src/file-do.ts` | the file Durable Object: ops, log, time travel, commits, a live socket |
 | `src/fit.ts` | the Rusty Buns fit check: how easily `rustybuns init` could box the repo |
+| `src/git-state.ts` | every git state of a repo in one answer, for the bar on the repo page |
 | `src/git.ts` | a git push with no git library: objects, trees rebuilt only along changed paths, pack, receive-pack |
 | `src/github.ts` | GitHub: a token from wherever there is one, your repos, digging one up as a fork |
 | `src/gitpath-data.ts` | gitpath's data for a hosted repo: a file's commits with parents and line counts, and the repo's busiest files |
@@ -653,6 +654,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/sync.ts` | an agent's text edit to line ops: a Myers diff that keeps line ids, and a rebase onto the file as it is now |
 | `src/tarball.ts` | past Artifacts' 40 MB import cap: a repo's tip from GitHub's tarball, pushed as one commit |
 | `src/tokens.ts` | personal API tokens: make, revoke, and who a bearer token acts as |
+| `src/try-out.ts` | try Rusty Buns on a repo or an agent's branch: init, then an offline plan |
 | `src/worker.ts` | routes, visibility, profiles, playlists, search |
 | `src/worktrees.ts` | real checkouts (`git worktree add`) off a desktop repo's bare git, per branch or per run, cleaned up when done |
 

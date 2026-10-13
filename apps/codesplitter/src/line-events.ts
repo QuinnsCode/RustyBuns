@@ -22,6 +22,9 @@ export interface Recent { id: number; last: number; ids: Set<string> }
  */
 export async function recordEdits(env: Env, at: { owner: string; repo: string; path: string }, applied: Applied[], recent: Map<string, Recent>, claim?: string) {
   if (!env.DB) return;
+  // Edits upstream's own commits brought in are already in git: only the rest wait for a commit.
+  if (applied.some((a) => a.by !== "upstream"))
+    await env.DB.prepare("INSERT OR IGNORE INTO uncommitted (owner, repo, path, since) VALUES (?, ?, ?, ?)").bind(at.owner, at.repo, at.path, applied[0]!.at).run().catch(() => {});
   const byWho = new Map<string, Applied[]>();
   for (const a of applied) byWho.set(a.by, [...(byWho.get(a.by) ?? []), a]);
   for (const [who, ops] of byWho) {
