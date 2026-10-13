@@ -289,8 +289,17 @@ describe("what changed since you were last here", () => {
 // axe's leftovers from the accessibility pass (#768).
 describe("headings and landmarks", () => {
   test("a repo's side panels are h2s under the page's h1, not h3s", () => {
-    expect(html).toContain(`<h2 draggable="true">\${icon(ic)}\${title}`);
+    expect(html).toContain(`<h2>\${icon(ic)}\${title}</h2>`);
     expect(html).not.toMatch(/<h3\b/);
+  });
+
+  test("the side's panels sit on tabs: code, hosted, features, and shipping apart", () => {
+    const src = html.slice(html.indexOf("const DOCK_TAB_OF"), html.indexOf("/** Make the details side a dock"));
+    const tabOf = new Function(`${src}; return dockTabOf;`)();
+    expect(["editing", "commits", "branches", "about"].map(tabOf)).toEqual(["code", "code", "code", "code"]);
+    expect(["upstream", "crew", "webhooks", "delete-this-repo"].map(tabOf)).toEqual(["hosted", "hosted", "hosted", "hosted"]);
+    expect(["agents", "beam", "dependencies"].map(tabOf)).toEqual(["features", "features", "features"]);
+    expect(["deploy", "preview-deploy", "rusty-buns"].map(tabOf)).toEqual(["ship", "ship", "ship"]);
   });
 
   test("the workbench's two asides have their own names", () => {
