@@ -674,6 +674,18 @@
   .agent-pulse i { display: block; min-height: 2px; border-radius: 2px; background: var(--border); }
   .agent-pulse i.on { background: var(--accent); }
   /* A person's code city: a quiet door at the foot of their profile, in a face the rest of the site never uses. */
+  .av-dot { align-self: center; width: 44px; height: 44px; padding: 0; border-radius: 50%; border: 1px solid var(--border-2); background: var(--bg-2, var(--bg)); cursor: pointer; overflow: hidden; flex: none; } .av-dot:hover { border-color: var(--fg); } .av-dot canvas { width: 100%; height: 100%; display: block; }
+  .av-modal { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(0,0,0,.55); padding: 16px; }
+  .av-modal .av-sheet { background: var(--bg); border: 1px solid var(--border-2); border-radius: 14px; width: min(1180px, 100%); height: min(860px, 100%); overflow: hidden; display: grid; grid-template-columns: minmax(260px, 400px) 1fr; grid-template-rows: auto minmax(0, 1fr); box-shadow: 0 24px 80px rgba(0,0,0,.35); }
+  .av-modal .head { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 14px 18px; border-bottom: 1px solid var(--border); } .av-modal .head .grow { flex: 1; }
+  .av-stage { display: grid; place-items: center; padding: 20px; min-height: 0; background: radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--fg) 4%, var(--bg)), color-mix(in srgb, var(--fg) 11%, var(--bg))); border-right: 1px solid var(--border); } .av-stage canvas { width: 100%; max-width: 340px; max-height: 100%; aspect-ratio: 4 / 5; }
+  .av-ed { display: flex; flex-direction: column; min-height: 0; }
+  .av-tabs { display: flex; gap: 4px; padding: 12px 16px 0; border-bottom: 1px solid var(--border); overflow-x: auto; } .av-tabs button { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--faint); font: 500 13px var(--sans); cursor: pointer; white-space: nowrap; } .av-tabs button:hover { color: var(--fg); } .av-tabs button.on { color: var(--fg); border-bottom-color: var(--fg); }
+  .av-panel { flex: 1; overflow: auto; padding: 14px 16px; display: grid; gap: 16px; align-content: start; } .av-sec h4 { margin: 0 0 8px; font: 600 12px var(--sans); color: var(--faint); text-transform: uppercase; letter-spacing: .06em; }
+  .av-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; } .av-tiles button { display: grid; justify-items: center; gap: 2px; padding: 4px 2px 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); cursor: pointer; font: 11px var(--sans); color: var(--faint); } .av-tiles button:hover { border-color: var(--border-2); background: color-mix(in srgb, var(--fg) 4%, var(--bg)); } .av-tiles button.on { border-color: var(--fg); box-shadow: 0 0 0 1px var(--fg); color: var(--fg); } .av-tiles canvas { width: 64px; height: 64px; border-radius: 8px; }
+  .av-sw { display: flex; gap: 8px; flex-wrap: wrap; } .av-sw button { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border-2); cursor: pointer; padding: 0; } .av-sw button.on { outline: 2px solid var(--fg); outline-offset: 2px; }
+  .av-foot { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); } .av-foot .muted { flex: 1; }
+  @media (max-width: 700px) { .av-modal .av-sheet { grid-template-columns: 1fr; grid-template-rows: auto auto minmax(0, 1fr); } .av-stage { border-right: 0; border-bottom: 1px solid var(--border); padding: 12px; } .av-stage canvas { max-width: 150px; } }
   .city-door { display: flex; justify-content: center; gap: 14px; margin: 48px 0 8px; font: italic 400 13px/1 "Didot", "Bodoni 72", "Cormorant Garamond", Georgia, serif; letter-spacing: .18em; text-transform: lowercase; }
   .city-door a, .city-door label { display: inline-flex; gap: 6px; align-items: center; color: var(--faint); text-decoration: none; transition: color .6s; }
   .city-door a:hover, .city-door label:hover { color: var(--fg); }
@@ -3278,7 +3290,7 @@ const views = {
     // A person's code city (play.html#c/…): a quiet door at the foot of their profile, not a box. Its owner can close it to visitors.
     const cityLink = agent || !(user.city_public || mine) ? "" : `<a href="/play.html#c/${encodeURIComponent(name)}" title="walk @${esc(name)}'s code city">${icon("building")}the city</a>${mine ? `<label title="let others walk your city"><input type="checkbox" id="citypub"${user.city_public ? " checked" : ""}>open</label>` : ""}`;
     app.innerHTML = `<div class="wrap prof">
-      <div class="prof-head"><h1>${icon(agent ? "bot" : "user")}@${esc(name)}${tierStamp(user.tier)}</h1><span class="muted">${agent ? `a coding agent on ${esc(agent.harness)}${agent.run_by.length ? `, run by ${agent.run_by.map((o) => `<a href="#/u/${esc(o.name)}">@${esc(o.name)}</a>`).join(", ")}` : ""}` : esc(user.bio) || "no notes yet"}</span><span class="grow"></span>
+      <div class="prof-head"><h1>${icon(agent ? "bot" : "user")}@${esc(name)}${tierStamp(user.tier)}</h1>${agent ? "" : `<button class="av-dot" id="av-dot" type="button" title="${mine ? "make your avatar" : `@${esc(name)}'s avatar`}" aria-label="${mine ? "make your avatar" : `@${esc(name)}'s avatar`}"><canvas width="88" height="88"></canvas></button>`}<span class="muted">${agent ? `a coding agent on ${esc(agent.harness)}${agent.run_by.length ? `, run by ${agent.run_by.map((o) => `<a href="#/u/${esc(o.name)}">@${esc(o.name)}</a>`).join(", ")}` : ""}` : esc(user.bio) || "no notes yet"}</span><span class="grow"></span>
         <span class="stat">${agent ? `${n(shown.length, "repo")} · ${n(agent.run_count, "run")} · ${n(agent.lines, "line edit")}` : `${n(repos.length, "repo")} · ${n(playlists.length, "collection")}`} · ${following} following · ${n(followers, "follower")}</span>
         ${followButton({ name, kind: name.startsWith("agent-") ? "agent" : "user" })}
         ${mine ? `<button class="btn ghost" id="editpage">${icon("palette")}Edit page</button>` : ""}</div>
@@ -3306,6 +3318,7 @@ const views = {
         ${mine ? dataBox(true) : ""}
       </aside></div>${cityLink ? `<div class="city-door">${cityLink}</div>` : ""}</div>`;
     const frame = $("iframe.theme"); if (frame) frame.srcdoc = user.theme_html;
+    if (!agent) avatarBox(user, mine, name);
     // The pulse: a week of lines landed, beating while they type. It looks again every 15 seconds while you're here.
     const share = `${location.origin}/api/users/${encodeURIComponent(name)}/share`;
     const drawPulse = (p) => {
@@ -6463,6 +6476,69 @@ addEventListener("keydown", (e) => {
 const FIXED = { f: 2, r: 2, l: 1, b: 2, health: 2 };
 // Settles when the page has drawn, so an agent's tool call can answer with where it landed.
 let routing = Promise.resolve();
+/** A person's avatar on their profile (src/avatar.ts, bundled as /avatar.js): a little round one in the header, arms and legs spread. Its click opens the full-size one, and for its owner the editor: step through each part, pick the colors, save. */
+async function avatarBox(user, mine, name) {
+  const dot = $("#av-dot");
+  if (!dot) return;
+  const { PARTS, drawAvatar, defaultAvatar, cleanAvatar, randomAvatar } = await import("/avatar.js");
+  let saved = null;
+  try { saved = cleanAvatar(JSON.parse(user.avatar || "null")); } catch {}
+  if (!saved && !mine) { dot.remove(); return; }
+  let a = saved ?? defaultAvatar(name);
+  const paintDot = () => { const g = dot.firstElementChild.getContext("2d"); g.clearRect(0, 0, 88, 88); drawAvatar(g, a, 44, 80, 66, true); };
+  paintDot();
+  dot.addEventListener("click", () => {
+    const m = document.createElement("div"); m.className = "av-modal";
+    const TABS = [
+      { id: "face", icon: "smile", label: "Face", secs: [["skin", "Skin", "sw"], ["eyes", "Eyes", "tiles"], ["mouth", "Mouth", "tiles"]] },
+      { id: "hair", icon: "scissors", label: "Hair", secs: [["hair", "Style", "tiles"], ["hairColor", "Colour", "sw"]] },
+      { id: "gear", icon: "crown", label: "Hats & glasses", secs: [["hat", "Hat", "tiles"], ["glasses", "Glasses", "tiles"]] },
+      { id: "outfit", icon: "shirt", label: "Outfit", secs: [["top", "Top", "tiles"], ["topColor", "Top colour", "sw"], ["bottomColor", "Trousers", "sw"]] },
+      { id: "body", icon: "ruler", label: "Build", secs: [["build", "Build", "tiles"]] },
+    ];
+    let tab = "face";
+    m.innerHTML = `<div class="av-sheet" role="dialog" aria-modal="true" aria-label="@${esc(name)}'s avatar"><div class="head">${icon("smile")}<b>@${esc(name)}'s avatar</b><span class="muted">${saved ? "worn in the code city" : mine ? "yours until you make one" : ""}</span><span class="grow"></span><button class="btn ghost" type="button" id="av-x" aria-label="close">${icon("x")}</button></div>
+      <div class="av-stage"><canvas id="av-c" width="300" height="375" role="img" aria-label="@${esc(name)}'s avatar"></canvas></div>${mine ? `<div class="av-ed"><div class="av-tabs" id="av-tabs"></div><div class="av-panel" id="av-panel"></div><div class="av-foot"><button type="button" class="btn" id="av-rand">${icon("shuffle")}Random</button><span class="muted" id="av-msg"></span><button type="button" class="btn primary" id="av-save">${icon("check")}Save</button></div></div>` : ""}</div>`;
+    document.body.append(m); icons();
+    const close = () => { m.remove(); removeEventListener("keydown", esc_); };
+    const esc_ = (e) => { if (e.key === "Escape") close(); };
+    addEventListener("keydown", esc_);
+    m.addEventListener("click", (e) => { if (e.target === m || e.target.closest("#av-x")) close(); });
+    const g = $("#av-c", m).getContext("2d");
+    const paint = () => { g.clearRect(0, 0, 300, 375); g.fillStyle = "rgba(0,0,0,.08)"; g.beginPath(); g.ellipse(150, 352, 62, 9, 0, 0, 7); g.fill(); drawAvatar(g, a, 150, 350, 320); };
+    paint();
+    if (!mine) return;
+    const head = new Set(["eyes", "mouth", "hair", "hat", "glasses"]);
+    // One option on a thumbnail: head parts crop to the head, the rest show the whole figure.
+    const thumb = (k, v) => {
+      const c = document.createElement("canvas"); c.width = c.height = 128; const t = c.getContext("2d"), x = { ...a, [k]: v, ...(k === "hair" ? { hat: "none" } : {}) };
+      if (head.has(k)) { const legH = x.build === "tall" ? 30 : x.build === "short" ? 16 : 24, u = 2; drawAvatar(t, x, 64, 80 + (legH + 44) * u, 100 * u); }
+      else drawAvatar(t, x, 64, 122, 118);
+      return c;
+    };
+    const names = { "cat-ears": "cat ears", "rubber-duck": "duck", none: "none" };
+    const render = () => {
+      $("#av-tabs", m).innerHTML = TABS.map((T) => `<button type="button" data-tab="${T.id}"${T.id === tab ? ' class="on"' : ""}>${icon(T.icon)}${T.label}</button>`).join("");
+      const T = TABS.find((x) => x.id === tab), panel = $("#av-panel", m);
+      panel.innerHTML = T.secs.map(([k, label, kind]) => `<div class="av-sec"><h4>${label}</h4>${kind === "sw"
+        ? `<div class="av-sw">${PARTS[k].map((c) => `<button type="button" data-k="${k}" data-v="${c}" title="${c}" style="background:${c}"${a[k] === c ? ' class="on"' : ""} aria-label="${label} ${c}"></button>`).join("")}</div>`
+        : `<div class="av-tiles">${PARTS[k].map((v) => `<button type="button" data-k="${k}" data-v="${v}"${a[k] === v ? ' class="on"' : ""} aria-label="${label} ${v}"><span data-thumb></span>${esc(names[v] || v)}</button>`).join("")}</div>`}</div>`).join("");
+      panel.querySelectorAll(".av-tiles button").forEach((b) => b.querySelector("[data-thumb]").replaceWith(thumb(b.dataset.k, b.dataset.v)));
+      icons();
+    };
+    render();
+    m.addEventListener("click", async (e) => {
+      const t = e.target.closest("button");
+      if (!t || !m.contains(t)) return;
+      if (t.dataset.tab) { tab = t.dataset.tab; render(); return; }
+      if (t.dataset.k && t.dataset.v) a = { ...a, [t.dataset.k]: t.dataset.v };
+      else if (t.id === "av-rand") a = randomAvatar(Math.random);
+      else if (t.id === "av-save") { t.disabled = true; try { await api("/me", { avatar: a }, "PUT"); saved = a; user.avatar = JSON.stringify(a); $("#av-msg").textContent = "saved: you're in the city"; } catch (err) { $("#av-msg").textContent = err.message; } t.disabled = false; return; }
+      else return;
+      paint(); paintDot(); render();
+    });
+  });
+}
 async function route() {
   let drawn; routing = new Promise((r) => (drawn = r));
   followed = fetchingFollows = null;

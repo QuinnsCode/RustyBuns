@@ -203,6 +203,7 @@ import {
 } from "./security.ts";
 import { worktreeRoute } from "./worktrees.ts";
 import { timed, withTiming } from "./timing.ts";
+import { cleanAvatar, PARTS } from "./avatar.ts";
 import { beamRoutes } from "./beam.ts";
 import {
   kickMirror,
@@ -381,12 +382,15 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (!user) return json({ error: "sign in first" }, 401);
     if (req.method === "PUT") {
       // Only what's sent changes, so turning the pulse off leaves the bio be.
-      const b = await body<"bio" | "theme_html" | "pulse" | "git_truth">();
+      const b = await body<"bio" | "theme_html" | "pulse" | "git_truth" | "avatar">();
       if (b.pulse !== undefined && typeof b.pulse !== "boolean") return json({ error: "pulse: true or false" }, 400);
       if (b.git_truth !== undefined && !TRUTHS.includes(b.git_truth as Truth)) return json({ error: `git_truth: ${TRUTHS.join(", ")}` }, 400);
       if ((b.bio !== undefined && typeof b.bio !== "string") || (b.theme_html !== undefined && typeof b.theme_html !== "string")) return json({ error: "bio and theme_html: text" }, 400);
-      await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth) WHERE name = ?")
-        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, user).run();
+      // avatar: the parts (src/avatar.ts), or null to take it off.
+      const avatar = b.avatar === undefined ? null : b.avatar === null ? "" : cleanAvatar(b.avatar);
+      if (avatar === null && b.avatar !== undefined) return json({ error: `avatar: every part (${Object.keys(PARTS).join(", ")}), each one of its options, colors as #rrggbb` }, 400);
+      await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth), avatar = COALESCE(?, avatar) WHERE name = ?")
+        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, avatar === null ? null : avatar === "" ? "" : JSON.stringify(avatar), user).run();
     }
     return json(await env.DB.prepare("SELECT * FROM users WHERE name = ?").bind(user).first());
   }
@@ -398,7 +402,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /api/users/:name  profile, the repos you may see, playlists, how many it follows and are following it, the stamps it gave and got;
   // an agent's (agent-…) also says who runs it, where, and its runs (actors.ts)
   if (p[1] === "users" && p[2]) {
-    const row = await env.DB.prepare("SELECT name, bio, theme_html, pulse, city_public, tier FROM users WHERE name = ?").bind(p[2]).first();
+    const row = await env.DB.prepare("SELECT name, bio, theme_html, pulse, city_public, tier, avatar FROM users WHERE name = ?").bind(p[2]).first();
     if (!row) return json({ error: "no such user" }, 404);
     const u = { ...row, tier: tierById(row.tier) };
     const { results: repos } = await env.DB.prepare(
