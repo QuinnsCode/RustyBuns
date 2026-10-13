@@ -134,7 +134,7 @@ const SHOPS = {
   books: { sign: "本 BOOKS", neon: "#ff2f9a", spines: ["#7a2e2a", "#2f4a6b", "#c79a3a", "#3d5a40", "#e8e0cc", "#5a3a66"], style: "spines" },
   used: { sign: "古書 USED BOOKS", neon: "#ffe14a", spines: ["#6b4a2c", "#8a6a3c", "#4a3a2a", "#a08a5a", "#37301f"], style: "spines" },
   library: { sign: "LIBRARY", neon: "#41ffb0", spines: ["#2f4a3a", "#5a3a2a", "#3a3a5a", "#7a6a3a", "#2a2a2a"], style: "spines" },
-  video: { sign: "ビデオ VIDEO", neon: "#19d3ff", spines: ["#101214", "#16181b", "#1c1f23"], style: "tapes" },
+  video: { sign: "HOLLYWOOD BUSTER", neon: "#ffd21a", spines: ["#101214", "#16181b", "#1c1f23"], style: "tapes" },
   comics: { sign: "COMICS", neon: "#ff7a1a", spines: ["#e8302a", "#2a6ae8", "#f4d03a", "#2ac86a", "#ff6aa8", "#ffffff"], style: "spines" },
   records: { sign: "RECORDS", neon: "#8a5cff", spines: ["#d8402a", "#2a8ad8", "#e8c83a", "#f0f0f0", "#3a3a3a", "#9a3ad8"], style: "sleeves" },
   lava: { sign: "LAVA LAMPS", neon: "#ff7a1a", style: "lava" },
