@@ -194,18 +194,28 @@ export function serverAddons(r: { outputs: { path: string }[]; metafile?: { inpu
 }
 
 /** The build's error for an addon it can't carry, or that doesn't load on a target; null when all is well. */
-export function addonProblems(entry: string, a: ServerAddons, targets: DesktopOs[] | null): string | null {
+export function addonProblems(entry: string, a: ServerAddons, outdir: string, targets: DesktopOs[] | null): string | null {
   const lines: string[] = [];
   for (const m of a.missed) {
     lines.push(`  ${m.pkg} loads a native addon (${m.files.slice(0, 3).join(", ")}${m.files.length > 3 ? ", ..." : ""}) by a path it works out at run time, so the bundle can't carry it`);
   }
   if (targets) {
-    const picked = new Set(a.perTarget.flatMap((l) => l.files.map((f) => f.split(sep).join("/"))));
-    for (const p of a.sources) {
-      if (picked.has(p)) continue;                             // one target's file, checked below
-      const on = headerOf(p), off = targets.filter((t) => !on.includes(t));
-      const name = p.includes("/node_modules/") ? p.slice(p.lastIndexOf("/node_modules/") + 14) : basename(p);
-      if (off.length) lines.push(`  ${name} is built for ${on.join(", ") || "an OS we don't know"}, so it won't load on ${off.join(", ")}: build those targets on their own OS (CI matrix), or install the addon's prebuilt for them`);
+    // node-gyp-build's addons load one file per target, checked by their own line below.
+    const perTargetAddons = new Set(a.perTarget.flatMap((l) => l.files.map((f) => basename(f).split(".")[0]!)));
+    // A package that ships a prebuilt per OS (napi-rs: bcrypt.darwin-arm64.node, bcrypt.linux-x64-gnu.node)
+    // picks the one for where it runs, so each addon, by name, needs one build per target, not every build every target.
+    const byAddon = new Map<string, { name: string; on: DesktopOs[] }[]>();
+    for (const name of a.carried) {
+      if (perTargetAddons.has(addonName(name))) continue;
+      const p = join(outdir, name);
+      const on = existsSync(p) ? addonPlatforms(readFileSync(p)) : [];
+      const addon = addonName(name);
+      byAddon.set(addon, [...byAddon.get(addon) ?? [], { name, on }]);
+    }
+    for (const [addon, builds] of byAddon) {
+      const off = targets.filter((t) => !builds.some((b) => b.on.includes(t)));
+      const built = [...new Set(builds.flatMap((b) => b.on))];
+      if (off.length) lines.push(`  ${addon}.node is built for ${built.join(", ") || "an OS we don't know"}, so it won't load on ${off.join(", ")}: install its prebuilt for them (\`bun install --os '*' --cpu '*'\` fetches every OS's build a package offers), or build those targets on their own OS`);
     }
     for (const l of a.perTarget) {
       const off = l.missing.filter((t) => targets.includes(t));
@@ -216,6 +226,9 @@ export function addonProblems(entry: string, a: ServerAddons, targets: DesktopOs
   return `desktop.server ${entry}: native addons the binary can't run\n${lines.join("\n")}\n`
     + `Use a pure-JS package in its place (bun:sqlite for better-sqlite3, bcryptjs for bcrypt), or port the routes to desktop/host.ts (AGENT_PROMPTS.md, prompt 3).`;
 }
+
+/** The addon a carried file is a build of: "server-0-bcrypt.darwin-arm64-1a2b3c4d.node" -> "bcrypt". */
+export const addonName = (carried: string) => carried.replace(/^server-\d+-/, "").replace(/-[a-z0-9]+\.node$/, "").split(".")[0]!;
 
 /** Beside server-<i>.js: the addon file names it requires, for the host to copy out of the binary with it. */
 export const addonsManifest = (bundle: string) => bundle.replace(/\.js$/, ".addons.json");

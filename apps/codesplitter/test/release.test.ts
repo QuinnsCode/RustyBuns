@@ -93,6 +93,18 @@ describe("checkPlan", () => {
     expect(checkPlan(plan("Plan: 1 to adopted", "[DB] adopted"), plain).stop).toContain("[DB] adopted");
   });
 
+  // The owner's release on 2026-10-13, after the #825 move left the consumers on the deleted queues.
+  test("a queue consumer replaced onto its queue's new id goes out; anything else replaced still stops it", () => {
+    const real = logged("Plan: 6 to update, 3 to replace, 3 binding changes", "[AGENT_SANDBOX] update", "[Build] update", "[CI_RUNNER] update", "[DB] update",
+      "[DEPLOY_RUNNER] update", "[HOOKSConsumer] replace", "[JOBSConsumer] replace", "[LEVEL_DIGSConsumer] replace", "[Worker] update",
+      "[Worker/AGENT_SANDBOX] update", "[Worker/CI_RUNNER] update", "[Worker/DEPLOY_RUNNER] update");
+    const v = checkPlan(real, plain);
+    expect(v.stop).toBeNull();
+    expect(v.show).toContain("[HOOKSConsumer] replace");
+    for (const row of ["[HOOKSConsumer] delete", "[HOOKS] replace", "[Worker/HOOKSConsumer] replace"])
+      expect(checkPlan(plan("Plan: 1 to update", "[HOOKSConsumer] replace", row), plain).stop).toContain(row);
+  });
+
   test("deletes, replaces, orphans, unbinds and drops stop it", () => {
     for (const row of ["[FILES] delete", "[Worker] replace", "[JOBS] orphaned", "[Worker/CI_RUNNER] unbind", "[Migrate] drop [action]"])
       expect(checkPlan(plan("Plan: 1 to update", row), plain).stop).toContain(row);

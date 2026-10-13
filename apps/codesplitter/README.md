@@ -216,7 +216,7 @@ The caveats and what's still missing are in [REFERENCE.md](REFERENCE.md#ci-for-y
 What would take someone else the longest to build:
 
 - **A merge by line identity, not by text.** Lines keep their ids through edits, moves and branches, so a merge knows a moved block is the same block,
-  even one moved out of an `if` and re-indented, and carries the other side's edits into it (#1223). Git guesses that from text.
+  even one moved out of an `if` and re-indented, and carries the other side's edits into it (#1223). A clash the move split apart is still one card (#1237). Git guesses that from text.
 - **A git push in a Worker with no git library.** Objects, trees rebuilt only along changed paths, the pack and receive-pack, plus a fresh start that moves a full repo to a new Artifact with the very same tree.
 - **One codebase on the edge and the desktop.** Durable Objects, D1, Artifacts, Queues and Cron all have local twins, so the desktop isn't a port.
   It's the same app.

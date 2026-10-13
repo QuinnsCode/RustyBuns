@@ -39,6 +39,7 @@ import { cloudflareEnv, cloudflareProblem, withAccount, realTokenCheck, realWran
 import { deployedWorker, redactQueryStrings } from "./redact.ts";
 import { tidySourceMaps } from "./sourcemaps.ts";
 import { formatOfflinePlan, plannedResources } from "./offline-plan.ts";
+import { estimate, formatEstimate, loadUsage, usageFlags } from "./usage-estimate.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
 import { PROF_SECRET, boxUrl, fetchHistory, fetchMem, fetchProfile, secretProblem } from "./prof.ts";
 import { formatProfileSummary, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
@@ -492,7 +493,7 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
       : own ? [...inf.prebuild, `${inf.execCmd("vite")} build${inf.vite.buildConfig ? ` --config ${inf.vite.buildConfig}` : ""}`].join(" && ") : vite("dist/web"),
     notFoundHandling: astro ? "404-page" : "single-page-application",
   };
-  // The servers beside the app the proxy points at, whose files init can name: the host runs each
+  // The servers beside or inside the app the proxy points at, whose files init can name: the host runs each
   // and proxies its paths to it. Paths that go to a server it didn't find are left for host.ts.
   const servers = proxied.length ? siblingServers(".") : [];
   const { found, left } = proxyServers(Object.fromEntries(proxied.map((p) => [p, inf.vite.proxyTargets[p] ?? null])), servers);
@@ -785,7 +786,14 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   const profiled = sub === "plan" || sub === "deploy";
   if (servers.length && cfg.worker && profiled) console.warn(`[server] the edge doesn't run desktop.server (${entries}): on the web ${servers.flatMap((s) => s.paths).join(", ")} reach the Worker, not that server.\n`);
   if (profiled) { checkBox(cfg); checkSpend(cfg); console.log(costReport(cfg) + "\n"); }
-  const { on: check, checker, rest: flagged } = checkFlags(rawArgs, profiled);
+  // plan --usage (#1224): a monthly bill from what a host's bindings did per request, cron tick and message.
+  const metered = usageFlags(rawArgs);
+  if (metered.requestsPerDay !== undefined && !metered.usage) throw new UsageError({ message: `--requests-per-day prices the requests in --usage: pass both` });
+  if (metered.usage) {
+    if (sub !== "plan") throw new UsageError({ message: `--usage is for plan only` });
+    console.log(formatEstimate(estimate(yield* step(() => loadUsage(metered.usage!)), { requestsPerDay: metered.requestsPerDay })) + "\n");
+  }
+  const { on: check, checker, rest: flagged } = checkFlags(metered.rest, profiled);
   // Ours, not Alchemy's: they waive the guards below.
   const force = flagged.includes("--force"), allowDelete = flagged.includes("--allow-delete");
   // plan --offline (#1197): against empty state, so no login, no state and no Alchemy; the build gets an empty HOME.
@@ -1086,6 +1094,10 @@ Box and ship the web app you already have. A dev dependency, never in prod.
        [--offline]           no login, no state, no Alchemy: builds (empty HOME) and type checks,
                              then lists every resource as a create, as on an empty account. For
                              trying someone else's repo; it doesn't count as a plan for deploy
+       [--usage <file|url>]  also a monthly estimate from a host's counted usage: a desktop's
+                             <data>/usage.json or a box's URL (its /__rb/usage), per cron tick,
+                             request and queue message, flagging crons that keep a DO awake 24/7
+       [--requests-per-day <n>]  the traffic to price requests at (default: the rate it saw)
   deploy [--yes]             alchemy deploy; refuses unless plan ran for this exact config
          [--force]           a live site (targets.edge.adopt) also refuses a HEAD behind
                              origin/main, or state left under the app's old name, unless --force

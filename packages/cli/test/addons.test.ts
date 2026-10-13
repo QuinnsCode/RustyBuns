@@ -3,7 +3,7 @@
 import { test, expect, afterAll } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { addonLookups, addonPlatforms, addonProblems, gypBuildFile, serverAddons, type TargetLookup } from "../src/addons.ts";
+import { addonLookups, addonName, addonPlatforms, addonProblems, gypBuildFile, serverAddons, type TargetLookup } from "../src/addons.ts";
 import type { DesktopOs } from "../src/config.ts";
 
 const root = mkdtempSync(join(import.meta.dir, ".e2e-addons-"));
@@ -63,7 +63,7 @@ test("a static addon is carried; one a package finds at run time is named, and s
   expect(addons.carried[0]).toMatch(/^server-0-fast-\w+\.node$/);
   expect(readdirSync(outdir).sort()).toEqual([addons.carried[0], "server-0.js"].sort());
   expect(addons.missed).toEqual([{ pkg: "@db/sqlish", files: expect.arrayContaining(["binding.gyp", "build/Release/sqlish.node"]) }]);
-  const err = addonProblems("../api/server.js", addons, ["linux-x64"])!;
+  const err = addonProblems("../api/server.js", addons, outdir, ["linux-x64"])!;
   expect(err).toContain("desktop.server ../api/server.js: native addons the binary can't run");
   expect(err).toContain("@db/sqlish loads a native addon");
   expect(err).not.toContain("fast");                         // linux-x64 is what it's built for
@@ -72,12 +72,12 @@ test("a static addon is carried; one a package finds at run time is named, and s
 test("a carried addon built for another OS names the targets it won't load on", async () => {
   const dir = join(root, "cross");
   fixture(dir, MACHO_ARM64, false);
-  const { addons } = await bundle(dir);
+  const { addons, outdir } = await bundle(dir);
   expect(addons.missed).toEqual([]);
-  expect(addonProblems("server.js", addons, ["darwin-arm64"])).toBeNull();
-  expect(addonProblems("server.js", addons, null)).toBeNull();      // the dev host: this machine
-  const err = addonProblems("server.js", addons, ["darwin-arm64", "linux-x64", "windows-x64"])!;
-  expect(err).toContain("staticaddon/build/Release/fast.node is built for darwin-arm64, so it won't load on linux-x64, windows-x64");
+  expect(addonProblems("server.js", addons, outdir, ["darwin-arm64"])).toBeNull();
+  expect(addonProblems("server.js", addons, outdir, null)).toBeNull();      // the dev host: this machine
+  const err = addonProblems("server.js", addons, outdir, ["darwin-arm64", "linux-x64", "windows-x64"])!;
+  expect(err).toContain("fast.node is built for darwin-arm64, so it won't load on linux-x64, windows-x64");
 });
 
 // better-sqlite3's shape: `require("bindings")("name")`, built into build/Release (and Debug).
@@ -99,8 +99,8 @@ test("an addon found through bindings is carried: the build/Release one, by the 
   expect(addons.sources).toEqual([join(nm, "sqlite-ish/build/Release/sqlite_ish.node")]);
   expect(addons.carried).toEqual([expect.stringMatching(/^server-0-sqlite_ish-\w+\.node$/)]);
   expect(readFileSync(join(outdir, "server-0.js"), "utf8")).toContain(addons.carried[0]);
-  expect(addonProblems("server.js", addons, ["linux-x64"])).toBeNull();
-  expect(addonProblems("server.js", addons, ["darwin-arm64"])).toContain("sqlite-ish/build/Release/sqlite_ish.node is built for linux-x64");
+  expect(addonProblems("server.js", addons, outdir, ["linux-x64"])).toBeNull();
+  expect(addonProblems("server.js", addons, outdir, ["darwin-arm64"])).toContain("sqlite_ish.node is built for linux-x64");
   // A name it wasn't built with says so when asked for, without loading anything.
   const { open } = await import(join(outdir, "server-0.js"));
   expect(() => open("other")).toThrow("bindings: other.node wasn't in sqlite-ish when this binary was built");
@@ -151,8 +151,21 @@ test("an addon found through node-gyp-build is carried for every target, and a t
   for (const f of addons.carried) expect(js).toContain(f);
   expect(js).toContain('"darwin-arm64"');
   expect(js).toContain('"linux-x64"');
-  const err = addonProblems("server.js", addons, targets)!;
+  const err = addonProblems("server.js", addons, outdir, targets)!;
   expect(err).toContain("hashish has no addon for windows-x64");
   expect(err).not.toContain("is built for");                   // each target's file loads on it
-  expect(addonProblems("server.js", addons, ["darwin-arm64", "linux-x64"])).toBeNull();
+  expect(addonProblems("server.js", addons, outdir, ["darwin-arm64", "linux-x64"])).toBeNull();
+});
+
+// napi-rs packages ship a build per OS, each its own package; the server loads the one for where it runs.
+test("an addon with a prebuilt per OS needs one build per target, not every build on every target", () => {
+  const dir = join(root, "per-os");
+  mkdirSync(dir, { recursive: true });
+  const mac = "server-0-bcrypt.darwin-arm64-bk1yghyr.node", linux = "server-0-bcrypt.linux-x64-gnu-ge3w5gb0.node";
+  writeFileSync(join(dir, mac), MACHO_ARM64);
+  writeFileSync(join(dir, linux), ELF_X64);
+  expect([mac, linux].map(addonName)).toEqual(["bcrypt", "bcrypt"]);
+  expect(addonProblems("server.js", { carried: [mac, linux], sources: [], perTarget: [], missed: [] }, dir, ["darwin-arm64", "linux-x64"])).toBeNull();
+  const err = addonProblems("server.js", { carried: [mac, linux], sources: [], perTarget: [], missed: [] }, dir, ["linux-x64", "windows-x64"])!;
+  expect(err).toContain("bcrypt.node is built for darwin-arm64, linux-x64, so it won't load on windows-x64");
 });
