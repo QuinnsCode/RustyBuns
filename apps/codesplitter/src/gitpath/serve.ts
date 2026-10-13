@@ -1,23 +1,23 @@
 #!/usr/bin/env bun
-// `bun run gitwiz` serves gitwiz on its own, with no Worker, rebuilt on every load
-// bun run gitwiz [-- --port 4783]   then open http://localhost:4783/
+// `bun run gitpath` serves gitpath on its own, with no Worker, rebuilt on every load
+// bun run gitpath [-- --port 4783]   then open http://localhost:4783/
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildGitwiz } from "./build.ts";
+import { buildGitpath } from "./build.ts";
 
 const app = join(import.meta.dir, "../..");
 const i = process.argv.indexOf("--port");
 const port = i > 0 ? Number(process.argv[i + 1]) : 4783;
-const out = mkdtempSync(join(tmpdir(), "gitwiz-"));
+const out = mkdtempSync(join(tmpdir(), "gitpath-"));
 
 const server = Bun.serve({
   port,
   async fetch(req) {
     const { pathname } = new URL(req.url);
-    if (pathname === "/" || pathname === "/gitwiz" || pathname === "/gitwiz.html") await buildGitwiz(out);
+    if (pathname === "/" || pathname === "/gitpath" || pathname === "/gitpath.html") await buildGitpath(out);
     const file =
-      pathname === "/" || pathname === "/gitwiz" ? join(out, "gitwiz.html")
+      pathname === "/" || pathname === "/gitpath" ? join(out, "gitpath.html")
       : pathname === "/vendor/lucide.min.js" ? join(app, "node_modules/lucide/dist/umd/lucide.min.js")
       : pathname.startsWith("/fonts/") ? join(app, "src", pathname)
       : join(out, pathname);
@@ -27,4 +27,4 @@ const server = Bun.serve({
     return (await f.exists()) ? new Response(f) : new Response("not found", { status: 404 });
   },
 });
-console.log(`gitwiz on http://localhost:${server.port}/`);
+console.log(`gitpath on http://localhost:${server.port}/`);

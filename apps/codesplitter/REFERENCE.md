@@ -628,7 +628,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/fit.ts` | the Rusty Buns fit check: how easily `rustybuns init` could box the repo |
 | `src/git.ts` | a git push with no git library: objects, trees rebuilt only along changed paths, pack, receive-pack |
 | `src/github.ts` | GitHub: a token from wherever there is one, your repos, digging one up as a fork |
-| `src/gitwiz/gitwiz.ts`, `src/gitwiz/page.ts`, `src/gitwiz/build.ts`, `src/gitwiz/serve.ts` | gitwiz, a file's commit graph run down a guitar-neck highway by a runner on the hot path (page.ts draws it; gitwiz.ts is the pure parts, tested in `test/gitwiz.test.ts`; `bun run gitwiz` serves it; data from `scripts/gitwiz-log.ts`) |
+| `src/gitpath/gitpath.ts`, `src/gitpath/page.ts`, `src/gitpath/build.ts`, `src/gitpath/serve.ts` | gitpath, a file's commit graph run down a guitar-neck highway by a unicycle game on the hot path (page.ts draws it; gitpath.ts is the pure parts, tested in `test/gitpath.test.ts`; `bun run gitpath` serves it; data from `scripts/gitpath-log.ts`) |
 | `src/harness.ts` | the coding-agent CLIs and the prompt each one gets |
 | `src/heal.ts` | self-healing CI: a failed required check, or a merge guard tripping, opens a fix task on the branch |
 | `src/hooks.ts` | outgoing webhooks: the owner's hooks, signed deliveries, the log, retries |
