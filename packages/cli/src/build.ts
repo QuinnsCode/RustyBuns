@@ -85,7 +85,7 @@ export const APP_SERVER_DIR = "app-server";
 /** The bundle of desktop.server's `i`th server, in APP_SERVER_DIR. */
 export const appServerFile = (i: number) => `server-${i}.js`;
 
-const ALL_OS: DesktopOs[] = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "windows-x64"];
+const ALL_OS: DesktopOs[] = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "windows-x64", "windows-arm64"];
 
 /** spa mode: your Vite SPA + your world class. No worker, no RSC, no shims. */
 /** A host's memory watch: RSS and heap every 5 minutes with the growth rate, served at /__rb/mem. */

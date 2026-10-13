@@ -41,7 +41,8 @@ export function addonPlatforms(bytes: Uint8Array): DesktopOs[] {
   if (bytes[0] === 0x4d && bytes[1] === 0x5a) {
     const pe = v.getUint32(0x3c, true);
     if (pe + 6 > bytes.length || v.getUint32(pe) !== 0x50450000) return [];
-    return v.getUint16(pe + 4, true) === 0x8664 ? ["windows-x64"] : [];
+    const m = v.getUint16(pe + 4, true);
+    return m === 0x8664 ? ["windows-x64"] : m === 0xaa64 ? ["windows-arm64"] : [];
   }
   return [];
 }

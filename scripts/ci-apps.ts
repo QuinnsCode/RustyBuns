@@ -3,7 +3,8 @@
 //
 //   bun scripts/ci-apps.ts test <base-ref>     apps a PR touched (all of them if packages/ moved),
 //                                              whether .claude/ moved (the guard hook tests), and the
-//                                              touched apps' desktop smokes, one job per Mac and Linux target
+//                                              touched apps' desktop smokes, one job per Mac and Linux target,
+//                                              plus a job per bootOn target
 //   bun scripts/ci-apps.ts drop <all|a,b,c>    the build matrix for desktop-drop.yml
 //   bun scripts/ci-apps.ts drop pr <base-ref>  a PR's dry run: the apps whose rows below changed
 //                                              (all of them if the pipeline itself changed)
@@ -18,6 +19,7 @@ type App = {
   drop?: false;         // tests only: no desktop binaries to build
   smoke?: string;       // build the host's binary and check it runs, on every Mac and Linux runner, when the app changes
   boot?: boolean;       // borg tier 1: build the dev host and boot it on the local twins (scripts/boot.ts)
+  bootOn?: string[];    // build the release binary on these targets' own runners and boot it (boot.ts --bin), when the app changes
 };
 
 export const APPS: Record<string, App> = {
@@ -36,7 +38,7 @@ export const APPS: Record<string, App> = {
   "park-hide-seek":    { test: "bun test", boot: true },
   "splat-desktop":     { test: "bun test", boot: true },
   "splat-rooms":       { test: "bun test test", boot: true },
-  "splat-spray":       { test: "bun test --parallel", boot: true },
+  "splat-spray":       { test: "bun test --parallel", boot: true, bootOn: ["windows-arm64"] },
   "two-fronts":        { test: "bun test test", drop: false },
   "tscircuit-desktop": { test: "bun test", prep: "bun run native", perOs: true, boot: true },
   "what-would-fantano-say": { test: "bun test test", drop: false },
@@ -48,6 +50,7 @@ const RUNNERS = [
   { runner: "macos-latest", target: "darwin-arm64" },
   { runner: "macos-15-intel", target: "darwin-x64" },
   { runner: "windows-latest", target: "windows-x64" },
+  { runner: "windows-11-arm", target: "windows-arm64" },
 ];
 // The Cargo workspace rust-cache keys on.
 const cargo = (app: string) => `apps/${app}/native`;
@@ -55,9 +58,10 @@ const CLI = "bun ../../packages/cli/src/index.ts build desktop";
 
 // Each binary is named for the app's folder, which is what the upload looks for, even when the
 // config's name differs (codesplitter keeps the name codesplitters for its state).
+const binFile = (app: string, t: string) => `dist/${app}-${t}${t.startsWith("windows") ? ".exe" : ""}`;
 function buildCmd(app: string, a: App, targets: string[]) {
   if (a.build) return a.build;
-  return targets.map((t) => `${CLI}${a.check ? " --check" : ""} --target ${t} --outfile dist/${app}-${t}${t.startsWith("windows") ? ".exe" : ""}`).join(" && ");
+  return targets.map((t) => `${CLI}${a.check ? " --check" : ""} --target ${t} --outfile ${binFile(app, t)}`).join(" && ");
 }
 
 const [cmd, arg = "", base = ""] = process.argv.slice(2);
@@ -110,7 +114,9 @@ if (cmd === "drop") {
   out("apps", { include: names.map((app) => ({ app, test: APPS[app]!.test ?? "", boot: !!APPS[app]!.boot, prep: APPS[app]!.prep ?? "", cargo: cargo(app) })) });
   out("any", names.length > 0);
   const smokes = Object.keys(APPS).filter((n) => APPS[n]!.smoke && (shared || touched.has(n)))
-    .flatMap((app) => RUNNERS.filter((r) => !r.target.startsWith("windows")).map((r) => ({ app, ...r, smoke: APPS[app]!.smoke })));
+    .flatMap((app) => RUNNERS.filter((r) => !r.target.startsWith("windows")).map((r) => ({ app, ...r, smoke: APPS[app]!.smoke })))
+    .concat(Object.keys(APPS).filter((n) => APPS[n]!.bootOn && (shared || touched.has(n))).flatMap((app) =>
+      RUNNERS.filter((r) => APPS[app]!.bootOn!.includes(r.target)).map((r) => ({ app, ...r, smoke: `${buildCmd(app, APPS[app]!, [r.target])} && bun ../../scripts/boot.ts --bin ${binFile(app, r.target)}` }))));
   out("smoke", { include: smokes });
   out("smokes", smokes.length > 0);
   out("packages", changed.some((f) => f.startsWith("packages/")));

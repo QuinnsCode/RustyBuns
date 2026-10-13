@@ -146,7 +146,7 @@ jobs:
           # A half-built app (say, Windows failed) isn't dropped; its artifacts are still on the run.
           ls -la bins
           want=$(bun -e 'const m=JSON.parse(process.argv[1]).include.filter(e=>e.app===process.argv[2]);console.log(m.length)' "$BUILD" "$APP")
-          got=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq "[.artifacts[].name | select(startswith(\"$APP-\"))] | length")
+          got=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" --jq "[.artifacts[].name | select(startswith(\"$APP-\"))] | length")
           echo "artifacts: $got of $want"
           [ "$got" = "$want" ]
         env:
@@ -198,7 +198,7 @@ jobs:
           cat > notes.md <<EOF
           Desktop binaries for [$app](https://github.com/$GITHUB_REPOSITORY/tree/$GITHUB_REF_NAME/apps/$app), built from $GITHUB_REF_NAME. One file, nothing to install: Bun is inside.
 
-          Pick yours: \`darwin-arm64\` is a Mac with Apple silicon, \`darwin-x64\` an Intel Mac, \`windows-x64\` Windows, \`linux-x64\` / \`linux-arm64\` Linux.
+          Pick yours: \`darwin-arm64\` is a Mac with Apple silicon, \`darwin-x64\` an Intel Mac, \`windows-x64\` Windows, \`windows-arm64\` Windows on Arm (Snapdragon), \`linux-x64\` / \`linux-arm64\` Linux.
 
           $mac
 
