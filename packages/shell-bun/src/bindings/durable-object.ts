@@ -18,6 +18,7 @@ import { Database } from "bun:sqlite";
 import { serialize } from "node:v8";
 import type { StoragePort } from "@rustybuns/ports";
 import { sqlStorage } from "./sql.ts";
+import { count, touch } from "../usage.ts";
 
 // ---- local WebSocket ends ----------------------------------------------------
 
@@ -227,6 +228,8 @@ export type DurableObjectCtor<Env> = new (ctx: LocalDurableObjectState, env: Env
 export interface NamespaceOptions {
   /** One StoragePort per DO id. Default: in-memory. Desktop passes sqlite. */
   storage?: (id: string) => StoragePort;
+  /** The binding's name: with it, every event counts toward usage.ts (requests, objects, busyMs). */
+  name?: string;
 }
 
 export class LocalDurableObjectNamespace<Env> {
@@ -266,7 +269,13 @@ export class LocalDurableObjectNamespace<Env> {
     await state.ready();
     // Awaiting an open gate would yield, and every queued event would slip through together.
     while (state.gated()) await state.gateOpen();
-    return await state.turn(() => fn(obj));
+    const name = this.opts.name;
+    if (!name) return await state.turn(() => fn(obj));
+    count(`${name}.requests`);
+    touch(name, id.toString());
+    const t0 = performance.now();
+    try { return await state.turn(() => fn(obj)); }
+    finally { count(`${name}.busyMs`, performance.now() - t0); }
   }
 
   /**
