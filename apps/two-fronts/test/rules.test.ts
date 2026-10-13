@@ -3,8 +3,8 @@ import type { BattleSpec } from "../src/battle/contract.ts";
 import { GALAXIES, type Galaxy, type GalaxyId } from "../src/war/galaxy.ts";
 import { aiOrders } from "../src/war/ai.ts";
 import {
-  ORBIT, applyBattleResult, applySpaceResult, canPushFromSurface, diceBattle, income, incomeBreakdown, keyShare, regionHolder, newCampaign, planOrders, resolveTurn, rng, supplied, vehiclePool,
-  type Campaign, type Orders,
+  ORBIT, applyBattleResult, applySpaceResult, canPushFromSurface, checkRetreats, declareAttacks, fogged, involved, diceBattle, income, incomeBreakdown, keyShare, regionHolder, newCampaign, planOrders, resolveTurn, rng, supplied, vehiclePool,
+  type Campaign, type Orders, type Retreat,
 } from "../src/war/rules.ts";
 
 const kessa = (c: Campaign) => c.systems.kessa!;
@@ -342,4 +342,86 @@ test("the vehicle pool comes from the map: gunships from the orbit, walkers from
   expect(vehiclePool(k, "marines", 6)).toEqual({ tank: 1, gunship: 1, walker: 1 });
   expect(vehiclePool(k, "wooka", 6)).toEqual({ tank: 2, speeder: 1 });
   expect(vehiclePool(k, "marines", 1)).toEqual({});
+});
+
+// Corva's army heads for Kessa's shield generator, which the Wooka hold with one army.
+const attackOnKessa = (): Orders => ({ faction: "marines", orders: [{ kind: "army", from: { system: "corva", sector: 1 }, to: { system: "kessa", sector: 0 }, count: 2 }] });
+const underMarineOrbit = () => {
+  const c = newCampaign(3);
+  kessa(c).orbit = "marines";
+  kessa(c).fleets = { marines: 1, wooka: 0 }; // too few to bombard
+  return c;
+};
+
+test("moves into the enemy's ground or orbit are declared as attacks, with no numbers on them", () => {
+  const c = newCampaign(3);
+  const fleet: Orders = { faction: "wooka", orders: [{ kind: "fleet", from: "morrow", to: "lumen", count: 2 }, { kind: "fleet", from: "nyx", to: "orin", count: 1 }] };
+  const attacks = declareAttacks(c, [attackOnKessa(), fleet]);
+  expect(attacks).toEqual([
+    { faction: "marines", from: "corva", to: { system: "kessa", sector: 0 } },
+    { faction: "wooka", from: "morrow", to: { system: "lumen", sector: ORBIT } },
+  ]);
+  expect(JSON.stringify(attacks)).not.toContain("count");
+  const declared = { ...c, attacks };
+  expect(involved(declared, "marines") && involved(declared, "wooka")).toBe(true);
+});
+
+test("a defender who pulls out saves their troops and gives up the ground", () => {
+  const c0 = underMarineOrbit();
+  const c = { ...c0, attacks: declareAttacks(c0, [attackOnKessa()]) };
+  const hold = resolveTurn(c, [attackOnKessa(), { faction: "wooka", orders: [] }]);
+  const out: Orders = { faction: "wooka", orders: [], retreats: [{ kind: "withdraw", from: { system: "kessa", sector: 0 }, to: { system: "kessa", sector: 2 } }] };
+  expect(checkRetreats(c, out, out.retreats!)).toEqual([null]);
+  const pulled = resolveTurn(c, [attackOnKessa(), out]);
+  expect(kessa(pulled).sectors[0]).toMatchObject({ owner: "marines", armies: { marines: 2, wooka: 0 } });
+  expect(kessa(pulled).sectors[2]!.armies.wooka).toBe(2);
+  expect(pulled.log).toContain("Wooka pull out of Kessa shield generator to Kessa capital.");
+  expect(hold.log.some((l) => l.startsWith("Ground battle at Kessa shield generator"))).toBe(true);
+  // Only from where they're attacked, only to ground they hold, and not from nothing.
+  const bad = (r: Retreat) => checkRetreats(c, { faction: "wooka", orders: [] }, [r])[0];
+  expect(bad({ kind: "withdraw", from: { system: "kessa", sector: 1 }, to: { system: "kessa", sector: 2 } })).toBe("Nobody is attacking there");
+  expect(bad({ kind: "withdraw", from: { system: "kessa", sector: 0 }, to: { system: "corva", sector: 1 } })).toBe("Pull back to a sector you hold");
+  expect(bad({ kind: "withdraw", from: { system: "kessa", sector: 0 }, to: { system: "orin", sector: 0 } })).toBe("Pull back to the same world or one next door");
+  expect(checkRetreats(c, { faction: "wooka", orders: [] }, [out.retreats![0]!, out.retreats![0]!])).toEqual([null, "No troops of yours there"]);
+});
+
+test("an attacker who calls it off keeps their troops at home", () => {
+  const c0 = underMarineOrbit();
+  const c = { ...c0, attacks: declareAttacks(c0, [attackOnKessa()]) };
+  const off: Orders = { ...attackOnKessa(), retreats: [{ kind: "calloff", to: { system: "kessa", sector: 0 } }] };
+  const after = resolveTurn(c, [off, { faction: "wooka", orders: [] }]);
+  expect(after.systems.corva!.sectors[1]!.armies.marines).toBe(2);
+  expect(kessa(after).sectors[0]).toMatchObject({ owner: "wooka", armies: { marines: 0, wooka: 1 } });
+  expect(checkRetreats(c, { faction: "wooka", orders: [] }, [{ kind: "calloff", to: { system: "kessa", sector: 0 } }])).toEqual(["No attack of yours there"]);
+});
+
+test("each side sees who holds what, but the enemy's numbers only where it has someone to count them", () => {
+  const c = newCampaign(3);
+  const seen = fogged(c, "marines");
+  expect(seen.systems.nyx).toMatchObject({ fog: true, orbit: "wooka", fleets: { wooka: 0 }, sectors: [{ owner: "wooka", armies: { wooka: 0 } }] });
+  expect(seen.systems.corva!.fog).toBeUndefined();
+  expect(seen.systems.corva!.sectors[1]!.armies.marines).toBe(c.systems.corva!.sectors[1]!.armies.marines);
+  expect(c.systems.nyx!.sectors[0]!.armies.wooka).toBe(2); // the real map is untouched
+});
+
+test("the Horde: 60 worlds laid out alike for both sides, but the Wooka come in force", () => {
+  const g = GALAXIES.horde, twin = twinOf(g);
+  expect(g.systems).toHaveLength(60);
+  expect(new Set(g.systems.map((s) => s.id)).size).toBe(60);
+  expect(reachable(g, "aster").size).toBe(60);
+  for (const s of g.systems) {
+    const t = g.system(twin(s.id));
+    expect(t.sectors).toEqual(s.sectors);
+    expect(g.regions.find((r) => r.id === t.region)!.bonus).toBe(g.regions.find((r) => r.id === s.region)!.bonus);
+    expect(g.start[t.id]!.owner).not.toBe(g.start[s.id]!.owner);
+  }
+  for (const [a, b] of g.lanes) expect(g.adjacent(twin(a), twin(b))).toBe(true);
+  const c = newCampaign(1, "marines", "horde");
+  expect(keyShare(c, "marines")).toBe(0.5);
+  const sum = (f: "marines" | "wooka", what: "armies" | "fleets") => g.systems.reduce((n, s) => n + (g.start[s.id]!.owner === f ? g.start[s.id]![what] * (what === "armies" ? s.sectors.length : 1) : 0), 0);
+  expect(sum("wooka", "armies")).toBeGreaterThan(sum("marines", "armies") * 1.5);
+  expect(sum("marines", "fleets")).toBeGreaterThan(sum("wooka", "fleets"));
+  // The AI can play a turn of it on either side, and it resolves.
+  const all = [aiOrders(c, "marines"), aiOrders(c, "wooka")];
+  expect(resolveTurn(c, all).turn).toBe(2);
 });

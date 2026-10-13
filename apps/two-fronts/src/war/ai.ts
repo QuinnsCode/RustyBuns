@@ -2,7 +2,7 @@
 // troops behind them. Every order goes through planOrders, so it never queues one the rules refuse.
 import type { Faction } from "../battle/contract.ts";
 import { galaxyOf } from "./galaxy.ts";
-import { COST, enemy, planOrders, type Campaign, type Order, type Orders } from "./rules.ts";
+import { COST, ORBIT, checkRetreats, enemy, planOrders, sectorAt, type Campaign, type Order, type Orders, type Retreat } from "./rules.ts";
 
 export function aiOrders(c: Campaign, f: Faction): Orders {
   const orders: Order[] = [];
@@ -69,4 +69,31 @@ export function aiOrders(c: Campaign, f: Faction): Orders {
     });
   }
   return { faction: f, orders };
+}
+
+// The AI's answer to the declared attacks. It never calls one of its own off. A lone army or ship
+// that's attacked outside a capital pulls back to the best-held place next to it nobody is
+// attacking, if there is one: no point dying for a spaceport it can take back.
+export function aiRetreats(c: Campaign, own: Orders): Retreat[] {
+  const f = own.faction, g = galaxyOf(c), attacks = c.attacks ?? [];
+  const d = planOrders(c, [{ ...own, retreats: undefined }]).c, out: Retreat[] = [];
+  const hit = (system: string, sector: number) => attacks.some((a) => a.faction === enemy(f) && a.to.system === system && a.to.sector === sector);
+  for (const a of attacks) {
+    if (a.faction === f || out.some((r) => r.kind === "withdraw" && r.from.system === a.to.system && r.from.sector === a.to.sector)) continue;
+    if (a.to.sector === ORBIT) {
+      if (d.systems[a.to.system]!.fleets[f] !== 1) continue;
+      const to = g.neighbours(a.to.system).find((n) => d.systems[n]!.orbit === f && !hit(n, ORBIT));
+      if (to) out.push({ kind: "withdraw", from: a.to, to: { system: to, sector: ORBIT } });
+      continue;
+    }
+    const x = sectorAt(d, a.to)!;
+    if (x.armies[f] !== 1 || x.kind === "capital") continue;
+    const places = [a.to.system, ...g.neighbours(a.to.system)].flatMap((id) => d.systems[id]!.sectors.map((y, i) => ({ system: id, sector: i, y })))
+      .filter((p) => p.y.owner === f && !(p.system === a.to.system && p.sector === a.to.sector) && !hit(p.system, p.sector))
+      .sort((p, q) => q.y.armies[f] - p.y.armies[f]);
+    if (places[0]) out.push({ kind: "withdraw", from: a.to, to: { system: places[0].system, sector: places[0].sector } });
+  }
+  // Only what the rules take, in case two pull out of the same place.
+  const errs = checkRetreats(c, own, out);
+  return out.filter((_, i) => !errs[i]);
 }

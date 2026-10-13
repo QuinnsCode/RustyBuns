@@ -137,3 +137,18 @@ body.in-battle .war-room { display: none; }
 .choices { display: flex; gap: 8px; margin: 12px 0; }
 .choices button { flex: 1; padding: 8px 6px; }
 .seat-link { width: 100%; font: 12px ui-monospace, monospace; color: inherit; background: #10151d; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+
+/* The fog: an enemy piece with no count on it. */
+.piece.unknown circle, .piece.unknown path { stroke-dasharray: 0.6 0.4; opacity: 0.8; }
+/* Declared attacks: theirs hot red, ours orange, a called-off one faded, a pull-back dashed green. */
+.declared path { fill: none; stroke-width: 0.9; stroke-linecap: round; }
+.declared.theirs path { stroke: #ff4b3e; }
+.declared.mine path { stroke: var(--accent); }
+.declared.orbit path { stroke-dasharray: 2 0.8; }
+.declared.off { opacity: 0.25; }
+.declared.pullback path { stroke: #59d18a; stroke-dasharray: 1.2 0.8; stroke-width: 0.6; }
+.declared circle { fill: #3a0f0d; stroke: #ff4b3e; stroke-width: 0.3; }
+.declared text { fill: #fff; font-size: 2.4px; font-weight: 700; text-anchor: middle; }
+.tip.attack { fill: #ff4b3e; }
+.attacks { border: 1px solid #5a2320; background: #1d1414; border-radius: 10px; padding: 8px 10px; margin-bottom: 10px; }
+.attacks h2 { color: #ff8a7a; }

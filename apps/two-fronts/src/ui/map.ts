@@ -5,7 +5,7 @@
 // territories as numbered pieces, front-line lanes run hot, and this turn's orders are arrows.
 import { FACTION_COLORS as COLORS, type Faction } from "../battle/contract.ts";
 import { galaxyOf } from "../war/galaxy.ts";
-import { enemy, holds, regionHolder, type Campaign, type Order } from "../war/rules.ts";
+import { ORBIT, enemy, holds, regionHolder, type Attack, type Campaign, type Order, type Retreat } from "../war/rules.ts";
 
 const hex = (f: Faction | null) => (f ? `#${COLORS[f].toString(16).padStart(6, "0")}` : "none");
 const R = 3.4;     // the planet
@@ -54,10 +54,12 @@ function wedge(cx: number, cy: number, r: number, a0: number, a1: number) {
 }
 
 // A board piece: an army is a round counter, a fleet a chevron, each with its count.
-const armyPiece = (x: number, y: number, f: Faction, n: number) =>
-  `<g class="piece ${f}"><title>${n} ${n === 1 ? "army" : "armies"}</title><circle cx="${x}" cy="${y}" r="2.2"/><text x="${x}" y="${y + 0.95}">${n}</text></g>`;
-const fleetPiece = (x: number, y: number, f: Faction, n: number) =>
-  `<g class="piece fleet ${f}"><title>${n} ${n === 1 ? "ship" : "ships"}</title><path d="M${x - 2.6} ${y + 1.6}L${x} ${y - 2.2}L${x + 2.6} ${y + 1.6}L${x} ${y + 0.6}Z"/><text x="${x}" y="${y + 4.3}">${n}</text></g>`;
+// A count of "?" is the enemy where nobody of ours is there to count them.
+const many = (n: number | "?", one: string, more: string) => (n === "?" ? `${more}, how many unknown` : `${n} ${n === 1 ? one : more}`);
+const armyPiece = (x: number, y: number, f: Faction, n: number | "?") =>
+  `<g class="piece ${f}${n === "?" ? " unknown" : ""}"><title>${many(n, "army", "armies")}</title><circle cx="${x}" cy="${y}" r="2.2"/><text x="${x}" y="${y + 0.95}">${n}</text></g>`;
+const fleetPiece = (x: number, y: number, f: Faction, n: number | "?") =>
+  `<g class="piece fleet ${f}${n === "?" ? " unknown" : ""}"><title>${many(n, "ship", "ships")}</title><path d="M${x - 2.6} ${y + 1.6}L${x} ${y - 2.2}L${x + 2.6} ${y + 1.6}L${x} ${y + 0.6}Z"/><text x="${x}" y="${y + 4.3}">${n}</text></g>`;
 // The lucide "swords" icon, centred on x, y.
 const swords = (x: number, y: number) => `<g class="hero-mark" transform="translate(${x - 2.4} ${y - 2.4}) scale(0.2)"><title>Hero battle</title><path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M14.5 6.5 18 3h3v3l-3.5 3.5M5 14l4 4M7 17l-3 3M3 19l2 2"/></g>`;
 // A shield-shaped badge for a region's bonus.
@@ -74,7 +76,10 @@ function stars(width: number) {
   return `<g class="stars">${out}</g>`;
 }
 
-export function drawMap(c: Campaign, orders: Order[], selected: string | null, hero: { system: string } | undefined) {
+// While the turn waits on retreats: the attacks declared, and this seat's answers to them.
+export interface Declared { me: Faction; attacks: Attack[]; retreats: Retreat[] }
+
+export function drawMap(c: Campaign, orders: Order[], selected: string | null, hero: { system: string } | undefined, declared?: Declared) {
   const g = galaxyOf(c), systemDef = g.system, W = g.width;
   const regionIx = new Map(g.regions.map((r, i) => [r.id, i]));
   const cells = territories(g.systems.map((d) => [d.x, d.y]), W);
@@ -118,6 +123,25 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
       <circle cx="${lx}" cy="${ly}" r="1.8" class="move-n"/><text x="${lx}" y="${ly + 0.8}" class="move-t">${o.count}</text></g>`];
   }).join("");
 
+  // The declared attacks: heavy arrows, the enemy's with no count on them. Called off, they fade;
+  // a pull-back is a dashed arrow home.
+  const arrow = (ax: number, ay: number, bx: number, by: number, cls: string, label: string, bend = 0.15) => {
+    const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1, k = (R + 2.5) / len, nx = -dy / len, ny = dx / len;
+    const mx = (ax + bx) / 2 + nx * len * bend, my = (ay + by) / 2 + ny * len * bend;
+    const sx = ax + dx * k, sy = ay + dy * k, ex = bx - dx * k, ey = by - dy * k, lx = (sx + ex) / 4 + mx / 2, ly = (sy + ey) / 4 + my / 2;
+    return `<g class="declared ${cls}"><path d="M${sx} ${sy}Q${mx} ${my} ${ex} ${ey}" marker-end="url(#arrow-attack)"/>${label ? `<circle cx="${lx}" cy="${ly}" r="1.9"/><text x="${lx}" y="${ly + 0.85}">${label}</text>` : ""}</g>`;
+  };
+  const same = (a: { system: string; sector: number }, b: { system: string; sector: number }) => a.system === b.system && a.sector === b.sector;
+  const attacks = (declared?.attacks ?? []).map((a) => {
+    const p = systemDef(a.from), q = systemDef(a.to.system), mine = a.faction === declared!.me;
+    const off = mine && declared!.retreats.some((r) => r.kind === "calloff" && same(r.to, a.to));
+    return `${arrow(p.x, p.y, q.x, q.y, `${mine ? "mine" : "theirs"} ${a.faction}${off ? " off" : ""}${a.to.sector === ORBIT ? " orbit" : ""}`, mine ? "" : "?", -0.12)}`;
+  }).join("") + (declared?.retreats ?? []).map((r) => {
+    if (r.kind !== "withdraw" || r.from.system === r.to.system) return "";
+    const p = systemDef(r.from.system), q = systemDef(r.to.system);
+    return arrow(p.x, p.y, q.x, q.y, "pullback", "", 0.1);
+  }).join("");
+
   const systems = g.systems.map((d) => {
     const s = c.systems[d.id]!, n = s.sectors.length;
     const body = n === 1
@@ -126,8 +150,14 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
     const armies = s.sectors.reduce((a, x) => ({ marines: a.marines + x.armies.marines, wooka: a.wooka + x.armies.wooka }), { marines: 0, wooka: 0 });
     // The player's pieces on the left, the other side's on the right.
     const side = (f: Faction) => (f === c.player ? -1 : 1);
-    const pieces = (["marines", "wooka"] as const).map((f) =>
-      (armies[f] ? armyPiece(d.x + side(f) * 6.4, d.y + 1.2, f, armies[f]) : "") + (s.fleets[f] ? fleetPiece(d.x + side(f) * 4.4, d.y - 6.6, f, s.fleets[f]) : "")).join("");
+    // In the fog, the enemy's ground and orbit show a piece with no number on it.
+    const foggy = (f: Faction) => s.fog && f !== declared?.me;
+    const nArmies = (f: Faction) => (foggy(f) ? (s.sectors.some((x) => x.owner === f) ? "?" : 0) : armies[f]);
+    const nFleets = (f: Faction) => (foggy(f) ? (s.orbit === f ? "?" : 0) : s.fleets[f]);
+    const pieces = (["marines", "wooka"] as const).map((f) => {
+      const a = nArmies(f), n = nFleets(f);
+      return (a ? armyPiece(d.x + side(f) * 6.4, d.y + 1.2, f, a) : "") + (n ? fleetPiece(d.x + side(f) * 4.4, d.y - 6.6, f, n) : "");
+    }).join("");
     return `<g class="system${selected === d.id ? " selected" : ""}${near.has(d.id) ? " reach" : ""}" data-system="${d.id}" tabindex="0" role="button" aria-label="${d.name}">
       <circle cx="${d.x}" cy="${d.y}" r="${R + 1.4}" class="orbit" stroke="${s.orbit ? hex(s.orbit) : "#6b7280"}" ${s.orbit ? "" : 'stroke-dasharray="1 1"'}><title>Orbit: ${s.orbit ?? "nobody"}</title></circle>
       ${body}
@@ -143,10 +173,11 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
       <pattern id="hatch" width="1.6" height="1.6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="1.6" class="hatch"/></pattern>
       <radialGradient id="vignette" cx="50%" cy="50%" r="75%"><stop offset="55%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity="0.65"/></radialGradient>
       <marker id="arrow-army" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L6 3L0 6z" class="tip army"/></marker>
+      <marker id="arrow-attack" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="3.5" markerHeight="3.5" orient="auto"><path d="M0 0L6 3L0 6z" class="tip attack"/></marker>
       <marker id="arrow-fleet" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L6 3L0 6z" class="tip fleet"/></marker>
     </defs>
     <rect width="${W}" height="100" class="board"/><rect width="${W}" height="100" fill="url(#grid)"/>${stars(W)}
     <g class="lands">${lands}</g><g class="borders">${borders}</g>
     <rect width="${W}" height="100" fill="url(#vignette)" pointer-events="none"/>
-    ${lanes}${regions}${moves}${systems}</svg>`;
+    ${lanes}${regions}${moves}${attacks}${systems}</svg>`;
 }

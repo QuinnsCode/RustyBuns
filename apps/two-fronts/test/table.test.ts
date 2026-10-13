@@ -6,9 +6,11 @@ import { groundRecorder, spaceRecorder } from "../src/battle/replay.ts";
 import { run, startBattle, step } from "../src/battle/sim.ts";
 import { runSpace, startSpaceBattle, stepSpace } from "../src/battle/space.ts";
 
-const ok = (s: Step) => {
+const ok = (s: Step): Extract<Step, { ok: true }> => {
   if (!s.ok) throw new Error(s.error);
-  return s;
+  // Once attacks are declared, every human with a say holds their ground.
+  const asked = waitingOn(s.table).filter(() => s.table.campaign.attacks);
+  return asked.length ? ok(handIn(s.table, asked[0]!, { faction: asked[0]!, orders: [] })) : s;
 };
 // The page's side of a played battle: ten seconds charging ahead firing, then the AI takes over.
 function playGround(spec: BattleSpec) {
@@ -173,4 +175,31 @@ test("a space battle is played again too, left to the AI or from the hero's inpu
   const real = runSpace(p.spec).over!;
   const done = ok(report(paused, "wooka", { id: p.spec.id, winner: "defender", fleets: { attacker: 0, defender: 2 }, heroDown: false, auto: true }));
   expect(done.done!.battle).toEqual({ ...real, auto: true });
+});
+
+test("attacks are declared, and the turn waits on the retreats of the sides they touch", () => {
+  const t = newTable({ marines: "human", wooka: "human" }, "short", 7);
+  const k = t.campaign.systems.kessa!;
+  k.fleets = { marines: 2, wooka: 0 };
+  k.orbit = "marines";
+  const attack = { faction: "marines" as const, orders: [{ kind: "army" as const, from: { system: "corva", sector: 1 }, to: { system: "kessa", sector: 0 }, count: 2 }] };
+  const one = handIn(t, "marines", attack);
+  if (!one.ok) throw new Error(one.error);
+  const asked = handIn(one.table, "wooka", empty("wooka"));
+  if (!asked.ok) throw new Error(asked.error);
+  expect(asked.table.campaign.turn).toBe(1);
+  expect(asked.table.campaign.attacks).toEqual([{ faction: "marines", from: "corva", to: { system: "kessa", sector: 0 } }]);
+  expect(waitingOn(asked.table)).toEqual(["marines", "wooka"]);
+  expect(handIn(asked.table, "wooka", { faction: "wooka", orders: [], retreats: [{ kind: "calloff", to: { system: "kessa", sector: 0 } }] })).toEqual({ ok: false, error: "No attack of yours there" });
+  const out = { faction: "wooka" as const, orders: [], retreats: [{ kind: "withdraw" as const, from: { system: "kessa", sector: 0 }, to: { system: "kessa", sector: 2 } }] };
+  const w = handIn(asked.table, "wooka", out);
+  if (!w.ok) throw new Error(w.error);
+  expect(handIn(w.table, "wooka", out)).toEqual({ ok: false, error: "Retreats already in for this turn" });
+  const done = handIn(w.table, "marines", empty("marines"));
+  if (!done.ok) throw new Error(done.error);
+  expect(done.table.campaign).toMatchObject({ turn: 2, attacks: null });
+  expect(done.table.campaign.systems.kessa!.sectors[0]!.owner).toBe("marines");
+  expect(done.done!.orders[1]).toMatchObject({ faction: "wooka", retreats: out.retreats });
+  // Orders hand in no retreats: those wait for the attacks.
+  expect(handIn(t, "marines", { ...attack, retreats: out.retreats } as never)).toEqual({ ok: false, error: "Retreats come after the attacks are declared" });
 });
