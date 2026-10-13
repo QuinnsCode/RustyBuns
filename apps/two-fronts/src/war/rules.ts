@@ -6,7 +6,7 @@
 // off. Then it all resolves: space battles, landings, ground battles, upkeep (cannon fire,
 // bombardment, supply, income). One battle a turn, on the ground or in orbit, can be
 // handed to the player as a hero battle; the turn pauses on it until the result comes back.
-import type { BattleResult, BattleSpec, Faction, SectorKind, SpaceBattleResult, SpaceBattleSpec, VehicleKind, VehiclePool } from "../battle/contract.ts";
+import type { BattleResult, BattleSpec, Faction, MatchMode, SectorKind, SpaceBattleResult, SpaceBattleSpec, VehicleKind, VehiclePool } from "../battle/contract.ts";
 import { other as otherSide } from "../battle/contract.ts";
 import { FACTION_NAMES, GALAXIES, SECTOR_INCOME, SECTOR_NAMES, galaxyOf, type GalaxyId } from "./galaxy.ts";
 
@@ -43,6 +43,7 @@ export interface Campaign {
   attacks?: Attack[] | null;
   winner: Faction | null;
   log: string[]; // this turn's events, newest last
+  mode?: MatchMode; // how the next hero ground battle is fought, as the last vote picked; conquest when absent
 }
 
 export type Order =
@@ -433,6 +434,7 @@ export function buildSpec(c: Campaign, at: Where, seed: number, heroOf: Faction 
     strikes: { attacker: strikes(att), defender: strikes(def) },
     reinforcements: { attacker: reinf(att), defender: reinf(def) },
     turrets: x.kind === "shield" || x.kind === "cannon" ? 2 : 1,
+    ...(c.mode && c.mode !== "conquest" && { mode: c.mode }),
     seed,
   };
 }

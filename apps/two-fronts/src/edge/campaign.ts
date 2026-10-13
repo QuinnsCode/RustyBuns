@@ -3,14 +3,22 @@
 // hash is kept. The table (map, orders handed in) is one row in the object's SQLite, and every
 // resolved turn adds a row to its history. The sequencing is src/war/table.ts, the same code the
 // page runs for a game against the AI or a hotseat game.
-import type { BattleResult, Faction, SpaceBattleResult } from "../battle/contract.ts";
+//
+// The end-of-match vote's pointers go over a WebSocket at /pointers: a seat says hello with its
+// token as the first message (a browser can't put it in a header, and a URL gets logged), then
+// sends where its pointer is, and the object passes that on to the other seat. Nothing about a
+// pointer is kept. The votes themselves are POSTs, kept with the table.
+import type { BattleResult, Faction, MatchMode, SpaceBattleResult } from "../battle/contract.ts";
 import { GALAXIES, type GalaxyId } from "../war/galaxy.ts";
 import { fogged, type Campaign, type Orders } from "../war/rules.ts";
-import { handIn, humans, newTable, report, waitingOn, type Seats, type Step, type Table, type TurnRecord } from "../war/table.ts";
+import { castVote, handIn, humans, newTable, report, waitingOn, type Seats, type Step, type Table, type TurnRecord, type Vote } from "../war/table.ts";
 
 // Cloudflare's SqlStorage, and the in-process one Rusty Buns hosts locally, as far as this uses them.
 interface Sql { exec<T = Record<string, unknown>>(query: string, ...bindings: unknown[]): { toArray(): T[] } }
-interface State { storage: { sql: Sql } }
+interface State { storage: { sql: Sql }; acceptWebSocket(ws: Socket): void; getWebSockets(): Socket[] }
+interface Socket { send(m: string): void; close(code?: number, reason?: string): void; serializeAttachment(v: unknown): void; deserializeAttachment(): unknown }
+// Provided by workerd and by the Rusty Buns host.
+declare const WebSocketPair: { new (): Record<0 | 1, Socket> };
 
 export interface View {
   seat: Faction;
@@ -18,11 +26,14 @@ export interface View {
   campaign: Campaign;
   waiting: Faction[];
   handedIn: boolean; // this seat's orders are in for the turn
+  vote: Vote | null;  // the end-of-match vote, open or just picked
 }
 
 const MAX_BODY = 256 * 1024; // room for a played battle's input log (MAX_INPUTS)
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 const fail = (error: string, status = 400) => json({ error }, status);
+const MAX_SOCKETS = 8; // a seat on a couple of devices, twice over
+const MAX_FRAME = 256;
 
 export async function hashToken(token: string) {
   const d = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode("two-fronts:" + token)));
@@ -33,7 +44,7 @@ const newToken = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Ui
 export class CampaignRoom {
   private sql: Sql;
 
-  constructor(ctx: State, _env: unknown) {
+  constructor(private ctx: State, _env: unknown) {
     this.sql = ctx.storage.sql;
   }
 
@@ -42,6 +53,7 @@ export class CampaignRoom {
     if (req.method === "POST" && path === "/create") return this.create(await body(req));
     const table = this.load();
     if (!table) return fail("No such campaign", 404);
+    if (path === "/pointers") return this.pointers(req);
     const seat = await this.seatOf(req);
     if (!seat) return fail("Not a seat at this campaign", 403);
 
@@ -52,7 +64,49 @@ export class CampaignRoom {
     }
     if (req.method === "POST" && path === "/orders") return this.step(seat, handIn(table, seat, (await body(req)) as Orders));
     if (req.method === "POST" && path === "/battle") return this.step(seat, report(table, seat, (await body(req)) as BattleResult | SpaceBattleResult));
+    if (req.method === "POST" && path === "/vote") {
+      const v = (await body(req)) as { match?: unknown; mode?: unknown } | null;
+      if (typeof v?.match !== "string" || typeof v.mode !== "string") return fail("That isn't a vote");
+      const res = this.step(seat, castVote(table, seat, v.match, v.mode as MatchMode));
+      if (res.ok) this.broadcast(JSON.stringify({ t: "vote", vote: this.load()!.vote }));
+      return res;
+    }
     return fail("Not found", 404);
+  }
+
+  private pointers(req: Request): Response {
+    if (req.headers.get("Upgrade") !== "websocket") return fail("WebSocket only", 426);
+    if (this.ctx.getWebSockets().length >= MAX_SOCKETS) return fail("Too many screens on this vote", 503);
+    const [client, server] = Object.values(new WebSocketPair()) as [Socket, Socket];
+    this.ctx.acceptWebSocket(server);
+    return new Response(null, { status: 101, webSocket: client } as ResponseInit);
+  }
+
+  // A pointer socket's frames: hello with the seat token first, then where its pointer is.
+  async webSocketMessage(ws: Socket, m: string | ArrayBuffer) {
+    if (typeof m !== "string" || m.length > MAX_FRAME) return ws.close(1009, "Too big");
+    let msg: { t?: unknown; token?: unknown; x?: unknown; y?: unknown };
+    try { msg = JSON.parse(m); } catch { return ws.close(1003, "Not JSON"); }
+    const seat = (ws.deserializeAttachment() as { seat?: Faction } | null)?.seat;
+    if (!seat) {
+      const found = msg.t === "hello" && typeof msg.token === "string" && /^\S{16,128}$/.test(msg.token) ? await this.seatFor(msg.token) : null;
+      if (!found) return ws.close(4003, "Not a seat at this campaign");
+      ws.serializeAttachment({ seat: found });
+      return ws.send(JSON.stringify({ t: "hi", seat: found }));
+    }
+    if (msg.t !== "at" || typeof msg.x !== "number" || typeof msg.y !== "number") return;
+    const unit = (n: number) => Math.round(Math.max(0, Math.min(1, n)) * 1000) / 1000;
+    this.broadcast(JSON.stringify({ t: "at", seat, x: unit(msg.x), y: unit(msg.y) }), ws);
+  }
+  webSocketClose(ws: Socket) { try { ws.close(1000); } catch { /* already closed */ } }
+  webSocketError() {}
+
+  // To every seat's pointer socket that has said hello, but the one it came from.
+  private broadcast(m: string, from?: Socket) {
+    for (const ws of this.ctx.getWebSockets()) {
+      if (ws === from || !(ws.deserializeAttachment() as { seat?: Faction } | null)?.seat) continue;
+      try { ws.send(m); } catch { /* gone */ }
+    }
   }
 
   private async create(b: unknown): Promise<Response> {
@@ -86,7 +140,7 @@ export class CampaignRoom {
   // A seat sees who holds what, but the other side's numbers only where it has someone to count
   // them, and never what they've ordered until the turn resolves (attacks are declared without numbers).
   private view(t: Table, seat: Faction): View {
-    return { seat, seats: t.seats, campaign: fogged(t.campaign, seat), waiting: waitingOn(t), handedIn: !!t.handedIn[seat] };
+    return { seat, seats: t.seats, campaign: fogged(t.campaign, seat), waiting: waitingOn(t), handedIn: !!t.handedIn[seat], vote: t.vote ?? null };
   }
 
   private load(): Table | null {
@@ -98,7 +152,10 @@ export class CampaignRoom {
 
   private async seatOf(req: Request): Promise<Faction | null> {
     const token = req.headers.get("Authorization")?.match(/^Bearer (\S{16,128})$/)?.[1];
-    if (!token) return null;
+    return token ? this.seatFor(token) : null;
+  }
+
+  private async seatFor(token: string): Promise<Faction | null> {
     const row = this.sql.exec<{ faction: Faction }>("SELECT faction FROM seats WHERE token_hash = ?", await hashToken(token)).toArray()[0];
     return row?.faction ?? null;
   }

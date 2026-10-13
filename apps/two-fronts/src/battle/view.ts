@@ -6,7 +6,7 @@ import { FACTION_COLORS, type BattleResult, type BattleSpec, type Side } from ".
 import { groundRecorder } from "./replay.ts";
 import { animate, gunship, marine, speeder, tank, turret, walker, wooka } from "./models.ts";
 import { buildWorld } from "./terrain.ts";
-import { DT, POST_RADIUS, STATS, STRIKE_RADIUS, TIME_LIMIT, TROOPERS, altitude, facing, heroUnit, startBattle, step, type Trooper, type Unit } from "./sim.ts";
+import { DT, POST_RADIUS, STATS, STRIKE_RADIUS, TROOPERS, altitude, championUnit, facing, heroUnit, inPlay, startBattle, step, timeLimit, type Trooper, type Unit } from "./sim.ts";
 
 export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTMLElement): Promise<BattleResult> {
   const b = startBattle(spec);
@@ -48,7 +48,8 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const makeMesh = (u: Unit) => {
     const f = spec.factions[u.side];
     const g = u.kind === "tank" ? tank() : u.kind === "walker" ? walker() : u.kind === "speeder" ? speeder() : u.kind === "gunship" ? gunship()
-      : u.kind === "turret" ? turret(f) : f === "wooka" ? wooka(u.kind === "hero") : marine(u.kind === "hero", (TROOPERS as string[]).includes(u.kind) ? (u.kind as Trooper) : "assault");
+      : u.kind === "turret" ? turret(f) : f === "wooka" ? wooka(u.kind === "hero" || u.kind === "champion") : marine(u.kind === "hero" || u.kind === "champion", (TROOPERS as string[]).includes(u.kind) ? (u.kind as Trooper) : "assault");
+    if (u.kind === "champion") g.scale.setScalar(1.3); // the escort's champion stands a head taller
     g.userData.last = { x: u.x, z: u.z };
     scene.add(g);
     return g;
@@ -110,6 +111,16 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   let handOver = false;
   hud.onpointerdown = (e) => { if ((e.target as HTMLElement).id === "b-auto") handOver = true; };
 
+  // What the mode asks of you right now, over the posts.
+  const objectiveLine = () => {
+    const live = b.posts[b.live]!, champ = championUnit(b);
+    const text = b.mode === "assault" ? (b.phase > 0 ? `Hold ${live.name} ${Math.ceil(b.phase)}s` : `Take ${live.name}`)
+      : b.mode === "hill" ? `Hill: ${live.name}, moves in ${Math.ceil(b.phase)}s`
+      : b.mode === "holdout" ? (heroSide === "defender" ? "Hold any post till the clock runs out" : "Take every post")
+      : b.mode === "escort" ? (champ ? `Champion ${Math.round((100 * champ.hp) / champ.maxHp)}%` : "Champion down")
+      : "";
+    return text ? `<span class="objective">${text}</span>` : "";
+  };
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
   const drawHud = () => {
     const hero = heroUnit(b), mine = heroSide, foe = mine === "attacker" ? "defender" : "attacker";
@@ -117,9 +128,9 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     const bar = (s: Side) => `<div class="tickets ${spec.factions[s]}"><b>${s === mine ? "You" : "Enemy"}</b><span>${Math.max(0, Math.ceil(b.tickets[s]))}</span><i style="width:${Math.min(100, (100 * Math.max(0, b.tickets[s])) / (spec.tickets[s] + spec.reinforcements[s]))}%"></i></div>`;
     hud.innerHTML = `
       <div class="b-top">${bar(mine)}
-        <div class="b-clock" title="Time left. When it runs out, the side with more tickets wins (the defender on a tie)."><span class="clock">${fmt(Math.max(0, TIME_LIMIT - b.time))}</span><sup>i</sup></div>
+        <div class="b-clock" title="${b.mode === "conquest" || b.mode === "hill" ? "Time left. When it runs out, the side with more tickets wins (the defender on a tie)." : "Time left. When it runs out, the defender has held."}"><span class="clock">${fmt(Math.max(0, timeLimit(spec) - b.time))}</span><sup>i</sup></div>
         ${bar(foe)}</div>
-      <div class="b-posts">${b.posts.map((p) => `<span class="post ${p.owner ? spec.factions[p.owner] : ""}">${p.name}</span>`).join("")}</div>
+      <div class="b-posts">${objectiveLine()}${b.posts.map((p, i) => `<span class="post ${p.owner ? spec.factions[p.owner] : ""}${inPlay(b, i) ? "" : " out"}">${p.name}</span>`).join("")}</div>
       <div class="b-hero">
         ${hero ? `<div class="hp"><i style="width:${(100 * hero.hp) / hero.maxHp}%"></i></div>` : `<div class="respawn">${b.hero.lives > 0 ? `Back in ${Math.ceil(b.hero.respawn)}s` : "Your hero is down"}</div>`}
         <span title="Lives">♥ ${b.hero.lives}</span>
@@ -170,6 +181,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         (p.flag.material as THREE.MeshStandardMaterial).color.setHex(post.owner ? color(post.owner) : 0xdddddd);
         (p.ring.material as THREE.MeshBasicMaterial).color.setHex(post.progress > 0 ? color("attacker") : post.progress < 0 ? color("defender") : 0xffffff);
         (p.beam.material as THREE.MeshBasicMaterial).color.setHex(post.owner ? color(post.owner) : 0x888888);
+        p.beam.visible = p.ring.visible = inPlay(b, i) || (b.mode === "escort" && i === b.posts.length - 1); // only what's in play glows
         p.flag.rotation.y = Math.sin(now / 700 + i) * 0.25; // it flaps
       });
       const pts: number[] = [];

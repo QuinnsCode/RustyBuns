@@ -1,6 +1,6 @@
 // Cloudflare entry for campaigns played a turn at a time: serves the page, and routes
-// /api/campaigns/<id>/... to that campaign's Durable Object. POST /api/campaigns starts one and
-// hands back its id and a seat token for each human side.
+// /api/campaigns/<id>/... to that campaign's Durable Object, the vote's pointer socket included.
+// POST /api/campaigns starts one and hands back its id and a seat token for each human side.
 import { CampaignRoom } from "./campaign.ts";
 import { allowStart } from "./limits.ts";
 // workerd takes only handlers and Durable Object classes from this module, so nothing else goes out.
@@ -33,10 +33,13 @@ export default {
     }
     const m = url.pathname.match(/^\/api\/campaigns\/([^/]+)(\/[a-z]+)?\/?$/);
     if (!m || !ID.test(m[1]!)) return Response.json({ error: "No such campaign" }, { status: 404 });
+    const room = env.CAMPAIGN.get(env.CAMPAIGN.idFromString(m[1]!));
+    // The vote's pointer socket goes through as it came, Upgrade header and all.
+    if (m[2] === "/pointers") return room.fetch(new Request("https://campaign/pointers", req));
     const headers = new Headers({ "Content-Type": "application/json" });
     const auth = req.headers.get("Authorization");
     if (auth) headers.set("Authorization", auth);
     const body = req.method === "POST" ? await req.text() : undefined;
-    return env.CAMPAIGN.get(env.CAMPAIGN.idFromString(m[1]!)).fetch(new Request(`https://campaign${m[2] ?? "/"}`, { method: req.method, headers, body }));
+    return room.fetch(new Request(`https://campaign${m[2] ?? "/"}`, { method: req.method, headers, body }));
   },
 };

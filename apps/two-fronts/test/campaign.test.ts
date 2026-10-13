@@ -1,12 +1,14 @@
 // The campaign's Durable Object behind the Worker, hosted in-process by Rusty Buns with the same
 // SQLite storage shape Cloudflare gives it.
 import { expect, test } from "bun:test";
-import { durableObject } from "@rustybuns/shell-bun";
+import { Database } from "bun:sqlite";
+import { durableObject, installCloudflareGlobals, sqlStorage } from "@rustybuns/shell-bun";
 import worker, { CampaignRoom } from "../src/edge/worker.ts";
 import { STARTS_PER_MINUTE, allowStart } from "../src/edge/limits.ts";
 import type { View } from "../src/edge/campaign.ts";
 import type { TurnRecord } from "../src/war/table.ts";
 
+installCloudflareGlobals(); // WebSocketPair, and a Response that carries a socket
 const env: any = { ASSETS: { fetch: async () => new Response("the page") } };
 env.CAMPAIGN = durableObject(CampaignRoom as never, env);
 
@@ -93,4 +95,61 @@ test("an address can start only so many campaigns a minute", () => {
   expect(allowStart("1.2.3.4", 2000)).toBe(false);
   expect(allowStart("5.6.7.8", 2000)).toBe(true);
   expect(allowStart("1.2.3.4", 62_000)).toBe(true);
+});
+
+// A pointer socket opened through the Worker: what the object sends it, and a way to send it a frame.
+async function pointerSocket(id: string, token?: string) {
+  const res = await worker.fetch(new Request(`https://two-fronts.test/api/campaigns/${id}/pointers`, { headers: { Upgrade: "websocket" } }), env);
+  expect(res.status).toBe(101);
+  const client = (res as any).webSocket, got: any[] = [];
+  client.toBrowser = (d: string) => got.push(JSON.parse(d));
+  let closed: number | null = null;
+  client.closeBrowser = (code: number) => (closed = code);
+  const send = async (m: object) => { client.onMessage(JSON.stringify(m)); await Bun.sleep(5); };
+  if (token) await send({ t: "hello", token });
+  return { got, send, closed: () => closed };
+}
+
+test("the vote's pointers: each seat says hello with its token, and its pointer goes to the other seat", async () => {
+  const { id, tokens } = await start({ marines: "human", wooka: "human" });
+  const marines = await pointerSocket(id, tokens.marines), wooka = await pointerSocket(id, tokens.wooka);
+  expect(marines.got).toEqual([{ t: "hi", seat: "marines" }]);
+  await marines.send({ t: "at", x: 0.25, y: 2 });
+  expect(wooka.got.at(-1)).toEqual({ t: "at", seat: "marines", x: 0.25, y: 1 });
+  expect(marines.got).toHaveLength(1); // not back to itself
+  // A socket that hasn't said hello hears nothing, and one with a bad token is shut.
+  const stranger = await pointerSocket(id);
+  await wooka.send({ t: "at", x: 0.5, y: 0.5 });
+  expect(stranger.got).toEqual([]);
+  expect(marines.got.at(-1)).toEqual({ t: "at", seat: "wooka", x: 0.5, y: 0.5 });
+  await stranger.send({ t: "hello", token: "x".repeat(32) });
+  expect(stranger.closed()).toBe(4003);
+  // Not a socket: turned away.
+  expect((await call(`/api/campaigns/${id}/pointers`, tokens.marines)).status).toBe(426);
+});
+
+test("the vote online: each seat POSTs one vote, the other screen hears it at once, and the last picks the mode", async () => {
+  // The object on its own, so the test can open a vote without fighting a battle first.
+  const sockets: any[] = [];
+  const ctx = { storage: { sql: sqlStorage(() => new Database(":memory:")) }, acceptWebSocket: (ws: any) => sockets.push(ws), getWebSockets: () => sockets };
+  const room = new CampaignRoom(ctx as never, {});
+  const req = (path: string, token?: string, body?: unknown) => room.fetch(new Request(`https://campaign${path}`, {
+    method: body === undefined ? "GET" : "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: body === undefined ? undefined : JSON.stringify(body),
+  }));
+  const { tokens } = (await (await req("/create", undefined, { seats: { marines: "human", wooka: "human" } })).json()) as { tokens: Record<string, string> };
+  const row = ctx.storage.sql.exec<{ tbl: string }>("SELECT tbl FROM campaign").toArray()[0]!;
+  ctx.storage.sql.exec("UPDATE campaign SET tbl = ?", JSON.stringify({ ...JSON.parse(row.tbl), vote: { match: "m1", votes: {}, picked: null } }));
+  const ws = { got: [] as any[], att: null as unknown, send(m: string) { this.got.push(JSON.parse(m)); }, close() {}, serializeAttachment(v: unknown) { this.att = v; }, deserializeAttachment() { return this.att; } };
+  sockets.push(ws);
+  await room.webSocketMessage(ws, JSON.stringify({ t: "hello", token: tokens.wooka }));
+
+  expect(((await (await req("/", tokens.marines)).json()) as View).vote).toEqual({ match: "m1", votes: {}, picked: null });
+  expect((await req("/vote", tokens.marines, { match: "m1" })).status).toBe(400);
+  const one = (await (await req("/vote", tokens.marines, { match: "m1", mode: "escort" })).json()) as View;
+  expect(one.vote).toEqual({ match: "m1", votes: { marines: "escort" }, picked: null });
+  expect(ws.got.at(-1)).toEqual({ t: "vote", vote: one.vote });
+  expect((await req("/vote", tokens.marines, { match: "m1", mode: "hill" })).status).toBe(409);
+  const both = (await (await req("/vote", tokens.wooka, { match: "m1", mode: "escort" })).json()) as View;
+  expect(both.vote!.picked).toBe("escort");
+  expect(both.campaign.mode).toBe("escort");
 });

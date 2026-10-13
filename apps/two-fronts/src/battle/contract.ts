@@ -11,6 +11,15 @@ export type VehicleKind = "tank" | "walker" | "speeder" | "gunship";
 export const VEHICLE_KINDS: VehicleKind[] = ["tank", "walker", "speeder", "gunship"];
 export type VehiclePool = Partial<Record<VehicleKind, number>>;
 export type Side = "attacker" | "defender";
+// How a ground battle is won. Conquest is the war over every post at once; the others are the
+// playlist the end-of-match vote picks from. A spec without a mode is conquest.
+//   assault: one post is live at a time, in order. Take it, then hold it while they counter-attack,
+//            and the next one comes live. Take the keep and the sector falls; run the clock out and it holds.
+//   hill:    one live post that moves on every so often. Whoever stands on it drains the other side.
+//   holdout: the defender holds every post against waves that keep growing, till the clock runs out.
+//   escort:  the attacker's champion walks for the keep, but only with company. Get them there, or kill them.
+export type MatchMode = "conquest" | "assault" | "hill" | "holdout" | "escort";
+export const MATCH_MODES: MatchMode[] = ["conquest", "assault", "hill", "holdout", "escort"];
 export type PerSide<T> = Record<Side, T>;
 
 export interface BattleSpec {
@@ -28,6 +37,7 @@ export interface BattleSpec {
   strikes: PerSide<number>;        // orbital strikes; the enemy's shield generator cuts them down
   reinforcements: PerSide<number>; // tickets dropped in once, at half tickets; only with orbit
   turrets: number;                 // the defender's fortifications
+  mode?: MatchMode;                // conquest when absent
   seed: number;
 }
 

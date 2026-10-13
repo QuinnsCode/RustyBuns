@@ -4,7 +4,7 @@
 // declared) the retreats of each side with a say in them. The rules stay pure; this only stores and sequences them, so the page runs it for
 // a game against the AI or a hotseat game, and the campaign's Durable Object runs the same code
 // for a game played a turn at a time over days.
-import type { BattleResult, Faction, SpaceBattleResult } from "../battle/contract.ts";
+import { MATCH_MODES, type BattleResult, type Faction, type MatchMode, type SpaceBattleResult } from "../battle/contract.ts";
 import { replayGround, replaySpace } from "../battle/replay.ts";
 import { run } from "../battle/sim.ts";
 import { runSpace } from "../battle/space.ts";
@@ -26,7 +26,13 @@ export interface Table {
   resolving: Orders[] | null;
   // While the turn waits on retreats: every side's moves, kept here and never shown to the other seat.
   moves?: Orders[] | null;
+  // After a ground battle: each side's one vote for how the next is fought. It never holds the turn up.
+  vote?: Vote | null;
 }
+
+// The end-of-match vote. The AI's seat votes the moment it opens; the page shows its pointer
+// wandering over to that card. When every seat is in, `picked` is the campaign's next mode.
+export interface Vote { match: string; votes: Partial<Record<Faction, MatchMode>>; picked: MatchMode | null }
 
 // A resolved turn, as the history keeps it.
 export interface TurnRecord { turn: number; orders: Orders[]; battle: BattleResult | SpaceBattleResult | null; log: string[] }
@@ -130,8 +136,43 @@ export function report(t: Table, f: Faction, res: BattleResult | SpaceBattleResu
     const clean = { id: r.id, winner: r.winner, tickets: { attacker: r.tickets.attacker, defender: r.tickets.defender }, heroDown: r.heroDown, ...(res.auto && { auto: true as const }) };
     after = applyBattleResult(c, clean);
     battle = clean;
+    return { ok: true, table: { ...t, campaign: after, resolving: null, vote: openVote(t, r.id) }, done: { turn: c.turn, orders: t.resolving ?? [], battle, log: after.log } };
   }
   return { ok: true, table: { ...t, campaign: after, resolving: null }, done: { turn: c.turn, orders: t.resolving ?? [], battle, log: after.log } };
+}
+
+// The AI's vote: any mode but the one just fought, picked from the match id so it's the same every time.
+export const aiVote = (match: string, seat: Faction, now: MatchMode = "conquest"): MatchMode => {
+  const others = MATCH_MODES.filter((m) => m !== now);
+  return others[hash(`${match}:${seat}`) % others.length]!;
+};
+const hash = (s: string) => [...s].reduce((h, ch) => (Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0), 2166136261);
+
+// Most votes wins. A split vote goes one way or the other by the match id, the same on every screen.
+export function tally(match: string, votes: Partial<Record<Faction, MatchMode>>): MatchMode {
+  const n = new Map<MatchMode, number>();
+  for (const m of Object.values(votes)) if (m) n.set(m, (n.get(m) ?? 0) + 1);
+  const most = Math.max(0, ...n.values()), tied = MATCH_MODES.filter((m) => n.get(m) === most);
+  return tied.length ? tied[hash(match) % tied.length]! : "conquest";
+}
+
+function openVote(t: Table, match: string): Vote {
+  const votes: Vote["votes"] = {};
+  for (const f of FACTIONS) if (t.seats[f] === "ai") votes[f] = aiVote(match, f, t.campaign.mode);
+  return { match, votes, picked: null };
+}
+
+// A seat votes once for the next match's mode. The last vote in picks it.
+export function castVote(t: Table, f: Faction, match: string, mode: MatchMode): Step {
+  const v = t.vote;
+  if (!v || v.match !== match || v.picked) return { ok: false, error: "No vote is open" };
+  if (t.seats[f] !== "human") return { ok: false, error: "That side isn't yours" };
+  if (v.votes[f]) return { ok: false, error: "You've voted" };
+  if (!MATCH_MODES.includes(mode)) return { ok: false, error: "No such mode" };
+  const votes = { ...v.votes, [f]: mode };
+  const done = FACTIONS.every((g) => votes[g]);
+  const picked = done ? tally(match, votes) : null;
+  return { ok: true, table: { ...t, vote: { match, votes, picked }, ...(picked && { campaign: { ...t.campaign, mode: picked } }) }, done: null };
 }
 
 // Orders from a stranger's browser: the right shape, every one legal, and a hero who can fight.

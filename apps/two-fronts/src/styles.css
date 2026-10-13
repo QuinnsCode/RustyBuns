@@ -159,6 +159,8 @@ body.in-battle .war-room { display: none; }
 .b-posts { position: absolute; top: 50px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; }
 .post { background: rgb(0 0 0 / 0.45); border-radius: 6px; padding: 2px 8px; border-bottom: 3px solid #ccc; color: #fff; }
 .post.marines { border-color: var(--marines); } .post.wooka { border-color: var(--wooka); }
+.post.out { opacity: 0.45; }
+.objective { background: rgb(0 0 0 / 0.6); border-radius: 6px; padding: 2px 10px; color: #ffd27a; font-weight: 600; white-space: nowrap; }
 .b-hero { position: absolute; left: 16px; bottom: 16px; display: flex; gap: 12px; align-items: center; background: rgb(0 0 0 / 0.45); padding: 6px 10px; border-radius: 8px; }
 .hp { width: 160px; height: 8px; background: #333; border-radius: 4px; overflow: hidden; }
 .hp i { display: block; height: 100%; background: var(--gold); }
@@ -229,3 +231,26 @@ button.x { display: inline-flex; line-height: 0; padding: 2px; }
 /* The space battle in 2.5D: no pointer lock, so the mouse is the crosshair. */
 body.space-2d .crosshair { display: none; }
 body.space-2d #battle-view { cursor: crosshair; }
+
+/* The end-of-match vote: mode cards, and everyone's pointer drawn over them. */
+.vote { position: fixed; inset: 0; z-index: 25; background: rgb(0 0 0 / 0.7); display: flex; align-items: center; justify-content: center; padding: 16px; cursor: none; touch-action: none; }
+.vote[hidden] { display: none; }
+.vote-box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px 24px; max-width: 760px; width: 100%; }
+.vote-box h2 { margin-top: 0; }
+.vote-who { font-weight: 600; min-height: 1.3em; }
+.vote-cards { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 12px 0; }
+.vote-card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 10px; border-radius: 10px; text-align: center; cursor: none; min-height: 150px; }
+.vote-card small { opacity: 0.75; line-height: 1.3; white-space: normal; font-size: 12px; }
+.vote-card b { white-space: normal; }
+.vote-card.off { opacity: 0.6; }
+.vote-card.picked { opacity: 1; outline: 3px solid #ffd27a; }
+.vote-dots { display: flex; gap: 4px; min-height: 12px; }
+.vote-pointer { position: absolute; pointer-events: none; display: flex; align-items: flex-start; gap: 2px; transform: translate(-3px, -3px); font-style: normal; font-size: 12px; z-index: 2; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.8)); }
+.vote-pointer[hidden] { display: none; }
+.vote-pointer.marines { color: var(--marines); } .vote-pointer.wooka { color: var(--wooka); }
+.vote-pointer.marines .icon { fill: var(--marines); } .vote-pointer.wooka .icon { fill: var(--wooka); }
+.vote-pointer span { margin-top: 16px; background: rgb(0 0 0 / 0.6); border-radius: 4px; padding: 0 4px; white-space: nowrap; }
+.vote-foot { display: flex; justify-content: flex-end; }
+.vote-go { cursor: none; }
+.mode-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: #ffd27a; }
+.mode-line .small { color: inherit; opacity: 0.8; }

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { MAX_INPUTS, handIn, newTable, report, waitingOn, type Step, type Table } from "../src/war/table.ts";
-import { ORBIT, resolveTurn, type Where } from "../src/war/rules.ts";
+import { MAX_INPUTS, aiVote, castVote, handIn, newTable, report, tally, waitingOn, type Step, type Table } from "../src/war/table.ts";
+import { ORBIT, buildSpec, resolveTurn, type Where } from "../src/war/rules.ts";
 import { other, type BattleSpec, type SpaceBattleSpec } from "../src/battle/contract.ts";
 import { groundRecorder, spaceRecorder } from "../src/battle/replay.ts";
 import { run, startBattle, step } from "../src/battle/sim.ts";
@@ -202,4 +202,40 @@ test("attacks are declared, and the turn waits on the retreats of the sides they
   expect(done.done!.orders[1]).toMatchObject({ faction: "wooka", retreats: out.retreats });
   // Orders hand in no retreats: those wait for the attacks.
   expect(handIn(t, "marines", { ...attack, retreats: out.retreats } as never)).toEqual({ ok: false, error: "Retreats come after the attacks are declared" });
+});
+
+test("after a ground battle each seat votes once for the next mode, and the last vote picks it", () => {
+  const { paused, spec } = heroAtKessa();
+  const t = ok(report(paused, "marines", { id: spec.id, winner: spec.hero, tickets: { attacker: 0, defender: 0 }, heroDown: false, auto: true })).table;
+  expect(t.vote).toEqual({ match: spec.id, votes: {}, picked: null });
+  expect(castVote(t, "marines", "someone-else", "hill")).toEqual({ ok: false, error: "No vote is open" });
+  expect(castVote(t, "marines", spec.id, "golf" as never)).toEqual({ ok: false, error: "No such mode" });
+  const one = ok(castVote(t, "marines", spec.id, "hill")).table;
+  expect(one.vote).toMatchObject({ votes: { marines: "hill" }, picked: null });
+  expect(one.campaign.mode).toBeUndefined();
+  expect(castVote(one, "marines", spec.id, "escort")).toEqual({ ok: false, error: "You've voted" });
+  const both = ok(castVote(one, "wooka", spec.id, "hill")).table;
+  expect(both.vote!.picked).toBe("hill");
+  expect(both.campaign.mode).toBe("hill");
+  expect(castVote(both, "wooka", spec.id, "hill")).toEqual({ ok: false, error: "No vote is open" });
+  // The next hero battle is fought that way.
+  expect(buildSpec(both.campaign, { system: "kessa", sector: 0 }, 1).mode).toBe("hill");
+  expect(buildSpec(t.campaign, { system: "kessa", sector: 0 }, 1).mode).toBeUndefined();
+});
+
+test("against the AI, its vote is in the moment the vote opens, and never for the mode just fought", () => {
+  const { paused, spec } = heroAtKessa();
+  const after = ok(report({ ...paused, seats: { marines: "human", wooka: "ai" } }, "marines", { ...run(spec).over!, auto: true })).table;
+  expect(after.vote!.votes.wooka).toBe(aiVote(spec.id, "wooka"));
+  expect(after.vote!.votes.wooka).not.toBe("conquest");
+  expect(castVote(after, "wooka", spec.id, "hill")).toEqual({ ok: false, error: "That side isn't yours" });
+  for (let i = 0; i < 20; i++) expect(aiVote(`m${i}`, "wooka", "escort")).not.toBe("escort");
+});
+
+test("a split vote goes the same way on every screen", () => {
+  const split = { marines: "hill", wooka: "escort" } as const;
+  const picks = new Set(Array.from({ length: 30 }, (_, i) => tally(`m${i}`, split)));
+  expect([...picks].sort()).toEqual(["escort", "hill"]);
+  expect(tally("m1", split)).toBe(tally("m1", { ...split }));
+  expect(tally("m1", { marines: "assault", wooka: "assault" })).toBe("assault");
 });
