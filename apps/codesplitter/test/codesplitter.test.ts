@@ -1112,7 +1112,6 @@ describe("github", () => {
 
       expect((await post(call, null, "/api/github/dig", { repo: "ana-gh/Tiny.JS" })).status).toBe(401);
       expect((await post(call, "ana", "/api/github/dig", { repo: "not a repo" })).status).toBe(400);
-      expect((await post(call, "ana", "/api/github/dig", { repo: "ana-gh/nope" })).status).toBe(404);
       const dug = await post(call, "ana", "/api/github/dig", { repo: "https://github.com/ana-gh/Tiny.JS.git" });
       expect(dug.status).toBe(201);
       expect(await dug.json()).toEqual({ owner: "ana", name: "tiny-js", upstream: "github:ana-gh/Tiny.JS", commit: "a".repeat(40) });
@@ -1126,6 +1125,23 @@ describe("github", () => {
       expect(imports[0].source.token).toBeUndefined();
       expect((await post(call, "ana", "/api/github/dig", { repo: "ana-gh/secret" })).status).toBe(201);
       expect(imports[1].source).toEqual({ url: "https://github.com/ana-gh/secret.git", branch: "main", depth: 1, token: "t0k" });
+
+      // A private repo the token can't see (invited as another login), from its page URL: this machine's git can, so it digs up,
+      // and the clone goes through that git's own credentials, not the token. github.com points at a folder here, so no network.
+      const { mkdtempSync } = await import("node:fs"), { tmpdir } = await import("node:os");
+      const gh = mkdtempSync(`${tmpdir()}/gh-`), sh = (...a: string[]) => Bun.spawnSync(["git", ...a], { stderr: "ignore" });
+      sh("init", "--quiet", "-b", "dev", `${gh}/w`);
+      sh("-C", `${gh}/w`, "-c", "user.name=x", "-c", "user.email=x@x", "commit", "--quiet", "--allow-empty", "-m", "one");
+      sh("clone", "--quiet", "--bare", `${gh}/w`, `${gh}/ana-gh/invited.git`);
+      const was = { ...process.env };
+      Object.assign(process.env, { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: `url.file://${gh}/.insteadOf`, GIT_CONFIG_VALUE_0: "https://github.com/" });
+      try {
+        const inv = await post(call, "ana", "/api/github/dig", { repo: "https://github.com/ana-gh/invited/tree/dev" });
+        expect(inv.status).toBe(201);
+        expect(imports[2].source).toEqual({ url: "https://github.com/ana-gh/invited.git", branch: "dev", depth: 1 });
+        const miss = await post(call, "ana", "/api/github/dig", { repo: "ana-gh/gone" });
+        expect([miss.status, ((await miss.json()) as any).error]).toEqual([404, expect.stringContaining("gh auth login")]);
+      } finally { for (const k of ["GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"]) if (was[k] === undefined) delete process.env[k]; else process.env[k] = was[k]; }
       // Cloudflare Artifacts imports public repos only: say so instead of failing later.
       Object.defineProperty(call.artifacts, "privateImports", { value: false });
       expect((await (await call("ana", "/api/github/repos")).json() as any).privateOk).toBe(false);

@@ -651,6 +651,8 @@
   .city-door input { margin: 0; accent-color: var(--muted); }
   .list .when { margin-left: auto; font: 12px var(--mono); color: var(--faint); white-space: nowrap; }
   .bar .barform { margin-left: auto; display: flex; gap: 6px; }
+  /* The dig box inside Repos: no bar of its own, the Dig up button opens it. */
+  .dig-in > summary { display: none; } .dig-in[open] { border-bottom: 1px solid var(--border); background: var(--canvas); }
   .bar .barform input, .bar .barform select { padding: 2px 8px; font-size: 12.5px; } .bar .barform input { width: 150px; } .bar .barform .btn { padding: 2px 8px; font-size: 12.5px; }
   @media (max-width: 860px) { .prof-grid { grid-template-columns: 1fr; } .bar .barform { margin-left: 0; } }
   .photo iframe { width: 100%; height: 220px; border: 0; display: block; background: #fff; }
@@ -2715,7 +2717,7 @@ function visBadge(v, canFlip) {
 }
 // Dig up anything on GitHub: search words, or paste whatever you copied there
 // (owner/name, a page URL, a remote, a git clone line). The server reads the repo out of it.
-const digBox = (why, fold = false) => `${fold ? `<details class="box fold" id="digfold"><summary class="bar">${icon("github")}<b>Dig up a GitHub repo</b><span class="muted">fork one here</span>${icon("chevron-down", "chev")}</summary><form id="ghdig">` : `<form id="ghdig" class="box"><div class="bar">${icon("github")}<b>Dig up a GitHub repo</b></div>`}<div class="body"><p class="muted" style="margin-top:0">${why}</p>
+const digBox = (why, fold = false, open = false) => `${fold ? `<details class="box fold" id="digfold"${open ? " open" : ""}><summary class="bar">${icon("github")}<b>Dig up a GitHub repo</b><span class="muted">paste its link, or search</span>${icon("chevron-down", "chev")}</summary><form id="ghdig">` : `<form id="ghdig" class="box"><div class="bar">${icon("github")}<b>Dig up a GitHub repo</b></div>`}<div class="body"><p class="muted" style="margin-top:0">${why}</p>
   <div class="ghwho" id="ghwho" hidden></div>
   <div class="row"><input name="repo" placeholder="search GitHub, or paste a link, owner/name or a git clone line" required style="flex:1" autocomplete="off"><input name="name" placeholder="name (optional)" style="width:150px"><button class="btn primary">${icon("git-fork")}Dig it up (fork)</button><button type="button" class="btn" id="ghwow" title="dig it up, then a tour walks round it: the code, collab, agents, each panel on the right, the city and the backrooms">${icon("sparkles")}Wow me</button></div>
   <label class="muted" id="ghmirror" hidden style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:8px"><input type="checkbox" name="mirror">Keep it in sync with upstream (a mirror): its commits come here, yours go back, and if it goes down you keep working until it's back. Takes any git URL, GitHub or not.</label>
@@ -2725,11 +2727,20 @@ const digBox = (why, fold = false) => `${fold ? `<details class="box fold" id="d
 const boxTop = (fold, id, bar) => fold ? `<details class="box fold" id="${id}"><summary class="bar">${bar}${icon("chevron-down", "chev")}</summary>` : `<div class="box" id="${id}"><div class="bar">${bar}</div>`;
 const boxEnd = (fold) => fold ? "</details>" : "</div>";
 const looksPasted = (v) => /[\/:]/.test(v.trim());
+// owner/name out of a pasted link, remote or clone line, the way the server reads it (github.ts parseRepo), to say what a dig will take.
+const pastedRepo = (v) => {
+  for (const w of v.trim().replace(/^(?:gh\s+repo\s+(?:clone|view|fork)|git\s+clone)\s+/, "").split(/\s+/)) {
+    if (w.startsWith("-")) continue;
+    const m = /^(?:(?:(?:https?|ssh|git):\/\/)?(?:[^@/\s]+@)?(?:www\.)?github\.com[:/]|(?:https?:\/\/)?raw\.githubusercontent\.com\/)?([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?(?:[/?#].*)?$/.exec(w);
+    if (m) return `${m[1]}/${m[2]}`;
+  }
+  return null;
+};
 function wireDig() {
   const f = $("#ghdig");
   if (!f) return;
   const msg = $("#ghmsg"), list = $("#ghlist");
-  let mine = { repos: [] }, note = "", timer = 0, asked = "";
+  let mine = { repos: [] }, note = "", timer = 0, asked = "", busy = false;
   const show = (repos, disabled = () => false) => {
     list.innerHTML = repos.map((x) => `<button type="button" data-repo="${esc(x.repo)}"${disabled(x) ? " disabled title=\"Cloudflare Artifacts imports public repos only: dig this up in the desktop app\"" : ""}>${esc(x.repo)}${x.private ? " · private" : ""}${x.stars != null ? `<span class="muted">★ ${x.stars}${x.language ? " · " + esc(x.language) : ""}</span>` : ""}</button>`).join("");
     for (const b of list.querySelectorAll("button:not([disabled])")) b.addEventListener("click", () => { f.repo.value = b.dataset.repo; list.innerHTML = ""; msg.textContent = `Ready to dig up ${b.dataset.repo}: press Dig it up. ${note}`; f.name.focus(); });
@@ -2761,8 +2772,9 @@ function wireDig() {
     }
     who.classList.toggle("on", !!g.login);
     icons();
-    msg.textContent = (g.login && g.repos.length ? "Pick one of yours, search, or paste anything from GitHub. " : "Search GitHub, or paste anything you copied there. ") + note;
-    if (!f.repo.value) showMine();
+    // Pasted or typed before GitHub answered: say what that'll dig up rather than the hint.
+    if (f.repo.value.trim()) f.repo.dispatchEvent(new Event("input"));
+    else { msg.textContent = (g.login && g.repos.length ? "Pick one of yours, search, or paste anything from GitHub. " : "Search GitHub, or paste anything you copied there. ") + note; showMine(); }
     // Mirrors need git on this machine: the desktop.
     if (g.mirrorsOk) $("#ghmirror").hidden = false;
     f.mirror.addEventListener("change", () => { $("#ghpull").hidden = !f.mirror.checked; });
@@ -2772,12 +2784,21 @@ function wireDig() {
   if (folded && !folded.open) folded.addEventListener("toggle", loadGh, { once: true }); else loadGh();
   // A dig clones a whole repo, so only the button starts one: Enter in a field doesn't (#443).
   // Picking one of yours fills the box and focuses the name, and a stray Enter there dug it up.
-  f.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("input")) e.preventDefault(); });
+  // A pasted link is a deliberate pick, though: Enter in the repo box digs that one up.
+  f.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || !e.target.matches("input")) return;
+    e.preventDefault();
+    if (e.target === f.repo && looksPasted(f.repo.value) && (pastedRepo(f.repo.value) || f.mirror.checked)) dig(false);
+  });
   f.repo.addEventListener("input", () => {
     clearTimeout(timer);
     const q = f.repo.value.trim();
     if (!q) return showMine();
-    if (looksPasted(q)) return (list.innerHTML = "");
+    if (looksPasted(q)) {
+      const r = pastedRepo(q);
+      msg.textContent = r ? `Digs up ${r}: press Enter or Dig it up. ${note}` : f.mirror.checked ? "Mirrors any git URL: press Enter or Dig it up." : "That doesn't read as a GitHub repo: paste its page link, owner/name or a clone line.";
+      return (list.innerHTML = "");
+    }
     timer = setTimeout(async () => {
       asked = q;
       const r = await api("/github/search?q=" + encodeURIComponent(q)).catch((e) => ({ repos: [], error: e.message }));
@@ -2789,7 +2810,9 @@ function wireDig() {
   });
   const dig = async (wow) => {
     if (!me()) { msg.textContent = "Sign in first (top right), then dig it up."; return; }
-    if (!f.repo.value.trim()) { msg.textContent = "Paste a public GitHub repo first."; return f.repo.focus(); }
+    if (!f.repo.value.trim()) { msg.textContent = "Paste a GitHub repo's link first, or search for one."; return f.repo.focus(); }
+    if (busy) return;
+    busy = true;
     msg.textContent = "cloning…";
     const mirror = f.mirror.checked, pullOnly = mirror && f.pullOnly.checked;
     if (mirror) msg.textContent = pullOnly ? "cloning, to pull from…" : "cloning, to keep in sync…";
@@ -2800,6 +2823,7 @@ function wireDig() {
       location.hash = `#/r/${r.owner}/${r.name}`;
     }
     catch (err) { msg.textContent = err.message; }
+    finally { busy = false; }
   };
   f.addEventListener("submit", (e) => { e.preventDefault(); dig(false); });
   $("#ghwow", f).addEventListener("click", () => dig(true));
@@ -3037,12 +3061,12 @@ const views = {
         <div><button class="btn primary">Save</button></div></div></form>` : ""}
       <div class="prof-grid"><div>
         <div class="box"><div class="bar">${icon("book-marked")}<b>${agent ? "Works in" : "Repos"}</b>
-          ${mine ? `<form id="newrepo" class="barform"><input name="name" placeholder="new-repo" required><select name="visibility"><option value="public">Public</option><option value="private">Private</option></select><button class="btn primary">${icon("plus")}Create</button></form>` : ""}</div>
-          <div class="body list">${shown.map((r) => `<a href="#/r/${r.owner}/${r.name}">${icon(r.visibility === "private" ? "lock" : "book")}${agent ? `${esc(r.owner)}/` : ""}${esc(r.name)}${r.level ? ` <span class="muted">· forked from ${esc(r.level)}</span>` : ""}<span class="when">${ago(r.created_at)}</span></a>`).join("") || '<span class="muted">no repos yet</span>'}</div></div>
+          ${mine ? `<form id="newrepo" class="barform"><input name="name" placeholder="new-repo" required><select name="visibility"><option value="public">Public</option><option value="private">Private</option></select><button class="btn" title="an empty repo">${icon("plus")}Create</button><button type="button" class="btn primary" id="digopen" title="fork a GitHub repo here: paste its link, or search">${icon("shovel")}Dig up</button></form>` : ""}</div>
+          ${mine ? digBox("Fork any GitHub repo into one you own here, then mod it line by line. Upstream never hears about it. Paste the link from your browser's address bar, owner/name or a clone line.", true, !repos.length).replace('class="box fold"', 'class="fold dig-in"') : ""}
+          <div class="body list">${shown.map((r) => `<a href="#/r/${r.owner}/${r.name}">${icon(r.visibility === "private" ? "lock" : "book")}${agent ? `${esc(r.owner)}/` : ""}${esc(r.name)}${r.level ? ` <span class="muted">· forked from ${esc(r.level)}</span>` : ""}<span class="when">${ago(r.created_at)}</span></a>`).join("") || '<span class="muted">no repos yet: dig one up from GitHub, or create an empty one</span>'}</div></div>
         ${pulse ? `<div class="box pulse-box" id="pulse-box"></div>` : ""}
         ${invites.length ? `<div class="box" id="invites"><div class="bar">${icon("mail")}<b>Invited to</b><span class="muted">crews waiting on you: open one to look, then join</span></div><div class="body list">${invites.map(inviteRow).join("")}</div></div>` : ""}
         ${agentBoxes}
-        ${mine ? digBox("Fork any public GitHub repo into one you own here, then mod it line by line. Upstream never hears about it.", true) : ""}
         ${stampBox}
         ${jobs.length ? `<div class="box jobs"><div class="bar">${icon("hourglass")}<b>Queued</b><span class="muted">this week's digs, previews and checks that waited in line</span></div>${jobs.map(jobRow).join("")}</div>` : ""}
       </div><aside>
@@ -3078,6 +3102,8 @@ const views = {
     $("#editpage")?.addEventListener("click", () => { const f = $("#theme"); f.hidden = !f.hidden; if (!f.hidden) f.bio.focus(); });
     $("#newrepo")?.addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target; await api("/repos", { name: f.name.value, visibility: f.visibility.value }); location.hash = `#/r/${me()}/${f.name.value}`; });
     wireDig();
+    // Dig up opens the box inside Repos (its toggle asks GitHub for your repos) and puts you in the paste field.
+    $("#digopen")?.addEventListener("click", () => { const d = $("#digfold"); d.open = !d.open; $("#digopen").classList.toggle("on", d.open); if (d.open) $("#ghdig").repo.focus(); });
     $("#newpl")?.addEventListener("submit", async (e) => { e.preventDefault(); const p = await api("/playlists", { title: e.target.title.value }); location.hash = "#/p/" + p.id; });
     $("#theme")?.addEventListener("submit", async (e) => { e.preventDefault(); await api("/me", { bio: e.target.bio.value, theme_html: e.target.theme_html.value }, "PUT"); route(); });
     $("#citypub")?.addEventListener("change", async (e) => { await api("/me/city", { public: e.target.checked }, "PUT"); route(); });
