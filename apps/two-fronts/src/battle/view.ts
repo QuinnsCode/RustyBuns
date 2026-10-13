@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { FACTION_COLORS, type BattleResult, type BattleSpec, type Side } from "./contract.ts";
 import { groundRecorder } from "./replay.ts";
-import { forest, gunship, marine, speeder, tank, turret, walker, wooka } from "./models.ts";
+import { animate, forest, gunship, marine, speeder, tank, turret, walker, wooka } from "./models.ts";
 import { DT, EYE, HALF, POST_RADIUS, STATS, STRIKE_RADIUS, TIME_LIMIT, TROOPERS, altitude, facing, heroUnit, startBattle, step, type Trooper, type Unit } from "./sim.ts";
 
 // The light, ground and stone of each map.
@@ -22,6 +22,8 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const scene = new THREE.Scene();
   // The forest moon: green gloom, light coming down through the canopy. The canyon is dust and
   // red rock, the jungle closer and darker still.
@@ -30,11 +32,18 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   scene.fog = new THREE.Fog(look.sky, look.fog[0], look.fog[1]);
   const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 600);
   scene.add(new THREE.HemisphereLight(0xd6e8c4, 0x2f2a1a, 1.5));
-  const sun = new THREE.DirectionalLight(0xfff1d0, 1.2);
-  sun.position.set(40, 120, 30);
-  scene.add(sun);
+  // The sun casts shadows in a box that follows the camera, so they stay sharp near the hero.
+  const sun = new THREE.DirectionalLight(0xfff1d0, 1.6);
+  const SUN = new THREE.Vector3(40, 120, 30);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, near: 1, far: 400 });
+  sun.shadow.bias = -0.0005;
+  sun.shadow.normalBias = 0.04;
+  scene.add(sun, sun.target);
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2.6, HALF * 2.6), new THREE.MeshLambertMaterial({ color: look.ground }));
   ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
   scene.add(ground);
   forest(scene, b.trees, spec.seed, HALF, spec.sector === "canyon" ? "none" : spec.sector === "jungle" ? "jungle" : "redwood");
 
@@ -59,6 +68,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const box = (w: number, h: number, d: number, x: number, z: number, mat: THREE.Material = concrete) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     m.position.set(x, h / 2, z);
+    m.castShadow = m.receiveShadow = true;
     scene.add(m);
     return m;
   };
@@ -189,7 +199,8 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     let last = performance.now(), acc = 0, hudAt = 0, raf = 0;
     const rec = groundRecorder();
     const frame = (now: number) => {
-      acc += Math.min(0.25, (now - last) / 1000);
+      const dt = Math.min(0.25, (now - last) / 1000);
+      acc += dt;
       last = now;
       while (handOver && !b.over) step(b, null);
       while (acc >= DT && !b.over) {
@@ -212,17 +223,10 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         if (!m) meshes.set(u.id, (m = makeMesh(u)));
         m.position.set(u.x, altitude(u), u.z);
         m.rotation.y = u.yaw;
-        // Wooka bounce when they run; Marine antennas wobble, more so on the move.
-        const last = m.userData.last as { x: number; z: number }, moving = Math.hypot(u.x - last.x, u.z - last.z) > 0.01;
+        // Walk cycles from how far it moved; recoil and club swings from how long since it fired.
+        const last = m.userData.last as { x: number; z: number }, moved = Math.hypot(u.x - last.x, u.z - last.z);
         last.x = u.x; last.z = u.z;
-        const t = now / 1000 + u.id;
-        if (m.userData.bob) m.userData.bob.position.y = moving ? Math.abs(Math.sin(t * 13)) * 0.14 : 0;
-        for (const [i, leg] of ((m.userData.legs ?? []) as THREE.Group[]).entries()) leg.rotation.x = moving ? Math.sin(t * 4 + i * Math.PI) * 0.35 : 0;
-        if (m.userData.club) m.userData.club.rotation.x = -0.6 + (u.cool > STATS.wooka.cool - 0.2 ? -1.2 : 0);
-        for (const [i, a] of ((m.userData.antennas ?? []) as THREE.Group[]).entries()) {
-          a.rotation.z = Math.sin(t * (5 + i) + i) * (moving ? 0.18 : 0.05);
-          a.rotation.x = Math.cos(t * (4 + i)) * (moving ? 0.12 : 0.03);
-        }
+        animate(m, { t: now / 1000, dt, moved: moved < 5 ? moved : 0, since: Math.max(0, STATS[u.kind].cool - u.cool) });
         m.visible = !(u.kind === "hero" && b.hero.inVehicle !== null);
       }
       for (const [id, m] of meshes) if (!seen.has(id)) { scene.remove(m); meshes.delete(id); }
@@ -251,6 +255,8 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       const f = facing(yaw);
       camera.position.set(at.x - f.x * back * Math.cos(pitch) + -f.z * 1.2, up - Math.sin(pitch) * back, at.z - f.z * back * Math.cos(pitch) + f.x * 1.2);
       camera.lookAt(at.x + f.x * 20, (body ? altitude(body) : 0) + 1.6 + Math.sin(pitch) * 20, at.z + f.z * 20);
+      sun.target.position.set(at.x + f.x * 30, 0, at.z + f.z * 30);
+      sun.position.copy(sun.target.position).add(SUN);
 
       renderer.render(scene, camera);
       if (now - hudAt > 100 || b.over) { drawHud(); hudAt = now; }

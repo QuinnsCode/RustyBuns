@@ -1,241 +1,930 @@
 // Everything on the forest moon is built from three.js primitives: no assets to load or license.
 // Models stand on y = 0 and face -z, the way yaw 0 faces in the sim.
+//
+// Each model is a rig: named joints (groups) with the parts hanging off them merged into one mesh
+// per material, so a Marine is a couple of dozen draw calls, not a hundred. A model is built once
+// and cloned after that, sharing its geometry. `animate` poses a clone every frame from what its
+// unit is doing: walk cycles, the Wooka's waddle and club swing, recoil, wobbling antennas.
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Faction } from "./contract.ts";
 import type { Tree, Trooper } from "./sim.ts";
 
-const lambert = (color: number, extra: THREE.MeshLambertMaterialParameters = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
-const box = (w: number, h: number, d: number, m: THREE.Material, x = 0, y = 0, z = 0) => {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
-  mesh.position.set(x, y, z);
-  return mesh;
-};
-const ball = (r: number, m: THREE.Material, x = 0, y = 0, z = 0, detail = 12) => {
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(r, detail, Math.max(6, detail - 4)), m);
-  mesh.position.set(x, y, z);
-  return mesh;
-};
-const rod = (r: number, h: number, m: THREE.Material, x = 0, y = 0, z = 0) => {
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 6), m);
-  mesh.position.set(x, y, z);
-  return mesh;
-};
+type V3 = [number, number, number];
+type Mat = THREE.Material;
 
-// --- Thunder Marines: black armour, white trim, a full-face helmet with a snorkel mask on the
-// front, and a backpack far too big for anyone, bristling with antennas that wobble. ---
+// --- Procedural textures: grey, so a material's colour tints them. None in a headless test. ---
+const textures = new Map<string, THREE.Texture | null>();
+function texture(name: string, w: number, h: number, repeat: [number, number], draw: (c: CanvasRenderingContext2D, r: () => number) => void) {
+  if (textures.has(name)) return textures.get(name) ?? null;
+  let t: THREE.Texture | null = null;
+  if (typeof document !== "undefined") {
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    let s = 7;
+    draw(canvas.getContext("2d")!, () => ((s = (s * 1103515245 + 12345) >>> 0) / 4294967296));
+    t = new THREE.CanvasTexture(canvas);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(...repeat);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 4;
+  }
+  textures.set(name, t);
+  return t;
+}
+const grey = (v: number, a = 1) => `rgba(${v},${v},${v},${a})`;
+// Fur: short strands, mostly falling down.
+const furMap = () => texture("fur", 128, 128, [3, 3], (c, r) => {
+  c.fillStyle = grey(165);
+  c.fillRect(0, 0, 128, 128);
+  c.lineWidth = 1.2;
+  for (let i = 0; i < 1600; i++) {
+    const x = r() * 128, y = r() * 128, len = 3 + r() * 7, a = Math.PI / 2 + (r() - 0.5) * 0.9;
+    c.strokeStyle = grey(90 + r() * 150, 0.7);
+    c.beginPath();
+    c.moveTo(x, y);
+    c.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+    c.stroke();
+  }
+});
+// Bark: deep vertical furrows.
+const barkMap = () => texture("bark", 64, 256, [3, 6], (c, r) => {
+  c.fillStyle = grey(150);
+  c.fillRect(0, 0, 64, 256);
+  for (let i = 0; i < 70; i++) {
+    const x = r() * 64, w = 1 + r() * 4;
+    c.fillStyle = grey(r() < 0.5 ? 70 + r() * 40 : 190 + r() * 50, 0.6);
+    c.fillRect(x, 0, w, 256);
+  }
+  for (let i = 0; i < 60; i++) {
+    c.fillStyle = grey(60, 0.5);
+    c.fillRect(r() * 64, r() * 256, 2 + r() * 8, 1 + r() * 2);
+  }
+});
+// Wood grain, for clubs, logs and hulls.
+const grainMap = () => texture("grain", 128, 128, [1, 2], (c, r) => {
+  c.fillStyle = grey(170);
+  c.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 40; i++) {
+    c.strokeStyle = grey(90 + r() * 60, 0.5);
+    c.lineWidth = 1 + r() * 2;
+    c.beginPath();
+    const x = r() * 128;
+    c.moveTo(x, 0);
+    for (let y = 0; y <= 128; y += 16) c.lineTo(x + Math.sin(y * 0.05 + i) * 3, y);
+    c.stroke();
+  }
+});
+// Hide: blotchy, with stitches.
+const hideMap = () => texture("hide", 128, 128, [1, 1], (c, r) => {
+  c.fillStyle = grey(185);
+  c.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 30; i++) {
+    c.fillStyle = grey(120 + r() * 100, 0.35);
+    c.beginPath();
+    c.arc(r() * 128, r() * 128, 6 + r() * 20, 0, Math.PI * 2);
+    c.fill();
+  }
+  c.strokeStyle = grey(60, 0.9);
+  c.lineWidth = 2;
+  for (const y of [42, 86]) for (let x = 4; x < 128; x += 10) { c.beginPath(); c.moveTo(x, y - 3); c.lineTo(x + 4, y + 3); c.stroke(); }
+});
+// Armour: faint panel lines and scuffs, so black isn't a flat hole.
+const panelMap = () => texture("panel", 128, 128, [2, 2], (c, r) => {
+  c.fillStyle = grey(205);
+  c.fillRect(0, 0, 128, 128);
+  c.strokeStyle = grey(120, 0.6);
+  c.lineWidth = 1;
+  c.strokeRect(0.5, 0.5, 127, 127);
+  c.beginPath(); c.moveTo(64, 0); c.lineTo(64, 64); c.lineTo(128, 64); c.stroke();
+  for (let i = 0; i < 80; i++) { c.fillStyle = grey(r() < 0.5 ? 255 : 150, 0.25); c.fillRect(r() * 128, r() * 128, 1 + r() * 6, 1); }
+});
+
+// --- Materials ---
+const std = (color: number, roughness = 0.6, extra: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color, roughness, metalness: 0.05, ...extra });
+const glow = (color: number) => new THREE.MeshBasicMaterial({ color });
+
+// Thunder Marines: black armour with white trim, a full-face helmet with a snorkel mask on the
+// front, and a backpack far too big for anyone, bristling with antennas that wobble.
 const M = {
-  armour: lambert(0x16181c),
-  trim: lambert(0xf2f4f7),
-  gold: lambert(0xe2b13c, { emissive: 0x6b4a00 }),
-  pack: lambert(0x2b2e34),
-  glass: new THREE.MeshPhongMaterial({ color: 0x8fd3ff, transparent: true, opacity: 0.75, shininess: 120 }),
-  snorkel: lambert(0xff7a1a),
-  gun: lambert(0x3c4048),
-  tip: lambert(0xff3b3b, { emissive: 0x801010 }),
+  get armour() { return lazy("m.armour", () => std(0x1d2026, 0.38, { metalness: 0.2, map: panelMap() })); },
+  get suit() { return lazy("m.suit", () => std(0x2a2c30, 0.85, { map: panelMap() })); },
+  get trim() { return lazy("m.trim", () => std(0xf1f3f6, 0.42, { map: panelMap() })); },
+  get gold() { return lazy("m.gold", () => std(0xf0bb40, 0.32, { metalness: 0.45, map: panelMap() })); },
+  get pack() { return lazy("m.pack", () => std(0x30343b, 0.55, { map: panelMap() })); },
+  get glass() { return lazy("m.glass", () => std(0x7fcfff, 0.08, { metalness: 0.3, transparent: true, opacity: 0.82, emissive: 0x0b2a3c })); },
+  get dark() { return lazy("m.dark", () => std(0x0a0b0d, 0.25, { metalness: 0.4, map: panelMap() })); },
+  get orange() { return lazy("m.orange", () => std(0xff7a1a, 0.5, { map: panelMap() })); },
+  get gun() { return lazy("m.gun", () => std(0x3b3f47, 0.4, { metalness: 0.55, map: panelMap() })); },
+  get rubber() { return lazy("m.rubber", () => std(0x0d0e10, 0.95, { map: panelMap() })); },
+  get red() { return lazy("m.red", () => glow(0xff3b3b)); },
+  get green() { return lazy("m.green", () => glow(0x5dff7a)); },
+  get lens() { return lazy("m.lens", () => glow(0x9fe6ff)); },
+  get pennant() { return lazy("m.pennant", () => std(0xe6b23a, 0.6, { side: THREE.DoubleSide })); },
+  get engine() { return lazy("m.engine", () => glow(0xff9a3c)); },
+  get engineCore() { return lazy("m.engineCore", () => glow(0xfff1c2)); },
+  get plume() { return lazy("m.plume", () => new THREE.MeshBasicMaterial({ color: 0xff9a3a, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending })); },
 };
+// The Wooka: round, fluffy, knee-high to a Marine, with big black eyes that have nothing behind
+// them and a club with a nail in it. On purpose.
+const W = {
+  get fur() { return lazy("w.fur", () => std(0x9a6438, 0.95, { map: furMap() })); },
+  get furDark() { return lazy("w.furDark", () => std(0x5a3518, 0.95, { map: furMap() })); },
+  get belly() { return lazy("w.belly", () => std(0xd6ad78, 0.95, { map: furMap() })); },
+  get chief() { return lazy("w.chief", () => std(0x3d3a38, 0.95, { map: furMap() })); }, // the chieftain's grey mantle
+  get eye() { return lazy("w.eye", () => new THREE.MeshPhysicalMaterial({ color: 0x030303, roughness: 0.05, clearcoat: 1, clearcoatRoughness: 0.02 })); },
+  get shine() { return lazy("w.shine", () => glow(0xffffff)); },
+  get glint() { return lazy("w.glint", () => glow(0xb01818)); },
+  get nose() { return lazy("w.nose", () => std(0x1a100b, 0.3, { map: furMap() })); },
+  get mouth() { return lazy("w.mouth", () => std(0x2a0c0c, 0.8, { map: furMap() })); },
+  get tooth() { return lazy("w.tooth", () => std(0xf3eedc, 0.5, { map: furMap() })); },
+  get wood() { return lazy("w.wood", () => std(0x7a4f2a, 0.85, { map: grainMap() })); },
+  get bark() { return lazy("w.bark", () => std(0x6b4a30, 0.95, { map: barkMap() })); },
+  get cut() { return lazy("w.cut", () => std(0xd2a46a, 0.9, { map: grainMap() })); }, // sawn wood, the rings showing
+  get nail() { return lazy("w.nail", () => std(0x9aa0a6, 0.35, { metalness: 0.8, map: grainMap() })); },
+  get bone() { return lazy("w.bone", () => std(0xeee6cf, 0.6, { map: furMap() })); },
+  get leather() { return lazy("w.leather", () => std(0x5e3a1f, 0.7, { map: furMap() })); },
+  get rope() { return lazy("w.rope", () => std(0xb89a5a, 0.95, { map: furMap() })); },
+  get hide() { return lazy("w.hide", () => std(0xc4a272, 0.9, { side: THREE.DoubleSide, map: hideMap() })); },
+  get hideDark() { return lazy("w.hideDark", () => std(0x8f6c44, 0.9, { side: THREE.DoubleSide, map: hideMap() })); },
+  get rock() { return lazy("w.rock", () => std(0x6f6559, 0.95, { flatShading: true })); },
+  get thatch() { return lazy("w.thatch", () => std(0xa88a4a, 1, { map: grainMap() })); },
+  get fire() { return lazy("w.fire", () => glow(0xff6a1a)); },
+  get fireCore() { return lazy("w.fireCore", () => glow(0xffd65a)); },
+  get paint() { return lazy("w.paint", () => std(0xb3261e, 0.8, { map: furMap() })); }, // the chieftain's war paint
+};
+const made = new Map<string, unknown>();
+function lazy<T>(key: string, make: () => T): T {
+  if (!made.has(key)) made.set(key, make());
+  return made.get(key) as T;
+}
 
-// Each class carries its kit: the heavy a rocket tube on the shoulder, the sniper a long rifle,
-// the engineer an orange toolbox on the pack. Assault troopers and the hero carry the standard gun.
-export function marine(hero = false, kit: Trooper = "assault") {
-  const g = new THREE.Group(), trim = hero ? M.gold : M.trim;
-  g.add(
-    box(0.22, 0.85, 0.26, M.armour, -0.15, 0.43, 0), box(0.22, 0.85, 0.26, M.armour, 0.15, 0.43, 0),
-    box(0.24, 0.16, 0.06, trim, -0.15, 0.5, -0.15), box(0.24, 0.16, 0.06, trim, 0.15, 0.5, -0.15), // knee pads
-    box(0.62, 0.72, 0.4, M.armour, 0, 1.2, 0),
-    box(0.5, 0.28, 0.05, trim, 0, 1.33, -0.21), // chest plate
-    box(0.64, 0.08, 0.42, trim, 0, 0.88, 0),    // belt
-    box(0.16, 0.62, 0.2, M.armour, -0.4, 1.2, 0), box(0.16, 0.62, 0.2, M.armour, 0.4, 1.2, -0.1),
-    box(0.1, 0.12, 0.7, M.gun, 0.4, 1.0, -0.45),
-  );
-  // The helmet, and its snorkel mask.
-  g.add(ball(0.24, M.armour, 0, 1.76, 0));
-  const band = new THREE.Mesh(new THREE.TorusGeometry(0.245, 0.03, 6, 20), trim);
-  band.rotation.x = Math.PI / 2;
-  band.position.y = 1.86;
-  const mask = ball(0.16, M.glass, 0, 1.74, -0.17);
-  mask.scale.set(1.15, 0.8, 0.45);
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.028, 6, 20), trim);
-  rim.scale.set(1.1, 0.8, 1);
-  rim.position.set(0, 1.74, -0.22);
-  g.add(band, mask, rim, rod(0.035, 0.6, M.snorkel, 0.2, 1.98, -0.12), rod(0.04, 0.12, M.snorkel, 0.2, 2.3, -0.12));
-  // The backpack. Nobody knows why it's this big.
-  g.add(box(0.95, 1.35, 0.75, M.pack, 0, 1.45, 0.58), box(0.97, 0.1, 0.77, trim, 0, 1.75, 0.58), box(0.6, 0.35, 0.08, M.armour, 0, 1.15, 0.97));
-  const antennas: THREE.Group[] = [];
-  for (const [x, h, z] of [[-0.35, 2.6, 0.4], [0.05, 3.4, 0.75], [0.36, 1.9, 0.5]] as const) {
-    const a = new THREE.Group();
-    a.position.set(x, 2.12, z);
-    a.add(rod(0.02, h, M.armour, 0, h / 2, 0), ball(0.06, M.tip, 0, h, 0, 8));
-    antennas.push(a);
-    g.add(a);
+// --- Geometry ---
+const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
+// Rounded boxes: small ones get a chamfer, big ones a proper curve.
+const rbox = (w: number, h: number, d: number, r = 0.04) => new RoundedBoxGeometry(w, h, d, Math.min(w, h, d) < 0.3 ? 1 : 3, Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3));
+const ball = (r: number, ws = 16, hs = 12) => new THREE.SphereGeometry(r, ws, hs);
+const dome = (r: number, ws = 16) => new THREE.SphereGeometry(r, ws, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+const cyl = (rt: number, rb: number, h: number, seg = 12) => new THREE.CylinderGeometry(rt, rb, h, seg);
+const capsule = (r: number, len: number, seg = 10) => new THREE.CapsuleGeometry(r, Math.max(0.001, len - 2 * r), 4, seg);
+const ring = (r: number, t: number, seg = 24, arc = Math.PI * 2) => new THREE.TorusGeometry(r, t, 6, seg, arc);
+const cone = (r: number, h: number, seg = 8) => new THREE.ConeGeometry(r, h, seg);
+const lathe = (pts: [number, number][], seg = 20) => new THREE.LatheGeometry(pts.map(([x, y]) => new THREE.Vector2(x, y)), seg);
+// A flat outline in x, y, extruded depth along z and centred on it.
+function prism(pts: [number, number][], depth: number, bevel = 0) {
+  const shape = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
+  const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: bevel > 0, bevelSize: bevel, bevelThickness: bevel, bevelSegments: 1 });
+  return g.translate(0, 0, -depth / 2);
+}
+// A flat outline lying on the ground plane: x across, z along (+z back), extruded up by `height`
+// and centred on y = 0.
+const slab = (pts: [number, number][], height: number, bevel = 0) => prism(pts.map(([x, z]) => [x, -z]), height, bevel).rotateX(-Math.PI / 2);
+// A side profile: z along (+z back), y up, extruded across x by `width`.
+const profile = (pts: [number, number][], width: number, bevel = 0) => prism(pts.map(([z, y]) => [-z, y]), width, bevel).rotateY(Math.PI / 2);
+// A lumpy ball: an icosphere with each vertex pushed in or out by a hash of its direction, so the
+// same vertex on two faces moves alike. Shag 0.1 is fur; 0.3 is an asteroid.
+function lumpy(r: number, detail = 2, shag = 0.08, seed = 1, smooth = true) {
+  const g = new THREE.IcosahedronGeometry(r, detail);
+  const p = g.attributes.position as THREE.BufferAttribute, n = g.attributes.normal as THREE.BufferAttribute, v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).normalize();
+    const h = Math.sin(Math.round(v.x * 500) * 12.9898 + Math.round(v.y * 500) * 78.233 + Math.round(v.z * 500) * 37.719 + seed) * 43758.5453;
+    const k = 1 + ((h - Math.floor(h)) * 2 - 1) * shag;
+    if (smooth) n.setXYZ(i, v.x, v.y, v.z);
+    p.setXYZ(i, v.x * r * k, v.y * r * k, v.z * r * k);
   }
-  if (kit === "heavy") {
-    const tube = rod(0.14, 1.5, M.gun, 0.45, 1.75, -0.1);
-    tube.rotation.x = Math.PI / 2;
-    g.add(tube, rod(0.16, 0.08, M.snorkel, 0.45, 1.75, -0.86).rotateX(Math.PI / 2));
-  } else if (kit === "sniper") {
-    g.add(box(0.06, 0.06, 1.3, M.gun, 0.4, 1.05, -1.05), box(0.08, 0.1, 0.3, M.glass, 0.4, 1.15, -0.5));
-  } else if (kit === "engineer") {
-    g.add(box(0.7, 0.4, 0.3, M.snorkel, 0, 1.0, 1.0), box(0.06, 0.06, 0.5, M.trim, -0.42, 0.95, -0.3));
-  }
-  g.userData = { antennas };
+  if (!smooth) g.computeVertexNormals();
   return g;
 }
 
-// --- The Wooka: round, fluffy, knee-high to a Marine, with big black eyes that have nothing
-// behind them and a club with a nail in it. On purpose. ---
-const W = {
-  fur: lambert(0x7a5230, { flatShading: true }),
-  belly: lambert(0xb38658, { flatShading: true }),
-  eye: new THREE.MeshPhongMaterial({ color: 0x050505, shininess: 160, specular: 0x888888 }),
-  glint: new THREE.MeshBasicMaterial({ color: 0xff2a2a }),
-  mouth: lambert(0x2a0c0c),
-  tooth: lambert(0xf3eedc),
-  wood: lambert(0x5b3a1e),
-  nail: lambert(0x9aa0a6),
-  bone: lambert(0xeee6cf),
-};
+// The shared materials parts merge into. A standard one reads roughness and metalness from a
+// per-vertex attribute, so armour, rubber and trim can share a draw call and still look apart.
+function family(mat: Mat): Mat {
+  if (mat.transparent || mat.side !== THREE.FrontSide) return mat;
+  if (mat.type === "MeshBasicMaterial") return lazy("family:glow", () => new THREE.MeshBasicMaterial({ vertexColors: true }));
+  if (mat.type !== "MeshStandardMaterial") return mat;
+  const m = mat as THREE.MeshStandardMaterial;
+  if (m.flatShading || m.emissive.getHex() !== 0) return mat;
+  return lazy(`family:${m.map?.uuid ?? "plain"}`, () => {
+    const f = new THREE.MeshStandardMaterial({ vertexColors: true, map: m.map });
+    f.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader
+        .replace("#include <common>", "#include <common>\nattribute vec2 pbr;\nvarying vec2 vPbr;")
+        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvPbr = pbr;");
+      sh.fragmentShader = sh.fragmentShader
+        .replace("#include <common>", "#include <common>\nvarying vec2 vPbr;")
+        .replace("float roughnessFactor = roughness;", "float roughnessFactor = vPbr.x;")
+        .replace("float metalnessFactor = metalness;", "float metalnessFactor = vPbr.y;");
+    };
+    f.customProgramCacheKey = () => "pbr-per-vertex";
+    return f;
+  });
+}
+function paint(g: THREE.BufferGeometry, m: THREE.MeshStandardMaterial) {
+  const n = g.attributes.position!.count, color = new Float32Array(n * 3), pbr = new Float32Array(n * 2);
+  for (let i = 0; i < n; i++) {
+    color.set([m.color.r, m.color.g, m.color.b], i * 3);
+    pbr.set([m.roughness ?? 1, m.metalness ?? 0], i * 2);
+  }
+  g.setAttribute("color", new THREE.BufferAttribute(color, 3));
+  if (m.type === "MeshStandardMaterial") g.setAttribute("pbr", new THREE.BufferAttribute(pbr, 2));
+}
 
-export function wooka(hero = false) {
-  const g = new THREE.Group(), body = new THREE.Group();
-  const fuzz = (r: number, m: THREE.Material, x: number, y: number, z: number) => {
-    const mesh = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), m);
-    mesh.position.set(x, y, z);
-    return mesh;
+interface Spot { x?: number; y?: number; z?: number; rx?: number; ry?: number; rz?: number; s?: number | V3 }
+const DOWN = new THREE.Vector3(0, -1, 0), UP = new THREE.Vector3(0, 1, 0);
+
+// Builds one rig: joints, and parts merged per joint and material when it's baked.
+class Kit {
+  readonly root = new THREE.Group();
+  private parts = new Map<THREE.Object3D, Map<Mat, THREE.BufferGeometry[]>>();
+  joint(name: string, parent: THREE.Object3D = this.root, x = 0, y = 0, z = 0) {
+    const g = new THREE.Group();
+    g.name = name;
+    g.position.set(x, y, z);
+    parent.add(g);
+    return g;
+  }
+  add(on: THREE.Object3D, geo: THREE.BufferGeometry, mat: Mat, p: Spot = {}) {
+    const s = p.s ?? 1, sv = typeof s === "number" ? [s, s, s] as V3 : s;
+    geo.applyMatrix4(new THREE.Matrix4().compose(
+      new THREE.Vector3(p.x ?? 0, p.y ?? 0, p.z ?? 0),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(p.rx ?? 0, p.ry ?? 0, p.rz ?? 0)),
+      new THREE.Vector3(...sv),
+    ));
+    const byMat = this.parts.get(on) ?? new Map<Mat, THREE.BufferGeometry[]>();
+    this.parts.set(on, byMat);
+    const list = byMat.get(mat) ?? [];
+    byMat.set(mat, list);
+    list.push(geo.index ? geo.toNonIndexed() : geo);
+    return this;
+  }
+  // The same part on both sides, x mirrored (by position and the y and z turns, never by scale).
+  pair(on: THREE.Object3D, make: () => THREE.BufferGeometry, mat: Mat, p: Spot) {
+    this.add(on, make(), mat, p);
+    this.add(on, make(), mat, { ...p, x: -(p.x ?? 0), ry: -(p.ry ?? 0), rz: -(p.rz ?? 0) });
+  }
+  // A rod from a to b.
+  rod(on: THREE.Object3D, a: V3, b: V3, r: number, mat: Mat, seg = 8, r2 = r) {
+    const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b);
+    const g = cyl(r2, r, A.distanceTo(B), seg);
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(UP, B.clone().sub(A).normalize()));
+    g.translate((A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2);
+    return this.add(on, g, mat);
+  }
+  // Merges each joint's parts into as few meshes as it can: every opaque part sharing a texture
+  // into one, its colour, roughness and metalness carried per vertex; every glowing part into
+  // another. Glass, hide and the like keep their own.
+  bake(model: string, extra: Record<string, string | number | boolean> = {}) {
+    for (const [on, byMat] of this.parts) {
+      const merged = new Map<Mat, THREE.BufferGeometry[]>();
+      for (const [mat, geos] of byMat) {
+        const into = family(mat);
+        for (const g of geos) {
+          for (const name of Object.keys(g.attributes)) if (!["position", "normal", "uv"].includes(name)) g.deleteAttribute(name);
+          g.clearGroups();
+          if (into !== mat) paint(g, mat as THREE.MeshStandardMaterial);
+        }
+        merged.set(into, [...(merged.get(into) ?? []), ...geos]);
+      }
+      for (const [mat, geos] of merged) {
+        const mesh = new THREE.Mesh(mergeGeometries(geos), mat);
+        mesh.castShadow = !(mat as THREE.MeshBasicMaterial).transparent;
+        mesh.receiveShadow = true;
+        on.add(mesh);
+      }
+    }
+    this.root.userData = { model, ...extra };
+    return this.root;
+  }
+}
+
+// Each model is built once, then cloned: clones share geometry and materials.
+const templates = new Map<string, THREE.Group>();
+function cloneOf(key: string, build: () => THREE.Group) {
+  let t = templates.get(key);
+  if (!t) templates.set(key, (t = build()));
+  return t.clone();
+}
+
+// Bends a two-bone limb so its end lands on `target`, the elbow or knee pushed towards `pole`.
+// Positions are in the limb's parent's space; each bone hangs down its joint's -y.
+function reach(upper: THREE.Object3D, lower: THREE.Object3D, target: V3, l1: number, l2: number, pole: V3) {
+  const S = upper.position, T = new THREE.Vector3(...target), d = T.clone().sub(S);
+  const dist = Math.min(d.length(), l1 + l2 - 1e-3), dir = d.normalize();
+  const a = Math.acos(Math.max(-1, Math.min(1, (l1 * l1 + dist * dist - l2 * l2) / (2 * l1 * dist))));
+  const P = new THREE.Vector3(...pole), bend = P.sub(dir.clone().multiplyScalar(P.dot(dir))).normalize();
+  const up = dir.clone().multiplyScalar(Math.cos(a)).add(bend.multiplyScalar(Math.sin(a)));
+  const elbow = S.clone().add(up.clone().multiplyScalar(l1));
+  upper.quaternion.setFromUnitVectors(DOWN, up);
+  const fore = T.clone().sub(elbow).normalize().applyQuaternion(upper.quaternion.clone().invert());
+  lower.quaternion.setFromUnitVectors(DOWN, fore);
+}
+
+// ============================================================================================
+// Thunder Marines
+// ============================================================================================
+const ARM = [0.31, 0.3] as const; // upper arm, forearm
+const LEG = [0.44, 0.44] as const; // thigh, shin
+
+// The guns, built along -z from the grip. Each says where the hands go, in its own space.
+function carbine(k: Kit, gun: THREE.Object3D, trim: Mat, long = false) {
+  const reach = long ? 0.5 : 0;
+  k.add(gun, rbox(0.085, 0.14, 0.52, 0.025), M.gun, { y: 0.03, z: -0.12 });          // receiver
+  k.add(gun, rbox(0.095, 0.1, 0.3 + reach * 0.3, 0.03), M.armour, { y: 0.03, z: -0.48 - reach * 0.15 }); // shroud
+  k.add(gun, box(0.088, 0.025, 0.4), trim, { y: 0.095, z: -0.2 });                    // a white stripe along the top
+  k.rod(gun, [0, 0.04, -0.6 - reach * 0.3], [0, 0.04, -0.82 - reach], 0.022, M.dark);  // barrel
+  k.add(gun, cyl(0.04, 0.04, 0.09, 10).rotateX(Math.PI / 2), M.dark, { y: 0.04, z: -0.84 - reach }); // muzzle brake
+  k.add(gun, rbox(0.05, 0.2, 0.09, 0.02), M.dark, { y: -0.1, z: -0.2, rx: 0.25 });      // magazine
+  k.add(gun, rbox(0.05, 0.13, 0.06, 0.02), M.rubber, { y: -0.07, z: 0.0, rx: -0.3 });  // grip
+  k.add(gun, rbox(0.06, 0.11, 0.26, 0.03), M.armour, { y: 0.0, z: 0.25 });             // stock
+  k.add(gun, rbox(0.045, 0.1, 0.05, 0.015), M.rubber, { y: -0.04, z: -0.4 - reach * 0.15 }); // foregrip
+  if (long) {
+    // A scope, front and back lenses lit, and a folded bipod.
+    k.add(gun, cyl(0.045, 0.045, 0.42, 12).rotateX(Math.PI / 2), M.dark, { y: 0.17, z: -0.15 });
+    k.add(gun, cyl(0.058, 0.045, 0.06, 12).rotateX(Math.PI / 2), M.dark, { y: 0.17, z: -0.38 });
+    k.add(gun, cyl(0.04, 0.04, 0.01, 12).rotateX(Math.PI / 2), M.lens, { y: 0.17, z: -0.415 });
+    k.rod(gun, [0.03, -0.01, -0.9], [0.04, -0.02, -0.55], 0.012, M.dark);
+    k.rod(gun, [-0.03, -0.01, -0.9], [-0.04, -0.02, -0.55], 0.012, M.dark);
+  } else {
+    k.add(gun, rbox(0.04, 0.05, 0.12, 0.012), M.dark, { y: 0.13, z: -0.1 });            // sight
+    k.add(gun, box(0.02, 0.02, 0.01), M.red, { y: 0.135, z: -0.165 });
+  }
+  return { grip: [0, -0.05, 0.02] as V3, fore: [0, -0.06, -0.4 - reach * 0.15] as V3 };
+}
+
+function launcher(k: Kit, gun: THREE.Object3D, trim: Mat) {
+  k.add(gun, cyl(0.13, 0.13, 1.4, 16).rotateX(Math.PI / 2), M.armour, { z: -0.2 });
+  for (const z of [-0.75, 0.35]) k.add(gun, cyl(0.15, 0.15, 0.08, 16).rotateX(Math.PI / 2), trim, { z });
+  k.add(gun, cyl(0.17, 0.13, 0.12, 16).rotateX(Math.PI / 2), M.orange, { z: -0.92 });   // the business end
+  k.add(gun, cyl(0.11, 0.11, 0.02, 16).rotateX(Math.PI / 2), M.dark, { z: -0.985 });
+  k.add(gun, cyl(0.13, 0.18, 0.14, 16).rotateX(Math.PI / 2), M.gun, { z: 0.56 });       // exhaust flare
+  k.add(gun, rbox(0.1, 0.12, 0.22, 0.03), M.gun, { x: -0.16, y: 0.08, z: -0.35 });      // sight box
+  k.add(gun, box(0.01, 0.06, 0.06), M.lens, { x: -0.16, y: 0.09, z: -0.465 });
+  k.add(gun, rbox(0.05, 0.14, 0.06, 0.02), M.rubber, { y: -0.18, z: -0.05, rx: -0.2 }); // trigger grip
+  k.add(gun, rbox(0.05, 0.12, 0.06, 0.02), M.rubber, { y: -0.17, z: -0.45 });
+  return { grip: [0, -0.22, -0.05] as V3, fore: [0, -0.2, -0.45] as V3 };
+}
+
+function buildMarine(hero: boolean, kit: Trooper) {
+  const k = new Kit(), trim = hero ? M.gold : M.trim;
+  const hips = k.joint("hips", k.root, 0, 0.98, 0);
+  k.add(hips, rbox(0.42, 0.22, 0.27, 0.08), M.armour, { y: 0.02 });
+  k.add(hips, rbox(0.47, 0.065, 0.31, 0.03), trim, { y: 0.11 });                      // belt
+  k.add(hips, rbox(0.12, 0.08, 0.04, 0.02), M.gun, { y: 0.11, z: -0.16 });            // buckle
+  k.pair(hips, () => rbox(0.1, 0.13, 0.09, 0.025), M.pack, { x: 0.19, y: 0.03, z: -0.12 }); // pouches
+  k.pair(hips, () => rbox(0.08, 0.12, 0.08, 0.025), M.pack, { x: 0.25, y: 0.03, z: 0.04 });
+  for (const s of [-1, 1]) {
+    const leg = k.joint(s < 0 ? "legL" : "legR", hips, s * 0.12, -0.04, 0);
+    k.add(leg, capsule(0.1, LEG[0] + 0.06), M.suit, { y: -LEG[0] / 2 });
+    k.add(leg, rbox(0.2, 0.3, 0.22, 0.07), M.armour, { y: -0.2, z: -0.01 });            // thigh plate
+    k.add(leg, box(0.02, 0.24, 0.06), trim, { x: s * 0.1, y: -0.2 });                  // its stripe
+    const knee = k.joint(s < 0 ? "kneeL" : "kneeR", leg, 0, -LEG[0], 0);
+    k.add(knee, rbox(0.17, 0.15, 0.09, 0.04), trim, { z: -0.1 });                     // knee pad
+    k.add(knee, capsule(0.09, LEG[1]), M.suit, { y: -LEG[1] / 2 + 0.02 });
+    k.add(knee, rbox(0.18, 0.28, 0.2, 0.07), M.armour, { y: -0.22, z: -0.01 });        // shin guard
+    k.add(knee, rbox(0.2, 0.15, 0.32, 0.06), M.armour, { y: -0.44 + 0.0, z: -0.05 });  // boot
+    k.add(knee, rbox(0.21, 0.04, 0.34, 0.015), M.rubber, { y: -0.52, z: -0.05 });      // sole
+    k.add(knee, rbox(0.14, 0.05, 0.08, 0.02), trim, { y: -0.4, z: -0.2 });             // toe cap
+  }
+
+  const torso = k.joint("torso", hips, 0, 0.12, 0);
+  k.add(torso, rbox(0.36, 0.24, 0.25, 0.08), M.suit, { y: 0.1 });                      // waist
+  k.add(torso, rbox(0.56, 0.4, 0.35, 0.12), M.armour, { y: 0.38 });                    // chest
+  k.add(torso, rbox(0.42, 0.18, 0.05, 0.03), trim, { y: 0.44, z: -0.165 });           // chest plate
+  k.add(torso, rbox(0.3, 0.12, 0.05, 0.03), M.armour, { y: 0.24, z: -0.15 });         // ab plate
+  // A thunderbolt on the chest, in orange (gold for the hero).
+  k.add(torso, prism([[0.03, 0.09], [-0.04, 0.0], [0.0, 0.0], [-0.03, -0.09], [0.04, 0.01], [0.0, 0.01]], 0.02), hero ? M.gold : M.orange, { y: 0.44, z: -0.195 });
+  k.add(torso, ring(0.13, 0.045, 16).rotateX(Math.PI / 2), M.armour, { y: 0.6 });     // collar
+  k.pair(torso, () => rbox(0.07, 0.05, 0.42, 0.02), M.pack, { x: 0.15, y: 0.6, z: 0.08 }); // pack straps
+
+  // The helmet: a dome, a white ridge front to back, and the snorkel mask on the front.
+  const head = k.joint("head", torso, 0, 0.66, 0);
+  k.add(head, ball(0.2, 24, 16), M.armour, { y: 0.12, s: [1, 1.08, 1.06] });
+  k.add(head, ring(0.215, 0.025, 20, Math.PI), trim, { y: 0.11, ry: Math.PI / 2 });   // ridge
+  k.add(head, rbox(0.38, 0.06, 0.3, 0.03), M.armour, { y: -0.02, z: 0.04 });          // jaw guard
+  k.pair(head, () => cyl(0.07, 0.07, 0.05, 14).rotateZ(Math.PI / 2), M.armour, { x: 0.205, y: 0.08 }); // ear pieces
+  k.pair(head, () => cyl(0.04, 0.04, 0.02, 14).rotateZ(Math.PI / 2), trim, { x: 0.235, y: 0.08 });
+  k.add(head, ball(0.14, 18, 12), M.glass, { y: 0.09, z: -0.16, s: [1.15, 0.85, 0.55] }); // the mask
+  k.add(head, ring(0.14, 0.024, 20), trim, { y: 0.09, z: -0.2, s: [1.15, 0.85, 1] });
+  k.add(head, cyl(0.06, 0.07, 0.09, 12).rotateX(Math.PI / 2), M.orange, { y: -0.02, z: -0.25 }); // snout
+  k.add(head, cyl(0.045, 0.045, 0.02, 12).rotateX(Math.PI / 2), M.dark, { y: -0.02, z: -0.3 });
+  // The snorkel itself: up from the snout, past the right cheek and over the helmet.
+  k.rod(head, [0.04, -0.02, -0.27], [0.18, 0.02, -0.18], 0.028, M.orange);
+  k.rod(head, [0.18, 0.02, -0.18], [0.21, 0.3, -0.14], 0.028, M.orange);
+  k.rod(head, [0.21, 0.3, -0.14], [0.2, 0.52, -0.1], 0.028, M.orange);
+  k.add(head, cyl(0.045, 0.045, 0.07, 12), M.orange, { x: 0.2, y: 0.56, z: -0.1 });
+  if (kit === "sniper") {
+    // A rangefinder over the left eye.
+    k.add(head, rbox(0.06, 0.06, 0.12, 0.02), M.dark, { x: -0.2, y: 0.17, z: -0.12 });
+    k.add(head, cyl(0.025, 0.025, 0.01, 10).rotateX(Math.PI / 2), M.red, { x: -0.2, y: 0.17, z: -0.185 });
+  }
+
+  // The backpack. Nobody knows why it's this big.
+  const pack = { y: 0.48, z: 0.56, w: 0.95, h: 1.32, d: 0.72 };
+  k.add(torso, rbox(pack.w, pack.h, pack.d, 0.12), M.pack, { y: pack.y, z: pack.z });
+  for (const y of [pack.y - 0.4, pack.y + 0.42]) k.add(torso, rbox(pack.w + 0.03, 0.06, pack.d + 0.03, 0.03), trim, { y, z: pack.z });
+  for (let i = 0; i < 5; i++) k.add(torso, box(0.5, 0.035, 0.04), M.dark, { y: pack.y - 0.15 + i * 0.07, z: pack.z + pack.d / 2 + 0.01 }); // vents
+  k.pair(torso, () => cyl(0.11, 0.11, 0.9, 14), M.armour, { x: pack.w / 2 + 0.06, y: pack.y + 0.05, z: pack.z + 0.1 }); // canisters
+  k.pair(torso, () => cyl(0.115, 0.115, 0.05, 14), trim, { x: pack.w / 2 + 0.06, y: pack.y + 0.5, z: pack.z + 0.1 });
+  k.pair(torso, () => cyl(0.115, 0.115, 0.05, 14), trim, { x: pack.w / 2 + 0.06, y: pack.y - 0.4, z: pack.z + 0.1 });
+  const top = pack.y + pack.h / 2;
+  k.add(torso, rbox(0.42, 0.18, 0.3, 0.05), M.armour, { x: -0.18, y: top + 0.08, z: pack.z - 0.05 }); // radio
+  for (const x of [-0.3, -0.2, -0.1]) k.add(torso, cyl(0.025, 0.025, 0.05, 8), M.gun, { x, y: top + 0.19, z: pack.z - 0.12 });
+  k.add(torso, ball(0.035, 8, 6), M.green, { x: -0.06, y: top + 0.17, z: pack.z + 0.06 });
+  k.add(torso, cyl(0.16, 0.04, 0.08, 16), M.trim, { x: 0.24, y: top + 0.15, z: pack.z + 0.15, rx: -0.5 }); // dish
+  k.rod(torso, [0.24, top, pack.z + 0.15], [0.24, top + 0.12, pack.z + 0.15], 0.02, M.gun);
+  // Antennas, two joints each so they bend as they wobble.
+  const antennas: [number, number, number][] = [[-0.35, 2.6, 0.38], [0.05, 3.4, 0.74], [0.36, 1.9, 0.5]];
+  antennas.forEach(([x, h, z], i) => {
+    const base = k.joint(`ant${i}`, torso, x, top, z);
+    k.add(base, cyl(0.05, 0.06, 0.1, 10), M.gun, { y: 0.05 });
+    k.add(base, cyl(0.016, 0.026, h / 2, 6), M.dark, { y: h / 4 });
+    k.add(base, ring(0.03, 0.01, 8).rotateX(Math.PI / 2), trim, { y: h / 4 });
+    const mid = k.joint(`ant${i}b`, base, 0, h / 2, 0);
+    k.add(mid, cyl(0.009, 0.016, h / 2, 6), M.dark, { y: h / 4 });
+    k.add(mid, ball(0.055, 10, 8), M.red, { y: h / 2 });
+    if (hero && i === 1) k.add(mid, new THREE.ShapeGeometry(new THREE.Shape([new THREE.Vector2(0, 0.12), new THREE.Vector2(0.4, 0), new THREE.Vector2(0, -0.12)])), M.pennant, { y: h / 2 - 0.22, ry: Math.PI / 2 }); // the hero's pennant
+  });
+  if (kit === "engineer") {
+    // An orange toolbox strapped to the pack, a wrench, and a coil of cable.
+    k.add(torso, rbox(0.7, 0.36, 0.3, 0.05), M.orange, { y: pack.y - 0.48, z: pack.z + 0.42 });
+    k.add(torso, ring(0.09, 0.02, 12, Math.PI), M.dark, { y: pack.y - 0.3, z: pack.z + 0.42 });
+    k.rod(torso, [-0.55, pack.y - 0.3, pack.z], [-0.55, pack.y + 0.4, pack.z], 0.03, M.gun);
+    k.add(torso, ring(0.08, 0.025, 12, Math.PI * 1.5), M.gun, { x: -0.55, y: pack.y + 0.48, z: pack.z, ry: Math.PI / 2 });
+    k.add(torso, ring(0.14, 0.03, 16), M.orange, { x: 0.55, y: pack.y - 0.2, z: pack.z + 0.2, ry: Math.PI / 2 });
+  }
+
+  // Arms: shoulder → elbow, each with a pauldron.
+  const shoulders: Record<"L" | "R", THREE.Object3D[]> = { L: [], R: [] };
+  for (const s of [-1, 1]) {
+    const side = s < 0 ? "L" : "R";
+    const arm = k.joint(`arm${side}`, torso, s * 0.34, 0.52, -0.02);
+    // The pauldron sits on the torso, so it stays put while the arm aims.
+    k.add(torso, dome(0.17, 18), M.armour, { x: s * 0.36, y: 0.55, z: -0.02, rz: -s * 0.35, s: [1, 0.75, 1.1] });
+    k.add(torso, ring(0.165, 0.022, 18).rotateX(Math.PI / 2), trim, { x: s * 0.36, y: 0.55, z: -0.02, rz: -s * 0.35, s: [1, 1, 1.1] });
+    k.add(arm, capsule(0.08, ARM[0]), M.suit, { y: -ARM[0] / 2 });
+    k.add(arm, rbox(0.15, 0.17, 0.16, 0.05), M.armour, { y: -0.17 });
+    const elbow = k.joint(`elbow${side}`, arm, 0, -ARM[0], 0);
+    k.add(elbow, capsule(0.072, ARM[1]), M.suit, { y: -ARM[1] / 2 });
+    k.add(elbow, rbox(0.14, 0.17, 0.15, 0.05), M.armour, { y: -0.13 });
+    k.add(elbow, rbox(0.15, 0.04, 0.16, 0.015), trim, { y: -0.04 });
+    k.add(elbow, rbox(0.1, 0.11, 0.12, 0.04), M.rubber, { y: -ARM[1] - 0.02 });       // glove
+    shoulders[side] = [arm, elbow];
+  }
+
+  // The gun, and both hands on it.
+  const heavy = kit === "heavy";
+  const gun = k.joint("gun", torso, heavy ? 0.3 : 0.08, heavy ? 0.74 : kit === "sniper" ? 0.34 : 0.26, heavy ? -0.02 : -0.16);
+  const hands = heavy ? launcher(k, gun, trim) : carbine(k, gun, trim, kit === "sniper");
+  const at = (h: V3): V3 => [gun.position.x + h[0], gun.position.y + h[1], gun.position.z + h[2]];
+  reach(shoulders.R[0]!, shoulders.R[1]!, at(hands.grip), ARM[0], ARM[1], [1, -0.4, 0.6]);
+  reach(shoulders.L[0]!, shoulders.L[1]!, at(hands.fore), ARM[0], ARM[1], [-1, -0.8, 0.3]);
+  return k.bake("marine", { hero });
+}
+
+export function marine(hero = false, kit: Trooper = "assault") {
+  return cloneOf(`marine:${hero}:${kit}`, () => buildMarine(hero, kit));
+}
+
+// ============================================================================================
+// The Wooka
+// ============================================================================================
+function buildWooka(hero: boolean) {
+  const k = new Kit();
+  const body = k.joint("body");
+  if (hero) body.scale.setScalar(1.45); // the chieftain: bigger, and wearing something's bones
+  const fur = W.fur, tuft = (on: THREE.Object3D, n: number, r: number, y: number, z: number, spread: number, len = 0.12) => {
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2, tilt = 0.5 + ((i * 37) % 7) / 14;
+      k.add(on, cone(0.05, len + ((i * 13) % 5) * 0.02, 5), fur, { x: Math.cos(a) * r, y: y + Math.sin(a * 3) * 0.02, z: z + Math.sin(a) * r * spread, rz: -Math.cos(a) * tilt, rx: Math.sin(a) * tilt * spread });
+    }
   };
-  const torso = fuzz(0.45, W.fur, 0, 0.55, 0);
-  torso.scale.set(1, 1.1, 0.95);
-  const belly = fuzz(0.3, W.belly, 0, 0.5, -0.22);
-  belly.scale.set(1, 1.1, 0.5);
-  const snout = fuzz(0.13, W.belly, 0, 0.98, -0.32);
-  const mouth = box(0.16, 0.04, 0.04, W.mouth, 0, 0.9, -0.38);
-  body.add(
-    torso, belly,
-    fuzz(0.36, W.fur, 0, 1.08, 0),
-    fuzz(0.12, W.fur, -0.27, 1.38, 0.02), fuzz(0.12, W.fur, 0.27, 1.38, 0.02), // ears
-    ball(0.11, W.eye, -0.14, 1.14, -0.28), ball(0.11, W.eye, 0.14, 1.14, -0.28),
-    ball(0.02, W.glint, -0.12, 1.17, -0.38, 6), ball(0.02, W.glint, 0.16, 1.17, -0.38, 6),
-    snout, mouth,
-  );
-  for (const x of [-0.05, 0.05]) {
-    const t = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.06, 4), W.tooth);
-    t.rotation.x = Math.PI;
-    t.position.set(x, 0.86, -0.39);
-    body.add(t);
+  // The body: a fat ball of fur with a paler belly, shaggy round the middle.
+  k.add(body, lumpy(0.45, 3, 0.1, 1), fur, { y: 0.56, s: [1, 1.05, 0.95] });
+  k.add(body, lumpy(0.31, 2, 0.06, 2), W.belly, { y: 0.5, z: -0.22, s: [1, 1.1, 0.5] });
+  // A leather strap over one shoulder, with a pouch and a string of teeth.
+  k.add(body, ring(0.47, 0.03, 28), W.leather, { y: 0.6, rz: 0.55, ry: Math.PI / 2, s: [1, 1, 0.9] });
+  k.add(body, rbox(0.14, 0.12, 0.08, 0.03), W.leather, { x: 0.22, y: 0.36, z: -0.33, rz: 0.4 });
+  for (let i = 0; i < 4; i++) k.add(body, cone(0.02, 0.07, 4), W.tooth, { x: -0.16 + i * 0.09, y: 0.76 - i * 0.07, z: -0.42, rx: Math.PI });
+
+  const head = k.joint("head", body, 0, 1.0, -0.02);
+  k.add(head, lumpy(0.37, 3, 0.08, 3), fur, { s: [1.06, 0.95, 1] });
+  tuft(head, 9, 0.12, 0.3, 0, 1, 0.13);                                     // a tuft on top
+  k.add(head, ball(0.25, 18, 12), W.belly, { y: -0.04, z: -0.22, s: [1.2, 1, 0.5] }); // the face, paler
+  // The eyes: big, black and glossy, with nothing behind them. A pin of red, if you look.
+  for (const s of [-1, 1]) {
+    k.add(head, ball(0.125, 20, 14), W.eye, { x: s * 0.14, y: 0.05, z: -0.29, s: [1, 1.15, 0.7] });
+    k.add(head, ball(0.026, 8, 6), W.shine, { x: s * 0.14 - 0.04, y: 0.11, z: -0.375 });
+    k.add(head, ball(0.012, 6, 4), W.shine, { x: s * 0.14 + 0.03, y: 0.0, z: -0.38 });
+    k.add(head, ball(0.012, 6, 4), W.glint, { x: s * 0.14, y: 0.04, z: -0.385 });
+    k.add(head, capsule(0.035, 0.17, 6), W.furDark, { x: s * 0.13, y: 0.19, z: -0.31, rz: s * 1.2 }); // a scowl
   }
-  // The club.
-  const club = new THREE.Group();
-  club.position.set(0.42, 0.6, -0.1);
-  club.rotation.x = -0.6;
-  club.add(rod(0.04, 0.7, W.wood, 0, 0.35, 0), rod(0.09, 0.22, W.wood, 0, 0.75, 0));
-  for (let i = 0; i < 4; i++) {
-    const n = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.14, 4), W.nail);
-    const a = (i / 4) * Math.PI * 2;
-    n.position.set(Math.cos(a) * 0.12, 0.75, Math.sin(a) * 0.12);
-    n.rotation.z = -Math.cos(a) * Math.PI / 2;
-    n.rotation.x = Math.sin(a) * Math.PI / 2;
-    club.add(n);
+  k.add(head, ball(0.11, 14, 10), W.belly, { y: -0.1, z: -0.33, s: [1.25, 0.8, 1] }); // snout
+  k.add(head, ball(0.045, 10, 8), W.nose, { y: -0.06, z: -0.43, s: [1.3, 0.8, 0.8] });
+  k.add(head, rbox(0.13, 0.025, 0.03, 0.01), W.mouth, { y: -0.16, z: -0.4 });
+  for (const x of [-0.04, 0.04]) k.add(head, cone(0.018, 0.06, 4), W.tooth, { x, y: -0.185, z: -0.41, rx: Math.PI });
+  for (const s of [-1, 1]) {
+    const ear = k.joint(s < 0 ? "earL" : "earR", head, s * 0.25, 0.25, 0.02);
+    k.add(ear, ball(0.11, 12, 10), fur, { y: 0.03, s: [1, 1, 0.5] });
+    k.add(ear, ball(0.07, 10, 8), W.belly, { y: 0.03, z: -0.035, s: [1, 1, 0.3] });
   }
-  body.add(club, fuzz(0.13, W.fur, -0.2, 0.08, -0.05), fuzz(0.13, W.fur, 0.2, 0.08, -0.05));
+
+  // Stubby arms; the right one holds the club.
+  for (const s of [-1, 1]) {
+    const side = s < 0 ? "L" : "R";
+    const arm = k.joint(`arm${side}`, body, s * 0.39, 0.74, -0.04);
+    arm.rotation.z = s * 0.35;
+    k.add(arm, capsule(0.09, 0.32, 8), fur, { y: -0.13 });
+    k.add(arm, ball(0.085, 10, 8), W.furDark, { y: -0.28 });
+    if (s > 0) {
+      const club = k.joint("club", arm, 0, -0.28, -0.02);
+      club.rotation.x = 0.45; // up over the shoulder
+      k.add(club, cyl(0.035, 0.045, 0.62, 8), W.wood, { y: 0.15 });
+      for (const y of [-0.04, 0.02, 0.08]) k.add(club, ring(0.045, 0.012, 10).rotateX(Math.PI / 2), W.rope, { y });
+      k.add(club, lumpy(0.12, 1, 0.12, 5, false), W.wood, { y: 0.52, s: [0.9, 1.6, 0.9] });
+      // The nail. On purpose. The chieftain's club has bones in it as well.
+      k.add(club, cone(0.018, 0.2, 5), W.nail, { x: 0.12, y: 0.58, rz: -Math.PI / 2 });
+      k.add(club, cyl(0.03, 0.03, 0.015, 8), W.nail, { x: 0.03, y: 0.58, rz: Math.PI / 2 });
+      if (hero) for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + 0.6;
+        k.add(club, cone(0.03, 0.18, 5), W.bone, { x: Math.cos(a) * 0.12, y: 0.5 + i * 0.04, z: Math.sin(a) * 0.12, rz: -Math.cos(a) * 1.3, rx: Math.sin(a) * 1.3 });
+      }
+    }
+  }
+  // Feet.
+  for (const s of [-1, 1]) {
+    const foot = k.joint(s < 0 ? "footL" : "footR", body, s * 0.19, 0.2, 0);
+    k.add(foot, capsule(0.1, 0.22, 8), fur, { y: -0.04 });
+    k.add(foot, ball(0.12, 12, 8), W.furDark, { y: -0.13, z: -0.06, s: [1, 0.55, 1.4] });
+    for (const x of [-0.05, 0, 0.05]) k.add(foot, ball(0.035, 6, 4), W.furDark, { x, y: -0.16, z: -0.21 });
+  }
+
   if (hero) {
-    // The chieftain: bigger, and wearing something's bones.
+    // A mantle of grey fur, a crown of bones, red paint across the eyes, and a necklace of skulls.
+    k.add(body, lumpy(0.3, 2, 0.15, 9), W.chief, { y: 0.86, z: 0.08, s: [1.7, 0.6, 1.4] });
     for (let i = 0; i < 7; i++) {
       const a = -1.2 + (i / 6) * 2.4;
-      const bone = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.32, 5), W.bone);
-      bone.position.set(Math.sin(a) * 0.3, 1.42, -Math.cos(a) * 0.12);
-      bone.rotation.z = -Math.sin(a) * 0.5;
-      body.add(bone);
+      k.add(head, cone(0.04, 0.34 + (i % 2) * 0.1, 5), W.bone, { x: Math.sin(a) * 0.3, y: 0.38 + Math.cos(a) * 0.03, z: -Math.cos(a) * 0.1, rz: -Math.sin(a) * 0.5 });
     }
-    body.scale.setScalar(1.45);
+    for (const s of [-1, 1]) for (const dy of [0, -0.05]) k.add(head, rbox(0.1, 0.025, 0.04, 0.01), W.paint, { x: s * 0.27, y: -0.05 + dy, z: -0.25, ry: s * 0.6 });
+    for (let i = 0; i < 5; i++) {
+      const a = Math.PI + (i - 2) * 0.45;
+      const x = Math.sin(a) * 0.3, z = Math.cos(a) * 0.26;
+      k.add(body, ball(0.055, 10, 8), W.bone, { x, y: 0.78 - Math.abs(i - 2) * 0.03, z });
+      k.add(body, ball(0.014, 6, 4), W.nose, { x: x - 0.02, y: 0.79 - Math.abs(i - 2) * 0.03, z: z - 0.05 });
+      k.add(body, ball(0.014, 6, 4), W.nose, { x: x + 0.02, y: 0.79 - Math.abs(i - 2) * 0.03, z: z - 0.05 });
+    }
   }
-  g.add(body);
-  g.userData = { bob: body, club };
-  return g;
+  return k.bake("wooka", { hero });
 }
 
-// --- Vehicles and fortifications ---
-export function tank() {
-  const g = new THREE.Group();
-  g.add(
-    box(3.4, 1.3, 5, M.armour, 0, 0.9, 0), box(3.5, 0.15, 5.05, M.trim, 0, 1.3, 0),
-    box(1.9, 0.9, 2, M.armour, 0, 2, 0.2), box(0.5, 0.5, 0.06, M.trim, 0.5, 2, -0.82),
-  );
-  const barrel = rod(0.18, 3.2, M.gun, 0, 2, -2);
-  barrel.rotation.x = Math.PI / 2;
-  g.add(barrel);
-  return g;
+export function wooka(hero = false) {
+  return cloneOf(`wooka:${hero}`, () => buildWooka(hero));
 }
 
-// A two-legged walker: a cockpit box high on long legs that swing as it strides.
+// ============================================================================================
+// Vehicles and fortifications. All Marine-built: the Wooka's share comes as more Wooka.
+// ============================================================================================
+function buildTank() {
+  const k = new Kit();
+  const hull = k.joint("hull");
+  // Tracks: a belt each side, road wheels, sprocket and idler, and a mudguard.
+  for (const s of [-1, 1]) {
+    const x = s * 1.35;
+    k.add(hull, profile([[-2.55, 0.35], [-2.2, 0.95], [2.2, 0.95], [2.6, 0.45], [2.25, 0.05], [-2.2, 0.05]], 0.7), M.rubber, { x });
+    for (let i = 0; i < 5; i++) k.add(hull, cyl(0.32, 0.32, 0.74, 14).rotateZ(Math.PI / 2), M.gun, { x, y: 0.38, z: -1.6 + i * 0.8 });
+    for (let i = 0; i < 5; i++) k.add(hull, cyl(0.14, 0.14, 0.76, 10).rotateZ(Math.PI / 2), M.dark, { x, y: 0.38, z: -1.6 + i * 0.8 });
+    for (let i = 0; i < 20; i++) k.add(hull, box(0.72, 0.05, 0.1), M.dark, { x, y: 0.96, z: -2.1 + i * 0.22 }); // track links
+    k.add(hull, rbox(0.82, 0.08, 5.3, 0.03), M.armour, { x, y: 1.06 });
+    k.add(hull, box(0.04, 0.09, 5.32), M.trim, { x: x + s * 0.42, y: 1.06 });
+  }
+  // The hull: a sloped glacis up front, white trim, engine deck behind.
+  k.add(hull, profile([[-2.6, 0.55], [-1.6, 1.55], [2.3, 1.55], [2.55, 1.2], [2.5, 0.5], [-2.3, 0.4]], 2.0, 0.05), M.armour);
+  k.add(hull, profile([[-2.15, 1.08], [-2.05, 1.18], [-1.95, 1.08], [-2.05, 0.98]], 2.08), M.trim);
+  k.add(hull, profile([[-1.6, 1.55], [2.3, 1.55], [2.3, 1.45], [-1.5, 1.45]], 2.04), M.trim);
+  for (let i = 0; i < 4; i++) k.add(hull, box(1.4, 0.04, 0.12), M.dark, { y: 1.57, z: 1.2 + i * 0.25 }); // engine grille
+  k.pair(hull, () => cyl(0.14, 0.14, 0.12, 12).rotateX(Math.PI / 2), M.engine, { x: 0.55, y: 1.0, z: 2.53 }); // exhausts glowing
+  k.pair(hull, () => ball(0.1, 10, 8), M.lens, { x: 0.8, y: 1.15, z: -2.35 });      // headlights
+
+  const turret = k.joint("turret", hull, 0, 1.55, 0.3);
+  k.add(turret, slab([[-0.6, -1.25], [0.6, -1.25], [1.1, -0.6], [1.1, 0.95], [-1.1, 0.95], [-1.1, -0.6]], 0.75, 0.08), M.armour, { y: 0.38 });
+  k.add(turret, slab([[-0.62, -1.27], [0.62, -1.27], [1.12, -0.62], [1.12, 0.97], [-1.12, 0.97], [-1.12, -0.62]], 0.08), M.trim, { y: 0.55 });
+  k.add(turret, cyl(0.35, 0.38, 0.15, 16), M.armour, { x: 0.45, y: 0.82, z: 0.35 });    // hatch
+  k.add(turret, rbox(0.25, 0.2, 0.3, 0.05), M.gun, { x: -0.6, y: 0.85, z: 0.2 });      // sensor
+  k.add(turret, box(0.2, 0.08, 0.02), M.red, { x: -0.6, y: 0.88, z: 0.04 });
+  k.rod(turret, [0.65, 0.85, 0.6], [0.65, 2.6, 0.75], 0.02, M.dark);
+  k.add(turret, ball(0.05, 8, 6), M.red, { x: 0.65, y: 2.6, z: 0.75 });
+  for (const s of [-1, 1]) for (let i = 0; i < 3; i++) k.add(turret, cyl(0.06, 0.06, 0.25, 8).rotateX(-1.1), M.gun, { x: s * (0.8 + i * 0.1), y: 0.7, z: -0.95 + i * 0.05 }); // smoke launchers
+  const barrel = k.joint("barrel", turret, 0, 0.4, -1.2);
+  k.add(barrel, rbox(0.55, 0.45, 0.4, 0.08), M.armour, { z: 0 });                     // mantlet
+  k.add(barrel, cyl(0.13, 0.15, 3.0, 14).rotateX(Math.PI / 2), M.gun, { z: -1.6 });
+  k.add(barrel, cyl(0.2, 0.2, 0.5, 14).rotateX(Math.PI / 2), M.gun, { z: -1.2 });   // fume extractor
+  k.add(barrel, rbox(0.38, 0.22, 0.4, 0.05), M.gun, { z: -3.15 });                  // muzzle brake
+  k.add(barrel, box(0.4, 0.05, 0.3), M.trim, { y: 0.06, z: -1.2 });
+  return k.bake("tank");
+}
+export const tank = () => cloneOf("tank", buildTank);
+
+const WALKER_BEND = 0.5;
+// A two-legged walker: a cockpit high on long legs that bend back at the knee, with chin guns.
+function buildWalker() {
+  const k = new Kit();
+  const body = k.joint("body", k.root, 0, 0.7 + 4.8 * Math.cos(WALKER_BEND) + 0.5, 0);
+  k.add(body, profile([[-2.3, 0.2], [-1.6, 1.2], [1.4, 1.3], [2.0, 0.6], [1.8, -0.8], [-1.6, -0.9], [-2.3, -0.3]], 2.8, 0.1), M.armour, { y: 0.6 });
+  k.add(body, profile([[-2.36, 0.25], [-1.62, 1.3], [-1.55, 1.2], [-2.25, 0.25]], 2.84), M.trim, { y: 0.6 });
+  k.add(body, profile([[-2.4, 0.3], [-2.12, 0.7], [-2.04, 0.7], [-2.32, 0.3]], 2.0), M.glass, { y: 0.6 }); // the viewport, proud of the slope
+  k.add(body, rbox(3.0, 0.2, 3.6, 0.06), M.trim, { y: -0.35 });
+  k.pair(body, () => rbox(0.1, 0.9, 2.2, 0.04), M.pack, { x: 1.42, y: 0.8, z: 0.3 });   // side hatches
+  k.pair(body, () => box(0.12, 0.08, 2.4), M.trim, { x: 1.43, y: 1.35, z: 0.3 });
+  k.pair(body, () => cyl(0.2, 0.2, 0.1, 10).rotateZ(Math.PI / 2), M.gun, { x: 1.45, y: 0.8, z: -0.4 });
+  for (let i = 0; i < 3; i++) k.pair(body, () => box(0.12, 0.06, 0.6), M.dark, { x: 1.43, y: 0.1 + i * 0.12, z: 1.4 });
+  for (const s of [-1, 1]) {
+    k.add(body, rbox(0.5, 0.5, 1.4, 0.1), M.gun, { x: s * 1.0, y: -0.6, z: -1.6 });           // gun pods
+    k.rod(body, [s * 1.0, -0.6, -2.2], [s * 1.0, -0.6, -3.6], 0.1, M.dark);
+    k.add(body, cyl(0.16, 0.16, 0.3, 10).rotateX(Math.PI / 2), M.dark, { x: s * 1.0, y: -0.6, z: -3.6 });
+    k.add(body, ball(0.12, 10, 8), M.red, { x: s * 1.2, y: 0.9, z: -1.9 });
+  }
+  k.add(body, cyl(0.4, 0.4, 2.8, 12).rotateZ(Math.PI / 2), M.gun, { y: -0.7, z: 0.4 });  // hip axle
+  for (let i = 0; i < 4; i++) k.add(body, box(2.2, 0.06, 0.12), M.dark, { y: 1.85, z: 0.2 + i * 0.3 });
+  k.rod(body, [0.9, 1.9, 1.2], [0.9, 4.2, 1.5], 0.04, M.dark);                         // a mast: it's a Marine machine
+  k.add(body, ball(0.12, 8, 6), M.red, { x: 0.9, y: 4.2, z: 1.5 });
+  for (const s of [-1, 1]) {
+    const side = s < 0 ? "L" : "R";
+    const leg = k.joint(`leg${side}`, body, s * 1.55, -0.7, 0.4);
+    k.add(leg, cyl(0.55, 0.55, 0.4, 16).rotateZ(Math.PI / 2), M.armour);
+    k.add(leg, rbox(0.45, 2.3, 0.7, 0.12), M.armour, { y: -1.15, z: -0.1 });
+    k.add(leg, box(0.12, 1.6, 0.06), M.trim, { y: -1.1, z: -0.47 });
+    k.rod(leg, [0, -0.3, 0.45], [0, -2.0, 0.5], 0.09, M.gun);                         // a piston
+    const knee = k.joint(`knee${side}`, leg, 0, -2.4, -0.1);
+    k.add(knee, cyl(0.38, 0.38, 0.5, 14).rotateZ(Math.PI / 2), M.gun);
+    k.add(knee, rbox(0.38, 2.4, 0.55, 0.1), M.armour, { y: -1.2 });
+    const ankle = k.joint(`ankle${side}`, knee, 0, -2.4, 0);
+    k.add(ankle, cyl(0.25, 0.25, 0.42, 12).rotateZ(Math.PI / 2), M.gun);
+    k.add(ankle, slab([[-0.5, -1.0], [0.5, -1.0], [0.6, 0.4], [-0.6, 0.4]], 0.3, 0.05), M.armour, { y: -0.35, z: -0.1 });
+    k.add(ankle, slab([[-0.52, -1.05], [0.52, -1.05], [0.52, -0.8], [-0.52, -0.8]], 0.32), M.trim, { y: -0.35, z: -0.1 });
+    for (const x of [-0.35, 0, 0.35]) k.add(ankle, cone(0.12, 0.35, 6).rotateX(-Math.PI / 2), M.gun, { x, y: -0.4, z: -1.2 }); // toes
+  }
+  // Hip → knee 2.4, knee → ankle 2.4, ankle → sole 0.5: it stands on y = 0 with its knees bent.
+  for (const side of ["L", "R"]) {
+    k.root.getObjectByName(`leg${side}`)!.rotation.x = WALKER_BEND;
+    k.root.getObjectByName(`knee${side}`)!.rotation.x = -2 * WALKER_BEND;
+    k.root.getObjectByName(`ankle${side}`)!.rotation.x = WALKER_BEND;
+  }
+  return k.bake("walker");
+}
 export function walker() {
-  const g = new THREE.Group(), legs: THREE.Group[] = [];
-  for (const x of [-1.1, 1.1]) {
-    const leg = new THREE.Group();
-    leg.position.set(x, 5, 0);
-    leg.add(box(0.5, 2.6, 0.5, M.armour, 0, -1.3, 0), box(0.45, 2.6, 0.45, M.armour, 0, -3.5, 0.4), box(1.1, 0.3, 1.6, M.trim, 0, -4.85, 0.2));
-    legs.push(leg);
-    g.add(leg);
+  const g = cloneOf("walker", buildWalker);
+  return g;
+}
+
+// A speeder: a long, low bike that floats a metre up, steering vanes out front, a rider.
+function buildSpeeder() {
+  const k = new Kit();
+  const bike = k.joint("bike", k.root, 0, 1.0, 0);
+  k.add(bike, profile([[-1.0, 0.05], [-0.7, 0.32], [1.2, 0.35], [1.9, 0.15], [1.8, -0.25], [-0.8, -0.25]], 0.75, 0.06), M.armour);
+  k.add(bike, profile([[-0.98, 0.1], [-0.68, 0.36], [1.2, 0.39], [1.2, 0.34], [-0.7, 0.31]], 0.78), M.trim);
+  k.add(bike, cyl(0.28, 0.3, 0.6, 14).rotateX(Math.PI / 2), M.gun, { y: -0.05, z: 1.85 });  // engine
+  k.add(bike, cyl(0.22, 0.22, 0.02, 14).rotateX(Math.PI / 2), M.engine, { y: -0.05, z: 2.16 });
+  k.add(bike, cone(0.2, 0.9, 12).rotateX(-Math.PI / 2), M.plume, { y: -0.05, z: 2.6 });
+  for (const s of [-1, 1]) {
+    k.rod(bike, [s * 0.25, 0.1, -0.9], [s * 0.35, 0.05, -2.6], 0.04, M.gun);             // forks
+    k.add(bike, rbox(0.06, 0.5, 0.9, 0.03), M.armour, { x: s * 0.42, y: 0.0, z: -2.7 }); // steering vanes
+    k.add(bike, box(0.065, 0.06, 0.92), M.trim, { x: s * 0.42, y: 0.25, z: -2.7 });
   }
-  g.add(box(3, 2, 4, M.armour, 0, 6, 0), box(3.05, 0.15, 4.05, M.trim, 0, 6.6, 0), box(2.2, 0.5, 0.06, M.glass, 0, 6.3, -2.02));
-  for (const x of [-1.7, 1.7]) {
-    const gun = rod(0.16, 2.4, M.gun, x, 5.6, -1.6);
-    gun.rotation.x = Math.PI / 2;
-    g.add(gun);
+  k.add(bike, rbox(0.25, 0.18, 0.5, 0.05), M.dark, { y: 0.4, z: 0.35 });                // seat
+  k.rod(bike, [-0.4, 0.55, -0.6], [0.4, 0.55, -0.6], 0.03, M.gun);                      // handlebars
+  k.add(bike, rbox(0.3, 0.06, 0.2, 0.02), M.glass, { y: 0.48, z: -0.75, rx: -0.6 });
+  k.add(bike, box(0.3, 0.1, 0.02), M.red, { y: 0.0, z: 2.17 });
+  // The rider, hunched forward with the pack still on.
+  const rider = k.joint("rider", bike, 0, 0.4, 0.3);
+  k.add(rider, rbox(0.45, 0.45, 0.3, 0.1), M.armour, { y: 0.35, z: -0.05, rx: -0.6 });
+  k.add(rider, ball(0.18, 16, 12), M.armour, { y: 0.62, z: -0.35 });
+  k.add(rider, ball(0.12, 12, 8), M.glass, { y: 0.6, z: -0.48, s: [1.1, 0.8, 0.5] });
+  k.add(rider, rbox(0.6, 0.8, 0.5, 0.1), M.pack, { y: 0.5, z: 0.32, rx: -0.4 });
+  k.add(rider, box(0.62, 0.05, 0.52), M.trim, { y: 0.75, z: 0.25, rx: -0.4 });
+  k.rod(rider, [0.2, 0.8, 0.4], [0.3, 2.4, 0.9], 0.015, M.dark);
+  k.add(rider, ball(0.04, 8, 6), M.red, { x: 0.3, y: 2.4, z: 0.9 });
+  for (const s of [-1, 1]) {
+    k.rod(rider, [s * 0.22, 0.45, -0.05], [s * 0.38, 0.18, -0.85], 0.07, M.suit);         // arms to the bars
+    k.rod(rider, [s * 0.15, 0.05, 0.05], [s * 0.3, -0.15, -0.4], 0.09, M.armour);          // legs
   }
-  g.userData = { legs };
-  return g;
+  return k.bake("speeder");
 }
+export const speeder = () => cloneOf("speeder", buildSpeeder);
 
-// A speeder: a long, low bike that floats a metre up.
-export function speeder() {
-  const g = new THREE.Group();
-  g.add(
-    box(0.8, 0.5, 3.6, M.armour, 0, 1, 0.2), box(0.82, 0.08, 3.62, M.trim, 0, 1.25, 0.2),
-    box(1.6, 0.1, 0.6, M.armour, 0, 1.1, -1.9), box(0.5, 0.5, 0.8, M.pack, 0, 1.4, 1),
-    box(0.3, 0.15, 0.2, M.tip, 0, 1, 2.05),
-  );
-  return g;
+// A gunship: a fat hull with a glass nose, stub wings with an engine pod each that tilts, a chin
+// turret and a tail boom.
+function buildGunship() {
+  const k = new Kit();
+  const hull = k.joint("hull");
+  k.add(hull, profile([[-3.6, -0.2], [-3.0, 0.7], [-1.2, 1.15], [2.4, 1.0], [5.6, 0.45], [5.8, 0.1], [2.4, -0.7], [-2.6, -1.0]], 2.4, 0.15), M.armour);
+  k.add(hull, profile([[-3.62, -0.2], [-3.02, 0.72], [-2.85, 0.8], [-3.45, -0.25]], 2.0), M.trim);
+  k.add(hull, profile([[-3.62, 0.0], [-3.08, 0.86], [-1.7, 1.28], [-1.9, 0.3]], 2.0), M.glass);     // canopy
+  k.add(hull, rbox(2.66, 0.12, 4.2, 0.05), M.trim, { y: 0.2, z: 0.2 });
+  k.add(hull, rbox(0.12, 1.0, 1.2, 0.04), M.dark, { x: 1.25, y: -0.1, z: 0.0 });          // door
+  k.add(hull, rbox(0.12, 1.0, 1.2, 0.04), M.dark, { x: -1.25, y: -0.1, z: 0.0 });
+  k.add(hull, profile([[4.2, 0.6], [5.6, 2.6], [6.3, 2.6], [5.9, 0.4]], 0.3, 0.04), M.armour); // tail fin
+  k.add(hull, profile([[5.45, 2.4], [5.6, 2.62], [6.3, 2.62], [6.24, 2.4]], 0.34), M.trim);
+  k.add(hull, slab([[-2.2, 5.2], [2.2, 5.2], [1.8, 6.0], [-1.8, 6.0]], 0.15), M.armour, { y: 0.55 });      // tailplane
+  k.pair(hull, () => ball(0.12, 8, 6), M.red, { x: 2.2, y: 0.55, z: 5.6 });
+  // Stub wings, and an engine pod on each end that tilts with speed.
+  k.add(hull, slab([[-4.2, -0.5], [4.2, -0.5], [4.2, 1.0], [-4.2, 1.0]], 0.28, 0.05), M.armour, { y: 0.35, z: 0.5 });
+  k.add(hull, slab([[-4.22, -0.55], [4.22, -0.55], [4.22, -0.35], [-4.22, -0.35]], 0.3), M.trim, { y: 0.35, z: 0.5 });
+  for (const s of [-1, 1]) {
+    k.add(hull, cyl(0.12, 0.12, 0.8, 8).rotateZ(Math.PI / 2), M.gun, { x: s * 2.5, y: -0.1, z: 0.2 }); // rocket rack
+    k.add(hull, rbox(0.5, 0.5, 1.4, 0.1), M.gun, { x: s * 2.8, y: -0.1, z: 0.3 });
+    for (const [dx, dy] of [[-0.12, -0.12], [0.12, -0.12], [-0.12, 0.12], [0.12, 0.12]] as const) k.add(hull, cyl(0.07, 0.07, 0.02, 8).rotateX(Math.PI / 2), M.orange, { x: s * 2.8 + dx, y: -0.1 + dy, z: -0.41 });
+    const pod = k.joint(s < 0 ? "podL" : "podR", hull, s * 4.4, 0.35, 0.6);
+    k.add(pod, cyl(0.62, 0.62, 2.4, 18).rotateX(Math.PI / 2), M.pack);
+    k.add(pod, ring(0.63, 0.06, 18), M.trim, { z: -1.1 });
+    k.add(pod, cyl(0.5, 0.5, 0.02, 18).rotateX(Math.PI / 2), M.dark, { z: -1.21 });
+    k.add(pod, cyl(0.45, 0.45, 0.02, 18).rotateX(Math.PI / 2), M.engine, { z: 1.21 });
+    k.add(pod, cone(0.4, 1.6, 14).rotateX(-Math.PI / 2), M.plume, { z: 2.0 });
+  }
+  const chin = k.joint("chin", hull, 0, -1.0, -2.6);
+  k.add(chin, ball(0.45, 14, 10), M.gun);
+  for (const x of [-0.12, 0.12]) k.rod(chin, [x, -0.05, -0.3], [x, -0.05, -1.5], 0.06, M.dark);
+  return k.bake("gunship");
 }
+export const gunship = () => cloneOf("gunship", buildGunship);
 
-// A gunship: a fat hull, stub wings with an engine pod each, a chin gun. The view flies it.
-export function gunship() {
-  const g = new THREE.Group();
-  g.add(
-    box(2.6, 2, 7, M.armour, 0, 0, 0), box(2.62, 0.15, 7.02, M.trim, 0, 0.7, 0),
-    box(2.2, 0.8, 0.06, M.glass, 0, 0.3, -3.52), box(8, 0.3, 2, M.armour, 0, 0.3, 0.6),
-    box(0.8, 1.5, 1.2, M.armour, 0, 1.4, 3.2),
-  );
-  for (const x of [-4, 4]) g.add(rod(0.6, 2.6, M.pack, x, 0.3, 0.6).rotateX(Math.PI / 2), ball(0.4, M.tip, x, 0.3, 1.95, 8));
-  const gun = rod(0.12, 1.6, M.gun, 0, -1.1, -2.8);
-  gun.rotation.x = Math.PI / 2;
-  g.add(gun);
-  return g;
-}
-
-export function turret(f: Faction) {
-  const g = new THREE.Group();
+function buildTurret(f: Faction) {
+  const k = new Kit();
   if (f === "wooka") {
-    // A rock-chucker: three poles, some rope, and a rock.
-    for (let i = 0; i < 3; i++) {
-      const leg = rod(0.1, 3.4, W.wood, 0, 1.6, 0);
-      const a = (i / 3) * Math.PI * 2;
-      leg.position.set(Math.cos(a) * 0.6, 1.6, Math.sin(a) * 0.6);
-      leg.rotation.set(Math.sin(a) * 0.35, 0, -Math.cos(a) * 0.35);
-      g.add(leg);
+    // A rock-chucker: a lashed frame of logs, a throwing arm, and a rock in a hide sling.
+    for (const s of [-1, 1]) {
+      k.rod(k.root, [s * 0.9, 0, -1.0], [s * 0.7, 2.4, 0], 0.12, W.bark);
+      k.rod(k.root, [s * 0.9, 0, 1.0], [s * 0.7, 2.4, 0], 0.12, W.bark);
+      k.rod(k.root, [s * 0.9, 0.1, -1.2], [s * 0.9, 0.1, 1.4], 0.14, W.bark);
+      k.add(k.root, ring(0.17, 0.04, 10), W.rope, { x: s * 0.7, y: 2.35, ry: Math.PI / 2 });
     }
-    g.add(ball(0.5, lambert(0x77736a), 0, 3.3, 0, 6));
-  } else {
-    g.add(rod(1.4, 2.6, M.armour, 0, 1.3, 0), rod(1.42, 0.15, M.trim, 0, 2.2, 0), box(1.6, 0.9, 1.6, M.armour, 0, 3, 0));
-    const barrel = rod(0.15, 2.4, M.gun, 0, 3, -1.4);
-    barrel.rotation.x = Math.PI / 2;
-    g.add(barrel);
+    k.rod(k.root, [-0.9, 2.4, 0], [0.9, 2.4, 0], 0.1, W.wood);                          // axle
+    k.add(k.root, lumpy(0.45, 1, 0.2, 7, false), W.rock, { x: 0, y: 0.45, z: 1.2 });      // counterweight pile
+    k.add(k.root, lumpy(0.3, 1, 0.2, 8, false), W.rock, { x: 0.5, y: 0.3, z: 1.4 });
+    const arm = k.joint("arm", k.root, 0, 2.4, 0);
+    arm.rotation.x = 0.9;
+    k.rod(arm, [0, -0.8, 0], [0, 2.4, 0], 0.09, W.wood, 8, 0.07);
+    k.add(arm, ball(0.35, 10, 6), W.hide, { y: 2.45, s: [1, 0.4, 1] });
+    k.add(arm, lumpy(0.3, 1, 0.25, 4, false), W.rock, { y: 2.65 });
+    k.add(arm, lumpy(0.42, 1, 0.2, 11, false), W.rock, { y: -0.95 });
+    for (let i = 0; i < 3; i++) k.add(k.root, cone(0.04, 0.4, 4), W.bone, { x: -0.6 + i * 0.6, y: 0.2, z: -1.3, rx: -0.3 }); // trophies
+    k.add(k.root, ball(0.16, 10, 8), W.bone, { x: 0.9, y: 2.7, z: 0 });               // a skull on the frame
+    return k.bake("rockChucker");
   }
-  return g;
+  // A Marine gun tower: a ringed bunker base, a head that turns, twin barrels.
+  k.add(k.root, cyl(1.3, 1.6, 2.0, 18), M.armour, { y: 1.0 });
+  k.add(k.root, cyl(1.32, 1.32, 0.15, 18), M.trim, { y: 1.75 });
+  k.add(k.root, cyl(1.65, 1.7, 0.25, 18), M.gun, { y: 0.12 });
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    k.add(k.root, rbox(0.4, 0.8, 0.2, 0.05), M.pack, { x: Math.sin(a) * 1.55, y: 0.6, z: Math.cos(a) * 1.55, ry: a });
+  }
+  const head = k.joint("head", k.root, 0, 2.6, 0);
+  k.add(head, rbox(1.7, 1.0, 1.8, 0.25), M.armour);
+  k.add(head, box(1.72, 0.12, 1.82), M.trim, { y: 0.15 });
+  k.add(head, rbox(1.1, 0.25, 0.1, 0.04), M.glass, { y: 0.25, z: -0.88 });
+  k.rod(head, [0.6, 0.5, 0.5], [0.6, 2.0, 0.6], 0.02, M.dark);
+  k.add(head, ball(0.06, 8, 6), M.red, { x: 0.6, y: 2.0, z: 0.6 });
+  const barrel = k.joint("barrel", head, 0, -0.1, -0.9);
+  for (const x of [-0.35, 0.35]) {
+    k.add(barrel, cyl(0.12, 0.14, 2.2, 12).rotateX(Math.PI / 2), M.gun, { x, z: -1.1 });
+    k.add(barrel, cyl(0.18, 0.18, 0.3, 12).rotateX(Math.PI / 2), M.dark, { x, z: -2.2 });
+  }
+  return k.bake("gunTower");
+}
+export const turret = (f: Faction) => cloneOf(`turret:${f}`, () => buildTurret(f));
+
+// ============================================================================================
+// Animation
+// ============================================================================================
+export interface Motion {
+  t: number;      // seconds, for idling
+  dt: number;     // since the last frame
+  moved: number;  // metres covered since the last frame
+  since: number;  // seconds since it last fired or swung
+}
+interface Pose { base: Map<THREE.Object3D, { p: THREE.Vector3; q: THREE.Quaternion }>; joints: Record<string, THREE.Object3D>; phase: number; walk: number; speed: number }
+const poses = new WeakMap<THREE.Object3D, Pose>();
+const e = new THREE.Euler(), dq = new THREE.Quaternion();
+function poseOf(g: THREE.Object3D): Pose {
+  let p = poses.get(g);
+  if (!p) {
+    const joints: Record<string, THREE.Object3D> = {}, base = new Map<THREE.Object3D, { p: THREE.Vector3; q: THREE.Quaternion }>();
+    g.traverse((o) => { if (o.name) { joints[o.name] = o; base.set(o, { p: o.position.clone(), q: o.quaternion.clone() }); } });
+    poses.set(g, (p = { base, joints, phase: (g.id * 1.7) % 6.28, walk: 0, speed: 0 }));
+  }
+  return p;
+}
+// Sets a joint to its rest pose, turned by rx, ry, rz on top and moved by dx, dy, dz.
+function set(p: Pose, name: string, rx = 0, ry = 0, rz = 0, dx = 0, dy = 0, dz = 0) {
+  const j = p.joints[name], b = j && p.base.get(j);
+  if (!j || !b) return;
+  j.position.set(b.p.x + dx, b.p.y + dy, b.p.z + dz);
+  j.quaternion.copy(b.q).multiply(dq.setFromEuler(e.set(rx, ry, rz)));
+}
+const ease = (from: number, to: number, rate: number, dt: number) => from + (to - from) * (1 - Math.exp(-rate * dt));
+
+// Poses a model from what its unit is doing this frame.
+export function animate(g: THREE.Object3D, m: Motion) {
+  const p = poseOf(g), model = g.userData.model as string, dt = Math.max(1e-3, m.dt);
+  p.speed = ease(p.speed, m.moved / dt, 10, dt);
+  p.walk = ease(p.walk, p.speed > 0.4 ? 1 : 0, 8, dt);
+  const a = p.walk, t = m.t;
+  if (model === "marine") {
+    p.phase += (m.moved / 1.7) * Math.PI * 2;
+    const s = Math.sin(p.phase), c = Math.cos(p.phase);
+    set(p, "legL", s * 0.6 * a);
+    set(p, "legR", -s * 0.6 * a);
+    set(p, "kneeL", -a * (0.1 + 0.9 * Math.max(0, c)));
+    set(p, "kneeR", -a * (0.1 + 0.9 * Math.max(0, -c)));
+    const kick = m.since < 0.15 ? 1 - m.since / 0.15 : 0;
+    set(p, "hips", 0, 0, 0, 0, -a * 0.06 * Math.abs(s) - a * 0.02);
+    set(p, "torso", 0.1 * a - kick * 0.06, s * 0.1 * a, 0, 0, Math.sin(t * 2) * 0.006);
+    set(p, "head", -0.08 * a, -s * 0.08 * a);
+    set(p, "gun", 0, 0, 0, 0, 0, kick * 0.07);
+    // The antennas lag behind the walk and wobble on their own.
+    for (let i = 0; i < 3; i++) {
+      const w = 0.04 + 0.16 * a;
+      set(p, `ant${i}`, 0.08 * a + Math.cos(t * (4 + i)) * w * 0.7, 0, Math.sin(t * (5 + i) + i) * w);
+      set(p, `ant${i}b`, Math.cos(t * (4 + i) - 0.6) * w, 0, Math.sin(t * (5 + i) + i - 0.6) * w * 1.4);
+    }
+  } else if (model === "wooka") {
+    // A waddle: short fast steps, rocking side to side, bouncing.
+    p.phase += (m.moved / 1.0) * Math.PI * 2;
+    const s = Math.sin(p.phase);
+    set(p, "body", 0.14 * a, 0, s * 0.16 * a, 0, a * Math.abs(s) * 0.13);
+    set(p, "footL", s * 0.8 * a, 0, 0, 0, Math.max(0, s) * 0.08 * a);
+    set(p, "footR", -s * 0.8 * a, 0, 0, 0, Math.max(0, -s) * 0.08 * a);
+    set(p, "armL", -s * 0.6 * a - 0.2 * a);
+    // The club comes up over the head and down hard.
+    const swing = m.since < 0.4 ? m.since / 0.4 : 1, rest = 0.35 + Math.sin(t * 3 + g.id) * 0.08;
+    const club = swing < 0.35 ? rest + (2.7 - rest) * (swing / 0.35) : swing < 1 ? 2.7 - 1.9 * ((swing - 0.35) / 0.65) : rest;
+    set(p, "armR", club);
+    // The head tilts, slowly, the way a thing does when it's working out if you're food.
+    set(p, "head", -0.1 * a, Math.sin(t * 0.6 + g.id) * 0.2 * (1 - a), Math.sin(t * 0.9 + g.id) * 0.18 * (1 - a));
+    set(p, "earL", 0, 0, 0.15 + Math.sin(t * 3 + g.id) * 0.08 + s * 0.2 * a);
+    set(p, "earR", 0, 0, -0.15 - Math.sin(t * 2.6 + g.id) * 0.08 + s * 0.2 * a);
+  } else if (model === "walker") {
+    p.phase += (m.moved / 7) * Math.PI * 2;
+    const s = Math.sin(p.phase), c = Math.cos(p.phase);
+    // On top of its bent-knee stance: the legs swing, and the one going forward lifts.
+    for (const [side, k] of [["L", 1], ["R", -1]] as const) {
+      const swing = k * s * 0.35 * a, lift = Math.max(0, k * c) * 0.5 * a;
+      set(p, `leg${side}`, swing + lift);
+      set(p, `knee${side}`, -lift * 1.6);
+      set(p, `ankle${side}`, -swing + lift * 0.6);
+    }
+    set(p, "body", 0, s * 0.04 * a, s * 0.03 * a, 0, -Math.abs(c) * 0.25 * a);
+  } else if (model === "tank") {
+    const kick = m.since < 0.3 ? 1 - m.since / 0.3 : 0;
+    set(p, "hull", -kick * 0.05 + Math.sin(t * 14) * 0.004 * a);
+    set(p, "barrel", 0, 0, 0, 0, 0, kick * 0.5);
+  } else if (model === "speeder") {
+    set(p, "bike", -0.08 * a, 0, Math.sin(t * 1.3 + g.id) * 0.05, 0, Math.sin(t * 2.2 + g.id) * 0.08);
+  } else if (model === "gunship") {
+    set(p, "hull", 0.08 * a, 0, Math.sin(t * 0.8 + g.id) * 0.04, 0, Math.sin(t * 1.4 + g.id) * 0.3);
+    set(p, "podL", -0.5 * a + 0.2);
+    set(p, "podR", -0.5 * a + 0.2);
+  } else if (model === "gunTower") {
+    const kick = m.since < 0.25 ? 1 - m.since / 0.25 : 0;
+    set(p, "barrel", 0, 0, 0, 0, 0, kick * 0.4);
+  } else if (model === "rockChucker") {
+    // The arm flings over, then is winched back down.
+    const k = m.since < 0.3 ? m.since / 0.3 : Math.max(0, 1 - (m.since - 0.3) / 0.9);
+    set(p, "arm", -1.9 * k);
+  } else if (model === "fighter" || model === "cruiser") {
+    // Engine fire flickers.
+    const f = 1 + Math.sin(t * 31 + g.id) * 0.08 + Math.sin(t * 17 + g.id * 3) * 0.06;
+    const j = p.joints.flame;
+    if (j) j.scale.set(1, 1, f);
+  }
 }
 
-// --- The forest: redwood trunks you can't walk through, their crowns lost in the fog, ferns
-// and fallen logs underfoot. The jungle is the same idea, lower, greener and thicker. The canyon
-// floor has neither. ---
+// ============================================================================================
+// The forest: redwood trunks you can't walk through, flaring out at the roots, their crowns lost
+// in the fog, ferns and fallen logs underfoot. The jungle is the same idea, lower, greener and
+// thicker. The canyon floor has neither.
+// ============================================================================================
 export type Woods = "redwood" | "jungle" | "none";
+function fernGeometry(jungle: boolean) {
+  // A ring of arching fronds, each a strip bent down at the tip.
+  const fronds: THREE.BufferGeometry[] = [];
+  const n = jungle ? 9 : 7;
+  for (let i = 0; i < n; i++) {
+    const g = new THREE.PlaneGeometry(0.28, 1.2, 1, 6).translate(0, 0.6, 0);
+    const p = g.attributes.position as THREE.BufferAttribute;
+    for (let v = 0; v < p.count; v++) {
+      const y = p.getY(v), k = y / 1.2;
+      p.setXYZ(v, p.getX(v) * Math.sin(Math.PI * Math.min(1, k * 1.1 + 0.1)), Math.sin(k * 2.2) * 0.55, -k * 1.0);
+    }
+    g.computeVertexNormals();
+    g.rotateY((i / n) * Math.PI * 2 + (i % 2) * 0.3);
+    fronds.push(g);
+  }
+  return mergeGeometries(fronds);
+}
 export function forest(scene: THREE.Scene, trees: Tree[], seed: number, half: number, woods: Woods = "redwood") {
   if (woods === "none") return;
   const jungle = woods === "jungle";
@@ -244,102 +933,212 @@ export function forest(scene: THREE.Scene, trees: Tree[], seed: number, half: nu
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), k = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
 
-  const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.8, 1, 1, 12), lambert(jungle ? 0x4d4630 : 0x6e3220), trees.length);
-  const crowns = new THREE.InstancedMesh(jungle ? new THREE.SphereGeometry(1, 8, 6) : new THREE.ConeGeometry(1, 1, 8), lambert(jungle ? 0x1f4a1a : 0x22361c), trees.length * 3);
+  // Trunks: unit height, radius 1 at the bottom of the straight part, flaring at the roots.
+  const trunkGeo = jungle
+    ? lathe([[0, 0], [1.6, 0], [1.15, 0.015], [1, 0.04], [0.85, 0.5], [0.6, 1]], 10)
+    : lathe([[0, 0], [2.0, 0], [1.4, 0.008], [1.1, 0.025], [1, 0.05], [0.8, 0.6], [0.55, 1]], 14);
+  const trunkMat = std(jungle ? 0x6d6448 : 0x8a4428, 0.95, { map: barkMap() });
+  const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, trees.length);
+  // Crowns: redwoods are tiers of drooping boughs high up; the jungle is round clumps.
+  const crownGeo = jungle ? lumpy(1, 1, 0.25, 3) : cone(1, 1, 9);
+  const crowns = new THREE.InstancedMesh(crownGeo, std(jungle ? 0x23561c : 0x24401e, 0.9, { flatShading: true }), trees.length * 4);
   trees.forEach((t, i) => {
     const h = jungle ? 22 + r() * 18 : 70 + r() * 50;
-    trunks.setMatrixAt(i, m.compose(p.set(t.x, h / 2, t.z), q.identity(), k.set(t.r, h, t.r)));
-    for (let j = 0; j < 3; j++) {
-      const y = h * (0.55 + j * 0.15);
-      crowns.setMatrixAt(i * 3 + j, m.compose(p.set(t.x, y, t.z), q.setFromAxisAngle(up, r() * 6), jungle ? k.set(t.r * 5, 4, t.r * 5) : k.set(t.r * 4 - j, 14, t.r * 4 - j)));
+    trunks.setMatrixAt(i, m.compose(p.set(t.x, 0, t.z), q.setFromAxisAngle(up, r() * 6), k.set(t.r, h, t.r)));
+    for (let j = 0; j < 4; j++) {
+      const y = h * (jungle ? 0.75 + j * 0.08 : 0.42 + j * 0.15);
+      const w = jungle ? t.r * (4 + r() * 2) : t.r * (5.5 - j) + 2;
+      crowns.setMatrixAt(i * 4 + j, m.compose(p.set(t.x + (r() - 0.5) * 2, y, t.z + (r() - 0.5) * 2), q.setFromAxisAngle(up, r() * 6), jungle ? k.set(w, 3 + r() * 2, w) : k.set(w, 16, w)));
     }
   });
-  const nFerns = jungle ? 900 : 420;
-  const ferns = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 0.6, 7), lambert(jungle ? 0x2f7a2a : 0x3f6b2a), nFerns);
+  trunks.castShadow = crowns.castShadow = true;
+  trunks.receiveShadow = true;
+  const nFerns = jungle ? 900 : 480;
+  const ferns = new THREE.InstancedMesh(fernGeometry(jungle), std(0xffffff, 0.9, { side: THREE.DoubleSide }), nFerns);
+  const col = new THREE.Color();
   for (let i = 0; i < nFerns; i++) {
-    const sz = 0.6 + r() * 1.4;
-    ferns.setMatrixAt(i, m.compose(p.set((r() - 0.5) * half * 2.2, 0.25 * sz, (r() - 0.5) * half * 2.2), q.setFromAxisAngle(up, r() * 6), k.set(sz * 1.4, sz, sz * 1.4)));
+    const sz = 0.7 + r() * 1.5;
+    ferns.setMatrixAt(i, m.compose(p.set((r() - 0.5) * half * 2.2, 0, (r() - 0.5) * half * 2.2), q.setFromAxisAngle(up, r() * 6), k.set(sz, sz * (0.8 + r() * 0.4), sz)));
+    ferns.setColorAt(i, col.setHSL(0.24 + r() * 0.08, 0.45, 0.28 + r() * 0.12));
   }
-  const logs = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 10), lambert(0x5a3b26), 14);
+  // Fallen logs, mossy on top, the cut ends pale.
+  const logs = new THREE.InstancedMesh(cyl(1, 1, 1, 12), std(0x6a4a30, 0.95, { map: barkMap() }), 14);
+  const moss = new THREE.InstancedMesh(new THREE.CylinderGeometry(1.04, 1.04, 0.98, 12, 1, true, Math.PI / 2 - 0.9, 1.8), std(0x4f7a2a, 1), 14);
   for (let i = 0; i < 14; i++) {
     const len = 10 + r() * 14, rad = 0.6 + r() * 0.6;
     q.setFromEuler(new THREE.Euler(0, r() * Math.PI, Math.PI / 2, "YXZ"));
-    logs.setMatrixAt(i, m.compose(p.set((r() - 0.5) * half * 1.8, rad, (r() - 0.5) * half * 1.8), q, k.set(rad, len, rad)));
+    m.compose(p.set((r() - 0.5) * half * 1.8, rad, (r() - 0.5) * half * 1.8), q, k.set(rad, len, rad));
+    logs.setMatrixAt(i, m);
+    moss.setMatrixAt(i, m);
   }
-  scene.add(trunks, crowns, ferns, logs);
+  logs.castShadow = logs.receiveShadow = true;
+  scene.add(trunks, crowns, ferns, logs, moss);
 }
 
-// --- In orbit. Models are centred on the craft and face -z, like yaw 0 and pitch 0 in the sim. ---
-const glow = (color: number) => new THREE.MeshBasicMaterial({ color });
-const along = (mesh: THREE.Mesh) => { mesh.rotation.x = Math.PI / 2; return mesh; };
+// ============================================================================================
+// In orbit. Models are centred on the craft and face -z, like yaw 0 and pitch 0 in the sim.
+// ============================================================================================
+const ALONG = -Math.PI / 2; // turns a lathe's +y to point forward, -z
 
-// A Marine fighter: a black dart with white trim, its canopy glass, two engines burning orange.
-// The hero's has gold trim.
-function marineFighter(hero: boolean) {
-  const g = new THREE.Group(), trim = hero ? M.gold : M.trim;
-  const nose = along(new THREE.Mesh(new THREE.ConeGeometry(0.7, 2.4, 6), M.armour));
-  nose.rotation.x = -Math.PI / 2;
-  nose.position.z = -2.4;
-  g.add(
-    box(1.4, 0.8, 2.6, M.armour), nose,
-    box(1.42, 0.12, 2.62, trim, 0, 0.2, 0),
-    box(5, 0.12, 1.3, M.armour, 0, -0.1, 0.5), box(5.02, 0.13, 0.25, trim, 0, -0.1, 0.05),
-    box(0.12, 1.2, 1, trim, -2.5, 0.35, 0.7), box(0.12, 1.2, 1, trim, 2.5, 0.35, 0.7), // wingtip fins
-    ball(0.45, M.glass, 0, 0.45, -0.7),
-  );
-  for (const x of [-0.45, 0.45]) g.add(along(rod(0.28, 0.6, glow(0xff9a3c), x, 0, 1.5)));
-  return g;
-}
-
-// A Wooka fighter: a hollowed-out log with hide sails for wings and one Wooka sitting in it,
-// steering by leaning. A bonfire in the back end does the rest.
-function wookaFighter(hero: boolean) {
-  const g = new THREE.Group();
-  const log = along(new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.8, 4.4, 8), W.wood));
-  const hide = new THREE.MeshLambertMaterial({ color: 0xb59a6a, side: THREE.DoubleSide });
-  const sail = (x: number) => {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.6), hide);
-    m.rotation.set(-Math.PI / 2, 0, 0);
-    m.position.set(x, 0.1, 0.3);
-    return m;
-  };
-  const spar = rod(0.06, 5.2, W.wood, 0, 0.12, 0.3);
-  spar.rotation.z = Math.PI / 2;
-  g.add(log, sail(-1.9), sail(1.9), spar, ball(0.5, W.fur, 0, 0.75, -0.4), ball(0.12, W.eye, -0.18, 0.82, -0.82), ball(0.12, W.eye, 0.18, 0.82, -0.82));
-  g.add(ball(0.5, glow(0xff6a1a), 0, 0, 2.3, 8));
-  if (hero) for (let i = 0; i < 5; i++) {
-    const bone = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.5, 5), W.bone);
-    bone.position.set(-0.4 + i * 0.2, 1.25, -0.4);
-    g.add(bone);
+// A Marine fighter: a black dart with white trim, swept wings with a cannon on each tip, twin
+// fins, its canopy glass, two engines burning orange. The hero's has gold trim.
+function buildMarineFighter(hero: boolean) {
+  const k = new Kit(), trim = hero ? M.gold : M.trim;
+  const body = k.root;
+  k.add(body, lathe([[0, -1.7], [0.45, -1.6], [0.7, -0.9], [0.72, 0.3], [0.5, 1.5], [0.22, 2.6], [0, 3.1]], 18), M.armour, { rx: ALONG, s: [1, 1, 0.75] });
+  k.add(body, ball(0.5, 18, 12), M.glass, { y: 0.4, z: -0.7, s: [0.8, 0.65, 1.7] });
+  k.add(body, ring(0.5, 0.04, 18), trim, { y: 0.4, z: -0.7, ry: Math.PI / 2, s: [1.7, 0.65, 1] });
+  k.add(body, box(0.1, 0.06, 2.4), trim, { y: 0.5, z: 0.9 });                        // spine stripe
+  for (const s of [-1, 1]) {
+    // A swept wing with a white leading edge, and a cannon on the tip.
+    k.add(body, slab([[s * 0.5, -0.4], [s * 2.9, 0.9], [s * 2.9, 1.5], [s * 0.5, 1.6]], 0.12, 0.02), M.armour, { y: -0.08 });
+    k.add(body, slab([[s * 0.5, -0.45], [s * 2.92, 0.85], [s * 2.92, 1.05], [s * 0.5, -0.2]], 0.14), trim, { y: -0.08 });
+    k.add(body, cyl(0.14, 0.14, 1.6, 10).rotateX(Math.PI / 2), M.gun, { x: s * 2.95, y: -0.08, z: 0.9 });
+    k.rod(body, [s * 2.95, -0.08, 0.1], [s * 2.95, -0.08, -1.0], 0.05, M.dark);
+    k.add(body, ball(0.06, 8, 6), s < 0 ? M.red : M.green, { x: s * 2.95, y: 0.08, z: 1.5 });
+    // Canted fins.
+    k.add(body, profile([[1.0, 0], [1.9, 1.1], [2.3, 1.1], [2.1, 0]], 0.08), M.armour, { x: s * 0.55, y: 0.2, rz: -s * 0.3 });
+    k.add(body, profile([[1.85, 1.05], [2.3, 1.05], [2.3, 1.15], [1.9, 1.15]], 0.1), trim, { x: s * 0.55, y: 0.2, rz: -s * 0.3 });
+    // Engines.
+    k.add(body, cyl(0.32, 0.28, 1.6, 14).rotateX(Math.PI / 2), M.pack, { x: s * 0.48, y: -0.05, z: 1.4 });
+    k.add(body, ring(0.3, 0.04, 14), trim, { x: s * 0.48, y: -0.05, z: 2.2 });
   }
-  return g;
-}
-
-export const fighter = (f: Faction, hero = false) => (f === "wooka" ? wookaFighter(hero) : marineFighter(hero));
-
-// A Marine cruiser: a long black hull with a white stripe, a bridge tower and a row of engines.
-// A Wooka cruiser: a hollowed asteroid with logs lashed round it and a sail of patched hides.
-export function cruiser(f: Faction) {
-  const g = new THREE.Group();
-  if (f === "wooka") {
-    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(14, 1), lambert(0x6f6559, { flatShading: true }));
-    rock.scale.set(1, 0.7, 1.8);
-    const sailMat = new THREE.MeshLambertMaterial({ color: 0xb59a6a, side: THREE.DoubleSide });
-    const sail = new THREE.Mesh(new THREE.PlaneGeometry(26, 22), sailMat);
-    sail.position.set(0, 22, 4);
-    g.add(rock, sail, rod(0.8, 34, W.wood, 0, 16, 4));
-    for (const x of [-12, 12]) g.add(along(rod(1.4, 46, W.wood, x, -2, 0)));
-    g.add(ball(5, glow(0xff6a1a), 0, 0, 25, 8));
-  } else {
-    g.add(
-      box(12, 7, 60, M.armour), box(12.1, 1, 60.1, M.trim, 0, 2, 0),
-      box(5, 8, 10, M.armour, 0, 7, 14), box(5.1, 1, 2, M.glass, 0, 9, 8.9),
-    );
-    const prow = along(new THREE.Mesh(new THREE.ConeGeometry(6, 14, 4), M.armour));
-    prow.rotation.x = -Math.PI / 2;
-    prow.position.z = -37;
-    g.add(prow);
-    for (const x of [-3.5, 0, 3.5]) g.add(along(rod(1.4, 1, glow(0xff9a3c), x, 0, 30.5)));
+  const flame = k.joint("flame", body, 0, -0.05, 2.2);
+  for (const s of [-1, 1]) {
+    k.add(flame, cyl(0.25, 0.25, 0.02, 14).rotateX(Math.PI / 2), M.engine, { x: s * 0.48, z: 0.01 });
+    k.add(flame, cyl(0.12, 0.12, 0.02, 10).rotateX(Math.PI / 2), M.engineCore, { x: s * 0.48, z: 0.02 });
+    k.add(flame, cone(0.24, 1.6, 12).rotateX(-Math.PI / 2), M.plume, { x: s * 0.48, z: 0.8 });
   }
-  return g;
+  return k.bake("fighter");
 }
+
+// A Wooka fighter: a hollowed-out log with hide sails on spars for wings and one Wooka sitting in
+// it, goggles on, steering by leaning. A bonfire in the back end does the rest.
+function buildWookaFighter(hero: boolean) {
+  const k = new Kit(), body = k.root;
+  k.add(body, cyl(0.7, 0.82, 4.4, 12).rotateX(Math.PI / 2), W.bark);
+  k.add(body, cyl(0.68, 0.68, 0.02, 12).rotateX(Math.PI / 2), W.cut, { z: -2.21 });
+  k.add(body, ring(0.35, 0.02, 12), W.wood, { z: -2.225 });                          // the rings
+  k.add(body, ring(0.16, 0.02, 10), W.wood, { z: -2.225 });
+  k.add(body, cyl(0.5, 0.5, 0.02, 12), W.nose, { y: 0.7, z: -0.4, s: [1, 1, 1.4] }); // the hollow
+  for (const z of [-1.5, 0.6, 1.6]) k.add(body, ring(0.8, 0.05, 14), W.rope, { z });
+  k.rod(body, [0.5, 0.4, 0.8], [1.1, 1.1, 1.2], 0.08, W.bark);                      // a branch stub
+  // The pilot, and their goggles.
+  k.add(body, lumpy(0.48, 2, 0.08, 2), W.fur, { y: 0.85, z: -0.4 });
+  for (const s of [-1, 1]) {
+    k.add(body, ball(0.13, 12, 8), W.eye, { x: s * 0.18, y: 0.95, z: -0.82 });
+    k.add(body, ring(0.13, 0.04, 12), W.leather, { x: s * 0.18, y: 0.95, z: -0.86 });
+    k.add(body, ball(0.11, 10, 8), W.fur, { x: s * 0.36, y: 1.28, z: -0.3, s: [1, 1, 0.5] });
+  }
+  k.add(body, ring(0.47, 0.035, 18), W.leather, { y: 0.95, z: -0.4, rx: Math.PI / 2 });
+  // Wings: a spar across and hide sails stretched on it, patched.
+  k.rod(body, [-3.4, 0.15, 0.2], [3.4, 0.15, 0.2], 0.08, W.wood);
+  for (const s of [-1, 1]) {
+    k.rod(body, [s * 0.5, 0.15, 1.8], [s * 3.2, 0.15, 0.2], 0.05, W.wood);
+    k.add(body, new THREE.ShapeGeometry(new THREE.Shape([new THREE.Vector2(s * 0.6, -0.4), new THREE.Vector2(s * 3.3, -0.1), new THREE.Vector2(s * 3.0, -1.6), new THREE.Vector2(s * 0.6, -1.8)])), s < 0 ? W.hide : W.hideDark, { y: 0.15, rx: Math.PI / 2 });
+    k.add(body, new THREE.PlaneGeometry(0.6, 0.5), s < 0 ? W.hideDark : W.hide, { x: s * 2.0, y: 0.17, z: 0.9, rx: -Math.PI / 2 });
+  }
+  if (hero) {
+    // A skull on the bow, and bones along the top.
+    k.add(body, ball(0.35, 14, 10), W.bone, { y: 0.2, z: -2.5, s: [1, 0.9, 1] });
+    for (const x of [-0.12, 0.12]) k.add(body, ball(0.08, 8, 6), W.nose, { x, y: 0.25, z: -2.8 });
+    for (let i = 0; i < 5; i++) k.add(body, cone(0.06, 0.5, 5), W.bone, { x: -0.4 + i * 0.2, y: 1.45, z: -0.3, rz: (i - 2) * 0.2 });
+  }
+  // The bonfire.
+  const flame = k.joint("flame", body, 0, 0, 2.2);
+  for (const [x, y, sz] of [[0, 0.1, 1], [0.25, -0.15, 0.7], [-0.25, -0.1, 0.75]] as const) {
+    k.add(flame, cone(0.4 * sz, 1.6 * sz, 7).rotateX(-Math.PI / 2), W.fire, { x, y, z: 0.6 * sz });
+    k.add(flame, cone(0.22 * sz, 1.0 * sz, 6).rotateX(-Math.PI / 2), W.fireCore, { x, y, z: 0.35 * sz });
+  }
+  return k.bake("fighter");
+}
+
+export const fighter = (f: Faction, hero = false) => cloneOf(`fighter:${f}:${hero}`, () => (f === "wooka" ? buildWookaFighter(hero) : buildMarineFighter(hero)));
+
+// A Marine cruiser: an arrowhead hull, black with a white stripe, a stepped deck, gun turrets, a
+// bridge tower, a lit hangar underneath and a bank of engines.
+function buildMarineCruiser() {
+  const k = new Kit(), g = k.root;
+  k.add(g, slab([[0, -37], [6.2, -18], [6.6, 28], [-6.6, 28], [-6.2, -18]], 5, 0.3), M.armour);
+  k.add(g, slab([[0, -37.6], [6.45, -18], [6.85, 28.2], [-6.85, 28.2], [-6.45, -18]], 0.6), M.trim, { y: 0.4 });
+  k.add(g, slab([[0, -25], [4.2, -12], [4.6, 26], [-4.6, 26], [-4.2, -12]], 2.4, 0.2), M.armour, { y: 3.4 });
+  k.add(g, slab([[0, -30], [3.4, -18], [3.6, 24], [-3.6, 24], [-3.4, -18]], 2.2, 0.2), M.armour, { y: -3.2 }); // keel
+  k.add(g, rbox(5, 0.5, 8, 0.2), M.engine, { y: -4.35, z: 4 });                       // hangar mouth
+  k.add(g, slab([[0, -24.5], [1.4, -20], [1.4, 10], [-1.4, 10], [-1.4, -20]], 0.1), M.trim, { y: 4.66 });
+  k.add(g, slab([[0, -25.4], [4.6, -12], [5.0, 26.3], [-5.0, 26.3], [-4.6, -12]], 0.4), M.trim, { y: 2.4 });
+  // The bridge tower, with a lit band of windows.
+  k.add(g, rbox(6, 3, 8, 0.4), M.armour, { y: 6, z: 15 });
+  k.add(g, rbox(4.4, 3, 5, 0.4), M.armour, { y: 9, z: 16 });
+  k.add(g, box(4.45, 0.5, 0.2), M.lens, { y: 9.4, z: 13.45 });
+  k.add(g, box(6.05, 0.4, 8.05), M.trim, { y: 7.0, z: 15 });
+  k.rod(g, [0, 10.5, 17], [0, 15, 17], 0.2, M.dark);
+  k.add(g, cyl(1.4, 0.3, 0.5, 14), M.trim, { y: 12.5, z: 17.5, rx: -0.5 });
+  k.add(g, ball(0.3, 8, 6), M.red, { y: 15.2, z: 17 });
+  // Turrets along the deck.
+  for (const [x, z] of [[0, -14], [0, -4], [2.4, 6], [-2.4, 6]] as const) {
+    k.add(g, cyl(1.2, 1.4, 0.6, 14), M.gun, { x, y: 4.9, z });
+    k.add(g, rbox(1.6, 0.8, 2, 0.2), M.armour, { x, y: 5.5, z });
+    for (const dx of [-0.35, 0.35]) k.rod(g, [x + dx, 5.5, z - 1], [x + dx, 5.5, z - 3.6], 0.14, M.dark);
+  }
+  // Panel lines and running lights.
+  for (let i = 0; i < 6; i++) k.add(g, box(13.4 - Math.max(0, 3 - i) * 2, 0.15, 0.3), M.dark, { y: 2.55, z: -14 + i * 7 });
+  k.add(g, ball(0.5, 8, 6), M.red, { x: -6.7, y: 0.8, z: 27 });
+  k.add(g, ball(0.5, 8, 6), M.green, { x: 6.7, y: 0.8, z: 27 });
+  k.add(g, ball(0.3, 10, 8), M.lens, { y: 1, z: -37.4 });
+  // Engines.
+  for (const [x, y, r] of [[-3.6, 0, 1.6], [0, 0, 2.0], [3.6, 0, 1.6], [-1.8, 3.6, 1.0], [1.8, 3.6, 1.0]] as const) {
+    k.add(g, cyl(r * 1.1, r, 2.5, 16).rotateX(Math.PI / 2), M.pack, { x, y, z: 29.2 });
+    k.add(g, ring(r * 1.1, 0.12, 16), M.trim, { x, y, z: 30.4 });
+  }
+  const flame = k.joint("flame", g, 0, 0, 30.45);
+  for (const [x, y, r] of [[-3.6, 0, 1.6], [0, 0, 2.0], [3.6, 0, 1.6], [-1.8, 3.6, 1.0], [1.8, 3.6, 1.0]] as const) {
+    k.add(flame, cyl(r * 0.95, r * 0.95, 0.05, 16).rotateX(Math.PI / 2), M.engine, { x, y });
+    k.add(flame, cyl(r * 0.5, r * 0.5, 0.05, 12).rotateX(Math.PI / 2), M.engineCore, { x, y, z: 0.05 });
+    k.add(flame, cone(r * 0.9, r * 5, 14).rotateX(-Math.PI / 2), M.plume, { x, y, z: r * 2.5 });
+  }
+  return k.bake("cruiser");
+}
+
+// A Wooka cruiser: a hollowed asteroid with huts on top, logs lashed round it, masts of patched
+// hide sails, a carved Wooka head for a figurehead, and bonfires out the back.
+function buildWookaCruiser() {
+  const k = new Kit(), g = k.root;
+  k.add(g, lumpy(14, 2, 0.18, 4, false), W.rock, { s: [1, 0.7, 1.8] });
+  // Logs lashed along each side.
+  for (const s of [-1, 1]) {
+    k.add(g, cyl(1.4, 1.5, 46, 10).rotateX(Math.PI / 2), W.bark, { x: s * 12.5, y: -2 });
+    k.add(g, cyl(1.1, 1.2, 38, 10).rotateX(Math.PI / 2), W.bark, { x: s * 11.5, y: 1.2, z: 2 });
+    for (const z of [-15, -4, 8, 18]) k.add(g, ring(1.6, 0.25, 12), W.rope, { x: s * 12.5, y: -2, z });
+  }
+  // Huts on top.
+  for (const [x, z, r] of [[-4, -6, 2.4], [3, 2, 3], [-3, 10, 2.2], [4, 14, 1.8]] as const) {
+    k.add(g, cyl(r, r * 1.1, r * 1.2, 10), W.wood, { x, y: 9 + r * 0.6, z });
+    k.add(g, cone(r * 1.5, r * 1.6, 10), W.thatch, { x, y: 9 + r * 1.2 + r * 0.8, z });
+    k.add(g, ball(0.4, 8, 6), W.fire, { x, y: 9 + r * 0.5, z: z - r * 1.05 });       // a lit doorway
+  }
+  // Masts and their sails, patched.
+  for (const [z, h, w] of [[-12, 30, 22], [4, 36, 26], [18, 24, 16]] as const) {
+    k.rod(g, [0, 6, z], [0, 6 + h, z], 0.8, W.wood, 8, 0.6);
+    k.rod(g, [-w / 2 - 1, 6 + h * 0.92, z], [w / 2 + 1, 6 + h * 0.92, z], 0.4, W.wood);
+    k.add(g, new THREE.PlaneGeometry(w, h * 0.7, 4, 4), W.hide, { y: 6 + h * 0.55, z: z + 0.6 });
+    k.add(g, new THREE.PlaneGeometry(w * 0.3, h * 0.25), W.hideDark, { x: w * 0.2, y: 6 + h * 0.4, z: z + 0.7 });
+    k.rod(g, [0, 6 + h, z], [0, 4, z + 22], 0.08, W.rope);                             // stays
+    k.rod(g, [0, 6 + h, z], [0, 4, z - 22], 0.08, W.rope);
+  }
+  // The figurehead: a carved Wooka head, eyes blacked in.
+  k.add(g, ball(5, 16, 12), W.wood, { y: 2, z: -27 });
+  for (const s of [-1, 1]) {
+    k.add(g, ball(1.6, 12, 8), W.eye, { x: s * 1.8, y: 3, z: -31 });
+    k.add(g, ball(1.6, 10, 8), W.wood, { x: s * 3.6, y: 6, z: -26, s: [1, 1, 0.5] });
+  }
+  k.add(g, ball(1, 10, 8), W.nose, { y: 1, z: -32 });
+  for (let i = 0; i < 6; i++) k.add(g, ball(0.45, 8, 6), W.fire, { x: Math.sin(i) * 9, y: 4 + (i % 3), z: -16 + i * 7 }); // lanterns
+  const flame = k.joint("flame", g, 0, 0, 24);
+  for (const [x, y, sz] of [[0, 0, 1], [-5, -2, 0.7], [5, -2, 0.7], [0, 4, 0.6]] as const) {
+    k.add(flame, cone(4.5 * sz, 14 * sz, 8).rotateX(-Math.PI / 2), W.fire, { x, y, z: 5 * sz });
+    k.add(flame, cone(2.5 * sz, 8 * sz, 7).rotateX(-Math.PI / 2), W.fireCore, { x, y, z: 3 * sz });
+  }
+  return k.bake("cruiser");
+}
+
+export const cruiser = (f: Faction) => cloneOf(`cruiser:${f}`, () => (f === "wooka" ? buildWookaCruiser() : buildMarineCruiser()));

@@ -3,7 +3,7 @@
 // boost, S to brake, click to fire.
 import * as THREE from "three";
 import { FACTION_COLORS, type Side, type SpaceBattleResult, type SpaceBattleSpec } from "./contract.ts";
-import { cruiser, fighter } from "./models.ts";
+import { animate, cruiser, fighter } from "./models.ts";
 import { spaceRecorder } from "./replay.ts";
 import { DT, LINE, SPACE_LIMIT, SPACE_STATS, heading, heroCraft, startSpaceBattle, stepSpace } from "./space.ts";
 
@@ -109,7 +109,8 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
     let last = performance.now(), acc = 0, hudAt = 0, raf = 0;
     const rec = spaceRecorder();
     const frame = (now: number) => {
-      acc += Math.min(0.25, (now - last) / 1000);
+      const dt = Math.min(0.25, (now - last) / 1000);
+      acc += dt;
       last = now;
       while (handOver && !b.over) stepSpace(b, null);
       while (acc >= DT && !b.over) {
@@ -128,6 +129,7 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
         m.userData.yaw = u.yaw;
         m.position.set(u.x, u.y, u.z);
         m.rotation.set(u.pitch, u.yaw, u.kind === "cruiser" ? 0 : m.rotation.z * 0.9 + Math.max(-0.9, Math.min(0.9, turn * 12)) * 0.1);
+        animate(m, { t: now / 1000, dt, moved: 0, since: 9 }); // engine fire flickers
         if (u.id !== b.hero.id) {
           dotPts.push(u.x, u.y, u.z);
           col.setHex(FACTION_COLORS[spec.factions[u.side]]);
