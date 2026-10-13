@@ -38,7 +38,11 @@ export default class World {
   while (!ready.test(out) && Date.now() < deadline) { const { value, done } = await reader.read(); if (done) break; out += new TextDecoder().decode(value); }
   const m = host === "box" ? out.match(/serving (http:\/\/[^/\s]+)()/) : out.match(/open (http:\/\/[^/]+)\/\?token=(\S+)/);
   if (!m) throw new Error("host did not start:\n" + out + (await new Response(p.stderr).text()));
-  return { p, url: m[1]!, token: m[2]! };
+  // keep draining both pipes, so a test that misses can print what the host said (#976)
+  let log = out;
+  const drain = async (r: ReadableStreamDefaultReader<Uint8Array>) => { for (;;) { const { value, done } = await r.read(); if (done) return; log += new TextDecoder().decode(value); } };
+  void drain(reader).catch(() => {}); void drain(p.stderr.getReader()).catch(() => {});
+  return { p, url: m[1]!, token: m[2]!, log: () => log };
 }
 
 type Hello = { id: string; name: string; principal: string; slug: string };
@@ -133,11 +137,12 @@ test("generated host: host identity by cookie, guests by passphrase with their o
 });
 
 test("generated host: --listen and --join at launch", async () => {
-  const { p, url } = await launch({ RB_JOIN: "fromenvxxxxxx" }, ["--listen", "0.0.0.0:0"]);
+  const { p, url, log } = await launch({ RB_JOIN: "fromenvxxxxxx" }, ["--listen", "0.0.0.0:0"]);
   try {
     expect(new URL(url).hostname).toBe("0.0.0.0");
     const g = await connect(`http://127.0.0.1:${new URL(url).port}/ws?join=fromenvxxxxxx&uid=g1&v=v1`);
-    expect(g).toMatchObject({ hello: { id: "g1" } });             // a miss prints why the socket closed
+    if (!("hello" in g)) { await Bun.sleep(50); console.error("host log:\n" + log()); }
+    expect(g).toMatchObject({ hello: { id: "g1" } });             // a miss prints why the socket closed, and the host's log above
   } finally { await halt(p); }
 });
 
