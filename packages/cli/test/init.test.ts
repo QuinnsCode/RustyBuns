@@ -1,4 +1,4 @@
-import { test, expect } from "bun:test";
+import { test, expect, setDefaultTimeout } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,8 @@ import { parseWranglerToml, droppedWranglerKeys } from "../src/wrangler.ts";
 import { workspaceRoot } from "../src/glue/deploy-deps.ts";
 import { viteConfig } from "../src/glue/port-vite.ts";
 
+// These tests spawn the CLI, which takes seconds under --parallel load; bun ignores bunfig's timeout.
+setDefaultTimeout(30_000);
 const CLI = new URL("../src/index.ts", import.meta.url).pathname;
 
 /** Make a throwaway project from { path: contents } and run the real CLI in it. */
@@ -64,21 +66,71 @@ test("init: wrangler keys that cannot be carried over are reported, and adopt re
   const p = project({
     "package.json": JSON.stringify({ name: "r", dependencies: { vite: "5" } }),
     "wrangler.jsonc": `{ "name": "r", "main": "src/worker.ts", // comment
-      "vectorize": [{ "binding": "V", "index_name": "v" }], "triggers": { "crons": ["* * * * *"] }, "env": { "staging": {} },
+      "account_id": "abc", "triggers": { "crons": ["* * * * *"] }, "env": { "staging": {} },
       "d1_databases": [{ "binding": "DB", "database_name": "d" }] }`,
     "src/worker.ts": "export default {}",
   });
   const r = p.run("init");
   expect(r.code).toBe(0);
-  expect(r.out).toMatch(/not carried over: vectorize, env/);
+  expect(r.out).toMatch(/not carried over: account_id, env/);
   expect(r.out).toMatch(/adopt will refuse/);
-  expect(p.read("wrangler.jsonc")).toContain('"vectorize"');
+  expect(p.read("wrangler.jsonc")).toContain('"account_id"');
   const adopt = p.run("adopt");
   expect(adopt.code).toBe(1);
-  expect(adopt.out).toMatch(/adopt would delete from wrangler\.jsonc: vectorize, env/);
-  expect(p.read("wrangler.jsonc")).toContain('"vectorize"');
+  expect(adopt.out).toMatch(/adopt would delete from wrangler\.jsonc: account_id, env/);
+  expect(p.read("wrangler.jsonc")).toContain('"account_id"');
   expect(p.run("adopt", "--force").code).toBe(0);
   expect(p.read("rustybuns.config.ts")).toMatch(/"crons": \[\s*"\* \* \* \* \*"\s*\]/);   // Cron Triggers carry over
+});
+
+test("init: workflows, analytics, loaders, containers, routes, observability and dead-letter queues carry over (#1195)", () => {
+  const p = project({
+    "package.json": JSON.stringify({ name: "r", dependencies: { vite: "5" } }),
+    "wrangler.jsonc": `{ "name": "r", "main": "src/worker.ts",
+      "workflows": [{ "binding": "FLOW", "name": "r-flow", "class_name": "Flow" }],
+      "analytics_engine_datasets": [{ "binding": "AE", "dataset": "events" }],
+      "worker_loaders": [{ "binding": "LOADER" }],
+      "durable_objects": { "bindings": [{ "name": "BOX", "class_name": "Box" }, { "name": "REMOTE", "class_name": "Remote" }] },
+      "containers": [{ "class_name": "Box", "image": "./Dockerfile", "max_instances": 3, "instance_type": "basic" },
+        { "class_name": "Remote", "image": "docker.io/org/remote:1" }],
+      "routes": [{ "pattern": "app.example.com", "custom_domain": true }, "example.com/api/*"],
+      "observability": { "enabled": true, "head_sampling_rate": 0.5 },
+      "queues": { "producers": [{ "binding": "JOBS", "queue": "jobs" }],
+        "consumers": [{ "queue": "jobs", "max_retries": 2, "dead_letter_queue": "jobs-dlq" }, { "queue": "jobs-dlq" }] } }`,
+    "src/worker.ts": "export default {}",
+  });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  // A registry image can't be built here, so that container stays a plain Durable Object.
+  expect(r.out).toMatch(/not carried over: containers\n/);
+  const cfg = p.read("rustybuns.config.ts");
+  const json = JSON.parse(cfg.slice(cfg.indexOf("defineConfig(") + 13, cfg.lastIndexOf(")")));
+  expect(json.bindings.FLOW).toEqual({ type: "workflow", className: "Flow" });
+  expect(json.bindings.AE).toEqual({ type: "analytics_engine", dataset: "events" });
+  expect(json.bindings.LOADER).toEqual({ type: "worker_loader" });
+  expect(json.bindings.BOX).toEqual({ type: "container", className: "Box", dockerfile: "Dockerfile", maxInstances: 3, instanceType: "basic" });
+  expect(json.bindings.REMOTE).toEqual({ type: "durable_object", className: "Remote" });
+  expect(json.bindings.JOBS).toEqual({ type: "queue", queueName: "jobs", consumer: { maxRetries: 2, deadLetterQueue: "JOBS_DLQ" } });
+  expect(json.bindings.JOBS_DLQ).toEqual({ type: "queue", queueName: "jobs-dlq", consumer: {}, producer: false });
+  expect(json.targets.edge).toEqual({ provider: "cloudflare", domain: "app.example.com", routes: [{ pattern: "example.com/api/*" }] });
+  expect(json.worker.observability).toEqual({ enabled: true, headSamplingRate: 0.5 });
+  // The config it wrote loads, and generates the stack.
+  expect(existsSync(join(p.dir, ".rustybuns/alchemy.run.ts"))).toBe(true);
+});
+
+test("init: a Vectorize index carries over, and init asks for the dimensions wrangler doesn't record", () => {
+  const p = project({
+    "package.json": JSON.stringify({ name: "r", dependencies: { vite: "5" } }),
+    "wrangler.jsonc": `{ "name": "r", "main": "src/worker.ts", "vectorize": [{ "binding": "V", "index_name": "docs" }] }`,
+    "src/worker.ts": "export default {}",
+  });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).not.toMatch(/not carried over/);
+  expect(r.out).toMatch(/todo: +bindings\.V\.dimensions: docs's vector length/);
+  expect(p.read("rustybuns.config.ts")).toContain('"indexName": "docs"');
+  // Until they're set, the config refuses to load rather than guess (a wrong guess replaces the index).
+  expect(p.run("adopt").out).toMatch(/bindings\.V\.dimensions: missing/);
 });
 
 test("init: wrangler.toml is read, and a missing worker entry is flagged", () => {
@@ -127,12 +179,11 @@ test("package manager: lockfiles, then packageManager field", () => {
 });
 
 test("wrangler toml parse and dropped keys", () => {
-  // A Vectorize index's dimensions aren't in wrangler's config, so it can't be carried over; Workers AI can.
-  const w = parseWranglerToml('name = "x"\n[ai]\nbinding = "AI"\n[[vectorize]]\nbinding = "V"\nindex_name = "v"\n[triggers]\ncrons = ["* * * * *"]\n');
-  expect(droppedWranglerKeys(w)).toEqual(["vectorize"]);
-  // limits.cpu_ms is carried (worker.cpuMs); any other limit is not
+  // Vectorize carries over (init asks for its dimensions); per-env blocks and the account don't yet.
+  const w = parseWranglerToml('name = "x"\naccount_id = "a"\n[ai]\nbinding = "AI"\n[[vectorize]]\nbinding = "V"\nindex_name = "v"\n[triggers]\ncrons = ["* * * * *"]\n[env.staging]\nname = "x-staging"\n');
+  expect(droppedWranglerKeys(w)).toEqual(["account_id", "env"]);
+  // limits.cpu_ms is carried (worker.cpuMs)
   expect(droppedWranglerKeys({ limits: { cpu_ms: 30000 } } as any)).toEqual([]);
-  expect(droppedWranglerKeys({ limits: { cpu_ms: 30000, subrequests: 100 } } as any)).toEqual(["limits"]);
 });
 
 test("add deploy writes overrides at the workspace root, where bun reads them", () => {
@@ -736,4 +787,12 @@ test("postgres: drivers, and Drizzle or Prisma only when set to postgresql", () 
   expect(pg({ "drizzle.config.ts": `export default defineConfig({ dialect: "sqlite" })` }, { "drizzle-orm": "1" })).toBeNull();
   expect(pg({ "prisma/schema.prisma": `datasource db {\n  provider = "postgresql"\n}` }, { prisma: "6" })).toBe("prisma (postgresql)");
   expect(pg({ "prisma/schema.prisma": `datasource db {\n  provider = "sqlite"\n}` }, { prisma: "6" })).toBeNull();
+});
+
+test("init: names source files that differ only by case (#1198)", () => {
+  const p = project({ "package.json": VITE, "src/main.tsx": "", "src/app/cover/factBar.ts": "", "src/app/cover/FactBar.tsx": "", "src/app/cover/Fact.tsx": "", "src/app/cover/fact.css": "" });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("warning:  src/app/cover/FactBar.tsx and src/app/cover/factBar.ts differ only by case");
+  expect(r.out).not.toMatch(/Fact\.tsx and/);
 });

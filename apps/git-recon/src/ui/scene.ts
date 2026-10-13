@@ -12,7 +12,7 @@
 // it as it refills.
 
 import * as THREE from "three";
-import { structureOf, type CodeMap, type Structure } from "../sim/codemap.ts";
+import { structureOf, type CodeMap, type RepoSnapshot, type Structure } from "../sim/codemap.ts";
 import { contourStep } from "../sim/terrain.ts";
 import type { Game, GameEvent } from "../sim/game.ts";
 import { HEIGHT, ROLL_TIME, type Soldier } from "../sim/game.ts";
@@ -190,7 +190,43 @@ const SHADOW_REACH = 45;
 /** How fast poses blend into each other, per second. */
 const BLEND = 14;
 
-export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "average" }): World {
+/** How many metres of ground one printing of the code covers before it repeats. */
+const TEXT_TILE = 44;
+
+/**
+ * The ground's print: the repo's own code, a few lines from each of its biggest files under an
+ * orange header with the file's path, in columns like a newspaper page. Without any text (an
+ * old cached load) it prints the file paths and line counts instead.
+ */
+function codePrint(map: CodeMap, text: RepoSnapshot["text"]): THREE.CanvasTexture {
+  const n = 2048, c = document.createElement("canvas"), g = c.getContext("2d")!;
+  c.width = c.height = n;
+  g.fillStyle = "#ffffff";
+  g.fillRect(0, 0, n, n);
+  const cols = 4, lh = 16, rows = n / lh, colW = n / cols, perCol = rows;
+  const files = text?.length ? text : [{ path: "files", lines: map.blocks.map((b) => `${b.path}  ${b.lines.toLocaleString()} lines`) }];
+  const each = Math.max(4, Math.floor((cols * perCol) / files.length) - 2);
+  const out: { s: string; head: boolean }[] = [];
+  for (const f of files) {
+    out.push({ s: `// ${f.path}`, head: true });
+    for (const l of f.lines.slice(0, each)) out.push({ s: l, head: false });
+    out.push({ s: "", head: false });
+  }
+  g.textBaseline = "top";
+  out.slice(0, cols * perCol).forEach((line, i) => {
+    const col = Math.floor(i / perCol), row = i % perCol;
+    g.font = `${line.head ? 600 : 400} 13px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    g.fillStyle = line.head ? "#e8590c" : "#3a3a3a";
+    g.fillText(line.s, col * colW + 10, row * lh + 1, colW - 16);
+  });
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "average" }, text?: RepoSnapshot["text"]): World {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(PAPER);
   scene.fog = new THREE.Fog(PAPER, 70, 230);
@@ -241,12 +277,15 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
       .replace("#include <common>", "#include <common>\nvarying vec3 vWorld;\nvarying vec3 vN;")
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvWorld = (modelMatrix * vec4(position, 1.0)).xyz;\nvN = normal;");
     sh.fragmentShader = sh.fragmentShader
-      .replace("#include <common>", `#include <common>\nvarying vec3 vWorld;\nvarying vec3 vN;\nuniform float uR;\nuniform float uStep;\nuniform float uWater;`)
+      .replace("#include <common>", `#include <common>\nvarying vec3 vWorld;\nvarying vec3 vN;\nuniform float uR;\nuniform float uStep;\nuniform float uWater;\nuniform sampler2D uText;\nuniform float uTile;`)
       .replace(
         "#include <dithering_fragment>",
         `#include <dithering_fragment>
         // Rock: diagonal hatching, denser the steeper the face, instead of a grey fill.
         float steep = smoothstep(0.3, 0.75, 1.0 - clamp(vN.y, 0.0, 1.0));
+        // The ground is printed with the repo's code; it fades out on rock faces.
+        vec3 print = texture2D(uText, vec2(vWorld.x, -vWorld.z) / uTile).rgb;
+        gl_FragColor.rgb *= mix(vec3(1.0), print, 0.62 * (1.0 - steep * 0.8));
         float hx = (vWorld.x + vWorld.z + vWorld.y) / 0.9, hf = fract(hx);
         float hatch = 1.0 - smoothstep(0.0, fwidth(hx) * 1.2 + 0.12 * (1.0 - steep), min(hf, 1.0 - hf));
         gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.32), hatch * steep * 0.55);
@@ -261,6 +300,8 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     sh.uniforms.uR = { value: R };
     sh.uniforms.uStep = { value: contourStep(lo, hi) };
     sh.uniforms.uWater = { value: map.terrain.water ?? -1e6 };
+    sh.uniforms.uText = { value: codePrint(map, text) };
+    sh.uniforms.uTile = { value: TEXT_TILE };
   };
   const terrainMesh = new THREE.Mesh(geo, mat);
   terrainMesh.receiveShadow = true;
@@ -457,6 +498,122 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     scene.add(ring);
   }
 
+  /** A blast: an orange core, inked smoke billowing out, a ring along the ground, a starburst and a flash of light. */
+  function explode(game: Game, x: number, y: number, z: number, r: number) {
+    const add = (m: THREE.Object3D, kind: "core" | "smoke" | "ring", r: number, life: number, v = [0, 0, 0]) => {
+      scene.add(m);
+      booms.push({ m, t: 0, r, kind, life, vx: v[0]!, vy: v[1]!, vz: v[2]! });
+    };
+    const core = new THREE.Mesh(boomGeo, orangeMat);
+    core.position.set(x, y, z);
+    add(core, "core", r * 0.7, 0.35);
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2 + Math.random(), out = r * (0.8 + Math.random() * 0.8);
+      const puff = inked(new THREE.Mesh(puffBall, smokeMat));
+      puff.position.set(x + Math.cos(a) * r * 0.25, y + 0.2, z + Math.sin(a) * r * 0.25);
+      add(puff, "smoke", r * (0.3 + Math.random() * 0.25), 1.1 + Math.random() * 0.6, [Math.cos(a) * out, 1.5 + Math.random() * 2.5, Math.sin(a) * out]);
+    }
+    const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: INK, transparent: true, depthWrite: false }));
+    ring.position.set(x, game.terrain.height(x, z) + 0.12, z);
+    add(ring, "ring", r, 0.45);
+    pop(x, y + 0.4, z, r * 1.6, 0.12);
+    flare(x, y + 1, z, 260 * r, r * 6, 0.45);
+    throwChips(x, y + 0.2, z, 10, 0.18, r * 1.8, false);
+  }
+
+  // Barrels: build artifacts, orange drums banded in ink.
+  const barrelGeo = new THREE.CylinderGeometry(0.42, 0.42, 1.1, 18).translate(0, 0.55, 0), bandGeo = new THREE.CylinderGeometry(0.435, 0.435, 0.08, 18);
+  const barrels = new Map<number, THREE.Object3D>();
+  function barrel(): THREE.Object3D {
+    const m = inked(new THREE.Mesh(barrelGeo, orangeMat));
+    m.castShadow = true;
+    for (const y of [0.25, 0.85]) {
+      const band = new THREE.Mesh(bandGeo, inkMat);
+      band.position.y = y;
+      m.add(band);
+    }
+    const lid = new THREE.Mesh(new THREE.CircleGeometry(0.3, 16).rotateX(-Math.PI / 2), boxMat);
+    lid.position.y = 1.105;
+    m.add(lid);
+    return m;
+  }
+
+  // The killstreak vehicles, paper white and inked like everything else, with orange trim.
+  const inkMat = new THREE.MeshLambertMaterial({ color: INK });
+  const piece = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, edged = true) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    if (edged) m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 25), edgeInk));
+    return m;
+  };
+  function buggy(): THREE.Group {
+    const g = new THREE.Group();
+    g.add(piece(new THREE.BoxGeometry(1.9, 0.45, 3.2), boxMat, 0, 0.75, 0));
+    g.add(piece(new THREE.BoxGeometry(1.7, 0.3, 0.9), orangeMat, 0, 1.05, -1.1));
+    g.add(piece(new THREE.BoxGeometry(1.95, 0.12, 0.5), inkMat, 0, 0.6, 1.55, false));
+    // The roll cage: two hoops of ink tube.
+    const tube = new THREE.TorusGeometry(0.85, 0.05, 6, 20, Math.PI);
+    for (const z of [-0.2, 0.9]) g.add(piece(tube, inkMat, 0, 0.95, z, false));
+    const wheels: THREE.Object3D[] = [];
+    const wheelGeo = new THREE.CylinderGeometry(0.46, 0.46, 0.38, 16).rotateZ(Math.PI / 2), hubGeo = new THREE.BoxGeometry(0.4, 0.12, 0.6);
+    for (const [x, z] of [[-1.05, -1.1], [1.05, -1.1], [-1.05, 1.15], [1.05, 1.15]] as const) {
+      const w = inked(new THREE.Mesh(wheelGeo, inkMat));
+      w.position.set(x, 0.46, z);
+      w.castShadow = true;
+      w.add(new THREE.Mesh(hubGeo, boxMat));
+      wheels.push(w);
+      g.add(w);
+    }
+    // The gun on the roll bar turns to where you aim.
+    const gun = new THREE.Group();
+    gun.position.set(0, 1.85, 0.3);
+    gun.add(piece(new THREE.BoxGeometry(0.22, 0.22, 0.5), boxMat, 0, 0, 0));
+    gun.add(piece(new THREE.CylinderGeometry(0.05, 0.05, 1, 10).rotateX(Math.PI / 2), inkMat, 0, 0, -0.7, false));
+    g.add(gun);
+    g.userData = { wheels, gun };
+    return g;
+  }
+  function heli(): THREE.Group {
+    const g = new THREE.Group(), body = new THREE.Group();
+    body.position.y = 1.2;
+    g.add(body);
+    const hull = inked(new THREE.Mesh(new THREE.CapsuleGeometry(0.85, 1.9, 6, 18).rotateX(Math.PI / 2), boxMat));
+    hull.castShadow = true;
+    body.add(hull);
+    const glass = new THREE.Mesh(new THREE.SphereGeometry(0.72, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(-Math.PI / 2 - 0.4), new THREE.MeshStandardMaterial({ color: 0x16191c, roughness: 0.15, metalness: 0.6 }));
+    glass.position.set(0, 0.15, -1.25);
+    body.add(glass);
+    body.add(piece(new THREE.CylinderGeometry(0.16, 0.28, 3.6, 10).rotateX(Math.PI / 2), boxMat, 0, 0.25, 2.9));
+    body.add(piece(new THREE.BoxGeometry(0.08, 1, 0.6), orangeMat, 0, 0.7, 4.5));
+    for (const side of [-1, 1]) {
+      body.add(piece(new THREE.CylinderGeometry(0.05, 0.05, 2.8, 8).rotateX(Math.PI / 2), inkMat, side * 0.75, -1.1, 0, false));
+      body.add(piece(new THREE.BoxGeometry(0.05, 0.5, 0.05), inkMat, side * 0.75, -0.85, -0.7, false));
+      body.add(piece(new THREE.BoxGeometry(0.05, 0.5, 0.05), inkMat, side * 0.75, -0.85, 0.7, false));
+      // Rocket pods on stub wings.
+      body.add(piece(new THREE.BoxGeometry(0.9, 0.08, 0.4), boxMat, side * 1.1, 0, 0));
+      body.add(piece(new THREE.CylinderGeometry(0.17, 0.17, 0.8, 10).rotateX(Math.PI / 2), orangeMat, side * 1.45, -0.12, -0.1));
+    }
+    // The chin gun.
+    body.add(piece(new THREE.CylinderGeometry(0.06, 0.06, 0.9, 8).rotateX(Math.PI / 2), inkMat, 0, -0.65, -1.6, false));
+    const rotor = new THREE.Group();
+    rotor.position.set(0, 1.05, 0);
+    rotor.add(piece(new THREE.CylinderGeometry(0.1, 0.1, 0.3, 8), inkMat, 0, -0.15, 0, false));
+    for (const a of [0, Math.PI / 2]) {
+      const blade = piece(new THREE.BoxGeometry(7.5, 0.04, 0.28), inkMat, 0, 0, 0, false);
+      blade.rotation.y = a;
+      rotor.add(blade);
+    }
+    body.add(rotor);
+    const tail = new THREE.Group();
+    tail.position.set(0.12, 0.6, 4.6);
+    tail.add(piece(new THREE.BoxGeometry(0.03, 1.3, 0.14), inkMat, 0, 0, 0, false));
+    body.add(tail);
+    g.userData = { body, rotor, tail };
+    return g;
+  }
+  const rides = new Map<number, THREE.Group>();
+
   const tmp = new THREE.Vector3();
   return {
     scene,
@@ -503,8 +660,9 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         b.shell.visible = s.alive && (b.flash > 0.02 || b.sweep >= 0);
         setGun(fig, s.weapon);
         b.down = s.alive ? -1 : b.down < 0 ? 0 : b.down + dt;
-        // Out of view in a battle, or left it: not drawn.
-        fig.root.visible = !s.hidden && !s.gone && (s.alive || b.down < SURRENDER + SINK);
+        const ride = s.vehicle >= 0 ? game.vehicles.find((v) => v.id === s.vehicle) : undefined;
+        // Out of view in a battle, left it, or up in a helicopter: not drawn.
+        fig.root.visible = !s.hidden && !s.gone && (s.alive || b.down < SURRENDER + SINK) && ride?.kind !== "heli";
         fig.root.position.set(s.x, s.y - Math.max(0, b.down - SURRENDER) * 2.2, s.z);
         fig.root.rotation.y = s.yaw;
         b.tag.visible = s.alive && s.tagged > 0;
@@ -513,7 +671,8 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         // How it's moving against the way it faces, so it strafes and backs up rather than moonwalks.
         const fx = -Math.sin(s.yaw), fz = -Math.cos(s.yaw);
         pose(fig, {
-          pose: s.alive ? (s.burn > 0 && s.grounded && s.roll <= 0 ? "star" : poseOf(s)) : "surrender",
+          pose: !s.alive ? "surrender" : ride ? "kneel" : s.burn > 0 && s.grounded && s.roll <= 0 ? "star" : poseOf(s),
+          reload: s.reload > 0 ? 1 - s.reload / WEAPONS[s.weapon].reload : 0,
           speed: Math.hypot(s.vx, s.vz),
           forward: s.vx * fx + s.vz * fz,
           side: s.vx * -fz + s.vz * fx,
@@ -547,6 +706,39 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         }
       }
       for (const [id, m] of stashes) if (!have.has(id)) scene.remove(m), stashes.delete(id);
+      have.clear();
+      for (const br of game.barrels) {
+        have.add(br.id);
+        let m = barrels.get(br.id);
+        if (!m) barrels.set(br.id, (m = barrel())), m.position.set(br.x, br.y, br.z), scene.add(m);
+        // Lit: it shakes before it goes.
+        if (br.fuse >= 0) m.rotation.z = Math.sin(game.time * 80) * 0.08;
+      }
+      for (const [id, m] of barrels) if (!have.has(id)) scene.remove(m), barrels.delete(id);
+      have.clear();
+      const you1 = game.you();
+      for (const v of game.vehicles) {
+        have.add(v.id);
+        let m = rides.get(v.id);
+        if (!m) rides.set(v.id, (m = v.kind === "buggy" ? buggy() : heli())), m.rotation.order = "YXZ", scene.add(m);
+        m.position.set(v.x, v.y, v.z);
+        m.rotation.y = v.yaw;
+        const u = m.userData, driven = v.driver >= 0;
+        // The gun points along the driver's aim, against the vehicle's heading.
+        const aimYaw = driven ? you1.yaw - v.yaw : 0, aimPitch = driven ? you1.pitch : 0;
+        if (v.kind === "buggy") {
+          for (const w of u.wheels as THREE.Object3D[]) w.rotation.x = -v.odo / 0.46;
+          (u.gun as THREE.Object3D).rotation.set(aimPitch, aimYaw, 0, "YXZ");
+        } else {
+          const f = { x: -Math.sin(v.yaw), z: -Math.cos(v.yaw) }, ahead = v.vx * f.x + v.vz * f.z, side = v.vx * -f.z + v.vz * f.x;
+          // It noses down to fly forward and banks into a strafe; the rotor spins up once someone's in.
+          (u.body as THREE.Object3D).rotation.set(-ahead * 0.018, 0, -side * 0.02);
+          const spin = driven || v.y > game.terrain.height(v.x, v.z) + 0.5 ? 34 : 4;
+          (u.rotor as THREE.Object3D).rotation.y += spin * dt;
+          (u.tail as THREE.Object3D).rotation.x += spin * 1.5 * dt;
+        }
+      }
+      for (const [id, m] of rides) if (!have.has(id)) scene.remove(m), rides.delete(id);
       const o = game.objective;
       if (!ring && o.kind === "carry") placeRing(map.spawn.x, map.spawn.z, HEAD_RADIUS);
       if (!ring && o.kind === "defend") placeRing(o.x, o.z, BRANCH_RADIUS);
@@ -636,25 +828,7 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     },
     event(game, e) {
       if (e.kind === "boom") {
-        const add = (m: THREE.Object3D, kind: "core" | "smoke" | "ring", r: number, life: number, v = [0, 0, 0]) => {
-          scene.add(m);
-          booms.push({ m, t: 0, r, kind, life, vx: v[0]!, vy: v[1]!, vz: v[2]! });
-        };
-        const core = new THREE.Mesh(boomGeo, orangeMat);
-        core.position.set(e.x, e.y, e.z);
-        add(core, "core", e.r * 0.7, 0.35);
-        for (let i = 0; i < 7; i++) {
-          const a = (i / 7) * Math.PI * 2 + Math.random(), out = e.r * (0.8 + Math.random() * 0.8);
-          const puff = inked(new THREE.Mesh(puffBall, smokeMat));
-          puff.position.set(e.x + Math.cos(a) * e.r * 0.25, e.y + 0.2, e.z + Math.sin(a) * e.r * 0.25);
-          add(puff, "smoke", e.r * (0.3 + Math.random() * 0.25), 1.1 + Math.random() * 0.6, [Math.cos(a) * out, 1.5 + Math.random() * 2.5, Math.sin(a) * out]);
-        }
-        const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: INK, transparent: true, depthWrite: false }));
-        ring.position.set(e.x, game.terrain.height(e.x, e.z) + 0.12, e.z);
-        add(ring, "ring", e.r, 0.45);
-        pop(e.x, e.y + 0.4, e.z, e.r * 1.6, 0.12);
-        flare(e.x, e.y + 1, e.z, 260 * e.r, e.r * 6, 0.45);
-        throwChips(e.x, e.y + 0.2, e.z, 10, 0.18, e.r * 1.8, false);
+        explode(game, e.x, e.y, e.z, e.r);
       } else if (e.kind === "impact") {
         throwChips(e.x, e.y, e.z, 3, 0.07, 3.5, false);
         pop(e.x, e.y, e.z, 0.45, 0.06);
@@ -680,12 +854,18 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         const n = Math.min(28, 8 + Math.round(e.w * e.d * e.h));
         throwChips(e.x, e.y + e.h * 0.4, e.z, n, Math.min(0.6, 0.15 + e.w * 0.1), 5, true);
         throwChips(e.x, e.y + 0.3, e.z, 10, 0.25, 2.5, false);
+        // And it goes up: the bigger the file, the bigger the bang.
+        explode(game, e.x, e.y + Math.min(1.5, e.h * 0.3), e.z, Math.min(3.5, 1.2 + Math.cbrt(e.w * e.d * Math.max(1, e.h)) * 0.6));
+      } else if (e.kind === "vehicleHit") {
+        const v = game.vehicles.find((o) => o.id === e.id);
+        if (v) throwChips(v.x, v.y + 1, v.z, 3, 0.08, 4, true);
       } else if (e.kind === "fire") {
         const s = game.soldiers[e.id], b = bodies.get(e.id);
         if (!s) return;
         if (b) b.kick = Math.min(1.2, b.kick + Math.min(1, WEAPONS[e.weapon].kick * 12 + 0.3));
         if (e.weapon === "clean") return;
-        const at = game.muzzle(s), big = WEAPONS[e.weapon].splash > 0 || e.weapon === "add" || e.weapon === "rebase";
+        const ride = game.vehicles.find((v) => v.id === s.vehicle);
+        const at = ride ? { x: ride.x, y: ride.y + (ride.kind === "buggy" ? 1.9 : 0.6), z: ride.z } : game.muzzle(s), big = WEAPONS[e.weapon].splash > 0 || e.weapon === "add" || e.weapon === "rebase";
         pop(at.x, at.y, at.z, big ? 0.9 : 0.55, 0.05);
         flare(at.x, at.y, at.z, big ? 40 : 18, big ? 9 : 6, 0.08);
       }

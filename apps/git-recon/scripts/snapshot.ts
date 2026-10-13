@@ -5,11 +5,11 @@
 //
 // Only what git tracks at HEAD, only source-ish text, the biggest files first. Alongside them,
 // what src/sim/intel.ts works out: which folders import which, and the last hundred commits'
-// churn per file and how much of it agents did. src/levels/github.ts does the same for a live repo.
+// churn per file and how much of it agents did, and the opening lines of the biggest scripts for the ground. src/levels/github.ts does the same for a live repo.
 
 import { resolve } from "node:path";
 import { folderOf } from "../src/sim/codemap.ts";
-import { folderLinks, isAgentCommit, isScript, MAX_FILES, SKIP, SOURCE, tally, workspacePackages } from "../src/sim/intel.ts";
+import { excerpts, folderLinks, isAgentCommit, isScript, MAX_FILES, SKIP, SOURCE, tally, workspacePackages } from "../src/sim/intel.ts";
 
 const [dir, name, max = String(MAX_FILES)] = process.argv.slice(2);
 if (!dir || !name) {
@@ -43,5 +43,5 @@ const commits = log.split("\x01").filter(Boolean).map((c) => {
 
 const kept = tally(files.slice(0, Number(max)), commits).sort((a, b) => a.path.localeCompare(b.path));
 const out = resolve(import.meta.dir, `../src/levels/repos/${name}.json`);
-await Bun.write(out, JSON.stringify({ name, ref, files: kept, links: folderLinks(sources, workspacePackages(manifests), new Set(files.map((f) => folderOf(f.path)))) }) + "\n");
+await Bun.write(out, JSON.stringify({ name, ref, files: kept, links: folderLinks(sources, workspacePackages(manifests), new Set(files.map((f) => folderOf(f.path)))), text: excerpts(sources) }) + "\n");
 console.log(`${name}@${ref}: ${kept.length} of ${files.length} files, ${commits.length} commits -> ${out}`);

@@ -12,10 +12,12 @@ import { addWin, winKey } from "../sim/heads.ts";
 import type { ZoneData } from "../sim/terrain.ts";
 import { BATTLE_SECONDS, FFA_SCORE, Game, scopeSway, SHIELD_DELAY, stanceOf, TEAM_SCORE, type GameEvent, type Input, type Mode } from "../sim/game.ts";
 import { Mirror } from "../net/mirror.ts";
-import { NEXT_ROUND } from "../net/room.ts";
+import { levelOf, NEXT_ROUND } from "../net/room.ts";
 import type { FromWorld, RosterEntry } from "../net/wire.ts";
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
-import { KEYS, keyLabel, ORDER, WEAPONS, type WeaponId } from "../sim/weapons.ts";
+import { KEYS, keyLabel, WEAPONS, type WeaponId } from "../sim/weapons.ts";
+import { isRole, nextRole, ROLE_ORDER, ROLES, type RoleId } from "../sim/roles.ts";
+import { STREAKS, VEHICLES, vehicleName } from "../sim/vehicles.ts";
 import { weaponIcon } from "./icons.ts";
 import { FIELD, place, play, VOICES } from "./audio.ts";
 import { BUILDS, type BuildId } from "./figure.ts";
@@ -155,10 +157,17 @@ $("place").onsubmit = async (e) => {
 // Remembered in this browser; a blocked storage just means the defaults every time.
 const saved = (k: string) => { try { return localStorage.getItem(`git-recon:${k}`); } catch { return null; } };
 const save = (k: string, v: string) => { try { localStorage.setItem(`git-recon:${k}`, v); } catch {} };
-const savedBuild = saved("build");
+const savedBuild = saved("build"), savedRole = saved("role");
 const me = {
   build: (savedBuild && savedBuild in BUILDS ? savedBuild : "average") as BuildId,
   head: headById(saved("head") ?? "ball"),
+  /** What you'll carry next round: set on the menu, the results screen, or with N mid-fight for your next life. */
+  role: (isRole(savedRole) ? savedRole : "committer") as RoleId,
+};
+const pickRole = (r: RoleId) => {
+  me.role = r, save("role", r);
+  if (current && current.game.status === "playing") current.game.nextRole = r === current.game.role ? null : r;
+  drawRoles();
 };
 if (!isOpen(me.head, wins.length)) me.head = HEADS[0]!;
 
@@ -184,15 +193,24 @@ function showHeads() {
 }
 showHeads();
 
+/** The role pickers, on the menu and the results screen: one button per role, its kit as the tooltip. */
+function drawRoles() {
+  for (const box of [$("roles"), $("results-roles")]) {
+    box.innerHTML = "";
+    radios(box, ROLE_ORDER, (r) => `${ROLES[r].name}: ${ROLES[r].blurb}`, (b, r) => (b.textContent = ROLES[r].name), (r) => r === me.role, pickRole);
+  }
+}
+drawRoles();
+
 function start(def: LevelDef) {
   const mission = missionFor(def.id), repo = chosen ?? def.repo;
-  const game = Game.fromRepo(def.ground(), repo, def.seed, mission);
+  const game = Game.fromRepo(def.ground(), repo, def.seed, mission, undefined, me.role);
   begin(def, repo, game, briefing(mission));
 }
 
 /** Into a level: the scene, the camera behind you, the HUD. On your own or in a battle (net). */
 function begin(def: LevelDef, repo: RepoSnapshot, game: Game, brief: string, net?: Net) {
-  const world = buildWorld(game.map, { head: me.head, build: me.build });
+  const world = buildWorld(game.map, { head: me.head, build: me.build }, repo.text);
   current = { def, repo, game, world, started: performance.now(), net };
   if (net) showLooks(net);
   const you = game.you();
@@ -225,9 +243,25 @@ $("back").onclick = toMenu;
 
 /* ---------------- battles ---------------- */
 
-/** What the host this page runs on says about itself: the desktop app is "git-recon", a plain web page has none. */
-let info: { app?: string; version?: string } | null = null;
-void fetch("/__rb/info").then((r) => (r.ok ? r.json() : null)).then((i) => (info = i)).catch(() => {});
+/** What the host this page runs on says about itself: the desktop app is "git-recon", a plain web page has none, online (src/edge/worker.ts) says so. */
+let info: { app?: string; version?: string; online?: boolean } | null = null;
+void fetch("/__rb/info").then((r) => (r.ok ? r.json() : null)).then((i) => (info = i, i?.online && goOnline())).catch(() => {});
+
+// No 0/O or 1/I, so a code read out loud comes out right.
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const roomCode = () => Array.from(crypto.getRandomValues(new Uint32Array(6)), (n) => CODE_CHARS[n % CODE_CHARS.length]).join("");
+
+/** Online, a battle is a room code: Host makes one, Join takes one (or ?room= from a friend's link). */
+function goOnline() {
+  $("battle-label").textContent = "Battle: many players in one repo, online";
+  $("battle-host").title = "Open a battle on this level and repo, with a code to send friends";
+  $("battle-join").title = "Join a friend's battle by its code";
+  const code = $<HTMLInputElement>("battle-addr");
+  code.placeholder = "Room code", code.setAttribute("aria-label", "The battle's room code");
+  code.value = new URLSearchParams(location.search).get("room")?.toUpperCase() ?? "";
+  $("battle-pass").hidden = true;
+}
+const roomLink = (room: string) => `${location.origin}${location.pathname}?room=${room}`;
 
 const MODES: { id: Mode; name: string; tip: string }[] = [
   { id: "coop", name: "Side by side", tip: "Everyone against the guards, on the level's mission" },
@@ -238,6 +272,8 @@ let mode: Mode = store.get<Mode>("mode", "ffa");
 radios($("battle-mode"), MODES, (m) => m.tip, (b, m) => (b.textContent = m.name), (m) => m.id === mode, (m) => (mode = m.id, store.set("mode", m.id)));
 const levelPick = $<HTMLSelectElement>("battle-level");
 for (const l of LEVELS) levelPick.add(new Option(l.name, l.id));
+// Anywhere: the lat/long in the box above, its ground read here and sent with the setup.
+levelPick.add(new Option("Anywhere (the lat/long above)", "place"));
 levelPick.value = store.get("battle-level", LEVELS[0]!.id);
 levelPick.onchange = () => store.set("battle-level", levelPick.value);
 const nameBox = $<HTMLInputElement>("battle-name");
@@ -268,10 +304,34 @@ function tabId(): string {
 /** Your look and name for the world, on the socket's query. */
 const who = () => ({ uid: tabId(), name: myName(), head: me.head.id, build: me.build });
 
+/** The level picked for a battle, and a lat/long one's ground; throws with what to fix. */
+async function battleLevel(): Promise<{ def: LevelDef; zone?: ZoneData }> {
+  const def = LEVELS.find((l) => l.id === levelPick.value);
+  if (def) return { def };
+  const at = parsePlace($<HTMLInputElement>("place-at").value);
+  if (!at) throw new Error("Put a latitude, longitude in the box above, like 36.0566, -112.1251.");
+  battleStatus("Reading the ground (a few seconds the first time)…");
+  const zone = await groundFor(at.lat, at.lon);
+  return { def: placeLevel(zone), zone };
+}
+
 $("battle-host").onclick = async () => {
   battleStatus("");
-  const def = LEVELS.find((l) => l.id === levelPick.value)!;
+  let picked: Awaited<ReturnType<typeof battleLevel>>;
+  try {
+    picked = await battleLevel();
+  } catch (err) {
+    return battleStatus(err instanceof Error ? err.message : String(err), true);
+  }
+  const { def, zone } = picked;
   let hosting: string | null = null;
+  if (info?.online) {
+    const room = roomCode();
+    history.replaceState(null, "", `?room=${room}`);
+    const b = new Battle("host", "/ws", { ...who(), room });
+    b.setup({ level: def.id, mode, repo: chosen ?? def.repo });
+    return connect(b, `${room} · ${roomLink(room)}`);
+  }
   try {
     // The desktop app opens its world to the LAN; a dev page (scripts/battle.ts behind Vite) just uses it.
     if (info?.app === "git-recon") {
@@ -285,7 +345,7 @@ $("battle-host").onclick = async () => {
     return battleStatus(`Couldn't open a battle to the LAN: ${(err as Error).message}`, true);
   }
   const b = new Battle("host", "/ws", who());
-  b.setup({ level: def.id, mode, repo: chosen ?? def.repo });
+  b.setup({ level: def.id, mode, repo: chosen ?? def.repo, ...(zone ? { zone } : {}) });
   connect(b, hosting);
 };
 
@@ -293,6 +353,12 @@ $("battle").onsubmit = (e) => {
   e.preventDefault();
   battleStatus("");
   const addr = $<HTMLInputElement>("battle-addr").value.trim().replace(/^\w+:\/\//, "").replace(/\/.*$/, "");
+  if (info?.online) {
+    const room = addr.toUpperCase();
+    if (!/^[A-Z0-9]{4,8}$/.test(room)) return battleStatus("Type the room code your friend sent, like K7QX2M.", true);
+    history.replaceState(null, "", `?room=${room}`);
+    return connect(new Battle("guest", "/ws", { ...who(), room }), null);
+  }
   store.set("addr", addr);
   // No address: this machine's own battle (a second tab, or back into the one you host).
   if (!addr) return connect(new Battle("host", "/ws", who()), null);
@@ -306,7 +372,7 @@ function connect(b: Battle, hosting: string | null) {
     if (m.t === "wait") return battleStatus("In. Waiting for the host to pick the battle…");
     if (m.t === "welcome") {
       // A new round is a new welcome: a fresh mirror and scene, the same socket.
-      const def = LEVELS.find((l) => l.id === m.setup.level)!, mirror = new Mirror(m);
+      const def = levelOf(m.setup), mirror = new Mirror(m);
       const brief = m.setup.mode === "coop" ? briefing(missionFor(def.id)) : MODES.find((x) => x.id === m.setup.mode)!.tip;
       battleStatus("");
       return begin(def, m.setup.repo, mirror.game, brief, { battle: b, mirror, hosting, roster: mirror.roster });
@@ -322,7 +388,7 @@ function connect(b: Battle, hosting: string | null) {
 
 function leaveBattle(net: Net) {
   net.battle.close();
-  if (net.hosting) void fetch("/__rb/host", { method: "POST", body: JSON.stringify({ join: null, listen: { hostname: "127.0.0.1" } }) }).catch(() => {});
+  if (net.hosting && !info?.online) void fetch("/__rb/host", { method: "POST", body: JSON.stringify({ join: null, listen: { hostname: "127.0.0.1" } }) }).catch(() => {});
 }
 
 /** Each player's head and build on their soldier. */
@@ -350,7 +416,7 @@ function board(game: Game, net: Net) {
 
 const keys = new Set<string>();
 const look = { yaw: 0, pitch: 0 };
-let fire = false, zoom = false, jump = false, roll = false, prone = false, pick: WeaponId | undefined;
+let fire = false, zoom = false, jump = false, roll = false, prone = false, reload = false, use = false, pick: WeaponId | undefined;
 /** How hard the camera's shaking: blasts near you and heavy guns going off. */
 let shake = 0;
 
@@ -362,8 +428,12 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "KeyZ" && !e.repeat) prone = !prone;
   if (e.code === "KeyC" || e.code === "ControlLeft") prone = false;
   if (e.code === "ShiftLeft" || e.code === "ShiftRight") roll = true;
-  const slot = KEYS.indexOf(e.code);
-  if (slot >= 0 && slot < ORDER.length) pick = ORDER[slot];
+  // The number keys pick from what your role carries, in its order.
+  const slot = KEYS.indexOf(e.code), kit = current.game.you().kit;
+  if (slot >= 0 && slot < kit.length) pick = kit[slot];
+  if (e.code === "KeyR" && !e.repeat) reload = true;
+  if (e.code === "KeyE" && !e.repeat) use = true;
+  if (e.code === "KeyN" && !e.repeat && !current.net && current.game.status === "playing") pickRole(nextRole(current.game.nextRole ?? current.game.role ?? me.role));
   if (e.code === "Escape" && current.game.status !== "playing") toMenu();
   // Out of a battle: Q, once the mouse is let go.
   if (e.code === "KeyQ" && current.net && document.pointerLockElement !== canvas) toMenu();
@@ -393,7 +463,7 @@ window.addEventListener("mousemove", (e) => {
 });
 window.addEventListener("wheel", (e) => {
   if (!current) return;
-  const you = current.game.you(), have = ORDER.filter((w) => you.ammo[w] !== 0);
+  const you = current.game.you(), have = you.kit.filter((w) => you.ammo[w] !== 0);
   const i = have.indexOf(you.weapon);
   pick = have[(i + (e.deltaY > 0 ? 1 : -1) + have.length) % have.length];
 });
@@ -443,8 +513,10 @@ function placeCamera(game: Game, dt: number) {
   const ease = (rate: number) => (cam.ready ? 1 - Math.exp(-rate * dt) : 1);
   const follow = ease(18);
   cam.x += (you.x - cam.x) * follow, cam.y += (you.y - cam.y) * ease(12), cam.z += (you.z - cam.z) * follow;
-  cam.height += ((you.prone ? 0.75 : you.crouch ? 1.3 : 1.7) - cam.height) * ease(9);
-  cam.back += ((sniping ? 0.4 : you.prone ? 4 : 5.2) - cam.back) * ease(sniping ? 30 : 8);
+  // In a vehicle the camera sits higher and further back, so you see it and round it.
+  const ride = game.vehicles.find((v) => v.id === you.vehicle);
+  cam.height += ((ride ? (ride.kind === "heli" ? 3.2 : 2.2) : you.prone ? 0.75 : you.crouch ? 1.3 : 1.7) - cam.height) * ease(9);
+  cam.back += ((ride ? (ride.kind === "heli" ? 13 : 8.5) : sniping ? 0.4 : you.prone ? 4 : 5.2) - cam.back) * ease(sniping ? 30 : 8);
   if (cam.ready && !you.grounded && you.vy < -6) cam.dip = Math.min(0.35, cam.dip + dt * 0.8);
   cam.dip *= Math.exp(-dt * (you.grounded ? 6 : 0.5));
   const run = Math.min(1, Math.hypot(you.vx, you.vz) / 7.5);
@@ -546,15 +618,33 @@ function hud(game: Game, aimingAt: Block | null) {
   $("progress").title = tip;
   // A battle won on downs counts down.
   $("clock").textContent = clock(game.mode && game.mode !== "coop" ? Math.max(0, BATTLE_SECONDS - game.time) : game.time);
-  $("stance").textContent = game.mode && !you.alive ? "down: back in a moment" : you.burn > 0 ? "on fire: roll!" : you.prone ? "prone" : you.crouch ? "crouched" : "";
-  $("stance").classList.toggle("hot", you.burn > 0);
-  // Weapons you have; git reset --hard only once you've found one. Every one is git, so the
-  // row is its drawing and the command without "git".
-  $("weapons").innerHTML = ORDER.map((w, i) => {
-    const a = you.ammo[w];
-    if (w === "reset" && a === 0) return "";
-    return `<li class="${w === you.weapon ? "on" : ""}${a === 0 ? " out" : ""}"><kbd>${keyLabel(KEYS[i]!)}</kbd>${weaponIcon(w)}<code>${WEAPONS[w].cmd.replace(/^git /, "")}</code><span>${a < 0 ? "∞" : a}</span></li>`;
-  }).join("");
+  const ride = game.vehicles.find((v) => v.id === you.vehicle), near = !ride && you.alive ? game.boardable(you) : null;
+  $("stance").textContent = game.mode && !you.alive ? "down: back in a moment" : ride ? `${vehicleName(ride.kind)} ${Math.ceil((ride.hp / ride.maxHp) * 100)}%` : you.burn > 0 ? "on fire: roll!" : you.reload > 0 ? "reloading" : you.prone ? "prone" : you.crouch ? "crouched" : "";
+  $("stance").classList.toggle("hot", you.burn > 0 || (!!ride && ride.hp < ride.maxHp * 0.3));
+  $("prompt").textContent = near ? `E · get in the ${vehicleName(near.kind)}` : ride ? `E · get out${ride.kind === "heli" ? " · Space up · C down · right click rockets" : ""}` : "";
+  // Kills, and what the next streak brings.
+  const next = STREAKS.find((st) => st.kills > game.kills);
+  $("kills").textContent = `${game.kills} kills${next ? ` · ${vehicleName(next.kind)} at ${next.kills}` : ""}`;
+  const role = game.role ? ROLES[game.role].name : "", after = game.nextRole ? ROLES[game.nextRole].name : "";
+  $("role").textContent = after ? `${role} · next life: ${after}` : role;
+  $("role").title = "N picks your role for your next life";
+  // What you carry: the magazine and what's left in all. In a vehicle, its guns. Every one is
+  // git, so a row is its drawing and the command without "git".
+  const row = (w: WeaponId) => `${weaponIcon(w)}<code>${WEAPONS[w].cmd.replace(/^git /, "")}</code>`;
+  if (ride) {
+    const spec = VEHICLES[ride.kind];
+    $("weapons").innerHTML = `<li class="on"><kbd title="click">L</kbd>${row(spec.gun)}<span>∞</span></li>` +
+      (spec.rockets ? `<li class="on"><kbd title="right click">R</kbd>${row(spec.rockets)}<span>∞</span></li>` : "");
+  } else {
+    $("weapons").innerHTML = you.kit.map((w, i) => {
+      const a = you.ammo[w], l = you.loaded[w];
+      return `<li class="${w === you.weapon ? "on" : ""}${a === 0 ? " out" : ""}"><kbd>${KEYS[i] ? keyLabel(KEYS[i]) : ""}</kbd>${row(w)}<span>${l}<small>/${a < 0 ? "∞" : a}</small></span></li>`;
+    }).join("");
+  }
+  // The crosshair rings round while a magazine goes in.
+  const c = $("crosshair");
+  c.classList.toggle("reloading", you.reload > 0);
+  c.style.setProperty("--reload", `${you.reload > 0 ? 1 - you.reload / WEAPONS[you.weapon].reload : 0}`);
   // What's under the crosshair, and how much of it is left.
   $("target").textContent = aimingAt ? `${aimingAt.path} · ${aimingAt.lines.toLocaleString()} lines` : "";
 }
@@ -583,6 +673,7 @@ function results(game: Game) {
     wins = got.wins, store.set("wins", wins);
     if (got.head) $("results-body").textContent += ` Unlocked a head: ${got.head.name.toLowerCase()}.`;
   }
+  drawRoles();
   $("results").hidden = false;
 }
 
@@ -629,20 +720,21 @@ function frame(now: number) {
     yaw: look.yaw,
     pitch: look.pitch,
     jump, roll, crouch: keys.has("KeyC") || keys.has("ControlLeft"), prone,
+    reload, use, up: keys.has("Space"), down: keys.has("KeyC") || keys.has("ControlLeft"),
     scope: zoom,
     fire: fire && document.pointerLockElement === canvas,
     aim: { x: aim.point.x, y: aim.point.y, z: aim.point.z },
     weapon: pick,
   };
   // Automatic guns fire while held; everything else once per click.
-  if (!WEAPONS[you.weapon].auto && fire) fire = false;
-  jump = roll = false, pick = undefined;
+  if (!WEAPONS[you.weapon].auto && fire && you.vehicle < 0) fire = false;
+  jump = roll = reload = use = false, pick = undefined;
   shake *= Math.exp(-dt * 9);
   let events: GameEvent[];
   if (net) {
     // A battle: your soldier moves now, the world says what happened; a roster change re-dresses everyone.
     net.mirror.frame(dt, input);
-    net.battle.input(input, now);
+    net.battle.input(input, now, net.mirror.acked);
     events = net.mirror.take();
     if (net.roster !== net.mirror.roster) showLooks(net);
     if (!$("board").hidden) board(game, net);
@@ -672,10 +764,12 @@ function frame(now: number) {
       const c = game.map.compounds[e.compound]!;
       banner(`${c.folder} merged`);
       feed(`merged ${c.folder}: crates in the yard`);
-    } else if (e.kind === "pickup") e.id === me && feed(e.item === "health" ? "health crate: +40 hp" : e.item === "ammo" ? "ammo crate" : `found git reset --hard (${keyLabel(KEYS[ORDER.indexOf("reset")]!)})`, e.item === "reset");
+    } else if (e.kind === "pickup") e.id === me && feed(e.item === "health" ? "health crate: +40 hp" : e.item === "ammo" ? "ammo crate" : `found git reset --hard (${keyLabel(KEYS[game.you().kit.indexOf("reset")] ?? "")})`, e.item === "reset");
     else if (e.kind === "blamed") feed(`blamed ${game.soldiers[e.id]!.name}`);
     else if (e.kind === "reverted") feed(`reverted ${game.soldiers[e.id]!.name}`);
     else if (e.kind === "objective") banner(e.text), feed(e.text, true);
+    else if (e.kind === "streak") banner(`${e.kills} kills: ${vehicleName(e.vehicle)} inbound`), feed(`${vehicleName(e.vehicle)} dropping in beside you · E to get in`, true);
+    else if (e.kind === "wrecked") feed(`${vehicleName(e.vehicle)} wrecked`, true);
     else if (e.kind === "hit" && e.target === me) {
       hitFrom(game, e.by);
       if (!e.shield) $("hud").classList.add("hurt"), setTimeout(() => $("hud").classList.remove("hurt"), 120);

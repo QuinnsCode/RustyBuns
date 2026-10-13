@@ -959,7 +959,7 @@ export async function branchTree(env: Env, owner: string, repo: string, name: st
  * whose git holds private lines blank (held) doesn't push branches either: their
  * copies have the real text.
  */
-export async function pushBranch(env: Env, owner: string, repo: string, name: string) {
+export async function pushBranch(env: Env, owner: string, repo: string, name: string, o: { tookMain?: boolean } = {}) {
   const s = await branchSetup(env, owner, repo);
   if ("error" in s) return s.error;
   const { r, dir, main, net } = s;
@@ -980,8 +980,12 @@ export async function pushBranch(env: Env, owner: string, repo: string, name: st
   if (prev && await isAncestor(dir, tip, prev)) [parents, baseTree] = [[prev], `${prev}^{tree}`];
   else if (prev) {
     const m = await git(["merge-tree", "--write-tree", "--name-only", "--no-messages", prev, tip], dir);
-    if (m.code) return json({ error: `upstream's ${ref} and main ${m.code === 1 ? "changed the same lines" : "share no history"}: settle it upstream, then push again`, clash: m.code === 1 ? m.out.trim().split("\n").slice(1).filter(Boolean) : [] }, 409);
-    [parents, baseTree] = [[prev, tip], m.out.trim().split("\n")[0]!];
+    const clash = m.code === 1 ? m.out.trim().split("\n").slice(1).filter(Boolean) : [];
+    // Git clashes, but the branch just took main in by line id (branches.ts takeMain, #1162): its copies of
+    // those files are the settled ones, so the merge commit is main's tree with them on top.
+    if (clash.length && o.tookMain && await allText(env, owner, repo, name, clash)) [parents, baseTree] = [[prev, tip], `${tip}^{tree}`];
+    else if (m.code) return json({ error: `upstream's ${ref} and main ${m.code === 1 ? "changed the same lines" : "share no history"}: settle it upstream, then push again`, clash }, 409);
+    else [parents, baseTree] = [[prev, tip], m.out.trim().split("\n")[0]!];
   }
 
   const tree = await branchTree(env, owner, repo, name, dir, baseTree);
@@ -1000,6 +1004,12 @@ export async function pushBranch(env: Env, owner: string, repo: string, name: st
   // A branch pushed upstream gets checked, here and on GitHub, as that commit.
   await startChecks(env, owner, repo, name, c, br.by);
   return json({ ref, commit: c, pushed: true, took });
+}
+
+/** Whether `name` has a copy of its own, with lines, of each of `paths`. */
+async function allText(env: Env, owner: string, repo: string, name: string, paths: string[]) {
+  const { results } = await env.DB.prepare(`SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND deleted = 0 AND blob IS NULL AND path IN (${paths.map(() => "?").join(", ")})`).bind(owner, repo, name, ...paths).all();
+  return results.length === new Set(paths).size;
 }
 
 /**
@@ -1021,21 +1031,41 @@ async function followBranches(env: Env, owner: string, repo: string) {
     try {
       const ref = br.upstream_ref, tip = tips.get(ref), had = await taken(s, ref);
       if (!tip) { if (br.status === "merged") await forget(br.name); continue; }
-      if (tip === had) {
-        // Deleting a merged branch upstream is a push too: a pull-only mirror leaves it be.
-        if (br.status !== "merged" || s.r.mirror_pull_only) continue;
-        const m = await git(["merge-tree", "--write-tree", up, tip], s.dir);
-        if (m.code || m.out.trim().split("\n")[0] !== await must(["rev-parse", `${up}^{tree}`], s.dir)) continue;
-        const d = await git(["push", "--porcelain", `--force-with-lease=refs/heads/${ref}:${tip}`, s.r.mirror_url, `:refs/heads/${ref}`], s.dir, s.net);
-        if (d.code) continue;
-        await git(["update-ref", "-d", tracking(ref)], s.dir);
-        await forget(br.name);
-      } else if (br.status === "open") {
-        const theirs = await fetchBranch(s, ref);
-        if (theirs) await catchUp(env, owner, repo, s, br.name, ref, theirs);
+      if (br.status === "open") {
+        const theirs = tip === had ? tip : await fetchBranch(s, ref);
+        if (theirs && theirs !== had) await catchUp(env, owner, repo, s, br.name, ref, theirs);
+        if (theirs) await clashOnlyInGit(env, owner, repo, s, br.name, theirs);
+        continue;
       }
+      // Deleting a merged branch upstream is a push too: a pull-only mirror leaves it be.
+      if (tip !== had || s.r.mirror_pull_only) continue;
+      const m = await git(["merge-tree", "--write-tree", up, tip], s.dir);
+      if (m.code || m.out.trim().split("\n")[0] !== await must(["rev-parse", `${up}^{tree}`], s.dir)) continue;
+      const d = await git(["push", "--porcelain", `--force-with-lease=refs/heads/${ref}:${tip}`, s.r.mirror_url, `:refs/heads/${ref}`], s.dir, s.net);
+      if (d.code) continue;
+      await git(["update-ref", "-d", tracking(ref)], s.dir);
+      await forget(br.name);
     } catch { /* that branch tries again next sync */ }
   }
+}
+
+/** Each open branch's upstream tip and main's, as clashOnlyInGit last looked at them: it looks at each pair once. */
+const lookedAt = new Map<string, string>();
+
+/**
+ * Upstream's tip `theirs` of open branch `name`, and main's tip, clash in git (#1190): GitHub's pull request
+ * shows a conflict until main comes in. When the line-id merge settles it, the branch takes main in and
+ * pushes that (branches.ts takeMainUpstream). Main's git holds a merge from its next commit, which a sync
+ * follows, so this runs here and not in the merge. A mirror that pushes no branches leaves it be.
+ */
+async function clashOnlyInGit(env: Env, owner: string, repo: string, s: Setup, name: string, theirs: string) {
+  if (s.r.mirror_pull_only || (s.r.crew_artifact && !s.r.mirror_push_crew)) return;
+  const tip = await must(["rev-parse", `refs/heads/${s.main}`], s.dir), key = `${s.dir}\n${name}`, pair = `${theirs} ${tip}`;
+  if (lookedAt.get(key) === pair) return;
+  lookedAt.set(key, pair);
+  if ((await git(["merge-tree", "--write-tree", "--name-only", "--no-messages", theirs, tip], s.dir)).code !== 1) return;
+  const { takeMainUpstream } = await import("./branches.ts");
+  await takeMainUpstream(env, owner, repo, name);
 }
 
 /** /api/repos/:o/:r/mirror/branches[/:b/pull|push]: reading is for anyone who can read the repo, the rest for its owner. */

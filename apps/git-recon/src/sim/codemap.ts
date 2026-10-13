@@ -25,6 +25,8 @@ export interface RepoSnapshot {
   links?: [string, string, number][];
   /** Names of the checks failing at `ref`. */
   failing?: string[];
+  /** The opening lines of its biggest files: what the ground is printed with. */
+  text?: { path: string; lines: string[] }[];
 }
 
 export interface Block {

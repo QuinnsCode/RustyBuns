@@ -27,6 +27,6 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun scripts/conflict-markers.ts
-      - run: bun test ./scripts/conflict-markers.test.ts ./scripts/trial-github-cache.test.ts ./scripts/trial-flags.test.ts
+      - run: bun test ./scripts/conflict-markers.test.ts ./scripts/ci-test-count.test.ts ./scripts/trial-github-cache.test.ts ./scripts/trial-flags.test.ts
       - run: bun run docs --check
       - run: bun run site --check

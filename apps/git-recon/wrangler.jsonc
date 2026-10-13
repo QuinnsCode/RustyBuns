@@ -1,0 +1,13 @@
+// git-recon battles online: the built page as static assets, and one World Durable Object per
+// room code (src/edge/worker.ts). ONLINE turns on the world's online rules: whoever picks first
+// owns the room, and an idle room closes. `bun run deploy`; the costs are in the README.
+{
+  "name": "git-recon",
+  "main": "src/edge/worker.ts",
+  "compatibility_date": "2026-09-01",
+  "assets": { "binding": "ASSETS", "directory": "dist/ui" },
+  "vars": { "ONLINE": "1" },
+  "durable_objects": { "bindings": [{ "name": "WORLD", "class_name": "World" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["World"] }],
+  "observability": { "enabled": true }
+}

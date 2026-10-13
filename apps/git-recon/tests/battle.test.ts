@@ -2,12 +2,13 @@
 // the world behind sockets, and the page's mirror of it.
 import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { LEVELS } from "../src/levels/levels.ts";
+import { groundAt } from "../src/levels/place.ts";
 import type { Block } from "../src/sim/codemap.ts";
 import { FFA_SCORE, Game, RESPAWN, type Input, type Mode } from "../src/sim/game.ts";
 import { Mirror } from "../src/net/mirror.ts";
-import { cleanSetup, Room } from "../src/net/room.ts";
-import { cleanInput, MAX_PLAYERS, packSoldier, unpackSoldier, VIEW, type FromWorld, type Setup, type Snap } from "../src/net/wire.ts";
-import World, { CLOSE_FULL, CLOSE_REPLACED } from "../src/net/world.ts";
+import { battleGame, cleanSetup, Room } from "../src/net/room.ts";
+import { cleanInput, decodeSnap, encodeSnap, MAX_PLAYERS, packSoldier, unpackSoldier, VIEW, type FromWorld, type Setup, type Snap } from "../src/net/wire.ts";
+import World, { CLOSE_FULL, CLOSE_IDLE, CLOSE_REPLACED, IDLE_MS } from "../src/net/world.ts";
 
 setDefaultTimeout(30_000);
 
@@ -115,9 +116,23 @@ describe("the wire", () => {
     expect([b.x, b.z, b.yaw, b.crouch, b.burn > 0, b.weapon]).toEqual([1.23, -3.46, 1.235, true, true, "push"]);
   });
 
+  test("a snapshot goes through the binary frame and back the same", () => {
+    const snap: Snap = {
+      t: "snap", seq: 70_000, base: 69_998, time: 12.345, status: "won", winner: "ada",
+      soldiers: [[3, 1.25, null, -80.5, null, null, null, 6.283, null, 100, null, 5, 2, null], [9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
+      gone: [4, 7], shots: [[123_456, 3, "theirs", "push", 1.5, 2, -3.25, 110, 0, -5.5, 0.42]], spent: [200_000], stashes: [[99, 1, 2, 3]],
+      cleared: [true, false], files: [["src/a.ts", 0, 0]], events: [{ kind: "cleared", compound: 1 }],
+    };
+    const bytes = encodeSnap(snap);
+    expect(decodeSnap(bytes)).toEqual(snap);
+    // Nothing optional, nothing in the tail: just the header and the counts.
+    expect(encodeSnap({ ...snap, winner: undefined, cleared: undefined, files: [], events: [], soldiers: [], gone: [], shots: [], spent: [], stashes: [] }).length).toBe(28);
+    expect(decodeSnap(new Uint8Array([9, 9, 9]))).toBeNull();
+  });
+
   test("inputs are cleaned: numbers in range, real weapons, a finite aim", () => {
     expect(cleanInput({ right: 9, forward: "x", yaw: 1, pitch: 9, fire: 1, weapon: "rm -rf", aim: { x: 1, y: NaN, z: 0 } }))
-      .toEqual({ right: 1, forward: 0, yaw: 1, pitch: 1.6, jump: false, roll: false, crouch: false, prone: false, scope: false, fire: false, aim: undefined, weapon: undefined });
+      .toEqual({ right: 1, forward: 0, yaw: 1, pitch: 1.6, jump: false, roll: false, crouch: false, prone: false, scope: false, fire: false, reload: false, aim: undefined, weapon: undefined });
     expect(cleanInput(null)).toBeNull();
   });
 
@@ -127,6 +142,25 @@ describe("the wire", () => {
     expect(cleanSetup({ level: "the-moon", mode: "ffa", repo })).toBeNull();
     expect(cleanSetup({ level: "el-capitan", mode: "battle-royale", repo })).toBeNull();
     expect(cleanSetup({ level: "el-capitan", mode: "ffa", repo: { name: "x", ref: "y", files: [{ path: 1 }] } })).toBeNull();
+  });
+
+  test("a lat/long setup brings its ground, and the world and the page build the same battle on it", async () => {
+    const tile = new Uint8Array(await Bun.file(new URL("./fixtures/terrarium-14-2752-6334.png", import.meta.url)).arrayBuffer());
+    const zone = await groundAt(37.744657, -119.520264, { realRadius: 700, tiles: async () => tile });
+    const repo = LEVELS[0]!.repo, level = `place:${zone.id}`;
+    const clean = cleanSetup(JSON.parse(JSON.stringify({ level, mode: "ffa", repo, zone: { ...zone, name: "<b>pwned</b>" } })))!;
+    expect(clean.zone!.name).toBe(zone.name);
+    expect(clean.zone!.heights).toBe(zone.heights);
+    const world = new Room(clean).game, page = battleGame(JSON.parse(JSON.stringify(clean)));
+    expect(page.map.compounds.map((c) => [c.folder, c.x, c.z])).toEqual(world.map.compounds.map((c) => [c.folder, c.x, c.z]));
+    expect(world.map.compounds.length).toBeGreaterThan(0);
+
+    // No ground, the wrong place, or heights that aren't n*n: turned away.
+    expect(cleanSetup({ level, mode: "ffa", repo })).toBeNull();
+    expect(cleanSetup({ level: "place:0.0000,0.0000", mode: "ffa", repo, zone })).toBeNull();
+    expect(cleanSetup({ level, mode: "ffa", repo, zone: { ...zone, heights: zone.heights.slice(4) } })).toBeNull();
+    expect(cleanSetup({ level, mode: "ffa", repo, zone: { ...zone, n: 100_000 } })).toBeNull();
+    expect(cleanSetup({ level, mode: "ffa", repo, zone: { ...zone, realRadius: Infinity } })).toBeNull();
   });
 });
 
@@ -177,23 +211,54 @@ describe("the room", () => {
     expect(room.filesNow()).toContainEqual([b.path, 0, 0]);
   });
 
+  test("an acked snapshot is the base: what didn't change stays out, and what left view goes by id", () => {
+    const room = new Room(setup()), look = { head: "ball", build: "average" }, g = room.game;
+    const a = room.join("a", "a", look)!, b = room.join("b", "b", look)!;
+    Object.assign(g.soldiers[a]!, { x: 0, z: 0 }), Object.assign(g.soldiers[b]!, { x: 10, z: 0 });
+    const first = room.snap("a", room.drain())!;
+    expect(first.base).toBe(0);
+    // Not acked yet: the next one is whole too.
+    expect(room.snap("a", room.drain())!.base).toBe(0);
+    room.ack("a", first.seq);
+    Object.assign(g.soldiers[b]!, { x: 11 });
+    const next = room.snap("a", room.drain())!;
+    expect(next.base).toBe(first.seq);
+    expect(next.soldiers.map((s) => s[0])).toEqual([b]);
+    const d = next.soldiers[0]!;
+    expect([d[1], d[2], d[3], d[9]]).toEqual([11, null, null, null]); // x, and not y, z or hp
+    expect(next.you).toBeUndefined(); // your ammo's as it was
+    room.ack("a", next.seq);
+    Object.assign(g.soldiers[b]!, { x: VIEW + 20 });
+    expect(room.snap("a", room.drain())!.gone).toEqual([b]);
+    // An ack for a snapshot that was never sent, or an older one, changes nothing.
+    room.ack("a", 9999), room.ack("a", first.seq);
+    expect(room.snap("a", room.drain())!.base).toBe(next.seq);
+  });
+
   test("32 players: a second of battle steps fast enough, and a snapshot stays small", () => {
     const room = new Room(setup("teams", "el-capitan")), look = { head: "ball", build: "average" };
     for (let i = 0; i < 32; i++) room.join(`k${i}`, `player ${i}`, look);
-    let t = 0;
+    let t = 0, sent = 0;
     room.tick(t);
     const start = performance.now();
     for (let i = 0; i < 20; i++) {
-      for (let p = 0; p < 32; p++) room.input(`k${p}`, { ...idle, forward: 1, yaw: p, fire: p % 3 === 0, aim: { x: 0, y: 1, z: 0 } });
+      // Half stand still (the guards come and go as they will).
+      for (let p = 0; p < 32; p++) room.input(`k${p}`, { ...idle, forward: p % 2, yaw: p, fire: p % 3 === 0, aim: { x: 0, y: 1, z: 0 } });
       room.tick((t += 50));
       const shared = room.drain();
-      for (let p = 0; p < 32; p++) room.snap(`k${p}`, shared);
+      for (let p = 0; p < 32; p++) {
+        const snap = room.snap(`k${p}`, shared)!, bytes = encodeSnap(snap);
+        if (i >= 10) sent += bytes.length;
+        room.ack(`k${p}`, decodeSnap(bytes)!.seq);
+      }
     }
     const ms = performance.now() - start;
-    const bytes = JSON.stringify(room.snap("k0", room.drain())).length;
-    console.log(`32 players: a second of battle in ${ms.toFixed(0)} ms; one snapshot ${bytes} bytes`);
+    const json = JSON.stringify(room.snap("k0", room.drain(), true)).length, whole = encodeSnap(room.snap("k0", room.drain(), true)!).length;
+    const delta = Math.round(sent / 10 / 32);
+    console.log(`32 players: a second of battle in ${ms.toFixed(0)} ms; one snapshot ${whole} bytes whole (${json} as JSON), ${delta} as an acked delta; ${(delta * 20 / 1024).toFixed(1)} KB/s a player`);
     expect(ms).toBeLessThan(1000);
-    expect(bytes).toBeLessThan(20_000);
+    expect(whole).toBeLessThan(json * 0.75);
+    expect(delta).toBeLessThan(whole);
   });
 });
 
@@ -203,7 +268,7 @@ class Sock {
   sent: FromWorld[] = [];
   closed: number | null = null;
   private att: unknown;
-  send(s: string) { this.sent.push(JSON.parse(s)); }
+  send(s: string | Uint8Array) { this.sent.push(typeof s === "string" ? JSON.parse(s) : decodeSnap(s)!); }
   close(code: number) { this.closed = code, (this.readyState = 3); }
   serializeAttachment(a: unknown) { this.att = a; }
   deserializeAttachment() { return this.att; }
@@ -245,7 +310,7 @@ describe("the world", () => {
     expect(b.roster.map((r) => r.name).sort()).toEqual(["Guest", "Host"]);
     expect(b.roster.find((r) => r.name === "Guest")!.look).toEqual({ head: "bun", build: "lank" });
     // Nobody's uid goes out.
-    expect(JSON.stringify([guest.sent, host.sent])).not.toContain("secret");
+    for (const uid of ["guest-secret-1", "host-secret-1"]) expect(JSON.stringify([guest.sent, host.sent])).not.toContain(uid);
   });
 
   test("inputs move the player, and snapshots carry it", async () => {
@@ -287,15 +352,88 @@ describe("the world", () => {
   });
 });
 
+describe("the world online", () => {
+  let real: unknown;
+  beforeAll(() => { real = (globalThis as any).WebSocketPair; (globalThis as any).WebSocketPair = FakePair; });
+  afterAll(() => { (globalThis as any).WebSocketPair = real; });
+
+  function world() {
+    const socks: Sock[] = [];
+    const w = new World({ acceptWebSocket: (s: Sock) => socks.push(s), getWebSockets: () => socks.filter((s) => s.readyState === 1) }, { ONLINE: "1" });
+    const join = async (uid: string) => {
+      await w.fetch(new Request("https://world/ws", { headers: { Upgrade: "websocket", "X-User-Id": uid, "X-User-Name": uid, "X-RB-Principal": "guest" } }));
+      return socks.at(-1)!;
+    };
+    const stop = () => clearInterval((w as any).timer);
+    return { w, join, stop };
+  }
+
+  test("everyone's a guest: the first to pick owns the room, and only they pick again", async () => {
+    const { w, join, stop } = world();
+    const a = await join("player-a"), b = await join("player-b");
+    w.webSocketMessage(a, JSON.stringify({ t: "setup", setup: setup("coop") }));
+    expect(w.room!.setup.mode).toBe("coop");
+    w.webSocketMessage(b, JSON.stringify({ t: "setup", setup: setup("ffa") }));
+    expect(w.room!.setup.mode).toBe("coop");
+    w.webSocketMessage(a, JSON.stringify({ t: "setup", setup: setup("ffa") }));
+    expect(w.room!.setup.mode).toBe("ffa");
+    expect(b.last("welcome")!.setup.mode).toBe("ffa");
+    stop();
+  });
+
+  test("the battle ends once everyone's left, and the code is free for a new pick", async () => {
+    const { w, join } = world();
+    const a = await join("player-a");
+    w.webSocketMessage(a, JSON.stringify({ t: "setup", setup: setup("coop") }));
+    a.close(1000), w.webSocketClose(a);
+    expect(w.room).toBeNull();
+    expect((w as any).timer).toBeNull();
+    const b = await join("player-b");
+    expect(b.sent[0]).toEqual({ t: "wait" });
+    w.webSocketMessage(b, JSON.stringify({ t: "setup", setup: setup("teams") }));
+    expect(b.last("welcome")!.setup.mode).toBe("teams");
+    clearInterval((w as any).timer);
+  });
+
+  test("a room nobody plays in closes after IDLE_MS, so it stops costing", async () => {
+    const { w, join } = world();
+    const a = await join("player-a");
+    w.webSocketMessage(a, JSON.stringify({ t: "setup", setup: setup("coop") }));
+    w.webSocketMessage(a, JSON.stringify({ t: "in", i: idle }));
+    (w as any).tick();
+    expect(a.closed).toBeNull();
+    (w as any).lastInput = Date.now() - IDLE_MS - 1;
+    (w as any).tick();
+    expect(a.closed).toBe(CLOSE_IDLE);
+    expect(w.room).toBeNull();
+    expect((w as any).timer).toBeNull();
+  });
+
+  test("on the desktop the idle rule is off", async () => {
+    const { w, join } = (() => {
+      const socks: Sock[] = [];
+      const w = new World({ acceptWebSocket: (s: Sock) => socks.push(s), getWebSockets: () => socks.filter((s) => s.readyState === 1) }, {});
+      return { w, join: async (uid: string) => (await w.fetch(new Request("https://world/ws", { headers: { Upgrade: "websocket", "X-User-Id": uid } })), socks.at(-1)!) };
+    })();
+    const host = await join("host-1");
+    w.webSocketMessage(host, JSON.stringify({ t: "setup", setup: setup("coop") }));
+    (w as any).lastInput = Date.now() - IDLE_MS - 1;
+    (w as any).tick();
+    expect(host.closed).toBeNull();
+    clearInterval((w as any).timer);
+  });
+});
+
 describe("the page's mirror", () => {
   function battle() {
     const room = new Room(setup("ffa")), look = { head: "ball", build: "average" };
     const a = room.join("a", "a", look)!, b = room.join("b", "b", look)!;
-    const snap = room.snap("a", { events: [], files: [] })!;
+    const snap = room.snap("a", { events: [], files: [] }, true)!;
     const m = new Mirror({ t: "welcome", setup: room.setup, me: a, roster: room.rosterNow(), files: room.filesNow(), snap });
+    room.ack("a", m.acked);
     return { room, m, a, b };
   }
-  const send = (room: Room, key: string): Snap => room.snap(key, room.drain())!;
+  const send = (room: Room, key: string): Snap => decodeSnap(encodeSnap(room.snap(key, room.drain())!))!;
 
   test("builds the same map and puts everyone where the world has them", () => {
     const { room, m, b } = battle();
@@ -329,6 +467,37 @@ describe("the page's mirror", () => {
     for (let i = 0; i < 60; i++) m.frame(1 / 60, { ...idle, forward: 1 });
     m.apply(send(room, "a"));
     expect(m.me.z).toBeCloseTo(room.game.soldiers[m.game.me]!.z, 0);
+  });
+
+  test("over acked binary deltas, the page has what the world has: soldiers, rounds, and who's out of view", () => {
+    const { room, m, a, b } = battle(), g = room.game;
+    let t = 0, full = 0, sent = 0;
+    room.tick(t);
+    for (let i = 0; i < 40; i++) {
+      room.input("a", { ...idle, fire: i < 10, aim: { x: 0, y: 1, z: -50 } });
+      room.input("b", { ...idle, forward: 1, yaw: i * 0.2 });
+      room.tick((t += 50));
+      const snap = room.snap("a", room.drain())!, bytes = encodeSnap(snap);
+      if (!snap.base) full++;
+      sent += bytes.length;
+      expect(m.apply(decodeSnap(bytes)!)).toBe(true);
+      room.ack("a", m.acked);
+    }
+    expect(full).toBe(0); // the welcome was the base the rest built on
+    const theirs = g.soldiers[b]!, mine = m.game.soldiers[b]!;
+    m.frame(0, idle);
+    expect(Math.hypot(theirs.x - mine.x, theirs.z - mine.z)).toBeLessThan(1);
+    expect(m.game.shots.map((p) => p.id).sort()).toEqual(g.shots.map((p) => p.id).sort());
+    for (const p of g.shots) {
+      const q = m.game.shots.find((x) => x.id === p.id)!;
+      expect(Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z)).toBeLessThan(0.2);
+    }
+    expect(m.me.hp).toBe(Math.ceil(g.soldiers[a]!.hp));
+    // b walks out of view: on the page it's hidden, not left where it was seen.
+    Object.assign(theirs, { x: g.soldiers[a]!.x + VIEW + 30 });
+    room.tick((t += 50));
+    m.apply(decodeSnap(encodeSnap(room.snap("a", room.drain())!))!);
+    expect(mine.hidden).toBe(true);
   });
 
   test("files the world razed go on the page too, and events come through once", () => {

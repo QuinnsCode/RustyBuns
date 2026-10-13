@@ -494,6 +494,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
   const dos: { name: string; className: string }[] = [];
   const migrations: [string, string][] = [];
   const artifacts: string[] = [];
+  /** [the queue binding's expression, its consumer's settings] */
   const consumers: [string, object][] = [];
   for (const [name, b] of Object.entries(c.bindings ?? {})) {
     switch (b.type) {
@@ -511,9 +512,13 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
         break;
       case "images": bind.push(`  ${name}: local.images(),`); break;
       case "queue": {
-        bind.push(`  ${name}: local.queue(${[b.queueName, b.renamedFrom].filter(Boolean).map((n) => JSON.stringify(n)).join(", ")}),`);
+        const q = `local.queue(${[b.queueName, b.renamedFrom].filter(Boolean).map((n) => JSON.stringify(n)).join(", ")})`;
+        // Consumer-only: no env binding, the consumer reads the queue itself.
+        if (b.producer !== false) bind.push(`  ${name}: ${q},`);
+        const dlq = b.consumer ? c.bindings[b.consumer.deadLetterQueue ?? ""] : undefined;
         // maxWaitTimeMs is the edge's: here a send is delivered at once.
-        if (b.consumer !== false) consumers.push([name, { batchSize: b.consumer?.batchSize, maxRetries: b.consumer?.maxRetries, retryDelay: b.consumer?.retryDelay, priority: b.consumer?.priority }]);
+        if (b.consumer !== false) consumers.push([b.producer !== false ? `env.${name}` : q, { batchSize: b.consumer?.batchSize, maxRetries: b.consumer?.maxRetries, retryDelay: b.consumer?.retryDelay, priority: b.consumer?.priority,
+          deadLetterQueue: dlq?.type === "queue" ? dlq.queueName : undefined }]);
         break;
       }
       case "send_email": bind.push(`  // ${name}: Cloudflare Email Sending has no local twin; the app runs without it`); break;
@@ -522,6 +527,10 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
       case "hyperdrive": bind.push(`  ${name}: ${hyperdriveBinding(name, b, (m) => `assetDir(${JSON.stringify(m)})!`)},`); break;
       case "vectorize": bind.push(`  // ${name}: Cloudflare Vectorize has no local twin; the app runs without it`); break;
       case "ai": bind.push(`  // ${name}: Workers AI has no local twin; the app runs without it`); break;
+      case "workflow": bind.push(`  // ${name}: Cloudflare Workflows (${b.className}) has no local twin; the app runs without it`); break;
+      case "worker_loader": bind.push(`  // ${name}: the Dynamic Worker Loader has no local twin; the app runs without it`); break;
+      // Data points have nowhere to go off the edge: writes are dropped.
+      case "analytics_engine": bind.push(`  ${name}: { writeDataPoint() {} },`); break;
       case "container": bind.push(`  // ${name}: Cloudflare Container (${b.className}) has no local twin; the app runs without it`); break;
       case "durable_object":
         if (b.scriptName) bind.push(`  // ${name}: DO in another script (${b.scriptName}) has no local twin`);
@@ -610,9 +619,9 @@ console.log(\`[${c.name}] serving \${shell.url}\`);${crons.length ? `
 // Cron Triggers: the edge runs scheduled() on these; here a minute timer does, each run a low job
 // on the host's scheduler (RB_PERSONA sets its budget).
 schedule(${JSON.stringify(crons)}, (controller) => (worker as any).scheduled?.(controller, env, { waitUntil() {}, passThroughOnException() {} })${c.worker!.cronPriority ? `, { priority: ${JSON.stringify(c.worker!.cronPriority)} }` : ""});` : ""}${consumers.map(([n, s]) => `
-// Queue consumer: the edge hands ${n}'s batches to queue(); here an in-process loop does, each
+// Queue consumer: the edge hands this queue's batches to queue(); here an in-process loop does, each
 // batch a low job on the host's scheduler unless the consumer says otherwise.
-(env.${n} as any).consume((batch: unknown) => (worker as any).queue?.(batch, env, { waitUntil() {}, passThroughOnException() {} }), ${JSON.stringify(s)});`).join("")}
+(${n} as any).consume((batch: unknown) => (worker as any).queue?.(batch, env, { waitUntil() {}, passThroughOnException() {} }), ${JSON.stringify(s)});`).join("")}
 ${LAUNCH_CHECK}${appCheck(c, false)}${h.launch}`;
 }
 

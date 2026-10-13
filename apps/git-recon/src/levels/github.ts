@@ -9,7 +9,7 @@
 // (the raw text comes from raw.githubusercontent.com, which doesn't count), and a load is kept for half an hour.
 
 import { folderOf, type RepoFile, type RepoSnapshot } from "../sim/codemap.ts";
-import { folderLinks, isAgentCommit, isScript, MAX_FILES, SKIP, SOURCE, tally, workspacePackages } from "../sim/intel.ts";
+import { excerpts, folderLinks, isAgentCommit, isScript, MAX_FILES, SKIP, SOURCE, tally, workspacePackages } from "../sim/intel.ts";
 
 /** Commits whose files are read for churn, scripts read for imports, and bytes a line is taken to be. */
 export const DETAIL = 10, READ = 150, BYTES_PER_LINE = 32;
@@ -80,7 +80,7 @@ export async function loadRepo(slug: string, get: Fetch = (u) => fetch(u)): Prom
     .catch(() => ({ check_runs: [] }));
   const failing = [...new Set(checks.check_runs.filter((r) => r.conclusion === "failure" || r.conclusion === "timed_out").map((r) => r.name))].sort();
 
-  return { name, ref: head.slice(0, 7), files, links, failing };
+  return { name, ref: head.slice(0, 7), files, links, failing, text: excerpts(sources) };
 }
 
 /** A load kept in the browser for half an hour, so trying a level twice doesn't spend the hour's calls twice. */

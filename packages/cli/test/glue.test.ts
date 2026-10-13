@@ -1,4 +1,4 @@
-import { test, expect } from "bun:test";
+import { test, expect, setDefaultTimeout } from "bun:test";
 import { infer } from "../src/glue/infer.ts";
 import { analyze, plan } from "../src/glue/boundary.ts";
 import { parseWrangler, wranglerToConfig } from "../src/wrangler.ts";
@@ -6,6 +6,8 @@ import { generateAlchemy } from "../src/gen/alchemy.ts";
 import { generateWrangler } from "../src/gen/wrangler.ts";
 import { desktopEntry, spaEntry, builtEntry, embeddedDirs, plainDynamicImports } from "../src/build.ts";
 
+// Some tests spawn the CLI, which takes seconds under --parallel load; bun ignores bunfig's timeout.
+setDefaultTimeout(30_000);
 const root = new URL("../../../apps/spa-example", import.meta.url).pathname;
 
 test("infer: framework, pm, deps, vite aliases from the repo itself", () => {
@@ -657,6 +659,68 @@ test("queue: wrangler and alchemy bind the producer and the consumer; the deskto
   const renamed = desktopEntry({ ...c, bindings: { DB: { type: "d1", databaseName: "g-db", renamedFrom: "old-db" }, JOBS: { ...c.bindings.JOBS, renamedFrom: "old-jobs" } } });
   expect(renamed).toContain(`DB: local.d1("g-db", "old-db"),`);
   expect(renamed).toContain(`JOBS: local.queue("g-jobs", "old-jobs"),`);
+});
+
+test("queue dead-letter queue: a consumer-only queue gets messages past maxRetries, on the edge and the desktop", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
+    bindings: {
+      JOBS: { type: "queue", queueName: "g-jobs", consumer: { maxRetries: 2, deadLetterQueue: "JOBS_DLQ" } },
+      JOBS_DLQ: { type: "queue", queueName: "g-jobs-dlq", producer: false },
+    },
+    targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
+  } as any;
+  const w = JSON.parse(generateWrangler(c).replace(/^\/\/.*$/gm, ""));
+  expect(w.queues).toEqual({
+    producers: [{ binding: "JOBS", queue: "g-jobs" }],
+    consumers: [{ queue: "g-jobs", dead_letter_queue: "g-jobs-dlq", max_retries: 2 }, { queue: "g-jobs-dlq" }],
+  });
+  const a = generateAlchemy(c);
+  expect(a).toContain(`export const JOBS_DLQ = Cloudflare.Queues.Queue("JOBS_DLQ");`);
+  expect(a).toContain(`env: { JOBS: JOBS },`);
+  expect(a).toContain(`queueId: (yield* JOBS).queueId, scriptName: worker.workerName, deadLetterQueue: (yield* JOBS_DLQ).queueName, settings: { maxRetries: 2 } });`);
+  expect(a).toContain(`yield* Cloudflare.Queues.Consumer("JOBS_DLQConsumer", { queueId: (yield* JOBS_DLQ).queueId`);
+  const host = desktopEntry(c);
+  expect(host).not.toContain(`JOBS_DLQ: local.queue`);
+  expect(host).toContain(`(env.JOBS as any).consume(`);
+  expect(host).toContain(`{"maxRetries":2,"deadLetterQueue":"g-jobs-dlq"}`);
+  expect(host).toContain(`(local.queue("g-jobs-dlq") as any).consume(`);
+  // Back from wrangler, the consumer-only queue is keyed by its name.
+  expect(wranglerToConfig({ name: "g", queues: w.queues }).bindings).toEqual({
+    JOBS: { type: "queue", queueName: "g-jobs", consumer: { maxRetries: 2, deadLetterQueue: "G_JOBS_DLQ" } },
+    G_JOBS_DLQ: { type: "queue", queueName: "g-jobs-dlq", consumer: {}, producer: false },
+  });
+});
+
+test("workflow, analytics engine, worker loader, observability, routes: wrangler and alchemy bind them; the desktop leaves them out", () => {
+  const c = {
+    name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [], observability: { enabled: true, logs: { enabled: true, headSamplingRate: 0.1 } } },
+    bindings: {
+      FLOW: { type: "workflow", className: "Flow" },
+      AE: { type: "analytics_engine", dataset: "events" },
+      LOADER: { type: "worker_loader" },
+    },
+    targets: { edge: { provider: "cloudflare", domain: ["app.example.com", "www.example.com"], routes: [{ pattern: "example.com/api/*", zoneName: "example.com" }] }, desktop: { mode: "worker" } },
+  } as any;
+  const w = JSON.parse(generateWrangler(c).replace(/^\/\/.*$/gm, ""));
+  expect(w.workflows).toEqual([{ binding: "FLOW", name: "g-flow", class_name: "Flow" }]);
+  expect(w.analytics_engine_datasets).toEqual([{ binding: "AE", dataset: "events" }]);
+  expect(w.worker_loaders).toEqual([{ binding: "LOADER" }]);
+  expect(w.observability).toEqual({ enabled: true, logs: { enabled: true, head_sampling_rate: 0.1 } });
+  const a = generateAlchemy(c);
+  expect(a).toContain(`export const FLOW = Cloudflare.Workflow("FLOW", { className: "Flow" });`);
+  expect(a).toContain(`export const AE = Cloudflare.AnalyticsEngine.Dataset("AE", { dataset: "events" });`);
+  expect(a).toContain(`export const LOADER = Cloudflare.WorkerLoader("LOADER");`);
+  expect(a).toContain(`env: { FLOW: FLOW, AE: AE, LOADER: LOADER },`);
+  expect(a).toContain(`  observability: {"enabled":true,"logs":{"enabled":true,"headSamplingRate":0.1,"invocationLogs":true}},`);
+  expect(a).toContain(`  domain: {"name":"app.example.com","aliases":["www.example.com"]},`);
+  expect(a).toContain(`  routes: [{"pattern":"example.com/api/*","zoneName":"example.com"}],`);
+  const host = desktopEntry(c);
+  expect(host).toContain(`// FLOW: Cloudflare Workflows (Flow) has no local twin`);
+  expect(host).toContain(`// LOADER: the Dynamic Worker Loader has no local twin`);
+  expect(host).toContain(`AE: { writeDataPoint() {} },`);
+  expect(wranglerToConfig({ name: "g", ...w }).bindings).toEqual(c.bindings);
+  expect(wranglerToConfig({ name: "g", ...w }).worker!.observability).toEqual(c.worker.observability);
 });
 
 test("container: wrangler and alchemy bind the class and its image; the desktop host leaves it out", () => {

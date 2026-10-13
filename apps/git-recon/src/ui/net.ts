@@ -1,12 +1,14 @@
 // The page's end of a battle: one WebSocket to a world (this machine's, or a friend's on the
-// LAN), the welcome and snapshots coming in, this page's Input going out. Inputs go about 30
-// times a second, and straight away when a key is tapped, so a quick click is never lost.
+// LAN), the welcome (JSON) and snapshots (binary) coming in, this page's Input going out. Inputs
+// go about 30 times a second, and straight away when a key is tapped, so a quick click is never
+// lost. Each carries the newest snapshot the page applied, which the world sends deltas against.
 
 import { worldSocket } from "@rustybuns/shell-bun/client";
 import type { Input } from "../sim/game.ts";
-import type { FromWorld, Setup, ToWorld } from "../net/wire.ts";
+import { decodeSnap, type FromWorld, type Setup, type ToWorld } from "../net/wire.ts";
 
-const SEND_MS = 33;
+/** An Input at most this often; an unchanged one every IDLE_MS, or ACK_MS when there's a newer snapshot to ack. */
+const SEND_MS = 33, ACK_MS = 100, IDLE_MS = 250;
 
 export class Battle {
   onMessage: (m: FromWorld) => void = () => {};
@@ -17,14 +19,17 @@ export class Battle {
   private queue: string[] = [];
   private sentAt = 0;
   private lastSent = "";
+  private ackSent = 0;
 
-  /** host: this machine's world (target "/ws"). guest: `http://ip:port/ws`, with the join passphrase in params. */
+  /** host: this machine's world (target "/ws"). guest: `http://ip:port/ws`, with the join passphrase in params. Online, both are "/ws" with the room code in params. */
   constructor(readonly kind: "host" | "guest", target: string, params: Record<string, string | undefined>) {
     this.ws = worldSocket(target, params);
+    this.ws.binaryType = "arraybuffer";
     this.ws.onopen = () => { for (const m of this.queue.splice(0)) this.ws.send(m); };
     this.ws.onmessage = (e) => {
-      let m: FromWorld;
-      try { m = JSON.parse(e.data); } catch { return; }
+      let m: FromWorld | null;
+      try { m = typeof e.data === "string" ? JSON.parse(e.data) : decodeSnap(e.data); } catch { return; }
+      if (!m) return;
       this.seen = true;
       this.onMessage(m);
     };
@@ -33,7 +38,9 @@ export class Battle {
       // A refused upgrade gives the page no status code, so name the usual causes.
       this.onClose(e.code === 4001 ? "You joined from somewhere else."
         : e.code === 4002 ? "That battle is full."
+        : e.code === 4003 ? "The battle closed: nobody had played for five minutes."
         : this.seen ? "Lost the connection to the battle."
+        : params.room ? "Couldn't reach the battle. Check the room code and your connection."
         : kind === "guest" ? "Couldn't join. Check the address and passphrase, that the host clicked Host, that you're on the same network, and that you both run the same build."
         : "Couldn't open the battle on this machine.");
     };
@@ -47,14 +54,14 @@ export class Battle {
 
   setup(setup: Setup) { this.raw({ t: "setup", setup }); }
 
-  /** This frame's input: sent if it's been SEND_MS, or now if it taps something (a jump, a roll, a shot, a weapon). */
-  input(i: Input, now: number) {
+  /** This frame's input, and the newest snapshot applied: sent if it's been SEND_MS, or now if it taps something (a jump, a roll, a shot, a weapon). */
+  input(i: Input, now: number, ack: number) {
     const tap = i.jump || i.roll || i.weapon !== undefined || (i.fire && !this.lastSent.includes('"fire":true'));
     if (!tap && now - this.sentAt < SEND_MS) return;
     const s = JSON.stringify(i);
-    if (!tap && s === this.lastSent && now - this.sentAt < 250) return;
-    this.sentAt = now, this.lastSent = s;
-    this.raw({ t: "in", i });
+    if (!tap && s === this.lastSent && now - this.sentAt < (ack > this.ackSent ? ACK_MS : IDLE_MS)) return;
+    this.sentAt = now, this.lastSent = s, this.ackSent = ack;
+    this.raw({ t: "in", i, ack });
   }
 
   close() { this.closed = true; this.ws.close(1000); }
