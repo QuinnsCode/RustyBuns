@@ -494,18 +494,21 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
   const dos: { name: string; className: string }[] = [];
   const migrations: [string, string][] = [];
   const artifacts: string[] = [];
-  /** [the queue binding's expression, its consumer's settings] */
-  const consumers: [string, object][] = [];
+  /** [the queue binding's expression, its consumer's settings, the binding's name] */
+  const consumers: [string, object, string][] = [];
+  /** Bindings the host meters for /__rb/usage: name -> kind. */
+  const meters: Record<string, string> = {};
   for (const [name, b] of Object.entries(c.bindings ?? {})) {
     switch (b.type) {
       case "d1":
+        meters[name] = "d1";
         bind.push(`  ${name}: local.d1(${[b.databaseName, b.renamedFrom].filter(Boolean).map((n) => JSON.stringify(n)).join(", ")}),`);
         if (b.migrationsDir) migrations.push([name, b.migrationsDir]);
         break;
-      case "kv": bind.push(`  ${name}: local.kv(${JSON.stringify(name)}),`); break;
+      case "kv": bind.push(`  ${name}: local.kv(${JSON.stringify(name)}),`); meters[name] = "kv"; break;
       case "var": bind.push(`  ${name}: ${JSON.stringify(b.value)},`); break;
       case "secret": bind.push(`  ${name}: process.env[${JSON.stringify(name)}] ?? "",`); break;
-      case "r2": bind.push(`  ${name}: local.r2(${JSON.stringify(b.bucketName)}),`); break;
+      case "r2": bind.push(`  ${name}: local.r2(${JSON.stringify(b.bucketName)}),`); meters[name] = "r2"; break;
       case "artifacts":
         bind.push(`  ${name}: local.artifacts(${JSON.stringify(b.namespace)}),`);
         artifacts.push(name);
@@ -514,11 +517,11 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
       case "queue": {
         const q = `local.queue(${[b.queueName, b.renamedFrom].filter(Boolean).map((n) => JSON.stringify(n)).join(", ")})`;
         // Consumer-only: no env binding, the consumer reads the queue itself.
-        if (b.producer !== false) bind.push(`  ${name}: ${q},`);
+        if (b.producer !== false) { bind.push(`  ${name}: ${q},`); meters[name] = "queue"; }
         const dlq = b.consumer ? c.bindings[b.consumer.deadLetterQueue ?? ""] : undefined;
         // maxWaitTimeMs is the edge's: here a send is delivered at once.
         if (b.consumer !== false) consumers.push([b.producer !== false ? `env.${name}` : q, { batchSize: b.consumer?.batchSize, maxRetries: b.consumer?.maxRetries, retryDelay: b.consumer?.retryDelay, priority: b.consumer?.priority,
-          deadLetterQueue: dlq?.type === "queue" ? dlq.queueName : undefined }]);
+          deadLetterQueue: dlq?.type === "queue" ? dlq.queueName : undefined }, name]);
         break;
       }
       case "send_email": bind.push(`  // ${name}: Cloudflare Email Sending has no local twin; the app runs without it`); break;
@@ -545,12 +548,12 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
 // First: workerd's globalThis.Cloudflare, read by nodejs_compat builds as they load.
 import "@rustybuns/shell-bun/workerd-global";
-import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
+import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch, within, metered, usageSnapshot${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
 // Bun's own process: a Worker built with nodejs_compat (unenv) swaps globalThis.process for
 // one whose cwd() is "/" and argv is empty, and that would move assets and flags (#741).
 import process from "node:process";
 import { homedir } from "node:os";
-import { mkdirSync, existsSync } from "node:fs";
+import { mkdirSync, existsSync, writeFileSync } from "node:fs";
 import { basename, join, isAbsolute, resolve } from "node:path";
 ${pgliteImports(c)}
 declare const RB_VERSION: string, RB_RUSTYBUNS: string, RB_DEV: boolean;
@@ -572,6 +575,10 @@ const listen = { hostname: lh || ${JSON.stringify(c.targets.desktop?.listen?.hos
 const env: Record<string, unknown> = {
 ${bind.join("\n")}
 };
+// What each binding does, counted per request, cron tick and queue batch: /__rb/usage serves it and
+// <data>/usage.json keeps it, for \`rustybuns plan --usage\` to turn into a monthly bill.
+for (const [n, k] of Object.entries(${JSON.stringify(meters)})) env[n] = metered(n, k as any, env[n]);
+setInterval(() => { try { writeFileSync(join(dataDir, "usage.json"), JSON.stringify(usageSnapshot())); } catch {} }, 60_000).unref();
 // D1 is sqlite: your wrangler migrations apply here unchanged, tracked in
 // d1_migrations. Embedded via --asset so the binary carries its own schema.
 ${migrations.map(([n, m]) => `for (const f of await applyD1Migrations(env.${n} as any, assetDir(${JSON.stringify(m)})!)) console.log("[migrate] " + f);`).join("\n")}
@@ -613,15 +620,15 @@ ${artifacts.map((n) => `(env.${n} as any).remoteBase = shell.url;`).join("\n")}$
 // env.ASSETS, as the edge binds it: the Worker can fetch its own static files.
 env.ASSETS ??= shell.assets;` : ""}
 ${h.box
-  ? `shell.mount({ fetch: async (req: Request, e: any, ctx: any) => { const p = new URL(req.url).pathname; return p === "/health" ? new Response("ok") : p === "/__rb/mem" ? Response.json(mem.stats()) : (await prof(req)) ?? ${webmcpOn(c, true) ? "webmcp(req) ?? " : ""}(worker as any).fetch(req, e, ctx); } } as any, env);`
-  : `shell.mount({ fetch: (req: Request, e: any, ctx: any) => new URL(req.url).pathname === "/__rb/mem" ? Response.json(mem.stats()) : (worker as any).fetch(req, e, ctx) } as any, env);`}
+  ? `shell.mount({ fetch: async (req: Request, e: any, ctx: any) => { const p = new URL(req.url).pathname; return p === "/health" ? new Response("ok") : p === "/__rb/mem" ? Response.json(mem.stats()) : p === "/__rb/usage" ? Response.json(usageSnapshot()) : (await prof(req)) ?? ${webmcpOn(c, true) ? "webmcp(req) ?? " : ""}within("request", () => (worker as any).fetch(req, e, ctx)); } } as any, env);`
+  : `shell.mount({ fetch: (req: Request, e: any, ctx: any) => { const p = new URL(req.url).pathname; return p === "/__rb/mem" ? Response.json(mem.stats()) : p === "/__rb/usage" ? Response.json(usageSnapshot()) : within("request", () => (worker as any).fetch(req, e, ctx)); } } as any, env);`}
 console.log(\`[${c.name}] serving \${shell.url}\`);${crons.length ? `
 // Cron Triggers: the edge runs scheduled() on these; here a minute timer does, each run a low job
 // on the host's scheduler (RB_PERSONA sets its budget).
-schedule(${JSON.stringify(crons)}, (controller) => (worker as any).scheduled?.(controller, env, { waitUntil() {}, passThroughOnException() {} })${c.worker!.cronPriority ? `, { priority: ${JSON.stringify(c.worker!.cronPriority)} }` : ""});` : ""}${consumers.map(([n, s]) => `
+schedule(${JSON.stringify(crons)}, (controller) => within("cron " + controller.cron, () => (worker as any).scheduled?.(controller, env, { waitUntil() {}, passThroughOnException() {} }))${c.worker!.cronPriority ? `, { priority: ${JSON.stringify(c.worker!.cronPriority)} }` : ""});` : ""}${consumers.map(([n, s, name]) => `
 // Queue consumer: the edge hands this queue's batches to queue(); here an in-process loop does, each
 // batch a low job on the host's scheduler unless the consumer says otherwise.
-(${n} as any).consume((batch: unknown) => (worker as any).queue?.(batch, env, { waitUntil() {}, passThroughOnException() {} }), ${JSON.stringify(s)});`).join("")}
+(${n} as any).consume((batch: any) => within(${JSON.stringify("queue " + name)}, () => (worker as any).queue?.(batch, env, { waitUntil() {}, passThroughOnException() {} }), batch.messages.length), ${JSON.stringify(s)});`).join("")}
 ${LAUNCH_CHECK}${appCheck(c, false)}${h.launch}`;
 }
 

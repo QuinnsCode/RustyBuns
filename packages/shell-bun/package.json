@@ -22,6 +22,7 @@
     "./advisories": "./src/advisories.ts",
     "./client": "./src/client.ts",
     "./cpuprof": "./src/cpuprof.ts",
+    "./cron": "./src/cron.ts",
     "./history": "./src/history.ts",
     "./intro": "./src/intro.tsx",
     "./memwatch": "./src/memwatch.ts",
@@ -29,6 +30,7 @@
     "./priority": "./src/priority.ts",
     "./profsummary": "./src/profsummary.ts",
     "./shims": "./src/shims.ts",
+    "./usage": "./src/usage.ts",
     "./webmcp": "./src/webmcp.ts",
     "./workerd-global": "./src/workerd-global.ts"
   },

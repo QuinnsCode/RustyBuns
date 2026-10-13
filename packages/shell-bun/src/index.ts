@@ -22,6 +22,7 @@ export { webMcpRoute, webMcpScript, WEBMCP_PATH, WEBMCP_TAG } from "./webmcp.ts"
 export { appServer, proxyMatcher, type AppServer, type AppServerOptions } from "./app-server.ts";
 export { schedule, parseCron, cronMatches, type ScheduledController } from "./cron.ts";
 export { scheduler, hostScheduler, adapt, machineLoad, lowPriorityCommand, memoryCapCommand, processTreeMb, treeMb, JobStopped, PERSONAS, type JobContext, type EffectJobContext, type RunOptions, type SpawnOptions, type WorkerOptions, type Priority, type Persona, type Budget, type Load, type SchedulerOptions, type SchedulerStats, type Scheduler } from "./priority.ts";
+export { within, count, metered, usageSnapshot, resetUsage, type UsageSnapshot, type CauseUsage } from "./usage.ts";
 export { durableObject, LocalDurableObjectNamespace, LocalDurableObjectState, WebSocketPair, installCloudflareGlobals, type DurableObjectCtor } from "./bindings/durable-object.ts";
 
 import type { MemoryPort, Reporter } from "@rustybuns/ports";
@@ -98,6 +99,6 @@ export function localBindings(dataDir: string) {
     /** With `renamedFrom`, messages still waiting under that name are carried over to `name`. */
     queue: (name: string, renamedFrom?: string) => queue(`${dataDir}/queues.sqlite`, name, renamedFrom),
     durableObject: <Env>(Ctor: DurableObjectCtor<Env>, env: Env, binding: string, opts?: { codec?: "json" | "v8" }) =>
-      durableObject(Ctor, env, { storage: (id) => storage(`${dataDir}/do_${binding}_${id}.sqlite`, { codec: opts?.codec }) }),
+      durableObject(Ctor, env, { name: binding, storage: (id) => storage(`${dataDir}/do_${binding}_${id}.sqlite`, { codec: opts?.codec }) }),
   };
 }

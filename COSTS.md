@@ -26,6 +26,41 @@ targets: { box: { provider: "hetzner", serverType: "cpx31", allowLargeServer: tr
 
 `--yes` does not skip this; it only skips the plan-before-deploy check.
 
+### What it would cost a month: `plan --usage`
+
+The list says what bills, not how much. The bill comes from the fan-out: a
+`* * * * *` cron whose tick runs twenty sweeps, each a few Durable Object calls
+and queue sends, is 1,440 ticks a day times all of that. The desktop and box
+hosts count every binding call per cause (each request, each cron tick, each
+queue message): DO requests, the distinct objects a run touches and how long it
+holds them, D1 rows read and written, KV reads/writes/lists, R2 class A/B
+operations and queue sends. A box serves the counts at `/__rb/usage`; a desktop
+writes them to `<data>/usage.json` once a minute. Run the app for a while, then:
+
+```
+rustybuns plan --usage ~/.my-app/usage.json          # or https://my-box.example
+rustybuns plan --usage usage.json --requests-per-day 50000
+```
+
+```
+estimated month from 1h 0m of counted usage (Workers Paid):
+  cron * * * * *: 43k (ticks in 30 days), each 20 DB_DO.requests, 2 DB_DO.objects, 2 JOBS.sent
+    ! keeps 2 DB_DO objects awake 24/7: ticks at most 60 s apart, and an idle object stays billed ~70 s
+  request: 26k (864 a day, the rate this run saw), each 10 DB.rowsRead, 1 DB.rowsWritten
+  queue JOBS: 86k (messages sent to JOBS), each 2 DB.rowsWritten
+  DO duration, GB-s     664k  $3.29
+  ...
+  ~$3.29 a month past what Workers Paid includes, plus its $5
+```
+
+A cron multiplies by its ticks in 30 days, requests by `--requests-per-day`
+(or the rate the run saw), and a queue's consumer by the messages the others
+send it. A Durable Object stays in memory, and billed, for about 70 seconds
+after its last event, so a cron that pokes one more often than that keeps it
+awake around the clock; the estimate flags it. CPU time, storage and bindings
+with no local twin (Workers AI among them) aren't counted. Prices are Workers
+Paid's list prices; check them against Cloudflare's pricing pages.
+
 ## Account checklist
 
 Do these once. They are what actually cap a bill.
