@@ -492,7 +492,7 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
       : own ? [...inf.prebuild, `${inf.execCmd("vite")} build${inf.vite.buildConfig ? ` --config ${inf.vite.buildConfig}` : ""}`].join(" && ") : vite("dist/web"),
     notFoundHandling: astro ? "404-page" : "single-page-application",
   };
-  // The servers beside the app the proxy points at, whose files init can name: the host runs each
+  // The servers beside or inside the app the proxy points at, whose files init can name: the host runs each
   // and proxies its paths to it. Paths that go to a server it didn't find are left for host.ts.
   const servers = proxied.length ? siblingServers(".") : [];
   const { found, left } = proxyServers(Object.fromEntries(proxied.map((p) => [p, inf.vite.proxyTargets[p] ?? null])), servers);
