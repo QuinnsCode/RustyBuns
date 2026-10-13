@@ -596,10 +596,29 @@ export async function refChecks(env: Env, owner: string, repo: string, ref: stri
     else if (s.offline && oursPassed && (!r || r.runner === "github")) deferred.push(name);
     else waiting.push(name);
   }
+  // A failed run that ran out of time says where it hung, near the end of its log.
+  const hung: Record<string, string> = {};
+  for (const name of failed) {
+    const r = latest.get(name)!;
+    if (r.runner === "github") continue;
+    const at = hungIn(((await env.DB.prepare("SELECT substr(log, -4096) AS tail FROM check_runs WHERE id = ?").bind(r.id).first())?.tail as string | null) ?? "");
+    if (at) hung[name] = at;
+  }
   return {
     ref, sha, where: s.where, here: s.here, offline: s.offline, runs, stale, changed_at: changed,
-    gate: { required: applies, ok: !waiting.length && !failed.length, passed, waiting, failed, deferred, skipped },
+    gate: { required: applies, ok: !waiting.length && !failed.length, passed, waiting, failed, hung, deferred, skipped },
   };
+}
+
+/**
+ * Where a run that ran out of time hung, from the `::error title=hung::` line scripts/ci-test-count.ts
+ * prints before it kills the tests: the last test file to report, else the first that never did, else
+ * the setup before any file. undefined when the log has no such line.
+ */
+export function hungIn(log: string): string | undefined {
+  const line = log.match(/::error title=hung::.*/g)?.at(-1);
+  if (!line) return undefined;
+  return line.match(/last to report: ([^;]+)/)?.[1]!.trim() ?? line.match(/never reported: ([^,;(]+)/)?.[1]!.trim() ?? "setup";
 }
 
 /**
@@ -620,7 +639,8 @@ async function checkedAt(env: Env, owner: string, repo: string, sha: string, run
 export async function mergeBlock(env: Env, owner: string, repo: string, ref: string) {
   const c = await refChecks(env, owner, repo, ref);
   if (c.gate.ok) return null;
-  const why = [c.stale && "the branch changed since its checks ran", c.gate.failed.length && `${c.gate.failed.join(", ")} failed`, c.gate.waiting.length && `waiting on ${c.gate.waiting.join(", ")}`].filter(Boolean).join("; ");
+  const failed = c.gate.failed.map((n) => c.gate.hung[n] ? `${n} (hung in ${c.gate.hung[n]})` : n);
+  const why = [c.stale && "the branch changed since its checks ran", failed.length && `${failed.join(", ")} failed`, c.gate.waiting.length && `waiting on ${c.gate.waiting.join(", ")}`].filter(Boolean).join("; ");
   const tip = c.offline && c.gate.waiting.length ? ". GitHub is down: run checks here, and once they pass, GitHub's wait until it's back" : "";
   const heal = c.gate.failed.length && ref !== "main" ? await (await import("./heal.ts")).heals(env, owner, repo, ref).catch(() => null) : null;
   const fixing = heal?.running ? ". A fix task is on it" : heal?.gave_up ? `. Self-healing gave up after ${heal.attempts.length} fix tasks: it waits for a person` : "";

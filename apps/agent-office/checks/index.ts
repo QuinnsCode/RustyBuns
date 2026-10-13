@@ -1,6 +1,7 @@
 // The PR board's health bar: each card's checks as a rounded bar, green for passed, red for failed, amber for
 // running, grey for skipped, as long as it has checks (or single tests, once CI counts them), with the counts and
-// how long CI took beside it. The card's line is patched (checks/patch.ts) to call globalThis.__rbChecksBar(pull);
+// how long CI took beside it, and the test file a job hung in, if one ran out of time.
+// The card's line is patched (checks/patch.ts) to call globalThis.__rbChecksBar(pull);
 // the server adds pull.checkTally.
 import { barWidth, describe, testTotal, took, type Tally } from "./tally.ts";
 
@@ -25,6 +26,8 @@ const COLORS: ["pass" | "fail" | "pending" | "skip", string][] = [["pass", "#2a9
   wrap.setAttribute("aria-label", wrap.title);
   wrap.style.whiteSpace = "nowrap";
   const time = took(t), tests = testTotal(t);
-  wrap.append(bar, `${n}${tests ? ` · ${tests} tests` : ""}${time ? ` · ${time}` : ""}`);
+  // a hung job: an hourglass and the file's name, the whole path in the tooltip
+  const hung = t.hung?.length ? ` · ⌛ ${t.hung.map((f) => f.split("/").pop()).join(", ")}` : "";
+  wrap.append(bar, `${n}${tests ? ` · ${tests} tests` : ""}${time ? ` · ${time}` : ""}${hung}`);
   return wrap;
 };

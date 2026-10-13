@@ -1,17 +1,20 @@
 // A pull request's checks at a glance, for the PR board's health bar (checks/index.ts): how many passed, failed,
 // are still running or were skipped, and how long CI has taken, from the statusCheckRollup the board already lists.
-// When CI reports single tests (scripts/ci-test-count.ts, read back by checks/server.ts), they're summed into tests.
+// When CI reports single tests (scripts/ci-test-count.ts, read back by checks/server.ts), they're summed into tests,
+// and a job that ran out of time adds the test file it hung in to hung.
 
 export type TestCount = { pass: number; fail: number; skip: number };
-export type Tally = { pass: number; fail: number; pending: number; skip: number; tests?: TestCount; startedAt?: string; completedAt?: string };
+/** What CI said about one finished check: its single tests, and where it hung if it ran out of time. */
+export type CheckTests = { count?: TestCount; hung?: string };
+export type Tally = { pass: number; fail: number; pending: number; skip: number; tests?: TestCount; hung?: string[]; startedAt?: string; completedAt?: string };
 
 const FAILED = ["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"];
 
 export type Check = { context?: string; detailsUrl?: string | null; conclusion?: string | null; state?: string | null; status?: string | null; startedAt?: string | null; completedAt?: string | null };
 
 /** Each check counted the way the office reads it (server/github.js checkOf), and when the first started and the last finished.
- *  testsOf gives a finished check's single tests, if CI reported any. */
-export function tally(rollup: Check[] | null | undefined, testsOf?: (c: Check) => TestCount | undefined): Tally | undefined {
+ *  testsOf gives a finished check's single tests, and where it hung, if CI reported them. */
+export function tally(rollup: Check[] | null | undefined, testsOf?: (c: Check) => CheckTests | undefined): Tally | undefined {
   if (!rollup?.length) return undefined;
   const t: Tally = { pass: 0, fail: 0, pending: 0, skip: 0 };
   let first = Infinity, last = 0;
@@ -23,7 +26,8 @@ export function tally(rollup: Check[] | null | undefined, testsOf?: (c: Check) =
     else if (running) t.pending++;
     else if (["SKIPPED", "NEUTRAL", "STALE"].includes(concl)) t.skip++;
     else t.pass++;
-    const n = running ? undefined : testsOf?.(c);
+    const r = running ? undefined : testsOf?.(c), n = r?.count;
+    if (r?.hung) (t.hung ??= []).push(r.hung);
     if (n) {
       t.tests ??= { pass: 0, fail: 0, skip: 0 };
       t.tests.pass += n.pass; t.tests.fail += n.fail; t.tests.skip += n.skip;
@@ -54,7 +58,7 @@ export const barWidth = (n: number, tests?: number) =>
 
 export const testTotal = (t: Tally) => t.tests ? t.tests.pass + t.tests.fail + t.tests.skip : 0;
 
-/** "12 checks, 340 tests (2 failed): 10 passed, 1 failed, 1 running · 4m" */
+/** "12 checks, 340 tests (2 failed): 10 passed, 1 failed, 1 running · 4m · hung in test/foo.test.ts" */
 export function describe(t: Tally, now = Date.now()): string {
   const n = t.pass + t.fail + t.pending + t.skip;
   const parts = [[t.pass, "passed"], [t.fail, "failed"], [t.pending, "running"], [t.skip, "skipped"]]
@@ -62,5 +66,6 @@ export function describe(t: Tally, now = Date.now()): string {
   const time = took(t, now);
   const k = testTotal(t), off = t.tests && [[t.tests.fail, "failed"], [t.tests.skip, "skipped"]].filter(([x]) => x).map(([x, w]) => `${x} ${w}`);
   const tests = k ? `, ${k} test${k === 1 ? "" : "s"}${off?.length ? ` (${off.join(", ")})` : ""}` : "";
-  return `${n} check${n === 1 ? "" : "s"}${tests}: ${parts.join(", ")}${time ? ` · ${time}${t.completedAt ? "" : " so far"}` : ""}`;
+  const hung = t.hung?.length ? ` · hung in ${t.hung.join(", ")}` : "";
+  return `${n} check${n === 1 ? "" : "s"}${tests}: ${parts.join(", ")}${time ? ` · ${time}${t.completedAt ? "" : " so far"}` : ""}${hung}`;
 }
