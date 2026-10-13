@@ -21,7 +21,7 @@ export class Battle {
   private lastSent = "";
   private ackSent = 0;
 
-  /** host: this machine's world (target "/ws"). guest: `http://ip:port/ws`, with the join passphrase in params. */
+  /** host: this machine's world (target "/ws"). guest: `http://ip:port/ws`, with the join passphrase in params. Online, both are "/ws" with the room code in params. */
   constructor(readonly kind: "host" | "guest", target: string, params: Record<string, string | undefined>) {
     this.ws = worldSocket(target, params);
     this.ws.binaryType = "arraybuffer";
@@ -38,7 +38,9 @@ export class Battle {
       // A refused upgrade gives the page no status code, so name the usual causes.
       this.onClose(e.code === 4001 ? "You joined from somewhere else."
         : e.code === 4002 ? "That battle is full."
+        : e.code === 4003 ? "The battle closed: nobody had played for five minutes."
         : this.seen ? "Lost the connection to the battle."
+        : params.room ? "Couldn't reach the battle. Check the room code and your connection."
         : kind === "guest" ? "Couldn't join. Check the address and passphrase, that the host clicked Host, that you're on the same network, and that you both run the same build."
         : "Couldn't open the battle on this machine.");
     };
