@@ -47,7 +47,7 @@ export type Binding =
   /**
    * Cloudflare Vectorize: `env.NAME.upsert(vectors)`, `.query(values, { topK, filter })`,
    * `.getByIds(ids)` and `.deleteByIds(ids)`. `metadataIndexes` are the metadata properties
-   * a query can filter on. Edge only: the desktop has no twin, so the binding is left out there.
+   * a query can filter on. On the desktop: an index in sqlite, queried by exact scan.
    */
   | {
       type: "vectorize";
@@ -62,7 +62,8 @@ export type Binding =
     }
   /**
    * Workers AI: `await env.NAME.run(model, inputs)`, e.g. embeddings for a vectorize
-   * binding. No resource behind it. Edge only: the desktop has no twin.
+   * binding. No resource behind it. On the desktop there's no model: each call throws an error
+   * that says it runs only on Cloudflare.
    */
   | { type: "ai" }
   /**
@@ -110,18 +111,19 @@ export type Binding =
    * Cloudflare Workflows: `await env.NAME.create({ params })` starts an instance of the
    * `WorkflowEntrypoint` class `main` exports (or `scriptName`'s), whose steps are retried
    * and persisted. Alchemy names the workflow `<worker>-<class>-<hash>`, not wrangler's `name`, so
-   * instances started under a wrangler deploy stay with that one. Edge only: the desktop has
-   * no twin, so the binding is left out there.
+   * instances started under a wrangler deploy stay with that one. On the desktop the class runs
+   * in-process, its instances and step results in sqlite.
    */
   | { type: "workflow"; className: string; scriptName?: string }
   /**
    * Workers Analytics Engine: `env.NAME.writeDataPoint({ blobs, doubles, indexes })` into a
-   * dataset, made on first write (no resource to provision). Off the edge writeDataPoint is a no-op.
+   * dataset, made on first write (no resource to provision). On the desktop points land in analytics.sqlite.
    */
   | { type: "analytics_engine"; /** @default the binding's name */ dataset?: string }
   /**
    * Dynamic Worker Loader: `env.NAME.get(id, () => ({ mainModule, modules, ... }))` runs code
-   * in a Worker isolate made at runtime. No resource behind it. Edge only: the desktop has no twin.
+   * in a Worker isolate made at runtime. No resource behind it. On the desktop the code runs in
+   * the host's own process: no isolate, no sandbox.
    */
   | { type: "worker_loader" }
   /**

@@ -492,6 +492,8 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
   const h = hostParts(c, host, c.targets.desktop?.dataDir ?? `~/.${c.name}`);
   const bind: string[] = [];
   const dos: { name: string; className: string }[] = [];
+  /** Workflows whose class is one of the Worker's exports, bound once it has loaded. */
+  const workflows: { name: string; className: string }[] = [];
   const migrations: [string, string][] = [];
   const artifacts: string[] = [];
   /** [the queue binding's expression, its consumer's settings] */
@@ -525,12 +527,15 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
       case "ratelimit": bind.push(`  // ${name}: Workers Rate Limiting has no local twin; the app runs without it`); break;
       // No pool off the edge: the app gets the origin's URL in Hyperdrive's shape.
       case "hyperdrive": bind.push(`  ${name}: ${hyperdriveBinding(name, b, (m) => `assetDir(${JSON.stringify(m)})!`)},`); break;
-      case "vectorize": bind.push(`  // ${name}: Cloudflare Vectorize has no local twin; the app runs without it`); break;
-      case "ai": bind.push(`  // ${name}: Workers AI has no local twin; the app runs without it`); break;
-      case "workflow": bind.push(`  // ${name}: Cloudflare Workflows (${b.className}) has no local twin; the app runs without it`); break;
-      case "worker_loader": bind.push(`  // ${name}: the Dynamic Worker Loader has no local twin; the app runs without it`); break;
-      // Data points have nowhere to go off the edge: writes are dropped.
-      case "analytics_engine": bind.push(`  ${name}: { writeDataPoint() {} },`); break;
+      case "vectorize": bind.push(`  ${name}: local.vectorize(${JSON.stringify(b.indexName)}, ${JSON.stringify({ dimensions: b.dimensions, metric: b.metric })}),`); break;
+      // No model off the edge: env.AI is there, and each call says it runs only on Cloudflare.
+      case "ai": bind.push(`  ${name}: local.ai(${JSON.stringify(name)}),`); break;
+      case "workflow":
+        if (b.scriptName) bind.push(`  // ${name}: Workflow in another script (${b.scriptName}) has no local twin`);
+        else { bind.push(`  ${name}: local.workflow(${JSON.stringify(name)}),`); workflows.push({ name, className: b.className }); }
+        break;
+      case "worker_loader": bind.push(`  ${name}: local.workerLoader(${JSON.stringify(name)}),`); break;
+      case "analytics_engine": bind.push(`  ${name}: local.analyticsEngine(${JSON.stringify(b.dataset ?? name)}),`); break;
       case "container": bind.push(`  // ${name}: Cloudflare Container (${b.className}) has no local twin; the app runs without it`); break;
       case "durable_object":
         if (b.scriptName) bind.push(`  // ${name}: DO in another script (${b.scriptName}) has no local twin`);
@@ -596,9 +601,11 @@ const doLater = (name: string) => {
 ${dos.map((d) => `env.${d.name} = doLater(${JSON.stringify(d.name)});`).join("\n")}
 // workerd logs a rejected waitUntil, cron or queue promise and keeps serving; Bun would exit.
 process.on("unhandledRejection", (e) => console.error("[worker] unhandled rejection:", e));
-const { default: worker, ${dos.map((d) => `${d.className}, `).join("")}} = await import(${JSON.stringify("../" + entry)});
+const { default: worker, ${[...new Set([...dos, ...workflows].map((d) => d.className))].map((n) => `${n}, `).join("")}} = await import(${JSON.stringify("../" + entry)});
 // into this same env, because a DO's constructor receives it (a DO can use DB, KV, other DOs)
-${dos.map((d) => `(env.${d.name} as any).__rbBind(local.durableObject(${d.className} as any, env, ${JSON.stringify(d.name)}));`).join("\n")}
+${dos.map((d) => `(env.${d.name} as any).__rbBind(local.durableObject(${d.className} as any, env, ${JSON.stringify(d.name)}));`).join("\n")}${workflows.length ? `
+// Workflows: create() before now queued its instance; bind() starts those and resumes any the last run left going.
+${workflows.map((w) => `(env.${w.name} as any).bind(${w.className} as any, env);`).join("\n")}` : ""}
 
 const token = ${h.token};
 const shell = serve<typeof env>({
@@ -762,7 +769,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
     name: "rustybuns-shims",
     setup(b: any) {
       // Host side: the worker-runtime modules become the local runtime.
-      b.onResolve({ filter: /^(cloudflare:workers|rwsdk\/worker)$/ }, () => ({ path: shimPath }));
+      b.onResolve({ filter: /^(cloudflare:workers|cloudflare:workflows|rwsdk\/worker)$/ }, () => ({ path: shimPath }));
       // A dependency's optional import that isn't installed (pg's pg-cloudflare and pg-native, only
       // loaded on those platforms) stays a runtime import instead of failing the bundle. The app's
       // own imports aren't covered: a missing one of those should still fail here.

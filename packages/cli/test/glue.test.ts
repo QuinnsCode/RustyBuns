@@ -612,7 +612,7 @@ test("ratelimit: wrangler and alchemy bind it; the desktop host leaves it out; w
     .toEqual({ RL: { type: "ratelimit", namespaceId: "7", simple: { limit: 5, period: 10 } } });
 });
 
-test("vectorize and ai: wrangler and alchemy bind them, with the index's metadata indexes; the desktop host leaves them out", () => {
+test("vectorize and ai: wrangler and alchemy bind them, with the index's metadata indexes; the desktop host runs their twins", () => {
   const c = {
     name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
     bindings: { VECTORS: { type: "vectorize", indexName: "g-vectors", dimensions: 384, metadataIndexes: { repo: "string", pub: "boolean" } }, AI: { type: "ai" } },
@@ -627,8 +627,8 @@ test("vectorize and ai: wrangler and alchemy bind them, with the index's metadat
   expect(a).toContain(`VECTORS: VECTORS, AI: AI`);
   expect(a).toContain(`yield* Cloudflare.Vectorize.MetadataIndex("VECTORS_repo", { indexName: (yield* VECTORS).indexName, propertyName: "repo", indexType: "string" });`);
   expect(a).toContain(`propertyName: "pub", indexType: "boolean"`);
-  expect(desktopEntry(c)).toContain(`// VECTORS: Cloudflare Vectorize has no local twin`);
-  expect(desktopEntry(c)).toContain(`// AI: Workers AI has no local twin`);
+  expect(desktopEntry(c)).toContain(`  VECTORS: local.vectorize("g-vectors", {"dimensions":384}),`);
+  expect(desktopEntry(c)).toContain(`  AI: local.ai("AI"),`);
   expect(wranglerToConfig({ name: "g", ai: { binding: "BRAIN" } }).bindings).toEqual({ BRAIN: { type: "ai" } });
 });
 
@@ -701,7 +701,7 @@ test("queue dead-letter queue: a consumer-only queue gets messages past maxRetri
   });
 });
 
-test("workflow, analytics engine, worker loader, observability, routes: wrangler and alchemy bind them; the desktop leaves them out", () => {
+test("workflow, analytics engine, worker loader, observability, routes: wrangler and alchemy bind them; the desktop runs their twins", () => {
   const c = {
     name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [], observability: { enabled: true, logs: { enabled: true, headSamplingRate: 0.1 } } },
     bindings: {
@@ -725,9 +725,11 @@ test("workflow, analytics engine, worker loader, observability, routes: wrangler
   expect(a).toContain(`  domain: {"name":"app.example.com","aliases":["www.example.com"]},`);
   expect(a).toContain(`  routes: [{"pattern":"example.com/api/*","zoneName":"example.com"}],`);
   const host = desktopEntry(c);
-  expect(host).toContain(`// FLOW: Cloudflare Workflows (Flow) has no local twin`);
-  expect(host).toContain(`// LOADER: the Dynamic Worker Loader has no local twin`);
-  expect(host).toContain(`AE: { writeDataPoint() {} },`);
+  expect(host).toContain(`  FLOW: local.workflow("FLOW"),`);
+  expect(host).toContain(`const { default: worker, Flow, } = await import(`);
+  expect(host).toContain(`(env.FLOW as any).bind(Flow as any, env);`);
+  expect(host).toContain(`  LOADER: local.workerLoader("LOADER"),`);
+  expect(host).toContain(`  AE: local.analyticsEngine("events"),`);
   expect(wranglerToConfig({ name: "g", ...w }).bindings).toEqual(c.bindings);
   expect(wranglerToConfig({ name: "g", ...w }).worker!.observability).toEqual(c.worker.observability);
 });
