@@ -5,7 +5,7 @@
 /** What each part can be. Colors are any #rrggbb; these are the palettes the editor offers. */
 export const PARTS = {
   skin: ["#f7d6b8", "#ecbf96", "#d49a6a", "#a8693f", "#7a4a2c", "#4e2e1b", "#c9e4c5", "#bcd0f2"],
-  hair: ["none", "short", "bob", "long", "spiky", "afro", "mohawk", "bun", "pigtails", "buzz", "mullet"],
+  hair: ["none", "short", "bob", "long", "spiky", "afro", "mohawk", "bun", "pigtails", "buzz", "mullet", "ponytail", "space-buns", "locs", "pompadour", "curly", "braids", "topknot", "flat-top"],
   hairColor: ["#16191c", "#4a2f1d", "#8a5a3c", "#d8b04a", "#e8590c", "#c23a6b", "#3a6bd8", "#f4f5f5"],
   hat: ["none", "cap", "beanie", "tophat", "hardhat", "cat-ears", "halo", "propeller", "wizard", "party", "cone", "headphones", "crown", "rubber-duck", "bucket"],
   eyes: ["dot", "wide", "sleepy", "happy", "wink", "angry"],
@@ -87,17 +87,26 @@ export function drawAvatar(g: Ctx, a: Avatar, x: number, y: number, h: number, s
   if (a.hair === "long") box(-21, headY + 8, 42, 40, hc, 12);
   if (a.hair === "bob") box(-21, headY + 8, 42, 26, hc, 12);
   if (a.hair === "pigtails") { box(-30, headY + 20, 10, 24, hc, 5); box(20, headY + 20, 10, 24, hc, 5); }
+  if (a.hair === "locs") for (let i = -3; i <= 3; i++) box(i * 6.2 - 2.5, headY + 4, 5, 34 + (3 - Math.abs(i)) * 2, hc, 2.5);
+  if (a.hair === "braids") for (const s of [-1, 1]) for (let j = 0; j < 4; j++) { g.fillStyle = hc; g.beginPath(); g.arc(x + s * 21 * u, y + (headY + 16 + j * 8) * u, 4.4 * u, 0, 7); g.fill(); }
+  if (a.hair === "mullet") box(-22, headY + 14, 44, 30, hc, 8);
+  if (a.hair === "ponytail") box(14, headY + 8, 11, 30, hc, 5.5);
   if (a.hair === "afro") { g.fillStyle = hc; g.beginPath(); g.arc(x, y + (headY + 14) * u, 27 * u, 0, 7); g.fill(); }
   box(-18, headY, 36, 36, a.skin, 15);
   // hair on top
   g.fillStyle = hc;
-  if (a.hair === "short" || a.hair === "bob" || a.hair === "long" || a.hair === "pigtails" || a.hair === "bun") box(-19, headY - 2, 38, 13, hc, 8);
+  if (["short", "bob", "long", "pigtails", "bun", "ponytail", "space-buns", "locs", "braids", "topknot"].includes(a.hair)) box(-19, headY - 2, 38, 13, hc, 8);
   if (a.hair === "bun") { g.beginPath(); g.arc(x, y + (headY - 6) * u, 7 * u, 0, 7); g.fill(); }
   if (a.hair === "spiky") for (let i = -2; i <= 2; i++) { g.beginPath(); g.moveTo(x + (i * 7 - 4) * u, y + (headY + 6) * u); g.lineTo(x + i * 7 * u, y + (headY - 10 - (2 - Math.abs(i)) * 2) * u); g.lineTo(x + (i * 7 + 4) * u, y + (headY + 6) * u); g.fill(); }
   if (a.hair === "mohawk") box(-4, headY - 12, 8, 20, hc, 3);
   if (a.hair === "afro") box(-19, headY, 38, 8, hc, 6);
+  if (a.hair === "space-buns") for (const sx of [-1, 1]) { g.beginPath(); g.arc(x + sx * 15 * u, y + (headY - 5) * u, 8 * u, 0, 7); g.fill(); }
+  if (a.hair === "topknot") { box(-4, headY - 17, 8, 14, hc, 4); g.beginPath(); g.arc(x, y + (headY - 19) * u, 6 * u, 0, 7); g.fill(); }
+  if (a.hair === "pompadour") box(-18, headY - 15, 36, 22, hc, 11);
+  if (a.hair === "flat-top") box(-18, headY - 13, 36, 19, hc, 3);
+  if (a.hair === "curly") for (let i = 0; i < 7; i++) { const t = Math.PI * (1 + i / 6); g.beginPath(); g.arc(x + Math.cos(t) * 17 * u, y + (headY + 12 + Math.sin(t) * 15) * u, 7 * u, 0, 7); g.fill(); }
   if (a.hair === "buzz") box(-18, headY - 1, 36, 8, hc, 7);
-  if (a.hair === "mullet") { box(-19, headY - 2, 38, 12, hc, 8); box(-16, headY + 20, 32, 18, hc, 6); }
+  if (a.hair === "mullet") box(-19, headY - 2, 38, 12, hc, 8);
   drawFace(g, a, x, y + cy * u, u);
   // hats
   if (a.hat === "cap") { box(-20, headY - 5, 40, 12, "#e8590c", 8); box(2, headY + 3, 24, 4, "#e8590c", 2); }

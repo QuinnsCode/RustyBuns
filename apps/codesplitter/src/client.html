@@ -6511,7 +6511,7 @@ async function avatarBox(user, mine, name) {
     const head = new Set(["eyes", "mouth", "hair", "hat", "glasses"]);
     // One option on a thumbnail: head parts crop to the head, the rest show the whole figure.
     const thumb = (k, v) => {
-      const c = document.createElement("canvas"); c.width = c.height = 128; const t = c.getContext("2d"), x = { ...a, [k]: v };
+      const c = document.createElement("canvas"); c.width = c.height = 128; const t = c.getContext("2d"), x = { ...a, [k]: v, ...(k === "hair" ? { hat: "none" } : {}) };
       if (head.has(k)) { const legH = x.build === "tall" ? 30 : x.build === "short" ? 16 : 24, u = 2; drawAvatar(t, x, 64, 80 + (legH + 44) * u, 100 * u); }
       else drawAvatar(t, x, 64, 122, 118);
       return c;

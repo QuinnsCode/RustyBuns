@@ -987,6 +987,15 @@ function person(a) {
   if (a.hair === "bun") add(BALL, hair, 0, hy + r * 1.05, 0.04, 0.2, 0.2, 0.2);
   if (a.hair === "pigtails") for (const s of [-1, 1]) add(BALL, hair, s * r * 1.15, hy - 0.08, 0.05, 0.16, 0.22, 0.16);
   if (a.hair === "afro") add(BALL, hair, 0, hy + 0.08, 0.04, r * 3.2, r * 3, r * 3);
+  if (["ponytail", "space-buns", "locs", "braids", "topknot", "pompadour", "curly"].includes(a.hair)) hairCap();
+  if (a.hair === "ponytail") { add(BALL, hair, 0, hy - 0.04, r * 1.1, 0.14, 0.36, 0.14); add(BALL, hair, 0, hy + 0.1, r * 0.95, 0.13, 0.13, 0.13); }
+  if (a.hair === "space-buns") for (const s of [-1, 1]) add(BALL, hair, s * r * 0.8, hy + r * 0.85, 0, 0.17, 0.17, 0.17);
+  if (a.hair === "locs") for (let i = -3; i <= 3; i++) { const t = (i / 3) * 1.7; add(BOX, hair, Math.sin(t) * r * 1.02, hy - 0.2, Math.cos(t) * r * 0.9, 0.06, 0.5 - Math.abs(i) * 0.03, 0.06); }
+  if (a.hair === "braids") for (const s of [-1, 1]) for (let j = 0; j < 3; j++) add(BALL, hair, s * r * 1.02, hy - 0.08 - j * 0.1, 0.08, 0.09, 0.11, 0.09);
+  if (a.hair === "topknot") { add(BALL, hair, 0, hy + r * 1.1, 0, 0.1, 0.2, 0.1); add(BALL, hair, 0, hy + r * 1.32, 0, 0.14, 0.14, 0.14); }
+  if (a.hair === "pompadour") add(BALL, hair, 0, hy + r * 0.95, -r * 0.3, r * 1.7, 0.28, r * 1.5);
+  if (a.hair === "flat-top") add(BOX, hair, 0, hy + r * 0.8, 0, r * 1.9, 0.2, r * 1.9);
+  if (a.hair === "curly") { for (let i = 0; i < 8; i++) { const t = (i / 8) * Math.PI * 2; add(BALL, hair, Math.cos(t) * r * 0.85, hy + r * 0.55, Math.sin(t) * r * 0.85, 0.18, 0.18, 0.18); } add(BALL, hair, 0, hy + r * 0.95, 0, 0.22, 0.2, 0.22); }
   if (a.hair === "buzz") hairCap(1.03);
   if (a.hair === "mullet") { hairCap(); add(BOX, hair, 0, hy - 0.16, 0.13, r * 1.7, 0.4, r * 1.1); }
   if (a.hair === "mohawk") add(BOX, hair, 0, hy + r * 0.95, 0, 0.07, 0.24, r * 1.5);
