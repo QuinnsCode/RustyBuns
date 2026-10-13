@@ -40,7 +40,10 @@
 // `preview` rule and the site's `containers` minutes, as a check in a container does
 // (ci-runner.ts). The doctor doesn't wait: it asks again on its next run, with the same files,
 // and gets the result, kept here by commit, folder and files. A preview keeps no Alchemy state:
-// it stands up and comes down in the one container.
+// it stands up and comes down in the one container. Unless its destroy fails: then that
+// stage's state is sealed under `stuck:<stage>` with the commit and files it ran, and a later
+// alarm, when the container is free, puts it back in a fresh container and destroys again,
+// backing off between tries. The sealed state goes only once a destroy succeeds (#1299).
 
 import { begin, finish, remoteFor, stateSuffix } from "./deploy.ts";
 import { isCleared, review, waitingNote } from "./deploy-review.ts";
@@ -58,6 +61,11 @@ interface Job { owner: string; repo: string; run: Run; production: boolean; dir?
 export interface PreviewResult { id: string; stage: string; ok: boolean; url?: string; failed?: string; note?: string; out?: string }
 /** What POST /preview answers: the result, the run it's waiting on, or why it can't go now. */
 export type PreviewAnswer = { result: PreviewResult } | { running: Run } | { busy: string };
+/** A preview whose destroy failed: what a later alarm needs to destroy it again (#1299). */
+interface Stuck { id: string; stage: string; commit: string; dir?: string; files: Record<string, string>; sealed: string; tries: number; next: number; last?: string }
+/** The wait before a stuck preview's next destroy, doubling from the first to the last. */
+const RETRY_MS = [10 * 60_000, 24 * 60 * 60_000];
+
 /** Results kept, newest last. */
 const KEEP_RESULTS = 20;
 
@@ -134,7 +142,7 @@ export interface RunnerState {
   container?: ContainerApi;
   exports?: GateExports;
   storage: {
-    get<T>(k: string): Promise<T | undefined>; put(k: string, v: unknown): Promise<void>; setAlarm(at: number): Promise<void>;
+    get<T>(k: string): Promise<T | undefined>; put(k: string, v: unknown): Promise<void>; delete(k: string): Promise<boolean>; setAlarm(at: number): Promise<void>;
     list<T>(o: { prefix: string }): Promise<Map<string, T>>;
   };
 }
@@ -168,6 +176,14 @@ export class DeployRunner {
         await this.ctx.storage.put(k, fresh);
         out.states++;
       } catch { out.failed.push(k.slice("state".length)); }
+    }
+    for (const [k, stuck] of await this.ctx.storage.list<Stuck>({ prefix: "stuck:" })) {
+      try {
+        const fresh = await resealState(this.env, owner, repo, stuck.sealed);
+        if (!fresh || (await this.ctx.storage.get<Stuck>(k))?.sealed !== stuck.sealed) continue;
+        await this.ctx.storage.put(k, { ...stuck, sealed: fresh });
+        out.states++;
+      } catch { out.failed.push(k); }
     }
     return out;
   }
@@ -222,7 +238,7 @@ export class DeployRunner {
 
   async alarm() {
     const job = await this.load();
-    if (!job || job.run.done) return;
+    if (!job || job.run.done) return this.destroyStuck();
     const { owner, repo, run } = job, c = this.ctx.container;
     try {
       if (job.started) throw new Error("the run was cut off before it finished (an alarm gets 15 minutes)");
@@ -281,8 +297,12 @@ export class DeployRunner {
       if (job.preview) await preview(runner, remote, run, { dir: job.dir, files: job.preview.files, expect: job.preview.tip });
       else await preview(runner, remote, run, { keep: true, allowAdopt: job.production, dir: job.dir, expect: checked.tip! });
       if (run.note?.includes("wasn't logged in")) run.note = "the deploy wasn't logged in: store a deploy key for each provider its targets use (Cloudflare, Railway, Hetzner)";
-      // The clone it names went with the container.
-      if (run.kept) run.note = `destroy failed, and the container is gone: take stage ${run.stage} down by hand in the provider's dashboard`;
+      // The clone it names goes with the container; a preview's state is kept for a later destroy.
+      if (run.kept) {
+        const files = job.preview && await this.stick(c, job, run.kept).catch(() => false);
+        run.note = files ? `destroy failed: stage ${run.stage}'s state is kept, sealed, and a later run destroys it again`
+          : `destroy failed, and the container is gone: take stage ${run.stage} down by hand in the provider's dashboard`;
+      }
     } catch (e) {
       run.note = `failed: ${(e as Error).message}`;
     } finally {
@@ -292,6 +312,84 @@ export class DeployRunner {
       else await finish(this.env, run);
       await this.save();
       if (job.again) await this.begin(owner, repo, job.again, "commit");
+      else await this.nextAlarm();
+    }
+  }
+
+  /** Seal a preview's state after its destroy failed, with what a later destroy needs. False when it has none. */
+  private async stick(c: ContainerApi, job: Job, app: string) {
+    const { files } = (await call(c, { cwd: app })) as { files: Record<string, string> };
+    if (!Object.keys(files).length) return false;
+    const sealed = await sealState(this.env, job.owner, job.repo, files);
+    if (sealed.length > STATE_MAX) return false;
+    const stuck: Stuck = { id: job.run.id, stage: job.run.stage, commit: job.preview!.tip, dir: job.dir, files: job.preview!.files, sealed, tries: 0, next: Date.now() + RETRY_MS[0]! };
+    await this.ctx.storage.put(`stuck:${stuck.stage}`, stuck);
+    return true;
+  }
+
+  /** The alarm for whatever waits: a queued run now, else the soonest stuck preview's next destroy. */
+  private async nextAlarm() {
+    const job = await this.load();
+    if (job && !job.run.done) return this.ctx.storage.setAlarm(Date.now());
+    const stuck = [...(await this.ctx.storage.list<Stuck>({ prefix: "stuck:" })).values()];
+    if (stuck.length) await this.ctx.storage.setAlarm(Math.min(...stuck.map((x) => x.next)));
+  }
+
+  /**
+   * Destroy the stuck preview that's waited longest, in a fresh container: the commit it ran, its
+   * files over it, its state put back. The sealed state goes once the destroy succeeds; else it's
+   * sealed again as the destroy left it, and tried later.
+   */
+  private async destroyStuck() {
+    const job = await this.load(), c = this.ctx.container;
+    if (!job || !c) return;
+    const stuck = [...(await this.ctx.storage.list<Stuck>({ prefix: "stuck:" })).values()].sort((a, b) => a.next - b.next)[0];
+    if (!stuck) return;
+    const { owner, repo } = job, key = `stuck:${stuck.stage}`, started = Date.now(), deadline = started + this.budgetMs;
+    const wd = `/work/${stuck.id}`, app = stuck.dir ? `${wd}/repo/${stuck.dir}` : `${wd}/repo`;
+    let done = false, why = "";
+    try {
+      const keys = await deployKeys(this.env, owner, repo);
+      if (!Object.keys(keys).length) throw new Error("every deploy key was removed");
+      const remote = await remoteFor(this.env, owner, repo);
+      if (!remote) throw new Error("this repo has no git remote");
+      await gate(c, this.ctx.exports, hostList([hostOf(remote)], REGISTRIES, ...Object.keys(keys).map((p) => PROVIDER_HOSTS[p as Provider]), keys.hetzner ? CRATES : []));
+      c.start({ env: { ...keyEnv(keys), CI: "1" }, enableInternet: !!keys.hetzner });
+      const secrets = [remote, ...Object.values(keys).map((k) => k.token)];
+      const run = async (cmd: string[], cwd: string) => {
+        let out = "";
+        const h = hider(secrets, (s) => { out = (out + s).slice(-1500); });
+        const res = await portFetch(c, "/exec", JSON.stringify({ cmd, cwd, limit_ms: Math.max(1, deadline - Date.now()) }));
+        const code = await readExec(res, h.push).finally(h.flush);
+        if (code !== 0) throw new Error(`${cmd.slice(0, 3).join(" ")} exited ${code}: ${out.trim().slice(-500)}`);
+      };
+      // The commit the preview ran, which the review cleared then, not main's tip now.
+      await run(["git", "init", "--quiet", "repo"], wd);
+      await run(["git", "-C", "repo", "fetch", "--quiet", "--depth", "1", remote, stuck.commit], wd);
+      await run(["git", "-C", "repo", "checkout", "--quiet", "FETCH_HEAD"], wd);
+      const res = await portFetch(c, "/files", JSON.stringify({ cwd: `${wd}/repo`, files: stuck.files }));
+      if (!res.ok) throw new Error(`the container's /files: ${res.status}`);
+      await run(["bun", "install"], app);
+      await call(c, { cwd: app, files: await unsealState(this.env, owner, repo, stuck.sealed) });
+      await run(["bun", "x", "rustybuns", "destroy", "--yes", "--stage", stuck.stage], app);
+      done = true;
+      await this.ctx.storage.delete(key);
+      await this.env.DB.prepare("UPDATE deploys SET note = ? WHERE id = ?").bind(`its destroy failed, and a later try took stage ${stuck.stage} down`, stuck.id).run().catch(() => null);
+    } catch (e) {
+      why = (e as Error).message;
+    } finally {
+      if (!done) {
+        // As the failed destroy left it: it may have taken some of the stack down.
+        const { files } = c.running ? (await call(c, { cwd: app }).catch(() => ({ files: {} }))) as { files: Record<string, string> } : { files: {} };
+        const left = Object.keys(files).length ? await sealState(this.env, owner, repo, files).catch(() => null) : null;
+        const tries = stuck.tries + 1;
+        await this.ctx.storage.put(key, { ...stuck, ...(left && left.length <= STATE_MAX && { sealed: left }), tries,
+          next: Date.now() + Math.min(RETRY_MS[0]! * 2 ** tries, RETRY_MS[1]!), last: why.slice(0, 1000) });
+      }
+      await c.destroy().catch(() => {});
+      const minutes = Math.ceil((Date.now() - started) / 60_000);
+      await charge(this.env, "containers", SITE, minutes).catch(() => null);
+      await this.nextAlarm();
     }
   }
 

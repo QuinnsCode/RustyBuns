@@ -48,7 +48,9 @@ function fakeContainers(cfg = { adopt: false, edge: true, box: false }) {
     /** Set, the deploy streams its output in two pieces with this between them, as a real one does. */
     gate: null as Promise<void> | null,
     /** The commit the clone lands on: the remote's tip, once hosted() knows the app. */
-    head: async () => SHA };
+    head: async () => SHA,
+    /** Set, a command it matches exits 1. */
+    fails: null as ((line: string) => boolean) | null };
   const make = (): ContainerApi => {
     let running = false;
     // Its disk: .alchemy/state, gone when it's destroyed.
@@ -73,6 +75,7 @@ function fakeContainers(cfg = { adopt: false, edge: true, box: false }) {
           const line = cmd.join(" ");
           seen.ran.push(line);
           seen.limits.push(limit_ms);
+          if (seen.fails?.(line)) return Response.json({ code: 1, out: "it failed\n" });
           let out = "";
           if (line.includes("rev-parse")) out = (await seen.head()) + "\n";
           if (line.includes("bun -e")) out = `RB ${JSON.stringify(cfg)}\n`;
@@ -120,7 +123,9 @@ function runnerNamespace(env: any, make: () => ContainerApi, budgetMs?: number) 
             get: async (k: string) => structuredClone(data.get(k)) as any,
             put: async (k: string, v: unknown) => { data.set(k, structuredClone(v)); },
             list: async (o: { prefix: string }) => new Map([...data].filter(([k]) => k.startsWith(o.prefix))) as any,
-            setAlarm: async () => { setTimeout(() => void obj.alarm(), 0); },
+            delete: async (k: string) => data.delete(k),
+            // A later one is the test's to fire, with alarm().
+            setAlarm: async (at: number) => { if (at <= Date.now() + 1000) setTimeout(() => void obj.alarm(), 0); },
           },
         };
         const obj = new DeployRunner(ctx, env, budgetMs);
@@ -752,6 +757,35 @@ describe("the dependency doctor's preview on the site (#900)", () => {
     expect(second.branch).toBeUndefined();
     expect(second.waiting).toBeUndefined();
     expect(seen.env).toHaveLength(deployed);
+  });
+
+  test("a failed destroy keeps the stage's state sealed; a later alarm destroys it in a fresh container, then drops it (#1299)", async () => {
+    const { call, send, seen, env } = await doctor();
+    let destroys = 0;
+    seen.fails = (l) => l.includes("rustybuns destroy") && destroys++ === 0;
+    const first = await (await send("ryan-quinn", "/api/repos/ryan-quinn/lab/deps/run", {})).json() as any;
+    const { id } = first.waiting, stage = `preview-${id}`;
+    expect((await settlePreview(call)).history[0]).toMatchObject({ id, status: "failed", note: expect.stringContaining("state is kept, sealed") });
+    const stub = env.DEPLOY_RUNNER.get("ryan-quinn/lab") as any;
+    const stuck = await stub.ctx.storage.get(`stuck:${stage}`);
+    expect(stuck).toMatchObject({ stage, tries: 0, files: { "package.json": expect.stringContaining(`"kleur": "^4.1.5"`) } });
+    expect(await unsealState(env, "ryan-quinn", "lab", stuck.sealed)).toMatchObject({ "lab/prod/Worker.json": expect.stringContaining("lab-0") });
+    expect(seen.destroyed).toBe(1);
+
+    // The later alarm: a fresh container, the commit the preview ran with its files, its state back, destroyed.
+    seen.ran.length = 0;
+    await stub.alarm();
+    expect(seen.ran[1]).toContain(`fetch --quiet --depth 1`);
+    expect(seen.ran[1]).toEndWith(stuck.commit);
+    expect(seen.ran.at(-1)).toBe(`bun x rustybuns destroy --yes --stage ${stage}`);
+    expect(seen.laid.at(-1)!.files).toEqual(stuck.files);
+    expect(seen.env).toHaveLength(2);
+    expect(seen.destroyed).toBe(2);
+    expect(await stub.ctx.storage.list({ prefix: "stuck:" })).toEqual(new Map());
+    expect((await settlePreview(call)).history[0].note).toContain("a later try took stage");
+    // Nothing left to destroy: the next alarm starts no container.
+    await stub.alarm();
+    expect(seen.env).toHaveLength(2);
   });
 });
 
