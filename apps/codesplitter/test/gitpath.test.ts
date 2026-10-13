@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { Box3, PerspectiveCamera, Vector3 } from "three";
 import { join } from "node:path";
 import {
-  AHEAD, FOV, LANE_W, RIDE, SPACING, STACK, TILT, boardHalf, edgeSamples, fitDistance, stackOf, worldX, worldZ, buildNotes, eventPush, filterRange, gustRide, newRide, qAtFrac, qAtTime, remount, rideEvents, stepRide, tapGrade, tapRide, timeFracAt, timeTicks, type Side,
+  AHEAD, CURVES, curveById, warpQ, FOV, LANE_W, RIDE, SPACING, STACK, TILT, boardHalf, edgeSamples, fitDistance, stackOf, worldX, worldZ, buildNotes, eventPush, filterRange, gustRide, newRide, qAtFrac, qAtTime, remount, rideEvents, stepRide, tapGrade, tapRide, timeFracAt, timeTicks, type Side,
   breeze, cleanRefs, clockAt, currentIndex, edgeSlotAt, formatAge, formatClock, geometry,
   keptAncestors, kindOf, layoutGraph, multiplier, orderCommits, parseDag, parsePatchLog, pathSlotAt, qToScrub,
   readInput, scoreAt, scrubToIndex, scrubToQ, simplifyParents, slotOf, stepQ, topFiles,
@@ -653,5 +653,30 @@ describe("what git does to the rider", () => {
     let over = false;
     for (let k = 0; k < 300 && !over; k++) over = stepRide(r, 1 / 60, 0);
     expect(over).toBe(true);
+  });
+});
+
+describe("the video's speed curves", () => {
+  test("there are seven, and each starts at 0, ends at 1 and never goes back", () => {
+    expect(CURVES.length).toBe(7);
+    for (const c of CURVES) {
+      expect(c.warp(0)).toBeCloseTo(0, 9);
+      expect(c.warp(1)).toBeCloseTo(1, 9);
+      let prev = 0;
+      for (let k = 1; k <= 200; k++) { const w = c.warp(k / 200); expect(w).toBeGreaterThanOrEqual(prev - 1e-12); prev = w; }
+    }
+  });
+
+  test("faster-and-faster covers more ground in the last second than the first", () => {
+    const c = curveById("faster");
+    expect(c.warp(0.5)).toBeLessThan(0.1);
+    expect(1 - c.warp(0.9)).toBeGreaterThan(c.warp(0.1) - c.warp(0));
+  });
+
+  test("warpQ scales to the commits, clamps u, and an unknown id is steady", () => {
+    expect(warpQ(curveById("steady"), 0.5, 40)).toBe(20);
+    expect(warpQ(curveById("steady"), 2, 40)).toBe(40);
+    expect(warpQ(curveById("steady"), -1, 40)).toBe(0);
+    expect(curveById("nope").id).toBe("steady");
   });
 });

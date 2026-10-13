@@ -3,7 +3,7 @@
 // loads a pasted or uploaded file or picture, and runs the game: a unicyclist on the hot path, pedalled with
 // taps. build.ts bundles it, three.js and all, to /gitpath.js for gitpath.html.
 import {
-  RIDE, STACK, buildNotes, clampQ, clockAt, currentIndex, eventPush, filterRange, formatAge, formatClock, geometry, gustRide,
+  CURVES, RIDE, STACK, curveById, warpQ, buildNotes, clampQ, clockAt, currentIndex, eventPush, filterRange, formatAge, formatClock, geometry, gustRide,
   layoutGraph, newRide, qAtFrac, readInput, remount, rideEvents, scoreAt, stepQ, stepRide, tapRide, timeFracAt, timeTicks, breeze,
   type Geometry, type Input, type Layout, type Note, type RideEvent, type Side,
 } from "./gitpath.ts";
@@ -343,6 +343,78 @@ function stepGame(dt: number, now: number) {
   else if (q >= notes.length) { running = false; toast(`Made it to the newest commit with ${falls} spill${falls === 1 ? "" : "s"}`); }
 }
 
+// -- the video ------------------------------------------------------------------------------------
+
+const vid = $<HTMLDialogElement>("vidbox");
+let curveId = CURVES[0]!.id, recording = false;
+
+function showCurves() {
+  $("curves").innerHTML = CURVES.map((c) =>
+    `<button class="btn" type="button" role="radio" data-id="${c.id}" aria-checked="${c.id === curveId}" title="${esc(c.label)}">${icon(c.icon)}${esc(c.label)}</button>`).join("");
+  icons();
+  for (const b of $("curves").querySelectorAll<HTMLElement>("button")) b.onclick = () => { curveId = b.dataset.id!; showCurves(); };
+}
+
+function openVideo() {
+  if (!notes.length || recording) return;
+  setGame(false); play(false);
+  const a = from$.value || dayOf(Date.parse(notes[0]!.date)), b = to$.value || dayOf(Date.parse(notes[notes.length - 1]!.date));
+  $("vidrange").textContent = `${path}, ${a} to ${b} (${notes.length} commit${notes.length === 1 ? "" : "s"}). Change the range with the two date boxes.`;
+  $("vidmsg").textContent = "";
+  showCurves(); vid.showModal();
+}
+
+/** Plays the range through the chosen speed curve while a MediaRecorder watches the board, then hands over the file. */
+async function exportVideo() {
+  if (recording || !notes.length) return;
+  const out = document.createElement("canvas");
+  if (typeof MediaRecorder === "undefined" || !out.captureStream) { $("vidmsg").textContent = "This browser can't record a canvas"; return; }
+  const secs = Math.min(120, Math.max(3, Number($<HTMLInputElement>("vidsecs").value) || 15));
+  const curve = curveById(curveId);
+  const type = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm", "video/mp4"].find((t) => MediaRecorder.isTypeSupported(t));
+  // The 3D board and the flat layer of branch names over it are two canvases; the video gets them merged into one.
+  out.width = board.width; out.height = board.height;
+  const octx = out.getContext("2d")!;
+  const paint = () => { octx.clearRect(0, 0, out.width, out.height); octx.drawImage(board, 0, 0); octx.drawImage(hudCanvas, 0, 0, out.width, out.height); };
+  const rec = new MediaRecorder(out.captureStream(30), type ? { mimeType: type, videoBitsPerSecond: 6_000_000 } : undefined);
+  const chunks: Blob[] = [];
+  rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+  const done = new Promise<void>((r) => { rec.onstop = () => r(); });
+  recording = true;
+  $<HTMLButtonElement>("vidgo").disabled = true;
+  vid.close();
+  const was = q;
+  q = 0; refresh(); paint();
+  rec.start();
+  const t0 = performance.now();
+  await new Promise<void>((resolve) => {
+    const step = (t: number) => {
+      const u = (t - t0) / (secs * 1000);
+      q = warpQ(curve, u, notes.length);
+      refresh(); paint();
+      if (u >= 1) { setTimeout(resolve, 600); return; }   // hold the last frame a moment
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+  rec.stop();
+  await done;
+  recording = false;
+  $<HTMLButtonElement>("vidgo").disabled = false;
+  q = was; refresh();
+  const blob = new Blob(chunks, { type: rec.mimeType || "video/webm" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `gitpath-${path.split("/").pop()}-${curve.id}.${blob.type.includes("mp4") ? "mp4" : "webm"}`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+  toast(`Saved ${a.download}`);
+}
+
+$("vidbtn").onclick = openVideo;
+$("vidcancel").onclick = () => vid.close();
+$("vidgo").onclick = () => void exportVideo();
+
 // -- the keys and taps for the pedals --------------------------------------------------------------
 
 const keyName = (k: string) => (k === " " ? "Space" : k.length === 1 ? k.toUpperCase() : k);
@@ -378,7 +450,7 @@ function setGame(on: boolean) {
 const wake = () => { if (!raf) { last = performance.now(); raf = requestAnimationFrame(frame); } };
 
 function play(on = !playing) {
-  if (!notes.length || gameOn) return;
+  if (!notes.length || gameOn || recording) return;
   if (on && q >= notes.length) q = 0;
   playing = on;
   refresh(); wake();
@@ -482,6 +554,7 @@ window.addEventListener("keydown", (e) => {
     "]": () => faster(1), "[": () => faster(-1), "+": () => faster(1), "-": () => faster(-1),
     f: () => $("file").focus(), F: () => $("file").focus(),
     o: openFile, O: openFile, p: openPaste, P: openPaste,
+    v: openVideo, V: openVideo,
     a: openFace, A: resetFace, g: () => setGame(!gameOn), G: () => setGame(!gameOn),
     "?": () => showTip(!!tip.hidden), "/": () => showTip(!!tip.hidden),
     Escape: () => { showTip(false); if (gameOn) setGame(false); },
