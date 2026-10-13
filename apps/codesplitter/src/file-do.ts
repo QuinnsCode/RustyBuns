@@ -327,9 +327,11 @@ export class FileDurableObject {
       const m = merge(base, branch, this.doc, resolve, deleter, path, writer, rule);
       // Every line settled: check the merged code still builds before it lands.
       if (!m.conflicts.length && path) m.conflicts = lintMerge(path, this.doc, branch, m, resolve);
-      if (m.conflicts.length || dry || !m.ops.length) return json({ rev: this.doc.rev, ops: m.ops, conflicts: m.conflicts }, m.conflicts.length && !dry ? 409 : 200);
+      // Generated text both sides touched kept main's copy: its command runs once the merge lands.
+      const regen = m.regenerate && { regenerate: m.regenerate };
+      if (m.conflicts.length || dry || !m.ops.length) return json({ rev: this.doc.rev, ops: m.ops, conflicts: m.conflicts, ...regen }, m.conflicts.length && !dry ? 409 : 200);
       const r = await this.edit(m.by, m.ops);
-      return r.ok ? json({ rev: r.rev, ops: m.ops, applied: r.applied, conflicts: [] }) : json(refused(r), 409);
+      return r.ok ? json({ rev: r.rev, ops: m.ops, applied: r.applied, conflicts: [], ...regen }) : json(refused(r), 409);
     }
     if (req.method === "POST" && route === "commit") {
       const { message } = (await req.json()) as { message?: string };

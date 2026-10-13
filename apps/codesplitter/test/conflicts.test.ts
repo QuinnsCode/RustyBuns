@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { apply, empty, explain, fromText, merge, mergeWords, parseError, text, type Doc, type Resolve } from "../src/lines.ts";
+import { apply, empty, explain, fromText, generatedRegions, merge, mergeWords, parseError, text, type Doc, type Resolve } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
 import { markers, settled } from "../src/conflict-agent.ts";
 import { materializeOn, parseResolve } from "../src/branches.ts";
@@ -9,7 +9,7 @@ import { lintMerge } from "../src/lint.ts";
 import { local as boot } from "../src/local.ts";
 import { toFile } from "../src/archive.ts";
 import type { Exec } from "../src/agent-run.ts";
-import type { Tester } from "../src/deps.ts";
+import type { Regenerator, Tester } from "../src/deps.ts";
 
 // End to end (in-process D1 and file DOs): fine alone, slow on a busy machine.
 setDefaultTimeout(20_000);
@@ -259,6 +259,17 @@ describe("settled without asking (#933)", () => {
     expect(merged(was, onMain, onBranch, "client.html")).toBe("  .cg g:hover > *, .cg g.sel > * { stroke: red; }\n  .cg path.t { fill: brown; } .cg g[data-h] { cursor: pointer; } .cg g.beat > * { stroke: gold; }\n  .cg .bead { fill: gold; }\n  .cg-tag { gap: 3px; }\n  .cg-pick { display: grid; }");
   });
 
+  test("in prose a word cut once but still on the line isn't renamed away (2086218's README paragraph)", () => {
+    const was = "Jekyll copies it. Pages has rules. The generator must be installed, or Jekyll says so.";
+    const onMain = "Jekyll copies it. Pages has rules. Jekyll runs in Docker when Ruby is old.";
+    const onBranch = "Jekyll copies it. Plain Jekyll lacks plugins. Pages has rules. The generator must be installed, or Jekyll says so.";
+    expect(mergeWords(was, onMain, onBranch, false, true)).toBe("Jekyll copies it. Plain Jekyll lacks plugins. Pages has rules. Jekyll runs in Docker when Ruby is old.");
+    // Code keeps the guard whole.
+    expect(mergeWords(was, onMain, onBranch)).toBeNull();
+    // Gone from the line altogether, it's still a rename the other side's new words would miss.
+    expect(mergeWords("Use the map. Click a dot.", "Use the vein. Click a dot.", "Use the map. The map has tags. Click a dot.", false, true)).toBeNull();
+  });
+
   test("real rewrites stay conflicts: code hung under a line the other side removed, or one item rewritten two ways", () => {
     // drawGraph in client.html: the branch dropped the call, main hung the pulse code under it.
     expect(conflicts(sides("  };\n  drawGraph(graph);\n  el.on();", "  };\n  drawGraph(graph);\n  let beatAt = 0;\n  el.on();", "  };\n  el.on();"), "client.html")).toHaveLength(1);
@@ -266,6 +277,36 @@ describe("settled without asking (#933)", () => {
     const was = "/** Its versions. */\nexport type Registry = (n: string) => Promise<{ versions: string[] } | null>;";
     const onMain = "/** Its versions. */\nexport interface Meta { versions: string[]; tags?: Tags }\nexport type Registry = (n: string) => Promise<Meta | null>;";
     expect(conflicts(sides(was, onMain, was.replace("string[] }", "string[]; peers?: Peers }")))).toHaveLength(1);
+  });
+});
+
+describe("generated text (#1154)", () => {
+  const ref = (rows: string[]) => ["## Layout", "", "<!-- generated: bun run layout -->", "| File | What |", "|---|---|", ...rows, "", "<!-- /generated -->", "", "## Next"].join("\n");
+
+  test("a region opens at its marker and closes at /generated, or runs to the end", () => {
+    expect(generatedRegions(ref(["| `a.ts` | a |"]).split("\n"))).toEqual([{ from: 2, to: 7, command: "bun run layout" }]);
+    expect(generatedRegions(["// generated: bun run build:types", "export type A = 1;"])).toEqual([{ from: 0, to: 2, command: "bun run build:types" }]);
+    expect(generatedRegions(["# generated: make docs", "x", "# /generated", "y"])).toEqual([{ from: 0, to: 2, command: "make docs" }]);
+  });
+
+  test("both sides touched it: main's copy stays, no card, and the merge names the command (#1109's stale Layout)", () => {
+    const s = sides(ref(["| `a.ts` | a |", "| `c.ts` | c |"]), ref(["| `a.ts` | a |", "| `b.ts` | b |", "| `c.ts` | c |"]), ref(["| `a.ts` | a, now longer |", "| `c.ts` | c |", "| `d.ts` | d |"]));
+    const main = structuredClone(s.main), m = merge(s.base, s.branch, main, {}, "bot", "REFERENCE.md");
+    expect(m.conflicts).toEqual([]);
+    expect(m.regenerate).toEqual(["bun run layout"]);
+    expect(apply(main, m.ops, m.by, 0, main.rev).ok).toBe(true);
+    expect(text(main)).toBe(text(s.main));
+  });
+
+  test("the branch's edits outside it still land; touched on one side only, it merges as lines and nothing reruns", () => {
+    const was = ref(["| `a.ts` | a |"]);
+    const s = sides(was, ref(["| `a.ts` | a |", "| `b.ts` | b |"]), ref(["| `a.ts` | a |", "| `d.ts` | d |"]).replace("## Next", "## Next, renamed"));
+    const m = merge(s.base, s.branch, s.main, {}, "bot", "REFERENCE.md");
+    expect(m.regenerate).toEqual(["bun run layout"]);
+    expect(text(settle(s, {}, "REFERENCE.md"))).toBe(ref(["| `a.ts` | a |", "| `b.ts` | b |"]).replace("## Next", "## Next, renamed"));
+    const one = sides(was, was.replace("## Layout", "## The layout"), ref(["| `a.ts` | a |", "| `d.ts` | d |"]));
+    expect(merge(one.base, one.branch, one.main, {}, "bot", "REFERENCE.md").regenerate).toBeUndefined();
+    expect(text(settle(one, {}, "REFERENCE.md"))).toBe(ref(["| `a.ts` | a |", "| `d.ts` | d |"]).replace("## Layout", "## The layout"));
   });
 });
 
@@ -608,6 +649,42 @@ describe("over the API", () => {
     lock = "a@1.0.1 b@1\n";
     expect((await post("ana", "/api/repos/ana/r/branches/dep/merge", {})).status).toBe(200);
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=bun.lock")).json() as Doc)).toBe("a@1.0.1 b@1");
+  });
+
+  test("generated text both sides touched keeps main's copy, then its command runs on the merged tree (#1154)", async () => {
+    const { call, post } = await app();
+    const table = (rows: string[]) => ["# Ref", "", "<!-- generated: bun run layout -->", "| File |", "|---|", ...rows, "", "<!-- /generated -->"].join("\n");
+    await post("ana", "/api/repos/ana/r/files", { path: "package.json", content: "{}" });
+    await post("ana", "/api/repos/ana/r/files", { path: "app/REFERENCE.md", content: table(["| a |"]) });
+    for (const path of ["package.json", "app/REFERENCE.md"]) await post("ana", `/api/repos/ana/r/do/commit?path=${path}`, { message: "ref" });
+    await post("ana", "/api/repos/ana/r/branches", { name: "docs" });
+    const doc = async (branch?: string) => (await (await call("ana", `/api/repos/ana/r/do/file?path=app/REFERENCE.md${branch ? `&branch=${branch}` : ""}`)).json() as Doc);
+    const row = (await doc()).lines.find((l) => l.text === "| a |")!;
+    await post("ana", "/api/repos/ana/r/do/ops?path=app/REFERENCE.md&branch=docs", { ops: [{ kind: "insert", after: row.id, text: "| d |" }] });
+    await post("ana", "/api/repos/ana/r/do/ops?path=app/REFERENCE.md", { ops: [{ kind: "insert", after: row.id, text: "| b |" }] });
+
+    // Where merges may not run the repo's code, it lands with main's copy and says what to run.
+    const first = await post("ana", "/api/repos/ana/r/branches/docs/merge", {});
+    expect(first.status).toBe(200);
+    expect((await first.json() as any).regenerated).toEqual([{ paths: ["app/REFERENCE.md"], command: "bun run layout", cwd: "app", note: "not rebuilt: this repo's merges don't run its code (its test merges setting): run `bun run layout` in app on main" }]);
+    expect(text(await doc())).toBe(table(["| a |", "| b |"]));
+
+    // Where they may, the command runs from the file's folder and what it wrote goes onto main.
+    await post("ana", "/api/repos/ana/r/branches", { name: "docs2" });
+    const b = (await doc()).lines.find((l) => l.text === "| b |")!;
+    await post("ana", "/api/repos/ana/r/do/ops?path=app/REFERENCE.md&branch=docs2", { ops: [{ kind: "insert", after: b.id, text: "| e |" }] });
+    await post("ana", "/api/repos/ana/r/do/ops?path=app/REFERENCE.md", { ops: [{ kind: "insert", after: b.id, text: "| c |" }] });
+    await call("ana", "/api/repos/ana/r/deps", { method: "PUT", body: JSON.stringify({ test_merges: true }) });
+    const ran: { files: Record<string, string>; cwd: string; command: string; read: string[] }[] = [];
+    call.env.DOCS_REGENERATOR = (async (_remote, files, o) => {
+      ran.push({ files, cwd: o.cwd, command: o.command, read: o.read });
+      return { ok: true, out: "", files: { "app/REFERENCE.md": table(["| a |", "| b |", "| c |", "| d |", "| e |"]) + "\n" } };
+    }) as Regenerator;
+    const second = await post("ana", "/api/repos/ana/r/branches/docs2/merge", {});
+    expect(second.status).toBe(200);
+    expect((await second.json() as any).regenerated).toEqual([{ paths: ["app/REFERENCE.md"], command: "bun run layout", cwd: "app" }]);
+    expect(ran).toEqual([{ files: { "app/REFERENCE.md": table(["| a |", "| b |", "| c |"]) + "\n" }, cwd: "app", command: "bun run layout", read: ["app/REFERENCE.md"] }]);
+    expect(text(await doc())).toBe(table(["| a |", "| b |", "| c |", "| d |", "| e |"]));
   });
 
   test("a merge both sides changed, settled with no card, runs the tests in a throwaway clone before it lands (#1096)", async () => {
