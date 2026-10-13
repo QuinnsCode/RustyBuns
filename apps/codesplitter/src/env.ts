@@ -129,6 +129,7 @@ export interface Env {
   DEPS_ADVISORIES?: unknown;
   DEPS_TESTER?: unknown;
   DEPS_FIXER?: unknown;
+  DOCS_REGENERATOR?: unknown;
   /** Tests only: stands in for emailing or notifying the owner about a run (see deps.ts). */
   DEPS_NOTIFY?: unknown;
   /** "1" turns on the supply-chain watch's daily news search, which needs ANTHROPIC_API_KEY (watch.ts). */
