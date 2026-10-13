@@ -248,7 +248,12 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
     const [b, m, br] = [base, main, branch].map(text);
     if (b !== m && b !== br && m !== br) return wholeFile(branch, main, resolve.file as "main" | "branch" | undefined, deleter);
   }
-  const was = new Map(base.lines.map((l) => [l.id, l])), now = new Map(main.lines.map((l) => [l.id, l]));
+  const was = new Map(base.lines.map((l) => [l.id, l]));
+  // A diff pairs lines by likeness, so a line it rewrote may really have moved (see rewrites).
+  // Each such line gets an id of its own here; main's go back on the ops at the end.
+  main = unpair(main, rewrites(base, main, was));
+  branch = unpair(branch, rewrites(base, branch, was));
+  const now = new Map(main.lines.map((l) => [l.id, l]));
   const at = new Map(main.lines.map((l, i) => [l.id, i]));
   const movedOnMain = moves(base, main, was), movedOnBranch = moves(base, branch, was);
   const loose = (t: string) => kind === "prose" || remark(t);
@@ -268,7 +273,7 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
   main.lines.forEach((l, i) => { if (!was.has(l.id) && !before.has(l.text)) mainAdded.set(l.text, (mainAdded.get(l.text) ?? new Set()).add(mainHeads[i]!)); });
   const ops: Op[] = [], by: string[] = [], conflicts: Conflict[] = [], taken = new Set<string>();
   let next = main.nextId, after: string | null = null;
-  const push = (op: Op, who: string) => { ops.push(op); by.push(who); };
+  const dropped = new Set<string>(), replaced = new Map<string, string | null>(), push = (op: Op, who: string) => { ops.push(op); by.push(who); if (op.kind === "delete") dropped.add(op.line); };
   const insert = (t: string, who: string) => { push({ kind: "insert", after, text: t }, who); after = `L${next++}`; };
   // A line main also added right here, among its new lines after the anchor.
   const twin = (t: string) => {
@@ -311,12 +316,21 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
     // Both reshaped it the same way: nothing to do.
     const pick = join(ms) === join(bs) ? "main" : resolve[key], own = written(pick);
     // Just before the stretch, unless something already went in there.
-    const before = () => { if (after === null || now.has(after)) after = main.lines.filter((l) => mainPos.get(l.id)! < g.lo).at(-1)?.id ?? null; };
+    // A line an earlier stretch swapped out stands for what went in its place.
+    const before = () => {
+      if (after !== null && !now.has(after)) return;
+      after = null;
+      for (const l of main.lines.filter((l) => mainPos.get(l.id)! < g.lo).reverse()) {
+        if (replaced.has(l.id)) { after = replaced.get(l.id)!; break; }
+        if (!dropped.has(l.id)) { after = l.id; break; }
+      }
+    };
     if (pick === "branch" || own) {
       before();
       for (const m of ms) push({ kind: "delete", line: m.id, base: m.rev }, deleter);
       if (own) for (const t of own) insert(t, writer);
       else for (const l of bs) insert(l.text, l.by);
+      for (const m of ms) replaced.set(m.id, after);
       return;
     }
     if (pick === "both:branch-first") {
@@ -346,17 +360,20 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
     if (!pick) conflicts.push({ line: key, base: join(bl)!, main: join(ms), branch: join(bs) });
     if (ms.length) after = ms.at(-1)!.id;
   };
-  let r = 0;
-  for (const [k, l] of branch.lines.entries()) {
+  let r = 0, shift: { from: string; to: string } | null = null;
+  for (let [k, l] of branch.lines.entries()) {
     const p = branchPos.get(l.id)!;
     while (r < regions.length && regions[r]!.lo <= p) settle(regions[r++]!);
-    if (r && p <= regions[r - 1]!.hi) continue;
+    if (r && p <= regions[r - 1]!.hi) { shift = null; continue; }
     const b = was.get(l.id);
     if (!b) {
       const from = moveOf.get(l.id), m = from && now.get(from);
       // The branch moved a line: it carries main's edit, and a line both moved stays where main put it.
       if (from && !m && movedOnMain.has(from)) continue;
-      if (m && m.text !== was.get(from)!.text) { insert(m.text, m.by); continue; }
+      if (from) shift = null;
+      if (m && m.text !== was.get(from)!.text) { insert(blendLine(was.get(from)!.text, m.text, l.text, loose(m.text)) ?? m.text, m.by); continue; }
+      // Under a line main re-indented, the branch's new lines move with it.
+      if (shift && l.text.startsWith(shift.from)) l = { ...l, text: shift.to + l.text.slice(shift.from.length) };
       const same = twin(l.text);
       if (same) { after = same; continue; }
       // Main added this very line somewhere else: landing it too would double it.
@@ -374,6 +391,7 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
     }
     const moved = !now.has(l.id) && movedOnMain.get(l.id);
     const m = now.get(l.id) ?? (moved || undefined);
+    shift = m && indent(m.text) !== indent(b.text) && indent(l.text) === indent(b.text) ? { from: indent(b.text), to: indent(m.text) } : null;
     if (l.text !== b.text && m?.text !== l.text) {
       const pick = m?.text === b.text ? "branch" : resolve[l.id];
       const words = m && !pick ? blendLine(b.text, m.text, l.text, loose(b.text)) : null;
@@ -413,7 +431,7 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
     // Moved on both sides: main's copy stays.
     const m = now.get(b.id) ?? (movedOnBranch.has(b.id) ? undefined : movedOnMain.get(b.id));
     if (!m || inRegion(mainPos.get(m.id)!)) continue;
-    const pick = m.text === b.text || movedOnBranch.has(b.id) ? "branch" : resolve[b.id], own = written(pick);
+    const pick = m.text === b.text || (!now.has(b.id) && m.text.trim() === b.text.trim()) || movedOnBranch.has(b.id) ? "branch" : resolve[b.id], own = written(pick);
     if (!pick) conflicts.push({ line: b.id, base: b.text, main: m.text, branch: null });
     else if (pick === "branch") push({ kind: "delete", line: m.id, base: m.rev }, deleter);
     else if (own) {
@@ -425,8 +443,28 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
   }
   if (kind === "keyed") twiceKeyed(main, branch, ops, by, conflicts, resolve, deleter, path);
   conflicts.push(...broken(main, branch, ops, by, path, resolve, !conflicts.length));
-  return { ops, by, conflicts };
+  const back = (id: string) => id.startsWith("~") ? id.slice(1) : id;
+  return { ops: ops.map((o) => o.kind === "insert" ? { ...o, after: o.after && back(o.after) } : { ...o, line: back(o.line) }), by, conflicts };
 }
+
+/**
+ * Lines `side` rewrote into something unalike that aren't edits (#1223). A diff pairs a stretch's old and
+ * new lines by likeness, so when a block moves out of an `if`, a base line's id can land on whatever took
+ * its place while the line itself is new elsewhere. Such a rewrite is a line of its own when the side added
+ * the base line's text (indentation aside, and only once in base) once elsewhere: the base line moved.
+ */
+function rewrites(base: Doc, side: Doc, was: Map<string, Line>) {
+  const count = (ls: Line[]) => ls.reduce((m, l) => m.set(l.text.trim(), (m.get(l.text.trim()) ?? 0) + 1), new Map<string, number>());
+  const inBase = count(base.lines), added = count(side.lines.filter((l) => !was.has(l.id))), ids = new Set<string>();
+  for (const l of side.lines) {
+    const b = was.get(l.id), t = b?.text.trim();
+    if (!t || alike(t, l.text.trim()) >= 0.5) continue;
+    if (inBase.get(t) === 1 && added.get(t) === 1) ids.add(l.id);
+  }
+  return ids;
+}
+
+const unpair = (d: Doc, ids: Set<string>): Doc => ids.size ? { ...d, lines: d.lines.map((l) => ids.has(l.id) ? { ...l, id: `~${l.id}` } : l) } : d;
 
 /** A line that opens or closes a git conflict. `=======` alone is a markdown heading's underline too, so it doesn't count. */
 export const MARKER = /^(<{7}|>{7})( |$)/;
@@ -626,16 +664,17 @@ function keys(lines: string[], path: string): (string | null)[] {
 }
 
 /**
- * Lines `side` moved since `base`: each base line it deleted whose exact text
- * it inserted elsewhere, by base id. An unambiguous text (one deleted, one
- * added, not blank) is a move on its own; the deleted lines around a move
- * that match the added lines around it, blank or repeated (`}`), moved with it.
+ * Lines `side` moved since `base`: each base line it deleted whose text it
+ * inserted elsewhere, by base id. Indentation doesn't count: a block moved out
+ * of an `if` is a move (#1223). An unambiguous text (one deleted, one added,
+ * not blank) is a move on its own; the deleted lines around a move that match
+ * the added lines around it, blank or repeated (`}`), moved with it.
  */
 function moves(base: Doc, side: Doc, was: Map<string, Line>) {
   const has = new Set(side.lines.map((l) => l.id));
   const gone = new Map<string, string[]>(), added = new Map<string, Line[]>();
-  for (const l of base.lines) if (!has.has(l.id) && l.text.trim()) gone.set(l.text, [...gone.get(l.text) ?? [], l.id]);
-  for (const l of side.lines) if (!was.has(l.id) && l.text.trim()) added.set(l.text, [...added.get(l.text) ?? [], l]);
+  for (const l of base.lines) if (!has.has(l.id) && l.text.trim()) gone.set(l.text.trim(), [...gone.get(l.text.trim()) ?? [], l.id]);
+  for (const l of side.lines) if (!was.has(l.id) && l.text.trim()) added.set(l.text.trim(), [...added.get(l.text.trim()) ?? [], l]);
   const out = new Map<string, Line>();
   for (const [t, ids] of gone) {
     const to = added.get(t);
@@ -648,7 +687,7 @@ function moves(base: Doc, side: Doc, was: Map<string, Line>) {
     const [id, to] = todo.pop()!;
     for (const d of [-1, 1]) {
       const b = base.lines[bi.get(id)! + d], s = side.lines[si.get(to.id)! + d];
-      if (!b || !s || has.has(b.id) || out.has(b.id) || was.has(s.id) || into.has(s.id) || b.text !== s.text) continue;
+      if (!b || !s || has.has(b.id) || out.has(b.id) || was.has(s.id) || into.has(s.id) || b.text.trim() !== s.text.trim()) continue;
       out.set(b.id, s); into.add(s.id); todo.push([b.id, s]);
     }
   }
