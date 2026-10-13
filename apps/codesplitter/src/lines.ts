@@ -151,7 +151,8 @@ export function kindOf(path: string): Kind {
  * go under it where it is now. New lines both added at one spot land main's
  * first, or in order in a sorted block (an import block, keys one per line);
  * the same new line added at the same spot on both sides lands once.
- * A stretch both sides reshaped settles line by line where it can (see blend).
+ * A stretch both sides reshaped settles line by line where it can (see blend),
+ * or word by word when it's a statement one side joined or wrapped (see rejoin).
  * A name one side renamed across the file (see renames) is renamed in the
  * lines the other side added too.
  *
@@ -345,7 +346,7 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
       for (const l of bs) insert(l.text, l.by);
       return;
     }
-    const bl = base.lines.filter((_, i) => covers(g, 2 * i + 1)), both = pick ? null : blend(bl, ms, bs, kind !== "prose", loose);
+    const bl = base.lines.filter((_, i) => covers(g, 2 * i + 1)), both = pick ? null : blend(bl, ms, bs, kind !== "prose", loose) ?? rejoin(bl, ms, bs, kind !== "prose", loose);
     if (both) {
       before();
       const keep = new Set(both.map((e) => e.m?.id));
@@ -552,11 +553,7 @@ function blend(bl: Line[], ms: Line[], bs: Line[], strict: boolean, loose: (t: s
       return best;
     });
   };
-  if (strict) {
-    const was = new Map(bl.map((b) => [b.id, b.text]));
-    const relinked = (side: Line[]) => side.some((l) => was.get(l.id) !== l.text && LINK.test(l.text));
-    if (relinked(ms) && relinked(bs)) return null;
-  }
+  if (strict && relinked(bl, ms, bs)) return null;
   const pm = pair(ms), pb = pair(bs), out: { m?: Line; text: string; by: string }[] = [];
   // Main's lines no base line paired with: a branch line that's the same lands once.
   const mainOnly = new Map<string, number>();
@@ -587,6 +584,27 @@ function blend(bl: Line[], ms: Line[], bs: Line[], strict: boolean, loose: (t: s
   }
   upTo(ms.length, bs.length);
   return out;
+}
+
+/** Both sides edited links of one `? :` or `&&` chain (#1168). */
+function relinked(bl: Line[], ms: Line[], bs: Line[]) {
+  const was = new Map(bl.map((b) => [b.id, b.text]));
+  const edits = (side: Line[]) => side.some((l) => was.get(l.id) !== l.text && LINK.test(l.text));
+  return edits(ms) && edits(bs);
+}
+
+/**
+ * A statement one side joined onto one line or wrapped onto several, and the other side only edited (#1256):
+ * each side's lines read as one text, merged word by word (see blendLine), laid out the way the side that
+ * moved the line breaks did. Null when it won't merge, or when it's more than a statement (four lines a side).
+ */
+function rejoin(bl: Line[], ms: Line[], bs: Line[], strict: boolean, loose: (t: string) => boolean) {
+  const kept = (side: Line[]) => side.length === bl.length && side.every((l, i) => l.id === bl[i]!.id);
+  if (!bl.length || !ms.length || !bs.length || Math.max(bl.length, ms.length, bs.length) > 4 || kept(ms) === kept(bs) || (strict && relinked(bl, ms, bs))) return null;
+  const join = (ls: Line[]) => ls.map((l) => l.text).join("\n");
+  const text = blendLine(join(bl), join(ms), join(bs), loose(bl[0]!.text), true);
+  // Main's lines take the merged text in order; the branch wrote what main didn't have.
+  return text?.split("\n").map((t, k) => ({ m: ms[k], text: t, by: t === ms[k]?.text ? ms[k]!.by : (bs[k] ?? bs.at(-1))!.by }));
 }
 
 /** A link of a multi-line `? :`, `&&`, `||` or `??` chain: a line that opens with one, or ends on one. */
@@ -833,8 +851,12 @@ function runs(lines: Line[]) {
  * With `both`, words both sides only added at the very same spot are kept: an
  * item each added to one list, `a`'s first (main's: it landed first), or in
  * order if the list was sorted. Refused if both add the same key.
+ *
+ * With `moved` (a statement one side joined or wrapped, see rejoin), a word a
+ * side took out but still has elsewhere in its text was moved, not renamed away,
+ * as in prose.
  */
-export function mergeWords(base: string, a: string, b: string, both = false, loose = false): string | null {
+export function mergeWords(base: string, a: string, b: string, both = false, loose = false, moved = loose): string | null {
   const o = words(base);
   const spans = (x: string[]) => {
     const out: { from: number; to: number; add: string[] }[] = [];
@@ -850,7 +872,7 @@ export function mergeWords(base: string, a: string, b: string, both = false, loo
   // A number always says something, however short: "up to 32" made 64 on one side, a new "room of 32" on the other (#1222).
   const named = (ws: string[]) => new Set(ws.filter((w) => /\w/.test(w) && (!loose || /\d/.test(w) || (w.length >= 3 && !STOP.has(w.toLowerCase())))));
   // In prose a word is only renamed away if it's gone from that side's line: one "Jekyll" of two cut is no rename.
-  const gone = (ss: typeof sa, x: string[]) => new Set([...named(ss.flatMap((s) => o.slice(s.from, s.to)))].filter((w) => !loose || !x.includes(w)));
+  const gone = (ss: typeof sa, x: string[]) => new Set([...named(ss.flatMap((s) => o.slice(s.from, s.to)))].filter((w) => !moved || !x.includes(w)));
   const added = (ss: typeof sa) => named(ss.flatMap((s) => s.add));
   const clash = (x: Set<string>, y: Set<string>) => [...x].some((w) => y.has(w));
   if (clash(gone(sa, wa), added(sb)) || clash(gone(sb, wb), added(sa))) return null;
@@ -923,9 +945,9 @@ const carry = (t: string, rs: Rename[], loose: boolean) =>
  * An `import type { … }` one side turned into `import { x, type … }` is read that way on
  * the other side too, so the names it added keep their `type` (#1168, build.ts).
  */
-function blendLine(base: string, a: string, b: string, loose: boolean) {
+function blendLine(base: string, a: string, b: string, loose: boolean, moved = loose) {
   if (TYPE_ONLY.test(base) && TYPE_ONLY.test(a) !== TYPE_ONLY.test(b)) [base, a, b] = [base, a, b].map(inlineTypes) as [string, string, string];
-  return mergeWords(base, a, b, false, loose) ?? mergeWords(base, a, b, true, loose);
+  return mergeWords(base, a, b, false, loose, moved) ?? mergeWords(base, a, b, true, loose, moved);
 }
 const TYPE_ONLY = /^(\s*import\s+)type\s*\{([^}]*)\}/;
 const inlineTypes = (t: string) => t.replace(TYPE_ONLY, (_, at: string, list: string) => `${at}{${list.split(",").map((n) => n.replace(/^(\s*)(?=\S)/, "$1type ")).join(",")}}`);

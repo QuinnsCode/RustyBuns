@@ -99,6 +99,9 @@ Corrections to the first pass:
 The two rejected rows are why L3 isn't "union the words". Raw tokens get separators wrong at the end
 of a list, and words matched across many lines line up the wrong braces. What works is to pair lines first, then
 merge items inside each paired line, and never word-merge blocks that only one side has.
+The one place a stretch is read as one text is a statement one side joined onto a line or wrapped onto
+several while the other only edited its lines (#1256): no more than four lines a side, so no braces to
+misalign, and laid out the way the side that moved the breaks did.
 
 ## 2. Why they all edit the same lines
 
