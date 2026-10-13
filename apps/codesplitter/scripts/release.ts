@@ -107,15 +107,20 @@ export function checkPlan(text: string, mode: Mode): Verdict {
   // current id, and the queue keeps its messages until it's back. The #825 move left all three on the
   // deleted queues, since their new ids weren't known when it planned.
   const consumer = (r: Row) => r.action === "replace" && !r.binding && /^[A-Z][A-Z0-9_]*Consumer$/.test(r.id);
-  const making = (r: Row) => moving(r) || (mode.checksNew && r.id === "CI_RUNNER");
-  const risky: string[] = [], made: string[] = [];
+  // A new queue comes with its consumer (`[FIXES] create`, `[FIXESConsumer] create`, #1234): it holds only
+  // messages and bills per operation, so it goes to the y/N before deploying instead of stopping the release.
+  const made = (id: string) => rows.some((r) => r.id === id && !r.binding && r.action === "create");
+  const newQueue = (r: Row) => r.action === "create" && !r.binding &&
+    (made(`${r.id}Consumer`) || (/^[A-Z][A-Z0-9_]*Consumer$/.test(r.id) && made(r.id.slice(0, -"Consumer".length))));
+  const making = (r: Row) => moving(r) || (mode.checksNew && r.id === "CI_RUNNER") || newQueue(r);
+  const risky: string[] = [], creates: string[] = [];
   for (const r of rows) {
     if (["delete", "replace", "orphaned", "unbind", "drop"].includes(r.action) && !moving(r) && !consumer(r)) risky.push(r.line);
     // A binding the Worker gains is a setting on it; one on anything else comes with that resource.
-    if (["create", "adopted"].includes(r.action) && !making(r) && !(r.binding && r.id === "Worker" && r.action === "create")) made.push(r.line);
+    if (["create", "adopted"].includes(r.action) && !making(r) && !(r.binding && r.id === "Worker" && r.action === "create")) creates.push(r.line);
   }
   if (risky.length) return out(`the plan deletes, replaces or unbinds something (${risky.join("; ")}). Not deploying; paste this to Claude.`);
-  if (made.length) return out(`the plan makes or takes over something on Cloudflare (${made.join("; ")}). Not deploying; paste this to Claude.`);
+  if (creates.length) return out(`the plan makes or takes over something on Cloudflare (${creates.join("; ")}). Not deploying; paste this to Claude.`);
   if (mode.move && !rows.some((r) => r.id === "DB" && !r.binding && r.action !== "noop" && r.action !== "update"))
     return out("--move, but the plan doesn't move DB to codesplitter-db. Not deploying; paste this to Claude.");
   return out(null);

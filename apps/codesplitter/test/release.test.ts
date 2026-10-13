@@ -93,6 +93,19 @@ describe("checkPlan", () => {
     expect(checkPlan(plan("Plan: 1 to adopted", "[DB] adopted"), plain).stop).toContain("[DB] adopted");
   });
 
+  // The owner's release on 2026-10-12, the first after #1241 gave fix tasks a FIXES queue of their own.
+  test("a new queue with its consumer goes to the y/N; a consumer alone or another new resource still stops it", () => {
+    const real = logged("Plan: 2 to create, 6 to update, 3 to replace, 4 binding changes", "[AGENT_SANDBOX] update", "[Build] update", "[CI_RUNNER] update",
+      "[DB] update", "[DEPLOY_RUNNER] update", "[FIXES] create", "[FIXESConsumer] create", "[HOOKSConsumer] replace", "[JOBSConsumer] replace",
+      "[LEVEL_DIGSConsumer] replace", "[Worker] update", "[Worker/AGENT_SANDBOX] update", "[Worker/CI_RUNNER] update",
+      "[Worker/DEPLOY_RUNNER] update", "[Worker/FIXES] create");
+    const v = checkPlan(real, plain);
+    expect(v.stop).toBeNull();
+    expect(v.show).toContain("[FIXES] create");
+    expect(checkPlan(plan("Plan: 1 to create", "[FIXESConsumer] create"), plain).stop).toContain("[FIXESConsumer] create");
+    expect(checkPlan(plan("Plan: 2 to create", "[FIXES] create", "[VECTORS] create"), plain).stop).toContain("[VECTORS] create");
+  });
+
   // The owner's release on 2026-10-13, after the #825 move left the consumers on the deleted queues.
   test("a queue consumer replaced onto its queue's new id goes out; anything else replaced still stops it", () => {
     const real = logged("Plan: 6 to update, 3 to replace, 3 binding changes", "[AGENT_SANDBOX] update", "[Build] update", "[CI_RUNNER] update", "[DB] update",
