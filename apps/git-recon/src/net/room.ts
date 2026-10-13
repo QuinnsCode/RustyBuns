@@ -39,7 +39,7 @@ export class Room {
   private looks = new Map<number, Look>();
   private held = new Map<number, Input>();
   /** Taps since the last step (a jump, a roll, a weapon, a single shot): they act even if the key's already up. */
-  private taps = new Map<number, Pick<Input, "jump" | "roll" | "fire" | "weapon">>();
+  private taps = new Map<number, Pick<Input, "jump" | "roll" | "fire" | "weapon" | "reload">>();
   private events: GameEvent[] = [];
   private files = new Map<string, string>();
   private roster = "";
@@ -76,8 +76,8 @@ export class Room {
     const id = this.ids.get(key), i = cleanInput(raw);
     if (id === undefined || !i) return;
     this.held.set(id, i);
-    const t = this.taps.get(id) ?? { jump: false, roll: false, fire: false };
-    this.taps.set(id, { jump: t.jump || i.jump, roll: t.roll || i.roll, fire: t.fire || i.fire, weapon: i.weapon ?? t.weapon });
+    const t = this.taps.get(id) ?? { jump: false, roll: false, fire: false, reload: false };
+    this.taps.set(id, { jump: t.jump || i.jump, roll: t.roll || i.roll, fire: t.fire || i.fire, weapon: i.weapon ?? t.weapon, reload: t.reload || i.reload });
   }
 
   /** Steps the battle to now (ms), and starts the next round once a decided one has been up NEXT_ROUND seconds. */
@@ -92,7 +92,7 @@ export class Room {
     const inputs = new Map<number, Input>();
     for (const [id, i] of this.held) {
       const t = this.taps.get(id);
-      inputs.set(id, t ? { ...i, jump: t.jump, roll: t.roll, fire: i.fire || t.fire, weapon: t.weapon } : { ...i, jump: false, roll: false, weapon: undefined });
+      inputs.set(id, t ? { ...i, jump: t.jump, roll: t.roll, fire: i.fire || t.fire, weapon: t.weapon, reload: t.reload } : { ...i, jump: false, roll: false, weapon: undefined, reload: false });
     }
     this.taps.clear();
     this.events.push(...this.game.step(dt, inputs));
@@ -151,7 +151,7 @@ export class Room {
     const stashes: StashState[] = g.stashes.map((s) => [s.id, r2(s.x), r2(s.y), r2(s.z)]);
     return {
       t: "snap", time: g.time, status: g.status, winner: g.winner, soldiers,
-      you: { ammo: ORDER.map((w) => me.ammo[w]), cd: r2(me.cd), heat: me.heat, shieldT: r2(me.shieldT), rollCd: r2(me.rollCd) },
+      you: { ammo: ORDER.map((w) => me.ammo[w]), loaded: ORDER.map((w) => me.loaded[w]), reload: r2(me.reload), cd: r2(me.cd), heat: me.heat, shieldT: r2(me.shieldT), rollCd: r2(me.rollCd) },
       shots, stashes, pickups: g.pickups, objective: g.objective, cleared: g.cleared, files: shared.files, events: shared.events,
       ...(shared.roster ? { roster: shared.roster } : {}),
     };

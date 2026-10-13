@@ -82,8 +82,8 @@ export class Mirror {
     const was = s.alive, local = { x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz, yaw: s.yaw, pitch: s.pitch, crouch: s.crouch, prone: s.prone, roll: s.roll, grounded: s.grounded };
     unpackSoldier(st, s);
     if (snap.you) {
-      ORDER.forEach((w, i) => (s.ammo[w] = snap.you!.ammo[i] ?? s.ammo[w]));
-      s.cd = snap.you.cd, s.heat = snap.you.heat, s.shieldT = snap.you.shieldT, s.rollCd = snap.you.rollCd;
+      ORDER.forEach((w, i) => ((s.ammo[w] = snap.you!.ammo[i] ?? s.ammo[w]), (s.loaded[w] = snap.you!.loaded[i] ?? s.loaded[w])));
+      s.reload = snap.you.reload, s.cd = snap.you.cd, s.heat = snap.you.heat, s.shieldT = snap.you.shieldT, s.rollCd = snap.you.rollCd;
     }
     // Down, just back, or only just here: the world's word on everything.
     if (first || !s.alive || !was) return;

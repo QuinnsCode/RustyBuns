@@ -117,7 +117,7 @@ describe("the wire", () => {
 
   test("inputs are cleaned: numbers in range, real weapons, a finite aim", () => {
     expect(cleanInput({ right: 9, forward: "x", yaw: 1, pitch: 9, fire: 1, weapon: "rm -rf", aim: { x: 1, y: NaN, z: 0 } }))
-      .toEqual({ right: 1, forward: 0, yaw: 1, pitch: 1.6, jump: false, roll: false, crouch: false, prone: false, scope: false, fire: false, aim: undefined, weapon: undefined });
+      .toEqual({ right: 1, forward: 0, yaw: 1, pitch: 1.6, jump: false, roll: false, crouch: false, prone: false, scope: false, fire: false, reload: false, aim: undefined, weapon: undefined });
     expect(cleanInput(null)).toBeNull();
   });
 
@@ -245,7 +245,7 @@ describe("the world", () => {
     expect(b.roster.map((r) => r.name).sort()).toEqual(["Guest", "Host"]);
     expect(b.roster.find((r) => r.name === "Guest")!.look).toEqual({ head: "bun", build: "lank" });
     // Nobody's uid goes out.
-    expect(JSON.stringify([guest.sent, host.sent])).not.toContain("secret");
+    for (const uid of ["guest-secret-1", "host-secret-1"]) expect(JSON.stringify([guest.sent, host.sent])).not.toContain(uid);
   });
 
   test("inputs move the player, and snapshots carry it", async () => {

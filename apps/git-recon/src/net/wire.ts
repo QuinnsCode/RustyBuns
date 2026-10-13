@@ -29,7 +29,7 @@ export type ShotState = [id: number, owner: number, team: Team, weapon: WeaponId
 export type StashState = [id: number, x: number, y: number, z: number];
 
 /** What only your own soldier needs: ammo per weapon (in ORDER), cooldowns, the shield's clock. */
-export interface Private { ammo: number[]; cd: number; heat: number; shieldT: number; rollCd: number }
+export interface Private { ammo: number[]; loaded: number[]; reload: number; cd: number; heat: number; shieldT: number; rollCd: number }
 
 export type ToWorld =
   | { t: "setup"; setup: Setup }
@@ -88,7 +88,7 @@ export function cleanInput(raw: unknown): Input | null {
   return {
     right: num(i.right, -1, 1), forward: num(i.forward, -1, 1),
     yaw: num(i.yaw, -1e6, 1e6), pitch: num(i.pitch, -1.6, 1.6),
-    jump: i.jump === true, roll: i.roll === true, crouch: i.crouch === true, prone: i.prone === true, scope: i.scope === true, fire: i.fire === true,
+    jump: i.jump === true, roll: i.roll === true, crouch: i.crouch === true, prone: i.prone === true, scope: i.scope === true, fire: i.fire === true, reload: i.reload === true,
     aim, weapon: ORDER.includes(i.weapon as WeaponId) ? (i.weapon as WeaponId) : undefined,
   };
 }

@@ -3,6 +3,11 @@
 // mid-roll) round a repo's compounds and take each one by downing its guards. The
 // level's mission (missions.ts) says what wins it. Go down and you come back from the
 // reflog, three times. Crates in the field and in cleared yards hold ammo and health.
+// Guns fire from a magazine and have to be reloaded (R, or by themselves when it runs dry).
+// What you carry is your role (roles.ts), picked for your next life. Steep ground is slow
+// to climb, and too steep and you slide. Build artifacts (barrels) in the yards blow up
+// when shot, setting each other off. Down 15 guards and a buggy drops in; 25, an attack
+// helicopter (vehicles.ts).
 // The files are the cover, and they don't last: blasts, fire and bullets delete their
 // lines, a file sinks as it loses them, and one with none left is gone.
 //
@@ -18,7 +23,9 @@
 import { mapRepo, mulberry32, reachable, type Block, type CodeMap, type RepoSnapshot } from "./codemap.ts";
 import { BRANCH_RADIUS, HEAD_RADIUS, OVERRUN, type Mission } from "./missions.ts";
 import { CLIFF, slope, wet, type Terrain } from "./terrain.ts";
-import { ORDER, splashDamage, WEAPONS, type WeaponId } from "./weapons.ts";
+import { ORDER, splashDamage, WEAPONS, type Weapon, type WeaponId } from "./weapons.ts";
+import { ROLES, type RoleId } from "./roles.ts";
+import { BOARD_REACH, HELI_CEILING, HELI_FLOOR, RUN_OVER, STREAKS, VEHICLES, type Vehicle, type VehicleKind } from "./vehicles.ts";
 
 /** "you" are the players on their own or side by side; "ours" and "theirs" the two sides of a team battle; "conflict" the guards. */
 export type Team = "you" | "conflict" | "ours" | "theirs";
@@ -69,7 +76,16 @@ export interface Soldier {
   /** A big compound's heavy: more HP, slower, carries the launcher. */
   heavy: boolean;
   weapon: WeaponId;
+  /** Rounds left of each, the magazine included (-1: spare magazines never run out). */
   ammo: Record<WeaponId, number>;
+  /** Rounds in each gun's magazine now. */
+  loaded: Record<WeaponId, number>;
+  /** Seconds left putting a fresh magazine in (0: not reloading). */
+  reload: number;
+  /** What it carries: its role's weapons, and git reset --hard once found. */
+  kit: WeaponId[];
+  /** The vehicle it's in, by id, or -1 on foot. */
+  vehicle: number;
   cd: number;
   /** Seconds left in a dive-roll, and seconds until the next one. */
   roll: number;
@@ -115,6 +131,21 @@ export interface Shot {
   target?: number;
 }
 
+/** A build artifact in a yard: shoot it and it blows up, and sets off any others near it. */
+export interface Barrel { id: number; x: number; y: number; z: number; hp: number; /** Seconds till it goes off once lit (-1: not lit), and who lit it. */ fuse: number; by: number }
+export const BARREL_HP = 30, BARREL_RADIUS = 0.45, BARREL_HEIGHT = 1.1, BARRELS = 3;
+/** A barrel's blast, and a wrecked vehicle's. */
+export const BARREL_BLAST: Weapon = { ...WEAPONS.push, damage: 110, splash: 5.5, knock: 15, wreck: 1.2 };
+export const VEHICLE_BLAST: Weapon = { ...WEAPONS.push, damage: 120, splash: 7, knock: 18, wreck: 1.5 };
+
+/** Ground steeper than this (rise over run) slides you back down. */
+export const SLIDE = 0.75;
+/** How much of your speed is left walking up (positive) or down (negative) a slope this steep. */
+export function climb(grade: number): number {
+  if (grade <= 0) return 1 + Math.min(0.15, -grade * 0.3);
+  return 1 / (1 + (grade * 2.2) ** 2);
+}
+
 /** A git stash on the ground: cover you hide behind, and a decoy the guards shoot at. */
 export interface Stash extends Block {
   id: number;
@@ -145,6 +176,12 @@ export interface Input {
   /** Looking down the rebase scope. */
   scope?: boolean;
   fire: boolean;
+  /** Put a fresh magazine in; get in or out of a vehicle (edge-triggered). */
+  reload?: boolean;
+  use?: boolean;
+  /** Held: a helicopter climbs, or drops. */
+  up?: boolean;
+  down?: boolean;
   /** What the crosshair is on; shots go from the muzzle to here. Without it, straight along yaw and pitch. */
   aim?: { x: number; y: number; z: number };
   weapon?: WeaponId;
@@ -168,6 +205,12 @@ export type GameEvent =
   /** A file with no lines left: gone. */
   | { kind: "razed"; path: string; lines: number; by: number; x: number; y: number; z: number; w: number; h: number; d: number }
   | { kind: "objective"; text: string }
+  | { kind: "reload"; id: number; weapon: WeaponId }
+  /** A kill streak earned a vehicle, which is dropping in. */
+  | { kind: "streak"; vehicle: VehicleKind; kills: number }
+  | { kind: "board"; vehicle: VehicleKind; on: boolean }
+  | { kind: "vehicleHit"; id: number; damage: number }
+  | { kind: "wrecked"; id: number; vehicle: VehicleKind }
   | { kind: "won" }
   | { kind: "lost" }
   /** A player joining or leaving a battle. */
@@ -200,6 +243,8 @@ export const FIELD_PICKUPS = 6;
 export const RESPAWN = 3, FFA_SCORE = 15, TEAM_SCORE = 30, BATTLE_SECONDS = 600;
 export const TICK = 1 / 120;
 
+/** A full magazine for a gun with this much ammo. */
+const full = (w: WeaponId, ammo: number) => (ammo < 0 ? WEAPONS[w].mag : Math.min(WEAPONS[w].mag, ammo));
 const fwd = (yaw: number) => ({ x: -Math.sin(yaw), z: -Math.cos(yaw) });
 const yawTo = (dx: number, dz: number) => Math.atan2(-dx, -dz);
 
@@ -220,6 +265,13 @@ export class Game {
   shots: Shot[] = [];
   stashes: Stash[] = [];
   pickups: Pickup[] = [];
+  barrels: Barrel[] = [];
+  vehicles: Vehicle[] = [];
+  /** Guards you've downed this level, which earn the vehicles. */
+  kills = 0;
+  /** What you carry (null: everything, for the sandbox), and what you'll carry from your next life. */
+  role: RoleId | null;
+  nextRole: RoleId | null = null;
   objective: Objective;
   events: GameEvent[] = [];
   time = 0;
@@ -241,7 +293,7 @@ export class Game {
   private acc = 0;
   private trailT = 0;
 
-  constructor(map: CodeMap, seed = 1, mission: Mission = { kind: "clear" }, mode?: Mode) {
+  constructor(map: CodeMap, seed = 1, mission: Mission = { kind: "clear" }, mode?: Mode, role: RoleId | null = null) {
     // Files get knocked down: the game's own copies, so the map it was given stays whole.
     this.map = { ...map, blocks: map.blocks.map((b) => ({ ...b })) };
     this.terrain = map.terrain;
@@ -250,8 +302,12 @@ export class Game {
     this.mission = mode && mode !== "coop" ? { kind: "clear" } : mission;
     this.rand = mulberry32(seed);
     this.cleared = map.compounds.map(() => false);
+    this.role = role;
     // On your own you're soldier 0; a battle's players join after the guards.
-    if (!mode) this.soldiers.push(this.soldier("you", "you", map.spawn.x, map.spawn.z, map.spawn.yaw, -1));
+    if (!mode) {
+      this.soldiers.push(this.soldier("you", "you", map.spawn.x, map.spawn.z, map.spawn.yaw, -1));
+      if (role) this.arm(this.you(), role);
+    }
     this.map.compounds.forEach((c, ci) => {
       for (let g = 0; g < c.guards; g++) {
         const a = (g / c.guards) * Math.PI * 2 + this.rand(), d = 2 + this.rand() * 2;
@@ -267,12 +323,25 @@ export class Game {
       }
     });
     this.scatterPickups(seed);
+    this.placeBarrels();
     this.objective = this.brief(this.mission);
     if (mode === "teams") this.far = this.farGround(seed);
   }
 
-  static fromRepo(ground: Terrain, repo: RepoSnapshot, seed = 1, mission?: Mission, mode?: Mode): Game {
-    return new Game(mapRepo(ground, repo, seed), seed, mission, mode);
+  static fromRepo(ground: Terrain, repo: RepoSnapshot, seed = 1, mission?: Mission, mode?: Mode, role?: RoleId): Game {
+    return new Game(mapRepo(ground, repo, seed), seed, mission, mode, role ?? null);
+  }
+
+  /** Hands a soldier a role's kit: its first gun with spare magazines for ever, the rest as they come. A found reset stays. */
+  arm(s: Soldier, role: RoleId) {
+    const r = ROLES[role];
+    for (const w of ORDER) {
+      if (w === "reset") continue;
+      s.ammo[w] = !r.weapons.includes(w) ? 0 : w === r.weapons[0] ? -1 : WEAPONS[w].ammo;
+      s.loaded[w] = full(w, s.ammo[w]);
+    }
+    s.kit = [...r.weapons, ...(s.ammo.reset > 0 ? (["reset"] as const) : [])];
+    s.weapon = r.weapons[0]!, s.reload = 0;
   }
 
   you(): Soldier { return this.soldiers[this.me]!; }
@@ -361,9 +430,10 @@ export class Game {
   private soldier(team: Team, name: string, x: number, z: number, yaw: number, compound: number, id = this.soldiers.length): Soldier {
     const player = team !== "conflict";
     const ammo = Object.fromEntries(ORDER.map((w) => [w, player ? WEAPONS[w].ammo : w === "commit" ? -1 : 0])) as Record<WeaponId, number>;
+    const loaded = Object.fromEntries(ORDER.map((w) => [w, full(w, ammo[w])])) as Record<WeaponId, number>;
     return {
       id, team, name, x, y: this.ground(x, z, Infinity), z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0,
-      hp: MAX_HP, maxHp: MAX_HP, shield: player ? MAX_SHIELD : 0, maxShield: player ? MAX_SHIELD : 0, shieldT: SHIELD_DELAY, alive: true, heavy: false, weapon: "commit", ammo, cd: 0, roll: 0, rollCd: 0, rollDir: { x: 0, z: 0 },
+      hp: MAX_HP, maxHp: MAX_HP, shield: player ? MAX_SHIELD : 0, maxShield: player ? MAX_SHIELD : 0, shieldT: SHIELD_DELAY, alive: true, heavy: false, weapon: "commit", ammo, loaded, reload: 0, kit: ORDER.filter((w) => ammo[w] !== 0), vehicle: -1, cd: 0, roll: 0, rollCd: 0, rollDir: { x: 0, z: 0 },
       grounded: true, crouch: false, prone: false, scoped: false, tagged: 0, heat: 0, burn: 0, burnBy: -1, burnT: 0, trail: [], compound,
       brain: player ? null : {
         home: { x, z }, alert: false, wait: 0, lost: 0, seen: null, strafe: 1, strafeT: 0, burst: 0, think: 0,
@@ -455,7 +525,7 @@ export class Game {
       this.acc -= TICK;
       this.tick(TICK, inputs);
       // Edge-triggered inputs act once.
-      inputs = new Map([...inputs].map(([id, i]) => [id, { ...i, jump: false, roll: false, weapon: undefined }]));
+      inputs = new Map([...inputs].map(([id, i]) => [id, { ...i, jump: false, roll: false, weapon: undefined, use: false, reload: false }]));
     }
     return this.events;
   }
@@ -485,8 +555,10 @@ export class Game {
     if (this.mode) this.comeBack(dt);
     for (const s of this.soldiers) if (s.alive && s.brain) this.think(s, dt);
     for (const s of this.soldiers) if (s.alive) this.move(s, dt);
+    for (const v of this.vehicles) if (v.driver < 0) this.settle(v, dt);
     this.separate();
     this.fly(dt);
+    this.fuses(dt);
     this.record(dt);
     for (const st of this.stashes) st.ttl -= dt;
     this.stashes = this.stashes.filter((st) => st.hp > 0 && st.ttl > 0);
@@ -502,7 +574,7 @@ export class Game {
       s.respawn -= dt;
       if (s.respawn > 0) continue;
       const { x, z, yaw } = this.spawnPoint(s.team);
-      Object.assign(s, { x, z, y: this.ground(x, z, Infinity), vx: 0, vy: 0, vz: 0, yaw, hp: s.maxHp, shield: s.maxShield, shieldT: SHIELD_DELAY, alive: true, roll: 0, cd: 0.5, burn: 0, trail: [] });
+      Object.assign(s, { x, z, y: this.ground(x, z, Infinity), vx: 0, vy: 0, vz: 0, yaw, hp: s.maxHp, shield: s.maxShield, shieldT: SHIELD_DELAY, alive: true, roll: 0, cd: 0.5, burn: 0, trail: [], reload: 0 });
       this.events.push({ kind: "respawn", id: s.id, lives: -1 });
     }
   }
@@ -520,12 +592,19 @@ export class Game {
   }
 
   private control(s: Soldier, input: Input, dt: number) {
+    if (input.use) this.toggleVehicle(s);
+    if (s.vehicle >= 0) {
+      const v = this.vehicles.find((v) => v.id === s.vehicle);
+      if (v) return this.drive(s, v, input, dt);
+      s.vehicle = -1;
+    }
     s.yaw = input.yaw;
     s.pitch = input.pitch;
     s.prone = !!input.prone && s.grounded;
     s.crouch = !s.prone && input.crouch && s.grounded;
     s.scoped = !!input.scope && s.weapon === "rebase";
-    if (input.weapon && s.ammo[input.weapon] !== 0) s.weapon = input.weapon;
+    if (input.weapon && input.weapon !== s.weapon && s.ammo[input.weapon] !== 0) s.weapon = input.weapon, s.reload = 0;
+    if (input.reload) this.startReload(s);
     const f = fwd(s.yaw), r = { x: -f.z, z: f.x };
     let mx = f.x * input.forward + r.x * input.right, mz = f.z * input.forward + r.z * input.right;
     const m = Math.hypot(mx, mz);
@@ -550,8 +629,20 @@ export class Game {
       s.vx = s.rollDir.x * v, s.vz = s.rollDir.z * v;
       return;
     }
+    // Uphill is slow going, the steeper the slower; downhill a little quicker.
+    const m = Math.hypot(mx, mz);
+    if (s.grounded && m > 0.05) {
+      const ux = mx / m, uz = mz / m, here = this.terrain.height(s.x, s.z);
+      k *= climb((this.terrain.height(s.x + ux * 0.8, s.z + uz * 0.8) - here) / 0.8);
+    }
     const top = (s.prone ? PRONE_SPEED : s.crouch ? CROUCH_SPEED : RUN) * k * (s.heavy ? 0.7 : 1), accel = s.grounded ? 60 : 20;
-    const tx = mx * top, tz = mz * top;
+    let tx = mx * top, tz = mz * top;
+    // Too steep to stand on (and not on a file): it slides you back down, the steeper the faster.
+    if (s.grounded && this.ground(s.x, s.z, s.y) <= this.terrain.height(s.x, s.z) + 0.05) {
+      const e = 0.5, gx = (this.terrain.height(s.x + e, s.z) - this.terrain.height(s.x - e, s.z)) / (2 * e);
+      const gz = (this.terrain.height(s.x, s.z + e) - this.terrain.height(s.x, s.z - e)) / (2 * e), g = Math.hypot(gx, gz);
+      if (g > SLIDE) tx -= (gx / g) * (g - SLIDE) * 14, tz -= (gz / g) * (g - SLIDE) * 14;
+    }
     const dx = tx - s.vx, dz = tz - s.vz, d = Math.hypot(dx, dz), a = Math.min(d, accel * dt);
     if (d > 0) s.vx += (dx / d) * a, s.vz += (dz / d) * a;
   }
@@ -562,6 +653,7 @@ export class Game {
     s.rollCd = Math.max(0, s.rollCd - dt);
     s.tagged = Math.max(0, s.tagged - dt);
     s.heat = Math.max(0, s.heat - HEAT_COOL * dt);
+    if (s.reload > 0 && (s.reload -= dt) <= 0) s.reload = 0, s.loaded[s.weapon] = full(s.weapon, s.ammo[s.weapon]);
     if (s.alive && s.shield < s.maxShield) {
       if (s.shieldT < SHIELD_DELAY && s.shieldT + dt >= SHIELD_DELAY) this.events.push({ kind: "shield", id: s.id, state: "charging" });
       if (s.shieldT + dt >= SHIELD_DELAY) {
@@ -578,7 +670,7 @@ export class Game {
         if (s.burnT >= 0.25) s.burnT -= 0.25, this.hurt(s, BURN_DPS * 0.25, s.burnBy);
       }
     }
-    if (!s.alive) return;
+    if (!s.alive || s.vehicle >= 0) return;
     const R = this.terrain.R;
     const tryTo = (nx: number, nz: number) => {
       // Cliffs: no walking up ground that rises faster than CLIFF, unless you're already above it.
@@ -648,8 +740,11 @@ export class Game {
         if (you.hp >= you.maxHp) return true;
         you.hp = Math.min(you.maxHp, you.hp + HEALTH_CRATE);
       } else if (p.kind === "ammo") {
-        for (const [w, n] of Object.entries(AMMO_CRATE) as [WeaponId, number][]) you.ammo[w] += n;
-      } else you.ammo.reset++;
+        for (const [w, n] of Object.entries(AMMO_CRATE) as [WeaponId, number][]) if (you.kit.includes(w) && you.ammo[w] >= 0) you.ammo[w] += n;
+      } else {
+        you.ammo.reset++, you.loaded.reset = full("reset", you.ammo.reset);
+        if (!you.kit.includes("reset")) you.kit.push("reset");
+      }
       this.events.push({ kind: "pickup", id: you.id, item: p.kind });
       return false;
     });
@@ -736,14 +831,34 @@ export class Game {
     return { x: s.x + f.x * 0.5 - f.z * 0.3, y: s.y + eye, z: s.z + f.z * 0.5 + f.x * 0.3 };
   }
 
+  /** Starts putting a fresh magazine in, if there's one to put in and this one isn't full. */
+  startReload(s: Soldier) {
+    if (s.reload > 0 || s.loaded[s.weapon] >= full(s.weapon, s.ammo[s.weapon])) return;
+    s.reload = WEAPONS[s.weapon].reload;
+    this.events.push({ kind: "reload", id: s.id, weapon: s.weapon });
+  }
+
   fire(s: Soldier, aim?: { x: number; y: number; z: number }, extraSpread = 0) {
-    if (s.cd > 0 || s.roll > 0) return;
-    const w = WEAPONS[s.weapon];
+    if (s.cd > 0 || s.roll > 0 || s.reload > 0) return;
     if (s.ammo[s.weapon] === 0) {
-      s.weapon = "commit";
+      s.weapon = s.kit.find((w) => s.ammo[w] !== 0) ?? "commit";
       return;
     }
-    const m = this.muzzle(s);
+    if (s.loaded[s.weapon] <= 0) return this.startReload(s);
+    const w = WEAPONS[s.weapon];
+    this.shoot(s, s.weapon, this.muzzle(s), aim, extraSpread);
+    s.heat = Math.min(MAX_HEAT, s.heat + w.bloom);
+    s.cd = w.cooldown;
+    s.loaded[s.weapon]--;
+    if (s.ammo[s.weapon]! > 0) s.ammo[s.weapon]!--;
+    this.events.push({ kind: "fire", id: s.id, weapon: s.weapon });
+    // The magazine's dry: straight into the reload.
+    if (s.loaded[s.weapon] <= 0 && s.ammo[s.weapon] !== 0) this.startReload(s);
+  }
+
+  /** Sends a weapon's rounds from m towards aim (or along s's facing). */
+  private shoot(s: Soldier, weapon: WeaponId, m: { x: number; y: number; z: number }, aim?: { x: number; y: number; z: number }, extraSpread = 0) {
+    const w = WEAPONS[weapon];
     let dx: number, dy: number, dz: number;
     if (aim) dx = aim.x - m.x, dy = aim.y - m.y, dz = aim.z - m.z;
     else {
@@ -761,14 +876,10 @@ export class Game {
       if (w.gravity > 5) uy += 0.25;
       const n = Math.hypot(ux, uy, uz);
       ux /= n, uy /= n, uz /= n;
-      const shot: Shot = { id: this.nextId++, owner: s.id, team: s.team, weapon: s.weapon, x: m.x, y: m.y, z: m.z, vx: ux * w.speed, vy: uy * w.speed, vz: uz * w.speed, age: 0, dead: false };
+      const shot: Shot = { id: this.nextId++, owner: s.id, team: s.team, weapon, x: m.x, y: m.y, z: m.z, vx: ux * w.speed, vy: uy * w.speed, vz: uz * w.speed, age: 0, dead: false };
       if (w.homing > 0) shot.target = this.pickTarget(s, m, ux, uy, uz);
       this.shots.push(shot);
     }
-    s.heat = Math.min(MAX_HEAT, s.heat + w.bloom);
-    s.cd = w.cooldown;
-    if (s.ammo[s.weapon]! > 0) s.ammo[s.weapon]!--;
-    this.events.push({ kind: "fire", id: s.id, weapon: s.weapon });
   }
 
   /** The enemy closest to the line of fire, within 20 degrees of it and 90 m: what a cherry-pick follows. */
@@ -806,6 +917,14 @@ export class Game {
           this.land(p, hit);
           break;
         }
+        const car = p.team !== "you" ? this.vehicleAt(p) : null, barrel = car ? null : this.barrelAt(p);
+        if (car || barrel) {
+          if (car) this.hurtVehicle(car, w.splash > 0 ? 0 : w.damage, p.owner);
+          else this.hurtBarrel(barrel!, w.damage, p.owner);
+          if (w.splash > 0 || w.effect === "stash") this.land(p, null);
+          else this.events.push({ kind: "impact", x: p.x, y: p.y, z: p.z, weapon: p.weapon }), (p.dead = true);
+          break;
+        }
         const g = this.terrain.height(p.x, p.z), b = this.blockAt(p.x, p.y, p.z);
         if (p.y <= g || b) {
           if (b && w.impact) this.wreck(b, w.damage * w.wreck, p.owner);
@@ -834,7 +953,7 @@ export class Game {
   /** A body the shot is inside, other than its own side's (and never the shooter's, by a direct hit). */
   private soldierAt(p: Shot): Soldier | null {
     for (const s of this.soldiers) {
-      if (!s.alive || !this.hostile(s, { id: p.owner, team: p.team })) continue;
+      if (!s.alive || s.vehicle >= 0 || !this.hostile(s, { id: p.owner, team: p.team })) continue;
       // Rolling: direct hits pass through.
       if (s.roll > 0) continue;
       if (p.y < s.y || p.y > s.y + bodyHeight(s)) continue;
@@ -848,24 +967,7 @@ export class Game {
     const w = WEAPONS[p.weapon];
     if (w.effect === "stash") return this.stash(p.x, p.z, p.y);
     if (w.splash > 0) {
-      this.events.push({ kind: "boom", x: p.x, y: p.y, z: p.z, r: w.splash });
-      // Every file and stash in the blast loses lines by how near its nearest face is.
-      for (const b of [...this.blocks()]) {
-        const cx = Math.max(b.x - b.w / 2, Math.min(p.x, b.x + b.w / 2)), cy = Math.max(b.y, Math.min(p.y, b.y + b.h)), cz = Math.max(b.z - b.d / 2, Math.min(p.z, b.z + b.d / 2));
-        this.wreck(b, splashDamage(w, Math.hypot(cx - p.x, cy - p.y, cz - p.z)) * w.wreck, p.owner);
-      }
-      for (const s of this.soldiers) {
-        if (!s.alive) continue;
-        const own = s.id === p.owner;
-        // No friendly fire, but your own blast still hurts you (half), the toy-soldier rule. Except a reset: it only wipes the yard.
-        if (own ? w.effect === "reset" : !this.hostile(s, { id: p.owner, team: p.team })) continue;
-        const dx = s.x - p.x, dy = s.y + 0.9 - p.y, dz = s.z - p.z, d = Math.hypot(dx, dy, dz);
-        const dmg = splashDamage(w, d) * (own ? 0.5 : 1) * (s.roll > 0 ? 0.5 : 1);
-        if (dmg <= 0) continue;
-        const k = w.knock * (1 - d / w.splash), hd = Math.hypot(dx, dz) || 1;
-        s.vx += (dx / hd) * k, s.vz += (dz / hd) * k, s.vy += k * 0.45, s.grounded = false;
-        this.hurt(s, dmg, p.owner);
-      }
+      this.blast(p.x, p.y, p.z, w, p.owner, p.team);
       if (w.effect === "reset") {
         // git reset --hard: the yard it lands in is wiped, every guard of it down wherever they stand.
         const ci = this.map.compounds.findIndex((c) => Math.hypot(c.x - p.x, c.z - p.z) < c.r + 2);
@@ -879,6 +981,221 @@ export class Game {
       if (w.burn > 0) direct.burn = Math.max(direct.burn, w.burn), direct.burnBy = p.owner;
       this.hurt(direct, w.damage, p.owner);
     }
+  }
+
+  /**
+   * An explosion: files, stashes, barrels, soldiers and vehicles in reach take damage by how near
+   * they are, and soldiers are thrown. No friendly fire for a team's own blast, except your own
+   * hurts you (half), the toy-soldier rule; a reset only wipes the yard. A barrel's (team null) hurts everyone.
+   */
+  private blast(x: number, y: number, z: number, w: Weapon, owner: number, team: Team | null) {
+    this.events.push({ kind: "boom", x, y, z, r: w.splash });
+    // Every file and stash in the blast loses lines by how near its nearest face is.
+    for (const b of [...this.blocks()]) {
+      const cx = Math.max(b.x - b.w / 2, Math.min(x, b.x + b.w / 2)), cy = Math.max(b.y, Math.min(y, b.y + b.h)), cz = Math.max(b.z - b.d / 2, Math.min(z, b.z + b.d / 2));
+      this.wreck(b, splashDamage(w, Math.hypot(cx - x, cy - y, cz - z)) * w.wreck, owner);
+    }
+    for (const b of this.barrels) this.hurtBarrel(b, splashDamage(w, Math.hypot(b.x - x, b.y + 0.5 - y, b.z - z)), owner);
+    if (team !== "you") for (const v of this.vehicles) if (v.alive) this.hurtVehicle(v, splashDamage(w, Math.hypot(v.x - x, v.y + VEHICLES[v.kind].mid - y, v.z - z)), owner);
+    for (const s of this.soldiers) {
+      if (!s.alive || s.vehicle >= 0) continue;
+      const own = team !== null && s.id === owner;
+      if (team !== null && (own ? w.effect === "reset" : !this.hostile(s, { id: owner, team }))) continue;
+      const dx = s.x - x, dy = s.y + 0.9 - y, dz = s.z - z, d = Math.hypot(dx, dy, dz);
+      const dmg = splashDamage(w, d) * (own ? 0.5 : 1) * (s.roll > 0 ? 0.5 : 1);
+      if (dmg <= 0) continue;
+      const k = w.knock * (1 - d / w.splash), hd = Math.hypot(dx, dz) || 1;
+      s.vx += (dx / hd) * k, s.vz += (dz / hd) * k, s.vy += k * 0.45, s.grounded = false;
+      this.hurt(s, dmg, owner);
+    }
+  }
+
+  /* ---------------- barrels ---------------- */
+
+  /** A few build artifacts round each yard's edge, clear of its files. */
+  private placeBarrels() {
+    for (const c of this.map.compounds) {
+      let placed = 0;
+      for (let i = 0; i < 12 && placed < BARRELS; i++) {
+        const a = (i / 12) * Math.PI * 2 + c.x * 0.1, r = Math.max(2, c.r - 1.5), x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r;
+        const y = this.terrain.height(x, z);
+        if (this.blockAt(x, y + 0.5, z) || this.blocks().some((b) => Math.abs(x - b.x) < b.w / 2 + 0.8 && Math.abs(z - b.z) < b.d / 2 + 0.8)) continue;
+        if (wet(this.terrain, x, z)) continue;
+        this.barrels.push({ id: this.nextId++, x, y, z, hp: BARREL_HP, fuse: -1, by: -1 });
+        placed++, i += 3;
+      }
+    }
+  }
+
+  private barrelAt(p: Shot): Barrel | null {
+    for (const b of this.barrels) if (p.y >= b.y && p.y <= b.y + BARREL_HEIGHT && Math.hypot(p.x - b.x, p.z - b.z) < BARREL_RADIUS) return b;
+    return null;
+  }
+
+  private hurtBarrel(b: Barrel, damage: number, by: number) {
+    if (damage <= 0 || b.fuse >= 0) return;
+    b.hp -= damage;
+    // Lit: it goes off a beat later, so a row of them goes up one after another.
+    if (b.hp <= 0) b.fuse = 0.12, b.by = by;
+  }
+
+  private fuses(dt: number) {
+    for (const b of [...this.barrels]) {
+      if (b.fuse < 0 || (b.fuse -= dt) > 0) continue;
+      this.barrels = this.barrels.filter((o) => o !== b);
+      this.blast(b.x, b.y + 0.5, b.z, BARREL_BLAST, b.by, null);
+    }
+  }
+
+  /* ---------------- vehicles ---------------- */
+
+  private dropVehicle(kind: VehicleKind) {
+    const you = this.you(), f = fwd(you.yaw), R = this.terrain.R - 4;
+    let x = you.x + f.x * 6, z = you.z + f.z * 6;
+    // Not on top of one already down: further off to the right.
+    for (let i = 0; i < 4 && this.vehicles.some((v) => Math.hypot(v.x - x, v.z - z) < 6); i++) x -= f.z * 6, z += f.x * 6;
+    const d = Math.hypot(x, z);
+    if (d > R) x *= R / d, z *= R / d;
+    const spec = VEHICLES[kind];
+    // It comes down out of the sky beside you.
+    this.vehicles.push({ id: this.nextId++, kind, x, y: this.ground(x, z, Infinity) + (kind === "heli" ? 30 : 14), z, vx: 0, vy: 0, vz: 0, yaw: you.yaw, hp: spec.hp, maxHp: spec.hp, driver: -1, alive: true, cd: 0, rocketCd: 0, odo: 0 });
+    this.events.push({ kind: "streak", vehicle: kind, kills: this.kills });
+  }
+
+  /** The nearest empty vehicle you could get in, if any. */
+  boardable(s: Soldier): Vehicle | null {
+    let best: Vehicle | null = null, bestD = BOARD_REACH;
+    for (const v of this.vehicles) {
+      const d = Math.hypot(v.x - s.x, v.z - s.z);
+      if (v.alive && v.driver < 0 && d < bestD && Math.abs(v.y - s.y) < 4) best = v, bestD = d;
+    }
+    return best;
+  }
+
+  private toggleVehicle(s: Soldier) {
+    const now = this.vehicles.find((v) => v.id === s.vehicle);
+    if (now) {
+      const f = fwd(now.yaw);
+      now.driver = -1, s.vehicle = -1;
+      // Out the right side, onto its own feet.
+      Object.assign(s, { x: now.x - f.z * 2.2, z: now.z + f.x * 2.2, y: now.y + 0.6, vx: now.vx * 0.3, vy: 0, vz: now.vz * 0.3, grounded: false });
+      this.events.push({ kind: "board", vehicle: now.kind, on: false });
+      return;
+    }
+    const v = this.boardable(s);
+    if (!v || s.roll > 0) return;
+    v.driver = s.id, s.vehicle = v.id;
+    Object.assign(s, { prone: false, crouch: false, burn: 0, reload: 0, scoped: false });
+    this.events.push({ kind: "board", vehicle: v.kind, on: true });
+  }
+
+  private drive(s: Soldier, v: Vehicle, input: Input, dt: number) {
+    const spec = VEHICLES[v.kind];
+    s.yaw = input.yaw, s.pitch = input.pitch;
+    v.cd = Math.max(0, v.cd - dt), v.rocketCd = Math.max(0, v.rocketCd - dt);
+    if (v.kind === "buggy") this.driveBuggy(v, input, dt, s.id);
+    else this.flyHeli(v, input, dt);
+    // The driver rides along.
+    Object.assign(s, { x: v.x, y: v.y + (v.kind === "buggy" ? 0.55 : 0.9), z: v.z, vx: v.vx, vy: 0, vz: v.vz, grounded: true, roll: 0 });
+    const top = { x: v.x, y: v.y + (v.kind === "buggy" ? 1.9 : 0.6), z: v.z };
+    if (input.fire && v.cd <= 0) {
+      this.shoot(s, spec.gun, top, input.aim, 0.01);
+      v.cd = spec.gunCd;
+      this.events.push({ kind: "fire", id: s.id, weapon: spec.gun });
+    }
+    if (spec.rockets && input.scope && v.rocketCd <= 0) {
+      const f = fwd(v.yaw);
+      for (const side of [-1, 1]) this.shoot(s, spec.rockets, { x: top.x - f.z * side * 1.3, y: top.y, z: top.z + f.x * side * 1.3 }, input.aim);
+      v.rocketCd = spec.rocketCd!;
+      this.events.push({ kind: "fire", id: s.id, weapon: spec.rockets });
+    }
+  }
+
+  private driveBuggy(v: Vehicle, input: Input, dt: number, driver: number) {
+    const spec = VEHICLES.buggy, f = fwd(v.yaw);
+    let speed = v.vx * f.x + v.vz * f.z;
+    const onGround = v.y <= this.terrain.height(v.x, v.z) + 0.1;
+    if (onGround) {
+      const grade = (this.terrain.height(v.x + f.x * 1.5, v.z + f.z * 1.5) - this.terrain.height(v.x, v.z)) / 1.5 * Math.sign(speed || input.forward || 1);
+      const target = input.forward > 0 ? spec.top * input.forward * climb(grade * 0.5) : input.forward < 0 ? -8 : 0;
+      const a = (input.forward ? spec.accel : 9) * dt;
+      speed += Math.max(-a, Math.min(a, target - speed));
+      // Steering bites harder the faster it goes, and reverses backing up.
+      v.yaw -= input.right * 2.1 * Math.max(-1, Math.min(1, speed / 6)) * dt;
+    }
+    const g = fwd(v.yaw);
+    v.vx = g.x * speed, v.vz = g.z * speed;
+    const nx = v.x + v.vx * dt, nz = v.z + v.vz * dt;
+    const here = this.terrain.height(v.x, v.z), there = this.terrain.height(nx, nz), run = Math.hypot(nx - v.x, nz - v.z);
+    // Files and cliffs stop it; a file hit at speed loses lines for it.
+    const wall = this.map.blocks.find((b) => b.h > 0 && b.y + b.h > v.y + 0.7 && Math.abs(nx - b.x) < b.w / 2 + 1.1 && Math.abs(nz - b.z) < b.d / 2 + 1.1);
+    if (wall || Math.hypot(nx, nz) > this.terrain.R - 2 || (run > 0 && (there - here) / run > CLIFF * 1.3)) {
+      if (wall && Math.abs(speed) > 4) this.wreck(wall, Math.abs(speed) * 8, driver);
+      v.vx *= -0.3, v.vz *= -0.3;
+    } else v.x = nx, v.z = nz, v.odo += speed * dt;
+    this.fall(v, dt);
+    // Run them over.
+    if (Math.abs(speed) > RUN_OVER) for (const t of this.soldiers) {
+      if (!t.alive || t.team === "you" || Math.hypot(t.x - v.x, t.z - v.z) > 1.8 || Math.abs(t.y - v.y) > 2) continue;
+      t.vx += v.vx * 0.8, t.vz += v.vz * 0.8, t.vy += 6, t.grounded = false;
+      this.hurt(t, t.hp + t.shield, driver);
+    }
+  }
+
+  private flyHeli(v: Vehicle, input: Input, dt: number) {
+    const spec = VEHICLES.heli, f = fwd(input.yaw), r = { x: -f.z, z: f.x };
+    let mx = f.x * input.forward + r.x * input.right, mz = f.z * input.forward + r.z * input.right;
+    const m = Math.hypot(mx, mz);
+    if (m > 1) mx /= m, mz /= m;
+    const k = Math.min(1, 2.2 * dt);
+    v.vx += (mx * spec.top - v.vx) * k, v.vz += (mz * spec.top - v.vz) * k;
+    v.vy += (((input.up ? 9 : 0) - (input.down || input.crouch ? 9 : 0)) - v.vy) * k;
+    v.yaw += (((input.yaw - v.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * Math.min(1, 6 * dt);
+    let nx = v.x + v.vx * dt, nz = v.z + v.vz * dt;
+    const d = Math.hypot(nx, nz), R = this.terrain.R - 2;
+    if (d > R) nx *= R / d, nz *= R / d;
+    v.x = nx, v.z = nz;
+    const floor = this.ground(v.x, v.z, Infinity) + HELI_FLOOR;
+    v.y = Math.max(floor, Math.min(this.terrain.height(v.x, v.z) + HELI_CEILING, v.y + v.vy * dt));
+  }
+
+  /** Under gravity onto the ground or a file's top; a helicopter with nobody in it settles gently. */
+  private fall(v: Vehicle, dt: number) {
+    v.vy -= (v.kind === "heli" ? 6 : GRAVITY) * dt;
+    v.y += v.vy * dt;
+    const g = this.ground(v.x, v.z, v.y + 0.5);
+    if (v.y <= g) v.y = g, v.vy = 0;
+  }
+
+  private settle(v: Vehicle, dt: number) {
+    if (!v.alive) return;
+    v.vx *= Math.exp(-dt * 3), v.vz *= Math.exp(-dt * 3);
+    v.x += v.vx * dt, v.z += v.vz * dt;
+    this.fall(v, dt);
+    if (v.kind === "heli") v.vy = Math.max(v.vy, -5);
+  }
+
+  private vehicleAt(p: Shot): Vehicle | null {
+    for (const v of this.vehicles) {
+      const spec = VEHICLES[v.kind];
+      if (v.alive && Math.hypot(p.x - v.x, p.y - (v.y + spec.mid), p.z - v.z) < spec.radius) return v;
+    }
+    return null;
+  }
+
+  private hurtVehicle(v: Vehicle, damage: number, by: number) {
+    if (!v.alive || damage <= 0 || this.status !== "playing") return;
+    v.hp -= damage;
+    this.events.push({ kind: "vehicleHit", id: v.id, damage });
+    if (v.hp > 0) return;
+    v.alive = false, v.hp = 0;
+    this.vehicles = this.vehicles.filter((o) => o !== v);
+    this.events.push({ kind: "wrecked", id: v.id, vehicle: v.kind });
+    const s = v.driver >= 0 ? this.soldiers[v.driver] : undefined;
+    // Thrown clear, and it hurts.
+    if (s) s.vehicle = -1, s.vy = 9, s.grounded = false, v.driver = -1;
+    this.blast(v.x, v.y + 1, v.z, VEHICLE_BLAST, this.me, "you");
+    if (s) this.hurt(s, 25, by);
   }
 
   /** Deletes a file's lines: it sinks with what it loses, and with nothing left it's gone. A stash just takes the damage. */
@@ -931,6 +1248,9 @@ export class Game {
 
   hurt(s: Soldier, damage: number, by: number) {
     if (!s.alive || this.status !== "playing") return;
+    // In a vehicle, the vehicle takes it.
+    const ride = s.vehicle >= 0 ? this.vehicles.find((v) => v.id === s.vehicle) : undefined;
+    if (ride) return this.hurtVehicle(ride, damage, by);
     // The shield takes it first; what's left over comes off the HP.
     const soak = Math.min(s.shield, damage);
     s.shieldT = 0, s.shield -= soak;
@@ -942,7 +1262,14 @@ export class Game {
     if (s.hp > 0) return;
     s.alive = false, s.hp = 0;
     this.events.push({ kind: "down", id: s.id, by });
-    if (s.brain) return this.checkCleared(s.compound);
+    if (s.team === "conflict") {
+      // Killstreaks are yours on your own: a battle has no vehicles.
+      if (!this.mode && by === this.me) {
+        this.kills++;
+        for (const st of STREAKS) if (this.kills === st.kills) this.dropVehicle(st.kind);
+      }
+      return this.checkCleared(s.compound);
+    }
     if (!this.mode) return this.respawn(s);
     // A battle: a down by another player scores, and you're back in RESPAWN seconds.
     s.deaths++, s.respawn = RESPAWN;
@@ -971,7 +1298,10 @@ export class Game {
       return this.lose();
     }
     const { x, z, yaw } = this.map.spawn;
-    Object.assign(s, { x, z, y: this.ground(x, z, Infinity), vx: 0, vy: 0, vz: 0, yaw, hp: s.maxHp, shield: s.maxShield, shieldT: SHIELD_DELAY, alive: true, roll: 0, cd: 0.5 });
+    Object.assign(s, { x, z, y: this.ground(x, z, Infinity), vx: 0, vy: 0, vz: 0, yaw, hp: s.maxHp, shield: s.maxShield, shieldT: SHIELD_DELAY, alive: true, roll: 0, cd: 0.5, burn: 0 });
+    // A fresh life: the role you picked for it, with full magazines.
+    if (this.nextRole) this.role = this.nextRole, this.nextRole = null;
+    if (this.role) this.arm(s, this.role);
     // Guards lose track of you (raiders keep coming).
     for (const g of this.soldiers) if (g.brain && !g.brain.raid) g.brain.alert = false, g.brain.seen = null;
     this.events.push({ kind: "respawn", id: s.id, lives: this.lives });
