@@ -10,6 +10,20 @@ menu?.addEventListener("change", async () => {
   location.href = `${root}/${menu.value}/${target}`;
 });
 
+// "Copy for agent": this page's markdown behind a one-line prompt, on the clipboard.
+const copy = document.querySelector("button.copy");
+copy?.addEventListener("click", async () => {
+  const label = copy.textContent;
+  try {
+    const md = await (await fetch(copy.dataset.md)).text();
+    await navigator.clipboard.writeText(`Read this documentation page, then help me with it. Don't deploy anything or read .env files.\n\n${md}`);
+    copy.textContent = "Copied";
+  } catch {
+    copy.textContent = "Couldn't copy";
+  }
+  setTimeout(() => (copy.textContent = label), 1500);
+});
+
 // The day/night toggle: the sun disc shrinks into its centre to uncover the moon. The page head sets the first theme.
 const theme = document.querySelector(".theme");
 const sync = () => {

@@ -43,6 +43,20 @@ export function renderError(e: unknown, cwd = process.cwd()): { text: string; co
   return { text: `✗ ${e instanceof Error ? e.message : String(e)}`, code: 1 };
 }
 
+/** The paste-into-your-agent block printed under a failure. No secrets: the error text and the command line only. */
+export function triagePrompt(text: string, o: { argv: string[]; version: string; platform?: string }): string {
+  const body = text.replace(/\b(?:cfut|cfat|ghp|gho|sk)[-_][A-Za-z0-9_-]{16,}/g, "<redacted>");
+  const prompt = [
+    `I ran \`rustybuns ${o.argv.join(" ")}\` (rustybuns ${o.version}, ${o.platform ?? process.platform}) and it failed:`,
+    "",
+    ...body.split("\n").map((l) => `    ${l}`),
+    "",
+    "Find the cause in this repo and my rustybuns.config.ts. Read GETTING_STARTED.md and REFERENCE.md from https://github.com/QuinnsCode/RustyBuns if you need them.",
+    "Fix it if it's my config. If it's a RustyBuns bug, draft a GitHub issue with the exact command and error. Don't deploy, and don't read .env files.",
+  ].join("\n");
+  return `\nStuck? Paste this into your coding agent (or run \`rustybuns triage\`):\n\n${prompt.split("\n").map((l) => `  │ ${l}`).join("\n")}`;
+}
+
 /** `--name <value>`, or undefined when absent. A flag with nothing after it is a usage error, not a default. */
 export function flag(args: string[], name: string): string | undefined {
   const i = args.indexOf(`--${name}`);

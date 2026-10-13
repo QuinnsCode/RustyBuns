@@ -114,12 +114,14 @@ function layout(site: Site, page: Page, pages: Page[], body: string, src: Source
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(page.title === site.name ? site.name : `${page.title} · ${site.name}`)}</title>
 <meta name="description" content="${esc(site.tagline)}">
+<link rel="alternate" type="text/markdown" href="${esc(posix.basename(page.path).replace(/\.html$/, ".md"))}">
 <script>try{var t=localStorage.getItem("theme");document.documentElement.dataset.theme=t==="light"||t==="dark"?t:matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}catch(e){}</script>
 <link rel="stylesheet" href="${esc(posix.join(root, "site.css"))}">
 </head>
 <body>
 <header>
   <a class="brand" href="${href(pages[0]!)}">${esc(site.name)}</a>
+  <button type="button" class="copy" data-md="${esc(posix.basename(page.path).replace(/\.html$/, ".md"))}" title="Copy this page as markdown, with a prompt, for your coding agent">Copy for agent</button>
   <button class="theme" type="button" aria-label="Day mode" title="Day mode"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="rays"><path d="M12 1.5v2.5M12 20v2.5M1.5 12H4M20 12h2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></g><path class="moon" d="M15.5 4.6A8 8 0 1 0 19.4 15.5 6.5 6.5 0 0 1 15.5 4.6Z"/><circle class="disc" cx="12" cy="12" r="8.2"/></svg></button>
   <label class="version">Version <select data-root="${esc(root)}" data-page="${esc(page.path)}">${options}</select></label>
 </header>
@@ -160,6 +162,8 @@ export function buildVersion(site: Site, src: Source, out: string, versions: str
     const file = join(out, src.version, page.path);
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, layout(site, page, pages, rendered.get(page.path)!, src, versions));
+    // The same page as markdown beside it, for agents (and the copy button): no nav, no chrome.
+    writeFileSync(file.replace(/\.html$/, ".md"), page.md);
   }
   return pages.map((p) => p.path);
 }
@@ -175,6 +179,15 @@ export function buildSite(site: Site, out: string, sources: Source[]): string[] 
   mkdirSync(out, { recursive: true });
   for (const f of ["site.css", "site.js"]) writeFileSync(join(out, f), readFileSync(join(assets, f)));
   writeFileSync(join(out, "versions.json"), JSON.stringify(manifest));
+  // llms.txt (the index) and llms-full.txt (everything) for the newest version, so an agent reads the
+  // site in one fetch instead of crawling it.
+  const latest = sources[0];
+  if (latest) {
+    const pages = site.pages(latest);
+    const dir = latest.version;
+    writeFileSync(join(out, "llms.txt"), `# ${site.name}\n\n> ${site.tagline}\n\n${pages.map((p) => `- [${p.title}](${dir}/${p.path.replace(/\.html$/, ".md")})`).join("\n")}\n`);
+    writeFileSync(join(out, "llms-full.txt"), `# ${site.name}\n\n> ${site.tagline}\n\n${pages.map((p) => `<!-- ${dir}/${p.path.replace(/\.html$/, ".md")} -->\n${p.md.trim()}`).join("\n\n---\n\n")}\n`);
+  }
   writeFileSync(join(out, "index.html"), `<!doctype html><meta charset="utf-8"><title>${esc(site.name)}</title><meta http-equiv="refresh" content="0; url=latest/index.html"><a href="latest/index.html">${esc(site.name)} docs</a>\n`);
   return problems;
 }
