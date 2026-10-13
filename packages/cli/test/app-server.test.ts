@@ -2,9 +2,9 @@
 // proxies its paths to it, the way the app's Vite dev server did.
 import { test, expect, afterAll, setDefaultTimeout } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { spaEntry, APP_SERVER_DIR, appServerFile } from "../src/build.ts";
-import { proxyMatcher } from "@rustybuns/shell-bun";
+import { appServer, proxyMatcher } from "@rustybuns/shell-bun";
 
 setDefaultTimeout(30_000);
 const root = mkdtempSync(join(import.meta.dir, ".e2e-server-"));
@@ -123,6 +123,20 @@ test("generated host: desktop.server runs beside it, gets PORT and DATA_DIR, ans
   } finally {
     p.kill();
     await p.exited;
+  }
+});
+
+test("a relative dataDir and file still start the server, which runs with its cwd in dataDir (#1269)", async () => {
+  const dir = join(root, "rel");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "server.js"), SERVER);
+  const srv = await appServer({ file: relative(process.cwd(), join(dir, "server.js")), paths: ["/api"], dataDir: relative(process.cwd(), join(dir, "data")) });
+  try {
+    const r = await srv.fetch(new Request("http://host/api/me"));
+    expect(r!.status).toBe(200);
+    expect((await r!.json() as { data: string }).data).toBe(join(dir, "data"));
+  } finally {
+    srv.stop();
   }
 });
 
