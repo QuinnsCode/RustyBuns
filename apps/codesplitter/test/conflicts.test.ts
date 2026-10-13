@@ -173,6 +173,51 @@ describe("settled without asking (#933)", () => {
     expect(merged(calls, `${calls}\ng(count + 1);`, calls.replace(/count/g, "total"))).toBe("const total = 1;\nf(total);\nz\ng(total + 1);");
   });
 
+  test("a local renamed in one function is renamed in the other side's new lines there, not in other functions (#1257, branches.ts)", () => {
+    // The branch's mergeBranch reads `run.dry` now; mergeFile keeps a `dry` parameter of its own.
+    const was = [
+      "async function mergeFile(path, dry) {",
+      "  return post(path, dry);",
+      "}",
+      "async function mergeBranch(rows) {",
+      "  const dry = await Promise.all(rows.map((f) => mergeFile(f, true)));",
+      "  for (const d of dry) check(d);",
+      "  const left = dry.filter((d) => d.conflicts.length);",
+      "  return left;",
+      "}",
+    ].join("\n");
+    const onBranch = was.replace("  const dry = await Promise.all(rows.map((f) => mergeFile(f, true)));", "  const run = await dryRun(rows);")
+      .replace("of dry)", "of run.dry)").replace("= dry.filter", "= run.dry.filter");
+    const onMain = was.replace("  return left;", "  const docs = left.length ? [] : rebuilt(dry);\n  return left;");
+    expect(merged(was, onMain, onBranch)).toBe(onBranch.replace("  return left;", "  const docs = left.length ? [] : rebuilt(run.dry);\n  return left;"));
+    // Main's new line in mergeFile keeps its own `dry`.
+    const inFile = was.replace("  return post(path, dry);", "  log(dry);\n  return post(path, dry);");
+    expect(merged(was, inFile, onBranch)).toBe(onBranch.replace("  return post(path, dry);", "  log(dry);\n  return post(path, dry);"));
+  });
+
+  test("an expression hoisted into a const is swapped in the other side's new lines in that function (#1257, cli index.ts)", () => {
+    const was = [
+      "async function alchemy(args) {",
+      "  const note = adoptNote(cfg, alchemyStage(args));",
+      "  guardDeploy(cfg, alchemyStage(args));",
+      "  return note;",
+      "}",
+      "function other(args) {",
+      "  return alchemyStage(args);",
+      "}",
+    ].join("\n");
+    const onBranch = was.replace("async function alchemy(args) {", "async function alchemy(args) {\n  const stage = alchemyStage(rawArgs);")
+      .replace("adoptNote(cfg, alchemyStage(args))", "adoptNote(cfg, stage)").replace("guardDeploy(cfg, alchemyStage(args))", "guardDeploy(cfg, stage)");
+    const plan = "  console.log(formatOfflinePlan(cfg.name, alchemyStage(args)));";
+    const onMain = was.replace("  return note;", `${plan}\n  return note;`).replace("  return alchemyStage(args);", "  log(alchemyStage(args));\n  return alchemyStage(args);");
+    expect(merged(was, onMain, onBranch)).toBe(onBranch
+      .replace("  return note;", `${plan.replace("alchemyStage(args)", "stage")}\n  return note;`)
+      .replace("  return alchemyStage(args);", "  log(alchemyStage(args));\n  return alchemyStage(args);"));
+    // No new const, no hoist: a call swapped for a name is just an edit.
+    const swapped = was.replace("adoptNote(cfg, alchemyStage(args))", "adoptNote(cfg, stage)").replace("guardDeploy(cfg, alchemyStage(args))", "guardDeploy(cfg, stage)");
+    expect(merged(was, onMain, swapped)).toBe(swapped.replace("  return note;", `${plan}\n  return note;`).replace("  return alchemyStage(args);", "  log(alchemyStage(args));\n  return alchemyStage(args);"));
+  });
+
   test("no rename carried where it isn't one: the old name still on main, one line changed, two new names, or prose words", () => {
     const was = "a(x.hero);\nb(x.hero);\nc(x.hero);\nz";
     // Main still has a `.hero` left.

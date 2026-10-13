@@ -223,8 +223,9 @@ test("wrangler toml parse and dropped keys", () => {
   // An env key a stage can't say is reported only when it differs from the top level's.
   const e = parseWranglerToml('name = "x"\nmain = "a.ts"\n[env.staging]\nmain = "a.ts"\n[env.qa]\nmain = "b.ts"\n[env."bad name"]\nname = "y"\n');
   expect(droppedWranglerKeys(e)).toEqual(["env.qa.main", "env.bad name"]);
-  // limits.cpu_ms is carried (worker.cpuMs)
+  // limits.cpu_ms is carried (worker.cpuMs); any other limit is not
   expect(droppedWranglerKeys({ limits: { cpu_ms: 30000 } } as any)).toEqual([]);
+  expect(droppedWranglerKeys({ limits: { cpu_ms: 30000, subrequests: 100 } } as any)).toEqual(["limits"]);
 });
 
 test("add deploy writes overrides at the workspace root, where bun reads them", () => {

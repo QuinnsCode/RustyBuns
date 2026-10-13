@@ -3,7 +3,7 @@
 The Mac binaries on the releases page aren't signed, so macOS blocks a double click and the
 first launch takes a Terminal command. Fixing that takes a paid Apple Developer account, a
 **Developer ID Application** certificate, and notarization. This guide gets the account and the
-credentials; wiring them into `desktop-drop.yml` comes after.
+credentials; step 7 hands them to `desktop-drop.yml`.
 
 Everything here is done by a person, once. Nothing in this repo asks Apple for anything.
 
@@ -140,9 +140,12 @@ R2 token there):
 | `APPLE_NOTARY_KEY_ID` | the Key ID |
 | `APPLE_NOTARY_ISSUER_ID` | the Issuer ID |
 
-Signing has to run on a macOS runner (`codesign` is Apple's), so the Mac targets would get a
-sign-and-notarize step before upload. That's the follow-up; until then the release notes keep
-the `xattr` workaround.
+Once they're there, every drop signs and notarizes its `darwin-*` binaries before the upload:
+the drop job runs on a Mac and calls `scripts/mac/sign.sh`, which loads the `.p12` and the notary
+key into a throwaway keychain and signs with the same code as `rustybuns build desktop --sign
+--notarize`. The release notes and the drop page then say "signed and notarized" instead of the
+`xattr` workaround. Without the secrets (a PR's dry run, or before you enroll) the step signs
+nothing and the workaround stays.
 
 Windows signing (the SmartScreen warning) is a separate certificate from a different seller and
 isn't covered here.
