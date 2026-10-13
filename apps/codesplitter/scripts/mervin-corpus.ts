@@ -94,7 +94,7 @@ if (import.meta.main) {
   const show = flag("--show", 0);
   const { merges, fought: foughtMerges, skipped, rows } = run(repo, flag("--limit", 300), flag("--max-lines", 3000));
   const count = (rs: Row[]) => Object.fromEntries(
-    (["solved", "close", "wrong", "cards", "gap", "guard", "lock", "differ", "agree"] as Bucket[]).map((k) => [k, rs.filter((r) => r.bucket === k).length]));
+    (["solved", "close", "wrong", "cards", "gap", "guard", "lock", "differ", "agree"] as Bucket[]).map((k) => [k, rs.filter((r) => r.bucket === k).length])) as Record<Bucket, number>;
   const fought = rows.filter((r) => ["solved", "close", "wrong", "cards", "guard", "lock"].includes(r.bucket));
   const pct = (n: number, d: number) => (d ? `${Math.round((100 * n) / d)}%` : "n/a");
   const by: Record<string, Row[]> = {};
