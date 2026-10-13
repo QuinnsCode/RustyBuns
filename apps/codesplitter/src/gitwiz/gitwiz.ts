@@ -1,19 +1,22 @@
-// Layout (src/gitwiz/gitwiz.ts, src/gitwiz/page.ts, src/gitwiz/build.ts, src/gitwiz/serve.ts): gitwiz, a file's git history played down a guitar-neck highway (page.ts draws the board; gitwiz.ts is the pure parts, tested in `test/gitwiz.test.ts`; `bun run gitwiz` serves it; data from `scripts/gitwiz-log.ts`)
-// gitwiz replays one file's history down a guitar-neck highway (page.ts draws it). Everything that can be
-// wrong without a screen is here, with no DOM and no imports, so test/gitwiz.test.ts covers it:
-//   - reading `git log -p -U0 --follow` (parsePatchLog) and the JSON that scripts/gitwiz-log.ts writes (readInput)
-//   - turning commits into notes: a kind (add, remove, rewrite), a size, a lane
-//   - the board's perspective (project) and the playhead's math (scrub, clock, score)
+// Layout (src/gitwiz/gitwiz.ts, src/gitwiz/page.ts, src/gitwiz/build.ts, src/gitwiz/serve.ts): gitwiz, a file's commit graph run down a guitar-neck highway by a runner on the hot path (page.ts draws it; gitwiz.ts is the pure parts, tested in `test/gitwiz.test.ts`; `bun run gitwiz` serves it; data from `scripts/gitwiz-log.ts`)
+// gitwiz replays one file's history as a git graph in perspective: branches fan out and rejoin, and a
+// runner follows the hot path (the route with the most churn). Everything that can be wrong without a
+// screen is here, with no DOM and no imports, so test/gitwiz.test.ts covers it:
+//   - reading `git log -p -U0 --parents` (parsePatchLog) and the JSON that scripts/gitwiz-log.ts writes (readInput)
+//   - cutting the repo's graph down to the commits that touched the file (simplifyParents)
+//   - notes: a kind (add, remove, rewrite), a size, parents, in an order where parents come first
+//   - the graph's layout (lanes, edges, the hot path), the board's perspective, and the runner's pace
 
-/** One commit that touched the file. `regions` is the lines it changed in the file's top, middle and bottom third. */
+/** One commit that touched the file. `parents` are the nearest earlier commits that touched it too, first parent first. */
 export interface Commit {
   hash: string; author: string; date: string; subject: string;
   added: number; removed: number;
-  regions?: [number, number, number];
+  parents?: string[];
+  /** Branch names pointing at it (`main`, `office/gizmo`), without `origin/`. */
+  refs?: string[];
 }
 
 export type Kind = "add" | "remove" | "rewrite";
-export type LaneMode = "region" | "author";
 
 export interface Note {
   i: number; hash: string; short: string; author: string; date: string; t: number; subject: string;
@@ -21,9 +24,11 @@ export interface Note {
   kind: Kind;
   /** 0..1, how loud the note is: lines changed on a log scale, against the biggest in this file. */
   size: number;
-  /** Share of the changed lines that were additions, for a rewrite's two-tone chip. */
+  /** Share of the changed lines that were additions, for a rewrite's two-tone coin. */
   addShare: number;
-  regions: [number, number, number];
+  /** Indices of its parents, which are always before it. */
+  parents: number[];
+  refs: string[];
 }
 
 /** What a pasted or uploaded file can hold: one history, or a few of a repo's most-edited files. */
@@ -33,49 +38,97 @@ export interface Input {
   histories: Record<string, Commit[]>;
 }
 
-export const REGION_NAMES = ["top", "middle", "bottom"] as const;
-
 // -- reading git ------------------------------------------------------------------------------------
 
-export const LOG_FORMAT = "%x1e%H%x1f%an%x1f%aI%x1f%s";
+/** Hash, author, committer date, parents, branch names, subject. The committer date is when it landed, so a rebased commit sorts where it went in. */
+export const LOG_FORMAT = "%x1e%H%x1f%an%x1f%cI%x1f%P%x1f%D%x1f%s";
 const HUNK = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
+
+/** `git log`'s `%D` as branch names: `HEAD -> main, origin/main, tag: v1` is `main`. Tags, HEAD and the game's `pr/` refs are left out. */
+export function cleanRefs(decor: string): string[] {
+  const out: string[] = [];
+  for (const raw of decor.split(", ")) {
+    const r = raw.replace(/^HEAD -> /, "").replace(/^origin\//, "").trim();
+    if (!r || r === "HEAD" || r.startsWith("tag: ") || r.startsWith("pr/") || r === "stash" || out.includes(r)) continue;
+    out.push(r);
+  }
+  return out;
+}
 
 /**
  * `git log --follow -p -U0 --no-merges --format=LOG_FORMAT -- <path>` as commits, newest first like git. Each
- * hunk's added and removed lines are counted, and each is placed in the file's top, middle or bottom
- * third. The file's length before a commit is the running sum of every earlier commit's added minus removed.
+ * hunk's added and removed lines are counted. `parents` are git's own, so most are commits that didn't touch
+ * the file: simplifyParents cuts them down.
  */
 export function parsePatchLog(raw: string): Commit[] {
   const out: Commit[] = [];
-  for (const chunk of raw.split("\x1e").slice(1).reverse()) {
+  for (const chunk of raw.split("\x1e").slice(1)) {
     const [head = "", ...body] = chunk.split("\n");
-    const [hash = "", author = "", date = "", ...subject] = head.split("\x1f");
+    const [hash = "", author = "", date = "", parents = "", decor = "", ...subject] = head.split("\x1f");
     if (!hash) continue;
-    const before = out.reduce((n, c) => n + c.added - c.removed, 0);
-    const regions: [number, number, number] = [0, 0, 0];
     let added = 0, removed = 0;
-    const hunks: { os: number; oc: number; ns: number; nc: number }[] = [];
     for (const line of body) {
       const m = HUNK.exec(line);
       if (!m) continue;
-      const oc = m[2] === undefined ? 1 : Number(m[2]), nc = m[4] === undefined ? 1 : Number(m[4]);
-      removed += oc; added += nc;
-      hunks.push({ os: Number(m[1]), oc, ns: Number(m[3]), nc });
+      removed += m[2] === undefined ? 1 : Number(m[2]);
+      added += m[4] === undefined ? 1 : Number(m[4]);
     }
-    // Each changed line goes in the third it sits in: a removed line by its place in the file as it
-    // was, an added one by its place in the file as it became.
-    const after = Math.max(before + added - removed, 1);
-    for (const h of hunks) {
-      for (let k = 0; k < h.oc; k++) regions[regionOf((h.os - 1 + k + 0.5) / Math.max(before, 1))]++;
-      for (let k = 0; k < h.nc; k++) regions[regionOf((h.ns - 1 + k + 0.5) / after)]++;
-    }
-    out.push({ hash, author, date, subject: subject.join("\x1f"), added, removed, regions });
+    const refs = cleanRefs(decor);
+    out.push({ hash, author, date, subject: subject.join("\x1f"), added, removed, parents: parents.split(" ").filter(Boolean), ...(refs.length ? { refs } : {}) });
   }
-  return out.reverse();
+  return out;
 }
 
-/** 0, 1 or 2: which third of the file a position (0 top .. 1 bottom) is in. */
-export const regionOf = (frac: number) => Math.min(2, Math.max(0, Math.floor(frac * 3)));
+/**
+ * For any commit, the nearest commits at or behind it that are in `keep`: itself if it is, else whichever
+ * kept commits are behind it. `dag` is every commit's own parents, first parent first.
+ */
+export function keptAncestors(dag: Map<string, string[]>, keep: Set<string>): (hash: string) => string[] {
+  const near = new Map<string, string[]>();
+  return (start) => {
+    if (keep.has(start)) return [start];
+    const stack = [start];
+    while (stack.length) {
+      const h = stack[stack.length - 1]!;
+      if (near.has(h)) { stack.pop(); continue; }
+      const ps = dag.get(h) ?? [];
+      const pending = ps.filter((p) => !keep.has(p) && !near.has(p));
+      if (pending.length) { stack.push(...pending); continue; }
+      const found = new Set<string>();
+      for (const p of ps) { if (keep.has(p)) found.add(p); else for (const k of near.get(p)!) found.add(k); }
+      near.set(h, [...found]);
+      stack.pop();
+    }
+    return near.get(start)!;
+  };
+}
+
+/**
+ * The graph as the file saw it: for each commit in `keep`, its nearest ancestors that are in `keep` too
+ * (a parent that touched the file stands for itself; one that didn't stands for whichever kept
+ * commits are behind it). A merge that touched nothing disappears, and the two lines it joined stay
+ * joined at the next commit that did.
+ */
+export function simplifyParents(dag: Map<string, string[]>, keep: Set<string>): Map<string, string[]> {
+  const near = keptAncestors(dag, keep);
+  const out = new Map<string, string[]>();
+  for (const c of keep) {
+    const found = new Set<string>();
+    for (const p of dag.get(c) ?? []) for (const k of near(p)) found.add(k);
+    out.set(c, [...found]);
+  }
+  return out;
+}
+
+/** `git log --all --format=%H %P` as each commit's parents. */
+export function parseDag(raw: string): Map<string, string[]> {
+  const dag = new Map<string, string[]>();
+  for (const line of raw.split("\n")) {
+    const [h, ...ps] = line.trim().split(/\s+/);
+    if (h) dag.set(h, ps);
+  }
+  return dag;
+}
 
 /**
  * `git log --no-merges -M --name-status --format=%x1e` (newest first) as paths, most-edited first, keeping only `exists`
@@ -104,23 +157,45 @@ export function topFiles(statusRaw: string, exists: (path: string) => boolean, l
 // -- reading the JSON ---------------------------------------------------------------------------------
 
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.round(v) : 0);
+const strings = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : undefined);
 
 function readCommit(c: unknown, at: number): Commit {
   const o = c as Record<string, unknown> | null;
   if (!o || typeof o !== "object") throw new Error(`commit ${at} isn't an object`);
   const date = String(o.date ?? "");
   if (!Number.isFinite(Date.parse(date))) throw new Error(`commit ${at} has no usable date`);
-  const r = o.regions;
-  const regions = Array.isArray(r) && r.length === 3 ? ([num(r[0]), num(r[1]), num(r[2])] as [number, number, number]) : undefined;
+  const parents = strings(o.parents), refs = strings(o.refs);
   return {
     hash: String(o.hash ?? ""), author: String(o.author ?? "unknown"), date, subject: String(o.subject ?? ""),
-    added: num(o.added), removed: num(o.removed), ...(regions ? { regions } : {}),
+    added: num(o.added), removed: num(o.removed), ...(parents ? { parents } : {}), ...(refs?.length ? { refs } : {}),
   };
 }
 
-/** Commits sorted oldest first. The files hold git's order, newest first, so of two commits with the same date the later one in the list is the older. */
-export const oldestFirst = (commits: Commit[]) =>
-  commits.map((c, i) => ({ c, i, t: Date.parse(c.date) })).sort((a, b) => a.t - b.t || b.i - a.i).map((x) => x.c);
+/**
+ * Commits oldest first, and never a commit before one of its parents (a clock that's off, or a rebase, can
+ * date a child before its parent). The files hold git's order, newest first, so of two commits with the
+ * same date the later one in the list is the older. With no parents it's just a sort by date.
+ */
+export function orderCommits(commits: Commit[]): Commit[] {
+  const at = new Map(commits.map((c, i) => [c.hash, i]));
+  const t = commits.map((c) => Date.parse(c.date));
+  const waiting = commits.map((c) => new Set((c.parents ?? []).filter((p) => at.has(p) && p !== c.hash)).size);
+  const children = commits.map(() => [] as number[]);
+  commits.forEach((c, i) => { for (const p of new Set(c.parents ?? [])) { const k = at.get(p); if (k !== undefined && k !== i) children[k]!.push(i); } });
+  const before = (a: number, b: number) => t[a]! - t[b]! || b - a;
+  const ready = commits.map((_, i) => i).filter((i) => waiting[i] === 0);
+  const out: Commit[] = [], done = new Set<number>();
+  while (ready.length) {
+    let best = 0;
+    for (let k = 1; k < ready.length; k++) if (before(ready[k]!, ready[best]!) < 0) best = k;
+    const i = ready.splice(best, 1)[0]!;
+    done.add(i); out.push(commits[i]!);
+    for (const c of children[i]!) if (--waiting[c]! === 0) ready.push(c);
+  }
+  // A cycle (bad hand-made parents) leaves some behind: they go in date order at the end.
+  for (const i of commits.map((_, i) => i).filter((i) => !done.has(i)).sort(before)) out.push(commits[i]!);
+  return out;
+}
 
 /**
  * Reads what the page was handed: a history (`[…]` or `{path, commits}`) or a bundle
@@ -139,10 +214,10 @@ export function readInput(source: unknown): Input {
   if (o.histories && typeof o.histories === "object") {
     for (const [p, list] of Object.entries(o.histories as Record<string, unknown>)) {
       if (!Array.isArray(list)) throw new Error(`${p}: expected a list of commits`);
-      histories[p] = oldestFirst(list.map(readCommit));
+      histories[p] = orderCommits(list.map(readCommit));
     }
   } else if (Array.isArray(o.commits)) {
-    histories[typeof o.path === "string" && o.path ? o.path : "this file"] = oldestFirst(o.commits.map(readCommit));
+    histories[typeof o.path === "string" && o.path ? o.path : "this file"] = orderCommits(o.commits.map(readCommit));
   } else throw new Error("no commits in there: expected a list, {commits}, or {histories}");
   const paths = Object.keys(histories);
   if (!paths.length || paths.every((p) => histories[p]!.length === 0)) throw new Error("that history has no commits");
@@ -163,55 +238,134 @@ export function kindOf(added: number, removed: number): Kind {
   return added >= removed ? "add" : "remove";
 }
 
+/** Notes in playing order: oldest first, parents before children. A parent that isn't in the list is dropped. */
 export function buildNotes(commits: Commit[]): Note[] {
-  const sorted = oldestFirst(commits);
+  const sorted = orderCommits(commits);
+  const at = new Map(sorted.map((c, i) => [c.hash, i]));
   const top = Math.max(1, ...sorted.map((c) => c.added + c.removed));
+  let clock = -Infinity;
   return sorted.map((c, i) => {
     const changed = c.added + c.removed;
-    const regions = c.regions ?? [0, 0, 0];
+    // The clock never runs backward, even where a commit is dated before its parent.
+    clock = Math.max(clock, Date.parse(c.date));
     return {
-      i, hash: c.hash, short: c.hash.slice(0, 7), author: c.author, date: c.date, t: Date.parse(c.date), subject: c.subject,
+      i, hash: c.hash, short: c.hash.slice(0, 7), author: c.author, date: c.date, t: clock, subject: c.subject,
       added: c.added, removed: c.removed, changed,
       kind: kindOf(c.added, c.removed),
       size: changed === 0 ? 0 : Math.log1p(changed) / Math.log1p(top),
       addShare: changed === 0 ? 0.5 : c.added / changed,
-      regions,
+      // A history with no parents at all (an older file, a hand-made list) reads as one line: each commit's parent is the one before.
+      parents: c.parents ? [...new Set(c.parents)].map((p) => at.get(p)).filter((k): k is number => k !== undefined && k < i) : i > 0 ? [i - 1] : [],
+      refs: c.refs ?? [],
     };
   });
 }
 
-export interface Lanes {
-  mode: LaneMode;
-  /** One name per lane, left to right. */
-  names: string[];
-  /** The lane of each note, by note index. */
-  of: number[];
+// -- the graph ---------------------------------------------------------------------------------------
+
+export interface Edge { lo: number; hi: number }
+
+export interface Layout {
+  /** Each note's lane: 0 is the main line, others are branches (reused once a branch has ended). */
+  lane: number[];
+  /** Where each lane sits across the board, in lane widths from the centre. Lane 0 is 0, then 1, -1, 2, -2. */
+  slot: number[];
+  lanes: number;
+  /** The most slots either side of the centre in use. */
+  extent: number;
+  edges: Edge[];
+  /** The newest note on the main line. */
+  tip: number;
+  /** The hot path: note indices, oldest to newest. */
+  hot: number[];
+  onHot: boolean[];
 }
 
-/** Whether the data says where in the file each commit landed. */
-export const hasRegions = (notes: Note[]) => notes.some((n) => n.regions[0] + n.regions[1] + n.regions[2] > 0);
+export const MAX_LANES = 9;
+const MAIN = /^(main|master|trunk)$/;
+
+/** A lane's place across the board: 0, then right, left, right, left. */
+export const slotOf = (lane: number) => (lane === 0 ? 0 : lane % 2 === 1 ? (lane + 1) / 2 : -lane / 2);
 
 /**
- * Region lanes: top, middle, bottom, a note in the third most of its lines landed in (a tie goes to the
- * middle, a commit with no regions too). Author lanes: the `max - 1` busiest authors by commit count,
- * left to right, and everyone else in the last lane as "others".
+ * The path with the most churn from the first commit to the main tip: at each fork it takes the branch
+ * that changed more lines. With no merges the graph is one line and this is all of it.
  */
-export function assignLanes(notes: Note[], mode: LaneMode, max = 5): Lanes {
-  if (mode === "region") {
-    return {
-      mode, names: [...REGION_NAMES],
-      of: notes.map((n) => {
-        const [t, m, b] = n.regions;
-        return b > t && b > m ? 2 : t > m && t >= b ? 0 : 1;
-      }),
-    };
+export function hotPath(notes: Note[], tip: number): number[] {
+  const best: number[] = [], from: number[] = [];
+  notes.forEach((n, i) => {
+    let p = -1;
+    for (const k of n.parents) if (p < 0 || best[k]! > best[p]!) p = k;
+    best[i] = n.changed + 1 + (p < 0 ? 0 : best[p]!);
+    from[i] = p;
+  });
+  const path: number[] = [];
+  for (let i = tip; i >= 0; i = from[i]!) path.push(i);
+  return path.reverse();
+}
+
+/**
+ * Lays the notes out as a git graph, newest to oldest: the main line (first parents back from the tip
+ * of `main`, or the newest commit) is lane 0; a branch takes the lowest free lane at its newest commit
+ * and gives it back once the graph reaches the commit it forks from.
+ */
+export function layoutGraph(notes: Note[], maxLanes = MAX_LANES): Layout {
+  const n = notes.length;
+  let tip = n - 1;
+  for (let i = n - 1; i >= 0; i--) if (notes[i]!.refs.some((r) => MAIN.test(r))) { tip = i; break; }
+  const lane = new Array<number>(n).fill(-1);
+  for (let i = tip; i >= 0; i = notes[i]!.parents[0] ?? -1) lane[i] = 0;
+  const expect: (number | null)[] = new Array(maxLanes).fill(null);
+  const taken = (p: number) => expect.some((e, k) => k > 0 && e === p);
+  const alloc = () => { for (let k = 1; k < maxLanes; k++) if (expect[k] === null) return k; return maxLanes - 1; };
+  for (let i = n - 1; i >= 0; i--) {
+    const ps = notes[i]!.parents;
+    if (lane[i] === 0) {
+      for (let k = 1; k < maxLanes; k++) if (expect[k] === i) expect[k] = null;
+    } else {
+      const here = expect.flatMap((e, k) => (k > 0 && e === i ? [k] : []));
+      for (const k of here.slice(1)) expect[k] = null;
+      lane[i] = here[0] ?? alloc();
+      expect[lane[i]!] = null;
+      // The lane stays this branch's all the way down to where it forks off, so nothing else is drawn through it.
+      if (ps[0] !== undefined) expect[lane[i]!] = ps[0];
+    }
+    for (const p of ps.slice(1)) if (lane[p] !== 0 && !taken(p)) expect[alloc()] = p;
   }
-  const counts = new Map<string, number>();
-  for (const n of notes) counts.set(n.author, (counts.get(n.author) ?? 0) + 1);
-  const ranked = [...counts].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([a]) => a);
-  const named = ranked.length > max ? ranked.slice(0, max - 1) : ranked;
-  const names = ranked.length > max ? [...named, "others"] : named;
-  return { mode, names, of: notes.map((n) => { const k = named.indexOf(n.author); return k < 0 ? names.length - 1 : k; }) };
+  const slot = lane.map(slotOf);
+  const edges: Edge[] = notes.flatMap((nt, hi) => nt.parents.map((lo) => ({ lo, hi })));
+  const hot = n ? hotPath(notes, tip) : [];
+  const onHot = new Array<boolean>(n).fill(false);
+  for (const i of hot) onHot[i] = true;
+  const lanes = n ? Math.max(...lane) + 1 : 1;
+  return { lane, slot, lanes, extent: Math.max(0, ...slot.map(Math.abs)), edges, tip, hot, onHot };
+}
+
+const smooth = (x: number) => { const c = Math.min(1, Math.max(0, x)); return c * c * (3 - 2 * c); };
+
+/**
+ * Where an edge sits across the board at time `t` (a note index, so fractions are between commits): flat in
+ * its branch's lane, bending to the other lane over at most a commit and a half at the end where the lines
+ * meet: at the older end when the branch forks off, at the newer end when it joins an older lane.
+ */
+export function edgeSlotAt(lay: Layout, e: Edge, t: number): number {
+  const a = lay.slot[e.lo]!, b = lay.slot[e.hi]!;
+  if (a === b) return a;
+  const bend = Math.min(1.5, (e.hi - e.lo) / 2);
+  return lay.lane[e.hi]! < lay.lane[e.lo]!
+    ? a + (b - a) * smooth((t - (e.hi - bend)) / bend)
+    : b + (a - b) * smooth(1 - (t - e.lo) / bend);
+}
+
+/** Where the hot path runs across the board at time `t`. */
+export function pathSlotAt(lay: Layout, t: number): number {
+  const h = lay.hot;
+  if (!h.length) return 0;
+  if (t <= h[0]! || h.length === 1) return lay.slot[h[0]!]!;
+  if (t >= h[h.length - 1]!) return lay.slot[h[h.length - 1]!]!;
+  let k = 0;
+  while (h[k + 1]! < t) k++;
+  return edgeSlotAt(lay, { lo: h[k]!, hi: h[k + 1]! }, t);
 }
 
 // -- the board ---------------------------------------------------------------------------------------
@@ -228,8 +382,8 @@ export interface Geometry {
 export const AHEAD = 16;
 /** How sharply the board narrows toward the horizon (the strum line is 1, the horizon is 1 / (1 + FALLOFF)). */
 export const FALLOFF = 6;
-/** Notes that have crossed keep sliding toward the viewer for this many commits, then they're gone. */
-export const BEHIND = 1;
+/** How far past the strum line the board is drawn, in commits. */
+export const BEHIND = 1.5;
 
 export function geometry(w: number, h: number): Geometry {
   return { w, h, horizon: h * 0.1, strum: h * 0.8, cx: w / 2, half: Math.min(w * 0.4, h * 0.62) };
@@ -242,16 +396,16 @@ export function scaleAt(d: number): number {
   return z >= 0 ? 1 / (1 + FALLOFF * z) : 1 - FALLOFF * z;
 }
 
-/** The lane's centre across the board, -1 (left edge) .. 1 (right edge). */
-export const laneCentre = (lane: number, lanes: number) => ((lane + 0.5) / Math.max(lanes, 1)) * 2 - 1;
+/** A slot's place across the board, -1 (left edge) .. 1 (right edge), with `extent` slots either side of the centre one. */
+export const slotX = (slot: number, extent: number) => slot / (extent + 0.5);
 
-/** A point on the board: lane position `lx` (-1..1) at depth `d` commits past the strum line, as a screen x, y and scale. */
+/** A point on the board: position `lx` (-1..1) at depth `d` commits past the strum line, as a screen x, y and scale. */
 export function project(g: Geometry, lx: number, d: number): { x: number; y: number; s: number } {
   const s = scaleAt(d);
   return { x: g.cx + lx * g.half * s, y: g.horizon + (g.strum - g.horizon) * s, s };
 }
 
-/** Inverse of scaleAt's y: the depth whose line sits at screen y (a fret hit-test, and the tests' round trip). */
+/** Inverse of scaleAt's y: the depth whose line sits at screen y. */
 export function depthAtY(g: Geometry, y: number): number {
   const s = (y - g.horizon) / (g.strum - g.horizon);
   return s <= 1 ? ((1 / s - 1) / FALLOFF) * AHEAD : ((1 - s) / FALLOFF) * AHEAD;
@@ -292,19 +446,41 @@ export function clockAt(notes: Note[], q: number): number {
 
 export interface Score { passed: number; combo: number; mult: number; score: number; added: number; removed: number }
 
-/** How the run stands with note `idx` under the strum line: commits gone by, the streak of one lane's notes in a row, and points. */
-export function scoreAt(notes: Note[], lanes: number[], idx: number): Score {
+/** x1 to x4: every four commits in a row on the hot path is another x. */
+export const multiplier = (combo: number) => Math.min(4, 1 + Math.floor(combo / 4));
+
+/** How the run stands with note `idx` under the strum line: commits gone by, the streak of hot-path commits the runner kept, and points. A commit on a side branch breaks the streak. */
+export function scoreAt(notes: Note[], onHot: boolean[], idx: number): Score {
   let score = 0, combo = 0, added = 0, removed = 0;
   for (let i = 0; i <= idx && i < notes.length; i++) {
-    combo = i > 0 && lanes[i] === lanes[i - 1] ? combo + 1 : 1;
-    score += 100 * multiplier(combo);
+    combo = onHot[i] ? combo + 1 : 0;
+    if (combo) score += 100 * multiplier(combo);
     added += notes[i]!.added; removed += notes[i]!.removed;
   }
   const passed = Math.max(0, Math.min(idx + 1, notes.length));
-  return { passed, combo: idx < 0 ? 0 : combo, mult: multiplier(combo), score, added, removed };
+  return { passed, combo, mult: multiplier(combo), score, added, removed };
 }
-/** x1 to x4: every four notes in a row in one lane is another x. */
-export const multiplier = (combo: number) => Math.min(4, 1 + Math.floor(combo / 4));
+
+// -- the runner --------------------------------------------------------------------------------------
+
+/**
+ * How hot the path is running at note `idx`: -1 (cold, the last few hot-path commits changed little
+ * next to the rest) to 1 (hot).
+ */
+export function paceAt(notes: Note[], hot: number[], idx: number, window = 4): number {
+  if (!hot.length) return 0;
+  const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  const sizes = hot.map((i) => notes[i]!.size);
+  const upto = hot.filter((i) => i <= idx).slice(-window).map((i) => notes[i]!.size);
+  if (!upto.length) return 0;
+  return Math.max(-1, Math.min(1, (mean(upto) - mean(sizes)) / 0.2));
+}
+
+/** How far ahead of the strum line the runner runs, in commits: it pulls ahead when the code is hot and falls back when it cools. Never behind the board's near edge. */
+export const runnerOffset = (pace: number) => Math.max(-0.5, 0.9 + 1.5 * pace);
+
+/** Strides a second: a jog when cold, a sprint when hot. */
+export const strideRate = (pace: number) => 2.2 + 2.2 * (Math.max(-1, Math.min(1, pace)) + 1);
 
 // -- words -------------------------------------------------------------------------------------------
 
@@ -316,7 +492,3 @@ export function formatClock(ms: number): string {
 }
 /** Days since the first commit, as a fixed 4-digit count: `0042d`. */
 export const formatAge = (ms: number, since: number) => `${String(Math.max(0, Math.floor((ms - since) / 86_400_000))).padStart(4, "0")}d`;
-export const initials = (name: string) => {
-  const parts = name.split(/[\s._-]+/).filter(Boolean);
-  return ((parts.length > 1 ? parts[0]![0]! + parts[1]![0]! : name.slice(0, 2)) || "?").toUpperCase();
-};
