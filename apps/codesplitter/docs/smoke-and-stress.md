@@ -8,7 +8,10 @@ Three tiers, cheapest first. Each tier only runs when the one below is green.
 local twins. Nothing leaves the machine. It covers every rule that costs nothing: repos, files,
 branches, search, hooks, commits, line edits, rate limits, webhook fan-out and retries.
 
-## Tier 2: the paid paths, with the paid part faked (to build)
+## Tier 2: the paid paths, with the paid part faked (hosted agents built, the rest to build)
+
+`bun run stress --paid-paths` runs hosted agents against a counting `AGENT_SANDBOX` fake in three modes (ok, fails, garbage):
+the site's `hosted` budget must start exactly 30 containers out of 55 asks, 429 the rest, and end every run.
 
 The paid paths are each behind one seam, so a stress run can hit the real route, queue, lock and
 budget code and swap only the thing that bills:
@@ -29,7 +32,7 @@ Rules for the fakes:
   timeouts are actually exercised.
 - Each fake can be told to fail, hang or answer garbage.
 
-Cost of a run: nothing. Put these in `scripts/stress.ts` as extra sections, or `bun run stress --paid-paths`.
+Cost of a run: nothing. The rest go in `scripts/stress.ts` as more sections behind `--paid-paths`.
 
 ## Tier 3: live smoke, tiny and capped (manual, owner-run)
 
