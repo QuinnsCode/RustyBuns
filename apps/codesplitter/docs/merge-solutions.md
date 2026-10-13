@@ -395,6 +395,10 @@ Nothing dropped a side, but this round has the first **silent bad merges** since
 
 The comment rules (a sentence added to a comment the other side reworded, and a comment edit losing to the deletion of its code) are one card each, and are left unfiled for now.
 
+Since #1255 the `scene.ts` and `wrangler.ts` lines are 1 card each. When both sides insert at one spot in code, the inserts are a card if
+they join with different ones of `&&`, `||` and `??`, or if one joins with any of them and the other opens or closes
+a paren it doesn't close or open. The five default replays don't change.
+
 ## 11. A merge plan: who waits for whom
 
 On 2026-10-12 the PR agent dry-ran pairs of about 40 open PRs, laid them out as waves, and told a worker to

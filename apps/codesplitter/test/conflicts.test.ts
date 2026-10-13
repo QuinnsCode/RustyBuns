@@ -354,6 +354,26 @@ describe("settled without asking (#933)", () => {
     // One side's chain under the other's plain new line still blends.
     expect(merged(was, `// checks\n${was}`, onBranch)).toBe(`// checks\n${onBranch}`);
   });
+
+  test("one expression both sides wrapped in && / || is a conflict: spliced, it grouped like neither (#1255)", () => {
+    // #1189's scene.ts: the `!` moved onto `(s.gone && …)`, and sunk soldiers were drawn again.
+    const was = "fig.root.visible = s.alive || b.down < SURRENDER + SINK;";
+    const onMain = "fig.root.visible = !s.hidden && !s.gone && (s.alive || b.down < SURRENDER + SINK);";
+    const onBranch = "fig.root.visible = (s.alive || b.down < SURRENDER + SINK) && ride?.kind !== \"heli\";";
+    expect(mergeWords(was, onMain, onBranch, true)).toBeNull();
+    expect(conflicts(sides(was, onMain, onBranch))).toHaveLength(1);
+    // #1199's wrangler.ts: the branch's && clause hung off main's || one, and never ran for `limits`.
+    const keep = (x: string) => `  return Object.keys(w).filter((k) => !HANDLED.has(k)${x});`;
+    const containers = " || (k === \"containers\" && (w.containers ?? []).some((c) => !localImage(c.image)))";
+    const limits = " && !(k === \"limits\" && Object.keys(w.limits ?? {}).every((l) => l === \"cpu_ms\"))";
+    expect(mergeWords(keep(""), keep(containers), keep(limits), true)).toBeNull();
+    expect(conflicts(sides(keep(""), keep(containers), keep(limits)))).toHaveLength(1);
+    // Both joining the same way still merges; `||` with `??` doesn't even parse.
+    expect(mergeWords("ok = a;", "ok = a && b;", "ok = a && c;", true)).toBe("ok = a && b && c;");
+    expect(mergeWords("ok = a;", "ok = a || b;", "ok = a ?? c;", true)).toBeNull();
+    // In prose, parens and "&&" are just words.
+    expect(mergeWords("Use it.", "Use it (a && b).", "Use it || c.", true, true)).toBe("Use it (a && b) || c.");
+  });
 });
 
 describe("generated text (#1154)", () => {
