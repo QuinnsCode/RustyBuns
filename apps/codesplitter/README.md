@@ -130,6 +130,7 @@ There's no downloadable build yet; that's one command from source.
 ## Everything else it does
 
 - **Blame and time travel for free.** The op log replays any file at any rev, so every line knows who wrote it and when.
+- **gitwiz.** A file's git history comes down a paper guitar-neck highway, a chip per commit (orange added, grey removed, lanes by the file's thirds or by author), with a card, a combo, a scrub bar and a clock at the strum line; `bun run gitwiz`, or feed it any clone with `bun scripts/gitwiz-log.ts <clone> <path>`.
 - **Live sync.** Edits go over each file's WebSocket.
   Every open page patches itself in place, and presence shows who else is there, people and agents apart.
   An agent holds the lines it was given while it works, you can hold lines of your own, and you can lift any claim.

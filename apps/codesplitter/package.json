@@ -7,6 +7,7 @@
     "agents": "bun agents.ts",
     "layout": "bun layout.ts",
     "phone": "bun scripts/phone.ts",
+    "gitwiz": "bun src/gitwiz/serve.ts",
     "cli": "bun cli.ts",
     "test": "bun test --parallel test",
     "test:watch": "bun test --watch test",
