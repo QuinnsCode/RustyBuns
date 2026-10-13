@@ -1,8 +1,9 @@
-// The AI faction's orders: spend everything, push fleets into weaker orbits next door, and land
-// troops behind them. Every order goes through planOrders, so it never queues one the rules refuse.
+// The AI faction's orders: spend everything, play its cards on the front, push fleets into weaker
+// orbits next door, and land troops behind them. After the fighting, it moves what it has spare up
+// to the front. Every order goes through the rules' own checks, so it never queues one they refuse.
 import type { Faction } from "../battle/contract.ts";
 import { galaxyOf } from "./galaxy.ts";
-import { COST, ORBIT, checkRetreats, enemy, planOrders, sectorAt, type Campaign, type Order, type Orders, type Retreat } from "./rules.ts";
+import { COST, ORBIT, checkRetreats, enemy, handOf, planDeploys, planOrders, sectorAt, type Campaign, type Order, type Orders, type Retreat, type SystemState } from "./rules.ts";
 
 export function aiOrders(c: Campaign, f: Faction): Orders {
   const orders: Order[] = [];
@@ -38,6 +39,16 @@ export function aiOrders(c: Campaign, f: Faction): Orders {
       }
     }
     if (!placed && !wantShips) break;
+  }
+
+  // Cards, after the garrison: troops and upgraded guns where the front is thinnest, and a trap
+  // under a lone army the enemy is next to. A card with nowhere to go stays in the hand.
+  const garrisoned = planOrders(c, [{ faction: f, orders }]).c;
+  const held = front.flatMap((s) => garrisoned.systems[s.id]!.sectors.map((x, j) => ({ at: { system: s.id, sector: j }, x })).filter((p) => p.x.owner === f));
+  const thinnest = [...held].sort((p, q) => p.x.armies[f] - q.x.armies[f]);
+  for (const card of handOf(c, f)) {
+    const spots = card === "trap" ? held.filter((p) => p.x.armies[f] === 1) : card === "guns" ? thinnest.filter((p) => p.x.kind === "capital" || p.x.kind === "spaceport") : thinnest;
+    spots.some((p) => tryAdd({ kind: "card", card, at: p.at }));
   }
   const after = planOrders(c, [{ faction: f, orders }]).c;
 
@@ -96,4 +107,28 @@ export function aiRetreats(c: Campaign, own: Orders): Retreat[] {
   // Only what the rules take, in case two pull out of the same place.
   const errs = checkRetreats(c, own, out);
   return out.filter((_, i) => !errs[i]);
+}
+
+// The AI's deploy phase: armies spare behind the lines (all but one) move up to the thinnest place
+// it holds on the front next to them, on the same world or next door.
+export function aiDeploys(c: Campaign, f: Faction): Order[] {
+  const g = galaxyOf(c), foe = enemy(f), ids = g.systems.map((s) => s.id);
+  if (f === "wooka") ids.reverse();
+  const onFront = (s: SystemState) => s.sectors.some((x) => x.owner === foe) || g.neighbours(s.id).some((n) => c.systems[n]!.sectors.some((x) => x.owner === foe));
+  const moves: Order[] = [];
+  for (const id of ids) {
+    const s = c.systems[id]!;
+    if (onFront(s)) continue;
+    s.sectors.forEach((x, j) => {
+      const now = planDeploys(c, f, moves).c, n = now.systems[id]!.sectors[j]!.armies[f];
+      if (x.owner !== f || n < 2) return;
+      const to = ids.filter((t) => g.adjacent(id, t) && onFront(c.systems[t]!))
+        .flatMap((t) => now.systems[t]!.sectors.map((y, k) => ({ at: { system: t, sector: k }, y })))
+        .filter((p) => p.y.owner === f)
+        .sort((p, q) => p.y.armies[f] - q.y.armies[f])[0];
+      const o: Order | null = to ? { kind: "army", from: { system: id, sector: j }, to: to.at, count: n - 1 } : null;
+      if (o && planDeploys(c, f, [...moves, o]).errors.at(-1) === null) moves.push(o);
+    });
+  }
+  return moves;
 }
