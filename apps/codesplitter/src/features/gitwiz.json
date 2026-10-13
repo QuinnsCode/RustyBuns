@@ -1,5 +1,5 @@
 {
   "icon": "wand-sparkles",
   "title": "gitwiz",
-  "what": "A file's git graph scrolls past guitar-neck style while a runner follows the hot path."
+  "what": "A file's git graph in 3D, with a runner on the hot path and a model per piece of the stack."
 }

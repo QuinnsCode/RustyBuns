@@ -58,6 +58,8 @@
   .k-add { background: #f8c9a1; border-color: var(--accent); } .k-remove { background: #e2e2e2; border-color: #8f8f8f; }
   .k-hot { height: 3px !important; border: 0 !important; border-radius: 2px; background: var(--accent); vertical-align: 2px !important; width: 16px !important; }
   .k-rewrite { background: linear-gradient(90deg, #f8c9a1 50%, #e2e2e2 50%); border-color: #6b6b6b; }
+  #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .tag { position: absolute; left: 0; top: 0; padding: 0 6px; font: 600 11px/16px var(--mono); color: var(--fg); background: var(--grain), var(--paper); border: 1px solid var(--border-2); border-radius: 4px; white-space: nowrap; }
   #empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
 
   /* Under the stage: the card for the commit at the strum line, the run's numbers, then the controls. */
@@ -129,6 +131,7 @@
 
 <main class="stage" id="stage">
   <canvas id="board" aria-label="The file's commit graph coming down a highway toward the strum line, with a runner on the hot path"></canvas>
+  <div id="labels" aria-hidden="true"></div>
   <div class="pill" id="lanenote"></div>
   <div class="pill" id="key"><span><i class="k-add"></i>add</span><span><i class="k-remove"></i>remove</span><span><i class="k-rewrite"></i>rewrite</span><span><i class="k-hot"></i>hot path</span></div>
   <div id="empty" hidden>Loading the history</div>
@@ -168,6 +171,7 @@
     <li><i class="k-rewrite" style="display:inline-block;width:12px;height:12px;border-radius:50%;border:1px solid"></i>split coin: a rewrite, both at once</li>
     <li><i data-lucide="maximize-2"></i>a bigger, glowing coin changed more lines</li>
     <li><i data-lucide="gauge"></i>the runner pulls ahead on hot stretches and falls back as the code cools</li>
+    <li><i data-lucide="box"></i><span class="wrap" style="margin:0;color:inherit">a commit that names a stack piece turns into its 3D model: <b id="stacklist" style="font-weight:500"></b></span></li>
     <li><i data-lucide="flame"></i>combo: commits in a row on the hot path. A side-branch commit breaks it; every four is another x, up to x4</li>
   </ul>
   <h2>Keys</h2>

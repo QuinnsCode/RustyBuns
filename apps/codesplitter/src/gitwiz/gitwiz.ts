@@ -1,11 +1,11 @@
-// Layout (src/gitwiz/gitwiz.ts, src/gitwiz/page.ts, src/gitwiz/build.ts, src/gitwiz/serve.ts): gitwiz, a file's commit graph run down a guitar-neck highway by a runner on the hot path (page.ts draws it; gitwiz.ts is the pure parts, tested in `test/gitwiz.test.ts`; `bun run gitwiz` serves it; data from `scripts/gitwiz-log.ts`)
+// Layout (src/gitwiz/gitwiz.ts, src/gitwiz/scene.ts, src/gitwiz/models.ts, src/gitwiz/page.ts, src/gitwiz/build.ts, src/gitwiz/serve.ts): gitwiz, a file's commit graph in 3D (three.js) with a runner on the hot path and a model per piece of the stack (gitwiz.ts is the pure parts, tested in `test/gitwiz.test.ts`; scene.ts and models.ts draw; page.ts is the controls; `bun run gitwiz` serves it; data from `scripts/gitwiz-log.ts`)
 // gitwiz replays one file's history as a git graph in perspective: branches fan out and rejoin, and a
 // runner follows the hot path (the route with the most churn). Everything that can be wrong without a
 // screen is here, with no DOM and no imports, so test/gitwiz.test.ts covers it:
 //   - reading `git log -p -U0 --parents` (parsePatchLog) and the JSON that scripts/gitwiz-log.ts writes (readInput)
 //   - cutting the repo's graph down to the commits that touched the file (simplifyParents)
 //   - notes: a kind (add, remove, rewrite), a size, parents, in an order where parents come first
-//   - the graph's layout (lanes, edges, the hot path), the board's perspective, and the runner's pace
+//   - the graph's layout (lanes, edges, the hot path), the 3D board's measures, the stack's models by name, and the runner's pace
 
 /** One commit that touched the file. `parents` are the nearest earlier commits that touched it too, first parent first. */
 export interface Commit {
@@ -369,47 +369,74 @@ export function pathSlotAt(lay: Layout, t: number): number {
 }
 
 // -- the board ---------------------------------------------------------------------------------------
-
-export interface Geometry {
-  w: number; h: number;
-  /** Screen y of the horizon and of the strum line, and the x of the vanishing point. */
-  horizon: number; strum: number; cx: number;
-  /** Half the board's width at the strum line. */
-  half: number;
-}
+// A real 3D scene (scene.ts, three.js): the board lies along -z with the strum line at z = 0 and the
+// viewer at +z. Slots are across it (x), commits are along it (z), one SPACING apart.
 
 /** How many commits are on the board at once, strum line to horizon. */
 export const AHEAD = 16;
-/** How sharply the board narrows toward the horizon (the strum line is 1, the horizon is 1 / (1 + FALLOFF)). */
-export const FALLOFF = 6;
-/** How far past the strum line the board is drawn, in commits. */
-export const BEHIND = 1.5;
+/** Width of one lane, and the distance between two commits, in scene units. */
+export const LANE_W = 2.2;
+export const SPACING = 1.7;
+export const FOV = 38;
+/** How far the camera looks down on the board, in degrees. */
+export const TILT = 38;
 
-export function geometry(w: number, h: number): Geometry {
-  return { w, h, horizon: h * 0.1, strum: h * 0.8, cx: w / 2, half: Math.min(w * 0.4, h * 0.62) };
+export const worldX = (slot: number) => slot * LANE_W;
+/** The z of note index `t` (a fraction is between two commits): note 0 is one commit in front of the strum line when q = 0. */
+export const worldZ = (t: number) => -(t + 1) * SPACING;
+/** Half the board's width, with `extent` slots either side of the middle one. */
+export const boardHalf = (extent: number) => (extent + 0.5) * LANE_W + 0.9;
+
+/** How far back the camera sits to fit a board of half-width `half` across a canvas of `aspect` (width / height) with a little to spare. */
+export function fitDistance(half: number, aspect: number, fov = FOV): number {
+  const halfH = Math.atan(Math.tan((fov * Math.PI) / 360) * Math.max(aspect, 0.2));
+  return Math.min(60, Math.max(9, half / (Math.tan(halfH) * 0.88)));
 }
 
-/** Scale at depth d (commits past the strum line; negative once crossed): 1 at the strum line, shrinking with distance. */
-export function scaleAt(d: number): number {
-  const z = d / AHEAD;
-  // Past the strum line it carries on straight, not into 1 / 0, so a note leaves smoothly.
-  return z >= 0 ? 1 / (1 + FALLOFF * z) : 1 - FALLOFF * z;
+/**
+ * The note indices along an edge to draw it through: its two ends, and close samples where it bends
+ * from one lane to the other (the rest is flat, so two points are enough).
+ */
+export function edgeSamples(lay: Layout, e: Edge): number[] {
+  const out = [e.lo];
+  if (lay.slot[e.lo] !== lay.slot[e.hi]) {
+    const bend = Math.min(1.5, (e.hi - e.lo) / 2);
+    const from = lay.lane[e.hi]! < lay.lane[e.lo]! ? e.hi - bend : e.lo;
+    const steps = Math.max(2, Math.ceil(bend / 0.15));
+    for (let k = 0; k <= steps; k++) out.push(from + (bend * k) / steps);
+  }
+  out.push(e.hi);
+  return [...new Set(out)].sort((a, b) => a - b);
 }
 
-/** A slot's place across the board, -1 (left edge) .. 1 (right edge), with `extent` slots either side of the centre one. */
-export const slotX = (slot: number, extent: number) => slot / (extent + 0.5);
+// -- the stack ---------------------------------------------------------------------------------------
 
-/** A point on the board: position `lx` (-1..1) at depth `d` commits past the strum line, as a screen x, y and scale. */
-export function project(g: Geometry, lx: number, d: number): { x: number; y: number; s: number } {
-  const s = scaleAt(d);
-  return { x: g.cx + lx * g.half * s, y: g.horizon + (g.strum - g.horizon) * s, s };
+export interface StackPiece {
+  id: string; name: string;
+  /** A commit whose subject matches turns into this piece's 3D model. */
+  words: RegExp;
 }
 
-/** Inverse of scaleAt's y: the depth whose line sits at screen y. */
-export function depthAtY(g: Geometry, y: number): number {
-  const s = (y - g.horizon) / (g.strum - g.horizon);
-  return s <= 1 ? ((1 / s - 1) / FALLOFF) * AHEAD : ((1 - s) / FALLOFF) * AHEAD;
-}
+/**
+ * The Cloudflare pieces codeSplitter is built on, each with a model in models.ts. A framework that supports
+ * another piece gets it here (id, name, the words that call it up) and a model of the same id there:
+ * test/gitwiz.test.ts fails if one has no model. The first match wins, so the specific come before the general.
+ */
+export const STACK: StackPiece[] = [
+  { id: "d1", name: "D1", words: /\bD1\b/ },
+  { id: "r2", name: "R2", words: /\bR2\b/ },
+  { id: "queues", name: "Queues", words: /\bqueues?\b/i },
+  { id: "durable-objects", name: "Durable Objects", words: /\bdurable objects?\b|\bDOs?\b/i },
+  { id: "containers", name: "Containers", words: /\bcontainers?\b|\bsandbox(es)?\b/i },
+  { id: "artifacts", name: "Artifacts", words: /\bartifacts?\b/i },
+  { id: "rate-limit", name: "Rate limiting", words: /rate[- ]?limit/i },
+  { id: "assets", name: "Static assets", words: /\bstatic assets?\b/i },
+  { id: "workers", name: "Workers", words: /\bworkers?\b|\bwrangler\b|\bworkerd\b/i },
+  { id: "cloud", name: "Cloudflare", words: /\bcloudflare\b|\balchemy\b/i },
+];
+
+/** The stack piece a commit's subject calls up, if any. */
+export const stackOf = (subject: string): string | undefined => STACK.find((p) => p.words.test(subject))?.id;
 
 // -- the playhead -------------------------------------------------------------------------------------
 // q is how many commits have gone by: 0 before the first reaches the strum line, n after the last. It

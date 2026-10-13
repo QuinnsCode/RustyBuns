@@ -1,4 +1,4 @@
-// gitwiz is three static files and a sample, with no route of its own: the Worker's assets serve them.
+// gitwiz is three static files and a sample (the script has three.js bundled in), with no route of its own: the Worker's assets serve them.
 // ../../build.ts calls this for dist/client, and serve.ts for its own scratch folder.
 import { copyFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";

@@ -1,11 +1,11 @@
-// The DOM half of gitwiz. gitwiz.ts has the math; this paints it (the commit graph as coins and lines on
-// a board that narrows toward a vanishing point, and a runner on the hot path), plays and scrubs the
-// history, and loads a pasted or uploaded file. build.ts bundles it to /gitwiz.js for gitwiz.html.
+// The DOM half of gitwiz: the controls, the card and the numbers around scene.ts's 3D board. It plays and
+// scrubs the history, hangs branch names over the canvas, and loads a pasted or uploaded file or picture.
+// build.ts bundles it, three.js and all, to /gitwiz.js for gitwiz.html.
 import {
-  AHEAD, BEHIND, buildNotes, clampQ, clockAt, currentIndex, edgeSlotAt, formatAge, formatClock, geometry, layoutGraph,
-  paceAt, pathSlotAt, project, qToScrub, readInput, runnerOffset, scoreAt, scrubToQ, slotX, stepQ, strideRate,
-  type Geometry, type Input, type Layout, type Note,
+  STACK, buildNotes, clampQ, clockAt, currentIndex, formatAge, formatClock, layoutGraph, paceAt, qToScrub, readInput, scoreAt,
+  scrubToQ, stepQ, strideRate, type Input, type Layout, type Note,
 } from "./gitwiz.ts";
+import { createScene } from "./scene.ts";
 
 declare const lucide: { createIcons(): void } | undefined;
 
@@ -21,11 +21,8 @@ const SPEEDS = [0.5, 1, 2, 4, 8, 16, 32];
 const AVATAR_KEY = "gitwiz.avatar";
 
 const board = $<HTMLCanvasElement>("board");
-const ctx = board.getContext("2d")!;
-const css = getComputedStyle(document.documentElement);
-const tok = (n: string, fallback: string) => css.getPropertyValue(n).trim() || fallback;
-const INK = tok("--fg", "#0a0a0a"), PAPER = tok("--paper", "#fcfbf8"), ACCENT = tok("--accent", "#e8590c");
-const MONO = tok("--mono", "monospace");
+const scene = createScene(board);
+const labels = $("labels");
 
 let input: Input | null = null;
 let path = "";
@@ -37,12 +34,10 @@ let speed = 2;
 let playing = false;
 let shown = -2;                   // the note the card and numbers are showing
 let hitAt = -1e9;                 // when the last note crossed, for the strum line's flash
-let geo: Geometry = geometry(800, 500);
 let last = 0;
 let raf = 0;
 // The runner: how hot it is running (smoothed), and how far through its stride.
 let pace = 0, phase = 0;
-let avatar: HTMLImageElement | null = null;
 
 // -- loading ---------------------------------------------------------------------------------------
 
@@ -74,6 +69,7 @@ function pick(p: string) {
   notes = buildNotes(input.histories[p]!);
   lay = layoutGraph(notes);
   hotEdges = new Set(lay.hot.slice(1).map((hi, k) => `${lay.hot[k]}-${hi}`));
+  scene?.setGraph(notes, lay, hotEdges);
   const forks = lay.lanes - 1;
   $("lanenote").innerHTML = `${icon("git-branch")}${forks > 0 ? `${forks} side lane${forks === 1 ? "" : "s"}` : "one line"}, main in the middle`;
   playing = false;
@@ -135,213 +131,29 @@ function cardFor(n: Note) {
 
 function resize() {
   const r = board.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  board.width = Math.max(1, Math.round(r.width * dpr));
-  board.height = Math.max(1, Math.round(r.height * dpr));
-  geo = geometry(r.width, r.height);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  scene?.resize(r.width, r.height);
   draw();
 }
 
-const rgba = (hex: string, a: number) => {
-  const v = parseInt(hex.slice(1), 16);
-  return `rgba(${v >> 16}, ${(v >> 8) & 255}, ${v & 255}, ${a})`;
-};
-/** A size that grows with the canvas, within reason. */
-const unit = () => Math.min(1.3, Math.max(0.7, geo.half / 260));
-/** A lane's slot at depth d, on screen. */
-const onBoard = (slot: number, d: number) => project(geo, slotX(slot, lay.extent), d);
-
+/** A pool of branch-name tags laid over the canvas where their commits are. */
+const tagEls: HTMLElement[] = [];
 function draw() {
-  const g = geo;
-  ctx.clearRect(0, 0, g.w, g.h);
-  const frac = q - Math.floor(q + 1e-9);
-
-  // The board: a paper strip that narrows to the vanishing point and fades out as it gets there.
-  const bl = project(g, -1, -BEHIND), br = project(g, 1, -BEHIND), tl = project(g, -1, AHEAD), tr = project(g, 1, AHEAD);
-  const fade = ctx.createLinearGradient(0, g.horizon, 0, g.strum);
-  fade.addColorStop(0, rgba("#fcfbf8", 0)); fade.addColorStop(0.5, rgba("#f6f3ec", 0.85)); fade.addColorStop(1, "#f3efe6");
-  ctx.beginPath(); ctx.moveTo(bl.x, bl.y); ctx.lineTo(br.x, br.y); ctx.lineTo(tr.x, tr.y); ctx.lineTo(tl.x, tl.y); ctx.closePath();
-  ctx.fillStyle = fade; ctx.fill();
-  for (const lx of [-1, 1]) {
-    const p = project(g, lx, -BEHIND), far = project(g, lx, AHEAD);
-    const grad = ctx.createLinearGradient(p.x, p.y, g.cx, g.horizon);
-    grad.addColorStop(0, rgba("#8a8578", 0.9)); grad.addColorStop(1, rgba("#b9b4a6", 0));
-    ctx.strokeStyle = grad; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(far.x, far.y); ctx.stroke();
-  }
-
-  // Frets: one a commit apart, sliding toward the viewer as the history plays.
-  for (let m = -1; m <= AHEAD; m++) {
-    const d = m - frac;
-    const a = project(g, -1, d), b = project(g, 1, d);
-    ctx.strokeStyle = rgba("#a39d8c", Math.max(0, Math.min(0.5, a.s * 0.8)) * (d < 0 ? Math.max(0, 1 + d / 0.5) : 1));
-    ctx.lineWidth = Math.max(0.5, 1.2 * a.s);
-    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-  }
-
-  // The strum line goes under everything that crosses it.
-  const since = performance.now() - hitAt, flash = since < 380 ? 1 - since / 380 : 0;
-  const sa = project(g, -1, 0), sb = project(g, 1, 0);
-  ctx.strokeStyle = flash ? ACCENT : INK; ctx.lineWidth = 2.5 + flash * 3;
-  ctx.beginPath(); ctx.moveTo(sa.x - 6, sa.y); ctx.lineTo(sb.x + 6, sb.y); ctx.stroke();
-
-  // The graph's lines still in view: the side branches first, the hot path on top.
-  const tMin = q - 1 - 0.3, tMax = q - 1 + AHEAD;
-  const seen = lay.edges.filter((e) => e.lo <= tMax && e.hi >= tMin);
-  ctx.lineCap = "round"; ctx.lineJoin = "round";
-  for (const hot of [false, true]) {
-    for (const e of seen) {
-      if (hotEdges.has(`${e.lo}-${e.hi}`) !== hot) continue;
-      const from = Math.max(e.lo, tMin), to = Math.min(e.hi, tMax);
-      ctx.beginPath();
-      for (let t = from; ; t = Math.min(to, t + 0.2)) {
-        const p = onBoard(edgeSlotAt(lay, e, t), t + 1 - q);
-        if (t === from) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
-        if (t >= to) break;
-      }
-      const s = onBoard(0, Math.max(-0.3, (from + to) / 2 + 1 - q)).s;
-      ctx.strokeStyle = hot ? ACCENT : "#9c9686";
-      ctx.lineWidth = Math.max(0.8, (hot ? 3.2 : 2) * s * unit());
-      ctx.stroke();
-    }
-  }
-
-  // Coins, far to near, so the near ones sit on top.
-  const lo = Math.max(0, Math.floor(q) - 1), hi = Math.min(notes.length - 1, Math.ceil(q) + AHEAD);
-  for (let i = hi; i >= lo; i--) {
-    const d = i + 1 - q;
-    if (d > AHEAD || d < -0.25) continue;
-    coin(notes[i]!, d, i === currentIndex(q, notes.length));
-  }
-
-  runner();
-}
-
-function coin(n: Note, d: number, now: boolean) {
-  const g = geo;
-  const p = onBoard(lay.slot[n.i]!, d);
-  const slotW = ((g.half * 2) / (2 * lay.extent + 1)) * p.s;
-  const r = Math.max(2.5, Math.min(slotW * 0.45, (8 + 11 * n.size) * p.s * unit()));
-  const hot = lay.onHot[n.i];
-  const gone = d < 0 ? Math.max(0, 1 + d / 0.25) : 1;
-  ctx.save();
-  ctx.globalAlpha = gone * Math.min(1, 0.4 + p.s * 1.4);
-  // The glow is the lines changed: nothing for a one-liner, a soft halo for a big one.
-  if (n.size > 0.3) { ctx.shadowColor = n.kind !== "remove" ? rgba(ACCENT, 0.55) : "rgba(100,100,100,.5)"; ctx.shadowBlur = 24 * n.size * p.s; }
-  ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.fillStyle = PAPER; ctx.fill();
-  ctx.shadowColor = "transparent"; ctx.shadowBlur = 0;
-  ctx.save(); ctx.clip();
-  const split = p.x - r + 2 * r * n.addShare;
-  ctx.fillStyle = n.kind === "remove" ? "#e2e2e2" : "#f8c9a1"; ctx.fillRect(p.x - r, p.y - r, 2 * r, 2 * r);
-  if (n.kind === "rewrite") { ctx.fillStyle = "#e2e2e2"; ctx.fillRect(split, p.y - r, p.x + r - split, 2 * r); }
-  ctx.fillStyle = "rgba(255,255,255,.5)"; ctx.fillRect(p.x - r, p.y - r, 2 * r, r * 0.55);
-  ctx.restore();
-  ctx.lineWidth = now ? 2.4 : Math.max(0.8, (hot ? 2 : 1.3) * p.s * unit());
-  ctx.strokeStyle = now ? INK : hot ? ACCENT : n.kind === "remove" ? "#8f8f8f" : "#b9b4a6";
-  ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.stroke();
-  if (n.refs.length && p.s > 0.4 && gone === 1) {
-    ctx.font = `600 ${Math.round(11 * Math.min(1.1, p.s))}px ${MONO}`;
-    ctx.textAlign = "left"; ctx.textBaseline = "middle";
-    const label = n.refs[0]!.length > 22 ? n.refs[0]!.slice(0, 21) + "…" : n.refs[0]!;
-    const w = ctx.measureText(label).width + 10, x = p.x + r + 6, h = 16 * Math.min(1.1, p.s);
-    ctx.fillStyle = PAPER; ctx.strokeStyle = "#cfcfcf"; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(x, p.y - h / 2, w, h, 4); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = INK; ctx.fillText(label, x + 5, p.y + 0.5);
-  }
-  ctx.restore();
-}
-
-// -- the runner ------------------------------------------------------------------------------------
-// An orange shirt, black shorts with an orange cloud on them, a Mii-style head (or the face you gave
-// it). It runs toward you along the hot path: pulling ahead when the code is hot, falling back as it cools.
-
-function runner() {
-  if (!notes.length) return;
-  const off = runnerOffset(pace);
-  const p = onBoard(pathSlotAt(lay, q - 1 + off), off);
-  const H = 92 * p.s * unit();
-  if (H < 8) return;
-  const u = H / 10.5;
-  const sw = Math.sin(phase), bob = playing ? Math.abs(Math.cos(phase)) * 0.35 * u : 0;
-  ctx.save();
-  ctx.translate(p.x, p.y);
-  ctx.fillStyle = "rgba(0,0,0,.16)"; ctx.beginPath(); ctx.ellipse(0, 0, 3.4 * u, 0.8 * u, 0, 0, 7); ctx.fill();
-  ctx.lineCap = "round";
-  const SKIN = "#f2c9a0", SKIN_EDGE = "#c79a72";
-  // Legs: one foot lifts while the other plants.
-  const hipY = -3.2 * u - bob;
-  for (const side of [-1, 1]) {
-    const lift = playing ? Math.max(0, side * sw) * 1.7 * u : 0;
-    ctx.strokeStyle = SKIN_EDGE; ctx.lineWidth = 1.25 * u;
-    ctx.beginPath(); ctx.moveTo(side * 0.95 * u, hipY); ctx.lineTo(side * 1.05 * u, -0.4 * u - lift); ctx.stroke();
-    ctx.strokeStyle = SKIN; ctx.lineWidth = 1 * u;
-    ctx.beginPath(); ctx.moveTo(side * 0.95 * u, hipY); ctx.lineTo(side * 1.05 * u, -0.4 * u - lift); ctx.stroke();
-    ctx.fillStyle = "#fff"; ctx.strokeStyle = INK; ctx.lineWidth = Math.max(0.8, 0.12 * u);
-    ctx.beginPath(); ctx.ellipse(side * 1.15 * u, -0.45 * u - lift, 0.95 * u, 0.55 * u, 0, 0, 7); ctx.fill(); ctx.stroke();
-  }
-  // Arms swing against the legs.
-  for (const side of [-1, 1]) {
-    const swing = playing ? -side * sw : 0;
-    const hx = side * (2.9 + 0.2 * swing) * u, hy = (-4.9 - 1.3 * swing) * u - bob;
-    ctx.strokeStyle = SKIN; ctx.lineWidth = 0.95 * u;
-    ctx.beginPath(); ctx.moveTo(side * 2.1 * u, -6.9 * u - bob); ctx.lineTo(hx, hy); ctx.stroke();
-    ctx.fillStyle = SKIN; ctx.beginPath(); ctx.arc(hx, hy, 0.55 * u, 0, 7); ctx.fill();
-  }
-  // Shorts, black, with the cloud.
-  ctx.fillStyle = "#111"; ctx.beginPath(); ctx.roundRect(-1.95 * u, -5.0 * u - bob, 3.9 * u, 2.1 * u, 0.5 * u); ctx.fill();
-  cloud(0, -4.15 * u - bob, 1.9 * u);
-  // Shirt, orange, with its short sleeves.
-  ctx.fillStyle = ACCENT; ctx.strokeStyle = "#c2410c"; ctx.lineWidth = Math.max(0.8, 0.12 * u);
-  ctx.beginPath(); ctx.roundRect(-2.05 * u, -7.7 * u - bob, 4.1 * u, 2.9 * u, 0.7 * u); ctx.fill(); ctx.stroke();
-  for (const side of [-1, 1]) { ctx.beginPath(); ctx.arc(side * 2.15 * u, -7.0 * u - bob, 0.85 * u, 0, 7); ctx.fill(); }
-  head(0, -9.1 * u - bob, 1.55 * u);
-  ctx.restore();
-}
-
-/** A small cloud, drawn from circles: a stand-in for the logo, not the real mark. */
-function cloud(cx: number, cy: number, w: number) {
-  ctx.fillStyle = ACCENT;
-  ctx.beginPath();
-  ctx.roundRect(cx - w / 2, cy - w * 0.12, w, w * 0.34, w * 0.17);
-  ctx.arc(cx - w * 0.17, cy - w * 0.12, w * 0.2, 0, 7);
-  ctx.arc(cx + w * 0.1, cy - w * 0.17, w * 0.27, 0, 7);
-  ctx.fill();
-}
-
-function head(x: number, y: number, r: number) {
-  ctx.save();
-  if (avatar && avatar.complete && avatar.naturalWidth) {
-    ctx.beginPath(); ctx.arc(x, y, r * 1.12, 0, 7); ctx.fillStyle = PAPER; ctx.fill(); ctx.save(); ctx.clip();
-    const s = Math.min(avatar.naturalWidth, avatar.naturalHeight);
-    ctx.drawImage(avatar, (avatar.naturalWidth - s) / 2, (avatar.naturalHeight - s) / 2, s, s, x - r * 1.12, y - r * 1.12, r * 2.24, r * 2.24);
-    ctx.restore();
-    ctx.strokeStyle = INK; ctx.lineWidth = Math.max(0.8, r * 0.1); ctx.beginPath(); ctx.arc(x, y, r * 1.12, 0, 7); ctx.stroke();
-    ctx.restore();
-    return;
-  }
-  ctx.lineWidth = Math.max(0.8, r * 0.08); ctx.strokeStyle = "#c79a72";
-  for (const side of [-1, 1]) { ctx.fillStyle = "#f2c9a0"; ctx.beginPath(); ctx.arc(x + side * r * 0.98, y + r * 0.1, r * 0.22, 0, 7); ctx.fill(); ctx.stroke(); }
-  ctx.fillStyle = "#f2c9a0"; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = "#3b2a20"; // hair: a cap and a fringe
-  ctx.beginPath(); ctx.arc(x, y, r * 1.04, Math.PI * 1.04, Math.PI * 1.96); ctx.quadraticCurveTo(x + r * 0.3, y - r * 0.5, x, y - r * 0.55); ctx.quadraticCurveTo(x - r * 0.4, y - r * 0.45, x - r * 1.0, y - r * 0.28); ctx.fill();
-  ctx.fillStyle = "#1b1b1b";
-  for (const side of [-1, 1]) { ctx.beginPath(); ctx.ellipse(x + side * r * 0.36, y + r * 0.1, r * 0.1, r * 0.15, 0, 0, 7); ctx.fill(); }
-  ctx.strokeStyle = "#8a4b3a"; ctx.lineWidth = Math.max(0.8, r * 0.09);
-  ctx.beginPath(); ctx.arc(x, y + r * 0.28, r * 0.3, 0.2 * Math.PI, 0.8 * Math.PI); ctx.stroke();
-  ctx.fillStyle = "rgba(232,89,12,.18)";
-  for (const side of [-1, 1]) { ctx.beginPath(); ctx.arc(x + side * r * 0.62, y + r * 0.38, r * 0.17, 0, 7); ctx.fill(); }
-  ctx.restore();
+  if (!scene) return;
+  const since = performance.now() - hitAt;
+  const tags = scene.render({ q, pace, phase, playing, flash: since < 380 ? 1 - since / 380 : 0 }, currentIndex(q, notes.length));
+  tags.forEach((t, k) => {
+    const el = (tagEls[k] ??= labels.appendChild(Object.assign(document.createElement("span"), { className: "tag" })));
+    if (el.textContent !== t.text) el.textContent = t.text.length > 22 ? t.text.slice(0, 21) + "…" : t.text;
+    el.hidden = false; el.style.transform = `translate(${Math.round(t.x + 14)}px, ${Math.round(t.y - 9)}px)`;
+  });
+  for (let k = tags.length; k < tagEls.length; k++) tagEls[k]!.hidden = true;
 }
 
 // -- the face you gave it --------------------------------------------------------------------------
 
 function setAvatar(url: string | null) {
-  if (!url) { avatar = null; draw(); return; }
-  const img = new Image();
-  img.onload = () => { avatar = img; draw(); };
-  img.onerror = () => { avatar = null; toast("Couldn't read that picture"); };
-  img.src = url;
+  scene?.setAvatar(url);
+  draw();
 }
 
 /** A picked picture, cut square and shrunk to a 96px head so it's small enough to remember. */
@@ -465,6 +277,8 @@ new ResizeObserver(resize).observe(board);
 
 // -- start -----------------------------------------------------------------------------------------
 
+$("stacklist").textContent = STACK.map((p) => p.name).join(", ");
+if (!scene) toast("gitwiz draws in 3D and this browser has no WebGL");
 $("empty").hidden = false;
 refresh();
 icons();
@@ -473,4 +287,4 @@ fetch("/gitwiz-sample.json").then((r) => r.json()).then((j) => { load(j, "the sa
   .catch(() => { $("empty").textContent = "Open or paste a history to begin (O, P)"; });
 
 // A handle for the console (window.gitwiz.seek(40)).
-(window as unknown as { gitwiz: unknown }).gitwiz = { seek, play, get q() { return q; }, get notes() { return notes; }, get layout() { return lay; } };
+(window as unknown as { gitwiz: unknown }).gitwiz = { seek, play, get q() { return q; }, get notes() { return notes; }, get layout() { return lay; }, stats: () => scene?.stats() };
