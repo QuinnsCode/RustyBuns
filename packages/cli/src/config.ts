@@ -281,6 +281,8 @@ export interface DesktopTarget {
    *   server: { entry: "../api/server.js", paths: ["/api"] }
    * A list when the proxy sent paths to more than one server; the first whose paths match wins:
    *   server: [{ entry: "../api/server.js", paths: ["/api"] }, { entry: "../media/index.js", paths: ["/img", "/gif"] }]
+   * A native addon (.node) it requires by a fixed path ships beside it; one a package finds at
+   * run time (bindings, node-gyp-build), or one not built for a target, stops the build.
    * Desktop and box only: a Worker can't run a node:http server, so the edge needs it ported.
    */
   server?: DesktopServer | DesktopServer[];

@@ -18,6 +18,10 @@
 // A fix task that failed the same way as the last one (#1077: the same test, the same error text)
 // doesn't get the same task again. Its path's policy says `escalate`: it's a person's turn now.
 // Otherwise the next one starts from a terse note saying what was tried, so it doesn't try it again.
+//
+// A branch the merge plan held for another, which really clashes with main once that one merged, gets one
+// too (#1219, rebuildTask): a rebuild, as a person would merge main in and keep both sides (branches.ts).
+// It counts as one of the branch's attempts.
 
 import type { Env } from "./env.ts";
 import type { CheckRun } from "./checks.ts";
@@ -63,18 +67,28 @@ export async function heals(env: Env, owner: string, repo: string, branch: strin
   return { max: MAX_ATTEMPTS, attempts: list, running, gave_up: !running && list.length >= MAX_ATTEMPTS };
 }
 
+/** Why no fix task would start on `branch` now (self-healing off, one running, MAX_ATTEMPTS had), or null when one may. */
+export async function fixUnavailable(env: Env, owner: string, repo: string, branch: string): Promise<string | null> {
+  if (branch === "main" || /^agent-run-\d+$/.test(branch)) return "not a branch self-healing works on";
+  const off = healUnavailable(env, owner);
+  if (off) return off;
+  const a = await attempts(env, owner, repo, branch);
+  if (!a) return "no open branch";
+  if (a.runs.some((r) => r.status === "running")) return "a fix task is running on it already";
+  if (a.runs.length >= MAX_ATTEMPTS) return `it had ${MAX_ATTEMPTS} fix tasks: a person's turn`;
+  return null;
+}
+
 /**
  * Start a fix task on `branch`'s `path`, which may edit `also` too, unless one's running there,
- * the branch has had its MAX_ATTEMPTS, or self-healing is off. Its id, or why not.
+ * the branch has had its MAX_ATTEMPTS, or self-healing is off. Its id, or why not. `before` runs once
+ * the task is booked and before the agent sees the branch (a rebuild's restart from main's copies);
+ * when it throws, the task fails unrun.
  */
-export async function openFix(env: Env, owner: string, repo: string, branch: string, path: string, task: string, also: string[] = []): Promise<{ id: number } | { skipped: string }> {
-  if (branch === "main" || /^agent-run-\d+$/.test(branch)) return { skipped: "not a branch self-healing works on" };
-  const off = healUnavailable(env, owner);
-  if (off) return { skipped: off };
-  const a = await attempts(env, owner, repo, branch);
-  if (!a) return { skipped: "no open branch" };
-  if (a.runs.some((r) => r.status === "running")) return { skipped: "a fix task is running on it already" };
-  if (a.runs.length >= MAX_ATTEMPTS) return { skipped: `it had ${MAX_ATTEMPTS} fix tasks: a person's turn` };
+export async function openFix(env: Env, owner: string, repo: string, branch: string, path: string, task: string, also: string[] = [], before?: () => Promise<void>): Promise<{ id: number } | { skipped: string }> {
+  const no = await fixUnavailable(env, owner, repo, branch);
+  if (no) return { skipped: no };
+  const a = (await attempts(env, owner, repo, branch))!;
   const last = a.runs.at(-1);
   if (last && sameFailure(last.task.replace(/^[\s\S]*\nTASK: /, ""), task)) {
     if ((await policyFor(env, owner, repo, path)).over === "escalate") return { skipped: "the same failure twice: a person's turn" };
@@ -92,6 +106,12 @@ export async function openFix(env: Env, owner: string, repo: string, branch: str
     .bind(owner, repo, path, harness, task.slice(0, 4000), `agent-${harness}`, Date.now(), branch, also.length ? JSON.stringify({ also }) : null, owner, repo, branch, owner, repo, branch, a.since, MAX_ATTEMPTS).first();
   if (!row) return { skipped: "another fix task got there first" };
   const id = row.id as number;
+  try { await before?.(); }
+  catch (e) {
+    const error = String((e as Error)?.message ?? e);
+    await env.DB.prepare("UPDATE agent_runs SET status = 'failed', result = ? WHERE id = ?").bind(JSON.stringify({ error }), id).run();
+    return { skipped: error };
+  }
   // The queue runs it, as it does a hosted run: on the desktop too, in this process.
   await env.JOBS.send({ agent: id, origin: env.BETTER_AUTH_URL ?? "http://codesplitter.local" });
   return { id };
@@ -129,6 +149,25 @@ export const guardTask = (branch: string, path: string, lints: string[], others:
   ...lints.map((l) => `- ${l}`),
   ...others.flatMap((o) => [`It tripped one on ${o.path} too:`, ...o.lints.map((l) => `- ${l}`)]),
 ].join("\n");
+
+/** Clashes a rebuild task lists, at most, and how much of each side it quotes. */
+const REBUILD_LISTED = 12, SIDE_CHARS = 300;
+
+/**
+ * The task for a branch that really clashes with main once `blocker` merged (#1219): its copies start again
+ * from main's, the branch's side kept where they clash, and the agent puts main's side back so both survive.
+ * Its last lines say, per clash, whether a merge rule could have settled it, which feeds the engine's rules.
+ */
+export function rebuildTask(branch: string, blocker: string, clashes: { path: string; line: string; main: string | null; branch: string | null; lint?: string }[]) {
+  const quote = (s: string | null) => s === null ? "nothing (deleted)" : JSON.stringify(s.length > SIDE_CHARS ? `${s.slice(0, SIDE_CHARS)}…` : s);
+  return [
+    `Rebuild branch ${branch} on main: ${blocker} merged, and main now clashes with it. Its files start from main's copies now, with the branch's side kept where they clash. Put main's side back in too, so both changes survive.`,
+    ...clashes.slice(0, REBUILD_LISTED).map((c) => c.lint ? `- ${c.path}: ${c.lint}` : `- ${c.path} ${c.line}: main has ${quote(c.main)}, the branch kept ${quote(c.branch)}`),
+    ...(clashes.length > REBUILD_LISTED ? [`- and ${clashes.length - REBUILD_LISTED} more`] : []),
+    `Generated text is rebuilt when the branch merges: leave it as it is. The branch's checks run again once you're done.`,
+    `End with one line per clash: ENGINE <path> <line> yes|no: whether a merge rule could have settled it with no agent, and how.`,
+  ].join("\n");
+}
 
 /** A check finished on a branch (checks.ts): a required one that failed opens a fix task. */
 export async function checkFailed(env: Env, run: CheckRun) {

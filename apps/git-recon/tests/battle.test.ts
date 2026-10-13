@@ -277,18 +277,19 @@ describe("the room", () => {
     expect(room.snap("a", room.drain())!.base).toBe(next.seq);
   });
 
-  test("32 players: a second of battle steps fast enough, and a snapshot stays small", () => {
+  test("MAX_PLAYERS: a second of battle steps fast enough, and a snapshot stays small", () => {
+    const n = MAX_PLAYERS;
     const room = new Room(setup("teams", "el-capitan")), look = { head: "ball", build: "average" };
-    for (let i = 0; i < 32; i++) room.join(`k${i}`, `player ${i}`, look);
+    for (let i = 0; i < n; i++) room.join(`k${i}`, `player ${i}`, look);
     let t = 0, sent = 0;
     room.tick(t);
     const start = performance.now();
     for (let i = 0; i < 20; i++) {
       // Half stand still (the guards come and go as they will).
-      for (let p = 0; p < 32; p++) room.input(`k${p}`, { ...idle, forward: p % 2, yaw: p, fire: p % 3 === 0, aim: { x: 0, y: 1, z: 0 } });
+      for (let p = 0; p < n; p++) room.input(`k${p}`, { ...idle, forward: p % 2, yaw: p, fire: p % 3 === 0, aim: { x: 0, y: 1, z: 0 } });
       room.tick((t += 50));
       const shared = room.drain();
-      for (let p = 0; p < 32; p++) {
+      for (let p = 0; p < n; p++) {
         const snap = room.snap(`k${p}`, shared)!, bytes = encodeSnap(snap);
         if (i >= 10) sent += bytes.length;
         room.ack(`k${p}`, decodeSnap(bytes)!.seq);
@@ -296,8 +297,8 @@ describe("the room", () => {
     }
     const ms = performance.now() - start;
     const json = JSON.stringify(room.snap("k0", room.drain(), true)).length, whole = encodeSnap(room.snap("k0", room.drain(), true)!).length;
-    const delta = Math.round(sent / 10 / 32);
-    console.log(`32 players: a second of battle in ${ms.toFixed(0)} ms; one snapshot ${whole} bytes whole (${json} as JSON), ${delta} as an acked delta; ${(delta * 20 / 1024).toFixed(1)} KB/s a player`);
+    const delta = Math.round(sent / 10 / n);
+    console.log(`${n} players: a second of battle in ${ms.toFixed(0)} ms; one snapshot ${whole} bytes whole (${json} as JSON), ${delta} as an acked delta; ${(delta * 20 / 1024).toFixed(1)} KB/s a player`);
     expect(ms).toBeLessThan(1000);
     expect(whole).toBeLessThan(json * 0.75);
     expect(delta).toBeLessThan(whole);

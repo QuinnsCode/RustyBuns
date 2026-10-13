@@ -3,8 +3,8 @@
 // The build bundles it with Bun into one file; the child is this same executable run as Bun
 // (BUN_BE_BUN), so a compiled binary needs no Node or Bun on the machine.
 
-import { mkdirSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { WebSocketPair } from "./bindings/durable-object.ts";
 
 export interface AppServerOptions {
@@ -71,8 +71,12 @@ export async function appServer(o: AppServerOptions): Promise<AppServer> {
   const dir = join(o.dataDir, ".rb-server");
   mkdirSync(dir, { recursive: true });
   // A compiled binary's files live in its own $bunfs, which the child (a fresh process) can't read.
+  // Its native addons (.node files) go with it: the build lists them beside it, in
+  // server-<i>.addons.json, and the bundle requires them from its own dir.
   if (/\$bunfs|~BUN/.test(file)) {
-    writeFileSync(join(dir, basename(file)), await Bun.file(file).bytes());
+    let addons: string[] = [];
+    try { addons = JSON.parse(readFileSync(file.replace(/\.js$/, ".addons.json"), "utf8")); } catch {}
+    for (const f of [basename(file), ...addons]) writeFileSync(join(dir, f), await Bun.file(join(dirname(file), f)).bytes());
     file = join(dir, basename(file));
   }
   const watchdog = join(dir, "watchdog.js");

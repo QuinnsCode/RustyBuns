@@ -6,11 +6,12 @@
 
 import { $ } from "bun";
 import { mkdir } from "node:fs/promises";
-import { existsSync, statSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, statSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, dirname, normalize, relative, resolve } from "node:path";
 import { hyperdriveUrlEnv, desktopServers, type Binding, type DesktopOs, type RustyBunsConfig } from "./config.ts";
 import { basename } from "node:path";
 import { Profiler } from "./profile.ts";
+import { addonProblems, addonsManifest, serverAddons } from "./addons.ts";
 import { BUN_CHECK_MIN, compactDiagnostics, pickChecker, runCheck, type CheckerName } from "./typecheck.ts";
 
 const EXTS = [".ts", ".tsx", ".mts", ".js", ".mjs", ".cjs", ".jsx"];
@@ -833,13 +834,21 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
 
   // desktop.server, each bundled with its imports into <dir>/app-server/server-<i>.js for the host to start.
   if (d.server && mode !== "spa") throw new Error("desktop.server runs beside the spa host; a worker-mode desktop runs the Worker, which has its own routes");
-  const bundleServers = (dir: string) => step("bundle server", async () => {
+  // A native addon it requires by a static path is carried beside its bundle, listed in a manifest
+  // the host copies out of the binary with it (see addons.ts); one it can't carry, or that won't
+  // load on a target (`targets`, unset for the dev host), stops the build here.
+  const bundleServers = (dir: string, targets?: DesktopOs[]) => step("bundle server", async () => {
     rmSync(join(dir, APP_SERVER_DIR), { recursive: true, force: true });   // a server dropped from the list
     for (const [i, s] of desktopServers(d).entries()) {
       const src = resolve(s.entry);
       if (!existsSync(src)) throw new Error(`desktop.server.entry: ${s.entry} doesn't exist`);
-      const r = await Bun.build({ entrypoints: [src], outdir: join(dir, APP_SERVER_DIR), naming: appServerFile(i).replace(/\.js$/, ".[ext]"), target: "bun", throw: false } as any);
+      const outdir = join(dir, APP_SERVER_DIR), name = appServerFile(i);
+      const r = await Bun.build({ entrypoints: [src], outdir, naming: { entry: name.replace(/\.js$/, ".[ext]"), asset: `${name.replace(/\.js$/, "")}-[name]-[hash].[ext]` }, target: "bun", metafile: true, throw: false } as any);
       if (!r.success) throw new Error(`desktop.server ${s.entry}:\n${buildErrors(r)}`);
+      const addons = serverAddons(r as any);
+      const problem = addonProblems(s.entry, addons, outdir, targets ?? null);
+      if (problem) throw new Error(problem);
+      if (addons.carried.length) writeFileSync(join(outdir, addonsManifest(name)), JSON.stringify(addons.carried));
     }
     return join(dir, APP_SERVER_DIR);
   });
@@ -871,7 +880,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   if (only?.length) nativeDirs(only);
   const nativeTags = hasRust ? await step("stage native", () => stageNative(targets, only)) : [];
   const { migrationDirs, mountDirs: projectMounts } = embeddedDirs(c);
-  const mountDirs = [...projectMounts, ...(nativeTags.length ? [NATIVE_STAGE] : []), ...(d.server ? [await bundleServers(".rustybuns")] : [])];
+  const mountDirs = [...projectMounts, ...(nativeTags.length ? [NATIVE_STAGE] : []), ...(d.server ? [await bundleServers(".rustybuns", targets)] : [])];
   // Embedded dirs are keyed by basename, so two mounts named the same collide.
   const names = [assets, ...migrationDirs, ...mountDirs].filter(Boolean).map((p) => basename(p!));
   if (new Set(names).size !== names.length) throw new Error(`embedded directories must have distinct basenames: ${names.join(", ")}`);

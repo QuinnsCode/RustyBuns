@@ -125,6 +125,8 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .board th, .board td { padding: 4px 12px; text-align: left; white-space: nowrap; }
 .board th { color: var(--muted); font-weight: 400; border-bottom: 1px solid var(--hair); }
 .board td:nth-child(n + 3) { text-align: right; }
+.board.long { top: 3%; font-size: 10px; line-height: 12px; }
+.board.long th, .board.long td { padding: 0 8px; }
 .board tr.me td { box-shadow: inset 0 -2px 0 var(--accent); }
 .board tr.theirs td:first-child::before { content: "◆ "; color: var(--muted); }
 .board tr.ours td:first-child::before { content: "◆ "; }
