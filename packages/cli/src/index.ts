@@ -15,7 +15,7 @@ import { buildBox, checkBox } from "./box.ts";
 import { watchDesktop } from "./watch.ts";
 import { codeSecrets, wranglerNames } from "./glue/secrets.ts";
 import { buildEnv, emptyHome, hostCommand, withLocalBins, hostEnv, wantsSandbox } from "./sandbox.ts";
-import { desktopServers, forStage, type RustyBunsConfig } from "./config.ts";
+import { desktopServers, forStage, workerName, type RustyBunsConfig } from "./config.ts";
 import { Effect } from "effect";
 import { decodeConfig } from "./config-schema.ts";
 import { AlchemyFailed, ConfigLoadFailed, DeployRefused, UsageError, closest, flag, intFlag, renderError, triagePrompt } from "./errors.ts";
@@ -31,6 +31,7 @@ import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-sc
 import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
 import { workspacePrebuild } from "./glue/workspace-build.ts";
 import { Profiler } from "./profile.ts";
+import { adoptProblem, adoptQuestion, confirmAdopt, forceFresh, isolationFlags, ISOLATION_ARGS, modeLine } from "./isolation.ts";
 import { adoptNote, alchemyStage, linkSharedState, lockState, noteChild, unlinkSharedState } from "./state.ts";
 import { runScoped, spawnScoped, step } from "./lifecycle.ts";
 import { commitsBehindMain, statefulDeletes, strayState } from "./guard.ts";
@@ -64,6 +65,9 @@ async function loadConfig(stage?: string): Promise<RustyBunsConfig> {
   return forStage(cfg, stage);
 }
 
+/** `--fresh` on this run: whatever the config says, nothing already on the account is taken over (isolation.ts). */
+let freshRun = false;
+
 async function loadRawConfig(): Promise<RustyBunsConfig> {
   const path = `${process.cwd()}/rustybuns.config.ts`;
   if (!(await Bun.file(path).exists())) throw new ConfigLoadFailed({ message: "no rustybuns.config.ts here; run `rustybuns init` first" });
@@ -74,7 +78,8 @@ async function loadRawConfig(): Promise<RustyBunsConfig> {
     throw new ConfigLoadFailed({ message: `rustybuns.config.ts${at ? `:${at.line}:${at.column}` : ""} doesn't load: ${(e as Error).message}${hint}` });
   }
   if (mod.default === undefined) throw new ConfigLoadFailed({ message: "rustybuns.config.ts has no default export; it should end `export default defineConfig({ ... })`" });
-  return Effect.runPromise(decodeConfig(mod.default));
+  const decoded = await Effect.runPromise(decodeConfig(mod.default));
+  return freshRun ? forceFresh(decoded) : decoded;
 }
 
 /** How this app adds Rusty Buns as a dev dependency. */
@@ -777,6 +782,8 @@ const timed = <A, E, R>(prof: Profiler, name: string, e: Effect.Effect<A, E, R>)
  */
 const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(function* () {
   const stage = alchemyStage(rawArgs);
+  const iso = isolationFlags(rawArgs);
+  freshRun = iso.fresh;
   const cfg = yield* step(() => loadConfig(stage));
   const servers = desktopServers(cfg.targets.desktop);
   const entries = servers.map((s) => s.entry).join(", ");
@@ -799,7 +806,7 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   // plan --offline (#1197): against empty state, so no login, no state and no Alchemy; the build gets an empty HOME.
   const offline = flagged.includes("--offline");
   if (offline && sub !== "plan") throw new UsageError({ message: `--offline is for plan only: ${sub} works on a real account` });
-  const sandboxed = wantsSandbox(flagged.filter((a) => a !== "--force" && a !== "--allow-delete" && a !== "--offline"));
+  const sandboxed = wantsSandbox(flagged.filter((a) => a !== "--force" && a !== "--allow-delete" && a !== "--offline" && !ISOLATION_ARGS.includes(a)));
   const sandbox = sandboxed.on || offline, args = sandboxed.args;
   const prof = new Profiler(sub);
   yield* step(() => prof.step("generate", () => generate({ adopt: false, stage })));
@@ -809,6 +816,14 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   else if (!offline) {
     const base = linkSharedState(process.cwd());
     if (base) { yield* Effect.acquireRelease(Effect.sync(() => lockState(base, sub)), (release) => Effect.sync(release)); lockBase = base; }
+  }
+  // Said first and last, so "is this touching real resources?" never has to be worked out from a plan.
+  const mode = modeLine(cfg, { forced: iso.fresh, offline });
+  if (profiled || sub === "destroy") console.log(mode + "\n");
+  const refuse = sub === "plan" || offline ? null : adoptProblem(sub, cfg, process.cwd(), stage, iso);
+  // ADOPT mode stops here: ask at the terminal; with no terminal (or a no), it is refused.
+  if (refuse && !(yield* step(() => confirmAdopt(adoptQuestion(sub, cfg), workerName(cfg))))) {
+    throw new DeployRefused({ message: refuse });
   }
   const note = profiled && !offline ? adoptNote(process.cwd(), cfg, stage) : null;
   if (note) console.log(note + "\n");
@@ -845,7 +860,7 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   // The lock names alchemy's pid too, so a SIGKILLed rustybuns doesn't free the state while it runs.
   const run = (a: string[]) => alchemyProcess(a, cfg, buildEnv, (pid) => lockBase && noteChild(lockBase, pid), cf);
   if (offline) {
-    console.log("\n" + formatOfflinePlan(cfg.name, stage, plannedResources(readFileSync(".rustybuns/alchemy.run.ts", "utf8"))));
+    console.log("\n" + formatOfflinePlan(cfg.name, stage, plannedResources(readFileSync(".rustybuns/alchemy.run.ts", "utf8"))) + "\n\n" + mode);
     yield* step(() => prof.finish());
     return;
   }
@@ -854,12 +869,14 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
     yield* step(() => prof.finish());
     if (code !== 0) throw new AlchemyFailed({ sub, exitCode: code });
     yield* step(() => Bun.write(stampFile, hash));
+    console.log("\n" + mode);
     return;
   }
   // --yes satisfies our plan check above AND is forwarded to alchemy's own prompt.
   const code = yield* timed(prof, `alchemy ${sub}`, run([sub, "--config", ".rustybuns/alchemy.run.ts", ...args]));
   if (profiled) yield* step(() => prof.finish());
   if (code !== 0) throw new AlchemyFailed({ sub, exitCode: code });
+  if (profiled || sub === "destroy") console.log("\n" + mode);
   if (sub === "deploy" && edgeOn(cfg) && cfg.worker?.redactQueryStrings) yield* step(() => redactAfterDeploy(cfg, stage));
   if (sub === "deploy" && cfg.targets.box) console.log(cfg.targets.box.provider === "railway"
     ? "\nthe box bills by usage from now on (less while asleep); `rustybuns destroy` stops it."
@@ -1104,6 +1121,13 @@ Box and ship the web app you already have. A dev dependency, never in prod.
          [--allow-delete]    and any deploy refuses to delete (or rename, which replaces) a D1,
                              R2, KV, queue, container, volume or Durable Object class unless
                              --allow-delete
+         [--fresh]           plan, deploy and destroy start and end with "mode: FRESH" (every
+                             resource new, named by Alchemy, none already on the account touched)
+                             or "mode: ADOPT" (targets.edge.adopt: lists the real names it takes
+                             over). --fresh forces FRESH whatever the config says
+         [--adopt-existing]  ADOPT mode asks "are you sure?" (y/N) before a first deploy to a stage
+                             and before any destroy; this answers yes, for scripts (with no
+                             terminal and no flag it is refused): it may take over or delete real resources
                              plan and deploy list the stack's billable resources first, and
                              refuse a large Hetzner server without box.allowLargeServer (COSTS.md)
   destroy                    alchemy destroy: removes everything the stack created
