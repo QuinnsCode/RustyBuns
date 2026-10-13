@@ -151,6 +151,10 @@ const shopTex = new Map();
 // the shoppers' route and the clerk's post. A kind with no entry here, or a module that fails, gets generic.js.
 const SHOP_MODULES = { video: "media", comics: "media", records: "media", lava: "media" };
 const rooms = [];
+// One ground floor in the city is a secret bar (city-shops/bar.js) behind its ordinary sign: an archive's if
+// there is one, and the same one for everybody, since the pick is by hash of the path.
+let secret;
+const speakeasy = () => secret ??= (rooms.some((s) => s.kind === "archive") ? rooms.filter((s) => s.kind === "archive") : rooms).reduce((a, s) => (hash(`${s.repo}/${s.b.path}/bar`) < hash(`${a.repo}/${a.b.path}/bar`) ? s : a));
 // The lava lamps are alive: one shared wall of them, blobs rising and sinking, redrawn a few times a second.
 const lava = (() => {
   const c = document.createElement("canvas"); c.width = 256; c.height = 128;
@@ -880,7 +884,8 @@ async function buildRoom(s) {
   const ctx = { b, repo, kind, r: rng(hash(`${repo}/${b.path}/shop`)), pw, ph, y0, scene: group, THREE, door, lines: b.lines, path: b.path,
     put: (key, x, y, z, sx, sy, sz, ry, color, rx, rz) => { if (!lists.has(key)) lists.set(key, []); lists.get(key).push({ m: place(new THREE.Matrix4(), x, y, z, sx, sy, sz, ry, rx, rz), color }); } };
   let out;
-  for (const name of [SHOP_MODULES[kind], "generic"]) {
+  s.secret = s === speakeasy();
+  for (const name of [s.secret && "bar", SHOP_MODULES[kind], "generic"]) {
     const mod = name && await shopModule(name);
     if (!mod) continue;
     lists.clear();
@@ -898,15 +903,16 @@ async function buildRoom(s) {
   const ih = pw / 2 - 0.1, [fx, fz] = door;
   s.aisles = out.aisles?.length ? out.aisles : [[b.x - ih * 0.4, b.z - ih * 0.4], [b.x + ih * 0.4, b.z - ih * 0.4], [b.x + ih * 0.4, b.z + ih * 0.4], [b.x - ih * 0.4, b.z + ih * 0.4]];
   s.clerk = out.clerk ?? [b.x - fx * ih * 0.8, b.z - fz * ih * 0.8];
+  s.talk = out.talk; s.chat = 0;
   s.group = group; group.visible = false; scene.add(group); s.state = 2;
 }
 /** Hand a room's people their crowd slots (and look) while it is shown, take them back when it is not. */
 function staff(s, on) {
   if (!on) { for (const f of s.folks) { for (const im of crowd) im.setMatrixAt(f.slot, HIDDEN); slots.push(f.slot); } s.folks = []; return; }
-  const r = rng(hash(`${s.repo}/${s.b.path}/folk`)), n = 1 + Math.min(3, 2 + Math.floor(r() * 2));
+  const r = rng(hash(`${s.repo}/${s.b.path}/folk`)), n = s.secret ? 4 : 1 + Math.min(3, 2 + Math.floor(r() * 2));
   for (let k = 0; k < n && slots.length; k++) {
     const slot = slots.pop(), clerk = k === 0, look = folk(r), [x, z] = clerk ? s.clerk : s.aisles[Math.floor(r() * s.aisles.length)];
-    const cols = { ...look, coat: clerk ? "#e8590c" : pick(r, ["#16191c", "#2e3439", "#f4f5f5", "#6b7680", "#8a5a3c", "#3a6b8a"]), brolly: "#ffffff" };
+    const cols = { ...look, coat: s.secret && clerk ? "#0d0d10" : clerk ? "#e8590c" : pick(r, ["#16191c", "#2e3439", "#f4f5f5", "#6b7680", "#8a5a3c", "#3a6b8a"]), brolly: "#ffffff", ...(s.secret && clerk && { pants: "#0d0d10", hair: "#d8d8d8" }) };
     crowd.forEach((im, i) => { const col = ["pants", "coat", "skin", "hair", "brolly"][i]; im.setColorAt(slot, C(cols[col])); if (im.instanceColor) im.instanceColor.needsUpdate = true; });
     s.folks.push({ slot, clerk, x, z, tx: x, tz: z, ry: r() * 6.28, wait: r() * 3, bob: r() * 6 });
   }
@@ -927,10 +933,15 @@ function updateShops(dt, time) {
     // Shoppers drift between aisles and browse the shelves; the clerk stays at the till and now and then steps out to restock.
     const dx = f.tx - f.x, dz = f.tz - f.z, d = Math.hypot(dx, dz), [cx, cz] = s.clerk, away = Math.atan2(f.x - s.b.x, f.z - s.b.z);
     let stepping = false;
+    if (s.secret) { // the bar: patrons keep their stools, the barkeep keeps the taps and turns to whoever is at the counter
+      if (f.clerk) f.ry = Math.hypot(px - f.x, pz - f.z) < 2 ? Math.atan2(px - f.x, pz - f.z) : Math.atan2(s.b.x - f.x, s.b.z - f.z);
+      else if (d <= 0.04 && !f.moving) f.wait = 9;
+    }
     if (d > 0.04) { const step = Math.min(d, 0.3 * dt); f.x += dx / d * step; f.z += dz / d * step; f.ry = Math.atan2(dx, dz); stepping = !still; f.moving = true; }
     else {
       if (f.moving) { f.moving = false; f.ry = away + (f.clerk ? Math.PI : 0); } // arrived: face the shelves; the clerk faces the room
-      if ((f.wait -= dt) <= 0) {
+      if (s.secret && f.clerk) { /* stays at the taps */ }
+      else if ((f.wait -= dt) <= 0) {
         if (f.clerk) { const atPost = Math.hypot(f.x - cx, f.z - cz) < 0.05; [f.tx, f.tz] = atPost && Math.random() < 0.4 ? s.aisles[Math.floor(Math.random() * s.aisles.length)] : [cx, cz]; f.wait = atPost ? 4 + Math.random() * 6 : 6 + Math.random() * 8; }
         else { [f.tx, f.tz] = s.aisles[Math.floor(Math.random() * s.aisles.length)]; f.wait = 1.5 + Math.random() * 4; }
       }
@@ -1169,7 +1180,8 @@ function updateVisitors(dt) {
 const EYE = 1.7 * FOLK_EYE, keys = new Set();
 const player = { pos: new THREE.Vector3(0, EYE, z1 + 2), yaw: 0, pitch: 0, air: 0, vy: 0 };
 let walking = false, lastSent = 0;
-addEventListener("keydown", (e) => { if (e.code === "Space" && walking) e.preventDefault(); keys.add(e.code); });
+let chatNext = false;
+addEventListener("keydown", (e) => { if (e.code === "Space" && walking) e.preventDefault(); if (e.code === "KeyE" && !e.repeat) chatNext = true; keys.add(e.code); });
 addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("blur", () => keys.clear());
 addEventListener("mousemove", (e) => {
@@ -1237,11 +1249,17 @@ function updateWalk(dt, now) {
   ray.setFromCamera(mid, camera);
   const hit = ray.intersectObjects(towers, false)[0];
   const what = $("#city-what");
-  if (hit && hit.distance < 40) {
+  const bar = rooms.find((s) => s.secret && s.group?.visible && s.folks.some((f) => f.clerk && Math.hypot(f.x - player.pos.x, f.z - player.pos.z) < 1.5));
+  if (bar) { // at the bar: the barkeep talks, E for the next thing he has to say
+    if (chatNext) bar.chat++;
+    what.innerHTML = `<b>The barkeep</b><br>&ldquo;${esc(bar.talk[bar.chat % bar.talk.length])}&rdquo;<br><small>E to reply</small>`;
+    what.hidden = false; chatNext = false;
+  } else if (hit && hit.distance < 40) {
     const b = hit.object.userData;
     what.innerHTML = `<b>${esc(b.repo)}/${esc(b.path)}</b><br>${n(b.lines, "line")} · ${b.agent >= 0.5 ? "mostly agents'" : b.agent > 0 ? "people's, agents helped" : "people's"}${b.last ? ` · last lines ${ago(b.last)}` : ""}`;
     what.hidden = false;
   } else what.hidden = true;
+  chatNext = false;
 }
 function setFov(f) { if (camera.fov !== f) { camera.fov = f; camera.updateProjectionMatrix(); } }
 function updateSkyline(time) {
