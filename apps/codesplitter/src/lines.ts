@@ -431,6 +431,9 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
     // Moved on both sides: main's copy stays.
     const m = now.get(b.id) ?? (movedOnBranch.has(b.id) ? undefined : movedOnMain.get(b.id));
     if (!m || inRegion(mainPos.get(m.id)!)) continue;
+    // The branch moved it into a stretch both reshaped, and main changed it: the card settles the move, so main's line stays (#1248).
+    const to = movedOnBranch.get(b.id);
+    if (to && m.text !== b.text && inRegion(branchPos.get(to.id)!)) continue;
     const pick = m.text === b.text || (!now.has(b.id) && m.text.trim() === b.text.trim()) || movedOnBranch.has(b.id) ? "branch" : resolve[b.id], own = written(pick);
     if (!pick) conflicts.push({ line: b.id, base: b.text, main: m.text, branch: null });
     else if (pick === "branch") push({ kind: "delete", line: m.id, base: m.rev }, deleter);
