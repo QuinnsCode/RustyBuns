@@ -61,6 +61,17 @@ test("CPU over cpuMs is refused, under it passes, and unset is no cap", async ()
   expect((await capped({}, spin)).status).toBe(200);
 });
 
+test("a bundle that swaps globalThis.process for unenv's doesn't break the limits", async () => {
+  const real = globalThis.process;
+  const nope = () => { throw new Error("[unenv] process.cpuUsage is not implemented yet!"); };
+  Object.defineProperty(globalThis, "process", { value: { ...real, cpuUsage: nope, memoryUsage: Object.assign(nope, { rss: nope }) }, configurable: true });
+  try {
+    expect((await capped({ cpuMs: 5_000 }, () => new Response("ok"))).status).toBe(200);
+  } finally {
+    Object.defineProperty(globalThis, "process", { value: real, configurable: true });
+  }
+});
+
 test("RB_CPU_MS wins over the config's cpuMs", () => {
   expect(edgeLimits(30_000, { RB_CPU_MS: "10" }).cpuMs).toBe(10);
   expect(edgeLimits(30_000, {}).cpuMs).toBe(30_000);

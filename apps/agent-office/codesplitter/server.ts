@@ -10,12 +10,14 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import type { Hint } from "./hint.ts";
+import { stillBusy, type Held, type Hint, type QueueAdd } from "./hint.ts";
 import { summarize, type AgentRun, type Branch, type CheckRun, type Summary } from "./news.ts";
 
 export const LIVE = "https://codesplitter.notryanquinn.workers.dev";
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 const FRESH_MS = 15_000;
+const HOLD_MAX = 8000;   // a held task rides in the query string, and the office has no body to read here
+const HOLD_DAYS = 14;
 
 export interface Site { url: string; token?: string; cookie?: string }
 
@@ -57,6 +59,16 @@ export function codesplitterRoute(s: Site = site(), get: typeof fetch = fetch) {
       return r.ok ? await r.json() as T : null;
     } catch { return null; }
   };
+  // Tasks the hint card's Wait is holding (#1287), per repo, until the branches they wait on have merged. Held here,
+  // not in the page, so a reload keeps them; the page sends the queue.add itself once one is ready (take).
+  const held = new Map<string, Held & { repo: string }>();
+  const ready = async (repo: string): Promise<Held[]> => {
+    const mine = [...held.values()].filter((h) => h.repo === repo);
+    if (!mine.length) return [];
+    const branches = await api<{ name: string; status: string }[]>(`/repos/${repo}/branches`);
+    const gone = Date.now() - HOLD_DAYS * 864e5;
+    return mine.filter((h) => h.at > gone && stillBusy(h, branches)?.length === 0);
+  };
   const look = async (repo: string): Promise<{ site: string; repo: string; boards: Summary | null }> => {
     const [branches, checks, runs] = await Promise.all([
       api<Branch[]>(`/repos/${repo}/branches`),
@@ -66,8 +78,38 @@ export function codesplitterRoute(s: Site = site(), get: typeof fetch = fetch) {
     const none = !branches && !checks && !runs;
     return { site: s.url, repo, boards: none ? null : summarize(branches, checks?.runs ?? null, runs) };
   };
+  // GET /__rb/codesplitter/hold?repo=  what's held for the repo and what's ready to queue now.
+  // POST .../hold?repo=&msg=<queue.add json>&branches=a,b  hold a task. POST .../hold/take?id=  claim a ready one
+  // (once; it's gone after) or DELETE .../hold?id= to drop it.
+  const hold = async (method: string, url: URL): Promise<{ status: number; body: unknown }> => {
+    const repo = url.searchParams.get("repo") ?? "";
+    const id = url.searchParams.get("id") ?? "";
+    if (method === "GET") {
+      if (!REPO.test(repo)) return { status: 400, body: { error: "repo is owner/name" } };
+      const now = await ready(repo);
+      return { status: 200, body: { held: [...held.values()].filter((h) => h.repo === repo).map(({ repo: _, ...h }) => h), ready: now.map((h) => h.id) } };
+    }
+    if (method === "DELETE") return { status: 200, body: { dropped: held.delete(id) } };
+    if (method !== "POST") return { status: 405, body: { error: `GET, POST or DELETE ${url.pathname}` } };
+    if (url.pathname.endsWith("/take")) {
+      const h = held.get(id);
+      if (!h || !(await ready(h.repo)).includes(h)) return { status: 409, body: { error: "not ready" } };
+      held.delete(id);
+      return { status: 200, body: h.msg };
+    }
+    const raw = url.searchParams.get("msg") ?? "";
+    const branches = (url.searchParams.get("branches") ?? "").split(",").filter(Boolean).slice(0, 20);
+    let msg: QueueAdd | undefined;
+    try { msg = JSON.parse(raw); } catch {}
+    if (!REPO.test(repo) || raw.length > HOLD_MAX || msg?.t !== "queue.add" || typeof msg.prompt !== "string" || !branches.length)
+      return { status: 400, body: { error: "repo, msg (a queue.add under 8KB) and branches" } };
+    const h = { id: crypto.randomUUID(), repo, msg, branches, at: Date.now() };
+    held.set(h.id, h);
+    return { status: 201, body: { id: h.id } };
+  };
   return async (method: string, url: URL): Promise<{ status: number; body: unknown } | null> => {
-    if (url.pathname !== "/__rb/codesplitter" && url.pathname !== "/__rb/codesplitter/hint") return null;
+    if (!/^\/__rb\/codesplitter(\/hint|\/hold|\/hold\/take)?$/.test(url.pathname)) return null;
+    if (url.pathname.includes("/hold")) return hold(method, url);
     if (method !== "GET") return { status: 405, body: { error: `GET ${url.pathname}` } };
     const repo = url.searchParams.get("repo") ?? "";
     // GET /__rb/codesplitter/hint?repo=&task=  the dispatch hint (#1187): the open branches already changing the

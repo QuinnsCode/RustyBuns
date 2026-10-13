@@ -40,6 +40,7 @@ const title = (b: Board) => {
 async function poll() {
   const s = load();
   if (!s.on) return paint();
+  if (s.repo) void release(s.repo);
   try {
     const r = await fetch(`/__rb/codesplitter?repo=${encodeURIComponent(s.repo ?? "")}`);
     const body = await r.json() as { site: string; boards: Summary | null };
@@ -175,6 +176,7 @@ const issues = new Map<number, string>();
 // the client's socket, with its sends looked at and the issue boards' text kept (queue/match.ts); wrapped before the
 // office's own bundle opens it
 const Native = window.WebSocket;
+let sock: WebSocket | undefined;   // the latest socket a queue.add was sent on, for releasing held tasks
 window.WebSocket = class extends Native {
   constructor(url: string | URL, protocols?: string | string[]) {
     super(url, protocols);
@@ -185,10 +187,29 @@ window.WebSocket = class extends Native {
   override send(data: Parameters<WebSocket["send"]>[0]) {
     const msg = queueAdd(data);
     const { on, repo } = load();
+    sock = this;
     if (!msg || !on || !repo) return super.send(data);
     void hinted(repo, msg).then((m) => m && this.readyState === Native.OPEN && super.send(JSON.stringify(m)));
   }
 };
+
+/** Wait: the office server holds the task and the open branches it waits on (#1287). */
+async function hold(repo: string, msg: QueueAdd, busy: Hint["busy"]) {
+  const q = new URLSearchParams({ repo, msg: JSON.stringify(msg), branches: busy.map((b) => b.branch).join(",") });
+  try { await fetch(`/__rb/codesplitter/hold?${q}`, { method: "POST" }); } catch {}
+}
+
+/** Queue what the server says has stopped waiting: each is claimed once, so two open tabs don't both send it. */
+async function release(repo: string) {
+  try {
+    const r = await fetch(`/__rb/codesplitter/hold?repo=${encodeURIComponent(repo)}`);
+    if (!r.ok) return;
+    for (const id of (await r.json() as { ready: string[] }).ready) {
+      const t = await fetch(`/__rb/codesplitter/hold/take?id=${encodeURIComponent(id)}`, { method: "POST" });
+      if (t.ok && sock?.readyState === Native.OPEN) Native.prototype.send.call(sock, JSON.stringify(await t.json()));
+    }
+  } catch {}
+}
 
 /** The message to send: as it was, stacked on a busy branch, or none (wait). Quiet and as it was if codeSplitter
  * doesn't answer in a few seconds. */
@@ -216,9 +237,9 @@ function card(msg: QueueAdd, busy: Hint["busy"], done: (m: QueueAdd | null) => v
   const box = el("div", { className: "rb-hint", role: "alertdialog", ariaLabel: "codeSplitter dispatch hint" },
     el("div", { className: "rb-hint-head" }, el("span", { innerHTML: markSvg(false, 18) }), `${what} touches files open branches are changing`),
     list,
-    el("p", {}, "Its branch would likely conflict with theirs. Stack it on the first, or wait till they merge."),
+    el("p", {}, "Its branch would likely conflict with theirs. Stack it on the first, or wait: it is queued for you once they merge."),
     el("div", { className: "rb-hint-buttons" },
-      button("Wait", "rb-hint-wait", "Don't queue it now; queue it again once they merge", () => null),
+      button("Wait", "rb-hint-wait", "Hold it on the office; it's queued once these branches have merged", () => { void hold(load().repo ?? "", msg, busy); return null; }),
       button("Queue anyway", "rb-hint-anyway", "Queue it from main, as usual", () => msg),
       button(`Stack on ${top.branch}`, "rb-hint-stack", `Queue it, branched from ${top.branch} with its pull request onto it`,
         () => ({ ...msg, prompt: stackedPrompt(msg.prompt, top) }))));
