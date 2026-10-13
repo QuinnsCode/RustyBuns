@@ -27,6 +27,7 @@ export { workflow, LocalWorkflow, LocalWorkflowInstance, durationMs, type Workfl
 export { vectorize, LocalVectorize, type VectorizeMetric, type VectorizeVector, type VectorizeMatch, type VectorizeQueryOptions } from "./bindings/vectorize.ts";
 export { ai, LocalAi } from "./bindings/ai.ts";
 export { analyticsEngine, LocalAnalyticsEngine, type AnalyticsEngineDataPoint } from "./bindings/analytics.ts";
+export { sendEmail, LocalSendEmail, type EmailBuilder } from "./bindings/email.ts";
 export { workerLoader, LocalWorkerLoader, LocalWorkerStub, type WorkerCode } from "./bindings/worker-loader.ts";
 export { durableObject, LocalDurableObjectNamespace, LocalDurableObjectState, WebSocketPair, installCloudflareGlobals, type DurableObjectCtor } from "./bindings/durable-object.ts";
 
@@ -47,6 +48,7 @@ import { vectorize, type VectorizeMetric } from "./bindings/vectorize.ts";
 import { ai } from "./bindings/ai.ts";
 import { analyticsEngine } from "./bindings/analytics.ts";
 import { workerLoader } from "./bindings/worker-loader.ts";
+import { sendEmail } from "./bindings/email.ts";
 
 export const caps: MemoryPort["caps"] = { sab: true, ffi: true, fs: true, gpu: false };
 
@@ -117,6 +119,8 @@ export function localBindings(dataDir: string) {
     ai,
     /** Analytics Engine: data points land in analytics.sqlite. */
     analyticsEngine: (dataset: string) => analyticsEngine(`${dataDir}/analytics.sqlite`, dataset),
+    /** Email Sending: nothing leaves the machine; each message is an .eml file under email/<binding>. */
+    sendEmail: (name: string, allowedSenderAddresses?: string[]) => sendEmail(`${dataDir}/email/${name}`, name, allowedSenderAddresses),
     /** The Dynamic Worker Loader, in this process (not a sandbox). */
     workerLoader: (name: string) => workerLoader(`${dataDir}/loader/${name}`),
     durableObject: <Env>(Ctor: DurableObjectCtor<Env>, env: Env, binding: string, opts?: { codec?: "json" | "v8" }) =>
