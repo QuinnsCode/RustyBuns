@@ -29,6 +29,14 @@ select { font: inherit; color: inherit; background: #222a37; border: 1px solid v
 .res small { color: #7ee08a; font-variant-numeric: tabular-nums; }
 .res.bad .icon, .res.bad b { color: #f5734c; }
 .res.score .war { width: 90px; margin: 0; }
+.res.card .icon { color: var(--accent); }
+/* The turn's six phases: done ones dim, the one we're in lit. */
+.phases { display: flex; gap: 4px; margin: 0 0 8px; }
+.phases span { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 24px; border: 1px solid var(--line); border-radius: 6px; color: var(--dim); opacity: 0.5; cursor: default; }
+.phases span.done { opacity: 0.8; }
+.phases span.on { opacity: 1; color: #fff; border-color: var(--accent); background: #3a2414; }
+.sector .mark { display: inline-flex; color: var(--accent); font-style: normal; }
+button.card .icon { color: var(--accent); }
 .overview { top: 52px; left: 12px; width: 230px; max-height: calc(100% - 140px); display: flex; flex-direction: column; border-radius: 4px 14px 4px 4px; overflow: hidden; }
 .ov-head { display: flex; align-items: center; gap: 6px; background: none; border: none; border-bottom: 1px solid #34406a; border-radius: 0; padding: 6px 10px; text-transform: uppercase; letter-spacing: 0.08em; font-size: 12px; color: #a7b4d0; }
 .ov-head small { color: var(--dim); }
