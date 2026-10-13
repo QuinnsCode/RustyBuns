@@ -260,8 +260,8 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
   // A name main renamed across the file is renamed in the lines the branch added too, and the other way round (#1156).
   const mainRenames = renames(base, main, loose), branchRenames = renames(base, branch, loose);
   if (mainRenames.length) {
-    const into = new Set([...movedOnBranch.values()].map((l) => l.id));
-    branch = { ...branch, lines: branch.lines.map((l) => was.has(l.id) || into.has(l.id) ? l : { ...l, text: carry(l.text, mainRenames, loose(l.text)) }) };
+    const into = new Set([...movedOnBranch.values()].map((l) => l.id)), scoped = scopes(branch.lines);
+    branch = { ...branch, lines: branch.lines.map((l) => was.has(l.id) || into.has(l.id) ? l : { ...l, text: carry(l.text, mainRenames, loose(l.text), scoped.get(l.id)) }) };
   }
   const moveOf = new Map([...movedOnBranch].map(([id, l]) => [l.id, id]));
   const mainPos = places(base, main), branchPos = places(base, branch);
@@ -418,10 +418,10 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
   }
   while (r < regions.length) settle(regions[r++]!);
   if (branchRenames.length) {
-    const touched = new Set(ops.flatMap((o) => o.kind === "insert" ? [] : [o.line]));
+    const touched = new Set(ops.flatMap((o) => o.kind === "insert" ? [] : [o.line])), scoped = scopes(main.lines);
     for (const m of main.lines) {
       if (was.has(m.id) || movedIn.has(m.id) || touched.has(m.id) || inRegion(mainPos.get(m.id)!)) continue;
-      const t = carry(m.text, branchRenames, loose(m.text));
+      const t = carry(m.text, branchRenames, loose(m.text), scoped.get(m.id));
       if (t !== m.text) push({ kind: "set", line: m.id, base: m.rev, text: t }, m.by);
     }
   }
@@ -876,14 +876,37 @@ export function mergeWords(base: string, a: string, b: string, both = false, loo
   return out + o.slice(i).join("");
 }
 
-/** A name one side renamed across the file: `from`, as a property (`.from`) or not, now `to` (a name or a dotted path). */
-interface Rename { from: string; dotted: boolean; to: string }
+/**
+ * A name one side renamed across the file: `from`, as a property (`.from`) or not, now `to` (a name or a dotted path).
+ * One with a `scope` was renamed only in the function whose head line has that id (#1257); a `call` one is an
+ * expression, `f(x)`, the side hoisted into a new `const to = f(…)` there.
+ */
+interface Rename { from: string; dotted: boolean; to: string; scope?: string; call?: boolean }
 
 /** `t` with each use of the renamed name swapped for the new one. */
 function renamed(t: string, r: Rename) {
+  if (r.call) return t.replace(new RegExp(`(?<![\\w$.])${r.from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "g"), r.to);
   const ws = words(t);
   return ws.map((w, i) => w === r.from && (ws[i - 1] === ".") === r.dotted && ws[i + 1] !== "$" && ws[i - 1] !== "$" ? r.to : w).join("");
 }
+
+/** A line that opens a function: `function f(`, `f = (…) =>`, or a method `f(…) {`. */
+const FN = /\bfunction\b|=>\s*\{?\s*$|^\s*(?:(?:async|static|public|private|protected|get|set)\s+)*\*?(?!(?:if|for|while|switch|catch|with|return)\b)[A-Za-z_$][\w$]*\s*\([^;]*\)\s*(?::[^=;{]+)?\{\s*$/;
+
+/** Each line's function: the id of the outermost function head over it by indentation (its own, for a head), null at the top. */
+function scopes(lines: Line[]): Map<string, string | null> {
+  const open: { indent: number; id: string; fn: boolean }[] = [], out = new Map<string, string | null>();
+  for (const l of lines) {
+    const indent = l.text.search(/\S/), fn = indent >= 0 && FN.test(l.text);
+    if (indent >= 0) while (open.length && open.at(-1)!.indent >= indent) open.pop();
+    out.set(l.id, open.find((o) => o.fn)?.id ?? (fn ? l.id : null));
+    if (indent >= 0) open.push({ indent, id: l.id, fn });
+  }
+  return out;
+}
+
+/** The new `const to = f(…)` a hoist leaves behind: not a use of the expression it replaced. */
+const hoisted = (t: string, r: Rename) => !!r.call && new RegExp(`^\\s*(?:const|let)\\s+${r.to}\\s*=\\s*${r.from.slice(0, r.from.indexOf("("))}\\s*\\(`).test(t);
 
 /**
  * The names `side` renamed across the file (#1156): a line it changed where one
@@ -891,9 +914,15 @@ function renamed(t: string, r: Rename) {
  * turning two or more of base's lines into the side's, and no use of the old name,
  * as a property or not as before, left on that side. In prose (`loose`) the
  * name must say something, as in mergeWords' guard.
+ *
+ * Or within one function (#1257): a local or parameter of it in base, renamed on
+ * two or more of its lines with no use left in it, though other functions keep a
+ * name of their own like it. Or an expression, `f(x)`, the side swapped for `name`
+ * on every line of a function where it also added `const name = f(…)`.
  */
 function renames(base: Doc, side: Doc, loose: (t: string) => boolean): Rename[] {
   const now = new Map(side.lines.map((l) => [l.id, l.text])), seen = new Map<string, Rename>();
+  const inSide = scopes(side.lines), inBase = scopes(base.lines), was = new Set(base.lines.map((l) => l.id));
   for (const b of base.lines) {
     const s = now.get(b.id);
     if (s === undefined || s === b.text) continue;
@@ -901,22 +930,52 @@ function renames(base: Doc, side: Doc, loose: (t: string) => boolean): Rename[] 
     let p = 0, q = 0;
     while (p < o.length && p < n.length && o[p] === n[p]) p++;
     while (q < o.length - p && q < n.length - p && o[o.length - 1 - q] === n[n.length - 1 - q]) q++;
+    // `dry` to `run.dry` reads as `run.` put in front: the name it went in front of is the one renamed.
+    if (p + q === o.length && q > 0) q--;
     const from = o.slice(p, o.length - q), to = n.slice(p, n.length - q).join("");
-    if (from.length !== 1 || !/^[A-Za-z_]\w*$/.test(from[0]!) || !/^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/.test(to)) continue;
+    if (!/^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/.test(to)) continue;
+    const scope = inSide.get(b.id) ?? undefined;
+    if (from.length > 3 && /^[A-Za-z_]\w*$/.test(from[0]!) && from[1] === "(" && from.at(-1) === ")" && /^\w+$/.test(to) && scope && balanced(from.slice(1))) {
+      const r: Rename = { from: from.join(""), dotted: false, to, scope, call: true };
+      seen.set(`${r.from} call ${r.to} ${scope}`, r);
+      continue;
+    }
+    if (from.length !== 1 || !/^[A-Za-z_]\w*$/.test(from[0]!)) continue;
     if (loose(b.text) && (from[0]!.length < 3 || STOP.has(from[0]!.toLowerCase()))) continue;
     const r = { from: from[0]!, dotted: o[p - 1] === ".", to };
     seen.set(`${r.from} ${r.dotted} ${r.to}`, r);
+    if (!r.dotted && scope) seen.set(`${r.from} ${r.dotted} ${r.to} ${scope}`, { ...r, scope });
   }
   const all = [...seen.values()];
-  return all.filter((r) => !side.lines.some((l) => renamed(l.text, r) !== l.text)
-    && base.lines.filter((b) => b.text !== now.get(b.id) && renamed(b.text, r) === now.get(b.id)).length >= 2
+  const within = (r: Rename) => (id: string, scoped: Map<string, string | null>) => !r.scope || scoped.get(id) === r.scope;
+  const swaps = (r: Rename) => base.lines.filter((b) => within(r)(b.id, inSide) && b.text !== now.get(b.id) && renamed(b.text, r) === now.get(b.id)).length;
+  const left = (r: Rename) => side.lines.some((l) => within(r)(l.id, inSide) && !hoisted(l.text, r) && renamed(l.text, r) !== l.text);
+  const kept = all.filter((r) => !left(r) && (r.call
+    ? swaps(r) >= 1 && side.lines.some((l) => !was.has(l.id) && inSide.get(l.id) === r.scope && hoisted(l.text, r))
+    : swaps(r) >= 2 && (!r.scope || base.lines.some((b) => inBase.get(b.id) === r.scope && declares(b.text, r.from, b.id === r.scope))))
     // One name renamed two ways (`hero` to `heroes.a` here, `heroes.b` there) isn't one swap.
-    && !all.some((x) => x !== r && x.from === r.from && x.dotted === r.dotted));
+    && !all.some((x) => x !== r && x.from === r.from && x.dotted === r.dotted && x.to !== r.to && (!r.scope || !x.scope || x.scope === r.scope)));
+  // A rename that holds across the file needs no scope.
+  return kept.filter((r) => !r.scope || r.call || !kept.some((x) => !x.scope && x.from === r.from && x.dotted === r.dotted && x.to === r.to));
 }
 
-/** `t`, a line one side added, with the other side's renames carried into it. Prose and comments skip short and common words. */
-const carry = (t: string, rs: Rename[], loose: boolean) =>
-  rs.reduce((s, r) => loose && (r.from.length < 3 || STOP.has(r.from.toLowerCase())) ? s : renamed(s, r), t);
+/** Do the words `ws`, `(` first, close the paren they open at the end and nowhere before? */
+function balanced(ws: string[]) {
+  let d = 0;
+  for (let i = 0; i < ws.length; i++) {
+    d += ws[i] === "(" ? 1 : ws[i] === ")" ? -1 : 0;
+    if (d === 0 && i < ws.length - 1) return false;
+  }
+  return d === 0;
+}
+
+/** Does `t` declare `name`: a `const`, `let` or `var` of it, or, on the function's `head` line, a parameter? */
+const declares = (t: string, name: string, head: boolean) =>
+  new RegExp(`\\b(?:const|let|var)\\b[^=]*\\b${name}\\b`).test(t) || (head && new RegExp(`\\([^)]*\\b${name}\\b`).test(t));
+
+/** `t`, a line one side added in the function `scope`, with the other side's renames carried into it. Prose and comments skip short and common words. */
+const carry = (t: string, rs: Rename[], loose: boolean, scope: string | null | undefined) =>
+  rs.reduce((s, r) => (r.scope && r.scope !== scope) || (loose && (r.from.length < 3 || STOP.has(r.from.toLowerCase()))) ? s : renamed(s, r), t);
 
 /**
  * One line both changed: word by word, else as a list both added items to (see mergeWords).
