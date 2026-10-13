@@ -37,6 +37,7 @@ import { checkSpend, costReport } from "./costs.ts";
 import { cloudflareEnv, cloudflareProblem, realTokenCheck, realWrangler, wranglerCli } from "./cloudflare-auth.ts";
 import { deployedWorker, redactQueryStrings } from "./redact.ts";
 import { tidySourceMaps } from "./sourcemaps.ts";
+import { formatOfflinePlan, plannedResources } from "./offline-plan.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
 import { PROF_SECRET, boxUrl, fetchHistory, fetchMem, fetchProfile, secretProblem } from "./prof.ts";
 import { formatProfileSummary, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
@@ -755,18 +756,23 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   const { on: check, checker, rest: flagged } = checkFlags(rawArgs, profiled);
   // Ours, not Alchemy's: they waive the guards below.
   const force = flagged.includes("--force"), allowDelete = flagged.includes("--allow-delete");
-  const { on: sandbox, args } = wantsSandbox(flagged.filter((a) => a !== "--force" && a !== "--allow-delete"));
+  // plan --offline (#1197): against empty state, so no login, no state and no Alchemy; the build gets an empty HOME.
+  const offline = flagged.includes("--offline");
+  if (offline && sub !== "plan") throw new UsageError({ message: `--offline is for plan only: ${sub} works on a real account` });
+  const sandboxed = wantsSandbox(flagged.filter((a) => a !== "--force" && a !== "--allow-delete" && a !== "--offline"));
+  const sandbox = sandboxed.on || offline, args = sandboxed.args;
   const prof = new Profiler(sub);
   yield* step(() => prof.step("generate", () => generate({ adopt: false })));
   let lockBase: string | null = null;
-  if (cfg.state === "project") unlinkSharedState(process.cwd());
-  else {
+  // --offline reads no state, so it neither links nor locks one.
+  if (cfg.state === "project") { if (!offline) unlinkSharedState(process.cwd()); }
+  else if (!offline) {
     const base = linkSharedState(process.cwd());
     if (base) { yield* Effect.acquireRelease(Effect.sync(() => lockState(base, sub)), (release) => Effect.sync(release)); lockBase = base; }
   }
-  const note = profiled ? adoptNote(process.cwd(), cfg, alchemyStage(args)) : null;
+  const note = profiled && !offline ? adoptNote(process.cwd(), cfg, alchemyStage(args)) : null;
   if (note) console.log(note + "\n");
-  if (profiled) guardDeploy(sub, cfg, alchemyStage(args), { force, allowDelete });
+  if (profiled && !offline) guardDeploy(sub, cfg, alchemyStage(args), { force, allowDelete });
   if (check) yield* step(() => checkStack(prof, checker));
   const hash = yield* step(stackHash);
   const stampFile = ".rustybuns/planned";
@@ -779,7 +785,7 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
       : "no plan on record for this config. Run `rustybuns plan` first (creates nothing), or pass --yes to skip." });
   }
   // Cloudflare's login before any build, so a missing or refused one costs a second, not a build (#1170).
-  const cf = sub !== "dev" && edgeOn(cfg) ? yield* step(() => cloudflareLogin(cfg, args)) : undefined;
+  const cf = sub !== "dev" && !offline && edgeOn(cfg) ? yield* step(() => cloudflareLogin(cfg, args)) : undefined;
   // Hetzner.Service and Railway.Service hash the box directory at plan time, so it has to exist first.
   if (profiled && cfg.targets.box) {
     console.log(`built ${yield* step(() => prof.step("build box", () => buildBox(cfg)))}`);
@@ -798,6 +804,11 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   const buildEnv: Record<string, string> = built ? { RUSTYBUNS_BUILT: "1" } : {};
   // The lock names alchemy's pid too, so a SIGKILLed rustybuns doesn't free the state while it runs.
   const run = (a: string[]) => alchemyProcess(a, cfg, buildEnv, (pid) => lockBase && noteChild(lockBase, pid), cf);
+  if (offline) {
+    console.log("\n" + formatOfflinePlan(cfg.name, alchemyStage(args), plannedResources(readFileSync(".rustybuns/alchemy.run.ts", "utf8"))));
+    yield* step(() => prof.finish());
+    return;
+  }
   if (sub === "plan") {
     const code = yield* timed(prof, "alchemy plan", run(["plan", "--config", ".rustybuns/alchemy.run.ts", ...args]));
     yield* step(() => prof.finish());
@@ -1040,6 +1051,9 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              Cloudflare: wrangler's login, asked for only the scopes the bindings
                              need, when wrangler is installed; the Alchemy profile otherwise
                              type checks the generated stack first (--no-check skips)
+       [--offline]           no login, no state, no Alchemy: builds (empty HOME) and type checks,
+                             then lists every resource as a create, as on an empty account. For
+                             trying someone else's repo; it doesn't count as a plan for deploy
   deploy [--yes]             alchemy deploy; refuses unless plan ran for this exact config
          [--force]           a live site (targets.edge.adopt) also refuses a HEAD behind
                              origin/main, or state left under the app's old name, unless --force
