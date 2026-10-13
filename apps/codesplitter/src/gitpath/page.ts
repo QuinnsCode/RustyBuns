@@ -3,8 +3,8 @@
 // loads a pasted or uploaded file or picture, and runs the game: a unicyclist on the hot path, pedalled with
 // taps. build.ts bundles it, three.js and all, to /gitpath.js for gitpath.html.
 import {
-  CURVES, RIDE, STACK, curveById, warpQ, buildNotes, clampQ, clockAt, currentIndex, eventPush, filterRange, formatAge, formatClock, geometry, gustRide,
-  layoutGraph, newRide, qAtFrac, readInput, remount, rideEvents, scoreAt, stepQ, stepRide, tapRide, timeFracAt, timeTicks, breeze, topFriends, veinChart,
+  CURVES, LIVES, RIDE, STACK, curveById, warpQ, buildNotes, clampQ, clockAt, currentIndex, eventPush, filterRange, formatAge, formatClock, geometry, gustRide,
+  layoutGraph, newRide, qAtFrac, readInput, remount, rideEvents, runOver, scoreAt, stepQ, stepRide, tapRide, timeFracAt, timeTicks, breeze, topFriends, veinChart,
   type Geometry, type Input, type Layout, type Note, type RideEvent, type Side,
 } from "./gitpath.ts";
 import { createScene } from "./scene.ts";
@@ -53,7 +53,7 @@ let gameOn = false, running = false;
 let ride = newRide();
 let events: RideEvent[] = [];
 let eventAt = new Map<number, RideEvent>();
-let falls = 0, wheel = 0;
+let falls = 0, idleFalls = 0, taps = 0, wheel = 0;
 let crash: { at: number; dir: number } | null = null;
 let tapFlash = { at: -1e9, side: 1 as Side, grade: 0 };
 let binds: { l: string; r: string } = { l: "z", r: "m" };
@@ -103,7 +103,7 @@ function pick(p: string, keepRange = false) {
   lay = layoutGraph(notes);
   events = rideEvents(notes, lay);
   eventAt = new Map(events.map((e) => [e.i, e]));
-  ride = newRide(); running = false; crash = null; falls = 0;
+  ride = newRide(); running = false; crash = null; falls = 0; idleFalls = 0; taps = 0;
   buildRail();
   hotEdges = new Set(lay.hot.slice(1).map((hi, k) => `${lay.hot[k]}-${hi}`));
   scene?.setGraph(notes, lay, hotEdges, events);
@@ -199,7 +199,7 @@ function refresh() {
   }
   if (gameOn) {
     $("g-speedv").textContent = ride.speed.toFixed(1);
-    $("g-fallsv").textContent = String(falls);
+    $("g-fallsv").textContent = String(Math.max(0, LIVES - falls));
   }
   draw();
 }
@@ -360,7 +360,11 @@ function stepGame(dt: number, now: number) {
     const e = eventAt.get(i);
     if (e) gustRide(ride, eventPush(e));
   }
-  if (fell) { falls++; crash = { at: now, dir: ride.lean > 0 ? 1 : -1 }; }
+  if (fell) {
+    falls++; idleFalls = taps === 0 ? idleFalls + 1 : 0; taps = 0;
+    if (runOver(falls, idleFalls)) { setGame(false); toast(idleFalls ? "Nobody at the pedals. Back to the menu" : "Out of lives. Back to the menu"); return; }
+    crash = { at: now, dir: ride.lean > 0 ? 1 : -1 };
+  }
   else if (q >= notes.length) { running = false; toast(`Made it to the newest commit with ${falls} spill${falls === 1 ? "" : "s"}`); }
 }
 
@@ -450,7 +454,7 @@ function showKeys() {
 function pedal(side: Side) {
   if (!gameOn || crash || !notes.length) return;
   if (q >= notes.length) { q = 0; ride = newRide(); }
-  running = true;
+  running = true; taps++;
   const grade = tapRide(ride, side);
   tapFlash = { at: performance.now(), side, grade };
   wake();
@@ -458,7 +462,7 @@ function pedal(side: Side) {
 
 function setGame(on: boolean) {
   if (on === gameOn) return;
-  gameOn = on; running = false; crash = null; rebinding = null;
+  gameOn = on; running = false; crash = null; rebinding = null; falls = 0; idleFalls = 0; taps = 0;
   playing = false;
   ride = newRide();
   $("gamebtn").setAttribute("aria-pressed", String(on));
