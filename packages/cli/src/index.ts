@@ -15,7 +15,7 @@ import { buildBox, checkBox } from "./box.ts";
 import { watchDesktop } from "./watch.ts";
 import { codeSecrets, wranglerNames } from "./glue/secrets.ts";
 import { buildEnv, emptyHome, hostCommand, withLocalBins, hostEnv, wantsSandbox } from "./sandbox.ts";
-import { desktopServers, forStage, type RustyBunsConfig } from "./config.ts";
+import { desktopServers, forStage, workerName, type RustyBunsConfig } from "./config.ts";
 import { Effect } from "effect";
 import { decodeConfig } from "./config-schema.ts";
 import { AlchemyFailed, ConfigLoadFailed, DeployRefused, UsageError, closest, flag, intFlag, renderError, triagePrompt } from "./errors.ts";
@@ -31,7 +31,7 @@ import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-sc
 import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
 import { workspacePrebuild } from "./glue/workspace-build.ts";
 import { Profiler } from "./profile.ts";
-import { adoptProblem, forceFresh, isolationFlags, ISOLATION_ARGS, modeLine } from "./isolation.ts";
+import { adoptProblem, adoptQuestion, confirmAdopt, forceFresh, isolationFlags, ISOLATION_ARGS, modeLine } from "./isolation.ts";
 import { adoptNote, alchemyStage, linkSharedState, lockState, noteChild, unlinkSharedState } from "./state.ts";
 import { runScoped, spawnScoped, step } from "./lifecycle.ts";
 import { commitsBehindMain, statefulDeletes, strayState } from "./guard.ts";
@@ -821,7 +821,10 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   const mode = modeLine(cfg, { forced: iso.fresh, offline });
   if (profiled || sub === "destroy") console.log(mode + "\n");
   const refuse = sub === "plan" || offline ? null : adoptProblem(sub, cfg, process.cwd(), stage, iso);
-  if (refuse) throw new DeployRefused({ message: refuse });
+  // ADOPT mode stops here: ask at the terminal; with no terminal (or a no), it is refused.
+  if (refuse && !(yield* step(() => confirmAdopt(adoptQuestion(sub, cfg), workerName(cfg))))) {
+    throw new DeployRefused({ message: refuse });
+  }
   const note = profiled && !offline ? adoptNote(process.cwd(), cfg, stage) : null;
   if (note) console.log(note + "\n");
   if (profiled && !offline) guardDeploy(sub, cfg, stage, { force, allowDelete });
@@ -1122,8 +1125,9 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              resource new, named by Alchemy, none already on the account touched)
                              or "mode: ADOPT" (targets.edge.adopt: lists the real names it takes
                              over). --fresh forces FRESH whatever the config says
-         [--adopt-existing]  ADOPT mode refuses a first deploy to a stage, and any destroy, unless
-                             you pass this: it may take over or delete real resources
+         [--adopt-existing]  ADOPT mode asks "are you sure?" (y/N) before a first deploy to a stage
+                             and before any destroy; this answers yes, for scripts (with no
+                             terminal and no flag it is refused): it may take over or delete real resources
                              plan and deploy list the stack's billable resources first, and
                              refuse a large Hetzner server without box.allowLargeServer (COSTS.md)
   destroy                    alchemy destroy: removes everything the stack created

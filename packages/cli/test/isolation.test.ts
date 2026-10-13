@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RustyBunsConfig } from "../src/config.ts";
-import { adoptProblem, adoptedNames, forceFresh, isolationFlags, modeLine } from "../src/isolation.ts";
+import { adoptProblem, adoptQuestion, adoptedNames, confirmAdopt, forceFresh, isolationFlags, modeLine } from "../src/isolation.ts";
 
 const cfg = (adopt: boolean): RustyBunsConfig => ({
   name: "shop",
@@ -55,4 +55,23 @@ test("ADOPT refuses a first deploy and any destroy, until --adopt-existing", () 
   // FRESH and plans never stop here.
   expect(adoptProblem("destroy", cfg(false), dir, "dev", none)).toBeNull();
   expect(adoptProblem("plan", cfg(true), dir, "other", none)).toBeNull();
+});
+
+test("the question names every resource, and only y or yes says yes", async () => {
+  const q = adoptQuestion("deploy", cfg(true));
+  for (const n of ["Worker shop-worker", "D1 shop-db", "R2 shop-files", "Queue shop-jobs"]) expect(q).toContain(n);
+  expect(q).toContain("overwrite");
+  expect(adoptQuestion("destroy", cfg(true))).toContain("DELETES");
+  const answers = (...a: string[]) => { const rest = [...a]; return async () => rest.shift() ?? ""; };
+  expect(await confirmAdopt(q, "shop-worker", answers("y", "shop-worker"))).toBe(true);
+  expect(await confirmAdopt(q, "shop-worker", answers(" YES\n", " shop-worker\n"))).toBe(true);
+  // Anything but y/yes, or a second answer that isn't the name, is no.
+  for (const a of [[""], ["n"], ["yep"], ["no"], ["y"], ["y", ""], ["y", "y"], ["y", "SHOP-WORKER"], ["y", "shop"]])
+    expect(await confirmAdopt(q, "shop-worker", answers(...a))).toBe(false);
+});
+
+test("with no terminal there is no one to ask, so it is a no", async () => {
+  // bun test runs with no TTY on stdin
+  if (process.stdin.isTTY) return;
+  expect(await confirmAdopt("sure? ", "x")).toBe(false);
 });

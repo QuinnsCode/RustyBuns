@@ -6,7 +6,8 @@
 // first and last, and the one that can hurt has to be asked for:
 //   FRESH   nothing existing is looked up or changed. `--fresh` forces it, whatever the config says.
 //   ADOPT   lists every name it would take over. A first deploy to a stage, and any destroy,
-//           is refused without `--adopt-existing`.
+//           asks "are you sure?" and then for the Worker's name; no terminal, or `--adopt-existing`
+//           (which answers yes for a script), decides it otherwise.
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -69,4 +70,29 @@ export function adoptProblem(sub: string, cfg: RustyBunsConfig, projectDir: stri
       `Pass --adopt-existing to do that, or --fresh to make new resources instead.`;
   }
   return null;
+}
+
+/** The question asked at the terminal when ADOPT mode stops a deploy or destroy. */
+export function adoptQuestion(sub: string, cfg: Pick<RustyBunsConfig, "name" | "bindings" | "targets">): string {
+  const list = adoptedNames(cfg).map((n) => `  - ${n}`).join("\n");
+  return sub === "destroy"
+    ? `ADOPT mode: this DELETES these resources, which may be real ones:\n${list}\nAre you sure you want to delete them? [y/N] `
+    : `ADOPT mode: this takes over, and overwrites, these resources if they already exist (real ones, not copies):\n${list}\nAre you sure you want to overwrite them? [y/N] `;
+}
+
+/**
+ * Ask twice at the terminal: y or yes, then the Worker's name typed out, so a reflex "y" can't
+ * overwrite real resources. Anything else is no. Without a terminal there is no one to ask, so
+ * it is no: pass --adopt-existing in a script. `ask` is for tests.
+ */
+export async function confirmAdopt(question: string, name: string, ask?: (q: string) => Promise<string>): Promise<boolean> {
+  if (!ask) {
+    if (!process.stdin.isTTY || !process.stdout.isTTY) return false;
+    const { createInterface } = await import("node:readline/promises");
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    const once = (q: string) => rl.question(q);
+    try { return await confirmAdopt(question, name, once); } finally { rl.close(); }
+  }
+  if (!/^y(es)?$/i.test((await ask(question)).trim())) return false;
+  return (await ask(`Really? Type the Worker's name (${name}) to go on: `)).trim() === name;
 }
