@@ -6,7 +6,7 @@
 // imports defineConfig, never loads effect.
 import { Effect, Schema, SchemaAST, SchemaIssue } from "effect";
 import { PERSONAS, type Persona } from "@rustybuns/shell-bun/priority";
-import type { RustyBunsConfig } from "./config.ts";
+import { forStage, type RustyBunsConfig } from "./config.ts";
 
 const opt = Schema.optional;
 const Str = Schema.String;
@@ -94,6 +94,20 @@ const BoxTarget = Schema.Union([
 // Cloudflare's rule for a Worker's name: lowercase letters, digits and dashes, 63 at most.
 const WorkerName = Str.check(Schema.isPattern(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/, { expected: "a Worker name: lowercase letters, digits and dashes, at most 63, no dash at either end" }));
 
+const AccountId = Str.check(Schema.isPattern(/^[0-9a-f]{32}$/, { expected: "a Cloudflare account id: 32 hex digits" }));
+const Route = Schema.Struct({ pattern: Str, zoneName: opt(Str), zoneId: opt(Str) });
+
+// A stage's overrides. What they make is checked again as the whole config each stage deploys.
+const Stage = Schema.Struct({
+  workerName: opt(WorkerName), accountId: opt(AccountId),
+  domain: opt(Schema.Union([Str, Strs])), routes: opt(Schema.Array(Route)),
+  workersDev: opt(Bool), previewUrls: opt(Bool), crons: opt(Strs),
+  bindings: opt(Schema.Record(Str, Schema.Union([Binding, Schema.Struct({
+    value: opt(Str), databaseName: opt(Str), bucketName: opt(Str), queueName: opt(Str),
+    indexName: opt(Str), dataset: opt(Str), namespaceId: opt(Str), configName: opt(Str),
+  })]))),
+});
+
 export const ConfigSchema = Schema.Struct({
   name: Str.check(Schema.isMinLength(1)),
   source: opt(Schema.Struct({ dir: opt(Str), aliases: opt(StrMap), ignore: opt(Strs) })),
@@ -121,10 +135,12 @@ export const ConfigSchema = Schema.Struct({
   bindings: Schema.Record(Str, Binding),
   targets: Schema.Struct({
     edge: opt(Schema.Struct({ provider: Schema.Literal("cloudflare"), domain: opt(Schema.Union([Str, Strs.check(Schema.isMinLength(1))])),
-      routes: opt(Schema.Array(Schema.Struct({ pattern: Str, zoneName: opt(Str), zoneId: opt(Str) }))), adopt: opt(Bool), workerName: opt(WorkerName), renamedFrom: opt(Str) })),
+      routes: opt(Schema.Array(Route)), adopt: opt(Bool), workerName: opt(WorkerName), renamedFrom: opt(Str),
+      accountId: opt(AccountId), workersDev: opt(Bool), previewUrls: opt(Bool) })),
     box: opt(BoxTarget),
     desktop: opt(DesktopTarget),
   }),
+  stages: opt(Schema.Record(Str, Stage)),
   state: opt(Schema.Literals(["shared", "project"])),
   experimental: opt(Schema.Struct({ wheel: opt(Schema.Literals(["agent", "human"])) })),
 });
@@ -185,6 +201,22 @@ export class ConfigInvalid extends Schema.TaggedError<ConfigInvalid>()("ConfigIn
 
 /** Check a loaded config. Fails with every problem at once, so one fix-and-rerun covers them all. */
 export const decodeConfig = (input: unknown): Effect.Effect<RustyBunsConfig, ConfigInvalid> =>
+  checkOne(input).pipe(
+    // A bad stage name, or an override for a binding the config lacks (say so, not "expected one of 18 shapes").
+    Effect.filterOrElse((c) => !stageProblems(c).length, (c) => Effect.fail(new ConfigInvalid({ problems: stageProblems(c) }))),
+    // Each stage again, as it deploys.
+    Effect.flatMap((c) => Effect.forEach(Object.keys(c.stages ?? {}), (s) => checkOne(forStage(c, s)).pipe(
+      Effect.mapError((e) => new ConfigInvalid({ problems: e.problems.map((p) => `stages.${s} (as deployed): ${p}`) })))).pipe(Effect.as(c))),
+  );
+
+/** A stage name `--stage` can't take, or an override for a binding the config lacks. */
+const stageProblems = (c: RustyBunsConfig) => Object.entries(c.stages ?? {}).flatMap(([s, st]) => [
+  ...(/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(s) ? [] : [`stages.${s}: a stage name is letters, digits, _ and -, starting with a letter or digit`]),
+  ...Object.entries(st.bindings ?? {}).filter(([k, o]) => !o.type && !c.bindings[k])
+    .map(([k]) => `stages.${s}.bindings.${k}: bindings has no ${k} for this to change; give it a type to add one in this stage`),
+]);
+
+const checkOne = (input: unknown): Effect.Effect<RustyBunsConfig, ConfigInvalid> =>
   Schema.decodeUnknownEffect(ConfigSchema)(input, { errors: "all", onExcessProperty: "error", reportInput: true }).pipe(
     Effect.mapError((e) => new ConfigInvalid({ problems: formatIssues(e.issue) })),
     // With an edge Worker and no targets.edge.workerName, `name` is the Worker's name.

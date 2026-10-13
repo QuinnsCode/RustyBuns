@@ -814,6 +814,7 @@ const app = {
   },
 
   // The queues (rustybuns.config.ts): JOBS runs queued requests whose turn has come, and hosted agent runs;
+  // FIXES is fix tasks (heal.ts), agent messages too, so they take the JOBS branch below;
   // HOOKS is one webhook try per message. A batch is all one queue's, told apart by its
   // messages, since a stage's queues may be named otherwise.
   async queue(batch: { messages: readonly { body: unknown; ack(): void }[] }, env: Env) {

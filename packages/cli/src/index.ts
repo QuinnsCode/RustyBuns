@@ -6,7 +6,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseWrangler, parseWranglerToml, wranglerToConfig, droppedWranglerKeys } from "./wrangler.ts";
+import { parseWrangler, parseWranglerToml, wranglerToConfig, wranglerStages, droppedWranglerKeys } from "./wrangler.ts";
 import { generateAlchemy } from "./gen/alchemy.ts";
 import { generateWrangler } from "./gen/wrangler.ts";
 import { buildDesktop } from "./build.ts";
@@ -15,7 +15,7 @@ import { buildBox, checkBox } from "./box.ts";
 import { watchDesktop } from "./watch.ts";
 import { codeSecrets, wranglerNames } from "./glue/secrets.ts";
 import { buildEnv, emptyHome, hostCommand, withLocalBins, hostEnv, wantsSandbox } from "./sandbox.ts";
-import { desktopServers, type RustyBunsConfig } from "./config.ts";
+import { desktopServers, forStage, type RustyBunsConfig } from "./config.ts";
 import { Effect } from "effect";
 import { decodeConfig } from "./config-schema.ts";
 import { AlchemyFailed, ConfigLoadFailed, DeployRefused, UsageError, closest, flag, intFlag, renderError } from "./errors.ts";
@@ -35,7 +35,7 @@ import { adoptNote, alchemyStage, linkSharedState, lockState, noteChild, unlinkS
 import { runScoped, spawnScoped, step } from "./lifecycle.ts";
 import { commitsBehindMain, statefulDeletes, strayState } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
-import { cloudflareEnv, cloudflareProblem, realTokenCheck, realWrangler, wranglerCli } from "./cloudflare-auth.ts";
+import { cloudflareEnv, cloudflareProblem, withAccount, realTokenCheck, realWrangler, wranglerCli } from "./cloudflare-auth.ts";
 import { deployedWorker, redactQueryStrings } from "./redact.ts";
 import { tidySourceMaps } from "./sourcemaps.ts";
 import { formatOfflinePlan, plannedResources } from "./offline-plan.ts";
@@ -52,8 +52,18 @@ import { BUN_CHECK_MIN, STACK_TSCONFIG, checkFlags, compactDiagnostics, pickChec
 const [cmd, ...rest] = process.argv.slice(2);
 const VERSION = (await Bun.file(new URL("../package.json", import.meta.url)).json()).version as string;
 
-/** rustybuns.config.ts, checked against config-schema.ts: a bad one stops here, naming each field. */
-async function loadConfig(): Promise<RustyBunsConfig> {
+/**
+ * rustybuns.config.ts, checked against config-schema.ts: a bad one stops here, naming each field.
+ * With `stage`, as that stage deploys it: its `stages` entry laid over the rest.
+ */
+async function loadConfig(stage?: string): Promise<RustyBunsConfig> {
+  const cfg = await loadRawConfig();
+  if (stage === undefined) return cfg;
+  if (cfg.stages && !cfg.stages[stage]) console.log(`stage ${stage}: no stages.${stage} in rustybuns.config.ts, so it deploys the config as written`);
+  return forStage(cfg, stage);
+}
+
+async function loadRawConfig(): Promise<RustyBunsConfig> {
   const path = `${process.cwd()}/rustybuns.config.ts`;
   if (!(await Bun.file(path).exists())) throw new ConfigLoadFailed({ message: "no rustybuns.config.ts here; run `rustybuns init` first" });
   let mod: { default?: unknown };
@@ -277,6 +287,12 @@ async function init() {
   }
   console.log(`desktop:  building for ${host} only; add other targets in rustybuns.config.ts`);
   cfg.source = { dir: inf.srcDir, aliases: inf.aliases };
+  // Wrangler's env.<name> blocks: a stage each, deployed with `--stage <name>`.
+  if (w.env && Object.keys(w.env).length) {
+    const { stages, missing } = wranglerStages(w, cfg);
+    if (Object.keys(stages).length) { cfg.stages = stages; console.log(`stages:   ${Object.keys(stages).join(" ")}  (from wrangler's env blocks; deploy one with --stage <name>)`); }
+    if (missing.length) console.log(`warning:  wrangler doesn't bind these in their env, but the stage keeps the top level's: ${missing.join(", ")}`);
+  }
   const body = `import { defineConfig } from "@rustybuns/cli/config";\n\nexport default defineConfig(${JSON.stringify(cfg, null, 2)});\n`;
   await Bun.write("rustybuns.config.ts", body);
   console.log(`wrote rustybuns.config.ts${src ? ` from ${src}` : ""}`);
@@ -526,8 +542,10 @@ function wranglerLosses(): string[] {
   try { return droppedWranglerKeys(parseWrangler(readFileSync(f, "utf8"))); } catch { return []; }
 }
 
-async function generate(opts: { adopt: boolean }) {
-  const cfg = await loadConfig();
+/** The stack for `stage` (the config as written when unset); wrangler.jsonc, local dev's, always from the config as written. */
+async function generate(opts: { adopt: boolean; stage?: string }) {
+  const raw = await loadRawConfig();
+  const cfg = forStage(raw, opts.stage ?? "");
   if (!cfg.worker && !cfg.targets.box) { console.log("desktop-only config: nothing to generate for the edge"); return; }
   // A bad cron fails here, not on Cloudflare's side halfway into a deploy.
   if (cfg.worker?.crons?.length) {
@@ -537,7 +555,7 @@ async function generate(opts: { adopt: boolean }) {
   const cpu = cfg.worker?.cpuMs;
   if (cpu !== undefined && !(Number.isInteger(cpu) && cpu >= 10 && cpu <= 300_000)) throw new Error(`worker.cpuMs: ${cpu} isn't a whole number of ms from 10 to 300000`);
   await mkdir(".rustybuns", { recursive: true });
-  await Bun.write(".rustybuns/alchemy.run.ts", generateAlchemy(cfg));
+  await Bun.write(".rustybuns/alchemy.run.ts", generateAlchemy(opts.stage === undefined ? cfg : forStage(raw, opts.stage)));
   console.log("wrote .rustybuns/alchemy.run.ts");
   await writeEnvSchema(cfg);
   if (!cfg.worker) return;   // box-only: no wrangler.jsonc
@@ -632,7 +650,8 @@ const alchemyProcess = (args: string[], cfg?: RustyBunsConfig, extra: Record<str
 const runAlchemy = (args: string[], cfg?: RustyBunsConfig) => runScoped(alchemyProcess(args, cfg));
 
 /** Alchemy's env before the Cloudflare login: secret values from .dev.vars, anything exported in the shell wins. */
-const alchemyBaseEnv = (extra: Record<string, string> = {}): Record<string, string | undefined> => ({ ...readDevVars(), ...process.env, ...extra });
+const alchemyBaseEnv = (extra: Record<string, string> = {}, cfg?: RustyBunsConfig): Record<string, string | undefined> =>
+  withAccount(cfg, { ...readDevVars(), ...process.env, ...extra });
 
 /** An edge stack logs in to Cloudflare through wrangler, with only the scopes it needs; {} leaves it to the shell or Alchemy's profile. */
 async function wranglerLogin(cfg: RustyBunsConfig, env: Record<string, string | undefined>): Promise<Record<string, string>> {
@@ -647,7 +666,7 @@ async function wranglerLogin(cfg: RustyBunsConfig, env: Record<string, string | 
  * or with RUSTYBUNS_NO_LOGIN_CHECK=1 (tests with a stub alchemy).
  */
 async function cloudflareLogin(cfg: RustyBunsConfig, args: string[]): Promise<Record<string, string>> {
-  const env = alchemyBaseEnv();
+  const env = alchemyBaseEnv({}, cfg);
   const cf = await wranglerLogin(cfg, env);
   const varlocked = !!cfg.experimental?.wheel && existsSync(ENV_SCHEMA) && /\bCLOUDFLARE_API_(TOKEN|KEY)\b/.test(readFileSync(ENV_SCHEMA, "utf8"));
   // `--profile <name>` picks Alchemy's profile over ALCHEMY_PROFILE.
@@ -672,7 +691,7 @@ function quietUpgradeNotice() {
 /** The alchemy command line and its env: Cloudflare login through wrangler (`cf` when already done), varlock for op secrets. */
 async function alchemyCommand(args: string[], cfg?: RustyBunsConfig, extra: Record<string, string> = {}, cf?: Record<string, string>) {
   let cmd = [...alchemyCli(), ...args];
-  const env = alchemyBaseEnv(extra);
+  const env = alchemyBaseEnv(extra, cfg);
   if (cfg?.targets.edge) {
     Object.assign(env, cf ?? await wranglerLogin(cfg, env));
     cloudflareToken = env.CLOUDFLARE_API_TOKEN;
@@ -756,7 +775,8 @@ const timed = <A, E, R>(prof: Profiler, name: string, e: Effect.Effect<A, E, R>)
  * the lock, in that order (lifecycle.ts).
  */
 const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(function* () {
-  const cfg = yield* step(loadConfig);
+  const stage = alchemyStage(rawArgs);
+  const cfg = yield* step(() => loadConfig(stage));
   const servers = desktopServers(cfg.targets.desktop);
   const entries = servers.map((s) => s.entry).join(", ");
   // A Worker can't run a node:http server with files on disk: that's a port by hand, not a config line.
@@ -774,7 +794,7 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   const sandboxed = wantsSandbox(flagged.filter((a) => a !== "--force" && a !== "--allow-delete" && a !== "--offline"));
   const sandbox = sandboxed.on || offline, args = sandboxed.args;
   const prof = new Profiler(sub);
-  yield* step(() => prof.step("generate", () => generate({ adopt: false })));
+  yield* step(() => prof.step("generate", () => generate({ adopt: false, stage })));
   let lockBase: string | null = null;
   // --offline reads no state, so it neither links nor locks one.
   if (cfg.state === "project") { if (!offline) unlinkSharedState(process.cwd()); }
@@ -782,9 +802,9 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
     const base = linkSharedState(process.cwd());
     if (base) { yield* Effect.acquireRelease(Effect.sync(() => lockState(base, sub)), (release) => Effect.sync(release)); lockBase = base; }
   }
-  const note = profiled && !offline ? adoptNote(process.cwd(), cfg, alchemyStage(args)) : null;
+  const note = profiled && !offline ? adoptNote(process.cwd(), cfg, stage) : null;
   if (note) console.log(note + "\n");
-  if (profiled && !offline) guardDeploy(sub, cfg, alchemyStage(args), { force, allowDelete });
+  if (profiled && !offline) guardDeploy(sub, cfg, stage, { force, allowDelete });
   if (check) yield* step(() => checkStack(prof, checker));
   const hash = yield* step(stackHash);
   const stampFile = ".rustybuns/planned";
@@ -817,7 +837,7 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   // The lock names alchemy's pid too, so a SIGKILLed rustybuns doesn't free the state while it runs.
   const run = (a: string[]) => alchemyProcess(a, cfg, buildEnv, (pid) => lockBase && noteChild(lockBase, pid), cf);
   if (offline) {
-    console.log("\n" + formatOfflinePlan(cfg.name, alchemyStage(args), plannedResources(readFileSync(".rustybuns/alchemy.run.ts", "utf8"))));
+    console.log("\n" + formatOfflinePlan(cfg.name, stage, plannedResources(readFileSync(".rustybuns/alchemy.run.ts", "utf8"))));
     yield* step(() => prof.finish());
     return;
   }
@@ -832,7 +852,7 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   const code = yield* timed(prof, `alchemy ${sub}`, run([sub, "--config", ".rustybuns/alchemy.run.ts", ...args]));
   if (profiled) yield* step(() => prof.finish());
   if (code !== 0) throw new AlchemyFailed({ sub, exitCode: code });
-  if (sub === "deploy" && edgeOn(cfg) && cfg.worker?.redactQueryStrings) yield* step(() => redactAfterDeploy(cfg, alchemyStage(args)));
+  if (sub === "deploy" && edgeOn(cfg) && cfg.worker?.redactQueryStrings) yield* step(() => redactAfterDeploy(cfg, stage));
   if (sub === "deploy" && cfg.targets.box) console.log(cfg.targets.box.provider === "railway"
     ? "\nthe box bills by usage from now on (less while asleep); `rustybuns destroy` stops it."
     : "\nthe box bills hourly from now on; `rustybuns destroy` stops it.");

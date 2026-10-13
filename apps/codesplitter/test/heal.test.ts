@@ -102,6 +102,22 @@ test("two failures at once open one fix task", async () => {
   expect((await runs()).length).toBe(1);
 });
 
+test("a fix task rides the FIXES queue, not JOBS, so it doesn't wait behind feature runs (#1234)", async () => {
+  const { call, fail, runs, settled } = await app();
+  const sent: Record<string, unknown[]> = { JOBS: [], FIXES: [] };
+  for (const q of ["JOBS", "FIXES"] as const) {
+    const send = call.env[q].send.bind(call.env[q]);
+    call.env[q].send = (body: unknown, opts?: unknown) => { sent[q]!.push(body); return send(body, opts); };
+  }
+  await fail(sha("a"));
+  await until(async () => (await runs()).length > 0);
+  await settled();
+  const [run] = await runs();
+  expect(run).toMatchObject({ status: "done", applied: 1 });
+  expect(sent.FIXES).toEqual([{ agent: run.id, origin: "http://codesplitter.local" }]);
+  expect(sent.JOBS).toEqual([]);
+});
+
 test("off unless hosted agents are on or the desktop says HEAL=1; a check that isn't required opens nothing", async () => {
   const off = await app(false);
   await off.fail(sha("a"));

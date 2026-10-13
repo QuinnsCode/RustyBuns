@@ -276,6 +276,22 @@ describe("settled without asking (#933)", () => {
     expect(mergeWords("Use the map. Click a dot.", "Use the vein. Click a dot.", "Use the map. The map has tags. Click a dot.", false, true)).toBeNull();
   });
 
+  test("a sentence both sides edited in different words merges word by word; a number one changed that the other's new words quote is a conflict (#1222, git-recon README)", () => {
+    // #1205 added "or online…" to the sentence, #1221 raised 32 to 64 in it: git conflicts, these don't.
+    const was = "> Play on your own, or by up to 32 players in one battle that the desktop app opens to the LAN. One of the examples.";
+    const onMain = was.replace("LAN.", "LAN, or online in a Durable Object per room.");
+    const onBranch = was.replace("32", "64");
+    expect(merged(was, onMain, onBranch, "README.md")).toBe("> Play on your own, or by up to 64 players in one battle that the desktop app opens to the LAN, or online in a Durable Object per room. One of the examples.");
+    // The room.ts bullet: the branch rewrote numbers inside it and left the 32-player test at 32, main added to it.
+    const bullet = "- `room.ts` sends snapshots as binary frames. On a 32-player test a delta averages under 1 KB, 16 KB/s a player (before, 60 KB/s). The page acks with each input. On a 32-player test a second of battle packs in well under a second of CPU.";
+    const grown = bullet.replace("(before, 60 KB/s).", "(before, 60 KB/s); at the 64-player cap, 25 KB/s.").replace("On a 32-player test a second of battle packs in well under", "At 64 players a second of battle packs in about a fifth of");
+    const added = bullet.replace("frames.", "frames (your ammo and clocks too).");
+    expect(merged(bullet, added, grown, "README.md")).toBe(grown.replace("frames.", "frames (your ammo and clocks too)."));
+    // Main's new words quote the 32 the branch made 64: merged, they'd say both.
+    expect(mergeWords(was, was.replace("LAN.", "LAN, so a room of 32 is cheap."), onBranch, false, true)).toBeNull();
+    expect(conflicts(sides(was, was.replace("LAN.", "LAN, so a room of 32 is cheap."), onBranch), "README.md")).toHaveLength(1);
+  });
+
   test("real rewrites stay conflicts: code hung under a line the other side removed, or one item rewritten two ways", () => {
     // drawGraph in client.html: the branch dropped the call, main hung the pulse code under it.
     expect(conflicts(sides("  };\n  drawGraph(graph);\n  el.on();", "  };\n  drawGraph(graph);\n  let beatAt = 0;\n  el.on();", "  };\n  el.on();"), "client.html")).toHaveLength(1);
@@ -700,6 +716,46 @@ describe("over the API", () => {
     expect((await second.json() as any).regenerated).toEqual([{ paths: ["app/REFERENCE.md"], command: "bun run layout", cwd: "app" }]);
     expect(ran).toEqual([{ files: { "app/REFERENCE.md": table(["| a |", "| b |", "| c |"]) + "\n" }, cwd: "app", command: "bun run layout", read: ["app/REFERENCE.md"] }]);
     expect(text(await doc())).toBe(table(["| a |", "| b |", "| c |", "| d |", "| e |"]));
+  });
+
+  test("on Cloudflare, generated text is rebuilt in a sandbox container, for the site's admins (#1192)", async () => {
+    const { call, post } = await app();
+    const table = (rows: string[]) => ["<!-- generated: bun run layout -->", ...rows, "<!-- /generated -->"].join("\n");
+    await post("ana", "/api/repos/ana/r/files", { path: "package.json", content: "{}" });
+    await post("ana", "/api/repos/ana/r/files", { path: "docs/REF.md", content: table(["a"]) });
+    for (const path of ["package.json", "docs/REF.md"]) await post("ana", `/api/repos/ana/r/do/commit?path=${path}`, { message: "ref" });
+    await call("ana", "/api/repos/ana/r/deps", { method: "PUT", body: JSON.stringify({ test_merges: true }) });
+    const doc = async () => (await (await call("ana", "/api/repos/ana/r/do/file?path=docs/REF.md")).json() as Doc);
+    const both = async (name: string, ours: string, theirs: string) => {
+      await post("ana", "/api/repos/ana/r/branches", { name });
+      const last = (await doc()).lines.at(-2)!;
+      await post("ana", `/api/repos/ana/r/do/ops?path=docs/REF.md&branch=${name}`, { ops: [{ kind: "insert", after: last.id, text: ours }] });
+      await post("ana", "/api/repos/ana/r/do/ops?path=docs/REF.md", { ops: [{ kind: "insert", after: last.id, text: theirs }] });
+      return (await (await post("ana", `/api/repos/ana/r/branches/${name}/merge`, {})).json() as any).regenerated;
+    };
+    const seen: { url: string; body: any }[] = [];
+    call.env.AGENT_SANDBOX = {
+      idFromName: (n: string) => n,
+      get: () => ({ async fetch(req: Request) {
+        const body = await req.json() as any;
+        seen.push({ url: req.url, body });
+        return Response.json({ ok: true, out: "", files: { "docs/REF.md": table(["a", "b", "c", "d", "e"]) + "\n" } });
+      } }),
+    };
+
+    // Not an admin: main's copy, and what to run.
+    call.env.ADMINS = "someone-else";
+    expect(await both("x", "c", "b")).toEqual([{ paths: ["docs/REF.md"], command: "bun run layout", cwd: "docs", note: "not rebuilt: generated text on Cloudflare is rebuilt for this site's admins (ADMINS): run `bun run layout` in docs on main" }]);
+    expect(seen).toHaveLength(0);
+
+    // An admin: the container's /regenerate runs it, and what it read back goes onto main.
+    call.env.ADMINS = "ana";
+    expect(await both("y", "e", "d")).toEqual([{ paths: ["docs/REF.md"], command: "bun run layout", cwd: "docs" }]);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.url).toBe("http://sandbox/regenerate");
+    expect(seen[0]!.body).toMatchObject({ pm: "bun", cwd: "docs", command: "bun run layout", read: ["docs/REF.md"], files: { "docs/REF.md": expect.any(String) } });
+    expect(seen[0]!.body.remote).toContain("://x:");
+    expect(text(await doc())).toBe(table(["a", "b", "c", "d", "e"]));
   });
 
   test("a merge both sides changed, settled with no card, runs the tests in a throwaway clone before it lands (#1096)", async () => {

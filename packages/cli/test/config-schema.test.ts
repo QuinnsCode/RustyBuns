@@ -3,6 +3,8 @@ import { readdirSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { Effect, Exit } from "effect";
 import { decodeConfig } from "../src/config-schema.ts";
+import { forStage, type RustyBunsConfig } from "../src/config.ts";
+import { generateAlchemy } from "../src/gen/alchemy.ts";
 
 const apps = resolve(import.meta.dir, "../../../apps");
 const configs = readdirSync(apps).map((a) => join(apps, a, "rustybuns.config.ts")).filter((f) => existsSync(f));
@@ -58,4 +60,34 @@ test("hyperdrive: its urlSecret has to be a secret binding", async () => {
   expect(await pg({ DATABASE_URL: { type: "secret" }, HYPERDRIVE: { type: "hyperdrive", urlSecret: "DATABASE_URL", local: "pglite", migrationsDir: "drizzle" } })).toEqual([]);
   expect(await pg({ DATABASE_URL: { type: "secret" }, HYPERDRIVE: { type: "hyperdrive", urlSecret: "DATABASE_URL", migrationsDir: "drizzle" } }))
     .toEqual([`bindings.HYPERDRIVE.migrationsDir: only a PGlite twin takes migrations at boot; add local: "pglite", or migrate your Postgres yourself`]);
+});
+
+test("stages: each is laid over the config by --stage, and checked as it deploys (#1211)", async () => {
+  const base: RustyBunsConfig = {
+    name: "app",
+    worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [], crons: ["0 * * * *"] },
+    bindings: { DB: { type: "d1", databaseName: "app", migrationsDir: "db" }, MODE: { type: "var", value: "prod" } },
+    targets: { edge: { provider: "cloudflare", adopt: true, domain: "app.example.com", previewUrls: false } },
+    stages: { staging: { workerName: "app-staging", domain: [], crons: [], workersDev: false,
+      bindings: { DB: { databaseName: "app-staging" }, MODE: { value: "staging" }, DEBUG: { type: "var", value: "1" } } } },
+  };
+  expect(await problems(base)).toEqual([]);
+  const s = forStage(base, "staging");
+  expect(s.stages).toBeUndefined();
+  expect(s.bindings).toEqual({ DB: { type: "d1", databaseName: "app-staging", migrationsDir: "db" }, MODE: { type: "var", value: "staging" }, DEBUG: { type: "var", value: "1" } });
+  expect(s.targets.edge).toEqual({ provider: "cloudflare", adopt: true, workerName: "app-staging", workersDev: false, previewUrls: false });
+  expect(s.worker!.crons).toBeUndefined();
+  // A stage with no entry, or none asked for, is the config as written.
+  expect(forStage(base, "prod")).toEqual({ ...base, stages: undefined } as never);
+  const stack = generateAlchemy(s);
+  expect(stack).toContain(`name: "app-staging"`);
+  expect(stack).toContain(`workersDev: {"enabled":false,"previewsEnabled":false}`);
+  expect(stack).not.toContain("app.example.com");
+  expect(generateAlchemy(forStage(base, "prod"))).toContain(`name: "app",`);
+  // Overrides are checked against what they make: a field on a binding the config lacks.
+  expect(await problems({ ...base, stages: { qa: { bindings: { CACHE: { bucketName: "x" } } } } }))
+    .toEqual([`stages.qa.bindings.CACHE: bindings has no CACHE for this to change; give it a type to add one in this stage`]);
+  expect(await problems({ ...base, stages: { qa: { workerName: "Bad_Name" } } })).toHaveLength(1);
+  expect(await problems({ ...base, stages: { "no good": {} } })).toHaveLength(1);
+  expect(await problems({ ...base, targets: { edge: { provider: "cloudflare", accountId: "abc" } } })).toHaveLength(1);
 });

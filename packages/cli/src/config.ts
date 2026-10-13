@@ -47,7 +47,7 @@ export type Binding =
   /**
    * Cloudflare Vectorize: `env.NAME.upsert(vectors)`, `.query(values, { topK, filter })`,
    * `.getByIds(ids)` and `.deleteByIds(ids)`. `metadataIndexes` are the metadata properties
-   * a query can filter on. Edge only: the desktop has no twin, so the binding is left out there.
+   * a query can filter on. On the desktop: an index in sqlite, queried by exact scan.
    */
   | {
       type: "vectorize";
@@ -62,7 +62,8 @@ export type Binding =
     }
   /**
    * Workers AI: `await env.NAME.run(model, inputs)`, e.g. embeddings for a vectorize
-   * binding. No resource behind it. Edge only: the desktop has no twin.
+   * binding. No resource behind it. On the desktop there's no model: each call throws an error
+   * that says it runs only on Cloudflare.
    */
   | { type: "ai" }
   /**
@@ -110,18 +111,19 @@ export type Binding =
    * Cloudflare Workflows: `await env.NAME.create({ params })` starts an instance of the
    * `WorkflowEntrypoint` class `main` exports (or `scriptName`'s), whose steps are retried
    * and persisted. Alchemy names the workflow `<worker>-<class>-<hash>`, not wrangler's `name`, so
-   * instances started under a wrangler deploy stay with that one. Edge only: the desktop has
-   * no twin, so the binding is left out there.
+   * instances started under a wrangler deploy stay with that one. On the desktop the class runs
+   * in-process, its instances and step results in sqlite.
    */
   | { type: "workflow"; className: string; scriptName?: string }
   /**
    * Workers Analytics Engine: `env.NAME.writeDataPoint({ blobs, doubles, indexes })` into a
-   * dataset, made on first write (no resource to provision). Off the edge writeDataPoint is a no-op.
+   * dataset, made on first write (no resource to provision). On the desktop points land in analytics.sqlite.
    */
   | { type: "analytics_engine"; /** @default the binding's name */ dataset?: string }
   /**
    * Dynamic Worker Loader: `env.NAME.get(id, () => ({ mainModule, modules, ... }))` runs code
-   * in a Worker isolate made at runtime. No resource behind it. Edge only: the desktop has no twin.
+   * in a Worker isolate made at runtime. No resource behind it. On the desktop the code runs in
+   * the host's own process: no isolate, no sandbox.
    */
   | { type: "worker_loader" }
   /**
@@ -279,6 +281,8 @@ export interface DesktopTarget {
    *   server: { entry: "../api/server.js", paths: ["/api"] }
    * A list when the proxy sent paths to more than one server; the first whose paths match wins:
    *   server: [{ entry: "../api/server.js", paths: ["/api"] }, { entry: "../media/index.js", paths: ["/img", "/gif"] }]
+   * A native addon (.node) it requires by a fixed path ships beside it; one a package finds at
+   * run time (bindings, node-gyp-build), or one not built for a target, stops the build.
    * Desktop and box only: a Worker can't run a node:http server, so the edge needs it ported.
    */
   server?: DesktopServer | DesktopServer[];
@@ -584,10 +588,29 @@ export interface RustyBunsConfig {
        * theirs start empty. Inert once the move is done, so it can stay.
        */
       renamedFrom?: string;
+      /**
+       * The Cloudflare account to deploy to (wrangler's `account_id`). Unset, it's the
+       * login's: CLOUDFLARE_ACCOUNT_ID, or the one account wrangler's login reaches.
+       * An exported CLOUDFLARE_ACCOUNT_ID that names another account is refused.
+       */
+      accountId?: string;
+      /** Serve the Worker at `<name>.<subdomain>.workers.dev` (wrangler's `workers_dev`). @default true */
+      workersDev?: boolean;
+      /** A preview URL on workers.dev for each uploaded version (wrangler's `preview_urls`). @default true */
+      previewUrls?: boolean;
     };
     box?: BoxTarget;
     desktop?: DesktopTarget;
   };
+  /**
+   * What changes per Alchemy stage, by stage name: `rustybuns deploy --stage staging`
+   * deploys the config with `stages.staging` laid over it. A stage with no entry here
+   * gets the config as written. `init` writes one per wrangler `env.<name>` block.
+   *   stages: { staging: { workerName: "app-staging", bindings: { DB: { databaseName: "app-staging" }, API_URL: { value: "https://staging.example.com" } } } }
+   * With `targets.edge.adopt`, give each stage its own resource names, or the stages
+   * take over the same Worker and databases.
+   */
+  stages?: Record<string, Stage>;
   /**
    * Where Alchemy keeps this app's deploy state. "shared" (the default) links
    * `.alchemy/state` into the repo's git dir, so every worktree and the main
@@ -630,3 +653,51 @@ export function workerName(c: Pick<RustyBunsConfig, "name" | "targets">): string
 
 /** The env var a hyperdrive binding's desktop and box twin reads its Postgres URL from. */
 export function hyperdriveUrlEnv(name: string, b: { urlSecret?: string }): string { return b.urlSecret ?? `${name}_URL`; }
+
+/**
+ * One stage's overrides. Each key replaces the config's; `bindings` merges into each
+ * binding by key (`{ databaseName }`, `{ value }` for a var), or adds a whole binding.
+ */
+export interface Stage {
+  /** targets.edge.workerName in this stage. */
+  workerName?: string;
+  accountId?: string;
+  /** targets.edge.domain; `[]` serves on none. */
+  domain?: string | string[];
+  /** targets.edge.routes; `[]` has none. */
+  routes?: { pattern: string; zoneName?: string; zoneId?: string }[];
+  workersDev?: boolean;
+  previewUrls?: boolean;
+  /** worker.crons; `[]` has none. */
+  crons?: string[];
+  bindings?: Record<string, StageBinding>;
+}
+
+/** Fields laid over a binding of the same key, or (with a `type` it doesn't have) a binding of its own. */
+export type StageBinding = Binding | {
+  type?: undefined;
+  value?: string; databaseName?: string; bucketName?: string; queueName?: string;
+  indexName?: string; dataset?: string; namespaceId?: string; configName?: string;
+};
+
+/** The config as stage `stage` deploys it: `stages[stage]` laid over the rest, and `stages` gone. */
+export function forStage(c: RustyBunsConfig, stage: string): RustyBunsConfig {
+  const { stages, ...base } = c;
+  const s = stages?.[stage];
+  if (!s) return base;
+  const bindings = { ...base.bindings };
+  for (const [k, o] of Object.entries(s.bindings ?? {})) {
+    const b = bindings[k];
+    bindings[k] = (o.type && o.type !== b?.type) || !b ? o as Binding : { ...b, ...o } as Binding;
+  }
+  const edge = base.targets.edge && { ...base.targets.edge };
+  if (edge) {
+    for (const k of ["workerName", "accountId", "workersDev", "previewUrls", "domain", "routes"] as const)
+      if (s[k] !== undefined) (edge as Record<string, unknown>)[k] = s[k];
+    if (Array.isArray(edge.domain) && !edge.domain.length) delete edge.domain;
+    if (edge.routes && !edge.routes.length) delete edge.routes;
+  }
+  let worker = base.worker;
+  if (worker && s.crons !== undefined) { const { crons: _, ...w } = worker; worker = s.crons.length ? { ...w, crons: s.crons } : w; }
+  return { ...base, ...(worker ? { worker } : {}), bindings, targets: { ...base.targets, ...(edge ? { edge } : {}) } };
+}
