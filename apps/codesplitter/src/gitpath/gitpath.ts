@@ -638,3 +638,29 @@ export function rideEvents(notes: Note[], lay: Layout): RideEvent[] {
 
 /** The push on the lean an event gives: away from the side it came from. */
 export const eventPush = (e: RideEvent) => -e.side * e.power;
+
+// -- the video's speed curves ---------------------------------------------------------------------------
+// An export plays the whole (cropped) history in a fixed time. A curve maps the video's progress u (0..1)
+// to how far through the commits it has got, w (0..1); q is then w * n. Every curve is monotonic and runs 0 to 1.
+
+export type Curve = { id: string; label: string; icon: string; warp: (u: number) => number };
+
+const smooth = (u: number) => u * u * (3 - 2 * u);
+
+export const CURVES: Curve[] = [
+  { id: "steady", label: "Steady", icon: "minus", warp: (u) => u },
+  { id: "ease-in", label: "Slow start", icon: "trending-up", warp: (u) => u * u },
+  { id: "ease-out", label: "Slow finish", icon: "trending-down", warp: (u) => 1 - (1 - u) * (1 - u) },
+  { id: "ease-in-out", label: "Slow at both ends", icon: "spline", warp: smooth },
+  // The meme: it crawls, then it won't stop. Exponential, so each second goes about twice as far as the last.
+  { id: "faster", label: "Faster and faster", icon: "rocket", warp: (u) => (Math.pow(2, 8 * u) - 1) / 255 },
+  { id: "rush", label: "Rush, then crawl", icon: "gauge", warp: (u) => 1 - Math.pow(1 - u, 4) },
+  // Three bursts with a pause between each: a smooth staircase.
+  { id: "bursts", label: "Bursts", icon: "chart-no-axes-column-increasing", warp: (u) => { const k = Math.min(2, Math.floor(u * 3)); return (k + smooth(u * 3 - k)) / 3; } },
+];
+
+/** The curve called `id`, or steady. */
+export const curveById = (id: string) => CURVES.find((c) => c.id === id) ?? CURVES[0]!;
+
+/** q at video progress `u` (0..1): the curve's warp, scaled to the commits and clamped. */
+export const warpQ = (curve: Curve, u: number, n: number) => clampQ(curve.warp(Math.min(1, Math.max(0, u))) * n, n);
