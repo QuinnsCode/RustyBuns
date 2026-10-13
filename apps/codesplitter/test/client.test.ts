@@ -343,3 +343,19 @@ describe("the tour", () => {
     expect(html).toContain(`id="tour-here"`);
   });
 });
+
+// The explorer's search box filters the whole tree by path.
+describe("explorer search", () => {
+  const src = html.slice(html.indexOf("function treeMatches"), html.indexOf("function mountExplorer"));
+  const treeMatches = new Function(`${src}; return treeMatches;`)();
+  const f = (path: string) => ({ path, name: path.split("/").pop(), type: "file" });
+
+  test("the box sits at the top of the explorer", () => {
+    expect(html).toContain(`Explorer</div><label class="tree-find">`);
+  });
+
+  test("any case, name matches first, then shorter paths", () => {
+    const files = ["test/slow.test.ts", "src/testing/a.ts", "sum.test.ts", "README.md"].map(f);
+    expect(treeMatches(files, "TEST").map((h: any) => [h.e.path, h.at])).toEqual([["sum.test.ts", 4], ["test/slow.test.ts", 5], ["src/testing/a.ts", -1]]);
+  });
+});
