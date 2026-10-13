@@ -3,7 +3,7 @@
 import { test, expect, afterAll } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { addonPlatforms, addonProblems, serverAddons } from "../src/addons.ts";
+import { addonName, addonPlatforms, addonProblems, serverAddons } from "../src/addons.ts";
 
 const root = mkdtempSync(join(import.meta.dir, ".e2e-addons-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -76,5 +76,18 @@ test("a carried addon built for another OS names the targets it won't load on", 
   expect(addonProblems("server.js", addons, outdir, ["darwin-arm64"])).toBeNull();
   expect(addonProblems("server.js", addons, outdir, null)).toBeNull();      // the dev host: this machine
   const err = addonProblems("server.js", addons, outdir, ["darwin-arm64", "linux-x64", "windows-x64"])!;
-  expect(err).toMatch(/server-0-fast-\w+\.node is built for darwin-arm64, so it won't load on linux-x64, windows-x64/);
+  expect(err).toMatch(/fast\.node is built for darwin-arm64, so it won't load on linux-x64, windows-x64/);
+});
+
+// napi-rs packages ship a build per OS, each its own package; the server loads the one for where it runs.
+test("an addon with a prebuilt per OS needs one build per target, not every build on every target", () => {
+  const dir = join(root, "per-os");
+  mkdirSync(dir, { recursive: true });
+  const mac = "server-0-bcrypt.darwin-arm64-bk1yghyr.node", linux = "server-0-bcrypt.linux-x64-gnu-ge3w5gb0.node";
+  writeFileSync(join(dir, mac), MACHO_ARM64);
+  writeFileSync(join(dir, linux), ELF_X64);
+  expect([mac, linux].map(addonName)).toEqual(["bcrypt", "bcrypt"]);
+  expect(addonProblems("server.js", { carried: [mac, linux], missed: [] }, dir, ["darwin-arm64", "linux-x64"])).toBeNull();
+  const err = addonProblems("server.js", { carried: [mac, linux], missed: [] }, dir, ["linux-x64", "windows-x64"])!;
+  expect(err).toContain("bcrypt.node is built for darwin-arm64, linux-x64, so it won't load on windows-x64");
 });
