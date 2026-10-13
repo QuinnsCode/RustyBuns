@@ -473,7 +473,7 @@ export async function requeueStale(env: Env, now = Date.now(), only?: { owner: s
 }
 
 /** A remote that clones the repo with real text, good for an hour: the crew's when there is one. */
-async function cloneUrl(env: Env, owner: string, repo: string) {
+export async function cloneUrl(env: Env, owner: string, repo: string) {
   const { access, handleFor } = await import("./archive.ts");
   const h = await handleFor(env, owner, repo, true).catch(() => null);
   const art = h && await access(h.handle, h.remote, "read", 3600).catch(() => null);
@@ -648,7 +648,7 @@ export async function mergeBlock(env: Env, owner: string, repo: string, ref: str
 }
 
 /** What `ref` is in git right now, to run checks on: main's commit, or the commit a branch last went upstream as. */
-async function headOf(env: Env, owner: string, repo: string, ref: string): Promise<string> {
+export async function headOf(env: Env, owner: string, repo: string, ref: string): Promise<string> {
   if (ref === "main") {
     const r = await env.DB.prepare("SELECT upstream_commit FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
     const { handleFor, listDir } = await import("./archive.ts");

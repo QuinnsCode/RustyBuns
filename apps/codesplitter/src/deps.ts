@@ -86,7 +86,9 @@
 // takes an alarm of its own, so the run hands it over and stops short of the branch
 // (`waiting`); the next hourly run asks again with the same files, gets the result, and goes
 // on. Finding the update that broke one takes a run per preview. Files an AI fixer wrote
-// aren't deployed with the deploy keys: those wait for the desktop.
+// aren't deployed with the deploy keys: those wait for the desktop. With no tester there and
+// CI_RUNNER bound, the repo's own checks run on the same files alongside (ci-runner.ts, #1294),
+// in a container with no secrets: what fails them doesn't deploy, and the branch waits for both.
 //
 //   GET  /api/repos/:o/:r/deps        settings and the last report (owner only)
 //   PUT  /api/repos/:o/:r/deps        any of the settings in FIELDS
@@ -104,6 +106,7 @@ import { hitsFor } from "./watch.ts";
 import { settings as deploySettings } from "./deploy.ts";
 import { hostedWhy, keysInfo } from "./deploy-keys.ts";
 import type { PreviewAnswer } from "./deploy-runner.ts";
+import type { DoctorAnswer } from "./ci-runner.ts";
 import { charge } from "./limits.ts";
 import { scopedTest } from "../sandbox/scoped.mjs";
 import { logEnd, logStart, preview, runnerFor, runs as livePreviews, STEPS as PREVIEW_STEPS, type Run as PreviewDeploy } from "./preview.ts";
@@ -183,8 +186,13 @@ export interface Report {
   updates: Update[];
   exposed?: Exposed[];
   previews?: PreviewRun[];
-  /** A preview deploy still running in the repo's deploy container: the branch waits for it, and the next hourly run asks again. */
-  waiting?: { id: string; stage: string; names: string[] };
+  /**
+   * A preview deploy still running in the repo's deploy container (`id`, `stage`), or the repo's checks on the
+   * same files in its check container (`checks`, #1294): the branch waits for them, and the next hourly run asks again.
+   */
+  waiting?: { id?: string; stage?: string; checks?: string; names: string[] };
+  /** The repo's own checks on the doctor's files, run on the site beside a preview (#1294). */
+  checks?: { id: string; ok: boolean; names: string[]; failed?: string; note?: string }[];
   digs?: Dug[];
   branch?: string;
   lock?: string;
@@ -1200,6 +1208,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
 
   // Then, when the owner turned it on, what passed goes up as a preview deploy, is checked, and comes down (#864).
   const previews: NonNullable<Report["previews"]> = [];
+  const checksRun: NonNullable<Report["checks"]> = [];
   const runner = s.preview ? runnerFor(env) : null;
   // On the site, the repo's deploy container, with its deploy keys.
   const why = s.preview && !runner ? await hostedPreviewWhy(env, owner, repo) : null;
@@ -1218,10 +1227,29 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
         if (deadline && Date.now() + slowest > deadline) { stopped = "out of time"; return null; }
         if (hosted) {
           if (Object.keys(files).some((p) => !manifests.has(p))) { stopped = "files an AI fixer wrote aren't deployed with the repo's deploy keys: run the doctor on the desktop app to preview them"; return null; }
+          const names = us.map((u) => u.name);
+          // With nothing to test them first, the repo's own checks run on the same files, alongside (#1294).
+          let checking: string | undefined;
+          if (!tester && env.CI_RUNNER) {
+            const ci = env.CI_RUNNER.get(env.CI_RUNNER.idFromName(`${owner}/${repo}`));
+            const c = (await (await ci.fetch(new Request("http://ci/doctor", { method: "POST", body: JSON.stringify({ owner, repo, files }) }))).json()) as DoctorAnswer;
+            if ("busy" in c) { stopped = `the repo's checks: ${c.busy}`; return null; }
+            if ("running" in c) checking = c.running.id;
+            else {
+              const k = c.result;
+              checksRun.push({ id: k.id, ok: k.ok, names, ...(k.failed && { failed: k.failed }), ...(k.note && { note: k.note }) });
+              // What fails them doesn't deploy.
+              if (!k.ok) return { ok: false, out: `the repo's checks: ${k.failed ?? "they"} failed${k.note ? ` (${k.note})` : ""}\n${tail(k.out ?? "")}` };
+            }
+          }
           const res = await hosted.get(hosted.idFromName(`${owner}/${repo}`)).fetch(new Request("http://deploy/preview", { method: "POST", body: JSON.stringify({ owner, repo, dir, files }) }));
           const a = (await res.json()) as PreviewAnswer;
           if ("busy" in a) { stopped = a.busy; return null; }
-          if ("running" in a) { waiting = { id: a.running.id, stage: a.running.stage, names: us.map((u) => u.name) }; stopped = "waiting"; return null; }
+          if ("running" in a || checking) {
+            waiting = { ...("running" in a && { id: a.running.id, stage: a.running.stage }), ...(checking && { checks: checking }), names };
+            stopped = "waiting";
+            return null;
+          }
           const p = a.result;
           previews.push({ id: p.id, stage: p.stage, ok: p.ok, names: us.map((u) => u.name), ...(p.url ? { url: p.url } : {}), ...(p.failed ? { failed: p.failed } : {}), ...(p.note ? { note: p.note } : {}) });
           return { ok: p.ok, out: p.ok ? "" : `preview deploy ${p.stage}: ${p.failed ?? "it"} failed${p.note ? ` (${p.note})` : ""}\n${tail(p.out ?? "")}` };
@@ -1270,7 +1298,11 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
           note = [note, again ? "each of these passes a preview alone but not together; nothing was put on a branch" : "what passed alone couldn't go up together to check it; nothing was put on a branch"].filter(Boolean).join("; ");
         }
       }
-      if (waiting) note = [note, `preview deploy ${waiting.stage} is running in the repo's deploy container: the branch waits for it, and the next hourly run picks it up`].filter(Boolean).join("; ");
+      if (waiting) {
+        const what = [waiting.stage && `preview deploy ${waiting.stage} is running in the repo's deploy container`, waiting.checks && "the repo's checks are running in its check container"].filter(Boolean);
+        const it = what.length > 1 ? "them" : "it";
+        note = [note, `${what.join(", and ")}: the branch waits for ${it}, and the next hourly run picks ${it} up`].filter(Boolean).join("; ");
+      }
       else if (stopped) note = [note, `a preview deploy couldn't go (${stopped}): only what passed one went on a branch`].filter(Boolean).join("; ");
     }
   }
@@ -1279,7 +1311,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
   // A run waiting on a preview puts nothing on a branch: the next one does, with the result.
   const take = waiting ? [] : inOrder(taking());
   updates = inOrder([...updates, ...yielded]);
-  const shown = { ...(previews.length ? { previews } : {}), ...(waiting ? { waiting } : {}) };
+  const shown = { ...(previews.length ? { previews } : {}), ...(checksRun.length ? { checks: checksRun } : {}), ...(waiting ? { waiting } : {}) };
   if (!take.length) return { at: now, checked, updates, ...also, ...shown, note: [note, waiting ? "" : previews.length ? "nothing passed both the tests and a preview deploy; nothing was put on a branch" : `every update ${updates.every((u) => u.status === "yielded") ? "gave way to a higher-ranked package" : "broke the tests"}; nothing was put on a branch`].filter(Boolean).join("; ") };
 
   // The lockfile to match, from the install that passed, else one made for it.
