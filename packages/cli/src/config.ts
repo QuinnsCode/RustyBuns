@@ -99,7 +99,31 @@ export type Binding =
       renamedFrom?: string;
       /** How this Worker consumes it, or false to only send to it. @default {} */
       consumer?: QueueConsumer | false;
+      /**
+       * false: the Worker only consumes it, and `env` gets no binding for it (wrangler's
+       * consumer-only queue, a dead-letter queue's own consumer, say). The key is only a name then.
+       * @default true
+       */
+      producer?: false;
     }
+  /**
+   * Cloudflare Workflows: `await env.NAME.create({ params })` starts an instance of the
+   * `WorkflowEntrypoint` class `main` exports (or `scriptName`'s), whose steps are retried
+   * and persisted. Alchemy names the workflow `<worker>-<class>-<hash>`, not wrangler's `name`, so
+   * instances started under a wrangler deploy stay with that one. Edge only: the desktop has
+   * no twin, so the binding is left out there.
+   */
+  | { type: "workflow"; className: string; scriptName?: string }
+  /**
+   * Workers Analytics Engine: `env.NAME.writeDataPoint({ blobs, doubles, indexes })` into a
+   * dataset, made on first write (no resource to provision). Off the edge writeDataPoint is a no-op.
+   */
+  | { type: "analytics_engine"; /** @default the binding's name */ dataset?: string }
+  /**
+   * Dynamic Worker Loader: `env.NAME.get(id, () => ({ mainModule, modules, ... }))` runs code
+   * in a Worker isolate made at runtime. No resource behind it. Edge only: the desktop has no twin.
+   */
+  | { type: "worker_loader" }
   /**
    * Cloudflare Hyperdrive: a pooled, cached route to a Postgres the app already has (Supabase,
    * Neon, RDS). `env.NAME.connectionString` goes to `pg`, `postgres` or Drizzle as is. Off the
@@ -182,6 +206,11 @@ export interface QueueConsumer {
   retryDelay?: number;
   /** Most batches the edge runs at once (up to 250); unset, it scales with the backlog. The desktop runs one at a time. */
   maxConcurrency?: number;
+  /**
+   * Another queue binding's key: a message still unacked after maxRetries goes there instead
+   * of being dropped (wrangler's `dead_letter_queue`). The desktop moves it there too.
+   */
+  deadLetterQueue?: string;
   /**
    * Desktop and box only: the priority class each batch runs at on the host's scheduler, which
    * shares a budget (`RB_PERSONA` at launch) among the host's background work. The edge ignores it.
@@ -491,6 +520,17 @@ export interface RustyBunsConfig {
      */
     placement?: { mode: "smart" };
     /**
+     * Workers Logs and traces (wrangler's `observability`). `{ enabled: true }` keeps every
+     * invocation's logs; a `headSamplingRate` below 1 keeps that share of requests. The
+     * desktop and box hosts ignore it.
+     */
+    observability?: {
+      enabled: boolean;
+      headSamplingRate?: number;
+      logs?: { enabled: boolean; invocationLogs?: boolean; headSamplingRate?: number; persist?: boolean };
+      traces?: { enabled?: boolean; headSamplingRate?: number; persist?: boolean };
+    };
+    /**
      * Workers Logs keep each request's URL without its query string
      * (`observability.redact_query_string`), so codes and tokens passed in a URL
      * aren't logged. Alchemy can't set it and each upload resets it, so
@@ -509,7 +549,17 @@ export interface RustyBunsConfig {
   targets: {
     edge?: {
       provider: "cloudflare";
-      domain?: string;
+      /**
+       * Custom domains the Worker serves on, DNS and certificate managed; their zones must
+       * be in the account. A list serves on each, the first being the Worker's URL.
+       */
+      domain?: string | string[];
+      /**
+       * Zone routes that send matching requests to the Worker, as wrangler's `routes`:
+       *   routes: [{ pattern: "example.com/api/*", zoneName: "example.com" }]
+       * The zone needs a proxied DNS record for the host already. The desktop ignores them.
+       */
+      routes?: { pattern: string; zoneName?: string; zoneId?: string }[];
       /**
        * Give the Worker the config's `name`, D1 its `databaseName` and R2 its
        * `bucketName`, and take over ones that already exist under those names
