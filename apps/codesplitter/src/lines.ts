@@ -575,6 +575,7 @@ function blend(bl: Line[], ms: Line[], bs: Line[], strict: boolean, loose: (t: s
   };
   if (strict && relinked(bl, ms, bs)) return null;
   const pm = pair(ms), pb = pair(bs), out: { m?: Line; text: string; by: string }[] = [];
+  if (strict && splitDifferently(bl, ms, bs, pm, pb)) return null;
   // Main's lines no base line paired with: a branch line that's the same lands once.
   const mainOnly = new Map<string, number>();
   ms.forEach((m, i) => { if (!pm.includes(i)) mainOnly.set(m.text, (mainOnly.get(m.text) ?? 0) + 1); });
@@ -604,6 +605,29 @@ function blend(bl: Line[], ms: Line[], bs: Line[], strict: boolean, loose: (t: s
   }
   upTo(ms.length, bs.length);
   return out;
+}
+
+/**
+ * In code, both sides rewrote one base line and each wrapped it onto more lines, with different new lines under
+ * it (a parameter list split in two, the last parameter's type changed differently): the new lines are halves
+ * of two rewrites of the same statement, not items of a list, so landing both leaves it declared twice (git's
+ * object-file.c, the Mervin scorecard).
+ */
+function splitDifferently(bl: Line[], ms: Line[], bs: Line[], pm: number[], pb: number[]) {
+  // A paired line cut short: the side kept the front of the base line and moved the rest onto the lines under it.
+  const cut = (b: Line, l: Line | undefined) => !!l && l.text.trimEnd().length >= 3 && l.text.length < b.text.length && b.text.startsWith(l.text.trimEnd());
+  // The lines a side added right next to a line it cut, as one run.
+  const tied = (side: Line[], paired: number[]) => {
+    const own = new Set(paired.filter((i) => i >= 0));
+    const run = new Set<number>();
+    bl.forEach((b, k) => {
+      if (paired[k]! < 0 || !cut(b, side[paired[k]!])) return;
+      for (const d of [-1, 1]) for (let i = paired[k]! + d; i >= 0 && i < side.length && !own.has(i); i += d) run.add(i);
+    });
+    return [...run].sort((a, b) => a - b).map((i) => side[i]!.text);
+  };
+  const m = tied(ms, pm), b = tied(bs, pb);
+  return m.length > 0 && b.length > 0 && m.join("\n") !== b.join("\n");
 }
 
 /** Both sides edited links of one `? :` or `&&` chain (#1168). */

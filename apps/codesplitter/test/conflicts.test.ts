@@ -561,6 +561,28 @@ describe("found in shadow mode (#1014)", () => {
   });
 });
 
+describe("found on git's own history (Mervin scorecard)", () => {
+  test("object-file.c: both wrapped one signature line, ending it differently; ours asks instead of declaring the parameter twice", () => {
+    const was = "static int read(struct odb_source *source,\n\t\t\tstruct object_info *oi, int flags)\n{";
+    const s = sides(was,
+      "static int read(struct odb_source *source,\n\t\t\tstruct object_info *oi,\n\t\t\tunsigned flags)\n{",
+      "static int read(struct odb_source *source,\n\t\t\tstruct object_info *oi,\n\t\t\tenum object_info_flags flags)\n{");
+    expect(conflicts(s, "object-file.c")).toHaveLength(1);
+    expect(text(settle(s, { [conflicts(s, "object-file.c")[0]!.line]: "branch" }, "object-file.c"))).toContain("enum object_info_flags flags)\n{");
+    // The same wrap on both sides, one ending: nothing to ask.
+    const same = sides(was,
+      "static int read(struct odb_source *source,\n\t\t\tstruct object_info *oi,\n\t\t\tunsigned flags)\n{",
+      "static int read(struct odb_source *source,\n\t\t\tstruct object_info *oi,\n\t\t\tunsigned flags)\n{");
+    expect(conflicts(same, "object-file.c")).toEqual([]);
+  });
+
+  test("two list entries added after a line both left alone still land together", () => {
+    const s = sides("a\nb\nc", "a\nb\nmain\nc", "a\nb\nbranch\nc");
+    expect(conflicts(s, "list.c")).toEqual([]);
+    expect(text(settle(s, {}, "list.c")).split("\n").sort()).toEqual(["a", "b", "branch", "c", "main"]);
+  });
+});
+
 describe("over the API", () => {
   /** ana's repo r: a.ts with `x(1)` on main changed to `x(2)` and on branch b1 to `x(3)`. */
   async function app(env: Record<string, string> = {}) {
