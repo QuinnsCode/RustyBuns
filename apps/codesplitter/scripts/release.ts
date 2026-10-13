@@ -103,10 +103,14 @@ export function checkPlan(text: string, mode: Mode): Verdict {
   }
 
   const moving = (r: Row) => mode.move && MOVED.includes(r.id);
+  // A queue's consumer (`[HOOKSConsumer]`) holds no data: Alchemy replaces it to point it at the queue's
+  // current id, and the queue keeps its messages until it's back. The #825 move left all three on the
+  // deleted queues, since their new ids weren't known when it planned.
+  const consumer = (r: Row) => r.action === "replace" && !r.binding && /^[A-Z][A-Z0-9_]*Consumer$/.test(r.id);
   const making = (r: Row) => moving(r) || (mode.checksNew && r.id === "CI_RUNNER");
   const risky: string[] = [], made: string[] = [];
   for (const r of rows) {
-    if (["delete", "replace", "orphaned", "unbind", "drop"].includes(r.action) && !moving(r)) risky.push(r.line);
+    if (["delete", "replace", "orphaned", "unbind", "drop"].includes(r.action) && !moving(r) && !consumer(r)) risky.push(r.line);
     // A binding the Worker gains is a setting on it; one on anything else comes with that resource.
     if (["create", "adopted"].includes(r.action) && !making(r) && !(r.binding && r.id === "Worker" && r.action === "create")) made.push(r.line);
   }

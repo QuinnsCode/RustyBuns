@@ -22,6 +22,11 @@ export { webMcpRoute, webMcpScript, WEBMCP_PATH, WEBMCP_TAG } from "./webmcp.ts"
 export { appServer, proxyMatcher, type AppServer, type AppServerOptions } from "./app-server.ts";
 export { schedule, parseCron, cronMatches, type ScheduledController } from "./cron.ts";
 export { scheduler, hostScheduler, adapt, machineLoad, lowPriorityCommand, memoryCapCommand, processTreeMb, treeMb, JobStopped, PERSONAS, type JobContext, type EffectJobContext, type RunOptions, type SpawnOptions, type WorkerOptions, type Priority, type Persona, type Budget, type Load, type SchedulerOptions, type SchedulerStats, type Scheduler } from "./priority.ts";
+export { workflow, LocalWorkflow, LocalWorkflowInstance, durationMs, type WorkflowCtor, type WorkflowEvent, type WorkflowStep, type WorkflowStepConfig, type InstanceStatus } from "./bindings/workflow.ts";
+export { vectorize, LocalVectorize, type VectorizeMetric, type VectorizeVector, type VectorizeMatch, type VectorizeQueryOptions } from "./bindings/vectorize.ts";
+export { ai, LocalAi } from "./bindings/ai.ts";
+export { analyticsEngine, LocalAnalyticsEngine, type AnalyticsEngineDataPoint } from "./bindings/analytics.ts";
+export { workerLoader, LocalWorkerLoader, LocalWorkerStub, type WorkerCode } from "./bindings/worker-loader.ts";
 export { durableObject, LocalDurableObjectNamespace, LocalDurableObjectState, WebSocketPair, installCloudflareGlobals, type DurableObjectCtor } from "./bindings/durable-object.ts";
 
 import type { MemoryPort, Reporter } from "@rustybuns/ports";
@@ -36,6 +41,11 @@ import { LocalArtifacts } from "./bindings/artifacts.ts";
 import { images } from "./bindings/images.ts";
 import { queue } from "./bindings/queue.ts";
 import { durableObject, type DurableObjectCtor } from "./bindings/durable-object.ts";
+import { workflow } from "./bindings/workflow.ts";
+import { vectorize, type VectorizeMetric } from "./bindings/vectorize.ts";
+import { ai } from "./bindings/ai.ts";
+import { analyticsEngine } from "./bindings/analytics.ts";
+import { workerLoader } from "./bindings/worker-loader.ts";
 
 export const caps: MemoryPort["caps"] = { sab: true, ffi: true, fs: true, gpu: false };
 
@@ -97,6 +107,17 @@ export function localBindings(dataDir: string) {
     /** A Cloudflare Queue over sqlite. Its consumer is whoever calls `consume()`, in this process. */
     /** With `renamedFrom`, messages still waiting under that name are carried over to `name`. */
     queue: (name: string, renamedFrom?: string) => queue(`${dataDir}/queues.sqlite`, name, renamedFrom),
+    /** A Workflow over sqlite. The app's class arrives with the Worker: `.bind(Class, env)` starts
+     *  the instances created before then, and those left running when the process stopped. */
+    workflow: (name: string) => workflow(`${dataDir}/workflows.sqlite`, name),
+    /** A Vectorize index over sqlite, queried by exact scan. */
+    vectorize: (indexName: string, opts?: { dimensions?: number; metric?: VectorizeMetric }) => vectorize(`${dataDir}/vectorize.sqlite`, indexName, opts),
+    /** Workers AI: present, and every call says it runs only on Cloudflare. */
+    ai,
+    /** Analytics Engine: data points land in analytics.sqlite. */
+    analyticsEngine: (dataset: string) => analyticsEngine(`${dataDir}/analytics.sqlite`, dataset),
+    /** The Dynamic Worker Loader, in this process (not a sandbox). */
+    workerLoader: (name: string) => workerLoader(`${dataDir}/loader/${name}`),
     durableObject: <Env>(Ctor: DurableObjectCtor<Env>, env: Env, binding: string, opts?: { codec?: "json" | "v8" }) =>
       durableObject(Ctor, env, { storage: (id) => storage(`${dataDir}/do_${binding}_${id}.sqlite`, { codec: opts?.codec }) }),
   };
