@@ -28,7 +28,7 @@ import { lintMerge } from "./lint.ts";
 import { policyOf, type Policy, type Rule } from "./policy.ts";
 import { conflictNote, conflictRound } from "./budget.ts";
 import { regenerateDocs, regenerateLock, tryInClone } from "./deps.ts";
-import { catalogueBlob, materialize, toFile, uncatalogue } from "./archive.ts";
+import { catalogueBlob, handleFor, materialize, toFile, uncatalogue } from "./archive.ts";
 import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { branchEdited, mergeBlock, refChecks, waiting } from "./checks.ts";
 import { settings as deploySettings } from "./deploy.ts";
@@ -164,10 +164,30 @@ async function deleteOnMain(env: Env, owner: string, repo: string, path: string,
   }
 }
 
-/** Main takes the branch's binary `path` (#446): its bytes, from the mirror's git, into main's git (and upstream's, at the next sync). */
+/**
+ * What `branch` has at a binary `path` (#1298): its blob, null where it's deleted, "text" where it's
+ * lines, or undefined for main's. Its own copy first, then the open branches it's stacked on.
+ */
+export async function blobOn(env: Env, owner: string, repo: string, branch: string, path: string): Promise<string | null | "text" | undefined> {
+  for (const [i, b] of [branch, ...await ancestors(env, owner, repo, branch)].entries()) {
+    const row = await env.DB.prepare(`SELECT deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND path = ?${i ? " AND merged = 0" : ""}`).bind(owner, repo, b, path).first();
+    if (row) return row.deleted ? null : (row.blob as string | null) ?? "text";
+  }
+}
+
+/** A blob's bytes: from the mirror's git (a branch's from upstream, #446), or else the repo's own (a commit's, picked or reverted, #1298). */
+export async function blobBytesOf(env: Env, owner: string, repo: string, blob: string): Promise<Uint8Array | null> {
+  const { blobBytes } = await import("./mirror.ts");
+  const mirrored = await blobBytes(env, owner, repo, blob);
+  if (mirrored) return mirrored;
+  const b = await (await handleFor(env, owner, repo).catch(() => null))?.handle.readBlob(blob).catch(() => null);
+  return b ? new Uint8Array(await b.arrayBuffer()) : null;
+}
+
+/** Main takes the branch's binary `path` (#446): its bytes, from git, into main's git (and upstream's, at the next sync). */
 async function blobOnMain(env: Env, owner: string, repo: string, f: { path: string; blob: string; mode: string | null }, user: string, message: string) {
-  const { blobBytes, kickMirror } = await import("./mirror.ts");
-  const bytes = await blobBytes(env, owner, repo, f.blob);
+  const { kickMirror } = await import("./mirror.ts");
+  const bytes = await blobBytesOf(env, owner, repo, f.blob);
   if (!bytes) throw new Error(`${f.path}'s bytes aren't in this repo's git any more`);
   await catalogueBlob(env, owner, repo, f.path, { bytes, mode: f.mode ?? undefined }, user, message);
   await kickMirror(env, owner, repo);
