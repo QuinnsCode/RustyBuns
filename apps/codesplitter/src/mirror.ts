@@ -90,6 +90,9 @@ export const mirrorsOn = (env: Env) => !!localGit(env);
 
 type Run = { code: number; out: string; err: string };
 export async function git(args: string[], cwd?: string, env: Record<string, string> = {}, timeout = 120_000): Promise<Run> {
+  // A repo whose clone hasn't landed (or failed) is a failed run, not a throw: Bun
+  // reports a missing cwd as ENOENT spawning git, which reads as git missing (#887).
+  if (cwd && !existsSync(cwd)) return { code: 128, out: "", err: `no git at ${cwd}` };
   const p = Bun.spawn(["git", ...args], {
     cwd, stdout: "pipe", stderr: "pipe", timeout,
     // Never wait on a prompt: a remote that wants a password it doesn't have is a failed try.
