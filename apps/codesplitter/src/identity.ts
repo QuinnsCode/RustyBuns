@@ -94,6 +94,22 @@ function authFor(req: Request, env: Env) {
 
 const aliasOf = (req: Request, env: Env) => aliasesClosed(env) ? null : /(?:^|;\s*)cs_user=([a-z0-9-]+)/.exec(req.headers.get("cookie") ?? "")?.[1] ?? null;
 
+const retired = async (env: Env, name: string) =>
+  String((await env.DB.prepare("SELECT email FROM handle_grants WHERE handle = ?").bind(name).first())?.email ?? "").startsWith("retired:");
+
+/**
+ * The alias the page shows as signed in, made a user here on first sight: cookies ignore
+ * ports, so a cs_user from another desktop on 127.0.0.1 can name a user this DB never had (#1274).
+ * A retired handle stays signed out.
+ */
+async function aliasSeen(req: Request, env: Env) {
+  const name = aliasOf(req, env);
+  if (!name || isAgentHandle(name)) return name;
+  if (await retired(env, name)) return null;
+  await env.DB.prepare("INSERT OR IGNORE INTO users (name, created_at) VALUES (?, ?)").bind(name, Date.now()).run();
+  return name;
+}
+
 /**
  * agent-<harness> is the collaborator a coding agent edits as (agent-routes.ts),
  * so no person may hold one, or they'd join every repo that runs that agent.
@@ -231,7 +247,7 @@ export async function identityRoutes(req: Request, env: Env, p: string[]): Promi
     const notice = privacyNotice(env.PRIVACY_NOTICE);
     const privacy = { ...(env.PRIVACY_EMAIL ? { privacy: env.PRIVACY_EMAIL } : {}), ...(notice ? { notice } : {}) };
     if (!accountsOn(env)) {
-      const user = aliasOf(req, env);
+      const user = await aliasSeen(req, env);
       return json({ mode: "alias", user, providers: [], ...(isAdmin(env, user) ? { admin: true } : {}), ...(aliasesClosed(env) ? { closed: true } : {}), ...privacy });
     }
     // Signed in but no handle yet: the page asks for one, with a free one to start from.
@@ -253,8 +269,7 @@ export async function identityRoutes(req: Request, env: Env, p: string[]): Promi
     if (typeof name !== "string" || !NAME.test(name)) return json({ error: "name: lowercase letters and digits, single dashes between" }, 400);
     if (isAgentHandle(name)) return json({ error: "agent- handles are for coding agents" }, 400);
     // A deleted account's handle, and @ghost that stands in for them (privacy.ts), stay retired here too.
-    const grant = await env.DB.prepare("SELECT email FROM handle_grants WHERE handle = ?").bind(name).first();
-    if (String(grant?.email ?? "").startsWith("retired:")) return json({ error: `@${name} was retired when its account was deleted` }, 409);
+    if (await retired(env, name)) return json({ error: `@${name} was retired when its account was deleted` }, 409);
     await env.DB.prepare("INSERT OR IGNORE INTO users (name, created_at) VALUES (?, ?)").bind(name, Date.now()).run();
     return json({ name }, 200, { "set-cookie": `cs_user=${name}; Path=/; SameSite=Lax` });
   }
