@@ -12,6 +12,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { workerName, type RustyBunsConfig } from "./config.ts";
+import { protectedNames } from "./protect.ts";
 
 export interface IsolationFlags { fresh: boolean; adoptExisting: boolean }
 
@@ -46,6 +47,12 @@ export function adoptedNames(cfg: Pick<RustyBunsConfig, "name" | "bindings" | "t
 const hasWorkerState = (projectDir: string, app: string, stage: string) =>
   existsSync(join(projectDir, ".alchemy", "state", app, stage, "Worker.json"));
 
+/** What a destroy deletes of the adopted names: all but the `protect`ed ones, which it leaves. */
+const destroyed = (cfg: Pick<RustyBunsConfig, "name" | "bindings" | "targets">) => {
+  const kept = new Set(protectedNames(cfg));
+  return adoptedNames(cfg).filter((n) => !kept.has(n));
+};
+
 /** The line to print before and after a plan, deploy or destroy. */
 export function modeLine(cfg: RustyBunsConfig, o: { forced?: boolean; offline?: boolean } = {}): string {
   const names = adoptedNames(cfg);
@@ -62,7 +69,7 @@ export function adoptProblem(sub: string, cfg: RustyBunsConfig, projectDir: stri
   const names = adoptedNames(cfg);
   if (!names.length || flags.adoptExisting) return null;
   if (sub === "destroy") {
-    return `this is ADOPT mode, so a destroy deletes the resources it took over, which may be real ones: ${names.join(", ")}. ` +
+    return `this is ADOPT mode, so a destroy deletes the resources it took over, which may be real ones: ${destroyed(cfg).join(", ")}. ` +
       `Pass --adopt-existing if that is what you want, or --fresh to run against fresh resources only.`;
   }
   if (sub === "deploy" && !hasWorkerState(projectDir, cfg.name, stage)) {
@@ -74,9 +81,10 @@ export function adoptProblem(sub: string, cfg: RustyBunsConfig, projectDir: stri
 
 /** The question asked at the terminal when ADOPT mode stops a deploy or destroy. */
 export function adoptQuestion(sub: string, cfg: Pick<RustyBunsConfig, "name" | "bindings" | "targets">): string {
-  const list = adoptedNames(cfg).map((n) => `  - ${n}`).join("\n");
+  const list = (sub === "destroy" ? destroyed(cfg) : adoptedNames(cfg)).map((n) => `  - ${n}`).join("\n");
+  const kept = protectedNames(cfg).map((n) => `  - ${n}`).join("\n");
   return sub === "destroy"
-    ? `ADOPT mode: this DELETES these resources, which may be real ones:\n${list}\nAre you sure you want to delete them? [y/N] `
+    ? `ADOPT mode: this DELETES these resources, which may be real ones:\n${list}\n${kept ? `and KEEPS these (protect: true):\n${kept}\n` : ""}Are you sure you want to delete them? [y/N] `
     : `ADOPT mode: this takes over, and overwrites, these resources if they already exist (real ones, not copies):\n${list}\nAre you sure you want to overwrite them? [y/N] `;
 }
 

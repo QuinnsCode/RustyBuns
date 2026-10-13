@@ -8,6 +8,12 @@ export type Binding =
       databaseName: string;
       migrationsDir?: string;
       /**
+       * Keep this resource when the stack is destroyed (or its declaration is removed): `destroy` and
+       * `plan` list it as KEPT and leave it on the account, with its data. The stack stops tracking it.
+       * Takes effect from the next deploy, so deploy once after turning it on, before any destroy.
+       */
+      protect?: boolean;
+      /**
        * The database's previous name, while renaming it. The desktop moves its
        * `<renamedFrom>.sqlite` over when there's no file under the new name yet.
        * On Cloudflare a rename replaces the database: copy its data into one
@@ -15,8 +21,8 @@ export type Binding =
        */
       renamedFrom?: string;
     }
-  | { type: "kv" }
-  | { type: "r2"; bucketName: string }
+  | { type: "kv"; protect?: boolean }
+  | { type: "r2"; bucketName: string; protect?: boolean }
   | { type: "durable_object"; className: string; scriptName?: string }
   /** Cloudflare Artifacts: git repos created at runtime. Locally, bare repos served over git HTTP. */
   | { type: "artifacts"; namespace: string }
@@ -53,6 +59,12 @@ export type Binding =
       type: "vectorize";
       /** The index's name on Cloudflare (with targets.edge.adopt; Alchemy names it otherwise). */
       indexName: string;
+      /**
+       * Keep this resource when the stack is destroyed (or its declaration is removed): `destroy` and
+       * `plan` list it as KEPT and leave it on the account, with its data. The stack stops tracking it.
+       * Takes effect from the next deploy, so deploy once after turning it on, before any destroy.
+       */
+      protect?: boolean;
       /** Each vector's length: the embedding model's (bge-small-en-v1.5 makes 384). Fixed at creation. */
       dimensions: number;
       /** @default "cosine" */
@@ -92,6 +104,12 @@ export type Binding =
       type: "queue";
       /** The queue's name on Cloudflare (with targets.edge.adopt; Alchemy names it otherwise). */
       queueName: string;
+      /**
+       * Keep this resource when the stack is destroyed (or its declaration is removed): `destroy` and
+       * `plan` list it as KEPT and leave it on the account, with its data. The stack stops tracking it.
+       * Takes effect from the next deploy, so deploy once after turning it on, before any destroy.
+       */
+      protect?: boolean;
       /**
        * The queue's previous name, while renaming it. The desktop carries
        * messages still waiting under it over to the new name. On Cloudflare a
@@ -140,6 +158,12 @@ export type Binding =
        * say) instead of the stack's branch.
        */
       urlSecret?: string;
+      /**
+       * Keep this resource when the stack is destroyed (or its declaration is removed): `destroy` and
+       * `plan` list it as KEPT and leave it on the account, with its data. The stack stops tracking it.
+       * Takes effect from the next deploy, so deploy once after turning it on, before any destroy.
+       */
+      protect?: boolean;
       /**
        * A Postgres the stack owns instead of a URL: a Neon project (and branch) made at deploy and
        * gone on destroy, its origin wired into Hyperdrive. Alchemy reads the Neon API key from
@@ -679,7 +703,7 @@ export interface Stage {
 /** Fields laid over a binding of the same key, or (with a `type` it doesn't have) a binding of its own. */
 export type StageBinding = Binding | {
   type?: undefined;
-  value?: string; databaseName?: string; bucketName?: string; queueName?: string;
+  value?: string; databaseName?: string; bucketName?: string; queueName?: string; protect?: boolean;
   indexName?: string; dataset?: string; namespaceId?: string; configName?: string;
 };
 

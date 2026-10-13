@@ -40,6 +40,7 @@ import { cloudflareEnv, cloudflareProblem, withAccount, realTokenCheck, realWran
 import { deployedWorker, redactQueryStrings } from "./redact.ts";
 import { tidySourceMaps } from "./sourcemaps.ts";
 import { formatOfflinePlan, plannedResources } from "./offline-plan.ts";
+import { protectReport } from "./protect.ts";
 import { estimate, formatEstimate, loadUsage, usageFlags } from "./usage-estimate.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
 import { PROF_SECRET, boxUrl, fetchHistory, fetchMem, fetchProfile, secretProblem } from "./prof.ts";
@@ -793,6 +794,9 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   const profiled = sub === "plan" || sub === "deploy";
   if (servers.length && cfg.worker && profiled) console.warn(`[server] the edge doesn't run desktop.server (${entries}): on the web ${servers.flatMap((s) => s.paths).join(", ")} reach the Worker, not that server.\n`);
   if (profiled) { checkBox(cfg); checkSpend(cfg); console.log(costReport(cfg) + "\n"); }
+  // What destroy keeps and what it deletes, in front of every run: protect is the one thing that decides it.
+  const kept = protectReport(cfg, sub);
+  if (kept && (profiled || sub === "destroy")) console.log(kept + "\n");
   // plan --usage (#1224): a monthly bill from what a host's bindings did per request, cron tick and message.
   const metered = usageFlags(rawArgs);
   if (metered.requestsPerDay !== undefined && !metered.usage) throw new UsageError({ message: `--requests-per-day prices the requests in --usage: pass both` });
