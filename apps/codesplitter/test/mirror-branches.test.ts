@@ -515,4 +515,10 @@ describe("mirrors: branches and this copy's own git", () => {
     expect((await call("ana", "/api/repos/ana/own/mirror/tags")).status).toBe(404);
   });
 
+  test("git in a folder that isn't there yet is a failed run, not a throw (#887)", async () => {
+    const r = await git(["rev-parse", "HEAD"], join(root, "not-cloned-yet.git"));
+    expect(r.code).not.toBe(0);
+    expect(r.err).toContain("not-cloned-yet.git");
+  });
+
 });
