@@ -19,6 +19,7 @@ export { cpuProfile, profRoute, profiling, PROF_MAX_MS, type CpuProfileOptions }
 export { summarizeProfile, formatProfileSummary, listSaved, type CpuProfile, type ProfileSummary, type HotFrame, type SavedFile } from "./profsummary.ts";
 export { history, readHistory, historyRuns, formatHistory, type History, type HistoryEntry, type Run } from "./history.ts";
 export { webMcpRoute, webMcpScript, WEBMCP_PATH, WEBMCP_TAG } from "./webmcp.ts";
+export { appServer, proxyMatcher, type AppServer, type AppServerOptions } from "./app-server.ts";
 export { schedule, parseCron, cronMatches, type ScheduledController } from "./cron.ts";
 export { scheduler, hostScheduler, adapt, machineLoad, lowPriorityCommand, memoryCapCommand, processTreeMb, treeMb, JobStopped, PERSONAS, type JobContext, type EffectJobContext, type RunOptions, type SpawnOptions, type WorkerOptions, type Priority, type Persona, type Budget, type Load, type SchedulerOptions, type SchedulerStats, type Scheduler } from "./priority.ts";
 export { durableObject, LocalDurableObjectNamespace, LocalDurableObjectState, WebSocketPair, installCloudflareGlobals, type DurableObjectCtor } from "./bindings/durable-object.ts";

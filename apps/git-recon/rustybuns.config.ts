@@ -1,6 +1,7 @@
 import { defineConfig } from "@rustybuns/cli/config";
 
-// Single player for now: the page runs the whole game, so the desktop app is just its window.
+// The page runs a level on its own. "Host" on the battle menu runs a battle in this world
+// (src/net/world.ts) and opens it to the LAN; friends running their own copy join it.
 export default defineConfig({
   name: "git-recon",
   source: { dir: "src", aliases: {} },
@@ -10,7 +11,11 @@ export default defineConfig({
       mode: "spa",
       clientBuild: "bun run build",
       clientDir: "dist/ui",
-      world: false,
+      world: "src/net/world.ts",
+      worldPath: "/ws",
+      host: "src/host/host.ts",
+      // Closed until the page opens it with POST /__rb/host. A battle holds 32: the host and 31 guests.
+      guests: { max: 31 },
       window: "app",
     },
   },

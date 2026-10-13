@@ -25,7 +25,7 @@ import { apply, empty, explain, fromText, merge, PICKS, text, type Conflict, typ
 import { lintMerge } from "./lint.ts";
 import { policyOf, type Policy, type Rule } from "./policy.ts";
 import { conflictNote, conflictRound } from "./budget.ts";
-import { regenerateLock, tryInClone } from "./deps.ts";
+import { regenerateDocs, regenerateLock, tryInClone } from "./deps.ts";
 import { catalogueBlob, materialize, toFile, uncatalogue } from "./archive.ts";
 import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { branchEdited, mergeBlock, refChecks, waiting } from "./checks.ts";
@@ -41,7 +41,7 @@ import { ADMINS_ONLY, adminsOnly, agentsUnavailable, hostedBudget, installedHarn
 import { askAgent, cheapest } from "./conflict-agent.ts";
 import { guardTripped, healUnavailable } from "./heal.ts";
 import { hunks, revertOps } from "./review.ts";
-import { clashIn, waves, type Clash, type Side } from "./merge-plan.ts";
+import { busyOn, clashIn, taskFiles, waves, type Busy, type Clash, type Side } from "./merge-plan.ts";
 
 const TEXT_MAX = 20_000;
 
@@ -183,7 +183,7 @@ async function mergeFile(env: Env, owner: string, repo: string, branch: { name: 
   const [base, doc, policy] = await Promise.all([read("base"), read("file"), pathPolicy(env, owner, repo, path, user)]);
   // Text the merger writes is theirs; deleted lines are the branch's doing.
   const res = await toFile(env, owner, repo, path, user, "merge", { method: "POST", body: JSON.stringify({ base, branch: doc, resolve, dry, deleter: branch.by, path, writer: user, rule: policy.merge }) });
-  return { status: res.status, policy, ...(await res.json() as { rev: number; ops?: Op[]; conflicts: Conflict[] }) };
+  return { status: res.status, policy, ...(await res.json() as { rev: number; ops?: Op[]; conflicts: Conflict[]; regenerate?: string[] }) };
 }
 
 /**
@@ -383,6 +383,40 @@ async function regenerated(env: Env, owner: string, repo: string, branch: Branch
     if (!res.ok) return "not regenerated: the branch's copy changed meanwhile";
   }
   return null;
+}
+
+/**
+ * Generated text both sides touched kept main's copy in the merge (#1154): each region's command, run once
+ * the merge lands, from the folder of the file holding it, on the merged tree in a throwaway clone (deps.ts).
+ * What it rewrote goes onto main's copies. One line per command: rebuilt, or why not.
+ */
+async function rebuilt(env: Env, owner: string, repo: string, paths: string[], dry: { path: string; regenerate?: string[] }[], user: string) {
+  const runs = new Map<string, { cwd: string; command: string; read: string[] }>();
+  for (const d of dry) for (const command of d.regenerate ?? []) {
+    const cwd = d.path.includes("/") ? d.path.slice(0, d.path.lastIndexOf("/")) : "";
+    const r = runs.get(`${cwd}\n${command}`) ?? runs.set(`${cwd}\n${command}`, { cwd, command, read: [] }).get(`${cwd}\n${command}`)!;
+    r.read.push(d.path);
+  }
+  if (!runs.size) return [];
+  const files: Record<string, string> = {};
+  for (const path of paths) {
+    const res = await toFile(env, owner, repo, path, user, "file");
+    if (res.ok) files[path] = text(await res.json() as Doc) + "\n";
+  }
+  const out: { paths: string[]; command: string; cwd?: string; note?: string }[] = [];
+  for (const { cwd, command, read } of runs.values()) {
+    const said = (note?: string) => out.push({ paths: read, command, ...(cwd && { cwd }), ...(note && { note }) });
+    const t = await regenerateDocs(env, owner, repo, files, cwd, command, read);
+    if ("skipped" in t) { said(`not rebuilt: ${t.skipped}`); continue; }
+    if (!t.ok || !t.files) { said(`couldn't be rebuilt: ${t.out.trim().slice(-300)}`); continue; }
+    for (const [path, next] of Object.entries(t.files)) {
+      const doc = await (await toFile(env, owner, repo, path, user, "file")).json() as Doc;
+      const ops = diffToOps(doc.lines, next.replace(/\n$/, "").split("\n"));
+      if (ops.length) await toFile(env, owner, repo, path, user, "ops", { method: "POST", body: JSON.stringify({ ops, ifRev: doc.rev }) });
+    }
+    said();
+  }
+  return out;
 }
 
 /**
@@ -589,7 +623,8 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
       files: merged.map((m) => m.path),
     });
   }
-  return json({ status: conflicts.length ? "open" : "merged", merged, conflicts, ...(took.length && { took }) }, conflicts.length ? 409 : 200);
+  const docs = conflicts.length ? [] : await rebuilt(env, owner, repo, merged.filter((m) => !m.deleted && !m.binary).map((m) => m.path), run.dry, user);
+  return json({ status: conflicts.length ? "open" : "merged", merged, conflicts, ...(docs.length && { regenerated: docs }), ...(took.length && { took }) }, conflicts.length ? 409 : 200);
 }
 
 /**
@@ -651,6 +686,19 @@ async function mergePlan(env: Env, owner: string, repo: string, user: string) {
   return { order, held: [...held], waves: plan };
 }
 
+/**
+ * The dispatch hint (#1163): before a task starts, the files it will likely touch (`files`, plus those its
+ * text names, merge-plan.ts taskFiles) and the open branches already rewriting any of them. A queue can
+ * hold the task till those merge, or stack it on the first (POST .../branches {name, parent}).
+ */
+export async function dispatchHint(env: Env, owner: string, repo: string, task: string, files: string[] = []): Promise<{ files: string[]; busy: Busy[] }> {
+  const changed = (await env.DB.prepare("SELECT b.name AS branch, f.path FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch WHERE f.owner = ? AND f.repo = ? AND f.merged = 0 AND b.status = 'open'").bind(owner, repo).all()).results as { branch: string; path: string }[];
+  const onMain = (await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, repo).all()).results as { path: string }[];
+  const paths = [...new Set([...onMain.map((f) => f.path), ...changed.map((c) => c.path)])];
+  const guess = [...new Set([...files, ...taskFiles(task, paths)])].sort();
+  return { files: guess, busy: busyOn(guess, changed) };
+}
+
 export async function branchRoutes(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null, a: Access): Promise<Response | null> {
   // POST /api/repos/:o/:r/merges {branches?, build_ok?}  merge every open branch (or those named) that
   // merges clean, oldest first. Each merges against main as the last one left it, so two that change
@@ -679,6 +727,11 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   }
   // GET /api/repos/:o/:r/merge-plan  the open branches in waves (merge-plan.ts).
   if (p[4] === "merge-plan" && !p[5] && req.method === "GET") return json(await mergePlan(env, owner, repo, user ?? "anon"));
+  // GET /api/repos/:o/:r/dispatch-hint?task=&paths=a,b  which open branches a new task's files are already on (dispatchHint).
+  if (p[4] === "dispatch-hint" && !p[5] && req.method === "GET") {
+    const q = new URL(req.url).searchParams;
+    return json(await dispatchHint(env, owner, repo, (q.get("task") ?? "").slice(0, 20_000), (q.get("paths") ?? "").split(",").filter(Boolean)));
+  }
   if (p[4] !== "branches") return null;
   const name = p[5];
 

@@ -181,9 +181,9 @@ export function viteProxyPaths(src: string): string[] {
  * Folders beside `root` that look like the server its dev proxy points at: a package.json with
  * a Node server framework, or a `start` script that runs node. "../api (node server.js)".
  */
-export function siblingServers(root: string): { dir: string; runs: string }[] {
+export function siblingServers(root: string): { dir: string; runs: string; entry: string | null }[] {
   const parent = dirname(resolve(root)), self = resolve(root);
-  const out: { dir: string; runs: string }[] = [];
+  const out: { dir: string; runs: string; entry: string | null }[] = [];
   let names: string[] = [];
   try { names = readdirSync(parent); } catch { return out; }
   for (const n of names.sort()) {
@@ -194,7 +194,11 @@ export function siblingServers(root: string): { dir: string; runs: string }[] {
     const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
     const fw = SERVER_DEPS.filter((x) => deps[x]);
     const start = String(pkg.scripts?.start ?? "");
-    if (fw.length || /^(node|bun|tsx|ts-node)\s/.test(start)) out.push({ dir: `../${n}`, runs: start || fw.join(", ") });
+    if (!fw.length && !/^(node|bun|tsx|ts-node)\s/.test(start)) continue;
+    // The file it runs: `node server.js`'s first non-flag argument, else package.json main.
+    const file = start.match(/^(?:node|bun|tsx|ts-node)\s+(?:-\S+\s+)*([^\s-]\S*\.[cm]?[jt]s)\b/)?.[1] ?? (typeof pkg.main === "string" ? pkg.main : null);
+    const entry = file && existsSync(join(d, file)) ? `../${n}/${file.replace(/^\.\//, "")}` : null;
+    out.push({ dir: `../${n}`, runs: start || fw.join(", "), entry });
   }
   return out;
 }

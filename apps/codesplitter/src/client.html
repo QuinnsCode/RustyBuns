@@ -1098,6 +1098,11 @@ let ctx = {};
 /** Say something to a screen reader, through the one polite live region. */
 function announce(msg) { const l = $("#live"); l.textContent = ""; setTimeout(() => (l.textContent = msg), 50); }
 function toast(msg, ms = 2400) { const t = document.createElement("div"); t.className = "toast"; t.setAttribute("aria-hidden", "true"); t.textContent = msg; document.body.append(t); announce(msg); setTimeout(() => t.remove(), ms); }
+/** An agent start's toast, with a heads-up when open branches already rewrite its files (#1163): its batch will meet theirs at merge. */
+const startedToast = (h, run) => {
+  const b = run?.busy?.[0];
+  toast(b ? `agent-${h} is on it. Heads up: ${b.branch}${run.busy.length > 1 ? ` and ${run.busy.length - 1} more` : ""} already rewrite${run.busy.length > 1 ? "" : "s"} ${b.files.join(", ")}` : `agent-${h} is on it`, b ? 6000 : 2400);
+};
 // "Skip to content" can't be a plain #app link: the hash is the router.
 $(".skip").addEventListener("click", (e) => { e.preventDefault(); app.focus(); });
 async function copy(text, what = "Copied") {
@@ -3967,8 +3972,7 @@ const views = {
     else { $("#m-why").textContent = av.why || "None of claude, codex, pi or opencode is installed on this machine."; go.disabled = true; }
     f.addEventListener("submit", async (e) => {
       e.preventDefault(); go.disabled = true;
-      toast(`agent-${f.harness.value} is on it`);
-      try { await api(`/repos/${owner}/${repo}/agents`, { path: f.path.value.trim(), harness: f.harness.value, task: f.task.value }); f.task.value = ""; }
+      try { startedToast(f.harness.value, await api(`/repos/${owner}/${repo}/agents`, { path: f.path.value.trim(), harness: f.harness.value, task: f.task.value })); f.task.value = ""; }
       catch (err) { toast(err.message); }
       finally { go.disabled = false; poll(); }
     });
@@ -4621,8 +4625,7 @@ const views = {
         e.preventDefault(); go.disabled = true;
         try {
           const lines = sel && f.only.checked ? selLines().map((l) => l.id) : undefined;
-          await api(`/repos/${owner}/${repo}/agents`, { path, harness: f.harness.value, task: f.task.value, model: f.model.value, lines });
-          toast(`agent-${f.harness.value} is on it`); f.task.value = ""; f.hidden = true; pollAgents();
+          startedToast(f.harness.value, await api(`/repos/${owner}/${repo}/agents`, { path, harness: f.harness.value, task: f.task.value, model: f.model.value, lines })); f.task.value = ""; f.hidden = true; pollAgents();
         } catch (err) { toast(err.message); }
         finally { go.disabled = false; }
       });
@@ -5662,7 +5665,7 @@ async function commands() {
       const r = await api(`${c.base}/commit${c.q}`, { message: msg }); toast(r.git?.commit ? `Pushed ${r.git.commit.slice(0, 7)}` : "Committed");
     }, "commit message");
     for (const h of c.agents?.harnesses ?? []) add("This file", "bot", `Give ${h} a task on this file`, `POST /api/repos/${c.owner}/${c.repo}/agents`, async (task) => {
-      await api(`/repos/${c.owner}/${c.repo}/agents`, { path: c.path, harness: h, task }); toast(`agent-${h} is on it`); c.pollAgents?.();
+      startedToast(h, await api(`/repos/${c.owner}/${c.repo}/agents`, { path: c.path, harness: h, task })); c.pollAgents?.();
     }, "the task");
     if (c.agents?.harnesses?.length) add("This file", "square", "Stop every agent on this file", `POST /api/repos/${c.owner}/${c.repo}/agents/stop`, async () => {
       const { stopped } = await api(`/repos/${c.owner}/${c.repo}/agents/stop`, { path: c.path }); toast(stopped.length ? `Stopped ${stopped.length} agent${stopped.length > 1 ? "s" : ""}` : "Nothing was running"); c.pollAgents?.();

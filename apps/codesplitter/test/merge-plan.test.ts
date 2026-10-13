@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { apply, empty, fromText, type Doc } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
-import { clashIn, waves } from "../src/merge-plan.ts";
+import { busyOn, clashIn, taskFiles, waves } from "../src/merge-plan.ts";
 import { local as boot } from "../src/local.ts";
 import type { Exec } from "../src/agent-run.ts";
 
@@ -139,5 +139,44 @@ describe("a branch that clashed takes main in once its blocker merges (#1162)", 
     expect(await runs("b2")).toBe(0);
     await post("ana", "/api/repos/ana/r/branches/b1/merge", {});
     expect(await runs("b2")).toBeGreaterThan(0);
+  });
+});
+
+describe("dispatch hint (#1163)", () => {
+  const paths = ["apps/two-fronts/src/main.ts", "apps/two-fronts/src/rules.ts", "apps/other/src/main.ts", "README.md", "main"];
+
+  test("a task names a file whole, or by a tail only one path ends in; a bare word names nothing", () => {
+    expect(taskFiles("Rework rules.ts, then the README.md (see ./apps/two-fronts/src/main.ts).", paths))
+      .toEqual(["README.md", "apps/two-fronts/src/main.ts", "apps/two-fronts/src/rules.ts"]);
+    // main.ts is two files' tail: it takes a longer one to say which. "main" has no dot or slash.
+    expect(taskFiles("fix main.ts and main", paths)).toEqual([]);
+    expect(taskFiles("fix other/src/main.ts.", paths)).toEqual(["apps/other/src/main.ts"]);
+  });
+
+  test("the open branches changing any of the files, the one sharing most first", () => {
+    const changed = [{ branch: "b", path: "x.ts" }, { branch: "a", path: "y.ts" }, { branch: "c", path: "y.ts" }, { branch: "c", path: "x.ts" }, { branch: "d", path: "z.ts" }];
+    expect(busyOn(["x.ts", "y.ts"], changed)).toEqual([{ branch: "c", files: ["x.ts", "y.ts"] }, { branch: "a", files: ["y.ts"] }, { branch: "b", files: ["x.ts"] }]);
+    expect(busyOn([], changed)).toEqual([]);
+  });
+
+  test("GET .../dispatch-hint: open branches on the task's files, not merged ones or ones elsewhere", async () => {
+    const call = await boot({ GH_CLI: "off" });
+    opened.push(call);
+    const post = (url: string, body: unknown) => call("ana", url, { method: "POST", body: JSON.stringify(body) });
+    await post("/api/login", { name: "ana" });
+    await post("/api/repos", { name: "r" });
+    await post("/api/repos/ana/r/files", { path: "src/main.ts", content: "main()" });
+    await post("/api/repos/ana/r/files", { path: "src/rules.ts", content: "rules()" });
+    const edit = (branch: string, path: string, text: string) => post(`/api/repos/ana/r/do/ops?path=${path}&branch=${branch}`, { ops: [{ kind: "set", line: "L1", base: 1, text }] });
+    for (const b of ["fronts", "rules", "done"]) await post("/api/repos/ana/r/branches", { name: b });
+    await edit("fronts", "src/main.ts", "main(1)");
+    await edit("rules", "src/rules.ts", "rules(1)");
+    await edit("done", "src/main.ts", "main(2)");
+    expect((await post("/api/repos/ana/r/branches/done/merge", {})).status).toBe(200);
+
+    const hint = async (q: string) => (await call("ana", `/api/repos/ana/r/dispatch-hint?${q}`)).json();
+    expect(await hint(`task=${encodeURIComponent("Rework main.ts")}`)).toEqual({ files: ["src/main.ts"], busy: [{ branch: "fronts", files: ["src/main.ts"] }] });
+    expect(await hint("task=rules&paths=src/rules.ts,docs/new.md")).toEqual({ files: ["docs/new.md", "src/rules.ts"], busy: [{ branch: "rules", files: ["src/rules.ts"] }] });
+    expect(await hint("task=nothing+here")).toEqual({ files: [], busy: [] });
   });
 });

@@ -56,6 +56,16 @@ test("the owner gives an agent a task; its edit lands on the file, blamed on the
   expect(repo.collaborators).toContain("agent-claude");
 });
 
+test("a start says which open branches already rewrite its file (#1163)", async () => {
+  const { call, post } = await app();
+  call.env.AGENT_REVIEW_MS = "60000";
+  await post("ryan", "/api/repos/ryan/lab/branches", { name: "fronts" });
+  await post("ryan", "/api/repos/ryan/lab/do/ops?path=a.js&branch=fronts", { ops: [{ kind: "set", line: "L1", base: 1, text: "let a = 3" }] });
+  const run = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout" })).json() as any;
+  expect(run.busy).toEqual([{ branch: "fronts", files: ["a.js"] }]);
+  await post("ryan", "/api/repos/ryan/lab/agents/stop", {});
+});
+
 test("a file in a folder works too", async () => {
   const { call, post } = await app();
   await post("ryan", "/api/repos/ryan/lab/files", { path: "src/deep/b.js", content: "x" });
