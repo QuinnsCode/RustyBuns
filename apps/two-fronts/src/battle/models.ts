@@ -9,7 +9,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Faction } from "./contract.ts";
-import type { Trooper } from "./sim.ts";
+import type { Trooper, WookaRole } from "./sim.ts";
 
 type V3 = [number, number, number];
 type Mat = THREE.Material;
@@ -154,6 +154,10 @@ const W = {
   get fire() { return lazy("w.fire", () => glow(0xff6a1a)); },
   get fireCore() { return lazy("w.fireCore", () => glow(0xffd65a)); },
   get paint() { return lazy("w.paint", () => std(0xb3261e, 0.8, { map: furMap() })); }, // the chieftain's war paint
+  get silver() { return lazy("w.silver", () => std(0xb9bcc2, 0.9, { map: furMap() })); }, // Warbur's silverback
+  get silverDark() { return lazy("w.silverDark", () => std(0x6e7178, 0.9, { map: furMap() })); },
+  get hex() { return lazy("w.hex", () => glow(0x7dff6a)); },        // a Shanti's magic
+  get powder() { return lazy("w.powder", () => std(0x3a2a1a, 0.7, { map: grainMap() })); }, // a Boomie's keg
 };
 const made = new Map<string, unknown>();
 function lazy<T>(key: string, make: () => T): T {
@@ -490,11 +494,15 @@ export function marine(hero = false, kit: Trooper = "assault") {
 // ============================================================================================
 // The Wooka
 // ============================================================================================
-function buildWooka(hero: boolean) {
+// Each kind of Wooka carries its own kit: a Chub is bigger with a bigger club, a Sticky has a
+// spear and a quiver of more, a Boomie a lit keg on its back, a Shanti a skull mask and a staff
+// that glows. Warbur is a silverback, half again as big as a Chub, and twice as mean.
+function buildWooka(hero: boolean, role: WookaRole | "warbur" = "fodder") {
   const k = new Kit();
   const body = k.joint("body");
-  if (hero) body.scale.setScalar(1.45); // the chieftain: bigger, and wearing something's bones
-  const fur = W.fur, tuft = (on: THREE.Object3D, n: number, r: number, y: number, z: number, spread: number, len = 0.12) => {
+  const warbur = role === "warbur";
+  body.scale.setScalar(warbur ? 2.6 : role === "chub" ? 1.4 : hero ? 1.45 : 1); // the chieftain: bigger, and wearing something's bones
+  const fur = warbur ? W.silver : W.fur, tuft = (on: THREE.Object3D, n: number, r: number, y: number, z: number, spread: number, len = 0.12) => {
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2, tilt = 0.5 + ((i * 37) % 7) / 14;
       k.add(on, cone(0.05, len + ((i * 13) % 5) * 0.02, 5), fur, { x: Math.cos(a) * r, y: y + Math.sin(a * 3) * 0.02, z: z + Math.sin(a) * r * spread, rz: -Math.cos(a) * tilt, rx: Math.sin(a) * tilt * spread });
@@ -536,10 +544,25 @@ function buildWooka(hero: boolean) {
     const arm = k.joint(`arm${side}`, body, s * 0.39, 0.74, -0.04);
     arm.rotation.z = s * 0.35;
     k.add(arm, capsule(0.09, 0.32, 8), fur, { y: -0.13 });
-    k.add(arm, ball(0.085, 10, 8), W.furDark, { y: -0.28 });
-    if (s > 0) {
+    k.add(arm, ball(0.085, 10, 8), warbur ? W.silverDark : W.furDark, { y: -0.28 });
+    if (s < 0 && role === "shanti") {
+      // The staff, topped with something that glows.
+      const staff = k.joint("staff", arm, 0, -0.28, -0.02);
+      k.add(staff, cyl(0.025, 0.03, 1.3, 6), W.wood, { y: 0.3 });
+      k.add(staff, ball(0.1, 10, 8), W.hex, { y: 0.98 });
+      for (let i = 0; i < 3; i++) k.add(staff, cone(0.02, 0.12, 4), W.bone, { y: 0.92, rz: (i - 1) * 0.9 });
+    }
+    if (s > 0 && role === "sticky") {
+      // A spear: a long shaft with a knapped stone point.
+      const club = k.joint("club", arm, 0, -0.28, -0.02);
+      club.rotation.x = 0.45;
+      k.add(club, cyl(0.02, 0.025, 1.4, 6), W.wood, { y: 0.3 });
+      k.add(club, cone(0.05, 0.2, 5), W.bone, { y: 1.08 });
+      k.add(club, ring(0.03, 0.01, 8).rotateX(Math.PI / 2), W.rope, { y: 0.96 });
+    } else if (s > 0 && role !== "boomie" && role !== "shanti") {
       const club = k.joint("club", arm, 0, -0.28, -0.02);
       club.rotation.x = 0.45; // up over the shoulder
+      if (role === "chub" || warbur) club.scale.setScalar(1.5);
       k.add(club, cyl(0.035, 0.045, 0.62, 8), W.wood, { y: 0.15 });
       for (const y of [-0.04, 0.02, 0.08]) k.add(club, ring(0.045, 0.012, 10).rotateX(Math.PI / 2), W.rope, { y });
       k.add(club, lumpy(0.12, 1, 0.12, 5, false), W.wood, { y: 0.52, s: [0.9, 1.6, 0.9] });
@@ -560,6 +583,26 @@ function buildWooka(hero: boolean) {
     for (const x of [-0.05, 0, 0.05]) k.add(foot, ball(0.035, 6, 4), W.furDark, { x, y: -0.16, z: -0.21 });
   }
 
+  if (role === "sticky") for (let i = 0; i < 3; i++) k.rod(body, [-0.15 + i * 0.08, 0.5, 0.35], [-0.25 + i * 0.1, 1.35, 0.45], 0.015, W.wood, 4); // the quiver
+  if (role === "boomie") {
+    // A keg of powder on its back, the fuse lit, and a red rag round its head.
+    k.add(body, cyl(0.22, 0.22, 0.45, 10), W.powder, { y: 0.7, z: 0.38, rx: 0.2 });
+    for (const y of [0.55, 0.85]) k.add(body, ring(0.225, 0.015, 12).rotateX(Math.PI / 2), W.rope, { y, z: 0.38 });
+    k.add(body, ball(0.06, 6, 4), W.fire, { y: 1.0, z: 0.42 });
+    k.add(head, ring(0.36, 0.04, 16).rotateX(Math.PI / 2), W.paint, { y: 0.12 });
+  }
+  if (role === "shanti") {
+    // A skull for a mask, and a mantle of grey.
+    k.add(head, ball(0.2, 12, 10), W.bone, { y: 0.02, z: -0.28, s: [1.1, 1.1, 0.6] });
+    for (const x of [-0.08, 0.08]) k.add(head, ball(0.05, 8, 6), W.hex, { x, y: 0.05, z: -0.39 });
+    k.add(body, lumpy(0.3, 2, 0.15, 9), W.chief, { y: 0.86, z: 0.08, s: [1.6, 0.6, 1.3] });
+  }
+  if (role === "chub") for (let i = 0; i < 5; i++) k.add(body, cone(0.04, 0.16, 5), W.tooth, { x: -0.24 + i * 0.12, y: 0.82 - Math.abs(i - 2) * 0.04, z: -0.4, rx: Math.PI });
+  if (warbur) {
+    // A silverback's mane, and scars.
+    k.add(body, lumpy(0.32, 2, 0.2, 13), W.silverDark, { y: 0.9, z: 0.1, s: [1.8, 0.7, 1.5] });
+    for (const dz of [0, 0.06]) k.add(body, rbox(0.3, 0.02, 0.02, 0.005), W.paint, { x: 0.1, y: 0.62 + dz, z: -0.43, rz: 0.5 });
+  }
   if (hero) {
     // A mantle of grey fur, a crown of bones, red paint across the eyes, and a necklace of skulls.
     k.add(body, lumpy(0.3, 2, 0.15, 9), W.chief, { y: 0.86, z: 0.08, s: [1.7, 0.6, 1.4] });
@@ -579,8 +622,8 @@ function buildWooka(hero: boolean) {
   return k.bake("wooka", { hero });
 }
 
-export function wooka(hero = false) {
-  return cloneOf(`wooka:${hero}`, () => buildWooka(hero));
+export function wooka(hero = false, role: WookaRole | "warbur" = "fodder") {
+  return cloneOf(`wooka:${hero}:${role}`, () => buildWooka(hero, role));
 }
 
 // ============================================================================================

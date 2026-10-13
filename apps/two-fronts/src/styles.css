@@ -229,3 +229,8 @@ button.x { display: inline-flex; line-height: 0; padding: 2px; }
 /* The space battle in 2.5D: no pointer lock, so the mouse is the crosshair. */
 body.space-2d .crosshair { display: none; }
 body.space-2d #battle-view { cursor: crosshair; }
+
+/* The champion meter: kills till Warbur or Gumpert, then who you are and what E does. */
+.champ { position: relative; overflow: hidden; padding: 2px 8px 4px; border-radius: 4px; background: rgb(255 255 255 / 0.08); font-weight: 700; letter-spacing: 0.04em; }
+.champ i { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--gold); }
+.champ-on { padding: 2px 8px; border-radius: 4px; background: var(--gold); color: #111; font-weight: 800; letter-spacing: 0.04em; }

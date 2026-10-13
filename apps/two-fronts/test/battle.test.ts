@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { BattleSpec } from "../src/battle/contract.ts";
 import {
-  DT, FLAVOR, HALF, LAYOUTS, STATS, STRIKE_RADIUS, TROOPERS, aimTarget, flies, heroUnit, hitChance, inCover, isVehicle, run, sees, startBattle, step, type UnitKind,
+  CHAMP_AT, DT, FLAVOR, HALF, LAYOUTS, ROLES, ROLE_STATS, STATS, STRIKE_RADIUS, TROOPERS, aimTarget, flies, heroUnit, hitChance, inCover, isVehicle, run, sees, startBattle, statsOf, step, type UnitKind, type WookaRole,
 } from "../src/battle/sim.ts";
 
 // A fixture straight from the contract: the ground layer never needs the strategy layer to run.
@@ -219,4 +219,104 @@ test("nobody ends up inside a building or rock, on any map", () => {
   }
   expect(startBattle(spec({ sector: "canyon" })).trees).toHaveLength(0);
   expect(startBattle(spec({ sector: "jungle" })).trees.length).toBeGreaterThan(startBattle(spec()).trees.length);
+});
+
+// One of the horde, of a given kind.
+const wookaOf = (b: ReturnType<typeof bare>, side: "attacker" | "defender", role: WookaRole, x: number, z: number) => {
+  const u = unit(b, side, "wooka", x, z);
+  Object.assign(u, { role, pack: 0, hp: ROLE_STATS[role].hp, maxHp: ROLE_STATS[role].hp });
+  return u;
+};
+const idle = { forward: 0, right: 0, yaw: 0, fire: false };
+
+test("the horde comes in all five kinds, mostly fodder", () => {
+  const b = startBattle(spec({ armies: { attacker: 3, defender: 4 } }));
+  step(b, null);
+  const n = (r: WookaRole) => b.units.filter((u) => u.role === r).length;
+  for (const r of ROLES) expect(n(r)).toBeGreaterThan(0);
+  expect(n("fodder")).toBeGreaterThan(n("chub"));
+  expect(b.units.filter((u) => u.role).every((u) => u.kind === "wooka" && u.side === "defender")).toBe(true);
+});
+
+test("the Wooka dig trench lines into their half of the field", () => {
+  const b = startBattle(spec());
+  const trenches = b.blocks.filter((k) => k.kind === "trench");
+  expect(trenches.length).toBeGreaterThan(6);
+  expect(trenches.every((k) => k.z < 0 && k.h < 1.6)).toBe(true); // the defender's half, and low enough to see over
+  for (const kind of ["rock", "stump", "log"] as const) expect(b.blocks.some((k) => k.kind === kind)).toBe(true);
+});
+
+test("a Boomie runs into a knot of Marines and goes off, and not gently", () => {
+  const b = bare();
+  const marines = [0, 2, -2].map((x) => unit(b, "attacker", "assault", x, 0));
+  const boom = wookaOf(b, "defender", "boomie", 0, -30);
+  for (let i = 0; i < 200 && b.units.includes(boom); i++) step(b, null);
+  expect(b.units.includes(boom)).toBe(false);
+  expect(b.fx.some((f) => f.kind === "blast")).toBe(true);
+  expect(marines.every((m) => m.hp < STATS.assault.hp - 100)).toBe(true);
+});
+
+test("a Sticky throws a spear and falls back", () => {
+  const b = bare();
+  unit(b, "attacker", "assault", 0, 0).cool = 99;
+  const s = wookaOf(b, "defender", "sticky", 0, -20);
+  s.cool = 0;
+  step(b, null); step(b, null);
+  expect(b.fx.some((f) => f.kind === "spear")).toBe(true);
+  const z = s.z;
+  for (let i = 0; i < 20; i++) step(b, null);
+  expect(s.z).toBeLessThan(z); // further off, towards home
+});
+
+test("three Wooka on a Marine tear them apart, and cover is no help up close", () => {
+  const b = bare();
+  const m = unit(b, "attacker", "assault", 0, 0);
+  const mob = [[1.5, 0], [-1.5, 0], [0, 1.5]].map(([x, z]) => Object.assign(wookaOf(b, "defender", "fodder", x!, z!), { cool: 0 }));
+  b.blocks.push({ x: 0, z: -1, w: 4, d: 0.5, h: 1.2 });
+  expect(hitChance(b, mob[0]!, m)).toBeCloseTo(statsOf(mob[0]!).aim - (1.5 / statsOf(mob[0]!).range) * 0.35);
+  for (let i = 0; i < 120 && b.units.includes(m); i++) step(b, null);
+  expect(b.units.includes(m)).toBe(false);
+  expect(b.fx.some((f) => f.kind === "gore" && f.big)).toBe(true);
+});
+
+test("a Shanti mends the Wooka round it", () => {
+  const b = bare();
+  wookaOf(b, "defender", "shanti", 0, -60);
+  const hurt = wookaOf(b, "defender", "chub", 4, -60);
+  hurt.hp = 100;
+  for (let i = 0; i < 30; i++) step(b, null);
+  expect(hurt.hp).toBeGreaterThan(100);
+});
+
+test("enough kills earn the hero their champion: Gumpert swaps kit, Warbur throws Wooka", () => {
+  const b = startBattle(spec());
+  b.kills.attacker = CHAMP_AT;
+  step(b, idle);
+  const g = heroUnit(b)!;
+  expect(g.champ).toBe("gumpert");
+  expect(g.maxHp).toBeGreaterThan(STATS.hero.hp);
+  step(b, { ...idle, use: true });
+  expect(g.kit).toBe("baton");
+  step(b, { ...idle, use: true });
+  expect(g.kit).toBe("jetpack");
+  expect(flies(g)).toBe(true);
+
+  const w = startBattle(spec({ hero: "defender" })); // the hero on the Wooka side
+  w.kills.defender = CHAMP_AT;
+  step(w, idle);
+  const bear = heroUnit(w)!;
+  expect(bear.champ).toBe("warbur");
+  const thrown = { id: w.nextId++, side: "defender" as const, kind: "wooka" as const, role: "fodder" as const, x: bear.x + 2, z: bear.z, yaw: 0, hp: 70, maxHp: 70, cool: 99, jx: 0, jz: 0 };
+  w.units = [bear, thrown]; // nobody else near enough to be the one thrown
+  step(w, { ...idle, yaw: bear.yaw, use: true });
+  expect(w.fx.some((f) => f.kind === "toss")).toBe(true);
+  expect(Math.hypot(thrown.x - bear.x, thrown.z - bear.z)).toBeGreaterThan(10);
+});
+
+test("an AI side earns its champion too, and it walks in", () => {
+  const b = startBattle(spec());
+  b.kills.defender = CHAMP_AT;
+  step(b, null);
+  expect(b.units.some((u) => u.kind === "champion" && u.champ === "warbur" && u.side === "defender")).toBe(true);
+  expect(b.events.some((e) => e.includes("WARBUR"))).toBe(true);
 });

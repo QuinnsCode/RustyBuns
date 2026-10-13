@@ -1,30 +1,52 @@
 // The hero ground battle as a pure, fixed-step simulation: command posts and scenery laid out by
 // the sector being fought over, AI troopers of four classes and the vehicles each side brought,
-// the defender's turrets, orbital strikes and drop-pod reinforcements from the spec. Trunks,
-// buildings and rock block movement and sight, and give cover to whoever stands behind them.
+// a Wooka horde of five kinds that hunts in packs and comes round the flanks, the defender's
+// turrets, orbital strikes and drop-pod reinforcements from the spec. Trunks, buildings, rock,
+// stumps, logs and the Wooka's trenches block movement, and give cover to whoever is behind them.
+// Kill enough of the other side and your champion takes the field: Warbur for the Wooka, Gumpert
+// for the Marines.
 // The view draws it and feeds the hero's input; the tests run it headless with the autopilot.
 import { atan2, cos, hypot, sin } from "./fmath.ts";
 import { VEHICLE_KINDS, other, poolSize, type BattleResult, type BattleSpec, type PerSide, type SectorKind, type Side, type VehicleKind } from "./contract.ts";
 
 export type Trooper = "assault" | "heavy" | "sniper" | "engineer";
 export const TROOPERS: Trooper[] = ["assault", "heavy", "sniper", "engineer"];
-export type UnitKind = Trooper | VehicleKind | "wooka" | "turret" | "hero";
+export type UnitKind = Trooper | VehicleKind | "wooka" | "turret" | "hero" | "champion";
+// The horde's five kinds. Chubs are big tribal brutes that lead the charge. Stickies throw spears
+// and fall back. Fodder are the front line, and at least they are devout. Boomies run at you
+// with a lit charge strapped on. Shanti are witch doctors who keep the rest going.
+export type WookaRole = "fodder" | "chub" | "sticky" | "boomie" | "shanti";
+export const ROLES: WookaRole[] = ["fodder", "chub", "sticky", "boomie", "shanti"];
+// Each side's champion, and Gumpert's three kits.
+export type Champ = "warbur" | "gumpert";
+export type Kit = "rockets" | "baton" | "jetpack";
+export const KITS: Kit[] = ["rockets", "baton", "jetpack"];
 export interface Unit {
   id: number; side: Side; kind: UnitKind; x: number; z: number; yaw: number; hp: number; maxHp: number; cool: number; jx: number; jz: number; guard?: boolean;
   target?: number; look?: number; // who it's shooting at, and when it next looks round for someone better
   detour?: number; detourT?: number; // the way round a wall it's taking, and for how much longer
+  role?: WookaRole;   // a Wooka's kind
+  pack?: number;      // a Wooka's pack: 0 goes up the middle, 1 and 2 round the flanks
+  back?: number;      // seconds a Sticky keeps falling back after a throw
+  stun?: number;      // seconds a unit stands dazed after Gumpert's baton
+  champ?: Champ;      // the hero, or an AI champion, once their side has earned one
+  kit?: Kit;          // Gumpert's kit
+  toss?: number;      // seconds till Warbur can throw another Wooka
 }
 export interface Post { name: string; x: number; z: number; owner: Side | null; progress: number } // progress: +1 attacker, -1 defender
 export interface Strike { side: Side; x: number; z: number; t: number }
-export interface Fx { kind: "shot" | "blast"; x: number; z: number; tx: number; tz: number; t: number; y?: number; ty?: number }
+// Shots, spears and hexes fly; blasts go off; gore is something coming apart, in its side's
+// colours (big: torn apart, or a vehicle going up); a toss is Warbur throwing a Wooka.
+export interface Fx { kind: "shot" | "spear" | "hex" | "blast" | "gore" | "toss"; x: number; z: number; tx: number; tz: number; t: number; y?: number; ty?: number; side?: Side; big?: boolean }
 
 // What the player does this step. Movement is relative to where the hero faces.
 export interface Input { forward: number; right: number; yaw: number; fire: boolean; strike?: { x: number; z: number }; use?: boolean }
 
 export interface Tree { x: number; z: number; r: number }
 // A building, wall or rock: centred on x, z, w wide (along x), d deep (along z) and h high.
-// Anything at eye height or more blocks sight; anything lower is a wall to crouch behind.
-export interface Block { x: number; z: number; w: number; d: number; h: number }
+// Anything at eye height or more blocks sight; anything lower is a wall to crouch behind. The
+// kind is only for the view: a sandbag wall unless it says otherwise.
+export interface Block { x: number; z: number; w: number; d: number; h: number; kind?: "rock" | "stump" | "log" | "trench" }
 
 export interface Battle {
   spec: BattleSpec;
@@ -46,6 +68,9 @@ export interface Battle {
   nextId: number;
   aiStrikeAt: PerSide<number>;
   spawnAt: PerSide<number>;
+  kills: PerSide<number>;    // what each side has killed of the other's, counted in tickets
+  champ: PerSide<boolean>;   // whether each side has earned its champion yet
+  screamAt: number;          // when a dying Marine last got a line in the feed
 }
 
 export const DT = 1 / 30;
@@ -83,7 +108,13 @@ const WAVE_EVERY = 8;              // seconds between reinforcement waves
 const BLEED_EVERY = 4;             // seconds per ticket the side with fewer posts loses
 const HERO_LIVES = 3;
 const AGGRO = 35;                  // how far a Wooka will charge at someone it can smell
-const FLAVOR_EVERY = 35;
+const FLAVOR_EVERY = 30;
+export const CHAMP_AT = 70;        // tickets' worth of kills a side needs to earn its champion
+const MOB = 3;                     // this many Wooka on one Marine and they tear them apart
+const MAUL = 25;                   // hp a second a mob takes off whoever it's on, on top of the clubs
+const HEAL = 6;                    // hp a second a Shanti puts back into each Wooka near it
+const FLANK = 30;                  // how wide a flanking pack swings
+const TOSS_EVERY = 3;
 
 // What the Marines' radio says about the Wooka. They are not cuddly.
 export const FLAVOR = [
@@ -100,7 +131,31 @@ export const FLAVOR = [
   "Found Sergeant Vance's helmet. On a pole. Facing us.",
   "Two eyes in the ferns. Then six. Then none, which is worse.",
   "Whatever you do, don't run. They like it when you run.",
+  "They've never seen anything but war since we landed. They've decided they like it.",
+  "That one's wearing a Marine's dog tags. All of them. As a skirt.",
+  "The little one with the bow on its head bit through a tank tread. Then it smiled.",
+  "Chaplain says they pray before battle. Chaplain won't say what to.",
+  "Something is drumming in the trees. It's using a helmet. There's still a head in it.",
+  "If you hear giggling, it's already too late.",
+  "Reminder: the fluffy ones are the dangerous ones. They are all the fluffy ones.",
+  "A Boomie waved at Corporal Diaz before it went off. Diaz waved back. Briefly.",
+  "The Shanti are chanting again. Our dead are getting up. Theirs are getting up faster.",
 ];
+
+// What a Marine says on the way out, when a mob gets them. The radio picks it all up.
+const SCREAMS = [
+  "It's in my armour! IT'S IN MY ARMOUR!",
+  "Tell my mother I... no, it's eating the radio...",
+  "They're so SOFT. Why are they so SOFT?",
+  "My legs! Where are my... oh. Oh, there they are.",
+  "I just wanted to pet one!",
+  "Not the eyes, not the EYES, they're looking at me!",
+  "Medic! MEDIC! Never mind, the medic's over there. Parts of him.",
+  "They're under the floor! How is there a floor out here?!",
+  "Sarge, they took the snorkel! I need the snorkel!",
+  "It's humming. Why is it humming while it does that?",
+];
+const NAMES = ["Pvt. Okafor", "Pvt. Brandt", "Cpl. Diaz", "Pvt. Hale", "Sgt. Moreau", "Pvt. Kowalski", "Pvt. Achebe", "L/Cpl. Finch", "Pvt. Nakamura", "Pvt. Rourke"];
 
 export const STATS: Record<UnitKind, { hp: number; speed: number; range: number; cool: number; dmg: number; aim: number; cost: number }> = {
   assault: { hp: 100, speed: 5.5, range: 42, cool: 0.8, dmg: 7, aim: 0.7, cost: 1 },
@@ -115,18 +170,46 @@ export const STATS: Record<UnitKind, { hp: number; speed: number; range: number;
   gunship: { hp: 450, speed: 10, range: 65, cool: 1.6, dmg: 28, aim: 0.8, cost: 6 },
   turret: { hp: 350, speed: 0, range: 55, cool: 1.2, dmg: 10, aim: 0.75, cost: 0 },
   hero: { hp: 300, speed: 8, range: 55, cool: 0.3, dmg: 9, aim: 0.9, cost: 3 },
+  champion: { hp: 800, speed: 8, range: 60, cool: 1.3, dmg: 55, aim: 0.9, cost: 6 }, // an AI side's champion: see CHAMP_STATS
 };
+// The Wooka, kind by kind. Chubs soak and smash, Stickies throw from range, Boomies hit once,
+// very hard, and Shanti hex from the back.
+export const ROLE_STATS: Record<WookaRole, (typeof STATS)[UnitKind]> = {
+  fodder: STATS.wooka,
+  chub: { hp: 220, speed: 5.2, range: 3.2, cool: 1.1, dmg: 34, aim: 0.85, cost: 1 },
+  sticky: { hp: 55, speed: 7, range: 30, cool: 2.4, dmg: 24, aim: 0.6, cost: 0.6 },
+  boomie: { hp: 45, speed: 9, range: 2.4, cool: 99, dmg: 0, aim: 1, cost: 0.6 },
+  shanti: { hp: 60, speed: 5, range: 28, cool: 3, dmg: 14, aim: 0.7, cost: 0.8 },
+};
+export const ROLE_MIX: Record<WookaRole, number> = { fodder: 0.5, chub: 0.17, sticky: 0.15, boomie: 0.1, shanti: 0.08 };
+// The champions. Warbur is a silverback, half Wooka and half bear, who throws Wooka at people.
+// Gumpert is the Marines' own, in whichever kit he's carrying.
+export const CHAMP_STATS: Record<Champ | Kit, (typeof STATS)[UnitKind]> = {
+  warbur: { hp: 1100, speed: 8.5, range: 3.8, cool: 0.7, dmg: 55, aim: 0.95, cost: 6 },
+  gumpert: { hp: 800, speed: 8, range: 60, cool: 1.3, dmg: 55, aim: 0.9, cost: 6 },
+  rockets: { hp: 800, speed: 8, range: 60, cool: 1.3, dmg: 55, aim: 0.9, cost: 6 },
+  baton: { hp: 800, speed: 10, range: 4, cool: 0.55, dmg: 45, aim: 0.98, cost: 6 },
+  jetpack: { hp: 800, speed: 13, range: 45, cool: 0.15, dmg: 12, aim: 0.85, cost: 6 },
+};
+// What a unit fights with: its champion's or its Wooka kind's numbers, else its kind's.
+export const statsOf = (u: Pick<Unit, "kind" | "role" | "champ" | "kit">) =>
+  u.champ ? CHAMP_STATS[u.champ === "gumpert" ? u.kit ?? "rockets" : u.champ] : u.role ? ROLE_STATS[u.role] : STATS[u.kind];
+const melee = (u: Unit) => statsOf(u).range < 5;
+
 // The big guns throw a blast this wide instead of hitting one target.
-const SPLASH: Partial<Record<UnitKind, number>> = { tank: 4, walker: 5, gunship: 3 };
+const SPLASH: Partial<Record<UnitKind | Champ | Kit, number>> = { tank: 4, walker: 5, gunship: 3, rockets: 5, warbur: 3 };
+const splashOf = (u: Unit) => SPLASH[u.champ ? (u.champ === "gumpert" ? u.kit ?? "rockets" : u.champ) : u.kind];
 const ARMOUR_BANE = 4;
 // Each wave's Marines come in this mix of classes.
 export const CLASS_MIX: Record<Trooper, number> = { assault: 0.5, heavy: 0.2, sniper: 0.15, engineer: 0.15 };
 export const isVehicle = (k: UnitKind): k is VehicleKind => (VEHICLE_KINDS as UnitKind[]).includes(k);
 const isTrooper = (k: UnitKind): k is Trooper => (TROOPERS as UnitKind[]).includes(k);
 const armoured = (k: UnitKind) => isVehicle(k) || k === "turret";
-export const flies = (u: { kind: UnitKind }) => u.kind === "gunship";
-export const altitude = (u: { kind: UnitKind }) => (flies(u) ? GUNSHIP_ALT : 0);
-const bodyOf = (k: UnitKind) => (k === "tank" ? 2.5 : k === "walker" ? 2.2 : k === "speeder" ? 1.4 : 0.6);
+// Gunships fly over everything, and so does Gumpert with the jetpack on, lower down.
+const jets = (u: { champ?: Champ; kit?: Kit }) => u.champ === "gumpert" && u.kit === "jetpack";
+export const flies = (u: { kind: UnitKind; champ?: Champ; kit?: Kit }) => u.kind === "gunship" || jets(u);
+export const altitude = (u: { kind: UnitKind; champ?: Champ; kit?: Kit }) => (u.kind === "gunship" ? GUNSHIP_ALT : jets(u) ? 5 : 0);
+const bodyOf = (u: Unit) => (u.kind === "tank" ? 2.5 : u.kind === "walker" ? 2.2 : u.kind === "speeder" ? 1.4 : u.champ === "warbur" ? 1.4 : u.role === "chub" ? 0.9 : 0.6);
 
 const rand = (b: Battle) => {
   let t = (b.seed = (b.seed + 0x6d2b79f5) >>> 0);
@@ -154,6 +237,7 @@ export function startBattle(spec: BattleSpec): Battle {
     over: null, seed: spec.seed >>> 0, nextId: 1,
     aiStrikeAt: { attacker: 20, defender: 25 },
     spawnAt: { attacker: 0, defender: 0 },
+    kills: { attacker: 0, defender: 0 }, champ: { attacker: false, defender: false }, screamAt: -99,
   };
   const gen = b.posts.at(-1)!;
   for (let i = 0; i < spec.turrets; i++) {
@@ -192,24 +276,55 @@ function scenery(b: Battle) {
     }
   };
   const walls = (n: number) => scatter(n, [1.2, 7], [1.1, 1.3], 4, 4); // low: cover, but you see over them
+  // Things to hide behind in the woods: rocks low and high, stumps, and fallen logs.
+  const cover = () => {
+    const kinded = (from: number, kind: Block["kind"], logs = false) => b.blocks.slice(from).forEach((k) => {
+      k.kind = kind;
+      if (logs && rand(b) < 0.5) [k.w, k.d] = [k.d, k.w];
+    });
+    let at = b.blocks.length; scatter(14, [1.6, 3.2], [1.0, 1.4], 4, 4); kinded(at, "rock");
+    at = b.blocks.length; scatter(6, [3, 5], [2.2, 3.6], 6, 8); kinded(at, "rock");
+    at = b.blocks.length; scatter(14, [1.6, 2.2], [1.0, 1.3], 4, 4); kinded(at, "stump");
+    at = b.blocks.length; for (let i = 0; i < 8; i++) scatter(1, [7, 10], [1.0, 1.1], 4, 4);
+    b.blocks.slice(at).forEach((k) => { k.d = 1.3; }); kinded(at, "log", true);
+  };
+  // The Wooka dig in: trench lines across their half of the field, in short zigzag runs with gaps
+  // to come through, kept off the posts and the spawns.
+  const trenches = () => {
+    const sides = (["attacker", "defender"] as Side[]).filter((s) => isHorde(b, s));
+    for (const s of sides) for (const depth of [38, 72]) {
+      const z0 = s === "attacker" ? depth : -depth;
+      for (let x = -HALF + 6, i = 0; x < HALF - 6; x += 15, i++) {
+        const k: Block = { x: x + 5, z: z0 + (i % 2 ? 2.5 : -2.5), w: 10, d: 1.4, h: 1.25, kind: "trench" };
+        if (b.posts.some((p) => gap(k, p) < POST_RADIUS + 2) || [SPAWN.attacker, SPAWN.defender].some((p) => gap(k, p) < 12)) continue;
+        if (b.blocks.some((o) => Math.abs(o.x - k.x) < (o.w + k.w) / 2 + 1 && Math.abs(o.z - k.z) < (o.d + k.d) / 2 + 1)) continue;
+        b.blocks.push(k);
+      }
+    }
+  };
+  if (b.spec.sector !== "canyon") trenches();
   switch (b.spec.sector) {
     case "shield":
       put(keep.x - 6, keep.z - 6, 7, 7, 9); // the generator's core
       walls(10);
+      cover();
       break;
     case "capital":
       put(keep.x, keep.z - 18, 22, 10, 12); // the palace
       scatter(40, [6, 14], [6, 28], POST_RADIUS + 10);
       walls(10);
+      cover();
       break;
     case "spaceport":
       put(keep.x + 10, keep.z - 10, 5, 5, 22); // the control tower
       scatter(14, [3, 4], [2.5, 3.5], POST_RADIUS + 4); // cargo crates
       walls(6);
+      cover();
       break;
     case "cannon":
       put(keep.x - 12, keep.z - 28, 16, 16, 6); // the cannon's base
       walls(14);
+      cover();
       break;
     case "canyon":
       // Rock walls down both sides, winding, then boulders and ore carts on the canyon floor.
@@ -226,6 +341,7 @@ function scenery(b: Battle) {
       put(keep.x, keep.z - 22, 20, 14, 12); // the temple
       scatter(6, [3, 6], [3, 6], POST_RADIUS + 6); // broken statues
       walls(16);
+      cover();
       break;
   }
 }
@@ -267,15 +383,17 @@ export function inCover(b: Battle, from: Unit, t: Unit) {
   return b.trees.some((o) => dist(o, t) - o.r < COVER && toward(o)) || b.blocks.some((k) => gap(k, t) < COVER && toward(nearestOn(k, t)));
 }
 
-// Cover halves the odds of a hit.
+// Cover halves the odds of a hit from range. Nothing helps against a club at arm's length.
 export const hitChance = (b: Battle, u: Unit, t: Unit) => {
-  const s = STATS[u.kind];
-  return clamp(s.aim - (dist(u, t) / s.range) * 0.35, 0.1, 0.95) * (inCover(b, u, t) ? 0.5 : 1);
+  const s = statsOf(u);
+  return clamp(s.aim - (dist(u, t) / s.range) * 0.35, 0.1, 0.95) * (!melee(u) && inCover(b, u, t) ? 0.5 : 1);
 };
 
-function add(b: Battle, side: Side, kind: UnitKind, x: number, z: number): Unit {
-  const hp = kind === "hero" ? Math.round(STATS.hero.hp * (1 + 0.15 * (b.spec.heroLevel - 1))) : STATS[kind].hp;
-  const u: Unit = { id: b.nextId++, side, kind, x, z, yaw: side === "attacker" ? 0 : Math.PI, hp, maxHp: hp, cool: rand(b) * STATS[kind].cool, jx: (rand(b) - 0.5) * 16, jz: (rand(b) - 0.5) * 16, guard: (isTrooper(kind) || kind === "wooka") && rand(b) < 1 / 3 };
+function add(b: Battle, side: Side, kind: UnitKind, x: number, z: number, role?: WookaRole): Unit {
+  const s = role ? ROLE_STATS[role] : STATS[kind];
+  const hp = kind === "hero" ? Math.round(STATS.hero.hp * (1 + 0.15 * (b.spec.heroLevel - 1))) : s.hp;
+  const u: Unit = { id: b.nextId++, side, kind, x, z, yaw: side === "attacker" ? 0 : Math.PI, hp, maxHp: hp, cool: rand(b) * Math.min(3, s.cool), jx: (rand(b) - 0.5) * 16, jz: (rand(b) - 0.5) * 16, guard: (isTrooper(kind) || kind === "wooka") && role !== "boomie" && rand(b) < 1 / 3 };
+  if (role) { u.role = role; u.pack = u.id % 3; }
   b.units.push(u);
   if (kind !== "turret") unstick(b, u);
   return u;
@@ -292,14 +410,32 @@ function spawnPoint(b: Battle, side: Side) {
 
 function spawnHero(b: Battle) {
   const p = spawnPoint(b, b.spec.hero);
-  b.hero.id = add(b, b.spec.hero, "hero", p.x, p.z).id;
+  const u = add(b, b.spec.hero, "hero", p.x, p.z);
+  b.hero.id = u.id;
+  // Earned your champion and came back? You come back as them.
+  if (b.champ[b.spec.hero]) crown(b, u);
+}
+
+// Makes a unit its side's champion: Warbur for the Wooka, Gumpert for the Marines, at full health.
+function crown(b: Battle, u: Unit) {
+  u.champ = isHorde(b, u.side) ? "warbur" : "gumpert";
+  if (u.champ === "gumpert") u.kit ??= "rockets";
+  u.hp = u.maxHp = Math.round(statsOf(u).hp * (1 + 0.15 * (b.spec.heroLevel - 1)));
+  u.toss = 0;
 }
 
 // Marines field troopers of four classes and the vehicles they brought. The Wooka field a
 // horde: more of them, and no vehicles, so their share of the pool comes as yet more Wooka.
 export const isHorde = (b: Battle, side: Side) => b.spec.factions[side] === "wooka";
 const troopCap = (b: Battle, side: Side) =>
-  isHorde(b, side) ? Math.min(24, 6 + b.spec.armies[side] * 5 + poolSize(b.spec.vehicles[side]) * 3) : Math.min(14, 4 + b.spec.armies[side] * 3);
+  isHorde(b, side) ? Math.min(28, 8 + b.spec.armies[side] * 5 + poolSize(b.spec.vehicles[side]) * 3) : Math.min(14, 4 + b.spec.armies[side] * 3);
+// The Wooka kind the horde is furthest short of, against its mix.
+function nextRole(b: Battle, side: Side): WookaRole {
+  const n = { fodder: 0, chub: 0, sticky: 0, boomie: 0, shanti: 0 };
+  for (const u of b.units) if (u.side === side && u.role) n[u.role]++;
+  const total = ROLES.reduce((t, k) => t + n[k], 0) + 1, short = (k: WookaRole) => ROLE_MIX[k] * total - n[k];
+  return ROLES.reduce((best, k) => (short(k) > short(best) ? k : best));
+}
 // The class the side is furthest short of, against the mix.
 function nextClass(b: Battle, side: Side): Trooper {
   const n = { assault: 0, heavy: 0, sniper: 0, engineer: 0 };
@@ -309,7 +445,7 @@ function nextClass(b: Battle, side: Side): Trooper {
 }
 export const heroUnit = (b: Battle) => b.units.find((u) => u.id === b.hero.id) ?? null;
 const heroVehicle = (b: Battle) => (b.hero.inVehicle === null ? null : b.units.find((u) => u.id === b.hero.inVehicle) ?? null);
-const hidden = (b: Battle, v: Unit) => v.kind === "hero" && b.hero.inVehicle !== null; // the hero, inside a vehicle
+const hidden = (b: Battle, v: Unit) => v.id === b.hero.id && b.hero.inVehicle !== null; // the hero, inside a vehicle
 
 function nearestEnemy(b: Battle, u: { x: number; z: number; side: Side }, range: number) {
   let best: Unit | null = null, bd = range;
@@ -328,27 +464,58 @@ function nearestSeen(b: Battle, u: Unit, range: number) {
 }
 
 function shoot(b: Battle, u: Unit, t: Unit | null, yaw = u.yaw) {
-  const s = STATS[u.kind];
+  const s = statsOf(u), kind: Fx["kind"] = u.role === "sticky" ? "spear" : u.role === "shanti" ? "hex" : "shot";
   u.cool = s.cool;
   if (!t) {
     // A shot at nothing stops at the first wall or trunk.
     const f = facing(yaw), end = { x: u.x + f.x * s.range, z: u.z + f.z * s.range };
     const k = flies(u) ? 1 : blocked(b, u, end);
-    b.fx.push({ kind: "shot", x: u.x, z: u.z, tx: u.x + (end.x - u.x) * k, tz: u.z + (end.z - u.z) * k, t: 0.08, y: altitude(u) });
+    if (!melee(u)) b.fx.push({ kind, x: u.x, z: u.z, tx: u.x + (end.x - u.x) * k, tz: u.z + (end.z - u.z) * k, t: 0.08, y: altitude(u) });
+    else swing(b, u, yaw);
     return;
   }
   u.yaw = yawTo(u, t);
   const hit = rand(b) < hitChance(b, u, t);
-  b.fx.push({ kind: "shot", x: u.x, z: u.z, tx: t.x + (hit ? 0 : (rand(b) - 0.5) * 6), tz: t.z + (hit ? 0 : (rand(b) - 0.5) * 6), t: 0.08, y: altitude(u), ty: altitude(t) });
+  if (!melee(u)) b.fx.push({ kind, x: u.x, z: u.z, tx: t.x + (hit ? 0 : (rand(b) - 0.5) * 6), tz: t.z + (hit ? 0 : (rand(b) - 0.5) * 6), t: kind === "shot" ? 0.08 : 0.3, y: altitude(u), ty: altitude(t) });
+  if (u.role === "sticky") u.back = 1.6; // throw, then get out of there
   if (!hit) return;
-  const splash = SPLASH[u.kind];
+  const splash = splashOf(u);
   if (splash) blast(b, u.side, t.x, t.z, splash, s.dmg);
-  else damage(b, t, u.kind === "heavy" && armoured(t.kind) ? s.dmg * ARMOUR_BANE : s.dmg);
+  else damage(b, t, (u.kind === "heavy" || u.kit === "rockets") && armoured(t.kind) ? s.dmg * ARMOUR_BANE : s.dmg);
+  if (u.kit === "baton") t.stun = 2;
 }
 
-function blast(b: Battle, side: Side, x: number, z: number, r: number, dmg: number) {
-  b.fx.push({ kind: "blast", x, z, tx: x, tz: z, t: r > 6 ? 0.6 : 0.25 });
-  for (const v of b.units) if (v.side !== side && v.hp > 0 && dist(v, { x, z }) <= r) damage(b, v, dmg);
+// A melee swing at nothing in particular: whatever's just in front gets it.
+function swing(b: Battle, u: Unit, yaw: number) {
+  const s = statsOf(u), f = facing(yaw), at = { x: u.x + f.x * s.range * 0.6, z: u.z + f.z * s.range * 0.6 };
+  const near = b.units.filter((v) => v.side !== u.side && v.hp > 0 && !hidden(b, v) && dist(v, at) < s.range * 0.8);
+  for (const v of near.slice(0, u.champ ? 4 : 1)) {
+    damage(b, v, s.dmg);
+    if (u.kit === "baton") v.stun = 2;
+  }
+}
+
+// Warbur picks up the nearest Wooka of his own and throws it: it lands where he's aiming, hard.
+function toss(b: Battle, u: Unit, at: { x: number; z: number }) {
+  if ((u.toss ?? 0) > 0) return false;
+  const ammo = b.units.filter((v) => v.side === u.side && v.role && v.role !== "shanti" && dist(v, u) < 6).sort((a, c) => dist(u, a) - dist(u, c))[0];
+  if (!ammo) return false;
+  u.toss = TOSS_EVERY;
+  const d = Math.min(35, dist(u, at)) || 1, x = clamp(u.x + ((at.x - u.x) / dist(u, at)) * d, -HALF, HALF), z = clamp(u.z + ((at.z - u.z) / dist(u, at)) * d, -HALF, HALF);
+  b.fx.push({ kind: "toss", x: ammo.x, z: ammo.z, tx: x, tz: z, t: 0.6, side: u.side });
+  ammo.x = x; ammo.z = z; unstick(b, ammo);
+  ammo.hp -= 20; // it'll live. Probably.
+  blast(b, u.side, x, z, 4, ammo.role === "boomie" ? 160 : 60);
+  if (ammo.role === "boomie") { ammo.hp = 0; ammo.back = -1; } // a thrown Boomie goes off where it lands
+  if (rand(b) < 0.3) b.events.push(ammo.role === "boomie" ? "Warbur threw a Boomie. Of course he did." : "Warbur threw a Wooka. It got up again, delighted.");
+  return true;
+}
+
+// A blast hurts the other side. A Boomie's hurts everyone, its own included, a bit less: it
+// doesn't care, and neither do they.
+function blast(b: Battle, side: Side, x: number, z: number, r: number, dmg: number, own = 0) {
+  b.fx.push({ kind: "blast", x, z, tx: x, tz: z, t: r > 6 ? 0.6 : 0.25, big: r > 6 });
+  for (const v of b.units) if (v.hp > 0 && dist(v, { x, z }) <= r && (v.side !== side || own)) damage(b, v, v.side === side ? dmg * own : dmg);
 }
 
 function damage(b: Battle, v: Unit, dmg: number) {
@@ -359,20 +526,44 @@ function damage(b: Battle, v: Unit, dmg: number) {
 // The side the player isn't on, and the player's own squadmates, think for themselves. Every so
 // often each looks round for the nearest enemy it can see, and shoots at that till it's gone.
 function think(b: Battle, u: Unit) {
-  const s = STATS[u.kind];
+  const s = statsOf(u);
   u.cool -= DT;
+  if (u.toss !== undefined) u.toss -= DT;
+  if (u.stun && (u.stun -= DT) > 0) return; // dazed
   if ((u.look = (u.look ?? 0) - DT) <= 0) {
     u.look = LOOK_EVERY;
     u.target = nearestSeen(b, u, s.range)?.id;
   }
   let foe = u.target === undefined ? null : b.units.find((v) => v.id === u.target && v.hp > 0 && !hidden(b, v)) ?? null;
   if (foe && dist(u, foe) > s.range) foe = null;
+  if (u.role === "boomie") return boomie(b, u);
+  if (u.role === "shanti") mend(b, u);
+  if (u.champ === "warbur" && foe) {
+    const far = nearestSeen(b, u, 35);
+    if (far && dist(u, far) > 8) toss(b, u, far);
+  }
   if (foe && u.cool <= 0) shoot(b, u, foe);
   if (!s.speed) return;
+  // A Sticky that's thrown, or has someone too close, backs off towards home.
+  if (u.role === "sticky") {
+    const close = nearestEnemy(b, u, 8);
+    if (u.back !== undefined && (u.back -= DT) <= 0) u.back = undefined;
+    const from = close ?? (u.back !== undefined ? foe : null);
+    if (from) return move(b, u, u.x - from.x, u.z - from.z, s.speed);
+  }
   if (foe && dist(u, foe) < s.range * 0.6) return; // hold and shoot
-  if (u.kind === "wooka") {
-    const prey = nearestEnemy(b, u, AGGRO); // they smell you through the trees
+  if (u.role && u.role !== "shanti" || u.champ === "warbur") {
+    const prey = hunt(b, u);
     if (prey) return move(b, u, prey.x - u.x, prey.z - u.z, s.speed);
+  }
+  if (u.role === "shanti") {
+    // Witch doctors keep behind their own front line.
+    const front = b.units.filter((v) => v.side === u.side && (v.role === "fodder" || v.role === "chub")).sort((a, c) => dist(u, a) - dist(u, c))[0];
+    if (front) {
+      const home = SPAWN[u.side], d = dist(front, home) || 1;
+      const x = front.x + ((home.x - front.x) / d) * 12, z = front.z + ((home.z - front.z) / d) * 12;
+      return move(b, u, x - u.x, z - u.z, s.speed);
+    }
   }
   if (u.kind === "engineer") {
     const fix = b.units.filter((v) => v.side === u.side && armoured(v.kind) && v.hp < v.maxHp && dist(u, v) < 40).sort((a, c) => dist(u, a) - dist(u, c))[0];
@@ -380,7 +571,43 @@ function think(b: Battle, u: Unit) {
     if (fix) return move(b, u, fix.x - u.x, fix.z - u.z, s.speed);
   }
   const goal = u.guard ? guardPost(b, u.side) ?? objective(b, u.side) : objective(b, u.side);
-  move(b, u, goal.x + u.jx - u.x, goal.z + u.jz - u.z, s.speed);
+  let gx = goal.x + u.jx, gz = goal.z + u.jz;
+  // The flanking packs swing wide of the straight line in, and close in once they're near.
+  if (u.pack && dist(u, goal) > FLANK) {
+    const d = dist(u, goal), side = u.pack === 1 ? 1 : -1;
+    gx += (-(goal.z - u.z) / d) * FLANK * side;
+    gz += ((goal.x - u.x) / d) * FLANK * side;
+  }
+  move(b, u, gx - u.x, gz - u.z, s.speed);
+}
+
+// The Wooka hunt in packs: they smell you through the trees, and when one of the pack is on
+// someone, the rest of the pack comes to help.
+function hunt(b: Battle, u: Unit) {
+  const prey = nearestEnemy(b, u, AGGRO);
+  if (prey) return prey;
+  for (const v of b.units) {
+    if (v.side !== u.side || v.pack !== u.pack || v === u || dist(u, v) > 25 || v.target === undefined) continue;
+    const t = b.units.find((w) => w.id === v.target && w.hp > 0 && !hidden(b, w));
+    if (t && dist(v, t) < 6) return t;
+  }
+  return null;
+}
+
+// A Boomie runs at the thickest knot of the enemy it can smell and goes off in the middle of it.
+function boomie(b: Battle, u: Unit) {
+  const s = statsOf(u);
+  const near = b.units.filter((v) => v.side !== u.side && v.hp > 0 && !hidden(b, v) && !flies(v) && dist(u, v) < 50);
+  const knot = near.sort((a, c) => near.filter((v) => dist(v, c) < 6).length - near.filter((v) => dist(v, a) < 6).length || dist(u, a) - dist(u, c))[0];
+  if (knot && dist(u, knot) < s.range) { u.hp = 0; return; } // goes off in the death pass
+  if (knot) return move(b, u, knot.x - u.x, knot.z - u.z, s.speed);
+  const goal = objective(b, u.side);
+  move(b, u, goal.x - u.x, goal.z - u.z, s.speed);
+}
+
+// A Shanti's chant mends the Wooka round it.
+function mend(b: Battle, u: Unit) {
+  for (const v of b.units) if (v.side === u.side && (v.role || v.champ === "warbur") && v !== u && v.hp < v.maxHp && dist(u, v) < 10) v.hp = Math.min(v.maxHp, v.hp + HEAL * DT);
 }
 
 // The nearest post the side doesn't hold; with both held, the one nearer the enemy.
@@ -401,6 +628,7 @@ function guardPost(b: Battle, side: Side) {
 // other) and keeps going that way a while, so it doesn't wobble back and forth along the wall.
 // The player just slides.
 function move(b: Battle, u: Unit, dx: number, dz: number, speed: number, steer = true) {
+  if (u.stun && u.stun > 0) return;
   const len = hypot(dx, dz);
   if (len < 0.5) return;
   const step = Math.min(len, speed * DT), x = u.x, z = u.z;
@@ -422,7 +650,7 @@ function move(b: Battle, u: Unit, dx: number, dz: number, speed: number, steer =
 // Push a unit out of any trunk or block it's in. Gunships fly over them.
 function unstick(b: Battle, u: Unit) {
   if (flies(u)) return;
-  const body = bodyOf(u.kind);
+  const body = bodyOf(u);
   for (const t of b.trees) {
     const ox = u.x - t.x, oz = u.z - t.z, d = hypot(ox, oz), min = t.r + body;
     if (d < min && d > 1e-6) { u.x = t.x + (ox / d) * min; u.z = t.z + (oz / d) * min; }
@@ -481,7 +709,7 @@ export function step(b: Battle, input: Input | null) {
 
   // The player's hero, or the vehicle they're driving.
   if (hero && input) {
-    const body = ride ?? hero, s = STATS[body.kind];
+    const body = ride ?? hero, s = statsOf(body);
     const f = facing(input.yaw), r = { x: -f.z, z: f.x };
     const fwd = clamp(input.forward, -1, 1), rt = clamp(input.right, -1, 1);
     move(b, body, f.x * fwd + r.x * rt, f.z * fwd + r.z * rt, s.speed * Math.min(1, hypot(fwd, rt)), false);
@@ -489,7 +717,17 @@ export function step(b: Battle, input: Input | null) {
     body.cool -= DT;
     if (input.fire && body.cool <= 0) shoot(b, body, aimTarget(b, body, input.yaw, s.range), input.yaw);
     if (input.strike) callStrike(b, hero.side, input.strike.x, input.strike.z);
-    if (input.use) {
+    if (hero.toss !== undefined) hero.toss -= DT;
+    // As a champion, E is Warbur's throw or Gumpert's change of kit; otherwise it's a vehicle.
+    if (input.use && hero.champ === "warbur") {
+      const f = facing(input.yaw);
+      if (!toss(b, hero, { x: hero.x + f.x * 25, z: hero.z + f.z * 25 })) b.events.push("No Wooka near enough to throw");
+    } else if (input.use && hero.champ === "gumpert") {
+      hero.kit = KITS[(KITS.indexOf(hero.kit ?? "rockets") + 1) % KITS.length]!;
+      hero.cool = 0.3;
+      unstick(b, hero);
+      b.events.push(hero.kit === "baton" ? "Gumpert: stun baton. Up close and personal." : hero.kit === "jetpack" ? "Gumpert: jetpack. Up and over." : "Gumpert: rocket launcher. Everything goes boom.");
+    } else if (input.use) {
       if (ride) { b.hero.inVehicle = null; hero.x = ride.x + 3; hero.z = ride.z; unstick(b, hero); b.events.push(`Out of the ${ride.kind}`); }
       else {
         const v = b.units.find((v) => isVehicle(v.kind) && v.side === hero.side && v.hp > 0 && dist(v, hero) < 7);
@@ -516,8 +754,25 @@ export function step(b: Battle, input: Input | null) {
     if (hero) { hero.hp -= 150; unstick(b, hero); }
     b.events.push(`Your ${wreck.kind} is destroyed`);
   }
+  // A mob on a Marine tears into them, on top of the clubs.
+  for (const u of b.units) {
+    if (u.hp <= 0 || isHorde(b, u.side) || armoured(u.kind) || flies(u) || hidden(b, u)) continue;
+    if (mob(b, u) >= MOB) u.hp -= MAUL * DT;
+  }
+  // Boomies go off when they die, however they die, and can set each other off.
+  for (let again = true; again;) {
+    again = false;
+    for (const u of b.units) if (u.hp <= 0 && u.role === "boomie" && u.back !== -1) {
+      u.back = -1;
+      blast(b, u.side, u.x, u.z, 7, 140, 0.2);
+      again = true;
+      if (rand(b) < 0.15) b.events.push("A Boomie went off. Nobody asked it to.");
+    }
+  }
   for (const u of b.units) if (u.hp <= 0) {
-    b.tickets[u.side] -= STATS[u.kind].cost;
+    b.tickets[u.side] -= statsOf(u).cost;
+    b.kills[other(u.side)] += statsOf(u).cost; // a Chub counts for more than a Fodder, a walker for more than both
+    die(b, u);
     if (u.id === b.hero.id) {
       b.hero.lives--;
       b.hero.id = null;
@@ -527,6 +782,7 @@ export function step(b: Battle, input: Input | null) {
   }
   b.units = b.units.filter((u) => u.hp > 0);
   if (b.hero.id === null && b.hero.lives > 0 && (b.hero.respawn -= DT) <= 0) spawnHero(b);
+  for (const s of sides) if (!b.champ[s] && b.kills[s] >= CHAMP_AT) champion(b, s);
 
   // Command posts: whoever stands alone on one turns it. Gunships fly over and don't count.
   for (const p of b.posts) {
@@ -562,7 +818,8 @@ export function step(b: Battle, input: Input | null) {
     if (!horde && alive(isVehicle) < 2 && left[next] > 0) { const at = spawnPoint(b, s); left[next]--; add(b, s, next, at.x, at.z); }
     for (let n = troopCap(b, s) - alive(horde ? (k) => k === "wooka" : isTrooper); n > 0; n--) {
       const at = spawnPoint(b, s);
-      add(b, s, horde ? "wooka" : nextClass(b, s), at.x, at.z);
+      if (horde) add(b, s, "wooka", at.x, at.z, nextRole(b, s));
+      else add(b, s, nextClass(b, s), at.x, at.z);
     }
   }
   if (Math.floor(b.time / FLAVOR_EVERY) !== Math.floor((b.time - DT) / FLAVOR_EVERY) && sides.some((s) => isHorde(b, s))) {
@@ -578,6 +835,40 @@ export function step(b: Battle, input: Input | null) {
     const winner = out ? other(out) : b.tickets.attacker > b.tickets.defender ? "attacker" : "defender";
     b.over = { id: b.spec.id, winner, tickets: { attacker: Math.max(0, Math.ceil(b.tickets.attacker)), defender: Math.max(0, Math.ceil(b.tickets.defender)) }, heroDown: b.hero.lives <= 0 };
   }
+}
+
+// How many of the horde are right on top of someone.
+const mob = (b: Battle, u: Unit) => b.units.filter((v) => v.side !== u.side && v.hp > 0 && v.role && v.role !== "sticky" && v.role !== "shanti" && dist(u, v) < 3).length;
+
+// Something dies: it comes apart in its side's colours. A Marine with a mob on them is torn
+// apart, and sometimes gets a last word in on the radio.
+function die(b: Battle, u: Unit) {
+  const torn = !isHorde(b, u.side) && !armoured(u.kind) && mob(b, u) >= MOB;
+  b.fx.push({ kind: "gore", x: u.x, z: u.z, tx: u.x, tz: u.z, t: 1.5, side: u.side, big: torn || armoured(u.kind) || !!u.champ, y: altitude(u) });
+  if (armoured(u.kind)) b.fx.push({ kind: "blast", x: u.x, z: u.z, tx: u.x, tz: u.z, t: 0.6, big: true });
+  if (isHorde(b, u.side) || armoured(u.kind) || u.id === b.hero.id || b.time - b.screamAt < 4) return;
+  if (torn || rand(b) < 0.3) {
+    b.screamAt = b.time;
+    const who = NAMES[Math.floor(rand(b) * NAMES.length)]!;
+    b.events.push(torn && rand(b) < 0.5 ? `${who} was torn apart.` : `${who}: "${SCREAMS[Math.floor(rand(b) * SCREAMS.length)]}"`);
+  }
+}
+
+// A side has killed enough to earn its champion. If it's the player's side, the hero becomes
+// them, or comes back as them; otherwise one walks in at the spawn.
+function champion(b: Battle, s: Side) {
+  b.champ[s] = true;
+  const warbur = isHorde(b, s), mine = s === b.spec.hero;
+  if (mine && b.hero.id !== null) {
+    if (b.hero.inVehicle !== null) b.hero.inVehicle = null;
+    crown(b, heroUnit(b)!);
+  } else if (!mine) {
+    const p = spawnPoint(b, s);
+    crown(b, add(b, s, "champion", p.x, p.z));
+  }
+  b.events.push(warbur
+    ? `${mine ? "You are" : "Something big is coming. It's"} WARBUR: half Wooka, half bear, all silverback.${mine ? " E throws a Wooka." : ""}`
+    : `${mine ? "You are" : "The Marines have"} GUMPERT.${mine ? " E swaps kit: rockets, stun baton, jetpack." : ""}`);
 }
 
 // With no input the hero fights like any other trooper: for tests, and for a battle left to the AI.
