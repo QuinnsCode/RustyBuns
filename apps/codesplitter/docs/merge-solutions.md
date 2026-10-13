@@ -316,6 +316,82 @@ No new engine bugs: nothing dropped a side. Of the two semantic misses, `rules.t
 already in (#1109, and #1156, after which it replays exactly), and `config-schema.ts` is a real rewrite that only a test of the Neon-plus-`migrationsDir` case would send back.
 Since #1168 `0fb458f` replays with `config-schema.ts` as 1 card and `build.ts` down to its 2 real rewrites.
 
+### 2026-10-12 replay, evening round: 14 fixes on main `6a8a16d`
+
+The evening merge round's 14 hand-fixed "merge main" commits, replayed on main's engine at `6a8a16d`:
+
+```sh
+bun scripts/merge-replay.ts 86061e8 137baa3 0ebf5e2 5955abe 70702de 4b8666b 77af4b1 798a8ef d7ffea8 04a8fff 2d8cd97 1676275 1ff6e0a 6379a0a
+```
+
+| PR (fix commit) | git conflicted on | codeSplitter vs the fix |
+|---|---|---|
+| #1182 (`86061e8`) | 12 files: root docs, cli `build.ts`, `config-schema.ts`, `config.ts`, `glue/infer.ts`, `index.ts`, two tests, shell-bun `app-server.ts` | all 12 exact |
+| #1189 (`137baa3`) | git-recon `README.md`, `sim/game.ts`, `ui/main.ts`, `ui/scene.ts` | README and `scene.ts` differ; `game.ts` 2 cards, `main.ts` 1 card |
+| #1191 (`0ebf5e2`) | codesplitter `REFERENCE.md`, `api.ts`, `branches.ts`, `openapi.ts`, `test/merge-plan.test.ts` | 2 exact; `merge-plan.test.ts` differs; `branches.ts` 1 card (the lint), `openapi.ts` 1 card |
+| #1199 (`5955abe`) | cli `src/index.ts` | exact |
+| #1199 (`70702de`) | cli `src/wrangler.ts`, `test/init.test.ts` | both differ |
+| #1205 (`4b8666b`) | git-recon `README.md`, `net/world.ts`, `tests/battle.test.ts` | 2 exact; README differs |
+| #1210 (`77af4b1`) | codesplitter `src/mirror.ts` | 3 cards |
+| #1214 (`798a8ef`) | git-recon `README.md` | exact |
+| #1214 (`d7ffea8`) | git-recon `README.md`, `net/mirror.ts`, `net/room.ts`, `ui/main.ts`, `ui/net.ts` | README differs; the other four 1, 1, 1 and 2 cards |
+| #1221 (`04a8fff`) | git-recon `README.md` | 1 card |
+| #1221 (`2d8cd97`) | git-recon `README.md` | differs |
+| #1227 (`1676275`) | codesplitter `src/mirror.ts` | differs |
+| #1229 (`1ff6e0a`) | cli `src/index.ts`, `test/init.test.ts` | `index.ts` differs; `init.test.ts` reordered |
+| #1240 (`6379a0a`) | root `REFERENCE.md` | exact |
+
+Git conflicted on 40 files. codeSplitter settled 30 of them: 19 exact, 1 reordered and 10 with other text. It left 10 as cards. Nothing git merged clean was raised.
+
+#### The 10 that settled to other text
+
+Each is graded (a) the engine is wrong, (b) the person's fix is wrong or lost something, or (c) both are fine.
+
+| fix | file | grade | what differs |
+|---|---|---|---|
+| #1189 | git-recon `ui/scene.ts` | **(a), silent** | Main wrapped `s.alive \|\| b.down < …` as `!s.hidden && !s.gone && (…)`, and the branch as `(…) && ride?.kind !== "heli"`. The word merge made it `!s.hidden && !(s.gone && (…)) && …`. Dead soldiers who finished sinking, and players who left, are drawn again. It typechecks, and no test draws the scene. The fix keeps both sides' clauses at their own level. The import's `type RepoSnapshot` landing last is (c). #1255 |
+| #1199 `70702de` | cli `src/wrangler.ts` | **(a)**, a test catches it | The same shape: main's `\|\| (k === "containers" && …)` and the branch's `&& !(k === "limits" && …)` joined with no brackets, so the `limits` clause hangs off the `containers` one and never runs. The branch's own new `subrequests` test fails on it. #1255 |
+| #1199 `70702de` | cli `test/init.test.ts` | **(b)** | codeSplitter kept the branch's `{ limits: { cpu_ms, subrequests } }` → `["limits"]` test. The fix took main's `"limits"` in `HANDLED` and dropped that test with the branch's clause. So `init` on main no longer warns that a `limits.subrequests` was dropped. #1258 |
+| #1191 | codesplitter `test/merge-plan.test.ts` | (c) | Both sides added a `describe` at the end of the file. It put the branch's (#1163) before main's (#1162), the fix after, and the blank line between them went missing |
+| #1227 | codesplitter `src/mirror.ts` | (c) | Main wrapped the two catch-up calls in `if (theirs) { … }`. The branch's new `if (theirs) await postOrder(…)` landed after the closing brace with the old indentation. The fix moved it inside. It does the same thing, but the indentation is off |
+| #1229 | cli `src/index.ts` | (c) | The branch hoisted `const stage = alchemyStage(rawArgs)` and swapped every `alchemyStage(args)` for `stage`. Main's new offline-plan line kept `alchemyStage(args)`. It's the same value, but not the branch's refactor. #1257 |
+| #1189 | git-recon `README.md` | (c) + stale | Rows and bullets both sides added at one spot came out in the other order. The person also wrote how roles (branch) and battles (main) meet: "On your own, down 15", "In a battle everyone carries every gun", keys `1`-`9` again. That is code the merge left as `game.ts` cards. #1254 |
+| #1205 | git-recon `README.md` | stale | Main had no costs paragraph yet, so the branch's went in as written, with "(about 66 KB/s a player, #1183)". Main's binary deltas had made that 16 KB/s, and the person said so. #1254 |
+| #1214 `d7ffea8` | git-recon `README.md` | stale | Main's "The page acks with each input." The person added "and each snapshot echoes the newest input the world had" for the branch's input replay. #1254 |
+| #1221 `2d8cd97` | git-recon `README.md` | stale | Main's "16 KB/s", "a full room of 32 … $0.03". The branch raised the cap to 64, and the person rewrote them as 25 KB/s, 64 and $0.06. #1254 |
+
+"Stale" means the merge is faithful to both sides, but the text says something one side made untrue. No line merge can know that. What's missing is a flag, not a different merge.
+
+#### The 10 left as cards
+
+| fix | file | card | what would settle it |
+|---|---|---|---|
+| #1191 | codesplitter `src/branches.ts` | lint: `` `dry` is not defined (line 626) `` | **The refusal was right.** The branch moved `mergeBranch`'s dry run into its own function, which returns `{ dry }`. Main's new `rebuilt(…, dry, user)` line still names the old local, so the settled text would not run. The fix says `run.dry`. A function-scoped version of #1156's rename carry would settle it like the fix. #1257 |
+| #1191 | codesplitter `src/openapi.ts` L317 | both added a last field to one `ok: obj({ … })`, the branch on a wrapped line | A list both grew (L3), read across the wrap: main's `regenerated` on the line, then the branch's `took` line. That's the fix. #1256 |
+| #1214 `d7ffea8` | git-recon `ui/main.ts` L707 | main added `net.mirror.acked` to `input(…)`, and the branch joined `frame()` into it | A word merge across the join gives `input(net.mirror.frame(dt, input), now, net.mirror.acked)`, the fix. #1256 |
+| #1214 `d7ffea8` | git-recon `ui/net.ts` L3 | header comment: main reworded it, the branch only added a sentence at the end | Main's comment plus the branch's new sentence. That's the fix, and a sentence rule would do it (not filed) |
+| #1214 `d7ffea8` | git-recon `ui/net.ts` L55 | main changed the resend throttle, and the branch deleted it (inputs now always go) | A person. The fix took the deletion, but whether main's ack timing still needs a throttle is a design call |
+| #1189 | git-recon `ui/main.ts` L384 | main reworded the "Weapons you have" comment, and the branch deleted the weapons row it heads | The comment goes with its code: a comment-only edit loses to a deletion of the block below it. That's the fix (not filed) |
+| #1189 | git-recon `sim/game.ts` L240, L685 | L240: both added a parameter to `fromRepo` (`mode?`, `role?`) and to its `new Game(…)`, and each added a method below. L685: main changed the friendly-fire test, and the branch moved splash damage into a documented helper | L240's signature is a list both grew (L3), but the constructor call has to follow the constructor's merged order, and that is a card in the same file. L685 is an edit to code the other side moved and rewrote. Both are for a person or the checked AI |
+| #1214 `d7ffea8` | git-recon `net/room.ts` L192 | main rebuilt the snapshot as a delta (`seq`, `base`, `...changed`), and the branch added `seq` to the old `you` | A person: the field the branch added lives in a structure main replaced |
+| #1214 `d7ffea8` | git-recon `net/mirror.ts` L5 | both rewrote the header comment for their own feature | A person or the checked AI: two descriptions to merge into one |
+| #1210 | codesplitter `src/mirror.ts` L1034–1043 | both restructured the one `if (tip === had) … else if (open)` chain | A person. The fix itself was redone in #1227 |
+| #1221 `04a8fff` | git-recon `README.md` L91 | both edited the `room.ts` bullet's numbers | A person. The fix took main's numbers and dropped the branch's 64-player figures, measured before main's smaller snapshots. Stale again. #1254 |
+
+So 4 card hunks are rule-shaped: `openapi.ts`, `ui/main.ts` L707, `ui/net.ts` L3 and `ui/main.ts` L384. With `branches.ts` that's 5, once a function-scoped rename lets its lint pass. The rest are rewrites where a person (or the checked AI) rightly decides.
+
+#### Verdict and issues
+
+Nothing dropped a side, but this round has the first **silent bad merges** since §10 began: two lines where both sides wrapped one expression in `&&`/`||`, and the word merge changed the grouping (#1255). `scene.ts` gets past typecheck and tests. `wrangler.ts` is caught only by the branch's own test. The commonest miss (5 of the 20 files that weren't exact) is prose one side made untrue. That calls for a "check the facts" flag, not a different merge (#1254). Filed, most common first:
+
+1. #1254: a paragraph the other side made untrue settles silently (5 files)
+2. #1255: both sides wrap one expression in `&&`/`||`, and the grouping changes silently (2 lines)
+3. #1256: settle an edit to a line the other side joined or wrapped (2 cards)
+4. #1257: carry a branch's function-local rename or hoisted const into main's new lines (1 lint card, 1 harmless difference)
+5. #1258: not the engine. #1199's fix lost the branch's `limits` warning in `init`
+
+The comment rules (a sentence added to a comment the other side reworded, and a comment edit losing to the deletion of its code) are one card each, and are left unfiled for now.
+
 ## 11. A merge plan: who waits for whom
 
 On 2026-10-12 the PR agent dry-ran pairs of about 40 open PRs, laid them out as waves, and told a worker to
