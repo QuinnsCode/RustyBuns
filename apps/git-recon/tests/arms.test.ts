@@ -55,7 +55,7 @@ describe("reloading", () => {
 
 describe("roles", () => {
   test("a role carries only its kit, its first gun never runs dry", () => {
-    const g = new Game(map(flat, quiet), 1, { kind: "clear" }, "reviewer"), you = g.you();
+    const g = new Game(map(flat, quiet), 1, { kind: "clear" }, undefined, "reviewer"), you = g.you();
     expect(you.weapon).toBe("rebase");
     expect(you.ammo.rebase).toBe(-1);
     expect(you.ammo.push).toBe(0);
@@ -63,7 +63,7 @@ describe("roles", () => {
   });
 
   test("the role you pick next takes over when you come back from the reflog", () => {
-    const g = new Game(map(flat, quiet), 1, { kind: "clear" }, "committer"), you = g.you();
+    const g = new Game(map(flat, quiet), 1, { kind: "clear" }, undefined, "committer"), you = g.you();
     g.nextRole = "maintainer";
     expect(you.weapon).toBe("commit");
     g.hurt(you, 1e9, 1);

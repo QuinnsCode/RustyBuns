@@ -55,6 +55,14 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .repo-status { grid-column: 1 / -1; margin: 0; min-height: 1.2em; font: 12px var(--mono); color: var(--muted); }
 .repo-status.err { color: var(--accent-ink); }
 .heads button:disabled { opacity: 0.35; cursor: default; box-shadow: none; filter: grayscale(1); }
+.battle { display: grid; gap: 6px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--hair); }
+.battle label { color: var(--muted); font-size: 13px; }
+.battle .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; align-items: center; }
+.battle input, .battle select { flex: 1 1 8ch; min-width: 0; font: 13px var(--mono); color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 3px; padding: 7px 10px; }
+.battle input:focus-visible, .battle select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.battle button { white-space: nowrap; }
+.battle-status { margin: 0; min-height: 1.4em; font: 12px var(--mono); color: var(--muted); }
+.battle-status.bad { color: var(--accent-ink); }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 20px 0 0; padding-top: 16px; border-top: 1px solid var(--hair); font-size: 12px; }
 .keys dt { font-family: var(--mono); }
 .keys dd { margin: 0; color: var(--muted); }
@@ -95,10 +103,12 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .stance.hot { color: var(--accent-ink); font-weight: 600; }
 #progress { font-variant-numeric: tabular-nums; pointer-events: auto; cursor: help; }
 .weapons { position: absolute; right: 12px; bottom: 12px; margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
-.weapons li { display: grid; grid-template-columns: 2ch 17ch 3ch; gap: 8px; align-items: center; padding: 3px 8px; background: rgba(255, 255, 255, 0.9); border: 1px solid var(--hair); font-size: 12px; }
+.weapons li { display: grid; grid-template-columns: 2ch 28px 12ch 3ch; gap: 8px; align-items: center; padding: 3px 8px; background: rgba(255, 255, 255, 0.9); border: 1px solid var(--hair); font-size: 12px; }
 .weapons li.on { border-color: var(--line); box-shadow: inset 3px 0 0 var(--accent); }
 .weapons li.out { opacity: 0.4; }
 .weapons kbd { color: var(--muted); }
+.weapons svg { width: 28px; height: 14px; display: block; }
+.weapons li.on svg { color: var(--accent-ink); }
 .weapons span { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .feed { position: absolute; top: 56px; right: 12px; margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; justify-items: end; font: 12px var(--mono); }
 .feed li { background: rgba(255, 255, 255, 0.9); padding: 2px 6px; border: 1px solid var(--hair); transition: opacity 1s; }
@@ -108,6 +118,16 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .banner.show { animation: banner 2.4s ease-out; }
 @keyframes banner { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
 .clickme { position: absolute; left: 50%; bottom: 20%; transform: translateX(-50%); font-size: 12px; color: var(--muted); background: rgba(255, 255, 255, 0.9); padding: 4px 10px; border: 1px solid var(--hair); }
+
+/* a battle: where to join, and the scoreboard while Tab is down */
+.hosting { position: absolute; left: 12px; top: 52px; font-size: 11px; background: rgba(255, 255, 255, 0.9); border: 1px solid var(--hair); padding: 2px 6px; }
+.board { position: absolute; left: 50%; top: 18%; transform: translateX(-50%); border-collapse: collapse; background: rgba(255, 255, 255, 0.95); border: 1px solid var(--line); font: 13px var(--mono); font-variant-numeric: tabular-nums; }
+.board th, .board td { padding: 4px 12px; text-align: left; white-space: nowrap; }
+.board th { color: var(--muted); font-weight: 400; border-bottom: 1px solid var(--hair); }
+.board td:nth-child(n + 3) { text-align: right; }
+.board tr.me td { box-shadow: inset 0 -2px 0 var(--accent); }
+.board tr.theirs td:first-child::before { content: "◆ "; color: var(--muted); }
+.board tr.ours td:first-child::before { content: "◆ "; }
 
 /* results */
 .results h2 { margin: 0 0 8px; font-size: 28px; }

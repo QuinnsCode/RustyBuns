@@ -15,7 +15,7 @@ pnpm exec rustybuns init
 
 It also finds D1 migrations in `./migrations`, takes secret *names* from `.dev.vars` (the values never leave your machine), and gitignores what it generates.
 
-Run it in the app's own folder. At a repo root that isn't the app, `init` names the folders below that are (`frontend/`, `apps/web/`). A Vite app whose dev server proxies paths to a server of its own (`server.proxy` sending `/api` to an `api/` folder running `node server.js`) stays desktop-only: the build alone can't answer those paths on the web. `init` prints a `backend:` line naming them and the server it found.
+Run it in the app's own folder. At a repo root that isn't the app, `init` names the folders below that are (`frontend/`, `apps/web/`). A Vite app whose dev server proxies paths to a server of its own (`server.proxy` sending `/api` to an `api/` folder running `node server.js`) stays desktop-only: the build alone can't answer those paths on the web. `init` prints a `backend:` line naming them and the server it found. When it can tell which file that server runs (`node server.js` in `../api`), it also writes `targets.desktop.server`: the desktop host then starts that server beside itself and sends those paths to it, with `DATA_DIR` in the app's data dir. See [`server`](REFERENCE.md#config).
 
 Would rather hand this to your coding agent? [AGENT_PROMPTS.md](AGENT_PROMPTS.md) has prompts to paste.
 
@@ -64,6 +64,7 @@ If something goes wrong here:
 
 - **pnpm 10 holds back packages less than a day old.** Add `minimumReleaseAgeExclude: ["alchemy", "effect", "@effect/*", "@rustybuns/*"]` to `pnpm-workspace.yaml`.
 - **In a monorepo,** `add deploy`'s version overrides go in the workspace root's `package.json`. Bun, npm and yarn ignore them in a member package.
+- **`not logged in to Cloudflare` or `Cloudflare refused the API token`:** `plan`, `deploy` and `destroy` check the login before they build anything. Run `rustybuns login cloudflare`, or set a working `CLOUDFLARE_API_TOKEN` with its `CLOUDFLARE_ACCOUNT_ID`.
 - **Several Cloudflare accounts:** `rustybuns login cloudflare --profile <name>`, then pass `--profile <name>` to `plan` and `deploy`.
 - **CI:** set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, and pass `--yes`.
 

@@ -287,6 +287,25 @@ test("init: a Vite app that proxies to its own server in dev stays desktop-only 
   expect(run("plan").out).toMatch(/desktop-only app/);
 });
 
+test("init: a proxied Vite app whose server file it can find runs that server beside the host", () => {
+  const p = project({
+    "frontend/package.json": VITE, "frontend/src/main.tsx": "", "frontend/package-lock.json": "{}",
+    "frontend/vite.config.js": "export default { server: { proxy: { '/api': { target: 'http://127.0.0.1:3000' } } } }\n",
+    "api/package.json": JSON.stringify({ type: "module", scripts: { start: "node --enable-source-maps server.js" } }),
+    "api/server.js": "",
+  });
+  const run = (...args: string[]) => { const x = Bun.spawnSync(["bun", CLI, ...args], { cwd: join(p.dir, "frontend"), env: { ...process.env, npm_config_user_agent: "" } }); return { code: x.exitCode, out: x.stdout.toString() + x.stderr.toString() }; };
+  const r = run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("backend:  ../api (node --enable-source-maps server.js) runs beside the desktop host: desktop.server proxies /api to it");
+  const c = p.read("frontend/rustybuns.config.ts");
+  expect(c).toContain('"server": {\n        "entry": "../api/server.js",\n        "paths": [\n          "/api"\n        ]');
+  expect(c).not.toContain('"edge"');
+  const plan = run("plan").out;
+  expect(plan).toContain("desktop-only app");
+  expect(plan).toContain("Add targets.box to host it on a server");
+});
+
 test("plan: Alchemy not installed yet says to run add deploy, not to fix the config", () => {
   const p = project({ "package.json": VITE, "bun.lock": "", "src/main.tsx": "" });
   expect(p.run("init").code).toBe(0);

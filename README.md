@@ -77,6 +77,8 @@ You write against the left-hand shape once. What each primitive would be on AWS,
 
 The host binds to `127.0.0.1`, gates every request on a per-launch token, and keeps your data in `~/.<app-name>/`. Your users never install Bun: it's inside the binary. Details in [The host](REFERENCE.md#the-host).
 
+**Bring your own server.** A Vite frontend whose dev server proxies `/api` to a Node server of its own (an `api/` folder running `node server.js`) keeps that server. `targets.desktop.server` bundles it into the binary, and the host runs it beside itself, with its data in the app's data dir, and sends it the paths Vite did. `init` sets it up when it finds the server. It runs on the desktop and a box, not on Workers.
+
 **Opens on a Mac without a warning.** A binary you download is blocked by macOS until it's signed and notarized. On a Mac with a Developer ID certificate, `build desktop --sign` signs the darwin binaries, and `--notarize <profile>` also sends a `.zip` of each to Apple. The profile is the one you saved with `xcrun notarytool store-credentials`, so your Apple password stays in the keychain.
 
 </details>
@@ -223,7 +225,7 @@ Every example is one codebase that runs as a desktop binary. The multiplayer one
 |---|---|
 | [hippo-tycoon](apps/hippo-tycoon/README.md) | One game class runs as a Durable Object on Cloudflare and in-process in the binary: solo, couch, LAN party and online rooms |
 | [park-hide-seek](apps/park-hide-seek/README.md) | 3D hide and seek on real Yosemite terrain, played by the page, by a LAN host or by the edge; each player is sent only what they can see. [Play it](https://park-hide-seek.notryanquinn.workers.dev) |
-| [git-recon](apps/git-recon/README.md) | A repo as a shooter level: its folders become compounds and its files buildings on real ground (Yosemite, or any lat/long) or a plastic-army kitchen and garden, fought with git commands as weapons, all in the page |
+| [git-recon](apps/git-recon/README.md) | A repo as a shooter level: its folders become compounds and its files buildings on real ground (Yosemite, or any lat/long) or a plastic-army kitchen and garden, fought with git commands as weapons, in the page on your own or 32 to a battle over the LAN |
 | [codeSplitter](apps/codesplitter/README.md) | A code host for the agentic era: every file a Durable Object, agents editing line by line, real git on Cloudflare Artifacts, an MCP server, on the edge and as a desktop app from one codebase. [Try it](https://codesplitter.notryanquinn.workers.dev) |
 | [agent-office](apps/agent-office/README.md) | Someone else's Node server (PTYs, WebSockets, a 3D client) as one binary, nothing forked |
 | [tscircuit-desktop](apps/tscircuit-desktop/README.md) | A heavy, real-world Vite app as one file, with a Rust engine up to 22x faster and a TypeScript fallback |

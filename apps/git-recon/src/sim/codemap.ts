@@ -109,6 +109,19 @@ export function checkHits(folder: string, check: string): boolean {
   return new RegExp(`(^|[^a-z0-9])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-z0-9])`).test(check.toLowerCase());
 }
 
+/** The shape a file is built as, by what kind of file it is. Its hitbox is always its box. */
+export type Structure = "tower" | "house" | "silo" | "bunker" | "stack";
+
+/** Tests dig in as bunkers, docs are houses, config and data are silos, styles and assets step up as stacks, code is a tower. */
+export function structureOf(path: string): Structure {
+  const p = path.toLowerCase(), name = p.split("/").pop()!;
+  if (/(^|\/)(tests?|__tests__|spec)\//.test(p) || /\.(test|spec)\.[a-z]+$/.test(name)) return "bunker";
+  if (/\.(md|mdx|txt|rst|adoc)$/.test(name) || /^(license|changelog|readme)/.test(name)) return "house";
+  if (/\.(json|jsonc|ya?ml|toml|lock|ini|env|schema|xml|csv)$/.test(name) || /config\.[a-z]+$/.test(name)) return "silo";
+  if (/\.(css|scss|sass|less|html|svg|png|jpe?g|gif|webp|ico|woff2?)$/.test(name)) return "stack";
+  return "tower";
+}
+
 /** A block's height for its line count: a one-liner is a step, a 5000-line file a watchtower. */
 export const heightOf = (lines: number) => Math.min(8, Math.round((0.6 + Math.sqrt(lines) * 0.13) * 10) / 10);
 const footOf = (lines: number) => Math.round((1.3 + Math.min(1.7, lines / 500)) * 10) / 10;

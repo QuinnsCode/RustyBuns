@@ -37,6 +37,21 @@
           <div class="row"><input id="place-at" name="at" inputmode="decimal" placeholder="36.0566, -112.1251" spellcheck="false" /><button id="place-go" class="primary" title="Read the ground there and fight on it">Deploy</button></div>
           <p id="place-status" class="place-status" role="status"></p>
         </form>
+        <form id="battle" class="battle" autocomplete="off">
+          <label>Battle: many players in one repo, over the LAN</label>
+          <div class="row">
+            <input id="battle-name" maxlength="24" placeholder="Your name" spellcheck="false" aria-label="Your name" />
+            <select id="battle-level" aria-label="Level"></select>
+            <div id="battle-mode" class="chips" role="radiogroup" aria-label="Mode"></div>
+            <button id="battle-host" type="button" class="primary" title="Open a battle on this level and repo to your network">Host</button>
+          </div>
+          <div class="row">
+            <input id="battle-addr" placeholder="192.168.1.20:41234" spellcheck="false" aria-label="The host's address" />
+            <input id="battle-pass" placeholder="passphrase" spellcheck="false" aria-label="The host's passphrase" />
+            <button id="battle-join" type="submit" title="Join a battle someone's hosting (no address: this machine's)">Join</button>
+          </div>
+          <p id="battle-status" class="battle-status" role="status"></p>
+        </form>
         <dl class="keys">
           <dt>WASD · mouse</dt><dd>move · aim</dd>
           <dt>Click</dt><dd>fire</dd>
@@ -47,6 +62,7 @@
           <dt>N</dt><dd>pick your role for your next life</dd>
           <dt>E</dt><dd>get in or out of a vehicle: a buggy at 15 kills, an attack helicopter at 25</dd>
           <dt>Right click</dt><dd>scope (rebase; it sways, less lying down)</dd>
+          <dt>Tab</dt><dd>the scoreboard, in a battle</dd>
         </dl>
       </div>
     </main>
@@ -66,6 +82,8 @@
       <div id="prompt" class="prompt"></div>
       <ul id="weapons" class="weapons"></ul>
       <ul id="feed" class="feed"></ul>
+      <code id="hosting" class="hosting" hidden></code>
+      <table id="board" class="board" hidden></table>
       <div id="clickme" class="clickme">Click to aim · Esc to let go of the mouse</div>
     </div>
 

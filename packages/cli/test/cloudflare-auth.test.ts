@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { BASE_SCOPES, cloudflareEnv, cloudflareScopes, missingScopes, type WhoAmI, type Wrangler } from "../src/cloudflare-auth.ts";
+import { BASE_SCOPES, alchemyCloudflareProfile, cloudflareEnv, cloudflareProblem, cloudflareScopes, missingScopes, type WhoAmI, type Wrangler } from "../src/cloudflare-auth.ts";
 import type { RustyBunsConfig } from "../src/config.ts";
 
 const cfg = (bindings: RustyBunsConfig["bindings"], domain?: string): RustyBunsConfig => ({
@@ -99,4 +99,31 @@ test("cloudflareEnv: several accounts need CLOUDFLARE_ACCOUNT_ID, which is then 
 
 test("cloudflareEnv: no readable token: Alchemy's profile", async () => {
   expect(await cloudflareEnv(cfg({}), {}, fake([me()], true, null).w, quiet)).toBeNull();
+});
+
+test("cloudflareProblem: a token Cloudflare refuses is one line with the fix; unreachable or fine passes", async () => {
+  const asked: string[] = [];
+  const answer = (status: number | null) => async (token: string, account: string) => { asked.push(`${token}@${account}`); return status; };
+  const creds = { CLOUDFLARE_API_TOKEN: "bad", CLOUDFLARE_ACCOUNT_ID: "acct1" };
+  expect(await cloudflareProblem(creds, answer(400))).toBe(
+    "Cloudflare refused the API token for account acct1 (HTTP 400). Run `rustybuns login cloudflare`, or set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.");
+  expect(asked).toEqual(["bad@acct1"]);
+  expect(await cloudflareProblem(creds, answer(200))).toBeNull();
+  expect(await cloudflareProblem(creds, answer(null))).toBeNull();
+  expect(await cloudflareProblem(creds, answer(503))).toBeNull();
+});
+
+test("cloudflareProblem: no credentials is one line; Alchemy's profile, API key or CI env are enough", async () => {
+  const never = async () => { throw new Error("no token to check"); };
+  const none = () => false;
+  expect(await cloudflareProblem({}, never, none)).toBe("not logged in to Cloudflare. Run `rustybuns login cloudflare`, or set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.");
+  expect(await cloudflareProblem({ CLOUDFLARE_API_TOKEN: "t" }, never, none)).toContain("Alchemy ignores it without CLOUDFLARE_ACCOUNT_ID");
+  const seen: string[] = [];
+  expect(await cloudflareProblem({ ALCHEMY_HOME: "/h", ALCHEMY_PROFILE: "work" }, never, (p) => { seen.push(p); return true; })).toBeNull();
+  expect(seen).toEqual(["/h/profiles/work/cloudflare.json"]);
+  expect(alchemyCloudflareProfile({ ALCHEMY_HOME: "/h" })).toBe("/h/profiles/default/cloudflare.json");
+  expect(await cloudflareProblem({ CLOUDFLARE_API_KEY: "k", CLOUDFLARE_EMAIL: "e", CLOUDFLARE_ACCOUNT_ID: "a" }, never, none)).toBeNull();
+  // no profiles in CI, even one on disk
+  expect(await cloudflareProblem({ CI: "true" }, never, () => true)).toContain("no Cloudflare credentials in CI");
+  expect(await cloudflareProblem({ CI: "false" }, never, () => true)).toBeNull();
 });
