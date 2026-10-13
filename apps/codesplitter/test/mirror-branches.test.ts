@@ -90,21 +90,52 @@ describe("mirrors: branches and this copy's own git", () => {
 
   test("a branch that took main in by line id pushes the settled files as a merge, where git alone clashes (#1162)", async () => {
     const call = await mirrored("took-main");
-    const q = "?path=README&branch=late";
+    const q = "?path=src%2Fa.ts&branch=late";
     expect((await post(call, "/api/repos/ana/up/branches", { name: "late" })).status).toBe(201);
-    const line = (await get(call, `/api/repos/ana/up/do/file${q}`)).lines[1];
-    await post(call, `/api/repos/ana/up/do/ops${q}`, { ops: [{ kind: "set", line: line.id, base: line.rev, text: "world, late" }] });
+    const line = (await get(call, `/api/repos/ana/up/do/file${q}`)).lines[0];
+    await post(call, `/api/repos/ana/up/do/ops${q}`, { ops: [{ kind: "set", line: line.id, base: line.rev, text: "export const a = 3" }] });
     expect(await (await post(call, "/api/repos/ana/up/mirror/branches/late/push")).json()).toMatchObject({ pushed: true });
-    // Main changes the same line upstream: git can't merge the two.
-    await upstreamCommit({ README: "hello\nworld, first\n" }, "first");
-    expect(await sync(call)).toMatchObject({ state: "ok" });
-    const settled = (await get(call, `/api/repos/ana/up/do/file${q}`)).lines[1];
-    await post(call, `/api/repos/ana/up/do/ops${q}`, { ops: [{ kind: "set", line: settled.id, base: settled.rev, text: "world, first and late" }] });
-    expect((await pushBranch(call.env, "ana", "up", "late"))!.status).toBe(409);
+    // Main changes the same line upstream: git can't merge the two, nor can line ids, so the sync leaves it be.
+    await upstreamCommit({ "src/a.ts": "export const a = 2\n" }, "first");
     const prev = await sh(`git --git-dir ${up} rev-parse late`);
+    expect(await sync(call)).toMatchObject({ state: "ok" });
+    expect(await sh(`git --git-dir ${up} rev-parse late`)).toBe(prev);
+    const settled = (await get(call, `/api/repos/ana/up/do/file${q}`)).lines[0];
+    await post(call, `/api/repos/ana/up/do/ops${q}`, { ops: [{ kind: "set", line: settled.id, base: settled.rev, text: "export const a = 2 + 3" }] });
+    expect((await pushBranch(call.env, "ana", "up", "late"))!.status).toBe(409);
     expect(await (await pushBranch(call.env, "ana", "up", "late", { tookMain: true }))!.json()).toMatchObject({ pushed: true });
     expect(await sh(`git --git-dir ${up} log -1 --format=%P late`)).toBe(`${prev} ${await upLog("%H")}`);
-    expect(await sh(`git --git-dir ${up} show late:README`)).toBe("hello\nworld, first and late");
+    expect(await sh(`git --git-dir ${up} show late:src/a.ts`)).toBe("export const a = 2 + 3");
+  });
+
+  test("a branch that clashes with main only in git takes main in and pushes it, once main's commit is up (#1190)", async () => {
+    const call = await mirrored("git-only");
+    const q = (b: string) => `?path=README&branch=${b}`;
+    const edit = async (b: string, i: number, text: string) => {
+      const line = (await get(call, `/api/repos/ana/up/do/file${q(b)}`)).lines[i];
+      expect((await post(call, `/api/repos/ana/up/do/ops${q(b)}`, { ops: [{ kind: "set", line: line.id, base: line.rev, text }] })).status).toBe(200);
+    };
+    // Two branches change neighbouring lines: line ids settle it, git calls it a clash.
+    for (const b of ["late", "early"]) expect((await post(call, "/api/repos/ana/up/branches", { name: b })).status).toBe(201);
+    await edit("late", 0, "hello, late");
+    await edit("early", 1, "world, early");
+    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/late/push")).json()).toMatchObject({ pushed: true });
+    const prev = await sh(`git --git-dir ${up} rev-parse late`);
+    expect(await (await post(call, "/api/repos/ana/up/branches/early/merge")).json()).toMatchObject({ status: "merged" });
+
+    // Main's git doesn't hold the merge till its commit: upstream's branch waits.
+    expect(await sync(call)).toMatchObject({ state: "ok" });
+    expect(await sh(`git --git-dir ${up} rev-parse late`)).toBe(prev);
+    expect((await post(call, "/api/repos/ana/up/do/commit?path=README", { message: "early" })).status).toBe(200);
+    expect(await sync(call)).toMatchObject({ state: "ok" });
+    expect(await upShow("README")).toBe("hello\nworld, early");
+    // Then it takes main in: a merge of main's tip, both lines in, and git merges it cleanly now.
+    expect(await sh(`git --git-dir ${up} log -1 --format=%P late`)).toBe(`${prev} ${await upLog("%H")}`);
+    expect(await sh(`git --git-dir ${up} show late:README`)).toBe("hello, late\nworld, early");
+    expect((await get(call, `/api/repos/ana/up/do/file${q("late")}`)).lines.map((l: any) => l.text)).toEqual(["hello, late", "world, early"]);
+    const pushed = await sh(`git --git-dir ${up} rev-parse late`);
+    expect(await sync(call)).toMatchObject({ state: "ok" });
+    expect(await sh(`git --git-dir ${up} rev-parse late`)).toBe(pushed);
   });
 
   test("branches carry deletions and binary files both ways, and merging one deletes upstream too (#440, #446)", async () => {
