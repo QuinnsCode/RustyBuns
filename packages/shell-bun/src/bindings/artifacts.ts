@@ -82,10 +82,24 @@ export class LocalArtifacts {
     return t.scope === "write" && !this.meta(repo).readOnly;
   }
 
+  /** A repo's rb.* stamp. One git spawn, and none while its config file is unchanged: every authed git request asks. */
+  private metas = new Map<string, { sig: string; meta: { id: string; source: string | null; readOnly: boolean; description: string | null } }>();
   meta(name: string) {
     const p = this.path(name);
-    const get = (k: string) => { try { return git(["config", "--get", `rb.${k}`], p).toString().trim(); } catch { return ""; } };
-    return { id: get("id"), source: get("source") || null, readOnly: get("readonly") === "true", description: get("description") || null };
+    let sig = "";
+    try { const st = statSync(join(p, "config")); sig = `${st.ino}:${st.size}:${st.mtimeMs}`; } catch {}
+    const hit = this.metas.get(p);
+    if (sig && hit?.sig === sig) return hit.meta;
+    const got: Record<string, string> = {};
+    try {
+      for (const e of git(["config", "--null", "--get-regexp", "^rb\\."], p).toString().split("\0")) {
+        const nl = e.indexOf("\n");
+        if (nl > 0) got[e.slice(3, nl)] = e.slice(nl + 1).trim();
+      }
+    } catch {}
+    const meta = { id: got.id ?? "", source: got.source || null, readOnly: got.readonly === "true", description: got.description || null };
+    if (sig) this.metas.set(p, { sig, meta });
+    return meta;
   }
   stamp(p: string, opts: { description?: string; readOnly?: boolean; source?: string }) {
     git(["config", "rb.id", crypto.randomUUID()], p);
