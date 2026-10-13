@@ -1,8 +1,8 @@
 // The match modes the end-of-match vote picks from, each with its own way to win.
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import type { BattleSpec, MatchMode } from "../src/battle/contract.ts";
 import { groundRecorder, replayGround } from "../src/battle/replay.ts";
-import { DT, POST_RADIUS, SPAWN, championUnit, heroUnit, inPlay, startBattle, step, timeLimit } from "../src/battle/sim.ts";
+import { DT, POST_RADIUS, SPAWN, heroUnit, inPlay, startBattle, step, timeLimit, vipUnit } from "../src/battle/sim.ts";
 
 const spec = (mode: MatchMode, over: Partial<BattleSpec> = {}): BattleSpec => ({
   id: "1-kessa-0", turn: 1, system: "Kessa", sector: "shield",
@@ -11,6 +11,7 @@ const spec = (mode: MatchMode, over: Partial<BattleSpec> = {}): BattleSpec => ({
   vehicles: { attacker: { tank: 1 }, defender: {} }, strikes: { attacker: 1, defender: 0 },
   reinforcements: { attacker: 0, defender: 0 }, turrets: 2, seed: 42, mode, ...over,
 });
+setDefaultTimeout(30_000); // whole battles, played out
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
 
 test("assault: one post live at a time; take it, hold it, and the next comes live", () => {
@@ -76,30 +77,33 @@ test("hold-out: turrets on every post, five minutes on the clock, and the attack
   expect(c.over?.winner).toBe("attacker");
 });
 
-test("escort: the champion walks for the keep only with company; getting there wins, going down loses", () => {
+test("escort: the attacker's champion is on the field from the start; if the hero attacks, it's them", () => {
   const b = startBattle(spec("escort"));
-  const champ = championUnit(b)!;
-  expect(champ).toMatchObject({ side: "attacker", kind: "champion" });
+  expect(vipUnit(b)).toBe(heroUnit(b)!);
+  expect(heroUnit(b)!.champ).toBe("gumpert");
   expect(b.posts.some((_, i) => inPlay(b, i))).toBe(false);
+  heroUnit(b)!.hp = 0;
+  step(b, null);
+  expect(b.over?.winner).toBe("defender");
+});
+
+test("escort: an AI champion walks for the keep only with company, and getting there wins", () => {
+  const b = startBattle(spec("escort", { hero: "defender" })), vip = vipUnit(b)!;
+  expect(vip).toMatchObject({ side: "attacker", kind: "champion", champ: "gumpert" });
   // Alone, it waits.
-  b.units = b.units.filter((u) => u.side === "defender" || u === champ);
+  b.units = b.units.filter((u) => u.side === "defender" || u === vip);
   b.spawnAt.attacker = 1e9;
-  const at = { x: champ.x, z: champ.z };
+  const at = { x: vip.x, z: vip.z };
   for (let i = 0; i < 30; i++) step(b, null);
-  expect(dist(champ, at)).toBeLessThan(0.01);
-  // With the hero alongside, it walks.
-  const c = startBattle(spec("escort")), hero = heroUnit(c)!, ch = championUnit(c)!;
-  Object.assign(hero, { x: ch.x + 2, z: ch.z });
+  expect(dist(vip, at)).toBeLessThan(0.01);
+  // With a friend alongside, it walks.
+  const c = startBattle(spec("escort", { hero: "defender" })), ch = vipUnit(c)!;
   const keep = c.posts.at(-1)!, far = dist(ch, keep);
   for (let i = 0; i < 30; i++) step(c, null);
   expect(dist(ch, keep)).toBeLessThan(far);
   Object.assign(ch, { x: keep.x, z: keep.z + POST_RADIUS / 2 });
   step(c, null);
   expect(c.over?.winner).toBe("attacker");
-  const d = startBattle(spec("escort"));
-  championUnit(d)!.hp = 0;
-  step(d, null);
-  expect(d.over?.winner).toBe("defender");
 });
 
 test("every mode replays the same from the hero's inputs", () => {

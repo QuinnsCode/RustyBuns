@@ -126,6 +126,11 @@
   .explorer .label { display: flex; align-items: center; }
   .tree-add { margin-left: auto; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--muted); cursor: pointer; }
   .tree-add:hover { background: var(--select); color: var(--fg); } .tree-add svg.lucide { width: 14px; height: 14px; }
+  /* The explorer's search: every file whose path has what you type, the name's match in bold. */
+  .tree-find { position: sticky; top: 0; z-index: 1; display: block; padding: 4px 8px 6px; background: var(--canvas); }
+  .tree-find svg.lucide { position: absolute; left: 16px; top: 50%; translate: 0 -55%; width: 13px; height: 13px; color: var(--muted); pointer-events: none; }
+  .tree-find input { width: 100%; height: 26px; padding: 2px 8px 2px 26px; font-size: 12.5px; }
+  .tree a .in { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; } .tree a mark { background: none; color: inherit; font-weight: 700; }
   /* The explorer's menu (right-click or ctrl-click on the tree): new file, copy path. */
   .ctx { position: fixed; z-index: 50; min-width: 220px; padding: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; box-shadow: 0 12px 32px -8px rgba(0,0,0,.18); display: grid; font-size: 13px; }
   .ctx button { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border: 0; border-radius: 4px; background: none; color: var(--fg); text-align: left; cursor: pointer; font: inherit; }
@@ -711,25 +716,19 @@
   .check.ok::before { content: "● "; color: var(--accent-ink); } .check.no { color: var(--del-fg); }
   .formmsg { font-size: 12.5px; color: var(--del-fg); margin: 0; min-height: 0; }
   .small { font-size: 12.5px; }
-  .rule { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--border); }
-  .rule:first-of-type { border-top: 0; padding-top: 0; } .rule:last-of-type { padding-bottom: 0; }
-  .rule .rhead { display: flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; }
-  .rule .rhead b { font-weight: 600; font-size: 14px; white-space: nowrap; }
-  .rule .rhead .switch { margin-left: 0; }
-  .rule .per { font: 500 10.5px var(--mono); color: var(--faint); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; }
-  .rule .use { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 400 11px var(--mono); color: var(--faint); white-space: nowrap; }
-  .rule .use .hot { color: var(--accent-ink); }
-  .rule .what { padding-left: 38px; font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .rule .ctl { display: flex; align-items: center; gap: 6px; padding-left: 38px; font-size: 12.5px; color: var(--faint); }
-  .rule .ctl :is(input, select) { padding: 2px 6px; font-size: 13px; line-height: 18px; }
-  .rule .ctl input { width: 64px; font-family: var(--mono); text-align: right; }
-  .rule .ctl .btn { padding: 2px 4px; color: var(--muted); }
-  .rule .spread { display: flex; flex-wrap: wrap; gap: 2px 10px; padding-left: 38px; font: 400 11px var(--mono); color: var(--faint); }
-  .rule .spread b { font-weight: 500; color: var(--muted); } .rule .spread .hot b { color: var(--accent-ink); }
-  .rule.off .what, .rule.off .ctl, .rule.off .use, .rule.off .per, .rule.off .spread { opacity: .4; }
+  .rule { display: flex; align-items: center; gap: 6px; padding: 5px 0; border-top: 1px solid var(--border); font-size: 13px; color: var(--faint); }
+  .rule:first-of-type { border-top: 0; }
+  .rule .switch { margin-left: 0; }
+  .rule .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-weight: 500; cursor: help; }
+  .rule .name .hot { margin-left: 6px; font: 500 11px var(--mono); color: var(--accent-ink); }
+  .rule :is(input, select) { padding: 1px 4px; font-size: 12.5px; line-height: 18px; }
+  .rule select[name=window_s] { width: 76px; } .rule select[name=on_fail] { width: 68px; }
+  .rule input[name=max] { width: 56px; font-family: var(--mono); text-align: right; }
+  .rule .btn { padding: 2px 4px; color: var(--muted); }
+  .rule.off :is(.name, input[name=max], select, span) { opacity: .4; }
   /* The rate limits page: rule groups flowed into columns, a save bar that sticks, the log as rows. */
-  .limits .rgroups { columns: 3 340px; column-gap: 12px; }
-  .limits .rgroups > .box { break-inside: avoid; margin: 0 0 12px; }
+  .limits .rgroups { columns: 2 440px; column-gap: 32px; }
+  .limits .rgroups > section { break-inside: avoid; margin: 0 0 18px; } .limits .rgroups h2, .limits .log h2 { margin: 0 0 4px; font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
   .limits h1 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: 1.5em; font-weight: 600; } .page-h { font-size: 1.5em; font-weight: 600; }
   /* The home feed (#/feed): the digest first, then one row per person or agent run, its raw events one click behind. */
   .feed { max-width: 820px; } .feed h1 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: 1.5em; font-weight: 600; } .feed h1 .seg { flex: none; } .feed h1 .seg a { padding: 3px 10px; font-size: 12.5px; }
@@ -743,7 +742,9 @@
   .feed .evs { border-top: 1px solid var(--border); padding: 6px 12px 8px 34px; font-size: 13px; display: grid; gap: 2px; }
   .feed .evs a { overflow-wrap: anywhere; }
   .limits .savebar { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 8px; padding: 10px 0; margin-bottom: 16px; background: var(--bg); border-top: 1px solid var(--border); }
-  .limits .ev .btn { margin-left: auto; }
+  .limits .ev .btn { margin-left: auto; padding: 2px 4px; color: var(--muted); }
+  .limits .log { margin: 0 0 18px; } .limits .log h2 { margin: 0 0 4px; font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .limits .log .ev { padding: 5px 0; } .limits .log .ev b { font: 500 12.5px var(--mono); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 22em; }
   .limits .ev, .jobs .ev { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 16px; border-top: 1px solid var(--border); font-size: 13px; }
   .limits .ev:first-of-type, .jobs .ev:first-of-type { border-top: 0; }
   .limits .tag, .jobs .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); }
@@ -1489,9 +1490,9 @@ function handleDrawer() {
 // Rate limits (admins): each rule's cap, its window, what happens to a caller
 // over it, and this window's traffic, grouped by what they protect; then who's
 // flagged and the last week's log of callers going over, each with a reset.
-const WINDOWS = [[60, "minute"], [600, "10 minutes"], [3600, "hour"], [86400, "day"], [604800, "week"]];
+const WINDOWS = [[60, "min"], [600, "10 min"], [3600, "hour"], [86400, "day"], [604800, "week"]];
 const every = (s) => (WINDOWS.find(([w]) => w === s)?.[1]) ?? `${s} seconds`;
-const ON_FAIL = [["reject", "reject (429)", "turn the call away with a 429"], ["log", "log it", "let it through, note it in the log"], ["flag", "flag caller", "let it through, flag the caller"], ["queue", "queue it", "hold it, run it when there's room"]];
+const ON_FAIL = [["reject", "reject", "turn the call away with a 429"], ["log", "log", "let it through, note it in the log"], ["flag", "flag", "let it through, flag the caller"], ["queue", "queue", "hold it, run it when there's room"]];
 const DID = { reject: "rejected", log: "logged", flag: "flagged", queue: "queued" };
 const ago = (t) => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? "just now" : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`; };
 async function limitsPage() {
@@ -1501,29 +1502,29 @@ async function limitsPage() {
     const d = r.defaults, changed = d && (d.max !== r.max || d.window_s !== r.window_s || d.on_fail !== r.on_fail || !r.enabled);
     const opts = (WINDOWS.some(([w]) => w === r.window_s) ? WINDOWS : [...WINDOWS, [r.window_s, every(r.window_s)]])
       .map(([w, l]) => `<option value="${w}"${w === r.window_s ? " selected" : ""}>${l}</option>`).join("");
-    // What callers really get: their count per window, across every window still kept (about the last day).
-    const sp = r.spread, stat = (k, l, tip) => `<span class="${sp[k] > r.max ? "hot" : ""}" title="${tip}">${l} <b>${sp[k]}</b></span>`;
-    const spread = sp ? `<div class="spread" title="per caller per ${every(r.window_s)}, over ${sp.windows} busy caller-window${sp.windows === 1 ? "" : "s"} since ${new Date(sp.since).toLocaleString()}">
-      ${stat("low", "low", "the quietest busy window")}${stat("p50", "med", "half of callers' windows were at or under this")}${stat("mean", "avg", "the average")}${stat("p90", "p90", "9 in 10 windows at or under")}${stat("p95", "p95", "19 in 20 windows at or under")}${stat("p99", "p99", "99 in 100 windows at or under")}${stat("worst", "worst", "the busiest a caller has been in one window")}<span>of ${r.max}${sp.over ? ` · <span class="hot"><b>${sp.over}</b> over</span>` : ""}</span></div>` : "";
-    const used = `${r.now.hits} hit${r.now.hits === 1 ? "" : "s"} · ${r.now.callers} caller${r.now.callers === 1 ? "" : "s"}${r.now.blocked ? ` · <span class="hot">${r.now.blocked} over</span>` : ""}`;
+    // The detail lives in the name's tooltip: what it counts, per whom, this window's traffic and what callers really get.
+    const sp = r.spread, per = r.per === "ip" ? "IP" : r.per === "token" ? "CI token" : r.per === "site" ? "the site" : "handle";
+    const tip = [r.what, `counted per ${per}`, `this ${every(r.window_s)}: ${r.now.hits} hits from ${r.now.callers} callers`,
+      sp && `per caller per window since ${new Date(sp.since).toLocaleString()}: median ${sp.p50}, p99 ${sp.p99}, worst ${sp.worst}`].filter(Boolean).join("\n");
+    const over = Math.max(r.now.blocked || 0, sp?.over || 0);
     return `<div class="rule${r.enabled ? "" : " off"}" data-name="${r.name}">
-      <label class="rhead"><span class="switch"><input type="checkbox" name="enabled"${r.enabled ? " checked" : ""} aria-label="limit ${esc(r.label)}"><i></i></span><b>${esc(r.label)}</b><span class="per">${r.per === "ip" ? "IP" : r.per === "token" ? "CI token" : r.per === "site" ? "site" : "handle"}</span><span class="use" title="this ${every(r.window_s)}">${used}</span></label>
-      <span class="what" title="${esc(r.what)}">${esc(r.what)}</span>${spread}
-      <div class="ctl"><input name="max" type="number" min="1" max="100000" value="${r.max}" aria-label="most allowed"><span>/</span><select name="window_s" aria-label="window">${opts}</select><span>then</span><select name="on_fail" aria-label="when a caller goes over">${ON_FAIL.filter(([v]) => v !== "queue" || r.queueable).map(([v, l, t]) => `<option value="${v}" title="${t}"${v === r.on_fail ? " selected" : ""}>${l}</option>`).join("")}</select>
-        ${changed ? `<button type="button" class="btn ghost small" data-default title="back to the default: ${d.max} per ${every(d.window_s)}, ${d.on_fail}">${icon("rotate-ccw")}</button>` : ""}</div>
+      <label class="switch"><input type="checkbox" name="enabled"${r.enabled ? " checked" : ""} aria-label="limit ${esc(r.label)}"><i></i></label>
+      <span class="name" title="${esc(tip)}">${esc(r.label)}${over ? `<span class="hot">${over} over</span>` : ""}</span>
+      <input name="max" type="number" min="1" max="100000" value="${r.max}" aria-label="most allowed"><span>/</span><select name="window_s" aria-label="window">${opts}</select>
+      <select name="on_fail" aria-label="when a caller goes over">${ON_FAIL.filter(([v]) => v !== "queue" || r.queueable).map(([v, l, t]) => `<option value="${v}" title="${t}"${v === r.on_fail ? " selected" : ""}>${l}</option>`).join("")}</select>
+      ${changed ? `<button type="button" class="btn ghost small" data-default title="back to the default: ${d.max} per ${every(d.window_s)}, ${d.on_fail}">${icon("rotate-ccw")}</button>` : ""}
     </div>`;
   };
   const groups = [...new Set(rules.map((r) => r.group))];
-  const reset = (who, rule) => `<button class="btn small" data-reset="${esc(who)}"${rule ? ` data-rule="${rule}"` : ""} title="clear ${rule ? "this rule's" : "every"} count for ${esc(who)}">${icon("rotate-ccw")}Reset</button>`;
+  const reset = (who, rule) => `<button class="btn ghost small" data-reset="${esc(who)}"${rule ? ` data-rule="${rule}"` : ""} title="reset ${rule ? "this rule's" : "every"} count for ${esc(who)}" aria-label="reset ${esc(who)}">${icon("rotate-ccw")}</button>`;
   app.innerHTML = `<div class="wrap limits" style="padding-top:24px">
     <h1>${icon("gauge")} Rate limits</h1>
-    <p class="muted" style="margin:0 0 18px">Behind the curtain: everything that costs money or invites abuse, and what happens when someone goes over. Counted per handle, or per IP before sign-in. Admins and the desktop app aren't counted.</p>
-    ${flagged.length ? `<div class="box"><div class="bar">${icon("flag")}<b>Flagged</b><span class="muted">went over a rule set to flag, this week</span></div>
-      ${flagged.map((f) => `<div class="body ev"><b>${esc(f.who)}</b><span class="muted">${f.rules.map(label).map(esc).join(", ")} · ${f.times}× · ${ago(f.last)}</span>${reset(f.who)}</div>`).join("")}</div>` : ""}
-    <form id="limits-form" class="rgroups">${groups.map((g) => `<div class="box"><div class="bar"><b>${esc(g)}</b></div><div class="body">${rules.filter((r) => r.group === g).map(row).join("")}</div></div>`).join("")}</form>
+    <p class="muted" style="margin:0 0 18px">Most allowed per window, and what happens past it. Hover a name for details. Admins and the desktop app aren't counted.</p>
+    ${flagged.length ? `<section class="log"><h2>Flagged this week</h2>${flagged.map((f) => `<div class="ev"><b>${esc(f.who)}</b><span>${f.rules.map(label).map(esc).join(", ")}</span><span class="tag flag">${f.times}×</span><span class="muted">${ago(f.last)}</span>${reset(f.who)}</div>`).join("")}</section>` : ""}
+    <form id="limits-form" class="rgroups">${groups.map((g) => `<section><h2>${esc(g)}</h2>${rules.filter((r) => r.group === g).map(row).join("")}</section>`).join("")}</form>
     <div class="savebar"><span class="muted small" id="limits-msg"></span><span class="grow"></span><button class="btn primary" id="limits-save">${icon("save")}Save</button></div>
-    <div class="box"><div class="bar">${icon("history")}<b>Over the cap</b><span class="muted">the first time each caller went over, per window, this week</span></div>
-      ${events.map((e) => `<div class="body ev"><span class="muted">${ago(e.at)}</span><b>${esc(e.who)}</b><span>${esc(label(e.rule))}</span><span class="tag ${e.action}">${DID[e.action] ?? e.action}</span>${reset(e.who, e.rule)}</div>`).join("") || '<div class="body muted">Nobody has gone over a limit this week.</div>'}</div>
+    <section class="log"><h2>Went over this week</h2>
+      ${events.map((e) => `<div class="ev"><b>${esc(e.who)}</b><span>${esc(label(e.rule))}</span><span class="tag ${e.action}">${DID[e.action] ?? e.action}</span><span class="muted">${ago(e.at)}</span>${reset(e.who, e.rule)}</div>`).join("") || '<div class="ev muted">Nobody yet.</div>'}</section>
   </div>`;
   const form = $("#limits-form");
   form.addEventListener("change", (e) => { const r = e.target.closest(".rule"); r?.classList.toggle("off", !r.querySelector("[name=enabled]").checked); $("#limits-msg").textContent = "Unsaved changes"; });
@@ -1646,11 +1647,10 @@ async function sealBox() {
   const k = await api("/admin/deploy-keys").catch(() => null);
   if (!k?.hosted || !$(".wrap.limits")) return;
   const box = document.createElement("div");
-  box.className = "box";
-  box.innerHTML = `<div class="bar">${icon("key")}<b>Deploy keys</b><span class="muted">${k.keys} stored, sealed under <code>DEPLOY_SECRETS_KEY</code></span></div>
-    <div class="body" style="display:grid;gap:8px;font-size:13px">${k.rotating
-      ? `<span><code>DEPLOY_SECRETS_KEY_OLD</code> is set, so what it sealed still opens. Re-seal every key and every repo's Alchemy state under the new key, then remove it and deploy again.</span><div><button class="btn primary" id="reseal">${icon("refresh-cw")}Re-seal</button></div>`
-      : `<span class="muted">To rotate it: deploy with the new key as <code>DEPLOY_SECRETS_KEY</code> and the old one as <code>DEPLOY_SECRETS_KEY_OLD</code>, then re-seal here.</span>`}</div>`;
+  box.className = "log";
+  box.innerHTML = `<h2>Deploy keys</h2><div class="ev" title="To rotate: deploy with the new key as DEPLOY_SECRETS_KEY and the old one as DEPLOY_SECRETS_KEY_OLD, then re-seal here."><span>${k.keys} sealed under <code>DEPLOY_SECRETS_KEY</code></span>${k.rotating
+      ? `<span class="muted">old key still set: re-seal, then remove it and deploy</span><button class="btn primary small" id="reseal">${icon("refresh-cw")}Re-seal</button>`
+      : ""}</div>`;
   $(".wrap.limits").append(box);
   const b = $("#reseal");
   b?.addEventListener("click", async () => {
@@ -1694,13 +1694,20 @@ function crumbs(base, root, path) {
 }
 /** The explorer: the whole repo as a tree. Folders open in place; the ones on
  *  the way to what you're looking at start open, and stay open as you move. */
-const openDirs = new Map(), treeCache = new Map();
-function mountExplorer(el, key, load, href, current, onNew) {
+const openDirs = new Map(), treeCache = new Map(), treeQuery = new Map(), repoTrees = new Map();
+/** The files whose path has `q` (any case): name matches first, then shorter paths; `at` is where the name matches, or -1. */
+function treeMatches(files, q) {
+  const l = q.toLowerCase();
+  return files.filter((e) => e.path.toLowerCase().includes(l))
+    .map((e) => ({ e, at: e.name.toLowerCase().indexOf(l) }))
+    .sort((a, b) => (a.at < 0) - (b.at < 0) || a.e.path.length - b.e.path.length || a.e.path.localeCompare(b.e.path));
+}
+async function mountExplorer(el, key, load, href, current, onNew) {
   const open = openDirs.get(key) ?? new Set(); openDirs.set(key, open);
   const segs = current.split("/").filter(Boolean);
   for (let i = 1; i <= segs.length; i++) open.add(segs.slice(0, i).join("/"));
-  // Level trees never change; a repo's can, so it's read fresh on each page.
-  const cache = key.startsWith("l/") ? treeCache : new Map();
+  // Level trees never change; a repo's can, so it's read fresh on each page, after the last page's copy is drawn at once.
+  const level = key.startsWith("l/"), cache = level ? treeCache : new Map(repoTrees.get(key));
   const get = (dir) => { const k = key + ":" + dir; if (!cache.has(k)) cache.set(k, load(dir).catch(() => ({ entries: [] }))); return cache.get(k); };
   const rows = async (dir, d) => {
     const t = await get(dir);
@@ -1710,7 +1717,32 @@ function mountExplorer(el, key, load, href, current, onNew) {
       : `<a href="${href(e)}" data-path="${esc(e.path)}" class="${e.path === current ? "on" : ""}" style="--d:${d}" title="${esc(e.path)}">${icon("file", "ic-file")}${esc(e.name)}</a>`).join("")
       || (d ? "" : '<p class="muted pad" style="margin:0">nothing here yet</p>');
   };
-  const draw = async () => { el.innerHTML = await rows("", 0); icons(); el.querySelector("a.on")?.scrollIntoView({ block: "nearest" }); };
+  // Search walks the whole tree once (folders read in parallel, at most 400 of them), then filters as you type.
+  let every = null;
+  const walk = async (dir, budget) => {
+    const t = await get(dir), dirs = t.entries.filter((e) => e.type === "dir" && budget.n-- > 0);
+    return [...t.entries.filter((e) => e.type !== "dir"), ...(await Promise.all(dirs.map((e) => walk(e.path, budget)))).flat()];
+  };
+  const find = el.parentElement.querySelector("#tree-find");
+  const found = async (q) => {
+    const hits = treeMatches(await (every ??= walk("", { n: 400 })), q);
+    return hits.map(({ e, at }) => `<a href="${href(e)}" data-path="${esc(e.path)}" class="${e.path === current ? "on" : ""}" title="${esc(e.path)}">${icon("file", "ic-file")}<span>${at < 0 ? esc(e.name) : esc(e.name.slice(0, at)) + "<mark>" + esc(e.name.slice(at, at + q.length)) + "</mark>" + esc(e.name.slice(at + q.length))}</span>${e.path.includes("/") ? `<span class="in">${esc(e.path.slice(0, e.path.lastIndexOf("/")))}</span>` : ""}</a>`).join("")
+      || '<p class="muted pad" style="margin:0">no file matches</p>';
+  };
+  const draw = async () => {
+    const q = find?.value.trim() ?? "";
+    const out = q ? await found(q) : await rows("", 0);
+    if ((find?.value.trim() ?? "") !== q) return;
+    el.innerHTML = out; icons(); el.querySelector("a.on")?.scrollIntoView({ block: "nearest" });
+  };
+  if (find) {
+    find.value = treeQuery.get(key) ?? "";
+    find.addEventListener("input", () => { treeQuery.set(key, find.value); draw(); });
+    find.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && find.value) { e.stopPropagation(); find.value = ""; treeQuery.delete(key); draw(); }
+      if (e.key === "Enter") { const a = el.querySelector("a[href]"); if (a) location.href = a.href; }
+    });
+  }
   el.addEventListener("click", (e) => {
     const a = e.target.closest("[data-dir]"); if (!a) return;
     const p = a.dataset.dir; open.has(p) ? open.delete(p) : open.add(p); draw();
@@ -1729,6 +1761,8 @@ function mountExplorer(el, key, load, href, current, onNew) {
     });
   }
   icons();
+  if (level || !repoTrees.has(key)) { repoTrees.set(key, cache); return draw(); }
+  await draw(); cache.clear(); every = null; repoTrees.set(key, cache);
   return draw();
 }
 /** The explorer's menu: a new file in `dir` (typed in place, Enter makes it), and copying the path under the pointer. */
@@ -1905,7 +1939,7 @@ function wireHunks(el, owner, repo, hunksOf, then) {
 function workbench(head, { tab, bar, body, details, status }) {
   document.body.classList.add("ide-mode");
   queueMicrotask(dock); queueMicrotask(explorerGrip); queueMicrotask(sheets);
-  return `${head}<div class="wb"><aside class="explorer" aria-label="Explorer"><div class="label pad" aria-hidden="true">Explorer</div><nav class="tree" id="tree" aria-label="Files"></nav></aside>
+  return `${head}<div class="wb"><aside class="explorer" aria-label="Explorer"><div class="label pad" aria-hidden="true">Explorer</div><label class="tree-find">${icon("search")}<input type="search" id="tree-find" placeholder="Search files" aria-label="Search files" autocomplete="off" spellcheck="false"></label><nav class="tree" id="tree" aria-label="Files"></nav></aside>
     <section class="editor">${tab ? `<div class="tabs"><span class="tab">${tab}</span></div>` : ""}<div class="crumbbar">${bar}</div><div class="scroll">${body}</div></section>
     <aside class="details" aria-label="Details">${details}</aside></div><nav class="sheets" id="sheets" aria-label="Recent repos"></nav><footer class="status"><span title="the dig site: this repo's files, its crew and its vein">${icon("shovel")}dig site</span>${status}</footer>`;
 }
@@ -4155,13 +4189,19 @@ const views = {
 
   async f(owner, repo, path) {
     // On a branch (the switcher's pick), every read and edit goes to the branch's copy of the file.
-    const here = await branchHere(owner, repo), branch = here.on;
-    const base = `/repos/${owner}/${repo}/do`, q = "?path=" + encodeURIComponent(path) + (branch ? `&branch=${encodeURIComponent(branch)}` : "");
+    // Everything is asked for at once, on the branch this browser picked; only a branch that went away asks again.
+    const base = `/repos/${owner}/${repo}/do`, qOn = (b) => "?path=" + encodeURIComponent(path) + (b ? `&branch=${encodeURIComponent(b)}` : "");
+    const reads = (b) => { const q = qOn(b), rs = [api(`${base}/commits${q}`), api(`${base}/file${q}`)]; rs.forEach((x) => x.catch(() => {})); return rs; };
+    const picked = branchPicked(owner, repo);
+    let early = reads(picked);
+    const [here, r] = await Promise.all([branchHere(owner, repo), api(`/repos/${owner}/${repo}`)]);
+    const branch = here.on, q = qOn(branch);
+    if (branch !== picked) early = reads(branch);
     // A file the branch deleted won't open on it: the error page offers main again.
     const onBranch = (e) => { if (branch) e.onBranch = [owner, repo, branch]; throw e; };
-    const [r, commits] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`${base}/commits${q}`).catch(onBranch)]);
+    const [commits, firstDoc] = await Promise.all(early.map((x) => x.catch(onBranch)));
     r.here = here;
-    let doc = await api(`${base}/file${q}`).catch(onBranch), viewing = null, sel = null;
+    let doc = firstDoc, viewing = null, sel = null;
     ctx = { view: "f", owner, repo, path, branch, canWrite: r.canWrite, isOwner: owner === me(), visibility: r.visibility, clone: r.clone, get sel() { return sel; }, base, q };
     const href = (e) => e.type === "dir" ? `#/r/${owner}/${repo}${e.path ? "/" + encodeURIComponent(e.path) : ""}` : `#/f/${owner}/${repo}/${encodeURIComponent(e.path)}`;
     app.innerHTML = workbench(views.repoHead(owner, repo, r), {
