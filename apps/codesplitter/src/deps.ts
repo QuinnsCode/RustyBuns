@@ -882,6 +882,59 @@ export async function readManifests(call: Call, owner: string, repo: string) {
   return { manifests, top, read, base, fileQ };
 }
 
+/** One package on the health page: what the repo pins against what the registry has. */
+export interface HealthRow {
+  name: string;
+  path: string;
+  dev: boolean;
+  spec: string;
+  /** The version the range starts at. */
+  version: string;
+  /** The newest stable release, if the registry knows the package. */
+  latest?: string;
+  /** How far behind: the biggest part that differs, the stable releases between, and the days between the two releases. */
+  behind?: { level: Level; versions: number; days: number };
+  vulns: string[];
+  /** A 🪏 dig on this package: its target and where it stands. */
+  dig?: { target: string; status: Dug["status"] };
+}
+export interface Health { score: number; rows: HealthRow[]; at: number }
+
+/** How much of a package's health its distance from latest leaves: a vulnerable one has none. */
+const HEALTH = { current: 1, patch: 0.85, minor: 0.6, major: 0.25 } as const;
+
+/**
+ * Every package the repo pins to a version it can read, against the registry's latest:
+ * how far behind (releases and days), its known vulnerabilities, any 🪏 dig on it, and one
+ * 0-100 score for the repo (the mean of each package's health). Newest-first by distance.
+ */
+export async function health(manifests: [path: string, pkg: Record<string, any>][], registry: Registry, vulns: Advisories, digs: Dug[] = [], now = Date.now()): Promise<Health> {
+  const pinned = manifests.flatMap(([path, pkg]) => (["dependencies", "devDependencies"] as const).flatMap((k) =>
+    Object.entries((pkg[k] ?? {}) as Record<string, string>).flatMap(([name, spec]) => { const r = range(spec); return r ? [{ name, path, dev: k === "devDependencies", spec, r }] : []; })));
+  const known = await vulns(pinned.map((x) => ({ name: x.name, version: x.r.v.join(".") }))).catch(() => new Map<string, Vuln[]>());
+  const metas = new Map<string, Meta | null>();
+  await Promise.all([...new Set(pinned.map((x) => x.name))].map(async (n) => { metas.set(n, await registry(n).catch(() => null)); }));
+  const rows: HealthRow[] = pinned.map(({ name, path, dev, spec, r }) => {
+    const version = r.v.join("."), meta = metas.get(name);
+    const row: HealthRow = { name, path, dev, spec, version, vulns: (known.get(`${name}@${version}`) ?? []).map((h) => h.id) };
+    const stable = (meta?.versions ?? []).filter((v) => /^\d+\.\d+\.\d+$/.test(v)).map((v) => [v, parse(v)!] as const).sort((a, b) => cmp(a[1], b[1]));
+    const top = stable.at(-1);
+    if (top) {
+      row.latest = top[0];
+      if (cmp(top[1], r.v) > 0) {
+        const days = Math.max(0, Math.round((Date.parse(meta!.time[top[0]] ?? "") - Date.parse(meta!.time[version] ?? "")) / 86_400_000));
+        row.behind = { level: levelOf(r.v, top[1]), versions: stable.filter(([, v]) => cmp(v, r.v) > 0).length, days: Number.isFinite(days) ? days : 0 };
+      }
+    }
+    const dig = digs.find((g) => g.name === name && (!g.path || g.path === path));
+    if (dig) row.dig = { target: dig.target, status: dig.status };
+    return row;
+  });
+  const worth = (x: HealthRow) => x.vulns.length ? 0 : x.behind ? HEALTH[x.behind.level] : HEALTH.current;
+  rows.sort((a, b) => worth(a) - worth(b) || (b.behind?.days ?? 0) - (a.behind?.days ?? 0) || a.name.localeCompare(b.name));
+  return { at: now, rows, score: rows.length ? Math.round(100 * rows.reduce((t, x) => t + worth(x), 0) / rows.length) : 100 };
+}
+
 /** Check one repo now, put what's worth taking on a branch, and keep the report. */
 export async function runDoctor(env: Env, call: Call, owner: string, repo: string, opts: { registry?: Registry; now?: number; deadline?: number; beatMs?: number; rank?: string[] } = {}): Promise<Report> {
   const now = opts.now ?? Date.now();
@@ -1559,6 +1612,13 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
   if (!p[5] && req.method === "GET") {
     const r = await env.DB.prepare("SELECT last_run, last_report, running_since FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
     return json({ settings: await settings(env, owner, repo), last_run: r.last_run, report: r.last_report ? JSON.parse(r.last_report) : null, running: !!r.running_since && r.running_since > Date.now() - STALE, can_test: !!testerAt(env, owner), can_preview: !!runnerFor(env) || !(await hostedPreviewWhy(env, owner, repo)), ...(!runnerFor(env) && { preview_why: await hostedPreviewWhy(env, owner, repo) }), malicious: await hitsFor(env, owner, repo) });
+  }
+  if (p[5] === "health" && req.method === "GET") {
+    const got = await readManifests(caller(self, url.origin), owner, repo);
+    if (!got.manifests) return json({ note: got.note, score: 100, rows: [], at: Date.now() });
+    const report = (await env.DB.prepare("SELECT last_report FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first())?.last_report;
+    const digs = report ? ((JSON.parse(report as string) as Report).digs ?? []) : [];
+    return json(await health([...got.manifests].map(([path, m]) => [path, m.pkg]), (env.DEPS_REGISTRY as Registry | undefined) ?? npmRegistry, (env.DEPS_ADVISORIES as Advisories | undefined) ?? osvAdvisories(), digs));
   }
   if (!p[5] && req.method === "PUT") {
     // Only what's sent changes; each field's write() checks it before it lands.

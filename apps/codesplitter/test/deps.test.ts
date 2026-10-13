@@ -1035,3 +1035,23 @@ test("over the doctor's limit, a run queues: the replay answers with the report,
   expect(job).toMatchObject({ state: "done", status: 200, result: { updates: expect.any(Array) } });
   expect((await settle(call)).running).toBe(false);
 });
+
+test("health: each pinned package against latest, with distance, advisories, digs and one score", async () => {
+  const { health } = await import("../src/deps.ts");
+  const none: Advisories = async () => new Map();
+  const bad: Advisories = async () => new Map([["mitt@3.0.0", [{ id: "GHSA-x", summary: "bad", fixed: ["3.0.1"] }]]]);
+  const pkg = JSON.parse(PKG);
+  const h = await health([["package.json", pkg]], NPM, bad, [{ name: "kleur", target: "major", take: false, status: "waiting" }], NOW);
+  // The vulnerable one is first, then by distance; workspace: and ranges it can't read are left out.
+  expect(h.rows.map((r) => r.name)).toEqual(["mitt", "kleur", "clsx", "ky", "hono"]);
+  const by = Object.fromEntries(h.rows.map((r) => [r.name, r]));
+  expect(by.mitt).toMatchObject({ version: "3.0.0", latest: "3.0.1", vulns: ["GHSA-x"], behind: { level: "patch", versions: 1, days: 300 } });
+  expect(by.kleur).toMatchObject({ latest: "4.1.5", behind: { level: "major", versions: 1 }, dig: { target: "major", status: "waiting" } });
+  expect(by.hono.latest).toBe("4.6.0");   // prereleases never count
+  expect(by.hono.behind?.level).toBe("minor");
+  expect(h.score).toBe(Math.round(100 * (0 + 0.25 + 0.25 + 0.6 + 0.25) / 5));
+  const same = await health([["package.json", { dependencies: { mitt: "3.0.1" } }]], NPM, none, [], NOW);
+  expect(same).toMatchObject({ score: 100, rows: [{ name: "mitt", latest: "3.0.1", vulns: [] }] });
+  expect(same.rows[0].behind).toBeUndefined();
+  expect((await health([], NPM, none, [], NOW)).score).toBe(100);
+});

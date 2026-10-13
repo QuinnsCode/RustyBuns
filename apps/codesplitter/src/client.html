@@ -3358,6 +3358,7 @@ const views = {
       <button class="btn ghost" id="tour-here" title="Let's show you around: this page, a step at a time">${icon("compass")}</button>
       ${playButton(`r/${owner}/${repo}`)}
       <a class="btn ghost" href="/gitpath?repo=${encodeURIComponent(owner)}/${encodeURIComponent(repo)}" title="gitpath: this repo's busiest files as a git graph, with a runner on the hot path" aria-label="gitpath">${icon("route")}</a>
+      ${isOwner ? `<a class="btn ghost" href="#/deps/${owner}/${repo}" title="dependencies: each package against the latest release, with a health score" aria-label="dependencies">${icon("heart-pulse")}</a>` : ""}
       ${followButton({ owner, repo })}
       <a class="btn" href="#/m/${owner}/${repo}" title="this repo's agents and branches, laid out for a phone">${icon("smartphone")}Phone</a>
       ${isOwner ? `<div class="pop"><button class="btn" id="invite">${icon("user-plus")}Invite</button><form class="panel" id="invite-form" hidden><b>Invite to the crew</b><span class="muted" style="font-size:13px">Crew can edit, commit and share. A handle or an email lets that person in; leave it empty for a link anyone can use once, a person or an agent.</span><input name="who" placeholder="@handle, email, or empty for a link"><input name="note" placeholder="a note for them (optional)" maxlength="280"><button class="btn primary">${icon("link")}Make the invite</button><div id="invite-made"></div></form></div>` : ""}
@@ -4200,6 +4201,25 @@ const views = {
     </div>`;
     icons();
     await views.wireBranches(owner, repo, r, { only: branch, full: true });
+  },
+  /** #/deps/:o/:r: how the repo's dependencies stand, each against the registry's latest (#860). */
+  async deps(owner, repo) {
+    ctx = { view: "deps", owner, repo, canWrite: false, isOwner: owner === me() };
+    app.innerHTML = `<div class="wrap" style="padding-top:20px;padding-bottom:40px"><h1 style="display:flex;align-items:center;gap:8px;font-size:20px">${icon("heart-pulse")}<a href="#/r/${owner}/${repo}">${esc(repo)}</a><span class="muted">dependencies</span></h1><div id="dh"><span class="muted">Asking the registry…</span></div></div>`;
+    icons();
+    const h = await api(`/repos/${owner}/${repo}/deps/health`).catch((e) => ({ error: e.message }));
+    const el = $("#dh");
+    if (h.error || h.note) { el.innerHTML = `<span class="muted">${esc(h.error || h.note)}</span>`; return; }
+    const tone = h.score >= 80 ? "ok" : h.score >= 50 ? "warn" : "bad";
+    const lv = { patch: "p", minor: "m", major: "M" };
+    el.innerHTML = `<div class="dh-score ${tone}" title="Health: the mean of each package's distance from latest. A vulnerable one counts for nothing."><b>${h.score}</b><span class="muted">/ 100</span></div>
+      <table class="dh" style="border-collapse:collapse;font-size:13px;width:100%"><thead><tr><th align="left">${icon("package")}</th><th align="right" title="the version your range starts at">${icon("pin")}</th><th align="right" title="the newest stable release">${icon("arrow-up-to-line")}</th><th align="right" title="how far behind: the biggest part that differs, releases between, and days between the two">${icon("history")}</th><th title="known vulnerabilities (OSV)">${icon("shield-alert")}</th><th title="a future release to watch, try and take">&#x1FA8F;</th></tr></thead><tbody>${h.rows.map((x) => `<tr title="${esc(x.name)} ${esc(x.spec)} in ${esc(x.path)}${x.dev ? " (dev)" : ""}">
+        <td>${pkgIcon(x.name)} <code>${esc(x.name)}</code>${x.path !== "package.json" ? ` <span class="muted">${esc(x.path.replace(/\/package\.json$/, ""))}</span>` : ""}</td>
+        <td align="right">${esc(x.version)}</td><td align="right">${x.latest ? esc(x.latest) : "?"}</td>
+        <td align="right">${x.behind ? `<span title="${x.behind.level} behind: ${x.behind.versions} release${x.behind.versions === 1 ? "" : "s"}, ${x.behind.days} days">${lv[x.behind.level]} · ${x.behind.versions} · ${x.behind.days}d</span>` : x.latest ? `<span title="up to date">${icon("check")}</span>` : ""}</td>
+        <td align="center">${x.vulns.length ? `<b class="vuln" title="${esc(x.vulns.join(", "))}">${x.vulns.length}</b>` : ""}</td>
+        <td align="center">${x.dig ? `<span title="${esc(x.dig.target)}: ${esc(x.dig.status)}">${esc(x.dig.status)}</span>` : ""}</td></tr>`).join("")}</tbody></table>`;
+    icons();
   },
   async m(owner, repo) {
     const [r, tree] = await Promise.all([api(`/repos/${owner}/${repo}`), api(`/repos/${owner}/${repo}/tree?path=`).catch(() => ({ entries: [] }))]);

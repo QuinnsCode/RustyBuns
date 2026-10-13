@@ -275,6 +275,7 @@ export const GROUPS: Group[] = [
       { method: "DELETE", path: "/api/repos/:o/:r/deploy/key[/:provider]", who: OWNER, does: "forget it" },
       { method: "GET", path: "/api/repos/:o/:r/deps", who: OWNER, does: "the dependency doctor's settings and last report, and the supply-chain watch's malicious-package hits in this repo" },
       { method: "PUT", path: "/api/repos/:o/:r/deps", body: `{${SETTING_KEYS.join(", ")}}`, who: OWNER, does: "the doctor's settings, its on-fail chain for an update that breaks the tests, the packages ranked to settle clashes, and whether what passed is checked with a preview deploy first; its 🪏 digs: future releases to watch, try and take ([{name, target, take}])" },
+      { method: "GET", path: "/api/repos/:o/:r/deps/health", who: OWNER, does: "how the repo's dependencies stand: {score (0-100), rows: [{name, path, dev, spec, version, latest, behind: {level, versions, days}, vulns, dig}]}, each package it pins against the registry's latest, its OSV advisories and any 🪏 dig on it" },
       { method: "POST", path: "/api/repos/:o/:r/deps/run", body: "{rank?}", who: OWNER, does: "check now; a rank settles clashes for this run only" },
       { method: "GET", path: "/api/watch", who: "anyone", does: "the supply-chain watch: each agent platform's status line, and (signed in) malicious-package hits in your repos" },
       { method: "GET", path: "/api/repos/:o/:r/hooks", who: OWNER, does: "the webhooks, each with its last delivery" },
