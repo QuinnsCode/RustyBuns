@@ -72,11 +72,15 @@ export async function appServer(o: AppServerOptions): Promise<AppServer> {
   mkdirSync(dir, { recursive: true });
   // A compiled binary's files live in its own $bunfs, which the child (a fresh process) can't read.
   // Its native addons (.node files) go with it: the build lists them beside it, in
-  // server-<i>.addons.json, and the bundle requires them from its own dir.
+  // server-<i>.addons.json, and the bundle requires them from its own dir (sharp's from a tree in it,
+  // server-<i>-native/@img/..., whose paths keep its addon's rpath to libvips).
   if (/\$bunfs|~BUN/.test(file)) {
     let addons: string[] = [];
     try { addons = JSON.parse(readFileSync(file.replace(/\.js$/, ".addons.json"), "utf8")); } catch {}
-    for (const f of [basename(file), ...addons]) writeFileSync(join(dir, f), await Bun.file(join(dirname(file), f)).bytes());
+    for (const f of [basename(file), ...addons]) {
+      mkdirSync(dirname(join(dir, f)), { recursive: true });
+      writeFileSync(join(dir, f), await Bun.file(join(dirname(file), f)).bytes());
+    }
     file = join(dir, basename(file));
   }
   const watchdog = join(dir, "watchdog.js");
