@@ -160,6 +160,22 @@ async function stagePglite(cwd = process.cwd()) {
   for (const f of PGLITE_FILES) await Bun.write(join(PGLITE_STAGE, f), Bun.file(join(dist, f)));
 }
 
+/** tsyringe (passkey/webauthn addons, via @peculiar/x509) throws at load unless reflect-metadata
+ *  ran first. On the edge the Worker's own entry imports it; the spa host loads the app's actions
+ *  itself, so it imports it first when the app's tree has it (#910). The bare name when the app
+ *  resolves it, else the copy beside the package that needs it (pnpm/isolated installs). */
+export function reflectMetadataImport(cwd = process.cwd()): string {
+  const from = (dir: string) => { try { return Bun.resolveSync("reflect-metadata", dir); } catch { return null; } };
+  if (from(cwd)) return `import "reflect-metadata";\n`;
+  for (const pkg of ["tsyringe", "@peculiar/x509"]) {
+    let dir: string;
+    try { dir = dirname(Bun.resolveSync(`${pkg}/package.json`, cwd)); } catch { continue; }
+    const hit = from(dir);
+    if (hit) return `import ${JSON.stringify(hit)};\n`;
+  }
+  return "";
+}
+
 export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string {
   const d = c.targets.desktop ?? {};
   const h = hostParts(c, host, d.dataDir ?? `~/.${c.name}`);
@@ -188,7 +204,7 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
 // as a Durable Object with sqlite storage, vouches the local identity at ${worldPath}.
 // Guests (other machines) reach ${worldPath} alone, with ?join=<passphrase>&uid=&name=&v=.
 // Replaces desktop_host.ts + desktop_gen_embed.ts.
-import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${d.server ? ", appServer" : ""}, type GuestState } from "@rustybuns/shell-bun";
+${reflectMetadataImport()}import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${d.server ? ", appServer" : ""}, type GuestState } from "@rustybuns/shell-bun";
 ${hasWorld ? `import World from ${JSON.stringify("../" + (d.world || "packages/desktop/world.ts"))};` : "// no world (desktop.world: false)"}
 ${d.host ? `import host from ${JSON.stringify("../" + d.host)};` : "const host: any = null;"}
 import { homedir, networkInterfaces } from "node:os";
