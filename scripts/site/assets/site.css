@@ -60,6 +60,7 @@ img { max-width: 100%; }
 details { background: var(--panel); border-radius: 8px; padding: 8px 14px; margin: 12px 0; }
 summary { cursor: pointer; color: var(--accent); }
 footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+footer p { margin: 4px 0; }
 @media (max-width: 760px) {
   header { padding: 10px 16px; }
   .wrap { grid-template-columns: 1fr; }

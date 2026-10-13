@@ -38,3 +38,6 @@ theme?.addEventListener("click", () => {
   try { localStorage.setItem("theme", next); } catch {}
   sync();
 });
+
+// The footer year follows the visitor's clock, so a site built last year doesn't say last year.
+for (const y of document.querySelectorAll("footer .year")) y.textContent = String(new Date().getFullYear());

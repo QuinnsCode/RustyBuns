@@ -390,7 +390,7 @@ packages/cli         init, add, build, plan/deploy; generates the host and the A
 packages/shell-bun   Bun.serve shell, token gate, D1/KV/R2/DO bindings over sqlite and the fs
 packages/ports       types only: Http, Comms, Storage, Memory, Reporter
 packages/native      loadNative(name, symbols): dlopen a Rust cdylib, null means take the TS path
-native/              Cargo workspace; rb_hello proves cdylib + pointer-over-SAB
+native/              Cargo workspace; rb_hello proves cdylib + pointer-over-SAB; rb_genome + native/stress/ hammer one shared memory from native and wasm workers at once (`bun native/stress/genome.ts`)
 apps/                example apps, see EXAMPLES.md
 ```
 
