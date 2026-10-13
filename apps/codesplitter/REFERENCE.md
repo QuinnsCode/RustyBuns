@@ -92,6 +92,7 @@ The pitch is in [README.md](README.md).
   Everyone else's clone gets the public text.
   Text already pushed before you marked it stays in git's history, so treat a leaked secret as leaked.
   `POST /api/repos/:o/:r/do/private?path= {lines: [ids], private}`.
+  Use cases and the gaps in the way: [docs/private-lines.md](docs/private-lines.md).
 - **Mirrors: Git going when git stops going (desktop).** Tick "keep it in sync" in the dig box and the repo becomes a mirror of the real one: GitHub, GitLab, or any git URL this machine can reach (`POST /api/mirrors {url}`, with this machine's own credentials: the GitHub token digs use, else git's credential helper or ssh keys).
   Every 5 minutes, and right after each commit, it fetches upstream's branch into the local bare repo, takes what's new (a fast-forward, or a merge commit made with `git merge-tree`, nothing checked out), lands it in any file open here as line edits by `upstream`, merged into live edits, and pushes back what upstream doesn't have yet.
   It never force-pushes.
