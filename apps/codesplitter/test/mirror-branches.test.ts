@@ -1,7 +1,8 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { git, pushBranch, upstreamMessages } from "../src/mirror.ts";
+import type { Exec } from "../src/agent-run.ts";
 import { root, up, sh, post, get, sync, file, editHere, upstreamRewrite, mirrored, upstreamCommit, upLog, commit, pushClash, upShow } from "./mirror-kit.ts";
 
 setDefaultTimeout(30_000);
@@ -106,6 +107,50 @@ describe("mirrors: branches and this copy's own git", () => {
     expect(await (await pushBranch(call.env, "ana", "up", "late", { tookMain: true }))!.json()).toMatchObject({ pushed: true });
     expect(await sh(`git --git-dir ${up} log -1 --format=%P late`)).toBe(`${prev} ${await upLog("%H")}`);
     expect(await sh(`git --git-dir ${up} show late:src/a.ts`)).toBe("export const a = 2 + 3");
+  });
+
+  test("a rebuild task that finishes pushes its branch upstream, as a merge of main's tip (#1226)", async () => {
+    const call = await mirrored("rebuild");
+    const q = (b: string) => `?path=src%2Fa.ts&branch=${b}`;
+    const edit = async (b: string, text: string) => {
+      const line = (await get(call, `/api/repos/ana/up/do/file${q(b)}`)).lines[0];
+      expect((await post(call, `/api/repos/ana/up/do/ops${q(b)}`, { ops: [{ kind: "set", line: line.id, base: line.rev, text }] })).status).toBe(200);
+    };
+    // Two branches change the same line: the plan holds late for first, and late is upstream already.
+    for (const b of ["first", "late"]) expect((await post(call, "/api/repos/ana/up/branches", { name: b })).status).toBe(201);
+    await edit("first", "export const a = 2");
+    await edit("late", "export const a = 3");
+    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/late/push")).json()).toMatchObject({ pushed: true });
+    const prev = await sh(`git --git-dir ${up} rev-parse late`);
+    await get(call, "/api/repos/ana/up/merge-plan");
+    // The agent waits till main's commit is up, then puts main's side back beside the branch's.
+    let go!: () => void;
+    const held = new Promise<void>((r) => { go = r; });
+    call.env.HEAL = "1";
+    call.env.AGENT_EXEC = (async (_cmd, cwd) => {
+      await held;
+      const f = join(cwd, "src/a.ts");
+      writeFileSync(f, readFileSync(f, "utf8").replace("export const a = 3", "export const a = 2 + 3"));
+      return { code: 0, out: "ENGINE src/a.ts L1 no: both set the same constant" };
+    }) as Exec;
+    const merged = await (await post(call, "/api/repos/ana/up/branches/first/merge")).json() as any;
+    expect(merged.took).toEqual([{ branch: "late", status: "rebuilding", files: ["src/a.ts"], fix: expect.any(Number) }]);
+    // Main's commit goes up, and the sync after it sees late clash with main in git: it leaves late to the task,
+    // which holds only the branch's side yet.
+    expect((await commit(call, "src/a.ts")).status).toBe(200);
+    expect(await sync(call)).toMatchObject({ state: "ok" });
+    expect(await sh(`git --git-dir ${up} rev-parse late`)).toBe(prev);
+    go();
+    const run = async () => (await get(call, "/api/repos/ana/up/agents")).find((x: any) => x.id === merged.took[0].fix);
+    for (const end = performance.now() + 20_000; performance.now() < end && (await run())?.status === "running";) await Bun.sleep(20);
+    expect(await run()).toMatchObject({ status: "done", rebuild: "first", pushed: { ok: true }, engine: [{ path: "src/a.ts", line: "L1", yes: false, how: "both set the same constant" }] });
+    expect(await sh(`git --git-dir ${up} log -1 --format=%P late`)).toBe(`${prev} ${await upLog("%H")}`);
+    expect(await sh(`git --git-dir ${up} show late:src/a.ts`)).toBe("export const a = 2 + 3");
+    // The next sync finds it in step with main: nothing more goes up.
+    const pushed = await sh(`git --git-dir ${up} rev-parse late`);
+    expect(await sync(call)).toMatchObject({ state: "ok" });
+    expect(await sh(`git --git-dir ${up} rev-parse late`)).toBe(pushed);
+    expect((await get(call, `/api/repos/ana/up/do/file${q("late")}`)).lines.map((l: any) => l.text)).toEqual(["export const a = 2 + 3"]);
   });
 
   test("a branch that clashes with main only in git takes main in and pushes it, once main's commit is up (#1190)", async () => {

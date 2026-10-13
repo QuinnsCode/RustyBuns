@@ -146,6 +146,11 @@ describe("a branch that clashed takes main in once its blocker merges (#1162)", 
     expect((await run()).task).toContain(`Rebuild branch b2 on main: b1 merged`);
     expect(prompts[0]).toContain('a.ts L2: main has "x(2);", the branch kept "x(3);"');
     expect(await read("b2")).toBe("const a = 1;\nx(2);\nx(3);\ny(1);");
+    // Its ENGINE line is kept, for the owner, with the repo's others (#1226).
+    expect(await (await call("ana", "/api/repos/ana/r/agents/engine")).json()).toEqual([
+      { run: r.took[0].fix, branch: "b2", after: "b1", started: expect.any(Number), engine: [{ path: "a.ts", line: "L2", yes: true, how: "both sides added a call; keep both" }] },
+    ]);
+    expect((await call("bo", "/api/repos/ana/r/agents/engine")).status).toBe(403);
     // Main's lines are under it now: it merges with no card.
     expect((await post("ana", "/api/repos/ana/r/branches/b2/merge", {})).status).toBe(200);
     expect(await read()).toBe("const a = 1;\nx(2);\nx(3);\ny(1);");
