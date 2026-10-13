@@ -105,6 +105,9 @@
   /* The git bar under a repo's header: every git state as a pill, quiet when fine, orange when it wants you, red when it's stuck. */
   .gitbar { background: var(--bg); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 5px 12px; font-size: 12.5px; }
   .gitbar:empty { display: none; }
+  /* Orange rules across the top and bottom of the window while you're on a repo's main, the git source of truth. A branch drops them. */
+  .truth-edge { position: fixed; left: 0; right: 0; height: 4px; background: var(--accent); z-index: 60; pointer-events: none; }
+  .truth-edge.top { top: 0; } .truth-edge.bottom { bottom: 0; }
   .gpill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); color: var(--muted); font: inherit; white-space: nowrap; cursor: pointer; text-decoration: none; }
   .gpill i, .gpill svg { width: 14px; height: 14px; }
   .gpill b { font-weight: 600; color: var(--fg); }
@@ -3374,7 +3377,7 @@ const views = {
   repoHead(owner, repo, r) {
     const isOwner = owner === me();
     setTimeout(() => views.wireGitBar(owner, repo), 0);   // the head is on the page by then
-    return `<div class="repohead">
+    return `${r.here?.on ? "" : `<div class="truth-edge top" title="main: the source of truth"></div><div class="truth-edge bottom"></div>`}<div class="repohead">
       <h1>${icon(r.visibility === "private" ? "lock" : "book")}<a href="#/u/${owner}">${esc(owner)}</a><span class="muted">/</span><b><a href="#/r/${owner}/${repo}">${esc(repo)}</a></b></h1>
       ${visBadge(r.visibility, isOwner)}
       ${views.branchSwitch(owner, repo, r)}
