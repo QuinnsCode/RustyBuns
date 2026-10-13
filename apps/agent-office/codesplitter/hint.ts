@@ -29,3 +29,14 @@ export function stackedPrompt(prompt: string, busy: Hint["busy"][number]): strin
     `Make your branch from origin/${busy.branch} instead of main, and open your pull request with --base ${busy.branch}. ` +
     `If that branch isn't on origin any more, it has merged: start from main as usual.`;
 }
+
+/** A task the card's Wait is holding on the office server (#1287): the message to send, and the branches it waits on. */
+export interface Held { id: string; msg: QueueAdd; branches: string[]; at: number }
+
+/** Which of the held task's branches are still open, by codeSplitter's branch list. A branch it no longer lists has
+ * merged and gone. Null when codeSplitter can't say, so the task keeps waiting. */
+export function stillBusy(held: Held, branches: { name: string; status: string }[] | null): string[] | null {
+  if (!branches) return null;
+  const open = new Set(branches.filter((b) => b.status === "open").map((b) => b.name));
+  return held.branches.filter((b) => open.has(b));
+}
