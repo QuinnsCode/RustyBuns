@@ -91,6 +91,9 @@ export default defineConfig({
     // Queued requests (digs, previews, dependency checks over a limit that queues): one
     // message each, delayed until the caller's window has room (src/limits.ts).
     JOBS: { type: "queue", queueName: "codesplitter-jobs", renamedFrom: "codesplitters-jobs", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } },
+    // Fix tasks (src/heal.ts: a failing check, a merge guard, a rebuild on main), one message
+    // each, in a queue of their own so they don't wait behind feature runs on JOBS (#1234).
+    FIXES: { type: "queue", queueName: "codesplitter-fixes", consumer: { batchSize: 1, maxWaitTimeMs: 1000 } },
     // Level digs: an import's first step, then a big level's parts (src/swarm.ts), one
     // message each, several at once. maxConcurrency caps how hard GitHub gets hit.
     LEVEL_DIGS: { type: "queue", queueName: "codesplitter-level-digs", renamedFrom: "codesplitters-level-digs", consumer: { batchSize: 1, maxWaitTimeMs: 1000, maxRetries: 3, retryDelay: 20, maxConcurrency: 8 } },

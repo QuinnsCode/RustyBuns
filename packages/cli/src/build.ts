@@ -6,11 +6,12 @@
 
 import { $ } from "bun";
 import { mkdir } from "node:fs/promises";
-import { existsSync, statSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, statSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, dirname, normalize, relative, resolve } from "node:path";
 import { hyperdriveUrlEnv, desktopServers, type Binding, type DesktopOs, type RustyBunsConfig } from "./config.ts";
 import { basename } from "node:path";
 import { Profiler } from "./profile.ts";
+import { addonProblems, addonsManifest, serverAddons } from "./addons.ts";
 import { BUN_CHECK_MIN, compactDiagnostics, pickChecker, runCheck, type CheckerName } from "./typecheck.ts";
 
 const EXTS = [".ts", ".tsx", ".mts", ".js", ".mjs", ".cjs", ".jsx"];
@@ -492,6 +493,8 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
   const h = hostParts(c, host, c.targets.desktop?.dataDir ?? `~/.${c.name}`);
   const bind: string[] = [];
   const dos: { name: string; className: string }[] = [];
+  /** Workflows whose class is one of the Worker's exports, bound once it has loaded. */
+  const workflows: { name: string; className: string }[] = [];
   const migrations: [string, string][] = [];
   const artifacts: string[] = [];
   /** [the queue binding's expression, its consumer's settings, the binding's name] */
@@ -528,12 +531,15 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
       case "ratelimit": bind.push(`  // ${name}: Workers Rate Limiting has no local twin; the app runs without it`); break;
       // No pool off the edge: the app gets the origin's URL in Hyperdrive's shape.
       case "hyperdrive": bind.push(`  ${name}: ${hyperdriveBinding(name, b, (m) => `assetDir(${JSON.stringify(m)})!`)},`); break;
-      case "vectorize": bind.push(`  // ${name}: Cloudflare Vectorize has no local twin; the app runs without it`); break;
-      case "ai": bind.push(`  // ${name}: Workers AI has no local twin; the app runs without it`); break;
-      case "workflow": bind.push(`  // ${name}: Cloudflare Workflows (${b.className}) has no local twin; the app runs without it`); break;
-      case "worker_loader": bind.push(`  // ${name}: the Dynamic Worker Loader has no local twin; the app runs without it`); break;
-      // Data points have nowhere to go off the edge: writes are dropped.
-      case "analytics_engine": bind.push(`  ${name}: { writeDataPoint() {} },`); break;
+      case "vectorize": bind.push(`  ${name}: local.vectorize(${JSON.stringify(b.indexName)}, ${JSON.stringify({ dimensions: b.dimensions, metric: b.metric })}),`); break;
+      // No model off the edge: env.AI is there, and each call says it runs only on Cloudflare.
+      case "ai": bind.push(`  ${name}: local.ai(${JSON.stringify(name)}),`); break;
+      case "workflow":
+        if (b.scriptName) bind.push(`  // ${name}: Workflow in another script (${b.scriptName}) has no local twin`);
+        else { bind.push(`  ${name}: local.workflow(${JSON.stringify(name)}),`); workflows.push({ name, className: b.className }); }
+        break;
+      case "worker_loader": bind.push(`  ${name}: local.workerLoader(${JSON.stringify(name)}),`); break;
+      case "analytics_engine": bind.push(`  ${name}: local.analyticsEngine(${JSON.stringify(b.dataset ?? name)}),`); break;
       case "container": bind.push(`  // ${name}: Cloudflare Container (${b.className}) has no local twin; the app runs without it`); break;
       case "durable_object":
         if (b.scriptName) bind.push(`  // ${name}: DO in another script (${b.scriptName}) has no local twin`);
@@ -603,9 +609,11 @@ const doLater = (name: string) => {
 ${dos.map((d) => `env.${d.name} = doLater(${JSON.stringify(d.name)});`).join("\n")}
 // workerd logs a rejected waitUntil, cron or queue promise and keeps serving; Bun would exit.
 process.on("unhandledRejection", (e) => console.error("[worker] unhandled rejection:", e));
-const { default: worker, ${dos.map((d) => `${d.className}, `).join("")}} = await import(${JSON.stringify("../" + entry)});
+const { default: worker, ${[...new Set([...dos, ...workflows].map((d) => d.className))].map((n) => `${n}, `).join("")}} = await import(${JSON.stringify("../" + entry)});
 // into this same env, because a DO's constructor receives it (a DO can use DB, KV, other DOs)
-${dos.map((d) => `(env.${d.name} as any).__rbBind(local.durableObject(${d.className} as any, env, ${JSON.stringify(d.name)}));`).join("\n")}
+${dos.map((d) => `(env.${d.name} as any).__rbBind(local.durableObject(${d.className} as any, env, ${JSON.stringify(d.name)}));`).join("\n")}${workflows.length ? `
+// Workflows: create() before now queued its instance; bind() starts those and resumes any the last run left going.
+${workflows.map((w) => `(env.${w.name} as any).bind(${w.className} as any, env);`).join("\n")}` : ""}
 
 const token = ${h.token};
 const shell = serve<typeof env>({
@@ -769,7 +777,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
     name: "rustybuns-shims",
     setup(b: any) {
       // Host side: the worker-runtime modules become the local runtime.
-      b.onResolve({ filter: /^(cloudflare:workers|rwsdk\/worker)$/ }, () => ({ path: shimPath }));
+      b.onResolve({ filter: /^(cloudflare:workers|cloudflare:workflows|rwsdk\/worker)$/ }, () => ({ path: shimPath }));
       // A dependency's optional import that isn't installed (pg's pg-cloudflare and pg-native, only
       // loaded on those platforms) stays a runtime import instead of failing the bundle. The app's
       // own imports aren't covered: a missing one of those should still fail here.
@@ -833,13 +841,21 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
 
   // desktop.server, each bundled with its imports into <dir>/app-server/server-<i>.js for the host to start.
   if (d.server && mode !== "spa") throw new Error("desktop.server runs beside the spa host; a worker-mode desktop runs the Worker, which has its own routes");
-  const bundleServers = (dir: string) => step("bundle server", async () => {
+  // A native addon it requires by a static path is carried beside its bundle, listed in a manifest
+  // the host copies out of the binary with it (see addons.ts); one it can't carry, or that won't
+  // load on a target (`targets`, unset for the dev host), stops the build here.
+  const bundleServers = (dir: string, targets?: DesktopOs[]) => step("bundle server", async () => {
     rmSync(join(dir, APP_SERVER_DIR), { recursive: true, force: true });   // a server dropped from the list
     for (const [i, s] of desktopServers(d).entries()) {
       const src = resolve(s.entry);
       if (!existsSync(src)) throw new Error(`desktop.server.entry: ${s.entry} doesn't exist`);
-      const r = await Bun.build({ entrypoints: [src], outdir: join(dir, APP_SERVER_DIR), naming: appServerFile(i).replace(/\.js$/, ".[ext]"), target: "bun", throw: false } as any);
+      const outdir = join(dir, APP_SERVER_DIR), name = appServerFile(i);
+      const r = await Bun.build({ entrypoints: [src], outdir, naming: { entry: name.replace(/\.js$/, ".[ext]"), asset: `${name.replace(/\.js$/, "")}-[name]-[hash].[ext]` }, target: "bun", metafile: true, throw: false } as any);
       if (!r.success) throw new Error(`desktop.server ${s.entry}:\n${buildErrors(r)}`);
+      const addons = serverAddons(r as any);
+      const problem = addonProblems(s.entry, addons, outdir, targets ?? null);
+      if (problem) throw new Error(problem);
+      if (addons.carried.length) writeFileSync(join(outdir, addonsManifest(name)), JSON.stringify(addons.carried));
     }
     return join(dir, APP_SERVER_DIR);
   });
@@ -849,7 +865,8 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
     // embedded; assets and migrations are read from the working tree.
     const outdir = opts.outdir ?? ".rustybuns/dev";
     if (workers.size) await bundleWorkers(outdir, opts.outdir ? "none" : "linked");
-    if (d.server) await bundleServers(outdir);
+    // The dev host runs here; a Railway box (host "box" without a compile) runs in its linux-x64 container.
+    if (d.server) await bundleServers(outdir, host === "box" ? ["linux-x64"] : undefined);
     const r = await step("bundle dev host", () => Bun.build({ entrypoints: [entry], outdir, target: "bun", define: defineMap, plugins, sourcemap: opts.outdir ? "none" : "linked", throw: false } as any));
     await prof?.finish();
     if (!r.success) throw new Error(buildErrors(r));
@@ -871,7 +888,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   if (only?.length) nativeDirs(only);
   const nativeTags = hasRust ? await step("stage native", () => stageNative(targets, only)) : [];
   const { migrationDirs, mountDirs: projectMounts } = embeddedDirs(c);
-  const mountDirs = [...projectMounts, ...(nativeTags.length ? [NATIVE_STAGE] : []), ...(d.server ? [await bundleServers(".rustybuns")] : [])];
+  const mountDirs = [...projectMounts, ...(nativeTags.length ? [NATIVE_STAGE] : []), ...(d.server ? [await bundleServers(".rustybuns", targets)] : [])];
   // Embedded dirs are keyed by basename, so two mounts named the same collide.
   const names = [assets, ...migrationDirs, ...mountDirs].filter(Boolean).map((p) => basename(p!));
   if (new Set(names).size !== names.length) throw new Error(`embedded directories must have distinct basenames: ${names.join(", ")}`);

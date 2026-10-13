@@ -1,6 +1,6 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { expireQueued, pathMatches, planFrom, pollGithub, requeueStale, STALE, startChecks, UNCLAIMED, watchGithub } from "../src/checks.ts";
+import { expireQueued, ORDER, pathMatches, planFrom, pollGithub, postOrder, requeueStale, STALE, startChecks, UNCLAIMED, watchGithub } from "../src/checks.ts";
 import worker from "../src/worker.ts";
 
 // End to end, with real git: a full run on a busy machine can stretch one past bun's 5s default.
@@ -138,6 +138,23 @@ test("* requires every check that ran; none at all holds it", async () => {
   expect((await checks("x")).gate.ok).toBe(true);
   await send("ryan", "/api/repos/ryan/lab/checks", { ref: "x", sha: SHA, name: "e2e", status: "cancelled" });
   expect((await checks("x")).gate).toMatchObject({ ok: false, failed: ["e2e"] });
+});
+
+test("a branch's turn in the merge plan goes up as codesplitter/merge-order: pending while it waits, success once it's up (#1219)", async () => {
+  const { call, send, github } = await app();
+  await postOrder(call.env, "ryan", "lab", "late", SHA);
+  expect(github.posted).toEqual([]); // the owner doesn't post our statuses
+  await call.env.DB.prepare("UPDATE repos SET mirror_url = 'https://github.com/QuinnsCode/RustyBuns.git' WHERE owner = 'ryan' AND name = 'lab'").run();
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { post_statuses: true }, "PUT");
+  for (const b of ["early", "late"]) await send("ryan", "/api/repos/ryan/lab/branches", { name: b });
+  await call.env.DB.prepare("UPDATE branches SET waits_on = '[\"early\"]' WHERE name = 'late'").run();
+  const at = `/repos/QuinnsCode/RustyBuns/statuses/${SHA}`;
+  await postOrder(call.env, "ryan", "lab", "late", SHA);
+  await postOrder(call.env, "ryan", "lab", "late", SHA); // nothing changed: not posted again
+  expect(github.posted).toEqual([{ path: at, body: { state: "pending", context: ORDER, description: "waits for early to merge first" } }]);
+  await call.env.DB.prepare("UPDATE branches SET status = 'merged' WHERE name = 'early'").run();
+  await postOrder(call.env, "ryan", "lab", "late", SHA);
+  expect(github.posted.at(-1)).toEqual({ path: at, body: { state: "success", context: ORDER, description: "its turn in the merge plan" } });
 });
 
 test("GitHub's results for a sha sent up come back in beside ours, and ours go out as statuses", async () => {

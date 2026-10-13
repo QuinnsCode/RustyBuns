@@ -130,7 +130,7 @@ test("pglite: COPY FROM STDIN streams in while other connections carry on (#1150
   } finally { a.close(); b.close(); }
 });
 
-test("pglite: SQL PREPARE, EXECUTE and DEALLOCATE ALL stay per connection (#1150)", async () => {
+test("pglite: SQL PREPARE, EXECUTE, DEALLOCATE ALL and DISCARD ALL stay per connection (#1150, #1167)", async () => {
   const h = open.at(-1)!;
   const sql = new SQL(h.connectionString, { max: 2 });
   try {
@@ -144,6 +144,15 @@ test("pglite: SQL PREPARE, EXECUTE and DEALLOCATE ALL stay per connection (#1150
     await a.unsafe("DEALLOCATE ALL");
     expect(await a.unsafe("EXECUTE q").catch((e: Error) => e.message)).toMatch(/does not exist/);
     expect((await b.unsafe("EXECUTE q"))[0].who).toBe("b");
+    // a pooler's reset on release: a's statements go, b's statements and the session's temp tables stay (#1167)
+    await b.unsafe("CREATE TEMP TABLE IF NOT EXISTS scratch (n int)");
+    await a.unsafe("PREPARE q AS SELECT 'a' AS who");
+    await a.unsafe("DISCARD ALL");
+    expect(await a.unsafe("EXECUTE q").catch((e: Error) => e.message)).toMatch(/does not exist/);
+    expect((await b.unsafe("EXECUTE q"))[0].who).toBe("b");
+    expect(await b.unsafe("SELECT * FROM scratch")).toHaveLength(0);
+    expect(await a.unsafe("DISCARD TEMP").catch((e: Error) => e.message)).toMatch(/DROP temp tables by name/);
+    expect(await b.unsafe("SELECT * FROM scratch")).toHaveLength(0);
     await b.unsafe("DEALLOCATE PREPARE q");
     expect((await b.unsafe(`EXECUTE "Q" (2)`))[0].who).toBe("b2");
     a.release(); b.release();
@@ -159,11 +168,13 @@ test("pglite: rewriteSql prefixes statement names and nothing else", () => {
   expect(r("EXPLAIN (ANALYZE) EXECUTE s; CREATE TABLE t AS EXECUTE s")).toBe("EXPLAIN (ANALYZE) EXECUTE rb7_s; CREATE TABLE t AS EXECUTE rb7_s");
   expect(r("deallocate all")).toStartWith("DO $rb$");
   expect(r("DEALLOCATE all_of_them")).toBe("DEALLOCATE rb7_all_of_them");
+  expect(r("SELECT 1; DISCARD ALL")).toStartWith("SELECT 1; DO $rb$");
+  expect(r("discard temporary")).toContain("DISCARD TEMP");
   // strings, comments, dollar quotes, columns and other statements' EXECUTE stay as they are
   for (const same of [
     "SELECT 'PREPARE x'; SELECT E'\\'; EXECUTE y'", "-- EXECUTE z\nSELECT 1 /* EXECUTE /* w */ */",
     "DO $$BEGIN EXECUTE 'DEALLOCATE ALL'; END$$", "SELECT prepare, execute FROM t", "PREPARE TRANSACTION 'g1'",
-    "GRANT EXECUTE ON FUNCTION f() TO u", "CREATE TRIGGER t AFTER INSERT ON x EXECUTE FUNCTION f()",
+    "DISCARD PLANS", "DISCARD SEQUENCES", "GRANT EXECUTE ON FUNCTION f() TO u", "CREATE TRIGGER t AFTER INSERT ON x EXECUTE FUNCTION f()",
   ]) expect(r(same)).toBe(same);
   expect(rewriteSql("COPY t (a) FROM STDIN WITH (FORMAT binary)", 7)).toMatchObject({ copyIn: true, binary: true, statements: 1 });
   expect(rewriteSql("COPY (SELECT a FROM stdin) TO STDOUT; SELECT 1", 7)).toMatchObject({ copyIn: false, statements: 2 });

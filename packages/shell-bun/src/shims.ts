@@ -18,6 +18,10 @@ export class DurableObject<E = unknown> {
 }
 export class WorkerEntrypoint<E = unknown> { constructor(public ctx: any, public env: E) {} }
 export class WorkflowEntrypoint<E = unknown> { constructor(public ctx: any, public env: E) {} }
+/** cloudflare:workflows' error that fails a step.do without its retries. */
+export class NonRetryableError extends Error {
+  constructor(message: string) { super(message); this.name = "NonRetryableError"; }
+}
 /** Base class for objects passed by reference over RPC; capnweb (in rwsdk) extends it at load. */
 export class RpcTarget {}
 
