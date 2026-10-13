@@ -33,6 +33,23 @@ codeSplitter's site (`scripts/site/codesplitter.ts`, tags `codesplitter-v*`) gen
 and MCP tool list from `apps/codesplitter/src/openapi.ts` and `src/mcp-tools.ts`, so an endpoint change
 updates its docs in the same PR. Those two files must keep importing nothing else.
 
+## codeSplitter is the Cloudflare git competition entry
+
+`apps/codesplitter` is our entry in Cloudflare's "Build the Next-Gen Git Platform on Cloudflare" competition
+([official rules](https://www.cloudflare.com/documents/build-next-gen-git-platform-competition-terms.pdf)). That is why the
+app exists, so changes to it must keep the entry valid:
+
+- Submissions close October 14, 2026 at 11:59 PM PDT. The rules never freeze the repo after that; the deadline is
+  only the submission cutoff. Finalists present October 21, 2026 and judges may open the repo or demo before then.
+- Tag the submitted commit (`contest-submission`). Until October 21, 2026 keep `main` working and the demo matching
+  its video; put experiments on a branch.
+- The Project must keep using Cloudflare Workers and Artifacts, and keep multiple agents working on changes concurrently.
+- The repo must keep a `LICENSE` file (MIT, Apache 2.0 or BSD) and the run instructions must stay accurate.
+- Judging weights: originality and quality as agent-oriented collaboration 50%, multi-agent concurrency, coordination,
+  context preservation, review and conflict handling 25%, ease of use and UX 25%.
+- No weapons, sexual or political content, and no attacks on competitor products in the app, demo or docs.
+- A week after the deadline (October 21, 2026) the owner reviews services that are expensive at scale and may remove them.
+
 ## Secrets and pushes
 
 Secret values live in 1Password and resolve through varlock at deploy time, behind the owner's
