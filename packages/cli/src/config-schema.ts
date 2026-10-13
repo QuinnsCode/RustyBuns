@@ -29,9 +29,9 @@ const QueueConsumer = Schema.Struct({
 });
 
 const Binding = Schema.Union([
-  Schema.Struct({ type: Schema.Literal("d1"), databaseName: Str, migrationsDir: opt(Str), renamedFrom: opt(Str) }),
-  Schema.Struct({ type: Schema.Literal("kv") }),
-  Schema.Struct({ type: Schema.Literal("r2"), bucketName: Str }),
+  Schema.Struct({ type: Schema.Literal("d1"), databaseName: Str, migrationsDir: opt(Str), renamedFrom: opt(Str), protect: opt(Bool) }),
+  Schema.Struct({ type: Schema.Literal("kv"), protect: opt(Bool) }),
+  Schema.Struct({ type: Schema.Literal("r2"), bucketName: Str, protect: opt(Bool) }),
   Schema.Struct({ type: Schema.Literal("durable_object"), className: Str, scriptName: opt(Str) }),
   Schema.Struct({ type: Schema.Literal("artifacts"), namespace: Str }),
   Schema.Struct({ type: Schema.Literal("images") }),
@@ -42,18 +42,18 @@ const Binding = Schema.Union([
     simple: Schema.Struct({ limit: int(1, Number.MAX_SAFE_INTEGER), period: Schema.Literals([10, 60]) }),
   }),
   Schema.Struct({
-    type: Schema.Literal("vectorize"), indexName: Str, dimensions: int(1, 1536),
+    type: Schema.Literal("vectorize"), indexName: Str, protect: opt(Bool), dimensions: int(1, 1536),
     metric: opt(Schema.Literals(["cosine", "euclidean", "dot-product"])),
     metadataIndexes: opt(Schema.Record(Str, Schema.Literals(["string", "number", "boolean"]))),
   }),
   Schema.Struct({ type: Schema.Literal("ai") }),
   Schema.Struct({ type: Schema.Literal("container"), className: Str, dockerfile: Str, maxInstances: opt(int(1, 1000)), instanceType: opt(Str) }),
-  Schema.Struct({ type: Schema.Literal("queue"), queueName: Str, renamedFrom: opt(Str), consumer: opt(Schema.Union([QueueConsumer, Schema.Literal(false)])), producer: opt(Schema.Literal(false)) }),
+  Schema.Struct({ type: Schema.Literal("queue"), queueName: Str, protect: opt(Bool), renamedFrom: opt(Str), consumer: opt(Schema.Union([QueueConsumer, Schema.Literal(false)])), producer: opt(Schema.Literal(false)) }),
   Schema.Struct({ type: Schema.Literal("workflow"), className: Str, scriptName: opt(Str) }),
   Schema.Struct({ type: Schema.Literal("analytics_engine"), dataset: opt(Str) }),
   Schema.Struct({ type: Schema.Literal("worker_loader") }),
   Schema.Struct({
-    type: Schema.Literal("hyperdrive"), urlSecret: opt(Str), configName: opt(Str),
+    type: Schema.Literal("hyperdrive"), urlSecret: opt(Str), protect: opt(Bool), configName: opt(Str),
     origin: opt(Schema.Struct({ neon: Schema.Struct({
       project: opt(Str), branch: opt(Str), region: opt(Str), pgVersion: opt(Schema.Literals([14, 15, 16, 17, 18])), apiKeyOp: opt(Str),
     }) })),
@@ -104,7 +104,7 @@ const Stage = Schema.Struct({
   workersDev: opt(Bool), previewUrls: opt(Bool), crons: opt(Strs),
   bindings: opt(Schema.Record(Str, Schema.Union([Binding, Schema.Struct({
     value: opt(Str), databaseName: opt(Str), bucketName: opt(Str), queueName: opt(Str),
-    indexName: opt(Str), dataset: opt(Str), namespaceId: opt(Str), configName: opt(Str),
+    indexName: opt(Str), protect: opt(Bool), dataset: opt(Str), namespaceId: opt(Str), configName: opt(Str),
   })]))),
 });
 

@@ -182,6 +182,7 @@ One language top to bottom, one config file, the whole stack running locally, an
 - **Runs locally.** sqlite stands in for every cloud binding, so an agent can boot, test and break the real app with no cloud account.
 - **It can see the app.** It renders in Chrome, which agents already drive: click, screenshot, read the console.
 - **Guard rails.** `plan` and `deploy` catch an agent's mistake before a server exists.
+- **Keep what holds data.** `protect: true` on a database, bucket, queue or vector index makes `destroy` leave it, and `plan`, `deploy` and `destroy` print a `[KEPT]` / `[REMOVED]` list first. See [Keep a resource through destroy](REFERENCE.md#config).
 - **A host that can't reach your keys.** The dev host starts without your `.env`, auto-install or credential env vars, and `run desktop --sandbox` puts it in a macOS Seatbelt jail, kept out of `~/.ssh`, cloud logins and keychains. `plan`, `deploy` and `dev` keep the Cloudflare token and other deploy logins out of the Worker build too, and with `--sandbox` give it an empty `HOME`. See [Running code you didn't write](REFERENCE.md#running-code-you-didnt-write).
 - **Rust without risk.** An agent can write the Rust engine and prove it matches the TypeScript one, sample by sample.
 

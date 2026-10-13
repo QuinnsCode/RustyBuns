@@ -7,6 +7,7 @@
 import { hyperdriveUrlEnv, workerName, type Binding, type RustyBunsConfig } from "../config.ts";
 import { BOX_DIR, RAILWAY_DATA, RAILWAY_DIR, boxDefaults, railwayDefaults } from "../box.ts";
 import { checkWheel, mintedSecrets } from "../wheel.ts";
+import { isProtected } from "../protect.ts";
 
 const ident = (s: string) => s.replace(/[^A-Za-z0-9_]/g, "_");
 
@@ -90,6 +91,9 @@ function resource(name: string, b: Binding, adopt: boolean): string | null {
       return null;
   }
 }
+
+/** protect: destroy skips the provider's delete, so the resource and its data stay on the account. */
+const keep = (decl: string) => decl.replace(/^(export const \w+ = )([\s\S]*);$/, "$1($2).pipe(Alchemy.RemovalPolicy.retain());");
 
 /** worker.observability in the upload's shape: logs need invocationLogs, which wrangler defaults to on. */
 function observability(o: NonNullable<NonNullable<RustyBunsConfig["worker"]>["observability"]>) {
@@ -188,7 +192,7 @@ export function generateAlchemy(c: RustyBunsConfig): string {
   if (edge) {
     const envEntries: string[] = [];
     for (const [name, b] of Object.entries(bindings)) {
-      const r = resource(name, b, adopt);
+      const decl = resource(name, b, adopt), r = decl && isProtected(b) ? keep(decl) : decl;
       // A consumer-only queue exists in the stack but not in env.
       if (r) { lines.push(r); if (!(b.type === "queue" && b.producer === false)) envEntries.push(`${name}: ${ident(name)}`); }
       else if (b.type === "durable_object")
