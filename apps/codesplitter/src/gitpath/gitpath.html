@@ -114,6 +114,14 @@
   .tip p { margin: 0 0 8px; } .tip ul { margin: 0 0 10px; padding: 0; list-style: none; display: grid; gap: 4px; }
   .tip li { display: flex; align-items: center; gap: 8px; } .tip li span { margin-left: auto; color: var(--muted); white-space: nowrap; }
   .tip .keys { grid-template-columns: 1fr 1fr; column-gap: 14px; }
+  .friends { position: absolute; left: 12px; top: 48px; z-index: 5; width: min(300px, calc(100% - 90px)); padding: 8px 10px; background: var(--grain), var(--paper); border: 1px solid var(--border-2); border-radius: 6px; box-shadow: 0 6px 24px rgba(0,0,0,.1); display: grid; gap: 2px; }
+  .friends h2 { margin: 0 0 4px; font: 600 11px/1.4 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .friends .f { display: grid; grid-template-columns: 2ch 1fr 112px; align-items: center; gap: 6px; font-size: 12.5px; }
+  .friends .f .n { font: 600 11px var(--mono); color: var(--muted); } .friends .f .who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .friends .f .who small { display: block; color: var(--muted); font: 500 11px var(--mono); }
+  .friends svg { width: 112px; height: 28px; background: var(--bg); border: 1px solid var(--border-2); border-radius: 4px; }
+  .friends .link { stroke: #b4b4b4; stroke-width: .8; } .friends .link.hot { stroke: var(--accent); stroke-width: 1.2; }
+  .friends .dot { fill: #e2e2e2; stroke: #8f8f8f; stroke-width: .6; } .friends .dot.add, .friends .dot.rewrite { fill: #f8c9a1; stroke: var(--accent); }
   .toast { position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%); z-index: 30; background: var(--fg); color: #fff; padding: 9px 14px; border-radius: 6px; font-size: 13px; max-width: calc(100vw - 32px); }
 
   dialog { width: min(560px, calc(100vw - 32px)); padding: 16px; background: var(--grain), var(--paper); color: var(--fg); border: 1px solid var(--border-2); border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,.18); }
@@ -146,6 +154,7 @@
   <button class="btn" id="face" type="button" title="Put your face on the runner (A). Shift-click, or Shift+A, brings the default head back" aria-label="Put your face on the runner"><i data-lucide="user-round"></i></button>
   <button class="btn" id="open" type="button" title="Open a .json file (O)" aria-label="Open a .json file"><i data-lucide="upload"></i></button>
   <button class="btn" id="paste" type="button" title="Paste JSON (P)" aria-label="Paste JSON"><i data-lucide="clipboard-paste"></i></button>
+  <button class="btn ghost" id="friendsbtn" type="button" title="Top 8 friends: the most frequent authors of this file and their vein charts (T)" aria-label="Top 8 friends" aria-pressed="false"><i data-lucide="users"></i></button>
  <button class="btn ghost dim" id="gamebtn" type="button" title="Ride it (G)" aria-label="Ride it" aria-pressed="false"><i data-lucide="gamepad-2"></i></button>
   <input type="file" id="pick" accept=".json,application/json" hidden>
   <input type="file" id="facepick" accept="image/*" hidden>
@@ -164,6 +173,7 @@
     <button class="btn keybtn" id="key-r" type="button" title="Right pedal. Click to rebind"><kbd id="key-rv"></kbd><i data-lucide="chevron-right"></i></button>
     <span class="pill gp" id="g-falls" title="Spills"><i data-lucide="heart-crack"></i><span class="mono" id="g-fallsv">0</span></span>
   </div>
+  <aside class="friends" id="friends" hidden aria-label="Top 8 friends and their vein charts"></aside>
   <div id="empty" hidden>Loading the history</div>
 </main>
 
@@ -217,7 +227,7 @@
     <li><kbd>&larr;</kbd> <kbd>&rarr;</kbd><span>one commit</span></li><li><kbd>Shift</kbd>+<kbd>&larr;</kbd><span>ten</span></li>
     <li><kbd>Home</kbd> <kbd>End</kbd><span>first, last</span></li><li><kbd>A</kbd><span>your face</span></li>
     <li><kbd>Z</kbd> <kbd>M</kbd><span>pedals (rebind)</span></li>
-    <li><kbd>G</kbd><span>the game</span></li><li><kbd>F</kbd><span>pick a file</span></li><li><kbd>O</kbd> <kbd>P</kbd><span>open, paste</span></li>
+    <li><kbd>T</kbd><span>top 8 friends</span></li><li><kbd>G</kbd><span>the game</span></li><li><kbd>F</kbd><span>pick a file</span></li><li><kbd>O</kbd> <kbd>P</kbd><span>open, paste</span></li>
   </ul>
   <p class="muted" style="margin:0">Your own file: <code>bun scripts/gitpath-log.ts &lt;clone&gt; &lt;path&gt;</code>, then open or paste its JSON.</p>
 </aside>
