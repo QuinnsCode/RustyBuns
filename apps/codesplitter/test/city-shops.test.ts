@@ -45,6 +45,21 @@ test("the bigger the file, the fuller the shelves", async () => {
   expect((await stock("media", "video", [0, 1], 4000)).puts.length).toBeGreaterThan((await stock("media", "video", [0, 1], 4)).puts.length);
 });
 
+test("the speakeasy fills its room on every door, inside the walls, with four stools and a barkeep who talks", async () => {
+  for (const face of [[0, 1], [1, 0], [0, -1], [-1, 0]] as [number, number][]) {
+    const { puts, out, b } = await stock("bar", "archive", face);
+    expect(puts.length).toBeGreaterThan(40);
+    for (const p of puts) {
+      expect(kitKeys.has(p.key)).toBe(true);
+      expect(Math.abs(p.x - b.x)).toBeLessThanOrEqual(1.36 + p.sx / 2 + 0.001);
+      expect(Math.abs(p.z - b.z)).toBeLessThanOrEqual(1.36 + p.sz / 2 + 0.001);
+    }
+    expect(out.aisles.length).toBe(4);
+    expect(out.talk.length).toBeGreaterThan(3);
+    expect(out.talk[1]).toContain("a.ts");
+  }
+});
+
 test("the coffee shop seats patrons and stays inside its walls", async () => {
   const { puts } = await stock("coffee", "coffee", [0, 1], 400);
   expect(puts.length).toBeGreaterThan(100);
