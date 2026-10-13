@@ -9,3 +9,18 @@ menu?.addEventListener("change", async () => {
   } catch {}
   location.href = `${root}/${menu.value}/${target}`;
 });
+
+// The day/night toggle: the sun disc shrinks into its centre to uncover the moon. The page head sets the first theme.
+const theme = document.querySelector(".theme");
+const sync = () => {
+  const label = `${document.documentElement.dataset.theme === "dark" ? "Night" : "Day"} mode`;
+  theme?.setAttribute("aria-label", label);
+  theme?.setAttribute("title", label);
+};
+sync();
+theme?.addEventListener("click", () => {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("theme", next); } catch {}
+  sync();
+});
