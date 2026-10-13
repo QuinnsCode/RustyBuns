@@ -173,14 +173,16 @@ export function rebuildTask(branch: string, blocker: string, clashes: { path: st
 /** A check finished on a branch (checks.ts): a required one that failed opens a fix task. */
 export async function checkFailed(env: Env, run: CheckRun) {
   if (run.status !== "failed" || run.ref === "main") return null;
-  const { get, refChecks } = await import("./checks.ts");
+  const { get, hungIn, refChecks } = await import("./checks.ts");
   // Only a failure the merge gate holds the branch on, and that's still current: the branch hasn't changed since.
   const c = await refChecks(env, run.owner, run.repo, run.ref);
   if (c.sha !== run.sha || !c.gate.failed.includes(run.name)) return null;
   const paths = await editable(env, run.owner, run.repo, run.ref);
   if (!paths.length) return null;
   const log = (await get(env, run.id))?.log ?? "";
-  const path = blame(paths, log)!, also = alsoFor(paths, path, log);
+  // A run that hung is about the test file it hung in, when the branch has it.
+  const hung = hungIn(log);
+  const path = paths.find((p) => hung && (p === hung || p.endsWith(`/${hung}`))) ?? blame(paths, log)!, also = alsoFor(paths, path, log);
   return openFix(env, run.owner, run.repo, run.ref, path, checkTask(run, path, also, log), also);
 }
 
