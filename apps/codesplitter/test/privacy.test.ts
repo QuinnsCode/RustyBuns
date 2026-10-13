@@ -97,6 +97,14 @@ describe("deleting with accounts on (#513)", () => {
     for (const name of ["ryan", "ghost"]) expect((await call(null, "/api/login", { method: "POST", body: JSON.stringify({ name }) })).status).toBe(409);
     expect((await call(null, "/api/login", { method: "POST", body: JSON.stringify({ name: "ryan2" }) })).status).toBe(200);
   });
+
+  test("an alias cookie this DB never saw (another 127.0.0.1 port's) is made a user, unless it's retired (#1274)", async () => {
+    const { call } = await app();
+    expect(await (await call("ana", "/api/session")).json()).toMatchObject({ mode: "alias", user: "ana" });
+    expect(await (await call("ana", "/api/me")).json()).toMatchObject({ name: "ana" });
+    await call("ryan", "/api/me?confirm=ryan", { method: "DELETE" });
+    expect(await (await call("ryan", "/api/session")).json()).toMatchObject({ user: null });
+  });
 });
 
 describe("@ghost in other people's repos (#514)", () => {
