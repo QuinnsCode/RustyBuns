@@ -1041,3 +1041,27 @@ test("worker host: DO bindings exist before the Worker loads, for top-level crea
   // a rejected cron or queue promise is logged, not fatal, as on workerd
   expect(src).toContain(`process.on("unhandledRejection"`);
 });
+
+test("spa entry imports reflect-metadata first when the app's tree has it (#910)", async () => {
+  const { reflectMetadataImport } = await import("../src/build.ts");
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const pkg = (dir: string, name: string) => {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name, main: "index.js" }));
+    writeFileSync(join(dir, "index.js"), "");
+  };
+  const hoisted = mkdtempSync(join(tmpdir(), "rb-reflect-"));
+  pkg(join(hoisted, "node_modules/reflect-metadata"), "reflect-metadata");
+  expect(reflectMetadataImport(hoisted)).toBe('import "reflect-metadata";\n');
+  // pnpm-style: only tsyringe sees it, so the host imports that copy by path
+  const nested = mkdtempSync(join(tmpdir(), "rb-reflect-"));
+  const store = join(nested, "node_modules/.pnpm/tsyringe@4/node_modules");
+  pkg(join(store, "tsyringe"), "tsyringe");
+  pkg(join(store, "reflect-metadata"), "reflect-metadata");
+  const { symlinkSync } = await import("node:fs");
+  symlinkSync(join(store, "tsyringe"), join(nested, "node_modules/tsyringe"));
+  expect(reflectMetadataImport(nested)).toContain("reflect-metadata/index.js");
+  expect(reflectMetadataImport(mkdtempSync(join(tmpdir(), "rb-reflect-")))).toBe("");
+});
