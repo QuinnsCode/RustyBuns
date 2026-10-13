@@ -1,13 +1,13 @@
-// The DOM half of gitpath. gitpath.ts has the math; this paints it (the commit graph as coins and lines on
-// a board that narrows toward a vanishing point), plays it, scrubs it by date on the rail, loads a pasted
-// or uploaded file, and runs the game: a unicyclist on the hot path, pedalled with taps. build.ts
-// bundles it to /gitpath.js for gitpath.html.
+// The DOM half of gitpath: the controls, the rail, the card and the game around scene.ts's 3D board. It plays
+// the history, scrubs it by date on the rail, hangs branch names and the wind and the pedals over the canvas,
+// loads a pasted or uploaded file or picture, and runs the game: a unicyclist on the hot path, pedalled with
+// taps. build.ts bundles it, three.js and all, to /gitpath.js for gitpath.html.
 import {
-  AHEAD, BEHIND, CURVES, RIDE, curveById, warpQ, buildNotes, clampQ, clockAt, currentIndex, edgeSlotAt, eventPush, filterRange, formatAge, formatClock,
-  geometry, gustRide, layoutGraph, newRide, pathSlotAt, project, qAtFrac, readInput, remount, rideEvents, scoreAt, slotX,
-  stepQ, stepRide, tapRide, timeFracAt, timeTicks, breeze,
+  CURVES, RIDE, STACK, curveById, warpQ, buildNotes, clampQ, clockAt, currentIndex, eventPush, filterRange, formatAge, formatClock, geometry, gustRide,
+  layoutGraph, newRide, qAtFrac, readInput, remount, rideEvents, scoreAt, stepQ, stepRide, tapRide, timeFracAt, timeTicks, breeze,
   type Geometry, type Input, type Layout, type Note, type RideEvent, type Side,
 } from "./gitpath.ts";
+import { createScene } from "./scene.ts";
 
 declare const lucide: { createIcons(): void } | undefined;
 
@@ -26,7 +26,10 @@ const KEYS_KEY = "gitpath.keys";
 const RIDER_AT = 0.9;
 
 const board = $<HTMLCanvasElement>("board");
-const ctx = board.getContext("2d")!;
+const scene = createScene(board);
+// Over the 3D board, a flat canvas for what is drawn in screen space: branch names, the wind and the pedals.
+const hudCanvas = $<HTMLCanvasElement>("hud");
+const ctx = hudCanvas.getContext("2d")!;
 const css = getComputedStyle(document.documentElement);
 const tok = (n: string, fallback: string) => css.getPropertyValue(n).trim() || fallback;
 const INK = tok("--fg", "#0a0a0a"), PAPER = tok("--paper", "#fcfbf8"), ACCENT = tok("--accent", "#e8590c");
@@ -45,7 +48,6 @@ let hitAt = -1e9;                 // when the last note crossed, for the strum l
 let geo: Geometry = geometry(800, 500);
 let last = 0;
 let raf = 0;
-let avatar: HTMLImageElement | null = null;
 // The game: off until the controller is clicked. `running` waits for the first tap, so the rider doesn't tip over before you start.
 let gameOn = false, running = false;
 let ride = newRide();
@@ -103,6 +105,7 @@ function pick(p: string, keepRange = false) {
   ride = newRide(); running = false; crash = null; falls = 0;
   buildRail();
   hotEdges = new Set(lay.hot.slice(1).map((hi, k) => `${lay.hot[k]}-${hi}`));
+  scene?.setGraph(notes, lay, hotEdges, events);
   const forks = lay.lanes - 1;
   $("lanenote").innerHTML = `${icon("git-branch")}${forks > 0 ? `${forks} side lane${forks === 1 ? "" : "s"}` : "one line"}, main in the middle`;
   playing = false;
@@ -198,10 +201,11 @@ function cardFor(n: Note) {
 function resize() {
   const r = board.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
-  board.width = Math.max(1, Math.round(r.width * dpr));
-  board.height = Math.max(1, Math.round(r.height * dpr));
+  hudCanvas.width = Math.max(1, Math.round(r.width * dpr));
+  hudCanvas.height = Math.max(1, Math.round(r.height * dpr));
   geo = geometry(r.width, r.height);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  scene?.resize(r.width, r.height);
   draw();
 }
 
@@ -209,242 +213,23 @@ const rgba = (hex: string, a: number) => {
   const v = parseInt(hex.slice(1), 16);
   return `rgba(${v >> 16}, ${(v >> 8) & 255}, ${v & 255}, ${a})`;
 };
-/** A size that grows with the canvas, within reason. */
-const unit = () => Math.min(1.3, Math.max(0.7, geo.half / 260));
-/** A lane's slot at depth d, on screen. */
-const onBoard = (slot: number, d: number) => project(geo, slotX(slot, lay.extent), d);
 
 function draw() {
-  const g = geo;
-  ctx.clearRect(0, 0, g.w, g.h);
-  const frac = q - Math.floor(q + 1e-9);
-
-  // The board: a paper strip that narrows to the vanishing point and fades out as it gets there.
-  const bl = project(g, -1, -BEHIND), br = project(g, 1, -BEHIND), tl = project(g, -1, AHEAD), tr = project(g, 1, AHEAD);
-  const fade = ctx.createLinearGradient(0, g.horizon, 0, g.strum);
-  fade.addColorStop(0, rgba("#fcfbf8", 0)); fade.addColorStop(0.5, rgba("#f6f3ec", 0.85)); fade.addColorStop(1, "#f3efe6");
-  ctx.beginPath(); ctx.moveTo(bl.x, bl.y); ctx.lineTo(br.x, br.y); ctx.lineTo(tr.x, tr.y); ctx.lineTo(tl.x, tl.y); ctx.closePath();
-  ctx.fillStyle = fade; ctx.fill();
-  for (const lx of [-1, 1]) {
-    const p = project(g, lx, -BEHIND), far = project(g, lx, AHEAD);
-    const grad = ctx.createLinearGradient(p.x, p.y, g.cx, g.horizon);
-    grad.addColorStop(0, rgba("#8a8578", 0.9)); grad.addColorStop(1, rgba("#b9b4a6", 0));
-    ctx.strokeStyle = grad; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(far.x, far.y); ctx.stroke();
-  }
-
-  // Frets: one a commit apart, sliding toward the viewer as the history plays.
-  for (let m = -1; m <= AHEAD; m++) {
-    const d = m - frac;
-    const a = project(g, -1, d), b = project(g, 1, d);
-    ctx.strokeStyle = rgba("#a39d8c", Math.max(0, Math.min(0.5, a.s * 0.8)) * (d < 0 ? Math.max(0, 1 + d / 0.5) : 1));
-    ctx.lineWidth = Math.max(0.5, 1.2 * a.s);
-    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-  }
-
-  // The strum line goes under everything that crosses it.
-  const since = performance.now() - hitAt, flash = since < 380 ? 1 - since / 380 : 0;
-  const sa = project(g, -1, 0), sb = project(g, 1, 0);
-  ctx.strokeStyle = flash ? ACCENT : INK; ctx.lineWidth = 2.5 + flash * 3;
-  ctx.beginPath(); ctx.moveTo(sa.x - 6, sa.y); ctx.lineTo(sb.x + 6, sb.y); ctx.stroke();
-
-  // The graph's lines still in view: the side branches first, the hot path on top.
-  const tMin = q - 1 - 0.3, tMax = q - 1 + AHEAD;
-  const seen = lay.edges.filter((e) => e.lo <= tMax && e.hi >= tMin);
-  ctx.lineCap = "round"; ctx.lineJoin = "round";
-  for (const hot of [false, true]) {
-    for (const e of seen) {
-      if (hotEdges.has(`${e.lo}-${e.hi}`) !== hot) continue;
-      const from = Math.max(e.lo, tMin), to = Math.min(e.hi, tMax);
-      ctx.beginPath();
-      for (let t = from; ; t = Math.min(to, t + 0.2)) {
-        const p = onBoard(edgeSlotAt(lay, e, t), t + 1 - q);
-        if (t === from) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
-        if (t >= to) break;
-      }
-      const s = onBoard(0, Math.max(-0.3, (from + to) / 2 + 1 - q)).s;
-      ctx.strokeStyle = hot ? ACCENT : "#9c9686";
-      ctx.lineWidth = Math.max(0.8, (hot ? 3.2 : 2) * s * unit());
-      ctx.stroke();
-    }
-  }
-
-  // Coins, far to near, so the near ones sit on top.
-  const lo = Math.max(0, Math.floor(q) - 1), hi = Math.min(notes.length - 1, Math.ceil(q) + AHEAD);
-  for (let i = hi; i >= lo; i--) {
-    const d = i + 1 - q;
-    if (d > AHEAD || d < -0.25) continue;
-    coin(notes[i]!, d, i === currentIndex(q, notes.length));
-  }
-
-  if (gameOn) { road(); rider(); wind(); hud(); }
-}
-
-function coin(n: Note, d: number, now: boolean) {
-  const g = geo;
-  const p = onBoard(lay.slot[n.i]!, d);
-  const slotW = ((g.half * 2) / (2 * lay.extent + 1)) * p.s;
-  const r = Math.max(2.5, Math.min(slotW * 0.45, (8 + 11 * n.size) * p.s * unit()));
-  const hot = lay.onHot[n.i];
-  const gone = d < 0 ? Math.max(0, 1 + d / 0.25) : 1;
-  ctx.save();
-  ctx.globalAlpha = gone * Math.min(1, 0.4 + p.s * 1.4);
-  // The glow is the lines changed: nothing for a one-liner, a soft halo for a big one.
-  if (n.size > 0.3) { ctx.shadowColor = n.kind !== "remove" ? rgba(ACCENT, 0.55) : "rgba(100,100,100,.5)"; ctx.shadowBlur = 24 * n.size * p.s; }
-  ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.fillStyle = PAPER; ctx.fill();
-  ctx.shadowColor = "transparent"; ctx.shadowBlur = 0;
-  ctx.save(); ctx.clip();
-  const split = p.x - r + 2 * r * n.addShare;
-  ctx.fillStyle = n.kind === "remove" ? "#e2e2e2" : "#f8c9a1"; ctx.fillRect(p.x - r, p.y - r, 2 * r, 2 * r);
-  if (n.kind === "rewrite") { ctx.fillStyle = "#e2e2e2"; ctx.fillRect(split, p.y - r, p.x + r - split, 2 * r); }
-  ctx.fillStyle = "rgba(255,255,255,.5)"; ctx.fillRect(p.x - r, p.y - r, 2 * r, r * 0.55);
-  ctx.restore();
-  ctx.lineWidth = now ? 2.4 : Math.max(0.8, (hot ? 2 : 1.3) * p.s * unit());
-  ctx.strokeStyle = now ? INK : hot ? ACCENT : n.kind === "remove" ? "#8f8f8f" : "#b9b4a6";
-  ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.stroke();
-  if (n.refs.length && p.s > 0.4 && gone === 1) {
-    ctx.font = `600 ${Math.round(11 * Math.min(1.1, p.s))}px ${MONO}`;
-    ctx.textAlign = "left"; ctx.textBaseline = "middle";
-    const label = n.refs[0]!.length > 22 ? n.refs[0]!.slice(0, 21) + "…" : n.refs[0]!;
-    const w = ctx.measureText(label).width + 10, x = p.x + r + 6, h = 16 * Math.min(1.1, p.s);
+  const now = performance.now(), since = now - hitAt;
+  const tags = scene?.render({
+    q, flash: since < 380 ? 1 - since / 380 : 0,
+    rider: gameOn ? { at: RIDER_AT, lean: ride.lean, crank: ride.crank, wheel, crash: crash ? { dir: crash.dir, slip: Math.min(1, (now - crash.at) / 700) } : null } : null,
+  }, currentIndex(q, notes.length)) ?? [];
+  ctx.clearRect(0, 0, geo.w, geo.h);
+  for (const t of tags) {
+    const text = t.text.length > 22 ? t.text.slice(0, 21) + "…" : t.text;
+    ctx.font = `600 11px ${MONO}`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    const w = ctx.measureText(text).width + 10, x = t.x + 14, h = 16;
     ctx.fillStyle = PAPER; ctx.strokeStyle = "#cfcfcf"; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(x, p.y - h / 2, w, h, 4); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = INK; ctx.fillText(label, x + 5, p.y + 0.5);
+    ctx.beginPath(); ctx.roundRect(x, t.y - h / 2, w, h, 4); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = INK; ctx.fillText(text, x + 5, t.y + 0.5);
   }
-  ctx.restore();
-}
-
-// -- the ride --------------------------------------------------------------------------------------
-// A small unicyclist in an orange shirt, seen from behind, riding the hot path away from us. Git is the
-// road: a merge is a car coming in from its side lane, a fork is a fork in the road, a new branch is a
-// fallen branch, a big squash merge is a boulder. (Sprites are drawn from the notes; the gusts that
-// go with them are the ride's, in gitpath.ts.)
-
-const ease = (x: number) => { const c = Math.min(1, Math.max(0, x)); return c * c * (3 - 2 * c); };
-
-/** The event sprites, far to near. `d` is commits ahead of the strum line, so the rider is at RIDER_AT. */
-function road() {
-  for (const e of [...events].reverse()) {
-    const d = e.i + 1 - q;
-    if (d > AHEAD || d < RIDER_AT - 0.6) continue;
-    const p = onBoard(lay.slot[e.i]!, d);
-    const S = p.s * unit();
-    if (S < 0.12) continue;
-    // 0 far away, 1 as it reaches the rider.
-    const come = ease(1 - (d - RIDER_AT) / 4);
-    const side = e.side, lane = geo.half * p.s;
-    ctx.save();
-    ctx.globalAlpha = Math.min(1, 0.3 + p.s * 1.6) * Math.max(0, Math.min(1, (d - RIDER_AT + 0.6) / 0.4));
-    ctx.lineCap = "round"; ctx.lineJoin = "round";
-    if (e.kind === "merge") {
-      // A car, nose on, coming in from its side lane.
-      const x = p.x + side * lane * (1.4 - 1.05 * come), y = p.y, w = 30 * S, h = 15 * S;
-      ctx.fillStyle = "rgba(0,0,0,.14)"; ctx.beginPath(); ctx.ellipse(x, y + 0.5 * S, w * 0.6, 2.5 * S, 0, 0, 7); ctx.fill();
-      ctx.fillStyle = "#222"; for (const k of [-1, 1]) ctx.fillRect(x + k * w * 0.42 - 2.5 * S, y - 4 * S, 5 * S, 4.5 * S);
-      ctx.fillStyle = ACCENT; ctx.strokeStyle = "#c2410c"; ctx.lineWidth = Math.max(0.8, 1.2 * S);
-      ctx.beginPath(); ctx.roundRect(x - w / 2, y - h, w, h * 0.7, 3 * S); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = PAPER; ctx.beginPath(); ctx.roundRect(x - w * 0.34, y - h * 1.5, w * 0.68, h * 0.62, 3 * S); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = "#ffe08a"; for (const k of [-1, 1]) { ctx.beginPath(); ctx.arc(x + k * w * 0.34, y - h * 0.55, 2 * S, 0, 7); ctx.fill(); }
-    } else if (e.kind === "fork") {
-      // A table fork standing in the road, tines up.
-      const h = 34 * S, x = p.x;
-      ctx.strokeStyle = INK; ctx.lineWidth = Math.max(1, 2.4 * S);
-      ctx.beginPath(); ctx.moveTo(x, p.y); ctx.lineTo(x, p.y - h * 0.62);
-      ctx.moveTo(x - 6 * S, p.y - h * 0.62); ctx.lineTo(x + 6 * S, p.y - h * 0.62);
-      for (const k of [-6, 0, 6]) { ctx.moveTo(x + k * S, p.y - h * 0.62); ctx.lineTo(x + k * S, p.y - h); }
-      ctx.stroke();
-    } else if (e.kind === "branch") {
-      // A fallen branch, across the lane with twigs.
-      const x = p.x, y = p.y - 2 * S, w = 36 * S;
-      ctx.strokeStyle = "#8a5a3c"; ctx.lineWidth = Math.max(1, 3.2 * S);
-      ctx.beginPath(); ctx.moveTo(x - w, y + 3 * S); ctx.quadraticCurveTo(x, y - 5 * S, x + w, y); ctx.stroke();
-      ctx.lineWidth = Math.max(0.8, 1.6 * S);
-      ctx.beginPath(); for (const k of [-0.5, 0, 0.45]) { ctx.moveTo(x + k * w, y - 1 * S); ctx.lineTo(x + k * w + 5 * S, y - 12 * S); } ctx.stroke();
-      ctx.fillStyle = "#5f9b4b"; for (const k of [-0.5, 0, 0.45]) { ctx.beginPath(); ctx.ellipse(x + k * w + 5 * S, y - 13 * S, 3 * S, 2 * S, 0.6, 0, 7); ctx.fill(); }
-    } else {
-      // A boulder, rolling in on a hop.
-      const x = p.x + side * lane * (0.9 - 0.8 * come), r = 13 * S, hop = Math.abs(Math.sin(d * 3.4)) * 16 * S * (1 - come * 0.6);
-      ctx.fillStyle = "rgba(0,0,0,.14)"; ctx.beginPath(); ctx.ellipse(x, p.y + 0.5 * S, r * 0.9, 2.5 * S, 0, 0, 7); ctx.fill();
-      ctx.translate(x, p.y - r - hop); ctx.rotate(d * 2.2 * side);
-      ctx.fillStyle = "#b7b3a8"; ctx.strokeStyle = INK; ctx.lineWidth = Math.max(0.8, 1.4 * S);
-      ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill(); ctx.stroke();
-      ctx.strokeStyle = "#8a8578"; ctx.beginPath(); ctx.arc(-r * 0.3, -r * 0.1, r * 0.35, 3, 5.4); ctx.moveTo(r * 0.2, r * 0.3); ctx.lineTo(r * 0.6, r * 0.55); ctx.stroke();
-    }
-    ctx.restore();
-  }
-}
-
-function rider() {
-  if (!notes.length) return;
-  const p = onBoard(pathSlotAt(lay, q - 1 + RIDER_AT), RIDER_AT);
-  const H = 54 * p.s * unit();
-  if (H < 6) return;
-  const u = H / 10.5, now = performance.now();
-  // A spill tips the rider over to the side it fell, then slides it off the board.
-  const slip = crash ? Math.min(1, (now - crash.at) / 700) : 0;
-  const tilt = crash ? crash.dir * (0.5 + 1.1 * ease(slip)) : ride.lean * 0.5;
-  const SKIN = "#f2c9a0", EDGE = "#c79a72";
-  ctx.save();
-  ctx.translate(p.x + (crash ? crash.dir * slip * 5 * u : 0), p.y);
-  ctx.fillStyle = "rgba(0,0,0,.16)"; ctx.beginPath(); ctx.ellipse(0, 0, 3.2 * u, 0.75 * u, 0, 0, 7); ctx.fill();
-  ctx.rotate(tilt);
-  ctx.lineCap = "round"; ctx.lineJoin = "round";
-  const hub = -2.2 * u;
-  // The wheel and its spokes.
-  ctx.strokeStyle = INK; ctx.lineWidth = Math.max(1, 0.5 * u);
-  ctx.beginPath(); ctx.arc(0, hub, 2.2 * u, 0, 7); ctx.stroke();
-  ctx.lineWidth = Math.max(0.5, 0.12 * u); ctx.strokeStyle = "#6b6b6b";
-  ctx.beginPath(); for (let k = 0; k < 5; k++) { const a = wheel + (k * Math.PI) / 2.5; ctx.moveTo(0, hub); ctx.lineTo(Math.cos(a) * 2.0 * u, hub + Math.sin(a) * 2.0 * u); } ctx.stroke();
-  // Frame and seat.
-  ctx.strokeStyle = INK; ctx.lineWidth = Math.max(1, 0.5 * u);
-  ctx.beginPath(); ctx.moveTo(0, hub); ctx.lineTo(0, -5.3 * u); ctx.stroke();
-  ctx.fillStyle = INK; ctx.beginPath(); ctx.roundRect(-1.2 * u, -5.7 * u, 2.4 * u, 0.7 * u, 0.35 * u); ctx.fill();
-  // Legs, hip to pedal, the cranks half a turn apart.
-  const a = ride.crank * 2 * Math.PI;
-  for (const side of [-1, 1]) {
-    const px = Math.cos(a + (side > 0 ? 0 : Math.PI)) * 0.9 * u + side * 0.9 * u, py = hub + Math.sin(a + (side > 0 ? 0 : Math.PI)) * 0.9 * u;
-    ctx.strokeStyle = EDGE; ctx.lineWidth = 1.3 * u; ctx.beginPath(); ctx.moveTo(side * 0.8 * u, -5.9 * u); ctx.lineTo(px, py); ctx.stroke();
-    ctx.strokeStyle = SKIN; ctx.lineWidth = 1.0 * u; ctx.beginPath(); ctx.moveTo(side * 0.8 * u, -5.9 * u); ctx.lineTo(px, py); ctx.stroke();
-    ctx.fillStyle = "#fff"; ctx.strokeStyle = INK; ctx.lineWidth = Math.max(0.6, 0.12 * u);
-    ctx.beginPath(); ctx.ellipse(px, py, 0.8 * u, 0.4 * u, 0, 0, 7); ctx.fill(); ctx.stroke();
-  }
-  // Arms out for balance: the one on the side it leans toward comes down.
-  for (const side of [-1, 1]) {
-    const hx = side * 3.9 * u, hy = -7.9 * u + side * ride.lean * 2.2 * u;
-    ctx.strokeStyle = SKIN; ctx.lineWidth = 0.9 * u;
-    ctx.beginPath(); ctx.moveTo(side * 1.9 * u, -8.5 * u); ctx.lineTo(hx, hy); ctx.stroke();
-    ctx.fillStyle = SKIN; ctx.beginPath(); ctx.arc(hx, hy, 0.55 * u, 0, 7); ctx.fill();
-  }
-  // Shorts, then the shirt, which has the face you gave it on the back, or the cloud.
-  ctx.fillStyle = "#111"; ctx.beginPath(); ctx.roundRect(-1.9 * u, -6.5 * u, 3.8 * u, 1.3 * u, 0.5 * u); ctx.fill();
-  ctx.fillStyle = ACCENT; ctx.strokeStyle = "#c2410c"; ctx.lineWidth = Math.max(0.7, 0.12 * u);
-  ctx.beginPath(); ctx.roundRect(-2.1 * u, -9.9 * u, 4.2 * u, 3.7 * u, 0.7 * u); ctx.fill(); ctx.stroke();
-  if (avatar && avatar.complete && avatar.naturalWidth) {
-    ctx.save();
-    ctx.beginPath(); ctx.arc(0, -8.0 * u, 1.35 * u, 0, 7); ctx.fillStyle = PAPER; ctx.fill(); ctx.clip();
-    const sq = Math.min(avatar.naturalWidth, avatar.naturalHeight);
-    ctx.drawImage(avatar, (avatar.naturalWidth - sq) / 2, (avatar.naturalHeight - sq) / 2, sq, sq, -1.35 * u, -9.35 * u, 2.7 * u, 2.7 * u);
-    ctx.restore();
-    ctx.strokeStyle = INK; ctx.lineWidth = Math.max(0.6, 0.14 * u); ctx.beginPath(); ctx.arc(0, -8.0 * u, 1.35 * u, 0, 7); ctx.stroke();
-  } else cloud(0, -7.6 * u, 2.6 * u);
-  // The back of the head: ears either side, hair over the rest.
-  const hy = -11.4 * u, r = 1.5 * u;
-  ctx.lineWidth = Math.max(0.6, 0.1 * u); ctx.strokeStyle = EDGE;
-  for (const side of [-1, 1]) { ctx.fillStyle = SKIN; ctx.beginPath(); ctx.arc(side * r * 0.98, hy + r * 0.1, r * 0.22, 0, 7); ctx.fill(); ctx.stroke(); }
-  ctx.fillStyle = "#3b2a20"; ctx.beginPath(); ctx.arc(0, hy, r, 0, 7); ctx.fill();
-  ctx.strokeStyle = "#5a4232"; ctx.beginPath(); ctx.arc(0, hy, r * 0.5, 4.1, 5.6); ctx.stroke();
-  ctx.fillStyle = SKIN; ctx.beginPath(); ctx.roundRect(-r * 0.4, hy + r * 0.82, r * 0.8, r * 0.4, r * 0.15); ctx.fill();
-  ctx.restore();
-}
-
-/** A small cloud, drawn from circles: a stand-in for the logo, not the real mark. */
-function cloud(cx: number, cy: number, w: number) {
-  ctx.fillStyle = "#fff";
-  ctx.beginPath();
-  ctx.roundRect(cx - w / 2, cy - w * 0.12, w, w * 0.34, w * 0.17);
-  ctx.arc(cx - w * 0.17, cy - w * 0.12, w * 0.2, 0, 7);
-  ctx.arc(cx + w * 0.1, cy - w * 0.17, w * 0.27, 0, 7);
-  ctx.fill();
+  if (gameOn) { wind(); hud(); }
 }
 
 /** Streaks across the board in the way the wind is blowing, thicker the harder it blows. */
@@ -502,11 +287,8 @@ function hud() {
 // -- the face you gave it --------------------------------------------------------------------------
 
 function setAvatar(url: string | null) {
-  if (!url) { avatar = null; draw(); return; }
-  const img = new Image();
-  img.onload = () => { avatar = img; draw(); };
-  img.onerror = () => { avatar = null; toast("Couldn't read that picture"); };
-  img.src = url;
+  scene?.setAvatar(url);
+  draw();
 }
 
 /** A picked picture, cut square and shrunk to a 96px head so it's small enough to remember. */
@@ -520,7 +302,7 @@ function readAvatar(f: File) {
     URL.revokeObjectURL(url);
     const data = c.toDataURL("image/png");
     try { localStorage.setItem(AVATAR_KEY, data); } catch {}
-    setAvatar(data); toast("That's the rider now. Shift+A puts the default head back.");
+    setAvatar(data); toast("That's on the rider's back now. Shift+A takes it off.");
   };
   img.onerror = () => { URL.revokeObjectURL(url); toast(`${f.name} isn't a picture I can read`); };
   img.src = url;
@@ -585,11 +367,16 @@ function openVideo() {
 /** Plays the range through the chosen speed curve while a MediaRecorder watches the board, then hands over the file. */
 async function exportVideo() {
   if (recording || !notes.length) return;
-  if (typeof MediaRecorder === "undefined" || !board.captureStream) { $("vidmsg").textContent = "This browser can't record a canvas"; return; }
+  const out = document.createElement("canvas");
+  if (typeof MediaRecorder === "undefined" || !out.captureStream) { $("vidmsg").textContent = "This browser can't record a canvas"; return; }
   const secs = Math.min(120, Math.max(3, Number($<HTMLInputElement>("vidsecs").value) || 15));
   const curve = curveById(curveId);
   const type = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm", "video/mp4"].find((t) => MediaRecorder.isTypeSupported(t));
-  const rec = new MediaRecorder(board.captureStream(30), type ? { mimeType: type, videoBitsPerSecond: 6_000_000 } : undefined);
+  // The 3D board and the flat layer of branch names over it are two canvases; the video gets them merged into one.
+  out.width = board.width; out.height = board.height;
+  const octx = out.getContext("2d")!;
+  const paint = () => { octx.clearRect(0, 0, out.width, out.height); octx.drawImage(board, 0, 0); octx.drawImage(hudCanvas, 0, 0, out.width, out.height); };
+  const rec = new MediaRecorder(out.captureStream(30), type ? { mimeType: type, videoBitsPerSecond: 6_000_000 } : undefined);
   const chunks: Blob[] = [];
   rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
   const done = new Promise<void>((r) => { rec.onstop = () => r(); });
@@ -597,14 +384,14 @@ async function exportVideo() {
   $<HTMLButtonElement>("vidgo").disabled = true;
   vid.close();
   const was = q;
-  q = 0; refresh();
+  q = 0; refresh(); paint();
   rec.start();
   const t0 = performance.now();
   await new Promise<void>((resolve) => {
     const step = (t: number) => {
       const u = (t - t0) / (secs * 1000);
       q = warpQ(curve, u, notes.length);
-      refresh();
+      refresh(); paint();
       if (u >= 1) { setTimeout(resolve, 600); return; }   // hold the last frame a moment
       requestAnimationFrame(step);
     };
@@ -713,7 +500,7 @@ tipBtn.onmouseleave = () => showTip(false);
 const pick$ = $<HTMLInputElement>("pick"), face$ = $<HTMLInputElement>("facepick"), paste = $<HTMLDialogElement>("pastebox");
 const openFile = () => pick$.click();
 const openFace = () => face$.click();
-const resetFace = () => { try { localStorage.removeItem(AVATAR_KEY); } catch {} setAvatar(null); toast("Back to the default head"); };
+const resetFace = () => { try { localStorage.removeItem(AVATAR_KEY); } catch {} setAvatar(null); toast("Back to the plain shirt"); };
 const openPaste = () => { $("pasterr").textContent = ""; paste.showModal(); $("pastetext").focus(); };
 $("open").onclick = openFile;
 $("paste").onclick = openPaste;
@@ -782,6 +569,8 @@ new ResizeObserver(resize).observe(board);
 
 // -- start -----------------------------------------------------------------------------------------
 
+$("stacklist").textContent = STACK.map((p) => p.name).join(", ");
+if (!scene) toast("gitpath draws in 3D and this browser has no WebGL");
 $("empty").hidden = false;
 refresh();
 icons();
