@@ -115,6 +115,7 @@ import {
 } from "./limits.ts";
 import { tierById } from "./tiers.ts";
 import { previewRoutes } from "./preview.ts";
+import { tryRoutes } from "./try-out.ts";
 import {
   deployOnCommit,
   deployRoutes,
@@ -352,6 +353,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (watch) return watch;
   const preview = await previewRoutes(req, env, p, user);
   if (preview) return preview;
+  const tried = await tryRoutes(req, env, p, user);
+  if (tried) return tried;
   const deploy = await deployRoutes(req, env, p, user);
   if (deploy) return deploy;
   const hooks = await hookRoutes(req, env, p, user);

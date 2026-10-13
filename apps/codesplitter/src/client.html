@@ -3443,6 +3443,7 @@ const views = {
       + sec("rocket", "Rusty Buns", `<div id="fit"><span class="muted">…</span></div>`)
       + (owner === me() ? sec("package", "Dependencies", `<a class="btn ghost" href="#/health/${owner}/${repo}" title="Repo health: your versions against the latest" aria-label="repo health">${icon("heart-pulse")}</a><div id="deps"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("send", "Deploy", `<div id="deploy"><span class="muted">…</span></div>`) : "")
+      + (owner === me() ? sec("flask-conical", "Try Rusty Buns", `<div id="try"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("rocket", "Preview deploy", `<div id="preview"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("webhook", "Webhooks", `<div id="hooks"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("shield", "Audit log", `<details id="audit"><summary class="muted" style="font-size:12px;cursor:pointer">tokens, crew, invites, visibility, webhooks and deploy keys: who changed them</summary><div></div></details>`) : "")
@@ -3950,6 +3951,51 @@ const views = {
     }));
     icons();
   },
+  /** Try Rusty Buns on main or an agent's branch: clone, install, init, an offline plan. Nothing deploys. Click a step for its log. */
+  async wireTry(owner, repo) {
+    const el = $("#try"), base = `/repos/${owner}/${repo}/try`;
+    if (!el) return;
+    const STEPS = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["init", "sparkles", "init"], ["plan", "list-checks", "plan"]];
+    const open = (await api(`/repos/${owner}/${repo}/branches`).catch(() => [])).filter((b) => b.status === "open");
+    let sel = null, timer = null, branch = "";
+    const draw = (d) => {
+      const run = d.run, by = Object.fromEntries((run?.steps ?? []).map((s) => [s.key, s]));
+      sel ??= run?.steps.find((s) => s.status === "running")?.key ?? null;
+      const shown = sel && by[sel], busy = run && !run.done;
+      const pre = el.querySelector("pre"), stick = !pre || pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
+      el.innerHTML = `${flowRow(STEPS, by, sel)}${runTicker(run)}
+        ${run ? `<p class="muted" style="font-size:12px">${run.stage === "main" ? "main" : `branch <code>${esc(run.stage)}</code>`}${run.commit ? ` at <code>${esc(run.commit.slice(0, 7))}</code>` : ""}</p>` : ""}
+        ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
+        ${shown ? `<pre style="max-height:260px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(shown.out || "(waiting)")}</pre>` : ""}
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <select id="try-branch"${busy ? " disabled" : ""} title="main, or an agent's branch: its files are laid over the clone"><option value="">main</option>${open.map((b) => `<option value="${esc(b.name)}"${b.name === branch ? " selected" : ""}>${esc(b.name)}</option>`).join("")}</select>
+          <button class="btn primary" id="try-run"${!d.can_run || busy ? " disabled" : ""} title="${d.can_run ? "" : "Runs on the desktop app"}">${icon("flask-conical")}${busy ? "Running…" : "Try it"}</button>
+        </div>
+        <p class="muted" style="font-size:12px;margin-top:4px">Runs <code>rustybuns init</code> on a throwaway clone (skipped if the repo has a config), then <code>plan --offline</code>: no login, nothing deployed, nothing saved. Pick an agent's branch to try its edits before you merge them.</p>`;
+      const np = el.querySelector("pre");
+      if (np && stick) np.scrollTop = np.scrollHeight;
+      el.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => { sel = sel === b.dataset.step ? null : b.dataset.step; draw(d); }));
+      $("#try-branch").addEventListener("change", (e) => { branch = e.target.value; });
+      $("#try-run").addEventListener("click", async () => {
+        sel = null;
+        try { await api(base, { branch: $("#try-branch").value || undefined }); } catch (err) { toast(err.message); }
+        poll();
+      });
+      icons();
+    };
+    const poll = async () => {
+      clearTimeout(timer);
+      if (!document.body.contains(el)) return;
+      const d = await api(base).catch(() => null);
+      if (!d) { el.innerHTML = '<span class="muted">unavailable</span>'; return; }
+      const running = d.run?.steps.find((s) => s.status === "running")?.key;
+      if (running && !el.dataset.picked) sel = running;
+      draw(d);
+      if (d.run && !d.run.done) timer = setTimeout(poll, 1000);
+    };
+    el.addEventListener("click", (e) => { if (e.target.closest("[data-step]")) el.dataset.picked = "1"; if (e.target.closest("#try-run")) delete el.dataset.picked; });
+    poll();
+  },
   /** A preview deploy: five steps that go green as the stack goes up and comes down. Click one for its log. */
   async wirePreview(owner, repo) {
     const el = $("#preview"), base = `/repos/${owner}/${repo}/preview`;
@@ -4177,6 +4223,7 @@ const views = {
     views.wireBeams(owner, repo, r);
     views.wireMirrorTurn(owner, repo);
     views.wirePreview(owner, repo);
+    views.wireTry(owner, repo);
     views.wireDeploy(owner, repo);
     views.wireHooks(owner, repo);
     $("#audit")?.addEventListener("toggle", (e) => { if (e.target.open) wireAudit(e.target.lastElementChild, `/repos/${owner}/${repo}/audit`); }, { once: true });
@@ -5764,7 +5811,7 @@ const FMAP = [
     ids: ["show-around", "profile", "search", "test-gutter", "accounts", "your-mods"],
     art: `<svg viewBox="0 0 360 220" role="img" aria-label="A command palette with a search box and three results"><rect class="bx" x="40" y="26" width="280" height="168" rx="8"/><path class="st g" d="M40 70H320"/><text x="58" y="53">⌘K</text><text class="m" x="92" y="53">split the file…</text><rect class="fl o pulse" x="196" y="44" width="2" height="14"/><g><rect class="ln o" x="52" y="80" width="256" height="30" rx="4" style="opacity:.18"/><text x="64" y="99">Dig up a GitHub repo</text><text class="m" x="236" y="99">↵</text><text x="64" y="129">Search code</text><text class="m" x="236" y="129">/</text><text x="64" y="159">Let's show you around</text><text class="m" x="236" y="159">?</text><text class="m" x="64" y="183">each one is a single API call</text></g></svg>` },
   { id: "pipelines", icon: "workflow", name: "Pipelines", head: "From commit to <em>production</em>", what: "Webhooks, CI on your own hardware, preview deploys, ship-on-commit and a guard on production, with every deploy on the record and every secret behind Touch ID.",
-    ids: ["webhooks", "own-hardware-ci", "repo-builds-itself", "deploy", "deploy-all-over", "preview-deploys", "ship-on-commit", "deploy-keys", "prod-guard", "deploy-log", "adopt-live", "varlock", "build-changes", "safe-updates", "doctor"],
+    ids: ["webhooks", "own-hardware-ci", "repo-builds-itself", "deploy", "deploy-all-over", "try-rusty-buns", "preview-deploys", "ship-on-commit", "deploy-keys", "prod-guard", "deploy-log", "adopt-live", "varlock", "build-changes", "safe-updates", "doctor"],
     art: `<svg viewBox="0 0 360 220" role="img" aria-label="A commit goes through checks and a preview to a guarded production deploy, with a webhook fired at each step"><g class="bx"><rect x="14" y="88" width="56" height="44" rx="5"/><rect x="92" y="88" width="56" height="44" rx="5"/><rect x="170" y="88" width="56" height="44" rx="5"/></g><rect class="bx o" x="248" y="88" width="56" height="44" rx="5"/><g><text x="22" y="114">commit</text><text x="102" y="114">checks</text><text x="176" y="114">preview</text><text class="o" x="262" y="108">prod</text><text class="o" x="258" y="121">guard</text></g><g class="st"><path d="M70 110H92"/><path d="M148 110H170"/><path d="M226 110H248"/><path d="M304 110H328"/></g><circle class="fl o" cx="338" cy="110" r="8"/><g class="st g d"><path d="M42 88C42 50 120 50 120 88"/><path d="M120 88C120 40 198 40 198 88"/><path d="M198 88C198 30 276 30 276 88"/></g><text class="m" x="60" y="52">webhook · signed · retried</text><path class="st g" d="M276 132C276 170 200 170 120 170"/><text class="m" x="130" y="190">every deploy logged</text></svg>` },
   { id: "private", icon: "lock-keyhole", name: "Private", head: "Private lines in a <em>public repo</em>", what: "Privacy is per line. Keep a repo private, make one public, or hide only the lines that need hiding, and your git history stays yours whatever happens upstream.",
     ids: ["private-lines", "visibility", "private-github", "git-truth", "own-history"],
@@ -6327,6 +6374,7 @@ const PANEL_SAY = {
   "rusty-buns": ["rocket", "How easily this repo ships as a desktop binary, a Cloudflare Worker or a server."],
   dependencies: ["package", "The dependency doctor: aged updates on a branch, known vulnerabilities, and the supply-chain watch."],
   deploy: ["send", "Ship the repo for real. Only a person presses the button; agents never deploy."],
+  "try-rusty-buns": ["flask-conical", "Init and plan a repo or an agent's branch, offline."],
   "preview-deploy": ["rocket", "A throwaway preview of the repo before anything ships."],
   webhooks: ["webhook", "GitHub-shaped, HMAC-signed webhooks for your CI/CD, retried on a queue."],
   "audit-log": ["shield", "Who changed tokens, crew, invites, visibility and deploy keys."],

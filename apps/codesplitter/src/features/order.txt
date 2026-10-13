@@ -48,6 +48,7 @@ agents-rebase
 hosted-agents
 agents-cant-ship
 safe-updates
+try-rusty-buns
 preview-deploys
 ship-on-commit
 deploy-keys

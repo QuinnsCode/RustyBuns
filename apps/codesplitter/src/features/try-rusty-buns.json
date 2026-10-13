@@ -1,0 +1,5 @@
+{
+  "icon": "flask-conical",
+  "title": "Try Rusty Buns",
+  "what": "Dig a repo up, let an agent edit it on a branch, then try Rusty Buns on those edits: init and an offline plan, nothing deployed."
+}
