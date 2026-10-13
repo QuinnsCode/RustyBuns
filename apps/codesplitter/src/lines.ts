@@ -759,7 +759,9 @@ function runs(lines: Line[]) {
  * (unless both made the very same change), or when a word one side replaced
  * is one the other side adds (a rename on one side, a new use of the old
  * name on the other): that's a real conflict. With `loose` (prose and
- * comments), that guard skips short and common words ("a", "it", "the").
+ * comments), that guard skips short and common words ("a", "it", "the"),
+ * but never a number: a sentence both sides edited in different words
+ * merges (#1222), unless one changed a number the other's new words quote.
  *
  * With `both`, words both sides only added at the very same spot are kept: an
  * item each added to one list, `a`'s first (main's: it landed first), or in
@@ -778,7 +780,8 @@ export function mergeWords(base: string, a: string, b: string, both = false, loo
     return out;
   };
   const wa = words(a), wb = words(b), sa = spans(wa), sb = spans(wb);
-  const named = (ws: string[]) => new Set(ws.filter((w) => /\w/.test(w) && (!loose || (w.length >= 3 && !STOP.has(w.toLowerCase())))));
+  // A number always says something, however short: "up to 32" made 64 on one side, a new "room of 32" on the other (#1222).
+  const named = (ws: string[]) => new Set(ws.filter((w) => /\w/.test(w) && (!loose || /\d/.test(w) || (w.length >= 3 && !STOP.has(w.toLowerCase())))));
   // In prose a word is only renamed away if it's gone from that side's line: one "Jekyll" of two cut is no rename.
   const gone = (ss: typeof sa, x: string[]) => new Set([...named(ss.flatMap((s) => o.slice(s.from, s.to)))].filter((w) => !loose || !x.includes(w)));
   const added = (ss: typeof sa) => named(ss.flatMap((s) => s.add));
