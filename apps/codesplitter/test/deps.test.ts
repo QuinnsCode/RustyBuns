@@ -137,6 +137,21 @@ test("a run reports what no update fixes, and goes on when osv.dev is down", asy
   expect(r2.note).toContain("couldn't check for known vulnerabilities (503)");
 });
 
+test("the health page: each package against latest, how far behind, a score, and a vulnerability zeroes its package", async () => {
+  const hit: Advisories = async () => new Map([["kleur@3.0.0", [{ id: "GHSA-k", summary: "", fixed: [] }]]]);
+  const { send, call } = await app(undefined, undefined, PKG, { advisories: hit });
+  await send("ryan", "/api/repos/ryan/lab/deps", { ignore: "ky" }, "PUT");
+  const h = await (await call("ryan", "/api/repos/ryan/lab/deps/health")).json();
+  const by = Object.fromEntries(h.packages.map((p: any) => [p.name, p]));
+  expect(by.mitt).toMatchObject({ version: "3.0.0", latest: "3.0.1", behind: "patch", versions: 1, days: 300, vulns: [] });
+  expect(by.kleur).toMatchObject({ latest: "4.1.5", behind: "major", days: 870, vulns: ["GHSA-k"], score: 0 });
+  expect(by.hono).toMatchObject({ latest: "4.6.0", behind: "minor" });
+  expect(by.local).toMatchObject({ version: null, behind: null });
+  expect(h.score).toBe(Math.round(100 * (0.85 + 0 + 0.3 + 0.6 + 0.3) / 5));
+  expect(h.packages[0].name).toBe("kleur");
+  expect((await call("bob", "/api/repos/ryan/lab/deps/health")).status).toBe(403);
+});
+
 test("whatsNew: only advisories and branch fixes the owner wasn't told about", () => {
   const report = (exposed: string[], fixes: string[], status: Update["status"] = "untested"): Report => ({
     at: 0, checked: 2, branch: fixes.length ? "deps-x" : undefined,

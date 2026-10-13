@@ -454,6 +454,52 @@ export async function outdated(pkg: Record<string, any>, s: Settings, registry: 
   return { checked, updates: found.sort(byName), exposed: exposed.sort(byName) };
 }
 
+/** One package's standing: what the repo pins, what the registry has, and how far apart they are. */
+export interface Standing {
+  name: string; path: string; spec: string;
+  /** The version the range starts at (null: a range the doctor doesn't read, like workspace: or a tag). */
+  version: string | null;
+  latest: string | null;
+  /** How big the gap to latest is; null when level with it or unread. */
+  behind: Level | null;
+  /** Stable releases past this one, and days between the two releases going out. */
+  versions: number;
+  days: number;
+  vulns: string[];
+  /** 0..1: how healthy this one is. */
+  score: number;
+}
+const WEIGHT: Record<Level, number> = { patch: 0.85, minor: 0.6, major: 0.3 };
+
+/**
+ * Every dependency of each package.json against the registry's latest, and one 0-100 score for the repo:
+ * the mean of each package's own (1 level, less for a patch, minor or major behind, 0 with a known vulnerability).
+ * Packages the doctor can't read are listed, not scored.
+ */
+export async function health(manifests: Map<string, { pkg: Record<string, any> }>, registry: Registry, vulns = new Map<string, Vuln[]>()): Promise<{ packages: Standing[]; score: number | null }> {
+  const own = new Set([...manifests.values()].map((m) => m.pkg.name).filter(Boolean));
+  const rows = [...manifests].flatMap(([path, m]) =>
+    Object.entries({ ...m.pkg.dependencies, ...m.pkg.devDependencies } as Record<string, string>)
+      .filter(([name]) => !own.has(name)).map(([name, spec]) => ({ name, path, spec })));
+  const packages = await Promise.all(rows.map(async (row): Promise<Standing> => {
+    const r = range(row.spec), none = { ...row, version: null, latest: null, behind: null, versions: 0, days: 0, vulns: [] as string[], score: 1 };
+    if (!r) return none;
+    const version = r.v.join(".");
+    const hits = (vulns.get(`${row.name}@${version}`) ?? []).map((h) => h.id);
+    const meta = await registry(row.name).catch(() => null);
+    const stable = (meta?.versions ?? []).map((raw) => ({ raw, v: parse(raw) })).filter((x): x is { raw: string; v: V } => !!x.v).sort((a, b) => cmp(a.v, b.v));
+    const latest = stable[stable.length - 1];
+    if (!latest) return { ...none, version, vulns: hits, score: hits.length ? 0 : 1 };
+    const behind = cmp(latest.v, r.v) > 0 ? levelOf(r.v, latest.v) : null;
+    const when = (raw: string) => Date.parse(meta!.time[raw] ?? "");
+    const days = behind && when(latest.raw) > when(version) ? Math.round((when(latest.raw) - when(version)) / 86_400_000) : 0;
+    return { ...row, version, latest: latest.raw, behind, versions: stable.filter((x) => cmp(x.v, r.v) > 0).length, days, vulns: hits, score: hits.length ? 0 : behind ? WEIGHT[behind] : 1 };
+  }));
+  const scored = packages.filter((p) => p.version);
+  const score = scored.length ? Math.round(100 * scored.reduce((a, p) => a + p.score, 0) / scored.length) : null;
+  return { packages: packages.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name)), score };
+}
+
 /** The newest release past the range that's within the level, not held back, old enough, and `fits`. */
 function newest(name: string, r: { prefix: string; v: V }, meta: { versions: string[]; time: Record<string, string> }, s: Settings, now: number, fits = (_raw: string) => true): V | null {
   const ripe = now - s.min_age_days * 86_400_000;
@@ -1576,6 +1622,22 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
     await env.DB.prepare(`UPDATE dep_watches SET ${set.map(([c]) => `${c} = ?`).join(", ")} WHERE owner = ? AND repo = ?`)
       .bind(...set.map(([, v]) => v), owner, repo).run();
     return json(await settings(env, owner, repo));
+  }
+  if (p[5] === "health" && req.method === "GET") {
+    // Unlike a run, this reads the registry and OSV live and keeps nothing: the page is a picture of now.
+    const files = await readManifests(caller(self, url.origin), owner, repo);
+    const malicious = await hitsFor(env, owner, repo);
+    if ("note" in files) return json({ packages: [], score: null, note: files.note, malicious, digs: [] });
+    const own = new Set([...files.manifests.values()].map((m) => m.pkg.name).filter(Boolean));
+    const asks = new Map([...files.manifests.values()].flatMap((m) => floors(m.pkg)).filter((x) => !own.has(x.name)).map((x) => [`${x.name}@${x.version}`, x]));
+    const advisories = (env.DEPS_ADVISORIES as Advisories | undefined) ?? osvAdvisories();
+    let note: string | undefined;
+    const vulns = await advisories([...asks.values()]).catch((e: Error) => { note = `couldn't check for known vulnerabilities (${e.message})`; return new Map<string, Vuln[]>(); });
+    const h = await health(files.manifests, (env.DEPS_REGISTRY as Registry | undefined) ?? npmRegistry, vulns);
+    const row = await env.DB.prepare("SELECT last_report FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
+    const last: Report | null = row?.last_report ? JSON.parse(row.last_report as string) : null;
+    const digs = last?.digs ?? (await settings(env, owner, repo)).digs.map((d): Dug => ({ ...d, status: "waiting" }));
+    return json({ ...h, ...(malicious.length && h.score !== null ? { score: 0 } : {}), ...(note ? { note } : {}), malicious, digs });
   }
   if (p[5] === "run" && req.method === "POST") {
     // {rank}: this run's own ranking, "bring these up, solve around them", run once.
