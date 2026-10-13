@@ -4,12 +4,13 @@
 // is one seat at it.
 import { GALAXIES, SECTOR_NAMES, FACTION_NAMES, galaxyOf, type GalaxyId } from "./war/galaxy.ts";
 import {
-  COST, ORBIT, checkRetreats, enemy, fogged, heroReady, income, incomeBreakdown, keyShare, planOrders, supplied,
+  COST, ORBIT, checkRetreats, enemy, fogged, heroReady, income, incomeBreakdown, keyShare, planOrders, regionHolder, supplied,
   type Attack, type Campaign, type Order, type Orders, type Retreat, type Where,
 } from "./war/rules.ts";
 import { handIn, heroFaction, humans, newTable, report, waitingOn, type Seats, type Table } from "./war/table.ts";
 import { fetchView, linkInHash, seatLink, sendBattle, sendOrders, startOnline, type Online, type View } from "./net.ts";
 import { drawMap } from "./ui/map.ts";
+import { icon } from "./ui/icons.ts";
 import { FLAVOR, run } from "./battle/sim.ts";
 import { runSpace } from "./battle/space.ts";
 import { VEHICLE_KINDS, type BattleResult, type BattleSpec, type Faction, type Side, type SpaceBattleResult, type SpaceBattleSpec } from "./battle/contract.ts";
@@ -34,6 +35,7 @@ let selected: string | null = null;
 // The moves this seat handed in online, to check its retreats against (the server keeps them hidden).
 let sent = read<{ id: string; turn: number; orders: Orders }>(SENT);
 let busy = false; // a call to the server, or a battle, is under way
+let overviewOpen = true;
 
 const online = () => (game.kind === "online" ? game : null);
 const hotseat = () => game.kind === "local" && humans(game.table).length === 2;
@@ -92,14 +94,33 @@ function flash(msg: string) {
 function render() {
   const draft = planOrders(c, [mine]).c, foe = enemy(me), g = online(), v = seen(), answering = !!c.attacks;
   $("map").innerHTML = drawMap(v, mine.orders, selected, mine.hero, { me, attacks: c.attacks ?? [], retreats: mine.retreats ?? [] });
-  const share = keyShare(c, me);
+  const share = keyShare(c, me), gx = galaxyOf(c);
+  const count = (f: Faction) => Object.values(c.systems).reduce((n, s) => ({ armies: n.armies + s.sectors.reduce((a, x) => a + x.armies[f], 0), ships: n.ships + s.fleets[f] }), { armies: 0, ships: 0 });
+  const forces = count(me), held = gx.regions.filter((r) => regionHolder(c, r.id) === me).length;
+  // The bar along the top of the map: what this side has to spend and to fight with.
+  $("topbar").innerHTML = `
+    <span class="res" title="Credits now, and next turn's income">${icon("coins")}<b>${draft.credits[me]}</b><small>+${income(c, me)}</small></span>
+    <span class="res score" title="War score: key sectors held (capitals and spaceports). Hold 75% to win; fall under 30% and your income halves.">${icon("flag")}
+      <span class="war"><i class="marines" style="width:${keyShare(c, "marines") * 100}%"></i><i class="wooka" style="width:${keyShare(c, "wooka") * 100}%"></i></span><b>${Math.round(share * 100)}%</b></span>
+    <span class="res" title="Your armies">${icon("users")}<b>${forces.armies}</b></span>
+    <span class="res" title="Your ships">${icon("rocket")}<b>${forces.ships}</b></span>
+    <span class="res" title="Regions you hold every capital in">${icon("map")}<b>${held}</b><small>/${gx.regions.length}</small></span>
+    <span class="res${heroReady(c, me) ? "" : " bad"}" title="${heroReady(c, me) ? `Your hero, level ${c.heroes[me].level}` : `Your hero is wounded until turn ${c.heroes[me].woundedUntil}`}">${icon("swords")}<b>${heroReady(c, me) ? `Lv ${c.heroes[me].level}` : `T${c.heroes[me].woundedUntil}`}</b></span>`;
+  // The overview: every world you hold ground on, with what you have there.
+  const fed = supplied(c, me);
+  const worlds = gx.systems.filter((d) => v.systems[d.id]!.sectors.some((x) => x.owner === me) || v.systems[d.id]!.fleets[me]);
+  $("overview").innerHTML = `<button type="button" id="overview-toggle" class="ov-head" title="${overviewOpen ? "Hide" : "Show"} your worlds">Overview <small>${worlds.length}</small>${icon("chevron-down", 14)}</button>
+    ${overviewOpen ? `<ul>${worlds.map((d) => {
+      const s = v.systems[d.id]!, armies = s.sectors.reduce((a, x) => a + x.armies[me], 0), foeOrbit = s.orbit === enemy(me);
+      return `<li data-system="${d.id}" class="${selected === d.id ? "on" : ""}">
+        <span class="ov-name">${d.name}${armies && !fed.has(d.id) ? `<i class="ov-warn" title="Cut off from supply">${icon("unplug", 12)}</i>` : ""}${foeOrbit ? `<i class="ov-warn" title="Blockaded: the enemy holds the orbit">!</i>` : ""}</span>
+        <span class="ov-dots">${s.sectors.map((x) => `<i class="dot ${x.owner}" title="${SECTOR_NAMES[x.kind]}"></i>`).join("")}</span>
+        <span class="ov-n" title="Your armies here">${icon("users", 12)}${armies}</span>
+        <span class="ov-n" title="Your ships here">${icon("rocket", 12)}${s.fleets[me]}</span></li>`;
+    }).join("")}</ul>` : ""}`;
+  $("turn-n").textContent = `Turn ${c.turn}`;
   $("status").innerHTML = `
-    <div class="row"><b>Turn ${c.turn}</b><span title="Credits now, and next turn's income">◈ ${draft.credits[me]} <small>+${income(c, me)}/turn</small></span></div>
     ${reinforcements()}
-    <div class="war" title="Key sectors held (capitals and spaceports). Hold 75% to win; fall under 30% and your income halves.">
-      <i class="marines" style="width:${keyShare(c, "marines") * 100}%"></i><i class="wooka" style="width:${keyShare(c, "wooka") * 100}%"></i>
-    </div>
-    <div class="row small"><span>War score ${Math.round(share * 100)}%</span><span>${heroReady(c, me) ? `Hero, level ${c.heroes[me].level}` : `Hero wounded until turn ${c.heroes[me].woundedUntil}`}</span></div>
     ${g || hotseat() ? `<div class="row small seat"><span><i class="dot ${me}"></i>${g ? "Online" : "Hotseat"}: ${FACTION_NAMES[me]}</span>
       ${g ? `<span>${waitingLine()}</span>${g.link.invite ? `<button type="button" id="invite" class="link" title="The other side's link">🔗</button>` : ""}` : ""}</div>` : ""}`;
 
@@ -165,8 +186,8 @@ function render() {
   $("log").innerHTML = c.log.map((l) => `<li>${esc(l)}</li>`).join("");
   const end = $("end-turn");
   end.toggleAttribute("disabled", busy || !myTurn());
-  end.textContent = answering && myTurn() ? (rs.length ? "Confirm retreats" : "Hold everywhere")
-    : g ? (myTurn() ? "Send orders" : waitingLine()) : hotseat() ? "Hand in orders" : "End turn";
+  end.innerHTML = (answering && myTurn() ? (rs.length ? "Confirm retreats" : "Hold everywhere")
+    : g ? (myTurn() ? "Send orders" : waitingLine()) : hotseat() ? "Hand in orders" : "Next turn") + icon("chevrons-right", 18);
   if (c.winner) showModal(`<h2>${hotseat() ? `${FACTION_NAMES[c.winner]} win` : c.winner === me ? "Victory" : "Defeat"}</h2><p>${FACTION_NAMES[c.winner]} wins the war on turn ${c.turn - 1}.</p><button type="button" id="new-war" class="primary">New campaign</button>`);
 }
 
@@ -254,6 +275,7 @@ document.addEventListener("click", (e) => {
   }
   if (t.dataset.dropRetreat) { mine.retreats?.splice(+t.dataset.dropRetreat, 1); save(); render(); return; }
   if (t.id === "end-turn") return endTurn();
+  if (t.id === "overview-toggle") { overviewOpen = !overviewOpen; render(); return; }
   if (t.id === "new-war" || t.id === "restart") return chooseGame();
   if (t.dataset.start) return startGame(t.dataset.start as "ai" | "hotseat" | "online");
   if (t.id === "invite") return showInvite();

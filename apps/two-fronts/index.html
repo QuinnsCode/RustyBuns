@@ -9,7 +9,12 @@
   </head>
   <body>
     <main class="war-room">
-      <section id="map" class="map"></section>
+      <section class="map">
+        <div id="map" class="map-view"></div>
+        <div id="topbar" class="topbar"></div>
+        <div id="overview" class="overview"></div>
+        <div class="turnbox"><span id="turn-n" class="turn-n"></span><button type="button" id="end-turn" class="next">End turn</button></div>
+      </section>
       <aside class="panel">
         <header><h1>Two Fronts</h1><button type="button" id="restart" class="link" title="New campaign">↺</button></header>
         <p class="tagline">The Wooka came with a furry ferocity unseen by the likes of man.</p>
@@ -18,7 +23,6 @@
         <div id="detail" class="detail"></div>
         <h3>Orders</h3>
         <ul id="orders" class="orders"></ul>
-        <button type="button" id="end-turn" class="primary end">End turn</button>
         <h3>Last turn</h3>
         <ul id="log" class="log"></ul>
       </aside>

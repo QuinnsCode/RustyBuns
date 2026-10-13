@@ -1,14 +1,21 @@
-// The galaxy map as SVG, laid out like a world-conquest board: each system owns a territory (its
-// Voronoi cell, capped so it doesn't sprawl), tinted by who holds its capital and hatched when the
-// enemy holds its orbit. Regions are the continents, outlined in their own colour with a bonus
-// badge that lights for whoever holds every capital in them. Armies and fleets stand on the
-// territories as numbered pieces, front-line lanes run hot, and this turn's orders are arrows.
+// The galaxy map as SVG, drawn like a space empire's star map: each system owns a territory (its
+// Voronoi cell, capped so it bulges round the star), and a side's territories run together into
+// one translucent sweep with a glowing border where it meets the other side or open space. Hatched
+// when the enemy holds the orbit. Each system is a glowing star with a name plaque and a dot per
+// sector in its holder's colour, over nebulae. Regions are dashed outlines with a bonus badge that
+// lights for whoever holds every capital in them. Armies and fleets stand by the stars as numbered
+// pieces, front-line lanes run hot, and this turn's orders are arrows.
 import { FACTION_COLORS as COLORS, type Faction } from "../battle/contract.ts";
 import { galaxyOf } from "../war/galaxy.ts";
 import { ORBIT, enemy, holds, regionHolder, type Attack, type Campaign, type Order, type Retreat } from "../war/rules.ts";
 
 const hex = (f: Faction | null) => (f ? `#${COLORS[f].toString(16).padStart(6, "0")}` : "none");
-const R = 3.4;     // the planet
+// The empire colours on the star map: a side's sweep of territory and its border.
+const TINT: Record<Faction, string> = { marines: "#3f7fd6", wooka: "#d07a2c" };
+const STAR_COLORS = ["#fff6dc", "#ffd27a", "#ff9d5c", "#a8dcff", "#ffffff", "#ffe9a8"];
+// A stable number per id, for each star's colour.
+const hash = (id: string) => [...id].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
+const R = 2.6;     // the star's orbit ring
 const CAP = 15;    // a territory reaches no further than this from its system
 const REGION_COLORS = ["#5b8def", "#9b7bea", "#3fb6a8", "#e0b341", "#e46a6a", "#6fbf5a", "#d47fc0"];
 
@@ -48,18 +55,13 @@ function territories(sites: Pt[], width: number): Poly[] {
 }
 const pathOf = (poly: Poly) => `M${poly.map((v) => `${v.p[0].toFixed(2)} ${v.p[1].toFixed(2)}`).join("L")}Z`;
 
-function wedge(cx: number, cy: number, r: number, a0: number, a1: number) {
-  const p = (a: number) => `${(cx + r * Math.sin(a)).toFixed(2)} ${(cy - r * Math.cos(a)).toFixed(2)}`;
-  return `M${cx} ${cy} L${p(a0)} A${r} ${r} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${p(a1)} Z`;
-}
-
 // A board piece: an army is a round counter, a fleet a chevron, each with its count.
 // A count of "?" is the enemy where nobody of ours is there to count them.
 const many = (n: number | "?", one: string, more: string) => (n === "?" ? `${more}, how many unknown` : `${n} ${n === 1 ? one : more}`);
 const armyPiece = (x: number, y: number, f: Faction, n: number | "?") =>
   `<g class="piece ${f}${n === "?" ? " unknown" : ""}"><title>${many(n, "army", "armies")}</title><circle cx="${x}" cy="${y}" r="2.2"/><text x="${x}" y="${y + 0.95}">${n}</text></g>`;
 const fleetPiece = (x: number, y: number, f: Faction, n: number | "?") =>
-  `<g class="piece fleet ${f}${n === "?" ? " unknown" : ""}"><title>${many(n, "ship", "ships")}</title><path d="M${x - 2.6} ${y + 1.6}L${x} ${y - 2.2}L${x + 2.6} ${y + 1.6}L${x} ${y + 0.6}Z"/><text x="${x}" y="${y + 4.3}">${n}</text></g>`;
+  `<g class="piece fleet ${f}${n === "?" ? " unknown" : ""}"><title>${many(n, "ship", "ships")}</title><path d="M${x - 2.6} ${y + 1.6}L${x} ${y - 2.2}L${x + 2.6} ${y + 1.6}L${x} ${y + 0.6}Z"/><text x="${x}" y="${y - 2.8}">${n}</text></g>`;
 // The lucide "swords" icon, centred on x, y.
 const swords = (x: number, y: number) => `<g class="hero-mark" transform="translate(${x - 2.4} ${y - 2.4}) scale(0.2)"><title>Hero battle</title><path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M14.5 6.5 18 3h3v3l-3.5 3.5M5 14l4 4M7 17l-3 3M3 19l2 2"/></g>`;
 // A shield-shaped badge for a region's bonus.
@@ -76,6 +78,17 @@ function stars(width: number) {
   return `<g class="stars">${out}</g>`;
 }
 
+// Nebulae: soft clouds of colour behind everything, the same every draw.
+function nebulae(width: number) {
+  let s = 11, out = "";
+  const r = () => ((s = (s * 1103515245 + 12345) >>> 0) / 4294967296);
+  const hues = ["#5b2b8c", "#2a4f8f", "#7a2d5c", "#1f6a78", "#43307a"];
+  for (let i = 0; i < Math.ceil(width / 14); i++) {
+    out += `<ellipse cx="${(r() * width).toFixed(1)}" cy="${(r() * 100).toFixed(1)}" rx="${(10 + r() * 22).toFixed(1)}" ry="${(7 + r() * 16).toFixed(1)}" fill="${hues[Math.floor(r() * hues.length)]}" opacity="${(0.25 + r() * 0.3).toFixed(2)}"/>`;
+  }
+  return `<g class="nebulae" filter="url(#haze)">${out}</g>`;
+}
+
 // While the turn waits on retreats: the attacks declared, and this seat's answers to them.
 export interface Declared { me: Faction; attacks: Attack[]; retreats: Retreat[] }
 
@@ -90,14 +103,24 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
     const s = c.systems[d.id]!, f = ownerOf(d.id), blockaded = f && s.orbit === enemy(f);
     return `<path d="${pathOf(cells[i]!)}" class="land ${f ?? ""}${near.has(d.id) ? " reach" : ""}" data-system="${d.id}"/>${blockaded ? `<path d="${pathOf(cells[i]!)}" class="blockade"><title>${d.name} is blockaded</title></path>` : ""}`;
   }).join("");
-  // Region borders: the cell edges that face another region or open space.
+  // Each side's border: its cells' edges that face the other side or open space, drawn clipped to
+  // the cell so the two sides' borders sit side by side instead of on top of each other.
+  const clips = cells.map((poly, i) => `<clipPath id="cell-${i}"><path d="${pathOf(poly)}"/></clipPath>`).join("");
+  const edgeLine = (poly: Poly, k: number) => {
+    const p = poly[k]!.p, q = poly[(k + 1) % poly.length]!.p;
+    return `M${p[0].toFixed(2)} ${p[1].toFixed(2)}L${q[0].toFixed(2)} ${q[1].toFixed(2)}`;
+  };
+  const frontiers = g.systems.map((d, i) => {
+    const f = ownerOf(d.id), poly = cells[i]!;
+    if (!f) return "";
+    const path = poly.map((v, k) => (v.tag >= 0 && ownerOf(g.systems[v.tag]!.id) === f ? "" : edgeLine(poly, k))).join("");
+    return path ? `<g clip-path="url(#cell-${i})"><path d="${path}" class="glow" stroke="${TINT[f]}"/><path d="${path}" class="edge" stroke="${TINT[f]}"/></g>` : "";
+  }).join("");
+  // Region borders: faint dashes along the cell edges between two regions.
   const borders = g.systems.map((d, i) => {
     const poly = cells[i]!, ri = regionIx.get(d.region)!;
-    return poly.map((v, k) => {
-      if (v.tag >= 0 && g.systems[v.tag]!.region === d.region) return "";
-      const q = poly[(k + 1) % poly.length]!.p;
-      return `<line x1="${v.p[0].toFixed(2)}" y1="${v.p[1].toFixed(2)}" x2="${q[0].toFixed(2)}" y2="${q[1].toFixed(2)}" stroke="${REGION_COLORS[ri % REGION_COLORS.length]}"/>`;
-    }).join("");
+    const path = poly.map((v, k) => (v.tag >= 0 && g.systems[v.tag]!.region !== d.region && v.tag > i ? edgeLine(poly, k) : "")).join("");
+    return path ? `<path d="${path}" stroke="${REGION_COLORS[ri % REGION_COLORS.length]}"/>` : "";
   }).join("");
   const regions = g.regions.map((r) => {
     const [x, y] = r.label, holder = regionHolder(c, r.id), up = y < 50 ? 1 : -1;
@@ -144,9 +167,9 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
 
   const systems = g.systems.map((d) => {
     const s = c.systems[d.id]!, n = s.sectors.length;
-    const body = n === 1
-      ? `<circle cx="${d.x}" cy="${d.y}" r="${R}" fill="${hex(s.sectors[0]!.owner)}" class="planet"/>`
-      : s.sectors.map((x, i) => `<path d="${wedge(d.x, d.y, R, (i / n) * Math.PI * 2, ((i + 1) / n) * Math.PI * 2)}" fill="${hex(x.owner)}" class="wedge"/>`).join("");
+    // A dot per sector under the star, in its holder's colour.
+    const dots = s.sectors.map((x, i) => `<circle cx="${(d.x + (i - (n - 1) / 2) * 1.5).toFixed(2)}" cy="${d.y + R + 1.1}" r="0.55" fill="${hex(x.owner)}" class="sector-dot"><title>${x.kind}: ${x.owner}</title></circle>`).join("");
+    const plaque = d.name.length * 1.45 + 2.4, py = d.y + R + 2.3, holder = ownerOf(d.id);
     const armies = s.sectors.reduce((a, x) => ({ marines: a.marines + x.armies.marines, wooka: a.wooka + x.armies.wooka }), { marines: 0, wooka: 0 });
     // The player's pieces on the left, the other side's on the right.
     const side = (f: Faction) => (f === c.player ? -1 : 1);
@@ -156,28 +179,34 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
     const nFleets = (f: Faction) => (foggy(f) ? (s.orbit === f ? "?" : 0) : s.fleets[f]);
     const pieces = (["marines", "wooka"] as const).map((f) => {
       const a = nArmies(f), n = nFleets(f);
-      return (a ? armyPiece(d.x + side(f) * 6.4, d.y + 1.2, f, a) : "") + (n ? fleetPiece(d.x + side(f) * 4.4, d.y - 6.6, f, n) : "");
+      return (a ? armyPiece(d.x + side(f) * 5.4, d.y - 0.4, f, a) : "") + (n ? fleetPiece(d.x + side(f) * 3.6, d.y - 5.4, f, n) : "");
     }).join("");
     return `<g class="system${selected === d.id ? " selected" : ""}${near.has(d.id) ? " reach" : ""}" data-system="${d.id}" tabindex="0" role="button" aria-label="${d.name}">
-      <circle cx="${d.x}" cy="${d.y}" r="${R + 1.4}" class="orbit" stroke="${s.orbit ? hex(s.orbit) : "#6b7280"}" ${s.orbit ? "" : 'stroke-dasharray="1 1"'}><title>Orbit: ${s.orbit ?? "nobody"}</title></circle>
-      ${body}
-      ${hero?.system === d.id ? swords(d.x, d.y) : ""}
+      <circle cx="${d.x}" cy="${d.y}" r="${R}" class="orbit" stroke="${s.orbit ? hex(s.orbit) : "#6b7280"}" ${s.orbit ? "" : 'stroke-dasharray="1 1"'}><title>Orbit: ${s.orbit ?? "nobody"}</title></circle>
+      <circle cx="${d.x}" cy="${d.y}" r="2.4" fill="url(#star-glow)" class="halo"/>
+      <circle cx="${d.x}" cy="${d.y}" r="0.95" fill="${STAR_COLORS[hash(d.id) % STAR_COLORS.length]}" class="star"/>
+      ${dots}
+      <rect x="${(d.x - plaque / 2).toFixed(2)}" y="${py}" width="${plaque.toFixed(2)}" height="3.1" rx="0.4" class="plaque" ${holder ? `stroke="${TINT[holder]}"` : ""}/>
+      <text x="${d.x}" y="${py + 2.2}" class="name">${d.name}</text>
+      ${hero?.system === d.id ? swords(d.x, d.y - 5.2) : ""}
       ${pieces}
-      <text x="${d.x}" y="${d.y + R + 5.4}" class="name">${d.name}</text>
     </g>`;
   }).join("");
 
   return `<svg viewBox="0 0 ${W} 100" class="galaxy" role="img" aria-label="The galaxy map">
     <defs>
-      <pattern id="grid" width="5" height="5" patternUnits="userSpaceOnUse"><path d="M5 0H0V5" class="grid"/></pattern>
+      <filter id="haze" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
+      <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="0.6"/></filter>
+      <radialGradient id="star-glow"><stop offset="0%" stop-color="#fff" stop-opacity="0.9"/><stop offset="35%" stop-color="#cfe2ff" stop-opacity="0.35"/><stop offset="100%" stop-color="#cfe2ff" stop-opacity="0"/></radialGradient>
+      ${clips}<clipPath id="board-clip"><rect width="${W}" height="100"/></clipPath>
       <pattern id="hatch" width="1.6" height="1.6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="1.6" class="hatch"/></pattern>
       <radialGradient id="vignette" cx="50%" cy="50%" r="75%"><stop offset="55%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity="0.65"/></radialGradient>
       <marker id="arrow-army" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L6 3L0 6z" class="tip army"/></marker>
       <marker id="arrow-attack" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="3.5" markerHeight="3.5" orient="auto"><path d="M0 0L6 3L0 6z" class="tip attack"/></marker>
       <marker id="arrow-fleet" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4" markerHeight="4" orient="auto"><path d="M0 0L6 3L0 6z" class="tip fleet"/></marker>
     </defs>
-    <rect width="${W}" height="100" class="board"/><rect width="${W}" height="100" fill="url(#grid)"/>${stars(W)}
-    <g class="lands">${lands}</g><g class="borders">${borders}</g>
+    <rect width="${W}" height="100" class="board"/><g clip-path="url(#board-clip)">${nebulae(W)}${stars(W)}</g>
+    <g class="lands">${lands}</g><g class="frontiers">${frontiers}</g><g class="borders">${borders}</g>
     <rect width="${W}" height="100" fill="url(#vignette)" pointer-events="none"/>
     ${lanes}${regions}${moves}${attacks}${systems}</svg>`;
 }
