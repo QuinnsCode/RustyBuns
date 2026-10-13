@@ -418,3 +418,19 @@ describe("a file page loads in one round trip", () => {
     expect(html).toContain("await draw(); cache.clear(); every = null; repoTrees.set(key, cache);");
   });
 });
+
+// The daily path (sign in with Google, dig up a link, edit, commit, make private, share, collab, deploy)
+// is one click each, from the landing page and from every repo page's header.
+describe("the daily flow is one click away", () => {
+  test("the landing page leads with Continue with Google when it is offered", () => {
+    expect(html).toContain('id="hero-google"');
+    expect(html).toContain('session.providers?.includes("google")');
+  });
+  test("every repo header carries the flow bar, and each step is wired to a real control", () => {
+    expect(html).toContain("${views.flowBar(owner, repo, r)}");
+    for (const k of ["edit", "commit", "private", "share", "invite", "deploy"]) expect(html).toContain(`step("${k}"`);
+    expect(html).toContain('go("commit", (t) => t.click())');
+    expect(html).toContain('needSel("lock"');
+    expect(html).toContain('needSel("share"');
+  });
+});
