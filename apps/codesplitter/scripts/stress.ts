@@ -1,7 +1,7 @@
 // Stress test for the modes that cost nothing: the app in-process on the local twins (D1, queues, DOs, git),
 // with webhook sends caught by a stub, so no request leaves the machine and nothing is billed.
 //
-//   bun scripts/stress.ts [--extra 25] [--commits 150] [--json]
+//   bun scripts/stress.ts [--extra 25] [--commits 150] [--paid-paths] [--json]
 //
 // Part 1, rate limits: for every rule that is free to hit, one caller (stamped as if from the internet,
 // since only those are counted) fires `cap + extra` requests at once. A rule is sound when exactly `cap`
@@ -15,6 +15,8 @@
 // checks, containers, doctor, fresh, and the Cloudflare email behind mail. They are still counted by the same code.
 import { local } from "../src/local.ts";
 import { sign } from "../src/hooks.ts";
+import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
+import { gated } from "../test/fake-gate.ts";
 
 const arg = (n: string, d: number) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? Number(process.argv[i + 1]) : d; };
 const EXTRA = arg("extra", 25), COMMITS = arg("commits", 150), AS_JSON = process.argv.includes("--json");
@@ -137,9 +139,63 @@ async function webhooks(): Promise<Storm> {
   } finally { call.close(); }
 }
 
+export interface Paid { mode: string; sent: number; cap: number; started: number; ended: number; limited: number; ms: number; pass: boolean }
+
+/**
+ * Tier 2 (docs/smoke-and-stress.md), hosted agents: AGENT_SANDBOX is a fake that counts every container it
+ * starts, so the real route, JOBS queue, `hosted` site budget and sandbox code run and only the bill is faked.
+ * The site-wide `hosted` rule counts admins too, so one admin fires `cap + extra` runs: exactly `cap` may start
+ * a container, the rest get a 429, and a fake that fails or answers garbage must still end every run.
+ */
+async function hostedAgents(mode: "ok" | "fail" | "garbage"): Promise<Paid> {
+  const origin = "http://codesplitter.local", cap = 30, sent = cap + EXTRA;
+  const call = await local({ GH_CLI: "off", BETTER_AUTH_SECRET: "stress-secret-".padEnd(40, "x"), BETTER_AUTH_URL: origin, ADMINS: "ryan-quinn" });
+  let started = 0, destroyed = 0;
+  call.env.AGENT_SANDBOX = {
+    idFromName: (n: string) => n,
+    get: () => {
+      let running = false;
+      const c: ContainerApi = {
+        get running() { return running; },
+        start() { running = true; started++; },
+        async destroy() { running = false; destroyed++; },
+        getTcpPort: () => ({ async fetch(_u, init) {
+          await Bun.sleep(5);
+          if (mode === "fail") return new Response("boom", { status: 500 });
+          if (mode === "garbage") return new Response("<html>not json</html>", { status: 200 });
+          return Response.json({ code: 0, out: "", text: JSON.parse(String(init!.body)).text });
+        } }),
+      };
+      return new AgentSandbox(gated(c), call.env);
+    },
+  };
+  try {
+    const res = await call(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin },
+      body: JSON.stringify({ email: "ryan.quinn@example.com", password: "correct horse battery", name: "Ryan Quinn" }) });
+    const cookie = (res.headers.getSetCookie?.() ?? [res.headers.get("set-cookie")!]).map((x) => x.split(";")[0]).join("; ");
+    await call(null, "/api/handle", { method: "POST", headers: { cookie }, body: JSON.stringify({ name: "ryan-quinn" }) });
+    const as = (path: string, init: RequestInit = {}) => call(null, path, { ...init, headers: { cookie } });
+    await as("/api/repos", { method: "POST", body: JSON.stringify({ name: "r1", visibility: "public" }) });
+    await as("/api/repos/ryan-quinn/r1/files", { method: "POST", body: JSON.stringify({ path: "src/a.js", content: "var x = 1\nf()" }) });
+    await call.env.DB.prepare("DELETE FROM limit_hits WHERE rule IN ('agent', 'hosted')").run();
+
+    const t = performance.now();
+    const res2 = await Promise.all(Array.from({ length: sent }, () => as("/api/repos/ryan-quinn/r1/agents", { method: "POST", body: JSON.stringify({ harness: "claude", path: "src/a.js", task: "x" }) })));
+    const limited = res2.filter((r) => r.status === 429).length, accepted = res2.filter((r) => r.status === 202).length;
+    // Every accepted run must end (done, failed or stopped): none left running, whatever the container answered.
+    let running = accepted;
+    for (const end = performance.now() + 60_000; performance.now() < end && running > 0; await Bun.sleep(50))
+      running = Number((await call.env.DB.prepare("SELECT COUNT(*) AS n FROM agent_runs WHERE status = 'running'").first())?.n ?? 0);
+    const ms = performance.now() - t;
+    return { mode, sent, cap, started, ended: accepted - running, limited, ms,
+      pass: accepted === cap && limited === EXTRA && started <= cap && running === 0 && destroyed >= started };
+  } finally { call.close(); }
+}
+
 if (import.meta.main) {
   const rows = await limits(), storm = await webhooks();
-  if (AS_JSON) console.log(JSON.stringify({ rows, storm }, null, 2));
+  const paid = process.argv.includes("--paid-paths") ? [await hostedAgents("ok"), await hostedAgents("fail"), await hostedAgents("garbage")] : [];
+  if (AS_JSON) console.log(JSON.stringify({ rows, storm, paid }, null, 2));
   else {
     console.log("rule      cap   sent  ok    429   other  counted  ms     result");
     for (const r of rows) console.log(`${r.name.padEnd(9)} ${String(r.cap).padEnd(5)} ${String(r.sent).padEnd(5)} ${String(r.ok).padEnd(5)} ${String(r.limited).padEnd(5)} ${String(r.other).padEnd(6)} ${String(r.counted).padEnd(8)} ${String(Math.round(r.ms)).padEnd(6)} ${r.pass ? "ok" : "FAIL"}`);
@@ -148,6 +204,11 @@ if (import.meta.main) {
     console.log(`  dead: ${storm.dead.booked}/${storm.hooks} booked a retry`);
     console.log(`  redeliver storm: ${storm.redeliver.sent} pressed, ${storm.redeliver.extra} extra sends`);
     console.log(`  ${storm.pass ? "ok" : "FAIL"}`);
+    if (paid.length) {
+      console.log("\npaid paths (faked): hosted agents, cap = the site's `hosted` rule");
+      console.log("fake      cap   sent  started  429   ended  ms     result");
+      for (const p of paid) console.log(`${p.mode.padEnd(9)} ${String(p.cap).padEnd(5)} ${String(p.sent).padEnd(5)} ${String(p.started).padEnd(8)} ${String(p.limited).padEnd(5)} ${String(p.ended).padEnd(6)} ${String(Math.round(p.ms)).padEnd(6)} ${p.pass ? "ok" : "FAIL"}`);
+    }
   }
-  process.exit(rows.every((r) => r.pass) && storm.pass ? 0 : 1);
+  process.exit(rows.every((r) => r.pass) && storm.pass && paid.every((p) => p.pass) ? 0 : 1);
 }
