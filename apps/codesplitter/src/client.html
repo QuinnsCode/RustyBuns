@@ -6658,7 +6658,7 @@ async function avatarBox(user, mine, name) {
     ];
     let tab = "face";
     m.innerHTML = `<div class="av-sheet" role="dialog" aria-modal="true" aria-label="@${esc(name)}'s avatar"><div class="head">${icon("smile")}<b>@${esc(name)}'s avatar</b><span class="muted">${saved ? "worn in the code city" : mine ? "yours until you make one" : ""}</span><span class="grow"></span><button class="btn ghost" type="button" id="av-x" aria-label="close">${icon("x")}</button></div>
-      <div class="av-stage"><canvas id="av-c" width="300" height="375" role="img" aria-label="@${esc(name)}'s avatar"></canvas></div>${mine ? `<div class="av-ed"><div class="av-tabs" id="av-tabs"></div><div class="av-panel" id="av-panel"></div><div class="av-foot"><button type="button" class="btn" id="av-rand">${icon("shuffle")}Random</button><span class="muted" id="av-msg"></span><button type="button" class="btn primary" id="av-save">${icon("check")}Save</button></div></div>` : ""}</div>`;
+      <div class="av-stage"><canvas id="av-c" width="300" height="375" role="img" aria-label="@${esc(name)}'s avatar"></canvas></div>${mine ? `<div class="av-ed"><div class="av-tabs" id="av-tabs"></div><div class="av-panel" id="av-panel"></div><div class="av-foot"><button type="button" class="btn" id="av-rand">${icon("shuffle")}Random</button><span class="muted" id="av-msg"></span><button type="button" class="btn" id="av-keep">${icon("check")}Save &amp; keep editing</button><button type="button" class="btn primary" id="av-save">${icon("check")}Save</button></div></div>` : ""}</div>`;
     document.body.append(m); icons();
     const close = () => { m.remove(); removeEventListener("keydown", esc_); };
     const esc_ = (e) => { if (e.key === "Escape") close(); };
@@ -6693,7 +6693,7 @@ async function avatarBox(user, mine, name) {
       if (t.dataset.tab) { tab = t.dataset.tab; render(); return; }
       if (t.dataset.k && t.dataset.v) a = { ...a, [t.dataset.k]: t.dataset.v };
       else if (t.id === "av-rand") a = randomAvatar(Math.random);
-      else if (t.id === "av-save") { t.disabled = true; try { await api("/me", { avatar: a }, "PUT"); saved = a; user.avatar = JSON.stringify(a); $("#av-msg").textContent = "saved: you're in the city"; } catch (err) { $("#av-msg").textContent = err.message; } t.disabled = false; return; }
+      else if (t.id === "av-save" || t.id === "av-keep") { t.disabled = true; try { await api("/me", { avatar: a }, "PUT"); saved = a; user.avatar = JSON.stringify(a); if (t.id === "av-save") { close(); return; } $("#av-msg").textContent = "saved: you're in the city"; } catch (err) { $("#av-msg").textContent = err.message; } t.disabled = false; return; }
       else return;
       paint(); paintDot(); render();
     });
