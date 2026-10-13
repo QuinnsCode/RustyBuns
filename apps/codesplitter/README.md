@@ -148,7 +148,7 @@ There's no downloadable build yet; that's one command from source.
   Tiles are joined by curves: a solid one for a mirror that keeps listening both ways, a dashed one for a fork copied once, which turns orange and says "N new upstream" once upstream has moved on since the dig (#874).
   Each curve's label says what's moving, and pointing at it shows what its button would do, before and after.
   Under the tiles, main's commits run as a row of dots: black for upstream's, orange for this copy's, a diamond for a merge, with each branch it merged curving off below and back in.
-  Click a dot to revert it on main, or cherry-pick it onto main or an open branch: its changes land as line edits, so every other line keeps its blame. A binary file it touched goes back (or comes along) whole on main, in the same git commit.
+  Click a dot to revert it on main, or cherry-pick it onto main or an open branch: its changes land as line edits, so every other line keeps its blame. A binary file it touched goes back (or comes along) whole: on main in the same git commit, on a branch when it merges.
   A tagged commit wears a little tag; the owner picks a dot to tag it, and on a mirror fetches upstream's tags or pushes one up.
   The pulse travels the vein: while it's open, every line the crew lands sends a bead down main into its newest commit.
 - **Levels.** Loved open-source repos to browse and fork: mitt, Hono, Preact, Cloudflare's own (Agents, workerd, PartyKit, Sandbox SDK and more), and the stack this is built on (RedwoodSDK, Effect, React, Alchemy, Bun).

@@ -41,15 +41,15 @@ describe("a commit's changes, planned against the file now (#880)", () => {
     expect(plan("pick", made, null)).toEqual({ path: "b.ts", do: "make", next: ["b"] });
     expect(plan("revert", made, doc(["b"]))).toEqual({ path: "b.ts", do: "delete" });
     expect(plan("revert", made, doc(["b", "more"]))).toMatchObject({ why: expect.stringContaining("changed since") });
-    expect(plan("pick", { path: "x.png", before: null, after: null, binary: { before: null, after: { hash: "h", mode: "100644" } } }, null)).toMatchObject({ why: expect.stringContaining("only main") });
+    expect(plan("pick", { path: "x.png", before: null, after: null, binary: { before: null, after: { hash: "h", mode: "100644" } } }, null)).toMatchObject({ why: expect.stringContaining("by its bytes") });
     expect(plan("pick", { path: "sub", before: null, after: null, odd: true }, null)).toMatchObject({ why: expect.stringContaining("submodule") });
   });
   test("a binary file goes by its bytes, when main's are the side it goes from (#888)", () => {
     const b = (...x: number[]) => new Uint8Array(x);
     const c = { path: "x.png", before: null, after: null, binary: { before: { hash: "a", mode: "100644" }, after: { hash: "b", mode: "100755" } } };
     const sides = { before: b(0, 1), after: b(0, 2) };
-    expect(planBlob("revert", c, sides, b(0, 2))).toEqual({ path: "x.png", do: "blob", made: false, bytes: b(0, 1), mode: "100644" });
-    expect(planBlob("pick", c, sides, b(0, 1))).toEqual({ path: "x.png", do: "blob", made: false, bytes: b(0, 2), mode: "100755" });
+    expect(planBlob("revert", c, sides, b(0, 2))).toEqual({ path: "x.png", do: "blob", made: false, bytes: b(0, 1), hash: "a", mode: "100644" });
+    expect(planBlob("pick", c, sides, b(0, 1))).toEqual({ path: "x.png", do: "blob", made: false, bytes: b(0, 2), hash: "b", mode: "100755" });
     expect(planBlob("revert", c, sides, b(0, 1))).toEqual({ path: "x.png", do: "skip" });
     expect(planBlob("revert", c, sides, b(0, 3))).toEqual({ path: "x.png", why: "a binary file changed since" });
     expect(planBlob("revert", c, sides, null)).toEqual({ path: "x.png", why: "deleted since" });
@@ -121,7 +121,7 @@ describe("revert and cherry-pick from the commit graph (#880)", () => {
 });
 
 describe("a commit that touches a binary file (#888)", () => {
-  test("its bytes are reverted and picked on main, in the same git commit as its lines; a branch or a change since clashes", async () => {
+  test("its bytes are reverted and picked on main, in the same git commit as its lines, and on a branch (#1298); a change since clashes", async () => {
     const call = await boot();
     opened.push(call);
     await post(call, "/api/login", { name: "ana" });
@@ -149,9 +149,15 @@ describe("a commit that touches a binary file (#888)", () => {
     expect((await (await post(call, `/api/repos/ana/p/commits/${logo}/pick`)).json()).files).toEqual([{ path: "a.ts", did: "edit" }, { path: "logo.png", did: "make" }]);
     expect(await git(call, "rev-parse", "main:logo.png")).toBe(await git(call, "rev-parse", `${logo}:logo.png`));
 
-    // A branch can't take bytes; nor can main once the logo changed since. Nothing lands.
+    // On a branch: the revert waits there, pointing at the commit's blob, and its merge writes main's git.
+    expect((await post(call, `/api/repos/ana/p/commits/${logo}/revert`)).status).toBe(200);
     expect((await post(call, "/api/repos/ana/p/branches", { name: "b" })).status).toBe(201);
-    expect((await (await post(call, `/api/repos/ana/p/commits/${logo}/revert`, { branch: "b" })).json()).clashes).toEqual([{ path: "logo.png", why: "a binary file: only main takes those" }]);
+    expect((await (await post(call, `/api/repos/ana/p/commits/${logo}/pick`, { branch: "b" })).json()).files).toEqual([{ path: "a.ts", did: "edit" }, { path: "logo.png", did: "make" }]);
+    expect(await git(call, "ls-tree", "--name-only", "main")).toBe("a.ts");
+    expect((await post(call, "/api/repos/ana/p/branches/b/merge")).status).toBe(200);
+    expect(await git(call, "rev-parse", "main:logo.png")).toBe(await git(call, "rev-parse", `${logo}:logo.png`));
+
+    // Main can't take bytes once the logo changed since. Nothing lands.
     await sh(`git pull -q origin main && printf 'P\\000X' > logo.png && git commit -qam "new logo" && git push -q origin HEAD:main`);
     const clash = await post(call, `/api/repos/ana/p/commits/${logo}/revert`);
     expect(clash.status).toBe(409);

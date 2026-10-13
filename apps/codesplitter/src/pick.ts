@@ -8,14 +8,15 @@
 // A dry run comes first, so a clash anywhere (lines changed since, a file deleted
 // or made since) lands nothing. A binary or too-big file has no lines: on main its
 // bytes are written into git as they are (#888), the way a branch merge writes one
-// (#446), as long as main's copy is still the commit's other side.
+// (#446), as long as main's copy is still the commit's other side. On a branch its
+// copy points at the commit's blob, and the branch's merge writes it (#1298).
 //
 //   POST /api/repos/:o/:r/commits/:sha/revert {branch?}
 //   POST /api/repos/:o/:r/commits/:sha/pick {branch?}
 
 import { fromText, type Doc } from "./lines.ts";
 import { handleFor, materialize, pushCatalogues, toFile, MAX_BYTES } from "./archive.ts";
-import { createOn, deleteOn, materializeOn, openBranch } from "./branches.ts";
+import { blobBytesOf, blobOn, createOn, deleteOn, materializeOn, openBranch } from "./branches.ts";
 import { fromDisk } from "./agent-run.ts";
 import { startChecks } from "./checks.ts";
 import { deployOnCommit } from "./deploy.ts";
@@ -77,7 +78,7 @@ export async function commitChanges(handle: Pick<ArtifactsRepo, "readCommit" | "
 
 /** What landing one change does to a file: edits it (`doc` to `next`), makes it, deletes it, or leaves it be. */
 export type Step = { path: string; do: "edit"; doc: Doc; next: string[] } | { path: string; do: "make"; next: string[] } | { path: string; do: "delete"; blob?: true } | { path: string; do: "skip" }
-  | { path: string; do: "blob"; made: boolean; bytes: Uint8Array; mode: string };
+  | { path: string; do: "blob"; made: boolean; bytes: Uint8Array; hash: string; mode: string };
 export interface Clash { path: string; why: string }
 
 /**
@@ -86,7 +87,7 @@ export interface Clash { path: string; why: string }
  */
 export function plan(kind: PickKind, c: Change, doc: Doc | null): Step | Clash {
   if (c.odd) return { path: c.path, why: "a submodule or symlink: it has no lines to undo or take" };
-  if (c.binary) return { path: c.path, why: "a binary file: only main takes those" };
+  if (c.binary) return { path: c.path, why: "a binary file: it goes by its bytes (planBlob)" };
   const [base, want] = kind === "revert" ? [c.after, c.before] : [c.before, c.after];
   const lines = doc?.lines.map((l) => l.text) ?? null;
   const same = (a: string[], b: string[]) => a.length === b.length && a.every((l, i) => l === b[i]);
@@ -103,15 +104,15 @@ export function plan(kind: PickKind, c: Change, doc: Doc | null): Step | Clash {
 }
 
 /**
- * The step for a binary or too-big file on main (#888), from the bytes of the commit's two sides
- * and main's now (null: not there). Main's copy has to be the side it goes from, byte for byte.
+ * The step for a binary or too-big file (#888), from the bytes of the commit's two sides and the
+ * target's now (null: not there). The target's copy has to be the side it goes from, byte for byte.
  */
 export function planBlob(kind: PickKind, c: Change & { binary: NonNullable<Change["binary"]> }, sides: { before: Uint8Array | null; after: Uint8Array | null }, now: Uint8Array | null): Step | Clash {
   const [base, want, to] = kind === "revert" ? [sides.after, sides.before, c.binary.before] : [sides.before, sides.after, c.binary.after];
   const same = (a: Uint8Array | null, b: Uint8Array | null) => a === null || b === null ? a === b : a.length === b.length && a.every((x, i) => x === b[i]);
   if (same(now, want)) return { path: c.path, do: "skip" };
   if (!same(now, base)) return { path: c.path, why: base === null ? "made again since, with other bytes" : now === null ? "deleted since" : "a binary file changed since" };
-  return want === null ? { path: c.path, do: "delete", blob: true } : { path: c.path, do: "blob", made: base === null, bytes: want, mode: to!.mode };
+  return want === null ? { path: c.path, do: "delete", blob: true } : { path: c.path, do: "blob", made: base === null, bytes: want, hash: to!.hash, mode: to!.mode };
 }
 
 /** The commit message, as git writes it. */
@@ -141,13 +142,16 @@ export async function pickRoute(env: Env, owner: string, repo: string, user: str
   const steps: Step[] = [], clashes: Clash[] = [];
   const bytes = async (b: Blob | null) => b ? new Uint8Array(await b.arrayBuffer()) : null;
   for (const c of got.changes) {
-    if (c.odd || (c.binary && branch)) { clashes.push(plan(kind, c, null) as Clash); continue; }
+    if (c.odd) { clashes.push(plan(kind, c, null) as Clash); continue; }
     if (c.binary) {
-      // Main's copy is in git, unless it's text the app holds as lines now.
-      if (await env.DB.prepare("SELECT 1 FROM files WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, c.path).first()) { clashes.push({ path: c.path, why: "a text file now" }); continue; }
+      // A branch's copy is its blob (or gone); main's is in git, unless it's text the app holds as lines now.
+      const on = branch ? await blobOn(env, owner, repo, branch, c.path) : undefined;
+      if (on === "text" || (on === undefined && await env.DB.prepare("SELECT 1 FROM files WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, c.path).first())) { clashes.push({ path: c.path, why: "a text file now" }); continue; }
       const read = (s: Side | null) => s ? h!.handle.readBlob(s.hash).then(bytes) : null;
-      const [before, after, now] = await Promise.all([read(c.binary.before), read(c.binary.after), h.handle.readFile({ ref: h.branch, path: c.path }).then(bytes)]);
-      const s = planBlob(kind, c as Change & { binary: NonNullable<Change["binary"]> }, { before, after }, now);
+      const now = on === undefined ? h.handle.readFile({ ref: h.branch, path: c.path }).then(bytes) : on === null ? null : blobBytesOf(env, owner, repo, on);
+      const [before, after, mine] = await Promise.all([read(c.binary.before), read(c.binary.after), now]);
+      if (on && !mine) { clashes.push({ path: c.path, why: `${branch}'s bytes aren't in this repo's git any more` }); continue; }
+      const s = planBlob(kind, c as Change & { binary: NonNullable<Change["binary"]> }, { before, after }, mine);
       "why" in s ? clashes.push(s) : s.do !== "skip" && steps.push(s);
       continue;
     }
@@ -165,8 +169,13 @@ export async function pickRoute(env: Env, owner: string, repo: string, user: str
   // For real: line edits by whoever pressed it, each against the rev the dry run read.
   const message = pickMessage(kind, got.commit);
   for (const s of steps) {
-    // Bytes go straight into git with the rest, below.
-    if (s.do === "blob" || (s.do === "delete" && s.blob)) continue;
+    // On main, bytes go straight into git with the rest, below; a branch's copy points at the commit's blob.
+    if (s.do === "blob") {
+      if (branch) await env.DB.prepare(`INSERT INTO branch_files (owner, repo, branch, path, blob, mode) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT (owner, repo, branch, path) DO UPDATE SET blob = excluded.blob, mode = excluded.mode, deleted = 0, merged = 0`).bind(owner, repo, branch, s.path, s.hash, s.mode).run();
+      continue;
+    }
+    if (s.do === "delete" && s.blob && !branch) continue;
     if (s.do === "edit") {
       const res = await toFile(env, owner, repo, s.path, user, "ops", { method: "POST", body: JSON.stringify({ ops: diffToOps(s.doc.lines, s.next), ifRev: s.doc.rev }) }, "", branch);
       if (!res.ok) return json({ error: `${s.path} was edited while this ran: try again`, landed: steps.slice(0, steps.indexOf(s)).map((x) => x.path) }, 409);
