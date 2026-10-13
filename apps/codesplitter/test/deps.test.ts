@@ -146,6 +146,7 @@ test("the health page: each package against latest, how far behind, a score, and
   expect(by.mitt).toMatchObject({ version: "3.0.0", latest: "3.0.1", behind: "patch", versions: 1, days: 300, vulns: [] });
   expect(by.kleur).toMatchObject({ latest: "4.1.5", behind: "major", days: 870, vulns: ["GHSA-k"], score: 0 });
   expect(by.hono).toMatchObject({ latest: "4.6.0", behind: "minor" });
+  expect(by.mitt.dev).toBe(false);
   expect(by.local).toMatchObject({ version: null, behind: null });
   expect(h.score).toBe(Math.round(100 * (0.85 + 0 + 0.3 + 0.6 + 0.3) / 5));
   expect(h.packages[0].name).toBe("kleur");
@@ -1049,4 +1050,18 @@ test("over the doctor's limit, a run queues: the replay answers with the report,
   // No tests to run, so it's quick: the report itself (a run that tests answers {running: true}, and the page polls).
   expect(job).toMatchObject({ state: "done", status: 200, result: { updates: expect.any(Array) } });
   expect((await settle(call)).running).toBe(false);
+});
+
+test("health: a dig rides on its package's row, dev is flagged, and an empty manifest list has no score", async () => {
+  const { health } = await import("../src/deps.ts");
+  const m = new Map([["package.json", { pkg: JSON.parse(PKG) }]]);
+  const h = await health(m, NPM, new Map(), [{ name: "kleur", target: "major", take: false, status: "waiting" }]);
+  const by = Object.fromEntries(h.packages.map((p) => [p.name, p]));
+  expect(by.kleur.dig).toEqual({ target: "major", status: "waiting" });
+  expect(by.mitt.dig).toBeUndefined();
+  expect(by.hono.latest).toBe("4.6.0");   // prereleases never count
+  const dev = await health(new Map([["package.json", { pkg: { devDependencies: { mitt: "3.0.1" } } }]]), NPM);
+  expect(dev).toMatchObject({ score: 100, packages: [{ name: "mitt", dev: true, latest: "3.0.1", vulns: [] }] });
+  expect(dev.packages[0].behind).toBeNull();
+  expect((await health(new Map(), NPM)).score).toBeNull();
 });
