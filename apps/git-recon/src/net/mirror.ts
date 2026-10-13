@@ -3,12 +3,13 @@
 // Everyone else is drawn INTERP seconds behind the newest snapshot, eased between the two
 // around then, so they glide rather than jump 20 times a second. Your own soldier moves the
 // moment you press a key (Game.predict) and is pulled back to the world's word on it only as
-// far as it drifts past what the lag explains. Shots stay the world's call.
+// far as it drifts past what the lag explains. Shots stay the world's call. Each snapshot is a
+// delta against one this page acked, so the page keeps the frames it built until they're past.
 
 import { Game, type GameEvent, type Input, type Soldier, type Stash } from "../sim/game.ts";
 import { ORDER } from "../sim/weapons.ts";
 import { battleGame } from "./room.ts";
-import { unpackSoldier, type FromWorld, type RosterEntry, type Setup, type Snap, type SoldierState } from "./wire.ts";
+import { rebuild, unpackSoldier, type Frame, type FromWorld, type Private, type RosterEntry, type Setup, type Snap, type SoldierState } from "./wire.ts";
 
 /** How far behind the newest snapshot everyone else is drawn, in seconds: two snapshots' worth. */
 export const INTERP = 0.1;
@@ -16,6 +17,8 @@ export const INTERP = 0.1;
 export const SNAP_DIST = 3;
 /** The lag a snapshot of your own soldier is taken to be behind you by, in seconds. */
 const LAG = 0.15;
+/** Frames kept to build deltas on; the world never goes back further than it keeps (64). */
+const FRAMES = 64;
 
 type Sample = { t: number; s: SoldierState };
 
@@ -28,6 +31,9 @@ export class Mirror {
   /** The battle's clock as this page reckons it: the newest snapshot's, run on by the page's own. */
   private clock = 0;
   private pending: GameEvent[] = [];
+  private frames = new Map<number, Frame>();
+  /** The newest snapshot applied: what the page acks with its inputs. */
+  acked = 0;
 
   constructor(welcome: Extract<FromWorld, { t: "welcome" }>) {
     this.setup = welcome.setup;
@@ -46,17 +52,24 @@ export class Mirror {
     for (const r of this.roster) this.game.soldiers[r.id]!.deaths = r.deaths;
   }
 
-  /** A snapshot in: the field, the files, the events to play, and new samples to draw everyone from. */
-  apply(snap: Snap, first = false) {
+  /** A snapshot in: the field, the files, the events to play, and new samples to draw everyone from. False if its base is gone. */
+  apply(snap: Snap, first = false): boolean {
     const g = this.game;
     if (snap.roster) this.roster = snap.roster, this.applyRoster();
     for (const [path, h, lines] of snap.files) g.setFile(path, h, lines);
+    this.pending.push(...snap.events);
+    const base = snap.base ? this.frames.get(snap.base) : undefined;
+    if (snap.base && !base) return false;
+    const frame = rebuild(base, snap);
+    this.frames.set(snap.seq, frame);
+    for (const k of this.frames.keys()) if (k < snap.base || this.frames.size > FRAMES) this.frames.delete(k);
+    this.acked = Math.max(this.acked, snap.seq);
     const seen = new Set<number>();
-    for (const st of snap.soldiers) {
+    for (const st of frame.soldiers.values()) {
       const id = st[0]!;
       seen.add(id);
       const s = g.soldiers[id] ?? g.ensurePlayer(id, "you", "");
-      if (id === g.me) this.reconcile(s, st, snap, first);
+      if (id === g.me) this.reconcile(s, st, frame.you, first);
       else {
         const list = this.samples.get(id) ?? [];
         list.push({ t: snap.time, s: st });
@@ -66,24 +79,24 @@ export class Mirror {
       }
     }
     for (const s of g.soldiers) s.hidden = !seen.has(s.id);
-    g.shots = snap.shots.map(([id, owner, team, weapon, x, y, z, vx, vy, vz, age]) => ({ id, owner, team, weapon, x, y, z, vx, vy, vz, age, dead: false }));
+    g.shots = [...frame.shots.values()].map(([id, owner, team, weapon, x, y, z, vx, vy, vz, age]) => ({ id, owner, team, weapon, x, y, z, vx, vy, vz, age, dead: false }));
     g.stashes = snap.stashes.map(([id, x, y, z]): Stash => ({ id, path: "stash", lines: 0, compound: -1, x, y, z, w: 1.6, d: 1.6, h: 1.3, hp: 1, ttl: 1 }));
-    g.pickups = snap.pickups;
-    g.objective = snap.objective;
-    snap.cleared.forEach((c, i) => (g.cleared[i] = c));
-    g.status = snap.status, g.winner = snap.winner;
+    g.pickups = frame.pickups;
+    g.objective = frame.objective;
+    frame.cleared.forEach((c, i) => (g.cleared[i] = c));
+    g.status = snap.status, g.winner = frame.winner;
     if (snap.time >= this.latest) this.latest = snap.time, this.clock = Math.max(this.clock, snap.time);
     if (first) this.clock = snap.time;
-    this.pending.push(...snap.events);
+    return true;
   }
 
   /** Your own soldier: the world's say on what you can't predict (HP, ammo, fire, going down), and where you are only if you've drifted. */
-  private reconcile(s: Soldier, st: SoldierState, snap: Snap, first: boolean) {
+  private reconcile(s: Soldier, st: SoldierState, you: Private | null, first: boolean) {
     const was = s.alive, local = { x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz, yaw: s.yaw, pitch: s.pitch, crouch: s.crouch, prone: s.prone, roll: s.roll, grounded: s.grounded };
     unpackSoldier(st, s);
-    if (snap.you) {
-      ORDER.forEach((w, i) => ((s.ammo[w] = snap.you!.ammo[i] ?? s.ammo[w]), (s.loaded[w] = snap.you!.loaded[i] ?? s.loaded[w])));
-      s.reload = snap.you.reload, s.cd = snap.you.cd, s.heat = snap.you.heat, s.shieldT = snap.you.shieldT, s.rollCd = snap.you.rollCd;
+    if (you) {
+      ORDER.forEach((w, i) => ((s.ammo[w] = you.ammo[i] ?? s.ammo[w]), (s.loaded[w] = you.loaded[i] ?? s.loaded[w])));
+      s.reload = you.reload, s.cd = you.cd, s.heat = you.heat, s.shieldT = you.shieldT, s.rollCd = you.rollCd;
     }
     // Down, just back, or only just here: the world's word on everything.
     if (first || !s.alive || !was) return;

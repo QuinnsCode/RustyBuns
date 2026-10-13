@@ -2,14 +2,15 @@
 // runs it in-process for whoever clicked "Host a battle", and guests on the LAN reach it over
 // ws:// with the join passphrase; the host vouches X-User-Id and X-User-Name for each. The host
 // player sends the setup (level, mode, repo, and a lat/long level's ground); everyone who joins
-// gets it in their welcome and builds the same map. Then the room runs at SNAP_HZ: step the battle, send each player their
-// snapshot. The vouched uid only keys the player here; snapshots carry soldier ids and names.
+// gets it in their welcome and builds the same map. Then the room runs at SNAP_HZ: step the
+// battle, send each player their snapshot, a binary delta against the last one their inputs
+// acked. The vouched uid only keys the player here; snapshots carry soldier ids and names.
 //
 // The same class can be a Durable Object per (level, repo) online; that needs a Worker in front
 // to vouch for players, and pricing before it goes live.
 
 import { cleanSetup, Room } from "./room.ts";
-import { SNAP_HZ, type FromWorld, type Look } from "./wire.ts";
+import { encodeSnap, SNAP_HZ, type FromWorld, type Look } from "./wire.ts";
 
 // Provided by workerd and by the Rusty Buns host.
 declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
@@ -76,12 +77,12 @@ export default class World {
     if (!b.take(now)) return;
     let m: any;
     try { m = JSON.parse(raw); } catch { return; }
-    if (m?.t === "in" && raw.length <= MAX_INPUT) this.room?.input(who.key, m.i);
+    if (m?.t === "in" && raw.length <= MAX_INPUT) this.room?.input(who.key, m.i), this.room?.ack(who.key, m.ack);
     else if (m?.t === "setup" && who.host) {
       // The host picks the battle; a new pick starts it over, with everyone still here.
       const setup = cleanSetup(m.setup);
       if (!setup) return;
-      this.room = new Room(setup);
+      this.room = new Room(setup, this.room?.seq);
       for (const w of this.open()) this.enter(w, this.who(w)!);
     }
   }
@@ -102,7 +103,7 @@ export default class World {
   private welcome(ws: any, who: Who) {
     const room = this.room!, me = room.idOf(who.key);
     if (me === undefined) return;
-    const snap = room.snap(who.key, { events: [], files: [] });
+    const snap = room.snap(who.key, { events: [], files: [] }, true);
     if (!snap) return;
     this.rounds.set(ws, room.round);
     this.send(ws, { t: "welcome", setup: room.setup, me, roster: room.rosterNow(), files: room.filesNow(), snap });
@@ -128,7 +129,7 @@ export default class World {
         continue;
       }
       const snap = room.snap(who.key, shared);
-      if (snap) this.send(ws, snap);
+      if (snap) try { ws.send(encodeSnap(snap)); } catch {}
     }
   }
 
