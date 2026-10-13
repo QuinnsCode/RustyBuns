@@ -111,7 +111,7 @@ export async function renderPulseCard(card: PulseCard): Promise<Uint8Array<Array
 
 export interface CityCard {
   name: string; files: number; lines: number;
-  districts: { x: number; z: number; size: number; buildings: { x: number; z: number; w: number; h: number; agent: number; glow: number }[] }[];
+  districts: { x: number; z: number; size: number; pulse?: { bustle: number }; buildings: { x: number; z: number; w: number; h: number; agent: number; glow: number }[] }[];
 }
 
 /** A city's postcard: a rainy night in miniature (city-scene.ts), its title and totals on dark bars. */

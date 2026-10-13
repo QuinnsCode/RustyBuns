@@ -253,7 +253,7 @@ export function paintCity(out: Uint8Array, W: number, H: number, city: CityCard,
     const lanes: { fixed: number; alongX: boolean }[] = [...xs.map((fixed) => ({ fixed, alongX: false })), ...zs.map((fixed) => ({ fixed, alongX: true }))];
     lanes.forEach((ln, li) => {
       for (let c = 0; c < 2; c++) {
-        if (hash(did, li, c + 20) > 0.55 + d.pulse.bustle * 0.3) continue;
+        if (hash(did, li, c + 20) > 0.55 + (d.pulse?.bustle ?? 0.4) * 0.3) continue;
         const dir = hash(did, li, c + 30) < 0.5 ? -1 : 1, off = dir * 0.3, t = 0.8 + hash(did, li, c + 40) * (d.size - 2.4);
         const pos = (along: number): [number, number] => ln.alongX ? [d.x + along, ln.fixed + off] : [ln.fixed + off, d.z + along];
         const [qx, qz] = pos(t), tail: RGB = dir * (ln.alongX ? 1 : 1) > 0 ? [255, 40, 50] : [255, 225, 190];
@@ -281,7 +281,7 @@ export function paintCity(out: Uint8Array, W: number, H: number, city: CityCard,
       } });
     }
     // Umbrellas on the sidewalks.
-    for (let i = 0; i < 2 + Math.round(d.pulse.bustle * 7); i++) {
+    for (let i = 0; i < 2 + Math.round((d.pulse?.bustle ?? 0.4) * 7); i++) {
       const b = d.buildings[Math.floor(hash(did, i, 60) * d.buildings.length)]!, ux = b.x + b.w / 2 + 0.55, uz = b.z - b.w / 2 + hash(did, i, 61) * b.w;
       items.push({ key: ux + uz, draw() {
         const feet = P(ux, uz), head = P(ux, uz, 0.8), col = UMBRELLAS[Math.floor(hash(did, i, 62) * UMBRELLAS.length)]!;
@@ -335,7 +335,7 @@ export function paintCity(out: Uint8Array, W: number, H: number, city: CityCard,
         if (agent) px.line(P(b.x + r, b.z + r, 0), P(b.x + r, b.z + r, H), 1.4, [70, 215, 255], 0.55, true);
       } });
     }
-    for (let i = 0; i < 1 + Math.round(d.pulse.bustle * 2); i++) {
+    for (let i = 0; i < 1 + Math.round((d.pulse?.bustle ?? 0.4) * 2); i++) {
       const v = P(d.x + 1.5 + hash(did, i, 90) * (d.size - 3), d.z + 1.5 + hash(did, i, 91) * (d.size - 3));
       items.push({ key: d.x + d.z + d.size * (0.6 + hash(did, i, 92) * 0.6), draw() { px.glow(v[0], v[1] - 10, 12, 26, [150, 135, 175], 0.2); px.glow(v[0] + 3, v[1] - 28, 18, 24, [130, 120, 160], 0.1); } });
     }
