@@ -24,6 +24,7 @@ commit-to-git
 clone
 levels
 dig
+show-around
 cards
 agents
 fit

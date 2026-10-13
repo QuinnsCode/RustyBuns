@@ -317,3 +317,29 @@ describe("text contrast", () => {
     expect(rulesFor("city-door").find((r) => r.sel === ".city-door a")?.body).not.toContain("opacity");
   });
 });
+
+// Let's show you around: sign in, dig, the code page, then the right bar a panel a step.
+describe("the tour", () => {
+  const src = html.slice(html.indexOf("function tourLand"), html.indexOf("let tourTimer"));
+  const tourLand = new Function(`${src}; return tourLand;`)();
+  const steps = [{ at: null }, { at: "a" }, { at: "b" }, { at: "c" }];
+
+  test("it steps past what isn't on the page, the way you were going", () => {
+    const here = (s: { at: string }) => s.at !== "b";
+    expect(tourLand(steps, 2, 1, here)).toBe(3);
+    expect(tourLand(steps, 2, -1, here)).toBe(1);
+    expect(tourLand(steps, 3, 1, () => false)).toBe(0);
+  });
+
+  test("every panel it shows is a panel a repo page draws", () => {
+    const keys = [...html.slice(html.indexOf("const PANEL_SAY"), html.indexOf("const $$")).matchAll(/^\s+"?([\w-]+)"?: \["/gm)].map((m) => m[1]);
+    const drawn = new Set([...html.matchAll(/sec\("[\w-]+", "([^"]+)"/g)].map((m) => m[1]!.toLowerCase().replace(/\W+/g, "-")));
+    expect(keys.length).toBeGreaterThan(10);
+    expect(keys.filter((k) => !drawn.has(k!))).toEqual([]);
+  });
+
+  test("the home page and every repo page can start it", () => {
+    expect(html).toContain(`id="hero-tour"`);
+    expect(html).toContain(`id="tour-here"`);
+  });
+});
