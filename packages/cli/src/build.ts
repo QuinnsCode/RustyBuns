@@ -892,18 +892,24 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   if (only?.length) nativeDirs(only);
   const nativeTags = hasRust ? await step("stage native", () => stageNative(targets, only)) : [];
   const { migrationDirs, mountDirs: projectMounts } = embeddedDirs(c);
-  const mountDirs = [...projectMounts, ...(nativeTags.length ? [NATIVE_STAGE] : []), ...(d.server ? [await bundleServers(".rustybuns", targets)] : [])];
+  const mountDirs = [...projectMounts, ...(nativeTags.length ? [NATIVE_STAGE] : [])];
   // Embedded dirs are keyed by basename, so two mounts named the same collide.
-  const names = [assets, ...migrationDirs, ...mountDirs].filter(Boolean).map((p) => basename(p!));
+  const names = [assets, ...migrationDirs, ...mountDirs, ...(d.server ? [APP_SERVER_DIR] : [])].filter(Boolean).map((p) => basename(p!));
   if (new Set(names).size !== names.length) throw new Error(`embedded directories must have distinct basenames: ${names.join(", ")}`);
   // Entrypoints beside .rustybuns/<host>.ts, so the binary has them at $bunfs/root/workers/.
   const workerFiles = workers.size ? await bundleWorkers(".rustybuns", "none") : [];
+  // One server bundle per target, in .rustybuns/server/<target>/app-server, so a binary embeds only
+  // its own target's addons and sharp tree, not every OS's libvips (#1268). All are bundled before
+  // the first compile, so a target an addon won't load on stops the build up front.
+  const serverDirs = new Map<DesktopOs, string>();
+  if (d.server) for (const t of targets) serverDirs.set(t, await bundleServers(join(".rustybuns", "server", t), [t]));
   for (const t of targets) {
     const out = opts.outfile ?? `dist/${c.name}-${t}${t.startsWith("windows") ? ".exe" : ""}`;
+    const embed = [assets, ...migrationDirs, ...mountDirs, serverDirs.get(t)].filter(Boolean) as string[];
     const r = await step(`compile ${t}`, () => Bun.build({
       entrypoints: [entry, ...workerFiles],
       outdir: dirname(out),          // Bun.build places compile.outfile under outdir
-      compile: { target: `bun-${t}`, outfile: basename(out), ...(assets || migrationDirs.length || mountDirs.length ? { assets: [assets, ...migrationDirs, ...mountDirs].filter(Boolean) } : {}) },
+      compile: { target: `bun-${t}`, outfile: basename(out), ...(embed.length ? { assets: embed } : {}) },
       define: defineMap,
       plugins,
       throw: false,

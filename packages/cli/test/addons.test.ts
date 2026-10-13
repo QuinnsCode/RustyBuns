@@ -253,6 +253,19 @@ test("sharp's addon and libvips go in a tree per target, the ones npm skipped fe
   } finally { reg.stop(); }
 });
 
+test("a bundle for one target carries only that target's sharp tree", async () => {
+  const dir = join(root, "sharp-one");
+  sharpish(dir);
+  const outdir = join(dir, "out"), perTarget: TargetLookup[] = [];
+  const r = await Bun.build({ entrypoints: [join(dir, "server.js")], outdir, naming: { entry: "server-0.[ext]", asset: "server-0-[name]-[hash].[ext]" }, target: "bun", metafile: true, plugins: [addonLookups(["darwin-arm64"], perTarget, { tree: "server-0-native", cache: join(dir, "cache") })], throw: false } as any);
+  expect(r.success).toBe(true);
+  expect(copyTrees(outdir, "server-0-native", perTarget).sort()).toEqual([
+    "server-0-native/@img/sharp-darwin-arm64/lib/sharp-darwin-arm64.node",
+    "server-0-native/@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.17.3.dylib",
+  ]);
+  expect(readFileSync(join(outdir, "server-0.js"), "utf8")).not.toContain("linux-x64");
+});
+
 // better-sqlite3's shape: bindings, with prebuild-install having fetched this machine's file only.
 test("a prebuild-install package gets each other target's prebuild from its release, by prebuild-install's URL", async () => {
   const dir = join(root, "prebuild"), nm = join(dir, "node_modules"), abi = process.versions.modules;
