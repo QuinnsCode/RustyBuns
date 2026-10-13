@@ -1,8 +1,8 @@
 // The world: one battle room, shaped like a Durable Object. On the desktop the Rusty Buns host
 // runs it in-process for whoever clicked "Host a battle", and guests on the LAN reach it over
 // ws:// with the join passphrase; the host vouches X-User-Id and X-User-Name for each. The host
-// player sends the setup (level, mode, repo); everyone who joins gets it in their welcome and
-// builds the same map. Then the room runs at SNAP_HZ: step the battle, send each player their
+// player sends the setup (level, mode, repo, and a lat/long level's ground); everyone who joins
+// gets it in their welcome and builds the same map. Then the room runs at SNAP_HZ: step the battle, send each player their
 // snapshot. The vouched uid only keys the player here; snapshots carry soldier ids and names.
 //
 // The same class can be a Durable Object per (level, repo) online; that needs a Worker in front
