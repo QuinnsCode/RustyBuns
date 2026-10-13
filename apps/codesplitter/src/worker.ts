@@ -123,6 +123,7 @@ import {
 import { clearOwn } from "./deploy-review.ts";
 import { resealRoutes } from "./deploy-keys.ts";
 import { repoFit } from "./fit.ts";
+import { gitState } from "./git-state.ts";
 import { commitGraph } from "./graph.ts";
 import { busiestFiles, fileHistory } from "./gitpath-data.ts";
 import { tagRoutes } from "./tags.ts";
@@ -492,6 +493,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (stamps) return stamps;
     // POST /api/repos/:o/:r/cuts {pieces: [{path, from, to}], note}  some lines and their imports, as a branch to run and merge back
     if (p[4] === "cuts" && req.method === "POST") return createCut(env, owner, repo, user, a.write, await body());
+    // GET /api/repos/:o/:r/git-state  mirror, push, pull, uncommitted files and clashes, in one answer (git-state.ts)
+    if (p[4] === "git-state" && req.method === "GET") return json(await gitState(env, owner, repo));
     // GET /api/repos/:o/:r/fit[?dir=apps/web]  how easily Rusty Buns could box it, or one app in it
     if (p[4] === "fit" && req.method === "GET") return repoFit(env, (r) => app.fetch(r, env), url.origin, owner, repo, user, url.searchParams.get("dir") ?? "");
     // GET /api/repos/:o/:r/graph[?limit=60]  main's commits, newest first, with the branches merged into them, each upstream's or this copy's
@@ -715,6 +718,7 @@ async function route(req: Request, env: Env): Promise<Response> {
         // the crew's remote the real text.
         const { commit, content, published } = (await res.json()) as { commit: { message: string; writers?: string[] }; content: string; published: string };
         await indexFile(env, owner, repo, path, published);
+        await env.DB.prepare("DELETE FROM uncommitted WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, path).run().catch(() => {});
         // The catalogue entry stands even if the push fails; the next push that lands carries it,
         // and if git is full, it starts fresh (fresh.ts) and the file lands there.
         const git = await pushCatalogue(env, owner, repo, path, { content, published }, user!, commit.message).catch((e: Error) => ({ error: e.message }));

@@ -49,6 +49,7 @@ hosted-agents
 agents-cant-ship
 safe-updates
 try-rusty-buns
+git-bar
 preview-deploys
 ship-on-commit
 deploy-keys

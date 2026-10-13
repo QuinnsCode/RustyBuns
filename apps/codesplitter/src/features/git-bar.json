@@ -1,0 +1,5 @@
+{
+  "icon": "git-compare-arrows",
+  "title": "Git at a glance",
+  "what": "A bar on every repo page: mirrored, commits to push, commits to pull, files to commit, conflicts. Quiet when fine, orange when it wants you, red when stuck."
+}
