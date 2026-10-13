@@ -1,11 +1,13 @@
-// Layout (src/gitwiz/gitwiz.ts, src/gitwiz/page.ts, src/gitwiz/build.ts, src/gitwiz/serve.ts): gitwiz, a file's commit graph run down a guitar-neck highway by a runner on the hot path (page.ts draws it; gitwiz.ts is the pure parts, tested in `test/gitwiz.test.ts`; `bun run gitwiz` serves it; data from `scripts/gitwiz-log.ts`)
-// gitwiz replays one file's history as a git graph in perspective: branches fan out and rejoin, and a
-// runner follows the hot path (the route with the most churn). Everything that can be wrong without a
-// screen is here, with no DOM and no imports, so test/gitwiz.test.ts covers it:
-//   - reading `git log -p -U0 --parents` (parsePatchLog) and the JSON that scripts/gitwiz-log.ts writes (readInput)
+// Layout (src/gitpath/gitpath.ts, src/gitpath/page.ts, src/gitpath/build.ts, src/gitpath/serve.ts): gitpath, a file's commit graph run down a guitar-neck highway by a unicycle game on the hot path (page.ts draws it; gitpath.ts is the pure parts, tested in `test/gitpath.test.ts`; `bun run gitpath` serves it; data from `scripts/gitpath-log.ts`)
+// gitpath replays one file's history as a git graph in perspective: branches fan out and rejoin, and the
+// hot path is the route with the most churn. Flip on the game and a unicyclist rides it, with git's own
+// events (merges, forks, branches, squashes) as the gusts. Everything that can be wrong without a
+// screen is here, with no DOM and no imports, so test/gitpath.test.ts covers it:
+//   - reading `git log -p -U0 --parents` (parsePatchLog) and the JSON that scripts/gitpath-log.ts writes (readInput)
 //   - cutting the repo's graph down to the commits that touched the file (simplifyParents)
 //   - notes: a kind (add, remove, rewrite), a size, parents, in an order where parents come first
-//   - the graph's layout (lanes, edges, the hot path), the board's perspective, and the runner's pace
+//   - the graph's layout (lanes, edges, the hot path), the board's perspective, and the time slider's maths
+//   - the ride: the unicycle's balance, the pedal timing, and which commits blow a gust
 
 /** One commit that touched the file. `parents` are the nearest earlier commits that touched it too, first parent first. */
 export interface Commit {
@@ -208,7 +210,7 @@ export function readInput(source: unknown): Input {
   }
   if (Array.isArray(v)) v = { commits: v };
   const o = v as Record<string, unknown> | null;
-  if (!o || typeof o !== "object") throw new Error("expected a list of commits or a gitwiz bundle");
+  if (!o || typeof o !== "object") throw new Error("expected a list of commits or a gitpath bundle");
   const repo = typeof o.repo === "string" ? o.repo : "";
   const histories: Record<string, Commit[]> = {};
   if (o.histories && typeof o.histories === "object") {
@@ -461,27 +463,6 @@ export function scoreAt(notes: Note[], onHot: boolean[], idx: number): Score {
   return { passed, combo, mult: multiplier(combo), score, added, removed };
 }
 
-// -- the runner --------------------------------------------------------------------------------------
-
-/**
- * How hot the path is running at note `idx`: -1 (cold, the last few hot-path commits changed little
- * next to the rest) to 1 (hot).
- */
-export function paceAt(notes: Note[], hot: number[], idx: number, window = 4): number {
-  if (!hot.length) return 0;
-  const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
-  const sizes = hot.map((i) => notes[i]!.size);
-  const upto = hot.filter((i) => i <= idx).slice(-window).map((i) => notes[i]!.size);
-  if (!upto.length) return 0;
-  return Math.max(-1, Math.min(1, (mean(upto) - mean(sizes)) / 0.2));
-}
-
-/** How far ahead of the strum line the runner runs, in commits: it pulls ahead when the code is hot and falls back when it cools. Never behind the board's near edge. */
-export const runnerOffset = (pace: number) => Math.max(-0.5, 0.9 + 1.5 * pace);
-
-/** Strides a second: a jog when cold, a sprint when hot. */
-export const strideRate = (pace: number) => 2.2 + 2.2 * (Math.max(-1, Math.min(1, pace)) + 1);
-
 // -- words -------------------------------------------------------------------------------------------
 
 const p2 = (n: number) => String(n).padStart(2, "0");
@@ -492,3 +473,168 @@ export function formatClock(ms: number): string {
 }
 /** Days since the first commit, as a fixed 4-digit count: `0042d`. */
 export const formatAge = (ms: number, since: number) => `${String(Math.max(0, Math.floor((ms - since) / 86_400_000))).padStart(4, "0")}d`;
+
+// -- the time slider ---------------------------------------------------------------------------------
+
+/** Where the clock at q sits between the first commit and the last, 0..1: the slider's thumb. */
+export function timeFracAt(notes: Note[], q: number): number {
+  if (notes.length < 2) return 0;
+  const first = notes[0]!.t, span = notes[notes.length - 1]!.t - first;
+  return span <= 0 ? qToScrub(q, notes.length) : Math.min(1, Math.max(0, (clockAt(notes, q) - first) / span));
+}
+
+/** The q whose clock reads `ms`: the inverse of clockAt, so dragging the slider goes by date and not by commit. */
+export function qAtTime(notes: Note[], ms: number): number {
+  const n = notes.length;
+  if (!n || ms <= notes[0]!.t) return 0;
+  if (ms >= notes[n - 1]!.t) return n;
+  let k = 1;
+  while (notes[k]!.t < ms) k++;
+  const a = notes[k - 1]!.t, b = notes[k]!.t;
+  return b === a ? k : k + (ms - a) / (b - a);
+}
+
+export const qAtFrac = (notes: Note[], frac: number) =>
+  notes.length < 2 ? 0 : qAtTime(notes, notes[0]!.t + Math.min(1, Math.max(0, frac)) * (notes[notes.length - 1]!.t - notes[0]!.t));
+
+/** Month-start ticks along the slider, spaced so there are at most `max`: `{frac, label}` with the label a month, or a year once the steps are a year or more. */
+export function timeTicks(first: number, last: number, max = 5): { frac: number; label: string }[] {
+  const span = last - first;
+  if (!(span > 0)) return [];
+  const a = new Date(first), months = (last - first) / 2_629_800_000;
+  const step = [1, 3, 6, 12, 24, 60, 120].find((m) => months / m <= max) ?? 120;
+  const out: { frac: number; label: string }[] = [];
+  let y = a.getUTCFullYear(), m = Math.ceil(a.getUTCMonth() / step) * step;
+  for (;; m += step) {
+    const t = Date.UTC(y + Math.floor(m / 12), m % 12, 1);
+    if (t > last) break;
+    if (t >= first) out.push({ frac: (t - first) / span, label: step >= 12 ? String(new Date(t).getUTCFullYear()) : formatClock(t).slice(0, 7) });
+  }
+  return out;
+}
+
+/** The commits dated between two `YYYY-MM-DD` days, both included, in UTC like the clock. Either end can be empty. */
+export function filterRange(commits: Commit[], from?: string, to?: string): Commit[] {
+  const lo = from ? Date.parse(from) : -Infinity, hi = to ? Date.parse(to) + 86_399_999 : Infinity;
+  if (Number.isNaN(lo) || Number.isNaN(hi)) return commits;
+  return commits.filter((c) => { const t = Date.parse(c.date); return t >= lo && t <= hi; });
+}
+
+// -- the ride ----------------------------------------------------------------------------------------
+// The game: a unicyclist rides the hot path, facing away. Left and right taps are the pedals. The sim is
+// an upside-down pendulum (lean falls over on its own), plus wind, plus a kick from each tap. A tap on a
+// side kicks the lean away from that side's power stroke, so leaning right is caught with right taps. But
+// speed only comes from alternating taps near the beat, so catching a gust costs speed.
+
+export type Side = -1 | 1;
+
+export const RIDE = {
+  /** Seconds between power strokes at a steady pace. */
+  period: 0.5,
+  /** How hard the lean falls over by itself, and how much of its swing is lost. */
+  gravity: 1.2, damping: 1.6,
+  /** A full tap kicks the swing by this much, a poor one by half. */
+  kick: 0.5,
+  /** Speed (commits a second) a perfect alternating tap adds, how fast it bleeds off, and the top. */
+  boost: 0.55, drag: 0.6, maxSpeed: 4,
+  /** Past this lean the rider is off. */
+  fall: 1,
+  /** How fast a gust dies down. */
+  gustDecay: 2.5,
+};
+
+export interface Ride {
+  /** -1..1, negative left, positive right. Reaching `fall` is a spill. */
+  lean: number; omega: number;
+  speed: number;
+  /** The last side tapped (0 before the first), when, and how well it hit the beat. */
+  last: Side | 0; lastAt: number; grade: number;
+  /** A gust that is dying down, as an acceleration on the lean. */
+  gust: number;
+  t: number;
+  /** Turns of the crank, a half turn a stroke, for the picture. */
+  crank: number;
+}
+
+export const newRide = (): Ride => ({ lean: 0, omega: 0, speed: 0, last: 0, lastAt: -Infinity, grade: 0, gust: 0, t: 0, crank: 0 });
+
+/** A steady breeze that never quite stops: two slow waves, each rider-time. Sizes are accelerations on the lean. */
+export const breeze = (t: number) => 0.28 * Math.sin(0.7 * t + 1.3) + 0.18 * Math.sin(1.9 * t);
+
+/** How well a tap at gap seconds after the last, on `side`, hits the beat: 0 (same side twice, or mashing) to 1. The first tap counts as 0.6. */
+export function tapGrade(r: Ride, side: Side): number {
+  if (r.last === 0) return 0.6;
+  if (r.last === side) return 0;
+  const gap = r.t - r.lastAt;
+  return Math.max(0, 1 - Math.abs(gap - RIDE.period) / (RIDE.period * 0.8));
+}
+
+/** A pedal tap: kicks the lean, and if it alternates on the beat, adds speed. Returns its grade. */
+export function tapRide(r: Ride, side: Side): number {
+  const g = tapGrade(r, side);
+  r.omega -= side * RIDE.kick * (0.5 + 0.5 * g);
+  r.speed = Math.min(RIDE.maxSpeed, r.speed + RIDE.boost * g);
+  r.crank += 0.5;
+  r.last = side; r.lastAt = r.t; r.grade = g;
+  return g;
+}
+
+/** Blows a gust: an acceleration on the lean that dies down. */
+export const gustRide = (r: Ride, push: number) => { r.gust += push; };
+
+/** Moves the ride on by dt seconds. True if the rider went over. */
+export function stepRide(r: Ride, dt: number, wind = breeze(r.t)): boolean {
+  r.omega += (RIDE.gravity * r.lean + wind + r.gust - RIDE.damping * r.omega) * dt;
+  r.lean += r.omega * dt;
+  r.gust *= Math.exp(-RIDE.gustDecay * dt);
+  r.speed *= Math.exp(-RIDE.drag * dt);
+  r.t += dt;
+  return Math.abs(r.lean) >= RIDE.fall;
+}
+
+/** Back on the unicycle: upright and still, keeping the clock and the crank. */
+export function remount(r: Ride) { r.lean = 0; r.omega = 0; r.speed = 0; r.gust = 0; r.last = 0; r.grade = 0; }
+
+export type EventKind = "merge" | "fork" | "branch" | "squash";
+
+/** A commit that blows a gust. `side` is where it comes from, -1 left and 1 right; it pushes the rider the other way. */
+export interface RideEvent { i: number; kind: EventKind; side: Side; power: number }
+
+/** Strength of each, as a push on the lean: a car is the biggest. */
+const POWER: Record<EventKind, number> = { merge: 3, fork: 2.2, branch: 1.5, squash: 2.4 };
+const SQUASH = /\(#\d+\)\s*$|\bsquash/i;
+
+/**
+ * What each commit is on the road, where the graph says so: a merge (two parents) is a car coming in from
+ * its side lane, a fork (a commit two lines start from) is a fork in the road, the first commit on a side
+ * branch is a fallen branch, and a big commit that landed as a squash merge is a rolling boulder.
+ * Commits that are none of those are a quiet stretch.
+ */
+export function rideEvents(notes: Note[], lay: Layout): RideEvent[] {
+  const kids = new Array<number>(notes.length).fill(0);
+  for (const n of notes) for (const p of new Set(n.parents)) kids[p]!++;
+  const sign = (x: number, i: number): Side => (x > 0 ? 1 : x < 0 ? -1 : parseInt(notes[i]!.hash.slice(-1) || "0", 16) % 2 ? 1 : -1);
+  const out: RideEvent[] = [];
+  for (const n of notes) {
+    const i = n.i, here = lay.slot[i]!;
+    let kind: EventKind | null = null, side: Side = 1;
+    if (n.parents.length > 1) {
+      kind = "merge";
+      const far = n.parents.slice(1).map((p) => lay.slot[p]!).sort((a, b) => Math.abs(b) - Math.abs(a))[0]!;
+      side = sign(far - here, i);
+    } else if (kids[i]! > 1) {
+      kind = "fork";
+      const kid = notes.filter((k) => k.parents.includes(i)).map((k) => lay.slot[k.i]!).sort((a, b) => Math.abs(b) - Math.abs(a))[0]!;
+      side = sign(kid - here, i);
+    } else if (lay.lane[i]! > 0 && n.parents.length === 1 && lay.lane[n.parents[0]!]! !== lay.lane[i]) {
+      kind = "branch"; side = sign(here, i);
+    } else if (n.size > 0.5 && SQUASH.test(n.subject)) {
+      kind = "squash"; side = sign(0, i);
+    }
+    if (kind) out.push({ i, kind, side, power: POWER[kind] });
+  }
+  return out;
+}
+
+/** The push on the lean an event gives: away from the side it came from. */
+export const eventPush = (e: RideEvent) => -e.side * e.power;
