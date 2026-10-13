@@ -23,7 +23,7 @@ test("every registered shop module exists, and names a real shop kind", async ()
     expect(shops.has(kind)).toBe(true);
     expect(typeof (await import(`../src/city-shops/${module}.js`)).buildInterior).toBe("function");
   }
-  expect(Object.keys(registry)).toEqual(expect.arrayContaining(["video", "comics", "records", "lava", "coffee", "hall", "hq", "office"]));
+  expect(Object.keys(registry)).toEqual(expect.arrayContaining(["video", "comics", "records", "lava", "coffee", "hall", "hq", "office", "books", "used", "library", "archive"]));
 });
 
 test("media shops and the generic store fill their room on every door, using only kit parts, inside the walls", async () => {
@@ -69,4 +69,8 @@ test("the coffee shop seats patrons and stays inside its walls", async () => {
 test("the offices stock more paper for a bigger file", async () => {
   for (const kind of ["hall", "hq", "office"]) expect((await stock("office", kind, [0, 1], 4000)).puts.length).toBeGreaterThanOrEqual((await stock("office", kind, [0, 1], 4)).puts.length);
   expect((await stock("office", "office", [0, 1], 4000)).puts.length).toBeGreaterThan((await stock("office", "office", [0, 1], 4)).puts.length);
+});
+
+test("the book shops stock more spines for a bigger file", async () => {
+  for (const kind of ["books", "used", "library", "archive"]) expect((await stock("library", kind, [0, 1], 4000)).puts.length).toBeGreaterThan((await stock("library", kind, [0, 1], 4)).puts.length);
 });

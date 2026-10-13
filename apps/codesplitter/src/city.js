@@ -134,7 +134,7 @@ const SHOPS = {
   books: { sign: "本 BOOKS", neon: "#ff2f9a", spines: ["#7a2e2a", "#2f4a6b", "#c79a3a", "#3d5a40", "#e8e0cc", "#5a3a66"], style: "spines" },
   used: { sign: "古書 USED BOOKS", neon: "#ffe14a", spines: ["#6b4a2c", "#8a6a3c", "#4a3a2a", "#a08a5a", "#37301f"], style: "spines" },
   library: { sign: "LIBRARY", neon: "#41ffb0", spines: ["#2f4a3a", "#5a3a2a", "#3a3a5a", "#7a6a3a", "#2a2a2a"], style: "spines" },
-  video: { sign: "ビデオ VIDEO", neon: "#19d3ff", spines: ["#101214", "#16181b", "#1c1f23"], style: "tapes" },
+  video: { sign: "HOLLYWOOD BUSTER", neon: "#ffd21a", spines: ["#101214", "#16181b", "#1c1f23"], style: "tapes" },
   comics: { sign: "COMICS", neon: "#ff7a1a", spines: ["#e8302a", "#2a6ae8", "#f4d03a", "#2ac86a", "#ff6aa8", "#ffffff"], style: "spines" },
   records: { sign: "RECORDS", neon: "#8a5cff", spines: ["#d8402a", "#2a8ad8", "#e8c83a", "#f0f0f0", "#3a3a3a", "#9a3ad8"], style: "sleeves" },
   lava: { sign: "LAVA LAMPS", neon: "#ff7a1a", style: "lava" },
@@ -151,7 +151,7 @@ const shopTex = new Map();
 // (and kind, for a module that serves several). put() is the kit's put, into that room's own instanced
 // meshes; scene is the room's Group. It may return { aisles: [[x, z]..], clerk: [x, z] } (world coords) for
 // the shoppers' route and the clerk's post. A kind with no entry here, or a module that fails, gets generic.js.
-const SHOP_MODULES = { video: "media", comics: "media", records: "media", lava: "media", coffee: "coffee", hall: "office", hq: "office", office: "office" };
+const SHOP_MODULES = { books: "library", used: "library", library: "library", archive: "library", video: "media", comics: "media", records: "media", lava: "media", coffee: "coffee", hall: "office", hq: "office", office: "office" };
 const rooms = [];
 // One ground floor in the city is a secret bar (city-shops/bar.js) behind its ordinary sign: an archive's if
 // there is one, and the same one for everybody, since the pick is by hash of the path.
