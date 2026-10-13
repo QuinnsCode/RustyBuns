@@ -31,3 +31,14 @@ test("a feature that isn't whole, or an id with no file, fails the build", () =>
   expect(() => features(dir({ "a.json": f("A"), "order.txt": "a\nghost\n" }))).toThrow("ghost");
   expect(() => features(dir({ "a.json": f("A"), "order.txt": "a\na\n" }))).toThrow("twice");
 });
+
+// The home page's whole-map tabs name features by id; a renamed or deleted feature would silently drop off its tab.
+test("every id on the home page's tabs is a real feature", async () => {
+  const html = await Bun.file(join(import.meta.dir, "../src/client.html")).text();
+  const block = html.slice(html.indexOf("const FMAP = ["), html.indexOf("async function featureMap"));
+  const named = [...block.matchAll(/ids: \[([^\]]*)\]/g)].flatMap((m) => [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]));
+  const have = new Set(features().map((x) => x.id));
+  expect(named.length).toBeGreaterThan(40);
+  expect(named.filter((id) => !have.has(id))).toEqual([]);
+  expect(named.filter((id, i) => named.indexOf(id) !== i)).toEqual([]);
+});
