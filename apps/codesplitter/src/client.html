@@ -700,7 +700,7 @@
   .av-panel { flex: 1; overflow: auto; padding: 14px 16px; display: grid; gap: 16px; align-content: start; } .av-sec h4 { margin: 0 0 8px; font: 600 12px var(--sans); color: var(--faint); text-transform: uppercase; letter-spacing: .06em; }
   .av-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; } .av-tiles button { display: grid; justify-items: center; gap: 2px; padding: 4px 2px 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); cursor: pointer; font: 11px var(--sans); color: var(--faint); } .av-tiles button:hover { border-color: var(--border-2); background: color-mix(in srgb, var(--fg) 4%, var(--bg)); } .av-tiles button.on { border-color: var(--fg); box-shadow: 0 0 0 1px var(--fg); color: var(--fg); } .av-tiles canvas { width: 64px; height: 64px; border-radius: 8px; }
   .av-sw { display: flex; gap: 8px; flex-wrap: wrap; } .av-sw button { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border-2); cursor: pointer; padding: 0; } .av-sw button.on { outline: 2px solid var(--fg); outline-offset: 2px; }
-  .av-foot { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); } .av-foot .muted { flex: 1; }
+  .av-foot { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); } .av-foot .muted { flex: 1; } .av-foot .btn { white-space: nowrap; }
   @media (max-width: 700px) { .av-modal .av-sheet { grid-template-columns: 1fr; grid-template-rows: auto auto minmax(0, 1fr); } .av-stage { border-right: 0; border-bottom: 1px solid var(--border); padding: 12px; } .av-stage canvas { max-width: 150px; } }
   .city-door { display: flex; justify-content: center; gap: 14px; margin: 48px 0 8px; font: italic 400 13px/1 "Didot", "Bodoni 72", "Cormorant Garamond", Georgia, serif; letter-spacing: .18em; text-transform: lowercase; }
   .city-door a, .city-door label { display: inline-flex; gap: 6px; align-items: center; color: var(--faint); text-decoration: none; transition: color .6s; }
@@ -6658,7 +6658,7 @@ async function avatarBox(user, mine, name) {
     ];
     let tab = "face";
     m.innerHTML = `<div class="av-sheet" role="dialog" aria-modal="true" aria-label="@${esc(name)}'s avatar"><div class="head">${icon("smile")}<b>@${esc(name)}'s avatar</b><span class="muted">${saved ? "worn in the code city" : mine ? "yours until you make one" : ""}</span><span class="grow"></span><button class="btn ghost" type="button" id="av-x" aria-label="close">${icon("x")}</button></div>
-      <div class="av-stage"><canvas id="av-c" width="300" height="375" role="img" aria-label="@${esc(name)}'s avatar"></canvas></div>${mine ? `<div class="av-ed"><div class="av-tabs" id="av-tabs"></div><div class="av-panel" id="av-panel"></div><div class="av-foot"><button type="button" class="btn" id="av-rand">${icon("shuffle")}Random</button><span class="muted" id="av-msg"></span><button type="button" class="btn primary" id="av-save">${icon("check")}Save</button></div></div>` : ""}</div>`;
+      <div class="av-stage"><canvas id="av-c" width="300" height="375" role="img" aria-label="@${esc(name)}'s avatar"></canvas></div>${mine ? `<div class="av-ed"><div class="av-tabs" id="av-tabs"></div><div class="av-panel" id="av-panel"></div><div class="av-foot"><button type="button" class="btn" id="av-rand">${icon("shuffle")}Random</button><span class="muted" id="av-msg"></span><button type="button" class="btn" id="av-save-stay">${icon("save")}Save &amp; keep editing</button><button type="button" class="btn primary" id="av-save">${icon("check")}Save &amp; exit</button></div></div>` : ""}</div>`;
     document.body.append(m); icons();
     const close = () => { m.remove(); removeEventListener("keydown", esc_); };
     const esc_ = (e) => { if (e.key === "Escape") close(); };
@@ -6693,7 +6693,12 @@ async function avatarBox(user, mine, name) {
       if (t.dataset.tab) { tab = t.dataset.tab; render(); return; }
       if (t.dataset.k && t.dataset.v) a = { ...a, [t.dataset.k]: t.dataset.v };
       else if (t.id === "av-rand") a = randomAvatar(Math.random);
-      else if (t.id === "av-save") { t.disabled = true; try { await api("/me", { avatar: a }, "PUT"); saved = a; user.avatar = JSON.stringify(a); $("#av-msg").textContent = "saved: you're in the city"; } catch (err) { $("#av-msg").textContent = err.message; } t.disabled = false; return; }
+      else if (t.id === "av-save" || t.id === "av-save-stay") {
+        const btns = [...m.querySelectorAll("#av-save, #av-save-stay")]; btns.forEach((b) => (b.disabled = true));
+        try { await api("/me", { avatar: a }, "PUT"); saved = a; user.avatar = JSON.stringify(a); if (t.id === "av-save") { close(); return; } $("#av-msg").textContent = "saved: you're in the city"; }
+        catch (err) { $("#av-msg").textContent = err.message; }
+        btns.forEach((b) => (b.disabled = false)); return;
+      }
       else return;
       paint(); paintDot(); render();
     });
