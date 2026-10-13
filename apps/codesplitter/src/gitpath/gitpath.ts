@@ -638,15 +638,12 @@ export function rideEvents(notes: Note[], lay: Layout): RideEvent[] {
 
 /** The push on the lean an event gives: away from the side it came from. */
 export const eventPush = (e: RideEvent) => -e.side * e.power;
-<<<<<<< HEAD
 
 // -- the video's speed curves ---------------------------------------------------------------------------
 // An export plays the whole (cropped) history in a fixed time. A curve maps the video's progress u (0..1)
 // to how far through the commits it has got, w (0..1); q is then w * n. Every curve is monotonic and runs 0 to 1.
 
 export type Curve = { id: string; label: string; icon: string; warp: (u: number) => number };
-
-const smooth = (u: number) => u * u * (3 - 2 * u);
 
 export const CURVES: Curve[] = [
   { id: "steady", label: "Steady", icon: "minus", warp: (u) => u },
@@ -665,5 +662,3 @@ export const curveById = (id: string) => CURVES.find((c) => c.id === id) ?? CURV
 
 /** q at video progress `u` (0..1): the curve's warp, scaled to the commits and clamped. */
 export const warpQ = (curve: Curve, u: number, n: number) => clampQ(curve.warp(Math.min(1, Math.max(0, u))) * n, n);
-=======
->>>>>>> origin/main
