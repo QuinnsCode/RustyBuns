@@ -635,6 +635,12 @@
   /* Profiles, collections, search. */
   .cards { display: grid; gap: 16px; padding-top: 20px; } .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   /* Own your git: the desktop is home, the clouds are where it syncs out to. */
+  /* Two ways in: the same calls for a hand and for an agent's eye. */
+  .both { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; padding-top: 20px; }
+  .both > div { border: 1px solid var(--border); border-radius: 8px; padding: 18px; background: var(--bg); display: grid; gap: 6px; align-content: start; }
+  .both .ico { width: 30px; height: 30px; border-radius: 5px; background: var(--grain), var(--paper); border: 1px solid var(--border-2); display: grid; place-items: center; }
+  .both b { font-weight: 600; } .both p { margin: 0; color: var(--muted); font-size: 13.5px; } .both code { color: var(--faint); font-size: 11.5px; }
+  .both .hand { color: var(--accent-ink); font: 500 11px var(--mono); }
   .owngit { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding-top: 20px; }
   .owngit > div { border: 1px solid var(--border); border-radius: 8px; padding: 18px; background: var(--bg); }
   .owngit > div.home { border-color: var(--accent); background: var(--accent-soft); }
@@ -3110,6 +3116,17 @@ const views = {
         <div class="label">the whole map</div><h2>Everything it does, by what you're doing</h2>
         <p class="muted">Pick where you're standing. Every feature is on one of these tabs, with a picture of how it fits.</p>
         <div class="fmap" id="fmap"><div class="fmap-tabs" role="tablist" aria-label="Feature areas"></div><div class="fmap-body"></div></div>
+      </div></section>
+      <section class="section"><div class="wrap">
+        <div class="label">a hand and an eye</div><h2>Made for a human hand, as much as an agent's eye</h2>
+        <p class="muted">We aren't stuck in history. Every action is one call, and every door into it opens for a person or an agent: click it, type it, or hand it to a model. Same call, same result, same signed line.</p>
+        <div class="both">
+          <div><span class="ico">${icon("globe")}</span><b>WebMCP</b><p>The page itself is a toolbox. An agent in the browser calls the same commands your palette runs, as whoever is signed in.</p><span class="hand">hand: click it · eye: document.modelContext</span></div>
+          <div><span class="ico">${icon("plug")}</span><b>MCP</b><p>A remote server for Claude Code, Codex, opencode or pi. One line connects it, and every tool is a call to the API.</p><code>${esc(mcpAdd("TOKEN").split(" --header")[0])}</code></div>
+          <div><span class="ico">${icon("terminal")}</span><b>CLI</b><p>For the agent that would rather run a command than speak MCP, and for you at a prompt.</p><code>codesplitter tools</code></div>
+          <div><span class="ico">${icon("command")}</span><b>Agentic menus</b><p>Press <kbd>⌘K</kbd> for menus that change with the page you're on, whether a finger or a model picks the item.</p><span class="hand">hand: ⌘K · eye: the same list as tools</span></div>
+        </div>
+        <div class="quits"><span>Live together, line by line</span><span>Private lines</span><span>Ship on commit</span><span>Agents that can't ship alone</span><span>Your git, on your machine</span></div>
       </div></section>
       <section class="section"><div class="wrap">
         <div class="label">the agentic code host</div><h2>Git it, get it, share it, agent it, socialize it</h2>
