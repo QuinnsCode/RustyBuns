@@ -20,6 +20,7 @@
 // A branch can be opened on another branch (#1025): B on A forks each file from A's copy where A has
 // one, waits for A to merge first, and when A does, its copies move onto main's (restack below).
 // A branch that clashed with one that merged (merge-plan.ts) takes main in by itself, once (#1162, afterBlocker).
+// When it really clashes, a rebuild task merges main in for it, both sides kept (#1219, rebuildOnMain).
 // So does one that follows a branch upstream and clashes with main only in git, at the next sync (#1190, takeMainUpstream).
 
 import { apply, empty, explain, fromText, merge, PICKS, text, type Conflict, type Doc, type Line, type Op, type Pick, type Resolve } from "./lines.ts";
@@ -40,7 +41,7 @@ import { localSandbox, type Exec } from "./agent-run.ts";
 import { containerSandbox } from "./sandbox.ts";
 import { ADMINS_ONLY, adminsOnly, agentsUnavailable, hostedBudget, installedHarnesses } from "./agent-routes.ts";
 import { askAgent, cheapest } from "./conflict-agent.ts";
-import { guardTripped, healUnavailable } from "./heal.ts";
+import { alsoFor, fixUnavailable, guardTripped, healUnavailable, openFix, rebuildTask } from "./heal.ts";
 import { hunks, revertOps } from "./review.ts";
 import { busyOn, clashIn, taskFiles, waves, type Busy, type Clash, type Side } from "./merge-plan.ts";
 
@@ -496,8 +497,11 @@ async function dryRun(env: Env, owner: string, repo: string, branch: BranchRow, 
   return failed ? { blocked: failed } : { dry };
 }
 
-/** What a branch that clashed with one that merged did about it (#1162): took main in, or left cards for a person. */
-export interface Took { branch: string; status: "updated" | "cards" | "failed"; files?: string[]; pushed?: boolean; error?: string }
+/**
+ * What a branch that clashed with one that merged did about it (#1162): took main in, left cards for a person,
+ * or started from main's copies with a rebuild task (`fix`, an agent run) putting main's side back (#1219).
+ */
+export interface Took { branch: string; status: "updated" | "cards" | "rebuilding" | "failed"; files?: string[]; pushed?: boolean; error?: string; fix?: number }
 
 /**
  * Branch `name` clashed with `blocker`, which merged (merge-plan.ts): it takes main in, once, by the line-id
@@ -511,7 +515,7 @@ async function afterBlocker(env: Env, owner: string, repo: string, name: string,
   const b = await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, name).first() as (BranchRow & { waits_on: string | null }) | null;
   if (!b) return { branch: name, status: "failed", error: "not open any more" };
   await waitFor(env, owner, repo, name, (JSON.parse(b.waits_on ?? "[]") as string[]).filter((w) => w !== blocker));
-  try { return await takeMain(env, owner, repo, b, user); }
+  try { return await takeMain(env, owner, repo, b, user, { rebuild: blocker }); }
   finally { if (!await waiting(env, owner, repo, name)) await branchEdited(env, owner, repo, name, Date.now(), b.by); }
 }
 
@@ -530,8 +534,11 @@ export async function takeMainUpstream(env: Env, owner: string, repo: string, na
   return takeMain(env, owner, repo, b, b.by, { push: true });
 }
 
-/** Branch `b` takes main in (afterBlocker, takeMainUpstream). With `push`, it goes upstream even if no file had to. */
-async function takeMain(env: Env, owner: string, repo: string, b: BranchRow, user: string, o: { push?: boolean } = {}): Promise<Took> {
+/**
+ * Branch `b` takes main in (afterBlocker, takeMainUpstream). With `push`, it goes upstream even if no file had to.
+ * With `rebuild` (the branch that merged), cards left go to a rebuild task when one can start (rebuildOnMain).
+ */
+async function takeMain(env: Env, owner: string, repo: string, b: BranchRow, user: string, o: { push?: boolean; rebuild?: string } = {}): Promise<Took> {
   const name = b.name;
   if ((await ancestors(env, owner, repo, name)).length) return { branch: name, status: "failed", error: "stacked on an open branch: it moves onto main when that one merges" };
   const rows = (await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as FileRow[];
@@ -543,10 +550,31 @@ async function takeMain(env: Env, owner: string, repo: string, b: BranchRow, use
     for (const f of cards) for (const c of f.conflicts) resolve[f.path] = { ...resolve[f.path], [c.line]: { text: c.answer!.text! } };
     run = await dryRun(env, owner, repo, b, rows, resolve, user);
   }
-  if ("blocked" in run) return { branch: name, status: "cards", files: run.blocked!.conflicts.map((f) => f.path), error: run.blocked!.error };
-  const files: string[] = [];
+  if ("blocked" in run) {
+    const left = run.blocked!.conflicts as { path: string; conflicts: (Conflict & { answer?: Answer })[] }[];
+    return (o.rebuild && await rebuildOnMain(env, owner, repo, b, o.rebuild, rows, resolve, left, user)) ||
+      { branch: name, status: "cards", files: left.map((f) => f.path), error: run.blocked!.error };
+  }
+  const { files, moved } = await onMainCopies(env, owner, repo, b, run.dry);
+  // One that follows a branch upstream takes it there too, as a merge of main's tip.
+  const ref = b.upstream_ref as string | null | undefined;
+  const { mirrorsOn, pushBranch } = await import("./mirror.ts");
+  if (!ref || !mirrorsOn(env) || !(files.length || (o.push && !moved))) return { branch: name, status: "updated", files };
+  const res = await pushBranch(env, owner, repo, name, { tookMain: true });
+  if (!res) return { branch: name, status: "updated", files };
+  const out = await res.json() as { pushed?: boolean; error?: string };
+  return { branch: name, status: "updated", files, pushed: res.ok && !!out.pushed, ...(!res.ok && { error: `not pushed upstream: ${out.error}` }) };
+}
+
+/**
+ * Each of branch `b`'s files main moved under starts again from main's copy, with `dry`'s ops (a dry run's)
+ * on top: what main changed is under the branch now, and its review shows only its own change. `moved`: main
+ * moved again under one since the dry run, which is left for the next merge to take.
+ */
+async function onMainCopies(env: Env, owner: string, repo: string, b: BranchRow, dry: { path: string; rev: number; ops?: Op[] }[]) {
+  const name = b.name, files: string[] = [];
   let moved = false;
-  for (const d of run.dry) {
+  for (const d of dry) {
     const read = async (op: string, on?: string) => { const res = await toFile(env, owner, repo, d.path, "upstream", op, {}, "", on); return (res.ok && await res.json() as Doc | null) || empty(); };
     const [main, base] = await Promise.all([read("file"), read("base", name)]);
     // Main didn't move under this file, or moved again since the dry run (the next merge takes it): nothing to take.
@@ -557,14 +585,40 @@ async function takeMain(env: Env, owner: string, repo: string, b: BranchRow, use
     if (d.ops?.length) await toFile(env, owner, repo, d.path, b.by, "ops", { method: "POST", body: JSON.stringify({ ops: d.ops }) }, "", name);
     files.push(d.path);
   }
-  // One that follows a branch upstream takes it there too, as a merge of main's tip.
-  const ref = b.upstream_ref as string | null | undefined;
-  const { mirrorsOn, pushBranch } = await import("./mirror.ts");
-  if (!ref || !mirrorsOn(env) || !(files.length || (o.push && !moved))) return { branch: name, status: "updated", files };
-  const res = await pushBranch(env, owner, repo, name, { tookMain: true });
-  if (!res) return { branch: name, status: "updated", files };
-  const out = await res.json() as { pushed?: boolean; error?: string };
-  return { branch: name, status: "updated", files, pushed: res.ok && !!out.pushed, ...(!res.ok && { error: `not pushed upstream: ${out.error}` }) };
+  return { files, moved };
+}
+
+/** Rounds of settling a rebuild takes: picking the branch's side can trip a lint the first merge didn't reach. */
+const REBUILD_ROUNDS = 3;
+
+/**
+ * Branch `b` really clashes with main now that `blocker` merged (#1219): the cards `left` are the rebuild's, as
+ * merging main in by hand is. Each clash is settled as a checked agent answered it, else as the branch's side,
+ * so none of the branch's work goes; its files start again from main's copies with that on top (onMainCopies);
+ * and a fix task (heal.ts rebuildTask) is told main's side of each, to put back. The restart waits until the
+ * task is booked, so a branch nobody would rebuild stays as it was, its cards for a person: null then.
+ */
+async function rebuildOnMain(env: Env, owner: string, repo: string, b: BranchRow, blocker: string, rows: FileRow[], resolve: Record<string, Resolve>, left: { path: string; conflicts: (Conflict & { answer?: Answer })[] }[], user: string): Promise<Took | null> {
+  const name = b.name;
+  if (await fixUnavailable(env, owner, repo, name)) return null;
+  const picks = structuredClone(resolve);
+  for (const f of left) for (const c of f.conflicts) picks[f.path] = { ...picks[f.path], [c.line]: c.answer?.ok && c.answer.text !== undefined ? { text: c.answer.text } : "branch" };
+  const dry: { path: string; rev: number; ops?: Op[] }[] = [];
+  for (const f of rows.filter((x) => !x.merged && !x.deleted && !x.blob)) {
+    let m = await mergeFile(env, owner, repo, b, f.path, user, picks[f.path], true);
+    for (let i = 1; m.conflicts.length && i < REBUILD_ROUNDS; i++) {
+      for (const c of m.conflicts) picks[f.path] = { ...picks[f.path], [c.line]: "branch" };
+      m = await mergeFile(env, owner, repo, b, f.path, user, picks[f.path], true);
+    }
+    if (m.conflicts.length) return null;
+    dry.push({ path: f.path, rev: m.rev, ops: m.ops });
+  }
+  const clashes = left.flatMap((f) => f.conflicts.filter((c) => !(c.answer?.ok && c.answer.text !== undefined)).map((c) => ({ ...c, path: f.path })));
+  const path = clashes[0]?.path ?? left[0]!.path;
+  const editable = rows.filter((x) => !x.merged && !x.deleted && !x.blob).map((x) => x.path);
+  const also = alsoFor(editable, path, left.map((f) => f.path).join("\n"));
+  const fix = await openFix(env, owner, repo, name, path, rebuildTask(name, blocker, clashes), also, async () => { await onMainCopies(env, owner, repo, b, dry); });
+  return "id" in fix ? { branch: name, status: "rebuilding", files: left.map((f) => f.path), fix: fix.id } : null;
 }
 
 /**
