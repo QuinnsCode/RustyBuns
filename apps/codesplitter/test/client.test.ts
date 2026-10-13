@@ -344,6 +344,22 @@ describe("the tour", () => {
   });
 });
 
+// The explorer's search box filters the whole tree by path.
+describe("explorer search", () => {
+  const src = html.slice(html.indexOf("function treeMatches"), html.indexOf("async function mountExplorer"));
+  const treeMatches = new Function(`${src}; return treeMatches;`)();
+  const f = (path: string) => ({ path, name: path.split("/").pop(), type: "file" });
+
+  test("the box sits at the top of the explorer", () => {
+    expect(html).toContain(`Explorer</div><label class="tree-find">`);
+  });
+
+  test("any case, name matches first, then shorter paths", () => {
+    const files = ["test/slow.test.ts", "src/testing/a.ts", "sum.test.ts", "README.md"].map(f);
+    expect(treeMatches(files, "TEST").map((h: any) => [h.e.path, h.at])).toEqual([["sum.test.ts", 4], ["test/slow.test.ts", 5], ["src/testing/a.ts", -1]]);
+  });
+});
+
 // The profile's pulse, drawn as an isometric block of the week's hours: a pillar per busy hour, a floor tile per quiet one.
 describe("the isometric pulse", () => {
   const src = html.slice(html.indexOf("const pulseIso = "), html.indexOf("/** Fill each [data-pulse=name]"));
@@ -379,5 +395,17 @@ describe("lineKey", () => {
     expect(got(lineKey("Escape", false, false, st([1, 2], 1, 2), 4))).toEqual({ picked: [], anchor: null, cursor: 2 });
     expect(lineKey("Escape", false, false, st([], null, 2), 4)).toBeNull();
     expect(lineKey("c", false, true, st([1], 1, 1), 4)).toBeNull();
+  });
+});
+
+// Switching files took ~2s live: branches, then the repo and commits, then the file, one after another.
+describe("a file page loads in one round trip", () => {
+  const f = html.slice(html.indexOf("  async f(owner, repo, path) {"), html.indexOf("mountExplorer($(\"#tree\")", html.indexOf("  async f(owner, repo, path) {")));
+  test("the file and its commits are asked for before the branch list comes back", () => {
+    expect(f.indexOf("let early = reads(picked)")).toBeGreaterThan(-1);
+    expect(f.indexOf("let early = reads(picked)")).toBeLessThan(f.indexOf("await Promise.all([branchHere(owner, repo)"));
+  });
+  test("the explorer draws the last page's tree at once, then reads it fresh", () => {
+    expect(html).toContain("await draw(); cache.clear(); every = null; repoTrees.set(key, cache);");
   });
 });

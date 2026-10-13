@@ -403,12 +403,54 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   // --- The scenery the sim laid out: walls of sandbags, and buildings, bunkers or rock. ---
   const bag = new THREE.CapsuleGeometry(0.17, 0.45, 2, 6).rotateZ(Math.PI / 2).scale(1, 0.85, 1.4);
   let nBags = 0;
-  for (const blk of b.blocks) if (blk.h < EYE) nBags += Math.ceil(blk.w / 0.85) * Math.ceil(blk.d / 0.55) * Math.ceil(blk.h / 0.3);
+  for (const blk of b.blocks) if (blk.h < EYE && !blk.kind) nBags += Math.ceil(blk.w / 0.85) * Math.ceil(blk.d / 0.55) * Math.ceil(blk.h / 0.3);
   const bags = inst(bag, std(0xffffff, 1), nBags, true);
   const rockMat = std(woods === "canyon" ? 0xa45a36 : 0x8a8a7c, 0.95, { map: strataMap() });
   const builtMat = std(spec.sector === "capital" ? 0xd0c8b6 : spec.sector === "jungle" ? 0x7f8a6a : 0x9ca3aa, 0.85, { map: concreteMap() });
   const rocky = woods === "canyon";
+  // Cover in the woods: rocks, stumps and fallen logs, and the Wooka's trench lines, earth
+  // banked up behind a row of sharpened stakes leaning out at whoever's coming.
+  const barkMat = std(0x5a3a26, 0.95, { map: barkMap() }), cutMat = std(0xc89a62, 0.9), dirtMat = std(0x5a3b22, 1, { flatShading: true }), stakeMat = std(0x8a6a44, 0.9);
+  const solidAt = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, ry = 0) => {
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, y, z);
+    mesh.rotation.y = ry;
+    mesh.castShadow = mesh.receiveShadow = true;
+    scene.add(mesh);
+  };
+  let nStakes = 0;
+  for (const blk of b.blocks) if (blk.kind === "trench") nStakes += Math.ceil(blk.w / 0.9);
+  const stakes = inst(new THREE.ConeGeometry(0.09, 1.6, 5), stakeMat, nStakes, true);
   for (const blk of b.blocks) {
+    if (!blk.kind) continue;
+    const y = heightAt(blk.x, blk.z), along = blk.w >= blk.d;
+    if (blk.kind === "rock") solidAt(lumpy(1, 2, 0.25, Math.floor(r() * 50), false).scale(blk.w * 0.6, blk.h * 0.75, blk.d * 0.6), rockMat, blk.x, y + blk.h * 0.35, blk.z, r() * 6);
+    else if (blk.kind === "stump") {
+      const rad = Math.min(blk.w, blk.d) / 2;
+      solidAt(new THREE.CylinderGeometry(rad * 0.9, rad * 1.15, blk.h, 12), barkMat, blk.x, y + blk.h / 2, blk.z);
+      solidAt(new THREE.CylinderGeometry(rad * 0.88, rad * 0.88, 0.04, 12), cutMat, blk.x, y + blk.h + 0.02, blk.z);
+      for (let i = 0; i < 4; i++) solidAt(new THREE.CylinderGeometry(0.12, 0.3, rad * 1.4, 5).rotateZ(Math.PI / 2.6), barkMat, blk.x + Math.cos(i * 1.6) * rad, y + 0.15, blk.z + Math.sin(i * 1.6) * rad, -i * 1.6);
+    } else if (blk.kind === "log") {
+      const len = Math.max(blk.w, blk.d), rad = Math.min(blk.w, blk.d) / 2;
+      solidAt(new THREE.CylinderGeometry(rad, rad * 1.1, len, 12).rotateZ(Math.PI / 2), barkMat, blk.x, y + rad * 0.9, blk.z, along ? 0 : Math.PI / 2);
+      for (const e of [-1, 1]) solidAt(new THREE.CylinderGeometry(rad * 0.95, rad * 0.95, 0.04, 12).rotateZ(Math.PI / 2), cutMat, blk.x + (along ? e * len / 2 : 0), y + rad * 0.9, blk.z + (along ? 0 : e * len / 2), along ? 0 : Math.PI / 2);
+    } else {
+      // The berm, then a row of stakes along the side facing the enemy, now and then a skull on one.
+      const berm = new THREE.BoxGeometry(blk.w, blk.h + 0.6, blk.d + 1.2, 8, 2, 2);
+      const bp = berm.attributes.position as THREE.BufferAttribute;
+      for (let i = 0; i < bp.count; i++) if (bp.getY(i) > 0) bp.setXYZ(i, bp.getX(i), bp.getY(i) + n(blk.x + bp.getX(i), blk.z, 3) * 0.25, bp.getZ(i) * 0.7);
+      berm.computeVertexNormals();
+      solidAt(berm, dirtMat, blk.x, y + (blk.h - 0.6) / 2, blk.z);
+      const out = blk.z > 0 ? -1 : 1; // the Wooka hold the far half: the stakes lean towards the middle
+      for (let x = -blk.w / 2 + 0.5; x < blk.w / 2; x += 0.9) {
+        put(stakes, m.compose(p.set(blk.x + x, y + blk.h * 0.7, blk.z + out * (blk.d / 2 + 0.4)), q.setFromAxisAngle(new THREE.Vector3(1, 0, 0), out * 0.7 + (r() - 0.5) * 0.2), k.set(1, 0.8 + r() * 0.4, 1)));
+        if (r() < 0.06) solidAt(lumpy(0.22, 1, 0.05, 7, false), std(0xeee6cf, 0.6), blk.x + x, y + blk.h + 0.6, blk.z + out * (blk.d / 2 + 0.9));
+      }
+    }
+  }
+  stakes.instanceMatrix.needsUpdate = true;
+  for (const blk of b.blocks) {
+    if (blk.kind) continue;
     const y = heightAt(blk.x, blk.z);
     if (blk.h < EYE) {
       const nx = Math.ceil(blk.w / 0.85), nz = Math.ceil(blk.d / 0.55), ny = Math.ceil(blk.h / 0.3);
