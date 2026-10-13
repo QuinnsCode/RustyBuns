@@ -62,7 +62,7 @@
 //   GET|POST /api/repos/:o/:r/mirror/branches[/:b/pull|push]  branches both ways (see "Branches" below)
 //   GET|POST /api/repos/:o/:r/mirror/turn       a dug fork, turned into a mirror (see the end)
 
-import { rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MAX_BYTES, MAX_LINES, materialize, toFile } from "./archive.ts";
@@ -80,7 +80,7 @@ import { byVersion, tagNameError } from "./tags.ts";
 export const EVERY = 5 * 60_000, MAX_WAIT = 15 * 60_000;
 
 /** The desktop's Artifacts: bare repos on this machine (shell-bun's LocalArtifacts). */
-interface LocalGit { path(name: string): string; remote(name: string): string; stamp(p: string, o: { description?: string; source?: string }): void; onPush?: (name: string) => unknown }
+interface LocalGit { path(name: string): string; remote(name: string): string; stamp(p: string, o: { description?: string; source?: string }): void; onPush?: (name: string) => unknown; importing?: Promise<unknown> }
 export const localGit = (env: Env) => {
   const a = env.ARTIFACTS as unknown as Partial<LocalGit> | undefined;
   return typeof a?.path === "function" && typeof a.stamp === "function" && typeof Bun !== "undefined" ? a as LocalGit : null;
@@ -576,6 +576,10 @@ export async function seeGit(env: Env, owner: string, repo: string) {
   const lg = localGit(env);
   const r = lg && await env.DB.prepare("SELECT artifact, branch FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() as { artifact: string | null; branch: string | null } | null;
   if (!lg || !r?.artifact) return;
+  // A dig answers while its clone is still running in the background: look once it lands.
+  // No git there means the clone failed, and Bun would throw spawning in a missing cwd.
+  await lg.importing?.catch(() => {});
+  if (!existsSync(lg.path(r.artifact))) return;
   const t = await git(["rev-parse", "--verify", "--quiet", `refs/heads/${r.branch ?? "main"}`], lg.path(r.artifact));
   await env.DB.prepare("UPDATE repos SET git_seen = ? WHERE owner = ? AND name = ? AND git_seen IS NULL").bind(t.code ? "" : t.out.trim(), owner, repo).run();
 }
