@@ -66,21 +66,59 @@ test("init: wrangler keys that cannot be carried over are reported, and adopt re
   const p = project({
     "package.json": JSON.stringify({ name: "r", dependencies: { vite: "5" } }),
     "wrangler.jsonc": `{ "name": "r", "main": "src/worker.ts", // comment
-      "account_id": "abc", "triggers": { "crons": ["* * * * *"] }, "env": { "staging": {} },
+      "triggers": { "crons": ["* * * * *"] }, "services": [{ "binding": "API", "service": "api" }], "env": { "staging": { "define": { "X": "1" } } },
       "d1_databases": [{ "binding": "DB", "database_name": "d" }] }`,
     "src/worker.ts": "export default {}",
   });
   const r = p.run("init");
   expect(r.code).toBe(0);
-  expect(r.out).toMatch(/not carried over: account_id, env/);
+  expect(r.out).toMatch(/not carried over: services, env\.staging\.define/);
   expect(r.out).toMatch(/adopt will refuse/);
-  expect(p.read("wrangler.jsonc")).toContain('"account_id"');
+  expect(p.read("wrangler.jsonc")).toContain('"services"');
   const adopt = p.run("adopt");
   expect(adopt.code).toBe(1);
-  expect(adopt.out).toMatch(/adopt would delete from wrangler\.jsonc: account_id, env/);
-  expect(p.read("wrangler.jsonc")).toContain('"account_id"');
+  expect(adopt.out).toMatch(/adopt would delete from wrangler\.jsonc: services, env\.staging\.define/);
+  expect(p.read("wrangler.jsonc")).toContain('"services"');
   expect(p.run("adopt", "--force").code).toBe(0);
   expect(p.read("rustybuns.config.ts")).toMatch(/"crons": \[\s*"\* \* \* \* \*"\s*\]/);   // Cron Triggers carry over
+});
+
+test("init: env blocks become stages, with account_id, workers_dev and preview_urls; adopt goes ahead (#1211)", () => {
+  const acct = "0123456789abcdef0123456789abcdef", other = "fedcba9876543210fedcba9876543210";
+  const p = project({
+    "package.json": JSON.stringify({ name: "r", dependencies: { vite: "5" } }),
+    "wrangler.jsonc": `{ "name": "r", "main": "src/worker.ts", "account_id": "${acct}", "preview_urls": false,
+      "routes": [{ "pattern": "app.example.com", "custom_domain": true }],
+      "vars": { "API_URL": "https://example.com", "MODE": "prod" },
+      "d1_databases": [{ "binding": "DB", "database_name": "r-db", "migrations_dir": "db" }],
+      "r2_buckets": [{ "binding": "FILES", "bucket_name": "r-files" }],
+      "env": {
+        "staging": { "account_id": "${other}", "workers_dev": true,
+          "routes": [{ "pattern": "staging.example.com", "custom_domain": true }],
+          "vars": { "API_URL": "https://staging.example.com", "MODE": "prod", "DEBUG": "1" },
+          "d1_databases": [{ "binding": "DB", "database_name": "r-db-staging", "migrations_dir": "db" }],
+          "r2_buckets": [{ "binding": "FILES", "bucket_name": "r-files-staging" }] },
+        "dev": { "name": "r-dev-worker", "vars": { "API_URL": "http://localhost" } } } }`,
+    "src/worker.ts": "export default {}",
+  });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).not.toMatch(/not carried over/);
+  expect(r.out).toMatch(/stages: +staging dev/);
+  // Wrangler doesn't inherit bindings into an env; the dev block left these out.
+  expect(r.out).toMatch(/env\.dev: DB, env\.dev: FILES, env\.dev: MODE/);
+  const cfg = p.read("rustybuns.config.ts");
+  const json = JSON.parse(cfg.slice(cfg.indexOf("defineConfig(") + 13, cfg.lastIndexOf(")")));
+  expect(json.targets.edge).toEqual({ provider: "cloudflare", domain: "app.example.com", accountId: acct, previewUrls: false });
+  expect(json.stages).toEqual({
+    staging: { workerName: "r-staging", accountId: other, workersDev: true, domain: "staging.example.com", routes: [],
+      bindings: { DB: { databaseName: "r-db-staging" }, FILES: { bucketName: "r-files-staging" },
+        API_URL: { value: "https://staging.example.com" }, DEBUG: { type: "var", value: "1" } } },
+    dev: { workerName: "r-dev-worker", bindings: { API_URL: { value: "http://localhost" } } },
+  });
+  expect(p.run("adopt").code).toBe(0);
+  // The stack follows the config as written; a stage's comes from `--stage` at plan time.
+  expect(p.read(".rustybuns/alchemy.run.ts")).toContain(`workersDev: {"previewsEnabled":false}`);
 });
 
 test("init: workflows, analytics, loaders, containers, routes, observability and dead-letter queues carry over (#1195)", () => {
@@ -179,9 +217,12 @@ test("package manager: lockfiles, then packageManager field", () => {
 });
 
 test("wrangler toml parse and dropped keys", () => {
-  // Vectorize carries over (init asks for its dimensions); per-env blocks and the account don't yet.
+  // Vectorize carries over (init asks for its dimensions), and so do env blocks and the account.
   const w = parseWranglerToml('name = "x"\naccount_id = "a"\n[ai]\nbinding = "AI"\n[[vectorize]]\nbinding = "V"\nindex_name = "v"\n[triggers]\ncrons = ["* * * * *"]\n[env.staging]\nname = "x-staging"\n');
-  expect(droppedWranglerKeys(w)).toEqual(["account_id", "env"]);
+  expect(droppedWranglerKeys(w)).toEqual([]);
+  // An env key a stage can't say is reported only when it differs from the top level's.
+  const e = parseWranglerToml('name = "x"\nmain = "a.ts"\n[env.staging]\nmain = "a.ts"\n[env.qa]\nmain = "b.ts"\n[env."bad name"]\nname = "y"\n');
+  expect(droppedWranglerKeys(e)).toEqual(["env.qa.main", "env.bad name"]);
 });
 
 test("add deploy writes overrides at the workspace root, where bun reads them", () => {

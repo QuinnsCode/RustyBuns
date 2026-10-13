@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { BASE_SCOPES, alchemyCloudflareProfile, cloudflareEnv, cloudflareProblem, cloudflareScopes, missingScopes, type WhoAmI, type Wrangler } from "../src/cloudflare-auth.ts";
+import { BASE_SCOPES, alchemyCloudflareProfile, cloudflareEnv, cloudflareProblem, cloudflareScopes, missingScopes, withAccount, type WhoAmI, type Wrangler } from "../src/cloudflare-auth.ts";
 import type { RustyBunsConfig } from "../src/config.ts";
 
 const cfg = (bindings: RustyBunsConfig["bindings"], domain?: string): RustyBunsConfig => ({
@@ -126,4 +126,14 @@ test("cloudflareProblem: no credentials is one line; Alchemy's profile, API key 
   // no profiles in CI, even one on disk
   expect(await cloudflareProblem({ CI: "true" }, never, () => true)).toContain("no Cloudflare credentials in CI");
   expect(await cloudflareProblem({ CI: "false" }, never, () => true)).toBeNull();
+});
+
+test("withAccount: targets.edge.accountId picks the account; an exported other one is refused (#1211)", () => {
+  const acct = "0123456789abcdef0123456789abcdef";
+  const c = { targets: { edge: { provider: "cloudflare" as const, accountId: acct } } };
+  expect(withAccount(c, { A: "1" } as Record<string, string>)).toEqual({ A: "1", CLOUDFLARE_ACCOUNT_ID: acct });
+  expect(withAccount(c, { CLOUDFLARE_ACCOUNT_ID: acct })).toEqual({ CLOUDFLARE_ACCOUNT_ID: acct });
+  expect(() => withAccount(c, { CLOUDFLARE_ACCOUNT_ID: "other" })).toThrow(/accountId is 0123.*but CLOUDFLARE_ACCOUNT_ID is other/);
+  expect(withAccount({ targets: {} }, { CLOUDFLARE_ACCOUNT_ID: "x" })).toEqual({ CLOUDFLARE_ACCOUNT_ID: "x" });
+  expect(withAccount(undefined, {})).toEqual({});
 });

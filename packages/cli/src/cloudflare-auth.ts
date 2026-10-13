@@ -188,3 +188,15 @@ export async function cloudflareProblem(env: Record<string, string | undefined>,
   if (hasFile(alchemyCloudflareProfile(env))) return null;
   return `not logged in to Cloudflare${env.CLOUDFLARE_API_TOKEN ? " (CLOUDFLARE_API_TOKEN is set, but Alchemy ignores it without CLOUDFLARE_ACCOUNT_ID)" : ""}. ${LOGIN_FIX}`;
 }
+
+/**
+ * `env` with CLOUDFLARE_ACCOUNT_ID set to targets.edge.accountId. One exported for another
+ * account is refused rather than picked: a deploy to the wrong account makes a second copy there.
+ */
+export function withAccount<E extends Record<string, string | undefined>>(c: Pick<RustyBunsConfig, "targets"> | undefined, env: E): E {
+  const want = c?.targets.edge?.accountId;
+  if (!want) return env;
+  if (env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_ACCOUNT_ID !== want)
+    throw new Error(`targets.edge.accountId is ${want}, but CLOUDFLARE_ACCOUNT_ID is ${env.CLOUDFLARE_ACCOUNT_ID}. Unset one, or make them agree.`);
+  return { ...env, CLOUDFLARE_ACCOUNT_ID: want };
+}

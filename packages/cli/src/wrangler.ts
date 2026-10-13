@@ -1,6 +1,6 @@
 // wrangler.jsonc -> RustyBunsConfig. Reads what RWSDK's scaffold emits.
 
-import type { Binding, RustyBunsConfig } from "./config.ts";
+import type { Binding, RustyBunsConfig, Stage, StageBinding } from "./config.ts";
 import { inferWorkerBuild } from "./glue/build-script.ts";
 
 import { stripJsonc } from "./glue/jsonc.ts";
@@ -42,6 +42,11 @@ export interface WranglerJson {
     logs?: { enabled?: boolean; invocation_logs?: boolean; head_sampling_rate?: number; persist?: boolean };
     traces?: { enabled?: boolean; head_sampling_rate?: number; persist?: boolean };
   };
+  account_id?: string;
+  workers_dev?: boolean;
+  preview_urls?: boolean;
+  /** Per-environment overrides: `wrangler deploy --env <name>`. */
+  env?: Record<string, WranglerJson>;
   [k: string]: unknown;
 }
 
@@ -61,14 +66,75 @@ const HANDLED = new Set([
   "$schema", "name", "main", "compatibility_date", "compatibility_flags", "assets",
   "d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "migrations", "vars", "triggers", "images", "send_email", "ratelimits", "ai", "queues", "placement", "hyperdrive",
   "workflows", "analytics_engine_datasets", "worker_loaders", "vectorize", "containers", "route", "routes", "observability", "limits",
+  "account_id", "workers_dev", "preview_urls", "env",
 ]);
+
+/** Keys wrangler doesn't inherit into an `env.<name>` block: the env has only the bindings it declares. */
+const ENV_BINDINGS = ["d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "vars", "images", "send_email", "ratelimits", "ai",
+  "queues", "hyperdrive", "workflows", "analytics_engine_datasets", "worker_loaders", "vectorize"] as const;
+/** What a stage can say for an env block; any other key it sets differently from the top level is not carried over. */
+const ENV_HANDLED = new Set<string>([...ENV_BINDINGS, "name", "route", "routes", "triggers", "account_id", "workers_dev", "preview_urls"]);
 
 /** A container `image` that is a Dockerfile here, not a registry image (`docker.io/org/app:tag`). */
 const localImage = (image: string) => /^\.{0,2}\//.test(image) || /(^|\/)Dockerfile[^/]*$/i.test(image);
 
-/** Wrangler keys (per-env overrides, the account) that `init` cannot represent yet. */
+/** Wrangler keys that `init` cannot represent yet; `env.<name>.<key>` for one inside an env block. */
 export function droppedWranglerKeys(w: WranglerJson): string[] {
-  return Object.keys(w).filter((k) => !HANDLED.has(k) || (k === "containers" && (w.containers ?? []).some((c) => !localImage(c.image))));
+  const top = Object.keys(w).filter((k) => !HANDLED.has(k) || (k === "containers" && (w.containers ?? []).some((c) => !localImage(c.image))));
+  const envs = Object.entries(w.env ?? {}).flatMap(([n, e]) => !STAGE_NAME.test(n) ? [`env.${n}`]
+    : Object.keys(e ?? {}).filter((k) => !ENV_HANDLED.has(k) && JSON.stringify(e[k]) !== JSON.stringify(w[k])).map((k) => `env.${n}.${k}`));
+  return [...top, ...envs];
+}
+
+/** Alchemy's rule for a stage name (state.ts's alchemyStage). */
+const STAGE_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+/** Binding fields a stage can lay over a binding of the same type; any other difference replaces the binding. */
+const STAGE_FIELDS = new Set(["value", "databaseName", "bucketName", "queueName", "indexName", "dataset", "namespaceId", "configName"]);
+
+/**
+ * Wrangler's `env.<name>` blocks as `stages`, against `base`, the config init made from the top level.
+ * `missing` names the bindings an env leaves out: wrangler wouldn't bind them there, but a stage keeps them.
+ */
+export function wranglerStages(w: WranglerJson, base: RustyBunsConfig): { stages: Record<string, Stage>; missing: string[] } {
+  const stages: Record<string, Stage> = {};
+  const missing: string[] = [];
+  for (const [n, e] of Object.entries(w.env ?? {})) {
+    if (!STAGE_NAME.test(n) || !e) continue;
+    const s: Stage = { workerName: e.name ?? `${w.name ?? "app"}-${n}` };
+    if (e.account_id !== undefined) s.accountId = e.account_id;
+    if (e.workers_dev !== undefined) s.workersDev = e.workers_dev;
+    if (e.preview_urls !== undefined) s.previewUrls = e.preview_urls;
+    if (e.route !== undefined || e.routes !== undefined) {
+      const { domains, zoneRoutes } = edgeRoutes(e);
+      s.domain = domains.length === 1 ? domains[0]! : domains;
+      s.routes = zoneRoutes;
+    }
+    if (e.triggers !== undefined) s.crons = e.triggers.crons ?? [];
+    // The env's own bindings, with the top level's containers so a container's DO reads as one.
+    const own = wranglerToConfig({ ...Object.fromEntries(ENV_BINDINGS.flatMap((k) => e[k] === undefined ? [] : [[k, e[k]]])), containers: e.containers ?? w.containers }).bindings;
+    const bindings: Record<string, StageBinding> = {};
+    for (const [k, b] of Object.entries(own)) {
+      const was = base.bindings[k];
+      if (!was || was.type !== b.type) { bindings[k] = b; continue; }
+      const diff = Object.entries(b).filter(([f, v]) => JSON.stringify(v) !== JSON.stringify((was as Record<string, unknown>)[f]));
+      if (!diff.length) continue;
+      bindings[k] = diff.every(([f]) => STAGE_FIELDS.has(f)) ? Object.fromEntries(diff) : b;
+    }
+    if (Object.keys(bindings).length) s.bindings = bindings;
+    for (const [k, b] of Object.entries(base.bindings)) if (!own[k] && b.type !== "secret") missing.push(`env.${n}: ${k}`);
+    stages[n] = s;
+  }
+  return { stages, missing };
+}
+
+/** A wrangler file's `route` and `routes`: custom domains the Worker owns, and the zone routes. */
+function edgeRoutes(w: WranglerJson) {
+  const routes = [...(w.route ? [w.route] : []), ...(w.routes ?? [])].map((r) => typeof r === "string" ? { pattern: r } : r);
+  return {
+    domains: routes.filter((r) => r.custom_domain).map((r) => r.pattern),
+    zoneRoutes: routes.filter((r) => !r.custom_domain).map((r) => ({ pattern: r.pattern, ...(r.zone_name ? { zoneName: r.zone_name } : {}), ...(r.zone_id ? { zoneId: r.zone_id } : {}) })),
+  };
 }
 
 /** A binding key from a queue or class name: `jobs-dlq` -> `JOBS_DLQ`, `MyBox` -> `MY_BOX`. */
@@ -133,9 +199,7 @@ export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string
   for (const [k, v] of Object.entries(w.vars ?? {})) bindings[k] = { type: "var", value: String(v) };
   const rwf = w.assets?.run_worker_first;
   // Routes: a custom domain is a hostname the Worker owns; the rest are zone routes.
-  const routes = [...(w.route ? [w.route] : []), ...(w.routes ?? [])].map((r) => typeof r === "string" ? { pattern: r } : r);
-  const domains = routes.filter((r) => r.custom_domain).map((r) => r.pattern);
-  const zoneRoutes = routes.filter((r) => !r.custom_domain).map((r) => ({ pattern: r.pattern, ...(r.zone_name ? { zoneName: r.zone_name } : {}), ...(r.zone_id ? { zoneId: r.zone_id } : {}) }));
+  const { domains, zoneRoutes } = edgeRoutes(w);
   const o = w.observability;
   const camel = (x: Record<string, unknown>) => JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(x).map(([k, v]) => [k.replace(/_([a-z])/g, (_, c) => c.toUpperCase()), v]))));
   const pick = <T extends object>(x: T, keys: (keyof T)[]) => Object.fromEntries(keys.filter((k) => x[k] !== undefined).map((k) => [k, x[k]]));
@@ -162,7 +226,9 @@ export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string
     },
     bindings,
     targets: {
-      edge: { provider: "cloudflare", ...(domains.length ? { domain: domains.length === 1 ? domains[0] : domains } : {}), ...(zoneRoutes.length ? { routes: zoneRoutes } : {}) },
+      edge: { provider: "cloudflare", ...(domains.length ? { domain: domains.length === 1 ? domains[0] : domains } : {}), ...(zoneRoutes.length ? { routes: zoneRoutes } : {}),
+        ...(w.account_id ? { accountId: w.account_id } : {}), ...(w.workers_dev !== undefined ? { workersDev: w.workers_dev } : {}),
+        ...(w.preview_urls !== undefined ? { previewUrls: w.preview_urls } : {}) },
       desktop: {
         mode: "spa",
         clientBuild: "vite build --config vite.desktop.config.ts",
