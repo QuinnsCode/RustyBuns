@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Layout (gitwiz/serve.ts): `bun run gitwiz` serves gitwiz on its own, with no Worker, rebuilt on every load
+// `bun run gitwiz` serves gitwiz on its own, with no Worker, rebuilt on every load
 // bun run gitwiz [-- --port 4783]   then open http://localhost:4783/
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";

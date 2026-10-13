@@ -1,4 +1,3 @@
-// Layout (gitwiz/page.ts): gitwiz's page: draws the highway on a canvas and wires the controls
 // The DOM half of gitwiz. gitwiz.ts has the math; this paints it (paper chips on a board that narrows
 // toward a vanishing point), plays and scrubs the history, and loads a pasted or uploaded file.
 // build.ts bundles it to /gitwiz.js for gitwiz.html.

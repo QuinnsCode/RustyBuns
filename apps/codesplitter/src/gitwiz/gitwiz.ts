@@ -1,4 +1,4 @@
-// Layout (gitwiz/gitwiz.ts): gitwiz's pure parts: git log in, notes and the highway's perspective out
+// Layout (src/gitwiz/gitwiz.ts, src/gitwiz/page.ts, src/gitwiz/build.ts, src/gitwiz/serve.ts): gitwiz, a file's git history played down a guitar-neck highway (page.ts draws the board; gitwiz.ts is the pure parts, tested in `test/gitwiz.test.ts`; `bun run gitwiz` serves it; data from `scripts/gitwiz-log.ts`)
 // gitwiz replays one file's history down a guitar-neck highway (page.ts draws it). Everything that can be
 // wrong without a screen is here, with no DOM and no imports, so test/gitwiz.test.ts covers it:
 //   - reading `git log -p -U0 --follow` (parsePatchLog) and the JSON that scripts/gitwiz-log.ts writes (readInput)
