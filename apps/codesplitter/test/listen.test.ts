@@ -94,3 +94,30 @@ test("a dug fork hears upstream move on, and takes its changes onto a branch (#8
     expect([u.tip, u.behind]).toEqual([C, null]);
   } finally { globalThis.fetch = real; }
 });
+
+test("a desktop dig answers while its clone is still landing, not with a 500", async () => {
+  const call = await boot({ GH_CLI: "off" });
+  opened.push(call);
+  const real = globalThis.fetch;
+  globalThis.fetch = (async (u: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(typeof u === "string" ? u : u instanceof URL ? u.href : u.url);
+    if (url.hostname === "github.com" && url.pathname === "/o/slow.git/info/refs") return new Response(`${A} HEAD\0side-band symref=HEAD:refs/heads/main\n${A} refs/heads/main\n`);
+    if (url.hostname === "api.github.com") return new Response("{}", { status: 404 });
+    return real(u as any, init);
+  }) as any;
+  const { push } = await import("../src/git.ts");
+  // The local binding's import: it answers at once and clones in the background.
+  const arts = call.artifacts as any;
+  arts.import = (async (params: any) => {
+    const name = params.target.name;
+    arts.importing = Bun.sleep(100).then(async () => {
+      const art = await arts.create(name, { setDefaultBranch: "main" });
+      await push(art.remote, art.token, { changes: { "README.md": "hi\n" }, message: "upstream", author: "upstream" });
+    });
+    return { id: "", name, description: null, defaultBranch: "main", remote: arts.remote(name), token: "" };
+  }) as any;
+  try {
+    await post(call, "ana", "/api/login", { name: "ana" });
+    expect((await post(call, "ana", "/api/github/dig", { repo: "o/slow" })).status).toBe(201);
+  } finally { globalThis.fetch = real; }
+});
