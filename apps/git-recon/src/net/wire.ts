@@ -5,6 +5,7 @@
 
 import type { RepoSnapshot } from "../sim/codemap.ts";
 import type { GameEvent, Input, Mode, Objective, Pickup, Soldier, Team } from "../sim/game.ts";
+import type { ZoneData } from "../sim/terrain.ts";
 import { ORDER, type WeaponId } from "../sim/weapons.ts";
 
 /** Snapshots a second, and players a room holds. */
@@ -12,8 +13,11 @@ export const SNAP_HZ = 20, MAX_PLAYERS = 32;
 /** How far off a soldier or a round still comes in your snapshot, in metres. */
 export const VIEW = 90;
 
-/** What a battle is: a level, a repo on it, and a mode. The host picks; everyone gets the same. */
-export interface Setup { level: string; mode: Mode; repo: RepoSnapshot }
+/**
+ * What a battle is: a level, a repo on it, and a mode. The host picks; everyone gets the same.
+ * A lat/long level ("place:<lat>,<lon>") brings its ground along, read in the host's page.
+ */
+export interface Setup { level: string; mode: Mode; repo: RepoSnapshot; zone?: ZoneData }
 
 /** How a player looks: a head and a build, by id. Looks only. */
 export interface Look { head: string; build: string }

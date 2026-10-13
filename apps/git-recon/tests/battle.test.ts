@@ -2,10 +2,11 @@
 // the world behind sockets, and the page's mirror of it.
 import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { LEVELS } from "../src/levels/levels.ts";
+import { groundAt } from "../src/levels/place.ts";
 import type { Block } from "../src/sim/codemap.ts";
 import { FFA_SCORE, Game, RESPAWN, type Input, type Mode } from "../src/sim/game.ts";
 import { Mirror } from "../src/net/mirror.ts";
-import { cleanSetup, Room } from "../src/net/room.ts";
+import { battleGame, cleanSetup, Room } from "../src/net/room.ts";
 import { cleanInput, MAX_PLAYERS, packSoldier, unpackSoldier, VIEW, type FromWorld, type Setup, type Snap } from "../src/net/wire.ts";
 import World, { CLOSE_FULL, CLOSE_REPLACED } from "../src/net/world.ts";
 
@@ -127,6 +128,25 @@ describe("the wire", () => {
     expect(cleanSetup({ level: "the-moon", mode: "ffa", repo })).toBeNull();
     expect(cleanSetup({ level: "el-capitan", mode: "battle-royale", repo })).toBeNull();
     expect(cleanSetup({ level: "el-capitan", mode: "ffa", repo: { name: "x", ref: "y", files: [{ path: 1 }] } })).toBeNull();
+  });
+
+  test("a lat/long setup brings its ground, and the world and the page build the same battle on it", async () => {
+    const tile = new Uint8Array(await Bun.file(new URL("./fixtures/terrarium-14-2752-6334.png", import.meta.url)).arrayBuffer());
+    const zone = await groundAt(37.744657, -119.520264, { realRadius: 700, tiles: async () => tile });
+    const repo = LEVELS[0]!.repo, level = `place:${zone.id}`;
+    const clean = cleanSetup(JSON.parse(JSON.stringify({ level, mode: "ffa", repo, zone: { ...zone, name: "<b>pwned</b>" } })))!;
+    expect(clean.zone!.name).toBe(zone.name);
+    expect(clean.zone!.heights).toBe(zone.heights);
+    const world = new Room(clean).game, page = battleGame(JSON.parse(JSON.stringify(clean)));
+    expect(page.map.compounds.map((c) => [c.folder, c.x, c.z])).toEqual(world.map.compounds.map((c) => [c.folder, c.x, c.z]));
+    expect(world.map.compounds.length).toBeGreaterThan(0);
+
+    // No ground, the wrong place, or heights that aren't n*n: turned away.
+    expect(cleanSetup({ level, mode: "ffa", repo })).toBeNull();
+    expect(cleanSetup({ level: "place:0.0000,0.0000", mode: "ffa", repo, zone })).toBeNull();
+    expect(cleanSetup({ level, mode: "ffa", repo, zone: { ...zone, heights: zone.heights.slice(4) } })).toBeNull();
+    expect(cleanSetup({ level, mode: "ffa", repo, zone: { ...zone, n: 100_000 } })).toBeNull();
+    expect(cleanSetup({ level, mode: "ffa", repo, zone: { ...zone, realRadius: Infinity } })).toBeNull();
   });
 });
 

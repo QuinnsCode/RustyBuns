@@ -4,9 +4,11 @@
 // for each of them holding only what's within VIEW of their soldier. Shots are the battle's
 // call, never the page's. When a battle's decided it starts the next round on the same repo.
 
-import { LEVELS } from "../levels/levels.ts";
+import { LEVELS, placeLevel, type LevelDef } from "../levels/levels.ts";
+import { placeName } from "../levels/place.ts";
 import { Game, type GameEvent, type Input } from "../sim/game.ts";
 import { missionFor } from "../sim/missions.ts";
+import type { ZoneData } from "../sim/terrain.ts";
 import { ORDER } from "../sim/weapons.ts";
 import { MAX_PLAYERS, packSoldier, VIEW, cleanInput, type FileState, type Look, type RosterEntry, type Setup, type ShotState, type Snap, type StashState } from "./wire.ts";
 
@@ -14,19 +16,56 @@ import { MAX_PLAYERS, packSoldier, VIEW, cleanInput, type FileState, type Look, 
 export const NEXT_ROUND = 10;
 const MODES = ["coop", "ffa", "teams"];
 
-/** A setup off the wire, checked: a level the world has, a mode, and a repo shaped like one. */
+/** A setup off the wire, checked: a level the world has (or a lat/long one with its ground), a mode, and a repo shaped like one. */
 export function cleanSetup(raw: unknown): Setup | null {
   if (!raw || typeof raw !== "object") return null;
   const s = raw as Record<string, any>, repo = s.repo;
-  if (!LEVELS.some((l) => l.id === s.level) || !MODES.includes(s.mode)) return null;
+  if (!MODES.includes(s.mode)) return null;
   if (!repo || typeof repo.name !== "string" || typeof repo.ref !== "string" || !Array.isArray(repo.files) || repo.files.length > 5000) return null;
   if (!repo.files.every((f: any) => f && typeof f.path === "string" && f.path.length < 400 && typeof f.lines === "number" && Number.isFinite(f.lines))) return null;
-  return { level: s.level, mode: s.mode, repo };
+  if (LEVELS.some((l) => l.id === s.level)) return { level: s.level, mode: s.mode, repo };
+  const zone = cleanZone(s.zone);
+  if (!zone || s.level !== `place:${zone.id}`) return null;
+  try {
+    levelOf({ level: s.level, mode: s.mode, repo, zone });
+  } catch {
+    return null;
+  }
+  return { level: s.level, mode: s.mode, repo, zone };
+}
+
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+
+/**
+ * A lat/long level's ground off the wire: a place on the map, a sane size, and exactly n*n
+ * heights. Its id and name are made again from the place, never taken from the sender.
+ */
+export function cleanZone(raw: unknown): ZoneData | null {
+  if (!raw || typeof raw !== "object") return null;
+  const z = raw as Record<string, any>, [lon, lat] = Array.isArray(z.center) ? z.center : [];
+  if (typeof lat !== "number" || typeof lon !== "number" || !(Math.abs(lat) <= 84) || !(Math.abs(lon) <= 180)) return null;
+  if (typeof z.realRadius !== "number" || !(z.realRadius >= 100 && z.realRadius <= 10_000)) return null;
+  if (!Number.isInteger(z.n) || z.n < 2 || z.n > 257) return null;
+  if (typeof z.heights !== "string" || z.heights.length !== 4 * Math.ceil((z.n * z.n * 2) / 3) || !BASE64.test(z.heights)) return null;
+  return { id: `${lat.toFixed(4)},${lon.toFixed(4)}`, name: placeName(lat, lon), center: [lon, lat], realRadius: z.realRadius, n: z.n, heights: z.heights };
+}
+
+// placeLevel tries a few seeds over the ground; a battle asks for the same place every round.
+let placed: { key: string; def: LevelDef } | null = null;
+
+/** The level a setup is on: a built-in one, or the lat/long it carries the ground of. */
+export function levelOf(setup: Setup): LevelDef {
+  const def = LEVELS.find((l) => l.id === setup.level);
+  if (def) return def;
+  if (!setup.zone) throw new Error(`no level ${setup.level}`);
+  const key = `${setup.zone.id}:${setup.zone.realRadius}:${setup.zone.heights}`;
+  if (placed?.key !== key) placed = { key, def: placeLevel(setup.zone) };
+  return placed.def;
 }
 
 /** The battle a setup makes: the same on the world and on every page, guards and all. */
 export function battleGame(setup: Setup): Game {
-  const def = LEVELS.find((l) => l.id === setup.level)!;
+  const def = levelOf(setup);
   return Game.fromRepo(def.ground(), setup.repo, def.seed, missionFor(def.id), setup.mode);
 }
 
