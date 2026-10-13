@@ -23,12 +23,13 @@ export interface WorkerCode {
 }
 
 let shimmed = false;
-/** Dynamic code that imports cloudflare:workers gets the same shim the host was built with. */
+/** Dynamic code that imports cloudflare:workers (or :workflows, :email) gets the same shim the host was built with. */
 function shimRuntimeImports() {
   if (shimmed) return;
   shimmed = true;
   Bun.plugin({ name: "rustybuns-loader-shims", setup(b) {
     b.module("cloudflare:workers", () => ({ exports: { ...shims }, loader: "object" }));
+    b.module("cloudflare:email", () => ({ exports: { EmailMessage: shims.EmailMessage }, loader: "object" }));
     b.module("cloudflare:workflows", () => ({ exports: { NonRetryableError: shims.NonRetryableError }, loader: "object" }));
   } });
 }

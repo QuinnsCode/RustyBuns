@@ -3,7 +3,8 @@
 # agent guard hook's tests when .claude/ moved.
 # An app with boot: true in scripts/ci-apps.ts also builds its dev host and boots it on the local twins.
 # An app with a smoke row in scripts/ci-apps.ts (agent-office) also builds its binary on each Mac and Linux
-# runner and checks it starts; those binaries are thrown away. The ones handed out come from desktop-drop.yml.
+# runner and checks it starts, and an app with bootOn (splat-spray) builds its binary on windows-11-arm and boots it
+# (scripts/boot.ts --bin); those binaries are thrown away. The ones handed out come from desktop-drop.yml.
 name: apps
 on:
   pull_request:
@@ -97,7 +98,8 @@ jobs:
       - if: matrix.boot
         run: bun ../../scripts/boot.ts
 
-  # The app's own binary, built for the runner it's on and started: linux-x64, linux-arm64, darwin-arm64, darwin-x64.
+  # The app's own binary, built for the runner it's on and started: linux-x64, linux-arm64, darwin-arm64, darwin-x64,
+  # and the bootOn targets (windows-arm64).
   smoke:
     needs: plan
     if: needs.plan.outputs.smokes == 'true'

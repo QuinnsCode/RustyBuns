@@ -1067,7 +1067,7 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              (refuses if that would drop bindings/triggers/routes it cannot represent)
 
   build desktop [--dev]      --dev: vite build + bundle the host, no compile  ->  run desktop
-             [--target T]    T = darwin-arm64 | darwin-x64 | linux-x64 | linux-arm64 | windows-x64
+             [--target T]    T = darwin-arm64 | darwin-x64 | linux-x64 | linux-arm64 | windows-x64 | windows-arm64
                              (default: targets in the config; "all" cross-compiles TS-only builds)
              [--check]       type check the app (its tsconfig) before the vite build
              [--sign]        macOS: sign the darwin binaries with your keychain's Developer ID

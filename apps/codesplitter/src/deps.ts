@@ -81,7 +81,12 @@
 // left goes up together once more. Each preview counts against the owner's
 // preview-deploy limit (limits.ts) and is logged with their own previews, by
 // agent-deps. A run that's out of time or over the limit puts nothing unchecked
-// on the branch. Previews run on the desktop, with its logins.
+// on the branch. Previews run on the desktop, with its logins, or on the site in the
+// repo's deploy container with its deploy keys (deploy-runner.ts, #900). There a preview
+// takes an alarm of its own, so the run hands it over and stops short of the branch
+// (`waiting`); the next hourly run asks again with the same files, gets the result, and goes
+// on. Finding the update that broke one takes a run per preview. Files an AI fixer wrote
+// aren't deployed with the deploy keys: those wait for the desktop.
 //
 //   GET  /api/repos/:o/:r/deps        settings and the last report (owner only)
 //   PUT  /api/repos/:o/:r/deps        any of the settings in FIELDS
@@ -97,6 +102,8 @@ import { execCommand, fromDisk, toDisk, type Exec } from "./agent-run.ts";
 import { CLAUDE_TOOLS, FIX_HARNESSES, harnessCommand, type Command, type Harness } from "./harness.ts";
 import { hitsFor } from "./watch.ts";
 import { settings as deploySettings } from "./deploy.ts";
+import { hostedWhy, keysInfo } from "./deploy-keys.ts";
+import type { PreviewAnswer } from "./deploy-runner.ts";
 import { charge } from "./limits.ts";
 import { scopedTest } from "../sandbox/scoped.mjs";
 import { logEnd, logStart, preview, runnerFor, runs as livePreviews, STEPS as PREVIEW_STEPS, type Run as PreviewDeploy } from "./preview.ts";
@@ -176,6 +183,8 @@ export interface Report {
   updates: Update[];
   exposed?: Exposed[];
   previews?: PreviewRun[];
+  /** A preview deploy still running in the repo's deploy container: the branch waits for it, and the next hourly run asks again. */
+  waiting?: { id: string; stage: string; names: string[] };
   digs?: Dug[];
   branch?: string;
   lock?: string;
@@ -1192,8 +1201,12 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
   // Then, when the owner turned it on, what passed goes up as a preview deploy, is checked, and comes down (#864).
   const previews: NonNullable<Report["previews"]> = [];
   const runner = s.preview ? runnerFor(env) : null;
-  if (s.preview && !runner) note = [note, "preview deploys run on the desktop app, with your own logins"].filter(Boolean).join("; ");
-  if (runner && taking().length) {
+  // On the site, the repo's deploy container, with its deploy keys.
+  const why = s.preview && !runner ? await hostedPreviewWhy(env, owner, repo) : null;
+  const hosted = s.preview && !runner && !why ? env.DEPLOY_RUNNER! : null;
+  if (why) note = [note, why].filter(Boolean).join("; ");
+  let waiting: Report["waiting"];
+  if ((runner || hosted) && taking().length) {
     const r = await remoteFor();
     if (!r) note = [note, "no git remote to deploy a preview from"].filter(Boolean).join("; ");
     else {
@@ -1203,6 +1216,16 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
       const deploy = async (us: Update[], files: Record<string, string>) => {
         if (stopped) return null;
         if (deadline && Date.now() + slowest > deadline) { stopped = "out of time"; return null; }
+        if (hosted) {
+          if (Object.keys(files).some((p) => !manifests.has(p))) { stopped = "files an AI fixer wrote aren't deployed with the repo's deploy keys: run the doctor on the desktop app to preview them"; return null; }
+          const res = await hosted.get(hosted.idFromName(`${owner}/${repo}`)).fetch(new Request("http://deploy/preview", { method: "POST", body: JSON.stringify({ owner, repo, dir, files }) }));
+          const a = (await res.json()) as PreviewAnswer;
+          if ("busy" in a) { stopped = a.busy; return null; }
+          if ("running" in a) { waiting = { id: a.running.id, stage: a.running.stage, names: us.map((u) => u.name) }; stopped = "waiting"; return null; }
+          const p = a.result;
+          previews.push({ id: p.id, stage: p.stage, ok: p.ok, names: us.map((u) => u.name), ...(p.url ? { url: p.url } : {}), ...(p.failed ? { failed: p.failed } : {}), ...(p.note ? { note: p.note } : {}) });
+          return { ok: p.ok, out: p.ok ? "" : `preview deploy ${p.stage}: ${p.failed ?? "it"} failed${p.note ? ` (${p.note})` : ""}\n${tail(p.out ?? "")}` };
+        }
         // Each counts against the owner's preview deploys, like one they started.
         const over = env.ADMINS && isAdmin(env, owner) ? null : await charge(env, "preview", `@${owner}`);
         if (over) { stopped = over; return null; }
@@ -1211,7 +1234,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
         const shown = `${owner}/${repo}`;
         if (!livePreviews.get(shown) || livePreviews.get(shown)!.done) livePreviews.set(shown, run);
         await logStart(env, owner, repo, run, "agent-deps", "preview");
-        await timed(() => preview(runner, r, run, { dir, files })).catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; });
+        await timed(() => preview(runner!, r, run, { dir, files })).catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; });
         await logEnd(env, run);
         const ok = run.steps.every((x) => x.status === "done");
         const failed = run.steps.find((x) => x.status === "failed");
@@ -1247,15 +1270,17 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
           note = [note, again ? "each of these passes a preview alone but not together; nothing was put on a branch" : "what passed alone couldn't go up together to check it; nothing was put on a branch"].filter(Boolean).join("; ");
         }
       }
-      if (stopped) note = [note, `a preview deploy couldn't go (${stopped}): only what passed one went on a branch`].filter(Boolean).join("; ");
+      if (waiting) note = [note, `preview deploy ${waiting.stage} is running in the repo's deploy container: the branch waits for it, and the next hourly run picks it up`].filter(Boolean).join("; ");
+      else if (stopped) note = [note, `a preview deploy couldn't go (${stopped}): only what passed one went on a branch`].filter(Boolean).join("; ");
     }
   }
   if (held.length) await env.DB.prepare("UPDATE dep_watches SET held = ? WHERE owner = ? AND repo = ?").bind([...new Set([...s.held, ...held])].join(","), owner, repo).run();
   // Once tests ran, only what passed them goes on the branch; what gave way to a higher-ranked package never does.
-  const take = inOrder(taking());
+  // A run waiting on a preview puts nothing on a branch: the next one does, with the result.
+  const take = waiting ? [] : inOrder(taking());
   updates = inOrder([...updates, ...yielded]);
-  const shown = previews.length ? { previews } : {};
-  if (!take.length) return { at: now, checked, updates, ...also, ...shown, note: [note, previews.length ? "nothing passed both the tests and a preview deploy; nothing was put on a branch" : `every update ${updates.every((u) => u.status === "yielded") ? "gave way to a higher-ranked package" : "broke the tests"}; nothing was put on a branch`].filter(Boolean).join("; ") };
+  const shown = { ...(previews.length ? { previews } : {}), ...(waiting ? { waiting } : {}) };
+  if (!take.length) return { at: now, checked, updates, ...also, ...shown, note: [note, waiting ? "" : previews.length ? "nothing passed both the tests and a preview deploy; nothing was put on a branch" : `every update ${updates.every((u) => u.status === "yielded") ? "gave way to a higher-ranked package" : "broke the tests"}; nothing was put on a branch`].filter(Boolean).join("; ") };
 
   // The lockfile to match, from the install that passed, else one made for it.
   let locked: string | undefined;
@@ -1339,6 +1364,14 @@ async function landFix(call: Call, owner: string, base: string, branch: string, 
 }
 
 const tail = (s: string) => s.trim().slice(-1500);
+
+/** Why the doctor's previews can't run on the site for this repo, or null when they can (its deploy container, #900). */
+async function hostedPreviewWhy(env: Env, owner: string, repo: string): Promise<string | null> {
+  if (!env.DEPLOY_RUNNER) return "preview deploys run on the desktop app, with your own logins";
+  const why = hostedWhy(env, owner);
+  if (why) return `preview deploys on the site: ${why}`;
+  return Object.values(await keysInfo(env, owner, repo)).some((k) => k.set) ? null : "preview deploys on the site need a deploy key: set one in the deploy panel";
+}
 
 // ---- settings, routes and the schedule ----------------------------------------
 
@@ -1493,7 +1526,7 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
 
   if (!p[5] && req.method === "GET") {
     const r = await env.DB.prepare("SELECT last_run, last_report, running_since FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
-    return json({ settings: await settings(env, owner, repo), last_run: r.last_run, report: r.last_report ? JSON.parse(r.last_report) : null, running: !!r.running_since && r.running_since > Date.now() - STALE, can_test: !!testerAt(env, owner), can_preview: !!runnerFor(env), malicious: await hitsFor(env, owner, repo) });
+    return json({ settings: await settings(env, owner, repo), last_run: r.last_run, report: r.last_report ? JSON.parse(r.last_report) : null, running: !!r.running_since && r.running_since > Date.now() - STALE, can_test: !!testerAt(env, owner), can_preview: !!runnerFor(env) || !(await hostedPreviewWhy(env, owner, repo)), ...(!runnerFor(env) && { preview_why: await hostedPreviewWhy(env, owner, repo) }), malicious: await hitsFor(env, owner, repo) });
   }
   if (!p[5] && req.method === "PUT") {
     // Only what's sent changes; each field's write() checks it before it lands.
@@ -1542,7 +1575,9 @@ export const SCHEDULED_BUDGET = 12 * 60_000;
 export async function scheduledDoctor(env: Env, self: (r: Request) => Promise<Response>, now = Date.now(), budgetMs = SCHEDULED_BUDGET) {
   const deadline = Date.now() + budgetMs;
   const { results } = await env.DB.prepare(
-    "SELECT owner, repo FROM dep_watches WHERE enabled = 1 AND (running_since IS NULL OR running_since < ?) AND (last_run IS NULL OR last_run + every_hours * 3600000 <= ?) ORDER BY COALESCE(last_run, 0)").bind(now - STALE, now + 60_000).all();
+    // A run waiting on a preview deploy (#900) goes again on the next cron, to pick up its result.
+    `SELECT owner, repo FROM dep_watches WHERE enabled = 1 AND (running_since IS NULL OR running_since < ?)
+      AND (last_run IS NULL OR last_run + every_hours * 3600000 <= ? OR json_extract(last_report, '$.waiting') IS NOT NULL) ORDER BY COALESCE(last_run, 0)`).bind(now - STALE, now + 60_000).all();
   const call = caller(self, "http://codesplitter.local");
   for (const { owner, repo } of results as { owner: string; repo: string }[]) {
     if (Date.now() >= deadline) break;

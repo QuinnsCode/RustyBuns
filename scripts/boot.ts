@@ -1,6 +1,7 @@
 // Borg tier 1 for any app, free on every PR: build its dev host (`build desktop --dev`), start it on
 // the local twins with a throwaway data dir, and check what every desktop app must do. Run it in
 // apps/<name>; apps.yml runs it for each app with `boot: true` in scripts/ci-apps.ts.
+// `--bin <file>` runs a compiled binary instead (no build): apps.yml's smoke of the bootOn targets.
 //
 //   1. no token: 403            2. with the token: / is 200
 //   3. cross-origin isolated (COOP same-origin, COEP require-corp or credentialless), so SharedArrayBuffer works
@@ -9,26 +10,31 @@
 // no auto-install, no credential env vars, and on macOS under Seatbelt (RB_SANDBOX=0 turns that off).
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { hostCommand, hostEnv } from "../packages/cli/src/sandbox.ts";
 
 const cli = join(import.meta.dir, "../packages/cli/src/index.ts");
-const token = "boot-check-token";
+// A dev host takes this token; a release binary mints its own and prints it (RB_NO_BROWSER).
+let token = "boot-check-token";
 const home = mkdtempSync(join(tmpdir(), "boot-"));
 const t0 = performance.now();
 const ms = () => `${Math.round(performance.now() - t0)}ms`;
 
-const build = Bun.spawnSync(["bun", cli, "build", "desktop", "--dev"], { stdout: "inherit", stderr: "inherit" });
-if (build.exitCode !== 0) { console.error("boot: build desktop --dev failed"); process.exit(1); }
-console.log(`boot: dev host built in ${ms()}`);
+const bin = process.argv.includes("--bin") ? process.argv[process.argv.indexOf("--bin") + 1] : undefined;
+if (!bin) {
+  const build = Bun.spawnSync(["bun", cli, "build", "desktop", "--dev"], { stdout: "inherit", stderr: "inherit" });
+  if (build.exitCode !== 0) { console.error("boot: build desktop --dev failed"); process.exit(1); }
+  console.log(`boot: dev host built in ${ms()}`);
+}
 
-const host = Bun.spawn(hostCommand(".rustybuns/dev/desktop.js", [], { sandbox: process.env.RB_SANDBOX !== "0" }), {
+// USERPROFILE is Windows' HOME.
+const host = Bun.spawn(bin ? [resolve(bin)] : hostCommand(".rustybuns/dev/desktop.js", [], { sandbox: process.env.RB_SANDBOX !== "0" }), {
   stdout: "pipe", stderr: "inherit",
-  env: { ...hostEnv(process.env), HOME: home, RB_NO_BROWSER: "1", RB_TOKEN: token },
+  env: { ...hostEnv(process.env), HOME: home, USERPROFILE: home, RB_NO_BROWSER: "1", RB_TOKEN: token },
 });
 const fails: string[] = [];
 try {
-  const url = await Promise.race([serving(host.stdout), Bun.sleep(30_000).then(() => { throw new Error("not serving after 30s"); })]);
+  const url = await Promise.race([serving(host.stdout, !!bin), Bun.sleep(30_000).then(() => { throw new Error("not serving after 30s"); })]);
   console.log(`boot: serving ${url} at ${ms()}`);
   const bare = await fetch(url + "/");
   if (bare.status !== 403) fails.push(`no token: HTTP ${bare.status}, want 403`);
@@ -48,14 +54,17 @@ for (const f of fails) console.error(`boot: ✗ ${f}`);
 console.log(fails.length ? `boot: failed at ${ms()}` : `boot: ✓ token gate, page and isolation in ${ms()}`);
 process.exit(fails.length ? 1 : 0);
 
-// The host prints "[<name>...] serving http://127.0.0.1:<port>" once it listens.
-async function serving(out: ReadableStream<Uint8Array>): Promise<string> {
+// The host prints "[<name>...] serving http://127.0.0.1:<port>" once it listens, and a binary
+// then "open <url>/?token=<token>".
+async function serving(out: ReadableStream<Uint8Array>, minted: boolean): Promise<string> {
   let seen = "";
   for await (const chunk of out) {
     seen += new TextDecoder().decode(chunk);
     process.stdout.write(chunk);
     const m = seen.match(/serving (http:\/\/[\d.]+:\d+)/);
-    if (m) return m[1]!;
+    const t = seen.match(/\?token=([\w-]+)\s/);
+    if (t) token = t[1]!;
+    if (m && (!minted || t)) return m[1]!;
   }
   throw new Error("host exited before serving");
 }

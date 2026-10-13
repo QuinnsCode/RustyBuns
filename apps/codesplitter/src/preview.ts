@@ -38,6 +38,8 @@ export type Exec = (cmd: string[], cwd: string, out: (s: string) => void) => Pro
  */
 export interface Runner {
   exec: Exec; fetch: (url: string) => Promise<{ status: number }>; workdir?: string;
+  /** Write files (paths under `cwd`) on a machine this process can't reach: a container's POST /files. */
+  write?: (cwd: string, files: Record<string, string>) => Promise<void>;
   state?: { restore(app: string): Promise<void>; keep(app: string): Promise<void> };
   /**
    * The Linux arches this machine can compile a box's native/ crates for; unset for any (the desktop:
@@ -198,12 +200,17 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
     }
     if (opts.files) {
       const c = step("clone"), paths = Object.keys(opts.files);
-      // A runner with a workdir of its own is a container, which this can't write into.
+      // A runner with a workdir of its own is a container: it writes through `write`, or not at all.
       const outside = paths.find((p) => p.split("/").some((x) => x === ".." || x === "" || x === "."));
-      const bad = !fs ? "this runner can't lay files over its clone" : outside ? `${outside} is outside the repo` : null;
+      const bad = !fs && !runner.write ? "this runner can't lay files over its clone" : outside ? `${outside} is outside the repo` : null;
       if (bad) { c.status = "failed"; c.out += bad + "\n"; return skip("install", "deploy", "check", "destroy"); }
-      const { dirname, join } = await import("node:path");
-      for (const p of paths) { fs!.mkdirSync(dirname(join(dir, "repo", p)), { recursive: true }); fs!.writeFileSync(join(dir, "repo", p), opts.files[p]!); }
+      if (!fs) {
+        const wrote = await runner.write!(`${dir}/repo`, opts.files).then(() => null, (e: Error) => e.message);
+        if (wrote) { c.status = "failed"; c.out += `laying the changed files over the clone: ${wrote}\n`; return skip("install", "deploy", "check", "destroy"); }
+      } else {
+        const { dirname, join } = await import("node:path");
+        for (const p of paths) { fs.mkdirSync(dirname(join(dir, "repo", p)), { recursive: true }); fs.writeFileSync(join(dir, "repo", p), opts.files[p]!); }
+      }
       c.out += `laid ${paths.length} changed file${paths.length === 1 ? "" : "s"} over the clone: ${paths.join(", ")}\n`;
     }
     // A folder that isn't there says so, rather than failing to start bun in it.
@@ -275,7 +282,10 @@ export async function previewRoutes(req: Request, env: Env, p: string[], user: s
   if (!(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first())) return json({ error: "not found" }, 404);
   const runner = runnerFor(env);
   if (req.method === "GET") {
-    return json({ can_run: !!runner, ...(await history(env, owner, repo, true, () => runs.get(key) ?? null)) });
+    // On the site, the dependency doctor's previews run in the repo's deploy container (deploy-runner.ts).
+    const live = async () => runs.get(key) ?? (!runner && env.DEPLOY_RUNNER
+      ? ((await (await env.DEPLOY_RUNNER.get(env.DEPLOY_RUNNER.idFromName(key)).fetch(new Request("http://deploy/preview"))).json()) as { run: Run | null }).run : null);
+    return json({ can_run: !!runner, ...(await history(env, owner, repo, true, live)) });
   }
   if (req.method !== "POST") return null;
   if (!runner) return json({ error: "preview deploys run on the desktop app, with your own logins" }, 400);

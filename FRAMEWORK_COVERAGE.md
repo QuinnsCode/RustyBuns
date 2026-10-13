@@ -128,7 +128,7 @@ rwsdk.com is slow on the host because its star widget fetches the GitHub API wit
 | 10 | `wrangler` named-export error at build: no lockfile, so a fresh install pairs a newer wrangler with an older `@cloudflare/vite-plugin` | the app's |
 | 10 | a 500 at request time, not yet triaged | open |
 | 7 | the app needs a secret (`AUTH_SECRET_KEY`, `BETTER_AUTH_SECRET`) | [#913](https://github.com/QuinnsCode/RustyBuns/issues/913) |
-| 5 | `tsyringe` needs `reflect-metadata` first (passkey addons) | [#910](https://github.com/QuinnsCode/RustyBuns/issues/910) |
+| 5 | `tsyringe` needs `reflect-metadata` first (passkey addons) | fixed, not yet rerun ([#910](https://github.com/QuinnsCode/RustyBuns/issues/910)) |
 | 2 | `cloudflare:email` | [#911](https://github.com/QuinnsCode/RustyBuns/issues/911) |
 | 1 | Prisma's `.wasm` query engine in worker mode | [#909](https://github.com/QuinnsCode/RustyBuns/issues/909) |
 | 1 | `virtual:use-client-lookup` in the spa build | [#912](https://github.com/QuinnsCode/RustyBuns/issues/912) |

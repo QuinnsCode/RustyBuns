@@ -85,7 +85,7 @@ export const APP_SERVER_DIR = "app-server";
 /** The bundle of desktop.server's `i`th server, in APP_SERVER_DIR. */
 export const appServerFile = (i: number) => `server-${i}.js`;
 
-const ALL_OS: DesktopOs[] = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "windows-x64"];
+const ALL_OS: DesktopOs[] = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "windows-x64", "windows-arm64"];
 
 /** spa mode: your Vite SPA + your world class. No worker, no RSC, no shims. */
 /** A host's memory watch: RSS and heap every 5 minutes with the growth rate, served at /__rb/mem. */
@@ -160,6 +160,22 @@ async function stagePglite(cwd = process.cwd()) {
   for (const f of PGLITE_FILES) await Bun.write(join(PGLITE_STAGE, f), Bun.file(join(dist, f)));
 }
 
+/** tsyringe (passkey/webauthn addons, via @peculiar/x509) throws at load unless reflect-metadata
+ *  ran first. On the edge the Worker's own entry imports it; the spa host loads the app's actions
+ *  itself, so it imports it first when the app's tree has it (#910). The bare name when the app
+ *  resolves it, else the copy beside the package that needs it (pnpm/isolated installs). */
+export function reflectMetadataImport(cwd = process.cwd()): string {
+  const from = (dir: string) => { try { return Bun.resolveSync("reflect-metadata", dir); } catch { return null; } };
+  if (from(cwd)) return `import "reflect-metadata";\n`;
+  for (const pkg of ["tsyringe", "@peculiar/x509"]) {
+    let dir: string;
+    try { dir = dirname(Bun.resolveSync(`${pkg}/package.json`, cwd)); } catch { continue; }
+    const hit = from(dir);
+    if (hit) return `import ${JSON.stringify(hit)};\n`;
+  }
+  return "";
+}
+
 export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string {
   const d = c.targets.desktop ?? {};
   const h = hostParts(c, host, d.dataDir ?? `~/.${c.name}`);
@@ -188,7 +204,7 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
 // as a Durable Object with sqlite storage, vouches the local identity at ${worldPath}.
 // Guests (other machines) reach ${worldPath} alone, with ?join=<passphrase>&uid=&name=&v=.
 // Replaces desktop_host.ts + desktop_gen_embed.ts.
-import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${d.server ? ", appServer" : ""}, type GuestState } from "@rustybuns/shell-bun";
+${reflectMetadataImport()}import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${d.server ? ", appServer" : ""}, type GuestState } from "@rustybuns/shell-bun";
 ${hasWorld ? `import World from ${JSON.stringify("../" + (d.world || "packages/desktop/world.ts"))};` : "// no world (desktop.world: false)"}
 ${d.host ? `import host from ${JSON.stringify("../" + d.host)};` : "const host: any = null;"}
 import { homedir, networkInterfaces } from "node:os";
@@ -447,6 +463,12 @@ export const rwsdkLookupStub = (spec: string) =>
 /** import(`x`) with no ${...} in it, as import("x"), so the bundler resolves it statically. */
 export const plainDynamicImports = (js: string) => js.replace(/\bimport\(`([^`$\\]+)`\)/g, (_, spec: string) => `import(${JSON.stringify(spec)})`);
 
+/** A .wasm file the built Worker imports, as workerd hands it over: a compiled WebAssembly.Module
+ *  (Prisma's query engine instantiates it), not the file path Bun's default loader gives. The bytes
+ *  ride in the bundle, so a compiled binary carries them (#909). */
+export const wasmModuleSource = (bytes: Uint8Array) =>
+  `export default new WebAssembly.Module(Buffer.from(${JSON.stringify(Buffer.from(bytes).toString("base64"))}, "base64"));`;
+
 /** desktop.workers: each module's absolute path -> its bundle's name in workers/ beside the host
  *  (src/rig/worker.ts -> src-rig-worker.js). Bun.build leaves `new URL("./w.ts", import.meta.url)`
  *  alone and doesn't emit the module, so each is bundled on its own. */
@@ -536,7 +558,8 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
           deadLetterQueue: dlq?.type === "queue" ? dlq.queueName : undefined }, name]);
         break;
       }
-      case "send_email": bind.push(`  // ${name}: Cloudflare Email Sending has no local twin; the app runs without it`); break;
+      // No mail off the edge: each send is an .eml file in the data dir.
+      case "send_email": bind.push(`  ${name}: local.sendEmail(${[JSON.stringify(name), ...(b.allowedSenderAddresses ? [JSON.stringify(b.allowedSenderAddresses)] : [])].join(", ")}),`); break;
       case "ratelimit": bind.push(`  // ${name}: Workers Rate Limiting has no local twin; the app runs without it`); break;
       // No pool off the edge: the app gets the origin's URL in Hyperdrive's shape.
       case "hyperdrive": bind.push(`  ${name}: ${hyperdriveBinding(name, b, (m) => `assetDir(${JSON.stringify(m)})!`)},`); break;
@@ -786,7 +809,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
     name: "rustybuns-shims",
     setup(b: any) {
       // Host side: the worker-runtime modules become the local runtime.
-      b.onResolve({ filter: /^(cloudflare:workers|cloudflare:workflows|rwsdk\/worker)$/ }, () => ({ path: shimPath }));
+      b.onResolve({ filter: /^(cloudflare:workers|cloudflare:workflows|cloudflare:email|rwsdk\/worker)$/ }, () => ({ path: shimPath }));
       b.onResolve({ filter: RWSDK_LOOKUPS }, (args: { path: string }) => ({ path: args.path, namespace: "rwsdk-lookup" }));
       b.onLoad({ filter: /.*/, namespace: "rwsdk-lookup" }, (args: { path: string }) => ({ contents: rwsdkLookupStub(args.path), loader: "js" }));
       // A dependency's optional import that isn't installed (pg's pg-cloudflare and pg-native, only
@@ -804,6 +827,10 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
         const dir = join(process.cwd(), dirname(c.worker.builtMain)).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         b.onLoad({ filter: new RegExp(`^${dir}[\\\\/].*\\.m?js$`) }, async (args: { path: string }) => ({
           contents: plainDynamicImports(await Bun.file(args.path).text()), loader: "js",
+        }));
+        // Only the Worker build's own .wasm: the host entry imports PGlite's as files.
+        b.onLoad({ filter: new RegExp(`^${dir}[\\\\/].*\\.wasm$`) }, async (args: { path: string }) => ({
+          contents: wasmModuleSource(await Bun.file(args.path).bytes()), loader: "js",
         }));
       }
       // The app's own code: a worker module it names by URL points at that worker's bundle.

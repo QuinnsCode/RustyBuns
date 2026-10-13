@@ -43,14 +43,15 @@ test("cloudflare:workers base classes exist to extend, RpcTarget too (capnweb ex
 
 test("workerd-global: globalThis.Cloudflare.compatibilityFlags, true for the flags the app lists", async () => {
   const g = globalThis as any;
-  const before = g.Cloudflare;
+  const before = g.Cloudflare, fetchBefore = g.fetch;
   delete g.Cloudflare;
   g.RB_COMPAT_FLAGS = "nodejs_compat,global_fetch_strictly_public";
   try {
     await import(`../src/workerd-global.ts?${Date.now()}`);
     expect(g.Cloudflare.compatibilityFlags).toEqual({ nodejs_compat: true, global_fetch_strictly_public: true });
     expect(g.Cloudflare.compatibilityFlags.enable_nodejs_process_v2).toBeUndefined();
-  } finally { delete g.RB_COMPAT_FLAGS; g.Cloudflare = before; }
+    expect(g.fetch.__rbCfCache).toBe(true);
+  } finally { delete g.RB_COMPAT_FLAGS; g.Cloudflare = before; g.fetch = fetchBefore; }
 });
 
 test("getRequestInfo is requestInfo; defineScript runs its function with the env", async () => {

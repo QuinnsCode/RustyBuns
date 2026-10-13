@@ -1,4 +1,4 @@
-// HOST-SIDE shim for `cloudflare:workers` and `rwsdk/worker`, bundled into the
+// HOST-SIDE shim for `cloudflare:workers`, `cloudflare:email` and `rwsdk/worker`, bundled into the
 // desktop binary in place of the real modules. Actions and db modules that do
 // `import { env } from "cloudflare:workers"` get the host's env (sqlite D1, KV,
 // in-process DOs); `requestInfo` is the one local identity. Actions are only
@@ -21,6 +21,10 @@ export class WorkflowEntrypoint<E = unknown> { constructor(public ctx: any, publ
 /** cloudflare:workflows' error that fails a step.do without its retries. */
 export class NonRetryableError extends Error {
   constructor(message: string) { super(message); this.name = "NonRetryableError"; }
+}
+/** cloudflare:email's message: a holder for the envelope and the raw MIME text, for env.EMAIL.send(). */
+export class EmailMessage {
+  constructor(readonly from: string, readonly to: string, readonly raw: string | ReadableStream | ArrayBuffer | Uint8Array) {}
 }
 /** Base class for objects passed by reference over RPC; capnweb (in rwsdk) extends it at load. */
 export class RpcTarget {}

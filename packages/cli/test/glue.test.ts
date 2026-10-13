@@ -4,7 +4,7 @@ import { analyze, plan } from "../src/glue/boundary.ts";
 import { parseWrangler, wranglerToConfig } from "../src/wrangler.ts";
 import { generateAlchemy } from "../src/gen/alchemy.ts";
 import { generateWrangler } from "../src/gen/wrangler.ts";
-import { desktopEntry, spaEntry, builtEntry, embeddedDirs, plainDynamicImports } from "../src/build.ts";
+import { desktopEntry, spaEntry, builtEntry, embeddedDirs, plainDynamicImports, wasmModuleSource } from "../src/build.ts";
 
 // Some tests spawn the CLI, which takes seconds under --parallel load; bun ignores bunfig's timeout.
 setDefaultTimeout(30_000);
@@ -583,7 +583,7 @@ test("worker-mode host: R2 is a directory bucket, and Bun's process survives a n
   expect(wranglerToConfig({ name: "g", images: { binding: "IMG" } }).bindings).toEqual({ IMG: { type: "images" } });
 });
 
-test("send_email: wrangler and alchemy bind it; the desktop host leaves it out; wrangler's carries over", () => {
+test("send_email: wrangler and alchemy bind it; the desktop host writes .eml files; wrangler's carries over", () => {
   const c = {
     name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
     bindings: { EMAIL: { type: "send_email", allowedSenderAddresses: ["hi@example.com"] } },
@@ -593,7 +593,7 @@ test("send_email: wrangler and alchemy bind it; the desktop host leaves it out; 
   const a = generateAlchemy(c);
   expect(a).toContain(`export const EMAIL = Cloudflare.Email.SendEmail("EMAIL", { allowedSenderAddresses: ["hi@example.com"] });`);
   expect(a).toContain(`EMAIL: EMAIL`);
-  expect(desktopEntry(c)).toContain(`// EMAIL: Cloudflare Email Sending has no local twin`);
+  expect(desktopEntry(c)).toContain(`  EMAIL: local.sendEmail("EMAIL", ["hi@example.com"]),`);
   expect(wranglerToConfig({ name: "g", send_email: [{ name: "MAIL" }] }).bindings).toEqual({ MAIL: { type: "send_email" } });
 });
 
@@ -890,6 +890,21 @@ test("plainDynamicImports: import(`x`) becomes import(\"x\") so the shim resolve
   expect(plainDynamicImports('import("rwsdk/worker")')).toBe('import("rwsdk/worker")');
 });
 
+test("wasmModuleSource: a Worker's .wasm import bundles to a WebAssembly.Module, as on workerd (#909)", async () => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "rb-wasm-"));
+  // The smallest module: magic and version, no sections.
+  writeFileSync(join(dir, "engine.wasm"), new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]));
+  writeFileSync(join(dir, "worker.js"), `import m from "./engine.wasm"; export const ok = m instanceof WebAssembly.Module && new WebAssembly.Instance(m) instanceof WebAssembly.Instance;`);
+  const r = await Bun.build({ entrypoints: [join(dir, "worker.js")], outdir: join(dir, "out"), target: "bun", plugins: [{ name: "wasm", setup(b) {
+    b.onLoad({ filter: /\.wasm$/ }, async (a) => ({ contents: wasmModuleSource(await Bun.file(a.path).bytes()), loader: "js" }));
+  } }] });
+  expect(r.success).toBe(true);
+  expect((await import(join(dir, "out", "worker.js"))).ok).toBe(true);
+});
+
 test("desktop.workers: each module gets a bundle beside the host, and host code's URL for it points there", async () => {
   const { workerBundles, pointWorkerUrls } = await import("../src/build.ts");
   const { mkdtempSync, mkdirSync, writeFileSync } = require("node:fs");
@@ -1061,4 +1076,28 @@ console.log(JSON.stringify([useClientLookup, useServerLookup]));`);
   expect(r.logs.map(l => l.message)).toEqual([]);
   const out = await Bun.$`bun ${join(dir, "out", "e.js")}`.text();
   expect(out.trim()).toBe("[{},{}]");
+});
+
+test("spa entry imports reflect-metadata first when the app's tree has it (#910)", async () => {
+  const { reflectMetadataImport } = await import("../src/build.ts");
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const pkg = (dir: string, name: string) => {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name, main: "index.js" }));
+    writeFileSync(join(dir, "index.js"), "");
+  };
+  const hoisted = mkdtempSync(join(tmpdir(), "rb-reflect-"));
+  pkg(join(hoisted, "node_modules/reflect-metadata"), "reflect-metadata");
+  expect(reflectMetadataImport(hoisted)).toBe('import "reflect-metadata";\n');
+  // pnpm-style: only tsyringe sees it, so the host imports that copy by path
+  const nested = mkdtempSync(join(tmpdir(), "rb-reflect-"));
+  const store = join(nested, "node_modules/.pnpm/tsyringe@4/node_modules");
+  pkg(join(store, "tsyringe"), "tsyringe");
+  pkg(join(store, "reflect-metadata"), "reflect-metadata");
+  const { symlinkSync } = await import("node:fs");
+  symlinkSync(join(store, "tsyringe"), join(nested, "node_modules/tsyringe"));
+  expect(reflectMetadataImport(nested)).toContain("reflect-metadata/index.js");
+  expect(reflectMetadataImport(mkdtempSync(join(tmpdir(), "rb-reflect-")))).toBe("");
 });
