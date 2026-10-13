@@ -23,7 +23,7 @@ test("every registered shop module exists, and names a real shop kind", async ()
     expect(shops.has(kind)).toBe(true);
     expect(typeof (await import(`../src/city-shops/${module}.js`)).buildInterior).toBe("function");
   }
-  expect(Object.keys(registry)).toEqual(expect.arrayContaining(["video", "comics", "records", "lava", "hall", "hq", "office"]));
+  expect(Object.keys(registry)).toEqual(expect.arrayContaining(["video", "comics", "records", "lava", "coffee", "hall", "hq", "office"]));
 });
 
 test("media shops and the generic store fill their room on every door, using only kit parts, inside the walls", async () => {
@@ -58,6 +58,12 @@ test("the speakeasy fills its room on every door, inside the walls, with four st
     expect(out.talk.length).toBeGreaterThan(3);
     expect(out.talk[1]).toContain("a.ts");
   }
+});
+
+test("the coffee shop seats patrons and stays inside its walls", async () => {
+  const { puts } = await stock("coffee", "coffee", [0, 1], 400);
+  expect(puts.length).toBeGreaterThan(100);
+  expect((await stock("coffee", "coffee", [0, 1], 4000)).puts.length).toBeGreaterThan((await stock("coffee", "coffee", [0, 1], 4)).puts.length);
 });
 
 test("the offices stock more paper for a bigger file", async () => {
