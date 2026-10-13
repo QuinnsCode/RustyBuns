@@ -702,6 +702,46 @@ describe("over the API", () => {
     expect(text(await doc())).toBe(table(["| a |", "| b |", "| c |", "| d |", "| e |"]));
   });
 
+  test("on Cloudflare, generated text is rebuilt in a sandbox container, for the site's admins (#1192)", async () => {
+    const { call, post } = await app();
+    const table = (rows: string[]) => ["<!-- generated: bun run layout -->", ...rows, "<!-- /generated -->"].join("\n");
+    await post("ana", "/api/repos/ana/r/files", { path: "package.json", content: "{}" });
+    await post("ana", "/api/repos/ana/r/files", { path: "docs/REF.md", content: table(["a"]) });
+    for (const path of ["package.json", "docs/REF.md"]) await post("ana", `/api/repos/ana/r/do/commit?path=${path}`, { message: "ref" });
+    await call("ana", "/api/repos/ana/r/deps", { method: "PUT", body: JSON.stringify({ test_merges: true }) });
+    const doc = async () => (await (await call("ana", "/api/repos/ana/r/do/file?path=docs/REF.md")).json() as Doc);
+    const both = async (name: string, ours: string, theirs: string) => {
+      await post("ana", "/api/repos/ana/r/branches", { name });
+      const last = (await doc()).lines.at(-2)!;
+      await post("ana", `/api/repos/ana/r/do/ops?path=docs/REF.md&branch=${name}`, { ops: [{ kind: "insert", after: last.id, text: ours }] });
+      await post("ana", "/api/repos/ana/r/do/ops?path=docs/REF.md", { ops: [{ kind: "insert", after: last.id, text: theirs }] });
+      return (await (await post("ana", `/api/repos/ana/r/branches/${name}/merge`, {})).json() as any).regenerated;
+    };
+    const seen: { url: string; body: any }[] = [];
+    call.env.AGENT_SANDBOX = {
+      idFromName: (n: string) => n,
+      get: () => ({ async fetch(req: Request) {
+        const body = await req.json() as any;
+        seen.push({ url: req.url, body });
+        return Response.json({ ok: true, out: "", files: { "docs/REF.md": table(["a", "b", "c", "d", "e"]) + "\n" } });
+      } }),
+    };
+
+    // Not an admin: main's copy, and what to run.
+    call.env.ADMINS = "someone-else";
+    expect(await both("x", "c", "b")).toEqual([{ paths: ["docs/REF.md"], command: "bun run layout", cwd: "docs", note: "not rebuilt: generated text on Cloudflare is rebuilt for this site's admins (ADMINS): run `bun run layout` in docs on main" }]);
+    expect(seen).toHaveLength(0);
+
+    // An admin: the container's /regenerate runs it, and what it read back goes onto main.
+    call.env.ADMINS = "ana";
+    expect(await both("y", "e", "d")).toEqual([{ paths: ["docs/REF.md"], command: "bun run layout", cwd: "docs" }]);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.url).toBe("http://sandbox/regenerate");
+    expect(seen[0]!.body).toMatchObject({ pm: "bun", cwd: "docs", command: "bun run layout", read: ["docs/REF.md"], files: { "docs/REF.md": expect.any(String) } });
+    expect(seen[0]!.body.remote).toContain("://x:");
+    expect(text(await doc())).toBe(table(["a", "b", "c", "d", "e"]));
+  });
+
   test("a merge both sides changed, settled with no card, runs the tests in a throwaway clone before it lands (#1096)", async () => {
     const { call, post } = await app();
     await post("ana", "/api/repos/ana/r/files", { path: "package.json", content: '{\n  "scripts": { "test": "bun test" }\n}' });

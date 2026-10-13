@@ -337,6 +337,8 @@ An agent boots examples and apps it didn't write, so the CLI starts every deskto
 
 With `--sandbox` (or `RB_SANDBOX=1`) the Worker build also runs with an empty `HOME`, `.rustybuns/home`, so a build step can't read `~/.wrangler`, `~/.alchemy`, `~/.npmrc`, `~/.config/gh` or anything else there. The package caches and toolchains still point at the real ones (npm, pnpm, Bun, Yarn, Bundler, `~/.cache`, rbenv, nvm, Volta, asdf, mise, cargo), so a build doesn't start cold, and git gets no credential helper, so a 401 fails instead of asking a keychain. It's opt-in because a build that needs a login under `HOME`, like a private registry in `~/.npmrc` or Docker's context, loses it.
 
+`plan --offline` goes further, for a repo that isn't yours: no Cloudflare login, no Alchemy state and no Alchemy run, so not one API call to any account. It builds the Worker with the empty `HOME`, type checks the generated stack, and lists every resource in it as a create, which is what a plan against an empty account shows. A real `plan` may find some of them already there, so an offline plan doesn't count as the plan `deploy` asks for.
+
 ### Multiplayer on a LAN
 
 A `spa` desktop can host its world for other copies of the app. Each guest runs its own binary, whose page is served from its own `127.0.0.1`, and opens one WebSocket to the host machine. Nothing else crosses the network: the SPA, assets, `/__rb/info` and `/__rb/action` stay behind the host's token, and a guest never gets that token.

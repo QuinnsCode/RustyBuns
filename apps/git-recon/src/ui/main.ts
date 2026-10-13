@@ -243,9 +243,25 @@ $("back").onclick = toMenu;
 
 /* ---------------- battles ---------------- */
 
-/** What the host this page runs on says about itself: the desktop app is "git-recon", a plain web page has none. */
-let info: { app?: string; version?: string } | null = null;
-void fetch("/__rb/info").then((r) => (r.ok ? r.json() : null)).then((i) => (info = i)).catch(() => {});
+/** What the host this page runs on says about itself: the desktop app is "git-recon", a plain web page has none, online (src/edge/worker.ts) says so. */
+let info: { app?: string; version?: string; online?: boolean } | null = null;
+void fetch("/__rb/info").then((r) => (r.ok ? r.json() : null)).then((i) => (info = i, i?.online && goOnline())).catch(() => {});
+
+// No 0/O or 1/I, so a code read out loud comes out right.
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const roomCode = () => Array.from(crypto.getRandomValues(new Uint32Array(6)), (n) => CODE_CHARS[n % CODE_CHARS.length]).join("");
+
+/** Online, a battle is a room code: Host makes one, Join takes one (or ?room= from a friend's link). */
+function goOnline() {
+  $("battle-label").textContent = "Battle: many players in one repo, online";
+  $("battle-host").title = "Open a battle on this level and repo, with a code to send friends";
+  $("battle-join").title = "Join a friend's battle by its code";
+  const code = $<HTMLInputElement>("battle-addr");
+  code.placeholder = "Room code", code.setAttribute("aria-label", "The battle's room code");
+  code.value = new URLSearchParams(location.search).get("room")?.toUpperCase() ?? "";
+  $("battle-pass").hidden = true;
+}
+const roomLink = (room: string) => `${location.origin}${location.pathname}?room=${room}`;
 
 const MODES: { id: Mode; name: string; tip: string }[] = [
   { id: "coop", name: "Side by side", tip: "Everyone against the guards, on the level's mission" },
@@ -309,6 +325,13 @@ $("battle-host").onclick = async () => {
   }
   const { def, zone } = picked;
   let hosting: string | null = null;
+  if (info?.online) {
+    const room = roomCode();
+    history.replaceState(null, "", `?room=${room}`);
+    const b = new Battle("host", "/ws", { ...who(), room });
+    b.setup({ level: def.id, mode, repo: chosen ?? def.repo });
+    return connect(b, `${room} · ${roomLink(room)}`);
+  }
   try {
     // The desktop app opens its world to the LAN; a dev page (scripts/battle.ts behind Vite) just uses it.
     if (info?.app === "git-recon") {
@@ -330,6 +353,12 @@ $("battle").onsubmit = (e) => {
   e.preventDefault();
   battleStatus("");
   const addr = $<HTMLInputElement>("battle-addr").value.trim().replace(/^\w+:\/\//, "").replace(/\/.*$/, "");
+  if (info?.online) {
+    const room = addr.toUpperCase();
+    if (!/^[A-Z0-9]{4,8}$/.test(room)) return battleStatus("Type the room code your friend sent, like K7QX2M.", true);
+    history.replaceState(null, "", `?room=${room}`);
+    return connect(new Battle("guest", "/ws", { ...who(), room }), null);
+  }
   store.set("addr", addr);
   // No address: this machine's own battle (a second tab, or back into the one you host).
   if (!addr) return connect(new Battle("host", "/ws", who()), null);
@@ -359,7 +388,7 @@ function connect(b: Battle, hosting: string | null) {
 
 function leaveBattle(net: Net) {
   net.battle.close();
-  if (net.hosting) void fetch("/__rb/host", { method: "POST", body: JSON.stringify({ join: null, listen: { hostname: "127.0.0.1" } }) }).catch(() => {});
+  if (net.hosting && !info?.online) void fetch("/__rb/host", { method: "POST", body: JSON.stringify({ join: null, listen: { hostname: "127.0.0.1" } }) }).catch(() => {});
 }
 
 /** Each player's head and build on their soldier. */
@@ -704,8 +733,7 @@ function frame(now: number) {
   let events: GameEvent[];
   if (net) {
     // A battle: your soldier moves now, the world says what happened; a roster change re-dresses everyone.
-    net.mirror.frame(dt, input);
-    net.battle.input(input, now, net.mirror.acked);
+    net.battle.input(net.mirror.frame(dt, input), now, net.mirror.acked);
     events = net.mirror.take();
     if (net.roster !== net.mirror.roster) showLooks(net);
     if (!$("board").hidden) board(game, net);

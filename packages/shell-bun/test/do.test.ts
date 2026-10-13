@@ -217,3 +217,22 @@ test("ctx.storage.sql: Cloudflare's cursor shape, FTS5, kept across eviction and
   expect(s.sql!.databaseSize).toBeGreaterThan(0);
   require("node:fs").rmSync(file, { force: true });
 });
+
+test("DO RPC: a stub calls the instance's methods after its constructor gate, one instance per id", async () => {
+  class Counter {
+    private n = 0;
+    constructor(ctx: LocalDurableObjectState) { ctx.blockConcurrencyWhile(async () => { this.n = (await ctx.storage.get<number>("n")) ?? 10; }); }
+    async add(by: number) { this.n += by; return this.n; }
+    initialize() {}
+    async fetch() { return new Response(String(this.n)); }
+  }
+  const ns = durableObject(Counter as any, {});
+  const stub = ns.get(ns.idFromName("a")) as any;
+  stub.initialize();                       // not awaited, as rwsdk/db does
+  expect(await stub.add(1)).toBe(11);      // after the gate read storage
+  expect(await stub.add(2)).toBe(13);
+  expect(await (await stub.fetch("http://do/")).text()).toBe("13");
+  expect(await (ns.getByName("b") as any).add(1)).toBe(11);
+  await expect(stub.missing()).rejects.toThrow("no method missing()");
+  expect(stub.then).toBeUndefined();       // awaiting a stub is not a call
+});

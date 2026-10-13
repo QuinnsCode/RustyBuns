@@ -6,7 +6,8 @@
 // @effect/language-service gets tsc-rs when it is installed.
 
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join, relative, resolve } from "node:path";
 
 export type CheckerName = "bun" | "tsc-rs" | "tsc";
 export const CHECKERS: CheckerName[] = ["bun", "tsc-rs", "tsc"];
@@ -66,11 +67,22 @@ export function checkCommand(c: Checker, tsconfig: string | null): string[] {
   return c.name === "tsc" ? [c.bin, "-p", tsconfig, "--noEmit", "--pretty", "false"] : [c.bin, "-p", tsconfig, "--noEmit"];
 }
 
+// `bun check` runs the app's own package.json "check" script when it has one (Bun's scripts win
+// over its built-ins), so a lint-and-codegen "check" ran in place of the type check and passed.
+// With a tsconfig, Bun runs from a directory with no package.json, and the paths it prints
+// are put back relative to here.
 export async function runCheck(c: Checker, tsconfig: string | null): Promise<CheckResult> {
   const t = performance.now();
-  const p = Bun.spawn(checkCommand(c, tsconfig), { stdout: "pipe", stderr: "pipe" });
+  const here = process.cwd(), away = c.name === "bun" && tsconfig ? tmpdir() : here;
+  const p = Bun.spawn(checkCommand(c, tsconfig && resolve(tsconfig)), { cwd: away, stdout: "pipe", stderr: "pipe" });
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
-  return { checker: c.name, ok: code === 0, ms: performance.now() - t, output: (out + err).trim() };
+  const output = away === here ? out + err : fromDir(out + err, away, here);
+  return { checker: c.name, ok: code === 0, ms: performance.now() - t, output: output.trim() };
+}
+
+/** Diagnostics printed from `from` (file(line,col): ...) with their paths relative to `to`. */
+export function fromDir(output: string, from: string, to: string): string {
+  return output.replace(/^([^\s(][^(\n]*)(?=\(\d+,\d+\))/gm, (f) => relative(to, resolve(from, f)));
 }
 
 /**
