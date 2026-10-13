@@ -583,7 +583,7 @@ test("worker-mode host: R2 is a directory bucket, and Bun's process survives a n
   expect(wranglerToConfig({ name: "g", images: { binding: "IMG" } }).bindings).toEqual({ IMG: { type: "images" } });
 });
 
-test("send_email: wrangler and alchemy bind it; the desktop host leaves it out; wrangler's carries over", () => {
+test("send_email: wrangler and alchemy bind it; the desktop host writes .eml files; wrangler's carries over", () => {
   const c = {
     name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
     bindings: { EMAIL: { type: "send_email", allowedSenderAddresses: ["hi@example.com"] } },
@@ -593,7 +593,7 @@ test("send_email: wrangler and alchemy bind it; the desktop host leaves it out; 
   const a = generateAlchemy(c);
   expect(a).toContain(`export const EMAIL = Cloudflare.Email.SendEmail("EMAIL", { allowedSenderAddresses: ["hi@example.com"] });`);
   expect(a).toContain(`EMAIL: EMAIL`);
-  expect(desktopEntry(c)).toContain(`// EMAIL: Cloudflare Email Sending has no local twin`);
+  expect(desktopEntry(c)).toContain(`  EMAIL: local.sendEmail("EMAIL", ["hi@example.com"]),`);
   expect(wranglerToConfig({ name: "g", send_email: [{ name: "MAIL" }] }).bindings).toEqual({ MAIL: { type: "send_email" } });
 });
 

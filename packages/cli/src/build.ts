@@ -529,7 +529,8 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
           deadLetterQueue: dlq?.type === "queue" ? dlq.queueName : undefined }, name]);
         break;
       }
-      case "send_email": bind.push(`  // ${name}: Cloudflare Email Sending has no local twin; the app runs without it`); break;
+      // No mail off the edge: each send is an .eml file in the data dir.
+      case "send_email": bind.push(`  ${name}: local.sendEmail(${[JSON.stringify(name), ...(b.allowedSenderAddresses ? [JSON.stringify(b.allowedSenderAddresses)] : [])].join(", ")}),`); break;
       case "ratelimit": bind.push(`  // ${name}: Workers Rate Limiting has no local twin; the app runs without it`); break;
       // No pool off the edge: the app gets the origin's URL in Hyperdrive's shape.
       case "hyperdrive": bind.push(`  ${name}: ${hyperdriveBinding(name, b, (m) => `assetDir(${JSON.stringify(m)})!`)},`); break;
@@ -779,7 +780,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
     name: "rustybuns-shims",
     setup(b: any) {
       // Host side: the worker-runtime modules become the local runtime.
-      b.onResolve({ filter: /^(cloudflare:workers|cloudflare:workflows|rwsdk\/worker)$/ }, () => ({ path: shimPath }));
+      b.onResolve({ filter: /^(cloudflare:workers|cloudflare:workflows|cloudflare:email|rwsdk\/worker)$/ }, () => ({ path: shimPath }));
       // A dependency's optional import that isn't installed (pg's pg-cloudflare and pg-native, only
       // loaded on those platforms) stays a runtime import instead of failing the bundle. The app's
       // own imports aren't covered: a missing one of those should still fail here.
