@@ -1,6 +1,6 @@
 // Bundle the Worker (the fetch handler and the file Durable Object) and copy
 // the pages: the site, the game, the feature list the home page's strip reads, the API reference and the MCP page. No framework.
-import { mkdir, copyFile, readFile, writeFile } from "node:fs/promises";
+import { mkdir, copyFile, readdir, readFile, writeFile } from "node:fs/promises";
 import { headersFile, inlineScriptHashes } from "./src/security.ts";
 import { features } from "./features.ts";
 import { buildGitpath } from "./src/gitpath/build.ts";
@@ -10,6 +10,9 @@ await copyFile("src/client.html", "dist/client/index.html");
 await copyFile("src/play.html", "dist/client/play.html");
 // The game's code city mode, which play.html loads on #c/<name>.
 await copyFile("src/city.js", "dist/client/city.js");
+// The shop interiors it loads when you walk up to a ground floor (city.js: SHOP_MODULES).
+await mkdir("dist/client/city-shops", { recursive: true });
+for (const f of await readdir("src/city-shops")) await copyFile(`src/city-shops/${f}`, `dist/client/city-shops/${f}`);
 // The QR code for the desktop's phone pairing link, drawn here so a desktop offline still makes one.
 // The avatar parts and drawing (src/avatar.ts), which the profile editor and the code city both import.
 const av = await Bun.build({ entrypoints: ["src/avatar.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "avatar.js" });

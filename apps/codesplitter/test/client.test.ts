@@ -434,3 +434,11 @@ describe("the daily flow is one click away", () => {
     expect(html).toContain('needSel("share"');
   });
 });
+
+// Getting started's table of contents plays the tour's steps by title; a renamed step would leave a dead entry.
+test("every Getting started entry names a real tour step", () => {
+  const guide = html.slice(html.indexOf("const GUIDE = ["), html.indexOf("let guideRepos"));
+  const steps = [...guide.matchAll(/step: "([^"]+)"/g)].map((m) => m[1]!);
+  expect(steps.length).toBeGreaterThan(0);
+  for (const t of steps) expect(html).toContain(`t: "${t}"`);
+});
