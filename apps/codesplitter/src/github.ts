@@ -9,7 +9,7 @@ import { accountsOn, isAdmin } from "./identity.ts";
 import { fileStub } from "./archive.ts";
 import { json, NAME, type Env, readBody } from "./env.ts";
 import { importTarball, tooBigToImport } from "./tarball.ts";
-import { mirrorsOn, seeGit } from "./mirror.ts";
+import { git, mirrorsOn, seeGit } from "./mirror.ts";
 import { wipeSearch } from "./search.ts";
 
 /** A visitor's dig lasts a day; past the cap, the oldest goes first. Admins' digs keep. */
@@ -247,6 +247,18 @@ async function gitAdvert(repo: string) {
 }
 
 /**
+ * On the desktop, a repo's default branch and tip as this machine's own git reads it (its credential
+ * helper or keychain), for one the token can't see: a private repo you were invited to as another
+ * login, or no token at all. The mirror box's clone gets in that way, so a dig should too.
+ */
+export async function machineRefs(env: Env, repo: string): Promise<{ branch: string; sha: string } | null> {
+  if (!privateDigs(env) || !mirrorsOn(env)) return null;
+  const r = await git(["ls-remote", "--symref", `https://github.com/${repo}.git`, "HEAD"], undefined, {}, 30_000);
+  const m = /^ref: refs\/heads\/(\S+)\tHEAD\n([0-9a-f]{40})\tHEAD/m.exec(r.out);
+  return r.code || !m ? null : { branch: m[1]!, sha: m[2]! };
+}
+
+/**
  * A public repo's default branch and its tip, from git's own ref list on github.com rather than
  * the API: without a token, the API's 60-an-hour limit is per IP, and Cloudflare's are shared,
  * so it's usually spent. Null when GitHub won't list it (missing, or private).
@@ -424,21 +436,35 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     if (await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(user, name).first()) return json({ error: "you already have a repo with that name" }, 409);
 
     let info: { full_name: string; default_branch: string; private: boolean }, sha: string | null;
+    // Set when only this machine's git can read it: the clone then goes without the token too.
+    let machine = false;
+    const hidden = privateDigs(env)
+      ? `GitHub has no ${full} that this machine can read. If it's private, accept its invite on GitHub, then sign in to git as that account (gh auth login)`
+      : `GitHub has no public ${full}. A private one, even one you're invited to, can't be dug up here (Cloudflare Artifacts imports public repos only): dig it up in the desktop app`;
     if (t) {
       const meta = await gh(`/repos/${full}`, t.token);
-      if (meta.status === 404) return json({ error: `GitHub has no ${full} you can see` }, 404);
-      if (!meta.ok) return json({ error: `GitHub said ${meta.status}` }, 502);
-      info = (await meta.json()) as typeof info;
-      // A private repo needs a clone that carries the token, which only local git does.
-      if (info.private && !privateDigs(env)) return json({ error: `${full} is private on GitHub. Cloudflare Artifacts can only import public repos, so dig it up in the desktop app instead` }, 422);
-      const head = await gh(`/repos/${info.full_name}/commits/${info.default_branch}`, t.token);
-      sha = head.ok ? ((await head.json()) as { sha: string }).sha : null;
+      if (meta.status === 404) {
+        // The token can't see it, but this machine's git might: logged in to git as the account that was invited.
+        const refs = await machineRefs(env, full);
+        if (!refs) return json({ error: hidden }, 404);
+        info = { full_name: full, default_branch: refs.branch, private: true };
+        sha = refs.sha;
+        machine = true;
+      } else {
+        if (!meta.ok) return json({ error: `GitHub said ${meta.status}` }, 502);
+        info = (await meta.json()) as typeof info;
+        // A private repo needs a clone that carries the token, which only local git does.
+        if (info.private && !privateDigs(env)) return json({ error: `${full} is private on GitHub. Cloudflare Artifacts can only import public repos, so dig it up in the desktop app instead` }, 422);
+        const head = await gh(`/repos/${info.full_name}/commits/${info.default_branch}`, t.token);
+        sha = head.ok ? ((await head.json()) as { sha: string }).sha : null;
+      }
     } else {
-      // No token: ask git, not the API (see gitRefs). Only public repos answer it.
-      const refs = await gitRefs(full);
-      if (!refs) return json({ error: `GitHub has no public ${full}${privateDigs(env) ? ". Sign in with GitHub, or run gh auth login, to dig up a private one" : ""}` }, 404);
-      info = { full_name: full, default_branch: refs.branch, private: false };
+      // No token: ask git, not the API (see gitRefs). Only public repos answer it, unless this machine's git can read it.
+      const pub = await gitRefs(full), refs = pub ?? await machineRefs(env, full);
+      if (!refs) return json({ error: hidden }, 404);
+      info = { full_name: full, default_branch: refs.branch, private: !pub };
       sha = refs.sha;
+      machine = !pub;
     }
 
     if (at && at.branch !== info.default_branch) {
@@ -457,7 +483,7 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
       // No row owns this name (checked above), so an Artifact under it is an orphan: an import cut
       // off halfway stays "being imported" on Cloudflare and would block the name for good (#348).
       await env.ARTIFACTS.delete?.(`${user}--${name}`).catch(() => false);
-      art = await importRepo(env, { repo: info.full_name, branch: info.default_branch, token: t?.token, private: info.private, folder: folder || undefined },
+      art = await importRepo(env, { repo: info.full_name, branch: info.default_branch, token: machine ? undefined : t?.token, private: info.private && !machine, folder: folder || undefined },
         { name: `${user}--${name}`, opts: { description: `${user}'s fork of ${info.full_name}${folder ? `'s ${folder}` : ""}` } });
     } catch (e) {
       return json({ error: `couldn't dig up ${info.full_name}: ${String((e as Error).message ?? e)}` }, 502);
