@@ -7,6 +7,7 @@ import { seal, sealState, unseal, unsealState } from "../src/deploy-keys.ts";
 import { DeployRunner, hider, readExec } from "../src/deploy-runner.ts";
 import { review, textDiff } from "../src/deploy-review.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
+import { CiRunner } from "../src/ci-runner.ts";
 import { gated, gateExports } from "./fake-gate.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the deploy image
 import { exec, state } from "../deploy-sandbox/server.mjs";
@@ -679,6 +680,78 @@ describe("the dependency doctor's preview on the site (#900)", () => {
     expect(r.note).toContain("a preview deploy couldn't go (The site's container minutes");
     expect(r.branch).toBeUndefined();
     expect(seen.env).toEqual([]);
+  });
+
+  /** A CiRunner whose container answers each command with `code`, recording what it ran and what went over the clone. */
+  function ciRunner(env: any, code = 0) {
+    const seen = { ran: [] as string[], laid: [] as Record<string, string>[], env: [] as (Record<string, string> | undefined)[], internet: [] as (boolean | undefined)[], alarms: [] as Promise<void>[] };
+    const data = new Map<string, unknown>();
+    const obj: CiRunner = new CiRunner({
+      container: gated<ContainerApi>({
+        running: false,
+        start(o) { seen.env.push(o?.env); seen.internet.push(o?.enableInternet); },
+        async destroy() {},
+        getTcpPort: () => ({
+          async fetch(u, init) {
+            const b = JSON.parse(String(init!.body));
+            if (String(u).endsWith("/files")) { seen.laid.push(b.files); return Response.json({ files: Object.keys(b.files).length }); }
+            seen.ran.push(b.cmd.join(" "));
+            return Response.json({ code: b.cmd[0] === "sh" ? code : 0, out: b.cmd[0] === "sh" ? "1 fail\n" : "" });
+          },
+        }),
+      }, []).container,
+      exports: gateExports,
+      storage: {
+        get: async (k: string) => structuredClone(data.get(k)) as any,
+        put: async (k: string, v: unknown) => { data.set(k, structuredClone(v)); },
+        setAlarm: async () => { seen.alarms.push(Bun.sleep(0).then(() => obj.alarm())); },
+      },
+    }, env);
+    env.CI_RUNNER = { idFromName: (n: string) => n, get: () => obj };
+    return { seen, settled: async () => { for (let n = 0; n < seen.alarms.length; n++) await seen.alarms[n]; } };
+  }
+  const settlePreview = async (call: Call) => {
+    let h: any;
+    for (const end = performance.now() + 15_000; performance.now() < end && (h = await (await call("ryan-quinn", P)).json()).history[0]?.status === "running";) await Bun.sleep(10);
+    return h;
+  };
+
+  test("with no tester, the repo's checks run on the same files alongside, in a container with no secrets; the branch waits for both (#1294)", async () => {
+    const { call, send, env } = await doctor();
+    const ci = ciRunner(env);
+    const first = await (await send("ryan-quinn", "/api/repos/ryan-quinn/lab/deps/run", {})).json() as any;
+    expect(first.branch).toBeUndefined();
+    expect(first.waiting).toMatchObject({ stage: expect.stringMatching(/^preview-/), checks: expect.any(String), names: ["kleur"] });
+    expect(first.note).toContain("the repo's checks are running in its check container: the branch waits for them");
+    await Promise.all([ci.settled(), settlePreview(call)]);
+    expect(ci.seen.laid).toHaveLength(1);
+    expect(ci.seen.laid[0]!["package.json"]).toContain(`"kleur": "^4.1.5"`);
+    expect(ci.seen.ran[0]).toStartWith("git clone --quiet http");
+    expect(ci.seen.ran.at(-1)).toBe("sh -c bun test");
+    expect(ci.seen.env).toEqual([{ CI: "1" }]);
+    expect(ci.seen.internet).toEqual([false]);
+
+    const second = await (await send("ryan-quinn", "/api/repos/ryan-quinn/lab/deps/run", {})).json() as any;
+    expect(second.waiting).toBeUndefined();
+    expect(second.checks).toEqual([{ id: first.waiting.checks, ok: true, names: ["kleur"] }]);
+    expect(second.previews).toMatchObject([{ ok: true, names: ["kleur"] }]);
+    expect(second.branch).toMatch(/^deps-/);
+    // Asked again with the same files, the kept result: no second container.
+    expect(ci.seen.env).toHaveLength(1);
+  });
+
+  test("what fails the repo's checks doesn't deploy, and goes on no branch (#1294)", async () => {
+    const { call, send, env, seen } = await doctor();
+    const ci = ciRunner(env, 1);
+    await (await send("ryan-quinn", "/api/repos/ryan-quinn/lab/deps/run", {})).json();
+    await Promise.all([ci.settled(), settlePreview(call)]);
+    const deployed = seen.env.length;
+    const second = await (await send("ryan-quinn", "/api/repos/ryan-quinn/lab/deps/run", {})).json() as any;
+    expect(second.checks).toMatchObject([{ ok: false, failed: "test", names: ["kleur"] }]);
+    expect(second.updates).toMatchObject([{ name: "kleur", status: "broke", out: expect.stringContaining("the repo's checks: test failed") }]);
+    expect(second.branch).toBeUndefined();
+    expect(second.waiting).toBeUndefined();
+    expect(seen.env).toHaveLength(deployed);
   });
 });
 

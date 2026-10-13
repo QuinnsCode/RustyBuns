@@ -20,10 +20,18 @@
 //     which admins' runs count against too: one over either is cancelled, saying so. The
 //     hourly cron wakes any repo with runs still queued, in case a kick went missing.
 //
+// The dependency doctor asks one here too (#1294): on the site, with no AGENT_SANDBOX tester,
+// its updated files go over main's tip and the repo's own checks (planChecks, every one, as on
+// main) run on them, in the same kind of container with no secrets, in an alarm of its own,
+// alongside the preview it hands the repo's deploy container (deploy-runner.ts, #900). Like
+// that preview, the doctor doesn't wait: it asks again on its next run with the same files and
+// gets the result, kept here by commit, plan and files. It counts as a check: the owner's
+// `checks` limit and the site's `containers` minutes.
+//
 // It costs container time: see "Checks in a container" in REFERENCE.md for the price.
 
 import { checkEnv, runDirs, sandboxUser, spawnAs } from "./check-env.ts";
-import { claimRun, get, readAt, updateRun, type CheckRun } from "./checks.ts";
+import { checkSettings, claimRun, cloneUrl, get, headOf, planChecks, readAt, updateRun, type CheckRun } from "./checks.ts";
 import { RUN_BUDGET_MS, readExec } from "./deploy-runner.ts";
 import { gate, hostList, hostOf, REGISTRIES, type GateExports } from "./egress.ts";
 import { json, type Env } from "./env.ts";
@@ -208,11 +216,91 @@ export interface CiRunnerState {
   storage: { get<T>(k: string): Promise<T | undefined>; put(k: string, v: unknown): Promise<void>; setAlarm(at: number): Promise<void> };
 }
 
-/** One per repo: POST /kick {owner, repo} says there's work, and each alarm runs one queued check in a fresh container. */
+/** How the repo's checks went on the doctor's files: `out`, the end of the one that failed; `note`, why they stopped short. */
+export interface DoctorChecks { id: string; ok: boolean; names: string[]; failed?: string; out?: string; note?: string }
+/** What POST /doctor answers: the result, the run it's waiting on, or why it can't go now. */
+export type DoctorAnswer = { result: DoctorChecks } | { running: { id: string } } | { busy: string };
+interface DoctorJob { id: string; owner: string; repo: string; key: string; tip: string; files: Record<string, string>; plan: { name: string; command?: string }[]; done?: boolean }
+/** Results kept, newest last. */
+const KEEP_RESULTS = 20;
+
+async function keyOf(v: unknown) {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(v)));
+  return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * One per repo: POST /kick {owner, repo} says there's work, and each alarm runs one queued check in a fresh container.
+ * POST /doctor {owner, repo, files} runs the repo's checks on the dependency doctor's files over main, in an alarm of its own.
+ */
 export class CiRunner {
   constructor(private ctx: CiRunnerState, private env: Env, private budgetMs = RUN_BUDGET_MS) {}
 
+  /** The repo's checks on `files` over main: their result if there is one, else the run it starts or waits on. */
+  private async doctor(owner: string, repo: string, files: Record<string, string>): Promise<DoctorAnswer> {
+    const s = await checkSettings(this.env, owner, repo);
+    const plan = await planChecks(this.env, owner, repo, "main", s.required, null, s.pinned);
+    if (!plan.length) return { busy: "checks are pinned to the settings, and none there has a command" };
+    const tip = await headOf(this.env, owner, repo, "main");
+    const key = await keyOf([tip, plan, Object.entries(files).sort(([a], [b]) => a.localeCompare(b))]);
+    const done = (await this.ctx.storage.get<Record<string, DoctorChecks>>("doctor-results"))?.[key];
+    if (done) return { result: done };
+    const job = await this.ctx.storage.get<DoctorJob>("doctor");
+    if (job && !job.done) return job.key === key ? { running: { id: job.id } } : { busy: "the dependency doctor's other checks are running in this repo's check container" };
+    // Its first minute comes off the site's budget up front, as a queued check's does.
+    const over = (this.env.ADMINS && isAdmin(this.env, owner) ? null : await charge(this.env, "checks", `@${owner}`))
+      ?? await charge(this.env, "containers", SITE);
+    if (over) return { busy: over };
+    const id = crypto.randomUUID().slice(0, 8);
+    await this.ctx.storage.put("doctor", { id, owner, repo, key, tip, files, plan } satisfies DoctorJob);
+    await this.ctx.storage.put("repo", { owner, repo });
+    await this.ctx.storage.setAlarm(Date.now());
+    return { running: { id } };
+  }
+
+  /** The doctor's checks, start to finish, in a fresh container: a result is kept once the files are over the clone. */
+  private async runDoctor(job: DoctorJob, c: ContainerApi | undefined) {
+    const began = Date.now(), deadline = began + this.budgetMs;
+    const result: DoctorChecks = { id: job.id, ok: false, names: job.plan.map((p) => p.name) };
+    let laid = false;
+    try {
+      if (!c) throw new Error("this Durable Object has no container");
+      const url = await cloneUrl(this.env, job.owner, job.repo);
+      if (!url) throw new Error("the repo has no git to clone yet");
+      await gate(c, this.ctx.exports, hostList([hostOf(url)], REGISTRIES));
+      c.start({ env: { CI: "1" }, enableInternet: false });
+      const m = containerMachine(c, `doctor-${job.id}`, deadline, this.budgetMs);
+      let said = "";
+      if (await m.exec(["git", "clone", "--quiet", url, "."], (s) => { said += s; })) throw new Error(`git clone failed: ${said.split(url).join("<the repo>")}`);
+      if (/^[0-9a-f]{40}$/.test(job.tip) && await m.exec(["git", "checkout", "--quiet", job.tip], () => {})) throw new Error(`${job.tip} isn't a commit in the repo's git`);
+      await m.write(job.files);
+      laid = true;
+      for (const p of job.plan) {
+        const command = p.command ?? "bun test";
+        let out = `$ ${command}\n`;
+        const code = await m.exec(["sh", "-c", command], (s) => { out += s; });
+        if (code) { Object.assign(result, { failed: p.name, out: `${out}\nexit ${code}\n`.slice(-1500) }); break; }
+      }
+      result.ok = !result.failed;
+    } catch (e) {
+      result.note = (e as Error).message;
+    }
+    job.done = true;
+    await this.ctx.storage.put("doctor", job);
+    // One that didn't get as far as its checks (no clone, main moved) isn't a result: the next ask tries again.
+    if (laid) {
+      const kept = Object.entries((await this.ctx.storage.get<Record<string, DoctorChecks>>("doctor-results")) ?? {}).filter(([k]) => k !== job.key);
+      await this.ctx.storage.put("doctor-results", Object.fromEntries([...kept, [job.key, result]].slice(-KEEP_RESULTS)));
+    }
+    const rest = Math.ceil((Date.now() - began) / 60_000) - 1;
+    if (rest > 0) await charge(this.env, "containers", SITE, rest).catch(() => null);
+  }
+
   async fetch(req: Request): Promise<Response> {
+    if (new URL(req.url).pathname === "/doctor") {
+      const { owner, repo, files } = (await req.json()) as { owner: string; repo: string; files: Record<string, string> };
+      return json(await this.doctor(owner, repo, files));
+    }
     const { owner, repo } = (await req.json()) as { owner: string; repo: string };
     await this.ctx.storage.put("repo", { owner, repo });
     await this.ctx.storage.setAlarm(Date.now());
@@ -220,6 +308,16 @@ export class CiRunner {
   }
 
   async alarm() {
+    const doctor = await this.ctx.storage.get<DoctorJob>("doctor");
+    if (doctor && !doctor.done) {
+      try { await this.runDoctor(doctor, this.ctx.container); }
+      finally {
+        await this.ctx.container?.destroy().catch(() => {});
+        // The queued checks, if any, in an alarm of their own.
+        await this.ctx.storage.setAlarm(Date.now());
+      }
+      return;
+    }
     const at = await this.ctx.storage.get<{ owner: string; repo: string }>("repo");
     if (!at) return;
     const { owner, repo } = at, c = this.ctx.container;
