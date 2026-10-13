@@ -316,6 +316,13 @@ No new engine bugs: nothing dropped a side. Of the two semantic misses, `rules.t
 already in (#1109, and #1156, after which it replays exactly), and `config-schema.ts` is a real rewrite that only a test of the Neon-plus-`migrationsDir` case would send back.
 Since #1168 `0fb458f` replays with `config-schema.ts` as 1 card and `build.ts` down to its 2 real rewrites.
 
+A later replay found two silent bad merges on one line (#1255). Base had a plain expression, and each side
+wrapped it in its own `&&` or `||`. In #1189's `scene.ts` (`137baa3`), splicing the two moved a `!` onto
+`(s.gone && …)`. In #1199's `wrangler.ts` (`70702de`), the branch's `&& !(limits …)` ended up hanging off main's
+`|| (containers …)`. Now two inserts at one spot in code are a card when they join with different ones of `&&`,
+`||` and `??`, or when one joins with any of them and the other opens or closes a paren it doesn't close or open.
+Both lines replay as 1 card each, and the five default replays don't change.
+
 ## 11. A merge plan: who waits for whom
 
 On 2026-10-12 the PR agent dry-ran pairs of about 40 open PRs, laid them out as waves, and told a worker to

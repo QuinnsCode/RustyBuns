@@ -832,7 +832,8 @@ function runs(lines: Line[]) {
  *
  * With `both`, words both sides only added at the very same spot are kept: an
  * item each added to one list, `a`'s first (main's: it landed first), or in
- * order if the list was sorted. Refused if both add the same key.
+ * order if the list was sorted. Refused if both add the same key, or in code
+ * if the two would regroup an expression (see regroups).
  */
 export function mergeWords(base: string, a: string, b: string, both = false, loose = false): string | null {
   const o = words(base);
@@ -861,7 +862,7 @@ export function mergeWords(base: string, a: string, b: string, both = false, loo
     if (last && s.from <= last.to) {
       if (s.from === last.from && s.to === last.to && s.add.join("") === last.add.join("")) continue;
       // Two inserts at one spot (the sort is stable, so a's came first): b's goes after a's, or before it in a sorted list.
-      if (both && s.from === s.to && last.from === last.to && s.from === last.from && !clash(keysOf(s.add), keysOf(last.add))) {
+      if (both && s.from === s.to && last.from === last.to && s.from === last.from && !clash(keysOf(s.add), keysOf(last.add)) && (loose || !regroups(last.add, s.add))) {
         const add = s.add.join("");
         if (inOrder && first(s.add) < first(last.add)) out = out.slice(0, out.length - last.add.join("").length) + add + last.add.join("");
         else out += add;
@@ -874,6 +875,31 @@ export function mergeWords(base: string, a: string, b: string, both = false, loo
     last = s;
   }
   return out + o.slice(i).join("");
+}
+
+/**
+ * Would two inserts at one spot in code change how an expression groups (#1255)? Yes if they
+ * join with different ones of `&&`, `||` and `??` (spliced, the other's clause hangs off
+ * this one's), or one joins with any and the other opens or closes a paren it doesn't close
+ * or open (each side wrapped the same expression its own way, and a `!` lands on the wrong
+ * group). Strings don't count.
+ */
+function regroups(a: string[], b: string[]) {
+  const read = (ws: string[]) => {
+    const t = ws.join("").replace(/(["'`])(?:\\.|(?!\1).)*\1/g, "\"\"");
+    const joins = new Set<string>();
+    let d = 0, low = 0;
+    for (const [i, c] of [...t].entries()) {
+      if (c === "(") d++;
+      else if (c === ")") low = Math.min(low, --d);
+      // Outside its own parens: `) && x` joins, `(a && b` doesn't.
+      else if (d <= 0 && "&|?".includes(c) && c === t[i + 1] && c !== t[i - 1]) joins.add(c);
+    }
+    return { joins, open: d !== 0 || low < 0 };
+  };
+  const x = read(a), y = read(b);
+  if (!x.joins.size && !y.joins.size) return false;
+  return x.open || y.open || (x.joins.size > 0 && y.joins.size > 0 && new Set([...x.joins, ...y.joins]).size > 1);
 }
 
 /** A name one side renamed across the file: `from`, as a property (`.from`) or not, now `to` (a name or a dotted path). */
