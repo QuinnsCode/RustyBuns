@@ -343,3 +343,17 @@ describe("the tour", () => {
     expect(html).toContain(`id="tour-here"`);
   });
 });
+
+// The profile's pulse, drawn as an isometric block of the week's hours: a pillar per busy hour, a floor tile per quiet one.
+describe("the isometric pulse", () => {
+  const src = html.slice(html.indexOf("const pulseIso = "), html.indexOf("/** Fill each [data-pulse=name]"));
+  const pulseIso = new Function("esc", `${src}; return pulseIso;`)((s: string) => s);
+
+  test("a pillar per busy hour, as tall as its share of the busiest", () => {
+    const hours = Array(168).fill(0); hours[3] = 10; hours[100] = 5;
+    const svg: string = pulseIso({ hours, total: 15, from: 0, live_at: null });
+    expect(svg.match(/class="floor"/g)?.length).toBe(166);
+    expect(svg.match(/class="t"/g)?.length).toBe(2);
+    expect(svg).toContain("10 lines</title>");
+  });
+});
