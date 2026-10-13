@@ -37,6 +37,9 @@ export function billables(c: RustyBunsConfig): Billable[] {
       if (b.type === "hyperdrive" && b.origin?.neon) out.push({ what: `Neon project for ${name}${b.origin.neon.branch ? ` (branch ${b.origin.neon.branch})` : ""}`, kind: "usage", note: "Neon Free: 0.5 GB per project and 100 compute-hours a month, scales to zero; paid plans bill compute and storage by use" });
       if (b.type === "ai") out.push({ what: `Workers AI ${name}`, kind: "usage", note: "10,000 neurons a day free, then $0.011 per 1k; bge-small embeddings are about 1.8k neurons per million tokens" });
       if (b.type === "queue") out.push({ what: `Queue ${name}`, kind: "usage", note: "10k operations a day free, 1M a month on Workers Paid, then $0.40 per million; a message is about three (write, read, delete)" });
+      if (b.type === "workflow" && !b.scriptName) out.push({ what: `Workflow ${name} (${b.className})`, kind: "usage", note: "requests + CPU time as the Worker's, plus the steps' stored state" });
+      if (b.type === "analytics_engine") out.push({ what: `Analytics Engine ${name}`, kind: "usage", note: "data points written + read queries; Workers Paid includes 10M writes and 1M queries a month" });
+      if (b.type === "worker_loader") out.push({ what: `Worker Loader ${name}`, kind: "usage", note: "each loaded Worker's requests + CPU time" });
       if (b.type === "images") out.push({ what: `Images ${name}`, kind: "usage", note: "5,000 unique transformations a month free, then $0.50 per 1k" });
       if (b.type === "r2") out.push({ what: `R2 ${name}`, kind: "usage", note: "storage + operations (egress is free)" });
     }

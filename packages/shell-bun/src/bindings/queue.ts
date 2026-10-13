@@ -3,7 +3,8 @@
 // messages to the Worker's `queue(batch, env, ctx)` in batches. As on
 // Cloudflare, a message the handler doesn't ack is retried (all of them when it
 // throws), after `delaySeconds` or the consumer's retryDelay, until it has been
-// delivered maxRetries + 1 times; then it is dropped. Messages survive a
+// delivered maxRetries + 1 times; then it is dropped, or moved to the consumer's
+// deadLetterQueue (another queue in the same file). Messages survive a
 // restart: a batch in flight when the process died comes back after its lease.
 //
 // Each batch is background work: it waits for a low slot on the host's scheduler (priority.ts)
@@ -23,6 +24,8 @@ export interface QueueConsumerSettings {
   maxRetries?: number;
   /** Seconds before a retry, when retry() doesn't say. @default 0 */
   retryDelay?: number;
+  /** The name of a queue in the same file that a message goes to once its retries are spent, instead of being dropped. */
+  deadLetterQueue?: string;
   /** The scheduler class each batch runs at. @default "low" */
   priority?: Priority;
   /** How long a batch may run before it is stopped and its messages retried; 0 for no limit. @default 15 minutes */
@@ -187,10 +190,14 @@ export class LocalQueue<Body = unknown> {
 
     const drop = this.db.query(`DELETE FROM queue_messages WHERE id = ?`);
     const later = this.db.query(`UPDATE queue_messages SET visible_at = ? WHERE id = ?`);
+    // Dead-lettered: a fresh message on the other queue, due now, its deliveries back to none.
+    const dead = this.db.query(`UPDATE queue_messages SET queue = ?, attempts = 0, visible_at = ? WHERE id = ?`);
+    const dlq = c.settings.deadLetterQueue;
     this.db.transaction(() => {
       for (const m of messages) {
         const v = verdicts.get(m.id) ?? (threw ? { ack: false } : { ack: true });
-        if (v.ack || m.attempts > (c.settings.maxRetries ?? 3)) drop.run(m.id);
+        if (!v.ack && m.attempts > (c.settings.maxRetries ?? 3) && dlq) dead.run(dlq, Date.now(), m.id);
+        else if (v.ack || m.attempts > (c.settings.maxRetries ?? 3)) drop.run(m.id);
         else later.run(Date.now() + (v.delaySeconds ?? c.settings.retryDelay ?? 0) * 1000, m.id);
       }
     })();

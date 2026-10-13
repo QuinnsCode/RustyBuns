@@ -12,7 +12,7 @@ import { addWin, winKey } from "../sim/heads.ts";
 import type { ZoneData } from "../sim/terrain.ts";
 import { BATTLE_SECONDS, FFA_SCORE, Game, scopeSway, SHIELD_DELAY, stanceOf, TEAM_SCORE, type GameEvent, type Input, type Mode } from "../sim/game.ts";
 import { Mirror } from "../net/mirror.ts";
-import { NEXT_ROUND } from "../net/room.ts";
+import { levelOf, NEXT_ROUND } from "../net/room.ts";
 import type { FromWorld, RosterEntry } from "../net/wire.ts";
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
 import { KEYS, keyLabel, WEAPONS, type WeaponId } from "../sim/weapons.ts";
@@ -272,6 +272,8 @@ let mode: Mode = store.get<Mode>("mode", "ffa");
 radios($("battle-mode"), MODES, (m) => m.tip, (b, m) => (b.textContent = m.name), (m) => m.id === mode, (m) => (mode = m.id, store.set("mode", m.id)));
 const levelPick = $<HTMLSelectElement>("battle-level");
 for (const l of LEVELS) levelPick.add(new Option(l.name, l.id));
+// Anywhere: the lat/long in the box above, its ground read here and sent with the setup.
+levelPick.add(new Option("Anywhere (the lat/long above)", "place"));
 levelPick.value = store.get("battle-level", LEVELS[0]!.id);
 levelPick.onchange = () => store.set("battle-level", levelPick.value);
 const nameBox = $<HTMLInputElement>("battle-name");
@@ -302,9 +304,26 @@ function tabId(): string {
 /** Your look and name for the world, on the socket's query. */
 const who = () => ({ uid: tabId(), name: myName(), head: me.head.id, build: me.build });
 
+/** The level picked for a battle, and a lat/long one's ground; throws with what to fix. */
+async function battleLevel(): Promise<{ def: LevelDef; zone?: ZoneData }> {
+  const def = LEVELS.find((l) => l.id === levelPick.value);
+  if (def) return { def };
+  const at = parsePlace($<HTMLInputElement>("place-at").value);
+  if (!at) throw new Error("Put a latitude, longitude in the box above, like 36.0566, -112.1251.");
+  battleStatus("Reading the ground (a few seconds the first time)…");
+  const zone = await groundFor(at.lat, at.lon);
+  return { def: placeLevel(zone), zone };
+}
+
 $("battle-host").onclick = async () => {
   battleStatus("");
-  const def = LEVELS.find((l) => l.id === levelPick.value)!;
+  let picked: Awaited<ReturnType<typeof battleLevel>>;
+  try {
+    picked = await battleLevel();
+  } catch (err) {
+    return battleStatus(err instanceof Error ? err.message : String(err), true);
+  }
+  const { def, zone } = picked;
   let hosting: string | null = null;
   if (info?.online) {
     const room = roomCode();
@@ -326,7 +345,7 @@ $("battle-host").onclick = async () => {
     return battleStatus(`Couldn't open a battle to the LAN: ${(err as Error).message}`, true);
   }
   const b = new Battle("host", "/ws", who());
-  b.setup({ level: def.id, mode, repo: chosen ?? def.repo });
+  b.setup({ level: def.id, mode, repo: chosen ?? def.repo, ...(zone ? { zone } : {}) });
   connect(b, hosting);
 };
 
@@ -353,7 +372,7 @@ function connect(b: Battle, hosting: string | null) {
     if (m.t === "wait") return battleStatus("In. Waiting for the host to pick the battle…");
     if (m.t === "welcome") {
       // A new round is a new welcome: a fresh mirror and scene, the same socket.
-      const def = LEVELS.find((l) => l.id === m.setup.level)!, mirror = new Mirror(m);
+      const def = levelOf(m.setup), mirror = new Mirror(m);
       const brief = m.setup.mode === "coop" ? briefing(missionFor(def.id)) : MODES.find((x) => x.id === m.setup.mode)!.tip;
       battleStatus("");
       return begin(def, m.setup.repo, mirror.game, brief, { battle: b, mirror, hosting, roster: mirror.roster });
@@ -715,7 +734,7 @@ function frame(now: number) {
   if (net) {
     // A battle: your soldier moves now, the world says what happened; a roster change re-dresses everyone.
     net.mirror.frame(dt, input);
-    net.battle.input(input, now);
+    net.battle.input(input, now, net.mirror.acked);
     events = net.mirror.take();
     if (net.roster !== net.mirror.roster) showLooks(net);
     if (!$("board").hidden) board(game, net);

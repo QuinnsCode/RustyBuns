@@ -24,7 +24,7 @@ import { planPort } from "./glue/port-vite.ts";
 import { jekyllDefaults, jekyllExcludes, jekyllPagesPlugins, jekyllPlugins, staticBuild, type StaticSite } from "./glue/static-site.ts";
 import { copySite, jekyllSiteFiles, staticSiteAt } from "./glue/site-files.ts";
 import { jekyllPlan, type JekyllEnv } from "./glue/jekyll.ts";
-import { sourceLayout } from "./glue/source.ts";
+import { sourceLayout, caseCollisions } from "./glue/source.ts";
 import { analyze, report } from "./glue/boundary.ts";
 import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
 import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
@@ -177,6 +177,9 @@ async function init() {
       ? `          no src/, app/, lib/, client/ or web/ found, so the whole project root is treated as source.\n          set source: { dir, aliases } in rustybuns.config.ts before running add desktop`
       : `          not sure about that; set source: { dir, aliases } in rustybuns.config.ts if it's wrong`);
   }
+  // macOS disks ignore case, so `./FactBar` can open factBar.ts there and fail the build (#1198).
+  for (const g of caseCollisions(".", inf.srcDir))
+    console.log(`warning:  ${g.join(" and ")} differ only by case; on macOS an import of one can open the other. Rename one.`);
   // Astro with no Cloudflare adapter is a static site: its build is the whole UI.
   const astroWorker = astroAdapter === "@astrojs/cloudflare" && !spa;
   if (inf.framework === "astro" && !astroWorker) {
@@ -194,7 +197,7 @@ async function init() {
   // Astro's adapter makes a wrangler config of its own when the app has none.
   const w = wsrc === null ? { name: inf.name.replace(/^@[^/]+\//, "") } : src!.endsWith(".toml") ? parseWranglerToml(wsrc) : parseWrangler(wsrc);
   const dropped = droppedWranglerKeys(w);
-  if (dropped.length) console.log(`not carried over: ${dropped.join(", ")}\n          (bindings, routes and env.* are not in rustybuns.config.ts yet; keep them in ${src} and do NOT run \`rustybuns adopt\`)`);
+  if (dropped.length) console.log(`not carried over: ${dropped.join(", ")}\n          (rustybuns.config.ts has no place for these yet; keep them in ${src} and do NOT run \`rustybuns adopt\`)`);
   // Where the Worker's bundle comes from: RWSDK's or the Cloudflare Vite plugin's build, else
   // none (a plain Worker; Alchemy bundles its main). Astro's adapter is set up below.
   const built = inf.framework === "rwsdk" ? "rwsdk" : !astroWorker && inf.vite.plugins.includes("cloudflare") ? "vite" : null;
@@ -270,6 +273,11 @@ async function init() {
   await Bun.write("rustybuns.config.ts", body);
   console.log(`wrote rustybuns.config.ts${src ? ` from ${src}` : ""}`);
   await ignoreOurs();
+  // Wrangler doesn't record a Vectorize index's dimensions; the config won't load until they're set.
+  const undimensioned = Object.entries(cfg.bindings).filter(([, b]) => b.type === "vectorize" && !b.dimensions);
+  for (const [n, b] of undimensioned)
+    console.log(`todo:     bindings.${n}.dimensions: ${(b as { indexName: string }).indexName}'s vector length (\`wrangler vectorize info ${(b as { indexName: string }).indexName}\`); wrangler doesn't record it`);
+  if (undimensioned.length) { console.log(`\nnext: set those dimensions, then ${inf.execCmd("rustybuns plan")}`); return; }
   await generate({ adopt: false });
   // The boundary report is for `add desktop`'s spa split; a worker-mode desktop runs the whole Worker.
   if (!astroWorker && !rrWorker) { const { modules } = await boundary(); console.log(report(modules)); }

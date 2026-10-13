@@ -20,6 +20,7 @@
 // A branch can be opened on another branch (#1025): B on A forks each file from A's copy where A has
 // one, waits for A to merge first, and when A does, its copies move onto main's (restack below).
 // A branch that clashed with one that merged (merge-plan.ts) takes main in by itself, once (#1162, afterBlocker).
+// So does one that follows a branch upstream and clashes with main only in git, at the next sync (#1190, takeMainUpstream).
 
 import { apply, empty, explain, fromText, merge, PICKS, text, type Conflict, type Doc, type Line, type Op, type Pick, type Resolve } from "./lines.ts";
 import { lintMerge } from "./lint.ts";
@@ -514,8 +515,23 @@ async function afterBlocker(env: Env, owner: string, repo: string, name: string,
   finally { if (!await waiting(env, owner, repo, name)) await branchEdited(env, owner, repo, name, Date.now(), b.by); }
 }
 
-/** Branch `b` takes main in (afterBlocker). */
-async function takeMain(env: Env, owner: string, repo: string, b: BranchRow, user: string): Promise<Took> {
+/**
+ * Branch `name` follows one upstream whose tip clashes with main's in git alone (#1190): the mirror's sync asks,
+ * once main's commit has gone up. When every file it changed merges into main by line id with nothing left, it
+ * takes main in (takeMain) and pushes that merge, so upstream's pull request stops showing a conflict. A line
+ * that clashes here too is a person's, and a branch still waiting in the merge plan takes main in when its
+ * blocker merges (afterBlocker): null for both.
+ */
+export async function takeMainUpstream(env: Env, owner: string, repo: string, name: string): Promise<Took | null> {
+  const b = await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, name).first() as (BranchRow & { waits_on: string | null }) | null;
+  if (!b?.upstream_ref || b.waits_on || (await ancestors(env, owner, repo, name)).length) return null;
+  const rows = (await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND deleted = 0 AND blob IS NULL ORDER BY path").bind(owner, repo, name).all()).results as { path: string }[];
+  for (const f of rows) if ((await mergeFile(env, owner, repo, b, f.path, b.by, undefined, true)).conflicts.length) return null;
+  return takeMain(env, owner, repo, b, b.by, { push: true });
+}
+
+/** Branch `b` takes main in (afterBlocker, takeMainUpstream). With `push`, it goes upstream even if no file had to. */
+async function takeMain(env: Env, owner: string, repo: string, b: BranchRow, user: string, o: { push?: boolean } = {}): Promise<Took> {
   const name = b.name;
   if ((await ancestors(env, owner, repo, name)).length) return { branch: name, status: "failed", error: "stacked on an open branch: it moves onto main when that one merges" };
   const rows = (await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as FileRow[];
@@ -529,11 +545,13 @@ async function takeMain(env: Env, owner: string, repo: string, b: BranchRow, use
   }
   if ("blocked" in run) return { branch: name, status: "cards", files: run.blocked!.conflicts.map((f) => f.path), error: run.blocked!.error };
   const files: string[] = [];
+  let moved = false;
   for (const d of run.dry) {
     const read = async (op: string, on?: string) => { const res = await toFile(env, owner, repo, d.path, "upstream", op, {}, "", on); return (res.ok && await res.json() as Doc | null) || empty(); };
     const [main, base] = await Promise.all([read("file"), read("base", name)]);
     // Main didn't move under this file, or moved again since the dry run (the next merge takes it): nothing to take.
-    if (text(main) === text(base) || main.rev !== d.rev) continue;
+    if (text(main) === text(base)) continue;
+    if (main.rev !== d.rev) { moved = true; continue; }
     await toFile(env, owner, repo, d.path, "upstream", "wipe", { method: "POST" }, "", name);
     await toFile(env, owner, repo, d.path, "upstream", "fork", { method: "POST", body: JSON.stringify({ doc: main }) }, "", name);
     if (d.ops?.length) await toFile(env, owner, repo, d.path, b.by, "ops", { method: "POST", body: JSON.stringify({ ops: d.ops }) }, "", name);
@@ -542,7 +560,7 @@ async function takeMain(env: Env, owner: string, repo: string, b: BranchRow, use
   // One that follows a branch upstream takes it there too, as a merge of main's tip.
   const ref = b.upstream_ref as string | null | undefined;
   const { mirrorsOn, pushBranch } = await import("./mirror.ts");
-  if (!files.length || !ref || !mirrorsOn(env)) return { branch: name, status: "updated", files };
+  if (!ref || !mirrorsOn(env) || !(files.length || (o.push && !moved))) return { branch: name, status: "updated", files };
   const res = await pushBranch(env, owner, repo, name, { tookMain: true });
   if (!res) return { branch: name, status: "updated", files };
   const out = await res.json() as { pushed?: boolean; error?: string };

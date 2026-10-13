@@ -55,6 +55,21 @@ test("retry, a throwing handler, and maxRetries", async () => {
   expect(q.size()).toBe(0);
 });
 
+test("deadLetterQueue: a message past maxRetries moves to that queue, as new, instead of being dropped", async () => {
+  const path = join(mkdtempSync(join(tmpdir(), "rb-queue-")), "queues.sqlite");
+  const jobs = new LocalQueue<string>(path, "jobs"), dlq = new LocalQueue<string>(path, "jobs-dlq");
+  jobs.consume(() => { throw new Error("no"); }, { maxRetries: 1, deadLetterQueue: "jobs-dlq" }, () => {});
+  await jobs.send("bad");
+  await jobs.drain();   // the retry falls due after this drain's `now`: the next one delivers it
+  await jobs.drain();
+  expect(jobs.size()).toBe(0);
+  const dead: [string, number][] = [];
+  dlq.consume((b: QueueBatch<string>) => { for (const m of b.messages) dead.push([m.body, m.attempts]); });
+  await dlq.drain();
+  expect(dead).toEqual([["bad", 1]]);
+  expect(dlq.size()).toBe(0);
+});
+
 test("messages outlive the process; a batch in flight comes back after its lease", async () => {
   const path = join(mkdtempSync(join(tmpdir(), "rb-queue-")), "queues.sqlite");
   const a = new LocalQueue<number>(path, "jobs");

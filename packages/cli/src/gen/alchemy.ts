@@ -57,6 +57,15 @@ function resource(name: string, b: Binding, adopt: boolean): string | null {
       // The origin is the secret's URL, read as the stack deploys; the password stays redacted.
       return `export const ${id} = Cloudflare.Hyperdrive.Connection("${name}", { ${named}origin: Config.redacted(${JSON.stringify(b.urlSecret)}).pipe(Config.map(pgOrigin))${caching} });`;
     }
+    case "workflow":
+      // Hosted by `main` unless scriptName says otherwise; Alchemy registers it once the Worker exists.
+      return `export const ${id} = Cloudflare.Workflow("${name}", { className: ${JSON.stringify(b.className)}${b.scriptName ? `, scriptName: ${JSON.stringify(b.scriptName)}` : ""} });`;
+    case "analytics_engine":
+      // Worker-only: the dataset appears with its first data point.
+      return `export const ${id} = Cloudflare.AnalyticsEngine.Dataset("${name}", { dataset: ${JSON.stringify(b.dataset ?? name)} });`;
+    case "worker_loader":
+      // Worker-only: loaded Workers are made at runtime.
+      return `export const ${id} = Cloudflare.WorkerLoader("${name}");`;
     case "ai":
       // Worker-only: Workers AI has no resource to provision.
       return `export const ${id} = Cloudflare.Workers.AI(${JSON.stringify(name)});`;
@@ -80,6 +89,11 @@ function resource(name: string, b: Binding, adopt: boolean): string | null {
     case "secret":
       return null;
   }
+}
+
+/** worker.observability in the upload's shape: logs need invocationLogs, which wrangler defaults to on. */
+function observability(o: NonNullable<NonNullable<RustyBunsConfig["worker"]>["observability"]>) {
+  return { ...o, ...(o.logs ? { logs: { ...o.logs, invocationLogs: o.logs.invocationLogs ?? true } } : {}) };
 }
 
 /** The Neon resource a hyperdrive binding fronts: its branch, else its project's default branch. */
@@ -175,7 +189,8 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     const envEntries: string[] = [];
     for (const [name, b] of Object.entries(bindings)) {
       const r = resource(name, b, adopt);
-      if (r) { lines.push(r); envEntries.push(`${name}: ${ident(name)}`); }
+      // A consumer-only queue exists in the stack but not in env.
+      if (r) { lines.push(r); if (!(b.type === "queue" && b.producer === false)) envEntries.push(`${name}: ${ident(name)}`); }
       else if (b.type === "durable_object")
         envEntries.push(`${name}: Cloudflare.DurableObject("${name}", { className: "${b.className}"${b.scriptName ? `, scriptName: "${b.scriptName}"`
           : renamedFrom ? `, transferredFrom: ${JSON.stringify(renamedFrom)}` : ""} })`);
@@ -214,7 +229,11 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     if (w.cpuMs) wb.push(`  limits: { cpuMs: ${w.cpuMs} },`);
     if (w.placement) wb.push(`  placement: ${JSON.stringify(w.placement)},  // Smart Placement: run near D1 and the Durable Objects`);
     if (w.crons?.length) wb.push(`  crons: ${JSON.stringify(w.crons)},  // Cron Triggers: the Worker exports scheduled()`);
-    if (c.targets.edge?.domain) wb.push(`  domain: ${JSON.stringify(c.targets.edge.domain)},`);
+    if (w.observability) wb.push(`  observability: ${JSON.stringify(observability(w.observability))},`);
+    const domain = c.targets.edge?.domain;
+    if (typeof domain === "string") wb.push(`  domain: ${JSON.stringify(domain)},`);
+    else if (domain) wb.push(`  domain: ${JSON.stringify({ name: domain[0], ...(domain.length > 1 ? { aliases: domain.slice(1) } : {}) })},`);
+    if (c.targets.edge?.routes?.length) wb.push(`  routes: ${JSON.stringify(c.targets.edge.routes)},`);
     wb.push(`  env: { ${envEntries.join(", ")} },`);
     // A wrangler-made Worker has no Alchemy tags, so plan and deploy refuse it as
     // someone else's unless this Worker opts in to taking it over.
@@ -317,7 +336,8 @@ export function generateAlchemy(c: RustyBunsConfig): string {
     const s = b.consumer ?? {};
     const settings = Object.entries({ batchSize: s.batchSize, maxWaitTimeMs: s.maxWaitTimeMs, maxRetries: s.maxRetries, retryDelay: s.retryDelay, maxConcurrency: s.maxConcurrency })
       .filter(([, v]) => v !== undefined).map(([k, v]) => `${k}: ${v}`);
-    lines.push(`    yield* Cloudflare.Queues.Consumer(${JSON.stringify(`${name}Consumer`)}, { queueId: (yield* ${ident(name)}).queueId, scriptName: worker.workerName${settings.length ? `, settings: { ${settings.join(", ")} }` : ""} });`);
+    const dlq = s.deadLetterQueue ? `, deadLetterQueue: (yield* ${ident(s.deadLetterQueue)}).queueName` : "";
+    lines.push(`    yield* Cloudflare.Queues.Consumer(${JSON.stringify(`${name}Consumer`)}, { queueId: (yield* ${ident(name)}).queueId, scriptName: worker.workerName${dlq}${settings.length ? `, settings: { ${settings.join(", ")} }` : ""} });`);
   }
   if (box && box.volumeSize > 0) lines.push(`    yield* Data;  // attached and mounted before the unit starts`);
   if (box || rail) lines.push(`    const service = yield* Service;`);
