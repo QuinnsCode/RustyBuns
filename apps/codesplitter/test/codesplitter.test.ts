@@ -161,6 +161,19 @@ describe("merge", () => {
     expect(clean(was, onMain, `${f("a")}\n// a done\n${f("c")}\n${rest}`)).toBe(`${rest}\n${f("a")}\n// a done\n${f("c")}`);
   });
 
+  test("a block main moved out of an `if` and re-indented takes the branch's edits and new lines (#1223)", () => {
+    const tail = ["const m = merge(up, tip);", "if (m.code) continue;", "await push(ref);", "await drop(tracking(ref));", "await forget(name);"];
+    const at = (pad: string, ls: string[]) => ls.map((l) => pad + l);
+    const was = ["for (const br of rows) {", "  if (tip === had) {", ...at("    ", tail), "  } else if (open) {", "    const theirs = await fetch(ref);", "    if (theirs) await catchUp(theirs);", "  }", "}"].join("\n");
+    // Main puts the open case first and the rest under it, one level out: its diff gives lines of the old block's ids to the new ones.
+    const onMain = ["for (const br of rows) {", "  if (open) {", "    const theirs = tip === had ? tip : await fetch(ref);", "    if (theirs) await catchUp(theirs);", "    continue;", "  }", "  if (tip !== had) continue;", ...at("  ", tail), "}"].join("\n");
+    // The branch adds a line inside the block and edits one.
+    const onBranch = was.replace("    await drop(tracking(ref));", "    await drop(tracking(ref));\n    await drop(squashRef(ref));").replace("await push(ref)", "await push(ref, lease)");
+    expect(clean(was, onMain, onBranch)).toBe(onMain.replace("  await drop(tracking(ref));", "  await drop(tracking(ref));\n  await drop(squashRef(ref));").replace("await push(ref)", "await push(ref, lease)"));
+    // Moved and re-indented on main, deleted on the branch: it's gone.
+    expect(clean(was, onMain, was.replace("    await forget(name);\n", ""))).toBe(onMain.replace("  await forget(name);\n", ""));
+  });
+
   test("the same new line added at the same spot on both sides lands once", () => {
     expect(clean("# T\na", "# T\nimport y\nimport z\na", "# T\nimport z\na")).toBe("# T\nimport y\nimport z\na");
     // Apart, they're two lines someone meant.
