@@ -400,14 +400,25 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
   await (await import("./ci-runner.ts")).kick(env, owner, repo).catch(() => null);
 }
 
+/** Whether open branch `name` waits for another open one to merge first: the merge plan's `after` (branches.ts). */
+export async function waiting(env: Env, owner: string, repo: string, name: string) {
+  const row = await env.DB.prepare("SELECT waits_on FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first() as { waits_on: string | null } | null;
+  const on = JSON.parse(row?.waits_on ?? "[]") as string[];
+  if (!on.length) return false;
+  return !!await env.DB.prepare(`SELECT 1 FROM branches WHERE owner = ? AND repo = ? AND status = 'open' AND name IN (${on.map(() => "?").join(", ")})`).bind(owner, repo, ...on).first();
+}
+
 /**
  * A branch's copy of a file took an edit at `at` (file-do.ts): the branch has changed since its
- * checks, and when they run here, a run of each is queued unless one's waiting already.
+ * checks, and when they run here, a run of each is queued unless one's waiting already, or the branch waits
+ * for another to merge first.
  */
 export async function branchEdited(env: Env, owner: string, repo: string, branch: string, at: number, by: string) {
   const r = await env.DB.prepare("UPDATE branches SET changed_at = MAX(COALESCE(changed_at, 0), ?) WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(at, owner, repo, branch).run();
   if (!r.meta?.changes) return;
   try {
+    // One the merge plan says waits for another to merge first runs once, after it's taken main in (#1162).
+    if (await waiting(env, owner, repo, branch)) return;
     if ((await checkSettings(env, owner, repo)).here) await queueHere(env, owner, repo, branch, `${branch}@${at}`, by, "", true);
   } catch {
     // Checks never get in the way of an edit.

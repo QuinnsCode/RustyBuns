@@ -1,7 +1,7 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { upstreamMessages } from "../src/mirror.ts";
+import { pushBranch, upstreamMessages } from "../src/mirror.ts";
 import { root, up, sh, post, get, sync, file, editHere, upstreamRewrite, mirrored, upstreamCommit, upLog, commit, pushClash, upShow } from "./mirror-kit.ts";
 
 setDefaultTimeout(30_000);
@@ -86,6 +86,25 @@ describe("mirrors: branches and this copy's own git", () => {
     expect(await upShow("NEW")).toBe("new\nnewer\nnewest");
     expect(await shinyUp()).toBe("gone");
     expect((await get(call, "/api/repos/ana/up/mirror/branches")).map((b: any) => b.ref)).toEqual(["tidy"]);
+  });
+
+  test("a branch that took main in by line id pushes the settled files as a merge, where git alone clashes (#1162)", async () => {
+    const call = await mirrored("took-main");
+    const q = "?path=README&branch=late";
+    expect((await post(call, "/api/repos/ana/up/branches", { name: "late" })).status).toBe(201);
+    const line = (await get(call, `/api/repos/ana/up/do/file${q}`)).lines[1];
+    await post(call, `/api/repos/ana/up/do/ops${q}`, { ops: [{ kind: "set", line: line.id, base: line.rev, text: "world, late" }] });
+    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/late/push")).json()).toMatchObject({ pushed: true });
+    // Main changes the same line upstream: git can't merge the two.
+    await upstreamCommit({ README: "hello\nworld, first\n" }, "first");
+    expect(await sync(call)).toMatchObject({ state: "ok" });
+    const settled = (await get(call, `/api/repos/ana/up/do/file${q}`)).lines[1];
+    await post(call, `/api/repos/ana/up/do/ops${q}`, { ops: [{ kind: "set", line: settled.id, base: settled.rev, text: "world, first and late" }] });
+    expect((await pushBranch(call.env, "ana", "up", "late"))!.status).toBe(409);
+    const prev = await sh(`git --git-dir ${up} rev-parse late`);
+    expect(await (await pushBranch(call.env, "ana", "up", "late", { tookMain: true }))!.json()).toMatchObject({ pushed: true });
+    expect(await sh(`git --git-dir ${up} log -1 --format=%P late`)).toBe(`${prev} ${await upLog("%H")}`);
+    expect(await sh(`git --git-dir ${up} show late:README`)).toBe("hello\nworld, first and late");
   });
 
   test("branches carry deletions and binary files both ways, and merging one deletes upstream too (#440, #446)", async () => {

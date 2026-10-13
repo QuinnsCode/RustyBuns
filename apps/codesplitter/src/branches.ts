@@ -19,6 +19,7 @@
 // the git blob (#446), which the review shows as changed and the merge writes into main's git.
 // A branch can be opened on another branch (#1025): B on A forks each file from A's copy where A has
 // one, waits for A to merge first, and when A does, its copies move onto main's (restack below).
+// A branch that clashed with one that merged (merge-plan.ts) takes main in by itself, once (#1162, afterBlocker).
 
 import { apply, empty, explain, fromText, merge, PICKS, text, type Conflict, type Doc, type Line, type Op, type Pick, type Resolve } from "./lines.ts";
 import { lintMerge } from "./lint.ts";
@@ -27,7 +28,7 @@ import { conflictNote, conflictRound } from "./budget.ts";
 import { regenerateLock, tryInClone } from "./deps.ts";
 import { catalogueBlob, materialize, toFile, uncatalogue } from "./archive.ts";
 import { changedLines, isBuildFile } from "./buildfiles.ts";
-import { mergeBlock, refChecks } from "./checks.ts";
+import { branchEdited, mergeBlock, refChecks, waiting } from "./checks.ts";
 import { settings as deploySettings } from "./deploy.ts";
 import { branchNameError, json, type Env, readBody } from "./env.ts";
 import { emit } from "./hooks.ts";
@@ -419,32 +420,14 @@ async function testedMerge(env: Env, owner: string, repo: string, branch: Branch
 }
 
 /**
- * Merge an open branch into main: a dry run first, so a conflict anywhere merges nothing (409),
- * then each file for real. `resolve` settles conflicts by line; `build_ok` lets build files land.
+ * The dry run of merging `branch` into main as main is now, each file by its policy (#1012): a lockfile both
+ * changed made again by CI, the AI's leftovers asked of a checked agent, a `check: tests` file's tests run.
+ * `blocked` is what a 409 says when anything's left; `resolve` gains what the run settled.
  */
-async function mergeBranch(env: Env, owner: string, repo: string, branch: BranchRow, user: string, body: { resolve?: unknown; build_ok?: unknown }): Promise<Response> {
+async function dryRun(env: Env, owner: string, repo: string, branch: BranchRow, rows: FileRow[], resolve: Record<string, Resolve>, user: string) {
   const name = branch.name;
-  const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as FileRow[]);
-  const resolve = parseResolve(body.resolve), build_ok = body.build_ok;
-  if (typeof resolve === "string") return json({ error: resolve }, 400);
-  // Stacked on a branch that's still open: that one's changes are in this one's copies, so it goes first.
-  const under = (await ancestors(env, owner, repo, name))[0];
-  if (under) return json({ error: `${name} is stacked on ${under}: merge ${under} first` }, 409);
-  const stuck = (await env.DB.prepare("SELECT path, source FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND source IS NOT NULL ORDER BY path").bind(owner, repo, name).all()).results as { path: string; source: string }[];
-  if (stuck.length) return json({ error: `${stuck.map((f) => f.path).join(", ")} forked from ${stuck[0]!.source}'s copies and didn't move onto main cleanly when it merged: copy your changes into a branch off main`, files: stuck.map((f) => f.path) }, 409);
-  const rows = await files(), todo = rows.filter((f) => !f.merged);
-  // Build or deploy files on a merge the owner's next commit would ship: read them first.
-  const build = todo.map((f) => f.path).filter(isBuildFile);
-  if (build.length && !build_ok && (await deploySettings(env, owner, repo)).on_commit) return json({ error: "this branch changes build or deploy files: read them, then merge with build_ok", build }, 409);
-  // Required checks that failed, or haven't finished, hold it, as a GitHub branch protection rule would.
-  const held = await mergeBlock(env, owner, repo, name);
-  if (held) return json(held, 409);
-  // A binary (or too big) file has no lines to merge: one main changed too since the branch left it waits, not overwritten.
-  const { blobMovedOnMain } = await import("./mirror.ts");
-  const moved = (await Promise.all(todo.filter((f) => f.blob && !f.deleted).map(async (f) => await blobMovedOnMain(env, owner, repo, name, f.path, f.blob!) ? f.path : null))).filter((p): p is string => !!p);
-  if (moved.length) return json({ error: `main changed ${moved.join(", ")} too, and it has no lines to merge: bring main into the branch upstream, then pull`, files: moved }, 409);
-  // A dry run first, so a conflict anywhere merges nothing. A deletion never conflicts.
-  const dry = await Promise.all(todo.filter((f) => !f.deleted && !f.blob).map(async (f) => ({ path: f.path, ...(await mergeFile(env, owner, repo, branch, f.path, user, resolve[f.path], true)) })));
+  // A deletion never conflicts; a binary file has no lines.
+  const dry = await Promise.all(rows.filter((f) => !f.merged && !f.deleted && !f.blob).map(async (f) => ({ path: f.path, ...(await mergeFile(env, owner, repo, branch, f.path, user, resolve[f.path], true)) })));
   // What the merge leaves goes where each file's policy says (#1012). A lockfile both changed, to CI: made again
   // on the branch and taken whole, unless the merger picked a side already.
   const notes = new Map<string, string>();
@@ -472,11 +455,99 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
         conflicts: conflicts.map((c) => { const a = answers.get(`${path}\n${c.line}`); return { ...explain(c), ...(a && { answer: a }) }; }),
       };
     });
-    return json({ error: broken.length ? `merged, it wouldn't build: ${broken.join("; ")}` : "conflicts", conflicts: blocked, ...(fix && "id" in fix && { fix: fix.id }) }, 409);
+    return { blocked: { error: broken.length ? `merged, it wouldn't build: ${broken.join("; ")}` : "conflicts", conflicts: blocked, ...(fix && "id" in fix && { fix: fix.id }) } };
   }
   const failed = await testedMerge(env, owner, repo, branch, dry, resolve, user);
-  if (failed) return json(failed, 409);
+  return failed ? { blocked: failed } : { dry };
+}
 
+/** What a branch that clashed with one that merged did about it (#1162): took main in, or left cards for a person. */
+export interface Took { branch: string; status: "updated" | "cards" | "failed"; files?: string[]; pushed?: boolean; error?: string }
+
+/**
+ * Branch `name` clashed with `blocker`, which merged (merge-plan.ts): it takes main in, once, by the line-id
+ * merge, as merging it would, so nobody has to. Settled with no card left (the checked agent's answers to the
+ * AI's leftovers count, a lockfile CI makes again too, and a `check: tests` file's tests passing), each file it
+ * changed that main moved under starts again from main's copy with the merge's ops on top, and a branch that
+ * follows one upstream pushes there. Cards left wait for a person, the agent's answers with them. Either way
+ * its own checks, held while it waited, run once now, unless it still waits for another.
+ */
+async function afterBlocker(env: Env, owner: string, repo: string, name: string, blocker: string, user: string): Promise<Took> {
+  const b = await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, name).first() as (BranchRow & { waits_on: string | null }) | null;
+  if (!b) return { branch: name, status: "failed", error: "not open any more" };
+  await waitFor(env, owner, repo, name, (JSON.parse(b.waits_on ?? "[]") as string[]).filter((w) => w !== blocker));
+  try { return await takeMain(env, owner, repo, b, user); }
+  finally { if (!await waiting(env, owner, repo, name)) await branchEdited(env, owner, repo, name, Date.now(), b.by); }
+}
+
+/** Branch `b` takes main in (afterBlocker). */
+async function takeMain(env: Env, owner: string, repo: string, b: BranchRow, user: string): Promise<Took> {
+  const name = b.name;
+  if ((await ancestors(env, owner, repo, name)).length) return { branch: name, status: "failed", error: "stacked on an open branch: it moves onto main when that one merges" };
+  const rows = (await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as FileRow[];
+  const resolve: Record<string, Resolve> = {};
+  let run = await dryRun(env, owner, repo, b, rows, resolve, user);
+  // Every card left has a checked agent's answer that passed: settle each with it.
+  const cards = "blocked" in run ? run.blocked!.conflicts as { path: string; conflicts: { line: string; answer?: Answer }[] }[] : [];
+  if (cards.length && cards.every((f) => f.conflicts.every((c) => c.answer?.ok && c.answer.text !== undefined))) {
+    for (const f of cards) for (const c of f.conflicts) resolve[f.path] = { ...resolve[f.path], [c.line]: { text: c.answer!.text! } };
+    run = await dryRun(env, owner, repo, b, rows, resolve, user);
+  }
+  if ("blocked" in run) return { branch: name, status: "cards", files: run.blocked!.conflicts.map((f) => f.path), error: run.blocked!.error };
+  const files: string[] = [];
+  for (const d of run.dry) {
+    const read = async (op: string, on?: string) => { const res = await toFile(env, owner, repo, d.path, "upstream", op, {}, "", on); return (res.ok && await res.json() as Doc | null) || empty(); };
+    const [main, base] = await Promise.all([read("file"), read("base", name)]);
+    // Main didn't move under this file, or moved again since the dry run (the next merge takes it): nothing to take.
+    if (text(main) === text(base) || main.rev !== d.rev) continue;
+    await toFile(env, owner, repo, d.path, "upstream", "wipe", { method: "POST" }, "", name);
+    await toFile(env, owner, repo, d.path, "upstream", "fork", { method: "POST", body: JSON.stringify({ doc: main }) }, "", name);
+    if (d.ops?.length) await toFile(env, owner, repo, d.path, b.by, "ops", { method: "POST", body: JSON.stringify({ ops: d.ops }) }, "", name);
+    files.push(d.path);
+  }
+  // One that follows a branch upstream takes it there too, as a merge of main's tip.
+  const ref = b.upstream_ref as string | null | undefined;
+  const { mirrorsOn, pushBranch } = await import("./mirror.ts");
+  if (!files.length || !ref || !mirrorsOn(env)) return { branch: name, status: "updated", files };
+  const res = await pushBranch(env, owner, repo, name, { tookMain: true });
+  if (!res) return { branch: name, status: "updated", files };
+  const out = await res.json() as { pushed?: boolean; error?: string };
+  return { branch: name, status: "updated", files, pushed: res.ok && !!out.pushed, ...(!res.ok && { error: `not pushed upstream: ${out.error}` }) };
+}
+
+/**
+ * Merge an open branch into main: a dry run first, so a conflict anywhere merges nothing (409),
+ * then each file for real. `resolve` settles conflicts by line; `build_ok` lets build files land.
+ */
+async function mergeBranch(env: Env, owner: string, repo: string, branch: BranchRow, user: string, body: { resolve?: unknown; build_ok?: unknown }): Promise<Response> {
+  const name = branch.name;
+  const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as FileRow[]);
+  const resolve = parseResolve(body.resolve), build_ok = body.build_ok;
+  if (typeof resolve === "string") return json({ error: resolve }, 400);
+  // Stacked on a branch that's still open: that one's changes are in this one's copies, so it goes first.
+  const under = (await ancestors(env, owner, repo, name))[0];
+  if (under) return json({ error: `${name} is stacked on ${under}: merge ${under} first` }, 409);
+  const stuck = (await env.DB.prepare("SELECT path, source FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND source IS NOT NULL ORDER BY path").bind(owner, repo, name).all()).results as { path: string; source: string }[];
+  if (stuck.length) return json({ error: `${stuck.map((f) => f.path).join(", ")} forked from ${stuck[0]!.source}'s copies and didn't move onto main cleanly when it merged: copy your changes into a branch off main`, files: stuck.map((f) => f.path) }, 409);
+  const rows = await files(), todo = rows.filter((f) => !f.merged);
+  // Build or deploy files on a merge the owner's next commit would ship: read them first.
+  const build = todo.map((f) => f.path).filter(isBuildFile);
+  if (build.length && !build_ok && (await deploySettings(env, owner, repo)).on_commit) return json({ error: "this branch changes build or deploy files: read them, then merge with build_ok", build }, 409);
+  // Required checks that failed, or haven't finished, hold it, as a GitHub branch protection rule would.
+  const held = await mergeBlock(env, owner, repo, name);
+  if (held) return json(held, 409);
+  // A binary (or too big) file has no lines to merge: one main changed too since the branch left it waits, not overwritten.
+  const { blobMovedOnMain } = await import("./mirror.ts");
+  const moved = (await Promise.all(todo.filter((f) => f.blob && !f.deleted).map(async (f) => await blobMovedOnMain(env, owner, repo, name, f.path, f.blob!) ? f.path : null))).filter((p): p is string => !!p);
+  if (moved.length) return json({ error: `main changed ${moved.join(", ")} too, and it has no lines to merge: bring main into the branch upstream, then pull`, files: moved }, 409);
+  // A dry run first, so a conflict anywhere merges nothing.
+  const run = await dryRun(env, owner, repo, branch, rows, resolve, user);
+  if ("blocked" in run) return json(run.blocked, 409);
+  // The open branches that clash with this one (merge-plan.ts), read before main moves: each takes main in after (#1162).
+  const others = (await env.DB.prepare("SELECT name FROM branches WHERE owner = ? AND repo = ? AND status = 'open' AND name != ? AND parent IS NOT ? ORDER BY created_at, name").bind(owner, repo, name, name).all()).results as { name: string }[];
+  const clashing = others.length ? await clashesIn(env, owner, repo, [name, ...others.map((b) => b.name)], user, name).catch(() => []) : [];
+
+  const took: Took[] = [];
   const merged: { path: string; rev: number; ops: number; deleted?: true; binary?: true }[] = [], conflicts: { path: string; conflicts: Conflict[] }[] = [];
   for (const f of todo) {
     // Claim the file, so two merges at once can't both apply it.
@@ -510,6 +581,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     await env.DB.prepare("UPDATE branches SET status = 'merged', merged_by = ?, merged_at = ? WHERE owner = ? AND repo = ? AND name = ?").bind(user, at, owner, repo, name).run();
     await env.DB.prepare("DELETE FROM leftover_answers WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, name).run();
     await restackChildren(env, owner, repo, name);
+    for (const c of clashing) took.push(await afterBlocker(env, owner, repo, c.then, name, user).catch((e) => ({ branch: c.then, status: "failed" as const, error: String((e as Error)?.message ?? e) })));
     // Shaped like a merged pull request, the branch as its head. Git hears about it at the next commit of main.
     await emit(env, owner, repo, "branch.merged", user, {
       action: "closed",
@@ -517,7 +589,43 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
       files: merged.map((m) => m.path),
     });
   }
-  return json({ status: conflicts.length ? "open" : "merged", merged, conflicts }, conflicts.length ? 409 : 200);
+  return json({ status: conflicts.length ? "open" : "merged", merged, conflicts, ...(took.length && { took }) }, conflicts.length ? 409 : 200);
+}
+
+/**
+ * Which of the open branches in `order` clash, on the files two or more of them change (merge-plan.ts): each pair
+ * in that order, the first merging first. With `first`, only that branch's clashes with the others.
+ */
+async function clashesIn(env: Env, owner: string, repo: string, order: string[], user: string, first?: string): Promise<Clash[]> {
+  const rows = (await env.DB.prepare("SELECT branch, path, deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND merged = 0").bind(owner, repo).all()).results as { branch: string; path: string; deleted: number; blob: string | null }[];
+  const on = new Map<string, typeof rows>();
+  for (const r of rows) if (order.includes(r.branch) && !r.deleted) on.set(r.path, [...on.get(r.path) ?? [], r]);
+  const clashes = new Map<string, Clash>();
+  const clash = (x: string, y: string, path: string) => {
+    if (first && x !== first) return;
+    (clashes.get(`${x}\n${y}`) ?? clashes.set(`${x}\n${y}`, { first: x, then: y, files: [] }).get(`${x}\n${y}`)!).files.push(path);
+  };
+  const rank = (b: string) => order.indexOf(b);
+  for (const [path, touched] of on) {
+    if (touched.length < 2 || (first && !touched.some((t) => t.branch === first))) continue;
+    touched.sort((x, y) => rank(x.branch) - rank(y.branch));
+    // A binary file has no lines to merge: the second to change it waits for the first, as its merge would.
+    const text = touched.filter((t) => !t.blob);
+    for (const [i, x] of touched.entries()) for (const y of touched.slice(i + 1)) if (x.blob && y.blob) clash(x.branch, y.branch, path);
+    if (text.length < 2 || (first && !text.some((t) => t.branch === first))) continue;
+    const read = async (op: string, branch?: string) => { const res = await toFile(env, owner, repo, path, user, op, {}, "", branch); return (res.ok && await res.json() as Doc | null) || empty(); };
+    const [main, policy, ...sides] = await Promise.all([read("file"), pathPolicy(env, owner, repo, path, user),
+      ...text.map(async (t) => ({ base: await read("base", t.branch), copy: await read("file", t.branch) }))]) as [Doc, Policy, ...Side[]];
+    for (const [i, x] of text.entries()) for (const [j, y] of text.entries())
+      if (j > i && (!first || x.branch === first) && clashIn(path, main, sides[i]!, sides[j]!, policy.merge).length) clash(x.branch, y.branch, path);
+  }
+  return [...clashes.values()];
+}
+
+/** Keep the open branches `branch` waits for in the merge plan (#1162): till they've merged, its own checks wait. */
+async function waitFor(env: Env, owner: string, repo: string, branch: string, on: string[]) {
+  const v = on.length ? JSON.stringify(on) : null;
+  await env.DB.prepare("UPDATE branches SET waits_on = ? WHERE owner = ? AND repo = ? AND name = ? AND waits_on IS NOT ?").bind(v, owner, repo, branch, v).run();
 }
 
 /**
@@ -533,31 +641,14 @@ async function mergePlan(env: Env, owner: string, repo: string, user: string) {
   const order: string[] = [], parent = new Map(open.map((b) => [b.name, b.parent]));
   const place = (b: string) => { if (order.includes(b)) return; const on = parent.get(b); if (on && parent.has(on)) place(on); order.push(b); };
   for (const b of [...open.filter((b) => !held.has(b.name)), ...open.filter((b) => held.has(b.name))]) place(b.name);
-  const rows = (await env.DB.prepare("SELECT branch, path, deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND merged = 0").bind(owner, repo).all()).results as { branch: string; path: string; deleted: number; blob: string | null }[];
-  const on = new Map<string, typeof rows>();
-  for (const r of rows) if (order.includes(r.branch) && !r.deleted) on.set(r.path, [...on.get(r.path) ?? [], r]);
   const clashes = new Map<string, Clash>();
-  const clash = (first: string, then: string, path?: string) => {
-    const c = clashes.get(`${first}\n${then}`) ?? clashes.set(`${first}\n${then}`, { first, then, files: [] }).get(`${first}\n${then}`)!;
-    if (path) c.files.push(path); else c.stacked = true;
-  };
   // A stacked branch waits for the one it's on: its merge refuses until then.
-  for (const b of open) if (b.parent && parent.has(b.parent)) clash(b.parent, b.name);
-  const rank = (b: string) => order.indexOf(b);
-  for (const [path, touched] of on) {
-    if (touched.length < 2) continue;
-    touched.sort((x, y) => rank(x.branch) - rank(y.branch));
-    // A binary file has no lines to merge: the second to change it waits for the first, as its merge would.
-    const text = touched.filter((t) => !t.blob);
-    for (const [i, x] of touched.entries()) for (const y of touched.slice(i + 1)) if (x.blob && y.blob) clash(x.branch, y.branch, path);
-    if (text.length < 2) continue;
-    const read = async (op: string, branch?: string) => { const res = await toFile(env, owner, repo, path, user, op, {}, "", branch); return (res.ok && await res.json() as Doc | null) || empty(); };
-    const [main, policy, ...sides] = await Promise.all([read("file"), pathPolicy(env, owner, repo, path, user),
-      ...text.map(async (t) => ({ base: await read("base", t.branch), copy: await read("file", t.branch) }))]) as [Doc, Policy, ...Side[]];
-    for (const [i, x] of text.entries()) for (const [j, y] of text.entries())
-      if (j > i && clashIn(path, main, sides[i]!, sides[j]!, policy.merge).length) clash(x.branch, y.branch, path);
-  }
-  return { order, held: [...held], waves: waves(order, [...clashes.values()]) };
+  for (const b of open) if (b.parent && parent.has(b.parent)) clashes.set(`${b.parent}\n${b.name}`, { first: b.parent, then: b.name, files: [], stacked: true });
+  for (const c of await clashesIn(env, owner, repo, order, user)) clashes.set(`${c.first}\n${c.then}`, { ...clashes.get(`${c.first}\n${c.then}`), ...c });
+  const plan = waves(order, [...clashes.values()]);
+  // What each branch waits for, kept: its own checks wait till those have merged and it's taken main in (#1162).
+  for (const p of plan.flat()) await waitFor(env, owner, repo, p.branch, p.after.filter((a) => !a.stacked).map((a) => a.branch));
+  return { order, held: [...held], waves: plan };
 }
 
 export async function branchRoutes(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null, a: Access): Promise<Response | null> {

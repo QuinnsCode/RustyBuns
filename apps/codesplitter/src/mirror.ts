@@ -959,7 +959,7 @@ export async function branchTree(env: Env, owner: string, repo: string, name: st
  * whose git holds private lines blank (held) doesn't push branches either: their
  * copies have the real text.
  */
-export async function pushBranch(env: Env, owner: string, repo: string, name: string) {
+export async function pushBranch(env: Env, owner: string, repo: string, name: string, o: { tookMain?: boolean } = {}) {
   const s = await branchSetup(env, owner, repo);
   if ("error" in s) return s.error;
   const { r, dir, main, net } = s;
@@ -980,8 +980,12 @@ export async function pushBranch(env: Env, owner: string, repo: string, name: st
   if (prev && await isAncestor(dir, tip, prev)) [parents, baseTree] = [[prev], `${prev}^{tree}`];
   else if (prev) {
     const m = await git(["merge-tree", "--write-tree", "--name-only", "--no-messages", prev, tip], dir);
-    if (m.code) return json({ error: `upstream's ${ref} and main ${m.code === 1 ? "changed the same lines" : "share no history"}: settle it upstream, then push again`, clash: m.code === 1 ? m.out.trim().split("\n").slice(1).filter(Boolean) : [] }, 409);
-    [parents, baseTree] = [[prev, tip], m.out.trim().split("\n")[0]!];
+    const clash = m.code === 1 ? m.out.trim().split("\n").slice(1).filter(Boolean) : [];
+    // Git clashes, but the branch just took main in by line id (branches.ts takeMain, #1162): its copies of
+    // those files are the settled ones, so the merge commit is main's tree with them on top.
+    if (clash.length && o.tookMain && await allText(env, owner, repo, name, clash)) [parents, baseTree] = [[prev, tip], `${tip}^{tree}`];
+    else if (m.code) return json({ error: `upstream's ${ref} and main ${m.code === 1 ? "changed the same lines" : "share no history"}: settle it upstream, then push again`, clash }, 409);
+    else [parents, baseTree] = [[prev, tip], m.out.trim().split("\n")[0]!];
   }
 
   const tree = await branchTree(env, owner, repo, name, dir, baseTree);
@@ -1000,6 +1004,12 @@ export async function pushBranch(env: Env, owner: string, repo: string, name: st
   // A branch pushed upstream gets checked, here and on GitHub, as that commit.
   await startChecks(env, owner, repo, name, c, br.by);
   return json({ ref, commit: c, pushed: true, took });
+}
+
+/** Whether `name` has a copy of its own, with lines, of each of `paths`. */
+async function allText(env: Env, owner: string, repo: string, name: string, paths: string[]) {
+  const { results } = await env.DB.prepare(`SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND deleted = 0 AND blob IS NULL AND path IN (${paths.map(() => "?").join(", ")})`).bind(owner, repo, name, ...paths).all();
+  return results.length === new Set(paths).size;
 }
 
 /**
