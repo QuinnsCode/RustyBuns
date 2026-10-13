@@ -107,8 +107,9 @@ export default defineConfig({
     LEVEL_CHUNKS: { type: "r2", bucketName: "codesplitter-level-chunks" },
     // Hosted coding agents (super experimental): one container per run, each CLI
     // installed (sandbox/Dockerfile), with the logins for the harnesses you use.
-    // The desktop has no twin and runs the CLIs on the machine instead.
-    ...(agents ? { AGENT_SANDBOX: { type: "container", className: "AgentSandbox", dockerfile: "sandbox/Dockerfile", maxInstances: 2, instanceType: "basic" } as const } : {}),
+    // The desktop has no twin and runs the CLIs on the machine instead. Feature runs take two
+    // at most (FEATURE_RUNS in src/agent-routes.ts): the third is for fix tasks, rebuilds too (#1242).
+    ...(agents ? { AGENT_SANDBOX: { type: "container", className: "AgentSandbox", dockerfile: "sandbox/Dockerfile", maxInstances: 3, instanceType: "basic" } as const } : {}),
     // The watch's news search: on, with the Anthropic key (also the agents' when they're on).
     ...(news ? { WATCH_NEWS: { type: "var", value: "1" } as const, ANTHROPIC_API_KEY: op("anthropic/api-key", true) } : {}),
     // Optional: only the items you've made in 1Password are bound.

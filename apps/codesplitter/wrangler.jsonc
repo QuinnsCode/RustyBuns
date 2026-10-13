@@ -16,7 +16,7 @@
     {
       "class_name": "AgentSandbox",
       "image": "sandbox/Dockerfile",
-      "max_instances": 2,
+      "max_instances": 3,
       "instance_type": "basic"
     },
     {

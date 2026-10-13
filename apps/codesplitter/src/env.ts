@@ -145,7 +145,7 @@ export interface Env {
   /** Level digs (levels.ts, swarm.ts): a dig's first step, then a big level's parts, side by side. Unset, an import runs in its request. */
   LEVEL_DIGS?: { send(body: DigMessage): Promise<void>; sendBatch(messages: Iterable<{ body: DigMessage; delaySeconds?: number }>): Promise<void> };
   /** Queued requests, one message each (limits.ts), delayed until the caller's window has room, and hosted agent runs (agent-routes.ts): the same Worker's queue() consumes it. */
-  JOBS: { send(body: { job: number } | { agent: number; origin: string; land?: true } | { digest: string }, opts?: { delaySeconds?: number }): Promise<void> };
+  JOBS: { send(body: { job: number } | { agent: number; origin: string; land?: true; held?: true } | { digest: string }, opts?: { delaySeconds?: number }): Promise<void> };
   /** Fix tasks (heal.ts), one message each, apart from JOBS so a rebuild doesn't wait behind feature runs (#1234). Unset, they ride JOBS. */
   FIXES?: { send(body: { agent: number; origin: string }): Promise<void> };
   /** Tests only: stands in for fetch when a webhook is delivered (see hooks.ts). */

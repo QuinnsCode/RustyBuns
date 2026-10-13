@@ -109,6 +109,15 @@ export interface Note { text: string; at: number }
 
 /** A queue consumer's wall time, so a hosted run's limit. */
 const HOSTED_RUN_MS = 15 * 60_000;
+/**
+ * Containers hosted feature runs may hold at once, sitewide. AGENT_SANDBOX has one more
+ * (rustybuns.config.ts), kept for fix tasks (heal.ts), so a rebuild never waits behind feature runs (#1242).
+ */
+export const FEATURE_RUNS = 2;
+/** How long a feature run held back for a container waits before it looks again. */
+const HOLD_S = 30;
+/** A feature run: the route's, or one carrying on its batch (agent-run-<id>). A fix task works on the branch it fixes. */
+const FEATURE = "(branch IS NULL OR branch LIKE 'agent-run-%')";
 /** How many runs each repo keeps. */
 const KEEP = 50;
 /** How many of a run's log lines are kept. */
@@ -134,7 +143,7 @@ const finish = (env: Env, id: number, status: "done" | "failed", result: Partial
   env.DB.prepare("UPDATE agent_runs SET status = ?, result = ? WHERE id = ? AND status = 'running'").bind(status, JSON.stringify(result), id).run();
 
 /** A JOBS message that starts hosted run `agent` (or with `land`, lands its batch when its clock runs out); `origin` is the site's, for the agent's calls to the API. */
-export interface AgentMessage { agent: number; origin: string; land?: true }
+export interface AgentMessage { agent: number; origin: string; land?: true; held?: true }
 
 /** Calls the app as `who`, as the agent and its owner do. */
 const caller = (self: (req: Request) => Promise<Response>, origin: string) => (who: string | null, path: string, init: RequestInit = {}) => {
@@ -300,7 +309,7 @@ async function tell(req: Request, env: Env, owner: string, repo: string, id: num
 export async function runQueuedAgents(messages: readonly { body: AgentMessage; ack(): void }[], env: Env, self: (req: Request) => Promise<Response>) {
   await Promise.all(messages.map(async (m) => {
     if (m.body.land) await landDue(env, self, m.body.origin, m.body.agent).catch(() => {});
-    else await execute(env, self, m.body.origin, m.body.agent);
+    else await execute(env, self, m.body.origin, m.body.agent, m.body.held);
     m.ack();
   }));
 }
@@ -446,9 +455,18 @@ async function resume(env: Env, origin: string, id: number, wait: number) {
 }
 
 /** Runs the agent of run `id`, keeping its log and result in D1. Only once: a second try (the queue's retry after a cut-off consumer) fails it instead. */
-async function execute(env: Env, self: (req: Request) => Promise<Response>, origin: string, id: number) {
-  const claimed = await env.DB.prepare("UPDATE agent_runs SET picked = 1 WHERE id = ? AND picked = 0").bind(id).run();
+async function execute(env: Env, self: (req: Request) => Promise<Response>, origin: string, id: number, held?: true) {
+  // Hosted, a feature run takes a container only while FEATURE_RUNS others aren't running, in the same
+  // statement, so two consumers can't both take the last one. One held back gets its clock from when it starts.
+  const now = Date.now();
+  const claimed = await (env.AGENT_SANDBOX
+    ? env.DB.prepare(`UPDATE agent_runs SET picked = 1${held ? ", started = ?" : ""} WHERE id = ? AND picked = 0 AND (NOT ${FEATURE}
+        OR (SELECT COUNT(*) FROM agent_runs WHERE picked = 1 AND status = 'running' AND started > ? AND ${FEATURE}) < ?)`).bind(...held ? [now] : [], id, now - HOSTED_RUN_MS, FEATURE_RUNS)
+    : env.DB.prepare("UPDATE agent_runs SET picked = 1 WHERE id = ? AND picked = 0").bind(id)).run();
   if (!claimed.meta?.changes) {
+    const was = await getRow(env, id);
+    // Held back: it looks again in a while, still queued.
+    if (was?.status === "running" && !was.picked) return void await env.JOBS.send({ agent: id, origin, held: true }, { delaySeconds: HOLD_S });
     await env.DB.prepare("UPDATE agent_runs SET status = 'failed', result = ? WHERE id = ? AND status = 'running'")
       .bind(JSON.stringify({ error: "the agent was cut off before it finished" }), id).run();
     return;

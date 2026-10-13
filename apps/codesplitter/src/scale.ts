@@ -77,11 +77,11 @@ export const CARDS: Card[] = [
   },
   {
     id: "agents", name: "Hosted agent runs", where: "AgentSandbox containers (rustybuns.config.ts)",
-    wall: "maxInstances 2: two hosted agent runs at once, sitewide",
+    wall: "maxInstances 3: two hosted feature runs at once, sitewide, and a third kept for fix tasks",
     shows: "Agent runs wait for a sandbox",
     here: "Yes, it's config: raise maxInstances, and pay per running container",
     box: "Docker on the box: as many as the cores hold, no per-second bill",
-    next: "Raise maxInstances when runs start waiting",
+    next: "Raise maxInstances and FEATURE_RUNS together when runs start waiting",
   },
   {
     id: "deploys", name: "Deploys and previews", where: "DeployRunner container (rustybuns.config.ts)",

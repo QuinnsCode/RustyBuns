@@ -171,6 +171,32 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     expect(runs.at(-1).cmd.env?.GH_TOKEN).toBeUndefined();
   });
 
+  test("feature runs take two containers at most, so a fix task never waits behind them (#1242)", async () => {
+    const { call, post, runs, env } = await hosted(async (b) => ({ code: 0, out: "", text: b.text }));
+    const add = (branch: string | null, picked: number) => env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started, picked, branch) VALUES ('ryan-quinn', 'r1', 'src/a.js', 'claude', 'x', 'agent-claude', 'running', ?, ?, ?) RETURNING id")
+      .bind(Date.now(), picked, branch).first().then((r: any) => r.id as number);
+    const busy = [await add(null, 1), await add("agent-run-1", 1)];
+    const row = (id: number) => env.DB.prepare("SELECT status, picked FROM agent_runs WHERE id = ?").bind(id).first();
+    // A third feature run waits on the queue, not picked up.
+    const res = await post("ryan-quinn", "/api/repos/ryan-quinn/r1/agents", { harness: "claude", path: "src/a.js", task: "y" });
+    const { id } = await res.json() as { id: number };
+    // A fix task gets the container kept for it.
+    await post("ryan-quinn", "/api/repos/ryan-quinn/r1/branches", { name: "tidy" });
+    const fix = await add("tidy", 0);
+    await env.FIXES!.send({ agent: fix, origin });
+    for (const end = performance.now() + 15_000; (await row(fix))!.status === "running" && performance.now() < end;) await Bun.sleep(20);
+    expect(await row(fix)).toMatchObject({ status: "done", picked: 1 });
+    expect(runs).toHaveLength(1);
+    expect(await row(id)).toMatchObject({ status: "running", picked: 0 });
+    expect(env.JOBS.size()).toBe(1);
+    // A feature run ends: the held one goes when it looks again.
+    await env.DB.prepare("UPDATE agent_runs SET status = 'done' WHERE id = ?").bind(busy[0]).run();
+    await env.JOBS.drain(Date.now() + 31_000);
+    for (const end = performance.now() + 15_000; (await row(id))!.status === "running" && performance.now() < end;) await Bun.sleep(20);
+    expect(await row(id)).toMatchObject({ status: "done", picked: 1 });
+    expect(runs).toHaveLength(2);
+  });
+
   test("only the owner starts one", async () => {
     const { post } = await hosted(async (b) => ({ code: 0, out: "", text: b.text }));
     expect((await post("pat-person", "/api/repos/ryan-quinn/r1/agents", { harness: "pi", path: "src/a.js", task: "x" })).status).toBe(403);

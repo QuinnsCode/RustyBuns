@@ -431,7 +431,7 @@ Each run on the page says about how many tokens it read and, when it stopped sho
 
 On Cloudflare a Worker is a V8 isolate: it has `node:fs` now, but it can't start the agents' CLIs (claude, codex, pi and opencode are native programs that run shell commands).
 So when `AGENT_SANDBOX` is bound (deploy with `CODESPLITTER_AGENTS=1`), the file page's Agent button (`POST /api/repos/:o/:r/agents`, or `bun agent.ts ... --hosted`) runs the agent in a container instead.
-Each run starts its own container (`sandbox/Dockerfile`: every CLI plus a small server), hands it the file, and stops it when the agent is done, so nothing bills while idle; `AGENT_SANDBOX` caps it at two at once on the `basic` size.
+Each run starts its own container (`sandbox/Dockerfile`: every CLI plus a small server), hands it the file, and stops it when the agent is done, so nothing bills while idle; `AGENT_SANDBOX` caps it at three at once on the `basic` size: two for feature runs (`FEATURE_RUNS`), the third kept for self-healing's fix tasks, rebuilds too, so one never waits behind feature runs (#1242). A feature run picked up with both of its containers busy goes back on the queue for 30 seconds, and its 15-minute clock starts when it does.
 The CLIs log in with these secrets, read through varlock from the `codesplitter` vault: `ANTHROPIC_API_KEY` (`op://codesplitter/anthropic/api-key`; never a Claude subscription login, which is for your own use, #559), `OPENAI_API_KEY` (`openai/api-key`), `CODEX_API_KEY` (`codex/api-key`).
 Each is optional: make the items for the harnesses you use, and the rest stay unset.
 Containers need the Workers Paid plan.
@@ -541,7 +541,7 @@ No Rust and no Docker in the image, so checks that need them belong on the deskt
 What it costs (Containers on Workers Paid, priced 2026-10-11, [Cloudflare's pricing](https://developers.cloudflare.com/containers/pricing/)): a `basic` instance is 1/4 vCPU, 1 GiB and 4 GB of disk, billed per 10 ms while it runs, memory and disk as provisioned, CPU as used: $0.0000025 per GiB-second, $0.000020 per vCPU-second, $0.00000007 per GB-second.
 A 5-minute run at full CPU is about $0.0023 (memory $0.00075, CPU $0.0015, disk $0.00008), and a full 13-minute one about $0.006.
 The plan includes 25 GiB-hours, 375 vCPU-minutes and 200 GB-hours a month, about 300 five-minute runs.
-`maxInstances: 2` caps the worst case: two containers busy around the clock is about $41 a month before the included usage.
+`maxInstances: 3` caps the worst case: three containers busy around the clock is about $62 a month before the included usage. The third runs only for fix tasks.
 The clone and installs are egress (1 TB a month included).
 To turn it off, deploy again without the flag: the binding goes.
 
