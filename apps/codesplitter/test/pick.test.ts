@@ -1,6 +1,9 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot, type Call } from "../src/local.ts";
-import { pickMessage, plan } from "../src/pick.ts";
+import { pickMessage, plan, planBlob } from "../src/pick.ts";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Doc } from "../src/lines.ts";
 
 setDefaultTimeout(30_000);
@@ -38,7 +41,22 @@ describe("a commit's changes, planned against the file now (#880)", () => {
     expect(plan("pick", made, null)).toEqual({ path: "b.ts", do: "make", next: ["b"] });
     expect(plan("revert", made, doc(["b"]))).toEqual({ path: "b.ts", do: "delete" });
     expect(plan("revert", made, doc(["b", "more"]))).toMatchObject({ why: expect.stringContaining("changed since") });
-    expect(plan("pick", { path: "x.png", before: null, after: null, binary: true }, null)).toMatchObject({ why: expect.stringContaining("binary") });
+    expect(plan("pick", { path: "x.png", before: null, after: null, binary: { before: null, after: { hash: "h", mode: "100644" } } }, null)).toMatchObject({ why: expect.stringContaining("only main") });
+    expect(plan("pick", { path: "sub", before: null, after: null, odd: true }, null)).toMatchObject({ why: expect.stringContaining("submodule") });
+  });
+  test("a binary file goes by its bytes, when main's are the side it goes from (#888)", () => {
+    const b = (...x: number[]) => new Uint8Array(x);
+    const c = { path: "x.png", before: null, after: null, binary: { before: { hash: "a", mode: "100644" }, after: { hash: "b", mode: "100755" } } };
+    const sides = { before: b(0, 1), after: b(0, 2) };
+    expect(planBlob("revert", c, sides, b(0, 2))).toEqual({ path: "x.png", do: "blob", made: false, bytes: b(0, 1), mode: "100644" });
+    expect(planBlob("pick", c, sides, b(0, 1))).toEqual({ path: "x.png", do: "blob", made: false, bytes: b(0, 2), mode: "100755" });
+    expect(planBlob("revert", c, sides, b(0, 1))).toEqual({ path: "x.png", do: "skip" });
+    expect(planBlob("revert", c, sides, b(0, 3))).toEqual({ path: "x.png", why: "a binary file changed since" });
+    expect(planBlob("revert", c, sides, null)).toEqual({ path: "x.png", why: "deleted since" });
+    const made = { ...c, binary: { before: null, after: c.binary.after } };
+    expect(planBlob("revert", made, { before: null, after: b(0, 2) }, b(0, 2))).toEqual({ path: "x.png", do: "delete", blob: true });
+    expect(planBlob("pick", made, { before: null, after: b(0, 2) }, null)).toMatchObject({ do: "blob", made: true });
+    expect(planBlob("pick", made, { before: null, after: b(0, 2) }, b(9))).toEqual({ path: "x.png", why: "made again since, with other bytes" });
   });
   test("git's wording", () => {
     expect(pickMessage("revert", { hash: "abc", message: "shout two\n\nbody" })).toBe('Revert "shout two"\n\nThis reverts commit abc.');
@@ -99,5 +117,45 @@ describe("revert and cherry-pick from the commit graph (#880)", () => {
     expect(clash.status).toBe(409);
     expect((await clash.json()).clashes).toEqual([{ path: "a.ts", why: "the same lines changed since" }]);
     expect(await texts(call, "a.ts")).toEqual(["one", "zwei", "three", "four", "FIVE"]);
+  });
+});
+
+describe("a commit that touches a binary file (#888)", () => {
+  test("its bytes are reverted and picked on main, in the same git commit as its lines; a branch or a change since clashes", async () => {
+    const call = await boot();
+    opened.push(call);
+    await post(call, "/api/login", { name: "ana" });
+    await post(call, "/api/repos", { name: "p" });
+    await post(call, "/api/repos/ana/p/files", { path: "a.ts", content: "one\ntwo" });
+    expect((await post(call, "/api/repos/ana/p/do/commit?path=a.ts", { message: "first" })).status).toBe(200);
+    const work = mkdtempSync(join(tmpdir(), "pick-bin-"));
+    const sh = async (cmd: string) => {
+      const p = Bun.spawn(["sh", "-c", cmd], { cwd: work, stdout: "pipe", stderr: "pipe", env: { ...process.env, GIT_AUTHOR_NAME: "ana", GIT_AUTHOR_EMAIL: "a@x", GIT_COMMITTER_NAME: "ana", GIT_COMMITTER_EMAIL: "a@x" } });
+      expect(await p.exited).toBe(0);
+    };
+    // A commit from outside, with a binary file and a line.
+    await sh(`git clone -q ${call.artifacts.path("ana--p")} . && printf 'P\\000N\\001G' > logo.png && printf 'one\\nTWO\\n' > a.ts && git add -A && git commit -qm "logo and shout" && git push -q origin HEAD:main`);
+    const logo = await hashOf(call, "logo and shout");
+
+    // Revert: the logo goes and line 2 comes back, as one commit.
+    const r = await post(call, `/api/repos/ana/p/commits/${logo}/revert`);
+    expect(r.status).toBe(200);
+    expect((await r.json()).files).toEqual([{ path: "a.ts", did: "edit" }, { path: "logo.png", did: "delete" }]);
+    expect(await git(call, "ls-tree", "--name-only", "main")).toBe("a.ts");
+    expect(await git(call, "show", "main:a.ts")).toBe("one\ntwo");
+    expect(await git(call, "log", "-1", "--format=%s", "main")).toBe('Revert "logo and shout"');
+
+    // Pick it again: the bytes are back, byte for byte.
+    expect((await (await post(call, `/api/repos/ana/p/commits/${logo}/pick`)).json()).files).toEqual([{ path: "a.ts", did: "edit" }, { path: "logo.png", did: "make" }]);
+    expect(await git(call, "rev-parse", "main:logo.png")).toBe(await git(call, "rev-parse", `${logo}:logo.png`));
+
+    // A branch can't take bytes; nor can main once the logo changed since. Nothing lands.
+    expect((await post(call, "/api/repos/ana/p/branches", { name: "b" })).status).toBe(201);
+    expect((await (await post(call, `/api/repos/ana/p/commits/${logo}/revert`, { branch: "b" })).json()).clashes).toEqual([{ path: "logo.png", why: "a binary file: only main takes those" }]);
+    await sh(`git pull -q origin main && printf 'P\\000X' > logo.png && git commit -qam "new logo" && git push -q origin HEAD:main`);
+    const clash = await post(call, `/api/repos/ana/p/commits/${logo}/revert`);
+    expect(clash.status).toBe(409);
+    expect((await clash.json()).clashes).toEqual([{ path: "logo.png", why: "a binary file changed since" }]);
+    expect(await git(call, "log", "-1", "--format=%s", "main")).toBe("new logo");
   });
 });

@@ -185,9 +185,10 @@ export function pushCatalogue(env: Env, owner: string, repo: string, path: strin
   return pushCatalogues(env, owner, repo, { [path]: files }, author, message);
 }
 
-/** pushCatalogue for several files at once, as one commit (a revert, #880); null takes a file out. */
-export async function pushCatalogues(env: Env, owner: string, repo: string, files: Record<string, { content: string; published: string } | null>, author: string, message: string) {
-  const paths = Object.keys(files), secret = paths.find((p) => files[p] && files[p]!.content !== files[p]!.published);
+/** pushCatalogue for several files at once, as one commit (a revert, #880); null takes a file out, and bytes go in as they are (#888). */
+export async function pushCatalogues(env: Env, owner: string, repo: string, files: Record<string, { content: string; published: string } | { bytes: Uint8Array; mode?: string } | null>, author: string, message: string) {
+  const paths = Object.keys(files), lines = (p: string) => { const f = files[p]; return f && "content" in f ? f : null; };
+  const secret = paths.find((p) => lines(p) && lines(p)!.content !== lines(p)!.published);
   await (secret ? ensureCrewRemote(env, owner, repo, secret) : payBackfill(env, owner, repo, paths[0]));
   const [h, crew] = await Promise.all([handleFor(env, owner, repo), handleFor(env, owner, repo, true)]);
   if (!h) return null;
@@ -196,7 +197,7 @@ export async function pushCatalogues(env: Env, owner: string, repo: string, file
     throw new Error("git is moving to a fresh start; this commit lands when it's done");
   }
   const text = (c: string) => c.endsWith("\n") ? c : c + "\n";
-  const changes = (side: "content" | "published") => Object.fromEntries(paths.map((p) => [p, files[p] ? text(files[p]![side]) : null]));
+  const changes = (side: "content" | "published"): Record<string, Change> => Object.fromEntries(paths.map((p) => [p, lines(p) ? text(lines(p)![side]) : files[p] as Change]));
   const crewPush = async (to: Handle) => {
     const a = await access(to.handle, to.remote, "write", 300);
     return push(a.remote, a.token, { changes: changes("content"), ...(await byline(env, owner, repo, author, message)), branch: to.branch, base: to.handle });

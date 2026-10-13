@@ -6,7 +6,9 @@
 // after. On main the files are committed as one git commit, git's own wording and
 // all; on an open branch the edits wait for the branch to merge, like any other.
 // A dry run comes first, so a clash anywhere (lines changed since, a file deleted
-// or made since, a binary file) lands nothing.
+// or made since) lands nothing. A binary or too-big file has no lines: on main its
+// bytes are written into git as they are (#888), the way a branch merge writes one
+// (#446), as long as main's copy is still the commit's other side.
 //
 //   POST /api/repos/:o/:r/commits/:sha/revert {branch?}
 //   POST /api/repos/:o/:r/commits/:sha/pick {branch?}
@@ -24,8 +26,13 @@ import { indexFile, unindexFile } from "./search.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 
 export type PickKind = "revert" | "pick";
-/** One file a commit changed: its lines before and after (null: it wasn't there), or that it's binary or too big. */
-export interface Change { path: string; before: string[] | null; after: string[] | null; binary?: true }
+/** A binary or too-big file's side of a commit: its git blob and mode. */
+export interface Side { hash: string; mode: string }
+/**
+ * One file a commit changed: its lines before and after (null: it wasn't there); for a binary
+ * or too-big one, its blobs instead (`binary`), or `odd` for a submodule or symlink.
+ */
+export interface Change { path: string; before: string[] | null; after: string[] | null; binary?: { before: Side | null; after: Side | null }; odd?: true }
 
 /** The most files one revert or pick takes. */
 const MAX_FILES = 100;
@@ -37,9 +44,9 @@ export async function commitChanges(handle: Pick<ArtifactsRepo, "readCommit" | "
   const parent = commit.parents[0] ? await handle.readCommit(commit.parents[0]).catch(() => null) : null;
   const changes: Change[] = [];
   let more = false;
-  const read = async (e: TreeEntry | undefined): Promise<string[] | null | "binary"> => {
+  const read = async (e: TreeEntry | undefined): Promise<string[] | null | "binary" | "odd"> => {
     if (!e) return null;
-    if (e.type === "gitlink" || e.type === "symlink") return "binary";
+    if (e.type === "gitlink" || e.type === "symlink") return "odd";
     const b = await handle.readBlob(e.hash);
     if (!b) return null;
     if (b.size > MAX_BYTES) return "binary";
@@ -58,7 +65,9 @@ export async function commitChanges(handle: Pick<ArtifactsRepo, "readCommit" | "
       const xf = xt ? undefined : x, yf = yt ? undefined : y;
       if (!xf && !yf) continue;
       const [before, after] = await Promise.all([read(xf), read(yf)]);
-      if (before === "binary" || after === "binary") changes.push({ path, before: null, after: null, binary: true });
+      const side = (e: TreeEntry | undefined) => e ? { hash: e.hash, mode: e.mode } : null;
+      if (before === "odd" || after === "odd") changes.push({ path, before: null, after: null, odd: true });
+      else if (before === "binary" || after === "binary") changes.push({ path, before: null, after: null, binary: { before: side(xf), after: side(yf) } });
       else changes.push({ path, before, after });
     }
   };
@@ -67,7 +76,8 @@ export async function commitChanges(handle: Pick<ArtifactsRepo, "readCommit" | "
 }
 
 /** What landing one change does to a file: edits it (`doc` to `next`), makes it, deletes it, or leaves it be. */
-export type Step = { path: string; do: "edit"; doc: Doc; next: string[] } | { path: string; do: "make"; next: string[] } | { path: string; do: "delete" } | { path: string; do: "skip" };
+export type Step = { path: string; do: "edit"; doc: Doc; next: string[] } | { path: string; do: "make"; next: string[] } | { path: string; do: "delete"; blob?: true } | { path: string; do: "skip" }
+  | { path: string; do: "blob"; made: boolean; bytes: Uint8Array; mode: string };
 export interface Clash { path: string; why: string }
 
 /**
@@ -75,7 +85,8 @@ export interface Clash { path: string; why: string }
  * a revert goes from the commit's after to its before, a pick the other way.
  */
 export function plan(kind: PickKind, c: Change, doc: Doc | null): Step | Clash {
-  if (c.binary) return { path: c.path, why: "a binary file: it has no lines to undo or take" };
+  if (c.odd) return { path: c.path, why: "a submodule or symlink: it has no lines to undo or take" };
+  if (c.binary) return { path: c.path, why: "a binary file: only main takes those" };
   const [base, want] = kind === "revert" ? [c.after, c.before] : [c.before, c.after];
   const lines = doc?.lines.map((l) => l.text) ?? null;
   const same = (a: string[], b: string[]) => a.length === b.length && a.every((l, i) => l === b[i]);
@@ -89,6 +100,18 @@ export function plan(kind: PickKind, c: Change, doc: Doc | null): Step | Clash {
   if (same(lines, want)) return { path: c.path, do: "skip" };
   const next = merge3(base, lines, want);
   return next ? { path: c.path, do: "edit", doc: doc!, next } : { path: c.path, why: "the same lines changed since" };
+}
+
+/**
+ * The step for a binary or too-big file on main (#888), from the bytes of the commit's two sides
+ * and main's now (null: not there). Main's copy has to be the side it goes from, byte for byte.
+ */
+export function planBlob(kind: PickKind, c: Change & { binary: NonNullable<Change["binary"]> }, sides: { before: Uint8Array | null; after: Uint8Array | null }, now: Uint8Array | null): Step | Clash {
+  const [base, want, to] = kind === "revert" ? [sides.after, sides.before, c.binary.before] : [sides.before, sides.after, c.binary.after];
+  const same = (a: Uint8Array | null, b: Uint8Array | null) => a === null || b === null ? a === b : a.length === b.length && a.every((x, i) => x === b[i]);
+  if (same(now, want)) return { path: c.path, do: "skip" };
+  if (!same(now, base)) return { path: c.path, why: base === null ? "made again since, with other bytes" : now === null ? "deleted since" : "a binary file changed since" };
+  return want === null ? { path: c.path, do: "delete", blob: true } : { path: c.path, do: "blob", made: base === null, bytes: want, mode: to!.mode };
 }
 
 /** The commit message, as git writes it. */
@@ -116,7 +139,18 @@ export async function pickRoute(env: Env, owner: string, repo: string, user: str
 
   // The dry run: every file's step, or why it can't.
   const steps: Step[] = [], clashes: Clash[] = [];
+  const bytes = async (b: Blob | null) => b ? new Uint8Array(await b.arrayBuffer()) : null;
   for (const c of got.changes) {
+    if (c.odd || (c.binary && branch)) { clashes.push(plan(kind, c, null) as Clash); continue; }
+    if (c.binary) {
+      // Main's copy is in git, unless it's text the app holds as lines now.
+      if (await env.DB.prepare("SELECT 1 FROM files WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, c.path).first()) { clashes.push({ path: c.path, why: "a text file now" }); continue; }
+      const read = (s: Side | null) => s ? h!.handle.readBlob(s.hash).then(bytes) : null;
+      const [before, after, now] = await Promise.all([read(c.binary.before), read(c.binary.after), h.handle.readFile({ ref: h.branch, path: c.path }).then(bytes)]);
+      const s = planBlob(kind, c as Change & { binary: NonNullable<Change["binary"]> }, { before, after }, now);
+      "why" in s ? clashes.push(s) : s.do !== "skip" && steps.push(s);
+      continue;
+    }
     const m = branch ? await materializeOn(env, owner, repo, branch, c.path) : await materialize(env, owner, repo, c.path);
     if ("error" in m && m.status !== 404) { clashes.push({ path: c.path, why: m.error }); continue; }
     const doc = "error" in m ? null : await (await toFile(env, owner, repo, c.path, user, "file", {}, "", branch)).json() as Doc;
@@ -131,6 +165,8 @@ export async function pickRoute(env: Env, owner: string, repo: string, user: str
   // For real: line edits by whoever pressed it, each against the rev the dry run read.
   const message = pickMessage(kind, got.commit);
   for (const s of steps) {
+    // Bytes go straight into git with the rest, below.
+    if (s.do === "blob" || (s.do === "delete" && s.blob)) continue;
     if (s.do === "edit") {
       const res = await toFile(env, owner, repo, s.path, user, "ops", { method: "POST", body: JSON.stringify({ ops: diffToOps(s.doc.lines, s.next), ifRev: s.doc.rev }) }, "", branch);
       if (!res.ok) return json({ error: `${s.path} was edited while this ran: try again`, landed: steps.slice(0, steps.indexOf(s)).map((x) => x.path) }, 409);
@@ -147,13 +183,15 @@ export async function pickRoute(env: Env, owner: string, repo: string, user: str
       await unindexFile(env, owner, repo, s.path);
     }
   }
-  const files = steps.map((s) => ({ path: s.path, did: s.do }));
+  const did = (s: Step) => s.do === "blob" ? (s.made ? "make" : "edit") : s.do;
+  const files = steps.map((s) => ({ path: s.path, did: did(s) }));
   if (branch) return json({ kind, commit: got.commit.hash, branch, message, files });
 
   // Main: each file commits, and git gets them all as one commit.
-  const catalogue: Record<string, { content: string; published: string } | null> = {};
+  const catalogue: Parameters<typeof pushCatalogues>[3] = {};
   for (const s of steps) {
     if (s.do === "delete") { catalogue[s.path] = null; continue; }
+    if (s.do === "blob") { catalogue[s.path] = { bytes: s.bytes, mode: s.mode }; continue; }
     const res = await toFile(env, owner, repo, s.path, user, "commit", { method: "POST", body: JSON.stringify({ message }) });
     const { content, published } = (await res.json()) as { content: string; published: string };
     await indexFile(env, owner, repo, s.path, published);
@@ -161,7 +199,7 @@ export async function pickRoute(env: Env, owner: string, repo: string, user: str
   }
   const git = await pushCatalogues(env, owner, repo, catalogue, user, message).catch((e: Error) => ({ error: e.message }));
   if (git && !("error" in git)) {
-    const made = (d: Step["do"]) => steps.filter((s) => s.do === d).map((s) => s.path);
+    const made = (d: string) => steps.filter((s) => did(s) === d).map((s) => s.path);
     await emit(env, owner, repo, "commit", user, {
       ref: "refs/heads/main", before: git.parent ?? "0".repeat(40), after: git.commit, created: !git.parent, pusher: { name: user },
       head_commit: { id: git.commit, message, timestamp: new Date().toISOString(), author: { name: user, username: user }, added: made("make"), modified: made("edit"), removed: made("delete") },
