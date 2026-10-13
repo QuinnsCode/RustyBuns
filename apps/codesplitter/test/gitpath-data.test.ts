@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { local as boot, type Call } from "../src/local.ts";
 import { countLines } from "../src/gitpath-data.ts";
+import { joinHistory } from "../src/gitpath-upstream.ts";
 import { buildNotes, layoutGraph, readInput } from "../src/gitpath/gitpath.ts";
 
 setDefaultTimeout(30_000);
@@ -93,5 +94,24 @@ describe("gitpath's data for a hosted repo", () => {
     expect(other.status).toBeGreaterThanOrEqual(401);
     expect(other.status).toBeLessThanOrEqual(404);
     expect(JSON.stringify(await other.json())).not.toContain("mine");
+  });
+});
+
+describe("history from before the repo was on codeSplitter", () => {
+  const c = (hash: string, parents: string[], added = 1) => ({ hash, author: "a", date: "2020-01-01T00:00:00.000Z", subject: hash, added, removed: 0, parents });
+  test("the import's root takes GitHub's older commits as its parents, and GitHub's counts", () => {
+    const hosted = [c("new", ["root"]), c("root", [], 50)];
+    const before = [c("root", ["mid"], 3), c("mid", ["old"]), c("old", [])];
+    const all = joinHistory(hosted, before);
+    expect(all.map((x) => x.hash)).toEqual(["new", "root", "mid", "old"]);
+    expect(all[1]).toMatchObject({ parents: ["mid"], added: 3 });
+  });
+  test("a tarball import (a root of its own) hangs off GitHub's newest", () => {
+    const all = joinHistory([c("tar", [], 9)], [c("a", ["b"]), c("b", [])]);
+    expect(all.map((x) => [x.hash, x.parents])).toEqual([["tar", ["a"]], ["a", ["b"]], ["b", []]]);
+  });
+  test("with nothing from GitHub the hosted history is as it was", () => {
+    const hosted = [c("x", [])];
+    expect(joinHistory(hosted, [])).toBe(hosted);
   });
 });

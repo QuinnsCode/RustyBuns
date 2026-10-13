@@ -50,6 +50,7 @@ import {
 import {
   evict,
   githubRoutes,
+  githubToken,
 } from "./github.ts";
 import { gameRoutes } from "./game.ts";
 import {
@@ -126,6 +127,7 @@ import { repoFit } from "./fit.ts";
 import { gitState } from "./git-state.ts";
 import { commitGraph } from "./graph.ts";
 import { busiestFiles, fileHistory } from "./gitpath-data.ts";
+import { joinHistory, upstreamBusiest, upstreamFileHistory, type UpstreamRepo } from "./gitpath-upstream.ts";
 import { tagRoutes } from "./tags.ts";
 import { pickRoute } from "./pick.ts";
 import {
@@ -522,7 +524,20 @@ async function route(req: Request, env: Env): Promise<Response> {
       try {
         const h = await handleFor(env, owner, repo);
         if (!h) return json({ repo: `${owner}/${repo}`, ...(path ? { path, commits: [] } : { files: [] }) });
-        return json({ repo: `${owner}/${repo}`, ...(path ? await fileHistory(h.handle, h.branch, path, limit) : await busiestFiles(h.handle, h.branch, limit)) });
+        // A repo dug from GitHub has only its import in its own git; what came before is read from GitHub (gitpath-upstream.ts).
+        const r = await env.DB.prepare("SELECT upstream, upstream_commit, branch FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() as UpstreamRepo | null;
+        const token = (await githubToken(env, user).catch(() => null))?.token;
+        if (path) {
+          const own = await fileHistory(h.handle, h.branch, path, limit);
+          const before = own.more ? null : await upstreamFileHistory(r, path, limit - own.commits.length, token);
+          return json({ repo: `${owner}/${repo}`, ...own, commits: before ? joinHistory(own.commits, before.commits) : own.commits, more: own.more || !!before?.more });
+        }
+        const own = await busiestFiles(h.handle, h.branch, limit, 100);
+        const before = own.more ? null : await upstreamBusiest(r, token);
+        const counts = new Map(own.files.map((f) => [f.path, f.commits]));
+        for (const [f, n] of before ?? []) counts.set(f, (counts.get(f) ?? 0) + n);
+        const files = [...counts].map(([path, commits]) => ({ path, commits })).sort((x, y) => y.commits - x.commits || (x.path < y.path ? -1 : 1)).slice(0, 12);
+        return json({ repo: `${owner}/${repo}`, branch: own.branch, files, more: own.more });
       } catch (e) {
         if (code(e) === "FORK_IN_PROGRESS" || code(e) === "IMPORT_IN_PROGRESS") return json({ forking: true, commits: [], files: [] }, 202);
         if (code(e) === "NOT_FOUND") return json({ lost: true, commits: [], files: [] });
