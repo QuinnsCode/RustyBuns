@@ -4,16 +4,9 @@
 import * as THREE from "three";
 import { FACTION_COLORS, type BattleResult, type BattleSpec, type Side } from "./contract.ts";
 import { groundRecorder } from "./replay.ts";
-import { animate, forest, gunship, marine, speeder, tank, turret, walker, wooka } from "./models.ts";
-import { DT, EYE, HALF, POST_RADIUS, STATS, STRIKE_RADIUS, TIME_LIMIT, TROOPERS, altitude, facing, heroUnit, startBattle, step, type Trooper, type Unit } from "./sim.ts";
-
-// The light, ground and stone of each map.
-const LOOKS = {
-  forest: { sky: 0x8fa48a, fog: [30, 190], ground: 0x3b4a26, stone: 0x9aa4ad },
-  canyon: { sky: 0xd9a77a, fog: [40, 220], ground: 0xa8663f, stone: 0x8e4f32 },
-  jungle: { sky: 0x5f7a55, fog: [18, 130], ground: 0x2c3a1c, stone: 0x6f7a5e },
-} as const;
-
+import { animate, gunship, marine, speeder, tank, turret, walker, wooka } from "./models.ts";
+import { buildWorld } from "./terrain.ts";
+import { DT, POST_RADIUS, STATS, STRIKE_RADIUS, TIME_LIMIT, TROOPERS, altitude, facing, heroUnit, startBattle, step, type Trooper, type Unit } from "./sim.ts";
 
 export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTMLElement): Promise<BattleResult> {
   const b = startBattle(spec);
@@ -24,91 +17,32 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
   const scene = new THREE.Scene();
-  // The forest moon: green gloom, light coming down through the canopy. The canyon is dust and
-  // red rock, the jungle closer and darker still.
-  const look = LOOKS[spec.sector === "canyon" || spec.sector === "jungle" ? spec.sector : "forest"];
-  scene.background = new THREE.Color(look.sky);
-  scene.fog = new THREE.Fog(look.sky, look.fog[0], look.fog[1]);
-  const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 600);
-  scene.add(new THREE.HemisphereLight(0xd6e8c4, 0x2f2a1a, 1.5));
-  // The sun casts shadows in a box that follows the camera, so they stay sharp near the hero.
-  const sun = new THREE.DirectionalLight(0xfff1d0, 1.6);
-  const SUN = new THREE.Vector3(40, 120, 30);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, near: 1, far: 400 });
-  sun.shadow.bias = -0.0005;
-  sun.shadow.normalBias = 0.04;
-  scene.add(sun, sun.target);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2.6, HALF * 2.6), new THREE.MeshLambertMaterial({ color: look.ground }));
-  ground.rotation.x = -Math.PI / 2;
-  ground.receiveShadow = true;
-  scene.add(ground);
-  forest(scene, b.trees, spec.seed, HALF, spec.sector === "canyon" ? "none" : spec.sector === "jungle" ? "jungle" : "redwood");
+  const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 2000);
+  // Doren's haze and light, the floor, the trees and everything on it: terrain.ts.
+  const world = buildWorld(scene, b);
+  const ground = world.heightAt;
 
-  // Command posts: a ring on the ground and a flag in the side's colour.
+  // Command posts: a ring on the ground, a banner on a pole, and a column of light in the
+  // holder's colour you can see through the trees.
   const posts = b.posts.map((p) => {
-    const ring = new THREE.Mesh(new THREE.RingGeometry(POST_RADIUS - 0.6, POST_RADIUS, 48), new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.6 }));
+    const y = ground(p.x, p.z);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(POST_RADIUS - 0.6, POST_RADIUS, 48), new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.6, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2;
-    ring.position.set(p.x, 0.05, p.z);
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 8), new THREE.MeshLambertMaterial({ color: 0x333333 }));
-    pole.position.set(p.x, 4, p.z);
-    const flag = new THREE.Mesh(new THREE.PlaneGeometry(3, 1.8), new THREE.MeshLambertMaterial({ color: 0xdddddd, side: THREE.DoubleSide }));
-    flag.position.set(p.x + 1.5, 7, p.z);
-    scene.add(ring, pole, flag);
-    return { ring, flag };
+    ring.position.set(p.x, y + 0.12, p.z);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 9, 8), new THREE.MeshStandardMaterial({ color: 0x2a2c30, metalness: 0.5, roughness: 0.4 }));
+    pole.position.set(p.x, y + 4.5, p.z);
+    pole.castShadow = true;
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.9, 8, 1), new THREE.MeshStandardMaterial({ color: 0xdddddd, side: THREE.DoubleSide, roughness: 0.8 }));
+    flag.position.set(p.x + 1.6, y + 7.8, p.z);
+    flag.castShadow = true;
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 60, 16, 1, true).translate(0, 30, 0), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.07, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    beam.position.set(p.x, y, p.z);
+    scene.add(ring, pole, flag, beam);
+    return { ring, flag, beam };
   });
-  // The scenery the sim laid out, which blocks movement and sight: buildings, rock and the
-  // landmark by the defender's keep in the map's stone, low walls as sandbags.
-  const keep = b.posts.at(-1)!;
-  const concrete = new THREE.MeshLambertMaterial({ color: look.stone });
-  const stone = spec.sector === "capital" ? new THREE.MeshLambertMaterial({ color: 0xc9c2b2 }) : concrete;
-  const sandbags = new THREE.MeshLambertMaterial({ color: spec.sector === "canyon" ? 0x6b5a48 : 0x8a7d5c });
-  const box = (w: number, h: number, d: number, x: number, z: number, mat: THREE.Material = concrete) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-    m.position.set(x, h / 2, z);
-    m.castShadow = m.receiveShadow = true;
-    scene.add(m);
-    return m;
-  };
-  for (const k of b.blocks) box(k.w, k.h, k.d, k.x, k.z, k.h < EYE ? sandbags : stone);
-  // Then the trimmings, which are only for show.
-  if (spec.sector === "shield") {
-    const dome = new THREE.Mesh(new THREE.SphereGeometry(26, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x7fd8ff, transparent: true, opacity: 0.12, depthWrite: false }));
-    dome.position.set(keep.x, 0, keep.z);
-    scene.add(dome);
-  } else if (spec.sector === "capital") {
-    ground.material.color.setHex(0x8d8a82);
-    box(8, 24, 8, keep.x, keep.z - 18, stone); // the palace's tower
-  } else if (spec.sector === "spaceport") {
-    // Landing pads round the first post, and the control tower by the keep.
-    ground.material.color.setHex(0x9b9688);
-    const padMat = new THREE.MeshLambertMaterial({ color: 0x5d6168 });
-    const pads = b.posts[0]!;
-    for (const [dx, dz] of [[-24, -18], [24, -18], [-24, 22], [24, 22]] as const) {
-      const pad = new THREE.Mesh(new THREE.CylinderGeometry(9, 9, 0.4, 24), padMat);
-      pad.position.set(pads.x + dx, 0.2, pads.z + dz);
-      scene.add(pad);
-    }
-    box(10, 4, 10, keep.x + 10, keep.z - 10).position.y = 24; // the tower's cab
-  } else if (spec.sector === "cannon") {
-    // The anti-ship cannon: its barrel cocked at the sky over the base.
-    ground.material.color.setHex(0x8f7f62);
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.8, 30, 12), new THREE.MeshLambertMaterial({ color: 0x5b6067 }));
-    barrel.position.set(keep.x - 12, 16, keep.z - 22);
-    barrel.rotation.x = -0.6;
-    scene.add(barrel);
-  } else if (spec.sector === "canyon") {
-    // A conveyor from the mine head's rig, and its tower.
-    box(2, 1, 30, keep.x + 12, keep.z + 4, sandbags).position.y = 6;
-    box(3, 16, 3, keep.x + 16, keep.z - 16);
-  } else if (spec.sector === "jungle") {
-    // The temple's stepped top.
-    box(14, 4, 9, keep.x, keep.z - 22).position.y = 14;
-    box(8, 4, 5, keep.x, keep.z - 22).position.y = 18;
-  }
-
   // Units, by id. Each side looks like its faction, whichever end of the field it's on.
   const meshes = new Map<number, THREE.Group>();
   const makeMesh = (u: Unit) => {
@@ -159,7 +93,8 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const aimPoint = () => {
     const ray = new THREE.Raycaster();
     ray.setFromCamera(new THREE.Vector2(0, 0), camera);
-    const hit = ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+    const me = heroUnit(b), floor = me ? ground(me.x, me.z) : 0; // the strike lands on the floor about where you stand
+    const hit = ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -floor), new THREE.Vector3());
     return hit && hit.distanceTo(camera.position) < 160 ? { x: hit.x, z: hit.z } : null;
   };
 
@@ -221,7 +156,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         seen.add(u.id);
         let m = meshes.get(u.id);
         if (!m) meshes.set(u.id, (m = makeMesh(u)));
-        m.position.set(u.x, altitude(u), u.z);
+        m.position.set(u.x, altitude(u) + ground(u.x, u.z), u.z);
         m.rotation.y = u.yaw;
         // Walk cycles from how far it moved; recoil and club swings from how long since it fired.
         const last = m.userData.last as { x: number; z: number }, moved = Math.hypot(u.x - last.x, u.z - last.z);
@@ -232,18 +167,20 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       for (const [id, m] of meshes) if (!seen.has(id)) { scene.remove(m); meshes.delete(id); }
       posts.forEach((p, i) => {
         const post = b.posts[i]!;
-        (p.flag.material as THREE.MeshLambertMaterial).color.setHex(post.owner ? color(post.owner) : 0xdddddd);
+        (p.flag.material as THREE.MeshStandardMaterial).color.setHex(post.owner ? color(post.owner) : 0xdddddd);
         (p.ring.material as THREE.MeshBasicMaterial).color.setHex(post.progress > 0 ? color("attacker") : post.progress < 0 ? color("defender") : 0xffffff);
+        (p.beam.material as THREE.MeshBasicMaterial).color.setHex(post.owner ? color(post.owner) : 0x888888);
+        p.flag.rotation.y = Math.sin(now / 700 + i) * 0.25; // it flaps
       });
       const pts: number[] = [];
       let nb = 0;
       for (const f of b.fx) {
-        if (f.kind === "shot") pts.push(f.x, (f.y ?? 0) + 1.4, f.z, f.tx, (f.ty ?? 0) + 1.2, f.tz);
-        else { const m = pooled(blasts, nb++, () => new THREE.Mesh(blastGeo, blastMat)); m.position.set(f.x, 1, f.z); m.scale.setScalar(f.t > 0.3 ? STRIKE_RADIUS : 3); }
+        if (f.kind === "shot") pts.push(f.x, (f.y ?? 0) + 1.4 + ground(f.x, f.z), f.z, f.tx, (f.ty ?? 0) + 1.2 + ground(f.tx, f.tz), f.tz);
+        else { const m = pooled(blasts, nb++, () => new THREE.Mesh(blastGeo, blastMat)); m.position.set(f.x, 1 + ground(f.x, f.z), f.z); m.scale.setScalar(f.t > 0.3 ? STRIKE_RADIUS : 3); }
       }
       for (let i = nb; i < blasts.length; i++) blasts[i]!.visible = false;
       shotGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
-      b.strikes.forEach((s, i) => { const m = pooled(marks, i, () => { const x = new THREE.Mesh(markGeo, markMat); x.rotation.x = -Math.PI / 2; return x; }); m.position.set(s.x, 0.1, s.z); });
+      b.strikes.forEach((s, i) => { const m = pooled(marks, i, () => { const x = new THREE.Mesh(markGeo, markMat); x.rotation.x = -Math.PI / 2; return x; }); m.position.set(s.x, 0.15 + ground(s.x, s.z), s.z); });
       for (let i = b.strikes.length; i < marks.length; i++) marks[i]!.visible = false;
 
       // Third-person camera over the hero's shoulder (or the vehicle's), or over the spawn while down.
@@ -251,12 +188,13 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       const body = (b.hero.inVehicle !== null && b.units.find((u) => u.id === b.hero.inVehicle)) || hero;
       const at = body ?? { x: 0, z: heroSide === "attacker" ? 100 : -100 };
       const [back, high] = !body || body.kind === "hero" ? [7, 3.2] : body.kind === "walker" ? [15, 10] : body.kind === "gunship" ? [18, 6] : [13, 6];
-      const up = high + (body ? altitude(body) : 0);
+      const floor = ground(at.x, at.z), up = high + (body ? altitude(body) : 0) + floor;
       const f = facing(yaw);
       camera.position.set(at.x - f.x * back * Math.cos(pitch) + -f.z * 1.2, up - Math.sin(pitch) * back, at.z - f.z * back * Math.cos(pitch) + f.x * 1.2);
-      camera.lookAt(at.x + f.x * 20, (body ? altitude(body) : 0) + 1.6 + Math.sin(pitch) * 20, at.z + f.z * 20);
-      sun.target.position.set(at.x + f.x * 30, 0, at.z + f.z * 30);
-      sun.position.copy(sun.target.position).add(SUN);
+      // Never under the floor behind you.
+      camera.position.y = Math.max(camera.position.y, ground(camera.position.x, camera.position.z) + 0.6);
+      camera.lookAt(at.x + f.x * 20, floor + (body ? altitude(body) : 0) + 1.6 + Math.sin(pitch) * 20, at.z + f.z * 20);
+      world.update(now / 1000, camera.position, { x: at.x + f.x * 30, z: at.z + f.z * 30 });
 
       renderer.render(scene, camera);
       if (now - hudAt > 100 || b.over) { drawHud(); hudAt = now; }

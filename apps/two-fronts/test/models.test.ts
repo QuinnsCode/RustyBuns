@@ -2,7 +2,7 @@
 // and stays cheap to draw, since a battle can have forty of them on screen.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
-import { animate, cruiser, fighter, gunship, marine, speeder, tank, turret, walker, wooka } from "../src/battle/models.ts";
+import { animate, cruiser, fighter, gunship, marine, speeder, tank, totem, turret, walker, wooka } from "../src/battle/models.ts";
 
 const meshes = (g: THREE.Object3D) => {
   let n = 0;
@@ -19,7 +19,7 @@ const ground: [string, () => THREE.Group, number][] = [
   ["sniper", () => marine(false, "sniper"), 26], ["engineer", () => marine(false, "engineer"), 26],
   ["wooka", () => wooka(), 12], ["chieftain", () => wooka(true), 12],
   ["tank", tank, 8], ["walker", walker, 12], ["speeder", speeder, 8], ["gunship", gunship, 12],
-  ["gun tower", () => turret("marines"), 6], ["rock-chucker", () => turret("wooka"), 6],
+  ["gun tower", () => turret("marines"), 6], ["rock-chucker", () => turret("wooka"), 6], ["totem", totem, 6],
 ];
 
 test.each(ground)("%s builds, stands on the ground, and is a handful of draw calls", (_, make, budget) => {

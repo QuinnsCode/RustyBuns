@@ -9,14 +9,14 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Faction } from "./contract.ts";
-import type { Tree, Trooper } from "./sim.ts";
+import type { Trooper } from "./sim.ts";
 
 type V3 = [number, number, number];
 type Mat = THREE.Material;
 
 // --- Procedural textures: grey, so a material's colour tints them. None in a headless test. ---
 const textures = new Map<string, THREE.Texture | null>();
-function texture(name: string, w: number, h: number, repeat: [number, number], draw: (c: CanvasRenderingContext2D, r: () => number) => void) {
+export function texture(name: string, w: number, h: number, repeat: [number, number], draw: (c: CanvasRenderingContext2D, r: () => number) => void) {
   if (textures.has(name)) return textures.get(name) ?? null;
   let t: THREE.Texture | null = null;
   if (typeof document !== "undefined") {
@@ -185,7 +185,7 @@ const slab = (pts: [number, number][], height: number, bevel = 0) => prism(pts.m
 const profile = (pts: [number, number][], width: number, bevel = 0) => prism(pts.map(([z, y]) => [-z, y]), width, bevel).rotateY(Math.PI / 2);
 // A lumpy ball: an icosphere with each vertex pushed in or out by a hash of its direction, so the
 // same vertex on two faces moves alike. Shag 0.1 is fur; 0.3 is an asteroid.
-function lumpy(r: number, detail = 2, shag = 0.08, seed = 1, smooth = true) {
+export function lumpy(r: number, detail = 2, shag = 0.08, seed = 1, smooth = true) {
   const g = new THREE.IcosahedronGeometry(r, detail);
   const p = g.attributes.position as THREE.BufferAttribute, n = g.attributes.normal as THREE.BufferAttribute, v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
@@ -903,77 +903,53 @@ export function animate(g: THREE.Object3D, m: Motion) {
 }
 
 // ============================================================================================
-// The forest: redwood trunks you can't walk through, flaring out at the roots, their crowns lost
-// in the fog, ferns and fallen logs underfoot. The jungle is the same idea, lower, greener and
-// thicker. The canyon floor has neither.
+// The Wooka's side of the woods (the forest itself is terrain.ts): trophy totems, a Marine's
+// helmet on a spike over carved faces, and the huts they keep up in the trunks.
 // ============================================================================================
-export type Woods = "redwood" | "jungle" | "none";
-function fernGeometry(jungle: boolean) {
-  // A ring of arching fronds, each a strip bent down at the tip.
-  const fronds: THREE.BufferGeometry[] = [];
-  const n = jungle ? 9 : 7;
-  for (let i = 0; i < n; i++) {
-    const g = new THREE.PlaneGeometry(0.28, 1.2, 1, 6).translate(0, 0.6, 0);
-    const p = g.attributes.position as THREE.BufferAttribute;
-    for (let v = 0; v < p.count; v++) {
-      const y = p.getY(v), k = y / 1.2;
-      p.setXYZ(v, p.getX(v) * Math.sin(Math.PI * Math.min(1, k * 1.1 + 0.1)), Math.sin(k * 2.2) * 0.55, -k * 1.0);
-    }
-    g.computeVertexNormals();
-    g.rotateY((i / n) * Math.PI * 2 + (i % 2) * 0.3);
-    fronds.push(g);
+function buildTotem() {
+  const k = new Kit(), g = k.root;
+  // Three carved logs, each a face: black eyes, a grin of teeth, stripes of red paint.
+  for (let i = 0; i < 3; i++) {
+    const y = 0.75 + i * 1.3;
+    k.add(g, cyl(0.42 - i * 0.04, 0.48 - i * 0.04, 1.25, 12), W.bark, { y });
+    k.pair(g, () => ball(0.11, 10, 8), W.eye, { x: 0.16, y: y + 0.22, z: -0.4 });
+    k.add(g, box(0.42, 0.08, 0.08), W.tooth, { y: y - 0.2, z: -0.43 });
+    k.add(g, ring(0.47 - i * 0.04, 0.035, 16), W.paint, { y: y + 0.45, rx: Math.PI / 2 });
   }
-  return mergeGeometries(fronds);
+  // The trophy: a Thunder Marine's helmet, white trim and snorkel and all, jammed on a spike.
+  k.rod(g, [0, 4.4, 0], [0, 5.4, 0], 0.05, W.bone);
+  k.add(g, dome(0.36, 18), M.armour, { y: 5.12, s: [1, 1.15, 1.05] });
+  k.add(g, ring(0.36, 0.04, 18), M.trim, { y: 5.15, rx: Math.PI / 2 });
+  k.add(g, box(0.42, 0.12, 0.08), M.dark, { y: 5.32, z: -0.33 });           // the visor
+  k.add(g, cyl(0.07, 0.09, 0.3, 8), M.trim, { y: 5.05, z: -0.4, rx: 0.4 });  // the snorkel
+  // Feathers and bones hanging off the top log.
+  for (const s of [-1, 1]) {
+    k.rod(g, [s * 0.4, 4.1, 0], [s * 0.7, 4.9, 0.1], 0.04, W.bone);
+    k.add(g, cone(0.08, 0.55, 5), W.paint, { x: s * 0.75, y: 5.1, z: 0.1, rz: -s * 0.4 });
+  }
+  return k.bake("totem");
 }
-export function forest(scene: THREE.Scene, trees: Tree[], seed: number, half: number, woods: Woods = "redwood") {
-  if (woods === "none") return;
-  const jungle = woods === "jungle";
-  let s = seed >>> 0;
-  const r = () => ((s = (s * 1103515245 + 12345) >>> 0) / 4294967296);
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), k = new THREE.Vector3();
-  const up = new THREE.Vector3(0, 1, 0);
+export const totem = () => cloneOf("totem", buildTotem);
 
-  // Trunks: unit height, radius 1 at the bottom of the straight part, flaring at the roots.
-  const trunkGeo = jungle
-    ? lathe([[0, 0], [1.6, 0], [1.15, 0.015], [1, 0.04], [0.85, 0.5], [0.6, 1]], 10)
-    : lathe([[0, 0], [2.0, 0], [1.4, 0.008], [1.1, 0.025], [1, 0.05], [0.8, 0.6], [0.55, 1]], 14);
-  const trunkMat = std(jungle ? 0x6d6448 : 0x8a4428, 0.95, { map: barkMap() });
-  const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, trees.length);
-  // Crowns: redwoods are tiers of drooping boughs high up; the jungle is round clumps.
-  const crownGeo = jungle ? lumpy(1, 1, 0.25, 3) : cone(1, 1, 9);
-  const crowns = new THREE.InstancedMesh(crownGeo, std(jungle ? 0x23561c : 0x24401e, 0.9, { flatShading: true }), trees.length * 4);
-  trees.forEach((t, i) => {
-    const h = jungle ? 22 + r() * 18 : 70 + r() * 50;
-    trunks.setMatrixAt(i, m.compose(p.set(t.x, 0, t.z), q.setFromAxisAngle(up, r() * 6), k.set(t.r, h, t.r)));
-    for (let j = 0; j < 4; j++) {
-      const y = h * (jungle ? 0.75 + j * 0.08 : 0.42 + j * 0.15);
-      const w = jungle ? t.r * (4 + r() * 2) : t.r * (5.5 - j) + 2;
-      crowns.setMatrixAt(i * 4 + j, m.compose(p.set(t.x + (r() - 0.5) * 2, y, t.z + (r() - 0.5) * 2), q.setFromAxisAngle(up, r() * 6), jungle ? k.set(w, 3 + r() * 2, w) : k.set(w, 16, w)));
-    }
-  });
-  trunks.castShadow = crowns.castShadow = true;
-  trunks.receiveShadow = true;
-  const nFerns = jungle ? 900 : 480;
-  const ferns = new THREE.InstancedMesh(fernGeometry(jungle), std(0xffffff, 0.9, { side: THREE.DoubleSide }), nFerns);
-  const col = new THREE.Color();
-  for (let i = 0; i < nFerns; i++) {
-    const sz = 0.7 + r() * 1.5;
-    ferns.setMatrixAt(i, m.compose(p.set((r() - 0.5) * half * 2.2, 0, (r() - 0.5) * half * 2.2), q.setFromAxisAngle(up, r() * 6), k.set(sz, sz * (0.8 + r() * 0.4), sz)));
-    ferns.setColorAt(i, col.setHSL(0.24 + r() * 0.08, 0.45, 0.28 + r() * 0.12));
+// A hut round a trunk: a deck of planks on log beams, a thatched cone with a fire glowing in its
+// door, and a rope ladder down. Centred on the trunk; its deck at y = 0.
+function buildHut() {
+  const k = new Kit(), g = k.root;
+  k.add(g, cyl(6, 6, 0.4, 16), W.wood, { y: -0.2 });
+  for (let i = 0; i < 4; i++) k.add(g, box(13, 0.5, 0.5), W.bark, { y: -0.6, ry: (i * Math.PI) / 4 });
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    k.rod(g, [Math.sin(a) * 5.8, 0, Math.cos(a) * 5.8], [Math.sin(a) * 5.8, 1.1, Math.cos(a) * 5.8], 0.08, W.bark, 5);
   }
-  // Fallen logs, mossy on top, the cut ends pale.
-  const logs = new THREE.InstancedMesh(cyl(1, 1, 1, 12), std(0x6a4a30, 0.95, { map: barkMap() }), 14);
-  const moss = new THREE.InstancedMesh(new THREE.CylinderGeometry(1.04, 1.04, 0.98, 12, 1, true, Math.PI / 2 - 0.9, 1.8), std(0x4f7a2a, 1), 14);
-  for (let i = 0; i < 14; i++) {
-    const len = 10 + r() * 14, rad = 0.6 + r() * 0.6;
-    q.setFromEuler(new THREE.Euler(0, r() * Math.PI, Math.PI / 2, "YXZ"));
-    m.compose(p.set((r() - 0.5) * half * 1.8, rad, (r() - 0.5) * half * 1.8), q, k.set(rad, len, rad));
-    logs.setMatrixAt(i, m);
-    moss.setMatrixAt(i, m);
-  }
-  logs.castShadow = logs.receiveShadow = true;
-  scene.add(trunks, crowns, ferns, logs, moss);
+  k.add(g, ring(5.8, 0.06, 32), W.rope, { y: 1.05, rx: Math.PI / 2 });
+  k.add(g, cyl(2.6, 2.8, 2.4, 12), W.hide, { x: 3.4, y: 1.2 });
+  k.add(g, cone(3.6, 3, 12), W.thatch, { x: 3.4, y: 3.9 });
+  k.add(g, box(1, 1.5, 0.1), W.fire, { x: 3.4, y: 0.8, z: -2.75 });
+  k.rod(g, [5.5, 0, -3], [5.5, -14, -3.4], 0.05, W.rope, 4);
+  k.rod(g, [6.1, 0, -2.6], [6.1, -14, -3], 0.05, W.rope, 4);
+  return k.bake("hut");
 }
+export const hut = () => cloneOf("hut", buildHut);
 
 // ============================================================================================
 // In orbit. Models are centred on the craft and face -z, like yaw 0 and pitch 0 in the sim.

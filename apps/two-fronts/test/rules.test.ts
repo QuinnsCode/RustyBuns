@@ -3,7 +3,7 @@ import type { BattleSpec } from "../src/battle/contract.ts";
 import { GALAXIES, type Galaxy, type GalaxyId } from "../src/war/galaxy.ts";
 import { aiOrders } from "../src/war/ai.ts";
 import {
-  ORBIT, applyBattleResult, applySpaceResult, canPushFromSurface, diceBattle, income, keyShare, newCampaign, planOrders, resolveTurn, rng, supplied, vehiclePool,
+  ORBIT, applyBattleResult, applySpaceResult, canPushFromSurface, diceBattle, income, incomeBreakdown, keyShare, regionHolder, newCampaign, planOrders, resolveTurn, rng, supplied, vehiclePool,
   type Campaign, type Orders,
 } from "../src/war/rules.ts";
 
@@ -74,6 +74,15 @@ test("income counts sectors and the region bonus, and halves when morale breaks"
   for (const s of Object.values(c.systems)) for (const x of s.sectors) if (s.id !== "aster") x.owner = "wooka";
   expect(keyShare(c, "marines")).toBeLessThan(0.3);
   expect(income(c, "marines")).toBe(1); // 3 halved, rounded down
+});
+
+test("the income breakdown itemises sectors, region bonuses and the morale cut", () => {
+  const c = newCampaign();
+  expect(regionHolder(c, "west")).toBe("marines");
+  expect(regionHolder(c, "core")).toBeNull();
+  expect(incomeBreakdown(c, "marines")).toEqual({ sectors: 16, regions: [{ name: "Thunder Reach", bonus: 2 }], morale: 0, total: 18 });
+  for (const s of Object.values(c.systems)) for (const x of s.sectors) if (s.id !== "aster") x.owner = "wooka";
+  expect(incomeBreakdown(c, "marines")).toEqual({ sectors: 3, regions: [], morale: -2, total: 1 });
 });
 
 test("orders are checked against what the earlier ones left", () => {
