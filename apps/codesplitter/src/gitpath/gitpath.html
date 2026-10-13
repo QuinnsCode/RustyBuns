@@ -3,11 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>gitwiz</title>
+<title>gitpath</title>
 <link href="/fonts/geist.css" rel="stylesheet">
 <script src="/vendor/lucide.min.js"></script>
 <style>
   /* One file's history, played down a highway in paper: page.ts draws the board, this is everything around it.
+     Make code beautiful again.
      The tokens and the paper buttons are client.html's. */
   :root {
     --bg: #ffffff; --canvas: #fafafa; --border: #e6e6e6; --border-2: #cfcfcf;
@@ -47,6 +48,7 @@
   .top { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--canvas); }
   .top h1 { display: flex; align-items: center; gap: 7px; margin: 0 8px 0 2px; font: 600 17px/1 var(--sans); letter-spacing: -.03em; }
   .top h1 svg { color: var(--accent); width: 18px; height: 18px; }
+  .motto { font: 500 11.5px/1 var(--mono); letter-spacing: .04em; color: var(--faint); white-space: nowrap; padding-left: 10px; border-left: 1px solid var(--border-2); }
   .repo { font: 500 12px var(--mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* The stage: the canvas fills it, the key and the lane note sit on top. */
@@ -58,6 +60,22 @@
   .k-add { background: #f8c9a1; border-color: var(--accent); } .k-remove { background: #e2e2e2; border-color: #8f8f8f; }
   .k-hot { height: 3px !important; border: 0 !important; border-radius: 2px; background: var(--accent); vertical-align: 2px !important; width: 16px !important; }
   .k-rewrite { background: linear-gradient(90deg, #f8c9a1 50%, #e2e2e2 50%); border-color: #6b6b6b; }
+  .rail { position: absolute; right: 10px; top: 48px; bottom: 14px; width: 74px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; touch-action: none; user-select: none; cursor: ns-resize; }
+  .rail-end { font: 500 10.5px/1 var(--mono); color: var(--faint); white-space: nowrap; } .rail-end.top { order: -1; }
+  .rail-track { position: relative; flex: 1; width: 14px; margin-right: 6px; background: var(--grain), var(--paper); border: 1px solid var(--border-2); border-radius: 7px; }
+  .rail-fill { position: absolute; left: 3px; right: 3px; bottom: 3px; border-radius: 4px; background: linear-gradient(0deg, #f08c4a, var(--accent)); opacity: .85; }
+  .rail-thumb { position: absolute; left: -5px; width: 22px; height: 8px; margin-top: -4px; border-radius: 4px; background: var(--fg); border: 2px solid var(--paper); box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+  .rail:focus-visible .rail-thumb { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .rail .tick { position: absolute; right: 22px; font: 500 10px/1 var(--mono); color: var(--faint); transform: translateY(50%); white-space: nowrap; pointer-events: none; }
+  .rail .tick::after { content: ""; position: absolute; left: calc(100% + 3px); top: 50%; width: 5px; border-top: 1px solid var(--border-2); }
+  .rail .dash { position: absolute; left: 3px; width: 6px; border-top: 1px solid rgba(138,133,120,.5); pointer-events: none; }
+  .range { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
+  .range input { font: 500 12px/20px var(--mono); color: var(--fg); background: var(--grain), var(--paper); border: 1px solid var(--border-2); border-radius: 5px; height: 32px; padding: 0 6px; }
+  .dim { opacity: .28; transition: opacity .15s; } .dim:hover, .dim:focus-visible, .dim[aria-pressed="true"] { opacity: 1; }
+  .gamebar { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; }
+  .gp { position: static; pointer-events: auto; }
+  .keybtn kbd { font-size: 12px; min-width: 1.6em; text-align: center; } .keybtn.binding { border-color: var(--accent); background: var(--grain), var(--accent-soft); }
+  .tapzone { cursor: pointer; }
   #empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
 
   /* Under the stage: the card for the commit at the strum line, the run's numbers, then the controls. */
@@ -108,29 +126,44 @@
 
   @media (max-width: 760px) {
     .deck { grid-template-columns: 1fr; } .stats { justify-content: stretch; } .stat { flex: 1; width: auto; }
-    .controls { flex-wrap: wrap; } .controls #scrub { order: 9; flex-basis: 100%; }
-    .repo { display: none; } #key { display: none; }
+    .controls { flex-wrap: wrap; }
+    .repo, .motto { display: none; } #key { display: none; }
+    .top { flex-wrap: wrap; } .rail { width: 46px; } .rail-end, .rail .tick { display: none; }
   }
 </style>
 </head>
 <body>
 <header class="top">
   <a class="btn ghost" href="/" title="codeSplitter" aria-label="codeSplitter"><i data-lucide="arrow-left"></i></a>
-  <h1><i data-lucide="wand-sparkles"></i>gitwiz</h1>
+  <h1><i data-lucide="route"></i>gitpath</h1>
+  <span class="motto">make code beautiful again</span>
   <select id="file" title="The most-edited files (F)" aria-label="File to replay"></select>
   <span class="repo" id="repo"></span>
   <span class="grow"></span>
+  <label class="range" title="Only the commits from this day (UTC)"><i data-lucide="calendar-range"></i><input type="date" id="from" aria-label="From day"></label>
+  <label class="range" title="Only the commits up to this day, included"><input type="date" id="to" aria-label="To day"></label>
+  <button class="btn ghost" id="unrange" type="button" title="The whole history" aria-label="The whole history" hidden><i data-lucide="x"></i></button>
   <button class="btn" id="face" type="button" title="Put your face on the runner (A). Shift-click, or Shift+A, brings the default head back" aria-label="Put your face on the runner"><i data-lucide="user-round"></i></button>
   <button class="btn" id="open" type="button" title="Open a .json file (O)" aria-label="Open a .json file"><i data-lucide="upload"></i></button>
   <button class="btn" id="paste" type="button" title="Paste JSON (P)" aria-label="Paste JSON"><i data-lucide="clipboard-paste"></i></button>
+ <button class="btn ghost dim" id="gamebtn" type="button" title="Ride it (G)" aria-label="Ride it" aria-pressed="false"><i data-lucide="gamepad-2"></i></button>
   <input type="file" id="pick" accept=".json,application/json" hidden>
   <input type="file" id="facepick" accept="image/*" hidden>
 </header>
 
 <main class="stage" id="stage">
-  <canvas id="board" aria-label="The file's commit graph coming down a highway toward the strum line, with a runner on the hot path"></canvas>
+  <canvas id="board" aria-label="The file's commit graph coming down a highway toward the strum line, with the hot path in orange"></canvas>
   <div class="pill" id="lanenote"></div>
   <div class="pill" id="key"><span><i class="k-add"></i>add</span><span><i class="k-remove"></i>remove</span><span><i class="k-rewrite"></i>rewrite</span><span><i class="k-hot"></i>hot path</span></div>
+  <div class="rail" id="rail" role="slider" tabindex="0" aria-label="Time: drag from the oldest commit at the bottom to the newest at the top" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+    <span class="rail-end top" id="rail-new"></span><div class="rail-track" id="rail-track"><div class="rail-fill" id="rail-fill"></div><div class="rail-thumb" id="rail-thumb"></div></div><span class="rail-end" id="rail-old"></span>
+  </div>
+  <div class="gamebar" id="gamebar" hidden>
+    <span class="pill gp" id="g-speed" title="Commits a second"><i data-lucide="gauge"></i><span class="mono" id="g-speedv">0.0</span></span>
+    <button class="btn keybtn" id="key-l" type="button" title="Left pedal. Click to rebind"><i data-lucide="chevron-left"></i><kbd id="key-lv"></kbd></button>
+    <button class="btn keybtn" id="key-r" type="button" title="Right pedal. Click to rebind"><kbd id="key-rv"></kbd><i data-lucide="chevron-right"></i></button>
+    <span class="pill gp" id="g-falls" title="Spills"><i data-lucide="heart-crack"></i><span class="mono" id="g-fallsv">0</span></span>
+  </div>
   <div id="empty" hidden>Loading the history</div>
 </main>
 
@@ -149,7 +182,7 @@
   <button class="btn" id="back" type="button" title="One commit back (Left)" aria-label="One commit back"><i data-lucide="chevron-left"></i></button>
   <button class="btn" id="fwd" type="button" title="One commit forward (Right)" aria-label="One commit forward"><i data-lucide="chevron-right"></i></button>
   <button class="btn" id="end" type="button" title="Jump to the newest (End)" aria-label="Jump to the newest"><i data-lucide="skip-forward"></i></button>
-  <input type="range" id="scrub" min="0" max="1" step="any" value="0" title="Scrub the history (drag, or the scroll wheel on the board)" aria-label="Scrub the history">
+  <span class="grow"></span>
   <span class="sep"></span>
   <button class="btn" id="slow" type="button" title="Slower ([)" aria-label="Slower"><i data-lucide="rewind"></i></button>
   <span id="speedv" title="Commits per second"></span>
@@ -161,33 +194,42 @@
 
 <aside class="tip" id="tip" hidden>
   <h2>Reading the board</h2>
-  <p>The file's commit graph comes down the highway, oldest to newest: main in the middle, branches fanning out to the sides and rejoining. The orange line is the hot path, the route with the most churn, and the runner follows it. When a commit reaches the strum line its diff is on the card.</p>
+  <p>The file's commit graph comes down the highway, oldest to newest: main in the middle, branches fanning out to the sides and rejoining. The orange line is the hot path, the route with the most churn. When a commit reaches the strum line its diff is on the card. The rail on the right is time itself, oldest at the bottom: drag it, or crop the history with the two dates at the top.</p>
   <ul>
     <li><i class="k-add" style="display:inline-block;width:12px;height:12px;border-radius:50%;border:1px solid"></i>orange coin: mostly lines added</li>
     <li><i class="k-remove" style="display:inline-block;width:12px;height:12px;border-radius:50%;border:1px solid"></i>grey coin: mostly lines removed</li>
     <li><i class="k-rewrite" style="display:inline-block;width:12px;height:12px;border-radius:50%;border:1px solid"></i>split coin: a rewrite, both at once</li>
     <li><i data-lucide="maximize-2"></i>a bigger, glowing coin changed more lines</li>
-    <li><i data-lucide="gauge"></i>the runner pulls ahead on hot stretches and falls back as the code cools</li>
+    <li><i data-lucide="gamepad-2"></i>the faint controller at the top right is the game: a unicyclist rides the hot path</li>
     <li><i data-lucide="flame"></i>combo: commits in a row on the hot path. A side-branch commit breaks it; every four is another x, up to x4</li>
+  </ul>
+  <h2>The ride (G)</h2>
+  <p>Tap the bottom half of the board, left then right, or your two pedal keys, in time with the ring. Alternating on the beat is speed; the unicycle falls over on its own, and a tap kicks it away from that side, so tap the side you are leaning toward to catch it (at the cost of speed). Git blows gusts at you:</p>
+  <ul>
+    <li><i data-lucide="car"></i>a merge: a car comes in from the side lane<span>big</span></li>
+    <li><i data-lucide="utensils"></i>a fork: two lines start here<span>medium</span></li>
+    <li><i data-lucide="git-branch"></i>a branch: the first commit on a side lane<span>small</span></li>
+    <li><i data-lucide="circle-dot"></i>a big squash merge: a boulder rolls over<span>big</span></li>
   </ul>
   <h2>Keys</h2>
   <ul class="keys">
     <li><kbd>Space</kbd><span>play, pause</span></li><li><kbd>[</kbd> <kbd>]</kbd><span>speed</span></li>
     <li><kbd>&larr;</kbd> <kbd>&rarr;</kbd><span>one commit</span></li><li><kbd>Shift</kbd>+<kbd>&larr;</kbd><span>ten</span></li>
     <li><kbd>Home</kbd> <kbd>End</kbd><span>first, last</span></li><li><kbd>A</kbd><span>your face</span></li>
-    <li><kbd>F</kbd><span>pick a file</span></li><li><kbd>O</kbd> <kbd>P</kbd><span>open, paste</span></li>
+    <li><kbd>Z</kbd> <kbd>M</kbd><span>pedals (rebind)</span></li>
+    <li><kbd>G</kbd><span>the game</span></li><li><kbd>F</kbd><span>pick a file</span></li><li><kbd>O</kbd> <kbd>P</kbd><span>open, paste</span></li>
   </ul>
-  <p class="muted" style="margin:0">Your own file: <code>bun scripts/gitwiz-log.ts &lt;clone&gt; &lt;path&gt;</code>, then open or paste its JSON.</p>
+  <p class="muted" style="margin:0">Your own file: <code>bun scripts/gitpath-log.ts &lt;clone&gt; &lt;path&gt;</code>, then open or paste its JSON.</p>
 </aside>
 
 <dialog id="pastebox">
   <h2>Paste a history</h2>
-  <p>JSON from <code>scripts/gitwiz-log.ts</code>: one file's commits, or a bundle of a repo's most-edited files.</p>
+  <p>JSON from <code>scripts/gitpath-log.ts</code>: one file's commits, or a bundle of a repo's most-edited files.</p>
   <textarea id="pastetext" spellcheck="false" placeholder='{"path": "…", "commits": [{"hash", "author", "date", "subject", "added", "removed"}]}' aria-label="History JSON"></textarea>
   <div class="row"><span id="pasterr" class="grow"></span>
     <button class="btn" id="pastecancel" type="button">Cancel</button>
     <button class="btn primary" id="pastego" type="button">Replay it</button></div>
 </dialog>
-<script src="/gitwiz.js"></script>
+<script src="/gitpath.js"></script>
 </body>
 </html>

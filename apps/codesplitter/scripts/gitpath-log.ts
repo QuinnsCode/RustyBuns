@@ -1,18 +1,18 @@
 #!/usr/bin/env bun
-// gitwiz's data: one file's history as a commit graph, or a repo's most-edited files, as the JSON src/gitwiz/ plays back.
+// gitpath's data: one file's history as a commit graph, or a repo's most-edited files, as the JSON src/gitpath/ plays back.
 // Read only: it runs `git log`, `git ls-files` and `git for-each-ref` in a local clone and writes to stdout.
 //
-//   bun scripts/gitwiz-log.ts <repo> <path>          one file's history, newest first like git:
+//   bun scripts/gitpath-log.ts <repo> <path>          one file's history, newest first like git:
 //                                                    {repo, path, commits: [{hash, author, date, subject, added, removed, parents, refs}]}
-//   bun scripts/gitwiz-log.ts <repo> --top [N]       the N most-edited files (default 12): {repo, files: [{path, commits}]}
-//   bun scripts/gitwiz-log.ts <repo> --bundle [N]    both, for the top N: {repo, files, histories}. What the page loads.
+//   bun scripts/gitpath-log.ts <repo> --top [N]       the N most-edited files (default 12): {repo, files: [{path, commits}]}
+//   bun scripts/gitpath-log.ts <repo> --bundle [N]    both, for the top N: {repo, files, histories}. What the page loads.
 //   add --head to read only what HEAD can reach: by default every branch counts, so the graph fans out
 //   into the branches that touched the file.
 //
 // <repo> is any local clone, e.g. this one (.) or a clone of someone else's. Each commit's `parents` are the
-// nearest earlier commits that touched the file too. Open the result in gitwiz with its Open or Paste button.
+// nearest earlier commits that touched the file too. Open the result in gitpath with its Open or Paste button.
 import { basename, resolve } from "node:path";
-import { LOG_FORMAT, keptAncestors, parseDag, parsePatchLog, simplifyParents, topFiles, type Commit } from "../src/gitwiz/gitwiz.ts";
+import { LOG_FORMAT, keptAncestors, parseDag, parsePatchLog, simplifyParents, topFiles, type Commit } from "../src/gitpath/gitpath.ts";
 
 async function git(repo: string, ...args: string[]): Promise<string> {
   const p = Bun.spawn(["git", "-C", repo, ...args], { stdout: "pipe", stderr: "pipe" });
@@ -53,7 +53,7 @@ if (import.meta.main) {
   const scope = args.includes("--head") ? ["HEAD"] : ["--all"];
   const [repoArg, what, n] = args.filter((a) => a !== "--head");
   if (!repoArg || !what) {
-    console.error("usage: bun scripts/gitwiz-log.ts <repo> <path> | --top [N] | --bundle [N]  [--head]");
+    console.error("usage: bun scripts/gitpath-log.ts <repo> <path> | --top [N] | --bundle [N]  [--head]");
     process.exit(2);
   }
   try {
