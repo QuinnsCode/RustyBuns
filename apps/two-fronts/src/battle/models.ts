@@ -171,7 +171,6 @@ const cyl = (rt: number, rb: number, h: number, seg = 12) => new THREE.CylinderG
 const capsule = (r: number, len: number, seg = 10) => new THREE.CapsuleGeometry(r, Math.max(0.001, len - 2 * r), 4, seg);
 const ring = (r: number, t: number, seg = 24, arc = Math.PI * 2) => new THREE.TorusGeometry(r, t, 6, seg, arc);
 const cone = (r: number, h: number, seg = 8) => new THREE.ConeGeometry(r, h, seg);
-const lathe = (pts: [number, number][], seg = 20) => new THREE.LatheGeometry(pts.map(([x, y]) => new THREE.Vector2(x, y)), seg);
 // A flat outline in x, y, extruded depth along z and centred on it.
 function prism(pts: [number, number][], depth: number, bevel = 0) {
   const shape = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
@@ -954,165 +953,178 @@ export const hut = () => cloneOf("hut", buildHut);
 // ============================================================================================
 // In orbit. Models are centred on the craft and face -z, like yaw 0 and pitch 0 in the sim.
 // ============================================================================================
-const ALONG = -Math.PI / 2; // turns a lathe's +y to point forward, -z
 
-// A Marine fighter: a black dart with white trim, swept wings with a cannon on each tip, twin
-// fins, its canopy glass, two engines burning orange. The hero's has gold trim.
+// Voxel ships: chunky cubes on a grid, like a toy village built from blocks. Flat colours, no
+// textures, so the blocks read from far off in the 2.5D view.
+const V = {
+  get hull() { return lazy("v.hull", () => std(0x2b3039, 0.55, { metalness: 0.25 })); },
+  get hullDark() { return lazy("v.hullDark", () => std(0x1b1e24, 0.5, { metalness: 0.3 })); },
+  get deck() { return lazy("v.deck", () => std(0x3d434e, 0.6, { metalness: 0.2 })); },
+  get trim() { return lazy("v.trim", () => std(0xeef1f5, 0.45)); },
+  get gold() { return lazy("v.gold", () => std(0xf0bb40, 0.35, { metalness: 0.45 })); },
+  get gun() { return lazy("v.gun", () => std(0x555b66, 0.4, { metalness: 0.5 })); },
+  get wood() { return lazy("v.wood", () => std(0x8a5a30, 0.9)); },
+  get woodDark() { return lazy("v.woodDark", () => std(0x5e3b1e, 0.9)); },
+  get plank() { return lazy("v.plank", () => std(0xc7965c, 0.9)); },
+  get thatch() { return lazy("v.thatch", () => std(0xd9b25a, 1)); },
+  get hide() { return lazy("v.hide", () => std(0xd7b07a, 0.9)); },
+  get hideDark() { return lazy("v.hideDark", () => std(0xa47c4c, 0.9)); },
+  get fur() { return lazy("v.fur", () => std(0x9a6438, 1)); },
+  get rope() { return lazy("v.rope", () => std(0xcdb27a, 1)); },
+  get leaf() { return lazy("v.leaf", () => std(0x4f8f3a, 1)); },
+  get bone() { return lazy("v.bone", () => std(0xeee6cf, 0.6)); },
+  get black() { return lazy("v.black", () => std(0x060606, 0.15, { metalness: 0.3 })); },
+};
+
+// A voxel grid: a material per cell. Baked into a Kit, only the cubes with an open face are
+// kept, so a solid hull costs just its skin.
+class Voxels {
+  private cells = new Map<string, [number, number, number, Mat]>();
+  set(x: number, y: number, z: number, m: Mat) { this.cells.set(`${x},${y},${z}`, [x, y, z, m]); return this; }
+  has(x: number, y: number, z: number) { return this.cells.has(`${x},${y},${z}`); }
+  fill(x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, m: Mat) {
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) this.set(x, y, z, m);
+    return this;
+  }
+  bake(k: Kit, on: THREE.Object3D, u: number) {
+    for (const [x, y, z, m] of this.cells.values()) {
+      if (this.has(x + 1, y, z) && this.has(x - 1, y, z) && this.has(x, y + 1, z) && this.has(x, y - 1, z) && this.has(x, y, z + 1) && this.has(x, y, z - 1)) continue;
+      k.add(on, box(u, u, u), m, { x: x * u, y: y * u, z: z * u });
+    }
+  }
+}
+// A repeatable scatter, for greebles.
+const seeded = (s: number) => () => ((s = (s * 1103515245 + 12345) >>> 0) / 4294967296);
+
+// A Marine fighter: a black dart with white-tipped wings, a lit canopy, twin fins and two
+// engines. The hero's has gold trim.
 function buildMarineFighter(hero: boolean) {
-  const k = new Kit(), trim = hero ? M.gold : M.trim;
-  const body = k.root;
-  k.add(body, lathe([[0, -1.7], [0.45, -1.6], [0.7, -0.9], [0.72, 0.3], [0.5, 1.5], [0.22, 2.6], [0, 3.1]], 18), M.armour, { rx: ALONG, s: [1, 1, 0.75] });
-  k.add(body, ball(0.5, 18, 12), M.glass, { y: 0.4, z: -0.7, s: [0.8, 0.65, 1.7] });
-  k.add(body, ring(0.5, 0.04, 18), trim, { y: 0.4, z: -0.7, ry: Math.PI / 2, s: [1.7, 0.65, 1] });
-  k.add(body, box(0.1, 0.06, 2.4), trim, { y: 0.5, z: 0.9 });                        // spine stripe
+  const k = new Kit(), v = new Voxels(), trim = hero ? V.gold : V.trim;
+  v.fill(0, 0, 0, 0, -4, 3, V.hull).set(0, 0, -5, trim);
+  v.fill(-1, 1, 0, 0, -1, 3, V.hull).set(0, 1, -2, M.lens).set(0, 1, -1, M.lens);
   for (const s of [-1, 1]) {
-    // A swept wing with a white leading edge, and a cannon on the tip.
-    k.add(body, slab([[s * 0.5, -0.4], [s * 2.9, 0.9], [s * 2.9, 1.5], [s * 0.5, 1.6]], 0.12, 0.02), M.armour, { y: -0.08 });
-    k.add(body, slab([[s * 0.5, -0.45], [s * 2.92, 0.85], [s * 2.92, 1.05], [s * 0.5, -0.2]], 0.14), trim, { y: -0.08 });
-    k.add(body, cyl(0.14, 0.14, 1.6, 10).rotateX(Math.PI / 2), M.gun, { x: s * 2.95, y: -0.08, z: 0.9 });
-    k.rod(body, [s * 2.95, -0.08, 0.1], [s * 2.95, -0.08, -1.0], 0.05, M.dark);
-    k.add(body, ball(0.06, 8, 6), s < 0 ? M.red : M.green, { x: s * 2.95, y: 0.08, z: 1.5 });
-    // Canted fins.
-    k.add(body, profile([[1.0, 0], [1.9, 1.1], [2.3, 1.1], [2.1, 0]], 0.08), M.armour, { x: s * 0.55, y: 0.2, rz: -s * 0.3 });
-    k.add(body, profile([[1.85, 1.05], [2.3, 1.05], [2.3, 1.15], [1.9, 1.15]], 0.1), trim, { x: s * 0.55, y: 0.2, rz: -s * 0.3 });
-    // Engines.
-    k.add(body, cyl(0.32, 0.28, 1.6, 14).rotateX(Math.PI / 2), M.pack, { x: s * 0.48, y: -0.05, z: 1.4 });
-    k.add(body, ring(0.3, 0.04, 14), trim, { x: s * 0.48, y: -0.05, z: 2.2 });
+    v.fill(s * 2, s * 2, 0, 0, 0, 2, V.hull).fill(s * 3, s * 3, 0, 0, 1, 2, V.hull);
+    v.fill(s * 4, s * 4, 0, 0, 0, 2, trim).set(s * 4, 0, -1, V.gun).set(s * 4, 0, -2, V.gun);
+    v.fill(s, s, 1, 2, 2, 3, V.hullDark).set(s, 2, 3, trim);
+    v.set(s, 0, 4, M.engine);
   }
-  const flame = k.joint("flame", body, 0, -0.05, 2.2);
-  for (const s of [-1, 1]) {
-    k.add(flame, cyl(0.25, 0.25, 0.02, 14).rotateX(Math.PI / 2), M.engine, { x: s * 0.48, z: 0.01 });
-    k.add(flame, cyl(0.12, 0.12, 0.02, 10).rotateX(Math.PI / 2), M.engineCore, { x: s * 0.48, z: 0.02 });
-    k.add(flame, cone(0.24, 1.6, 12).rotateX(-Math.PI / 2), M.plume, { x: s * 0.48, z: 0.8 });
-  }
+  v.bake(k, k.root, 0.6);
+  const flame = k.joint("flame", k.root, 0, 0, 2.75);
+  for (const s of [-1, 1]) k.add(flame, cone(0.3, 1.8, 8).rotateX(-Math.PI / 2), M.plume, { x: s * 0.6, z: 0.9 });
   return k.bake("fighter");
 }
 
-// A Wooka fighter: a hollowed-out log with hide sails on spars for wings and one Wooka sitting in
-// it, goggles on, steering by leaning. A bonfire in the back end does the rest.
+// A Wooka fighter: a hollowed-out log with hide sails for wings, one Wooka sitting in it, and a
+// bonfire in the back end.
 function buildWookaFighter(hero: boolean) {
-  const k = new Kit(), body = k.root;
-  k.add(body, cyl(0.7, 0.82, 4.4, 12).rotateX(Math.PI / 2), W.bark);
-  k.add(body, cyl(0.68, 0.68, 0.02, 12).rotateX(Math.PI / 2), W.cut, { z: -2.21 });
-  k.add(body, ring(0.35, 0.02, 12), W.wood, { z: -2.225 });                          // the rings
-  k.add(body, ring(0.16, 0.02, 10), W.wood, { z: -2.225 });
-  k.add(body, cyl(0.5, 0.5, 0.02, 12), W.nose, { y: 0.7, z: -0.4, s: [1, 1, 1.4] }); // the hollow
-  for (const z of [-1.5, 0.6, 1.6]) k.add(body, ring(0.8, 0.05, 14), W.rope, { z });
-  k.rod(body, [0.5, 0.4, 0.8], [1.1, 1.1, 1.2], 0.08, W.bark);                      // a branch stub
-  // The pilot, and their goggles.
-  k.add(body, lumpy(0.48, 2, 0.08, 2), W.fur, { y: 0.85, z: -0.4 });
+  const k = new Kit(), v = new Voxels();
+  for (let z = -4; z <= 3; z++) for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) {
+    if (Math.abs(x) + Math.abs(y) === 2) continue;
+    v.set(x, y, z, (z + 4) % 3 ? V.wood : V.woodDark);
+  }
+  v.set(0, 2, -1, V.fur).set(0, 2, 0, V.fur).set(0, 3, -1, V.fur).set(-1, 2, -1, V.fur).set(1, 2, -1, V.fur);
+  v.set(0, 2, -2, V.black);
   for (const s of [-1, 1]) {
-    k.add(body, ball(0.13, 12, 8), W.eye, { x: s * 0.18, y: 0.95, z: -0.82 });
-    k.add(body, ring(0.13, 0.04, 12), W.leather, { x: s * 0.18, y: 0.95, z: -0.86 });
-    k.add(body, ball(0.11, 10, 8), W.fur, { x: s * 0.36, y: 1.28, z: -0.3, s: [1, 1, 0.5] });
+    v.fill(s * 2, s * 5, 0, 0, -1, 1, V.hide).set(s * 4, 0, 0, V.hideDark).fill(s * 2, s * 5, 1, 1, -1, -1, V.wood);
   }
-  k.add(body, ring(0.47, 0.035, 18), W.leather, { y: 0.95, z: -0.4, rx: Math.PI / 2 });
-  // Wings: a spar across and hide sails stretched on it, patched.
-  k.rod(body, [-3.4, 0.15, 0.2], [3.4, 0.15, 0.2], 0.08, W.wood);
-  for (const s of [-1, 1]) {
-    k.rod(body, [s * 0.5, 0.15, 1.8], [s * 3.2, 0.15, 0.2], 0.05, W.wood);
-    k.add(body, new THREE.ShapeGeometry(new THREE.Shape([new THREE.Vector2(s * 0.6, -0.4), new THREE.Vector2(s * 3.3, -0.1), new THREE.Vector2(s * 3.0, -1.6), new THREE.Vector2(s * 0.6, -1.8)])), s < 0 ? W.hide : W.hideDark, { y: 0.15, rx: Math.PI / 2 });
-    k.add(body, new THREE.PlaneGeometry(0.6, 0.5), s < 0 ? W.hideDark : W.hide, { x: s * 2.0, y: 0.17, z: 0.9, rx: -Math.PI / 2 });
-  }
-  if (hero) {
-    // A skull on the bow, and bones along the top.
-    k.add(body, ball(0.35, 14, 10), W.bone, { y: 0.2, z: -2.5, s: [1, 0.9, 1] });
-    for (const x of [-0.12, 0.12]) k.add(body, ball(0.08, 8, 6), W.nose, { x, y: 0.25, z: -2.8 });
-    for (let i = 0; i < 5; i++) k.add(body, cone(0.06, 0.5, 5), W.bone, { x: -0.4 + i * 0.2, y: 1.45, z: -0.3, rz: (i - 2) * 0.2 });
-  }
-  // The bonfire.
-  const flame = k.joint("flame", body, 0, 0, 2.2);
-  for (const [x, y, sz] of [[0, 0.1, 1], [0.25, -0.15, 0.7], [-0.25, -0.1, 0.75]] as const) {
-    k.add(flame, cone(0.4 * sz, 1.6 * sz, 7).rotateX(-Math.PI / 2), W.fire, { x, y, z: 0.6 * sz });
-    k.add(flame, cone(0.22 * sz, 1.0 * sz, 6).rotateX(-Math.PI / 2), W.fireCore, { x, y, z: 0.35 * sz });
-  }
+  if (hero) v.set(0, 0, -5, V.bone).set(0, 4, -1, V.bone);
+  v.set(0, 0, 4, W.fire).set(-1, 0, 4, W.fireCore).set(1, 0, 4, W.fire);
+  v.bake(k, k.root, 0.6);
+  const flame = k.joint("flame", k.root, 0, 0, 2.75);
+  k.add(flame, cone(0.5, 2.2, 7).rotateX(-Math.PI / 2), W.fire, { z: 1.1 });
+  k.add(flame, cone(0.28, 1.3, 6).rotateX(-Math.PI / 2), W.fireCore, { z: 0.7 });
   return k.bake("fighter");
 }
 
 export const fighter = (f: Faction, hero = false) => cloneOf(`fighter:${f}:${hero}`, () => (f === "wooka" ? buildWookaFighter(hero) : buildMarineFighter(hero)));
 
-// A Marine cruiser: an arrowhead hull, black with a white stripe, a stepped deck, gun turrets, a
-// bridge tower, a lit hangar underneath and a bank of engines.
+// A Marine capital ship: a long wedge stepped up in tiers like a ziggurat, black with white trim
+// along its edges, rows of lit windows in each step, turrets on the deck, a command tower at the
+// back with a bridge across its top, and a bank of engines.
 function buildMarineCruiser() {
-  const k = new Kit(), g = k.root;
-  k.add(g, slab([[0, -37], [6.2, -18], [6.6, 28], [-6.6, 28], [-6.2, -18]], 5, 0.3), M.armour);
-  k.add(g, slab([[0, -37.6], [6.45, -18], [6.85, 28.2], [-6.85, 28.2], [-6.45, -18]], 0.6), M.trim, { y: 0.4 });
-  k.add(g, slab([[0, -25], [4.2, -12], [4.6, 26], [-4.6, 26], [-4.2, -12]], 2.4, 0.2), M.armour, { y: 3.4 });
-  k.add(g, slab([[0, -30], [3.4, -18], [3.6, 24], [-3.6, 24], [-3.4, -18]], 2.2, 0.2), M.armour, { y: -3.2 }); // keel
-  k.add(g, rbox(5, 0.5, 8, 0.2), M.engine, { y: -4.35, z: 4 });                       // hangar mouth
-  k.add(g, slab([[0, -24.5], [1.4, -20], [1.4, 10], [-1.4, 10], [-1.4, -20]], 0.1), M.trim, { y: 4.66 });
-  k.add(g, slab([[0, -25.4], [4.6, -12], [5.0, 26.3], [-5.0, 26.3], [-4.6, -12]], 0.4), M.trim, { y: 2.4 });
-  // The bridge tower, with a lit band of windows.
-  k.add(g, rbox(6, 3, 8, 0.4), M.armour, { y: 6, z: 15 });
-  k.add(g, rbox(4.4, 3, 5, 0.4), M.armour, { y: 9, z: 16 });
-  k.add(g, box(4.45, 0.5, 0.2), M.lens, { y: 9.4, z: 13.45 });
-  k.add(g, box(6.05, 0.4, 8.05), M.trim, { y: 7.0, z: 15 });
-  k.rod(g, [0, 10.5, 17], [0, 15, 17], 0.2, M.dark);
-  k.add(g, cyl(1.4, 0.3, 0.5, 14), M.trim, { y: 12.5, z: 17.5, rx: -0.5 });
-  k.add(g, ball(0.3, 8, 6), M.red, { y: 15.2, z: 17 });
-  // Turrets along the deck.
-  for (const [x, z] of [[0, -14], [0, -4], [2.4, 6], [-2.4, 6]] as const) {
-    k.add(g, cyl(1.2, 1.4, 0.6, 14), M.gun, { x, y: 4.9, z });
-    k.add(g, rbox(1.6, 0.8, 2, 0.2), M.armour, { x, y: 5.5, z });
-    for (const dx of [-0.35, 0.35]) k.rod(g, [x + dx, 5.5, z - 1], [x + dx, 5.5, z - 3.6], 0.14, M.dark);
+  const k = new Kit(), v = new Voxels(), r = seeded(5);
+  const NOSE = -24, TAIL = 18;
+  const half = (z: number) => Math.round(1 + ((z - NOSE) / (TAIL - NOSE)) * 9);
+  // The tiers: how far each is set in from the edge, and where it starts.
+  const tiers = [{ y: -2, in: 5, from: -12 }, { y: -1, in: 2, from: -20 }, { y: 0, in: 0, from: NOSE }, { y: 1, in: 1, from: -21 }, { y: 2, in: 3, from: -14 }, { y: 3, in: 5, from: -6 }];
+  for (let z = NOSE; z <= TAIL; z++) {
+    for (const t of tiers) {
+      if (z < t.from) continue;
+      const w = half(z) - t.in;
+      if (w < 0) continue;
+      for (let x = -w; x <= w; x++) {
+        const edge = Math.abs(x) === w, top = t.y === 3;
+        v.set(x, t.y, z, t.y === 0 && edge ? V.trim : edge && (t.y === 1 || t.y === 2) && z % 4 === 0 ? M.lens : top && x === 0 ? V.trim : t.y < 0 ? V.hullDark : (x + z) % 7 === 0 ? V.deck : V.hull);
+      }
+    }
   }
-  // Panel lines and running lights.
-  for (let i = 0; i < 6; i++) k.add(g, box(13.4 - Math.max(0, 3 - i) * 2, 0.15, 0.3), M.dark, { y: 2.55, z: -14 + i * 7 });
-  k.add(g, ball(0.5, 8, 6), M.red, { x: -6.7, y: 0.8, z: 27 });
-  k.add(g, ball(0.5, 8, 6), M.green, { x: 6.7, y: 0.8, z: 27 });
-  k.add(g, ball(0.3, 10, 8), M.lens, { y: 1, z: -37.4 });
-  // Engines.
-  for (const [x, y, r] of [[-3.6, 0, 1.6], [0, 0, 2.0], [3.6, 0, 1.6], [-1.8, 3.6, 1.0], [1.8, 3.6, 1.0]] as const) {
-    k.add(g, cyl(r * 1.1, r, 2.5, 16).rotateX(Math.PI / 2), M.pack, { x, y, z: 29.2 });
-    k.add(g, ring(r * 1.1, 0.12, 16), M.trim, { x, y, z: 30.4 });
+  // Greebles on the top tier, and turrets along the second.
+  for (let i = 0; i < 26; i++) {
+    const z = Math.floor(-4 + r() * 14), w = half(z) - 5, x = Math.round((r() * 2 - 1) * w);
+    if (x !== 0) v.set(x, 4, z, r() < 0.5 ? V.hullDark : V.deck);
   }
-  const flame = k.joint("flame", g, 0, 0, 30.45);
-  for (const [x, y, r] of [[-3.6, 0, 1.6], [0, 0, 2.0], [3.6, 0, 1.6], [-1.8, 3.6, 1.0], [1.8, 3.6, 1.0]] as const) {
-    k.add(flame, cyl(r * 0.95, r * 0.95, 0.05, 16).rotateX(Math.PI / 2), M.engine, { x, y });
-    k.add(flame, cyl(r * 0.5, r * 0.5, 0.05, 12).rotateX(Math.PI / 2), M.engineCore, { x, y, z: 0.05 });
-    k.add(flame, cone(r * 0.9, r * 5, 14).rotateX(-Math.PI / 2), M.plume, { x, y, z: r * 2.5 });
+  for (const z of [-12, -6, 0, 6]) for (const s of [-1, 1]) {
+    const x = s * (half(z) - 2);
+    v.set(x, 2, z, V.gun).set(x, 3, z, V.gun).set(x, 3, z - 1, V.gun).set(x, 3, z - 2, V.gun);
   }
+  // The command tower and its bridge.
+  v.fill(-2, 2, 4, 7, 10, 15, V.hull).fill(-3, 3, 4, 4, 9, 16, V.hullDark);
+  v.fill(-6, 6, 8, 9, 11, 13, V.hull).fill(-6, 6, 9, 9, 10, 10, M.lens).fill(-6, 6, 10, 10, 11, 13, V.trim);
+  v.set(-5, 11, 12, V.trim).set(5, 11, 12, V.trim).fill(0, 0, 11, 13, 14, 14, V.hullDark).set(0, 14, 14, M.red);
+  // Running lights and the engine bank.
+  v.set(-half(NOSE + 2), 0, NOSE + 2, M.red).set(half(NOSE + 2), 0, NOSE + 2, M.green);
+  for (let x = -8; x <= 8; x += 2) v.set(x, 0, TAIL + 1, M.engine).set(x, 1, TAIL + 1, M.engineCore);
+  const u = 1.5;
+  v.bake(k, k.root, u);
+  const flame = k.joint("flame", k.root, 0, u * 0.5, (TAIL + 1.5) * u);
+  for (let x = -8; x <= 8; x += 4) k.add(flame, cone(1.6, 9, 10).rotateX(-Math.PI / 2), M.plume, { x: x * u, z: 4.5 });
   return k.bake("cruiser");
 }
 
-// A Wooka cruiser: a hollowed asteroid with huts on top, logs lashed round it, masts of patched
-// hide sails, a carved Wooka head for a figurehead, and bonfires out the back.
+// A Wooka capital ship: a village on a raft of lashed logs. Plank decks, huts with thatched roofs
+// and lit doorways, a little tree, two masts of patched hide, a carved Wooka head for a figurehead
+// and bonfires burning out the back.
 function buildWookaCruiser() {
-  const k = new Kit(), g = k.root;
-  k.add(g, lumpy(14, 2, 0.18, 4, false), W.rock, { s: [1, 0.7, 1.8] });
-  // Logs lashed along each side.
-  for (const s of [-1, 1]) {
-    k.add(g, cyl(1.4, 1.5, 46, 10).rotateX(Math.PI / 2), W.bark, { x: s * 12.5, y: -2 });
-    k.add(g, cyl(1.1, 1.2, 38, 10).rotateX(Math.PI / 2), W.bark, { x: s * 11.5, y: 1.2, z: 2 });
-    for (const z of [-15, -4, 8, 18]) k.add(g, ring(1.6, 0.25, 12), W.rope, { x: s * 12.5, y: -2, z });
+  const k = new Kit(), v = new Voxels(), r = seeded(9);
+  const BOW = -20, STERN = 18;
+  for (let z = BOW; z <= STERN; z++) {
+    const taper = z < BOW + 4 ? BOW + 4 - z : 0;
+    for (let x = -8 + taper; x <= 8 - taper; x++) for (let y = -4; y <= 0; y++) {
+      if ((x * x) / 64 + ((y + 1.5) * (y + 1.5)) / 7 > 1) continue;
+      const log = Math.floor((x + 8) / 2) % 2 ? V.wood : V.woodDark;
+      v.set(x, y, z, (z - BOW) % 9 === 4 && Math.abs(x) >= 6 ? V.rope : log);
+    }
+    if (z > BOW + 3) for (let x = -6; x <= 6; x++) v.set(x, 1, z, (x + z) % 5 === 0 ? V.wood : V.plank);
   }
-  // Huts on top.
-  for (const [x, z, r] of [[-4, -6, 2.4], [3, 2, 3], [-3, 10, 2.2], [4, 14, 1.8]] as const) {
-    k.add(g, cyl(r, r * 1.1, r * 1.2, 10), W.wood, { x, y: 9 + r * 0.6, z });
-    k.add(g, cone(r * 1.5, r * 1.6, 10), W.thatch, { x, y: 9 + r * 1.2 + r * 0.8, z });
-    k.add(g, ball(0.4, 8, 6), W.fire, { x, y: 9 + r * 0.5, z: z - r * 1.05 });       // a lit doorway
-  }
+  // Huts: walls of wood with a lit doorway, and a stepped thatch roof.
+  const hut = (cx: number, cz: number, base: number, size: number) => {
+    v.fill(cx - size, cx + size, base, base + 2, cz - size, cz + size, V.wood);
+    v.set(cx, base, cz - size, W.fire).set(cx, base + 1, cz - size, W.fire);
+    for (let i = 0; i <= size + 1; i++) v.fill(cx - size - 1 + i, cx + size + 1 - i, base + 3 + i, base + 3 + i, cz - size - 1 + i, cz + size + 1 - i, V.thatch);
+  };
+  hut(-3, -10, 2, 2); hut(3, 0, 2, 2); hut(-3, 9, 2, 1); hut(-3, 9, 7, 1); hut(4, 13, 2, 1);
+  // A little tree on the deck.
+  v.fill(4, 4, 2, 6, -10, -10, V.woodDark);
+  for (let x = -2; x <= 2; x++) for (let y = -1; y <= 2; y++) for (let z = -2; z <= 2; z++) if (x * x + y * y + z * z <= 5) v.set(4 + x, 7 + y, -10 + z, V.leaf);
   // Masts and their sails, patched.
-  for (const [z, h, w] of [[-12, 30, 22], [4, 36, 26], [18, 24, 16]] as const) {
-    k.rod(g, [0, 6, z], [0, 6 + h, z], 0.8, W.wood, 8, 0.6);
-    k.rod(g, [-w / 2 - 1, 6 + h * 0.92, z], [w / 2 + 1, 6 + h * 0.92, z], 0.4, W.wood);
-    k.add(g, new THREE.PlaneGeometry(w, h * 0.7, 4, 4), W.hide, { y: 6 + h * 0.55, z: z + 0.6 });
-    k.add(g, new THREE.PlaneGeometry(w * 0.3, h * 0.25), W.hideDark, { x: w * 0.2, y: 6 + h * 0.4, z: z + 0.7 });
-    k.rod(g, [0, 6 + h, z], [0, 4, z + 22], 0.08, W.rope);                             // stays
-    k.rod(g, [0, 6 + h, z], [0, 4, z - 22], 0.08, W.rope);
+  for (const [z, h] of [[-4, 16], [6, 13]] as const) {
+    v.fill(0, 0, 2, 2 + h, z, z, V.wood);
+    v.fill(-6, 6, 2 + h - 1, 2 + h - 1, z, z, V.woodDark);
+    for (let x = -5; x <= 5; x++) for (let y = 6; y <= h - 1; y++) v.set(x, y, z + 1, r() < 0.15 ? V.hideDark : V.hide);
   }
   // The figurehead: a carved Wooka head, eyes blacked in.
-  k.add(g, ball(5, 16, 12), W.wood, { y: 2, z: -27 });
-  for (const s of [-1, 1]) {
-    k.add(g, ball(1.6, 12, 8), W.eye, { x: s * 1.8, y: 3, z: -31 });
-    k.add(g, ball(1.6, 10, 8), W.wood, { x: s * 3.6, y: 6, z: -26, s: [1, 1, 0.5] });
-  }
-  k.add(g, ball(1, 10, 8), W.nose, { y: 1, z: -32 });
-  for (let i = 0; i < 6; i++) k.add(g, ball(0.45, 8, 6), W.fire, { x: Math.sin(i) * 9, y: 4 + (i % 3), z: -16 + i * 7 }); // lanterns
-  const flame = k.joint("flame", g, 0, 0, 24);
-  for (const [x, y, sz] of [[0, 0, 1], [-5, -2, 0.7], [5, -2, 0.7], [0, 4, 0.6]] as const) {
-    k.add(flame, cone(4.5 * sz, 14 * sz, 8).rotateX(-Math.PI / 2), W.fire, { x, y, z: 5 * sz });
-    k.add(flame, cone(2.5 * sz, 8 * sz, 7).rotateX(-Math.PI / 2), W.fireCore, { x, y, z: 3 * sz });
+  for (let x = -3; x <= 3; x++) for (let y = -3; y <= 3; y++) for (let z = -3; z <= 3; z++) if (x * x + y * y + z * z <= 10) v.set(x, 2 + y, BOW - 2 + z, V.fur);
+  v.set(-1, 3, BOW - 5, V.black).set(1, 3, BOW - 5, V.black).set(-1, 3, BOW - 4, V.black).set(1, 3, BOW - 4, V.black).set(0, 2, BOW - 5, V.woodDark);
+  v.set(-2, 5, BOW - 2, V.fur).set(2, 5, BOW - 2, V.fur);
+  // Lanterns along the rails, and the bonfires astern.
+  for (let z = BOW + 6; z < STERN; z += 6) v.set(-6, 2, z, W.fire).set(6, 2, z, W.fire);
+  for (let x = -5; x <= 5; x += 2) v.set(x, -1, STERN + 1, W.fire).set(x, 0, STERN + 1, W.fireCore);
+  const u = 1.5;
+  v.bake(k, k.root, u);
+  const flame = k.joint("flame", k.root, 0, -0.5 * u, (STERN + 1.5) * u);
+  for (const [x, sz] of [[0, 1], [-4, 0.75], [4, 0.75]] as const) {
+    k.add(flame, cone(3.5 * sz, 12 * sz, 7).rotateX(-Math.PI / 2), W.fire, { x: x * u, z: 5 * sz });
+    k.add(flame, cone(2 * sz, 7 * sz, 6).rotateX(-Math.PI / 2), W.fireCore, { x: x * u, z: 3 * sz });
   }
   return k.bake("cruiser");
 }

@@ -97,7 +97,15 @@ button.next:disabled { background: #2a3350; color: #9aa3b2; opacity: 1; }
 .panel header { display: flex; justify-content: space-between; align-items: center; }
 .panel h1 { font-size: 18px; margin: 0; letter-spacing: 0.04em; }
 .tagline { margin: 2px 0 0; font-size: 12px; font-style: italic; color: var(--wooka); }
-.reinf { list-style: none; margin: 6px 0 2px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: #10151d; font-size: 12px; }
+.reinf { margin: 6px 0 2px; border: 1px solid var(--line); border-radius: 8px; background: #10151d; font-size: 12px; }
+.reinf summary { display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: pointer; list-style: none; color: var(--dim); }
+.reinf summary::-webkit-details-marker { display: none; }
+.reinf summary > .icon:first-child { color: var(--gold); }
+.reinf summary b { color: #7ee08a; font-size: 14px; font-variant-numeric: tabular-nums; }
+.reinf summary > .icon:last-child { margin-left: auto; transition: transform 0.15s; }
+.reinf[open] summary > .icon:last-child { transform: rotate(180deg); }
+.reinf summary .bad { color: #f5734c; display: inline-flex; }
+.reinf ul { list-style: none; margin: 0; padding: 0 8px 6px; }
 .reinf li { display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; color: var(--dim); }
 .reinf li b { color: var(--text); font-variant-numeric: tabular-nums; }
 .reinf li.bad, .reinf li.bad b { color: #f5734c; }
@@ -192,3 +200,32 @@ body.in-battle .war-room { display: none; }
 .tip.attack { fill: #ff4b3e; }
 .attacks { border: 1px solid #5a2320; background: #1d1414; border-radius: 10px; padding: 8px 10px; margin-bottom: 10px; }
 .attacks h2 { color: #ff8a7a; }
+
+/* The panel, icons first: a word only where an icon can't say it, the rest in tooltips. */
+button.icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 5px; line-height: 0; }
+#restart { background: none; border: none; color: var(--dim); } #restart:hover { color: var(--text); }
+.quick button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.panel h3 { display: flex; align-items: center; gap: 6px; }
+.sys-head { display: flex; align-items: baseline; gap: 8px; }
+.orbit-row { display: flex; align-items: center; gap: 12px; margin: 2px 0 6px; color: var(--dim); }
+.orbit-row > span { display: inline-flex; align-items: center; gap: 4px; }
+.orbit-row .hero { margin-left: auto; }
+.count { display: inline-flex; align-items: center; gap: 5px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.count b { min-width: 1.4em; text-align: center; padding: 0 4px; border-radius: 4px; background: #222a37; font-size: 12px; }
+.count b.marines { color: var(--marines); } .count b.wooka { color: var(--wooka); }
+button.hero { display: inline-flex; align-items: center; line-height: 0; padding: 4px 6px; }
+.note { display: flex; gap: 6px; align-items: flex-start; margin: 4px 0; font-size: 12px; color: var(--dim); }
+.note .icon { margin-top: 1px; } .note.warn { color: #f5b14c; }
+.act.send { flex-wrap: nowrap; gap: 5px; color: var(--dim); }
+.act.send .what { display: inline-flex; color: var(--text); }
+.act.send select:last-of-type { flex: 1; min-width: 0; max-width: none; }
+button.go { color: var(--accent); }
+button.build { display: inline-flex; align-items: center; gap: 2px; padding: 3px 8px; }
+button.build small { display: inline-flex; align-items: center; gap: 2px; margin-left: 4px; color: var(--gold); font-size: 12px; }
+.sector .armies { margin-left: auto; }
+.orders li .icon, .hero-order .icon { vertical-align: -2px; }
+button.x { display: inline-flex; line-height: 0; padding: 2px; }
+
+/* The space battle in 2.5D: no pointer lock, so the mouse is the crosshair. */
+body.space-2d .crosshair { display: none; }
+body.space-2d #battle-view { cursor: crosshair; }
