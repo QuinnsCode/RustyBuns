@@ -184,7 +184,7 @@ export interface SiblingServer {
   dir: string;
   /** What starts it: its start script, or the frameworks it uses. */
   runs: string;
-  /** The file it runs, from the app's folder ("../api/server.js"), null when init can't find it. */
+  /** The file it runs, from the app's folder ("../api/server.js", "api/server.js"), null when init can't find it. */
   entry: string | null;
   /** The port it listens on unless told otherwise. */
   port: number | null;
@@ -250,17 +250,25 @@ export function targetPort(target: string | null): number | null {
 }
 
 /**
- * Folders beside `root` that look like the server its dev proxy points at: a package.json with
- * a Node server framework, or a `start` script that runs node. "../api (node server.js)".
+ * Folders beside `root`, or inside it, that look like the server its dev proxy points at: a
+ * package.json with a Node server framework, or a `start` script that runs node.
+ * "../api (node server.js)", "api (node server.js)".
  */
 export function siblingServers(root: string): SiblingServer[] {
-  const parent = dirname(resolve(root)), self = resolve(root);
+  const self = resolve(root);
+  return [...serversIn(dirname(self), "../", (n) => join(dirname(self), n) !== self), ...serversIn(self, "", (n) => !NOT_SERVER_DIRS.has(n))];
+}
+
+/** An app's own folders that hold its source, assets, build output or tooling, never a server of its own. */
+const NOT_SERVER_DIRS = new Set(["src", "public", "static", "assets", "dist", "build", "out", "coverage", "test", "tests", "e2e", "desktop", "scripts"]);
+
+function serversIn(parent: string, prefix: string, keep: (name: string) => boolean): SiblingServer[] {
   const out: SiblingServer[] = [];
   let names: string[] = [];
   try { names = readdirSync(parent); } catch { return out; }
   for (const n of names.sort()) {
     const d = join(parent, n);
-    if (d === self || n.startsWith(".") || n === "node_modules") continue;
+    if (n.startsWith(".") || n === "node_modules" || !keep(n)) continue;
     const pkg = readJson(join(d, "package.json"));
     if (!pkg) continue;
     const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
@@ -269,11 +277,11 @@ export function siblingServers(root: string): SiblingServer[] {
     if (!fw.length && !/^(node|bun|tsx|ts-node)\s/.test(start)) continue;
     // The file it runs: `node server.js`'s first non-flag argument, else package.json main.
     const file = start.match(/^(?:node|bun|tsx|ts-node)\s+(?:-\S+\s+)*([^\s-]\S*\.[cm]?[jt]s)\b/)?.[1] ?? (typeof pkg.main === "string" ? pkg.main : null);
-    const entry = file && existsSync(join(d, file)) ? `../${n}/${file.replace(/^\.\//, "")}` : null;
+    const entry = file && existsSync(join(d, file)) ? `${prefix}${n}/${file.replace(/^\.\//, "")}` : null;
     // The port it listens on when PORT isn't set (`process.env.PORT || 3001`, `listen(3001)`).
     const code = entry ? readFileSync(join(d, file!), "utf8") : "";
     const port = code.match(/\bPORT\b[^\n;]*?(?:\|\||\?\?|=)\s*(\d{2,5})\b/)?.[1] ?? code.match(/\.listen\(\s*(\d{2,5})\b/)?.[1];
-    out.push({ dir: `../${n}`, runs: start || fw.join(", "), entry, port: port ? +port : null, readsPort: /\bPORT\b/.test(code) });
+    out.push({ dir: `${prefix}${n}`, runs: start || fw.join(", "), entry, port: port ? +port : null, readsPort: /\bPORT\b/.test(code) });
   }
   return out;
 }

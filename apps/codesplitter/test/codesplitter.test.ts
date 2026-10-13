@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
-import { apply, empty, fromText, merge, mergeWords, replay, text, type Applied, type Doc } from "../src/lines.ts";
+import { apply, empty, fromText, merge, mergeWords, replay, text, type Applied, type Doc, type Pick } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
 import { lintMerge, newProblems } from "../src/lint.ts";
 import { local as boot, type Call } from "../src/local.ts";
@@ -172,6 +172,23 @@ describe("merge", () => {
     expect(clean(was, onMain, onBranch)).toBe(onMain.replace("  await drop(tracking(ref));", "  await drop(tracking(ref));\n  await drop(squashRef(ref));").replace("await push(ref)", "await push(ref, lease)"));
     // Moved and re-indented on main, deleted on the branch: it's gone.
     expect(clean(was, onMain, was.replace("    await forget(name);\n", ""))).toBe(onMain.replace("  await forget(name);\n", ""));
+  });
+
+  test("a clash split only by lines main moved away is one card, and the moved lines land once (#1237)", () => {
+    const tail = ["const m = merge(up, tip);", "if (m.code) continue;", "await push(ref);", "await drop(tracking(ref));", "await forget(name);"];
+    const at = (pad: string, ls: string[]) => ls.map((l) => pad + l);
+    const was = ["for (const br of rows) {", "  if (tip === had) {", "    if (!merged || pullOnly) continue;", ...at("    ", tail), "  } else if (open) {", "    const theirs = await fetch(ref);", "    if (theirs) await catchUp(theirs);", "  }", "}"].join("\n");
+    // Main moves the tail out a level, as in #1223; the branch puts the open case first, and both rewrite it.
+    const onMain = ["for (const br of rows) {", "  if (open) {", "    const theirs = tip === had ? tip : await fetch(ref);", "    if (theirs && theirs !== had) await catchUp(theirs);", "    if (theirs) await clash(theirs);", "    continue;", "  }", "  if (tip !== had || pullOnly) continue;", ...at("  ", tail), "}"].join("\n");
+    const onBranch = ["for (const br of rows) {", "  if (open) {", "    const theirs = tip === had ? had : await fetch(ref);", "    if (theirs) await catchUp(theirs);", "  } else if (tip === had) {", "    if (pullOnly) continue;", ...at("    ", tail.slice(0, 4)), "    await drop(squashRef(ref));", "    await forget(name);", "  }", "}"].join("\n");
+    const { base, main, branch } = sides(was, onMain, onBranch), m = merge(base, branch, main, {}, "bot");
+    expect(m.conflicts).toHaveLength(1);
+    // Neither side of the card has the tail: it lands where main moved it, with the branch's new line.
+    expect([m.conflicts[0]!.main, m.conflicts[0]!.branch].some((t) => t?.includes("merge(up"))).toBe(false);
+    const moved = at("  ", [...tail.slice(0, 4), "await drop(squashRef(ref));", "await forget(name);"]).join("\n");
+    const pick = (p: Pick) => { const d = structuredClone(main), r = merge(base, branch, main, { [m.conflicts[0]!.line]: p }, "bot"); expect(r.conflicts).toEqual([]); return land(d, r); };
+    expect(pick("branch")).toBe(`${onBranch.split("\n").slice(0, 6).join("\n")}\n  }\n  if (tip !== had || pullOnly) continue;\n${moved}\n}`);
+    expect(pick({ text: "  if (open) {\n    await sync(ref);" })).toBe(`for (const br of rows) {\n  if (open) {\n    await sync(ref);\n  }\n  if (tip !== had || pullOnly) continue;\n${moved}\n}`);
   });
 
   test("the same new line added at the same spot on both sides lands once", () => {

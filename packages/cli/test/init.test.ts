@@ -837,3 +837,19 @@ test("init: names source files that differ only by case (#1198)", () => {
   expect(r.out).toContain("warning:  src/app/cover/FactBar.tsx and src/app/cover/factBar.ts differ only by case");
   expect(r.out).not.toMatch(/Fact\.tsx and/);
 });
+
+test("init: a proxied Vite app with its server in a folder of its own (./api) runs that server beside the host", () => {
+  const p = project({
+    "package.json": VITE, "src/main.tsx": "", "package-lock.json": "{}",
+    "vite.config.js": "export default { server: { proxy: { '/api': 'http://localhost:3001' } } }\n",
+    "api/package.json": JSON.stringify({ scripts: { start: "node server.js" } }),
+    "api/server.js": "require('http').createServer(() => {}).listen(process.env.PORT || 3001);\n",
+    // Build output and assets with a package.json aren't servers.
+    "dist/package.json": JSON.stringify({ main: "index.js", dependencies: { express: "^4" } }), "dist/index.js": "",
+  });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("backend:  api (node server.js) runs beside the desktop host: desktop.server proxies /api to it");
+  const cfg = p.read("rustybuns.config.ts");
+  expect(JSON.parse(cfg.slice(cfg.indexOf("defineConfig(") + 13, cfg.lastIndexOf(")"))).targets.desktop.server).toEqual({ entry: "api/server.js", paths: ["/api"] });
+});

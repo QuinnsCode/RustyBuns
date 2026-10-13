@@ -200,12 +200,18 @@ export function addonProblems(entry: string, a: ServerAddons, targets: DesktopOs
     lines.push(`  ${m.pkg} loads a native addon (${m.files.slice(0, 3).join(", ")}${m.files.length > 3 ? ", ..." : ""}) by a path it works out at run time, so the bundle can't carry it`);
   }
   if (targets) {
+    // A package that ships a prebuilt per OS (napi-rs: bcrypt.darwin-arm64.node, bcrypt.linux-x64-gnu.node)
+    // picks the one for where it runs, so each addon, by name, needs one build per target, not every build every target.
     const picked = new Set(a.perTarget.flatMap((l) => l.files.map((f) => f.split(sep).join("/"))));
+    const byAddon = new Map<string, string[]>();
     for (const p of a.sources) {
       if (picked.has(p)) continue;                             // one target's file, checked below
-      const on = headerOf(p), off = targets.filter((t) => !on.includes(t));
-      const name = p.includes("/node_modules/") ? p.slice(p.lastIndexOf("/node_modules/") + 14) : basename(p);
-      if (off.length) lines.push(`  ${name} is built for ${on.join(", ") || "an OS we don't know"}, so it won't load on ${off.join(", ")}: build those targets on their own OS (CI matrix), or install the addon's prebuilt for them`);
+      byAddon.set(addonName(p), [...byAddon.get(addonName(p)) ?? [], p]);
+    }
+    for (const [addon, builds] of byAddon) {
+      const on = [...new Set(builds.flatMap(headerOf))], off = targets.filter((t) => !on.includes(t));
+      const p = builds[0]!, name = builds.length > 1 ? `${addon}.node` : p.includes("/node_modules/") ? p.slice(p.lastIndexOf("/node_modules/") + 14) : basename(p);
+      if (off.length) lines.push(`  ${name} is built for ${on.join(", ") || "an OS we don't know"}, so it won't load on ${off.join(", ")}: install its prebuilt for them (\`bun install --os '*' --cpu '*'\` fetches every OS's build a package offers), or build those targets on their own OS`);
     }
     for (const l of a.perTarget) {
       const off = l.missing.filter((t) => targets.includes(t));
@@ -216,6 +222,9 @@ export function addonProblems(entry: string, a: ServerAddons, targets: DesktopOs
   return `desktop.server ${entry}: native addons the binary can't run\n${lines.join("\n")}\n`
     + `Use a pure-JS package in its place (bun:sqlite for better-sqlite3, bcryptjs for bcrypt), or port the routes to desktop/host.ts (AGENT_PROMPTS.md, prompt 3).`;
 }
+
+/** The addon a .node file is a build of: ".../bcrypt.darwin-arm64.node" -> "bcrypt". */
+export const addonName = (file: string) => basename(file).split(".")[0]!;
 
 /** Beside server-<i>.js: the addon file names it requires, for the host to copy out of the binary with it. */
 export const addonsManifest = (bundle: string) => bundle.replace(/\.js$/, ".addons.json");

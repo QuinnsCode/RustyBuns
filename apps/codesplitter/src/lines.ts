@@ -265,8 +265,8 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
   }
   const moveOf = new Map([...movedOnBranch].map(([id, l]) => [l.id, id]));
   const mainPos = places(base, main), branchPos = places(base, branch);
-  const regions = clashes(hunks(base, main, mainPos, movedOnMain), hunks(base, branch, branchPos, movedOnBranch), kind !== "prose");
-  const inRegion = (p: number) => regions.some((g) => g.lo <= p && p <= g.hi);
+  const regions = joined(clashes(hunks(base, main, mainPos, movedOnMain), hunks(base, branch, branchPos, movedOnBranch), kind !== "prose"), base, [main, mainPos, movedOnMain], [branch, branchPos, movedOnBranch]);
+  const inRegion = (p: number) => regions.some((g) => covers(g, p));
   // Lines main added that weren't in the file already, and the block each went in: a line that already repeats (a test's setup call) is no sign of doubling.
   const before = new Set(base.lines.map((l) => l.text)), mainHeads = heads(main.lines), branchHeads = heads(branch.lines);
   const mainAdded = new Map<string, Set<string>>();
@@ -310,7 +310,7 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
   const written = (pick: Pick | undefined) => typeof pick === "object" ? pick.text.split("\n") : null;
   // A stretch both reshaped: keep main's as is, swap in the branch's whole or a text of the writer's, or keep both.
   const settle = (g: Region) => {
-    const within = (d: Doc, pos: Map<string, number>) => d.lines.filter((l) => g.lo <= pos.get(l.id)! && pos.get(l.id)! <= g.hi);
+    const within = (d: Doc, pos: Map<string, number>) => d.lines.filter((l) => covers(g, pos.get(l.id)!));
     const ms = within(main, mainPos), bs = within(branch, branchPos), key = base.lines[Math.ceil((g.lo - 1) / 2)]!.id;
     const join = (ls: Line[]) => ls.length ? ls.map((l) => l.text).join("\n") : null;
     // Both reshaped it the same way: nothing to do.
@@ -345,7 +345,7 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
       for (const l of bs) insert(l.text, l.by);
       return;
     }
-    const bl = base.lines.filter((_, i) => g.lo <= 2 * i + 1 && 2 * i + 1 <= g.hi), both = pick ? null : blend(bl, ms, bs, kind !== "prose", loose);
+    const bl = base.lines.filter((_, i) => covers(g, 2 * i + 1)), both = pick ? null : blend(bl, ms, bs, kind !== "prose", loose);
     if (both) {
       before();
       const keep = new Set(both.map((e) => e.m?.id));
@@ -364,7 +364,7 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
   for (let [k, l] of branch.lines.entries()) {
     const p = branchPos.get(l.id)!;
     while (r < regions.length && regions[r]!.lo <= p) settle(regions[r++]!);
-    if (r && p <= regions[r - 1]!.hi) { shift = null; continue; }
+    if (r && covers(regions[r - 1]!, p)) { shift = null; continue; }
     const b = was.get(l.id);
     if (!b) {
       const from = moveOf.get(l.id), m = from && now.get(from);
@@ -695,7 +695,9 @@ function moves(base: Doc, side: Doc, was: Map<string, Line>) {
 }
 
 // Positions against base: base line i at 2i + 1, the gap after it at 2i + 2, the top at 0.
-interface Region { lo: number; hi: number }
+interface Region { lo: number; hi: number; holes?: Region[] }
+/** Whether `p` is in `g` and not in one of its holes. */
+const covers = (g: Region, p: number) => g.lo <= p && p <= g.hi && !g.holes?.some((h) => h.lo <= p && p <= h.hi);
 interface Hunk extends Region { reshaped: boolean; deletes: boolean }
 
 /** Where each line of `side` sits against base: a base line at its own spot, a new line in the gap it was added to. */
@@ -756,6 +758,32 @@ function clashes(main: Hunk[], branch: Hunk[], strict: boolean): Region[] {
     const last = out.at(-1);
     if (last && g.lo <= last.hi) last.hi = Math.max(last.hi, g.hi);
     else out.push({ ...g });
+  }
+  return out;
+}
+
+type Side = [Doc, Map<string, number>, Map<string, Line>];
+
+/**
+ * Stretches split only by base lines one side moved away, joined into one, with each gap as a hole (#1237).
+ * Each would be its own card, though it's one decision. What's in a hole is left out of the card, on both
+ * sides: the moved lines land where the side moved them, and the other side's new lines there go with them.
+ * The side that moved them has nothing left in the gap, and the other side has only those lines and new ones.
+ */
+function joined(regions: Region[], base: Doc, ...sides: [Side, Side]): Region[] {
+  const out: Region[] = [];
+  // Base line i sits at 2i + 1: a gap with none in it is no gap.
+  const hole = (lo: number, hi: number) => (lo % 2 ? lo : lo + 1) <= hi && sides.some(([d, pos, moved], k) => {
+    for (let p = lo % 2 ? lo : lo + 1; p <= hi; p += 2) if (!moved.has(base.lines[(p - 1) / 2]!.id)) return false;
+    const [o, opos, omoved] = sides[1 - k]!, into = new Set([...omoved.values()].map((l) => l.id));
+    const at = (q: Map<string, number>) => (l: Line) => lo <= q.get(l.id)! && q.get(l.id)! <= hi;
+    // A line the other side moved into the gap is a move of its own, best left a card's.
+    return !d.lines.some(at(pos)) && o.lines.filter(at(opos)).every((l) => moved.has(l.id) || !into.has(l.id));
+  });
+  for (const g of regions) {
+    const last = out.at(-1);
+    if (last && hole(last.hi + 1, g.lo - 1)) out[out.length - 1] = { lo: last.lo, hi: g.hi, holes: [...last.holes ?? [], { lo: last.hi + 1, hi: g.lo - 1 }, ...g.holes ?? []] };
+    else out.push(g);
   }
   return out;
 }

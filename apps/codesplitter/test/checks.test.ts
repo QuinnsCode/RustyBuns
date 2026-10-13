@@ -1,6 +1,6 @@
 import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { local as boot } from "../src/local.ts";
-import { expireQueued, ORDER, pathMatches, planFrom, pollGithub, postOrder, requeueStale, STALE, startChecks, UNCLAIMED, watchGithub } from "../src/checks.ts";
+import { expireQueued, hungIn, ORDER, pathMatches, planFrom, pollGithub, postOrder, requeueStale, STALE, startChecks, UNCLAIMED, watchGithub } from "../src/checks.ts";
 import worker from "../src/worker.ts";
 
 // End to end, with real git: a full run on a busy machine can stretch one past bun's 5s default.
@@ -126,8 +126,31 @@ test("a required check gates the merge: missing waits, failed blocks, passed let
   const lint = (review.checks.runs as any[]).find((r) => r.name === "lint");
   await send("ryan", `/api/repos/ryan/lab/checks/${lint.id}`, { status: "passed" }, "PUT");
   await send("ryan", "/api/repos/ryan/lab/checks", { ref: "tidy", sha: SHA, name: "test", status: "passed" });
-  expect((await checks("tidy")).gate).toEqual({ required: ["test", "lint"], ok: true, passed: ["test", "lint"], waiting: [], failed: [], deferred: [], skipped: [] });
+  expect((await checks("tidy")).gate).toEqual({ required: ["test", "lint"], ok: true, passed: ["test", "lint"], waiting: [], failed: [], hung: {}, deferred: [], skipped: [] });
   expect((await send("ryan", "/api/repos/ryan/lab/branches/tidy/merge", {})).status).toBe(200);
+});
+
+test("a run that ran out of time says where it hung: the merge block names the file (#1218)", async () => {
+  const { call, send, checks } = await app();
+  await send("ryan", "/api/repos/ryan/lab/do/commit?path=a.ts", { message: "first" });
+  await send("ryan", "/api/repos/ryan/lab/branches", { name: "slow" });
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { required: ["test", "lint"] }, "PUT");
+  const run = await (await send("ryan", "/api/repos/ryan/lab/checks", { ref: "slow", sha: SHA, name: "test", status: "running" })).json();
+  const log = "$ bun scripts/ci-test-count.ts bun test\ntest/a.test.ts:\n(pass) one\ntest/b.test.ts:\n" +
+    "::error title=hung::Still running after 10 min, killed. last to report: test/b.test.ts\n\nexit 124\n";
+  await send("ryan", `/api/repos/ryan/lab/checks/${run.id}`, { status: "failed", log }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/checks", { ref: "slow", sha: SHA, name: "lint", status: "failed" });
+  expect((await checks("slow")).gate).toMatchObject({ failed: ["test", "lint"], hung: { test: "test/b.test.ts" } });
+  const m = await send("ryan", "/api/repos/ryan/lab/branches/slow/merge", {});
+  expect((await m.json()).error).toContain("test (hung in test/b.test.ts), lint failed");
+});
+
+test("hungIn: the last file to report, else the first that never did, else setup", () => {
+  const hung = (rest: string) => hungIn(`out\n::error title=hung::Still running after 10 min, killed. ${rest}\nexit 124\n`);
+  expect(hung("last to report: test/b.test.ts; never reported: test/c.test.ts")).toBe("test/b.test.ts");
+  expect(hung("never reported: test/c.test.ts, test/d.test.ts (+3 more)")).toBe("test/c.test.ts");
+  expect(hung("no test file reported")).toBe("setup");
+  expect(hungIn("12 pass\nexit 1\n")).toBeUndefined();
 });
 
 test("* requires every check that ran; none at all holds it", async () => {

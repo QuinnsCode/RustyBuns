@@ -427,7 +427,7 @@ test("box.webmcp: off by default; on, both box hosts add the script tag to their
     expect(src).toContain("head: WEBMCP_TAG");
   }
   expect(spa).toContain("const script = webmcp(req);");
-  expect(worker).toContain("(await prof(req)) ?? webmcp(req) ?? (worker as any).fetch(req, e, ctx)");
+  expect(worker).toContain(`(await prof(req)) ?? webmcp(req) ?? within("request", () => (worker as any).fetch(req, e, ctx))`);
 });
 
 test("box: honors desktop.host and headers; a box-only app needs no worker section", () => {
@@ -549,7 +549,7 @@ test("artifacts: wrangler, alchemy and the desktop host all get the binding", ()
   expect(host).toContain(`open: { "/__rb/git/": (req: Request) => gitHttp(req, [env.ARTIFACTS as any]) },`);
   expect(host).toContain(`(env.ARTIFACTS as any).remoteBase = shell.url;`);
   // Worker mode watches its memory as well, ahead of the Worker's own routes.
-  expect(host).toContain(`=== "/__rb/mem" ? Response.json(mem.stats()) : (worker as any).fetch(req, e, ctx)`);
+  expect(host).toContain(`p === "/__rb/mem" ? Response.json(mem.stats()) : p === "/__rb/usage" ? Response.json(usageSnapshot()) : within("request", () => (worker as any).fetch(req, e, ctx))`);
 });
 
 test("images: wrangler, alchemy and the desktop host all get the binding; wrangler's carries over", () => {
@@ -612,7 +612,7 @@ test("ratelimit: wrangler and alchemy bind it; the desktop host leaves it out; w
     .toEqual({ RL: { type: "ratelimit", namespaceId: "7", simple: { limit: 5, period: 10 } } });
 });
 
-test("vectorize and ai: wrangler and alchemy bind them, with the index's metadata indexes; the desktop host leaves them out", () => {
+test("vectorize and ai: wrangler and alchemy bind them, with the index's metadata indexes; the desktop host runs their twins", () => {
   const c = {
     name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] },
     bindings: { VECTORS: { type: "vectorize", indexName: "g-vectors", dimensions: 384, metadataIndexes: { repo: "string", pub: "boolean" } }, AI: { type: "ai" } },
@@ -627,8 +627,8 @@ test("vectorize and ai: wrangler and alchemy bind them, with the index's metadat
   expect(a).toContain(`VECTORS: VECTORS, AI: AI`);
   expect(a).toContain(`yield* Cloudflare.Vectorize.MetadataIndex("VECTORS_repo", { indexName: (yield* VECTORS).indexName, propertyName: "repo", indexType: "string" });`);
   expect(a).toContain(`propertyName: "pub", indexType: "boolean"`);
-  expect(desktopEntry(c)).toContain(`// VECTORS: Cloudflare Vectorize has no local twin`);
-  expect(desktopEntry(c)).toContain(`// AI: Workers AI has no local twin`);
+  expect(desktopEntry(c)).toContain(`  VECTORS: local.vectorize("g-vectors", {"dimensions":384}),`);
+  expect(desktopEntry(c)).toContain(`  AI: local.ai("AI"),`);
   expect(wranglerToConfig({ name: "g", ai: { binding: "BRAIN" } }).bindings).toEqual({ BRAIN: { type: "ai" } });
 });
 
@@ -655,7 +655,9 @@ test("queue: wrangler and alchemy bind the producer and the consumer; the deskto
   expect(generateAlchemy({ ...c, targets: { edge: { provider: "cloudflare", adopt: true } } })).toContain(`Cloudflare.Queues.Queue("JOBS", { name: "g-jobs" });`);
   const host = desktopEntry(c);
   expect(host).toContain(`JOBS: local.queue("g-jobs"),`);
-  expect(host).toContain(`(env.JOBS as any).consume((batch: unknown) => (worker as any).queue?.(batch, env, `);
+  expect(host).toContain(`(env.JOBS as any).consume((batch: any) => within("queue JOBS", () => (worker as any).queue?.(batch, env, `);
+  // Sends count toward /__rb/usage; a consumer-only queue has no env binding to meter.
+  expect(host).toContain(`Object.entries({"JOBS":"queue","OUTBOX":"queue"})) env[n] = metered(n, k as any, env[n]);`);
   expect(host).toContain(`{"batchSize":5,"maxRetries":6}`);
   // priority is the host's: the edge generators leave it out.
   const hi = { ...c, bindings: { JOBS: { ...c.bindings.JOBS, consumer: { ...c.bindings.JOBS.consumer, priority: "high" } } } };
@@ -701,7 +703,7 @@ test("queue dead-letter queue: a consumer-only queue gets messages past maxRetri
   });
 });
 
-test("workflow, analytics engine, worker loader, observability, routes: wrangler and alchemy bind them; the desktop leaves them out", () => {
+test("workflow, analytics engine, worker loader, observability, routes: wrangler and alchemy bind them; the desktop runs their twins", () => {
   const c = {
     name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [], observability: { enabled: true, logs: { enabled: true, headSamplingRate: 0.1 } } },
     bindings: {
@@ -725,9 +727,11 @@ test("workflow, analytics engine, worker loader, observability, routes: wrangler
   expect(a).toContain(`  domain: {"name":"app.example.com","aliases":["www.example.com"]},`);
   expect(a).toContain(`  routes: [{"pattern":"example.com/api/*","zoneName":"example.com"}],`);
   const host = desktopEntry(c);
-  expect(host).toContain(`// FLOW: Cloudflare Workflows (Flow) has no local twin`);
-  expect(host).toContain(`// LOADER: the Dynamic Worker Loader has no local twin`);
-  expect(host).toContain(`AE: { writeDataPoint() {} },`);
+  expect(host).toContain(`  FLOW: local.workflow("FLOW"),`);
+  expect(host).toContain(`const { default: worker, Flow, } = await import(`);
+  expect(host).toContain(`(env.FLOW as any).bind(Flow as any, env);`);
+  expect(host).toContain(`  LOADER: local.workerLoader("LOADER"),`);
+  expect(host).toContain(`  AE: local.analyticsEngine("events"),`);
   expect(wranglerToConfig({ name: "g", ...w }).bindings).toEqual(c.bindings);
   expect(wranglerToConfig({ name: "g", ...w }).worker!.observability).toEqual(c.worker.observability);
 });
@@ -758,10 +762,10 @@ test("crons: Cron Triggers on the edge, a minute timer on the desktop", () => {
   expect(JSON.parse(generateWrangler(c).replace(/^\/\/.*\n/gm, "")).triggers).toEqual({ crons: ["0 * * * *"] });
   expect(generateAlchemy(c)).toContain(`  crons: ["0 * * * *"],`);
   const host = desktopEntry(c);
-  expect(host).toContain(`schedule(["0 * * * *"], (controller) => (worker as any).scheduled?.(controller, env,`);
+  expect(host).toContain(`schedule(["0 * * * *"], (controller) => within("cron " + controller.cron, () => (worker as any).scheduled?.(controller, env,`);
   const none = desktopEntry({ ...c, worker: { ...c.worker, crons: undefined } });
   expect(none).not.toContain("schedule");
-  expect(desktopEntry({ ...c, worker: { ...c.worker, cronPriority: "normal" } })).toContain(`passThroughOnException() {} }), { priority: "normal" });`);
+  expect(desktopEntry({ ...c, worker: { ...c.worker, cronPriority: "normal" } })).toContain(`passThroughOnException() {} })), { priority: "normal" });`);
   expect(wranglerToConfig({ name: "g", triggers: { crons: ["*/5 * * * *"] } }).worker!.crons).toEqual(["*/5 * * * *"]);
 });
 

@@ -20,6 +20,9 @@ export async function local(extra: Record<string, unknown> = {}) {
   // Queued requests' messages, likewise.
   env.JOBS = queue(":memory:", "codesplitter-jobs");
   const stopJobs = env.JOBS.consume((batch: any) => worker.queue(batch, env));
+  // Fix tasks, likewise, in a queue of their own.
+  env.FIXES = queue(":memory:", "codesplitter-fixes");
+  const stopFixes = env.FIXES.consume((batch: any) => worker.queue(batch, env));
   // Level digs, likewise: an import's first step, and a big level's parts.
   env.LEVEL_DIGS = queue(":memory:", "codesplitter-level-digs");
   const stopDigs = env.LEVEL_DIGS.consume((batch: any) => worker.queue(batch, env), { maxRetries: 3 });
@@ -41,7 +44,7 @@ export async function local(extra: Record<string, unknown> = {}) {
     artifacts: env.ARTIFACTS as LocalArtifacts,
     env,
     /** Stop the queue consumers and the git server, and delete the temp repos. */
-    close() { stopHooks(); stopJobs(); stopDigs(); git.stop(true); rmSync(dir, { recursive: true, force: true }); },
+    close() { stopHooks(); stopJobs(); stopFixes(); stopDigs(); git.stop(true); rmSync(dir, { recursive: true, force: true }); },
   });
 }
 

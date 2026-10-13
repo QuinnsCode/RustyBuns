@@ -3,7 +3,7 @@
 import { test, expect, afterAll } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { addonLookups, addonPlatforms, addonProblems, gypBuildFile, serverAddons, type TargetLookup } from "../src/addons.ts";
+import { addonLookups, addonName, addonPlatforms, addonProblems, gypBuildFile, serverAddons, type TargetLookup } from "../src/addons.ts";
 import type { DesktopOs } from "../src/config.ts";
 
 const root = mkdtempSync(join(import.meta.dir, ".e2e-addons-"));
@@ -155,4 +155,19 @@ test("an addon found through node-gyp-build is carried for every target, and a t
   expect(err).toContain("hashish has no addon for windows-x64");
   expect(err).not.toContain("is built for");                   // each target's file loads on it
   expect(addonProblems("server.js", addons, ["darwin-arm64", "linux-x64"])).toBeNull();
+});
+
+// napi-rs packages ship a build per OS, each its own package; the server loads the one for where it runs.
+test("an addon with a prebuilt per OS needs one build per target, not every build on every target", () => {
+  const dir = join(root, "per-os", "node_modules/@node-rs");
+  mkdirSync(join(dir, "bcrypt-darwin-arm64"), { recursive: true });
+  mkdirSync(join(dir, "bcrypt-linux-x64-gnu"), { recursive: true });
+  const mac = join(dir, "bcrypt-darwin-arm64/bcrypt.darwin-arm64.node"), linux = join(dir, "bcrypt-linux-x64-gnu/bcrypt.linux-x64-gnu.node");
+  writeFileSync(mac, MACHO_ARM64);
+  writeFileSync(linux, ELF_X64);
+  expect([mac, linux].map(addonName)).toEqual(["bcrypt", "bcrypt"]);
+  const addons = { carried: [], sources: [mac, linux], perTarget: [], missed: [] };
+  expect(addonProblems("server.js", addons, ["darwin-arm64", "linux-x64"])).toBeNull();
+  const err = addonProblems("server.js", addons, ["linux-x64", "windows-x64"])!;
+  expect(err).toContain("bcrypt.node is built for darwin-arm64, linux-x64, so it won't load on windows-x64");
 });
