@@ -734,3 +734,11 @@ test("postgres: drivers, and Drizzle or Prisma only when set to postgresql", () 
   expect(pg({ "prisma/schema.prisma": `datasource db {\n  provider = "postgresql"\n}` }, { prisma: "6" })).toBe("prisma (postgresql)");
   expect(pg({ "prisma/schema.prisma": `datasource db {\n  provider = "sqlite"\n}` }, { prisma: "6" })).toBeNull();
 });
+
+test("init: names source files that differ only by case (#1198)", () => {
+  const p = project({ "package.json": VITE, "src/main.tsx": "", "src/app/cover/factBar.ts": "", "src/app/cover/FactBar.tsx": "", "src/app/cover/Fact.tsx": "", "src/app/cover/fact.css": "" });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toContain("warning:  src/app/cover/FactBar.tsx and src/app/cover/factBar.ts differ only by case");
+  expect(r.out).not.toMatch(/Fact\.tsx and/);
+});

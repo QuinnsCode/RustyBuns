@@ -24,7 +24,7 @@ import { planPort } from "./glue/port-vite.ts";
 import { jekyllDefaults, jekyllExcludes, jekyllPagesPlugins, jekyllPlugins, staticBuild, type StaticSite } from "./glue/static-site.ts";
 import { copySite, jekyllSiteFiles, staticSiteAt } from "./glue/site-files.ts";
 import { jekyllPlan, type JekyllEnv } from "./glue/jekyll.ts";
-import { sourceLayout } from "./glue/source.ts";
+import { sourceLayout, caseCollisions } from "./glue/source.ts";
 import { analyze, report } from "./glue/boundary.ts";
 import { generateBoundaryFiles, scaffoldDesktopPackage } from "./glue/desktop-scaffold.ts";
 import { installCommand, applyOverrides, workspaceRoot, DEPLOY_DEPS } from "./glue/deploy-deps.ts";
@@ -177,6 +177,9 @@ async function init() {
       ? `          no src/, app/, lib/, client/ or web/ found, so the whole project root is treated as source.\n          set source: { dir, aliases } in rustybuns.config.ts before running add desktop`
       : `          not sure about that; set source: { dir, aliases } in rustybuns.config.ts if it's wrong`);
   }
+  // macOS disks ignore case, so `./FactBar` can open factBar.ts there and fail the build (#1198).
+  for (const g of caseCollisions(".", inf.srcDir))
+    console.log(`warning:  ${g.join(" and ")} differ only by case; on macOS an import of one can open the other. Rename one.`);
   // Astro with no Cloudflare adapter is a static site: its build is the whole UI.
   const astroWorker = astroAdapter === "@astrojs/cloudflare" && !spa;
   if (inf.framework === "astro" && !astroWorker) {
