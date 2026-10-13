@@ -215,8 +215,9 @@
   .phone #m-agent :is(input, select, textarea) { font: inherit; font-size: 16px; padding: 8px; width: 100%; box-sizing: border-box; }
   .phone .btn { min-height: 36px; }
   .sec .run pre { margin: 4px 0 0; max-height: 180px; overflow: auto; font: 400 11.5px/1.45 var(--mono); white-space: pre-wrap; color: var(--muted); }
-  .ghwho { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; padding: 8px 10px; margin: 0 0 8px; border: 1px solid var(--border-2); border-radius: 5px; background: var(--canvas); }
-  .ghwho.on { border-color: var(--del-edge); background: var(--accent-soft); } .ghwho svg.lucide { margin-top: 2px; }
+  .ghwho { display: flex; gap: 8px; align-items: center; font-size: 13px; margin: 0 0 8px; }
+  .ghwho .octo { width: 20px; height: 20px; fill: currentColor; color: #9aa0a6; flex: none; }
+  .ghwho.on .octo { color: #000; filter: drop-shadow(0 0 4px rgba(255,255,255,.85)) drop-shadow(0 0 7px rgba(63,185,80,.65)); }
   .ghwho { flex-wrap: wrap; } .ghaccts { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; }
   .ghacct { display: inline-flex; } .ghacct .btn:first-child { border-radius: 5px 0 0 5px; } .ghacct .btn:not(:first-child) { border-radius: 0; border-left: 0; padding-inline: 6px; } .ghacct .btn:last-child { border-radius: 0 5px 5px 0; }
   .ghacct .btn[data-gh-agent]:not(.on) { opacity: .55; }
@@ -635,6 +636,12 @@
   /* Profiles, collections, search. */
   .cards { display: grid; gap: 16px; padding-top: 20px; } .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   /* Own your git: the desktop is home, the clouds are where it syncs out to. */
+  /* Two ways in: the same calls for a hand and for an agent's eye. */
+  .both { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; padding-top: 20px; }
+  .both > div { border: 1px solid var(--border); border-radius: 8px; padding: 18px; background: var(--bg); display: grid; gap: 6px; align-content: start; }
+  .both .ico { width: 30px; height: 30px; border-radius: 5px; background: var(--grain), var(--paper); border: 1px solid var(--border-2); display: grid; place-items: center; }
+  .both b { font-weight: 600; } .both p { margin: 0; color: var(--muted); font-size: 13.5px; } .both code { color: var(--faint); font-size: 11.5px; }
+  .both .hand { color: var(--accent-ink); font: 500 11px var(--mono); }
   .owngit { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding-top: 20px; }
   .owngit > div { border: 1px solid var(--border); border-radius: 8px; padding: 18px; background: var(--bg); }
   .owngit > div.home { border-color: var(--accent); background: var(--accent-soft); }
@@ -685,6 +692,12 @@
   .photo iframe { width: 100%; height: 220px; border: 0; display: block; background: #fff; }
   .list a { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--border); text-decoration: none; } .list a:first-child { border-top: 0; }
   .list a:hover { color: var(--accent-ink); }
+  .folders { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+  .folders a { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 6px; border-radius: 6px; text-decoration: none; text-align: center; min-width: 0; }
+  .folders a:hover { background: var(--accent-soft); color: var(--accent-ink); }
+  .folders svg.lucide { width: 40px; height: 40px; stroke-width: 1.25; }
+  .folders .fname { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+  .folders .when { font-size: 11px; color: var(--muted); }
 
   /* The command palette. */
   .palette { position: fixed; inset: 0; z-index: 50; background: rgba(255,255,255,.6); backdrop-filter: blur(3px); display: grid; justify-items: center; align-items: start; padding-top: 12vh; }
@@ -2943,9 +2956,11 @@ function visBadge(v, canFlip) {
 }
 // Dig up anything on GitHub: search words, or paste whatever you copied there
 // (owner/name, a page URL, a remote, a git clone line). The server reads the repo out of it.
-const digBox = (why, fold = false) => `${fold ? `<details class="box fold" id="digfold"><summary class="bar">${icon("github")}<b>Dig up a GitHub repo</b><span class="muted">paste its link, or search</span>${icon("chevron-down", "chev")}</summary><form id="ghdig">` : `<form id="ghdig" class="box"><div class="bar">${icon("github")}<b>Dig up a GitHub repo</b></div>`}<div class="body"><p class="muted" style="margin-top:0">${why}</p>
+const OCTOCAT = `<svg class="octo" viewBox="0 0 24 24" role="img" aria-label="GitHub"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>`;
+const DIG_WHY = "In codeSplitter, “digging” is simply bringing code into the ecosystem: digging in for the long haul.";
+const digBox = (why, fold = false) => `${fold ? `<details class="box fold" id="digfold"><summary class="bar"><b>Dig it up?</b>${icon("chevron-down", "chev")}</summary><form id="ghdig">` : `<form id="ghdig" class="box"><div class="bar"><b>Dig it up?</b></div>`}<div class="body"><p class="muted" style="margin-top:0">${why}</p>
   <div class="ghwho" id="ghwho" hidden></div>
-  <div class="row"><input name="repo" placeholder="search GitHub, or paste a link, owner/name or a git clone line" required style="flex:1" autocomplete="off"><input name="name" placeholder="name (optional)" style="width:150px"><button class="btn primary">${icon("git-fork")}Dig it up (fork)</button><button type="button" class="btn" id="ghwow" title="dig it up, then a tour walks round it: the code, collab, agents, each panel on the right, the city and the backrooms">${icon("sparkles")}Wow me</button></div>
+  <div class="row"><input name="repo" placeholder="search GitHub, or paste a link, owner/name or a git clone line" required style="flex:1" autocomplete="off"><input name="name" placeholder="name (optional)" style="width:150px"><button class="btn primary">${icon("git-fork")}Dig it up</button><button type="button" class="btn" id="ghwow" title="dig it up, then a tour walks round it: the code, collab, agents, each panel on the right, the city and the backrooms">${icon("sparkles")}Wow me</button></div>
   <label class="muted" id="ghmirror" hidden style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:8px"><input type="checkbox" name="mirror"><span title="its commits come here, yours go back, and you keep working while it's down. Any git URL, GitHub or not.">Keep it in sync with upstream (a mirror)</span></label>
   <label class="muted" id="ghpull" hidden style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:4px;padding-left:22px"><input type="checkbox" name="pullOnly">Pull only: nothing goes back up</label>
   <p class="muted" id="ghmsg" style="font-size:13px"></p><div class="gh-list" id="ghlist"></div></div></form>${fold ? "</details>" : ""}`;
@@ -2987,15 +3002,11 @@ function wireDig() {
   const loadGh = () => api("/github/repos").then((g) => {
     mine = g;
     note = g.temporary ? `Digs last ${g.ttlHours} hours here, and the oldest goes first when too many are live.` : "";
-    // Say plainly whose GitHub this is and where the login came from, since that's why private repos show up.
-    const via = { gh: "the GitHub CLI on this machine (<code>gh auth token</code>)", account: "your GitHub sign-in", secret: "this host's GitHub token" }[g.via];
-    const off = { gh: "To stop, run <code>gh auth logout</code> or start the app with <code>GH_CLI=off</code>.", account: "", secret: "" }[g.via] ?? "";
-    const who = $("#ghwho"), priv = g.repos.filter((x) => x.private).length;
+    const who = $("#ghwho");
     who.hidden = false;
     who.innerHTML = g.login
-      ? `${icon("github")}<span><b>Logged in to GitHub as <a href="https://github.com/${esc(g.login)}" rel="noopener">@${esc(g.login)}</a></b> through ${via}. That's why your ${g.repos.length} repo${g.repos.length === 1 ? "" : "s"}${priv ? ` (${priv} private)` : ""} show below. ${off}</span>`
-      : g.error ? `${icon("github")}<span><b>GitHub login didn't work</b> (${esc(g.error)}). Only public repos can be searched.</span>`
-      : `${icon("github")}<span><b>Not logged in to GitHub.</b> Only public repos can be searched. ${g.privateOk ? "Run <code>gh auth login</code> on this machine to see your own." : g.accounts && session.providers.includes("github") ? "Connect your GitHub to see your own." : "Sign in with GitHub to see your own."}</span>`;
+      ? `${OCTOCAT}<a href="https://github.com/${esc(g.login)}" rel="noopener">@${esc(g.login)}</a>`
+      : `${OCTOCAT}<span class="muted">${g.error ? "GitHub didn't connect" : "connect github?"}</span>`;
     // Accounts mode: every GitHub linked to this sign-in, to switch between, plus one more to connect.
     if (g.accounts && session.providers.includes("github")) {
       const chips = g.accounts.map((a) => `<span class="ghacct${a.active ? " on" : ""}"><button type="button" class="btn" data-gh-use="${esc(a.id)}"${a.active ? " disabled" : ""} title="${a.active ? "digging as this one" : "dig as this one"}">${a.active ? icon("check") : ""}@${esc(a.login ?? "unknown")}</button><button type="button" class="btn${a.agent ? " on" : ""}" data-gh-agent="${a.agent ? "" : esc(a.id)}" title="${a.agent ? "your hosted agents work as this one: click for none" : "let your hosted agents work as this one (a bot account keeps theirs apart from yours)"}">${icon(a.agent ? "bot" : "bot-off")}</button><button type="button" class="btn" data-gh-unlink="${esc(a.id)}" title="unlink this GitHub">${icon("x")}</button></span>`).join("");
@@ -3012,7 +3023,7 @@ function wireDig() {
     icons();
     // Pasted or typed before GitHub answered: say what that'll dig up rather than the hint.
     if (f.repo.value.trim()) f.repo.dispatchEvent(new Event("input"));
-    else { msg.textContent = (g.login && g.repos.length ? "Pick one of yours, search, or paste anything from GitHub. " : "Search GitHub, or paste anything you copied there. ") + note; showMine(); }
+    else { msg.textContent = (g.login && g.repos.length ? "" : "Search GitHub, or paste a link.") + note; showMine(); }
     // Mirrors need git on this machine: the desktop.
     if (g.mirrorsOk) $("#ghmirror").hidden = false;
     f.mirror.addEventListener("change", () => { $("#ghpull").hidden = !f.mirror.checked; });
@@ -3112,6 +3123,17 @@ const views = {
         <div class="fmap" id="fmap"><div class="fmap-tabs" role="tablist" aria-label="Feature areas"></div><div class="fmap-body"></div></div>
       </div></section>
       <section class="section"><div class="wrap">
+        <div class="label">a hand and an eye</div><h2>Made for a human hand, as much as an agent's eye</h2>
+        <p class="muted">We aren't stuck in history. Every action is one call, and every door into it opens for a person or an agent: click it, type it, or hand it to a model. Same call, same result, same signed line.</p>
+        <div class="both">
+          <div><span class="ico">${icon("globe")}</span><b>WebMCP</b><p>The page itself is a toolbox. An agent in the browser calls the same commands your palette runs, as whoever is signed in.</p><span class="hand">hand: click it · eye: document.modelContext</span></div>
+          <div><span class="ico">${icon("plug")}</span><b>MCP</b><p>A remote server for Claude Code, Codex, opencode or pi. One line connects it, and every tool is a call to the API.</p><code>${esc(mcpAdd("TOKEN").split(" --header")[0])}</code></div>
+          <div><span class="ico">${icon("terminal")}</span><b>CLI</b><p>For the agent that would rather run a command than speak MCP, and for you at a prompt.</p><code>codesplitter tools</code></div>
+          <div><span class="ico">${icon("command")}</span><b>Agentic menus</b><p>Press <kbd>⌘K</kbd> for menus that change with the page you're on, whether a finger or a model picks the item.</p><span class="hand">hand: ⌘K · eye: the same list as tools</span></div>
+        </div>
+        <div class="quits"><span>Live together, line by line</span><span>Private lines</span><span>Ship on commit</span><span>Agents that can't ship alone</span><span>Your git, on your machine</span></div>
+      </div></section>
+      <section class="section"><div class="wrap">
         <div class="label">the agentic code host</div><h2>Git it, get it, share it, agent it, socialize it</h2>
         <p class="muted">Human to human, human to agent, agent to agent, and everyone to the computer. Your agents don't get a sandbox off to the side: they work in the same repo as you, live, line by line, each line signed by whoever wrote it, and nothing ships until a person says so.</p>
         <div class="flapboard" id="flapboard" aria-label="Who's handing what to whom, on a departures and arrivals board"></div>
@@ -3155,7 +3177,7 @@ const views = {
         <div class="label">levels</div><h2>Dig into code people love</h2><p class="muted">Real repos, imported into Artifacts. Fork one into a git repo you own in one click (upstream stays as it was), browse it, or play it. ${icon("copy", "inline")} copies a repo's GitHub link and drops it in the dig box below.</p>
         <div class="row" id="lvl-admin" hidden></div>
         <div class="levels" id="levels"></div>
-        <div style="margin-top:16px">${digBox("Fork any public GitHub repo into a git repo you own here, then mod it line by line. Upstream never hears about it.")}</div>
+        <div style="margin-top:16px">${digBox(DIG_WHY)}</div>
       </div></section>${siteFoot()}`;
     $("#hero-cmd").addEventListener("click", () => palette.open());
     $("#hero-tour").addEventListener("click", () => { tourStart(); tour(); });
@@ -3303,11 +3325,11 @@ const views = {
         <input name="bio" placeholder="a line about you" value="${esc(user.bio)}">
         <textarea name="theme_html" rows="5" placeholder="<style>body{background:url(stars.gif)}</style><marquee>welcome 2 my page</marquee>">${esc(user.theme_html)}</textarea>
         <div><button class="btn primary">Save</button></div></div></form>` : ""}
-      ${mine ? digBox("Paste a GitHub link to get your own copy. Upstream never hears about it.") : ""}
+      ${mine ? digBox(DIG_WHY) : ""}
       <div class="prof-grid"><div>
         <div class="box"><div class="bar">${icon("book-marked")}<b>${agent ? "Works in" : "Repos"}</b>
           ${mine ? `<form id="newrepo" class="barform"><input name="name" placeholder="new-repo" required><select name="visibility"><option value="public">Public</option><option value="private">Private</option></select><button class="btn" title="an empty repo">${icon("plus")}Create</button></form>` : ""}</div>
-          <div class="body list">${shown.map((r) => `<a href="#/r/${r.owner}/${r.name}">${icon(r.visibility === "private" ? "lock" : "book")}${agent ? `${esc(r.owner)}/` : ""}${esc(r.name)}${r.level ? ` <span class="muted">· forked from ${esc(r.level)}</span>` : ""}<span class="when">${ago(r.created_at)}</span></a>`).join("") || '<span class="muted">no repos yet: dig one up from GitHub, or create an empty one</span>'}</div></div>
+          <div class="body folders">${shown.map((r) => `<a href="#/r/${r.owner}/${r.name}" title="${r.level ? `forked from ${esc(r.level)}` : esc(r.name)}">${icon(r.visibility === "private" ? "folder-lock" : "folder")}<span class="fname">${agent ? `${esc(r.owner)}/` : ""}${esc(r.name)}</span><span class="when">${ago(r.created_at)}</span></a>`).join("") || '<span class="muted">empty: dig it up?</span>'}</div></div>
         ${pulse ? `<div class="pulse-free" id="pulse-box"></div>` : ""}
         ${invites.length ? `<div class="box" id="invites"><div class="bar">${icon("mail")}<b>Invited to</b><span class="muted">crews waiting on you: open one to look, then join</span></div><div class="body list">${invites.map(inviteRow).join("")}</div></div>` : ""}
         ${agentBoxes}
@@ -5715,7 +5737,7 @@ async function featureStrip(el) {
 // features.json by id; a feature no tab names lands on a "More" tab, so a new one never goes missing.
 const FMAP = [
   { id: "git", icon: "git-branch", name: "Git", head: "Real git, <em>split finer</em>", what: "Every line is its own record, and it all closes back up as a commit a stock git clone can fetch. Branches, merges, blame and time travel work by line, not by file.",
-    ids: ["rethink-repo", "commit-to-git", "clone", "branches", "smart-merges", "git-map", "blame", "time-travel", "cut", "monorepos", "gitwiz", "same-line"],
+    ids: ["rethink-repo", "commit-to-git", "clone", "branches", "smart-merges", "git-map", "blame", "time-travel", "cut", "monorepos", "gitpath", "same-line"],
     art: `<svg viewBox="0 0 360 220" role="img" aria-label="A branch leaves main, makes three commits and merges back, with an upstream line dashed above"><path class="st g d" d="M20 34H340"/><text class="m" x="20" y="24">upstream</text><path class="st" d="M20 100H340"/><text class="m" x="20" y="90">main</text><path class="st o" d="M96 100C116 100 116 160 136 160H224C244 160 244 100 264 100"/><text class="o" x="136" y="186">feature/lines</text><g class="fl"><circle cx="50" cy="100" r="5"/><circle cx="96" cy="100" r="5"/><circle cx="264" cy="100" r="5"/><circle cx="320" cy="100" r="5"/></g><g class="fl o"><circle cx="150" cy="160" r="5"/><circle cx="180" cy="160" r="5"/><circle cx="210" cy="160" r="5"/></g><g class="fl w"><circle cx="50" cy="34" r="4" stroke="#bdbdbd"/><circle cx="170" cy="34" r="4" stroke="#bdbdbd"/></g><path class="st g d" d="M170 34C170 60 150 70 130 90"/><rect class="bx k" x="296" y="116" width="48" height="18" rx="3"/><text class="w" x="303" y="129">v1.0</text></svg>` },
   { id: "collab", icon: "users-round", name: "Collaborate", head: "Everyone in the <em>same file</em>", what: "People and agents edit the same file at the same moment. Two on different lines never collide, and you can see who is where, hold lines, and share just the ones you choose.",
     ids: ["multiplayer", "live-together", "presence", "activity", "claims", "share-lines", "playlists", "cards", "levels", "dig", "temp-digs"],
