@@ -154,21 +154,15 @@
   .editor .scroll { flex: 1; min-height: 0; overflow: auto; }
   .details { border-left: 1px solid var(--border); font-size: 13px; container-type: inline-size; }
   /* The details side (dock()): drag its left edge to widen it, or snap it to 2/3 or the whole bench.
-     Panels drag by their title to a new spot and fold to a rounded bar; the rail jumps to one.
-     Each browser keeps its own layout. */
+     Tabs along the top (Code, Hosted, Features, Ship) pick which panels show. Each browser keeps its own layout. */
   .drail { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 2px; padding: 4px 8px; background: var(--canvas); border-bottom: 1px solid var(--border); }
-  .drail button { flex: none; } .drail .dscroll[hidden] { display: none; }
-  .dstrip { flex: 1; min-width: 0; display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; } .dstrip::-webkit-scrollbar { display: none; } .dstrip button { scroll-snap-align: start; }
-  .drail button { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--muted); cursor: pointer; }
+  .dtabs { flex: 1; min-width: 0; display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; } .dtabs::-webkit-scrollbar { display: none; }
+  .drail button { display: grid; place-items: center; flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--muted); cursor: pointer; }
+  .drail button.dtab { display: flex; align-items: center; gap: 5px; width: auto; padding: 0 8px; font: 500 12px var(--sans, inherit); white-space: nowrap; }
   .drail button:hover, .drail button.on { background: var(--select); color: var(--fg); }
-  .drail button.shut { color: var(--faint); }
   .drail svg.lucide { width: 14px; height: 14px; vertical-align: 0; }
-  .drail .sep { width: 1px; height: 16px; margin: 0 4px; background: var(--border-2); }
+  .dpanels > [hidden] { display: none; }
   @container (min-width: 620px) { .dpanels { columns: 300px; column-gap: 0; } .dpanels .sec { break-inside: avoid; } }
-  .sec h2 { cursor: grab; user-select: none; } .sec h2 .fold { margin-left: auto; transition: transform .12s; }
-  .sec.shut { margin: 6px 10px; padding: 3px 12px; border: 1px solid var(--border-2); border-radius: 999px; background: var(--canvas); }
-  .sec.shut h2 { margin: 0; } .sec.shut > :not(h2) { display: none !important; } .sec.shut h2 .fold { transform: rotate(-90deg); }
-  .sec.dragging { opacity: .4; } .sec.drop-before { box-shadow: inset 0 2px var(--accent); } .sec.drop-after { box-shadow: inset 0 -2px var(--accent); }
   /* The Wow me tour: a card in the corner, and a ring round whatever it's showing. */
   .tour { position: fixed; left: 16px; bottom: 56px; z-index: 60; width: min(360px, calc(100vw - 32px)); display: grid; gap: 8px; padding: 14px; background: var(--bg); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.18); font-size: 14px; }
   .tour .tour-top { display: flex; align-items: center; gap: 8px; } .tour .tour-top b { flex: 1; } .tour .tour-n { font-variant-numeric: tabular-nums; }
@@ -2342,82 +2336,49 @@ const tagHead = (tags, marks, o) => !tags.length && !(o.mine && o.mirror) ? "" :
 /** The owner's bar for the picked commit: its tags (delete, or push up on a mirror), and a box to tag it. */
 const tagBar = (c, marks, o) => !c || !o.mine ? "" : `<div class="cg-act"><code>${c.hash.slice(0, 7)}</code><span class="msg muted" title="${esc(c.message)}">${esc(c.message)}</span>${(marks.on[c.hash] ?? []).map((n) => `<span class="cg-tag">${esc(n)}${o.mirror ? `<button data-tag-push="${esc(n)}" title="push it to upstream">${icon("upload")}</button>` : ""}<button data-tag-del="${esc(n)}" title="delete this tag">${icon("x")}</button></span>`).join("")}
   <form id="cg-new"><input name="tag" placeholder="v1.0" aria-label="a new tag's name" autocomplete="off" spellcheck="false"><button class="btn" title="tag this commit">${icon("tag")}</button></form></div>`;
-/** This browser's layout of the details side: its width (px, "66.667%" or "full"), the panels' order, and which are folded. */
-const dockPrefs = () => { try { return { w: "", order: [], shut: [], ...JSON.parse(localStorage.getItem("cs_dock") ?? "{}") }; } catch { return { w: "", order: [], shut: [] }; } };
-const saveDock = (d) => { try { localStorage.setItem("cs_dock", JSON.stringify(d)); } catch {} };
-/** Make the details side a dock: a rail of width snaps and panel jumps, a resize edge, panels to drag and fold. */
+/** This browser's layout of the details side: its width (px, "66.667%" or "full") and which tab is up. */
+const dockPrefs = () => { try { return { w: "", tab: "code", ...JSON.parse(localStorage.getItem("cs_dock") ?? "{}") }; } catch { return { w: "", tab: "code" }; } };
+const saveDock = (d) => { try { localStorage.setItem("cs_dock", JSON.stringify({ w: d.w, tab: d.tab })); } catch {} };
+/** The details side's tabs: the code itself, the repo as hosted here, and what it can do. Shipping is its own step, so it gets the last tab. */
+const DOCK_TABS = [["code", "file-code", "Code"], ["hosted", "server", "Hosted"], ["features", "sparkles", "Features"], ["ship", "send", "Ship"]];
+const DOCK_TAB_OF = {
+  hosted: ["upstream", "mirror", "crew", "webhooks", "audit-log", "delete-this-repo"],
+  features: ["agents", "beam", "dependencies"],
+  ship: ["rusty-buns", "deploy", "preview-deploy"],
+};
+const dockTabOf = (key) => Object.keys(DOCK_TAB_OF).find((t) => DOCK_TAB_OF[t].includes(key)) ?? "code";
+/** Make the details side a dock: tabs along the top, width snaps, a resize edge. */
 function dock() {
   const wb = $(".wb"), aside = $(".details");
   if (!wb || !aside || aside.querySelector(".drail")) return;
   const d = dockPrefs();
   const panels = document.createElement("div"); panels.className = "dpanels";
   const secs = [...aside.querySelectorAll(":scope > .sec")];
-  // Saved panels take the saved order within the slots they hold; panels this browser hasn't placed stay put.
-  const slots = secs.map((s, i) => d.order.includes(s.dataset.key) ? i : -1).filter((i) => i >= 0);
-  const placed = slots.map((i) => secs[i]).sort((a, b) => d.order.indexOf(a.dataset.key) - d.order.indexOf(b.dataset.key));
-  slots.forEach((i, j) => (secs[i] = placed[j]));
-  secs.forEach((s) => { s.classList.toggle("shut", d.shut.includes(s.dataset.key)); panels.append(s); });
-  // One panel open at a time, an accordion: opening one folds the rest. (Agents use the palette's WebMCP tools, not the panels.)
-  const only = (s) => { for (const x of panels.children) x.classList.toggle("shut", x !== s); };
-  only(secs.find((s) => !s.classList.contains("shut")));
+  for (const s of secs) { s.dataset.tab = dockTabOf(s.dataset.key); panels.append(s); }
+  const tabs = DOCK_TABS.filter(([t]) => secs.some((s) => s.dataset.tab === t));
+  if (!tabs.some(([t]) => t === d.tab)) d.tab = tabs[0]?.[0] ?? "code";
   const rail = document.createElement("div"); rail.className = "drail";
   const widths = [["290px", "panel-right", "Narrow"], ["66.667%", "columns-2", "Two-thirds of the screen"], ["full", "maximize-2", "Whole screen"]];
   const drawRail = () => {
-    rail.innerHTML = widths.map(([w, ic, t]) => `<button type="button" class="dw${(d.w || "290px") === w ? " on" : ""}" data-w="${w}" title="${t}">${icon(ic)}</button>`).join("")
-      + `<span class="sep dw"></span><button type="button" class="dscroll" data-scroll="-1" title="more panels" hidden>${icon("chevron-left")}</button>`
-      + `<div class="dstrip">${[...panels.children].map((s) => `<button type="button" class="${s.classList.contains("shut") ? "shut" : ""}" data-jump="${s.dataset.key}" title="${esc(s.querySelector("h2").textContent)}">${icon(s.dataset.ic)}</button>`).join("")}</div>`
-      + `<button type="button" class="dscroll" data-scroll="1" title="more panels" hidden>${icon("chevron-right")}</button><button type="button" data-fold title="Fold every panel">${icon("chevrons-down-up")}</button>`;
+    rail.innerHTML = `<div class="dtabs" role="tablist">${tabs.length > 1 ? tabs.map(([t, ic, name]) => `<button type="button" role="tab" class="dtab${t === d.tab ? " on" : ""}" data-tab="${t}" aria-selected="${t === d.tab}">${icon(ic)}${name}</button>`).join("") : ""}</div>`
+      + widths.map(([w, ic, t]) => `<button type="button" class="dw${(d.w || "290px") === w ? " on" : ""}" data-w="${w}" title="${t}">${icon(ic)}</button>`).join("");
     icons();
-    const strip = $(".dstrip", rail), keep = stripAt;
-    strip.scrollLeft = keep; strip.addEventListener("scroll", arrows); arrows();
   };
-  // The panel buttons are one row that scrolls sideways: arrows show at whichever end has more, and a wheel scrolls it.
-  let stripAt = 0;
-  const arrows = () => {
-    const strip = $(".dstrip", rail); if (!strip) return;
-    stripAt = strip.scrollLeft;
-    const [l, r] = rail.querySelectorAll(".dscroll");
-    l.hidden = strip.scrollLeft <= 1; r.hidden = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1;
-  };
-  new ResizeObserver(arrows).observe(rail);
-  rail.addEventListener("wheel", (e) => { const strip = e.target.closest(".dstrip"); if (!strip || !e.deltaY || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; e.preventDefault(); strip.scrollLeft += e.deltaY; }, { passive: false });
-  const save = () => {
-    const keys = [...panels.children].map((s) => s.dataset.key);
-    d.order = [...keys, ...d.order.filter((k) => !keys.includes(k))];
-    d.shut = [...new Set([...d.shut.filter((k) => !keys.includes(k)), ...[...panels.children].filter((s) => s.classList.contains("shut")).map((s) => s.dataset.key)])];
-    saveDock(d); drawRail();
-  };
+  const show = (t) => { d.tab = t; for (const s of panels.children) s.hidden = s.dataset.tab !== t; drawRail(); };
+  /** Bring up the tab a panel lives on (the tour does this). */
+  aside.showPanel = (key) => { const s = panels.querySelector(`[data-key="${key}"]`); if (s) show(s.dataset.tab); };
   const setWidth = (w) => {
     d.w = w; wb.classList.toggle("d-full", w === "full");
     wb.style.setProperty("--dw", w && w !== "full" ? w : "290px");
-    arrows();
+    drawRail();
   };
-  setWidth(d.w);
-  aside.append(rail, panels); drawRail();
+  const save = () => saveDock(d);
+  aside.append(rail, panels); show(d.tab); setWidth(d.w);
   rail.addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
-    if (b.dataset.scroll) { const strip = $(".dstrip", rail); return strip.scrollBy({ left: Math.sign(+b.dataset.scroll) * strip.clientWidth * 0.8, behavior: "smooth" }); }
     if (b.dataset.w) { setWidth(b.dataset.w); return save(); }
-    if ("fold" in b.dataset) { only(null); return save(); }
-    const s = panels.querySelector(`[data-key="${b.dataset.jump}"]`); if (!s) return;
-    only(s); save();
-    s.scrollIntoView({ block: "nearest", behavior: "smooth" }); s.classList.remove("flash"); void s.offsetWidth; s.classList.add("flash");
+    if (b.dataset.tab) { show(b.dataset.tab); save(); }
   });
-  // A click on a title folds the panel; a drag carries it above or below another.
-  panels.addEventListener("click", (e) => { const h = e.target.closest(".sec > h2"); if (!h || e.target.closest("a, button")) return; const s = h.parentElement; only(s.classList.contains("shut") ? s : null); save(); });
-  let dragged = null;
-  const clearDrop = () => panels.querySelectorAll(".drop-before, .drop-after").forEach((s) => s.classList.remove("drop-before", "drop-after"));
-  panels.addEventListener("dragstart", (e) => { dragged = e.target.closest?.(".sec"); if (!dragged) return; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", dragged.dataset.key); dragged.classList.add("dragging"); });
-  panels.addEventListener("dragover", (e) => {
-    const s = e.target.closest(".sec"); if (!dragged || !s || s === dragged) return;
-    e.preventDefault(); clearDrop();
-    const r = s.getBoundingClientRect(); s.classList.add(e.clientY < r.top + r.height / 2 ? "drop-before" : "drop-after");
-  });
-  panels.addEventListener("drop", (e) => {
-    const s = e.target.closest(".sec"); if (!dragged || !s || s === dragged) return;
-    e.preventDefault(); s.classList.contains("drop-before") ? s.before(dragged) : s.after(dragged); save();
-  });
-  panels.addEventListener("dragend", () => { dragged?.classList.remove("dragging"); dragged = null; clearDrop(); });
   // The left edge: drag to any width, double-click for the narrow default.
   const grip = document.createElement("div"); grip.className = "dgrip"; grip.title = "Drag to widen; double-click to reset";
   wb.append(grip);
@@ -2465,7 +2426,7 @@ const deleteRepo = async (owner, repo, typed) => {
   await api(`/repos/${owner}/${repo}?confirm=${encodeURIComponent(repo)}`, undefined, "DELETE");
   toast(`Deleted ${owner}/${repo}`); location.hash = `#/u/${owner}`;
 };
-const sec = (ic, title, html) => `<section class="sec" data-key="${title.toLowerCase().replace(/\W+/g, "-")}" data-ic="${ic}"><h2 draggable="true">${icon(ic)}${title}${icon("chevron-down", "fold")}</h2>${html}</section>`;
+const sec = (ic, title, html) => `<section class="sec" data-key="${title.toLowerCase().replace(/\W+/g, "-")}" data-ic="${ic}"><h2>${icon(ic)}${title}</h2>${html}</section>`;
 /** mm:ss gone since `from`, or left until `deadline`. */
 const tickText = (from, deadline) => {
   const s = Math.floor(Math.max(0, deadline ? deadline - Date.now() : Date.now() - from) / 1000);
@@ -6231,7 +6192,7 @@ const TOUR = [
   { ch: "code", ic: "git-commit-horizontal", t: "It's still real git", at: "#clone", on: "repo", go: () => { $("#clone")?.click(); return "git clone works, git pull works, your tools work."; },
     say: () => "Commit pushes a real git commit. Clone it with plain git, or point your AI at it: claude mcp add codesplitter." },
   { ch: "panels", ic: "panel-right", t: "What's on the right", at: ".drail", on: "repo",
-    say: () => "The right bar: a panel for each thing this repo can do. Next opens them one at a time. Up here you widen the side, jump to a panel, or fold them all." },
+    say: () => "The right bar: tabs for the code, the repo as hosted here, and what it can do. Next walks the panels. Up here you switch tab or widen the side." },
   ...Object.entries(PANEL_SAY).map(([key, [ic, say]]) => ({ ch: "panels", ic, panel: key, at: `.dpanels > .sec[data-key="${key}"]`, on: "repo", say: () => say })),
   { ch: "play", ic: "building", t: "Your code city", at: null, on: "any", href: () => `/play.html#c/${encodeURIComponent(me())}`, open: true,
     say: () => "Every repo you own is a district, every file a building: white stone where people wrote it, black glass where agents did. It opens in a new tab." },
@@ -6277,8 +6238,8 @@ function tour() {
   const said = $(".tour-said", card), hot = !away && s.at && $(s.at);
   if (hot) {
     hot.classList.add("tour-hot");
-    // A panel step opens its panel, folded or not.
-    if (s.panel) { hot.classList.remove("shut"); $(`.drail [data-jump="${s.panel}"]`)?.classList.remove("shut"); }
+    // A panel step brings up its tab.
+    if (s.panel) $(".details")?.showPanel?.(s.panel);
     hot.scrollIntoView?.({ block: s.at === "#ghdig" ? "center" : "nearest", behavior: "smooth" });
   }
   const step = (i, dir) => { if (i < 0 || i >= TOUR.length) return; tourSave({ ...t, i, dir }); tour(); };
