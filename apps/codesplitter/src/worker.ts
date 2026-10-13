@@ -113,6 +113,7 @@ import {
   sweepLimits,
   type JobMessage,
 } from "./limits.ts";
+import { tierById } from "./tiers.ts";
 import { previewRoutes } from "./preview.ts";
 import {
   deployOnCommit,
@@ -396,8 +397,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /api/users/:name  profile, the repos you may see, playlists, how many it follows and are following it, the stamps it gave and got;
   // an agent's (agent-…) also says who runs it, where, and its runs (actors.ts)
   if (p[1] === "users" && p[2]) {
-    const u = await env.DB.prepare("SELECT name, bio, theme_html, pulse, city_public FROM users WHERE name = ?").bind(p[2]).first();
-    if (!u) return json({ error: "no such user" }, 404);
+    const row = await env.DB.prepare("SELECT name, bio, theme_html, pulse, city_public, tier FROM users WHERE name = ?").bind(p[2]).first();
+    if (!row) return json({ error: "no such user" }, 404);
+    const u = { ...row, tier: tierById(row.tier) };
     const { results: repos } = await env.DB.prepare(
       "SELECT owner, name, visibility, level, created_at, expires_at FROM repos WHERE owner = ? AND (visibility = 'public' OR owner = ?) AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC").bind(p[2], user, Date.now()).all();
     const { results: playlists } = await env.DB.prepare("SELECT * FROM playlists WHERE owner = ? ORDER BY id DESC").bind(p[2]).all();
