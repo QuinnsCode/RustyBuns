@@ -83,6 +83,15 @@
   #who form { display: flex; gap: 6px; }
   main { padding: 0 0 80px; } main:focus { outline: 0; }
   .wrap { max-width: 1440px; margin: 0 auto; padding: 0 24px; }
+  /* The rail (drawRail()): a column of view shortcuts down the left, signed in and wide enough. Words are tooltips. */
+  .rail { position: fixed; left: 0; top: 0; bottom: 0; z-index: 11; width: 48px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0 12px; background: var(--canvas); border-right: 1px solid var(--border); }
+  .rail[hidden] { display: none; } .rail .grow { flex: 1; }
+  .rail a, .rail button { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
+  .rail a:hover, .rail button:hover { background: var(--select); color: var(--fg); }
+  .rail a.on { background: var(--select); color: var(--fg); box-shadow: inset 2px 0 var(--accent); }
+  .rail svg.lucide { width: 18px; height: 18px; }
+  body.railed { padding-left: 48px; } body.railed .tour { left: 64px; }
+  @media (max-width: 860px) { .rail { display: none !important; } body.railed { padding-left: 0; } body.railed .tour { left: 16px; } }
 
   /* Repo pages are a workbench, edge to edge like an editor: a slim header,
      the explorer on the left, the code in the middle, details on the right,
@@ -632,7 +641,13 @@
   .live .beat-dot, .beat-dot.live { background: var(--accent); animation: heartbeat 1.1s ease-in-out infinite; }
   @keyframes heartbeat { 0%, 60%, 100% { transform: scale(1); } 15% { transform: scale(1.5); } 30% { transform: scale(1.1); } 45% { transform: scale(1.35); } }
   .who.beat { animation: heartbeat .6s ease-out; }
-  .pulse-box .body { display: grid; gap: 8px; } .pulse-box svg.pulse { width: 100%; height: 56px; }
+  /* Your pulse on your profile: no box, a line of words over an isometric block of the week's hours. */
+  .pulse-free { margin: 8px 0 24px; } .pulse-free > .bar { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 0 4px; }
+  .pulse-free > .body { display: grid; gap: 4px; justify-items: center; } .pulse-free > .body > .muted { justify-self: start; padding: 0 4px; }
+  .pulse-iso { width: 100%; max-width: 560px; height: auto; color: var(--accent); }
+  .pulse-iso .floor { fill: var(--canvas); stroke: var(--border); stroke-width: .3; }
+  .pulse-iso .t { fill: currentColor; } .pulse-iso .r { fill: color-mix(in srgb, currentColor 72%, #000); } .pulse-iso .l { fill: color-mix(in srgb, currentColor 52%, #000); }
+  .pulse-iso g:hover .t { fill: color-mix(in srgb, currentColor 70%, #fff); }
   .crew-pulse { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; } .crew-pulse svg.pulse { width: 56px; height: 14px; }
   @media (prefers-reduced-motion: reduce) { .live .beat-dot, .beat-dot.live, .who.beat { animation: none; } }
   .prof-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
@@ -889,6 +904,7 @@
   <a class="btn ghost" id="topplay" href="/play.html#l/mitt" title="the game"><i data-lucide="gamepad-2"></i>Play</a>
   <span id="who"></span>
 </header>
+<nav class="rail" id="rail" aria-label="Views" hidden></nav>
 <div class="notice" id="notice" hidden></div>
 <main id="app" tabindex="-1"></main>
 <div class="drawer" id="drawer" hidden><div class="scrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
@@ -936,6 +952,25 @@ const isLive = (p) => !!p?.live_at && Date.now() - p.live_at < LIVE_MS;
 const pulseSvg = (p) => {
   const n = p.hours.length, max = Math.max(1, ...p.hours);
   return `<svg class="pulse" viewBox="0 0 ${n} 20" preserveAspectRatio="none" role="img" aria-label="${p.total} lines landed this week"><rect class="base" x="0" y="19.5" width="${n}" height=".5"/>${p.hours.map((v, i) => v ? `<rect x="${i}" y="${20 - Math.max(1.5, 19 * v / max)}" width=".85" height="${Math.max(1.5, 19 * v / max)}"/>` : "").join("")}</svg>`;
+};
+/**
+ * The profile's pulse as an isometric city block: a row per day, a tile per hour, a pillar as tall as the
+ * lines landed then. Drawn back to front so nearer pillars hide the ones behind; the floor shows the quiet hours.
+ */
+const pulseIso = (p) => {
+  const W = 10, H = 5, TALL = 40, max = Math.max(1, ...p.hours), rows = Math.ceil(p.hours.length / 24);
+  const pt = (x, y) => `${x.toFixed(1)},${y.toFixed(1)}`;
+  const cells = p.hours.map((v, i) => ({ v, i, d: Math.floor(i / 24), h: i % 24 })).sort((a, b) => a.h + a.d - (b.h + b.d) || a.h - b.h);
+  const body = cells.map(({ v, i, d, h }) => {
+    const x = (h - d) * W / 2, y = (h + d) * H / 2, z = v ? Math.max(2, TALL * v / max) : 0;
+    const top = `${pt(x, y - z)} ${pt(x + W / 2, y + H / 2 - z)} ${pt(x, y + H - z)} ${pt(x - W / 2, y + H / 2 - z)}`;
+    if (!z) return `<polygon class="floor" points="${top}"/>`;
+    const at = new Date(p.from + i * 3600_000).toLocaleString([], { weekday: "short", hour: "numeric" });
+    return `<g><title>${at}: ${v} line${v === 1 ? "" : "s"}</title><polygon class="l" points="${pt(x - W / 2, y + H / 2 - z)} ${pt(x, y + H - z)} ${pt(x, y + H)} ${pt(x - W / 2, y + H / 2)}"/>`
+      + `<polygon class="r" points="${pt(x + W / 2, y + H / 2 - z)} ${pt(x, y + H - z)} ${pt(x, y + H)} ${pt(x + W / 2, y + H / 2)}"/><polygon class="t" points="${top}"/></g>`;
+  }).join("");
+  const left = -(rows - 1) * W / 2 - W / 2, width = (23 + rows - 1) * W / 2 + W, height = (23 + rows - 1) * H / 2 + H + TALL + 2;
+  return `<svg class="pulse-iso" viewBox="${left} ${-TALL - 2} ${width} ${height}" role="img" aria-label="${p.total} lines landed this week, by hour">${body}</svg>`;
 };
 /** Fill each [data-pulse=name] under `root` with its pulse, all in one request. Off or quiet ones stay empty. */
 async function fillPulses(root = document) {
@@ -1032,17 +1067,17 @@ const inviteSaid = (i) => i.kind === "email" ? (i.mailed ? `Emailed ${i.target}.
   : i.kind === "handle" ? `Only @${i.target} can use it.` : "Anyone with it can join once, a person or an agent.";
 // An agent's MCP line for each harness, from POST /api/invites/claim; the token in it stays masked here.
 const HARNESS_HOW = { claude: "Claude Code: run", codex: "Codex: run", opencode: "opencode: add to opencode.json", pi: "pi (0.99 or later): add to ~/.pi/agent/mcp.json" };
-// The connect line shows; tokens and apps fold under "Tokens and apps", which #/me/tokens opens (#729).
+// The connect line shows; other clients and tokens fold under "More", which #/me/tokens opens (#729).
 async function wireTokens(made, open = !!made) {
   const el = $("#tokens .body");
   if (!el) return;
   const [list, apps] = await Promise.all([api("/tokens").catch(() => []), api("/oauth/grants").catch(() => [])]);
   const when = (t) => t.expired ? "expired" : `expires ${new Date(t.expires_at).toLocaleDateString()}`;
-  const connect = `<div style="display:grid;gap:4px;margin-bottom:10px"><span class="muted" style="font-size:12px">Run this in Claude Code, then <b>/mcp</b> → Authenticate. It asks you to sign in here, no token needed.</span>
+  const connect = `<div style="display:grid;gap:4px;margin-bottom:10px"><span class="muted" style="font-size:12px">Paste in a terminal, then <b>/mcp</b> → Authenticate.</span>
       <div class="copyline"><input readonly value="${esc(mcpSignIn())}"><button class="btn" id="connect-cmd" title="copy the command">${icon("copy")}</button></div></div>`;
-  const url = `<span class="muted" style="font-size:12px">The server URL, for any MCP client:</span>
+  const url = `<span class="muted" style="font-size:12px">Server URL, any MCP client</span>
       <div class="copyline" style="margin:4px 0 10px"><input readonly value="${esc(mcpUrl())}"><button class="btn" id="connect-url" title="copy the server URL">${icon("copy")}</button></div>`;
-  const signedIn = apps.length ? `<div class="muted" style="font-size:12px">Apps signed in</div><div class="list">${apps.map((g) => `<div class="row" style="flex-wrap:nowrap">${icon("app-window")}<span style="flex:1;min-width:0">${esc(g.client_name)} <span class="muted">· ${g.scope === "write" ? "read and write" : "read"} · signed in ${ago(g.created_at)}${g.last_used_at ? ` · used ${ago(g.last_used_at)}` : ""}</span></span>
+  const signedIn = apps.length ? `<div class="muted" style="font-size:12px">Signed in</div><div class="list">${apps.map((g) => `<div class="row" style="flex-wrap:nowrap"><span style="flex:1;min-width:0" title="${g.scope === "write" ? "read and write" : "read only"} · signed in ${ago(g.created_at)}">${icon(g.scope === "write" ? "pencil" : "eye")} ${esc(g.client_name)}${g.last_used_at ? ` <span class="muted">· ${ago(g.last_used_at)}</span>` : ""}</span>
       <button class="btn ghost" data-signout="${esc(g.id)}" title="sign it out">${icon("log-out")}</button></div>`).join("")}</div>` : "";
   const fresh = made ? `<div style="display:grid;gap:4px;margin-bottom:8px"><b>${icon("key-round")} ${esc(made.label)}</b><span class="muted" style="font-size:12px">Copy it now: it won't be shown again.</span>
       <div class="copyline"><input readonly value="${esc(masked(made.token))}" title="hidden: copy it with the button"><button class="btn" id="token-copy" title="copy the token">${icon("copy")}</button></div>
@@ -1050,15 +1085,15 @@ async function wireTokens(made, open = !!made) {
       <div class="copyline"><input readonly value="${esc(mcpAdd(masked(made.token)))}" title="the token is hidden: the button copies it whole"><button class="btn" id="token-mcp" title="copy the command">${icon("copy")}</button></div>
       <span class="muted" style="font-size:12px">Or sign in the CLI (<code>${esc(cliInstall())}</code>) with it:</span>
       <div class="copyline"><input readonly value="${esc(cliLogin(masked(made.token)))}" title="the token is hidden: the button copies it whole"><button class="btn" id="token-cli" title="copy the command">${icon("copy")}</button></div></div>` : "";
-  el.innerHTML = connect + `<details class="more" id="tokens-more"${open ? " open" : ""}><summary class="muted">${icon("key-round")} Tokens and apps</summary><div style="margin-top:8px">` + url + signedIn
-    + `<div class="muted" style="font-size:12px;margin-top:10px">${icon("key-round")} Tokens, for scripts and CI (no browser)</div>` + fresh
-    + `<div class="list">${list.map((t) => `<div class="row" style="flex-wrap:nowrap">${icon(t.scope === "write" ? "pencil" : "eye")}<span style="flex:1;min-width:0">${esc(t.label)} <span class="muted">· ${t.scope === "write" ? "read and write" : "read"} · …${esc(t.last4)} · ${when(t)}${t.last_used_at ? ` · used ${ago(t.last_used_at)}` : ""}</span></span>
+  el.innerHTML = connect + `<details class="more" id="tokens-more"${open ? " open" : ""}><summary class="muted">More: other clients, tokens</summary><div style="margin-top:8px">` + url + signedIn
+    + `<div class="muted" style="font-size:12px;margin-top:10px">Tokens, for scripts and CI</div>` + fresh
+    + `<div class="list">${list.map((t) => `<div class="row" style="flex-wrap:nowrap"><span style="flex:1;min-width:0" title="${t.scope === "write" ? "read and write" : "read only"} · …${esc(t.last4)} · ${when(t)}${t.last_used_at ? ` · used ${ago(t.last_used_at)}` : ""}">${icon(t.scope === "write" ? "pencil" : "eye")} ${esc(t.label)}${t.expired ? ` <span class="muted">· expired</span>` : ""}</span>
       <button class="btn ghost" data-revoke="${esc(t.id)}" title="revoke">${icon("trash-2")}</button></div>`).join("")}</div>
-    <form id="newtoken" style="display:grid;gap:6px;margin:8px 0 4px"><input name="label" placeholder="what it's for, like a deploy script" required>
+    <form id="newtoken" style="display:grid;gap:6px;margin:8px 0 4px"><input name="label" placeholder="what it's for" required>
       <div style="display:flex;flex-wrap:wrap;gap:6px"><select name="scope" style="flex:1 1 auto"><option value="read">Read only</option><option value="write">Read and write</option></select>
       <select name="days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="365">1 year</option></select>
       <button class="btn primary">${icon("plus")}Make</button></div></form>
-    <details id="my-audit" style="margin-top:10px"><summary class="muted" style="font-size:12px;cursor:pointer">${icon("shield")} Audit log: tokens, crews, invites and keys you changed</summary><div></div></details></div></details>`;
+    <details id="my-audit" style="margin-top:10px"><summary class="muted" style="font-size:12px;cursor:pointer">${icon("shield")} Audit log</summary><div></div></details></div></details>`;
   icons();
   $("#my-audit").addEventListener("toggle", (e) => { if (e.target.open) wireAudit(e.target.lastElementChild, "/tokens/audit", true); }, { once: true });
   $("#connect-cmd").addEventListener("click", () => copy(mcpSignIn(), "Command copied"));
@@ -1159,7 +1194,29 @@ function landHome() {
   if (location.hash === to) route(); else location.hash = to;
 }
 
+/** The rail down the left: one icon per view to bounce between, the one you're on lit. Signed in only. */
+function drawRail() {
+  const el = $("#rail"), u = me();
+  el.hidden = !u; document.body.classList.toggle("railed", !!u);
+  if (!u) return (el.innerHTML = "");
+  const [, view = "home", arg] = location.hash.replace(/^#/, "").split("/");
+  const at = { home: view === "home" || !view, me: (view === "u" && arg === u) || view === "me", feed: view === "feed", admin: view === "admin", privacy: view === "privacy" };
+  const link = (key, href, ic, t) => `<a href="${href}" title="${t}" aria-label="${t}"${at[key] ? ' class="on" aria-current="page"' : ""}>${icon(ic)}</a>`;
+  el.innerHTML = link("home", "#/", "house", "Home")
+    + link("me", `#/u/${esc(u)}`, "user", "Your page: repos, digging, collections")
+    + link("feed", "#/feed", "rss", "Your feed")
+    + `<button type="button" id="rail-jump" title="Search or run a command (⌘K)" aria-label="Search">${icon("search")}</button>`
+    + link("city", `/play.html#c/${encodeURIComponent(u)}`, "building", "Your code city")
+    + link("play", "/play.html#l/mitt", "gamepad-2", "Play the backrooms")
+    + `<span class="grow"></span>`
+    + (session.admin ? link("admin", "#/admin", "shield", "Admin") : "")
+    + link("api", "/reference", "book-open", "The API")
+    + link("privacy", "#/privacy", "lock", "Privacy");
+  $("#rail-jump").addEventListener("click", () => $("#jump").click());
+  icons();
+}
 function header() {
+  drawRail();
   const u = me();
   if (u) {
     $("#who").innerHTML = `${session.unverified ? `<button class="btn ghost" id="verify" title="send ${esc(session.unverified)} a new verification link">${icon("mail-warning")}Verify email</button>` : ""}${session.admin ? `<a class="btn ghost" href="#/admin/insights" title="insights: people, agents, health">${icon("activity")}</a><a class="btn ghost" href="#/admin/limits" title="rate limits">${icon("gauge")}</a><a class="btn ghost" href="#/admin/scale" title="survey: how close each scaling wall is">${icon("map")}</a>` : ""}<a class="btn ghost" id="jobs" href="#/u/${u}" title="your queued requests" hidden>${icon("hourglass")}<span></span></a><a class="btn ghost" id="invited" href="#/u/${u}" hidden>${icon("mail")}<span></span></a><a class="btn ghost" href="#/feed" title="your feed">${icon("rss")}</a><a class="btn ghost" href="#/u/${u}">${icon("user")}@${esc(u)}</a>${onDesktop() ? `<button class="btn ghost" id="phone" title="pair a phone">${icon("smartphone")}</button>` : ""}<button class="btn ghost" id="out" title="sign out">${icon("log-out")}</button>`;
@@ -2715,21 +2772,42 @@ function visBadge(v, canFlip) {
 }
 // Dig up anything on GitHub: search words, or paste whatever you copied there
 // (owner/name, a page URL, a remote, a git clone line). The server reads the repo out of it.
-const digBox = (why, fold = false) => `${fold ? `<details class="box fold" id="digfold"><summary class="bar">${icon("github")}<b>Dig up a GitHub repo</b><span class="muted">fork one here</span>${icon("chevron-down", "chev")}</summary><form id="ghdig">` : `<form id="ghdig" class="box"><div class="bar">${icon("github")}<b>Dig up a GitHub repo</b></div>`}<div class="body"><p class="muted" style="margin-top:0">${why}</p>
+const digBox = (why, fold = false) => `${fold ? `<details class="box fold" id="digfold"><summary class="bar">${icon("github")}<b>Dig up a GitHub repo</b><span class="muted">paste its link, or search</span>${icon("chevron-down", "chev")}</summary><form id="ghdig">` : `<form id="ghdig" class="box"><div class="bar">${icon("github")}<b>Dig up a GitHub repo</b></div>`}<div class="body"><p class="muted" style="margin-top:0">${why}</p>
   <div class="ghwho" id="ghwho" hidden></div>
   <div class="row"><input name="repo" placeholder="search GitHub, or paste a link, owner/name or a git clone line" required style="flex:1" autocomplete="off"><input name="name" placeholder="name (optional)" style="width:150px"><button class="btn primary">${icon("git-fork")}Dig it up (fork)</button><button type="button" class="btn" id="ghwow" title="dig it up, then a tour walks round it: the code, collab, agents, each panel on the right, the city and the backrooms">${icon("sparkles")}Wow me</button></div>
-  <label class="muted" id="ghmirror" hidden style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:8px"><input type="checkbox" name="mirror">Keep it in sync with upstream (a mirror): its commits come here, yours go back, and if it goes down you keep working until it's back. Takes any git URL, GitHub or not.</label>
-  <label class="muted" id="ghpull" hidden style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:4px;padding-left:22px"><input type="checkbox" name="pullOnly">Pull-only: its commits come here and nothing ever goes back up, not even with your GitHub login on this machine.</label>
+  <label class="muted" id="ghmirror" hidden style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:8px"><input type="checkbox" name="mirror"><span title="its commits come here, yours go back, and you keep working while it's down. Any git URL, GitHub or not.">Keep it in sync with upstream (a mirror)</span></label>
+  <label class="muted" id="ghpull" hidden style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:4px;padding-left:22px"><input type="checkbox" name="pullOnly">Pull only: nothing goes back up</label>
   <p class="muted" id="ghmsg" style="font-size:13px"></p><div class="gh-list" id="ghlist"></div></div></form>${fold ? "</details>" : ""}`;
 // A box that folds to its bar on your profile (#729): open it to see the rest. Unfolded elsewhere.
 const boxTop = (fold, id, bar) => fold ? `<details class="box fold" id="${id}"><summary class="bar">${bar}${icon("chevron-down", "chev")}</summary>` : `<div class="box" id="${id}"><div class="bar">${bar}</div>`;
 const boxEnd = (fold) => fold ? "</details>" : "</div>";
+// Which folded side boxes start open, until this browser says otherwise (foldSide).
+const SIDE_OPEN = { collections: true, following: true };
+/** Open each folded box in `aside` the way this browser left it (`force` opens one regardless), and remember each toggle. */
+function foldSide(aside, force) {
+  if (!aside) return;
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem("cs_side") ?? "{}"); } catch {}
+  for (const d of aside.querySelectorAll(":scope > details.box.fold[id]")) {
+    d.open = d.id === force || (saved[d.id] ?? SIDE_OPEN[d.id] ?? false);
+    d.addEventListener("toggle", () => { saved[d.id] = d.open; try { localStorage.setItem("cs_side", JSON.stringify(saved)); } catch {} });
+  }
+}
 const looksPasted = (v) => /[\/:]/.test(v.trim());
+// owner/name out of a pasted link, remote or clone line, the way the server reads it (github.ts parseRepo), to say what a dig will take.
+const pastedRepo = (v) => {
+  for (const w of v.trim().replace(/^(?:gh\s+repo\s+(?:clone|view|fork)|git\s+clone)\s+/, "").split(/\s+/)) {
+    if (w.startsWith("-")) continue;
+    const m = /^(?:(?:(?:https?|ssh|git):\/\/)?(?:[^@/\s]+@)?(?:www\.)?github\.com[:/]|(?:https?:\/\/)?raw\.githubusercontent\.com\/)?([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?(?:[/?#].*)?$/.exec(w);
+    if (m) return `${m[1]}/${m[2]}`;
+  }
+  return null;
+};
 function wireDig() {
   const f = $("#ghdig");
   if (!f) return;
   const msg = $("#ghmsg"), list = $("#ghlist");
-  let mine = { repos: [] }, note = "", timer = 0, asked = "";
+  let mine = { repos: [] }, note = "", timer = 0, asked = "", busy = false;
   const show = (repos, disabled = () => false) => {
     list.innerHTML = repos.map((x) => `<button type="button" data-repo="${esc(x.repo)}"${disabled(x) ? " disabled title=\"Cloudflare Artifacts imports public repos only: dig this up in the desktop app\"" : ""}>${esc(x.repo)}${x.private ? " · private" : ""}${x.stars != null ? `<span class="muted">★ ${x.stars}${x.language ? " · " + esc(x.language) : ""}</span>` : ""}</button>`).join("");
     for (const b of list.querySelectorAll("button:not([disabled])")) b.addEventListener("click", () => { f.repo.value = b.dataset.repo; list.innerHTML = ""; msg.textContent = `Ready to dig up ${b.dataset.repo}: press Dig it up. ${note}`; f.name.focus(); });
@@ -2761,8 +2839,9 @@ function wireDig() {
     }
     who.classList.toggle("on", !!g.login);
     icons();
-    msg.textContent = (g.login && g.repos.length ? "Pick one of yours, search, or paste anything from GitHub. " : "Search GitHub, or paste anything you copied there. ") + note;
-    if (!f.repo.value) showMine();
+    // Pasted or typed before GitHub answered: say what that'll dig up rather than the hint.
+    if (f.repo.value.trim()) f.repo.dispatchEvent(new Event("input"));
+    else { msg.textContent = (g.login && g.repos.length ? "Pick one of yours, search, or paste anything from GitHub. " : "Search GitHub, or paste anything you copied there. ") + note; showMine(); }
     // Mirrors need git on this machine: the desktop.
     if (g.mirrorsOk) $("#ghmirror").hidden = false;
     f.mirror.addEventListener("change", () => { $("#ghpull").hidden = !f.mirror.checked; });
@@ -2772,12 +2851,21 @@ function wireDig() {
   if (folded && !folded.open) folded.addEventListener("toggle", loadGh, { once: true }); else loadGh();
   // A dig clones a whole repo, so only the button starts one: Enter in a field doesn't (#443).
   // Picking one of yours fills the box and focuses the name, and a stray Enter there dug it up.
-  f.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("input")) e.preventDefault(); });
+  // A pasted link is a deliberate pick, though: Enter in the repo box digs that one up.
+  f.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || !e.target.matches("input")) return;
+    e.preventDefault();
+    if (e.target === f.repo && looksPasted(f.repo.value) && (pastedRepo(f.repo.value) || f.mirror.checked)) dig(false);
+  });
   f.repo.addEventListener("input", () => {
     clearTimeout(timer);
     const q = f.repo.value.trim();
     if (!q) return showMine();
-    if (looksPasted(q)) return (list.innerHTML = "");
+    if (looksPasted(q)) {
+      const r = pastedRepo(q);
+      msg.textContent = r ? `Digs up ${r}: press Enter or Dig it up. ${note}` : f.mirror.checked ? "Mirrors any git URL: press Enter or Dig it up." : "That doesn't read as a GitHub repo: paste its page link, owner/name or a clone line.";
+      return (list.innerHTML = "");
+    }
     timer = setTimeout(async () => {
       asked = q;
       const r = await api("/github/search?q=" + encodeURIComponent(q)).catch((e) => ({ repos: [], error: e.message }));
@@ -2789,7 +2877,9 @@ function wireDig() {
   });
   const dig = async (wow) => {
     if (!me()) { msg.textContent = "Sign in first (top right), then dig it up."; return; }
-    if (!f.repo.value.trim()) { msg.textContent = "Paste a public GitHub repo first."; return f.repo.focus(); }
+    if (!f.repo.value.trim()) { msg.textContent = "Paste a GitHub repo's link first, or search for one."; return f.repo.focus(); }
+    if (busy) return;
+    busy = true;
     msg.textContent = "cloning…";
     const mirror = f.mirror.checked, pullOnly = mirror && f.pullOnly.checked;
     if (mirror) msg.textContent = pullOnly ? "cloning, to pull from…" : "cloning, to keep in sync…";
@@ -2800,6 +2890,7 @@ function wireDig() {
       location.hash = `#/r/${r.owner}/${r.name}`;
     }
     catch (err) { msg.textContent = err.message; }
+    finally { busy = false; }
   };
   f.addEventListener("submit", (e) => { e.preventDefault(); dig(false); });
   $("#ghwow", f).addEventListener("click", () => dig(true));
@@ -3035,22 +3126,22 @@ const views = {
         <input name="bio" placeholder="a line about you" value="${esc(user.bio)}">
         <textarea name="theme_html" rows="5" placeholder="<style>body{background:url(stars.gif)}</style><marquee>welcome 2 my page</marquee>">${esc(user.theme_html)}</textarea>
         <div><button class="btn primary">Save</button></div></div></form>` : ""}
+      ${mine ? digBox("Paste a GitHub link to get your own copy. Upstream never hears about it.") : ""}
       <div class="prof-grid"><div>
         <div class="box"><div class="bar">${icon("book-marked")}<b>${agent ? "Works in" : "Repos"}</b>
-          ${mine ? `<form id="newrepo" class="barform"><input name="name" placeholder="new-repo" required><select name="visibility"><option value="public">Public</option><option value="private">Private</option></select><button class="btn primary">${icon("plus")}Create</button></form>` : ""}</div>
-          <div class="body list">${shown.map((r) => `<a href="#/r/${r.owner}/${r.name}">${icon(r.visibility === "private" ? "lock" : "book")}${agent ? `${esc(r.owner)}/` : ""}${esc(r.name)}${r.level ? ` <span class="muted">· forked from ${esc(r.level)}</span>` : ""}<span class="when">${ago(r.created_at)}</span></a>`).join("") || '<span class="muted">no repos yet</span>'}</div></div>
-        ${pulse ? `<div class="box pulse-box" id="pulse-box"></div>` : ""}
+          ${mine ? `<form id="newrepo" class="barform"><input name="name" placeholder="new-repo" required><select name="visibility"><option value="public">Public</option><option value="private">Private</option></select><button class="btn" title="an empty repo">${icon("plus")}Create</button></form>` : ""}</div>
+          <div class="body list">${shown.map((r) => `<a href="#/r/${r.owner}/${r.name}">${icon(r.visibility === "private" ? "lock" : "book")}${agent ? `${esc(r.owner)}/` : ""}${esc(r.name)}${r.level ? ` <span class="muted">· forked from ${esc(r.level)}</span>` : ""}<span class="when">${ago(r.created_at)}</span></a>`).join("") || '<span class="muted">no repos yet: dig one up from GitHub, or create an empty one</span>'}</div></div>
+        ${pulse ? `<div class="pulse-free" id="pulse-box"></div>` : ""}
         ${invites.length ? `<div class="box" id="invites"><div class="bar">${icon("mail")}<b>Invited to</b><span class="muted">crews waiting on you: open one to look, then join</span></div><div class="body list">${invites.map(inviteRow).join("")}</div></div>` : ""}
         ${agentBoxes}
-        ${mine ? digBox("Fork any public GitHub repo into one you own here, then mod it line by line. Upstream never hears about it.", true) : ""}
         ${stampBox}
         ${jobs.length ? `<div class="box jobs"><div class="bar">${icon("hourglass")}<b>Queued</b><span class="muted">this week's digs, previews and checks that waited in line</span></div>${jobs.map(jobRow).join("")}</div>` : ""}
       </div><aside>
-        ${mine ? `<div class="box" id="tokens"><div class="bar">${icon("plug")}<b>Connect your AI</b><a class="muted" style="margin-left:auto;font-size:12px" href="/reference">the API</a> · <a class="muted" style="font-size:12px" href="/mcp">MCP</a></div><div class="body"><span class="muted">…</span></div></div>` : ""}
+        ${mine ? `${boxTop(true, "tokens", `${icon("plug")}<b>Connect your AI</b><a class="muted" style="font-size:12px" href="/reference">the API</a> · <a class="muted" style="font-size:12px" href="/mcp">MCP</a>`)}<div class="body"><span class="muted">…</span></div></details>` : ""}
         ${user.theme_html ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page</div><iframe class="theme" sandbox title="${esc(name)}'s page"></iframe></div>` : ""}
-        ${agent ? "" : `<div class="box"><div class="bar">${icon("library")}<b>Collections</b></div><div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || (mine ? "" : '<span class="muted">nothing collected yet</span>')}
-          ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div></div>`}
-        ${mine ? `<div class="box"><div class="bar"${follows.length ? "" : ' style="border-bottom:0" title="Follow is on profiles, repos, agent runs, shares and collections"'}>${icon("eye")}<b>Following</b><span class="muted">${follows.length ? "people, agents, repos and lines" : "nobody yet"}</span></div>${follows.length ? `<div class="body list">${follows.map(followLink).join("")}</div>` : ""}</div>` : ""}
+        ${agent ? "" : `${boxTop(mine, "collections", `${icon("library")}<b>Collections</b>${playlists.length ? `<span class="muted">${playlists.length}</span>` : ""}`)}<div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || (mine ? "" : '<span class="muted">nothing collected yet</span>')}
+          ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div>${boxEnd(mine)}`}
+        ${mine ? `${boxTop(true, "following", `${icon("eye")}<b>Following</b><span class="muted" title="Follow is on profiles, repos, agent runs, shares and collections">${follows.length || "nobody yet"}</span>`)}<div class="body list">${follows.map(followLink).join("") || '<span class="muted">Follow is on profiles, repos, agent runs, shares and collections.</span>'}</div></details>` : ""}
         ${mine ? truthBox(true) : ""}
         ${mine ? dataBox(true) : ""}
       </aside></div>${cityLink ? `<div class="city-door">${cityLink}</div>` : ""}</div>`;
@@ -3064,7 +3155,7 @@ const views = {
       box.innerHTML = `<div class="bar"><span class="beat-dot"></span><b>Pulse</b><span class="muted">${p.total ? `${p.total} line${p.total === 1 ? "" : "s"} landed this week` : "quiet this week"}${isLive(p) ? " · typing now" : p.live_at ? ` · last line ${ago(p.live_at)}` : ""}</span><span class="grow"></span>
         ${mine ? `<label class="muted" style="font-size:12px" title="off: only you see your pulse"><input type="checkbox" id="pulse-public"${user.pulse ? " checked" : ""}> public</label>` : ""}
         ${!mine || user.pulse ? `<a class="btn ghost" href="https://x.com/intent/post?text=${encodeURIComponent(`@${name}'s pulse on codeSplitter`)}&url=${encodeURIComponent(share)}" target="_blank" rel="noopener" title="share the pulse card on X">${icon("share-2")}</a>` : ""}</div>
-        <div class="body"${p.total || isLive(p) ? "" : " hidden"}>${pulseSvg(p)}${mine ? `<span class="muted" style="font-size:12px">${user.pulse ? "Everyone sees the lines you land in public repos; private repos count only here, for you." : "Only you see your pulse."}</span>` : ""}</div>`;
+        <div class="body"${p.total || isLive(p) ? "" : " hidden"}>${pulseIso(p)}${mine ? `<span class="muted" style="font-size:12px">${user.pulse ? "Everyone sees the lines you land in public repos; private repos count only here, for you." : "Only you see your pulse."}</span>` : ""}</div>`;
       $("#pulse-public")?.addEventListener("change", async (e) => { user.pulse = e.target.checked ? 1 : 0; await api("/me", { pulse: e.target.checked }, "PUT"); drawPulse(p); toast(e.target.checked ? "Your pulse is public" : "Only you see your pulse now"); });
       icons();
     };
@@ -3078,6 +3169,8 @@ const views = {
     $("#editpage")?.addEventListener("click", () => { const f = $("#theme"); f.hidden = !f.hidden; if (!f.hidden) f.bio.focus(); });
     $("#newrepo")?.addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target; await api("/repos", { name: f.name.value, visibility: f.visibility.value }); location.hash = `#/r/${me()}/${f.name.value}`; });
     wireDig();
+    // The side column folds box by box, like the code page's panels; this browser keeps which are open.
+    foldSide($(".prof-grid > aside"), open === "tokens" ? "tokens" : null);
     $("#newpl")?.addEventListener("submit", async (e) => { e.preventDefault(); const p = await api("/playlists", { title: e.target.title.value }); location.hash = "#/p/" + p.id; });
     $("#theme")?.addEventListener("submit", async (e) => { e.preventDefault(); await api("/me", { bio: e.target.bio.value, theme_html: e.target.theme_html.value }, "PUT"); route(); });
     $("#citypub")?.addEventListener("change", async (e) => { await api("/me/city", { public: e.target.checked }, "PUT"); route(); });
@@ -6092,6 +6185,7 @@ async function route() {
     if (b) { $("#err-main").addEventListener("click", () => { pickBranch(b[0], b[1], null); route(); }); icons(); }
   }
   window.scrollTo(0, 0);
+  drawRail();
   wireFollows();
   await webTools();
   tour();
