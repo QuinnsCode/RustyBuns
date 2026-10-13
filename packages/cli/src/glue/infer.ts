@@ -46,6 +46,8 @@ export interface Inferred {
     desktopConfigPath: string | null;
     /** Paths `server.proxy` hands to another server in dev ("/api"): the build alone doesn't answer them. */
     proxy: string[];
+    /** Each of those paths' target ("http://localhost:3001"), null when the config doesn't spell it out. */
+    proxyTargets: Record<string, string | null>;
   };
   /** astro.config.*: its adapter by package name and its `output`. Null when there is no config. */
   astro: AstroInfo | null;
@@ -146,11 +148,12 @@ export function inferVite(root: string, buildConfig: string | null = null) {
   if (buildConfig && !existsSync(join(root, buildConfig))) buildConfig = null;
   const configPath = buildConfig ? join(root, buildConfig) : cands.map((c) => join(root, c)).find(existsSync) ?? null;
   const desktopConfigPath = ["vite.desktop.config.ts", "vite.desktop.config.mts"].map((c) => join(root, c)).find(existsSync) ?? null;
-  const out = { configPath, buildConfig, plugins: [] as string[], root: null as string | null, outDir: null as string | null, aliases: {} as Record<string, string>, desktopConfigPath, proxy: [] as string[] };
+  const out = { configPath, buildConfig, plugins: [] as string[], root: null as string | null, outDir: null as string | null, aliases: {} as Record<string, string>, desktopConfigPath, proxy: [] as string[], proxyTargets: {} as Record<string, string | null> };
   if (!configPath) return out;
   const src = readFileSync(configPath, "utf8");
   out.plugins = vitePlugins(src);
   out.proxy = viteProxyPaths(src);
+  out.proxyTargets = viteProxyTargets(src);
   out.root = viteRoot(src);
   out.outDir = src.match(/\boutDir:\s*["']([^"']+)["']/)?.[1] ?? null;
   const dir = (d: string) => d.replace(/^\.\//, "").replace(/\/$/, "") || ".";
@@ -177,13 +180,82 @@ export function viteProxyPaths(src: string): string[] {
   return [...body.matchAll(/["'`]([^"'`]+)["'`]\s*:/g)].map((m) => m[1]!);
 }
 
+export interface SiblingServer {
+  dir: string;
+  /** What starts it: its start script, or the frameworks it uses. */
+  runs: string;
+  /** The file it runs, from the app's folder ("../api/server.js"), null when init can't find it. */
+  entry: string | null;
+  /** The port it listens on unless told otherwise. */
+  port: number | null;
+  /** Whether its entry reads PORT. One that doesn't keeps its own port. */
+  readsPort: boolean;
+}
+
+/**
+ * The servers a proxy's paths go to: its keys grouped by target port, each group given the sibling
+ * server that listens there (or the one server there is, when the proxy has one target). Paths
+ * no server found for are `left` for desktop/host.ts.
+ */
+export function proxyServers(targets: Record<string, string | null>, servers: SiblingServer[]) {
+  const groups = new Map<string, string[]>();
+  for (const [path, t] of Object.entries(targets)) {
+    const k = String(targetPort(t) ?? t ?? "?");
+    groups.set(k, [...(groups.get(k) ?? []), path]);
+  }
+  const runnable = servers.filter((s) => s.entry);
+  const found: { server: SiblingServer; paths: string[]; port?: number }[] = [], left: string[] = [];
+  for (const [k, paths] of groups) {
+    const port = /^\d+$/.test(k) ? +k : null;
+    const at = runnable.filter((s) => port !== null && s.port === port);
+    const server = at.length === 1 ? at[0] : groups.size === 1 && runnable.length === 1 ? runnable[0] : undefined;
+    if (!server || found.some((f) => f.server === server)) { left.push(...paths); continue; }
+    // One that ignores PORT listens where the proxy pointed: the host proxies there too.
+    found.push({ server, paths, ...(!server.readsPort && (server.port ?? port) ? { port: (server.port ?? port)! } : {}) });
+  }
+  return { found, left };
+}
+
+/**
+ * Where each server.proxy key goes: its string value, or its options' `target`, or the first URL
+ * in the declaration of the variable named there (`const backend = env.API ?? "http://localhost:3001"`).
+ */
+export function viteProxyTargets(src: string): Record<string, string | null> {
+  const at = src.search(/\bproxy\s*:\s*\{/);
+  if (at < 0) return {};
+  const body = src.slice(src.indexOf("{", at) + 1);
+  const url = (v: string | undefined): string | null => {
+    if (!v) return null;
+    const lit = v.match(/^["'`]([^"'`]+)["'`]$/)?.[1];
+    if (lit) return lit;
+    if (!/^[A-Za-z_$][\w$]*$/.test(v)) return null;
+    return src.match(new RegExp(`\\b${v.replace(/\$/g, "\\$")}\\s*=[^;\\n]*?["'\`]((?:https?|wss?)://[^"'\`]+)["'\`]`))?.[1] ?? null;
+  };
+  const out: Record<string, string | null> = {};
+  for (const key of viteProxyPaths(src)) {
+    const q = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const m = body.match(new RegExp(`["'\`]${q}["'\`]\\s*:\\s*(\\{[^{}]*?\\btarget\\s*:\\s*([^,}\\s]+)|([^,{}\\s]+))`));
+    out[key] = url(m?.[2] ?? m?.[3]);
+  }
+  return out;
+}
+
+/** The port a proxy target names ("http://localhost:3001" is 3001), null when it names none. */
+export function targetPort(target: string | null): number | null {
+  if (!target) return null;
+  try {
+    const u = new URL(target);
+    return u.port ? +u.port : /^(https|wss):$/.test(u.protocol) ? 443 : 80;
+  } catch { return null; }
+}
+
 /**
  * Folders beside `root` that look like the server its dev proxy points at: a package.json with
  * a Node server framework, or a `start` script that runs node. "../api (node server.js)".
  */
-export function siblingServers(root: string): { dir: string; runs: string }[] {
+export function siblingServers(root: string): SiblingServer[] {
   const parent = dirname(resolve(root)), self = resolve(root);
-  const out: { dir: string; runs: string }[] = [];
+  const out: SiblingServer[] = [];
   let names: string[] = [];
   try { names = readdirSync(parent); } catch { return out; }
   for (const n of names.sort()) {
@@ -194,7 +266,14 @@ export function siblingServers(root: string): { dir: string; runs: string }[] {
     const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
     const fw = SERVER_DEPS.filter((x) => deps[x]);
     const start = String(pkg.scripts?.start ?? "");
-    if (fw.length || /^(node|bun|tsx|ts-node)\s/.test(start)) out.push({ dir: `../${n}`, runs: start || fw.join(", ") });
+    if (!fw.length && !/^(node|bun|tsx|ts-node)\s/.test(start)) continue;
+    // The file it runs: `node server.js`'s first non-flag argument, else package.json main.
+    const file = start.match(/^(?:node|bun|tsx|ts-node)\s+(?:-\S+\s+)*([^\s-]\S*\.[cm]?[jt]s)\b/)?.[1] ?? (typeof pkg.main === "string" ? pkg.main : null);
+    const entry = file && existsSync(join(d, file)) ? `../${n}/${file.replace(/^\.\//, "")}` : null;
+    // The port it listens on when PORT isn't set (`process.env.PORT || 3001`, `listen(3001)`).
+    const code = entry ? readFileSync(join(d, file!), "utf8") : "";
+    const port = code.match(/\bPORT\b[^\n;]*?(?:\|\||\?\?|=)\s*(\d{2,5})\b/)?.[1] ?? code.match(/\.listen\(\s*(\d{2,5})\b/)?.[1];
+    out.push({ dir: `../${n}`, runs: start || fw.join(", "), entry, port: port ? +port : null, readsPort: /\bPORT\b/.test(code) });
   }
   return out;
 }

@@ -3,7 +3,7 @@
 
 import { $ } from "bun";
 import { mkdir, rm } from "node:fs/promises";
-import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseWrangler, parseWranglerToml, wranglerToConfig, droppedWranglerKeys } from "./wrangler.ts";
@@ -15,11 +15,11 @@ import { buildBox, checkBox } from "./box.ts";
 import { watchDesktop } from "./watch.ts";
 import { codeSecrets, wranglerNames } from "./glue/secrets.ts";
 import { buildEnv, emptyHome, hostCommand, withLocalBins, hostEnv, wantsSandbox } from "./sandbox.ts";
-import type { RustyBunsConfig } from "./config.ts";
+import { desktopServers, type RustyBunsConfig } from "./config.ts";
 import { Effect } from "effect";
 import { decodeConfig } from "./config-schema.ts";
 import { AlchemyFailed, ConfigLoadFailed, DeployRefused, UsageError, closest, flag, intFlag, renderError } from "./errors.ts";
-import { infer, readPackageJson, appsBelow, siblingServers } from "./glue/infer.ts";
+import { infer, readPackageJson, appsBelow, siblingServers, proxyServers } from "./glue/infer.ts";
 import { unsupported } from "./glue/fit.ts";
 import { planPort } from "./glue/port-vite.ts";
 import { jekyllDefaults, jekyllExcludes, jekyllPagesPlugins, jekyllPlugins, staticBuild, type StaticSite } from "./glue/static-site.ts";
@@ -35,7 +35,7 @@ import { adoptNote, alchemyStage, linkSharedState, lockState, noteChild, unlinkS
 import { runScoped, spawnScoped, step } from "./lifecycle.ts";
 import { commitsBehindMain, statefulDeletes, strayState } from "./guard.ts";
 import { checkSpend, costReport } from "./costs.ts";
-import { cloudflareEnv, realWrangler, wranglerCli } from "./cloudflare-auth.ts";
+import { cloudflareEnv, cloudflareProblem, realTokenCheck, realWrangler, wranglerCli } from "./cloudflare-auth.ts";
 import { deployedWorker, redactQueryStrings } from "./redact.ts";
 import { tidySourceMaps } from "./sourcemaps.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
@@ -467,6 +467,12 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
       : own ? [...inf.prebuild, `${inf.execCmd("vite")} build${inf.vite.buildConfig ? ` --config ${inf.vite.buildConfig}` : ""}`].join(" && ") : vite("dist/web"),
     notFoundHandling: astro ? "404-page" : "single-page-application",
   };
+  // The servers beside the app the proxy points at, whose files init can name: the host runs each
+  // and proxies its paths to it. Paths that go to a server it didn't find are left for host.ts.
+  const servers = proxied.length ? siblingServers(".") : [];
+  const { found, left } = proxyServers(Object.fromEntries(proxied.map((p) => [p, inf.vite.proxyTargets[p] ?? null])), servers);
+  const specs = found.map((f) => ({ entry: f.server.entry!, paths: f.paths, ...(f.port ? { port: f.port } : {}) }));
+  const server = specs.length > 1 ? specs : specs[0] ?? null;
   const cfg = {
     name: inf.name.replace(/^@[^/]+\//, ""),
     source: { dir: inf.srcDir, aliases: inf.aliases },
@@ -481,20 +487,23 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
         clientDir: "dist/ui",
         world: false,
         host: "desktop/host.ts",
+        ...(server ? { server } : {}),
         targets: [hostTag],
       },
     },
   };
   await Bun.write("rustybuns.config.ts", `import { defineConfig } from "@rustybuns/cli/config";\n\nexport default defineConfig(${JSON.stringify(cfg, null, 2)});\n`);
   const what = astro ? "a static Astro site" : "no wrangler found";
-  const servers = proxied.length ? siblingServers(".") : [];
   console.log(web ? `wrote rustybuns.config.ts (${what}: the desktop, and the web as static files on Workers, from ${web.assets})`
     : inf.serverDeps.length ? `wrote rustybuns.config.ts (desktop-only: it runs a Node server (${inf.serverDeps.join(", ")}), so its frontend alone can't go on the web)`
     : `wrote rustybuns.config.ts (desktop-only: ${relative(".", inf.vite.configPath!)} proxies ${proxied.join(", ")} to a separate server in dev, so its frontend alone can't go on the web)`);
-  if (proxied.length) {
-    console.log(servers.length
-      ? `backend:  ${servers.map((s) => `${s.dir} (${s.runs})`).join(", ")} ${servers.length > 1 ? "may be" : "looks like"} that server. Rusty Buns doesn't run it yet: answer ${proxied.join(", ")} in desktop/host.ts, or port the server to a Worker, before \`plan\``
-      : `backend:  answer ${proxied.join(", ")} in desktop/host.ts, or port that server to a Worker, before \`plan\``);
+  for (const f of found)
+    console.log(`backend:  ${f.server.dir} (${f.server.runs}) runs beside the desktop host: desktop.server proxies ${f.paths.join(", ")} to it, with DATA_DIR in the app's data dir. The web can't run it, so the app stays off the edge`);
+  if (left.length) {
+    const rest = servers.filter((s) => !found.some((f) => f.server === s));
+    console.log(rest.length
+      ? `backend:  ${rest.map((s) => `${s.dir} (${s.runs})`).join(", ")} ${rest.length > 1 ? "may be" : "looks like"} the server for ${left.join(", ")}. Rusty Buns can't tell which file it runs or which paths are its: add it to desktop.server, answer them in desktop/host.ts, or port it to a Worker, before \`plan\``
+      : `backend:  answer ${left.join(", ")} in desktop/host.ts, or port that server to a Worker, before \`plan\``);
   }
   await writeHost();
   await ignoreOurs();
@@ -606,24 +615,61 @@ let cloudflareToken: string | undefined;
  * Run the project-local alchemy with the terminal attached, so its prompts work, for the life
  * of the current scope: interrupted (a signal), it is stopped and waited for. `onStart` gets its pid.
  */
-const alchemyProcess = (args: string[], cfg?: RustyBunsConfig, extra: Record<string, string> = {}, onStart?: (pid: number) => void) =>
-  step(() => alchemyCommand(args, cfg, extra)).pipe(Effect.flatMap(({ cmd, env }) => spawnScoped(cmd, { stdio: ["inherit", "inherit", "inherit"], env }, onStart)));
+const alchemyProcess = (args: string[], cfg?: RustyBunsConfig, extra: Record<string, string> = {}, onStart?: (pid: number) => void,
+  cf?: Record<string, string>) =>
+  step(() => alchemyCommand(args, cfg, extra, cf)).pipe(Effect.flatMap(({ cmd, env }) => spawnScoped(cmd, { stdio: ["inherit", "inherit", "inherit"], env }, onStart)));
 
 /** runAlchemy outside plan/deploy/destroy (`login`). */
 const runAlchemy = (args: string[], cfg?: RustyBunsConfig) => runScoped(alchemyProcess(args, cfg));
 
-/** The alchemy command line and its env: Cloudflare login through wrangler, varlock for op secrets. */
-async function alchemyCommand(args: string[], cfg?: RustyBunsConfig, extra: Record<string, string> = {}) {
+/** Alchemy's env before the Cloudflare login: secret values from .dev.vars, anything exported in the shell wins. */
+const alchemyBaseEnv = (extra: Record<string, string> = {}): Record<string, string | undefined> => ({ ...readDevVars(), ...process.env, ...extra });
+
+/** An edge stack logs in to Cloudflare through wrangler, with only the scopes it needs; {} leaves it to the shell or Alchemy's profile. */
+async function wranglerLogin(cfg: RustyBunsConfig, env: Record<string, string | undefined>): Promise<Record<string, string>> {
+  if (!cfg.targets.edge) return {};
+  const w = wranglerCli();
+  return (await cloudflareEnv(cfg, env, w && realWrangler(w), console.log, Boolean(process.stdin.isTTY && process.stdout.isTTY))) ?? {};
+}
+
+/**
+ * The Cloudflare login for plan, deploy and destroy, before the build: none, or a token Cloudflare
+ * refuses, stops here in one line (#1170). Skipped when varlock brings the token from 1Password,
+ * or with RUSTYBUNS_NO_LOGIN_CHECK=1 (tests with a stub alchemy).
+ */
+async function cloudflareLogin(cfg: RustyBunsConfig, args: string[]): Promise<Record<string, string>> {
+  const env = alchemyBaseEnv();
+  const cf = await wranglerLogin(cfg, env);
+  const varlocked = !!cfg.experimental?.wheel && existsSync(ENV_SCHEMA) && /\bCLOUDFLARE_API_(TOKEN|KEY)\b/.test(readFileSync(ENV_SCHEMA, "utf8"));
+  // `--profile <name>` picks Alchemy's profile over ALCHEMY_PROFILE.
+  const profile = flag(args, "profile");
+  const problem = varlocked || env.RUSTYBUNS_NO_LOGIN_CHECK ? null
+    : await cloudflareProblem({ ...env, ...cf, ...(profile ? { ALCHEMY_PROFILE: profile } : {}) }, realTokenCheck);
+  if (problem) throw new Error(problem);
+  return cf;
+}
+
+/**
+ * Alchemy checks npm once a day and says to `pnpm add` a newer one, but `add deploy` pins it (DEPLOY_DEPS)
+ * on purpose. A fresh check with no versions in its cache (.alchemy/version-check.json) keeps it quiet.
+ */
+function quietUpgradeNotice() {
+  try {
+    mkdirSync(".alchemy", { recursive: true });
+    writeFileSync(join(".alchemy", "version-check.json"), JSON.stringify({ checkedAt: Date.now(), distTags: {} }));
+  } catch { /* only a notice */ }
+}
+
+/** The alchemy command line and its env: Cloudflare login through wrangler (`cf` when already done), varlock for op secrets. */
+async function alchemyCommand(args: string[], cfg?: RustyBunsConfig, extra: Record<string, string> = {}, cf?: Record<string, string>) {
   let cmd = [...alchemyCli(), ...args];
-  // Secret values come from .dev.vars; anything already exported in the shell wins.
-  const env: Record<string, string | undefined> = { ...readDevVars(), ...process.env, ...extra };
-  // An edge stack logs in to Cloudflare through wrangler, with only the scopes it needs; Alchemy's profile otherwise.
+  const env = alchemyBaseEnv(extra);
   if (cfg?.targets.edge) {
-    const w = wranglerCli();
-    Object.assign(env, (await cloudflareEnv(cfg, env, w && realWrangler(w), console.log, Boolean(process.stdin.isTTY && process.stdout.isTTY))) ?? {});
+    Object.assign(env, cf ?? await wranglerLogin(cfg, env));
     cloudflareToken = env.CLOUDFLARE_API_TOKEN;
   }
   if (cfg?.experimental?.wheel && existsSync(ENV_SCHEMA)) cmd = underVarlock(cfg, cmd, env);
+  quietUpgradeNotice();
   return { cmd, env };
 }
 
@@ -702,8 +748,13 @@ const timed = <A, E, R>(prof: Profiler, name: string, e: Effect.Effect<A, E, R>)
  */
 const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(function* () {
   const cfg = yield* step(loadConfig);
-  if (!cfg.worker && !cfg.targets.box) throw new Error("desktop-only app: no edge or box stack to plan or deploy");
+  const servers = desktopServers(cfg.targets.desktop);
+  const entries = servers.map((s) => s.entry).join(", ");
+  // A Worker can't run a node:http server with files on disk: that's a port by hand, not a config line.
+  const serverNote = servers.length ? ` Its own server (desktop.server, ${entries}) runs beside the desktop and box hosts only: a Worker can't run a Node server without porting it. Add targets.box to host it on a server.` : "";
+  if (!cfg.worker && !cfg.targets.box) throw new Error(`desktop-only app: no edge or box stack to plan or deploy.${serverNote}`);
   const profiled = sub === "plan" || sub === "deploy";
+  if (servers.length && cfg.worker && profiled) console.warn(`[server] the edge doesn't run desktop.server (${entries}): on the web ${servers.flatMap((s) => s.paths).join(", ")} reach the Worker, not that server.\n`);
   if (profiled) { checkBox(cfg); checkSpend(cfg); console.log(costReport(cfg) + "\n"); }
   const { on: check, checker, rest: flagged } = checkFlags(rawArgs, profiled);
   // Ours, not Alchemy's: they waive the guards below.
@@ -731,6 +782,8 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
       ? "config changed since the last plan. Run `rustybuns plan` again, or pass --yes to skip."
       : "no plan on record for this config. Run `rustybuns plan` first (creates nothing), or pass --yes to skip." });
   }
+  // Cloudflare's login before any build, so a missing or refused one costs a second, not a build (#1170).
+  const cf = sub !== "dev" && edgeOn(cfg) ? yield* step(() => cloudflareLogin(cfg, args)) : undefined;
   // Hetzner.Service and Railway.Service hash the box directory at plan time, so it has to exist first.
   if (profiled && cfg.targets.box) {
     console.log(`built ${yield* step(() => prof.step("build box", () => buildBox(cfg)))}`);
@@ -748,7 +801,7 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   // The stack's Build then only records dist, not rebuild it while the assets upload (#424).
   const buildEnv: Record<string, string> = built ? { RUSTYBUNS_BUILT: "1" } : {};
   // The lock names alchemy's pid too, so a SIGKILLed rustybuns doesn't free the state while it runs.
-  const run = (a: string[]) => alchemyProcess(a, cfg, buildEnv, (pid) => lockBase && noteChild(lockBase, pid));
+  const run = (a: string[]) => alchemyProcess(a, cfg, buildEnv, (pid) => lockBase && noteChild(lockBase, pid), cf);
   if (sub === "plan") {
     const code = yield* timed(prof, "alchemy plan", run(["plan", "--config", ".rustybuns/alchemy.run.ts", ...args]));
     yield* step(() => prof.finish());

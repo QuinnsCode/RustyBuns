@@ -60,11 +60,13 @@ const Binding = Schema.Union([
 ]);
 
 const DesktopOs = Schema.Literals(["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "windows-x64"]);
+const AppServer = Schema.Struct({ entry: Str, paths: Strs.check(Schema.isMinLength(1)), port: opt(Port), env: opt(StrMap) });
 const DesktopTarget = Schema.Struct({
   mode: opt(Schema.Literals(["spa", "worker"])),
   clientBuild: opt(Str), clientDir: opt(Str),
   world: opt(Schema.Union([Str, Schema.Literal(false)])),
   host: opt(Str), headers: opt(StrMap),
+  server: opt(Schema.Union([AppServer, Schema.Array(AppServer).check(Schema.isMinLength(1))])),
   native: opt(Schema.Union([Strs, Schema.Literal(false)])),
   worldPath: opt(Str), identity: opt(StrMap),
   listen: opt(Schema.Struct({ hostname: opt(Str), port: opt(Port) })),

@@ -6,15 +6,24 @@
 // The files are the cover, and they don't last: blasts, fire and bullets delete their
 // lines, a file sinks as it loses them, and one with none left is gone.
 //
+// Battles (a mode) put any number of players in the same repo: side by side against
+// the guards on the level's mission (coop), every player for themselves (ffa), or two
+// sides (teams), with the guards fighting everyone. Players come back from the reflog
+// for as long as the battle lasts; the first to the score, or the best when time runs
+// out, wins. room.ts runs a battle for a world and sends each player what they need.
+//
 // Coordinates as in terrain.ts: x east, z south, y up. Facing: yaw 0 looks
 // along -z; forward is (-sin yaw, -cos yaw).
 
-import { mapRepo, mulberry32, type Block, type CodeMap, type RepoSnapshot } from "./codemap.ts";
+import { mapRepo, mulberry32, reachable, type Block, type CodeMap, type RepoSnapshot } from "./codemap.ts";
 import { BRANCH_RADIUS, HEAD_RADIUS, OVERRUN, type Mission } from "./missions.ts";
-import { CLIFF, wet, type Terrain } from "./terrain.ts";
+import { CLIFF, slope, wet, type Terrain } from "./terrain.ts";
 import { ORDER, splashDamage, WEAPONS, type WeaponId } from "./weapons.ts";
 
-export type Team = "you" | "conflict";
+/** "you" are the players on their own or side by side; "ours" and "theirs" the two sides of a team battle; "conflict" the guards. */
+export type Team = "you" | "conflict" | "ours" | "theirs";
+/** A battle's mode: side by side on the mission, every player for themselves, or two sides. */
+export type Mode = "coop" | "ffa" | "teams";
 
 export interface Brain {
   home: { x: number; z: number };
@@ -84,6 +93,13 @@ export interface Soldier {
   /** For guards: the compound they hold. */
   compound: number;
   brain: Brain | null;
+  /** In a battle: players this one has downed, times it went down, seconds until it's back, and whether it has left. */
+  score: number;
+  deaths: number;
+  respawn: number;
+  gone: boolean;
+  /** Out of view (a battle sends only what's near you): the page doesn't draw it. */
+  hidden?: boolean;
 }
 
 export interface Shot {
@@ -112,7 +128,8 @@ export interface Pickup { id: number; kind: PickupKind; x: number; y: number; z:
 
 export type Objective =
   | { kind: "clear" }
-  | { kind: "carry"; x: number; y: number; z: number; carried: boolean; delivered: boolean }
+  /** by: the soldier carrying it, or -1. */
+  | { kind: "carry"; x: number; y: number; z: number; carried: boolean; delivered: boolean; by: number }
   | { kind: "defend"; x: number; z: number; seconds: number; wave: number; held: number; overrun: number; raids: number };
 
 export interface Input {
@@ -140,9 +157,9 @@ export type GameEvent =
   | { kind: "shield"; id: number; state: "broke" | "charging" | "full" }
   | { kind: "boom"; x: number; y: number; z: number; r: number }
   | { kind: "down"; id: number; by: number }
-  | { kind: "respawn"; lives: number }
+  | { kind: "respawn"; id: number; lives: number }
   | { kind: "cleared"; compound: number }
-  | { kind: "pickup"; item: PickupKind }
+  | { kind: "pickup"; id: number; item: PickupKind }
   | { kind: "blamed"; id: number }
   | { kind: "reverted"; id: number }
   | { kind: "stashed"; x: number; y: number; z: number }
@@ -152,7 +169,10 @@ export type GameEvent =
   | { kind: "razed"; path: string; lines: number; by: number; x: number; y: number; z: number; w: number; h: number; d: number }
   | { kind: "objective"; text: string }
   | { kind: "won" }
-  | { kind: "lost" };
+  | { kind: "lost" }
+  /** A player joining or leaving a battle. */
+  | { kind: "joined"; id: number }
+  | { kind: "left"; id: number };
 
 export const RUN = 7.5, CROUCH_SPEED = 3.2, PRONE_SPEED = 1.5, GRAVITY = 26, JUMP = 8.5;
 export const ROLL_TIME = 0.42, ROLL_SPEED = 12.5, ROLL_COOLDOWN = 0.6;
@@ -176,7 +196,9 @@ export const RUBBLE = 0.15;
 export const BURN_DPS = 10, MAX_HEAT = 0.06, HEAT_COOL = 0.08;
 /** Field crates a level scatters, besides the one git reset --hard. */
 export const FIELD_PICKUPS = 6;
-const TICK = 1 / 120;
+/** A battle: seconds down before you're back, players downed to win (a side's total in teams), and how long it runs. */
+export const RESPAWN = 3, FFA_SCORE = 15, TEAM_SCORE = 30, BATTLE_SECONDS = 600;
+export const TICK = 1 / 120;
 
 const fwd = (yaw: number) => ({ x: -Math.sin(yaw), z: -Math.cos(yaw) });
 const yawTo = (dx: number, dz: number) => Math.atan2(-dx, -dz);
@@ -203,6 +225,14 @@ export class Game {
   time = 0;
   lives = LIVES;
   status: "playing" | "won" | "lost" = "playing";
+  /** A battle's mode; undefined is single player. */
+  readonly mode?: Mode;
+  /** Who won a battle: a player's name or a side. */
+  winner: string | null = null;
+  /** The soldier this page plays: 0 on your own, your player in a battle. */
+  me = 0;
+  /** Where the theirs side comes in: the reachable flat ground farthest from HEAD. */
+  private far: { x: number; z: number; yaw: number } | null = null;
   readonly cleared: boolean[];
   /** A file's full size, kept the first time something hits it: its height and lines shrink from there. */
   private wrecks = new Map<Block, { hp: number; maxHp: number; tall: number; lines: number }>();
@@ -211,14 +241,17 @@ export class Game {
   private acc = 0;
   private trailT = 0;
 
-  constructor(map: CodeMap, seed = 1, mission: Mission = { kind: "clear" }) {
+  constructor(map: CodeMap, seed = 1, mission: Mission = { kind: "clear" }, mode?: Mode) {
     // Files get knocked down: the game's own copies, so the map it was given stays whole.
     this.map = { ...map, blocks: map.blocks.map((b) => ({ ...b })) };
     this.terrain = map.terrain;
-    this.mission = mission;
+    // A battle that isn't side by side is won on downs, not the level's mission.
+    this.mode = mode;
+    this.mission = mode && mode !== "coop" ? { kind: "clear" } : mission;
     this.rand = mulberry32(seed);
     this.cleared = map.compounds.map(() => false);
-    this.soldiers.push(this.soldier("you", "you", map.spawn.x, map.spawn.z, map.spawn.yaw, -1));
+    // On your own you're soldier 0; a battle's players join after the guards.
+    if (!mode) this.soldiers.push(this.soldier("you", "you", map.spawn.x, map.spawn.z, map.spawn.yaw, -1));
     this.map.compounds.forEach((c, ci) => {
       for (let g = 0; g < c.guards; g++) {
         const a = (g / c.guards) * Math.PI * 2 + this.rand(), d = 2 + this.rand() * 2;
@@ -234,25 +267,109 @@ export class Game {
       }
     });
     this.scatterPickups(seed);
-    this.objective = this.brief(mission);
+    this.objective = this.brief(this.mission);
+    if (mode === "teams") this.far = this.farGround(seed);
   }
 
-  static fromRepo(ground: Terrain, repo: RepoSnapshot, seed = 1, mission?: Mission): Game {
-    return new Game(mapRepo(ground, repo, seed), seed, mission);
+  static fromRepo(ground: Terrain, repo: RepoSnapshot, seed = 1, mission?: Mission, mode?: Mode): Game {
+    return new Game(mapRepo(ground, repo, seed), seed, mission, mode);
   }
 
-  you(): Soldier { return this.soldiers[0]!; }
+  you(): Soldier { return this.soldiers[this.me]!; }
 
-  private soldier(team: Team, name: string, x: number, z: number, yaw: number, compound: number): Soldier {
-    const ammo = Object.fromEntries(ORDER.map((w) => [w, team === "you" ? WEAPONS[w].ammo : w === "commit" ? -1 : 0])) as Record<WeaponId, number>;
+  /** The players in it (not the guards, not anyone who left). */
+  players(): Soldier[] { return this.soldiers.filter((s) => !s.brain && !s.gone); }
+
+  /** Whether a and b fight each other. In a free-for-all every player is on their own. */
+  hostile(a: { id: number; team: Team }, b: { id: number; team: Team }): boolean {
+    if (a.id === b.id) return false;
+    if (this.mode === "ffa" && a.team === "you" && b.team === "you") return true;
+    return a.team !== b.team;
+  }
+
+  /**
+   * A player into the battle, on the side with fewer players in teams; a left player's slot is
+   * taken first, so ids stay small. Returns their soldier.
+   */
+  join(name: string, team?: Team): Soldier {
+    if (!this.mode) throw new Error("join is for battles");
+    const players = this.players();
+    const side: Team = this.mode !== "teams" ? "you"
+      : team === "ours" || team === "theirs" ? team
+      : players.filter((p) => p.team === "theirs").length < players.filter((p) => p.team === "ours").length ? "theirs" : "ours";
+    const at = this.spawnPoint(side);
+    const slot = this.soldiers.find((s) => s.gone);
+    const s = this.soldier(side, name, at.x, at.z, at.yaw, -1, slot?.id);
+    if (slot) this.soldiers[slot.id] = s;
+    else this.soldiers.push(s);
+    this.events.push({ kind: "joined", id: s.id });
+    return s;
+  }
+
+  /** A player out of the battle: gone from the field, its slot free for the next to join. */
+  leave(id: number) {
+    const s = this.soldiers[id];
+    if (!s || s.brain || s.gone) return;
+    this.dropCommit(s);
+    s.gone = true, s.alive = false;
+    this.events.push({ kind: "left", id });
+  }
+
+  /** On a page's copy of a battle: soldier id as the battle has it, a player on team (guards are already there). */
+  ensurePlayer(id: number, team: Team, name: string): Soldier {
+    while (this.soldiers.length <= id) {
+      const s = this.soldier("you", "", this.map.spawn.x, this.map.spawn.z, 0, -1);
+      s.gone = true, s.alive = false;
+      this.soldiers.push(s);
+    }
+    const s = this.soldiers[id]!;
+    if (!s.brain) s.team = team, s.name = name, s.gone = false;
+    return s;
+  }
+
+  /** Where a player comes in: round HEAD (theirs at the far end), a few metres apart. */
+  spawnPoint(team: Team): { x: number; z: number; yaw: number } {
+    const base = team === "theirs" && this.far ? this.far : this.map.spawn;
+    if (!this.mode) return base;
+    for (let tries = 0; tries < 8; tries++) {
+      const a = this.rand() * Math.PI * 2, d = 2 + this.rand() * 5, x = base.x + Math.cos(a) * d, z = base.z + Math.sin(a) * d;
+      if (Math.hypot(x, z) < this.terrain.R - 2 && !wet(this.terrain, x, z) && !this.blockAt(x, this.terrain.height(x, z) + 0.5, z)) return { x, z, yaw: base.yaw };
+    }
+    return base;
+  }
+
+  /**
+   * The theirs side's end: of some flat, dry spots you can walk to from HEAD, one as far from it
+   * as from the compounds' guards (coming in under fire is no start). Null: they share HEAD.
+   */
+  private farGround(seed: number): { x: number; z: number; yaw: number } | null {
+    const r = mulberry32(seed ^ 0x5eed), { spawn, compounds } = this.map, R = this.terrain.R, canReach = reachable(this.terrain, spawn.x, spawn.z);
+    let best: { x: number; z: number; yaw: number } | null = null, bestScore = 0;
+    for (let i = 0; i < 600; i++) {
+      const a = r() * Math.PI * 2, d = Math.sqrt(r()) * (R - 14), x = Math.cos(a) * d, z = Math.sin(a) * d;
+      const far = Math.hypot(x - spawn.x, z - spawn.z);
+      if (far < 40 || slope(this.terrain, x, z) > 0.5 || wet(this.terrain, x, z) || !canReach(x, z)) continue;
+      const clear = Math.min(SIGHT, ...compounds.map((c) => Math.hypot(c.x - x, c.z - z) - c.r));
+      if (clear < 15) continue;
+      // Out of the guards' sight counts most; then the farther from HEAD the better.
+      const score = clear * 2 + far;
+      if (score > bestScore) best = { x, z, yaw: Math.atan2(x - spawn.x, z - spawn.z) }, bestScore = score;
+    }
+    return best;
+  }
+
+  private soldier(team: Team, name: string, x: number, z: number, yaw: number, compound: number, id = this.soldiers.length): Soldier {
+    const player = team !== "conflict";
+    const ammo = Object.fromEntries(ORDER.map((w) => [w, player ? WEAPONS[w].ammo : w === "commit" ? -1 : 0])) as Record<WeaponId, number>;
     return {
-      id: this.soldiers.length, team, name, x, y: this.ground(x, z, Infinity), z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0,
-      hp: MAX_HP, maxHp: MAX_HP, shield: team === "you" ? MAX_SHIELD : 0, maxShield: team === "you" ? MAX_SHIELD : 0, shieldT: SHIELD_DELAY, alive: true, heavy: false, weapon: "commit", ammo, cd: 0, roll: 0, rollCd: 0, rollDir: { x: 0, z: 0 },
+      id, team, name, x, y: this.ground(x, z, Infinity), z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0,
+      hp: MAX_HP, maxHp: MAX_HP, shield: player ? MAX_SHIELD : 0, maxShield: player ? MAX_SHIELD : 0, shieldT: SHIELD_DELAY, alive: true, heavy: false, weapon: "commit", ammo, cd: 0, roll: 0, rollCd: 0, rollDir: { x: 0, z: 0 },
       grounded: true, crouch: false, prone: false, scoped: false, tagged: 0, heat: 0, burn: 0, burnBy: -1, burnT: 0, trail: [], compound,
-      brain: team === "you" ? null : {
+      brain: player ? null : {
         home: { x, z }, alert: false, wait: 0, lost: 0, seen: null, strafe: 1, strafeT: 0, burst: 0, think: 0,
         role: "hold", side: 1, cover: null, coverT: 0, lastHp: MAX_HP, raid: false,
       },
+      score: 0, deaths: 0, respawn: 0, gone: false,
     };
   }
 
@@ -282,7 +399,7 @@ export class Game {
       const { spawn } = this.map;
       const far = [...this.map.compounds].sort((a, b) => Math.hypot(b.x - spawn.x, b.z - spawn.z) - Math.hypot(a.x - spawn.x, a.z - spawn.z))[0];
       const x = far?.x ?? spawn.x, z = far?.z ?? spawn.z;
-      return { kind: "carry", x, y: this.terrain.height(x, z), z, carried: false, delivered: false };
+      return { kind: "carry", x, y: this.terrain.height(x, z), z, carried: false, delivered: false, by: -1 };
     }
     if (m.kind === "defend") return { kind: "defend", x: this.map.spawn.x, z: this.map.spawn.z, seconds: m.seconds, wave: m.wave, held: 0, overrun: 0, raids: 0 };
     return { kind: "clear" };
@@ -326,24 +443,46 @@ export class Game {
 
   /* ---------------- the loop ---------------- */
 
-  /** Advances by dt seconds, in fixed ticks. Events since the last call are in this.events. */
-  step(dt: number, input: Input): GameEvent[] {
+  /**
+   * Advances by dt seconds, in fixed ticks. Events since the last call are in this.events.
+   * One Input plays you; a battle passes each player's, by soldier id.
+   */
+  step(dt: number, input: Input | Map<number, Input>): GameEvent[] {
     this.events = [];
     this.acc = Math.min(this.acc + dt, 0.25);
+    let inputs = input instanceof Map ? input : new Map([[this.me, input]]);
     while (this.acc >= TICK) {
       this.acc -= TICK;
-      this.tick(TICK, input);
+      this.tick(TICK, inputs);
       // Edge-triggered inputs act once.
-      input = { ...input, jump: false, roll: false, weapon: undefined };
+      inputs = new Map([...inputs].map(([id, i]) => [id, { ...i, jump: false, roll: false, weapon: undefined }]));
     }
     return this.events;
   }
 
-  private tick(dt: number, input: Input) {
+  /**
+   * Your own soldier a frame ahead of the battle's word on it: moves only, no shots, nobody
+   * else. The page plays this between snapshots so your soldier answers the keys at once.
+   */
+  predict(id: number, input: Input, dt: number) {
+    const s = this.soldiers[id];
+    if (!s?.alive || this.status !== "playing") return;
+    // Fire's damage is the battle's to deal, and so are the events.
+    const burn = s.burn;
+    s.burn = 0;
+    this.control(s, { ...input, fire: false }, dt);
+    this.move(s, dt);
+    s.burn = burn, this.events = [];
+  }
+
+  private tick(dt: number, inputs: Map<number, Input>) {
     this.time += dt;
     if (this.status !== "playing") return;
-    const you = this.you();
-    if (you.alive) this.control(you, input, dt);
+    for (const [id, input] of inputs) {
+      const s = this.soldiers[id];
+      if (s?.alive && !s.brain) this.control(s, input, dt);
+    }
+    if (this.mode) this.comeBack(dt);
     for (const s of this.soldiers) if (s.alive && s.brain) this.think(s, dt);
     for (const s of this.soldiers) if (s.alive) this.move(s, dt);
     this.separate();
@@ -353,6 +492,19 @@ export class Game {
     this.stashes = this.stashes.filter((st) => st.hp > 0 && st.ttl > 0);
     this.collect();
     this.pursue(dt);
+    if (this.mode && this.mode !== "coop" && this.time >= BATTLE_SECONDS) this.decide();
+  }
+
+  /** Battle players back from the reflog once they've been down long enough. */
+  private comeBack(dt: number) {
+    for (const s of this.soldiers) {
+      if (s.alive || s.brain || s.gone) continue;
+      s.respawn -= dt;
+      if (s.respawn > 0) continue;
+      const { x, z, yaw } = this.spawnPoint(s.team);
+      Object.assign(s, { x, z, y: this.ground(x, z, Infinity), vx: 0, vy: 0, vz: 0, yaw, hp: s.maxHp, shield: s.maxShield, shieldT: SHIELD_DELAY, alive: true, roll: 0, cd: 0.5, burn: 0, trail: [] });
+      this.events.push({ kind: "respawn", id: s.id, lives: -1 });
+    }
   }
 
   private record(dt: number) {
@@ -360,7 +512,8 @@ export class Game {
     if (this.trailT < TRAIL_EVERY) return;
     this.trailT -= TRAIL_EVERY;
     const keep = Math.round(TRAIL_SECONDS / TRAIL_EVERY) + 1;
-    for (const s of this.soldiers) if (s.alive && s.team !== "you") {
+    // A battle's players too: a revert sends them back as well.
+    for (const s of this.soldiers) if (s.alive && (s.team !== "you" || this.mode)) {
       s.trail.push({ x: s.x, y: s.y, z: s.z });
       if (s.trail.length > keep) s.trail.shift();
     }
@@ -384,7 +537,7 @@ export class Game {
       const dir = s.prone ? { x: r.x * side, z: r.z * side } : m > 0.1 ? { x: mx / Math.max(m, 1e-6), z: mz / Math.max(m, 1e-6) } : f;
       s.roll = ROLL_TIME, s.rollCd = ROLL_TIME + ROLL_COOLDOWN, s.rollDir = dir;
     }
-    const carrying = this.objective.kind === "carry" && this.objective.carried;
+    const carrying = this.objective.kind === "carry" && this.objective.carried && this.objective.by === s.id;
     this.walk(s, mx, mz, dt, (input.forward < 0 ? 0.75 : 1) * (carrying ? 0.85 : 1));
     if (input.jump && s.grounded && s.roll <= 0 && !s.prone) s.vy = JUMP, s.grounded = false;
     if (input.fire) this.fire(s, input.aim);
@@ -483,8 +636,10 @@ export class Game {
   /* ---------------- pickups and the mission ---------------- */
 
   private collect() {
-    const you = this.you();
-    if (!you.alive) return;
+    for (const s of this.soldiers) if (s.alive && !s.brain) this.collectFor(s);
+  }
+
+  private collectFor(you: Soldier) {
     const near = (x: number, y: number, z: number) => Math.hypot(x - you.x, z - you.z) < 1.5 && Math.abs(y - you.y) < 2.2;
     this.pickups = this.pickups.filter((p) => {
       if (!near(p.x, p.y, p.z)) return true;
@@ -495,12 +650,12 @@ export class Game {
       } else if (p.kind === "ammo") {
         for (const [w, n] of Object.entries(AMMO_CRATE) as [WeaponId, number][]) you.ammo[w] += n;
       } else you.ammo.reset++;
-      this.events.push({ kind: "pickup", item: p.kind });
+      this.events.push({ kind: "pickup", id: you.id, item: p.kind });
       return false;
     });
     const o = this.objective;
     if (o.kind === "carry" && !o.carried && near(o.x, o.y, o.z)) {
-      o.carried = true;
+      o.carried = true, o.by = you.id;
       this.events.push({ kind: "objective", text: "got the commit: carry it to HEAD" });
     }
   }
@@ -508,9 +663,10 @@ export class Game {
   /** The mission's own clock and win: a carried commit reaching HEAD, a branch held or overrun. */
   private pursue(dt: number) {
     if (this.status !== "playing") return;
-    const o = this.objective, you = this.you();
+    const o = this.objective;
     if (o.kind === "carry") {
-      if (!o.carried) return;
+      const you = this.soldiers[o.by];
+      if (!o.carried || !you) return;
       o.x = you.x, o.y = you.y + HEIGHT + 0.4, o.z = you.z;
       const { spawn } = this.map;
       if (Math.hypot(you.x - spawn.x, you.z - spawn.z) < HEAD_RADIUS) {
@@ -543,10 +699,27 @@ export class Game {
     this.events.push({ kind: "objective", text: `${this.map.compounds[next.i]!.folder} is raiding main` });
   }
 
-  private win() {
+  private win(winner: string | null = null) {
     if (this.status !== "playing") return;
     this.status = "won";
+    this.winner = winner;
     this.events.push({ kind: "won" });
+  }
+
+  /** A side's downs in a team battle. */
+  teamScore(team: Team): number {
+    return this.soldiers.reduce((n, s) => n + (s.team === team && !s.brain ? s.score : 0), 0);
+  }
+
+  /** A battle won on downs: the first to the score, or when time's up whoever has most (a draw goes to nobody). */
+  private decide() {
+    if (this.mode === "teams") {
+      const ours = this.teamScore("ours"), theirs = this.teamScore("theirs");
+      if (ours >= TEAM_SCORE || theirs >= TEAM_SCORE || this.time >= BATTLE_SECONDS) this.win(ours > theirs ? "ours" : theirs > ours ? "theirs" : null);
+    } else if (this.mode === "ffa") {
+      const top = [...this.players()].sort((a, b) => b.score - a.score);
+      if ((top[0]?.score ?? 0) >= FFA_SCORE || this.time >= BATTLE_SECONDS) this.win(top[0] && top[0].score > (top[1]?.score ?? -1) ? top[0].name : null);
+    }
   }
 
   private lose() {
@@ -602,7 +775,7 @@ export class Game {
   private pickTarget(s: Soldier, m: { x: number; y: number; z: number }, ux: number, uy: number, uz: number): number | undefined {
     let best: Soldier | undefined, bestA = 0.35;
     for (const t of this.soldiers) {
-      if (!t.alive || t.team === s.team) continue;
+      if (!t.alive || !this.hostile(s, t)) continue;
       const dx = t.x - m.x, dy = t.y + 1 - m.y, dz = t.z - m.z, d = Math.hypot(dx, dy, dz);
       if (d > 90 || d < 1e-6) continue;
       const a = Math.acos(Math.max(-1, Math.min(1, (dx * ux + dy * uy + dz * uz) / d)));
@@ -661,7 +834,7 @@ export class Game {
   /** A body the shot is inside, other than its own side's (and never the shooter's, by a direct hit). */
   private soldierAt(p: Shot): Soldier | null {
     for (const s of this.soldiers) {
-      if (!s.alive || s.team === p.team) continue;
+      if (!s.alive || !this.hostile(s, { id: p.owner, team: p.team })) continue;
       // Rolling: direct hits pass through.
       if (s.roll > 0) continue;
       if (p.y < s.y || p.y > s.y + bodyHeight(s)) continue;
@@ -685,7 +858,7 @@ export class Game {
         if (!s.alive) continue;
         const own = s.id === p.owner;
         // No friendly fire, but your own blast still hurts you (half), the toy-soldier rule. Except a reset: it only wipes the yard.
-        if (s.team === p.team && (!own || w.effect === "reset")) continue;
+        if (own ? w.effect === "reset" : !this.hostile(s, { id: p.owner, team: p.team })) continue;
         const dx = s.x - p.x, dy = s.y + 0.9 - p.y, dz = s.z - p.z, d = Math.hypot(dx, dy, dz);
         const dmg = splashDamage(w, d) * (own ? 0.5 : 1) * (s.roll > 0 ? 0.5 : 1);
         if (dmg <= 0) continue;
@@ -725,6 +898,20 @@ export class Game {
     this.events.push({ kind: "razed", path: b.path, lines: w.lines, by, x: b.x, y: b.y, z: b.z, w: b.w, h: w.tall, d: b.d });
   }
 
+  /** Whether a file has taken a hit (it's lost lines, or all of them). */
+  hit(b: Block): boolean { return this.wrecks.has(b); }
+
+  /** The paths of the files with no lines left. */
+  razedPaths(): string[] { return [...this.wrecks].filter(([, w]) => w.hp <= 0).map(([b]) => b.path); }
+
+  /** A file as the battle says it stands, on a page's copy of the battle: its height and lines, or gone. */
+  setFile(path: string, h: number, lines: number) {
+    const i = this.map.blocks.findIndex((b) => b.path === path), b = this.map.blocks[i];
+    if (!b) return;
+    b.h = Math.max(0, h), b.lines = lines;
+    if (b.h <= 0) this.map.blocks.splice(i, 1);
+  }
+
   /** Throws a stash down where a round landed: a box to crouch behind. Only the newest few stay. */
   private stash(x: number, z: number, y: number) {
     const base = this.ground(x, z, y + 1);
@@ -755,18 +942,30 @@ export class Game {
     if (s.hp > 0) return;
     s.alive = false, s.hp = 0;
     this.events.push({ kind: "down", id: s.id, by });
-    if (s.team === "you") return this.respawn(s);
-    this.checkCleared(s.compound);
+    if (s.brain) return this.checkCleared(s.compound);
+    if (!this.mode) return this.respawn(s);
+    // A battle: a down by another player scores, and you're back in RESPAWN seconds.
+    s.deaths++, s.respawn = RESPAWN;
+    this.dropCommit(s);
+    const killer = this.soldiers[by];
+    if (killer && !killer.brain && this.hostile(killer, s)) {
+      killer.score++;
+      if (this.mode !== "coop") this.decide();
+    }
+  }
+
+  /** A carried commit drops where its carrier fell (or left). */
+  private dropCommit(s: Soldier) {
+    const o = this.objective;
+    if (o.kind === "carry" && o.carried && o.by === s.id) {
+      o.carried = false, o.by = -1, o.x = s.x, o.y = this.ground(s.x, s.z, s.y + 1), o.z = s.z;
+      this.events.push({ kind: "objective", text: "dropped the commit" });
+    }
   }
 
   private respawn(s: Soldier) {
     this.lives--;
-    // A carried commit drops where you fell.
-    const o = this.objective;
-    if (o.kind === "carry" && o.carried) {
-      o.carried = false, o.x = s.x, o.y = this.ground(s.x, s.z, s.y + 1), o.z = s.z;
-      this.events.push({ kind: "objective", text: "dropped the commit" });
-    }
+    this.dropCommit(s);
     if (this.lives < 0) {
       this.lives = 0;
       return this.lose();
@@ -775,7 +974,7 @@ export class Game {
     Object.assign(s, { x, z, y: this.ground(x, z, Infinity), vx: 0, vy: 0, vz: 0, yaw, hp: s.maxHp, shield: s.maxShield, shieldT: SHIELD_DELAY, alive: true, roll: 0, cd: 0.5 });
     // Guards lose track of you (raiders keep coming).
     for (const g of this.soldiers) if (g.brain && !g.brain.raid) g.brain.alert = false, g.brain.seen = null;
-    this.events.push({ kind: "respawn", lives: this.lives });
+    this.events.push({ kind: "respawn", id: s.id, lives: this.lives });
   }
 
   private checkCleared(ci: number) {
@@ -788,7 +987,8 @@ export class Game {
     }
     this.events.push({ kind: "cleared", compound: ci });
     // Every compound taken: the repo is merged, whatever the mission, unless a commit still has to get home.
-    if (this.cleared.every(Boolean) && this.objective.kind !== "carry") this.win();
+    // A battle on downs goes on.
+    if (this.cleared.every(Boolean) && this.objective.kind !== "carry" && (!this.mode || this.mode === "coop")) this.win();
   }
 
   private alarm(ci: number) {
@@ -815,23 +1015,29 @@ export class Game {
     return best;
   }
 
-  /** What a guard can see to shoot at: you, or a stash it takes for you (the nearer, if it sees both). */
+  /** What a guard can see to shoot at: the nearest player it sees, or a stash it takes for one (the nearer, if it sees both). */
   private spot(s: Soldier): { x: number; y: number; z: number } | null {
-    const you = this.you(), eye = s.y + 1.5;
-    const reach = SIGHT * (you.prone ? 0.4 : you.crouch ? 0.6 : 1);
-    const dYou = Math.hypot(you.x - s.x, you.z - s.z);
-    const sees = you.alive && dYou < reach && this.clear(s.x, eye, s.z, you.x, you.y + bodyHeight(you) * 0.67, you.z);
+    const eye = s.y + 1.5;
+    // Nearest first, so the sight lines (the costly part) stop at the first player in view.
+    let you: Soldier | null = null, dYou = Infinity;
+    const near = this.soldiers
+      .filter((p) => p.alive && !p.brain)
+      .map((p) => ({ p, d: Math.hypot(p.x - s.x, p.z - s.z) }))
+      .filter(({ p, d }) => d < SIGHT * (p.prone ? 0.4 : p.crouch ? 0.6 : 1))
+      .sort((a, b) => a.d - b.d);
+    for (const { p, d } of near) if (this.clear(s.x, eye, s.z, p.x, p.y + bodyHeight(p) * 0.67, p.z)) { you = p, dYou = d; break; }
+    const sees = !!you;
     let decoy: Stash | null = null, dDecoy = Infinity;
     for (const st of this.stashes) {
       const d = Math.hypot(st.x - s.x, st.z - s.z);
       if (d < SIGHT && d < dDecoy && this.clear(s.x, eye, s.z, st.x, st.y + st.h + 0.4, st.z)) decoy = st, dDecoy = d;
     }
     if (decoy && (!sees || dDecoy < dYou + 10)) return { x: decoy.x, y: decoy.y + decoy.h * 0.6, z: decoy.z };
-    return sees ? { x: you.x, y: you.y + bodyHeight(you) * 0.6, z: you.z } : null;
+    return you ? { x: you.x, y: you.y + bodyHeight(you) * 0.6, z: you.z } : null;
   }
 
   private think(s: Soldier, dt: number) {
-    const b = s.brain!, you = this.you();
+    const b = s.brain!;
     b.think -= dt;
     b.coverT = Math.max(0, b.coverT - dt);
     if (b.think <= 0) {
@@ -893,7 +1099,7 @@ export class Game {
       if (toHome > LEASH && (mx * (b.home.x - s.x) + mz * (b.home.z - s.z)) < 0) mx = (b.home.x - s.x) / toHome, mz = (b.home.z - s.z) / toHome;
     }
     this.walk(s, mx * 0.8, mz * 0.8, dt);
-    if (b.wait > 0 || b.lost > 0 || !b.seen || !you.alive || b.coverT > 0) return;
+    if (b.wait > 0 || b.lost > 0 || !b.seen || b.coverT > 0) return;
     // Bursts of commits; a launcher round when the target's far enough off not to catch the blast.
     const aim = b.seen;
     if (s.ammo.push > 0 && d > 12 && s.cd <= 0 && this.rand() < (s.heavy ? 0.03 : 0.01)) s.weapon = "push";
@@ -919,7 +1125,7 @@ export class Game {
 
   /** Where a flanker heads: off to one side of you, square to the line from you to its yard. */
   flankPoint(s: Soldier): { x: number; z: number } {
-    const b = s.brain!, t = b.seen ?? this.you();
+    const b = s.brain!, t = b.seen ?? b.home;
     const ux = b.home.x - t.x, uz = b.home.z - t.z, u = Math.hypot(ux, uz) || 1;
     return { x: t.x + (-uz / u) * b.side * 15, z: t.z + (ux / u) * b.side * 15 };
   }

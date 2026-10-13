@@ -375,7 +375,9 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
         // code run in-process untouched.
         const client = (res as any).webSocket as LocalWebSocket | undefined;
         if (res.status === 101 && client) {
-          const ok = srv.upgrade(raw, { data: { path: url.pathname, attachment: null, wrapped: null as unknown as Socket, bridge: client } });
+          // The subprotocol the far end chose (desktop.server's socket), echoed so the browser accepts it.
+          const proto = res.headers?.get("sec-websocket-protocol");
+          const ok = srv.upgrade(raw, { headers: proto ? { "Sec-WebSocket-Protocol": proto } : undefined, data: { path: url.pathname, attachment: null, wrapped: null as unknown as Socket, bridge: client } });
           return ok ? undefined as unknown as Response : new Response("upgrade failed", { status: 500 });
         }
         return withHeaders(res);

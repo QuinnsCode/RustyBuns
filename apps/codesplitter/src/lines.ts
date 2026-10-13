@@ -173,22 +173,73 @@ export function kindOf(path: string): Kind {
  * - a merge that would bring git's conflict markers into main, or leave a
  *   JSON file that won't parse (see broken).
  *
+ * A generated region both sides changed keeps main's copy and names the
+ * command that rebuilds it in `regenerate` (see generated).
+ *
  * Other new lines never conflict: each goes after the nearest line before it
  * that main still has. Inserts are given the ids main will assign them, so
  * the batch must land on `main` exactly as passed. Deleted lines leave no
  * blame, so their ops are credited to `deleter`.
  */
-export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, deleter = "anon", path = "", writer = deleter, rule: Rule = kindOf(path)): { ops: Op[]; by: string[]; conflicts: Conflict[] } {
+export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, deleter = "anon", path = "", writer = deleter, rule: Rule = kindOf(path)): { ops: Op[]; by: string[]; conflicts: Conflict[]; regenerate?: string[] } {
+  const g = generated(base, branch, main);
+  const m = mergeLines(base, g.branch, main, given, deleter, path, writer, rule);
+  return g.regenerate.length ? { ...m, regenerate: g.regenerate } : m;
+}
+
+/** A generated region opens with `<!-- generated: <command> -->` (or `// generated:`, `# generated:`) on a line of its own. */
+const GENERATED = /^\s*(?:<!--|\/\/|#)\s*generated:\s*(.+?)\s*(?:-->)?\s*$/;
+/** And closes with `<!-- /generated -->`, or runs to the end of the file. */
+const GENERATED_END = /^\s*(?:<!--|\/\/|#)\s*\/generated\s*(?:-->)?\s*$/;
+
+/** The generated regions of `lines`: the opening marker's index, the closing one's (or the length), and the command that rebuilds it. */
+export function generatedRegions(lines: string[]): { from: number; to: number; command: string }[] {
+  const out: { from: number; to: number; command: string }[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i]!.match(GENERATED);
+    if (!m) continue;
+    let j = i + 1;
+    while (j < lines.length && !GENERATED_END.test(lines[j]!)) j++;
+    out.push({ from: i, to: j, command: m[1]! });
+    i = j;
+  }
+  return out;
+}
+
+/**
+ * Generated text both sides touched (#1154): a table a script builds, like REFERENCE.md's Layout. A line
+ * merge of one is stale even when it settles, so the branch's edits inside it are dropped (main's copy
+ * stays, never a card) and its command is returned, to run on the merged tree. A region either side
+ * opened, closed or lost a marker of merges as ordinary lines.
+ */
+function generated(base: Doc, branch: Doc, main: Doc): { branch: Doc; regenerate: string[] } {
+  const regenerate: string[] = [];
+  let lines = branch.lines;
+  for (const r of generatedRegions(base.lines.map((l) => l.text))) {
+    const open = base.lines[r.from]!.id, close = base.lines[r.to]?.id;
+    const inside = (ls: Line[]) => {
+      const i = ls.findIndex((l) => l.id === open), j = close ? ls.findIndex((l) => l.id === close) : ls.length;
+      return i < 0 || j < 0 || j < i || ls[i]!.text !== base.lines[r.from]!.text ? null : { i, j, text: ls.slice(i + 1, j).map((l) => l.text).join("\n") };
+    };
+    const was = base.lines.slice(r.from + 1, r.to).map((l) => l.text).join("\n"), m = inside(main.lines), b = inside(lines);
+    if (!m || !b || m.text === was || b.text === was) continue;
+    lines = [...lines.slice(0, b.i + 1), ...base.lines.slice(r.from + 1, r.to), ...lines.slice(b.j)];
+    if (!regenerate.includes(r.command)) regenerate.push(r.command);
+  }
+  return { branch: lines === branch.lines ? branch : { ...branch, lines }, regenerate };
+}
+
+function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: string, path: string, writer: string, rule: Rule): { ops: Op[]; by: string[]; conflicts: Conflict[] } {
   if (rule === "union") {
     // git's merge=union: what both rewrote keeps both, main's first; a line both added lands once. Markers and broken data still refuse.
-    const first = merge(base, branch, main, given, deleter, path, writer, "prose");
+    const first = mergeLines(base, branch, main, given, deleter, path, writer, "prose");
     const keep = (c: Conflict): Pick => {
       if (c.doubled) return "main";
       const m = c.main?.split("\n") ?? [], b = c.branch?.split("\n") ?? [], fresh = b.filter((l) => !m.includes(l));
       return fresh.length === b.length ? "both" : { text: [...m, ...fresh].join("\n") };
     };
     const both: Resolve = Object.fromEntries(first.conflicts.filter((c) => !sideOnly(c.line)).map((c) => [c.line, keep(c)]));
-    return merge(base, branch, main, { ...both, ...given }, deleter, path, writer, "prose");
+    return mergeLines(base, branch, main, { ...both, ...given }, deleter, path, writer, "prose");
   }
   // What only takes a side keeps only a side.
   const resolve: Resolve = Object.fromEntries(Object.entries(given).filter(([id, v]) => !sideOnly(id) || v === "main" || v === "branch"));
@@ -445,7 +496,9 @@ function heads(lines: Line[]): string[] {
  * added kept whole, main's first at a shared spot. The same line added on both
  * sides lands once. Null, a conflict, when a pair won't merge, or a base line
  * is gone on one side and changed on the other, or gone at all in code
- * (`strict`), where the other side's new lines may lean on it.
+ * (`strict`), where the other side's new lines may lean on it, or when in code
+ * both sides edited links of one `? :` or `&&` chain: each side's clauses can
+ * come out whole and the merge still skip one (#1168, config-schema.ts).
  */
 function blend(bl: Line[], ms: Line[], bs: Line[], strict: boolean, loose: (t: string) => boolean) {
   // Its own id, unless a line the side rewrote it into is more alike (a one-liner reflowed, an id handed to the wrong line).
@@ -461,6 +514,11 @@ function blend(bl: Line[], ms: Line[], bs: Line[], strict: boolean, loose: (t: s
       return best;
     });
   };
+  if (strict) {
+    const was = new Map(bl.map((b) => [b.id, b.text]));
+    const relinked = (side: Line[]) => side.some((l) => was.get(l.id) !== l.text && LINK.test(l.text));
+    if (relinked(ms) && relinked(bs)) return null;
+  }
   const pm = pair(ms), pb = pair(bs), out: { m?: Line; text: string; by: string }[] = [];
   // Main's lines no base line paired with: a branch line that's the same lands once.
   const mainOnly = new Map<string, number>();
@@ -492,6 +550,9 @@ function blend(bl: Line[], ms: Line[], bs: Line[], strict: boolean, loose: (t: s
   upTo(ms.length, bs.length);
   return out;
 }
+
+/** A link of a multi-line `? :`, `&&`, `||` or `??` chain: a line that opens with one, or ends on one. */
+const LINK = /^\s*(\?\s|:\s|&&|\|\||\?\?)|(\s\?|&&|\|\||\?\?)\s*$/;
 
 /** Both changed a lockfile: keep main's, swap in the branch's whole, or report it. Either way it's regenerated after. */
 function wholeFile(branch: Doc, main: Doc, pick: "branch" | "main" | undefined, deleter: string) {
@@ -716,11 +777,13 @@ export function mergeWords(base: string, a: string, b: string, both = false, loo
     }
     return out;
   };
-  const sa = spans(words(a)), sb = spans(words(b));
+  const wa = words(a), wb = words(b), sa = spans(wa), sb = spans(wb);
   const named = (ws: string[]) => new Set(ws.filter((w) => /\w/.test(w) && (!loose || (w.length >= 3 && !STOP.has(w.toLowerCase())))));
-  const gone = (ss: typeof sa) => named(ss.flatMap((s) => o.slice(s.from, s.to))), added = (ss: typeof sa) => named(ss.flatMap((s) => s.add));
+  // In prose a word is only renamed away if it's gone from that side's line: one "Jekyll" of two cut is no rename.
+  const gone = (ss: typeof sa, x: string[]) => new Set([...named(ss.flatMap((s) => o.slice(s.from, s.to)))].filter((w) => !loose || !x.includes(w)));
+  const added = (ss: typeof sa) => named(ss.flatMap((s) => s.add));
   const clash = (x: Set<string>, y: Set<string>) => [...x].some((w) => y.has(w));
-  if (clash(gone(sa), added(sb)) || clash(gone(sb), added(sa))) return null;
+  if (clash(gone(sa, wa), added(sb)) || clash(gone(sb, wb), added(sa))) return null;
   const all = [...sa, ...sb].sort((p, q) => p.from - q.from || p.to - q.to);
   const inOrder = both && sorted(base), first = (ws: string[]) => ws.join("").match(/[\w$]+/)?.[0]?.toLowerCase() ?? "";
   let out = "", i = 0, last: (typeof all)[number] | null = null;
@@ -785,8 +848,17 @@ function renames(base: Doc, side: Doc, loose: (t: string) => boolean): Rename[] 
 const carry = (t: string, rs: Rename[], loose: boolean) =>
   rs.reduce((s, r) => loose && (r.from.length < 3 || STOP.has(r.from.toLowerCase())) ? s : renamed(s, r), t);
 
-/** One line both changed: word by word, else as a list both added items to (see mergeWords). */
-const blendLine = (base: string, a: string, b: string, loose: boolean) => mergeWords(base, a, b, false, loose) ?? mergeWords(base, a, b, true, loose);
+/**
+ * One line both changed: word by word, else as a list both added items to (see mergeWords).
+ * An `import type { … }` one side turned into `import { x, type … }` is read that way on
+ * the other side too, so the names it added keep their `type` (#1168, build.ts).
+ */
+function blendLine(base: string, a: string, b: string, loose: boolean) {
+  if (TYPE_ONLY.test(base) && TYPE_ONLY.test(a) !== TYPE_ONLY.test(b)) [base, a, b] = [base, a, b].map(inlineTypes) as [string, string, string];
+  return mergeWords(base, a, b, false, loose) ?? mergeWords(base, a, b, true, loose);
+}
+const TYPE_ONLY = /^(\s*import\s+)type\s*\{([^}]*)\}/;
+const inlineTypes = (t: string) => t.replace(TYPE_ONLY, (_, at: string, list: string) => `${at}{${list.split(",").map((n) => n.replace(/^(\s*)(?=\S)/, "$1type ")).join(",")}}`);
 
 /**
  * A conflict as the review shows it: which picks settle it (`text` is

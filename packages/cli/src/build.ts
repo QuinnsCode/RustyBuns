@@ -6,9 +6,9 @@
 
 import { $ } from "bun";
 import { mkdir } from "node:fs/promises";
-import { existsSync, statSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, statSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join, dirname, normalize, relative, resolve } from "node:path";
-import { hyperdriveUrlEnv, type Binding, type DesktopOs, type RustyBunsConfig } from "./config.ts";
+import { hyperdriveUrlEnv, desktopServers, type Binding, type DesktopOs, type RustyBunsConfig } from "./config.ts";
 import { basename } from "node:path";
 import { Profiler } from "./profile.ts";
 import { BUN_CHECK_MIN, compactDiagnostics, pickChecker, runCheck, type CheckerName } from "./typecheck.ts";
@@ -76,6 +76,11 @@ function appCheck(c: RustyBunsConfig, keep: boolean): string {
   return `appLaunchCheck(${JSON.stringify(c.name)}, typeof RB_VERSION === "string" ? RB_VERSION : undefined, ${JSON.stringify(url)})${keep ? ".then((n) => { appUpdate = n; })" : ""};\n`;
 }
 const appImport = (c: RustyBunsConfig) => c.targets.desktop?.advisories ? ", appLaunchCheck" : "";
+
+/** Where desktop.server's bundles sit beside the host: the dev bundle's dir, the binary's $bunfs root. */
+export const APP_SERVER_DIR = "app-server";
+/** The bundle of desktop.server's `i`th server, in APP_SERVER_DIR. */
+export const appServerFile = (i: number) => `server-${i}.js`;
 
 const ALL_OS: DesktopOs[] = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64", "windows-x64"];
 
@@ -180,7 +185,7 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
 // as a Durable Object with sqlite storage, vouches the local identity at ${worldPath}.
 // Guests (other machines) reach ${worldPath} alone, with ?join=<passphrase>&uid=&name=&v=.
 // Replaces desktop_host.ts + desktop_gen_embed.ts.
-import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}, type GuestState } from "@rustybuns/shell-bun";
+import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${d.server ? ", appServer" : ""}, type GuestState } from "@rustybuns/shell-bun";
 ${hasWorld ? `import World from ${JSON.stringify("../" + (d.world || "packages/desktop/world.ts"))};` : "// no world (desktop.world: false)"}
 ${d.host ? `import host from ${JSON.stringify("../" + d.host)};` : "const host: any = null;"}
 import { homedir, networkInterfaces } from "node:os";
@@ -267,7 +272,12 @@ const token = ${h.token};
 const shell = serve<Record<string, unknown>>({ assets: clientDir, mounts, token, reporter: stdoutReporter, headers: ${JSON.stringify(d.headers ?? {})}${webmcpOn(c, h.box) ? ", head: WEBMCP_TAG" : ""}${h.listen},
   guest: { paths: [${JSON.stringify(worldPath)}], passphrase: () => guests.join } });
 const hostCtx = { env, dataDir, identity, reporter: stdoutReporter, shell, guests };
-
+${d.server ? `// desktop.server: the app's own servers, bundled beside this host, each run as its child. They
+// answer the paths the Vite dev server's proxy sent them, WebSocket upgrades too.
+const appSrvs = await Promise.all([
+${desktopServers(d).map((s, i) => `  appServer({ file: join(import.meta.dir, ${JSON.stringify(APP_SERVER_DIR)}, ${JSON.stringify(appServerFile(i))}), name: ${JSON.stringify(s.entry)}, paths: ${JSON.stringify(s.paths)}, dataDir${s.port ? `, port: ${s.port}` : ""}${s.env ? `, env: ${JSON.stringify(s.env)}` : ""} }),
+`).join("")}]);
+` : ""}
 // A guest's identity rides on its upgrade: trust on first use, shaped like
 // the host's, never the host's own id. The id is a stable per-player token
 // the client generates once and keeps.
@@ -410,7 +420,11 @@ ${h.box ? `    // Actions run as the desktop's one host identity. A box has no t
       const res = await host.fetch(req, hostCtx);
       if (res) return res;
     }
-    // A static site's own 404.html, the nearest one, as the web build serves with notFoundHandling "404-page".
+${d.server ? `    for (const srv of appSrvs) {
+      const res = await srv.fetch(req);
+      if (res) return res;
+    }
+` : ""}    // A static site's own 404.html, the nearest one, as the web build serves with notFoundHandling "404-page".
     return shell.notFound(url);
   },
 }, env);
@@ -801,11 +815,25 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
     return out;
   });
 
+  // desktop.server, each bundled with its imports into <dir>/app-server/server-<i>.js for the host to start.
+  if (d.server && mode !== "spa") throw new Error("desktop.server runs beside the spa host; a worker-mode desktop runs the Worker, which has its own routes");
+  const bundleServers = (dir: string) => step("bundle server", async () => {
+    rmSync(join(dir, APP_SERVER_DIR), { recursive: true, force: true });   // a server dropped from the list
+    for (const [i, s] of desktopServers(d).entries()) {
+      const src = resolve(s.entry);
+      if (!existsSync(src)) throw new Error(`desktop.server.entry: ${s.entry} doesn't exist`);
+      const r = await Bun.build({ entrypoints: [src], outdir: join(dir, APP_SERVER_DIR), naming: appServerFile(i).replace(/\.js$/, ".[ext]"), target: "bun", throw: false } as any);
+      if (!r.success) throw new Error(`desktop.server ${s.entry}:\n${buildErrors(r)}`);
+    }
+    return join(dir, APP_SERVER_DIR);
+  });
+
   if (opts.noCompile) {
     // Dev host: same bundle pipeline as the binary, minus --compile. Nothing
     // embedded; assets and migrations are read from the working tree.
     const outdir = opts.outdir ?? ".rustybuns/dev";
     if (workers.size) await bundleWorkers(outdir, opts.outdir ? "none" : "linked");
+    if (d.server) await bundleServers(outdir);
     const r = await step("bundle dev host", () => Bun.build({ entrypoints: [entry], outdir, target: "bun", define: defineMap, plugins, sourcemap: opts.outdir ? "none" : "linked", throw: false } as any));
     await prof?.finish();
     if (!r.success) throw new Error(buildErrors(r));
@@ -827,7 +855,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   if (only?.length) nativeDirs(only);
   const nativeTags = hasRust ? await step("stage native", () => stageNative(targets, only)) : [];
   const { migrationDirs, mountDirs: projectMounts } = embeddedDirs(c);
-  const mountDirs = [...projectMounts, ...(nativeTags.length ? [NATIVE_STAGE] : [])];
+  const mountDirs = [...projectMounts, ...(nativeTags.length ? [NATIVE_STAGE] : []), ...(d.server ? [await bundleServers(".rustybuns")] : [])];
   // Embedded dirs are keyed by basename, so two mounts named the same collide.
   const names = [assets, ...migrationDirs, ...mountDirs].filter(Boolean).map((p) => basename(p!));
   if (new Set(names).size !== names.length) throw new Error(`embedded directories must have distinct basenames: ${names.join(", ")}`);

@@ -10,6 +10,7 @@
 // or a login that doesn't finish: Alchemy's profile does what it did before.
 
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import type { RustyBunsConfig } from "./config.ts";
 import { workspaceRoot } from "./glue/deploy-deps.ts";
@@ -135,4 +136,55 @@ export async function cloudflareEnv(c: RustyBunsConfig, env: Record<string, stri
     return null;
   }
   return { CLOUDFLARE_API_TOKEN: t.token, CLOUDFLARE_ACCOUNT_ID: accountId };
+}
+
+/** Cloudflare's HTTP status for this token on this account (200 when it takes it); null when Cloudflare couldn't be reached. */
+export type TokenCheck = (token: string, accountId: string) => Promise<number | null>;
+
+/**
+ * The account itself (wrangler's OAuth carries account:read), else the token's own verify
+ * endpoint, user or account owned: a Workers-only API token may not read the account but is still good.
+ */
+export const realTokenCheck: TokenCheck = async (token, accountId) => {
+  const api = "https://api.cloudflare.com/client/v4";
+  const account = `${api}/accounts/${encodeURIComponent(accountId)}`;
+  let first: number | null = null;
+  for (const url of [account, `${api}/user/tokens/verify`, `${account}/tokens/verify`]) {
+    try {
+      const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000) });
+      if (r.ok) return r.status;
+      first ??= r.status;
+    } catch { return null; }
+  }
+  return first;
+};
+
+/** Where Alchemy keeps the selected profile's Cloudflare login (ALCHEMY_HOME, ALCHEMY_PROFILE). */
+export function alchemyCloudflareProfile(env: Record<string, string | undefined>): string {
+  return join(env.ALCHEMY_HOME ?? join(homedir(), ".alchemy"), "profiles", env.ALCHEMY_PROFILE || "default", "cloudflare.json");
+}
+
+const LOGIN_FIX = "Run `rustybuns login cloudflare`, or set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.";
+
+/**
+ * Checked before the build (#1170): no Cloudflare login, or a token Cloudflare
+ * refuses, is one line here instead of a whole build and then Alchemy's stack
+ * trace. `env` is what Alchemy will get, wrangler's token included. Same order
+ * as Alchemy: a full set of env credentials, else (outside CI) its profile.
+ * null when it looks fine, or when Cloudflare can't be reached to ask.
+ */
+export async function cloudflareProblem(env: Record<string, string | undefined>, check: TokenCheck,
+  hasFile: (path: string) => boolean = existsSync): Promise<string | null> {
+  const account = env.CLOUDFLARE_ACCOUNT_ID;
+  if (account && env.CLOUDFLARE_API_TOKEN) {
+    const status = await check(env.CLOUDFLARE_API_TOKEN, account);
+    if (status !== null && status >= 400 && status < 500)
+      return `Cloudflare refused the API token for account ${account} (HTTP ${status}). ${LOGIN_FIX}`;
+    return null;
+  }
+  if (account && env.CLOUDFLARE_API_KEY && (env.CLOUDFLARE_EMAIL || env.CLOUDFLARE_ACCOUNT_EMAIL)) return null;
+  // Alchemy reads no profile in CI, only the environment.
+  if (env.CI && !/^(0|false)$/i.test(env.CI)) return "no Cloudflare credentials in CI. Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.";
+  if (hasFile(alchemyCloudflareProfile(env))) return null;
+  return `not logged in to Cloudflare${env.CLOUDFLARE_API_TOKEN ? " (CLOUDFLARE_API_TOKEN is set, but Alchemy ignores it without CLOUDFLARE_ACCOUNT_ID)" : ""}. ${LOGIN_FIX}`;
 }
