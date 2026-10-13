@@ -15,6 +15,7 @@ const Bool = Schema.Boolean;
 const StrMap = Schema.Record(Str, Str);
 const int = (minimum: number, maximum: number) => Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum, maximum }));
 const Port = int(1, 65535);
+const Rate = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }));
 
 const Priority = Schema.Literals(["realtime", "high", "normal", "low"]);
 const QueueConsumer = Schema.Struct({
@@ -23,6 +24,7 @@ const QueueConsumer = Schema.Struct({
   maxRetries: opt(int(0, 100)),
   retryDelay: opt(int(0, 86_400)),
   maxConcurrency: opt(int(1, 250)),
+  deadLetterQueue: opt(Str),
   priority: opt(Priority),
 });
 
@@ -46,7 +48,10 @@ const Binding = Schema.Union([
   }),
   Schema.Struct({ type: Schema.Literal("ai") }),
   Schema.Struct({ type: Schema.Literal("container"), className: Str, dockerfile: Str, maxInstances: opt(int(1, 1000)), instanceType: opt(Str) }),
-  Schema.Struct({ type: Schema.Literal("queue"), queueName: Str, renamedFrom: opt(Str), consumer: opt(Schema.Union([QueueConsumer, Schema.Literal(false)])) }),
+  Schema.Struct({ type: Schema.Literal("queue"), queueName: Str, renamedFrom: opt(Str), consumer: opt(Schema.Union([QueueConsumer, Schema.Literal(false)])), producer: opt(Schema.Literal(false)) }),
+  Schema.Struct({ type: Schema.Literal("workflow"), className: Str, scriptName: opt(Str) }),
+  Schema.Struct({ type: Schema.Literal("analytics_engine"), dataset: opt(Str) }),
+  Schema.Struct({ type: Schema.Literal("worker_loader") }),
   Schema.Struct({
     type: Schema.Literal("hyperdrive"), urlSecret: opt(Str), configName: opt(Str),
     origin: opt(Schema.Struct({ neon: Schema.Struct({
@@ -106,11 +111,17 @@ export const ConfigSchema = Schema.Struct({
     crons: opt(Strs), cronPriority: opt(Priority),
     cpuMs: opt(int(10, 300_000)),
     placement: opt(Schema.Struct({ mode: Schema.Literal("smart") })),
+    observability: opt(Schema.Struct({
+      enabled: Bool, headSamplingRate: opt(Rate),
+      logs: opt(Schema.Struct({ enabled: Bool, invocationLogs: opt(Bool), headSamplingRate: opt(Rate), persist: opt(Bool) })),
+      traces: opt(Schema.Struct({ enabled: opt(Bool), headSamplingRate: opt(Rate), persist: opt(Bool) })),
+    })),
     redactQueryStrings: opt(Bool), sourceMaps: opt(Bool),
   })),
   bindings: Schema.Record(Str, Binding),
   targets: Schema.Struct({
-    edge: opt(Schema.Struct({ provider: Schema.Literal("cloudflare"), domain: opt(Str), adopt: opt(Bool), workerName: opt(WorkerName), renamedFrom: opt(Str) })),
+    edge: opt(Schema.Struct({ provider: Schema.Literal("cloudflare"), domain: opt(Schema.Union([Str, Strs.check(Schema.isMinLength(1))])),
+      routes: opt(Schema.Array(Schema.Struct({ pattern: Str, zoneName: opt(Str), zoneId: opt(Str) }))), adopt: opt(Bool), workerName: opt(WorkerName), renamedFrom: opt(Str) })),
     box: opt(BoxTarget),
     desktop: opt(DesktopTarget),
   }),
@@ -191,6 +202,12 @@ export const decodeConfig = (input: unknown): Effect.Effect<RustyBunsConfig, Con
           ? [`bindings.${n}.urlSecret: ${JSON.stringify(h.urlSecret)} isn't a secret binding; add ${h.urlSecret}: { type: "secret" } with the postgres:// URL`]
         : h.migrationsDir && h.local !== "pglite"
           ? [`bindings.${n}.migrationsDir: only a PGlite twin takes migrations at boot; add local: "pglite", or migrate your Postgres yourself`] : []);
+      // A dead-letter queue is another queue binding, by key, so its name follows the stack's.
+      for (const [n, q] of Object.entries(b)) {
+        const dlq = q.type === "queue" && q.consumer ? q.consumer.deadLetterQueue : undefined;
+        if (dlq !== undefined && (b[dlq]?.type !== "queue" || dlq === n))
+          bad.push(`bindings.${n}.consumer.deadLetterQueue: ${JSON.stringify(dlq)} isn't another queue binding; add ${dlq}: { type: "queue", queueName: "...", producer: false, consumer: false }`);
+      }
       return bad.length ? Effect.fail(new ConfigInvalid({ problems: bad })) : Effect.succeed(c);
     }),
     Effect.as(input as RustyBunsConfig),   // the schema only checks; the config stays what the developer wrote

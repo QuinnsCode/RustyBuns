@@ -1132,21 +1132,43 @@ async function followBranches(env: Env, owner: string, repo: string) {
       if (!tip) { if (br.status === "merged") await forget(br.name); continue; }
       if (br.status === "open") {
         // Main may have taken in a branch this one's stacked on (ontoSquash), even when this one didn't move.
-        const theirs = tip === had ? had : await fetchBranch(s, ref);
-        if (theirs) await catchUp(env, owner, repo, s, br.name, ref, theirs);
-      } else if (tip === had) {
-        // Deleting a merged branch upstream is a push too: a pull-only mirror leaves it be.
-        if (s.r.mirror_pull_only) continue;
-        const m = await git(["merge-tree", "--write-tree", up, tip], s.dir);
-        if (m.code || m.out.trim().split("\n")[0] !== await must(["rev-parse", `${up}^{tree}`], s.dir)) continue;
-        const d = await git(["push", "--porcelain", `--force-with-lease=refs/heads/${ref}:${tip}`, s.r.mirror_url, `:refs/heads/${ref}`], s.dir, s.net);
-        if (d.code) continue;
-        await git(["update-ref", "-d", tracking(ref)], s.dir);
-        await git(["update-ref", "-d", squashRef(ref)], s.dir);
-        await forget(br.name);
+        const theirs = tip === had ? tip : await fetchBranch(s, ref);
+        if (theirs) {
+          await catchUp(env, owner, repo, s, br.name, ref, theirs);
+          await clashOnlyInGit(env, owner, repo, s, br.name, theirs);
+        }
+        continue;
       }
+      // Deleting a merged branch upstream is a push too: a pull-only mirror leaves it be.
+      if (tip !== had || s.r.mirror_pull_only) continue;
+      const m = await git(["merge-tree", "--write-tree", up, tip], s.dir);
+      if (m.code || m.out.trim().split("\n")[0] !== await must(["rev-parse", `${up}^{tree}`], s.dir)) continue;
+      const d = await git(["push", "--porcelain", `--force-with-lease=refs/heads/${ref}:${tip}`, s.r.mirror_url, `:refs/heads/${ref}`], s.dir, s.net);
+      if (d.code) continue;
+      await git(["update-ref", "-d", tracking(ref)], s.dir);
+      await git(["update-ref", "-d", squashRef(ref)], s.dir);
+      await forget(br.name);
     } catch { /* that branch tries again next sync */ }
   }
+}
+
+/** Each open branch's upstream tip and main's, as clashOnlyInGit last looked at them: it looks at each pair once. */
+const lookedAt = new Map<string, string>();
+
+/**
+ * Upstream's tip `theirs` of open branch `name`, and main's tip, clash in git (#1190): GitHub's pull request
+ * shows a conflict until main comes in. When the line-id merge settles it, the branch takes main in and
+ * pushes that (branches.ts takeMainUpstream). Main's git holds a merge from its next commit, which a sync
+ * follows, so this runs here and not in the merge. A mirror that pushes no branches leaves it be.
+ */
+async function clashOnlyInGit(env: Env, owner: string, repo: string, s: Setup, name: string, theirs: string) {
+  if (s.r.mirror_pull_only || (s.r.crew_artifact && !s.r.mirror_push_crew)) return;
+  const tip = await must(["rev-parse", `refs/heads/${s.main}`], s.dir), key = `${s.dir}\n${name}`, pair = `${theirs} ${tip}`;
+  if (lookedAt.get(key) === pair) return;
+  lookedAt.set(key, pair);
+  if ((await git(["merge-tree", "--write-tree", "--name-only", "--no-messages", theirs, tip], s.dir)).code !== 1) return;
+  const { takeMainUpstream } = await import("./branches.ts");
+  await takeMainUpstream(env, owner, repo, name);
 }
 
 /** /api/repos/:o/:r/mirror/branches[/:b/pull|push]: reading is for anyone who can read the repo, the rest for its owner. */

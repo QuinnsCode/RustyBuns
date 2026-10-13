@@ -34,7 +34,7 @@ const BY_BINDING: Record<string, string[]> = {
 export function cloudflareScopes(c: RustyBunsConfig): string[] {
   const s = new Set(BASE_SCOPES);
   for (const b of Object.values(c.bindings ?? {})) for (const x of BY_BINDING[b.type] ?? []) s.add(x);
-  if (c.targets.edge?.domain) s.add("zone:read");   // a custom domain is looked up in its zone
+  if (c.targets.edge?.domain || c.targets.edge?.routes?.length) s.add("zone:read");   // a custom domain or route is looked up in its zone
   return [...s];
 }
 
