@@ -103,7 +103,7 @@ describe("personal API tokens", () => {
 
   test("a token needs a label, a scope and 1 to 365 days, and a cookie to be made", async () => {
     const { call, send } = await app();
-    for (const body of [{ scope: "read" }, { label: "x", scope: "admin" }, { label: "x", scope: "read", days: 0 }, { label: "x", scope: "read", days: 366 }, { label: "x", scope: "read", days: 1.5 }])
+    for (const body of [{ scope: "read" }, { label: "x", scope: "root" }, { label: "x", scope: "read", days: 0 }, { label: "x", scope: "read", days: 366 }, { label: "x", scope: "read", days: 1.5 }])
       expect((await send("ryan", "/api/tokens", body)).status).toBe(400);
     expect((await call(null, "/api/tokens", { method: "POST", body: JSON.stringify({ label: "x", scope: "read" }) })).status).toBe(401);
   });
@@ -174,5 +174,33 @@ describe("GET /api/openapi.json", () => {
     }
     // A level that isn't dug yet (409), and a job that never was (404), still answered as routes.
     expect(Object.entries(answers).filter(([p, n]) => n >= 400 && !(p.startsWith("/levels/") && n === 409) && !(p === "/jobs/{id}" && n === 404))).toEqual([]);
+  });
+
+  test("a write token edits code but can't manage the repo; admin can; a token can be held to a repo", async () => {
+    const { send, call, make, as } = await app();
+    const w = await make("write");
+    const put = (t: string, url: string, body: unknown, method = "POST") => as(t, url, { method, body: JSON.stringify(body) });
+    expect((await put(w.token, "/api/repos/ryan/lab/files", { path: "b.ts", content: "x" })).status).toBeLessThan(300);
+    for (const [url, body, method] of [
+      ["/api/repos/ryan/lab", { visibility: "public" }, "PUT"],
+      ["/api/repos/ryan/lab/collaborators", { name: "agent-x" }, "POST"],
+      ["/api/repos/ryan/lab/invites", {}, "POST"],
+      ["/api/repos/ryan/lab/hooks", { url: "https://example.com" }, "POST"],
+      ["/api/repos/ryan/lab/checks/tokens", { label: "ci" }, "POST"],
+      ["/api/repos/ryan/lab/checks/settings", { pinned: true }, "PUT"],
+      ["/api/repos/ryan/lab?confirm=lab", {}, "DELETE"],
+    ] as const) {
+      const r = await put(w.token, url, body, method);
+      expect([method, url, r.status]).toEqual([method, url, 403]);
+    }
+    const a = await make("admin");
+    expect((await put(a.token, "/api/repos/ryan/lab", { visibility: "public" }, "PUT")).status).toBe(200);
+    // Held to a repo: the rest of the account is out of reach, and an unknown repo is refused.
+    expect((await send("ryan", "/api/tokens", { label: "x", scope: "write", repo: "ryan/nope" })).status).toBe(400);
+    await send("ryan", "/api/repos", { name: "other", visibility: "private" });
+    const h = await (await send("ryan", "/api/tokens", { label: "held", scope: "write", repo: "ryan/lab" })).json() as { token: string };
+    expect((await put(h.token, "/api/repos/ryan/lab/files", { path: "c.ts", content: "x" })).status).toBeLessThan(300);
+    expect((await put(h.token, "/api/repos/ryan/other/files", { path: "c.ts", content: "x" })).status).toBe(403);
+    void call;
   });
 });

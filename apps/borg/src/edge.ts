@@ -6,17 +6,18 @@ export const stageName = (now = Date.now()) => `borg${Math.floor(now / 1000)}`;
 
 // Alchemy names a resource `<app>-<id>-<stage>-<suffix>` (lowercased for R2 and queues), and the
 // app is borg-slim. A name this doesn't match was never borg's, so the sweeper leaves it alone.
-const BORG_NAME = /^borg-slim-.+-borg(\d{10})-/i;
+const nameRe = (app: string, prefix: string) => new RegExp(`^${app}-.+-${prefix}(\\d{10})-`, "i");
+const BORG_NAME = nameRe("borg-slim", "borg");
 
-/** When the run that made this resource started (ms), or null when it isn't a tier 2 resource. */
-export function stageStarted(name: string): number | null {
-  const m = BORG_NAME.exec(name);
+/** When the run that made this resource started (ms), or null when it isn't a tier 2 resource. Fatty borg passes its app and `fatty` prefix. */
+export function stageStarted(name: string, app?: string, prefix?: string): number | null {
+  const m = (app ? nameRe(app, prefix ?? "borg") : BORG_NAME).exec(name);
   return m ? Number(m[1]) * 1000 : null;
 }
 
 /** A borg resource from a run that started over `maxAgeMs` ago: its own destroy should have gone by now. */
-export const stale = (name: string, now = Date.now(), maxAgeMs = 60 * 60_000) => {
-  const t = stageStarted(name);
+export const stale = (name: string, now = Date.now(), maxAgeMs = 60 * 60_000, app?: string, prefix?: string) => {
+  const t = stageStarted(name, app, prefix);
   return t !== null && now - t > maxAgeMs;
 };
 
@@ -75,6 +76,8 @@ export interface SweepOpts {
   accountId: string; token: string; now?: number; maxAgeMs?: number; dryRun?: boolean; fetch?: typeof fetch;
   /** Also this run's own stage, whatever its age: what its destroy left behind. */
   stage?: string;
+  /** Whose resources: slim borg by default; fatty borg names its app and the `fatty` stage prefix. */
+  app?: string; prefix?: string;
 }
 export interface Swept { kind: string; name: string; error?: string }
 
@@ -94,8 +97,8 @@ export async function sweep(o: SweepOpts): Promise<Swept[]> {
       found.push(...(k.items(r.result) ?? []));
       if (!k.paged || page >= (r.result_info?.total_pages ?? 1)) break;
     }
-    const mine = (n: string) => !!o.stage && stageStarted(n) !== null && n.toLowerCase().includes(`-${o.stage.toLowerCase()}-`);
-    for (const x of found.filter((x) => stale(k.name(x), now, o.maxAgeMs) || mine(k.name(x)))) {
+    const mine = (n: string) => !!o.stage && stageStarted(n, o.app, o.prefix) !== null && n.toLowerCase().includes(`-${o.stage.toLowerCase()}-`);
+    for (const x of found.filter((x) => stale(k.name(x), now, o.maxAgeMs, o.app, o.prefix) || mine(k.name(x)))) {
       const s: Swept = { kind: k.kind, name: k.name(x) };
       if (!o.dryRun) await call(k.del(x), "DELETE").catch((e: Error) => { s.error = e.message; });
       out.push(s);

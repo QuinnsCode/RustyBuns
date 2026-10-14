@@ -290,6 +290,7 @@ const city = await res.json().catch(() => ({ error: "couldn't read the city" }))
 if (!res.ok) {
   $("#city-sum").textContent = res.status === 404 ? `@${name} has no public city.` : city.error;
   $("#city-walk").hidden = $("#city-card").hidden = true;
+  window.cityLoaded?.();
   await new Promise(() => {});
 }
 const all = city.districts.flatMap((d) => d.buildings.map((b) => ({ ...b, repo: d.repo })));
@@ -1295,3 +1296,5 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+// The rain in front of the page lifts once the city has drawn a frame or two.
+requestAnimationFrame(() => requestAnimationFrame(() => window.cityLoaded?.()));

@@ -96,6 +96,47 @@
 <script type="importmap">{ "imports": { "three": "/vendor/three.module.js" } }</script>
 </head>
 <body>
+<!-- #c/<name>: rain while the city loads (city.js calls cityLoaded() once it's drawn, or has nothing to draw), then it fades out. -->
+<script>
+if (location.hash.startsWith("#c/")) {
+  const who = decodeURIComponent(location.hash.slice(3).split("?")[0] ?? "");
+  const box = document.createElement("div");
+  box.id = "city-loading";
+  box.setAttribute("role", "status");
+  box.style.cssText = "position:fixed;inset:0;z-index:99;background:#0a0e16;display:grid;place-items:center;transition:opacity 1s ease;font:14px ui-monospace,monospace;color:#9fb2d0";
+  const cv = document.createElement("canvas");
+  cv.style.cssText = "position:absolute;inset:0;width:100%;height:100%";
+  const say = document.createElement("div");
+  say.style.cssText = "position:relative;text-align:center;letter-spacing:.12em;text-shadow:0 0 12px #19d3ff80";
+  box.append(cv, say);
+  document.body.prepend(box);
+  const lines = ["laying the streets", "stacking the towers", "lighting the windows", "waiting out the rain"];
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let t0 = performance.now(), raf = 0;
+  const g = cv.getContext("2d"), drops = Array.from({ length: 220 }, () => ({ x: Math.random(), y: Math.random(), v: 0.6 + Math.random() * 0.9 }));
+  const draw = (now) => {
+    const w = cv.width = innerWidth, h = cv.height = innerHeight;
+    g.strokeStyle = "rgba(159,178,208,.5)";
+    for (const d of drops) {
+      if (!still) { d.y += d.v * 0.016; if (d.y > 1) { d.y = 0; d.x = Math.random(); } }
+      g.beginPath(); g.moveTo(d.x * w, d.y * h); g.lineTo(d.x * w + 2, d.y * h + 14 * d.v); g.stroke();
+    }
+    say.innerHTML = `<div style="font-size:20px;color:#e6edf8;margin-bottom:10px">@${who.replace(/[<>&"']/g, "")}'s city</div>${lines[Math.floor((now - t0) / 1800) % lines.length]}…`;
+    raf = requestAnimationFrame(draw);
+  };
+  raf = requestAnimationFrame(draw);
+  let gone = false;
+  window.cityLoaded = () => {
+    if (gone) return;
+    gone = true;
+    box.style.opacity = "0";
+    box.style.pointerEvents = "none";
+    setTimeout(() => { cancelAnimationFrame(raf); box.remove(); }, 1100);
+  };
+  // Never trap anyone behind the rain.
+  setTimeout(window.cityLoaded, 30000);
+}
+</script>
 <canvas id="c" aria-hidden="true"></canvas>
 <div class="hud" id="tl"><div class="big" id="title">codeSplitter</div><div id="where"></div><div id="wave"></div></div>
 <div class="hud" id="tr"><div id="score" class="big">0</div><div id="combo"></div><div id="others"></div></div>

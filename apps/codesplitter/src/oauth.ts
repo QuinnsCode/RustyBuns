@@ -174,7 +174,7 @@ async function authorizePage(req: Request, env: Env, url: URL) {
   const to = new URL(q.redirect_uri);
   return page("Sign in an app", `<h1>Let <b>${esc(c.name)}</b> act as @${esc(user)}?</h1>
     ${c.local ? `<p class="warn">An app on this computer${c.registered ? "" : ", by the name it gave itself"}. Only say yes if you just started this from it.</p>` : ""}
-    <p class="muted">It'll be sent back to <code>${esc(to.origin + to.pathname)}</code>. It can't reach admin pages, your tokens, your sign-in or live sockets, and you can revoke it from your profile page at any time.</p>
+    <p class="muted">It'll be sent back to <code>${esc(to.origin + to.pathname)}</code>. It can't reach admin pages, delete a repo, change its visibility or crew, make webhooks or CI tokens, see your tokens, your sign-in or live sockets, and you can revoke it from your profile page at any time.</p>
     <form method="post" action="/api/oauth/authorize"><input type="hidden" name="request" value="${form}">
     ${scope("read")}${scope("write")}
     <div class="row"><button name="decision" value="deny">Cancel</button><button class="go" name="decision" value="allow">Allow</button></div></form>`);

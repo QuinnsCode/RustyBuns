@@ -37,6 +37,10 @@ How they combine:
 - Profile settings that are not about code (sign-in, tokens, data) have no Code counterpart. A repo can't change them, and an agent or token can't change them for you; they are for the person, signed in on the site.
 - Whatever the owner of a repo sets applies to everyone on it. Whatever a person sets in their Profile applies only to them.
 
+## What codeSplitter promises, and the tests behind it
+
+[The security model](apps/codesplitter/REFERENCE.md#the-security-model-your-code-your-app-your-provisioning-your-destruction) in codeSplitter's reference says what you hand it (your code, your app, your provisioning, your destruction) and what it promises back, one test per promise, with every delete in a table of what goes and what stays. `bun run smoke` in `apps/codesplitter` runs those tests and the stress script, and `test/trust.test.ts` fails CI when a promise's test is gone.
+
 ## The examples
 
 The example apps change quickly and haven't had a formal security review. See the caution in the [README](README.md#see-it-work).
