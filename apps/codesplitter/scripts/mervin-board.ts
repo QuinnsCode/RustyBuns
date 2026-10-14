@@ -211,14 +211,15 @@ const sorted = (t: string) => t.split("\n").sort().join("\n");
 /** Each board file against `now` (main after the real merges). */
 export function score(repo: string | undefined, board: Board, treeDir: string, now: string) {
   const git = gitIn(repo);
-  const log = (git("log", "--format=%H%x09%s", `${board.main}..${now}`) ?? "").split("\n").filter(Boolean);
+  const log = (git("log", "--first-parent", "--format=%H%x09%s", `${board.main}..${now}`) ?? "").split("\n").filter(Boolean);
   const onBoard = new Set(board.stages.map((s) => s.pr));
   const landed = new Set<number>(), moved = new Set<string>();
   for (const l of log) {
     const [sha, subject = ""] = l.split("\t");
-    const pr = Number([...subject.matchAll(/\(#(\d+)\)/g)].at(-1)?.[1]);
+    // A PR is found by its number on main's first-parent line, never by head sha: a merge round rebuilds PRs first.
+    const pr = Number(subject.match(/^Merge pull request #(\d+)/)?.[1] ?? [...subject.matchAll(/\(#(\d+)\)/g)].at(-1)?.[1]);
     if (onBoard.has(pr)) { landed.add(pr); continue; }
-    for (const p of (git("diff-tree", "--no-commit-id", "--name-only", "-r", "--no-renames", sha!) ?? "").split("\n").filter(Boolean)) moved.add(p);
+    for (const p of (git("diff-tree", "-m", "--first-parent", "--no-commit-id", "--name-only", "-r", "--no-renames", sha!) ?? "").split("\n").filter(Boolean)) moved.add(p);
   }
   const rows: { path: string; score: Score; tiers: Tier[] }[] = [];
   const byPath = new Map<string, { prs: number[]; tiers: Tier[] }>();
