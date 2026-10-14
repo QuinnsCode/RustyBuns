@@ -236,6 +236,7 @@ export const codesplitter: Site = {
   name: "codeSplitter",
   tagline: "Git for the agentic era: every line is its own record, and git keeps going when other gits don't.",
   repo: "QuinnsCode/RustyBuns",
+  ogImage: "og-codesplitter.png",
   pages(src) {
     const readme = src.read(`${APP}/README.md`) ?? "# codeSplitter\n";
     const reference = src.read(`${APP}/REFERENCE.md`);
