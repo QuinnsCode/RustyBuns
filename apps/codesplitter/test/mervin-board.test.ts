@@ -219,3 +219,28 @@ describe("mervin stack", () => {
     expect(stackable(board as any, [{ pr: 1, go: true, why: "", behind: [] }, { pr: 2, go: true, why: "", behind: [] }])).toEqual([1]);
   });
 });
+
+describe("mervin board: a conflict with main", () => {
+  test("is blamed on main, not on the earlier stage that edited the same line", () => {
+    const repo = mkdtempSync(join(tmpdir(), "mervin-main-"));
+    const git = (...a: string[]) => Bun.spawnSync(["git", ...a], { cwd: repo, stderr: "pipe" }).stdout.toString().trim();
+    const commit = (text: string, msg: string) => { writeFileSync(join(repo, "f.ts"), text); git("add", "-A"); git("commit", "-qm", msg); return git("rev-parse", "HEAD"); };
+    git("init", "-q", "-b", "main"); git("config", "user.email", "t@t"); git("config", "user.name", "t");
+    const base = commit("a\nb\nc\n", "base");
+    git("checkout", "-qb", "q1");
+    const q1 = commit("a\nq1\nc\n", "q1");
+    git("checkout", "-qb", "q2", base);
+    const q2 = commit("a\nq2\nc\n", "q2");
+    git("checkout", "-q", "main");
+    const main = commit("a\nmain\nc\n", "main moves");
+    const { board } = run(repo, main, [
+      { number: 1, headRefOid: q1, headRefName: "q1", baseRefName: "main" },
+      { number: 2, headRefOid: q2, headRefName: "q2", baseRefName: "main" },
+    ]);
+    const [f1, f2] = board.stages.map((s) => s.files[0]!);
+    expect(f1!.main).toBe(true);
+    expect(f2!.main).toBe(true);
+    expect(f2!.after).toEqual([]); // card on #1's line is not the cause: nothing landed before it
+    rmSync(repo, { recursive: true, force: true });
+  });
+});
