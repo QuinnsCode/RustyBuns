@@ -13,6 +13,7 @@ bun run office                 # fetch the pinned release, Bun-ify it, open the 
 bun run office:update          # git pull, rebuild, then swap the running office for the new one
 bun run office:update -- --watch   # the same, then keep watching like office:mama
 bun run office:mama            # run the office; rebuild and swap it when bun, bun.lock or the release move
+bun run office:dev             # work on the office itself: watch the source, rebuild only what changed, restart only for server code
 bun run desktop:build          # dist/agent-office-<os>-<arch>
 bun run desktop:build:all      # + darwin-x64, linux-x64, linux-arm64
 bun run desktop:smoke          # start that binary on a temp floor, check /__rb/mem sees it and its pty host (CI does this on every Mac and Linux target)

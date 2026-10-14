@@ -25,7 +25,8 @@ const at = args.indexOf("--port");
 const port = Number((at >= 0 && args[at + 1]) || 4600);
 
 const read = () => (existsSync(stamp) ? readFileSync(stamp, "utf8").trim() : "");
-const listening = () =>
+/** Is something accepting connections on `port`? */
+export const listening = (port: number) =>
   new Promise<boolean>((done) => {
     const s = connect(port, "127.0.0.1", () => { s.end(); done(true); });
     s.on("error", () => done(false));
@@ -53,7 +54,7 @@ if (import.meta.main) {
   if (!build()) process.exit(1);
 
   // 3. swap out the running office, if it's ours
-  if (await listening()) {
+  if (await listening(port)) {
     const office = await ours(port);
     if (!office) {
       console.log(first
@@ -68,8 +69,8 @@ if (import.meta.main) {
       process.exit(0);
     }
     // upstream exits 300ms after SIGTERM
-    for (let i = 0; i < 50 && (await listening()); i++) await Bun.sleep(100);
-    if (await listening()) process.kill(office.pid, "SIGKILL");
+    for (let i = 0; i < 50 && (await listening(port)); i++) await Bun.sleep(100);
+    if (await listening(port)) process.kill(office.pid, "SIGKILL");
     console.log(`🥐 Swapped the office on port ${port} for the new build; the workers keep running.`);
   }
 

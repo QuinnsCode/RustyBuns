@@ -5,6 +5,8 @@
 //   bun scripts/rustybunsify.ts compile          ...then build ./dist/agent-office-<os>-<arch>, one self-contained file
 //   bun scripts/rustybunsify.ts compile --all    ...for darwin-arm64, darwin-x64, linux-x64 and linux-arm64
 //   --check                                      type check our code (tsconfig.json) first; nothing is built on errors
+//   --only=skin,pages,live                       rebuild just those of ./office (office:dev); needs an up-to-date ./office
+//   --timings                                    print how long each stage took
 //
 // The release is pinned below, with its tarball's sha256, since it's compiled into the binary we hand out.
 // AGENT_OFFICE_TAG=v0.1.212 AGENT_OFFICE_SHA256=<its agent-office.tgz digest> tries another; bump PINNED once it works.
@@ -40,6 +42,15 @@ if (process.argv.includes("--check")) {
   if (r.exitCode !== 0) throw new Error("type errors; nothing was built. Drop --check to build anyway.");
 }
 const skin = process.env.AGENT_OFFICE_SKIN ?? "druids";
+const timings = process.argv.includes("--timings");
+let lapped = performance.now();
+/** With --timings, print the time since the last lap, under `name`. */
+function lap(name: string) {
+  const now = performance.now();
+  if (timings) console.log(`   ⏱ ${name.padEnd(32)}${((now - lapped) / 1000).toFixed(2)}s`);
+  lapped = now;
+}
+const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split(",");
 // The skin and the codeSplitter tiles both use three, so they're built together and share one copy of it, in
 // /assets/rb-chunk-<hash>.js, instead of each bundling their own. Agent Office's bundle keeps its own, so the
 // console still says "Multiple instances of Three.js" once, but not twice. That one stays (#839): the office's three
@@ -53,9 +64,11 @@ const stamp = path.join(office, ".rustybuns");
 if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitter hosts hooktokens env ticks power board guard asks brawl ester dexter reload` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
-  if (skin === "druids") await buildSkin(path.join(office, "dist/public/druids"));
-  await buildPageScripts();
-  await buildLive();
+  if (skin === "druids" && (!only || only.includes("skin"))) { await buildSkin(path.join(office, "dist/public/druids")); lap("skin (druids + shared chunk)"); }
+  if (!only || only.includes("pages")) { await buildPageScripts(); lap("page scripts"); }
+  if (!only || only.includes("live")) { await buildLive(); lap("server bundles (live)"); }
+} else if (only) {
+  throw new Error("--only needs ./office built from this release and skin: run without it first");
 } else {
   await prepare(tag);
 }
@@ -67,6 +80,7 @@ async function prepare(tag: string) {
   // 1. the release tarball, cached, and checked against its sha256 every time
   const cache = path.join(root, ".cache");
   const tgz = await releaseTarball(tag, sha256!, cache);
+  lap("release tarball (cached/verified)");
   rmSync(office, { recursive: true, force: true });
   const tmp = `${office}.tmp`;
   rmSync(tmp, { recursive: true, force: true });
@@ -77,6 +91,8 @@ async function prepare(tag: string) {
 
   // 2. its runtime dependencies, with Bun
   await $`bun install --production --ignore-scripts`.cwd(office).quiet();
+
+  lap("extract + bun install");
 
   // 3. native node-pty out, the Bun PTY shim in
   const lydell = path.join(office, "node_modules/@lydell");
@@ -101,9 +117,12 @@ async function prepare(tag: string) {
   patch("workers/process.js", "export function binScript(name) {",
     "export function binScript(name) {\n    if (process.env.AGENT_OFFICE_RUSTYBUNS_BIN)\n        return `/rustybuns/bin/${name}`;");
 
+  lap("shim + static patches");
+
   // 6. the GitHub boards kept fresh (live/github.ts): a worker's own gh writes and git pushes look again at once,
   // and a busy floor asks GitHub every few seconds, with a free conditional request, whether anything changed
   await buildLive();
+  lap("server bundles (live)");
   prepend("floor.js", "import { liveGitHub as __rbLive } from './rb-live.js';\n");
   patch("floor.js", "        void this.github.refresh();\n        // A floor with people on it",
     "        void this.github.refresh();\n        this.__rbLive = __rbLive(this, def.dir);\n        // A floor with people on it");
@@ -162,7 +181,9 @@ async function prepare(tag: string) {
   patch("floor.js", "        this.whiteboard.flush();", "        this.__rbBrawl?.stop();\n        this.whiteboard.flush();");
 
   // 8. Lucide icons for the emoji, on every page, a search box for the queue, and the codeSplitter mark (codesplitter/)
+  lap("server patches (6-7d)");
   await buildPageScripts();
+  lap("page scripts");
 
   // 9. the time on the issues and PR boards, in front of "Updated …" (its setting is a page script, clock/)
   clockOnBoards();
@@ -199,7 +220,9 @@ async function prepare(tag: string) {
   patchAsk(openNewFirstClient);
 
   // 14. the Druids Curse skin
+  lap("client patches (9-13b)");
   if (skin === "druids") await druids(cache);
+  lap("druids skin (assets + build)");
 
   writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitter hosts hooktokens env ticks power board guard asks brawl ester dexter reload\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
