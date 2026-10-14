@@ -9,7 +9,18 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
-export interface ReloadState { boot: string; page: string; stale: boolean; workers: boolean; canRestart: boolean }
+// `swap` maps each page script that can be swapped in place ("rb-clock") to its current file; `fixed` hashes everything
+// else a page loaded (the skin, shared chunks, rb-reload itself), which only a refresh replaces (reload/hot.ts).
+export interface ReloadState { boot: string; page: string; swap: Record<string, string>; fixed: string; stale: boolean; workers: boolean; canRestart: boolean }
+
+const SCRIPT = /^(rb-(?!chunk-|reload-)[a-z]+)-\w+\.js$/;
+
+/** The `rb-<name>-<hash>.js` page scripts in `dir`, by name. */
+export function swappable(dir: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const f of existsSync(dir) ? readdirSync(dir) : []) { const m = SCRIPT.exec(f); if (m) out[m[1]!] = f; }
+  return out;
+}
 
 /** A hash of every file in `dir` whose name starts with `rb-` (or is in `extra`), by name and content; re-read only when its size or mtime moves. */
 export function fingerprint(dir: string, extra: string[] = []) {
@@ -27,14 +38,17 @@ export function fingerprint(dir: string, extra: string[] = []) {
 
 /** `pub` is dist/public, `srv` the server bundles, `bin` the dir holding bin/rb-triage.js; `restart` is what a restart does (SIGTERM, in the office). */
 export function officeReload(pub: string, srv: string, bin: string, canRestart: boolean, restart: () => void) {
-  const page = fingerprint(path.join(pub, "assets"));
+  const assets = path.join(pub, "assets");
+  const page = fingerprint(assets);
   const skin = fingerprint(path.join(pub, "druids"), ["druids.js"]);
+  // names are hashed, so the file name stands for a script's content; everything else under assets/rb- is fixed
+  const fixed = () => Bun.hash(page().split(",").filter((f) => f && !SCRIPT.test(f.split(":")[0]!)).join(",") + skin()).toString(36);
   const server = fingerprint(srv);
   const mcp = fingerprint(bin);
   const boot = `${Date.now().toString(36)}-${process.pid}`;
   const started = server(), mcpStarted = mcp();
   return {
-    state: (): ReloadState => ({ boot, page: Bun.hash(page() + skin()).toString(36), stale: server() !== started, workers: mcp() !== mcpStarted, canRestart }),
+    state: (): ReloadState => ({ boot, page: Bun.hash(page() + skin()).toString(36), swap: swappable(assets), fixed: fixed(), stale: server() !== started, workers: mcp() !== mcpStarted, canRestart }),
     restart: () => (canRestart ? (setTimeout(restart, 200), true) : false),
   };
 }

@@ -2,6 +2,7 @@
 // (scripts/rustybunsify.ts) to put globalThis.__rbClock(fetchedAt) in front of it; this defines that, and adds
 // the setting to Settings › You as the office opens it. Kept in this browser, like the office's other "Just you"
 // settings. Automatic follows the browser's zone.
+import { hot } from "../reload/hot.ts";
 import { KEY, browserZone, clock, zones } from "./time.ts";
 
 const saved = () => { try { return localStorage.getItem(KEY); } catch { return null; } };
@@ -41,13 +42,15 @@ function addTo(modal: Element) {
 
 function watch() {
   document.querySelectorAll(".modal.settings").forEach(addTo);
-  new MutationObserver(records => {
+  const observer = new MutationObserver(records => {
     for (const r of records) for (const n of r.addedNodes) {
       if (!(n instanceof Element)) continue;
       if (n.matches(".modal.settings")) addTo(n);
       else n.querySelectorAll(".modal.settings").forEach(addTo);
     }
-  }).observe(document.body, { childList: true, subtree: true });
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  hot("rb-clock", () => { observer.disconnect(); document.querySelectorAll(".rb-timezone").forEach(n => n.remove()); });
 }
 
 if (document.body) watch();
