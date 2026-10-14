@@ -407,10 +407,14 @@
   /* Secret bottom-of-the-file mode: the oldest lines fall apart (decayTiers, rot). Tier 0 is the newest fifth and stays whole. */
   .dust-end { display: flex; justify-content: center; padding: 28px 0 40px; }
   .dust-end button { border: 0; background: none; color: var(--faint); opacity: .12; cursor: default; padding: 4px; transition: opacity .3s; } .dust-end button:hover, .dust-end button:focus-visible, .dust-end button[aria-pressed="true"] { opacity: .7; cursor: pointer; } .dust-end svg { width: 14px; height: 14px; }
-  .code.rotting .ln .t { overflow: visible; } .code.rotting .ln.d2 .t { opacity: .92; } .code.rotting .ln.d3 .t { opacity: .84; } .code.rotting .ln.d4 .t { opacity: .74; }
-  .code.rotting .ln .t i { display: inline-block; font-style: normal; white-space: pre; transform: translateY(var(--y)) rotate(var(--r)); opacity: var(--o); transform-origin: 50% 0; animation: slump 3s ease-in backwards; animation-delay: var(--w); }
-  @keyframes slump { from { transform: none; opacity: 1; } }
-  @media (prefers-reduced-motion: reduce) { .code.rotting .ln .t i { animation: none; } }
+   
+  /* Hunched: an older line leans a little. A cracked letter is its glyph twice, cut on a slant: the top where it was, the bottom (the ::after) slipped and tilted. */
+  .code.rotting .ln.d2 .t { transform: skewX(-1deg); } .code.rotting .ln.d3 .t { transform: translateY(.5px) skewX(-2deg); } .code.rotting .ln.d4 .t { transform: translateY(1px) skewX(-3.5deg); } .code.rotting .ln .t { transform-origin: 0 100%; }
+  .code.rotting .ln .t i.k { position: relative; display: inline-block; font-style: normal; white-space: pre; }
+  .code.rotting .ln .t i.k s { text-decoration: none; clip-path: polygon(0 0, 100% 0, 100% calc(var(--cut) - var(--lean)), 0 calc(var(--cut) + var(--lean))); }
+  .code.rotting .ln .t i.k::after { content: attr(data-c); position: absolute; left: 0; top: 0; clip-path: polygon(0 calc(var(--cut) + var(--lean)), 100% calc(var(--cut) - var(--lean)), 100% 100%, 0 100%); transform: translate(var(--dx), var(--dy)) rotate(var(--r)); transform-origin: 50% var(--cut); animation: slip 3s ease-in backwards; animation-delay: var(--w); }
+  @keyframes slip { from { transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .code.rotting .ln .t i.k::after { animation: none; } }
   /* Stamps on a line: small chips after its text, yours filled in. */
   .ln .stamps { display: inline-flex; gap: 4px; margin-left: 14px; vertical-align: 1px; user-select: none; font: 500 11px/16px var(--sans); }
   .ln .stamp { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); color: var(--muted); cursor: pointer; font: inherit; }
@@ -2877,16 +2881,16 @@ function decayTiers(revs, tiers = DECAY_TIERS) {
   const last = new Map(); sorted.forEach((r, i) => last.set(r, i));
   return revs.map((r) => Math.min(tiers - 1, Math.floor(((n - last.get(r) - 1) / Math.max(n, 1)) * tiers)));
 }
-/** A line's text with a few characters worked loose, more the older the tier: they sag a little, tilt, and now and then one has dropped. Same characters, same order, so copying and editing still see the text. */
+/** A line's text with a few letters cracked, more the older the tier: a slanted break across the glyph, the lower half slipped a hair and tilted, and the odd one dropped lower. Same characters, same order, so copying and editing still see the text. */
 function rotText(text, tier, seed) {
   if (!tier || !text) return esc(text);
   let h = 2166136261; for (const ch of seed) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
   const rnd = () => ((h = Math.imul(h ^ (h >>> 15), 2246822507) + 0x6d2b79f5) >>> 0) / 4294967296;
   return [...text].map((ch) => {
-    if (ch === " " || rnd() > tier * 0.035) return esc(ch);
-    const fell = tier > 2 && rnd() < .2;
-    const y = fell ? 6 + rnd() * tier * 3 : rnd() * tier * 1.4, o = fell ? .3 : 1 - tier * .06;
-    return `<i style="--y:${y.toFixed(1)}px;--r:${((rnd() - .5) * 5 * tier).toFixed(0)}deg;--o:${o.toFixed(2)};--w:${(rnd() * 2).toFixed(1)}s">${esc(ch)}</i>`;
+    if (/\s/.test(ch) || rnd() > tier * 0.04) return esc(ch);
+    const dropped = tier > 2 && rnd() < .15;
+    const dy = dropped ? 2.5 + rnd() * tier * .8 : .4 + rnd() * tier * .35;
+    return `<i class="k" data-c="${esc(ch)}" style="--cut:${(40 + rnd() * 25).toFixed(0)}%;--lean:${((rnd() - .5) * 16).toFixed(0)}%;--dx:${((rnd() - .3) * tier * .5).toFixed(1)}px;--dy:${dy.toFixed(1)}px;--r:${((rnd() - .2) * tier * 2).toFixed(1)}deg;--w:${(rnd() * 2).toFixed(1)}s"><s>${esc(ch)}</s></i>`;
   }).join("");
 }
 /** Rot the rows of a drawn file by line age (rev). Run it after codeRows; undone by drawing the rows again. */
