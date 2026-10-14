@@ -291,6 +291,8 @@ test("a check that needs Rust is queued for the desktop up front; one that hits 
   const late = await log(runs.find((r) => r.name === "late").id);
   expect(late).toContain("docker: not found");
   expect(late).toContain("Needs desktop");
+  // The listing flags both so the pill says "needs desktop", not a plain queued.
+  expect(runs.map((r) => !!r.needs_desktop)).toEqual([true, true]);
   await holder.ci.idle();
   void settled;
 });

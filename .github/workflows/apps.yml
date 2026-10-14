@@ -133,6 +133,9 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       - run: bun install --frozen-lockfile
+      # BuildKit's GitHub Actions layer cache (type=gha, a scope per image) needs the docker-container driver.
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0 (exports ACTIONS_RESULTS_URL for the cache)
       # codeSplitter's check, deploy and agent images are behind these flags in its rustybuns.config.ts.
       - env:
           BASE: ${{ github.event.pull_request.base.sha }}
