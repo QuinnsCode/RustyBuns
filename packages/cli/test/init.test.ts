@@ -681,6 +681,24 @@ test("init --port-vite: a custom webpack build gets the list of what to port, an
   expect(existsSync(join(p.dir, "vite.config.ts"))).toBe(false);
 });
 
+test("init --port-vite: a custom webpack build's printout names its aliases, defines and proxies and drafts a vite.config.ts", () => {
+  const p = project({
+    "package.json": JSON.stringify({ name: "w", devDependencies: { webpack: "5" } }), "bun.lock": "",
+    "webpack.config.js": `module.exports = { entry: { main: "./src/a.js", admin: "./src/b.js" }, output: { publicPath: "/app/" },
+      resolve: { alias: { "@": path.resolve("src"), lib: path.resolve("lib") } },
+      plugins: [new webpack.DefinePlugin({ VERSION: JSON.stringify("1"), "process.env.X": 1 })],
+      devServer: { proxy: { "/api": { target: "http://localhost:1" } } } };`,
+  });
+  const r = p.run("init", "--port-vite");
+  expect(r.code).toBe(1);
+  expect(r.out).toContain("resolve.alias -> resolve.alias (@, lib)");
+  expect(r.out).toContain("DefinePlugin -> define (VERSION, process.env.X)");
+  expect(r.out).toContain("devServer.proxy -> server.proxy (/api)");
+  expect(r.out).toContain('base: "/app/"');
+  expect(r.out).toContain('input: { main: "main.html", admin: "admin.html" }');
+  expect(existsSync(join(p.dir, "vite.config.ts"))).toBe(false);
+});
+
 test("init: an rwsdk app's desktop build runs what its release build runs before vite (prisma generate)", () => {
   const p = project({
     "package.json": JSON.stringify({ name: "todos", dependencies: { rwsdk: "1.7.0", react: "19" }, devDependencies: { vite: "7" },
