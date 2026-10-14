@@ -67,3 +67,19 @@ test("mama's source list is our code, not the build or the tests", () => {
   expect(files).toContain("live/reload.ts");
   expect(files.some((f) => /^(office|node_modules|test)\//.test(f))).toBe(false);
 });
+
+test("swap names the page scripts that can be swapped in place; the skin, chunks and rb-reload stay fixed", () => {
+  const { pub, srv, bin } = office();
+  const r = officeReload(pub, srv, bin, true, () => {});
+  const before = r.state();
+  expect(before.swap).toEqual({ "rb-ester": "rb-ester-aaa.js" });
+  writeFileSync(path.join(pub, "assets/rb-ester-bbb.js"), "two");
+  const swapped = r.state();
+  expect(swapped.fixed).toBe(before.fixed);
+  expect(swapped.page).not.toBe(before.page);
+  writeFileSync(path.join(pub, "assets/rb-chunk-abc.js"), "chunk");
+  writeFileSync(path.join(pub, "assets/rb-reload-abc.js"), "reload");
+  const after = r.state();
+  expect(after.fixed).not.toBe(swapped.fixed);
+  expect(Object.keys(after.swap)).toEqual(["rb-ester"]);
+});

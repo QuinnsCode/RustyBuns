@@ -26,7 +26,7 @@ office on the port that isn't this checkout's. One caveat: a new Agent Office re
 makes the new office stop the old pty host, and Claude workers are then resumed rather than kept.
 
 Under `office:mama` (or `office:update -- --watch`) your edits show up without a terminal: she rebuilds when this app's
-code changes, open pages refresh themselves (or offer Refresh while you're typing), and a change to server code makes the
+code changes, open pages refresh themselves (or offer Refresh while you're typing), except that a page script that registers with `reload/hot.ts` (the time zone setting so far) is swapped in place, keeping the 3D office, terminals and typed text, and a change to server code makes the
 office say so with a Restart button. Restart is the same SIGTERM, and the page shows "coming back" until the new office
 answers. Started any other way, the banner says to restart it yourself.
 
