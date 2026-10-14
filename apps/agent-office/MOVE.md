@@ -13,6 +13,8 @@ round alone.
 
 ## 1. The ephemeral preview
 
+The stage and its runbook exist: [PREVIEW.md](PREVIEW.md) (#1385).
+
 A separate codeSplitter stage, never the live one:
 
 - Its own Alchemy stage (e.g. `office-preview`) with its own resource names, so `destroy` removes only the preview.

@@ -157,6 +157,29 @@ export default defineConfig({
       EMAIL_FROM: { type: "var", value: mailFrom } as const,
     } : {}),
   },
+  // The ephemeral office preview (apps/agent-office/MOVE.md, #1385): `rustybuns deploy --stage office-preview`
+  // with DEPLOYS=1 AGENTS=1 CHECKS=1, then `rustybuns destroy --stage office-preview` after verifying.
+  // Every named resource has its own name, so the destroy touches nothing live; none is protected.
+  // No crons (nothing sweeps a throwaway), and Turnstile is off since its widget is tied to the live hostname.
+  // Verify it with a throwaway repo and token, per apps/agent-office/PREVIEW.md.
+  stages: {
+    "office-preview": {
+      workerName: "codesplitter-office-preview",
+      crons: [],
+      bindings: {
+        DB: { databaseName: "codesplitter-office-preview-db" },
+        LEVEL_CHUNKS: { bucketName: "codesplitter-office-preview-chunks" },
+        HOOKS: { queueName: "codesplitter-office-preview-hooks" },
+        JOBS: { queueName: "codesplitter-office-preview-jobs" },
+        FIXES: { queueName: "codesplitter-office-preview-fixes" },
+        LEVEL_DIGS: { queueName: "codesplitter-office-preview-level-digs" },
+        ARTIFACTS: { type: "artifacts", namespace: "office-preview" },
+        AUTH_LIMIT: { namespaceId: "6471" },
+        BETTER_AUTH_URL: { value: "https://codesplitter-office-preview.notryanquinn.workers.dev" },
+        TURNSTILE_SITE_KEY: { value: "" },
+      },
+    },
+  },
   targets: {
     // Live as D1 codesplitters-db, first deployed with wrangler; adopted by rustybuns deploy on
     // 2026-10-09 (#170). Keep adopt on: a new clone or stage starts with empty state, and adopt
