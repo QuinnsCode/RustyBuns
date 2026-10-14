@@ -2577,11 +2577,16 @@ const infraTile = (n, sel) => {
   const mark = n.protected ? `<span class="badge-keep" title="Kept: destroy leaves it, and its data, on the account">${icon("lock")}</span>` : data ? `<span class="badge-gone" title="Removed with its data when the stack is destroyed">${icon("trash-2")}</span>` : "<span></span>";
   return `<button type="button" class="itile${n.protected ? " kept" : ""}${sel === n.id ? " sel" : ""}" data-n="${esc(n.id)}"><span>${icon(INFRA_ICON[n.kind] ?? "circle")}</span><span><span class="kind">${esc(n.kind.replace("_", " "))}</span><b>${esc(n.label)}</b>${n.note || (n.name && n.name !== n.label) ? `<small>${esc(n.name && n.name !== n.label ? n.name : n.note)}</small>` : ""}</span>${mark}</button>`;
 };
+/** Ephemeral or Real: the CLI's `--ephemeral` / `--real`. Saved as the repo's `production` setting; a Real stack may adopt live resources. */
+const envChoice = (production) => `<fieldset class="envpick" style="border:1px solid var(--line, #d0d0d0);border-radius:6px;padding:6px 8px;display:grid;gap:4px"><legend style="font-size:12px">Environment</legend>
+  <label><input type="radio" name="production" value="0"${production ? "" : " checked"}> ${icon("flask-conical")} <b>Ephemeral</b> <span class="muted">made new with names the tool picks, touches nothing already on the account, torn down with <code>destroy</code> (CLI: <code>--ephemeral</code>)</span></label>
+  <label><input type="radio" name="production" value="1"${production ? " checked" : ""}> ${icon("shield")} <b>Real</b> <span class="muted">may hold customer data: can take over live resources (<code>adopt</code>), keeps what has <code>protect: true</code> through destroy (CLI: <code>--real</code>)</span></label></fieldset>`;
 const infraMap = (g, sel) => {
   const cols = [[], [], []];
   for (const n of g.nodes) cols[n.kind === "worker" ? 0 : n.kind === "postgres" ? 2 : 1].push(n);
   const kept = g.nodes.filter((n) => n.protected).length, data = g.nodes.filter((n) => INFRA_DATA.has(n.kind));
-  return `<div class="row" style="gap:6px"><span class="badge" title="${g.mode === "adopt" ? "ADOPT: takes over resources already on the account by their names" : "FRESH: makes every resource new, with names it picks"}">${g.mode.toUpperCase()}</span><span class="badge">stage ${esc(g.stage)}</span>${g.targets.map((t) => `<span class="badge">${icon(t === "edge" ? "cloud" : t === "box" ? "server" : "monitor")}${esc(t)}</span>`).join("")}</div>
+  const real = (g.environment ?? (g.mode === "adopt" ? "real" : "ephemeral")) === "real";
+  return `<div class="row" style="gap:6px"><span class="badge ${real ? "badge-keep" : ""}" title="${real ? "REAL: may hold customer data. " + esc((g.reasons ?? []).join("; ")) : "EPHEMERAL: made new and safe to destroy"}">${icon(real ? "shield" : "flask-conical")}${real ? "REAL" : "EPHEMERAL"}</span><span class="badge" title="${g.mode === "adopt" ? "ADOPT: takes over resources already on the account by their names" : "FRESH: makes every resource new, with names it picks"}">${g.mode.toUpperCase()}</span><span class="badge">stage ${esc(g.stage)}</span>${g.targets.map((t) => `<span class="badge">${icon(t === "edge" ? "cloud" : t === "box" ? "server" : "monitor")}${esc(t)}</span>`).join("")}</div>
     <div class="imap">${cols.filter((c) => c.length).map((c) => `<div class="col">${c.map((n) => infraTile(n, sel)).join("")}</div>`).join("")}<svg class="wires"></svg></div>
     <div class="imap-legend"><span>${icon("lock")}<b>${kept}</b> kept on destroy</span><span>${icon("trash-2")}<b>${data.length - kept}</b> removed with their data</span><span class="muted">click a tile</span></div>`;
 };
@@ -4084,13 +4089,13 @@ const views = {
             folder <input name="dir" aria-label="folder" value="${esc(s.dir ?? "")}" placeholder="(repo root)" list="deploy-dirs" title="Where the app's rustybuns.config.ts is, in a monorepo" style="width:12em;font:12px var(--mono)">
             <datalist id="deploy-dirs"></datalist></div>
           <label><input type="checkbox" name="on_commit"${s.on_commit ? " checked" : ""}> Ship when I commit to main <span class="muted">(only your own commits; crew and agents never start a deploy, and their code waits for you to approve it)</span></label>
-          <label><input type="checkbox" name="production"${s.production ? " checked" : ""}> This is production <span class="muted">(lets a stack with <code>adopt</code> take over the live resources)</span></label>
+          ${envChoice(s.production)}
           <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deploy-run"></button></div>
         </form>`;
       fill();
       $("#deploy-form").addEventListener("submit", async (e) => {
         e.preventDefault(); const f = e.target;
-        try { await api(base, { stage: f.stage.value, dir: f.dir.value.trim(), on_commit: f.on_commit.checked, production: f.production.checked }, "PUT"); toast("Saved"); poll(true); }
+        try { await api(base, { stage: f.stage.value, dir: f.dir.value.trim(), on_commit: f.on_commit.checked, production: f.production.value === "1" }, "PUT"); toast("Saved"); poll(true); }
         catch (err) { toast(err.message); }
       });
       $("#deploy-run").addEventListener("click", async () => {
@@ -4282,14 +4287,14 @@ const views = {
         return `<form id="ship-form" style="display:grid;gap:8px;font-size:13px">
           <div class="row"><label>stage <input name="stage" value="${esc(s.stage ?? "prod")}" pattern="[a-z0-9][a-z0-9\\-]{0,30}" style="width:9em;font:12px var(--mono)" title="lowercase letters, digits and dashes"></label>
           <label>folder <input name="dir" value="${esc(s.dir ?? "")}" placeholder="(repo root)" style="width:12em;font:12px var(--mono)" title="Where the app's rustybuns.config.ts is, in a monorepo"></label></div>
-          <label><input type="checkbox" name="production"${s.production ? " checked" : ""}> This repo is production <span class="muted">(a stack with <code>adopt: true</code> may take over live resources)</span></label>
+          ${envChoice(s.production)}
           <label><input type="checkbox" name="on_commit"${s.on_commit ? " checked" : ""}> Ship when I commit to main <span class="muted">(only your own commits)</span></label>
           <div><button class="btn primary">${icon("check")}Save stage</button></div></form>
-          <div class="imap-note${kept ? " kept" : ""}">${g ? `<span>${icon("lock")} Destroying <b>${esc(s.stage ?? "prod")}</b> keeps <b>${kept}</b> and removes <b>${gone}</b> data resource${gone === 1 ? "" : "s"}, with their data.</span>` : `<span class="muted">Run Build and plan to see what destroying this stage keeps and removes.</span>`}</div>`;
+          <div class="imap-note${kept ? " kept" : ""}">${g ? `<span>${icon("lock")} Destroying <b>${esc(s.stage ?? "prod")}</b> (${s.production || g.environment === "real" ? "REAL" : "EPHEMERAL"}) keeps <b>${kept}</b> and removes <b>${gone}</b> data resource${gone === 1 ? "" : "s"}, with their data.${gone && (s.production || g.environment === "real") ? " Set <code>protect: true</code> on what must survive, then deploy once." : ""}</span>` : `<span class="muted">Run Build and plan to see what destroying this stage keeps and removes.</span>`}</div>`;
       }
       const r = d?.run, s = d?.settings ?? {};
       return `${flowRow(SHIP, by(r), sel)}${runTicker(r)}${r?.url ? `<p style="font-size:12px"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a></p>` : ""}${r?.note ? `<p class="muted" style="font-size:12px">${esc(r.note)}</p>` : ""}${sel ? log(r, sel) : ""}
-        ${g ? `<div class="imap-note${g.nodes.some((n) => n.protected) ? " kept" : ""}"><span>${icon("rocket")} Ships to <b>${esc(s.stage ?? "prod")}</b>: ${g.nodes.length} resource${g.nodes.length === 1 ? "" : "s"}, ${g.nodes.filter((n) => n.protected).length} protected from destroy.</span></div>` : ""}
+        ${g ? `<div class="imap-note${g.nodes.some((n) => n.protected) ? " kept" : ""}"><span>${icon("rocket")} Ships to <b>${esc(s.stage ?? "prod")}</b> as ${s.production || g.environment === "real" ? "<b>REAL</b>" : "<b>EPHEMERAL</b>"}: ${g.nodes.length} resource${g.nodes.length === 1 ? "" : "s"}, <b>${g.nodes.filter((n) => n.protected).length} protected</b> from destroy, ${g.nodes.filter((n) => INFRA_DATA.has(n.kind) && !n.protected).length} not.</span></div>` : ""}
         <div class="row"><button class="btn primary" id="ship-deploy"${!d?.can_run || (r && !r.done) ? " disabled" : ""} title="${d?.can_run ? "" : d?.why || "Runs on the desktop app, with your own logins"}">${icon("rocket")}${r && !r.done ? "Deploying…" : `Deploy to ${esc(s.stage ?? "prod")}`}</button>
         <button type="button" class="btn ghost" id="ship-more" title="Deploy keys, the review of code that isn't yours, and every deploy logged">${icon("send")}Deploy settings and log</button></div>
         <p class="muted" style="font-size:12px">Ships the repo's own stack to <b>${esc(s.stage ?? "prod")}</b> and leaves it up. Code that isn't yours waits for you to read and approve it under Deploy settings.</p>`;
@@ -4330,7 +4335,7 @@ const views = {
       el.querySelector("#ship-form")?.addEventListener("submit", async (e) => {
         e.preventDefault();
         const f = e.target;
-        try { await api(depBase, { stage: f.stage.value.trim(), dir: f.dir.value.trim(), production: f.production.checked, on_commit: f.on_commit.checked }, "PUT"); form = null; toast("Stage saved"); } catch (err) { toast(err.message); }
+        try { await api(depBase, { stage: f.stage.value.trim(), dir: f.dir.value.trim(), production: f.production.value === "1", on_commit: f.on_commit.checked }, "PUT"); form = null; toast("Stage saved"); } catch (err) { toast(err.message); }
         poll();
       });
       el.querySelector("#ship-deploy")?.addEventListener("click", async () => {
