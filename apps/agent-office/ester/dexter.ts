@@ -124,6 +124,7 @@ export function week(r: Report, growth = 1.5, weeks = 6): string[] {
   const h = r.helpers, saved = cut(r);
   out.push("What each job costs when an agent does it by hand (units), and the share kept if a helper does it:",
     `  Mervin (board, PR and CI reads): ${m(h.mervin)}`, `  Ester (test and typecheck output): ${m(h.ester)}`, `  Dexter (results over ${CAP} tokens, the excess): ${m(h.dexter)}`,
+    `  Merge fights (turns from a conflict to its commit): ${m(r.fights)}, of which Mervin settles ${Math.round(SETTLES * 100)}%: ${m(r.fights * SETTLES)}`,
     `Stretch: about ${m(saved)} units back, ${Math.round((saved / (total || 1)) * 100)}% of the week, so the same cap lasts ${(total / (total - saved || 1)).toFixed(2)}x as long (assuming ${SAVES * 100}% of reads and test output are saved).`,
     `If PRs grow ${growth}x a week (units; this week = the cap):`);
   for (const p of project(r, growth, weeks)) out.push(`  week ${p.week}: ${(p.without / (total || 1)).toFixed(2)}x the cap without, ${(p.with / (total || 1)).toFixed(2)}x with`);
