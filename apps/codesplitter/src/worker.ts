@@ -384,6 +384,11 @@ async function route(req: Request, env: Env): Promise<Response> {
   const privacy = await privacyRoutes(req, env, p, url, user, !token && !actingAs.has(req));
   if (privacy) return privacy;
 
+  // POST /api/me/page/revert {to}  put the page back an hour, or to the starter (page.ts)
+  // GET /api/users/:name/page[/path]  the profile's page, served as a sandboxed site (page.ts)
+  const page = await pageRoutes(req, env, p, user);
+  if (page) return page;
+
   // GET|PUT /api/me
   if (p[1] === "me") {
     if (!user) return json({ error: "sign in first" }, 401);
@@ -405,10 +410,6 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /api/users/:name/(pulse|pulse.png|share) and /api/pulse: heartbeats (pulse.ts)
   const pulse = await pulseRoutes(req, env, p, url, user);
   if (pulse) return pulse;
-
-  // GET /api/users/:name/page[/path]  the profile's page, served as a sandboxed site (page.ts)
-  const page = await pageRoutes(req, env, p);
-  if (page) return page;
 
   // GET /api/users/:name  profile, the repos you may see, playlists, how many it follows and are following it, the stamps it gave and got;
   // an agent's (agent-…) also says who runs it, where, and its runs (actors.ts)

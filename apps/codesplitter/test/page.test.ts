@@ -6,6 +6,35 @@ setDefaultTimeout(20_000);
 const opened: { close(): void }[] = [];
 afterAll(() => { for (const o of opened) o.close(); });
 
+describe("putting your page back", () => {
+  test("default restores the starter and empties the rest; an hour back empties what is newer than that", async () => {
+    const call = await boot({ GH_CLI: "off" });
+    opened.push(call);
+    const send = (user: string | null, url: string, body?: unknown) =>
+      call(user, url, { method: body === undefined ? "GET" : "POST", ...(body !== undefined && { body: JSON.stringify(body) }) });
+    await send("ryan", "/api/login", { name: "ryan" });
+    expect((await send("ryan", "/api/me/page/revert", { to: "default" })).status).toBe(404);
+    expect((await send(null, "/api/me/page/revert", { to: "default" })).status).toBe(401);
+    expect((await send("ryan", "/api/me/page/revert", { to: "never" })).status).toBe(400);
+    await send("ryan", "/api/repos", { name: "page" });
+    await send("ryan", "/api/repos/ryan/page/files", { path: "index.html", content: "<h1>mine</h1>" });
+    await send("ryan", "/api/repos/ryan/page/files", { path: "extra.js", content: "1;" });
+
+    const out = await (await send("ryan", "/api/me/page/revert", { to: "default" })).json() as any;
+    expect(out.changed.sort()).toEqual(["extra.js", "index.html", "world.js"]);
+    const html = await (await send(null, "/api/users/ryan/page/")).text();
+    expect(html).toContain("world.js");
+    expect(html).not.toContain("mine");
+    expect(await (await send(null, "/api/users/ryan/page/world.js")).text()).toContain("THREE.WebGLRenderer");
+    expect((await send(null, "/api/users/ryan/page/extra.js")).status).toBe(404);
+
+    // Everything above happened within the hour, so an hour back is a page with nothing in it.
+    const back = await (await send("ryan", "/api/me/page/revert", { to: "hour" })).json() as any;
+    expect(back.unreachable).toEqual([]);
+    expect((await send(null, "/api/users/ryan/page/world.js")).status).toBe(404);
+  });
+});
+
 describe("your page", () => {
   test("serves the public page repo in a script sandbox, with only public data", async () => {
     const call = await boot({ GH_CLI: "off" });

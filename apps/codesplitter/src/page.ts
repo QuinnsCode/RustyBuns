@@ -2,6 +2,9 @@
 //
 //   GET /api/users/:name/page[/path]   the page, served as a site: files from the public repo `page`
 //                                      (index.html by default), else the HTML saved with PUT /api/me
+//   POST /api/me/page/revert {to}       put the page back: to "hour" (as every file of it stood an hour ago) or
+//                                      "default" (the starter world below, other files emptied). It is edits like
+//                                      any other, so the log keeps what it replaced and "hour" again goes further back.
 //
 // The page is the owner's own code, so it runs, but only in a box with nothing in it:
 //   sandbox      the response's CSP carries `sandbox allow-scripts`, so it runs with an opaque origin even
@@ -16,6 +19,7 @@
 
 import { json, type Env } from "./env.ts";
 import { toFile } from "./archive.ts";
+import type { Applied, Line, Op } from "./lines.ts";
 
 /** The public repo whose files are the page. */
 export const PAGE_REPO = "page";
@@ -85,7 +89,12 @@ async function repoFile(env: Env, name: string, path: string) {
 
 const note = (text: string, status: number) => new Response(`<!doctype html><meta charset="utf-8"><meta name="color-scheme" content="light dark"><body style="font:14px system-ui;display:grid;place-items:center;height:100vh;margin:0;opacity:.6">${text}`, { status, headers: { "content-type": "text/html; charset=utf-8", "content-security-policy": PAGE_CSP, "x-frame-options": "SAMEORIGIN" } });
 
-export async function pageRoutes(req: Request, env: Env, p: string[]): Promise<Response | null> {
+export async function pageRoutes(req: Request, env: Env, p: string[], user?: string | null): Promise<Response | null> {
+  if (p[1] === "me" && p[2] === "page" && p[3] === "revert" && !p[4] && req.method === "POST") {
+    if (!user) return json({ error: "sign in first" }, 401);
+    const b = (await req.json().catch(() => ({}))) as { to?: unknown };
+    return revertPage(env, user, b.to);
+  }
   if (p[1] !== "users" || !p[2] || p[3] !== "page" || (req.method !== "GET" && req.method !== "HEAD")) return null;
   const name = p[2], path = pagePath(p.slice(4));
   if (!path) return json({ error: "no such file" }, 404);
@@ -104,4 +113,76 @@ export async function pageRoutes(req: Request, env: Env, p: string[]): Promise<R
       "access-control-allow-origin": "*",
     },
   });
+}
+
+/** What a page looks like before anyone has touched it: a tower per public repo. */
+export const STARTER: Record<string, string> = {
+  "index.html": `<!doctype html>
+<meta charset="utf-8">
+<style>html,body{margin:0;height:100%;background:#111}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+<script type="module" src="world.js"></script>`,
+  "world.js": `import * as THREE from "three";
+const { repos } = JSON.parse(document.getElementById("profile").textContent);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.append(renderer.domElement);
+const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(0, 4, 10);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x222244, 2));
+// A tower per public repo.
+const towers = repos.map((r, i) => {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1 + (r.length % 5), 1), new THREE.MeshStandardMaterial({ color: 0xff6a00 }));
+  m.position.x = (i - repos.length / 2) * 2;
+  scene.add(m);
+  return m;
+});
+renderer.setAnimationLoop((t) => { towers.forEach((m, i) => (m.rotation.y = t / 1000 + i)); renderer.render(scene, camera); });
+`,
+};
+
+const asDoc = async (res: Response) => (await res.json()) as { lines: Line[] };
+
+/** Make `path` in the owner's page repo say `content` ("" empties it), as edits: its lines go, the new ones come in at the top, last first. */
+async function setText(env: Env, owner: string, path: string, content: string) {
+  await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, PAGE_REPO, path).run();
+  const now = await asDoc(await toFile(env, owner, PAGE_REPO, path, owner, "file"));
+  if (now.lines.map((l) => l.text).join("\n") === content) return false;
+  const ops: Op[] = now.lines.map((l) => ({ kind: "delete", line: l.id, base: l.rev }));
+  if (content) for (const text of content.split("\n").reverse()) ops.push({ kind: "insert", after: null, text });
+  await toFile(env, owner, PAGE_REPO, path, owner, "ops", { method: "POST", body: JSON.stringify({ ops }) });
+  return true;
+}
+
+/** The file as it was at `cutoff` (ms), "" when it did not exist yet, or null when its history no longer reaches back that far. */
+async function textAt(env: Env, owner: string, path: string, cutoff: number) {
+  let rev = 0, since = 0;
+  for (let i = 0; i < 100; i++) {
+    const res = await toFile(env, owner, PAGE_REPO, path, owner, "log", {}, `?since=${since}`);
+    if (!res.ok) return null;
+    const page = (await res.json()) as { ops: Applied[]; next: number | null };
+    for (const o of page.ops) if (o.at <= cutoff) rev = Math.max(rev, o.rev);
+    if (page.next == null || page.next <= since) break;
+    since = page.next;
+  }
+  if (!rev) return "";
+  const res = await toFile(env, owner, PAGE_REPO, path, owner, "at", {}, `?rev=${rev}`);
+  return res.ok ? (await asDoc(res)).lines.map((l) => l.text).join("\n") : null;
+}
+
+export const HOUR_MS = 3_600_000;
+
+/** POST /api/me/page/revert {to: "hour" | "default"}: what each page file was changed to, and the ones history could not reach. */
+export async function revertPage(env: Env, owner: string, to: unknown, now = Date.now()) {
+  if (to !== "hour" && to !== "default") return json({ error: 'to: "hour" or "default"' }, 400);
+  if (!(await hasPage(env, owner))) return json({ error: "no page repo yet: make a public repo named page" }, 404);
+  const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, PAGE_REPO).all();
+  const paths = [...new Set([...(results as { path: string }[]).map((r) => r.path), ...(to === "default" ? Object.keys(STARTER) : [])])];
+  const changed: string[] = [], unreachable: string[] = [];
+  for (const path of paths) {
+    const want = to === "default" ? STARTER[path] ?? "" : await textAt(env, owner, path, now - HOUR_MS);
+    if (want === null) unreachable.push(path);
+    else if (await setText(env, owner, path, want)) changed.push(path);
+  }
+  return json({ to, changed, unreachable });
 }
