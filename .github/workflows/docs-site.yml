@@ -1,0 +1,37 @@
+# Publishes the docs sites (`bun run site`) to a Cloudflare Worker with static assets, on each release
+# tag (v* for RustyBuns, codesplitter-v* for codeSplitter). Every version's docs are rebuilt from git, so
+# either tag refreshes both sites. Run it by hand from the Actions tab to only build, without deploying.
+# Needs, in the `docs-site` environment: the CLOUDFLARE_API_TOKEN secret (Workers Scripts: Edit),
+# CLOUDFLARE_ACCOUNT_ID, and optionally the SITE_URL variable (the address the site is served from).
+name: docs-site
+on:
+  push:
+    tags: ["v*", "codesplitter-v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: docs-site
+
+permissions:
+  contents: read
+
+jobs:
+  site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ github.event_name == 'push' && 'docs-site' || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }   # every release tag, so each version's folder is built
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run site
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+      - name: Deploy
+        if: github.event_name == 'push'
+        run: bunx wrangler deploy --config scripts/site/wrangler.jsonc
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
