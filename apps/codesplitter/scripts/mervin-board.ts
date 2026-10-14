@@ -48,7 +48,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { report, triage } from "./ester.ts";
+import { hold, report, triage } from "./ester.ts";
 import { sandbox, shadow, testRuns, testTree, writeTree } from "./shadow.ts";
 
 export type Tier = "certain" | "agree" | "mervin" | "differ" | "card";
@@ -458,6 +458,7 @@ if (import.meta.main) {
         const again = new Set(added.length && bad.length ? (await testTree(join(out, "tree"), bad, env, true)).failed : added);
         const verdicts = triage(r.failed, board.stages, before, again);
         console.log(report(verdicts, r.runs, again.size ? bad.map((x) => r.runs.find((d) => d.dir === x.dir && d.cmd === x.cmd)!.ms) : [], board.stages).join("\n"));
+        if (hold(verdicts).length) console.log(`Ester says hold: ${hold(verdicts).map((n) => `#${n}`).join(", ")}`);
         const mine = new Set(verdicts.filter((v) => v.owner === "blocks").map((v) => v.test));
         const red = board.stages.filter((s) => s.ci === "fail").map((s) => `#${s.pr} (${s.failing!.join(", ")})`);
         if (red.length) console.log(`already red on their own, so look at them before blaming the merge: ${red.join("; ")}`);

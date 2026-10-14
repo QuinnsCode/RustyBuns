@@ -4,6 +4,7 @@
 //   main     fails on main too (this sandbox lacks the claude CLI, a native build...): not the board's, ignore.
 //   flaky    failed once, passed on a rerun of just that run: note it, file an issue if it keeps happening.
 //   own      the failure sits in an app a PR with red CI of its own touches: that PR fixes its own CI first.
+//   wait     the same, but that PR's CI hasn't finished: hold it and rerun when its CI is done.
 //   blocks   only the merged tree breaks it: the PRs that touched that app are the suspects, and the first stage
 //            that breaks it (--check-stages) is the one to hold back.
 //
@@ -11,7 +12,7 @@
 
 import type { Stage } from "./mervin-board.ts";
 
-export type Owner = "main" | "flaky" | "own" | "blocks";
+export type Owner = "main" | "flaky" | "own" | "wait" | "blocks";
 export interface Verdict { test: string; owner: Owner; prs: number[]; why: string }
 
 /** `apps/foo: test name` to the app dir it ran in (`.` for repo-wide checks). */
@@ -34,6 +35,8 @@ export function triage(failed: string[], stages: Stage[], onMain: Set<string>, r
     const prs = touching(stages, dirOf(test), written);
     const red = stages.filter((s) => prs.includes(s.pr) && s.ci === "fail");
     if (red.length) return { test, owner: "own", prs: red.map((s) => s.pr), why: `PR CI is already red (${red.flatMap((s) => s.failing ?? []).join(", ") || "failing"})` };
+    const pending = stages.filter((s) => prs.includes(s.pr) && s.ci === "pending");
+    if (pending.length) return { test, owner: "wait", prs: pending.map((s) => s.pr), why: "PR CI hasn't finished: hold it, rerun when it has" };
     return { test, owner: "blocks", prs, why: prs.length ? "only the merged tree breaks it" : "no stage touched this app: check the install or lockfile" };
   });
 }
@@ -58,7 +61,10 @@ export function timing(runs: { dir: string; cmd: string; ms: number }[], reran: 
 /** Ester's report: counts first, then what needs a person, then how long it all took. */
 export function report(vs: Verdict[], runs: { dir: string; cmd: string; ms: number }[] = [], reran: number[] = [], stages: Stage[] = []): string[] {
   const n = (o: Owner) => vs.filter((v) => v.owner === o).length;
-  const out = [`Ester: ${vs.length} failing, ${n("main")} not the board's, ${n("flaky")} flaky, ${n("own")} a PR's own red, ${n("blocks")} block Mervin`];
+  const out = [`Ester: ${vs.length} failing, ${n("main")} not the board's, ${n("flaky")} flaky, ${n("own")} a PR's own red, ${n("wait")} waiting on CI, ${n("blocks")} block Mervin`];
   for (const v of vs.filter((v) => v.owner !== "main")) out.push(`  ${v.owner.padEnd(6)} ${v.test}  ${v.why}${v.prs.length ? `  (${v.prs.map((p) => `#${p}`).join(", ")})` : ""}`);
   return [...out, ...timing(runs, reran, stages)];
 }
+
+/** The PRs to hold back from the merge wave: every PR named by an own, wait or blocks verdict. */
+export const hold = (vs: Verdict[]) => [...new Set(vs.filter((v) => v.owner !== "main" && v.owner !== "flaky").flatMap((v) => v.prs))].sort((a, b) => a - b);
