@@ -195,6 +195,21 @@ test fail where main passes. Six of the 19 PRs are already red on their own (#14
 main: a clash every per-file merge rates "certain". So a red board says to fix the red PRs first, and "certain"
 covers one file's text, not the files around it.
 
+## Mervin runs the merge round
+
+```sh
+bun scripts/mervin-merge.ts          # the plan: wave, or HOLD and why, one stamped line per PR
+bun scripts/mervin-merge.ts --go     # turn on `gh pr merge --auto --squash` for wave 1 only
+bun scripts/mervin-merge.ts --stack --push   # join the clean PRs into one PR, one merge commit each
+```
+
+This is the decision the office's PR agent made (#1506), taken over: Mervin reads the board and holds a PR whose
+CI failed, whose file he carded, that clashes across files, that is stacked on an open PR, or that waits behind a
+held one. `--stack` joins the clean ones (go, and every file certain or agree) into one branch with git plumbing, a merge commit per PR, and opens one PR listing what's in it and what isn't and why. Merge it as a merge commit; `git revert -m1` undoes it all or one PR. Every run is recorded to `.mervin/rounds/` (PR list with head shas and CI, main's sha, the board, the verdicts, the stack's tip) and pins each PR head under `refs/mervin/`, and `--upload ephemeral-mervin-rounds` puts it in that R2 bucket (made 2026-10-14 by hand with `wrangler r2 bucket create`, named `ephemeral-` so a cleanup that lists the account's resources and deletes the `ephemeral-*` ones finds it; empty R2 bills nothing), so `--replay <file>` reruns the same decisions on exactly that input, even after a force push. The rest go in waves (wave 2 touches files wave 1 does). The merge itself is GitHub's auto-merge, so the
+ruleset on `main` still decides. After a wave lands, run it again: the board is rebuilt on the new main. The lines
+are stamped so the owner can tail a run. Not done yet: running it inside a codeSplitter sandbox box, and pushing
+alerts as it goes (the stdout lines are the feed for that).
+
 ## Where Mervin is weak
 
 - **Code outside JS/TS is only flagged.** `src/lint.ts` parses only JavaScript, TypeScript and HTML. For the rest
