@@ -4,6 +4,7 @@
 // Cloudflare and in-process under Bun on the desktop.
 
 import { fromText } from "./lines.ts";
+import { mainClosed, protectRoute } from "./protect.ts";
 import {
   ensureCrewRemote,
   fileStub,
@@ -564,6 +565,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     // POST /api/repos/:o/:r/commits/:sha/pick {branch?}  a commit taken again, onto main or an open branch
     if (p[4] === "commits" && p[5] && (p[6] === "revert" || p[6] === "pick") && !p[7] && req.method === "POST") {
       if (!a.write) return json({ error: "no write access" }, 403);
+      const picked = (await req.clone().json().catch(() => ({})) as { branch?: unknown }).branch;
+      if (!picked || picked === "main") { const closed = await mainClosed(env, owner, repo, user); if (closed) return closed; }
       return pickRoute(env, owner, repo, user!, p[6], p[5], await req.json().catch(() => ({})) as { branch?: unknown });
     }
     // GET /api/repos/:o/:r/tree?path=dir[&branch=b]  the repo's git tree, plus files written here but not catalogued yet
@@ -667,6 +670,8 @@ async function route(req: Request, env: Env): Promise<Response> {
       await audit(env, req, { actor: user, action: "crew.remove", owner, repo, target: p[5] });
       return json({ ok: true });
     }
+    // GET|PUT /api/repos/:o/:r/protect  keep crew and agents off main (protect.ts)
+    if (p[4] === "protect" && !p[5]) return protectRoute(req, env, owner, repo, user);
     // /api/repos/:o/:r/invites[/:token]  invite by handle, email or a bare link; the pending ones; revoke (invites.ts)
     const invites = await repoInviteRoutes(req, env, p, owner, repo, user);
     if (invites) return invites;
@@ -680,6 +685,8 @@ async function route(req: Request, env: Env): Promise<Response> {
         if (!(await openBranch(env, owner, repo, branch))) return json({ error: "no open branch " + branch }, 404);
         return createOn(env, owner, repo, branch, path, content, user!);
       }
+      const closed = await mainClosed(env, owner, repo, user);
+      if (closed) return closed;
       const r = await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, path).run();
       if (!r.meta?.changes) return json({ error: "file exists" }, 409);
       await toFile(env, owner, repo, path, user!, "ops", { method: "POST", body: JSON.stringify({ ops: fromText(content) }) });
@@ -696,6 +703,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       if ("error" in m) return json({ error: m.error }, m.status);
       const writes = p[5] === "ops" || p[5] === "commit" || ((p[5] === "private" || p[5] === "claims" || p[5] === "release") && req.method === "POST");
       if (writes && !a.write) return json({ error: "no write access" }, 403);
+      if (writes && !branch) { const closed = await mainClosed(env, owner, repo, user); if (closed) return closed; }
       // On the desktop, a push to the repo's git from outside reaches main's files when they're opened or
       // committed, so a commit here never writes their old lines back over it (#773).
       if (!branch && (p[5] === "commit" || (p[5] === "file" && req.method === "GET")) && mirrorsOn(env)) await landPushes(env, owner, repo).catch(() => {});

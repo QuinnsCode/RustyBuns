@@ -37,6 +37,7 @@ import { emit } from "./hooks.ts";
 import { diffToOps, keptPairs } from "./sync.ts";
 import { unindexFile } from "./search.ts";
 import { HARNESSES, type Harness } from "./harness.ts";
+import { protectOn } from "./protect.ts";
 import { localSandbox, type Exec } from "./agent-run.ts";
 import { containerSandbox } from "./sandbox.ts";
 import { ADMINS_ONLY, adminsOnly, agentsUnavailable, hostedBudget, installedHarnesses } from "./agent-routes.ts";
@@ -46,6 +47,7 @@ import { hunks, revertOps } from "./review.ts";
 import { MERVIN } from "./mervin.ts";
 import { noteConflict } from "./usage.ts";
 import { busyOn, clashIn, taskFiles, waves, type Busy, type Clash, type Side } from "./merge-plan.ts";
+import { sha256 } from "./util.ts";
 
 const TEXT_MAX = 20_000;
 
@@ -324,8 +326,7 @@ export const MAX_ASKED = 3;
 
 /** Which conflict an answer was for: the same line in another conflict needs another answer. */
 async function conflictKey(c: Conflict) {
-  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([c.line, c.base, c.main, c.branch])));
-  return [...new Uint8Array(hash)].map((x) => x.toString(16).padStart(2, "0")).join("").slice(0, 32);
+  return (await sha256(JSON.stringify([c.line, c.base, c.main, c.branch]))).slice(0, 32);
 }
 
 /** The answers kept for the branch's conflicts, by `path\nline`, with the conflict each was for. */
@@ -670,6 +671,8 @@ async function rebuildOnMain(env: Env, owner: string, repo: string, b: BranchRow
  */
 async function mergeBranch(env: Env, owner: string, repo: string, branch: BranchRow, user: string, body: { resolve?: unknown; build_ok?: unknown }): Promise<Response> {
   const name = branch.name;
+  // Protected main (#1426): someone other than a branch's author accepts it. The owner's merges are their own to make.
+  if (user !== owner && user === branch.by && await protectOn(env, owner, repo)) return json({ error: "main is protected: someone other than the branch's author merges it", protected: true }, 403);
   const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as FileRow[]);
   // build_ok is a reader's word: the owner's, or someone other than the branch's author.
   const resolve = parseResolve(body.resolve), build_ok = body.build_ok && (user === owner || user !== branch.by);

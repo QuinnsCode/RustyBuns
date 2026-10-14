@@ -27,6 +27,7 @@ import { json, type Env } from "./env.ts";
 import { actingAs, identify, isAdmin } from "./identity.ts";
 import { ruleFor, viaMcp } from "./limits.ts";
 import { conflictStats } from "./usage.ts";
+import { plural, sha256 } from "./util.ts";
 
 const DAY = 86_400_000, KEEP_DAYS = 30;
 
@@ -68,9 +69,8 @@ export const STEPS = [
 ] as const;
 const STEP_OF: Record<string, string> = { dig: "repo", repo: "repo", file: "code", edit: "code", commit: "commit", share: "share", agent: "agent", preview: "deploy", deploy: "deploy" };
 
-const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
 async function ipHash(env: Env, ip: string, day: number) {
-  return hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${day}:${ip}:${env.BETTER_AUTH_SECRET ?? ""}`))).slice(0, 12);
+  return (await sha256(`${day}:${ip}:${env.BETTER_AUTH_SECRET ?? ""}`)).slice(0, 12);
 }
 
 const stepSql = (env: Env, user: string, step: string, now: number) => env.DB.prepare(`INSERT INTO user_steps (name, step, first_at, last_at, n) VALUES (?, ?, ?, ?, 1)
@@ -172,7 +172,6 @@ export async function sweepTraffic(env: Env, now = Date.now()) {
 
 type Check = { name: string; state: "ok" | "warn" | "bad"; detail: string };
 const n = (x: unknown) => Number(x ?? 0);
-const plural = (k: number, w: string) => `${k} ${w}${k === 1 ? "" : "s"}`;
 
 /** A quick look at each part that can go wrong, over the last day. A table that isn't there is skipped. */
 async function health(env: Env, now: number): Promise<{ db_ms: number; checks: Check[] }> {
