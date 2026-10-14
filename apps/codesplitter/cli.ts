@@ -23,6 +23,7 @@
 
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { TRIAGE_USAGE, triage } from "@rustybuns/cli/triage";
+import { agentPrompt } from "./src/agent-prompt.ts";
 import { tool, tools, toRequest } from "./src/mcp.ts";
 import { splittersContext } from "./triage/context.ts";
 import PLAYBOOK from "./triage/PLAYBOOK.md" with { type: "text" };
@@ -30,7 +31,7 @@ import PLAYBOOK from "./triage/PLAYBOOK.md" with { type: "text" };
 type Out = { code: number; out: string; err: string };
 type Fetch = (req: Request) => Promise<Response>;
 
-const USAGE = "usage: codesplitter <command> [--param value …] [--body JSON|-] [--url URL] [--token cst_…|--as NAME]\n       codesplitter tools | help <command> | login [--url URL] [--token cst_…]\n       codesplitter " + TRIAGE_USAGE;
+const USAGE = "usage: codesplitter <command> [--param value …] [--body JSON|-] [--url URL] [--token cst_…|--as NAME]\n       codesplitter tools | help <command> | prompt | login [--url URL] [--token cst_…]\n       codesplitter " + TRIAGE_USAGE;
 
 /** Run one command. `env` and `send` are the process's own unless a test says otherwise. */
 export async function main(argv: string[], env: Record<string, string | undefined> = process.env, send: Fetch = (r) => fetch(r), stdin = readStdin): Promise<Out> {
@@ -100,6 +101,10 @@ function saved(env: Record<string, string | undefined>): { url?: string; token?:
 /** `login`, or any command with the saved site and token filled in under the variables. */
 export async function run(argv: string[], env: Record<string, string | undefined> = process.env, ask = askLine, send?: Fetch): Promise<Out> {
   const conf = saved(env);
+  if (argv[0] === "prompt") {
+    const url = (argv[1] === "--url" ? argv[2] : undefined) ?? envVar(env, "URL") ?? conf.url;
+    return url ? { code: 0, out: agentPrompt(url.replace(/\/$/, "")), err: "" } : { code: 2, out: "", err: "codesplitter prompt --url https://<site> (or codesplitter login first)" };
+  }
   if (argv[0] === "triage") return triageCommand(argv.slice(1), env, conf, send);
   if (argv[0] !== "login") return main(argv, { ...strip(env), CODESPLITTER_URL: envVar(env, "URL") ?? conf.url, CODESPLITTER_TOKEN: envVar(env, "TOKEN") ?? conf.token }, send);
   const flags: Record<string, string> = {};

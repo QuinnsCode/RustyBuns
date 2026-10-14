@@ -3207,6 +3207,7 @@ const views = {
           <div><span class="ico">${icon("terminal")}</span><b>CLI</b><p>For the agent that would rather run a command than speak MCP, and for you at a prompt.</p><code>codesplitter tools</code></div>
           <div><span class="ico">${icon("command")}</span><b>Agentic menus</b><p>Press <kbd>⌘K</kbd> for menus that change with the page you're on, whether a finger or a model picks the item.</p><span class="hand">hand: ⌘K · eye: the same list as tools</span></div>
         </div>
+        <div class="row" style="margin-top:14px"><button class="btn" id="hand-agent" title="a prompt that lets your own agent steer this site for you: through the page's WebMCP tools, MCP or the CLI">${icon("bot")}Copy a prompt for your agent</button></div>
         <div class="quits"><span>Live together, line by line</span><span>Private lines</span><span>Ship on commit</span><span>Agents that can't ship alone</span><span>Your git, on your machine</span></div>
       </div></section>
       <section class="section"><div class="wrap">
@@ -3257,6 +3258,7 @@ const views = {
       </div></section>${siteFoot()}`;
     $("#hero-cmd").addEventListener("click", () => palette.open());
     $("#hero-tour").addEventListener("click", () => { tourStart(); tour(); });
+    $("#hand-agent").addEventListener("click", async () => copy(await (await fetch("/agent.md")).text(), "Prompt copied: paste it to your agent, then say what you want done"));
     $("#hero-google")?.addEventListener("click", async () => {
       try { const r = await api("/auth/sign-in/social", { provider: "google", callbackURL: location.origin + "/#/me" }); location.href = r.url; }
       catch (err) { signInDrawer("in"); toast(String(err.message || err)); }
@@ -3607,6 +3609,7 @@ const views = {
       + sec("users", "Crew", `<p>${[owner, ...r.collaborators].map((c) => `<span class="crew-pulse"><a href="#/u/${esc(c)}">@${esc(c)}</a><span data-pulse="${esc(c)}"></span></span>`).join("")}</p>${owner === me() ? '<div id="pending"></div>' : ""}`)
       + (r.canWrite ? sec("zap", "Beam", `<div id="beams"><span class="muted">…</span></div>`) : "")
       + sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)
+      + sec("git-merge", "Mervin", `<div id="mervin"><span class="muted">…</span></div>`)
       + sec("rocket", "Rusty Buns", `<div id="fit"><span class="muted">…</span></div>`)
       + (owner === me() ? sec("package", "Dependencies", `<a class="btn ghost" href="#/health/${owner}/${repo}" title="Repo health: your versions against the latest" aria-label="repo health">${icon("heart-pulse")}</a><div id="deps"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("send", "Deploy", `<div id="deploy"><span class="muted">…</span></div>`) : "")
@@ -3783,8 +3786,19 @@ const views = {
       route();
     }));
   },
+  /** Mervin, the merge engine, and what he settled of git/git's conflicts (GET /api/mervin; docs/mervin.md). */
+  async wireMervin() {
+    const el = $("#mervin");
+    if (!el) return;
+    const m = await api("/mervin").catch(() => null);
+    if (!m) { el.innerHTML = ""; return; }
+    const c = m.corpus, pc = (n) => Math.round(100 * n / c.files);
+    el.innerHTML = `<p class="muted" title="${esc(m.does)}">${esc(m.name)} merges by line and orders clashing branches into waves. Of ${c.files} files git's merge gave up on in ${esc(c.repo)}:</p>`
+      + `<p><b title="settled to what landed, or the same lines in another order">${c.settled}</b> settled (${pc(c.settled)}%) · <b title="handed back as cards">${c.asked}</b> asked (${pc(c.asked)}%) · <b title="settled clean to other text: the number to drive to 0">${c.other}</b> other text (${pc(c.other)}%)</p>`;
+  },
   /** Could `rustybuns init` box this repo as a desktop binary, a Worker and a server? A monorepo lists its apps. */
   async wireFit(owner, repo, dir = "") {
+    views.wireMervin();
     const el = $("#fit");
     if (!el) return;
     // The file pages share this panel: ask once per repo (and folder) per visit.
@@ -4336,7 +4350,7 @@ const views = {
       ? await api("/agents").then((a) => a.available && !a.admins_only ? a.harnesses : []).catch(() => []) : [];
     // Each wave merges together; a branch that clashes with one before it says which, on hover.
     const waits = (w) => w.after.map((a) => `${a.branch}${a.stacked ? " (stacked on it)" : ""}${a.files.length ? `: ${a.files.join(", ")}` : ""}`).join("; ");
-    const planned = plan?.waves.length > 1 ? `<div class="muted" style="white-space:nowrap;overflow-x:auto" title="merge a wave: the next wave's branches take main in by themselves">${icon("git-merge")} ${plan.waves.map((wave, i) => `<b>${i + 1}</b> ${wave.map((w) => w.after.length ? `<code title="${esc(`after ${waits(w)}`)}">${esc(w.branch)}</code>` : `<code>${esc(w.branch)}</code>`).join(" ")}`).join(" → ")}</div>` : "";
+    const planned = plan?.waves.length > 1 ? `<div class="muted" style="white-space:nowrap;overflow-x:auto" title="${esc(`${plan.engine ?? "Mervin"} planned this: merge a wave and the next wave's branches take main in by themselves`)}">${icon("git-merge")} <b>${esc(plan.engine ?? "Mervin")}</b> ${plan.waves.map((wave, i) => `<b>${i + 1}</b> ${wave.map((w) => w.after.length ? `<code title="${esc(`after ${waits(w)}`)}">${esc(w.branch)}</code>` : `<code>${esc(w.branch)}</code>`).join(" ")}`).join(" → ")}</div>` : "";
     el.innerHTML = planned + reviews.map((b) => {
       // A file only opened on the branch (the switcher reads through its copy) changes nothing: not counted.
       const files = b.files.filter((f) => !f.merged && (f.ops.length || f.deleted || f.binary || f.conflicts.length)), clash = files.flatMap((f) => f.conflicts.map((c) => ({ path: f.path, ...c })));
@@ -6607,6 +6621,8 @@ const fileArgs = (a) => ({ owner: a.owner || ctx.owner, repo: a.repo || ctx.repo
 const readTools = () => [
   { name: "current_page", title: "Where am I", description: "What the page shows now: its view (home, r repo, f file, l level, c cut, s share, u profile, search…), the repo, file or level, the selected lines, what you may do there, and who is signed in.",
     inputSchema: noInput, annotations: { readOnlyHint: true }, execute: async () => where() },
+  { name: "agent_guide", title: "How to drive this site", description: "The prompt a person hands their own agent for steering this site: the WebMCP tools, MCP and CLI, and the rules to follow.",
+    inputSchema: noInput, annotations: { readOnlyHint: true }, execute: async () => (await fetch("/agent.md")).text() },
   { name: "open_page", title: "Open a page", description: "Go to a page by its hash: #/ home, #/r/owner/repo[/dir], #/f/owner/repo/path/to/file, #/l/level-slug[/path], #/u/handle, #/m/owner/repo (agents and branches, for a phone), #/b/owner/repo/branch (a branch's merge page, a card per conflict), #/search/query, #/about. Answers with the new page.",
     inputSchema: { type: "object", properties: { hash: { type: "string", description: "like #/f/owner/repo/src/app.ts" } }, required: ["hash"] },
     annotations: { readOnlyHint: true }, execute: ({ hash }) => asAgent(() => { history.pushState(null, "", "#" + hash.replace(/^#?\/?/, "/")); return route(); }) },

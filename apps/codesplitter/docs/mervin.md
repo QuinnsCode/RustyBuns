@@ -3,6 +3,7 @@
 Mervin is codeSplitter's merge engine: the line-id merge (`src/lines.ts`), the resolver levels and the
 merge plan (`src/merge-plan.ts`) that puts clashing PRs in waves. It swerves out of the way of merge conflicts.
 
+<<<<<<< HEAD
 **Don't be the conflict in your git.** Git that keeps going.
 
 Mervin keeps on swervin, so your agentic merge conflicts can stop hurting. Everyone has that "database guy";
@@ -11,6 +12,9 @@ Mervin is your agentic git and merge guy, out here solving the problems so your 
 Mervin is the merge engine this agentic era needs, and layered with a sync layer it makes agents go brrrr.
 Let Mervin bring the intelligence to your merges, so you don't spend precious token budget on them and
 human minds are free to steer the digsite.
+=======
+Design note for running it locally and on Cloudflare: [mervin-engine.md](mervin-engine.md).
+>>>>>>> origin/main
 
 ## The goal: 80% of fights seen coming
 
@@ -108,11 +112,12 @@ not silent mistakes, and Ruby has no `lint.ts` guard (see below).
 - **Code outside JS/TS is only flagged.** `src/lint.ts` parses only JavaScript, TypeScript and HTML. For the rest
   (C, Rust, Python, Go, shell) a stretch both sides changed where git would have stopped, and Mervin settled, now
   comes back as a `check` (#1389), like the prose fact checks: it never holds the merge, and the writer can settle it
-  with a text. Where the repo has a `package.json` with a `test` or `build` script and test merges is on, that script runs on the merged tree first, and a failure comes back as a `lint:tests` conflict (#1401), settled as the branch to land anyway. Repos with no `package.json` (git/git's make) are still only flagged.
+  with a text. Where the repo has a `package.json` with a `test` or `build` script and test merges is on, that script runs on the merged tree first, and a failure comes back as a `lint:tests` conflict (#1401), settled as the branch to land anyway. Repos with no `package.json` run `make` (a Makefile), `cargo build` (Cargo.toml) or `go build ./...` (go.mod) instead, with nothing installed first (#1407); with none of those they are still only flagged.
 - **Never run on anyone else's history until now.** The 80% goal in this doc is about seeing fights coming; the
   recall number for it (mervin-score) still needs a corpus that keeps real merges (the `lines` predictor is in).
-- **Invisible.** The name is in no UI string, README line or API field; the merge engine is the strongest answer
-  to the contest's conflict-handling criterion and a judge cannot see it.
+- **Visible now, thinly.** The merge plan line and `GET /api/repos/:o/:r/merge-plan` (`engine`) name him, and the repo page
+  and `GET /api/mervin` show the git/git corpus (settled / asked / other text, `src/mervin.ts`). The numbers there are
+  this doc's table, not a live per-repo tally, and the merge page does not credit him per file yet.
 
 ## Corpus to pull in
 
@@ -121,11 +126,3 @@ Tried: rust-lang/cargo, which merges only green PRs through bors, so 1 of 1,600 
 Tried: pingdotgg/t3code, which squash-merges: 15 merge commits in 5,473, so no corpus either.
 Still to check: a Linux subsystem tree, Django. Reference engines to compare against, not to vendor yet:
 Mergiraf (structured merge), Spork and IntelliMerge (tree matching).
-
-## Next
-
-1. Look at Rails' 85 wrong files, starting with `CHANGELOG.md` (both sides prepend an entry), and fix what is an engine fault.
-2. Run `mervin-score.ts` (now with `lines`) on a corpus that keeps real merges and record recall here; add the merge plan as a predictor.
-3. Build commands for repos with no `package.json` (make, cargo, go) as the arbiter.
-4. Run Mergiraf over the hunks in [merge-solutions.md](merge-solutions.md) and see what it settles.
-5. Show Mervin: a corpus number on the repo page, and the merge plan's waves with his name on them.
