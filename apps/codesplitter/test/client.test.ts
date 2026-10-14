@@ -551,7 +551,7 @@ describe("rot mode", () => {
       const out = rotText(text, tier, "l1");
       expect(out.replace(/<i [^>]*>/g, "").replace(/<\/i>/g, "").replaceAll("&#60;", "<").replaceAll("&#62;", ">")).toBe(text);
     }
-    expect(rotText(text, 4, "l1")).toContain("<i ");
+    expect(rotText(text.repeat(8), 4, "l1")).toContain("<i ");
     expect(rotText(text, 0, "l1")).toBe(esc(text));
   });
 
