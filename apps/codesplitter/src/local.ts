@@ -7,6 +7,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import worker, { FileDurableObject, GameRoom, RepoSearch } from "./worker.ts";
 
+// Each queue here is consumed at once, not through the host scheduler: that one is the process's, and holds its slots for
+// the CPU budget and for every other instance's deliveries, so in a busy test process a dig waited past a test's timeout (#1446).
+const now = { run: (_priority: unknown, fn: (job?: any) => unknown) => Promise.resolve(fn()) } as any;
+
 export async function local(extra: Record<string, unknown> = {}) {
   installCloudflareGlobals();
   // The tests claim check runs themselves, so the desktop's own runner stays off unless asked for.
@@ -16,16 +20,16 @@ export async function local(extra: Record<string, unknown> = {}) {
   env.SEARCH = durableObject(RepoSearch as any, env);
   // Webhook tries, consumed in-process as the desktop host does.
   env.HOOKS = queue(":memory:", "codesplitter-hooks");
-  const stopHooks = env.HOOKS.consume((batch: any) => worker.queue(batch, env));
+  const stopHooks = env.HOOKS.consume((batch: any) => worker.queue(batch, env), { scheduler: now });
   // Queued requests' messages, likewise.
   env.JOBS = queue(":memory:", "codesplitter-jobs");
-  const stopJobs = env.JOBS.consume((batch: any) => worker.queue(batch, env));
+  const stopJobs = env.JOBS.consume((batch: any) => worker.queue(batch, env), { scheduler: now });
   // Fix tasks, likewise, in a queue of their own.
   env.FIXES = queue(":memory:", "codesplitter-fixes");
-  const stopFixes = env.FIXES.consume((batch: any) => worker.queue(batch, env));
+  const stopFixes = env.FIXES.consume((batch: any) => worker.queue(batch, env), { scheduler: now });
   // Level digs, likewise: an import's first step, and a big level's parts.
   env.LEVEL_DIGS = queue(":memory:", "codesplitter-level-digs");
-  const stopDigs = env.LEVEL_DIGS.consume((batch: any) => worker.queue(batch, env), { maxRetries: 3 });
+  const stopDigs = env.LEVEL_DIGS.consume((batch: any) => worker.queue(batch, env), { maxRetries: 3, scheduler: now });
   // Artifacts: bare repos in a temp dir, behind a git HTTP server of their own.
   const dir = mkdtempSync(join(tmpdir(), "codesplitter-artifacts-"));
   // An `ARTIFACTS` passed in wins (scripts/fresh-check.ts brings Cloudflare's).
