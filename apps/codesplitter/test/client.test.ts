@@ -410,13 +410,24 @@ describe("lineKey", () => {
 // Selecting by rule, for the palette, the right-click menu and agents.
 describe("picking lines by rule", () => {
   const src = html.slice(html.indexOf("const pickAll"), html.indexOf('/** "line 4", "lines 4'));
-  const { pickAll, pickInvert, pickMatching, pickBy, pickBlock } = new Function(`${src}; return { pickAll, pickInvert, pickMatching, pickBy, pickBlock };`)();
+  const { pickAll, pickInvert, pickMatching, pickBy, pickBlock, pickDrop, pickRunAt, pickRanges } = new Function(`${src}; return { pickAll, pickInvert, pickMatching, pickBy, pickBlock, pickDrop, pickRunAt, pickRanges };`)();
   const sorted = (s: Set<number>) => [...s].sort((a, b) => a - b);
   const code = ["function a() {", "  if (x) {", "    one();", "", "    two();", "  }", "  three();", "}", "", "const b = 1;"];
 
   test("invert flips the pick, all picks everything", () => {
     expect(sorted(pickInvert(new Set([0, 2]), 4))).toEqual([1, 3]);
     expect(sorted(pickAll(3))).toEqual([0, 1, 2]);
+  });
+
+  test("unselecting drops a line, a run, or typed ranges", () => {
+    const picked = new Set([1, 2, 3, 7, 8]);
+    expect(sorted(pickDrop(picked, new Set([2])))).toEqual([1, 3, 7, 8]);
+    expect(sorted(pickRunAt(picked, 2))).toEqual([1, 2, 3]);
+    expect(sorted(pickRunAt(picked, 5))).toEqual([]);
+    expect(sorted(pickRanges("3-4, 9", 10))).toEqual([2, 3, 8]);
+    expect(sorted(pickRanges("8-", 10))).toEqual([7, 8, 9]);
+    expect(sorted(pickRanges("5-3", 10))).toEqual([2, 3, 4]);
+    expect(() => pickRanges("x", 10)).toThrow();
   });
 
   test("matching is a substring in any case, or /regex/", () => {
