@@ -44,6 +44,21 @@ Clef-omni bills $0.15 per million input tokens and about 13 tokens a second of a
 
 With no Turnstile secret, or no AI binding, or a failing call, the review is the **estimate**, worked out from the numbers alone for free, and the card says so. Local dev never has the secret, so it never spends, even though Wrangler connects the AI binding remotely and warns that it could.
 
+## How it's set up
+
+One Worker, declared in `rustybuns.config.ts` (RWSDK entry `src/worker.tsx`, static assets from `dist/client`). `wrangler.jsonc` is generated from it for local dev only; Alchemy owns the real infra. Nothing is stored.
+
+| Binding | What it is | Used for |
+| --- | --- | --- |
+| `AI` | Workers AI | the Clef-omni call (`src/judge.ts`) |
+| `BUDGET` | Durable Object `ReviewBudget` | counts today's Clef calls (`src/budget-do.ts`) |
+| `DAILY_REVIEWS` | var, `25000` | the budget's ceiling |
+| `REVIEW_LIMIT` | rate limit, 4 per 60 s | per-address throttle |
+| `TURNSTILE_SITE_KEY` | var, public | shows the widget; empty means no live calls |
+| `TURNSTILE_SECRET` | secret, `op://fantano/turnstile/secret` | siteverify, resolved by varlock at deploy |
+
+Leave out any of `AI`, `BUDGET`, the site key or the secret and every review is the free estimate, which is all local dev ever gets.
+
 ## Run it
 
 ```sh
