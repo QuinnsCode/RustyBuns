@@ -79,12 +79,12 @@ shows two real engine faults:
 Busy repos that keep real merge commits, cloned in full (not shallow) to a scratch directory. Done: git/git (above).
 Tried: rust-lang/cargo, which merges only green PRs through bors, so 1 of 1,600 merges was ever conflicted: no corpus.
 Still to check: Linux subsystem trees, Rails, Django. Reference engines to compare against, not to vendor yet:
-Mergiraf (structured merge), Spork and IntelliMerge (tree matching).
+Mergiraf (structured merge; run over the merge-solutions.md hunks, see §12 there), Spork and IntelliMerge (tree matching).
 
 ## Next
 
 1. Run `mervin-corpus.ts` on a second repo with a different language mix (Linux subsystem tree, Rails) and record it here.
 2. Run `mervin-score.ts` (now with `lines`) on a corpus that keeps real merges and record recall here; add the merge plan as a predictor.
 3. Build commands for repos with no `package.json` (make, cargo, go) as the arbiter.
-4. Run Mergiraf over the hunks in [merge-solutions.md](merge-solutions.md) and see what it settles.
+4. Run Mergiraf on a corpus with moved and reordered code, where a tree match should beat a line one. Over the 29 hunks in [merge-solutions.md](merge-solutions.md#12-mergiraf-over-the-same-hunks) it settled 6 and nothing L3 doesn't.
 5. Show Mervin: a corpus number on the repo page, and the merge plan's waves with his name on them.
