@@ -36,7 +36,8 @@ updates its docs in the same PR. Those two files must keep importing nothing els
 ## codeSplitter is the Cloudflare git competition entry
 
 `apps/codesplitter` is our entry in Cloudflare's "Build the Next-Gen Git Platform on Cloudflare" competition
-([official rules](https://www.cloudflare.com/documents/build-next-gen-git-platform-competition-terms.pdf)). That is why the
+([official rules](https://www.cloudflare.com/documents/build-next-gen-git-platform-competition-terms.pdf),
+full text in [apps/codesplitter/docs/contest-rules.md](apps/codesplitter/docs/contest-rules.md)). That is why the
 app exists, so changes to it must keep the entry valid:
 
 - Submissions close October 14, 2026 at 11:59 PM PDT. The rules never freeze the repo after that; the deadline is
