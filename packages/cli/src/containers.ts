@@ -4,9 +4,12 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
-import { join, relative } from "node:path";
+import { tmpdir } from "node:os";
+import { join, relative, resolve } from "node:path";
 import type { RustyBunsConfig } from "./config.ts";
+import { refusedSummary } from "./egress-gate.ts";
 import { ENV_SCHEMA } from "./wheel.ts";
 
 export interface ContainerBinding {
@@ -17,6 +20,8 @@ export interface ContainerBinding {
   context: string;
   maxInstances: number;
   instanceType: string;
+  /** The egress module and host list `--prod-like` gates with (config.ts). */
+  egress?: { module: string; hosts: string[] };
 }
 
 export const STATE_DIR = ".rustybuns/containers";
@@ -27,7 +32,7 @@ export function containerBindings(cfg: RustyBunsConfig): ContainerBinding[] {
   return Object.entries(cfg.bindings ?? {}).flatMap(([name, b]) => {
     if (b.type !== "container") return [];
     const at = b.dockerfile.lastIndexOf("/");
-    return [{ name, className: b.className, dockerfile: b.dockerfile, context: at < 0 ? "." : b.dockerfile.slice(0, at), maxInstances: b.maxInstances ?? 1, instanceType: b.instanceType ?? "lite" }];
+    return [{ name, className: b.className, dockerfile: b.dockerfile, context: at < 0 ? "." : b.dockerfile.slice(0, at), maxInstances: b.maxInstances ?? 1, instanceType: b.instanceType ?? "lite", egress: b.egress }];
   });
 }
 
@@ -143,7 +148,7 @@ export async function buildOne(app: string, b: ContainerBinding, opts: { verbose
   };
   await Promise.all([lines(p.stdout, onLine), lines(p.stderr, onLine)]);
   if (tty) process.stdout.write("\r\x1b[K");
-  if ((await p.exited) !== 0) throw new Error(`building ${b.name} (${b.dockerfile}) failed. The last lines:\n${tail.slice(-15).join("\n")}`);
+  if ((await p.exited) !== 0) throw new Error(`building ${b.name} (${b.dockerfile}) failed. The last lines:\n${tail.slice(-30).join("\n")}`);
   const size = imageSize(tag), led = readLedger(opts.dir), prevSize = led[b.name]?.size;
   led[b.name] = { hash, size, at: Date.now(), dockerfile: b.dockerfile };
   writeLedger(led, opts.dir);
@@ -210,9 +215,53 @@ export function runArgs(tag: string, name: string, port: number, o: { env: Recor
   ];
 }
 
+// ---- --prod-like ----
+
+/** Where the runtime puts its CA, which each image's CMD trusts at start. */
+export const CA_PATH = "/etc/cloudflare/certs/cloudflare-containers-ca.crt";
+const GATE_IMAGE = "oven/bun:1";
+
+/** `--prod-like` and `--prod-like=false` aside, the args without it. */
+export const prodLikeFlag = (args: string[]) => ({ prodLike: args.includes("--prod-like"), rest: args.filter((a) => a !== "--prod-like") });
+
+export interface ProdLike { port: number; alive: () => boolean; logs: () => string[]; stop: () => string }
+
+/**
+ * The image under production's conditions: on a Docker network with no route out, whose one neighbour is the
+ * egress gate (egress-gate.ts, running the app's own `allowed`), with a per-session CA at the runtime's path.
+ * The CA and its key live in a temp directory deleted on stop. `stop` returns the gate's refused-host summary.
+ */
+export async function startProdLike(app: string, b: ContainerBinding, tag: string, flags: { env: Record<string, string>; file?: string; dir?: string }): Promise<ProdLike> {
+  if (!b.egress) throw new Error(`${b.name} declares no egress list, so --prod-like has nothing to gate it with. Add egress: { module, hosts } to its binding in rustybuns.config.ts.`);
+  const id = `${app}-${b.name}-${process.pid}`.toLowerCase().replace(/[^a-z0-9_.-]/g, "-");
+  const net = `rb-net-${id}`, cname = `rb-${id}`, gname = `rb-gate-${id}`, tmp = mkdtempSync(join(tmpdir(), "rb-ca-"));
+  const docker = (...a: string[]) => Bun.spawnSync(["docker", ...a], { stdout: "pipe", stderr: "pipe" });
+  const mod = resolve(flags.dir ?? ".", b.egress.module), port = await freePort();
+  const gateSrc = new URL("./egress-gate.ts", import.meta.url).pathname;
+  const ssl = Bun.spawnSync(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=rustybuns local gate", "-keyout", join(tmp, "ca.key"), "-out", join(tmp, "ca.crt")], { stdout: "ignore", stderr: "pipe" });
+  if (ssl.exitCode !== 0) { rmSync(tmp, { recursive: true, force: true }); throw new Error(`--prod-like needs openssl to make this session's CA: ${ssl.stderr.toString().trim().split("\n").pop()}`); }
+  const cleanup = () => { kill(cname); kill(gname); docker("network", "rm", net); rmSync(tmp, { recursive: true, force: true }); };
+  const fail = (what: string, r: { stderr: Buffer }) => { cleanup(); throw new Error(`${what}: ${r.stderr.toString().trim().split("\n")[0]}`); };
+  const made = docker("network", "create", "--internal", net);
+  if (made.exitCode !== 0) fail("creating the container's network", made);
+  const proxy = `http://${gname}:3128`;
+  const proxyEnv = ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"].flatMap((k) => ["-e", `${k}=${proxy}`]);
+  const c = docker("run", "-d", "--rm", "--platform", "linux/amd64", "--name", cname, "--network", net, "-v", `${join(tmp, "ca.crt")}:${CA_PATH}:ro`, ...proxyEnv, "-e", `NO_PROXY=${cname},localhost,127.0.0.1`,
+    ...(flags.file ? ["--env-file", flags.file] : []), ...Object.entries(flags.env).flatMap(([k, v]) => ["-e", `${k}=${v}`]), tag);
+  if (c.exitCode !== 0) fail("starting the container", c);
+  const g = docker("run", "-d", "--rm", "--name", gname, "-p", `127.0.0.1:${port}:9000`, "-v", `${gateSrc}:/gate/egress-gate.ts:ro`, "-v", `${mod}:/gate/egress.ts:ro`,
+    "-e", "GATE_MODULE=/gate/egress.ts", "-e", `GATE_HOSTS=${JSON.stringify(b.egress.hosts)}`, "-e", `FORWARD=${cname}:${PORT}`, GATE_IMAGE, "bun", "/gate/egress-gate.ts");
+  if (g.exitCode !== 0) fail("starting the egress gate", g);
+  const joined = docker("network", "connect", "--alias", gname, net, gname);
+  if (joined.exitCode !== 0) fail("joining the gate to the container's network", joined);
+  const running = (n: string) => docker("inspect", "-f", "{{.State.Running}}", n).stdout.toString().trim() === "true";
+  const logs = () => { const r = docker("logs", gname); return (r.stdout.toString() + r.stderr.toString()).split("\n").filter((l) => l.startsWith("egress")); };
+  return { port, alive: () => running(cname), logs, stop() { const sum = refusedSummary(logs(), b.name); cleanup(); return sum; } };
+}
+
 const kill = (name: string) => Bun.spawnSync(["docker", "rm", "-f", name], { stdout: "ignore", stderr: "ignore" });
 
-export async function runOne(app: string, b: ContainerBinding, flags: { env: Record<string, string>; file?: string; shell?: boolean; verbose?: boolean; dir?: string }): Promise<void> {
+export async function runOne(app: string, b: ContainerBinding, flags: { env: Record<string, string>; file?: string; shell?: boolean; verbose?: boolean; dir?: string; prodLike?: boolean }): Promise<void> {
   const led = readLedger(flags.dir);
   if (freshness(b, led, contextHash(b.context)) !== "built") { console.log(`${b.name}: ${led[b.name] ? "stale" : "not built"}, building`); await buildOne(app, b, flags); }
   const tag = imageTag(app, b), name = `rb-${app}-${b.name}-${process.pid}`.toLowerCase();
@@ -224,6 +273,7 @@ export async function runOne(app: string, b: ContainerBinding, flags: { env: Rec
     await Bun.spawn(argv, { stdio: ["inherit", "inherit", "inherit"] }).exited;
     return;
   }
+  if (flags.prodLike) return runProdLike(app, b, tag, empty, flags);
   const argv = runArgs(tag, name, port, flags);
   console.log(`$ ${argv.join(" ")}`);
   const p = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe" });
@@ -241,9 +291,33 @@ export async function runOne(app: string, b: ContainerBinding, flags: { env: Rec
   stop();
 }
 
-export async function smokeOne(app: string, b: ContainerBinding, flags: { env: Record<string, string>; file?: string; verbose?: boolean; dir?: string }): Promise<{ ok: boolean; note: string }> {
+/** `run --prod-like`: the gate and the container, the gate's log lines as they come, its refused-host summary at Ctrl-C. */
+async function runProdLike(app: string, b: ContainerBinding, tag: string, empty: string[], flags: { env: Record<string, string>; file?: string; dir?: string }) {
+  const g = await startProdLike(app, b, tag, flags);
+  let seen = 0, stopped = false, summary = "";
+  const end = () => { if (!stopped) { stopped = true; summary = g.stop(); } };
+  process.once("SIGINT", end);
+  const ms = await waitReady(g.port, g.alive);
+  if (ms === null) { const out = g.logs().join("\n"); end(); throw new Error(`${b.name} did not answer on :${PORT} under the gate.\n${out}\n${summary}`); }
+  console.log(`\n${b.name} ready in ${(ms / 1000).toFixed(1)}s, prod-like (no route out but the gate): http://127.0.0.1:${g.port}  (Ctrl-C stops and removes it)`);
+  if (empty.length) console.log(`not set (pass --env NAME=VALUE or --env-file): ${empty.join(", ")}`);
+  while (!stopped && g.alive()) {
+    const all = g.logs(); all.slice(seen).forEach((l) => console.log(l)); seen = all.length;
+    await Bun.sleep(1000);
+  }
+  end();
+  console.log(summary);
+}
+
+export async function smokeOne(app: string, b: ContainerBinding, flags: { env: Record<string, string>; file?: string; verbose?: boolean; dir?: string; prodLike?: boolean }): Promise<{ ok: boolean; note: string }> {
   const led = readLedger(flags.dir);
   try { if (freshness(b, led, contextHash(b.context)) !== "built") await buildOne(app, b, flags); } catch (e) { return { ok: false, note: `build failed: ${(e as Error).message.split("\n")[0]}` }; }
+  if (flags.prodLike) {
+    const g = await startProdLike(app, b, imageTag(app, b), flags);
+    const ms = await waitReady(g.port, g.alive);
+    const out = g.logs().join("\n"), sum = g.stop();
+    return ms !== null ? { ok: true, note: `answered on :${PORT} in ${(ms / 1000).toFixed(1)}s under the gate\n${out}\n${sum}` } : { ok: false, note: `never answered under the gate\n${out}\n${sum}` };
+  }
   const tag = imageTag(app, b), name = `rb-smoke-${app}-${b.name}-${process.pid}`.toLowerCase(), port = await freePort();
   const start = Bun.spawnSync(runArgs(tag, name, port, { ...flags, detach: true }));
   if (start.exitCode !== 0) return { ok: false, note: start.stderr.toString().trim().split("\n").pop() ?? "docker run failed" };
@@ -256,4 +330,4 @@ export async function smokeOne(app: string, b: ContainerBinding, flags: { env: R
   } finally { kill(name); }
 }
 
-export const CONTAINERS_USAGE = `usage: rustybuns containers [list] | build [BINDING…] [--verbose] | run BINDING [--shell] [--env NAME=VALUE]… [--env-file path] | smoke [BINDING…]`;
+export const CONTAINERS_USAGE = `usage: rustybuns containers [list] | build [BINDING…] [--verbose] | run BINDING [--shell] [--prod-like] [--env NAME=VALUE]… [--env-file path] | smoke [BINDING…] [--prod-like]`;

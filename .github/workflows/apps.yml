@@ -120,6 +120,27 @@ jobs:
         working-directory: .
       - run: ${{ matrix.smoke }}
 
+  # The container images a PR touched (an app's rustybuns.config.ts bindings), built for linux/amd64 and booted
+  # (rustybuns containers smoke), with a size and boot table in the job summary. Not part of the `apps` gate below.
+  containers:
+    needs: plan
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - run: bun install --frozen-lockfile
+      # codeSplitter's check, deploy and agent images are behind these flags in its rustybuns.config.ts.
+      - env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          CODESPLITTER_AGENTS: "1"
+          CODESPLITTER_DEPLOYS: "1"
+          CODESPLITTER_CHECKS: "1"
+        run: bun scripts/ci-containers.ts check "$BASE"
+
   # One check for the ruleset on main to require (.github/rulesets/main.json): the jobs above only run for the
   # apps a PR touched, so their names come and go. This passes when none of them failed or got cancelled.
   apps:

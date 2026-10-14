@@ -31,13 +31,14 @@
 // It costs container time: see "Checks in a container" in REFERENCE.md for the price.
 
 import { checkEnv, runDirs, sandboxUser, spawnAs } from "./check-env.ts";
-import { checkSettings, claimRun, cloneUrl, get, headOf, planChecks, readAt, updateRun, type CheckRun } from "./checks.ts";
+import { checkSettings, claimRun, cloneUrl, get, handToDesktop, headOf, planChecks, readAt, updateRun, type CheckRun } from "./checks.ts";
 import { RUN_BUDGET_MS, readExec } from "./deploy-runner.ts";
 import { gate, hostList, hostOf, REGISTRIES, type GateExports } from "./egress.ts";
 import { json, type Env } from "./env.ts";
 import { isAdmin } from "./identity.ts";
 import { charge, SITE } from "./limits.ts";
 import { portFetch, type ContainerApi } from "./sandbox.ts";
+import { missingTool } from "./needs.ts";
 import { sha256 } from "./util.ts";
 
 /** A run as claimRun hands it out. */
@@ -74,7 +75,7 @@ export async function branchFiles(env: Env, owner: string, repo: string, ref: st
  * run isn't this runner's any more (it went quiet and was requeued, or was cancelled) stops it.
  */
 export async function runJob(env: Env, owner: string, repo: string, job: Job, label: string, start: () => Promise<Machine>, fallback = "bun test") {
-  let out = "", lost = false, m: Machine | undefined;
+  let out = "", all = "", lost = false, m: Machine | undefined;
   const report = async (u: Parameters<typeof updateRun>[2]) => {
     const run = await get(env, job.id);
     if (!run || run.runner_label !== label || run.status !== "running") { lost = true; m?.stop(); return; }
@@ -100,9 +101,16 @@ export async function runJob(env: Env, owner: string, repo: string, job: Job, la
     const command = job.command ?? fallback;
     out += `$ ${command}\n`;
     tick = setInterval(() => void flush().catch(() => null), 2000);
-    const code = await m.exec(["sh", "-c", command], (s) => { out += s; });
+    const code = await m.exec(["sh", "-c", command], (s) => { out += s; all += s; });
     clearInterval(tick);
     if (lost) return;
+    // A container run that hit a tool the image lacks isn't a failure: it goes to the desktop (needs.ts).
+    const tool = code === 0 ? null : missingTool(all);
+    if (tool && (await get(env, job.id))?.runner === "container") {
+      await report({ append: out + `\nexit ${code}\n` });
+      const run = await get(env, job.id);
+      if (run && !lost) { await handToDesktop(env, run, tool); return; }
+    }
     const junit = await m.read("junit.xml");
     await report({ append: out + `\nexit ${code}\n`, status: code === 0 ? "passed" : "failed", ...(junit && { junit }) });
   } catch (e) {
@@ -319,7 +327,7 @@ export class CiRunner {
     const at = await this.ctx.storage.get<{ owner: string; repo: string }>("repo");
     if (!at) return;
     const { owner, repo } = at, c = this.ctx.container;
-    const job = await claimRun(this.env, owner, repo, LABEL, [], Date.now(), null);
+    const job = await claimRun(this.env, owner, repo, LABEL, [], Date.now(), null, ["container"]);
     if (!job) return;
     try {
       // Its first minute comes off the site's budget up front, so a spent budget starts no container.

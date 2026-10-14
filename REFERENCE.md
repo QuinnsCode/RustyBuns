@@ -211,14 +211,19 @@ Stopping `plan`, `deploy` or `destroy` partway (Ctrl-C, a `kill`, an agent's tim
 
 ### Containers
 
-A binding `{ type: "container", className, dockerfile, maxInstances?, instanceType? }` puts a Dockerfile behind a Durable Object class; the Dockerfile's folder is the build context. `rustybuns containers` works with them locally:
+A binding `{ type: "container", className, dockerfile, maxInstances?, instanceType?, egress? }` puts a Dockerfile behind a Durable Object class; the Dockerfile's folder is the build context. `rustybuns containers` works with them locally:
 
 - `containers` lists each binding as built, stale (its context changed since the last build) or not built, with image size. Hashes live in `.rustybuns/containers/`.
 - `containers build [BINDING…]` builds for `linux/amd64`, the platform Cloudflare runs, showing one progress line per image (`--verbose` for raw BuildKit output), then a size table with the change since the last local build.
 - `containers run BINDING` rebuilds if stale, starts it on a free port, waits for `:8080` to answer, prints the `docker run` it used, and streams logs until Ctrl-C. Env: only `--env NAME=VALUE` and `--env-file path` reach the container, and the names in `.env.schema` left unset are listed. It never reads `.env` or 1Password. `--shell` opens `sh` in the image.
 - `containers smoke [BINDING…]` boots each image headless and exits 1 if one never answers or exits.
 
-`deploy`, `containers *` and `build box` (with cross-built Rust crates) check the Docker daemon first and stop with one message if it isn't running. A local run doesn't replicate Cloudflare's runtime: no egress gate, no Cloudflare CA, no instance types, cold starts or `maxInstances`.
+`deploy`, `containers *` and `build box` (with cross-built Rust crates) check the Docker daemon first and stop with one message if it isn't running. 
+`run --prod-like` and `smoke --prod-like` run an image the way production does. The binding's `egress: { module, hosts }` names a module exporting `allowed(host, list)` and `refused(host)` (codeSplitter's `src/egress.ts`) and the hosts that container may reach. The container goes on a Docker network with no route out, its one neighbour an egress gate (`oven/bun`) that runs your module's own functions, so changing the list changes the local run with no second edit. A per-session CA is mounted at `/etc/cloudflare/certs/cloudflare-containers-ca.crt` and deleted on exit. Each request logs one line (`egress  ✅ host  CONNECT …` or `⛔ … 403`), and the run ends with the refused hosts and the list to add them to. HTTPS is gated by host and tunnelled, not decrypted, so only plain HTTP shows paths. The gate needs `openssl` and pulls `oven/bun` the first time.
+
+Without `--prod-like`, a local run doesn't replicate Cloudflare's runtime. Neither mode emulates instance types, cold starts or `maxInstances`.
+
+In CI, `scripts/ci-containers.ts` (the `containers` job in `apps.yml`) builds and boots the images a PR touched, from each app's bindings, and writes a size and boot table to the job summary.
 
 ### Known-bad versions
 
