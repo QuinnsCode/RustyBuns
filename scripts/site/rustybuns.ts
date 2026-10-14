@@ -10,6 +10,7 @@ export const rustybuns: Site = {
   name: "Rusty Buns",
   tagline: "Write a web app once. Ship it as a desktop binary, a Cloudflare Worker and a Linux server.",
   repo: "QuinnsCode/RustyBuns",
+  ogImage: "og-rustybuns.png",
   pages(src) {
     const readme = src.read("README.md") ?? "# Rusty Buns\n";
     const pages: Page[] = [];
