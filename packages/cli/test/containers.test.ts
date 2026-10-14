@@ -54,3 +54,11 @@ test("BuildKit progress lines become step n/m; --env pairs and .env.schema names
   writeFileSync(join(dir, ".env.schema"), "# c\nGH_TOKEN=\nPLAIN=1\n");
   expect(schemaNames(dir)).toEqual(["GH_TOKEN", "PLAIN"]);
 });
+
+test("the GHA layer cache is one scope per image, read and written", async () => {
+  const { ghaCacheArgs } = await import("../src/containers.ts");
+  const args = ghaCacheArgs("Codesplitter", { name: "CI_RUNNER" } as never);
+  expect(args).toContain("type=gha,scope=codesplitter-ci_runner");
+  expect(args).toContain("type=gha,mode=max,scope=codesplitter-ci_runner");
+  expect(args[0]).toBe("--load");
+});

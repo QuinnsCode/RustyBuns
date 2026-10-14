@@ -131,10 +131,19 @@ async function lines(s: ReadableStream<Uint8Array>, on: (line: string) => void) 
 
 const imageSize = (tag: string) => Number(Bun.spawnSync(["docker", "image", "inspect", "-f", "{{.Size}}", tag]).stdout.toString().trim()) || 0;
 
-export async function buildOne(app: string, b: ContainerBinding, opts: { verbose?: boolean; log?: (s: string) => void; dir?: string } = {}): Promise<{ tag: string; size: number; prevSize?: number; ms: number }> {
+/**
+ * BuildKit's GitHub Actions layer cache, one scope per image (#1693): the flags that read and write it. `--load`
+ * puts the result in the local image store, which the docker-container driver (setup-buildx-action) doesn't do by default.
+ */
+export function ghaCacheArgs(app: string, b: ContainerBinding): string[] {
+  const scope = `${app}-${b.name}`.toLowerCase();
+  return ["--load", "--cache-from", `type=gha,scope=${scope}`, "--cache-to", `type=gha,mode=max,scope=${scope}`];
+}
+
+export async function buildOne(app: string, b: ContainerBinding, opts: { verbose?: boolean; log?: (s: string) => void; dir?: string; ghaCache?: boolean } = {}): Promise<{ tag: string; size: number; prevSize?: number; ms: number }> {
   const log = opts.log ?? console.log, tag = imageTag(app, b), t0 = performance.now();
   const hash = contextHash(b.context);
-  const p = Bun.spawn(["docker", "build", "--platform", "linux/amd64", "--progress=plain", "-f", b.dockerfile, "-t", tag, b.context], { stdout: "pipe", stderr: "pipe" });
+  const p = Bun.spawn(["docker", "build", "--platform", "linux/amd64", "--progress=plain", ...(opts.ghaCache ? ghaCacheArgs(app, b) : []), "-f", b.dockerfile, "-t", tag, b.context], { stdout: "pipe", stderr: "pipe" });
   const tail: string[] = [];
   const tty = process.stdout.isTTY && !opts.verbose;
   const onLine = (l: string) => {

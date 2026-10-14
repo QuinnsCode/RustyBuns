@@ -69,7 +69,7 @@ if (import.meta.main) {
     for (const b of bs) {
       const row: Row = { name: b.name, dockerfile: b.dockerfile, ok: false };
       try {
-        const r = await buildOne(a1, b);
+        const r = await buildOne(a1, b, { ghaCache: !!process.env.ACTIONS_RESULTS_URL });
         Object.assign(row, { build: `${(r.ms / 1000).toFixed(0)}s`, size: mb(r.size) });
         const s = await smokeOne(a1, b, { env: {} });
         row.ok = s.ok;
