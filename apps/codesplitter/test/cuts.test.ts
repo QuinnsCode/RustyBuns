@@ -149,6 +149,11 @@ test("cut lines out, run them, fix the cut, and merge the fix back", async () =>
   expect([run2.code, run2.passed, run2.failed]).toEqual([0, 1, 0]);
   expect(run2.marks["test/sum.test.ts"][testLine]).toBe("pass");
 
+  // The test output is the owner's; anyone with the id gets the marks and counts.
+  expect(run2.out.length).toBeGreaterThan(0);
+  expect(((await (await call("ana", `/api/cuts/${id}`)).json()) as any).run.out).toBe("");
+  expect(((await (await call("ryan", `/api/cuts/${id}`)).json()) as any).run.out).toBe(run2.out);
+
   // Share: a social card and a page for link previews.
   const card = await call(null, `/api/cuts/${id}/card.png`);
   expect(card.headers.get("content-type")).toBe("image/png");

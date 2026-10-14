@@ -365,7 +365,6 @@ async function waitingOn(env: Env, self: (req: Request) => Promise<Response>, ur
   if (!path) return json({ error: "path is required" }, 400);
   const { results } = await env.DB.prepare(`SELECT * FROM agent_runs WHERE owner = ? AND repo = ? AND path = ? ORDER BY id DESC LIMIT ${KEEP}`).bind(owner, repo, path).all();
   const rows = results as Row[], day = Date.now() - 86_400_000;
-  await relaunch(env, rows, url.origin);
   const call = caller(self, url.origin);
   const waiting: Waiting[] = await Promise.all(rows.flatMap((r) => {
     const p = resultOf(r).pending;

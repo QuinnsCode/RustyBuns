@@ -20,6 +20,7 @@
 //   GET  /api/cuts/:id/card.png     the social card: the code and its test result (?font=geist for Geist Mono)
 //   GET  /api/cuts/:id/share        a page for link previews (og:image), sending people on to the cut
 
+import { checkEnv, runDirs } from "./check-env.ts";
 import { materialize, toFile } from "./archive.ts";
 import { cardFont, renderCard, type CardLine } from "./card.ts";
 import { json, type Body, type Env } from "./env.ts";
@@ -278,20 +279,21 @@ const localTester = (): Tester => async (files) => {
   const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { dirname, join, relative } = await import("node:path");
-  const dir = mkdtempSync(join(tmpdir(), "codesplitter-cut-"));
+  const base = mkdtempSync(join(tmpdir(), "codesplitter-cut-")), { repo: dir, home, tmp } = runDirs(base);
   try {
+    for (const d of [dir, home, tmp]) mkdirSync(d);
     for (const [path, text] of Object.entries(files)) {
       const at = join(dir, path);
       if (relative(dir, at).startsWith("..")) continue;
       mkdirSync(dirname(at), { recursive: true });
       writeFileSync(at, text);
     }
-    const p = Bun.spawn(["bun", "test", "--reporter=junit", `--reporter-outfile=${REPORT}`], { cwd: dir, stdout: "pipe", stderr: "pipe", timeout: 120_000, env: { ...process.env, CI: "1" } });
+    const p = Bun.spawn(["bun", "test", "--reporter=junit", `--reporter-outfile=${REPORT}`], { cwd: dir, stdout: "pipe", stderr: "pipe", timeout: 120_000, env: checkEnv(process.env, home, tmp) });
     const [o, e] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
     const code = await p.exited;
     return { code, out: o + e, report: await Bun.file(join(dir, REPORT)).text().catch(() => "") };
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
   }
 };
 
@@ -373,7 +375,8 @@ export async function cutRoutes(req: Request, env: Env, p: string[], url: URL, u
   // GET /api/cuts/:id
   if (!p[3] && req.method === "GET") {
     const { run: _, ...rest } = c;
-    return json({ ...rest, paths: JSON.parse(c.paths), files: await cutFiles(env, c), run, can_run: user === c.owner && !!testerFor(env, user) });
+    // The output can quote the cut's own code and the machine's paths: the link shows the marks and counts, the owner the text.
+    return json({ ...rest, paths: JSON.parse(c.paths), files: await cutFiles(env, c), run: run && user !== c.owner ? { ...run, out: "" } : run, can_run: user === c.owner && !!testerFor(env, user) });
   }
 
   // POST /api/cuts/:id/run
