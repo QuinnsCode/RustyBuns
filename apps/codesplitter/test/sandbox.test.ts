@@ -141,9 +141,10 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     throw new Error("the run never ended");
   };
 
-  test("every harness is offered, even where Bun can't run CLIs", async () => {
-    const { call } = await hosted(async (b) => b);
-    expect(await (await call(null, "/api/agents")).json()).toMatchObject({ available: true, harnesses: ["claude", "codex", "pi", "opencode"] });
+  test("only the harnesses that can't read their own key are offered, even where Bun can't run CLIs (#1428)", async () => {
+    const { call, post } = await hosted(async (b) => b);
+    expect(await (await call(null, "/api/agents")).json()).toMatchObject({ available: true, harnesses: ["claude", "opencode"] });
+    for (const harness of ["codex", "pi"]) expect((await post("ryan-quinn", "/api/repos/ryan-quinn/r1/agents", { harness, path: "src/a.js", task: "x" })).status).toBe(400);
   });
 
   test("the owner gives an agent a task; it runs in a container off the queue, and its lines are blamed on it", async () => {
@@ -166,15 +167,13 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     const authId = (await env.DB.prepare("SELECT auth_id FROM users WHERE name = 'ryan-quinn'").first())!.auth_id as string;
     for (const [id, at] of [["bot", "2026-01-01"], ["mine", "2026-02-01"]]) await env.DB.prepare(`INSERT INTO account (id, accountId, providerId, userId, accessToken, createdAt, updatedAt) VALUES (?, ?, 'github', ?, ?, ?, ?)`)
       .bind(id, id + "-gh", authId, `tok-${id}`, at, at).run();
-    const start = (harness = "codex") => finished(call, { harness, path: "src/a.js", task: "x" });
+    const start = (harness = "claude") => finished(call, { harness, path: "src/a.js", task: "x" });
     // None picked: no token, though "mine" digs.
     expect((await start()).github).toBeUndefined();
     expect(runs.at(-1).cmd.env?.GH_TOKEN).toBeUndefined();
+    // A harness with no shell has nothing to use it with, so with a bot picked it still gets none (#1428).
     expect((await post("ryan-quinn", "/api/github/agent", { id: "bot" })).status).toBe(200);
-    expect((await start()).github).toBe(true);
-    expect(runs.at(-1).cmd.env).toMatchObject({ GH_TOKEN: "tok-bot", GITHUB_TOKEN: "tok-bot" });
-    // A harness with no shell has nothing to use it with (#1428).
-    expect((await start("claude")).github).toBeUndefined();
+    expect((await start()).github).toBeUndefined();
     expect(runs.at(-1).cmd.env?.GH_TOKEN).toBeUndefined();
     // Only your own GitHubs, only signed in; null goes back to none.
     expect((await post("ryan-quinn", "/api/github/agent", { id: "someone-elses" })).status).toBe(404);
@@ -300,7 +299,7 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
 
   test("a CLI that fails in the container comes back as a failed run, and nothing lands", async () => {
     const { call } = await hosted(async () => ({ code: 1, out: "not logged in", text: "junk" }));
-    expect(await finished(call, { harness: "codex", path: "src/a.js", task: "x" })).toMatchObject({ status: "failed" });
+    expect(await finished(call, { harness: "claude", path: "src/a.js", task: "x" })).toMatchObject({ status: "failed" });
     expect(text(await doc(call))).toBe("var x = 1\nf()");
   });
 

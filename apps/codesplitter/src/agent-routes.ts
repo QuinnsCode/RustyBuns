@@ -52,7 +52,7 @@ import { json, type Env, readBody } from "./env.ts";
 import { byToken } from "./tokens.ts";
 import { charge, every, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
-import { HARNESSES, RUNS_COMMANDS, harnessCommand, type Harness } from "./harness.ts";
+import { HARNESSES, HOSTED_HARNESSES, RUNS_COMMANDS, harnessCommand, type Harness } from "./harness.ts";
 import { localSandbox, runAgent, type Conflict, type Exec, type Sandbox } from "./agent-run.ts";
 import { containerSandbox, LOGINS } from "./sandbox.ts";
 import { agentGithubToken } from "./github.ts";
@@ -193,8 +193,8 @@ export async function policyFor(env: Env, owner: string, repo: string, path: str
 /** Why no agent edits `path`: `.gitattributes` locks it (a lockfile, or `codesplitter-live=locked`). */
 const locked = (path: string) => `${path} is locked (codesplitter-live=locked): it's regenerated, so no agent edits it`;
 
-/** The harnesses whose CLI is on PATH (all of them when a test swaps the CLI out). */
-export const installedHarnesses = (env: Env) => env.AGENT_EXEC || env.AGENT_SANDBOX ? HARNESSES : HARNESSES.filter((h) => Bun.which(harnessCommand(h, "").bin));
+/** The harnesses whose CLI is on PATH (all of them when a test swaps the CLI out; a hosted site's are HOSTED_HARNESSES). */
+export const installedHarnesses = (env: Env) => env.AGENT_EXEC ? HARNESSES : env.AGENT_SANDBOX ? HOSTED_HARNESSES : HARNESSES.filter((h) => Bun.which(harnessCommand(h, "").bin));
 
 export async function agentRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null,
   access: (owner: string, repo: string) => Promise<{ read: boolean; write: boolean }>,

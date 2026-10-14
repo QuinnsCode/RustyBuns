@@ -27,6 +27,13 @@ export const FIX_HARNESSES: Harness[] = ["claude", "pi", "opencode"];
 /** The harnesses with a shell, the only ones a GH_TOKEN is any use to (#1428). The rest could only leak it. */
 export const RUNS_COMMANDS: Harness[] = ["codex"];
 
+/**
+ * The harnesses a hosted run may use. codex (a shell) and pi (a `read` tool that
+ * isn't held to its directory) can read their own key from the run's environment,
+ * so they stay off the site until a proxy adds the key on the way out (#1428).
+ */
+export const HOSTED_HARNESSES: Harness[] = ["claude", "opencode"];
+
 // opencode reads permissions from config. OPENCODE_CONFIG_CONTENT outranks any
 // global or project config, so a stray opencode.json can't loosen it. Everything
 // is denied except reading and editing inside the working directory.
