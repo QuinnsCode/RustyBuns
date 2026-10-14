@@ -6172,9 +6172,12 @@ function wireFoot() {
 // Three copies of the list side by side; whenever the scroll passes into the third
 // copy it jumps back one copy's width (and the same going left), so it never ends.
 // It drifts slowly on its own, and stops while the pointer or focus is on it.
+// One fetch for the strip and the map, which are both on the home page.
+let featuresP;
+const featuresJson = () => (featuresP ||= fetch("/features.json").then((r) => r.json()).catch(() => []));
 let stopStrip = () => {};
 async function featureStrip(el) {
-  const feats = await fetch("/features.json").then((r) => r.json()).catch(() => []);
+  const feats = await featuresJson();
   if (!feats.length || !el.isConnected) return;
   const track = $("#feats-track", el);
   const card = (f, cls = "") => `<div class="feat ${cls}"><span class="ico">${icon(f.icon)}</span><b>${esc(f.title)}</b><span>${esc(f.what)}</span></div>`;
@@ -6235,7 +6238,7 @@ const FMAP = [
     art: `<svg viewBox="0 0 360 220" role="img" aria-label="A laptop holding the real repo, mirrored out to GitHub, GitLab and any remote"><rect class="bx o" x="24" y="70" width="104" height="72" rx="6"/><text class="o" x="42" y="102">your laptop</text><text class="m" x="42" y="120">the real repo</text><path class="st o" d="M10 152H142"/><g class="bx"><rect x="236" y="26" width="104" height="38" rx="6"/><rect x="236" y="91" width="104" height="38" rx="6"/><rect x="236" y="156" width="104" height="38" rx="6"/></g><g><text x="256" y="49">GitHub</text><text x="256" y="114">GitLab</text><text x="256" y="179">any remote</text></g><g class="st o"><path d="M128 96C180 96 190 45 236 45"/><path d="M128 106H236"/><path d="M128 116C180 116 190 175 236 175" class="d"/></g><path class="st g" d="M276 186l16 -16m0 16l-16 -16" transform="translate(40 -10)"/><text class="m" x="150" y="206">cloud down? keep going</text></svg>` },
 ];
 async function featureMap(el) {
-  const feats = await fetch("/features.json").then((r) => r.json()).catch(() => []);
+  const feats = await featuresJson();
   if (!feats.length || !el.isConnected) return;
   const byId = new Map(feats.map((f) => [f.id, f]));
   const named = new Set(FMAP.flatMap((t) => t.ids));
