@@ -134,4 +134,4 @@ Busy repos that keep real merge commits, cloned in full (not shallow) to a scrat
 Tried: rust-lang/cargo, which merges only green PRs through bors, so 1 of 1,600 merges was ever conflicted: no corpus.
 Tried: pingdotgg/t3code, which squash-merges: 15 merge commits in 5,473, so no corpus either.
 Still to check: a Linux subsystem tree, Django. Reference engines to compare against, not to vendor yet:
-Mergiraf (structured merge), Spork and IntelliMerge (tree matching).
+Mergiraf (structured merge; over the 29 hunks in [merge-solutions.md](merge-solutions.md#12-mergiraf-over-the-same-hunks) it settled 6 and nothing L3 doesn't; still to try on a corpus with moved and reordered code), Spork and IntelliMerge (tree matching).

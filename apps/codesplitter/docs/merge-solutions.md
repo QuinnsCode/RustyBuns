@@ -445,6 +445,38 @@ in §10 has their files settling exactly or with the same lines in another order
 Left for later: merging main into each branch that waits once its blocker lands (#1162), and warning before
 a task starts that an open branch is rewriting the same files (#1163).
 
+## 12. Mergiraf over the same hunks
+
+Mergiraf is a structured merge driver: it parses both sides into syntax trees and merges the trees, and it falls
+back to a line merge for files it has no grammar for. This runs it over the 29 hunks of §1 to see what it settles
+that codeSplitter's merge does not, and the reverse (#1408).
+
+Mergiraf 0.20.0 (`cargo install mergiraf --locked`), run once per file that main and the branch both changed, the
+same three versions §1 used: base `d7ef133` / `9c6885a`, main `3826cb7`, and the branch tips `751673bb` (#893) and
+`195d32cd` (#886).
+
+```sh
+mergiraf merge base left right -p src/deps.ts -o out    # exit 0 clean, 1 conflicts left
+```
+
+| | #893 | #886 | Left |
+|---|---|---|---|
+| git, line diff3 | 0 / 10 | 0 / 19 | 29 |
+| **Mergiraf** | 4 | 2 | 22, plus features.json refused |
+| codeSplitter today | 5 | 11 | 13 |
+| codeSplitter L3 | 9 | 16 | 4 |
+
+Every file Mergiraf called clean was read: no wrong answers. The 6 it settled:
+
+- **Also settled today (4):** the `commitGraph` comment next to the changed signature (B), `client.test.ts` and `mirror.test.ts` (both added a test), and the `deps.test.ts` import list.
+- **Mergiraf only, today (2):** the `worker.ts` `import { … } from "./mirror.ts"` line, and the `client.html` save body, which came out as `held: f.held.value, digs, rank }`. These are the hunks L2a and L3 are there for, and they settle both.
+
+**What it does not settle.** All 9 `deps.ts` hunks, every README/REFERENCE paragraph, the CSS rule line, the `<g class>` template, the graph head template and the `Registry` rewrite stay conflicts. So do 12 hunks that codeSplitter settles today, such as the both-added-at-one-spot blocks (A) in `client.html` and `deps.ts`, and 7 more that L2/L3 settle, such as one-line `DEFAULTS` and `interface Report`. It matches nodes by tree position, so two sides that each edited the same long line, or reshaped the same stretch, are a conflict to it as much as to git.
+
+**Where they agree.** Both refuse `features.json` while main's markers are in it: Mergiraf prints `left side contains conflict markers, falling back to Git` and returns git's conflict. codeSplitter used to merge it "clean" with the markers carried through (§7), and now refuses it too. Neither settles the 3 D hunks (`drawGraph`, `depUpdate`, `Registry`/`Meta`); those still need the AI and the build check.
+
+**Verdict.** On these hunks Mergiraf settles nothing that L3 does not, and L3 settles 19 it leaves. Nothing here argues for vendoring it. Its tree match would earn its place on code where lines are *reordered or moved*, which these hunks don't exercise; that is a test for a corpus (`mervin-corpus.ts`), not for 29 append-heavy hunks. The same caveat applies the other way: 29 hunks from one app is a small sample.
+
 ## Next steps
 
 Filed as issues, linked from the PR:
