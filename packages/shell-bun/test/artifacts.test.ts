@@ -1,8 +1,10 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalArtifacts, gitHttp } from "../src/bindings/artifacts.ts";
+
+setDefaultTimeout(30_000);   // seeding and the fork's git clone take ~1s, but over 5s when the machine is loaded (#1033)
 
 const dir = mkdtempSync(join(tmpdir(), "rb-artifacts-"));
 const ns = new LocalArtifacts(join(dir, "repos"), "default");
