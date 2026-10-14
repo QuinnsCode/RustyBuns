@@ -14,6 +14,29 @@ codeSplitter' [dependency doctor](apps/codesplitter/README.md) keeps a repo's de
 
 Any repo hosted on codeSplitter can turn it on. Running it on this repo is [#615](https://github.com/QuinnsCode/RustyBuns/issues/615).
 
+## Code settings and Profile settings
+
+codeSplitter keeps its security settings in two places, split by what they are about.
+
+**Code settings** belong to a codebase (a repo). They are about the code and the git side of it, and each repo has its own:
+
+- who can read it (visibility, private lines) and who can write (crew, invites, agents)
+- what runs on it: checks (and pinning them to the settings' commands), the dependency doctor, deploys, deploy keys and the review of code that isn't yours
+
+**Profile settings** belong to a person. They are about everything that isn't the git code itself:
+
+- how you sign in: password, GitHub or Google, sessions
+- your `cst_` tokens, OAuth apps and the agents acting as you
+- your profile page, avatar, city and what the feed shows of you
+- your data: export it, delete the account
+
+How they combine:
+
+- A repo's Code settings stand on their own. Nothing in a profile is needed for a repo to be safe.
+- A Profile can set a default for all your repos, and a repo's own Code setting wins over it, with one exception: a Profile can also **override** a Code setting to make it stricter. Profile settings can tighten a repo (for example, every agent run on your repos needs your review) but never loosen what the repo's owner set.
+- Profile settings that are not about code (sign-in, tokens, data) have no Code counterpart. A repo can't change them, and an agent or token can't change them for you; they are for the person, signed in on the site.
+- Whatever the owner of a repo sets applies to everyone on it. Whatever a person sets in their Profile applies only to them.
+
 ## The examples
 
 The example apps change quickly and haven't had a formal security review. See the caution in the [README](README.md#see-it-work).
