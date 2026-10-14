@@ -117,9 +117,11 @@ describe("bun cli.ts", () => {
     expect(sh).toContain('login --url "$site"');
   });
 
-  test("the agent prompt names this site's WebMCP tools, MCP line and CLI, and /agent.md and `prompt` serve it", async () => {
+  test("the agent prompt lists the CLI first, then MCP, then WebMCP, and /agent.md and `prompt` serve it", async () => {
     const text = agentPrompt("https://cs.example");
     for (const want of ["current_page", "https://cs.example/api/mcp", "https://cs.example/install.sh", "codesplitter tools"]) expect(text).toContain(want);
+    expect(text.indexOf("install.sh")).toBeLessThan(text.indexOf("/api/mcp"));
+    expect(text.indexOf("/api/mcp")).toBeLessThan(text.indexOf("current_page"));
     expect(await agentPromptResponse("https://cs.example").text()).toBe(text);
     expect((await run(["prompt", "--url", "https://cs.example/"], {})).out).toBe(text);
     expect((await run(["prompt"], { HOME: mkdtempSync(`${tmpdir()}/cs-`) })).code).toBe(2);
