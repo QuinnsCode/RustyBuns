@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { hold, report, triage } from "../scripts/ester.ts";
+import { hold, hurtLines, hurting, packagesChanged, report, rows, triage } from "../scripts/ester.ts";
 import type { Stage } from "../scripts/mervin-board.ts";
 
 const stage = (pr: number, path: string, ci?: Stage["ci"], failing?: string[]): Stage => ({ pr, head: "h", base: "b", ci, failing, files: [{ path, tier: "certain", why: "", after: [] }] });
@@ -37,5 +37,23 @@ describe("ester", () => {
     const w = triage(["apps/e: t"], [stage(7, "apps/e/q.ts", "pending")], new Set());
     expect(w[0]).toMatchObject({ owner: "wait", prs: [7] });
     expect(hold([...vs, ...w])).toEqual([1, 2, 3, 7]);
+  });
+});
+
+describe("ester: dependencies that hurt", () => {
+  const pj = (deps: Record<string, string>) => JSON.stringify({ dependencies: deps });
+  test("a package counts when its range changes, not when the file does", () => {
+    expect(packagesChanged(pj({ a: "1", b: "1" }), pj({ a: "2", b: "1", c: "1" }))).toEqual(["a", "c"]);
+    expect(packagesChanged(null, "not json")).toEqual([]);
+  });
+
+  test("ranks by breaks and clashes, with the clash rate against touches", () => {
+    const st = [{ ...stage(1, "apps/a/x.ts"), pkgs: ["zod"] }, { ...stage(2, "apps/a/y.ts"), pkgs: ["zod", "hono"] }, { ...stage(3, "apps/b/z.ts"), pkgs: ["hono"] }, { ...stage(4, "apps/b/w.ts"), pkgs: ["calm"] }];
+    const vs = triage(["apps/a: t"], st, new Set());
+    const rs = rows(st, vs, [{ prs: [2, 3] }]);
+    expect(hurting(rs).map((h) => [h.pkg, h.touches, h.broke, h.clashes])).toEqual([["hono", 2, 1, 2], ["zod", 2, 2, 1], ["calm", 1, 0, 0]]);
+    expect(hurting(rs)[0]!.rate).toBe(1);
+    expect(hurtLines(rs).join("\n")).not.toContain("calm");
+    expect(hurtLines(rows(st, [], []))).toEqual([]);
   });
 });

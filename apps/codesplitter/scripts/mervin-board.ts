@@ -53,7 +53,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describeBlast, load, rank } from "./blast.ts";
-import { hold, report, triage } from "./ester.ts";
+import { hold, hurtLines, packagesChanged, report, rows, triage } from "./ester.ts";
 import { heal, layout } from "../layout.ts";
 import { sandbox, shadow, testRuns, testTree, writeTree } from "./shadow.ts";
 
@@ -91,7 +91,7 @@ export function ciOf(pr: BoardPr): { ci: Ci; failing: string[]; ciSecs: number }
 }
 /** `main` is true when the PR conflicts with main's own copy of the file, whatever earlier stages did. */
 export interface FileRow { path: string; tier: Tier; why: string; after: number[]; main?: boolean }
-export interface Stage { ms?: number; cached?: boolean; pr: number; title?: string; head: string; base: string; stackedOn?: number; ci?: Ci; failing?: string[]; ciSecs?: number; files: FileRow[] }
+export interface Stage { pkgs?: string[]; ms?: number; cached?: boolean; pr: number; title?: string; head: string; base: string; stackedOn?: number; ci?: Ci; failing?: string[]; ciSecs?: number; files: FileRow[] }
 /** A clash between files (or PRs) that merges clean as text: `prs` lists the PRs, `main` is true when main holds one side. */
 export interface Clash {
   kind: "migration" | "export" | "route"; key: string; prs: number[]; main?: boolean;
@@ -275,6 +275,9 @@ export function run(repo: string | undefined, main: string, prs: BoardPr[], cach
       return [line, now(path), (touched.get(path) ?? []).join(",")];
     }));
     const hit = key ? cache!.get(key) : undefined;
+    const manifests = diff.map((l) => l.split("\t")[1]!).filter((p) => p.endsWith("package.json"));
+    const pkgs = [...new Set(manifests.flatMap((p) => packagesChanged(show(base, p), show(pr.headRefOid, p))))].sort();
+    if (pkgs.length) stage.pkgs = pkgs;
     if (hit) {
       stage.files = hit.files;
       for (const [path, t] of hit.mine) { tree.set(path, t); mine.set(path, t); }
@@ -484,6 +487,8 @@ if (import.meta.main) {
         const again = new Set(added.length && bad.length ? (await testTree(join(out, "tree"), bad, env, true)).failed : added);
         const verdicts = triage(r.failed, board.stages, before, again);
         console.log(report(verdicts, r.runs, again.size ? bad.map((x) => r.runs.find((d) => d.dir === x.dir && d.cmd === x.cmd)!.ms) : [], board.stages).join("\n"));
+        const hurt = hurtLines(rows(board.stages, verdicts, board.clashes));
+        if (hurt.length) console.log(hurt.join("\n"));
         if (hold(verdicts).length) console.log(`Ester says hold: ${hold(verdicts).map((n) => `#${n}`).join(", ")}`);
         const mine = new Set(verdicts.filter((v) => v.owner === "blocks").map((v) => v.test));
         const red = board.stages.filter((s) => s.ci === "fail").map((s) => `#${s.pr} (${s.failing!.join(", ")})`);

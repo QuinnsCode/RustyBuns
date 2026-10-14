@@ -185,6 +185,11 @@ that touched that app are named as suspects). Only `blocks` fails the check, and
 weighs a rerun by: the slowest runs in the sandbox, what the flaky rerun cost, and the slowest CI check GitHub timed
 on each PR.
 
+She also keeps score of dependencies: the board tags each stage with the packages its `package.json` diff changed (the
+package, not the lockfile, which every bump rewrites). After a red `--check` she prints **dependencies that hurt**: per
+package, the PRs touching it, how many were `own` or `blocks`, and how many clashed, as a share of touches so a
+package that is only touched a lot doesn't look guilty.
+
 The scorecard and corpus replay old merges. This one merges the board you have now, one stage per PR, onto
 `origin/main` in a temp folder, and files each file in a tier:
 
