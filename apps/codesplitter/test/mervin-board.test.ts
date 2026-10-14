@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ciOf, order, run, score, type BoardPr } from "../scripts/mervin-board.ts";
+import { ciOf, diskCache, order, run, score, type BoardPr, type StageCache } from "../scripts/mervin-board.ts";
 
 // scripts/mervin-board.ts: the open PRs merged in a sandbox one stage at a time, then scored against what landed.
 describe("mervin board", () => {
@@ -52,6 +52,45 @@ describe("mervin board", () => {
     expect(tree.get("c.ts")).toBe("X\np1\np3\n");
   });
 
+  test("a cache reuses a stage until main, its head or a file it touches moves", () => {
+    const cache: StageCache = new Map();
+    const first = run(repo, main, order(prs), cache);
+    expect(first.board.stages.some((s) => s.cached)).toBe(false);
+    const again = run(repo, main, order(prs), cache);
+    expect(again.board.stages.every((s) => s.cached)).toBe(true);
+    expect(again.board.stages.map((s) => s.files)).toEqual(first.board.stages.map((s) => s.files));
+    expect([...again.tree]).toEqual([...first.tree]);
+    expect(again.board.clashes).toEqual(first.board.clashes);
+    // p4 pushed again: only it reruns (p1..p3 are before it and unchanged)
+    const moved = prs.map((p) => (p.number === 4 ? { ...p, headRefOid: p3 } : p));
+    expect(run(repo, main, order(moved), cache).board.stages.map((s) => !!s.cached)).toEqual([true, true, true, false]);
+    // p2 pushed again, now touching only d.ts: the later stages share no file with it, so they stay cached
+    git("checkout", "-qb", "p2b", main);
+    const p2b0 = commit({ "d.ts": "d\n" }, "p2 again");
+    const p2b = prs.map((p) => (p.number === 2 ? { ...p, headRefOid: p2b0 } : p));
+    expect(run(repo, main, order(p2b), cache).board.stages.map((s) => !!s.cached)).toEqual([true, false, true, true]);
+  });
+
+  test("the disk cache keeps stages between runs", () => {
+    const dir = mkdtempSync(join(tmpdir(), "mervin-board-cache-"));
+    try {
+      const a = diskCache(dir);
+      run(repo, main, order(prs), a.cache); a.save();
+      const b = diskCache(dir);
+      expect(run(repo, main, order(prs), b.cache).board.stages.every((s) => s.cached)).toBe(true);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test("a conflict with main is blamed on main, not on an earlier PR", () => {
+    git("checkout", "-qb", "m2", main);
+    const moved = commit({ "c.ts": "main\n" }, "main moves c.ts");
+    const { board } = run(repo, moved, order(prs, [4, 1]));
+    const c = (i: number) => board.stages[i]!.files.find((f) => f.path === "c.ts")!;
+    expect(c(0)).toMatchObject({ tier: "card", after: [], main: true });
+    expect(c(1)).toMatchObject({ tier: "card", after: [], main: true });
+    expect(board.stages[0]!.files.find((f) => f.path === "a.ts")).toBeUndefined();
+  });
+
   test("the score: exact, wrong, asked, and a file someone else moved", () => {
     const { board, tree } = run(repo, main, order(prs, [1, 2, 4]));
     const dir = mkdtempSync(join(tmpdir(), "mervin-board-tree-"));
@@ -67,6 +106,21 @@ describe("mervin board", () => {
       commit({ "a.ts": "other\n" }, "outside the board (#99)");
       expect(score(repo, board, dir, git("rev-parse", "HEAD")).rows.find((r) => r.path === "a.ts")!.score).toBe("moved");
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test("a PR rebuilt after the board ran, then merged with a merge commit, still counts as landed", () => {
+    const { board, tree } = run(repo, main, order(prs, [4]));
+    const dir = mkdtempSync(join(tmpdir(), "mervin-board-tree-"));
+    try {
+      for (const [p, t] of tree) writeFileSync(join(dir, p), t!);
+      git("checkout", "-q", "p4");
+      commit({ "d.ts": "rebuilt\n" }, "merge main into p4");   // a new head sha, unknown to the board
+      git("checkout", "-qb", "after", main);
+      git("merge", "-q", "--no-ff", "-m", "Merge pull request #4 from o/p4", "p4");
+      const { landed, rows } = score(repo, board, dir, git("rev-parse", "HEAD"));
+      expect(landed).toEqual([4]);
+      expect(rows.map((r) => r.score)).toEqual(["exact"]);
+    } finally { rmSync(dir, { recursive: true, force: true }); git("checkout", "-q", "main"); }
   });
 
   test("a PR's own CI: red when any check failed, pending while one runs", () => {
