@@ -192,6 +192,7 @@ curl -i localhost:3000/health     # on Railway, X-RB-Data: volume means /data is
 | `add desktop [--entry file#Component]` | scaffold `packages/desktop/` and `vite.desktop.config.ts`; keeps files you already have |
 | `add deploy [--dry-run]` | install the pinned Alchemy + Effect set and package manager overrides |
 | `boundary` | classify `src/` as client / action / server / leak; regenerate stubs and proxies |
+| `infra [--stage s] [--json]` | the stack as a graph, from the config alone (no login): the Worker and each binding, `[KEPT]` where `protect: true` leaves it through destroy. `--json` is what codeSplitter's Ship pop-out draws |
 | `generate` / `adopt` | regenerate `.rustybuns/`; `adopt` accepts the generated `wrangler.jsonc` over a hand-written one |
 | `build desktop [--dev] [--target os-arch]` | `--dev` bundles without compiling, for `run desktop` |
 | `run desktop` | start the dev host |
