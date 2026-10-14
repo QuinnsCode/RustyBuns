@@ -3,6 +3,7 @@
 // they merge. Her `hold` list shows on his card, since what she says to hold back is what he must not merge.
 // The runs are the office's (ester/run.ts, /__rb/helpers); this polls them while one is going.
 import { Skull, GitMerge, Scissors, createElement, type IconNode } from "lucide";
+import { hot } from "../reload/hot.ts";
 import type { EsterState } from "./run.ts";
 
 type Name = "ester" | "mervin" | "dexter";
@@ -27,6 +28,7 @@ const clock = (s: EsterState) => {
 
 function mount() {
   const style = el("style");
+  style.dataset.rbHelpers = "";
   style.textContent =
     ".rb-helpers{position:fixed;bottom:12px;left:12px;z-index:2147482000;display:flex;flex-direction:column;gap:8px;font:13px/1.4 system-ui,sans-serif}" +
     ".rb-helper-row{display:flex;gap:8px}" +
@@ -75,6 +77,8 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
     m.box.prepend(card);
   };
 
+  let stopped = false;
+  hot("rb-ester", () => { stopped = true; clearTimeout(timer); m.box.remove(); document.querySelectorAll("style[data-rb-helpers]").forEach(n => n.remove()); });
   const poll = async () => {
     try {
       const res = await fetch("/__rb/helpers", { credentials: "same-origin" });
@@ -83,7 +87,7 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
       if (res.ok) Object.assign(states, await res.json());
       render();
     } catch {}
-    timer = setTimeout(poll, Object.values(states).some((s) => s.phase === "running") ? 2000 : 15000);
+    if (!stopped) timer = setTimeout(poll, Object.values(states).some((s) => s.phase === "running") ? 2000 : 15000);
   };
 
   async function call(n: Name) {
