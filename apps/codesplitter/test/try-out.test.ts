@@ -45,12 +45,15 @@ const finish = async (call: any) => {
 const statuses = (run: any) => Object.fromEntries(run.steps.map((s: any) => [s.key, s.status]));
 
 test("trying a repo inits it, prints the config, and plans offline", async () => {
-  const { runner, ran } = fake({ "cat rustybuns.config.ts": { out: "export default { name: 'lab' }\n" } });
+  const graph = { app: "lab", stage: "prod", mode: "fresh", targets: ["edge"], nodes: [{ id: "worker", kind: "worker", label: "lab", protected: false }, { id: "INDEX", kind: "vectorize", label: "INDEX", protected: true }], edges: [{ from: "worker", to: "INDEX" }] };
+  const { runner, ran } = fake({ "cat rustybuns.config.ts": { out: "export default { name: 'lab' }\n" }, "rustybuns infra": { out: `$ x\nINFRA ${JSON.stringify(graph)}\n` } });
   const { call, send } = await app(runner);
   expect((await call("ana", "/api/repos/ryan/lab/try")).status).toBe(403);
   expect((await send("ryan", "/api/repos/ryan/lab/try", {})).status).toBe(202);
   const run = await finish(call);
-  expect(statuses(run)).toEqual({ clone: "done", install: "done", init: "done", plan: "done" });
+  expect(statuses(run)).toEqual({ clone: "done", install: "done", init: "done", infra: "done", plan: "done" });
+  expect(run.infra).toEqual(graph);
+  expect(ran.some((r) => r.line.endsWith("rustybuns infra --json --stage prod"))).toBe(true);
   expect(run.steps.find((s: any) => s.key === "init").out).toContain("export default");
   expect(ran.some((r) => r.line.endsWith("rustybuns plan --offline"))).toBe(true);
   expect(ran.some((r) => r.line.includes("deploy"))).toBe(false);
@@ -74,5 +77,14 @@ test("a failed init says so and skips the plan", async () => {
   const { call, send } = await app(runner);
   await send("ryan", "/api/repos/ryan/lab/try", {});
   const run = await finish(call);
-  expect(statuses(run)).toEqual({ clone: "done", install: "done", init: "failed", plan: "skipped" });
+  expect(statuses(run)).toEqual({ clone: "done", install: "done", init: "failed", infra: "skipped", plan: "skipped" });
+});
+
+test("a repo whose rustybuns has no infra command still plans, just without a map", async () => {
+  const { runner } = fake({ "rustybuns infra": { out: "unknown command: infra\n", code: 1 } });
+  const { call, send } = await app(runner);
+  await send("ryan", "/api/repos/ryan/lab/try", {});
+  const run = await finish(call);
+  expect(statuses(run)).toMatchObject({ infra: "failed", plan: "done" });
+  expect(run.infra).toBeUndefined();
 });

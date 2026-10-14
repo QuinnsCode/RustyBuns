@@ -28,7 +28,9 @@ import { json, type Env } from "./env.ts";
 export type StepKey = "clone" | "install" | "deploy" | "check" | "destroy" | "init" | "plan";
 export interface Step { key: StepKey; status: "waiting" | "running" | "done" | "failed" | "skipped"; out: string; ms?: number }
 /** `deadline`: when a hosted run is cut off (deploy-runner.ts); a desktop one has none. */
-export interface Run { id: string; at: number; stage: string; steps: Step[]; url?: string; done: boolean; kept?: string; note?: string; commit?: string; deadline?: number }
+export interface Run { id: string; at: number; stage: string; steps: Step[]; url?: string; done: boolean; kept?: string; note?: string; commit?: string; deadline?: number;
+  /** The stack as a graph (rustybuns infra --json), from a try-out's infra step. */
+  infra?: unknown }
 
 /** Run a command, streaming its output; resolves to the exit code. */
 export type Exec = (cmd: string[], cwd: string, out: (s: string) => void) => Promise<number>;
