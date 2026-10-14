@@ -242,6 +242,7 @@
   .sec { padding: 10px 14px; border-bottom: 1px solid var(--border); }
   .sec h2 { margin: 0 0 6px; font: 500 11px/1.4 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 6px; }
   .sec-i { margin-left: auto; display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); cursor: pointer; }
+  .sec-i.inl { margin-left: 4px; display: inline-grid; vertical-align: middle; }
   .sec-i:hover, .sec-i[aria-expanded="true"] { background: var(--select); color: var(--fg); } .sec-i svg.lucide { width: 13px; height: 13px; }
   .sec p { margin: 0 0 6px; } .sec .btn { margin: 2px 4px 2px 0; }
   .sec .run { padding: 6px 0; border-top: 1px solid var(--border); display: grid; gap: 2px; } .sec .run:first-child { border-top: 0; }
@@ -2667,7 +2668,7 @@ function dock() {
   aside.append(rail, panels); show(d.tab); setWidth(d.w);
   panels.addEventListener("click", (e) => {
     const b = e.target.closest(".sec-i"); if (!b) return;
-    const p = b.closest(".sec").querySelector(".sec-info"), on = p.hidden;
+    const p = b.classList.contains("inl") ? b.nextElementSibling : b.closest(".sec").querySelector(".sec-info"), on = p.hidden;
     p.hidden = !on; b.setAttribute("aria-expanded", String(on));
   });
   rail.addEventListener("click", (e) => {
@@ -2761,6 +2762,8 @@ const deleteRepo = async (owner, repo, typed) => {
   toast(`Deleted ${owner}/${repo}`); location.hash = `#/u/${owner}`;
 };
 /** A side panel. `info` is its long explanation: an "i" in the heading opens it, so the panel itself stays a row of symbols. */
+/** An inline i for a live panel: the status stays a chip, the long wording opens behind it (same toggle as sec's). */
+const note = (html) => `<button type="button" class="sec-i inl" aria-expanded="false" aria-label="More" title="More">${icon("info")}</button><span class="sec-info muted" hidden> ${html}</span>`;
 const sec = (ic, title, html, info = "") => `<section class="sec" data-key="${title.toLowerCase().replace(/\W+/g, "-")}" data-ic="${ic}"><h2>${icon(ic)}${title}${info ? `<button type="button" class="sec-i" aria-expanded="false" aria-label="About ${title}" title="More about ${title}">${icon("info")}</button>` : ""}</h2>${info ? `<p class="sec-info muted" hidden>${info}</p>` : ""}${html}</section>`;
 /** mm:ss gone since `from`, or left until `deadline`. */
 const tickText = (from, deadline) => {
@@ -3891,7 +3894,7 @@ const views = {
       + (owner === me() && r.mirrorable ? sec("refresh-cw", "Mirror", `<div id="mirror-turn"><span class="muted">…</span></div>`) : "")
       + sec("users", "Crew", `<p>${[owner, ...r.collaborators].map((c) => `<span class="crew-pulse"><a href="#/u/${esc(c)}">@${esc(c)}</a><span data-pulse="${esc(c)}"></span></span>`).join("")}</p>${owner === me() ? '<div id="pending"></div>' : ""}`)
       + (r.canWrite ? sec("zap", "Beam", `<div id="beams"><span class="muted">…</span></div>`) : "")
-      + sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)
+      + sec("git-merge", "Branches", `<div id="branches"><span class="muted">none open${note("Agents work on a branch, then someone merges it.")}</span></div>`)
       + sec("git-merge", "Mervin", `<div id="mervin"><span class="muted">…</span></div>`)
       + sec("rocket", "Rusty Buns", `<div id="fit"><span class="muted">…</span></div>`)
       + (owner === me() ? sec("package", "Dependencies", `<a class="btn ghost" href="#/health/${owner}/${repo}" title="Repo health: your versions against the latest" aria-label="repo health">${icon("heart-pulse")}</a><div id="deps"><span class="muted">…</span></div>`) : "")
@@ -3933,18 +3936,18 @@ const views = {
       : `<button class="btn" data-crew="1"${picAttr("crew")}>${icon("lock")}Push the crew's copy</button>`) : "";
     // Which side leads, and with this copy leading, how far behind its backup upstream is.
     const lead = m.primary === "here"
-      ? `<p class="muted" style="font-size:12px">${icon("hard-drive")}This copy leads: <code>${esc(m.url)}</code> is the backup, ${m.ahead ? `<b>${m.ahead} commit${m.ahead === 1 ? "" : "s"} behind</b>` : "up to date"}${m.syncedAt ? ` as of ${ago(m.syncedAt)}` : ""}. Syncs push first. <a href="#" data-primary="upstream">Let upstream lead</a></p>`
-      : `<p class="muted" style="font-size:12px">${icon("cloud")}Upstream leads: syncs hear from it, then push. <a href="#" data-primary="here">Make this copy the source of truth</a></p>`;
+      ? `<p class="muted" style="font-size:12px">${icon("hard-drive")}This copy leads${note(`<code>${esc(m.url)}</code> is the backup, ${m.ahead ? `<b>${m.ahead} commit${m.ahead === 1 ? "" : "s"} behind</b>` : "up to date"}${m.syncedAt ? ` as of ${ago(m.syncedAt)}` : ""}. Syncs push first.`)} <a href="#" data-primary="upstream">Let upstream lead</a></p>`
+      : `<p class="muted" style="font-size:12px">${icon("cloud")}Upstream leads${note("Syncs hear from it, then push.")} <a href="#" data-primary="here">Make this copy the source of truth</a></p>`;
     // Pull-only (#1009): one-way, for a mirror kept for local CI.
     const pull = m.pullOnly
-      ? `<p class="muted" style="font-size:12px">${icon("download")}Pull-only: syncs hear from upstream and nothing goes back up. <a href="#" data-pull="0">Push too</a></p>`
+      ? `<p class="muted" style="font-size:12px">${icon("download")}Pull-only${note("Syncs hear from upstream and nothing goes back up.")} <a href="#" data-pull="0">Push too</a></p>`
       : `<p class="muted" style="font-size:12px"><a href="#" data-pull="1" title="syncs only pull; branch and tag pushes are turned away">${icon("download")}Make it pull-only</a></p>`;
     const who = m.pullOnly ? "" : m.identity ? `Commits go up as <b>${esc(m.identity.name)}</b> &lt;${esc(m.identity.email)}&gt;.` : `No git identity on this machine: set <code>git config --global user.name</code> and <code>user.email</code>.`;
     el.dataset.pics = "";
     el.innerHTML = `<p>${head}</p>${m.state !== "ok" && m.state !== "held" && !(m.state === "rewritten" && !m.error?.includes(": ")) ? said : ""}
       <div class="gitpic-slot" data-pic="${esc(JSON.stringify(first))}">${gitPic(first)}</div>
       <div class="row" style="gap:6px;flex-wrap:wrap">${pickSide}<button class="btn" id="mirror-sync"${sync}>${icon("refresh-cw")}Sync now</button>${m.pushCrew ? "" : crew}</div>${m.pushCrew ? crew : ""}${m.pullOnly ? "" : lead}${pull}
-      <p class="muted" style="font-size:12px">${who} ${m.truth && m.truth !== "ask" ? `Clashes settle themselves: ${esc(TRUTHS[m.truth]?.[0] ?? m.truth)} wins.` : "Clashes wait for you."} <a href="#/u/${esc(me())}">Where git truth lives</a>: your history never goes extinct either way.</p><div id="mirror-branches"></div>`;
+      <p class="muted" style="font-size:12px">${m.truth && m.truth !== "ask" ? `${esc(TRUTHS[m.truth]?.[0] ?? m.truth)} wins clashes` : "Clashes wait for you"}${note(`${who} <a href="#/u/${esc(me())}">Where git truth lives</a>: your history never goes extinct either way.`)}</p><div id="mirror-branches"></div>`;
     icons();
     $("#mirror-sync").addEventListener("click", (e) => {
       const btn = e.currentTarget; btn.disabled = true; btn.innerHTML = `${icon("refresh-cw")}Syncing…`; btn.querySelector("svg")?.classList.add("spin");
@@ -3973,9 +3976,9 @@ const views = {
     if (t.failed) { el.innerHTML = `<span class="muted">${esc(t.failed)}</span>`; return; }
     const mine = t.ahead ? `<b>${t.ahead} commit${t.ahead === 1 ? "" : "s"}</b> made here since the dig go up to <code>${esc(t.url)}</code> ${esc(t.branch)} on the first sync` : `Nothing made here since the dig, so nothing goes up yet`;
     const pic = ["sync", { ahead: t.ahead, behind: 1 }];
-    el.innerHTML = `<p>Copied once, at <code>${esc(t.commit.slice(0, 7))}</code>. Make it a mirror and the two listen to each other: upstream's commits come here, yours go back up, never forced.</p>
+    el.innerHTML = `<p>Copied at <code>${esc(t.commit.slice(0, 7))}</code>${note("Make it a mirror and the two listen to each other: upstream's commits come here, yours go back up, never forced.")}</p>
       <div class="gitpic-slot" data-pic="${esc(JSON.stringify(pic))}">${gitPic(pic)}</div>
-      <p class="muted" style="font-size:12px">${mine}. Upstream has to take your pushes: without the rights, it stays here and says so.</p>
+      <p class="muted" style="font-size:12px">${t.ahead ? `${icon("arrow-up")}${t.ahead}` : "nothing to send"}${note(`${mine}. Upstream has to take your pushes: without the rights, it stays here and says so.`)}</p>
       <div class="row"><button class="btn" id="mirror-turn-go"${picAttr(...pic)}>${icon("refresh-cw")}Make it a mirror</button></div>`;
     icons();
     const go = $("#mirror-turn-go");
@@ -4003,7 +4006,7 @@ const views = {
     el.innerHTML = `<p>${head}${u.heardAt ? `, heard ${ago(u.heardAt)}` : ""}.${u.folder ? ` Only <code>${esc(u.folder)}</code> comes in.` : ""}</p>
       ${moved && mine ? `<div class="gitpic-slot" data-pic="${esc(JSON.stringify(pic))}">${gitPic(pic)}</div>` : ""}
       <div class="row" style="gap:6px;flex-wrap:wrap">${moved && mine ? `<button class="btn primary" id="listen-take"${picAttr(...pic)}>${icon("download")}Take them</button>` : ""}${mine ? `<button class="btn" id="listen-hear" title="ask GitHub now">${icon("refresh-cw")}Check now</button>` : ""}</div>
-      ${mine ? `<p class="muted" style="font-size:12px">They come in on a branch, to review and merge like any other. Checked every hour.</p>` : ""}`;
+      ${mine ? note("They come in on a branch, to review and merge like any other. Checked every hour.") : ""}`;
     icons();
     $("#listen-hear")?.addEventListener("click", () => { el.querySelector("p").textContent = "asking GitHub…"; views.wireListen(owner, repo, true); });
     $("#listen-take")?.addEventListener("click", async (e) => {
@@ -4031,7 +4034,7 @@ const views = {
         <input name="to" placeholder="@handle to send it to (optional)" aria-label="send to">
         ${fork ? `<label class="row muted" style="font-size:13px;gap:6px"><input type="checkbox" name="upstream">On upstream's newest commit</label>` : ""}
         <button class="btn primary">${icon("zap")}Beam it</button></form>`
-      : `<p class="muted">Open a branch${d.hosted ? "" : ", or push a git branch here (the Clone button's Push back line),"} and beam it: its commits squashed into one clean commit, lockfile churn and leftovers left out, as a link and a patch.</p>`) + sent;
+      : `<p class="muted">no branch to beam${note(`Open a branch${d.hosted ? "" : ", or push a git branch here (the Clone button's Push back line),"} and beam it: its commits squashed into one clean commit, lockfile churn and leftovers left out, as a link and a patch.`)}</p>`) + sent;
     icons();
     $("#beam-form")?.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -4079,7 +4082,7 @@ const views = {
     const m = await api("/mervin").catch(() => null);
     if (!m) { el.innerHTML = ""; return; }
     const c = m.corpus, pc = (n) => Math.round(100 * n / c.files);
-    el.innerHTML = `<p class="muted" title="${esc(m.does)}">${esc(m.name)} merges by line and orders clashing branches into waves. Of ${c.files} files git's merge gave up on in ${esc(c.repo)}:</p>`
+    el.innerHTML = `<p class="muted" title="${esc(m.does)}">${c.files} files${note(`${esc(m.name)} merges by line and orders clashing branches into waves. Of ${c.files} files git's merge gave up on in ${esc(c.repo)}:`)}</p>`
       + `<p><b title="settled to what landed, or the same lines in another order">${c.settled}</b> settled (${pc(c.settled)}%) · <b title="handed back as cards">${c.asked}</b> asked (${pc(c.asked)}%) · <b title="settled clean to other text: the number to drive to 0">${c.other}</b> other text (${pc(c.other)}%)</p>`;
     mervinHint(owner, repo);
     views.wireLearning(owner, repo, el);
@@ -4090,7 +4093,7 @@ const views = {
     if (!l) return;
     const mine = owner === me(), r = l.report;
     const box = document.createElement("div");
-    box.innerHTML = `<p class="muted" style="margin-top:8px">${icon("brain")} Learning: ${l.learning ? "on" : "off"}. ${l.learning ? "Keeps the extension and a hash of the path of each merged file, never contents." : "Off until the owner turns it on."}</p>`
+    box.innerHTML = `<p class="muted" style="margin-top:8px">${icon("brain")} Learning: ${l.learning ? "on" : "off"}${note(l.learning ? "Keeps the extension and a hash of the path of each merged file, never contents." : "Off until the owner turns it on.")}</p>`
       + (r ? `<p title="the last ${r.days} days"><b>${r.settled}</b> settled · <b>${r.asked}</b> asked · <b>${r.wrong}</b> wrong · <b>${r.rules_proposed}</b> rules proposed</p>`
         + (r.fighting.length ? `<ul class="fit-why">${r.fighting.map((f) => `<li><code>${esc(f.path_hash.slice(0, 8))}</code> ${f.ext ? `.${esc(f.ext)} ` : ""}asked ${f.asked}x</li>`).join("")}</ul>` : "") : "")
       + (mine ? `<p><button class="btn" data-learn="${l.learning ? "off" : "on"}">${l.learning ? "Turn off" : "Turn on"}</button> <button class="btn ghost" data-learn="delete" title="Delete every event kept for this repo" aria-label="delete my data">${icon("trash-2")}</button></p>` : "");
@@ -4324,7 +4327,7 @@ const views = {
           <div class="row">stage <input name="stage" aria-label="stage" value="${esc(s.stage)}" style="width:8em;font:12px var(--mono)" pattern="[a-z0-9][a-z0-9-]*" required>
             folder <input name="dir" aria-label="folder" value="${esc(s.dir ?? "")}" placeholder="(repo root)" list="deploy-dirs" title="Where the app's rustybuns.config.ts is, in a monorepo" style="width:12em;font:12px var(--mono)">
             <datalist id="deploy-dirs"></datalist></div>
-          <label><input type="checkbox" name="on_commit"${s.on_commit ? " checked" : ""}> Ship when I commit to main <span class="muted">(only your own commits; crew and agents never start a deploy, and their code waits for you to approve it)</span></label>
+          <label><input type="checkbox" name="on_commit"${s.on_commit ? " checked" : ""}> Ship when I commit to main ${note("Only your own commits; crew and agents never start a deploy, and their code waits for you to approve it.")}</label>
           ${envChoice(s.production)}
           <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deploy-run"></button></div>
         </form>`;
@@ -4420,7 +4423,7 @@ const views = {
         <label title="X-GitHub-Event, X-Hub-Signature-256, push / create / pull_request: for Jenkins, Buildkite, Argo and other receivers built for GitHub"><input type="checkbox" name="gh"> Speak GitHub (for CI that expects GitHub webhooks)</label>
         <div><button class="btn primary">${icon("plus")}Add webhook</button></div>
       </form>
-      <p class="muted" style="font-size:12px;margin-top:4px">GitHub-shaped JSON, POSTed and signed with HMAC-SHA256. A failed delivery is tried again for about three hours.</p>`;
+      <p class="muted" style="font-size:12px;margin-top:4px">${note("GitHub-shaped JSON, POSTed and signed with HMAC-SHA256. A failed delivery is tried again for about three hours.")}</p>`;
     $("#hook-secret")?.addEventListener("click", () => copy(secret, "Secret copied"));
     $("#hook-form").addEventListener("submit", async (e) => {
       e.preventDefault(); const f = e.target;
@@ -4464,7 +4467,7 @@ const views = {
           <select id="try-branch" aria-label="Branch to try"${busy ? " disabled" : ""} title="main, or an agent's branch: its files are laid over the clone"><option value="">main</option>${open.map((b) => `<option value="${esc(b.name)}"${b.name === branch ? " selected" : ""}>${esc(b.name)}</option>`).join("")}</select>
           <button class="btn primary" id="try-run"${!d.can_run || busy ? " disabled" : ""} title="${d.can_run ? "" : "Runs on the desktop app"}">${icon("flask-conical")}${busy ? "Running…" : "Try it"}</button>
         </div>
-        <p class="muted" style="font-size:12px;margin-top:4px">Runs <code>rustybuns init</code> on a throwaway clone (skipped if the repo has a config), then <code>plan --offline</code>: no login, nothing deployed, nothing saved. Pick an agent's branch to try its edits before you merge them.</p>`;
+        <p class="muted" style="font-size:12px;margin-top:4px">${note("Runs <code>rustybuns init</code> on a throwaway clone (skipped if the repo has a config), then <code>plan --offline</code>: no login, nothing deployed, nothing saved. Pick an agent's branch to try its edits before you merge them.")}</p>`;
       const np = el.querySelector("pre");
       if (np && stick) np.scrollTop = np.scrollHeight;
       el.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => { sel = sel === b.dataset.step ? null : b.dataset.step; draw(d); }));
@@ -4628,7 +4631,7 @@ const views = {
         ${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}
         ${shown ? `<pre style="max-height:220px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(shown.out || "(waiting)")}</pre>` : ""}
         <button class="btn primary" id="preview-run"${!d.can_run || (run && !run.done) ? " disabled" : ""} title="${d.can_run ? "" : "Runs on the desktop app, with your own logins"}">${icon("rocket")}${run && !run.done ? "Running…" : "Deploy a preview"}</button>
-        <p class="muted" style="font-size:12px;margin-top:4px">Deploys this repo's <code>rustybuns.config.ts</code> (in the folder set under Deploy, for a monorepo) to its targets as a throwaway stage, with the logins on this machine, checks it answers, then destroys it.</p>
+        <p class="muted" style="font-size:12px;margin-top:4px">${note("Deploys this repo's <code>rustybuns.config.ts</code> (in the folder set under Deploy, for a monorepo) to its targets as a throwaway stage, with the logins on this machine, checks it answers, then destroys it.")}</p>
         ${runLog((d.history ?? []).filter((h) => h.id !== run?.id))}`;
       const np = el.querySelector("pre");
       if (np && stick) np.scrollTop = np.scrollHeight;
@@ -4978,7 +4981,7 @@ const views = {
       <h1>${icon("smartphone")}<a href="#/u/${owner}">${esc(owner)}</a><span class="muted">/</span><b>${esc(repo)}</b><span class="grow"></span><a class="btn ghost" href="#/r/${owner}/${repo}" title="the full repo page">${icon("monitor")}Full view</a></h1>
       ${sec("bot", "Agents", isOwner && r.canWrite ? `<form id="m-agent"><input name="path" list="m-files" placeholder="file, e.g. src/index.ts" autocomplete="off" autocapitalize="off" required pattern=".*[^\\/]" title="a file, not a folder"><datalist id="m-files"></datalist><select name="harness"></select><textarea name="task" rows="3" placeholder="what should the agent do?" required></textarea><button class="btn primary">${icon("play")}Run</button><span class="muted" id="m-why" style="font-size:13px"></span></form><div id="m-runs"><span class="muted">…</span></div>`
         : `<p class="muted">Only the repo's owner starts and sees its coding agents.</p>`)}
-      ${sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)}
+      ${sec("git-merge", "Branches", `<div id="branches"><span class="muted">none open${note("Agents work on a branch, then someone merges it.")}</span></div>`)}
     </div>`;
     icons();
     views.wireBranches(owner, repo, r, { phone: true });
