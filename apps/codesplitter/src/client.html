@@ -744,6 +744,7 @@
   .owngit b { display: block; margin-bottom: 6px; } .owngit p { margin: 0; color: var(--muted); }
   .owngit .flow { font: 500 12px/1.6 var(--mono); color: var(--fg); margin-top: 12px; }
   .owngit .flow em { font-style: normal; color: var(--accent-ink); }
+  .live-stats { display: flex; flex-wrap: wrap; gap: 8px 28px; font: 500 13px/1.6 var(--mono); color: var(--muted); } .live-stats b { color: var(--text, inherit); font-size: 20px; font-variant-numeric: tabular-nums; display: inline-block; min-width: 3ch; }
   .quits { font: 500 12px/1.8 var(--mono); color: var(--muted); margin-top: 16px; } .quits span + span::before { content: " · "; color: var(--faint); }
   @media (max-width: 720px) { .owngit { grid-template-columns: 1fr; } }
   /* A profile: one header line, the repos and digging in the main column, collections and the page on the side. */
@@ -3418,6 +3419,10 @@ const views = {
         <div><div class="stage" id="stage" aria-label="A file splitting into lines, being edited by agents, and rejoining as a git commit"></div>
           <ol class="phases" id="phases"><li>a file</li><li>split into lines</li><li>everyone edits at once</li><li>back together as git</li></ol></div>
       </div></section>
+      <section class="section"><div class="wrap"><div class="live-stats" id="live-stats" aria-live="polite">
+        <span class="stat"><b id="stat-merges">·</b> merges landed here</span>
+        <span class="stat"><b id="stat-solved">·</b> clashes Mervin settled with no card</span>
+      </div></div></section>
       <section class="section"><div class="wrap">
         <div class="label">the whole map</div><h2>Everything it does, by what you're doing</h2>
         <p class="muted">Pick where you're standing. Every feature is on one of these tabs, with a picture of how it fits.</p>
@@ -3491,6 +3496,7 @@ const views = {
     wireDig();
     wireFoot();
     intro($("#stage"), $("#phases"));
+    api("/stats").then((n) => { $("#stat-merges").textContent = n.merges.toLocaleString(); $("#stat-solved").textContent = n.solved.toLocaleString(); }).catch(() => { $("#live-stats").hidden = true; });
     featureMap($("#fmap"));
     featureStrip($("#feats"));
     flapBoard($("#flapboard"));

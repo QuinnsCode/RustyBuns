@@ -87,6 +87,8 @@ export default defineConfig({
       VECTORS: { type: "vectorize", indexName: "codesplitter-vectors", dimensions: 384, metadataIndexes: { repo: "string", pub: "boolean" } } as const,
       AI: { type: "ai" } as const,
     } : {}),
+    // The landing page's counts (merges, clashes Mervin settled), copied here for a minute so a visit costs a KV read, not D1 (src/stats.ts).
+    STATS: { type: "kv" },
     // Webhook tries, one message each; this Worker's queue() sends them and books the
     // retries with a delay (src/hooks.ts). The desktop runs it in-process on sqlite.
     HOOKS: { type: "queue", queueName: "codesplitter-hooks", renamedFrom: "codesplitters-hooks", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } },
