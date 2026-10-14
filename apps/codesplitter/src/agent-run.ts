@@ -29,7 +29,7 @@ export type Sandbox = (cmd: Command, file: { path: string; text: string; also?: 
  */
 export const execCommand: Exec = async (cmd, cwd, signal) => {
   signal?.throwIfAborted();
-  const proc = Bun.spawn([cmd.bin, ...cmd.args], { cwd, env: { ...process.env, ...cmd.env, PWD: cwd }, stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn([cmd.bin, ...cmd.args], { cwd, env: { ...agentEnv(process.env), ...cmd.env, PWD: cwd }, stdout: "pipe", stderr: "pipe" });
   const kill = () => proc.kill();
   signal?.addEventListener("abort", kill, { once: true });
   try {
@@ -37,6 +37,17 @@ export const execCommand: Exec = async (cmd, cwd, signal) => {
     return { code: await proc.exited, out: out + err };
   } finally { signal?.removeEventListener("abort", kill); }
 };
+
+/** What a CLI run on this machine inherits: the shell's basics and its own login. */
+const AGENT_ENV = /^(PATH|HOME|USER|LOGNAME|SHELL|TMPDIR|TEMP|TMP|LANG|LC_[A-Z]+|TERM|COLORTERM|NO_COLOR|TZ|XDG_[A-Z_]+|HTTPS?_PROXY|NO_PROXY|SSL_CERT_(FILE|DIR)|NODE_EXTRA_CA_CERTS|ANTHROPIC_[A-Z_]+|CLAUDE_[A-Z_]+|OPENAI_[A-Z_]+|CODEX_[A-Z_]+|OPENCODE_[A-Z_]+|PI_[A-Z_]+)$/;
+
+/**
+ * The environment a CLI gets on this machine (hosted runs get theirs from sandbox.ts): the shell's basics and the
+ * agent CLIs' own names, not the server's. A desktop codeSplitter's process holds its deploy keys, its auth secret
+ * and whatever the shell exported, and codex's shell (or a one-liner the prompt talks an agent into) would read them.
+ */
+export const agentEnv = (from: Record<string, string | undefined>): Record<string, string> =>
+  Object.fromEntries(Object.entries(from).filter((e): e is [string, string] => AGENT_ENV.test(e[0]) && e[1] !== undefined));
 
 /** A scratch directory on this machine, made for one run and deleted after it. The CLIs must be installed here. */
 export const localSandbox = (exec: Exec = execCommand): Sandbox => async (cmd, file, signal) => {
@@ -169,7 +180,8 @@ export async function runAgent(call: Call, opts: {
     const now = Date.now(), whose = new Map<string, string>();
     for (const c of (await res.json()) as { id: string; who: string; bot: boolean; lines: string[]; task?: string; until: number | null }[]) {
       if (c.id === claim || (c.who === user && !c.bot) || (c.until !== null && c.until <= now)) continue;
-      for (const id of c.lines) whose.set(id, `held by @${c.who}${c.task ? `: ${c.task}` : ""}`);
+      // the task text is theirs, so it's quoted: a claim is one way to put words in another agent's prompt
+      for (const id of c.lines) whose.set(id, `held by @${c.who}${c.task ? `, on ${JSON.stringify(c.task)}` : ""}`);
     }
     return doc.lines.flatMap((l, i) => whose.has(l.id) ? [{ n: i + 1, text: l.text, why: whose.get(l.id)! }] : []);
   }

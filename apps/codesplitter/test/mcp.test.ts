@@ -36,6 +36,9 @@ describe("POST /api/mcp", () => {
     expect(ts.find((t) => t.name === "read_file")!.inputSchema.required).toEqual(["owner", "repo", "path"]);
     // Line claims, for agents sharing a file (#926).
     for (const name of ["list_claims", "claim_lines", "release_claim"]) expect(ts.find((t) => t.name === name)?.annotations.destructiveHint).toBe(false);
+    // What ships code, changes who sees what, or can't be undone says so, so an MCP client asks first (agentic attack audit)
+    for (const name of ["set_protect_main", "set_check_settings", "make_tag", "delete_tag", "share_lines", "beam_branch", "take_upstream", "run_cut", "claim_invite", "delete_branch_file", "start_agent", "record_check", "update_check"])
+      expect(ts.find((t) => t.name === name)?.annotations.destructiveHint).toBe(true);
     expect(ts.find((t) => t.name === "edit_lines")!.inputSchema.properties.body.properties.claim).toBeDefined();
   });
 

@@ -685,3 +685,14 @@ describe("word-level rebase (#928)", () => {
     expect((await post(call, "agent-x", set("f(a, b, a)"))).status).toBe(409);
   });
 });
+
+describe("agentEnv", () => {
+  test("a CLI run on this machine gets the shell's basics and its own login, not the server's secrets", async () => {
+    const { agentEnv } = await import("../src/agent-run.ts");
+    const env = agentEnv({ PATH: "/bin", HOME: "/h", LANG: "C", ANTHROPIC_API_KEY: "a", CLAUDE_CODE_OAUTH_TOKEN: "o", OPENAI_API_KEY: "k", OPENCODE_CONFIG_CONTENT: "{}",
+      BETTER_AUTH_SECRET: "s", DEPLOY_SECRETS_KEY: "d", CLOUDFLARE_API_TOKEN: "c", DATABASE_URL: "postgres://x", OP_SERVICE_ACCOUNT_TOKEN: "op", AWS_ACCESS_KEY_ID: "aws", GH_TOKEN: "g", UNDEFINED: undefined });
+    expect(env).toEqual({ PATH: "/bin", HOME: "/h", LANG: "C", ANTHROPIC_API_KEY: "a", CLAUDE_CODE_OAUTH_TOKEN: "o", OPENAI_API_KEY: "k", OPENCODE_CONFIG_CONTENT: "{}" });  // a GH_TOKEN comes in cmd.env on the runs the owner gave an agent account (#1428), never from the shell
+    const { out } = await execCommand({ bin: "sh", args: ["-c", "echo [$RB_TEST_SECRET][$HOME]"], env: {} }, tmpdir());
+    expect(out.trim()).toBe(`[][${process.env.HOME}]`);
+  });
+});

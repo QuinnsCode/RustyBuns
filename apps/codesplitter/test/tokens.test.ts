@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { adminRoute } from "../src/tokens.ts";
 import { join } from "node:path";
 import { local as boot } from "../src/local.ts";
 
@@ -124,8 +125,9 @@ describe("GET /api/openapi.json", () => {
         expect(o.parameters.filter((p: any) => p.in === "path").map((p: any) => p.name)).toEqual([...path.matchAll(/\{(\w+)\}/g)].map((m) => m[1]));
     // Executor's policy keys off these.
     const risky = Object.values(s.paths).flatMap((m: any) => Object.values(m).filter((o: any) => o["x-codesplitter-risky"]).map((o: any) => o.operationId)).sort();
-    expect(risky).toEqual(["accept_agent_batch", "cherry_pick", "commit_file", "create_ci_token", "create_invite", "delete_repo", "delete_share", "deploy", "invite", "merge_branch", "merge_clean_branches", "reject_agent_batch",
-      "remove_collaborator", "revert_commit", "revoke_ci_token", "revoke_invite", "set_private_lines", "set_repo_visibility", "stop_agents", "withdraw_beam"]);
+    expect(risky).toEqual(["accept_agent_batch", "beam_branch", "cherry_pick", "claim_invite", "commit_file", "create_ci_token", "create_invite", "delete_branch_file", "delete_repo", "delete_share", "delete_tag", "deploy", "invite",
+      "make_tag", "merge_branch", "merge_clean_branches", "record_check", "reject_agent_batch", "remove_collaborator", "revert_commit", "revoke_ci_token", "revoke_invite", "run_cut", "set_check_settings", "set_private_lines",
+      "set_protect_main", "set_repo_visibility", "share_lines", "start_agent", "stop_agents", "take_upstream", "update_check", "withdraw_beam"]);
   });
 
   test("covers every API call the palette and the home page name", async () => {
@@ -203,4 +205,10 @@ describe("GET /api/openapi.json", () => {
     expect((await put(h.token, "/api/repos/ryan/other/files", { path: "c.ts", content: "x" })).status).toBe(403);
     void call;
   });
+});
+
+test("a write token can't turn protect-main off: protect is a repo setting, admin scope like collaborators and hooks", () => {
+  expect(adminRoute(["api", "repos", "o", "r", "protect"], "PUT")).toBe(true);
+  expect(adminRoute(["api", "repos", "o", "r", "protect"], "GET")).toBe(false);
+  expect(adminRoute(["api", "repos", "o", "r", "branches"], "POST")).toBe(false);
 });

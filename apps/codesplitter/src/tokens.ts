@@ -48,7 +48,7 @@ const COOKIE_ONLY = new Set(["admin", "auth", "login", "logout", "handle", "toke
 export const adminRoute = (p: string[], method: string) => {
   if (p[1] !== "repos" || !p[2] || !p[3] || method === "GET" || method === "HEAD") return false;
   const k = p[4];
-  return !k || k === "collaborators" || k === "hooks" || k === "invites" || (k === "deploy" && p[5] === "key") || (k === "checks" && (p[5] === "tokens" || p[5] === "settings"));
+  return !k || k === "collaborators" || k === "hooks" || k === "invites" || k === "protect" || (k === "deploy" && p[5] === "key") || (k === "checks" && (p[5] === "tokens" || p[5] === "settings"));
 };
 
 /** The bearer token a request carries, or null when it carries none. */

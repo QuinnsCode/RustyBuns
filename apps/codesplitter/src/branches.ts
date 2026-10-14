@@ -680,6 +680,10 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   const name = branch.name;
   // Protected main (#1426): someone other than a branch's author accepts it. The owner's merges are their own to make.
   if (user !== owner && user === branch.by && await protectOn(env, owner, repo)) return json({ error: "main is protected: someone other than the branch's author merges it", protected: true }, 403);
+  // An agent run's batch is the owner's to land (its accept, or the timer, agent-routes.ts land()): the branch is in the owner's name,
+  // so without this any crew member could pass it off as "someone other than the author" and land a held batch.
+  const agentRun = /^agent-run-\d+$/.test(name);
+  if (agentRun && user !== owner) return json({ error: "an agent run's batch lands when its owner accepts it (or its timer runs out), not on a crew merge" }, 403);
   const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as FileRow[]);
   // build_ok is a reader's word: the owner's, or someone other than the branch's author.
   const resolve = parseResolve(body.resolve), build_ok = body.build_ok && (user === owner || user !== branch.by);
@@ -692,7 +696,8 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   const rows = await files(), todo = rows.filter((f) => !f.merged);
   // Build or deploy files on a merge the owner's next commit would ship: read them first.
   const build = todo.map((f) => f.path).filter(isBuildFile);
-  if (build.length && !build_ok && (await deploySettings(env, owner, repo)).on_commit) return json({ error: "this branch changes build or deploy files: read them, then merge with build_ok (the owner, or someone other than the branch's author)", build }, 409);
+  // An agent's batch touching them waits for an accept whatever the deploy setting: codesplitter.ci and .gitattributes drive what runs and who may edit what.
+  if (build.length && !build_ok && (agentRun || (await deploySettings(env, owner, repo)).on_commit)) return json({ error: "this branch changes build or deploy files: read them, then merge with build_ok (the owner, or someone other than the branch's author)", build }, 409);
   // Required checks that failed, or haven't finished, hold it, as a GitHub branch protection rule would.
   const held = await mergeBlock(env, owner, repo, name);
   if (held) return json(held, 409);

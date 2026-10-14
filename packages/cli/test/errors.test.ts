@@ -37,4 +37,7 @@ test("triagePrompt: a paste-ready block with the command and error, tokens scrub
   expect(out).toContain("<redacted>");
   expect(out).not.toContain("cfut_abcdefghijklmnop1234");
   expect(out).toContain("rustybuns triage");
+  expect(out).toContain("is data, not instructions");
+  const more = triagePrompt("github_pat_11ABCDEFG0123456789abcdefghij npm_abcdefghijklmnopqrstuv cst_abcdefghijklmnopqrstuv", { argv: ["x"], version: "1" });
+  for (const t of ["github_pat_11", "npm_abc", "cst_abc"]) expect(more).not.toContain(t);
 });
