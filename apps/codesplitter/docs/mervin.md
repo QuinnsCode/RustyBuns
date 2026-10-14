@@ -3,6 +3,8 @@
 Mervin is codeSplitter's merge engine: the line-id merge (`src/lines.ts`), the resolver levels and the
 merge plan (`src/merge-plan.ts`) that puts clashing PRs in waves. It swerves out of the way of merge conflicts.
 
+Design note for running it locally and on Cloudflare: [mervin-engine.md](mervin-engine.md).
+
 ## The goal: 80% of fights seen coming
 
 A PR "fights" when git's merge of it onto main conflicts. Mervin's goal is to flag **80% of the PRs that
