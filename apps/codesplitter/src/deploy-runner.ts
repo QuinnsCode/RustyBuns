@@ -27,7 +27,7 @@
 // before each deploy: the next deploy updates the same stack instead of making
 // a second one under a new name. Each app folder of a monorepo keeps its own.
 //
-//   POST /start {owner, repo, by, trigger}   from deploy.ts, after its checks
+//   POST /start {owner, repo, by, trigger, allowDelete?, force?}   from deploy.ts, after its checks
 //   GET  /run                                the run going now, or the last one
 //   POST /reseal {owner, repo}               seal the kept state under the current DEPLOY_SECRETS_KEY (deploy-keys.ts)
 //   POST /preview {owner, repo, dir, files}  the dependency doctor's preview (deps.ts, #900), below
@@ -45,7 +45,7 @@
 // alarm, when the container is free, puts it back in a fresh container and destroys again,
 // backing off between tries. The sealed state goes only once a destroy succeeds (#1299).
 
-import { begin, finish, remoteFor, stateSuffix } from "./deploy.ts";
+import { begin, finish, remoteFor, stateSuffix, type DeployFlags } from "./deploy.ts";
 import { isCleared, review, waitingNote } from "./deploy-review.ts";
 import { deployKeys, keyEnv, keysInfo, keysLabel, resealState, sealState, unsealState, type Provider } from "./deploy-keys.ts";
 import { json, type Env } from "./env.ts";
@@ -55,7 +55,7 @@ import { logEnd, logStart, preview, STEPS as PREVIEW_STEPS, type Run, type Runne
 import { portFetch, type ContainerApi } from "./sandbox.ts";
 import { CRATES, gate, hostList, hostOf, PROVIDER_HOSTS, REGISTRIES, type GateExports } from "./egress.ts";
 
-interface Job { owner: string; repo: string; run: Run; production: boolean; dir?: string; again?: string; started?: number; preview?: { key: string; tip: string; files: Record<string, string> } }
+interface Job { owner: string; repo: string; run: Run; production: boolean; dir?: string; flags?: DeployFlags; again?: string; started?: number; preview?: { key: string; tip: string; files: Record<string, string> } }
 
 /** How a doctor's preview went, kept for the doctor to ask about: `out`, the end of the step that failed. */
 export interface PreviewResult { id: string; stage: string; ok: boolean; url?: string; failed?: string; note?: string; out?: string }
@@ -157,9 +157,9 @@ export class DeployRunner {
   }
   private save() { return this.ctx.storage.put("job", this.job); }
 
-  private async begin(owner: string, repo: string, by: string, trigger: "button" | "commit") {
+  private async begin(owner: string, repo: string, by: string, trigger: "button" | "commit", flags: DeployFlags = {}) {
     const { run, production, dir } = await begin(this.env, owner, repo, by, trigger, "hosted", keysLabel(await keysInfo(this.env, owner, repo)));
-    this.job = { owner, repo, run, production, dir };
+    this.job = { owner, repo, run, production, dir, flags };
     await this.save();
     await this.ctx.storage.setAlarm(Date.now());
     return run;
@@ -226,14 +226,14 @@ export class DeployRunner {
     }
     const job = await this.load();
     if (req.method === "GET") return json({ run: job?.preview ? (await this.ctx.storage.get<Run>("last")) ?? null : job?.run ?? null });
-    const { owner, repo, by, trigger } = (await req.json()) as { owner: string; repo: string; by: string; trigger: "button" | "commit" };
+    const { owner, repo, by, trigger, allowDelete, force } = (await req.json()) as { owner: string; repo: string; by: string; trigger: "button" | "commit" } & DeployFlags;
     if (job && !job.run.done) {
       if (trigger === "button") return json({ error: job.preview ? "the dependency doctor's preview is running: deploy when it's done" : "a deploy is already running", status: 409 });
       job.again = by;
       await this.save();
       return json({ queued: true });
     }
-    return json({ run: await this.begin(owner, repo, by, trigger) });
+    return json({ run: await this.begin(owner, repo, by, trigger, { ...(allowDelete && { allowDelete }), ...(force && { force }) }) });
   }
 
   async alarm() {
@@ -295,7 +295,7 @@ export class DeployRunner {
         },
       };
       if (job.preview) await preview(runner, remote, run, { dir: job.dir, files: job.preview.files, expect: job.preview.tip });
-      else await preview(runner, remote, run, { keep: true, allowAdopt: job.production, dir: job.dir, expect: checked.tip! });
+      else await preview(runner, remote, run, { keep: true, allowAdopt: job.production, ...job.flags, dir: job.dir, expect: checked.tip! });
       if (run.note?.includes("wasn't logged in")) run.note = "the deploy wasn't logged in: store a deploy key for each provider its targets use (Cloudflare, Railway, Hetzner)";
       // The clone it names goes with the container; a preview's state is kept for a later destroy.
       if (run.kept) {

@@ -274,7 +274,7 @@ export const GROUPS: Group[] = [
       { method: "POST", path: "/api/repos/:o/:r/preview", who: OWNER, does: "start a preview deploy" },
       { method: "GET", path: "/api/repos/:o/:r/deploy", who: OWNER, does: "deploy settings, the run going now, the last 20 deploys; hosted, the review: {tip, commits, cleared} (what's waiting for you)" },
       { method: "PUT", path: "/api/repos/:o/:r/deploy", body: "{stage, dir, on_commit, production}", who: OWNER, does: "deploy settings" },
-      { method: "POST", path: "/api/repos/:o/:r/deploy", body: "{approve?}", who: OWNER, does: "ship it now; hosted, code that isn't yours alone since your last approval answers 409 with the review, and {approve: tip} approves main up to its tip first" },
+      { method: "POST", path: "/api/repos/:o/:r/deploy", body: "{approve?, allow_delete?, force?}", who: OWNER, does: "ship it now (allow_delete: true passes --allow-delete, force: true passes --force, for this deploy only, never saved); hosted, code that isn't yours alone since your last approval answers 409 with the review, and {approve: tip} approves main up to its tip first" },
       { method: "GET", path: "/api/repos/:o/:r/deploy/review", who: OWNER, does: "what a hosted deploy waits on: the commits that aren't yours alone since your last approval, and the diff" },
       { method: "GET", path: "/api/repos/:o/:r/deploy/key[/:provider]", who: OWNER, does: "{set, by, at, last4}: the stored deploy key (Cloudflare's without a provider)" },
       { method: "PUT", path: "/api/repos/:o/:r/deploy/key[/:provider]", body: "{token, account_id?}", who: OWNER, does: "store a deploy key" },
