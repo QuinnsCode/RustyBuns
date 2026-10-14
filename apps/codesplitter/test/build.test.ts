@@ -85,3 +85,17 @@ test("the home page links hashed CSS and JS files that _headers caches as immuta
   expect(await Bun.file(`${dist}${js}`).exists()).toBe(true);
   expect(await Bun.file(`${dist}/_headers`).text()).toContain("/assets/*\n  cache-control: public, max-age=31536000, immutable");
 }, 60_000);
+
+// #1697: a cold agent fetching / or /llms.txt is pointed at the spec, the MCP server and the reference.
+test("the root points a cold agent at the API: llms.txt, robots.txt, a Link header and a no-JS summary", async () => {
+  const p = Bun.spawn(["bun", "run", "build.ts"], { cwd: `${import.meta.dir}/..`, stdout: "pipe", stderr: "pipe" });
+  expect(await p.exited).toBe(0);
+  const dist = `${import.meta.dir}/../dist/client`;
+  const [llms, robots, headers, home] = await Promise.all(["llms.txt", "robots.txt", "_headers", "index.html"].map((f) => Bun.file(`${dist}/${f}`).text()));
+  for (const path of ["/api", "/api/openapi.json", "/api/mcp", "/reference"]) {
+    expect(llms).toContain(`(${path})`);
+    expect(robots).toContain(path);
+    expect(headers).toContain(`<${path}>`);
+    expect(home).toContain(`href="${path}"`);
+  }
+}, 60_000);

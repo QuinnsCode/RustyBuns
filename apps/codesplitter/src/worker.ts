@@ -240,6 +240,7 @@ import {
   upstreamRemote,
   type Truth,
 } from "./mirror.ts";
+import { LLMS_TXT, ROBOTS_TXT } from "./discover.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
@@ -277,6 +278,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (p[0] === "install.sh" && !p[1] && req.method === "GET") return installScript(url.origin);
   // GET /agent.md  a prompt to hand your own agent so it can steer the site for you (agent-prompt.ts)
   if (p[0] === "agent.md" && !p[1] && req.method === "GET") return agentPromptResponse(url.origin);
+  // GET /llms.txt, /robots.txt  where an agent starting at the root is pointed at the API (discover.ts)
+  if ((p[0] === "llms.txt" || p[0] === "robots.txt") && !p[1] && req.method === "GET") return new Response(p[0] === "llms.txt" ? LLMS_TXT : ROBOTS_TXT, { headers: { "content-type": "text/plain; charset=utf-8" } });
   if (p[0] !== "api") return new Response("not found", { status: 404 });
   // GET /api/health, POST /api/watchdog/rolled-back  the watchdog Worker's check and its rollback report (watchdog.ts)
   const dog = await watchdogRoutes(req, env, p);
