@@ -99,6 +99,12 @@ if (import.meta.main) {
     if (args.includes("--no-record") || replay) return;
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, JSON.stringify(recorded, null, 2));
+    const bucket = arg("upload");
+    if (bucket) {
+      const key = `mervin/rounds/${file.split("/").pop()}`;
+      const r = Bun.spawnSync(["wrangler", "r2", "object", "put", `${bucket}/${key}`, "--file", file, "--content-type", "application/json", "--remote"], { cwd: top, stderr: "pipe" });
+      say(r.exitCode === 0 ? `uploaded r2://${bucket}/${key}` : `upload FAILED: ${r.stderr.toString().trim().split("\n").pop()}`);
+    }
   };
   if (!args.includes("--no-record") && !replay) {
     for (const p of prs) Bun.spawnSync(["git", "update-ref", `refs/mervin/pr-${p.number}-${p.headRefOid.slice(0, 9)}`, p.headRefOid], { cwd: top });
