@@ -22,12 +22,14 @@
 //   GET    /invite/:token  (not under /api) a browser goes to the page; an agent gets these steps as text
 
 import { audit } from "./audit.ts";
+import { charge, SITE } from "./limits.ts";
 import { json, NAME, type Env, readBody } from "./env.ts";
 import { HARNESSES, type Harness } from "./harness.ts";
-import { isAgentHandle, mail, mailOn, slug } from "./identity.ts";
-import { b64url, hash, mint } from "./tokens.ts";
+import { isAdmin, isAgentHandle, mail, mailOn, slug } from "./identity.ts";
+import { mint } from "./tokens.ts";
 import { turnstile } from "./security.ts";
 import { repoRow } from "./repos.ts";
+import { b64url, sha256 } from "./util.ts";
 
 export const INVITE_DAYS = 7, MAX_INVITE_DAYS = 30, AGENT_TOKEN_DAYS = 30;
 const MAX_PENDING = 50;
@@ -99,7 +101,7 @@ export async function repoInviteRoutes(req: Request, env: Env, p: string[], owne
     created_at: now, expires_at: now + days * DAY, claimed_by: null, claimed_at: null, door: null,
   };
   await env.DB.prepare("INSERT INTO invites (id, hash, last4, owner, repo, by, kind, target, note, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(i.id, await hash(token), i.last4, i.owner, i.repo, i.by, i.kind, i.target, i.note, i.created_at, i.expires_at).run();
+    .bind(i.id, await sha256(token), i.last4, i.owner, i.repo, i.by, i.kind, i.target, i.note, i.created_at, i.expires_at).run();
   await audit(env, req, { actor: user, action: "invite.create", owner, repo, target: i.id, detail: i.target ? `${i.kind}: ${i.target}` : i.kind });
   // The link is shown this once: only its hash is kept.
   const out = { ...shown(i), token, link: inviteLink(origin(env, req), token) };
@@ -121,7 +123,7 @@ export async function repoInviteRoutes(req: Request, env: Env, p: string[], owne
 async function live(env: Env, ref: string, user: string | null = null): Promise<Invite | { error: string; status: number }> {
   const repoLive = "JOIN repos r ON r.owner = i.owner AND r.name = i.repo WHERE (r.expires_at IS NULL OR r.expires_at > ?)";
   const i = (ref.startsWith("csi_")
-    ? await env.DB.prepare(`SELECT i.* FROM invites i ${repoLive} AND i.hash = ?`).bind(Date.now(), await hash(ref)).first()
+    ? await env.DB.prepare(`SELECT i.* FROM invites i ${repoLive} AND i.hash = ?`).bind(Date.now(), await sha256(ref)).first()
     : user ? await env.DB.prepare(`SELECT i.* FROM invites i ${repoLive} AND i.id = ? AND i.kind = 'handle' AND i.target = ?`).bind(Date.now(), ref, user).first() : null) as Invite | null;
   if (!i) return { error: "this invite was revoked, or never was", status: 404 };
   if (i.claimed_by) return { error: `this invite was already used, by @${i.claimed_by}: ask @${i.by} for another`, status: 410 };
@@ -208,6 +210,11 @@ async function claim(req: Request, env: Env, user: string | null): Promise<Respo
     return json({ ...where, joined: user, door: "agent", token: t.token, expires_at: t.expires_at, mcp: mcpLines(base, t.token),
       next: `Use this token for ${i.owner}/${i.repo}: each of your tokens reaches the repo it came with.` }, 201);
   }
+  // Bots are welcome, but not by the thousand: on the hosted site every handle gets its own per-person limits, so the
+  // ones an inviter brings in are held to a share of their own, and the site to a total.
+  // A desktop (no cf-connecting-ip) is never counted: its swarm costs the site nothing.
+  const over = !req.headers.get("cf-connecting-ip") ? null : ((env.ADMINS && isAdmin(env, i.by) ? null : await charge(env, "brood", `@${i.by}`)) ?? await charge(env, "newagents", SITE));
+  if (over) return json({ error: over }, 429);
   const handle = await newAgent(env, String(b.name ?? "") || harness || "guest");
   if (!(await join(env, i, handle, "agent"))) {
     await env.DB.prepare("DELETE FROM users WHERE name = ?").bind(handle).run();

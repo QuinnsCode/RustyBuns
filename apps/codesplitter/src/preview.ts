@@ -230,7 +230,7 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
       const d = step("deploy");
       d.status = "failed";
       d.out = opts.keep
-        ? "refused: targets.edge.adopt is on, so this deploy would take over the live Worker and its data under their real names.\nIf this repo is production, say so in the deploy settings.\n"
+        ? "refused: targets.edge.adopt is on, so this deploy would take over the live Worker and its data under their real names.\nIf this repo is production, say so in the deploy settings: set its environment to Real (CLI: --real).\n"
         : "refused: targets.edge.adopt is on, so this stack would take over the live Worker and its data under their real names, and destroy would delete them.\nTurn adopt off on a branch to preview it.\n";
       return skip("check", "destroy");
     }

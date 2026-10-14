@@ -79,6 +79,8 @@ export default defineConfig({
     GAMES: { type: "durable_object", className: "GameRoom" },
     // One code search index per repo, FTS5 in its SQLite (src/search.ts).
     SEARCH: { type: "durable_object", className: "RepoSearch" },
+    // One settings object per person, created near where they first connect (src/settings.ts).
+    SETTINGS: { type: "durable_object", className: "UserSettings" },
     // Search across repos: one vector index over every repo's committed code, and Workers AI
     // (bge-small-en-v1.5, 384 dimensions) to embed it. Without them, it fans out (src/search.ts).
     ...(vectors ? {

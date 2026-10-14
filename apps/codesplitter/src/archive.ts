@@ -34,6 +34,13 @@ export function toFile(env: Env, owner: string, repo: string, path: string, user
   return fileStub(env, owner, repo, path, branch).fetch(new Request(`https://file/${op}${search}`, { ...init, headers }));
 }
 
+export interface FileLine { id: string; text: string; by: string; rev: number; private?: true }
+/** The file's lines as `user` sees them; without `crew`, private lines are placeholders. */
+export async function fileLines(env: Env, owner: string, repo: string, path: string, user: string, crew: boolean) {
+  const res = await toFile(env, owner, repo, path, user, "file", { headers: { "x-codesplitter-crew": crew ? "1" : "0" } });
+  return ((await res.json()) as { lines: FileLine[] }).lines;
+}
+
 /**
  * The repo row's artifact handle and branch, or null when it has none. With
  * `crew`, the crew's remote when the repo has one (it holds private lines'

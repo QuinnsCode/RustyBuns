@@ -4,7 +4,7 @@
 //   PUT /api/me/seen {key, rev}  you've seen it at rev
 // A key is the page's own name for a file (owner/repo:branch:path); the newest LAST_SEEN stay.
 
-import { json, type Env } from "./env.ts";
+import { json, readBody, type Env } from "./env.ts";
 
 export const LAST_SEEN = 500;
 
@@ -16,8 +16,8 @@ export async function seenRoutes(req: Request, env: Env, p: string[], url: URL, 
     const r = key ? await env.DB.prepare("SELECT rev FROM last_seen WHERE name = ? AND key = ?").bind(user, key).first() : null;
     return json({ rev: r ? Number(r.rev) : null });
   }
-  const b = (await req.json().catch(() => null)) as { key?: unknown; rev?: unknown } | null;
-  if (typeof b?.key !== "string" || !b.key || b.key.length > 1024) return json({ error: "key: a string of up to 1024 characters" }, 400);
+  const b = await readBody<"key" | "rev">(req);
+  if (typeof b.key !== "string" || !b.key || b.key.length > 1024) return json({ error: "key: a string of up to 1024 characters" }, 400);
   if (!Number.isInteger(b.rev) || (b.rev as number) < 0) return json({ error: "rev: a whole number" }, 400);
   const by = (sql: string, ...args: unknown[]) => env.DB.prepare(sql).bind(...args);
   await env.DB.batch([

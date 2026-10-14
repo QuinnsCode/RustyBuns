@@ -1,0 +1,17 @@
+diff --git a/src/Cloudflare/Queues/Consumer.ts b/src/Cloudflare/Queues/Consumer.ts
+index f69b5818195f681f36a789e8d78ec7b6bd75ad46..1eb060694103d87936c2b3028b51f3e2a6c1518b 100644
+--- a/src/Cloudflare/Queues/Consumer.ts
++++ b/src/Cloudflare/Queues/Consumer.ts
+@@ -591,7 +591,11 @@ export const ConsumerProviderLive = () =>
+           queueId: output.queueId,
+           consumerId: output.consumerId,
+         })
+-        .pipe(Effect.catchTag("ConsumerNotFound", () => Effect.void));
++        .pipe(
++          Effect.catchTag("ConsumerNotFound", () => Effect.void),
++          // The queue itself is gone (recreated under a new id), so its consumer is too.
++          Effect.catchTag("QueueNotFound", () => Effect.void),
++        );
+ 
+       // Block until Cloudflare's worker subsystem stops claiming
+       // the script as a queue consumer. Without this the

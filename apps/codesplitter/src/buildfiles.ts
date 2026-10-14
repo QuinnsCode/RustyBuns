@@ -4,9 +4,9 @@
 // calls these out, line by line, and a merge that would deploy waits for the
 // owner to say they've read them.
 
+import { isLockfile } from "./lockfiles.ts";
 import type { Doc, Op } from "./lines.ts";
 
-const LOCKFILES = new Set(["package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb", "deno.lock"]);
 const NAMES = [
   /^package\.json$/,
   /^rustybuns\.config\.[cm]?[jt]s$/,
@@ -27,7 +27,7 @@ const DIRS = [".rustybuns", ".github", ".circleci", ".buildkite"];
 export function isBuildFile(path: string): boolean {
   const parts = path.split("/"), name = parts[parts.length - 1];
   if (parts.slice(0, -1).some((d) => DIRS.includes(d))) return true;
-  return LOCKFILES.has(name) || NAMES.some((re) => re.test(name));
+  return isLockfile(name) || NAMES.some((re) => re.test(name));
 }
 
 /** A merge's ops against main as a diff a person reads: `-` what goes, `+` what comes. */

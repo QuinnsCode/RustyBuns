@@ -101,6 +101,21 @@ test("a desktop run cut off when the app quit shows as failed, not running for e
   expect(runs[0]).toMatchObject({ status: "failed", error: "the app stopped before the agent finished" });
 });
 
+test("a hosted run whose consumer died shows as stopped past its deadline, not running for ever", async () => {
+  const { call } = await app();
+  call.env.AGENT_SANDBOX = {};
+  const sql = "INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started, picked) VALUES ('ryan', 'lab', 'a.js', 'claude', 'x', 'agent-claude', 'running', ?, ?)";
+  const now = Date.now();
+  await call.env.DB.prepare(sql).bind(1, 1).run();
+  await call.env.DB.prepare(sql).bind(now, now).run();
+  const runs = (await (await call("ryan", "/api/repos/ryan/lab/agents")).json() as any[]).sort((a, b) => a.started - b.started);
+  expect(runs[0]).toMatchObject({ status: "stopped" });
+  expect(runs[0].error).toStartWith("out of time");
+  expect(runs[1].status).toBe("running");
+  const row = await call.env.DB.prepare("SELECT status FROM agent_runs WHERE started = 1").first() as { status: string };
+  expect(row.status).toBe("stopped");
+});
+
 /** A CLI that waits: till Stop kills it (signal), or till `go` lets it upper-case the file. Each run's prompt is kept. */
 function gated(call: { env: any }) {
   const prompts: string[] = [];
@@ -317,4 +332,17 @@ test("with AGENT_REVIEW_MS=0 the agent writes main as it goes, with no branch", 
   expect((await runsOf(call))[0].pending).toBeUndefined();
   expect(await mainText(call)).toEqual(["LET A = 1", "LET B = 2"]);
   expect(await (await call("ryan", "/api/repos/ryan/lab/branches")).json()).toEqual([]);
+});
+
+test("protect main: an agent's batch waits for a person instead of the timer", async () => {
+  const { call, post } = await app();
+  await call("ryan", "/api/repos/ryan/lab/protect", { method: "PUT", body: JSON.stringify({ on: true }) });
+  const started = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout" })).json() as any;
+  let runs: any[] = [];
+  await until(async () => (runs = await (await call("ryan", "/api/repos/ryan/lab/agents?path=a.js")).json())[0].status !== "running");
+  expect(runs[0]).toMatchObject({ status: "done", pending: { branch: `agent-run-${started.id}`, until: null } });
+  await Bun.sleep(600);   // well past AGENT_REVIEW_MS
+  runs = await (await call("ryan", "/api/repos/ryan/lab/agents?path=a.js")).json();
+  expect(runs[0].landed).toBeUndefined();
+  expect(runs[0].pending).toBeDefined();
 });

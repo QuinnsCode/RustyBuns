@@ -4,6 +4,7 @@
 // Cloudflare and in-process under Bun on the desktop.
 
 import { fromText } from "./lines.ts";
+import { mainClosed, protectRoute } from "./protect.ts";
 import {
   ensureCrewRemote,
   fileStub,
@@ -199,6 +200,7 @@ import {
 import { pulseRoutes } from "./pulse.ts";
 import { hasPage, pageRoutes } from "./page.ts";
 import { seenRoutes } from "./seen.ts";
+import { settingsRoutes } from "./settings.ts";
 import { agentPromptResponse } from "./agent-prompt.ts";
 import { installScript } from "./install.ts";
 import {
@@ -234,6 +236,7 @@ import {
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
+export { UserSettings } from "./settings.ts";
 export { AgentSandbox } from "./sandbox.ts";
 export { DeployRunner } from "./deploy-runner.ts";
 export { CiRunner } from "./ci-runner.ts";
@@ -305,7 +308,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   callers.set(req, user);
   via.set(req, actingAs.has(req) ? "job" : token ? (token.oauth ? "oauth" : "token") : "cookie");
   if (token && p[1] === "session") return json({ mode: "token", user, token: { id: token.id, label: token.label, scope: token.scope, expires_at: token.expires_at } });
-  const slow = byIp ? null : await timed(req, "limit", () => limit(req, env, rule, user, admin));
+  const slow = byIp ? null : await timed(req, "limit", () => limit(req, env, rule, user, admin, token?.id));
   if (slow) return slow;
   const tokens = await tokenRoutes(req, env, p, user);
   if (tokens) return tokens;
@@ -375,6 +378,10 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET|PUT /api/me/seen, the rev of each file you last saw (seen.ts)
   const seen = await seenRoutes(req, env, p, url, user);
   if (seen) return seen;
+
+  // GET|PUT /api/me/settings, your light/dark choice and the like, in a Durable Object of your own (settings.ts)
+  const settings = await settingsRoutes(req, env, p, user);
+  if (settings) return settings;
 
   // GET /api/me/feed and its digest (feed.ts)
   const feed = await feedRoutes(req, env, p, url, user);
@@ -469,7 +476,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       const home = h ? (/^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(art?.remote ?? h.remote) ? "local" : "cloud") : null;
       // On the desktop the owner can push back too (#464): the bare repo is a remote for their own tools, with a
       // day-long write token (gone when the app restarts). Not with private lines, which that git holds blank.
-      const wa = home === "local" && user === owner && !ch?.crew ? await artifactAccess(h!.handle, h!.remote, "write", 86400).catch(() => null) : null;
+      const wa = home === "local" && user === owner && !ch?.crew && (!token || token.scope === "write") ? await artifactAccess(h!.handle, h!.remote, "write", 86400).catch(() => null) : null;
       const push = wa && `git remote add codesplitter ${wa.remote.replace("://", `://x:${wa.token.split("?")[0]}@`)}`;
       // The owner sees who's invited but not in yet, beside the crew.
       const invites = user === owner ? { invites: await pendingInvites(env, owner, repo) } : {};
@@ -560,6 +567,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     // POST /api/repos/:o/:r/commits/:sha/pick {branch?}  a commit taken again, onto main or an open branch
     if (p[4] === "commits" && p[5] && (p[6] === "revert" || p[6] === "pick") && !p[7] && req.method === "POST") {
       if (!a.write) return json({ error: "no write access" }, 403);
+      const picked = (await req.clone().json().catch(() => ({})) as { branch?: unknown }).branch;
+      if (!picked || picked === "main") { const closed = await mainClosed(env, owner, repo, user); if (closed) return closed; }
       return pickRoute(env, owner, repo, user!, p[6], p[5], await req.json().catch(() => ({})) as { branch?: unknown });
     }
     // GET /api/repos/:o/:r/tree?path=dir[&branch=b]  the repo's git tree, plus files written here but not catalogued yet
@@ -663,6 +672,8 @@ async function route(req: Request, env: Env): Promise<Response> {
       await audit(env, req, { actor: user, action: "crew.remove", owner, repo, target: p[5] });
       return json({ ok: true });
     }
+    // GET|PUT /api/repos/:o/:r/protect  keep crew and agents off main (protect.ts)
+    if (p[4] === "protect" && !p[5]) return protectRoute(req, env, owner, repo, user);
     // /api/repos/:o/:r/invites[/:token]  invite by handle, email or a bare link; the pending ones; revoke (invites.ts)
     const invites = await repoInviteRoutes(req, env, p, owner, repo, user);
     if (invites) return invites;
@@ -676,6 +687,8 @@ async function route(req: Request, env: Env): Promise<Response> {
         if (!(await openBranch(env, owner, repo, branch))) return json({ error: "no open branch " + branch }, 404);
         return createOn(env, owner, repo, branch, path, content, user!);
       }
+      const closed = await mainClosed(env, owner, repo, user);
+      if (closed) return closed;
       const r = await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, path).run();
       if (!r.meta?.changes) return json({ error: "file exists" }, 409);
       await toFile(env, owner, repo, path, user!, "ops", { method: "POST", body: JSON.stringify({ ops: fromText(content) }) });
@@ -692,6 +705,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       if ("error" in m) return json({ error: m.error }, m.status);
       const writes = p[5] === "ops" || p[5] === "commit" || ((p[5] === "private" || p[5] === "claims" || p[5] === "release") && req.method === "POST");
       if (writes && !a.write) return json({ error: "no write access" }, 403);
+      if (writes && !branch) { const closed = await mainClosed(env, owner, repo, user); if (closed) return closed; }
       // On the desktop, a push to the repo's git from outside reaches main's files when they're opened or
       // committed, so a commit here never writes their old lines back over it (#773).
       if (!branch && (p[5] === "commit" || (p[5] === "file" && req.method === "GET")) && mirrorsOn(env)) await landPushes(env, owner, repo).catch(() => {});
@@ -733,7 +747,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       }
       // Only the crew reads private lines; everyone else gets placeholders.
       const res = await toFile(env, owner, repo, path, user ?? "anon", p[5]!, { method: req.method, body: sent, headers: { "x-codesplitter-crew": a.write ? "1" : "0", ...(live && { "x-codesplitter-live": live }) } },
-        url.searchParams.has("rev") ? `?rev=${url.searchParams.get("rev")}` : url.searchParams.has("since") ? `?since=${url.searchParams.get("since")}` : "", branch);
+        url.searchParams.has("rev") ? `?rev=${url.searchParams.get("rev")}` : url.searchParams.has("since") ? `?since=${url.searchParams.get("since")}` : p[5] === "file" && (url.searchParams.has("from") || url.searchParams.has("limit")) ? `?${new URLSearchParams([...url.searchParams].filter(([k]) => k === "from" || k === "limit"))}` : "", branch);
       if (p[5] === "private" && req.method === "POST" && res.ok) {
         // From the first private line on, the crew has a remote of its own to clone and deploy from.
         if ((JSON.parse(sent!) as { private?: boolean }).private) await ensureCrewRemote(env, owner, repo).catch(() => null);

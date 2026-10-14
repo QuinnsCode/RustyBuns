@@ -18,6 +18,7 @@
 
 import { json, type Env } from "./env.ts";
 import { repoRow } from "./repos.ts";
+import { digest, hex } from "./util.ts";
 
 /** The most repos one search across repos asks without the vector index. */
 export const FAN_OUT = 50;
@@ -147,8 +148,7 @@ export const vectorsOn = (env: Env) => !!(env.VECTORS && env.AI);
 
 /** A chunk's vector id: Vectorize takes 64 bytes, so the file is a hash and the chunk its number. */
 async function vid(owner: string, repo: string, path: string, i: number) {
-  const h = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${owner}/${repo}/${path}`)));
-  return `${[...h.slice(0, 20)].map((b) => b.toString(16).padStart(2, "0")).join("")}:${i}`;
+  return `${hex((await digest(`${owner}/${repo}/${path}`)).slice(0, 20))}:${i}`;
 }
 const vids = (owner: string, repo: string, path: string, n: number) => Promise.all(Array.from({ length: n }, (_, i) => vid(owner, repo, path, i)));
 

@@ -27,22 +27,23 @@
 // time travel and the live socket. A commit hands back that public text too,
 // for git and search, so the real text never leaves the app.
 
-import type { Env } from "./env.ts";
+import { json, type Env } from "./env.ts";
 import { recordEdits, type Recent } from "./line-events.ts";
 import { noteStep } from "./insights.ts";
 import { branchEdited } from "./checks.ts";
 import { Tally } from "./limits.ts";
 import { lintMerge } from "./lint.ts";
 import { DocStore } from "./doc-store.ts";
-import { apply, empty, merge, mergeWords, replay, sha, text, type Applied, type Doc, type Line, type Op, type Resolve } from "./lines.ts";
+import { sha256 as sha } from "./util.ts";
+import { apply, empty, merge, mergeWords, replay, text, type Applied, type Doc, type Line, type Op, type Resolve } from "./lines.ts";
 import type { Live, Rule } from "./policy.ts";
+import { pad10 } from "./util.ts";
 
 /** `writers`: everyone whose edits since the file's last commit this one carries (a hosted deploy asks about others', deploy.ts). */
 interface Commit { n: number; sha: string; parent: string | null; rev: number; by: string; at: number; message: string; writers: string[] }
 
 declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
 
-const pad = (n: number) => String(n).padStart(10, "0");
 /** One read of the log takes this many ops at most, so no read holds the whole log in memory. */
 const OP_PAGE = 1000;
 /** The doc is snapshotted every this many ops, so time travel replays at most this many. */
@@ -52,7 +53,6 @@ export const KEEP_SNAPS = 10;
 
 /** Asked for history from before `trimmed`. */
 class Trimmed extends Error { constructor(readonly from: number) { super(`history before rev ${from} is trimmed: read the file instead`); } }
-const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { "content-type": "application/json" } });
 
 type Shown = Line & { private?: true };
 
@@ -106,6 +106,17 @@ export const WAIT_POLL_MS = 20_000;
 export const WAIT_KEEP_MS = 60_000;
 /** Presence goes out at most this often, so a thousand sockets opening at once isn't a million messages. */
 const PRESENCE_MS = 250;
+
+/**
+ * A window of a doc's lines, when the reader asks for one (`from`, 0-based, and `limit`): the doc
+ * with only those lines, plus `total` and `from` so they can ask for the next. Without either, the
+ * whole doc, as before.
+ */
+function window<D extends { lines: unknown[] }>(doc: D, from: string | null, limit: string | null): D | (D & { total: number; from: number }) {
+  if (from === null && limit === null) return doc;
+  const start = Math.max(0, Math.floor(Number(from)) || 0), n = Math.max(1, Math.min(Math.floor(Number(limit)) || doc.lines.length, 5000));
+  return { ...doc, lines: doc.lines.slice(start, start + n), total: doc.lines.length, from: start };
+}
 
 export class FileDurableObject {
   doc: Doc = empty();
@@ -231,7 +242,7 @@ export class FileDurableObject {
       this.presence();
       return new Response(null, { status: 101, webSocket: client } as ResponseInit);
     }
-    if (req.method === "GET" && route === "file") return json(this.shown(this.doc, crew));
+    if (req.method === "GET" && route === "file") return json(window(this.shown(this.doc, crew), url.searchParams.get("from"), url.searchParams.get("limit")));
     if (req.method === "POST" && route === "ops") {
       const { ops, ifRev, claim } = (await req.json()) as { ops: Op[]; ifRev?: number; claim?: string };
       const r = await this.edit(by, ops, ifRev, claim, live);
@@ -351,14 +362,14 @@ export class FileDurableObject {
 
   async commit(by: string, message?: string) {
     const content = text(this.doc);
-    const prev: Commit | undefined = this.commits ? await this.ctx.storage.get("commit:" + pad(this.commits)) : undefined;
+    const prev: Commit | undefined = this.commits ? await this.ctx.storage.get("commit:" + pad10(this.commits)) : undefined;
     const commit: Commit = {
       n: this.commits + 1, sha: await sha((prev?.sha ?? "") + "\n" + content), parent: prev?.sha ?? null,
       rev: this.doc.rev, by, at: Date.now(), message: message || "commit",
       writers: await this.writers(prev?.rev ?? 0),
     };
     this.commits = commit.n;
-    await Promise.all([this.ctx.storage.put("commit:" + pad(commit.n), commit), this.ctx.storage.put("commits", this.commits)]);
+    await Promise.all([this.ctx.storage.put("commit:" + pad10(commit.n), commit), this.ctx.storage.put("commits", this.commits)]);
     this.noteAuthors([by]);
     this.broadcast({ type: "commit", commit });
     // What git and search get: private lines blank.
@@ -389,7 +400,7 @@ export class FileDurableObject {
     if (claim && typeof by === "string") await this.renew(by, claim);
     if (this.claims.size) await this.follow(typeof by === "string" ? by : "", r.applied, claim);
     this.noteAuthors(r.applied.map((a) => a.by));
-    await Promise.all([...this.docs.save(this.doc, r.applied.map((a) => a.line)), ...r.applied.map((a) => this.ctx.storage.put("op:" + pad(a.rev), a))]);
+    await Promise.all([...this.docs.save(this.doc, r.applied.map((a) => a.line)), ...r.applied.map((a) => this.ctx.storage.put("op:" + pad10(a.rev), a))]);
     if (this.doc.rev - (this.snaps.at(-1) ?? this.base?.rev ?? 0) >= SNAP_EVERY) await this.snapshot();
     const msg = (crew: boolean) => JSON.stringify({ type: "ops", rev: this.doc.rev, applied: this.hide(r.applied, crew) });
     const [toCrew, toOthers] = [msg(true), msg(false)];
@@ -469,7 +480,7 @@ export class FileDurableObject {
     if (since < this.trimmed) throw new Trimmed(this.trimmed);
     let from = since + 1;
     while (from <= until) {
-      const m: Map<string, Applied> = await this.ctx.storage.list({ prefix: "op:", start: "op:" + pad(from), limit: OP_PAGE });
+      const m: Map<string, Applied> = await this.ctx.storage.list({ prefix: "op:", start: "op:" + pad10(from), limit: OP_PAGE });
       for (const a of m.values()) { if (a.rev > until) return; yield a; from = a.rev + 1; }
       if (m.size < OP_PAGE) return;
     }
@@ -498,7 +509,7 @@ export class FileDurableObject {
   async at(rev: number): Promise<Doc> {
     if (rev < this.trimmed) throw new Trimmed(this.trimmed);
     const snap = this.snaps.findLast((n) => n <= rev);
-    const from = snap === undefined ? this.base ?? empty() : (await new DocStore(this.ctx.storage, "snap:" + pad(snap)).load()) ?? empty();
+    const from = snap === undefined ? this.base ?? empty() : (await new DocStore(this.ctx.storage, "snap:" + pad10(snap)).load()) ?? empty();
     const log: Applied[] = [];
     for await (const a of this.ops(snap ?? 0, rev)) log.push(a);
     return replay(log, rev, from);
@@ -516,9 +527,9 @@ export class FileDurableObject {
     this.snaps.push(rev);
     const drop = this.snaps.length > KEEP_SNAPS ? this.snaps.shift()! : null;
     if (drop !== null || long) this.trimmed = this.snaps[0];
-    await Promise.all([...new DocStore(this.ctx.storage, "snap:" + pad(rev)).replace(this.doc), this.ctx.storage.put("snaps", this.snaps), this.ctx.storage.put("trimmed", this.trimmed)]);
+    await Promise.all([...new DocStore(this.ctx.storage, "snap:" + pad10(rev)).replace(this.doc), this.ctx.storage.put("snaps", this.snaps), this.ctx.storage.put("trimmed", this.trimmed)]);
     if (drop !== null) {
-      const gone: Map<string, unknown> = await this.ctx.storage.list({ prefix: "snap:" + pad(drop) });
+      const gone: Map<string, unknown> = await this.ctx.storage.list({ prefix: "snap:" + pad10(drop) });
       await Promise.all([...gone.keys()].map((k) => this.ctx.storage.delete(k)));
     }
     if (drop !== null || long) this.sweeping = this.sweeping.then(() => this.sweep()).catch(() => {});
@@ -527,7 +538,7 @@ export class FileDurableObject {
   /** Delete the ops history no longer reaches, a page at a time. */
   async sweep() {
     for (;;) {
-      const m: Map<string, unknown> = await this.ctx.storage.list({ prefix: "op:", end: "op:" + pad(this.trimmed + 1), limit: OP_PAGE });
+      const m: Map<string, unknown> = await this.ctx.storage.list({ prefix: "op:", end: "op:" + pad10(this.trimmed + 1), limit: OP_PAGE });
       await Promise.all([...m.keys()].map((k) => this.ctx.storage.delete(k)));
       if (m.size < OP_PAGE) return;
     }
@@ -833,7 +844,7 @@ export class FileDurableObject {
     const out = new Map<string, string>();
     for (const op of ops) {
       if (op.kind !== "set" || this.doc.lines.find((l) => l.id === op.line)?.rev === op.base) continue;
-      const a: Applied | undefined = op.base > this.trimmed ? await this.ctx.storage.get("op:" + pad(op.base)) : undefined;
+      const a: Applied | undefined = op.base > this.trimmed ? await this.ctx.storage.get("op:" + pad10(op.base)) : undefined;
       const was = a?.line === op.line && a.op.kind !== "delete" ? a.op.text : this.base?.lines.find((l) => l.id === op.line && l.rev === op.base)?.text;
       if (was !== undefined) out.set(`${op.line}@${op.base}`, was);
     }

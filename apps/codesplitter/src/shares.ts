@@ -5,14 +5,9 @@
 //   GET    /api/shares/:id      the lines as they are now, for anyone with the link
 //   DELETE /api/shares/:id      whoever shared it, or the repo's owner
 
-import { materialize, toFile } from "./archive.ts";
+import { fileLines, materialize } from "./archive.ts";
 import { json, type Body, type Env } from "./env.ts";
 import { repoRow } from "./repos.ts";
-
-interface Line { id: string; text: string; by: string; rev: number; private?: true }
-// Anyone with the link reads it, so private lines come as placeholders.
-const fileLines = async (env: Env, owner: string, repo: string, path: string) =>
-  ((await (await toFile(env, owner, repo, path, "share", "file", { headers: { "x-codesplitter-crew": "0" } })).json()) as { lines: Line[] }).lines;
 
 /** Who may share from a repo: anyone who can read a public one; only its crew for a private one. */
 export async function createShare(env: Env, owner: string, repo: string, user: string | null, access: { read: boolean; write: boolean }, private_: boolean, body: Body<"path" | "from" | "to" | "note">) {
@@ -21,7 +16,7 @@ export async function createShare(env: Env, owner: string, repo: string, user: s
   const path = String(body?.path ?? "");
   const m = await materialize(env, owner, repo, path);
   if ("error" in m) return json({ error: m.error }, m.status);
-  const lines = await fileLines(env, owner, repo, path);
+  const lines = await fileLines(env, owner, repo, path, "share", false);
   const from = Math.max(1, Math.floor(Number(body.from))), to = Math.min(lines.length, Math.max(from, Math.floor(Number(body.to))));
   if (!lines[from - 1]) return json({ error: "no such lines" }, 400);
   if (to - from >= 500) return json({ error: "share at most 500 lines" }, 400);
@@ -42,7 +37,8 @@ export async function shareRoutes(req: Request, env: Env, p: string[], user: str
   }
   // The range is wherever its surviving lines are now, plus anything written between them.
   const wanted = new Set(JSON.parse(s.ids) as string[]);
-  const lines = await fileLines(env, s.owner, s.repo, s.path);
+  // Anyone with the link reads it, so private lines come as placeholders.
+  const lines = await fileLines(env, s.owner, s.repo, s.path, "share", false);
   const hit = lines.flatMap((l, i) => (wanted.has(l.id) ? [i] : []));
   const repo = await repoRow(env, s.owner, s.repo, "visibility");
   const out = { id: s.id, owner: s.owner, repo: s.repo, path: s.path, by: s.by, note: s.note, created_at: s.created_at, visibility: repo?.visibility ?? "public" };
