@@ -1,10 +1,12 @@
 // Layout: try Rusty Buns on a repo or an agent's branch: init, then an offline plan
-// Try Rusty Buns: the end of dig -> agent edits -> boxed. Four steps the owner
+// Try Rusty Buns: the end of dig -> agent edits -> boxed. Five steps the owner
 // watches go green on the repo page, with nothing deployed and no login:
 //
 //   clone    the repo's git remote into a temp dir, and the branch's files laid over it
 //   install  bun install
 //   init     rustybuns init, unless the repo already has a rustybuns.config.ts; its config is printed
+//   infra    rustybuns infra --json: the stack as a graph for the repo page's map (run.infra),
+//            with what protect: true keeps through destroy
 //   plan     rustybuns plan --offline: builds and type checks, lists the stack as creates
 //
 // A branch (an agent's work) isn't in git until it merges, so its changed files
@@ -21,7 +23,7 @@ import { json, readBody, type Env } from "./env.ts";
 import { text, type Doc } from "./lines.ts";
 import { runnerFor, type Run, type Runner } from "./preview.ts";
 
-export const TRY_STEPS = ["clone", "install", "init", "plan"] as const;
+export const TRY_STEPS = ["clone", "install", "init", "infra", "plan"] as const;
 
 /** One run per repo, in this process: the desktop app is one process. */
 const trials = new Map<string, Run>();
@@ -39,7 +41,7 @@ export async function branchFiles(env: Env, owner: string, repo: string, branch:
   return out;
 }
 
-export async function tryOut(runner: Runner, remote: string, run: Run, opts: { dir?: string; files?: Record<string, string> } = {}) {
+export async function tryOut(runner: Runner, remote: string, run: Run, opts: { dir?: string; files?: Record<string, string>; stage?: string } = {}) {
   const fs = await import("node:fs");
   const { dirname, join } = await import("node:path");
   const dir = fs.mkdtempSync(join((await import("node:os")).tmpdir(), "codesplitter-try-"));
@@ -60,29 +62,34 @@ export async function tryOut(runner: Runner, remote: string, run: Run, opts: { d
   };
   const skip = (...ks: string[]) => { for (const k of ks) step(k).status = "skipped"; };
   try {
-    if (!(await go("clone", [{ cmd: ["git", "clone", "--depth", "1", "--quiet", remote, "repo"], cwd: dir }, { cmd: ["git", "-C", "repo", "rev-parse", "HEAD"], cwd: dir }]))) return skip("install", "init", "plan");
+    if (!(await go("clone", [{ cmd: ["git", "clone", "--depth", "1", "--quiet", remote, "repo"], cwd: dir }, { cmd: ["git", "-C", "repo", "rev-parse", "HEAD"], cwd: dir }]))) return skip("install", "init", "infra", "plan");
     run.commit = /\b[0-9a-f]{40}\b/.exec(step("clone").out)?.[0];
     const paths = Object.keys(opts.files ?? {});
     const outside = paths.find((p) => p.split("/").some((x) => x === ".." || x === "" || x === "."));
-    if (outside) { const c = step("clone"); c.status = "failed"; c.out += `${outside} is outside the repo\n`; return skip("install", "init", "plan"); }
+    if (outside) { const c = step("clone"); c.status = "failed"; c.out += `${outside} is outside the repo\n`; return skip("install", "init", "infra", "plan"); }
     for (const p of paths) { fs.mkdirSync(dirname(join(dir, "repo", p)), { recursive: true }); fs.writeFileSync(join(dir, "repo", p), opts.files![p]!); }
     if (paths.length) step("clone").out += `laid ${paths.length} changed file${paths.length === 1 ? "" : "s"} over the clone: ${paths.join(", ")}\n`;
     if (opts.dir && !fs.existsSync(app)) {
       const s = step("install"); s.status = "failed"; s.out = `this repo has no folder ${opts.dir}: fix the folder in the deploy settings\n`;
-      return skip("init", "plan");
+      return skip("init", "infra", "plan");
     }
     // A static site has no package.json to install; init writes one.
     const install = fs.existsSync(`${app}/package.json`) ? [{ cmd: ["bun", "install"], cwd: app }] : [];
-    if (install.length) { if (!(await go("install", install))) return skip("init", "plan"); }
+    if (install.length) { if (!(await go("install", install))) return skip("init", "infra", "plan"); }
     else { step("install").status = "skipped"; step("install").out = "no package.json yet: init writes one\n"; }
     const rb = (...args: string[]) => ({ cmd: ["bun", "x", "rustybuns", ...args], cwd: app });
     if (fs.existsSync(`${app}/rustybuns.config.ts`)) { step("init").status = "skipped"; step("init").out = "already has a rustybuns.config.ts: init left it alone\n"; }
     else {
       if (!(await go("init", [rb("init"), { cmd: ["cat", "rustybuns.config.ts"], cwd: app }]))) {
         run.note = "init couldn't box this one: its output says what it needs (see Rusty Buns above for the fit)";
-        return skip("plan");
+        return skip("infra", "plan");
       }
       run.note = "init wrote a rustybuns.config.ts in the clone; nothing was saved to your repo";
+    }
+    // The map doesn't gate the plan: a config that fails to load fails the plan with the reason.
+    if (await go("infra", [rb("infra", "--json", "--stage", opts.stage ?? "prod")])) {
+      const g = /^INFRA (\{.*\})$/m.exec(step("infra").out)?.[1];
+      if (g) try { run.infra = JSON.parse(g); } catch { /* the log still shows it */ }
     }
     if (!(await go("plan", [rb("plan", "--offline")]))) run.note = "the plan didn't pass: the log says what to fix, and an agent can on a branch";
   } finally {
@@ -108,11 +115,11 @@ export async function tryRoutes(req: Request, env: Env, p: string[], user: strin
   const art = h && await artifactAccess(h.handle, h.remote, "read", 3600);
   if (!art) return json({ error: "this repo has no git remote yet: commit its files first" }, 400);
   const remote = art.remote.replace("://", `://x:${art.token.split("?")[0]}@`);
-  const { dir } = await settings(env, owner, repo);
+  const { dir, stage } = await settings(env, owner, repo);
   const files = branch ? await branchFiles(env, owner, repo, branch, user) : undefined;
   const id = crypto.randomUUID().slice(0, 8);
   const run: Run = { id, at: Date.now(), stage: branch ?? "main", steps: TRY_STEPS.map((key) => ({ key, status: "waiting", out: "" })) as Run["steps"], done: false };
   trials.set(key, run);
-  void tryOut(runner, remote, run, { dir, files }).catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; });
+  void tryOut(runner, remote, run, { dir, files, stage }).catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; });
   return json({ run }, 202);
 }

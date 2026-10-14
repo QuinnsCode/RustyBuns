@@ -15,7 +15,7 @@ That's automated development, a software factory, and the floor it runs on shoul
 - **It's still real git.** A commit is a real `git push` to Cloudflare Artifacts.
   `git clone` works, `git pull` works, your tools work.
 - **People and agents use the same API, in the same ways.** The ⌘K palette, a REST API with an OpenAPI spec, personal tokens, OAuth, WebMCP in the browser, and now an **MCP server**.
-  If you can click it, your agent can call it.
+  If you can click it, your agent can call it. **Copy a prompt for your agent** on the home page (or `/agent.md`, or `codesplitter prompt`) hands your own agent the WebMCP, MCP and CLI routes in one paste, so it can steer the site for you.
 - **Then why not just deploy your app as well?** The repo knows how to ship itself: preview deploys, real deploys, a log of every one.
   Only a person presses the button.
 
@@ -23,6 +23,8 @@ That's automated development, a software factory, and the floor it runs on shoul
 
 Live at **[codesplitter.notryanquinn.workers.dev](https://codesplitter.notryanquinn.workers.dev)**.
 It's a proof of concept, built for Cloudflare's Artifacts challenge, and it moves fast.
+
+**In progress, top priority:** the Druids-skinned Agent Office running inside codeSplitter, on the `office-preview` stage ([plan](../agent-office/MOVE.md), [runbook](../agent-office/PREVIEW.md), [#1412](https://github.com/QuinnsCode/RustyBuns/issues/1412)). That stage stays deployed until the owner has seen it. codeSplitter may also move to its own home on 2026-10-14; the run instructions stay accurate either way.
 
 ## What it does for you
 

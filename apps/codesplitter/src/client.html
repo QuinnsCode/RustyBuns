@@ -530,6 +530,30 @@
   .pop > .panel { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: 340px; padding: 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 32px -8px rgba(0,0,0,.14); display: grid; gap: 9px; }
   .pop > .panel[hidden] { display: none; }
   .pop > .panel.open-right { left: 0; right: auto; }
+  /* Ship: the pop-out that walks build, plan, stage, deploy, with the stack drawn as paper tiles wired to the Worker. */
+  .ship-panel { width: min(780px, calc(100vw - 32px)) !important; max-height: 78vh; overflow: auto; }
+  .ship-steps { display: flex; gap: 6px; flex-wrap: wrap; }
+  .ship-steps .btn { gap: 8px; }
+  .ship-steps .btn.on { border-color: var(--fg); box-shadow: 0 0 0 3px var(--select); }
+  .ship-steps .st { width: 8px; height: 8px; border-radius: 50%; background: var(--border-2); }
+  .ship-steps .st.done { background: #2f9e44; } .ship-steps .st.running { background: var(--accent); animation: pulse 1s ease-in-out infinite; } .ship-steps .st.failed { background: var(--del-fg); }
+  .imap { position: relative; display: flex; align-items: center; gap: 56px; padding: 18px 16px; overflow: auto; max-height: 300px; border: 1px solid var(--border); border-radius: 8px; background: radial-gradient(var(--border) 1px, transparent 1.2px) 0 0 / 18px 18px, var(--bg); }
+  .imap .col { display: grid; gap: 10px; position: relative; z-index: 1; }
+  .imap svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  .imap svg.wires path { fill: none; stroke: var(--border-2); stroke-width: 1.6; stroke-dasharray: 5 4; }
+  .imap svg.wires path.kept { stroke: var(--accent); stroke-dasharray: none; }
+  .itile { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 9px; min-width: 200px; max-width: 280px; text-align: left; padding: 9px 12px 8px; color: var(--fg); background: var(--grain), var(--paper); border: 1px solid var(--border-2); border-radius: 6px; box-shadow: 0 1px 0 var(--border); cursor: pointer; font: inherit; }
+  .itile:hover { background: var(--grain), linear-gradient(0deg, var(--accent-soft), var(--paper) 85%); border-color: #a8a8a8; }
+  .itile.sel { border-color: var(--fg); box-shadow: 0 0 0 3px var(--select); }
+  .itile.kept { border-color: var(--accent); box-shadow: 0 1px 0 var(--accent-glow); }
+  .itile b { display: block; font: 600 13px/1.25 var(--sans); overflow-wrap: anywhere; }
+  .itile small { display: block; font: 400 11.5px/1.3 var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+  .itile .kind { font: 500 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .04em; color: var(--faint); }
+  .itile .badge-keep { color: var(--accent-ink); } .itile .badge-gone { color: var(--faint); }
+  .imap-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); align-items: center; }
+  .imap-legend span { display: inline-flex; gap: 5px; align-items: center; }
+  .imap-note { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 13px; display: grid; gap: 6px; background: var(--grain), var(--paper); }
+  .imap-note.kept { border-color: var(--accent); }
   .pair-qr { width: min(220px, 100%); margin: 0 auto 10px; border-radius: 8px; overflow: hidden; } .pair-qr svg { display: block; width: 100%; height: auto; }
   .copyline { display: flex; gap: 6px; } .copyline input { flex: 1; min-width: 0; font: 12px var(--mono); }
 
@@ -2540,6 +2564,39 @@ const runLog = (history) => history.length ? `<div style="margin-top:6px">${hist
   <span style="font-size:12px">@${esc(h.by)} ${h.trigger === "commit" ? "committed" : h.trigger === "preview" ? "ran a preview" : "pressed deploy"}${h.runner === "hosted" ? ` · from the site, ${keysUsed(h.key_last4)}` : ""}${h.commit_hash ? ` · <code>${esc(h.commit_hash.slice(0, 7))}</code>` : ""}${h.url ? ` · <a href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.url.replace(/^https?:\/\//, ""))}</a>` : ""}</span>
   ${h.note ? `<span class="muted" style="font-size:12px">${esc(h.note)}</span>` : ""}
   ${h.status === "failed" && h.out ? `<details><summary class="muted" style="font-size:12px;cursor:pointer">log</summary><pre>${esc(h.out)}</pre></details>` : ""}</div>`).join("")}</div>` : "";
+/** The stack as a map (rustybuns infra): the Worker, then each resource it binds, as paper tiles wired together. Orange and locked: destroy keeps it. */
+const INFRA_ICON = { worker: "cloud", d1: "database", kv: "key-round", r2: "hard-drive", queue: "layers", vectorize: "waypoints", hyperdrive: "cable", postgres: "database", durable_object: "cpu", container: "box", ai: "sparkles", images: "image", send_email: "mail", ratelimit: "gauge", workflow: "workflow", analytics_engine: "activity", artifacts: "git-branch" };
+/** The kinds whose data survives only if the stack lets it: protect: true applies to these. */
+const INFRA_DATA = new Set(["d1", "kv", "r2", "queue", "vectorize", "hyperdrive"]);
+const infraTile = (n, sel) => {
+  const data = INFRA_DATA.has(n.kind);
+  const mark = n.protected ? `<span class="badge-keep" title="Kept: destroy leaves it, and its data, on the account">${icon("lock")}</span>` : data ? `<span class="badge-gone" title="Removed with its data when the stack is destroyed">${icon("trash-2")}</span>` : "<span></span>";
+  return `<button type="button" class="itile${n.protected ? " kept" : ""}${sel === n.id ? " sel" : ""}" data-n="${esc(n.id)}"><span>${icon(INFRA_ICON[n.kind] ?? "circle")}</span><span><span class="kind">${esc(n.kind.replace("_", " "))}</span><b>${esc(n.label)}</b>${n.note || (n.name && n.name !== n.label) ? `<small>${esc(n.name && n.name !== n.label ? n.name : n.note)}</small>` : ""}</span>${mark}</button>`;
+};
+const infraMap = (g, sel) => {
+  const cols = [[], [], []];
+  for (const n of g.nodes) cols[n.kind === "worker" ? 0 : n.kind === "postgres" ? 2 : 1].push(n);
+  const kept = g.nodes.filter((n) => n.protected).length, data = g.nodes.filter((n) => INFRA_DATA.has(n.kind));
+  return `<div class="row" style="gap:6px"><span class="badge" title="${g.mode === "adopt" ? "ADOPT: takes over resources already on the account by their names" : "FRESH: makes every resource new, with names it picks"}">${g.mode.toUpperCase()}</span><span class="badge">stage ${esc(g.stage)}</span>${g.targets.map((t) => `<span class="badge">${icon(t === "edge" ? "cloud" : t === "box" ? "server" : "monitor")}${esc(t)}</span>`).join("")}</div>
+    <div class="imap">${cols.filter((c) => c.length).map((c) => `<div class="col">${c.map((n) => infraTile(n, sel)).join("")}</div>`).join("")}<svg class="wires"></svg></div>
+    <div class="imap-legend"><span>${icon("lock")}<b>${kept}</b> kept on destroy</span><span>${icon("trash-2")}<b>${data.length - kept}</b> removed with their data</span><span class="muted">click a tile</span></div>`;
+};
+/** Draw the wires once the tiles have a size: Worker to each binding, a bezier from one tile's edge to the other's. */
+const wireInfra = (box, g) => {
+  const svg = box.querySelector("svg.wires"), map = box.querySelector(".imap");
+  if (!svg || !map) return;
+  const m = map.getBoundingClientRect(), at = (id) => map.querySelector(`[data-n="${CSS.escape(id)}"]`)?.getBoundingClientRect();
+  svg.setAttribute("viewBox", `0 0 ${map.scrollWidth} ${map.scrollHeight}`);
+  svg.style.width = map.scrollWidth + "px"; svg.style.height = map.scrollHeight + "px";
+  svg.innerHTML = g.edges.map((e) => {
+    const a = at(e.from), b = at(e.to);
+    if (!a || !b) return "";
+    // Left to right: whichever tile sits further left leaves from its right edge.
+    const [l, r] = a.left <= b.left ? [a, b] : [b, a], x1 = l.right - m.left + map.scrollLeft, y1 = l.top + l.height / 2 - m.top + map.scrollTop, x2 = r.left - m.left + map.scrollLeft, y2 = r.top + r.height / 2 - m.top + map.scrollTop, c = Math.max(20, (x2 - x1) / 2);
+    const kept = g.nodes.find((n) => n.id === (e.from === "worker" ? e.to : e.from))?.protected;
+    return `<path${kept ? ' class="kept"' : ""} d="M${x1} ${y1} C${x1 + c} ${y1} ${x2 - c} ${y2} ${x2} ${y2}"/>`;
+  }).join("");
+};
 const flowRow = (steps, by, sel) => `<div class="flow">${steps.map(([k, ic, label], i) => `${i ? `<span class="ln${by[steps[i - 1][0]]?.status === "done" ? " done" : ""}"></span>` : ""}<button type="button" data-step="${k}" class="${by[k]?.status ?? "waiting"}${sel === k ? " sel" : ""}" title="${by[k]?.status ?? "waiting"}${by[k]?.ms ? ` · ${(by[k].ms / 1000).toFixed(1)}s` : ""}"><span class="dot">${icon(by[k]?.status === "done" ? "check" : by[k]?.status === "failed" ? "x" : ic)}</span>${label}</button>`).join("")}</div>`;
 /** Delete a repo here, once its name is typed back; then home to its owner's page. */
 const deleteRepo = async (owner, repo, typed) => {
@@ -3150,6 +3207,7 @@ const views = {
           <div><span class="ico">${icon("terminal")}</span><b>CLI</b><p>For the agent that would rather run a command than speak MCP, and for you at a prompt.</p><code>codesplitter tools</code></div>
           <div><span class="ico">${icon("command")}</span><b>Agentic menus</b><p>Press <kbd>⌘K</kbd> for menus that change with the page you're on, whether a finger or a model picks the item.</p><span class="hand">hand: ⌘K · eye: the same list as tools</span></div>
         </div>
+        <div class="row" style="margin-top:14px"><button class="btn" id="hand-agent" title="a prompt that lets your own agent steer this site for you: through the page's WebMCP tools, MCP or the CLI">${icon("bot")}Copy a prompt for your agent</button></div>
         <div class="quits"><span>Live together, line by line</span><span>Private lines</span><span>Ship on commit</span><span>Agents that can't ship alone</span><span>Your git, on your machine</span></div>
       </div></section>
       <section class="section"><div class="wrap">
@@ -3200,6 +3258,7 @@ const views = {
       </div></section>${siteFoot()}`;
     $("#hero-cmd").addEventListener("click", () => palette.open());
     $("#hero-tour").addEventListener("click", () => { tourStart(); tour(); });
+    $("#hand-agent").addEventListener("click", async () => copy(await (await fetch("/agent.md")).text(), "Prompt copied: paste it to your agent, then say what you want done"));
     $("#hero-google")?.addEventListener("click", async () => {
       try { const r = await api("/auth/sign-in/social", { provider: "google", callbackURL: location.origin + "/#/me" }); location.href = r.url; }
       catch (err) { signInDrawer("in"); toast(String(err.message || err)); }
@@ -3426,6 +3485,7 @@ const views = {
       ${isOwner ? `<a class="btn ghost" href="#/health/${owner}/${repo}" title="dependencies: each package against the latest release, with a health score" aria-label="dependencies">${icon("heart-pulse")}</a>` : ""}
       ${followButton({ owner, repo })}
       <a class="btn" href="#/m/${owner}/${repo}" title="this repo's agents and branches, laid out for a phone">${icon("smartphone")}Phone</a>
+      ${isOwner ? `<div class="pop"><button class="btn" id="ship" title="Build, plan, stage and deploy this repo, with its infra drawn out">${icon("rocket")}Ship</button><div class="panel ship-panel" id="ship-panel" hidden></div></div>` : ""}
       ${isOwner ? `<div class="pop"><button class="btn" id="invite">${icon("user-plus")}Invite</button><form class="panel" id="invite-form" hidden><b>Invite to the crew</b><span class="muted" style="font-size:13px">Crew can edit, commit and share. A handle or an email lets that person in; leave it empty for a link anyone can use once, a person or an agent.</span><input name="who" placeholder="@handle, email, or empty for a link"><input name="note" placeholder="a note for them (optional)" maxlength="280"><button class="btn primary">${icon("link")}Make the invite</button><div id="invite-made"></div></form></div>` : ""}
       ${me() ? `<div class="pop"><button class="btn" id="limits" title="what this repo and you may do, and how close you are">${icon("gauge")}Limits</button><div class="panel" id="limits-panel" hidden style="width:380px;max-height:70vh;overflow:auto"><span class="muted">…</span></div></div>` : ""}
       ${r.clone ? `<div class="pop"><button class="btn primary" id="clone">${icon("code")}Clone</button><div class="panel" hidden><b>${icon("terminal")} Clone with git</b><span class="muted" style="font-size:13px">A real git remote in Cloudflare Artifacts. The token in it is read-only and lasts an hour.</span><div class="copyline"><input readonly value="${esc(maskedUrl(r.clone))}" title="the token is hidden: the button copies it whole"><button class="btn" id="clone-copy">${icon("copy")}</button></div>${r.crewClone ? `<b>${icon("lock")} The crew's remote</b><span class="muted" style="font-size:13px">Private lines are blank in the remote above. This one has their real text, for the crew only; previews and deploys clone it.</span><div class="copyline"><input readonly value="${esc(maskedUrl(r.crewClone))}" title="the token is hidden: the button copies it whole"><button class="btn" id="crew-clone-copy">${icon("copy")}</button></div>` : ""}${r.push ? `<b>${icon("upload")} Push back</b><span class="muted" style="font-size:13px">This repo's git is on this machine: add it as a remote and push to it. The token writes, lasts a day, and goes when the app restarts.</span><div class="copyline"><input readonly value="${esc(maskedUrl(r.push))}" title="the token is hidden: the button copies it whole"><button class="btn" id="push-copy">${icon("copy")}</button></div>` : ""}</div></div>` : ""}
@@ -3549,6 +3609,7 @@ const views = {
       + sec("users", "Crew", `<p>${[owner, ...r.collaborators].map((c) => `<span class="crew-pulse"><a href="#/u/${esc(c)}">@${esc(c)}</a><span data-pulse="${esc(c)}"></span></span>`).join("")}</p>${owner === me() ? '<div id="pending"></div>' : ""}`)
       + (r.canWrite ? sec("zap", "Beam", `<div id="beams"><span class="muted">…</span></div>`) : "")
       + sec("git-merge", "Branches", `<div id="branches"><span class="muted">None open. Agents work on a branch, then someone merges it.</span></div>`)
+      + sec("git-merge", "Mervin", `<div id="mervin"><span class="muted">…</span></div>`)
       + sec("rocket", "Rusty Buns", `<div id="fit"><span class="muted">…</span></div>`)
       + (owner === me() ? sec("package", "Dependencies", `<a class="btn ghost" href="#/health/${owner}/${repo}" title="Repo health: your versions against the latest" aria-label="repo health">${icon("heart-pulse")}</a><div id="deps"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("send", "Deploy", `<div id="deploy"><span class="muted">…</span></div>`) : "")
@@ -3725,8 +3786,19 @@ const views = {
       route();
     }));
   },
+  /** Mervin, the merge engine, and what he settled of git/git's conflicts (GET /api/mervin; docs/mervin.md). */
+  async wireMervin() {
+    const el = $("#mervin");
+    if (!el) return;
+    const m = await api("/mervin").catch(() => null);
+    if (!m) { el.innerHTML = ""; return; }
+    const c = m.corpus, pc = (n) => Math.round(100 * n / c.files);
+    el.innerHTML = `<p class="muted" title="${esc(m.does)}">${esc(m.name)} merges by line and orders clashing branches into waves. Of ${c.files} files git's merge gave up on in ${esc(c.repo)}:</p>`
+      + `<p><b title="settled to what landed, or the same lines in another order">${c.settled}</b> settled (${pc(c.settled)}%) · <b title="handed back as cards">${c.asked}</b> asked (${pc(c.asked)}%) · <b title="settled clean to other text: the number to drive to 0">${c.other}</b> other text (${pc(c.other)}%)</p>`;
+  },
   /** Could `rustybuns init` box this repo as a desktop binary, a Worker and a server? A monorepo lists its apps. */
   async wireFit(owner, repo, dir = "") {
+    views.wireMervin();
     const el = $("#fit");
     if (!el) return;
     // The file pages share this panel: ask once per repo (and folder) per visit.
@@ -4105,6 +4177,116 @@ const views = {
     el.addEventListener("click", (e) => { if (e.target.closest("[data-step]")) el.dataset.picked = "1"; if (e.target.closest("#try-run")) delete el.dataset.picked; });
     poll();
   },
+  /**
+   * Ship: a pop-out beside Clone that walks build, plan, stage and deploy. Build and plan are the Try run
+   * (clone, install, init, infra, plan --offline: no login, nothing deployed); the plan step draws the stack
+   * as a map, with what protect: true keeps through destroy. Stage and deploy are the deploy settings and run.
+   */
+  wireShip(owner, repo) {
+    const btn = $("#ship"), el = $("#ship-panel");
+    if (!btn || !el) return;
+    popover(btn);
+    const tryBase = `/repos/${owner}/${repo}/try`, depBase = `/repos/${owner}/${repo}/deploy`;
+    const BUILD = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["init", "sparkles", "init"]];
+    const PLAN = [["infra", "waypoints", "map"], ["plan", "list-checks", "plan"]];
+    const SHIP = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["deploy", "rocket", "deploy"], ["check", "activity", "check"]];
+    let tab = "plan", t = null, d = null, sel = null, node = null, timer = null, branch = "", branches = null, form = null;
+    const by = (run) => Object.fromEntries((run?.steps ?? []).map((s) => [s.key, s]));
+    const stat = (run, keys) => { const s = keys.map((k) => by(run)[k]?.status); return s.includes("failed") ? "failed" : s.includes("running") ? "running" : s.length && s.every((x) => x === "done" || x === "skipped") ? "done" : "waiting"; };
+    const TABS = [["build", "package", "Build", () => stat(t?.run, ["clone", "install", "init"])], ["plan", "list-checks", "Plan", () => stat(t?.run, ["infra", "plan"])],
+      ["stage", "layers", "Stage", () => (d?.settings ? "done" : "waiting")], ["deploy", "rocket", "Deploy", () => (d?.run ? (d.run.done ? stat(d.run, ["clone", "install", "deploy", "check"]) : "running") : "waiting")]];
+    const log = (run, key) => { const s = by(run)[key]; return s ? `<pre style="max-height:240px;overflow:auto;font:400 11.5px/1.45 var(--mono);white-space:pre-wrap;color:var(--muted);margin:4px 0">${esc(s.out || "(waiting)")}</pre>` : ""; };
+    const runBar = () => {
+      const busy = t?.run && !t.run.done, open = branches;
+      return `<div class="row"><select id="ship-branch"${busy ? " disabled" : ""} title="main, or an agent's branch: its files are laid over the clone"><option value="">main</option>${open.map((b) => `<option value="${esc(b.name)}"${b.name === branch ? " selected" : ""}>${esc(b.name)}</option>`).join("")}</select>
+        <button class="btn primary" id="ship-try"${!t?.can_run || busy ? " disabled" : ""} title="${t?.can_run ? "" : "Runs on the desktop app"}">${icon("flask-conical")}${busy ? "Running…" : t?.run ? "Build and plan again" : "Build and plan"}</button></div>`;
+    };
+    const body = () => {
+      const run = t?.run, g = run?.infra;
+      if (tab === "build") return `${flowRow(BUILD, by(run), sel)}${runTicker(run)}${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}${sel ? log(run, sel) : ""}${runBar()}
+        <p class="muted" style="font-size:12px">Clones the repo (or an agent's branch laid over it), installs, and runs <code>rustybuns init</code> if there is no config. Nothing is deployed.</p>`;
+      if (tab === "plan") return `${g ? infraMap(g, node) : run ? `<p class="muted">${by(run).infra?.status === "failed" ? "No map: this repo's Rusty Buns is older than <code>rustybuns infra</code>. The plan below still ran." : "Drawing the stack…"}</p>` : `<p class="muted">Build and plan draws this repo's stack here: the Worker and what it binds, with what <code>protect: true</code> keeps through destroy.</p>`}
+        <div id="ship-note"></div>${flowRow(PLAN, by(run), sel)}${runTicker(run)}${sel ? log(run, sel) : ""}${runBar()}`;
+      if (tab === "stage") {
+        const s = d?.settings ?? {}, gone = g ? g.nodes.filter((n) => INFRA_DATA.has(n.kind) && !n.protected).length : null, kept = g ? g.nodes.filter((n) => n.protected).length : null;
+        return `<form id="ship-form" style="display:grid;gap:8px;font-size:13px">
+          <div class="row"><label>stage <input name="stage" value="${esc(s.stage ?? "prod")}" pattern="[a-z0-9][a-z0-9\\-]{0,30}" style="width:9em;font:12px var(--mono)" title="lowercase letters, digits and dashes"></label>
+          <label>folder <input name="dir" value="${esc(s.dir ?? "")}" placeholder="(repo root)" style="width:12em;font:12px var(--mono)" title="Where the app's rustybuns.config.ts is, in a monorepo"></label></div>
+          <label><input type="checkbox" name="production"${s.production ? " checked" : ""}> This repo is production <span class="muted">(a stack with <code>adopt: true</code> may take over live resources)</span></label>
+          <label><input type="checkbox" name="on_commit"${s.on_commit ? " checked" : ""}> Ship when I commit to main <span class="muted">(only your own commits)</span></label>
+          <div><button class="btn primary">${icon("check")}Save stage</button></div></form>
+          <div class="imap-note${kept ? " kept" : ""}">${g ? `<span>${icon("lock")} Destroying <b>${esc(s.stage ?? "prod")}</b> keeps <b>${kept}</b> and removes <b>${gone}</b> data resource${gone === 1 ? "" : "s"}, with their data.</span>` : `<span class="muted">Run Build and plan to see what destroying this stage keeps and removes.</span>`}</div>`;
+      }
+      const r = d?.run, s = d?.settings ?? {};
+      return `${flowRow(SHIP, by(r), sel)}${runTicker(r)}${r?.url ? `<p style="font-size:12px"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a></p>` : ""}${r?.note ? `<p class="muted" style="font-size:12px">${esc(r.note)}</p>` : ""}${sel ? log(r, sel) : ""}
+        ${g ? `<div class="imap-note${g.nodes.some((n) => n.protected) ? " kept" : ""}"><span>${icon("rocket")} Ships to <b>${esc(s.stage ?? "prod")}</b>: ${g.nodes.length} resource${g.nodes.length === 1 ? "" : "s"}, ${g.nodes.filter((n) => n.protected).length} protected from destroy.</span></div>` : ""}
+        <div class="row"><button class="btn primary" id="ship-deploy"${!d?.can_run || (r && !r.done) ? " disabled" : ""} title="${d?.can_run ? "" : d?.why || "Runs on the desktop app, with your own logins"}">${icon("rocket")}${r && !r.done ? "Deploying…" : `Deploy to ${esc(s.stage ?? "prod")}`}</button>
+        <button type="button" class="btn ghost" id="ship-more" title="Deploy keys, the review of code that isn't yours, and every deploy logged">${icon("send")}Deploy settings and log</button></div>
+        <p class="muted" style="font-size:12px">Ships the repo's own stack to <b>${esc(s.stage ?? "prod")}</b> and leaves it up. Code that isn't yours waits for you to read and approve it under Deploy settings.</p>`;
+    };
+    const note = () => {
+      const g = t?.run?.infra, box = el.querySelector("#ship-note"), n = g?.nodes.find((x) => x.id === node);
+      if (!box || !n) return;
+      const data = INFRA_DATA.has(n.kind), line = n.name && n.name !== n.label ? n.name : n.label;
+      box.innerHTML = `<div class="imap-note${n.protected ? " kept" : ""}"><span>${icon(INFRA_ICON[n.kind] ?? "circle")} <b>${esc(n.label)}</b> <span class="muted">${esc(n.kind.replace("_", " "))}${n.name && n.name !== n.label ? ` · ${esc(n.name)}` : ""}</span></span>
+        ${n.protected ? `<span>${icon("lock")} <b>Kept.</b> Destroy leaves <code>${esc(line)}</code> and its data on the account. Turn it off with <code>protect: false</code>, then deploy once.</span>`
+          : data ? `<span>${icon("trash-2")} <b>Removed on destroy</b>, with its data. To keep it, add <code>protect: true</code> to <code>${esc(n.label)}</code> in <code>rustybuns.config.ts</code>, then deploy once. <button class="btn small" id="ship-copy">${icon("copy")}Copy the line</button></span>`
+          : `<span class="muted">${n.kind === "worker" ? "The Worker itself. Destroy removes it; its data lives in the resources beside it." : "No data of its own, so there is nothing to keep."}</span>`}</div>`;
+      icons();
+      el.querySelector("#ship-copy")?.addEventListener("click", () => copy("protect: true", "Copied protect: true"));
+    };
+    const draw = () => {
+      if (el.hidden) return;
+      const keep = el.querySelector("#ship-form") && el.contains(document.activeElement);   // a form someone is typing in stays as it is
+      el.innerHTML = `<b>${icon("rocket")} Ship ${esc(owner)}/${esc(repo)}</b>
+        <div class="ship-steps">${TABS.map(([k, ic, label, st]) => `<button type="button" class="btn${tab === k ? " on" : ""}" data-tab="${k}"><span class="st ${st()}"></span>${icon(ic)}${label}</button>`).join("")}</div>
+        <div id="ship-body" style="display:grid;gap:9px">${body()}</div>`;
+      if (keep && form) return;
+      icons();
+      const g = t?.run?.infra, map = el.querySelector(".imap");
+      if (g && map) requestAnimationFrame(() => { wireInfra(el, g); map.addEventListener("scroll", () => wireInfra(el, g), { passive: true }); });
+      note();
+      el.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; sel = null; draw(); }));
+      el.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => { sel = sel === b.dataset.step ? null : b.dataset.step; draw(); }));
+      el.querySelectorAll(".itile").forEach((b) => b.addEventListener("click", () => { node = node === b.dataset.n ? null : b.dataset.n; draw(); }));
+      el.querySelector("#ship-branch")?.addEventListener("change", (e) => { branch = e.target.value; });
+      el.querySelector("#ship-try")?.addEventListener("click", async () => {
+        sel = null;
+        try { await api(tryBase, { branch: el.querySelector("#ship-branch").value || undefined }); } catch (err) { toast(err.message); }
+        poll();
+      });
+      el.querySelector("#ship-more")?.addEventListener("click", () => { el.hidden = true; setTimeout(() => document.getElementById("deploy")?.scrollIntoView({ block: "center", behavior: "smooth" }), 0); });
+      el.querySelector("#ship-form")?.addEventListener("input", () => { form = true; });
+      el.querySelector("#ship-form")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = e.target;
+        try { await api(depBase, { stage: f.stage.value.trim(), dir: f.dir.value.trim(), production: f.production.checked, on_commit: f.on_commit.checked }, "PUT"); form = null; toast("Stage saved"); } catch (err) { toast(err.message); }
+        poll();
+      });
+      el.querySelector("#ship-deploy")?.addEventListener("click", async () => {
+        sel = null;
+        try { await api(depBase, {}); } catch (err) { toast(err.message.includes("approve") || /read/i.test(err.message) ? `${err.message} (Deploy settings has the diff to read and approve)` : err.message); }
+        poll();
+      });
+    };
+    const poll = async () => {
+      clearTimeout(timer);
+      if (!document.body.contains(el) || el.hidden) return;
+      const [nt, nd, br] = await Promise.all([api(tryBase).catch(() => null), api(depBase).catch(() => null), branches ? null : api(`/repos/${owner}/${repo}/branches`).catch(() => [])]);
+      t = nt ?? t; d = nd ?? d;
+      if (br) branches = br.filter((b) => b.status === "open");
+      const running = [t?.run, d?.run].some((r) => r && !r.done);
+      if (running) { const s = (tab === "deploy" ? d?.run : t?.run)?.steps.find((x) => x.status === "running")?.key; if (s && !sel) sel = s; }
+      draw();
+      if (running) timer = setTimeout(poll, 1000);
+    };
+    btn.addEventListener("click", () => { if (!el.hidden) { el.innerHTML = '<span class="muted">…</span>'; poll(); } });
+    const esc_ = (e) => {
+      if (!document.body.contains(el)) return document.removeEventListener("keydown", esc_);
+      if (e.key === "Escape" && !el.hidden) { el.hidden = true; btn.focus(); }
+    };
+    document.addEventListener("keydown", esc_);
+  },
   /** A preview deploy: five steps that go green as the stack goes up and comes down. Click one for its log. */
   async wirePreview(owner, repo) {
     const el = $("#preview"), base = `/repos/${owner}/${repo}/preview`;
@@ -4168,7 +4350,7 @@ const views = {
       ? await api("/agents").then((a) => a.available && !a.admins_only ? a.harnesses : []).catch(() => []) : [];
     // Each wave merges together; a branch that clashes with one before it says which, on hover.
     const waits = (w) => w.after.map((a) => `${a.branch}${a.stacked ? " (stacked on it)" : ""}${a.files.length ? `: ${a.files.join(", ")}` : ""}`).join("; ");
-    const planned = plan?.waves.length > 1 ? `<div class="muted" style="white-space:nowrap;overflow-x:auto" title="merge a wave: the next wave's branches take main in by themselves">${icon("git-merge")} ${plan.waves.map((wave, i) => `<b>${i + 1}</b> ${wave.map((w) => w.after.length ? `<code title="${esc(`after ${waits(w)}`)}">${esc(w.branch)}</code>` : `<code>${esc(w.branch)}</code>`).join(" ")}`).join(" → ")}</div>` : "";
+    const planned = plan?.waves.length > 1 ? `<div class="muted" style="white-space:nowrap;overflow-x:auto" title="${esc(`${plan.engine ?? "Mervin"} planned this: merge a wave and the next wave's branches take main in by themselves`)}">${icon("git-merge")} <b>${esc(plan.engine ?? "Mervin")}</b> ${plan.waves.map((wave, i) => `<b>${i + 1}</b> ${wave.map((w) => w.after.length ? `<code title="${esc(`after ${waits(w)}`)}">${esc(w.branch)}</code>` : `<code>${esc(w.branch)}</code>`).join(" ")}`).join(" → ")}</div>` : "";
     el.innerHTML = planned + reviews.map((b) => {
       // A file only opened on the branch (the switcher reads through its copy) changes nothing: not counted.
       const files = b.files.filter((f) => !f.merged && (f.ops.length || f.deleted || f.binary || f.conflicts.length)), clash = files.flatMap((f) => f.conflicts.map((c) => ({ path: f.path, ...c })));
@@ -4376,6 +4558,7 @@ const views = {
     views.wireMirrorTurn(owner, repo);
     views.wirePreview(owner, repo);
     views.wireTry(owner, repo);
+    views.wireShip(owner, repo);
     views.wireDeploy(owner, repo);
     views.wireHooks(owner, repo);
     $("#audit")?.addEventListener("toggle", (e) => { if (e.target.open) wireAudit(e.target.lastElementChild, `/repos/${owner}/${repo}/audit`); }, { once: true });
@@ -6438,6 +6621,8 @@ const fileArgs = (a) => ({ owner: a.owner || ctx.owner, repo: a.repo || ctx.repo
 const readTools = () => [
   { name: "current_page", title: "Where am I", description: "What the page shows now: its view (home, r repo, f file, l level, c cut, s share, u profile, search…), the repo, file or level, the selected lines, what you may do there, and who is signed in.",
     inputSchema: noInput, annotations: { readOnlyHint: true }, execute: async () => where() },
+  { name: "agent_guide", title: "How to drive this site", description: "The prompt a person hands their own agent for steering this site: the WebMCP tools, MCP and CLI, and the rules to follow.",
+    inputSchema: noInput, annotations: { readOnlyHint: true }, execute: async () => (await fetch("/agent.md")).text() },
   { name: "open_page", title: "Open a page", description: "Go to a page by its hash: #/ home, #/r/owner/repo[/dir], #/f/owner/repo/path/to/file, #/l/level-slug[/path], #/u/handle, #/m/owner/repo (agents and branches, for a phone), #/b/owner/repo/branch (a branch's merge page, a card per conflict), #/search/query, #/about. Answers with the new page.",
     inputSchema: { type: "object", properties: { hash: { type: "string", description: "like #/f/owner/repo/src/app.ts" } }, required: ["hash"] },
     annotations: { readOnlyHint: true }, execute: ({ hash }) => asAgent(() => { history.pushState(null, "", "#" + hash.replace(/^#?\/?/, "/")); return route(); }) },

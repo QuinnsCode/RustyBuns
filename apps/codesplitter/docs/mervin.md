@@ -3,6 +3,8 @@
 Mervin is codeSplitter's merge engine: the line-id merge (`src/lines.ts`), the resolver levels and the
 merge plan (`src/merge-plan.ts`) that puts clashing PRs in waves. It swerves out of the way of merge conflicts.
 
+Design note for running it locally and on Cloudflare: [mervin-engine.md](mervin-engine.md).
+
 ## The goal: 80% of fights seen coming
 
 A PR "fights" when git's merge of it onto main conflicts. Mervin's goal is to flag **80% of the PRs that
@@ -63,28 +65,53 @@ shows two real engine faults:
    those asks as a card now. 63 wrong became 59, solved did not move.
 2. **A block one side moved while the other edited around it** (odb.h) came out with its comment split: the stretch-blend dropped the branch's `*/`, `/*` and blank lines as "the same line main added". Fixed here (`blend` in `src/lines.ts`, #1390): only a line with some text counts as the same; the merge is well formed, main's block first.
 
+## What Mervin settles on Rails (Ruby, Markdown)
+
+```sh
+git clone --bare https://github.com/rails/rails.git rails.git
+bun scripts/mervin-corpus.ts rails.git --limit 400 --show 30
+```
+
+Measured 2026-10-13 on rails/rails: 16,000 merges scanned (the walk stops at `--limit` x 40; Rails has 26,585),
+251 conflicted in git, 298 conflicted files replayed (3 skipped). Only 251 of 400 fights were found in that
+window, so that is the whole sample.
+
+| What Mervin did with a file git gave up on | Files | Share |
+|---|---|---|
+| **solved**: settled to exactly what the person committed | 80 | 27% |
+| **close**: same lines in another order, or the same text bar indentation | 82 | 28% |
+| **wrong**: settled clean to other text | 85 | 29% |
+| **cards**: handed back to ask | 42 | 14% |
+| lock: lockfiles, left to the package manager | 9 | 3% |
+| gap: git merges it clean, Mervin conflicts | 0 | |
+
+By language: Ruby solved 24 of 77 (31%) and asked on 31 (40%); Markdown solved 51 of 204 (25%), close on 81,
+wrong on 62. Markdown is 68% of the sample, nearly all `CHANGELOG.md` and guides.
+
+Against git/git: solved plus close is 54% here and 48% there, and `wrong` is 29% against 13%, so the silent
+bad-merge rate more than doubles on this mix. It is a Markdown problem, not a Ruby one: 62 of the 85 wrong
+files are `.md`, and 21 of the 77 Ruby files. Of the first 30 wrong files listed, 23 are `CHANGELOG.md`, the file
+where both branches add an entry at the top and the person who merged chose an order or reworded one. Whether
+those are engine faults or the person editing around the conflict is not yet looked at: pull a few and diff
+them against `landed` before changing the resolver. Ruby is the other finding: the weak spot is cards (40%),
+not silent mistakes, and Ruby has no `lint.ts` guard (see below).
+
 ## Where Mervin is weak
 
 - **Code outside JS/TS is only flagged.** `src/lint.ts` parses only JavaScript, TypeScript and HTML. For the rest
   (C, Rust, Python, Go, shell) a stretch both sides changed where git would have stopped, and Mervin settled, now
   comes back as a `check` (#1389), like the prose fact checks: it never holds the merge, and the writer can settle it
-  with a text. Where the repo has a `package.json` with a `test` or `build` script and test merges is on, that script runs on the merged tree first, and a failure comes back as a `lint:tests` conflict (#1401), settled as the branch to land anyway. Repos with no `package.json` (git/git's make) are still only flagged.
+  with a text. Where the repo has a `package.json` with a `test` or `build` script and test merges is on, that script runs on the merged tree first, and a failure comes back as a `lint:tests` conflict (#1401), settled as the branch to land anyway. Repos with no `package.json` run `make` (a Makefile), `cargo build` (Cargo.toml) or `go build ./...` (go.mod) instead, with nothing installed first (#1407); with none of those they are still only flagged.
 - **Never run on anyone else's history until now.** The 80% goal in this doc is about seeing fights coming; the
   recall number for it (mervin-score) still needs a corpus that keeps real merges (the `lines` predictor is in).
-- **Invisible.** The name is in no UI string, README line or API field; the merge engine is the strongest answer
-  to the contest's conflict-handling criterion and a judge cannot see it.
+- **Visible now, thinly.** The merge plan line and `GET /api/repos/:o/:r/merge-plan` (`engine`) name him, and the repo page
+  and `GET /api/mervin` show the git/git corpus (settled / asked / other text, `src/mervin.ts`). The numbers there are
+  this doc's table, not a live per-repo tally, and the merge page does not credit him per file yet.
 
 ## Corpus to pull in
 
-Busy repos that keep real merge commits, cloned in full (not shallow) to a scratch directory. Done: git/git (above).
+Busy repos that keep real merge commits, cloned in full (not shallow) to a scratch directory. Done: git/git and rails/rails (above).
 Tried: rust-lang/cargo, which merges only green PRs through bors, so 1 of 1,600 merges was ever conflicted: no corpus.
-Still to check: Linux subsystem trees, Rails, Django. Reference engines to compare against, not to vendor yet:
-Mergiraf (structured merge; run over the merge-solutions.md hunks, see §12 there), Spork and IntelliMerge (tree matching).
-
-## Next
-
-1. Run `mervin-corpus.ts` on a second repo with a different language mix (Linux subsystem tree, Rails) and record it here.
-2. Run `mervin-score.ts` (now with `lines`) on a corpus that keeps real merges and record recall here; add the merge plan as a predictor.
-3. Build commands for repos with no `package.json` (make, cargo, go) as the arbiter.
-4. Run Mergiraf on a corpus with moved and reordered code, where a tree match should beat a line one. Over the 29 hunks in [merge-solutions.md](merge-solutions.md#12-mergiraf-over-the-same-hunks) it settled 6 and nothing L3 doesn't.
-5. Show Mervin: a corpus number on the repo page, and the merge plan's waves with his name on them.
+Tried: pingdotgg/t3code, which squash-merges: 15 merge commits in 5,473, so no corpus either.
+Still to check: a Linux subsystem tree, Django. Reference engines to compare against, not to vendor yet:
+Mergiraf (structured merge; over the 29 hunks in [merge-solutions.md](merge-solutions.md#12-mergiraf-over-the-same-hunks) it settled 6 and nothing L3 doesn't; still to try on a corpus with moved and reordered code), Spork and IntelliMerge (tree matching).

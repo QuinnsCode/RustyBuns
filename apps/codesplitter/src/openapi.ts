@@ -136,10 +136,10 @@ const OPS: Record<string, Record<string, Op>> = {
       conflicts: obj({ mirror: { description: "{state, files} on a clash or rewrite; else null" }, push: arr(str()) }) }) } },
   [`${repo}/try`]: {
     get: { id: "get_try", summary: "The current or last Rusty Buns try-out (owner only)", tag: "Repos",
-      description: "`can_run` says whether this server can run one (the desktop app can); `run` is the last run's steps (clone, install, init, plan) and their output, or null.",
+      description: "`can_run` says whether this server can run one (the desktop app can); `run` is the last run's steps (clone, install, init, infra, plan) and their output, or null. `run.infra` is the stack as a graph (`{app, stage, mode, targets, nodes, edges}`), each node with `protected: true` when `protect: true` makes destroy leave it; absent when the repo's Rusty Buns is too old for `rustybuns infra`.",
       ok: obj({ can_run: bool(), run: { description: "the run, or null" } }) },
     post: { id: "start_try", summary: "Try Rusty Buns on the repo or a branch: init, then an offline plan (owner only)", tag: "Repos",
-      description: "Desktop only. Clones the repo's git remote, lays the branch's changed files over it, runs `rustybuns init` and `rustybuns plan --offline`. Nothing is deployed. A run already going is a 409.",
+      description: "Desktop only. Clones the repo's git remote, lays the branch's changed files over it, runs `rustybuns init`, `rustybuns infra --json` and `rustybuns plan --offline`. Nothing is deployed. A run already going is a 409.",
       body: obj({ branch: str("an open branch to try; main without it") }), ok: obj({ run: { description: "the run just started" } }), status: 202 },
   },
   [`${repo}/tags/{name}`]: { delete: { id: "delete_tag", summary: "Delete a tag (owner only). A mirror's upstream keeps its own", tag: "Repos", ok: ref("Ok") } },
@@ -349,7 +349,7 @@ const OPS: Record<string, Record<string, Op>> = {
     description: "Two branches clash when the second merges clean into main now but not once the first has landed, by codeSplitter's own merge (line ids, then the lint), so a pair it settles by itself holds nothing up. " +
       "`order` is the order merge_clean_branches takes them: oldest first, the ones whose required checks passed ahead of the ones they hold (`held`). A stacked branch waits for the one it's on. " +
       "Merge a wave and the next one's branches that name one of them in `after` take main in by themselves, once (merge_branch's `took`). Reading the plan keeps each branch's `after`: its own checks wait till those have merged, so they run once.",
-    ok: obj({ order: arr(str("a branch name")), held: arr(str("a branch its required checks hold")),
+    ok: obj({ engine: str("the merge engine that planned it: Mervin"), order: arr(str("a branch name")), held: arr(str("a branch its required checks hold")),
       waves: arr(arr(obj({ branch: str(), after: arr(obj({ branch: str("one it waits for"), files: arr(str("where they clash")), stacked: bool("it's built on that one") })) }))) }) } },
   [`${repo}/dispatch-hint`]: { get: { id: "get_dispatch_hint", summary: "Before a task starts: its likely files, and the open branches already rewriting them", tag: "Branches",
     description: "`files` is `paths` plus the repo's files the task's text names, whole or by a tail only one path ends in (`main.ts`, `src/main.ts`). " +

@@ -442,3 +442,32 @@ test("every Getting started entry names a real tour step", () => {
   expect(steps.length).toBeGreaterThan(0);
   for (const t of steps) expect(html).toContain(`t: "${t}"`);
 });
+
+// Ship (the pop-out beside Clone): the infra map marks what destroy keeps. The helpers are plain
+// functions of the graph `rustybuns infra --json` prints, so they run here without a page.
+describe("the Ship pop-out's infra map", () => {
+  const src = html.slice(html.indexOf("const INFRA_ICON"), html.indexOf("const flowRow"));
+  const { infraMap } = new Function("icon", "esc", `${src}; return { infraMap };`)((n: string) => `<i ${n}>`, (s: string) => String(s)) as { infraMap: (g: unknown, sel?: string | null) => string };
+  const graph = { app: "lab", stage: "prod", mode: "adopt", targets: ["edge"], edges: [], nodes: [
+    { id: "worker", kind: "worker", label: "lab", protected: false },
+    { id: "DB", kind: "d1", label: "DB", name: "lab-db", protected: false },
+    { id: "INDEX", kind: "vectorize", label: "INDEX", name: "lab-index", protected: true },
+    { id: "AI", kind: "ai", label: "AI", protected: false },
+  ] };
+
+  test("a protected tile is kept, locked and counted; an unprotected data tile is removed; a Worker-only binding is neither", () => {
+    const out = infraMap(graph);
+    expect(out).toMatch(/class="itile kept" data-n="INDEX"/);
+    expect(out).toContain("<i lock>");
+    expect(out).toContain("<b>1</b> kept on destroy");
+    expect(out).toContain("<b>1</b> removed with their data");
+    expect(out).toContain("ADOPT");
+    expect(out.match(/<i trash-2>/g)?.length).toBe(2);   // the DB tile's badge, and the legend's
+  });
+
+  test("the toolbar has Ship for the owner, wired to its panel", () => {
+    expect(html).toContain(`id="ship"`);
+    expect(html).toContain(`id="ship-panel"`);
+    expect(html).toContain("views.wireShip(owner, repo);");
+  });
+});
