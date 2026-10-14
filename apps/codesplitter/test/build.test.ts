@@ -25,6 +25,10 @@ test("the pages load their scripts and styles from the site, and the build ships
     expect(html).not.toMatch(/"imports":\s*\{[^}]*"(https?:)?\/\//);
   }
   for (const f of ["vendor/lucide.min.js", "vendor/three.module.js", "fonts/geist.css"]) expect(await Bun.file(`${dist}/${f}`).exists()).toBe(true);
+  // Only the icons the source names, not lucide's whole 358 KB set (#1471).
+  const lucide = await Bun.file(`${dist}/vendor/lucide.min.js`).text();
+  expect(lucide.length).toBeLessThan(120_000);
+  expect(lucide).toContain("lucide");
 }, 60_000);
 
 // The CSP is enforced (#673) without 'unsafe-inline': each page's inline scripts run because
@@ -40,8 +44,9 @@ test("_headers enforces the CSP and lets every page's inline scripts run by hash
   expect(scriptSrc).not.toContain("unsafe-inline");
   for (const page of ["index.html", "play.html", "features.html", "reference.html", "mcp.html"]) {
     const hashes = inlineScriptHashes(await Bun.file(`${dist}/${page}`).text());
-    // The home page keeps none inline: its script is a hashed file under 'self'.
-    if (page === "index.html") expect(hashes).toHaveLength(0); else expect(hashes.length).toBeGreaterThan(0);
+    // The home page keeps one inline: the light/dark paint (#1499), which has to run before first paint. Its app
+    // script is a hashed file under 'self'.
+    if (page === "index.html") expect(hashes).toHaveLength(1); else expect(hashes.length).toBeGreaterThan(0);
     for (const h of hashes) expect(scriptSrc).toContain(`'${h}'`);
   }
 }, 60_000);

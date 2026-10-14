@@ -115,6 +115,10 @@
         "class_name": "RepoSearch"
       },
       {
+        "name": "SETTINGS",
+        "class_name": "UserSettings"
+      },
+      {
         "name": "AGENT_SANDBOX",
         "class_name": "AgentSandbox"
       },
@@ -148,6 +152,12 @@
       "tag": "v4",
       "new_sqlite_classes": [
         "RepoSearch"
+      ]
+    },
+    {
+      "tag": "v5",
+      "new_sqlite_classes": [
+        "UserSettings"
       ]
     }
   ],

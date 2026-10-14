@@ -4,6 +4,7 @@ import { mkdir, copyFile, readdir, readFile, writeFile } from "node:fs/promises"
 import { headersFile, inlineScriptHashes } from "./src/security.ts";
 import { features } from "./features.ts";
 import { buildGitpath } from "./src/gitpath/build.ts";
+import { buildLucide } from "./src/lucide-subset.ts";
 
 await mkdir("dist/client", { recursive: true });
 // The home page's styles and script go to content-hashed files, so a deploy that changes only one
@@ -65,9 +66,11 @@ for (const f of ["geist.css", "Geist-Variable.woff2", "GeistMono-Variable.woff2"
 // packages, so no visitor's browser asks a CDN for them.
 await mkdir("dist/client/vendor", { recursive: true });
 for (const [from, to] of [
-  ["lucide/dist/umd/lucide.min.js", "lucide.min.js"], ["lucide/LICENSE", "lucide-LICENSE.txt"],
+  ["lucide/LICENSE", "lucide-LICENSE.txt"],
   ["three/build/three.module.min.js", "three.module.js"], ["three/LICENSE", "three-LICENSE.txt"],
 ]) await copyFile(`node_modules/${from}`, `dist/client/vendor/${to}`);
+// Only the icons the source names (src/lucide-subset.ts), not the whole 358 KB set.
+await buildLucide("src", "dist/client/vendor/lucide.min.js", "dist/.lucide");
 // Resolve packages as wrangler does for workerd, and leave node:* to the runtime
 // (nodejs_compat). Without it Better Auth takes its browser build, whose stand-in
 // AsyncLocalStorage is one slot shared by every request: overlapping requests

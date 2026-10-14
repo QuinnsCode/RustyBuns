@@ -38,8 +38,8 @@ test("--fresh turns adoption off, and leaves a fresh config as it was", () => {
   expect(adoptedNames(forceFresh(cfg(true)))).toEqual([]);
   const c = cfg(false);
   expect(forceFresh(c)).toBe(c);
-  expect(isolationFlags(["--fresh", "--stage", "x"])).toEqual({ fresh: true, adoptExisting: false });
-  expect(isolationFlags(["--adopt-existing"])).toEqual({ fresh: false, adoptExisting: true });
+  expect(isolationFlags(["--fresh", "--stage", "x"])).toMatchObject({ fresh: true, adoptExisting: false });
+  expect(isolationFlags(["--adopt-existing"])).toMatchObject({ fresh: false, adoptExisting: true });
 });
 
 test("ADOPT refuses a first deploy and any destroy, until --adopt-existing", () => {

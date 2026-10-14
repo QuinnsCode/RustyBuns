@@ -55,7 +55,7 @@ test("a monorepo's checks are per workspace, scoped to it and what it depends on
     { dir: "packages/core", pkg: pkg({ name: "@x/core" }) },
     { dir: "packages/empty", pkg: null },
   ];
-  const lock = ["package.json", "bun.lock", "bun.lockb", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"];
+  const lock = ["package.json", "bun.lock", "bun.lockb", "pnpm-lock.yaml", "yarn.lock", "package-lock.json", "npm-shrinkwrap.json", "deno.lock"];
   // The root's test gives way to each workspace's; its typecheck stays, repo-wide.
   expect(planFrom(null, root, ws)).toEqual([
     { name: "apps/a:test", command: "cd 'apps/a' && bun run test", paths: ["apps/a", "packages/ui", "packages/core", ...lock] },

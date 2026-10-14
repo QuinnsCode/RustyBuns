@@ -83,3 +83,85 @@ describe("mervin board", () => {
     expect(score(repo, board, join(repo, "none"), main).rows.every((r) => r.score === "waiting")).toBe(true);
   });
 });
+
+// scripts/mervin-merge.ts: which PRs go now, which wait, and why.
+import { decide } from "../scripts/mervin-merge.ts";
+describe("mervin merge round", () => {
+  const row = (path: string, tier: "certain" | "card", after: number[] = []) => ({ path, tier, why: "", after });
+  const stage = (pr: number, files: ReturnType<typeof row>[], extra = {}) => ({ pr, head: "h", base: "b", files, ...extra });
+  const board = (stages: ReturnType<typeof stage>[], clashes: any[] = []) => ({ main: "m", at: "", stages, written: [], skipped: [], clashes });
+  test("waves, holds and what waits behind a hold", () => {
+    const v = decide(board([
+      stage(1, [row("a", "certain")]),
+      stage(2, [row("a", "certain", [1])]),
+      stage(3, [row("b", "card")]),
+      stage(4, [row("b", "certain", [3])]),
+      stage(5, [row("c", "certain")], { stackedOn: 9 }),
+      stage(6, [row("d", "certain")]),
+    ], [{ kind: "migration", key: "1", prs: [6] }]), []);
+    const by = Object.fromEntries(v.map((x) => [x.pr, x]));
+    expect([by[1]!.go, by[1]!.wave]).toEqual([true, 1]);
+    expect([by[2]!.go, by[2]!.wave]).toEqual([true, 2]);
+    expect(by[3]!.why).toContain("asks on b");
+    expect(by[4]!.why).toContain("behind held #3");
+    expect(by[5]!.why).toContain("stacked on #9");
+    expect(by[6]!.why).toContain("migration");
+  });
+  test("a failed CI holds the PR", () => {
+    const prs: BoardPr[] = [{ number: 1, headRefOid: "h", statusCheckRollup: [{ name: "apps", conclusion: "FAILURE", status: "COMPLETED" }] }];
+    expect(decide(board([stage(1, [row("a", "certain")])]), prs)[0]!.why).toBe("CI failed: apps");
+  });
+});
+
+describe("mervin merge round blockers (#1542)", () => {
+  const st = (pr: number, extra = {}) => ({ pr, head: "h", base: "b", files: [{ path: "a", tier: "certain" as const, why: "", after: [] }], ...extra });
+  const bd = (stages: any[]) => ({ main: "m", at: "", stages, written: [], skipped: [], clashes: [] }) as any;
+  const ok = (name: string) => ({ name, conclusion: "SUCCESS", status: "COMPLETED" });
+  test("a check that hasn't reported is pending, not green", () => {
+    const prs: BoardPr[] = [{ number: 1, headRefOid: "h", statusCheckRollup: [ok("typecheck")] }];
+    expect(decide(bd([st(1)]), prs)[0]!.why).toBe("required check not reported yet: apps");
+    prs[0]!.statusCheckRollup = [ok("typecheck"), ok("apps")];
+    expect(decide(bd([st(1)]), prs)[0]!.go).toBe(true);
+  });
+  test("a stacked PR whose base branch is gone is not landable", () => {
+    const prs: BoardPr[] = [{ number: 1, headRefOid: "h", headRefName: "b1", baseRefName: "dead" }];
+    expect(decide(bd([st(1)]), prs)[0]!.why).toContain("retarget to main");
+  });
+  test("merge method: a stack takes a merge commit, a plain PR squashes", () => {
+    const prs: BoardPr[] = [
+      { number: 1, headRefOid: "h", headRefName: "b1", baseRefName: "main" },
+      { number: 2, headRefOid: "h", headRefName: "b2", baseRefName: "b1" },
+      { number: 3, headRefOid: "h", headRefName: "b3", baseRefName: "main" },
+    ];
+    const by = Object.fromEntries(decide(bd([st(1), st(2, { stackedOn: 1 }), st(3)]), prs).map((v) => [v.pr, v.method]));
+    expect(by).toEqual({ 1: "merge", 2: undefined, 3: "squash" });
+  });
+  test("a failure that is also red on main says so", () => {
+    const prs: BoardPr[] = [{ number: 1, headRefOid: "h", statusCheckRollup: [{ name: "apps", conclusion: "FAILURE", status: "COMPLETED" }] }];
+    expect(decide(bd([st(1)]), prs, ["apps"])[0]!.why).toContain("also failing on main");
+  });
+});
+
+import { buildStack, stackable } from "../scripts/mervin-merge.ts";
+describe("mervin stack", () => {
+  test("clean PRs join as merge commits, a clashing one is left out, only certain/agree are picked", () => {
+    const repo = mkdtempSync(join(tmpdir(), "mervin-stack-"));
+    const g = (...a: string[]) => { const r = Bun.spawnSync(["git", ...a], { cwd: repo, stderr: "pipe" }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
+    const put = (f: string, t: string, m: string) => { writeFileSync(join(repo, f), t); g("add", "-A"); g("commit", "-qm", m); return g("rev-parse", "HEAD").out.trim(); };
+    g("init", "-q", "-b", "main"); g("config", "user.email", "t@t"); g("config", "user.name", "t");
+    const base = put("a.txt", "1\n2\n3\n", "base"); put("b.txt", "x\n", "b");
+    const m = g("rev-parse", "HEAD").out.trim();
+    g("checkout", "-qb", "q1", m); const h1 = put("a.txt", "one\n2\n3\n", "q1");
+    g("checkout", "-qb", "q2", m); const h2 = put("c.txt", "new\n", "q2");
+    g("checkout", "-qb", "q3", m); const h3 = put("a.txt", "uno\n2\n3\n", "q3");
+    const mk = (n: number, h: string) => ({ number: n, headRefOid: h, title: `pr ${n}` });
+    const r = buildStack(g, m, [mk(1, h1), mk(2, h2), mk(3, h3)], new Map([[1, "pr 1"], [2, "pr 2"], [3, "pr 3"]]));
+    expect(r.joined).toEqual([1, 2]);
+    expect(r.left.map((l) => l.pr)).toEqual([3]);
+    expect(g("log", "--merges", "--format=%s", r.tip).out.trim().split("\n")).toEqual(["Merge #2: pr 2", "Merge #1: pr 1"]);
+    expect(base).toBeTruthy();
+    const row = (tier: any) => ({ path: "p", tier, why: "", after: [] });
+    const board = { main: "m", at: "", skipped: [], clashes: [], written: [], stages: [{ pr: 1, head: "", base: "", files: [row("certain")] }, { pr: 2, head: "", base: "", files: [row("mervin")] }] };
+    expect(stackable(board as any, [{ pr: 1, go: true, why: "", behind: [] }, { pr: 2, go: true, why: "", behind: [] }])).toEqual([1]);
+  });
+});

@@ -5,6 +5,7 @@
 // you lose the orbit. The view draws it and feeds the hero's input; the tests run it headless.
 import { acos, atan2, cos, hypot, sin } from "./fmath.ts";
 import { other, type PerSide, type Side, type SpaceBattleResult, type SpaceBattleSpec } from "./contract.ts";
+import { clamp } from "@rustybuns/util";
 
 export type CraftKind = "fighter" | "cruiser" | "hero";
 export interface Craft {
@@ -65,7 +66,6 @@ const rand = (b: SpaceBattle) => {
 };
 type P = { x: number; y: number; z: number };
 const dist = (a: P, b: P) => hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const wrap = (a: number) => atan2(sin(a), cos(a));
 // yaw 0, pitch 0 faces -z, like the ground battle and a three.js camera.
 export const heading = (yaw: number, pitch: number) => ({ x: -sin(yaw) * cos(pitch), y: sin(pitch), z: -cos(yaw) * cos(pitch) });
