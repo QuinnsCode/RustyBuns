@@ -88,6 +88,24 @@ export function ask(n: number, rows: BoardRow[]) {
     blocks: rows.filter((r) => blockers(r, rows).some((b) => b.pr === n)).map((r) => r.pr) };
 }
 
+/** The board in about four lines, ids first (#1593): what can merge, what is red, what waits and on what. Detail is one `?pr=` away. */
+export function brief(rows: BoardRow[]): string[] {
+  const list = (ns: number[]) => (ns.length ? ns.map((n) => `#${n}`).join(" ") : "none");
+  const mergeable = canMerge(rows);
+  const red = rows.filter((r) => r.ci === "fail").map((r) => r.pr);
+  const waiting = rows.filter((r) => !mergeable.includes(r.pr) && !red.includes(r.pr));
+  return [
+    `${rows.length} open. mergeable: ${list(mergeable)}`,
+    `red: ${list(red)}`,
+    `waiting: ${waiting.length ? waiting.map((r) => `#${r.pr}<-${blockers(r, rows).map((b) => `#${b.pr}`).join(",") || "cards"}`).join(" ") : "none"}`,
+    `waves: ${waves(rows).map((w) => w.join(",")).join(" | ") || "none"}`,
+  ];
+}
+
+/** Each row cut down to the named fields (`pr` always kept). */
+export const pick = (rows: BoardRow[], fields: string[]) =>
+  rows.map((r) => Object.fromEntries([["pr", r.pr], ...fields.filter((f) => f in r && f !== "pr").map((f) => [f, (r as unknown as Record<string, unknown>)[f]])]));
+
 /** Is `x` a row the board takes? A row that is, or what's wrong with it. */
 export function parseRow(x: unknown): BoardRow | string {
   const r = x as Partial<BoardRow> | null;
