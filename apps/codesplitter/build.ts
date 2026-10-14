@@ -48,9 +48,13 @@ await writeFile("dist/client/features.json", JSON.stringify(features()) + "\n");
 // Not api.html: Cloudflare serves that at /api, over the Worker's JSON.
 await copyFile("src/api.html", "dist/client/reference.html");
 await copyFile("src/mcp.html", "dist/client/mcp.html");
+// The deploy and health map: its page, and its logic (src/deploy-map.ts) bundled for the browser.
+await copyFile("src/map.html", "dist/client/map.html");
+const dm = await Bun.build({ entrypoints: ["src/deploy-map.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "deploy-map.js" });
+if (!dm.success) { for (const l of dm.logs) console.error(l); process.exit(1); }
 // The pages' security headers, the same ones the Worker puts on its answers (src/security.ts),
 // with the hashes of the pages' inline scripts: the enforced CSP runs those and no others.
-const pages = ["index.html", "play.html", "features.html", "reference.html", "mcp.html"];
+const pages = ["index.html", "play.html", "features.html", "reference.html", "mcp.html", "map.html"];
 const hashes = new Set<string>();
 for (const page of pages) for (const h of inlineScriptHashes(await readFile(`dist/client/${page}`, "utf8"))) hashes.add(h);
 await writeFile("dist/client/_headers", headersFile([...hashes]) + "\n/assets/*\n  cache-control: public, max-age=31536000, immutable\n");
