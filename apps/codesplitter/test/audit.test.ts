@@ -28,7 +28,7 @@ const actions = (rows: { action: string }[]) => rows.map((r) => r.action).revers
 describe("audit log", () => {
   test("logs who changed tokens, the crew, invites, visibility and hooks, for the owner and on your tokens page", async () => {
     const { call, send } = await app();
-    const t = await (await send("ryan", "/api/tokens", { label: "ci", scope: "write" }, "POST", { "cf-ipcountry": "NZ" })).json() as { id: string; token: string };
+    const t = await (await send("ryan", "/api/tokens", { label: "ci", scope: "admin" }, "POST", { "cf-ipcountry": "NZ" })).json() as { id: string; token: string };
     // A token's calls are logged as the token's.
     expect((await send(null, "/api/repos/ryan/lab", { visibility: "private" }, "PUT", { authorization: `Bearer ${t.token}` })).status).toBe(200);
     await send("ryan", "/api/repos/ryan/lab/collaborators", { name: "sam" });
@@ -52,7 +52,7 @@ describe("audit log", () => {
 
     const mine = await (await call("ryan", "/api/tokens/audit")).json() as any[];
     expect(actions(mine)[0]).toBe("token.create");
-    expect(mine.at(-1)).toMatchObject({ action: "token.create", target: t.id, via: "cookie", country: "NZ", detail: "write: ci" });
+    expect(mine.at(-1)).toMatchObject({ action: "token.create", target: t.id, via: "cookie", country: "NZ", detail: "admin: ci" });
     expect(mine[0]).toMatchObject({ action: "token.revoke", target: t.id });
     expect(await (await call("sam", "/api/tokens/audit")).json()).toEqual([]);
 
