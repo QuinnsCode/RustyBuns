@@ -60,16 +60,27 @@ export const refused = (host: string) =>
  * the Worker still imports under Bun's tests; the run's list comes in as props.
  */
 export const EgressGate = {
-  async fetch(req: Request, _env: unknown, ctx: { props?: { hosts?: string[] } }): Promise<Response> {
-    const host = new URL(req.url).hostname;
+  async fetch(req: Request, _env: unknown, ctx: { props?: GateProps }): Promise<Response> {
+    const host = new URL(req.url).hostname.toLowerCase().replace(/\.$/, "");
     if (!allowed(host, ctx.props?.hosts ?? [])) return refused(host);
-    return fetch(req);
+    const add = ctx.props?.inject?.[host];
+    if (!add) return fetch(req);
+    // The container only holds a stand-in for the key; the real one goes on here, over what the CLI sent (#1655).
+    const out = new Request(req);
+    for (const [k, v] of Object.entries(add)) out.headers.set(k, v);
+    return fetch(out);
   },
 };
 
+/** One run's gate: the hosts it may reach, and headers to put on requests to a host (an API key or token the container never holds). */
+export interface GateProps { hosts: string[]; inject?: Record<string, Record<string, string>> }
+
+/** What stands in for a key in the container's environment, so the CLI sends a request the gate then signs. */
+export const STAND_IN = "added-outside-the-container";
+
 /** The slice of `ctx.exports` a container's Durable Object needs: the gate, bound to one run's list. */
 export interface GateExports {
-  EgressGate?: (opts: { props: { hosts: string[] } }) => unknown;
+  EgressGate?: (opts: { props: GateProps }) => unknown;
 }
 
 /** The interception calls on `ctx.container` (workers-types' Container). */
@@ -83,8 +94,8 @@ export interface Interceptor {
  * list. Call before `start`, so the runtime puts its CA in the container as it
  * boots. Throws rather than run with the internet open when the gate isn't there.
  */
-export async function gate(c: Interceptor, exports: GateExports | undefined, hosts: string[]): Promise<void> {
-  const g = exports?.EgressGate?.({ props: { hosts } });
+export async function gate(c: Interceptor, exports: GateExports | undefined, hosts: string[], inject?: GateProps["inject"]): Promise<void> {
+  const g = exports?.EgressGate?.({ props: { hosts, ...inject && { inject } } });
   if (!g || !c.interceptOutboundHttps || !c.interceptAllOutboundHttp)
     throw new Error("the egress gate isn't available (ctx.exports.EgressGate, and a runtime that intercepts container HTTPS)");
   await c.interceptOutboundHttps("*", g);

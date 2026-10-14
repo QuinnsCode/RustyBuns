@@ -2,6 +2,7 @@ import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { text, type Doc } from "../src/lines.ts";
 import { local as boot, type Call } from "../src/local.ts";
 import { AgentSandbox, LOGINS, type ContainerApi } from "../src/sandbox.ts";
+import { STAND_IN } from "../src/egress.ts";
 import { gated } from "./fake-gate.ts";
 // @ts-expect-error plain .mjs, no types: it is the server inside the container image
 import { run, test as testCut } from "../sandbox/server.mjs";
@@ -88,7 +89,7 @@ describe("AgentSandbox", () => {
       return seen.started?.env;
     };
     expect(await started("claude")).toEqual({ ANTHROPIC_API_KEY: "sk-a" });   // never the subscription login (#559)
-    expect(await started("codex")).toEqual({ OPENAI_API_KEY: "sk-o" });
+    expect(await started("codex")).toEqual({ OPENAI_API_KEY: STAND_IN });   // proxied: the gate holds the real one (#1655)
   });
 });
 
@@ -141,10 +142,9 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     throw new Error("the run never ended");
   };
 
-  test("only the harnesses that can't read their own key are offered, even where Bun can't run CLIs (#1428)", async () => {
-    const { call, post } = await hosted(async (b) => b);
-    expect(await (await call(null, "/api/agents")).json()).toMatchObject({ available: true, harnesses: ["claude", "opencode"] });
-    for (const harness of ["codex", "pi"]) expect((await post("ryan-quinn", "/api/repos/ryan-quinn/r1/agents", { harness, path: "src/a.js", task: "x" })).status).toBe(400);
+  test("every harness is offered, even where Bun can't run CLIs: codex and pi behind the key-adding gate (#1655)", async () => {
+    const { call } = await hosted(async (b) => b);
+    expect(await (await call(null, "/api/agents")).json()).toMatchObject({ available: true, harnesses: ["claude", "codex", "pi", "opencode"] });
   });
 
   test("the owner gives an agent a task; it runs in a container off the queue, and its lines are blamed on it", async () => {
@@ -175,6 +175,10 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     expect((await post("ryan-quinn", "/api/github/agent", { id: "bot" })).status).toBe(200);
     expect((await start()).github).toBeUndefined();
     expect(runs.at(-1).cmd.env?.GH_TOKEN).toBeUndefined();
+    // codex has a shell, so it gets one, but only a stand-in: the gate adds the real token (#1655).
+    expect((await start("codex")).github).toBe(true);
+    expect(runs.at(-1).cmd.env).toMatchObject({ GH_TOKEN: STAND_IN, GITHUB_TOKEN: STAND_IN });
+    expect(JSON.stringify(runs.at(-1))).not.toContain("tok-bot");
     // Only your own GitHubs, only signed in; null goes back to none.
     expect((await post("ryan-quinn", "/api/github/agent", { id: "someone-elses" })).status).toBe(404);
     expect((await post("pat-person", "/api/github/agent", { id: "bot" })).status).toBe(404);
