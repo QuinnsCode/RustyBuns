@@ -8,6 +8,12 @@ merge plan (`src/merge-plan.ts`) that puts clashing PRs in waves. It swerves out
 Mervin keeps on swervin, so your agentic merge conflicts can stop hurting. Everyone has that "database guy";
 Mervin is your agentic git and merge guy, out here solving the problems so your agent doesn't have to.
 
+Mervin is built for the agentic era but is not an AI. It is a deterministic merge engine: no model, no
+prompt, no sampling, so the same three inputs give the same merge every time, for free, in milliseconds.
+It is designed for maximum collaboration with minimal friction: many agents and people on one repo at once,
+their merge conflicts dissolving into merge solutions instead of piling up as work. A model only gets involved
+when Mervin hands back a card, and then with the context to answer it.
+
 Mervin is the merge engine this agentic era needs, and layered with a sync layer it makes agents go brrrr.
 Let Mervin bring the intelligence to your merges, so you don't spend precious token budget on them and
 human minds are free to steer the digsite.
@@ -172,6 +178,46 @@ covers one file's text, not the files around it.
 - **Visible now, thinly.** The merge plan line and `GET /api/repos/:o/:r/merge-plan` (`engine`) name him, and the repo page
   and `GET /api/mervin` show the git/git corpus (settled / asked / other text, `src/mervin.ts`). The numbers there are
   this doc's table, not a live per-repo tally, and the merge page does not credit him per file yet.
+
+## Learning your merge patterns (opt-in, not built yet)
+
+Design only. The engine stays deterministic: learning never changes how a merge is computed, it changes what
+Mervin notices and how he orders and flags, and it is off until a repo turns it on.
+
+**What is kept.** One small event per merge, with no file contents and no diffs: repo, file extension, resolver
+level that settled it (or `card`), whether the merged tree passed its checks, how the card was answered (main's,
+the branch's, both, written, an agent), and whether the result was later reverted or edited. Paths are hashed
+unless the repo says otherwise.
+
+**Where it goes.** Cloudflare's R2 stack lets us keep it as plain tables with no database to run:
+
+```
+Mervin (Worker) -> Pipeline (stream + SQL transform) -> R2 Data Catalog (Iceberg table in R2) -> R2 SQL
+```
+
+This is the Basin skill's product set: Basin Pipelines to ingest, Basin Catalog for the Iceberg tables in R2,
+Basin SQL to query across them (formerly Pipelines, R2 Data Catalog and R2 SQL). Per-repo hot state (the open-PR
+overlap map) stays in the MervinDO ([mervin-engine.md](mervin-engine.md)); R2 holds the history that is too
+wide for it.
+
+**What it is asked.**
+
+- Which file types, directories and PR pairs fight here, so the merge plan weights them: `SELECT ext, count(*)
+  ... WHERE outcome = 'card' GROUP BY ext`.
+- Which resolver level this repo's people accept without editing, and which settle "wrong" (answered, then
+  reverted). A level with a bad record on this repo is demoted to a card, which is the self-heal.
+- Which card answers repeat (always main's on `package.json`, always both on `CHANGELOG.md`): suggested first,
+  or proposed as a `.gitattributes` rule for a person to approve.
+
+**Report.** A weekly summary per repo (settled, asked, wrong, top fighting paths, rules proposed), on the repo
+page and `GET /api/mervin`. Self-heal means demoting a level or suggesting a rule; it never rewrites history or
+merges anything new without the same guards as today.
+
+**Opt-in.** Off by default, per repo, switchable in settings, with delete-my-data. Nothing leaves the account
+that owns the repo.
+
+Open: event schema, retention, and whether Pipelines-to-Iceberg or plain R2 NDJSON plus R2 SQL is cheaper at
+our volume (price it first, per the contest cost rule).
 
 ## Corpus to pull in
 
