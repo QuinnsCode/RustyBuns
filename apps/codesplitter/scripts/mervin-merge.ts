@@ -77,6 +77,61 @@ export function stackable(board: Board, verdicts: Verdict[]): number[] {
   return board.stages.filter((s) => go.has(s.pr) && s.files.every((f) => f.tier === "certain" || f.tier === "agree")).map((s) => s.pr);
 }
 
+export type Who = "none" | "one agent" | "two agents" | "a swarm" | "a human";
+export interface Advice { pr: number; who: Who; why: string; blocks: number[] }
+export interface Heads { warnings: string[]; advice: Advice[]; stack: number[] }
+
+/** Files an agent should not settle alone: lockfiles, migrations, deploy files. */
+const RISKY = /(^|\/)(bun\.lockb?|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|migrations\/.*|wrangler\.(jsonc?|toml)|alchemy\.run\.ts|rustybuns\.config\.ts|\.github\/workflows\/.*|Dockerfile)$/;
+/** A PR this many others wait behind is the one to fix first, and worth a swarm. */
+const SWARM_AT = 3;
+/** This many PRs sharing files or clashes is "a lot of overlap incoming". */
+const OVERLAP_AT = 3;
+
+/**
+ * Where Mervin speaks up (#1519): warns when open PRs overlap, offers the clean ones as a stack, and for each held PR
+ * recommends who steps in. Held PRs come ranked: the red PR that blocks the most others first, then by size.
+ * It only advises; the person decides order and can override.
+ */
+export function advise(board: Board, verdicts: Verdict[]): Heads {
+  const stageOf = new Map(board.stages.map((s) => [s.pr, s]));
+  const open = board.clashes.filter((c) => !c.settled);
+  // who waits behind whom, through any depth
+  const blocks = (pr: number): number[] => {
+    const seen = new Set<number>(), todo = [pr];
+    for (let n = todo.pop(); n !== undefined; n = todo.pop()) for (const v of verdicts) if (!v.go && !seen.has(v.pr) && v.behind.includes(n)) { seen.add(v.pr); todo.push(v.pr); }
+    return [...seen];
+  };
+  const overlapping = new Set<number>(board.stages.filter((s) => s.files.some((f) => f.after.length)).flatMap((s) => [s.pr, ...s.files.flatMap((f) => f.after)]));
+  for (const c of board.clashes) for (const n of c.prs) overlapping.add(n);
+  const warnings: string[] = [];
+  if (overlapping.size >= OVERLAP_AT) {
+    const kinds = [...new Set(open.map((c) => c.kind))];
+    warnings.push(`a lot of overlap incoming: ${overlapping.size} open PRs share files${kinds.length ? ` or collide on ${kinds.join(", ")}` : ""}. Put an agent on it, or let me stack the easy ones.`);
+  }
+  const stack = stackable(board, verdicts);
+  if (stack.length > 1) warnings.push(`${stack.length} PRs are easy (${stack.map((n) => `#${n}`).join(" ")}): \`mervin-merge.ts --stack\` joins them into one PR whose own tested result is what CI checks.`);
+  const advice: Advice[] = [];
+  for (const v of verdicts.filter((x) => !x.go)) {
+    const s = stageOf.get(v.pr), files = s?.files ?? [];
+    const behindMe = blocks(v.pr);
+    const mine = open.filter((c) => c.prs.includes(v.pr));
+    const flagged = files.filter((f) => f.tier === "card" || f.tier === "differ" || RISKY.test(f.path)).map((f) => f.path);
+    let who: Who, why: string;
+    if (flagged.length || mine.some((c) => c.kind === "migration")) { who = "a human"; why = `${flagged.length ? flagged.join(", ") : "a migration stamp"} needs a person's eyes`; }
+    else if (behindMe.length >= SWARM_AT) { who = "a swarm"; why = `${behindMe.length} PRs wait behind it`; }
+    else if (mine.length || v.why.startsWith("conflicts with main")) { who = "two agents"; why = mine.length ? `clashes with ${[...new Set(mine.flatMap((c) => c.prs).filter((n) => n !== v.pr))].map((n) => `#${n}`).join(", ") || "main"}` : "conflicts with main"; }
+    else if (v.why.startsWith("stacked on") || v.why.startsWith("waits behind") || v.why.startsWith("CI still") || v.why.startsWith("required check")) { who = "none"; why = `waiting: ${v.why}`; }
+    else { who = "one agent"; why = `${files.length} file${files.length === 1 ? "" : "s"}: ${v.why}`; }
+    advice.push({ pr: v.pr, who, why, blocks: behindMe });
+  }
+  const rank = (a: Advice) => a.blocks.length;
+  advice.sort((a, b) => rank(b) - rank(a) || (stageOf.get(a.pr)?.files.length ?? 0) - (stageOf.get(b.pr)?.files.length ?? 0) || a.pr - b.pr);
+  const first = advice.find((a) => a.blocks.length);
+  if (first) warnings.push(`#${first.pr} blocks ${first.blocks.map((n) => `#${n}`).join(" ")}: fix it before the PRs behind it.`);
+  return { warnings, advice, stack };
+}
+
 /** One merge commit per PR on top of main, built with plumbing. Returns the tip and what joined or was left out. */
 export function buildStack(git: (...a: string[]) => { code: number; out: string }, main: string, prs: BoardPr[], titles: Map<number, string>) {
   let tip = main;
@@ -127,7 +182,11 @@ if (import.meta.main) {
     for (const p of prs) Bun.spawnSync(["git", "update-ref", `refs/mervin/pr-${p.number}-${p.headRefOid.slice(0, 9)}`, p.headRefOid], { cwd: top });
     save(); say(`recorded ${file}`);
   }
+  const heads = advise(board, verdicts);
   for (const v of verdicts) say(`#${v.pr} ${v.go ? `wave ${v.wave}` : "HOLD"}: ${v.why}${v.title ? `  (${v.title})` : ""}`);
+  for (const w of heads.warnings) say(`warning: ${w}`);
+  for (const a of heads.advice) say(`#${a.pr} suggest ${a.who}: ${a.why}${a.blocks.length ? ` (blocks ${a.blocks.map((n) => `#${n}`).join(" ")})` : ""}`);
+  recorded.advice = heads; save();
   if (args.includes("--stack")) {
     const picks = stackable(board, verdicts);
     const titles = new Map(prs.map((p) => [p.number, p.title ?? ""]));
