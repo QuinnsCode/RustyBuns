@@ -41,12 +41,29 @@ export function triage(failed: string[], stages: Stage[], onMain: Set<string>, r
   });
 }
 
-/** Ester's report: counts first, then what needs a person. */
-export function report(vs: Verdict[]): string[] {
+const secs = (ms: number) => `${(ms / 1000).toFixed(0)}s`;
+
+/**
+ * How long things take, so she can weigh a rerun: this sandbox's slowest runs (`runs`, wall ms), what the flaky
+ * rerun cost (`reran`, the runs it repeated, in ms; they go side by side so the slowest counts), and the slowest
+ * CI check GitHub timed on each PR (`ciSecs`).
+ */
+export function timing(runs: { dir: string; cmd: string; ms: number }[], reran: number[], stages: Stage[]): string[] {
+  const out: string[] = [];
+  const slow = [...runs].sort((a, b) => b.ms - a.ms).slice(0, 3);
+  if (slow.length) out.push(`  slowest runs: ${slow.map((r) => `${r.dir}: ${r.cmd} ${secs(r.ms)}`).join(", ")}`);
+  if (reran.length) out.push(`  the flaky rerun took ${secs(Math.max(...reran))}`);
+  const ci = stages.filter((s) => s.ciSecs).sort((a, b) => b.ciSecs! - a.ciSecs!).slice(0, 3);
+  if (ci.length) out.push(`  slowest PR CI: ${ci.map((s) => `#${s.pr} ${Math.round(s.ciSecs! / 60)}m`).join(", ")}`);
+  return out;
+}
+
+/** Ester's report: counts first, then what needs a person, then how long it all took. */
+export function report(vs: Verdict[], runs: { dir: string; cmd: string; ms: number }[] = [], reran: number[] = [], stages: Stage[] = []): string[] {
   const n = (o: Owner) => vs.filter((v) => v.owner === o).length;
   const out = [`Ester: ${vs.length} failing, ${n("main")} not the board's, ${n("flaky")} flaky, ${n("own")} a PR's own red, ${n("wait")} waiting on CI, ${n("blocks")} block Mervin`];
   for (const v of vs.filter((v) => v.owner !== "main")) out.push(`  ${v.owner.padEnd(6)} ${v.test}  ${v.why}${v.prs.length ? `  (${v.prs.map((p) => `#${p}`).join(", ")})` : ""}`);
-  return out;
+  return [...out, ...timing(runs, reran, stages)];
 }
 
 /** The PRs to hold back from the merge wave: every PR named by an own, wait or blocks verdict. */

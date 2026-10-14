@@ -26,6 +26,13 @@ describe("ester", () => {
     expect(lines.join("\n")).not.toContain("apps/d: t4");
   });
 
+  test("reports run, rerun and CI times", () => {
+    const lines = report(vs, [{ dir: "apps/a", cmd: "bun test", ms: 41000 }, { dir: ".", cmd: "bun run typecheck", ms: 90000 }], [41000], [{ ...stages[0]!, ciSecs: 360 }]).join("\n");
+    expect(lines).toContain("slowest runs: .: bun run typecheck 90s, apps/a: bun test 41s");
+    expect(lines).toContain("the flaky rerun took 41s");
+    expect(lines).toContain("slowest PR CI: #1 6m");
+  });
+
   test("a PR whose CI is still pending is waited on, and every culprit PR is held", () => {
     const w = triage(["apps/e: t"], [stage(7, "apps/e/q.ts", "pending")], new Set());
     expect(w[0]).toMatchObject({ owner: "wait", prs: [7] });
