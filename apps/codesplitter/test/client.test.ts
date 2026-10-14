@@ -711,3 +711,10 @@ describe("every page keeps its content off the window edges", () => {
     expect(rulesFor("backrooms")[0]?.body).toContain("padding: 0 24px");
   });
 });
+
+// Going back to a file waited on the Durable Object every time; the page now remembers the last visit.
+test("a file page paints its last visit, then reads it afresh", () => {
+  expect(html).toContain("const fileMemo = new Map()");
+  expect(html).toContain("fileLeave?.(); fileLeave = null;");
+  expect(html).toContain("if (d.rev > doc.rev)");
+});
