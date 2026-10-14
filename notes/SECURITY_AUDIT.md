@@ -150,15 +150,15 @@ The first two rounds were about what an agent *holds* (secrets, the `gh` login, 
 
 ### Still open, as issues
 
-- **The main ruleset requires no review**, so the required checks only prove a PR's own copy of the workflows passed. That is #754's "require review" step, which waits on agents having their own GitHub identity.
-- **Approval gates reachable with a bearer token** on codeSplitter: `deploy {approve}`, `accept_agent_batch` and `build_ok` take a write token, so a prompt-injected owner's agent can pass them; and a deploy approval clears a tip whose review diff was cut short (40 files, 200 lines).
-- **Crew control the path policy**: `.gitattributes` and `codesplitter.ci` can be live-edited on an unprotected main by any writer, which unlocks `locked` files and changes what the checks runner runs.
-- **Self-heal opens fix tasks from crew-reported runs**, the dependency doctor's fixer runs with the full environment and previews deploy its edits unreviewed, a rebuild task pushes agent output (workflows included) to GitHub, and the owner's own agent sees private lines it could copy into public ones.
-- **Desktop leftovers**: cut runs with the full environment and output readable by id, `get_repo` handing a push token to a write bearer, a `GET` that lands a batch.
-- **WebMCP** derives its risk hints from a regex that misses invites, un-hiding private lines, shares and agent starts; handoff notes and the feed digest aren't framed as data; webhook SSRF misses three IPv6 ranges and gh-compat events fire for crew branches.
-- **Agent Office upstream**: issue and PR titles land in worker prompts unquoted, PR branch names are handed to the agent inside a shell command, the office's session secret and people's sign-ins sit on disk readable by every worker (#667), heap snapshots hold every token, and the office rebuilds its guards from the main checkout. These need the office's author.
-- **Agent Office defaults**: `ASK_FIRST` is off out of the box, and the Allow/Deny card shows 400 characters of a 20,000-character prompt.
-- **CI**: the drop job's GitHub Release wants its own job with `contents: write`, `borg-edge` holds the Cloudflare token at job level across `bun install`, and a `dry` dispatch of `desktop-drop` still attaches the `drops` environment.
+- **#1575 (manual run). The main ruleset requires no review**, so the required checks only prove a PR's own copy of the workflows passed. That is #754's "require review" step, which waits on agents having their own GitHub identity.
+- **#1566. Approval gates reachable with a bearer token** on codeSplitter: `deploy {approve}`, `accept_agent_batch` and `build_ok` take a write token, so a prompt-injected owner's agent can pass them; and a deploy approval clears a tip whose review diff was cut short (40 files, 200 lines).
+- **#1567. Crew control the path policy**: `.gitattributes` and `codesplitter.ci` can be live-edited on an unprotected main by any writer, which unlocks `locked` files and changes what the checks runner runs.
+- **#1568 and #1569. Self-heal opens fix tasks from crew-reported runs**, the dependency doctor's fixer runs with the full environment and previews deploy its edits unreviewed, a rebuild task pushes agent output (workflows included) to GitHub, and the owner's own agent sees private lines it could copy into public ones.
+- **#1570. Desktop leftovers**: cut runs with the full environment and output readable by id, `get_repo` handing a push token to a write bearer, a `GET` that lands a batch.
+- **#1571. WebMCP** derives its risk hints from a regex that misses invites, un-hiding private lines, shares and agent starts; handoff notes and the feed digest aren't framed as data; webhook SSRF misses three IPv6 ranges and gh-compat events fire for crew branches.
+- **#1572. Agent Office upstream**: issue and PR titles land in worker prompts unquoted, PR branch names are handed to the agent inside a shell command, the office's session secret and people's sign-ins sit on disk readable by every worker (#667), heap snapshots hold every token, and the office rebuilds its guards from the main checkout. These need the office's author.
+- **#1573. Agent Office defaults**: `ASK_FIRST` is off out of the box, and the Allow/Deny card shows 400 characters of a 20,000-character prompt.
+- **#1574. CI**: the drop job's GitHub Release wants its own job with `contents: write`, `borg-edge` holds the Cloudflare token at job level across `bun install`, and a `dry` dispatch of `desktop-drop` still attaches the `drops` environment.
 
 ### What the guard still can't do
 
