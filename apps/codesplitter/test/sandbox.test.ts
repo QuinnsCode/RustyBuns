@@ -155,13 +155,16 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     const authId = (await env.DB.prepare("SELECT auth_id FROM users WHERE name = 'ryan-quinn'").first())!.auth_id as string;
     for (const [id, at] of [["bot", "2026-01-01"], ["mine", "2026-02-01"]]) await env.DB.prepare(`INSERT INTO account (id, accountId, providerId, userId, accessToken, createdAt, updatedAt) VALUES (?, ?, 'github', ?, ?, ?, ?)`)
       .bind(id, id + "-gh", authId, `tok-${id}`, at, at).run();
-    const start = () => finished(call, { harness: "claude", path: "src/a.js", task: "x" });
+    const start = (harness = "codex") => finished(call, { harness, path: "src/a.js", task: "x" });
     // None picked: no token, though "mine" digs.
     expect((await start()).github).toBeUndefined();
     expect(runs.at(-1).cmd.env?.GH_TOKEN).toBeUndefined();
     expect((await post("ryan-quinn", "/api/github/agent", { id: "bot" })).status).toBe(200);
     expect((await start()).github).toBe(true);
     expect(runs.at(-1).cmd.env).toMatchObject({ GH_TOKEN: "tok-bot", GITHUB_TOKEN: "tok-bot" });
+    // A harness with no shell has nothing to use it with (#1428).
+    expect((await start("claude")).github).toBeUndefined();
+    expect(runs.at(-1).cmd.env?.GH_TOKEN).toBeUndefined();
     // Only your own GitHubs, only signed in; null goes back to none.
     expect((await post("ryan-quinn", "/api/github/agent", { id: "someone-elses" })).status).toBe(404);
     expect((await post("pat-person", "/api/github/agent", { id: "bot" })).status).toBe(404);

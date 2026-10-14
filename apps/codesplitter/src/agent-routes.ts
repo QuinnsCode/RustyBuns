@@ -50,7 +50,7 @@
 import { json, type Env, readBody } from "./env.ts";
 import { charge, every, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
-import { HARNESSES, harnessCommand, type Harness } from "./harness.ts";
+import { HARNESSES, RUNS_COMMANDS, harnessCommand, type Harness } from "./harness.ts";
 import { localSandbox, runAgent, type Conflict, type Exec, type Sandbox } from "./agent-run.ts";
 import { containerSandbox } from "./sandbox.ts";
 import { agentGithubToken } from "./github.ts";
@@ -518,7 +518,8 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     let sandbox: Sandbox = async (cmd, file, sig) => { const r = await box(cmd, file, sig); await peek(); return r; };
     // A hosted agent works on GitHub as the account its owner picked for agents (a bot,
     // say), not as the one they dig as; with none picked it gets no GitHub token at all.
-    const gh = env.AGENT_SANDBOX ? await agentGithubToken(env, owner).catch(() => null) : null;
+    // Nor does one that can't run a command, or a fix task the doctor started (#1428).
+    const gh = env.AGENT_SANDBOX && !row.branch && RUNS_COMMANDS.includes(harness) ? await agentGithubToken(env, owner).catch(() => null) : null;
     if (gh) {
       const inner = sandbox;
       sandbox = (cmd, file, sig) => inner({ ...cmd, env: { ...cmd.env, GH_TOKEN: gh, GITHUB_TOKEN: gh } }, file, sig);
