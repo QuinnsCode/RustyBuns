@@ -47,6 +47,16 @@ Every app is five things: **http, comms, storage, memory, identity**. Cloudflare
 
 </details>
 
+### Bun and Vite are the stack, the rest swaps out
+
+Bun runs your app and Vite builds it. Everything else (Alchemy, Effect, Rust, Hetzner, Railway) is an option you add when you want it and drop when you don't.
+
+<details><summary>More</summary>
+
+We give you all the options and none of the requirements. Bun is the host on the desktop and on a box, and Vite builds the client. That's the whole floor. Deploy tooling is opt-in: a project that only builds the desktop binary never runs `add deploy`, so it never gets Alchemy or Effect. Rust is an optional engine with a TypeScript twin. Each deploy target is one Layer you can swap for another or leave out. Nothing here is a thing your `src/` imports, so any of it can go without touching your app. See [Leaving is a `git rm`](#leaving-is-a-git-rm) and [Adopting it in steps](ADOPTION.md#adopting-it-in-steps).
+
+</details>
+
 ### Five primitives, and where each one lands
 
 Every app is http, comms, storage, memory and identity. Here's what each one becomes on each target.
