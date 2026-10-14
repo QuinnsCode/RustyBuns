@@ -6,6 +6,12 @@ Prefer a shell command to a tool server: `gh`, `bun`, `git`, `office-workers`, `
 (`codesplitter tools` lists them). MCP is there when no CLI covers it (same operations as the CLI). WebMCP
 is different: it runs in a signed-in browser page as the user, so use it only for what needs that page.
 
+## Ephemeral worktrees: install first
+
+An agent's worktree is a fresh checkout with no `node_modules`, so the first `bun test` fails with
+`Cannot find package 'effect'`. Run `bun install --frozen-lockfile` at the repo root and wait it out
+(about 15 s) before any test or typecheck. Re-run it after pulling when the lockfile moved.
+
 ## Tests: CI runs the suite
 
 CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each app a PR touched (`apps.yml`;
