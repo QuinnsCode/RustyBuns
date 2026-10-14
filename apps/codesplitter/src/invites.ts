@@ -22,9 +22,10 @@
 //   GET    /invite/:token  (not under /api) a browser goes to the page; an agent gets these steps as text
 
 import { audit } from "./audit.ts";
+import { charge, SITE } from "./limits.ts";
 import { json, NAME, type Env, readBody } from "./env.ts";
 import { HARNESSES, type Harness } from "./harness.ts";
-import { isAgentHandle, mail, mailOn, slug } from "./identity.ts";
+import { isAdmin, isAgentHandle, mail, mailOn, slug } from "./identity.ts";
 import { b64url, hash, mint } from "./tokens.ts";
 import { turnstile } from "./security.ts";
 
@@ -207,6 +208,11 @@ async function claim(req: Request, env: Env, user: string | null): Promise<Respo
     return json({ ...where, joined: user, door: "agent", token: t.token, expires_at: t.expires_at, mcp: mcpLines(base, t.token),
       next: `Use this token for ${i.owner}/${i.repo}: each of your tokens reaches the repo it came with.` }, 201);
   }
+  // Bots are welcome, but not by the thousand: on the hosted site every handle gets its own per-person limits, so the
+  // ones an inviter brings in are held to a share of their own, and the site to a total.
+  // A desktop (no cf-connecting-ip) is never counted: its swarm costs the site nothing.
+  const over = !req.headers.get("cf-connecting-ip") ? null : ((env.ADMINS && isAdmin(env, i.by) ? null : await charge(env, "brood", `@${i.by}`)) ?? await charge(env, "newagents", SITE));
+  if (over) return json({ error: over }, 429);
   const handle = await newAgent(env, String(b.name ?? "") || harness || "guest");
   if (!(await join(env, i, handle, "agent"))) {
     await env.DB.prepare("DELETE FROM users WHERE name = ?").bind(handle).run();

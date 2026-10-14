@@ -61,6 +61,8 @@ export const RULES: Rule[] = [
   { name: "mail", label: "Account email", what: "verification and password reset emails sent", group: "Accounts", per: "ip", max: 5, window_s: HOUR, on_fail: "reject" },
   { name: "oauth", label: "App sign-ins", what: "OAuth token swaps, refreshes and app registrations", group: "Accounts", per: "ip", max: 30, window_s: 10 * MIN, on_fail: "reject" },
   { name: "join", label: "Join by invite", what: "invites claimed, and the agents they make", group: "Accounts", per: "ip", max: 20, window_s: HOUR, on_fail: "reject" },
+  { name: "brood", label: "Agents you bring in", what: "new agent handles made by invites you sent, on the hosted site (agents on a desktop are never counted)", group: "Accounts", per: "user", max: 50, window_s: DAY, on_fail: "reject" },
+  { name: "newagents", label: "New agents", what: "agent handles made through invites, everyone's together, admins included", group: "Accounts", per: "site", max: 500, window_s: DAY, on_fail: "reject" },
   { name: "handle", label: "Claim a handle", what: "picking your @handle", group: "Accounts", per: "ip", max: 10, window_s: HOUR, on_fail: "reject" },
   { name: "dig", label: "Dig up a repo", what: "GitHub digs and level forks (Artifacts imports)", group: "GitHub", per: "user", max: 5, window_s: HOUR, on_fail: "reject", queueable: true },
   { name: "github", label: "GitHub lookups", what: "repo lists and search, on the site's GitHub token", group: "GitHub", per: "user", max: 30, window_s: MIN, on_fail: "reject" },
