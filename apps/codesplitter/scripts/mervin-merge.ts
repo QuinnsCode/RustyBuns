@@ -3,7 +3,7 @@
 // next; the merging itself is GitHub's own auto-merge, so the main ruleset (PRs only, CI green) still has the
 // last word.
 //
-//   bun scripts/mervin-merge.ts [1468 1478 ...] [--go] [--from prs.json]
+//   bun scripts/mervin-merge.ts [1468 1478 ...] [--go] [--from prs.json] [--main-red check,check]
 //   bun scripts/mervin-merge.ts --stack [--push]
 //
 // Every run is recorded so a bad round can be replayed: the PR list as `gh` gave it (head shas, CI), main's sha,
@@ -18,8 +18,8 @@
 // (merge-tree, commit-tree), so no worktree or checkout is touched. A PR git can't join cleanly onto the stack
 // so far is left out and named. `--push` pushes the branch and opens the PR, its body listing what was combined.
 //
-// With no flag it only prints the plan (reads git and `gh pr list`). `--go` turns on `gh pr merge --auto
-// --squash` for the first wave and nothing else; run it again after that wave lands, and the board is rebuilt
+// With no flag it only prints the plan (reads git and `gh pr list`). `--go` turns on `gh pr merge --auto`
+// (--squash, or --merge for a stack; `--method` overrides and warns) for the first wave and nothing else; run it again after that wave lands, and the board is rebuilt
 // on the new main. A PR is held when its CI failed, the board carded one of its files (Mervin couldn't carry its
 // change), it is stacked on a PR that hasn't landed, it sits in a clash between files, or it waits behind a
 // held PR that touches the same files. Every line is stamped so the run can be tailed.
@@ -28,11 +28,16 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { run, order, ciOf, type Board, type BoardPr } from "./mervin-board.ts";
 
-export interface Verdict { pr: number; title?: string; go: boolean; wave?: number; why: string; behind: number[] }
+export interface Verdict { pr: number; title?: string; go: boolean; wave?: number; why: string; behind: number[]; method?: "squash" | "merge" }
+
+/** The checks the main ruleset requires. One that hasn't reported yet is pending, never passed (#1542). */
+export const REQUIRED_CHECKS = ["typecheck", "apps"];
 
 /** Wave 1 merges now; wave 2 touches files a wave 1 PR does, so it goes after that lands; a held PR holds those behind it. */
-export function decide(board: Board, prs: BoardPr[]): Verdict[] {
+export function decide(board: Board, prs: BoardPr[], mainRed: string[] = []): Verdict[] {
   const byNum = new Map(prs.map((p) => [p.number, p]));
+  const heads = new Set(prs.map((p) => p.headRefName).filter(Boolean));
+  const bases = new Set(prs.map((p) => p.baseRefName).filter(Boolean));
   const clashing = new Set(board.clashes.flatMap((c) => c.prs));
   const out = new Map<number, Verdict>();
   for (const s of board.stages) {
@@ -40,7 +45,13 @@ export function decide(board: Board, prs: BoardPr[]): Verdict[] {
     const behind = [...new Set(s.files.flatMap((f) => f.after))].filter((n) => out.has(n));
     const cards = s.files.filter((f) => f.tier === "card").map((f) => f.path);
     let why = "";
-    if (ci.ci === "fail") why = `CI failed: ${ci.failing.join(", ")}`;
+    const pr = byNum.get(s.pr);
+    const reported = new Set((pr?.statusCheckRollup ?? []).map((c) => c.name));
+    const missing = pr?.statusCheckRollup?.length ? REQUIRED_CHECKS.filter((n) => !reported.has(n)) : [];
+    if (ci.ci === "fail") why = `CI failed: ${ci.failing.join(", ")}${ci.failing.every((n) => mainRed.includes(n)) ? " (also failing on main, rerun once main is fixed)" : ""}`;
+    else if (pr?.baseRefName && pr.baseRefName !== "main" && !heads.has(pr.baseRefName)) why = `base branch ${pr.baseRefName} is gone or already merged, retarget to main`;
+    else if (missing.length) why = `required check not reported yet: ${missing.join(", ")}`;
+    else if (ci.ci === "pending") why = "CI still running";
     else if (cards.length) why = `Mervin asks on ${cards.join(", ")}`;
     else if (clashing.has(s.pr)) why = `clashes across files: ${board.clashes.filter((c) => c.prs.includes(s.pr)).map((c) => `${c.kind} ${c.key}`).join("; ")}`;
     else if (s.stackedOn !== undefined) why = `stacked on #${s.stackedOn}, which hasn't landed`;
@@ -50,7 +61,8 @@ export function decide(board: Board, prs: BoardPr[]): Verdict[] {
     }
     if (why) { out.set(s.pr, { pr: s.pr, title: s.title, go: false, why, behind }); continue; }
     const wave = 1 + Math.max(0, ...behind.map((n) => out.get(n)!.wave ?? 0));
-    out.set(s.pr, { pr: s.pr, title: s.title, go: true, wave, why: wave === 1 ? "clear to merge" : `after ${behind.map((n) => `#${n}`).join(", ")}`, behind });
+    const method = s.stackedOn !== undefined || (pr?.headRefName && bases.has(pr.headRefName)) ? "merge" : "squash";
+    out.set(s.pr, { pr: s.pr, title: s.title, go: true, wave, method, why: wave === 1 ? "clear to merge" : `after ${behind.map((n) => `#${n}`).join(", ")}`, behind });
   }
   for (const k of board.skipped) out.set(k.pr, { pr: k.pr, go: false, why: `skipped: ${k.why}`, behind: [] });
   return [...out.values()];
@@ -92,7 +104,7 @@ if (import.meta.main) {
   const given = args.filter((a, i) => /^\d+$/.test(a) && !args[i - 1]?.startsWith("--")).map(Number);
   say(`reading ${prs.length} open PRs against main ${main.slice(0, 9)}`);
   const { board } = run(top, main, order(prs, given.length ? given : undefined));
-  const verdicts = decide(board, prs);
+  const verdicts = decide(board, prs, (arg("main-red") ?? "").split(",").filter(Boolean));
   const file = join(resolve(arg("record") ?? join(top, ".mervin/rounds")), `${new Date().toISOString().replace(/[:.]/g, "-")}-${main.slice(0, 9)}.json`);
   const recorded: Record<string, unknown> = { at: new Date().toISOString(), main, replayOf: replay, prs, board, verdicts };
   const save = () => {
@@ -145,7 +157,9 @@ if (import.meta.main) {
   say(`${now.length} to merge now, ${verdicts.filter((v) => v.go).length - now.length} in later waves, ${verdicts.filter((v) => !v.go).length} held`);
   if (!args.includes("--go")) { say("plan only; add --go to turn on auto-merge for wave 1"); process.exit(0); }
   for (const v of now) {
-    const r = Bun.spawnSync(["gh", "pr", "merge", String(v.pr), "--auto", "--squash"], { cwd: top, stderr: "pipe" });
+    const method = (arg("method") as "squash" | "merge" | undefined) ?? v.method ?? "squash";
+    if (method !== v.method) say(`#${v.pr} warning: using --${method}, Mervin recommends --${v.method} (${v.method === "merge" ? "part of a stack" : "a plain PR"})`);
+    const r = Bun.spawnSync(["gh", "pr", "merge", String(v.pr), "--auto", `--${method}`], { cwd: top, stderr: "pipe" });
     say(`#${v.pr} auto-merge ${r.exitCode === 0 ? "on" : `FAILED: ${r.stderr.toString().trim()}`}`);
   }
   say("wave 1 is queued; rerun after it lands for the next wave");
