@@ -6,7 +6,25 @@ import { features } from "./features.ts";
 import { buildGitpath } from "./src/gitpath/build.ts";
 
 await mkdir("dist/client", { recursive: true });
-await copyFile("src/client.html", "dist/client/index.html");
+// The home page's styles and script go to content-hashed files, so a deploy that changes only one
+// leaves the other cached, and the HTML itself is small. 'self' covers them, so the CSP needs no hash.
+const home = await readFile("src/client.html", "utf8");
+// The style is the head's; the script is the one at the end (the page's own code mentions <style> in strings).
+const head = home.slice(0, home.indexOf("</head>"));
+const css = [...head.matchAll(/<style>([\s\S]*?)<\/style>/g)];
+const js = [...home.slice(head.length).matchAll(/<script>([\s\S]*?)<\/script>/g)];
+if (css.length !== 1 || js.length !== 1) throw new Error(`src/client.html: expected one inline <style> in the head and one inline <script>, found ${css.length} and ${js.length}`);
+await mkdir("dist/client/assets", { recursive: true });
+const hashed = async (body: string, ext: string) => {
+  const name = `app-${new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 10)}.${ext}`;
+  await writeFile(`dist/client/assets/${name}`, body);
+  return `/assets/${name}`;
+};
+const cssUrl = await hashed(css[0]![1]!, "css");
+const jsUrl = await hashed(js[0]![1]!, "js");
+await writeFile("dist/client/index.html", home
+  .replace(css[0]![0], () => `<link href="${cssUrl}" rel="stylesheet">`)
+  .replace(js[0]![0], () => `<script src="${jsUrl}"></script>`));
 await copyFile("src/play.html", "dist/client/play.html");
 // The game's code city mode, which play.html loads on #c/<name>.
 await copyFile("src/city.js", "dist/client/city.js");
@@ -19,6 +37,9 @@ const av = await Bun.build({ entrypoints: ["src/avatar.ts"], outdir: "dist/clien
 if (!av.success) { for (const l of av.logs) console.error(l); process.exit(1); }
 const qr = await Bun.build({ entrypoints: ["src/qr.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "qr.js" });
 if (!qr.success) { for (const l of qr.logs) console.error(l); process.exit(1); }
+// Self-heal: the "copy a fix prompt for your agent" text (src/fix-prompt.ts) behind a failure's toast.
+const fp = await Bun.build({ entrypoints: ["src/fix-prompt.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "fix-prompt.js" });
+if (!fp.success) { for (const l of fp.logs) console.error(l); process.exit(1); }
 // gitpath: a file's history played down a highway (src/gitpath/): its page, script and sample.
 await buildGitpath("dist/client");
 await copyFile("src/features.html", "dist/client/features.html");
@@ -27,12 +48,16 @@ await writeFile("dist/client/features.json", JSON.stringify(features()) + "\n");
 // Not api.html: Cloudflare serves that at /api, over the Worker's JSON.
 await copyFile("src/api.html", "dist/client/reference.html");
 await copyFile("src/mcp.html", "dist/client/mcp.html");
+// The deploy and health map: its page, and its logic (src/deploy-map.ts) bundled for the browser.
+await copyFile("src/map.html", "dist/client/map.html");
+const dm = await Bun.build({ entrypoints: ["src/deploy-map.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "deploy-map.js" });
+if (!dm.success) { for (const l of dm.logs) console.error(l); process.exit(1); }
 // The pages' security headers, the same ones the Worker puts on its answers (src/security.ts),
 // with the hashes of the pages' inline scripts: the enforced CSP runs those and no others.
-const pages = ["index.html", "play.html", "features.html", "reference.html", "mcp.html"];
+const pages = ["index.html", "play.html", "features.html", "reference.html", "mcp.html", "map.html"];
 const hashes = new Set<string>();
 for (const page of pages) for (const h of inlineScriptHashes(await readFile(`dist/client/${page}`, "utf8"))) hashes.add(h);
-await writeFile("dist/client/_headers", headersFile([...hashes]));
+await writeFile("dist/client/_headers", headersFile([...hashes]) + "\n/assets/*\n  cache-control: public, max-age=31536000, immutable\n");
 // Geist, served from here (no Google Fonts call): the stylesheet, both variable fonts and their license.
 await mkdir("dist/client/fonts", { recursive: true });
 for (const f of ["geist.css", "Geist-Variable.woff2", "GeistMono-Variable.woff2", "LICENSE.txt"]) await copyFile(`src/fonts/${f}`, `dist/client/fonts/${f}`);
@@ -41,7 +66,7 @@ for (const f of ["geist.css", "Geist-Variable.woff2", "GeistMono-Variable.woff2"
 await mkdir("dist/client/vendor", { recursive: true });
 for (const [from, to] of [
   ["lucide/dist/umd/lucide.min.js", "lucide.min.js"], ["lucide/LICENSE", "lucide-LICENSE.txt"],
-  ["three/build/three.module.js", "three.module.js"], ["three/LICENSE", "three-LICENSE.txt"],
+  ["three/build/three.module.min.js", "three.module.js"], ["three/LICENSE", "three-LICENSE.txt"],
 ]) await copyFile(`node_modules/${from}`, `dist/client/vendor/${to}`);
 // Resolve packages as wrangler does for workerd, and leave node:* to the runtime
 // (nodejs_compat). Without it Better Auth takes its browser build, whose stand-in

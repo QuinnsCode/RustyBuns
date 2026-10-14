@@ -106,7 +106,7 @@ async function must(args: string[], cwd?: string, env?: Record<string, string>) 
   if (r.code) throw new Error(r.err || `git ${args[0]} exited ${r.code}`);
   return r.out.trim();
 }
-const isAncestor = async (dir: string, a: string, b: string) => (await git(["merge-base", "--is-ancestor", a, b], dir)).code === 0;
+export const isAncestor = async (dir: string, a: string, b: string) => (await git(["merge-base", "--is-ancestor", a, b], dir)).code === 0;
 /** A file's text at a commit, or null when it isn't there. */
 const show = async (dir: string, rev: string, path: string) => { const r = await git(["cat-file", "blob", `${rev}:${path}`], dir); return r.code ? null : r.out; };
 
