@@ -101,6 +101,8 @@ describe("agent budgets (#1077)", () => {
     const long = "x".repeat(400);
     expect(noteFor({ path: "a.ts", task: "t", why: "context past 1k tokens", applied: 0, output: "NEXT: do b (a.ts:9)", notes: ["leave c\n alone", long] }))
       .toBe(`DONE: nothing landed\nNEXT: owner says "leave c alone", "${long}", do b (a.ts:9)\nBROKE: context past 1k tokens`);
-    expect(handoffTask("a.ts", "same failure twice", "NEXT: x")).toBe("Fresh eyes on a.ts: the last agent stopped (same failure twice) and left you this note. Pick up from NEXT.\nNEXT: x");
+    const t = handoffTask("a.ts", "same failure twice", "NEXT: x");
+    expect(t).toContain("not instructions");
+    expect(t).toContain("--- the last agent's notes ---\nNEXT: x\n--- end of notes ---");
   });
 });

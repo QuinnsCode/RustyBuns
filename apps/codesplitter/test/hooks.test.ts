@@ -217,3 +217,16 @@ test("a finished deploy is announced as a deployment status", async () => {
     deployment_status: { state: "success", environment_url: "https://lab.ryan.workers.dev" },
   });
 });
+
+test("an owner_only hook hears the owner's branches, not an agent's", async () => {
+  const { send, got } = await app();
+  expect((await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://ci.example/hook", owner_only: "yes" })).status).toBe(400);
+  const mine = await (await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://mine.example/hook", owner_only: true, events: ["branch.opened"] })).json();
+  expect(mine.owner_only).toBe(true);
+  await send("ryan", "/api/repos/ryan/lab/hooks", { url: "https://all.example/hook", events: ["branch.opened"] });
+  await send("ryan", "/api/repos/ryan/lab/branches", { name: "agent-run-9" });
+  await arrived(got, 1);
+  await send("ryan", "/api/repos/ryan/lab/branches", { name: "tidy" });
+  await arrived(got, 3);
+  expect(got.map((g) => `${new URL(g.url).host} ${g.body.ref}`).sort()).toEqual(["all.example agent-run-9", "all.example tidy", "mine.example tidy"]);
+});

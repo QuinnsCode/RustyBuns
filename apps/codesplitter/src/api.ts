@@ -294,7 +294,7 @@ export const GROUPS: Group[] = [
       { method: "POST", path: "/api/repos/:o/:r/deps/run", body: "{rank?}", who: OWNER, does: "check now; a rank settles clashes for this run only" },
       { method: "GET", path: "/api/watch", who: "anyone", does: "the supply-chain watch: each agent platform's status line, and (signed in) malicious-package hits in your repos" },
       { method: "GET", path: "/api/repos/:o/:r/hooks", who: OWNER, does: "the webhooks, each with its last delivery" },
-      { method: "POST", path: "/api/repos/:o/:r/hooks", body: "{url, events?, secret?, github_compat?}", who: OWNER, does: "add a webhook (not to a private, loopback or link-local address); its secret is shown this once. github_compat: GitHub's event names, headers and fields, for receivers built for GitHub" },
+      { method: "POST", path: "/api/repos/:o/:r/hooks", body: "{url, events?, secret?, github_compat?, owner_only?}", who: OWNER, does: "add a webhook (not to a private, loopback or link-local address); its secret is shown this once. github_compat: GitHub's event names, headers and fields, for receivers built for GitHub. owner_only: skip events from the crew's or agents' work, so CI with your secrets never builds it" },
       { method: "DELETE", path: "/api/repos/:o/:r/hooks/:id", who: OWNER, does: "remove it" },
       { method: "GET", path: "/api/repos/:o/:r/hooks/:id/deliveries", who: OWNER, does: "its last 20 deliveries" },
       { method: "POST", path: "/api/repos/:o/:r/hooks/:id/deliveries/:d/redeliver", who: OWNER, does: "send one again" },
