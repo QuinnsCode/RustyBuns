@@ -427,6 +427,14 @@
   .ln .saving { position: absolute; right: 24px; top: 0; font: 500 11.5px/20px var(--sans); color: var(--muted); pointer-events: none; }
   .ln .saving.failed { position: static; display: block; white-space: normal; color: var(--del-fg); }
   .code.plain .ln { grid-template-columns: 52px minmax(0, 1fr); }
+  /* Secret bottom-of-the-file mode: the oldest lines fall apart (decayTiers, rot). Tier 0 is the newest fifth and stays whole. */
+  .dust-end { display: flex; justify-content: center; padding: 28px 0 40px; }
+  .dust-end button { border: 0; background: none; color: var(--faint); opacity: .3; cursor: default; padding: 4px; transition: opacity .3s; } .dust-end button:hover, .dust-end button:focus-visible, .dust-end button[aria-pressed="true"] { opacity: .7; cursor: pointer; } .dust-end svg { width: 14px; height: 14px; }
+   
+  /* Bombed out: a damaged letter's corner is blasted off (the <s> keeps the rest standing) and the chunk, a piece of that same glyph, lies beside it. */
+  .code.rotting .ln .t i.k { position: relative; display: inline-block; font-style: normal; white-space: pre; }
+  .code.rotting .ln .t i.k s { text-decoration: none; clip-path: var(--keep); }
+  .code.rotting .ln .t i.k::after { content: attr(data-c); position: absolute; left: 0; top: 0; clip-path: var(--chunk); transform: translate(var(--dx), var(--dy)) rotate(var(--r)); }
   /* Stamps on a line: small chips after its text, yours filled in. */
   .ln .stamps { display: inline-flex; gap: 4px; margin-left: 14px; vertical-align: 1px; user-select: none; font: 500 11px/16px var(--sans); }
   .ln .stamp { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); color: var(--muted); cursor: pointer; font: inherit; }
@@ -2948,6 +2956,46 @@ function table(tree, href) {
   if (!tree.entries.length) return '<div class="body muted">Nothing unearthed yet.</div>';
   return `<div class="table">${tree.entries.map((e) => `<a class="rowlink" href="${href(e)}">${e.type === "dir" ? icon("folder", "ic-dir") : icon("file", "ic-file")}<span>${esc(e.name)}</span></a>`).join("")}</div>`;
 }
+/** How far each line has aged, 0 (newest) to `tiers - 1` (oldest): by how many of the file's lines are newer, so a file's own history sets the scale. Lines of one rev stay whole. */
+const DECAY_TIERS = 5;
+function decayTiers(revs, tiers = DECAY_TIERS) {
+  const sorted = [...revs].sort((a, b) => a - b), n = sorted.length;
+  const last = new Map(); sorted.forEach((r, i) => last.set(r, i));
+  return revs.map((r) => Math.min(tiers - 1, Math.floor(((n - last.get(r) - 1) / Math.max(n, 1)) * tiers)));
+}
+/** A jagged bite out of one corner of a glyph's box: the clip-path of what's left standing and of the chunk that came off, and which way the chunk lies from the corner. `size` is how much of the box it takes (0 to 1). */
+function bite(rnd, size) {
+  const w = size * (.6 + rnd() * .6), h = size * (.6 + rnd() * .6), steps = 3 + Math.floor(rnd() * 3);
+  const edge = [[1 - w, 0]];
+  for (let k = 1; k < steps; k++) { const t = k / steps, inward = (rnd() - .1) * .22; edge.push([1 - w + w * t - inward * h, h * t + inward * w]); }
+  edge.push([1, h]);
+  const fx = rnd() < .5, fy = rnd() < .5;
+  const poly = (pts) => `polygon(${pts.map(([x, y]) => `${((fx ? 1 - x : x) * 100).toFixed(0)}% ${((fy ? 1 - y : y) * 100).toFixed(0)}%`).join(",")})`;
+  return { keep: poly([[0, 0], ...edge, [1, 1], [0, 1]]), chunk: poly([...edge, [1, 0]]), out: fx ? -1 : 1, up: fy ? 1 : -1 };
+}
+/** A line's text bombed out, more the older the tier: a few letters have a chunk blown off a corner, and the chunk, a piece of that same letter, lies beside it a little askew. Nothing falls far. Same characters, same order, so copying and editing still see the text. */
+function rotText(text, tier, seed) {
+  if (!tier || !text) return esc(text);
+  let h = 2166136261; for (const ch of seed) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  const rnd = () => ((h = Math.imul(h ^ (h >>> 15), 2246822507) + 0x6d2b79f5) >>> 0) / 4294967296;
+  return [...text].map((ch) => {
+    if (/\s/.test(ch) || rnd() > tier * 0.07) return esc(ch);
+    const b = bite(rnd, Math.min(.85, .4 + rnd() * tier * .15));
+    // The chunk slides out from its corner and settles lower, tilted: a couple of pixels, never off the line.
+    const dx = b.out * (1 + rnd() * 2.5), dy = b.up < 0 ? 1.5 + rnd() * 2.5 : 3 + rnd() * 2.5;
+    return `<i class="k" data-c="${esc(ch)}" style="--keep:${b.keep};--chunk:${b.chunk};--dx:${dx.toFixed(1)}px;--dy:${dy.toFixed(1)}px;--r:${((rnd() - .5) * 40).toFixed(0)}deg"><s>${esc(ch)}</s></i>`;
+  }).join("");
+}
+/** Rot the rows of a drawn file by line age (rev). Run it after codeRows; undone by drawing the rows again. */
+function rot(box, lines) {
+  const tiers = decayTiers(lines.map((l) => l.rev));
+  box.querySelectorAll(".ln[data-i]").forEach((el) => {
+    const l = lines[+el.dataset.i], t = tiers[+el.dataset.i], span = $(".t", el);
+    if (!l || !t || !span || l.private || span.querySelector("input")) return;
+    el.classList.add("d" + t);
+    span.innerHTML = rotText(l.text, t, l.id ?? String(el.dataset.i));
+  });
+}
 function codeRows(lines, { blame = true, start = 1 } = {}) {
   // A private line reaches people outside the crew blank: say so instead of showing nothing.
   return lines.map((l, i) => `<div class="ln${l.private ? " priv" : ""}" data-i="${i}" data-id="${esc(l.id ?? "")}"><span class="n">${(l.n ?? start + i)}</span>${blame ? `<span class="by" title="${esc(l.by)} · r${l.rev}">${esc(l.by)}</span>` : ""}<span class="t">${l.private && !l.text ? '<span class="ph">private line: only the crew can read it</span>' : l.private ? `<span class="secret">${esc(l.text) || " "}</span>` : esc(l.text) || " "}</span></div>`).join("");
@@ -4936,7 +4984,7 @@ const views = {
         ${owner === me() && r.canWrite ? `<div class="pop"><button class="btn" id="agent" title="give a coding agent a task on this file">${icon("bot")}Agent</button><form class="panel" id="agent-form" hidden style="width:380px"><b>Give a coding agent a task</b><span class="muted" id="agent-why" style="font-size:13px">It runs on this machine with its CLI's own login, edits this file as <code>agent-&lt;name&gt;</code>, and its lines land here live.</span><select name="harness"></select><textarea name="task" rows="4" placeholder="add a doc comment to every function" required></textarea><label id="agent-only" class="muted" style="font-size:13px" hidden><input type="checkbox" name="only" checked> Only <span></span>: they're held for it while it works</label><input name="model" placeholder="model (optional: the CLI's default)"><div><button class="btn primary">${icon("play")}Run</button></div></form></div>` : ""}
         ${r.canWrite && !branch ? `<div class="pop"><button class="btn primary" id="commit" title="commit this file to git">${icon("git-commit-horizontal")}Commit</button><form class="panel" id="commit-form" hidden><b>Commit to git</b><span class="muted" style="font-size:13px">Pushes this file to the repo's Artifact as a real commit.</span><input id="msg" placeholder="what changed"><button class="btn primary">Commit</button></form></div>` : ""}`,
       // A push to the repo's git (the desktop's Push back) that clashed with edits here: its commit waits on a pick (#788).
-      body: `${r.canWrite && !branch && r.home === "local" ? `<div class="notice" id="pushclash" hidden>${icon("git-pull-request-arrow")}<span class="grow">A push to this repo's git changed the same lines as edits here, so committing waits till ${owner === me() ? "you pick" : `@${esc(owner)} picks`} a side.</span>${owner === me() ? `<button class="btn" style="white-space:nowrap" data-take="mine" title="keep the edits here: the next commit writes them over what was pushed">${icon("user")}Keep mine</button><button class="btn" style="white-space:nowrap" data-take="pushed" title="put the pushed lines in place of the edits here">${icon("download")}Take pushed</button>` : ""}</div>` : ""}<div class="crew" id="crew"></div><div class="code" id="lines"></div><div class="here-dock" id="here"><span class="faces" id="here-faces"></span><div class="pop"><button type="button" class="here-n" id="here-n" title="who's here">${icon("users")}<b>1</b></button><div class="panel" hidden><b id="who-here">just you</b><input id="here-filter" type="search" placeholder="find someone" hidden><div class="here-list" id="here-list"></div><b class="here-h">Activity</b><div class="act-bar"><div class="seg" id="act-kinds" role="group" aria-label="show">${[["all", "All"], ["people", "People"], ["agents", "Agents"], ["holds", "Holds"]].map(([k, t]) => `<button type="button" data-k="${k}" aria-pressed="${k === "all"}"${k === "all" ? ' class="on"' : ""}>${t}</button>`).join("")}</div><input id="act-find" type="search" placeholder="who" aria-label="filter by who"></div><div class="acts" id="acts"></div></div></div></div>`,
+      body: `${r.canWrite && !branch && r.home === "local" ? `<div class="notice" id="pushclash" hidden>${icon("git-pull-request-arrow")}<span class="grow">A push to this repo's git changed the same lines as edits here, so committing waits till ${owner === me() ? "you pick" : `@${esc(owner)} picks`} a side.</span>${owner === me() ? `<button class="btn" style="white-space:nowrap" data-take="mine" title="keep the edits here: the next commit writes them over what was pushed">${icon("user")}Keep mine</button><button class="btn" style="white-space:nowrap" data-take="pushed" title="put the pushed lines in place of the edits here">${icon("download")}Take pushed</button>` : ""}</div>` : ""}<div class="crew" id="crew"></div><div class="code" id="lines"></div><div class="dust-end"><button type="button" id="dust" aria-pressed="false" aria-label="Let the oldest lines rot">${icon("hourglass")}</button></div><div class="here-dock" id="here"><span class="faces" id="here-faces"></span><div class="pop"><button type="button" class="here-n" id="here-n" title="who's here">${icon("users")}<b>1</b></button><div class="panel" hidden><b id="who-here">just you</b><input id="here-filter" type="search" placeholder="find someone" hidden><div class="here-list" id="here-list"></div><b class="here-h">Activity</b><div class="act-bar"><div class="seg" id="act-kinds" role="group" aria-label="show">${[["all", "All"], ["people", "People"], ["agents", "Agents"], ["holds", "Holds"]].map(([k, t]) => `<button type="button" data-k="${k}" aria-pressed="${k === "all"}"${k === "all" ? ' class="on"' : ""}>${t}</button>`).join("")}</div><input id="act-find" type="search" placeholder="who" aria-label="filter by who"></div><div class="acts" id="acts"></div></div></div></div>`,
       details: (r.canWrite ? sec("pencil", "Editing", `<p class="muted">Double-click a line to edit it. Enter saves, Shift+Enter adds a line below, an empty line + Enter deletes it. Click a line number to select; shift-click for a range, ⌘-click a line to add it, or drag down the numbers. Right-click the code for what you can do with the lines. Keys as in VS Code: ↑/↓, shift+↑/↓, ⌘A, ⌘L, ⌘C, Esc.</p>`) : sec("share-2", "Sharing", `<p class="muted">Click a line number, shift-click another, and share just those lines.</p>`))
         + (owner === me() && r.canWrite ? sec("bot", "Agents", `<div id="agent-runs"></div>`) : "")
         + sec("scroll-text", "Commits", `<div id="commits"></div>`)
@@ -5133,6 +5181,14 @@ const views = {
       const then = await api(`${base}/at${q}&rev=${seen}`).catch(() => null);
       if (then?.lines && box.isConnected && !caught.length) catchUp(new Map(then.lines.map((l) => [l.id, l.text])), seen);
     };
+    // The secret under the file: the oldest lines fall apart, by age tier.
+    let rotting = false;
+    $("#dust")?.addEventListener("click", () => {
+      rotting = !rotting;
+      $("#dust").setAttribute("aria-pressed", rotting);
+      draw(doc);
+      toast(rotting ? "Age shows. The oldest lines are slowly coming loose." : "Pieced back together, good as new.");
+    });
     const draw = (d, fresh = new Set()) => {
       const live = viewing === null;
       if (!live) {
@@ -5148,6 +5204,8 @@ const views = {
       seenNow(d.rev);
       const keep = anchor(), before = [...box.querySelectorAll(".ln[data-id]")];
       box.innerHTML = codeRows(d.lines);
+      box.classList.toggle("rotting", rotting);
+      if (rotting) rot(box, d.lines);
       if (branch) ghosts(d);
       else waitGhosts();
       motion(d, before);
