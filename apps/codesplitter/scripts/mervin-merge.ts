@@ -121,6 +121,7 @@ export function advise(board: Board, verdicts: Verdict[]): Heads {
     if (flagged.length || mine.some((c) => c.kind === "migration")) { who = "a human"; why = `${flagged.length ? flagged.join(", ") : "a migration stamp"} needs a person's eyes`; }
     else if (behindMe.length >= SWARM_AT) { who = "a swarm"; why = `${behindMe.length} PRs wait behind it`; }
     else if (mine.length || v.why.startsWith("conflicts with main")) { who = "two agents"; why = mine.length ? `clashes with ${[...new Set(mine.flatMap((c) => c.prs).filter((n) => n !== v.pr))].map((n) => `#${n}`).join(", ") || "main"}` : "conflicts with main"; }
+    else if (v.why.includes("retarget to main")) { who = "one agent"; why = `its base branch has no open PR, so a merge would land in a dead branch and never reach main: \`gh pr edit ${v.pr} --base main\`, then rerun`; }
     else if (v.why.startsWith("stacked on") || v.why.startsWith("waits behind") || v.why.startsWith("CI still") || v.why.startsWith("required check")) { who = "none"; why = `waiting: ${v.why}`; }
     else { who = "one agent"; why = `${files.length} file${files.length === 1 ? "" : "s"}: ${v.why}`; }
     advice.push({ pr: v.pr, who, why, blocks: behindMe });

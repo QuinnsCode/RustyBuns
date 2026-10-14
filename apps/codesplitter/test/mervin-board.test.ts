@@ -167,6 +167,7 @@ describe("mervin merge round", () => {
   });
 });
 
+import { advise, buildStack, stackable } from "../scripts/mervin-merge.ts";
 describe("mervin merge round blockers (#1542)", () => {
   const st = (pr: number, extra = {}) => ({ pr, head: "h", base: "b", files: [{ path: "a", tier: "certain" as const, why: "", after: [] }], ...extra });
   const bd = (stages: any[]) => ({ main: "m", at: "", stages, written: [], skipped: [], clashes: [] }) as any;
@@ -180,6 +181,14 @@ describe("mervin merge round blockers (#1542)", () => {
   test("a stacked PR whose base branch is gone is not landable", () => {
     const prs: BoardPr[] = [{ number: 1, headRefOid: "h", headRefName: "b1", baseRefName: "dead" }];
     expect(decide(bd([st(1)]), prs)[0]!.why).toContain("retarget to main");
+  });
+  test("a PR based on a merged PR's branch is held and advised to retarget (#1545)", () => {
+    const prs: BoardPr[] = [{ number: 1478, headRefOid: "h", headRefName: "b2", baseRefName: "office/nibble-5ddf" }];
+    const board = bd([st(1478)]), verdicts = decide(board, prs);
+    expect(verdicts[0]!.go).toBe(false);
+    const a = advise(board, verdicts).advice[0]!;
+    expect(a.who).toBe("one agent");
+    expect(a.why).toContain("gh pr edit 1478 --base main");
   });
   test("merge method: a stack takes a merge commit, a plain PR squashes", () => {
     const prs: BoardPr[] = [
@@ -196,7 +205,6 @@ describe("mervin merge round blockers (#1542)", () => {
   });
 });
 
-import { advise, buildStack, stackable } from "../scripts/mervin-merge.ts";
 describe("mervin stack", () => {
   test("clean PRs join as merge commits, a clashing one is left out, only certain/agree are picked", () => {
     const repo = mkdtempSync(join(tmpdir(), "mervin-stack-"));
