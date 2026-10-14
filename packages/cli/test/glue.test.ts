@@ -560,10 +560,20 @@ test("artifacts: wrangler, alchemy and the desktop host all get the binding", ()
   expect(a).toContain(`ARTIFACTS: ARTIFACTS`);
   const host = desktopEntry(c);
   expect(host).toContain(`ARTIFACTS: local.artifacts("codesplitters"),`);
-  expect(host).toContain(`open: { "/__rb/git/": (req: Request) => gitHttp(req, [env.ARTIFACTS as any]) },`);
+  expect(host).toContain(`"/__rb/git/": (req: Request) => gitHttp(req, [env.ARTIFACTS as any]),`);
   expect(host).toContain(`(env.ARTIFACTS as any).remoteBase = shell.url;`);
   // Worker mode watches its memory as well, ahead of the Worker's own routes.
   expect(host).toContain(`p === "/__rb/mem" ? Response.json(mem.stats()) : p === "/__rb/usage" ? Response.json(usageSnapshot()) : within("request", () => capped(limits, () => (worker as any).fetch(req, e, ctx)))`);
+});
+
+test("desktopOpenPaths: those prefixes reach the Worker without the host cookie, and nothing else does", () => {
+  const base = { name: "g", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] }, bindings: {}, targets: { desktop: { mode: "worker" } } } as any;
+  const none = desktopEntry(base);
+  expect(none).not.toContain("open: {");
+  const host = desktopEntry({ ...base, worker: { ...base.worker, desktopOpenPaths: ["/api/mcp", "/api/oauth/"] } });
+  expect(host).toContain(`"/api/mcp": (req: Request) => within("request", () => capped(limits, () => (worker as any).fetch(req, env,`);
+  expect(host).toContain(`"/api/oauth/": (req: Request)`);
+  expect(host).not.toContain(`"/api/me"`);
 });
 
 test("images: wrangler, alchemy and the desktop host all get the binding; wrangler's carries over", () => {

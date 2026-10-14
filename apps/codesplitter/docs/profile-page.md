@@ -8,6 +8,10 @@ Make a **public repo named `page`**. Its files are your site: `index.html` first
 
 Because it is a repo, the page has history, line claims and conflict handling like any code here, and an agent changes it with the tools it already has (`write_file`, the line commands, MCP). No `page` repo? The HTML saved with `PUT /api/me {theme_html}` is the index.
 
+## Full page
+
+The expand icon on the page's bar wipes the profile away (a circular view transition from the corner) so the page fills the window. On your own profile, Talk to your page floats over it so you can keep directing the agent. Esc or the corner button wipes back.
+
 ## Talk to it, and put it back
 
 On your own profile, **Talk to your page** sends what you type to a coding agent working in your `page` repo (the same agents as the file page's Agent button, so one must be set up). Two buttons beside it put the page back: the clock to how every file stood an hour ago, the circular arrow to the starter world below. Both are ordinary edits (`POST /api/me/page/revert {to: "hour" | "default"}`), so the log keeps what they replaced.

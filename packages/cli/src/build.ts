@@ -527,6 +527,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
   /** Workflows whose class is one of the Worker's exports, bound once it has loaded. */
   const workflows: { name: string; className: string }[] = [];
   const migrations: [string, string][] = [];
+  const openPaths = c.worker?.desktopOpenPaths ?? [];
   const artifacts: string[] = [];
   /** [the queue binding's expression, its consumer's settings, the binding's name] */
   const consumers: [string, object, string][] = [];
@@ -652,9 +653,12 @@ const shell = serve<typeof env>({
   assets: assetDir(${JSON.stringify(c.worker!.assets ?? "")}),
   runWorkerFirst: ${JSON.stringify(c.worker!.runWorkerFirst ?? [])},
   token,
-  reporter: stdoutReporter${webmcpOn(c, h.box) ? ",\n  head: WEBMCP_TAG" : ""}${h.listen},${artifacts.length ? `
-  // Artifacts remotes: git clients bring a repo token, not the host cookie.
-  open: { "/__rb/git/": (req: Request) => gitHttp(req, [${artifacts.map((n) => `env.${n} as any`).join(", ")}]) },` : ""}
+  reporter: stdoutReporter${webmcpOn(c, h.box) ? ",\n  head: WEBMCP_TAG" : ""}${h.listen},${artifacts.length || openPaths.length ? `
+  // Routes that bring their own auth skip the host cookie: Artifacts git remotes (a repo token) and desktopOpenPaths (an MCP client's OAuth).
+  open: {${artifacts.length ? `
+    "/__rb/git/": (req: Request) => gitHttp(req, [${artifacts.map((n) => `env.${n} as any`).join(", ")}]),` : ""}${openPaths.map((p) => `
+    ${JSON.stringify(p)}: (req: Request) => within("request", () => capped(limits, () => (worker as any).fetch(req, env, { waitUntil(p: Promise<unknown>) { p.catch(() => {}); }, passThroughOnException() {} }))),`).join("")}
+  },` : ""}
 });
 ${artifacts.map((n) => `(env.${n} as any).remoteBase = shell.url;`).join("\n")}${c.worker!.assets ? `
 // env.ASSETS, as the edge binds it: the Worker can fetch its own static files.
