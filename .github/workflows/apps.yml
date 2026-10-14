@@ -121,7 +121,7 @@ jobs:
       - run: ${{ matrix.smoke }}
 
   # The container images a PR touched (an app's rustybuns.config.ts bindings), built for linux/amd64 and booted
-  # (rustybuns containers smoke), with a size and boot table in the job summary. Not part of the `apps` gate below.
+  # (rustybuns containers smoke), with a size (and its change against the base) and boot table in the job summary. Not part of the `apps` gate below.
   containers:
     needs: plan
     if: github.event_name == 'pull_request'
