@@ -101,7 +101,23 @@ const reachable = (html: string) =>
     .replace(/<pre>/g, '<pre tabindex="0">')
     .replace(/<table>[\s\S]*?<\/table>/g, (t) => `<div class="scroll" tabindex="0" role="region" aria-label="Table">${t}</div>`);
 
-function layout(site: Site, page: Page, pages: Page[], body: string, src: Source, versions: string[]) {
+// A page's one-sentence summary for search results and link previews: its first paragraph, as plain text.
+export function summary(md: string, fallback: string) {
+  const para = md
+    .replace(/<[^>]+>/g, "")
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .find((p) => p && !/^(#|[-*|>`!]|\d+\.)/.test(p));
+  const text = (para ?? "").replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`]/g, "").replace(/\s+/g, " ");
+  if (!text) return fallback;
+  return text.length <= 160 ? text : `${text.slice(0, 157).replace(/\s+\S*$/, "")}...`;
+}
+
+// The absolute address the site is served from, when the deploy says (SITE_URL), so canonical links,
+// link previews and the sitemap can be absolute. Without it those are left out rather than guessed.
+const base = () => (process.env.SITE_URL ?? "").replace(/\/+$/, "");
+
+function layout(site: Site, page: Page, pages: Page[], body: string, src: Source, versions: string[], dir: string) {
   const here = posix.dirname(page.path);
   const href = (p: Page) => esc(posix.relative(here, p.path) || posix.basename(p.path));
   const link = (p: Page) => `<a href="${href(p)}"${p === page ? ' aria-current="page"' : ""}>${esc(p.title)}</a>`;
@@ -115,20 +131,36 @@ function layout(site: Site, page: Page, pages: Page[], body: string, src: Source
   const blob = (file: string) => `https://github.com/${site.repo}/blob/${src.ref}/${file}`;
   const edit = blob(page.from);
   // Legal links: a site page when the site has one for the file, else the file on GitHub.
-  const legal = [["Privacy", "PRIVACY.md"], ["Security", "SECURITY.md"]]
-    .map(([label, file]) => [label, pages.find((p) => p.from === file && !p.anchor)] as const)
-    .filter(([label, p]) => p || label === "Security")
-    .map(([label, p]) => ` · <a href="${esc(p ? href(p) : blob("SECURITY.md"))}">${label}</a>`)
+  const legal = [["Privacy", "PRIVACY.md"], ["Accessibility", "ACCESSIBILITY.md"], ["Security", "SECURITY.md"]]
+    .map(([label, file]) => [label, file, pages.find((p) => p.from === file && !p.anchor)] as const)
+    .filter(([label, , p]) => p || label === "Security")
+    .map(([label, file, p]) => ` · <a href="${esc(p ? href(p) : blob(file))}">${label}</a>`)
     .join("");
+  const title = page.title === site.name ? site.name : `${page.title} · ${site.name}`;
+  const description = page.path === "index.html" ? site.tagline : summary(page.md, site.tagline);
+  const url = base() ? `${base()}/${dir}/${src.version}/${page.path}` : "";
+  const sheet = (file: string) => esc(posix.join(root, file));
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(page.title === site.name ? site.name : `${page.title} · ${site.name}`)}</title>
-<meta name="description" content="${esc(site.tagline)}">
+<title>${esc(title)}</title>
+<meta name="description" content="${esc(description)}">
 <meta name="color-scheme" content="light dark">
-<link rel="icon" href="${esc(posix.join(root, "favicon.svg"))}" type="image/svg+xml">
+<meta name="theme-color" content="#fffdf8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#17130f" media="(prefers-color-scheme: dark)">
+<meta name="author" content="QuinnsCode (Ryan Quinn)">
+<meta name="generator" content="Rusty Buns docs site">
+${src.version === "latest" ? "" : '<meta name="robots" content="noindex">\n'}${url ? `<link rel="canonical" href="${esc(url)}">\n` : ""}<meta property="og:site_name" content="${esc(site.name)}">
+<meta property="og:type" content="${page.path === "index.html" ? "website" : "article"}">
+<meta property="og:title" content="${esc(title)}">
+<meta property="og:description" content="${esc(description)}">
+${url ? `<meta property="og:url" content="${esc(url)}">\n` : ""}<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="${esc(title)}">
+<meta name="twitter:description" content="${esc(description)}">
+<link rel="icon" href="${sheet("favicon.svg")}" type="image/svg+xml">
+<link rel="manifest" href="${sheet("manifest.webmanifest")}">
 <link rel="alternate" type="text/markdown" href="${esc(posix.basename(page.path).replace(/\.html$/, ".md"))}">
 <script>try{var d=document.documentElement,t=localStorage.getItem("theme");d.dataset.theme=t==="light"||t==="dark"?t:matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";var r=JSON.parse(localStorage.getItem("reading")||"{}");for(var k of["font","size","space"])if(typeof r[k]==="string")d.dataset[k]=r[k]}catch(e){}</script>
 <link rel="stylesheet" href="${esc(posix.join(root, "site.css"))}">
@@ -168,7 +200,7 @@ ${body}
 
 // Builds one version into `out/<version>/` and returns its page paths. Problems (a link inside the
 // site to a page or heading that isn't there) are pushed, not thrown, so one run reports them all.
-export function buildVersion(site: Site, src: Source, out: string, versions: string[], problems: string[]): string[] {
+export function buildVersion(site: Site, src: Source, out: string, versions: string[], problems: string[], dir = ""): string[] {
   const pages = site.pages(src);
   const byFile = new Map<string, string>();
   for (const p of pages) byFile.set(p.anchor ? `${p.from}#${p.anchor}` : p.from, p.path);
@@ -189,7 +221,7 @@ export function buildVersion(site: Site, src: Source, out: string, versions: str
   for (const page of pages) {
     const file = join(out, src.version, page.path);
     mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, layout(site, page, pages, reachable(rendered.get(page.path)!), src, versions));
+    writeFileSync(file, layout(site, page, pages, reachable(rendered.get(page.path)!), src, versions, dir));
     // The same page as markdown beside it, for agents (and the copy button): no nav, no chrome.
     writeFileSync(file.replace(/\.html$/, ".md"), page.md);
   }
@@ -198,17 +230,31 @@ export function buildVersion(site: Site, src: Source, out: string, versions: str
 
 // The whole site: `latest/` from the working tree plus a folder per tag, the shared CSS and JS, a
 // versions.json the version menu reads, and an index.html that sends you to latest.
-export function buildSite(site: Site, out: string, sources: Source[]): string[] {
+export function buildSite(site: Site, out: string, sources: Source[], dir = ""): string[] {
   const problems: string[] = [];
   const versions = sources.map((s) => s.version);
   const manifest: Record<string, string[]> = {};
-  for (const src of sources) manifest[src.version] = buildVersion(site, src, out, versions, problems);
+  for (const src of sources) manifest[src.version] = buildVersion(site, src, out, versions, problems, dir);
   const assets = join(import.meta.dir, "assets");
   mkdirSync(out, { recursive: true });
   for (const f of ["site.css", "site.js", "favicon.svg"]) writeFileSync(join(out, f), readFileSync(join(assets, f)));
   mkdirSync(join(out, "fonts"), { recursive: true });
   for (const f of readdirSync(join(assets, "fonts"))) writeFileSync(join(out, "fonts", f), readFileSync(join(assets, "fonts", f)));
-  writeFileSync(join(out, "robots.txt"), "User-agent: *\nAllow: /\n");
+  const root = base() ? `${base()}/${dir}` : "";
+  writeFileSync(join(out, "robots.txt"), `User-agent: *\nAllow: /\n${root ? `\nSitemap: ${root}/sitemap.xml\n` : ""}`);
+  if (root) {
+    const urls = (manifest.latest ?? []).map((p) => `  <url><loc>${esc(`${root}/latest/${p}`)}</loc></url>`).join("\n");
+    writeFileSync(join(out, "sitemap.xml"), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`);
+  }
+  writeFileSync(join(out, "manifest.webmanifest"), JSON.stringify({ name: site.name, short_name: site.name, description: site.tagline, start_url: "latest/index.html", display: "browser", background_color: "#fffdf8", theme_color: "#9a5214", icons: [{ src: "favicon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" }] }));
+  // RFC 9116: where to report a vulnerability, and when this answer should be looked at again.
+  mkdirSync(join(out, ".well-known"), { recursive: true });
+  const expires = new Date(Date.now() + 365 * 864e5).toISOString().replace(/\.\d+Z$/, "Z");
+  writeFileSync(join(out, ".well-known", "security.txt"), `Contact: https://github.com/${site.repo}/security/advisories/new\nExpires: ${expires}\nPreferred-Languages: en\nPolicy: https://github.com/${site.repo}/blob/main/SECURITY.md\n`);
+  writeFileSync(join(out, "404.html"), `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Page not found · ${esc(site.name)}</title><meta name="color-scheme" content="light dark"><link rel="icon" href="/${dir ? `${dir}/` : ""}favicon.svg" type="image/svg+xml"><style>body{font-family:system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 16px;line-height:1.6;background:#fffdf8;color:#2a2118}a{color:#9a5214}@media(prefers-color-scheme:dark){body{background:#17130f;color:#eee4d6}a{color:#e39a52}}</style></head>
+<body><h1>Page not found</h1><p>That page isn't here, or it moved. Try the <a href="/${dir ? `${dir}/` : ""}latest/index.html">${esc(site.name)} docs home</a>.</p></body></html>
+`);
   writeFileSync(join(out, "versions.json"), JSON.stringify(manifest));
   // llms.txt (the index) and llms-full.txt (everything) for the newest version, so an agent reads the
   // site in one fetch instead of crawling it.
