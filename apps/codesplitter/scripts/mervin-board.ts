@@ -2,7 +2,7 @@
 // each file is. Then, once the PRs have merged for real, score the sandbox against what landed.
 //
 //   bun scripts/mervin-board.ts [1468 1478 ...] [--out dir] [--from prs.json] [--check] [--check-stages] [--json]
-//                               [--no-cache] [--cache dir]
+//                               [--no-cache] [--cache dir] [--blast]
 //   bun scripts/mervin-board.ts --score <dir> [--main origin/main]
 //
 // With no PR numbers it takes every open PR (`gh pr list`, read only), oldest first, a stacked PR right after
@@ -30,6 +30,10 @@
 // `--check-stages` is `--check` once per stage (opt-in: one install per stage): the tree after stage 1, after
 // stage 2 and so on, so a failure the board adds points at the first stage that caused it.
 //
+// `--blast` ranks the PRs by blast radius (scripts/blast.ts): the workspaces, files and tests each one reaches, so a
+// shared-package change or a major bump is stacked last, and it warns about a major bump with no migration notes
+// and a package two PRs bump to different versions.
+//
 // Reruns are incremental: each stage is cached (`.mervin/board-cache`, or --cache) by main, the PR's head and the
 // state of every file it touches, so a push to one PR reruns that stage and only the later ones sharing files with it.
 // `--check` installs once and runs the typecheck and the touched apps' tests side by side. Timings print at the end.
@@ -48,6 +52,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { describeBlast, load, rank } from "./blast.ts";
 import { hold, report, triage } from "./ester.ts";
 import { sandbox, shadow, testRuns, testTree, writeTree } from "./shadow.ts";
 
@@ -55,7 +60,7 @@ export type Tier = "certain" | "agree" | "mervin" | "differ" | "card";
 export const TIERS: Tier[] = ["certain", "agree", "mervin", "differ", "card"];
 
 export interface BoardPr {
-  number: number; title?: string; headRefOid: string; headRefName?: string; baseRefName?: string;
+  number: number; title?: string; body?: string; headRefOid: string; headRefName?: string; baseRefName?: string;
   statusCheckRollup?: { name?: string; conclusion?: string | null; status?: string; startedAt?: string; completedAt?: string }[];
 }
 /** The PR's own CI: red on its own means a failure in the merged tree may be the PR's, not the merge's. */
@@ -198,9 +203,10 @@ function stampsIn(git: ReturnType<typeof gitIn>, main: string, perStage: { claim
   return out;
 }
 
-/** Oldest first, each stacked PR moved to just after the PR it's built on (when that's on the board too). */
-export function order(prs: BoardPr[], given?: number[]): BoardPr[] {
-  const list = given ? given.map((n) => prs.find((p) => p.number === n)).filter((p): p is BoardPr => !!p) : [...prs].sort((a, b) => a.number - b.number);
+/** Oldest first (or narrowest blast radius first, with `risk` from blast.ts), each stacked PR moved to just after the PR it's built on (when that's on the board too). */
+export function order(prs: BoardPr[], given?: number[], risk?: number[]): BoardPr[] {
+  const rank = (p: BoardPr) => (risk ? risk.indexOf(p.number) : 0);
+  const list = given ? given.map((n) => prs.find((p) => p.number === n)).filter((p): p is BoardPr => !!p) : [...prs].sort((a, b) => rank(a) - rank(b) || a.number - b.number);
   if (given) return list;
   const byHead = new Map(list.map((p) => [p.headRefName, p]));
   const out: BoardPr[] = [], seen = new Set<number>();
@@ -384,13 +390,14 @@ if (import.meta.main) {
   const given = args.filter((a, i) => /^\d+$/.test(a) && !args[i - 1]?.startsWith("--")).map(Number);
   const from = arg("from");
   const prs: BoardPr[] = JSON.parse(from ? readFileSync(from, "utf8")
-    : Bun.spawnSync(["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "number,title,headRefOid,headRefName,baseRefName,statusCheckRollup"], { cwd: top }).stdout.toString() || "[]");
+    : Bun.spawnSync(["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "number,title,body,headRefOid,headRefName,baseRefName,statusCheckRollup"], { cwd: top }).stdout.toString() || "[]");
   const main = gitIn(top)("rev-parse", arg("main") ?? "origin/main")!.trim();
   const out = arg("out") ? resolve(arg("out")!) : mkdtempSync(join(tmpdir(), "mervin-board-"));
   if (arg("out")) { if (existsSync(out)) throw new Error(`${out} exists: pick a new folder`); mkdirSync(out, { recursive: true }); }
 
   const disk = args.includes("--no-cache") ? undefined : diskCache(arg("cache") ? resolve(arg("cache")!) : join(top, ".mervin/board-cache"));
-  const { board, tree, writes } = run(top, main, order(prs, given.length ? given : undefined), disk?.cache);
+  const wide = args.includes("--blast") ? load(gitIn(top), main, prs) : undefined;
+  const { board, tree, writes } = run(top, main, order(prs, given.length ? given : undefined, wide && rank(wide.blasts)), disk?.cache);
   disk?.save();
   const mergeMs = Math.round(performance.now() - wall);
   writeTree(join(out, "tree"), main);
@@ -402,6 +409,7 @@ if (import.meta.main) {
     console.log(`Mervin's board: ${board.stages.length} PRs onto main ${main.slice(0, 9)}\n`);
     board.stages.forEach((s, i) => console.log([`stage ${i + 1}: ${describe(s)[0]}`, ...describe(s).slice(1)].join("\n") + "\n"));
     for (const c of board.clashes) console.log(`clash ${c.kind}: ${c.key}  ${c.prs.map((n) => `#${n}`).join(" + ")}${c.main ? " + main" : ""}  ${c.settled ? `settled: ${c.settled}` : "CARD"}`);
+    if (wide) { for (const b of wide.blasts) console.log(describeBlast(b)); for (const f of wide.flags) console.log(`warning: ${f}`); }
     for (const s of board.skipped) console.log(`skipped #${s.pr}: ${s.why}`);
     const all = count(board.stages.flatMap((s) => s.files));
     const n = board.stages.reduce((k, s) => k + s.files.length, 0);
