@@ -3260,11 +3260,22 @@ const digBox = (why) => `<div class="digbar"><button type="button" class="bubble
   <div class="row"><input name="repo" placeholder="search GitHub, or paste a link, owner/name or a git clone line" required style="flex:1" autocomplete="off"><input name="name" placeholder="name (optional)" style="width:150px"><button class="btn primary">${icon("git-fork")}Dig it up</button><button type="button" class="btn" id="ghwow" title="dig it up, then a tour walks round it: the code, collab, agents, each panel on the right, the city and the backrooms">${icon("sparkles")}Wow me</button></div>
   <label class="muted" id="ghmirror" hidden style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:8px"><input type="checkbox" name="mirror"><span title="its commits come here, yours go back, and you keep working while it's down. Any git URL, GitHub or not.">Keep it in sync with upstream (a mirror)</span></label>
   <label class="muted" id="ghpull" hidden style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:4px;padding-left:22px"><input type="checkbox" name="pullOnly">Pull only: nothing goes back up</label>
+  <div class="row" id="ghmervin" hidden style="margin-top:8px"><button type="button" class="btn" id="ghmervin-go" title="digs it as a pull-only mirror: its branches come here, nothing goes back up, and Mervin plans how to merge them">${icon("git-merge")}Watch Mervin merge my PRs</button></div>
   <p class="muted" id="ghmsg" style="font-size:13px"></p><div class="gh-list" id="ghlist"></div></div></form></dialog>`;
 /** Open the dig modal (the bubbles, the levels' copy buttons and the tour all land here). */
 const openDig = () => { const d = $("#digdlg"); if (d && !d.open) d.showModal(); return $("#ghdig"); };
 // A box that folds to its bar on your profile (#729): open it to see the rest. Unfolded elsewhere.
 const boxTop = (fold, id, bar) => fold ? `<details class="box fold" id="${id}"><summary class="bar">${bar}${icon("chevron-down", "chev")}</summary>` : `<div class="box" id="${id}"><div class="bar">${bar}</div>`;
+// Repos with no open branches this visit (the repo's details), so Mervin's panel can say how to get some.
+const noBranches = {};
+function mervinHint(owner, repo) {
+  const r = noBranches[`${owner}/${repo}`], el = $("#mervin");
+  if (!r || !el || !el.firstElementChild || $("#mervin-hint")) return;
+  const how = r.mirror ? "Open upstream's branches from the Upstream's branches list, under the Hosted tab, and he plans them."
+    : r.mirrorable ? "Make it a mirror (the Mirror box) and its branches can come here."
+    : "Dig the repo again as a pull-only mirror (Watch Mervin merge my PRs) to bring its branches in.";
+  el.insertAdjacentHTML("beforeend", `<p class="muted" id="mervin-hint">No branches here for him to merge. ${how}</p>`);
+}
 const boxEnd = (fold) => fold ? "</details>" : "</div>";
 // Which folded side boxes start open, until this browser says otherwise (foldSide).
 const SIDE_OPEN = { collections: true, following: true };
@@ -3327,7 +3338,7 @@ function wireDig() {
     if (f.repo.value.trim()) f.repo.dispatchEvent(new Event("input"));
     else { msg.textContent = (g.login && g.repos.length ? "" : "Search GitHub, or paste a link.") + note; showMine(); }
     // Mirrors need git on this machine: the desktop.
-    if (g.mirrorsOk) $("#ghmirror").hidden = false;
+    if (g.mirrorsOk) { $("#ghmirror").hidden = false; $("#ghmervin").hidden = false; }
     f.mirror.addEventListener("change", () => { $("#ghpull").hidden = !f.mirror.checked; });
   }).catch(() => {});
   const dlg = $("#digdlg");
@@ -3361,13 +3372,13 @@ function wireDig() {
       if (!r.repos.length && !r.error) list.innerHTML = '<span class="muted">nothing on GitHub by that name</span>';
     }, 350);
   });
-  const dig = async (wow) => {
+  const dig = async (wow, watch) => {
     if (!me()) { msg.textContent = "Sign in first (top right), then dig it up."; return; }
     if (!f.repo.value.trim()) { msg.textContent = "Paste a GitHub repo's link first, or search for one."; return f.repo.focus(); }
     if (busy) return;
     busy = true;
     msg.textContent = "cloning…";
-    const mirror = f.mirror.checked, pullOnly = mirror && f.pullOnly.checked;
+    const mirror = watch || f.mirror.checked, pullOnly = watch || (mirror && f.pullOnly.checked);
     if (mirror) msg.textContent = pullOnly ? "cloning, to pull from…" : "cloning, to keep in sync…";
     try {
       const r = await api(mirror ? "/mirrors" : "/github/dig", mirror ? { url: f.repo.value, name: f.name.value || undefined, ...(pullOnly && { pullOnly: true }) } : { repo: f.repo.value, name: f.name.value || undefined });
@@ -3380,6 +3391,7 @@ function wireDig() {
   };
   f.addEventListener("submit", (e) => { e.preventDefault(); dig(false); });
   $("#ghwow", f).addEventListener("click", () => dig(true));
+  $("#ghmervin-go", f).addEventListener("click", () => dig(false, true));
 }
 
 // Where a fork came from, where its git lives, and who owns it.
@@ -4023,7 +4035,7 @@ const views = {
     }));
   },
   /** Mervin, the merge engine, and what he settled of git/git's conflicts (GET /api/mervin; docs/mervin.md). */
-  async wireMervin() {
+  async wireMervin(owner, repo) {
     const el = $("#mervin");
     if (!el) return;
     const m = await api("/mervin").catch(() => null);
@@ -4031,10 +4043,11 @@ const views = {
     const c = m.corpus, pc = (n) => Math.round(100 * n / c.files);
     el.innerHTML = `<p class="muted" title="${esc(m.does)}">${esc(m.name)} merges by line and orders clashing branches into waves. Of ${c.files} files git's merge gave up on in ${esc(c.repo)}:</p>`
       + `<p><b title="settled to what landed, or the same lines in another order">${c.settled}</b> settled (${pc(c.settled)}%) · <b title="handed back as cards">${c.asked}</b> asked (${pc(c.asked)}%) · <b title="settled clean to other text: the number to drive to 0">${c.other}</b> other text (${pc(c.other)}%)</p>`;
+    mervinHint(owner, repo);
   },
   /** Could `rustybuns init` box this repo as a desktop binary, a Worker and a server? A monorepo lists its apps. */
   async wireFit(owner, repo, dir = "") {
-    views.wireMervin();
+    views.wireMervin(owner, repo);
     const el = $("#fit");
     if (!el) return;
     // The file pages share this panel: ask once per repo (and folder) per visit.
@@ -4593,6 +4606,8 @@ const views = {
       const stuck = !live.mergeable.includes(p.pr);
       return ` <span title="${esc([p.title, p.ci === "fail" ? `CI red: ${(p.failing ?? []).join(", ")}` : p.ci === "pending" ? "CI running" : "", p.stackedOn ? `on #${p.stackedOn}` : "", ...p.clashes.map((c) => `clash ${c.kind} ${c.key}`), p.tiers.card ? `${p.tiers.card} cards` : "", p.owner ? `owner ${p.owner}` : ""].filter(Boolean).join(" · "))}">#${p.pr} ${icon(stuck ? "clock" : "circle-check")}${p.owner ? esc(p.owner) : ""}</span>`;
     }).join("")}</div>` : "";
+    noBranches[`${owner}/${repo}`] = !open.length && !board && !only ? r : null;
+    mervinHint(owner, repo);
     if (!open.length) {
       if (board) el.innerHTML = board;
       if (only) el.innerHTML = `<p class="muted">${esc(only)} isn't open: merged, or gone. <a href="#/r/${esc(owner)}/${esc(repo)}">Back to ${esc(repo)}</a></p>`;

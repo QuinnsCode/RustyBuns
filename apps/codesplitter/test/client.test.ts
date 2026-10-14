@@ -604,3 +604,11 @@ describe("api shares repeated reads within a view", () => {
     expect(calls.length).toBe(2);
   });
 });
+
+// #1555: getting branches in for Mervin was a hidden checkbox pair; now one button, and a hint when none are open.
+test("the dig dialog digs a pull-only mirror in one click, and Mervin says how to get branches", () => {
+  expect(html).toContain('id="ghmervin-go"');
+  expect(html).toContain("Watch Mervin merge my PRs");
+  expect(html).toContain('dig(false, true)');
+  expect(html).toContain('id="mervin-hint"');
+});
