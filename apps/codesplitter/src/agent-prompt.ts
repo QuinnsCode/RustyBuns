@@ -13,7 +13,7 @@ your harness can do, and tell me which you chose.
    the page, so call current_page first, then open_page with a hash:
    #/ home, #/r/owner/repo[/dir] a repo, #/f/owner/repo/path a file, #/b/owner/repo/branch a branch's merge page.
    Read with list_files and read_file (each line says who wrote it). list_conflicts and settle_conflict work a
-   merge page's cards, select_lines picks lines, and every command in the Cmd+K palette is a tool too.
+   merge page's cards, select_lines, select_matching, select_lines_by, expand_selection, invert_selection and deselect_lines pick and drop lines (selected_lines reads the pick), and every command in the Cmd+K palette is a tool too.
    You act as me, so what I can do, you can do, and nothing else.
 
 2. MCP, if you can add a server. I'll make a token at ${origin}/#/me/tokens and give it to you:

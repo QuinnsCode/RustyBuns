@@ -407,6 +407,54 @@ describe("lineKey", () => {
   });
 });
 
+// Selecting by rule, for the palette, the right-click menu and agents.
+describe("picking lines by rule", () => {
+  const src = html.slice(html.indexOf("const pickAll"), html.indexOf('/** "line 4", "lines 4'));
+  const { pickAll, pickInvert, pickMatching, pickBy, pickBlock } = new Function(`${src}; return { pickAll, pickInvert, pickMatching, pickBy, pickBlock };`)();
+  const sorted = (s: Set<number>) => [...s].sort((a, b) => a - b);
+  const code = ["function a() {", "  if (x) {", "    one();", "", "    two();", "  }", "  three();", "}", "", "const b = 1;"];
+
+  test("invert flips the pick, all picks everything", () => {
+    expect(sorted(pickInvert(new Set([0, 2]), 4))).toEqual([1, 3]);
+    expect(sorted(pickAll(3))).toEqual([0, 1, 2]);
+  });
+
+  test("matching is a substring in any case, or /regex/", () => {
+    expect(sorted(pickMatching(["Foo()", "bar", "fooBar"], "foo"))).toEqual([0, 2]);
+    expect(sorted(pickMatching(["a1", "b", "c22"], "/\\d+$/"))).toEqual([0, 2]);
+    expect(sorted(pickMatching(["a", "A"], "/a/i"))).toEqual([0, 1]);
+  });
+
+  test("by names the author, with or without @ or agent-", () => {
+    const lines = [{ by: "ryan" }, { by: "agent-claude" }, { by: "ryan" }];
+    expect(sorted(pickBy(lines, "@ryan"))).toEqual([0, 2]);
+    expect(sorted(pickBy(lines, "claude"))).toEqual([1]);
+  });
+
+  test("expanding goes to same-depth lines, then the block, then the file", () => {
+    const one = pickBlock(code, new Set([2]));
+    expect(sorted(one)).toEqual([2, 3, 4]);
+    const block = pickBlock(code, one);
+    expect(sorted(block)).toEqual([1, 2, 3, 4, 5]);
+    expect(sorted(pickBlock(code, block))).toEqual([1, 2, 3, 4, 5, 6]);
+    const fn = pickBlock(code, new Set([1, 2, 3, 4, 5, 6]));
+    expect(sorted(fn)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(sorted(pickBlock(code, fn))).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+
+  test("Home/End jump and ⌘I inverts from the keys", () => {
+    const lk = new Function(`${html.slice(html.indexOf("function lineKey"), html.indexOf("/**\n * What else picks"))}; return lineKey;`)();
+    const st = (picked: number[], anchor: number | null, cursor: number | null) => ({ picked: new Set(picked), anchor, cursor });
+    expect([...lk("End", true, false, st([1], 1, 1), 5).picked]).toEqual([1, 2, 3, 4]);
+    expect([...lk("Home", false, false, st([3], 3, 3), 5).picked]).toEqual([0]);
+    expect([...lk("i", false, true, st([0, 1], 0, 1), 4).picked]).toEqual([2, 3]);
+  });
+
+  test("agents get the selection tools", () => {
+    for (const t of ["select_lines", "deselect_lines", "select_all_lines", "invert_selection", "expand_selection", "select_matching", "select_lines_by", "selected_lines"]) expect(html).toContain(`name: "${t}"`);
+  });
+});
+
 // Switching files took ~2s live: branches, then the repo and commits, then the file, one after another.
 describe("a file page loads in one round trip", () => {
   const f = html.slice(html.indexOf("  async f(owner, repo, path) {"), html.indexOf("mountExplorer($(\"#tree\")", html.indexOf("  async f(owner, repo, path) {")));
