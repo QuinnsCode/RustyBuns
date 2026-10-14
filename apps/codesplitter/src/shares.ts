@@ -7,6 +7,7 @@
 
 import { fileLines, materialize } from "./archive.ts";
 import { json, type Body, type Env } from "./env.ts";
+import { repoRow } from "./repos.ts";
 
 /** Who may share from a repo: anyone who can read a public one; only its crew for a private one. */
 export async function createShare(env: Env, owner: string, repo: string, user: string | null, access: { read: boolean; write: boolean }, private_: boolean, body: Body<"path" | "from" | "to" | "note">) {
@@ -39,7 +40,7 @@ export async function shareRoutes(req: Request, env: Env, p: string[], user: str
   // Anyone with the link reads it, so private lines come as placeholders.
   const lines = await fileLines(env, s.owner, s.repo, s.path, "share", false);
   const hit = lines.flatMap((l, i) => (wanted.has(l.id) ? [i] : []));
-  const repo = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(s.owner, s.repo).first();
+  const repo = await repoRow(env, s.owner, s.repo, "visibility");
   const out = { id: s.id, owner: s.owner, repo: s.repo, path: s.path, by: s.by, note: s.note, created_at: s.created_at, visibility: repo?.visibility ?? "public" };
   if (!hit.length) return json({ ...out, lines: [], gone: true });
   const a = hit[0]!, b = hit[hit.length - 1]!;

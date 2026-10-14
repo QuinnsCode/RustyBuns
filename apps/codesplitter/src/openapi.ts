@@ -403,7 +403,7 @@ const OPS: Record<string, Record<string, Op>> = {
   "/agents": { get: { id: "list_harnesses", summary: "Which coding-agent harnesses this site can run", tag: "Agents", open: true, ok: loose("{available, why, harnesses, all}") } },
   [`${repo}/deploy`]: {
     get: { id: "deploy_status", summary: "Deploy settings, the run going now, and the last 20 (owner only)", tag: "Deploys", ok: loose("{settings, run, deploys}") },
-    post: { id: "deploy", summary: "Deploy the repo now (owner only)", tag: "Deploys", risky: true, ok: loose("{run}"), status: 202 },
+    post: { id: "deploy", summary: "Deploy the repo now (owner only)", tag: "Deploys", risky: true, body: obj({ approve: str("approve main up to this sha first"), allow_delete: bool("pass --allow-delete: a deploy that deletes or replaces a D1, R2, KV or queue, this once"), force: bool("pass --force: deploy from a HEAD behind origin/main, this once") }), ok: loose("{run}"), status: 202 },
   },
 
   "/playlists": { post: { id: "create_collection", summary: "Start a collection of lines you like", tag: "Collections",
