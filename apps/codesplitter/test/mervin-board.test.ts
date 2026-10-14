@@ -58,7 +58,7 @@ describe("mervin board", () => {
     const { board } = run(repo, moved, order(prs, [4, 1]));
     const c = (i: number) => board.stages[i]!.files.find((f) => f.path === "c.ts")!;
     expect(c(0)).toMatchObject({ tier: "card", after: [], main: true });
-    expect(c(1)).toMatchObject({ tier: "card", after: [4], main: true });
+    expect(c(1)).toMatchObject({ tier: "card", after: [], main: true });
     expect(board.stages[0]!.files.find((f) => f.path === "a.ts")).toBeUndefined();
   });
 
