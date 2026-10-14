@@ -197,6 +197,7 @@ import {
 } from "./search.ts";
 import { pulseRoutes } from "./pulse.ts";
 import { seenRoutes } from "./seen.ts";
+import { agentPromptResponse } from "./agent-prompt.ts";
 import { installScript } from "./install.ts";
 import {
   crossSite,
@@ -262,6 +263,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (p[0] === "invite" && p[1] && !p[2] && req.method === "GET") return invitePage(req, env, p[1]);
   // GET /install.sh  the CLI in one line, fetched from /cli.js on this site (install.ts)
   if (p[0] === "install.sh" && !p[1] && req.method === "GET") return installScript(url.origin);
+  // GET /agent.md  a prompt to hand your own agent so it can steer the site for you (agent-prompt.ts)
+  if (p[0] === "agent.md" && !p[1] && req.method === "GET") return agentPromptResponse(url.origin);
   if (p[0] !== "api") return new Response("not found", { status: 404 });
   // A cookie-signed write from another site goes no further (security.ts).
   const foreign = crossSite(req, env);
