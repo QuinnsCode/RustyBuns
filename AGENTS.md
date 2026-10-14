@@ -1,22 +1,21 @@
 # RustyBuns
 
-## Tests: CI runs the suite, you run the few you need
+## Tools: CLI first
 
-CI covers every PR. `typecheck.yml` runs `bun run typecheck` repo-wide, and `apps.yml` runs
-the tests of each app the PR touched (all apps, plus `bun test packages`, when `packages/` or the
-lockfile moved). The per-app commands are in `scripts/ci-apps.ts`.
+Prefer a shell command to a tool server: `gh`, `bun`, `git`, `office-workers`, `codesplitter <command>`
+(`codesplitter tools` lists them). MCP is there when no CLI covers it (same operations as the CLI). WebMCP
+is different: it runs in a signed-in browser page as the user, so use it only for what needs that page.
 
-So locally:
+## Tests: CI runs the suite
 
-- Run only the test files for the code you changed, e.g. `cd apps/<app> && bun test test/foo.test.ts`.
-  Typecheck just the app you touched if you like.
-- Don't run `bun test` at the root, every app's suite or `bun run typecheck` "to be safe". Push
-  and let CI do that.
-- Don't rerun a passing test to double-check, and don't loop on a flaky one. Note it, and file an issue
-  if it's real.
-- After pushing, check with `gh pr checks <n>` (or `--watch`). If CI fails, fix that failure and
-  rerun just its test locally.
-- Don't kick off native builds (`build:native`, cargo) or `desktop-drop.yml` unless the change needs it.
+CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each app a PR touched (`apps.yml`;
+all apps plus `bun test packages` when `packages/` or the lockfile moved). Commands: `scripts/ci-apps.ts`.
+
+- Run only the test files you changed: `cd apps/<app> && bun test test/foo.test.ts`. Typecheck just that app if you like.
+- No root `bun test`, no whole-app suites, no repo-wide typecheck "to be safe". Push; CI does it.
+- Don't rerun a passing test or loop on a flaky one. Note it; file an issue if real.
+- After pushing: `gh pr checks <n>` (or `--watch`). On failure, fix that and rerun only its test.
+- No native builds (`build:native`, cargo) or `desktop-drop.yml` unless the change needs it.
 
 ## Docs heal themselves
 
@@ -35,8 +34,8 @@ updates its docs in the same PR. Those two files must keep importing nothing els
 
 ## Cut before you add
 
-Agents rewrite the same helper in every file they touch. Before writing one, grep for it; if it exists twice, pull it up
-and delete the copies in the same PR. A PR that deletes more than it adds is the goal.
+Grep before writing a helper. If it exists twice, pull it up and delete the copies in the same PR.
+A PR that deletes more than it adds is the goal.
 
 - codeSplitter's small shared helpers live in `apps/codesplitter/src/util.ts` (imports nothing): `hex`, `b64url`, `digest`,
   `sha256`, `esc`, `plural`, `pad10`, `inBatches`. Responses use `json` and request bodies `readBody` from `env.ts`; git
