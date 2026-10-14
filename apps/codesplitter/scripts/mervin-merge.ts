@@ -39,9 +39,11 @@ export function decide(board: Board, prs: BoardPr[]): Verdict[] {
     const ci = ciOf(byNum.get(s.pr) ?? { number: s.pr, headRefOid: s.head });
     const behind = [...new Set(s.files.flatMap((f) => f.after))].filter((n) => out.has(n));
     const cards = s.files.filter((f) => f.tier === "card").map((f) => f.path);
+    const vsMain = s.files.filter((f) => f.main).map((f) => f.path);
     let why = "";
     if (ci.ci === "fail") why = `CI failed: ${ci.failing.join(", ")}`;
     else if (cards.length) why = `Mervin asks on ${cards.join(", ")}`;
+    else if (vsMain.length) why = `conflicts with main on ${vsMain.join(", ")}`;
     else if (clashing.has(s.pr)) why = `clashes across files: ${board.clashes.filter((c) => c.prs.includes(s.pr)).map((c) => `${c.kind} ${c.key}`).join("; ")}`;
     else if (s.stackedOn !== undefined) why = `stacked on #${s.stackedOn}, which hasn't landed`;
     else {

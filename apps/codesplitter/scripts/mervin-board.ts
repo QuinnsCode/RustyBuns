@@ -59,7 +59,8 @@ export function ciOf(pr: BoardPr): { ci: Ci; failing: string[] } {
   const ci: Ci = failing.length ? "fail" : !checks.length ? "none" : checks.some((c) => c.status && c.status !== "COMPLETED") ? "pending" : "pass";
   return { ci, failing };
 }
-export interface FileRow { path: string; tier: Tier; why: string; after: number[] }
+/** `main` is true when the PR conflicts with main's own copy of the file, whatever earlier stages did. */
+export interface FileRow { path: string; tier: Tier; why: string; after: number[]; main?: true }
 export interface Stage { pr: number; title?: string; head: string; base: string; stackedOn?: number; ci?: Ci; failing?: string[]; files: FileRow[] }
 /** A clash between files (or PRs) that merges clean as text: `prs` lists the PRs, `main` is true when main holds one side. */
 export interface Clash { kind: "migration" | "export" | "route"; key: string; prs: number[]; main?: boolean }
@@ -158,7 +159,10 @@ export function run(repo: string | undefined, main: string, prs: BoardPr[]): { b
       const [status, path] = line.split("\t") as [string, string];
       const b = show(base, path), br = status === "D" ? null : show(pr.headRefOid, path), cur = now(path);
       const after = touched.get(path) ?? [];
-      const row = (tier: Tier, why: string) => stage.files.push({ path, tier, why, after: [...after] });
+      // Does the PR clash with main's copy alone? (GitHub's CONFLICTING, not only a clash with earlier stages.)
+      const mainTxt = show(main, path);
+      const clashMain = () => mainTxt !== b && mainTxt !== br && (mainTxt === null || br === null || [b ?? "", mainTxt, br].some((t) => t.includes("\0")) || !shadow(path, b ?? "", mainTxt, br, attributes).git.clean);
+      const row = (tier: Tier, why: string) => stage.files.push({ path, tier, why, after: [...after], ...((tier === "card" || tier === "mervin") && clashMain() && { main: true as const }) });
       if (cur === br) row("certain", "already reads as this PR wrote it");
       else if (cur === b) { tree.set(path, br); mine.set(path, br); row("certain", br === null ? "deleted, untouched since the base" : "untouched since the base: the PR's copy"); }
       else if (br === null || cur === null) row("card", br === null ? "deleted here, changed on main" : "changed here, deleted on main");
@@ -200,7 +204,7 @@ export function describe(s: Stage): string[] {
   const head = `#${s.pr}${s.stackedOn ? ` (on #${s.stackedOn})` : ""} ${s.title ?? ""}`.trimEnd();
   const ci = s.ci ? `   own CI ${s.ci}${s.failing?.length ? ` (${s.failing.join(", ")})` : ""}` : "";
   const out = [head, `  ${s.files.length} files, ${sure}% certain   ${TIERS.map((t) => `${t} ${c[t]}`).join("  ")}${ci}`];
-  for (const f of s.files) if (f.tier !== "certain") out.push(`  ${f.tier.padEnd(7)} ${f.path}  ${f.why}${f.after.length ? `  (after ${f.after.map((n) => `#${n}`).join(", ")})` : ""}`);
+  for (const f of s.files) if (f.tier !== "certain") out.push(`  ${f.tier.padEnd(7)} ${f.path}  ${f.why}${f.main ? "  (conflicts with main)" : ""}${f.after.length ? `  (after ${f.after.map((n) => `#${n}`).join(", ")})` : ""}`);
   return out;
 }
 
