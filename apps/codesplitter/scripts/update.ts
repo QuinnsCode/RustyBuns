@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// 🔄 Keep the codeSplitter desktop up to date: pull this checkout, install, and restart the desktop on the new build.
+// Keep the codeSplitter desktop up to date: pull this checkout, install, and restart the desktop on the new build.
 //
 //   bun run desktop:update         pull (fast-forward only), bun install, then run the desktop the way desktop:watch does
 //   bun run desktop:update -- -y   the same, without asking before it stops a desktop that wasn't started by desktop:watch
@@ -25,7 +25,7 @@ export async function watched(pid: number): Promise<boolean> {
 }
 
 if (import.meta.main) {
-  console.log(`🔄 git pull (${(await $`git branch --show-current`.cwd(root).text()).trim()})`);
+  console.log(`git pull (${(await $`git branch --show-current`.cwd(root).text()).trim()})`);
   const pulled = await $`git pull --ff-only`.cwd(root).nothrow();
   if (pulled.exitCode !== 0) process.exit(pulled.exitCode);
   const installed = await $`bun install`.cwd(root).nothrow();
@@ -34,7 +34,7 @@ if (import.meta.main) {
   let running: ReturnType<typeof desktop> | null = null;
   try { running = desktop(); } catch {}
   if (running && (await watched(running.pid))) {
-    console.log("🔄 Pulled. The desktop is running under desktop:watch: it rebuilds now and its window reloads by itself.");
+    console.log("Pulled. The desktop is running under desktop:watch: it rebuilds now and its window reloads by itself.");
     process.exit(0);
   }
   if (running) {
