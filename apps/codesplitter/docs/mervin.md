@@ -115,10 +115,3 @@ Tried: rust-lang/cargo, which merges only green PRs through bors, so 1 of 1,600 
 Tried: pingdotgg/t3code, which squash-merges: 15 merge commits in 5,473, so no corpus either.
 Still to check: a Linux subsystem tree, Django. Reference engines to compare against, not to vendor yet:
 Mergiraf (structured merge), Spork and IntelliMerge (tree matching).
-
-## Next
-
-1. Look at Rails' 85 wrong files, starting with `CHANGELOG.md` (both sides prepend an entry), and fix what is an engine fault.
-2. Run `mervin-score.ts` (now with `lines`) on a corpus that keeps real merges and record recall here; add the merge plan as a predictor.
-3. Run Mergiraf over the hunks in [merge-solutions.md](merge-solutions.md) and see what it settles.
-4. Show Mervin: a corpus number on the repo page, and the merge plan's waves with his name on them.
