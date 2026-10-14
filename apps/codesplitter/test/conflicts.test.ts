@@ -1051,4 +1051,12 @@ describe("over the API", () => {
     expect(failed.status).toBe(409);
     expect(ran).toEqual([{ only: ["calc.h"], build: ["make"] }]);
   });
+
+  test("a block both sides wrapped a line in, diffed at different spots, is not spliced twice (#1421)", () => {
+    const base = "    if (r && p <= regions[r - 1]!.hi) continue;";
+    const main = "    if (r && covers(regions[r - 1]!, p)) { shift = null; continue; }";
+    const branch = "    if (r && p <= regions[r - 1]!.hi) { shift = null; continue; }";
+    expect(mergeWords(base, main, branch)).toBeNull();
+    expect(mergeWords(base, main, branch, true)).toBeNull();
+  });
 });
