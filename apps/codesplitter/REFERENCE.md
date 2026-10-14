@@ -696,6 +696,7 @@ Run on 2026-10-14: 51 promises held, 321 tests, and every stress rule and faked 
 | `DELETE /api/repos/:o/:r/worktrees/:name` | The worktree, changes and all; never main itself. | Its branch, in git. | `test/worktrees.test.ts`: "the worktrees route: owner only, never main itself, and a run's goes when it's removed" |
 | `DELETE /api/repos/:o/:r/fresh` | The old git a fresh start moved off, once you ask. | The fresh Artifact. | `test/fresh.test.ts`: "moves git to a new Artifact with the same files as one commit, and keeps the old" |
 | `DELETE /api/repos/:o/:r/tags/:name` | The tag here. | A mirror's upstream tag. | `test/mirror-pushes.test.ts`: "tags: fetched from upstream on asking, made and deleted here, pushed up, never clobbered (#879)" |
+| `DELETE /api/repos/:o/:r/mervin` | The learning events kept for the repo. | Merges and files; learning stays as set. | `test/mervin-learning.test.ts`: "off by default: nothing is kept; on keeps hashed events; delete removes them" |
 | `DELETE /api/shares/:id` | The share link. | The lines. | `test/codesplitter-github.test.ts`: "share a few lines of a private repo: live, following the lines, nothing else leaks" |
 | `DELETE /api/beams/:id` | The beam's commit ref. | The branch it came from. | `test/beam.test.ts`: "squashes the stack onto main without its noise, keeps it under refs/beams, and hands over a patch that applies" |
 | `DELETE /api/repos/:o/:r/stamps` | Your stamp on that line. | | `test/stamps.test.ts`: "a stamp goes on a line, an agent's too, and follows it by id through edits" |
