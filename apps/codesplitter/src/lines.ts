@@ -576,9 +576,10 @@ function blend(bl: Line[], ms: Line[], bs: Line[], strict: boolean, loose: (t: s
   if (strict && relinked(bl, ms, bs)) return null;
   const pm = pair(ms), pb = pair(bs), out: { m?: Line; text: string; by: string }[] = [];
   if (strict && splitDifferently(bl, ms, bs, pm, pb)) return null;
-  // Main's lines no base line paired with: a branch line that's the same lands once.
+  // Main's lines no base line paired with: a branch line that's the same lands once. A `*/`, `/*` or blank is no sign
+  // of the same line: two different blocks both close a comment, and dropping the branch's would leave it unclosed (git's odb.h).
   const mainOnly = new Map<string, number>();
-  ms.forEach((m, i) => { if (!pm.includes(i)) mainOnly.set(m.text, (mainOnly.get(m.text) ?? 0) + 1); });
+  ms.forEach((m, i) => { if (!pm.includes(i) && /[A-Za-z0-9]{2}/.test(m.text)) mainOnly.set(m.text, (mainOnly.get(m.text) ?? 0) + 1); });
   let i = 0, j = 0;
   const upTo = (x: number, y: number) => {
     while (i < x) { const m = ms[i++]!; out.push({ m, text: m.text, by: m.by }); }

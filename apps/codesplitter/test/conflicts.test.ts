@@ -576,6 +576,21 @@ describe("found on git's own history (Mervin scorecard)", () => {
     expect(conflicts(same, "object-file.c")).toEqual([]);
   });
 
+  test("odb.h: both put a new commented declaration above one comment they both reworded; neither comment loses its closing lines (#1390)", () => {
+    const tail = "struct odb_source *odb_find_source(void);\n\n/*\n * Replace\n */\nvoid other(void);";
+    const was = `void odb_clear(void);\n\n/*\n * Find source by its path. Dies in case it couldn't\n * be found.\n */\n${tail}`;
+    const find = " * Find source by its path. Returns NULL\n * in case it could not be found.\n */";
+    const s = sides(was,
+      `void odb_clear(void);\n\n/*\n * Starts a transaction.\n */\nvoid begin(void);\n\n/*\n * Commits it.\n */\nvoid commit(void);\n\n/*\n${find}\n${tail}`,
+      `void odb_clear(void);\n\n/*\n * Clear caches.\n */\nvoid reprepare(void);\n\n/*\n${find}\n${tail}`);
+    expect(conflicts(s, "odb.h")).toEqual([]);
+    const out = text(settle(s, {}, "odb.h"));
+    for (const t of ["begin(void);", "commit(void);", "reprepare(void);"]) expect(out).toContain(t);
+    // Every comment opened is closed: the three new ones and the two old.
+    expect(out.match(/^\/\*$/gm)).toHaveLength(5);
+    expect(out.match(/^ \*\/$/gm)).toHaveLength(5);
+  });
+
   test("two list entries added after a line both left alone still land together", () => {
     const s = sides("a\nb\nc", "a\nb\nmain\nc", "a\nb\nbranch\nc");
     expect(conflicts(s, "list.c")).toEqual([]);
