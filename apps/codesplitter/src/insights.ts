@@ -26,6 +26,7 @@
 import { json, type Env } from "./env.ts";
 import { actingAs, identify, isAdmin } from "./identity.ts";
 import { ruleFor, viaMcp } from "./limits.ts";
+import { conflictStats } from "./usage.ts";
 
 const DAY = 86_400_000, KEEP_DAYS = 30;
 
@@ -255,6 +256,7 @@ export async function insightRoutes(req: Request, env: Env, p: string[], url: UR
     steps: STEPS.map((s) => ({ ...s, people: n(funnel.find((f) => f.step === s.step)?.people) })),
     total_users: total,
     users,
+    conflicts: await conflictStats(env),
     health: await health(env, now),
   });
 }

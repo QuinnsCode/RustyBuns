@@ -196,6 +196,7 @@ import {
   searchRoutes,
 } from "./search.ts";
 import { pulseRoutes } from "./pulse.ts";
+import { askUsage, forget, sweepConflicts } from "./usage.ts";
 import { hasPage, pageRoutes } from "./page.ts";
 import { seenRoutes } from "./seen.ts";
 import { agentPromptResponse } from "./agent-prompt.ts";
@@ -397,17 +398,21 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (!user) return json({ error: "sign in first" }, 401);
     if (req.method === "PUT") {
       // Only what's sent changes, so turning the pulse off leaves the bio be.
-      const b = await body<"bio" | "theme_html" | "pulse" | "git_truth" | "avatar">();
+      const b = await body<"bio" | "theme_html" | "pulse" | "git_truth" | "avatar" | "share_usage">();
+      if (b.share_usage !== undefined && typeof b.share_usage !== "boolean") return json({ error: "share_usage: true or false" }, 400);
       if (b.pulse !== undefined && typeof b.pulse !== "boolean") return json({ error: "pulse: true or false" }, 400);
       if (b.git_truth !== undefined && !TRUTHS.includes(b.git_truth as Truth)) return json({ error: `git_truth: ${TRUTHS.join(", ")}` }, 400);
       if ((b.bio !== undefined && typeof b.bio !== "string") || (b.theme_html !== undefined && typeof b.theme_html !== "string")) return json({ error: "bio and theme_html: text" }, 400);
       // avatar: the parts (src/avatar.ts), or null to take it off.
       const avatar = b.avatar === undefined ? null : b.avatar === null ? "" : cleanAvatar(b.avatar);
       if (avatar === null && b.avatar !== undefined) return json({ error: `avatar: every part (${Object.keys(PARTS).join(", ")}), each one of its options, colors as #rrggbb` }, 400);
-      await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth), avatar = COALESCE(?, avatar) WHERE name = ?")
-        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, avatar === null ? null : avatar === "" ? "" : JSON.stringify(avatar), user).run();
+      await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth), avatar = COALESCE(?, avatar), share_usage = COALESCE(?, share_usage) WHERE name = ?")
+        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, avatar === null ? null : avatar === "" ? "" : JSON.stringify(avatar), b.share_usage === undefined ? null : b.share_usage ? 1 : 0, user).run();
+      // Saying no (or changing your mind) takes back what was shared (usage.ts).
+      if (b.share_usage === false) await forget(env, user).run();
     }
-    return json(await env.DB.prepare("SELECT * FROM users WHERE name = ?").bind(user).first());
+    // ask_usage: a private-repo owner who hasn't answered yet gets the "help improve" modal (usage.ts).
+    return json({ ...(await env.DB.prepare("SELECT * FROM users WHERE name = ?").bind(user).first()), ask_usage: await askUsage(env, user) });
   }
 
   // GET /api/users/:name/(pulse|pulse.png|share) and /api/pulse: heartbeats (pulse.ts)
@@ -861,6 +866,7 @@ const app = {
     ctx.waitUntil(sweepLimits(env));
     ctx.waitUntil(sweepTraffic(env));
     ctx.waitUntil(sweepLineEvents(env));
+    ctx.waitUntil(sweepConflicts(env));
     ctx.waitUntil(sweepOAuth(env));
     if (accountsOn(env)) ctx.waitUntil(sweepSessions(env));
     ctx.waitUntil(drainJobs(env, (r) => app.fetch(r, env)));

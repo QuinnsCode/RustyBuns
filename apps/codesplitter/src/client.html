@@ -880,6 +880,9 @@
   .insights table { width: 100%; border-collapse: collapse; font-size: 13px; } .insights th, .insights td { text-align: left; padding: 7px 12px; border-top: 1px solid var(--border); white-space: nowrap; } .insights thead th { border-top: 0; color: var(--muted); font-weight: 500; font-size: 12px; }
   .insights .scroll { overflow-x: auto; } .insights td.ua { max-width: 280px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-family: var(--mono); font-size: 11px; }
   .insights .steps { display: inline-flex; gap: 3px; } .insights .steps i { width: 9px; height: 9px; border-radius: 2px; border: 1px solid var(--border-2); } .insights .steps i.on { background: var(--accent); border-color: var(--accent); }
+  .insights .heat { display: grid; grid-template-columns: 28px repeat(24, minmax(0, 1fr)); gap: 2px; padding: 12px 16px; font-size: 10px; color: var(--muted); align-items: center; }
+  .insights .heat i { aspect-ratio: 1; border-radius: 2px; background: var(--canvas); border: 1px solid var(--border); } .insights .heat i.on { background: var(--accent); border-color: transparent; }
+  .usagedlg { max-width: 460px; width: calc(100% - 32px); border: 1px solid var(--border); border-radius: 8px; padding: 0; } .usagedlg .body { display: grid; gap: 10px; padding: 16px; font-size: 14px; } .usagedlg .bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
   .insights .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); } .insights .tag.person { color: var(--accent-ink); border-color: var(--accent); }
   @media (max-width: 720px) { .insights .tiles, .insights .cols { grid-template-columns: 1fr; } .insights .way > div { grid-template-columns: 110px 1fr 56px; } }
   .scale .verdict { border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; margin: 0 0 14px; display: flex; align-items: center; gap: 12px; }
@@ -1701,6 +1704,16 @@ async function limitsPage() {
 // Insights (admins, src/insights.ts): people vs agents vs bots by day, the site's
 // health over the last day, how far everyone has got, and who's been calling.
 const KINDS = [["person", "People", "browsers"], ["agent", "Agents", "API tokens, MCP, scripts, headless"], ["bot", "Bots", "crawlers and monitors"]];
+/** How agents settle merge conflicts for the people who opted in (usage.ts): by extension, by round, and when. */
+function conflictsBox(c) {
+  const rows = (list, key) => list.map((r) => `<tr><td>${esc(r[key] === "" ? "(none)" : r[key] === 4 ? "4+" : r[key])}</td><td>${r.n}</td><td>${r.n ? Math.round(100 * (r.held || 0) / r.n) : 0}%</td><td>${r.to_person || 0}</td></tr>`).join("");
+  const top = Math.max(1, ...c.by_hour.map((h) => h.n)), at = (dow, hour) => c.by_hour.find((h) => h.dow === dow && h.hour === hour)?.n ?? 0;
+  const table = (list, key, head) => list.length ? `<table><thead><tr><th>${head}</th><th>Conflicts</th><th>Agent held</th><th>To a person</th></tr></thead><tbody>${rows(list, key)}</tbody></table>` : "";
+  return `<div class="box"><div class="bar">${icon("git-merge")}<b>Merge conflicts</b><span class="muted">${c.people} of ${c.asked} who answered said yes; no paths or code, kept a year</span></div>
+    ${c.by_ext.length ? `<div class="cols" style="padding:0"><div class="scroll">${table(c.by_ext, "ext", "File type")}</div><div class="scroll">${table(c.by_round, "round", "Round")}</div></div>
+    <div class="heat" role="img" aria-label="conflicts by weekday and hour, UTC">${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, dow) => `<span>${day}</span>${Array.from({ length: 24 }, (_, h) => `<i class="${at(dow, h) ? "on" : ""}" style="${at(dow, h) ? `opacity:${0.25 + 0.75 * at(dow, h) / top}` : ""}" title="${day} ${h}:00 UTC: ${at(dow, h)}"></i>`).join("")}`).join("")}</div>`
+    : '<div class="body muted small">Nothing yet: nobody has opted in, or no agent has been asked about a conflict.</div>'}</div>`;
+}
 async function insightsPage(days = 7) {
   const d = await api(`/admin/insights?days=${days}`);
   const { kinds, by_day, by_via, callers } = d.traffic, fmt = (n) => Number(n || 0).toLocaleString();
@@ -1725,6 +1738,7 @@ async function insightsPage(days = 7) {
     <div class="box" id="ins-actions"><div class="bar">${icon("github")}<b>GitHub Actions</b><span class="muted">this month, on your GitHub account</span></div><div class="body muted small">Asking GitHub…</div></div>
     <div class="box"><div class="bar">${icon("footprints")}<b>The way in</b><span class="muted">of ${fmt(d.total_users)} people, how many reached each step</span></div>
       <div class="way" style="padding:6px 0">${d.steps.map((s) => `<div><span>${esc(s.label)}</span><span class="meter"><i style="width:${d.total_users ? (s.people / d.total_users) * 100 : 0}%"></i></span><span class="muted" style="text-align:right">${fmt(s.people)}</span></div>`).join("")}</div></div>
+    ${conflictsBox(d.conflicts)}
     <div class="box"><div class="bar">${icon("users")}<b>Recent people</b><span class="muted">most recently here, with how far each got; requests over the range above</span></div>
       <div class="scroll"><table><thead><tr><th>Who</th><th>Joined</th><th>Last seen</th><th>Got as far as</th><th></th><th>As a person</th><th>Via agents</th></tr></thead><tbody>
       ${d.users.map((u) => `<tr><td><a href="#/u/${esc(u.name)}">@${esc(u.name)}</a></td><td class="muted">${u.joined ? ago(u.joined) : "—"}</td><td class="muted">${u.last_seen ? ago(u.last_seen) : "—"}</td>
@@ -3376,7 +3390,7 @@ const views = {
       <p class="lede">Here's everything we dug up, what each find is for, and how to take it home or bury it. We brushed every layer. The short version: we keep what it takes to run a code host, and not one shard more.</p>
       <div class="tldr">
         <div>${icon("shovel")}<b>We keep the minimum.</b><span>Your account, your code, and enough to keep you signed in.</span></div>
-        <div>${icon("eye-off")}<b>Nobody's watching.</b><span>No analytics, no ad pixels, no trackers, no fingerprinting.</span></div>
+        <div>${icon("eye-off")}<b>Nobody's watching.</b><span>No ad pixels, no trackers, no fingerprinting. The one thing we study beyond that is opt-in.</span></div>
         <div>${icon("hand-coins")}<b>Not for sale.</b><span>We don't sell or rent your data, or train AI on your code.</span></div>
         <div>${icon("download")}<b>It's yours.</b><span>Download all of it, or delete your account, any time, from your profile.</span></div>
       </div>
@@ -3399,11 +3413,12 @@ const views = {
         ${row("Feed", "Which files you edited, how many lines and when (never the text), shown in the feeds of people who follow you or the repo and can read it; and the digest your agent last wrote of your own feed", "Your followers' home feeds, and yours", "30 days; the digest until the next one")}
         ${row("Rate limits", "Your IP address, counted against sign-in and sign-up attempts", "Keeping bots out", "An hour; a blocked attempt is noted for 7 days")}
         ${row("Request logs", "Cloudflare's Workers logs of each request to the site: the address asked for (without its query string, the part after the ?), the method, the response status, your IP address, country and browser, and the error lines our code prints when something breaks", "Finding out what broke, and spotting abuse", "7 days, then Cloudflare deletes them")}
+        ${row("Merge conflicts (opt-in)", "If you own a private repo and said yes to “Help improve your git experience”: per conflict an agent was asked about, the file's extension, which round it was, who settled it and whether it held. Never paths, repo names or code.", "Making agents better at settling conflicts, summed for the admins", "A year, or until you say no in Your data, which deletes it")}
         ${row("Usage", "A daily count of your requests (by handle, or signed out by a hash of your IP that changes every day), whether they came from a browser or a script, your browser's name, and the first time you did each thing here (made a repo, committed, deployed)", "Seeing whether people or bots use the site, and where people get stuck", "Daily counts 30 days; the firsts until you delete your account")}
         </tbody></table></div>
 
       <h2>Trenches that came up empty</h2>
-      <p>We dug where the usual stuff hides and found nothing: no analytics, no advertising, no third-party cookies, no tracking pixels, no session replays, no data brokers. Our fonts, icons and the game's 3D engine are served from our own server, so neither Google nor a public CDN hears about your visit. We don't use your code or your data to train AI models, ours or anyone's.</p>
+      <p>We dug where the usual stuff hides and found nothing: no third-party analytics, no advertising, no third-party cookies, no tracking pixels, no session replays, no data brokers. Our fonts, icons and the game's 3D engine are served from our own server, so neither Google nor a public CDN hears about your visit. We don't use your code or your data to train AI models, ours or anyone's.</p>
 
       <h2>Cookies: one jar, no biscuits for anyone else</h2>
       <p>The only cookies here keep you signed in: <code>better-auth.session_token</code> (and a short-lived <code>session_data</code> copy that saves a database trip), or <code>cs_user</code> on the desktop app. They're strictly necessary, so there's no banner to click through; there's nothing optional to say no to. The site also remembers a few layout choices, like how wide you like the sidebar or which notice you've dismissed, in your browser's local storage. That never leaves your device.</p>
@@ -6121,6 +6136,7 @@ async function wireTruth() {
   });
 }
 const dataBox = (fold = false) => `${boxTop(fold, "yourdata", `${icon("archive")}<b>Your data</b><a class="muted" style="font-size:12px" href="#/privacy">privacy</a>`)}<div class="body" style="display:grid;gap:10px;font-size:13px">
+  <label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="share-usage" style="margin-top:3px"><span>Help improve my git experience<br><span class="muted" style="font-size:12px">Share how merge conflicts in my private repos go (file types and outcomes, never code or names). Off until you say.</span></span></label>
   <div><a class="btn" href="/api/me/export" download>${icon("download")}Download everything</a> <span class="muted" style="font-size:12px">one JSON file; clone your repos for the code</span></div>
   <details><summary class="muted" style="cursor:pointer;font-size:12px">Delete my account</summary><form id="delme" style="display:grid;gap:6px;margin-top:8px">
     <span class="muted" style="font-size:12px">Gone for good: your repos (files, branches, git), collections, shares, tokens, connected apps, sessions and sign-in, and codeSplitter' access to your GitHub and Google. Lines you wrote in other people's repos stay under @${esc(me())}, which is retired.</span>
@@ -6128,6 +6144,13 @@ const dataBox = (fold = false) => `${boxTop(fold, "yourdata", `${icon("archive")
     <input name="name" placeholder="type ${esc(me())} to confirm" autocomplete="off" required><div><button class="btn" style="color:var(--del-fg)">${icon("trash-2")}Delete @${esc(me())} for good</button></div></form></details>
 </div>${boxEnd(fold)}`;
 function wireData() {
+  const share = $("#share-usage");
+  if (share) {
+    api("/me").then((u) => { share.checked = u?.share_usage === 1; }).catch(() => {});
+    share.addEventListener("change", async () => {
+      try { await api("/me", { share_usage: share.checked }, "PUT"); toast(share.checked ? "Thank you: conflicts will help the agents get better" : "Stopped, and what was shared is deleted"); } catch (e) { share.checked = !share.checked; toast(e.message); }
+    });
+  }
   $("#delme")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const typed = e.target.name.value.trim();
@@ -7239,7 +7262,23 @@ async function route() {
   drawn();
 }
 addEventListener("hashchange", route);
-refreshSession().then(() => { header(); noticeBar(); route(); mailedLink(); });
+/** Once, to someone who owns a private repo: may codeSplitter keep how their merge conflicts go? (usage.ts) */
+async function askUsageModal() {
+  if (!me()) return;
+  const u = await api("/me").catch(() => null);
+  if (!u?.ask_usage || $("#usagedlg")) return;
+  document.body.insertAdjacentHTML("beforeend", `<dialog id="usagedlg" class="usagedlg"><div class="bar">${icon("git-merge")}<b>Help improve your git experience</b></div><div class="body">
+    <p style="margin:0">Send us how your agents' merge conflicts go, and help make them magically go away.</p>
+    <p class="muted" style="margin:0;font-size:13px">We keep only the file type, which round it was, who settled it and whether it held. Never your code, file names or repo names. It covers your private repos, which are yours alone. Change your mind any time in Your data: it deletes what you shared.</p>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="usage-no">No thanks</button><button class="btn primary" id="usage-yes">${icon("heart-handshake")}Yes, help</button></div></div></dialog>`);
+  icons();
+  const d = $("#usagedlg"), answer = async (yes) => { d.close(); d.remove(); try { await api("/me", { share_usage: yes }, "PUT"); if (yes) toast("Thank you"); } catch (e) { toast(e.message); } };
+  $("#usage-yes").addEventListener("click", () => answer(true));
+  $("#usage-no").addEventListener("click", () => answer(false));
+  d.addEventListener("close", () => d.remove());  // Esc leaves it unanswered: asked again next visit
+  d.showModal();
+}
+refreshSession().then(() => { header(); noticeBar(); route(); mailedLink(); askUsageModal(); });
 icons();
 </script>
 </body>
