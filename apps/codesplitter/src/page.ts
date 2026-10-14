@@ -17,10 +17,10 @@
 // (private lines come back blank). Text only; the repo is the page's storage, so its history, its line
 // claims and its conflict handling are the page's too, and an agent edits it with the tools it has already.
 
-import { json, type Env } from "./env.ts";
+import { json, readBody, type Env } from "./env.ts";
 import { toFile } from "./archive.ts";
 import type { Applied, Line, Op } from "./lines.ts";
-
+import { repoRow } from "./repos.ts";
 /** The public repo whose files are the page. */
 export const PAGE_REPO = "page";
 
@@ -75,7 +75,7 @@ export function withData(html: string, data: unknown) {
 /** Whether `name` has a page to show: HTML saved on the profile, or a public `page` repo. */
 export async function hasPage(env: Env, name: string, themeHtml?: string | null) {
   if (themeHtml) return true;
-  return !!(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ? AND visibility = 'public' AND (expires_at IS NULL OR expires_at > ?)").bind(name, PAGE_REPO, Date.now()).first());
+  return (await repoRow(env, name, PAGE_REPO, "visibility", { liveAt: Date.now() }))?.visibility === "public";
 }
 
 /** The text of `path` in the public page repo, as the public sees it, or null when there is no such file. */
@@ -92,7 +92,7 @@ const note = (text: string, status: number) => new Response(`<!doctype html><met
 export async function pageRoutes(req: Request, env: Env, p: string[], user?: string | null): Promise<Response | null> {
   if (p[1] === "me" && p[2] === "page" && p[3] === "revert" && !p[4] && req.method === "POST") {
     if (!user) return json({ error: "sign in first" }, 401);
-    const b = (await req.json().catch(() => ({}))) as { to?: unknown };
+    const b = await readBody<"to">(req);
     return revertPage(env, user, b.to);
   }
   if (p[1] !== "users" || !p[2] || p[3] !== "page" || (req.method !== "GET" && req.method !== "HEAD")) return null;

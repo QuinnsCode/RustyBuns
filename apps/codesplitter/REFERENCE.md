@@ -111,6 +111,8 @@ The pitch is in [README.md](README.md).
   A text file too big to dig (over 256 KB or 5000 lines, a lockfile say) comes over the same way rather than being skipped (#1094), and a merge holds (409) such a file that main changed too since the branch left it, rather than overwriting main's change (#1095): bring main into the branch upstream, then pull.
   It can't be opened as lines on the branch (415).
   `GET|POST /api/repos/:o/:r/mirror`, `GET|POST /api/repos/:o/:r/mirror/branches`, `POST /api/repos/:o/:r/mirror/branches/:b/pull|push`, `src/mirror.ts`.
+  A folder mirror (`POST /api/mirrors {url, path}`, `src/folder-mirror.ts`) is one folder of a monorepo as a repo of its own: upstream's commits that touch the folder come in as its history, and its work goes up under the folder as the branch `codesplitter/<name>`, for a pull request, never to upstream's main.
+  The workspace packages the folder depends on (`workspace:` ranges, transitively) and upstream's root `package.json` and lockfile are kept beside it, read-only, as a tree at `refs/folder-deps/<branch>` (listed as `deps` in the mirror's status), so a build can install without upstream's whole checkout (#1494).
 - **Local out, GitHub in: which side leads (desktop, #464).** A mirror is GitHub-first by default: each sync hears from upstream, then pushes.
   In the Upstream panel, **Make this copy the source of truth** (`POST /api/repos/:o/:r/mirror {primary: "here"}`; `"upstream"` switches back) flips it: the bare repo in `~/.codesplitters` leads and upstream is its backup and the trigger for its Actions.
   A sync with commits waiting pushes them first, before fetching anything, and only fetches and merges when upstream moved too (the push is turned away, never forced).
@@ -330,6 +332,8 @@ On Cloudflare, Artifacts needs the Workers Paid plan (10k operations and 1 GB a 
 The plan for testing the paid paths without a bill, and the capped live smoke, is in [docs/smoke-and-stress.md](docs/smoke-and-stress.md).
 
 ### Deploying (Cloudflare)
+
+The steps from config to the world, in one table: [docs/alchemy.md](docs/alchemy.md).
 
 `rustybuns deploy` owns the live site: Alchemy took over the wrangler-made Worker `codesplitter` and D1 `codesplitters-db` on 2026-10-09 (`targets.edge.adopt`), Durable Object storage intact.
 
@@ -752,6 +756,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/deploy.ts` | deploys: settings, the log, the desktop runner |
 | `src/file-do.ts` | the file Durable Object: ops, log, time travel, commits, a live socket |
 | `src/fit.ts` | the Rusty Buns fit check: how easily `rustybuns init` could box the repo |
+| `src/folder-mirror.ts` | folder mirrors: one folder of a monorepo kept in step as a repo of its own, both ways |
 | `src/git-state.ts` | every git state of a repo in one answer, for the bar on the repo page |
 | `src/git.ts` | a git push with no git library: objects, trees rebuilt only along changed paths, pack, receive-pack |
 | `src/github.ts` | GitHub: a token from wherever there is one, your repos, digging one up as a fork |
@@ -771,12 +776,14 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/openapi.ts` | `GET /api/openapi.json`, the API for outside agents |
 | `src/patch.ts` | a unified diff and a `git format-patch` mail written in JS, for beams on the hosted site where there's no git to run |
 | `src/policy.ts` | policy per path: how live edits go, the merge rule, who settles what is left, how a settled merge is checked, an agent's budget; defaults under the repo's `.gitattributes` |
+| `src/protect.ts` | protect main (#1426): an owner setting that keeps crew and agents off main. |
 | `src/sandbox.ts` | the container Durable Object hosted agents run in |
 | `src/swarm.ts` | digging a big level in parts off the `LEVEL_DIGS` queue, side by side |
 | `src/sync.ts` | an agent's text edit to line ops: a Myers diff that keeps line ids, and a rebase onto the file as it is now |
 | `src/tarball.ts` | past Artifacts' 40 MB import cap: a repo's tip from GitHub's tarball, pushed as one commit |
 | `src/tokens.ts` | personal API tokens: make, revoke, and who a bearer token acts as |
 | `src/try-out.ts` | try Rusty Buns on a repo or an agent's branch: init, then an offline plan |
+| `src/util.ts` | small helpers every file may use: hex, base64url, SHA-256, HTML escaping, plurals, batching |
 | `src/worker.ts` | routes, visibility, profiles, playlists, search |
 | `src/worktrees.ts` | real checkouts (`git worktree add`) off a desktop repo's bare git, per branch or per run, cleaned up when done |
 

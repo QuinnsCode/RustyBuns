@@ -2,9 +2,9 @@
 // so both paths produce the same audio (golden test) and the race is fair.
 // Typed arrays, no allocation in render().
 import { VERSION, TRACK_FIELDS } from "./song.ts";
+import { clamp } from "@rustybuns/util";
 
 const MAX_VOICES = 16, MAX_UNISON = 8, MAX_DELAY_S = 2;
-const clamp = (x: number, lo: number, hi: number) => Math.min(Math.max(x, lo), hi);
 
 function blep(t: number, dt: number): number {
   if (t < dt) { const x = t / dt; return x + x - x * x - 1; }

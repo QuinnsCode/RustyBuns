@@ -154,7 +154,7 @@ const OPS: Record<string, Record<string, Op>> = {
     body: obj({ path: str(), content: str(), branch: str("add it on this open branch instead of main") }, ["path"]), ok: obj({ path: str() }), status: 201 } },
   [`${repo}/do/file`]: { get: { id: "read_file", summary: "A file's lines, each with its id, who last wrote it, and the rev it was written at", tag: "Files", open: true,
     description: "Line ids stay put while lines move, so edits address them. Private lines are blank unless you're crew.",
-    query: { ...filePath, ...onBranch }, ok: ref("Doc") } },
+    query: { ...filePath, ...onBranch, from: int("window the lines: start at this 0-based line (adds `total` and `from` to the answer)"), limit: int("window the lines: at most this many, up to 5,000; leave both out for the whole file") }, ok: ref("Doc") } },
   [`${repo}/do/at`]: { get: { id: "read_file_at", summary: "Time travel: the file as it was at a rev, with blame per line", tag: "Files", open: true,
     query: { ...filePath, ...onBranch, rev: { ...int("the edit to stop at"), required: true } }, ok: ref("Doc") } },
   [`${repo}/do/log`]: { get: { id: "file_log", summary: "A file's edits since a rev, a page at a time", tag: "Files", open: true,
@@ -313,6 +313,12 @@ const OPS: Record<string, Record<string, Op>> = {
     get: { id: "check_settings", summary: "Where a repo's checks run, and which ones a merge waits on", tag: "Checks", open: true, ok: ref("CheckSettings") },
     put: { id: "set_check_settings", summary: "Set where checks run, which are required, and whether ours go to GitHub (owner only)", tag: "Checks",
       body: obj({ where: { type: ["string", "null"], enum: ["here", "github", "both", null] }, required: arr(ref("RequiredCheck")), post_statuses: bool(), pinned: bool() }), ok: ref("CheckSettings") },
+  },
+  [`${repo}/protect`]: {
+    get: { id: "get_protect_main", summary: "Whether main is protected from the crew and agents", tag: "Repos", open: true, ok: obj({ on: bool() }) },
+    put: { id: "set_protect_main", summary: "Protect main (owner only)", tag: "Repos",
+      description: "On: the crew (people and agents) edit on branches only, an agent's batch waits for a person instead of a timer, and a branch's author can't merge it. The owner's own work on main is untouched.",
+      body: obj({ on: bool() }, ["on"]), ok: obj({ on: bool() }) },
   },
   [`${repo}/checks/tokens`]: {
     get: { id: "list_ci_tokens", summary: "The repo's CI tokens, without their secrets (owner only)", tag: "Checks", ok: arr(ref("CiToken")) },

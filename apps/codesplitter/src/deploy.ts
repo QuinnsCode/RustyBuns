@@ -41,6 +41,7 @@ import { deployKeyRoutes, hostedWhy, keysInfo } from "./deploy-keys.ts";
 import { approve, diff, isCleared, review, waitingNote, type Review } from "./deploy-review.ts";
 import { emit } from "./hooks.ts";
 import { dirState, history, logEnd, logStart, preview, runnerFor, type Run, type StepKey } from "./preview.ts";
+import { repoRow } from "./repos.ts";
 
 export interface Settings { stage: string; dir: string; on_commit: boolean; production: boolean }
 const DEFAULTS: Settings = { stage: "prod", dir: "", on_commit: false, production: false };
@@ -165,7 +166,7 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
   const [owner, repo] = [p[2], p[3]];
   // It ships with this machine's logins and shows the repo's output: the owner's alone.
   if (!user || user !== owner || user.startsWith("agent-")) return json({ error: "only the repo's owner can deploy it" }, 403);
-  if (!(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first())) return json({ error: "not found" }, 404);
+  if (!(await repoRow(env, owner, repo, "1"))) return json({ error: "not found" }, 404);
   const hosted = !runnerFor(env) && !!env.DEPLOY_RUNNER;
 
   if (p[5] === "review") {
@@ -197,7 +198,7 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
     return json(await settings(env, owner, repo));
   }
   if (req.method === "POST") {
-    const { approve: sha, allow_delete, force } = (await req.json().catch(() => ({}))) as { approve?: unknown; allow_delete?: unknown; force?: unknown };
+    const { approve: sha, allow_delete, force } = await readBody<"approve" | "allow_delete" | "force">(req);
     const r = await start(env, owner, repo, user, "button", typeof sha === "string" ? sha : undefined, { ...(allow_delete === true && { allowDelete: true }), ...(force === true && { force: true }) });
     return r.error ? json({ error: r.error, ...(r.review && { review: r.review }) }, r.status ?? (r.error.includes("already") ? 409 : 400)) : json({ run: r.run }, 202);
   }

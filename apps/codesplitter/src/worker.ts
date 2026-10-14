@@ -3,7 +3,9 @@
 // is a playlist of code you like. Plain fetch handler: it runs as a Worker on
 // Cloudflare and in-process under Bun on the desktop.
 
+import { rankOf } from "./policy.ts";
 import { fromText } from "./lines.ts";
+import { mainClosed, protectRoute } from "./protect.ts";
 import {
   ensureCrewRemote,
   fileStub,
@@ -14,6 +16,7 @@ import {
   pushCatalogue,
   toFile,
 } from "./archive.ts";
+import { repoRow } from "./repos.ts";
 import {
   code,
   json,
@@ -196,8 +199,10 @@ import {
   searchRoutes,
 } from "./search.ts";
 import { pulseRoutes } from "./pulse.ts";
+import { askUsage, forget, sweepConflicts } from "./usage.ts";
 import { hasPage, pageRoutes } from "./page.ts";
 import { seenRoutes } from "./seen.ts";
+import { settingsRoutes } from "./settings.ts";
 import { agentPromptResponse } from "./agent-prompt.ts";
 import { installScript } from "./install.ts";
 import {
@@ -233,6 +238,7 @@ import {
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
+export { UserSettings } from "./settings.ts";
 export { AgentSandbox } from "./sandbox.ts";
 export { DeployRunner } from "./deploy-runner.ts";
 export { CiRunner } from "./ci-runner.ts";
@@ -240,7 +246,7 @@ export { EgressGate } from "./egress.ts";
 
 async function access(env: Env, owner: string, repo: string, user: string | null) {
   // A visitor's dig that has expired is gone, swept or not.
-  const r = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ? AND (expires_at IS NULL OR expires_at > ?)").bind(owner, repo, Date.now()).first();
+  const r = await repoRow(env, owner, repo, "visibility", { liveAt: Date.now() });
   if (!r) return { read: false, write: false, exists: false };
   const collab = user ? await env.DB.prepare("SELECT 1 FROM collaborators WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, user).first() : null;
   const write = user === owner || !!collab;
@@ -304,7 +310,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   callers.set(req, user);
   via.set(req, actingAs.has(req) ? "job" : token ? (token.oauth ? "oauth" : "token") : "cookie");
   if (token && p[1] === "session") return json({ mode: "token", user, token: { id: token.id, label: token.label, scope: token.scope, expires_at: token.expires_at } });
-  const slow = byIp ? null : await timed(req, "limit", () => limit(req, env, rule, user, admin));
+  const slow = byIp ? null : await timed(req, "limit", () => limit(req, env, rule, user, admin, token?.id));
   if (slow) return slow;
   const tokens = await tokenRoutes(req, env, p, user);
   if (tokens) return tokens;
@@ -375,6 +381,10 @@ async function route(req: Request, env: Env): Promise<Response> {
   const seen = await seenRoutes(req, env, p, url, user);
   if (seen) return seen;
 
+  // GET|PUT /api/me/settings, your light/dark choice and the like, in a Durable Object of your own (settings.ts)
+  const settings = await settingsRoutes(req, env, p, user);
+  if (settings) return settings;
+
   // GET /api/me/feed and its digest (feed.ts)
   const feed = await feedRoutes(req, env, p, url, user);
   if (feed) return feed;
@@ -397,17 +407,21 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (!user) return json({ error: "sign in first" }, 401);
     if (req.method === "PUT") {
       // Only what's sent changes, so turning the pulse off leaves the bio be.
-      const b = await body<"bio" | "theme_html" | "pulse" | "git_truth" | "avatar">();
+      const b = await body<"bio" | "theme_html" | "pulse" | "git_truth" | "avatar" | "share_usage">();
+      if (b.share_usage !== undefined && typeof b.share_usage !== "boolean") return json({ error: "share_usage: true or false" }, 400);
       if (b.pulse !== undefined && typeof b.pulse !== "boolean") return json({ error: "pulse: true or false" }, 400);
       if (b.git_truth !== undefined && !TRUTHS.includes(b.git_truth as Truth)) return json({ error: `git_truth: ${TRUTHS.join(", ")}` }, 400);
       if ((b.bio !== undefined && typeof b.bio !== "string") || (b.theme_html !== undefined && typeof b.theme_html !== "string")) return json({ error: "bio and theme_html: text" }, 400);
       // avatar: the parts (src/avatar.ts), or null to take it off.
       const avatar = b.avatar === undefined ? null : b.avatar === null ? "" : cleanAvatar(b.avatar);
       if (avatar === null && b.avatar !== undefined) return json({ error: `avatar: every part (${Object.keys(PARTS).join(", ")}), each one of its options, colors as #rrggbb` }, 400);
-      await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth), avatar = COALESCE(?, avatar) WHERE name = ?")
-        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, avatar === null ? null : avatar === "" ? "" : JSON.stringify(avatar), user).run();
+      await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth), avatar = COALESCE(?, avatar), share_usage = COALESCE(?, share_usage) WHERE name = ?")
+        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, avatar === null ? null : avatar === "" ? "" : JSON.stringify(avatar), b.share_usage === undefined ? null : b.share_usage ? 1 : 0, user).run();
+      // Saying no (or changing your mind) takes back what was shared (usage.ts).
+      if (b.share_usage === false) await forget(env, user).run();
     }
-    return json(await env.DB.prepare("SELECT * FROM users WHERE name = ?").bind(user).first());
+    // ask_usage: a private-repo owner who hasn't answered yet gets the "help improve" modal (usage.ts).
+    return json({ ...(await env.DB.prepare("SELECT * FROM users WHERE name = ?").bind(user).first()), ask_usage: await askUsage(env, user) });
   }
 
   // GET /api/users/:name/(pulse|pulse.png|share) and /api/pulse: heartbeats (pulse.ts)
@@ -454,7 +468,7 @@ async function route(req: Request, env: Env): Promise<Response> {
 
     // GET /api/repos/:o/:r
     if (!p[4] && req.method === "GET") {
-      const r = await env.DB.prepare("SELECT owner, name, visibility, level, branch, upstream, upstream_commit, upstream_tip, upstream_behind, upstream_heard_at, created_at, expires_at, mirror_url IS NOT NULL AS mirror, mirror_pull_only IS 1 AS pullOnly FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+      const r = await repoRow(env, owner, repo, "owner, name, visibility, level, branch, upstream, upstream_commit, upstream_tip, upstream_behind, upstream_heard_at, created_at, expires_at, mirror_url IS NOT NULL AS mirror, mirror_pull_only IS 1 AS pullOnly");
       const { results: collaborators } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all();
       // Anyone who can read the repo can clone its artifact, with an hour-long read token;
       // the crew also gets their own remote's, with private lines' real text, once there is one.
@@ -468,7 +482,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       const home = h ? (/^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(art?.remote ?? h.remote) ? "local" : "cloud") : null;
       // On the desktop the owner can push back too (#464): the bare repo is a remote for their own tools, with a
       // day-long write token (gone when the app restarts). Not with private lines, which that git holds blank.
-      const wa = home === "local" && user === owner && !ch?.crew ? await artifactAccess(h!.handle, h!.remote, "write", 86400).catch(() => null) : null;
+      const wa = home === "local" && user === owner && !ch?.crew && (!token || token.scope === "write") ? await artifactAccess(h!.handle, h!.remote, "write", 86400).catch(() => null) : null;
       const push = wa && `git remote add codesplitter ${wa.remote.replace("://", `://x:${wa.token.split("?")[0]}@`)}`;
       // The owner sees who's invited but not in yet, beside the crew.
       const invites = user === owner ? { invites: await pendingInvites(env, owner, repo) } : {};
@@ -500,7 +514,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     }
     // POST /api/repos/:o/:r/shares {path, from, to, note}  a live link to some lines
     if (p[4] === "shares" && req.method === "POST") {
-      const v = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+      const v = await repoRow(env, owner, repo, "visibility");
       return createShare(env, owner, repo, user, a, v?.visibility === "private", await body());
     }
     // GET|POST|DELETE /api/repos/:o/:r/stamps  react to lines, by id (stamps.ts)
@@ -514,7 +528,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (p[4] === "fit" && req.method === "GET") return repoFit(env, (r) => app.fetch(r, env), url.origin, owner, repo, user, url.searchParams.get("dir") ?? "");
     // GET /api/repos/:o/:r/graph[?limit=60]  main's commits, newest first, with the branches merged into them, each upstream's or this copy's
     if (p[4] === "graph" && !p[5] && req.method === "GET") {
-      const r = await env.DB.prepare("SELECT upstream_commit FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+      const r = await repoRow(env, owner, repo, "upstream_commit");
       const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit")) || 60));
       try {
         const h = await handleFor(env, owner, repo);
@@ -534,7 +548,7 @@ async function route(req: Request, env: Env): Promise<Response> {
         const h = await handleFor(env, owner, repo);
         if (!h) return json({ repo: `${owner}/${repo}`, ...(path ? { path, commits: [] } : { files: [] }) });
         // A repo dug from GitHub has only its import in its own git; what came before is read from GitHub (gitpath-upstream.ts).
-        const r = await env.DB.prepare("SELECT upstream, upstream_commit, branch FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() as UpstreamRepo | null;
+        const r = await repoRow(env, owner, repo, "upstream, upstream_commit, branch") as UpstreamRepo | null;
         const token = (await githubToken(env, user).catch(() => null))?.token;
         if (path) {
           const own = await fileHistory(h.handle, h.branch, path, limit);
@@ -559,6 +573,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     // POST /api/repos/:o/:r/commits/:sha/pick {branch?}  a commit taken again, onto main or an open branch
     if (p[4] === "commits" && p[5] && (p[6] === "revert" || p[6] === "pick") && !p[7] && req.method === "POST") {
       if (!a.write) return json({ error: "no write access" }, 403);
+      const picked = (await req.clone().json().catch(() => ({})) as { branch?: unknown }).branch;
+      if (!picked || picked === "main") { const closed = await mainClosed(env, owner, repo, user); if (closed) return closed; }
       return pickRoute(env, owner, repo, user!, p[6], p[5], await req.json().catch(() => ({})) as { branch?: unknown });
     }
     // GET /api/repos/:o/:r/tree?path=dir[&branch=b]  the repo's git tree, plus files written here but not catalogued yet
@@ -662,6 +678,8 @@ async function route(req: Request, env: Env): Promise<Response> {
       await audit(env, req, { actor: user, action: "crew.remove", owner, repo, target: p[5] });
       return json({ ok: true });
     }
+    // GET|PUT /api/repos/:o/:r/protect  keep crew and agents off main (protect.ts)
+    if (p[4] === "protect" && !p[5]) return protectRoute(req, env, owner, repo, user);
     // /api/repos/:o/:r/invites[/:token]  invite by handle, email or a bare link; the pending ones; revoke (invites.ts)
     const invites = await repoInviteRoutes(req, env, p, owner, repo, user);
     if (invites) return invites;
@@ -675,6 +693,8 @@ async function route(req: Request, env: Env): Promise<Response> {
         if (!(await openBranch(env, owner, repo, branch))) return json({ error: "no open branch " + branch }, 404);
         return createOn(env, owner, repo, branch, path, content, user!);
       }
+      const closed = await mainClosed(env, owner, repo, user);
+      if (closed) return closed;
       const r = await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, path).run();
       if (!r.meta?.changes) return json({ error: "file exists" }, 409);
       await toFile(env, owner, repo, path, user!, "ops", { method: "POST", body: JSON.stringify({ ops: fromText(content) }) });
@@ -691,6 +711,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       if ("error" in m) return json({ error: m.error }, m.status);
       const writes = p[5] === "ops" || p[5] === "commit" || ((p[5] === "private" || p[5] === "claims" || p[5] === "release") && req.method === "POST");
       if (writes && !a.write) return json({ error: "no write access" }, 403);
+      if (writes && !branch) { const closed = await mainClosed(env, owner, repo, user); if (closed) return closed; }
       // On the desktop, a push to the repo's git from outside reaches main's files when they're opened or
       // committed, so a commit here never writes their old lines back over it (#773).
       if (!branch && (p[5] === "commit" || (p[5] === "file" && req.method === "GET")) && mirrorsOn(env)) await landPushes(env, owner, repo).catch(() => {});
@@ -712,7 +733,10 @@ async function route(req: Request, env: Env): Promise<Response> {
         if (holding.length) return json({ error: `you hold lines in ${holding.map((h) => h.path).join(", ")}: let go of them before you wait in line here, or work elsewhere`, holding }, 409);
       }
       // How the path takes live edits (#1011), read as the merge reads it: main's .gitattributes over the defaults.
-      const live = (p[5] === "ops" || p[5] === "ws" || (p[5] === "claims" && req.method === "POST")) && a.write ? (await pathPolicy(env, owner, repo, path, user!)).live : undefined;
+      const pol = (p[5] === "ops" || p[5] === "ws" || (p[5] === "claims" && req.method === "POST")) && a.write ? await pathPolicy(env, owner, repo, path, user!) : undefined;
+      const live = pol?.live;
+      // A repo that ranks its agents (codesplitter-order=rank) lets a higher rank step ahead of lower ones in line.
+      const rank = pol?.order === "rank" && p[5] === "claims" ? String(rankOf(pol.rank, user ?? "anon")) : undefined;
       if (p[5] === "ws") {
         // The DO learns who this socket is, and whether it may write, from us.
         const h = new Headers(req.headers);
@@ -731,8 +755,8 @@ async function route(req: Request, env: Env): Promise<Response> {
         return fileStub(env, owner, repo, path, branch).fetch(new Request(req.url, { headers: h }));
       }
       // Only the crew reads private lines; everyone else gets placeholders.
-      const res = await toFile(env, owner, repo, path, user ?? "anon", p[5]!, { method: req.method, body: sent, headers: { "x-codesplitter-crew": a.write ? "1" : "0", ...(live && { "x-codesplitter-live": live }) } },
-        url.searchParams.has("rev") ? `?rev=${url.searchParams.get("rev")}` : url.searchParams.has("since") ? `?since=${url.searchParams.get("since")}` : "", branch);
+      const res = await toFile(env, owner, repo, path, user ?? "anon", p[5]!, { method: req.method, body: sent, headers: { "x-codesplitter-crew": a.write ? "1" : "0", ...(live && { "x-codesplitter-live": live }), ...(rank !== undefined && { "x-codesplitter-rank": rank }) } },
+        url.searchParams.has("rev") ? `?rev=${url.searchParams.get("rev")}` : url.searchParams.has("since") ? `?since=${url.searchParams.get("since")}` : p[5] === "file" && (url.searchParams.has("from") || url.searchParams.has("limit")) ? `?${new URLSearchParams([...url.searchParams].filter(([k]) => k === "from" || k === "limit"))}` : "", branch);
       if (p[5] === "private" && req.method === "POST" && res.ok) {
         // From the first private line on, the crew has a remote of its own to clone and deploy from.
         if ((JSON.parse(sent!) as { private?: boolean }).private) await ensureCrewRemote(env, owner, repo).catch(() => null);
@@ -861,6 +885,7 @@ const app = {
     ctx.waitUntil(sweepLimits(env));
     ctx.waitUntil(sweepTraffic(env));
     ctx.waitUntil(sweepLineEvents(env));
+    ctx.waitUntil(sweepConflicts(env));
     ctx.waitUntil(sweepOAuth(env));
     if (accountsOn(env)) ctx.waitUntil(sweepSessions(env));
     ctx.waitUntil(drainJobs(env, (r) => app.fetch(r, env)));

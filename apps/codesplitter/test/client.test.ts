@@ -530,3 +530,77 @@ describe("the Ship pop-out's infra map", () => {
     expect(html).toContain("views.wireShip(owner, repo);");
   });
 });
+
+// The firehose glow: a still orange edge that bumps at 175 bpm while edits stream in, and never takes a click.
+describe("the firehose glow", () => {
+  test("pulses at 175 bpm and ignores the pointer", () => {
+    const own = rulesFor("firehose").find((r) => r.sel === ".firehose");
+    expect(own?.body).toContain("pointer-events: none");
+    expect(css).toContain(".firehose.on { opacity: 1; animation: firehose-bump .343s");
+  });
+  test("is fed by the file socket's ops", () => {
+    expect(html).toContain("firehose(msg.applied.length)");
+  });
+});
+
+// The secret under a file: the oldest lines fall apart, by age tier.
+describe("rot mode", () => {
+  const src = html.slice(html.indexOf("const DECAY_TIERS"), html.indexOf("function codeRows"));
+  const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  const { decayTiers, rotText } = new Function("esc", `${src}; return { decayTiers, rotText };`)(esc);
+
+  test("age tiers are relative to the file: oldest lines rot most, a one-rev file stays whole", () => {
+    expect(decayTiers([5, 5, 5])).toEqual([0, 0, 0]);
+    const t = decayTiers([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(t[0]).toBe(4);
+    expect(t.at(-1)).toBe(0);
+    expect(t).toEqual([...t].sort((a, b) => b - a));
+  });
+
+  test("rotting keeps the characters and their order", () => {
+    const text = "export const answer = 42; // <b>";
+    for (const tier of [1, 2, 3, 4]) {
+      const out = rotText(text, tier, "l1");
+      expect(out.replace(/<i [^>]*>/g, "").replace(/<\/?[is]>/g, "").replaceAll("&#60;", "<").replaceAll("&#62;", ">")).toBe(text);
+    }
+    expect(rotText(text.repeat(8), 4, "l1")).toContain("<i ");
+    expect(rotText(text, 0, "l1")).toBe(esc(text));
+  });
+
+  test("the bottom of the file has the button", () => {
+    expect(html).toContain('id="dust"');
+  });
+});
+
+// #1469: a repo or file view called the repo, branches and fit endpoints several times each.
+describe("api shares repeated reads within a view", () => {
+  const src = html.slice(html.indexOf("const sharedGets"), html.indexOf("const apiCall"));
+  const make = () => {
+    const calls: string[] = [];
+    const apiCall = async (path: string, body?: unknown, method?: string) => { calls.push((method ?? (body === undefined ? "GET" : "POST")) + " " + path); return { path }; };
+    const { api, sharedGets } = new Function("apiCall", `${src}; return { api, sharedGets };`)(apiCall);
+    return { api, sharedGets, calls };
+  };
+
+  test("the repo, branches and fit are fetched once each", async () => {
+    const { api, calls } = make();
+    await Promise.all(["/repos/o/r", "/repos/o/r", "/repos/o/r", "/repos/o/r/branches", "/repos/o/r/branches", "/repos/o/r/fit", "/repos/o/r/fit", "/repos/o/r/tree?path="].map((p) => api(p)));
+    expect(calls).toEqual(["GET /repos/o/r", "GET /repos/o/r/branches", "GET /repos/o/r/fit", "GET /repos/o/r/tree?path="]);
+  });
+
+  test("a write, or the next route, drops them", async () => {
+    const { api, sharedGets, calls } = make();
+    await api("/repos/o/r/branches");
+    await api("/repos/o/r/branches", { name: "x" });
+    await api("/repos/o/r/branches");
+    sharedGets.clear();
+    await api("/repos/o/r/branches");
+    expect(calls).toEqual(["GET /repos/o/r/branches", "POST /repos/o/r/branches", "GET /repos/o/r/branches", "GET /repos/o/r/branches"]);
+  });
+
+  test("other reads are never shared", async () => {
+    const { api, calls } = make();
+    await api("/repos/o/r/agents"); await api("/repos/o/r/agents");
+    expect(calls.length).toBe(2);
+  });
+});

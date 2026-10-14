@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>codeSplitter</title>
+<script>
+  /* The light/dark choice paints before anything else, from this browser's copy; your settings (src/settings.ts) correct it once you're known. */
+  try { var t = localStorage.getItem("cs_theme"); if (t === "dark" || t === "light") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
 <link href="/fonts/geist.css" rel="stylesheet">
 <script src="/vendor/lucide.min.js"></script>
 <style>
@@ -30,6 +34,25 @@
     --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .32 0 0 0 0 .28 0 0 0 0 .2 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     --sans: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
     --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  /* Dark: the same black, white and one orange, turned over. "system" (no data-theme) follows the OS. */
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0e0e0e; --canvas: #161616; --border: #2a2a2a; --border-2: #3d3d3d;
+    --fg: #f2f2f2; --muted: #a0a0a0; --faint: #8f8f8f;
+    --accent-ink: #f08c4a; --accent-soft: #2a1a0e;
+    --del: #2a1a0e; --del-fg: #f6a96c; --add: #1d1d1d; --add-edge: #4a4a4a;
+    --select: #222; --paper: #1a1916;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #0e0e0e; --canvas: #161616; --border: #2a2a2a; --border-2: #3d3d3d;
+      --fg: #f2f2f2; --muted: #a0a0a0; --faint: #8f8f8f;
+      --accent-ink: #f08c4a; --accent-soft: #2a1a0e;
+      --del: #2a1a0e; --del-fg: #f6a96c; --add: #1d1d1d; --add-edge: #4a4a4a;
+      --select: #222; --paper: #1a1916;
+    }
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
@@ -404,6 +427,14 @@
   .ln .saving { position: absolute; right: 24px; top: 0; font: 500 11.5px/20px var(--sans); color: var(--muted); pointer-events: none; }
   .ln .saving.failed { position: static; display: block; white-space: normal; color: var(--del-fg); }
   .code.plain .ln { grid-template-columns: 52px minmax(0, 1fr); }
+  /* Secret bottom-of-the-file mode: the oldest lines fall apart (decayTiers, rot). Tier 0 is the newest fifth and stays whole. */
+  .dust-end { display: flex; justify-content: center; padding: 28px 0 40px; }
+  .dust-end button { border: 0; background: none; color: var(--faint); opacity: .3; cursor: default; padding: 4px; transition: opacity .3s; } .dust-end button:hover, .dust-end button:focus-visible, .dust-end button[aria-pressed="true"] { opacity: .7; cursor: pointer; } .dust-end svg { width: 14px; height: 14px; }
+   
+  /* Bombed out: a damaged letter's corner is blasted off (the <s> keeps the rest standing) and the chunk, a piece of that same glyph, lies beside it. */
+  .code.rotting .ln .t i.k { position: relative; display: inline-block; font-style: normal; white-space: pre; }
+  .code.rotting .ln .t i.k s { text-decoration: none; clip-path: var(--keep); }
+  .code.rotting .ln .t i.k::after { content: attr(data-c); position: absolute; left: 0; top: 0; clip-path: var(--chunk); transform: translate(var(--dx), var(--dy)) rotate(var(--r)); }
   /* Stamps on a line: small chips after its text, yours filled in. */
   .ln .stamps { display: inline-flex; gap: 4px; margin-left: 14px; vertical-align: 1px; user-select: none; font: 500 11px/16px var(--sans); }
   .ln .stamp { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); color: var(--muted); cursor: pointer; font: inherit; }
@@ -416,6 +447,15 @@
   /* Picked lines get a solid black gutter, one bar down a run; a line open for editing keeps its gutter and gets a dark box. */
   .ln.sel { background: var(--select); } .ln.sel .n { color: #fff; background: #0a0a0a; }
   .ln .t > input { border-color: #0a0a0a; box-shadow: 0 0 0 2px var(--select); }
+  /* The firehose: a still orange glow on the bottom edge while edits land. It flashes on a change, then sits and bumps at 175 bpm (343ms),
+     brighter the faster they come (--rate, 0 to 1). Never takes a click. */
+  .firehose { position: fixed; left: 0; right: 0; bottom: 0; height: 64px; pointer-events: none; z-index: 5; opacity: 0; transition: opacity .8s ease-out; transform-origin: 50% 100%;
+    background: radial-gradient(120% 100% at 50% 100%, color-mix(in srgb, var(--accent) calc(18% + var(--rate, 0) * 30%), transparent), transparent 70%); }
+  .firehose.on { opacity: 1; animation: firehose-bump .343s ease-in-out infinite; }
+  .firehose.hit::after { content: ""; position: absolute; inset: 0; background: inherit; animation: firehose-hit .5s ease-out; }
+  @keyframes firehose-bump { 50% { transform: scaleY(1.1); opacity: .8; } }
+  @keyframes firehose-hit { from { filter: brightness(1.6); opacity: 1; } to { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .firehose.on { animation: none; } .firehose.hit::after { animation: none; display: none; } }
   .ln.flash { animation: flash 1.4s ease-out; } @keyframes flash { from { background: var(--accent-soft); } }
   /* Claimed lines: the holder's colour down the edge, and their name in the blame column. An agent's shimmer while it works. */
   .ln.claim .t { box-shadow: inset 3px 0 0 var(--who); background: color-mix(in srgb, var(--who) 7%, transparent); }
@@ -880,6 +920,9 @@
   .insights table { width: 100%; border-collapse: collapse; font-size: 13px; } .insights th, .insights td { text-align: left; padding: 7px 12px; border-top: 1px solid var(--border); white-space: nowrap; } .insights thead th { border-top: 0; color: var(--muted); font-weight: 500; font-size: 12px; }
   .insights .scroll { overflow-x: auto; } .insights td.ua { max-width: 280px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-family: var(--mono); font-size: 11px; }
   .insights .steps { display: inline-flex; gap: 3px; } .insights .steps i { width: 9px; height: 9px; border-radius: 2px; border: 1px solid var(--border-2); } .insights .steps i.on { background: var(--accent); border-color: var(--accent); }
+  .insights .heat { display: grid; grid-template-columns: 28px repeat(24, minmax(0, 1fr)); gap: 2px; padding: 12px 16px; font-size: 10px; color: var(--muted); align-items: center; }
+  .insights .heat i { aspect-ratio: 1; border-radius: 2px; background: var(--canvas); border: 1px solid var(--border); } .insights .heat i.on { background: var(--accent); border-color: transparent; }
+  .usagedlg { max-width: 460px; width: calc(100% - 32px); border: 1px solid var(--border); border-radius: 8px; padding: 0; } .usagedlg .body { display: grid; gap: 10px; padding: 16px; font-size: 14px; } .usagedlg .bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
   .insights .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); } .insights .tag.person { color: var(--accent-ink); border-color: var(--accent); }
   @media (max-width: 720px) { .insights .tiles, .insights .cols { grid-template-columns: 1fr; } .insights .way > div { grid-template-columns: 110px 1fr 56px; } }
   .scale .verdict { border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; margin: 0 0 14px; display: flex; align-items: center; gap: 12px; }
@@ -903,6 +946,8 @@
   .switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: transform .15s; }
   .switch input:checked + i { background: var(--fg); } .switch input:checked + i::after { transform: translateX(12px); }
   .switch input:focus-visible + i { box-shadow: 0 0 0 3px rgba(10,10,10,.12); }
+  .toast.fail { display: flex; align-items: center; gap: 8px; max-width: min(92vw, 560px); background: #7a1f1f; }
+  .toast.fail .btn { color: #fff; border-color: rgba(255,255,255,.5); padding: 4px 8px; white-space: nowrap; }
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--fg); color: #fff; padding: 9px 14px; border-radius: 6px; font-size: 13px; z-index: 60; box-shadow: 0 12px 32px -8px rgba(0,0,0,.3); }
 
   /* Every feature, on a strip that scrolls sideways forever: three copies of the list,
@@ -1033,6 +1078,7 @@
   </a>
   <button class="jump" id="jump" type="button"><i data-lucide="search"></i><span>Search or run a command</span><kbd>⌘K</kbd></button>
   <span class="grow"></span>
+  <button class="btn ghost" id="theme-toggle" type="button" title="light or dark"><i data-lucide="moon"></i></button>
   <a class="btn ghost" id="topplay" href="/play.html#l/mitt" title="the game"><i data-lucide="gamepad-2"></i>Play</a>
   <span id="who"></span>
 </header>
@@ -1123,10 +1169,24 @@ async function fillPulses(root = document) {
 // Who you are comes from the server: an alias (desktop, demos) or a Better Auth account.
 let session = { mode: "alias", user: null, providers: [] };
 const me = () => session.user;
-const api = async (path, body, method, headers = {}) => {
+// A view asks for the repo, its branches, its fit and its tree from several panels: each is fetched once per view
+// (the promise is shared), and dropped on the next route or any write, so nothing is read stale.
+const sharedGets = new Map();
+const SHARED = /^\/repos\/[^/?]+\/[^/?]+(\/(branches|fit|tree))?(\?.*)?$/;
+const api = (path, body, method, headers = {}) => {
+  if (body === undefined && !method) {
+    if (!SHARED.test(path)) return apiCall(path, body, method, headers);
+    let p = sharedGets.get(path);
+    if (!p) { p = apiCall(path, body, method, headers); sharedGets.set(path, p); p.catch(() => sharedGets.delete(path)); }
+    return p;
+  }
+  sharedGets.clear();
+  return apiCall(path, body, method, headers);
+};
+const apiCall = async (path, body, method, headers = {}) => {
   const r = await fetch("/api" + path, body === undefined && !method ? {} : { method: method || "POST", headers: { "content-type": "application/json", ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || j.message || r.status);
+  if (!r.ok) throw Object.assign(new Error(j.error || j.message || r.status), { failure: { status: r.status, method: method || "POST", path } });
   // A place in a limit's line is an object; a deploy's own {queued: true} (a commit landing mid-run) isn't one.
   return r.status === 202 && typeof j.queued === "object" && j.queued ? inLine(j.queued) : j;
 };
@@ -1238,7 +1298,7 @@ async function wireTokens(made, open = !!made) {
   $("#token-cli")?.addEventListener("click", () => copy(cliLogin(made.token), "Command copied"));
   $("#newtoken").addEventListener("submit", async (e) => {
     e.preventDefault(); const f = e.target;
-    try { wireTokens(await api("/tokens", { label: f.elements.label.value, scope: f.elements.scope.value, repo: f.elements.repo.value.trim() || undefined, days: Number(f.elements.days.value) })); } catch (err) { toast(err.message); }
+    try { wireTokens(await api("/tokens", { label: f.elements.label.value, scope: f.elements.scope.value, repo: f.elements.repo.value.trim() || undefined, days: Number(f.elements.days.value) })); } catch (err) { failed(err, "make an API token"); }
   });
   el.querySelectorAll("[data-revoke]").forEach((b) => b.addEventListener("click", async () => {
     await api(`/tokens/${b.dataset.revoke}`, undefined, "DELETE"); toast("Token revoked"); wireTokens(undefined, true);
@@ -1273,6 +1333,29 @@ let lineSel = null;
 /** Say something to a screen reader, through the one polite live region. */
 function announce(msg) { const l = $("#live"); l.textContent = ""; setTimeout(() => (l.textContent = msg), 50); }
 function toast(msg, ms = 2400) { const t = document.createElement("div"); t.className = "toast"; t.setAttribute("aria-hidden", "true"); t.textContent = msg; document.body.append(t); announce(msg); setTimeout(() => t.remove(), ms); }
+/**
+ * Self-heal: a failure the person can hand to their own coding agent. The toast stays until it's closed and has a
+ * button that copies a prompt saying what happened and the error (src/fix-prompt.ts), ready to paste.
+ * Server faults and uncaught errors get one by themselves; a caller passes `what` to name the action.
+ */
+async function failed(err, what, extra = {}) {
+  const msg = String(err?.message || err);
+  const t = document.createElement("div"); t.className = "toast fail"; t.setAttribute("role", "alert");
+  const b = document.createElement("button"); b.className = "btn ghost"; b.innerHTML = icon("clipboard-copy") + " Fix it with your agent"; b.title = "Copy a prompt for your coding agent: what happened, and the error";
+  const x = document.createElement("button"); x.className = "btn ghost"; x.innerHTML = icon("x"); x.setAttribute("aria-label", "Dismiss");
+  const m = document.createElement("span"); m.textContent = msg;
+  t.append(m, b, x); document.body.append(t); announce(msg + ". A button copies a prompt for your coding agent.");
+  x.onclick = () => t.remove();
+  b.onclick = async () => {
+    try {
+      const { fixPrompt } = await import("/fix-prompt.js");
+      await copy(fixPrompt({ what: what || "use codeSplitter", error: msg, stack: err?.stack, page: location.hash, ...err?.failure, ...extra }, { site: location.origin, agent: agentCall ? "an agent" : undefined }), "Prompt copied: paste it into your coding agent");
+    } catch { toast("Couldn't build the prompt: copy the error above instead"); }
+  };
+}
+// Anything uncaught is a bug somewhere: say so, with the way to hand it to an agent.
+addEventListener("error", (e) => { if (e.error) failed(e.error, "use the page"); });
+addEventListener("unhandledrejection", (e) => { if (e.reason?.failure ? e.reason.failure.status >= 500 : e.reason instanceof Error) failed(e.reason, "use the page"); });
 /** An agent start's toast, with a heads-up when open branches already rewrite its files (#1163): its batch will meet theirs at merge. */
 const startedToast = (h, run) => {
   const b = run?.busy?.[0];
@@ -1312,12 +1395,29 @@ document.addEventListener("click", async (e) => {
   try {
     if (f) { await api(`/follows/${f.id}`, undefined, "DELETE"); followed = followed.filter((x) => x !== f); toast("Unfollowed"); }
     else { followed = [await api("/follows", t), ...(followed ?? [])]; toast(t.name ? `Following @${t.name}` : t.path ? "Following these lines" : `Following ${t.owner}/${t.repo}`); }
-  } catch (err) { toast(err.message); }
+  } catch (err) { failed(err, "follow or unfollow"); }
   b.disabled = false;
   wireFollows();
 });
 
-async function refreshSession() { session = await api("/session").catch(() => session); }
+async function refreshSession() { session = await api("/session").catch(() => session); pullTheme(); }
+// Light or dark: this browser's copy paints at once; once signed in, your settings are the truth across devices (src/settings.ts).
+const isDark = () => document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+const showTheme = (t) => {
+  if (t === "dark" || t === "light") document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  try { t === "dark" || t === "light" ? localStorage.setItem("cs_theme", t) : localStorage.removeItem("cs_theme"); } catch {}
+};
+async function pullTheme() {
+  if (!me()) return;
+  const s = await api("/me/settings").catch(() => null);
+  if (s && "theme" in s) showTheme(s.theme);
+}
+document.addEventListener("click", (e) => {
+  if (!e.target.closest?.("#theme-toggle")) return;
+  const t = isDark() ? "light" : "dark";
+  showTheme(t);
+  if (me()) api("/me/settings", { theme: t }, "PUT").catch(() => {});
+});
 // An invite you left to sign in (#/i/:token): where signing in, picking a handle or a verified email brings you back to.
 const INVITE_KEY = "cs_invite";
 const heldInvite = () => { try { return localStorage.getItem(INVITE_KEY); } catch { return null; } };
@@ -1701,6 +1801,16 @@ async function limitsPage() {
 // Insights (admins, src/insights.ts): people vs agents vs bots by day, the site's
 // health over the last day, how far everyone has got, and who's been calling.
 const KINDS = [["person", "People", "browsers"], ["agent", "Agents", "API tokens, MCP, scripts, headless"], ["bot", "Bots", "crawlers and monitors"]];
+/** How agents settle merge conflicts for the people who opted in (usage.ts): by extension, by round, and when. */
+function conflictsBox(c) {
+  const rows = (list, key) => list.map((r) => `<tr><td>${esc(r[key] === "" ? "(none)" : r[key] === 4 ? "4+" : r[key])}</td><td>${r.n}</td><td>${r.n ? Math.round(100 * (r.held || 0) / r.n) : 0}%</td><td>${r.to_person || 0}</td></tr>`).join("");
+  const top = Math.max(1, ...c.by_hour.map((h) => h.n)), at = (dow, hour) => c.by_hour.find((h) => h.dow === dow && h.hour === hour)?.n ?? 0;
+  const table = (list, key, head) => list.length ? `<table><thead><tr><th>${head}</th><th>Conflicts</th><th>Agent held</th><th>To a person</th></tr></thead><tbody>${rows(list, key)}</tbody></table>` : "";
+  return `<div class="box"><div class="bar">${icon("git-merge")}<b>Merge conflicts</b><span class="muted">${c.people} of ${c.asked} who answered said yes; no paths or code, kept a year</span></div>
+    ${c.by_ext.length ? `<div class="cols" style="padding:0"><div class="scroll">${table(c.by_ext, "ext", "File type")}</div><div class="scroll">${table(c.by_round, "round", "Round")}</div></div>
+    <div class="heat" role="img" aria-label="conflicts by weekday and hour, UTC">${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, dow) => `<span>${day}</span>${Array.from({ length: 24 }, (_, h) => `<i class="${at(dow, h) ? "on" : ""}" style="${at(dow, h) ? `opacity:${0.25 + 0.75 * at(dow, h) / top}` : ""}" title="${day} ${h}:00 UTC: ${at(dow, h)}"></i>`).join("")}`).join("")}</div>`
+    : '<div class="body muted small">Nothing yet: nobody has opted in, or no agent has been asked about a conflict.</div>'}</div>`;
+}
 async function insightsPage(days = 7) {
   const d = await api(`/admin/insights?days=${days}`);
   const { kinds, by_day, by_via, callers } = d.traffic, fmt = (n) => Number(n || 0).toLocaleString();
@@ -1725,6 +1835,7 @@ async function insightsPage(days = 7) {
     <div class="box" id="ins-actions"><div class="bar">${icon("github")}<b>GitHub Actions</b><span class="muted">this month, on your GitHub account</span></div><div class="body muted small">Asking GitHub…</div></div>
     <div class="box"><div class="bar">${icon("footprints")}<b>The way in</b><span class="muted">of ${fmt(d.total_users)} people, how many reached each step</span></div>
       <div class="way" style="padding:6px 0">${d.steps.map((s) => `<div><span>${esc(s.label)}</span><span class="meter"><i style="width:${d.total_users ? (s.people / d.total_users) * 100 : 0}%"></i></span><span class="muted" style="text-align:right">${fmt(s.people)}</span></div>`).join("")}</div></div>
+    ${conflictsBox(d.conflicts)}
     <div class="box"><div class="bar">${icon("users")}<b>Recent people</b><span class="muted">most recently here, with how far each got; requests over the range above</span></div>
       <div class="scroll"><table><thead><tr><th>Who</th><th>Joined</th><th>Last seen</th><th>Got as far as</th><th></th><th>As a person</th><th>Via agents</th></tr></thead><tbody>
       ${d.users.map((u) => `<tr><td><a href="#/u/${esc(u.name)}">@${esc(u.name)}</a></td><td class="muted">${u.joined ? ago(u.joined) : "—"}</td><td class="muted">${u.last_seen ? ago(u.last_seen) : "—"}</td>
@@ -2577,11 +2688,16 @@ const infraTile = (n, sel) => {
   const mark = n.protected ? `<span class="badge-keep" title="Kept: destroy leaves it, and its data, on the account">${icon("lock")}</span>` : data ? `<span class="badge-gone" title="Removed with its data when the stack is destroyed">${icon("trash-2")}</span>` : "<span></span>";
   return `<button type="button" class="itile${n.protected ? " kept" : ""}${sel === n.id ? " sel" : ""}" data-n="${esc(n.id)}"><span>${icon(INFRA_ICON[n.kind] ?? "circle")}</span><span><span class="kind">${esc(n.kind.replace("_", " "))}</span><b>${esc(n.label)}</b>${n.note || (n.name && n.name !== n.label) ? `<small>${esc(n.name && n.name !== n.label ? n.name : n.note)}</small>` : ""}</span>${mark}</button>`;
 };
+/** Ephemeral or Real: the CLI's `--ephemeral` / `--real`. Saved as the repo's `production` setting; a Real stack may adopt live resources. */
+const envChoice = (production) => `<fieldset class="envpick" style="border:1px solid var(--line, #d0d0d0);border-radius:6px;padding:6px 8px;display:grid;gap:4px"><legend style="font-size:12px">Environment</legend>
+  <label><input type="radio" name="production" value="0"${production ? "" : " checked"}> ${icon("flask-conical")} <b>Ephemeral</b> <span class="muted">made new with names the tool picks, touches nothing already on the account, torn down with <code>destroy</code> (CLI: <code>--ephemeral</code>)</span></label>
+  <label><input type="radio" name="production" value="1"${production ? " checked" : ""}> ${icon("shield")} <b>Real</b> <span class="muted">may hold customer data: can take over live resources (<code>adopt</code>), keeps what has <code>protect: true</code> through destroy (CLI: <code>--real</code>)</span></label></fieldset>`;
 const infraMap = (g, sel) => {
   const cols = [[], [], []];
   for (const n of g.nodes) cols[n.kind === "worker" ? 0 : n.kind === "postgres" ? 2 : 1].push(n);
   const kept = g.nodes.filter((n) => n.protected).length, data = g.nodes.filter((n) => INFRA_DATA.has(n.kind));
-  return `<div class="row" style="gap:6px"><span class="badge" title="${g.mode === "adopt" ? "ADOPT: takes over resources already on the account by their names" : "FRESH: makes every resource new, with names it picks"}">${g.mode.toUpperCase()}</span><span class="badge">stage ${esc(g.stage)}</span>${g.targets.map((t) => `<span class="badge">${icon(t === "edge" ? "cloud" : t === "box" ? "server" : "monitor")}${esc(t)}</span>`).join("")}</div>
+  const real = (g.environment ?? (g.mode === "adopt" ? "real" : "ephemeral")) === "real";
+  return `<div class="row" style="gap:6px"><span class="badge ${real ? "badge-keep" : ""}" title="${real ? "REAL: may hold customer data. " + esc((g.reasons ?? []).join("; ")) : "EPHEMERAL: made new and safe to destroy"}">${icon(real ? "shield" : "flask-conical")}${real ? "REAL" : "EPHEMERAL"}</span><span class="badge" title="${g.mode === "adopt" ? "ADOPT: takes over resources already on the account by their names" : "FRESH: makes every resource new, with names it picks"}">${g.mode.toUpperCase()}</span><span class="badge">stage ${esc(g.stage)}</span>${g.targets.map((t) => `<span class="badge">${icon(t === "edge" ? "cloud" : t === "box" ? "server" : "monitor")}${esc(t)}</span>`).join("")}</div>
     <div class="imap">${cols.filter((c) => c.length).map((c) => `<div class="col">${c.map((n) => infraTile(n, sel)).join("")}</div>`).join("")}<svg class="wires"></svg></div>
     <div class="imap-legend"><span>${icon("lock")}<b>${kept}</b> kept on destroy</span><span>${icon("trash-2")}<b>${data.length - kept}</b> removed with their data</span><span class="muted">click a tile</span></div>`;
 };
@@ -2862,6 +2978,46 @@ const readmeOf = (tree) => tree.entries.find((e) => e.type === "file" && /^readm
 function table(tree, href) {
   if (!tree.entries.length) return '<div class="body muted">Nothing unearthed yet.</div>';
   return `<div class="table">${tree.entries.map((e) => `<a class="rowlink" href="${href(e)}">${e.type === "dir" ? icon("folder", "ic-dir") : icon("file", "ic-file")}<span>${esc(e.name)}</span></a>`).join("")}</div>`;
+}
+/** How far each line has aged, 0 (newest) to `tiers - 1` (oldest): by how many of the file's lines are newer, so a file's own history sets the scale. Lines of one rev stay whole. */
+const DECAY_TIERS = 5;
+function decayTiers(revs, tiers = DECAY_TIERS) {
+  const sorted = [...revs].sort((a, b) => a - b), n = sorted.length;
+  const last = new Map(); sorted.forEach((r, i) => last.set(r, i));
+  return revs.map((r) => Math.min(tiers - 1, Math.floor(((n - last.get(r) - 1) / Math.max(n, 1)) * tiers)));
+}
+/** A jagged bite out of one corner of a glyph's box: the clip-path of what's left standing and of the chunk that came off, and which way the chunk lies from the corner. `size` is how much of the box it takes (0 to 1). */
+function bite(rnd, size) {
+  const w = size * (.6 + rnd() * .6), h = size * (.6 + rnd() * .6), steps = 3 + Math.floor(rnd() * 3);
+  const edge = [[1 - w, 0]];
+  for (let k = 1; k < steps; k++) { const t = k / steps, inward = (rnd() - .1) * .22; edge.push([1 - w + w * t - inward * h, h * t + inward * w]); }
+  edge.push([1, h]);
+  const fx = rnd() < .5, fy = rnd() < .5;
+  const poly = (pts) => `polygon(${pts.map(([x, y]) => `${((fx ? 1 - x : x) * 100).toFixed(0)}% ${((fy ? 1 - y : y) * 100).toFixed(0)}%`).join(",")})`;
+  return { keep: poly([[0, 0], ...edge, [1, 1], [0, 1]]), chunk: poly([...edge, [1, 0]]), out: fx ? -1 : 1, up: fy ? 1 : -1 };
+}
+/** A line's text bombed out, more the older the tier: a few letters have a chunk blown off a corner, and the chunk, a piece of that same letter, lies beside it a little askew. Nothing falls far. Same characters, same order, so copying and editing still see the text. */
+function rotText(text, tier, seed) {
+  if (!tier || !text) return esc(text);
+  let h = 2166136261; for (const ch of seed) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  const rnd = () => ((h = Math.imul(h ^ (h >>> 15), 2246822507) + 0x6d2b79f5) >>> 0) / 4294967296;
+  return [...text].map((ch) => {
+    if (/\s/.test(ch) || rnd() > tier * 0.07) return esc(ch);
+    const b = bite(rnd, Math.min(.85, .4 + rnd() * tier * .15));
+    // The chunk slides out from its corner and settles lower, tilted: a couple of pixels, never off the line.
+    const dx = b.out * (1 + rnd() * 2.5), dy = b.up < 0 ? 1.5 + rnd() * 2.5 : 3 + rnd() * 2.5;
+    return `<i class="k" data-c="${esc(ch)}" style="--keep:${b.keep};--chunk:${b.chunk};--dx:${dx.toFixed(1)}px;--dy:${dy.toFixed(1)}px;--r:${((rnd() - .5) * 40).toFixed(0)}deg"><s>${esc(ch)}</s></i>`;
+  }).join("");
+}
+/** Rot the rows of a drawn file by line age (rev). Run it after codeRows; undone by drawing the rows again. */
+function rot(box, lines) {
+  const tiers = decayTiers(lines.map((l) => l.rev));
+  box.querySelectorAll(".ln[data-i]").forEach((el) => {
+    const l = lines[+el.dataset.i], t = tiers[+el.dataset.i], span = $(".t", el);
+    if (!l || !t || !span || l.private || span.querySelector("input")) return;
+    el.classList.add("d" + t);
+    span.innerHTML = rotText(l.text, t, l.id ?? String(el.dataset.i));
+  });
 }
 function codeRows(lines, { blame = true, start = 1 } = {}) {
   // A private line reaches people outside the crew blank: say so instead of showing nothing.
@@ -3376,7 +3532,7 @@ const views = {
       <p class="lede">Here's everything we dug up, what each find is for, and how to take it home or bury it. We brushed every layer. The short version: we keep what it takes to run a code host, and not one shard more.</p>
       <div class="tldr">
         <div>${icon("shovel")}<b>We keep the minimum.</b><span>Your account, your code, and enough to keep you signed in.</span></div>
-        <div>${icon("eye-off")}<b>Nobody's watching.</b><span>No analytics, no ad pixels, no trackers, no fingerprinting.</span></div>
+        <div>${icon("eye-off")}<b>Nobody's watching.</b><span>No ad pixels, no trackers, no fingerprinting. The one thing we study beyond that is opt-in.</span></div>
         <div>${icon("hand-coins")}<b>Not for sale.</b><span>We don't sell or rent your data, or train AI on your code.</span></div>
         <div>${icon("download")}<b>It's yours.</b><span>Download all of it, or delete your account, any time, from your profile.</span></div>
       </div>
@@ -3397,13 +3553,15 @@ const views = {
         ${row("Tokens and apps", "API token labels and last four characters, apps you connected, and when each was last used. The secrets are stored only as hashes.", "Letting your scripts, agents and apps act as you", "Until they expire or you revoke them")}
         ${row("Agent runs", "The task you gave an agent, the model and a short log", "Showing you what your agent did", "With the repo")}
         ${row("Feed", "Which files you edited, how many lines and when (never the text), shown in the feeds of people who follow you or the repo and can read it; and the digest your agent last wrote of your own feed", "Your followers' home feeds, and yours", "30 days; the digest until the next one")}
+        ${row("Settings", "Your light or dark choice, kept in a Durable Object of your own. It is created in the Cloudflare region nearest to where you first signed in (a continent-wide hint, never your precise location)", "Showing the site the way you chose, on every device", "Until you delete your account")}
         ${row("Rate limits", "Your IP address, counted against sign-in and sign-up attempts", "Keeping bots out", "An hour; a blocked attempt is noted for 7 days")}
         ${row("Request logs", "Cloudflare's Workers logs of each request to the site: the address asked for (without its query string, the part after the ?), the method, the response status, your IP address, country and browser, and the error lines our code prints when something breaks", "Finding out what broke, and spotting abuse", "7 days, then Cloudflare deletes them")}
+        ${row("Merge conflicts (opt-in)", "If you own a private repo and said yes to “Help improve your git experience”: per conflict an agent was asked about, the file's extension, which round it was, who settled it and whether it held. Never paths, repo names or code.", "Making agents better at settling conflicts, summed for the admins", "A year, or until you say no in Your data, which deletes it")}
         ${row("Usage", "A daily count of your requests (by handle, or signed out by a hash of your IP that changes every day), whether they came from a browser or a script, your browser's name, and the first time you did each thing here (made a repo, committed, deployed)", "Seeing whether people or bots use the site, and where people get stuck", "Daily counts 30 days; the firsts until you delete your account")}
         </tbody></table></div>
 
       <h2>Trenches that came up empty</h2>
-      <p>We dug where the usual stuff hides and found nothing: no analytics, no advertising, no third-party cookies, no tracking pixels, no session replays, no data brokers. Our fonts, icons and the game's 3D engine are served from our own server, so neither Google nor a public CDN hears about your visit. We don't use your code or your data to train AI models, ours or anyone's.</p>
+      <p>We dug where the usual stuff hides and found nothing: no third-party analytics, no advertising, no third-party cookies, no tracking pixels, no session replays, no data brokers. Our fonts, icons and the game's 3D engine are served from our own server, so neither Google nor a public CDN hears about your visit. We don't use your code or your data to train AI models, ours or anyone's.</p>
 
       <h2>Cookies: one jar, no biscuits for anyone else</h2>
       <p>The only cookies here keep you signed in: <code>better-auth.session_token</code> (and a short-lived <code>session_data</code> copy that saves a database trip), or <code>cs_user</code> on the desktop app. They're strictly necessary, so there's no banner to click through; there's nothing optional to say no to. The site also remembers a few layout choices, like how wide you like the sidebar or which notice you've dismissed, in your browser's local storage. That never leaves your device.</p>
@@ -4084,13 +4242,13 @@ const views = {
             folder <input name="dir" aria-label="folder" value="${esc(s.dir ?? "")}" placeholder="(repo root)" list="deploy-dirs" title="Where the app's rustybuns.config.ts is, in a monorepo" style="width:12em;font:12px var(--mono)">
             <datalist id="deploy-dirs"></datalist></div>
           <label><input type="checkbox" name="on_commit"${s.on_commit ? " checked" : ""}> Ship when I commit to main <span class="muted">(only your own commits; crew and agents never start a deploy, and their code waits for you to approve it)</span></label>
-          <label><input type="checkbox" name="production"${s.production ? " checked" : ""}> This is production <span class="muted">(lets a stack with <code>adopt</code> take over the live resources)</span></label>
+          ${envChoice(s.production)}
           <div><button class="btn">Save</button> <button class="btn primary" type="button" id="deploy-run"></button></div>
         </form>`;
       fill();
       $("#deploy-form").addEventListener("submit", async (e) => {
         e.preventDefault(); const f = e.target;
-        try { await api(base, { stage: f.stage.value, dir: f.dir.value.trim(), on_commit: f.on_commit.checked, production: f.production.checked }, "PUT"); toast("Saved"); poll(true); }
+        try { await api(base, { stage: f.stage.value, dir: f.dir.value.trim(), on_commit: f.on_commit.checked, production: f.production.value === "1" }, "PUT"); toast("Saved"); poll(true); }
         catch (err) { toast(err.message); }
       });
       $("#deploy-run").addEventListener("click", async () => {
@@ -4290,14 +4448,14 @@ const views = {
         return `<form id="ship-form" style="display:grid;gap:8px;font-size:13px">
           <div class="row"><label>stage <input name="stage" value="${esc(s.stage ?? "prod")}" pattern="[a-z0-9][a-z0-9\\-]{0,30}" style="width:9em;font:12px var(--mono)" title="lowercase letters, digits and dashes"></label>
           <label>folder <input name="dir" value="${esc(s.dir ?? "")}" placeholder="(repo root)" style="width:12em;font:12px var(--mono)" title="Where the app's rustybuns.config.ts is, in a monorepo"></label></div>
-          <label><input type="checkbox" name="production"${s.production ? " checked" : ""}> This repo is production <span class="muted">(a stack with <code>adopt: true</code> may take over live resources)</span></label>
+          ${envChoice(s.production)}
           <label><input type="checkbox" name="on_commit"${s.on_commit ? " checked" : ""}> Ship when I commit to main <span class="muted">(only your own commits)</span></label>
           <div><button class="btn primary">${icon("check")}Save stage</button></div></form>
-          <div class="imap-note${kept ? " kept" : ""}">${g ? `<span>${icon("lock")} Destroying <b>${esc(s.stage ?? "prod")}</b> keeps <b>${kept}</b> and removes <b>${gone}</b> data resource${gone === 1 ? "" : "s"}, with their data.</span>` : `<span class="muted">Run Build and plan to see what destroying this stage keeps and removes.</span>`}</div>`;
+          <div class="imap-note${kept ? " kept" : ""}">${g ? `<span>${icon("lock")} Destroying <b>${esc(s.stage ?? "prod")}</b> (${s.production || g.environment === "real" ? "REAL" : "EPHEMERAL"}) keeps <b>${kept}</b> and removes <b>${gone}</b> data resource${gone === 1 ? "" : "s"}, with their data.${gone && (s.production || g.environment === "real") ? " Set <code>protect: true</code> on what must survive, then deploy once." : ""}</span>` : `<span class="muted">Run Build and plan to see what destroying this stage keeps and removes.</span>`}</div>`;
       }
       const r = d?.run, s = d?.settings ?? {};
       return `${flowRow(SHIP, by(r), sel)}${runTicker(r)}${r?.url ? `<p style="font-size:12px"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a></p>` : ""}${r?.note ? `<p class="muted" style="font-size:12px">${esc(r.note)}</p>` : ""}${sel ? log(r, sel) : ""}
-        ${g ? `<div class="imap-note${g.nodes.some((n) => n.protected) ? " kept" : ""}"><span>${icon("rocket")} Ships to <b>${esc(s.stage ?? "prod")}</b>: ${g.nodes.length} resource${g.nodes.length === 1 ? "" : "s"}, ${g.nodes.filter((n) => n.protected).length} protected from destroy.</span></div>` : ""}
+        ${g ? `<div class="imap-note${g.nodes.some((n) => n.protected) ? " kept" : ""}"><span>${icon("rocket")} Ships to <b>${esc(s.stage ?? "prod")}</b> as ${s.production || g.environment === "real" ? "<b>REAL</b>" : "<b>EPHEMERAL</b>"}: ${g.nodes.length} resource${g.nodes.length === 1 ? "" : "s"}, <b>${g.nodes.filter((n) => n.protected).length} protected</b> from destroy, ${g.nodes.filter((n) => INFRA_DATA.has(n.kind) && !n.protected).length} not.</span></div>` : ""}
         ${deployFlags(g, d?.settings)}
         <div class="row"><button class="btn primary" id="ship-deploy"${!d?.can_run || (r && !r.done) ? " disabled" : ""} title="${d?.can_run ? "" : d?.why || "Runs on the desktop app, with your own logins"}">${icon("rocket")}${r && !r.done ? "Deploying…" : `Deploy to ${esc(s.stage ?? "prod")}`}</button>
         <button type="button" class="btn ghost" id="ship-more" title="Deploy keys, the review of code that isn't yours, and every deploy logged">${icon("send")}Deploy settings and log</button></div>
@@ -4339,7 +4497,7 @@ const views = {
       el.querySelector("#ship-form")?.addEventListener("submit", async (e) => {
         e.preventDefault();
         const f = e.target;
-        try { await api(depBase, { stage: f.stage.value.trim(), dir: f.dir.value.trim(), production: f.production.checked, on_commit: f.on_commit.checked }, "PUT"); form = null; toast("Stage saved"); } catch (err) { toast(err.message); }
+        try { await api(depBase, { stage: f.stage.value.trim(), dir: f.dir.value.trim(), production: f.production.value === "1", on_commit: f.on_commit.checked }, "PUT"); form = null; toast("Stage saved"); } catch (err) { toast(err.message); }
         poll();
       });
       el.querySelector("#ship-allow-delete")?.addEventListener("change", (e) => { allowDelete = e.target.checked; });
@@ -4839,6 +4997,7 @@ const views = {
     const reads = (b) => { const q = qOn(b), rs = [api(`${base}/commits${q}`), api(`${base}/file${q}`)]; rs.forEach((x) => x.catch(() => {})); return rs; };
     const picked = branchPicked(owner, repo);
     let early = reads(picked);
+    api(treeQ(owner, repo, "")).catch(() => {}); // the explorer's first read starts with the repo call, not after it
     const [here, r] = await Promise.all([branchHere(owner, repo), api(`/repos/${owner}/${repo}`)]);
     const branch = here.on, q = qOn(branch);
     if (branch !== picked) early = reads(branch);
@@ -4862,7 +5021,7 @@ const views = {
         ${owner === me() && r.canWrite ? `<div class="pop"><button class="btn" id="agent" title="give a coding agent a task on this file">${icon("bot")}Agent</button><form class="panel" id="agent-form" hidden style="width:380px"><b>Give a coding agent a task</b><span class="muted" id="agent-why" style="font-size:13px">It runs on this machine with its CLI's own login, edits this file as <code>agent-&lt;name&gt;</code>, and its lines land here live.</span><select name="harness"></select><textarea name="task" rows="4" placeholder="add a doc comment to every function" required></textarea><label id="agent-only" class="muted" style="font-size:13px" hidden><input type="checkbox" name="only" checked> Only <span></span>: they're held for it while it works</label><input name="model" placeholder="model (optional: the CLI's default)"><div><button class="btn primary">${icon("play")}Run</button></div></form></div>` : ""}
         ${r.canWrite && !branch ? `<div class="pop"><button class="btn primary" id="commit" title="commit this file to git">${icon("git-commit-horizontal")}Commit</button><form class="panel" id="commit-form" hidden><b>Commit to git</b><span class="muted" style="font-size:13px">Pushes this file to the repo's Artifact as a real commit.</span><input id="msg" placeholder="what changed"><button class="btn primary">Commit</button></form></div>` : ""}`,
       // A push to the repo's git (the desktop's Push back) that clashed with edits here: its commit waits on a pick (#788).
-      body: `${r.canWrite && !branch && r.home === "local" ? `<div class="notice" id="pushclash" hidden>${icon("git-pull-request-arrow")}<span class="grow">A push to this repo's git changed the same lines as edits here, so committing waits till ${owner === me() ? "you pick" : `@${esc(owner)} picks`} a side.</span>${owner === me() ? `<button class="btn" style="white-space:nowrap" data-take="mine" title="keep the edits here: the next commit writes them over what was pushed">${icon("user")}Keep mine</button><button class="btn" style="white-space:nowrap" data-take="pushed" title="put the pushed lines in place of the edits here">${icon("download")}Take pushed</button>` : ""}</div>` : ""}<div class="crew" id="crew"></div><div class="code" id="lines"></div><div class="here-dock" id="here"><span class="faces" id="here-faces"></span><div class="pop"><button type="button" class="here-n" id="here-n" title="who's here">${icon("users")}<b>1</b></button><div class="panel" hidden><b id="who-here">just you</b><input id="here-filter" type="search" placeholder="find someone" hidden><div class="here-list" id="here-list"></div><b class="here-h">Activity</b><div class="act-bar"><div class="seg" id="act-kinds" role="group" aria-label="show">${[["all", "All"], ["people", "People"], ["agents", "Agents"], ["holds", "Holds"]].map(([k, t]) => `<button type="button" data-k="${k}" aria-pressed="${k === "all"}"${k === "all" ? ' class="on"' : ""}>${t}</button>`).join("")}</div><input id="act-find" type="search" placeholder="who" aria-label="filter by who"></div><div class="acts" id="acts"></div></div></div></div>`,
+      body: `${r.canWrite && !branch && r.home === "local" ? `<div class="notice" id="pushclash" hidden>${icon("git-pull-request-arrow")}<span class="grow">A push to this repo's git changed the same lines as edits here, so committing waits till ${owner === me() ? "you pick" : `@${esc(owner)} picks`} a side.</span>${owner === me() ? `<button class="btn" style="white-space:nowrap" data-take="mine" title="keep the edits here: the next commit writes them over what was pushed">${icon("user")}Keep mine</button><button class="btn" style="white-space:nowrap" data-take="pushed" title="put the pushed lines in place of the edits here">${icon("download")}Take pushed</button>` : ""}</div>` : ""}<div class="crew" id="crew"></div><div class="code" id="lines"></div><div class="dust-end"><button type="button" id="dust" aria-pressed="false" aria-label="Let the oldest lines rot">${icon("hourglass")}</button></div><div class="here-dock" id="here"><span class="faces" id="here-faces"></span><div class="pop"><button type="button" class="here-n" id="here-n" title="who's here">${icon("users")}<b>1</b></button><div class="panel" hidden><b id="who-here">just you</b><input id="here-filter" type="search" placeholder="find someone" hidden><div class="here-list" id="here-list"></div><b class="here-h">Activity</b><div class="act-bar"><div class="seg" id="act-kinds" role="group" aria-label="show">${[["all", "All"], ["people", "People"], ["agents", "Agents"], ["holds", "Holds"]].map(([k, t]) => `<button type="button" data-k="${k}" aria-pressed="${k === "all"}"${k === "all" ? ' class="on"' : ""}>${t}</button>`).join("")}</div><input id="act-find" type="search" placeholder="who" aria-label="filter by who"></div><div class="acts" id="acts"></div></div></div></div>`,
       details: (r.canWrite ? sec("pencil", "Editing", `<p class="muted">Double-click a line to edit it. Enter saves, Shift+Enter adds a line below, an empty line + Enter deletes it. Click a line number to select; shift-click for a range, ⌘-click a line to add it, or drag down the numbers. Right-click the code for what you can do with the lines. Keys as in VS Code: ↑/↓, shift+↑/↓, ⌘A, ⌘L, ⌘C, Esc.</p>`) : sec("share-2", "Sharing", `<p class="muted">Click a line number, shift-click another, and share just those lines.</p>`))
         + (owner === me() && r.canWrite ? sec("bot", "Agents", `<div id="agent-runs"></div>`) : "")
         + sec("scroll-text", "Commits", `<div id="commits"></div>`)
@@ -5059,6 +5218,14 @@ const views = {
       const then = await api(`${base}/at${q}&rev=${seen}`).catch(() => null);
       if (then?.lines && box.isConnected && !caught.length) catchUp(new Map(then.lines.map((l) => [l.id, l.text])), seen);
     };
+    // The secret under the file: the oldest lines fall apart, by age tier.
+    let rotting = false;
+    $("#dust")?.addEventListener("click", () => {
+      rotting = !rotting;
+      $("#dust").setAttribute("aria-pressed", rotting);
+      draw(doc);
+      toast(rotting ? "Age shows. The oldest lines are slowly coming loose." : "Pieced back together, good as new.");
+    });
     const draw = (d, fresh = new Set()) => {
       const live = viewing === null;
       if (!live) {
@@ -5074,6 +5241,8 @@ const views = {
       seenNow(d.rev);
       const keep = anchor(), before = [...box.querySelectorAll(".ln[data-id]")];
       box.innerHTML = codeRows(d.lines);
+      box.classList.toggle("rotting", rotting);
+      if (rotting) rot(box, d.lines);
       if (branch) ghosts(d);
       else waitGhosts();
       motion(d, before);
@@ -5554,6 +5723,23 @@ const views = {
       else doc.lines.splice(i, 1);
       doc.rev = a.rev;
     };
+    // The firehose glow (.firehose): edits per second over the last 3s set its brightness, a landing flashes it, and it goes quiet when they stop.
+    let fireEl = null, fireTimer = null, hits = [];
+    const firehose = (n) => {
+      const now = Date.now();
+      for (let i = 0; i < n; i++) hits.push(now);
+      if (!fireEl) { fireEl = document.createElement("div"); fireEl.className = "firehose"; fireEl.setAttribute("aria-hidden", "true"); document.body.append(fireEl); }
+      fireEl.classList.remove("hit"); void fireEl.offsetWidth; fireEl.classList.add("hit");
+      const tick = () => {
+        const t = Date.now(); hits = hits.filter((h) => t - h < 3000);
+        const rate = hits.length / 3;
+        if (!box.isConnected) { fireEl?.remove(); fireEl = fireTimer = null; return; }
+        fireEl.style.setProperty("--rate", String(Math.min(1, rate / 15)));
+        fireEl.classList.toggle("on", rate > 0.5);
+        fireTimer = hits.length || fireEl.classList.contains("on") ? setTimeout(tick, 400) : null;
+      };
+      if (!fireTimer) tick();
+    };
     const connect = () => {
       const s = socket = ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api${base}/ws${q}`);
       s.onmessage = onMessage;
@@ -5598,6 +5784,7 @@ const views = {
       const rev = $("#rev"); rev.max = doc.rev; if (viewing === null) rev.value = doc.rev;
       logOps(msg.applied);
       for (const a of msg.applied) if (a.op.kind !== "delete") beating.set(a.by, Date.now() + 600);
+      firehose(msg.applied.length);
       // The same beat runs down this repo's vein, if it's open.
       if (msg.applied.some((a) => a.op.kind !== "delete") && $("#gitmap")?.dataset.repo === `${owner}/${repo}`) $("#gitmap").beat?.();
       schedule(msg.applied.map((a) => a.line));
@@ -5762,7 +5949,7 @@ const views = {
         catch (err) {
           // Main changed these lines too: its merge page settles them, a card each.
           if (err.message === "conflicts") { toast("Main changed these lines too: settle each one, then merge"); location.hash = `#/b/${c.owner}/${c.repo}/${encodeURIComponent(c.branch)}`; }
-          else toast(err.message);
+          else failed(err, `merge ${c.branch} into main in ${c.owner}/${c.repo}`, { kind: "merge" });
         }
         load();
       });
@@ -6134,6 +6321,7 @@ async function wireTruth() {
   });
 }
 const dataBox = (fold = false) => `${boxTop(fold, "yourdata", `${icon("archive")}<b>Your data</b><a class="muted" style="font-size:12px" href="#/privacy">privacy</a>`)}<div class="body" style="display:grid;gap:10px;font-size:13px">
+  <label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="share-usage" style="margin-top:3px"><span>Help improve my git experience<br><span class="muted" style="font-size:12px">Share how merge conflicts in my private repos go (file types and outcomes, never code or names). Off until you say.</span></span></label>
   <div><a class="btn" href="/api/me/export" download>${icon("download")}Download everything</a> <span class="muted" style="font-size:12px">one JSON file; clone your repos for the code</span></div>
   <details><summary class="muted" style="cursor:pointer;font-size:12px">Delete my account</summary><form id="delme" style="display:grid;gap:6px;margin-top:8px">
     <span class="muted" style="font-size:12px">Gone for good: your repos (files, branches, git), collections, shares, tokens, connected apps, sessions and sign-in, and codeSplitter' access to your GitHub and Google. Lines you wrote in other people's repos stay under @${esc(me())}, which is retired.</span>
@@ -6141,6 +6329,13 @@ const dataBox = (fold = false) => `${boxTop(fold, "yourdata", `${icon("archive")
     <input name="name" placeholder="type ${esc(me())} to confirm" autocomplete="off" required><div><button class="btn" style="color:var(--del-fg)">${icon("trash-2")}Delete @${esc(me())} for good</button></div></form></details>
 </div>${boxEnd(fold)}`;
 function wireData() {
+  const share = $("#share-usage");
+  if (share) {
+    api("/me").then((u) => { share.checked = u?.share_usage === 1; }).catch(() => {});
+    share.addEventListener("change", async () => {
+      try { await api("/me", { share_usage: share.checked }, "PUT"); toast(share.checked ? "Thank you: conflicts will help the agents get better" : "Stopped, and what was shared is deleted"); } catch (e) { share.checked = !share.checked; toast(e.message); }
+    });
+  }
   $("#delme")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const typed = e.target.name.value.trim();
@@ -6185,9 +6380,12 @@ function wireFoot() {
 // Three copies of the list side by side; whenever the scroll passes into the third
 // copy it jumps back one copy's width (and the same going left), so it never ends.
 // It drifts slowly on its own, and stops while the pointer or focus is on it.
+// One fetch for the strip and the map, which are both on the home page.
+let featuresP;
+const featuresJson = () => (featuresP ||= fetch("/features.json").then((r) => r.json()).catch(() => []));
 let stopStrip = () => {};
 async function featureStrip(el) {
-  const feats = await fetch("/features.json").then((r) => r.json()).catch(() => []);
+  const feats = await featuresJson();
   if (!feats.length || !el.isConnected) return;
   const track = $("#feats-track", el);
   const card = (f, cls = "") => `<div class="feat ${cls}"><span class="ico">${icon(f.icon)}</span><b>${esc(f.title)}</b><span>${esc(f.what)}</span></div>`;
@@ -6248,7 +6446,7 @@ const FMAP = [
     art: `<svg viewBox="0 0 360 220" role="img" aria-label="A laptop holding the real repo, mirrored out to GitHub, GitLab and any remote"><rect class="bx o" x="24" y="70" width="104" height="72" rx="6"/><text class="o" x="42" y="102">your laptop</text><text class="m" x="42" y="120">the real repo</text><path class="st o" d="M10 152H142"/><g class="bx"><rect x="236" y="26" width="104" height="38" rx="6"/><rect x="236" y="91" width="104" height="38" rx="6"/><rect x="236" y="156" width="104" height="38" rx="6"/></g><g><text x="256" y="49">GitHub</text><text x="256" y="114">GitLab</text><text x="256" y="179">any remote</text></g><g class="st o"><path d="M128 96C180 96 190 45 236 45"/><path d="M128 106H236"/><path d="M128 116C180 116 190 175 236 175" class="d"/></g><path class="st g" d="M276 186l16 -16m0 16l-16 -16" transform="translate(40 -10)"/><text class="m" x="150" y="206">cloud down? keep going</text></svg>` },
 ];
 async function featureMap(el) {
-  const feats = await fetch("/features.json").then((r) => r.json()).catch(() => []);
+  const feats = await featuresJson();
   if (!feats.length || !el.isConnected) return;
   const byId = new Map(feats.map((f) => [f.id, f]));
   const named = new Set(FMAP.flatMap((t) => t.ids));
@@ -7224,6 +7422,7 @@ async function avatarBox(user, mine, name) {
 }
 async function route() {
   let drawn; routing = new Promise((r) => (drawn = r));
+  sharedGets.clear();
   followed = fetchingFollows = null;
   socket?.close(); socket = null;
   clearTimeout(agentTimer);
@@ -7252,7 +7451,23 @@ async function route() {
   drawn();
 }
 addEventListener("hashchange", route);
-refreshSession().then(() => { header(); noticeBar(); route(); mailedLink(); });
+/** Once, to someone who owns a private repo: may codeSplitter keep how their merge conflicts go? (usage.ts) */
+async function askUsageModal() {
+  if (!me()) return;
+  const u = await api("/me").catch(() => null);
+  if (!u?.ask_usage || $("#usagedlg")) return;
+  document.body.insertAdjacentHTML("beforeend", `<dialog id="usagedlg" class="usagedlg"><div class="bar">${icon("git-merge")}<b>Help improve your git experience</b></div><div class="body">
+    <p style="margin:0">Send us how your agents' merge conflicts go, and help make them magically go away.</p>
+    <p class="muted" style="margin:0;font-size:13px">We keep only the file type, which round it was, who settled it and whether it held. Never your code, file names or repo names. It covers your private repos, which are yours alone. Change your mind any time in Your data: it deletes what you shared.</p>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="usage-no">No thanks</button><button class="btn primary" id="usage-yes">${icon("heart-handshake")}Yes, help</button></div></div></dialog>`);
+  icons();
+  const d = $("#usagedlg"), answer = async (yes) => { d.close(); d.remove(); try { await api("/me", { share_usage: yes }, "PUT"); if (yes) toast("Thank you"); } catch (e) { toast(e.message); } };
+  $("#usage-yes").addEventListener("click", () => answer(true));
+  $("#usage-no").addEventListener("click", () => answer(false));
+  d.addEventListener("close", () => d.remove());  // Esc leaves it unanswered: asked again next visit
+  d.showModal();
+}
+refreshSession().then(() => { header(); noticeBar(); route(); mailedLink(); askUsageModal(); });
 icons();
 </script>
 </body>

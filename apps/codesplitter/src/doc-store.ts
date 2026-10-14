@@ -12,6 +12,7 @@
 // A doc stored the old way (one key, lines and all) loads as it is and is rewritten in chunks.
 
 import type { Doc, Line } from "./lines.ts";
+import { pad10 } from "./util.ts";
 
 /** A chunk is filled to about this many lines, or this many characters of JSON, and splits at twice either. */
 export const CHUNK_LINES = 500;
@@ -19,7 +20,6 @@ export const CHUNK_CHARS = 128 * 1024;
 
 interface Manifest { rev: number; nextId: number; chunks: number[]; next: number }
 
-const pad = (n: number) => String(n).padStart(10, "0");
 const size = (l: Line) => JSON.stringify(l).length;
 
 /** Lines in runs of about CHUNK_LINES and CHUNK_CHARS each, in order. */
@@ -45,7 +45,7 @@ export class DocStore {
 
   constructor(private storage: any, readonly key: string) {}
 
-  chunkKey(n: number) { return `${this.key}:${pad(n)}`; }
+  chunkKey(n: number) { return `${this.key}:${pad10(n)}`; }
 
   /** The stored doc, or null if there is none. One stored the old way is rewritten in chunks. */
   async load(): Promise<Doc | null> {

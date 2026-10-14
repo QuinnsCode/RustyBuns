@@ -21,7 +21,7 @@ pnpm exec rustybuns deploy              # Cloudflare, plus a Hetzner or Railway 
 
 That's the whole product. Rusty Buns is a dev dependency: it never edits `src/` and never ships in your bundle.
 
-> **Alpha, `0.1.11`.** Desktop works on macOS and Linux. The Cloudflare deploy is verified end to end. The Railway and Hetzner boxes are verified live.
+> **Alpha, `0.1.12`.** Desktop works on macOS and Linux. The Cloudflare deploy is verified end to end. The Railway and Hetzner boxes are verified live.
 
 ## Features
 
@@ -44,6 +44,16 @@ Every app is five things: **http, comms, storage, memory, identity**. Cloudflare
 ```
 
 `rustybuns.config.ts` is the only file you own. `init` reads your app and writes it; the host, the wrangler config and the infrastructure are all generated from it. More in [The five primitives](ADOPTION.md#the-five-primitives) and [How it works](REFERENCE.md#how-it-works).
+
+</details>
+
+### Bun and Vite are the stack, the rest swaps out
+
+Bun runs your app and Vite builds it. Everything else (Alchemy, Effect, Rust, Hetzner, Railway) is an option you add when you want it and drop when you don't.
+
+<details><summary>More</summary>
+
+We give you all the options and none of the requirements. Bun is the host on the desktop and on a box, and Vite builds the client. That's the whole floor. Deploy tooling is opt-in: a project that only builds the desktop binary never runs `add deploy`, so it never gets Alchemy or Effect. Rust is an optional engine with a TypeScript twin. Each deploy target is one Layer you can swap for another or leave out. Nothing here is a thing your `src/` imports, so any of it can go without touching your app. Leaving is a `git rm`; see [Adopting it in steps](ADOPTION.md#adopting-it-in-steps).
 
 </details>
 

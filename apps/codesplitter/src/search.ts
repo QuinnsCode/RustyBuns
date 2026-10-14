@@ -17,6 +17,8 @@
 // and the hourly cron embeds it (embedDue), as does POST /api/admin/scale/search-embed.
 
 import { json, type Env } from "./env.ts";
+import { repoRow } from "./repos.ts";
+import { digest, hex } from "./util.ts";
 
 /** The most repos one search across repos asks without the vector index. */
 export const FAN_OUT = 50;
@@ -146,8 +148,7 @@ export const vectorsOn = (env: Env) => !!(env.VECTORS && env.AI);
 
 /** A chunk's vector id: Vectorize takes 64 bytes, so the file is a hash and the chunk its number. */
 async function vid(owner: string, repo: string, path: string, i: number) {
-  const h = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${owner}/${repo}/${path}`)));
-  return `${[...h.slice(0, 20)].map((b) => b.toString(16).padStart(2, "0")).join("")}:${i}`;
+  return `${hex((await digest(`${owner}/${repo}/${path}`)).slice(0, 20))}:${i}`;
 }
 const vids = (owner: string, repo: string, path: string, n: number) => Promise.all(Array.from({ length: n }, (_, i) => vid(owner, repo, path, i)));
 
@@ -175,7 +176,7 @@ async function dropVectors(env: Env, ids: string[]) {
 
 /** Embed `files` of a repo, clear the chunk numbers they no longer fill, and note it in the repo's DO and D1. */
 async function embedFiles(env: Env, owner: string, repo: string, files: ToEmbed[]) {
-  const r = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+  const r = await repoRow(env, owner, repo, "visibility");
   if (!r || !files.length) return;
   const pub = r.visibility === "public";
   const each = files.map((f) => ({ ...f, chunks: chunksOf(f.content) }));

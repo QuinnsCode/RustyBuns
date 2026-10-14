@@ -53,7 +53,8 @@
 // of upstream settles as "held"), merged branches' upstream branches are left be,
 // and the branch and tag push routes answer 409. For a mirror kept for local CI.
 //
-//   POST /api/mirrors {url, name?, visibility?, pullOnly?}  clone any git remote as a mirror you own (desktop only)
+//   POST /api/mirrors {url, name?, visibility?, pullOnly?, path?, branch?}  clone any git remote as a mirror you own (desktop
+//        only); with a path (or a GitHub .../tree/<branch>/<path> URL), one folder of it, as a repo of its own (folder-mirror.ts)
 //   GET  /api/repos/:o/:r/mirror                 where it stands with upstream
 //   POST /api/repos/:o/:r/mirror {resolve?, pushCrew?}
 //        (owner) sync now; settle a clash with "mine" or "upstream", rewritten history with
@@ -68,11 +69,13 @@ import { join } from "node:path";
 import { MAX_BYTES, MAX_LINES, materialize, toFile } from "./archive.ts";
 import { fromDisk } from "./agent-run.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
-import { githubToken, parseRepo } from "./github.ts";
+import { branchAndPath, githubToken, parseFolder, parseRepo } from "./github.ts";
 import { postOrder, startChecks, upstreamMoved, upstreamTaken } from "./checks.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 import { branchNameError, json, NAME, type Env, readBody } from "./env.ts";
+import { repoRow } from "./repos.ts";
 import type { Doc } from "./lines.ts";
+import { depsRef, depsTree, folderPath, graft, sendBranch, sourceRef, split, splitFromRef, workspaceDeps } from "./folder-mirror.ts";
 import { indexFile, unindexFile } from "./search.ts";
 import { byVersion, tagNameError } from "./tags.ts";
 
@@ -106,7 +109,7 @@ async function must(args: string[], cwd?: string, env?: Record<string, string>) 
   if (r.code) throw new Error(r.err || `git ${args[0]} exited ${r.code}`);
   return r.out.trim();
 }
-const isAncestor = async (dir: string, a: string, b: string) => (await git(["merge-base", "--is-ancestor", a, b], dir)).code === 0;
+export const isAncestor = async (dir: string, a: string, b: string) => (await git(["merge-base", "--is-ancestor", a, b], dir)).code === 0;
 /** A file's text at a commit, or null when it isn't there. */
 const show = async (dir: string, rev: string, path: string) => { const r = await git(["cat-file", "blob", `${rev}:${path}`], dir); return r.code ? null : r.out; };
 
@@ -146,13 +149,13 @@ export const authorEnv = (): Record<string, string> => {
 /** Who a mirror's commits are by, as git and upstream see them: this machine's git identity. Null for any other repo. */
 export async function mirrorIdentity(env: Env, owner: string, repo: string) {
   if (!mirrorsOn(env)) return null;
-  const r = await env.DB.prepare("SELECT mirror_url FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+  const r = await repoRow(env, owner, repo, "mirror_url");
   return r?.mirror_url ? gitIdentity() : null;
 }
 
-interface Row { owner: string; name: string; artifact: string; branch: string | null; crew_artifact: string | null; mirror_push_crew: number | null; mirror_primary: string | null; mirror_pull_only: number | null; mirror_url: string; mirror_fails: number | null; mirror_down_since: number | null; upstream_commit: string | null }
+interface Row { owner: string; name: string; artifact: string; branch: string | null; crew_artifact: string | null; mirror_push_crew: number | null; mirror_primary: string | null; mirror_pull_only: number | null; mirror_path: string | null; mirror_url: string; mirror_fails: number | null; mirror_down_since: number | null; upstream_commit: string | null }
 const row = (env: Env, owner: string, repo: string) =>
-  env.DB.prepare("SELECT owner, name, artifact, branch, crew_artifact, mirror_push_crew, mirror_primary, mirror_pull_only, mirror_url, mirror_fails, mirror_down_since, upstream_commit FROM repos WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(owner, repo).first() as Promise<Row | null>;
+  repoRow(env, owner, repo, "owner, name, artifact, branch, crew_artifact, mirror_push_crew, mirror_primary, mirror_pull_only, mirror_path, mirror_url, mirror_fails, mirror_down_since, upstream_commit", { mirrored: true }) as Promise<Row | null>;
 
 type State = "ok" | "down" | "refused" | "clash" | "held" | "rewritten";
 export type Resolve = "mine" | "upstream" | "rebase";
@@ -211,7 +214,7 @@ async function settled(env: Env, r: Row, tip: string, state: "ok" | "held" = "ok
 /** Something moved under this try (a commit here, a push upstream): go again on the next tick, as things stand. */
 async function again(env: Env, r: Row) {
   await env.DB.prepare("UPDATE repos SET mirror_next_at = ? WHERE owner = ? AND name = ?").bind(Date.now(), r.owner, r.name).run();
-  const s = await env.DB.prepare("SELECT mirror_state FROM repos WHERE owner = ? AND name = ?").bind(r.owner, r.name).first();
+  const s = await repoRow(env, r.owner, r.name, "mirror_state");
   return (s?.mirror_state ?? "ok") as State;
 }
 
@@ -267,7 +270,7 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
     if (!crew) await landPushes(env, owner, repo);
     // This copy leads: commits waiting on top of what upstream last had go up before anything's fetched.
     // Upstream moved meanwhile? The push is turned away, and the usual fetch, merge and push follow.
-    if (primaryOf(r.mirror_primary) === "here" && !held && !crew && !r.mirror_pull_only) {
+    if (primaryOf(r.mirror_primary) === "here" && !held && !crew && !r.mirror_pull_only && !r.mirror_path) {
       const known = await git(["rev-parse", "--verify", "--quiet", up], dir), tip = await must(["rev-parse", heads], dir), last = known.out.trim();
       if (!known.code && last !== tip && await isAncestor(dir, last, tip)) {
         const p = await push(tip);
@@ -285,10 +288,24 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
     // it's all of upstream's past, when re-basing needs only its new tip. A fast-forward stops at
     // the agreed commit all the same. Upstream wound back past that is fetched the plain way.
     const since = agreed && Number(await must(["log", "-1", "--format=%ct", agreed], dir)) - 7 * 86_400;
-    const fetch = (limit: string[]) => git(["fetch", "--quiet", "--no-tags", ...limit, r.mirror_url, `+${heads}:${up}`], dir, net);
+    // A folder mirror fetches upstream's whole branch beside it, and splits the folder's commits out of it (folder-mirror.ts).
+    const into = r.mirror_path ? sourceRef(branch) : up;
+    const fetch = (limit: string[]) => git(["fetch", "--quiet", "--no-tags", ...limit, r.mirror_url, `+${heads}:${into}`], dir, net);
     let f = await fetch(since ? [`--shallow-since=${since}`] : []);
     if (since && f.code && /shallow/i.test(f.err)) f = await fetch([]);
     if (f.code) return failed(env, r, "down", f.err || "upstream didn't answer");
+    if (r.mirror_path) {
+      const source = await must(["rev-parse", into], dir), last = (await git(["rev-parse", "--verify", "--quiet", splitFromRef(branch)], dir)).out.trim();
+      if (last !== source) {
+        // Upstream rewrote its history past the last commit split: start the folder's over, and the sync sees it as rewritten.
+        const from = last && await isAncestor(dir, last, source) ? last : null;
+        const tip = await split(git, dir, r.mirror_path, from, source, from ? await must(["rev-parse", up], dir) : null);
+        if (!tip) return failed(env, r, "clash", `upstream's ${branch} has no ${r.mirror_path} any more`);
+        await must(["update-ref", up, tip], dir);
+        await must(["update-ref", splitFromRef(branch), source], dir);
+        await keepDeps(dir, r.mirror_path, branch, source);
+      }
+    }
     let theirs = await must(["rev-parse", up], dir), ours = await must(["rev-parse", heads], dir);
     const before = ours;
 
@@ -347,6 +364,7 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
     if (ours !== theirs && !(await isAncestor(dir, ours, theirs))) {
       if (held) return settled(env, r, theirs, "held", "this repo has private lines, and its git holds them blank, so nothing goes upstream", ours !== before);
       if (r.mirror_pull_only) return settled(env, r, theirs, "held", "this mirror is pull-only, so nothing goes upstream", ours !== before);
+      if (r.mirror_path) return send(env, r, dir, net, theirs, ours, ours !== before);
       const p = await push(ours);
       // Upstream moved since the fetch: the next round merges it in, then pushes.
       if (p === "moved") return again(env, r);
@@ -358,6 +376,28 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
   } catch (e) {
     return failed(env, r, "clash", `sync stopped: ${String((e as Error).message ?? e)}`);
   }
+}
+
+/**
+ * A folder mirror's work, sent up (folder-mirror.ts): this copy's tree under the folder's path on upstream's tip, as one
+ * commit on its own branch for a pull request. Upstream's main never takes it from here. Held until upstream merges it;
+ * when upstream's folder already reads as this copy's, there's nothing to send and it's in step.
+ */
+async function send(env: Env, r: Row, dir: string, net: Record<string, string>, theirs: string, ours: string, took: boolean) {
+  const branch = r.branch ?? "main", source = await must(["rev-parse", sourceRef(branch)], dir);
+  const tree = await graft(git, dir, r.mirror_path!, source, ours);
+  if (!tree) return settled(env, r, theirs, "ok", null, took);
+  const subjects = (await must(["log", "--format=- %s", `${theirs}..${ours}`, "--no-merges"], dir)).split("\n").filter(Boolean).slice(0, 50);
+  const c = await must(["commit-tree", tree, "-p", source, "-m", `${r.name}: ${r.mirror_path} from codeSplitter\n\n${subjects.join("\n")}`], dir, authorEnv());
+  const to = sendBranch(r.name);
+  // The branch is this copy's own proposal: a new send replaces it. Upstream's main is never pushed.
+  const p = await git(["push", "--porcelain", r.mirror_url, `+${c}:refs/heads/${to}`], dir, net);
+  if (p.code) {
+    const said = [p.err, p.out].filter(Boolean).join("\n") || "upstream didn't take the push";
+    return failed(env, r, /\b40[13]\b|denied|permission|not allowed|protected branch|authentication|forbidden/i.test(said) ? "refused" : "down", said);
+  }
+  const gh = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(r.mirror_url)?.[1];
+  return settled(env, r, theirs, "held", `sent up as branch ${to}${gh ? `: open a pull request at https://github.com/${gh}/compare/${branch}...${to}` : ", for a pull request"}`, took);
 }
 
 /**
@@ -528,7 +568,7 @@ const landing = new Map<string, Promise<void>>();
 async function landNow(env: Env, owner: string, repo: string) {
   const lg = localGit(env);
   if (!lg) return;
-  const r = await env.DB.prepare("SELECT artifact, branch, crew_artifact, git_seen, git_clash FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() as { artifact: string | null; branch: string | null; crew_artifact: string | null; git_seen: string | null; git_clash: string | null } | null;
+  const r = await repoRow(env, owner, repo, "artifact, branch, crew_artifact, git_seen, git_clash") as { artifact: string | null; branch: string | null; crew_artifact: string | null; git_seen: string | null; git_clash: string | null } | null;
   if (!r?.artifact || r.crew_artifact) return;
   const dir = lg.path(r.artifact), t = await git(["rev-parse", "--verify", "--quiet", `refs/heads/${r.branch ?? "main"}`], dir), tip = t.out.trim();
   if (t.code || !tip || tip === r.git_seen) return;
@@ -577,7 +617,7 @@ const clashesOf = (v: unknown): Record<string, string> => { try { return v ? JSO
 /** A desktop repo's baseline for landPushes: main's tip as it is when the repo's made or dug up ("" for an empty git). */
 export async function seeGit(env: Env, owner: string, repo: string) {
   const lg = localGit(env);
-  const r = lg && await env.DB.prepare("SELECT artifact, branch FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() as { artifact: string | null; branch: string | null } | null;
+  const r = lg && await repoRow(env, owner, repo, "artifact, branch") as { artifact: string | null; branch: string | null } | null;
   if (!lg || !r?.artifact) return;
   // A dig answers while its clone is still running in the background: look once it lands.
   // No git there means the clone failed, and Bun would throw spawning in a missing cwd.
@@ -589,7 +629,7 @@ export async function seeGit(env: Env, owner: string, repo: string) {
 
 /** The files a push clashed with (#788), each with its pushed commit. */
 export async function pushClashes(env: Env, owner: string, repo: string) {
-  const r = await env.DB.prepare("SELECT artifact, git_clash FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+  const r = await repoRow(env, owner, repo, "artifact, git_clash");
   return { artifact: r?.artifact as string | undefined, clashes: clashesOf(r?.git_clash) };
 }
 
@@ -638,9 +678,25 @@ export async function settlePush(env: Env, owner: string, repo: string, path: st
   return true;
 }
 
+/** The workspace packages a folder mirror's folder depends on stay upstream's: kept as a read-only tree at depsRef, not in the folder's history. */
+async function keepDeps(dir: string, path: string, branch: string, source: string) {
+  const tree = await depsTree(git, dir, source, await workspaceDeps(git, dir, path, source));
+  if (!tree) { await git(["update-ref", "-d", depsRef(branch)], dir); return; }
+  const msg = `workspace dependencies of ${path} at ${source.slice(0, 7)}\n\nUpstream-commit: ${source}`;
+  await must(["update-ref", depsRef(branch), await must(["commit-tree", tree, "-m", msg], dir, authorEnv())], dir);
+}
+
+/** The folders (outside a folder mirror's own) its dependency tree holds, from the tree itself. */
+async function depsList(lg: LocalGit, r: Row, branch: string) {
+  const dir = await syncedDir(lg, r), pkgs: string[] = [];
+  const files = await git(["ls-tree", "-r", "--name-only", depsRef(branch)], dir);
+  for (const f of files.out.split("\n")) if (f.endsWith("/package.json")) pkgs.push(f.slice(0, -"/package.json".length));
+  return pkgs.sort();
+}
+
 /** Where a mirror stands: its state, and how far ahead and behind it was at the last fetch. */
 export async function mirrorStatus(env: Env, owner: string, repo: string) {
-  const r = await env.DB.prepare("SELECT artifact, crew_artifact, mirror_push_crew, mirror_primary, mirror_pull_only, branch, mirror_url, mirror_state, mirror_error, mirror_clash, mirror_down_since, mirror_synced_at, mirror_next_at, upstream_commit FROM repos WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(owner, repo).first();
+  const r = await repoRow(env, owner, repo, "artifact, crew_artifact, mirror_push_crew, mirror_primary, mirror_pull_only, mirror_path, branch, mirror_url, mirror_state, mirror_error, mirror_clash, mirror_down_since, mirror_synced_at, mirror_next_at, upstream_commit", { mirrored: true });
   const lg = localGit(env);
   if (!r || !lg) return null;
   const branch = (r.branch ?? "main") as string;
@@ -657,6 +713,10 @@ export async function mirrorStatus(env: Env, owner: string, repo: string) {
     primary: primaryOf(r.mirror_primary),
     // One-way (#1009): it pulls, and nothing it does pushes.
     pullOnly: !!r.mirror_pull_only,
+    // A folder mirror (folder-mirror.ts): the folder of upstream it mirrors, and the branch its work goes up as.
+    path: (r.mirror_path ?? null) as string | null, sends: r.mirror_path ? sendBranch(repo) : null,
+    // The workspace packages outside the folder it depends on, read-only at refs/folder-deps/<branch>.
+    deps: r.mirror_path ? await depsList(lg, r as unknown as Row, branch) : [],
   };
 }
 
@@ -670,6 +730,7 @@ export async function mirrorRepoRoute(req: Request, env: Env, owner: string, rep
     if (b.pushCrew !== undefined && typeof b.pushCrew !== "boolean") return json({ error: "pushCrew: true or false" }, 400);
     if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
     if (b.primary !== undefined && !PRIMARIES.includes(b.primary as Primary)) return json({ error: "primary: here or upstream" }, 400);
+    if (b.primary === "here" && await folderOf(env, owner, repo)) return json({ error: "a folder mirror can't lead: upstream's main takes its work through a pull request" }, 409);
     if (b.primary !== undefined) await env.DB.prepare("UPDATE repos SET mirror_primary = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.primary === "here" ? "here" : null, owner, repo).run();
     if (b.pullOnly !== undefined) await env.DB.prepare("UPDATE repos SET mirror_pull_only = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.pullOnly ? 1 : null, owner, repo).run();
     if (b.pushCrew !== undefined) await env.DB.prepare("UPDATE repos SET mirror_push_crew = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.pushCrew ? 1 : null, owner, repo).run();
@@ -1181,8 +1242,14 @@ async function clashOnlyInGit(env: Env, owner: string, repo: string, s: Setup, n
 }
 
 /** /api/repos/:o/:r/mirror/branches[/:b/pull|push]: reading is for anyone who can read the repo, the rest for its owner. */
+/** A folder mirror's folder, or null for a whole-repo mirror or any other repo. */
+const folderOf = async (env: Env, owner: string, repo: string) =>
+  ((await env.DB.prepare("SELECT mirror_path FROM repos WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(owner, repo).first())?.mirror_path ?? null) as string | null;
+const FOLDER_ONLY = "a folder mirror sends its work up as one branch of its own, so upstream's branches and tags stay upstream";
+
 export async function mirrorBranchRoute(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null) {
   if (p[5] !== "branches") return null;
+  if (await folderOf(env, owner, repo)) return json({ error: FOLDER_ONLY }, 409);
   if (!p[6] && req.method === "GET") return upstreamBranches(env, owner, repo);
   if (req.method !== "POST") return null;
   if (user !== owner) return json({ error: "owner only" }, 403);
@@ -1272,6 +1339,7 @@ export async function pushTag(env: Env, owner: string, repo: string, name: strin
 /** /api/repos/:o/:r/mirror/tags[/:name/push]: reading is for anyone who can read the repo, the rest for its owner. */
 export async function mirrorTagRoute(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null) {
   if (p[5] !== "tags") return null;
+  if (await folderOf(env, owner, repo)) return json({ error: FOLDER_ONLY }, 409);
   let run: () => Promise<unknown>;
   if (!p[6] && req.method === "GET") run = () => upstreamTags(env, owner, repo);
   else if (req.method !== "POST") return null;
@@ -1307,16 +1375,25 @@ export async function mirrorRoutes(req: Request, env: Env, p: string[], user: st
   if (!user) return json({ error: "sign in first" }, 401);
   const lg = localGit(env);
   if (!lg) return json({ error: "mirrors need git on your machine: dig it up in the desktop app" }, 501);
-  const b = await readBody<"url" | "name" | "visibility" | "pullOnly">(req);
+  const b = await readBody<"url" | "name" | "visibility" | "pullOnly" | "path" | "branch">(req);
   const src = typeof b.url === "string" ? remoteOf(b.url) : null;
   if (!src) return json({ error: "give a git remote: a GitHub owner/name, an https or ssh URL, or git@host:path" }, 400);
   if (b.name !== undefined && typeof b.name !== "string") return json({ error: "bad repo name" }, 400);
+  // One folder of it (folder-mirror.ts): {path}, or a GitHub folder URL (.../tree/<branch>/<path>).
+  let path: string | null = null, want: string | null = null;
+  const folder = typeof b.url === "string" ? parseFolder(b.url) : null;
+  if (folder) ({ branch: want, path } = await branchAndPath(src.upstream.replace(/^github:/, ""), folder));
+  if (b.path !== undefined) path = b.path as string;
+  if (b.branch !== undefined) want = typeof b.branch === "string" && !branchNameError(b.branch) ? b.branch : "";
+  if (want === "") return json({ error: "bad branch name" }, 400);
+  if (path !== null && !(path = folderPath(path))) return json({ error: "path: a folder of the repo, like apps/web" }, 400);
+  if (path) return folderMirror(env, lg, user, src, path, want, b);
   const name = b.name || src.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
   const visibility = b.visibility ?? "public";
   if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
   if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
-  if (await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(user, name).first()) return json({ error: "you already have a repo with that name" }, 409);
+  if (await repoRow(env, user, name, "1")) return json({ error: "you already have a repo with that name" }, 409);
 
   // Shallow, like a dig: upstream's history stays upstream, and our commits build on its tip.
   const art = `${user}--${name}`, dir = lg.path(art);
@@ -1333,6 +1410,41 @@ export async function mirrorRoutes(req: Request, env: Env, p: string[], user: st
   await env.DB.prepare(`INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, upstream, upstream_commit, mirror_url, mirror_pull_only, mirror_state, mirror_synced_at, mirror_next_at, mirror_fails, git_seen)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, 0, ?)`).bind(user, name, visibility, now, art, lg.remote(art), branch, src.upstream, sha, src.url, b.pullOnly ? 1 : null, now, now + EVERY, sha).run();
   return json({ owner: user, name, upstream: src.upstream, commit: sha, mirror: true, pullOnly: !!b.pullOnly }, 201);
+}
+
+/** POST /api/mirrors with a folder: a repo of upstream's folder alone, its history split out from here on. */
+async function folderMirror(env: Env, lg: LocalGit, user: string, src: { url: string; upstream: string; name: string }, path: string, want: string | null, b: Record<string, unknown>) {
+  const name = (b.name as string) || path.split("/").pop()!.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
+  const visibility = b.visibility ?? "public";
+  if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
+  if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
+  if (await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(user, name).first()) return json({ error: "you already have a repo with that name" }, 409);
+  const art = `${user}--${name}`, dir = lg.path(art), net = await remoteEnv(env, user, src.url);
+  rmSync(dir, { recursive: true, force: true });   // no row owns this name, so anything here is an orphan
+  const fail = (status: number, error: string) => { rmSync(dir, { recursive: true, force: true }); return json({ error }, status); };
+  // Upstream's default branch, unless one was named: what its HEAD points at.
+  let branch = want;
+  if (!branch) {
+    const ls = await git(["ls-remote", "--symref", src.url, "HEAD"], undefined, net, 60_000);
+    branch = /^ref: refs\/heads\/(\S+)\s+HEAD/m.exec(ls.out)?.[1] ?? null;
+    if (!branch) return fail(502, `couldn't reach ${shownUrl(src.url)}: ${ls.err || "no default branch"}`);
+  }
+  if ((await git(["init", "--quiet", "--bare", dir])).code) return fail(500, "couldn't make its git");
+  const f = await git(["fetch", "--quiet", "--no-tags", "--depth", "1", src.url, `+refs/heads/${branch}:${sourceRef(branch)}`], dir, net, 30 * 60_000);
+  if (f.code) return fail(502, `couldn't fetch ${shownUrl(src.url)} ${branch}: ${f.err}`);
+  const source = await must(["rev-parse", sourceRef(branch)], dir);
+  const tip = await split(git, dir, path, null, source, null);
+  if (!tip) return fail(404, `${branch} has no folder ${path}`);
+  await keepDeps(dir, path, branch, source);
+  for (const [ref, sha] of [[`refs/heads/${branch}`, tip], [`refs/upstream/${branch}`, tip], [splitFromRef(branch), source]]) await must(["update-ref", ref!, sha!], dir);
+  await must(["symbolic-ref", "HEAD", `refs/heads/${branch}`], dir);
+  const upstream = `${src.upstream}/tree/${branch}/${path}`;
+  lg.stamp(dir, { description: `${user}'s mirror of ${upstream}`, source: upstream });
+  const now = Date.now();
+  await env.DB.prepare(`INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, upstream, upstream_commit, mirror_url, mirror_pull_only, mirror_path, mirror_state, mirror_synced_at, mirror_next_at, mirror_fails, git_seen)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, 0, ?)`).bind(user, name, visibility, now, art, lg.remote(art), branch, upstream, tip, src.url, b.pullOnly ? 1 : null, path, now, now + EVERY, tip).run();
+  return json({ owner: user, name, upstream, commit: tip, mirror: true, pullOnly: !!b.pullOnly, path, sends: sendBranch(name) }, 201);
 }
 
 // A dug fork, turned into a mirror (#875). A dig on the desktop is a shallow clone of upstream, so its git
@@ -1361,7 +1473,7 @@ type Turn = { artifact: string; url: string; branch: string; commit: string; ahe
 async function turnable(env: Env, owner: string, repo: string): Promise<Turn | { error: string; status: number }> {
   const lg = localGit(env);
   if (!lg) return { error: "mirrors need git on your machine: turn it into one in the desktop app", status: 501 };
-  const r = await env.DB.prepare("SELECT artifact, branch, upstream, upstream_commit, mirror_url FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() as
+  const r = await repoRow(env, owner, repo, "artifact, branch, upstream, upstream_commit, mirror_url") as
     { artifact: string; branch: string | null; upstream: string | null; upstream_commit: string | null; mirror_url: string | null } | null;
   if (!r) return { error: "not found", status: 404 };
   if (r.mirror_url) return { error: "it's a mirror already", status: 409 };

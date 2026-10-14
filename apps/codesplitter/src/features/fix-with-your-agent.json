@@ -1,0 +1,5 @@
+{
+  "icon": "clipboard-copy",
+  "title": "Failures hand back a fix prompt",
+  "what": "When something breaks, a button copies a prompt for your own coding agent: what you were doing, the error, and how to send a fix upstream as a pull request."
+}

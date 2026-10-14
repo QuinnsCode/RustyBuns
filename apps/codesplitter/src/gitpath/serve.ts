@@ -5,11 +5,15 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildGitpath } from "./build.ts";
+import { buildLucide } from "../lucide-subset.ts";
 
 const app = join(import.meta.dir, "../..");
 const i = process.argv.indexOf("--port");
 const port = i > 0 ? Number(process.argv[i + 1]) : 4783;
 const out = mkdtempSync(join(tmpdir(), "gitpath-"));
+
+const lucide = join(out, "lucide.min.js");
+await buildLucide(join(app, "src"), lucide, join(out, ".lucide"));
 
 const server = Bun.serve({
   port,
@@ -18,7 +22,7 @@ const server = Bun.serve({
     if (pathname === "/" || pathname === "/gitpath" || pathname === "/gitpath.html") await buildGitpath(out);
     const file =
       pathname === "/" || pathname === "/gitpath" ? join(out, "gitpath.html")
-      : pathname === "/vendor/lucide.min.js" ? join(app, "node_modules/lucide/dist/umd/lucide.min.js")
+      : pathname === "/vendor/lucide.min.js" ? lucide
       : pathname.startsWith("/fonts/") ? join(app, "src", pathname)
       : join(out, pathname);
     // Only the three places above are ever read from: no path climbs out of them.

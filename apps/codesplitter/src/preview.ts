@@ -24,6 +24,7 @@
 import { access as artifactAccess, handleFor } from "./archive.ts";
 import { settings } from "./deploy.ts";
 import { json, type Env } from "./env.ts";
+import { repoRow } from "./repos.ts";
 
 export type StepKey = "clone" | "install" | "deploy" | "check" | "destroy" | "init" | "plan";
 export interface Step { key: StepKey; status: "waiting" | "running" | "done" | "failed" | "skipped"; out: string; ms?: number }
@@ -229,7 +230,7 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
       const d = step("deploy");
       d.status = "failed";
       d.out = opts.keep
-        ? "refused: targets.edge.adopt is on, so this deploy would take over the live Worker and its data under their real names.\nIf this repo is production, say so in the deploy settings.\n"
+        ? "refused: targets.edge.adopt is on, so this deploy would take over the live Worker and its data under their real names.\nIf this repo is production, say so in the deploy settings: set its environment to Real (CLI: --real).\n"
         : "refused: targets.edge.adopt is on, so this stack would take over the live Worker and its data under their real names, and destroy would delete them.\nTurn adopt off on a branch to preview it.\n";
       return skip("check", "destroy");
     }
@@ -281,7 +282,7 @@ export async function previewRoutes(req: Request, env: Env, p: string[], user: s
   const [owner, repo] = [p[2], p[3]], key = `${owner}/${repo}`;
   // It deploys with this machine's logins and shows the repo's output: the owner's alone.
   if (user !== owner) return json({ error: "only the repo's owner can run a preview deploy" }, 403);
-  if (!(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first())) return json({ error: "not found" }, 404);
+  if (!(await repoRow(env, owner, repo, "1"))) return json({ error: "not found" }, 404);
   const runner = runnerFor(env);
   if (req.method === "GET") {
     // On the site, the dependency doctor's previews run in the repo's deploy container (deploy-runner.ts).

@@ -31,6 +31,8 @@
 import { json, type Env, readBody } from "./env.ts";
 import { audit } from "./audit.ts";
 import { actingAs } from "./identity.ts";
+import { repoRow } from "./repos.ts";
+import { b64url, sha256 } from "./util.ts";
 
 export const SCOPES = ["read", "write", "admin"] as const;
 export type Scope = (typeof SCOPES)[number];
@@ -41,9 +43,6 @@ const MAX_TOKENS = 20;
 /** Routes a token never reaches: running the site, and the account itself. */
 const COOKIE_ONLY = new Set(["admin", "auth", "login", "logout", "handle", "tokens", "oauth"]);
 
-const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
-export const hash = async (secret: string) => hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret)));
-export const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
 /** Whether a route manages a repo rather than its code: a write token is refused it, an admin one isn't. */
 export const adminRoute = (p: string[], method: string) => {
@@ -67,7 +66,7 @@ export async function bearer(req: Request, env: Env, p: string[]): Promise<Token
   const secret = bearerOf(req);
   if (secret === null) return null;
   const now = Date.now();
-  const t = secret && await env.DB.prepare("SELECT id, name AS user, scope, label, expires_at, last_used_at, repo, grant_id IS NOT NULL AS oauth FROM api_tokens WHERE hash = ?").bind(await hash(secret)).first() as (Token & { last_used_at: number | null }) | null;
+  const t = secret && await env.DB.prepare("SELECT id, name AS user, scope, label, expires_at, last_used_at, repo, grant_id IS NOT NULL AS oauth FROM api_tokens WHERE hash = ?").bind(await sha256(secret)).first() as (Token & { last_used_at: number | null }) | null;
   if (!t || t.expires_at <= now) return json({ error: "this API token is expired, revoked or wrong: make one on your profile page" }, 401, { "www-authenticate": 'Bearer error="invalid_token"' });
   if (COOKIE_ONLY.has(p[1] ?? "")) return json({ error: "API tokens can't reach this: sign in on the site" }, 403);
   if (p.at(-1) === "ws") return json({ error: "API tokens don't open live sockets: use the HTTP routes" }, 403);
@@ -89,7 +88,7 @@ export async function mint(env: Env, user: string, label: string, scope: Scope, 
   const secret = "cst_" + b64url(crypto.getRandomValues(new Uint8Array(32)));
   const t = { id: crypto.randomUUID().slice(0, 8), label, scope, last4: secret.slice(-4), created_at: Date.now(), expires_at: Date.now() + days * DAY };
   await env.DB.prepare("INSERT INTO api_tokens (id, name, label, hash, last4, scope, created_at, expires_at, repo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(t.id, user, t.label, await hash(secret), t.last4, t.scope, t.created_at, t.expires_at, repo).run();
+    .bind(t.id, user, t.label, await sha256(secret), t.last4, t.scope, t.created_at, t.expires_at, repo).run();
   return { ...t, token: secret };
 }
 
@@ -112,7 +111,7 @@ export async function tokenRoutes(req: Request, env: Env, p: string[], user: str
     const repo = b.repo == null || b.repo === "" ? null : String(b.repo);
     if (repo !== null) {
       const [o, r, ...rest] = repo.split("/");
-      if (!o || !r || rest.length || !(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(o, r).first())) return json({ error: "repo: owner/name of one that exists" }, 400);
+      if (!o || !r || rest.length || !(await repoRow(env, o, r, "1"))) return json({ error: "repo: owner/name of one that exists" }, 400);
     }
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM api_tokens WHERE name = ? AND grant_id IS NULL AND expires_at > ?").bind(user, Date.now()).first();
     if ((n?.n as number ?? 0) >= MAX_TOKENS) return json({ error: `at most ${MAX_TOKENS} live tokens: revoke one first` }, 400);

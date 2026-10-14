@@ -54,6 +54,7 @@ import { charge, SITE } from "./limits.ts";
 import { logEnd, logStart, preview, STEPS as PREVIEW_STEPS, type Run, type Runner } from "./preview.ts";
 import { portFetch, type ContainerApi } from "./sandbox.ts";
 import { CRATES, gate, hostList, hostOf, PROVIDER_HOSTS, REGISTRIES, type GateExports } from "./egress.ts";
+import { sha256 } from "./util.ts";
 
 interface Job { owner: string; repo: string; run: Run; production: boolean; dir?: string; flags?: DeployFlags; again?: string; started?: number; preview?: { key: string; tip: string; files: Record<string, string> } }
 
@@ -72,8 +73,7 @@ const KEEP_RESULTS = 20;
 /** A preview's key: the commit it deploys, the app's folder and the files laid over it. */
 async function previewKey(tip: string, dir: string | undefined, files: Record<string, string>) {
   const text = JSON.stringify([tip, dir ?? "", Object.entries(files).sort(([a], [b]) => a.localeCompare(b))]);
-  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return sha256(text);
 }
 
 /** A run's share of the alarm's 15 minutes, leaving room to clean up after it. */

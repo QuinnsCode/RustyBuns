@@ -103,6 +103,7 @@ import { json, readBody, type Env } from "./env.ts";
 import { execCommand, fromDisk, toDisk, type Exec } from "./agent-run.ts";
 import { CLAUDE_TOOLS, FIX_HARNESSES, harnessCommand, type Command, type Harness } from "./harness.ts";
 import { hitsFor } from "./watch.ts";
+import { isLockfile, LOCK_PM } from "./lockfiles.ts";
 import { settings as deploySettings } from "./deploy.ts";
 import { hostedWhy, keysInfo } from "./deploy-keys.ts";
 import type { PreviewAnswer } from "./deploy-runner.ts";
@@ -110,6 +111,7 @@ import type { DoctorAnswer } from "./ci-runner.ts";
 import { charge } from "./limits.ts";
 import { scopedTest } from "../sandbox/scoped.mjs";
 import { logEnd, logStart, preview, runnerFor, runs as livePreviews, STEPS as PREVIEW_STEPS, type Run as PreviewDeploy } from "./preview.ts";
+import { repoRow } from "./repos.ts";
 
 export type Level = "patch" | "minor" | "major";
 const LEVELS: Level[] = ["patch", "minor", "major"];
@@ -296,7 +298,7 @@ async function homeNpmrc(env: Env): Promise<Npmrc | null> {
 }
 
 export type PM = "bun" | "npm" | "pnpm" | "yarn";
-const LOCKS: Record<string, PM> = { "bun.lock": "bun", "bun.lockb": "bun", "pnpm-lock.yaml": "pnpm", "yarn.lock": "yarn", "package-lock.json": "npm" };
+const LOCKS: Record<string, PM> = LOCK_PM;
 
 /** The repo's package manager, from package.json's packageManager or its lockfile; bun when there's neither. */
 export function packageManager(top: string[], pkg: Record<string, any>): { pm: PM; lock: string | null } {
@@ -706,7 +708,6 @@ export const localRegenerator = (timeoutMs = 10 * 60_000): Regenerator => (remot
     return { ok: true, out: r.out, files: Object.fromEntries(read.filter((p) => existsSync(join(repo, p))).map((p) => [p, readFileSync(join(repo, p), "utf8")])) };
   }, (out) => ({ ok: false, out }));
 
-const LOCKFILES = /(^|\/)(bun\.lockb?|package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$/;
 
 /**
  * The coding agent runs in a full clone (it needs the history), with the
@@ -747,7 +748,7 @@ export const localFixer = (exec: Exec = execCommand, timeoutMs = 10 * 60_000): F
     const edits: Edit[] = [];
     for (const line of status) {
       const path = line.slice(3).trim();
-      if (!path || line.startsWith(" D") || path in job.files || LOCKFILES.test(path) || path.startsWith("node_modules/")) continue;
+      if (!path || line.startsWith(" D") || path in job.files || isLockfile(path) || path.startsWith("node_modules/")) continue;
       const before = line.startsWith("??") ? null : (await run(["git", "show", `HEAD:${path}`])).out.replace(/^.*\n/, "");
       edits.push({ path, before, after: readFileSync(join(repo, path), "utf8") });
     }
@@ -1621,7 +1622,7 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
   const [owner, repo] = [p[2], p[3]];
   // Settings and reports quote the repo's test output, so they're the owner's alone.
   if (user !== owner) return json({ error: "only the repo's owner can see its dependency doctor" }, 403);
-  if (!(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first())) return json({ error: "not found" }, 404);
+  if (!(await repoRow(env, owner, repo, "1"))) return json({ error: "not found" }, 404);
   await env.DB.prepare("INSERT OR IGNORE INTO dep_watches (owner, repo) VALUES (?, ?)").bind(owner, repo).run();
 
   if (!p[5] && req.method === "GET") {
