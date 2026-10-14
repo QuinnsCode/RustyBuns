@@ -5,7 +5,7 @@
 
 import { rankOf } from "./policy.ts";
 import { fromText } from "./lines.ts";
-import { mainClosed, protectRoute } from "./protect.ts";
+import { mainClosed, policyClosed, protectRoute } from "./protect.ts";
 import {
   ensureCrewRemote,
   fileStub,
@@ -697,7 +697,7 @@ async function route(req: Request, env: Env): Promise<Response> {
         if (!(await openBranch(env, owner, repo, branch))) return json({ error: "no open branch " + branch }, 404);
         return createOn(env, owner, repo, branch, path, content, user!);
       }
-      const closed = await mainClosed(env, owner, repo, user);
+      const closed = policyClosed(owner, path, user) ?? await mainClosed(env, owner, repo, user);
       if (closed) return closed;
       const r = await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, path).run();
       if (!r.meta?.changes) return json({ error: "file exists" }, 409);
@@ -716,6 +716,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       const writes = p[5] === "ops" || p[5] === "commit" || ((p[5] === "private" || p[5] === "claims" || p[5] === "release") && req.method === "POST");
       if (writes && !a.write) return json({ error: "no write access" }, 403);
       if (writes && !branch) { const closed = await mainClosed(env, owner, repo, user); if (closed) return closed; }
+      if ((writes || p[5] === "ws") && !branch && a.write) { const closed = policyClosed(owner, path, user); if (closed) return closed; }
       // On the desktop, a push to the repo's git from outside reaches main's files when they're opened or
       // committed, so a commit here never writes their old lines back over it (#773).
       if (!branch && (p[5] === "commit" || (p[5] === "file" && req.method === "GET")) && mirrorsOn(env)) await landPushes(env, owner, repo).catch(() => {});
