@@ -57,6 +57,15 @@ describe("clashIn", () => {
 });
 
 describe("GET /api/repos/:o/:r/merge-plan", () => {
+  test("GET /api/mervin names the engine and gives his corpus", async () => {
+    const call = await boot({ GH_CLI: "off" });
+    opened.push(call);
+    const r = await call(null, "/api/mervin");
+    const m = await r.json() as { name: string; corpus: { files: number; settled: number; asked: number; other: number } };
+    expect(m.name).toBe("Mervin");
+    expect(m.corpus.settled + m.corpus.asked + m.corpus.other).toBe(m.corpus.files);
+  });
+
   test("two branches on one line go in two waves, as does one stacked on another; the rest merge with the first", async () => {
     const call = await boot({ GH_CLI: "off" });
     opened.push(call);
@@ -75,7 +84,7 @@ describe("GET /api/repos/:o/:r/merge-plan", () => {
     const r = await call("ana", "/api/repos/ana/r/merge-plan");
     expect(r.status).toBe(200);
     expect(await r.json()).toEqual({
-      order: ["b1", "b2", "b3", "b4", "b5"], held: [],
+      engine: "Mervin", order: ["b1", "b2", "b3", "b4", "b5"], held: [],
       waves: [
         [{ branch: "b1", after: [] }, { branch: "b3", after: [] }, { branch: "b4", after: [] }],
         [{ branch: "b2", after: [{ branch: "b1", files: ["a.ts"] }] }, { branch: "b5", after: [{ branch: "b3", files: [], stacked: true }] }],

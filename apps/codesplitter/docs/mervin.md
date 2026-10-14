@@ -102,8 +102,9 @@ not silent mistakes, and Ruby has no `lint.ts` guard (see below).
   with a text. Where the repo has a `package.json` with a `test` or `build` script and test merges is on, that script runs on the merged tree first, and a failure comes back as a `lint:tests` conflict (#1401), settled as the branch to land anyway. Repos with no `package.json` (git/git's make) are still only flagged.
 - **Never run on anyone else's history until now.** The 80% goal in this doc is about seeing fights coming; the
   recall number for it (mervin-score) still needs a corpus that keeps real merges (the `lines` predictor is in).
-- **Invisible.** The name is in no UI string, README line or API field; the merge engine is the strongest answer
-  to the contest's conflict-handling criterion and a judge cannot see it.
+- **Visible now, thinly.** The merge plan line and `GET /api/repos/:o/:r/merge-plan` (`engine`) name him, and the repo page
+  and `GET /api/mervin` show the git/git corpus (settled / asked / other text, `src/mervin.ts`). The numbers there are
+  this doc's table, not a live per-repo tally, and the merge page does not credit him per file yet.
 
 ## Corpus to pull in
 
