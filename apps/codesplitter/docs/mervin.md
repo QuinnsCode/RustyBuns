@@ -150,7 +150,7 @@ commit wrote it, or, on a contested line, as exactly one of the texts offered. A
 lands fails the run. Nothing leaves the machine.
 
 First pass on expressjs/express (2026-10-13, 60 conflicted merges, 183 files): 21 solved, 38 wrong, 122 cards, 138 human edits kept.
-Most cards are `package.json` (both sides bump dependencies and scripts), the first lesson file to read. The pretend team on the
+Most cards were `package.json` (both sides bump dependencies and scripts), so `package.json` now merges by key (`src/manifest.ts`): each key on its own, the higher version when both bumped one, and a card only for a script or field both rewrote. Same sample after: 36 solved, 44 wrong, 101 cards. The extra wrong are mostly people keeping the older version or moving a key, which no engine can know. The pretend team on the
 latest 5 commits: 13 files, 4 exact, 9 settled on contested lines, 0 lost, 0 stuck.
 
 ## Where Mervin is weak

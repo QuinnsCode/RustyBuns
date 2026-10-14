@@ -78,3 +78,36 @@ test("the engine keeps the human edit to a merge, and never replays a merge twic
   expect(second.fresh).toBe(0);
   expect(readFileSync(join(home, "lessons.jsonl"), "utf8").trim().split("\n")).toHaveLength(1);
 }, 60000);
+
+import { higher, mergeManifest } from "../src/manifest.ts";
+import { fromText, merge, apply, empty, text } from "../src/lines.ts";
+
+const pkg = (o: object) => JSON.stringify(o, null, 2) + "\n";
+test("a package.json both sides touched merges by key: new keys land sorted, the higher bump wins", () => {
+  const base = pkg({ name: "x", scripts: { test: "t" }, dependencies: { a: "^1.0.0", c: "^1.0.0" } });
+  const main = pkg({ name: "x", scripts: { test: "t", lint: "l" }, dependencies: { a: "^1.2.0", c: "^1.0.0" } });
+  const branch = pkg({ name: "x", scripts: { test: "t", build: "b" }, dependencies: { a: "^2.0.0", b: "^1.0.0", c: "^1.0.0" } });
+  expect(JSON.parse(mergeManifest(base, main, branch)!)).toEqual({ name: "x", scripts: { test: "t", lint: "l", build: "b" }, dependencies: { a: "^2.0.0", b: "^1.0.0", c: "^1.0.0" } });
+  // A script both rewrote is a guess: not settled here.
+  expect(mergeManifest(base, pkg({ scripts: { test: "one" } }), pkg({ scripts: { test: "two" } }))).toBeNull();
+  expect(higher("^1.2.0", "~1.10.0")).toBe("~1.10.0");
+  expect(higher("latest", "^1")).toBeNull();
+});
+
+test("the line merge no longer asks on neighbouring dependency bumps in package.json, and still asks on other files", () => {
+  const base = pkg({ dependencies: { a: "^1.0.0", b: "^1.0.0" } });
+  const side = (t: string) => { const d = empty(); apply(d, fromText(base), "base"); return d; };
+  const run = (path: string) => {
+    const [b, m, br] = [side(base), side(base), side(base)];
+    apply(m, [{ kind: "set", line: m.lines[2]!.id, base: m.lines[2]!.rev, text: '    "a": "^1.1.0",' }], "main");
+    apply(br, [{ kind: "set", line: br.lines[2]!.id, base: br.lines[2]!.rev, text: '    "a": "^1.2.0",' }], "branch");
+    return merge(b, br, m, {}, "branch", path, "branch");
+  };
+  expect(run("notes.json").conflicts.length).toBeGreaterThan(0);
+  const r = run("package.json");
+  expect(r.conflicts).toEqual([]);
+  const m = side(base);
+  apply(m, [{ kind: "set", line: m.lines[2]!.id, base: m.lines[2]!.rev, text: '    "a": "^1.1.0",' }], "main");
+  expect(apply(m, r.ops, r.by).ok).toBe(true);
+  expect(text(m)).toContain('"a": "^1.2.0"');
+});

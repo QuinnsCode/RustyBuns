@@ -13,7 +13,8 @@
 import { parse as parseToml } from "smol-toml";
 import type { Rule } from "./policy.ts";
 import { parseAllDocuments } from "yaml";
-import { alike, keptPairs } from "./sync.ts";
+import { alike, diffToOps, keptPairs } from "./sync.ts";
+import { isManifest, mergeManifest } from "./manifest.ts";
 
 export interface Line { id: string; text: string; by: string; rev: number }
 
@@ -182,6 +183,9 @@ export function kindOf(path: string): Kind {
  * Each lists the `facts` the sides disagree on. A pick for `check:<line>` settles
  * the stretch as a conflict's would (a text of the writer's, say, the facts fixed).
  *
+ * A package.json the lines merge would ask on merges by key instead (src/manifest.ts): each key on its own, the higher
+ * version when both bumped one, and a card only for a script or field both rewrote.
+ *
  * A generated region both sides changed keeps main's copy and names the
  * command that rebuilds it in `regenerate` (see generated).
  *
@@ -192,7 +196,15 @@ export function kindOf(path: string): Kind {
  */
 export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, deleter = "anon", path = "", writer = deleter, rule: Rule = kindOf(path)): { ops: Op[]; by: string[]; conflicts: Conflict[]; checks?: Conflict[]; regenerate?: string[] } {
   const g = generated(base, branch, main);
-  const m = mergeLines(base, g.branch, main, given, deleter, path, writer, rule);
+  let m = mergeLines(base, g.branch, main, given, deleter, path, writer, rule);
+  // A package.json the lines merge asks on: merge it by key (src/manifest.ts), unless the writer already answered a card.
+  if (m.conflicts.length && !Object.keys(given).length && isManifest(path)) {
+    const keyed = mergeManifest(text(base), text(main), text(g.branch));
+    if (keyed !== null) {
+      const ops = diffToOps(main.lines, keyed.split("\n"));
+      m = { ops, by: ops.map(() => writer), conflicts: [] };
+    }
+  }
   return g.regenerate.length ? { ...m, regenerate: g.regenerate } : m;
 }
 
