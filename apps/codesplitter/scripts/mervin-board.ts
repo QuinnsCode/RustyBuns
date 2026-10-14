@@ -76,6 +76,7 @@ export const TIERS: Tier[] = ["certain", "agree", "mervin", "differ", "card"];
 
 export interface BoardPr {
   number: number; title?: string; body?: string; headRefOid: string; headRefName?: string; baseRefName?: string;
+  autoMergeRequest?: object | null;
   statusCheckRollup?: { name?: string; conclusion?: string | null; status?: string; startedAt?: string; completedAt?: string }[];
 }
 /** The PR's own CI: red on its own means a failure in the merged tree may be the PR's, not the merge's. */
