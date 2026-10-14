@@ -54,6 +54,16 @@ export const HELPERS = {
 export type Helper = keyof typeof HELPERS;
 export const isHelper = (n: string): n is Helper => Object.hasOwn(HELPERS, n);
 
+/** The repo root for `script`: the first floor dir, or a parent of one (a floor may sit in apps/agent-office), that holds it. */
+export function repoWith(script: string, dirs: Iterable<string>): string | null {
+  for (const d of dirs)
+    for (let dir = path.resolve(d); ; dir = path.dirname(dir)) {
+      if (existsSync(path.join(dir, script))) return dir;
+      if (dir === path.dirname(dir)) break;
+    }
+  return null;
+}
+
 /** One helper: `start` begins a run in a floor's repo unless one is going, `state` is how it stands. */
 export function createHelper(h: { script: string; cwd: string; args: readonly string[] }, spawn: Spawn = bunSpawn, bun = "bun") {
   let s: EsterState = { phase: "idle", lines: [], hold: [] };
@@ -62,7 +72,7 @@ export function createHelper(h: { script: string; cwd: string; args: readonly st
     /** Starts the run in `repo`. It goes on after this answers; null when it did start. */
     start(repo: string): { status: number; error: string } | null {
       if (s.phase === "running") return { status: 409, error: "Already on it" };
-      if (!existsSync(path.join(repo, h.script))) return { status: 404, error: `This helper works from ${h.script}, and this floor's repo doesn't have it` };
+      if (!existsSync(path.join(repo, h.script))) return { status: 404, error: `This helper works from ${h.script}, and ${repo} doesn't have it` };
       s = { phase: "running", lines: [], hold: [], startedAt: Date.now() };
       const mine = s;
       spawn([bun, path.join(repo, h.script), ...h.args], path.join(repo, h.cwd), (line) => {
