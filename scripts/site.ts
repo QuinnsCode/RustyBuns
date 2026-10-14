@@ -2,7 +2,7 @@
 // tree plus a folder per release tag, read from git, so every version's docs match its code.
 // `bun run site --check` (typecheck.yml runs it) builds only latest, into a temp dir, and fails on any
 // link inside the site that doesn't land on a page or heading.
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { atTag, buildSite, shown, tags, worktree } from "./site/lib.ts";
@@ -22,6 +22,10 @@ for (const { dir, site, tags: pattern } of sites) {
   const sources = [worktree(), ...(check ? [] : tags(pattern).map(atTag))];
   problems.push(...buildSite(site, join(root, dir), sources, dir).map((p) => `${dir}: ${p}`));
   if (!check) console.log(`${site.name}: ${sources.map((s) => s.version).join(", ")} -> ${shown(join(root, dir))}/index.html`);
+}
+if (!check) {
+  const links = sites.map(({ dir, site }) => `<li><a href="${dir}/latest/">${site.name}</a></li>`).join("");
+  writeFileSync(join(root, "index.html"), `<!doctype html><meta charset="utf-8"><title>Docs</title><ul>${links}</ul>\n`);
 }
 if (check) rmSync(root, { recursive: true, force: true });
 if (problems.length) {

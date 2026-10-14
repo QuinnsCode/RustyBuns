@@ -1,0 +1,6 @@
+{
+  // The docs sites: a Worker with static assets and no code. `bun run site` builds dist/site/ first.
+  "name": "rustybuns-docs",
+  "compatibility_date": "2026-06-01",
+  "assets": { "directory": "../../dist/site", "html_handling": "auto-trailing-slash" }
+}
