@@ -11,6 +11,7 @@ import { json, NAME, type Env, readBody } from "./env.ts";
 import { importTarball, tooBigToImport } from "./tarball.ts";
 import { git, mirrorsOn, seeGit } from "./mirror.ts";
 import { wipeSearch } from "./search.ts";
+import { repoRow } from "./repos.ts";
 import { hex } from "./util.ts";
 
 /** A visitor's dig lasts a day; past the cap, the oldest goes first. Admins' digs keep. */
@@ -126,7 +127,7 @@ export async function branchAndPath(repo: string, rest: string, token?: string):
 
 /** Forget a repo: its rows, its files' Durable Objects, and its git. An expired dig goes this way, and so does a repo its owner deletes. */
 export async function evict(env: Env, owner: string, name: string) {
-  const r = await env.DB.prepare("SELECT artifact, crew_artifact, old_artifacts FROM repos WHERE owner = ? AND name = ?").bind(owner, name).first();
+  const r = await repoRow(env, owner, name, "artifact, crew_artifact, old_artifacts");
   const { results: files } = await env.DB.prepare("SELECT path, NULL AS branch FROM files WHERE owner = ? AND repo = ? UNION ALL SELECT path, branch FROM branch_files WHERE owner = ? AND repo = ?")
     .bind(owner, name, owner, name).all();
   await Promise.all((files as { path: string; branch: string | null }[]).map((f) =>
@@ -438,7 +439,7 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     // imported" on Cloudflare and would block the name for good (#348).
     const ready = (async () => {
       await makeRoom(env, 0);
-      if (await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(user, name).first()) return false;
+      if (await repoRow(env, user, name, "1")) return false;
       await env.ARTIFACTS!.delete?.(`${user}--${name}`).catch(() => false);
       return true;
     })();

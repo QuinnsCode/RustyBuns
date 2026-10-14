@@ -3,6 +3,7 @@
 // is a playlist of code you like. Plain fetch handler: it runs as a Worker on
 // Cloudflare and in-process under Bun on the desktop.
 
+import { rankOf } from "./policy.ts";
 import { fromText } from "./lines.ts";
 import { mainClosed, protectRoute } from "./protect.ts";
 import {
@@ -15,6 +16,7 @@ import {
   pushCatalogue,
   toFile,
 } from "./archive.ts";
+import { repoRow } from "./repos.ts";
 import {
   code,
   json,
@@ -197,6 +199,7 @@ import {
   searchRoutes,
 } from "./search.ts";
 import { pulseRoutes } from "./pulse.ts";
+import { askUsage, forget, sweepConflicts } from "./usage.ts";
 import { hasPage, pageRoutes } from "./page.ts";
 import { seenRoutes } from "./seen.ts";
 import { settingsRoutes } from "./settings.ts";
@@ -243,7 +246,7 @@ export { EgressGate } from "./egress.ts";
 
 async function access(env: Env, owner: string, repo: string, user: string | null) {
   // A visitor's dig that has expired is gone, swept or not.
-  const r = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ? AND (expires_at IS NULL OR expires_at > ?)").bind(owner, repo, Date.now()).first();
+  const r = await repoRow(env, owner, repo, "visibility", { liveAt: Date.now() });
   if (!r) return { read: false, write: false, exists: false };
   const collab = user ? await env.DB.prepare("SELECT 1 FROM collaborators WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, user).first() : null;
   const write = user === owner || !!collab;
@@ -404,17 +407,21 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (!user) return json({ error: "sign in first" }, 401);
     if (req.method === "PUT") {
       // Only what's sent changes, so turning the pulse off leaves the bio be.
-      const b = await body<"bio" | "theme_html" | "pulse" | "git_truth" | "avatar">();
+      const b = await body<"bio" | "theme_html" | "pulse" | "git_truth" | "avatar" | "share_usage">();
+      if (b.share_usage !== undefined && typeof b.share_usage !== "boolean") return json({ error: "share_usage: true or false" }, 400);
       if (b.pulse !== undefined && typeof b.pulse !== "boolean") return json({ error: "pulse: true or false" }, 400);
       if (b.git_truth !== undefined && !TRUTHS.includes(b.git_truth as Truth)) return json({ error: `git_truth: ${TRUTHS.join(", ")}` }, 400);
       if ((b.bio !== undefined && typeof b.bio !== "string") || (b.theme_html !== undefined && typeof b.theme_html !== "string")) return json({ error: "bio and theme_html: text" }, 400);
       // avatar: the parts (src/avatar.ts), or null to take it off.
       const avatar = b.avatar === undefined ? null : b.avatar === null ? "" : cleanAvatar(b.avatar);
       if (avatar === null && b.avatar !== undefined) return json({ error: `avatar: every part (${Object.keys(PARTS).join(", ")}), each one of its options, colors as #rrggbb` }, 400);
-      await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth), avatar = COALESCE(?, avatar) WHERE name = ?")
-        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, avatar === null ? null : avatar === "" ? "" : JSON.stringify(avatar), user).run();
+      await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth), avatar = COALESCE(?, avatar), share_usage = COALESCE(?, share_usage) WHERE name = ?")
+        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, avatar === null ? null : avatar === "" ? "" : JSON.stringify(avatar), b.share_usage === undefined ? null : b.share_usage ? 1 : 0, user).run();
+      // Saying no (or changing your mind) takes back what was shared (usage.ts).
+      if (b.share_usage === false) await forget(env, user).run();
     }
-    return json(await env.DB.prepare("SELECT * FROM users WHERE name = ?").bind(user).first());
+    // ask_usage: a private-repo owner who hasn't answered yet gets the "help improve" modal (usage.ts).
+    return json({ ...(await env.DB.prepare("SELECT * FROM users WHERE name = ?").bind(user).first()), ask_usage: await askUsage(env, user) });
   }
 
   // GET /api/users/:name/(pulse|pulse.png|share) and /api/pulse: heartbeats (pulse.ts)
@@ -461,7 +468,7 @@ async function route(req: Request, env: Env): Promise<Response> {
 
     // GET /api/repos/:o/:r
     if (!p[4] && req.method === "GET") {
-      const r = await env.DB.prepare("SELECT owner, name, visibility, level, branch, upstream, upstream_commit, upstream_tip, upstream_behind, upstream_heard_at, created_at, expires_at, mirror_url IS NOT NULL AS mirror, mirror_pull_only IS 1 AS pullOnly FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+      const r = await repoRow(env, owner, repo, "owner, name, visibility, level, branch, upstream, upstream_commit, upstream_tip, upstream_behind, upstream_heard_at, created_at, expires_at, mirror_url IS NOT NULL AS mirror, mirror_pull_only IS 1 AS pullOnly");
       const { results: collaborators } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all();
       // Anyone who can read the repo can clone its artifact, with an hour-long read token;
       // the crew also gets their own remote's, with private lines' real text, once there is one.
@@ -507,7 +514,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     }
     // POST /api/repos/:o/:r/shares {path, from, to, note}  a live link to some lines
     if (p[4] === "shares" && req.method === "POST") {
-      const v = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+      const v = await repoRow(env, owner, repo, "visibility");
       return createShare(env, owner, repo, user, a, v?.visibility === "private", await body());
     }
     // GET|POST|DELETE /api/repos/:o/:r/stamps  react to lines, by id (stamps.ts)
@@ -521,7 +528,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (p[4] === "fit" && req.method === "GET") return repoFit(env, (r) => app.fetch(r, env), url.origin, owner, repo, user, url.searchParams.get("dir") ?? "");
     // GET /api/repos/:o/:r/graph[?limit=60]  main's commits, newest first, with the branches merged into them, each upstream's or this copy's
     if (p[4] === "graph" && !p[5] && req.method === "GET") {
-      const r = await env.DB.prepare("SELECT upstream_commit FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+      const r = await repoRow(env, owner, repo, "upstream_commit");
       const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit")) || 60));
       try {
         const h = await handleFor(env, owner, repo);
@@ -541,7 +548,7 @@ async function route(req: Request, env: Env): Promise<Response> {
         const h = await handleFor(env, owner, repo);
         if (!h) return json({ repo: `${owner}/${repo}`, ...(path ? { path, commits: [] } : { files: [] }) });
         // A repo dug from GitHub has only its import in its own git; what came before is read from GitHub (gitpath-upstream.ts).
-        const r = await env.DB.prepare("SELECT upstream, upstream_commit, branch FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() as UpstreamRepo | null;
+        const r = await repoRow(env, owner, repo, "upstream, upstream_commit, branch") as UpstreamRepo | null;
         const token = (await githubToken(env, user).catch(() => null))?.token;
         if (path) {
           const own = await fileHistory(h.handle, h.branch, path, limit);
@@ -726,7 +733,10 @@ async function route(req: Request, env: Env): Promise<Response> {
         if (holding.length) return json({ error: `you hold lines in ${holding.map((h) => h.path).join(", ")}: let go of them before you wait in line here, or work elsewhere`, holding }, 409);
       }
       // How the path takes live edits (#1011), read as the merge reads it: main's .gitattributes over the defaults.
-      const live = (p[5] === "ops" || p[5] === "ws" || (p[5] === "claims" && req.method === "POST")) && a.write ? (await pathPolicy(env, owner, repo, path, user!)).live : undefined;
+      const pol = (p[5] === "ops" || p[5] === "ws" || (p[5] === "claims" && req.method === "POST")) && a.write ? await pathPolicy(env, owner, repo, path, user!) : undefined;
+      const live = pol?.live;
+      // A repo that ranks its agents (codesplitter-order=rank) lets a higher rank step ahead of lower ones in line.
+      const rank = pol?.order === "rank" && p[5] === "claims" ? String(rankOf(pol.rank, user ?? "anon")) : undefined;
       if (p[5] === "ws") {
         // The DO learns who this socket is, and whether it may write, from us.
         const h = new Headers(req.headers);
@@ -745,7 +755,7 @@ async function route(req: Request, env: Env): Promise<Response> {
         return fileStub(env, owner, repo, path, branch).fetch(new Request(req.url, { headers: h }));
       }
       // Only the crew reads private lines; everyone else gets placeholders.
-      const res = await toFile(env, owner, repo, path, user ?? "anon", p[5]!, { method: req.method, body: sent, headers: { "x-codesplitter-crew": a.write ? "1" : "0", ...(live && { "x-codesplitter-live": live }) } },
+      const res = await toFile(env, owner, repo, path, user ?? "anon", p[5]!, { method: req.method, body: sent, headers: { "x-codesplitter-crew": a.write ? "1" : "0", ...(live && { "x-codesplitter-live": live }), ...(rank !== undefined && { "x-codesplitter-rank": rank }) } },
         url.searchParams.has("rev") ? `?rev=${url.searchParams.get("rev")}` : url.searchParams.has("since") ? `?since=${url.searchParams.get("since")}` : p[5] === "file" && (url.searchParams.has("from") || url.searchParams.has("limit")) ? `?${new URLSearchParams([...url.searchParams].filter(([k]) => k === "from" || k === "limit"))}` : "", branch);
       if (p[5] === "private" && req.method === "POST" && res.ok) {
         // From the first private line on, the crew has a remote of its own to clone and deploy from.
@@ -875,6 +885,7 @@ const app = {
     ctx.waitUntil(sweepLimits(env));
     ctx.waitUntil(sweepTraffic(env));
     ctx.waitUntil(sweepLineEvents(env));
+    ctx.waitUntil(sweepConflicts(env));
     ctx.waitUntil(sweepOAuth(env));
     if (accountsOn(env)) ctx.waitUntil(sweepSessions(env));
     ctx.waitUntil(drainJobs(env, (r) => app.fetch(r, env)));

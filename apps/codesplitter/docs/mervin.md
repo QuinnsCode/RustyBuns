@@ -20,6 +20,13 @@ human minds are free to steer the digsite.
 
 Design note for running it locally and on Cloudflare: [mervin-engine.md](mervin-engine.md).
 
+## The live count
+
+Every merge that lands adds to a counter, and every stretch both sides changed that Mervin blended with no card and
+nobody picking a side adds to a second one. `GET /api/stats` returns `{merges, solved}` and the landing page shows
+them. D1 (`site_stats`) holds the counts; the `STATS` KV namespace holds a copy for a minute, so a visit is one KV read
+and D1 is read about once a minute (`src/stats.ts`).
+
 ## The goal: 80% of fights seen coming
 
 A PR "fights" when git's merge of it onto main conflicts. Mervin's goal is to flag **80% of the PRs that
@@ -181,6 +188,14 @@ It only reads git and `gh pr list`. It never writes a ref, pushes or touches a w
 own folder, so agents can run it side by side. `--check` builds in shadow.ts's sandbox (empty HOME, none of
 the shell's env).
 
+Reruns are incremental. Each stage is cached in `.mervin/board-cache` (`--cache <dir>` to move it, `--no-cache` to
+redo everything) by main's sha, the PR's head and the state of every file it touches, so a push to one PR reruns
+that stage and only the later ones that share files with it; PRs with no files in common never invalidate each
+other. `--check` installs once and runs the typecheck and the touched apps' tests side by side, as CI does. A
+missing dependency (no `node_modules`) stops the board at the start with "run `bun install`". The board prints
+total wall time and per-stage time. Measured 2026-10-13 on 12 open PRs (59 file merges): 35.6s cold, 12.2s rerun with
+every stage cached (7.0s of it merging, the rest `gh` and writing the tree).
+
 Merge the board for real the usual way: PRs, CI, the merge round. The sandbox tree is a forecast and never
 gets pushed. Afterwards `--score` compares each file the sandbox wrote with main: **exact**, **close** (same
 lines reordered, or only indentation differs), **wrong** (a silent bad merge, so make it a fixture in
@@ -262,6 +277,44 @@ that owns the repo.
 Open: event schema, retention, and whether Pipelines-to-Iceberg or plain R2 NDJSON plus R2 SQL is cheaper at
 our volume (price it first, per the contest cost rule).
 
+### Cascade files: land them up front or at the end (idea, not built)
+
+Some files make every other PR fight: a lockfile, a shared `types.ts`, a barrel `index.ts`, a migration folder, a
+README table. Merge one early and each open PR that touched it goes stale and needs a rebuild; merge it late
+and it keeps clashing with whatever landed before. Mervin can learn which paths do this per repo and use it to
+order the round.
+
+**Measure.** A path's cascade score is how many *other* open PRs it turns stale or carded when a PR touching it
+lands. Two sources, both with no file contents: the overlap map in the MervinDO (how many open PRs touch the path
+right now), and the history above (how often the path's merges ended as a `card`, grouped by path hash and
+extension). Keep a score per path, per directory and per extension, so a new file in a known-bad directory
+starts with its neighbours' score.
+
+**Order.** Two choices per cascade path, picked by what the PR looks like:
+
+- *Up front* when the change is small and mechanical (a lockfile bump, a version banner, a regenerated table):
+  land it first so every later PR rebuilds once onto the settled file.
+- *At the end* when it is a big hand edit nobody else depends on: let the small PRs go first so it rebases once
+  instead of on every wave.
+- The learned weight only breaks ties in `order` (`scripts/mervin-board.ts`). Stacking and CI holds still win, and
+  a PR is never moved ahead of the PR it is stacked on.
+
+**By language.** Cascade is learned per programming language as well as per path, because languages fail
+differently: a `Cargo.lock` or `bun.lock` cascades, a Rust module rarely does, and Mervin settles JS/TS and HTML
+by parsing but only flags the rest (see "Where Mervin is weak"). Language comes from the extension and
+`.gitattributes` (`linguist-language`), with `linguist-generated` marking lockfiles and regenerated files as
+up-front candidates. Each language keeps its own score and its own up-front/at-the-end lean for the repo.
+
+**Mini tag.** The plan line, the board and the PR card show a small language tag like GitHub's: a colored dot and
+the name (`TypeScript`, `Rust`, `Markdown`), one per language the PR touches, biggest first, at most three. A
+cascading language gets a small down-arrow for "goes first" or up-arrow for "goes last", with the reason as
+the tooltip. Colors are fixed per language, not learned, and the tag is an icon plus a word, never a wrapping label.
+
+**Report.** Show the score on the plan line (`wave 1, first: lockfile cascades 6 PRs`) so a person sees why a PR
+was moved, and a PR list given by hand (`bun scripts/mervin-merge.ts 12 9 14`) already beats any learned weight.
+
+Open: whether to let a repo mark paths as cascade by hand in `.gitattributes` before enough history exists.
+
 ## Corpus to pull in
 
 Busy repos that keep real merge commits, cloned in full (not shallow) to a scratch directory. Done: git/git and rails/rails (above).
@@ -269,3 +322,27 @@ Tried: rust-lang/cargo, which merges only green PRs through bors, so 1 of 1,600 
 Tried: pingdotgg/t3code, which squash-merges: 15 merge commits in 5,473, so no corpus either.
 Still to check: a Linux subsystem tree, Django. Reference engines to compare against, not to vendor yet:
 Mergiraf (structured merge; over the 29 hunks in [merge-solutions.md](merge-solutions.md#12-mergiraf-over-the-same-hunks) it settled 6 and nothing L3 doesn't; still to try on a corpus with moved and reordered code), Spork and IntelliMerge (tree matching).
+
+## The live board (#1524)
+
+`scripts/mervin-live.ts` keeps one picture of the open PRs on codeSplitter: every 30 seconds it stages the board again when a
+PR's head, its CI or main moved, and posts the rows that changed (`POST /api/repos/:o/:r/board`). Each row has the PR's own CI,
+what it's stacked on, its files per tier, its clashes, the Agent Office worker that owns it (`office-workers list --json`), and,
+for a PR touching `package.json`, `bun.lock` or `packages/`, the apps and PRs it reaches. When PRs merge, the board they were
+staged on is scored against main and the tiers' hit rates are kept. The UI (the branches panel) and the MCP tool `get_board` read
+it: `waves` and `mergeable` come off the rows, and `get_board` with `pr` says what blocks that PR, who should take it, and what it blocks.
+
+```sh
+CODESPLITTER_TOKEN=... bun scripts/mervin-live.ts --url https://<codesplitter> --repo owner/name   # --once, --dry
+```
+
+## Dependency fights (#1477)
+
+`src/dep-docs.ts` (imports only `manifest.ts`; the registry, OSV and the sandbox are arguments, so tests are offline):
+
+- `detectDependencyFiles` finds manifests and the lockfiles that follow them across npm (with workspace members), Cargo, Python, Go and Ruby.
+- `settleDeps` asks the dependency's docs (`npmDocs`: npm deprecation and README notes, OSV advisories) when both sides bumped one across a major. Safe docs take the higher version; a breaking finding, no docs or a spent lookup budget gives a card ("x 1.3 to 2.0 renames `foo`; branch uses it at src/a.ts:12").
+- `mergeTable` merges `Cargo.toml`, `pyproject.toml` and `go.mod` dependency tables by key, as `manifest.ts` does for `package.json`.
+- `proveMerge` installs and builds the merged tree in a sandbox that is destroyed on success, failure and throw. Lookups and sandbox runs each draw on a `Budget`, so a pass and a repo have a cap.
+
+Not wired into the live merge yet (it is async, `lines.merge` is sync), and express, rails and git/git have not been re-run against the table above.

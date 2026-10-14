@@ -357,6 +357,18 @@ const OPS: Record<string, Record<string, Op>> = {
       "Merge a wave and the next one's branches that name one of them in `after` take main in by themselves, once (merge_branch's `took`). Reading the plan keeps each branch's `after`: its own checks wait till those have merged, so they run once.",
     ok: obj({ engine: str("the merge engine that planned it: Mervin"), order: arr(str("a branch name")), held: arr(str("a branch its required checks hold")),
       waves: arr(arr(obj({ branch: str(), after: arr(obj({ branch: str("one it waits for"), files: arr(str("where they clash")), stacked: bool("it's built on that one") })) }))) }) } },
+  [`${repo}/board`]: {
+    get: { id: "get_board", summary: "Mervin's live board: every open PR, its CI, stack, clashes and owner, and what can merge now", tag: "Branches",
+      description: "One row per open PR Mervin staged: its own CI, the PR it's stacked on, its files per tier (certain, agree, mervin, differ, card), the clashes that merge clean as text and break later, the Agent Office worker that owns it, and for a PR touching package.json, bun.lock or packages/ the apps and PRs it reaches. " +
+        "`waves` and `mergeable` come straight off the rows; `hits` is each tier's exact-landing rate after real merges. With `pr`: that PR's answer, what blocks it (`blocking`), who should take it (`take`) and what it blocks.",
+      query: { pr: int("one PR's answer instead of the whole board") },
+      ok: obj({ main: { type: ["string", "null"], description: "the main commit the board was staged on" }, at: { type: ["integer", "null"], description: "ms of the last update" },
+        prs: arr(loose("{pr, title?, head, ci, failing?, stackedOn?, tiers, files, clashes: [{kind, key, with, main?}], owner?, blast?: {apps, prs}, at}")),
+        waves: arr(arr(int("a PR number"))), mergeable: arr(int("a PR nothing holds up")), hits: loose("{tier: percent that landed exactly, or null}") }) },
+    post: { id: "update_board", summary: "Post the rows of the PRs whose stage moved (the crew)", tag: "Branches",
+      description: "What scripts/mervin-live.ts sends: `prs` are upserted by PR number, `drop` removes merged or closed ones, `replace` removes every row not in `prs`, and `hits` replaces the tiers' track record.",
+      body: obj({ main: str("the main commit the board was staged on"), prs: arr(loose("a row, as get_board returns it")), drop: arr(int()), replace: bool(), hits: loose("{tier: {exact, of}}") }, ["main", "prs"]),
+      ok: obj({ ok: bool(), rows: int() }), status: 201 } },
   [`${repo}/dispatch-hint`]: { get: { id: "get_dispatch_hint", summary: "Before a task starts: its likely files, and the open branches already rewriting them", tag: "Branches",
     description: "`files` is `paths` plus the repo's files the task's text names, whole or by a tail only one path ends in (`main.ts`, `src/main.ts`). " +
       "`busy` lists the open branches that change any of them, the one sharing the most first. Their merges will likely meet the task's: hold it till they land, or open its branch on the first (start_branch with `parent`). start_agent's answer carries the same `busy`.",
@@ -391,7 +403,7 @@ const OPS: Record<string, Record<string, Op>> = {
   "/agents": { get: { id: "list_harnesses", summary: "Which coding-agent harnesses this site can run", tag: "Agents", open: true, ok: loose("{available, why, harnesses, all}") } },
   [`${repo}/deploy`]: {
     get: { id: "deploy_status", summary: "Deploy settings, the run going now, and the last 20 (owner only)", tag: "Deploys", ok: loose("{settings, run, deploys}") },
-    post: { id: "deploy", summary: "Deploy the repo now (owner only)", tag: "Deploys", risky: true, ok: loose("{run}"), status: 202 },
+    post: { id: "deploy", summary: "Deploy the repo now (owner only)", tag: "Deploys", risky: true, body: obj({ approve: str("approve main up to this sha first"), allow_delete: bool("pass --allow-delete: a deploy that deletes or replaces a D1, R2, KV or queue, this once"), force: bool("pass --force: deploy from a HEAD behind origin/main, this once") }), ok: loose("{run}"), status: 202 },
   },
 
   "/playlists": { post: { id: "create_collection", summary: "Start a collection of lines you like", tag: "Collections",

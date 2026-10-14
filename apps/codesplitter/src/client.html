@@ -447,6 +447,15 @@
   /* Picked lines get a solid black gutter, one bar down a run; a line open for editing keeps its gutter and gets a dark box. */
   .ln.sel { background: var(--select); } .ln.sel .n { color: #fff; background: #0a0a0a; }
   .ln .t > input { border-color: #0a0a0a; box-shadow: 0 0 0 2px var(--select); }
+  /* The firehose: a still orange glow on the bottom edge while edits land. It flashes on a change, then sits and bumps at 175 bpm (343ms),
+     brighter the faster they come (--rate, 0 to 1). Never takes a click. */
+  .firehose { position: fixed; left: 0; right: 0; bottom: 0; height: 64px; pointer-events: none; z-index: 5; opacity: 0; transition: opacity .8s ease-out; transform-origin: 50% 100%;
+    background: radial-gradient(120% 100% at 50% 100%, color-mix(in srgb, var(--accent) calc(18% + var(--rate, 0) * 30%), transparent), transparent 70%); }
+  .firehose.on { opacity: 1; animation: firehose-bump .343s ease-in-out infinite; }
+  .firehose.hit::after { content: ""; position: absolute; inset: 0; background: inherit; animation: firehose-hit .5s ease-out; }
+  @keyframes firehose-bump { 50% { transform: scaleY(1.1); opacity: .8; } }
+  @keyframes firehose-hit { from { filter: brightness(1.6); opacity: 1; } to { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .firehose.on { animation: none; } .firehose.hit::after { animation: none; display: none; } }
   .ln.flash { animation: flash 1.4s ease-out; } @keyframes flash { from { background: var(--accent-soft); } }
   /* Claimed lines: the holder's colour down the edge, and their name in the blame column. An agent's shimmer while it works. */
   .ln.claim .t { box-shadow: inset 3px 0 0 var(--who); background: color-mix(in srgb, var(--who) 7%, transparent); }
@@ -735,6 +744,7 @@
   .owngit b { display: block; margin-bottom: 6px; } .owngit p { margin: 0; color: var(--muted); }
   .owngit .flow { font: 500 12px/1.6 var(--mono); color: var(--fg); margin-top: 12px; }
   .owngit .flow em { font-style: normal; color: var(--accent-ink); }
+  .live-stats { display: flex; flex-wrap: wrap; gap: 8px 28px; font: 500 13px/1.6 var(--mono); color: var(--muted); } .live-stats b { color: var(--text, inherit); font-size: 20px; font-variant-numeric: tabular-nums; display: inline-block; min-width: 3ch; }
   .quits { font: 500 12px/1.8 var(--mono); color: var(--muted); margin-top: 16px; } .quits span + span::before { content: " · "; color: var(--faint); }
   @media (max-width: 720px) { .owngit { grid-template-columns: 1fr; } }
   /* A profile: one header line, the repos and digging in the main column, collections and the page on the side. */
@@ -911,6 +921,9 @@
   .insights table { width: 100%; border-collapse: collapse; font-size: 13px; } .insights th, .insights td { text-align: left; padding: 7px 12px; border-top: 1px solid var(--border); white-space: nowrap; } .insights thead th { border-top: 0; color: var(--muted); font-weight: 500; font-size: 12px; }
   .insights .scroll { overflow-x: auto; } .insights td.ua { max-width: 280px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-family: var(--mono); font-size: 11px; }
   .insights .steps { display: inline-flex; gap: 3px; } .insights .steps i { width: 9px; height: 9px; border-radius: 2px; border: 1px solid var(--border-2); } .insights .steps i.on { background: var(--accent); border-color: var(--accent); }
+  .insights .heat { display: grid; grid-template-columns: 28px repeat(24, minmax(0, 1fr)); gap: 2px; padding: 12px 16px; font-size: 10px; color: var(--muted); align-items: center; }
+  .insights .heat i { aspect-ratio: 1; border-radius: 2px; background: var(--canvas); border: 1px solid var(--border); } .insights .heat i.on { background: var(--accent); border-color: transparent; }
+  .usagedlg { max-width: 460px; width: calc(100% - 32px); border: 1px solid var(--border); border-radius: 8px; padding: 0; } .usagedlg .body { display: grid; gap: 10px; padding: 16px; font-size: 14px; } .usagedlg .bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
   .insights .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); } .insights .tag.person { color: var(--accent-ink); border-color: var(--accent); }
   @media (max-width: 720px) { .insights .tiles, .insights .cols { grid-template-columns: 1fr; } .insights .way > div { grid-template-columns: 110px 1fr 56px; } }
   .scale .verdict { border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; margin: 0 0 14px; display: flex; align-items: center; gap: 12px; }
@@ -1789,6 +1802,16 @@ async function limitsPage() {
 // Insights (admins, src/insights.ts): people vs agents vs bots by day, the site's
 // health over the last day, how far everyone has got, and who's been calling.
 const KINDS = [["person", "People", "browsers"], ["agent", "Agents", "API tokens, MCP, scripts, headless"], ["bot", "Bots", "crawlers and monitors"]];
+/** How agents settle merge conflicts for the people who opted in (usage.ts): by extension, by round, and when. */
+function conflictsBox(c) {
+  const rows = (list, key) => list.map((r) => `<tr><td>${esc(r[key] === "" ? "(none)" : r[key] === 4 ? "4+" : r[key])}</td><td>${r.n}</td><td>${r.n ? Math.round(100 * (r.held || 0) / r.n) : 0}%</td><td>${r.to_person || 0}</td></tr>`).join("");
+  const top = Math.max(1, ...c.by_hour.map((h) => h.n)), at = (dow, hour) => c.by_hour.find((h) => h.dow === dow && h.hour === hour)?.n ?? 0;
+  const table = (list, key, head) => list.length ? `<table><thead><tr><th>${head}</th><th>Conflicts</th><th>Agent held</th><th>To a person</th></tr></thead><tbody>${rows(list, key)}</tbody></table>` : "";
+  return `<div class="box"><div class="bar">${icon("git-merge")}<b>Merge conflicts</b><span class="muted">${c.people} of ${c.asked} who answered said yes; no paths or code, kept a year</span></div>
+    ${c.by_ext.length ? `<div class="cols" style="padding:0"><div class="scroll">${table(c.by_ext, "ext", "File type")}</div><div class="scroll">${table(c.by_round, "round", "Round")}</div></div>
+    <div class="heat" role="img" aria-label="conflicts by weekday and hour, UTC">${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, dow) => `<span>${day}</span>${Array.from({ length: 24 }, (_, h) => `<i class="${at(dow, h) ? "on" : ""}" style="${at(dow, h) ? `opacity:${0.25 + 0.75 * at(dow, h) / top}` : ""}" title="${day} ${h}:00 UTC: ${at(dow, h)}"></i>`).join("")}`).join("")}</div>`
+    : '<div class="body muted small">Nothing yet: nobody has opted in, or no agent has been asked about a conflict.</div>'}</div>`;
+}
 async function insightsPage(days = 7) {
   const d = await api(`/admin/insights?days=${days}`);
   const { kinds, by_day, by_via, callers } = d.traffic, fmt = (n) => Number(n || 0).toLocaleString();
@@ -1813,6 +1836,7 @@ async function insightsPage(days = 7) {
     <div class="box" id="ins-actions"><div class="bar">${icon("github")}<b>GitHub Actions</b><span class="muted">this month, on your GitHub account</span></div><div class="body muted small">Asking GitHub…</div></div>
     <div class="box"><div class="bar">${icon("footprints")}<b>The way in</b><span class="muted">of ${fmt(d.total_users)} people, how many reached each step</span></div>
       <div class="way" style="padding:6px 0">${d.steps.map((s) => `<div><span>${esc(s.label)}</span><span class="meter"><i style="width:${d.total_users ? (s.people / d.total_users) * 100 : 0}%"></i></span><span class="muted" style="text-align:right">${fmt(s.people)}</span></div>`).join("")}</div></div>
+    ${conflictsBox(d.conflicts)}
     <div class="box"><div class="bar">${icon("users")}<b>Recent people</b><span class="muted">most recently here, with how far each got; requests over the range above</span></div>
       <div class="scroll"><table><thead><tr><th>Who</th><th>Joined</th><th>Last seen</th><th>Got as far as</th><th></th><th>As a person</th><th>Via agents</th></tr></thead><tbody>
       ${d.users.map((u) => `<tr><td><a href="#/u/${esc(u.name)}">@${esc(u.name)}</a></td><td class="muted">${u.joined ? ago(u.joined) : "—"}</td><td class="muted">${u.last_seen ? ago(u.last_seen) : "—"}</td>
@@ -3395,6 +3419,10 @@ const views = {
         <div><div class="stage" id="stage" aria-label="A file splitting into lines, being edited by agents, and rejoining as a git commit"></div>
           <ol class="phases" id="phases"><li>a file</li><li>split into lines</li><li>everyone edits at once</li><li>back together as git</li></ol></div>
       </div></section>
+      <section class="section"><div class="wrap"><div class="live-stats" id="live-stats" aria-live="polite">
+        <span class="stat"><b id="stat-merges">·</b> merges landed here</span>
+        <span class="stat"><b id="stat-solved">·</b> clashes Mervin settled with no card</span>
+      </div></div></section>
       <section class="section"><div class="wrap">
         <div class="label">the whole map</div><h2>Everything it does, by what you're doing</h2>
         <p class="muted">Pick where you're standing. Every feature is on one of these tabs, with a picture of how it fits.</p>
@@ -3468,6 +3496,7 @@ const views = {
     wireDig();
     wireFoot();
     intro($("#stage"), $("#phases"));
+    api("/stats").then((n) => { $("#stat-merges").textContent = n.merges.toLocaleString(); $("#stat-solved").textContent = n.solved.toLocaleString(); }).catch(() => { $("#live-stats").hidden = true; });
     featureMap($("#fmap"));
     featureStrip($("#feats"));
     flapBoard($("#flapboard"));
@@ -3509,7 +3538,7 @@ const views = {
       <p class="lede">Here's everything we dug up, what each find is for, and how to take it home or bury it. We brushed every layer. The short version: we keep what it takes to run a code host, and not one shard more.</p>
       <div class="tldr">
         <div>${icon("shovel")}<b>We keep the minimum.</b><span>Your account, your code, and enough to keep you signed in.</span></div>
-        <div>${icon("eye-off")}<b>Nobody's watching.</b><span>No analytics, no ad pixels, no trackers, no fingerprinting.</span></div>
+        <div>${icon("eye-off")}<b>Nobody's watching.</b><span>No ad pixels, no trackers, no fingerprinting. The one thing we study beyond that is opt-in.</span></div>
         <div>${icon("hand-coins")}<b>Not for sale.</b><span>We don't sell or rent your data, or train AI on your code.</span></div>
         <div>${icon("download")}<b>It's yours.</b><span>Download all of it, or delete your account, any time, from your profile.</span></div>
       </div>
@@ -3533,11 +3562,12 @@ const views = {
         ${row("Settings", "Your light or dark choice, kept in a Durable Object of your own. It is created in the Cloudflare region nearest to where you first signed in (a continent-wide hint, never your precise location)", "Showing the site the way you chose, on every device", "Until you delete your account")}
         ${row("Rate limits", "Your IP address, counted against sign-in and sign-up attempts", "Keeping bots out", "An hour; a blocked attempt is noted for 7 days")}
         ${row("Request logs", "Cloudflare's Workers logs of each request to the site: the address asked for (without its query string, the part after the ?), the method, the response status, your IP address, country and browser, and the error lines our code prints when something breaks", "Finding out what broke, and spotting abuse", "7 days, then Cloudflare deletes them")}
+        ${row("Merge conflicts (opt-in)", "If you own a private repo and said yes to “Help improve your git experience”: per conflict an agent was asked about, the file's extension, which round it was, who settled it and whether it held. Never paths, repo names or code.", "Making agents better at settling conflicts, summed for the admins", "A year, or until you say no in Your data, which deletes it")}
         ${row("Usage", "A daily count of your requests (by handle, or signed out by a hash of your IP that changes every day), whether they came from a browser or a script, your browser's name, and the first time you did each thing here (made a repo, committed, deployed)", "Seeing whether people or bots use the site, and where people get stuck", "Daily counts 30 days; the firsts until you delete your account")}
         </tbody></table></div>
 
       <h2>Trenches that came up empty</h2>
-      <p>We dug where the usual stuff hides and found nothing: no analytics, no advertising, no third-party cookies, no tracking pixels, no session replays, no data brokers. Our fonts, icons and the game's 3D engine are served from our own server, so neither Google nor a public CDN hears about your visit. We don't use your code or your data to train AI models, ours or anyone's.</p>
+      <p>We dug where the usual stuff hides and found nothing: no third-party analytics, no advertising, no third-party cookies, no tracking pixels, no session replays, no data brokers. Our fonts, icons and the game's 3D engine are served from our own server, so neither Google nor a public CDN hears about your visit. We don't use your code or your data to train AI models, ours or anyone's.</p>
 
       <h2>Cookies: one jar, no biscuits for anyone else</h2>
       <p>The only cookies here keep you signed in: <code>better-auth.session_token</code> (and a short-lived <code>session_data</code> copy that saves a database trip), or <code>cs_user</code> on the desktop app. They're strictly necessary, so there's no banner to click through; there's nothing optional to say no to. The site also remembers a few layout choices, like how wide you like the sidebar or which notice you've dismissed, in your browser's local storage. That never leaves your device.</p>
@@ -4394,7 +4424,7 @@ const views = {
     const BUILD = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["init", "sparkles", "init"]];
     const PLAN = [["infra", "waypoints", "map"], ["plan", "list-checks", "plan"]];
     const SHIP = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["deploy", "rocket", "deploy"], ["check", "activity", "check"]];
-    let tab = "plan", t = null, d = null, sel = null, node = null, timer = null, branch = "", branches = null, form = null;
+    let tab = "plan", t = null, d = null, sel = null, node = null, timer = null, branch = "", branches = null, form = null, allowDelete = false, force = false;
     const by = (run) => Object.fromEntries((run?.steps ?? []).map((s) => [s.key, s]));
     const stat = (run, keys) => { const s = keys.map((k) => by(run)[k]?.status); return s.includes("failed") ? "failed" : s.includes("running") ? "running" : s.length && s.every((x) => x === "done" || x === "skipped") ? "done" : "waiting"; };
     const TABS = [["build", "package", "Build", () => stat(t?.run, ["clone", "install", "init"])], ["plan", "list-checks", "Plan", () => stat(t?.run, ["infra", "plan"])],
@@ -4404,6 +4434,14 @@ const views = {
       const busy = t?.run && !t.run.done, open = branches;
       return `<div class="row"><select id="ship-branch"${busy ? " disabled" : ""} title="main, or an agent's branch: its files are laid over the clone"><option value="">main</option>${open.map((b) => `<option value="${esc(b.name)}"${b.name === branch ? " selected" : ""}>${esc(b.name)}</option>`).join("")}</select>
         <button class="btn primary" id="ship-try"${!t?.can_run || busy ? " disabled" : ""} title="${t?.can_run ? "" : "Runs on the desktop app"}">${icon("flask-conical")}${busy ? "Running…" : t?.run ? "Build and plan again" : "Build and plan"}</button></div>`;
+    };
+    /** The CLI's `--allow-delete` and `--force`: per deploy, never saved, cleared once pressed. Each names what it would put at risk. */
+    const deployFlags = (g, s) => {
+      const data = (g?.nodes ?? []).filter((n) => INFRA_DATA.has(n.kind)), names = data.length ? data.map((n) => `<code>${esc(n.name || n.label)}</code> (${esc(n.kind.replace("_", " "))})`).join(", ") : "the D1, R2, KV or queue resources it replaces";
+      return `<div style="display:grid;gap:4px;font-size:13px">
+        <label><input type="checkbox" id="ship-allow-delete"${allowDelete ? " checked" : ""}> ${icon("trash-2")} <b>Allow deletes</b> <span class="muted">this deploy may delete or replace ${names}, with their data (CLI: <code>--allow-delete</code>)</span></label>
+        <label><input type="checkbox" id="ship-force"${force ? " checked" : ""}> ${icon("triangle-alert")} <b>Force</b> <span class="muted">deploy a commit that is behind <code>origin/main</code> to <b>${esc(s?.stage ?? "prod")}</b> (CLI: <code>--force</code>)</span></label>
+        <span class="muted" style="font-size:12px">Neither is saved: they apply to the next press only.</span></div>`;
     };
     const body = () => {
       const run = t?.run, g = run?.infra;
@@ -4424,6 +4462,7 @@ const views = {
       const r = d?.run, s = d?.settings ?? {};
       return `${flowRow(SHIP, by(r), sel)}${runTicker(r)}${r?.url ? `<p style="font-size:12px"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a></p>` : ""}${r?.note ? `<p class="muted" style="font-size:12px">${esc(r.note)}</p>` : ""}${sel ? log(r, sel) : ""}
         ${g ? `<div class="imap-note${g.nodes.some((n) => n.protected) ? " kept" : ""}"><span>${icon("rocket")} Ships to <b>${esc(s.stage ?? "prod")}</b> as ${s.production || g.environment === "real" ? "<b>REAL</b>" : "<b>EPHEMERAL</b>"}: ${g.nodes.length} resource${g.nodes.length === 1 ? "" : "s"}, <b>${g.nodes.filter((n) => n.protected).length} protected</b> from destroy, ${g.nodes.filter((n) => INFRA_DATA.has(n.kind) && !n.protected).length} not.</span></div>` : ""}
+        ${deployFlags(g, d?.settings)}
         <div class="row"><button class="btn primary" id="ship-deploy"${!d?.can_run || (r && !r.done) ? " disabled" : ""} title="${d?.can_run ? "" : d?.why || "Runs on the desktop app, with your own logins"}">${icon("rocket")}${r && !r.done ? "Deploying…" : `Deploy to ${esc(s.stage ?? "prod")}`}</button>
         <button type="button" class="btn ghost" id="ship-more" title="Deploy keys, the review of code that isn't yours, and every deploy logged">${icon("send")}Deploy settings and log</button></div>
         <p class="muted" style="font-size:12px">Ships the repo's own stack to <b>${esc(s.stage ?? "prod")}</b> and leaves it up. Code that isn't yours waits for you to read and approve it under Deploy settings.</p>`;
@@ -4467,9 +4506,13 @@ const views = {
         try { await api(depBase, { stage: f.stage.value.trim(), dir: f.dir.value.trim(), production: f.production.value === "1", on_commit: f.on_commit.checked }, "PUT"); form = null; toast("Stage saved"); } catch (err) { toast(err.message); }
         poll();
       });
+      el.querySelector("#ship-allow-delete")?.addEventListener("change", (e) => { allowDelete = e.target.checked; });
+      el.querySelector("#ship-force")?.addEventListener("change", (e) => { force = e.target.checked; });
       el.querySelector("#ship-deploy")?.addEventListener("click", async () => {
         sel = null;
-        try { await api(depBase, {}); } catch (err) { toast(err.message.includes("approve") || /read/i.test(err.message) ? `${err.message} (Deploy settings has the diff to read and approve)` : err.message); }
+        const flags = { ...(allowDelete && { allow_delete: true }), ...(force && { force: true }) };
+        allowDelete = force = false;
+        try { await api(depBase, flags); } catch (err) { toast(err.message.includes("approve") || /read/i.test(err.message) ? `${err.message} (Deploy settings has the diff to read and approve)` : err.message); }
         poll();
       });
     };
@@ -4542,7 +4585,14 @@ const views = {
     const el = $("#branches"), base = `/repos/${owner}/${repo}/branches`;
     const open = (await api(base).catch(() => [])).filter((b) => b.status === "open" && (!only || b.name === only));
     await wireCheckHead(el, owner, repo, r);
+    // Mervin's live board (#1524, GET /api/repos/:o/:r/board): a row per open PR, what holds it up, who owns it.
+    const live = only ? null : await api(`/repos/${owner}/${repo}/board`).catch(() => null);
+    const board = live?.prs.length ? `<div class="muted" style="overflow-x:auto" title="Mervin's live board: every open PR, its CI, stack, clashes and owner"><b>${icon("git-pull-request")}Board</b>${live.prs.map((p) => {
+      const stuck = !live.mergeable.includes(p.pr);
+      return ` <span title="${esc([p.title, p.ci === "fail" ? `CI red: ${(p.failing ?? []).join(", ")}` : p.ci === "pending" ? "CI running" : "", p.stackedOn ? `on #${p.stackedOn}` : "", ...p.clashes.map((c) => `clash ${c.kind} ${c.key}`), p.tiers.card ? `${p.tiers.card} cards` : "", p.owner ? `owner ${p.owner}` : ""].filter(Boolean).join(" · "))}">#${p.pr} ${icon(stuck ? "clock" : "circle-check")}${p.owner ? esc(p.owner) : ""}</span>`;
+    }).join("")}</div>` : "";
     if (!open.length) {
+      if (board) el.innerHTML = board;
       if (only) el.innerHTML = `<p class="muted">${esc(only)} isn't open: merged, or gone. <a href="#/r/${esc(owner)}/${esc(repo)}">Back to ${esc(repo)}</a></p>`;
       return;
     }
@@ -4555,7 +4605,7 @@ const views = {
     // Each wave merges together; a branch that clashes with one before it says which, on hover.
     const waits = (w) => w.after.map((a) => `${a.branch}${a.stacked ? " (stacked on it)" : ""}${a.files.length ? `: ${a.files.join(", ")}` : ""}`).join("; ");
     const planned = plan?.waves.length > 1 ? `<div class="muted" style="white-space:nowrap;overflow-x:auto" title="${esc(`${plan.engine ?? "Mervin"} planned this: merge a wave and the next wave's branches take main in by themselves`)}">${icon("git-merge")} <b>${esc(plan.engine ?? "Mervin")}</b> ${plan.waves.map((wave, i) => `<b>${i + 1}</b> ${wave.map((w) => w.after.length ? `<code title="${esc(`after ${waits(w)}`)}">${esc(w.branch)}</code>` : `<code>${esc(w.branch)}</code>`).join(" ")}`).join(" → ")}</div>` : "";
-    el.innerHTML = planned + reviews.map((b) => {
+    el.innerHTML = board + planned + reviews.map((b) => {
       // A file only opened on the branch (the switcher reads through its copy) changes nothing: not counted.
       const files = b.files.filter((f) => !f.merged && (f.ops.length || f.deleted || f.binary || f.conflicts.length)), clash = files.flatMap((f) => f.conflicts.map((c) => ({ path: f.path, ...c })));
       // Prose the merge settled that one side may have made untrue (#1254): cards to read, never in the way of Merge.
@@ -5686,6 +5736,23 @@ const views = {
       else doc.lines.splice(i, 1);
       doc.rev = a.rev;
     };
+    // The firehose glow (.firehose): edits per second over the last 3s set its brightness, a landing flashes it, and it goes quiet when they stop.
+    let fireEl = null, fireTimer = null, hits = [];
+    const firehose = (n) => {
+      const now = Date.now();
+      for (let i = 0; i < n; i++) hits.push(now);
+      if (!fireEl) { fireEl = document.createElement("div"); fireEl.className = "firehose"; fireEl.setAttribute("aria-hidden", "true"); document.body.append(fireEl); }
+      fireEl.classList.remove("hit"); void fireEl.offsetWidth; fireEl.classList.add("hit");
+      const tick = () => {
+        const t = Date.now(); hits = hits.filter((h) => t - h < 3000);
+        const rate = hits.length / 3;
+        if (!box.isConnected) { fireEl?.remove(); fireEl = fireTimer = null; return; }
+        fireEl.style.setProperty("--rate", String(Math.min(1, rate / 15)));
+        fireEl.classList.toggle("on", rate > 0.5);
+        fireTimer = hits.length || fireEl.classList.contains("on") ? setTimeout(tick, 400) : null;
+      };
+      if (!fireTimer) tick();
+    };
     const connect = () => {
       const s = socket = ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api${base}/ws${q}`);
       s.onmessage = onMessage;
@@ -5730,6 +5797,7 @@ const views = {
       const rev = $("#rev"); rev.max = doc.rev; if (viewing === null) rev.value = doc.rev;
       logOps(msg.applied);
       for (const a of msg.applied) if (a.op.kind !== "delete") beating.set(a.by, Date.now() + 600);
+      firehose(msg.applied.length);
       // The same beat runs down this repo's vein, if it's open.
       if (msg.applied.some((a) => a.op.kind !== "delete") && $("#gitmap")?.dataset.repo === `${owner}/${repo}`) $("#gitmap").beat?.();
       schedule(msg.applied.map((a) => a.line));
@@ -6266,6 +6334,7 @@ async function wireTruth() {
   });
 }
 const dataBox = (fold = false) => `${boxTop(fold, "yourdata", `${icon("archive")}<b>Your data</b><a class="muted" style="font-size:12px" href="#/privacy">privacy</a>`)}<div class="body" style="display:grid;gap:10px;font-size:13px">
+  <label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="share-usage" style="margin-top:3px"><span>Help improve my git experience<br><span class="muted" style="font-size:12px">Share how merge conflicts in my private repos go (file types and outcomes, never code or names). Off until you say.</span></span></label>
   <div><a class="btn" href="/api/me/export" download>${icon("download")}Download everything</a> <span class="muted" style="font-size:12px">one JSON file; clone your repos for the code</span></div>
   <details><summary class="muted" style="cursor:pointer;font-size:12px">Delete my account</summary><form id="delme" style="display:grid;gap:6px;margin-top:8px">
     <span class="muted" style="font-size:12px">Gone for good: your repos (files, branches, git), collections, shares, tokens, connected apps, sessions and sign-in, and codeSplitter' access to your GitHub and Google. Lines you wrote in other people's repos stay under @${esc(me())}, which is retired.</span>
@@ -6273,6 +6342,13 @@ const dataBox = (fold = false) => `${boxTop(fold, "yourdata", `${icon("archive")
     <input name="name" placeholder="type ${esc(me())} to confirm" autocomplete="off" required><div><button class="btn" style="color:var(--del-fg)">${icon("trash-2")}Delete @${esc(me())} for good</button></div></form></details>
 </div>${boxEnd(fold)}`;
 function wireData() {
+  const share = $("#share-usage");
+  if (share) {
+    api("/me").then((u) => { share.checked = u?.share_usage === 1; }).catch(() => {});
+    share.addEventListener("change", async () => {
+      try { await api("/me", { share_usage: share.checked }, "PUT"); toast(share.checked ? "Thank you: conflicts will help the agents get better" : "Stopped, and what was shared is deleted"); } catch (e) { share.checked = !share.checked; toast(e.message); }
+    });
+  }
   $("#delme")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const typed = e.target.name.value.trim();
@@ -7388,7 +7464,23 @@ async function route() {
   drawn();
 }
 addEventListener("hashchange", route);
-refreshSession().then(() => { header(); noticeBar(); route(); mailedLink(); });
+/** Once, to someone who owns a private repo: may codeSplitter keep how their merge conflicts go? (usage.ts) */
+async function askUsageModal() {
+  if (!me()) return;
+  const u = await api("/me").catch(() => null);
+  if (!u?.ask_usage || $("#usagedlg")) return;
+  document.body.insertAdjacentHTML("beforeend", `<dialog id="usagedlg" class="usagedlg"><div class="bar">${icon("git-merge")}<b>Help improve your git experience</b></div><div class="body">
+    <p style="margin:0">Send us how your agents' merge conflicts go, and help make them magically go away.</p>
+    <p class="muted" style="margin:0;font-size:13px">We keep only the file type, which round it was, who settled it and whether it held. Never your code, file names or repo names. It covers your private repos, which are yours alone. Change your mind any time in Your data: it deletes what you shared.</p>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="usage-no">No thanks</button><button class="btn primary" id="usage-yes">${icon("heart-handshake")}Yes, help</button></div></div></dialog>`);
+  icons();
+  const d = $("#usagedlg"), answer = async (yes) => { d.close(); d.remove(); try { await api("/me", { share_usage: yes }, "PUT"); if (yes) toast("Thank you"); } catch (e) { toast(e.message); } };
+  $("#usage-yes").addEventListener("click", () => answer(true));
+  $("#usage-no").addEventListener("click", () => answer(false));
+  d.addEventListener("close", () => d.remove());  // Esc leaves it unanswered: asked again next visit
+  d.showModal();
+}
+refreshSession().then(() => { header(); noticeBar(); route(); mailedLink(); askUsageModal(); });
 icons();
 </script>
 </body>

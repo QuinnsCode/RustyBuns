@@ -45,8 +45,11 @@ import { askAgent, cheapest } from "./conflict-agent.ts";
 import { alsoFor, fixUnavailable, guardTripped, healUnavailable, openFix, rebuildTask } from "./heal.ts";
 import { hunks, revertOps } from "./review.ts";
 import { MERVIN } from "./mervin.ts";
+import { noteConflict } from "./usage.ts";
 import { busyOn, clashIn, taskFiles, waves, type Busy, type Clash, type Side } from "./merge-plan.ts";
 import { sha256 } from "./util.ts";
+import { countMerge } from "./stats.ts";
+import { boardRoutes } from "./board-routes.ts";
 
 const TEXT_MAX = 20_000;
 
@@ -213,7 +216,7 @@ async function mergeFile(env: Env, owner: string, repo: string, branch: { name: 
   const [base, doc, policy] = await Promise.all([read("base"), read("file"), pathPolicy(env, owner, repo, path, user)]);
   // Text the merger writes is theirs; deleted lines are the branch's doing.
   const res = await toFile(env, owner, repo, path, user, "merge", { method: "POST", body: JSON.stringify({ base, branch: doc, resolve, dry, deleter: branch.by, path, writer: user, rule: policy.merge }) });
-  return { status: res.status, policy, ...(await res.json() as { rev: number; ops?: Op[]; conflicts: Conflict[]; checks?: Conflict[]; regenerate?: string[] }) };
+  return { status: res.status, policy, ...(await res.json() as { rev: number; ops?: Op[]; conflicts: Conflict[]; checks?: Conflict[]; regenerate?: string[]; solved?: number }) };
 }
 
 /**
@@ -374,7 +377,7 @@ async function askLeftovers(env: Env, owner: string, repo: string, branch: Branc
     const round = !counted && (!rounds || kept.has(id)) ? rounds + 1 : rounds;
     const who = conflictRound(round, f.policy.over);
     const note = who === "ask" ? undefined : conflictNote({ branch: branch.name, path: f.path, line: c.line, rounds: round - 1, last: kept.get(id)?.answer });
-    if (who === "escalate") { notes.set(f.path, `conflict round ${round} on ${branch.name}: a person's turn\n${note}`); continue; }
+    if (who === "escalate") { await noteConflict(env, owner, f.path, { round, who }); notes.set(f.path, `conflict round ${round} on ${branch.name}: a person's turn\n${note}`); continue; }
     const spent = await hostedBudget(env);
     if (spent) { why = ((await spent.json()) as { error: string }).error; continue; }
     if (round > rounds) {
@@ -387,6 +390,7 @@ async function askLeftovers(env: Env, owner: string, repo: string, branch: Branc
     const r = await checkedAnswer(env, owner, repo, branch, rows, f.path, c, ask, user).catch((e) => ({ error: String((e as Error)?.message ?? e) }));
     const a: Answer = { ...("error" in r ? { harness: ask.harness, ...(ask.model && { model: ask.model }), ok: false, tests: "not run", failure: r.error.slice(-4000) } : r), ...(note && { round: rounds, note }) };
     answers.set(id, a);
+    await noteConflict(env, owner, f.path, { round, who, harness: a.harness, ok: a.ok, tests: a.tests });
     await env.DB.prepare(`INSERT INTO leftover_answers (owner, repo, branch, path, line, key, answer, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (owner, repo, branch, path, line) DO UPDATE SET key = excluded.key, answer = excluded.answer, at = excluded.at`)
       .bind(owner, repo, branch.name, f.path, c.line, await conflictKey(c), JSON.stringify(a), Date.now()).run();
@@ -705,6 +709,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
 
   const took: Took[] = [];
   const merged: { path: string; rev: number; ops: number; deleted?: true; binary?: true }[] = [], conflicts: { path: string; conflicts: Conflict[] }[] = [];
+  let solved = 0;
   for (const f of todo) {
     // Claim the file, so two merges at once can't both apply it.
     const claim = await env.DB.prepare("UPDATE branch_files SET merged = 1 WHERE owner = ? AND repo = ? AND branch = ? AND path = ? AND merged = 0").bind(owner, repo, name, f.path).run();
@@ -727,7 +732,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     const onMain = await materialize(env, owner, repo, f.path);
     if ("error" in onMain && onMain.status === 404) await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, f.path).run();
     const m = await mergeFile(env, owner, repo, branch, f.path, user, resolve[f.path], false);
-    if (m.status === 200) { merged.push({ path: f.path, rev: m.rev, ops: m.ops?.length ?? 0 }); continue; }
+    if (m.status === 200) { merged.push({ path: f.path, rev: m.rev, ops: m.ops?.length ?? 0 }); solved += m.solved ?? 0; continue; }
     // Main moved into a conflict between the dry run and now: this file waits for another merge.
     await env.DB.prepare("UPDATE branch_files SET merged = 0 WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, name, f.path).run();
     conflicts.push({ path: f.path, conflicts: m.conflicts });
@@ -737,6 +742,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     await env.DB.prepare("UPDATE branches SET status = 'merged', merged_by = ?, merged_at = ? WHERE owner = ? AND repo = ? AND name = ?").bind(user, at, owner, repo, name).run();
     await env.DB.prepare("DELETE FROM leftover_answers WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, name).run();
     await restackChildren(env, owner, repo, name);
+    await countMerge(env, solved);
     for (const c of clashing) took.push(await afterBlocker(env, owner, repo, c.then, name, user).catch((e) => ({ branch: c.then, status: "failed" as const, error: String((e as Error)?.message ?? e) })));
     // Shaped like a merged pull request, the branch as its head. Git hears about it at the next commit of main.
     await emit(env, owner, repo, "branch.merged", user, {
@@ -849,6 +855,8 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   }
   // GET /api/repos/:o/:r/merge-plan  the open branches in waves (merge-plan.ts).
   if (p[4] === "merge-plan" && !p[5] && req.method === "GET") return json(await mergePlan(env, owner, repo, user ?? "anon"));
+  // GET|POST /api/repos/:o/:r/board  the live board (board-routes.ts).
+  if (p[4] === "board" && !p[5] && (req.method === "GET" || req.method === "POST")) return boardRoutes(req, env, owner, repo, a.write);
   // GET /api/repos/:o/:r/dispatch-hint?task=&paths=a,b  which open branches a new task's files are already on (dispatchHint).
   if (p[4] === "dispatch-hint" && !p[5] && req.method === "GET") {
     const q = new URL(req.url).searchParams;

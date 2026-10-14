@@ -38,6 +38,7 @@
 
 import { audit } from "./audit.ts";
 import { json, type Env, readBody } from "./env.ts";
+import { repoRow } from "./repos.ts";
 import { hex } from "./util.ts";
 
 export const EVENTS = ["commit", "branch.opened", "branch.merged", "deploy.finished", "check_run"] as const;
@@ -153,7 +154,7 @@ export async function emit(env: Env, owner: string, repo: string, event: Event, 
     const { results } = await env.DB.prepare("SELECT id, url, secret, events, github_compat FROM webhooks WHERE owner = ? AND repo = ?").bind(owner, repo).all();
     const hooks = (results as { id: string; url: string; secret: string; events: string; github_compat: number }[]).filter((h) => h.events.split(",").includes(event));
     if (!hooks.length) return;
-    const r = await env.DB.prepare("SELECT visibility, artifact_remote FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+    const r = await repoRow(env, owner, repo, "visibility, artifact_remote");
     const repository = { name: repo, full_name: `${owner}/${repo}`, owner: { login: owner }, private: r?.visibility === "private", default_branch: "main" };
     const payload = JSON.stringify({ ...data, repository, sender: { login: sender } });
     // GitHub's receivers fetch the sha from `clone_url`: our git remote (a private repo's wants a token).
@@ -204,7 +205,7 @@ export async function hookRoutes(req: Request, env: Env, p: string[], user: stri
   const [owner, repo, id] = [p[2], p[3], p[5]];
   // Hooks carry a secret and say what happens in the repo: the owner's alone.
   if (user !== owner) return json({ error: "only the repo's owner can manage its webhooks" }, 403);
-  if (!(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first())) return json({ error: "not found" }, 404);
+  if (!(await repoRow(env, owner, repo, "1"))) return json({ error: "not found" }, 404);
 
   if (!id && req.method === "GET") {
     const { results } = await env.DB.prepare(`SELECT h.id, h.url, h.events, h.github_compat, h.created_at,
