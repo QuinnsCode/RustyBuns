@@ -12,6 +12,7 @@ import { code, json, NAME, type ArtifactsRepo, type DigMessage, type Env, readBo
 import { githubHead, githubTarball, githubToken, importRepo, submodules } from "./github.ts";
 import { tooBigToImport, whenFree } from "./tarball.ts";
 import { digPart, Later, planSwarm, progress } from "./swarm.ts";
+import { repoRow } from "./repos.ts";
 
 export interface Level { n: number; slug: string; title: string; repo: string; branch: string; blurb: string }
 
@@ -211,7 +212,7 @@ export async function levelRoutes(req: Request, env: Env, p: string[], url: URL,
     if (r.r2) return json({ error: `${level.title} is too big for Artifacts, so it has no git to fork here: browse it, play it, or clone ${level.repo} from GitHub` }, 409);
     const { name = slug } = await readBody<"name">(req);
     if (typeof name !== "string" || !NAME.test(name)) return json({ error: "bad repo name" }, 400);
-    if (await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(user, name).first()) return json({ error: "you already have a repo with that name" }, 409);
+    if (await repoRow(env, user, name, "1")) return json({ error: "you already have a repo with that name" }, 409);
     const art = await r.handle.fork(`${user}--${name}`, { description: `${user}'s dig of ${level.title}`, defaultBranchOnly: true });
     const [tip] = await r.handle.log({ ref: level.branch, limit: 1 });
     await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, level, upstream, upstream_commit) VALUES (?, ?, 'public', ?, ?, ?, ?, ?, ?, ?)")

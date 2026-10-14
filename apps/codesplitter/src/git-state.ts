@@ -11,12 +11,13 @@
 
 import type { Env } from "./env.ts";
 import { mirrorStatus } from "./mirror.ts";
+import { repoRow } from "./repos.ts";
 
 /** How many uncommitted paths the answer names; the count is always whole. */
 const NAMED = 30;
 
 export async function gitState(env: Env, owner: string, repo: string) {
-  const r = await env.DB.prepare("SELECT upstream, upstream_commit, upstream_tip, upstream_behind, upstream_heard_at, git_error, git_clash FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() as
+  const r = await repoRow(env, owner, repo, "upstream, upstream_commit, upstream_tip, upstream_behind, upstream_heard_at, git_error, git_clash") as
     { upstream: string | null; upstream_commit: string | null; upstream_tip: string | null; upstream_behind: number | null; upstream_heard_at: number | null; git_error: string | null; git_clash: string | null } | null;
   const [mirror, count, named, waiting] = await Promise.all([
     mirrorStatus(env, owner, repo).catch(() => null),
