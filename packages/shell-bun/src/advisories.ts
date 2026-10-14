@@ -5,12 +5,13 @@
 // so one version covers all four. The check never fails a command: offline, or
 // a slow GitHub, just means no banner.
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 export const ADVISORIES_URL = "https://raw.githubusercontent.com/QuinnsCode/RustyBuns/main/advisories.json";
 export const LATEST_URL = "https://registry.npmjs.org/@rustybuns/cli/latest";
+const PACKUMENT_URL = "https://registry.npmjs.org/@rustybuns/cli";
 const DAY = 24 * 60 * 60 * 1000;
 
 export type Advisory = {
@@ -24,7 +25,8 @@ export type Advisory = {
   issue?: number | string;
 };
 
-export type Facts = { advisories: Advisory[]; latest?: string; checkedAt: number };
+/** `latestAt` is when `latest` was published (ms), to tell a release the age gate holds back from an old one. */
+export type Facts = { advisories: Advisory[]; latest?: string; latestAt?: number; checkedAt: number };
 
 // Bun.semver.satisfies treats a range it cannot parse as matching everything,
 // so a typo in advisories.json would warn every user. Only plain comparators
@@ -42,7 +44,7 @@ export function matching(version: string, advisories: Advisory[]): Advisory[] {
 }
 
 /** What to tell someone on `version`: a banner for a bad release, a line for an old one, or nothing. */
-export function advise(version: string, facts: Pick<Facts, "advisories" | "latest">): string | null {
+export function advise(version: string, facts: Pick<Facts, "advisories" | "latest" | "latestAt">, held: { gate?: number | null; now?: number } = {}): string | null {
   const bad = matching(version, facts.advisories);
   if (bad.length) {
     const lines = bad.map((a) => {
@@ -52,8 +54,38 @@ export function advise(version: string, facts: Pick<Facts, "advisories" | "lates
     });
     return `rustybuns ${version} is a known-bad release.\n${lines.join("\n")}`;
   }
-  if (facts.latest && Bun.semver.order(version, facts.latest) < 0)
+  if (facts.latest && Bun.semver.order(version, facts.latest) < 0) {
+    const age = facts.latestAt && (held.now ?? Date.now()) - facts.latestAt;
+    if (held.gate && age && age < held.gate * 1000)
+      return `rustybuns ${facts.latest} is out but your minimum release age (${duration(held.gate * 1000)}) is holding it back; it is ${duration(age)} old.\n  Wait, pin ${version} (bun add -d @rustybuns/cli@${version}), or exempt @rustybuns/* (see GETTING_STARTED.md).`;
     return `rustybuns ${facts.latest} is out (you have ${version}): bun add -d @rustybuns/cli@latest`;
+  }
+  return null;
+}
+
+const duration = (ms: number) => ms >= 86_400_000 ? `${Math.round(ms / 86_400_000)}d` : ms >= 3_600_000 ? `${Math.round(ms / 3_600_000)}h` : `${Math.max(1, Math.round(ms / 60_000))}m`;
+
+/** Whether `key`'s list in a bunfig.toml / pnpm-workspace.yaml names @rustybuns/cli (or the @rustybuns/* glob). */
+function exempt(text: string, key: string): boolean {
+  const m = new RegExp(`^\\s*${key}\\s*[=:][ \\t]*(\\[[^\\]]*\\]|(?:\\n[ \\t]*-.*)*)`, "m").exec(text);
+  return !!m && /@rustybuns\/(cli|\*)/.test(m[1]!);
+}
+
+/**
+ * The package manager's minimum release age for @rustybuns/cli, in seconds, read from
+ * bunfig.toml (`minimumReleaseAge`, seconds) and pnpm-workspace.yaml (minutes) in `dir`,
+ * then ~/.bunfig.toml. Null when none is set or @rustybuns/cli is exempt. Never throws.
+ */
+export function ageGate(dir = process.cwd(), home = homedir()): number | null {
+  const files: [string, number, string][] = [[join(dir, "bunfig.toml"), 1, "minimumReleaseAgeExcludes"], [join(dir, "pnpm-workspace.yaml"), 60, "minimumReleaseAgeExclude"], [join(home, ".bunfig.toml"), 1, "minimumReleaseAgeExcludes"]];
+  for (const [file, unit, excludes] of files) {
+    try {
+      if (!existsSync(file)) continue;
+      const text = readFileSync(file, "utf8");
+      const n = Number(/^\s*minimumReleaseAge\s*[=:]\s*(\d+)/m.exec(text)?.[1]);
+      if (n > 0) return exempt(text, excludes) ? null : n * unit;
+    } catch {}
+  }
   return null;
 }
 
@@ -70,12 +102,20 @@ async function getJson(url: string, fetcher: typeof fetch, ms: number): Promise<
 }
 
 /** Fetch the advisories and the latest version, keeping what was cached for any that fail. */
-export async function refresh(opts: { fetcher?: typeof fetch; ms?: number; now?: number; cached?: Facts | null } = {}): Promise<Facts> {
+export async function refresh(opts: { fetcher?: typeof fetch; ms?: number; now?: number; cached?: Facts | null; version?: string } = {}): Promise<Facts> {
   const { fetcher = fetch, ms = 1500, now = Date.now(), cached = null } = opts;
   const [adv, latest] = await Promise.allSettled([getJson(ADVISORIES_URL, fetcher, ms), getJson(LATEST_URL, fetcher, ms)]);
+  const version = latest.status === "fulfilled" && typeof latest.value?.version === "string" ? latest.value.version : undefined;
+  // When it came out matters only to someone behind it, so the (larger) full document is fetched only then.
+  let latestAt = version && version === cached?.latest ? cached?.latestAt : undefined;
+  if (version && !latestAt && opts.version && Bun.semver.order(opts.version, version) < 0) {
+    const t = Date.parse((await getJson(PACKUMENT_URL, fetcher, ms).catch(() => null))?.time?.[version]);
+    if (t) latestAt = t;
+  }
   return {
     advisories: adv.status === "fulfilled" && Array.isArray(adv.value?.advisories) ? adv.value.advisories : cached?.advisories ?? [],
-    latest: latest.status === "fulfilled" && typeof latest.value?.version === "string" ? latest.value.version : cached?.latest,
+    latest: version ?? cached?.latest,
+    latestAt: version ? latestAt : cached?.latestAt,
     checkedAt: now,
   };
 }
@@ -87,15 +127,16 @@ export const checkDisabled = (env = process.env) => !!(env.CI || env.RUSTYBUNS_N
  * The advice for `version`, from a cache refreshed once a day (`force` refreshes
  * now). Never throws.
  */
-export async function checkVersion(version: string, opts: { force?: boolean; path?: string; fetcher?: typeof fetch; now?: number; advise?: typeof advise } = {}): Promise<string | null> {
+export async function checkVersion(version: string, opts: { force?: boolean; path?: string; fetcher?: typeof fetch; now?: number; gate?: number | null; advise?: typeof advise } = {}): Promise<string | null> {
   try {
     const { path = cachePath(), now = Date.now() } = opts;
+    const gate = "gate" in opts ? opts.gate : ageGate();
     let facts = readCache(path);
     if (opts.force || !facts || now - facts.checkedAt > DAY) {
-      facts = await refresh({ fetcher: opts.fetcher, now, cached: facts });
+      facts = await refresh({ fetcher: opts.fetcher, now, cached: facts, version: gate ? version : undefined });
       try { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, JSON.stringify(facts)); } catch {}
     }
-    return (opts.advise ?? advise)(version, facts);
+    return (opts.advise ?? advise)(version, facts, { gate, now });
   } catch {
     return null;
   }
