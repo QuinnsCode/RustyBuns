@@ -8,6 +8,7 @@
 
 import { workerName, type Binding, type RustyBunsConfig } from "./config.ts";
 import { isProtected } from "./protect.ts";
+import { environmentOf, realReasons, type Environment } from "./environment.ts";
 
 export interface InfraNode {
   id: string;
@@ -25,6 +26,9 @@ export interface InfraGraph {
   app: string;
   stage: string;
   mode: "fresh" | "adopt";
+  /** EPHEMERAL (made new, safe to destroy) or REAL (may hold customer data), and why (environment.ts). */
+  environment: Environment;
+  reasons: string[];
   targets: string[];
   nodes: InfraNode[];
   edges: InfraEdge[];
@@ -67,12 +71,12 @@ export function infraGraph(cfg: RustyBunsConfig, stage: string): InfraGraph {
     }
   }
   const targets = [edge || !cfg.targets.box ? "edge" : "", cfg.targets.box ? "box" : "", cfg.targets.desktop ? "desktop" : ""].filter(Boolean);
-  return { app: cfg.name, stage, mode: edge?.adopt ? "adopt" : "fresh", targets, nodes, edges };
+  return { app: cfg.name, stage, mode: edge?.adopt ? "adopt" : "fresh", environment: environmentOf(cfg, stage), reasons: realReasons(cfg, stage), targets, nodes, edges };
 }
 
 /** The graph as the plain text `rustybuns infra` prints without --json. */
 export function infraText(g: InfraGraph): string {
-  const lines = [`${g.app} · stage ${g.stage} · ${g.mode.toUpperCase()} · ${g.targets.join(" + ")}`];
+  const lines = [`${g.app} · stage ${g.stage} · ${g.environment.toUpperCase()} · ${g.mode.toUpperCase()} · ${g.targets.join(" + ")}`];
   for (const n of g.nodes) {
     const tag = n.protected ? "[KEPT]   " : n.kind === "worker" ? "         " : "[REMOVED]";
     lines.push(`  ${tag} ${n.kind.padEnd(14)} ${n.label}${n.name && n.name !== n.label ? ` (${n.name})` : ""}${n.note ? `  ${n.note}` : ""}`);

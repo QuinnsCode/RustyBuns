@@ -50,6 +50,8 @@ export const GROUPS: Group[] = [
       { method: "POST", path: "/api/me/feed/digest", body: "{harness, model?}", who: SIGNED_IN, does: "a coding agent (claude, codex, pi, opencode) digests your feed since the last digest; answers at once (202), poll the GET. On the hosted site, admins only (403): it runs on the site's API keys" },
       { method: "GET", path: "/api/me/seen?key=", who: SIGNED_IN, does: "the rev of a file you last saw, under the key the file page gives it (owner/repo:branch:path): {rev}, null if never" },
       { method: "PUT", path: "/api/me/seen", body: "{key, rev}", who: SIGNED_IN, does: "you've seen that file at rev; the newest 500 files are kept" },
+      { method: "GET", path: "/api/me/settings", who: SIGNED_IN, does: "your settings, kept in a Durable Object of your own near where you first connected: {theme?: light | dark | system}, only what you have set" },
+      { method: "PUT", path: "/api/me/settings", body: "{theme?}", who: SIGNED_IN, does: "set your light/dark choice across devices; only what you send changes, null puts one back to its default" },
       { method: "GET", path: "/api/me/export", who: SIGNED_IN, does: "everything here about you, as one JSON download (cookie only, never a token or agent)" },
       { method: "DELETE", path: "/api/me?confirm=:handle&scrub=1", who: SIGNED_IN, does: "delete your account, your repos and everything of them; your handle is retired, and with scrub=1 @ghost takes its place in other people's repos (cookie only)" },
       { method: "GET", path: "/api/users/:name", does: "a profile: {user, repos you may see, playlists, following, followers, stamps: {given, got}}; following counts what you may see of it; an agent's (agent-…) adds agent: {harness, run_by, repos it works in, lines, pulse per day, runs}" },
@@ -135,7 +137,7 @@ export const GROUPS: Group[] = [
     name: "A file",
     about: "Each file is a Durable Object. Every call takes ?path= (the file) and, to work on a branch's copy, &branch=. A line is {id, text, by, rev}: by and rev are its blame. An op names lines by id: {kind: \"insert\", after: id | null, text} | {kind: \"set\", line, base, text} | {kind: \"delete\", line, base}, where base is the line's rev as you read it; a stale one is a 409 to retry. ifRev pins the whole batch to the file's rev.",
     endpoints: [
-      { method: "GET", path: "/api/repos/:o/:r/do/file?path=", does: "the file now, with blame: {rev, lines: [{id, text, by, rev, private?}]}" },
+      { method: "GET", path: "/api/repos/:o/:r/do/file?path=", does: "the file now, with blame: {rev, lines: [{id, text, by, rev, private?}]}; &from=&limit= windows a big file's lines and adds {total, from}" },
       { method: "POST", path: "/api/repos/:o/:r/do/ops?path=", body: "{ops: Op[], ifRev?, claim?}", who: CREW, does: "edit, all or nothing: {rev, applied}, or 409 {rev, conflicts}, plus {claims, retryAfter} when lines are held; {error} when the path's policy refuses it (an agent's unclaimed lines on a codesplitter-live=line file, any edit to a locked one)" },
       { method: "GET", path: "/api/repos/:o/:r/do/log?path=&since=&limit=", does: "a page of the ops after rev since: {ops: [{rev, by, at, op, line}], next}, at most limit (default and cap 1,000); pass next as since for the next page, null at the end; 410 {from} if since is before where history starts" },
       { method: "GET", path: "/api/repos/:o/:r/do/at?path=&rev=", does: "time travel: the file as it was at rev, with blame; 410 {from} before where history starts" },

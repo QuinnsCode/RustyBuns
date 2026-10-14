@@ -10,8 +10,8 @@ import {
 } from "./rules.ts";
 import { spawn } from "./spawn.ts";
 import type { Event, Hippo, Input, State } from "./types.ts";
+import { clamp } from "@rustybuns/util";
 
-const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 
 export function newHippo(seat: number): Hippo {
   return { seat, slide: 0, gulp: -1, cooldown: 0, sputter: 0, sore: 0, flooded: false, dud: false, score: 0, bellow: 0 };

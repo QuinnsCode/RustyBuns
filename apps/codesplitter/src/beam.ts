@@ -42,6 +42,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startChecks } from "./checks.ts";
 import { branchNameError, json, readBody, type Body, type Env } from "./env.ts";
+import { repoRow } from "./repos.ts";
 import { access as artifactAccess, handleFor, readTree, toFile } from "./archive.ts";
 import { ancestors } from "./branches.ts";
 import { blobId, GIT_EMAIL_DOMAIN, push, setRef, ZERO, type Change as GitChange } from "./git.ts";
@@ -122,15 +123,13 @@ async function must(args: string[], dir: string, env?: Record<string, string>, s
 }
 
 type RepoRow = { artifact: string | null; branch: string | null; upstream: string | null; crew_artifact: string | null };
-const repoRow = (env: Env, owner: string, repo: string) =>
-  env.DB.prepare("SELECT artifact, branch, upstream, crew_artifact FROM repos WHERE owner = ? AND name = ? AND (expires_at IS NULL OR expires_at > ?)")
-    .bind(owner, repo, Date.now()).first() as Promise<RepoRow | null>;
+const repoOf = (env: Env, owner: string, repo: string) => repoRow<RepoRow>(env, owner, repo, "artifact, branch, upstream, crew_artifact", { liveAt: Date.now() });
 
 /** The repo's bare git on this machine, or why there isn't one to beam from. */
 async function bareOf(env: Env, owner: string, repo: string): Promise<{ error: Response } | { r: RepoRow; dir: string; main: string }> {
   const lg = localGit(env);
   if (!lg) return { error: json({ error: "beams need git on this machine: beam from the desktop app" }, 501) };
-  const r = await repoRow(env, owner, repo);
+  const r = await repoOf(env, owner, repo);
   if (!r) return { error: json({ error: "no such repo" }, 404) };
   if (!r.artifact) return { error: json({ error: "this repo has no git yet" }, 409) };
   return { r, dir: lg.path(r.artifact), main: r.branch ?? "main" };
@@ -207,7 +206,7 @@ async function linesStack(env: Env, owner: string, repo: string, dir: string, ma
 
 /** Beam branch `branch` of owner/repo, a git one or (`kind: "codesplitter"`) one of ours: see the top of this file. */
 export async function makeBeam(env: Env, owner: string, repo: string, user: string, body: Body<"branch" | "kind" | "onto" | "to" | "title" | "message" | "keep" | "drop">): Promise<Response> {
-  const lg = localGit(env), r = await repoRow(env, owner, repo);
+  const lg = localGit(env), r = await repoOf(env, owner, repo);
   if (!r) return json({ error: "no such repo" }, 404);
   if (!r.artifact) return json({ error: "this repo has no git yet" }, 409);
   const main = r.branch ?? "main";

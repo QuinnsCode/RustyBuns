@@ -8,6 +8,7 @@
 // The view draws it and feeds the hero's input; the tests run it headless with the autopilot.
 import { atan2, cos, hypot, sin } from "./fmath.ts";
 import { VEHICLE_KINDS, other, poolSize, type BattleResult, type BattleSpec, type MatchMode, type PerSide, type SectorKind, type Side, type VehicleKind } from "./contract.ts";
+import { clamp } from "@rustybuns/util";
 
 export type Trooper = "assault" | "heavy" | "sniper" | "engineer";
 export const TROOPERS: Trooper[] = ["assault", "heavy", "sniper", "engineer"];
@@ -240,7 +241,6 @@ const rand = (b: Battle) => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => hypot(a.x - b.x, a.z - b.z);
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 // yaw 0 faces -z, towards the defender's end of the plain, like a three.js camera.
 export const facing = (yaw: number) => ({ x: -sin(yaw), z: -cos(yaw) });
 export const yawTo = (from: { x: number; z: number }, to: { x: number; z: number }) => atan2(-(to.x - from.x), -(to.z - from.z));

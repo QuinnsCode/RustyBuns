@@ -8,6 +8,12 @@ merge plan (`src/merge-plan.ts`) that puts clashing PRs in waves. It swerves out
 Mervin keeps on swervin, so your agentic merge conflicts can stop hurting. Everyone has that "database guy";
 Mervin is your agentic git and merge guy, out here solving the problems so your agent doesn't have to.
 
+Mervin is built for the agentic era but is not an AI. It is a deterministic merge engine: no model, no
+prompt, no sampling, so the same three inputs give the same merge every time, for free, in milliseconds.
+It is designed for maximum collaboration with minimal friction: many agents and people on one repo at once,
+their merge conflicts dissolving into merge solutions instead of piling up as work. A model only gets involved
+when Mervin hands back a card, and then with the context to answer it.
+
 Mervin is the merge engine this agentic era needs, and layered with a sync layer it makes agents go brrrr.
 Let Mervin bring the intelligence to your merges, so you don't spend precious token budget on them and
 human minds are free to steer the digsite.
@@ -125,6 +131,34 @@ those are engine faults or the person editing around the conflict is not yet loo
 them against `landed` before changing the resolver. Ruby is the other finding: the weak spot is cards (40%),
 not silent mistakes, and Ruby has no `lint.ts` guard (see below).
 
+## The borg engine: Mervin on a loop
+
+`scripts/borg-engine.ts` rolls Mervin through public git histories continuously, and keeps what people did
+by hand:
+
+```sh
+bun run borg                                  # git/git, rails/rails, expressjs/express, one pass
+bun run borg https://github.com/org/repo.git --limit 100 --agents 4 --loop --every 600
+```
+
+Each pass, per repo: clone bare (or fetch) into `~/.cache/borg`, replay the next `--limit` merges it has not seen
+(`state.json` remembers them, so a loop walks a history back to its first merge), and tally what Mervin did with each
+file git gave up on, as `mervin-corpus.ts` does. Wherever the person who merged did not land what Mervin made
+(he asked, or settled to other text), the lines they added and dropped are appended to `lessons.jsonl`: the
+**human edits**, the teaching set for the next resolver level. A reordering is not an edit.
+
+With `--agents N` the same pass has a team of pretend agents rewrite the repo's latest commits into one file at once
+(`scripts/borg-agents.ts`, also runnable alone: `bun scripts/borg-agents.ts <repo> [commit ...] --agents 4 --contest 0.3`).
+A commit's diff is cut into units (one changed line; a run of new lines after one anchor), dealt to the agents, and
+fired concurrently at the file's Durable Object on the local twins. With `--contest`, that share of the rewritten
+lines also gets a second agent writing different text: two agents on one line. It passes when the file ends as the
+commit wrote it, or, on a contested line, as exactly one of the texts offered. A lost update or an agent that never
+lands fails the run. Nothing leaves the machine.
+
+First pass on expressjs/express (2026-10-13, 60 conflicted merges, 183 files): 21 solved, 38 wrong, 122 cards, 138 human edits kept.
+Most cards were `package.json` (both sides bump dependencies and scripts), so `package.json` now merges by key (`src/manifest.ts`): each key on its own, the higher version when both bumped one, and a card only for a script or field both rewrote. Same sample after: 36 solved, 44 wrong, 101 cards. The extra wrong are mostly people keeping the older version or moving a key, which no engine can know. The pretend team on the
+latest 5 commits: 13 files, 4 exact, 9 settled on contested lines, 0 lost, 0 stuck.
+
 ## Mervin on the open PR board
 
 ```sh
@@ -161,6 +195,21 @@ test fail where main passes. Six of the 19 PRs are already red on their own (#14
 main: a clash every per-file merge rates "certain". So a red board says to fix the red PRs first, and "certain"
 covers one file's text, not the files around it.
 
+## Mervin runs the merge round
+
+```sh
+bun scripts/mervin-merge.ts          # the plan: wave, or HOLD and why, one stamped line per PR
+bun scripts/mervin-merge.ts --go     # turn on `gh pr merge --auto --squash` for wave 1 only
+bun scripts/mervin-merge.ts --stack --push   # join the clean PRs into one PR, one merge commit each
+```
+
+This is the decision the office's PR agent made (#1506), taken over: Mervin reads the board and holds a PR whose
+CI failed, whose file he carded, that clashes across files, that is stacked on an open PR, or that waits behind a
+held one. `--stack` joins the clean ones (go, and every file certain or agree) into one branch with git plumbing, a merge commit per PR, and opens one PR listing what's in it and what isn't and why. Merge it as a merge commit; `git revert -m1` undoes it all or one PR. Every run is recorded to `.mervin/rounds/` (PR list with head shas and CI, main's sha, the board, the verdicts, the stack's tip) and pins each PR head under `refs/mervin/`, and `--upload ephemeral-mervin-rounds` puts it in that R2 bucket (made 2026-10-14 by hand with `wrangler r2 bucket create`, named `ephemeral-` so a cleanup that lists the account's resources and deletes the `ephemeral-*` ones finds it; empty R2 bills nothing), so `--replay <file>` reruns the same decisions on exactly that input, even after a force push. The rest go in waves (wave 2 touches files wave 1 does). The merge itself is GitHub's auto-merge, so the
+ruleset on `main` still decides. After a wave lands, run it again: the board is rebuilt on the new main. The lines
+are stamped so the owner can tail a run. Not done yet: running it inside a codeSplitter sandbox box, and pushing
+alerts as it goes (the stdout lines are the feed for that).
+
 ## Where Mervin is weak
 
 - **Code outside JS/TS is only flagged.** `src/lint.ts` parses only JavaScript, TypeScript and HTML. For the rest
@@ -172,6 +221,46 @@ covers one file's text, not the files around it.
 - **Visible now, thinly.** The merge plan line and `GET /api/repos/:o/:r/merge-plan` (`engine`) name him, and the repo page
   and `GET /api/mervin` show the git/git corpus (settled / asked / other text, `src/mervin.ts`). The numbers there are
   this doc's table, not a live per-repo tally, and the merge page does not credit him per file yet.
+
+## Learning your merge patterns (opt-in, not built yet)
+
+Design only. The engine stays deterministic: learning never changes how a merge is computed, it changes what
+Mervin notices and how he orders and flags, and it is off until a repo turns it on.
+
+**What is kept.** One small event per merge, with no file contents and no diffs: repo, file extension, resolver
+level that settled it (or `card`), whether the merged tree passed its checks, how the card was answered (main's,
+the branch's, both, written, an agent), and whether the result was later reverted or edited. Paths are hashed
+unless the repo says otherwise.
+
+**Where it goes.** Cloudflare's R2 stack lets us keep it as plain tables with no database to run:
+
+```
+Mervin (Worker) -> Pipeline (stream + SQL transform) -> R2 Data Catalog (Iceberg table in R2) -> R2 SQL
+```
+
+This is the Basin skill's product set: Basin Pipelines to ingest, Basin Catalog for the Iceberg tables in R2,
+Basin SQL to query across them (formerly Pipelines, R2 Data Catalog and R2 SQL). Per-repo hot state (the open-PR
+overlap map) stays in the MervinDO ([mervin-engine.md](mervin-engine.md)); R2 holds the history that is too
+wide for it.
+
+**What it is asked.**
+
+- Which file types, directories and PR pairs fight here, so the merge plan weights them: `SELECT ext, count(*)
+  ... WHERE outcome = 'card' GROUP BY ext`.
+- Which resolver level this repo's people accept without editing, and which settle "wrong" (answered, then
+  reverted). A level with a bad record on this repo is demoted to a card, which is the self-heal.
+- Which card answers repeat (always main's on `package.json`, always both on `CHANGELOG.md`): suggested first,
+  or proposed as a `.gitattributes` rule for a person to approve.
+
+**Report.** A weekly summary per repo (settled, asked, wrong, top fighting paths, rules proposed), on the repo
+page and `GET /api/mervin`. Self-heal means demoting a level or suggesting a rule; it never rewrites history or
+merges anything new without the same guards as today.
+
+**Opt-in.** Off by default, per repo, switchable in settings, with delete-my-data. Nothing leaves the account
+that owns the repo.
+
+Open: event schema, retention, and whether Pipelines-to-Iceberg or plain R2 NDJSON plus R2 SQL is cheaper at
+our volume (price it first, per the contest cost rule).
 
 ## Corpus to pull in
 

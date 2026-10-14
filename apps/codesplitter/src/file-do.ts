@@ -107,6 +107,17 @@ export const WAIT_KEEP_MS = 60_000;
 /** Presence goes out at most this often, so a thousand sockets opening at once isn't a million messages. */
 const PRESENCE_MS = 250;
 
+/**
+ * A window of a doc's lines, when the reader asks for one (`from`, 0-based, and `limit`): the doc
+ * with only those lines, plus `total` and `from` so they can ask for the next. Without either, the
+ * whole doc, as before.
+ */
+function window<D extends { lines: unknown[] }>(doc: D, from: string | null, limit: string | null): D | (D & { total: number; from: number }) {
+  if (from === null && limit === null) return doc;
+  const start = Math.max(0, Math.floor(Number(from)) || 0), n = Math.max(1, Math.min(Math.floor(Number(limit)) || doc.lines.length, 5000));
+  return { ...doc, lines: doc.lines.slice(start, start + n), total: doc.lines.length, from: start };
+}
+
 export class FileDurableObject {
   doc: Doc = empty();
   base: Doc | null = null;
@@ -231,7 +242,7 @@ export class FileDurableObject {
       this.presence();
       return new Response(null, { status: 101, webSocket: client } as ResponseInit);
     }
-    if (req.method === "GET" && route === "file") return json(this.shown(this.doc, crew));
+    if (req.method === "GET" && route === "file") return json(window(this.shown(this.doc, crew), url.searchParams.get("from"), url.searchParams.get("limit")));
     if (req.method === "POST" && route === "ops") {
       const { ops, ifRev, claim } = (await req.json()) as { ops: Op[]; ifRev?: number; claim?: string };
       const r = await this.edit(by, ops, ifRev, claim, live);

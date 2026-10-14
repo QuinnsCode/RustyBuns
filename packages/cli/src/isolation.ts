@@ -14,14 +14,19 @@ import { join } from "node:path";
 import { workerName, type RustyBunsConfig } from "./config.ts";
 import { protectedNames } from "./protect.ts";
 
-export interface IsolationFlags { fresh: boolean; adoptExisting: boolean }
+export interface IsolationFlags { fresh: boolean; adoptExisting: boolean; ephemeral?: boolean; real?: boolean }
 
 export function isolationFlags(args: string[]): IsolationFlags {
-  return { fresh: args.includes("--fresh"), adoptExisting: args.includes("--adopt-existing") };
+  return {
+    fresh: args.includes("--fresh") || args.includes("--ephemeral"),
+    adoptExisting: args.includes("--adopt-existing") || args.includes("--real"),
+    ephemeral: args.includes("--ephemeral"),
+    real: args.includes("--real"),
+  };
 }
 
 /** Our own flags, which Alchemy would not understand. */
-export const ISOLATION_ARGS = ["--fresh", "--adopt-existing"];
+export const ISOLATION_ARGS = ["--fresh", "--adopt-existing", "--ephemeral", "--real"];
 
 /** The config with adoption off, for `--fresh`. */
 export function forceFresh(cfg: RustyBunsConfig): RustyBunsConfig {
