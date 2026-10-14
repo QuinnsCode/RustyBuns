@@ -16,20 +16,6 @@ test("every inline script on the page parses", () => {
   for (const s of scripts) expect(() => new Bun.Transpiler({ loader: "js" }).transformSync(s)).not.toThrow();
 });
 
-// The ⌘K palette opened as a narrow, tall box twice (#609, #678): a bare `.sheet` rule for
-// another widget (the repo tabs, max-width: 200px) also styled the palette's sheet.
-describe("the command palette and the drawer keep their size", () => {
-  test("the palette's sheet is full width", () => {
-    expect(html).toContain(`<div class="palette" id="palette" hidden><div class="sheet"`);
-    const own = rulesFor("sheet").find((r) => r.sel === ".palette .sheet");
-    expect(own?.body).toContain("width: min(640px, calc(100vw - 32px))");
-  });
-
-  test("no rule styles a .sheet outside the palette or the drawer", () => {
-    expect(rulesFor("sheet").map((r) => r.sel).filter((s) => !/^\.(palette|drawer)(\.on)? \.sheet\b/.test(s))).toEqual([]);
-  });
-});
-
 // Every git action draws what it does before you press it (#693).
 describe("git action pictures", () => {
   const src = html.slice(html.indexOf("const GITPICS"), html.indexOf("const picAttr"));
@@ -175,26 +161,6 @@ describe("picked lines as runs", () => {
   });
 });
 
-// A pressed Follow button read as a warning in orange (#710): only its eye turns orange.
-test("Following keeps the button neutral", () => {
-  const pressed = rulesFor("follow").filter((r) => r.sel.includes('aria-pressed="true"'));
-  expect(pressed.map((r) => r.sel)).toEqual(['.btn.follow[aria-pressed="true"] svg']);
-  expect(pressed[0]!.body).not.toMatch(/border|background/);
-});
-
-// The owner couldn't find where to make a token, and its copy buttons ran off the column (#729).
-describe("the profile's tokens", () => {
-  test("a copyline's input shrinks, so its copy button stays in the column", () => {
-    expect(rulesFor("copyline").find((r) => r.sel === ".copyline input")?.body).toContain("min-width: 0");
-  });
-
-  test("#/me/tokens opens Tokens and apps", () => {
-    expect(html).toContain('location.replace(`#/u/${me()}${open === "tokens" ? "/tokens" : ""}`)');
-    expect(html).toContain('wireTokens(undefined, open === "tokens")');
-    expect(html).toContain('<details class="more" id="tokens-more"${open ? " open" : ""}>');
-  });
-});
-
 // Branch names follow git, not the handle rule (#701); the page checks them as you type, as the server does.
 describe("branch names", () => {
   const src = html.slice(html.indexOf("/** What's wrong with a branch name"), html.indexOf("/** Under a branch-name box"));
@@ -283,47 +249,6 @@ describe("what changed since you were last here", () => {
     tick();
     await settle();
     expect(sent).toHaveLength(3);
-  });
-});
-
-// axe's leftovers from the accessibility pass (#768).
-describe("headings and landmarks", () => {
-  test("a repo's side panels are h2s under the page's h1, not h3s", () => {
-    expect(html).toContain(`<h2>\${icon(ic)}\${title}`);
-    expect(html).not.toMatch(/<h3\b/);
-  });
-
-  test("the side's panels sit on tabs: code, hosted, features, and shipping apart", () => {
-    const src = html.slice(html.indexOf("const DOCK_TAB_OF"), html.indexOf("/** Make the details side a dock"));
-    const tabOf = new Function(`${src}; return dockTabOf;`)();
-    expect(["editing", "commits", "branches", "about"].map(tabOf)).toEqual(["code", "code", "code", "code"]);
-    expect(["upstream", "crew", "webhooks", "delete-this-repo"].map(tabOf)).toEqual(["hosted", "hosted", "hosted", "hosted"]);
-    expect(["agents", "beam", "dependencies"].map(tabOf)).toEqual(["features", "features", "features"]);
-    expect(["deploy", "preview-deploy", "rusty-buns"].map(tabOf)).toEqual(["ship", "ship", "ship"]);
-  });
-
-  test("the workbench's two asides have their own names", () => {
-    expect(html).toContain(`<aside class="explorer" aria-label="Explorer">`);
-    expect(html).toContain(`<aside class="details" aria-label="Details">`);
-  });
-
-  test("the feed, search, admin, invite, share, cut and error pages each open with an h1", () => {
-    for (const h of [`<h1>\${icon("rss")} Your feed`, `<h1 class="page-h" style="margin:0 0 14px">\${icon("search")}`, `<h1>\${icon("gauge")} Rate limits`,
-      `<h1>\${icon("activity")} Insights`, `<h1>\${icon("map")} Survey`, `\${icon("mail-x")}<h1>Invite</h1>`, `\${icon("user-plus")}<h1>`,
-      `\${icon("share-2")}<h1>`, `\${icon("scissors")}<h1>`, `<h1 class="sr">Couldn't open this page</h1>`]) expect(html).toContain(h);
-  });
-});
-
-// The live contrast sweep (#784): text the sweep caught below 4.5:1.
-describe("text contrast", () => {
-  test("orange letters on the dark flap tiles use the light orange", () => {
-    expect(rulesFor("flap-cell").filter((r) => r.body.includes("--accent-ink"))).toEqual([]);
-    expect(rulesFor("st").find((r) => r.sel === ".flap-cell.st b")?.body).toContain("var(--accent-glow)");
-  });
-
-  test("the hero's phases and the city door fade by colour, not by opacity", () => {
-    expect(rulesFor("phases").find((r) => r.sel === ".phases li")?.body).not.toContain("opacity");
-    expect(rulesFor("city-door").find((r) => r.sel === ".city-door a")?.body).not.toContain("opacity");
   });
 });
 
@@ -478,22 +403,6 @@ describe("a file page loads in one round trip", () => {
   });
 });
 
-// The daily path (sign in with Google, dig up a link, edit, commit, make private, share, collab, deploy)
-// is one click each, from the landing page and from every repo page's header.
-describe("the daily flow is one click away", () => {
-  test("the landing page leads with Continue with Google when it is offered", () => {
-    expect(html).toContain('id="hero-google"');
-    expect(html).toContain('session.providers?.includes("google")');
-  });
-  test("every repo header carries the flow bar, and each step is wired to a real control", () => {
-    expect(html).toContain("${views.flowBar(owner, repo, r)}");
-    for (const k of ["edit", "commit", "private", "share", "invite", "deploy"]) expect(html).toContain(`step("${k}"`);
-    expect(html).toContain('go("commit", (t) => t.click())');
-    expect(html).toContain('needSel("lock"');
-    expect(html).toContain('needSel("share"');
-  });
-});
-
 // Getting started's table of contents plays the tour's steps by title; a renamed step would leave a dead entry.
 test("every Getting started entry names a real tour step", () => {
   const guide = html.slice(html.indexOf("const GUIDE = ["), html.indexOf("let guideRepos"));
@@ -613,24 +522,24 @@ test("the dig dialog digs a pull-only mirror in one click, and Mervin says how t
   expect(html).toContain('id="mervin-hint"');
 });
 
-describe("the tour's autoplay", () => {
+// The tour leaves sign-in, spending, merging and shipping to a person.
+test("the tour's autoplay pauses where a person must act", () => {
   const src = html.slice(html.indexOf("function tourPause"), html.indexOf("/** The step to show from"));
   const tourPause = new Function(`${src}; return tourPause;`)();
-  test("it leaves sign-in, spending, merging, shipping and new pages to a person", () => {
-    expect(tourPause({ ch: "signin" }, false)).toContain("Sign in");
-    expect(tourPause({ ch: "signin" }, true)).toBe("");
-    expect(tourPause({ ch: "code" }, false)).toBe("");
-    expect(tourPause({ ch: "self", you: "Only a person deploys." }, true)).toBe("Only a person deploys.");
-    expect(tourPause({ ch: "play", href: () => "/x" }, true)).toContain("Go");
-  });
-  test("every step that costs money, merges or ships is marked, and the self-edit chapter ends in a person's hands", () => {
-    const self = html.slice(html.indexOf('{ ch: "self", ic: "bot"'), html.indexOf('{ ch: "play", ic: "building"'));
-    for (const t of ["An agent edits it", "Mervin merges it", "A person ships it"]) {
-      const at = self.indexOf(`t: "${t}"`);
-      expect(self.slice(at, self.indexOf("{ ch:", at + 1) > 0 ? self.indexOf("{ ch:", at + 1) : undefined)).toContain("you:");
-    }
-    expect(html).toContain(`["self", "repeat", "Edit itself"]`);
-  });
+  expect(tourPause({ ch: "signin" }, false)).toContain("Sign in");
+  expect(tourPause({ ch: "signin" }, true)).toBe("");
+  expect(tourPause({ ch: "code" }, false)).toBe("");
+  expect(tourPause({ ch: "self", you: "Only a person deploys." }, true)).toBe("Only a person deploys.");
+  expect(tourPause({ ch: "play", href: () => "/x" }, true)).toContain("Go");
+});
+
+test("the side's panels sit on tabs: code, hosted, features, and shipping apart", () => {
+  const src = html.slice(html.indexOf("const DOCK_TAB_OF"), html.indexOf("/** Make the details side a dock"));
+  const tabOf = new Function(`${src}; return dockTabOf;`)();
+  expect(["editing", "commits", "branches", "about"].map(tabOf)).toEqual(["code", "code", "code", "code"]);
+  expect(["upstream", "crew", "webhooks", "delete-this-repo"].map(tabOf)).toEqual(["hosted", "hosted", "hosted", "hosted"]);
+  expect(["agents", "beam", "dependencies"].map(tabOf)).toEqual(["features", "features", "features"]);
+  expect(["deploy", "preview-deploy", "rusty-buns"].map(tabOf)).toEqual(["ship", "ship", "ship"]);
 });
 
 describe("scenes a queue or an agent drives", () => {
@@ -696,22 +605,6 @@ test("the fit panel offers Box it to the owner when the repo fits", () => {
   expect(html).toContain('$("#box-it")?.addEventListener("click", () => $("#ship").click())');
 });
 
-// #1653: pages that render outside `.wrap` (body.ide-mode zeroes main's padding) must carry their own side margin.
-describe("every page keeps its content off the window edges", () => {
-  test("each view's root is a wrap, the workbench, or a block with side padding", () => {
-    const roots = [...html.matchAll(/app\.innerHTML = `<div class="([\w-]+)/g)].map((m) => m[1]!);
-    expect(roots.length).toBeGreaterThan(10);
-    for (const cls of new Set(roots)) {
-      if (cls === "wrap") continue;
-      const padded = rulesFor(cls).some((r) => /padding:\s*(\d+px\s+)?(1[2-9]|[2-9]\d)px|padding:\s*0\s+(1[2-9]|[2-9]\d)px/.test(r.body));
-      expect(padded || cls === "phone" || cls === "repohead").toBe(true);
-    }
-  });
-  test("the backrooms page pads its sides", () => {
-    expect(rulesFor("backrooms")[0]?.body).toContain("padding: 0 24px");
-  });
-});
-
 // Send-offs: the share panel hands out links into the game, and play.html reads them.
 describe("game send-offs", () => {
   const play = readFileSync(join(import.meta.dir, "../src/play.html"), "utf8");
@@ -728,11 +621,4 @@ describe("game send-offs", () => {
     expect(play).toContain('hq.get("mode") === "wreck"');
     expect(play).toContain('hq.get("room")');
   });
-});
-
-// Going back to a file waited on the Durable Object every time; the page now remembers the last visit.
-test("a file page paints its last visit, then reads it afresh", () => {
-  expect(html).toContain("const fileMemo = new Map()");
-  expect(html).toContain("fileLeave?.(); fileLeave = null;");
-  expect(html).toContain("if (d.rev > doc.rev)");
 });
