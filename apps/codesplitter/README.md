@@ -163,6 +163,7 @@ There's no downloadable build yet; that's one command from source.
   It's a link anyone can open, with the diff and a `git am` patch, and it can land in someone's inbox.
   A codeSplitter branch beams from the hosted site too, where the Worker's own git builds the commits, one per branch for a stacked one.
   It never writes to GitHub.
+- **Select lines the way you'd want to.** Click, shift-click, drag, ⌘-click, arrows, Home/End, ⌘A, ⌘I to invert, ⇧⌥↑ to grow to the enclosing block, Esc or a second click to drop them; or pick by rule from ⌘K: lines matching text or a /regex/, lines an author or agent wrote. Agents get the same through WebMCP (`select_lines` with several ranges and add/remove/toggle, `select_matching`, `select_lines_by`, `expand_selection`, `invert_selection`, `deselect_lines`, `selected_lines`).
 - **Cut some lines out.** Select lines, and the cut follows what they use across files.
   Run its tests alone, share a card of it on X, and merge it back line by line.
 - **The dependency doctor.** It proposes updates on a branch on your schedule, skips releases too new to trust, tests them in a throwaway clone, and runs a breaking one down an on-fail chain you build from icons: retry it, have a coding agent fix it, have Claude search the web for known breakage, hold the release back, roll back to a smaller release, or alert you, stopping at the first that works, with caps on tries, minutes and dollars.
