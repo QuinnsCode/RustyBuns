@@ -17,6 +17,9 @@ const NAMES = [
   /^vite\.config\.[cm]?[jt]s$/,
   /^\.gitlab-ci\.yml$/, /^\.travis\.yml$/, /^azure-pipelines\.yml$/, /^Jenkinsfile$/,
   /^\.npmrc$/, /^bunfig\.toml$/,
+  // Not run at build time, but they say what runs and how: the checks' commands (checks.ts), and each
+  // path's policy (policy.ts), whose `codesplitter-check` and `codesplitter-live` an agent could loosen.
+  /^codesplitter\.ci$/, /^\.gitattributes$/,
 ];
 const DIRS = [".rustybuns", ".github", ".circleci", ".buildkite"];
 

@@ -642,6 +642,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/heal.ts` | self-healing CI: a failed required check, or a merge guard tripping, opens a fix task on the branch |
 | `src/hooks.ts` | outgoing webhooks: the owner's hooks, signed deliveries, the log, retries |
 | `src/identity.ts` | accounts (Better Auth) or aliases, and handles |
+| `src/leaks.ts` | the secrets an agent's edit must never carry into a repo |
 | `src/levels.ts` | the levels: import, browse, fork |
 | `src/lines.ts` | the line model: ops, conflicts, replay. Pure functions |
 | `src/merge-plan.ts` | merge plan (#1155): the open branches in waves, by codeSplitter's own merge as the clash test; the dispatch hint's file guess (#1163) |

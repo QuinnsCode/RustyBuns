@@ -480,6 +480,9 @@ export async function cloneUrl(env: Env, owner: string, repo: string) {
   return art ? art.remote.replace("://", `://x:${art.token.split("?")[0]}@`) : null;
 }
 
+/** The first line of the log of a run someone recorded by hand: claimRun keeps it from them. */
+const HAND = (user: string) => `recorded by hand by @${user}\n`;
+
 /**
  * A runner takes the oldest queued run of ours, desktop or container (never GitHub's or an
  * external CI's), of `names` when it only runs some, as `label`. One UPDATE marks it
@@ -488,9 +491,13 @@ export async function cloneUrl(env: Env, owner: string, repo: string) {
 export async function claimRun(env: Env, owner: string, repo: string, label: string, names: string[] = [], now = Date.now(), by: string | null = null) {
   await requeueStale(env, now, { owner, repo });
   const only = names.length ? ` AND name IN (${names.map(() => "?").join(", ")})` : "";
+  // Nobody but the owner runs a check they queued by hand: record it, claim it, pass it, and a crew
+  // member (or a prompt-injected agent holding a token) waves its own branch past a required check.
+  const mine = by && by !== owner ? HAND(by) : null;
+  const notMine = mine ? " AND substr(log, 1, ?) != ?" : "";
   const run = await env.DB.prepare(`UPDATE check_runs SET status = 'running', started_at = ?, runner_label = ?, heartbeat_at = ?, claimed_by = ?
-    WHERE id = (SELECT id FROM check_runs WHERE owner = ? AND repo = ? AND status = 'queued' AND runner IN ('desktop', 'container')${only} ORDER BY id LIMIT 1) AND status = 'queued' RETURNING *`)
-    .bind(now, label, now, by, owner, repo, ...names).first() as CheckRun | null;
+    WHERE id = (SELECT id FROM check_runs WHERE owner = ? AND repo = ? AND status = 'queued' AND runner IN ('desktop', 'container')${only}${notMine} ORDER BY id LIMIT 1) AND status = 'queued' RETURNING *`)
+    .bind(now, label, now, by, owner, repo, ...names, ...mine ? [mine.length, mine] : []).first() as CheckRun | null;
   if (!run) return null;
   const s = await checkSettings(env, owner, repo);
   const command = s.required.find((r) => r.name === run.name)?.command ?? (s.pinned ? undefined : run.command);
@@ -685,7 +692,7 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
     if (b.url !== undefined && b.url !== null && typeof b.url !== "string") return json({ error: "url: text" }, 400);
     if (status && status !== "queued" && user !== owner) return json({ error: "only a runner says how a check went: record it queued for one to claim, or report through a CI token" }, 403);
     const run = await recordRun(env, { owner, repo, ref: b.ref, sha: b.sha, name: b.name, runner: runner ?? "desktop", status, url: b.url ?? undefined, runner_label: `by hand: @${user}` }, user!);
-    await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(`recorded by hand by @${user}\n`, run.id).run();
+    await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(HAND(user!), run.id).run();
     return json(await get(env, run.id), 201);
   }
   if (p[5] === "run" && req.method === "POST") {
@@ -749,7 +756,9 @@ export async function checkRoutes(req: Request, env: Env, p: string[], url: URL,
     const text = (v: unknown) => typeof v === "string" ? v : undefined;
     if ([b.log, b.append, b.junit, b.runner_label, b.url].some((v) => v !== undefined && text(v) === undefined)) return json({ error: "log, append, junit, runner_label and url: text" }, 400);
     if (run.runner === "github") return json({ error: "GitHub's runs come from GitHub" }, 409);
-    if (b.status && b.status !== run.status && user !== owner && run.claimed_by !== user) return json({ error: "only the runner that claimed it says how it went: POST .../checks/claim first" }, 403);
+    // Its log too: rewritten by anyone, a run recorded by hand would lose the line that keeps its recorder from claiming it.
+    if (user !== owner && run.claimed_by !== user && (b.status && b.status !== run.status || [b.log, b.append, b.junit, b.url].some((v) => v !== undefined)))
+      return json({ error: "only the runner that claimed it says how it went: POST .../checks/claim first" }, 403);
     // A runner that went quiet and lost its claim stops: the run is someone else's now.
     if (b.runner_label && b.runner_label !== run.runner_label && !DONE.has(run.status)) return json({ error: run.runner_label ? `${run.runner_label} has it now` : "it went back in the queue: no word from you in time" }, 409);
     const after = await updateRun(env, run, { status, log: text(b.log), append: text(b.append), junit: text(b.junit), url: text(b.url) }, user!);

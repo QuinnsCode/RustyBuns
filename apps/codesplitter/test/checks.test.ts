@@ -417,6 +417,22 @@ test("a collaborator can't pass a check it didn't run: only the claimer or the o
   expect(await (await call("ryan", `/api/repos/ryan/lab/checks/${mine.id}`)).json()).toMatchObject({ status: "failed", claimed_by: "agent-x" });
 });
 
+test("a collaborator can't queue a required check by hand, claim it and pass it: someone else runs what it queued", async () => {
+  const { send, checks } = await app();
+  for (const name of ["agent-x", "agent-y"]) await send("ryan", "/api/repos/ryan/lab/collaborators", { name });
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { required: ["test"] }, "PUT");
+  const queued = await (await send("agent-x", "/api/repos/ryan/lab/checks", { ref: "main", sha: SHA, name: "test" })).json();
+  // Its own claim finds nothing, and the log that says who queued it can't be rewritten by someone who didn't claim it.
+  expect((await send("agent-x", "/api/repos/ryan/lab/checks/claim", { runner_label: "agent-box", names: ["test"] })).status).toBe(204);
+  expect((await send("agent-x", `/api/repos/ryan/lab/checks/${queued.id}`, { log: "clean\n" }, "PUT")).status).toBe(403);
+  expect((await send("agent-x", "/api/repos/ryan/lab/checks/claim", { runner_label: "agent-box", names: ["test"] })).status).toBe(204);
+  expect((await checks()).gate.ok).toBe(false);
+  // Another runner takes it, and only that runner says how it went.
+  expect(await (await send("agent-y", "/api/repos/ryan/lab/checks/claim", { runner_label: "y-box" })).json()).toMatchObject({ id: queued.id });
+  expect((await send("agent-x", `/api/repos/ryan/lab/checks/${queued.id}`, { status: "passed" }, "PUT")).status).toBe(403);
+  expect((await send("agent-y", `/api/repos/ryan/lab/checks/${queued.id}`, { runner_label: "y-box", status: "passed" }, "PUT")).status).toBe(200);
+});
+
 test("what runs here: codesplitter.ci says, else package.json's scripts, else one test run (#463)", () => {
   expect(planFrom(null, null)).toEqual([]);
   expect(planFrom(null, JSON.stringify({ scripts: { test: "bun test", typecheck: "tsc", dev: "vite" } }))).toEqual([

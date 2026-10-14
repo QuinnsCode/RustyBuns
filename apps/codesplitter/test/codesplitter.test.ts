@@ -1668,7 +1668,7 @@ describe("shares", () => {
   });
 
   test("build and deploy files are told apart from the rest", () => {
-    for (const p of ["package.json", "web/package.json", "bun.lock", "pnpm-lock.yaml", "rustybuns.config.ts", "wrangler.jsonc", ".rustybuns/state.json", "alchemy.run.ts", "Dockerfile", "api/Dockerfile.prod", "build.ts", "vite.config.mjs", ".github/workflows/ci.yml", ".gitlab-ci.yml"]) expect([p, isBuildFile(p)]).toEqual([p, true]);
+    for (const p of ["package.json", "web/package.json", "bun.lock", "pnpm-lock.yaml", "rustybuns.config.ts", "wrangler.jsonc", ".rustybuns/state.json", "alchemy.run.ts", "Dockerfile", "api/Dockerfile.prod", "build.ts", "vite.config.mjs", ".github/workflows/ci.yml", ".gitlab-ci.yml", "codesplitter.ci", ".gitattributes"]) expect([p, isBuildFile(p)]).toEqual([p, true]);
     for (const p of ["src/build.tsx", "README.md", "src/package.ts", "docs/wrangler.md", "test/vite.config.test.ts"]) expect([p, isBuildFile(p)]).toEqual([p, false]);
   });
 

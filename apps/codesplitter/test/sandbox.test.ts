@@ -31,6 +31,17 @@ describe("the container's server", () => {
     expect((await run({ cmd: { bin: "true", args: [] }, path: "a.js", text: "", also: { "../escape.js": "" } })).code).toBe(2);
     expect((await testCut({ files: { "../escape.test.ts": "" } })).code).toBe(2);
   });
+  test("a symlink or fifo left in place of a file isn't read back: the server is root, the agent and the repo's code aren't", async () => {
+    // /proc/1/environ in the container: the agent's logins. A file outside the directory stands in for it here.
+    const outside = `${import.meta.dir}/fixtures-secret-${process.pid}.txt`;
+    await Bun.write(outside, "ANTHROPIC_API_KEY=sk-ant-not-yours\n");
+    try {
+      const r = await run({ cmd: { bin: "sh", args: ["-c", `ln -sf ${outside} a.js && rm b.js && mkfifo b.js`] }, path: "a.js", text: "x\n", also: { "b.js": "b\n" } });
+      expect(r).toMatchObject({ code: 0, text: null, also: { "b.js": null } });
+      const through = await run({ cmd: { bin: "sh", args: ["-c", `rm -r d && ln -s ${import.meta.dir} d`] }, path: "a.js", text: "x\n", also: { [`d/${outside.split("/").pop()}`]: "y\n" } });
+      expect(through.also).toEqual({ [`d/${outside.split("/").pop()}`]: null });
+    } finally { await Bun.file(outside).delete(); }
+  });
   test("runs bun test over a cut's files, with a JUnit report", async () => {
     const r = await testCut({ files: { "a.test.ts": 'import { expect, test } from "bun:test";\ntest("one", () => expect(1).toBe(1));\n' } });
     expect(r.code).toBe(0);
@@ -288,6 +299,28 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     const { call } = await hosted(async () => ({ code: 1, out: "not logged in", text: "junk" }));
     expect(await finished(call, { harness: "codex", path: "src/a.js", task: "x" })).toMatchObject({ status: "failed" });
     expect(text(await doc(call))).toBe("var x = 1\nf()");
+  });
+
+  test("an agent told to write its own key into the file, or a key of any known shape, or to empty it, lands nothing", async () => {
+    const key = "sk-live-made-up-for-this-test-0123456789";
+    const leaks = [`var x = 1\nf()\n// ${key}\n`, "var x = 1\nf()\nconst t = 'ghp_" + "a".repeat(36) + "'\n", ""];
+    const { call, env } = await hosted(async () => ({ code: 0, out: "", text: leaks.shift() }));
+    env.ANTHROPIC_API_KEY = key;
+    for (const why of ["a key this run was handed", "a GitHub token", "emptied src/a.js"]) {
+      const run = await finished(call, { harness: "claude", path: "src/a.js", task: "x" });
+      expect(run.status).toBe("failed");
+      expect(JSON.stringify(run)).toContain(why);
+      expect(text(await doc(call))).toBe("var x = 1\nf()");
+    }
+  });
+
+  test("a path .gitattributes locks is refused before a container starts", async () => {
+    const { call, post, runs } = await hosted(async (b) => ({ code: 0, out: "", text: b.text }));
+    await post("ryan-quinn", "/api/repos/ryan-quinn/r1/files", { path: ".gitattributes", content: "src/a.js codesplitter-live=locked" });
+    const res = await post("ryan-quinn", "/api/repos/ryan-quinn/r1/agents", { harness: "claude", path: "src/a.js", task: "x" });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toContain("locked");
+    expect(runs).toHaveLength(0);
   });
 
   test("runs are kept in D1, so any isolate sees them; a retry after a cut-off consumer fails the run rather than running it twice", async () => {
