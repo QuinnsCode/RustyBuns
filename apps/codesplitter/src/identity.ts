@@ -93,10 +93,11 @@ function authFor(req: Request, env: Env) {
   return auth;
 }
 
-// agent- handles are ours to give, so a cookie can't claim one (it would join every repo running that agent).
+// On Cloudflare, agent- handles are ours to give, so a cookie can't claim one (it would join every repo running that agent).
+// Off it (local, tests), the cookie is the only way to be an agent, so it stays.
 const aliasOf = (req: Request, env: Env) => {
   const name = aliasesClosed(env) ? null : /(?:^|;\s*)cs_user=([a-z0-9-]+)/.exec(req.headers.get("cookie") ?? "")?.[1] ?? null;
-  return name && !isAgentHandle(name) ? name : null;
+  return name && !(onCloudflare() && isAgentHandle(name)) ? name : null;
 };
 
 const retired = async (env: Env, name: string) =>
@@ -109,7 +110,7 @@ const retired = async (env: Env, name: string) =>
  */
 async function aliasSeen(req: Request, env: Env) {
   const name = aliasOf(req, env);
-  if (!name) return name;
+  if (!name || isAgentHandle(name)) return name;
   if (await retired(env, name)) return null;
   await env.DB.prepare("INSERT OR IGNORE INTO users (name, created_at) VALUES (?, ?)").bind(name, Date.now()).run();
   return name;
