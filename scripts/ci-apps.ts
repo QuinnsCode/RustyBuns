@@ -83,6 +83,15 @@ async function rowChanges(base: string): Promise<Set<string> | "all"> {
   return apps;
 }
 
+// Root package.json edits to its scripts or version can't break an app; anything else (dependencies,
+// overrides, patches, workspaces) can.
+async function rootDepsChanged(base: string): Promise<boolean> {
+  const strip = (txt: string) => { try { const { scripts, version, ...rest } = JSON.parse(txt); return JSON.stringify(rest); } catch { return txt; } };
+  const mb = (await Bun.$`git merge-base ${base} HEAD`.quiet().nothrow().text()).trim() || base;
+  const before = await Bun.$`git show ${mb}:package.json`.quiet().nothrow().text();
+  return strip(before) !== strip(await Bun.file("package.json").text());
+}
+
 if (cmd === "drop") {
   let names: string[];
   if (arg === "pr") {
@@ -107,9 +116,10 @@ if (cmd === "drop") {
 } else if (cmd === "test") {
   if (!arg) throw new Error("test needs a base ref");
   const changed = await changedFiles(arg);
-  // A change to the shared code or the lockfile can break any app.
+  // A change to the shared code, the lockfile or the root package.json's dependencies can break any app.
   const rows = changed.includes("scripts/ci-apps.ts") ? await rowChanges(arg) : new Set<string>();
-  const shared = rows === "all" || changed.some((f) => /^(packages\/|bun\.lock$|package\.json$|\.github\/workflows\/apps\.yml$)/.test(f));
+  const shared = rows === "all" || changed.some((f) => /^(packages\/|bun\.lock$|\.github\/workflows\/apps\.yml$)/.test(f))
+    || (changed.includes("package.json") && await rootDepsChanged(arg));
   const touched = new Set([...changed.map((f) => f.match(/^apps\/([^/]+)\//)?.[1]).filter(Boolean), ...(rows === "all" ? [] : rows)]);
   const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n)));
   out("apps", { include: names.map((app) => ({ app, test: APPS[app]!.test ?? "", boot: !!APPS[app]!.boot, prep: APPS[app]!.prep ?? "", cargo: cargo(app) })) });
