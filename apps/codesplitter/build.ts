@@ -6,7 +6,25 @@ import { features } from "./features.ts";
 import { buildGitpath } from "./src/gitpath/build.ts";
 
 await mkdir("dist/client", { recursive: true });
-await copyFile("src/client.html", "dist/client/index.html");
+// The home page's styles and script go to content-hashed files, so a deploy that changes only one
+// leaves the other cached, and the HTML itself is small. 'self' covers them, so the CSP needs no hash.
+const home = await readFile("src/client.html", "utf8");
+// The style is the head's; the script is the one at the end (the page's own code mentions <style> in strings).
+const head = home.slice(0, home.indexOf("</head>"));
+const css = [...head.matchAll(/<style>([\s\S]*?)<\/style>/g)];
+const js = [...home.slice(head.length).matchAll(/<script>([\s\S]*?)<\/script>/g)];
+if (css.length !== 1 || js.length !== 1) throw new Error(`src/client.html: expected one inline <style> in the head and one inline <script>, found ${css.length} and ${js.length}`);
+await mkdir("dist/client/assets", { recursive: true });
+const hashed = async (body: string, ext: string) => {
+  const name = `app-${new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 10)}.${ext}`;
+  await writeFile(`dist/client/assets/${name}`, body);
+  return `/assets/${name}`;
+};
+const cssUrl = await hashed(css[0]![1]!, "css");
+const jsUrl = await hashed(js[0]![1]!, "js");
+await writeFile("dist/client/index.html", home
+  .replace(css[0]![0], () => `<link href="${cssUrl}" rel="stylesheet">`)
+  .replace(js[0]![0], () => `<script src="${jsUrl}"></script>`));
 await copyFile("src/play.html", "dist/client/play.html");
 // The game's code city mode, which play.html loads on #c/<name>.
 await copyFile("src/city.js", "dist/client/city.js");
@@ -32,7 +50,7 @@ await copyFile("src/mcp.html", "dist/client/mcp.html");
 const pages = ["index.html", "play.html", "features.html", "reference.html", "mcp.html"];
 const hashes = new Set<string>();
 for (const page of pages) for (const h of inlineScriptHashes(await readFile(`dist/client/${page}`, "utf8"))) hashes.add(h);
-await writeFile("dist/client/_headers", headersFile([...hashes]));
+await writeFile("dist/client/_headers", headersFile([...hashes]) + "\n/assets/*\n  cache-control: public, max-age=31536000, immutable\n");
 // Geist, served from here (no Google Fonts call): the stylesheet, both variable fonts and their license.
 await mkdir("dist/client/fonts", { recursive: true });
 for (const f of ["geist.css", "Geist-Variable.woff2", "GeistMono-Variable.woff2", "LICENSE.txt"]) await copyFile(`src/fonts/${f}`, `dist/client/fonts/${f}`);
