@@ -220,6 +220,26 @@ There's no framework API to unwind: your app stays a `fetch` handler with D1, KV
 
 </details>
 
+### Postgres instead of D1
+
+Swap D1 for your own Postgres: PGlite on the desktop, Hyperdrive in front of Neon, Supabase or RDS on the edge.
+
+<details><summary>More</summary>
+
+It's a code change, the way adding a shadcn component is. D1's `env.DB.prepare(...)` is sqlite-shaped, so your code uses a Postgres client (`pg`, `postgres`, Drizzle or Prisma) over `env.HYPERDRIVE.connectionString`, and `init` adds the `hyperdrive` binding when it sees one. The desktop and box connect to `DATABASE_URL`, or serve PGlite from the data dir with `local: "pglite"`. KV, Durable Object storage, queues and workflows still use sqlite locally; only the relational database moves. [borg-postgres](apps/borg-postgres/README.md) runs the same Worker on both and checks inserts, `jsonb`, rollback and concurrent upserts. Caveats (PGlite is one shared session) are in [Where things run](REFERENCE.md#where-things-run).
+
+</details>
+
+### Defaults you can take over
+
+Like shadcn, the defaults are a starting point: swap a piece, or `eject` the deploy program and own it.
+
+<details><summary>More</summary>
+
+Rusty Buns starts as a dev dependency that generates the host, the wrangler config and the Alchemy stack from `rustybuns.config.ts`. When a default stops fitting, change that piece and keep the rest: Postgres for D1, your own server beside the host, Rust or TypeScript for the hot path. `rustybuns eject` copies the Alchemy program to your repo, and from then on you own it. See [Adopting it in steps](ADOPTION.md#adopting-it-in-steps).
+
+</details>
+
 ### Accessible by default
 
 The docs site works with a screen reader and a keyboard alone, and has reading settings with dyslexia-friendly fonts (Atkinson Hyperlegible, OpenDyslexic), larger text and wider spacing.
