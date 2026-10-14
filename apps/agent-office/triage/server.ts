@@ -7,6 +7,8 @@
 //   GET  /__rb/heap             the heap snapshots the office and the pty hosts wrote over their ceiling
 //   GET  /__rb/history          the office's runs, one per start, newest first: memory slope, profiles, ceiling restarts
 //   GET  /__rb/helpers          Ester's and Mervin's runs of the board script (ester/run.ts): phase, the tail they printed, PRs to hold
+//   GET  /__rb/reload           what the page is running and whether the server's code moved on (live/reload.ts)
+//   POST /__rb/reload/restart   restart the office (SIGTERM; the workers keep running) when office:mama is minding it
 //   POST /__rb/helpers/<name>   start one (ester or mervin) in the first floor's repo, unless it is on it already
 // A POST from the page needs an X-RB-Triage header, which a form on another site can't send.
 import { existsSync, readFileSync } from "node:fs";
@@ -15,16 +17,25 @@ import { cpuProfile, PROF_MAX_MS, profiling } from "@rustybuns/shell-bun/cpuprof
 import { listSaved, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
 import { historyRuns } from "@rustybuns/shell-bun/history";
 import { officeHistory, officeMem } from "../live/mem.ts";
+import { officeReload } from "../live/reload.ts";
 import { createHelpers, isHelper } from "../ester/run.ts";
 
 export const TRIAGE_HEADER = "x-rb-triage";
+
+/** Built into <office>/dist/server/server/rb-triage.js, so the page assets are two up, in dist/public. */
+const SERVER_DIR = import.meta.dir;
+const PUBLIC_DIR = path.resolve(SERVER_DIR, "../../public");
 
 export interface TriageAnswer { status: number; body: unknown }
 
 const top = (url: URL) => Math.min(Math.max(Number(url.searchParams.get("top")) || 10, 1), 50);
 
 /** The /__rb route handler; null for a path that isn't one of them. `trusted` lets a POST through. */
-export function officeTriage(dataDir: string, floors: () => Iterable<{ id: string; dir: string }>) {
+export function officeTriage(
+  dataDir: string,
+  floors: () => Iterable<{ id: string; dir: string }>,
+  reload = officeReload(PUBLIC_DIR, SERVER_DIR, !!process.env.AGENT_OFFICE_RB_MAMA, () => process.kill(process.pid, "SIGTERM")),
+) {
   const mem = officeMem(dataDir, floors);
   const hist = officeHistory(dataDir);
   const profDir = path.join(dataDir, "prof");
@@ -33,6 +44,12 @@ export function officeTriage(dataDir: string, floors: () => Iterable<{ id: strin
     const p = url.pathname;
     const only = (m: string) => ({ status: 405, body: { error: `${m} ${p}` } });
     if (p === "/__rb/mem") return method === "GET" ? { status: 200, body: mem() } : only("GET");
+    if (p === "/__rb/reload") return method === "GET" ? { status: 200, body: reload.state() } : only("GET");
+    if (p === "/__rb/reload/restart") {
+      if (method !== "POST") return only("POST");
+      if (!trusted) return { status: 403, body: { error: `Send ${TRIAGE_HEADER}: 1 with the POST` } };
+      return reload.restart() ? { status: 202, body: { restarting: true } } : { status: 409, body: { error: "Nothing restarts the office here: run bun run office:update, or start it with bun run office:mama" } };
+    }
     if (p === "/__rb/history") return method === "GET" ? { status: 200, body: { runs: historyRuns(hist.read()) } } : only("GET");
     if (p === "/__rb/heap") {
       if (method !== "GET") return only("GET");

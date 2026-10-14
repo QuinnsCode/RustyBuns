@@ -24,6 +24,11 @@ office and its workers.) A failed pull or build leaves the old office up, and `o
 office on the port that isn't this checkout's. One caveat: a new Agent Office release that bumps `PTY_PROTOCOL`
 makes the new office stop the old pty host, and Claude workers are then resumed rather than kept.
 
+Under `office:mama` (or `office:update -- --watch`) your edits show up without a terminal: she rebuilds when this app's
+code changes, open pages refresh themselves (or offer Refresh while you're typing), and a change to server code makes the
+office say so with a Restart button. Restart is the same SIGTERM, and the page shows "coming back" until the new office
+answers. Started any other way, the banner says to restart it yourself.
+
 Then copy `./dist/agent-office-linux-x64` to a server and run it there, with all of Agent Office's own flags.
 Like upstream, it listens on `127.0.0.1` behind the office password, so reach it with
 `ssh -L 4600:localhost:4600 <server>` and open http://localhost:4600. Don't hand it `--host 0.0.0.0` on a
