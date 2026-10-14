@@ -26,6 +26,9 @@ export const GENERATED = ["wrangler.jsonc", ".env.schema"];
 /** What --move renames (#809): each replaced, the new one adopted or made, the old one deleted. */
 export const MOVED = ["DB", "HOOKS", "JOBS", "LEVEL_DIGS", "LEVEL_CHUNKS"];
 const OLD = "codesplitters", NEW = "codesplitter";
+/** The KV namespaces rustybuns.config.ts declares (`STATS: { type: "kv" }`): a plan row doesn't say what type a resource is. */
+export const kvBindings = (config: string) => [...config.matchAll(/^\s*([A-Z][A-Z0-9_]*): \{ type: "kv"/gm)].map((m) => m[1]!);
+const KV = (() => { try { return kvBindings(readFileSync(join(import.meta.dir, "..", "rustybuns.config.ts"), "utf8")); } catch { return []; } })();
 
 export interface Mode { checksNew: boolean; move: boolean }
 
@@ -112,7 +115,9 @@ export function checkPlan(text: string, mode: Mode): Verdict {
   const made = (id: string) => rows.some((r) => r.id === id && !r.binding && r.action === "create");
   const newQueue = (r: Row) => r.action === "create" && !r.binding &&
     (made(`${r.id}Consumer`) || (/^[A-Z][A-Z0-9_]*Consumer$/.test(r.id) && made(r.id.slice(0, -"Consumer".length))));
-  const making = (r: Row) => moving(r) || (mode.checksNew && r.id === "CI_RUNNER") || newQueue(r);
+  // A new KV namespace (`[STATS] create`, #1539) holds nothing yet and bills per read, so it goes to the y/N too.
+  const newKv = (r: Row) => r.action === "create" && !r.binding && KV.includes(r.id);
+  const making = (r: Row) => moving(r) || (mode.checksNew && r.id === "CI_RUNNER") || newQueue(r) || newKv(r);
   const risky: string[] = [], creates: string[] = [];
   for (const r of rows) {
     if (["delete", "replace", "orphaned", "unbind", "drop"].includes(r.action) && !moving(r) && !consumer(r)) risky.push(r.line);

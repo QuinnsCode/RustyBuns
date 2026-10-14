@@ -50,6 +50,7 @@ import { noteConflict } from "./usage.ts";
 import { busyOn, clashIn, taskFiles, waves, type Busy, type Clash, type Side } from "./merge-plan.ts";
 import { sha256 } from "./util.ts";
 import { countMerge } from "./stats.ts";
+import { emitOutcome } from "./mervin-events.ts";
 import { boardRoutes } from "./board-routes.ts";
 
 const TEXT_MAX = 20_000;
@@ -718,6 +719,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   const took: Took[] = [];
   const merged: { path: string; rev: number; ops: number; deleted?: true; binary?: true }[] = [], conflicts: { path: string; conflicts: Conflict[] }[] = [];
   let solved = 0;
+  const outcome: { path: string; picks?: Record<string, unknown>; solved?: number }[] = [];
   for (const f of todo) {
     // Claim the file, so two merges at once can't both apply it.
     const claim = await env.DB.prepare("UPDATE branch_files SET merged = 1 WHERE owner = ? AND repo = ? AND branch = ? AND path = ? AND merged = 0").bind(owner, repo, name, f.path).run();
@@ -740,7 +742,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     const onMain = await materialize(env, owner, repo, f.path);
     if ("error" in onMain && onMain.status === 404) await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, f.path).run();
     const m = await mergeFile(env, owner, repo, branch, f.path, user, resolve[f.path], false);
-    if (m.status === 200) { merged.push({ path: f.path, rev: m.rev, ops: m.ops?.length ?? 0 }); solved += m.solved ?? 0; continue; }
+    if (m.status === 200) { merged.push({ path: f.path, rev: m.rev, ops: m.ops?.length ?? 0 }); solved += m.solved ?? 0; outcome.push({ path: f.path, picks: resolve[f.path], solved: m.solved }); continue; }
     // Main moved into a conflict between the dry run and now: this file waits for another merge.
     await env.DB.prepare("UPDATE branch_files SET merged = 0 WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, name, f.path).run();
     conflicts.push({ path: f.path, conflicts: m.conflicts });
@@ -751,6 +753,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     await env.DB.prepare("DELETE FROM leftover_answers WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, name).run();
     await restackChildren(env, owner, repo, name);
     await countMerge(env, solved);
+    await emitOutcome(env, owner, repo, outcome);
     for (const c of clashing) took.push(await afterBlocker(env, owner, repo, c.then, name, user).catch((e) => ({ branch: c.then, status: "failed" as const, error: String((e as Error)?.message ?? e) })));
     // Shaped like a merged pull request, the branch as its head. Git hears about it at the next commit of main.
     await emit(env, owner, repo, "branch.merged", user, {

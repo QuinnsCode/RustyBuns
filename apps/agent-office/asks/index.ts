@@ -3,10 +3,11 @@
 // what the agent asked and Allow / Deny, and a clock running down to when it's turned down by itself.
 // Nothing upstream is patched: the cards poll /__rb/asks, and an answer POSTs to /__rb/asks/<id>.
 import type { Ask } from "../live/floorguard.ts";
+import { hot } from "../reload/hot.ts";
 
 const POLL_MS = 3000;
 const answered = new Set<string>();
-let box: HTMLElement | undefined;
+let box: HTMLElement | undefined, sheet: HTMLElement | undefined, timer: ReturnType<typeof setTimeout> | undefined, stopped = false;
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]) => {
   const e = Object.assign(document.createElement(tag), props);
@@ -34,6 +35,7 @@ function mount() {
     ".rb-ask .rb-allow{background:#2f8f46;color:#fff}.rb-ask .rb-deny{background:#c0392b;color:#fff}" +
     ".rb-ask button:disabled{opacity:.5;cursor:default}";
   document.head.append(style);
+  sheet = style;
   box = el("div", { className: "rb-asks", role: "region", ariaLabel: "Agents asking first" });
   document.body.append(box);
 }
@@ -77,8 +79,9 @@ async function poll() {
     if (res.redirected || res.status === 401 || res.status === 404) return;
     if (res.ok) show(((await res.json()) as { asks: Ask[] }).asks);
   } catch {}
-  setTimeout(poll, POLL_MS);
+  if (!stopped) timer = setTimeout(poll, POLL_MS);
 }
 
+hot("rb-asks", () => { stopped = true; clearTimeout(timer); box?.remove(); sheet?.remove(); });
 if (document.body) poll();
 else document.addEventListener("DOMContentLoaded", poll, { once: true });

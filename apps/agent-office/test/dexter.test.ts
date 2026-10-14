@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { render, tally, type Report } from "../ester/dexter.ts";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { propose, render, tally, trimDiff, trimLine, type Report } from "../ester/dexter.ts";
 
 const fresh = (): Report => ({ sessions: 1, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map() });
 const j = (o: unknown) => JSON.stringify(o);
@@ -27,4 +30,24 @@ test("tokens add up once per message, and each result is charged to the tool tha
 
 test("nothing to trim is said plainly", () => {
   expect(render(fresh())[1]).toBe("No tool results. Nothing to trim.");
+});
+
+test("a line is cut to short plain words, but code, links and capitals are kept", () => {
+  expect(trimLine("Please make sure you really run `in order to` first, in order to win.")).toBe("Make sure you run `in order to` first, to win.");
+  expect(trimLine("See [prior to](http://a.b/utilize) and utilize it.")).toBe("See [prior to](http://a.b/utilize) and use it.");
+  expect(trimLine("Short line.")).toBe("Short line.");
+});
+
+test("the diff skips fences, tables and headings, and counts line numbers from 1", () => {
+  const src = ["# Please head", "basically fine text", "```", "basically code", "```", "| basically | x |"].join("\n");
+  expect(trimDiff("A.md", src)!.diff).toBe("--- a/A.md\n+++ b/A.md\n@@ -2 +2 @@\n-basically fine text\n+fine text");
+  expect(trimDiff("B.md", "Already short.")).toBeNull();
+});
+
+test("propose reads the files and writes nothing", () => {
+  const f = path.join(mkdtempSync(path.join(tmpdir(), "dexter-")), "CLAUDE.md");
+  writeFileSync(f, "It is important to note that we utilize bun.\n");
+  expect(propose([["CLAUDE.md", f]])[1]).toContain("+We use bun.");
+  expect(propose([])[0]).toContain("Nothing to cut");
+  expect(readFileSync(f, "utf8")).toContain("utilize");
 });

@@ -297,8 +297,44 @@ that owns the repo.
 weights that only break ties in the plan's order, levels demoted to a card, and `.gitattributes` suggestions. Not wired to a
 store yet; that waits on #1508, #1509 and #1510.
 
-Open: event schema, retention, and whether Pipelines-to-Iceberg or plain R2 NDJSON plus R2 SQL is cheaper at
-our volume (price it first, per the contest cost rule).
+The event (`src/mervin-events.ts`, `MERVIN_EVENTS` binding, per-repo `mervin_learning` row) is built and emitted once per
+merge when both are present; its shape has no content field, and a test pins that. The settings switch and
+delete-my-data are not built yet.
+
+**Decision: Pipelines to Iceberg.** Plain R2 NDJSON plus R2 SQL is not an option, because R2 SQL only queries
+Iceberg tables managed by the catalog; NDJSON would need our own reader in a Worker. It is also not cheaper (below).
+
+**Price** (Cloudflare docs, 2026-10-14). One event is about 300 bytes and one per merge, plus one per card answered,
+so call it 2 events per merge.
+
+| Line | Rate | Included monthly |
+|---|---|---|
+| Pipeline ingest | free | all |
+| Pipeline SQL transform | $0.04/GB | 50 GB |
+| Delivery to R2 as Iceberg | $0.06/GB | 50 GB |
+| Catalog operations | $9.00/million | 1 million |
+| Compaction | $0.005/GB, $2.00/million objects | 10 GB, 1 million |
+| R2 storage | $0.015/GB-month | 10 GB |
+| R2 Class A (write) | $4.50/million | 1 million |
+| R2 SQL | not listed on the pricing pages | n/a |
+
+| Volume (opt-in repos x 20 merges/day) | Events/month | Data/month | A: Pipelines to Iceberg | B: NDJSON objects |
+|---|---|---|---|---|
+| 1,000 repos | 1.2M | 0.4 GB | $0 (inside every allowance) | $0 if one object per repo per day, but no SQL |
+| 100,000 repos | 120M | 36 GB | about $0.6 storage in year one, ~$7 after a year at 400 days; transform and delivery stay inside 50 GB | $13.50 for 3M daily-batch writes, or $540 if an object per event; no SQL |
+
+Fan-out: events reach one table through one stream; the catalog operation count is the pipeline's commits (one per
+roll interval, about 9k a day at 5 minutes, 260k a month, under the 1M allowance), not the event count. Raise the roll
+interval before turning compaction on. The cost grows with storage, not events, until a repo count well past 100k
+(transform and delivery cross their 50 GB allowance near 140k repos on this model).
+
+**Retention.** Keep events 400 days (a year of weekly reports plus a quarter of slack), then drop them with a scheduled
+delete and snapshot expiration (free). Paths and the repo key are hashed with a per-repo salt kept in the repo's
+MervinDO, so delete-my-data is: stop writing, delete the salt (the rows can no longer be tied to the repo), and let
+retention remove them. Iceberg row deletes are not needed.
+
+**Not done.** No live resources were created to check the numbers, and R2 SQL has no listed price, so the first
+live pipeline (smallest stream, one table, destroy after) should read the bill and update this table.
 
 ### Cascade files: land them up front or at the end (idea, not built)
 
@@ -353,6 +389,11 @@ PR's head, its CI or main moved, and posts the rows that changed (`POST /api/rep
 what it's stacked on, its files per tier, its clashes, the Agent Office worker that owns it (`office-workers list --json`), and,
 for a PR touching `package.json`, `bun.lock` or `packages/`, the apps and PRs it reaches. When PRs merge, the board they were
 staged on is scored against main and the tiers' hit rates are kept. The UI (the branches panel) and the MCP tool `get_board` read
+
+`get_board` also answers small (#1593): `brief=1` gives about four lines, ids first (`mergeable`, `red`, `waiting` on what, `waves`), and
+`fields=ci,owner` keeps just those row fields. Experiment: do the board check three ways on the same task (raw `gh pr list --json ...`,
+the same narrowed with `jq`/`tail`, and `get_board` with `brief=1`), and compare tokens and turns with Dexter (`bun apps/agent-office/ester/dexter.ts`).
+The unit test prices the three shapes on 30 PRs; the real numbers come from Dexter on live sessions.
 it: `waves` and `mergeable` come off the rows, and `get_board` with `pr` says what blocks that PR, who should take it, and what it blocks.
 
 ```sh

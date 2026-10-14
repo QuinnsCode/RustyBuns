@@ -133,8 +133,8 @@ describe("webhook URLs stay out of the private network", () => {
   });
 
   test("privateHost", () => {
-    for (const h of ["0.0.0.0", "100.64.0.1", "172.31.255.255", "a.localhost", "metadata.internal", "[::]", "[ff02::1]"]) expect([h, privateHost(h)]).toEqual([h, true]);
-    for (const h of ["172.32.0.1", "11.0.0.1", "ci.example", "[2606:4700::1111]", "192.169.0.1"]) expect([h, privateHost(h)]).toEqual([h, false]);
+    for (const h of ["0.0.0.0", "100.64.0.1", "172.31.255.255", "a.localhost", "metadata.internal", "[::]", "[ff02::1]", "[::7f00:1]", "[64:ff9b::7f00:1]", "[64:ff9b::a9fe:a9fe]", "[2002:7f00:1::]", "[2002:c0a8:101::1]"]) expect([h, privateHost(h)]).toEqual([h, true]);
+    for (const h of ["172.32.0.1", "11.0.0.1", "ci.example", "[2606:4700::1111]", "[64:ff9b::808:808]", "[2002:808:808::1]", "192.169.0.1"]) expect([h, privateHost(h)]).toEqual([h, false]);
   });
 
   test("a delivery to a name that resolves inward isn't sent", async () => {
