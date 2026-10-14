@@ -360,6 +360,14 @@ const OPS: Record<string, Record<string, Op>> = {
       "Merge a wave and the next one's branches that name one of them in `after` take main in by themselves, once (merge_branch's `took`). Reading the plan keeps each branch's `after`: its own checks wait till those have merged, so they run once.",
     ok: obj({ engine: str("the merge engine that planned it: Mervin"), order: arr(str("a branch name")), held: arr(str("a branch its required checks hold")),
       waves: arr(arr(obj({ branch: str(), after: arr(obj({ branch: str("one it waits for"), files: arr(str("where they clash")), stacked: bool("it's built on that one") })) }))) }) } },
+  [`${repo}/mervin`]: {
+    get: { id: "get_mervin_learning", summary: "Whether Mervin learns this repo's merge patterns, and last week's report", tag: "Branches", open: true,
+      ok: obj({ learning: bool(), report: loose("{days, settled, asked, wrong, fighting: [{path_hash, ext, asked}], rules_proposed}, only while learning is on") }) },
+    put: { id: "set_mervin_learning", risky: true, summary: "Turn Mervin's learning on or off for a repo (owner only; off by default)", tag: "Branches",
+      description: "On keeps one small event per merged file: extension, hashed path, settled or asked. No contents, no diffs. Off stops keeping them; delete_mervin_learning removes what was kept.",
+      body: obj({ learning: bool() }, ["learning"]), ok: obj({ learning: bool(), report: loose("the last week") }) },
+    delete: { id: "delete_mervin_learning", risky: true, summary: "Delete every learning event kept for a repo (owner only)", tag: "Branches", ok: obj({ ok: bool(), deleted: int() }) },
+  },
   [`${repo}/board`]: {
     get: { id: "get_board", summary: "Mervin's live board: every open PR, its CI, stack, clashes and owner, and what can merge now", tag: "Branches",
       description: "One row per open PR Mervin staged: its own CI, the PR it's stacked on, its files per tier (certain, agree, mervin, differ, card), the clashes that merge clean as text and break later, the Agent Office worker that owns it, and for a PR touching package.json, bun.lock or packages/ the apps and PRs it reaches. " +

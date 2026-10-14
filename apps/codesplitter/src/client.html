@@ -4065,6 +4065,27 @@ const views = {
     el.innerHTML = `<p class="muted" title="${esc(m.does)}">${esc(m.name)} merges by line and orders clashing branches into waves. Of ${c.files} files git's merge gave up on in ${esc(c.repo)}:</p>`
       + `<p><b title="settled to what landed, or the same lines in another order">${c.settled}</b> settled (${pc(c.settled)}%) · <b title="handed back as cards">${c.asked}</b> asked (${pc(c.asked)}%) · <b title="settled clean to other text: the number to drive to 0">${c.other}</b> other text (${pc(c.other)}%)</p>`;
     mervinHint(owner, repo);
+    views.wireLearning(owner, repo, el);
+  },
+  /** Mervin's learning here: the owner's opt-in, last week's report, delete-my-data (GET|PUT|DELETE /repos/:o/:r/mervin). */
+  async wireLearning(owner, repo, el) {
+    const l = await api(`/repos/${owner}/${repo}/mervin`).catch(() => null);
+    if (!l) return;
+    const mine = owner === me(), r = l.report;
+    const box = document.createElement("div");
+    box.innerHTML = `<p class="muted" style="margin-top:8px">${icon("brain")} Learning: ${l.learning ? "on" : "off"}. ${l.learning ? "Keeps the extension and a hash of the path of each merged file, never contents." : "Off until the owner turns it on."}</p>`
+      + (r ? `<p title="the last ${r.days} days"><b>${r.settled}</b> settled · <b>${r.asked}</b> asked · <b>${r.wrong}</b> wrong · <b>${r.rules_proposed}</b> rules proposed</p>`
+        + (r.fighting.length ? `<ul class="fit-why">${r.fighting.map((f) => `<li><code>${esc(f.path_hash.slice(0, 8))}</code> ${f.ext ? `.${esc(f.ext)} ` : ""}asked ${f.asked}x</li>`).join("")}</ul>` : "") : "")
+      + (mine ? `<p><button class="btn" data-learn="${l.learning ? "off" : "on"}">${l.learning ? "Turn off" : "Turn on"}</button> <button class="btn ghost" data-learn="delete" title="Delete every event kept for this repo" aria-label="delete my data">${icon("trash-2")}</button></p>` : "");
+    el.appendChild(box);
+    box.querySelectorAll("[data-learn]").forEach((b) => b.addEventListener("click", async () => {
+      const what = b.dataset.learn;
+      try {
+        if (what === "delete") { const d = await api(`/repos/${owner}/${repo}/mervin`, undefined, "DELETE"); toast(`Deleted ${d.deleted} event${d.deleted === 1 ? "" : "s"}`); }
+        else await api(`/repos/${owner}/${repo}/mervin`, { learning: what === "on" }, "PUT");
+      } catch (e) { toast(`Not changed: ${e.message}`); }
+      box.remove(); views.wireLearning(owner, repo, el);
+    }));
   },
   /** Could `rustybuns init` box this repo as a desktop binary, a Worker and a server? A monorepo lists its apps. */
   async wireFit(owner, repo, dir = "") {

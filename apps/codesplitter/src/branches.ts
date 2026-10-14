@@ -50,6 +50,7 @@ import { noteConflict } from "./usage.ts";
 import { busyOn, clashIn, taskFiles, waves, type Busy, type Clash, type Side } from "./merge-plan.ts";
 import { sha256 } from "./util.ts";
 import { countMerge } from "./stats.ts";
+import { deleteLearning, learningState, recordEvents, setLearning, type Event as LearnEvent } from "./mervin-learning.ts";
 import { boardRoutes } from "./board-routes.ts";
 
 const TEXT_MAX = 20_000;
@@ -718,6 +719,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   const took: Took[] = [];
   const merged: { path: string; rev: number; ops: number; deleted?: true; binary?: true }[] = [], conflicts: { path: string; conflicts: Conflict[] }[] = [];
   let solved = 0;
+  const learned: LearnEvent[] = [];
   for (const f of todo) {
     // Claim the file, so two merges at once can't both apply it.
     const claim = await env.DB.prepare("UPDATE branch_files SET merged = 1 WHERE owner = ? AND repo = ? AND branch = ? AND path = ? AND merged = 0").bind(owner, repo, name, f.path).run();
@@ -740,7 +742,11 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     const onMain = await materialize(env, owner, repo, f.path);
     if ("error" in onMain && onMain.status === 404) await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, f.path).run();
     const m = await mergeFile(env, owner, repo, branch, f.path, user, resolve[f.path], false);
-    if (m.status === 200) { merged.push({ path: f.path, rev: m.rev, ops: m.ops?.length ?? 0 }); solved += m.solved ?? 0; continue; }
+    if (m.status === 200) {
+      merged.push({ path: f.path, rev: m.rev, ops: m.ops?.length ?? 0 }); solved += m.solved ?? 0;
+      if (resolve[f.path]) learned.push({ path: f.path, outcome: "asked" }); else if (m.solved) learned.push({ path: f.path, outcome: "settled" });
+      continue;
+    }
     // Main moved into a conflict between the dry run and now: this file waits for another merge.
     await env.DB.prepare("UPDATE branch_files SET merged = 0 WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, name, f.path).run();
     conflicts.push({ path: f.path, conflicts: m.conflicts });
@@ -751,6 +757,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     await env.DB.prepare("DELETE FROM leftover_answers WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, name).run();
     await restackChildren(env, owner, repo, name);
     await countMerge(env, solved);
+    await recordEvents(env, owner, repo, learned);
     for (const c of clashing) took.push(await afterBlocker(env, owner, repo, c.then, name, user).catch((e) => ({ branch: c.then, status: "failed" as const, error: String((e as Error)?.message ?? e) })));
     // Shaped like a merged pull request, the branch as its head. Git hears about it at the next commit of main.
     await emit(env, owner, repo, "branch.merged", user, {
@@ -863,6 +870,18 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   }
   // GET /api/repos/:o/:r/merge-plan  the open branches in waves (merge-plan.ts).
   if (p[4] === "merge-plan" && !p[5] && req.method === "GET") return json(await mergePlan(env, owner, repo, user ?? "anon"));
+  // GET|PUT|DELETE /api/repos/:o/:r/mervin  Mervin's learning: the opt-in, the weekly report, delete-my-data (mervin-learning.ts).
+  if (p[4] === "mervin" && !p[5]) {
+    if (req.method === "GET") return json(await learningState(env, owner, repo));
+    if (req.method === "PUT" || req.method === "DELETE") {
+      if (user !== owner) return json({ error: "only the owner changes this" }, 403);
+      if (req.method === "DELETE") return json({ ok: true, deleted: await deleteLearning(env, owner, repo) });
+      const b = await readBody<"learning">(req);
+      if (typeof b.learning !== "boolean") return json({ error: "learning: true | false" }, 400);
+      await setLearning(env, owner, repo, b.learning);
+      return json(await learningState(env, owner, repo));
+    }
+  }
   // GET|POST /api/repos/:o/:r/board  the live board (board-routes.ts).
   if (p[4] === "board" && !p[5] && (req.method === "GET" || req.method === "POST")) return boardRoutes(req, env, owner, repo, a.write);
   // GET /api/repos/:o/:r/dispatch-hint?task=&paths=a,b  which open branches a new task's files are already on (dispatchHint).
