@@ -192,7 +192,7 @@
   .crumbbar .crumbs { font-weight: 500; font-size: 13px; min-width: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   @container editor (max-width: 980px) { .crumbbar .btn { font-size: 0; gap: 0; padding: 3px 6px; } .crumbbar .btn span { display: none; } }
   .editor .scroll { flex: 1; min-height: 0; overflow: auto; }
-  .details { border-left: 1px solid var(--border); font-size: 13px; container-type: inline-size; }
+  .details { border-left: 2px solid var(--border-2); box-shadow: -6px 0 10px -8px rgb(0 0 0 / .25); font-size: 13px; container-type: inline-size; }
   /* The details side (dock()): drag its left edge to widen it, or snap it to 2/3 or the whole bench.
      Tabs along the top (Code, Hosted, Features, Ship) pick which panels show. Each browser keeps its own layout. */
   .drail { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 2px; padding: 4px 8px; background: var(--canvas); border-bottom: 1px solid var(--border); }
