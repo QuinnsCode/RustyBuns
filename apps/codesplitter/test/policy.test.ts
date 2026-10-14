@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { apply, empty, fromText, merge, text, type Doc } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
-import { DEFAULTS, policyOf } from "../src/policy.ts";
+import { DEFAULTS, policyOf, rankOf } from "../src/policy.ts";
 import { local as boot } from "../src/local.ts";
 
 // End to end (in-process D1 and file DOs): fine alone, slow on a busy machine.
@@ -126,5 +126,16 @@ describe("policy per path (#938)", () => {
     expect((await r2.json() as any).error).toContain("locked");
     expect((await post("agent-a", "/api/repos/ana/r/do/claims?path=bun.lock", { lines: ["L1"] })).status).toBe(409);
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=bun.lock")).json() as Doc)).toBe("{}");
+  });
+});
+
+describe("order and rank", () => {
+  test("parsed from .gitattributes, and rankOf takes the first matching pattern", () => {
+    const p = policyOf("src/hot.ts", "src/hot.ts codesplitter-order=rank codesplitter-rank=claude*:2,local*:1");
+    expect(p).toMatchObject({ order: "rank", rank: [["claude*", 2], ["local*", 1]] });
+    expect(rankOf(p.rank, "agent-claude-max")).toBe(2);
+    expect(rankOf(p.rank, "local-7b")).toBe(1);
+    expect(rankOf(p.rank, "ryan")).toBe(0);
+    expect(policyOf("src/hot.ts").order).toBeUndefined();
   });
 });
