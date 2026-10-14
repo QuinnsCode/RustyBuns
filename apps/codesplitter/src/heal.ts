@@ -89,6 +89,9 @@ export async function fixUnavailable(env: Env, owner: string, repo: string, bran
 export async function openFix(env: Env, owner: string, repo: string, branch: string, path: string, task: string, also: string[] = [], o: { before?: () => Promise<void>; rebuild?: string } = {}): Promise<{ id: number } | { skipped: string }> {
   const no = await fixUnavailable(env, owner, repo, branch);
   if (no) return { skipped: no };
+  // These start on the site's keys with no one's click, so a crew member's branch can't spend them: its author has to be an admin.
+  const by = (await env.DB.prepare("SELECT by FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, branch).first())?.by as string | undefined;
+  if (adminsOnly(env, by ?? null)) return { skipped: "hosted fix tasks start only on an admin's branches (ADMINS)" };
   const a = (await attempts(env, owner, repo, branch))!;
   const last = a.runs.at(-1);
   if (last && sameFailure(last.task.replace(/^[\s\S]*\nTASK: /, ""), task)) {

