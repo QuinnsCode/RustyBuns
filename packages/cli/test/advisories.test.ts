@@ -1,8 +1,8 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ADVISORIES_URL, advise, adviseApp, adviseBuilt, appLaunchCheck, checkDisabled, checkVersion, launchCheck, matching, validRange, type Advisory } from "../src/advisories.ts";
+import { ADVISORIES_URL, advise, ageGate, adviseApp, adviseBuilt, appLaunchCheck, checkDisabled, checkVersion, launchCheck, matching, validRange, type Advisory } from "../src/advisories.ts";
 
 const bad: Advisory[] = [
   { versions: "0.1.6", do: "upgrade", to: "latest", why: "stale deps" },
@@ -147,4 +147,36 @@ test("advisories.json: every entry is well formed", () => {
     // The version it sends people to is not itself bad.
     if (a.to !== "latest") expect(matching(a.to, advisories)).toEqual([]);
   }
+});
+
+test("a newer release the minimum release age holds back says so, with the ways out", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "rb-gate-"));
+  const home = mkdtempSync(join(tmpdir(), "rb-home-"));
+  const t0 = 10_000_000_000;
+  const fetcher = (async (url: string) => {
+    if (String(url) === ADVISORIES_URL) return Response.json({ advisories: [] });
+    if (String(url).endsWith("/latest")) return Response.json({ version: "0.1.13" });
+    return Response.json({ time: { "0.1.13": new Date(t0 - 3 * 3600_000).toISOString() } });
+  }) as unknown as typeof fetch;
+  const run = (gate: number | null) => checkVersion("0.1.12", { path: join(mkdtempSync(join(tmpdir(), "rb-adv-")), "c.json"), fetcher, now: t0, gate });
+
+  const held = (await run(86_400))!;
+  expect(held).toContain("0.1.13 is out but your minimum release age (1d) is holding it back; it is 3h old");
+  expect(held).toContain("pin 0.1.12");
+  expect(held).toContain("exempt @rustybuns/*");
+  // No gate, or one the release has already cleared: the ordinary "is out" line.
+  expect(await run(null)).toBe("rustybuns 0.1.13 is out (you have 0.1.12): bun add -d @rustybuns/cli@latest");
+  expect(await run(3600)).toContain("bun add -d @rustybuns/cli@latest");
+
+  // The gate comes from bunfig.toml (seconds) or pnpm-workspace.yaml (minutes), unless we are exempt.
+  expect(ageGate(dir, home)).toBeNull();
+  writeFileSync(join(dir, "bunfig.toml"), "[install]\nminimumReleaseAge = 259200\n");
+  expect(ageGate(dir, home)).toBe(259200);
+  writeFileSync(join(dir, "bunfig.toml"), '[install]\nminimumReleaseAge = 259200\nminimumReleaseAgeExcludes = ["alchemy", "@rustybuns/cli"]\n');
+  expect(ageGate(dir, home)).toBeNull();
+  writeFileSync(join(dir, "bunfig.toml"), "");
+  writeFileSync(join(dir, "pnpm-workspace.yaml"), "minimumReleaseAge: 1440\n");
+  expect(ageGate(dir, home)).toBe(86_400);
+  writeFileSync(join(dir, "pnpm-workspace.yaml"), 'minimumReleaseAge: 1440\nminimumReleaseAgeExclude:\n  - alchemy\n  - "@rustybuns/*"\n');
+  expect(ageGate(dir, home)).toBeNull();
 });
