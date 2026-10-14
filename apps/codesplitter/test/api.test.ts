@@ -49,6 +49,18 @@ describe("the API reference", () => {
     const ref = (await r.json()) as { groups: typeof GROUPS };
     expect(ref.groups).toEqual(GROUPS);
   });
+
+  test("starts with the steps and a glossary of the site's words", async () => {
+    const call = await local();
+    afterAll(() => call.close());
+    const ref = (await (await call(null, "/api")).json()) as { start: { call: string }[]; glossary: { term: string }[] };
+    const terms = ref.glossary.map((g) => g.term);
+    for (const t of ["level", "beam", "cut", "stamp", "crew"]) expect(terms).toContain(t);
+    // Every call a step names is one the reference lists.
+    const named = ref.start.flatMap((s) => [...s.call.matchAll(new RegExp(String.raw`(GET|POST|PUT|DELETE) (${PATH})`, "g"))]);
+    expect(named.length).toBeGreaterThan(5);
+    expect(named.flatMap(([, m, p]) => keys(m!, p!)).filter((k) => !documented.has(k))).toEqual([]);
+  });
 });
 
 describe("a 401 from the API", () => {
