@@ -1133,8 +1133,8 @@ describe("github", () => {
       if (path === "/user/repos") return Response.json([{ full_name: "ana-gh/Tiny.JS", private: false, default_branch: "trunk" }, { full_name: "ana-gh/secret", private: true, default_branch: "main" }]);
       if (path === "/repos/ana-gh/Tiny.JS") return Response.json({ full_name: "ana-gh/Tiny.JS", private: false, default_branch: "trunk" });
       if (path === "/repos/ana-gh/secret") return Response.json({ full_name: "ana-gh/secret", private: true, default_branch: "main" });
-      if (path === "/repos/ana-gh/Tiny.JS/commits/trunk") return Response.json({ sha: "a".repeat(40) });
-      if (path === "/repos/ana-gh/secret/commits/main") return Response.json({ sha: "b".repeat(40) });
+      if (path === "/repos/ana-gh/Tiny.JS/commits/HEAD") return Response.json({ sha: "a".repeat(40) });
+      if (path === "/repos/ana-gh/secret/commits/HEAD") return Response.json({ sha: "b".repeat(40) });
       return new Response("{}", { status: 404 });
     }) as any;
     const imports: any[] = [];
