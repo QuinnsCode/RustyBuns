@@ -1,25 +1,24 @@
 import { expect, test } from "bun:test";
-import { allImages, imagesIn, touchedImages } from "./ci-containers.ts";
+import type { ContainerBinding } from "../packages/cli/src/containers.ts";
+import { failedLine, summary, touched } from "./ci-containers.ts";
 
-const config = `
-  bindings: {
-    ...(agents ? { AGENT_SANDBOX: { type: "container", className: "AgentSandbox", dockerfile: "sandbox/Dockerfile", maxInstances: 2 } as const } : {}),
-    DEPLOY_RUNNER: { type: "container", className: "DeployRunner", dockerfile: "deploy-sandbox/Dockerfile" } as const,
-    CI_RUNNER: { type: "container", className: "CiRunner", dockerfile: "deploy-sandbox/ci.Dockerfile" } as const,
-    DB: { type: "d1", databaseName: "x" },
-  }`;
+const b = (name: string, dockerfile: string): ContainerBinding => ({ name, className: name, dockerfile, context: dockerfile.slice(0, dockerfile.lastIndexOf("/")), maxInstances: 1, instanceType: "basic" });
+const bindings = [b("AGENT", "sandbox/Dockerfile"), b("DEPLOY", "deploy-sandbox/Dockerfile"), b("CI", "deploy-sandbox/ci.Dockerfile")];
 
-test("images are read from a config's text, and only the ones whose context changed are touched", () => {
-  const images = imagesIn("codesplitter", config);
-  expect(images.map((i) => i.binding)).toEqual(["AGENT_SANDBOX", "DEPLOY_RUNNER", "CI_RUNNER"]);
-  const names = (changed: string[]) => touchedImages(images, changed).map((i) => i.binding);
-  // the two deploy-sandbox images share a context; sandbox/ is left alone
-  expect(names(["apps/codesplitter/deploy-sandbox/server.mjs"])).toEqual(["DEPLOY_RUNNER", "CI_RUNNER"]);
-  expect(names(["apps/codesplitter/src/egress.ts", "README.md"])).toEqual([]);
-  expect(names(["packages/cli/src/gen/alchemy.ts"])).toHaveLength(3);
+test("a change inside a context picks the bindings that build from it; the generator picks all; nothing picks none", () => {
+  expect(touched(bindings, ["apps/x/deploy-sandbox/server.mjs"], "apps/x")).toEqual(["DEPLOY", "CI"]);
+  expect(touched(bindings, ["apps/x/sandbox/Dockerfile"], "apps/x")).toEqual(["AGENT"]);
+  expect(touched(bindings, ["packages/cli/src/gen/alchemy.ts"], "apps/x")).toEqual(["AGENT", "DEPLOY", "CI"]);
+  expect(touched(bindings, ["apps/y/sandbox/Dockerfile", "README.md"], "apps/x")).toEqual([]);
 });
 
-test("the repo's real configs yield codeSplitter's three images", () => {
-  expect(allImages().filter((i) => i.app === "codesplitter").map((i) => i.dockerfile).sort())
-    .toEqual(["deploy-sandbox/Dockerfile", "deploy-sandbox/ci.Dockerfile", "sandbox/Dockerfile"]);
+test("the summary has a row per image, names the failing Dockerfile line, and says so when nothing was touched", () => {
+  expect(failedLine("ERROR: failed to solve\n > [3/5] RUN apt-get instal gitt\nsandbox/Dockerfile:12")).toBe("sandbox/Dockerfile line 12");
+  const md = summary([
+    { name: "AGENT", dockerfile: "sandbox/Dockerfile", ok: true, build: "72s", size: "812 MB", boot: "0.9s" },
+    { name: "CI", dockerfile: "deploy-sandbox/ci.Dockerfile", ok: false, build: "9s", fail: "Dockerfile:4\nboom" },
+  ]);
+  expect(md).toContain("| `AGENT` (sandbox/Dockerfile) | ✅ 72s | 812 MB | 0.9s |");
+  expect(md).toContain("**CI** failed at Dockerfile line 4");
+  expect(summary([])).toContain("No container images were touched");
 });

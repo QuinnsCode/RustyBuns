@@ -137,7 +137,7 @@ export const GROUPS: Group[] = [
   },
   {
     name: "A file",
-    about: "Each file is a Durable Object. Every call takes ?path= (the file) and, to work on a branch's copy, &branch=. A line is {id, text, by, rev}: by and rev are its blame. An op names lines by id: {kind: \"insert\", after: id | null, text} | {kind: \"set\", line, base, text} | {kind: \"delete\", line, base}, where base is the line's rev as you read it; a stale one is a 409 to retry. ifRev pins the whole batch to the file's rev.",
+    about: "Each file is a Durable Object. Every call takes ?path= (the file) and, to work on a branch's copy, &branch=. To edit a file on a branch: POST /branches {name}, GET do/file?branch= for the line ids, POST do/ops?branch= to change them, then POST /branches/:b/merge. Plain git reads (the repo's clone line) but pushing is not how edits land here. A line is {id, text, by, rev}: by and rev are its blame. An op names lines by id: {kind: \"insert\", after: id | null, text} | {kind: \"set\", line, base, text} | {kind: \"delete\", line, base}, where base is the line's rev as you read it; a stale one is a 409 to retry. ifRev pins the whole batch to the file's rev.",
     endpoints: [
       { method: "GET", path: "/api/repos/:o/:r/do/file?path=", does: "the file now, with blame: {rev, lines: [{id, text, by, rev, private?}]}; &from=&limit= windows a big file's lines and adds {total, from}" },
       { method: "POST", path: "/api/repos/:o/:r/do/ops?path=", body: "{ops: Op[], ifRev?, claim?}", who: CREW, does: "edit, all or nothing: {rev, applied}, or 409 {rev, conflicts}, plus {claims, retryAfter} when lines are held; {error} when the path's policy refuses it (an agent's unclaimed lines on a codesplitter-live=line file, any edit to a locked one)" },
@@ -336,8 +336,40 @@ export const GROUPS: Group[] = [
   },
 ];
 
+/** What codeSplitter is, in one breath: the first thing a cold agent should read. */
+export const WHAT = "codeSplitter is a code host where every line has its own id, author and history, so people and agents edit the same file at once without stepping on each other. You never run git: edits are ops on lines, branches merge by line, and conflicts come back as cards with choices.";
+
+/** The path from nothing to a merged change, as steps an agent can follow. */
+export const START: { step: string; call: string }[] = [
+  { step: "Sign in as a person (email, GitHub or Google). An agent can't do this part; ask the person.", call: "GET /api/session says how" },
+  { step: "Make a personal API token on the profile page (or add the MCP server and say yes on the consent page). Send it as Authorization: Bearer cst_…. Read tokens only GET.", call: "POST /api/tokens {label, scope: \"write\"}" },
+  { step: "Create a repo.", call: "POST /api/repos {name, visibility}" },
+  { step: "Invite your agents to the crew. Each claims the invite as an agent and gets a handle of its own.", call: "POST /api/repos/:o/:r/invites, then POST /api/invites/claim {invite, as: \"agent\"}" },
+  { step: "Before starting, ask who is already changing the same files.", call: "GET /api/repos/:o/:r/dispatch-hint?task=&paths=" },
+  { step: "Open a branch, one per agent, and edit on it with ?branch=name. Ops name lines by id, so agents on different lines never collide.", call: "POST /api/repos/:o/:r/branches {name}, POST /api/repos/:o/:r/do/ops?path=&branch=" },
+  { step: "Read the plan for the order, then merge. Clean merges land at once; a clash returns a 409 with the conflicts and their choices.", call: "GET /api/repos/:o/:r/merge-plan, POST /api/repos/:o/:r/branches/:b/merge" },
+];
+
+/** The site's own words, defined once. */
+export const GLOSSARY: { term: string; means: string }[] = [
+  { term: "repo", means: "A project: its files, its crew and its history. Named owner/name." },
+  { term: "crew", means: "The people and agents allowed to change a repo: its owner and whoever accepted an invite. Anyone else can read a public repo." },
+  { term: "line id", means: "Every line has a stable id and a rev. Edits, merges, blame and stamps refer to the id, so they survive other edits moving the line." },
+  { term: "branch", means: "A copy of the repo's files to change without touching main. It merges back by line id, not by git." },
+  { term: "merge", means: "Three-way, by line id, into main. Lines only one side touched land; lines both rewrote come back as conflicts you settle." },
+  { term: "level", means: "A well-loved open-source repo imported read-only to browse, search and play in (mitt, Hono, Preact, Cloudflare's own and more). Cut lines from one to work on a piece of it." },
+  { term: "cut", means: "Some selected lines taken out along with what they use (the imports and declarations they need, across files), as a branch of their own that can be run, shared and merged back." },
+  { term: "beam", means: "Handing a git branch's stack of commits over as one clean commit on main (or upstream), with lockfile churn and build leftovers left out and named." },
+  { term: "stamp", means: "A reaction on a line (+1, heart, binoculars, shovel, gem, skull, lgtm) that stays on the line by id through edits. Stamp a line, not a pull request." },
+  { term: "claim", means: "A lease on some lines so only you edit them for a while. An agent's lasts two minutes and renews with each edit." },
+  { term: "token", means: "A personal API key (cst_…) for scripts and agents, read or write, made on your profile page. An agent is never an admin." },
+];
+
 export const REFERENCE = {
   name: "codeSplitter API",
+  what: WHAT,
+  start: START,
+  glossary: GLOSSARY,
   about: "JSON over HTTP; send JSON bodies with content-type: application/json. Errors are {error} with a 4xx or 5xx. Over a rate limit is a 429 with retry-after, or a 202 {queued} for limits that queue (poll GET /api/jobs/:id). Every action in the site's command palette (⌘K) is one of these calls.",
   groups: GROUPS,
 };

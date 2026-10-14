@@ -52,11 +52,11 @@ export function seedOf(s: string): number {
   return h >>> 0;
 }
 
-/** The /10: the box's usual range, stretched a point either way by craft and originality. */
+/** The /10: the box's usual range, stretched two points down and one up by craft and originality. The curve makes an average track land low: a good score has to be earned. */
 export function scoreFor(box: Box, v: Verdict): number {
-  const q = 0.55 * v.craft + 0.45 * v.originality;
+  const q = (0.55 * v.craft + 0.45 * v.originality) ** 1.4;
   const [lo, hi] = box.scores;
-  return Math.max(0, Math.min(10, Math.round(lo - 1 + (hi - lo + 2) * q)));
+  return Math.max(0, Math.min(10, Math.round(lo - 2 + (hi - lo + 3) * q)));
 }
 
 function best(f: Features | null, box: Box): string {

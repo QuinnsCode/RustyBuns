@@ -109,7 +109,8 @@ const OPS: Record<string, Record<string, Op>> = {
     body: obj({ name: str("lowercase letters and digits, single dashes between"), visibility: { type: "string", enum: ["public", "private"] } }, ["name"]),
     ok: obj({ owner: str(), name: str(), visibility: str() }), status: 201 } },
   [repo]: {
-    get: { id: "get_repo", summary: "A repo: visibility, crew, whether you can write, and a git clone command with an hour-long read token", tag: "Repos", open: true, ok: ref("Repo") },
+    get: { id: "get_repo", summary: "A repo: visibility, crew, whether you can write, and a git clone command with an hour-long read token", tag: "Repos", open: true,
+      description: "`git clone` with `clone` reads the repo's git. Pushing is not the way to change it: edit with edit_lines on a branch and merge. `push` (a git remote add line) comes only on the desktop app, for the owner.", ok: ref("Repo") },
     put: { id: "set_repo_visibility", summary: "Make a repo public or private (owner only)", tag: "Repos", risky: true,
       body: obj({ visibility: { type: "string", enum: ["public", "private"] } }, ["visibility"]), ok: obj({ visibility: str() }) },
     delete: { id: "delete_repo", summary: "Delete a repo and everything of it here, for good (owner only)", tag: "Repos", risky: true,
@@ -162,6 +163,7 @@ const OPS: Record<string, Record<string, Op>> = {
     ok: obj({ kind: str("revert or pick"), commit: str(), branch: str(), message: str("the commit message, as git writes it"), files: arr(obj({ path: str(), did: str("edit, make or delete") })), git: loose("main's git commit") }),
   } }])),
   [`${repo}/files`]: { post: { id: "add_file", summary: "Add a file (the crew)", tag: "Files",
+    description: "A new file, on main or, with `branch`, on an open branch. To change a file that exists, use edit_lines.",
     body: obj({ path: str(), content: str(), branch: str("add it on this open branch instead of main") }, ["path"]), ok: obj({ path: str() }), status: 201 } },
   [`${repo}/do/file`]: { get: { id: "read_file", summary: "A file's lines, each with its id, who last wrote it, and the rev it was written at", tag: "Files", open: true,
     description: "Line ids stay put while lines move, so edits address them. Private lines are blank unless you're crew.",
@@ -173,7 +175,7 @@ const OPS: Record<string, Record<string, Op>> = {
     query: { ...filePath, ...onBranch, since: int("0 for all"), limit: int("at most this many ops, up to and by default 1,000") },
     ok: obj({ ops: arr(ref("Applied")), next: int("pass as since for the next page; null at the end") }) } },
   [`${repo}/do/ops`]: { post: { id: "edit_lines", summary: "Edit a file's lines: insert, set and delete by line id, all or nothing (the crew)", tag: "Files",
-    description: "Each set or delete names the line's rev as `base`; if it moved on, the batch is a 409 with its conflicts, unless a set changed other words of the line than the edit since did: then it lands on top of that one. `ifRev` pins the batch to the whole file's rev. "
+    description: "This is how an agent edits a file, on main or, with `branch`, on an open branch's copy (start_branch first; read_file with the same `branch` for the line ids; merge_branch lands it). Each set or delete names the line's rev as `base`; if it moved on, the batch is a 409 with its conflicts, unless a set changed other words of the line than the edit since did: then it lands on top of that one. `ifRev` pins the batch to the whole file's rev. "
       + "An agent editing lines it claimed names the claim, which renews it. When someone else holds a line, the 409 also has `claims` (who, task, until) and `retryAfter` (seconds; null for a person's hold, which stands till lifted): "
       + "work elsewhere in the file first, then try those lines again no sooner than retryAfter, or ask a person to lift the claim. Don't poll. "
       + "The path's policy (the review's `live`) can refuse it too, with an `error`: on a `line` file an agent edits only lines it claimed (claim_lines, with wait to get in line), and a `locked` one (lockfiles) takes no live edits or claims: regenerate it or push it.",
@@ -516,6 +518,8 @@ export function openapi(origin: string) {
       description: "A code host where every line is its own record. Make a personal API token on your profile page and send it as `Authorization: Bearer cst_…`: "
         + "it acts as you, counts against your rate limits, and expires. read tokens make GET requests only. Tokens never reach admin routes, sign-in, or token management. "
         + "Or sign in with OAuth (authorization code with PKCE; public clients, so no secret): an app on your own computer may use any client_id with a http://127.0.0.1 or localhost redirect, anything else registers at /api/oauth/register first. "
+        + "Quickstart for an agent: start_branch, then read_file with `branch` to get a file's line ids, edit_lines (POST /do/ops) with the same `branch` to set, insert or delete lines by id (add_file with `branch` makes a new file), then merge_branch. Nothing needs git: every edit is an HTTP call, and merging commits the branch's files to main's git. "
+        + "Plain git works for reading: get_repo's `clone` is a `git clone` line with a read token good for an hour. A `git push` is not how work lands on the hosted site (the clone is read-only there); on the desktop app the owner also gets a `push` remote with a day-long write token, and pushed commits are picked up as edits. "
         + "Operations marked `x-codesplitter-risky` change who can get in or see what, can't be undone, or ship code: ask a person before calling them.",
     },
     servers: [{ url: `${origin}/api` }],

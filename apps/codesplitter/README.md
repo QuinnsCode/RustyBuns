@@ -200,6 +200,10 @@ There's no downloadable build yet; that's one command from source.
   A promise whose test is renamed or dropped fails CI, and `bun run smoke` runs every cited test and the stress script with a row per promise.
 - **Accounts and limits.** GitHub, Google or email sign-in.
   Rate limits on everything that costs money, which an admin can set to reject, log, flag or queue. Paid tiers named for gems (Tanzanite 2x, Alexandrite 5x, Painite 10x) multiply a person's caps and stamp their name.
+- **What a stranger can browse.** There is no site-wide list of public repos: no explore page, and `/api/repos`, `/api/explore` and `/api/public` don't exist. A public repo is open to anyone with its link, with no sign-in, and a person's public repos are listed on their profile (`GET /api/users/:name`) and in their code city. Private repos show only to their owner and crew. Without a link or a handle, the imported levels are what there is to look at.
+- **Pricing.** Free, and nothing here takes payment. A gem tier is set by an admin by hand (`PUT /api/admin/limits/tier`); there is no checkout.
+- **Limits.** Every rule is a count per caller per window, and the defaults are the table in [`src/limits.ts`](src/limits.ts) (for example 10 new repos a day, 60 commits an hour, 20 hosted agent runs a day, 5 GitHub digs an hour). A repo's owner sees where they stand at `GET /api/repos/:o/:r/limits`, and admins tune the rules at `#/admin/limits`. Going over answers 429 with `retry-after`. Hosted agent and container runs also share a site-wide daily budget, so they can run out for everyone.
+- **Stability.** This is a hackathon-stage project with no uptime promise. Don't keep your only copy of anything here; clone it out, or run the desktop app, where your git lives on your machine.
 - **The game.** Every repo is a level: the backrooms of the codebase, where the lines tear off the walls as paper birds and you swat them with the rolled-up README.
   Bop your friends in the lobby. Share lines, then send a link into the game: the wrecking room (everyone smashes the repo together) or the backrooms standing in that file's folder.
 

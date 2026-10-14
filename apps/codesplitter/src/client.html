@@ -1109,7 +1109,17 @@
 </header>
 <nav class="rail" id="rail" aria-label="Views" hidden></nav>
 <div class="notice" id="notice" hidden></div>
-<main id="app" tabindex="-1"></main>
+<main id="app" tabindex="-1"><noscript>
+  <h1>codeSplitter</h1>
+  <p>A git host where every line has its own author and history, and people and agents edit the same file at once. This page needs JavaScript; the API doesn't.</p>
+  <ul>
+    <li><a href="/api">/api</a>: the API reference, as JSON</li>
+    <li><a href="/api/openapi.json">/api/openapi.json</a>: the OpenAPI 3.1 spec</li>
+    <li><a href="/api/mcp">/api/mcp</a>: a remote MCP server</li>
+    <li><a href="/reference">/reference</a>: the reference as a page</li>
+    <li><a href="/llms.txt">/llms.txt</a>: this, for agents</li>
+  </ul>
+</noscript></main>
 <div class="drawer" id="drawer" hidden><div class="scrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
   <div class="dhead"><span class="label" id="drawer-kicker"></span><span class="grow"></span><button class="btn ghost" id="drawer-x" title="close (esc)"><i data-lucide="x"></i></button></div>
   <div class="dbody" id="drawer-body"></div><div class="dfoot" id="drawer-foot" hidden></div>
@@ -6754,8 +6764,8 @@ const CHECK_ICONS = { queued: "circle-dashed", running: "loader", passed: "circl
 function checkRow(c) {
   if (!c || (!c.runs.length && !c.gate.required.length && !c.where)) return "";
   const runs = c.runs.map((r) => {
-    const label = `${icon(CHECK_ICONS[r.status])}${esc(r.name)} <span class="muted">${r.runner === "github" ? "GitHub" : esc(r.runner === "external" && r.runner_label || r.runner)} · ${r.status}</span>`;
-    return `<span class="check ${r.status}" title="${esc(r.name)}: ${r.status}">${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${label}</a>` : label}</span>`;
+    const label = `${icon(CHECK_ICONS[r.status])}${esc(r.name)} <span class="muted">${r.runner === "github" ? "GitHub" : esc(r.runner === "external" && r.runner_label || r.runner)} · ${r.needs_desktop ? "needs desktop" : r.status}</span>`;
+    return `<span class="check ${r.status}" title="${esc(r.name)}: ${r.needs_desktop ? "needs the desktop app (Docker or Rust)" : r.status}">${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${label}</a>` : label}</span>`;
   }).join("");
   const g = c.gate, why = g.ok ? "" : [g.failed.length && `${g.failed.join(", ")} failed`, g.waiting.length && `waiting on ${g.waiting.join(", ")}`].filter(Boolean).join("; ");
   const later = g.deferred?.length ? `<span class="muted">${icon("cloud-off")} GitHub is down: ${esc(g.deferred.join(", "))} put off until it's back. Ours passed, so it merges now.</span>` : "";

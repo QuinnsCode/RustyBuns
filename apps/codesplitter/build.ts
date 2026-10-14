@@ -3,6 +3,7 @@
 import { mkdir, copyFile, readdir, readFile, writeFile } from "node:fs/promises";
 import { headersFile, inlineScriptHashes } from "./src/security.ts";
 import { features } from "./features.ts";
+import { LINK_HEADER, LLMS_TXT, ROBOTS_TXT } from "./src/discover.ts";
 import { buildGitpath } from "./src/gitpath/build.ts";
 import { buildLucide } from "./src/lucide-subset.ts";
 
@@ -62,7 +63,10 @@ if (!mr.success) { for (const l of mr.logs) console.error(l); process.exit(1); }
 const pages = ["index.html", "play.html", "features.html", "reference.html", "mcp.html", "map.html", "mervin-watch.html"];
 const hashes = new Set<string>();
 for (const page of pages) for (const h of inlineScriptHashes(await readFile(`dist/client/${page}`, "utf8"))) hashes.add(h);
-await writeFile("dist/client/_headers", headersFile([...hashes]) + "\n/assets/*\n  cache-control: public, max-age=31536000, immutable\n");
+// What a cold agent finds at the root (src/discover.ts): llms.txt, robots.txt and a Link header on /.
+await writeFile("dist/client/llms.txt", LLMS_TXT);
+await writeFile("dist/client/robots.txt", ROBOTS_TXT);
+await writeFile("dist/client/_headers", headersFile([...hashes]) + `\n/\n  link: ${LINK_HEADER}\n` + "\n/assets/*\n  cache-control: public, max-age=31536000, immutable\n");
 // Geist, served from here (no Google Fonts call): the stylesheet, both variable fonts and their license.
 await mkdir("dist/client/fonts", { recursive: true });
 for (const f of ["geist.css", "Geist-Variable.woff2", "GeistMono-Variable.woff2", "LICENSE.txt"]) await copyFile(`src/fonts/${f}`, `dist/client/fonts/${f}`);

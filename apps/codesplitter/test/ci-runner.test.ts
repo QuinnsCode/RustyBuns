@@ -274,3 +274,25 @@ test("container minutes come off one daily budget for the site, admins' runs inc
   expect(holder.ci.seen.env).toHaveLength(1);
   await holder.ci.idle();
 });
+
+test("a check that needs Rust is queued for the desktop up front; one that hits a missing tool in the container is handed over, not failed (#1689)", async () => {
+  const holder = { ci: null as ReturnType<typeof ciNamespace> | null };
+  const { call, send, add, checks, settled, log } = await app({ CI_RUNNER: { get: (id: string) => holder.ci!.ns.get(id), idFromName: (n: string) => n } });
+  holder.ci = ciNamespace(call.env);
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "here", required: [{ name: "native", command: "cargo test" }, { name: "late", command: "echo 'sh: 1: docker: not found'; exit 127" }] }, "PUT");
+  await add("math.test.ts", MATH);
+  for (let end = performance.now() + 25_000; performance.now() < end; await Bun.sleep(20)) {
+    const runs = (await checks()).runs as any[];
+    if (runs.length === 2 && runs.every((r) => r.runner === "desktop" && r.status === "queued")) break;
+  }
+  const runs = (await checks()).runs as any[];
+  expect(runs.map((r) => [r.name, r.runner, r.status]).sort()).toEqual([["late", "desktop", "queued"], ["native", "desktop", "queued"]]);
+  expect(await log(runs.find((r) => r.name === "native").id)).toContain("Needs Rust. Hosted checks don't have it.");
+  const late = await log(runs.find((r) => r.name === "late").id);
+  expect(late).toContain("docker: not found");
+  expect(late).toContain("Needs desktop");
+  // The listing flags both so the pill says "needs desktop", not a plain queued.
+  expect(runs.map((r) => !!r.needs_desktop)).toEqual([true, true]);
+  await holder.ci.idle();
+  void settled;
+});

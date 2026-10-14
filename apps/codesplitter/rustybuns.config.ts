@@ -1,4 +1,9 @@
 import { defineConfig } from "@rustybuns/cli/config";
+import { CRATES, GITHUB_HOSTS, HARNESS_HOSTS, PROVIDER_HOSTS, REGISTRIES, hostList } from "./src/egress.ts";
+
+// What `rustybuns containers run --prod-like` gates each container with: the gate's own module, and the
+// hosts that container may reach in production (the lists egress.ts builds a run's from).
+const egress = (...hosts: (readonly string[])[]) => ({ module: "src/egress.ts", hosts: hostList(...hosts) });
 
 // Accounts, admin and hosted-agent secrets live in 1Password (vault "codesplitter")
 // and reach the deploy through varlock: experimental.wheel "human" unlocks them with
@@ -116,7 +121,7 @@ export default defineConfig({
     // Hosted coding agents (super experimental): one container per run, each CLI
     // installed (sandbox/Dockerfile), with the logins for the harnesses you use.
     // The desktop has no twin and runs the CLIs on the machine instead.
-    ...(agents ? { AGENT_SANDBOX: { type: "container", className: "AgentSandbox", dockerfile: "sandbox/Dockerfile", maxInstances: 2, instanceType: "basic" } as const } : {}),
+    ...(agents ? { AGENT_SANDBOX: { type: "container", className: "AgentSandbox", dockerfile: "sandbox/Dockerfile", maxInstances: 2, instanceType: "basic", egress: egress(REGISTRIES, GITHUB_HOSTS, ...Object.values(HARNESS_HOSTS)) } as const } : {}),
     // The watch's news search: on, with the Anthropic key (also the agents' when they're on).
     ...(news ? { WATCH_NEWS: { type: "var", value: "1" } as const, ANTHROPIC_API_KEY: op("anthropic/api-key", true) } : {}),
     // Optional: only the items you've made in 1Password are bound.
@@ -131,7 +136,7 @@ export default defineConfig({
     // (deploy-sandbox/Dockerfile), separate from the agents' so no agent sees a
     // deploy key. Keys are sealed in D1 under DEPLOY_SECRETS_KEY.
     ...(deploys ? {
-      DEPLOY_RUNNER: { type: "container", className: "DeployRunner", dockerfile: "deploy-sandbox/Dockerfile", maxInstances: 1, instanceType: "basic" } as const,
+      DEPLOY_RUNNER: { type: "container", className: "DeployRunner", dockerfile: "deploy-sandbox/Dockerfile", maxInstances: 1, instanceType: "basic", egress: egress(REGISTRIES, CRATES, GITHUB_HOSTS, ...Object.values(PROVIDER_HOSTS)) } as const,
       DEPLOY_SECRETS_KEY: op("DEPLOY_SECRETS_KEY/password"),
       // Only while rotating it: the key before, so what it sealed opens until an admin re-seals (README).
       DEPLOY_SECRETS_KEY_OLD: op("DEPLOY_SECRETS_KEY_OLD/password", true),
@@ -139,7 +144,7 @@ export default defineConfig({
     // Checks in containers: one Durable Object per repo, so one run at a time, each in its own
     // container (deploy-sandbox/ci.Dockerfile: git, bun and the deploy image's small server),
     // with no secrets at all. Two at once across the site caps the spend.
-    ...(checks ? { CI_RUNNER: { type: "container", className: "CiRunner", dockerfile: "deploy-sandbox/ci.Dockerfile", maxInstances: 2, instanceType: "basic" } as const } : {}),
+    ...(checks ? { CI_RUNNER: { type: "container", className: "CiRunner", dockerfile: "deploy-sandbox/ci.Dockerfile", maxInstances: 2, instanceType: "basic", egress: egress(REGISTRIES, GITHUB_HOSTS) } as const } : {}),
     // Accounts (Better Auth), GitHub and Google sign-in.
     BETTER_AUTH_SECRET: op("better-auth/secret"),
     BETTER_AUTH_URL: { type: "var", value: "https://codesplitter.notryanquinn.workers.dev" },

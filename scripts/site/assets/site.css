@@ -124,3 +124,33 @@ header { flex-wrap: wrap; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
 @media (forced-colors: active) { .theme .disc, .reading svg { forced-color-adjust: auto; } }
+
+/* The favourite-features vote */
+.vote { margin-top: 40px; padding: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.vote h2 { margin-top: 0; border: 0; }
+.vote kbd { font: 0.85em ui-monospace, Menlo, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--bg); }
+.vote .stage { display: block; width: 100%; height: 320px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+.stage-bar { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: 14px; color: var(--muted); }
+.stage-bar button { font: inherit; min-width: 34px; min-height: 32px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.stage-bar button:hover { border-color: var(--accent); }
+.beat { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); opacity: .35; }
+.beat.pulse { animation: beat 1s ease-out; }
+@keyframes beat { from { opacity: 1; transform: scale(1.5); } to { opacity: .35; transform: scale(1); } }
+.said { margin: 8px 0; }
+.order { columns: 3 220px; margin: 8px 0 16px; padding-left: 28px; font-size: 14px; color: var(--muted); }
+.tiers { display: grid; gap: 6px; }
+.tier { user-select: none; display: grid; grid-template-columns: 80px minmax(0, 1fr); border: 1px solid var(--line); border-radius: 8px; background: var(--bg); overflow: hidden; }
+.tier .label { display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 20px; background: var(--accent); color: var(--bg); text-align: center; font-size: 14px; }
+.tier:not(.tier-pool) .label { font-size: 22px; }
+.tier-pool .label { background: var(--line); color: var(--fg); }
+.zone { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; min-height: 48px; }
+.zone.hot { outline: 3px dashed var(--accent); outline-offset: -3px; }
+.chip { font: inherit; font-size: 14px; min-height: 36px; padding: 4px 10px; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; cursor: grab; touch-action: none; user-select: none; }
+.chip[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.chip.lifted { opacity: .35; }
+.chip.ghost { position: fixed; left: 0; top: 0; z-index: 10; pointer-events: none; box-shadow: 0 6px 16px rgb(0 0 0 / .3); }
+.ballot { margin-top: 16px; display: grid; gap: 10px; }
+.ballot label { display: grid; gap: 4px; }
+.ballot textarea { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; resize: vertical; }
+.ballot button[type="submit"] { justify-self: start; font: inherit; min-height: 36px; padding: 4px 16px; color: var(--bg); background: var(--accent); border: 0; border-radius: 6px; cursor: pointer; font-weight: 600; }
+@media (forced-colors: active) { .tier .label { border-right: 1px solid CanvasText; } }

@@ -1,6 +1,7 @@
 // The Rusty Buns docs site: the README as the home page, a page per README feature, About, and the
 // root guides. Old tags from before the feature-list README get their README as one page.
 import { configReference } from "./config-reference.ts";
+import { voteSection } from "./vote-section.ts";
 import { type Page, type Site, slug, titleOf } from "./lib.ts";
 
 const GUIDES = ["GETTING_STARTED.md", "AGENT_PROMPTS.md", "REFERENCE.md", "ADOPTION.md", "EXAMPLES.md", "COSTS.md", "FRAMEWORKS.md", "FRAMEWORK_COVERAGE.md", "SECURITY.md", "LICENSING.md", "PRIVACY.md", "ACCESSIBILITY.md", "APPLE_SIGNING.md"];
@@ -9,6 +10,7 @@ export const rustybuns: Site = {
   name: "Rusty Buns",
   tagline: "Write a web app once. Ship it as a desktop binary, a Cloudflare Worker and a Linux server.",
   repo: "QuinnsCode/RustyBuns",
+  ogImage: "og-rustybuns.png",
   pages(src) {
     const readme = src.read("README.md") ?? "# Rusty Buns\n";
     const pages: Page[] = [];
@@ -24,9 +26,11 @@ export const rustybuns: Site = {
           const page = `features/${slug(title)}.html`;
           features.push({ path: page, title: title.replace(/`/g, ""), md: `# ${title}\n\n${short}\n\n${long}\n`, from: "README.md", anchor: slug(title), section: "Features" });
           return `\n### ${title}\n\n${short} [More →](${page})\n`;
-        }),
+        }) + "\n<!--extra-->\n",
     );
-    pages.push({ path: "index.html", title: "Rusty Buns", md: home, from: "README.md" });
+    // The favourite-features vote sits under the list on today's home page; old tags have no API behind them.
+    const vote = src.version === "latest" ? { extra: voteSection(features.map((f) => ({ slug: f.anchor!, title: f.title }))), script: "votes.js" } : {};
+    pages.push({ path: "index.html", title: "Rusty Buns", md: home, from: "README.md", ...vote });
     const about = src.read("ABOUT.md");
     if (about) pages.push({ path: "about.html", title: titleOf(about, "About"), md: about, from: "ABOUT.md" });
     pages.push(...features);

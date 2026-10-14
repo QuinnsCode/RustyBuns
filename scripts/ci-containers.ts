@@ -1,65 +1,84 @@
-// Container images in CI (#818 part 2). Two halves:
+// CI's `containers` job (#1689, #818 part 2): build and smoke-test the container images a PR touched.
 //
-//   plan  (imported by ci-apps.ts)  which container bindings a PR touched. Read from each app's
-//                                   rustybuns.config.ts as text, so the plan job needs no install.
-//   run   bun ../../scripts/ci-containers.ts NAME path/to/Dockerfile   (cwd: the app)
-//                                   build for linux/amd64, boot it, write a row to the job summary,
-//                                   exit 1 on failure. The same buildOne / smokeOne `rustybuns containers` uses.
+//   bun scripts/ci-containers.ts plan <base-ref>      the bindings to check, per app, as `key=json` lines for $GITHUB_OUTPUT
+//   bun scripts/ci-containers.ts check <base-ref>     plan, then run every touched app: what the workflow calls
+//   bun scripts/ci-containers.ts run <app> [BINDING…] build and boot them, a table in $GITHUB_STEP_SUMMARY, exit 1 if one fails
+//
+// An app's bindings come from its rustybuns.config.ts (the Dockerfile and its context folder). A binding is
+// touched when the diff is inside its context, or in the CLI's generator (packages/cli/src/gen/).
+import { appendFileSync, existsSync, readdirSync } from "node:fs";
+import { type ContainerBinding, buildOne, containerBindings, mb, smokeOne } from "../packages/cli/src/containers.ts";
 
-import { appendFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
-import { buildOne, containerBindings, mb, smokeOne } from "../packages/cli/src/containers.ts";
-import type { RustyBunsConfig } from "../packages/cli/src/config.ts";
-
-export interface Image { app: string; binding: string; dockerfile: string; context: string }
-
-/** `NAME: { type: "container", ... dockerfile: "path" ...}` in a config's text. */
-export function imagesIn(app: string, config: string): Image[] {
-  return [...config.matchAll(/\b([A-Z][A-Z0-9_]*):\s*\{\s*type:\s*"container",[^}]*?dockerfile:\s*"([^"]+)"/g)].map((m) => {
-    const dockerfile = m[2]!, at = dockerfile.lastIndexOf("/");
-    return { app, binding: m[1]!, dockerfile, context: at < 0 ? "" : dockerfile.slice(0, at) };
-  });
+/** The bindings a diff touches: those whose context folder holds a changed file, all of them when the generator moved. */
+export function touched(bindings: ContainerBinding[], changed: string[], appDir: string): string[] {
+  if (changed.some((f) => f.startsWith("packages/cli/src/gen/"))) return bindings.map((b) => b.name);
+  return bindings.filter((b) => changed.some((f) => f.startsWith(`${appDir}/${b.context === "." ? "" : b.context + "/"}`))).map((b) => b.name);
 }
 
-/** Where the images are built from: a change here rebuilds every image. */
-const SHARED = /^packages\/cli\/src\/(gen\/|containers\.ts$)|^scripts\/ci-containers\.ts$/;
-
-/** The images whose build context the diff touched; all of them when the shared build code did. */
-export function touchedImages(images: Image[], changed: string[]): Image[] {
-  if (changed.some((f) => SHARED.test(f))) return images;
-  return images.filter((i) => changed.some((f) => f.startsWith(`apps/${i.app}/${i.context ? i.context + "/" : ""}`)));
+/** The Dockerfile line a failed build names ("Dockerfile:12"), or null. */
+export function failedLine(out: string): string | null {
+  const m = /(\S*Dockerfile\S*):(\d+)/.exec(out);
+  return m ? `${m[1]} line ${m[2]}` : null;
 }
 
-export function allImages(root = join(import.meta.dir, "..")): Image[] {
-  const apps = join(root, "apps");
-  return readdirSync(apps).flatMap((app) => {
-    const cfg = join(apps, app, "rustybuns.config.ts");
-    return existsSync(cfg) ? imagesIn(app, readFileSync(cfg, "utf8")) : [];
-  });
+export interface Row { name: string; dockerfile: string; ok: boolean; build?: string; size?: string; boot?: string; fail?: string }
+
+/** The job summary: one row per image, and for each failure its Dockerfile line and the build's last lines. */
+export function summary(rows: Row[]): string {
+  if (!rows.length) return "No container images were touched by this PR.\n";
+  const table = ["| Image | Build | Size | Boot |", "|---|---|---|---|",
+    ...rows.map((r) => `| \`${r.name}\` (${r.dockerfile}) | ${r.ok ? "✅" : "❌"} ${r.build ?? ""} | ${r.size ?? ""} | ${r.boot ?? ""} |`)];
+  const fails = rows.filter((r) => !r.ok).map((r) => `\n**${r.name}** failed${failedLine(r.fail ?? "") ? ` at ${failedLine(r.fail!)}` : ""}:\n\`\`\`\n${r.fail}\n\`\`\``);
+  return table.join("\n") + "\n" + fails.join("\n") + "\n";
 }
 
-/** The summary table's row, and its header for the first. */
-export const SUMMARY_HEAD = "| Image | Build | Size | Boot |\n|---|---|---|---|\n";
+/** The apps with bindings, and the ones the diff touched. */
+async function plan(base: string) {
+  const changed = (await Bun.$`git diff --name-only ${base}...HEAD`.text()).split("\n").filter(Boolean);
+  const include: { app: string; bindings: string }[] = [];
+  for (const app of readdirSync("apps").filter((d) => existsSync(`apps/${d}/rustybuns.config.ts`))) {
+    const hit = touched(containerBindings(await configOf(app)), changed, `apps/${app}`);
+    if (hit.length) include.push({ app, bindings: hit.join(" ") });
+  }
+  return include;
+}
+
+async function configOf(app: string) {
+  const mod = await import(`${process.cwd()}/apps/${app}/rustybuns.config.ts`);
+  return mod.default as Parameters<typeof containerBindings>[0];
+}
 
 if (import.meta.main) {
-  const [binding, dockerfile] = process.argv.slice(2);
-  if (!binding || !dockerfile) throw new Error("usage: bun scripts/ci-containers.ts NAME path/to/Dockerfile (from the app's folder)");
-  const [b] = containerBindings({ bindings: { [binding]: { type: "container", className: binding, dockerfile } } } as unknown as RustyBunsConfig);
-  const label = `\`${binding}\` (${dockerfile})`;
-  const summary = (row: string, extra = "") => {
-    const out = process.env.GITHUB_STEP_SUMMARY;
-    if (out) appendFileSync(out, SUMMARY_HEAD + row + "\n" + extra);
-    console.log(row);
-  };
-  let built;
-  try { built = await buildOne("ci", b!, { verbose: true }); }
-  catch (e) {
-    const msg = (e as Error).message;
-    summary(`| ${label} | failed | | |`, `\n\`\`\`\n${msg.slice(0, 4000)}\n\`\`\`\n`);
-    process.exit(1);
-  }
-  const t0 = performance.now(), r = await smokeOne("ci", b!, { env: {} });
-  const boot = `${((performance.now() - t0) / 1000).toFixed(1)}s`;
-  summary(`| ${label} | ${(built.ms / 1000).toFixed(0)}s | ${mb(built.size)} | ${r.ok ? "up in " + boot : "failed"} |`, r.ok ? "" : `\n\`\`\`\n${r.note}\n\`\`\`\n`);
-  if (!r.ok) process.exit(1);
+  const [cmd, a1 = "", ...names] = process.argv.slice(2);
+  if (cmd === "plan" || cmd === "check") {
+    if (!a1) throw new Error(`${cmd} needs a base ref`);
+    const include = await plan(a1);
+    if (cmd === "plan") { console.log(`containers=${JSON.stringify({ include })}`); console.log(`any=${include.length > 0}`); }
+    else {
+      if (!include.length) { console.log("no container images touched"); if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary([])); }
+      for (const { app, bindings } of include) {
+        const p = Bun.spawn(["bun", import.meta.path, "run", app, ...bindings.split(" ")], { stdio: ["inherit", "inherit", "inherit"] });
+        if ((await p.exited) !== 0) process.exitCode = 1;
+      }
+    }
+  } else if (cmd === "run") {
+    process.chdir(`apps/${a1}`);
+    const cfg = (await import(`${process.cwd()}/rustybuns.config.ts`)).default;
+    const bs = containerBindings(cfg).filter((b) => !names.length || names.includes(b.name));
+    const rows: Row[] = [];
+    for (const b of bs) {
+      const row: Row = { name: b.name, dockerfile: b.dockerfile, ok: false };
+      try {
+        const r = await buildOne(a1, b, { ghaCache: !!process.env.ACTIONS_RESULTS_URL });
+        Object.assign(row, { build: `${(r.ms / 1000).toFixed(0)}s`, size: mb(r.size) });
+        const s = await smokeOne(a1, b, { env: {} });
+        row.ok = s.ok;
+        if (s.ok) row.boot = /in ([\d.]+s)/.exec(s.note)?.[1]; else row.fail = s.note;
+      } catch (e) { row.fail = (e as Error).message; }
+      console.log(`${row.ok ? "✅" : "❌"} ${b.name} ${row.build ?? ""} ${row.size ?? ""} ${row.boot ?? ""}${row.fail ? "\n" + row.fail : ""}`);
+      rows.push(row);
+    }
+    if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary(rows));
+    if (rows.some((r) => !r.ok)) process.exitCode = 1;
+  } else throw new Error("usage: bun scripts/ci-containers.ts plan <base-ref> | check <base-ref> | run <app> [BINDING…]");
 }

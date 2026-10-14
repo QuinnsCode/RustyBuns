@@ -74,6 +74,7 @@ import { json, readBody, type Env } from "./env.ts";
 import { githubToken, parseRepo } from "./github.ts";
 import { emit } from "./hooks.ts";
 import { LOCKFILES as LOCKFILE_NAMES } from "./lockfiles.ts";
+import { NEED_LABEL, scanNeeds, needsText, type Need } from "./needs.ts";
 
 export const RUNNERS = ["desktop", "container", "github", "external"] as const;
 export const STATUSES = ["queued", "running", "passed", "failed", "cancelled"] as const;
@@ -99,7 +100,9 @@ const MAX_LOG = 256 * 1024;
 export const STALE = 10 * 60_000;
 /** A run of ours still queued after this long has no runner coming for it: the cron cancels it. */
 export const UNCLAIMED = 6 * 3600_000;
-const COLUMNS = "id, owner, repo, ref, sha, name, runner, status, started_at, finished_at, url, external_id, created_at, runner_label";
+/** Both notes that hand a run to the desktop (queueHere's, handToDesktop's) say this, so a listing can tell a handed-over run from an ordinary queued one. */
+const HANDED = "queued for the desktop app";
+const COLUMNS = `id, owner, repo, ref, sha, name, runner, status, started_at, finished_at, url, external_id, created_at, runner_label, (runner = 'desktop' AND status = 'queued' AND log LIKE '%${HANDED}%') AS needs_desktop`;
 
 /** The setting as stored: JSON, or the comma-separated names it used to be. */
 const parseRequired = (raw: string): Required[] => {
@@ -384,6 +387,15 @@ export async function planChecks(env: Env, owner: string, repo: string, ref: str
  * commit's runs cancel the ones still queued on an older one: nobody reads those.
  * Then the built-in runner, if there is one, is told there's work (ci-runner.ts).
  */
+/** A container run that failed because the image lacks a tool goes back in the queue for the desktop, not red. */
+export async function handToDesktop(env: Env, run: CheckRun, tool: Need) {
+  const note = `\n${NEED_LABEL[tool]} isn't in the hosted image. Needs desktop: ${HANDED} or a runner of your own (scripts/runner.ts).\n`;
+  await env.DB.prepare(`UPDATE check_runs SET runner = 'desktop', status = 'queued', started_at = NULL, finished_at = NULL, runner_label = NULL, heartbeat_at = NULL, claimed_by = NULL,
+    log = substr(log || ?, -${MAX_LOG}) WHERE id = ?`).bind(note, run.id).run();
+  const after = await get(env, run.id);
+  if (after) await postStatus(env, after).catch(() => null);
+}
+
 async function queueHere(env: Env, owner: string, repo: string, ref: string, sha: string, by: string, why = "", edit = false) {
   const runner: Runner = env.CI_RUNNER || typeof Bun === "undefined" ? "container" : "desktop";
   const s = await checkSettings(env, owner, repo);
@@ -396,8 +408,11 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
       ? await env.DB.prepare("SELECT 1 FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND name = ? AND runner IN ('desktop', 'container') AND status = 'queued'").bind(owner, repo, ref, name).first()
       : await env.DB.prepare("SELECT 1 FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha = ? AND name = ? AND runner != 'github' AND status IN ('queued', 'running')").bind(owner, repo, ref, sha, name).first();
     if (live) continue;
-    const run = await recordRun(env, { owner, repo, ref, sha, name, runner, command }, by);
-    if (why) await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(why, run.id).run();
+    // A check the hosted image can't run (Docker, cargo) is queued for the desktop or a runner of the owner's own.
+    const needs = runner === "container" && command ? scanNeeds(command) : [];
+    const run = await recordRun(env, { owner, repo, ref, sha, name, runner: needs.length ? "desktop" : runner, command }, by);
+    const note = needs.length ? `${needsText(needs)} Needs desktop: ${HANDED} or a runner of your own (scripts/runner.ts).\n` : "";
+    if (why || note) await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(why + note, run.id).run();
   }
   await (await import("./ci-runner.ts")).kick(env, owner, repo).catch(() => null);
 }
@@ -485,11 +500,11 @@ export async function cloneUrl(env: Env, owner: string, repo: string) {
 const HAND = (user: string) => `recorded by hand by @${user}\n`;
 
 /**
- * A runner takes the oldest queued run of ours, desktop or container (never GitHub's or an
+ * A runner takes the oldest queued run of ours, desktop or container (`kinds` limits it: the hosted container leaves the desktop's alone; never GitHub's or an
  * external CI's), of `names` when it only runs some, as `label`. One UPDATE marks it
  * running, so of two runners racing for it only one gets it. null when there's nothing to do.
  */
-export async function claimRun(env: Env, owner: string, repo: string, label: string, names: string[] = [], now = Date.now(), by: string | null = null) {
+export async function claimRun(env: Env, owner: string, repo: string, label: string, names: string[] = [], now = Date.now(), by: string | null = null, kinds: readonly ("desktop" | "container")[] = ["desktop", "container"]) {
   await requeueStale(env, now, { owner, repo });
   const only = names.length ? ` AND name IN (${names.map(() => "?").join(", ")})` : "";
   // Nobody but the owner runs a check they queued by hand: record it, claim it, pass it, and a crew
@@ -497,7 +512,7 @@ export async function claimRun(env: Env, owner: string, repo: string, label: str
   const mine = by && by !== owner ? HAND(by) : null;
   const notMine = mine ? " AND substr(log, 1, ?) != ?" : "";
   const run = await env.DB.prepare(`UPDATE check_runs SET status = 'running', started_at = ?, runner_label = ?, heartbeat_at = ?, claimed_by = ?
-    WHERE id = (SELECT id FROM check_runs WHERE owner = ? AND repo = ? AND status = 'queued' AND runner IN ('desktop', 'container')${only}${notMine} ORDER BY id LIMIT 1) AND status = 'queued' RETURNING *`)
+    WHERE id = (SELECT id FROM check_runs WHERE owner = ? AND repo = ? AND status = 'queued' AND runner IN (${kinds.map((k) => `'${k}'`).join(", ")})${only}${notMine} ORDER BY id LIMIT 1) AND status = 'queued' RETURNING *`)
     .bind(now, label, now, by, owner, repo, ...names, ...mine ? [mine.length, mine] : []).first() as CheckRun | null;
   if (!run) return null;
   const s = await checkSettings(env, owner, repo);
@@ -505,7 +520,7 @@ export async function claimRun(env: Env, owner: string, repo: string, label: str
   // Pinned, a run with no command in the settings (queued before, or by hand) doesn't fall back to the runner's default.
   if (s.pinned && !command) {
     await updateRun(env, run, { status: "cancelled", append: "\nchecks are pinned to the settings, and this one has no command there: cancelled\n" }, "codesplitters");
-    return claimRun(env, owner, repo, label, names, now, by);
+    return claimRun(env, owner, repo, label, names, now, by, kinds);
   }
   await postStatus(env, run).catch(() => null);
   return { id: run.id, ref: run.ref, sha: run.sha, name: run.name, clone_url: await cloneUrl(env, owner, repo), ...(command && { command }), stale_after_s: STALE / 1000 };

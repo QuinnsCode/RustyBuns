@@ -1,6 +1,10 @@
 {
-  // The docs sites: a Worker with static assets and no code. `bun run site` builds dist/site/ first.
+  // The docs sites: a Worker with static assets, plus /api/votes (the home page's favourite-features
+  // vote, kept in one Durable Object). `bun run site` builds dist/site/ first.
   "name": "rustybuns-docs",
+  "main": "worker.ts",
   "compatibility_date": "2026-06-01",
-  "assets": { "directory": "../../dist/site", "html_handling": "auto-trailing-slash" }
+  "assets": { "directory": "../../dist/site", "binding": "ASSETS", "html_handling": "auto-trailing-slash", "run_worker_first": ["/api/*"] },
+  "durable_objects": { "bindings": [{ "name": "VOTES", "class_name": "Votes" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Votes"] }]
 }

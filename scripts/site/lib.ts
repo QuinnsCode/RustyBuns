@@ -39,12 +39,15 @@ export type Page = {
   from: string; // the repo file it came from, so its relative links resolve
   anchor?: string; // set when the page is one heading of `from` (a README feature)
   section?: string; // sidebar group; none means it sits at the top
+  extra?: string; // HTML that replaces the <!--extra--> comment in the page (or ends it), outside the markdown copy
+  script?: string; // an assets/ file the page loads as a module
 };
 
 export type Site = {
   name: string;
   tagline: string;
   repo: string; // owner/name on GitHub
+  ogImage?: string; // a 1200x630 png in scripts/site/assets/, served as og.png for link previews
   pages(src: Source): Page[];
 };
 
@@ -118,6 +121,7 @@ export function summary(md: string, fallback: string) {
 const base = () => (process.env.SITE_URL ?? "").replace(/\/+$/, "");
 
 function layout(site: Site, page: Page, pages: Page[], body: string, src: Source, versions: string[], dir: string) {
+  if (page.extra !== undefined) body = body.includes("<!--extra-->") ? body.replace("<!--extra-->", () => page.extra!) : body + page.extra;
   const here = posix.dirname(page.path);
   const href = (p: Page) => esc(posix.relative(here, p.path) || posix.basename(p.path));
   const link = (p: Page) => `<a href="${href(p)}"${p === page ? ' aria-current="page"' : ""}>${esc(p.title)}</a>`;
@@ -140,6 +144,8 @@ function layout(site: Site, page: Page, pages: Page[], body: string, src: Source
   const description = page.path === "index.html" ? site.tagline : summary(page.md, site.tagline);
   const url = base() ? `${base()}/${dir}/${src.version}/${page.path}` : "";
   const sheet = (file: string) => esc(posix.join(root, file));
+  // Link previews need an absolute URL, so the image tags appear only when SITE_URL is set and the png exists.
+  const og = site.ogImage && url && existsSync(join(import.meta.dir, "assets", site.ogImage)) ? `${base()}/${dir ? `${dir}/` : ""}og.png` : "";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -156,7 +162,7 @@ ${src.version === "latest" ? "" : '<meta name="robots" content="noindex">\n'}${u
 <meta property="og:type" content="${page.path === "index.html" ? "website" : "article"}">
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(description)}">
-${url ? `<meta property="og:url" content="${esc(url)}">\n` : ""}<meta name="twitter:card" content="summary">
+${url ? `<meta property="og:url" content="${esc(url)}">\n` : ""}${og ? `<meta property="og:image" content="${esc(og)}">\n<meta property="og:image:width" content="1200">\n<meta property="og:image:height" content="630">\n<meta property="og:image:alt" content="${esc(`${site.name}: ${site.tagline}`)}">\n<meta name="twitter:image" content="${esc(og)}">\n` : ""}<meta name="twitter:card" content="${og ? "summary_large_image" : "summary"}">
 <meta name="twitter:title" content="${esc(title)}">
 <meta name="twitter:description" content="${esc(description)}">
 <link rel="icon" href="${sheet("favicon.svg")}" type="image/svg+xml">
@@ -193,6 +199,7 @@ ${body}
   </main>
 </div>
 <script src="${esc(posix.join(root, "site.js"))}"></script>
+${page.script ? `<script type="module" src="${esc(posix.join(root, page.script))}"></script>\n` : ""}
 </body>
 </html>
 `;
@@ -237,7 +244,8 @@ export function buildSite(site: Site, out: string, sources: Source[], dir = ""):
   for (const src of sources) manifest[src.version] = buildVersion(site, src, out, versions, problems, dir);
   const assets = join(import.meta.dir, "assets");
   mkdirSync(out, { recursive: true });
-  for (const f of ["site.css", "site.js", "favicon.svg"]) writeFileSync(join(out, f), readFileSync(join(assets, f)));
+  for (const f of ["site.css", "site.js", "votes.js", "favicon.svg"]) writeFileSync(join(out, f), readFileSync(join(assets, f)));
+  if (site.ogImage && existsSync(join(assets, site.ogImage))) writeFileSync(join(out, "og.png"), readFileSync(join(assets, site.ogImage)));
   mkdirSync(join(out, "fonts"), { recursive: true });
   for (const f of readdirSync(join(assets, "fonts"))) writeFileSync(join(out, "fonts", f), readFileSync(join(assets, "fonts", f)));
   const root = base() ? `${base()}/${dir}` : "";

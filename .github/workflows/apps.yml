@@ -122,26 +122,56 @@ jobs:
         working-directory: .
       - run: ${{ matrix.smoke }}
 
-  # The container images a PR touched (the Dockerfile or anything in its folder): built for linux/amd64, the
-  # platform Cloudflare Containers runs, then booted until :8080 answers. One job per image; each writes a row
-  # to its summary. A PR that touches no image skips this. scripts/ci-containers.ts; locally, `rustybuns containers smoke`.
-  containers:
+  # The container images a PR touched (an app's rustybuns.config.ts bindings): planned once, then one job per app so
+  # they build in parallel; each builds for linux/amd64 and boots (rustybuns containers smoke), with a size and boot
+  # table in its job summary. A PR that touches no image skips the build jobs. Not part of the `apps` gate below.
+  containers-plan:
     needs: plan
-    if: needs.plan.outputs.containersAny == 'true'
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      containers: ${{ steps.p.outputs.containers }}
+      any: ${{ steps.p.outputs.any }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - run: bun install --frozen-lockfile
+      - id: p
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          CODESPLITTER_AGENTS: "1"
+          CODESPLITTER_DEPLOYS: "1"
+          CODESPLITTER_CHECKS: "1"
+        run: bun scripts/ci-containers.ts plan "$BASE" >> "$GITHUB_OUTPUT"
+
+  containers:
+    needs: containers-plan
+    if: needs.containers-plan.outputs.any == 'true'
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.containers) }}
-    name: containers ${{ matrix.app }} ${{ matrix.binding }}
+      matrix: ${{ fromJSON(needs.containers-plan.outputs.containers) }}
+    name: containers ${{ matrix.app }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: apps/${{ matrix.app }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
-      - run: bun ../../scripts/ci-containers.ts "${{ matrix.binding }}" "${{ matrix.dockerfile }}"
+      - run: bun install --frozen-lockfile
+      # BuildKit's GitHub Actions layer cache (type=gha, a scope per image) needs the docker-container driver.
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0 (exports ACTIONS_RESULTS_URL for the cache)
+      # codeSplitter's check, deploy and agent images are behind these flags in its rustybuns.config.ts.
+      - env:
+          CODESPLITTER_AGENTS: "1"
+          CODESPLITTER_DEPLOYS: "1"
+          CODESPLITTER_CHECKS: "1"
+          APP: ${{ matrix.app }}
+          BINDINGS: ${{ matrix.bindings }}
+        run: bun scripts/ci-containers.ts run "$APP" $BINDINGS
 
   # One check for the ruleset on main to require (.github/rulesets/main.json): the jobs above only run for the
   # apps a PR touched, so their names come and go. This passes when none of them failed or got cancelled.

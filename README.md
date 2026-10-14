@@ -149,7 +149,7 @@ The copy has no `.env` or `.dev.vars`, gets a fake for every secret the app name
 
 <details><summary>More</summary>
 
-Each image shows as built, stale or not built, with its size. `run` starts one on a free port, waits until it answers and streams its logs. Only the `--env` values you pass reach it. `smoke` exits non-zero if an image never boots, and `deploy` checks that Docker is running before any Alchemy work. See [Containers](REFERENCE.md#containers).
+Each image shows as built, stale or not built, with its size. `run` starts one on a free port, waits until it answers and streams its logs. Only the `--env` values you pass reach it. `--prod-like` puts a run behind the app's own egress gate, on a network with no other way out. `smoke` exits non-zero if an image never boots, CI smoke-tests the images a PR touches, and `deploy` checks that Docker is running before any Alchemy work. See [Containers](REFERENCE.md#containers).
 
 </details>
 

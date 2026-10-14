@@ -93,6 +93,12 @@ export type Binding =
       maxInstances?: number;
       /** "lite" (1/16 vCPU, 256 MiB), "basic" (1/4 vCPU, 1 GiB), "standard-1" and up. @default "lite" */
       instanceType?: string;
+      /**
+       * What `rustybuns containers run --prod-like` gates the container's HTTP and HTTPS with: a module
+       * (path relative to the app) exporting `allowed(host, list)` and `refused(host)`, the same ones the
+       * deployed gate uses, and the host list this container gets in production.
+       */
+      egress?: { module: string; hosts: string[] };
     }
   /**
    * Cloudflare Queues: `env.NAME.send(body, { delaySeconds })` and `sendBatch`,

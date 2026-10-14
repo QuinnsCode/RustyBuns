@@ -27,7 +27,7 @@ Feature detail for each beat: [feature-map.md](feature-map.md), [line-locks.md](
 - No weapons, sexual or political content, and no mention of competitor products.
 - Say "git" once as the foundation, then show users never needing to see a git error.
 - Keep the cursor still while a live update lands so judges can see it patch.
-- Do a dry run the day before against the deployed worker; fix anything that fails in the app, not in the edit.
+- Do a dry run the day before against the deployed worker; fix anything that fails in the app, not in the edit. `bun run demo-check` walks the beats through the app's API on the local twins (free); `bun run demo-check --url <deployed app> --cookie <session>` runs the same beats on a throwaway repo there. It doesn't cover the agent hand-off note or the look of the page, so still watch those once.
 
 ## Submission checklist
 

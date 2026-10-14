@@ -53,7 +53,7 @@ import { PROF_SECRET, boxUrl, fetchHistory, fetchMem, fetchProfile, secretProble
 import { formatProfileSummary, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
 import { formatMemStats } from "@rustybuns/shell-bun/memwatch";
 import { formatHistory } from "@rustybuns/shell-bun/history";
-import { CONTAINERS_USAGE, bindingsWhy, buildOne, containerBindings, contextHash, envFlags, listText, needDocker, pick, readLedger, runOne, sizeTable, smokeOne } from "./containers.ts";
+import { CONTAINERS_USAGE, bindingsWhy, buildOne, containerBindings, contextHash, envFlags, prodLikeFlag, listText, needDocker, pick, readLedger, runOne, sizeTable, smokeOne } from "./containers.ts";
 import { TRIAGE_USAGE, triage } from "./triage.ts";
 import { rustybunsContext } from "./triage-context.ts";
 import { checkDisabled, checkVersion } from "./advisories.ts";
@@ -1013,7 +1013,8 @@ async function triageCommand(args: string[]) {
 async function containersCommand(args: string[]) {
   const [sub = "list", ...more] = args;
   const cfg = await loadConfig(), all = containerBindings(cfg);
-  const { env, file, rest } = envFlags(more);
+  const { env, file, rest: r1 } = envFlags(more);
+  const { prodLike, rest } = prodLikeFlag(r1);
   const verbose = rest.includes("--verbose"), shell = rest.includes("--shell");
   const names = rest.filter((a) => !a.startsWith("--"));
   const why = all.length ? bindingsWhy(all.length) : "";
@@ -1032,11 +1033,11 @@ async function containersCommand(args: string[]) {
     console.log(sizeTable(rows));
   } else if (sub === "run") {
     if (bs.length !== 1 || names.length !== 1) throw new UsageError({ message: "containers run takes exactly one BINDING" });
-    await runOne(cfg.name, bs[0]!, { env, file, shell, verbose });
+    await runOne(cfg.name, bs[0]!, { env, file, shell, verbose, prodLike });
   } else {
     let bad = 0;
     for (const b of bs) {
-      const r = await smokeOne(cfg.name, b, { env, file, verbose });
+      const r = await smokeOne(cfg.name, b, { env, file, verbose, prodLike });
       console.log(`${r.ok ? "✅" : "❌"} ${b.name}  ${r.note}`);
       if (!r.ok) bad++;
     }
@@ -1193,7 +1194,7 @@ Box and ship the web app you already have. A dev dependency, never in prod.
 
   containers [list]          the config's container bindings, and whether each image is built or stale
   containers build [B…]      build for linux/amd64 with a progress line per image, then a size table
-  containers run B           build if stale, start on a free port, stream logs until Ctrl-C
+  containers run B           build if stale, start on a free port, stream logs until Ctrl-C (--prod-like: behind the egress gate, no other way out)
                              (--shell for sh in the image; --env NAME=VALUE, --env-file path)
   containers smoke [B…]      boot each image headless, check it answers; exit 1 if one doesn't
 

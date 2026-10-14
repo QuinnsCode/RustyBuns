@@ -240,6 +240,7 @@ import {
   upstreamRemote,
   type Truth,
 } from "./mirror.ts";
+import { LLMS_TXT, ROBOTS_TXT } from "./discover.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
@@ -277,6 +278,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (p[0] === "install.sh" && !p[1] && req.method === "GET") return installScript(url.origin);
   // GET /agent.md  a prompt to hand your own agent so it can steer the site for you (agent-prompt.ts)
   if (p[0] === "agent.md" && !p[1] && req.method === "GET") return agentPromptResponse(url.origin);
+  // GET /llms.txt, /robots.txt  where an agent starting at the root is pointed at the API (discover.ts)
+  if ((p[0] === "llms.txt" || p[0] === "robots.txt") && !p[1] && req.method === "GET") return new Response(p[0] === "llms.txt" ? LLMS_TXT : ROBOTS_TXT, { headers: { "content-type": "text/plain; charset=utf-8" } });
   if (p[0] !== "api") return new Response("not found", { status: 404 });
   // GET /api/health, POST /api/watchdog/rolled-back  the watchdog Worker's check and its rollback report (watchdog.ts)
   const dog = await watchdogRoutes(req, env, p);
@@ -888,7 +891,14 @@ const app = {
     catch (e) { if (churn) forgetSession(req, env); if (tallied(req)) { const t = record(env, req, 500, !!ctx); if (ctx) ctx.waitUntil(t); else await t; } throw e; }
     if (churn) forgetSession(req, env);
     if (tallied(req)) { const t = record(env, req, res.status, !!ctx); if (ctx) ctx.waitUntil(t); else await t; }
-    return p[0] === "api" ? withTiming(req, res, start) : res;
+    if (p[0] !== "api") return res;
+    // A 401 that names no challenge leads an agent nowhere: point it at the OAuth metadata (RFC 9728).
+    if (res.status === 401 && !res.headers.has("www-authenticate")) {
+      const out = new Response(res.body, res);
+      out.headers.set("www-authenticate", `Bearer realm="codeSplitter", resource_metadata="${new URL(req.url).origin}/.well-known/oauth-protected-resource"`);
+      res = out;
+    }
+    return withTiming(req, res, start);
   },
 
   // The Cron Triggers (rustybuns.config.ts crons). Hourly: each repo's dependency doctor runs
