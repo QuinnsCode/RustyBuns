@@ -9,7 +9,7 @@
 //   GET  /__rb/helpers          Ester's and Mervin's runs of the board script (ester/run.ts): phase, the tail they printed, PRs to hold
 //   GET  /__rb/reload           what the page is running and whether the server's code moved on (live/reload.ts)
 //   POST /__rb/reload/restart   restart the office (SIGTERM; the workers keep running) when office:mama is minding it
-//   POST /__rb/helpers/<name>   start one (ester, mervin or dexter) in the first floor's repo, unless it is on it already
+//   POST /__rb/helpers/<name>   start one (ester, mervin or dexter) in the floor's repo that has its script, unless it is on it already
 // A POST from the page needs an X-RB-Triage header, which a form on another site can't send.
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -18,7 +18,7 @@ import { listSaved, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
 import { historyRuns } from "@rustybuns/shell-bun/history";
 import { officeHistory, officeMem } from "../live/mem.ts";
 import { officeReload } from "../live/reload.ts";
-import { createHelpers, isHelper } from "../ester/run.ts";
+import { createHelpers, HELPERS, isHelper, repoWith } from "../ester/run.ts";
 
 export const TRIAGE_HEADER = "x-rb-triage";
 
@@ -65,9 +65,11 @@ export function officeTriage(
       if (!isHelper(name)) return { status: 404, body: { error: "Ester, Mervin or Dexter" } };
       if (method !== "POST") return only("POST");
       if (!trusted) return { status: 403, body: { error: `Send ${TRIAGE_HEADER}: 1 with the POST` } };
-      const floor = [...floors()][0];
-      if (!floor) return { status: 404, body: { error: "No floor to run in" } };
-      const refused = helpers[name].start(floor.dir);
+      const dirs = [...floors()].map((f) => f.dir);
+      if (!dirs.length) return { status: 404, body: { error: "No floor to run in" } };
+      const repo = repoWith(HELPERS[name].script, dirs);
+      if (!repo) return { status: 404, body: { error: `This helper works from ${HELPERS[name].script}, and none of the floors' repos have it (looked in ${dirs.join(", ")})` } };
+      const refused = helpers[name].start(repo);
       return refused ? { status: refused.status, body: { error: refused.error } } : { status: 202, body: helpers[name].state() };
     }
     if (p === "/__rb/prof") {

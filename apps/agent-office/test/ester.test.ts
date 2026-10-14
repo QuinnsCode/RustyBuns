@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { BOARD, DEXTER, createHelpers, holdFrom, type Spawn } from "../ester/run.ts";
+import { BOARD, DEXTER, createHelpers, holdFrom, repoWith, type Spawn } from "../ester/run.ts";
 import { officeTriage } from "../triage/server.ts";
 
 const repo = () => {
@@ -62,4 +62,16 @@ test("the routes: a POST from the page needs the header, and only Ester and Merv
   expect((await to("POST", "/__rb/helpers/ester", false))!.status).toBe(403);
   expect((await to("POST", "/__rb/helpers/clippy"))!.status).toBe(404);
   expect((await to("GET", "/__rb/helpers/ester"))!.status).toBe(405);
+});
+
+test("the routes run a helper in the floor whose repo has the script, found from a subfolder", async () => {
+  const other = mkdtempSync(path.join(tmpdir(), "rb-ester-other-")), root = repo();
+  const sub = path.join(root, "apps/agent-office");
+  expect(repoWith(BOARD, [other, sub])).toBe(root);
+  expect(repoWith(BOARD, [other])).toBeNull();
+  const routes = officeTriage(mkdtempSync(path.join(tmpdir(), "rb-ester-data-")), () => [{ id: "a", dir: other }, { id: "b", dir: sub }]);
+  expect((await routes("POST", new URL("/__rb/helpers/dexter", "http://o"), true))!.status).toBe(202);
+  const none = await officeTriage(mkdtempSync(path.join(tmpdir(), "rb-ester-data-")), () => [{ id: "a", dir: other }])("POST", new URL("/__rb/helpers/mervin", "http://o"), true);
+  expect(none!.status).toBe(404);
+  expect(JSON.stringify(none!.body)).toContain(other);
 });
