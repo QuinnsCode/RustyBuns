@@ -438,6 +438,9 @@
       ],
     },
   },
+  "patchedDependencies": {
+    "alchemy@2.0.0-beta.77": "patches/alchemy@2.0.0-beta.77.patch",
+  },
   "overrides": {
     "@effect/platform-bun": "4.0.0-rc.112",
     "@effect/platform-node": "4.0.0-rc.112",
