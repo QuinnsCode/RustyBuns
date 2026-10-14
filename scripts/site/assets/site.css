@@ -4,8 +4,10 @@
   --muted: #76695a;
   --line: #eadfce;
   --panel: #f8f1e5;
-  --accent: #b5651d;
+  --accent: #9a5214;
   --code: #f3eadb;
+  --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --scale: 1;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -31,7 +33,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: calc(16px * var(--scale)); line-height: 1.6; }
 a { color: var(--accent); }
 header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 24px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 1; }
 .brand { font-weight: 700; font-size: 18px; color: var(--fg); text-decoration: none; }
@@ -81,3 +83,44 @@ footer p { margin: 4px 0; }
 :root[data-theme="dark"] .theme .disc { transform: scale(0); }
 :root[data-theme="dark"] .theme .rays { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .theme .disc, .theme .rays { transition: none; } }
+
+/* Accessibility */
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.skip { position: absolute; left: 8px; top: -60px; z-index: 3; padding: 8px 14px; border-radius: 6px; background: var(--fg); color: var(--bg); }
+.skip:focus { top: 8px; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+main:focus { outline: none; }
+a:not(nav a):not(.brand) { text-decoration-thickness: .08em; text-underline-offset: .15em; }
+.copy, .theme, .reading summary, .reading button, .reading select, .version select { min-height: 32px; }
+.scroll { overflow-x: auto; }
+.scroll table { display: table; margin: 0; }
+header { flex-wrap: wrap; }
+.reading { position: relative; margin-left: 8px; }
+.reading summary { list-style: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: var(--panel); cursor: pointer; }
+.reading summary::-webkit-details-marker { display: none; }
+.reading summary:hover, .reading[open] summary { border-color: var(--accent); }
+.reading svg { width: 20px; height: 20px; fill: none; stroke: var(--fg); stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+.reading .panel { position: absolute; right: 0; top: 42px; z-index: 2; display: grid; gap: 10px; width: 280px; max-width: calc(100vw - 32px); padding: 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 16px rgb(0 0 0 / .2); }
+.reading label { display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
+.reading select, .reading button { font: inherit; font-size: 14px; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+.reading button { cursor: pointer; }
+.reading button:hover { border-color: var(--accent); }
+
+@font-face { font-family: "Atkinson Hyperlegible"; src: url("fonts/atkinson-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Atkinson Hyperlegible"; src: url("fonts/atkinson-700.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "OpenDyslexic"; src: url("fonts/opendyslexic-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "OpenDyslexic"; src: url("fonts/opendyslexic-700.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+:root[data-font="atkinson"] { --font: "Atkinson Hyperlegible", system-ui, sans-serif; }
+:root[data-font="dyslexic"] { --font: "OpenDyslexic", "Comic Sans MS", system-ui, sans-serif; }
+:root[data-font="system"] { --font: system-ui, sans-serif; }
+:root[data-size="large"] { --scale: 1.2; }
+:root[data-size="xlarge"] { --scale: 1.45; }
+:root[data-space="wide"] body { letter-spacing: .12em; word-spacing: .16em; line-height: 1.9; }
+:root[data-space="wide"] p, :root[data-space="wide"] li { margin-block: 1.4em; }
+:root[data-space="wide"] pre, :root[data-space="wide"] code { letter-spacing: normal; word-spacing: normal; }
+@media (prefers-contrast: more) {
+  :root { --muted: #4a4034; --line: #7a6a58; }
+  :root:not([data-theme="light"]) { --muted: #d4c7b8; --line: #8a7b6a; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
+@media (forced-colors: active) { .theme .disc, .reading svg { forced-color-adjust: auto; } }

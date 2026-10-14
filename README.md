@@ -210,6 +210,16 @@ There's no framework API to unwind: your app stays a `fetch` handler with D1, KV
 
 </details>
 
+### Accessible by default
+
+The docs site works with a screen reader and a keyboard alone, and has reading settings with dyslexia-friendly fonts (Atkinson Hyperlegible, OpenDyslexic), larger text and wider spacing.
+
+<details><summary>More</summary>
+
+We aim for WCAG 2.2 AA. The reading settings and theme are also WebMCP tools, so an agent can change them for you. See [ACCESSIBILITY.md](ACCESSIBILITY.md) for what's covered and how to report a barrier.
+
+</details>
+
 ## What's the catch?
 
 - **No native menus, tray, installers, signing or auto-update yet.** If you need a native-feeling window today, use Electron or Tauri.
@@ -279,6 +289,7 @@ pnpm exec rustybuns destroy        # removes everything it created
 - [AGENT_PROMPTS.md](AGENT_PROMPTS.md): prompts to paste into your coding agent to try it on your repo
 - [REFERENCE.md](REFERENCE.md): every command, config key, the host, the Hetzner and Railway boxes, LAN multiplayer, who holds the keys to secrets
 - [ADOPTION.md](ADOPTION.md): who it's for, and how to adopt it (and leave)
+- [ACCESSIBILITY.md](ACCESSIBILITY.md): what's accessible today, the reading settings, and how to report a barrier
 - [COSTS.md](COSTS.md): what each deploy can bill you for, and how to cap it
 - [FRAMEWORKS.md](FRAMEWORKS.md): beyond Vite + React
 - [FRAMEWORK_COVERAGE.md](FRAMEWORK_COVERAGE.md): how many real GitHub apps per framework run unchanged
