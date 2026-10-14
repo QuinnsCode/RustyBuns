@@ -563,6 +563,7 @@
   .checks { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 12px; margin: 2px 0; }
   .check { display: inline-flex; align-items: center; gap: 4px; } .check a { color: inherit; } .check.failed, .check.cancelled { color: var(--del-fg); } .check.running svg { animation: spin 1.2s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  #mirror-sync svg.spin { animation: spin 1s linear infinite; }
   .legend { display: inline-flex; gap: 10px; font: 500 11.5px var(--mono); color: var(--muted); }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
   .legend .d { background: var(--del); box-shadow: inset 0 0 0 1px var(--del-edge); } .legend .a { background: var(--add); box-shadow: inset 0 0 0 1px var(--add-edge); }
@@ -3911,7 +3912,10 @@ const views = {
       <div class="row" style="gap:6px;flex-wrap:wrap">${pickSide}<button class="btn" id="mirror-sync"${sync}>${icon("refresh-cw")}Sync now</button>${m.pushCrew ? "" : crew}</div>${m.pushCrew ? crew : ""}${m.pullOnly ? "" : lead}${pull}
       <p class="muted" style="font-size:12px">${who} ${m.truth && m.truth !== "ask" ? `Clashes settle themselves: ${esc(TRUTHS[m.truth]?.[0] ?? m.truth)} wins.` : "Clashes wait for you."} <a href="#/u/${esc(me())}">Where git truth lives</a>: your history never goes extinct either way.</p><div id="mirror-branches"></div>`;
     icons();
-    $("#mirror-sync").addEventListener("click", () => { el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, {}); });
+    $("#mirror-sync").addEventListener("click", (e) => {
+      const btn = e.currentTarget; btn.disabled = true; btn.innerHTML = `${icon("refresh-cw")}Syncing…`; btn.querySelector("svg")?.classList.add("spin");
+      el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, {});
+    });
     el.querySelectorAll("[data-resolve]").forEach((b) => b.addEventListener("click", () => { el.querySelector("p").textContent = "settling…"; views.wireMirror(owner, repo, { resolve: b.dataset.resolve }); }));
     el.querySelectorAll("[data-primary]").forEach((b) => b.addEventListener("click", (e) => {
       e.preventDefault(); el.querySelector("p").textContent = "syncing…"; views.wireMirror(owner, repo, { primary: b.dataset.primary });
