@@ -24,16 +24,13 @@ export interface Site { url: string; token?: string; cookie?: string }
 export function site(env: Record<string, string | undefined> = process.env): Site {
   let conf: { url?: string; token?: string } = {};
   const dir = env.XDG_CONFIG_HOME ?? path.join(env.HOME ?? homedir(), ".config");
-  for (const name of ["codesplitter", "codesplitters"]) {   // the old name, from before the rename
-    try { conf = JSON.parse(readFileSync(path.join(dir, name, "config.json"), "utf8")); break; } catch {}
-  }
-  // CODESPLITTERS_* is each one's name from before the rename (#805), still read.
-  const u = new URL(env.CODESPLITTER_URL ?? env.CODESPLITTERS_URL ?? conf.url ?? desktop(env.HOME ?? homedir()) ?? LIVE);
+  try { conf = JSON.parse(readFileSync(path.join(dir, "codesplitter", "config.json"), "utf8")); } catch {}
+  const u = new URL(env.CODESPLITTER_URL ?? conf.url ?? desktop(env.HOME ?? homedir()) ?? LIVE);
   const launch = u.searchParams.get("token");
   u.search = "";
   return {
     url: u.toString().replace(/\/$/, ""),
-    token: env.CODESPLITTER_TOKEN ?? env.CODESPLITTERS_TOKEN ?? conf.token,
+    token: env.CODESPLITTER_TOKEN ?? conf.token,
     ...(launch && { cookie: `rb_token_${u.port}=${launch}` }),
   };
 }

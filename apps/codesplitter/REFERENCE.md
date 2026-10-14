@@ -248,7 +248,7 @@ The pitch is in [README.md](README.md).
   `/mcp` lists every tool in words, with how to connect (`GET /api/mcp/tools` as JSON).
   A read token lists only the reads, and the risky operations are marked `destructiveHint`, so the client asks before calling them.
 - **A CLI.** `bun cli.ts` (`apps/codesplitter`) is the same tools as commands, for an agent that would rather run a shell command than speak MCP: `bun cli.ts tools`, `bun cli.ts help read_file`, `bun cli.ts read_file --owner ryan --repo lab --path a.ts`, `--body JSON` (or `-` for stdin) for the ones that take one.
-  Point it at a site with `CODESPLITTER_URL` and `CODESPLITTER_TOKEN` (or `--url`, `--token`; every `CODESPLITTER_*` variable, these and the deploy flags, still answers to its old `CODESPLITTERS_*` name); on the desktop, `--as NAME` signs in as a handle.
+  Point it at a site with `CODESPLITTER_URL` and `CODESPLITTER_TOKEN` (or `--url`, `--token`); on the desktop, `--as NAME` signs in as a handle.
   Its commands come from the same list as the MCP tools, so the API, MCP and the CLI never drift.
   It sends its own user agent, so insights counts it as `cli`.
 - **OAuth sign-in for apps.** Instead of copying a token, an app can sign in: Executor's Add account, or an MCP client added with no header (`claude mcp add --transport http codesplitter https://<site>/api/mcp`), whose 401 points it at `/.well-known/oauth-protected-resource/api/mcp`.

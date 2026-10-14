@@ -91,10 +91,9 @@ export function prompts(owner: string, name: string) {
 if (import.meta.main) {
   const args = Object.fromEntries(process.argv.slice(2).reduce<string[][]>((a, v, i, all) => (v.startsWith("--") ? [...a, [v.slice(2), all[i + 1] ?? ""]] : a), []));
   let saved: { url?: string; token?: string } = {};
-  for (const name of ["codesplitter", "codesplitters"])   // the old name, from before the rename
-    try { saved = JSON.parse(readFileSync(`${process.env.XDG_CONFIG_HOME ?? `${process.env.HOME}/.config`}/${name}/config.json`, "utf8")); break; } catch {}
-  const url = args.url ?? process.env.CODESPLITTER_URL ?? process.env.CODESPLITTERS_URL ?? saved.url;   // and the old names, from before the rename
-  const token = args.token ?? process.env.CODESPLITTER_TOKEN ?? process.env.CODESPLITTERS_TOKEN ?? saved.token;
+  try { saved = JSON.parse(readFileSync(`${process.env.XDG_CONFIG_HOME ?? `${process.env.HOME}/.config`}/codesplitter/config.json`, "utf8")); } catch {}
+  const url = args.url ?? process.env.CODESPLITTER_URL ?? saved.url;
+  const token = args.token ?? process.env.CODESPLITTER_TOKEN ?? saved.token;
   if (!url || !token) {
     console.error("No codeSplitter site or token. Run `codesplitter login` once, or pass --url and --token.");
     process.exit(2);

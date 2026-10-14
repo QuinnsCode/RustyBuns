@@ -43,15 +43,15 @@ test("the dot: nothing the first time, then whatever changed since you last look
 
 test("where it asks: env, else the CLI's login, else the running desktop, else the live site; a desktop launch token becomes its cookie", () => {
   expect(site({ HOME: "/nowhere" })).toEqual({ url: LIVE, token: undefined });
-  expect(site({ HOME: "/nowhere", CODESPLITTERS_URL: "http://127.0.0.1:5199/?token=abc", CODESPLITTERS_TOKEN: "cst_x" }))
+  expect(site({ HOME: "/nowhere", CODESPLITTER_URL: "http://127.0.0.1:5199/?token=abc", CODESPLITTER_TOKEN: "cst_x" }))
     .toEqual({ url: "http://127.0.0.1:5199", token: "cst_x", cookie: "rb_token_5199=abc" });
 
   const home = mkdtempSync(path.join(tmpdir(), "office-cs-"));
   mkdirSync(path.join(home, ".codesplitters"));
   const leave = (pid: number) => writeFileSync(path.join(home, ".codesplitters/desktop.json"), JSON.stringify({ url: "http://127.0.0.1:5200", token: "t/k", pid }));
   leave(process.pid);
-  expect(site({ HOME: home, CODESPLITTERS_TOKEN: "cst_x" })).toEqual({ url: "http://127.0.0.1:5200", token: "cst_x", cookie: "rb_token_5200=t/k" });
-  expect(site({ HOME: home, CODESPLITTERS_URL: "https://elsewhere.example" }).url).toBe("https://elsewhere.example");
+  expect(site({ HOME: home, CODESPLITTER_TOKEN: "cst_x" })).toEqual({ url: "http://127.0.0.1:5200", token: "cst_x", cookie: "rb_token_5200=t/k" });
+  expect(site({ HOME: home, CODESPLITTER_URL: "https://elsewhere.example" }).url).toBe("https://elsewhere.example");
   leave(2 ** 22 + 1); // no such process: the app died and left its file behind
   expect(site({ HOME: home }).url).toBe(LIVE);
 });

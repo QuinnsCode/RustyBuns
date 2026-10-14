@@ -19,8 +19,7 @@ import { defineConfig } from "@rustybuns/cli/config";
 // Account email (verification and password reset) is opt-in the same way, once the
 // sender's domain is onboarded to Cloudflare Email Sending (Workers Paid):
 //   CODESPLITTER_MAIL_FROM=accounts@your-domain  binds EMAIL and sends from it
-// Each still answers to its name from before the rename, CODESPLITTERS_* (#805).
-const flag = (name: string) => process.env[`CODESPLITTER_${name}`] ?? process.env[`CODESPLITTERS_${name}`];
+const flag = (name: string) => process.env[`CODESPLITTER_${name}`];
 const agents = flag("AGENTS") === "1";
 const deploys = flag("DEPLOYS") === "1";
 const vectors = flag("VECTORS") === "1";

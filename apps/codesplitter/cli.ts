@@ -83,18 +83,15 @@ async function readStdin() {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-/** Which is set: CODESPLITTER_<name>, or CODESPLITTERS_<name> as it was called before the rename (#805). */
-export const envName = (env: Record<string, string | undefined>, name: string) =>
-  [`CODESPLITTER_${name}`, `CODESPLITTERS_${name}`].find((k) => env[k]);
-export const envVar = (env: Record<string, string | undefined>, name: string) => env[envName(env, name) ?? ""];
+/** Which is set: CODESPLITTER_<name>. */
+export const envName = (env: Record<string, string | undefined>, name: string) => (env[`CODESPLITTER_${name}`] ? `CODESPLITTER_${name}` : undefined);
+export const envVar = (env: Record<string, string | undefined>, name: string) => env[`CODESPLITTER_${name}`];
 
 // `codesplitter login` keeps the site and token here, so neither has to be exported
 // every time. The variables and flags still win over it.
 const configPath = (env: Record<string, string | undefined>) => `${env.XDG_CONFIG_HOME ?? `${env.HOME ?? "."}/.config`}/codesplitter/config.json`;
 function saved(env: Record<string, string | undefined>): { url?: string; token?: string } {
-  // Logged in before the rename: the old codesplitters/config.json.
-  for (const p of [configPath(env), configPath(env).replace(/codesplitter\/config\.json$/, "codesplitters/config.json")])
-    try { return JSON.parse(readFileSync(p, "utf8")); } catch {}
+  try { return JSON.parse(readFileSync(configPath(env), "utf8")); } catch {}
   return {};
 }
 
