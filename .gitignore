@@ -21,3 +21,4 @@ wrangler.generated.jsonc
 *.p12
 .npmrc
 .rustybuns-trial/
+.mervin

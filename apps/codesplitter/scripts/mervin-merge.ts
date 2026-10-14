@@ -6,6 +6,11 @@
 //   bun scripts/mervin-merge.ts [1468 1478 ...] [--go] [--from prs.json]
 //   bun scripts/mervin-merge.ts --stack [--push]
 //
+// Every run is recorded so a bad round can be replayed: the PR list as `gh` gave it (head shas, CI), main's sha,
+// the board and the verdicts, and the stack's tip, go to `.mervin/rounds/<time>-<main>.json` (`--record <dir>`
+// to move it; `--no-record` to skip). It also pins each PR head at `refs/mervin/pr-<n>-<sha>`, so a force push
+// can't take the commit away. `--replay <file>` runs the same decisions again on exactly that input.
+//
 // `--stack` takes the PRs that are clean (go, and every file certain or agree: no merge logic needed) and joins
 // them into one branch, `mervin/stack-<main>`, one merge commit per PR in the board's order, so the whole stack
 // is one PR you merge (as a merge commit, which also marks the PRs inside it merged) and one `git revert -m1`
@@ -19,6 +24,8 @@
 // change), it is stacked on a PR that hasn't landed, it sits in a clash between files, or it waits behind a
 // held PR that touches the same files. Every line is stamped so the run can be tailed.
 
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { run, order, ciOf, type Board, type BoardPr } from "./mervin-board.ts";
 
 export interface Verdict { pr: number; title?: string; go: boolean; wave?: number; why: string; behind: number[] }
@@ -76,14 +83,27 @@ if (import.meta.main) {
   const arg = (n: string) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : undefined; };
   const say = (m: string) => console.log(`${new Date().toISOString().slice(11, 19)} mervin: ${m}`);
   const top = Bun.spawnSync(["git", "rev-parse", "--show-toplevel"]).stdout.toString().trim();
+  const replay = arg("replay");
+  const rec = replay ? JSON.parse(await Bun.file(replay).text()) : undefined;
   const from = arg("from");
-  const prs: BoardPr[] = JSON.parse(from ? await Bun.file(from).text()
+  const prs: BoardPr[] = rec ? rec.prs : JSON.parse(from ? await Bun.file(from).text()
     : Bun.spawnSync(["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "number,title,headRefOid,headRefName,baseRefName,statusCheckRollup"], { cwd: top }).stdout.toString() || "[]");
-  const main = Bun.spawnSync(["git", "rev-parse", "origin/main"], { cwd: top }).stdout.toString().trim();
+  const main: string = rec ? rec.main : Bun.spawnSync(["git", "rev-parse", "origin/main"], { cwd: top }).stdout.toString().trim();
   const given = args.filter((a, i) => /^\d+$/.test(a) && !args[i - 1]?.startsWith("--")).map(Number);
   say(`reading ${prs.length} open PRs against main ${main.slice(0, 9)}`);
   const { board } = run(top, main, order(prs, given.length ? given : undefined));
   const verdicts = decide(board, prs);
+  const file = join(resolve(arg("record") ?? join(top, ".mervin/rounds")), `${new Date().toISOString().replace(/[:.]/g, "-")}-${main.slice(0, 9)}.json`);
+  const recorded: Record<string, unknown> = { at: new Date().toISOString(), main, replayOf: replay, prs, board, verdicts };
+  const save = () => {
+    if (args.includes("--no-record") || replay) return;
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, JSON.stringify(recorded, null, 2));
+  };
+  if (!args.includes("--no-record") && !replay) {
+    for (const p of prs) Bun.spawnSync(["git", "update-ref", `refs/mervin/pr-${p.number}-${p.headRefOid.slice(0, 9)}`, p.headRefOid], { cwd: top });
+    save(); say(`recorded ${file}`);
+  }
   for (const v of verdicts) say(`#${v.pr} ${v.go ? `wave ${v.wave}` : "HOLD"}: ${v.why}${v.title ? `  (${v.title})` : ""}`);
   if (args.includes("--stack")) {
     const picks = stackable(board, verdicts);
@@ -92,6 +112,7 @@ if (import.meta.main) {
     const { tip, joined, left } = buildStack(git, main, picks.map((n) => prs.find((p) => p.number === n)!), titles);
     const branch = `mervin/stack-${main.slice(0, 9)}`;
     git("update-ref", `refs/heads/${branch}`, tip);
+    recorded.stack = { branch, tip, joined, left }; save();
     say(`stack ${branch}: ${joined.length} PRs joined${left.length ? `, left out ${left.map((l) => `#${l.pr} (${l.why})`).join(", ")}` : ""}`);
     const held = verdicts.filter((v) => !v.go || !picks.includes(v.pr));
     const body = [
