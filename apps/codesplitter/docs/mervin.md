@@ -3,6 +3,8 @@
 Mervin is codeSplitter's merge engine: the line-id merge (`src/lines.ts`), the resolver levels and the
 merge plan (`src/merge-plan.ts`) that puts clashing PRs in waves. It swerves out of the way of merge conflicts.
 
+Design note for running it locally and on Cloudflare: [mervin-engine.md](mervin-engine.md).
+
 ## The goal: 80% of fights seen coming
 
 A PR "fights" when git's merge of it onto main conflicts. Mervin's goal is to flag **80% of the PRs that
@@ -99,11 +101,12 @@ not silent mistakes, and Ruby has no `lint.ts` guard (see below).
 - **Code outside JS/TS is only flagged.** `src/lint.ts` parses only JavaScript, TypeScript and HTML. For the rest
   (C, Rust, Python, Go, shell) a stretch both sides changed where git would have stopped, and Mervin settled, now
   comes back as a `check` (#1389), like the prose fact checks: it never holds the merge, and the writer can settle it
-  with a text. Where the repo has a `package.json` with a `test` or `build` script and test merges is on, that script runs on the merged tree first, and a failure comes back as a `lint:tests` conflict (#1401), settled as the branch to land anyway. Repos with no `package.json` (git/git's make) are still only flagged (#1407).
+  with a text. Where the repo has a `package.json` with a `test` or `build` script and test merges is on, that script runs on the merged tree first, and a failure comes back as a `lint:tests` conflict (#1401), settled as the branch to land anyway. Repos with no `package.json` run `make` (a Makefile), `cargo build` (Cargo.toml) or `go build ./...` (go.mod) instead, with nothing installed first (#1407); with none of those they are still only flagged.
 - **Never run on anyone else's history until now.** The 80% goal in this doc is about seeing fights coming; the
   recall number for it (mervin-score) still needs a corpus that keeps real merges (the `lines` predictor is in).
-- **Invisible.** The name is in no UI string, README line or API field; the merge engine is the strongest answer
-  to the contest's conflict-handling criterion and a judge cannot see it.
+- **Visible now, thinly.** The merge plan line and `GET /api/repos/:o/:r/merge-plan` (`engine`) name him, and the repo page
+  and `GET /api/mervin` show the git/git corpus (settled / asked / other text, `src/mervin.ts`). The numbers there are
+  this doc's table, not a live per-repo tally, and the merge page does not credit him per file yet.
 
 ## Corpus to pull in
 
