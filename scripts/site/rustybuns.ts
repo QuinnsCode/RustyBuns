@@ -1,5 +1,6 @@
 // The Rusty Buns docs site: the README as the home page, a page per README feature, About, and the
 // root guides. Old tags from before the feature-list README get their README as one page.
+import { configReference } from "./config-reference.ts";
 import { type Page, type Site, slug, titleOf } from "./lib.ts";
 
 const GUIDES = ["GETTING_STARTED.md", "AGENT_PROMPTS.md", "REFERENCE.md", "ADOPTION.md", "EXAMPLES.md", "COSTS.md", "FRAMEWORKS.md", "FRAMEWORK_COVERAGE.md", "SECURITY.md", "LICENSING.md", "PRIVACY.md", "ACCESSIBILITY.md", "APPLE_SIGNING.md"];
@@ -33,6 +34,8 @@ export const rustybuns: Site = {
       const md = src.read(file);
       if (md) pages.push({ path: `guides/${file.replace(/\.md$/, "").toLowerCase().replace(/_/g, "-")}.html`, title: titleOf(md, file), md, from: file, section: "Guides" });
     }
+    const config = configReference(src);
+    if (config) pages.push(config);
     return pages;
   },
 };
