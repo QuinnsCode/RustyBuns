@@ -171,7 +171,7 @@ console.log("RB " + JSON.stringify({ adopt: !!c.targets?.edge?.adopt, edge: !!c.
  * deploy-review.ts), or nothing after it runs. `files` (repo paths) are laid
  * over the clone first: the dependency doctor's branch, not yet pushed (deps.ts).
  */
-export async function preview(runner: Runner, remote: string, run: Run, opts: { keep?: boolean; allowAdopt?: boolean; dir?: string; expect?: string; files?: Record<string, string> } = {}) {
+export async function preview(runner: Runner, remote: string, run: Run, opts: { keep?: boolean; allowAdopt?: boolean; allowDelete?: boolean; force?: boolean; dir?: string; expect?: string; files?: Record<string, string> } = {}) {
   const fs = runner.workdir ? null : await import("node:fs");
   const dir = runner.workdir ?? fs!.mkdtempSync((await import("node:path")).join((await import("node:os")).tmpdir(), "codesplitter-preview-"));
   const app = opts.dir ? `${dir}/repo/${opts.dir}` : `${dir}/repo`;
@@ -243,7 +243,7 @@ export async function preview(runner: Runner, remote: string, run: Run, opts: { 
       return skip("check", "destroy");
     }
     deployed = true;   // from here a half-made stack may exist, so destroy always runs
-    const rb = (sub: string) => ({ cmd: ["bun", "x", "rustybuns", sub, "--yes", "--stage", run.stage], cwd: app });
+    const rb = (sub: string) => ({ cmd: ["bun", "x", "rustybuns", sub, "--yes", "--stage", run.stage, ...(sub === "deploy" ? [...(opts.allowDelete ? ["--allow-delete"] : []), ...(opts.force ? ["--force"] : [])] : [])], cwd: app });
     await runner.state?.restore(app);
     const ok = await go("deploy", [rb("deploy")]);
     // Kept even when the deploy failed: a half-made stack is in it too.

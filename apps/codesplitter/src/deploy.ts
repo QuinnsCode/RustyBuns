@@ -30,7 +30,8 @@
 //
 //   GET  /api/repos/:o/:r/deploy   settings, the run going now, the last 20 deploys (owner only)
 //   PUT  /api/repos/:o/:r/deploy   {stage, dir, on_commit, production}
-//   POST /api/repos/:o/:r/deploy   ship it now; {approve: sha}: approve main up to sha (its tip) first
+//   POST /api/repos/:o/:r/deploy   ship it now; {approve: sha}: approve main up to sha (its tip) first;
+//                                  {allow_delete: true} / {force: true}: the CLI's --allow-delete / --force, for this deploy only
 //   GET  /api/repos/:o/:r/deploy/review   what a deploy waits on, with the diff since the last approval
 //   .../deploy/key[/:provider]     the stored deploy keys (deploy-keys.ts)
 
@@ -90,6 +91,8 @@ export async function finish(env: Env, run: Run) {
 
 const hostedStub = (env: Env, owner: string, repo: string) => env.DEPLOY_RUNNER!.get(env.DEPLOY_RUNNER!.idFromName(`${owner}/${repo}`));
 
+/** The CLI's `--allow-delete` and `--force`, for one deploy only: never saved with the settings, never passed on a commit-triggered ship. */
+export interface DeployFlags { allowDelete?: boolean; force?: boolean }
 type Started = { run?: Run; queued?: boolean; error?: string; status?: number; review?: Review };
 
 /** A review as the panel gets it, without the handle it walked. */
@@ -111,7 +114,7 @@ async function gate(env: Env, owner: string, repo: string, approved?: string): P
  * desktop it runs here with this machine's logins; on the site it runs in its
  * own container with the repo's stored deploy key (deploy-runner.ts).
  */
-async function start(env: Env, owner: string, repo: string, by: string, trigger: "button" | "commit", approved?: string): Promise<Started> {
+async function start(env: Env, owner: string, repo: string, by: string, trigger: "button" | "commit", approved?: string, flags: DeployFlags = {}): Promise<Started> {
   const runner = runnerFor(env);
   if (!runner) {
     if (!env.DEPLOY_RUNNER) return { error: "deploys run on the desktop app, with your own logins", status: 400 };
@@ -121,7 +124,7 @@ async function start(env: Env, owner: string, repo: string, by: string, trigger:
     // The runner checks again before it unseals the keys; this answers the panel with what's waiting.
     const held = await gate(env, owner, repo, approved);
     if ("error" in held) return held;
-    const res = await hostedStub(env, owner, repo).fetch(new Request("http://deploy/start", { method: "POST", body: JSON.stringify({ owner, repo, by, trigger }) }));
+    const res = await hostedStub(env, owner, repo).fetch(new Request("http://deploy/start", { method: "POST", body: JSON.stringify({ owner, repo, by, trigger, ...flags }) }));
     return (await res.json()) as Started;
   }
   const key = `${owner}/${repo}`, now = live.get(key);
@@ -140,7 +143,7 @@ async function start(env: Env, owner: string, repo: string, by: string, trigger:
   // The clone is a temp dir; the stack's Alchemy state is kept beside the desktop's own data.
   const { homedir } = await import("node:os");
   const keeps = runner.state ? runner : { ...runner, state: dirState(`${env.DEPLOY_STATE_DIR ?? `${homedir()}/.codesplitters/alchemy`}/${owner}/${repo}${stateSuffix(dir)}`) };
-  void preview(keeps, remote, run, { keep: true, allowAdopt: production, dir, expect: held.tip })
+  void preview(keeps, remote, run, { keep: true, allowAdopt: production, dir, expect: held.tip, ...flags })
     .catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; })
     .then(async () => {
       await finish(env, run);
@@ -195,8 +198,8 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
     return json(await settings(env, owner, repo));
   }
   if (req.method === "POST") {
-    const { approve: sha } = await readBody<"approve">(req);
-    const r = await start(env, owner, repo, user, "button", typeof sha === "string" ? sha : undefined);
+    const { approve: sha, allow_delete, force } = await readBody<"approve" | "allow_delete" | "force">(req);
+    const r = await start(env, owner, repo, user, "button", typeof sha === "string" ? sha : undefined, { ...(allow_delete === true && { allowDelete: true }), ...(force === true && { force: true }) });
     return r.error ? json({ error: r.error, ...(r.review && { review: r.review }) }, r.status ?? (r.error.includes("already") ? 409 : 400)) : json({ run: r.run }, 202);
   }
   return null;

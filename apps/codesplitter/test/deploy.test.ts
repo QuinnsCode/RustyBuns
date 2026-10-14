@@ -256,3 +256,16 @@ test("a folder that isn't in the repo says so", async () => {
   expect(d.history[0]).toMatchObject({ status: "failed", note: expect.stringContaining("no folder apps/gone") });
   expect(f.ran.some((l) => l.includes("bun install"))).toBe(false);
 });
+
+test("--allow-delete and --force go to one deploy only, when the press asks, and are never saved", async () => {
+  const { runner, ran } = fake();
+  const { call, send } = await app(runner);
+  await send("ryan", "/api/repos/ryan/lab/deploy", { allow_delete: true, force: true });
+  await settle(call);
+  const deploys = () => ran.filter((l) => l.includes("rustybuns deploy"));
+  expect(deploys()[0]).toMatch(/--allow-delete/);
+  expect(deploys()[0]).toMatch(/--force/);
+  await send("ryan", "/api/repos/ryan/lab/deploy", { allow_delete: "yes" });
+  await settle(call, 2);
+  expect(deploys()[1]).not.toMatch(/--allow-delete|--force/);
+});
