@@ -114,7 +114,7 @@ export async function pageRoutes(req: Request, env: Env, p: string[], user?: str
     if (!(await hasPage(env, user))) return json({ error: "no page repo yet: make a public repo named page" }, 404);
     return json({ path, changed: await setText(env, user, path, b.content) });
   }
-  // GET /api/users/:name/page-version: changes whenever a file of the page does, so an open page knows when to reload.
+  // GET /api/users/:name/page-version, changes whenever a file of the page does, so an open page knows when to reload.
   if (p[1] === "users" && p[2] && p[3] === "page-version" && !p[4] && req.method === "GET") return json({ version: await pageVersion(env, p[2]) });
   if (p[1] !== "users" || !p[2] || p[3] !== "page" || (req.method !== "GET" && req.method !== "HEAD")) return null;
   const name = p[2], path = pagePath(p.slice(4));
