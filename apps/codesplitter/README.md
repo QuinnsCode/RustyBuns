@@ -127,8 +127,13 @@ It's free and it's yours: your data lives in `~/.codesplitters`.
 cd apps/codesplitter
 bun install
 bun run desktop        # the app in a window
-bun run desktop:watch  # the same, rebuilt and restarted on every save
+bun run desktop:watch  # the same, rebuilt and restarted on every save; the window reloads itself
+bun run desktop:update # git pull, install, and restart the desktop on the new build
 ```
+
+Under `desktop:watch` a pull is enough: the changed files rebuild the host and the window refreshes on its own (it
+offers a Refresh button instead if you have text typed in). `desktop:update` is the one command to keep up with
+merged changes: it pulls fast-forward only, and swaps a desktop that wasn't started by `desktop:watch` for a watched one.
 
 There's no downloadable build yet; that's one command from source.
 

@@ -6,7 +6,7 @@
 // a burst of writes (an agent editing ten files) costs two builds, not ten.
 //
 // Every host gets the same port and launch token (RB_LISTEN, RB_TOKEN), so the window the first
-// one opened stays logged in across restarts: reload it. RB_WATCH keeps that window open when its
+// one opened stays logged in across restarts and reloads itself (shell-bun reload.ts). RB_WATCH keeps that window open when its
 // host exits, and RB_WATCH=again tells a restarted host not to open another (launcher.ts).
 // rustybuns.config.ts is read once: a change to it needs the watch started again.
 import { statSync, watch as fsWatch } from "node:fs";
