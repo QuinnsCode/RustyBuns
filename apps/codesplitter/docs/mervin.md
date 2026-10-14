@@ -208,3 +208,14 @@ Tried: rust-lang/cargo, which merges only green PRs through bors, so 1 of 1,600 
 Tried: pingdotgg/t3code, which squash-merges: 15 merge commits in 5,473, so no corpus either.
 Still to check: a Linux subsystem tree, Django. Reference engines to compare against, not to vendor yet:
 Mergiraf (structured merge; over the 29 hunks in [merge-solutions.md](merge-solutions.md#12-mergiraf-over-the-same-hunks) it settled 6 and nothing L3 doesn't; still to try on a corpus with moved and reordered code), Spork and IntelliMerge (tree matching).
+
+## Dependency fights (#1477)
+
+`src/dep-docs.ts` (imports only `manifest.ts`; the registry, OSV and the sandbox are arguments, so tests are offline):
+
+- `detectDependencyFiles` finds manifests and the lockfiles that follow them across npm (with workspace members), Cargo, Python, Go and Ruby.
+- `settleDeps` asks the dependency's docs (`npmDocs`: npm deprecation and README notes, OSV advisories) when both sides bumped one across a major. Safe docs take the higher version; a breaking finding, no docs or a spent lookup budget gives a card ("x 1.3 to 2.0 renames `foo`; branch uses it at src/a.ts:12").
+- `mergeTable` merges `Cargo.toml`, `pyproject.toml` and `go.mod` dependency tables by key, as `manifest.ts` does for `package.json`.
+- `proveMerge` installs and builds the merged tree in a sandbox that is destroyed on success, failure and throw. Lookups and sandbox runs each draw on a `Budget`, so a pass and a repo have a cap.
+
+Not wired into the live merge yet (it is async, `lines.merge` is sync), and express, rails and git/git have not been re-run against the table above.
