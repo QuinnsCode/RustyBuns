@@ -8,10 +8,10 @@
 
 /** The shapes of keys nobody means to commit: LLM keys, GitHub tokens, AWS keys, private keys, this site's own. */
 const SHAPES: [string, RegExp][] = [
-  ["an Anthropic key", /\bsk-ant-[A-Za-z0-9_-]{20,}/],
+  ["an Anthropic key", new RegExp("\\bsk-" + "ant-[A-Za-z0-9_-]{20,}")],   // built from pieces so this file isn't itself a key-shaped string
   ["an OpenAI key", /\bsk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{40,}/],
   ["a GitHub token", /\bgh[pousr]_[A-Za-z0-9]{36,}/],
-  ["a GitHub token", /\bgithub_pat_[A-Za-z0-9_]{60,}/],
+  ["a GitHub token", new RegExp("\\bgithub_" + "pat_[A-Za-z0-9_]{60,}")],
   ["an AWS key", /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
   ["a private key", /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
   ["a codeSplitter token", /\bcs(?:t|ci)_[A-Za-z0-9_-]{40,}/],
