@@ -1011,6 +1011,11 @@ describe("rate limits", () => {
       expect(await edit(2, [{ kind: "insert", after: null, text: "still lands" }])).toMatchObject({ type: "ack", rev: 2 });
     } finally { call.env.DB.prepare = prepare; }
     expect((await (await call("ana", "/api/repos/ana/r/do/file?path=a")).json() as any).lines.map((l: any) => l.text)).toEqual(["still lands", "x"]);
+    // A window of the lines, with the total; no window, the whole file.
+    const page = await (await call("ana", "/api/repos/ana/r/do/file?path=a&from=1&limit=1")).json() as any;
+    expect(page).toMatchObject({ total: 2, from: 1 });
+    expect(page.lines.map((l: any) => l.text)).toEqual(["x"]);
+    expect((await (await call("ana", "/api/repos/ana/r/do/file?path=a")).json() as any).total).toBeUndefined();
   });
 });
 

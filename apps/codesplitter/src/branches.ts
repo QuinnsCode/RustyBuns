@@ -70,8 +70,13 @@ export function parseResolve(raw: unknown): Record<string, Resolve> | string {
 interface Access { read: boolean; write: boolean }
 
 export async function openBranch(env: Env, owner: string, repo: string, name: string) {
-  const b = await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first();
+  const b = await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first() as BranchRow | null;
   return b?.status === "open" ? b : null;
+}
+
+/** Every open branch of the repo, oldest first. */
+async function openBranches(env: Env, owner: string, repo: string) {
+  return (await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND status = 'open' ORDER BY created_at, name").bind(owner, repo).all()).results as BranchRow[];
 }
 
 /** The open branches `branch` is stacked on, nearest first: its parent, that one's, and on down. One that merged has its work on main, and ends it. */
@@ -263,7 +268,7 @@ async function fileHunks(env: Env, owner: string, repo: string, branch: string, 
   return { doc: doc!, hunks: hunks(base ?? empty(), doc!) };
 }
 
-type BranchRow = { name: string; by: string; created_at?: unknown; upstream_ref?: unknown };
+type BranchRow = { name: string; by: string; status?: string; parent: string | null; waits_on: string | null; created_at?: unknown; upstream_ref?: unknown };
 type FileRow = { path: string; merged: number; deleted: number; blob: string | null; mode: string | null };
 /** A coding agent's answer to one conflict, checked: `ok` only when the merged file parses and the tests pass (or don't run). */
 export interface Answer { harness: Harness; model?: string; text?: string; ok: boolean; tests: string; failure?: string; round?: number; note?: string }
@@ -535,7 +540,7 @@ export interface Took { branch: string; status: "updated" | "cards" | "rebuildin
  * its own checks, held while it waited, run once now, unless it still waits for another.
  */
 async function afterBlocker(env: Env, owner: string, repo: string, name: string, blocker: string, user: string): Promise<Took> {
-  const b = await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, name).first() as (BranchRow & { waits_on: string | null }) | null;
+  const b = await openBranch(env, owner, repo, name);
   if (!b) return { branch: name, status: "failed", error: "not open any more" };
   await waitFor(env, owner, repo, name, (JSON.parse(b.waits_on ?? "[]") as string[]).filter((w) => w !== blocker));
   try { return await takeMain(env, owner, repo, b, user, { rebuild: blocker }); }
@@ -550,7 +555,7 @@ async function afterBlocker(env: Env, owner: string, repo: string, name: string,
  * blocker merges (afterBlocker): null for both. So is one a rebuild task is on: it pushes when it ends (#1226).
  */
 export async function takeMainUpstream(env: Env, owner: string, repo: string, name: string): Promise<Took | null> {
-  const b = await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, name).first() as (BranchRow & { waits_on: string | null }) | null;
+  const b = await openBranch(env, owner, repo, name);
   if (!b?.upstream_ref || b.waits_on || (await ancestors(env, owner, repo, name)).length) return null;
   if (await env.DB.prepare("SELECT 1 FROM agent_runs WHERE owner = ? AND repo = ? AND branch = ? AND status = 'running' AND json_extract(result, '$.rebuild') IS NOT NULL").bind(owner, repo, name).first()) return null;
   const rows = (await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND deleted = 0 AND blob IS NULL ORDER BY path").bind(owner, repo, name).all()).results as { path: string }[];
@@ -695,7 +700,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   const run = await dryRun(env, owner, repo, branch, rows, resolve, user);
   if ("blocked" in run) return json(run.blocked, 409);
   // The open branches that clash with this one (merge-plan.ts), read before main moves: each takes main in after (#1162).
-  const others = (await env.DB.prepare("SELECT name FROM branches WHERE owner = ? AND repo = ? AND status = 'open' AND name != ? AND parent IS NOT ? ORDER BY created_at, name").bind(owner, repo, name, name).all()).results as { name: string }[];
+  const others = (await openBranches(env, owner, repo)).filter((b) => b.name !== name && b.parent !== name);
   const clashing = others.length ? await clashesIn(env, owner, repo, [name, ...others.map((b) => b.name)], user, name).catch(() => []) : [];
 
   const took: Took[] = [];
@@ -787,7 +792,7 @@ async function waitFor(env: Env, owner: string, repo: string, branch: string, on
  * change are merged in the dry run: a branch on files nobody else touches clashes with nothing.
  */
 async function mergePlan(env: Env, owner: string, repo: string, user: string) {
-  const open = (await env.DB.prepare("SELECT name, parent FROM branches WHERE owner = ? AND repo = ? AND status = 'open' ORDER BY created_at, name").bind(owner, repo).all()).results as { name: string; parent: string | null }[];
+  const open = await openBranches(env, owner, repo);
   const held = new Set((await Promise.all(open.map(async (b) => await mergeBlock(env, owner, repo, b.name) ? b.name : null))).filter((n) => n !== null));
   // A stacked branch can't merge before the one it's on, so that one comes first whatever its age.
   const order: string[] = [], parent = new Map(open.map((b) => [b.name, b.parent]));
@@ -826,7 +831,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     const b = await readBody<"branches" | "build_ok">(req);
     const named = b.branches;
     if (named !== undefined && !(Array.isArray(named) && named.every((x): x is string => typeof x === "string"))) return json({ error: "branches: [name]" }, 400);
-    const open = (await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND status = 'open' ORDER BY created_at, name").bind(owner, repo).all()).results as { name: string; by: string }[];
+    const open = await openBranches(env, owner, repo);
     const todo = named ? open.filter((r) => named.includes(r.name)) : open;
     const merged: string[] = [];
     const skipped: { branch: string; error: string; files?: string[] }[] = (named ?? []).filter((n) => !todo.some((r) => r.name === n)).map((n) => ({ branch: n, error: "no open branch" }));

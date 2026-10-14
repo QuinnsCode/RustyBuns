@@ -22,7 +22,7 @@
 import { materialize, toFile } from "./archive.ts";
 import { fromDisk } from "./agent-run.ts";
 import { createOn, deleteOn, materializeOn } from "./branches.ts";
-import { branchNameError, json, type Env } from "./env.ts";
+import { branchNameError, json, readBody, type Env } from "./env.ts";
 import { gh, githubToken, gitTip } from "./github.ts";
 import { emit } from "./hooks.ts";
 import type { Doc } from "./lines.ts";
@@ -177,7 +177,7 @@ export async function listenRoute(req: Request, env: Env, p: string[], owner: st
   if (user !== owner) return json({ error: "owner only" }, 403);
   if (p[5] === "hear") { const h = await hear(env, f); return json(status(h.fork, h.error)); }
   if (p[5] === "take") {
-    const { name } = (await req.json().catch(() => ({}))) as { name?: unknown };
+    const { name } = await readBody<"name">(req);
     if (name !== undefined && typeof name !== "string") return json({ error: "name: the branch to open" }, 400);
     return takeUpstream(env, f, user, name);
   }
