@@ -225,6 +225,10 @@
   .tour .tour-chs { display: flex; align-items: center; gap: 4px; font-size: 13px; } .tour .tour-chs span { margin-left: 4px; white-space: nowrap; }
   .tour .tour-chs button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--bg); color: var(--muted); cursor: pointer; }
   .tour .tour-chs button.on { border-color: var(--accent); color: var(--accent); } .tour .tour-chs svg { width: 14px; height: 14px; }
+  .tour-cursor { position: fixed; left: 0; top: 0; z-index: 70; width: 22px; height: 22px; pointer-events: none; color: var(--accent); filter: drop-shadow(0 1px 2px rgba(0,0,0,.4)); transition: transform .8s cubic-bezier(.4,0,.2,1); }
+  .tour-cursor svg { width: 22px; height: 22px; fill: var(--bg); } .tour-cursor.click::after { content: ""; position: absolute; left: -9px; top: -9px; width: 40px; height: 40px; border: 2px solid var(--accent); border-radius: 50%; animation: tour-ripple .45s ease-out; }
+  @keyframes tour-ripple { from { transform: scale(.2); opacity: 1; } to { transform: scale(1); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .tour-cursor { transition: none; } .tour-cursor.click::after { animation: none; display: none; } }
   .tour-hot { outline: 2px solid var(--accent) !important; outline-offset: 2px; animation: pulse 1.2s ease-in-out infinite; }
   .sec.flash { animation: flash 1s ease-out; } @keyframes flash { from { background: var(--accent-soft); } }
   .dgrip { position: absolute; top: 0; bottom: 0; right: calc(var(--dw, 290px) - 3px); width: 6px; z-index: 3; cursor: col-resize; }
@@ -7100,7 +7104,7 @@ const tourClick = (el, init = {}) => el?.dispatchEvent(new MouseEvent("mousedown
 // A small public repo to dig on the tour: the first level's.
 const TOUR_STARTER = "developit/mitt";
 // The chapters, in order. A step's `on` says where it plays: anywhere, or on the toured repo's file page.
-const TOUR_CHAPTERS = [["signin", "log-in", "Sign in"], ["dig", "shovel", "Dig a repo"], ["code", "file-code", "The code"], ["panels", "panel-right", "The right bar"], ["play", "gamepad-2", "Play"]];
+const TOUR_CHAPTERS = [["signin", "log-in", "Sign in"], ["dig", "shovel", "Dig a repo"], ["code", "file-code", "The code"], ["panels", "panel-right", "The right bar"], ["self", "repeat", "Edit itself"], ["play", "gamepad-2", "Play"]];
 const TOUR = [
   { ch: "signin", ic: "log-in", t: "Sign in", at: "#who", on: "any",
     say: () => me() ? `You're in as @${me()}. Next, dig up a repo.` : "Everything you dig up, edit and collect goes under your @handle. Sign in, or make an account, at the top right.",
@@ -7155,6 +7159,29 @@ const TOUR = [
   { ch: "panels", ic: "git-compare-arrows", t: "The git bar", at: "#gitbar", on: "repo",
     say: () => "Mirrored, push, pull, uncommitted and conflicts, as pills across the top of the repo." },
   ...Object.entries(PANEL_SAY).map(([key, [ic, say]]) => ({ ch: "panels", ic, panel: key, at: `.dpanels > .sec[data-key="${key}"]`, on: "repo", say: () => say })),
+  // The loop that makes codeSplitter edit codeSplitter, run on whatever repo this is: an agent edits, checks run on its
+  // branch, Mervin merges it, a person deploys it, the watchdog backs it out if it's sick. `you` marks what autoplay
+  // leaves to a person: it costs an agent run, or it merges, or it ships.
+  { ch: "self", ic: "bot", t: "An agent edits it", at: "#agent", on: "repo", you: "It runs an agent, which costs money, so you press this one.",
+    go: async (t) => {
+      const h = ctx.agents?.harnesses?.[0];
+      if (!h || !ctx.path) return "No agent runs on this machine: invite one from the code chapter and it joins over MCP.";
+      await api(`/repos/${t.owner}/${t.repo}/agents`, { path: ctx.path, harness: h, task: "Make one small, safe improvement to this file: a clearer comment or a typo fix. Change as little as you can." });
+      ctx.pollAgents?.(); return `agent-${h} is on it. Its change lands on a branch, not on main.`;
+    }, label: "Run an agent",
+    say: () => "Ask an agent to change this repo, and if this repo is codeSplitter's own source, that's codeSplitter editing codeSplitter. It works on a branch." },
+  { ch: "self", ic: "git-branch", panel: "branches", t: "It waits on a branch", at: '.dpanels > .sec[data-key="branches"]', on: "repo",
+    say: () => "The change is a branch, its lines blamed on the agent. Main, and the live app, haven't moved." },
+  { ch: "self", ic: "list-checks", t: "Checks run on the branch", at: '.dpanels > .sec[data-key="branches"] [data-checks]', on: "repo",
+    go: () => { const b = $('.dpanels > .sec[data-key="branches"] [data-checks]'); if (!b) return "No branch to check yet."; b.click(); return "Typecheck and tests run on the branch, here, no GitHub needed."; },
+    say: () => "Our own checks run on the branch as it is, so a bad edit is caught before it can ship." },
+  { ch: "self", ic: "git-merge", t: "Mervin merges it", at: '.dpanels > .sec[data-key="branches"] [data-merge]', on: "repo", you: "A merge changes main, so you press this one.",
+    go: () => { const b = $('.dpanels > .sec[data-key="branches"] [data-merge]:not([disabled])'); if (!b) return "Nothing is ready to merge: the checks have to pass first."; b.click(); return "Merged by line id, so what git would call a conflict is settled."; },
+    say: () => "Merge by line id: two agents on one file don't collide the way they do in git. Needs the checks green first." },
+  { ch: "self", ic: "send", panel: "deploy", t: "A person ships it", at: '.dpanels > .sec[data-key="deploy"]', on: "repo", you: "Only a person deploys; agents never do.",
+    say: () => "Deploy is a button only a person presses. The new version is live once its health check passes." },
+  { ch: "self", ic: "shield-check", t: "The watchdog has your back", at: null, on: "any",
+    say: () => "A separate Worker checks the live app on a timer. If a deploy goes bad it rolls back to the last good version, and says what shipped it." },
   { ch: "play", ic: "building", t: "Your code city", at: null, on: "any", href: () => `/play.html#c/${encodeURIComponent(me())}`, open: true,
     say: () => "Every repo you own is a district, every file a building: white stone where people wrote it, black glass where agents did. It opens in a new tab." },
   { ch: "play", ic: "gamepad-2", t: "Beat up the code", at: null, on: "any", href: (t) => t.owner ? `/play.html#r/${t.owner}/${t.repo}` : "/play.html#l/mitt",
@@ -7163,13 +7190,45 @@ const TOUR = [
 const tourChapter = (ch) => TOUR.findIndex((s) => s.ch === ch);
 /** Start the tour: from the top, or (with a repo) at its code view. */
 const tourStart = (owner, repo) => tourSave(owner ? { owner, repo, i: tourChapter("code") } : { i: me() ? tourChapter("dig") : 0 });
+/** Why autoplay stops at step `s` and leaves it to a person, or "" to play it: someone has to sign in, it costs, merges or ships, or it opens another page. */
+function tourPause(s, signedIn) {
+  if (s.ch === "signin" && !signedIn) return "Sign in first, then press Play again.";
+  if (s.ch === "dig") return s.at && !signedIn ? "Sign in first, then press Play again." : "";
+  if (s.you) return s.you;
+  if (s.href) return "This one opens its own page: press Go.";
+  return "";
+}
 /** The step to show from `i`, going `dir`: past repo-page steps whose part isn't on this page (an agent button you don't own, a panel this repo hasn't got). */
 function tourLand(steps, i, dir, here) {
   for (let k = i; k >= 0 && k < steps.length; k += dir) if (!steps[k].at || here(steps[k])) return k;
   return dir > 0 ? tourLand(steps, i, -1, here) : i;
 }
 let tourTimer = null;
-function tourStop(done) { clearInterval(tourTimer); tourTimer = null; $$(".tour-hot").forEach((e) => e.classList.remove("tour-hot")); $(".tour")?.remove(); if (done) tourSave(null); }
+// Each tour() draw is a generation; a drive that finds it has moved on stops quietly.
+let tourGen = 0;
+function tourStop(done) { tourGen++; clearInterval(tourTimer); tourTimer = null; $$(".tour-hot").forEach((e) => e.classList.remove("tour-hot")); $(".tour")?.remove(); $(".tour-cursor")?.remove(); if (done) tourSave(null); }
+const tourWait = (ms) => new Promise((r) => setTimeout(r, matchMedia("(prefers-reduced-motion: reduce)").matches ? Math.min(ms, 300) : ms));
+/** The fake cursor: glides to `el`, ripples as if it clicked, and the real action runs after. */
+async function tourCursor(el) {
+  let c = $(".tour-cursor");
+  if (!c) { c = document.createElement("div"); c.className = "tour-cursor"; c.setAttribute("aria-hidden", "true"); c.innerHTML = icon("mouse-pointer-2"); c.style.transition = "none"; c.style.transform = `translate(${innerWidth / 2}px, ${innerHeight}px)`; document.body.append(c); c.getBoundingClientRect(); c.style.transition = ""; }
+  const r = el.getBoundingClientRect();
+  c.style.transform = `translate(${Math.round(r.left + Math.min(r.width / 2, 120))}px, ${Math.round(r.top + r.height / 2)}px)`;
+  await tourWait(900);
+  c.classList.add("click"); await tourWait(450); c.classList.remove("click");
+}
+/** Play the shown step for you: the cursor goes to it, the step's real action runs, then on to the next. A person's own click or key ends it. */
+async function tourDrive(gen, t, s, hot, said, next, last) {
+  const live = () => gen === tourGen && tourState()?.auto;
+  const hold = (why) => { const a = tourState(); if (a) { delete a.auto; tourSave(a); } tour(); const w = $(".tour-said"); if (w) w.textContent = why; };
+  await tourWait(500); if (!live()) return;
+  const why = tourPause(s, !!me()); if (why) return hold(why);
+  if (hot) { await tourCursor(hot); if (!live()) return; }
+  if (s.go && !s.done?.()) { try { said.textContent = (await s.go(t)) || ""; } catch (err) { said.textContent = err.message; } }
+  await tourWait(3000); if (!live()) return;
+  if (last) { tourStop(true); return; }
+  next();
+}
 function tour() {
   tourStop();
   const t = tourState();
@@ -7192,7 +7251,7 @@ function tour() {
     <div class="tour-top">${icon(s.ic)}<b>${esc(title)}</b><span class="muted tour-n">${n}/${mine.length}</span></div>
     <div class="tour-dots">${mine.map((_, k) => `<i class="${k < n ? "on" : ""}"></i>`).join("")}</div>
     <p>${esc(say)}</p><p class="tour-said" aria-live="polite"></p>
-    <div class="tour-btns">${t.i ? `<button class="btn" data-back title="back (←)">${icon("arrow-left")}</button>` : ""}<span class="grow"></span>
+    <div class="tour-btns">${t.i ? `<button class="btn" data-back title="back (←)">${icon("arrow-left")}</button>` : ""}<button class="btn" data-auto title="${t.auto ? "pause: take the wheel" : "play: a cursor does the steps for you, with real actions"}">${icon(t.auto ? "pause" : "play")}</button><span class="grow"></span>
       ${away || ((s.go || s.href) && !s.done?.()) ? `<button class="btn${last || away ? " primary" : ""}" data-go>${icon(away ? "arrow-right-to-line" : "zap")}${esc(goLabel)}</button>` : ""}
       ${last ? `<button class="btn" data-x>${icon("check")}Done</button>` : `<button class="btn primary" data-next title="next (→)">Next${icon("arrow-right")}</button>`}</div>`;
   document.body.append(card); icons();
@@ -7204,10 +7263,13 @@ function tour() {
     hot.scrollIntoView?.({ block: s.at === "#ghdig" ? "center" : "nearest", behavior: "smooth" });
   }
   const step = (i, dir) => { if (i < 0 || i >= TOUR.length) return; tourSave({ ...t, i, dir }); tour(); };
+  if (t.auto && !away) void tourDrive(tourGen, t, s, hot, said, () => step(t.i + 1, 1), last);
+  else if (t.auto) { delete t.auto; tourSave(t); }
   card.addEventListener("click", async (e) => {
     const b = e.target.closest("button"); if (!b) return;
     if ("x" in b.dataset) return tourStop(true);
     if (b.dataset.ch) return step(tourChapter(b.dataset.ch), 1);
+    if ("auto" in b.dataset) { tourSave({ ...t, auto: !t.auto }); return tour(); }
     if ("back" in b.dataset) return step(t.i - 1, -1);
     if ("next" in b.dataset) return step(t.i + 1, 1);
     if (!("go" in b.dataset)) return;
@@ -7218,6 +7280,11 @@ function tour() {
     finally { b.disabled = false; }
   });
 }
+// A person's own click or key (not the cursor's) takes the wheel back from Play.
+for (const type of ["pointerdown", "keydown"]) addEventListener(type, (e) => {
+  const t = tourState(); if (!t?.auto || !e.isTrusted || e.target.closest?.(".tour")) return;
+  delete t.auto; tourSave(t); $(".tour-cursor")?.remove(); tour();
+}, true);
 // ← and → walk the tour, unless you're typing.
 addEventListener("keydown", (e) => {
   const c = $(".tour"); if (!c || e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.("input, textarea, select, [contenteditable]")) return;
