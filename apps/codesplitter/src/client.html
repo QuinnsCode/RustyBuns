@@ -4104,9 +4104,12 @@ const views = {
     el.innerHTML = (dir ? `<p class="muted"><a href="#" data-fit-dir="">${esc(repo)}</a> / <code>${esc(dir)}</code></p>` : "")
       + `<p><span class="badge fit-${f.verdict}">${say[f.verdict]}</span> <span class="fw-logos">${stackLogos(f.label)}</span></p>
       <ul class="fit-why">${f.reasons.map((r) => `<li>${esc(r).replace(/\x60([^\x60]+)\x60/g, "<code>$1</code>")}</li>`).join("")}</ul>
+      ${owner === me() && (f.verdict === "ready" || f.verdict === "likely") && $("#ship") ? `<p><button class="btn primary" id="box-it" title="Open Ship: build the box, plan it, then stage and deploy it to the web or the desktop">${icon("package")}Box it</button></p>` : ""}
       ${f.issue ? `<p class="muted">Support is tracked in <a href="${esc(f.issue)}" target="_blank" rel="noopener">#${esc(f.issue.split("/").pop())}</a>.</p>` : ""}`
       + (ws.length ? `<p class="muted" style="margin-top:8px">Its apps:</p><ul class="fit-why" style="list-style:none;padding-left:0">${ws.map((w) =>
           `<li><a href="#" data-fit-dir="${esc(w.dir)}" title="${esc(w.dir)}">${esc(w.name)}</a> <span class="badge fit-${w.verdict}">${say[w.verdict]}</span> <span class="fw-logos">${stackLogos(w.label)}</span></li>`).join("")}</ul>` : "");
+    $("#box-it")?.addEventListener("click", () => $("#ship").click());
+    icons();
     el.querySelectorAll("[data-fit-dir]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); views.wireFit(owner, repo, a.dataset.fitDir); }));
   },
   /** The dependency doctor: when it checks, what it may propose, what to do when an update breaks the tests, and what it found last. */

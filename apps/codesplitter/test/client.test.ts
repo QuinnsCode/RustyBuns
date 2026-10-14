@@ -688,3 +688,10 @@ describe("the dependency doctor's chain report", () => {
     expect(depUpdate({ ...base, status: "broke", chain: [{ step: "retry", ok: false }] })).toContain("gave up");
   });
 });
+
+// #209: a repo that fits gets a "Box it" button on its fit panel, which opens Ship.
+test("the fit panel offers Box it to the owner when the repo fits", () => {
+  expect(html).toContain('id="box-it"');
+  expect(html).toContain('f.verdict === "ready" || f.verdict === "likely"');
+  expect(html).toContain('$("#box-it")?.addEventListener("click", () => $("#ship").click())');
+});
