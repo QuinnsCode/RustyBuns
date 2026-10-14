@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { order, run, score, type BoardPr } from "../scripts/mervin-board.ts";
+import { ciOf, order, run, score, type BoardPr } from "../scripts/mervin-board.ts";
 
 // scripts/mervin-board.ts: the open PRs merged in a sandbox one stage at a time, then scored against what landed.
 describe("mervin board", () => {
@@ -67,6 +67,14 @@ describe("mervin board", () => {
       commit({ "a.ts": "other\n" }, "outside the board (#99)");
       expect(score(repo, board, dir, git("rev-parse", "HEAD")).rows.find((r) => r.path === "a.ts")!.score).toBe("moved");
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test("a PR's own CI: red when any check failed, pending while one runs", () => {
+    const pr = (rollup: BoardPr["statusCheckRollup"]) => ciOf({ number: 1, headRefOid: "x", statusCheckRollup: rollup });
+    expect(pr([{ name: "typecheck", conclusion: "SUCCESS", status: "COMPLETED" }, { name: "test codesplitter", conclusion: "FAILURE", status: "COMPLETED" }])).toEqual({ ci: "fail", failing: ["test codesplitter"] });
+    expect(pr([{ name: "typecheck", conclusion: "", status: "IN_PROGRESS" }]).ci).toBe("pending");
+    expect(pr([{ name: "typecheck", conclusion: "SKIPPED", status: "COMPLETED" }]).ci).toBe("pass");
+    expect(pr([]).ci).toBe("none");
   });
 
   test("a PR not landed yet is waiting, not scored", () => {

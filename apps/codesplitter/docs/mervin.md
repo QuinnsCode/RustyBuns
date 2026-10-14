@@ -155,7 +155,11 @@ record, so "certain" and "mervin" earn their confidence from real rounds. Files 
 touched are `moved` and aren't scored, and neither are files of PRs that haven't landed.
 
 Measured 2026-10-13 on 19 open PRs: 125 file merges, certain 91 (73%), agree 26, mervin 7, differ 0, card 1
-(`shares.ts`, #1467 after #1456).
+(`shares.ts`, #1467 after #1456). `--check`: the merged tree typechecks, but codeSplitter's tests and one hippo-tycoon
+test fail where main passes. Six of the 19 PRs are already red on their own (#1432, #1442, #1455, #1457, #1458,
+#1476), which accounts for those, and #1432's migration shares its stamp (`20261013040000`) with one already on
+main: a clash every per-file merge rates "certain". So a red board says to fix the red PRs first, and "certain"
+covers one file's text, not the files around it.
 
 ## Where Mervin is weak
 

@@ -9,7 +9,8 @@
 // each one in a tier:
 //
 //   certain   nothing to merge: no one else changed the file since the PR's base (or it already reads as the PR
-//             wrote it), so the result is the PR's own copy. 100%: no merge logic ran.
+//             wrote it), so the result is the PR's own copy. 100% for that file's text: no merge logic ran. It says
+//             nothing about the files around it (two PRs adding migrations with one stamp are both certain).
 //   agree     git and Mervin both merge it clean, to the same text.
 //   mervin    git conflicts, Mervin settles it: the stretch that needs the build and tests (--check) to trust.
 //   differ    both merge clean, to different text (Mervin's is kept): look at it.
@@ -17,7 +18,9 @@
 //             the tree, so the stage is partial.
 //
 // `--check` builds the final tree like CI: bun install, `bun run typecheck`, and the touched apps' tests, in a
-// throwaway HOME with none of this shell's env (shadow.ts's sandbox).
+// throwaway HOME with none of this shell's env (shadow.ts's sandbox). When something fails, main's tree runs the
+// same way, and only the failures the board adds count. Each stage also shows the PR's own CI: a PR red on its own
+// explains failures the merge didn't cause.
 //
 // Safe to swarm: it only reads git (show, diff, merge-base, archive) and `gh pr list`. It never writes a ref,
 // never pushes, never touches a worktree; everything goes to its own fresh temp folder (or --out, which must
@@ -37,9 +40,20 @@ import { sandbox, shadow, testRuns, testTree, writeTree } from "./shadow.ts";
 export type Tier = "certain" | "agree" | "mervin" | "differ" | "card";
 export const TIERS: Tier[] = ["certain", "agree", "mervin", "differ", "card"];
 
-export interface BoardPr { number: number; title?: string; headRefOid: string; headRefName?: string; baseRefName?: string }
+export interface BoardPr {
+  number: number; title?: string; headRefOid: string; headRefName?: string; baseRefName?: string;
+  statusCheckRollup?: { name?: string; conclusion?: string | null; status?: string }[];
+}
+/** The PR's own CI: red on its own means a failure in the merged tree may be the PR's, not the merge's. */
+export type Ci = "pass" | "fail" | "pending" | "none";
+export function ciOf(pr: BoardPr): { ci: Ci; failing: string[] } {
+  const checks = pr.statusCheckRollup ?? [];
+  const failing = checks.filter((c) => ["FAILURE", "TIMED_OUT", "CANCELLED", "ERROR"].includes(c.conclusion ?? "")).map((c) => c.name ?? "?");
+  const ci: Ci = failing.length ? "fail" : !checks.length ? "none" : checks.some((c) => c.status && c.status !== "COMPLETED") ? "pending" : "pass";
+  return { ci, failing };
+}
 export interface FileRow { path: string; tier: Tier; why: string; after: number[] }
-export interface Stage { pr: number; title?: string; head: string; base: string; stackedOn?: number; files: FileRow[] }
+export interface Stage { pr: number; title?: string; head: string; base: string; stackedOn?: number; ci?: Ci; failing?: string[]; files: FileRow[] }
 export interface Board { main: string; at: string; stages: Stage[]; written: string[]; skipped: { pr: number; why: string }[] }
 
 const BUF = 64 << 20;
@@ -85,7 +99,7 @@ export function run(repo: string | undefined, main: string, prs: BoardPr[]): { b
     const parent = pr.baseRefName && done.get(pr.baseRefName);
     const base = git("merge-base", parent || main, pr.headRefOid)?.trim();
     if (!base) { board.skipped.push({ pr: pr.number, why: "no merge base with main" }); continue; }
-    const stage: Stage = { pr: pr.number, title: pr.title, head: pr.headRefOid, base, files: [] };
+    const stage: Stage = { pr: pr.number, title: pr.title, head: pr.headRefOid, base, ...(pr.statusCheckRollup && ciOf(pr)), files: [] };
     if (parent) stage.stackedOn = board.stages.find((s) => s.head === parent)?.pr;
     const diff = (git("diff", "--name-status", "--no-renames", base, pr.headRefOid) ?? "").split("\n").filter(Boolean);
     for (const line of diff) {
@@ -123,7 +137,8 @@ export function describe(s: Stage): string[] {
   const c = count(s.files);
   const sure = s.files.length ? Math.round((100 * c.certain) / s.files.length) : 100;
   const head = `#${s.pr}${s.stackedOn ? ` (on #${s.stackedOn})` : ""} ${s.title ?? ""}`.trimEnd();
-  const out = [head, `  ${s.files.length} files, ${sure}% certain   ${TIERS.map((t) => `${t} ${c[t]}`).join("  ")}`];
+  const ci = s.ci ? `   own CI ${s.ci}${s.failing?.length ? ` (${s.failing.join(", ")})` : ""}` : "";
+  const out = [head, `  ${s.files.length} files, ${sure}% certain   ${TIERS.map((t) => `${t} ${c[t]}`).join("  ")}${ci}`];
   for (const f of s.files) if (f.tier !== "certain") out.push(`  ${f.tier.padEnd(7)} ${f.path}  ${f.why}${f.after.length ? `  (after ${f.after.map((n) => `#${n}`).join(", ")})` : ""}`);
   return out;
 }
@@ -191,7 +206,7 @@ if (import.meta.main) {
   const given = args.filter((a, i) => /^\d+$/.test(a) && !args[i - 1]?.startsWith("--")).map(Number);
   const from = arg("from");
   const prs: BoardPr[] = JSON.parse(from ? readFileSync(from, "utf8")
-    : Bun.spawnSync(["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "number,title,headRefOid,headRefName,baseRefName"], { cwd: top }).stdout.toString() || "[]");
+    : Bun.spawnSync(["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "number,title,headRefOid,headRefName,baseRefName,statusCheckRollup"], { cwd: top }).stdout.toString() || "[]");
   const main = gitIn(top)("rev-parse", arg("main") ?? "origin/main")!.trim();
   const out = arg("out") ? resolve(arg("out")!) : mkdtempSync(join(tmpdir(), "mervin-board-"));
   if (arg("out")) { if (existsSync(out)) throw new Error(`${out} exists: pick a new folder`); mkdirSync(out, { recursive: true }); }
@@ -225,7 +240,17 @@ if (import.meta.main) {
       const runs = [{ dir: ".", cmd: "bun run typecheck" }, ...testRuns(readFileSync(join(out, "tree/scripts/ci-apps.ts"), "utf8"), board.written)];
       const r = await testTree(join(out, "tree"), runs, env);
       for (const x of r.runs) console.log(`${x.ok ? "pass" : "FAIL"}  ${x.dir}: ${x.cmd}`);
-      if (r.failed.length) { console.log(`\nfailed:\n  ${r.failed.join("\n  ")}\n\n${r.log}`); process.exit(1); }
+      if (r.failed.length) {
+        // The sandbox fails some tests on main too (no claude CLI, no native build): only what the board adds counts.
+        writeTree(join(out, "main"), main);
+        const before = new Set((await testTree(join(out, "main"), runs, env)).failed);
+        const added = r.failed.filter((f) => !before.has(f));
+        console.log(`\n${r.failed.length - added.length} fail on main in this sandbox too (not the board)`);
+        const red = board.stages.filter((s) => s.ci === "fail").map((s) => `#${s.pr} (${s.failing!.join(", ")})`);
+        if (red.length) console.log(`already red on their own, so look at them before blaming the merge: ${red.join("; ")}`);
+        if (added.length) { console.log(`the board breaks:\n  ${added.join("\n  ")}\n\n${r.log}`); process.exit(1); }
+        console.log("the board adds no failures");
+      }
     } finally { rmSync(tmp, { recursive: true, force: true }); }
   }
 }
