@@ -655,7 +655,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/sync.ts` | an agent's text edit to line ops: a Myers diff that keeps line ids, and a rebase onto the file as it is now |
 | `src/tarball.ts` | past Artifacts' 40 MB import cap: a repo's tip from GitHub's tarball, pushed as one commit |
 | `src/tokens.ts` | personal API tokens: make, revoke, and who a bearer token acts as |
-| `src/try-out.ts` | try Rusty Buns on a repo or an agent's branch: init, `infra` (the stack as a graph for the Ship pop-out's map), then an offline plan |
+| `src/try-out.ts` | try Rusty Buns on a repo or an agent's branch: init, then an offline plan |
 | `src/worker.ts` | routes, visibility, profiles, playlists, search |
 | `src/worktrees.ts` | real checkouts (`git worktree add`) off a desktop repo's bare git, per branch or per run, cleaned up when done |
 
