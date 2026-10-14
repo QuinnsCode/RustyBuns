@@ -141,10 +141,10 @@ async function wallMarks(on: boolean) {
       tiles.set(b, t);
       wall.add(t.mesh);
     }
-    // the top right corner of the board, just past its frame, a hair off the wall
+    // the top left corner of the board, just past its frame, a hair off the wall (the office's elevator blocks the right)
     const p = (board.geometry as PlaneGeometry).parameters;
     board.updateWorldMatrix(true, false);
-    t.mesh.matrix.copy(board.matrixWorld).multiply(new Matrix4().makeTranslation(p.width / 2 + 0.25 + SIZE / 2, p.height / 2 - SIZE / 2, 0.03));
+    t.mesh.matrix.copy(board.matrixWorld).multiply(new Matrix4().makeTranslation(-(p.width / 2 + 0.25 + SIZE / 2), p.height / 2 - SIZE / 2, 0.03));
     t.mesh.matrixWorldNeedsUpdate = true;
     const dot = lit.has(b);
     if (t.dot !== dot) {

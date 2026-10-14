@@ -6,6 +6,8 @@
 //   GET  /__rb/prof/<id>        a saved profile's summary (?top=N frames)
 //   GET  /__rb/heap             the heap snapshots the office and the pty hosts wrote over their ceiling
 //   GET  /__rb/history          the office's runs, one per start, newest first: memory slope, profiles, ceiling restarts
+//   GET  /__rb/helpers          Ester's and Mervin's runs of the board script (ester/run.ts): phase, the tail they printed, PRs to hold
+//   POST /__rb/helpers/<name>   start one (ester or mervin) in the first floor's repo, unless it is on it already
 // A POST from the page needs an X-RB-Triage header, which a form on another site can't send.
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -13,6 +15,7 @@ import { cpuProfile, PROF_MAX_MS, profiling } from "@rustybuns/shell-bun/cpuprof
 import { listSaved, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
 import { historyRuns } from "@rustybuns/shell-bun/history";
 import { officeHistory, officeMem } from "../live/mem.ts";
+import { createHelpers, isHelper } from "../ester/run.ts";
 
 export const TRIAGE_HEADER = "x-rb-triage";
 
@@ -25,6 +28,7 @@ export function officeTriage(dataDir: string, floors: () => Iterable<{ id: strin
   const mem = officeMem(dataDir, floors);
   const hist = officeHistory(dataDir);
   const profDir = path.join(dataDir, "prof");
+  const helpers = createHelpers();
   return async (method: string, url: URL, trusted: boolean): Promise<TriageAnswer | null> => {
     const p = url.pathname;
     const only = (m: string) => ({ status: 405, body: { error: `${m} ${p}` } });
@@ -37,6 +41,17 @@ export function officeTriage(dataDir: string, floors: () => Iterable<{ id: strin
         ...[...floors()].flatMap((f) => listSaved(path.join(f.dir, ".agent-office", "heap"), ".heapsnapshot").map((s) => ({ process: `pty host (floor ${f.id})`, ...s }))),
       ].sort((a, b) => b.at.localeCompare(a.at));
       return { status: 200, body: { snapshots } };
+    }
+    if (p === "/__rb/helpers") return method === "GET" ? { status: 200, body: { ester: helpers.ester.state(), mervin: helpers.mervin.state() } } : only("GET");
+    if (p.startsWith("/__rb/helpers/")) {
+      const name = p.slice("/__rb/helpers/".length);
+      if (!isHelper(name)) return { status: 404, body: { error: "Ester or Mervin" } };
+      if (method !== "POST") return only("POST");
+      if (!trusted) return { status: 403, body: { error: `Send ${TRIAGE_HEADER}: 1 with the POST` } };
+      const floor = [...floors()][0];
+      if (!floor) return { status: 404, body: { error: "No floor to run in" } };
+      const refused = helpers[name].start(floor.dir);
+      return refused ? { status: refused.status, body: { error: refused.error } } : { status: 202, body: helpers[name].state() };
     }
     if (p === "/__rb/prof") {
       if (method === "GET") return { status: 200, body: { running: profiling(), profiles: listSaved(profDir, ".cpuprofile") } };
