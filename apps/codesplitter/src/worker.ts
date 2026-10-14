@@ -14,6 +14,7 @@ import {
   pushCatalogue,
   toFile,
 } from "./archive.ts";
+import { repoRow } from "./repos.ts";
 import {
   code,
   json,
@@ -240,7 +241,7 @@ export { EgressGate } from "./egress.ts";
 
 async function access(env: Env, owner: string, repo: string, user: string | null) {
   // A visitor's dig that has expired is gone, swept or not.
-  const r = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ? AND (expires_at IS NULL OR expires_at > ?)").bind(owner, repo, Date.now()).first();
+  const r = await repoRow(env, owner, repo, "visibility", { liveAt: Date.now() });
   if (!r) return { read: false, write: false, exists: false };
   const collab = user ? await env.DB.prepare("SELECT 1 FROM collaborators WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, user).first() : null;
   const write = user === owner || !!collab;
@@ -454,7 +455,7 @@ async function route(req: Request, env: Env): Promise<Response> {
 
     // GET /api/repos/:o/:r
     if (!p[4] && req.method === "GET") {
-      const r = await env.DB.prepare("SELECT owner, name, visibility, level, branch, upstream, upstream_commit, upstream_tip, upstream_behind, upstream_heard_at, created_at, expires_at, mirror_url IS NOT NULL AS mirror, mirror_pull_only IS 1 AS pullOnly FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+      const r = await repoRow(env, owner, repo, "owner, name, visibility, level, branch, upstream, upstream_commit, upstream_tip, upstream_behind, upstream_heard_at, created_at, expires_at, mirror_url IS NOT NULL AS mirror, mirror_pull_only IS 1 AS pullOnly");
       const { results: collaborators } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all();
       // Anyone who can read the repo can clone its artifact, with an hour-long read token;
       // the crew also gets their own remote's, with private lines' real text, once there is one.
@@ -500,7 +501,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     }
     // POST /api/repos/:o/:r/shares {path, from, to, note}  a live link to some lines
     if (p[4] === "shares" && req.method === "POST") {
-      const v = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+      const v = await repoRow(env, owner, repo, "visibility");
       return createShare(env, owner, repo, user, a, v?.visibility === "private", await body());
     }
     // GET|POST|DELETE /api/repos/:o/:r/stamps  react to lines, by id (stamps.ts)
@@ -514,7 +515,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (p[4] === "fit" && req.method === "GET") return repoFit(env, (r) => app.fetch(r, env), url.origin, owner, repo, user, url.searchParams.get("dir") ?? "");
     // GET /api/repos/:o/:r/graph[?limit=60]  main's commits, newest first, with the branches merged into them, each upstream's or this copy's
     if (p[4] === "graph" && !p[5] && req.method === "GET") {
-      const r = await env.DB.prepare("SELECT upstream_commit FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+      const r = await repoRow(env, owner, repo, "upstream_commit");
       const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit")) || 60));
       try {
         const h = await handleFor(env, owner, repo);
@@ -534,7 +535,7 @@ async function route(req: Request, env: Env): Promise<Response> {
         const h = await handleFor(env, owner, repo);
         if (!h) return json({ repo: `${owner}/${repo}`, ...(path ? { path, commits: [] } : { files: [] }) });
         // A repo dug from GitHub has only its import in its own git; what came before is read from GitHub (gitpath-upstream.ts).
-        const r = await env.DB.prepare("SELECT upstream, upstream_commit, branch FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() as UpstreamRepo | null;
+        const r = await repoRow(env, owner, repo, "upstream, upstream_commit, branch") as UpstreamRepo | null;
         const token = (await githubToken(env, user).catch(() => null))?.token;
         if (path) {
           const own = await fileHistory(h.handle, h.branch, path, limit);

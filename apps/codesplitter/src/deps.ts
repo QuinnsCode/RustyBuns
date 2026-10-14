@@ -110,6 +110,7 @@ import type { DoctorAnswer } from "./ci-runner.ts";
 import { charge } from "./limits.ts";
 import { scopedTest } from "../sandbox/scoped.mjs";
 import { logEnd, logStart, preview, runnerFor, runs as livePreviews, STEPS as PREVIEW_STEPS, type Run as PreviewDeploy } from "./preview.ts";
+import { repoRow } from "./repos.ts";
 
 export type Level = "patch" | "minor" | "major";
 const LEVELS: Level[] = ["patch", "minor", "major"];
@@ -1621,7 +1622,7 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
   const [owner, repo] = [p[2], p[3]];
   // Settings and reports quote the repo's test output, so they're the owner's alone.
   if (user !== owner) return json({ error: "only the repo's owner can see its dependency doctor" }, 403);
-  if (!(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first())) return json({ error: "not found" }, 404);
+  if (!(await repoRow(env, owner, repo, "1"))) return json({ error: "not found" }, 404);
   await env.DB.prepare("INSERT OR IGNORE INTO dep_watches (owner, repo) VALUES (?, ?)").bind(owner, repo).run();
 
   if (!p[5] && req.method === "GET") {

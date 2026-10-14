@@ -17,6 +17,7 @@
 // and the hourly cron embeds it (embedDue), as does POST /api/admin/scale/search-embed.
 
 import { json, type Env } from "./env.ts";
+import { repoRow } from "./repos.ts";
 
 /** The most repos one search across repos asks without the vector index. */
 export const FAN_OUT = 50;
@@ -175,7 +176,7 @@ async function dropVectors(env: Env, ids: string[]) {
 
 /** Embed `files` of a repo, clear the chunk numbers they no longer fill, and note it in the repo's DO and D1. */
 async function embedFiles(env: Env, owner: string, repo: string, files: ToEmbed[]) {
-  const r = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+  const r = await repoRow(env, owner, repo, "visibility");
   if (!r || !files.length) return;
   const pub = r.visibility === "public";
   const each = files.map((f) => ({ ...f, chunks: chunksOf(f.content) }));

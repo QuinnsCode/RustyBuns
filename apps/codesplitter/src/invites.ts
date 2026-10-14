@@ -27,6 +27,7 @@ import { HARNESSES, type Harness } from "./harness.ts";
 import { isAgentHandle, mail, mailOn, slug } from "./identity.ts";
 import { b64url, hash, mint } from "./tokens.ts";
 import { turnstile } from "./security.ts";
+import { repoRow } from "./repos.ts";
 
 export const INVITE_DAYS = 7, MAX_INVITE_DAYS = 30, AGENT_TOKEN_DAYS = 30;
 const MAX_PENDING = 50;
@@ -163,7 +164,7 @@ export async function inviteRoutes(req: Request, env: Env, p: string[], user: st
   if (!p[2] || req.method !== "GET") return null;
   const i = await live(env, p[2], user);
   if ("error" in i) return json({ error: i.error }, i.status);
-  const r = await env.DB.prepare("SELECT visibility FROM repos WHERE owner = ? AND name = ?").bind(i.owner, i.repo).first();
+  const r = await repoRow(env, i.owner, i.repo, "visibility");
   return json({
     owner: i.owner, repo: i.repo, visibility: r?.visibility ?? "public", by: i.by, note: i.note, kind: i.kind,
     // Who it's for: a handle says so; an email only that it went to one.

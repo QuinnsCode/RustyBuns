@@ -31,6 +31,7 @@
 import { json, type Env, readBody } from "./env.ts";
 import { audit } from "./audit.ts";
 import { actingAs } from "./identity.ts";
+import { repoRow } from "./repos.ts";
 
 export const SCOPES = ["read", "write", "admin"] as const;
 export type Scope = (typeof SCOPES)[number];
@@ -112,7 +113,7 @@ export async function tokenRoutes(req: Request, env: Env, p: string[], user: str
     const repo = b.repo == null || b.repo === "" ? null : String(b.repo);
     if (repo !== null) {
       const [o, r, ...rest] = repo.split("/");
-      if (!o || !r || rest.length || !(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(o, r).first())) return json({ error: "repo: owner/name of one that exists" }, 400);
+      if (!o || !r || rest.length || !(await repoRow(env, o, r, "1"))) return json({ error: "repo: owner/name of one that exists" }, 400);
     }
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM api_tokens WHERE name = ? AND grant_id IS NULL AND expires_at > ?").bind(user, Date.now()).first();
     if ((n?.n as number ?? 0) >= MAX_TOKENS) return json({ error: `at most ${MAX_TOKENS} live tokens: revoke one first` }, 400);
