@@ -153,7 +153,9 @@ const caller = (self: (req: Request) => Promise<Response>, origin: string) => (w
 
 // The desktop's runs going on in this process, each with its Stop: one still
 // `running` in D1 that isn't here was cut off when the app quit.
-const live = new Map<number, AbortController>();
+// Kept per app instance: run ids restart at 1 in every database, so one shared map would hand a run another's stopper.
+const lives = new WeakMap<object, Map<number, AbortController>>();
+const liveOf = (env: Env) => { let m = lives.get(env); if (!m) lives.set(env, m = new Map()); return m; };
 
 /** Why agents can't run here, or null when they can. Hosted ones need accounts on; local ones off, since the agent signs in by alias. */
 export function agentsUnavailable(env: Env): string | null {
@@ -227,7 +229,7 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
     const { results } = await env.DB.prepare(`SELECT * FROM agent_runs WHERE owner = ? AND repo = ?${path ? " AND path = ?" : ""} ORDER BY id DESC LIMIT ${KEEP}`)
       .bind(...[owner, repo, path].filter((x) => x !== null)).all();
     const rows = results as Row[];
-    if (!env.AGENT_SANDBOX) for (const r of rows) if (r.status === "running" && !live.has(r.id)) {
+    if (!env.AGENT_SANDBOX) for (const r of rows) if (r.status === "running" && !liveOf(env).has(r.id)) {
       const error = "the app stopped before the agent finished";
       await finish(env, r.id, "failed", { error });
       Object.assign(r, { status: "failed", result: JSON.stringify({ error }) });
@@ -273,7 +275,7 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
 /** Starts run `id`: off the queue when hosted, in this process on the desktop. */
 async function launch(env: Env, self: (req: Request) => Promise<Response>, origin: string, id: number) {
   if (env.AGENT_SANDBOX) await env.JOBS.send({ agent: id, origin });
-  else { live.set(id, new AbortController()); void execute(env, self, origin, id).finally(() => live.delete(id)); }
+  else { liveOf(env).set(id, new AbortController()); void execute(env, self, origin, id).finally(() => liveOf(env).delete(id)); }
 }
 
 /** Stops the repo's running runs that match every filter given (none: all of them). */
@@ -296,7 +298,7 @@ async function stopRuns(req: Request, env: Env, owner: string, repo: string, use
     if (!done.meta?.changes) continue;
     stopped.push(r.id);
     // Here it stops at once; a hosted run sees it on its next check.
-    live.get(r.id)?.abort();
+    liveOf(env).get(r.id)?.abort();
     // Its lines are free now, even if the run itself is gone (cut off, or the app quit).
     if (result.lines) await call(owner, `/api/repos/${owner}/${repo}/do/claims?path=${encodeURIComponent(r.path)}`, { method: "POST", body: JSON.stringify({ id: `run-${r.id}`, release: true }) }).catch(() => {});
   }
@@ -501,9 +503,9 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
   const wait = reviewMs(env), own = !row.branch && wait ? runBranch(id) : undefined, branch = row.branch ?? own;
   // Stop: on the desktop the route aborts it here; a hosted Stop lands on another
   // isolate, so this one checks D1 every couple of seconds, and right as the agent ends.
-  const stopper = live.get(id) ?? new AbortController(), signal = stopper.signal;
+  const stopper = liveOf(env).get(id) ?? new AbortController(), signal = stopper.signal;
   // A desktop run off the queue (a fix task) is this process's too, so listing runs doesn't call it cut off.
-  if (!env.AGENT_SANDBOX && !live.has(id)) live.set(id, stopper);
+  if (!env.AGENT_SANDBOX && !liveOf(env).has(id)) liveOf(env).set(id, stopper);
   let given = 0;
   const peek = async () => {
     const r = await env.DB.prepare("SELECT status, notes FROM agent_runs WHERE id = ?").bind(id).first() as Pick<Row, "status" | "notes"> | null;
@@ -587,5 +589,5 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     } else await finish(env, id, "failed", { ...extra, error: String((e as Error)?.message ?? e).slice(-4000) });
     // Whatever it left on its branch goes with it.
     if (own) await dropBranch(env, owner, repo, own, path);
-  } finally { clearInterval(checking); clearTimeout(cutoff); if (row.branch) live.delete(id); }
+  } finally { clearInterval(checking); clearTimeout(cutoff); if (row.branch) liveOf(env).delete(id); }
 }
