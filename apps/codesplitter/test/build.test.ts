@@ -25,6 +25,10 @@ test("the pages load their scripts and styles from the site, and the build ships
     expect(html).not.toMatch(/"imports":\s*\{[^}]*"(https?:)?\/\//);
   }
   for (const f of ["vendor/lucide.min.js", "vendor/three.module.js", "fonts/geist.css"]) expect(await Bun.file(`${dist}/${f}`).exists()).toBe(true);
+  // Only the icons the source names, not lucide's whole 358 KB set (#1471).
+  const lucide = await Bun.file(`${dist}/vendor/lucide.min.js`).text();
+  expect(lucide.length).toBeLessThan(120_000);
+  expect(lucide).toContain("lucide");
 }, 60_000);
 
 // The CSP is enforced (#673) without 'unsafe-inline': each page's inline scripts run because
