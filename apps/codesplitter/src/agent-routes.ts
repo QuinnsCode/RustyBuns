@@ -61,6 +61,7 @@ import { HANDOFFS, handoffTask, noteFor, short } from "./budget.ts";
 import { cheapest } from "./conflict-agent.ts";
 import { dispatchHint } from "./branches.ts";
 import type { Busy } from "./merge-plan.ts";
+import { MERVIN } from "./mervin.ts";
 import { engineLines, type Engine } from "./heal.ts";
 
 export interface Run {
@@ -187,6 +188,7 @@ export const installedHarnesses = (env: Env) => env.AGENT_EXEC || env.AGENT_SAND
 export async function agentRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null,
   access: (owner: string, repo: string) => Promise<{ read: boolean; write: boolean }>,
   self: (req: Request) => Promise<Response>): Promise<Response | null> {
+  if (p[1] === "mervin" && !p[2] && req.method === "GET") return json(MERVIN);
   if (p[1] === "agents" && !p[2]) {
     const why = agentsUnavailable(env);
     return json({ available: !why, why, harnesses: why ? [] : installedHarnesses(env), all: HARNESSES, admins_only: adminsOnly(env, user) });

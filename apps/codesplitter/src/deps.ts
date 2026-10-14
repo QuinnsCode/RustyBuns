@@ -312,7 +312,7 @@ export function packageManager(top: string[], pkg: Record<string, any>): { pm: P
  * script). `lock` is the lockfile afterwards, when it's text. With `only`, just the tests
  * for those files, where the test script runs one runner straight (sandbox/scoped.mjs).
  */
-export type Tester = (remote: string, files: Record<string, string>, opts: { pm: PM; lock: string | null; test: boolean; hosts?: string[]; only?: string[] }) => Promise<{ ok: boolean; out: string; lock?: string }>;
+export type Tester = (remote: string, files: Record<string, string>, opts: { pm: PM; lock: string | null; test: boolean; hosts?: string[]; only?: string[]; build?: string[] }) => Promise<{ ok: boolean; out: string; lock?: string }>;
 
 /**
  * One update for a coding agent to make work: the clone has `files` swapped in
@@ -674,8 +674,10 @@ async function installAndTest(run: Run, repo: string, files: Record<string, stri
 }
 
 /** A clone in a temp dir, an install, the test script if asked and there is one, then the clone is deleted. Desktop only. */
-export const localTester = (timeoutMs = 10 * 60_000): Tester => (remote, files, { pm, lock, test, only }) =>
+export const localTester = (timeoutMs = 10 * 60_000): Tester => (remote, files, { pm, lock, test, only, build }) =>
   inClone(remote, files, 1, timeoutMs, !test, async (repo, run) => {
+    // No package.json: the repo's own build is the arbiter, with nothing to install first (#1407).
+    if (build) { const b = await run(build); return { ok: b.code === 0, out: b.out }; }
     const { existsSync, readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
     const cmd = test ? INSTALL[pm] : pm === "yarn" && existsSync(join(repo, ".yarnrc.yml")) ? ["yarn", "install", "--mode=update-lockfile"] : LOCK_ONLY[pm];
@@ -799,9 +801,9 @@ const onDesktop = (env: Env) => typeof Bun !== "undefined" && !env.BETTER_AUTH_S
 const installerFor = (env: Env): Tester | null => (env.DEPS_TESTER as Tester | undefined) ?? (onDesktop(env) ? localTester() : null);
 
 /** The same run in a container of its own (sandbox/server.mjs, POST /deps-test), torn down after. */
-export const containerTester = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Tester => async (remote, files, { pm, lock, test, hosts, only }) => {
+export const containerTester = (ns: NonNullable<Env["AGENT_SANDBOX"]>): Tester => async (remote, files, { pm, lock, test, hosts, only, build }) => {
   const stub = ns.get(ns.idFromName(crypto.randomUUID()));
-  const res = await stub.fetch(new Request("http://sandbox/deps-test", { method: "POST", body: JSON.stringify({ remote, files, pm, lock, test, hosts, only }) }));
+  const res = await stub.fetch(new Request("http://sandbox/deps-test", { method: "POST", body: JSON.stringify({ remote, files, pm, lock, test, hosts, only, build }) }));
   if (!res.ok) return { ok: false, out: `sandbox: ${res.status} ${(await res.text()).replaceAll(remote, "<remote>")}` };
   return (await res.json()) as { ok: boolean; out: string; lock?: string };
 };
@@ -838,19 +840,28 @@ export async function tryInClone(env: Env, owner: string, repo: string, files: R
   if (!tester) return { skipped: noTester(env) };
   const c = await cloneOf(env, owner, repo, files);
   if ("skipped" in c) return c;
-  return tester(c.remote, files, { ...c.pm, test: true, only });
+  return tester(c.remote, files, { ...c.pm, test: true, only, ...("build" in c && { build: c.build }) });
 }
 
+/** The build a repo with no package.json answers to, from the build file at its top (#1407). */
+export const buildCommand = (top: string[]): string[] | null =>
+  top.includes("Makefile") || top.includes("makefile") || top.includes("GNUmakefile") ? ["make"]
+    : top.includes("Cargo.toml") ? ["cargo", "build"] : top.includes("go.mod") ? ["go", "build", "./..."] : null;
+
 /** What a throwaway clone of the repo needs: its remote with a read token, and its package manager. */
-async function cloneOf(env: Env, owner: string, repo: string, files: Record<string, string>): Promise<{ remote: string; pm: { pm: PM; lock: string | null } } | { skipped: string }> {
+async function cloneOf(env: Env, owner: string, repo: string, files: Record<string, string>): Promise<{ remote: string; pm: { pm: PM; lock: string | null }; build?: string[] } | { skipped: string }> {
   const h = await handleFor(env, owner, repo, true);
   const art = h && await artifactAccess(h.handle, h.remote, "read", 3600);
   if (!art) return { skipped: "the repo isn't in git yet" };
   const res = await toFile(env, owner, repo, "package.json", owner, "file");
   const pkg = files["package.json"] ?? (res.ok ? ((await res.json()) as Doc).lines.map((l) => l.text).join("\n") : null);
-  let parsed: Record<string, any>;
-  try { parsed = JSON.parse(pkg ?? ""); } catch { return { skipped: "no package.json at the top of this repo" }; }
   const top = ((await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? AND path NOT LIKE '%/%'").bind(owner, repo).all()).results as { path: string }[]).map((r) => r.path);
+  let parsed: Record<string, any>;
+  try { parsed = JSON.parse(pkg ?? ""); } catch {
+    const build = buildCommand([...top, ...Object.keys(files).filter((p) => !p.includes("/"))]);
+    if (!build) return { skipped: "no package.json, Makefile, Cargo.toml or go.mod at the top of this repo" };
+    return { remote: art.remote.replace("://", `://x:${art.token.split("?")[0]}@`), pm: packageManager(top, {}), build };
+  }
   return { remote: art.remote.replace("://", `://x:${art.token.split("?")[0]}@`), pm: packageManager(top, parsed) };
 }
 
@@ -866,6 +877,7 @@ export async function regenerateLock(env: Env, owner: string, repo: string, lock
   const installer = installerFor(env);
   const c = await cloneOf(env, owner, repo, files);
   if ("skipped" in c) return c;
+  if (c.build) return { skipped: "no package.json at the top of this repo" };
   if (!installer) return { skipped: `lockfiles are regenerated on the desktop app: run \`${c.pm.pm} install\` on the branch` };
   return installer(c.remote, files, { pm: c.pm.pm, lock, test: false });
 }
@@ -884,6 +896,7 @@ export async function regenerateDocs(env: Env, owner: string, repo: string, file
   if (!runner) return { skipped: `${env.AGENT_SANDBOX ? "generated text on Cloudflare is rebuilt for this site's admins (ADMINS)" : "generated text is rebuilt on the desktop app"}: ${by}` };
   const c = await cloneOf(env, owner, repo, files);
   if ("skipped" in c) return c;
+  if (c.build) return { skipped: "no package.json at the top of this repo" };
   return runner(c.remote, files, { pm: c.pm.pm, cwd, command, read });
 }
 

@@ -40,6 +40,7 @@ import { cloudflareEnv, cloudflareProblem, withAccount, realTokenCheck, realWran
 import { deployedWorker, redactQueryStrings } from "./redact.ts";
 import { tidySourceMaps } from "./sourcemaps.ts";
 import { formatOfflinePlan, plannedResources } from "./offline-plan.ts";
+import { infraGraph, infraText } from "./infra.ts";
 import { protectReport } from "./protect.ts";
 import { estimate, formatEstimate, loadUsage, usageFlags } from "./usage-estimate.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
@@ -977,7 +978,7 @@ async function triageCommand(args: string[]) {
   });
 }
 
-const COMMANDS = ["init", "copy-site", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "build", "eject", "version"];
+const COMMANDS = ["init", "copy-site", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "infra", "build", "eject", "version"];
 const isVersion = cmd === "--version" || cmd === "-v" || cmd === "version";
 if (!isVersion && !checkDisabled()) {
   const advice = await checkVersion(VERSION);
@@ -1027,6 +1028,11 @@ try {
       if (!(await Bun.file(".rustybuns/dev/desktop.js").exists())) await buildDesktop(await loadConfig(), { noCompile: true });
       const p = Bun.spawn(hostCommand(".rustybuns/dev/desktop.js", hostArgs, { sandbox }), { stdio: ["inherit", "inherit", "inherit"], env: hostEnv(process.env) });
       process.exit(await p.exited);
+    }
+    case "infra": {
+      // The stack as a graph, from the config alone: no login, no build. codeSplitter draws it.
+      const stage = alchemyStage(rest.filter((a) => a !== "--json")), g = infraGraph(await loadConfig(stage), stage);
+      console.log(rest.includes("--json") ? "INFRA " + JSON.stringify(g) : infraText(g)); break;
     }
     case "boundary": { const { modules, excluded } = await boundary(); console.log(report(modules, excluded)); break; }
     case "build": {
@@ -1105,6 +1111,8 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              launcher in .rustybuns/box/, Railway a Bun bundle + Dockerfile
                              in .rustybuns/railway/ (plan and deploy run this for you)
 
+  infra [--stage s] [--json] the stack as a graph, from the config alone: the Worker and each
+                             binding, [KEPT] where protect: true leaves it through destroy
   login <provider>           connect cloudflare, hetzner or railway to your Alchemy profile
                              (~/.alchemy: browser login or a pasted token; every app shares it)
   plan                       alchemy plan: shows what would be created, creates nothing

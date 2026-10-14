@@ -138,8 +138,10 @@ async function testScript(run, repo, pm, installed, only) {
   return { ok: t.code === 0, out: t.out };
 }
 
-export function depsTest({ remote, files, pm = "bun", lock = null, only }) {
+export function depsTest({ remote, files, pm = "bun", lock = null, only, build }) {
   return inClone(remote, files, 1, async (repo, run) => {
+    // No package.json: the repo's own build, nothing to install (#1407).
+    if (build?.length) { const b = await run(build[0], build.slice(1)); return { ok: b.code === 0, out: b.out }; }
     const installed = await install(run, pm);
     if (installed.code !== 0) return { ok: false, out: installed.out };
     // The lockfile that install wrote, for the branch (bun.lockb is binary, so not that one).
