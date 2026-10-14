@@ -11,6 +11,7 @@ import { json, NAME, type Env, readBody } from "./env.ts";
 import { importTarball, tooBigToImport } from "./tarball.ts";
 import { git, mirrorsOn, seeGit } from "./mirror.ts";
 import { wipeSearch } from "./search.ts";
+import { hex } from "./util.ts";
 
 /** A visitor's dig lasts a day; past the cap, the oldest goes first. Admins' digs keep. */
 export const DIG_TTL = 24 * 3600_000;
@@ -211,7 +212,6 @@ async function gitObject(repo: string, sha: string, commit: boolean) {
 
 /** Gitlinks at `sha` by path, from github.com's git: the commit, then each tree down, each fetched once. */
 function gitWalker(repo: string, sha: string) {
-  const hex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
   const trees = new Map<string, Promise<Map<string, { mode: string; sha: string }>>>();
   const tree = (id: string) => {
     if (!trees.has(id)) trees.set(id, gitObject(repo, id, false).then((b) => {

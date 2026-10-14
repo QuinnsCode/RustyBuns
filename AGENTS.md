@@ -33,6 +33,22 @@ codeSplitter's site (`scripts/site/codesplitter.ts`, tags `codesplitter-v*`) gen
 and MCP tool list from `apps/codesplitter/src/openapi.ts` and `src/mcp-tools.ts`, so an endpoint change
 updates its docs in the same PR. Those two files must keep importing nothing else.
 
+## Cut before you add
+
+Agents rewrite the same helper in every file they touch. Before writing one, grep for it; if it exists twice, pull it up
+and delete the copies in the same PR. A PR that deletes more than it adds is the goal.
+
+- codeSplitter's small shared helpers live in `apps/codesplitter/src/util.ts` (imports nothing): `hex`, `b64url`, `digest`,
+  `sha256`, `esc`, `plural`, `pad10`, `inBatches`. Responses use `json` and request bodies `readBody` from `env.ts`; git
+  runs through `git` and `isAncestor` in `mirror.ts`. Add to these, don't redefine them.
+- Known repeats still to pull up (check before adding another): the `SELECT ... FROM repos WHERE owner = ? AND name = ?`
+  lookup (about 55 inline copies, two `repoRow` variants), `toFile(...)` plus `.json()` wrappers (`fileLines` in
+  `stamps.ts` and `shares.ts`), the lockfile list (`buildfiles.ts`, `checks.ts`, `deps.ts`), `.catch(() => null)` on
+  `req.json()` (use `readBody`), and `clamp`, seeded `rng`, `escapeHtml` and `json` helpers copied between `apps/*`
+  (a shared package is the fix, not a fifth copy).
+- When a table is always read together with another (`repos` and `branches` are joined by hand in many places), add a
+  view or one query helper rather than another hand-written join.
+
 ## codeSplitter is the Cloudflare git competition entry
 
 `apps/codesplitter` is our entry in Cloudflare's "Build the Next-Gen Git Platform on Cloudflare" competition

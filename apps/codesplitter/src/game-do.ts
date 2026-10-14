@@ -26,6 +26,8 @@
 //   {t:"note", text}                 why a start or ready did nothing
 // Players live on their sockets (attachments survive hibernation); the stored keys are the round and the setup.
 
+import { json } from "./env.ts";
+
 declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
 
 interface Player { id: string; user: string; ready: boolean; alive: boolean; score: number; wave: number; seen: number }
@@ -39,7 +41,6 @@ const asDiff = (d: any): Diff | undefined =>
   d && typeof d.path === "string" && d.path.length < 512 && Number.isInteger(d.from) && Number.isInteger(d.to) && d.from >= 0 && d.to > d.from
     ? { path: d.path, from: d.from, to: d.to } : undefined;
 
-const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { "content-type": "application/json" } });
 const MAX_PLAYERS = 8, MAX_BROKEN = 5000;
 
 export class GameRoom {

@@ -38,6 +38,7 @@
 
 import { audit } from "./audit.ts";
 import { json, type Env, readBody } from "./env.ts";
+import { hex } from "./util.ts";
 
 export const EVENTS = ["commit", "branch.opened", "branch.merged", "deploy.finished", "check_run"] as const;
 export type Event = (typeof EVENTS)[number];
@@ -51,8 +52,6 @@ export const GITHUB_EVENT: Record<Event, string> = {
 
 /** A message on the queue: try `id` again, as its try number `n + 1`. */
 export interface HookMessage { id: string; n: number }
-
-const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
 
 export async function sign(secret: string, body: string) {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
