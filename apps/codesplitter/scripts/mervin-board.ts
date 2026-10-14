@@ -54,13 +54,29 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describeBlast, load, rank } from "./blast.ts";
 import { hold, report, triage } from "./ester.ts";
+import { heal, layout } from "../layout.ts";
 import { sandbox, shadow, testRuns, testTree, writeTree } from "./shadow.ts";
 
 export type Tier = "certain" | "agree" | "mervin" | "differ" | "card";
+/** The generated file: its Layout table is rebuilt from the merged tree (`bun run layout`), not kept as text-merged (#1540). */
+export const REFERENCE = "apps/codesplitter/REFERENCE.md";
+const APP_IN_TREE = "apps/codesplitter";
+
+/** Rewrites the Layout table of the merged tree in `root` from the files it now has. A tree without the file or table is left alone. */
+export function regenerate(root: string) {
+  const file = join(root, REFERENCE);
+  if (!existsSync(file)) return;
+  try {
+    const before = readFileSync(file, "utf8"), after = heal(before, layout(join(root, APP_IN_TREE), true));
+    if (after !== before) writeFileSync(file, after);
+  } catch { /* a Layout line naming a missing file, or no table: the tree's own layout test says so */ }
+}
+
 export const TIERS: Tier[] = ["certain", "agree", "mervin", "differ", "card"];
 
 export interface BoardPr {
   number: number; title?: string; body?: string; headRefOid: string; headRefName?: string; baseRefName?: string;
+  autoMergeRequest?: object | null;
   statusCheckRollup?: { name?: string; conclusion?: string | null; status?: string; startedAt?: string; completedAt?: string }[];
 }
 /** The PR's own CI: red on its own means a failure in the merged tree may be the PR's, not the merge's. */
@@ -284,7 +300,8 @@ export function run(repo: string | undefined, main: string, prs: BoardPr[], cach
           else if (!s.ours.clean) row("card", s.ours.conflicts.map((c) => c.lint ?? (c.whole ? "lockfile" : `line ${c.line}`)).slice(0, 3).join(", "));
           else {
             tree.set(path, s.ours.text); mine.set(path, s.ours.text);
-            if (!s.git.clean) row("mervin", "git conflicts, Mervin settles");
+            if (path === REFERENCE) row("mervin", "generated: both sides merged clean, but `bun run layout` rewrites the Layout table after the merge");
+            else if (!s.git.clean) row("mervin", "git conflicts, Mervin settles");
             else if (s.git.text === s.ours.text) row("agree", "git and Mervin agree");
             else row("differ", "both clean, different text: Mervin's kept");
           }
@@ -402,6 +419,7 @@ if (import.meta.main) {
   const mergeMs = Math.round(performance.now() - wall);
   writeTree(join(out, "tree"), main);
   for (const [path, t] of tree) applyFile(join(out, "tree"), path, t);
+  regenerate(join(out, "tree"));
   writeFileSync(join(out, "board.json"), JSON.stringify(board, null, 2));
 
   if (args.includes("--json")) console.log(JSON.stringify(board, null, 2));

@@ -71,6 +71,12 @@ export function decide(board: Board, prs: BoardPr[], mainRed: string[] = []): Ve
   return [...out.values()];
 }
 
+/** PRs with auto-merge already on (by hand) whose base is dead or whose parent hasn't landed: merging them strands the commit (#1545). */
+export function strayAutoMerges(prs: BoardPr[], verdicts: Verdict[]): number[] {
+  const auto = new Set(prs.filter((p) => p.autoMergeRequest).map((p) => p.number));
+  return verdicts.filter((v) => !v.go && auto.has(v.pr) && (v.why.includes("retarget to main") || v.why.startsWith("stacked on"))).map((v) => v.pr);
+}
+
 /** The PRs worth stacking: clear to go, and every file needed no merge logic or both engines agreed. */
 export function stackable(board: Board, verdicts: Verdict[]): number[] {
   const go = new Set(verdicts.filter((v) => v.go).map((v) => v.pr));
@@ -121,6 +127,7 @@ export function advise(board: Board, verdicts: Verdict[]): Heads {
     if (flagged.length || mine.some((c) => c.kind === "migration")) { who = "a human"; why = `${flagged.length ? flagged.join(", ") : "a migration stamp"} needs a person's eyes`; }
     else if (behindMe.length >= SWARM_AT) { who = "a swarm"; why = `${behindMe.length} PRs wait behind it`; }
     else if (mine.length || v.why.startsWith("conflicts with main")) { who = "two agents"; why = mine.length ? `clashes with ${[...new Set(mine.flatMap((c) => c.prs).filter((n) => n !== v.pr))].map((n) => `#${n}`).join(", ") || "main"}` : "conflicts with main"; }
+    else if (v.why.includes("retarget to main")) { who = "one agent"; why = `its base branch has no open PR, so a merge would land in a dead branch and never reach main: \`gh pr edit ${v.pr} --base main\`, then rerun`; }
     else if (v.why.startsWith("stacked on") || v.why.startsWith("waits behind") || v.why.startsWith("CI still") || v.why.startsWith("required check")) { who = "none"; why = `waiting: ${v.why}`; }
     else { who = "one agent"; why = `${files.length} file${files.length === 1 ? "" : "s"}: ${v.why}`; }
     advice.push({ pr: v.pr, who, why, blocks: behindMe });
@@ -157,7 +164,7 @@ if (import.meta.main) {
   const rec = replay ? JSON.parse(await Bun.file(replay).text()) : undefined;
   const from = arg("from");
   const prs: BoardPr[] = rec ? rec.prs : JSON.parse(from ? await Bun.file(from).text()
-    : Bun.spawnSync(["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "number,title,headRefOid,headRefName,baseRefName,statusCheckRollup"], { cwd: top }).stdout.toString() || "[]");
+    : Bun.spawnSync(["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "number,title,headRefOid,headRefName,baseRefName,autoMergeRequest,statusCheckRollup"], { cwd: top }).stdout.toString() || "[]");
   const main: string = rec ? rec.main : Bun.spawnSync(["git", "rev-parse", "origin/main"], { cwd: top }).stdout.toString().trim();
   const given = args.filter((a, i) => /^\d+$/.test(a) && !args[i - 1]?.startsWith("--")).map(Number);
   say(`reading ${prs.length} open PRs against main ${main.slice(0, 9)}`);
@@ -217,6 +224,12 @@ if (import.meta.main) {
   }
   const now = verdicts.filter((v) => v.go && v.wave === 1);
   say(`${now.length} to merge now, ${verdicts.filter((v) => v.go).length - now.length} in later waves, ${verdicts.filter((v) => !v.go).length} held`);
+  const stray = strayAutoMerges(prs, verdicts);
+  for (const n of stray) say(`#${n} warning: auto-merge is on but its base is dead or its parent hasn't landed${args.includes("--go") ? ", turning it off" : " (--go turns it off)"}`);
+  if (args.includes("--go")) for (const n of stray) {
+    const r = Bun.spawnSync(["gh", "pr", "merge", String(n), "--disable-auto"], { cwd: top, stderr: "pipe" });
+    say(`#${n} auto-merge ${r.exitCode === 0 ? "off" : `FAILED to turn off: ${r.stderr.toString().trim()}`}`);
+  }
   if (!args.includes("--go")) { say("plan only; add --go to turn on auto-merge for wave 1"); process.exit(0); }
   for (const v of now) {
     const method = (arg("method") as "squash" | "merge" | undefined) ?? v.method ?? "squash";

@@ -3691,7 +3691,7 @@ const views = {
         ${mine ? truthBox(true) : ""}
         ${mine ? dataBox(true) : ""}
       </aside></div>${cityLink ? `<div class="city-door">${cityLink}</div>` : ""}</div>`;
-    if (page) pageStage();
+    if (page) { pageStage(); pageWatch(name); }
     if (mine && !agent) pageTalk(name, !!page);
     if (!agent) avatarBox(user, mine, name);
     // The pulse: a week of lines landed, beating while they type. It looks again every 15 seconds while you're here.
@@ -4396,6 +4396,7 @@ const views = {
       <form id="hook-form" style="display:grid;gap:6px;font-size:13px;margin-top:6px">
         <input name="url" type="url" placeholder="https://ci.example.com/codesplitter" required>
         <div class="row" style="flex-wrap:wrap;gap:8px">${d.events.map((e) => `<label><input type="checkbox" name="ev" value="${e}" checked> <code>${e}</code></label>`).join("")}</div>
+        <label title="Only deliver what you did yourself: a crew member's or an agent's branch won't trigger your CI, with your secrets"><input type="checkbox" name="mine"> Owner's work only (not the crew's or agents')</label>
         <label title="X-GitHub-Event, X-Hub-Signature-256, push / create / pull_request: for Jenkins, Buildkite, Argo and other receivers built for GitHub"><input type="checkbox" name="gh"> Speak GitHub (for CI that expects GitHub webhooks)</label>
         <div><button class="btn primary">${icon("plus")}Add webhook</button></div>
       </form>
@@ -4404,7 +4405,7 @@ const views = {
     $("#hook-form").addEventListener("submit", async (e) => {
       e.preventDefault(); const f = e.target;
       const events = [...f.querySelectorAll("[name=ev]:checked")].map((x) => x.value);
-      try { const h = await api(base, { url: f.url.value, events, github_compat: f.gh.checked }); views.wireHooks(owner, repo, h.secret); }
+      try { const h = await api(base, { url: f.url.value, events, github_compat: f.gh.checked, owner_only: f.mine.checked }); views.wireHooks(owner, repo, h.secret); }
       catch (err) { toast(err.message); }
     });
     el.querySelectorAll("[data-hook-del]").forEach((b) => b.addEventListener("click", async () => {
@@ -7000,6 +7001,12 @@ const fileSel = () => {
   if (ctx.view !== "f" || !lineSel?.box.isConnected) throw new Error("open a file first: open_page #/f/owner/repo/path");
   return lineSel;
 };
+// The palette commands that change who sees what, can't be undone, or ship code: WebMCP tells the agent to ask first (as mcp-tools.ts does from x-codesplitter-risky).
+const RISKY_CALLS = new Set(["POST /repos/:o/:r/shares", "POST /repos/:o/:r/do/private", "POST /repos/:o/:r/do/release", "POST /repos/:o/:r/cuts", "POST /repos/:o/:r/do/commit",
+  "POST /repos/:o/:r/agents", "POST /repos/:o/:r/agents/stop", "POST /repos/:o/:r/invites", "PUT /repos/:o/:r", "DELETE /repos/:o/:r", "POST /repos/:o/:r/branches/:name/merge",
+  "POST /repos/:o/:r/merges", "POST /repos/:o/:r/checks/run", "PUT /repos/:o/:r/checks/settings"]);
+const isRisky = (api) => RISKY_CALLS.has(api.replace(/\?.*$/, "").replace(/\/api\/repos\/[^/]+\/[^/]+/, "/repos/:o/:r"));
+
 // The scene playing and the step it's on, for the scene tools.
 function sceneNow() {
   const t = tourState(), s = TOUR[t.i], [lo, hi] = tourSpan(t.scene ?? s.ch);
@@ -7061,7 +7068,7 @@ const readTools = () => [
   { name: "settle_conflict", title: "Settle a merge conflict", description: "Settle one conflict card on a branch's merge page, as clicking would: pick main, branch, both, both:branch-first, suggestion, or text (with `text`, the lines that replace it). Nothing lands until the branch's Merge button is pressed.",
     inputSchema: { type: "object", properties: { branch: { type: "string" }, path: { type: "string" }, line: { type: "string", description: "the conflict's line, as list_conflicts says" },
       pick: { type: "string", enum: ["main", "branch", "both", "both:branch-first", "suggestion", "text"] }, text: { type: "string", description: "with pick text: the settled lines" } }, required: ["branch", "path", "line", "pick"] },
-    execute: ({ branch, path, line, pick, text }) => asAgent(() => {
+    annotations: { destructiveHint: false, consequentialHint: false, idempotentHint: true }, execute: ({ branch, path, line, pick, text }) => asAgent(() => {
       const card = document.querySelector(`[data-clash="${CSS.escape(clashId(ctx.owner, ctx.repo, branch, path, line))}"]`);
       if (!card) throw new Error("no such conflict on this page: list_conflicts says which there are");
       const { c } = clashes.get(card.dataset.clash), base = pick === "both:branch-first" ? "both" : pick;
@@ -7130,7 +7137,7 @@ async function webTools() {
     const read = !c.api || c.api.startsWith("GET") || c.api.startsWith("WS");
     return [{ name, title: c.title, description: `${c.group}: ${c.title}${c.ask ? ` (input: ${c.ask})` : ""}. The palette's ${c.api || "navigation"}.`,
       inputSchema: c.ask ? { type: "object", properties: { input: { type: "string", description: c.ask } }, required: ["input"] } : noInput,
-      annotations: { readOnlyHint: read, consequentialHint: /^DELETE|^PUT|\/merge|\/commit/.test(c.api) },
+      annotations: { readOnlyHint: read, destructiveHint: isRisky(c.api), consequentialHint: isRisky(c.api) },
       execute: ({ input } = {}) => asAgent(() => c.run(input)) }];
   });
   if (off !== toolsOff) return; // a newer route got here first
@@ -7537,6 +7544,18 @@ function pageStage() {
   stageWired = true;
   addEventListener("keydown", (e) => { if (e.key === "Escape" && document.body.classList.contains("staged")) stage(false); });
   addEventListener("hashchange", () => document.body.classList.remove("staged"));
+}
+// A commit to the page repo (from the box, an agent or a person) reloads just this profile's frame, for whoever is looking.
+async function pageWatch(name) {
+  const f = $("iframe.theme");
+  let seen = null;
+  while (f && f.isConnected) {
+    if (!document.hidden) {
+      const v = (await api(`/users/${encodeURIComponent(name)}/page-version`).catch(() => null))?.version;
+      if (v != null) { if (seen !== null && v !== seen) f.src = `/api/users/${encodeURIComponent(name)}/page/?t=${Date.now()}`; seen = v; }
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
 }
 // Talk to your page: the box on your profile sends what you say to a coding agent working in your repo `page`
 // (its files are the site, see src/page.ts); the two buttons put the page back an hour, or to the starter.

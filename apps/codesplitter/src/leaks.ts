@@ -20,13 +20,23 @@ const SHAPES: [string, RegExp][] = [
 /** Values shorter than this aren't checked for verbatim: too likely to turn up by chance. */
 const MIN_SECRET = 16;
 
+/** A private line shorter than this isn't checked for copies: a word or two turns up by chance. */
+const MIN_HIDDEN = 6;
+
 /**
  * What looks like a secret in `after`'s lines that `before` didn't have, or null. `secrets`
  * are the values the run was handed (its API keys, its GitHub token): any of them turning up
- * counts, whatever its shape. Lines already in the file don't count: the agent didn't write them.
+ * counts, whatever its shape. `hidden` is the text of the file's private lines, which the run read as crew:
+ * a copy of one on more lines than before counts too. Lines already in the file don't count: the agent didn't write them.
  */
-export function leakIn(before: string[], after: string[], secrets: (string | null | undefined)[] = []): string | null {
+export function leakIn(before: string[], after: string[], secrets: (string | null | undefined)[] = [], hidden: string[] = []): string | null {
   const had = new Set(before), values = secrets.filter((s): s is string => !!s && s.length >= MIN_SECRET);
+  // A private line the agent could read (#1569): a copy of its text on another line is a leak even
+  // though the text was "already in the file", so the lines carrying it are counted, not compared.
+  const count = (lines: string[], t: string) => lines.reduce((n, l) => n + (l.includes(t) ? 1 : 0), 0);
+  for (const t of new Set(hidden.map((h) => h.trim()).filter((h) => h.length >= MIN_HIDDEN))) {
+    if (count(after, t) > count(before, t)) return "a private line copied into a public one";
+  }
   for (const line of after) {
     if (had.has(line)) continue;
     if (values.some((v) => line.includes(v))) return "a key this run was handed";

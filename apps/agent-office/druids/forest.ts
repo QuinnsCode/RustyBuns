@@ -68,7 +68,8 @@ const seen = new WeakSet<object>();
     refit(app.office);
   }
   if (fire) fire.intensity = 14 + Math.sin(t * 11) * 2 + Math.sin(t * 3.7) * 3;
-  if (fireflies) drift(fireflies, t);
+  if (fireflies) (fireflies.material as PointsMaterial).opacity = 0.6 + Math.sin(t * 2) * 0.25;
+  flyTime.value = t;
   for (const g of growing) g.update(t);
   firstPerson(app, stage.scene);
 });
@@ -160,7 +161,7 @@ function canopyCanvas() {
 const model = (path: string) => gltf(path).then((g) => g.scene);
 
 /** A copy of a model, `height` tall, standing at (x, y, z). */
-async function place(into: Group, path: string, x: number, y: number, z: number, height: number, turn: number) {
+async function place(into: Group, path: string, x: number, y: number, z: number, height: number, turn: number, casts = true) {
   try {
     const o = (await model(path)).clone();
     const b = new Box3().setFromObject(o), s = b.getSize(new Vector3());
@@ -171,7 +172,9 @@ async function place(into: Group, path: string, x: number, y: number, z: number,
     o.traverse((m) => {
       m.userData.rbForest = "skip";
       if (!(m as Mesh).isMesh) return;
-      m.castShadow = m.receiveShadow = true;
+      // ankle-high props and the far wood don't cast: the sun's shadow map is redrawn every frame
+      m.castShadow = casts;
+      m.receiveShadow = true;
       // the office inks every edge; on the game's dense meshes that's grey static, so leave them clean
       for (const mat of [(m as Mesh).material].flat()) mat.userData.outlineParameters = { visible: false };
     });
@@ -210,7 +213,7 @@ function plant(into: Group, colliders: Box[]) {
   for (let n = 0, tries = 0; n < 60 && tries < 3000; tries++) {
     const x = ROOM.minX + r() * (ROOM.maxX - ROOM.minX), z = ROOM.minZ + r() * (ROOM.maxZ - ROOM.minZ);
     if (!inRoom(x, z, 1) || !clear(x, z, 0.45)) continue;
-    place(into, pick(FOREST.ground), x, 0, z, 0.25 + r() * 0.3, r() * 6.3);
+    place(into, pick(FOREST.ground), x, 0, z, 0.25 + r() * 0.3, r() * 6.3, false);
     n++;
   }
 
@@ -225,7 +228,7 @@ function plant(into: Group, colliders: Box[]) {
     }
   if (best.d >= 1) {
     place(into, FOREST.hearth, best.x, 0, best.z, Math.min(1.6, best.d), 0);
-    fire = new PointLight("#ff9a3c", 14, 10, 1.6);
+    fire = new PointLight("#ff9a3c", 14, 7, 1.6);
     fire.position.set(best.x, 0.9, best.z);
     into.add(fire);
   }
@@ -234,7 +237,7 @@ function plant(into: Group, colliders: Box[]) {
   for (let n = 0, tries = 0; n < 40 && tries < 4000; tries++) {
     const x = -70 + r() * 140, z = -55 + r() * 110;
     if (inRoom(x, z, -6) || (z > ROAD.minZ && z < ROAD.maxZ) || !clear(x, z, 1.5)) continue;
-    place(into, pick(FOREST.wood), x, STREET_Y, z, 9 + r() * 7, r() * 6.3);
+    place(into, pick(FOREST.wood), x, STREET_Y, z, 9 + r() * 7, r() * 6.3, false);
     n++;
   }
   place(into, FOREST.beacon, 0, STREET_Y, ROOM.minZ - 12, 9, 0);
@@ -246,29 +249,29 @@ function plant(into: Group, colliders: Box[]) {
 // ---- fireflies -------------------------------------------------------------------------------------------
 
 const FLIES = 160;
-let home: Float32Array;
+const flyTime = { value: 0 };
 
+/** The swarm's wander runs in the vertex shader off a time uniform: positions are uploaded once, not every frame. */
 function swarm() {
   const r = rng(99);
-  home = new Float32Array(FLIES * 4);
-  for (let i = 0; i < FLIES; i++)
-    home.set([ROOM.minX + r() * 36, 0.4 + r() * 3.4, ROOM.minZ + r() * 26, r() * 100], i * 4);
+  const pos = new Float32Array(FLIES * 3), phase = new Float32Array(FLIES);
+  for (let i = 0; i < FLIES; i++) {
+    pos.set([ROOM.minX + r() * 36, 0.4 + r() * 3.4, ROOM.minZ + r() * 26], i * 3);
+    phase[i] = r() * 100;
+  }
   const g = new BufferGeometry();
-  g.setAttribute("position", new BufferAttribute(new Float32Array(FLIES * 3), 3));
-  const p = new Points(g, new PointsMaterial({
+  g.setAttribute("position", new BufferAttribute(pos, 3));
+  g.setAttribute("phase", new BufferAttribute(phase, 1));
+  const mat = new PointsMaterial({
     color: "#e4ff8a", size: 0.07, transparent: true, opacity: 0.85, blending: AdditiveBlending, depthWrite: false,
-  }));
+  });
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = flyTime;
+    sh.vertexShader = "uniform float uTime;\nattribute float phase;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
+      transformed += vec3(sin(uTime * 0.3 + phase) * 0.8, sin(uTime * 0.7 + phase * 2.0) * 0.25, cos(uTime * 0.25 + phase) * 0.8);`);
+  };
+  const p = new Points(g, mat);
   p.frustumCulled = false;
   p.userData.rbForest = "skip";
   return p;
-}
-
-function drift(p: Points, t: number) {
-  const pos = p.geometry.getAttribute("position") as BufferAttribute;
-  for (let i = 0; i < FLIES; i++) {
-    const [x, y, z, s] = home.subarray(i * 4, i * 4 + 4);
-    pos.setXYZ(i, x + Math.sin(t * 0.3 + s) * 0.8, y + Math.sin(t * 0.7 + s * 2) * 0.25, z + Math.cos(t * 0.25 + s) * 0.8);
-  }
-  pos.needsUpdate = true;
-  (p.material as PointsMaterial).opacity = 0.6 + Math.sin(t * 2) * 0.25;
 }

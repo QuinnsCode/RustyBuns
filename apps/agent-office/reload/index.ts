@@ -3,6 +3,7 @@
 // is minding the office, then shows "coming back" until the new office answers, and reloads. The state is the
 // office's (live/reload.ts, /__rb/reload).
 import type { ReloadState } from "../live/reload.ts";
+import type { Hot } from "./hot.ts";
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}, ...kids: (Node | string)[]) => {
   const e = Object.assign(document.createElement(tag), props);
@@ -43,6 +44,18 @@ function mount() {
     } catch {}
   }
 
+  // Only page scripts changed, and each changed one said how to be swapped (reload/hot.ts): load the new file over
+  // the old, so the 3D office, terminals and half-typed text stay. False when something needs the page refreshed.
+  async function swap(a: ReloadState, b: ReloadState) {
+    const hot = (globalThis as { __rbHot?: Record<string, Hot> }).__rbHot ?? {};
+    const changed = Object.keys({ ...a.swap, ...b.swap }).filter((k) => a.swap[k] !== b.swap[k]);
+    if (a.fixed !== b.fixed || !changed.every((k) => b.swap[k] && hot[k])) return false;
+    try {
+      for (const k of changed) { hot[k]!.dispose(); delete hot[k]; await import(`/assets/${b.swap[k]}`); }
+    } catch { return false; }
+    return true;
+  }
+
   async function poll() {
     try {
       const res = await fetch("/__rb/reload", { credentials: "same-origin" });
@@ -52,12 +65,15 @@ function mount() {
       misses = 0;
       first ??= now;
       if (now.boot !== first.boot) return location.reload();
-      if (now.page !== first.page) {
+      if (now.page !== first.page && await swap(first, now)) first = now;
+      else if (now.page !== first.page) {
         if (!typing()) return location.reload();
         show("Agent Office was updated.", ["Refresh", () => location.reload()]);
       } else if (now.stale && !restarting) {
         show(now.canRestart ? "Server code changed: the office needs a restart." : "Server code changed: restart the office (bun run office:update, or run it under bun run office:mama).",
           now.canRestart ? ["Restart", restart] : undefined);
+      } else if (now.workers && !restarting) {
+        show("The workers' tools changed: they need to reconnect (new session or /mcp), the office needn't restart.");
       }
     } catch {
       if (first && ++misses >= 2) show(restarting ? "Restarting the office, coming back in a moment (workers keep running)…" : "The office isn't answering; reconnecting…");

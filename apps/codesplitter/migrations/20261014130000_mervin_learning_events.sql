@@ -1,11 +1,6 @@
--- Mervin learning (docs/mervin.md): per-repo opt-in, off by default, and one small event per merged file.
+-- Mervin learning (docs/mervin.md): one small event per merged file for repos that opted in (mervin_learning, above).
 -- No contents, no diffs; paths are hashed.
-CREATE TABLE mervin_learning (
-  owner TEXT NOT NULL,
-  repo TEXT NOT NULL,
-  since INTEGER NOT NULL,
-  PRIMARY KEY (owner, repo)
-);
+ALTER TABLE mervin_learning ADD COLUMN since INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE mervin_events (
   owner TEXT NOT NULL,
   repo TEXT NOT NULL,

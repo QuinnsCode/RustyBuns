@@ -74,6 +74,12 @@ export function privateHost(host: string): boolean {
       || (x === 192 && y === 168) || (x === 100 && y >= 64 && y <= 127) || (x === 192 && y === 0 && a[2] === 0) || (x === 198 && (y === 18 || y === 19));
   }
   if (!h.includes(":")) return false;
+  // IPv4-compatible (::7f00:1), NAT64 (64:ff9b::/96) and 6to4 (2002::/16) carry an IPv4 address that may be inward.
+  const tail = (x: string, y: string) => [parseInt(x, 16) >> 8, parseInt(x, 16) & 255, parseInt(y, 16) >> 8, parseInt(y, 16) & 255].join(".");
+  const compat = /^(?:0{1,4})?(?::0{1,4})*::([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(h) ?? /^64:ff9b::([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(h);
+  if (compat) return privateHost(tail(compat[1]!, compat[2]!));
+  const sixToFour = /^2002:([0-9a-f]{1,4}):([0-9a-f]{1,4})(?::|$)/.exec(h);
+  if (sixToFour) return privateHost(tail(sixToFour[1]!, sixToFour[2]!));
   // IPv6: unspecified, loopback, unique-local (fc00::/7), link-local (fe80::/10), multicast, and IPv4 in IPv6.
   if (h === "::" || h === "::1" || /^f[cd]/.test(h) || /^fe[89ab]/.test(h) || h.startsWith("ff")) return true;
   const mapped = /^(?:0*:)*:?(?:ffff:)?(\d+\.\d+\.\d+\.\d+)$/.exec(h)?.[1];
@@ -151,8 +157,10 @@ function githubShaped(event: Event, data: Record<string, any>, repository: Recor
 /** Something happened in owner/repo: log a delivery to every hook that wants it, and queue their first tries. */
 export async function emit(env: Env, owner: string, repo: string, event: Event, sender: string, data: Record<string, unknown>) {
   try {
-    const { results } = await env.DB.prepare("SELECT id, url, secret, events, github_compat FROM webhooks WHERE owner = ? AND repo = ?").bind(owner, repo).all();
-    const hooks = (results as { id: string; url: string; secret: string; events: string; github_compat: number }[]).filter((h) => h.events.split(",").includes(event));
+    const { results } = await env.DB.prepare("SELECT id, url, secret, events, github_compat, owner_only FROM webhooks WHERE owner = ? AND repo = ?").bind(owner, repo).all();
+    // An owner_only hook hears the owner's own work, not a crew member's or an agent's (a CI that builds it runs with the owner's secrets).
+    const theirs = sender !== owner || sender.startsWith("agent-") || String(data.ref ?? "").startsWith("agent-run-");
+    const hooks = (results as { id: string; url: string; secret: string; events: string; github_compat: number; owner_only: number }[]).filter((h) => h.events.split(",").includes(event) && !(h.owner_only && theirs));
     if (!hooks.length) return;
     const r = await repoRow(env, owner, repo, "visibility, artifact_remote");
     const repository = { name: repo, full_name: `${owner}/${repo}`, owner: { login: owner }, private: r?.visibility === "private", default_branch: "main" };
@@ -208,24 +216,25 @@ export async function hookRoutes(req: Request, env: Env, p: string[], user: stri
   if (!(await repoRow(env, owner, repo, "1"))) return json({ error: "not found" }, 404);
 
   if (!id && req.method === "GET") {
-    const { results } = await env.DB.prepare(`SELECT h.id, h.url, h.events, h.github_compat, h.created_at,
+    const { results } = await env.DB.prepare(`SELECT h.id, h.url, h.events, h.github_compat, h.owner_only, h.created_at,
       (SELECT json_object('event', d.event, 'status', d.status, 'code', d.code, 'at', d.at) FROM webhook_deliveries d WHERE d.hook = h.id ORDER BY d.at DESC LIMIT 1) AS last
       FROM webhooks h WHERE h.owner = ? AND h.repo = ? ORDER BY h.created_at`).bind(owner, repo).all();
-    return json({ events: EVENTS, hooks: (results as any[]).map((h) => ({ ...h, events: h.events.split(","), github_compat: !!h.github_compat, last: h.last ? JSON.parse(h.last) : null })) });
+    return json({ events: EVENTS, hooks: (results as any[]).map((h) => ({ ...h, events: h.events.split(","), github_compat: !!h.github_compat, owner_only: !!h.owner_only, last: h.last ? JSON.parse(h.last) : null })) });
   }
   if (!id && req.method === "POST") {
-    const b = await readBody<"url" | "events" | "secret" | "github_compat">(req);
+    const b = await readBody<"url" | "events" | "secret" | "github_compat" | "owner_only">(req);
     const url = checkUrl(b.url);
     if (!url) return json({ error: "url: an http(s) URL out on the internet (not a private or loopback address), without a password in it" }, 400);
     const events = b.events ?? [...EVENTS];
     if (!Array.isArray(events) || !events.length || events.some((e) => !EVENTS.includes(e as Event))) return json({ error: `events: some of ${EVENTS.join(", ")}` }, 400);
     if (b.secret !== undefined && (typeof b.secret !== "string" || b.secret.length < 16)) return json({ error: "secret: at least 16 characters, or leave it out for one made for you" }, 400);
     if (b.github_compat !== undefined && typeof b.github_compat !== "boolean") return json({ error: "github_compat: true or false" }, 400);
+    if (b.owner_only !== undefined && typeof b.owner_only !== "boolean") return json({ error: "owner_only: true or false" }, 400);
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM webhooks WHERE owner = ? AND repo = ?").bind(owner, repo).first();
     if ((n?.n ?? 0) >= MAX_HOOKS) return json({ error: `a repo has at most ${MAX_HOOKS} webhooks` }, 400);
-    const hook = { id: crypto.randomUUID().slice(0, 8), url, events: [...new Set(events)], secret: b.secret ?? hex(crypto.getRandomValues(new Uint8Array(24)).buffer), github_compat: b.github_compat ?? false, created_at: Date.now() };
-    await env.DB.prepare("INSERT INTO webhooks (id, owner, repo, url, secret, events, github_compat, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(hook.id, owner, repo, hook.url, hook.secret, hook.events.join(","), hook.github_compat ? 1 : 0, hook.created_at).run();
+    const hook = { id: crypto.randomUUID().slice(0, 8), url, events: [...new Set(events)], secret: b.secret ?? hex(crypto.getRandomValues(new Uint8Array(24)).buffer), github_compat: b.github_compat ?? false, owner_only: b.owner_only ?? false, created_at: Date.now() };
+    await env.DB.prepare("INSERT INTO webhooks (id, owner, repo, url, secret, events, github_compat, owner_only, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(hook.id, owner, repo, hook.url, hook.secret, hook.events.join(","), hook.github_compat ? 1 : 0, hook.owner_only ? 1 : 0, hook.created_at).run();
     await audit(env, req, { actor: user, action: "hook.create", owner, repo, target: hook.id, detail: new URL(hook.url).host });
     return json(hook, 201);
   }

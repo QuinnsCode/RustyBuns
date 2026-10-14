@@ -143,3 +143,19 @@ describe("fail closed without BETTER_AUTH_SECRET", () => {
     }
   });
 });
+
+describe("agent- handles from the cs_user cookie (#1455)", () => {
+  test("hosted refuses one, so a cookie can't join every repo running that agent; local still acts as it", async () => {
+    const call = await local();
+    const user = async () => ((await (await call("agent-a", "/api/session")).json()) as { user: string | null }).user;
+    expect(await user()).toBe("agent-a");
+    const was = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { value: { userAgent: "Cloudflare-Workers" }, configurable: true });
+    try {
+      expect(await user()).toBeNull();
+    } finally {
+      if (was) Object.defineProperty(globalThis, "navigator", was);
+    }
+    expect(await user()).toBe("agent-a");
+  });
+});
