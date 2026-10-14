@@ -609,9 +609,9 @@ Run on 2026-10-14: 51 promises held, 321 tests, and every stress rule and faked 
 - A private repo is a 404 to everyone outside its crew, in search, feeds and follows too.
   `test/codesplitter.test.ts`: "private repos are invisible to everyone else, in search too"; `test/follows.test.ts`: "a private repo only its crew can follow, and only its crew sees in a list".
 - Private lines in a public repo reach the crew only; git, search and everyone else get them blank, and a crew remote gets their text.
-  `test/codesplitter.test.ts`: "private lines in a public repo: the crew reads them, everyone else, git and search get them blank".
+  `test/codesplitter-github.test.ts`: "private lines in a public repo: the crew reads them, everyone else, git and search get them blank".
 - A shared link shows the lines it names and nothing else.
-  `test/codesplitter.test.ts`: "share a few lines of a private repo: live, following the lines, nothing else leaks".
+  `test/codesplitter-github.test.ts`: "share a few lines of a private repo: live, following the lines, nothing else leaks".
 - A `cst_` token is stored as a SHA-256 hash, shown once, always expires, and a read token only reads.
   `test/tokens.test.ts`: "a token acts as its owner, shows once, and is stored only as a hash"; `test/tokens.test.ts`: "read tokens only GET; write tokens do what their owner can".
 - No token is ever an admin, and none can make tokens, sign in, or touch the account: a leaked one can't outlive itself.
@@ -625,7 +625,7 @@ Run on 2026-10-14: 51 promises held, 321 tests, and every stress rule and faked 
 - An agent's edit is blamed on the agent, by the server, so authorship can't be forged.
   `test/agent.test.ts`: "an agent's edit lands as line ops, attributed to the agent".
 - A branch that touches build or deploy files says so, and a merge that would ship waits for a person to read them.
-  `test/codesplitter.test.ts`: "a branch that changes build or deploy files says so, and a merge that would ship waits for the owner to read it".
+  `test/codesplitter-github.test.ts`: "a branch that changes build or deploy files says so, and a merge that would ship waits for the owner to read it".
 - Every change to who can get in is in an append-only audit log: tokens, crew, invites, visibility, webhooks, deploy keys, repo deletes.
   `test/audit.test.ts`: "logs who changed tokens, the crew, invites, visibility and hooks, for the owner and on your tokens page".
 - A webhook never reaches a private, loopback or link-local address, and every delivery is signed.
@@ -652,7 +652,7 @@ Run on 2026-10-14: 51 promises held, 321 tests, and every stress rule and faked 
 - A check on the desktop or a runner keeps only `PATH` and the locale: no logins, its own `HOME`, and git never asks the keychain.
   `test/check-env.test.ts`: "a check keeps only PATH and the locale: no logins, its own HOME and TMPDIR, the owner's package caches (#1010)"; `test/check-env.test.ts`: "git under a check's empty HOME never asks the keychain: macOS would pop Keychain Not Found".
 - The dependency doctor's test clone runs the repo's checks beside it in a container with no secrets, and what fails goes on no branch.
-  `test/deploy-hosted.test.ts`: "with no tester, the repo's checks run on the same files alongside, in a container with no secrets; the branch waits for both (#1294)"; `test/deploy-hosted.test.ts`: "what fails the repo's checks doesn't deploy, and goes on no branch (#1294)".
+  `test/deploy-hosted-review.test.ts`: "with no tester, the repo's checks run on the same files alongside, in a container with no secrets; the branch waits for both (#1294)"; `test/deploy-hosted-review.test.ts`: "what fails the repo's checks doesn't deploy, and goes on no branch (#1294)".
 
 **Your provisioning.** A deploy key is the most dangerous thing you give us.
 
@@ -665,9 +665,9 @@ Run on 2026-10-14: 51 promises held, 321 tests, and every stress rule and faked 
 - It's unsealed only into one run's own container, and scrubbed from that run's log, even split across two pieces of the stream.
   `test/deploy-hosted.test.ts`: "needs a key; then runs in its own container with the key in its env, hidden from the log"; `test/deploy-hosted.test.ts`: "a step's output shows while it runs, with a key split across two pieces still hidden"; `test/deploy-hosted.test.ts`: "Railway and Hetzner keys go into the container's env for a box target, hidden from the log like Cloudflare's".
 - Only the owner's own code ships, or code the owner read and approved: a crew or agent commit holds the deploy, hosted or desktop.
-  `test/deploy-hosted.test.ts`: "the owner's own commit ships when they turned it on; crew commits never do"; `test/deploy-hosted.test.ts`: "a crew commit holds the deploy, keys sealed, until the owner approves the diff at that tip"; `test/deploy.test.ts`: "a crew commit holds a desktop deploy until the owner approves the diff at that tip".
+  `test/deploy-hosted.test.ts`: "the owner's own commit ships when they turned it on; crew commits never do"; `test/deploy-hosted-review.test.ts`: "a crew commit holds the deploy, keys sealed, until the owner approves the diff at that tip"; `test/deploy.test.ts`: "a crew commit holds a desktop deploy until the owner approves the diff at that tip".
 - The runner checks again before it unseals the keys, and won't deploy a clone of any other commit than the one it checked.
-  `test/deploy-hosted.test.ts`: "the runner checks again before it unseals the keys, and won't deploy a clone of another commit"; `test/deploy.test.ts`: "a desktop deploy won't run a clone of another commit than the one it checked".
+  `test/deploy-hosted-review.test.ts`: "the runner checks again before it unseals the keys, and won't deploy a clone of another commit"; `test/deploy.test.ts`: "a desktop deploy won't run a clone of another commit than the one it checked".
 - One deploy per repo at a time, 13 minutes each, and a run out of time fails and still cleans up.
   `test/deploy.test.ts`: "a commit while a deploy runs ships once more afterwards; a second press is refused"; `test/deploy-hosted.test.ts`: "each command gets what's left of the run's time; a run out of time fails and still cleans up".
 - A stack that adopts live resources ships only once the owner says it's production.
@@ -682,21 +682,21 @@ Run on 2026-10-14: 51 promises held, 321 tests, and every stress rule and faked 
 | Delete | What goes | What stays | Proved by |
 | --- | --- | --- | --- |
 | `DELETE /api/me` | Your account, every repo you own with its files, branches, git and Artifacts, your tokens, grants, sessions and audit rows; your OAuth logins are revoked at GitHub and Google first. | Lines and branches you made in other people's repos, under your handle, which is retired so nobody can pass as you. With `scrub=1`, or an admin's scrub later, `@ghost` takes its place. | `test/privacy.test.ts`: "deleting asks for the handle, then buries the account and retires the handle"; `test/privacy.test.ts`: "the Better Auth rows go, the handle is retired, and the old cookie is no one"; `test/privacy.test.ts`: "deleting the account revokes them at GitHub and Google, before the tokens go"; `test/privacy.test.ts`: "asked for at the delete, @ghost takes its place on lines, ops, commits and branches"; `test/privacy.test.ts`: "a token can't export or delete; only the person can" |
-| `DELETE /api/repos/:o/:r` | Rows, files, branches, cuts, shares, follows and git. GitHub never hears. | The repo's audit trail, for its owner, until the account goes. | `test/codesplitter.test.ts`: "the owner deletes a repo, once its name is typed back: rows, files, branches, cuts, shares and git"; `test/audit.test.ts`: "a deleted repo's trail stays for its owner; erasing the account takes it"; `test/follows.test.ts`: "deleting a repo drops its follows; deleting an account drops theirs and of them" |
+| `DELETE /api/repos/:o/:r` | Rows, files, branches, cuts, shares, follows and git. GitHub never hears. | The repo's audit trail, for its owner, until the account goes. | `test/codesplitter-github.test.ts`: "the owner deletes a repo, once its name is typed back: rows, files, branches, cuts, shares and git"; `test/audit.test.ts`: "a deleted repo's trail stays for its owner; erasing the account takes it"; `test/follows.test.ts`: "deleting a repo drops its follows; deleting an account drops theirs and of them" |
 | `DELETE /api/tokens/:id` | The token: its next request is a 401. | The audit row that says it was made and revoked. | `test/tokens.test.ts`: "a bad, revoked or expired token is a 401, never signed out or the cookie's" |
 | `DELETE /api/oauth/grants/:id` | The app's grant and every token under it, at once. | | `test/oauth.test.ts`: "you see your apps on your profile and sign them out; revoke ends a grant too" |
 | `DELETE /api/repos/:o/:r/deploy/key[/:provider]` | The sealed key. A run already queued fails instead of deploying. | The audit row, without the key. | `test/deploy-hosted.test.ts`: "a removed key fails the run instead of deploying" |
 | `POST /api/repos/:o/:r/agents/stop` | The agent's process or container, its claim on the lines, and anything it left. | Its run, marked stopped. | `test/agent-routes.test.ts`: "Stop kills a running agent: nothing it left lands, its claim is lifted, and it shows as stopped"; `test/sandbox.test.ts`: "Stop on a hosted run: the run sees it in D1 and destroys its container, and nothing lands" |
-| A preview stage | The stage's Worker, once its checks ran. A destroy that fails keeps the stage's state sealed and a later alarm destroys it in a fresh container, backing off between tries. | | `test/deploy-hosted.test.ts`: "a failed destroy keeps the stage's state sealed; a later alarm destroys it in a fresh container, then drops it (#1299)" |
+| A preview stage | The stage's Worker, once its checks ran. A destroy that fails keeps the stage's state sealed and a later alarm destroys it in a fresh container, backing off between tries. | | `test/deploy-hosted-review.test.ts`: "a failed destroy keeps the stage's state sealed; a later alarm destroys it in a fresh container, then drops it (#1299)" |
 | `DELETE /api/repos/:o/:r/collaborators/:name` | Their seat, and an agent's token for this repo. | The lines they wrote, under their name. | `test/invites.test.ts`: "an agent's token reaches its repo only, can't show private lines again, and goes when it leaves the crew (#645)" |
 | `DELETE /api/repos/:o/:r/invites/:id` | The pending invite. | A claimed one's row, without its token. | `test/invites.test.ts`: "only the owner invites; invites expire and can be revoked" |
 | `DELETE /api/repos/:o/:r/checks/tokens/:id` | The CI token. | Its audit row. | `test/gh-compat.test.ts`: "CI tokens: the owner's to make, list and revoke; the secret shows once" |
 | `DELETE /api/repos/:o/:r/hooks/:id` | The webhook and its secret. | Its deliveries' log, and its audit row. | `test/hooks.test.ts`: "only the owner manages hooks; the secret is shown once" |
-| `DELETE /api/repos/:o/:r/branches/:b/files` | The file on that branch; merging deletes it from main and its git. | The file on main until the merge. | `test/codesplitter.test.ts`: "a branch deletes a file, and merging deletes it from main and its git (#440)" |
+| `DELETE /api/repos/:o/:r/branches/:b/files` | The file on that branch; merging deletes it from main and its git. | The file on main until the merge. | `test/codesplitter-github.test.ts`: "a branch deletes a file, and merging deletes it from main and its git (#440)" |
 | `DELETE /api/repos/:o/:r/worktrees/:name` | The worktree, changes and all; never main itself. | Its branch, in git. | `test/worktrees.test.ts`: "the worktrees route: owner only, never main itself, and a run's goes when it's removed" |
 | `DELETE /api/repos/:o/:r/fresh` | The old git a fresh start moved off, once you ask. | The fresh Artifact. | `test/fresh.test.ts`: "moves git to a new Artifact with the same files as one commit, and keeps the old" |
 | `DELETE /api/repos/:o/:r/tags/:name` | The tag here. | A mirror's upstream tag. | `test/mirror-pushes.test.ts`: "tags: fetched from upstream on asking, made and deleted here, pushed up, never clobbered (#879)" |
-| `DELETE /api/shares/:id` | The share link. | The lines. | `test/codesplitter.test.ts`: "share a few lines of a private repo: live, following the lines, nothing else leaks" |
+| `DELETE /api/shares/:id` | The share link. | The lines. | `test/codesplitter-github.test.ts`: "share a few lines of a private repo: live, following the lines, nothing else leaks" |
 | `DELETE /api/beams/:id` | The beam's commit ref. | The branch it came from. | `test/beam.test.ts`: "squashes the stack onto main without its noise, keeps it under refs/beams, and hands over a patch that applies" |
 | `DELETE /api/repos/:o/:r/stamps` | Your stamp on that line. | | `test/stamps.test.ts`: "a stamp goes on a line, an agent's too, and follows it by id through edits" |
 | `DELETE /api/follows/:id` | The follow, by the follower only. | | `test/follows.test.ts`: "unfollow is the follower's alone" |
