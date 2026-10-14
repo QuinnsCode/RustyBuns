@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { report, triage } from "../scripts/ester.ts";
+import { hold, report, triage } from "../scripts/ester.ts";
 import type { Stage } from "../scripts/mervin-board.ts";
 
 const stage = (pr: number, path: string, ci?: Stage["ci"], failing?: string[]): Stage => ({ pr, head: "h", base: "b", ci, failing, files: [{ path, tier: "certain", why: "", after: [] }] });
@@ -22,7 +22,13 @@ describe("ester", () => {
   test("without a rerun nothing is called flaky, and the report leaves main's failures out", () => {
     expect(triage(["apps/a: t5"], stages, new Set())[0]!.owner).toBe("blocks");
     const lines = report(vs);
-    expect(lines[0]).toContain("5 failing, 1 not the board's, 1 flaky, 1 a PR's own red, 2 block Mervin");
+    expect(lines[0]).toContain("5 failing, 1 not the board's, 1 flaky, 1 a PR's own red, 0 waiting on CI, 2 block Mervin");
     expect(lines.join("\n")).not.toContain("apps/d: t4");
+  });
+
+  test("a PR whose CI is still pending is waited on, and every culprit PR is held", () => {
+    const w = triage(["apps/e: t"], [stage(7, "apps/e/q.ts", "pending")], new Set());
+    expect(w[0]).toMatchObject({ owner: "wait", prs: [7] });
+    expect(hold([...vs, ...w])).toEqual([1, 2, 3, 7]);
   });
 });
