@@ -5,6 +5,8 @@
 //   bun run office:mama -- --port 4700     any args go to the office, as with `bun run office`
 //   bun run office:update -- --watch       the same, after a pull (see update.ts)
 //
+// She also watches this app's own source: a change rebuilds ./office while it runs, open pages refresh themselves,
+// and a server change makes the office say it needs a restart, with a Restart button (reload/, live/reload.ts).
 // Every few seconds she looks at the bun binary, the lockfile and the pinned release. When one of them moved
 // (a `bun upgrade`, a `bun install`, a pull), she rebuilds ./office while the old office keeps serving. A failed
 // build leaves the old office running. A good one gets the old office a SIGTERM, which upstream treats as a
@@ -37,6 +39,12 @@ export function fingerprint(files: string[]) {
   return files.map((f) => (existsSync(f) ? `${f}:${statSync(f).size}:${statSync(f).mtimeMs}` : `${f}:-`)).join("\n");
 }
 
+/** Our own source, which the office is built from: what a rebuild picks up (page scripts, the skin, the server bundles). */
+export function sources(dir = root) {
+  const skip = /^(office|node_modules|dist|\.cache|test|bench)\//;
+  return [...new Bun.Glob("**/*.{ts,js,json}").scanSync({ cwd: dir })].filter((f) => !skip.test(f)).sort().map((f) => path.join(dir, f));
+}
+
 /** How long to wait before starting the office again, after `crashes` quick deaths in a row: 1s, 2s, 4s… up to 30s. */
 export const backoff = (crashes: number) => Math.min(30_000, 1000 * 2 ** Math.max(0, crashes - 1));
 
@@ -53,7 +61,7 @@ export function watch(args: string[]) {
 
   const start = () => {
     const born = Date.now();
-    const child = Bun.spawn(["bun", path.join(root, "office/bin/agent-office.js"), ...args], { cwd: root, stdio: ["inherit", "inherit", "inherit"] });
+    const child = Bun.spawn(["bun", path.join(root, "office/bin/agent-office.js"), ...args], { cwd: root, stdio: ["inherit", "inherit", "inherit"], env: { ...process.env, AGENT_OFFICE_RB_MAMA: "1" } });
     office = child;
     void child.exited.then((code) => {
       if (stopping || swapping || office !== child) return;
@@ -74,10 +82,25 @@ export function watch(args: string[]) {
   };
 
   let seen = fingerprint(watched());
+  let seenSrc = fingerprint(sources());
   start();
 
   setInterval(async () => {
     if (swapping || stopping) return;
+    const src = fingerprint(sources());
+    if (src !== seenSrc) {
+      // our code changed: rebuild while the office keeps serving. Open pages refresh themselves, and a changed server
+      // bundle makes the office say it needs a restart (live/reload.ts); it isn't swapped here, since that's their call
+      await Bun.sleep(500);
+      if (fingerprint(sources()) !== src) return;
+      swapping = true;
+      console.log("🥐 mama: the code changed; rebuilding (open pages refresh, server changes ask for a restart)");
+      if (!build()) console.log("🥐 mama: that build failed, so the office keeps what it has. Fix it and save; she'll try again.");
+      seenSrc = fingerprint(sources());
+      seen = fingerprint(watched());
+      swapping = false;
+      return;
+    }
     const now = fingerprint(watched());
     if (now === seen) return;
     // let a bun install or upgrade finish writing before building on it
@@ -95,6 +118,7 @@ export function watch(args: string[]) {
     }
     // taken after the build, so anything the build itself touched doesn't count as another change
     seen = fingerprint(watched());
+    seenSrc = fingerprint(sources());
     swapping = false;
   }, POLL_MS);
 
