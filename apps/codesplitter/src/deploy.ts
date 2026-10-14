@@ -31,14 +31,16 @@
 //   GET  /api/repos/:o/:r/deploy   settings, the run going now, the last 20 deploys (owner only)
 //   PUT  /api/repos/:o/:r/deploy   {stage, dir, on_commit, production}
 //   POST /api/repos/:o/:r/deploy   ship it now; {approve: sha}: approve main up to sha (its tip) first;
+//                                  by cookie only; a diff cut short needs {approve_unseen: true} too;
 //                                  {allow_delete: true} / {force: true}: the CLI's --allow-delete / --force, for this deploy only
 //   GET  /api/repos/:o/:r/deploy/review   what a deploy waits on, with the diff since the last approval
 //   .../deploy/key[/:provider]     the stored deploy keys (deploy-keys.ts)
 
 import { access as artifactAccess, handleFor } from "./archive.ts";
 import { json, readBody, type Env } from "./env.ts";
+import { byToken } from "./tokens.ts";
 import { deployKeyRoutes, hostedWhy, keysInfo } from "./deploy-keys.ts";
-import { approve, diff, isCleared, review, waitingNote, type Review } from "./deploy-review.ts";
+import { approve, cutShort, diff, isCleared, review, waitingNote, type Review } from "./deploy-review.ts";
 import { emit } from "./hooks.ts";
 import { dirState, history, logEnd, logStart, preview, runnerFor, type Run, type StepKey } from "./preview.ts";
 import { repoRow } from "./repos.ts";
@@ -100,10 +102,13 @@ type Started = { run?: Run; queued?: boolean; error?: string; status?: number; r
 const shown = ({ tip, base, commits, more }: Review) => ({ tip, base, commits, more, cleared: isCleared({ tip, base, commits, more }) });
 
 /** Approve main up to `approved` if that's still its tip; then the tip to deploy, or why the deploy waits. */
-async function gate(env: Env, owner: string, repo: string, approved?: string): Promise<{ tip: string } | (Started & { error: string })> {
+async function gate(env: Env, owner: string, repo: string, approved?: string, unseen = false): Promise<{ tip: string } | (Started & { error: string })> {
   let r = await review(env, owner, repo);
   if (approved && !isCleared(r)) {
     if (approved !== r.tip) return { error: "main moved since you read it: read the diff again", status: 409, review: shown(r) };
+    // Approving says the diff was read: when part of it was cut short, that takes saying so.
+    const cut = !unseen && r.handle && r.tip ? cutShort(r, await diff(r.handle, r.base, r.tip)) : null;
+    if (cut) return { error: `the diff was cut short (${cut}): read the rest in the repo, then approve with approve_unseen: true`, status: 409, review: shown(r) };
     await approve(env, owner, repo, approved);
     r = await review(env, owner, repo);
   }
@@ -115,7 +120,7 @@ async function gate(env: Env, owner: string, repo: string, approved?: string): P
  * desktop it runs here with this machine's logins; on the site it runs in its
  * own container with the repo's stored deploy key (deploy-runner.ts).
  */
-async function start(env: Env, owner: string, repo: string, by: string, trigger: "button" | "commit", approved?: string, flags: DeployFlags = {}): Promise<Started> {
+async function start(env: Env, owner: string, repo: string, by: string, trigger: "button" | "commit", approved?: string, flags: DeployFlags = {}, unseen = false): Promise<Started> {
   const runner = runnerFor(env);
   if (!runner) {
     if (!env.DEPLOY_RUNNER) return { error: "deploys run on the desktop app, with your own logins", status: 400 };
@@ -123,7 +128,7 @@ async function start(env: Env, owner: string, repo: string, by: string, trigger:
     if (why) return { error: why, status: 403 };
     if (!Object.values(await keysInfo(env, owner, repo)).some((k) => k.set)) return { error: "set a deploy key first", status: 400 };
     // The runner checks again before it unseals the keys; this answers the panel with what's waiting.
-    const held = await gate(env, owner, repo, approved);
+    const held = await gate(env, owner, repo, approved, unseen);
     if ("error" in held) return held;
     const res = await hostedStub(env, owner, repo).fetch(new Request("http://deploy/start", { method: "POST", body: JSON.stringify({ owner, repo, by, trigger, ...flags }) }));
     return (await res.json()) as Started;
@@ -136,7 +141,7 @@ async function start(env: Env, owner: string, repo: string, by: string, trigger:
   }
   const remote = await remoteFor(env, owner, repo);
   if (!remote) return { error: "this repo has no git remote yet: commit its files first", status: 400 };
-  const held = await gate(env, owner, repo, approved);
+  const held = await gate(env, owner, repo, approved, unseen);
   if ("error" in held) return held;
   const { run, production, dir } = await begin(env, owner, repo, by, trigger, "desktop");
   const entry: { run: Run; again?: string } = { run };
@@ -199,8 +204,10 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
     return json(await settings(env, owner, repo));
   }
   if (req.method === "POST") {
-    const { approve: sha, allow_delete, force } = await readBody<"approve" | "allow_delete" | "force">(req);
-    const r = await start(env, owner, repo, user, "button", typeof sha === "string" ? sha : undefined, { ...(allow_delete === true && { allowDelete: true }), ...(force === true && { force: true }) });
+    const { approve: sha, approve_unseen, allow_delete, force } = await readBody<"approve" | "approve_unseen" | "allow_delete" | "force">(req);
+    // An approval is a person reading the diff: a token (a prompt-injected agent may hold one) can't give it.
+    if (sha !== undefined && byToken(req)) return json({ error: "API tokens can't approve a deploy: approve it in the Deploy panel, signed in on the site" }, 403);
+    const r = await start(env, owner, repo, user, "button", typeof sha === "string" ? sha : undefined, { ...(allow_delete === true && { allowDelete: true }), ...(force === true && { force: true }) }, approve_unseen === true);
     return r.error ? json({ error: r.error, ...(r.review && { review: r.review }) }, r.status ?? (r.error.includes("already") ? 409 : 400)) : json({ run: r.run }, 202);
   }
   return null;

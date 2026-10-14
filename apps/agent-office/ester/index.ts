@@ -6,10 +6,10 @@ import { Skull, GitMerge, Scissors, createElement, type IconNode } from "lucide"
 import type { EsterState } from "./run.ts";
 
 type Name = "ester" | "mervin" | "dexter";
-const WHO: Record<Name, { label: string; icon: IconNode; ask: string }> = {
-  ester: { label: "Ester", icon: Skull, ask: "Run the board check and sort what fails" },
-  mervin: { label: "Mervin", icon: GitMerge, ask: "List the open PRs and how they merge" },
-  dexter: { label: "Dexter", icon: Scissors, ask: "Find where the tokens go and what to trim" },
+const WHO: Record<Name, { label: string; icon: IconNode; ask: string; job: string }> = {
+  ester: { label: "Ester", icon: Skull, ask: "Run the board check and sort what fails", job: "Testing: unclogs the test line by saying who owns each failing test." },
+  mervin: { label: "Mervin", icon: GitMerge, ask: "List the open PRs and how they merge", job: "Merging: guards the merge line, and won't merge what Ester says to hold." },
+  dexter: { label: "Dexter", icon: Scissors, ask: "Find where the tokens go and what to trim", job: "Tokens: names the tools whose output cost the most; never tests or merges." },
 };
 const HEADER = { "x-rb-triage": "1" };
 const IDLE: EsterState = { phase: "idle", lines: [], hold: [] };
@@ -38,6 +38,7 @@ function mount() {
     ".rb-helper-card{width:min(420px,calc(100vw - 24px));background:#fffdf7;color:#222;border:2px solid #e8a33d;border-radius:10px;padding:10px 12px;box-shadow:0 6px 20px #0004}" +
     ".rb-helper-head{display:flex;align-items:center;gap:8px;font-weight:600}.rb-helper-head span:first-child{flex:1}" +
     ".rb-helper-clock{font-variant-numeric:tabular-nums;min-width:4ch;text-align:right}" +
+    ".rb-helper-job{font-size:12px;opacity:.75;margin-top:2px}" +
     ".rb-helper-log{margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere;max-height:12em;overflow:auto;font:12px/1.35 ui-monospace,monospace}" +
     ".rb-helper-card button{border:0;border-radius:6px;padding:6px 14px;font:inherit;font-weight:600;background:#2f8f46;color:#fff;cursor:pointer}" +
     ".rb-helper-card button:disabled{opacity:.5;cursor:default}";
@@ -68,6 +69,7 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
     const held = open === "mervin" && states.ester.hold.length ? `Ester says hold ${states.ester.hold.map((n) => `#${n}`).join(", ")}: don't merge ${states.ester.hold.length > 1 ? "them" : "it"} yet.\n` : "";
     card = el("div", { className: "rb-helper-card" },
       el("div", { className: "rb-helper-head" }, el("span", {}, `${who.label}: ${s.phase === "idle" ? who.ask : s.phase}`), el("span", { className: "rb-helper-clock" }, s.startedAt ? clock(s) : "")),
+      el("div", { className: "rb-helper-job" }, who.job),
       el("div", { className: "rb-helper-log" }, held + (s.error ? s.error + "\n" : "") + s.lines.slice(-40).join("\n")),
       go);
     m.box.prepend(card);

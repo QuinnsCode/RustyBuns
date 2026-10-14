@@ -5,7 +5,7 @@
 
 import { rankOf } from "./policy.ts";
 import { fromText } from "./lines.ts";
-import { mainClosed, protectRoute } from "./protect.ts";
+import { mainClosed, policyClosed, protectRoute } from "./protect.ts";
 import {
   ensureCrewRemote,
   fileStub,
@@ -129,6 +129,9 @@ import { resealRoutes } from "./deploy-keys.ts";
 import { repoFit } from "./fit.ts";
 import { gitState } from "./git-state.ts";
 import { commitGraph, GRAPH_MAX, sharedGraph } from "./graph.ts";
+
+/** A share link's read token: a day unless asked, a week at most. */
+const SHARE_DEFAULT_S = 86400, SHARE_MAX_S = 7 * 86400;
 import { watchdogRoutes } from "./watchdog.ts";
 import { busiestFiles, fileHistory } from "./gitpath-data.ts";
 import { joinHistory, upstreamBusiest, upstreamFileHistory, type UpstreamRepo } from "./gitpath-upstream.ts";
@@ -409,6 +412,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET|PUT /api/me
   if (p[1] === "me") {
     if (!user) return json({ error: "sign in first" }, 401);
+    let warning: string | undefined;
     if (req.method === "PUT") {
       // Only what's sent changes, so turning the pulse off leaves the bio be.
       const b = await body<"bio" | "theme_html" | "pulse" | "git_truth" | "avatar" | "share_usage">();
@@ -423,9 +427,11 @@ async function route(req: Request, env: Env): Promise<Response> {
         .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, avatar === null ? null : avatar === "" ? "" : JSON.stringify(avatar), b.share_usage === undefined ? null : b.share_usage ? 1 : 0, user).run();
       // Saying no (or changing your mind) takes back what was shared (usage.ts).
       if (b.share_usage === false) await forget(env, user).run();
+      // A public page repo wins over the saved theme_html, so saving it would otherwise change nothing you can see.
+      if (b.theme_html && await hasPage(env, user)) warning = "theme_html saved, but your public page repo is shown instead; edit the repo's index.html, or make the repo private";
     }
     // ask_usage: a private-repo owner who hasn't answered yet gets the "help improve" modal (usage.ts).
-    return json({ ...(await env.DB.prepare("SELECT * FROM users WHERE name = ?").bind(user).first()), ask_usage: await askUsage(env, user) });
+    return json({ ...(await env.DB.prepare("SELECT * FROM users WHERE name = ?").bind(user).first()), ask_usage: await askUsage(env, user), ...(warning && { warning }) });
   }
 
   // GET /api/users/:name/(pulse|pulse.png|share) and /api/pulse: heartbeats (pulse.ts)
@@ -530,6 +536,16 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (p[4] === "git-state" && req.method === "GET") return json(await gitState(env, owner, repo));
     // GET /api/repos/:o/:r/fit[?dir=apps/web]  how easily Rusty Buns could box it, or one app in it
     if (p[4] === "fit" && req.method === "GET") return repoFit(env, (r) => app.fetch(r, env), url.origin, owner, repo, user, url.searchParams.get("dir") ?? "");
+    // GET /api/repos/:o/:r/share[?branch=&ttl=]  a git clone line with a read token that lasts ttl seconds (a day by default, a week at most), to hand to someone
+    if (p[4] === "share" && !p[5] && req.method === "GET") {
+      const branch = url.searchParams.get("branch");
+      if (branch && !/^[\w][\w./-]*$/.test(branch)) return json({ error: "that isn't a branch name" }, 400);
+      const ttl = Math.max(60, Math.min(SHARE_MAX_S, Math.floor(Number(url.searchParams.get("ttl"))) || SHARE_DEFAULT_S));
+      const h = await handleFor(env, owner, repo).catch(() => null);
+      if (!h) return json({ error: "this repo has no git to share" }, 409);
+      const art = await artifactAccess(h.handle, h.remote, "read", ttl);
+      return json({ command: `git clone${branch ? ` -b ${branch}` : ""} ${art.remote.replace("://", `://x:${art.token.split("?")[0]}@`)} ${repo}`, ttl, expiresAt: Date.now() + ttl * 1000, ...(branch && { branch }) });
+    }
     // GET /api/repos/:o/:r/graph[?limit=60]  main's commits, newest first, with the branches merged into them, each upstream's or this copy's
     if (p[4] === "graph" && !p[5] && req.method === "GET") {
       const r = await repoRow(env, owner, repo, "upstream_commit");
@@ -697,7 +713,7 @@ async function route(req: Request, env: Env): Promise<Response> {
         if (!(await openBranch(env, owner, repo, branch))) return json({ error: "no open branch " + branch }, 404);
         return createOn(env, owner, repo, branch, path, content, user!);
       }
-      const closed = await mainClosed(env, owner, repo, user);
+      const closed = policyClosed(owner, path, user) ?? await mainClosed(env, owner, repo, user);
       if (closed) return closed;
       const r = await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, path).run();
       if (!r.meta?.changes) return json({ error: "file exists" }, 409);
@@ -716,6 +732,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       const writes = p[5] === "ops" || p[5] === "commit" || ((p[5] === "private" || p[5] === "claims" || p[5] === "release") && req.method === "POST");
       if (writes && !a.write) return json({ error: "no write access" }, 403);
       if (writes && !branch) { const closed = await mainClosed(env, owner, repo, user); if (closed) return closed; }
+      if ((writes || p[5] === "ws") && !branch && a.write) { const closed = policyClosed(owner, path, user); if (closed) return closed; }
       // On the desktop, a push to the repo's git from outside reaches main's files when they're opened or
       // committed, so a commit here never writes their old lines back over it (#773).
       if (!branch && (p[5] === "commit" || (p[5] === "file" && req.method === "GET")) && mirrorsOn(env)) await landPushes(env, owner, repo).catch(() => {});

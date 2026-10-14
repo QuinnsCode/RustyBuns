@@ -49,6 +49,7 @@
 
 import { protectOn } from "./protect.ts";
 import { json, type Env, readBody } from "./env.ts";
+import { byToken } from "./tokens.ts";
 import { charge, every, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
 import { HARNESSES, RUNS_COMMANDS, harnessCommand, type Harness } from "./harness.ts";
@@ -65,6 +66,7 @@ import type { Busy } from "./merge-plan.ts";
 import { MERVIN } from "./mervin.ts";
 import { readStats } from "./stats.ts";
 import { engineLines, type Engine } from "./heal.ts";
+import { isBuildFile } from "./buildfiles.ts";
 
 export interface Run {
   id: number;
@@ -222,6 +224,8 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
     // The crew can put a batch off (look) or stop its clock (hold); landing or binning it is the owner's.
     const crewMay = review && (p[6] === "look" || p[6] === "hold");
     if (crewMay ? !a.write : user !== owner) return json({ error: crewMay ? "only the repo's crew can hold or look at an agent's batch" : "only the repo's owner can stop, tell, accept or reject its coding agents" }, 403);
+    // An accept is a person reading the batch (it lands build files): a token can't give it.
+    if (review && p[6] === "accept" && byToken(req)) return json({ error: "API tokens can't accept a batch: accept it on the site, signed in" }, 403);
     if (review) return reviewRun(env, self, url.origin, owner, repo, Number(p[5]), p[6]!, user!);
     return stop ? stopRuns(req, env, owner, repo, user!, caller(self, url.origin)) : tell(req, env, owner, repo, Number(p[5]));
   }
@@ -589,7 +593,11 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     // A rebuild that ended with both sides on its branch takes it upstream, so its pull request stops clashing (#1226).
     // It goes while the run still says running, so a sync takes main in for it meanwhile (takeMainUpstream) leaves it be.
     // One handed off waits for whoever took over.
-    const pushed = rebuild && row.branch && !handoff && !signal.aborted ? await pushRebuilt(env, owner, repo, row.branch) : undefined;
+    // One that edited a file that runs at build time (.github/workflows/*, a lockfile) waits for a person: a push runs it with the repo's secrets.
+    const build = [path, ...(r.edited ?? [])].filter(isBuildFile);
+    const pushed = rebuild && row.branch && !handoff && !signal.aborted
+      ? build.length ? { ok: false, error: `left for a person: the task edited ${[...new Set(build)].join(", ")}, which run at build time. Review the branch, then push it` } : await pushRebuilt(env, owner, repo, row.branch)
+      : undefined;
     const done = await finish(env, id, "done", { ...extra, ...(engine.length && { engine }), ...(pushed && { pushed }), applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), spent: r.spent, ...(r.edited && { edited: r.edited }), ...(pending ? { pending } : {}), ...(handoff && { handoff }) });
     // Stopped just as it ended: nothing waits.
     if (pending?.until && done.meta?.changes) await landLater(env, id, origin, wait);

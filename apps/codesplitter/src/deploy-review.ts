@@ -85,7 +85,8 @@ export async function review(env: Env, owner: string, repo: string): Promise<Rev
   return { tip, base, commits, more, handle: h.handle };
 }
 
-export interface FileDiff { path: string; lines: string[]; note?: string }
+/** `cut`: the person sees less than the file holds (lines past the cap, or binary or too big to show). */
+export interface FileDiff { path: string; lines: string[]; note?: string; cut?: true }
 
 const MAX_FILES = 40, MAX_FILE_LINES = 200, MAX_BYTES = 256 * 1024, CONTEXT = 2;
 
@@ -116,12 +117,20 @@ export async function diff(handle: ArtifactsRepo, base: string | null, tip: stri
       if (!xf && !yf) continue;
       const [then, now] = await Promise.all([blob(xf), blob(yf)]);
       const d = then.note || now.note ? [] : textDiff(then.text ?? "", now.text ?? "");
+      const cut = !!(then.note || now.note) || d.length > MAX_FILE_LINES;
       const note = [!xf && "new file", !yf && "deleted", then.note ?? now.note, d.length > MAX_FILE_LINES && `${d.length - MAX_FILE_LINES} more lines`].filter(Boolean).join(", ");
-      if (d.length || note) files.push({ path, lines: d.slice(0, MAX_FILE_LINES), ...(note && { note }) });
+      if (d.length || note) files.push({ path, lines: d.slice(0, MAX_FILE_LINES), ...(note && { note }), ...(cut && { cut: true as const }) });
     }
   };
   await walk(await treeOf(base), await treeOf(tip), "");
   return { files, more };
+}
+
+/** Why reading the diff isn't reading all of it, or null when it is: the history walk or the file list stopped short, or a file was cut. */
+export function cutShort(r: Review, d: { files: FileDiff[]; more: boolean }): string | null {
+  const cut = d.files.filter((f) => f.cut).map((f) => f.path);
+  const why = [r.more && "the history goes back further than the review walks", d.more && `more than ${MAX_FILES} files changed`, cut.length && `${cut.length} file${cut.length === 1 ? " is" : "s are"} cut short, binary or too big to show (${cut.slice(0, 3).join(", ")}${cut.length > 3 ? ", ..." : ""})`].filter(Boolean);
+  return why.length ? why.join("; ") : null;
 }
 
 /** A line diff a person reads: `- ` taken out, `+ ` put in, `  ` context, `@@ n` where a hunk starts in the new text. */
