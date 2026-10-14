@@ -196,6 +196,7 @@ import {
   searchRoutes,
 } from "./search.ts";
 import { pulseRoutes } from "./pulse.ts";
+import { hasPage, pageRoutes } from "./page.ts";
 import { seenRoutes } from "./seen.ts";
 import { agentPromptResponse } from "./agent-prompt.ts";
 import { installScript } from "./install.ts";
@@ -386,6 +387,11 @@ async function route(req: Request, env: Env): Promise<Response> {
   const privacy = await privacyRoutes(req, env, p, url, user, !token && !actingAs.has(req));
   if (privacy) return privacy;
 
+  // POST /api/me/page/revert {to}  put the page back an hour, or to the starter (page.ts)
+  // GET /api/users/:name/page[/path]  the profile's page, served as a sandboxed site (page.ts)
+  const page = await pageRoutes(req, env, p, user);
+  if (page) return page;
+
   // GET|PUT /api/me
   if (p[1] === "me") {
     if (!user) return json({ error: "sign in first" }, 401);
@@ -420,7 +426,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     const [given, got, agent] = await Promise.all([recentStamps(env, user, p[2], "by"), recentStamps(env, user, p[2], "author"),
       isAgentHandle(p[2]) ? agentProfile(env, p[2], user) : null]);
     // What it follows in a private repo counts only for that repo's crew.
-    return json({ user: u, repos, playlists, following: (await listFollows(env.DB, p[2], user)).length, followers: await followers(env.DB, p[2]), stamps: { given, got }, ...(agent && { agent }) });
+    return json({ user: u, page: await hasPage(env, p[2], row.theme_html as string | null), repos, playlists, following: (await listFollows(env.DB, p[2], user)).length, followers: await followers(env.DB, p[2]), stamps: { given, got }, ...(agent && { agent }) });
   }
 
   // POST /api/repos {name, visibility}

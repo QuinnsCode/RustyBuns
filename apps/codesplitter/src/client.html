@@ -3385,7 +3385,7 @@ const views = {
   async u(name, open) {
     const mine = name === me();
     const pulseOf = () => api(`/users/${encodeURIComponent(name)}/pulse`).catch(() => null);
-    const [{ user, repos, playlists, following = 0, followers = 0, stamps, agent }, { jobs }, follows, invites, pulse] = await Promise.all([api("/users/" + name), mine ? api("/jobs").catch(() => ({ jobs: [] })) : { jobs: [] }, mine ? api("/me/following").catch(() => []) : [], mine ? api("/invites").catch(() => []) : [], pulseOf()]);
+    const [{ user, page, repos, playlists, following = 0, followers = 0, stamps, agent }, { jobs }, follows, invites, pulse] = await Promise.all([api("/users/" + name), mine ? api("/jobs").catch(() => ({ jobs: [] })) : { jobs: [] }, mine ? api("/me/following").catch(() => []) : [], mine ? api("/invites").catch(() => []) : [], pulseOf()]);
     ctx = { view: "u", name };
     const n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
     const stampRow = (s, who) => `<a href="#/f/${s.owner}/${s.repo}/${encodeURIComponent(s.path)}">${stampFace(s.stamp)}<span>${who} <span class="muted">${esc(s.repo)}/${esc(s.path.split("/").pop())}</span></span><span class="when">${ago(s.created_at)}</span></a>`;
@@ -3403,7 +3403,7 @@ const views = {
         <span class="stat">${agent ? `${n(shown.length, "repo")} · ${n(agent.run_count, "run")} · ${n(agent.lines, "line edit")}` : `${n(repos.length, "repo")} · ${n(playlists.length, "collection")}`} · ${following} following · ${n(followers, "follower")}</span>
         ${followButton({ name, kind: name.startsWith("agent-") ? "agent" : "user" })}
         ${mine ? `<button class="btn ghost" id="editpage">${icon("palette")}Edit page</button>` : ""}</div>
-      ${mine ? `<form id="theme" class="box" hidden><div class="bar">${icon("palette")}<b>Your page</b><span class="muted">any HTML and CSS, rendered in a sandbox (no scripts)</span></div><div class="body" style="display:grid;gap:8px">
+      ${mine ? `<form id="theme" class="box" hidden><div class="bar">${icon("palette")}<b>Your page</b><span class="muted">HTML, CSS and script, in a sandbox with no way into the app. For a whole site, put files in a public repo named <b>page</b> (index.html first)</span></div><div class="body" style="display:grid;gap:8px">
         <input name="bio" placeholder="a line about you" value="${esc(user.bio)}">
         <textarea name="theme_html" rows="5" placeholder="<style>body{background:url(stars.gif)}</style><marquee>welcome 2 my page</marquee>">${esc(user.theme_html)}</textarea>
         <div><button class="btn primary">Save</button></div></div></form>` : ""}
@@ -3419,14 +3419,15 @@ const views = {
         ${jobs.length ? `<div class="box jobs"><div class="bar">${icon("hourglass")}<b>Queued</b><span class="muted">this week's digs, previews and checks that waited in line</span></div>${jobs.map(jobRow).join("")}</div>` : ""}
       </div><aside>
         ${mine ? `${boxTop(true, "tokens", `${icon("plug")}<b>Connect your AI</b><a class="muted" style="font-size:12px" href="/reference">the API</a> · <a class="muted" style="font-size:12px" href="/mcp">MCP</a>`)}<div class="body"><span class="muted">…</span></div></details>` : ""}
-        ${user.theme_html ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page</div><iframe class="theme" sandbox title="${esc(name)}'s page"></iframe></div>` : ""}
+        ${page ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page</div><iframe class="theme" sandbox="allow-scripts allow-popups allow-pointer-lock" src="/api/users/${encodeURIComponent(name)}/page/" title="${esc(name)}'s page"></iframe></div>` : ""}
+        ${mine && !agent ? `<form id="talk" class="box"><div class="bar">${icon("message-circle")}<b>Talk to your page</b><button type="button" class="btn ghost" id="pg-hour" title="Put the page back to how it was an hour ago">${icon("history")}</button><button type="button" class="btn ghost" id="pg-default" title="Put the page back to the starter">${icon("rotate-ccw")}</button></div><div class="body row" style="flex-wrap:nowrap"><input name="say" placeholder="make it a night city, one tower per repo" required autocomplete="off" style="flex:1;min-width:0"><button class="btn primary" title="Send it to your coding agent">${icon("send")}</button></div></form>` : ""}
         ${agent ? "" : `${boxTop(mine, "collections", `${icon("library")}<b>Collections</b>${playlists.length ? `<span class="muted">${playlists.length}</span>` : ""}`)}<div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || (mine ? "" : '<span class="muted">nothing collected yet</span>')}
           ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div>${boxEnd(mine)}`}
         ${mine ? `${boxTop(true, "following", `${icon("eye")}<b>Following</b><span class="muted" title="Follow is on profiles, repos, agent runs, shares and collections">${follows.length || "nobody yet"}</span>`)}<div class="body list">${follows.map(followLink).join("") || '<span class="muted">Follow is on profiles, repos, agent runs, shares and collections.</span>'}</div></details>` : ""}
         ${mine ? truthBox(true) : ""}
         ${mine ? dataBox(true) : ""}
       </aside></div>${cityLink ? `<div class="city-door">${cityLink}</div>` : ""}</div>`;
-    const frame = $("iframe.theme"); if (frame) frame.srcdoc = user.theme_html;
+    if (mine && !agent) pageTalk(name, !!page);
     if (!agent) avatarBox(user, mine, name);
     // The pulse: a week of lines landed, beating while they type. It looks again every 15 seconds while you're here.
     const share = `${location.origin}/api/users/${encodeURIComponent(name)}/share`;
@@ -6977,6 +6978,40 @@ async function guide() {
 const FIXED = { f: 2, r: 2, l: 1, b: 2, health: 2 };
 // Settles when the page has drawn, so an agent's tool call can answer with where it landed.
 let routing = Promise.resolve();
+// Talk to your page: the box on your profile sends what you say to a coding agent working in your repo `page`
+// (its files are the site, see src/page.ts); the two buttons put the page back an hour, or to the starter.
+async function pageTalk(name, has) {
+  const frame = () => $("iframe.theme"), reload = () => { const f = frame(); if (f) f.src = `/api/users/${encodeURIComponent(name)}/page/?t=${Date.now()}`; else route(); };
+  // The repo and a first file for the agent to work on: the starter, when there is no page yet.
+  const ensure = async () => { if (has) return; await api("/repos", { name: "page", visibility: "public" }).catch(() => {}); await api("/me/page/revert", { to: "default" }, "POST"); has = true; };
+  const back = async (to, what) => {
+    try { await ensure(); const r = await api("/me/page/revert", { to }, "POST"); toast(r.changed.length ? `Page back to ${what}` : "Nothing to change"); reload(); }
+    catch (e) { toast(e.message); }
+  };
+  $("#pg-hour").onclick = () => back("hour", "an hour ago");
+  $("#pg-default").onclick = () => back("default", "the starter");
+  $("#talk").onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target, say = f.say.value.trim(), btn = f.querySelector("button.primary");
+    btn.disabled = true;
+    try {
+      const av = await api("/agents");
+      if (!av.available || !av.harnesses?.length) throw new Error(av.why || "No coding agent is set up here: see Connect your AI");
+      await ensure();
+      const task = `You are rebuilding the owner's public profile page. This repo's files are the site (index.html first, text files only), served in a sandbox: scripts run, but the page has no cookies, no network beyond its own files, and libraries come from cdn.jsdelivr.net, cdnjs.cloudflare.com, unpkg.com or esm.sh at a pinned version. It reads its owner's public data with JSON.parse(document.getElementById("profile").textContent) ({name, bio, repos}). Change whatever files you need. The owner says: ${say}`;
+      const run = await api(`/repos/${name}/page/agents`, { path: "index.html", harness: av.harnesses[0], task });
+      startedToast(av.harnesses[0], run); f.say.value = "";
+      for (let i = 0; i < 100; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const mine = (await api(`/repos/${name}/page/agents`).catch(() => [])).find((x) => x.id === run.id);
+        if (mine && mine.status !== "running") { toast(mine.status === "done" ? "Your page is updated" : `The agent ${mine.status}`); break; }
+      }
+      // Its batch waits a few seconds for review before landing on main.
+      for (const wait of [2000, 8000]) { await new Promise((r) => setTimeout(r, wait)); reload(); }
+    } catch (err) { toast(err.message, 5000); }
+    btn.disabled = false;
+  };
+}
 /** A person's avatar on their profile (src/avatar.ts, bundled as /avatar.js): a little round one in the header, arms and legs spread. Its click opens the full-size one, and for its owner the editor: step through each part, pick the colors, save. */
 async function avatarBox(user, mine, name) {
   const dot = $("#av-dot");

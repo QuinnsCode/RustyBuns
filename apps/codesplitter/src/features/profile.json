@@ -1,5 +1,5 @@
 {
   "icon": "palette",
-  "title": "Your profile is your own HTML",
-  "what": "Write your own HTML and CSS, sandboxed, no scripts."
+  "title": "Your profile is your own site",
+  "what": "Rebuild it with HTML, CSS and script, even a three.js world, from a repo named page."
 }
