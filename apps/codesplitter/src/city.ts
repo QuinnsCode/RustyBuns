@@ -48,11 +48,13 @@ async function gitLines(env: Env, owner: string, repo: string, now: number): Pro
     if (!tip) return git;
     git.commits = log.filter((c) => now - (c.authoredAt < 1e12 ? c.authoredAt * 1000 : c.authoredAt) < WEEK).length;
     const blobs: { path: string; hash: string }[] = [];
-    for (const dirs = [{ dir: "", hash: tip.treeHash }]; dirs.length && blobs.length < WALK;) {
-      const { dir, hash } = dirs.shift()!;
-      for (const e of (await readTree(env, h.handle, hash)) ?? []) {
+    // A level of directories at a time: their trees are read together.
+    for (let dirs = [{ dir: "", hash: tip.treeHash }]; dirs.length && blobs.length < WALK;) {
+      const level = await Promise.all(dirs.map(async (d) => ({ d, tree: (await readTree(env, h.handle, d.hash)) ?? [] })));
+      dirs = [];
+      for (const { d, tree } of level) for (const e of tree) {
         if (e.name.startsWith(".") || e.name === "node_modules") continue;
-        const path = dir ? `${dir}/${e.name}` : e.name;
+        const path = d.dir ? `${d.dir}/${e.name}` : e.name;
         if (e.type === "tree") dirs.push({ dir: path, hash: e.hash });
         else if ((e.type === "blob" || e.type === "exec") && blobs.length < WALK) blobs.push({ path, hash: e.hash });
       }
@@ -177,19 +179,35 @@ export function layout(repos: { repo: string; buildings: Omit<Building, "x" | "z
   });
 }
 
-/** `name`'s city as `viewer` may see it, or null when there's no such person or their public city is off (to anyone but them). */
-export async function cityOf(env: Env, name: string, viewer: string | null): Promise<City | null> {
+/** How long a built city is kept: its git walks and file DOs are the cost of a visit, and a minute-old skyline reads the same. */
+const KEEP_MS = 60_000;
+
+/** The person `name`, if `viewer` may see their city (it's public, or it's theirs). */
+async function visible(env: Env, name: string, viewer: string | null) {
   const u = await env.DB.prepare("SELECT name, city_public FROM users WHERE name = ?").bind(name).first();
-  if (!u || (!u.city_public && viewer !== name)) return null;
-  const now = Date.now();
+  return !u || (!u.city_public && viewer !== name) ? null : { public: !!u.city_public };
+}
+
+/** `name`'s districts, built at most once a KEEP_MS (public repos only, so every viewer shares them). */
+async function districtsOf(env: Env, name: string, now: number): Promise<District[]> {
+  const kept = await env.DB.prepare("SELECT body FROM city_cache WHERE name = ? AND built_at > ?").bind(name, now - KEEP_MS).first() as { body: string } | null;
+  if (kept) try { return JSON.parse(kept.body) as District[]; } catch {}
   const { results } = await env.DB.prepare(
     "SELECT name FROM repos WHERE owner = ? AND visibility = 'public' AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC LIMIT ?").bind(name, now, DISTRICTS).all();
-  const repos = (results as { name: string }[]).map((r) => r.name);
-  const built = await Promise.all(repos.map(async (repo) => ({ repo, ...await buildings(env, name, repo, now) })));
+  const built = await Promise.all((results as { name: string }[]).map(async ({ name: repo }) => ({ repo, ...await buildings(env, name, repo, now) })));
   const districts = layout(built.filter((d) => d.buildings.length));
-  const present = await presentIn(env, name, repos);
+  await env.DB.prepare("INSERT OR REPLACE INTO city_cache (name, built_at, body) VALUES (?, ?, ?)").bind(name, now, JSON.stringify(districts)).run().catch(() => {});
+  return districts;
+}
+
+/** `name`'s city as `viewer` may see it, or null when there's no such person or their public city is off (to anyone but them). */
+export async function cityOf(env: Env, name: string, viewer: string | null): Promise<City | null> {
+  const v = await visible(env, name, viewer);
+  if (!v) return null;
+  const districts = await districtsOf(env, name, Date.now());
+  const present = await presentIn(env, name, districts.map((d) => d.repo));
   const all = districts.flatMap((d) => d.buildings);
-  return { name, public: !!u.city_public, districts, present, files: all.length, lines: all.reduce((n, b) => n + b.lines, 0) };
+  return { name, public: v.public, districts, present, files: all.length, lines: all.reduce((n, b) => n + b.lines, 0) };
 }
 
 /** Whether `viewer` may walk `name`'s city: it's theirs, or they follow its owner. */
@@ -207,7 +225,7 @@ export async function cityRoutes(req: Request, env: Env, p: string[], user: stri
   if (p[1] !== "users" || !p[2] || (p[3] !== "city" && p[3] !== "city.png") || req.method !== "GET") return null;
   const name = p[2];
   if (p[3] === "city" && p[4] === "ws") {
-    if (!(await cityOf(env, name, user)) || !(await mayVisit(env, name, user))) return json({ error: "follow them to walk their city" }, 403);
+    if (!(await visible(env, name, user)) || !(await mayVisit(env, name, user))) return json({ error: "follow them to walk their city" }, 403);
     if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "a WebSocket" }, 426);
     const h = new Headers(req.headers);
     h.set("x-codesplitter-user", user!);
