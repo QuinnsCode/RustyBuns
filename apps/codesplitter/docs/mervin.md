@@ -293,6 +293,10 @@ merges anything new without the same guards as today.
 **Opt-in.** Off by default, per repo, switchable in settings, with delete-my-data. Nothing leaves the account
 that owns the repo.
 
+The event (`src/mervin-events.ts`, `MERVIN_EVENTS` binding, per-repo `mervin_learning` row) is built and emitted once per
+merge when both are present; its shape has no content field, and a test pins that. The settings switch and
+delete-my-data are not built yet.
+
 **Decision: Pipelines to Iceberg.** Plain R2 NDJSON plus R2 SQL is not an option, because R2 SQL only queries
 Iceberg tables managed by the catalog; NDJSON would need our own reader in a Worker. It is also not cheaper (below).
 

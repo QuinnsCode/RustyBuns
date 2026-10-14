@@ -89,6 +89,8 @@ export interface Env {
   LEVEL_CHUNKS?: R2Like;
   /** The landing page's counts, cached for a minute so reads skip D1 (stats.ts). */
   STATS?: { get(key: string, type: "json"): Promise<unknown>; put(key: string, value: string, opts?: { expirationTtl?: number }): Promise<void> };
+  /** Where Mervin's content-free outcome events go (a Pipeline stream binding; mervin-events.ts). Unbound, none are emitted. */
+  MERVIN_EVENTS?: { send(events: unknown[]): Promise<void> };
   /** Handles allowed to import levels when accounts are on (comma separated). */
   ADMINS?: string;
   /** The owner's verified email; signing in with it claims the first ADMINS handle. */
