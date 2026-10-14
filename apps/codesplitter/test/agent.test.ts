@@ -42,6 +42,14 @@ describe("harnessCommand", () => {
     expect(args[args.indexOf("--setting-sources") + 1]).toBe("user");
     expect(args).toContain("--strict-mcp-config");
   });
+  test("claude is denied anything outside the working directory by its settings (#1656)", () => {
+    const { args } = harnessCommand("claude", "do it");
+    expect(args[args.indexOf("--permission-mode") + 1]).toBe("dontAsk");
+    const { permissions } = JSON.parse(args[args.indexOf("--settings") + 1]!);
+    expect(permissions.defaultMode).toBe("dontAsk");
+    expect(permissions.allow.length).toBeGreaterThan(0);
+    for (const rule of permissions.allow) expect(rule).toMatch(/^\w+\(\.\/\*\*\)$/);
+  });
   test("pi gets only the file tools, no bash", () => {
     const { args } = harnessCommand("pi", "do it");
     expect(args[args.indexOf("--tools") + 1]).toBe("read,edit,write");
