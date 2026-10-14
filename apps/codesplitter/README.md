@@ -128,6 +128,7 @@ cd apps/codesplitter
 bun install
 bun run desktop        # the app in a window
 bun run desktop:watch  # the same, rebuilt and restarted on every save; the window reloads itself
+bun run desktop:agent  # desktop:watch with no window: prints the open URL once, for an agent's browser
 bun run desktop:update # git pull, install, and restart the desktop on the new build
 ```
 

@@ -1025,8 +1025,11 @@ try {
       await addDesktop(rest.slice(1)); break;
     }
     case "run": {
-      if (rest[0] !== "desktop") throw new Error("usage: rustybuns run desktop [--watch] [--sandbox]");
-      const { on: sandbox, args: hostArgs } = wantsSandbox(rest.slice(1).filter((a) => a !== "--watch"));
+      if (rest[0] !== "desktop") throw new Error("usage: rustybuns run desktop [--watch] [--agent] [--sandbox]");
+      // --agent: no window; the host prints its open URL once, and under --watch the same token and port
+      // outlive every rebuild, so an agent's browser signs in once and its page reloads itself.
+      if (rest.includes("--agent")) process.env["RB_NO_BROWSER"] = "1";
+      const { on: sandbox, args: hostArgs } = wantsSandbox(rest.slice(1).filter((a) => a !== "--watch" && a !== "--agent"));
       if (rest.includes("--watch")) {
         const cfg = await loadConfig();
         await watchDesktop(cfg, () => buildDesktop(cfg, { noCompile: true }), hostArgs, sandbox);
@@ -1109,7 +1112,8 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              from \`xcrun notarytool store-credentials P\`
   run desktop                start the dev host (bun .rustybuns/dev/desktop.js)
             [--watch]        rebuild (--dev) on save and restart the host; a failed build
-                             keeps the old one up, and the window stays (reload it)
+                             keeps the old one up, and the window reloads itself
+            [--agent]        open no window (RB_NO_BROWSER): print the open URL once, for an agent's browser
             [--sandbox]      macOS: run it under Seatbelt, kept out of ~/.ssh, ~/.aws, gh,
                              wrangler, keychains and the project's .env (or RB_SANDBOX=1).
                              Always: no .env load, no auto-install, no credential env vars
