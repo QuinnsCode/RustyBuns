@@ -74,7 +74,7 @@ import { postOrder, startChecks, upstreamMoved, upstreamTaken } from "./checks.t
 import { diffToOps, merge3 } from "./sync.ts";
 import { branchNameError, json, NAME, type Env, readBody } from "./env.ts";
 import type { Doc } from "./lines.ts";
-import { folderPath, graft, sendBranch, sourceRef, split, splitFromRef } from "./folder-mirror.ts";
+import { depsRef, depsTree, folderPath, graft, sendBranch, sourceRef, split, splitFromRef, workspaceDeps } from "./folder-mirror.ts";
 import { indexFile, unindexFile } from "./search.ts";
 import { byVersion, tagNameError } from "./tags.ts";
 
@@ -302,6 +302,7 @@ async function step(env: Env, owner: string, repo: string, o: { resolve?: Resolv
         if (!tip) return failed(env, r, "clash", `upstream's ${branch} has no ${r.mirror_path} any more`);
         await must(["update-ref", up, tip], dir);
         await must(["update-ref", splitFromRef(branch), source], dir);
+        await keepDeps(dir, r.mirror_path, branch, source);
       }
     }
     let theirs = await must(["rev-parse", up], dir), ours = await must(["rev-parse", heads], dir);
@@ -676,6 +677,22 @@ export async function settlePush(env: Env, owner: string, repo: string, path: st
   return true;
 }
 
+/** The workspace packages a folder mirror's folder depends on stay upstream's: kept as a read-only tree at depsRef, not in the folder's history. */
+async function keepDeps(dir: string, path: string, branch: string, source: string) {
+  const tree = await depsTree(git, dir, source, await workspaceDeps(git, dir, path, source));
+  if (!tree) { await git(["update-ref", "-d", depsRef(branch)], dir); return; }
+  const msg = `workspace dependencies of ${path} at ${source.slice(0, 7)}\n\nUpstream-commit: ${source}`;
+  await must(["update-ref", depsRef(branch), await must(["commit-tree", tree, "-m", msg], dir, authorEnv())], dir);
+}
+
+/** The folders (outside a folder mirror's own) its dependency tree holds, from the tree itself. */
+async function depsList(lg: LocalGit, r: Row, branch: string) {
+  const dir = await syncedDir(lg, r), pkgs: string[] = [];
+  const files = await git(["ls-tree", "-r", "--name-only", depsRef(branch)], dir);
+  for (const f of files.out.split("\n")) if (f.endsWith("/package.json")) pkgs.push(f.slice(0, -"/package.json".length));
+  return pkgs.sort();
+}
+
 /** Where a mirror stands: its state, and how far ahead and behind it was at the last fetch. */
 export async function mirrorStatus(env: Env, owner: string, repo: string) {
   const r = await env.DB.prepare("SELECT artifact, crew_artifact, mirror_push_crew, mirror_primary, mirror_pull_only, mirror_path, branch, mirror_url, mirror_state, mirror_error, mirror_clash, mirror_down_since, mirror_synced_at, mirror_next_at, upstream_commit FROM repos WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(owner, repo).first();
@@ -697,6 +714,8 @@ export async function mirrorStatus(env: Env, owner: string, repo: string) {
     pullOnly: !!r.mirror_pull_only,
     // A folder mirror (folder-mirror.ts): the folder of upstream it mirrors, and the branch its work goes up as.
     path: (r.mirror_path ?? null) as string | null, sends: r.mirror_path ? sendBranch(repo) : null,
+    // The workspace packages outside the folder it depends on, read-only at refs/folder-deps/<branch>.
+    deps: r.mirror_path ? await depsList(lg, r as unknown as Row, branch) : [],
   };
 }
 
@@ -1416,6 +1435,7 @@ async function folderMirror(env: Env, lg: LocalGit, user: string, src: { url: st
   const source = await must(["rev-parse", sourceRef(branch)], dir);
   const tip = await split(git, dir, path, null, source, null);
   if (!tip) return fail(404, `${branch} has no folder ${path}`);
+  await keepDeps(dir, path, branch, source);
   for (const [ref, sha] of [[`refs/heads/${branch}`, tip], [`refs/upstream/${branch}`, tip], [splitFromRef(branch), source]]) await must(["update-ref", ref!, sha!], dir);
   await must(["symbolic-ref", "HEAD", `refs/heads/${branch}`], dir);
   const upstream = `${src.upstream}/tree/${branch}/${path}`;

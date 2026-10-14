@@ -17,6 +17,8 @@ export type Git = (args: string[], cwd?: string, env?: Record<string, string>) =
 export const sourceRef = (branch: string) => `refs/folder-source/${branch}`;
 export const splitFromRef = (branch: string) => `refs/folder-split/${branch}`;
 /** The upstream branch a folder mirror sends its work to. */
+/** The upstream root's lockfile and the workspace packages the folder depends on, kept as a read-only tree beside the folder. */
+export const depsRef = (branch: string) => `refs/folder-deps/${branch}`;
 export const sendBranch = (repo: string) => `codesplitter/${repo}`;
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
@@ -92,4 +94,60 @@ export async function graft(git: Git, dir: string, path: string, onto: string, o
   const [root, mine] = await Promise.all([out(git, dir, ["rev-parse", `${onto}^{tree}`]), out(git, dir, ["rev-parse", `${ours}^{tree}`])]);
   const tree = await swap(git, dir, root, path.split("/"), mine);
   return tree === root ? null : tree;
+}
+
+const ROOT_FILES = ["package.json", "bun.lock", "bun.lockb", "bunfig.toml"];
+
+/** `git show <rev>:<path>` parsed as JSON, or null when it isn't there or isn't JSON. */
+async function jsonAt(git: Git, dir: string, rev: string, path: string): Promise<any | null> {
+  const r = await git(["show", `${rev}:${path}`], dir);
+  if (r.code) return null;
+  try { return JSON.parse(r.out); } catch { return null; }
+}
+
+/**
+ * The workspace packages outside `path` that the folder depends on (through `workspace:` ranges, and theirs in turn), as
+ * upstream's commit `source` has them: their folders, sorted. The root's `workspaces` say where packages live; a pattern
+ * is a folder or `dir/*`.
+ */
+export async function workspaceDeps(git: Git, dir: string, path: string, source: string): Promise<string[]> {
+  const root = await jsonAt(git, dir, source, "package.json");
+  const globs: unknown = Array.isArray(root?.workspaces) ? root.workspaces : root?.workspaces?.packages;
+  if (!Array.isArray(globs)) return [];
+  const byName = new Map<string, string>();
+  for (const g of globs) {
+    if (typeof g !== "string" || g.startsWith("!")) continue;
+    const base = g.replace(/\/$/, "");
+    const dirs = base.endsWith("/*")
+      ? (await git(["ls-tree", "--name-only", "-d", `${source}:${base.slice(0, -2)}`], dir)).out.split("\n").filter(Boolean).map((n) => `${base.slice(0, -2)}/${n}`)
+      : [base];
+    for (const d of dirs) {
+      const name = (await jsonAt(git, dir, source, `${d}/package.json`))?.name;
+      if (typeof name === "string") byName.set(name, d);
+    }
+  }
+  const seen = new Set<string>(), todo = [path];
+  while (todo.length) {
+    const pkg = await jsonAt(git, dir, source, `${todo.pop()}/package.json`);
+    for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
+      for (const [name, range] of Object.entries<unknown>(pkg?.[field] ?? {})) {
+        const d = byName.get(name);
+        if (d && d !== path && typeof range === "string" && range.startsWith("workspace:") && !seen.has(d)) { seen.add(d); todo.push(d); }
+      }
+    }
+  }
+  return [...seen].sort();
+}
+
+/** A tree of upstream commit `source`'s root manifest and lockfile plus the `deps` folders, at their own paths. Null when there are none. */
+export async function depsTree(git: Git, dir: string, source: string, deps: string[]): Promise<string | null> {
+  if (!deps.length) return null;
+  const entries: string[] = [];
+  for (const f of ROOT_FILES) {
+    const sha = await git(["rev-parse", "--verify", "--quiet", `${source}:${f}`], dir);
+    if (!sha.code) entries.push(`100644 blob ${sha.out.trim()}\t${f}`);
+  }
+  let tree = await mktree(dir, entries);
+  for (const d of deps) tree = await swap(git, dir, tree, d.split("/"), await out(git, dir, ["rev-parse", `${source}:${d}`]));
+  return tree;
 }
