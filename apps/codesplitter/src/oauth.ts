@@ -27,7 +27,7 @@
 //   POST /api/oauth/revoke       RFC 7009 {token}
 //   GET  /api/oauth/grants       yours (cookie only)     DELETE /api/oauth/grants/:id
 
-import { json, type Env } from "./env.ts";
+import { json, readBody, type Env } from "./env.ts";
 import { identify } from "./identity.ts";
 import { ownOrigin } from "./security.ts";
 import { DAY, MAX_DAYS } from "./tokens.ts";
@@ -146,8 +146,8 @@ const revokeGrant = (env: Env, grant: string) => env.DB.batch([
 async function fields(req: Request): Promise<Record<string, string>> {
   const type = req.headers.get("content-type") ?? "";
   if (type.includes("application/json")) {
-    const b = await req.json().catch(() => ({}));
-    return Object.fromEntries(Object.entries(b ?? {}).map(([k, v]) => [k, String(v)]));
+    const b = await readBody<string>(req);
+    return Object.fromEntries(Object.entries(b).map(([k, v]) => [k, String(v)]));
   }
   return Object.fromEntries(new URLSearchParams(await req.text().catch(() => "")));
 }
@@ -237,11 +237,11 @@ async function token(req: Request, env: Env) {
 }
 
 async function register(req: Request, env: Env) {
-  const b = (await req.json().catch(() => null)) as { redirect_uris?: unknown; client_name?: unknown } | null;
-  const uris = b?.redirect_uris;
+  const b = await readBody<"redirect_uris" | "client_name">(req);
+  const uris = b.redirect_uris;
   if (!Array.isArray(uris) || !uris.length || uris.length > 5 || !uris.every(registrable))
     return oauthError("invalid_redirect_uri", "redirect_uris: 1 to 5 https URLs, or http://127.0.0.1 / localhost ones");
-  const name = (typeof b?.client_name === "string" ? b.client_name.replace(/[\x00-\x1f<>]/g, "").trim().slice(0, 60) : "") || "an app";
+  const name = (typeof b.client_name === "string" ? b.client_name.replace(/[\x00-\x1f<>]/g, "").trim().slice(0, 60) : "") || "an app";
   const c = { client_id: random("csc_").slice(0, 28), client_name: name, redirect_uris: uris as string[], client_id_issued_at: Math.floor(Date.now() / 1000) };
   await env.DB.prepare("INSERT INTO oauth_clients (id, name, redirect_uris, created_at) VALUES (?, ?, ?, ?)").bind(c.client_id, name, JSON.stringify(uris), Date.now()).run();
   // Public clients only: whatever auth method it asked for, it sends no secret.
