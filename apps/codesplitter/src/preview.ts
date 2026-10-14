@@ -24,6 +24,7 @@
 import { access as artifactAccess, handleFor } from "./archive.ts";
 import { settings } from "./deploy.ts";
 import { json, type Env } from "./env.ts";
+import { repoRow } from "./repos.ts";
 
 export type StepKey = "clone" | "install" | "deploy" | "check" | "destroy" | "init" | "plan";
 export interface Step { key: StepKey; status: "waiting" | "running" | "done" | "failed" | "skipped"; out: string; ms?: number }
@@ -281,7 +282,7 @@ export async function previewRoutes(req: Request, env: Env, p: string[], user: s
   const [owner, repo] = [p[2], p[3]], key = `${owner}/${repo}`;
   // It deploys with this machine's logins and shows the repo's output: the owner's alone.
   if (user !== owner) return json({ error: "only the repo's owner can run a preview deploy" }, 403);
-  if (!(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first())) return json({ error: "not found" }, 404);
+  if (!(await repoRow(env, owner, repo, "1"))) return json({ error: "not found" }, 404);
   const runner = runnerFor(env);
   if (req.method === "GET") {
     // On the site, the dependency doctor's previews run in the repo's deploy container (deploy-runner.ts).

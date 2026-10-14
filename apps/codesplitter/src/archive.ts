@@ -8,6 +8,7 @@ import { GIT_BOT, GIT_EMAIL_DOMAIN, push, type Change } from "./git.ts";
 import { localGit, mirrorIdentity } from "./mirror.ts";
 import { noodles, type Noodle } from "./noodles.ts";
 import type { ArtifactsRepo, Env, TreeEntry } from "./env.ts";
+import { repoRow } from "./repos.ts";
 
 /**
  * A file's DO; on a branch, the branch's own copy of it ("@" can't appear in a repo name).
@@ -46,7 +47,7 @@ export async function fileLines(env: Env, owner: string, repo: string, path: str
  * real text): what previews, deploys and the crew's own clone use.
  */
 export async function handleFor(env: Env, owner: string, repo: string, crew = false) {
-  const r = await env.DB.prepare("SELECT artifact, artifact_remote, crew_artifact, crew_remote, branch FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+  const r = await repoRow<any>(env, owner, repo, "artifact, artifact_remote, crew_artifact, crew_remote, branch");
   if (!env.ARTIFACTS || !r?.artifact) return null;
   const [name, remote] = crew && r.crew_artifact ? [r.crew_artifact, r.crew_remote] : [r.artifact, r.artifact_remote];
   return { handle: await env.ARTIFACTS.get(name), branch: (r.branch ?? "main") as string, remote: remote as string, crew: name !== r.artifact };
@@ -60,7 +61,7 @@ export async function handleFor(env: Env, owner: string, repo: string, crew = fa
  * `except`, which its caller is about to push), tried again until it lands.
  */
 export async function ensureCrewRemote(env: Env, owner: string, repo: string, except?: string) {
-  const r = await env.DB.prepare("SELECT artifact, crew_artifact, crew_backfill, branch FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+  const r = await repoRow<any>(env, owner, repo, "artifact, crew_artifact, crew_backfill, branch");
   if (!env.ARTIFACTS || !r?.artifact) return;
   if (r.crew_artifact) return r.crew_backfill ? payBackfill(env, owner, repo, except) : undefined;
   const name = `${r.artifact}--crew`, branch = (r.branch ?? "main") as string, description = `codeSplitter ${owner}/${repo}, the crew's copy`;
@@ -83,7 +84,7 @@ export async function ensureCrewRemote(env: Env, owner: string, repo: string, ex
 
 /** Run the crew remote's backfill, if it's still owed. One that fails doesn't stop the commit; the next one tries again. */
 export async function payBackfill(env: Env, owner: string, repo: string, except?: string) {
-  if (!(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ? AND crew_backfill = 1").bind(owner, repo).first())) return;
+  if ((await repoRow(env, owner, repo, "crew_backfill"))?.crew_backfill !== 1) return;
   try {
     await backfillCrew(env, owner, repo, except);
     await env.DB.prepare("UPDATE repos SET crew_backfill = NULL WHERE owner = ? AND name = ?").bind(owner, repo).run();
