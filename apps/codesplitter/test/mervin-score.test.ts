@@ -35,6 +35,8 @@ test("a branch that edited the same line main did is flagged at its midpoint and
   expect(tally(cases, "overlap").recall).toBe(1);
   expect(cases[0].lines).toBe(true);
   expect(tally(cases, "lines").recall).toBe(1);
+  expect(cases[0].plan).toBe(true);
+  expect(tally(cases, "plan").recall).toBe(1);
 });
 
 test("the line-id predictor stays quiet when both sides touched a file in different places", () => {
@@ -54,4 +56,5 @@ test("the line-id predictor stays quiet when both sides touched a file in differ
   expect(cases).toHaveLength(1);
   expect(cases[0].overlap).toBe(true);
   expect(cases[0].lines).toBe(false);
+  expect(cases[0].plan).toBe(false);
 });
