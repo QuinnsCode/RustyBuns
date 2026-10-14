@@ -136,6 +136,9 @@ test("each district's pulse: a week of commits and edits makes it busy, failing 
   await run("test", "failed", now - 3000); await run("test", "passed", now - 2000);
   await run("lint", "passed", now - 3000); await run("lint", "failed", now - 1000);
   await run("old", "failed", now - 30 * 86_400_000);
+  // The built city is kept a minute: the first read is the quiet one.
+  expect(await lab()).toEqual(quiet);
+  await call.env.DB.prepare("DELETE FROM city_cache").run();
   expect(await lab()).toMatchObject({ passed: 2, failed: 2, failing: 1, chaos: 0.6 });
 });
 

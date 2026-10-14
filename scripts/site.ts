@@ -20,7 +20,7 @@ if (!check) rmSync(root, { recursive: true, force: true });
 const problems: string[] = [];
 for (const { dir, site, tags: pattern } of sites) {
   const sources = [worktree(), ...(check ? [] : tags(pattern).map(atTag))];
-  problems.push(...buildSite(site, join(root, dir), sources).map((p) => `${dir}: ${p}`));
+  problems.push(...buildSite(site, join(root, dir), sources, dir).map((p) => `${dir}: ${p}`));
   if (!check) console.log(`${site.name}: ${sources.map((s) => s.version).join(", ")} -> ${shown(join(root, dir))}/index.html`);
 }
 if (check) rmSync(root, { recursive: true, force: true });

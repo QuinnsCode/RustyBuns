@@ -189,6 +189,9 @@ There's no downloadable build yet; that's one command from source.
   Two tries, one at a time; then the branch waits for a person, the attempts listed beside its checks. On with hosted agents (admins only, on the hosted budget), or on the desktop with `HEAL=1`.
 - **Build changes are flagged.** A branch that touches `package.json`, a lockfile, a Dockerfile, CI or the deploy config shows every changed line, and its merge waits for a person to say they've read them.
   Agents can be prompt-injected; this is where it gets caught.
+- **A security model you can read, and that the tests hold to.** Your code, your app, your provisioning and your destruction: what each is promised, and the test that proves each promise, in [REFERENCE.md](REFERENCE.md#the-security-model-your-code-your-app-your-provisioning-your-destruction).
+  Every delete the API offers is in a table of what goes and what stays.
+  A promise whose test is renamed or dropped fails CI, and `bun run smoke` runs every cited test and the stress script with a row per promise.
 - **Accounts and limits.** GitHub, Google or email sign-in.
   Rate limits on everything that costs money, which an admin can set to reject, log, flag or queue. Paid tiers named for gems (Tanzanite 2x, Alexandrite 5x, Painite 10x) multiply a person's caps and stamp their name.
 - **The game.** Every repo is a level: the backrooms of the codebase, where the lines tear off the walls as paper birds and you swat them with the rolled-up README.

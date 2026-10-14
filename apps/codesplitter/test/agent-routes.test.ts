@@ -318,3 +318,16 @@ test("with AGENT_REVIEW_MS=0 the agent writes main as it goes, with no branch", 
   expect(await mainText(call)).toEqual(["LET A = 1", "LET B = 2"]);
   expect(await (await call("ryan", "/api/repos/ryan/lab/branches")).json()).toEqual([]);
 });
+
+test("protect main: an agent's batch waits for a person instead of the timer", async () => {
+  const { call, post } = await app();
+  await call("ryan", "/api/repos/ryan/lab/protect", { method: "PUT", body: JSON.stringify({ on: true }) });
+  const started = await (await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "claude", task: "shout" })).json() as any;
+  let runs: any[] = [];
+  await until(async () => (runs = await (await call("ryan", "/api/repos/ryan/lab/agents?path=a.js")).json())[0].status !== "running");
+  expect(runs[0]).toMatchObject({ status: "done", pending: { branch: `agent-run-${started.id}`, until: null } });
+  await Bun.sleep(600);   // well past AGENT_REVIEW_MS
+  runs = await (await call("ryan", "/api/repos/ryan/lab/agents?path=a.js")).json();
+  expect(runs[0].landed).toBeUndefined();
+  expect(runs[0].pending).toBeDefined();
+});
