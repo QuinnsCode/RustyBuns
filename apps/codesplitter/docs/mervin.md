@@ -308,6 +308,19 @@ Tried: pingdotgg/t3code, which squash-merges: 15 merge commits in 5,473, so no c
 Still to check: a Linux subsystem tree, Django. Reference engines to compare against, not to vendor yet:
 Mergiraf (structured merge; over the 29 hunks in [merge-solutions.md](merge-solutions.md#12-mergiraf-over-the-same-hunks) it settled 6 and nothing L3 doesn't; still to try on a corpus with moved and reordered code), Spork and IntelliMerge (tree matching).
 
+## The live board (#1524)
+
+`scripts/mervin-live.ts` keeps one picture of the open PRs on codeSplitter: every 30 seconds it stages the board again when a
+PR's head, its CI or main moved, and posts the rows that changed (`POST /api/repos/:o/:r/board`). Each row has the PR's own CI,
+what it's stacked on, its files per tier, its clashes, the Agent Office worker that owns it (`office-workers list --json`), and,
+for a PR touching `package.json`, `bun.lock` or `packages/`, the apps and PRs it reaches. When PRs merge, the board they were
+staged on is scored against main and the tiers' hit rates are kept. The UI (the branches panel) and the MCP tool `get_board` read
+it: `waves` and `mergeable` come off the rows, and `get_board` with `pr` says what blocks that PR, who should take it, and what it blocks.
+
+```sh
+CODESPLITTER_TOKEN=... bun scripts/mervin-live.ts --url https://<codesplitter> --repo owner/name   # --once, --dry
+```
+
 ## Dependency fights (#1477)
 
 `src/dep-docs.ts` (imports only `manifest.ts`; the registry, OSV and the sandbox are arguments, so tests are offline):
