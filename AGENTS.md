@@ -15,6 +15,10 @@ all apps plus `bun test packages` when `packages/` or the lockfile moved). Comma
 - No root `bun test`, no whole-app suites, no repo-wide typecheck "to be safe". Push; CI does it.
 - Don't rerun a passing test or loop on a flaky one. Note it; file an issue if real.
 - After pushing: `gh pr checks <n>` (or `--watch`). On failure, fix that and rerun only its test.
+- What to write: a feature gets one journey through the running app (`local()` from `test/app-kit.ts`, or a
+  script like `scripts/stress.ts`) by default; units are for weird corner cases (parsers, merge edge cases, limits).
+  Don't assert on source text (`expect(html).toContain(...)`, CSS rules, markup wiring): it pins how the page is
+  written, not what it does, and breaks on every refactor. Test the function (eval it out of the page) or the behaviour.
 - No native builds (`build:native`, cargo) or `desktop-drop.yml` unless the change needs it.
 
 ## Docs heal themselves
