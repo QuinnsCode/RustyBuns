@@ -740,7 +740,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       }
       // Only the crew reads private lines; everyone else gets placeholders.
       const res = await toFile(env, owner, repo, path, user ?? "anon", p[5]!, { method: req.method, body: sent, headers: { "x-codesplitter-crew": a.write ? "1" : "0", ...(live && { "x-codesplitter-live": live }) } },
-        url.searchParams.has("rev") ? `?rev=${url.searchParams.get("rev")}` : url.searchParams.has("since") ? `?since=${url.searchParams.get("since")}` : "", branch);
+        url.searchParams.has("rev") ? `?rev=${url.searchParams.get("rev")}` : url.searchParams.has("since") ? `?since=${url.searchParams.get("since")}` : p[5] === "file" && (url.searchParams.has("from") || url.searchParams.has("limit")) ? `?${new URLSearchParams([...url.searchParams].filter(([k]) => k === "from" || k === "limit"))}` : "", branch);
       if (p[5] === "private" && req.method === "POST" && res.ok) {
         // From the first private line on, the crew has a remote of its own to clone and deploy from.
         if ((JSON.parse(sent!) as { private?: boolean }).private) await ensureCrewRemote(env, owner, repo).catch(() => null);
