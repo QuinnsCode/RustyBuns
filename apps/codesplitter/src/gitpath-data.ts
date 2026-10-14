@@ -8,22 +8,16 @@ import type { ArtifactsRepo, TreeEntry } from "./env.ts";
 import { graphRows } from "./graph.ts";
 import { keptAncestors, simplifyParents, type Commit } from "./gitpath/gitpath.ts";
 import { keptPairs } from "./sync.ts";
+import { inBatches } from "./util.ts";
 
 type Handle = Pick<ArtifactsRepo, "log" | "readCommit" | "readTree" | "readBlob">;
 
 /** Past this a file is counted as changed but its lines aren't (a big or binary file). */
 const MAX_BYTES = 512 * 1024;
 /** How many reads go at once. */
-const BATCH = 8;
 /** A commit that changes more files than this is an import, not an edit, and doesn't count toward the busiest files. */
 const MAX_CHANGED = 300;
 const LOCKFILE = /(^|\/)(bun\.lockb?|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock)$/;
-
-const inBatches = async <T, R>(items: T[], fn: (t: T) => Promise<R>): Promise<R[]> => {
-  const out: R[] = [];
-  for (let i = 0; i < items.length; i += BATCH) out.push(...(await Promise.all(items.slice(i, i + BATCH).map(fn))));
-  return out;
-};
 
 /** Reads of one repo's trees, commits and blobs, each once. */
 function reader(h: Handle, known: Map<string, { treeHash: string }>) {
