@@ -530,3 +530,15 @@ describe("the Ship pop-out's infra map", () => {
     expect(html).toContain("views.wireShip(owner, repo);");
   });
 });
+
+// The firehose glow: a still orange edge that bumps at 175 bpm while edits stream in, and never takes a click.
+describe("the firehose glow", () => {
+  test("pulses at 175 bpm and ignores the pointer", () => {
+    const own = rulesFor("firehose").find((r) => r.sel === ".firehose");
+    expect(own?.body).toContain("pointer-events: none");
+    expect(css).toContain(".firehose.on { opacity: 1; animation: firehose-bump .343s");
+  });
+  test("is fed by the file socket's ops", () => {
+    expect(html).toContain("firehose(msg.applied.length)");
+  });
+});

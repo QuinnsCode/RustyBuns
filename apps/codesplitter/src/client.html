@@ -416,6 +416,15 @@
   /* Picked lines get a solid black gutter, one bar down a run; a line open for editing keeps its gutter and gets a dark box. */
   .ln.sel { background: var(--select); } .ln.sel .n { color: #fff; background: #0a0a0a; }
   .ln .t > input { border-color: #0a0a0a; box-shadow: 0 0 0 2px var(--select); }
+  /* The firehose: a still orange glow on the bottom edge while edits land. It flashes on a change, then sits and bumps at 175 bpm (343ms),
+     brighter the faster they come (--rate, 0 to 1). Never takes a click. */
+  .firehose { position: fixed; left: 0; right: 0; bottom: 0; height: 64px; pointer-events: none; z-index: 5; opacity: 0; transition: opacity .8s ease-out; transform-origin: 50% 100%;
+    background: radial-gradient(120% 100% at 50% 100%, color-mix(in srgb, var(--accent) calc(18% + var(--rate, 0) * 30%), transparent), transparent 70%); }
+  .firehose.on { opacity: 1; animation: firehose-bump .343s ease-in-out infinite; }
+  .firehose.hit::after { content: ""; position: absolute; inset: 0; background: inherit; animation: firehose-hit .5s ease-out; }
+  @keyframes firehose-bump { 50% { transform: scaleY(1.1); opacity: .8; } }
+  @keyframes firehose-hit { from { filter: brightness(1.6); opacity: 1; } to { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .firehose.on { animation: none; } .firehose.hit::after { animation: none; display: none; } }
   .ln.flash { animation: flash 1.4s ease-out; } @keyframes flash { from { background: var(--accent-soft); } }
   /* Claimed lines: the holder's colour down the edge, and their name in the blame column. An agent's shimmer while it works. */
   .ln.claim .t { box-shadow: inset 3px 0 0 var(--who); background: color-mix(in srgb, var(--who) 7%, transparent); }
@@ -5541,6 +5550,23 @@ const views = {
       else doc.lines.splice(i, 1);
       doc.rev = a.rev;
     };
+    // The firehose glow (.firehose): edits per second over the last 3s set its brightness, a landing flashes it, and it goes quiet when they stop.
+    let fireEl = null, fireTimer = null, hits = [];
+    const firehose = (n) => {
+      const now = Date.now();
+      for (let i = 0; i < n; i++) hits.push(now);
+      if (!fireEl) { fireEl = document.createElement("div"); fireEl.className = "firehose"; fireEl.setAttribute("aria-hidden", "true"); document.body.append(fireEl); }
+      fireEl.classList.remove("hit"); void fireEl.offsetWidth; fireEl.classList.add("hit");
+      const tick = () => {
+        const t = Date.now(); hits = hits.filter((h) => t - h < 3000);
+        const rate = hits.length / 3;
+        if (!box.isConnected) { fireEl?.remove(); fireEl = fireTimer = null; return; }
+        fireEl.style.setProperty("--rate", String(Math.min(1, rate / 15)));
+        fireEl.classList.toggle("on", rate > 0.5);
+        fireTimer = hits.length || fireEl.classList.contains("on") ? setTimeout(tick, 400) : null;
+      };
+      if (!fireTimer) tick();
+    };
     const connect = () => {
       const s = socket = ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api${base}/ws${q}`);
       s.onmessage = onMessage;
@@ -5585,6 +5611,7 @@ const views = {
       const rev = $("#rev"); rev.max = doc.rev; if (viewing === null) rev.value = doc.rev;
       logOps(msg.applied);
       for (const a of msg.applied) if (a.op.kind !== "delete") beating.set(a.by, Date.now() + 600);
+      firehose(msg.applied.length);
       // The same beat runs down this repo's vein, if it's open.
       if (msg.applied.some((a) => a.op.kind !== "delete") && $("#gitmap")?.dataset.repo === `${owner}/${repo}`) $("#gitmap").beat?.();
       schedule(msg.applied.map((a) => a.line));
