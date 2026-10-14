@@ -289,7 +289,7 @@ describe("what changed since you were last here", () => {
 // axe's leftovers from the accessibility pass (#768).
 describe("headings and landmarks", () => {
   test("a repo's side panels are h2s under the page's h1, not h3s", () => {
-    expect(html).toContain(`<h2>\${icon(ic)}\${title}</h2>`);
+    expect(html).toContain(`<h2>\${icon(ic)}\${title}`);
     expect(html).not.toMatch(/<h3\b/);
   });
 

@@ -241,6 +241,8 @@
   @media (min-width: 1200px) { .wb.d-full { grid-template-columns: minmax(0, 1fr); } .wb.d-full > :is(.explorer, .editor, .dgrip, .egrip) { display: none; } .wb.d-full > .details { border-left: 0; } }
   .sec { padding: 10px 14px; border-bottom: 1px solid var(--border); }
   .sec h2 { margin: 0 0 6px; font: 500 11px/1.4 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .sec-i { margin-left: auto; display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); cursor: pointer; }
+  .sec-i:hover, .sec-i[aria-expanded="true"] { background: var(--select); color: var(--fg); } .sec-i svg.lucide { width: 13px; height: 13px; }
   .sec p { margin: 0 0 6px; } .sec .btn { margin: 2px 4px 2px 0; }
   .sec .run { padding: 6px 0; border-top: 1px solid var(--border); display: grid; gap: 2px; } .sec .run:first-child { border-top: 0; }
   .sec .run .st { font: 500 11px/1.4 var(--mono); color: var(--muted); } .sec .run .st.running { color: var(--accent-ink); } .sec .run .st.failed { color: var(--del-fg); } .vuln { color: var(--del-fg); font-weight: 600; }
@@ -2642,7 +2644,7 @@ function dock() {
   const rail = document.createElement("div"); rail.className = "drail";
   const widths = [["290px", "panel-right", "Narrow"], ["66.667%", "columns-2", "Two-thirds of the screen"], ["full", "maximize-2", "Whole screen"]];
   const drawRail = () => {
-    rail.innerHTML = `<div class="dtabs" role="tablist">${tabs.length > 1 ? tabs.map(([t, ic, name]) => `<button type="button" role="tab" class="dtab${t === d.tab ? " on" : ""}" data-tab="${t}" aria-selected="${t === d.tab}">${icon(ic)}${name}</button>`).join("") : ""}</div>`
+    rail.innerHTML = `<div class="dtabs" role="tablist">${tabs.length > 1 ? tabs.map(([t, ic, name]) => `<button type="button" role="tab" class="dtab${t === d.tab ? " on" : ""}" data-tab="${t}" aria-selected="${t === d.tab}" aria-label="${name}" title="${name}">${icon(ic)}</button>`).join("") : ""}</div>`
       + widths.map(([w, ic, t]) => `<button type="button" class="dw${(d.w || "290px") === w ? " on" : ""}" data-w="${w}" title="${t}">${icon(ic)}</button>`).join("");
     icons();
   };
@@ -2656,6 +2658,11 @@ function dock() {
   };
   const save = () => saveDock(d);
   aside.append(rail, panels); show(d.tab); setWidth(d.w);
+  panels.addEventListener("click", (e) => {
+    const b = e.target.closest(".sec-i"); if (!b) return;
+    const p = b.closest(".sec").querySelector(".sec-info"), on = p.hidden;
+    p.hidden = !on; b.setAttribute("aria-expanded", String(on));
+  });
   rail.addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
     if (b.dataset.w) { setWidth(b.dataset.w); return save(); }
@@ -2746,7 +2753,8 @@ const deleteRepo = async (owner, repo, typed) => {
   await api(`/repos/${owner}/${repo}?confirm=${encodeURIComponent(repo)}`, undefined, "DELETE");
   toast(`Deleted ${owner}/${repo}`); location.hash = `#/u/${owner}`;
 };
-const sec = (ic, title, html) => `<section class="sec" data-key="${title.toLowerCase().replace(/\W+/g, "-")}" data-ic="${ic}"><h2>${icon(ic)}${title}</h2>${html}</section>`;
+/** A side panel. `info` is its long explanation: an "i" in the heading opens it, so the panel itself stays a row of symbols. */
+const sec = (ic, title, html, info = "") => `<section class="sec" data-key="${title.toLowerCase().replace(/\W+/g, "-")}" data-ic="${ic}"><h2>${icon(ic)}${title}${info ? `<button type="button" class="sec-i" aria-expanded="false" aria-label="About ${title}" title="More about ${title}">${icon("info")}</button>` : ""}</h2>${info ? `<p class="sec-info muted" hidden>${info}</p>` : ""}${html}</section>`;
 /** mm:ss gone since `from`, or left until `deadline`. */
 const tickText = (from, deadline) => {
   const s = Math.floor(Math.max(0, deadline ? deadline - Date.now() : Date.now() - from) / 1000);
@@ -3870,7 +3878,7 @@ const views = {
   /** The right-hand panel every repo page shares: where it came from, and who's in it. */
   repoDetails(owner, repo, r) {
     const from = r.upstream ? forkNote(r, owner) : r.level ? `Forked from level <a href="#/l/${r.level}">${esc(r.level)}</a>.` : "";
-    return sec("info", "About", `<p>${from || `${esc(owner)}'s repo.`}</p><p class="muted">${r.visibility === "private" ? "Private: only the crew can see it. Share single lines from any file." : "Public: anyone can read it and play its backrooms."}</p><button class="btn" data-gitmap title="the vein: who this repo listens to, its branches and its history, with the crew's pulse running through it">${icon("git-fork")}Vein</button>`)
+    return sec("info", "About", `<p><span class="badge" title="${r.visibility === "private" ? "Private: only the crew can see it" : "Public: anyone can read it"}">${icon(r.visibility === "private" ? "lock" : "globe")}${r.visibility === "private" ? "Private" : "Public"}</span> ${from}</p><button class="btn" data-gitmap title="the vein: who this repo listens to, its branches and its history, with the crew's pulse running through it">${icon("git-fork")}Vein</button>`, r.visibility === "private" ? "Private: only the crew can see it. Share single lines from any file." : "Public: anyone can read it and play its backrooms.")
       + (owner === me() && r.mirror ? sec("refresh-cw", "Upstream", `<div id="mirror"><span class="muted">…</span></div>`) : "")
       + (!r.mirror && r.upstream?.startsWith("github:") && r.upstream_commit ? sec("git-fork", "Upstream", `<div id="listen" data-pics><span class="muted">…</span></div>`) : "")
       + (owner === me() && r.mirrorable ? sec("refresh-cw", "Mirror", `<div id="mirror-turn"><span class="muted">…</span></div>`) : "")
@@ -3884,9 +3892,9 @@ const views = {
       + (owner === me() ? sec("flask-conical", "Try Rusty Buns", `<div id="try"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("rocket", "Preview deploy", `<div id="preview"><span class="muted">…</span></div>`) : "")
       + (owner === me() ? sec("webhook", "Webhooks", `<div id="hooks"><span class="muted">…</span></div>`) : "")
-      + (owner === me() ? sec("shield", "Audit log", `<details id="audit"><summary class="muted" style="font-size:12px;cursor:pointer">tokens, crew, invites, visibility, webhooks and deploy keys: who changed them</summary><div></div></details>`) : "")
-      + (owner === me() ? sec("trash-2", "Delete this repo", `<form id="delrepo" style="display:grid;gap:6px;font-size:13px"><span class="muted" style="font-size:12px">Gone for good here: its files, branches, cuts, shares, logs and git. GitHub never hears, and a stack it deployed stays up.</span>
-        <input name="name" placeholder="type ${esc(repo)} to confirm" autocomplete="off" required><div><button class="btn" style="color:var(--del-fg)">${icon("trash-2")}Delete ${esc(owner)}/${esc(repo)}</button></div></form>`) : "");
+      + (owner === me() ? sec("shield", "Audit log", `<details id="audit"><summary class="muted" style="font-size:12px;cursor:pointer" title="tokens, crew, invites, visibility, webhooks and deploy keys: who changed them">${icon("list")}</summary><div></div></details>`) : "")
+      + (owner === me() ? sec("trash-2", "Delete this repo", `<form id="delrepo" style="display:grid;gap:6px;font-size:13px">
+        <input name="name" placeholder="type ${esc(repo)} to confirm" autocomplete="off" required><div><button class="btn" style="color:var(--del-fg)" title="Delete ${esc(owner)}/${esc(repo)}">${icon("trash-2")}</button></div></form>`, "Gone for good here: its files, branches, cuts, shares, logs and git. GitHub never hears, and a stack it deployed stays up.") : "");
   },
   /** A mirror's standing with upstream: in step, down (and since when), refused, held, a clash or rewritten history to settle. */
   async wireMirror(owner, repo, body) {
@@ -5100,7 +5108,7 @@ const views = {
         ${r.canWrite && !branch ? `<div class="pop"><button class="btn primary" id="commit" title="commit this file to git">${icon("git-commit-horizontal")}Commit</button><form class="panel" id="commit-form" hidden><b>Commit to git</b><span class="muted" style="font-size:13px">Pushes this file to the repo's Artifact as a real commit.</span><input id="msg" placeholder="what changed"><button class="btn primary">Commit</button></form></div>` : ""}`,
       // A push to the repo's git (the desktop's Push back) that clashed with edits here: its commit waits on a pick (#788).
       body: `${r.canWrite && !branch && r.home === "local" ? `<div class="notice" id="pushclash" hidden>${icon("git-pull-request-arrow")}<span class="grow">A push to this repo's git changed the same lines as edits here, so committing waits till ${owner === me() ? "you pick" : `@${esc(owner)} picks`} a side.</span>${owner === me() ? `<button class="btn" style="white-space:nowrap" data-take="mine" title="keep the edits here: the next commit writes them over what was pushed">${icon("user")}Keep mine</button><button class="btn" style="white-space:nowrap" data-take="pushed" title="put the pushed lines in place of the edits here">${icon("download")}Take pushed</button>` : ""}</div>` : ""}<div class="crew" id="crew"></div><div class="code" id="lines"></div><div class="dust-end"><button type="button" id="dust" aria-pressed="false" aria-label="Let the oldest lines rot">${icon("hourglass")}</button></div><div class="here-dock" id="here"><span class="faces" id="here-faces"></span><div class="pop"><button type="button" class="here-n" id="here-n" title="who's here">${icon("users")}<b>1</b></button><div class="panel" hidden><b id="who-here">just you</b><input id="here-filter" type="search" placeholder="find someone" hidden><div class="here-list" id="here-list"></div><b class="here-h">Activity</b><div class="act-bar"><div class="seg" id="act-kinds" role="group" aria-label="show">${[["all", "All"], ["people", "People"], ["agents", "Agents"], ["holds", "Holds"]].map(([k, t]) => `<button type="button" data-k="${k}" aria-pressed="${k === "all"}"${k === "all" ? ' class="on"' : ""}>${t}</button>`).join("")}</div><input id="act-find" type="search" placeholder="who" aria-label="filter by who"></div><div class="acts" id="acts"></div></div></div></div>`,
-      details: (r.canWrite ? sec("pencil", "Editing", `<p class="muted">Double-click a line to edit it. Enter saves, Shift+Enter adds a line below, an empty line + Enter deletes it. Click a line number to select; shift-click for a range, ⌘-click a line to add it, or drag down the numbers. Right-click the code for what you can do with the lines. Keys as in VS Code: ↑/↓, shift+↑/↓, ⌘A, ⌘L, ⌘C, Esc.</p>`) : sec("share-2", "Sharing", `<p class="muted">Click a line number, shift-click another, and share just those lines.</p>`))
+      details: (r.canWrite ? sec("pencil", "Editing", "", `Double-click a line to edit it. Enter saves, Shift+Enter adds a line below, an empty line + Enter deletes it. Click a line number to select; shift-click for a range, ⌘-click a line to add it, or drag down the numbers. Right-click the code for what you can do with the lines. Keys as in VS Code: ↑/↓, shift+↑/↓, ⌘A, ⌘L, ⌘C, Esc.`) : sec("share-2", "Sharing", "", `Click a line number, shift-click another, and share just those lines.`))
         + (owner === me() && r.canWrite ? sec("bot", "Agents", `<div id="agent-runs"></div>`) : "")
         + sec("scroll-text", "Commits", `<div id="commits"></div>`)
         + views.repoDetails(owner, repo, r),
