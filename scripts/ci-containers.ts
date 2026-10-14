@@ -55,11 +55,11 @@ if (import.meta.main) {
   try { built = await buildOne("ci", b!, { verbose: true }); }
   catch (e) {
     const msg = (e as Error).message;
-    summary(`| ${label} | ❌ | | |`, `\n\`\`\`\n${msg.slice(0, 4000)}\n\`\`\`\n`);
+    summary(`| ${label} | failed | | |`, `\n\`\`\`\n${msg.slice(0, 4000)}\n\`\`\`\n`);
     process.exit(1);
   }
   const t0 = performance.now(), r = await smokeOne("ci", b!, { env: {} });
   const boot = `${((performance.now() - t0) / 1000).toFixed(1)}s`;
-  summary(`| ${label} | ✅ ${(built.ms / 1000).toFixed(0)}s | ${mb(built.size)} | ${r.ok ? "✅ " + boot : "❌"} |`, r.ok ? "" : `\n\`\`\`\n${r.note}\n\`\`\`\n`);
+  summary(`| ${label} | ${(built.ms / 1000).toFixed(0)}s | ${mb(built.size)} | ${r.ok ? "up in " + boot : "failed"} |`, r.ok ? "" : `\n\`\`\`\n${r.note}\n\`\`\`\n`);
   if (!r.ok) process.exit(1);
 }
