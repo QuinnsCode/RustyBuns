@@ -7,19 +7,13 @@
 import type { Commit } from "./gitpath/gitpath.ts";
 import { gh } from "./github.ts";
 import { upstreamOf } from "./listen.ts";
+import { inBatches } from "./util.ts";
 
 /** How many commits get their line counts read, one request each; older ones keep 0/0. */
 const DETAILS = 40;
-const BATCH = 8;
 
 interface Row { sha: string; commit: { message: string; author: { name?: string; date?: string } | null; committer: { date?: string } | null }; author: { login?: string } | null }
 interface Detail { files?: { filename: string; additions: number; deletions: number }[] }
-
-const inBatches = async <T, R>(items: T[], fn: (t: T) => Promise<R>): Promise<R[]> => {
-  const out: R[] = [];
-  for (let i = 0; i < items.length; i += BATCH) out.push(...(await Promise.all(items.slice(i, i + BATCH).map(fn))));
-  return out;
-};
 
 const getJson = async <T>(path: string, token?: string): Promise<T | null> => {
   try {
