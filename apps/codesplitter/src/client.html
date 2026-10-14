@@ -4542,7 +4542,14 @@ const views = {
     const el = $("#branches"), base = `/repos/${owner}/${repo}/branches`;
     const open = (await api(base).catch(() => [])).filter((b) => b.status === "open" && (!only || b.name === only));
     await wireCheckHead(el, owner, repo, r);
+    // Mervin's live board (#1524, GET /api/repos/:o/:r/board): a row per open PR, what holds it up, who owns it.
+    const live = only ? null : await api(`/repos/${owner}/${repo}/board`).catch(() => null);
+    const board = live?.prs.length ? `<div class="muted" style="overflow-x:auto" title="Mervin's live board: every open PR, its CI, stack, clashes and owner"><b>${icon("git-pull-request")}Board</b>${live.prs.map((p) => {
+      const stuck = !live.mergeable.includes(p.pr);
+      return ` <span title="${esc([p.title, p.ci === "fail" ? `CI red: ${(p.failing ?? []).join(", ")}` : p.ci === "pending" ? "CI running" : "", p.stackedOn ? `on #${p.stackedOn}` : "", ...p.clashes.map((c) => `clash ${c.kind} ${c.key}`), p.tiers.card ? `${p.tiers.card} cards` : "", p.owner ? `owner ${p.owner}` : ""].filter(Boolean).join(" · "))}">#${p.pr} ${icon(stuck ? "clock" : "circle-check")}${p.owner ? esc(p.owner) : ""}</span>`;
+    }).join("")}</div>` : "";
     if (!open.length) {
+      if (board) el.innerHTML = board;
       if (only) el.innerHTML = `<p class="muted">${esc(only)} isn't open: merged, or gone. <a href="#/r/${esc(owner)}/${esc(repo)}">Back to ${esc(repo)}</a></p>`;
       return;
     }
@@ -4555,7 +4562,7 @@ const views = {
     // Each wave merges together; a branch that clashes with one before it says which, on hover.
     const waits = (w) => w.after.map((a) => `${a.branch}${a.stacked ? " (stacked on it)" : ""}${a.files.length ? `: ${a.files.join(", ")}` : ""}`).join("; ");
     const planned = plan?.waves.length > 1 ? `<div class="muted" style="white-space:nowrap;overflow-x:auto" title="${esc(`${plan.engine ?? "Mervin"} planned this: merge a wave and the next wave's branches take main in by themselves`)}">${icon("git-merge")} <b>${esc(plan.engine ?? "Mervin")}</b> ${plan.waves.map((wave, i) => `<b>${i + 1}</b> ${wave.map((w) => w.after.length ? `<code title="${esc(`after ${waits(w)}`)}">${esc(w.branch)}</code>` : `<code>${esc(w.branch)}</code>`).join(" ")}`).join(" → ")}</div>` : "";
-    el.innerHTML = planned + reviews.map((b) => {
+    el.innerHTML = board + planned + reviews.map((b) => {
       // A file only opened on the branch (the switcher reads through its copy) changes nothing: not counted.
       const files = b.files.filter((f) => !f.merged && (f.ops.length || f.deleted || f.binary || f.conflicts.length)), clash = files.flatMap((f) => f.conflicts.map((c) => ({ path: f.path, ...c })));
       // Prose the merge settled that one side may have made untrue (#1254): cards to read, never in the way of Merge.
