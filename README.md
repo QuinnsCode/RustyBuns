@@ -131,6 +131,16 @@ D1 migrations apply at boot, and `"use server"` functions run for real against s
 
 </details>
 
+### Smoke test an app without touching it
+
+`rustybuns smoke [dir]` copies your Vite or Bun app to a throwaway folder, installs, inits, builds and boots it on the local twins, and says whether `GET /` answered.
+
+<details><summary>More</summary>
+
+The copy has no `.env` or `.dev.vars`, gets a fake for every secret the app names, runs with an empty HOME and no Cloudflare or other deploy logins, and the host runs in Seatbelt on macOS. It tries the mode `init` picks, then the app's own Worker build if it has one, prints where it stopped when it fails (`install`, `init`, `build`, `boot` or `request`), and deletes everything afterwards unless you pass `--keep`. Nothing is deployed and no account is read, so it costs nothing. The same steps run over public GitHub repos in [FRAMEWORK_COVERAGE.md](FRAMEWORK_COVERAGE.md).
+
+</details>
+
 ### Plan before anything costs money
 
 `plan` typechecks the generated stack and shows what it would create and bill. `deploy` refuses to run without a plan for that exact config, then asks.
