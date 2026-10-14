@@ -93,7 +93,11 @@ function authFor(req: Request, env: Env) {
   return auth;
 }
 
-const aliasOf = (req: Request, env: Env) => aliasesClosed(env) ? null : /(?:^|;\s*)cs_user=([a-z0-9-]+)/.exec(req.headers.get("cookie") ?? "")?.[1] ?? null;
+// agent- handles are ours to give, so a cookie can't claim one (it would join every repo running that agent).
+const aliasOf = (req: Request, env: Env) => {
+  const name = aliasesClosed(env) ? null : /(?:^|;\s*)cs_user=([a-z0-9-]+)/.exec(req.headers.get("cookie") ?? "")?.[1] ?? null;
+  return name && !isAgentHandle(name) ? name : null;
+};
 
 const retired = async (env: Env, name: string) =>
   String((await env.DB.prepare("SELECT email FROM handle_grants WHERE handle = ?").bind(name).first())?.email ?? "").startsWith("retired:");
@@ -105,7 +109,7 @@ const retired = async (env: Env, name: string) =>
  */
 async function aliasSeen(req: Request, env: Env) {
   const name = aliasOf(req, env);
-  if (!name || isAgentHandle(name)) return name;
+  if (!name) return name;
   if (await retired(env, name)) return null;
   await env.DB.prepare("INSERT OR IGNORE INTO users (name, created_at) VALUES (?, ?)").bind(name, Date.now()).run();
   return name;
