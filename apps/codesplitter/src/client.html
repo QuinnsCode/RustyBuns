@@ -124,11 +124,11 @@
   body.ide-mode { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
   body.ide-mode #topplay { display: none; }
   body.ide-mode main { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0; }
-  .repohead { background: var(--bg); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 12px; }
+  .repohead { background: var(--bg); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 16px; }
   .repohead h1 { margin: 0; font: 400 15px/1.3 var(--sans); letter-spacing: -0.015em; display: flex; align-items: center; gap: 6px; }
   .repohead h1 b { font-weight: 600; }
   /* The git bar under a repo's header: every git state as a pill, quiet when fine, orange when it wants you, red when it's stuck. */
-  .gitbar { background: var(--bg); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 5px 12px; font-size: 12.5px; }
+  .gitbar { background: var(--bg); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 5px 16px; font-size: 12.5px; }
   .gitbar:empty { display: none; }
   /* Orange rules across the top and bottom of the window while you're on a repo's main, the git source of truth. A branch drops them. */
   .truth-edge { position: fixed; left: 0; right: 0; height: 4px; background: var(--accent); z-index: 60; pointer-events: none; }
@@ -160,7 +160,7 @@
   .on-branch > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .on-branch code { color: var(--accent-ink); font-weight: 600; }
   .on-branch .btn { flex: none; padding: 2px 10px; }
-  .wb { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--ew, 250px) minmax(0, 1fr) var(--dw, 290px); position: relative; }
+  .wb { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--ew, 250px) minmax(0, 1fr) var(--dw, 290px); position: relative; margin: 12px 16px; border: 1px solid var(--border); }
   .wb > * { min-height: 0; overflow: auto; }
   .explorer { background: var(--canvas); border-right: 1px solid var(--border); padding-bottom: 12px; }
   .pad { padding: 8px 12px 4px; }
