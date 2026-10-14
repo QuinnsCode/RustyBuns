@@ -58,6 +58,8 @@ function mount() {
       } else if (now.stale && !restarting) {
         show(now.canRestart ? "Server code changed: the office needs a restart." : "Server code changed: restart the office (bun run office:update, or run it under bun run office:mama).",
           now.canRestart ? ["Restart", restart] : undefined);
+      } else if (now.workers && !restarting) {
+        show("The workers' tools changed: they need to reconnect (new session or /mcp), the office needn't restart.");
       }
     } catch {
       if (first && ++misses >= 2) show(restarting ? "Restarting the office, coming back in a moment (workers keep running)…" : "The office isn't answering; reconnecting…");
