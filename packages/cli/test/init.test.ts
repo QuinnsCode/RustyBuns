@@ -854,3 +854,18 @@ test("init: a proxied Vite app with its server in a folder of its own (./api) ru
   const cfg = p.read("rustybuns.config.ts");
   expect(JSON.parse(cfg.slice(cfg.indexOf("defineConfig(") + 13, cfg.lastIndexOf(")"))).targets.desktop.server).toEqual({ entry: "api/server.js", paths: ["/api"] });
 });
+
+test("init: a hand-written wrangler.json or wrangler.toml stays the app's config", () => {
+  for (const f of ["wrangler.json", "wrangler.toml"]) {
+    const p = project({
+      "package.json": JSON.stringify({ name: "r", dependencies: { vite: "5" } }),
+      [f]: f.endsWith("json") ? `{ "name": "r", "main": "src/worker.ts" }` : `name = "r"\nmain = "src/worker.ts"\n`,
+      "src/worker.ts": "export default {}",
+    });
+    const r = p.run("init");
+    expect(r.out).toContain("wrangler.generated.jsonc");
+    expect(r.code).toBe(0);
+    expect(existsSync(join(p.dir, "wrangler.jsonc"))).toBe(false);
+    expect(p.read("wrangler.generated.jsonc")).toStartWith("// GENERATED");
+  }
+});
