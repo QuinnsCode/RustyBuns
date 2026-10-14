@@ -66,6 +66,7 @@ import type { Busy } from "./merge-plan.ts";
 import { MERVIN } from "./mervin.ts";
 import { readStats } from "./stats.ts";
 import { engineLines, type Engine } from "./heal.ts";
+import { isBuildFile } from "./buildfiles.ts";
 
 export interface Run {
   id: number;
@@ -592,7 +593,11 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     // A rebuild that ended with both sides on its branch takes it upstream, so its pull request stops clashing (#1226).
     // It goes while the run still says running, so a sync takes main in for it meanwhile (takeMainUpstream) leaves it be.
     // One handed off waits for whoever took over.
-    const pushed = rebuild && row.branch && !handoff && !signal.aborted ? await pushRebuilt(env, owner, repo, row.branch) : undefined;
+    // One that edited a file that runs at build time (.github/workflows/*, a lockfile) waits for a person: a push runs it with the repo's secrets.
+    const build = [path, ...(r.edited ?? [])].filter(isBuildFile);
+    const pushed = rebuild && row.branch && !handoff && !signal.aborted
+      ? build.length ? { ok: false, error: `left for a person: the task edited ${[...new Set(build)].join(", ")}, which run at build time. Review the branch, then push it` } : await pushRebuilt(env, owner, repo, row.branch)
+      : undefined;
     const done = await finish(env, id, "done", { ...extra, ...(engine.length && { engine }), ...(pushed && { pushed }), applied: r.applied, rev: r.rev, runs: r.runs, conflicts: r.conflicts, output: r.output.slice(-4000), spent: r.spent, ...(r.edited && { edited: r.edited }), ...(pending ? { pending } : {}), ...(handoff && { handoff }) });
     // Stopped just as it ended: nothing waits.
     if (pending?.until && done.meta?.changes) await landLater(env, id, origin, wait);
