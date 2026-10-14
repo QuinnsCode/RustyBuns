@@ -15,6 +15,7 @@
 import { evict, openToken } from "./github.ts";
 import { fileStub, toFile } from "./archive.ts";
 import { listFollows } from "./follows.ts";
+import { settingsStub } from "./settings.ts";
 import { json, readBody, type Env } from "./env.ts";
 
 const all = async (env: Env, sql: string, ...args: unknown[]) => (await env.DB.prepare(sql).bind(...args).all()).results;
@@ -68,6 +69,8 @@ export async function exportFor(env: Env, handle: string) {
     line_events: await all(env, "SELECT owner, repo, path, sets, inserts, deletes, lines, first_at, last_at FROM line_events WHERE who = ?", handle),
     // The rev of each file you last saw (seen.ts).
     last_seen: await all(env, "SELECT key, rev, at FROM last_seen WHERE name = ? ORDER BY at DESC", handle),
+    // Your settings (settings.ts), from the Durable Object near you.
+    settings: await settingsStub(env, handle).fetch(new Request("https://settings/")).then((r) => r.json()).catch(() => null),
     feed_digest: await env.DB.prepare("SELECT harness, status, since, through, text, at FROM feed_digests WHERE name = ?").bind(handle).first(),
   };
 }
@@ -192,6 +195,7 @@ export async function eraseUser(env: Env, handle: string, { scrub = false } = {}
     // handle_grants is what makes a handle unclaimable; no inbox is called this.
     by("INSERT OR REPLACE INTO handle_grants (handle, email) VALUES (?, ?)", handle, `retired:${handle}`),
   ]);
+  await settingsStub(env, handle).fetch(new Request("https://settings/", { method: "DELETE" })).catch(() => {});
   if (scrub) await scrubHandle(env, handle);
   if (!u) return revokeYourself;
   await env.DB.batch([

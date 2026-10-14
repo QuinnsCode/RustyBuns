@@ -15,6 +15,7 @@
     "deploy": "vite build && bunx wrangler deploy"
   },
   "dependencies": {
+    "@rustybuns/util": "workspace:*",
     "@rustybuns/shell-bun": "workspace:*",
     "three": "^0.180.0"
   },

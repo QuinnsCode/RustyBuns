@@ -7,16 +7,12 @@
 // Who may stamp: anyone signed in who can read the repo. A private line is the crew's
 // to stamp and see stamped, like its text.
 
-import { materialize, toFile } from "./archive.ts";
+import { fileLines, materialize, toFile, type FileLine } from "./archive.ts";
 import { json, readBody, type Env } from "./env.ts";
 
 export const STAMPS = ["+1", "heart", "binoculars", "shovel", "gem", "skull", "lgtm"] as const;
 /** How many lines one stamp may go on at once. */
 const MAX_LINES = 100;
-
-interface Line { id: string; by: string; private?: true }
-const fileLines = async (env: Env, owner: string, repo: string, path: string, crew: boolean) =>
-  ((await (await toFile(env, owner, repo, path, "stamp", "file", { headers: { "x-codesplitter-crew": crew ? "1" : "0" } })).json()) as { lines: Line[] }).lines;
 
 /** Tell the pages that have the file open that its stamps changed (file-do.ts). */
 const stamped = (env: Env, owner: string, repo: string, path: string) => toFile(env, owner, repo, path, "stamp", "stamped", { method: "POST" });
@@ -28,9 +24,9 @@ export async function stampRoutes(req: Request, env: Env, p: string[], url: URL,
   if (!path) return json({ error: "path required" }, 400);
   const m = await materialize(env, owner, repo, path);
   if ("error" in m) return json({ error: m.error }, m.status);
-  const lines = await fileLines(env, owner, repo, path, a.write);
+  const lines = await fileLines(env, owner, repo, path, "stamp", a.write);
   // Outside the crew a private line's stamps are hidden, as its text is.
-  const shown = (l: Line) => a.write || !l.private;
+  const shown = (l: FileLine) => a.write || !l.private;
 
   if (req.method === "GET") {
     const { results } = await env.DB.prepare("SELECT line, stamp, by, created_at FROM stamps WHERE owner = ? AND repo = ? AND path = ? ORDER BY created_at, rowid")
@@ -59,7 +55,7 @@ export async function stampRoutes(req: Request, env: Env, p: string[], url: URL,
     return json({ ok: true });
   }
 
-  let picked: Line[];
+  let picked: FileLine[];
   if (Array.isArray(q.lines)) {
     const want = new Set(q.lines.map(String));
     picked = lines.filter((l) => shown(l) && want.has(l.id));

@@ -14,8 +14,9 @@ export const GIT_BOT = "codesplitters";
 /** A crew member without an email of their own commits as `<name>@` this. */
 export const GIT_EMAIL_DOMAIN = "codesplitters.local";
 
+import { hex } from "./util.ts";
+
 const enc = new TextEncoder();
-const hex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
 const unhex = (s: string) => Uint8Array.from(s.match(/../g)!.map((h) => parseInt(h, 16)));
 const concat = (parts: Uint8Array[]) => {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));

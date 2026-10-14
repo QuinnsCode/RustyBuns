@@ -47,6 +47,7 @@
 // works on the branch the stopped one left, whose batch waits, held, till it's done; after HANDOFFS
 // of them it's a person's turn. The run says how much it read (`spent`) and, under `handoff`, why it stopped.
 
+import { protectOn } from "./protect.ts";
 import { json, type Env, readBody } from "./env.ts";
 import { charge, every, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
@@ -117,6 +118,8 @@ export interface Note { text: string; at: number }
 
 /** A queue consumer's wall time, so a hosted run's limit. */
 const HOSTED_RUN_MS = 15 * 60_000;
+/** How long past its deadline a hosted run may still be `running` before a listing calls it cut off. */
+const HOSTED_GRACE_MS = 2 * 60_000;
 /** How many runs each repo keeps. */
 const KEEP = 50;
 /** How many of a run's log lines are kept. */
@@ -153,7 +156,9 @@ const caller = (self: (req: Request) => Promise<Response>, origin: string) => (w
 
 // The desktop's runs going on in this process, each with its Stop: one still
 // `running` in D1 that isn't here was cut off when the app quit.
-const live = new Map<number, AbortController>();
+// Kept per app instance: run ids restart at 1 in every database, so one shared map would hand a run another's stopper.
+const lives = new WeakMap<object, Map<number, AbortController>>();
+const liveOf = (env: Env) => { let m = lives.get(env); if (!m) lives.set(env, m = new Map()); return m; };
 
 /** Why agents can't run here, or null when they can. Hosted ones need accounts on; local ones off, since the agent signs in by alias. */
 export function agentsUnavailable(env: Env): string | null {
@@ -227,10 +232,16 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
     const { results } = await env.DB.prepare(`SELECT * FROM agent_runs WHERE owner = ? AND repo = ?${path ? " AND path = ?" : ""} ORDER BY id DESC LIMIT ${KEEP}`)
       .bind(...[owner, repo, path].filter((x) => x !== null)).all();
     const rows = results as Row[];
-    if (!env.AGENT_SANDBOX) for (const r of rows) if (r.status === "running" && !live.has(r.id)) {
+    if (!env.AGENT_SANDBOX) for (const r of rows) if (r.status === "running" && !liveOf(env).has(r.id)) {
       const error = "the app stopped before the agent finished";
       await finish(env, r.id, "failed", { error });
       Object.assign(r, { status: "failed", result: JSON.stringify({ error }) });
+    }
+    // A hosted run's own deadline timer lives in the consumer's isolate; if that went (a deploy, a crash), nothing else would end the row.
+    if (env.AGENT_SANDBOX) for (const r of rows) if (r.status === "running" && r.started + HOSTED_RUN_MS + HOSTED_GRACE_MS < Date.now()) {
+      const result = { error: `out of time: a hosted run gets ${every(HOSTED_RUN_MS / 1000)}` };
+      await env.DB.prepare("UPDATE agent_runs SET status = 'stopped', result = json_set(COALESCE(result, '{}'), '$.error', ?) WHERE id = ? AND status = 'running'").bind(result.error, r.id).run();
+      Object.assign(r, { status: "stopped", result: JSON.stringify({ ...resultOf(r), ...result }) });
     }
     await relaunch(env, rows, url.origin);
     return json(rows.map((r) => toRun(r, env)));
@@ -273,7 +284,7 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
 /** Starts run `id`: off the queue when hosted, in this process on the desktop. */
 async function launch(env: Env, self: (req: Request) => Promise<Response>, origin: string, id: number) {
   if (env.AGENT_SANDBOX) await env.JOBS.send({ agent: id, origin });
-  else { live.set(id, new AbortController()); void execute(env, self, origin, id).finally(() => live.delete(id)); }
+  else { liveOf(env).set(id, new AbortController()); void execute(env, self, origin, id).finally(() => liveOf(env).delete(id)); }
 }
 
 /** Stops the repo's running runs that match every filter given (none: all of them). */
@@ -296,7 +307,7 @@ async function stopRuns(req: Request, env: Env, owner: string, repo: string, use
     if (!done.meta?.changes) continue;
     stopped.push(r.id);
     // Here it stops at once; a hosted run sees it on its next check.
-    live.get(r.id)?.abort();
+    liveOf(env).get(r.id)?.abort();
     // Its lines are free now, even if the run itself is gone (cut off, or the app quit).
     if (result.lines) await call(owner, `/api/repos/${owner}/${repo}/do/claims?path=${encodeURIComponent(r.path)}`, { method: "POST", body: JSON.stringify({ id: `run-${r.id}`, release: true }) }).catch(() => {});
   }
@@ -413,7 +424,10 @@ async function reviewRun(env: Env, self: (req: Request) => Promise<Response>, or
   if (!row || row.owner !== owner || row.repo !== repo) return json({ error: "no such run" }, 404);
   const run = resultOf(row), p = run.pending;
   if (!p) return json({ error: run.landed ? "it already landed" : run.rejected ? "it was rejected" : "nothing of this run's is waiting" }, 409);
-  if (what === "accept") return land(env, self, origin, id, user);
+  if (what === "accept") {
+    if (user === row.agent && user !== owner && await protectOn(env, owner, repo)) return json({ error: "main is protected: someone other than the agent accepts its batch" }, 403);
+    return land(env, self, origin, id, user);
+  }
   if (what === "reject") {
     const { pending: _, ...rest } = run;
     if (!(await swap(env, id, run, { ...rest, rejected: { at: Date.now(), by: user } }))) return json({ error: "it's landing already" }, 409);
@@ -498,12 +512,14 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
   const { owner, repo, path, harness, agent } = row;
   // Its batch waits on a branch of its own, made as its owner, unless there's no wait. A fix task
   // (heal.ts) works on the branch it's fixing instead, which is left as it is whatever happens.
-  const wait = reviewMs(env), own = !row.branch && wait ? runBranch(id) : undefined, branch = row.branch ?? own;
+  // Protected main (#1426): a batch always has a branch of its own and waits for a person, not a timer.
+  const protectedMain = await protectOn(env, owner, repo).catch(() => false);
+  const wait = reviewMs(env), own = !row.branch && (wait || protectedMain) ? runBranch(id) : undefined, branch = row.branch ?? own;
   // Stop: on the desktop the route aborts it here; a hosted Stop lands on another
   // isolate, so this one checks D1 every couple of seconds, and right as the agent ends.
-  const stopper = live.get(id) ?? new AbortController(), signal = stopper.signal;
+  const stopper = liveOf(env).get(id) ?? new AbortController(), signal = stopper.signal;
   // A desktop run off the queue (a fix task) is this process's too, so listing runs doesn't call it cut off.
-  if (!env.AGENT_SANDBOX && !live.has(id)) live.set(id, stopper);
+  if (!env.AGENT_SANDBOX && !liveOf(env).has(id)) liveOf(env).set(id, stopper);
   let given = 0;
   const peek = async () => {
     const r = await env.DB.prepare("SELECT status, notes FROM agent_runs WHERE id = ?").bind(id).first() as Pick<Row, "status" | "notes"> | null;
@@ -565,7 +581,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       note: noteFor({ path, task: row.task, why: r.tripped.why, applied: r.applied, edited: r.edited, conflicts: r.conflicts, failures: r.failures, output: r.output, notes: unheard }),
     });
     // Its batch waits for whoever took over: held till the fresh agent is done, or for a person.
-    const pending = !own || !r.applied ? undefined : !handoff ? { branch: own, until: Date.now() + wait }
+    const pending = !own || !r.applied ? undefined : !handoff ? { branch: own, until: protectedMain ? null : Date.now() + wait, ...(protectedMain && { why: "main is protected: a person accepts it" }) }
       : { branch: own, until: null, why: handoff.next ? `handed off to run ${handoff.next}` : `stopped at ~${short(handoff.at)} tokens (${handoff.why}): a person's turn` };
     const engine = rebuild ? engineLines(r.output) : [];
     // A rebuild that ended with both sides on its branch takes it upstream, so its pull request stops clashing (#1226).
@@ -587,5 +603,5 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     } else await finish(env, id, "failed", { ...extra, error: String((e as Error)?.message ?? e).slice(-4000) });
     // Whatever it left on its branch goes with it.
     if (own) await dropBranch(env, owner, repo, own, path);
-  } finally { clearInterval(checking); clearTimeout(cutoff); if (row.branch) live.delete(id); }
+  } finally { clearInterval(checking); clearTimeout(cutoff); if (row.branch) liveOf(env).delete(id); }
 }

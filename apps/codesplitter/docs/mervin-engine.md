@@ -49,6 +49,13 @@ One small API, served three ways (CLI, HTTP, MCP): `merge(base, ours, theirs, po
    `DEPLOYS=1 AGENTS=1 CHECKS=1`.
 3. Rust `mervin` crate for line-id diff + stretch-blend, with the parity test.
 
+## Learning store
+
+Opt-in outcome events (no file contents) stream from the Worker host through a Pipeline into an Iceberg table
+in R2 and are queried with R2 SQL, so the merge plan can learn what works for a repo. The core never reads it:
+learning changes plan weights and which resolver levels are trusted, never the merge itself. Design in
+[mervin.md](mervin.md#learning-your-merge-patterns-opt-in-not-built-yet).
+
 ## Constraints
 
 - Contest: keep `main` working and the demo matching its video until October 21, 2026. Build on branches; step 2

@@ -27,17 +27,17 @@
 //   POST /api/oauth/revoke       RFC 7009 {token}
 //   GET  /api/oauth/grants       yours (cookie only)     DELETE /api/oauth/grants/:id
 
-import { json, type Env } from "./env.ts";
+import { json, readBody, type Env } from "./env.ts";
 import { identify } from "./identity.ts";
 import { ownOrigin } from "./security.ts";
-import { b64url, DAY, hash, MAX_DAYS } from "./tokens.ts";
+import { DAY, MAX_DAYS } from "./tokens.ts";
 import { OAUTH_SCOPES } from "./openapi.ts";
+import { b64url, digest, esc, sha256 } from "./util.ts";
 
 const HOUR = 3_600_000, CODE_MS = 10 * 60_000, REFRESH_MS = 30 * DAY, GRANT_MS = MAX_DAYS * DAY;
 
 const random = (prefix: string) => prefix + b64url(crypto.getRandomValues(new Uint8Array(32)));
 const id = () => crypto.randomUUID().slice(0, 8);
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const NO_STORE = { "cache-control": "no-store" };
 const CORS = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type, authorization", "access-control-allow-methods": "GET, POST, OPTIONS" };
 const oauthError = (error: string, description: string, status = 400) => json({ error, error_description: description }, status, { ...NO_STORE, ...CORS });
@@ -133,7 +133,7 @@ button.go{background:var(--accent);border-color:var(--accent);color:#fff;font-we
 async function issue(env: Env, g: { id: string; name: string; client_name: string; scope: string }, refresh: string) {
   const access = random("cst_"), now = Date.now();
   await env.DB.prepare("INSERT INTO api_tokens (id, name, label, hash, last4, scope, created_at, expires_at, grant_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(id(), g.name, g.client_name, await hash(access), access.slice(-4), g.scope, now, now + HOUR, g.id).run();
+    .bind(id(), g.name, g.client_name, await sha256(access), access.slice(-4), g.scope, now, now + HOUR, g.id).run();
   return json({ access_token: access, token_type: "Bearer", expires_in: HOUR / 1000, refresh_token: refresh, scope: g.scope }, 200, { ...NO_STORE, ...CORS });
 }
 
@@ -146,8 +146,8 @@ const revokeGrant = (env: Env, grant: string) => env.DB.batch([
 async function fields(req: Request): Promise<Record<string, string>> {
   const type = req.headers.get("content-type") ?? "";
   if (type.includes("application/json")) {
-    const b = await req.json().catch(() => ({}));
-    return Object.fromEntries(Object.entries(b ?? {}).map(([k, v]) => [k, String(v)]));
+    const b = await readBody<string>(req);
+    return Object.fromEntries(Object.entries(b).map(([k, v]) => [k, String(v)]));
   }
   return Object.fromEntries(new URLSearchParams(await req.text().catch(() => "")));
 }
@@ -193,7 +193,7 @@ async function authorizeForm(req: Request, env: Env, url: URL) {
   }
   const code = random("csa_");
   await env.DB.prepare("UPDATE oauth_requests SET code_hash = ?, scope = ?, expires_at = ? WHERE id = ?")
-    .bind(await hash(code), f.scope === "write" ? "write" : "read", Date.now() + CODE_MS, r.id).run();
+    .bind(await sha256(code), f.scope === "write" ? "write" : "read", Date.now() + CODE_MS, r.id).run();
   return back(r.redirect_uri, { code, state: r.state }, url.origin);
 }
 
@@ -201,23 +201,23 @@ async function token(req: Request, env: Env) {
   const f = await fields(req), now = Date.now();
   if (f.grant_type === "authorization_code") {
     if (!f.code || !f.code_verifier) return oauthError("invalid_request", "code and code_verifier are required");
-    const r = await env.DB.prepare("SELECT * FROM oauth_requests WHERE code_hash = ?").bind(await hash(f.code)).first() as
+    const r = await env.DB.prepare("SELECT * FROM oauth_requests WHERE code_hash = ?").bind(await sha256(f.code)).first() as
       { id: string; name: string; client_id: string; client_name: string; redirect_uri: string; code_challenge: string; scope: string; expires_at: number } | null;
     // Once only, right or wrong.
     if (r) await env.DB.prepare("DELETE FROM oauth_requests WHERE id = ?").bind(r.id).run();
     if (!r || r.expires_at <= now) return oauthError("invalid_grant", "that code is expired, used or wrong");
     if (f.client_id !== r.client_id || f.redirect_uri !== r.redirect_uri) return oauthError("invalid_grant", "client_id and redirect_uri must match the authorize request");
-    const challenge = b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(f.code_verifier))));
+    const challenge = b64url(await digest(f.code_verifier));
     if (challenge !== r.code_challenge) return oauthError("invalid_grant", "code_verifier doesn't match the code_challenge");
     const refresh = random("csr_");
     const g = { id: id(), name: r.name, client_name: r.client_name, scope: r.scope };
     await env.DB.prepare("INSERT INTO oauth_grants (id, name, client_id, client_name, scope, refresh_hash, created_at, expires_at, last_used_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(g.id, g.name, r.client_id, g.client_name, g.scope, await hash(refresh), now, now + REFRESH_MS, now).run();
+      .bind(g.id, g.name, r.client_id, g.client_name, g.scope, await sha256(refresh), now, now + REFRESH_MS, now).run();
     return issue(env, g, refresh);
   }
   if (f.grant_type === "refresh_token") {
     if (!f.refresh_token) return oauthError("invalid_request", "refresh_token is required");
-    const h = await hash(f.refresh_token);
+    const h = await sha256(f.refresh_token);
     const g = await env.DB.prepare("SELECT * FROM oauth_grants WHERE refresh_hash = ?").bind(h).first() as
       { id: string; name: string; client_id: string; client_name: string; scope: string; created_at: number; expires_at: number } | null;
     if (!g) {
@@ -230,18 +230,18 @@ async function token(req: Request, env: Env) {
     if (f.client_id && f.client_id !== g.client_id) return oauthError("invalid_grant", "that refresh token is another client's");
     const refresh = random("csr_");
     await env.DB.prepare("UPDATE oauth_grants SET refresh_hash = ?, prev_hash = ?, expires_at = ?, last_used_at = ? WHERE id = ?")
-      .bind(await hash(refresh), h, Math.min(now + REFRESH_MS, g.created_at + GRANT_MS), now, g.id).run();
+      .bind(await sha256(refresh), h, Math.min(now + REFRESH_MS, g.created_at + GRANT_MS), now, g.id).run();
     return issue(env, g, refresh);
   }
   return oauthError("unsupported_grant_type", "authorization_code or refresh_token");
 }
 
 async function register(req: Request, env: Env) {
-  const b = (await req.json().catch(() => null)) as { redirect_uris?: unknown; client_name?: unknown } | null;
-  const uris = b?.redirect_uris;
+  const b = await readBody<"redirect_uris" | "client_name">(req);
+  const uris = b.redirect_uris;
   if (!Array.isArray(uris) || !uris.length || uris.length > 5 || !uris.every(registrable))
     return oauthError("invalid_redirect_uri", "redirect_uris: 1 to 5 https URLs, or http://127.0.0.1 / localhost ones");
-  const name = (typeof b?.client_name === "string" ? b.client_name.replace(/[\x00-\x1f<>]/g, "").trim().slice(0, 60) : "") || "an app";
+  const name = (typeof b.client_name === "string" ? b.client_name.replace(/[\x00-\x1f<>]/g, "").trim().slice(0, 60) : "") || "an app";
   const c = { client_id: random("csc_").slice(0, 28), client_name: name, redirect_uris: uris as string[], client_id_issued_at: Math.floor(Date.now() / 1000) };
   await env.DB.prepare("INSERT INTO oauth_clients (id, name, redirect_uris, created_at) VALUES (?, ?, ?, ?)").bind(c.client_id, name, JSON.stringify(uris), Date.now()).run();
   // Public clients only: whatever auth method it asked for, it sends no secret.
@@ -251,7 +251,7 @@ async function register(req: Request, env: Env) {
 async function revoke(req: Request, env: Env) {
   const { token: t } = await fields(req);
   if (t) {
-    const h = await hash(t);
+    const h = await sha256(t);
     const g = await env.DB.prepare("SELECT id FROM oauth_grants WHERE refresh_hash = ? OR prev_hash = ?").bind(h, h).first() as { id: string } | null;
     if (g) await revokeGrant(env, g.id);
     else await env.DB.prepare("DELETE FROM api_tokens WHERE hash = ?").bind(h).run();

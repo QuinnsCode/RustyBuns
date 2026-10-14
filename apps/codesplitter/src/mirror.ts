@@ -72,6 +72,7 @@ import { githubToken, parseRepo } from "./github.ts";
 import { postOrder, startChecks, upstreamMoved, upstreamTaken } from "./checks.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 import { branchNameError, json, NAME, type Env, readBody } from "./env.ts";
+import { repoRow } from "./repos.ts";
 import type { Doc } from "./lines.ts";
 import { indexFile, unindexFile } from "./search.ts";
 import { byVersion, tagNameError } from "./tags.ts";
@@ -106,7 +107,7 @@ async function must(args: string[], cwd?: string, env?: Record<string, string>) 
   if (r.code) throw new Error(r.err || `git ${args[0]} exited ${r.code}`);
   return r.out.trim();
 }
-const isAncestor = async (dir: string, a: string, b: string) => (await git(["merge-base", "--is-ancestor", a, b], dir)).code === 0;
+export const isAncestor = async (dir: string, a: string, b: string) => (await git(["merge-base", "--is-ancestor", a, b], dir)).code === 0;
 /** A file's text at a commit, or null when it isn't there. */
 const show = async (dir: string, rev: string, path: string) => { const r = await git(["cat-file", "blob", `${rev}:${path}`], dir); return r.code ? null : r.out; };
 
@@ -146,13 +147,13 @@ export const authorEnv = (): Record<string, string> => {
 /** Who a mirror's commits are by, as git and upstream see them: this machine's git identity. Null for any other repo. */
 export async function mirrorIdentity(env: Env, owner: string, repo: string) {
   if (!mirrorsOn(env)) return null;
-  const r = await env.DB.prepare("SELECT mirror_url FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+  const r = await repoRow(env, owner, repo, "mirror_url");
   return r?.mirror_url ? gitIdentity() : null;
 }
 
 interface Row { owner: string; name: string; artifact: string; branch: string | null; crew_artifact: string | null; mirror_push_crew: number | null; mirror_primary: string | null; mirror_pull_only: number | null; mirror_url: string; mirror_fails: number | null; mirror_down_since: number | null; upstream_commit: string | null }
 const row = (env: Env, owner: string, repo: string) =>
-  env.DB.prepare("SELECT owner, name, artifact, branch, crew_artifact, mirror_push_crew, mirror_primary, mirror_pull_only, mirror_url, mirror_fails, mirror_down_since, upstream_commit FROM repos WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(owner, repo).first() as Promise<Row | null>;
+  repoRow(env, owner, repo, "owner, name, artifact, branch, crew_artifact, mirror_push_crew, mirror_primary, mirror_pull_only, mirror_url, mirror_fails, mirror_down_since, upstream_commit", { mirrored: true }) as Promise<Row | null>;
 
 type State = "ok" | "down" | "refused" | "clash" | "held" | "rewritten";
 export type Resolve = "mine" | "upstream" | "rebase";
@@ -211,7 +212,7 @@ async function settled(env: Env, r: Row, tip: string, state: "ok" | "held" = "ok
 /** Something moved under this try (a commit here, a push upstream): go again on the next tick, as things stand. */
 async function again(env: Env, r: Row) {
   await env.DB.prepare("UPDATE repos SET mirror_next_at = ? WHERE owner = ? AND name = ?").bind(Date.now(), r.owner, r.name).run();
-  const s = await env.DB.prepare("SELECT mirror_state FROM repos WHERE owner = ? AND name = ?").bind(r.owner, r.name).first();
+  const s = await repoRow(env, r.owner, r.name, "mirror_state");
   return (s?.mirror_state ?? "ok") as State;
 }
 
@@ -528,7 +529,7 @@ const landing = new Map<string, Promise<void>>();
 async function landNow(env: Env, owner: string, repo: string) {
   const lg = localGit(env);
   if (!lg) return;
-  const r = await env.DB.prepare("SELECT artifact, branch, crew_artifact, git_seen, git_clash FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() as { artifact: string | null; branch: string | null; crew_artifact: string | null; git_seen: string | null; git_clash: string | null } | null;
+  const r = await repoRow(env, owner, repo, "artifact, branch, crew_artifact, git_seen, git_clash") as { artifact: string | null; branch: string | null; crew_artifact: string | null; git_seen: string | null; git_clash: string | null } | null;
   if (!r?.artifact || r.crew_artifact) return;
   const dir = lg.path(r.artifact), t = await git(["rev-parse", "--verify", "--quiet", `refs/heads/${r.branch ?? "main"}`], dir), tip = t.out.trim();
   if (t.code || !tip || tip === r.git_seen) return;
@@ -577,7 +578,7 @@ const clashesOf = (v: unknown): Record<string, string> => { try { return v ? JSO
 /** A desktop repo's baseline for landPushes: main's tip as it is when the repo's made or dug up ("" for an empty git). */
 export async function seeGit(env: Env, owner: string, repo: string) {
   const lg = localGit(env);
-  const r = lg && await env.DB.prepare("SELECT artifact, branch FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() as { artifact: string | null; branch: string | null } | null;
+  const r = lg && await repoRow(env, owner, repo, "artifact, branch") as { artifact: string | null; branch: string | null } | null;
   if (!lg || !r?.artifact) return;
   // A dig answers while its clone is still running in the background: look once it lands.
   // No git there means the clone failed, and Bun would throw spawning in a missing cwd.
@@ -589,7 +590,7 @@ export async function seeGit(env: Env, owner: string, repo: string) {
 
 /** The files a push clashed with (#788), each with its pushed commit. */
 export async function pushClashes(env: Env, owner: string, repo: string) {
-  const r = await env.DB.prepare("SELECT artifact, git_clash FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+  const r = await repoRow(env, owner, repo, "artifact, git_clash");
   return { artifact: r?.artifact as string | undefined, clashes: clashesOf(r?.git_clash) };
 }
 
@@ -640,7 +641,7 @@ export async function settlePush(env: Env, owner: string, repo: string, path: st
 
 /** Where a mirror stands: its state, and how far ahead and behind it was at the last fetch. */
 export async function mirrorStatus(env: Env, owner: string, repo: string) {
-  const r = await env.DB.prepare("SELECT artifact, crew_artifact, mirror_push_crew, mirror_primary, mirror_pull_only, branch, mirror_url, mirror_state, mirror_error, mirror_clash, mirror_down_since, mirror_synced_at, mirror_next_at, upstream_commit FROM repos WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(owner, repo).first();
+  const r = await repoRow(env, owner, repo, "artifact, crew_artifact, mirror_push_crew, mirror_primary, mirror_pull_only, branch, mirror_url, mirror_state, mirror_error, mirror_clash, mirror_down_since, mirror_synced_at, mirror_next_at, upstream_commit", { mirrored: true });
   const lg = localGit(env);
   if (!r || !lg) return null;
   const branch = (r.branch ?? "main") as string;
@@ -1316,7 +1317,7 @@ export async function mirrorRoutes(req: Request, env: Env, p: string[], user: st
   const visibility = b.visibility ?? "public";
   if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
   if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
-  if (await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(user, name).first()) return json({ error: "you already have a repo with that name" }, 409);
+  if (await repoRow(env, user, name, "1")) return json({ error: "you already have a repo with that name" }, 409);
 
   // Shallow, like a dig: upstream's history stays upstream, and our commits build on its tip.
   const art = `${user}--${name}`, dir = lg.path(art);
@@ -1361,7 +1362,7 @@ type Turn = { artifact: string; url: string; branch: string; commit: string; ahe
 async function turnable(env: Env, owner: string, repo: string): Promise<Turn | { error: string; status: number }> {
   const lg = localGit(env);
   if (!lg) return { error: "mirrors need git on your machine: turn it into one in the desktop app", status: 501 };
-  const r = await env.DB.prepare("SELECT artifact, branch, upstream, upstream_commit, mirror_url FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() as
+  const r = await repoRow(env, owner, repo, "artifact, branch, upstream, upstream_commit, mirror_url") as
     { artifact: string; branch: string | null; upstream: string | null; upstream_commit: string | null; mirror_url: string | null } | null;
   if (!r) return { error: "not found", status: 404 };
   if (r.mirror_url) return { error: "it's a mirror already", status: 409 };
