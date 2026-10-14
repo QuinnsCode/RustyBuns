@@ -41,7 +41,7 @@ for (const f of ["geist.css", "Geist-Variable.woff2", "GeistMono-Variable.woff2"
 await mkdir("dist/client/vendor", { recursive: true });
 for (const [from, to] of [
   ["lucide/dist/umd/lucide.min.js", "lucide.min.js"], ["lucide/LICENSE", "lucide-LICENSE.txt"],
-  ["three/build/three.module.js", "three.module.js"], ["three/LICENSE", "three-LICENSE.txt"],
+  ["three/build/three.module.min.js", "three.module.js"], ["three/LICENSE", "three-LICENSE.txt"],
 ]) await copyFile(`node_modules/${from}`, `dist/client/vendor/${to}`);
 // Resolve packages as wrangler does for workerd, and leave node:* to the runtime
 // (nodejs_compat). Without it Better Auth takes its browser build, whose stand-in
