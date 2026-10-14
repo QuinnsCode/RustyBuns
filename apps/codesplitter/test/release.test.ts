@@ -3,7 +3,7 @@
 // edge case each. Nothing here runs a command or touches Cloudflare.
 
 import { describe, expect, test } from "bun:test";
-import { checkPlan, deleteItems, dirtyFiles, main, MOVE_PENDING, NeedsMove, notifyCmd, parseArgs, readyLevels, realIO, release, Stop, type IO, type Mode, type Ran } from "../scripts/release.ts";
+import { checkPlan, deleteItems, dirtyFiles, main, MOVE_PENDING, NeedsMove, notifyCmd, kvBindings, parseArgs, readyLevels, realIO, release, Stop, type IO, type Mode, type Ran } from "../scripts/release.ts";
 
 const plain: Mode = { checksNew: false, move: false };
 const move: Mode = { checksNew: false, move: true };
@@ -94,6 +94,15 @@ describe("checkPlan", () => {
   });
 
   // The owner's release on 2026-10-12, the first after #1241 gave fix tasks a FIXES queue of their own.
+  test("a new KV namespace goes to the y/N; a KV delete or another new resource still stops it", () => {
+    expect(kvBindings('  STATS: { type: "kv" },\n  DB: { type: "d1" },')).toEqual(["STATS"]);
+    const v = checkPlan(logged("Plan: 1 to create, 3 to update, 4 binding changes", "[Build] update", "[DB] update", "[STATS] create", "[Worker] update", "[Worker/STATS] create"), plain);
+    expect(v.stop).toBeNull();
+    expect(v.show).toContain("[STATS] create");
+    expect(checkPlan(plan("Plan: 2 to create", "[STATS] create", "[Worker/STATS] create", "[NEWDB] create"), plain).stop).toContain("[NEWDB] create");
+    expect(checkPlan(plan("Plan: 1 to delete", "[STATS] delete"), plain).stop).toContain("[STATS] delete");
+  });
+
   test("a new queue with its consumer goes to the y/N; a consumer alone or another new resource still stops it", () => {
     const real = logged("Plan: 2 to create, 6 to update, 3 to replace, 4 binding changes", "[AGENT_SANDBOX] update", "[Build] update", "[CI_RUNNER] update",
       "[DB] update", "[DEPLOY_RUNNER] update", "[FIXES] create", "[FIXESConsumer] create", "[HOOKSConsumer] replace", "[JOBSConsumer] replace",
