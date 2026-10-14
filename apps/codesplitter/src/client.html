@@ -1109,7 +1109,17 @@
 </header>
 <nav class="rail" id="rail" aria-label="Views" hidden></nav>
 <div class="notice" id="notice" hidden></div>
-<main id="app" tabindex="-1"></main>
+<main id="app" tabindex="-1"><noscript>
+  <h1>codeSplitter</h1>
+  <p>A git host where every line has its own author and history, and people and agents edit the same file at once. This page needs JavaScript; the API doesn't.</p>
+  <ul>
+    <li><a href="/api">/api</a>: the API reference, as JSON</li>
+    <li><a href="/api/openapi.json">/api/openapi.json</a>: the OpenAPI 3.1 spec</li>
+    <li><a href="/api/mcp">/api/mcp</a>: a remote MCP server</li>
+    <li><a href="/reference">/reference</a>: the reference as a page</li>
+    <li><a href="/llms.txt">/llms.txt</a>: this, for agents</li>
+  </ul>
+</noscript></main>
 <div class="drawer" id="drawer" hidden><div class="scrim"></div><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
   <div class="dhead"><span class="label" id="drawer-kicker"></span><span class="grow"></span><button class="btn ghost" id="drawer-x" title="close (esc)"><i data-lucide="x"></i></button></div>
   <div class="dbody" id="drawer-body"></div><div class="dfoot" id="drawer-foot" hidden></div>
