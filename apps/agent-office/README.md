@@ -159,3 +159,4 @@ runtimes), and each terminal keeps ~26 MB of scrollback. That parser is the obvi
 - Not `rustybuns build desktop`: that wraps Vite apps and Workers-shaped handlers, and this is a
   long-running server with terminals. It's the first sample for the planned sidecar mode (FRAMEWORKS.md).
 - Moving the office into codeSplitter (hosted workers, queue and merge engine) is planned, not built: see [MOVE.md](MOVE.md).
+- To use codeSplitter from the local office today, see [DOGFOOD.md](DOGFOOD.md).
