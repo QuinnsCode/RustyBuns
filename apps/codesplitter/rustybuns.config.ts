@@ -79,7 +79,7 @@ export default defineConfig({
   },
   bindings: {
     // Profiles, repos, playlists and the search index.
-    DB: { type: "d1", databaseName: "codesplitter-db", renamedFrom: "codesplitters-db", migrationsDir: "migrations" },
+    DB: { type: "d1", databaseName: "codesplitter-db", protect: true, renamedFrom: "codesplitters-db", migrationsDir: "migrations" },
     // One Durable Object per file.
     FILES: { type: "durable_object", className: "FileDurableObject" },
     // One game room per level or repo: the lobby on its page, then the relay.
@@ -91,11 +91,11 @@ export default defineConfig({
     // Search across repos: one vector index over every repo's committed code, and Workers AI
     // (bge-small-en-v1.5, 384 dimensions) to embed it. Without them, it fans out (src/search.ts).
     ...(vectors ? {
-      VECTORS: { type: "vectorize", indexName: "codesplitter-vectors", dimensions: 384, metadataIndexes: { repo: "string", pub: "boolean" } } as const,
+      VECTORS: { type: "vectorize", indexName: "codesplitter-vectors", protect: true, dimensions: 384, metadataIndexes: { repo: "string", pub: "boolean" } } as const,
       AI: { type: "ai" } as const,
     } : {}),
     // The landing page's counts (merges, clashes Mervin settled), copied here for a minute so a visit costs a KV read, not D1 (src/stats.ts).
-    STATS: { type: "kv" },
+    STATS: { type: "kv", protect: true },
     // Webhook tries, one message each; this Worker's queue() sends them and books the
     // retries with a delay (src/hooks.ts). The desktop runs it in-process on sqlite.
     HOOKS: { type: "queue", queueName: "codesplitter-hooks", renamedFrom: "codesplitters-hooks", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } },
@@ -117,7 +117,7 @@ export default defineConfig({
     // (src/chunks.ts), read through the Cache API. None so far: Bun and Alchemy fit in Artifacts
     // from the tarball (#356), so the bucket is empty. No desktop twin yet; the desktop's local
     // git takes any size anyway.
-    LEVEL_CHUNKS: { type: "r2", bucketName: "codesplitter-level-chunks" },
+    LEVEL_CHUNKS: { type: "r2", bucketName: "codesplitter-level-chunks", protect: true },
     // Hosted coding agents (super experimental): one container per run, each CLI
     // installed (sandbox/Dockerfile), with the logins for the harnesses you use.
     // The desktop has no twin and runs the CLIs on the machine instead.
@@ -174,7 +174,7 @@ export default defineConfig({
   },
   // The ephemeral office preview (apps/agent-office/MOVE.md, #1385): `rustybuns deploy --stage office-preview`
   // with DEPLOYS=1 AGENTS=1 CHECKS=1, then `rustybuns destroy --stage office-preview` after verifying.
-  // Every named resource has its own name, so the destroy touches nothing live; none is protected.
+  // Every named resource has its own name, so the destroy touches nothing live; the live data bindings are protect: true, and this stage turns it off on its own copies.
   // No crons (nothing sweeps a throwaway), and Turnstile is off since its widget is tied to the live hostname.
   // Verify it with a throwaway repo and token, per apps/agent-office/PREVIEW.md.
   stages: {
@@ -182,8 +182,9 @@ export default defineConfig({
       workerName: "codesplitter-office-preview",
       crons: [],
       bindings: {
-        DB: { databaseName: "codesplitter-office-preview-db" },
-        LEVEL_CHUNKS: { bucketName: "codesplitter-office-preview-chunks" },
+        DB: { databaseName: "codesplitter-office-preview-db", protect: false },
+        LEVEL_CHUNKS: { bucketName: "codesplitter-office-preview-chunks", protect: false },
+        STATS: { protect: false },
         HOOKS: { queueName: "codesplitter-office-preview-hooks" },
         JOBS: { queueName: "codesplitter-office-preview-jobs" },
         FIXES: { queueName: "codesplitter-office-preview-fixes" },
