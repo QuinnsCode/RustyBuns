@@ -3,7 +3,6 @@
 Mervin is codeSplitter's merge engine: the line-id merge (`src/lines.ts`), the resolver levels and the
 merge plan (`src/merge-plan.ts`) that puts clashing PRs in waves. It swerves out of the way of merge conflicts.
 
-<<<<<<< HEAD
 **Don't be the conflict in your git.** Git that keeps going.
 
 Mervin keeps on swervin, so your agentic merge conflicts can stop hurting. Everyone has that "database guy";
@@ -12,9 +11,8 @@ Mervin is your agentic git and merge guy, out here solving the problems so your 
 Mervin is the merge engine this agentic era needs, and layered with a sync layer it makes agents go brrrr.
 Let Mervin bring the intelligence to your merges, so you don't spend precious token budget on them and
 human minds are free to steer the digsite.
-=======
+
 Design note for running it locally and on Cloudflare: [mervin-engine.md](mervin-engine.md).
->>>>>>> origin/main
 
 ## The goal: 80% of fights seen coming
 
