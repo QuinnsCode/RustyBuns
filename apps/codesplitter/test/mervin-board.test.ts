@@ -83,3 +83,32 @@ describe("mervin board", () => {
     expect(score(repo, board, join(repo, "none"), main).rows.every((r) => r.score === "waiting")).toBe(true);
   });
 });
+
+// scripts/mervin-merge.ts: which PRs go now, which wait, and why.
+import { decide } from "../scripts/mervin-merge.ts";
+describe("mervin merge round", () => {
+  const row = (path: string, tier: "certain" | "card", after: number[] = []) => ({ path, tier, why: "", after });
+  const stage = (pr: number, files: ReturnType<typeof row>[], extra = {}) => ({ pr, head: "h", base: "b", files, ...extra });
+  const board = (stages: ReturnType<typeof stage>[], clashes: any[] = []) => ({ main: "m", at: "", stages, written: [], skipped: [], clashes });
+  test("waves, holds and what waits behind a hold", () => {
+    const v = decide(board([
+      stage(1, [row("a", "certain")]),
+      stage(2, [row("a", "certain", [1])]),
+      stage(3, [row("b", "card")]),
+      stage(4, [row("b", "certain", [3])]),
+      stage(5, [row("c", "certain")], { stackedOn: 9 }),
+      stage(6, [row("d", "certain")]),
+    ], [{ kind: "migration", key: "1", prs: [6] }]), []);
+    const by = Object.fromEntries(v.map((x) => [x.pr, x]));
+    expect([by[1]!.go, by[1]!.wave]).toEqual([true, 1]);
+    expect([by[2]!.go, by[2]!.wave]).toEqual([true, 2]);
+    expect(by[3]!.why).toContain("asks on b");
+    expect(by[4]!.why).toContain("behind held #3");
+    expect(by[5]!.why).toContain("stacked on #9");
+    expect(by[6]!.why).toContain("migration");
+  });
+  test("a failed CI holds the PR", () => {
+    const prs: BoardPr[] = [{ number: 1, headRefOid: "h", statusCheckRollup: [{ name: "apps", conclusion: "FAILURE", status: "COMPLETED" }] }];
+    expect(decide(board([stage(1, [row("a", "certain")])]), prs)[0]!.why).toBe("CI failed: apps");
+  });
+});

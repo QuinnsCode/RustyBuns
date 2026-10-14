@@ -161,6 +161,20 @@ test fail where main passes. Six of the 19 PRs are already red on their own (#14
 main: a clash every per-file merge rates "certain". So a red board says to fix the red PRs first, and "certain"
 covers one file's text, not the files around it.
 
+## Mervin runs the merge round
+
+```sh
+bun scripts/mervin-merge.ts          # the plan: wave, or HOLD and why, one stamped line per PR
+bun scripts/mervin-merge.ts --go     # turn on `gh pr merge --auto --squash` for wave 1 only
+```
+
+This is the decision the office's PR agent made (#1506), taken over: Mervin reads the board and holds a PR whose
+CI failed, whose file he carded, that clashes across files, that is stacked on an open PR, or that waits behind a
+held one. The rest go in waves (wave 2 touches files wave 1 does). The merge itself is GitHub's auto-merge, so the
+ruleset on `main` still decides. After a wave lands, run it again: the board is rebuilt on the new main. The lines
+are stamped so the owner can tail a run. Not done yet: running it inside a codeSplitter sandbox box, and pushing
+alerts as it goes (the stdout lines are the feed for that).
+
 ## Where Mervin is weak
 
 - **Code outside JS/TS is only flagged.** `src/lint.ts` parses only JavaScript, TypeScript and HTML. For the rest
