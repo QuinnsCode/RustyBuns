@@ -187,9 +187,12 @@ export function engineLines(output: string): Engine[] {
   return [...by.values()];
 }
 
-/** A check finished on a branch (checks.ts): a required one that failed opens a fix task. */
-export async function checkFailed(env: Env, run: CheckRun) {
-  if (run.status !== "failed" || run.ref === "main") return null;
+/** Who may report a run whose log becomes a task: the owner, the internal runner, or a CI token (`ci:<label>`). Not a crew member who claimed it. */
+export const trustedReporter = (owner: string, by: string) => by === owner || by === "codesplitters" || by.startsWith("ci:");
+
+/** A check finished on a branch (checks.ts): a required one that failed opens a fix task, when the owner, the internal runner or a CI token (`by`) reported it. */
+export async function checkFailed(env: Env, run: CheckRun, by: string) {
+  if (run.status !== "failed" || run.ref === "main" || !trustedReporter(run.owner, by)) return null;
   const { get, hungIn, refChecks } = await import("./checks.ts");
   // Only a failure the merge gate holds the branch on, and that's still current: the branch hasn't changed since.
   const c = await refChecks(env, run.owner, run.repo, run.ref);
