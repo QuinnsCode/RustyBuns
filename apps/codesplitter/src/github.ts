@@ -432,8 +432,17 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     const visibility = b.visibility ?? "public";
     const expires = isAdmin(env, user) ? null : Date.now() + DIG_TTL;
     if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
-    await makeRoom(env, 0);
-    if (await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(user, name).first()) return json({ error: "you already have a repo with that name" }, 409);
+    // The housekeeping runs alongside the lookups on GitHub, not before them. The name check skips
+    // an expired dig of yours, which makeRoom is about to evict. Only once the name is known to be
+    // free is an Artifact under it an orphan to delete: an import cut off halfway stays "being
+    // imported" on Cloudflare and would block the name for good (#348).
+    const ready = (async () => {
+      await makeRoom(env, 0);
+      if (await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(user, name).first()) return false;
+      await env.ARTIFACTS!.delete?.(`${user}--${name}`).catch(() => false);
+      return true;
+    })();
+    ready.catch(() => {});
 
     let info: { full_name: string; default_branch: string; private: boolean }, sha: string | null;
     // Set when only this machine's git can read it: the clone then goes without the token too.
@@ -475,9 +484,8 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     }
     const upstream = `github:${info.full_name}${folder ? `/tree/${info.default_branch}/${folder}` : ""}`;
 
-    // No row owns this name (checked above), so an Artifact under it is an orphan: an import cut
-    // off halfway stays "being imported" on Cloudflare and would block the name for good (#348).
-    await Promise.all([expires ? makeRoom(env, 1) : null, env.ARTIFACTS.delete?.(`${user}--${name}`).catch(() => false)]);
+    if (!(await ready)) return json({ error: "you already have a repo with that name" }, 409);
+    if (expires) await makeRoom(env, 1);
 
     // Shallow, like the levels; writable, because it's yours now.
     let art;
@@ -489,8 +497,9 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     }
     await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, upstream, upstream_commit, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .bind(user, name, visibility, Date.now(), art.name, art.remote, info.default_branch, upstream, sha, expires).run();
-    // On the desktop its git takes pushes from the start: land them from here on (#788).
-    await seeGit(env, user, name);
+    // On the desktop its git takes pushes from the start: land them from here on (#788). That
+    // waits for the background clone, so the dig answers without it.
+    void seeGit(env, user, name).catch(() => {});
     return json({ owner: user, name, upstream, commit: sha, ...(expires ? { expires_at: expires } : {}) }, 201);
   }
   return null;
