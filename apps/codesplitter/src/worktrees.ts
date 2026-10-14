@@ -24,6 +24,7 @@ import { existsSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { git, localGit } from "./mirror.ts";
 import { json, type Env } from "./env.ts";
+import { repoRow } from "./repos.ts";
 
 /** How long a run's worktree is kept if nobody removes it. */
 export const RUN_TTL = 24 * 3600_000;
@@ -86,12 +87,12 @@ export async function finished(bare: string, w: { branch: string | null; base: s
 }
 
 type Row = { name: string; branch: string | null; sha: string; base: string | null; path: string; created_at: number };
-const repoRow = (env: Env, owner: string, repo: string) =>
-  env.DB.prepare("SELECT artifact, branch, crew_artifact FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() as Promise<{ artifact: string | null; branch: string | null; crew_artifact: string | null } | null>;
+type Repo = { artifact: string | null; branch: string | null; crew_artifact: string | null };
+const repoOf = (env: Env, owner: string, repo: string) => repoRow<Repo>(env, owner, repo, "artifact, branch, crew_artifact");
 
 /** Remove the repo's worktrees that are done with (see finished): after each mirror sync, and on every list. */
 export async function pruneWorktrees(env: Env, owner: string, repo: string, now = Date.now()) {
-  const lg = localGit(env), r = await repoRow(env, owner, repo);
+  const lg = localGit(env), r = await repoOf(env, owner, repo);
   if (!lg || !r?.artifact) return;
   const bare = lg.path(r.artifact);
   const { results } = await env.DB.prepare("SELECT name, branch, sha, base, path, created_at FROM worktrees WHERE owner = ? AND repo = ?").bind(owner, repo).all();
@@ -104,7 +105,7 @@ export async function pruneWorktrees(env: Env, owner: string, repo: string, now 
 
 /** Every worktree of a repo that's being deleted (github.ts evict), before its git goes. */
 export async function dropWorktrees(env: Env, owner: string, repo: string) {
-  const lg = localGit(env), r = await repoRow(env, owner, repo);
+  const lg = localGit(env), r = await repoOf(env, owner, repo);
   if (!lg || !r?.artifact) return;
   rmSync(worktreeRoot(lg.path(r.artifact)), { recursive: true, force: true });
 }
@@ -113,7 +114,7 @@ export async function dropWorktrees(env: Env, owner: string, repo: string) {
 export async function worktreeRoute(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null) {
   if (p[4] !== "worktrees" || p[6]) return null;
   if (user !== owner) return json({ error: "owner only" }, 403);
-  const lg = localGit(env), r = await repoRow(env, owner, repo);
+  const lg = localGit(env), r = await repoOf(env, owner, repo);
   if (!lg) return json({ error: "worktrees need the repo's git on your machine: the desktop app" }, 501);
   if (!r?.artifact) return json({ error: "this repo has no git yet: commit something first" }, 409);
   // Private lines are blank in this git; a checkout of it would read as if they were gone.
