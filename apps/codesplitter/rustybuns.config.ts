@@ -106,6 +106,8 @@ export default defineConfig({
     // One git repo per excavation; cataloguing pushes to it.
     // Still the old name: each repo's remote, stored in D1, names it, so it moves on its own (#823).
     ARTIFACTS: { type: "artifacts", namespace: "codesplitters" },
+    // Where they move to (src/artifact-move.ts): copy into it, switch ARTIFACTS to "codesplitter", drop this.
+    ARTIFACTS_NEXT: { type: "artifacts", namespace: "codesplitter" },
     // Levels too big for an Artifacts repo even from the tarball, as ~8 MB chunks of their text files
     // (src/chunks.ts), read through the Cache API. None so far: Bun and Alchemy fit in Artifacts
     // from the tarball (#356), so the bucket is empty. No desktop twin yet; the desktop's local
@@ -182,6 +184,7 @@ export default defineConfig({
         FIXES: { queueName: "codesplitter-office-preview-fixes" },
         LEVEL_DIGS: { queueName: "codesplitter-office-preview-level-digs" },
         ARTIFACTS: { type: "artifacts", namespace: "office-preview" },
+        ARTIFACTS_NEXT: { type: "artifacts", namespace: "office-preview-next" },
         AUTH_LIMIT: { namespaceId: "6471" },
         BETTER_AUTH_URL: { value: "https://codesplitter-office-preview.notryanquinn.workers.dev" },
         TURNSTILE_SITE_KEY: { value: "" },

@@ -3,6 +3,7 @@
 // is a playlist of code you like. Plain fetch handler: it runs as a Worker on
 // Cloudflare and in-process under Bun on the desktop.
 
+import { artifactMoveRoutes } from "./artifact-move.ts";
 import { rankOf } from "./policy.ts";
 import { fromText } from "./lines.ts";
 import { mainClosed, policyClosed, protectRoute } from "./protect.ts";
@@ -331,6 +332,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (limits) return limits;
   const reseal = await resealRoutes(req, env, p, admin);
   if (reseal) return reseal;
+  // Admin routes that move the Artifacts namespace: copy, then rewrite (artifact-move.ts, #823)
+  const artifactMove = await artifactMoveRoutes(req, env, p, admin);
+  if (artifactMove) return artifactMove;
   // GET /api/admin/insights  people vs agents, the site's health, how far each person got (insights.ts)
   const insights = await insightRoutes(req, env, p, url, admin);
   if (insights) return insights;
