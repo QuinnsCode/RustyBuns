@@ -48,6 +48,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { report, triage } from "./ester.ts";
 import { sandbox, shadow, testRuns, testTree, writeTree } from "./shadow.ts";
 
 export type Tier = "certain" | "agree" | "mervin" | "differ" | "card";
@@ -391,9 +392,15 @@ if (import.meta.main) {
         const before = new Set((await testTree(join(out, "main"), runs, env, true)).failed);
         const added = r.failed.filter((f) => !before.has(f));
         console.log(`\n${r.failed.length - added.length} fail on main in this sandbox too (not the board)`);
+        // Ester: rerun only the failing runs once to catch flaky ones, then sort by owner.
+        const bad = runs.filter((x) => r.runs.some((d) => !d.ok && d.dir === x.dir && d.cmd === x.cmd));
+        const again = new Set(added.length && bad.length ? (await testTree(join(out, "tree"), bad, env, true)).failed : added);
+        const verdicts = triage(r.failed, board.stages, before, again);
+        console.log(report(verdicts).join("\n"));
+        const mine = new Set(verdicts.filter((v) => v.owner === "blocks").map((v) => v.test));
         const red = board.stages.filter((s) => s.ci === "fail").map((s) => `#${s.pr} (${s.failing!.join(", ")})`);
         if (red.length) console.log(`already red on their own, so look at them before blaming the merge: ${red.join("; ")}`);
-        if (added.length) { console.log(`the board breaks:\n  ${added.join("\n  ")}\n\n${r.log}`); process.exit(1); }
+        if (mine.size) { console.log(`the board breaks:\n  ${[...mine].join("\n  ")}\n\n${r.log}`); process.exit(1); }
         console.log("the board adds no failures");
       }
     } finally { rmSync(tmp, { recursive: true, force: true }); }
