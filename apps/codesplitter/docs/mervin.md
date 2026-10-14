@@ -293,7 +293,11 @@ merges anything new without the same guards as today.
 **Opt-in.** Off by default, per repo, switchable in settings, with delete-my-data. Nothing leaves the account
 that owns the repo.
 
-Open: event schema, retention, and whether Pipelines-to-Iceberg or plain R2 NDJSON plus R2 SQL is cheaper at
+The event (`src/mervin-events.ts`, `MERVIN_EVENTS` binding, per-repo `mervin_learning` row) is built and emitted once per
+merge when both are present; its shape has no content field, and a test pins that. The settings switch and
+delete-my-data are not built yet.
+
+Open: retention, and whether Pipelines-to-Iceberg or plain R2 NDJSON plus R2 SQL is cheaper at
 our volume (price it first, per the contest cost rule).
 
 ### Cascade files: land them up front or at the end (idea, not built)
