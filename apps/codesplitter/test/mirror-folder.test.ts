@@ -67,6 +67,34 @@ describe("folder mirrors", () => {
     expect((await post(call, "/api/repos/ana/up/mirror", { primary: "here" })).status).toBe(409);
   });
 
+  test("brings the workspace packages the folder depends on, read-only, beside it", async () => {
+    const mono = join(root, "ws.git");
+    const seed = mkdtempSync(join(root, "seed-"));
+    const files: Record<string, string> = {
+      "package.json": JSON.stringify({ name: "mono", workspaces: ["apps/*", "packages/*"] }),
+      "bun.lock": "lock\n",
+      "apps/web/package.json": JSON.stringify({ name: "web", dependencies: { "@m/a": "workspace:*", left: "1.0.0" } }),
+      "apps/web/a.ts": "one\n",
+      "apps/other/package.json": JSON.stringify({ name: "other" }),
+      "packages/a/package.json": JSON.stringify({ name: "@m/a", dependencies: { "@m/b": "workspace:*" } }),
+      "packages/b/package.json": JSON.stringify({ name: "@m/b" }),
+      "packages/c/package.json": JSON.stringify({ name: "@m/c" }),
+    };
+    await sh(`git init -q --bare ${mono} && git clone -q ${mono} . 2>/dev/null`, seed);
+    for (const [p, c] of Object.entries(files)) { await sh(`mkdir -p "$(dirname ${p})"`, seed); writeFileSync(join(seed, p), c); }
+    await sh("git add -A && git commit -qm init && git push -q origin main", seed);
+    const call = await boot();
+    opened.push(call);
+    await post(call, "/api/login", { name: "ana" });
+    expect((await post(call, "/api/mirrors", { url: `file://${mono}`, name: "up", path: "apps/web" })).status).toBe(201);
+    // Transitive, and only what the folder uses.
+    expect(await sync(call)).toMatchObject({ state: "ok", deps: ["packages/a", "packages/b"] });
+    const here = call.artifacts.path("ana--up");
+    expect(await sh(`git --git-dir ${here} ls-tree -r --name-only refs/folder-deps/main`)).toBe("bun.lock\npackage.json\npackages/a/package.json\npackages/b/package.json");
+    // The folder's own repo stays the folder alone.
+    expect((await get(call, "/api/repos/ana/up/tree?path=")).entries.map((e: any) => e.name).sort()).toEqual(["a.ts", "package.json"]);
+  });
+
   test("a folder path is a folder", () => {
     expect(folderPath("/apps/web/")).toBe("apps/web");
     expect(folderPath("apps//web")).toBe("apps/web");

@@ -112,6 +112,7 @@ The pitch is in [README.md](README.md).
   It can't be opened as lines on the branch (415).
   `GET|POST /api/repos/:o/:r/mirror`, `GET|POST /api/repos/:o/:r/mirror/branches`, `POST /api/repos/:o/:r/mirror/branches/:b/pull|push`, `src/mirror.ts`.
   A folder mirror (`POST /api/mirrors {url, path}`, `src/folder-mirror.ts`) is one folder of a monorepo as a repo of its own: upstream's commits that touch the folder come in as its history, and its work goes up under the folder as the branch `codesplitter/<name>`, for a pull request, never to upstream's main.
+  The workspace packages the folder depends on (`workspace:` ranges, transitively) and upstream's root `package.json` and lockfile are kept beside it, read-only, as a tree at `refs/folder-deps/<branch>` (listed as `deps` in the mirror's status), so a build can install without upstream's whole checkout (#1494).
 - **Local out, GitHub in: which side leads (desktop, #464).** A mirror is GitHub-first by default: each sync hears from upstream, then pushes.
   In the Upstream panel, **Make this copy the source of truth** (`POST /api/repos/:o/:r/mirror {primary: "here"}`; `"upstream"` switches back) flips it: the bare repo in `~/.codesplitters` leads and upstream is its backup and the trigger for its Actions.
   A sync with commits waiting pushes them first, before fetching anything, and only fetches and merges when upstream moved too (the push is turned away, never forced).
