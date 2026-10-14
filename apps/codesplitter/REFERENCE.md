@@ -354,6 +354,11 @@ Anything else it marks `create` is really new.
 So `wrangler d1 migrations list codesplitter-db --remote` shows everything after 0009 as pending though it's all applied.
 Never run `wrangler d1 migrations apply --remote`: it would run those again and fail partway.
 New migrations go in `migrations/` and the next `rustybuns deploy` applies them.
+
+**Guards on stored data (`test/data-guards.test.ts`).** Three things fail a PR before it can strand or erase what's live:
+- *Durable Object classes.* `wrangler.jsonc`'s migration tags only append. A tag already deployed can't change (Cloudflare code 10074), and `deleted_classes` erases that class's data, so it needs the tag named in `MAY_ERASE`. New tags go at the end of `LEDGER` in the test.
+- *D1.* A migration with `DROP TABLE`, `DROP COLUMN` or `DELETE FROM` carries `-- destructive-ok: <why the rows are safe to lose>`. The table-rebuild pattern (copy, drop, rename) counts.
+- *A file's Durable Object.* Its storage has no schema version, so the shapes of the keys it writes are pinned (`KEY_SHAPES`), and every dump in `test/fixtures/file-do/` must load in today's code and read back the same. Changing the layout means reading the old keys until those pass, like `DocStore` reads the old single `doc` key. Never edit a dump; add one for the new layout with `FREEZE_FILE_DO=<new-name> bun test test/data-guards.test.ts`.
 To see what's applied:
 
 ```sh
