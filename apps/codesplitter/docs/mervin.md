@@ -68,7 +68,7 @@ shows two real engine faults:
 - **Code outside JS/TS is only flagged.** `src/lint.ts` parses only JavaScript, TypeScript and HTML. For the rest
   (C, Rust, Python, Go, shell) a stretch both sides changed where git would have stopped, and Mervin settled, now
   comes back as a `check` (#1389), like the prose fact checks: it never holds the merge, and the writer can settle it
-  with a text. Nothing builds it yet: the build as the arbiter, where the repo has one, is still open.
+  with a text. Where the repo has a `package.json` with a `test` or `build` script and test merges is on, that script runs on the merged tree first, and a failure comes back as a `lint:tests` conflict (#1401), settled as the branch to land anyway. Repos with no `package.json` (git/git's make) are still only flagged.
 - **Never run on anyone else's history until now.** The 80% goal in this doc is about seeing fights coming; the
   recall number for it (mervin-score) still needs a corpus that keeps real merges (the `lines` predictor is in).
 - **Invisible.** The name is in no UI string, README line or API field; the merge engine is the strongest answer
@@ -85,6 +85,6 @@ Mergiraf (structured merge), Spork and IntelliMerge (tree matching).
 
 1. Run `mervin-corpus.ts` on a second repo with a different language mix (Linux subsystem tree, Rails) and record it here.
 2. Run `mervin-score.ts` (now with `lines`) on a corpus that keeps real merges and record recall here; add the merge plan as a predictor.
-3. A language-agnostic "settled but git would have stopped" check for code that `lint.ts` cannot parse.
+3. Build commands for repos with no `package.json` (make, cargo, go) as the arbiter.
 4. Run Mergiraf over the hunks in [merge-solutions.md](merge-solutions.md) and see what it settles.
 5. Show Mervin: a corpus number on the repo page, and the merge plan's waves with his name on them.

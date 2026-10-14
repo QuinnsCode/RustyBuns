@@ -996,4 +996,25 @@ describe("over the API", () => {
     expect(ran).toHaveLength(1);
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json() as Doc)).toBe("const a = { marines: 1 };\nx(a.concord);");
   });
+
+  test("code lint.ts can't read, settled where git would have stopped, runs the repo's build before it lands (#1401)", async () => {
+    const { call, post } = await app();
+    const was = ["int add(int a, int b);", "int sub(int a, int b);", "int mul(int a, int b);", "", "int run(void);"].join("\n");
+    await post("ana", "/api/repos/ana/r/files", { path: "package.json", content: '{\n  "scripts": { "build": "make" }\n}' });
+    await post("ana", "/api/repos/ana/r/files", { path: "calc.h", content: was });
+    for (const path of ["calc.h", "package.json"]) await post("ana", `/api/repos/ana/r/do/commit?path=${path}`, { message: "main" });
+    await post("ana", "/api/repos/ana/r/branches", { name: "c1" });
+    const doc = async () => (await call("ana", "/api/repos/ana/r/do/file?path=calc.h")).json() as Promise<Doc>;
+    const [sub, mul] = [(await doc()).lines[1]!, (await doc()).lines[2]!];
+    await post("ana", "/api/repos/ana/r/do/ops?path=calc.h&branch=c1", { ops: [{ kind: "set", line: sub.id, base: sub.rev, text: "int sub(long a, int b);" }] });
+    await post("ana", "/api/repos/ana/r/do/ops?path=calc.h", { ops: [{ kind: "set", line: mul.id, base: mul.rev, text: "int mul(int a, long b);" }] });
+    const ran: { only?: string[] }[] = [];
+    call.env.DEPS_TESTER = (async (_remote: string, _files: Record<string, string>, o: { only?: string[] }) => { ran.push({ only: o.only }); return { ok: false, out: "calc.h: error" }; }) as Tester;
+    await call("ana", "/api/repos/ana/r/deps", { method: "PUT", body: JSON.stringify({ test_merges: true }) });
+    const failed = await post("ana", "/api/repos/ana/r/branches/c1/merge", {});
+    expect(failed.status).toBe(409);
+    expect((await failed.json() as any).conflicts).toEqual([{ path: "calc.h", leftover: "person", conflicts: [expect.objectContaining({ line: "lint:tests" })] }]);
+    expect(ran).toEqual([{ only: ["calc.h"] }]);
+    expect((await post("ana", "/api/repos/ana/r/branches/c1/merge", { resolve: { "calc.h": { "lint:tests": "branch" } } })).status).toBe(200);
+  });
 });
