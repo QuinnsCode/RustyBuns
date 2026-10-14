@@ -37,6 +37,7 @@ import { emit } from "./hooks.ts";
 import { diffToOps, keptPairs } from "./sync.ts";
 import { unindexFile } from "./search.ts";
 import { HARNESSES, type Harness } from "./harness.ts";
+import { protectOn } from "./protect.ts";
 import { localSandbox, type Exec } from "./agent-run.ts";
 import { containerSandbox } from "./sandbox.ts";
 import { ADMINS_ONLY, adminsOnly, agentsUnavailable, hostedBudget, installedHarnesses } from "./agent-routes.ts";
@@ -668,6 +669,8 @@ async function rebuildOnMain(env: Env, owner: string, repo: string, b: BranchRow
  */
 async function mergeBranch(env: Env, owner: string, repo: string, branch: BranchRow, user: string, body: { resolve?: unknown; build_ok?: unknown }): Promise<Response> {
   const name = branch.name;
+  // Protected main (#1426): someone other than a branch's author accepts it. The owner's merges are their own to make.
+  if (user !== owner && user === branch.by && await protectOn(env, owner, repo)) return json({ error: "main is protected: someone other than the branch's author merges it", protected: true }, 403);
   const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as FileRow[]);
   // build_ok is a reader's word: the owner's, or someone other than the branch's author.
   const resolve = parseResolve(body.resolve), build_ok = body.build_ok && (user === owner || user !== branch.by);
