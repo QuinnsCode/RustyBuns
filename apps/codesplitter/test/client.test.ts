@@ -632,3 +632,23 @@ describe("the tour's autoplay", () => {
     expect(html).toContain(`["self", "repeat", "Edit itself"]`);
   });
 });
+
+describe("scenes a queue or an agent drives", () => {
+  const src = html.slice(html.indexOf("const tourSpan"), html.indexOf("/** A step's real action"));
+  const TOUR = [{ ch: "a" }, { ch: "a" }, { ch: "b" }, { ch: "b" }, { ch: "c" }];
+  const { tourSpan, tourNext } = new Function("TOUR", `${src}; return { tourSpan, tourNext };`)(TOUR);
+  test("a scene is a chapter's span of steps", () => {
+    expect(tourSpan("b")).toEqual([2, 3]);
+  });
+  test("it steps, then moves to the next queued scene, then ends", () => {
+    expect(tourNext({ i: 0, scene: "a" })).toMatchObject({ i: 1 });
+    expect(tourNext({ i: 1, scene: "a", queue: ["c", "b"] })).toMatchObject({ scene: "c", i: 4, queue: ["b"] });
+    expect(tourNext({ i: 1, scene: "a" })).toBeNull();
+    expect(tourNext({ i: 3 })).toMatchObject({ i: 4 });
+  });
+  test("agents get the scene tools, and a held step does nothing", () => {
+    for (const n of ["list_scenes", "play_scene", "scene_step"]) expect(html).toContain(`name: "${n}"`);
+    const step = html.slice(html.indexOf('name: "scene_step"'), html.indexOf('name: "list_conflicts"'));
+    expect(step.indexOf("tourPause")).toBeLessThan(step.indexOf("tourRun"));
+  });
+});
