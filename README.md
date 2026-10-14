@@ -21,6 +21,8 @@ pnpm exec rustybuns deploy              # Cloudflare, plus a Hetzner or Railway 
 
 That's the whole product. Rusty Buns is a dev dependency: it never edits `src/` and never ships in your bundle.
 
+A brand-new release not installing? Your package manager's minimum release age is holding it back. See [Getting started](GETTING_STARTED.md) for the one-minute fix.
+
 > **Alpha, `0.1.12`.** Desktop works on macOS and Linux. The Cloudflare deploy is verified end to end. The Railway and Hetzner boxes are verified live.
 
 ## Features
