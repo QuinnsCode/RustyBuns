@@ -25,6 +25,8 @@ export const TRIAGE_HEADER = "x-rb-triage";
 /** Built into <office>/dist/server/server/rb-triage.js, so the page assets are two up, in dist/public. */
 const SERVER_DIR = import.meta.dir;
 const PUBLIC_DIR = path.resolve(SERVER_DIR, "../../public");
+/** The workers' MCP server (triage/mcp.ts) is built beside bin/office-workers.js. */
+const BIN_DIR = path.resolve(SERVER_DIR, "../../../bin");
 
 export interface TriageAnswer { status: number; body: unknown }
 
@@ -34,7 +36,7 @@ const top = (url: URL) => Math.min(Math.max(Number(url.searchParams.get("top")) 
 export function officeTriage(
   dataDir: string,
   floors: () => Iterable<{ id: string; dir: string }>,
-  reload = officeReload(PUBLIC_DIR, SERVER_DIR, !!process.env.AGENT_OFFICE_RB_MAMA, () => process.kill(process.pid, "SIGTERM")),
+  reload = officeReload(PUBLIC_DIR, SERVER_DIR, BIN_DIR, !!process.env.AGENT_OFFICE_RB_MAMA, () => process.kill(process.pid, "SIGTERM")),
 ) {
   const mem = officeMem(dataDir, floors);
   const hist = officeHistory(dataDir);
