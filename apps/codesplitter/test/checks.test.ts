@@ -372,13 +372,13 @@ test("the reference runner claims a run, clones, runs a real bun test and report
   const server = Bun.serve({ port: 0, fetch: (req) => worker.fetch(req, call.env) });
   opened.push({ close: () => server.stop(true) });
   const { token: secret } = await (await send("ryan", "/api/tokens", { label: "runner", scope: "write" })).json();
-  await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "here", required: [{ name: "test", command: 'bun test ./math.test.ts && echo "seen: token=${CODESPLITTERS_TOKEN-unset} url=${CODESPLITTERS_URL-unset} ci=$CI"' }] }, "PUT");
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { where: "here", required: [{ name: "test", command: 'bun test ./math.test.ts && echo "seen: token=${CODESPLITTER_TOKEN-unset} url=${CODESPLITTER_URL-unset} ci=$CI"' }] }, "PUT");
   await send("ryan", "/api/repos/ryan/lab/files", { path: "math.test.ts", content: 'import { expect, test } from "bun:test";\ntest("adds", () => expect(1 + 1).toBe(2));' });
   const c = await (await send("ryan", "/api/repos/ryan/lab/do/commit?path=math.test.ts", { message: "a test" })).json();
 
   const p = Bun.spawn(["bun", "scripts/runner.ts", "ryan/lab", "--once", "--label", "ci-box"], {
     cwd: `${import.meta.dir}/..`, stdout: "pipe", stderr: "pipe",
-    env: { ...process.env, CODESPLITTERS_URL: `http://127.0.0.1:${server.port}`, CODESPLITTERS_TOKEN: secret },
+    env: { ...process.env, CODESPLITTER_URL: `http://127.0.0.1:${server.port}`, CODESPLITTER_TOKEN: secret },
   });
   const [code, out, err] = await Promise.all([p.exited, new Response(p.stdout).text(), new Response(p.stderr).text()]);
   expect({ code, err }).toEqual({ code: 0, err: "" });
@@ -597,7 +597,7 @@ test("the reference runner checks a branch edited here and not pushed: main, wit
 
   const p = Bun.spawn(["bun", "scripts/runner.ts", "ryan/lab", "--once", "--label", "ci-box"], {
     cwd: `${import.meta.dir}/..`, stdout: "pipe", stderr: "pipe",
-    env: { ...process.env, CODESPLITTERS_URL: `http://127.0.0.1:${server.port}`, CODESPLITTERS_TOKEN: secret },
+    env: { ...process.env, CODESPLITTER_URL: `http://127.0.0.1:${server.port}`, CODESPLITTER_TOKEN: secret },
   });
   expect(await p.exited).toBe(0);
   const run = await (await call("ryan", `/api/repos/ryan/lab/checks/${k.runs[0].id}`)).json();

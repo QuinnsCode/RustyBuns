@@ -77,17 +77,10 @@ describe("bun cli.ts", () => {
     expect(r.code).toBe(0);
   });
 
-  // They were CODESPLITTERS_* before the rename (#805): those still work, and the new names win.
-  test("reads the variables' old names too", async () => {
-    const { cli, seen, fetch, token } = await app();
-    expect((await cli(["read_file", "--owner", "ryan", "--repo", "lab", "--path", "a.ts"], { CODESPLITTERS_URL: "http://old", CODESPLITTERS_TOKEN: token })).code).toBe(0);
-    expect(seen[0]!.url).toStartWith("http://old/api/");
-    await cli(["read_file", "--owner", "ryan", "--repo", "lab", "--path", "a.ts"], { CODESPLITTER_URL: "http://new", CODESPLITTERS_URL: "http://old", CODESPLITTERS_TOKEN: token });
-    expect(seen[1]!.url).toStartWith("http://new/api/");
-    // Through run, the way the installed CLI starts, with nothing saved.
-    const home = mkdtempSync(`${tmpdir()}/cs-cli-`);
-    expect((await run(["read_file", "--owner", "ryan", "--repo", "lab", "--path", "a.ts"], { HOME: home, CODESPLITTERS_URL: "http://old", CODESPLITTERS_TOKEN: token }, undefined, fetch)).code).toBe(0);
-    expect(seen[2]!.url).toStartWith("http://old/api/");
+  test("ignores the variables' pre-rename names", async () => {
+    const { cli, seen, token } = await app();
+    expect((await cli(["read_file", "--owner", "ryan", "--repo", "lab", "--path", "a.ts"], { CODESPLITTERS_URL: "http://old", CODESPLITTERS_TOKEN: token })).code).not.toBe(0);
+    expect(seen).toHaveLength(0);
   });
 
   test("login saves the site and token, and every command after uses them", async () => {

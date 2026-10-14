@@ -43,8 +43,7 @@ function desktop(): string | undefined {
     return `${d.url}/?token=${encodeURIComponent(d.token)}`;
   } catch { return undefined; }
 }
-// CODESPLITTERS_* is each one's name from before the rename (#805), still read.
-const site = process.env.CODESPLITTER_URL ?? process.env.CODESPLITTERS_URL ?? desktop(), token = process.env.CODESPLITTER_TOKEN ?? process.env.CODESPLITTERS_TOKEN;
+const site = process.env.CODESPLITTER_URL ?? desktop(), token = process.env.CODESPLITTER_TOKEN;
 if (!slug?.includes("/") || !site || !token) throw new Error("usage: CODESPLITTER_URL=… CODESPLITTER_TOKEN=cst_… bun scripts/runner.ts owner/repo [--label] [--names a,b] [--command] [--once]");
 // The desktop app sits behind its launch token too: a URL like http://127.0.0.1:5199/?token=<it>
 // (what RB_NO_BROWSER=1 prints, or desktop() finds) sends it as the cookie the desktop expects.
