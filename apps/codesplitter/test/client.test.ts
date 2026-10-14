@@ -695,3 +695,19 @@ test("the fit panel offers Box it to the owner when the repo fits", () => {
   expect(html).toContain('f.verdict === "ready" || f.verdict === "likely"');
   expect(html).toContain('$("#box-it")?.addEventListener("click", () => $("#ship").click())');
 });
+
+// #1653: pages that render outside `.wrap` (body.ide-mode zeroes main's padding) must carry their own side margin.
+describe("every page keeps its content off the window edges", () => {
+  test("each view's root is a wrap, the workbench, or a block with side padding", () => {
+    const roots = [...html.matchAll(/app\.innerHTML = `<div class="([\w-]+)/g)].map((m) => m[1]!);
+    expect(roots.length).toBeGreaterThan(10);
+    for (const cls of new Set(roots)) {
+      if (cls === "wrap") continue;
+      const padded = rulesFor(cls).some((r) => /padding:\s*(\d+px\s+)?(1[2-9]|[2-9]\d)px|padding:\s*0\s+(1[2-9]|[2-9]\d)px/.test(r.body));
+      expect(padded || cls === "phone" || cls === "repohead").toBe(true);
+    }
+  });
+  test("the backrooms page pads its sides", () => {
+    expect(rulesFor("backrooms")[0]?.body).toContain("padding: 0 24px");
+  });
+});
