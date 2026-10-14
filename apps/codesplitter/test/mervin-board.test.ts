@@ -52,6 +52,16 @@ describe("mervin board", () => {
     expect(tree.get("c.ts")).toBe("X\np1\np3\n");
   });
 
+  test("a conflict with main is blamed on main, not on an earlier PR", () => {
+    git("checkout", "-qb", "m2", main);
+    const moved = commit({ "c.ts": "main\n" }, "main moves c.ts");
+    const { board } = run(repo, moved, order(prs, [4, 1]));
+    const c = (i: number) => board.stages[i]!.files.find((f) => f.path === "c.ts")!;
+    expect(c(0)).toMatchObject({ tier: "card", after: [], main: true });
+    expect(c(1)).toMatchObject({ tier: "card", after: [], main: true });
+    expect(board.stages[0]!.files.find((f) => f.path === "a.ts")).toBeUndefined();
+  });
+
   test("the score: exact, wrong, asked, and a file someone else moved", () => {
     const { board, tree } = run(repo, main, order(prs, [1, 2, 4]));
     const dir = mkdtempSync(join(tmpdir(), "mervin-board-tree-"));
@@ -67,6 +77,21 @@ describe("mervin board", () => {
       commit({ "a.ts": "other\n" }, "outside the board (#99)");
       expect(score(repo, board, dir, git("rev-parse", "HEAD")).rows.find((r) => r.path === "a.ts")!.score).toBe("moved");
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test("a PR rebuilt after the board ran, then merged with a merge commit, still counts as landed", () => {
+    const { board, tree } = run(repo, main, order(prs, [4]));
+    const dir = mkdtempSync(join(tmpdir(), "mervin-board-tree-"));
+    try {
+      for (const [p, t] of tree) writeFileSync(join(dir, p), t!);
+      git("checkout", "-q", "p4");
+      commit({ "d.ts": "rebuilt\n" }, "merge main into p4");   // a new head sha, unknown to the board
+      git("checkout", "-qb", "after", main);
+      git("merge", "-q", "--no-ff", "-m", "Merge pull request #4 from o/p4", "p4");
+      const { landed, rows } = score(repo, board, dir, git("rev-parse", "HEAD"));
+      expect(landed).toEqual([4]);
+      expect(rows.map((r) => r.score)).toEqual(["exact"]);
+    } finally { rmSync(dir, { recursive: true, force: true }); git("checkout", "-q", "main"); }
   });
 
   test("a PR's own CI: red when any check failed, pending while one runs", () => {

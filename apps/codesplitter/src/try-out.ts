@@ -22,6 +22,7 @@ import { settings } from "./deploy.ts";
 import { json, readBody, type Env } from "./env.ts";
 import { text, type Doc } from "./lines.ts";
 import { runnerFor, type Run, type Runner } from "./preview.ts";
+import { repoRow } from "./repos.ts";
 
 export const TRY_STEPS = ["clone", "install", "init", "infra", "plan"] as const;
 
@@ -102,7 +103,7 @@ export async function tryRoutes(req: Request, env: Env, p: string[], user: strin
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "try" && !p[5])) return null;
   const [owner, repo] = [p[2], p[3]], key = `${owner}/${repo}`;
   if (user !== owner) return json({ error: "only the repo's owner can try Rusty Buns on it" }, 403);
-  if (!(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first())) return json({ error: "not found" }, 404);
+  if (!(await repoRow(env, owner, repo, "1"))) return json({ error: "not found" }, 404);
   const runner = runnerFor(env);
   if (req.method === "GET") return json({ can_run: !!runner, run: trials.get(key) ?? null });
   if (req.method !== "POST") return null;

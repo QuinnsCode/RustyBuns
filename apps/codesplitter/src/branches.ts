@@ -49,6 +49,7 @@ import { noteConflict } from "./usage.ts";
 import { busyOn, clashIn, taskFiles, waves, type Busy, type Clash, type Side } from "./merge-plan.ts";
 import { sha256 } from "./util.ts";
 import { countMerge } from "./stats.ts";
+import { boardRoutes } from "./board-routes.ts";
 
 const TEXT_MAX = 20_000;
 
@@ -854,6 +855,8 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   }
   // GET /api/repos/:o/:r/merge-plan  the open branches in waves (merge-plan.ts).
   if (p[4] === "merge-plan" && !p[5] && req.method === "GET") return json(await mergePlan(env, owner, repo, user ?? "anon"));
+  // GET|POST /api/repos/:o/:r/board  the live board (board-routes.ts).
+  if (p[4] === "board" && !p[5] && (req.method === "GET" || req.method === "POST")) return boardRoutes(req, env, owner, repo, a.write);
   // GET /api/repos/:o/:r/dispatch-hint?task=&paths=a,b  which open branches a new task's files are already on (dispatchHint).
   if (p[4] === "dispatch-hint" && !p[5] && req.method === "GET") {
     const q = new URL(req.url).searchParams;

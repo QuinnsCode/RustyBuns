@@ -28,6 +28,7 @@
 import { audit } from "./audit.ts";
 import { json, readBody, type Env } from "./env.ts";
 import { accountsOn, isAdmin } from "./identity.ts";
+import { repoRow } from "./repos.ts";
 
 export interface DeployKey { token: string; account_id?: string }
 export type Provider = "cloudflare" | "railway" | "hetzner";
@@ -148,7 +149,7 @@ export async function deployKeyRoutes(req: Request, env: Env, p: string[], user:
   const [owner, repo, provider] = [p[2], p[3], p[6] ?? "cloudflare"];
   if (!isProvider(provider)) return json({ error: `no such provider: ${provider} (${NAMES.join(", ")})` }, 404);
   if (user !== owner) return json({ error: "only the repo's owner can manage its deploy keys" }, 403);
-  if (!(await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first())) return json({ error: "not found" }, 404);
+  if (!(await repoRow(env, owner, repo, "1"))) return json({ error: "not found" }, 404);
 
   if (req.method === "GET") return json({ ...(await keyInfo(env, owner, repo, provider)), hosted: !hostedWhy(env, user), why: hostedWhy(env, user) });
   if (req.method === "DELETE") {

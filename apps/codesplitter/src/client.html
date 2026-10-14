@@ -4424,7 +4424,7 @@ const views = {
     const BUILD = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["init", "sparkles", "init"]];
     const PLAN = [["infra", "waypoints", "map"], ["plan", "list-checks", "plan"]];
     const SHIP = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["deploy", "rocket", "deploy"], ["check", "activity", "check"]];
-    let tab = "plan", t = null, d = null, sel = null, node = null, timer = null, branch = "", branches = null, form = null;
+    let tab = "plan", t = null, d = null, sel = null, node = null, timer = null, branch = "", branches = null, form = null, allowDelete = false, force = false;
     const by = (run) => Object.fromEntries((run?.steps ?? []).map((s) => [s.key, s]));
     const stat = (run, keys) => { const s = keys.map((k) => by(run)[k]?.status); return s.includes("failed") ? "failed" : s.includes("running") ? "running" : s.length && s.every((x) => x === "done" || x === "skipped") ? "done" : "waiting"; };
     const TABS = [["build", "package", "Build", () => stat(t?.run, ["clone", "install", "init"])], ["plan", "list-checks", "Plan", () => stat(t?.run, ["infra", "plan"])],
@@ -4434,6 +4434,14 @@ const views = {
       const busy = t?.run && !t.run.done, open = branches;
       return `<div class="row"><select id="ship-branch"${busy ? " disabled" : ""} title="main, or an agent's branch: its files are laid over the clone"><option value="">main</option>${open.map((b) => `<option value="${esc(b.name)}"${b.name === branch ? " selected" : ""}>${esc(b.name)}</option>`).join("")}</select>
         <button class="btn primary" id="ship-try"${!t?.can_run || busy ? " disabled" : ""} title="${t?.can_run ? "" : "Runs on the desktop app"}">${icon("flask-conical")}${busy ? "Running…" : t?.run ? "Build and plan again" : "Build and plan"}</button></div>`;
+    };
+    /** The CLI's `--allow-delete` and `--force`: per deploy, never saved, cleared once pressed. Each names what it would put at risk. */
+    const deployFlags = (g, s) => {
+      const data = (g?.nodes ?? []).filter((n) => INFRA_DATA.has(n.kind)), names = data.length ? data.map((n) => `<code>${esc(n.name || n.label)}</code> (${esc(n.kind.replace("_", " "))})`).join(", ") : "the D1, R2, KV or queue resources it replaces";
+      return `<div style="display:grid;gap:4px;font-size:13px">
+        <label><input type="checkbox" id="ship-allow-delete"${allowDelete ? " checked" : ""}> ${icon("trash-2")} <b>Allow deletes</b> <span class="muted">this deploy may delete or replace ${names}, with their data (CLI: <code>--allow-delete</code>)</span></label>
+        <label><input type="checkbox" id="ship-force"${force ? " checked" : ""}> ${icon("triangle-alert")} <b>Force</b> <span class="muted">deploy a commit that is behind <code>origin/main</code> to <b>${esc(s?.stage ?? "prod")}</b> (CLI: <code>--force</code>)</span></label>
+        <span class="muted" style="font-size:12px">Neither is saved: they apply to the next press only.</span></div>`;
     };
     const body = () => {
       const run = t?.run, g = run?.infra;
@@ -4454,6 +4462,7 @@ const views = {
       const r = d?.run, s = d?.settings ?? {};
       return `${flowRow(SHIP, by(r), sel)}${runTicker(r)}${r?.url ? `<p style="font-size:12px"><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a></p>` : ""}${r?.note ? `<p class="muted" style="font-size:12px">${esc(r.note)}</p>` : ""}${sel ? log(r, sel) : ""}
         ${g ? `<div class="imap-note${g.nodes.some((n) => n.protected) ? " kept" : ""}"><span>${icon("rocket")} Ships to <b>${esc(s.stage ?? "prod")}</b> as ${s.production || g.environment === "real" ? "<b>REAL</b>" : "<b>EPHEMERAL</b>"}: ${g.nodes.length} resource${g.nodes.length === 1 ? "" : "s"}, <b>${g.nodes.filter((n) => n.protected).length} protected</b> from destroy, ${g.nodes.filter((n) => INFRA_DATA.has(n.kind) && !n.protected).length} not.</span></div>` : ""}
+        ${deployFlags(g, d?.settings)}
         <div class="row"><button class="btn primary" id="ship-deploy"${!d?.can_run || (r && !r.done) ? " disabled" : ""} title="${d?.can_run ? "" : d?.why || "Runs on the desktop app, with your own logins"}">${icon("rocket")}${r && !r.done ? "Deploying…" : `Deploy to ${esc(s.stage ?? "prod")}`}</button>
         <button type="button" class="btn ghost" id="ship-more" title="Deploy keys, the review of code that isn't yours, and every deploy logged">${icon("send")}Deploy settings and log</button></div>
         <p class="muted" style="font-size:12px">Ships the repo's own stack to <b>${esc(s.stage ?? "prod")}</b> and leaves it up. Code that isn't yours waits for you to read and approve it under Deploy settings.</p>`;
@@ -4497,9 +4506,13 @@ const views = {
         try { await api(depBase, { stage: f.stage.value.trim(), dir: f.dir.value.trim(), production: f.production.value === "1", on_commit: f.on_commit.checked }, "PUT"); form = null; toast("Stage saved"); } catch (err) { toast(err.message); }
         poll();
       });
+      el.querySelector("#ship-allow-delete")?.addEventListener("change", (e) => { allowDelete = e.target.checked; });
+      el.querySelector("#ship-force")?.addEventListener("change", (e) => { force = e.target.checked; });
       el.querySelector("#ship-deploy")?.addEventListener("click", async () => {
         sel = null;
-        try { await api(depBase, {}); } catch (err) { toast(err.message.includes("approve") || /read/i.test(err.message) ? `${err.message} (Deploy settings has the diff to read and approve)` : err.message); }
+        const flags = { ...(allowDelete && { allow_delete: true }), ...(force && { force: true }) };
+        allowDelete = force = false;
+        try { await api(depBase, flags); } catch (err) { toast(err.message.includes("approve") || /read/i.test(err.message) ? `${err.message} (Deploy settings has the diff to read and approve)` : err.message); }
         poll();
       });
     };
@@ -4572,7 +4585,14 @@ const views = {
     const el = $("#branches"), base = `/repos/${owner}/${repo}/branches`;
     const open = (await api(base).catch(() => [])).filter((b) => b.status === "open" && (!only || b.name === only));
     await wireCheckHead(el, owner, repo, r);
+    // Mervin's live board (#1524, GET /api/repos/:o/:r/board): a row per open PR, what holds it up, who owns it.
+    const live = only ? null : await api(`/repos/${owner}/${repo}/board`).catch(() => null);
+    const board = live?.prs.length ? `<div class="muted" style="overflow-x:auto" title="Mervin's live board: every open PR, its CI, stack, clashes and owner"><b>${icon("git-pull-request")}Board</b>${live.prs.map((p) => {
+      const stuck = !live.mergeable.includes(p.pr);
+      return ` <span title="${esc([p.title, p.ci === "fail" ? `CI red: ${(p.failing ?? []).join(", ")}` : p.ci === "pending" ? "CI running" : "", p.stackedOn ? `on #${p.stackedOn}` : "", ...p.clashes.map((c) => `clash ${c.kind} ${c.key}`), p.tiers.card ? `${p.tiers.card} cards` : "", p.owner ? `owner ${p.owner}` : ""].filter(Boolean).join(" · "))}">#${p.pr} ${icon(stuck ? "clock" : "circle-check")}${p.owner ? esc(p.owner) : ""}</span>`;
+    }).join("")}</div>` : "";
     if (!open.length) {
+      if (board) el.innerHTML = board;
       if (only) el.innerHTML = `<p class="muted">${esc(only)} isn't open: merged, or gone. <a href="#/r/${esc(owner)}/${esc(repo)}">Back to ${esc(repo)}</a></p>`;
       return;
     }
@@ -4585,7 +4605,7 @@ const views = {
     // Each wave merges together; a branch that clashes with one before it says which, on hover.
     const waits = (w) => w.after.map((a) => `${a.branch}${a.stacked ? " (stacked on it)" : ""}${a.files.length ? `: ${a.files.join(", ")}` : ""}`).join("; ");
     const planned = plan?.waves.length > 1 ? `<div class="muted" style="white-space:nowrap;overflow-x:auto" title="${esc(`${plan.engine ?? "Mervin"} planned this: merge a wave and the next wave's branches take main in by themselves`)}">${icon("git-merge")} <b>${esc(plan.engine ?? "Mervin")}</b> ${plan.waves.map((wave, i) => `<b>${i + 1}</b> ${wave.map((w) => w.after.length ? `<code title="${esc(`after ${waits(w)}`)}">${esc(w.branch)}</code>` : `<code>${esc(w.branch)}</code>`).join(" ")}`).join(" → ")}</div>` : "";
-    el.innerHTML = planned + reviews.map((b) => {
+    el.innerHTML = board + planned + reviews.map((b) => {
       // A file only opened on the branch (the switcher reads through its copy) changes nothing: not counted.
       const files = b.files.filter((f) => !f.merged && (f.ops.length || f.deleted || f.binary || f.conflicts.length)), clash = files.flatMap((f) => f.conflicts.map((c) => ({ path: f.path, ...c })));
       // Prose the merge settled that one side may have made untrue (#1254): cards to read, never in the way of Merge.
