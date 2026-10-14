@@ -484,6 +484,19 @@ describe("settled, check the facts (#1254)", () => {
     expect(merge(code.base, code.branch, code.main, {}, "bot", "a.ts").checks).toBeUndefined();
   });
 
+  test("code lint.ts can't read: a stretch both sides changed that settled is flagged, as git would have stopped (#1389)", () => {
+    const was = ["int add(int a, int b);", "int sub(int a, int b);", "int mul(int a, int b);", "", "int run(void);"].join("\n");
+    const s = sides(was, was.replace("int sub(int a, int b);", "int sub(long a, int b);"), was.replace("int mul(int a, int b);", "int mul(int a, long b);"));
+    const m = merge(s.base, s.branch, s.main, {}, "bot", "calc.h");
+    expect(m.conflicts).toEqual([]);
+    expect(m.checks?.map((c) => ({ ...c, facts: c.facts }))).toEqual([expect.objectContaining({ check: true, facts: [] })]);
+    expect(text(settle(s, {}, "calc.h"))).toContain("long a, int b");
+    // Far apart, nothing to check; in JS or TS, lint.ts is the check.
+    const far = sides(was, was.replace("int add(int a, int b);", "int add(long a, int b);"), was.replace("int run(void);", "int run(int);"));
+    expect(merge(far.base, far.branch, far.main, {}, "bot", "calc.h").checks).toBeUndefined();
+    expect(merge(s.base, s.branch, s.main, {}, "bot", "calc.ts").checks).toBeUndefined();
+  });
+
   test("a stretch that's a card already isn't a check too, and the agent is asked to make the facts true", () => {
     const s = sides(readme(["Up to 32 players."], [room]), readme(["Up to 48 players."], [room]), readme(["Up to 64 players."], [room]));
     const m = merge(s.base, s.branch, s.main, {}, "bot", "README.md");
@@ -982,5 +995,26 @@ describe("over the API", () => {
     expect((await post("ana", "/api/repos/ana/r/branches/b2/merge", { resolve: { "a.ts": { "lint:tests": "branch" } } })).status).toBe(200);
     expect(ran).toHaveLength(1);
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json() as Doc)).toBe("const a = { marines: 1 };\nx(a.concord);");
+  });
+
+  test("code lint.ts can't read, settled where git would have stopped, runs the repo's build before it lands (#1401)", async () => {
+    const { call, post } = await app();
+    const was = ["int add(int a, int b);", "int sub(int a, int b);", "int mul(int a, int b);", "", "int run(void);"].join("\n");
+    await post("ana", "/api/repos/ana/r/files", { path: "package.json", content: '{\n  "scripts": { "build": "make" }\n}' });
+    await post("ana", "/api/repos/ana/r/files", { path: "calc.h", content: was });
+    for (const path of ["calc.h", "package.json"]) await post("ana", `/api/repos/ana/r/do/commit?path=${path}`, { message: "main" });
+    await post("ana", "/api/repos/ana/r/branches", { name: "c1" });
+    const doc = async () => (await call("ana", "/api/repos/ana/r/do/file?path=calc.h")).json() as Promise<Doc>;
+    const [sub, mul] = [(await doc()).lines[1]!, (await doc()).lines[2]!];
+    await post("ana", "/api/repos/ana/r/do/ops?path=calc.h&branch=c1", { ops: [{ kind: "set", line: sub.id, base: sub.rev, text: "int sub(long a, int b);" }] });
+    await post("ana", "/api/repos/ana/r/do/ops?path=calc.h", { ops: [{ kind: "set", line: mul.id, base: mul.rev, text: "int mul(int a, long b);" }] });
+    const ran: { only?: string[] }[] = [];
+    call.env.DEPS_TESTER = (async (_remote: string, _files: Record<string, string>, o: { only?: string[] }) => { ran.push({ only: o.only }); return { ok: false, out: "calc.h: error" }; }) as Tester;
+    await call("ana", "/api/repos/ana/r/deps", { method: "PUT", body: JSON.stringify({ test_merges: true }) });
+    const failed = await post("ana", "/api/repos/ana/r/branches/c1/merge", {});
+    expect(failed.status).toBe(409);
+    expect((await failed.json() as any).conflicts).toEqual([{ path: "calc.h", leftover: "person", conflicts: [expect.objectContaining({ line: "lint:tests" })] }]);
+    expect(ran).toEqual([{ only: ["calc.h"] }]);
+    expect((await post("ana", "/api/repos/ana/r/branches/c1/merge", { resolve: { "calc.h": { "lint:tests": "branch" } } })).status).toBe(200);
   });
 });

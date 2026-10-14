@@ -59,5 +59,5 @@ It's off until the owner sets the repo variable `BORG_EDGE=1` and creates the `b
 
 Slim borg checks each primitive once. What's left for it: the edge run on a Free-plan account ([#865](https://github.com/QuinnsCode/RustyBuns/issues/865)). Two bigger rigs are planned:
 
-- **thick borg** ([#856](https://github.com/QuinnsCode/RustyBuns/issues/856)): a decent-sized app per common migration story (keep the database and move the code, leave a PaaS for a box, go all-edge).
+- **thick borg** ([#856](https://github.com/QuinnsCode/RustyBuns/issues/856)): a decent-sized app per common migration story (keep the database and move the code, leave a PaaS for a box, go all-edge). The first, keep the database, is [borg-postgres](../borg-postgres/README.md).
 - **fatty borg** ([#857](https://github.com/QuinnsCode/RustyBuns/issues/857)): the chunky examples (codeSplitter, tscircuit-desktop, park-hide-seek, agent-office) run through build, deploy and teardown.
