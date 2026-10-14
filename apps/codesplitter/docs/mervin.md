@@ -61,7 +61,7 @@ shows two real engine faults:
    ended it differently (`unsigned flags)` / `enum object_info_flags flags)`); the stretch-blend kept both
    endings, leaving the parameter declared twice. Fixed here (`splitDifferently`, `blend` in `src/lines.ts`):
    those asks as a card now. 63 wrong became 59, solved did not move.
-2. **A block one side moved while the other edited around it** (odb.h) comes out with its comment split. Not fixed.
+2. **A block one side moved while the other edited around it** (odb.h) came out with its comment split: the stretch-blend dropped the branch's `*/`, `/*` and blank lines as "the same line main added". Fixed here (`blend` in `src/lines.ts`, #1390): only a line with some text counts as the same; the merge is well formed, main's block first.
 
 ## Where Mervin is weak
 
