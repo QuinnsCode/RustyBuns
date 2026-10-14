@@ -22,6 +22,10 @@ import { decodeConfig } from "./config-schema.ts";
 import { AlchemyFailed, ConfigLoadFailed, DeployRefused, UsageError, closest, flag, intFlag, renderError, triagePrompt } from "./errors.ts";
 import { infer, readPackageJson, appsBelow, siblingServers, proxyServers } from "./glue/infer.ts";
 import { unsupported } from "./glue/fit.ts";
+
+// @sveltejs/adapter-cloudflare builds the Worker and the static assets into one directory.
+const SVELTE_ASSETS = ".svelte-kit/cloudflare";
+const SVELTE_WORKER = `${SVELTE_ASSETS}/_worker.js`;
 import { planPort } from "./glue/port-vite.ts";
 import { jekyllDefaults, jekyllExcludes, jekyllPagesPlugins, jekyllPlugins, staticBuild, type StaticSite } from "./glue/static-site.ts";
 import { copySite, jekyllSiteFiles, staticSiteAt } from "./glue/site-files.ts";
@@ -179,6 +183,8 @@ async function init() {
   const later = inf.framework === "unknown" ? unsupported(inf.stack) : null;
   if (later && !force && inf.stack === "react-router")
     throw new Error(`this React Router app doesn't build with @cloudflare/vite-plugin; Rusty Buns runs the Worker that plugin builds (Cloudflare's React Router template). cloudflareDevProxy, Remix v2 and the Node server are ${later.issue}. Pass --force to write a config anyway.`);
+  if (inf.stack === "sveltekit" && inf.framework === "unknown" && !force)
+    throw new Error(`this SvelteKit app has no @sveltejs/adapter-cloudflare; Rusty Buns runs the Worker it builds. Add it (\`${inf.pm === "npm" ? "npm i" : inf.pm + " add"} -D @sveltejs/adapter-cloudflare\`) and use it in svelte.config.js, then re-run init (${unsupported("sveltekit")!.issue}). Pass --force to write a config anyway.`);
   if (later && !force && (inf.stack === "cra" || inf.stack === "vue-cli"))
     throw new Error(`${later.name} builds with webpack. \`rustybuns init --port-vite\` ports it to Vite (vite.config.ts, index.html, package.json) and goes on as a Vite app (${later.issue}).`);
   if (later && !force && inf.stack === "webpack")
@@ -210,7 +216,8 @@ async function init() {
   // TanStack Start off Cloudflare (Vercel, Netlify, Node) renders on its server and has no
   // index.html, so a SPA build serves nothing. The desktop runs its production server instead.
   if (inf.framework === "tanstack-start" && !src && !spa) { await initStart(inf); return; }
-  if ((!src && !astroWorker) || spa) {
+  const svelteWorker = inf.framework === "sveltekit" && !spa;
+  if ((!src && !astroWorker && !svelteWorker) || spa) {
     if (src && spa) console.log(`ignoring ${src} (--spa): desktop-only config. Remove the flag to carry its bindings over.`);
     await initSpa(inf); return;
   }
@@ -229,9 +236,12 @@ async function init() {
     cfg.worker!.main = w.main ?? "@astrojs/cloudflare/entrypoints/server";
     if (!cfg.worker!.build) cfg.worker!.build = "astro build";
   }
+  // SvelteKit: adapter-cloudflare builds the Worker and its assets into .svelte-kit/cloudflare.
+  if (svelteWorker && !w.main) cfg.worker!.main = SVELTE_WORKER;
+  if (svelteWorker && !cfg.worker!.build) cfg.worker!.build = `${inf.execCmd("vite")} build`;
   // A package entry (@astrojs/cloudflare/entrypoints/server) resolves through node_modules, not a file here.
   const isFile = (m: string) => m.startsWith(".") || m.startsWith("/") || /\.[mc]?[jt]sx?$/.test(m);
-  if (!(astroWorker && !w.main) && isFile(cfg.worker!.main!) && !/^(\.\/)?dist\//.test(cfg.worker!.main!) && !existsSync(cfg.worker!.main!)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
+  if (!(astroWorker && !w.main) && isFile(cfg.worker!.main!) && !/^(\.\/)?dist\//.test(cfg.worker!.main!) && !(svelteWorker && cfg.worker!.main!.includes(".svelte-kit/")) && !existsSync(cfg.worker!.main!)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
   { const { inferWorkerBuild } = await import("./glue/build-script.ts"); const b = inferWorkerBuild(inf.scripts, null);
     console.log(!cfg.worker!.build ? `build:    none (a plain Worker: Alchemy bundles ${cfg.worker!.main})`
       : `build:    ${cfg.worker!.build}  (${b.from === "default" || b.build !== cfg.worker!.build ? "no build script found; using the default" : `from "${b.from}" script`})`); }
@@ -253,6 +263,10 @@ async function init() {
   if (rrWorker) {
     cfg.worker!.builtMain = `${inf.reactRouterBuild}/server/index.js`;
     cfg.worker!.assets = `${inf.reactRouterBuild}/client`;
+  }
+  if (svelteWorker) {
+    cfg.worker!.builtMain = SVELTE_WORKER;
+    cfg.worker!.assets = SVELTE_ASSETS;
   }
   if (astroWorker) {
     // Older adapters (and their wrangler files) build dist/_worker.js and serve dist/; newer ones dist/server + dist/client.
@@ -286,7 +300,7 @@ async function init() {
   // app's build runs before vite (prisma generate, codegen) runs first, as in initSpa (#403).
   const host = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
   // Astro and React Router: the desktop runs the Worker build under Bun, same bundle as the edge.
-  if (astroWorker || rrWorker) cfg.targets.desktop = { mode: "worker", targets: [host as any] };
+  if (astroWorker || rrWorker || svelteWorker) cfg.targets.desktop = { mode: "worker", targets: [host as any] };
   else {
     const d = cfg.targets.desktop!;
     const { preViteSteps } = await import("./glue/build-script.ts");

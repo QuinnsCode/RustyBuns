@@ -11,7 +11,7 @@ import { workspaceRoot } from "./deploy-deps.ts";
 import { inits, stackOf, vitePlugins, type Stack } from "./fit.ts";
 import { inferStaticBuild } from "./build-script.ts";
 
-export type Framework = "rwsdk" | "tanstack-start" | "astro" | "react-router" | "vite-react" | "vite" | "unknown";
+export type Framework = "rwsdk" | "tanstack-start" | "astro" | "react-router" | "sveltekit" | "vite-react" | "vite" | "unknown";
 export type PackageManager = "bun" | "pnpm" | "npm" | "yarn";
 
 export interface Inferred {
@@ -375,7 +375,7 @@ export function infer(root = process.cwd()): Inferred {
     const viaRoot = { ...(top.dependencies ?? {}), ...(top.devDependencies ?? {}) }["vite"];
     if (vite.configPath || viaRoot) stack = stackOf({ ...deps, vite: viaRoot ?? "*" }, vite.plugins);
   }
-  const framework = (inits(stack, vite.plugins) ? stack : "unknown") as Framework;
+  const framework = (inits(stack, vite.plugins, deps) ? stack : "unknown") as Framework;
   const pm = detectPm(root);
   const wranglerPath = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"].map((c) => join(root, c)).find(existsSync) ?? null;
   const tsAliases = inferTsconfigAliases(root);

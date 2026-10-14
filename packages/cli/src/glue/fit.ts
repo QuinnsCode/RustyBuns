@@ -14,7 +14,8 @@ export type Stack =
   | "unknown";
 
 /** React Router counts only when it builds through @cloudflare/vite-plugin; see `inits`. */
-export const SUPPORTED: Stack[] = ["rwsdk", "tanstack-start", "astro", "react-router", "vite-react", "vite"];
+/** SvelteKit counts only with @sveltejs/adapter-cloudflare, which builds the Worker; see `inits`. */
+export const SUPPORTED: Stack[] = ["rwsdk", "tanstack-start", "astro", "react-router", "sveltekit", "vite-react", "vite"];
 
 const LABEL: Record<Stack, string> = {
   rwsdk: "RedwoodSDK", "tanstack-start": "TanStack Start", "vite-react": "Vite + React", vite: "Vite",
@@ -74,9 +75,14 @@ export function stackOf(deps: Record<string, unknown>, plugins: string[] = []): 
   return "unknown";
 }
 
-/** Whether `init` reads this app. React Router only as a Worker: its Cloudflare template's @cloudflare/vite-plugin. */
-export const inits = (stack: Stack, plugins: string[]) =>
-  SUPPORTED.includes(stack) && (stack !== "react-router" || plugins.includes("cloudflare"));
+/**
+ * Whether `init` reads this app. React Router only as a Worker (its Cloudflare template's
+ * @cloudflare/vite-plugin), SvelteKit only with @sveltejs/adapter-cloudflare.
+ */
+export const inits = (stack: Stack, plugins: string[], deps: Record<string, unknown> = {}) =>
+  SUPPORTED.includes(stack)
+  && (stack !== "react-router" || plugins.includes("cloudflare"))
+  && (stack !== "sveltekit" || !!deps["@sveltejs/adapter-cloudflare"]);
 
 export type Verdict = "ready" | "likely" | "needs-work" | "poor";
 
@@ -140,7 +146,7 @@ export function fit({ pkg, files, viteConfig }: FitInput): Fit {
   const worker = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"].find(has);
   const fetchServer = FETCH_SERVERS.find((d) => deps[d]);
 
-  if (inits(stack, plugins)) {
+  if (inits(stack, plugins, deps)) {
     verdict = "ready";
     reasons.push(`${LABEL[stack]}: \`rustybuns init\` reads it as is.`);
   } else if (unsupported(stack)) {
@@ -148,6 +154,8 @@ export function fit({ pkg, files, viteConfig }: FitInput): Fit {
     issue = unsupported(stack)!.issue;
     reasons.push(stack === "react-router"
       ? "React Router: `rustybuns init` reads it when @cloudflare/vite-plugin builds it (Cloudflare's current template), not through cloudflareDevProxy or a Node server."
+      : stack === "sveltekit"
+      ? "SvelteKit: `rustybuns init` reads it with @sveltejs/adapter-cloudflare, which builds the Worker; add it (`npm i -D @sveltejs/adapter-cloudflare`) in svelte.config.js."
       : TRACKED[stack] === 404 || stack === "webpack"
         ? stack === "webpack"
           ? "A custom webpack build: ported to Vite by hand, `rustybuns init` reads it (`init --port-vite` lists what to port)."
