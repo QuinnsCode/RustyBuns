@@ -62,7 +62,15 @@ export function ciOf(pr: BoardPr): { ci: Ci; failing: string[] } {
 export interface FileRow { path: string; tier: Tier; why: string; after: number[] }
 export interface Stage { pr: number; title?: string; head: string; base: string; stackedOn?: number; ci?: Ci; failing?: string[]; files: FileRow[] }
 /** A clash between files (or PRs) that merges clean as text: `prs` lists the PRs, `main` is true when main holds one side. */
-export interface Clash { kind: "migration" | "export" | "route"; key: string; prs: number[]; main?: boolean }
+export interface Clash {
+  kind: "migration" | "export" | "route"; key: string; prs: number[]; main?: boolean;
+  /** Per PR: the migration file it added, or the text of the declaration's body. Read by `settle`. */
+  files?: Record<number, string>; bodies?: Record<number, string>;
+  /** The step that settled it (shown on the board); a clash without one is a card for a person. */
+  settled?: string;
+  /** Migrations: the later PRs' files renamed to the next free stamp. */
+  renumber?: { pr: number; from: string; to: string }[];
+}
 export interface Board { main: string; at: string; stages: Stage[]; written: string[]; skipped: { pr: number; why: string }[]; clashes: Clash[] }
 
 const BUF = 64 << 20;
@@ -85,14 +93,20 @@ export function claims(git: ReturnType<typeof gitIn>, base: string, head: string
     if (stamp) {
       // main already has a different file under that stamp (the same file is the same migration)
       const there = (git("ls-tree", "--name-only", main, dir(path) || ".") ?? "").split("\n").filter((f) => f !== path && stampOf(f) === stamp);
-      out.push({ kind: "migration", key: `${dir(path)}${stamp}`, prs: [], ...(there.length && { main: true }) });
+      out.push({ kind: "migration", key: `${dir(path)}${stamp}`, prs: [], files: { 0: path }, ...(there.length && { main: true }) });
     }
     if (status === "D" || !/\.[cm]?[jt]sx?$/.test(path)) continue;
-    for (const l of (git("diff", "-U0", "--no-renames", base, head, "--", path) ?? "").split("\n")) {
+    const lines = (git("diff", "-U0", "--no-renames", base, head, "--", path) ?? "").split("\n");
+    lines.forEach((l, i) => {
       const name = l.match(DECL)?.[1], route = l.match(ROUTE)?.[1];
-      if (name) out.push({ kind: "export", key: `${path} ${name}`, prs: [] });
+      if (name) {
+        // the declaration and the added lines right after it, up to the next declaration or hunk
+        let body = l;
+        for (let j = i + 1; j < lines.length && lines[j]!.startsWith("+") && !DECL.test(lines[j]!); j++) body += `\n${lines[j]}`;
+        out.push({ kind: "export", key: `${path} ${name}`, prs: [], bodies: { 0: body.trim() } });
+      }
       if (route) out.push({ kind: "route", key: route, prs: [] });
-    }
+    });
   }
   return out;
 }
@@ -105,9 +119,53 @@ export function clashes(perStage: { pr: number; claims: Clash[] }[]): Clash[] {
     const e = by.get(id) ?? { kind: c.kind, key: c.key, prs: [] };
     if (!e.prs.includes(pr)) e.prs.push(pr);
     if (c.main) e.main = true;
+    if (c.files) e.files = { ...e.files, [pr]: c.files[0]! };
+    if (c.bodies) e.bodies = { ...e.bodies, [pr]: c.bodies[0]! };
     by.set(id, e);
   }
   return [...by.values()].filter((c) => c.prs.length > 1 || c.main);
+}
+
+const STAMP = /(\d+)_[^/]*$/;
+/** The migration stamp after the highest in `taken`, as wide as the others. */
+export const nextStamp = (taken: string[]) => (taken.reduce((m, t) => (BigInt(t) > m ? BigInt(t) : m), 0n) + 1n).toString().padStart(taken[0]?.length ?? 0, "0");
+
+/**
+ * Settles the clashes that have one right answer and names the step: migrations are renumbered (the earliest PR keeps
+ * its stamp unless main holds it), an export two PRs wrote the same way keeps one copy. Anything else, or two bodies
+ * that differ, has no `settled` and stays a card. `taken` is every stamp in use, per migrations directory.
+ */
+export function settle(list: Clash[], taken: Map<string, string[]> = new Map()): Clash[] {
+  for (const c of list) {
+    if (c.kind === "migration" && c.files) {
+      const dir = c.key.replace(/\d+$/, "");
+      const stamps = taken.get(dir) ?? [];
+      c.renumber = [];
+      for (const pr of c.main ? c.prs : c.prs.slice(1)) {
+        const from = c.files[pr]!, old = from.match(STAMP)![1]!;
+        const to = nextStamp([...stamps, old]);
+        stamps.push(to);
+        c.renumber.push({ pr, from, to: from.replace(`${old}_`, `${to}_`) });
+      }
+      taken.set(dir, stamps);
+      c.settled = `renumbered ${c.renumber.map((r) => `#${r.pr} to ${r.to.match(STAMP)![1]}`).join(", ")}`;
+    } else if (c.kind === "export" && c.bodies && !c.main && new Set(Object.values(c.bodies)).size === 1) {
+      c.settled = `identical in #${c.prs.join(" and #")}: kept one copy`;
+    }
+  }
+  return list;
+}
+
+/** Every migration stamp in use, per directory: on main, and claimed by any PR. */
+function stampsIn(git: ReturnType<typeof gitIn>, main: string, perStage: { claims: Clash[] }[]): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  const add = (dir: string, stamp: string) => { const l = out.get(dir) ?? []; if (!l.includes(stamp)) l.push(stamp); out.set(dir, l); };
+  for (const { claims } of perStage) for (const c of claims) if (c.kind === "migration") {
+    const dir = c.key.replace(/\d+$/, "");
+    for (const f of (git("ls-tree", "--name-only", main, dir || ".") ?? "").split("\n")) { const st = stampOf(f); if (st) add(dir, st); }
+    add(dir, c.key.slice(dir.length));
+  }
+  return out;
 }
 
 /** Oldest first, each stacked PR moved to just after the PR it's built on (when that's on the board too). */
@@ -165,7 +223,8 @@ export function run(repo: string | undefined, main: string, prs: BoardPr[]): { b
       else if ([b ?? "", cur, br].some((t) => t.includes("\0"))) row("card", "binary, both changed");
       else {
         const s = shadow(path, b ?? "", cur, br, attributes);
-        if (!s.ours.clean) row("card", s.ours.conflicts.map((c) => c.lint ?? (c.whole ? "lockfile" : `line ${c.line}`)).slice(0, 3).join(", "));
+        if (!s.ours.clean && s.ours.conflicts.every((c) => c.whole)) row("mervin", "lockfile: main's copy kept; bun install in the sandbox adds the PR's package.json change");
+        else if (!s.ours.clean) row("card", s.ours.conflicts.map((c) => c.lint ?? (c.whole ? "lockfile" : `line ${c.line}`)).slice(0, 3).join(", "));
         else {
           tree.set(path, s.ours.text); mine.set(path, s.ours.text);
           if (!s.git.clean) row("mervin", "git conflicts, Mervin settles");
@@ -180,7 +239,7 @@ export function run(repo: string | undefined, main: string, prs: BoardPr[]): { b
     if (pr.headRefName) done.set(pr.headRefName, pr.headRefOid);
   }
   board.written = [...tree.keys()].sort();
-  board.clashes = clashes(perStage);
+  board.clashes = settle(clashes(perStage), stampsIn(git, main, perStage));
   return { board, tree, writes };
 }
 
@@ -281,7 +340,7 @@ if (import.meta.main) {
   else {
     console.log(`Mervin's board: ${board.stages.length} PRs onto main ${main.slice(0, 9)}\n`);
     board.stages.forEach((s, i) => console.log([`stage ${i + 1}: ${describe(s)[0]}`, ...describe(s).slice(1)].join("\n") + "\n"));
-    for (const c of board.clashes) console.log(`clash ${c.kind}: ${c.key}  ${c.prs.map((n) => `#${n}`).join(" + ")}${c.main ? " + main" : ""}`);
+    for (const c of board.clashes) console.log(`clash ${c.kind}: ${c.key}  ${c.prs.map((n) => `#${n}`).join(" + ")}${c.main ? " + main" : ""}  ${c.settled ? `settled: ${c.settled}` : "CARD"}`);
     for (const s of board.skipped) console.log(`skipped #${s.pr}: ${s.why}`);
     const all = count(board.stages.flatMap((s) => s.files));
     const n = board.stages.reduce((k, s) => k + s.files.length, 0);

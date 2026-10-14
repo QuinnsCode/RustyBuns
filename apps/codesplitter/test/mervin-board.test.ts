@@ -136,3 +136,33 @@ describe("mervin stack", () => {
     expect(stackable(board as any, [{ pr: 1, go: true, why: "", behind: [] }, { pr: 2, go: true, why: "", behind: [] }])).toEqual([1]);
   });
 });
+
+import { nextStamp, settle, type Clash } from "../scripts/mervin-board.ts";
+describe("mervin settles clashes", () => {
+  test("migrations: the later PR takes the next free stamp, and main's stamp moves every PR", () => {
+    expect(nextStamp(["20261013040000", "20261013050000"])).toBe("20261013050001");
+    const m = (prs: number[], main?: true): Clash => ({ kind: "migration", key: "db/migrations/20261013040000", prs, main, files: Object.fromEntries(prs.map((p) => [p, `db/migrations/20261013040000_p${p}.sql`])) });
+    const [a, b] = settle([m([1432, 1455]), m([1503], true)], new Map([["db/migrations/", ["20261013040000"]]]));
+    expect(a!.renumber).toEqual([{ pr: 1455, from: "db/migrations/20261013040000_p1455.sql", to: "db/migrations/20261013040001_p1455.sql" }]);
+    expect(b!.renumber![0]!.to).toBe("db/migrations/20261013040002_p1503.sql");
+    expect(a!.settled).toContain("#1455 to 20261013040001");
+  });
+  test("exports: same body keeps one, different bodies stay a card", () => {
+    const e = (bodies: Record<number, string>): Clash => ({ kind: "export", key: "src/repos.ts repoRow", prs: Object.keys(bodies).map(Number), bodies });
+    const [same, diff] = settle([e({ 1: "x", 2: "x" }), e({ 1: "x", 2: "y" })]);
+    expect(same!.settled).toContain("kept one copy");
+    expect(diff!.settled).toBeUndefined();
+  });
+  test("a lockfile both PRs changed keeps main's copy, not a card", () => {
+    const repo = mkdtempSync(join(tmpdir(), "mervin-lock-"));
+    const g = (...a: string[]) => Bun.spawnSync(["git", ...a], { cwd: repo, stderr: "pipe" }).stdout.toString().trim();
+    const put = (t: string) => { writeFileSync(join(repo, "bun.lock"), t); g("add", "-A"); g("commit", "-qm", "c"); return g("rev-parse", "HEAD"); };
+    g("init", "-q", "-b", "main"); g("config", "user.email", "t@t"); g("config", "user.name", "t");
+    const base = put('{\n  "a": 1,\n  "b": 2\n}\n');
+    g("checkout", "-qb", "q", base); const q = put('{\n  "a": 1,\n  "b": 3\n}\n');
+    g("checkout", "-q", "main"); const m = put('{\n  "a": 1,\n  "b": 4\n}\n');
+    const { board, tree } = run(repo, m, [{ number: 1, headRefOid: q, headRefName: "q", baseRefName: "main" }]);
+    expect(board.stages[0]!.files[0]!.tier).toBe("mervin");
+    expect(tree.has("bun.lock")).toBe(false);
+  });
+});
