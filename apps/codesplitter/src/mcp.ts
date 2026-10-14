@@ -77,7 +77,7 @@ export async function mcp(req: Request, origin: string, dispatch: (r: Request) =
   const who = await dispatch(new Request(`${origin}/api/session`, { headers: { authorization: auth } }));
   if (who.status === 401) return unauthorized(((await who.json().catch(() => ({}))) as { error?: string }).error ?? "bad token", origin);
   const scope = ((await who.json().catch(() => ({}))) as { token?: { scope?: string } }).token?.scope;
-  const mine = all().filter((t) => scope === "write" || t.method === "GET");
+  const mine = all().filter((t) => scope === "write" || scope === "admin" || t.method === "GET");
 
   const { id, method } = msg, params = (msg.params ?? {}) as { protocolVersion?: unknown; name?: unknown; arguments?: unknown };
   switch (method) {

@@ -202,3 +202,12 @@ test("a rebuild task's ENGINE lines: one per clash, the last said counts, markdo
     { path: "b.ts", line: "L9", yes: false, how: "" },
   ]);
 });
+
+test("hosted, a fix task starts only on an admin's branch: a crew member's failing branch waits for a person", async () => {
+  const { call, fail, runs } = await app();
+  (call.env as any).AGENT_SANDBOX = {};
+  (call.env as any).ADMINS = "nobody";
+  await fail(sha("a"));
+  await Bun.sleep(100);
+  expect(await runs()).toEqual([]);
+});

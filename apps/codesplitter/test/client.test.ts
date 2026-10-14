@@ -410,13 +410,24 @@ describe("lineKey", () => {
 // Selecting by rule, for the palette, the right-click menu and agents.
 describe("picking lines by rule", () => {
   const src = html.slice(html.indexOf("const pickAll"), html.indexOf('/** "line 4", "lines 4'));
-  const { pickAll, pickInvert, pickMatching, pickBy, pickBlock } = new Function(`${src}; return { pickAll, pickInvert, pickMatching, pickBy, pickBlock };`)();
+  const { pickAll, pickInvert, pickMatching, pickBy, pickBlock, pickDrop, pickRunAt, pickRanges } = new Function(`${src}; return { pickAll, pickInvert, pickMatching, pickBy, pickBlock, pickDrop, pickRunAt, pickRanges };`)();
   const sorted = (s: Set<number>) => [...s].sort((a, b) => a - b);
   const code = ["function a() {", "  if (x) {", "    one();", "", "    two();", "  }", "  three();", "}", "", "const b = 1;"];
 
   test("invert flips the pick, all picks everything", () => {
     expect(sorted(pickInvert(new Set([0, 2]), 4))).toEqual([1, 3]);
     expect(sorted(pickAll(3))).toEqual([0, 1, 2]);
+  });
+
+  test("unselecting drops a line, a run, or typed ranges", () => {
+    const picked = new Set([1, 2, 3, 7, 8]);
+    expect(sorted(pickDrop(picked, new Set([2])))).toEqual([1, 3, 7, 8]);
+    expect(sorted(pickRunAt(picked, 2))).toEqual([1, 2, 3]);
+    expect(sorted(pickRunAt(picked, 5))).toEqual([]);
+    expect(sorted(pickRanges("3-4, 9", 10))).toEqual([2, 3, 8]);
+    expect(sorted(pickRanges("8-", 10))).toEqual([7, 8, 9]);
+    expect(sorted(pickRanges("5-3", 10))).toEqual([2, 3, 4]);
+    expect(() => pickRanges("x", 10)).toThrow();
   });
 
   test("matching is a substring in any case, or /regex/", () => {
@@ -517,5 +528,38 @@ describe("the Ship pop-out's infra map", () => {
     expect(html).toContain(`id="ship"`);
     expect(html).toContain(`id="ship-panel"`);
     expect(html).toContain("views.wireShip(owner, repo);");
+  });
+});
+
+// #1469: a repo or file view called the repo, branches and fit endpoints several times each.
+describe("api shares repeated reads within a view", () => {
+  const src = html.slice(html.indexOf("const sharedGets"), html.indexOf("const apiCall"));
+  const make = () => {
+    const calls: string[] = [];
+    const apiCall = async (path: string, body?: unknown, method?: string) => { calls.push((method ?? (body === undefined ? "GET" : "POST")) + " " + path); return { path }; };
+    const { api, sharedGets } = new Function("apiCall", `${src}; return { api, sharedGets };`)(apiCall);
+    return { api, sharedGets, calls };
+  };
+
+  test("the repo, branches and fit are fetched once each", async () => {
+    const { api, calls } = make();
+    await Promise.all(["/repos/o/r", "/repos/o/r", "/repos/o/r", "/repos/o/r/branches", "/repos/o/r/branches", "/repos/o/r/fit", "/repos/o/r/fit", "/repos/o/r/tree?path="].map((p) => api(p)));
+    expect(calls).toEqual(["GET /repos/o/r", "GET /repos/o/r/branches", "GET /repos/o/r/fit", "GET /repos/o/r/tree?path="]);
+  });
+
+  test("a write, or the next route, drops them", async () => {
+    const { api, sharedGets, calls } = make();
+    await api("/repos/o/r/branches");
+    await api("/repos/o/r/branches", { name: "x" });
+    await api("/repos/o/r/branches");
+    sharedGets.clear();
+    await api("/repos/o/r/branches");
+    expect(calls).toEqual(["GET /repos/o/r/branches", "POST /repos/o/r/branches", "GET /repos/o/r/branches", "GET /repos/o/r/branches"]);
+  });
+
+  test("other reads are never shared", async () => {
+    const { api, calls } = make();
+    await api("/repos/o/r/agents"); await api("/repos/o/r/agents");
+    expect(calls.length).toBe(2);
   });
 });

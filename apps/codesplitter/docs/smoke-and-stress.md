@@ -2,6 +2,11 @@
 
 Three tiers, cheapest first. Each tier only runs when the one below is green.
 
+`bun run smoke` (`scripts/smoke.ts`) is tiers 1 and 2 in one go, led by the security model in
+[REFERENCE.md](../REFERENCE.md#the-security-model-your-code-your-app-your-provisioning-your-destruction): it runs
+every test a promise cites (one `bun test --parallel`, read back from its JUnit report) and prints a row per promise,
+then `scripts/stress.ts --paid-paths`. Exit 0 means every promise and every stress rule held.
+
 ## Tier 1: free, in-process (exists)
 
 `bun run stress` (`scripts/stress.ts`, see [REFERENCE.md](../REFERENCE.md)) runs the whole app on the

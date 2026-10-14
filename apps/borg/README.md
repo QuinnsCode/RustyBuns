@@ -60,4 +60,20 @@ It's off until the owner sets the repo variable `BORG_EDGE=1` and creates the `b
 Slim borg checks each primitive once. What's left for it: the edge run on a Free-plan account ([#865](https://github.com/QuinnsCode/RustyBuns/issues/865)). Two bigger rigs are planned:
 
 - **thick borg** ([#856](https://github.com/QuinnsCode/RustyBuns/issues/856)): a decent-sized app per common migration story (keep the database and move the code, leave a PaaS for a box, go all-edge). The first, keep the database, is [borg-postgres](../borg-postgres/README.md).
-- **fatty borg** ([#857](https://github.com/QuinnsCode/RustyBuns/issues/857)): the chunky examples (codeSplitter, tscircuit-desktop, park-hide-seek, agent-office) run through build, deploy and teardown.
+- **fatty borg** ([#857](https://github.com/QuinnsCode/RustyBuns/issues/857)): the chunky examples, below.
+
+## Fatty borg
+
+`bun fatty.ts [app...]` lists the steps for codeSplitter, tscircuit-desktop, park-hide-seek and agent-office and runs nothing. `bun fatty.ts --run` does them, on demand or weekly, never per PR, because it costs money.
+
+| App | Steps |
+|---|---|
+| codeSplitter | `plan`, cost cap, `deploy` to a `fatty<unix seconds>` stage, smoke check, `destroy` |
+| tscircuit-desktop | `build desktop` |
+| park-hide-seek | `build desktop`, `build box` (its Railway box bills until destroyed, so it isn't deployed) |
+| agent-office | `build desktop` (PTYs: desktop and box only) |
+
+- **Destroy always runs** after a deploy, even when a step failed, then the sweeper looks for what it left (a `nothing left` row; it needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`) and deletes it.
+- **Refuses to take over a live deploy.** codeSplitter's config pins its Worker name and adopts, so a throwaway stage would adopt the real one and `destroy` would delete it. The deploy stays refused until the config has a `stages` entry for fatty runs; the builds and `plan` still run.
+- **Timings and sizes** print against the last green run, kept in `.fatty/last.json`.
+- `FATTY_MAX_RESOURCES` (40) and `FATTY_ALLOW_PAID=1` set the cost cap read from `plan`.

@@ -152,6 +152,7 @@
   .ctx button { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border: 0; border-radius: 4px; background: none; color: var(--fg); text-align: left; cursor: pointer; font: inherit; }
   .ctx button:hover { background: var(--select); } .ctx svg.lucide { width: 14px; height: 14px; color: var(--muted); }
   .ctx input { margin: 2px; font: 12.5px var(--mono); }
+  .ctx label.ask { display: flex; align-items: center; gap: 8px; padding: 2px 8px; } .ctx label.ask input { flex: 1; min-width: 0; margin: 0; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--fg); }
   .ctx button span { flex: 1; } .ctx kbd { color: var(--muted); font: 11.5px var(--mono); padding-left: 16px; } .ctx hr { border: 0; border-top: 1px solid var(--border); margin: 4px 2px; }
   .ctx button:focus-visible { outline: none; background: var(--select); } #lines:focus { outline: none; }
   .tree a { display: flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px 0 calc(8px + var(--d, 0) * 12px); color: var(--fg); font-size: 13px; white-space: nowrap; cursor: pointer; }
@@ -902,6 +903,8 @@
   .switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: transform .15s; }
   .switch input:checked + i { background: var(--fg); } .switch input:checked + i::after { transform: translateX(12px); }
   .switch input:focus-visible + i { box-shadow: 0 0 0 3px rgba(10,10,10,.12); }
+  .toast.fail { display: flex; align-items: center; gap: 8px; max-width: min(92vw, 560px); background: #7a1f1f; }
+  .toast.fail .btn { color: #fff; border-color: rgba(255,255,255,.5); padding: 4px 8px; white-space: nowrap; }
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--fg); color: #fff; padding: 9px 14px; border-radius: 6px; font-size: 13px; z-index: 60; box-shadow: 0 12px 32px -8px rgba(0,0,0,.3); }
 
   /* Every feature, on a strip that scrolls sideways forever: three copies of the list,
@@ -1122,10 +1125,24 @@ async function fillPulses(root = document) {
 // Who you are comes from the server: an alias (desktop, demos) or a Better Auth account.
 let session = { mode: "alias", user: null, providers: [] };
 const me = () => session.user;
-const api = async (path, body, method, headers = {}) => {
+// A view asks for the repo, its branches, its fit and its tree from several panels: each is fetched once per view
+// (the promise is shared), and dropped on the next route or any write, so nothing is read stale.
+const sharedGets = new Map();
+const SHARED = /^\/repos\/[^/?]+\/[^/?]+(\/(branches|fit|tree))?(\?.*)?$/;
+const api = (path, body, method, headers = {}) => {
+  if (body === undefined && !method) {
+    if (!SHARED.test(path)) return apiCall(path, body, method, headers);
+    let p = sharedGets.get(path);
+    if (!p) { p = apiCall(path, body, method, headers); sharedGets.set(path, p); p.catch(() => sharedGets.delete(path)); }
+    return p;
+  }
+  sharedGets.clear();
+  return apiCall(path, body, method, headers);
+};
+const apiCall = async (path, body, method, headers = {}) => {
   const r = await fetch("/api" + path, body === undefined && !method ? {} : { method: method || "POST", headers: { "content-type": "application/json", ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || j.message || r.status);
+  if (!r.ok) throw Object.assign(new Error(j.error || j.message || r.status), { failure: { status: r.status, method: method || "POST", path } });
   // A place in a limit's line is an object; a deploy's own {queued: true} (a commit landing mid-run) isn't one.
   return r.status === 202 && typeof j.queued === "object" && j.queued ? inLine(j.queued) : j;
 };
@@ -1223,7 +1240,8 @@ async function wireTokens(made, open = !!made) {
     + `<div class="list">${list.map((t) => `<div class="row" style="flex-wrap:nowrap"><span style="flex:1;min-width:0" title="${t.scope === "write" ? "read and write" : "read only"} · …${esc(t.last4)} · ${when(t)}${t.last_used_at ? ` · used ${ago(t.last_used_at)}` : ""}">${icon(t.scope === "write" ? "pencil" : "eye")} ${esc(t.label)}${t.expired ? ` <span class="muted">· expired</span>` : ""}</span>
       <button class="btn ghost" data-revoke="${esc(t.id)}" title="revoke">${icon("trash-2")}</button></div>`).join("")}</div>
     <form id="newtoken" style="display:grid;gap:6px;margin:8px 0 4px"><input name="label" placeholder="what it's for" required>
-      <div style="display:flex;flex-wrap:wrap;gap:6px"><select name="scope" style="flex:1 1 auto"><option value="read">Read only</option><option value="write">Read and write</option></select>
+      <div style="display:flex;flex-wrap:wrap;gap:6px"><select name="scope" style="flex:1 1 auto"><option value="read">Read only</option><option value="write">Read and write code</option><option value="admin">Admin (delete, crew, webhooks)</option></select>
+      <input name="repo" placeholder="all repos, or owner/name" style="flex:1 1 auto">
       <select name="days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="365">1 year</option></select>
       <button class="btn primary">${icon("plus")}Make</button></div></form>
     <details id="my-audit" style="margin-top:10px"><summary class="muted" style="font-size:12px;cursor:pointer">${icon("shield")} Audit log</summary><div></div></details></div></details>`;
@@ -1236,7 +1254,7 @@ async function wireTokens(made, open = !!made) {
   $("#token-cli")?.addEventListener("click", () => copy(cliLogin(made.token), "Command copied"));
   $("#newtoken").addEventListener("submit", async (e) => {
     e.preventDefault(); const f = e.target;
-    try { wireTokens(await api("/tokens", { label: f.elements.label.value, scope: f.elements.scope.value, days: Number(f.elements.days.value) })); } catch (err) { toast(err.message); }
+    try { wireTokens(await api("/tokens", { label: f.elements.label.value, scope: f.elements.scope.value, repo: f.elements.repo.value.trim() || undefined, days: Number(f.elements.days.value) })); } catch (err) { failed(err, "make an API token"); }
   });
   el.querySelectorAll("[data-revoke]").forEach((b) => b.addEventListener("click", async () => {
     await api(`/tokens/${b.dataset.revoke}`, undefined, "DELETE"); toast("Token revoked"); wireTokens(undefined, true);
@@ -1271,6 +1289,29 @@ let lineSel = null;
 /** Say something to a screen reader, through the one polite live region. */
 function announce(msg) { const l = $("#live"); l.textContent = ""; setTimeout(() => (l.textContent = msg), 50); }
 function toast(msg, ms = 2400) { const t = document.createElement("div"); t.className = "toast"; t.setAttribute("aria-hidden", "true"); t.textContent = msg; document.body.append(t); announce(msg); setTimeout(() => t.remove(), ms); }
+/**
+ * Self-heal: a failure the person can hand to their own coding agent. The toast stays until it's closed and has a
+ * button that copies a prompt saying what happened and the error (src/fix-prompt.ts), ready to paste.
+ * Server faults and uncaught errors get one by themselves; a caller passes `what` to name the action.
+ */
+async function failed(err, what, extra = {}) {
+  const msg = String(err?.message || err);
+  const t = document.createElement("div"); t.className = "toast fail"; t.setAttribute("role", "alert");
+  const b = document.createElement("button"); b.className = "btn ghost"; b.innerHTML = icon("clipboard-copy") + " Fix it with your agent"; b.title = "Copy a prompt for your coding agent: what happened, and the error";
+  const x = document.createElement("button"); x.className = "btn ghost"; x.innerHTML = icon("x"); x.setAttribute("aria-label", "Dismiss");
+  const m = document.createElement("span"); m.textContent = msg;
+  t.append(m, b, x); document.body.append(t); announce(msg + ". A button copies a prompt for your coding agent.");
+  x.onclick = () => t.remove();
+  b.onclick = async () => {
+    try {
+      const { fixPrompt } = await import("/fix-prompt.js");
+      await copy(fixPrompt({ what: what || "use codeSplitter", error: msg, stack: err?.stack, page: location.hash, ...err?.failure, ...extra }, { site: location.origin, agent: agentCall ? "an agent" : undefined }), "Prompt copied: paste it into your coding agent");
+    } catch { toast("Couldn't build the prompt: copy the error above instead"); }
+  };
+}
+// Anything uncaught is a bug somewhere: say so, with the way to hand it to an agent.
+addEventListener("error", (e) => { if (e.error) failed(e.error, "use the page"); });
+addEventListener("unhandledrejection", (e) => { if (e.reason?.failure ? e.reason.failure.status >= 500 : e.reason instanceof Error) failed(e.reason, "use the page"); });
 /** An agent start's toast, with a heads-up when open branches already rewrite its files (#1163): its batch will meet theirs at merge. */
 const startedToast = (h, run) => {
   const b = run?.busy?.[0];
@@ -1310,7 +1351,7 @@ document.addEventListener("click", async (e) => {
   try {
     if (f) { await api(`/follows/${f.id}`, undefined, "DELETE"); followed = followed.filter((x) => x !== f); toast("Unfollowed"); }
     else { followed = [await api("/follows", t), ...(followed ?? [])]; toast(t.name ? `Following @${t.name}` : t.path ? "Following these lines" : `Following ${t.owner}/${t.repo}`); }
-  } catch (err) { toast(err.message); }
+  } catch (err) { failed(err, "follow or unfollow"); }
   b.disabled = false;
   wireFollows();
 });
@@ -2979,11 +3020,11 @@ function lineKey(key, shift, mod, { picked, anchor, cursor }, n) {
   if (shift) { const a = anchor ?? cursor ?? c; return { picked: span(a, c), anchor: a, cursor: c }; }
   return { picked: new Set([c]), anchor: c, cursor: c };
 }
-/** Our own right-click menu: items are {ic, title, key?, run} or "-" for a rule. ↑/↓ walk it, Esc shuts it. */
+/** Our own right-click menu: items are {ic, title, key?, run}, {ic, input: placeholder, run(text)} (a row to type in, Enter runs it) or "-" for a rule. ↑/↓ walk it, Esc shuts it. */
 function ctxMenu(x, y, items) {
   $(".ctx")?.remove();
   const m = document.createElement("div"); m.className = "ctx"; m.setAttribute("role", "menu");
-  m.innerHTML = items.map((it, k) => it === "-" ? "<hr>" : `<button type="button" role="menuitem" data-k="${k}">${icon(it.ic)}<span>${esc(it.title)}</span>${it.key ? `<kbd>${esc(it.key)}</kbd>` : ""}</button>`).join("");
+  m.innerHTML = items.map((it, k) => it === "-" ? "<hr>" : it.input ? `<label class="ask" data-k="${k}">${icon(it.ic)}<input placeholder="${esc(it.input)}" aria-label="${esc(it.input)}" spellcheck="false"></label>` : `<button type="button" role="menuitem" data-k="${k}">${icon(it.ic)}<span>${esc(it.title)}</span>${it.key ? `<kbd>${esc(it.key)}</kbd>` : ""}</button>`).join("");
   document.body.append(m); icons();
   m.style.left = Math.max(8, Math.min(x, innerWidth - m.offsetWidth - 8)) + "px"; m.style.top = Math.max(8, Math.min(y, innerHeight - m.offsetHeight - 8)) + "px";
   const back = document.activeElement;
@@ -2997,12 +3038,9 @@ function ctxMenu(x, y, items) {
     bs[(k + (e.key === "ArrowDown" ? 1 : -1) + bs.length) % bs.length]?.focus();
   };
   addEventListener("mousedown", out, true); addEventListener("keydown", keys, true); addEventListener("scroll", close, true);
-  m.addEventListener("click", async (e) => {
-    const it = items[e.target.closest("button")?.dataset.k];
-    if (!it) return;
-    close();
-    try { await it.run(); } catch (err) { toast(String(err.message || err)); }
-  });
+  const go = async (it, ...args) => { close(); try { await it.run(...args); } catch (err) { toast(String(err.message || err)); } };
+  m.addEventListener("click", (e) => { const it = items[e.target.closest("button")?.dataset.k]; if (it) go(it); });
+  m.addEventListener("keydown", (e) => { const ask = e.key === "Enter" && e.target.closest("label.ask"); if (ask && e.target.value.trim()) go(items[ask.dataset.k], e.target.value); });
   m.querySelector("button")?.focus();
 }
 /** Picked line indexes (0-based) as runs of line numbers: {2, 3, 4, 9} is [[3, 5], [10, 10]]. */
@@ -3017,6 +3055,29 @@ function runsOf(picked) {
  */
 const pickAll = (n) => new Set(Array.from({ length: n }, (_, k) => k));
 const pickInvert = (picked, n) => new Set([...pickAll(n)].filter((k) => !picked.has(k)));
+/** Drop `gone` from the pick. */
+const pickDrop = (picked, gone) => new Set([...picked].filter((k) => !gone.has(k)));
+/** The picked lines touching line `i`, unbroken: the run it sits in. */
+function pickRunAt(picked, i) {
+  const run = new Set();
+  if (!picked.has(i)) return run;
+  let a = i, b = i;
+  while (picked.has(a - 1)) a--;
+  while (picked.has(b + 1)) b++;
+  for (let k = a; k <= b; k++) run.add(k);
+  return run;
+}
+/** "3-5, 9, 12-" (1-based; a bare "12-" runs to the end) as 0-based indexes inside n lines. */
+function pickRanges(text, n) {
+  const out = new Set();
+  for (const part of text.split(/[,\s]+/).filter(Boolean)) {
+    const m = /^(\d+)?(?:\s*[-–:]\s*(\d+)?)?$/.exec(part);
+    if (!m || (m[1] === undefined && m[2] === undefined)) throw new Error(`"${part}" is not a line or a range like 3-5`);
+    const dash = /[-–:]/.test(part), a = m[1] === undefined ? 1 : Number(m[1]), b = m[2] !== undefined ? Number(m[2]) : dash ? n : a;
+    for (let k = Math.max(1, Math.min(a, b)); k <= Math.min(n, Math.max(a, b)); k++) out.add(k - 1);
+  }
+  return out;
+}
 /** Lines holding `q` (any case), or matching it when it is written /regex/flags. */
 function pickMatching(texts, q) {
   const m = /^\/(.+)\/([a-z]*)$/.exec(q), re = m && new RegExp(m[1], m[2].replace(/[gy]/g, "")), low = q.toLowerCase();
@@ -4804,6 +4865,7 @@ const views = {
     const reads = (b) => { const q = qOn(b), rs = [api(`${base}/commits${q}`), api(`${base}/file${q}`)]; rs.forEach((x) => x.catch(() => {})); return rs; };
     const picked = branchPicked(owner, repo);
     let early = reads(picked);
+    api(treeQ(owner, repo, "")).catch(() => {}); // the explorer's first read starts with the repo call, not after it
     const [here, r] = await Promise.all([branchHere(owner, repo), api(`/repos/${owner}/${repo}`)]);
     const branch = here.on, q = qOn(branch);
     if (branch !== picked) early = reads(branch);
@@ -5117,7 +5179,12 @@ const views = {
         { ic: "list-checks", title: "Select all lines", key: kb("A"), run: () => picker.set(pickAll(doc.lines.length)) },
         { ic: "expand", title: "Expand to the block", key: "⇧⌥↑", run: () => picker.set(pickBlock(doc.lines.map((l) => l.text), picker.picked)) },
         { ic: "flip-horizontal", title: "Invert the selection", key: kb("I"), run: () => picker.set(pickInvert(picker.picked, doc.lines.length)) },
-        { ic: "x", title: "Deselect", key: "Esc", run: () => picker.set(new Set()) },
+        ...(picker.picked.size > 1 ? ["-",
+          ...(picker.picked.has(i) ? [{ ic: "minus", title: `Unselect line ${i + 1}`, run: () => picker.set(pickDrop(picker.picked, new Set([i]))) }] : []),
+          ...(pickRunAt(picker.picked, i).size > 0 && pickRunAt(picker.picked, i).size < picker.picked.size ? [{ ic: "scissors", title: `Unselect this run (${runsLabel(runsOf(pickRunAt(picker.picked, i)))})`, run: () => picker.set(pickDrop(picker.picked, pickRunAt(picker.picked, i))) }] : []),
+          { ic: "list-minus", input: "Unselect lines, e.g. 3-5, 9", run: (t) => picker.set(pickDrop(picker.picked, pickRanges(t, doc.lines.length))) },
+        ] : []),
+        { ic: "x", title: picker.picked.size > 1 ? "Unselect all lines" : "Unselect", key: "Esc", run: () => picker.set(new Set()) },
         { ic: "command", title: "More commands", key: kb("K"), run: () => palette.open() },
       ]);
     });
@@ -5722,7 +5789,7 @@ const views = {
         catch (err) {
           // Main changed these lines too: its merge page settles them, a card each.
           if (err.message === "conflicts") { toast("Main changed these lines too: settle each one, then merge"); location.hash = `#/b/${c.owner}/${c.repo}/${encodeURIComponent(c.branch)}`; }
-          else toast(err.message);
+          else failed(err, `merge ${c.branch} into main in ${c.owner}/${c.repo}`, { kind: "merge" });
         }
         load();
       });
@@ -6145,9 +6212,12 @@ function wireFoot() {
 // Three copies of the list side by side; whenever the scroll passes into the third
 // copy it jumps back one copy's width (and the same going left), so it never ends.
 // It drifts slowly on its own, and stops while the pointer or focus is on it.
+// One fetch for the strip and the map, which are both on the home page.
+let featuresP;
+const featuresJson = () => (featuresP ||= fetch("/features.json").then((r) => r.json()).catch(() => []));
 let stopStrip = () => {};
 async function featureStrip(el) {
-  const feats = await fetch("/features.json").then((r) => r.json()).catch(() => []);
+  const feats = await featuresJson();
   if (!feats.length || !el.isConnected) return;
   const track = $("#feats-track", el);
   const card = (f, cls = "") => `<div class="feat ${cls}"><span class="ico">${icon(f.icon)}</span><b>${esc(f.title)}</b><span>${esc(f.what)}</span></div>`;
@@ -6208,7 +6278,7 @@ const FMAP = [
     art: `<svg viewBox="0 0 360 220" role="img" aria-label="A laptop holding the real repo, mirrored out to GitHub, GitLab and any remote"><rect class="bx o" x="24" y="70" width="104" height="72" rx="6"/><text class="o" x="42" y="102">your laptop</text><text class="m" x="42" y="120">the real repo</text><path class="st o" d="M10 152H142"/><g class="bx"><rect x="236" y="26" width="104" height="38" rx="6"/><rect x="236" y="91" width="104" height="38" rx="6"/><rect x="236" y="156" width="104" height="38" rx="6"/></g><g><text x="256" y="49">GitHub</text><text x="256" y="114">GitLab</text><text x="256" y="179">any remote</text></g><g class="st o"><path d="M128 96C180 96 190 45 236 45"/><path d="M128 106H236"/><path d="M128 116C180 116 190 175 236 175" class="d"/></g><path class="st g" d="M276 186l16 -16m0 16l-16 -16" transform="translate(40 -10)"/><text class="m" x="150" y="206">cloud down? keep going</text></svg>` },
 ];
 async function featureMap(el) {
-  const feats = await fetch("/features.json").then((r) => r.json()).catch(() => []);
+  const feats = await featuresJson();
   if (!feats.length || !el.isConnected) return;
   const byId = new Map(feats.map((f) => [f.id, f]));
   const named = new Set(FMAP.flatMap((t) => t.ids));
@@ -7184,6 +7254,7 @@ async function avatarBox(user, mine, name) {
 }
 async function route() {
   let drawn; routing = new Promise((r) => (drawn = r));
+  sharedGets.clear();
   followed = fetchingFollows = null;
   socket?.close(); socket = null;
   clearTimeout(agentTimer);

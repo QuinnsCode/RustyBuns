@@ -216,7 +216,7 @@ export interface Check {
 
 // Nothing from this shell (tokens, account ids) reaches the tests: an empty HOME, bun's cache kept,
 // a git identity for the tests that commit, and no keychain prompts.
-function sandbox(home: string) {
+export function sandbox(home: string) {
   const who = { NAME: "shadow", EMAIL: "shadow@localhost" };
   return {
     ...NO_KEYCHAIN,
@@ -239,7 +239,7 @@ export function failures(run: Run, out: string) {
 }
 
 /** Installs and runs each of `runs` in `root`, and what failed. */
-async function testTree(root: string, runs: Run[], env: Record<string, string>) {
+export async function testTree(root: string, runs: Run[], env: Record<string, string>) {
   const done: (Run & { ok: boolean })[] = [], failed: string[] = [], logs: string[] = [];
   const steps = existsSync(join(root, "package.json")) ? [{ dir: ".", cmd: "bun install" }, ...runs] : runs;
   for (const run of steps) {

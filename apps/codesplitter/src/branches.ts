@@ -669,7 +669,8 @@ async function rebuildOnMain(env: Env, owner: string, repo: string, b: BranchRow
 async function mergeBranch(env: Env, owner: string, repo: string, branch: BranchRow, user: string, body: { resolve?: unknown; build_ok?: unknown }): Promise<Response> {
   const name = branch.name;
   const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as FileRow[]);
-  const resolve = parseResolve(body.resolve), build_ok = body.build_ok;
+  // build_ok is a reader's word: the owner's, or someone other than the branch's author.
+  const resolve = parseResolve(body.resolve), build_ok = body.build_ok && (user === owner || user !== branch.by);
   if (typeof resolve === "string") return json({ error: resolve }, 400);
   // Stacked on a branch that's still open: that one's changes are in this one's copies, so it goes first.
   const under = (await ancestors(env, owner, repo, name))[0];
@@ -679,7 +680,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   const rows = await files(), todo = rows.filter((f) => !f.merged);
   // Build or deploy files on a merge the owner's next commit would ship: read them first.
   const build = todo.map((f) => f.path).filter(isBuildFile);
-  if (build.length && !build_ok && (await deploySettings(env, owner, repo)).on_commit) return json({ error: "this branch changes build or deploy files: read them, then merge with build_ok", build }, 409);
+  if (build.length && !build_ok && (await deploySettings(env, owner, repo)).on_commit) return json({ error: "this branch changes build or deploy files: read them, then merge with build_ok (the owner, or someone other than the branch's author)", build }, 409);
   // Required checks that failed, or haven't finished, hold it, as a GitHub branch protection rule would.
   const held = await mergeBlock(env, owner, repo, name);
   if (held) return json(held, 409);
