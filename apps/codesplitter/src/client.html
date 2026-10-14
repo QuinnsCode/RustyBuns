@@ -1391,6 +1391,9 @@ const startedToast = (h, run) => {
 };
 // "Skip to content" can't be a plain #app link: the hash is the router.
 $(".skip").addEventListener("click", (e) => { e.preventDefault(); app.focus(); });
+/** A link into the game for someone else: `wreck` opens the repo's wrecking room, `room` the backrooms in the file's folder. */
+const sendOffLink = (owner, repo, path, kind) => `${location.origin}/play.html#r/${owner}/${repo}` + (kind === "wreck" ? "?mode=wreck" : `?room=${encodeURIComponent(path.split("/").slice(0, -1).join("/"))}`);
+
 async function copy(text, what = "Copied") {
   // An agent's call isn't a click, so the clipboard may refuse it: hand it the text instead.
   if (agentCall) agentCall.copied = text;
@@ -5110,7 +5113,7 @@ const views = {
       tab: `${icon("file")}${esc(path.split("/").pop())}`,
       bar: `${crumbs(`#/r/${owner}/${repo}`, repo, path)}<span class="grow"></span>
         <div class="pop"><button class="btn" id="hist" title="time travel">${icon("history")}History</button><div class="panel" hidden><b>Carbon dating</b><span class="muted" style="font-size:13px">Drag back through every edit. Older revisions show as a diff against now.</span><input id="rev" type="range" min="1" value="${doc.rev}" max="${doc.rev}"><span class="legend"><span><i class="d"></i>taken out</span><span><i class="a"></i>put in</span></span><a class="btn" id="smash" hidden title="the lines this took out, as furniture in the backrooms">${icon("hammer")}Smash what it took out</a></div></div>
-        ${me() ? `<div class="pop"><button class="btn" id="share" disabled title="${SHARE_TIP}">${icon("share-2")}Share lines</button><form class="panel" id="share-form" hidden><b>Share <span id="share-range"></span></b><span class="muted" style="font-size:13px">A live link to just these lines. It follows them as they're edited${r.visibility === "private" ? ", and opens nothing else of this private repo" : ""}.</span><input name="note" placeholder="a note (optional)"><button class="btn primary">${icon("link")}Create link</button><div class="copyline" id="share-out" hidden><input readonly><button class="btn" type="button" id="share-copy">${icon("copy")}</button></div></form></div>
+        ${me() ? `<div class="pop"><button class="btn" id="share" disabled title="${SHARE_TIP}">${icon("share-2")}Share lines</button><form class="panel" id="share-form" hidden><b>Share <span id="share-range"></span></b><span class="muted" style="font-size:13px">A live link to just these lines. It follows them as they're edited${r.visibility === "private" ? ", and opens nothing else of this private repo" : ""}.</span><input name="note" placeholder="a note (optional)"><button class="btn primary">${icon("link")}Create link</button><div class="copyline" id="share-out" hidden><input readonly><button class="btn" type="button" id="share-copy">${icon("copy")}</button></div><div class="row" id="send-offs" hidden><button class="btn" type="button" data-send="wreck" title="a link that opens this repo's wrecking room: everyone in it smashes the codebase together">${icon("hammer")}Wrecking room</button><button class="btn" type="button" data-send="room" title="a link that drops them in the backrooms, in this file's folder">${icon("door-open")}Backrooms</button></div></form></div>
         <div class="pop"><button class="btn" id="stamp" disabled title="select lines first, then stamp them: a reaction that stays on each line through edits">${icon("stamp")}Stamp</button><div class="panel stamp-pick" id="stamp-pick" hidden><b>Stamp <span id="stamp-range"></span></b><span class="muted" style="font-size:13px">It stays on each line as the file is edited, whoever wrote it, person or agent.</span><div class="row">${STAMP_KINDS.map(([k, , t]) => `<button class="btn" type="button" data-stamp="${k}" title="${t}">${stampFace(k)}</button>`).join("")}</div></div></div>
         ${r.canWrite ? `<div class="pop"><button class="btn" id="cut" disabled title="${PICK_TIP}">${icon("scissors")}Cut</button><form class="panel" id="cut-form" hidden style="width:380px"><b>Cut <span id="cut-range"></span> out</b><span class="muted" style="font-size:13px">Just these lines and what they use, followed through imports into the repo's other files, as a tiny repo on a branch of its own: run its tests, share it, merge a fix back.</span><textarea name="more" rows="3" placeholder="add these lines too, a range a line:&#10;test/sum.test.ts:10-24"></textarea><input name="note" placeholder="what it shows (optional)"><button class="btn primary">${icon("scissors")}Cut</button></form></div>` : ""}
         <div class="pop"><button class="btn" id="collect" disabled title="select lines first">${icon("bookmark-plus")}Collect</button><form class="panel" id="track" hidden><b>Collect into a collection</b><select name="pl"></select><input name="note" placeholder="why it belongs in a museum"><button class="btn primary">Collect</button></form></div>` : ""}
@@ -5755,6 +5758,12 @@ const views = {
         $("#share-out").hidden = false; $("#share-out input").value = url; copy(url, "Link copied");
       });
       $("#share-copy").addEventListener("click", () => copy($("#share-out input").value, "Link copied"));
+      $("#send-offs").hidden = false;
+      // The game's two ways in, as links: the wrecking room, or the backrooms standing in this file's folder.
+      $("#send-offs").addEventListener("click", (e) => {
+        const k = e.target.closest("[data-send]")?.dataset.send;
+        if (k) copy(sendOffLink(owner, repo, path, k), k === "wreck" ? "Wrecking room link copied" : "Backrooms link copied");
+      });
     }
     if ($("#stamp")) {
       const pick = popover($("#stamp"));
