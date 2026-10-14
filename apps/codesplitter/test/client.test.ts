@@ -665,3 +665,26 @@ describe("scenes a queue or an agent drives", () => {
     expect(step.indexOf("tourPause")).toBeLessThan(step.indexOf("tourRun"));
   });
 });
+
+// The on-fail chain's report (#869, #873): the icon trail, its hover text with the cost, the roll back and hold wording.
+describe("the dependency doctor's chain report", () => {
+  const start = html.indexOf("const DEP_STEPS");
+  const src = html.slice(start, html.indexOf("\n", html.indexOf("const depUpdate", start)));
+  const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  const { depUpdate } = new Function("esc", `${src}; return { depUpdate };`)(esc);
+  const base = { name: "clsx", from: "1.2.1", to: "2.0.0", level: "major", path: "package.json" };
+
+  test("a rolled-back update says so, and each step's hover says what it did and what it cost", () => {
+    const out = depUpdate({ ...base, status: "kept", was: "2.0.0", to: "1.3.0", chain: [{ step: "retry", ok: false }, { step: "fix", ok: false, usd: 0.25 }, { step: "search", ok: false, note: "out of dollars" }, { step: "rollback", ok: true }] });
+    expect(out).toContain("broke the tests at 2.0.0; rolled back, tests pass");
+    expect(out).toMatch(/title="AI fix[^"]*: didn&#39;t work \(\$0\.25\)">🤖✗/);
+    expect(out).toMatch(/title="AI web search[^"]*: out of dollars">🔎–/);
+    expect(out).toMatch(/title="roll back[^"]*: worked">↩️✓/);
+    expect(out).not.toContain("gave up");
+  });
+
+  test("a held-back release says so, and a chain where nothing worked gave up", () => {
+    expect(depUpdate({ ...base, status: "held", chain: [{ step: "hold", ok: true }] })).toContain("broke the tests, held back");
+    expect(depUpdate({ ...base, status: "broke", chain: [{ step: "retry", ok: false }] })).toContain("gave up");
+  });
+});
