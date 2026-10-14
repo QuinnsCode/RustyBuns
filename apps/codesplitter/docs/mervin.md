@@ -19,7 +19,7 @@ bun scripts/mervin-score.ts [repo ...] [--limit 200] [--json]
 For each real merge commit of a branch into the mainline, the truth is git's merge of the two parents. The
 predictors see only the branch's midpoint commit and the mainline as of that commit's date, then report
 recall (fights flagged ahead) and precision (flags that fought) for two predictors, `overlap` (both sides
-touched a file) and `clash` (git's merge of the midpoints already conflicts). A line-id predictor and the
+touched a file) and `clash` (git's merge of the midpoints already conflicts). A line-id predictor (`lines`, added beside them) and the
 Mervin plan go next to them once there is a corpus to hold them to. For what Mervin does once branches meet, see `mervin-corpus.ts` below.
 
 Needs repos with real merge commits. This repo squash-merges, so it scores nothing; use its replay
@@ -71,7 +71,7 @@ shows two real engine faults:
   agnostic: a file git conflicted on and Mervin merged clean should say so (a check, like the prose fact
   checks), with the build as the arbiter where the repo has one.
 - **Never run on anyone else's history until now.** The 80% goal in this doc is about seeing fights coming; the
-  recall number for it (mervin-score) still needs a corpus that keeps real merges and a line-id predictor.
+  recall number for it (mervin-score) still needs a corpus that keeps real merges (the `lines` predictor is in).
 - **Invisible.** The name is in no UI string, README line or API field; the merge engine is the strongest answer
   to the contest's conflict-handling criterion and a judge cannot see it.
 
@@ -85,7 +85,7 @@ Mergiraf (structured merge), Spork and IntelliMerge (tree matching).
 ## Next
 
 1. Run `mervin-corpus.ts` on a second repo with a different language mix (Linux subsystem tree, Rails) and record it here.
-2. Add the line-id predictor beside `overlap` and `clash` in `mervin-score.ts`.
+2. Run `mervin-score.ts` (now with `lines`) on a corpus that keeps real merges and record recall here; add the merge plan as a predictor.
 3. A language-agnostic "settled but git would have stopped" check for code that `lint.ts` cannot parse.
 4. Run Mergiraf over the hunks in [merge-solutions.md](merge-solutions.md) and see what it settles.
 5. Show Mervin: a corpus number on the repo page, and the merge plan's waves with his name on them.
