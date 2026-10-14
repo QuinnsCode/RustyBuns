@@ -137,7 +137,7 @@ export const GROUPS: Group[] = [
   },
   {
     name: "A file",
-    about: "Each file is a Durable Object. Every call takes ?path= (the file) and, to work on a branch's copy, &branch=. A line is {id, text, by, rev}: by and rev are its blame. An op names lines by id: {kind: \"insert\", after: id | null, text} | {kind: \"set\", line, base, text} | {kind: \"delete\", line, base}, where base is the line's rev as you read it; a stale one is a 409 to retry. ifRev pins the whole batch to the file's rev.",
+    about: "Each file is a Durable Object. Every call takes ?path= (the file) and, to work on a branch's copy, &branch=. To edit a file on a branch: POST /branches {name}, GET do/file?branch= for the line ids, POST do/ops?branch= to change them, then POST /branches/:b/merge. Plain git reads (the repo's clone line) but pushing is not how edits land here. A line is {id, text, by, rev}: by and rev are its blame. An op names lines by id: {kind: \"insert\", after: id | null, text} | {kind: \"set\", line, base, text} | {kind: \"delete\", line, base}, where base is the line's rev as you read it; a stale one is a 409 to retry. ifRev pins the whole batch to the file's rev.",
     endpoints: [
       { method: "GET", path: "/api/repos/:o/:r/do/file?path=", does: "the file now, with blame: {rev, lines: [{id, text, by, rev, private?}]}; &from=&limit= windows a big file's lines and adds {total, from}" },
       { method: "POST", path: "/api/repos/:o/:r/do/ops?path=", body: "{ops: Op[], ifRev?, claim?}", who: CREW, does: "edit, all or nothing: {rev, applied}, or 409 {rev, conflicts}, plus {claims, retryAfter} when lines are held; {error} when the path's policy refuses it (an agent's unclaimed lines on a codesplitter-live=line file, any edit to a locked one)" },
