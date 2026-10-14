@@ -125,6 +125,34 @@ those are engine faults or the person editing around the conflict is not yet loo
 them against `landed` before changing the resolver. Ruby is the other finding: the weak spot is cards (40%),
 not silent mistakes, and Ruby has no `lint.ts` guard (see below).
 
+## The borg engine: Mervin on a loop
+
+`scripts/borg-engine.ts` rolls Mervin through public git histories continuously, and keeps what people did
+by hand:
+
+```sh
+bun run borg                                  # git/git, rails/rails, expressjs/express, one pass
+bun run borg https://github.com/org/repo.git --limit 100 --agents 4 --loop --every 600
+```
+
+Each pass, per repo: clone bare (or fetch) into `~/.cache/borg`, replay the next `--limit` merges it has not seen
+(`state.json` remembers them, so a loop walks a history back to its first merge), and tally what Mervin did with each
+file git gave up on, as `mervin-corpus.ts` does. Wherever the person who merged did not land what Mervin made
+(he asked, or settled to other text), the lines they added and dropped are appended to `lessons.jsonl`: the
+**human edits**, the teaching set for the next resolver level. A reordering is not an edit.
+
+With `--agents N` the same pass has a team of pretend agents rewrite the repo's latest commits into one file at once
+(`scripts/borg-agents.ts`, also runnable alone: `bun scripts/borg-agents.ts <repo> [commit ...] --agents 4 --contest 0.3`).
+A commit's diff is cut into units (one changed line; a run of new lines after one anchor), dealt to the agents, and
+fired concurrently at the file's Durable Object on the local twins. With `--contest`, that share of the rewritten
+lines also gets a second agent writing different text: two agents on one line. It passes when the file ends as the
+commit wrote it, or, on a contested line, as exactly one of the texts offered. A lost update or an agent that never
+lands fails the run. Nothing leaves the machine.
+
+First pass on expressjs/express (2026-10-13, 60 conflicted merges, 183 files): 21 solved, 38 wrong, 122 cards, 138 human edits kept.
+Most cards were `package.json` (both sides bump dependencies and scripts), so `package.json` now merges by key (`src/manifest.ts`): each key on its own, the higher version when both bumped one, and a card only for a script or field both rewrote. Same sample after: 36 solved, 44 wrong, 101 cards. The extra wrong are mostly people keeping the older version or moving a key, which no engine can know. The pretend team on the
+latest 5 commits: 13 files, 4 exact, 9 settled on contested lines, 0 lost, 0 stuck.
+
 ## Mervin on the open PR board
 
 ```sh
