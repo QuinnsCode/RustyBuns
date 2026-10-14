@@ -47,7 +47,7 @@ import { ancestors } from "./branches.ts";
 import { blobId, GIT_EMAIL_DOMAIN, push, setRef, ZERO, type Change as GitChange } from "./git.ts";
 import { text, type Doc } from "./lines.ts";
 import { upstreamOf } from "./listen.ts";
-import { authorEnv, branchTree, git, gitIdentity, localGit } from "./mirror.ts";
+import { authorEnv, branchTree, git, gitIdentity, isAncestor, localGit } from "./mirror.ts";
 import { formatPatch, unifiedDiff, type FileDiff } from "./patch.ts";
 
 type Access = (owner: string, repo: string) => Promise<{ read: boolean; write: boolean; exists: boolean }>;
@@ -120,7 +120,6 @@ async function must(args: string[], dir: string, env?: Record<string, string>, s
   if (r.code) throw new GitError(r.err.trim() || `git ${args[0]} exited ${r.code}`);
   return r.out.trim();
 }
-const isAncestor = async (dir: string, a: string, b: string) => (await git(["merge-base", "--is-ancestor", a, b], dir)).code === 0;
 
 type RepoRow = { artifact: string | null; branch: string | null; upstream: string | null; crew_artifact: string | null };
 const repoRow = (env: Env, owner: string, repo: string) =>
