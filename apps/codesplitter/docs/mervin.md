@@ -18,9 +18,29 @@ bun scripts/mervin-score.ts [repo ...] [--limit 200] [--json]
 
 For each real merge commit of a branch into the mainline, the truth is git's merge of the two parents. The
 predictors see only the branch's midpoint commit and the mainline as of that commit's date, then report
-recall (fights flagged ahead) and precision (flags that fought) for two predictors, `overlap` (both sides
-touched a file) and `clash` (git's merge of the midpoints already conflicts). A line-id predictor (`lines`, added beside them) and the
-Mervin plan go next to them once there is a corpus to hold them to. For what Mervin does once branches meet, see `mervin-corpus.ts` below.
+recall (fights flagged ahead) and precision (flags that fought) for four predictors: `overlap` (both sides
+touched a file), `clash` (git's merge of the midpoints already conflicts), `lines` (the line-id merge of the midpoints
+leaves cards) and `plan` (a commit that landed on the mainline since the base clashes with the midpoint on a file both
+touched: the merge plan would have put the branch in a wave behind it). For what Mervin does once branches meet, see `mervin-corpus.ts` below.
+
+### Recall on a corpus with real merges (expressjs/express)
+
+```sh
+git clone --bare https://github.com/expressjs/express.git express.git   # 11 MB
+bun scripts/mervin-score.ts express.git --limit 400
+```
+
+Measured 2026-10-13: 202 merged PRs, 67 fought.
+
+| Predictor | Flagged | Recall | Precision |
+|---|---|---|---|
+| overlap | 68 | 91% | 90% |
+| clash | 62 | 88% | 95% |
+| lines | 54 | 79% | 98% |
+| plan | 57 | 84% | 98% |
+
+The plan clears the 80% goal at 98% precision; the line-id predictor alone sits just under it. Express is one small
+JavaScript repo: a bigger, mixed-language corpus is next (a full git/git clone dropped twice mid-download).
 
 Needs repos with real merge commits. This repo squash-merges, so it scores nothing; use its replay
 (`scripts/merge-plan.ts`) for its own history and the scorecard for pulled-in repos.
@@ -84,7 +104,7 @@ Mergiraf (structured merge), Spork and IntelliMerge (tree matching).
 ## Next
 
 1. Run `mervin-corpus.ts` on a second repo with a different language mix (Linux subsystem tree, Rails) and record it here.
-2. Run `mervin-score.ts` (now with `lines`) on a corpus that keeps real merges and record recall here; add the merge plan as a predictor.
+2. Run `mervin-score.ts` on a bigger, mixed-language corpus (git/git, Rails, Django) and record recall beside express.
 3. Build commands for repos with no `package.json` (make, cargo, go) as the arbiter.
 4. Run Mergiraf over the hunks in [merge-solutions.md](merge-solutions.md) and see what it settles.
 5. Show Mervin: a corpus number on the repo page, and the merge plan's waves with his name on them.

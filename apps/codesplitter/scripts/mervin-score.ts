@@ -9,6 +9,8 @@
 //   clash    git's merge of those two midpoints already conflicts
 //   lines    the line-id merge (src/lines.ts, as a branch merge runs it) of those two midpoints leaves cards
 //            on a file both touched
+//   plan     the merge plan would have put the branch in a wave behind a PR: some commit that landed on the
+//            mainline since the base clashes (line-id merge) with the branch's midpoint on a file both touched
 // Recall is the share of fights flagged ahead; precision is the share of flags that fought. The 80% goal is
 // recall on fights, with precision kept honest. Repos with no real merge commits (squash-only) score nothing.
 
@@ -33,9 +35,18 @@ function linesClash(repo: string, base: string, mid: string, mainThen: string, f
   }
   return false;
 }
+/** The plan's test (src/merge-plan.ts), one landed mainline commit at a time: does any of them clash with the branch? */
+function planBlocked(repo: string, baseNow: string, mid: string, mainThen: string, mine: Set<string>) {
+  const landed = git(repo, "rev-list", "--first-parent", "-n60", `${baseNow}..${mainThen}`).out.split("\n").filter(Boolean);
+  for (const c of landed) {
+    const files = [...names(repo, `${c}^`, c)].filter((f) => mine.has(f));
+    if (files.length && linesClash(repo, baseNow, mid, c, files)) return true;
+  }
+  return false;
+}
 const fights = (repo: string, a: string, b: string) => git(repo, "merge-tree", "--write-tree", "--no-messages", a, b).code === 1;
 
-export interface Case { commit: string; fought: boolean; overlap: boolean; clash: boolean; lines: boolean }
+export interface Case { commit: string; fought: boolean; overlap: boolean; clash: boolean; lines: boolean; plan: boolean }
 
 export function score(repo: string, limit = 200): Case[] {
   const log = git(repo, "log", "--merges", "--first-parent", `-n${limit * 3}`, "--format=%H %P|%s").out.split("\n").filter(Boolean);
@@ -62,12 +73,13 @@ export function score(repo: string, limit = 200): Case[] {
       overlap: both.length > 0,
       clash: fights(repo, mainThen, mid),
       lines: linesClash(repo, baseNow, mid, mainThen, both),
+      plan: both.length > 0 && planBlocked(repo, baseNow, mid, mainThen, mine),
     });
   }
   return cases;
 }
 
-export function tally(cases: Case[], by: "overlap" | "clash" | "lines") {
+export function tally(cases: Case[], by: "overlap" | "clash" | "lines" | "plan") {
   const fought = cases.filter((c) => c.fought).length, flagged = cases.filter((c) => c[by]).length;
   const hit = cases.filter((c) => c.fought && c[by]).length;
   return { prs: cases.length, fought, flagged, recall: fought ? hit / fought : NaN, precision: flagged ? hit / flagged : NaN };
@@ -81,10 +93,10 @@ if (import.meta.main) {
   const all: Record<string, unknown> = {};
   for (const repo of repos.length ? repos : ["."]) {
     const cases = score(repo, limit);
-    all[repo] = { overlap: tally(cases, "overlap"), clash: tally(cases, "clash"), lines: tally(cases, "lines") };
+    all[repo] = { overlap: tally(cases, "overlap"), clash: tally(cases, "clash"), lines: tally(cases, "lines"), plan: tally(cases, "plan") };
     if (args.includes("--json")) continue;
     console.log(`${repo}: ${cases.length} merged PRs, ${cases.filter((c) => c.fought).length} fought`);
-    for (const by of ["overlap", "clash", "lines"] as const) {
+    for (const by of ["overlap", "clash", "lines", "plan"] as const) {
       const t = tally(cases, by);
       console.log(`  ${by.padEnd(8)} flagged ${t.flagged}, recall ${pct(t.recall)}, precision ${pct(t.precision)}`);
     }
