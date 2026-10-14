@@ -30,6 +30,7 @@ function mount() {
     ".rb-ask-head span:first-child{flex:1;min-width:0}" +
     ".rb-ask-clock{font-variant-numeric:tabular-nums;min-width:4ch;text-align:right;color:#8a5a12;cursor:help}" +
     ".rb-ask-detail{margin:6px 0 8px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:8em;overflow:auto}" +
+    ".rb-ask-size,.rb-ask-odd{margin:-4px 0 8px;font-size:12px;color:#8a5a12}.rb-ask-odd{color:#c0392b;font-weight:600}" +
     ".rb-ask-buttons{display:flex;gap:8px;justify-content:flex-end}" +
     ".rb-ask button{white-space:nowrap;border:0;border-radius:6px;padding:6px 14px;font:inherit;font-weight:600;cursor:pointer}" +
     ".rb-ask .rb-allow{background:#2f8f46;color:#fff}.rb-ask .rb-deny{background:#c0392b;color:#fff}" +
@@ -56,6 +57,8 @@ function card(a: Ask) {
   const c = el("div", { className: "rb-ask" },
     el("div", { className: "rb-ask-head" }, el("span", {}, `✋ ${a.who} asks first`), clock),
     el("div", { className: "rb-ask-detail" }, a.detail),
+    el("div", { className: a.odd ? "rb-ask-odd" : "rb-ask-size" },
+      `${a.size.toLocaleString()} characters${a.odd ? `, ${a.odd} control character${a.odd === 1 ? "" : "s"} shown as symbols: look closely` : ""}`),
     el("div", { className: "rb-ask-buttons" }, deny, allow));
   c.dataset.id = a.id;
   allow.onclick = () => answer(a.id, true, c);
