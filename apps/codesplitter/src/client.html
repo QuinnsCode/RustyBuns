@@ -1223,7 +1223,8 @@ async function wireTokens(made, open = !!made) {
     + `<div class="list">${list.map((t) => `<div class="row" style="flex-wrap:nowrap"><span style="flex:1;min-width:0" title="${t.scope === "write" ? "read and write" : "read only"} · …${esc(t.last4)} · ${when(t)}${t.last_used_at ? ` · used ${ago(t.last_used_at)}` : ""}">${icon(t.scope === "write" ? "pencil" : "eye")} ${esc(t.label)}${t.expired ? ` <span class="muted">· expired</span>` : ""}</span>
       <button class="btn ghost" data-revoke="${esc(t.id)}" title="revoke">${icon("trash-2")}</button></div>`).join("")}</div>
     <form id="newtoken" style="display:grid;gap:6px;margin:8px 0 4px"><input name="label" placeholder="what it's for" required>
-      <div style="display:flex;flex-wrap:wrap;gap:6px"><select name="scope" style="flex:1 1 auto"><option value="read">Read only</option><option value="write">Read and write</option></select>
+      <div style="display:flex;flex-wrap:wrap;gap:6px"><select name="scope" style="flex:1 1 auto"><option value="read">Read only</option><option value="write">Read and write code</option><option value="admin">Admin (delete, crew, webhooks)</option></select>
+      <input name="repo" placeholder="all repos, or owner/name" style="flex:1 1 auto">
       <select name="days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="365">1 year</option></select>
       <button class="btn primary">${icon("plus")}Make</button></div></form>
     <details id="my-audit" style="margin-top:10px"><summary class="muted" style="font-size:12px;cursor:pointer">${icon("shield")} Audit log</summary><div></div></details></div></details>`;
@@ -1236,7 +1237,7 @@ async function wireTokens(made, open = !!made) {
   $("#token-cli")?.addEventListener("click", () => copy(cliLogin(made.token), "Command copied"));
   $("#newtoken").addEventListener("submit", async (e) => {
     e.preventDefault(); const f = e.target;
-    try { wireTokens(await api("/tokens", { label: f.elements.label.value, scope: f.elements.scope.value, days: Number(f.elements.days.value) })); } catch (err) { toast(err.message); }
+    try { wireTokens(await api("/tokens", { label: f.elements.label.value, scope: f.elements.scope.value, repo: f.elements.repo.value.trim() || undefined, days: Number(f.elements.days.value) })); } catch (err) { toast(err.message); }
   });
   el.querySelectorAll("[data-revoke]").forEach((b) => b.addEventListener("click", async () => {
     await api(`/tokens/${b.dataset.revoke}`, undefined, "DELETE"); toast("Token revoked"); wireTokens(undefined, true);
