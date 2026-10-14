@@ -88,6 +88,14 @@ Found in code: `rustybuns.config.ts` targets, `@rustybuns/shell-bun` bindings, `
 
 The tool description tells the agent what to do, in order: **work elsewhere** (other lines, then come back); **queue** (`claim_lines {wait: true}` returns a place in line, from Phase 2); or **ask** (a person can lift the claim). An agent never busy-polls: it waits at least `retryAfter`.
 
+**Who goes first is the repo's call.** The queue is first come, first served unless `.gitattributes` says otherwise:
+
+```
+src/hot.ts  codesplitter-order=rank codesplitter-rank=claude*:2,local*:1
+```
+
+With `codesplitter-order=rank`, a waiter steps ahead of waiters of lower rank (behind its equals). Rank is the first pattern (`*` wild) matching the claimer's name, with or without `agent-`; no match is 0. It only orders the line: a lease is never taken off its holder.
+
 ## 5. Recommendation
 
 **B as the backbone, A as the floor, D as a flavor of B, C opt-in, a narrow E (word rebase) and no full CRDT.**
