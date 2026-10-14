@@ -167,3 +167,18 @@ runtimes), and each terminal keeps ~26 MB of scrollback. That parser is the obvi
   long-running server with terminals. It's the first sample for the planned sidecar mode (FRAMEWORKS.md).
 - Moving the office into codeSplitter (hosted workers, queue and merge engine) is planned, not built: see [MOVE.md](MOVE.md).
 - To use codeSplitter from the local office today, see [DOGFOOD.md](DOGFOOD.md).
+
+## Known gaps (round-3 audit, [#1572](https://github.com/QuinnsCode/RustyBuns/issues/1572))
+
+Workers run as you, on your machine, so these are about one worker reaching what another worker or person owns.
+The first three are in the pinned office release, for its author; ours are the last three.
+
+- Issue and PR titles go into worker prompts unquoted (`issue.work`, `pull.review`, `pull.fixMerge`, meeting `{{title}}`),
+  and the templates don't say GitHub text is untrusted data. Quote the values and say so.
+- A PR branch name is pasted into `git push origin HEAD:{{branch}}`. Check it against `^[A-Za-z0-9._/-]+$` first.
+- `tell_worker` prompts reach the terminal through `str()` only; strip control characters in `prompt()`, not just `fromWorker`.
+- Secrets sit on disk where every worker can read them: `config.json` (session secret, password verifier),
+  `homes/<id>/` sign-ins, `scrollback/` and `chat.jsonl`. The floor guard refuses reads under `.agent-office/`, a script still can.
+- Heap snapshots hold every hook token and sign-in, and `/__rb/heap` (`triage/server.ts`) lists their paths to any worker. Listing is the point of `heap_snapshots`, so fixing it means a ceiling on who can read the files, not hiding the paths.
+- `rustybunsify.ts`, `update.ts` and `mama.ts` rebuild `live/*.ts` from the main checkout on every start, so an edit to `live/floorguard.ts` or `live/env.ts` there turns the guards off at the next restart. Build from a verified commit.
+- The webhook forwarder's secret is on `gh webhook forward`'s command line (`live/github.ts`), so `ps` shows it. Pass it by env or stdin once the extension takes it.
