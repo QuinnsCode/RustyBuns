@@ -887,3 +887,25 @@ test("init: a hand-written wrangler.json or wrangler.toml stays the app's config
     expect(p.read("wrangler.generated.jsonc")).toStartWith("// GENERATED");
   }
 });
+
+test("init: SvelteKit on adapter-cloudflare runs its Worker build on the desktop; without the adapter it's refused", () => {
+  const sk = (devDeps: Record<string, string>, extra: Record<string, string> = {}) => project({
+    "package.json": JSON.stringify({ name: "sk", scripts: { build: "vite build" }, devDependencies: { vite: "^7", "@sveltejs/kit": "^2", svelte: "^5", ...devDeps } }),
+    "svelte.config.js": "export default {};\n", "bun.lock": "", ...extra,
+  });
+  const p = sk({ "@sveltejs/adapter-cloudflare": "^7" });   // no wrangler config: the adapter's defaults
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/detected: sveltekit/);
+  const c = p.read("rustybuns.config.ts");
+  expect(c).toContain('"builtMain": ".svelte-kit/cloudflare/_worker.js"');
+  expect(c).toContain('"assets": ".svelte-kit/cloudflare"');
+  expect(c).toContain('"mode": "worker"');
+  expect(c).not.toContain("clientBuild");
+
+  const auto = sk({ "@sveltejs/adapter-auto": "^6" });
+  const n = auto.run("init");
+  expect(n.code).not.toBe(0);
+  expect(n.out).toMatch(/adapter-cloudflare.*issues\/318/);
+  expect(existsSync(join(auto.dir, "rustybuns.config.ts"))).toBe(false);
+});

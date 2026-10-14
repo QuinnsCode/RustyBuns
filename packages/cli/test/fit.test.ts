@@ -97,3 +97,12 @@ test("a static site with no app: plain HTML is ready, a generator's site likely"
   // a Vite app's index.html is the app's entry, not a static site
   expect(fit({ pkg: { dependencies: { vite: "6" } }, files: ["index.html"] }).label).not.toContain("static");
 });
+
+test("SvelteKit is ready with adapter-cloudflare, needs work without it", () => {
+  const sk = { "@sveltejs/kit": "2", svelte: "5", vite: "7" };
+  expect(fit({ pkg: pkg({ ...sk, "@sveltejs/adapter-cloudflare": "7" }), files: [] })).toMatchObject({ verdict: "ready", stack: "sveltekit" });
+  const auto = fit({ pkg: pkg({ ...sk, "@sveltejs/adapter-auto": "6" }), files: [] });
+  expect(auto).toMatchObject({ verdict: "needs-work", stack: "sveltekit" });
+  expect(auto.reasons[0]).toContain("adapter-cloudflare");
+  expect(auto.issue).toMatch(/issues\/318$/);
+});
