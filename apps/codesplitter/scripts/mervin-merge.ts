@@ -36,9 +36,10 @@ export const REQUIRED_CHECKS = ["typecheck", "apps"];
 /** Wave 1 merges now; wave 2 touches files a wave 1 PR does, so it goes after that lands; a held PR holds those behind it. */
 export function decide(board: Board, prs: BoardPr[], mainRed: string[] = []): Verdict[] {
   const byNum = new Map(prs.map((p) => [p.number, p]));
+  const open = board.clashes.filter((c) => !c.settled);
   const heads = new Set(prs.map((p) => p.headRefName).filter(Boolean));
   const bases = new Set(prs.map((p) => p.baseRefName).filter(Boolean));
-  const clashing = new Set(board.clashes.flatMap((c) => c.prs));
+  const clashing = new Set(open.flatMap((c) => c.prs));
   const out = new Map<number, Verdict>();
   for (const s of board.stages) {
     const ci = ciOf(byNum.get(s.pr) ?? { number: s.pr, headRefOid: s.head });
@@ -55,7 +56,7 @@ export function decide(board: Board, prs: BoardPr[], mainRed: string[] = []): Ve
     else if (ci.ci === "pending") why = "CI still running";
     else if (cards.length) why = `Mervin asks on ${cards.join(", ")}`;
     else if (vsMain.length) why = `conflicts with main on ${vsMain.join(", ")}`;
-    else if (clashing.has(s.pr)) why = `clashes across files: ${board.clashes.filter((c) => c.prs.includes(s.pr)).map((c) => `${c.kind} ${c.key}`).join("; ")}`;
+    else if (clashing.has(s.pr)) why = `clashes across files: ${open.filter((c) => c.prs.includes(s.pr)).map((c) => `${c.kind} ${c.key}`).join("; ")}`;
     else if (s.stackedOn !== undefined) why = `stacked on #${s.stackedOn}, which hasn't landed`;
     else {
       const held = behind.find((n) => !out.get(n)!.go);
