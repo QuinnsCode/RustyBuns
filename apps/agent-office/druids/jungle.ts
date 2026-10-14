@@ -297,7 +297,7 @@ export function jungle(colliders: Box[], density = 1) {
       if (x > ROOM.minX && x < ROOM.maxX && z > ROOM.minZ && z < ROOM.maxZ) blades.push({ x, z, s: 0.6 + r() * 0.7, yaw: r() * 6.28 });
     }
   }
-  const grass = instanced(blade(), swaying(new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: 0.85, emissive: 0x16300c }), 14),
+  const grass = instanced(blade(), swaying(new THREE.MeshLambertMaterial({ side: THREE.DoubleSide, emissive: 0x16300c }), 14),
     blades.map((b) => ({ ...b, y: 0.005 })));
   if (grass) {
     const c = new THREE.Color();
