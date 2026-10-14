@@ -307,7 +307,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   callers.set(req, user);
   via.set(req, actingAs.has(req) ? "job" : token ? (token.oauth ? "oauth" : "token") : "cookie");
   if (token && p[1] === "session") return json({ mode: "token", user, token: { id: token.id, label: token.label, scope: token.scope, expires_at: token.expires_at } });
-  const slow = byIp ? null : await timed(req, "limit", () => limit(req, env, rule, user, admin));
+  const slow = byIp ? null : await timed(req, "limit", () => limit(req, env, rule, user, admin, token?.id));
   if (slow) return slow;
   const tokens = await tokenRoutes(req, env, p, user);
   if (tokens) return tokens;
@@ -475,7 +475,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       const home = h ? (/^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(art?.remote ?? h.remote) ? "local" : "cloud") : null;
       // On the desktop the owner can push back too (#464): the bare repo is a remote for their own tools, with a
       // day-long write token (gone when the app restarts). Not with private lines, which that git holds blank.
-      const wa = home === "local" && user === owner && !ch?.crew ? await artifactAccess(h!.handle, h!.remote, "write", 86400).catch(() => null) : null;
+      const wa = home === "local" && user === owner && !ch?.crew && (!token || token.scope === "write") ? await artifactAccess(h!.handle, h!.remote, "write", 86400).catch(() => null) : null;
       const push = wa && `git remote add codesplitter ${wa.remote.replace("://", `://x:${wa.token.split("?")[0]}@`)}`;
       // The owner sees who's invited but not in yet, beside the crew.
       const invites = user === owner ? { invites: await pendingInvites(env, owner, repo) } : {};
