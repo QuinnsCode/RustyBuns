@@ -1123,7 +1123,21 @@ async function fillPulses(root = document) {
 // Who you are comes from the server: an alias (desktop, demos) or a Better Auth account.
 let session = { mode: "alias", user: null, providers: [] };
 const me = () => session.user;
-const api = async (path, body, method, headers = {}) => {
+// A view asks for the repo, its branches, its fit and its tree from several panels: each is fetched once per view
+// (the promise is shared), and dropped on the next route or any write, so nothing is read stale.
+const sharedGets = new Map();
+const SHARED = /^\/repos\/[^/?]+\/[^/?]+(\/(branches|fit|tree))?(\?.*)?$/;
+const api = (path, body, method, headers = {}) => {
+  if (body === undefined && !method) {
+    if (!SHARED.test(path)) return apiCall(path, body, method, headers);
+    let p = sharedGets.get(path);
+    if (!p) { p = apiCall(path, body, method, headers); sharedGets.set(path, p); p.catch(() => sharedGets.delete(path)); }
+    return p;
+  }
+  sharedGets.clear();
+  return apiCall(path, body, method, headers);
+};
+const apiCall = async (path, body, method, headers = {}) => {
   const r = await fetch("/api" + path, body === undefined && !method ? {} : { method: method || "POST", headers: { "content-type": "application/json", ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || j.message || r.status);
@@ -4826,6 +4840,7 @@ const views = {
     const reads = (b) => { const q = qOn(b), rs = [api(`${base}/commits${q}`), api(`${base}/file${q}`)]; rs.forEach((x) => x.catch(() => {})); return rs; };
     const picked = branchPicked(owner, repo);
     let early = reads(picked);
+    api(treeQ(owner, repo, "")).catch(() => {}); // the explorer's first read starts with the repo call, not after it
     const [here, r] = await Promise.all([branchHere(owner, repo), api(`/repos/${owner}/${repo}`)]);
     const branch = here.on, q = qOn(branch);
     if (branch !== picked) early = reads(branch);
@@ -7214,6 +7229,7 @@ async function avatarBox(user, mine, name) {
 }
 async function route() {
   let drawn; routing = new Promise((r) => (drawn = r));
+  sharedGets.clear();
   followed = fetchingFollows = null;
   socket?.close(); socket = null;
   clearTimeout(agentTimer);
