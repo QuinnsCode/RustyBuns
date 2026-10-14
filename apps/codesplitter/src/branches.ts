@@ -43,6 +43,7 @@ import { ADMINS_ONLY, adminsOnly, agentsUnavailable, hostedBudget, installedHarn
 import { askAgent, cheapest } from "./conflict-agent.ts";
 import { alsoFor, fixUnavailable, guardTripped, healUnavailable, openFix, rebuildTask } from "./heal.ts";
 import { hunks, revertOps } from "./review.ts";
+import { MERVIN } from "./mervin.ts";
 import { busyOn, clashIn, taskFiles, waves, type Busy, type Clash, type Side } from "./merge-plan.ts";
 
 const TEXT_MAX = 20_000;
@@ -794,7 +795,7 @@ async function mergePlan(env: Env, owner: string, repo: string, user: string) {
   const plan = waves(order, [...clashes.values()]);
   // What each branch waits for, kept: its own checks wait till those have merged and it's taken main in (#1162).
   for (const p of plan.flat()) await waitFor(env, owner, repo, p.branch, p.after.filter((a) => !a.stacked).map((a) => a.branch));
-  return { order, held: [...held], waves: plan };
+  return { engine: MERVIN.name, order, held: [...held], waves: plan };
 }
 
 /**

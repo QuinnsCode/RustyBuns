@@ -72,8 +72,9 @@ shows two real engine faults:
   checks), with the build as the arbiter where the repo has one.
 - **Never run on anyone else's history until now.** The 80% goal in this doc is about seeing fights coming; the
   recall number for it (mervin-score) still needs a corpus that keeps real merges and a line-id predictor.
-- **Invisible.** The name is in no UI string, README line or API field; the merge engine is the strongest answer
-  to the contest's conflict-handling criterion and a judge cannot see it.
+- **Visible now, thinly.** The merge plan line and `GET /api/repos/:o/:r/merge-plan` (`engine`) name him, and the repo page
+  and `GET /api/mervin` show the git/git corpus (settled / asked / other text, `src/mervin.ts`). The numbers there are
+  this doc's table, not a live per-repo tally, and the merge page does not credit him per file yet.
 
 ## Corpus to pull in
 

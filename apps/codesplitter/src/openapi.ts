@@ -349,7 +349,7 @@ const OPS: Record<string, Record<string, Op>> = {
     description: "Two branches clash when the second merges clean into main now but not once the first has landed, by codeSplitter's own merge (line ids, then the lint), so a pair it settles by itself holds nothing up. " +
       "`order` is the order merge_clean_branches takes them: oldest first, the ones whose required checks passed ahead of the ones they hold (`held`). A stacked branch waits for the one it's on. " +
       "Merge a wave and the next one's branches that name one of them in `after` take main in by themselves, once (merge_branch's `took`). Reading the plan keeps each branch's `after`: its own checks wait till those have merged, so they run once.",
-    ok: obj({ order: arr(str("a branch name")), held: arr(str("a branch its required checks hold")),
+    ok: obj({ engine: str("the merge engine that planned it: Mervin"), order: arr(str("a branch name")), held: arr(str("a branch its required checks hold")),
       waves: arr(arr(obj({ branch: str(), after: arr(obj({ branch: str("one it waits for"), files: arr(str("where they clash")), stacked: bool("it's built on that one") })) }))) }) } },
   [`${repo}/dispatch-hint`]: { get: { id: "get_dispatch_hint", summary: "Before a task starts: its likely files, and the open branches already rewriting them", tag: "Branches",
     description: "`files` is `paths` plus the repo's files the task's text names, whole or by a tail only one path ends in (`main.ts`, `src/main.ts`). " +
