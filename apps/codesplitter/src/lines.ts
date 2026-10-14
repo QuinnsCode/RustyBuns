@@ -1003,6 +1003,12 @@ export function mergeWords(base: string, a: string, b: string, both = false, loo
   const added = (ss: typeof sa) => named(ss.flatMap((s) => s.add));
   const clash = (x: Set<string>, y: Set<string>) => [...x].some((w) => y.has(w));
   if (clash(gone(sa, wa), added(sb)) || clash(gone(sb, wb), added(sa))) return null;
+  // Both added the same words, but the diffs placed them differently (one matched a `)` the other didn't): spliced, they'd land twice (#1421).
+  if (!loose) {
+    const own = (ss: typeof sa, other: typeof sa) => ss.filter((s) => !other.some((t) => t.from === s.from && t.to === s.to && t.add.join("") === s.add.join(""))).map((s) => s.add.join("").trim());
+    const x = own(sa, sb), y = own(sb, sa), twice = (p: string[], q: string[]) => p.some((t) => named(words(t)).size >= 2 && q.some((u) => u.includes(t)));
+    if (twice(x, y) || twice(y, x)) return null;
+  }
   const all = [...sa, ...sb].sort((p, q) => p.from - q.from || p.to - q.to);
   const inOrder = both && sorted(base), first = (ws: string[]) => ws.join("").match(/[\w$]+/)?.[0]?.toLowerCase() ?? "";
   let out = "", i = 0, last: (typeof all)[number] | null = null;
