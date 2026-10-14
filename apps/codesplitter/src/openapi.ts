@@ -314,6 +314,12 @@ const OPS: Record<string, Record<string, Op>> = {
     put: { id: "set_check_settings", summary: "Set where checks run, which are required, and whether ours go to GitHub (owner only)", tag: "Checks",
       body: obj({ where: { type: ["string", "null"], enum: ["here", "github", "both", null] }, required: arr(ref("RequiredCheck")), post_statuses: bool(), pinned: bool() }), ok: ref("CheckSettings") },
   },
+  [`${repo}/protect`]: {
+    get: { id: "get_protect_main", summary: "Whether main is protected from the crew and agents", tag: "Repos", open: true, ok: obj({ on: bool() }) },
+    put: { id: "set_protect_main", summary: "Protect main (owner only)", tag: "Repos",
+      description: "On: the crew (people and agents) edit on branches only, an agent's batch waits for a person instead of a timer, and a branch's author can't merge it. The owner's own work on main is untouched.",
+      body: obj({ on: bool() }, ["on"]), ok: obj({ on: bool() }) },
+  },
   [`${repo}/checks/tokens`]: {
     get: { id: "list_ci_tokens", summary: "The repo's CI tokens, without their secrets (owner only)", tag: "Checks", ok: arr(ref("CiToken")) },
     post: { id: "create_ci_token", summary: "Make a CI token for external CI to report checks with (owner only)", tag: "Checks", risky: true,
