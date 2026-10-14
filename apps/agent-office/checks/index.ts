@@ -3,6 +3,7 @@
 // how long CI took beside it, and the test file a job hung in, if one ran out of time.
 // The card's line is patched (checks/patch.ts) to call globalThis.__rbChecksBar(pull);
 // the server adds pull.checkTally.
+import { hot } from "../reload/hot.ts";
 import { barWidth, describe, testTotal, took, type Tally } from "./tally.ts";
 
 const COLORS: ["pass" | "fail" | "pending" | "skip", string][] = [["pass", "#2a9d4b"], ["fail", "#c3423f"], ["pending", "#e0a526"], ["skip", "#9aa0a6"]];
@@ -31,3 +32,6 @@ const COLORS: ["pass" | "fail" | "pending" | "skip", string][] = [["pass", "#2a9
   wrap.append(bar, `${n}${tests ? ` · ${tests} tests` : ""}${time ? ` · ${time}` : ""}${hung}`);
   return wrap;
 };
+
+// the bars already drawn stay until the board redraws; the new script replaces this function
+hot("rb-checks", () => {});
