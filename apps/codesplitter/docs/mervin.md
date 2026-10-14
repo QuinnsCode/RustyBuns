@@ -20,6 +20,8 @@ human minds are free to steer the digsite.
 
 Design note for running it locally and on Cloudflare: [mervin-engine.md](mervin-engine.md).
 
+Real numbers on where a swarm of PRs got stuck, and which helper each jam belongs to: [jams.md](jams.md).
+
 ## The live count
 
 Every merge that lands adds to a counter, and every stretch both sides changed that Mervin blended with no card and
