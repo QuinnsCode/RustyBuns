@@ -35,6 +35,9 @@ export default defineConfig({
     TURNSTILE_SECRET: op("turnstile/secret"),
   },
   targets: {
-    edge: { provider: "cloudflare" },
+    // adopt names the Worker `workerName`, so the URL is what-would-fantano-say.<subdomain>.workers.dev
+    // and not Alchemy's `<app>-worker-<random>`. The next deploy replaces the randomly named Worker
+    // (nothing is stored; BUDGET is only today's counter).
+    edge: { provider: "cloudflare", adopt: true, workerName: "what-would-fantano-say" },
   },
 });

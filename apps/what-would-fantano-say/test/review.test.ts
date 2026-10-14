@@ -101,9 +101,10 @@ describe("write", () => {
     expect([0, 3, 5, 8].map(verdictFor)).toEqual(["NOT GOOD", "LIGHT", "DECENT", "STRONG"]);
   });
 
-  test("scores stretch a point past the box's range either way", () => {
-    expect(scoreFor(box, { box: box.id, craft: 0, originality: 0, by: "clef" })).toBe(box.scores[0] - 1);
-    expect(scoreFor(box, { box: box.id, craft: 1, originality: 1, by: "clef" })).toBe(box.scores[1] + 1);
+  test("scores stretch two points below the box's range and one above, and an average track lands under its middle", () => {
+    expect(scoreFor(box, { box: box.id, craft: 0, originality: 0, by: "clef" })).toBe(Math.max(0, box.scores[0] - 2));
+    expect(scoreFor(box, { box: box.id, craft: 1, originality: 1, by: "clef" })).toBe(Math.min(10, box.scores[1] + 1));
+    expect(scoreFor(box, { box: box.id, craft: 0.5, originality: 0.5, by: "clef" })).toBeLessThan((box.scores[0] + box.scores[1]) / 2);
   });
 
   test("the same song always gets the same review, and nothing is left unfilled", () => {
