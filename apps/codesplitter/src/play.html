@@ -137,6 +137,7 @@ if (location.hash.startsWith("#c/")) {
   setTimeout(window.cityLoaded, 30000);
 }
 </script>
+<main>
 <canvas id="c" aria-hidden="true"></canvas>
 <div class="hud" id="tl"><div class="big" id="title">codeSplitter</div><div id="where"></div><div id="wave"></div></div>
 <div class="hud" id="tr"><div id="score" class="big">0</div><div id="combo"></div><div id="others"></div></div>
@@ -169,6 +170,7 @@ if (location.hash.startsWith("#c/")) {
   <div class="row"><button class="primary" id="again">back to the lobby</button></div>
   <p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p>
 </div></div>
+</main>
 
 <script type="module">
 import * as THREE from "three";

@@ -42,7 +42,7 @@
     color-scheme: dark;
     --bg: #0e0e0e; --canvas: #161616; --border: #2a2a2a; --border-2: #3d3d3d;
     --fg: #f2f2f2; --muted: #a0a0a0; --faint: #8f8f8f;
-    --accent-ink: #f08c4a; --accent-soft: #2a1a0e;
+    --accent-ink: #f08c4a; --main-ink: #58a6ff; --accent-soft: #2a1a0e;
     --del: #2a1a0e; --del-fg: #f6a96c; --add: #1d1d1d; --add-edge: #4a4a4a;
     --select: #222; --paper: #1a1916; --top-bg: rgba(14,14,14,.86); --scrim: rgba(0,0,0,.6); --hover: #242424; --edge-hi: #6b6b6b; --ink-bg: #f2f2f2; --ink-fg: #0a0a0a; --ink-hover: #d8d8d8; --tint: rgba(255,255,255,.1);
   }
@@ -51,7 +51,7 @@
       color-scheme: dark;
       --bg: #0e0e0e; --canvas: #161616; --border: #2a2a2a; --border-2: #3d3d3d;
       --fg: #f2f2f2; --muted: #a0a0a0; --faint: #8f8f8f;
-      --accent-ink: #f08c4a; --accent-soft: #2a1a0e;
+      --accent-ink: #f08c4a; --main-ink: #58a6ff; --accent-soft: #2a1a0e;
       --del: #2a1a0e; --del-fg: #f6a96c; --add: #1d1d1d; --add-edge: #4a4a4a;
       --select: #222; --paper: #1a1916; --top-bg: rgba(14,14,14,.86); --scrim: rgba(0,0,0,.6); --hover: #242424; --edge-hi: #6b6b6b; --ink-bg: #f2f2f2; --ink-fg: #0a0a0a; --ink-hover: #d8d8d8; --tint: rgba(255,255,255,.1);
     }
@@ -308,7 +308,7 @@
   .clash.settled .cl-h .cl-state { color: var(--accent-ink); }
   .clash .cl-side { display: grid; grid-template-columns: 56px 1fr; gap: 6px; align-items: start; padding: 1px 0; }
   .clash .cl-who { font: 500 11px/18px var(--mono); text-transform: uppercase; color: var(--muted); white-space: nowrap; }
-  .clash .cl-main .cl-who { color: #1f6feb; } .clash .cl-branch .cl-who { color: var(--accent-ink); }
+  .clash .cl-main .cl-who { color: var(--main-ink, #1f6feb); } .clash .cl-branch .cl-who { color: var(--accent-ink); }
   .clash code.pre { white-space: pre-wrap; word-break: break-word; display: block; }
   .clash mark { background: var(--accent-soft); color: inherit; border-radius: 2px; box-shadow: inset 0 -1px var(--accent); }
   .clash .cl-main mark { background: color-mix(in srgb, #1f6feb 20%, transparent); box-shadow: inset 0 -1px #1f6feb; }
