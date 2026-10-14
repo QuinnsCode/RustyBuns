@@ -117,6 +117,8 @@ export interface Note { text: string; at: number }
 
 /** A queue consumer's wall time, so a hosted run's limit. */
 const HOSTED_RUN_MS = 15 * 60_000;
+/** How long past its deadline a hosted run may still be `running` before a listing calls it cut off. */
+const HOSTED_GRACE_MS = 2 * 60_000;
 /** How many runs each repo keeps. */
 const KEEP = 50;
 /** How many of a run's log lines are kept. */
@@ -231,6 +233,12 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
       const error = "the app stopped before the agent finished";
       await finish(env, r.id, "failed", { error });
       Object.assign(r, { status: "failed", result: JSON.stringify({ error }) });
+    }
+    // A hosted run's own deadline timer lives in the consumer's isolate; if that went (a deploy, a crash), nothing else would end the row.
+    if (env.AGENT_SANDBOX) for (const r of rows) if (r.status === "running" && r.started + HOSTED_RUN_MS + HOSTED_GRACE_MS < Date.now()) {
+      const result = { error: `out of time: a hosted run gets ${every(HOSTED_RUN_MS / 1000)}` };
+      await env.DB.prepare("UPDATE agent_runs SET status = 'stopped', result = json_set(COALESCE(result, '{}'), '$.error', ?) WHERE id = ? AND status = 'running'").bind(result.error, r.id).run();
+      Object.assign(r, { status: "stopped", result: JSON.stringify({ ...resultOf(r), ...result }) });
     }
     await relaunch(env, rows, url.origin);
     return json(rows.map((r) => toRun(r, env)));
