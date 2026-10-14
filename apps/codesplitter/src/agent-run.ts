@@ -10,6 +10,7 @@ import type { Doc, Line, Op } from "./lines.ts";
 import { harnessCommand, taskPrompt, type Command, type Harness, type HeldLine } from "./harness.ts";
 import { diffToOps, rebase } from "./sync.ts";
 import { NOTE_ASK, tokens, tripped, usageOf, type Budget, type Trip } from "./budget.ts";
+import { leakIn } from "./leaks.ts";
 
 /** Runs a command in `cwd`; `signal` aborting kills it (Stop on a run). */
 export type Exec = (cmd: Command, cwd: string, signal?: AbortSignal) => Promise<{ code: number; out: string }>;
@@ -129,6 +130,8 @@ export async function runAgent(call: Call, opts: {
   budget?: Budget;
   /** How often its claim is renewed while it works (default HEARTBEAT_MS). */
   heartbeat?: number;
+  /** What the run was handed (its API keys, its GitHub token): an edit that writes one into a file posts nothing (leaks.ts). */
+  secrets?: (string | null | undefined)[];
   exec?: Exec; log?: (s: string) => void;
 }): Promise<Result> {
   const { user, owner, repo, path } = opts;
@@ -236,8 +239,16 @@ export async function runAgent(call: Call, opts: {
       + others.reduce((n, d) => n + d.lines.reduce((k, l) => k + l.text.length + 1, 0) * 2, 0) + run.out.length);
     if (run.code !== 0) throw new Error(`${opts.harness} exited ${run.code}:\n${output.slice(-2000)}`);
     if (run.text === null) throw new Error(`${opts.harness} removed ${path}`);
+    // Emptied is removed by another name: every line goes. A person does that, not an agent.
+    if (run.text === "" && snapshot.lines.length) throw new Error(`${opts.harness} emptied ${path}`);
     const gone = also.find((p) => typeof run.also?.[p] !== "string");
     if (gone) throw new Error(`${opts.harness} removed ${gone}`);
+    // A key in what it wrote (a prompt-injected agent told to leak its own): nothing from this round is posted.
+    const left: [string, Doc, string][] = [[path, snapshot, run.text], ...also.map((p, i): [string, Doc, string] => [p, others[i]!, run.also![p]!])];
+    for (const [p, before, after] of left) {
+      const leak = leakIn(before.lines.map((l) => l.text), fromDisk(after), opts.secrets);
+      if (leak) throw new Error(`${opts.harness} wrote what looks like ${leak} into ${p}; nothing was posted`);
+    }
 
     // 3. Diff what it left against the snapshot, and post the change: its own file's, then each other's.
     conflicts = [];

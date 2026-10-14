@@ -30,10 +30,27 @@
 
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { chmod, chown, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { chmod, chown, mkdtemp, mkdir, open, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { scopedTest } from "./scoped.mjs";
+
+/**
+ * The text of `p` under `root`, as the agent or the repo's code left it, or null. The server reading
+ * it is root, and they aren't: a symlink there to /proc/1/environ (the agent's logins) or another
+ * user's home would hand back what they can't read themselves. So no symlink, at the end or on the
+ * way, nothing that isn't a plain file (a fifo would hang the read), and nothing outside `root`.
+ */
+export async function readInside(root, p) {
+  try {
+    const [top, dir] = await Promise.all([realpath(root), realpath(dirname(join(root, p)))]);
+    const rel = relative(top, dir);
+    if (rel.startsWith("..") || isAbsolute(rel)) return null;
+    const fh = await open(join(dir, basename(p)), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try { return (await fh.stat()).isFile() ? await fh.readFile("utf8") : null; } finally { await fh.close(); }
+  } catch { return null; }
+}
 
 /** An agent that runs longer than this is killed and reported as failed. */
 const LIMIT_MS = Number(process.env.AGENT_TIMEOUT_MS ?? 10 * 60_000);
@@ -74,7 +91,7 @@ export async function run({ cmd, path, text, also }) {
     }
     await hand(dir, USERS.agent);
     const { code, out } = await exec(cmd.bin, cmd.args, dir, cmd.env);
-    const left = (p) => readFile(at(p), "utf8").catch(() => null);
+    const left = (p) => readInside(dir, p);
     const back = also ? { also: Object.fromEntries(await Promise.all(Object.keys(also).map(async (p) => [p, await left(p)]))) } : {};
     return { code, out, text: await left(path), ...back };
   } finally {
@@ -162,7 +179,7 @@ export function regenerate({ remote, files, pm = "bun", cwd = "", command, read 
     if (!bin) return { ok: false, out: "no command" };
     const r = await run(bin, args, join(repo, cwd));
     if (r.code !== 0) return { ok: false, out: r.out };
-    const back = await Promise.all(read.map(async (p) => [p, await readFile(join(repo, p), "utf8").catch(() => null)]));
+    const back = await Promise.all(read.map(async (p) => [p, await readInside(repo, p)]));
     return { ok: true, out: r.out, files: Object.fromEntries(back.filter(([, t]) => t !== null)) };
   });
 }
@@ -208,8 +225,11 @@ export async function depsFix({ cmd, remote, files, pm = "bun", name, out = "", 
     for (const line of status) {
       const path = line.slice(3).trim();
       if (!path || line.startsWith(" D") || path in (files ?? {}) || LOCKFILES.test(path) || path.startsWith("node_modules/")) continue;
+      // A symlink, a fifo or a path out of the clone isn't an edit: the repo's code may have left it to be read as root.
+      const after = await readInside(repo, path);
+      if (after === null) continue;
       const before = line.startsWith("??") ? null : (await run("git", ["show", `HEAD:${path}`])).out.replace(/^.*\n/, "");
-      edits.push({ path, before, after: await readFile(join(repo, path), "utf8") });
+      edits.push({ path, before, after });
     }
     return { ok, tries, out, edits, usd };
   });

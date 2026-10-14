@@ -52,7 +52,7 @@ import { charge, every, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
 import { HARNESSES, harnessCommand, type Harness } from "./harness.ts";
 import { localSandbox, runAgent, type Conflict, type Exec, type Sandbox } from "./agent-run.ts";
-import { containerSandbox } from "./sandbox.ts";
+import { containerSandbox, LOGINS } from "./sandbox.ts";
 import { agentGithubToken } from "./github.ts";
 import { toFile } from "./archive.ts";
 import { text, type Doc } from "./lines.ts";
@@ -182,6 +182,9 @@ export async function policyFor(env: Env, owner: string, repo: string, path: str
   return policyOf(path, res?.ok ? text(await res.json() as Doc) : "");
 }
 
+/** Why no agent edits `path`: `.gitattributes` locks it (a lockfile, or `codesplitter-live=locked`). */
+const locked = (path: string) => `${path} is locked (codesplitter-live=locked): it's regenerated, so no agent edits it`;
+
 /** The harnesses whose CLI is on PATH (all of them when a test swaps the CLI out). */
 export const installedHarnesses = (env: Env) => env.AGENT_EXEC || env.AGENT_SANDBOX ? HARNESSES : HARNESSES.filter((h) => Bun.which(harnessCommand(h, "").bin));
 
@@ -245,6 +248,8 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
   if (!installedHarnesses(env).includes(harness)) return json({ error: `${harness} isn't installed on this machine` }, 400);
   if (typeof task !== "string" || !task.trim()) return json({ error: "task required" }, 400);
   if (model !== undefined && model !== null && typeof model !== "string") return json({ error: "model: text" }, 400);
+  // A locked path is regenerated, never edited live: refused before a container starts or a token is spent.
+  if ((await policyFor(env, owner, repo, path)).live === "locked") return json({ error: locked(path) }, 409);
   const spent = await hostedBudget(env);
   if (spent) return spent;
 
@@ -537,8 +542,11 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       if (!added.ok) throw new Error(`adding ${agent}: ${await added.text()}`);
     }
     const policy = await policyFor(env, owner, repo, path);
+    // A fix task's path comes from a branch, not the start route, so the lock is checked here too.
+    if (policy.live === "locked") throw new Error(locked(path));
     const r = await runAgent(call, {
       user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined, sandbox, lines, claim: `run-${id}`, signal, branch, also,
+      secrets: [...LOGINS.map((k) => env[k]), gh],
       budget: { tokens: policy.budget, over: policy.over },
       notes: async () => { const all = await peek(); const fresh = all.slice(given).map((n) => n.text); given = all.length; return fresh; },
       log: (s) => {
