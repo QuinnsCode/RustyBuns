@@ -288,7 +288,9 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
   const dropped = new Set<string>(), replaced = new Map<string, string | null>(), push = (op: Op, who: string) => { ops.push(op); by.push(who); if (op.kind === "delete") dropped.add(op.line); };
   const insert = (t: string, who: string) => { push({ kind: "insert", after, text: t }, who); after = `L${next++}`; };
   // A line main also added right here, among its new lines after the anchor.
+  // A bare `/**` or `*/` is no sign of the same line: each side's doc comment opens and closes its own (#1267, lines.ts).
   const twin = (t: string) => {
+    if (/^\s*(\/\*+|\*+\/)\s*$/.test(t)) return null;
     for (let i = after === null ? 0 : (at.get(after) ?? Infinity) + 1; i < main.lines.length && !was.has(main.lines[i]!.id); i++) {
       const m = main.lines[i]!;
       if (m.text === t && !taken.has(m.id)) { taken.add(m.id); return m.id; }
@@ -312,7 +314,12 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
   const behindMain = (t: string) => {
     let i = after === null ? 0 : after === resume?.id ? resume.i : (at.get(after) ?? Infinity) + 1;
     const inOrder = i < main.lines.length && fresh(main.lines[i]!) && sortedAt(i, t);
-    for (; i < main.lines.length && fresh(main.lines[i]!); i++) {
+    let end = i;
+    while (end < main.lines.length && fresh(main.lines[end]!)) end++;
+    // A doc comment main opened and closes on the line after the run (the base line it rewrote) goes with that line: the branch's lines land before it.
+    const open = main.lines.slice(i, end).findLastIndex((l) => /^\s*\/\*+\s*$/.test(l.text));
+    if (open >= 0 && !main.lines.slice(i + open, end).some((l) => /\*\/\s*$/.test(l.text)) && end < main.lines.length && /^\s*\*/.test(main.lines[end]!.text)) end = i + open;
+    for (; i < end; i++) {
       const m = main.lines[i]!.text;
       if (inOrder && indent(m) === indent(t) && sortKey(m) > sortKey(t)) return i;
       after = main.lines[i]!.id;

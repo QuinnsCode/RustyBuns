@@ -558,6 +558,21 @@ describe("found in shadow mode (#1014)", () => {
     expect(text(settle(s, { [conflicts(s, ".gitignore")[0]!.line]: "main" }, ".gitignore"))).toBe(".env\n.env.*\n!.env.schema\n!.env.example\n.dev.vars");
   });
 
+  test("#1267's lines.ts: one side turned a one-line comment into a doc comment, the other added a doc comment above it; git conflicted, ours kept both whole, the openers in either order of sides", () => {
+    const was = "}\n\n/** A name one side renamed across the file. */\ninterface Rename { from: string; to: string }\n\nfunction renamed() {}";
+    const grows = "}\n\n/**\n * A name one side renamed across the file.\n * One with a `scope` was renamed only in one function (#1257).\n */\ninterface Rename { from: string; to: string; scope?: string }\n\nfunction renamed() {}";
+    const adds = "}\n\n/**\n * Would two inserts at one spot change how an expression groups (#1255)?\n */\nfunction regroups(a: string[], b: string[]) {\n  return a !== b;\n}\n\n/** A name one side renamed across the file. */\ninterface Rename { from: string; to: string }\n\nfunction renamed() {}";
+    for (const [onMain, onBranch] of [[adds, grows], [grows, adds]] as const) {
+      const s = sides(was, onMain, onBranch);
+      const done = text(settle(s, {}, "src/lines.ts"));
+      expect(done).toContain("}\n\n/**\n * A name one side renamed across the file.\n * One with");
+      expect(done).toContain("*/\nfunction regroups");
+      expect(done.match(/\/\*\*/g)).toHaveLength(2);
+      const m = merge(s.base, s.branch, s.main, {}, "bot", "src/lines.ts");
+      expect(lintMerge("src/lines.ts", s.main, s.branch, m)).toEqual([]);
+    }
+  });
+
   test("#960's index.html: each side added a head picker in its own place; git conflicted, ours kept both, so a duplicate id is a lint conflict", () => {
     const was = "<body>\n<header><h1>git-recon</h1></header>\n<main>\n<canvas id=\"map\"></canvas>\n</main>\n</body>";
     const s = sides(was,
