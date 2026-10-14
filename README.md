@@ -133,7 +133,7 @@ D1 migrations apply at boot, and `"use server"` functions run for real against s
 
 ### Smoke test an app without touching it
 
-`rustybuns smoke [dir]` copies your Vite or Bun app to a throwaway folder, installs, inits, builds and boots it on the local twins, and says whether `GET /` answered.
+`rustybuns smoke [dir]` copies your Vite or Bun app to a throwaway folder, installs, inits, builds and boots it on the local twins, and says whether `GET /` answered. A Bun app that is only a `Bun.serve` server has no client to build, so it runs as its own server beside the host.
 
 <details><summary>More</summary>
 
