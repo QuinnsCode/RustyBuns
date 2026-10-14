@@ -4,6 +4,7 @@
 //   3. bun build --compile the entry, embedding dist  -> one executable
 // Targets: current OS by default. Cross-OS is a CI matrix, not one machine.
 
+import { needDocker } from "./containers.ts";
 import { $ } from "bun";
 import { mkdir } from "node:fs/promises";
 import { existsSync, statSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -786,9 +787,7 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   if (otherCross.length) {
     throw new Error(`native/ has Rust crates: cdylibs do not cross-compile. Build ${otherCross.join(", ")} on their own OS (CI matrix), or pass --target ${hostTag}.`);
   }
-  if (linuxCross.length && !dockerUp()) {
-    throw new Error(`native/ has Rust crates and ${linuxCross.join(", ")} is not this machine: start Docker (they build in a Linux container), or build on Linux.`);
-  }
+  if (linuxCross.length) needDocker(`native/ has Rust crates and ${linuxCross.join(", ")} is not this machine, so they build in a Linux container (or build on Linux).`);
   // After the glue (the app imports the generated stubs), before the client build:
   // a type error shouldn't cost a full UI build and a 100 MB compile first.
   if (opts.check) await checkApp(prof, opts.check);
@@ -993,8 +992,6 @@ export function localRust(): string | undefined {
   const r = Bun.spawnSync(["rustc", "--version"], { stdout: "pipe", stderr: "ignore" });
   return /rustc (\d+\.\d+\.\d+)/.exec(r.stdout.toString())?.[1];
 }
-
-const dockerUp = () => Bun.spawnSync(["docker", "info"], { stdout: "ignore", stderr: "ignore" }).exitCode === 0;
 
 /**
  * Build native/crates for a Linux target in Docker, into native/dist/<crate>/<target>/,

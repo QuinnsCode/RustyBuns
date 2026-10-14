@@ -143,6 +143,16 @@ The copy has no `.env` or `.dev.vars`, gets a fake for every secret the app name
 
 </details>
 
+### Dockerfiles you can build and run locally
+
+`rustybuns containers` lists your container bindings and builds, runs and smoke-tests their images for `linux/amd64`.
+
+<details><summary>More</summary>
+
+Each image shows as built, stale or not built, with its size. `run` starts one on a free port, waits until it answers and streams its logs. Only the `--env` values you pass reach it. `smoke` exits non-zero if an image never boots, and `deploy` checks that Docker is running before any Alchemy work. See [Containers](REFERENCE.md#containers).
+
+</details>
+
 ### Plan before anything costs money
 
 `plan` typechecks the generated stack and shows what it would create and bill. `deploy` refuses to run without a plan for that exact config, then asks.
