@@ -174,6 +174,13 @@ bun scripts/mervin-board.ts --check    # also install, typecheck and test the me
 bun scripts/mervin-board.ts --score <dir>   # after the real merge round: was the sandbox right?
 ```
 
+### Ester the tester
+
+Mervin's pal. When `--check` goes red, Ester (`scripts/ester.ts`) sorts each failing test by owner: **main** (fails
+on main in the same sandbox, ignore), **flaky** (passed when only the failing runs were rerun once), **own** (an app
+a PR with red CI of its own touches: that PR fixes it first) and **blocks** (only the merged tree breaks it; the PRs
+that touched that app are named as suspects). Only `blocks` fails the check.
+
 The scorecard and corpus replay old merges. This one merges the board you have now, one stage per PR, onto
 `origin/main` in a temp folder, and files each file in a tier:
 
