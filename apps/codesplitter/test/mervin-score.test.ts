@@ -33,4 +33,25 @@ test("a branch that edited the same line main did is flagged at its midpoint and
   expect(cases).toHaveLength(1);
   expect(cases[0].fought).toBe(true);
   expect(tally(cases, "overlap").recall).toBe(1);
+  expect(cases[0].lines).toBe(true);
+  expect(tally(cases, "lines").recall).toBe(1);
+});
+
+test("the line-id predictor stays quiet when both sides touched a file in different places", () => {
+  const dir = mkdtempSync(join(tmpdir(), "mervin-"));
+  sh(dir, "git init -q -b main");
+  put(dir, "a.txt", "one\ntwo\nthree\nfour\nfive\nsix\nseven\n", "base");
+  sh(dir, "git checkout -qb pr");
+  sh(dir, "git checkout -q main");
+  put(dir, "a.txt", "ONE\ntwo\nthree\nfour\nfive\nsix\nseven\n", "main edit");
+  sh(dir, "git checkout -q pr");
+  put(dir, "a.txt", "one\ntwo\nthree\nfour\nfive\nsix\nSEVEN\n", "pr 1");
+  put(dir, "b.txt", "x\n", "pr 2");
+  put(dir, "c.txt", "y\n", "pr 3");
+  sh(dir, "git checkout -q main");
+  sh(dir, "git merge --no-ff -q pr -m 'Merge pr'");
+  const cases = score(dir);
+  expect(cases).toHaveLength(1);
+  expect(cases[0].overlap).toBe(true);
+  expect(cases[0].lines).toBe(false);
 });

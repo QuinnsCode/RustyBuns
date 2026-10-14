@@ -444,17 +444,18 @@ async function rebuilt(env: Env, owner: string, repo: string, paths: string[], d
 /**
  * A merge that settled with no card, checked further where the file's policy says `tests` (#1096): the lint
  * can't see a key or string one side renamed and the other still uses. Each such file both sides changed
- * since the branch forked runs the repo's tests on the merged tree in a throwaway clone, as an agent's answer
+ * since the branch forked (or, in code lint can't read, settled where git would have stopped, #1401) runs the repo's tests on the merged tree in a throwaway clone, as an agent's answer
  * does, only those files' tests where the runner can tell. A failure is a `lint:tests` conflict on each, and
  * settled as the branch it lands anyway. Null when it passed, or nothing needed the run, or it can't run here.
  */
-async function testedMerge(env: Env, owner: string, repo: string, branch: BranchRow, dry: { path: string; policy: Policy; ops?: Op[] }[], resolve: Record<string, Resolve>, user: string) {
+async function testedMerge(env: Env, owner: string, repo: string, branch: BranchRow, dry: { path: string; policy: Policy; ops?: Op[]; checks?: Conflict[] }[], resolve: Record<string, Resolve>, user: string) {
   // A file new on the branch has no copy on main yet: it starts empty.
   const read = async (path: string, op: string, on?: string) => {
     const res = await toFile(env, owner, repo, path, user, op, {}, "", on);
     return (res.ok && await res.json() as Doc | null) || empty();
   };
-  const asked = dry.filter((d) => d.policy.check === "tests" && d.ops?.length && resolve[d.path]?.["lint:tests"] !== "branch");
+  // Code lint.ts can't read that settled where git would have stopped (#1389, no facts) has only the build to say it still works (#1401).
+  const asked = dry.filter((d) => (d.policy.check === "tests" || d.checks?.some((c) => !c.facts?.length)) && d.ops?.length && resolve[d.path]?.["lint:tests"] !== "branch");
   const both = (await Promise.all(asked.map(async (d) => {
     const [main, base] = await Promise.all([read(d.path, "file"), read(d.path, "base", branch.name)]);
     return text(main) !== text(base) ? d : null;
