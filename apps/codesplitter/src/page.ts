@@ -87,6 +87,17 @@ async function repoFile(env: Env, name: string, path: string) {
   return doc?.lines?.length ? doc.lines.map((l) => l.text).join("\n") : null;
 }
 
+/** Every public file of the page with the rev it is at, or "" when there is no page repo: the same string until a file changes. */
+async function pageVersion(env: Env, name: string) {
+  if (!(await hasPage(env, name))) return "";
+  const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? ORDER BY path").bind(name, PAGE_REPO).all();
+  const revs = await Promise.all((results as { path: string }[]).map(async ({ path }) => {
+    const res = await toFile(env, name, PAGE_REPO, path, "anon", "file", { headers: { "x-codesplitter-crew": "0" } }).catch(() => null);
+    return `${path}:${res?.ok ? ((await res.json().catch(() => null)) as { rev?: number } | null)?.rev ?? 0 : 0}`;
+  }));
+  return revs.join(" ");
+}
+
 const note = (text: string, status: number) => new Response(`<!doctype html><meta charset="utf-8"><meta name="color-scheme" content="light dark"><body style="font:14px system-ui;display:grid;place-items:center;height:100vh;margin:0;opacity:.6">${text}`, { status, headers: { "content-type": "text/html; charset=utf-8", "content-security-policy": PAGE_CSP, "x-frame-options": "SAMEORIGIN" } });
 
 export async function pageRoutes(req: Request, env: Env, p: string[], user?: string | null): Promise<Response | null> {
@@ -95,6 +106,16 @@ export async function pageRoutes(req: Request, env: Env, p: string[], user?: str
     const b = await readBody<"to">(req);
     return revertPage(env, user, b.to);
   }
+  if (p[1] === "me" && p[2] === "page" && !p[3] && req.method === "PUT") {
+    if (!user) return json({ error: "sign in first" }, 401);
+    const b = await readBody<"path" | "content">(req), path = pagePath(typeof b.path === "string" ? b.path.split("/") : [""]);
+    if (!path || !TYPES[path.split(".").pop()!.toLowerCase()]) return json({ error: `path: a text file of the page (${Object.keys(TYPES).join(", ")})` }, 400);
+    if (typeof b.content !== "string") return json({ error: "content: the file's whole text" }, 400);
+    if (!(await hasPage(env, user))) return json({ error: "no page repo yet: make a public repo named page" }, 404);
+    return json({ path, changed: await setText(env, user, path, b.content) });
+  }
+  // GET /api/users/:name/page-version: changes whenever a file of the page does, so an open page knows when to reload.
+  if (p[1] === "users" && p[2] && p[3] === "page-version" && !p[4] && req.method === "GET") return json({ version: await pageVersion(env, p[2]) });
   if (p[1] !== "users" || !p[2] || p[3] !== "page" || (req.method !== "GET" && req.method !== "HEAD")) return null;
   const name = p[2], path = pagePath(p.slice(4));
   if (!path) return json({ error: "no such file" }, 404);

@@ -89,3 +89,26 @@ describe("your page", () => {
     expect(withData("<head></head>", { bio: "</script><b>" })).not.toContain("</script><b>");
   });
 });
+
+describe("page tools", () => {
+  test("edit_my_page writes a file and the page version moves with it", async () => {
+    const call = await boot({ GH_CLI: "off" });
+    opened.push(call);
+    const send = (user: string | null, url: string, body?: unknown, method = body === undefined ? "GET" : "POST") =>
+      call(user, url, { method, ...(body !== undefined && { body: JSON.stringify(body) }) });
+    await send("ryan", "/api/login", { name: "ryan" });
+    expect((await send("ryan", "/api/me/page", { path: "index.html", content: "x" }, "PUT")).status).toBe(404);
+    await send("ryan", "/api/repos", { name: "page" });
+    expect((await send(null, "/api/me/page", { path: "index.html", content: "x" }, "PUT")).status).toBe(401);
+    expect((await send("ryan", "/api/me/page", { path: "../x.html", content: "x" }, "PUT")).status).toBe(400);
+    expect((await send("ryan", "/api/me/page", { path: "a.exe", content: "x" }, "PUT")).status).toBe(400);
+    await send("ryan", "/api/me/page", { path: "index.html", content: "<h1>one</h1>" }, "PUT");
+    const v1 = ((await (await send(null, "/api/users/ryan/page-version")).json()) as any).version;
+    expect(v1).toContain("index.html:");
+    const same = await (await send("ryan", "/api/me/page", { path: "index.html", content: "<h1>one</h1>" }, "PUT")).json() as any;
+    expect(same.changed).toBe(false);
+    await send("ryan", "/api/me/page", { path: "index.html", content: "<h1>two</h1>" }, "PUT");
+    expect(((await (await send(null, "/api/users/ryan/page-version")).json()) as any).version).not.toBe(v1);
+    expect(await (await send(null, "/api/users/ryan/page/")).text()).toContain("two");
+  });
+});
