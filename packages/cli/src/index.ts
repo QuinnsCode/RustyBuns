@@ -10,6 +10,7 @@ import { parseWrangler, parseWranglerToml, wranglerToConfig, wranglerStages, dro
 import { generateAlchemy } from "./gen/alchemy.ts";
 import { generateWrangler } from "./gen/wrangler.ts";
 import { buildDesktop } from "./build.ts";
+import { smoke } from "./smoke.ts";
 import { signDarwin } from "./sign.ts";
 import { buildBox, checkBox } from "./box.ts";
 import { watchDesktop } from "./watch.ts";
@@ -984,7 +985,7 @@ async function triageCommand(args: string[]) {
   });
 }
 
-const COMMANDS = ["init", "copy-site", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "infra", "build", "eject", "version"];
+const COMMANDS = ["init", "copy-site", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "infra", "build", "smoke", "eject", "version"];
 const isVersion = cmd === "--version" || cmd === "-v" || cmd === "version";
 if (!isVersion && !checkDisabled()) {
   const advice = await checkVersion(VERSION);
@@ -1059,6 +1060,15 @@ try {
         const zips = await signDarwin(out.split("\n"), { identifier: process.env.RB_SIGN_ID ?? `dev.rustybuns.${cfg.name}`, notarize: n >= 0 ? flags[n + 1] : undefined });
         if (zips.length) console.log(`notarized ${zips.join(", ")}`);
       }
+      break;
+    }
+    case "smoke": {
+      // Does this app run on Rusty Buns? A throwaway copy, installed, initialised, built and booted on the local twins.
+      const dir = rest.find((a) => !a.startsWith("--")) ?? ".";
+      const r = await smoke(dir, { keep: rest.includes("--keep"), version: VERSION, cli: fileURLToPath(import.meta.url), log: (l) => console.log(`  ${l}`) });
+      console.log(r.stage === "works" ? `works: GET / answered ${r.status} in ${r.mode} mode (${(r.ms / 1000).toFixed(1)}s)` : `stopped at ${r.stage}${r.mode ? ` (${r.mode} mode)` : ""}:\n${r.error}`);
+      if (r.kept) console.log(`kept: ${r.kept}`);
+      if (r.stage !== "works") process.exitCode = 1;
       break;
     }
     case "eject": {
