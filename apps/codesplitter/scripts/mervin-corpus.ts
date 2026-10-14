@@ -37,7 +37,15 @@ export function bucket(verdict: Verdict, gitClean: boolean, oursClean: boolean, 
 /** A file with each line's leading and trailing space dropped: indentation is a style, not a different merge. */
 const unindented = (t: string) => t.split("\n").map((l) => l.trim()).join("\n");
 
-interface Row { merge: string; path: string; ext: string; bucket: Bucket; off: number }
+export interface Row { merge: string; path: string; ext: string; bucket: Bucket; off: number }
+
+/** For the borg engine (scripts/borg-engine.ts): skip merges it has replayed, and see each file's three texts, what Mervin made of them, and what landed. */
+export interface Hooks {
+  skip?: (commit: string) => boolean;
+  each?: (row: Row, texts: { base: string; main: string; branch: string; landed: string; ours: string | null }) => void;
+  /** Called once per merge the walk took up, conflicted or not, after its files. */
+  done?: (commit: string) => void;
+}
 
 /** The paths git's merge of two commits conflicts on (none when it merges clean). */
 function conflicted(repo: string, main: string, branch: string): string[] {
@@ -48,7 +56,7 @@ function conflicted(repo: string, main: string, branch: string): string[] {
 }
 
 /** Replays up to `limit` conflicted merges of `repo` (a clone, bare or not) and files each conflicted file's fate. */
-export function run(repo: string, limit = 300, maxLines = 3000): { merges: number; fought: number; skipped: number; rows: Row[] } {
+export function run(repo: string, limit = 300, maxLines = 3000, hooks: Hooks = {}): { merges: number; fought: number; skipped: number; rows: Row[] } {
   const git = (...a: string[]) => {
     const r = Bun.spawnSync(["git", "-C", repo, ...a], { stderr: "pipe", maxBuffer: GIT_BUF });
     return r.exitCode === 0 ? r.stdout.toString() : null;
@@ -62,10 +70,10 @@ export function run(repo: string, limit = 300, maxLines = 3000): { merges: numbe
   for (const line of log) {
     if (fought >= limit) break;
     const [commit, main, branch, ...rest] = line.split(" ");
-    if (!branch || rest.length) continue;
+    if (!branch || rest.length || hooks.skip?.(commit!)) continue;
     merges++;
     const paths = conflicted(repo, main!, branch);
-    if (!paths.length) continue;
+    if (!paths.length) { hooks.done?.(commit!); continue; }
     fought++;
     const base = git("merge-base", main!, branch)?.trim();
     for (const path of paths) {
@@ -76,12 +84,15 @@ export function run(repo: string, limit = 300, maxLines = 3000): { merges: numbe
       if ([b, m, br].some((t) => t.includes("\0") || t.split("\n").length > maxLines)) { skipped++; continue; }
       try {
         const s = shadow(path, b, m, br, "", landed);
-        rows.push({
+        const row: Row = {
           merge: commit!.slice(0, 9), path, ext: path.match(/\.([\w]+)$/)?.[1] ?? "(none)",
           bucket: bucket(s.verdict, s.git.clean, s.ours.clean, s.landed!.ours, s.landed!.reordered || (s.ours.text !== null && unindented(s.ours.text) === unindented(landed))), off: s.landed!.off,
-        });
+        };
+        rows.push(row);
+        hooks.each?.(row, { base: b, main: m, branch: br, landed, ours: s.ours.text });
       } catch { skipped++; }
     }
+    hooks.done?.(commit!);
   }
   return { merges, fought, skipped, rows };
 }
