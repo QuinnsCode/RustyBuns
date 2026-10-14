@@ -8,6 +8,7 @@
  *   CHANGELOG.md       merge=union
  *   src/worker.ts      codesplitter-budget=80k codesplitter-over=escalate
  *   scripts/*.ts       codesplitter-check=lint
+ *   src/hot.ts         codesplitter-order=rank codesplitter-rank=claude*:2,local*:1
  *
  * `codesplitter-merge` takes a merge rule by name; git's own `merge=union` is
  * honoured, and `merge=binary` or `-merge` keeps one side's file whole.
@@ -32,10 +33,15 @@ export type Over = "handoff" | "escalate" | "downshift";
  */
 export type Check = "lint" | "tests";
 /** `budget`: the context an agent run on the path may read, in tokens, before it's cut short. */
-export interface Policy { live: Live; merge: Rule; leftover: Leftover; check: Check; budget: number; over: Over }
+export interface Policy { live: Live; merge: Rule; leftover: Leftover; check: Check; budget: number; over: Over; order?: Order; rank?: [string, number][] }
+/**
+ * Who goes first in line for held lines: first come (the default), or by `rank`, where a higher rank steps
+ * ahead of lower ones still waiting. It never takes a lease off its holder. The repo's owner picks it (inversion of control).
+ */
+export type Order = "first" | "rank";
 
 const LIVES: Live[] = ["free", "line", "locked"], RULES: Rule[] = ["lock", "keyed", "prose", "code", "union"], LEFTOVERS: Leftover[] = ["ai", "person", "ci"];
-const OVERS: Over[] = ["handoff", "escalate", "downshift"], CHECKS: Check[] = ["lint", "tests"];
+const OVERS: Over[] = ["handoff", "escalate", "downshift"], ORDERS: Order[] = ["first", "rank"], CHECKS: Check[] = ["lint", "tests"];
 
 /** The defaults, by file kind. */
 export const DEFAULTS: Record<Kind, Policy> = {
@@ -73,6 +79,8 @@ export function parseAttributes(text: string): Rule1[] {
       else if (k === "codesplitter-leftover" && LEFTOVERS.includes(v as Leftover)) set.leftover = v as Leftover;
       else if (k === "codesplitter-check" && CHECKS.includes(v as Check)) set.check = v as Check;
       else if (k === "codesplitter-budget" && v && tokensOf(v) > 0) set.budget = tokensOf(v);
+      else if (k === "codesplitter-order" && ORDERS.includes(v as Order)) set.order = v as Order;
+      else if (k === "codesplitter-rank" && v) set.rank = v.split(",").map((e) => e.split(":")).filter((e) => e[0] && Number.isFinite(Number(e[1]))).map((e) => [e[0]!, Number(e[1])]);
       else if (k === "codesplitter-over" && OVERS.includes(v as Over)) set.over = v as Over;
     }
     if (Object.keys(set).length) out.push({ re: glob(pattern), set });
@@ -85,4 +93,14 @@ export function policyOf(path: string, attributes = ""): Policy {
   const p = { ...DEFAULTS[kindOf(path)] };
   for (const r of parseAttributes(attributes)) if (r.re.test(path)) Object.assign(p, r.set);
   return p;
+}
+
+/** Who's rank under a policy's `rank` list: the first pattern (`*` wild) matching the name, with or without its `agent-`; 0 when none does. */
+export function rankOf(rank: [string, number][] | undefined, who: string): number {
+  const bare = who.replace(/^agent-/, "");
+  for (const [pattern, n] of rank ?? []) {
+    const re = new RegExp("^" + pattern.split("*").map((x) => x.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*") + "$");
+    if (re.test(who) || re.test(bare)) return n;
+  }
+  return 0;
 }

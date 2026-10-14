@@ -44,8 +44,9 @@ test("_headers enforces the CSP and lets every page's inline scripts run by hash
   expect(scriptSrc).not.toContain("unsafe-inline");
   for (const page of ["index.html", "play.html", "features.html", "reference.html", "mcp.html"]) {
     const hashes = inlineScriptHashes(await Bun.file(`${dist}/${page}`).text());
-    // The home page keeps none inline: its script is a hashed file under 'self'.
-    if (page === "index.html") expect(hashes).toHaveLength(0); else expect(hashes.length).toBeGreaterThan(0);
+    // The home page keeps one inline: the light/dark paint (#1499), which has to run before first paint. Its app
+    // script is a hashed file under 'self'.
+    if (page === "index.html") expect(hashes).toHaveLength(1); else expect(hashes.length).toBeGreaterThan(0);
     for (const h of hashes) expect(scriptSrc).toContain(`'${h}'`);
   }
 }, 60_000);

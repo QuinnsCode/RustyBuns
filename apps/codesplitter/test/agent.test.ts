@@ -542,6 +542,20 @@ describe("claims", () => {
     expect((await claims(call))[0]!.until! - Date.now()).toBeGreaterThan(GRANT_MS);
   });
 
+  test("codesplitter-order=rank lets a higher rank step ahead in line; the default stays first come", async () => {
+    for (const [attrs, first] of [["", "agent-y"], ["a.js codesplitter-order=rank codesplitter-rank=agent-z:2,agent-y:1", "agent-z"]] as const) {
+      const call = await local();
+      await setup(call, "a\nb");
+      await crew(call);
+      if (attrs) await call("ryan", "/api/repos/ryan/r1/files", { method: "POST", body: JSON.stringify({ path: ".gitattributes", content: attrs }) });
+      await post(call, "ryan", "claims", { lines: ["L1"] });
+      await wait(call, "agent-y", { id: "run-y", lines: ["L1"] });
+      expect(await (await wait(call, "agent-z", { id: "run-z", lines: ["L1"] })).json()).toMatchObject({ place: attrs ? 1 : 2 });
+      await post(call, "ryan", "release", { id: (await claims(call))[0]!.id });
+      expect((await claims(call)).map((c) => c.who)).toEqual([first]);
+    }
+  });
+
   test("a waiter that's gone is skipped after its grant window, and one that stops asking leaves the line", async () => {
     const call = await local();
     await setup(call, "a\nb");
