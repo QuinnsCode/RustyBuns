@@ -17,6 +17,15 @@ export async function mainClosed(env: Env, owner: string, repo: string, user: st
   return json({ error: "main is protected: edit on a branch, and the owner merges it", protected: true }, 403);
 }
 
+/** The files that set the path policy and the checks' commands: only the owner rewrites them live on main (#1567). */
+export const POLICY_FILES = new Set([".gitattributes", "codesplitter.ci"]);
+
+/** An error response when `user` may not edit this path live on main (protect-main or not), else null. */
+export function policyClosed(owner: string, path: string, user: string | null | undefined): Response | null {
+  if (user === owner || !POLICY_FILES.has(path.replace(/^(\.\/)+/, ""))) return null;
+  return json({ error: `only the owner edits ${path} on main: change it on a branch, and the owner merges it`, policy: true }, 403);
+}
+
 export async function protectRoute(req: Request, env: Env, owner: string, repo: string, user: string | null): Promise<Response> {
   if (req.method === "GET") return json({ on: await protectOn(env, owner, repo) });
   if (req.method !== "PUT") return json({ error: "GET or PUT" }, 405);
