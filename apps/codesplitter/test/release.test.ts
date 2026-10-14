@@ -106,6 +106,17 @@ describe("checkPlan", () => {
     expect(checkPlan(plan("Plan: 2 to create", "[FIXES] create", "[VECTORS] create"), plain).stop).toContain("[VECTORS] create");
   });
 
+  // The live deploy of d9e823e8 (#1630), the first after #1539 added the STATS KV namespace.
+  test("a new KV namespace goes to the y/N; a new D1 or R2 bucket, or a deleted or replaced namespace, still stops it", () => {
+    const v = checkPlan(plan("Plan: 1 to create, 1 to update, 1 binding changes", "[STATS] create", "[Worker] update", "[Worker/STATS] create"), plain);
+    expect(v.stop).toBeNull();
+    expect(v.show).toContain("[STATS] create");
+    expect(checkPlan(plan("Plan: 1 to create", "[STATS2] create"), plain).stop).toContain("[STATS2] create");
+    expect(checkPlan(plan("Plan: 1 to replace", "[STATS] replace"), plain).stop).toContain("[STATS] replace");
+    expect(checkPlan(plan("Plan: 1 to delete", "[STATS] delete"), plain).stop).toContain("[STATS] delete");
+    expect(checkPlan(plan("Plan: 1 to update", "[Worker] update", "[Worker/STATS] unbind"), plain).stop).toContain("unbind");
+  });
+
   // The owner's release on 2026-10-13, after the #825 move left the consumers on the deleted queues.
   test("a queue consumer replaced onto its queue's new id goes out; anything else replaced still stops it", () => {
     const real = logged("Plan: 6 to update, 3 to replace, 3 binding changes", "[AGENT_SANDBOX] update", "[Build] update", "[CI_RUNNER] update", "[DB] update",

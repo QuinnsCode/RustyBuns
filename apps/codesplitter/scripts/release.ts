@@ -25,6 +25,8 @@ export const ACCOUNT = /c2d417e6[0-9a-f]{24}/;
 export const GENERATED = ["wrangler.jsonc", ".env.schema"];
 /** What --move renames (#809): each replaced, the new one adopted or made, the old one deleted. */
 export const MOVED = ["DB", "HOOKS", "JOBS", "LEVEL_DIGS", "LEVEL_CHUNKS"];
+/** KV namespaces in rustybuns.config.ts (the plan doesn't say a row's type): a new one is free, so it goes to the y/N (#1633). */
+export const KV = ["STATS"];
 const OLD = "codesplitters", NEW = "codesplitter";
 
 export interface Mode { checksNew: boolean; move: boolean }
@@ -112,7 +114,8 @@ export function checkPlan(text: string, mode: Mode): Verdict {
   const made = (id: string) => rows.some((r) => r.id === id && !r.binding && r.action === "create");
   const newQueue = (r: Row) => r.action === "create" && !r.binding &&
     (made(`${r.id}Consumer`) || (/^[A-Z][A-Z0-9_]*Consumer$/.test(r.id) && made(r.id.slice(0, -"Consumer".length))));
-  const making = (r: Row) => moving(r) || (mode.checksNew && r.id === "CI_RUNNER") || newQueue(r);
+  const newKv = (r: Row) => r.action === "create" && !r.binding && KV.includes(r.id);
+  const making = (r: Row) => moving(r) || (mode.checksNew && r.id === "CI_RUNNER") || newQueue(r) || newKv(r);
   const risky: string[] = [], creates: string[] = [];
   for (const r of rows) {
     if (["delete", "replace", "orphaned", "unbind", "drop"].includes(r.action) && !moving(r) && !consumer(r)) risky.push(r.line);
