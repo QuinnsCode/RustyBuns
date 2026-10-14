@@ -3691,7 +3691,7 @@ const views = {
         ${mine ? truthBox(true) : ""}
         ${mine ? dataBox(true) : ""}
       </aside></div>${cityLink ? `<div class="city-door">${cityLink}</div>` : ""}</div>`;
-    if (page) pageStage();
+    if (page) { pageStage(); pageWatch(name); }
     if (mine && !agent) pageTalk(name, !!page);
     if (!agent) avatarBox(user, mine, name);
     // The pulse: a week of lines landed, beating while they type. It looks again every 15 seconds while you're here.
@@ -7516,6 +7516,18 @@ function pageStage() {
   stageWired = true;
   addEventListener("keydown", (e) => { if (e.key === "Escape" && document.body.classList.contains("staged")) stage(false); });
   addEventListener("hashchange", () => document.body.classList.remove("staged"));
+}
+// A commit to the page repo (from the box, an agent or a person) reloads just this profile's frame, for whoever is looking.
+async function pageWatch(name) {
+  const f = $("iframe.theme");
+  let seen = null;
+  while (f && f.isConnected) {
+    if (!document.hidden) {
+      const v = (await api(`/users/${encodeURIComponent(name)}/page-version`).catch(() => null))?.version;
+      if (v != null) { if (seen !== null && v !== seen) f.src = `/api/users/${encodeURIComponent(name)}/page/?t=${Date.now()}`; seen = v; }
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
 }
 // Talk to your page: the box on your profile sends what you say to a coding agent working in your repo `page`
 // (its files are the site, see src/page.ts); the two buttons put the page back an hour, or to the starter.
