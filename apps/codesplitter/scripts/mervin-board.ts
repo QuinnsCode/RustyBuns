@@ -59,7 +59,8 @@ export function ciOf(pr: BoardPr): { ci: Ci; failing: string[] } {
   const ci: Ci = failing.length ? "fail" : !checks.length ? "none" : checks.some((c) => c.status && c.status !== "COMPLETED") ? "pending" : "pass";
   return { ci, failing };
 }
-export interface FileRow { path: string; tier: Tier; why: string; after: number[] }
+/** `main` is true when main changed the file since the PR's base too: the clash is with main itself, not only with `after`. */
+export interface FileRow { path: string; tier: Tier; why: string; after: number[]; main?: boolean }
 export interface Stage { pr: number; title?: string; head: string; base: string; stackedOn?: number; ci?: Ci; failing?: string[]; files: FileRow[] }
 /** A clash between files (or PRs) that merges clean as text: `prs` lists the PRs, `main` is true when main holds one side. */
 export interface Clash { kind: "migration" | "export" | "route"; key: string; prs: number[]; main?: boolean }
@@ -153,12 +154,14 @@ export function run(repo: string | undefined, main: string, prs: BoardPr[]): { b
     if (parent) stage.stackedOn = board.stages.find((s) => s.head === parent)?.pr;
     perStage.push({ pr: pr.number, claims: claims(git, base, pr.headRefOid, main) });
     const mine = new Map<string, string | null>();
+    const mainBase = parent ? git("merge-base", main, pr.headRefOid)?.trim() : base;
     const diff = (git("diff", "--name-status", "--no-renames", base, pr.headRefOid) ?? "").split("\n").filter(Boolean);
     for (const line of diff) {
       const [status, path] = line.split("\t") as [string, string];
       const b = show(base, path), br = status === "D" ? null : show(pr.headRefOid, path), cur = now(path);
       const after = touched.get(path) ?? [];
-      const row = (tier: Tier, why: string) => stage.files.push({ path, tier, why, after: [...after] });
+      const onMain = !!mainBase && show(main, path) !== show(mainBase, path);
+      const row = (tier: Tier, why: string) => stage.files.push({ path, tier, why, after: [...after], ...(onMain && tier !== "certain" && { main: true }) });
       if (cur === br) row("certain", "already reads as this PR wrote it");
       else if (cur === b) { tree.set(path, br); mine.set(path, br); row("certain", br === null ? "deleted, untouched since the base" : "untouched since the base: the PR's copy"); }
       else if (br === null || cur === null) row("card", br === null ? "deleted here, changed on main" : "changed here, deleted on main");
@@ -200,7 +203,7 @@ export function describe(s: Stage): string[] {
   const head = `#${s.pr}${s.stackedOn ? ` (on #${s.stackedOn})` : ""} ${s.title ?? ""}`.trimEnd();
   const ci = s.ci ? `   own CI ${s.ci}${s.failing?.length ? ` (${s.failing.join(", ")})` : ""}` : "";
   const out = [head, `  ${s.files.length} files, ${sure}% certain   ${TIERS.map((t) => `${t} ${c[t]}`).join("  ")}${ci}`];
-  for (const f of s.files) if (f.tier !== "certain") out.push(`  ${f.tier.padEnd(7)} ${f.path}  ${f.why}${f.after.length ? `  (after ${f.after.map((n) => `#${n}`).join(", ")})` : ""}`);
+  for (const f of s.files) if (f.tier !== "certain") out.push(`  ${f.tier.padEnd(7)} ${f.path}  ${f.why}${f.main || f.after.length ? `  (after ${[...(f.main ? ["main"] : []), ...f.after.map((n) => `#${n}`)].join(", ")})` : ""}`);
   return out;
 }
 
@@ -242,6 +245,7 @@ export function score(repo: string | undefined, board: Board, treeDir: string, n
 }
 
 if (import.meta.main) {
+  try { import.meta.resolve("@babel/parser"); } catch { console.error("a dependency is missing (@babel/parser): run `bun install` first"); process.exit(2); }
   const args = process.argv.slice(2);
   const arg = (n: string) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : undefined; };
   const top = gitIn(undefined)("rev-parse", "--show-toplevel")!.trim();

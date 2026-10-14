@@ -52,6 +52,16 @@ describe("mervin board", () => {
     expect(tree.get("c.ts")).toBe("X\np1\np3\n");
   });
 
+  test("a conflict with main is blamed on main, not on an earlier PR", () => {
+    git("checkout", "-qb", "m2", main);
+    const moved = commit({ "c.ts": "main\n" }, "main moves c.ts");
+    const { board } = run(repo, moved, order(prs, [4, 1]));
+    const c = (i: number) => board.stages[i]!.files.find((f) => f.path === "c.ts")!;
+    expect(c(0)).toMatchObject({ tier: "card", after: [], main: true });
+    expect(c(1)).toMatchObject({ tier: "card", after: [], main: true });
+    expect(board.stages[0]!.files.find((f) => f.path === "a.ts")).toBeUndefined();
+  });
+
   test("the score: exact, wrong, asked, and a file someone else moved", () => {
     const { board, tree } = run(repo, main, order(prs, [1, 2, 4]));
     const dir = mkdtempSync(join(tmpdir(), "mervin-board-tree-"));
