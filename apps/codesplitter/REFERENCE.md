@@ -331,6 +331,8 @@ The plan for testing the paid paths without a bill, and the capped live smoke, i
 
 ### Deploying (Cloudflare)
 
+The steps from config to the world, in one table: [docs/alchemy.md](docs/alchemy.md).
+
 `rustybuns deploy` owns the live site: Alchemy took over the wrangler-made Worker `codesplitter` and D1 `codesplitters-db` on 2026-10-09 (`targets.edge.adopt`), Durable Object storage intact.
 
 **Releases go through `scripts/release.ts`.** The owner runs `zsh ~/release-codesplitters.sh` (a copy of `scripts/release-codesplitters.sh`, which each run refreshes from main, so a fix to it can't sit unused in the repo), which puts a release worktree of the agent-office clone on `origin/main` and hands over to it.
@@ -354,6 +356,11 @@ Anything else it marks `create` is really new.
 So `wrangler d1 migrations list codesplitter-db --remote` shows everything after 0009 as pending though it's all applied.
 Never run `wrangler d1 migrations apply --remote`: it would run those again and fail partway.
 New migrations go in `migrations/` and the next `rustybuns deploy` applies them.
+
+**Guards on stored data (`test/data-guards.test.ts`).** Three things fail a PR before it can strand or erase what's live:
+- *Durable Object classes.* `wrangler.jsonc`'s migration tags only append. A tag already deployed can't change (Cloudflare code 10074), and `deleted_classes` erases that class's data, so it needs the tag named in `MAY_ERASE`. New tags go at the end of `LEDGER` in the test.
+- *D1.* A migration with `DROP TABLE`, `DROP COLUMN` or `DELETE FROM` carries `-- destructive-ok: <why the rows are safe to lose>`. The table-rebuild pattern (copy, drop, rename) counts.
+- *A file's Durable Object.* Its storage has no schema version, so the shapes of the keys it writes are pinned (`KEY_SHAPES`), and every dump in `test/fixtures/file-do/` must load in today's code and read back the same. Changing the layout means reading the old keys until those pass, like `DocStore` reads the old single `doc` key. Never edit a dump; add one for the new layout with `FREEZE_FILE_DO=<new-name> bun test test/data-guards.test.ts`.
 To see what's applied:
 
 ```sh
@@ -766,12 +773,14 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/openapi.ts` | `GET /api/openapi.json`, the API for outside agents |
 | `src/patch.ts` | a unified diff and a `git format-patch` mail written in JS, for beams on the hosted site where there's no git to run |
 | `src/policy.ts` | policy per path: how live edits go, the merge rule, who settles what is left, how a settled merge is checked, an agent's budget; defaults under the repo's `.gitattributes` |
+| `src/protect.ts` | protect main (#1426): an owner setting that keeps crew and agents off main. |
 | `src/sandbox.ts` | the container Durable Object hosted agents run in |
 | `src/swarm.ts` | digging a big level in parts off the `LEVEL_DIGS` queue, side by side |
 | `src/sync.ts` | an agent's text edit to line ops: a Myers diff that keeps line ids, and a rebase onto the file as it is now |
 | `src/tarball.ts` | past Artifacts' 40 MB import cap: a repo's tip from GitHub's tarball, pushed as one commit |
 | `src/tokens.ts` | personal API tokens: make, revoke, and who a bearer token acts as |
 | `src/try-out.ts` | try Rusty Buns on a repo or an agent's branch: init, then an offline plan |
+| `src/util.ts` | small helpers every file may use: hex, base64url, SHA-256, HTML escaping, plurals, batching |
 | `src/worker.ts` | routes, visibility, profiles, playlists, search |
 | `src/worktrees.ts` | real checkouts (`git worktree add`) off a desktop repo's bare git, per branch or per run, cleaned up when done |
 

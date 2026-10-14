@@ -38,6 +38,7 @@ import { json, type Env } from "./env.ts";
 import { isAdmin } from "./identity.ts";
 import { charge, SITE } from "./limits.ts";
 import { portFetch, type ContainerApi } from "./sandbox.ts";
+import { sha256 } from "./util.ts";
 
 /** A run as claimRun hands it out. */
 export type Job = NonNullable<Awaited<ReturnType<typeof claimRun>>>;
@@ -224,10 +225,7 @@ interface DoctorJob { id: string; owner: string; repo: string; key: string; tip:
 /** Results kept, newest last. */
 const KEEP_RESULTS = 20;
 
-async function keyOf(v: unknown) {
-  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(v)));
-  return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
+const keyOf = (v: unknown) => sha256(JSON.stringify(v));
 
 /**
  * One per repo: POST /kick {owner, repo} says there's work, and each alarm runs one queued check in a fresh container.
