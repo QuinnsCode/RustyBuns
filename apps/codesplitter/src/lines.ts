@@ -194,7 +194,7 @@ export function kindOf(path: string): Kind {
  * the batch must land on `main` exactly as passed. Deleted lines leave no
  * blame, so their ops are credited to `deleter`.
  */
-export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, deleter = "anon", path = "", writer = deleter, rule: Rule = kindOf(path)): { ops: Op[]; by: string[]; conflicts: Conflict[]; checks?: Conflict[]; regenerate?: string[] } {
+export function merge(base: Doc, branch: Doc, main: Doc, given: Resolve = {}, deleter = "anon", path = "", writer = deleter, rule: Rule = kindOf(path)): { ops: Op[]; by: string[]; conflicts: Conflict[]; checks?: Conflict[]; regenerate?: string[]; solved?: number } {
   const g = generated(base, branch, main);
   let m = mergeLines(base, g.branch, main, given, deleter, path, writer, rule);
   // A package.json the lines merge asks on: merge it by key (src/manifest.ts), unless the writer already answered a card.
@@ -250,7 +250,7 @@ function generated(base: Doc, branch: Doc, main: Doc): { branch: Doc; regenerate
   return { branch: lines === branch.lines ? branch : { ...branch, lines }, regenerate };
 }
 
-function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: string, path: string, writer: string, rule: Rule): { ops: Op[]; by: string[]; conflicts: Conflict[]; checks?: Conflict[] } {
+function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: string, path: string, writer: string, rule: Rule): { ops: Op[]; by: string[]; conflicts: Conflict[]; checks?: Conflict[]; solved?: number } {
   if (rule === "union") {
     // git's merge=union: what both rewrote keeps both, main's first; a line both added lands once. Markers and broken data still refuse.
     const first = mergeLines(base, branch, main, given, deleter, path, writer, "prose");
@@ -298,7 +298,7 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
   const mainAdded = new Map<string, Set<string>>();
   main.lines.forEach((l, i) => { if (!was.has(l.id) && !before.has(l.text)) mainAdded.set(l.text, (mainAdded.get(l.text) ?? new Set()).add(mainHeads[i]!)); });
   const ops: Op[] = [], by: string[] = [], conflicts: Conflict[] = [], taken = new Set<string>();
-  let next = main.nextId, after: string | null = null;
+  let next = main.nextId, after: string | null = null, solved = 0;
   const dropped = new Set<string>(), replaced = new Map<string, string | null>(), push = (op: Op, who: string) => { ops.push(op); by.push(who); if (op.kind === "delete") dropped.add(op.line); };
   const insert = (t: string, who: string) => { push({ kind: "insert", after, text: t }, who); after = `L${next++}`; };
   // A line main also added right here, among its new lines after the anchor.
@@ -382,7 +382,9 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
       return;
     }
     const bl = base.lines.filter((_, i) => covers(g, 2 * i + 1)), both = pick ? null : blend(bl, ms, bs, kind !== "prose", loose) ?? rejoin(bl, ms, bs, kind !== "prose", loose);
+    // A stretch both sides changed, blended with nobody picking: Mervin settled it on his own.
     if (both) {
+      solved++;
       before();
       const keep = new Set(both.map((e) => e.m?.id));
       for (const m of ms) if (!keep.has(m.id)) push({ kind: "delete", line: m.id, base: m.rev }, deleter);
@@ -431,7 +433,7 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
     if (l.text !== b.text && m?.text !== l.text) {
       const pick = m?.text === b.text ? "branch" : resolve[l.id];
       const words = m && !pick ? blendLine(b.text, m.text, l.text, loose(b.text)) : null;
-      if (words !== null) push({ kind: "set", line: m!.id, base: m!.rev, text: words }, l.by);
+      if (words !== null) { solved++; push({ kind: "set", line: m!.id, base: m!.rev, text: words }, l.by); }
       else if (!pick) conflicts.push({ line: l.id, base: b.text, main: m?.text ?? null, branch: l.text });
       else if (pick !== "main") {
         const own = written(pick);
@@ -491,7 +493,7 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
     return { ...c, check: true as const, facts: [...new Set([c.main, c.branch].flatMap((t) => facts(t ?? "")))].filter((f) => ![c.base, c.main ?? "", c.branch ?? ""].every((t) => facts(t).includes(f))) };
     // Both sides making the same change to code is no clash.
   }).filter((c) => kind !== "code" || c.main !== c.branch);
-  return { ops: ops.map((o) => o.kind === "insert" ? { ...o, after: o.after && back(o.after) } : { ...o, line: back(o.line) }), by, conflicts, ...(checks.length && { checks }) };
+  return { ops: ops.map((o) => o.kind === "insert" ? { ...o, after: o.after && back(o.after) } : { ...o, line: back(o.line) }), by, conflicts, ...(checks.length && { checks }), ...(solved && !conflicts.length && { solved }) };
 }
 
 /**

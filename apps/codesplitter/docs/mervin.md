@@ -20,6 +20,13 @@ human minds are free to steer the digsite.
 
 Design note for running it locally and on Cloudflare: [mervin-engine.md](mervin-engine.md).
 
+## The live count
+
+Every merge that lands adds to a counter, and every stretch both sides changed that Mervin blended with no card and
+nobody picking a side adds to a second one. `GET /api/stats` returns `{merges, solved}` and the landing page shows
+them. D1 (`site_stats`) holds the counts; the `STATS` KV namespace holds a copy for a minute, so a visit is one KV read
+and D1 is read about once a minute (`src/stats.ts`).
+
 ## The goal: 80% of fights seen coming
 
 A PR "fights" when git's merge of it onto main conflicts. Mervin's goal is to flag **80% of the PRs that

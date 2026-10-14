@@ -262,6 +262,7 @@ export const GROUPS: Group[] = [
   {
     name: "Agents, previews and deploys",
     endpoints: [
+      { method: "GET", path: "/api/stats", does: "the landing page's live counts: {merges, solved}, merges landed on this site and clashes (a stretch both sides changed) Mervin settled with no card. Public; read from a KV copy at most a minute old" },
       { method: "GET", path: "/api/mervin", does: "Mervin, the merge engine, and his corpus on git/git: {name, does, corpus: {repo, measured, files, settled, asked, other}}, of the files git's merge gave up on, how many he settled to what landed, handed back as cards, or settled to other text" },
       { method: "GET", path: "/api/agents", does: "which coding-agent harnesses this machine can run; admins_only: true when the hosted site keeps them (and feed digests) to its admins and you aren't one" },
       { method: "GET", path: "/api/repos/:o/:r/agents?path=", who: OWNER, does: "the repo's agent runs, newest first, or one file's with path" },
