@@ -221,6 +221,7 @@
   .guide .guide-rows { display: grid; gap: 2px; } .guide .guide-row { display: grid; grid-template-columns: 18px 1fr 18px; align-items: center; gap: 8px; padding: 7px 8px; text-align: left; background: none; color: var(--fg); border: 0; border-radius: 6px; font: inherit; cursor: pointer; }
   .guide .guide-row:hover { background: var(--select); } .guide .guide-row > svg:last-child { color: var(--muted); } .guide .guide-row.ok { color: var(--muted); } .guide .guide-row.ok > svg:first-child { color: var(--accent); }
   .tour .tour-dots { display: flex; gap: 3px; } .tour .tour-dots i { flex: 1; height: 3px; border-radius: 2px; background: var(--border); } .tour .tour-dots i.on { background: var(--accent); }
+  .tour .tour-queue { display: flex; align-items: center; gap: 4px; font-size: 13px; } .tour .tour-queue .btn { padding: 0 4px; }
   .tour .tour-btns { display: flex; gap: 6px; } .tour .tour-btns .grow, .tour .tour-top .grow { flex: 1; }
   .tour .tour-chs { display: flex; align-items: center; gap: 4px; font-size: 13px; } .tour .tour-chs span { margin-left: 4px; white-space: nowrap; }
   .tour .tour-chs button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--bg); color: var(--muted); cursor: pointer; }
@@ -3753,7 +3754,7 @@ const views = {
       ${isOwner ? `<div class="pop"><button class="btn" id="ship" title="Build, plan, stage and deploy this repo, with its infra drawn out">${icon("rocket")}Ship</button><div class="panel ship-panel" id="ship-panel" hidden></div></div>` : ""}
       ${isOwner ? `<div class="pop"><button class="btn" id="invite">${icon("user-plus")}Invite</button><form class="panel" id="invite-form" hidden><b>Invite to the crew</b><span class="muted" style="font-size:13px">Crew can edit, commit and share. A handle or an email lets that person in; leave it empty for a link anyone can use once, a person or an agent.</span><input name="who" placeholder="@handle, email, or empty for a link"><input name="note" placeholder="a note for them (optional)" maxlength="280"><button class="btn primary">${icon("link")}Make the invite</button><div id="invite-made"></div></form></div>` : ""}
       ${me() ? `<div class="pop"><button class="btn" id="limits" title="what this repo and you may do, and how close you are">${icon("gauge")}Limits</button><div class="panel" id="limits-panel" hidden style="width:380px;max-height:70vh;overflow:auto"><span class="muted">…</span></div></div>` : ""}
-      ${r.clone ? `<div class="pop"><button class="btn primary" id="clone">${icon("code")}Clone</button><div class="panel" hidden><b>${icon("terminal")} Clone with git</b><span class="muted" style="font-size:13px">A real git remote in Cloudflare Artifacts. The token in it is read-only and lasts an hour.</span><div class="copyline"><input readonly value="${esc(maskedUrl(r.clone))}" title="the token is hidden: the button copies it whole"><button class="btn" id="clone-copy">${icon("copy")}</button></div>${r.crewClone ? `<b>${icon("lock")} The crew's remote</b><span class="muted" style="font-size:13px">Private lines are blank in the remote above. This one has their real text, for the crew only; previews and deploys clone it.</span><div class="copyline"><input readonly value="${esc(maskedUrl(r.crewClone))}" title="the token is hidden: the button copies it whole"><button class="btn" id="crew-clone-copy">${icon("copy")}</button></div>` : ""}${r.push ? `<b>${icon("upload")} Push back</b><span class="muted" style="font-size:13px">This repo's git is on this machine: add it as a remote and push to it. The token writes, lasts a day, and goes when the app restarts.</span><div class="copyline"><input readonly value="${esc(maskedUrl(r.push))}" title="the token is hidden: the button copies it whole"><button class="btn" id="push-copy">${icon("copy")}</button></div>` : ""}</div></div>` : ""}
+      ${r.clone ? `<div class="pop"><button class="btn primary" id="clone">${icon("code")}Clone</button><div class="panel" hidden><b>${icon("terminal")} Clone with git</b><span class="muted" style="font-size:13px">A real git remote in Cloudflare Artifacts. The token in it is read-only and lasts an hour.</span><div class="copyline"><input readonly value="${esc(maskedUrl(r.clone))}" title="the token is hidden: the button copies it whole"><button class="btn" id="clone-copy">${icon("copy")}</button></div><button class="btn" id="share-copy" title="a clone command whose read token lasts a day, to hand to someone">${icon("link")}Copy share link</button>${r.crewClone ? `<b>${icon("lock")} The crew's remote</b><span class="muted" style="font-size:13px">Private lines are blank in the remote above. This one has their real text, for the crew only; previews and deploys clone it.</span><div class="copyline"><input readonly value="${esc(maskedUrl(r.crewClone))}" title="the token is hidden: the button copies it whole"><button class="btn" id="crew-clone-copy">${icon("copy")}</button></div>` : ""}${r.push ? `<b>${icon("upload")} Push back</b><span class="muted" style="font-size:13px">This repo's git is on this machine: add it as a remote and push to it. The token writes, lasts a day, and goes when the app restarts.</span><div class="copyline"><input readonly value="${esc(maskedUrl(r.push))}" title="the token is hidden: the button copies it whole"><button class="btn" id="push-copy">${icon("copy")}</button></div>` : ""}</div></div>` : ""}
     </div>${r.here?.on ? `<div class="on-branch" id="on-branch">${icon("git-branch")}<span>On branch <code title="${esc(r.here.on)}">${esc(r.here.on)}</code> · <span class="muted">edits land here, not main</span></span><span class="grow"></span>
       <a class="btn" href="#/b/${esc(owner)}/${esc(repo)}/${encodeURIComponent(r.here.on)}" title="review it against main, then merge">${icon("git-merge")}Merge</a><button class="btn ghost" id="branch-main" title="read and edit main again; the branch stays open">${icon("undo-2")}Back to main</button></div>` : ""}<div class="gitbar" id="gitbar"></div>`;
   },
@@ -4838,7 +4839,7 @@ const views = {
     }
     views.wireInvites(owner, repo, r.invites);
     if ($("#limits")) { popover($("#limits")); $("#limits").addEventListener("click", () => { if (!$("#limits-panel").hidden) views.wireLimits(owner, repo); }); }
-    if ($("#clone")) { popover($("#clone")); $("#clone-copy").addEventListener("click", () => copy(r.clone, "Clone command copied")); $("#crew-clone-copy")?.addEventListener("click", () => copy(r.crewClone, "Crew clone command copied")); $("#push-copy")?.addEventListener("click", () => copy(r.push, "Remote command copied")); }
+    if ($("#clone")) { popover($("#clone")); $("#clone-copy").addEventListener("click", () => copy(r.clone, "Clone command copied")); $("#share-copy").addEventListener("click", async () => { const s = await api(`/repos/${owner}/${repo}/share`); if (s.command) copy(s.command, "Share command copied, good for a day"); }); $("#crew-clone-copy")?.addEventListener("click", () => copy(r.crewClone, "Crew clone command copied")); $("#push-copy")?.addEventListener("click", () => copy(r.push, "Remote command copied")); }
     $("#flip")?.addEventListener("click", async () => { await api(`/repos/${owner}/${repo}`, { visibility: r.visibility === "private" ? "public" : "private" }, "PUT"); route(); });
     document.querySelectorAll("[data-gitmap]").forEach((b) => (b.onclick = (e) => { e.stopPropagation(); gitMap({ owner, repo, view: "r" }); }));
     views.wireBranches(owner, repo, r);
@@ -6881,6 +6882,10 @@ async function commands() {
   if (session.admin) add("Admin", "map", "Survey: scaling walls", "GET /api/admin/scale", () => (location.hash = "#/admin/scale"));
   if (!u && session.mode === "accounts") add("Anywhere", "log-in", "Sign in", "POST /api/auth/sign-in/email", () => signInDrawer());
   if (u) add("Anywhere", "log-out", "Sign out", session.mode === "accounts" ? "POST /api/auth/sign-out" : "POST /api/logout", signOut);
+  // Scenes: the tour's chapters (or "id:2-3" for some of a chapter's steps), played or lined up after the one playing.
+  const sceneAsk = "a scene: " + TOUR_CHAPTERS.map(([k]) => k).join(", ") + ", or id:2-3 for some of its steps";
+  add("Tour", "play", "Play a scene…", "", async (spec) => { if (!tourSceneOk(spec)) throw new Error(`no scene "${spec}"`); tourSave({ scene: spec, i: tourSpan(spec)[0], dir: 1, ...(c.owner && c.repo && { owner: c.owner, repo: c.repo }) }); tour(); }, sceneAsk, true);
+  if (tourState()) add("Tour", "list-plus", "Queue a scene…", "", async (spec) => { if (!tourSceneOk(spec)) throw new Error(`no scene "${spec}"`); const t = tourState(); tourSave({ ...t, queue: [...(t.queue ?? []), spec] }); tour(); }, sceneAsk, true);
   return out;
 }
 
@@ -6980,6 +6985,12 @@ const RISKY_CALLS = new Set(["POST /repos/:o/:r/shares", "POST /repos/:o/:r/do/p
   "POST /repos/:o/:r/agents", "POST /repos/:o/:r/agents/stop", "POST /repos/:o/:r/invites", "PUT /repos/:o/:r", "DELETE /repos/:o/:r", "POST /repos/:o/:r/branches/:name/merge",
   "POST /repos/:o/:r/merges", "POST /repos/:o/:r/checks/run", "PUT /repos/:o/:r/checks/settings"]);
 const isRisky = (api) => RISKY_CALLS.has(api.replace(/\?.*$/, "").replace(/\/api\/repos\/[^/]+\/[^/]+/, "/repos/:o/:r"));
+
+// The scene playing and the step it's on, for the scene tools.
+function sceneNow() {
+  const t = tourState(), s = TOUR[t.i], [lo, hi] = tourSpan(t.scene ?? s.ch);
+  return { scene: t.scene ?? s.ch, step: t.i - lo + 1, of: hi - lo + 1, title: s.t ?? s.panel, says: s.say(t), ...(s.you && { you: s.you }), ...(t.queue?.length && { queue: t.queue }) };
+}
 const readTools = () => [
   { name: "current_page", title: "Where am I", description: "What the page shows now: its view (home, r repo, f file, l level, c cut, s share, u profile, search…), the repo, file or level, the selected lines, what you may do there, and who is signed in.",
     inputSchema: noInput, annotations: { readOnlyHint: true }, execute: async () => where() },
@@ -6998,6 +7009,33 @@ const readTools = () => [
       const f = fileArgs(a), doc = await api(`/repos/${f.owner}/${f.repo}/do/file?path=${encodeURIComponent(f.path)}`);
       return { rev: doc.rev, lines: doc.lines.map((l, i) => ({ n: i + 1, text: l.text, by: l.by, ...(l.private ? { private: true } : {}) })) };
     } },
+  { name: "list_scenes", title: "List scenes", description: "The scenes play_scene can play (the tour's chapters): each one's id, name and steps, with the steps that are a person's to press marked in `you`. A scene can be just some steps: \"id:2-3\" is the chapter's 2nd and 3rd, \"id:2\" its 2nd.",
+    inputSchema: noInput, annotations: { readOnlyHint: true }, execute: async () => TOUR_CHAPTERS.map(([id, , name]) => ({ id, name, steps: TOUR.filter((s) => s.ch === id).map((s) => ({ title: s.t ?? s.panel, ...(s.you && { you: s.you }) })) })) },
+  { name: "play_scene", title: "Play a scene", description: "Start a scene on screen, the way the tour does: a card and a fake cursor, and scene_step does each step's real action. `scene` is an id from list_scenes, or \"id:2-3\" for just those steps; `queue` lists scenes to play after it. Scenes with steps on a repo's file page open that repo's page themselves when given `owner`/`repo` (or when one is on screen). Answers with the first step.",
+    inputSchema: { type: "object", properties: { scene: { type: "string", description: "an id from list_scenes, or id:from-to for some of its steps" }, queue: { type: "array", items: { type: "string" } }, owner: { type: "string" }, repo: { type: "string" } }, required: ["scene"] },
+    execute: ({ scene, queue = [], owner, repo }) => asAgent(async () => {
+      for (const id of [scene, ...queue]) if (!tourSceneOk(id)) throw new Error(`no scene "${id}": list_scenes says which there are`);
+      const o = owner || ctx.owner, r = repo || ctx.repo;
+      tourSave({ scene, queue, i: tourSpan(scene)[0], dir: 1, ...(o && r && { owner: o, repo: r }) });
+      // A scene with steps on a file page opens the repo (its page lands on a file) rather than leaving that to scene_step.
+      const needs = [scene, ...queue].some((id) => { const [a, b] = tourSpan(id); return TOUR.slice(a, b + 1).some((x) => x.on === "repo"); });
+      if (needs && o && r && !(ctx.view === "f" && ctx.owner === o && ctx.repo === r)) { history.pushState(null, "", `#/r/${o}/${r}`); await route(); await routing; }
+      tour(); return sceneNow();
+    }) },
+  { name: "scene_step", title: "Step a scene", description: "Do the shown step of the scene playing: the cursor glides to it and its real action runs, then the scene moves on. Signing in, running an agent, merging and deploying are a person's to press, so on those it answers `held` and does nothing; `skip: true` moves past a step without doing it. Answers with what it did and the next step.",
+    inputSchema: { type: "object", properties: { skip: { type: "boolean" } } },
+    execute: ({ skip } = {}) => asAgent(async () => {
+      let t = tourState();
+      if (!t) throw new Error("no scene is playing: play_scene first");
+      const s = TOUR[t.i], here = t.owner && ctx.view === "f" && ctx.owner === t.owner && ctx.repo === t.repo;
+      if (s.on === "repo" && !here) return { held: "this step is on the toured repo's file page: open_page #/f/owner/repo/path, then scene_step again", ...sceneNow() };
+      const why = skip ? "" : tourPause(s, !!me());
+      if (why) return { held: `${why} A person presses this one; scene_step with skip: true moves past it.`, ...sceneNow() };
+      let did = "";
+      if (!skip) { const hot = s.at && $(s.at); if (hot) await tourCursor(hot); did = await tourRun(t, s); }
+      tourGo(t);
+      return { stepped: s.t ?? s.panel, ...(did && { did }), ...(tourState() ? sceneNow() : { scene: null, done: true }) };
+    }) },
   { name: "list_conflicts", title: "List merge conflicts", description: "On a branch's merge page (#/b/owner/repo/branch; the repo page's Branches links to it), its merge conflicts as their cards show them: branch, path, line, base, main, branch_text, the picks it takes, the suggestion if any, and how it's settled so far.",
     inputSchema: noInput, annotations: { readOnlyHint: true, untrustedContentHint: true }, execute: async () => {
       await routing;
@@ -7205,6 +7243,7 @@ const TOUR = [
   { ch: "play", ic: "gamepad-2", t: "Beat up the code", at: null, on: "any", href: (t) => t.owner ? `/play.html#r/${t.owner}/${t.repo}` : "/play.html#l/mitt",
     say: () => "The backrooms of a repo: its lines tear off the walls as paper birds, and you swat them with the rolled-up README. Bring friends and bop them too." },
 ];
+const tourName = (spec) => { const [id, ...steps] = String(spec).split(":"); return TOUR_CHAPTERS.find(([k]) => k === id)[2] + (steps.length ? ` (steps ${steps.join("")})` : ""); };
 const tourChapter = (ch) => TOUR.findIndex((s) => s.ch === ch);
 /** Start the tour: from the top, or (with a repo) at its code view. */
 const tourStart = (owner, repo) => tourSave(owner ? { owner, repo, i: tourChapter("code") } : { i: me() ? tourChapter("dig") : 0 });
@@ -7221,6 +7260,28 @@ function tourLand(steps, i, dir, here) {
   for (let k = i; k >= 0 && k < steps.length; k += dir) if (!steps[k].at || here(steps[k])) return k;
   return dir > 0 ? tourLand(steps, i, -1, here) : i;
 }
+// A scene is a chapter: its steps are data (a target, what it says, the real action) and run from tourSpan(id)[0] to [1].
+// Three things drive one: a person (Back and Next), a queue the person builds (t.queue; the card's queue button, or shift-click a chapter's icon),
+// and an agent (the play_scene and scene_step tools). All three go through the same steps, so the same rule holds:
+// tourPause leaves signing in, spending, merging and deploying to a person.
+// A scene is "id" (the whole chapter) or "id:2-3" (just its 2nd to 3rd step, or "id:2" for one), so a scene can teach one feature.
+const tourSpan = (spec) => {
+  const [id, from, to] = String(spec).split(/[:-]/), lo = TOUR.findIndex((s) => s.ch === id), hi = TOUR.findLastIndex((s) => s.ch === id);
+  if (!from || lo < 0) return [lo, hi];
+  const a = Math.min(Math.max(+from, 1), hi - lo + 1), b = Math.min(Math.max(+(to || from), a), hi - lo + 1);
+  return [lo + a - 1, lo + b - 1];
+};
+const tourSceneOk = (spec) => TOUR_CHAPTERS.some(([k]) => k === String(spec).split(":")[0]) && !Number.isNaN(tourSpan(spec)[0]);
+/** The state after the shown step: the next one, else the next queued scene, else null (the tour is over). */
+function tourNext(t) {
+  const hi = t.scene ? tourSpan(t.scene)[1] : TOUR.length - 1;
+  if (t.i < hi) return { ...t, i: t.i + 1, dir: 1 };
+  const [q, ...rest] = t.queue ?? [];
+  return q ? { ...t, scene: q, queue: rest, i: tourSpan(q)[0], dir: 1 } : null;
+}
+function tourGo(t) { const n = tourNext(t); if (n) { tourSave(n); tour(); } else tourStop(true); }
+/** A step's real action, as its Do it button runs it: what it says it did, or why it couldn't. */
+const tourRun = async (t, s) => { if (!s.go || s.done?.()) return ""; try { return (await s.go(t)) || ""; } catch (err) { return err.message; } };
 let tourTimer = null;
 // Each tour() draw is a generation; a drive that finds it has moved on stops quietly.
 let tourGen = 0;
@@ -7242,7 +7303,7 @@ async function tourDrive(gen, t, s, hot, said, next, last) {
   await tourWait(500); if (!live()) return;
   const why = tourPause(s, !!me()); if (why) return hold(why);
   if (hot) { await tourCursor(hot); if (!live()) return; }
-  if (s.go && !s.done?.()) { try { said.textContent = (await s.go(t)) || ""; } catch (err) { said.textContent = err.message; } }
+  if (s.go && !s.done?.()) said.textContent = await tourRun(t, s);
   await tourWait(3000); if (!live()) return;
   if (last) { tourStop(true); return; }
   next();
@@ -7255,8 +7316,9 @@ function tour() {
   const onRepo = !!t.owner && ["f", "r"].includes(ctx?.view) && ctx.owner === t.owner && ctx.repo === t.repo;
   const onFile = onRepo && ctx.view === "f";
   // On the toured file's page, skip what isn't there; anywhere else, a repo step waits with a way back.
-  if (onFile && TOUR[t.i]?.on === "repo") { const k = tourLand(TOUR, t.i, t.dir ?? 1, (s) => s.on !== "repo" || !!$(s.at)); if (k !== t.i) { t.i = k; tourSave(t); } }
-  const s = TOUR[t.i] ?? TOUR[0], away = s.on === "repo" && !onFile, last = t.i === TOUR.length - 1;
+  const [lo, hi] = t.scene ? tourSpan(t.scene) : [0, TOUR.length - 1];
+  if (onFile && TOUR[t.i]?.on === "repo") { const k = lo + tourLand(TOUR.slice(lo, hi + 1), t.i - lo, t.dir ?? 1, (s) => s.on !== "repo" || !!$(s.at)); if (k !== t.i) { t.i = k; tourSave(t); } }
+  const s = TOUR[t.i] ?? TOUR[0], away = s.on === "repo" && !onFile, last = t.i === hi && !t.queue?.length;
   const ch = TOUR_CHAPTERS.find(([k]) => k === s.ch), shown = (x) => x.ch === s.ch && (!onFile || x.on !== "repo" || !x.at || !!$(x.at));
   const mine = TOUR.filter(shown), n = TOUR.slice(0, t.i).filter(shown).length + 1;
   const title = s.t ?? (s.panel && $(s.at)?.querySelector("h2")?.textContent.trim()) ?? s.panel;
@@ -7265,11 +7327,12 @@ function tour() {
   const goLabel = away ? (!t.owner ? "Dig one" : onRepo && !fileLink ? "Reload" : "Take me there") : typeof s.label === "function" ? s.label() : s.label ?? (s.href ? (s.open ? "Open it" : "Go") : "Do it");
   const card = document.createElement("div"); card.className = "tour"; card.setAttribute("role", "dialog"); card.setAttribute("aria-label", "Let's show you around");
   card.innerHTML = `<div class="tour-top"><span class="muted">Let's show you around!</span><span class="grow"></span><button class="btn ghost" data-x title="end the tour">${icon("x")}</button></div>
-    <div class="tour-chs" role="group" aria-label="chapters">${TOUR_CHAPTERS.map(([k, ic, name]) => `<button type="button" class="${k === s.ch ? "on" : ""}" data-ch="${k}" title="${name}" aria-label="${name}"${k === s.ch ? ' aria-current="step"' : ""}>${icon(ic)}</button>`).join("")}<span class="muted">${esc(ch[2])}</span></div>
+    <div class="tour-chs" role="group" aria-label="chapters">${TOUR_CHAPTERS.map(([k, ic, name]) => `<button type="button" class="${k === s.ch ? "on" : ""}" data-ch="${k}" title="${name} (${t.qm ? "queues it next" : "shift-click to queue it next"})" aria-label="${name}"${k === s.ch ? ' aria-current="step"' : ""}>${icon(ic)}</button>`).join("")}<button type="button" class="btn ghost${t.qm ? " on" : ""}" data-qm aria-pressed="${!!t.qm}" title="queue: then pick the chapters to play after this one">${icon("list-plus")}${t.qm ? "Pick chapters" : "Queue"}</button><span class="muted">${esc(ch[2])}</span></div>
     <div class="tour-top">${icon(s.ic)}<b>${esc(title)}</b><span class="muted tour-n">${n}/${mine.length}</span></div>
     <div class="tour-dots">${mine.map((_, k) => `<i class="${k < n ? "on" : ""}"></i>`).join("")}</div>
     <p>${esc(say)}</p><p class="tour-said" aria-live="polite"></p>
-    <div class="tour-btns">${t.i ? `<button class="btn" data-back title="back (←)">${icon("arrow-left")}</button>` : ""}<button class="btn" data-auto title="${t.auto ? "pause: take the wheel" : "play: a cursor does the steps for you, with real actions"}">${icon(t.auto ? "pause" : "play")}</button><span class="grow"></span>
+    ${t.queue?.length ? `<p class="muted tour-queue">Up next: ${esc(t.queue.map(tourName).join(", "))} <button type="button" class="btn ghost" data-unqueue title="clear the queue">${icon("x")}</button></p>` : ""}
+    <div class="tour-btns">${t.i > lo ? `<button class="btn" data-back title="back (←)">${icon("arrow-left")}</button>` : ""}<button class="btn" data-auto title="${t.auto ? "pause: take the wheel" : "play: a cursor does the steps for you, with real actions"}">${icon(t.auto ? "pause" : "play")}</button><span class="grow"></span>
       ${away || ((s.go || s.href) && !s.done?.()) ? `<button class="btn${last || away ? " primary" : ""}" data-go>${icon(away ? "arrow-right-to-line" : "zap")}${esc(goLabel)}</button>` : ""}
       ${last ? `<button class="btn" data-x>${icon("check")}Done</button>` : `<button class="btn primary" data-next title="next (→)">Next${icon("arrow-right")}</button>`}</div>`;
   document.body.append(card); icons();
@@ -7281,18 +7344,23 @@ function tour() {
     hot.scrollIntoView?.({ block: s.at === "#ghdig" ? "center" : "nearest", behavior: "smooth" });
   }
   const step = (i, dir) => { if (i < 0 || i >= TOUR.length) return; tourSave({ ...t, i, dir }); tour(); };
-  if (t.auto && !away) void tourDrive(tourGen, t, s, hot, said, () => step(t.i + 1, 1), last);
+  if (t.auto && !away) void tourDrive(tourGen, t, s, hot, said, () => tourGo(t), last);
   else if (t.auto) { delete t.auto; tourSave(t); }
   card.addEventListener("click", async (e) => {
     const b = e.target.closest("button"); if (!b) return;
     if ("x" in b.dataset) return tourStop(true);
-    if (b.dataset.ch) return step(tourChapter(b.dataset.ch), 1);
+    if ("qm" in b.dataset) { tourSave({ ...t, qm: !t.qm }); return tour(); }
+    if ("unqueue" in b.dataset) { tourSave({ ...t, queue: [] }); return tour(); }
+    if (b.dataset.ch) {
+      if (e.shiftKey || t.qm) { tourSave({ ...t, queue: [...(t.queue ?? []), b.dataset.ch] }); return tour(); }
+      tourSave({ ...t, i: tourChapter(b.dataset.ch), dir: 1, scene: undefined }); return tour();
+    }
     if ("auto" in b.dataset) { tourSave({ ...t, auto: !t.auto }); return tour(); }
     if ("back" in b.dataset) return step(t.i - 1, -1);
-    if ("next" in b.dataset) return step(t.i + 1, 1);
+    if ("next" in b.dataset) return tourGo(t);
     if (!("go" in b.dataset)) return;
     if (away) return !t.owner ? step(tourChapter("dig"), -1) : fileLink ? (location.hash = fileLink.getAttribute("href")) : onRepo ? location.reload() : (location.hash = `#/r/${t.owner}/${t.repo}`);
-    if (s.href) { if (!last) step(t.i + 1, 1); return s.open ? open(s.href(t), "_blank", "noopener") : (location.href = s.href(t)); }
+    if (s.href) { if (!last) tourGo(t); return s.open ? open(s.href(t), "_blank", "noopener") : (location.href = s.href(t)); }
     b.disabled = true; said.textContent = "…";
     try { said.textContent = (await s.go(t)) || ""; } catch (err) { said.textContent = err.message; }
     finally { b.disabled = false; }

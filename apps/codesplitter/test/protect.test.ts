@@ -69,3 +69,17 @@ test("an agent run's batch that touches a build file waits for an accept even wh
   expect((await timer.json() as { build: string[] }).build).toEqual(["codesplitter.ci"]);
   expect((await post("ryan", "/api/repos/ryan/lab/branches/agent-run-8/merge", { build_ok: true })).status).toBe(200);
 });
+
+test("the path policy files are the owner's on main, protect-main or not (#1567)", async () => {
+  const { post } = await app();
+  for (const path of [".gitattributes", "codesplitter.ci"]) {
+    expect((await post("ryan", "/api/repos/ryan/lab/files", { path, content: "" })).status).toBe(201);
+    expect((await post("sam", `/api/repos/ryan/lab/do/ops?path=${path}`, edit)).status).toBe(403);
+    expect((await post("sam", `/api/repos/ryan/lab/do/commit?path=${path}`, {})).status).toBe(403);
+    expect((await post("ryan", `/api/repos/ryan/lab/do/ops?path=${path}`, edit)).status).toBe(200);
+  }
+  expect((await post("sam", "/api/repos/ryan/lab/do/ops?path=a.js", edit)).status).toBe(200);
+  // A branch is how the crew proposes a change.
+  await post("sam", "/api/repos/ryan/lab/branches", { name: "pol" });
+  expect((await post("sam", "/api/repos/ryan/lab/do/ops?path=.gitattributes&branch=pol", edit)).status).toBe(200);
+});

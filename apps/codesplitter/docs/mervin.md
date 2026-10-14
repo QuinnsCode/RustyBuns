@@ -234,6 +234,16 @@ ruleset on `main` still decides. After a wave lands, run it again: the board is 
 are stamped so the owner can tail a run. Not done yet: running it inside a codeSplitter sandbox box, and pushing
 alerts as it goes (the stdout lines are the feed for that).
 
+### Mervin speaks up (#1519)
+
+After the verdicts the plan prints `warning:` lines and a `suggest` line per held PR. When three or more open PRs
+share files or collide (a migration stamp, an export, a route) he says "a lot of overlap incoming", offers the clean
+ones as a `--stack`, and names the red PR that blocks the most others: fix that one first. Each held PR gets a
+recommendation: a human (a card, a lockfile, a migration, a deploy file, or a file the engine settled but differs),
+a swarm (three or more PRs wait behind it), two agents (a clash across two PRs, or a conflict with main), one agent
+(small, alone), or no one yet (it only waits on something else). It only advises: you decide the order and can
+override. The advice is recorded in the round file.
+
 ## Where Mervin is weak
 
 - **Code outside JS/TS is only flagged.** `src/lint.ts` parses only JavaScript, TypeScript and HTML. For the rest

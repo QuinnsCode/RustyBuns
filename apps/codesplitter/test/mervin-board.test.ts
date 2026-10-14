@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ciOf, diskCache, order, run, score, type BoardPr, type StageCache } from "../scripts/mervin-board.ts";
+import { ciOf, diskCache, order, regenerate, run, score, type BoardPr, type StageCache } from "../scripts/mervin-board.ts";
 
 // scripts/mervin-board.ts: the open PRs merged in a sandbox one stage at a time, then scored against what landed.
 describe("mervin board", () => {
@@ -196,7 +196,7 @@ describe("mervin merge round blockers (#1542)", () => {
   });
 });
 
-import { buildStack, stackable } from "../scripts/mervin-merge.ts";
+import { advise, buildStack, stackable } from "../scripts/mervin-merge.ts";
 describe("mervin stack", () => {
   test("clean PRs join as merge commits, a clashing one is left out, only certain/agree are picked", () => {
     const repo = mkdtempSync(join(tmpdir(), "mervin-stack-"));
@@ -272,5 +272,52 @@ describe("mervin board: a conflict with main", () => {
     expect(f2!.main).toBe(true);
     expect(f2!.after).toEqual([]); // card on #1's line is not the cause: nothing landed before it
     rmSync(repo, { recursive: true, force: true });
+  });
+});
+
+describe("mervin advice (#1519)", () => {
+  const f = (path: string, tier: "certain" | "card" | "agree" = "certain", after: number[] = []) => ({ path, tier, why: "", after });
+  const st = (pr: number, files = [f(`f${pr}.ts`)], extra = {}) => ({ pr, head: "h", base: "b", files, ...extra });
+  const bd = (stages: any[], clashes: any[] = []) => ({ main: "m", at: "", stages, written: [], skipped: [], clashes }) as any;
+  const red: BoardPr = { number: 1, headRefOid: "h", statusCheckRollup: [{ name: "apps", conclusion: "FAILURE", status: "COMPLETED" }] };
+  test("a red PR that blocks others ranks first and gets a swarm; easy ones are offered as a stack", () => {
+    const board = bd([st(1, [f("a.ts")]), st(2, [f("a.ts", "certain", [1])]), st(3, [f("a.ts", "certain", [1])]), st(4, [f("a.ts", "certain", [1])]), st(5), st(6)]);
+    const h = advise(board, decide(board, [red]));
+    expect(h.advice[0]).toMatchObject({ pr: 1, who: "a swarm", blocks: [2, 3, 4] });
+    expect(h.warnings.some((w) => w.includes("overlap"))).toBe(true);
+    expect(h.warnings.some((w) => w.includes("#1 blocks"))).toBe(true);
+    expect(h.stack).toEqual([5, 6]);
+    expect(h.advice.find((a) => a.pr === 2)!.who).toBe("none");
+  });
+  test("a lockfile or migration goes to a human, a clash across two PRs to two agents, a lone red PR to one", () => {
+    const board = bd([st(1, [f("bun.lock")]), st(2, [f("x.ts")]), st(3, [f("y.ts")]), st(4, [f("z.ts")]), st(5, [f("w.ts")])],
+      [{ kind: "export", key: "x.ts foo", prs: [2, 3] }, { kind: "migration", key: "m/1", prs: [5] }]);
+    const prs: BoardPr[] = [1, 4].map((n) => ({ ...red, number: n }));
+    const by = Object.fromEntries(advise(board, decide(board, prs)).advice.map((a) => [a.pr, a.who]));
+    expect(by).toEqual({ 1: "a human", 2: "two agents", 3: "two agents", 4: "one agent", 5: "a human" });
+  });
+  test("quiet when nothing overlaps", () => {
+    const board = bd([st(1), st(2)]);
+    const h = advise(board, decide(board, []));
+    expect(h.advice).toEqual([]);
+    expect(h.warnings.some((w) => w.includes("overlap"))).toBe(false);
+  });
+});
+
+describe("mervin board: a generated file (#1540)", () => {
+  test("REFERENCE.md's Layout table is rebuilt from the merged tree, and its clean merge is a mervin row", () => {
+    const root = mkdtempSync(join(tmpdir(), "mervin-gen-"));
+    const app = join(root, "apps/codesplitter");
+    mkdirSync(join(app, "src"), { recursive: true });
+    writeFileSync(join(app, "src/a.ts"), "// Layout: the a\nexport {};\n");
+    writeFileSync(join(app, "src/folder-mirror.ts"), "// Layout: the mirror\nexport {};\n");
+    const ref = (rows: string[]) => `# R\n\n## Layout\n\n| File | What |\n|---|---|\n${rows.join("\n")}\n\nafter\n`;
+    writeFileSync(join(app, "REFERENCE.md"), ref(["| `src/a.ts` | the a |"]));
+    regenerate(root);
+    const out = readFileSync(join(app, "REFERENCE.md"), "utf8");
+    expect(out).toContain("| `src/folder-mirror.ts` | the mirror |");
+    expect(out).toContain("| `migrations/` |");
+    expect(out.endsWith("\nafter\n")).toBe(true);
+    rmSync(root, { recursive: true, force: true });
   });
 });

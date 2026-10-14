@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { BOARD, DEXTER, createHelpers, holdFrom, repoWith, type Spawn } from "../ester/run.ts";
@@ -11,6 +11,7 @@ const repo = () => {
   writeFileSync(path.join(dir, BOARD), "");
   mkdirSync(path.join(dir, "apps/agent-office/ester"), { recursive: true });
   writeFileSync(path.join(dir, DEXTER), "");
+  mkdirSync(path.join(dir, "node_modules"));
   return dir;
 };
 const settle = () => new Promise((r) => setTimeout(r, 5));
@@ -74,4 +75,15 @@ test("the routes run a helper in the floor whose repo has the script, found from
   const none = await officeTriage(mkdtempSync(path.join(tmpdir(), "rb-ester-data-")), () => [{ id: "a", dir: other }])("POST", new URL("/__rb/helpers/mervin", "http://o"), true);
   expect(none!.status).toBe(404);
   expect(JSON.stringify(none!.body)).toContain(other);
+});
+
+test("a checkout with no node_modules is installed before the helper runs", async () => {
+  const seen: string[][] = [];
+  const { mervin } = createHelpers(async (cmd) => (seen.push(cmd.slice(1)), 0));
+  const dir = repo();
+  rmSync(path.join(dir, "node_modules"), { recursive: true });
+  mervin.start(dir);
+  await settle();
+  expect(seen).toEqual([["install"], [expect.stringMatching(/mervin-board\.ts$/)]]);
+  expect(mervin.state().phase).toBe("green");
 });

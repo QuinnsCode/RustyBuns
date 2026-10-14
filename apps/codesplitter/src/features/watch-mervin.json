@@ -1,0 +1,5 @@
+{
+  "icon": "play",
+  "title": "Watch Mervin work",
+  "what": "Replay a merge round on a page: each PR a card moving through the waves, files merging one at a time with their tier, a card popping out when Mervin asks. Play, pause, stop, step and a speed slider."
+}
