@@ -151,6 +151,19 @@ describe("settled without asking (#933)", () => {
       .toBe("// routes\nimport { beamRoutes } from \"./beam.ts\";\nimport { kick, land, mirrorTag, seeGit, turnRoute } from \"./mirror.ts\";");
   });
 
+  test("a section one side deleted whole stays deleted when the other only edited or trimmed it (docs/mervin.md Next, #1420)", () => {
+    const doc = (next: string[]) => ["Intro.", "", "## Measured", "", "A table.", ...(next.length ? ["", "## Next", "", ...next] : [])].join("\n");
+    const was = doc(["1. Run the corpus.", "2. Run the score.", "3. Build the arbiter."]);
+    const gone = doc([]);
+    // Main deleted it, the branch edited an item (and so did one that also trimmed an item).
+    expect(merged(was, gone, doc(["1. Run the corpus.", "2. Run the score on Rails.", "3. Build the arbiter."]), "docs/m.md")).toBe(gone);
+    expect(merged(was, gone, doc(["1. Run the corpus.", "3. Build the arbiter, again."]), "docs/m.md")).toBe(gone);
+    // The branch deleted it, main edited it.
+    expect(merged(was, doc(["1. Run the corpus.", "2. Run the score on Rails.", "3. Build the arbiter."]), gone, "docs/m.md")).toBe(gone);
+    // A delete of only some of the section against an edit of the rest is still asked.
+    expect(conflicts(sides(was, doc(["3. Build the arbiter."]), doc(["1. Run the corpus.", "2. Run the score on Rails.", "3. Build the arbiter."])), "docs/m.md")).toHaveLength(1);
+  });
+
   test("in prose and comments the rename guard skips short and common words; code keeps it whole (the README bullet)", () => {
     const was = "- **The map.** A panel opens a map of where it came from. Click a dot to revert it.";
     const onMain = "- **The vein.** The panel opens the vein, its history: where it came from. Click a dot to revert it.";

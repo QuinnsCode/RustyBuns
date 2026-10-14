@@ -171,6 +171,8 @@ export function kindOf(path: string): Kind {
  *   JSON, YAML, TOML) the merge would define twice is a conflict; and in code,
  *   lines added right next to lines the other side deleted are a conflict too
  *   (the deleted lines may be what the new ones use). Prose is left loose.
+ *   In prose, a section (a heading and its lines) one side deleted whole stays deleted when the other only
+ *   edited or trimmed lines in it (#1420); it asks only if the other side added lines or the delete was partial.
  * - a merge that would bring git's conflict markers into main, or leave a
  *   JSON file that won't parse (see broken).
  *
@@ -333,7 +335,10 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
     const ms = within(main, mainPos), bs = within(branch, branchPos), key = regionKey(base, g);
     const join = (ls: Line[]) => ls.length ? ls.map((l) => l.text).join("\n") : null;
     // Both reshaped it the same way: nothing to do.
-    const pick = join(ms) === join(bs) ? "main" : g.pick ?? resolve[key], own = written(pick);
+    // A section (a heading and what's under it) one side deleted whole while the other only edited or trimmed it: it stays deleted (prose only).
+    const bl0 = base.lines.filter((_, i) => covers(g, 2 * i + 1));
+    const sectionGone = kind === "prose" && (!ms.length || !bs.length) && bl0.some((l) => /^#{1,6}\s/.test(l.text)) && (ms.length ? ms : bs).every((l) => was.has(l.id)) ? (bs.length ? "main" : "branch") : undefined;
+    const pick = join(ms) === join(bs) ? "main" : g.pick ?? resolve[key] ?? sectionGone, own = written(pick);
     // Just before the stretch, unless something already went in there.
     // A line an earlier stretch swapped out stands for what went in its place.
     const before = () => {
