@@ -1,7 +1,9 @@
 // Dexter, the office's token trimmer (called on from the page, ester/index.ts). He reads Claude Code's session
 // transcripts for this repo (~/.claude/projects/*RustyBuns*, the last DEXTER_HOURS, default 24), adds up the tokens, and
 // names the tools whose results were biggest, since a result stays in the context and is paid for on every turn after.
-// He prints short, plain lines, and one tip per offender. No model call, so asking him costs nothing.
+// He prints short, plain lines, and one tip per offender. He also proposes trims to the standing text every session pays
+// for (CLAUDE.md, AGENTS.md, the memory index): filler words and long phrases cut to short plain ones, printed as a diff
+// to approve (`git apply --unidiff-zero`). He never edits a file. No model call, so asking him costs nothing.
 // Run: bun apps/agent-office/ester/dexter.ts
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -70,6 +72,61 @@ export function render(r: Report): string[] {
   return out;
 }
 
+/** Phrase -> short word. Only filler and wordy phrases; jargon that steers is left alone. */
+const CAVEMAN: [RegExp, string][] = [
+  [/\bin order to\b/gi, "to"],
+  [/\bdue to the fact that\b/gi, "because"],
+  [/\bin the event that\b/gi, "if"],
+  [/\bat this point in time\b/gi, "now"],
+  [/\bit is important to (?:note|remember) that\s+/gi, ""],
+  [/\bis able to\b/gi, "can"],
+  [/\ba number of\b/gi, "some"],
+  [/\bprior to\b/gi, "before"],
+  [/\butili[sz]e\b/gi, "use"],
+  [/\b(?:please|basically|essentially|actually|really|simply)\s+(?=\S)/gi, ""],
+  [/\b(?:please|basically|essentially|actually|really|simply)\s+$/gi, ""],
+  [/(\S)  +/g, "$1 "],
+];
+const KEEP_AS_IS = /(`[^`]*`|\[[^\]]*\]\([^)]*\)|https?:\/\/\S+)/;
+
+/** One prose line, trimmed. Code spans, links and URLs are left whole; a capital at the start stays a capital. */
+export function trimLine(line: string): string {
+  const out = line.split(KEEP_AS_IS).map((part, i) => (i % 2 ? part : CAVEMAN.reduce((p, [re, to]) => p.replace(re, to), part))).join("").replace(/[ \t]+$/, "");
+  return /^\s*[A-Z]/.test(line) ? out.replace(/^(\s*)([a-z])/, (_, sp, c) => sp + c.toUpperCase()) : out;
+}
+
+/** A diff of trims for one file's text (null when nothing to trim). Skips code fences, tables, front matter and headings. */
+export function trimDiff(name: string, src: string): { diff: string; saved: number } | null {
+  const lines = src.split("\n"), hunks: string[] = [];
+  let fence = false, front = lines[0] === "---", saved = 0;
+  lines.forEach((l, i) => {
+    if (/^\s*```/.test(l)) fence = !fence;
+    if (i > 0 && front && l === "---") front = false;
+    if (fence || front || /^\s*(\||#|```|---)/.test(l) || !l.trim()) return;
+    const t = trimLine(l);
+    if (t === l) return;
+    saved += Math.round((l.length - t.length) / 4);
+    hunks.push(`@@ -${i + 1} +${i + 1} @@\n-${l}\n+${t}`);
+  });
+  return hunks.length ? { diff: [`--- a/${name}`, `+++ b/${name}`, ...hunks].join("\n"), saved } : null;
+}
+
+/** The standing text of this repo: root CLAUDE.md and AGENTS.md, and the memory index of each project dir for it. */
+export function standing(repo: string, projects: string): [string, string][] {
+  const files: [string, string][] = ["CLAUDE.md", "AGENTS.md"].map((n) => [n, path.join(repo, n)]);
+  if (existsSync(projects))
+    for (const d of readdirSync(projects).filter((d) => d.includes("RustyBuns"))) files.push([path.join(projects, d, "memory/MEMORY.md").replace(homedir(), "~"), path.join(projects, d, "memory/MEMORY.md")]);
+  return files.filter(([, f]) => existsSync(f));
+}
+
+/** Dexter's proposal: the diff of every trim, then what it saves. Nothing is written. */
+export function propose(files: [string, string][]): string[] {
+  const diffs = files.flatMap(([name, f]) => trimDiff(name, readFileSync(f, "utf8")) ?? []);
+  if (!diffs.length) return ["Standing text is already short. Nothing to cut."];
+  const saved = diffs.reduce((n, d) => n + d.saved, 0);
+  return [`Trims for the text every session pays for (about ${k(saved)} tokens a session). Not applied. To take them, save as a file and run git apply --unidiff-zero.`, ...diffs.map((d) => d.diff)];
+}
+
 /** The transcripts of this repo (and its worktrees) touched in the last `hours`. */
 export function recent(root: string, hours: number, now = Date.now()): string[] {
   if (!existsSync(root)) return [];
@@ -83,5 +140,5 @@ if (import.meta.main) {
   const files = recent(path.join(homedir(), ".claude/projects"), Number(process.env.DEXTER_HOURS) || 24);
   const r: Report = { sessions: files.length, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map() };
   for (const f of files) tally(readFileSync(f, "utf8").split("\n"), r);
-  console.log(render(r).join("\n"));
+  console.log([...render(r), "", ...propose(standing(process.cwd(), path.join(homedir(), ".claude/projects")))].join("\n"));
 }
