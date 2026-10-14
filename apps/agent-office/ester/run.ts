@@ -1,4 +1,4 @@
-// The office's two helpers, called on from the page (ester/index.ts). Both are apps/codesplitter/scripts/mervin-board.ts:
+// The office's three helpers (Dexter, who trims tokens, is ester/dexter.ts), called on from the page (ester/index.ts). Both are apps/codesplitter/scripts/mervin-board.ts:
 // Mervin lists the open PRs and how they merge (no flags), Ester is its `--check`, which builds the merged tree in a
 // sandbox and, when it goes red, sorts each failing test by who owns it (scripts/ester.ts). Testing is the bottleneck she
 // takes, merging the one he takes, and her `Ester says hold` list is what he is handed. This runs them in the floor's
@@ -44,22 +44,28 @@ export const bunSpawn: Spawn = async (cmd, cwd, onLine) => {
 export const holdFrom = (lines: string[]) =>
   (lines.findLast((l) => l.startsWith("Ester says hold:")) ?? "").match(/#(\d+)/g)?.map((n) => Number(n.slice(1))) ?? [];
 
-export const HELPERS = { ester: ["--check"], mervin: [] as string[] } as const;
+/** What each helper runs: a script under the floor's repo, from `cwd`, with `args`. */
+export const DEXTER = "apps/agent-office/ester/dexter.ts";
+export const HELPERS = {
+  ester: { script: BOARD, cwd: "apps/codesplitter", args: ["--check"] },
+  mervin: { script: BOARD, cwd: "apps/codesplitter", args: [] as string[] },
+  dexter: { script: DEXTER, cwd: ".", args: [] as string[] },
+} as const;
 export type Helper = keyof typeof HELPERS;
 export const isHelper = (n: string): n is Helper => Object.hasOwn(HELPERS, n);
 
 /** One helper: `start` begins a run in a floor's repo unless one is going, `state` is how it stands. */
-export function createHelper(args: readonly string[], spawn: Spawn = bunSpawn, bun = "bun") {
+export function createHelper(h: { script: string; cwd: string; args: readonly string[] }, spawn: Spawn = bunSpawn, bun = "bun") {
   let s: EsterState = { phase: "idle", lines: [], hold: [] };
   return {
     state: (): EsterState => ({ ...s, lines: [...s.lines], hold: [...s.hold] }),
     /** Starts the run in `repo`. It goes on after this answers; null when it did start. */
     start(repo: string): { status: number; error: string } | null {
       if (s.phase === "running") return { status: 409, error: "Already on it" };
-      if (!existsSync(path.join(repo, BOARD))) return { status: 404, error: `The helpers work from ${BOARD}, and this floor's repo doesn't have it` };
+      if (!existsSync(path.join(repo, h.script))) return { status: 404, error: `This helper works from ${h.script}, and this floor's repo doesn't have it` };
       s = { phase: "running", lines: [], hold: [], startedAt: Date.now() };
       const mine = s;
-      spawn([bun, "scripts/mervin-board.ts", ...args], path.join(repo, "apps/codesplitter"), (line) => {
+      spawn([bun, path.join(repo, h.script), ...h.args], path.join(repo, h.cwd), (line) => {
         mine.lines.push(line);
         if (mine.lines.length > KEEP) mine.lines.shift();
       }).then(
@@ -71,5 +77,5 @@ export function createHelper(args: readonly string[], spawn: Spawn = bunSpawn, b
   };
 }
 
-/** Both helpers of an office. */
-export const createHelpers = (spawn?: Spawn) => ({ ester: createHelper(HELPERS.ester, spawn), mervin: createHelper(HELPERS.mervin, spawn) });
+/** The helpers of an office. */
+export const createHelpers = (spawn?: Spawn) => ({ ester: createHelper(HELPERS.ester, spawn), mervin: createHelper(HELPERS.mervin, spawn), dexter: createHelper(HELPERS.dexter, spawn) });

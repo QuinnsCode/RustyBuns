@@ -2,13 +2,15 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { BOARD, createHelpers, holdFrom, type Spawn } from "../ester/run.ts";
+import { BOARD, DEXTER, createHelpers, holdFrom, type Spawn } from "../ester/run.ts";
 import { officeTriage } from "../triage/server.ts";
 
 const repo = () => {
   const dir = mkdtempSync(path.join(tmpdir(), "rb-ester-"));
   mkdirSync(path.dirname(path.join(dir, BOARD)), { recursive: true });
   writeFileSync(path.join(dir, BOARD), "");
+  mkdirSync(path.join(dir, "apps/agent-office/ester"), { recursive: true });
+  writeFileSync(path.join(dir, DEXTER), "");
   return dir;
 };
 const settle = () => new Promise((r) => setTimeout(r, 5));
@@ -41,7 +43,7 @@ test("a run goes one at a time, keeps what it printed, and says hold when the bo
   finish(0);
   await settle();
   expect(mervin.state().phase).toBe("green");
-  expect(seen).toEqual([["scripts/mervin-board.ts", "--check"], ["scripts/mervin-board.ts"]]);
+  expect(seen).toEqual([[expect.stringMatching(/mervin-board\.ts$/), "--check"], [expect.stringMatching(/mervin-board\.ts$/)]]);
 });
 
 test("a crash or a repo without the board script is an error, not a hang", async () => {
@@ -56,7 +58,7 @@ test("the routes: a POST from the page needs the header, and only Ester and Merv
   const dir = repo();
   const routes = officeTriage(mkdtempSync(path.join(tmpdir(), "rb-ester-data-")), () => [{ id: "f1", dir }]);
   const to = (m: string, p: string, trusted = true) => routes(m, new URL(p, "http://o"), trusted);
-  expect((await to("GET", "/__rb/helpers"))!.body).toMatchObject({ ester: { phase: "idle" }, mervin: { phase: "idle" } });
+  expect((await to("GET", "/__rb/helpers"))!.body).toMatchObject({ ester: { phase: "idle" }, mervin: { phase: "idle" }, dexter: { phase: "idle" } });
   expect((await to("POST", "/__rb/helpers/ester", false))!.status).toBe(403);
   expect((await to("POST", "/__rb/helpers/clippy"))!.status).toBe(404);
   expect((await to("GET", "/__rb/helpers/ester"))!.status).toBe(405);
