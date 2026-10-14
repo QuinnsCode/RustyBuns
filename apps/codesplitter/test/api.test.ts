@@ -50,3 +50,15 @@ describe("the API reference", () => {
     expect(ref.groups).toEqual(GROUPS);
   });
 });
+
+describe("a 401 from the API", () => {
+  test("points at the OAuth protected-resource metadata", async () => {
+    const call = await local();
+    afterAll(() => call.close());
+    const r = await call(null, "/api/me");
+    expect(r.status).toBe(401);
+    expect(r.headers.get("www-authenticate")).toMatch(/^Bearer .*resource_metadata="[^"]+\/\.well-known\/oauth-protected-resource"/);
+    const meta = await call(null, new URL(r.headers.get("www-authenticate")!.match(/resource_metadata="([^"]+)"/)![1]!).pathname);
+    expect(meta.status).toBe(200);
+  });
+});

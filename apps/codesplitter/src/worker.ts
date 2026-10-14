@@ -888,7 +888,14 @@ const app = {
     catch (e) { if (churn) forgetSession(req, env); if (tallied(req)) { const t = record(env, req, 500, !!ctx); if (ctx) ctx.waitUntil(t); else await t; } throw e; }
     if (churn) forgetSession(req, env);
     if (tallied(req)) { const t = record(env, req, res.status, !!ctx); if (ctx) ctx.waitUntil(t); else await t; }
-    return p[0] === "api" ? withTiming(req, res, start) : res;
+    if (p[0] !== "api") return res;
+    // A 401 that names no challenge leads an agent nowhere: point it at the OAuth metadata (RFC 9728).
+    if (res.status === 401 && !res.headers.has("www-authenticate")) {
+      const out = new Response(res.body, res);
+      out.headers.set("www-authenticate", `Bearer realm="codeSplitter", resource_metadata="${new URL(req.url).origin}/.well-known/oauth-protected-resource"`);
+      res = out;
+    }
+    return withTiming(req, res, start);
   },
 
   // The Cron Triggers (rustybuns.config.ts crons). Hourly: each repo's dependency doctor runs
