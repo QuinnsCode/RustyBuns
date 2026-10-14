@@ -68,3 +68,52 @@ export function report(vs: Verdict[], runs: { dir: string; cmd: string; ms: numb
 
 /** The PRs to hold back from the merge wave: every PR named by an own, wait or blocks verdict. */
 export const hold = (vs: Verdict[]) => [...new Set(vs.filter((v) => v.owner !== "main" && v.owner !== "flaky").flatMap((v) => v.prs))].sort((a, b) => a - b);
+
+/** The packages whose version range differs between two package.json texts (null for a file that doesn't exist). */
+export function packagesChanged(before: string | null, after: string | null): string[] {
+  const deps = (text: string | null) => {
+    try {
+      const j = JSON.parse(text ?? "{}");
+      return Object.assign({}, ...["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"].map((k) => j[k] ?? {})) as Record<string, string>;
+    } catch { return {}; }
+  };
+  const a = deps(before), b = deps(after);
+  return [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((p) => a[p] !== b[p]).sort();
+}
+
+/** One row per PR on the board: the packages its manifests changed, how its failures were judged, whether it clashed. */
+export interface Row { pr: number; apps: string[]; pkgs: string[]; owners: Owner[]; clashed: boolean }
+
+/** Rows from a board's stages, Ester's verdicts and Mervin's clashes (each clash marks every PR in it). */
+export function rows(stages: (Stage & { pkgs?: string[] })[], vs: Verdict[], clashes: { prs: number[] }[]): Row[] {
+  return stages.map((s) => ({
+    pr: s.pr,
+    apps: [...new Set(s.files.filter((f) => f.tier !== "card").map((f) => f.path.match(/^apps\/[^/]+/)?.[0]).filter((a): a is string => !!a))].sort(),
+    pkgs: s.pkgs ?? [],
+    owners: vs.filter((v) => v.prs.includes(s.pr)).map((v) => v.owner),
+    clashed: clashes.some((c) => c.prs.includes(s.pr)),
+  }));
+}
+
+export interface Hurt { pkg: string; touches: number; broke: number; clashes: number; rate: number }
+
+/** Per package: PRs touching it, how many were `blocks` or `own`, how many clashed, and clashes as a share of touches. */
+export function hurting(rs: Row[]): Hurt[] {
+  const by = new Map<string, Hurt>();
+  for (const r of rs) for (const pkg of r.pkgs) {
+    const h = by.get(pkg) ?? { pkg, touches: 0, broke: 0, clashes: 0, rate: 0 };
+    h.touches++;
+    if (r.owners.some((o) => o === "blocks" || o === "own")) h.broke++;
+    if (r.clashed) h.clashes++;
+    h.rate = h.clashes / h.touches;
+    by.set(pkg, h);
+  }
+  return [...by.values()].sort((a, b) => b.broke + b.clashes - (a.broke + a.clashes) || b.rate - a.rate || a.pkg.localeCompare(b.pkg));
+}
+
+/** The "dependencies that hurt" list: only packages that broke a test or clashed. */
+export function hurtLines(rs: Row[], top = 5): string[] {
+  const h = hurting(rs).filter((x) => x.broke || x.clashes).slice(0, top);
+  if (!h.length) return [];
+  return ["Ester: dependencies that hurt", ...h.map((x) => `  ${x.pkg.padEnd(24)} ${x.touches} PR${x.touches === 1 ? "" : "s"}, ${x.broke} broke a test, ${x.clashes} clashed (${Math.round(x.rate * 100)}%)`)];
+}
