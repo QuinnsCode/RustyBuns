@@ -39,6 +39,8 @@ export type Page = {
   from: string; // the repo file it came from, so its relative links resolve
   anchor?: string; // set when the page is one heading of `from` (a README feature)
   section?: string; // sidebar group; none means it sits at the top
+  extra?: string; // HTML that replaces the <!--extra--> comment in the page (or ends it), outside the markdown copy
+  script?: string; // an assets/ file the page loads as a module
 };
 
 export type Site = {
@@ -118,6 +120,7 @@ export function summary(md: string, fallback: string) {
 const base = () => (process.env.SITE_URL ?? "").replace(/\/+$/, "");
 
 function layout(site: Site, page: Page, pages: Page[], body: string, src: Source, versions: string[], dir: string) {
+  if (page.extra !== undefined) body = body.includes("<!--extra-->") ? body.replace("<!--extra-->", () => page.extra!) : body + page.extra;
   const here = posix.dirname(page.path);
   const href = (p: Page) => esc(posix.relative(here, p.path) || posix.basename(p.path));
   const link = (p: Page) => `<a href="${href(p)}"${p === page ? ' aria-current="page"' : ""}>${esc(p.title)}</a>`;
@@ -193,6 +196,7 @@ ${body}
   </main>
 </div>
 <script src="${esc(posix.join(root, "site.js"))}"></script>
+${page.script ? `<script type="module" src="${esc(posix.join(root, page.script))}"></script>\n` : ""}
 </body>
 </html>
 `;
@@ -237,7 +241,7 @@ export function buildSite(site: Site, out: string, sources: Source[], dir = ""):
   for (const src of sources) manifest[src.version] = buildVersion(site, src, out, versions, problems, dir);
   const assets = join(import.meta.dir, "assets");
   mkdirSync(out, { recursive: true });
-  for (const f of ["site.css", "site.js", "favicon.svg"]) writeFileSync(join(out, f), readFileSync(join(assets, f)));
+  for (const f of ["site.css", "site.js", "votes.js", "favicon.svg"]) writeFileSync(join(out, f), readFileSync(join(assets, f)));
   mkdirSync(join(out, "fonts"), { recursive: true });
   for (const f of readdirSync(join(assets, "fonts"))) writeFileSync(join(out, "fonts", f), readFileSync(join(assets, "fonts", f)));
   const root = base() ? `${base()}/${dir}` : "";
