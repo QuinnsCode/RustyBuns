@@ -612,3 +612,23 @@ test("the dig dialog digs a pull-only mirror in one click, and Mervin says how t
   expect(html).toContain('dig(false, true)');
   expect(html).toContain('id="mervin-hint"');
 });
+
+describe("the tour's autoplay", () => {
+  const src = html.slice(html.indexOf("function tourPause"), html.indexOf("/** The step to show from"));
+  const tourPause = new Function(`${src}; return tourPause;`)();
+  test("it leaves sign-in, spending, merging, shipping and new pages to a person", () => {
+    expect(tourPause({ ch: "signin" }, false)).toContain("Sign in");
+    expect(tourPause({ ch: "signin" }, true)).toBe("");
+    expect(tourPause({ ch: "code" }, false)).toBe("");
+    expect(tourPause({ ch: "self", you: "Only a person deploys." }, true)).toBe("Only a person deploys.");
+    expect(tourPause({ ch: "play", href: () => "/x" }, true)).toContain("Go");
+  });
+  test("every step that costs money, merges or ships is marked, and the self-edit chapter ends in a person's hands", () => {
+    const self = html.slice(html.indexOf('{ ch: "self", ic: "bot"'), html.indexOf('{ ch: "play", ic: "building"'));
+    for (const t of ["An agent edits it", "Mervin merges it", "A person ships it"]) {
+      const at = self.indexOf(`t: "${t}"`);
+      expect(self.slice(at, self.indexOf("{ ch:", at + 1) > 0 ? self.indexOf("{ ch:", at + 1) : undefined)).toContain("you:");
+    }
+    expect(html).toContain(`["self", "repeat", "Edit itself"]`);
+  });
+});
