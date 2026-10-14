@@ -18,13 +18,13 @@ const FOLDERS: Row[] = [
 
 const LINE = /^\/\/ Layout(?: \(([^)]+)\))?: (.+)$/;
 
-/** Every row: the .ts files at the top and under src/ that open with a Layout line, plus FOLDERS, by first path. Throws on a row naming a file that isn't there. */
-export function layout(root = APP): Row[] {
+/** Every row (FOLDERS too when `folders`; a copy of the app elsewhere, like Mervin's merged tree, passes true): the .ts files at the top and under src/ that open with a Layout line, plus FOLDERS, by first path. Throws on a row naming a file that isn't there. */
+export function layout(root = APP, folders = root === APP): Row[] {
   const files = [
     ...readdirSync(root).filter((f) => f.endsWith(".ts")),
     ...(readdirSync(join(root, "src"), { recursive: true }) as string[]).filter((f) => f.endsWith(".ts")).map((f) => `src/${f}`),
   ];
-  const rows = [...(root === APP ? FOLDERS : [])];
+  const rows = [...(folders ? FOLDERS : [])];
   for (const file of files) {
     const m = readFileSync(join(root, file), "utf8").split("\n", 1)[0]!.match(LINE);
     if (!m) continue;

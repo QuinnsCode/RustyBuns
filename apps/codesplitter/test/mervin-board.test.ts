@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ciOf, diskCache, order, run, score, type BoardPr, type StageCache } from "../scripts/mervin-board.ts";
+import { ciOf, diskCache, order, regenerate, run, score, type BoardPr, type StageCache } from "../scripts/mervin-board.ts";
 
 // scripts/mervin-board.ts: the open PRs merged in a sandbox one stage at a time, then scored against what landed.
 describe("mervin board", () => {
@@ -301,5 +301,23 @@ describe("mervin advice (#1519)", () => {
     const h = advise(board, decide(board, []));
     expect(h.advice).toEqual([]);
     expect(h.warnings.some((w) => w.includes("overlap"))).toBe(false);
+  });
+});
+
+describe("mervin board: a generated file (#1540)", () => {
+  test("REFERENCE.md's Layout table is rebuilt from the merged tree, and its clean merge is a mervin row", () => {
+    const root = mkdtempSync(join(tmpdir(), "mervin-gen-"));
+    const app = join(root, "apps/codesplitter");
+    mkdirSync(join(app, "src"), { recursive: true });
+    writeFileSync(join(app, "src/a.ts"), "// Layout: the a\nexport {};\n");
+    writeFileSync(join(app, "src/folder-mirror.ts"), "// Layout: the mirror\nexport {};\n");
+    const ref = (rows: string[]) => `# R\n\n## Layout\n\n| File | What |\n|---|---|\n${rows.join("\n")}\n\nafter\n`;
+    writeFileSync(join(app, "REFERENCE.md"), ref(["| `src/a.ts` | the a |"]));
+    regenerate(root);
+    const out = readFileSync(join(app, "REFERENCE.md"), "utf8");
+    expect(out).toContain("| `src/folder-mirror.ts` | the mirror |");
+    expect(out).toContain("| `migrations/` |");
+    expect(out.endsWith("\nafter\n")).toBe(true);
+    rmSync(root, { recursive: true, force: true });
   });
 });
