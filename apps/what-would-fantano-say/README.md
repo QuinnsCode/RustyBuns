@@ -46,7 +46,7 @@ With no Turnstile secret, or no AI binding, or a failing call, the review is the
 
 ## How it's set up
 
-One Worker, declared in `rustybuns.config.ts` (RWSDK entry `src/worker.tsx`, static assets from `dist/client`). `wrangler.jsonc` is generated from it for local dev only; Alchemy owns the real infra. Nothing is stored.
+One Worker named `what-would-fantano-say` (`adopt` is on, so the workers.dev URL has no random suffix), declared in `rustybuns.config.ts` (RWSDK entry `src/worker.tsx`, static assets from `dist/client`). `wrangler.jsonc` is generated from it for local dev only; Alchemy owns the real infra. Nothing is stored.
 
 | Binding | What it is | Used for |
 | --- | --- | --- |
