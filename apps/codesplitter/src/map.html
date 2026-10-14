@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>codeSplitter deploy map</title>
+<link href="/fonts/geist.css" rel="stylesheet">
+<script src="/vendor/lucide.min.js"></script>
+<style>
+  /* White ocean, light gray land, the night side a darker shadow; dark theme inverts it. Rusty orange marks where assets live. */
+  :root { --bg: #fff; --ocean: #fff; --land: #e4e4e4; --night: rgba(0,0,0,.09); --fg: #0a0a0a; --muted: #6b6b6b; --border: #cfcfcf; --paper: #fcfbf8; --accent: #e8590c;
+    --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, monospace; }
+  :root[data-theme="dark"] { --bg: #0a0a0a; --ocean: #0a0a0a; --land: #2b2b2b; --night: rgba(0,0,0,.35); --fg: #f2f2f2; --muted: #9a9a9a; --border: #3a3a3a; --paper: #151515; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font: 600 26px/1.1 var(--sans); letter-spacing: -0.04em; margin: 0 0 14px; } h1 em { font-style: normal; color: var(--accent); }
+  .bar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .grow { flex: 1; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; color: var(--fg); border: 1px solid var(--border); border-radius: 5px; background: var(--paper); cursor: pointer; }
+  .btn[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .btn svg { width: 16px; height: 16px; }
+  #stage { border: 1px solid var(--border); border-radius: 6px; background: var(--ocean); overflow: hidden; cursor: grab; touch-action: pan-y; }
+  #stage.drag { cursor: grabbing; }
+  canvas { display: block; width: 100%; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0; font: 12px var(--mono); color: var(--muted); }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+  #card { min-height: 84px; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--paper); font-size: 13px; }
+  #card b { font-weight: 600; } .muted { color: var(--muted); }
+  #card a { color: var(--accent); }
+  textarea { width: 100%; height: 90px; margin-top: 12px; font: 12px var(--mono); background: var(--paper); color: var(--fg); border: 1px solid var(--border); border-radius: 5px; padding: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Deploy <em>map</em></h1>
+  <div class="bar" role="toolbar" aria-label="Colour by">
+    <button class="btn" data-mode="locale" title="Colour by locale"><i data-lucide="map-pin"></i></button>
+    <button class="btn" data-mode="app" title="Colour by app"><i data-lucide="layers"></i></button>
+    <button class="btn" data-mode="provider" title="Colour by provider"><i data-lucide="cloud"></i></button>
+    <span class="grow"></span>
+    <button class="btn" id="theme" title="Light or dark"><i data-lucide="sun-moon"></i></button>
+  </div>
+  <div id="stage"><canvas id="c" aria-label="World map of deployed resources. Drag sideways to turn it."></canvas></div>
+  <div class="legend" id="legend"></div>
+  <div id="card" class="muted">Drag the map sideways; it wraps. Click a dot for its health.</div>
+  <textarea id="src" spellcheck="false" aria-label="rustybuns infra --json output, with a location on each node"></textarea>
+</div>
+<script type="module">
+import { landCells, layout, project, wrapX, isNight, readGraphs, MODES, STATUS_COLOUR, LAT_TOP, LAT_BOTTOM, STEP } from "/deploy-map.js";
+const $ = (id) => document.getElementById(id), canvas = $("c"), ctx = canvas.getContext("2d");
+const SAMPLE = [
+  { app: "codesplitter", stage: "prod", nodes: [
+    { id: "worker", kind: "worker", label: "codesplitter", location: "SJC", health: { status: "up", errors: 0, p50: 38, p95: 120 } },
+    { id: "DB", kind: "d1", label: "DB", location: "SJC", health: { status: "up", errors: 0, p50: 6, p95: 22 } },
+    { id: "FILES", kind: "do", label: "FILES", location: "FRA", health: { status: "degraded", errors: 14, p50: 80, p95: 410 } },
+  ] },
+  { app: "park", stage: "prod", nodes: [
+    { id: "box", kind: "box", label: "park", provider: "hetzner", location: "hetzner:fsn1", health: { status: "up", p50: 12, p95: 60 } },
+    { id: "pg", kind: "postgres", label: "Neon", provider: "aws", location: "aws:us-east-1", health: { status: "down", errors: 90 } },
+  ] },
+];
+let graphs = SAMPLE, mode = "locale", offset = 0, hit = [], picked = null;
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+try { const t = localStorage.getItem("map-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+if (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches) document.documentElement.dataset.theme = "dark";
+
+function draw() {
+  const w = canvas.clientWidth, h = w * (LAT_TOP - LAT_BOTTOM) / 360, dpr = devicePixelRatio || 1;
+  canvas.width = w * dpr; canvas.height = h * dpr; canvas.style.height = h + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = css("--ocean"); ctx.fillRect(0, 0, w, h);
+  const land = css("--land"), night = css("--night"), cell = w * STEP / 360, now = new Date(), r = Math.max(1.5, cell * .38);
+  for (const [lon, lat] of landCells()) {
+    const [x, y] = project(lat, lon, w), px = wrapX(x, offset, w);
+    ctx.fillStyle = land; ctx.beginPath(); ctx.arc(px, y, r, 0, 7); ctx.fill();
+    if (isNight(lat, lon, now)) { ctx.fillStyle = night; ctx.beginPath(); ctx.arc(px, y, r, 0, 7); ctx.fill(); }
+  }
+  const { dots, unplaced } = layout(graphs, mode);
+  hit = [];
+  for (const d of dots) {
+    const [x, y] = project(d.lat, d.lon, w), px = wrapX(x, offset, w), rad = 6;
+    ctx.fillStyle = d.colour; ctx.globalAlpha = .9; ctx.beginPath(); ctx.arc(px, y, rad, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+    const s = d.node.health?.status;
+    if (s) { ctx.strokeStyle = STATUS_COLOUR[s]; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(px, y, rad + 3, 0, 7); ctx.stroke(); }
+    hit.push({ px, y, d });
+  }
+  const names = [...new Set(dots.map((d) => mode === "app" ? d.app : mode === "provider" ? (d.node.provider ?? "cloudflare") : "assets"))];
+  $("legend").innerHTML = names.map((n) => `<span><i style="background:${dots.find((d) => (mode === "app" ? d.app : mode === "provider" ? (d.node.provider ?? "cloudflare") : "assets") === n).colour}"></i>${esc(n)}</span>`).join("")
+    + (unplaced.length ? `<span>${unplaced.length} without a location</span>` : "");
+}
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function show(d) {
+  const n = d.node, hl = n.health;
+  $("card").innerHTML = `<b>${esc(n.label)}</b> <span class="muted">${esc(n.kind)} in ${esc(d.app)} at ${esc(n.location)}</span><br>`
+    + (hl ? `<span style="color:${STATUS_COLOUR[hl.status]}">${esc(hl.status)}</span>${hl.errors != null ? ` · ${hl.errors} recent errors` : ""}${hl.p50 != null ? ` · p50 ${hl.p50}ms` : ""}${hl.p95 != null ? ` · p95 ${hl.p95}ms` : ""}${/^https:/.test(hl.url ?? "") ? ` · <a href="${esc(hl.url)}" target="_blank" rel="noopener">open</a>` : ""}` : `<span class="muted">no health reported</span>`);
+}
+let drag = null;
+$("stage").addEventListener("pointerdown", (e) => { drag = { x: e.clientX, off: offset, moved: false }; $("stage").classList.add("drag"); $("stage").setPointerCapture(e.pointerId); });
+$("stage").addEventListener("pointermove", (e) => { if (!drag) return; const dx = e.clientX - drag.x; if (Math.abs(dx) > 3) drag.moved = true; offset = drag.off + dx; draw(); });
+$("stage").addEventListener("pointerup", (e) => {
+  const moved = drag?.moved; drag = null; $("stage").classList.remove("drag");
+  if (moved) return;
+  const b = canvas.getBoundingClientRect(), x = e.clientX - b.left, y = e.clientY - b.top;
+  const best = hit.map((k) => ({ k, dist: Math.hypot(k.px - x, k.y - y) })).sort((a, c) => a.dist - c.dist)[0];
+  if (best && best.dist < 14) show(best.k.d);
+});
+for (const b of document.querySelectorAll("[data-mode]")) b.addEventListener("click", () => { mode = b.dataset.mode; sync(); draw(); });
+const sync = () => { for (const b of document.querySelectorAll("[data-mode]")) b.setAttribute("aria-pressed", String(b.dataset.mode === mode)); };
+$("theme").addEventListener("click", () => { const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark"; document.documentElement.dataset.theme = t; try { localStorage.setItem("map-theme", t); } catch {} draw(); });
+$("src").value = JSON.stringify(SAMPLE, null, 1);
+$("src").addEventListener("input", () => { try { graphs = readGraphs(JSON.parse($("src").value)); draw(); } catch {} });
+addEventListener("resize", draw);
+lucide.createIcons(); sync(); draw();
+</script>
+</body>
+</html>

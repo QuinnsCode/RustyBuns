@@ -24,6 +24,7 @@ import { localSandbox, type Exec, type Sandbox } from "./agent-run.ts";
 import { KEEP_MS } from "./line-events.ts";
 import { containerSandbox } from "./sandbox.ts";
 import { ADMINS_ONLY, adminsOnly, agentsUnavailable, hostedBudget, installedHarnesses } from "./agent-routes.ts";
+import { plural } from "./util.ts";
 
 const WEEK = 7 * 24 * 3600_000;
 /** Events one feed read looks at. */
@@ -69,7 +70,6 @@ function followed(e: LineEvent & { ids: string }, f: Follow) {
   return (JSON.parse(e.ids) as string[]).some((id) => want.has(id));
 }
 
-const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
 function summarize(g: Omit<Group, "summary">) {
   const name = g.bot ? `${g.who.replace(/^agent-/, "")}${g.run ? " #" + g.run.replace(/^run-/, "") : ""}` : "@" + g.who;

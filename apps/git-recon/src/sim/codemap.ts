@@ -8,6 +8,8 @@
 // The same repo on the same ground with the same seed is always the same level.
 
 import { CLIFF, slope, wet, withPads, type Pad, type Terrain } from "./terrain.ts";
+import { mulberry32 } from "@rustybuns/util";
+export { mulberry32 };
 
 export interface RepoFile {
   path: string;
@@ -79,16 +81,6 @@ export interface CodeMap {
 /** Compounds a level holds at most, files shown in each, and crates out in the field. */
 export const COMPOUNDS = 6, PER_COMPOUND = 14, CRATES = 36;
 
-export function mulberry32(seed: number) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 export function hashString(s: string): number {
   let h = 2166136261;

@@ -61,6 +61,8 @@ export const RULES: Rule[] = [
   { name: "mail", label: "Account email", what: "verification and password reset emails sent", group: "Accounts", per: "ip", max: 5, window_s: HOUR, on_fail: "reject" },
   { name: "oauth", label: "App sign-ins", what: "OAuth token swaps, refreshes and app registrations", group: "Accounts", per: "ip", max: 30, window_s: 10 * MIN, on_fail: "reject" },
   { name: "join", label: "Join by invite", what: "invites claimed, and the agents they make", group: "Accounts", per: "ip", max: 20, window_s: HOUR, on_fail: "reject" },
+  { name: "brood", label: "Agents you bring in", what: "new agent handles made by invites you sent, on the hosted site (agents on a desktop are never counted)", group: "Accounts", per: "user", max: 50, window_s: DAY, on_fail: "reject" },
+  { name: "newagents", label: "New agents", what: "agent handles made through invites, everyone's together, admins included", group: "Accounts", per: "site", max: 500, window_s: DAY, on_fail: "reject" },
   { name: "handle", label: "Claim a handle", what: "picking your @handle", group: "Accounts", per: "ip", max: 10, window_s: HOUR, on_fail: "reject" },
   { name: "dig", label: "Dig up a repo", what: "GitHub digs and level forks (Artifacts imports)", group: "GitHub", per: "user", max: 5, window_s: HOUR, on_fail: "reject", queueable: true },
   { name: "github", label: "GitHub lookups", what: "repo lists and search, on the site's GitHub token", group: "GitHub", per: "user", max: 30, window_s: MIN, on_fail: "reject" },
@@ -253,7 +255,7 @@ export class Tally {
 }
 
 /** A 429 when this caller is over the rule's limit, or a 202 when it queues them; else null (and the hit is counted). */
-export async function limit(req: Request, env: Env, rule: string | null, user: string | null, admin: boolean): Promise<Response | null> {
+export async function limit(req: Request, env: Env, rule: string | null, user: string | null, admin: boolean, tokenId?: string): Promise<Response | null> {
   const who = counted(req, rule, user, admin);
   // Only a signed-in caller can be queued: the job runs as them, and only they may poll it.
   const over = who ? await hit(env, rule!, who, !!user) : null;
@@ -267,8 +269,8 @@ export async function limit(req: Request, env: Env, rule: string | null, user: s
     return json({ error: `Slow down: ${r.label.toLowerCase()} is limited to ${r.max} per ${every(r.window_s)}, and your line is full. Try again in ${every(wait)}.` }, 429, { "retry-after": String(wait) });
   }
   const url = new URL(req.url), body = req.method === "GET" ? null : await req.clone().text();
-  const row = await env.DB.prepare("INSERT INTO limit_jobs (rule, who, user, method, path, body, state, at) VALUES (?, ?, ?, ?, ?, ?, 'waiting', ?) RETURNING id")
-    .bind(r.name, who, user, req.method, url.pathname + url.search, body, Date.now()).first();
+  const row = await env.DB.prepare("INSERT INTO limit_jobs (rule, who, user, method, path, body, state, at, token) VALUES (?, ?, ?, ?, ?, ?, 'waiting', ?, ?) RETURNING id")
+    .bind(r.name, who, user, req.method, url.pathname + url.search, body, Date.now(), tokenId ?? null).first();
   const queued = await place(env, row!.id as number);
   await book(env, queued);
   return json({ queued }, 202);
@@ -287,7 +289,7 @@ async function book(env: Env, pl: Awaited<ReturnType<typeof place>>) {
   try { await env.JOBS.send({ job: pl.id } satisfies JobMessage, { delaySeconds }); } catch {}
 }
 
-type Job = { id: number; rule: string; who: string; user: string; method: string; path: string; body: string | null; state: string; at: number; status: number | null; result: string | null };
+type Job = { id: number; rule: string; who: string; user: string; method: string; path: string; body: string | null; state: string; at: number; status: number | null; result: string | null; token: string | null };
 
 /** Where a job stands: its place in its caller's line and about when it runs, or how it came out. */
 async function place(env: Env, id: number) {
@@ -318,6 +320,11 @@ async function drain(env: Env, rule: string, who: string, self: (r: Request) => 
       "INSERT INTO limit_hits (rule, who, win, count) VALUES (?, ?, ?, 1) ON CONFLICT (rule, who, win) DO UPDATE SET count = count + 1 WHERE count < ? OR ? RETURNING count")
       .bind(rule, who, win, r.max, r.enabled ? 0 : 1).first();
     if (!slot) { await env.DB.prepare("UPDATE limit_jobs SET state = 'waiting', started = NULL WHERE id = ?").bind(j.id).run(); return; }
+    // A job made with an API token doesn't outlive it: revoking the token ends what it left waiting.
+    if (j.token && !(await env.DB.prepare("SELECT 1 FROM api_tokens WHERE id = ? AND expires_at > ?").bind(j.token, Date.now()).first())) {
+      await env.DB.prepare("UPDATE limit_jobs SET state = 'done', status = 401, result = ? WHERE id = ?").bind(JSON.stringify({ error: "the API token that queued this was revoked" }), j.id).run();
+      continue;
+    }
     const req = new Request("http://codesplitter.local" + j.path, { method: j.method, headers: j.body === null ? {} : { "content-type": "application/json" }, body: j.body });
     actingAs.set(req, j.user);
     let status = 500, result = JSON.stringify({ error: "the queued job failed" });
@@ -407,6 +414,8 @@ export async function sweepLimits(env: Env, now = Date.now()) {
     env.DB.prepare("DELETE FROM limit_events WHERE at < ?").bind(now - 7 * DAY * 1000),
     env.DB.prepare("DELETE FROM limit_jobs WHERE state = 'done' AND at < ?").bind(now - 7 * DAY * 1000),
     env.DB.prepare("UPDATE limit_jobs SET state = 'done', status = 504, result = ? WHERE state = 'running' AND started < ?").bind(JSON.stringify({ error: "the queued job never finished" }), now - 15 * MIN * 1000),
+    // A hosted agent's crew row goes once it has had no run in a day (agent-routes.ts adds it again with the next).
+    env.DB.prepare("DELETE FROM collaborators WHERE name IN (SELECT agent FROM agent_runs) AND NOT EXISTS (SELECT 1 FROM agent_runs r WHERE r.owner = collaborators.owner AND r.repo = collaborators.repo AND r.agent = collaborators.name AND (r.status = 'running' OR r.started > ?))").bind(now - DAY * 1000),
   ]);
 }
 

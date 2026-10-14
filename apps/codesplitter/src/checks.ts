@@ -73,6 +73,7 @@
 import { json, readBody, type Env } from "./env.ts";
 import { githubToken, parseRepo } from "./github.ts";
 import { emit } from "./hooks.ts";
+import { LOCKFILES as LOCKFILE_NAMES } from "./lockfiles.ts";
 
 export const RUNNERS = ["desktop", "container", "github", "external"] as const;
 export const STATUSES = ["queued", "running", "passed", "failed", "cancelled"] as const;
@@ -270,7 +271,7 @@ const scriptsOf = (pkg: string | null) => {
   return SCRIPTS.filter((n) => typeof s?.[n] === "string");
 };
 /** Files that, changed, can break any workspace: the root package.json and the lockfiles. */
-const LOCKFILES = ["package.json", "bun.lock", "bun.lockb", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"];
+const LOCKFILES = ["package.json", ...LOCKFILE_NAMES];
 const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
 /** A package.json's workspace patterns (an array, or yarn's {packages}). */

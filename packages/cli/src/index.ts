@@ -41,7 +41,7 @@ import { deployedWorker, redactQueryStrings } from "./redact.ts";
 import { tidySourceMaps } from "./sourcemaps.ts";
 import { formatOfflinePlan, plannedResources } from "./offline-plan.ts";
 import { infraGraph, infraText } from "./infra.ts";
-import { protectReport } from "./protect.ts";
+import { ephemeralProblem, environmentBanner, realDestroyProblem, realDestroyQuestion } from "./environment.ts";
 import { estimate, formatEstimate, loadUsage, usageFlags } from "./usage-estimate.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
 import { PROF_SECRET, boxUrl, fetchHistory, fetchMem, fetchProfile, secretProblem } from "./prof.ts";
@@ -794,10 +794,12 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   if (!cfg.worker && !cfg.targets.box) throw new Error(`desktop-only app: no edge or box stack to plan or deploy.${serverNote}`);
   const profiled = sub === "plan" || sub === "deploy";
   if (servers.length && cfg.worker && profiled) console.warn(`[server] the edge doesn't run desktop.server (${entries}): on the web ${servers.flatMap((s) => s.paths).join(", ")} reach the Worker, not that server.\n`);
+  // First thing printed: ephemeral or real, and what survives a destroy (environment.ts).
+  if (iso.ephemeral && iso.real) throw new UsageError({ message: `--ephemeral and --real contradict each other: pick one` });
+  const clash = iso.ephemeral ? ephemeralProblem(cfg, stage) : null;
+  if (clash) throw new UsageError({ message: clash });
+  if (profiled || sub === "destroy") console.log(environmentBanner(cfg, stage, sub) + "\n");
   if (profiled) { checkBox(cfg); checkSpend(cfg); console.log(costReport(cfg) + "\n"); }
-  // What destroy keeps and what it deletes, in front of every run: protect is the one thing that decides it.
-  const kept = protectReport(cfg, sub);
-  if (kept && (profiled || sub === "destroy")) console.log(kept + "\n");
   // plan --usage (#1224): a monthly bill from what a host's bindings did per request, cron tick and message.
   const metered = usageFlags(rawArgs);
   if (metered.requestsPerDay !== undefined && !metered.usage) throw new UsageError({ message: `--requests-per-day prices the requests in --usage: pass both` });
@@ -829,6 +831,10 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   // ADOPT mode stops here: ask at the terminal; with no terminal (or a no), it is refused.
   if (refuse && !(yield* step(() => confirmAdopt(adoptQuestion(sub, cfg), workerName(cfg))))) {
     throw new DeployRefused({ message: refuse });
+  }
+  const realRefuse = offline ? null : realDestroyProblem(sub, cfg, stage, iso.adoptExisting);
+  if (realRefuse && !(yield* step(() => confirmAdopt(realDestroyQuestion(cfg), workerName(cfg))))) {
+    throw new DeployRefused({ message: realRefuse });
   }
   const note = profiled && !offline ? adoptNote(process.cwd(), cfg, stage) : null;
   if (note) console.log(note + "\n");
@@ -1137,6 +1143,12 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              resource new, named by Alchemy, none already on the account touched)
                              or "mode: ADOPT" (targets.edge.adopt: lists the real names it takes
                              over). --fresh forces FRESH whatever the config says
+         [--ephemeral]       same as --fresh, and refuses a REAL stage (prod/production/live/main,
+                             ADOPT, or protect: true): the codeSplitter Ship panel's Ephemeral
+         [--real]            same as --adopt-existing: yes, this REAL environment may be taken over
+                             or destroyed with its data (the Ship panel's Real). Every plan, deploy
+                             and destroy opens with "environment: EPHEMERAL" or "REAL", then
+                             what protect: true keeps and what a destroy removes
          [--adopt-existing]  ADOPT mode asks "are you sure?" (y/N) before a first deploy to a stage
                              and before any destroy; this answers yes, for scripts (with no
                              terminal and no flag it is refused): it may take over or delete real resources

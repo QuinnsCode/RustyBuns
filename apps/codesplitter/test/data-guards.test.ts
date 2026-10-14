@@ -18,6 +18,7 @@ const LEDGER = [
   { tag: "v2", new_sqlite_classes: ["DeployRunner"] },
   { tag: "v3", new_sqlite_classes: ["AgentSandbox"] },
   { tag: "v4", new_sqlite_classes: ["RepoSearch"] },
+  { tag: "v5", new_sqlite_classes: ["UserSettings"] },
 ];
 /** Tags allowed to delete a class's data. Name one here only when erasing that data is the point. */
 const MAY_ERASE = new Set<string>();

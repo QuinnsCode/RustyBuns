@@ -19,6 +19,7 @@ import { copyObjects, GIT_BOT, rawObj, type Obj } from "./git.ts";
 import { digCap } from "./github.ts";
 import { usage } from "./limits.ts";
 import { json, type Env } from "./env.ts";
+import { repoRow } from "./repos.ts";
 
 /** Cloudflare's caps (developers.cloudflare.com/artifacts/platform/limits). */
 export const REPO_CAP = 1024 ** 3, BLOB_CAP = 32 * 1024 ** 2;
@@ -49,7 +50,7 @@ export async function freshRoutes(req: Request, env: Env, p: string[], url: URL,
   }
   if (req.method === "DELETE") {
     const name = url.searchParams.get("artifact") ?? "";
-    const r = await env.DB.prepare("SELECT old_artifacts FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+    const r = await repoRow(env, owner, repo, "old_artifacts");
     const old: string[] = JSON.parse((r?.old_artifacts as string) ?? "[]");
     if (!old.includes(name)) return json({ error: "that isn't git this repo moved off" }, 404);
     await env.ARTIFACTS?.delete?.(name);
@@ -62,7 +63,7 @@ export async function freshRoutes(req: Request, env: Env, p: string[], url: URL,
 /** Everything that caps this repo and its owner, and where each stands. */
 async function limits(env: Env, owner: string, repo: string, user: string | null) {
   const [r, f, pending] = await Promise.all([
-    env.DB.prepare("SELECT artifact, git_bytes, git_error, old_artifacts, expires_at FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first(),
+    repoRow(env, owner, repo, "artifact, git_bytes, git_error, old_artifacts, expires_at"),
     row(env, owner, repo),
     env.DB.prepare("SELECT path FROM git_pending WHERE owner = ? AND repo = ?").bind(owner, repo).all(),
   ]);
@@ -88,7 +89,7 @@ const isFull = (r: any) => !!r && ((r.git_bytes ?? 0) >= REPO_CAP * NEARLY_FULL 
 
 /** After a push that didn't land: if git looks full, start fresh without being asked. */
 export async function startIfFull(env: Env, owner: string, repo: string) {
-  const r = await env.DB.prepare("SELECT git_bytes, git_error FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+  const r = await repoRow(env, owner, repo, "git_bytes, git_error");
   if (!isFull(r) || running(await row(env, owner, repo))) return null;
   const f = await start(env, owner, repo);
   return "status" in f ? null : advance(env, owner, repo);
@@ -96,7 +97,7 @@ export async function startIfFull(env: Env, owner: string, repo: string) {
 
 async function start(env: Env, owner: string, repo: string): Promise<Fresh | { error: string; status: number }> {
   // A mirror's git builds on upstream's history (mirror.ts); one root commit would cut it off.
-  if (await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(owner, repo).first())
+  if (await repoRow(env, owner, repo, "1", { mirrored: true }))
     return { error: "a mirror's git shares upstream's history, so it doesn't start fresh", status: 409 };
   const f = await row(env, owner, repo);
   if (running(f)) return f!;
@@ -109,7 +110,7 @@ async function start(env: Env, owner: string, repo: string): Promise<Fresh | { e
   if (!h || !env.ARTIFACTS) return { error: "this repo has no git to move", status: 409 };
   const [tip] = await h.handle.log({ ref: h.branch, limit: 1 });
   if (!tip) return { error: "nothing in git yet", status: 409 };
-  const r = await env.DB.prepare("SELECT artifact FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+  const r = await repoRow(env, owner, repo, "artifact");
   const previous = r!.artifact as string;
   const art = await env.ARTIFACTS.create(`${previous.replace(/\.f[0-9a-z]+$/, "")}.f${Date.now().toString(36)}`, { description: `${owner}/${repo}, started fresh`, setDefaultBranch: h.branch });
   await env.DB.batch([
@@ -211,7 +212,7 @@ async function step(env: Env, f: Fresh) {
   if (!last) return;
 
   // Done: point the repo at the new git, keep the old, and land what waited.
-  const repo = await env.DB.prepare("SELECT old_artifacts FROM repos WHERE owner = ? AND name = ?").bind(f.owner, f.repo).first();
+  const repo = await repoRow(env, f.owner, f.repo, "old_artifacts");
   const kept = [...JSON.parse((repo?.old_artifacts as string) ?? "[]"), f.previous];
   await env.DB.batch([
     env.DB.prepare("UPDATE repos SET artifact = ?, artifact_remote = ?, git_bytes = ?, git_error = NULL, old_artifacts = ? WHERE owner = ? AND name = ?")

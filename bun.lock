@@ -145,6 +145,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/util": "workspace:*",
         "three": "^0.180.0",
       },
       "devDependencies": {
@@ -159,6 +160,7 @@
       "dependencies": {
         "@rustybuns/cli": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/util": "workspace:*",
         "react": "19.2.8",
         "react-dom": "19.2.8",
         "three": "^0.180.0",
@@ -202,6 +204,7 @@
         "@rustybuns/cli": "workspace:*",
         "@rustybuns/native": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/util": "workspace:*",
         "react": "19.2.8",
         "react-dom": "19.2.8",
       },
@@ -358,6 +361,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/util": "workspace:*",
         "three": "^0.180.0",
       },
       "devDependencies": {
@@ -394,7 +398,7 @@
     },
     "packages/cli": {
       "name": "@rustybuns/cli",
-      "version": "0.1.11",
+      "version": "0.1.12",
       "bin": {
         "rustybuns": "./src/index.ts",
       },
@@ -407,15 +411,15 @@
     },
     "packages/native": {
       "name": "@rustybuns/native",
-      "version": "0.1.11",
+      "version": "0.1.12",
     },
     "packages/ports": {
       "name": "@rustybuns/ports",
-      "version": "0.1.11",
+      "version": "0.1.12",
     },
     "packages/shell-bun": {
       "name": "@rustybuns/shell-bun",
-      "version": "0.1.11",
+      "version": "0.1.12",
       "dependencies": {
         "@rustybuns/ports": "workspace:*",
         "effect": "4.0.0-rc.112",
@@ -437,6 +441,13 @@
         "react-dom",
       ],
     },
+    "packages/util": {
+      "name": "@rustybuns/util",
+      "version": "0.0.0",
+    },
+  },
+  "patchedDependencies": {
+    "alchemy@2.0.0-beta.77": "patches/alchemy@2.0.0-beta.77.patch",
   },
   "overrides": {
     "@effect/platform-bun": "4.0.0-rc.112",
@@ -1187,6 +1198,8 @@
     "@rustybuns/ports": ["@rustybuns/ports@workspace:packages/ports"],
 
     "@rustybuns/shell-bun": ["@rustybuns/shell-bun@workspace:packages/shell-bun"],
+
+    "@rustybuns/util": ["@rustybuns/util@workspace:packages/util"],
 
     "@sec-ant/readable-stream": ["@sec-ant/readable-stream@0.4.1", "", {}, "sha512-831qok9r2t8AlxLko40y2ebgSDhenenCatLVeW/uBtnHPyhHOvG0C7TvfgecV+wHzIm5KUICgzmVpWS+IMEAeg=="],
 
