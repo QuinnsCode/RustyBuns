@@ -82,6 +82,18 @@ describe("your page", () => {
     expect(res.headers.get("content-security-policy")).toStartWith("sandbox");
   });
 
+  test("says so when a public page repo hides the saved HTML", async () => {
+    const call = await boot({ GH_CLI: "off" });
+    opened.push(call);
+    const put = async (body: unknown) => (await call("ned", "/api/me", { method: "PUT", body: JSON.stringify(body) })).json() as Promise<any>;
+    await call("ned", "/api/login", { method: "POST", body: JSON.stringify({ name: "ned" }) });
+    expect((await put({ theme_html: "<h1>a</h1>" })).warning).toBeUndefined();
+    await call("ned", "/api/repos", { method: "POST", body: JSON.stringify({ name: "page" }) });
+    await call("ned", "/api/repos/ned/page/files", { method: "POST", body: JSON.stringify({ path: "index.html", content: "<h1>repo</h1>" }) });
+    expect((await put({ theme_html: "<h1>b</h1>" })).warning).toContain("public page repo");
+    expect((await put({ bio: "hi" })).warning).toBeUndefined();
+  });
+
   test("keeps paths inside the page and data from closing its block", () => {
     expect(pagePath([])).toBe("index.html");
     expect(pagePath(["a", "b.js"])).toBe("a/b.js");
