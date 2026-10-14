@@ -806,6 +806,17 @@
   .bar .barform input, .bar .barform select { padding: 2px 8px; font-size: 12.5px; } .bar .barform input { width: 150px; } .bar .barform .btn { padding: 2px 8px; font-size: 12.5px; }
   @media (max-width: 860px) { .prof-grid { grid-template-columns: 1fr; } .bar .barform { margin-left: 0; } }
   .photo iframe { width: 100%; height: 220px; border: 0; display: block; background: #fff; }
+  /* Full page: the page box fills the window (a circular wipe from the corner, where the browser has view transitions), and Talk to your page floats over it. */
+  .stage-x { display: none; }
+  body.staged { overflow: hidden; }
+  body.staged .photo { position: fixed; inset: 0; z-index: 50; margin: 0; border: 0; border-radius: 0; }
+  body.staged .photo .bar, body.staged .tour, body.staged .guide, body.staged .guide-fab { display: none; }
+  body.staged .photo iframe { height: 100% !important; }
+  body.staged .stage-x { display: inline-flex; position: fixed; top: 12px; right: 12px; z-index: 52; }
+  body.staged #talk { position: fixed; z-index: 51; left: 50%; bottom: 16px; transform: translateX(-50%); width: min(560px, calc(100vw - 32px)); margin: 0; box-shadow: 0 8px 28px rgba(0,0,0,.35); }
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+  ::view-transition-new(root) { animation: stage-wipe .55s ease-in-out both; }
+  @keyframes stage-wipe { from { clip-path: circle(0 at 100% 0); } to { clip-path: circle(150% at 100% 0); } }
   .list a { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-top: 1px solid var(--border); text-decoration: none; } .list a:first-child { border-top: 0; }
   .list a:hover { color: var(--accent-ink); }
   .folders { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
@@ -3671,7 +3682,7 @@ const views = {
         ${jobs.length ? `<div class="box jobs"><div class="bar">${icon("hourglass")}<b>Queued</b><span class="muted">this week's digs, previews and checks that waited in line</span></div>${jobs.map(jobRow).join("")}</div>` : ""}
       </div><aside>
         ${mine ? `${boxTop(true, "tokens", `${icon("plug")}<b>Connect your AI</b><a class="muted" style="font-size:12px" href="/reference">the API</a> · <a class="muted" style="font-size:12px" href="/mcp">MCP</a>`)}<div class="body"><span class="muted">…</span></div></details>` : ""}
-        ${page ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page</div><iframe class="theme" sandbox="allow-scripts allow-popups allow-pointer-lock" src="/api/users/${encodeURIComponent(name)}/page/" title="${esc(name)}'s page"></iframe></div>` : ""}
+        ${page ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page<button type="button" class="btn ghost" id="pg-stage" title="Full page" aria-label="Full page" style="margin-left:auto">${icon("maximize-2")}</button></div><button type="button" class="btn stage-x" id="pg-unstage" title="Back to the profile (Esc)" aria-label="Back to the profile">${icon("minimize-2")}</button><iframe class="theme" sandbox="allow-scripts allow-popups allow-pointer-lock" src="/api/users/${encodeURIComponent(name)}/page/" title="${esc(name)}'s page"></iframe></div>` : ""}
         ${mine && !agent ? `<form id="talk" class="box"><div class="bar">${icon("message-circle")}<b>Talk to your page</b><button type="button" class="btn ghost" id="pg-hour" title="Put the page back to how it was an hour ago">${icon("history")}</button><button type="button" class="btn ghost" id="pg-default" title="Put the page back to the starter">${icon("rotate-ccw")}</button></div><div class="body row" style="flex-wrap:nowrap"><input name="say" placeholder="make it a night city, one tower per repo" required autocomplete="off" style="flex:1;min-width:0"><button class="btn primary" title="Send it to your coding agent">${icon("send")}</button></div></form>` : ""}
         ${agent ? "" : `${boxTop(mine, "collections", `${icon("library")}<b>Collections</b>${playlists.length ? `<span class="muted">${playlists.length}</span>` : ""}`)}<div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || (mine ? "" : '<span class="muted">nothing collected yet</span>')}
           ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div>${boxEnd(mine)}`}
@@ -3679,6 +3690,7 @@ const views = {
         ${mine ? truthBox(true) : ""}
         ${mine ? dataBox(true) : ""}
       </aside></div>${cityLink ? `<div class="city-door">${cityLink}</div>` : ""}</div>`;
+    if (page) pageStage();
     if (mine && !agent) pageTalk(name, !!page);
     if (!agent) avatarBox(user, mine, name);
     // The pulse: a week of lines landed, beating while they type. It looks again every 15 seconds while you're here.
@@ -7424,6 +7436,20 @@ async function guide() {
 const FIXED = { f: 2, r: 2, l: 1, b: 2, health: 2 };
 // Settles when the page has drawn, so an agent's tool call can answer with where it landed.
 let routing = Promise.resolve();
+// Full page: the page box wipes out to fill the window; Esc, the corner button or leaving the profile puts it back.
+let stageWired = false;
+function pageStage() {
+  const stage = (on) => {
+    const flip = () => document.body.classList.toggle("staged", on);
+    if (document.startViewTransition && !matchMedia("(prefers-reduced-motion: reduce)").matches) document.startViewTransition(flip); else flip();
+  };
+  $("#pg-stage").onclick = () => stage(true);
+  $("#pg-unstage").onclick = () => stage(false);
+  if (stageWired) return;
+  stageWired = true;
+  addEventListener("keydown", (e) => { if (e.key === "Escape" && document.body.classList.contains("staged")) stage(false); });
+  addEventListener("hashchange", () => document.body.classList.remove("staged"));
+}
 // Talk to your page: the box on your profile sends what you say to a coding agent working in your repo `page`
 // (its files are the site, see src/page.ts); the two buttons put the page back an hour, or to the starter.
 async function pageTalk(name, has) {
