@@ -197,6 +197,7 @@ curl -i localhost:3000/health     # on Railway, X-RB-Data: volume means /data is
 | `build desktop [--dev] [--target os-arch]` | `--dev` bundles without compiling, for `run desktop` |
 | `run desktop` | start the dev host |
 | `build box [--target os-arch]` | Hetzner: Linux binary + Node launcher in `.rustybuns/box/` (`--target` your own OS to try it locally). Railway: Bun bundle + Dockerfile in `.rustybuns/railway/` |
+| `containers [list\|build\|run\|smoke]` | the config's [container bindings](#containers) as a workflow: list what's built or stale, build, run one on a free port, smoke-test headless |
 | `login <cloudflare\|hetzner\|railway>` | connect a provider account to your Alchemy profile (`~/.alchemy`, shared by every app), through this project's pinned Alchemy |
 | `plan` / `deploy [--yes]` / `destroy` | Alchemy against the generated stack; `deploy` refuses without a plan for this exact config |
 | `dev` | `alchemy dev`: workerd and local simulators for the edge |
@@ -207,6 +208,17 @@ curl -i localhost:3000/health     # on Railway, X-RB-Data: volume means /data is
 `--profile <name>` and `--stage <name>` pass through to Alchemy; `--stage` also picks the config's `stages` entry. `RB_NO_BROWSER=1` prints the desktop token URL instead of opening a browser.
 
 Stopping `plan`, `deploy` or `destroy` partway (Ctrl-C, a `kill`, an agent's timeout, a closed terminal) asks Alchemy to stop the way Ctrl-C does, waits up to 10 seconds (`RUSTYBUNS_STOP_GRACE_MS`) for it to finish what it's writing, then frees the state lock. If rustybuns is killed outright (`kill -9`), the lock stays held until that Alchemy exits, so a second deploy can't run against the same state beside it.
+
+### Containers
+
+A binding `{ type: "container", className, dockerfile, maxInstances?, instanceType? }` puts a Dockerfile behind a Durable Object class; the Dockerfile's folder is the build context. `rustybuns containers` works with them locally:
+
+- `containers` lists each binding as built, stale (its context changed since the last build) or not built, with image size. Hashes live in `.rustybuns/containers/`.
+- `containers build [BINDING…]` builds for `linux/amd64`, the platform Cloudflare runs, showing one progress line per image (`--verbose` for raw BuildKit output), then a size table with the change since the last local build.
+- `containers run BINDING` rebuilds if stale, starts it on a free port, waits for `:8080` to answer, prints the `docker run` it used, and streams logs until Ctrl-C. Env: only `--env NAME=VALUE` and `--env-file path` reach the container, and the names in `.env.schema` left unset are listed. It never reads `.env` or 1Password. `--shell` opens `sh` in the image.
+- `containers smoke [BINDING…]` boots each image headless and exits 1 if one never answers or exits.
+
+`deploy`, `containers *` and `build box` (with cross-built Rust crates) check the Docker daemon first and stop with one message if it isn't running. A local run doesn't replicate Cloudflare's runtime: no egress gate, no Cloudflare CA, no instance types, cold starts or `maxInstances`.
 
 ### Known-bad versions
 

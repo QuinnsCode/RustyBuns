@@ -49,6 +49,7 @@ import { PROF_SECRET, boxUrl, fetchHistory, fetchMem, fetchProfile, secretProble
 import { formatProfileSummary, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
 import { formatMemStats } from "@rustybuns/shell-bun/memwatch";
 import { formatHistory } from "@rustybuns/shell-bun/history";
+import { CONTAINERS_USAGE, bindingsWhy, buildOne, containerBindings, contextHash, envFlags, listText, needDocker, pick, readLedger, runOne, sizeTable, smokeOne } from "./containers.ts";
 import { TRIAGE_USAGE, triage } from "./triage.ts";
 import { rustybunsContext } from "./triage-context.ts";
 import { checkDisabled, checkVersion } from "./advisories.ts";
@@ -801,6 +802,8 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   const serverNote = servers.length ? ` Its own server (desktop.server, ${entries}) runs beside the desktop and box hosts only: a Worker can't run a Node server without porting it. Add targets.box to host it on a server.` : "";
   if (!cfg.worker && !cfg.targets.box) throw new Error(`desktop-only app: no edge or box stack to plan or deploy.${serverNote}`);
   const profiled = sub === "plan" || sub === "deploy";
+  // Deploy builds each container's image locally: say so now, before any Alchemy work.
+  if (sub === "deploy" && cfg.worker && containerBindings(cfg).length) needDocker(bindingsWhy(containerBindings(cfg).length));
   if (servers.length && cfg.worker && profiled) console.warn(`[server] the edge doesn't run desktop.server (${entries}): on the web ${servers.flatMap((s) => s.paths).join(", ")} reach the Worker, not that server.\n`);
   // First thing printed: ephemeral or real, and what survives a destroy (environment.ts).
   if (iso.ephemeral && iso.real) throw new UsageError({ message: `--ephemeral and --real contradict each other: pick one` });
@@ -992,7 +995,42 @@ async function triageCommand(args: string[]) {
   });
 }
 
-const COMMANDS = ["init", "copy-site", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "infra", "build", "smoke", "eject", "version"];
+/** `rustybuns containers [list|build|run|smoke]`: the config's container bindings as a workflow (containers.ts). */
+async function containersCommand(args: string[]) {
+  const [sub = "list", ...more] = args;
+  const cfg = await loadConfig(), all = containerBindings(cfg);
+  const { env, file, rest } = envFlags(more);
+  const verbose = rest.includes("--verbose"), shell = rest.includes("--shell");
+  const names = rest.filter((a) => !a.startsWith("--"));
+  const why = all.length ? bindingsWhy(all.length) : "";
+  if (sub === "list") {
+    const led = readLedger();
+    console.log(listText(all, led, (b) => contextHash(b.context)));
+    return;
+  }
+  if (!["build", "run", "smoke"].includes(sub)) throw new UsageError({ message: CONTAINERS_USAGE });
+  const bs = pick(all, names);
+  if (!bs.length) throw new UsageError({ message: "no container bindings in rustybuns.config.ts" });
+  needDocker(why || "This command builds images.");
+  if (sub === "build") {
+    const rows = [];
+    for (const b of bs) rows.push({ name: b.name, ...(await buildOne(cfg.name, b, { verbose })) });
+    console.log(sizeTable(rows));
+  } else if (sub === "run") {
+    if (bs.length !== 1 || names.length !== 1) throw new UsageError({ message: "containers run takes exactly one BINDING" });
+    await runOne(cfg.name, bs[0]!, { env, file, shell, verbose });
+  } else {
+    let bad = 0;
+    for (const b of bs) {
+      const r = await smokeOne(cfg.name, b, { env, file, verbose });
+      console.log(`${r.ok ? "✅" : "❌"} ${b.name}  ${r.note}`);
+      if (!r.ok) bad++;
+    }
+    if (bad) process.exitCode = 1;
+  }
+}
+
+const COMMANDS = ["init", "copy-site", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "infra", "build", "containers", "smoke", "eject", "version"];
 const isVersion = cmd === "--version" || cmd === "-v" || cmd === "version";
 if (!isVersion && !checkDisabled()) {
   const advice = await checkVersion(VERSION);
@@ -1069,6 +1107,7 @@ try {
       }
       break;
     }
+    case "containers": await containersCommand(rest); break;
     case "smoke": {
       // Does this app run on Rusty Buns? A throwaway copy, installed, initialised, built and booted on the local twins.
       const dir = rest.find((a) => !a.startsWith("--")) ?? ".";
@@ -1137,6 +1176,12 @@ Box and ship the web app you already have. A dev dependency, never in prod.
   build box [--target T]     the same host for the box: Hetzner gets a linux binary + node
                              launcher in .rustybuns/box/, Railway a Bun bundle + Dockerfile
                              in .rustybuns/railway/ (plan and deploy run this for you)
+
+  containers [list]          the config's container bindings, and whether each image is built or stale
+  containers build [B…]      build for linux/amd64 with a progress line per image, then a size table
+  containers run B           build if stale, start on a free port, stream logs until Ctrl-C
+                             (--shell for sh in the image; --env NAME=VALUE, --env-file path)
+  containers smoke [B…]      boot each image headless, check it answers; exit 1 if one doesn't
 
   infra [--stage s] [--json] the stack as a graph, from the config alone: the Worker and each
                              binding, [KEPT] where protect: true leaves it through destroy
