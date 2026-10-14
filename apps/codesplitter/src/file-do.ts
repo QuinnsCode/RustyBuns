@@ -81,7 +81,7 @@ interface Rest { who: string; lines: string[]; until: number }
  * it's still asking, or else for GRANT_MS, its grant window, to take by claiming again by id.
  * It keeps its place while it keeps asking: one quiet for WAIT_KEEP_MS leaves the line.
  */
-interface Waiter { id: string; who: string; lines: string[]; task?: string; at: number; seen: number }
+interface Waiter { id: string; who: string; lines: string[]; task?: string; at: number; seen: number; rank?: number }
 
 /** An agent's claim lapses after this unless it's renewed, so a run that dies frees its lines in minutes. */
 export const LEASE_MS = 2 * 60_000;
@@ -288,7 +288,8 @@ export class FileDurableObject {
       const b = (await req.json()) as ClaimAsk & { release?: boolean };
       if (b.release) return json({ released: await this.release(b.id ?? "") });
       if (live === "locked") return json({ error: LOCKED }, 409);
-      return this.claim(by, b);
+      const rank = Number(req.headers.get("x-codesplitter-rank"));
+      return this.claim(by, b, req.headers.has("x-codesplitter-rank") && Number.isFinite(rank) ? rank : undefined);
     }
     if (req.method === "POST" && route === "release") {
       const { id } = (await req.json()) as { id?: string };
@@ -645,7 +646,7 @@ export class FileDurableObject {
    * the way, and `retryAfter`: seconds till the first of them lapses (null: people's holds).
    * Lines someone is waiting in line for are taken in turn: with `wait`, it joins the line (see `wait`).
    */
-  async claim(by: string, b: ClaimAsk) {
+  async claim(by: string, b: ClaimAsk, rank?: number) {
     this.live();
     const bot = by.startsWith("agent-"), now = Date.now();
     const old = b.id ? this.claims.get(b.id) : undefined;
@@ -671,7 +672,7 @@ export class FileDurableObject {
       // People steer agents: a person's hold doesn't wait behind agents in line for free lines.
       const ahead = bot || b.wait ? this.ahead(b.id, want) : [];
       if (clash.length || ahead.length) {
-        if (b.wait) return this.wait(by, b, lines);
+        if (b.wait) return this.wait(by, b, lines, rank);
         if (clash.length) return json({ error: `held by ${clash.map((c) => "@" + c.who).join(", ")}`, claims: clash, retryAfter: retryAfter(clash) }, 409);
         const blocking = this.blocking(ahead);
         return json({ error: `${ahead.length} waiting in line for these lines: claim with wait to join them`, queued: ahead.length, claims: blocking, retryAfter: retryAfter(blocking) }, 409);
@@ -716,15 +717,17 @@ export class FileDurableObject {
    * Someone holding lines here may not wait (nor, the Worker sees to it, in another file): holding
    * some lines while waiting for others is how two waiters end up waiting on each other for ever.
    */
-  async wait(by: string, b: ClaimAsk, lines: string[]) {
+  async wait(by: string, b: ClaimAsk, lines: string[], rank?: number) {
     const holding = [...this.claims.values()].filter((c) => c.who === by && !c.soft);
     if (holding.length) return json({ error: `you hold lines here (${holding.map((c) => c.id).join(", ")}): finish with them and let go before you wait for more`, claims: holding }, 409);
     const now = Date.now();
     let w = this.waits.find((x) => x.id === b.id);
     if (w && w.who !== by) return json({ error: `${b.id} is @${w.who}'s place in line` }, 409);
     if (!w) {
-      w = { id: b.id ?? newId(now), who: by, lines, ...(b.task ? { task: b.task.slice(0, 200) } : {}), at: now, seen: now };
-      this.waits.push(w);
+      w = { id: b.id ?? newId(now), who: by, lines, ...(b.task ? { task: b.task.slice(0, 200) } : {}), at: now, seen: now, ...(rank !== undefined && { rank }) };
+      // Under a ranked policy (codesplitter-order=rank) it steps ahead of waiters of lower rank, behind its equals.
+      const lower = rank === undefined ? -1 : this.waits.findIndex((x) => (x.rank ?? 0) < rank);
+      if (lower < 0) this.waits.push(w); else this.waits.splice(lower, 0, w);
       await this.ctx.storage.put("wait:" + w.id, w);
     } else {
       w.seen = now;
