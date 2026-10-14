@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Watch Mervin work</title>
+<link href="/fonts/geist.css" rel="stylesheet">
+<script src="/vendor/lucide.min.js"></script>
+<style>
+  :root { --bg: #fff; --fg: #0a0a0a; --muted: #6b6b6b; --border: #cfcfcf; --paper: #fcfbf8; --accent: #e8590c; --ok: #2f7d32; --bad: #b3261e;
+    --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, monospace; }
+  :root[data-theme="dark"] { --bg: #0a0a0a; --fg: #f2f2f2; --muted: #9a9a9a; --border: #3a3a3a; --paper: #151515; --ok: #6fbf73; --bad: #ef7b73; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font: 600 26px/1.1 var(--sans); letter-spacing: -0.04em; margin: 0 0 14px; } h1 em { font-style: normal; color: var(--accent); }
+  .bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .grow { flex: 1; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; color: var(--fg); border: 1px solid var(--border); border-radius: 5px; background: var(--paper); cursor: pointer; }
+  .btn[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .btn svg { width: 16px; height: 16px; }
+  #clock { font: 14px var(--mono); width: 7ch; white-space: nowrap; }
+  #speedtxt { font: 12px var(--mono); width: 5ch; white-space: nowrap; color: var(--muted); }
+  input[type=range] { width: 140px; accent-color: var(--accent); }
+  .cols { display: grid; grid-template-columns: 1fr 340px; gap: 14px; }
+  @media (max-width: 800px) { .cols { grid-template-columns: 1fr; } }
+  .wave { margin-bottom: 14px; }
+  .wave h2 { font: 600 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 6px; }
+  .card { border: 1px solid var(--border); border-radius: 6px; background: var(--paper); padding: 10px 12px; margin-bottom: 8px; transition: border-color .2s, opacity .2s; }
+  .card.queued { opacity: .55; } .card.merging { border-color: var(--accent); } .card.merged { border-color: var(--ok); } .card.held { border-color: var(--bad); }
+  .card .head { display: flex; gap: 8px; align-items: center; white-space: nowrap; }
+  .card .head b { font-family: var(--mono); font-weight: 600; } .card .head .t { overflow: hidden; text-overflow: ellipsis; flex: 1; }
+  .card svg { width: 15px; height: 15px; flex: none; }
+  .merged svg.s { color: var(--ok); } .held svg.s { color: var(--bad); } .merging svg.s { color: var(--accent); }
+  .why { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .file { display: flex; gap: 8px; font: 12px var(--mono); margin-top: 4px; white-space: nowrap; }
+  .file .p { overflow: hidden; text-overflow: ellipsis; flex: 1; }
+  .tier { display: inline-block; min-width: 7ch; text-align: center; border: 1px solid var(--border); border-radius: 3px; font: 11px var(--mono); }
+  .tier.certain, .tier.agree { color: var(--ok); } .tier.mervin, .tier.differ { color: var(--accent); } .tier.card { color: var(--bad); border-color: var(--bad); }
+  .ask { margin-top: 6px; padding: 6px 8px; border: 1px dashed var(--bad); border-radius: 5px; font-size: 12px; animation: pop .3s ease-out; }
+  @keyframes pop { from { transform: scale(.9); opacity: 0; } }
+  #log { font: 12px/1.6 var(--mono); border: 1px solid var(--border); border-radius: 6px; background: var(--paper); padding: 8px 10px; height: 360px; overflow: auto; white-space: nowrap; }
+  #tiers { display: flex; gap: 10px; flex-wrap: wrap; font: 12px var(--mono); color: var(--muted); margin-bottom: 8px; }
+  textarea { width: 100%; height: 80px; margin-top: 12px; font: 12px var(--mono); background: var(--paper); color: var(--fg); border: 1px solid var(--border); border-radius: 5px; padding: 8px; }
+  .muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Watch <em>Mervin</em> work</h1>
+  <div class="bar" role="toolbar" aria-label="Playback">
+    <button class="btn" id="play" title="Play"><i data-lucide="play"></i></button>
+    <button class="btn" id="pause" title="Pause: hold the next step"><i data-lucide="pause"></i></button>
+    <button class="btn" id="stop" title="Stop: back to the start"><i data-lucide="square"></i></button>
+    <button class="btn" id="step" title="Step: the next event"><i data-lucide="skip-forward"></i></button>
+    <i data-lucide="gauge" title="Speed" style="width:16px;height:16px"></i>
+    <input type="range" id="speed" min="0" max="6" step="1" value="2" aria-label="Speed" title="Speed">
+    <span id="speedtxt">1x</span>
+    <span class="grow"></span>
+    <span id="clock" title="Round time played">00:00.0</span>
+    <button class="btn" id="theme" title="Light or dark"><i data-lucide="sun-moon"></i></button>
+  </div>
+  <div class="cols">
+    <div id="waves"></div>
+    <div><div id="tiers"></div><div id="log" aria-live="polite"></div></div>
+  </div>
+  <textarea id="src" spellcheck="false" aria-label="a round file from .mervin/rounds (bun scripts/mervin-merge.ts)" placeholder="Paste a round file from .mervin/rounds"></textarea>
+</div>
+<script type="module">
+import { events, Player, view, readRound, clockText, SPEEDS } from "/mervin-replay.js";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const SAMPLE = {
+  board: { stages: [
+    { pr: 1501, title: "Fix the lockfile drift", files: [{ path: "bun.lock", tier: "certain" }, { path: "package.json", tier: "agree" }] },
+    { pr: 1502, title: "Route for the board", stackedOn: 1501, files: [{ path: "src/worker.ts", tier: "mervin", why: "both added a route; line ids settled it" }, { path: "src/api.ts", tier: "differ" }] },
+    { pr: 1503, title: "Rewrite the stamps", files: [{ path: "src/stamps.ts", tier: "card" }] },
+  ] },
+  verdicts: [
+    { pr: 1501, go: true, wave: 1, why: "clear to merge" },
+    { pr: 1502, go: true, wave: 2, why: "after #1501" },
+    { pr: 1503, go: false, why: "Mervin asks on src/stamps.ts" },
+  ],
+};
+try { const t = localStorage.getItem("map-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+if (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches) document.documentElement.dataset.theme = "dark";
+let round = SAMPLE, player = new Player(events(round)), last = 0;
+const ICON = { queued: "clock", held: "octagon-alert", merging: "git-merge", merged: "circle-check" };
+
+function draw() {
+  const v = view(round, player.steps.slice(0, player.at));
+  const groups = new Map();
+  for (const p of v.prs) { const k = p.state === "held" ? "held" : `wave ${p.wave ?? "?"}`; (groups.get(k) ?? groups.set(k, []).get(k)).push(p); }
+  $("waves").innerHTML = [...groups].sort(([a], [b]) => (a === "held") - (b === "held") || a.localeCompare(b)).map(([k, ps]) => `<div class="wave"><h2>${esc(k)}</h2>${ps.map((p) =>
+    `<div class="card ${p.state}"><div class="head"><i class="s" data-lucide="${ICON[p.state]}"></i><b>#${p.pr}</b><span class="t">${esc(p.title)}</span></div>`
+    + (p.why ? `<div class="why">${esc(p.why)}</div>` : "")
+    + p.files.map((f) => `<div class="file"><span class="tier ${f.tier}">${f.tier}</span><span class="p" title="${esc(f.why)}">${esc(f.path)}</span></div>`).join("")
+    + p.cards.map((c) => `<div class="ask"><i data-lucide="message-circle-question" style="width:13px;height:13px;vertical-align:-2px"></i> Mervin asks about <b>${esc(c)}</b></div>`).join("")
+    + `</div>`).join("")}</div>`).join("");
+  $("tiers").innerHTML = Object.entries(v.tiers).map(([t, n]) => `<span>${t} ${n}</span>`).join("");
+  const log = $("log"), stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+  log.innerHTML = v.log.map((l) => `<div>${esc(l)}</div>`).join("");
+  if (stick) log.scrollTop = log.scrollHeight;
+  $("clock").textContent = clockText(player.clock);
+  for (const [id, m] of [["play", "playing"], ["pause", "paused"], ["stop", "stopped"]]) $(id).setAttribute("aria-pressed", String(player.mode === m));
+  lucide.createIcons();
+}
+function frame(now) {
+  const dt = last ? now - last : 0; last = now;
+  if (player.tick(dt).length || player.mode === "playing") draw();
+  requestAnimationFrame(frame);
+}
+$("play").onclick = () => { player.play(); draw(); };
+$("pause").onclick = () => { player.pause(); draw(); };
+$("stop").onclick = () => { player.stop(); draw(); };
+$("step").onclick = () => { player.step(); draw(); };
+$("speed").oninput = () => { player.setSpeed(SPEEDS[$("speed").value]); $("speedtxt").textContent = `${player.speed}x`; };
+$("theme").onclick = () => { const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark"; document.documentElement.dataset.theme = t; try { localStorage.setItem("map-theme", t); } catch {} };
+$("src").value = JSON.stringify(SAMPLE, null, 1);
+$("src").addEventListener("input", () => {
+  try { const r = readRound(JSON.parse($("src").value)); if (typeof r === "string") return; round = r; player = new Player(events(r)); player.setSpeed(SPEEDS[$("speed").value]); draw(); } catch {}
+});
+draw(); requestAnimationFrame(frame);
+</script>
+</body>
+</html>
