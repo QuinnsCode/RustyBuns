@@ -148,7 +148,8 @@ test("the health page: each package against latest, how far behind, a score, and
   expect(by.hono).toMatchObject({ latest: "4.6.0", behind: "minor" });
   expect(by.mitt.dev).toBe(false);
   expect(by.local).toMatchObject({ version: null, behind: null });
-  expect(h.score).toBe(Math.round(100 * (0.85 + 0 + 0.3 + 0.6 + 0.3) / 5));
+  expect(h.score).toBe(Math.round(100 * (0.85 + 0 + 0.3 + 0.25 * (0.6 + 0.3)) / (3 + 0.5)));
+  expect(h).toMatchObject({ runtime: 38, dev: 45 });
   expect(h.packages[0].name).toBe("kleur");
   expect((await call("bob", "/api/repos/ryan/lab/deps/health")).status).toBe(403);
 });
@@ -1068,6 +1069,10 @@ test("health: a dig rides on its package's row, dev is flagged, and an empty man
   expect(dev).toMatchObject({ score: 100, packages: [{ name: "mitt", dev: true, latest: "3.0.1", vulns: [] }] });
   expect(dev.packages[0].behind).toBeNull();
   expect((await health(new Map(), NPM)).score).toBeNull();
+  // A stale dev dependency drags the score a quarter as hard as a stale runtime one.
+  const mixed = await health(new Map([["package.json", { pkg: { dependencies: { mitt: "3.0.0" }, devDependencies: { kleur: "3.0.0" } } }]]), NPM);
+  expect(mixed).toMatchObject({ runtime: 85, dev: 30, score: 74 });
+  expect(dev).toMatchObject({ runtime: null, dev: 100 });
 });
 
 test("health: asks the registry for one package at a time, and once per name, so big documents never pile up (#1675)", async () => {

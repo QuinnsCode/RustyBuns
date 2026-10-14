@@ -4940,7 +4940,7 @@ const views = {
       const [ic, says] = p.behind ? dot[p.behind] : p.version ? ["circle-check", "up to date"] : ["minus", "a range the doctor doesn't read"];
       const dig = watching.get(p.name);
       return `<tr title="${esc(p.name)} ${esc(p.spec)}">
-        <td>${pkgIcon(p.name)} <code>${esc(p.name)}</code>${where(p)}</td>
+        <td>${pkgIcon(p.name)} <code>${esc(p.name)}</code>${where(p)}${p.dev ? ` <span class="muted" title="dev dependency: counts a quarter as much in the score">${icon("wrench")}</span>` : ""}</td>
         <td title="what the repo pins">${esc(p.version ?? p.spec)}</td>
         <td title="the registry's latest">${esc(p.latest ?? "")}</td>
         <td title="${esc(says)}${p.versions ? ` · ${p.versions} release${p.versions === 1 ? "" : "s"}, ${p.days} day${p.days === 1 ? "" : "s"} behind` : ""}">${icon(ic)}${p.versions ? ` ${p.versions} · ${p.days}d` : ""}</td>
@@ -4948,12 +4948,12 @@ const views = {
         <td>${dig ? `<span title="${digTip(dig)}">🪏 ${esc(dig.target)}</span>` : ""}</td></tr>`;
     };
     const viewA = `<p style="display:flex;gap:12px;align-items:baseline"><b class="${h.score === null ? "muted" : tone(h.score)}" style="font-size:40px" title="health: 100 is every dependency on its latest, none with a known vulnerability">${h.score ?? "–"}</b>
-        <span class="muted" title="packages">${icon("package")} ${h.packages.length}</span></p>
+        <span class="muted" title="packages">${icon("package")} ${h.packages.length}</span>${h.dev !== null && h.runtime !== null ? `<span class="muted" title="runtime dependencies alone">${icon("package")} ${h.runtime}</span><span class="muted" title="dev dependencies alone, weighed a quarter as much">${icon("wrench")} ${h.dev}</span>` : ""}</p>
       ${h.packages.length ? `<table style="width:100%;font-size:13px"><thead><tr><th title="package">${icon("package")}</th><th title="yours">${icon("pin")}</th><th title="latest">${icon("sparkles")}</th><th title="how far behind: releases · days">${icon("history")}</th><th title="vulnerabilities">${icon("shield")}</th><th title="digs: future releases being watched">🪏</th></tr></thead><tbody>${h.packages.map(rowA).join("")}</tbody></table>` : ""}`;
     // Layout B: the score as n / 100, the gap as a letter, releases and days.
     const lv = { patch: "p", minor: "m", major: "M" };
     const rowB = (x) => `<tr title="${esc(x.name)} ${esc(x.spec)} in ${esc(x.path)}${x.dev ? " (dev)" : ""}">
-        <td>${pkgIcon(x.name)} <code>${esc(x.name)}</code>${where(x)}</td>
+        <td>${pkgIcon(x.name)} <code>${esc(x.name)}</code>${where(x)}${x.dev ? ` <span class="muted" title="dev dependency: counts a quarter as much in the score">${icon("wrench")}</span>` : ""}</td>
         <td align="right">${esc(x.version ?? x.spec)}</td><td align="right">${x.latest ? esc(x.latest) : "?"}</td>
         <td align="right">${x.behind ? `<span title="${x.behind} behind: ${x.versions} release${x.versions === 1 ? "" : "s"}, ${x.days} days">${lv[x.behind]} · ${x.versions} · ${x.days}d</span>` : x.latest ? `<span title="up to date">${icon("check")}</span>` : ""}</td>
         <td align="center">${x.vulns.length ? `<b class="vuln" title="${esc(x.vulns.join(", "))}">${x.vulns.length}</b>` : ""}</td>
