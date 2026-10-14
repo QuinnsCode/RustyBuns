@@ -75,10 +75,13 @@ export function createHelper(h: { script: string; cwd: string; args: readonly st
       if (!existsSync(path.join(repo, h.script))) return { status: 404, error: `This helper works from ${h.script}, and ${repo} doesn't have it` };
       s = { phase: "running", lines: [], hold: [], startedAt: Date.now() };
       const mine = s;
-      spawn([bun, path.join(repo, h.script), ...h.args], path.join(repo, h.cwd), (line) => {
+      const push = (line: string) => {
         mine.lines.push(line);
         if (mine.lines.length > KEEP) mine.lines.shift();
-      }).then(
+      };
+      const run = () => spawn([bun, path.join(repo, h.script), ...h.args], path.join(repo, h.cwd), push);
+      // a fresh checkout has no node_modules, so the script can't import its packages: install first
+      (existsSync(path.join(repo, "node_modules")) ? run() : spawn([bun, "install"], repo, push).then((code) => (code === 0 ? run() : 2))).then(
         (code) => Object.assign(mine, { phase: code === 0 ? "green" : code === 1 ? "red" : "error", hold: holdFrom(mine.lines), endedAt: Date.now() }, code > 1 ? { error: `stopped with exit ${code}` } : {}),
         (err: Error) => Object.assign(mine, { phase: "error", endedAt: Date.now(), error: err.message }),
       );
