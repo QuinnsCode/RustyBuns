@@ -53,9 +53,13 @@ await copyFile("src/mcp.html", "dist/client/mcp.html");
 await copyFile("src/map.html", "dist/client/map.html");
 const dm = await Bun.build({ entrypoints: ["src/deploy-map.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "deploy-map.js" });
 if (!dm.success) { for (const l of dm.logs) console.error(l); process.exit(1); }
+// Watch Mervin work: its page, and the replay (src/mervin-replay.ts) bundled for the browser.
+await copyFile("src/mervin-watch.html", "dist/client/mervin-watch.html");
+const mr = await Bun.build({ entrypoints: ["src/mervin-replay.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "mervin-replay.js" });
+if (!mr.success) { for (const l of mr.logs) console.error(l); process.exit(1); }
 // The pages' security headers, the same ones the Worker puts on its answers (src/security.ts),
 // with the hashes of the pages' inline scripts: the enforced CSP runs those and no others.
-const pages = ["index.html", "play.html", "features.html", "reference.html", "mcp.html", "map.html"];
+const pages = ["index.html", "play.html", "features.html", "reference.html", "mcp.html", "map.html", "mervin-watch.html"];
 const hashes = new Set<string>();
 for (const page of pages) for (const h of inlineScriptHashes(await readFile(`dist/client/${page}`, "utf8"))) hashes.add(h);
 await writeFile("dist/client/_headers", headersFile([...hashes]) + "\n/assets/*\n  cache-control: public, max-age=31536000, immutable\n");
