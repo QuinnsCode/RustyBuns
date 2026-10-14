@@ -69,6 +69,8 @@ export async function exportFor(env: Env, handle: string) {
     line_events: await all(env, "SELECT owner, repo, path, sets, inserts, deletes, lines, first_at, last_at FROM line_events WHERE who = ?", handle),
     // The rev of each file you last saw (seen.ts).
     last_seen: await all(env, "SELECT key, rev, at FROM last_seen WHERE name = ? ORDER BY at DESC", handle),
+    // What you agreed to share about how your merge conflicts go (usage.ts): no paths, no code.
+    shared_usage: { opted_in: (await env.DB.prepare("SELECT share_usage FROM users WHERE name = ?").bind(handle).first())?.share_usage ?? null, conflicts: await all(env, "SELECT at, ext, round, who, harness, ok, tests FROM conflict_outcomes WHERE name = ?", handle) },
     // Your settings (settings.ts), from the Durable Object near you.
     settings: await settingsStub(env, handle).fetch(new Request("https://settings/")).then((r) => r.json()).catch(() => null),
     feed_digest: await env.DB.prepare("SELECT harness, status, since, through, text, at FROM feed_digests WHERE name = ?").bind(handle).first(),
@@ -185,6 +187,7 @@ export async function eraseUser(env: Env, handle: string, { scrub = false } = {}
     by("DELETE FROM line_events WHERE who = ?", handle),
     by("DELETE FROM audit WHERE actor = ? OR owner = ?", handle, handle),
     by("DELETE FROM feed_digests WHERE name = ?", handle),
+    by("DELETE FROM conflict_outcomes WHERE name = ?", handle),
     by("DELETE FROM last_seen WHERE name = ?", handle),
     // evict leaves these: agent runs (the tasks you gave) and the limits counted against you.
     by("DELETE FROM agent_runs WHERE owner = ?", handle),

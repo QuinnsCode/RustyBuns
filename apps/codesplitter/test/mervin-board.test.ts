@@ -128,6 +128,35 @@ describe("mervin merge round", () => {
   });
 });
 
+describe("mervin merge round blockers (#1542)", () => {
+  const st = (pr: number, extra = {}) => ({ pr, head: "h", base: "b", files: [{ path: "a", tier: "certain" as const, why: "", after: [] }], ...extra });
+  const bd = (stages: any[]) => ({ main: "m", at: "", stages, written: [], skipped: [], clashes: [] }) as any;
+  const ok = (name: string) => ({ name, conclusion: "SUCCESS", status: "COMPLETED" });
+  test("a check that hasn't reported is pending, not green", () => {
+    const prs: BoardPr[] = [{ number: 1, headRefOid: "h", statusCheckRollup: [ok("typecheck")] }];
+    expect(decide(bd([st(1)]), prs)[0]!.why).toBe("required check not reported yet: apps");
+    prs[0]!.statusCheckRollup = [ok("typecheck"), ok("apps")];
+    expect(decide(bd([st(1)]), prs)[0]!.go).toBe(true);
+  });
+  test("a stacked PR whose base branch is gone is not landable", () => {
+    const prs: BoardPr[] = [{ number: 1, headRefOid: "h", headRefName: "b1", baseRefName: "dead" }];
+    expect(decide(bd([st(1)]), prs)[0]!.why).toContain("retarget to main");
+  });
+  test("merge method: a stack takes a merge commit, a plain PR squashes", () => {
+    const prs: BoardPr[] = [
+      { number: 1, headRefOid: "h", headRefName: "b1", baseRefName: "main" },
+      { number: 2, headRefOid: "h", headRefName: "b2", baseRefName: "b1" },
+      { number: 3, headRefOid: "h", headRefName: "b3", baseRefName: "main" },
+    ];
+    const by = Object.fromEntries(decide(bd([st(1), st(2, { stackedOn: 1 }), st(3)]), prs).map((v) => [v.pr, v.method]));
+    expect(by).toEqual({ 1: "merge", 2: undefined, 3: "squash" });
+  });
+  test("a failure that is also red on main says so", () => {
+    const prs: BoardPr[] = [{ number: 1, headRefOid: "h", statusCheckRollup: [{ name: "apps", conclusion: "FAILURE", status: "COMPLETED" }] }];
+    expect(decide(bd([st(1)]), prs, ["apps"])[0]!.why).toContain("also failing on main");
+  });
+});
+
 import { buildStack, stackable } from "../scripts/mervin-merge.ts";
 describe("mervin stack", () => {
   test("clean PRs join as merge commits, a clashing one is left out, only certain/agree are picked", () => {
