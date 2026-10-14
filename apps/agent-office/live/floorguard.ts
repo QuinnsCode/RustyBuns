@@ -34,7 +34,7 @@ export function peopleOnly(action: string, setting = process.env.AGENT_OFFICE_PE
 /** How long an agent's request waits for a person. The office-workers command's timeouts get this much more. */
 export const ASK_MS = 120_000;
 
-export interface Ask { id: string; floor: string; who: string; what: string; detail: string; at: number; until: number }
+export interface Ask { id: string; floor: string; who: string; what: string; detail: string; size: number; odd: number; at: number; until: number }
 const asks = new Map<string, Ask & { answer: (why: string) => void }>();
 
 const clip = (s: unknown, n: number) => {
@@ -42,17 +42,29 @@ const clip = (s: unknown, n: number) => {
   return line.length > n ? `${line.slice(0, n - 1)}…` : line;
 };
 
-/** What the agent is asking to do, in a line for the card. */
+// C0 controls (bar newline and tab), DEL and C1: what a terminal reads as keystrokes or escapes.
+const ODD = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/g;
+
+/** A prompt for the card whole (newlines kept, no length cap), control characters shown as ␛-style pictures. */
+const full = (s: unknown) => String(s ?? "").replace(ODD, (c) => (c < " " ? String.fromCharCode(0x2400 + c.charCodeAt(0)) : "\u2421"));
+
+/** How long the prompt the card shows is, and how many control characters it holds. */
+function askSize(body: any) {
+  const text = String(body?.prompt ?? "");
+  return { size: text.length, odd: text.match(ODD)?.length ?? 0 };
+}
+
+/** What the agent is asking to do, for the card: the prompt in full, since a clipped one hides what it ends with. */
 export function askDetail(action: string, body: any) {
   const b = body ?? {};
-  if (action === "/tell") return `tell ${clip(b.worker, 64)}: ${clip(b.prompt, 400)}`;
+  if (action === "/tell") return `tell ${clip(b.worker, 64)}: ${full(b.prompt)}`;
   if (action === "/home") {
     const them = b.merged ? "every worker whose pull request merged" : (Array.isArray(b.workers) ? b.workers : []).map((w: unknown) => clip(w, 64)).join(", ");
     return `send ${them || "nobody"} home${b.cleanup ? ` (cleanup: ${clip(b.cleanup, 16)})` : ""}`;
   }
   if (action === "/pr") return b.pr === undefined || b.pr === null ? `say ${clip(b.worker, 64) || "it"} has no pull request` : `say PR #${clip(b.pr, 12)} is ${b.worker ? `${clip(b.worker, 64)}'s` : "its own"}`;
-  if (action === "/queue") return `queue a task${b.issue ? ` for issue #${clip(b.issue, 12)}` : ""} "${clip(b.title, 80)}": ${clip(b.prompt, 400)}`;
-  return `hire a worker${b.issue ? ` for issue #${clip(b.issue, 12)}` : ""}: ${clip(b.prompt, 400)}`;
+  if (action === "/queue") return `queue a task${b.issue ? ` for issue #${clip(b.issue, 12)}` : ""} "${clip(b.title, 80)}": ${full(b.prompt)}`;
+  return `hire a worker${b.issue ? ` for issue #${clip(b.issue, 12)}` : ""}: ${full(b.prompt)}`;
 }
 
 /**
@@ -64,7 +76,7 @@ export function askFirst(action: string, floor: string, who: string, body: unkno
   const what = listed(action, setting);
   if (!what) return Promise.resolve("");
   const id = crypto.randomUUID(), at = Date.now();
-  const ask: Ask = { id, floor, who, what, detail: askDetail(action, body), at, until: at + ms };
+  const ask: Ask = { id, floor, who, what, detail: askDetail(action, body), ...askSize(body), at, until: at + ms };
   toast(`✋ ${who} asks to ${clip(ask.detail, 120)} (Allow or Deny it in the office)`);
   return new Promise((resolve) => {
     const answer = (why: string) => { clearTimeout(timer); asks.delete(id); resolve(why); };
