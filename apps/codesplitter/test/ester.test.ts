@@ -25,4 +25,11 @@ describe("ester", () => {
     expect(lines[0]).toContain("5 failing, 1 not the board's, 1 flaky, 1 a PR's own red, 2 block Mervin");
     expect(lines.join("\n")).not.toContain("apps/d: t4");
   });
+
+  test("reports run, rerun and CI times", () => {
+    const lines = report(vs, [{ dir: "apps/a", cmd: "bun test", ms: 41000 }, { dir: ".", cmd: "bun run typecheck", ms: 90000 }], [41000], [{ ...stages[0]!, ciSecs: 360 }]).join("\n");
+    expect(lines).toContain("slowest runs: .: bun run typecheck 90s, apps/a: bun test 41s");
+    expect(lines).toContain("the flaky rerun took 41s");
+    expect(lines).toContain("slowest PR CI: #1 6m");
+  });
 });

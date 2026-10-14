@@ -56,19 +56,21 @@ export const TIERS: Tier[] = ["certain", "agree", "mervin", "differ", "card"];
 
 export interface BoardPr {
   number: number; title?: string; headRefOid: string; headRefName?: string; baseRefName?: string;
-  statusCheckRollup?: { name?: string; conclusion?: string | null; status?: string }[];
+  statusCheckRollup?: { name?: string; conclusion?: string | null; status?: string; startedAt?: string; completedAt?: string }[];
 }
 /** The PR's own CI: red on its own means a failure in the merged tree may be the PR's, not the merge's. */
 export type Ci = "pass" | "fail" | "pending" | "none";
-export function ciOf(pr: BoardPr): { ci: Ci; failing: string[] } {
+export function ciOf(pr: BoardPr): { ci: Ci; failing: string[]; ciSecs: number } {
   const checks = pr.statusCheckRollup ?? [];
   const failing = checks.filter((c) => ["FAILURE", "TIMED_OUT", "CANCELLED", "ERROR"].includes(c.conclusion ?? "")).map((c) => c.name ?? "?");
   const ci: Ci = failing.length ? "fail" : !checks.length ? "none" : checks.some((c) => c.status && c.status !== "COMPLETED") ? "pending" : "pass";
-  return { ci, failing };
+  // GitHub stamps each check with start and end: the slowest one is how long the PR waits on CI.
+  const ciSecs = Math.max(0, ...checks.map((c) => (c.startedAt && c.completedAt ? Math.round((Date.parse(c.completedAt) - Date.parse(c.startedAt)) / 1000) : 0)));
+  return { ci, failing, ciSecs };
 }
 /** `main` is true when the PR conflicts with main's own copy of the file, whatever earlier stages did. */
 export interface FileRow { path: string; tier: Tier; why: string; after: number[]; main?: boolean }
-export interface Stage { ms?: number; cached?: boolean; pr: number; title?: string; head: string; base: string; stackedOn?: number; ci?: Ci; failing?: string[]; files: FileRow[] }
+export interface Stage { ms?: number; cached?: boolean; pr: number; title?: string; head: string; base: string; stackedOn?: number; ci?: Ci; failing?: string[]; ciSecs?: number; files: FileRow[] }
 /** A clash between files (or PRs) that merges clean as text: `prs` lists the PRs, `main` is true when main holds one side. */
 export interface Clash { kind: "migration" | "export" | "route"; key: string; prs: number[]; main?: boolean }
 export interface Board { main: string; at: string; stages: Stage[]; written: string[]; skipped: { pr: number; why: string }[]; clashes: Clash[] }
@@ -396,7 +398,7 @@ if (import.meta.main) {
         const bad = runs.filter((x) => r.runs.some((d) => !d.ok && d.dir === x.dir && d.cmd === x.cmd));
         const again = new Set(added.length && bad.length ? (await testTree(join(out, "tree"), bad, env, true)).failed : added);
         const verdicts = triage(r.failed, board.stages, before, again);
-        console.log(report(verdicts).join("\n"));
+        console.log(report(verdicts, r.runs, again.size ? bad.map((x) => r.runs.find((d) => d.dir === x.dir && d.cmd === x.cmd)!.ms) : [], board.stages).join("\n"));
         const mine = new Set(verdicts.filter((v) => v.owner === "blocks").map((v) => v.test));
         const red = board.stages.filter((s) => s.ci === "fail").map((s) => `#${s.pr} (${s.failing!.join(", ")})`);
         if (red.length) console.log(`already red on their own, so look at them before blaming the merge: ${red.join("; ")}`);
