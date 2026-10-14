@@ -63,6 +63,37 @@ shows two real engine faults:
    those asks as a card now. 63 wrong became 59, solved did not move.
 2. **A block one side moved while the other edited around it** (odb.h) came out with its comment split: the stretch-blend dropped the branch's `*/`, `/*` and blank lines as "the same line main added". Fixed here (`blend` in `src/lines.ts`, #1390): only a line with some text counts as the same; the merge is well formed, main's block first.
 
+## What Mervin settles on Rails (Ruby, Markdown)
+
+```sh
+git clone --bare https://github.com/rails/rails.git rails.git
+bun scripts/mervin-corpus.ts rails.git --limit 400 --show 30
+```
+
+Measured 2026-10-13 on rails/rails: 16,000 merges scanned (the walk stops at `--limit` x 40; Rails has 26,585),
+251 conflicted in git, 298 conflicted files replayed (3 skipped). Only 251 of 400 fights were found in that
+window, so that is the whole sample.
+
+| What Mervin did with a file git gave up on | Files | Share |
+|---|---|---|
+| **solved**: settled to exactly what the person committed | 80 | 27% |
+| **close**: same lines in another order, or the same text bar indentation | 82 | 28% |
+| **wrong**: settled clean to other text | 85 | 29% |
+| **cards**: handed back to ask | 42 | 14% |
+| lock: lockfiles, left to the package manager | 9 | 3% |
+| gap: git merges it clean, Mervin conflicts | 0 | |
+
+By language: Ruby solved 24 of 77 (31%) and asked on 31 (40%); Markdown solved 51 of 204 (25%), close on 81,
+wrong on 62. Markdown is 68% of the sample, nearly all `CHANGELOG.md` and guides.
+
+Against git/git: solved plus close is 54% here and 48% there, and `wrong` is 29% against 13%, so the silent
+bad-merge rate more than doubles on this mix. It is a Markdown problem, not a Ruby one: 62 of the 85 wrong
+files are `.md`, and 21 of the 77 Ruby files. Of the first 30 wrong files listed, 23 are `CHANGELOG.md`, the file
+where both branches add an entry at the top and the person who merged chose an order or reworded one. Whether
+those are engine faults or the person editing around the conflict is not yet looked at: pull a few and diff
+them against `landed` before changing the resolver. Ruby is the other finding: the weak spot is cards (40%),
+not silent mistakes, and Ruby has no `lint.ts` guard (see below).
+
 ## Where Mervin is weak
 
 - **Code outside JS/TS is only flagged.** `src/lint.ts` parses only JavaScript, TypeScript and HTML. For the rest
@@ -76,7 +107,8 @@ shows two real engine faults:
 
 ## Corpus to pull in
 
-Busy repos that keep real merge commits, cloned in full (not shallow) to a scratch directory. Done: git/git (above).
+Busy repos that keep real merge commits, cloned in full (not shallow) to a scratch directory. Done: git/git and rails/rails (above).
 Tried: rust-lang/cargo, which merges only green PRs through bors, so 1 of 1,600 merges was ever conflicted: no corpus.
-Still to check: Linux subsystem trees, Rails, Django. Reference engines to compare against, not to vendor yet:
+Tried: pingdotgg/t3code, which squash-merges: 15 merge commits in 5,473, so no corpus either.
+Still to check: a Linux subsystem tree, Django. Reference engines to compare against, not to vendor yet:
 Mergiraf (structured merge), Spork and IntelliMerge (tree matching).
