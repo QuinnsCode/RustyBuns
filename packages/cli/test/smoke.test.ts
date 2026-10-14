@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { packageManager, withMode } from "../src/smoke.ts";
+import { bareServerEntry, packageManager, withMode, withServer } from "../src/smoke.ts";
 import { declaredSecrets, fakeSecret, removeCommittedSecrets } from "../src/fake-secrets.ts";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "smoke-test-"));
@@ -31,4 +31,17 @@ test("committed secrets are deleted, examples stay, and fakes are never real-loo
   expect(declaredSecrets(d)).toEqual(["AUTH_SECRET", "STRIPE_SECRET_KEY"]);
   expect(fakeSecret("DATABASE_URL")).toContain("127.0.0.1:9");
   expect(fakeSecret("CLOUDFLARE_API_TOKEN")).toBeUndefined();
+});
+
+test("a Bun.serve app with no client runs as its own server, not a spa build", () => {
+  const d = tmp();
+  writeFileSync(join(d, "package.json"), JSON.stringify({ scripts: { start: "bun run app.ts" } }));
+  writeFileSync(join(d, "app.ts"), "Bun.serve({ fetch: () => new Response('hi') });");
+  expect(bareServerEntry(d)).toBe("app.ts");
+  writeFileSync(join(d, "index.html"), "<html></html>");
+  expect(bareServerEntry(d)).toBeNull();
+  const cfg = `{\n  "desktop": {\n    "mode": "spa",\n    "clientBuild": "vite build",\n    "clientDir": "dist/ui"\n  }\n}`;
+  const w = withServer(cfg, "app.ts", "/d");
+  expect(w).toContain(`"server": { "entry": "app.ts", "paths": ["/"] }`);
+  expect(w).not.toContain("client");
 });

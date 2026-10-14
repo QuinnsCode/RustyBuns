@@ -29,6 +29,26 @@ export function withMode(cfg: string, mode: "spa" | "worker", dataDir: string): 
   return s;
 }
 
+/**
+ * The file of an app that is only a Bun server and has no client to build: no index.html or vite config,
+ * and an entry (start script, main, index.*) that calls Bun.serve. Null for anything else.
+ */
+export function bareServerEntry(dir: string): string | null {
+  if (existsSync(join(dir, "index.html")) || ["ts", "mts", "js", "mjs"].some((e) => existsSync(join(dir, `vite.config.${e}`)))) return null;
+  let pkg: any = {};
+  try { pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")); } catch {}
+  const start = String(pkg.scripts?.start ?? "").match(/^(?:bun|node|tsx)\s+(?:run\s+)?(?:-\S+\s+)*([^\s-]\S*\.[cm]?[jt]s)\b/)?.[1];
+  const candidates = [start, pkg.main, ...["ts", "js", "mts", "mjs"].map((e) => `index.${e}`), ...["ts", "js"].map((e) => `src/index.${e}`)]
+    .filter((f): f is string => typeof f === "string").map((f) => f.replace(/^\.\//, ""));
+  return candidates.find((f) => existsSync(join(dir, f)) && /\bBun\.serve\s*\(/.test(readFileSync(join(dir, f), "utf8"))) ?? null;
+}
+
+/** The config init wrote, with no client to build: the app's own server runs beside the host and answers every path. */
+export function withServer(cfg: string, entry: string, dataDir: string): string {
+  return withMode(cfg, "spa", dataDir).replace(/\n\s*"client(Build|Dir)": "[^"]*",?/g, "")
+    .replace(/("desktop": \{)/, `$1\n      "server": { "entry": ${JSON.stringify(entry)}, "paths": ["/"] },`);
+}
+
 /** The host prints a URL with the launch token once it listens. */
 async function servingUrl(host: ReturnType<typeof Bun.spawn>, buf: () => string): Promise<string | undefined> {
   for (let i = 0; i < 240 && host.exitCode === null; i++) {
@@ -88,12 +108,13 @@ export async function smoke(src: string, o: { keep?: boolean; version: string; c
     const cfgPath = join(dir, "rustybuns.config.ts"), initCfg = readFileSync(cfgPath, "utf8");
     const initMode = initCfg.match(/"mode": "(\w+)"/)?.[1];
     // the mode init chose first, then the app's own Worker build if it has one
-    const modes = [initMode === "worker" ? "worker" : "spa", ...(initMode !== "worker" && /"builtMain"/.test(initCfg) ? ["worker"] : [])] as ("spa" | "worker")[];
+    const serverEntry = initMode === "worker" ? null : bareServerEntry(dir);
+    const modes = (serverEntry ? ["server"] : [initMode === "worker" ? "worker" : "spa", ...(initMode !== "worker" && /"builtMain"/.test(initCfg) ? ["worker"] : [])]) as ("spa" | "worker" | "server")[];
 
     let last = fail("build", "no mode to try");
     for (const mode of modes) {
-      writeFileSync(cfgPath, withMode(initCfg, mode, data));
-      say(`build: ${mode} mode`);
+      writeFileSync(cfgPath, mode === "server" ? withServer(initCfg, serverEntry!, data) : withMode(initCfg, mode, data));
+      say(mode === "server" ? `build: its own Bun server (${serverEntry}) beside the host, nothing to build for a client` : `build: ${mode} mode`);
       if (mode === "spa" && !existsSync(join(dir, "vite.desktop.config.ts"))) {
         s = run([...cli, "add", "desktop"], 300_000);
         if (!s.ok) { last = fail("build", s.tail, mode); continue; }
