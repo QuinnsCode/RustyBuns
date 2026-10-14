@@ -42,6 +42,7 @@ import { approve, diff, isCleared, review, waitingNote, type Review } from "./de
 import { emit } from "./hooks.ts";
 import { dirState, history, logEnd, logStart, preview, runnerFor, type Run, type StepKey } from "./preview.ts";
 import { repoRow } from "./repos.ts";
+import { rollbacks } from "./watchdog.ts";
 
 export interface Settings { stage: string; dir: string; on_commit: boolean; production: boolean }
 const DEFAULTS: Settings = { stage: "prod", dir: "", on_commit: false, production: false };
@@ -182,7 +183,7 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
       : env.DEPLOY_RUNNER ? ((await (await hostedStub(env, owner, repo).fetch(new Request("http://deploy/run"))).json()) as { run: Run | null }).run : null;
     const keys = await keysInfo(env, owner, repo);
     return json({ settings: await settings(env, owner, repo), can_run: desktop || (!why && Object.values(keys).some((k) => k.set)), hosted, why, keys,
-      ...((desktop || (hosted && !why)) && { review: shown(await review(env, owner, repo)) }), ...(await history(env, owner, repo, false, run)) });
+      ...((desktop || (hosted && !why)) && { review: shown(await review(env, owner, repo)) }), rollbacks: await rollbacks(env, owner, repo), ...(await history(env, owner, repo, false, run)) });
   }
   if (req.method === "PUT") {
     // Only what's sent changes; each field is checked before it lands in the settings.

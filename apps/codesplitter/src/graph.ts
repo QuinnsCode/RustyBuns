@@ -39,6 +39,23 @@ export async function graphRows(h: Pick<ArtifactsRepo, "log" | "readCommit">, br
   return { rows, known, more };
 }
 
+/** The most one request may walk, and how long a walk is shared by the requests that ask for the same thing: the cost per repo is the same however many agents ask (#1562). */
+export const GRAPH_MAX = 200, SHARE_MS = 5000;
+const walks = new Map<string, { at: number; graph: Promise<Graph> }>();
+
+/** commitGraph, but one walk per repo and limit per SHARE_MS: ten thousand agents polling the TV cost one. */
+export function sharedGraph(key: string, now: number, walk: (limit: number) => Promise<Graph>, limit: number): Promise<Graph> {
+  limit = Math.max(1, Math.min(GRAPH_MAX, limit));
+  const k = `${key}\n${limit}`, hit = walks.get(k);
+  if (hit && now - hit.at < SHARE_MS) return hit.graph;
+  for (const [o, w] of walks) if (now - w.at >= SHARE_MS) walks.delete(o);
+  const graph = walk(limit);
+  walks.set(k, { at: now, graph });
+  // A failed walk isn't kept: the next request tries again.
+  graph.catch(() => { if (walks.get(k)?.graph === graph) walks.delete(k); });
+  return graph;
+}
+
 /** `limit` of main's commits, newest first, each followed by the side branch it merged (if any). */
 export async function commitGraph(h: Pick<ArtifactsRepo, "log" | "readCommit">, branch: string, upstreamCommit: string | null, limit = 60): Promise<Graph> {
   const { rows, known, more } = await graphRows(h, branch, limit);
