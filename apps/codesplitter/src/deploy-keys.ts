@@ -44,11 +44,14 @@ export const PROVIDERS: Record<Provider, { env: (k: DeployKey) => Record<string,
 const NAMES = Object.keys(PROVIDERS) as Provider[];
 const isProvider = (p: string): p is Provider => (NAMES as string[]).includes(p);
 
-/** Why `user` can't deploy from the site, or null when they can. */
-export function hostedWhy(env: Env, user: string | null): string | null {
+/**
+ * Why `user` can't deploy from the site, or null when they can. `keys: false` is for a run that
+ * holds no deploy key (a plan, try-out.ts), which needs no DEPLOY_SECRETS_KEY.
+ */
+export function hostedWhy(env: Env, user: string | null, keys = true): string | null {
   if (!env.DEPLOY_RUNNER) return "hosted deploys are off on this site (CODESPLITTER_DEPLOYS=1)";
   if (!accountsOn(env)) return "hosted deploys need accounts on (BETTER_AUTH_SECRET): with aliases anyone can claim a handle";
-  if (!env.DEPLOY_SECRETS_KEY) return "hosted deploys need DEPLOY_SECRETS_KEY to seal deploy keys";
+  if (keys && !env.DEPLOY_SECRETS_KEY) return "hosted deploys need DEPLOY_SECRETS_KEY to seal deploy keys";
   if (!user || user.startsWith("agent-")) return "only a person deploys";
   if (!(env.ADMINS && isAdmin(env, user))) return "hosted deploys are limited to this site's admins (ADMINS)";
   return null;

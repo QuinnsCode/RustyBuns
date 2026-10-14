@@ -796,3 +796,46 @@ test("the review's diff: what goes, what comes, two lines of context, where each
   expect(textDiff("", "x\n")).toEqual(["@@ 1", "+ x"]);
   expect(textDiff("same\n", "same\n")).toEqual([]);
 });
+
+describe("Ship's Build and Plan on the site (#1400)", () => {
+  const T = "/api/repos/ryan-quinn/lab/try";
+  const finished = async (call: Call) => {
+    let d: any;
+    for (const end = performance.now() + 15_000; performance.now() < end;) { d = await (await call("ryan-quinn", T)).json(); if (d.run?.done) break; await Bun.sleep(10); }
+    return d.run;
+  };
+
+  test("it clones, installs, inits and plans in the deploy container with no deploy key stored or sent, then destroys it", async () => {
+    const { call, send, seen } = await hosted();
+    // Init runs: the clone has no config yet.
+    seen.fails = (line) => line.startsWith("test -e") && line.endsWith("rustybuns.config.ts");
+    expect(await (await call("ryan-quinn", T)).json()).toMatchObject({ can_run: true, hosted: true, run: null });
+    expect((await send("ryan-quinn", T, {})).status).toBe(202);
+    const run = await finished(call);
+    expect(Object.fromEntries(run.steps.map((s: any) => [s.key, s.status]))).toEqual({ clone: "done", install: "done", init: "done", infra: "done", plan: "done" });
+    expect(seen.ran.some((l) => l.endsWith("rustybuns infra --json --stage prod"))).toBe(true);
+    expect(seen.ran.some((l) => l.endsWith("rustybuns plan --offline"))).toBe(true);
+    expect(seen.ran.some((l) => /rustybuns (deploy|destroy)/.test(l))).toBe(false);
+    // No key in the container, no internet beyond the clone and the registries, and it's gone after.
+    expect(seen.env).toEqual([{ CI: "1" }]);
+    expect(seen.internet).toEqual([false]);
+    expect(seen.destroyed).toBe(1);
+    // The deploy panel still shows no deploy, and the last plan stays readable.
+    expect((await (await call("ryan-quinn", D)).json() as any).run).toBeNull();
+    expect((await (await call("ryan-quinn", T)).json() as any).run.id).toBe(run.id);
+  });
+
+  test("a plan waits out a deploy's slot, and only the site's admins can run one", async () => {
+    const { call, send, seen } = await hosted();
+    let release!: () => void;
+    seen.gate = new Promise<void>((r) => { release = r; });
+    await send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");
+    await send("ryan-quinn", D, { settings: {} }, "PUT");
+    expect((await send("ryan-quinn", D, {})).status).toBeLessThan(300);
+    expect((await send("ryan-quinn", T, {})).status).toBe(409);
+    release();
+    // sam-sample owns a lab of their own but isn't an admin of this site.
+    expect(await (await call("sam-sample", "/api/repos/sam-sample/lab/try")).json()).toMatchObject({ can_run: false, why: expect.stringContaining("admins") });
+    expect((await send("sam-sample", "/api/repos/sam-sample/lab/try", {})).status).toBe(400);
+  });
+});

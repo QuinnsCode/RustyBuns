@@ -136,10 +136,10 @@ const OPS: Record<string, Record<string, Op>> = {
       conflicts: obj({ mirror: { description: "{state, files} on a clash or rewrite; else null" }, push: arr(str()) }) }) } },
   [`${repo}/try`]: {
     get: { id: "get_try", summary: "The current or last Rusty Buns try-out (owner only)", tag: "Repos",
-      description: "`can_run` says whether this server can run one (the desktop app can); `run` is the last run's steps (clone, install, init, infra, plan) and their output, or null. `run.infra` is the stack as a graph (`{app, stage, mode, targets, nodes, edges}`), each node with `protected: true` when `protect: true` makes destroy leave it; absent when the repo's Rusty Buns is too old for `rustybuns infra`.",
-      ok: obj({ can_run: bool(), run: { description: "the run, or null" } }) },
+      description: "`can_run` says whether this server can run one (the desktop app can, and so can the site's admins, in the repo's deploy container, where `hosted` is true and `why` says what's missing when `can_run` is false); `run` is the last run's steps (clone, install, init, infra, plan) and their output, or null. `run.infra` is the stack as a graph (`{app, stage, mode, targets, nodes, edges}`), each node with `protected: true` when `protect: true` makes destroy leave it; absent when the repo's Rusty Buns is too old for `rustybuns infra`.",
+      ok: obj({ can_run: bool(), hosted: bool(), why: str(), run: { description: "the run, or null" } }) },
     post: { id: "start_try", summary: "Try Rusty Buns on the repo or a branch: init, then an offline plan (owner only)", tag: "Repos",
-      description: "Desktop only. Clones the repo's git remote, lays the branch's changed files over it, runs `rustybuns init`, `rustybuns infra --json` and `rustybuns plan --offline`. Nothing is deployed. A run already going is a 409.",
+      description: "Desktop, or the site's admins in the repo's deploy container (no deploy key needed or sent into it; it waits for a deploy or preview running there, 409). Clones the repo's git remote, lays the branch's changed files over it, runs `rustybuns init`, `rustybuns infra --json` and `rustybuns plan --offline`. Nothing is deployed. A run already going is a 409.",
       body: obj({ branch: str("an open branch to try; main without it") }), ok: obj({ run: { description: "the run just started" } }), status: 202 },
   },
   [`${repo}/tags/{name}`]: { delete: { id: "delete_tag", summary: "Delete a tag (owner only). A mirror's upstream keeps its own", tag: "Repos", ok: ref("Ok") } },
