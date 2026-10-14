@@ -195,13 +195,13 @@ test("spawning ramps up and overflow spawns more", () => {
   expect(over).toBeGreaterThan(late);
 });
 
-test("sim purity: no DOM, console, clocks, Math.random, or imports from outside src/sim", () => {
+test("sim purity: no DOM, console, clocks, Math.random, or imports from outside src/sim (bar the pure @rustybuns/util)", () => {
   const dir = join(import.meta.dir, "../src/sim");
   for (const f of readdirSync(dir).filter((n) => n.endsWith(".ts"))) {
     const src = readFileSync(join(dir, f), "utf8");
     const code = src.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
     expect(code, f).not.toMatch(/Math\.random|Date\.now|performance\.now|\bconsole\.|\bdocument\b|\bwindow\b|\bsetTimeout\b/);
-    for (const m of code.matchAll(/from\s+"([^"]+)"/g)) expect(m[1]!, f).toMatch(/^\.\//);
+    for (const m of code.matchAll(/from\s+"([^"]+)"/g)) expect(m[1]!, f).toMatch(/^(\.\/|@rustybuns\/util$)/); // @rustybuns/util is pure: clamp and a seeded PRNG, no I/O or globals
     expect(src.split("\n").length, f).toBeLessThan(400);
   }
 });
