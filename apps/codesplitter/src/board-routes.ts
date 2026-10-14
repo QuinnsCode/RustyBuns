@@ -4,7 +4,7 @@
 
 import type { Env } from "./env.ts";
 import { json, readBody } from "./env.ts";
-import { ask, canMerge, hitRate, parseRow, waves, type BoardRow, type Hits } from "./board.ts";
+import { ask, brief, canMerge, pick, hitRate, parseRow, waves, type BoardRow, type Hits } from "./board.ts";
 
 const MAX_ROWS = 500;
 
@@ -36,11 +36,15 @@ export async function boardRoutes(req: Request, env: Env, owner: string, repo: s
 
   const all = await rows();
   const meta = await env.DB.prepare("SELECT main, hits, updated_at FROM board_meta WHERE owner = ? AND repo = ?").bind(owner, repo).first() as { main: string; hits: string; updated_at: number } | null;
-  const n = Number(new URL(req.url).searchParams.get("pr"));
+  const q = new URL(req.url).searchParams;
+  const n = Number(q.get("pr"));
   if (n) {
     const a = ask(n, all);
     return a ? json(a) : json({ error: "not on the board" }, 404);
   }
+  if (q.get("brief")) return json({ brief: brief(all).join("\n") });
+  const fields = q.get("fields")?.split(",").map((f) => f.trim()).filter(Boolean);
+  if (fields?.length) return json({ main: meta?.main ?? null, prs: pick(all, fields), mergeable: canMerge(all) });
   return json({
     main: meta?.main ?? null, at: meta?.updated_at ?? null, prs: all,
     waves: waves(all), mergeable: canMerge(all), hits: hitRate(JSON.parse(meta?.hits ?? "{}") as Hits),

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { ask, canMerge, hitRate, parseRow, waves, whoShouldTake, whyNot, type BoardRow } from "../src/board.ts";
+import { ask, brief, canMerge, pick, hitRate, parseRow, waves, whoShouldTake, whyNot, type BoardRow } from "../src/board.ts";
 import { addHits, ownersOf, reach, rowOf } from "../scripts/mervin-live.ts";
 import { local as boot } from "../src/local.ts";
 
@@ -38,6 +38,24 @@ describe("board answers", () => {
     expect(hitRate({ certain: { exact: 9, of: 10 }, agree: { exact: 0, of: 0 } })).toEqual({ certain: 90, agree: null });
     expect(parseRow({ pr: 0 })).toBe("pr: a positive integer");
     expect(parseRow(row(7))).toEqual(row(7));
+  });
+});
+
+describe("compact board (#1593)", () => {
+  const rows = [row(1, { owner: "pixel" }), row(2, { stackedOn: 1 }), row(4, { ci: "fail", failing: ["apps"] })];
+  test("brief is four lines, ids first", () => {
+    expect(brief(rows)).toEqual(["3 open. mergeable: #1", "red: #4", "waiting: #2<-#1", "waves: 1,4 | 2"]);
+    expect(brief([])).toEqual(["0 open. mergeable: none", "red: none", "waiting: none", "waves: none"]);
+  });
+  test("pick keeps pr and the named fields only", () => {
+    expect(pick(rows, ["ci", "owner", "nope"])).toEqual([{ pr: 1, ci: "pass", owner: "pixel" }, { pr: 2, ci: "pass" }, { pr: 4, ci: "fail" }]);
+  });
+  test("the token cost: brief < fields < full board, on 30 PRs", () => {
+    const many = Array.from({ length: 30 }, (_, i) => row(i + 1, { title: `PR number ${i + 1} does a thing`, owner: "pixel", files: 12, tiers: { certain: 8, agree: 3, card: 1 }, stackedOn: i % 3 ? i : undefined }));
+    const cost = (x: unknown) => Math.round(JSON.stringify(x).length / 4);
+    const full = cost({ prs: many, waves: waves(many), mergeable: canMerge(many) }), fields = cost(pick(many, ["ci"])), short = cost({ brief: brief(many).join("\n") });
+    expect(short).toBeLessThan(fields);
+    expect(fields).toBeLessThan(full / 3);
   });
 });
 

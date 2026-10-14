@@ -349,6 +349,11 @@ PR's head, its CI or main moved, and posts the rows that changed (`POST /api/rep
 what it's stacked on, its files per tier, its clashes, the Agent Office worker that owns it (`office-workers list --json`), and,
 for a PR touching `package.json`, `bun.lock` or `packages/`, the apps and PRs it reaches. When PRs merge, the board they were
 staged on is scored against main and the tiers' hit rates are kept. The UI (the branches panel) and the MCP tool `get_board` read
+
+`get_board` also answers small (#1593): `brief=1` gives about four lines, ids first (`mergeable`, `red`, `waiting` on what, `waves`), and
+`fields=ci,owner` keeps just those row fields. Experiment: do the board check three ways on the same task (raw `gh pr list --json ...`,
+the same narrowed with `jq`/`tail`, and `get_board` with `brief=1`), and compare tokens and turns with Dexter (`bun apps/agent-office/ester/dexter.ts`).
+The unit test prices the three shapes on 30 PRs; the real numbers come from Dexter on live sessions.
 it: `waves` and `mergeable` come off the rows, and `get_board` with `pr` says what blocks that PR, who should take it, and what it blocks.
 
 ```sh

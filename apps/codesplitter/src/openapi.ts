@@ -364,7 +364,8 @@ const OPS: Record<string, Record<string, Op>> = {
     get: { id: "get_board", summary: "Mervin's live board: every open PR, its CI, stack, clashes and owner, and what can merge now", tag: "Branches",
       description: "One row per open PR Mervin staged: its own CI, the PR it's stacked on, its files per tier (certain, agree, mervin, differ, card), the clashes that merge clean as text and break later, the Agent Office worker that owns it, and for a PR touching package.json, bun.lock or packages/ the apps and PRs it reaches. " +
         "`waves` and `mergeable` come straight off the rows; `hits` is each tier's exact-landing rate after real merges. With `pr`: that PR's answer, what blocks it (`blocking`), who should take it (`take`) and what it blocks.",
-      query: { pr: int("one PR's answer instead of the whole board") },
+      query: { pr: int("one PR's answer instead of the whole board"), brief: bool("about four lines, ids first: {brief}, instead of the rows"),
+        fields: str("comma list of row fields to keep (ci, owner, stackedOn, ...): {main, prs: [{pr, ...}], mergeable}") },
       ok: obj({ main: { type: ["string", "null"], description: "the main commit the board was staged on" }, at: { type: ["integer", "null"], description: "ms of the last update" },
         prs: arr(loose("{pr, title?, head, ci, failing?, stackedOn?, tiers, files, clashes: [{kind, key, with, main?}], owner?, blast?: {apps, prs}, at}")),
         waves: arr(arr(int("a PR number"))), mergeable: arr(int("a PR nothing holds up")), hits: loose("{tier: percent that landed exactly, or null}") }) },
