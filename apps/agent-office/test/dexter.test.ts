@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { project, propose, render, tally, trimDiff, trimLine, week, type Report } from "../ester/dexter.ts";
 
-const fresh = (): Report => ({ sessions: 1, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 } });
+const fresh = (): Report => ({ sessions: 1, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0 });
 const j = (o: unknown) => JSON.stringify(o);
 
 test("tokens add up once per message, and each result is charged to the tool that made it", () => {
@@ -69,7 +69,22 @@ test("a result is charged for every later turn, to the helper whose job made it,
   expect(r.helpers.dexter).toBe(8000 * (1.25 + 0.2)); // the 8k over the 2k cap
   expect(r.helpers.ester).toBe(0);
   const p = project(r, 2, 2);
-  expect(p[0]!.without).toBeCloseTo(p[0]!.saved / 0.9 + (p[0]!.without - p[0]!.saved / 0.9), 5);
   expect(p[2]!.saved).toBeCloseTo(p[0]!.saved * 4, 5);
   expect(week(r).join("\n")).toContain("Mervin (board, PR and CI reads)");
+});
+
+test("turns between a conflict and the commit that settles it are a fight", () => {
+  const r = fresh();
+  const reply = (id: string, command?: string) => j({ type: "assistant", message: { id, usage: { output_tokens: 10 }, content: command ? [{ type: "tool_use", id: `t${id}`, name: "Bash", input: { command } }] : [] } });
+  tally(
+    [
+      reply("m1", "git merge origin/main"),
+      j({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tm1", content: "CONFLICT (content): Merge conflict in a.ts" }] } }),
+      reply("m2"),
+      reply("m3", "git commit -am merge"),
+      reply("m4"),
+    ],
+    r,
+  );
+  expect(r.fights).toBe(100); // m2 and m3: 50 units each; m4 is after the commit
 });
