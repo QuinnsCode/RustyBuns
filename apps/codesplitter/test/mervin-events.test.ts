@@ -40,9 +40,9 @@ describe("outcome event", () => {
     const sent: unknown[][] = [];
     const db = (row: unknown) => ({ prepare: () => ({ bind: () => ({ first: async () => row }) }) });
     await emitOutcome({ DB: db({ hash_paths: 1 }) } as never, "o", "r", files);
-    await emitOutcome({ DB: db(null), MERVIN_EVENTS: { send: async (e) => { sent.push(e); } } } as never, "o", "r", files);
+    await emitOutcome({ DB: db(null), MERVIN_EVENTS: { send: async (e: unknown[]) => { sent.push(e); } } } as never, "o", "r", files);
     expect(sent.length).toBe(0);
-    await emitOutcome({ DB: db({ hash_paths: 1 }), MERVIN_EVENTS: { send: async (e) => { sent.push(e); } } } as never, "o", "r", files);
+    await emitOutcome({ DB: db({ hash_paths: 1 }), MERVIN_EVENTS: { send: async (e: unknown[]) => { sent.push(e); } } } as never, "o", "r", files);
     expect(sent.length).toBe(1);
     await emitOutcome({ DB: db({ hash_paths: 1 }), MERVIN_EVENTS: { send: async () => { throw new Error("down"); } } } as never, "o", "r", files);
   });
