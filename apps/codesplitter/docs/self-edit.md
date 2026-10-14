@@ -26,8 +26,11 @@ Each tour chapter is a scene, and its steps are data (a target, what it says, th
 through the same steps and the same rule that sign-in, running an agent, merging and deploying stay a person's:
 
 - **A person**: Back, Next, Play.
-- **A queue**: shift-click a chapter's icon on the card to line it up after this one; "Up next" shows the queue and ✕ clears it.
-- **An agent**: the WebMCP tools `list_scenes`, `play_scene` (with an optional `queue`) and `scene_step`. A step glides the
+- **A queue**: the card's Queue button (or shift-click) turns the chapter icons into "play this next" picks, so it works
+  from a keyboard or a phone; the palette's "Queue a scene…" does the same. "Up next" shows the queue and ✕ clears it.
+- **An agent**: the WebMCP tools `list_scenes`, `play_scene` (with an optional `queue`; given `owner`/`repo` it opens the
+  repo's file page itself) and `scene_step`. The palette's "Play a scene…" starts one too.
+- **A slice**: a scene is a chapter (`code`) or some of its steps (`code:2-3`, `code:2`), so an agent can learn one feature. A step glides the
   fake cursor to its target and runs the real action; on a person's step it answers `held` (or `skip: true` moves past).
 
 Reduced motion shortens the cursor's waits and drops the ripple.
