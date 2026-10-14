@@ -274,7 +274,8 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
   const mainPos = places(base, main), branchPos = places(base, branch);
   const mainHunks = hunks(base, main, mainPos, movedOnMain), branchHunks = hunks(base, branch, branchPos, movedOnBranch);
   // Prose that may have settled untrue (#1254): a check the writer settled with a pick is a stretch both reshaped.
-  const checking = kind === "prose" ? factChecks(base, main, branch, mainPos, branchPos, mainHunks, branchHunks) : [];
+  // And code lint.ts can't read (#1389): where both sides changed lines that touch, git would have stopped, and a settled stretch may not build.
+  const checking = kind === "prose" ? factChecks(base, main, branch, mainPos, branchPos, mainHunks, branchHunks) : kind === "code" && !LINTED.test(path) ? touching(mainHunks, branchHunks) : [];
   const picked = checking.flatMap((g) => { const pick = resolve[`check:${regionKey(base, g)}`]; return pick ? [{ ...g, pick }] : []; });
   const regions = withPicked(joined(clashes(mainHunks, branchHunks, kind !== "prose"), base, [main, mainPos, movedOnMain], [branch, branchPos, movedOnBranch]), picked);
   const inRegion = (p: number) => regions.some((g) => covers(g, p));
@@ -464,7 +465,8 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
     const within = (d: Doc, pos: Map<string, number>) => { const ls = d.lines.filter((l) => covers(g, pos.get(l.id)!)); return ls.length ? ls.map((l) => l.text).join("\n") : null; };
     const c = { line: `check:${regionKey(base, g)}`, base: base.lines.filter((_, i) => covers(g, 2 * i + 1)).map((l) => l.text).join("\n"), main: within(main, mainPos), branch: within(branch, branchPos) };
     return { ...c, check: true as const, facts: [...new Set([c.main, c.branch].flatMap((t) => facts(t ?? "")))].filter((f) => ![c.base, c.main ?? "", c.branch ?? ""].every((t) => facts(t).includes(f))) };
-  });
+    // Both sides making the same change to code is no clash.
+  }).filter((c) => kind !== "code" || c.main !== c.branch);
   return { ops: ops.map((o) => o.kind === "insert" ? { ...o, after: o.after && back(o.after) } : { ...o, line: back(o.line) }), by, conflicts, ...(checks.length && { checks }) };
 }
 
@@ -576,9 +578,10 @@ function blend(bl: Line[], ms: Line[], bs: Line[], strict: boolean, loose: (t: s
   if (strict && relinked(bl, ms, bs)) return null;
   const pm = pair(ms), pb = pair(bs), out: { m?: Line; text: string; by: string }[] = [];
   if (strict && splitDifferently(bl, ms, bs, pm, pb)) return null;
-  // Main's lines no base line paired with: a branch line that's the same lands once.
+  // Main's lines no base line paired with: a branch line that's the same lands once. A `*/`, `/*` or blank is no sign
+  // of the same line: two different blocks both close a comment, and dropping the branch's would leave it unclosed (git's odb.h).
   const mainOnly = new Map<string, number>();
-  ms.forEach((m, i) => { if (!pm.includes(i)) mainOnly.set(m.text, (mainOnly.get(m.text) ?? 0) + 1); });
+  ms.forEach((m, i) => { if (!pm.includes(i) && /[A-Za-z0-9]{2}/.test(m.text)) mainOnly.set(m.text, (mainOnly.get(m.text) ?? 0) + 1); });
   let i = 0, j = 0;
   const upTo = (x: number, y: number) => {
     while (i < x) { const m = ms[i++]!; out.push({ m, text: m.text, by: m.by }); }
@@ -851,9 +854,7 @@ const facts = (t: string) => [...t.matchAll(/`[^`]+`|(?<![#\w.])\d+(?:[.,]\d+)*/
  * edited line states a number or `name` the other side took out of that section (under one heading).
  */
 function factChecks(base: Doc, main: Doc, branch: Doc, mainPos: Map<string, number>, branchPos: Map<string, number>, mh: Hunk[], bh: Hunk[]): Region[] {
-  // An unchanged base line (an odd position) between two changes keeps them apart.
-  const apart = (a: Region, b: Region) => a.hi + (a.hi % 2 ? 2 : 1) < b.lo, found: Region[] = [];
-  for (const x of mh) for (const y of bh) if (!apart(x, y) && !apart(y, x)) found.push({ lo: Math.min(x.lo, y.lo), hi: Math.max(x.hi, y.hi) });
+  const found = touchingAll(mh, bh);
   // Each base line's section: the headings above it. A position between lines is in the section of the line before.
   const heading = /^#{1,6}\s/, section: number[] = [];
   base.lines.forEach((l, i) => section.push((section[i - 1] ?? 0) + (i && heading.test(l.text) ? 1 : 0)));
@@ -874,6 +875,22 @@ function factChecks(base: Doc, main: Doc, branch: Doc, mainPos: Map<string, numb
       if (facts(l.text).some((f) => gone.includes(f) && !old.has(f))) found.push({ lo: opos.get(l.id)!, hi: opos.get(l.id)! });
     }
   }
+  return mergedRegions(found);
+}
+
+/** Files lint.ts parses (JS, TS, HTML); the rest of the code has no check of its own. */
+const LINTED = /\.([cm]?[jt]sx?|html?)$/i;
+
+/** Where each of main's changes meets one of the branch's: the stretch git would have stopped on. An unchanged base line (an odd position) between two keeps them apart. */
+function touchingAll(mh: Hunk[], bh: Hunk[]): Region[] {
+  const apart = (a: Region, b: Region) => a.hi + (a.hi % 2 ? 2 : 1) < b.lo, found: Region[] = [];
+  for (const x of mh) for (const y of bh) if (!apart(x, y) && !apart(y, x)) found.push({ lo: Math.min(x.lo, y.lo), hi: Math.max(x.hi, y.hi) });
+  return found;
+}
+
+const touching = (mh: Hunk[], bh: Hunk[]) => mergedRegions(touchingAll(mh, bh));
+
+function mergedRegions(found: Region[]): Region[] {
   found.sort((a, b) => a.lo - b.lo);
   const out: Region[] = [];
   for (const g of found) {

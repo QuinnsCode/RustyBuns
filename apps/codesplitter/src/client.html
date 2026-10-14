@@ -238,6 +238,14 @@
   .phone #m-agent :is(input, select, textarea) { font: inherit; font-size: 16px; padding: 8px; width: 100%; box-sizing: border-box; }
   .phone .btn { min-height: 36px; }
   .sec .run pre { margin: 4px 0 0; max-height: 180px; overflow: auto; font: 400 11.5px/1.45 var(--mono); white-space: pre-wrap; color: var(--muted); }
+  .digbar { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
+  .bubble { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line, #d0d7de); background: var(--bg, #fff); color: inherit; border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+  .bubble:hover { border-color: #000; }
+  .bubble .octo { width: 18px; height: 18px; fill: currentColor; color: #9aa0a6; }
+  .bubble.on .octo { color: #000; filter: drop-shadow(0 0 4px rgba(63,185,80,.65)); }
+  .digdlg { border: 1px solid var(--line, #d0d7de); border-radius: 10px; padding: 0; width: min(760px, 94vw); background: var(--bg, #fff); color: inherit; }
+  .digdlg::backdrop { background: rgba(0,0,0,.4); }
+  .digdlg form { margin: 0; }
   .ghwho { display: flex; gap: 8px; align-items: center; font-size: 13px; margin: 0 0 8px; }
   .ghwho .octo { width: 20px; height: 20px; fill: currentColor; color: #9aa0a6; flex: none; }
   .ghwho.on .octo { color: #000; filter: drop-shadow(0 0 4px rgba(255,255,255,.85)) drop-shadow(0 0 7px rgba(63,185,80,.65)); }
@@ -2961,12 +2969,15 @@ function visBadge(v, canFlip) {
 // (owner/name, a page URL, a remote, a git clone line). The server reads the repo out of it.
 const OCTOCAT = `<svg class="octo" viewBox="0 0 24 24" role="img" aria-label="GitHub"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>`;
 const DIG_WHY = "In codeSplitter, “digging” is simply bringing code into the ecosystem: digging in for the long haul.";
-const digBox = (why, fold = false) => `${fold ? `<details class="box fold" id="digfold"><summary class="bar"><b>Dig it up?</b>${icon("chevron-down", "chev")}</summary><form id="ghdig">` : `<form id="ghdig" class="box"><div class="bar"><b>Dig it up?</b></div>`}<div class="body"><p class="muted" style="margin-top:0">${why}</p>
+const digBox = (why) => `<div class="digbar"><button type="button" class="bubble" id="dig-gh" title="GitHub: connect, or switch account">${OCTOCAT}<span id="dig-gh-t">GitHub</span></button><button type="button" class="bubble" id="dig-repo" title="Dig up a repo" aria-label="Dig up a repo">${icon("plus")}</button></div>
+<dialog id="digdlg" class="digdlg"><form id="ghdig" method="dialog"><div class="bar"><b>Dig it up?</b><span class="grow"></span><button type="button" class="btn ghost" id="digclose" aria-label="close" title="close">${icon("x")}</button></div><div class="body"><p class="muted" style="margin-top:0">${why}</p>
   <div class="ghwho" id="ghwho" hidden></div>
   <div class="row"><input name="repo" placeholder="search GitHub, or paste a link, owner/name or a git clone line" required style="flex:1" autocomplete="off"><input name="name" placeholder="name (optional)" style="width:150px"><button class="btn primary">${icon("git-fork")}Dig it up</button><button type="button" class="btn" id="ghwow" title="dig it up, then a tour walks round it: the code, collab, agents, each panel on the right, the city and the backrooms">${icon("sparkles")}Wow me</button></div>
   <label class="muted" id="ghmirror" hidden style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:8px"><input type="checkbox" name="mirror"><span title="its commits come here, yours go back, and you keep working while it's down. Any git URL, GitHub or not.">Keep it in sync with upstream (a mirror)</span></label>
   <label class="muted" id="ghpull" hidden style="display:flex;gap:6px;align-items:center;font-size:13px;margin-top:4px;padding-left:22px"><input type="checkbox" name="pullOnly">Pull only: nothing goes back up</label>
-  <p class="muted" id="ghmsg" style="font-size:13px"></p><div class="gh-list" id="ghlist"></div></div></form>${fold ? "</details>" : ""}`;
+  <p class="muted" id="ghmsg" style="font-size:13px"></p><div class="gh-list" id="ghlist"></div></div></form></dialog>`;
+/** Open the dig modal (the bubbles, the levels' copy buttons and the tour all land here). */
+const openDig = () => { const d = $("#digdlg"); if (d && !d.open) d.showModal(); return $("#ghdig"); };
 // A box that folds to its bar on your profile (#729): open it to see the rest. Unfolded elsewhere.
 const boxTop = (fold, id, bar) => fold ? `<details class="box fold" id="${id}"><summary class="bar">${bar}${icon("chevron-down", "chev")}</summary>` : `<div class="box" id="${id}"><div class="bar">${bar}</div>`;
 const boxEnd = (fold) => fold ? "</details>" : "</div>";
@@ -3023,6 +3034,9 @@ function wireDig() {
       });
     }
     who.classList.toggle("on", !!g.login);
+    const bub = $("#dig-gh");
+    bub.classList.toggle("on", !!g.login);
+    $("#dig-gh-t").textContent = g.login ? `@${g.login}` : "Connect GitHub";
     icons();
     // Pasted or typed before GitHub answered: say what that'll dig up rather than the hint.
     if (f.repo.value.trim()) f.repo.dispatchEvent(new Event("input"));
@@ -3031,9 +3045,11 @@ function wireDig() {
     if (g.mirrorsOk) $("#ghmirror").hidden = false;
     f.mirror.addEventListener("change", () => { $("#ghpull").hidden = !f.mirror.checked; });
   }).catch(() => {});
-  // Folded (your profile), GitHub isn't asked until you open the box.
-  const folded = f.closest("details");
-  if (folded && !folded.open) folded.addEventListener("toggle", loadGh, { once: true }); else loadGh();
+  const dlg = $("#digdlg");
+  for (const id of ["#dig-gh", "#dig-repo"]) $(id).addEventListener("click", openDig);
+  $("#digclose").addEventListener("click", () => dlg.close());
+  dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); });   // the backdrop
+  loadGh();
   // A dig clones a whole repo, so only the button starts one: Enter in a field doesn't (#443).
   // Picking one of yours fills the box and focuses the name, and a stray Enter there dug it up.
   // A pasted link is a deliberate pick, though: Enter in the repo box digs that one up.
@@ -5609,11 +5625,10 @@ async function drawLevels() {
 }
 function wireLevels() {
   const into = (repo, submit) => {
-    const f = $("#ghdig");
+    const f = openDig();
     if (!f) return;
     f.repo.value = `https://github.com/${repo}`;
     f.repo.dispatchEvent(new Event("input"));
-    f.scrollIntoView({ behavior: "smooth", block: "center" });
     if (submit) f.requestSubmit(); else f.name.focus({ preventScroll: true });
   };
   $("#levels").addEventListener("click", async (e) => {
@@ -6546,7 +6561,7 @@ const TOUR = [
     go: () => {
       const f = $("#ghdig");
       if (!f) { location.hash = "#/"; return ""; }
-      f.closest("details")?.setAttribute("open", "");
+      openDig();
       f.repo.value = TOUR_STARTER; f.repo.dispatchEvent(new Event("input"));
       f.querySelector("button.primary")?.focus();
       return `${TOUR_STARTER} is filled in: a whole event emitter in about 200 bytes. Press Dig it up.`;

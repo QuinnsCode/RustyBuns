@@ -19,7 +19,7 @@ bun scripts/mervin-score.ts [repo ...] [--limit 200] [--json]
 For each real merge commit of a branch into the mainline, the truth is git's merge of the two parents. The
 predictors see only the branch's midpoint commit and the mainline as of that commit's date, then report
 recall (fights flagged ahead) and precision (flags that fought) for two predictors, `overlap` (both sides
-touched a file) and `clash` (git's merge of the midpoints already conflicts). A line-id predictor and the
+touched a file) and `clash` (git's merge of the midpoints already conflicts). A line-id predictor (`lines`, added beside them) and the
 Mervin plan go next to them once there is a corpus to hold them to. For what Mervin does once branches meet, see `mervin-corpus.ts` below.
 
 Needs repos with real merge commits. This repo squash-merges, so it scores nothing; use its replay
@@ -61,17 +61,16 @@ shows two real engine faults:
    ended it differently (`unsigned flags)` / `enum object_info_flags flags)`); the stretch-blend kept both
    endings, leaving the parameter declared twice. Fixed here (`splitDifferently`, `blend` in `src/lines.ts`):
    those asks as a card now. 63 wrong became 59, solved did not move.
-2. **A block one side moved while the other edited around it** (odb.h) comes out with its comment split. Not fixed.
+2. **A block one side moved while the other edited around it** (odb.h) came out with its comment split: the stretch-blend dropped the branch's `*/`, `/*` and blank lines as "the same line main added". Fixed here (`blend` in `src/lines.ts`, #1390): only a line with some text counts as the same; the merge is well formed, main's block first.
 
 ## Where Mervin is weak
 
-- **Code outside JS/TS is unguarded.** `src/lint.ts` parses only JavaScript, TypeScript and HTML. A clean merge
-  of C, Rust, Python or Go that no longer builds goes out clean. All of git/git's C and shell sits outside it.
-- **Silent beats asking.** 13% of git's conflicts came out clean and different. The next guard is language
-  agnostic: a file git conflicted on and Mervin merged clean should say so (a check, like the prose fact
-  checks), with the build as the arbiter where the repo has one.
+- **Code outside JS/TS is only flagged.** `src/lint.ts` parses only JavaScript, TypeScript and HTML. For the rest
+  (C, Rust, Python, Go, shell) a stretch both sides changed where git would have stopped, and Mervin settled, now
+  comes back as a `check` (#1389), like the prose fact checks: it never holds the merge, and the writer can settle it
+  with a text. Where the repo has a `package.json` with a `test` or `build` script and test merges is on, that script runs on the merged tree first, and a failure comes back as a `lint:tests` conflict (#1401), settled as the branch to land anyway. Repos with no `package.json` (git/git's make) are still only flagged.
 - **Never run on anyone else's history until now.** The 80% goal in this doc is about seeing fights coming; the
-  recall number for it (mervin-score) still needs a corpus that keeps real merges and a line-id predictor.
+  recall number for it (mervin-score) still needs a corpus that keeps real merges (the `lines` predictor is in).
 - **Visible now, thinly.** The merge plan line and `GET /api/repos/:o/:r/merge-plan` (`engine`) name him, and the repo page
   and `GET /api/mervin` show the git/git corpus (settled / asked / other text, `src/mervin.ts`). The numbers there are
   this doc's table, not a live per-repo tally, and the merge page does not credit him per file yet.
@@ -86,7 +85,7 @@ Mergiraf (structured merge), Spork and IntelliMerge (tree matching).
 ## Next
 
 1. Run `mervin-corpus.ts` on a second repo with a different language mix (Linux subsystem tree, Rails) and record it here.
-2. Add the line-id predictor beside `overlap` and `clash` in `mervin-score.ts`.
-3. A language-agnostic "settled but git would have stopped" check for code that `lint.ts` cannot parse.
+2. Run `mervin-score.ts` (now with `lines`) on a corpus that keeps real merges and record recall here; add the merge plan as a predictor.
+3. Build commands for repos with no `package.json` (make, cargo, go) as the arbiter.
 4. Run Mergiraf over the hunks in [merge-solutions.md](merge-solutions.md) and see what it settles.
 5. Show Mervin: a corpus number on the repo page, and the merge plan's waves with his name on them.
