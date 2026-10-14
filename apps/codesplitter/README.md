@@ -125,7 +125,7 @@ It's free and it's yours: your data lives in `~/.codesplitters`.
 
 ```sh
 cd apps/codesplitter
-bun install
+bun install            # first, always: a fresh worktree or sandbox has no node_modules
 bun run desktop        # the app in a window
 bun run desktop:watch  # the same, rebuilt and restarted on every save; the window reloads itself
 bun run desktop:agent  # desktop:watch with no window: prints the open URL once, for an agent's browser

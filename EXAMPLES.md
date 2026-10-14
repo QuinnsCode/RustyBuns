@@ -17,6 +17,7 @@ Games, music makers and 3D tools you can run on your own computer. Pick one, pas
    cd RustyBuns
    bun install
    ```
+   In a fresh or throwaway checkout (a worktree, a sandbox), nothing is installed yet: run `bun install` first and wait for it to finish, or every command fails on a missing package.
 
 That's it. Now pick an app.
 
