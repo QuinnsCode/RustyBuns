@@ -414,6 +414,21 @@ describe("artifacts", () => {
     expect(await Bun.file(`${dir}/dig/README`).text()).toBe("found it\n");
     (await import("node:fs")).rmSync(dir, { recursive: true, force: true });
   });
+
+  test("a share link is a clone command with a read token that lasts as long as asked, a week at most", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/login", { name: "ana" });
+    await post(call, "ana", "/api/repos", { name: "dig" });
+    await post(call, "ana", "/api/repos/ana/dig/files", { path: "README", content: "found it" });
+    await post(call, "ana", "/api/repos/ana/dig/do/commit?path=README", { message: "first" });
+    const day = await (await call(null, "/api/repos/ana/dig/share")).json() as any;
+    expect(day.ttl).toBe(86400);
+    expect(day.command).toMatch(/^git clone http\S+ dig$/);
+    const week = await (await call(null, "/api/repos/ana/dig/share?ttl=99999999&branch=main")).json() as any;
+    expect(week.ttl).toBe(7 * 86400);
+    expect(week.command).toMatch(/^git clone -b main /);
+    expect((await call(null, "/api/repos/ana/dig/share?branch=--upload-pack=x")).status).toBe(400);
+  });
 });
 
 describe("levels", () => {

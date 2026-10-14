@@ -85,6 +85,7 @@ export const GROUPS: Group[] = [
     endpoints: [
       { method: "POST", path: "/api/repos", body: "{name, visibility?: \"public\" | \"private\"}", who: SIGNED_IN, does: "a new, empty repo of yours" },
       { method: "GET", path: "/api/repos/:o/:r", does: "the repo: visibility, collaborators, canWrite, upstream, and a git clone line with an hour-long read token (crewClone too, for the crew; on the desktop, push for the owner: a git remote add line with a day-long write token)" },
+      { method: "GET", path: "/api/repos/:o/:r/share?branch=&ttl=", does: "a git clone line to hand to someone: {command, ttl, expiresAt, branch?}. Its read token lasts ttl seconds (a day by default, a week at most) and clones the repo, or with branch just that branch" },
       { method: "PUT", path: "/api/repos/:o/:r", body: "{visibility}", who: OWNER, does: "make it public or private" },
       { method: "DELETE", path: "/api/repos/:o/:r?confirm=:r", who: OWNER, does: "delete it here: rows, files, branches, git. GitHub never hears" },
       { method: "GET", path: "/api/repos/:o/:r/tree?path=dir&branch=", does: "one folder: {commit, entries: [{name, path, type: \"file\" | \"dir\"}]}, git's plus files written here but not committed yet (with branch, as that branch has it: its new files in, the ones it deleted out); 202 {forking} while a dig is landing" },
