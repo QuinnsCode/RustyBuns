@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>codeSplitter</title>
+<script>
+  /* The light/dark choice paints before anything else, from this browser's copy; your settings (src/settings.ts) correct it once you're known. */
+  try { var t = localStorage.getItem("cs_theme"); if (t === "dark" || t === "light") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
 <link href="/fonts/geist.css" rel="stylesheet">
 <script src="/vendor/lucide.min.js"></script>
 <style>
@@ -30,6 +34,25 @@
     --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .32 0 0 0 0 .28 0 0 0 0 .2 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     --sans: "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
     --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  /* Dark: the same black, white and one orange, turned over. "system" (no data-theme) follows the OS. */
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0e0e0e; --canvas: #161616; --border: #2a2a2a; --border-2: #3d3d3d;
+    --fg: #f2f2f2; --muted: #a0a0a0; --faint: #8f8f8f;
+    --accent-ink: #f08c4a; --accent-soft: #2a1a0e;
+    --del: #2a1a0e; --del-fg: #f6a96c; --add: #1d1d1d; --add-edge: #4a4a4a;
+    --select: #222; --paper: #1a1916;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #0e0e0e; --canvas: #161616; --border: #2a2a2a; --border-2: #3d3d3d;
+      --fg: #f2f2f2; --muted: #a0a0a0; --faint: #8f8f8f;
+      --accent-ink: #f08c4a; --accent-soft: #2a1a0e;
+      --del: #2a1a0e; --del-fg: #f6a96c; --add: #1d1d1d; --add-edge: #4a4a4a;
+      --select: #222; --paper: #1a1916;
+    }
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
@@ -1033,6 +1056,7 @@
   </a>
   <button class="jump" id="jump" type="button"><i data-lucide="search"></i><span>Search or run a command</span><kbd>⌘K</kbd></button>
   <span class="grow"></span>
+  <button class="btn ghost" id="theme-toggle" type="button" title="light or dark"><i data-lucide="moon"></i></button>
   <a class="btn ghost" id="topplay" href="/play.html#l/mitt" title="the game"><i data-lucide="gamepad-2"></i>Play</a>
   <span id="who"></span>
 </header>
@@ -1317,7 +1341,24 @@ document.addEventListener("click", async (e) => {
   wireFollows();
 });
 
-async function refreshSession() { session = await api("/session").catch(() => session); }
+async function refreshSession() { session = await api("/session").catch(() => session); pullTheme(); }
+// Light or dark: this browser's copy paints at once; once signed in, your settings are the truth across devices (src/settings.ts).
+const isDark = () => document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+const showTheme = (t) => {
+  if (t === "dark" || t === "light") document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  try { t === "dark" || t === "light" ? localStorage.setItem("cs_theme", t) : localStorage.removeItem("cs_theme"); } catch {}
+};
+async function pullTheme() {
+  if (!me()) return;
+  const s = await api("/me/settings").catch(() => null);
+  if (s && "theme" in s) showTheme(s.theme);
+}
+document.addEventListener("click", (e) => {
+  if (!e.target.closest?.("#theme-toggle")) return;
+  const t = isDark() ? "light" : "dark";
+  showTheme(t);
+  if (me()) api("/me/settings", { theme: t }, "PUT").catch(() => {});
+});
 // An invite you left to sign in (#/i/:token): where signing in, picking a handle or a verified email brings you back to.
 const INVITE_KEY = "cs_invite";
 const heldInvite = () => { try { return localStorage.getItem(INVITE_KEY); } catch { return null; } };
@@ -3397,6 +3438,7 @@ const views = {
         ${row("Tokens and apps", "API token labels and last four characters, apps you connected, and when each was last used. The secrets are stored only as hashes.", "Letting your scripts, agents and apps act as you", "Until they expire or you revoke them")}
         ${row("Agent runs", "The task you gave an agent, the model and a short log", "Showing you what your agent did", "With the repo")}
         ${row("Feed", "Which files you edited, how many lines and when (never the text), shown in the feeds of people who follow you or the repo and can read it; and the digest your agent last wrote of your own feed", "Your followers' home feeds, and yours", "30 days; the digest until the next one")}
+        ${row("Settings", "Your light or dark choice, kept in a Durable Object of your own. It is created in the Cloudflare region nearest to where you first signed in (a continent-wide hint, never your precise location)", "Showing the site the way you chose, on every device", "Until you delete your account")}
         ${row("Rate limits", "Your IP address, counted against sign-in and sign-up attempts", "Keeping bots out", "An hour; a blocked attempt is noted for 7 days")}
         ${row("Request logs", "Cloudflare's Workers logs of each request to the site: the address asked for (without its query string, the part after the ?), the method, the response status, your IP address, country and browser, and the error lines our code prints when something breaks", "Finding out what broke, and spotting abuse", "7 days, then Cloudflare deletes them")}
         ${row("Usage", "A daily count of your requests (by handle, or signed out by a hash of your IP that changes every day), whether they came from a browser or a script, your browser's name, and the first time you did each thing here (made a repo, committed, deployed)", "Seeing whether people or bots use the site, and where people get stuck", "Daily counts 30 days; the firsts until you delete your account")}

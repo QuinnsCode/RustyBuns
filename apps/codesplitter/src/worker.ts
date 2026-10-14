@@ -198,6 +198,7 @@ import {
 import { pulseRoutes } from "./pulse.ts";
 import { hasPage, pageRoutes } from "./page.ts";
 import { seenRoutes } from "./seen.ts";
+import { settingsRoutes } from "./settings.ts";
 import { agentPromptResponse } from "./agent-prompt.ts";
 import { installScript } from "./install.ts";
 import {
@@ -233,6 +234,7 @@ import {
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
+export { UserSettings } from "./settings.ts";
 export { AgentSandbox } from "./sandbox.ts";
 export { DeployRunner } from "./deploy-runner.ts";
 export { CiRunner } from "./ci-runner.ts";
@@ -374,6 +376,10 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET|PUT /api/me/seen, the rev of each file you last saw (seen.ts)
   const seen = await seenRoutes(req, env, p, url, user);
   if (seen) return seen;
+
+  // GET|PUT /api/me/settings, your light/dark choice and the like, in a Durable Object of your own (settings.ts)
+  const settings = await settingsRoutes(req, env, p, user);
+  if (settings) return settings;
 
   // GET /api/me/feed and its digest (feed.ts)
   const feed = await feedRoutes(req, env, p, url, user);
