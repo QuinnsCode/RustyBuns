@@ -27,6 +27,7 @@ import { timingSafeEqual } from "node:crypto";
 function kind(p: string): "file" | "dir" | null {
   try { const st = statSync(p); return st.isDirectory() ? "dir" : st.isFile() ? "file" : null; } catch { return null; }
 }
+import { RELOAD_PATH, RELOAD_TAG } from "./reload.ts";
 import { installCloudflareGlobals, type LocalWebSocket } from "./bindings/durable-object.ts";
 
 /** Files at the asset root that Cloudflare's asset server reads as config (or skips at upload) and never serves. */
@@ -206,7 +207,10 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
   let env: Env | null = null;
   const rep = opts.reporter;
 
-  const head = opts.head;
+  // Under `run desktop --watch` pages reload themselves when the host is swapped (reload.ts).
+  const watching = !!process.env["RB_WATCH"] && !!opts.token;
+  const boot = crypto.randomUUID();
+  const head = [opts.head, watching ? RELOAD_TAG : ""].filter(Boolean).join("") || undefined;
   const withHeaders = (res: Response) => {
     const h = new Headers(res.headers);
     for (const [k, v] of Object.entries(headers)) if (!h.has(k)) h.set(k, v);
@@ -347,6 +351,7 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
       if (raw.method !== "POST" || who !== "host" || origin === null || !ownOrigin(raw, origin)) return new Response("forbidden", { status: 403 });
       return Response.json({ code: mintCode(PAIR_TTL_MS), ttlMs: PAIR_TTL_MS });
     }
+    if (watching && url.pathname === RELOAD_PATH) return Response.json({ boot }, { headers: { "cache-control": "no-store" } });
     // Vouch the principal to the handler; never trust the client's copy.
     const h = new Headers(raw.headers);
     for (const k of [...h.keys()]) if (k.startsWith("x-rb-")) h.delete(k);

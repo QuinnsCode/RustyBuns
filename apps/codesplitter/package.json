@@ -15,7 +15,8 @@
     "test": "bun test --parallel test",
     "test:watch": "bun test --watch test",
     "desktop": "bun ../../packages/cli/src/index.ts build desktop --dev && bun ../../packages/cli/src/index.ts run desktop",
-    "desktop:watch": "bun ../../packages/cli/src/index.ts run desktop --watch"
+    "desktop:watch": "bun ../../packages/cli/src/index.ts run desktop --watch",
+    "desktop:update": "bun scripts/update.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.132.1",
