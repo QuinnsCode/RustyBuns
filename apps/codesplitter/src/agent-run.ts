@@ -258,7 +258,8 @@ export async function runAgent(call: Call, opts: {
     // A key in what it wrote (a prompt-injected agent told to leak its own): nothing from this round is posted.
     const left: [string, Doc, string][] = [[path, snapshot, run.text], ...also.map((p, i): [string, Doc, string] => [p, others[i]!, run.also![p]!])];
     for (const [p, before, after] of left) {
-      const leak = leakIn(before.lines.map((l) => l.text), fromDisk(after), opts.secrets);
+      const hidden = before.lines.filter((l) => (l as { private?: boolean }).private).map((l) => l.text);
+      const leak = leakIn(before.lines.map((l) => l.text), fromDisk(after), opts.secrets, hidden);
       if (leak) throw new Error(`${opts.harness} wrote what looks like ${leak} into ${p}; nothing was posted`);
     }
 
