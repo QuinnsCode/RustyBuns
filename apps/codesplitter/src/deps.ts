@@ -652,7 +652,10 @@ async function runTests(run: Run, repo: string, files: Record<string, string>, p
   const { existsSync, readFileSync } = await import("node:fs");
   const { join } = await import("node:path");
   const pkg = JSON.parse(files["package.json"] ?? readFileSync(join(repo, "package.json"), "utf8"));
-  if (!pkg.scripts?.test) return { ok: true, out: installed + "\n(no test script)" };
+  // A merge's try (`only`) falls back to the build script where there are no tests (#1401).
+  const script = pkg.scripts?.test ? "test" : only?.length && pkg.scripts?.build ? "build" : null;
+  if (!script) return { ok: true, out: installed + "\n(no test script)" };
+  if (script === "build") { const b = await run([pm, "run", "build"]); return { ok: b.code === 0, out: b.out }; }
   const tracked = only?.length ? (await run(["git", "ls-files"])).out.split("\n").slice(1).filter(Boolean) : [];
   const scoped = scopedTest(pkg.scripts.test, only, tracked);
   if (scoped && (scoped[0] === "bun" || existsSync(join(repo, scoped[0]!)))) {

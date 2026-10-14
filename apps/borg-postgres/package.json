@@ -1,0 +1,3 @@
+{ "name": "borg-postgres", "private": true, "type": "module",
+  "scripts": { "test": "bun test test", "story": "bun story.ts", "desktop": "bun ../../packages/cli/src/index.ts build desktop --check" },
+  "dependencies": { "@rustybuns/cli": "workspace:*", "@rustybuns/shell-bun": "workspace:*", "@electric-sql/pglite": "^0.5.8", "@electric-sql/pglite-socket": "^0.2.11", "postgres": "^3.4.7" } }
