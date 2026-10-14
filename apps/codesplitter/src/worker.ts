@@ -3,6 +3,7 @@
 // is a playlist of code you like. Plain fetch handler: it runs as a Worker on
 // Cloudflare and in-process under Bun on the desktop.
 
+import { rankOf } from "./policy.ts";
 import { fromText } from "./lines.ts";
 import {
   ensureCrewRemote,
@@ -712,7 +713,10 @@ async function route(req: Request, env: Env): Promise<Response> {
         if (holding.length) return json({ error: `you hold lines in ${holding.map((h) => h.path).join(", ")}: let go of them before you wait in line here, or work elsewhere`, holding }, 409);
       }
       // How the path takes live edits (#1011), read as the merge reads it: main's .gitattributes over the defaults.
-      const live = (p[5] === "ops" || p[5] === "ws" || (p[5] === "claims" && req.method === "POST")) && a.write ? (await pathPolicy(env, owner, repo, path, user!)).live : undefined;
+      const pol = (p[5] === "ops" || p[5] === "ws" || (p[5] === "claims" && req.method === "POST")) && a.write ? await pathPolicy(env, owner, repo, path, user!) : undefined;
+      const live = pol?.live;
+      // A repo that ranks its agents (codesplitter-order=rank) lets a higher rank step ahead of lower ones in line.
+      const rank = pol?.order === "rank" && p[5] === "claims" ? String(rankOf(pol.rank, user ?? "anon")) : undefined;
       if (p[5] === "ws") {
         // The DO learns who this socket is, and whether it may write, from us.
         const h = new Headers(req.headers);
@@ -731,7 +735,7 @@ async function route(req: Request, env: Env): Promise<Response> {
         return fileStub(env, owner, repo, path, branch).fetch(new Request(req.url, { headers: h }));
       }
       // Only the crew reads private lines; everyone else gets placeholders.
-      const res = await toFile(env, owner, repo, path, user ?? "anon", p[5]!, { method: req.method, body: sent, headers: { "x-codesplitter-crew": a.write ? "1" : "0", ...(live && { "x-codesplitter-live": live }) } },
+      const res = await toFile(env, owner, repo, path, user ?? "anon", p[5]!, { method: req.method, body: sent, headers: { "x-codesplitter-crew": a.write ? "1" : "0", ...(live && { "x-codesplitter-live": live }), ...(rank !== undefined && { "x-codesplitter-rank": rank }) } },
         url.searchParams.has("rev") ? `?rev=${url.searchParams.get("rev")}` : url.searchParams.has("since") ? `?since=${url.searchParams.get("since")}` : "", branch);
       if (p[5] === "private" && req.method === "POST" && res.ok) {
         // From the first private line on, the crew has a remote of its own to clone and deploy from.
