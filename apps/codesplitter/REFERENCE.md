@@ -779,6 +779,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/tarball.ts` | past Artifacts' 40 MB import cap: a repo's tip from GitHub's tarball, pushed as one commit |
 | `src/tokens.ts` | personal API tokens: make, revoke, and who a bearer token acts as |
 | `src/try-out.ts` | try Rusty Buns on a repo or an agent's branch: init, then an offline plan |
+| `src/util.ts` | small helpers every file may use: hex, base64url, SHA-256, HTML escaping, plurals, batching |
 | `src/worker.ts` | routes, visibility, profiles, playlists, search |
 | `src/worktrees.ts` | real checkouts (`git worktree add`) off a desktop repo's bare git, per branch or per run, cleaned up when done |
 
