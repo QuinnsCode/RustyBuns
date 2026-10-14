@@ -39,20 +39,19 @@ export async function graphRows(h: Pick<ArtifactsRepo, "log" | "readCommit">, br
   return { rows, known, more };
 }
 
-/** The most one request may walk, and how long a walk is shared by the requests that ask for the same thing: the cost per repo is the same however many agents ask (#1562). */
-export const GRAPH_MAX = 200, SHARE_MS = 5000;
-const walks = new Map<string, { at: number; graph: Promise<Graph> }>();
+/** The most one request may walk, and (sharedGraph) one walk per repo and limit at a time: the cost per repo is the same however many agents ask (#1562). */
+export const GRAPH_MAX = 200;
+const walking = new Map<string, Promise<Graph>>();
 
-/** commitGraph, but one walk per repo and limit per SHARE_MS: ten thousand agents polling the TV cost one. */
-export function sharedGraph(key: string, now: number, walk: (limit: number) => Promise<Graph>, limit: number): Promise<Graph> {
+/** commitGraph, but requests that arrive while a walk of the same repo and limit is running wait for it instead of starting their own. Nothing is kept once it ends, so a commit is seen at once. */
+export function sharedGraph(key: string, walk: (limit: number) => Promise<Graph>, limit: number): Promise<Graph> {
   limit = Math.max(1, Math.min(GRAPH_MAX, limit));
-  const k = `${key}\n${limit}`, hit = walks.get(k);
-  if (hit && now - hit.at < SHARE_MS) return hit.graph;
-  for (const [o, w] of walks) if (now - w.at >= SHARE_MS) walks.delete(o);
-  const graph = walk(limit);
-  walks.set(k, { at: now, graph });
-  // A failed walk isn't kept: the next request tries again.
-  graph.catch(() => { if (walks.get(k)?.graph === graph) walks.delete(k); });
+  const k = `${key}\n${limit}`;
+  let graph = walking.get(k);
+  if (!graph) {
+    graph = walk(limit).finally(() => walking.delete(k));
+    walking.set(k, graph);
+  }
   return graph;
 }
 

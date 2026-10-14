@@ -537,7 +537,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       try {
         const h = await handleFor(env, owner, repo);
         if (!h) return json({ branch: "main", commits: [], more: false, upstream: null });
-        return json(await sharedGraph(`${owner}/${repo}/${h.branch}/${(r?.upstream_commit as string) ?? ""}`, Date.now(), (n) => commitGraph(h.handle, h.branch, (r?.upstream_commit as string) ?? null, n), limit));
+        return json(await sharedGraph(`${owner}/${repo}/${h.branch}/${(r?.upstream_commit as string) ?? ""}`, (n) => commitGraph(h.handle, h.branch, (r?.upstream_commit as string) ?? null, n), limit));
       } catch (e) {
         if (code(e) === "FORK_IN_PROGRESS" || code(e) === "IMPORT_IN_PROGRESS") return json({ forking: true, commits: [] }, 202);
         if (code(e) === "NOT_FOUND") return json({ lost: true, commits: [] });

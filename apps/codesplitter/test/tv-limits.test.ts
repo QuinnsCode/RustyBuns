@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { beads, BOUNDS, glowOnly, logShare, parseLimits, PRESETS, shownLanes, smooth } from "../src/tv-limits.ts";
-import { sharedGraph, GRAPH_MAX, SHARE_MS, type Graph } from "../src/graph.ts";
+import { sharedGraph, GRAPH_MAX, type Graph } from "../src/graph.ts";
 
 test("untouched or broken settings give the calm preset, and values are held to their bounds", () => {
   expect(parseLimits(null)).toEqual(PRESETS.calm);
@@ -41,13 +41,12 @@ test("a burst reads as one swell and one fat bead", () => {
   expect(glowOnly(PRESETS.calm.maxLines + 1, PRESETS.calm)).toBe(true);
 });
 
-test("many requests for the same graph share one walk, capped per request", async () => {
+test("requests that arrive during a walk share it, capped per request, and nothing is kept after", async () => {
   let walks = 0, last = 0;
-  const walk = async (n: number): Promise<Graph> => { walks++; last = n; return { branch: "main", commits: [], more: false, upstream: null }; };
-  const t = 1_000_000;
-  await Promise.all(Array.from({ length: 1000 }, () => sharedGraph("a/b", t, walk, 99999)));
+  const walk = async (n: number): Promise<Graph> => { walks++; last = n; await Promise.resolve(); return { branch: "main", commits: [], more: false, upstream: null }; };
+  await Promise.all(Array.from({ length: 1000 }, () => sharedGraph("a/b", walk, 99999)));
   expect(walks).toBe(1);
   expect(last).toBe(GRAPH_MAX);
-  await sharedGraph("a/b", t + SHARE_MS, walk, 60);
+  await sharedGraph("a/b", walk, 60);
   expect(walks).toBe(2);
 });
