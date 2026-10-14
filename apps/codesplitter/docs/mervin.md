@@ -65,11 +65,10 @@ shows two real engine faults:
 
 ## Where Mervin is weak
 
-- **Code outside JS/TS is unguarded.** `src/lint.ts` parses only JavaScript, TypeScript and HTML. A clean merge
-  of C, Rust, Python or Go that no longer builds goes out clean. All of git/git's C and shell sits outside it.
-- **Silent beats asking.** 13% of git's conflicts came out clean and different. The next guard is language
-  agnostic: a file git conflicted on and Mervin merged clean should say so (a check, like the prose fact
-  checks), with the build as the arbiter where the repo has one.
+- **Code outside JS/TS is only flagged.** `src/lint.ts` parses only JavaScript, TypeScript and HTML. For the rest
+  (C, Rust, Python, Go, shell) a stretch both sides changed where git would have stopped, and Mervin settled, now
+  comes back as a `check` (#1389), like the prose fact checks: it never holds the merge, and the writer can settle it
+  with a text. Nothing builds it yet: the build as the arbiter, where the repo has one, is still open.
 - **Never run on anyone else's history until now.** The 80% goal in this doc is about seeing fights coming; the
   recall number for it (mervin-score) still needs a corpus that keeps real merges (the `lines` predictor is in).
 - **Invisible.** The name is in no UI string, README line or API field; the merge engine is the strongest answer

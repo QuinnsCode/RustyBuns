@@ -484,6 +484,19 @@ describe("settled, check the facts (#1254)", () => {
     expect(merge(code.base, code.branch, code.main, {}, "bot", "a.ts").checks).toBeUndefined();
   });
 
+  test("code lint.ts can't read: a stretch both sides changed that settled is flagged, as git would have stopped (#1389)", () => {
+    const was = ["int add(int a, int b);", "int sub(int a, int b);", "int mul(int a, int b);", "", "int run(void);"].join("\n");
+    const s = sides(was, was.replace("int sub(int a, int b);", "int sub(long a, int b);"), was.replace("int mul(int a, int b);", "int mul(int a, long b);"));
+    const m = merge(s.base, s.branch, s.main, {}, "bot", "calc.h");
+    expect(m.conflicts).toEqual([]);
+    expect(m.checks?.map((c) => ({ ...c, facts: c.facts }))).toEqual([expect.objectContaining({ check: true, facts: [] })]);
+    expect(text(settle(s, {}, "calc.h"))).toContain("long a, int b");
+    // Far apart, nothing to check; in JS or TS, lint.ts is the check.
+    const far = sides(was, was.replace("int add(int a, int b);", "int add(long a, int b);"), was.replace("int run(void);", "int run(int);"));
+    expect(merge(far.base, far.branch, far.main, {}, "bot", "calc.h").checks).toBeUndefined();
+    expect(merge(s.base, s.branch, s.main, {}, "bot", "calc.ts").checks).toBeUndefined();
+  });
+
   test("a stretch that's a card already isn't a check too, and the agent is asked to make the facts true", () => {
     const s = sides(readme(["Up to 32 players."], [room]), readme(["Up to 48 players."], [room]), readme(["Up to 64 players."], [room]));
     const m = merge(s.base, s.branch, s.main, {}, "bot", "README.md");
