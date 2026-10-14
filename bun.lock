@@ -145,6 +145,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/util": "workspace:*",
         "three": "^0.180.0",
       },
       "devDependencies": {
@@ -159,6 +160,7 @@
       "dependencies": {
         "@rustybuns/cli": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/util": "workspace:*",
         "react": "19.2.8",
         "react-dom": "19.2.8",
         "three": "^0.180.0",
@@ -202,6 +204,7 @@
         "@rustybuns/cli": "workspace:*",
         "@rustybuns/native": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/util": "workspace:*",
         "react": "19.2.8",
         "react-dom": "19.2.8",
       },
@@ -358,6 +361,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/util": "workspace:*",
         "three": "^0.180.0",
       },
       "devDependencies": {
@@ -436,6 +440,10 @@
         "react",
         "react-dom",
       ],
+    },
+    "packages/util": {
+      "name": "@rustybuns/util",
+      "version": "0.0.0",
     },
   },
   "overrides": {
@@ -1187,6 +1195,8 @@
     "@rustybuns/ports": ["@rustybuns/ports@workspace:packages/ports"],
 
     "@rustybuns/shell-bun": ["@rustybuns/shell-bun@workspace:packages/shell-bun"],
+
+    "@rustybuns/util": ["@rustybuns/util@workspace:packages/util"],
 
     "@sec-ant/readable-stream": ["@sec-ant/readable-stream@0.4.1", "", {}, "sha512-831qok9r2t8AlxLko40y2ebgSDhenenCatLVeW/uBtnHPyhHOvG0C7TvfgecV+wHzIm5KUICgzmVpWS+IMEAeg=="],
 

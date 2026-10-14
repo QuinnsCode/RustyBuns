@@ -13,6 +13,7 @@
     "desktop:build": "bunx rustybuns build desktop --check"
   },
   "dependencies": {
+    "@rustybuns/util": "workspace:*",
     "@rustybuns/cli": "workspace:*",
     "@rustybuns/shell-bun": "workspace:*",
     "react": "19.2.8",
