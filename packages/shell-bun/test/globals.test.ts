@@ -13,3 +13,7 @@ test("installCloudflareGlobals: native Responses are still instanceof Response",
   expect(r.webSocket).toBe(ws);
   expect({} instanceof Response).toBe(false);
 });
+
+test("caches.default exists as soon as the host is imported (SvelteKit reads it at module load)", () => {
+  expect((globalThis as any).caches.default).toBeDefined();
+});

@@ -358,6 +358,16 @@ export function durableObject<Env>(Ctor: DurableObjectCtor<Env>, env: Env, opts?
 
 // ---- Cloudflare globals the DO bundle expects ---------------------------------
 // Bun's Response drops unknown init props, and WebSocketPair is a CF global.
+// Workers' Cache API. Nothing is kept: every match misses, so callers fall through to the work.
+// Installed when the host loads, not in serve(): SvelteKit's Worker reads `caches.default` while
+// its module evaluates, which is before serve() runs.
+function installCaches() {
+  if ("caches" in globalThis) return;
+  const none = { match: async () => undefined, put: async () => {}, delete: async () => false };
+  (globalThis as any).caches = { default: none, open: async () => none };
+}
+installCaches();
+
 let installed = false;
 export function installCloudflareGlobals() {
   if (installed) return;
@@ -375,9 +385,5 @@ export function installCloudflareGlobals() {
   }
   (globalThis as any).Response = RBResponse;
   (globalThis as any).WebSocketPair = WebSocketPair;
-  // Workers' Cache API. Nothing is kept: every match misses, so callers fall through to the work.
-  if (!("caches" in globalThis)) {
-    const none = { match: async () => undefined, put: async () => {}, delete: async () => false };
-    (globalThis as any).caches = { default: none, open: async () => none };
-  }
+  installCaches();
 }
