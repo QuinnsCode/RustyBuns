@@ -130,6 +130,31 @@ test("a crew commit holds a desktop deploy until the owner approves the diff at 
   expect((await settle(call)).history[0]).toMatchObject({ status: "done", commit_hash: waiting.review.tip });
 });
 
+test("a token can't approve a deploy, and an approval of a diff cut short needs approve_unseen", async () => {
+  const { runner, ran } = fake();
+  const { call, send } = await app(runner);
+  const D = "/api/repos/ryan/lab/deploy";
+  await send("pat", "/api/login", { name: "pat" });
+  await send("ryan", "/api/repos/ryan/lab/collaborators", { name: "pat" });
+  const long = Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n");
+  await send("pat", "/api/repos/ryan/lab/files", { path: "big.txt", content: long });
+  await send("pat", "/api/repos/ryan/lab/do/commit?path=big.txt", { message: "pat's big file" });
+  const tip = ((await (await send("ryan", D, {})).json()) as any).review.tip;
+
+  // A write or admin token holds the owner's name but isn't a person reading the diff.
+  const t = (await (await send("ryan", "/api/tokens", { label: "agent", scope: "admin" })).json()) as { token: string };
+  const viaToken = await call(null, D, { method: "POST", headers: { authorization: `Bearer ${t.token}` }, body: JSON.stringify({ approve: tip, approve_unseen: true }) });
+  expect(viaToken.status).toBe(403);
+
+  // The 300-line file shows 200: approving as if it was read is refused until the body says otherwise.
+  const cut = await send("ryan", D, { approve: tip });
+  expect(cut.status).toBe(409);
+  expect(((await cut.json()) as any).error).toContain("cut short");
+  expect(ran).toEqual([]);
+  expect((await send("ryan", D, { approve: tip, approve_unseen: true })).status).toBe(202);
+  expect((await settle(call)).history[0]).toMatchObject({ status: "done", commit_hash: tip });
+});
+
 test("a desktop deploy won't run a clone of another commit than the one it checked", async () => {
   const { runner, ran } = fake();
   const { call, send } = await app(runner);
