@@ -45,6 +45,7 @@ import { askAgent, cheapest } from "./conflict-agent.ts";
 import { alsoFor, fixUnavailable, guardTripped, healUnavailable, openFix, rebuildTask } from "./heal.ts";
 import { hunks, revertOps } from "./review.ts";
 import { MERVIN } from "./mervin.ts";
+import { noteConflict } from "./usage.ts";
 import { busyOn, clashIn, taskFiles, waves, type Busy, type Clash, type Side } from "./merge-plan.ts";
 import { sha256 } from "./util.ts";
 import { countMerge } from "./stats.ts";
@@ -375,7 +376,7 @@ async function askLeftovers(env: Env, owner: string, repo: string, branch: Branc
     const round = !counted && (!rounds || kept.has(id)) ? rounds + 1 : rounds;
     const who = conflictRound(round, f.policy.over);
     const note = who === "ask" ? undefined : conflictNote({ branch: branch.name, path: f.path, line: c.line, rounds: round - 1, last: kept.get(id)?.answer });
-    if (who === "escalate") { notes.set(f.path, `conflict round ${round} on ${branch.name}: a person's turn\n${note}`); continue; }
+    if (who === "escalate") { await noteConflict(env, owner, f.path, { round, who }); notes.set(f.path, `conflict round ${round} on ${branch.name}: a person's turn\n${note}`); continue; }
     const spent = await hostedBudget(env);
     if (spent) { why = ((await spent.json()) as { error: string }).error; continue; }
     if (round > rounds) {
@@ -388,6 +389,7 @@ async function askLeftovers(env: Env, owner: string, repo: string, branch: Branc
     const r = await checkedAnswer(env, owner, repo, branch, rows, f.path, c, ask, user).catch((e) => ({ error: String((e as Error)?.message ?? e) }));
     const a: Answer = { ...("error" in r ? { harness: ask.harness, ...(ask.model && { model: ask.model }), ok: false, tests: "not run", failure: r.error.slice(-4000) } : r), ...(note && { round: rounds, note }) };
     answers.set(id, a);
+    await noteConflict(env, owner, f.path, { round, who, harness: a.harness, ok: a.ok, tests: a.tests });
     await env.DB.prepare(`INSERT INTO leftover_answers (owner, repo, branch, path, line, key, answer, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (owner, repo, branch, path, line) DO UPDATE SET key = excluded.key, answer = excluded.answer, at = excluded.at`)
       .bind(owner, repo, branch.name, f.path, c.line, await conflictKey(c), JSON.stringify(a), Date.now()).run();
