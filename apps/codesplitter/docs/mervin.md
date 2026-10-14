@@ -256,9 +256,11 @@ override. The advice is recorded in the round file.
   and `GET /api/mervin` show the git/git corpus (settled / asked / other text, `src/mervin.ts`). The numbers there are
   this doc's table, not a live per-repo tally, and the merge page does not credit him per file yet.
 
-## Learning your merge patterns (opt-in, not built yet)
+## Learning your merge patterns (opt-in)
 
-Design only. The engine stays deterministic: learning never changes how a merge is computed, it changes what
+Built: the opt-in, the event log, the weekly report and delete-my-data (`src/mervin-learning.ts`;
+`GET|PUT|DELETE /api/repos/:o/:r/mervin`; the Mervin panel on the repo page). Events sit in D1 for now; the R2
+pipeline below, demoting a level and proposing rules are still design. The engine stays deterministic: learning never changes how a merge is computed, it changes what
 Mervin notices and how he orders and flags, and it is off until a repo turns it on.
 
 **What is kept.** One small event per merge, with no file contents and no diffs: repo, file extension, resolver
