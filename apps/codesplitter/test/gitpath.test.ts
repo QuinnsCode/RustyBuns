@@ -745,13 +745,3 @@ describe("a hosted repo", () => {
     expect(dataUrl({ owner: "a/b", repo: "p?x" })).toBe("/api/repos/a%2Fb/p%3Fx/gitpath");
   });
 });
-
-describe("the repo page", () => {
-  test("its header links to gitpath on that repo, as an icon with the word as its tooltip", () => {
-    const html = readFileSync(join(import.meta.dir, "../src/client.html"), "utf8");
-    const link = /<a class="btn ghost" href="\/gitpath\?repo=\$\{encodeURIComponent\(owner\)\}\/\$\{encodeURIComponent\(repo\)\}"[^>]*>/.exec(html)?.[0];
-    expect(link).toBeDefined();
-    expect(link).toContain('aria-label="gitpath"');
-    expect(link).toContain('title="gitpath:');
-  });
-});

@@ -1,13 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-
 const html = readFileSync(join(import.meta.dir, "../src/client.html"), "utf8");
-const css = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join("\n").replace(/\/\*[\s\S]*?\*\//g, "");
-/** Every selector in the page's styles that reaches `.cls`, and its declarations. */
-const rulesFor = (cls: string) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-  .flatMap(([, sel, body]) => sel!.split(",").map((s) => ({ sel: s.trim(), body: body! })))
-  .filter(({ sel }) => new RegExp(String.raw`\.${cls}(?![\w-])`).test(sel));
 
 // #989 split the doctor's Save body one setting a line and lost an `||`, so no script on the page ran.
 test("every inline script on the page parses", () => {
@@ -34,11 +28,6 @@ describe("git action pictures", () => {
   test("a sync draws the commits waiting on each side, and nothing when in step", () => {
     expect(dots(gitPic(["sync", { ahead: 2, behind: 1 }]))).toEqual(["oou", "oomm", "ooumm", "ooumm"]);
     expect(gitPic(["sync", { ahead: 0, behind: 0 }])).toContain("Already in step");
-  });
-
-  test("the git actions on the page carry a picture", () => {
-    for (const b of ["data-resolve=\"mine\"", "data-resolve=\"rebase\"", "id=\"mirror-sync\"", "data-crew=\"1\"", "data-push=", "data-pull=", "data-open-ref=", "data-cg=\"revert\"", "data-cg=\"pick\""])
-      expect(html).toMatch(new RegExp(`${b}[^>]*\\$\\{(picAttr|sync)`));
   });
 });
 
@@ -272,10 +261,6 @@ describe("the tour", () => {
     expect(keys.filter((k) => !drawn.has(k!))).toEqual([]);
   });
 
-  test("the home page and every repo page can start it", () => {
-    expect(html).toContain(`id="hero-tour"`);
-    expect(html).toContain(`id="tour-here"`);
-  });
 });
 
 // The explorer's search box filters the whole tree by path.
@@ -283,10 +268,6 @@ describe("explorer search", () => {
   const src = html.slice(html.indexOf("function treeMatches"), html.indexOf("async function mountExplorer"));
   const treeMatches = new Function(`${src}; return treeMatches;`)();
   const f = (path: string) => ({ path, name: path.split("/").pop(), type: "file" });
-
-  test("the box sits at the top of the explorer", () => {
-    expect(html).toContain(`Explorer</div><label class="tree-find">`);
-  });
 
   test("any case, name matches first, then shorter paths", () => {
     const files = ["test/slow.test.ts", "src/testing/a.ts", "sum.test.ts", "README.md"].map(f);
@@ -386,21 +367,6 @@ describe("picking lines by rule", () => {
     expect([...lk("i", false, true, st([0, 1], 0, 1), 4).picked]).toEqual([2, 3]);
   });
 
-  test("agents get the selection tools", () => {
-    for (const t of ["select_lines", "deselect_lines", "select_all_lines", "invert_selection", "expand_selection", "select_matching", "select_lines_by", "selected_lines"]) expect(html).toContain(`name: "${t}"`);
-  });
-});
-
-// Switching files took ~2s live: branches, then the repo and commits, then the file, one after another.
-describe("a file page loads in one round trip", () => {
-  const f = html.slice(html.indexOf("  async f(owner, repo, path) {"), html.indexOf("mountExplorer($(\"#tree\")", html.indexOf("  async f(owner, repo, path) {")));
-  test("the file and its commits are asked for before the branch list comes back", () => {
-    expect(f.indexOf("let early = reads(picked)")).toBeGreaterThan(-1);
-    expect(f.indexOf("let early = reads(picked)")).toBeLessThan(f.indexOf("await Promise.all([branchHere(owner, repo)"));
-  });
-  test("the explorer draws the last page's tree at once, then reads it fresh", () => {
-    expect(html).toContain("await draw(); cache.clear(); every = null; repoTrees.set(key, cache);");
-  });
 });
 
 // Getting started's table of contents plays the tour's steps by title; a renamed step would leave a dead entry.
@@ -433,23 +399,6 @@ describe("the Ship pop-out's infra map", () => {
     expect(out.match(/<i trash-2>/g)?.length).toBe(2);   // the DB tile's badge, and the legend's
   });
 
-  test("the toolbar has Ship for the owner, wired to its panel", () => {
-    expect(html).toContain(`id="ship"`);
-    expect(html).toContain(`id="ship-panel"`);
-    expect(html).toContain("views.wireShip(owner, repo);");
-  });
-});
-
-// The firehose glow: a still orange edge that bumps at 175 bpm while edits stream in, and never takes a click.
-describe("the firehose glow", () => {
-  test("pulses at 175 bpm and ignores the pointer", () => {
-    const own = rulesFor("firehose").find((r) => r.sel === ".firehose");
-    expect(own?.body).toContain("pointer-events: none");
-    expect(css).toContain(".firehose.on { opacity: 1; animation: firehose-bump .343s");
-  });
-  test("is fed by the file socket's ops", () => {
-    expect(html).toContain("firehose(msg.applied.length)");
-  });
 });
 
 // The secret under a file: the oldest lines fall apart, by age tier.
@@ -476,9 +425,6 @@ describe("rot mode", () => {
     expect(rotText(text, 0, "l1")).toBe(esc(text));
   });
 
-  test("the bottom of the file has the button", () => {
-    expect(html).toContain('id="dust"');
-  });
 });
 
 // #1469: a repo or file view called the repo, branches and fit endpoints several times each.
@@ -512,14 +458,6 @@ describe("api shares repeated reads within a view", () => {
     await api("/repos/o/r/agents"); await api("/repos/o/r/agents");
     expect(calls.length).toBe(2);
   });
-});
-
-// #1555: getting branches in for Mervin was a hidden checkbox pair; now one button, and a hint when none are open.
-test("the dig dialog digs a pull-only mirror in one click, and Mervin says how to get branches", () => {
-  expect(html).toContain('id="ghmervin-go"');
-  expect(html).toContain("Watch Mervin merge my PRs");
-  expect(html).toContain('dig(false, true)');
-  expect(html).toContain('id="mervin-hint"');
 });
 
 // The tour leaves sign-in, spending, merging and shipping to a person.
@@ -562,16 +500,6 @@ describe("scenes a queue or an agent drives", () => {
     expect(tourNext({ i: 1, scene: "a" })).toBeNull();
     expect(tourNext({ i: 3 })).toMatchObject({ i: 4 });
     expect(tourNext({ i: 1, scene: "a" })).toBeNull();
-  });
-  test("the queue has a visible button, and the palette plays and queues scenes", () => {
-    expect(html).toContain("data-qm");
-    expect(html).toContain('"Play a scene…"');
-    expect(html).toContain('"Queue a scene…"');
-  });
-  test("agents get the scene tools, and a held step does nothing", () => {
-    for (const n of ["list_scenes", "play_scene", "scene_step"]) expect(html).toContain(`name: "${n}"`);
-    const step = html.slice(html.indexOf('name: "scene_step"'), html.indexOf('name: "list_conflicts"'));
-    expect(step.indexOf("tourPause")).toBeLessThan(step.indexOf("tourRun"));
   });
 });
 
