@@ -79,6 +79,21 @@ describe("mervin board", () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  test("a PR rebuilt after the board ran, then merged with a merge commit, still counts as landed", () => {
+    const { board, tree } = run(repo, main, order(prs, [4]));
+    const dir = mkdtempSync(join(tmpdir(), "mervin-board-tree-"));
+    try {
+      for (const [p, t] of tree) writeFileSync(join(dir, p), t!);
+      git("checkout", "-q", "p4");
+      commit({ "d.ts": "rebuilt\n" }, "merge main into p4");   // a new head sha, unknown to the board
+      git("checkout", "-qb", "after", main);
+      git("merge", "-q", "--no-ff", "-m", "Merge pull request #4 from o/p4", "p4");
+      const { landed, rows } = score(repo, board, dir, git("rev-parse", "HEAD"));
+      expect(landed).toEqual([4]);
+      expect(rows.map((r) => r.score)).toEqual(["exact"]);
+    } finally { rmSync(dir, { recursive: true, force: true }); git("checkout", "-q", "main"); }
+  });
+
   test("a PR's own CI: red when any check failed, pending while one runs", () => {
     const pr = (rollup: BoardPr["statusCheckRollup"]) => ciOf({ number: 1, headRefOid: "x", statusCheckRollup: rollup });
     expect(pr([{ name: "typecheck", conclusion: "SUCCESS", status: "COMPLETED" }, { name: "test codesplitter", conclusion: "FAILURE", status: "COMPLETED" }])).toEqual({ ci: "fail", failing: ["test codesplitter"] });
