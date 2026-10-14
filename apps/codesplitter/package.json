@@ -16,6 +16,7 @@
     "test:watch": "bun test --watch test",
     "desktop": "bun ../../packages/cli/src/index.ts build desktop --dev && bun ../../packages/cli/src/index.ts run desktop",
     "desktop:watch": "bun ../../packages/cli/src/index.ts run desktop --watch",
+    "desktop:agent": "bun ../../packages/cli/src/index.ts run desktop --watch --agent",
     "desktop:update": "bun scripts/update.ts"
   },
   "dependencies": {
