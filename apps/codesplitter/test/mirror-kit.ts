@@ -1,5 +1,5 @@
 // What the mirror tests share: an upstream as a bare repo on disk, a signed-in desktop, and the
-// moves both sides make. Split across three files so bun test --parallel can run them side by side;
+// moves both sides make. Split across four files so bun test --parallel can run them side by side;
 // each file gets its own copy of this module, so its own temp root and `up`.
 import { afterAll, expect } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
