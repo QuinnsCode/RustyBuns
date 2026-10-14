@@ -332,7 +332,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (limits) return limits;
   const reseal = await resealRoutes(req, env, p, admin);
   if (reseal) return reseal;
-  // POST /api/admin/artifacts/copy|rewrite  move the Artifacts namespace (artifact-move.ts, #823)
+  // Admin routes that move the Artifacts namespace: copy, then rewrite (artifact-move.ts, #823)
   const artifactMove = await artifactMoveRoutes(req, env, p, admin);
   if (artifactMove) return artifactMove;
   // GET /api/admin/insights  people vs agents, the site's health, how far each person got (insights.ts)
