@@ -154,7 +154,7 @@ const OPS: Record<string, Record<string, Op>> = {
     body: obj({ path: str(), content: str(), branch: str("add it on this open branch instead of main") }, ["path"]), ok: obj({ path: str() }), status: 201 } },
   [`${repo}/do/file`]: { get: { id: "read_file", summary: "A file's lines, each with its id, who last wrote it, and the rev it was written at", tag: "Files", open: true,
     description: "Line ids stay put while lines move, so edits address them. Private lines are blank unless you're crew.",
-    query: { ...filePath, ...onBranch }, ok: ref("Doc") } },
+    query: { ...filePath, ...onBranch, from: int("window the lines: start at this 0-based line (adds `total` and `from` to the answer)"), limit: int("window the lines: at most this many, up to 5,000; leave both out for the whole file") }, ok: ref("Doc") } },
   [`${repo}/do/at`]: { get: { id: "read_file_at", summary: "Time travel: the file as it was at a rev, with blame per line", tag: "Files", open: true,
     query: { ...filePath, ...onBranch, rev: { ...int("the edit to stop at"), required: true } }, ok: ref("Doc") } },
   [`${repo}/do/log`]: { get: { id: "file_log", summary: "A file's edits since a rev, a page at a time", tag: "Files", open: true,
