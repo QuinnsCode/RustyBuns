@@ -25,6 +25,7 @@ import { cardFont, renderCard, type CardLine } from "./card.ts";
 import { json, type Body, type Env } from "./env.ts";
 import { isAdmin } from "./identity.ts";
 import type { Doc, Line } from "./lines.ts";
+import { esc } from "./util.ts";
 
 export type Mark = "pass" | "fail";
 export interface CutRun { at: number; code: number; passed: number; failed: number; out: string; marks: Record<string, Record<string, Mark>>; note?: string }
@@ -359,7 +360,6 @@ async function cutFiles(env: Env, c: CutRow) {
   }));
 }
 
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const summary = (run: CutRun | null) => !run ? "not run yet" : run.note ?? `${run.passed} passed, ${run.failed} failed`;
 
 export async function cutRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null): Promise<Response | null> {

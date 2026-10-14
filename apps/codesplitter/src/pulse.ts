@@ -17,6 +17,7 @@
 
 import { json, type Env } from "./env.ts";
 import { renderPulseCard } from "./card.ts";
+import { esc } from "./util.ts";
 
 const HOUR = 3_600_000;
 export const HOURS = 7 * 24;
@@ -61,7 +62,6 @@ export async function pulses(env: Env, names: string[], viewer: string | null, n
   return out;
 }
 
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const lines = (n: number) => `${n.toLocaleString("en-US")} line${n === 1 ? "" : "s"}`;
 export const pulseSummary = (p: Pulse) => p.total ? `${lines(p.total)} landed this week` : "quiet this week";
 
