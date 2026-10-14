@@ -1,14 +1,15 @@
-// Ester and Mervin, the office's helpers, as two badges in a corner of the page. Click one to call on it: Ester
+// Ester, Mervin and Dexter (who reads the session transcripts for where the tokens went), the office's helpers, as three badges in a corner of the page. Click one to call on it: Ester
 // (a skeleton, naturally) runs the board check and sorts what fails by who owns it, Mervin lists the open PRs and how
 // they merge. Her `hold` list shows on his card, since what she says to hold back is what he must not merge.
 // The runs are the office's (ester/run.ts, /__rb/helpers); this polls them while one is going.
-import { Skull, GitMerge, createElement, type IconNode } from "lucide";
+import { Skull, GitMerge, Scissors, createElement, type IconNode } from "lucide";
 import type { EsterState } from "./run.ts";
 
-type Name = "ester" | "mervin";
+type Name = "ester" | "mervin" | "dexter";
 const WHO: Record<Name, { label: string; icon: IconNode; ask: string }> = {
   ester: { label: "Ester", icon: Skull, ask: "Run the board check and sort what fails" },
   mervin: { label: "Mervin", icon: GitMerge, ask: "List the open PRs and how they merge" },
+  dexter: { label: "Dexter", icon: Scissors, ask: "Find where the tokens go and what to trim" },
 };
 const HEADER = { "x-rb-triage": "1" };
 const IDLE: EsterState = { phase: "idle", lines: [], hold: [] };
@@ -52,7 +53,7 @@ if (document.body) boot();
 else document.addEventListener("DOMContentLoaded", boot, { once: true });
 
 function start(m: { box: HTMLElement; row: HTMLElement }) {
-  const states: Record<Name, EsterState> = { ester: IDLE, mervin: IDLE };
+  const states: Record<Name, EsterState> = { ester: IDLE, mervin: IDLE, dexter: IDLE };
   let open: Name | undefined, card: HTMLElement | undefined, timer: ReturnType<typeof setTimeout> | undefined;
   const badges = {} as Record<Name, HTMLButtonElement>;
 

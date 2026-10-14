@@ -9,7 +9,7 @@
 //   GET  /__rb/helpers          Ester's and Mervin's runs of the board script (ester/run.ts): phase, the tail they printed, PRs to hold
 //   GET  /__rb/reload           what the page is running and whether the server's code moved on (live/reload.ts)
 //   POST /__rb/reload/restart   restart the office (SIGTERM; the workers keep running) when office:mama is minding it
-//   POST /__rb/helpers/<name>   start one (ester or mervin) in the first floor's repo, unless it is on it already
+//   POST /__rb/helpers/<name>   start one (ester, mervin or dexter) in the first floor's repo, unless it is on it already
 // A POST from the page needs an X-RB-Triage header, which a form on another site can't send.
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -59,10 +59,10 @@ export function officeTriage(
       ].sort((a, b) => b.at.localeCompare(a.at));
       return { status: 200, body: { snapshots } };
     }
-    if (p === "/__rb/helpers") return method === "GET" ? { status: 200, body: { ester: helpers.ester.state(), mervin: helpers.mervin.state() } } : only("GET");
+    if (p === "/__rb/helpers") return method === "GET" ? { status: 200, body: { ester: helpers.ester.state(), mervin: helpers.mervin.state(), dexter: helpers.dexter.state() } } : only("GET");
     if (p.startsWith("/__rb/helpers/")) {
       const name = p.slice("/__rb/helpers/".length);
-      if (!isHelper(name)) return { status: 404, body: { error: "Ester or Mervin" } };
+      if (!isHelper(name)) return { status: 404, body: { error: "Ester, Mervin or Dexter" } };
       if (method !== "POST") return only("POST");
       if (!trusted) return { status: 403, body: { error: `Send ${TRIAGE_HEADER}: 1 with the POST` } };
       const floor = [...floors()][0];
