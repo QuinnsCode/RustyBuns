@@ -20,8 +20,19 @@ you have the wheel back. The tour's Back and Next still work.
 Play leaves four things to a person and says why when it stops: signing in, running an agent (it costs money), merging
 (it changes main) and deploying. The rest, checks included, it does itself.
 
+## Scenes: a person, a queue or an agent
+
+Each tour chapter is a scene, and its steps are data (a target, what it says, the real action). Three things drive one,
+through the same steps and the same rule that sign-in, running an agent, merging and deploying stay a person's:
+
+- **A person**: Back, Next, Play.
+- **A queue**: shift-click a chapter's icon on the card to line it up after this one; "Up next" shows the queue and ✕ clears it.
+- **An agent**: the WebMCP tools `list_scenes`, `play_scene` (with an optional `queue`) and `scene_step`. A step glides the
+  fake cursor to its target and runs the real action; on a person's step it answers `held` (or `skip: true` moves past).
+
+Reduced motion shortens the cursor's waits and drops the ripple.
+
 ## Not done yet
 
 - Point it at the real codeSplitter source and run the loop once for real: a `MANUAL RUN` for the owner (the deploy and
   the watchdog token need the owner's secrets).
-- Scenes a queue or an agent drives (a WebMCP tool that plays a scene), not just the tour.
