@@ -102,8 +102,10 @@ if (import.meta.main) {
     const bucket = arg("upload");
     if (bucket) {
       const key = `mervin/rounds/${file.split("/").pop()}`;
-      const r = Bun.spawnSync(["wrangler", "r2", "object", "put", `${bucket}/${key}`, "--file", file, "--content-type", "application/json", "--remote"], { cwd: top, stderr: "pipe" });
+      try {
+      const r = Bun.spawnSync(["bunx", "wrangler", "r2", "object", "put", `${bucket}/${key}`, "--file", file, "--content-type", "application/json", "--remote"], { cwd: top, stderr: "pipe" });
       say(r.exitCode === 0 ? `uploaded r2://${bucket}/${key}` : `upload FAILED: ${r.stderr.toString().trim().split("\n").pop()}`);
+      } catch (e) { say(`upload FAILED: ${(e as Error).message}`); }
     }
   };
   if (!args.includes("--no-record") && !replay) {
