@@ -409,6 +409,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET|PUT /api/me
   if (p[1] === "me") {
     if (!user) return json({ error: "sign in first" }, 401);
+    let warning: string | undefined;
     if (req.method === "PUT") {
       // Only what's sent changes, so turning the pulse off leaves the bio be.
       const b = await body<"bio" | "theme_html" | "pulse" | "git_truth" | "avatar" | "share_usage">();
@@ -423,9 +424,11 @@ async function route(req: Request, env: Env): Promise<Response> {
         .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, avatar === null ? null : avatar === "" ? "" : JSON.stringify(avatar), b.share_usage === undefined ? null : b.share_usage ? 1 : 0, user).run();
       // Saying no (or changing your mind) takes back what was shared (usage.ts).
       if (b.share_usage === false) await forget(env, user).run();
+      // A public page repo wins over the saved theme_html, so saving it would otherwise change nothing you can see.
+      if (b.theme_html && await hasPage(env, user)) warning = "theme_html saved, but your public page repo is shown instead; edit the repo's index.html, or make the repo private";
     }
     // ask_usage: a private-repo owner who hasn't answered yet gets the "help improve" modal (usage.ts).
-    return json({ ...(await env.DB.prepare("SELECT * FROM users WHERE name = ?").bind(user).first()), ask_usage: await askUsage(env, user) });
+    return json({ ...(await env.DB.prepare("SELECT * FROM users WHERE name = ?").bind(user).first()), ask_usage: await askUsage(env, user), ...(warning && { warning }) });
   }
 
   // GET /api/users/:name/(pulse|pulse.png|share) and /api/pulse: heartbeats (pulse.ts)
