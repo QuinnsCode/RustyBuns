@@ -82,3 +82,18 @@ test("GET /api/health answers, and the rollback report needs the secret and a re
     expect((await call(null, "/api/watchdog/rolled-back", { method: "POST", body: "{}", headers: { authorization: "Bearer s3cret" } })).status).toBe(400);
   } finally { call.close(); }
 });
+
+test("a rollback is logged with the deploy and branch that shipped the bad version", async () => {
+  const call = await boot({ GH_CLI: "off", WATCHDOG_SECRET: "s3cret" });
+  try {
+    await call("ryan", "/api/login", { method: "POST", body: JSON.stringify({ name: "ryan" }) });
+    await call("ryan", "/api/repos", { method: "POST", body: JSON.stringify({ name: "lab", visibility: "public" }) });
+    const db = call.env.DB;
+    await db.prepare("INSERT INTO branches (owner, repo, name, by, status, created_at, merged_by, merged_at) VALUES ('ryan','lab','risky','agent-x','merged',1,'ryan',100)").run();
+    await db.prepare("INSERT INTO deploys (id, owner, repo, stage, by, trigger, status, commit_hash, at) VALUES ('d1','ryan','lab','prod','ryan','button','done','abc123',200)").run();
+    const res = await call(null, "/api/watchdog/rolled-back", { method: "POST", headers: { authorization: "Bearer s3cret" }, body: JSON.stringify({ repo: "ryan/lab", from: "v2", to: "v1", at: 300 }) });
+    expect(res.status).toBe(200);
+    const row = await db.prepare("SELECT deploy_id, commit_hash, branch, from_version, to_version FROM rollbacks WHERE owner = 'ryan'").first();
+    expect(row).toMatchObject({ deploy_id: "d1", commit_hash: "abc123", branch: "risky", from_version: "v2", to_version: "v1" });
+  } finally { call.close(); }
+});

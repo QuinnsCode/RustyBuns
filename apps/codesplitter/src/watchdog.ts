@@ -22,9 +22,25 @@ export async function watchdogRoutes(req: Request, env: Env, p: string[]): Promi
   const [owner, repo] = typeof b.repo === "string" ? b.repo.split("/") : [];
   if (!owner || !repo || typeof b.from !== "string" || typeof b.to !== "string") return json({ error: "repo (owner/name), from and to" }, 400);
   if (!(await repoRow(env, owner, repo, "1"))) return json({ error: "not found" }, 404);
+  const at = typeof b.at === "number" ? b.at : Date.now(), who = await shippedBy(env, owner, repo, at);
+  await env.DB.prepare("INSERT INTO rollbacks (owner, repo, from_version, to_version, deploy_id, commit_hash, branch, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(owner, repo, b.from, b.to, who.deploy, who.commit, who.branch, at).run();
   await emit(env, owner, repo, "deploy.finished", "watchdog", {
-    deployment: { id: `rollback-${b.to.slice(0, 8)}`, sha: null, environment: "production", task: "rollback", creator: { login: "watchdog" } },
-    deployment_status: { state: "failure", environment: "production", environment_url: null, description: `rolled back from version ${b.from} to ${b.to}: the app failed its health check` },
+    deployment: { id: `rollback-${b.to.slice(0, 8)}`, sha: who.commit, environment: "production", task: "rollback", creator: { login: "watchdog" } },
+    deployment_status: { state: "failure", environment: "production", environment_url: null, description: `rolled back from version ${b.from} to ${b.to}: the app failed its health check${who.branch ? `; shipped by branch ${who.branch}` : ""}` },
   });
   return json({ ok: true });
+}
+
+/** The deploy live when the app broke (the last real one to finish by `at`), its commit, and the branch merged last before it. */
+export async function shippedBy(env: Env, owner: string, repo: string, at: number) {
+  const d = await env.DB.prepare("SELECT id, commit_hash, at FROM deploys WHERE owner = ? AND repo = ? AND trigger != 'preview' AND status = 'done' AND at <= ? ORDER BY at DESC LIMIT 1").bind(owner, repo, at).first();
+  const b = d && await env.DB.prepare("SELECT name FROM branches WHERE owner = ? AND repo = ? AND status = 'merged' AND merged_at <= ? ORDER BY merged_at DESC LIMIT 1").bind(owner, repo, d.at as number).first();
+  return { deploy: (d?.id as string) ?? null, commit: (d?.commit_hash as string) ?? null, branch: (b?.name as string) ?? null };
+}
+
+/** A repo's last rollbacks, newest first (for its deploy panel). */
+export async function rollbacks(env: Env, owner: string, repo: string) {
+  const { results } = await env.DB.prepare("SELECT from_version, to_version, deploy_id, commit_hash, branch, at FROM rollbacks WHERE owner = ? AND repo = ? ORDER BY at DESC LIMIT 10").bind(owner, repo).all();
+  return results;
 }

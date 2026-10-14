@@ -39,6 +39,22 @@ export async function graphRows(h: Pick<ArtifactsRepo, "log" | "readCommit">, br
   return { rows, known, more };
 }
 
+/** The most one request may walk, and (sharedGraph) one walk per repo and limit at a time: the cost per repo is the same however many agents ask (#1562). */
+export const GRAPH_MAX = 200;
+const walking = new Map<string, Promise<Graph>>();
+
+/** commitGraph, but requests that arrive while a walk of the same repo and limit is running wait for it instead of starting their own. Nothing is kept once it ends, so a commit is seen at once. */
+export function sharedGraph(key: string, walk: (limit: number) => Promise<Graph>, limit: number): Promise<Graph> {
+  limit = Math.max(1, Math.min(GRAPH_MAX, limit));
+  const k = `${key}\n${limit}`;
+  let graph = walking.get(k);
+  if (!graph) {
+    graph = walk(limit).finally(() => walking.delete(k));
+    walking.set(k, graph);
+  }
+  return graph;
+}
+
 /** `limit` of main's commits, newest first, each followed by the side branch it merged (if any). */
 export async function commitGraph(h: Pick<ArtifactsRepo, "log" | "readCommit">, branch: string, upstreamCommit: string | null, limit = 60): Promise<Graph> {
   const { rows, known, more } = await graphRows(h, branch, limit);

@@ -128,7 +128,7 @@ import { clearOwn } from "./deploy-review.ts";
 import { resealRoutes } from "./deploy-keys.ts";
 import { repoFit } from "./fit.ts";
 import { gitState } from "./git-state.ts";
-import { commitGraph } from "./graph.ts";
+import { commitGraph, GRAPH_MAX, sharedGraph } from "./graph.ts";
 import { watchdogRoutes } from "./watchdog.ts";
 import { busiestFiles, fileHistory } from "./gitpath-data.ts";
 import { joinHistory, upstreamBusiest, upstreamFileHistory, type UpstreamRepo } from "./gitpath-upstream.ts";
@@ -533,11 +533,11 @@ async function route(req: Request, env: Env): Promise<Response> {
     // GET /api/repos/:o/:r/graph[?limit=60]  main's commits, newest first, with the branches merged into them, each upstream's or this copy's
     if (p[4] === "graph" && !p[5] && req.method === "GET") {
       const r = await repoRow(env, owner, repo, "upstream_commit");
-      const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit")) || 60));
+      const limit = Math.max(1, Math.min(GRAPH_MAX, Number(url.searchParams.get("limit")) || 60));
       try {
         const h = await handleFor(env, owner, repo);
         if (!h) return json({ branch: "main", commits: [], more: false, upstream: null });
-        return json(await commitGraph(h.handle, h.branch, (r?.upstream_commit as string) ?? null, limit));
+        return json(await sharedGraph(`${owner}/${repo}/${h.branch}/${(r?.upstream_commit as string) ?? ""}`, (n) => commitGraph(h.handle, h.branch, (r?.upstream_commit as string) ?? null, n), limit));
       } catch (e) {
         if (code(e) === "FORK_IN_PROGRESS" || code(e) === "IMPORT_IN_PROGRESS") return json({ forking: true, commits: [] }, 202);
         if (code(e) === "NOT_FOUND") return json({ lost: true, commits: [] });
