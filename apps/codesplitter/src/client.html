@@ -1196,6 +1196,10 @@ const me = () => session.user;
 // A view asks for the repo, its branches, its fit and its tree from several panels: each is fetched once per view
 // (the promise is shared), and dropped on the next route or any write, so nothing is read stale.
 const sharedGets = new Map();
+// A file page's last doc and commits, kept across routes: going back to a file paints these at once and then
+// reads it afresh (the socket and the fresh read bring anything newer), so back-and-forth never waits on the file.
+const fileMemo = new Map();
+let fileLeave = null;
 const SHARED = /^\/repos\/[^/?]+\/[^/?]+(\/(branches|fit|tree))?(\?.*)?$/;
 const api = (path, body, method, headers = {}) => {
   if (body === undefined && !method) {
@@ -5080,7 +5084,14 @@ const views = {
     // On a branch (the switcher's pick), every read and edit goes to the branch's copy of the file.
     // Everything is asked for at once, on the branch this browser picked; only a branch that went away asks again.
     const base = `/repos/${owner}/${repo}/do`, qOn = (b) => "?path=" + encodeURIComponent(path) + (b ? `&branch=${encodeURIComponent(b)}` : "");
-    const reads = (b) => { const q = qOn(b), rs = [api(`${base}/commits${q}`), api(`${base}/file${q}`)]; rs.forEach((x) => x.catch(() => {})); return rs; };
+    const memoKey = (b) => `${owner}/${repo}${qOn(b)}`;
+    let remembered = null;
+    const reads = (b) => {
+      const q = qOn(b), m = fileMemo.get(memoKey(b));
+      remembered = m ?? null;
+      const rs = [api(`${base}/commits${q}`), api(`${base}/file${q}`)]; rs.forEach((x) => x.catch(() => {}));
+      return m ? [Promise.resolve(m.commits), Promise.resolve(m.doc)] : rs;
+    };
     const picked = branchPicked(owner, repo);
     let early = reads(picked);
     api(treeQ(owner, repo, "")).catch(() => {}); // the explorer's first read starts with the repo call, not after it
@@ -5091,7 +5102,8 @@ const views = {
     const onBranch = (e) => { if (branch) e.onBranch = [owner, repo, branch]; throw e; };
     const [commits, firstDoc] = await Promise.all(early.map((x) => x.catch(onBranch)));
     r.here = here;
-    let doc = firstDoc, viewing = null, sel = null;
+    const stale = remembered;
+    let doc = firstDoc, shownCommits = commits, viewing = null, sel = null;
     ctx = { view: "f", owner, repo, path, branch, canWrite: r.canWrite, isOwner: owner === me(), visibility: r.visibility, clone: r.clone, get sel() { return sel; }, base, q };
     const href = (e) => e.type === "dir" ? `#/r/${owner}/${repo}${e.path ? "/" + encodeURIComponent(e.path) : ""}` : `#/f/${owner}/${repo}/${encodeURIComponent(e.path)}`;
     app.innerHTML = workbench(views.repoHead(owner, repo, r), {
@@ -5608,7 +5620,7 @@ const views = {
     // The game's "smash the removed lines": a revision pair of this file.
     const smashHref = (from, to) => `/play.html#r/${owner}/${repo}?path=${encodeURIComponent(path)}&from=${from}&to=${to}`;
     // Newest first, so a commit's parent is the next one down.
-    const drawCommits = (cs) => $("#commits").innerHTML = cs.map((c, i) => `<div class="commit"><code>${c.sha.slice(0, 7)}</code><span>${esc(c.message)}</span><span class="muted">@${esc(c.by)} · r${c.rev}${c.rev > (cs[i + 1]?.rev ?? 0) ? ` · <a href="${smashHref(cs[i + 1]?.rev ?? 0, c.rev)}" title="smash the lines this commit took out">smash</a>` : ""}</span></div>`).join("") || '<span class="muted">Not committed yet. Search only sees committed files.</span>';
+    const drawCommits = (cs) => $("#commits").innerHTML = (shownCommits = cs, "") + cs.map((c, i) => `<div class="commit"><code>${c.sha.slice(0, 7)}</code><span>${esc(c.message)}</span><span class="muted">@${esc(c.by)} · r${c.rev}${c.rev > (cs[i + 1]?.rev ?? 0) ? ` · <a href="${smashHref(cs[i + 1]?.rev ?? 0, c.rev)}" title="smash the lines this commit took out">smash</a>` : ""}</span></div>`).join("") || '<span class="muted">Not committed yet. Search only sees committed files.</span>';
     const edit = (el) => {
       const held = claimOf.get(el.dataset.id);
       if (held && !mine(held)) return toast(held.bot ? `An agent is working on this line${held.task ? `: ${held.task}` : ""}. Lift its claim under Here now to take it back` : `@${held.who} is holding this line`);
@@ -5876,6 +5888,13 @@ const views = {
       schedule(msg.applied.map((a) => a.line));
     };
     connect();
+    fileLeave = () => { fileMemo.delete(memoKey(branch)); fileMemo.set(memoKey(branch), { doc, commits: shownCommits }); if (fileMemo.size > 40) fileMemo.delete(fileMemo.keys().next().value); };
+    // Painted from the last visit: read it afresh and swap in whatever moved since.
+    if (stale) Promise.all([api(`${base}/file${q}`), api(`${base}/commits${q}`)]).then(([d, cs]) => {
+      if (ctx.view !== "f" || ctx.path !== path) return;
+      if (d.rev > doc.rev) { doc = d; const rev = $("#rev"); if (rev) { rev.max = doc.rev; if (viewing === null) rev.value = doc.rev; } if (viewing === null && !box.querySelector(".ln input")) draw(doc); }
+      drawCommits(cs);
+    }).catch(() => {});
   },
 
   // An invite: the repo, who invited you and why, for anyone with the link. Two doors in: as yourself, or for your agent.
@@ -7670,6 +7689,7 @@ async function avatarBox(user, mine, name) {
 async function route() {
   let drawn; routing = new Promise((r) => (drawn = r));
   sharedGets.clear();
+  fileLeave?.(); fileLeave = null;
   followed = fetchingFollows = null;
   socket?.close(); socket = null;
   clearTimeout(agentTimer);
