@@ -29,6 +29,8 @@ jobs:
       hooks: ${{ steps.p.outputs.hooks }}
       smoke: ${{ steps.p.outputs.smoke }}
       smokes: ${{ steps.p.outputs.smokes }}
+      containers: ${{ steps.p.outputs.containers }}
+      containersAny: ${{ steps.p.outputs.containersAny }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
@@ -120,15 +122,36 @@ jobs:
         working-directory: .
       - run: ${{ matrix.smoke }}
 
+  # The container images a PR touched (the Dockerfile or anything in its folder): built for linux/amd64, the
+  # platform Cloudflare Containers runs, then booted until :8080 answers. One job per image; each writes a row
+  # to its summary. A PR that touches no image skips this. scripts/ci-containers.ts; locally, `rustybuns containers smoke`.
+  containers:
+    needs: plan
+    if: needs.plan.outputs.containersAny == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.containers) }}
+    name: containers ${{ matrix.app }} ${{ matrix.binding }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - run: bun ../../scripts/ci-containers.ts "${{ matrix.binding }}" "${{ matrix.dockerfile }}"
+
   # One check for the ruleset on main to require (.github/rulesets/main.json): the jobs above only run for the
   # apps a PR touched, so their names come and go. This passes when none of them failed or got cancelled.
   apps:
-    needs: [plan, packages, hooks, test, smoke]
+    needs: [plan, packages, hooks, test, smoke, containers]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - env: { RESULTS: "${{ join(needs.*.result, ' ') }}" }
         run: |
-          echo "plan, packages, hooks, test, smoke: $RESULTS"
+          echo "plan, packages, hooks, test, smoke, containers: $RESULTS"
           case " $RESULTS " in *" failure "*|*" cancelled "*) exit 1 ;; esac

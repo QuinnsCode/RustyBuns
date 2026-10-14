@@ -4,7 +4,8 @@
 //   bun scripts/ci-apps.ts test <base-ref>     apps a PR touched (all of them if packages/ moved),
 //                                              whether .claude/ moved (the guard hook tests), and the
 //                                              touched apps' desktop smokes, one job per Mac and Linux target,
-//                                              plus a job per bootOn target
+//                                              plus a job per bootOn target, and the container images
+//                                              whose build context the diff touched (ci-containers.ts)
 //   bun scripts/ci-apps.ts drop <all|a,b,c>    the build matrix for desktop-drop.yml
 //   bun scripts/ci-apps.ts drop pr <base-ref>  a PR's dry run: the apps whose rows below changed
 //                                              (all of them if the pipeline itself changed)
@@ -21,6 +22,8 @@ type App = {
   boot?: boolean;       // borg tier 1: build the dev host and boot it on the local twins (scripts/boot.ts)
   bootOn?: string[];    // build the release binary on these targets' own runners and boot it (boot.ts --bin), when the app changes
 };
+
+import { allImages, touchedImages } from "./ci-containers.ts";
 
 export const APPS: Record<string, App> = {
   "agent-demo":        { test: "bun test test", drop: false },
@@ -130,6 +133,9 @@ if (cmd === "drop") {
       RUNNERS.filter((r) => APPS[app]!.bootOn!.includes(r.target)).map((r) => ({ app, ...r, smoke: `${buildCmd(app, APPS[app]!, [r.target])} && bun ../../scripts/boot.ts --bin ${binFile(app, r.target)}` }))));
   out("smoke", { include: smokes });
   out("smokes", smokes.length > 0);
+  const images = touchedImages(allImages(), changed);
+  out("containers", { include: images });
+  out("containersAny", images.length > 0);
   out("packages", changed.some((f) => f.startsWith("packages/")));
   // bun test skips dot directories, so the agent guard hook's tests (.claude/hooks) get their own job.
   out("hooks", shared || changed.some((f) => f.startsWith(".claude/")));
