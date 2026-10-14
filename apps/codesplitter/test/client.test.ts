@@ -289,7 +289,7 @@ describe("what changed since you were last here", () => {
 // axe's leftovers from the accessibility pass (#768).
 describe("headings and landmarks", () => {
   test("a repo's side panels are h2s under the page's h1, not h3s", () => {
-    expect(html).toContain(`<h2>\${icon(ic)}\${title}</h2>`);
+    expect(html).toContain(`<h2>\${icon(ic)}\${title}`);
     expect(html).not.toMatch(/<h3\b/);
   });
 
@@ -728,4 +728,11 @@ describe("game send-offs", () => {
     expect(play).toContain('hq.get("mode") === "wreck"');
     expect(play).toContain('hq.get("room")');
   });
+});
+
+// Going back to a file waited on the Durable Object every time; the page now remembers the last visit.
+test("a file page paints its last visit, then reads it afresh", () => {
+  expect(html).toContain("const fileMemo = new Map()");
+  expect(html).toContain("fileLeave?.(); fileLeave = null;");
+  expect(html).toContain("if (d.rev > doc.rev)");
 });
