@@ -179,11 +179,14 @@ import * as THREE from "three";
 if (location.hash.startsWith("#c/")) { await import("/city.js"); await new Promise(() => {}); }
 
 // ---- where we are -------------------------------------------------------------
-// #l/<level> or #r/<owner>/<repo>, and for a diff to smash ?path=&from=&to=
+// #l/<level> or #r/<owner>/<repo>, and for a diff to smash ?path=&from=&to=; a send-off adds ?mode=wreck (the wrecking room)
+// and/or ?room=<folder> (the room to start in)
 const [hashRoom, hashQuery] = location.hash.slice(1).split("?");
 const room = hashRoom || "l/mitt";
 const hq = new URLSearchParams(hashQuery ?? "");
 const hashDiff = hq.has("path") ? { path: hq.get("path"), from: Number(hq.get("from")), to: Number(hq.get("to")) } : null;
+const hashMode = hq.get("mode") === "wreck" && !hashDiff ? "wreck" : null;
+const startRoom = (hq.get("room") ?? "").replace(/^\/|\/$/g, "");
 const API = `/api/game/${room}`;
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -1309,6 +1312,7 @@ function connect() {
       mode = m.mode ?? "horde"; diff = m.diff ?? null;
       // Came from a file's History: put its diff up in the lobby, once.
       if (hashDiff && !sentDiff && m.state === "waiting") { sentDiff = true; send({ t: "mode", mode: "removed", diff: hashDiff }); }
+      else if (hashMode && !sentDiff && m.state === "waiting") { sentDiff = true; if (m.mode !== hashMode) send({ t: "mode", mode: hashMode }); }
       renderLobby();
       for (const id of others.keys()) if (!m.players.some((p) => p.id === id)) { scene.remove(others.get(id).group); others.delete(id); }
       // Walked in on a round in progress: you're in it.
@@ -1596,9 +1600,9 @@ function frame(now, manual) {
 // Fonts first, so the atlases draw in Geist Mono; then the root room and the lobby.
 await document.fonts.load(`500 ${FONT_PX}px "Geist Mono"`).catch(() => {});
 await document.fonts.load(`500 54px "Geist"`).catch(() => {});
-if (hashDiff) { mode = "removed"; diff = hashDiff; }
+if (hashDiff) { mode = "removed"; diff = hashDiff; } else if (hashMode) mode = hashMode;
 renderModes();
-if (!(await enter(""))) $("#lobby-msg").textContent = "this room isn't dug up yet; import the level first";
+if (!(startRoom && await enter(startRoom)) && !(await enter(""))) $("#lobby-msg").textContent = "this room isn't dug up yet; import the level first";
 connect();
 requestAnimationFrame(frame);
 // For poking at it from the console.

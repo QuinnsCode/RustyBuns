@@ -201,7 +201,7 @@ There's no downloadable build yet; that's one command from source.
 - **Accounts and limits.** GitHub, Google or email sign-in.
   Rate limits on everything that costs money, which an admin can set to reject, log, flag or queue. Paid tiers named for gems (Tanzanite 2x, Alexandrite 5x, Painite 10x) multiply a person's caps and stamp their name.
 - **The game.** Every repo is a level: the backrooms of the codebase, where the lines tear off the walls as paper birds and you swat them with the rolled-up README.
-  Bop your friends in the lobby.
+  Bop your friends in the lobby. Share lines, then send a link into the game: the wrecking room (everyone smashes the repo together) or the backrooms standing in that file's folder.
 
 ### Point your CI here
 
