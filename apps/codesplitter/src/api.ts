@@ -56,6 +56,7 @@ export const GROUPS: Group[] = [
       { method: "GET", path: "/api/users/:name/pulse", does: "their pulse: {name, hours: [168 hourly line counts, oldest first], from, total, live_at}. Private repos count only on your own; 404 when they turned it off" },
       { method: "GET", path: "/api/users/:name/pulse.png", does: "their public pulse as a 1200x630 card" },
       { method: "GET", path: "/api/users/:name/share", does: "a page for link previews (og:image is the pulse card), sending people on to the profile" },
+      { method: "GET", path: "/api/users/:name/page[/path]", does: "a profile's page, served as a site inside a sandbox (scripts run, with no origin, cookies or network beyond its own files): index.html and the other text files of the public repo `page`, else the HTML saved with PUT /api/me; the page reads the owner's public repos from <script type=application/json id=profile>; see docs/profile-page.md" },
       { method: "GET", path: "/api/pulse?names=a,b", does: "up to 50 pulses at once, for crew lists: {pulses}" },
       { method: "GET", path: "/api/users/:name/city", does: "a person's code city, laid out: {name, public, districts: [{repo, x, z, size, buildings: [{path, lines, agent (0 to 1: how much agents wrote), last, glow, x, z, w, h}]}], present: [{who, repo, path, at}] (who has a file open now, and since when), files, lines, visit}; public repos only; 404 once its owner switched it off (to anyone but them)" },
       { method: "GET", path: "/api/users/:name/city.png", does: "the code city's postcard, 1200x630" },
