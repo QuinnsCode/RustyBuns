@@ -5,9 +5,9 @@ import type { GateExports } from "../src/egress.ts";
  * runtime's interception calls added, and `ctx.exports.EgressGate`. Each run's
  * egress list (src/egress.ts) is pushed onto `lists`.
  */
-export function gated<C extends object>(c: C, lists: string[][] = []) {
+export function gated<C extends object>(c: C, lists: string[][] = [], injects: unknown[] = []) {
   const container = Object.assign(c, {
-    async interceptOutboundHttps(addr: string, g: any) { if (addr === "*") lists.push(g.hosts); },
+    async interceptOutboundHttps(addr: string, g: any) { if (addr === "*") { lists.push(g.hosts); injects.push(g.inject); } },
     async interceptAllOutboundHttp(_g: unknown) {},
   });
   return { container, exports: gateExports };

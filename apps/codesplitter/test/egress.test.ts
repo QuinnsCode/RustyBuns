@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { allowed, EgressGate, gate, GITHUB_HOSTS, REGISTRIES } from "../src/egress.ts";
+import { allowed, EgressGate, gate, STAND_IN, GITHUB_HOSTS, REGISTRIES } from "../src/egress.ts";
 import { AgentSandbox, sandboxHosts, type ContainerApi } from "../src/sandbox.ts";
 import { gated } from "./fake-gate.ts";
 
@@ -39,6 +39,15 @@ describe("EgressGate", () => {
     expect(sent).toEqual(["https://registry.npmjs.org/mitt"]);
   });
 
+  test("puts a run's key on requests to its host only, over whatever the CLI sent (#1655)", async () => {
+    const seen: Record<string, string | null> = {};
+    globalThis.fetch = (async (r: Request) => { seen[new URL(r.url).hostname] = r.headers.get("authorization"); return new Response("ok"); }) as typeof fetch;
+    const ctx = { props: { hosts: ["api.openai.com", "example.com"], inject: { "api.openai.com": { authorization: "Bearer real" } } } };
+    await EgressGate.fetch(new Request("https://api.openai.com/v1", { headers: { authorization: "Bearer stand-in" } }), {}, ctx);
+    await EgressGate.fetch(new Request("https://example.com/", { headers: { authorization: "Bearer stand-in" } }), {}, ctx);
+    expect(seen).toEqual({ "api.openai.com": "Bearer real", "example.com": "Bearer stand-in" });
+  });
+
   test("routes all of a container's HTTP and HTTPS through the gate, and won't start one without it", async () => {
     const calls: string[] = [];
     const c = { interceptOutboundHttps: async (a: string) => { calls.push(`https ${a}`); }, interceptAllOutboundHttp: async () => { calls.push("http"); } };
@@ -63,4 +72,19 @@ test("AgentSandbox starts its container with the internet off and the run's list
   const res = await new AgentSandbox({ container: c }, env).fetch(run);
   expect(res.status).toBe(503);
   expect(opts).toBeUndefined();
+});
+
+test("codex's container holds stand-ins; the real key and GH_TOKEN ride on the gate (#1655)", async () => {
+  let opts: Parameters<ContainerApi["start"]>[0], sent = "";
+  const injects: any[] = [];
+  const c: ContainerApi = { running: false, start(o) { opts = o; }, async destroy() {}, getTcpPort: () => ({ fetch: async (_u, init) => { sent = String(init!.body); return Response.json({}); } }) };
+  const env: any = { OPENAI_API_KEY: "sk-real", ANTHROPIC_API_KEY: "sk-ant" };
+  const body = JSON.stringify({ cmd: { bin: "codex", args: [], env: { GH_TOKEN: "ghp-real" } }, path: "a.js", text: "" });
+  await new AgentSandbox(gated(c, [], injects), env).fetch(new Request("http://sandbox/run", { method: "POST", body }));
+  expect(opts!.env).toEqual({ OPENAI_API_KEY: STAND_IN });
+  expect(sent).not.toContain("ghp-real");
+  expect(JSON.parse(sent).cmd.env.GH_TOKEN).toBe(STAND_IN);
+  expect(injects[0]["api.openai.com"]).toEqual({ authorization: "Bearer sk-real" });
+  expect(injects[0]["api.github.com"]).toEqual({ authorization: "Bearer ghp-real" });
+  expect(JSON.stringify(opts)).not.toContain("sk-real");
 });

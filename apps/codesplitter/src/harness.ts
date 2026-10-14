@@ -28,11 +28,11 @@ export const FIX_HARNESSES: Harness[] = ["claude", "pi", "opencode"];
 export const RUNS_COMMANDS: Harness[] = ["codex"];
 
 /**
- * The harnesses a hosted run may use. codex (a shell) and pi (a `read` tool that
- * isn't held to its directory) can read their own key from the run's environment,
- * so they stay off the site until a proxy adds the key on the way out (#1428).
+ * The harnesses a hosted run may use: all of them. codex (a shell) and pi (a `read`
+ * that isn't held to its directory) could read their own key, so the container only
+ * holds a stand-in for it and the egress gate adds the real one (#1428, #1655).
  */
-export const HOSTED_HARNESSES: Harness[] = ["claude", "opencode"];
+export const HOSTED_HARNESSES: Harness[] = HARNESSES;
 
 // opencode reads permissions from config. OPENCODE_CONFIG_CONTENT outranks any
 // global or project config, so a stray opencode.json can't loosen it. Everything

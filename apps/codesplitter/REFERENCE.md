@@ -707,7 +707,7 @@ Run on 2026-10-14: 51 promises held, 321 tests, and every stress rule and faked 
 
 - Crew and invited agents can still commit straight to `main`; protecting it is #1426.
 - A personal write token or OAuth grant is the whole account: it can delete repos, change crews and set deploy keys; holding tokens to repos and splitting out `admin` is #1427.
-- Hosted codex and pi can read their own keys from the run's environment, and `GH_TOKEN` reaches harnesses that can't use it; #1428.
+- A hosted codex or pi holds only a stand-in for its key and `GH_TOKEN`; the egress gate adds the real ones on the way out (#1655, `src/egress.ts`), and `GH_TOKEN` goes only to harnesses with a shell (#1428).
 - Crew can start the owner's hosted agents through heal, `build_ok` is self-attested, and a read token gets a write remote on the desktop; #1429.
 - On a laptop, every agent runs as you: the office's secrets and your `gh` login are readable by any of them (#667); [notes/SECURITY_AUDIT.md](../../notes/SECURITY_AUDIT.md) has the whole list.
 

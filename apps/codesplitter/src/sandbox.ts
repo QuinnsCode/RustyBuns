@@ -8,7 +8,7 @@
 
 import type { Sandbox } from "./agent-run.ts";
 import { json, type Env } from "./env.ts";
-import { gate, GITHUB_HOSTS, HARNESS_HOSTS, hostList, hostOf, REGISTRIES, type GateExports, type Interceptor } from "./egress.ts";
+import { gate, GITHUB_HOSTS, STAND_IN, HARNESS_HOSTS, hostList, hostOf, REGISTRIES, type GateExports, type Interceptor } from "./egress.ts";
 
 /**
  * The CLIs' logins, passed into the container from the Worker's secrets when set.
@@ -25,6 +25,24 @@ const KEYS: Record<string, readonly (typeof LOGINS)[number][]> = {
   pi: ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"],
   opencode: ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"],
 };
+
+/**
+ * The harnesses whose key (and GH_TOKEN) never enter the container: codex has a
+ * shell and pi a `read` that isn't held to its directory, so either could print
+ * it. The container gets a stand-in, and the egress gate adds the real one to
+ * requests to that API's host (#1655).
+ */
+const PROXIED = ["codex", "pi"];
+
+/** The headers the gate adds, by host: each key to its own API, the GH_TOKEN to GitHub. */
+export function injections(bin: string, env: Env, token?: string): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = {};
+  const openai = env.OPENAI_API_KEY || env.CODEX_API_KEY;
+  if (KEYS[bin]?.includes("ANTHROPIC_API_KEY") && env.ANTHROPIC_API_KEY) out["api.anthropic.com"] = { "x-api-key": env.ANTHROPIC_API_KEY };
+  if (openai && KEYS[bin]?.some((k) => k !== "ANTHROPIC_API_KEY")) out["api.openai.com"] = { authorization: `Bearer ${openai}` };
+  if (token) for (const h of GITHUB_HOSTS) out[h] = { authorization: h === "github.com" ? `Basic ${btoa(`x-access-token:${token}`)}` : `Bearer ${token}` };
+  return out;
+}
 
 /** The slice of the Workers container API we use (`ctx.container` on a container-backed DO). */
 export interface ContainerApi extends Interceptor {
@@ -73,14 +91,25 @@ export class AgentSandbox {
       if (c.running) await c.destroy("stopped").catch(() => {});
       return json({ stopped: true });
     }
-    const body = await req.text();
+    let body = await req.text();
     if (!c.running) {
       const env: Record<string, string> = {};
       let parsed: Parameters<typeof sandboxHosts>[0] = {};
       try { parsed = JSON.parse(body) ?? {}; } catch {}
-      for (const k of KEYS[String(parsed.cmd?.bin ?? "")] ?? []) if (this.env[k]) env[k] = this.env[k]!;
-      try { await gate(c, this.ctx.exports, sandboxHosts(parsed)); } catch (e) { return json({ error: (e as Error).message }, 503); }
+      const bin = String(parsed.cmd?.bin ?? ""), proxied = PROXIED.includes(bin);
+      for (const k of KEYS[bin] ?? []) if (this.env[k]) env[k] = proxied ? STAND_IN : this.env[k]!;
+      let inject: ReturnType<typeof injections> | undefined, sent = body;
+      if (proxied) {
+        const token = parsed.cmd?.env?.GH_TOKEN;
+        inject = injections(bin, this.env, token);
+        if (token) {
+          const swapped = { ...parsed, cmd: { ...parsed.cmd, env: { ...parsed.cmd!.env, GH_TOKEN: STAND_IN, GITHUB_TOKEN: STAND_IN } } };
+          sent = JSON.stringify(swapped);
+        }
+      }
+      try { await gate(c, this.ctx.exports, sandboxHosts(parsed), inject); } catch (e) { return json({ error: (e as Error).message }, 503); }
       c.start({ env, enableInternet: false });
+      body = sent;
     }
     try {
       // /run: an agent on a file; /test: bun test on a cut's files (cuts.ts); /deps-test and /deps-fix: the dependency doctor's runs (deps.ts).
