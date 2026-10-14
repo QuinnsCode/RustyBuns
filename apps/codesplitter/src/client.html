@@ -1266,6 +1266,8 @@ let socket = null;
 let agentTimer = null;
 // What the page is showing, so the palette can offer what makes sense here.
 let ctx = {};
+// The open file's picker, for the palette and agents: set by the file page, null elsewhere.
+let lineSel = null;
 /** Say something to a screen reader, through the one polite live region. */
 function announce(msg) { const l = $("#live"); l.textContent = ""; setTimeout(() => (l.textContent = msg), 50); }
 function toast(msg, ms = 2400) { const t = document.createElement("div"); t.className = "toast"; t.setAttribute("aria-hidden", "true"); t.textContent = msg; document.body.append(t); announce(msg); setTimeout(() => t.remove(), ms); }
@@ -2903,7 +2905,7 @@ function diffRows(then, now) {
   }
   return { html: rows.join(""), del, add };
 }
-const PICK_TIP = "select lines first: click a line number, shift-click another, ⌘-click to add one, or drag down the numbers";
+const PICK_TIP = "select lines first: click a line number, shift-click another, ⌘-click to add one, or drag down the numbers (⌘A all, ⌘I invert, ⇧⌥↑ grow to the block, Esc drops them)";
 const SHARE_TIP = PICK_TIP + ". A share is one run of lines";
 // ⌘ on a Mac, Ctrl elsewhere. On a Mac ctrl-click is a right-click, so it opens the menu instead of picking.
 const MAC = /Mac|iP(hone|ad)/.test(navigator.platform);
@@ -2939,8 +2941,10 @@ function selectable(box, onChange) {
     if (e.shiftKey && anchor !== null) return pick(new Set([...(more ? picked : []), ...span(anchor, i)]));
     anchor = i;
     if (more && picked.has(i)) { const next = new Set(picked); next.delete(i); return pick(next); }
+    // Clicking the one picked line again drops it (a drag from it still picks a run).
+    const again = !more && picked.size === 1 && picked.has(i);
     drag = { from: i, keep: more ? new Set(picked) : new Set() };
-    pick(new Set([...drag.keep, i]));
+    pick(again ? new Set() : new Set([...drag.keep, i]));
   });
   box.addEventListener("mouseover", (e) => { if (!drag) return; const i = at(e); if (i !== null) pick(new Set([...drag.keep, ...span(drag.from, i)])); });
   addEventListener("mouseup", () => (drag = null));
@@ -2953,11 +2957,12 @@ function selectable(box, onChange) {
     pick(next.picked);
     box.querySelector(`.ln[data-i="${cursor}"]`)?.scrollIntoView({ block: "nearest" });
   });
-  return { at: (e) => at(e, true), get picked() { return picked; }, set(next) { anchor = cursor = Math.min(...next); pick(next); } };
+  return { at: (e) => at(e, true), get picked() { return picked; }, set(next) { if (next.size) anchor = cursor = Math.min(...next); else anchor = null; pick(next); } };
 }
 /**
- * The VS Code keys for picking lines: ↑/↓ move, shift+↑/↓ grow the pick, ⌘A picks all, ⌘L picks
- * the line and then the next one each press, Esc drops the pick. Null for any other key.
+ * The VS Code keys for picking lines: ↑/↓ move, Home/End jump, shift grows the pick, ⌘A picks all,
+ * ⌘I flips the pick, ⌘L picks the line and then the next one each press, Esc drops the pick.
+ * Null for any other key.
  */
 function lineKey(key, shift, mod, { picked, anchor, cursor }, n) {
   if (!n) return null;
@@ -2968,8 +2973,9 @@ function lineKey(key, shift, mod, { picked, anchor, cursor }, n) {
     const c = cursor === null ? 0 : picked.has(cursor) ? Math.min(cursor + 1, n - 1) : cursor;
     return { picked: new Set([...picked, c]), anchor: anchor ?? c, cursor: c };
   }
-  if (mod || (key !== "ArrowUp" && key !== "ArrowDown")) return null;
-  const c = cursor === null ? (key === "ArrowUp" ? n - 1 : 0) : Math.max(0, Math.min(n - 1, cursor + (key === "ArrowUp" ? -1 : 1)));
+  if (mod && key.toLowerCase() === "i") return { picked: new Set(Array.from({ length: n }, (_, k) => k).filter((k) => !picked.has(k))), anchor, cursor };
+  if (mod || !["ArrowUp", "ArrowDown", "Home", "End"].includes(key)) return null;
+  const c = key === "Home" ? 0 : key === "End" ? n - 1 : cursor === null ? (key === "ArrowUp" ? n - 1 : 0) : Math.max(0, Math.min(n - 1, cursor + (key === "ArrowUp" ? -1 : 1)));
   if (shift) { const a = anchor ?? cursor ?? c; return { picked: span(a, c), anchor: a, cursor: c }; }
   return { picked: new Set([c]), anchor: c, cursor: c };
 }
@@ -3004,6 +3010,47 @@ function runsOf(picked) {
   const runs = [];
   for (const i of [...picked].sort((a, b) => a - b)) { const r = runs.at(-1); if (r && r[1] === i) r[1] = i + 1; else runs.push([i + 1, i + 1]); }
   return runs;
+}
+/**
+ * What else picks lines, for the palette, the right-click menu and agents (WebMCP): each takes
+ * the file's line texts and gives back a Set of 0-based indexes, like the mouse does.
+ */
+const pickAll = (n) => new Set(Array.from({ length: n }, (_, k) => k));
+const pickInvert = (picked, n) => new Set([...pickAll(n)].filter((k) => !picked.has(k)));
+/** Lines holding `q` (any case), or matching it when it is written /regex/flags. */
+function pickMatching(texts, q) {
+  const m = /^\/(.+)\/([a-z]*)$/.exec(q), re = m && new RegExp(m[1], m[2].replace(/[gy]/g, "")), low = q.toLowerCase();
+  return new Set(texts.flatMap((t, k) => (re ? re.test(t) : t.toLowerCase().includes(low)) ? [k] : []));
+}
+/** Lines last written by `who` (a handle, with or without @, or an agent's name). */
+function pickBy(lines, who) {
+  const name = (w) => String(w ?? "").toLowerCase().replace(/^@/, "").replace(/^agent-/, "");
+  return new Set(lines.flatMap((l, k) => name(l.by) === name(who) ? [k] : []));
+}
+/**
+ * Grow the pick by one level of structure, like VS Code's expand selection: first to the lines
+ * around it that sit as deep, then to the block that holds them (its header line down to its
+ * closing brace), and so on out to the whole file.
+ */
+function pickBlock(texts, picked) {
+  const ind = (k) => texts[k].trim() ? texts[k].match(/^\s*/)[0].replace(/\t/g, "  ").length : null;
+  const ks = [...picked].sort((a, b) => a - b), lo = ks[0], hi = ks.at(-1);
+  if (lo === undefined) return picked;
+  const deep = ks.map(ind).filter((d) => d !== null);
+  if (!deep.length) return picked;
+  const level = Math.min(...deep);
+  // The last line, walking from k, before one that sits shallower than `at` (blank lines are bridged).
+  const reach = (k, dir, at) => { let last = k - dir; for (let j = k; j >= 0 && j < texts.length; j += dir) { const d = ind(j); if (d === null) continue; if (d < at) break; last = j; } return last; };
+  const a = reach(lo, -1, level), b = reach(hi, 1, level);
+  const span = (x, y) => new Set(Array.from({ length: y - x + 1 }, (_, k) => x + k));
+  if (a < lo || b > hi) return span(a, b);
+  let h = lo - 1;
+  while (h >= 0 && !(ind(h) !== null && ind(h) < level)) h--;
+  if (h < 0) return pickAll(texts.length);
+  let e = Math.max(reach(h + 1, 1, ind(h) + 1), hi);
+  const next = texts.findIndex((t, k) => k > e && t.trim());
+  if (next >= 0 && ind(next) === ind(h) && /^\s*([}\])]|end\b|<\/)/.test(texts[next])) e = next;
+  return span(h, e);
 }
 /** "line 4", "lines 4–9" or "lines 4–9, 12, 20–22" (a long list ends "and 3 more"). */
 function runsLabel(runs, one = "line ", many = "lines ") {
@@ -5043,13 +5090,15 @@ const views = {
       for (const b of ["#share-range", "#stamp-range", "#cut-range"]) if ($(b)) $(b).textContent = label;
       $("#st-sel").textContent = sel ? runsLabel(runs, "Ln ", "Ln ") : "";
     });
+    lineSel = { box, picker, lines: () => doc.lines };
     const selLines = () => sel ? sel.flatMap(([a, b]) => doc.lines.slice(a - 1, b)) : [];
     const selPrivate = () => selLines().length > 0 && selLines().every((l) => l.private);
     // ⌘C with no text selected copies the picked lines whole; Enter edits a single picked line.
     const copyLines = () => copy(selLines().map((l) => l.text).join("\n"), `Copied ${runsLabel(sel)}`);
     box.addEventListener("keydown", (e) => {
       if (e.target !== box || !sel) return;
-      if ((MAC ? e.metaKey : e.ctrlKey) && e.key.toLowerCase() === "c" && getSelection().isCollapsed) { e.preventDefault(); copyLines(); }
+      if (e.altKey && e.shiftKey && e.key === "ArrowUp") { e.preventDefault(); picker.set(pickBlock(doc.lines.map((l) => l.text), picker.picked)); }
+      else if ((MAC ? e.metaKey : e.ctrlKey) && e.key.toLowerCase() === "c" && getSelection().isCollapsed) { e.preventDefault(); copyLines(); }
       else if (e.key === "Enter" && r.canWrite && viewing === null && picker.picked.size === 1) { e.preventDefault(); edit(box.querySelector(`.ln[data-i="${[...picker.picked][0]}"]`)); }
     });
     // Right-click (ctrl-click on a Mac) is ours: it picks the line under it unless it's already in the pick, then
@@ -5065,7 +5114,10 @@ const views = {
         { ic: "copy", title: text ? "Copy" : `Copy ${runsLabel(sel)}`, key: kb("C"), run: () => text ? copy(text) : copyLines() },
         ...(mine.length ? ["-", ...mine] : []),
         "-",
-        { ic: "list-checks", title: "Select all lines", key: kb("A"), run: () => picker.set(new Set(doc.lines.map((_, k) => k))) },
+        { ic: "list-checks", title: "Select all lines", key: kb("A"), run: () => picker.set(pickAll(doc.lines.length)) },
+        { ic: "expand", title: "Expand to the block", key: "⇧⌥↑", run: () => picker.set(pickBlock(doc.lines.map((l) => l.text), picker.picked)) },
+        { ic: "flip-horizontal", title: "Invert the selection", key: kb("I"), run: () => picker.set(pickInvert(picker.picked, doc.lines.length)) },
+        { ic: "x", title: "Deselect", key: "Esc", run: () => picker.set(new Set()) },
         { ic: "command", title: "More commands", key: kb("K"), run: () => palette.open() },
       ]);
     });
@@ -6422,12 +6474,22 @@ async function wireCiTokens(owner, repo, made) {
 }
 
 async function commands() {
-  const out = [], add = (group, ic, title, apiCall, run, ask) => out.push({ group, ic, title, api: apiCall, run, ask });
+  const out = [], add = (group, ic, title, apiCall, run, ask, noTool) => out.push({ group, ic, title, api: apiCall, run, ask, noTool });
   const c = ctx, u = me();
   if (c.view === "f") {
     // The picked runs of lines, or the ones typed in, like 4-12.
     const range = c.sel ? runsLabel(c.sel) : null, one = c.sel?.length === 1 ? c.sel[0] : null;
     const typed = (arg) => { const [from, to] = String(arg).split(/[-–, ]+/).map(Number); return [[from, to || from]]; };
+    // Picking lines, by hand or by rule. WebMCP has its own tools for these (they work whatever the pick is now).
+    const picker = () => lineSel.picker, texts = () => lineSel.lines().map((l) => l.text);
+    add("This file", "list-checks", "Select all lines", "", async () => picker().set(pickAll(texts().length)), undefined, true);
+    if (c.sel) {
+      add("This file", "x", "Deselect lines", "", async () => picker().set(new Set()), undefined, true);
+      add("This file", "flip-horizontal", "Invert the selection", "", async () => picker().set(pickInvert(picker().picked, texts().length)), undefined, true);
+      add("This file", "expand", "Expand the selection to its block", "", async () => picker().set(pickBlock(texts(), picker().picked)), undefined, true);
+    }
+    add("This file", "text-search", "Select lines matching…", "", async (q) => picker().set(pickMatching(texts(), q)), "text, or /regex/ to match", true);
+    add("This file", "user", "Select lines by…", "", async (who) => picker().set(pickBy(lineSel.lines(), who)), "a handle or an agent's name", true);
     if (u) add("This file", "share-2", one ? `Share ${range}` : "Share lines…", `POST /api/repos/${c.owner}/${c.repo}/shares`, async (arg) => {
       const [[from, to]] = one ? [one] : typed(arg);
       const s = await api(`/repos/${c.owner}/${c.repo}/shares`, { path: c.path, from, to });
@@ -6619,6 +6681,11 @@ async function asAgent(run) {
 }
 // Which file a read means: the one asked for, else the one on screen.
 const fileArgs = (a) => ({ owner: a.owner || ctx.owner, repo: a.repo || ctx.repo, path: a.path ?? ctx.path ?? ctx.dir ?? "" });
+// The open file's picker, or why there isn't one.
+const fileSel = () => {
+  if (ctx.view !== "f" || !lineSel?.box.isConnected) throw new Error("open a file first: open_page #/f/owner/repo/path");
+  return lineSel;
+};
 const readTools = () => [
   { name: "current_page", title: "Where am I", description: "What the page shows now: its view (home, r repo, f file, l level, c cut, s share, u profile, search…), the repo, file or level, the selected lines, what you may do there, and who is signed in.",
     inputSchema: noInput, annotations: { readOnlyHint: true }, execute: async () => where() },
@@ -6656,14 +6723,54 @@ const readTools = () => [
       if (pick === "text" && typeof text !== "string") throw new Error("pick text needs text");
       clashSet(card, pick, pick === "text" ? text : undefined);
     }) },
-  { name: "select_lines", title: "Select lines", description: "Select lines on the file on screen, as clicking their numbers would, so the line commands (share, cut, make private) act on them.",
-    inputSchema: { type: "object", properties: { from: { type: "integer", minimum: 1 }, to: { type: "integer", minimum: 1 } }, required: ["from"] },
-    execute: ({ from, to = from }) => asAgent(() => {
-      const ln = (n) => $(`#lines .ln[data-i="${n - 1}"] .n`);
-      if (!ln(from) || !ln(to)) throw new Error("no such line on this page");
-      ln(from).dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      ln(to).dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
+  { name: "select_lines", title: "Select lines", description: "Select lines on the file on screen, as clicking their numbers would, so the line commands (share, cut, make private) act on them. Give `from` and `to` for one run, or `ranges` for several. `mode` says what to do with the current pick: replace it (the default), add to it, remove from it, or toggle. Answers with the pick as runs.",
+    inputSchema: { type: "object", properties: { from: { type: "integer", minimum: 1 }, to: { type: "integer", minimum: 1 },
+      ranges: { type: "array", items: { type: "object", properties: { from: { type: "integer", minimum: 1 }, to: { type: "integer", minimum: 1 } }, required: ["from"] } },
+      mode: { type: "string", enum: ["replace", "add", "remove", "toggle"] } } },
+    execute: ({ from, to, ranges, mode = "replace" }) => asAgent(() => {
+      const f = fileSel(), n = f.lines().length, want = new Set();
+      for (const r of ranges ?? (from ? [{ from, to }] : [])) {
+        const a = r.from, b = r.to ?? a;
+        if (!(a >= 1 && b >= a && b <= n)) throw new Error(`lines ${a}–${b} aren't in this file (it has ${n})`);
+        for (let k = a - 1; k < b; k++) want.add(k);
+      }
+      if (!want.size && mode !== "replace") throw new Error("name the lines: from/to or ranges");
+      const now = f.picker.picked;
+      f.picker.set(new Set(mode === "add" ? [...now, ...want] : mode === "remove" ? [...now].filter((k) => !want.has(k)) : mode === "toggle" ? [...now].filter((k) => !want.has(k)).concat([...want].filter((k) => !now.has(k))) : want));
     }) },
+  { name: "deselect_lines", title: "Deselect lines", description: "Drop the picked lines on the file on screen, as Esc does. With `from`/`to`, drop just those and keep the rest.",
+    inputSchema: { type: "object", properties: { from: { type: "integer", minimum: 1 }, to: { type: "integer", minimum: 1 } } },
+    execute: ({ from, to = from } = {}) => asAgent(() => {
+      const f = fileSel();
+      f.picker.set(from ? new Set([...f.picker.picked].filter((k) => k < from - 1 || k > to - 1)) : new Set());
+    }) },
+  { name: "select_all_lines", title: "Select all lines", description: "Pick every line of the file on screen, as Cmd+A does.",
+    inputSchema: noInput, execute: () => asAgent(() => { const f = fileSel(); f.picker.set(pickAll(f.lines().length)); }) },
+  { name: "invert_selection", title: "Invert the selection", description: "Pick the lines that aren't picked and drop the ones that are, on the file on screen.",
+    inputSchema: noInput, execute: () => asAgent(() => { const f = fileSel(); f.picker.set(pickInvert(f.picker.picked, f.lines().length)); }) },
+  { name: "expand_selection", title: "Expand the selection", description: "Grow the pick one level of structure: to the lines around it at the same depth, then to the block that holds them (header to closing brace), out to the whole file. Call it again to go wider.",
+    inputSchema: noInput, execute: () => asAgent(() => {
+      const f = fileSel();
+      if (!f.picker.picked.size) throw new Error("pick some lines first: select_lines");
+      f.picker.set(pickBlock(f.lines().map((l) => l.text), f.picker.picked));
+    }) },
+  { name: "select_matching", title: "Select lines matching", description: "Pick the lines of the file on screen that hold `match` (any case), or match it when written /regex/flags. `mode` as select_lines: replace (the default), add, remove or toggle. Answers with the pick as runs.",
+    inputSchema: { type: "object", properties: { match: { type: "string" }, mode: { type: "string", enum: ["replace", "add", "remove"] } }, required: ["match"] },
+    execute: ({ match, mode = "replace" }) => asAgent(() => {
+      const f = fileSel(), hit = pickMatching(f.lines().map((l) => l.text), match), now = f.picker.picked;
+      f.picker.set(mode === "add" ? new Set([...now, ...hit]) : mode === "remove" ? new Set([...now].filter((k) => !hit.has(k))) : hit);
+    }) },
+  { name: "select_lines_by", title: "Select lines by an author", description: "Pick the lines of the file on screen that `who` last wrote (a handle, or an agent's name as read_file shows it in `by`). Mode as select_matching.",
+    inputSchema: { type: "object", properties: { who: { type: "string" }, mode: { type: "string", enum: ["replace", "add", "remove"] } }, required: ["who"] },
+    execute: ({ who, mode = "replace" }) => asAgent(() => {
+      const f = fileSel(), hit = pickBy(f.lines(), who), now = f.picker.picked;
+      f.picker.set(mode === "add" ? new Set([...now, ...hit]) : mode === "remove" ? new Set([...now].filter((k) => !hit.has(k))) : hit);
+    }) },
+  { name: "selected_lines", title: "Read the selection", description: "The lines picked on the file on screen: the runs ([from, to], 1-based) and each line's text and author.",
+    inputSchema: noInput, annotations: { readOnlyHint: true, untrustedContentHint: true }, execute: async () => {
+      const f = fileSel();
+      return { runs: runsOf(f.picker.picked), lines: [...f.picker.picked].sort((a, b) => a - b).map((k) => ({ n: k + 1, text: f.lines()[k].text, by: f.lines()[k].by })) };
+    } },
 ];
 async function webTools() {
   const mc = document.modelContext ?? navigator.modelContext;
@@ -6672,7 +6779,7 @@ async function webTools() {
   const off = (toolsOff = new AbortController()), seen = new Set();
   const cmds = (await commands().catch(() => [])).flatMap((c) => {
     const name = toolName(c.title);
-    if (!name || seen.has(name)) return [];
+    if (!name || c.noTool || seen.has(name)) return [];
     seen.add(name);
     const read = !c.api || c.api.startsWith("GET") || c.api.startsWith("WS");
     return [{ name, title: c.title, description: `${c.group}: ${c.title}${c.ask ? ` (input: ${c.ask})` : ""}. The palette's ${c.api || "navigation"}.`,
