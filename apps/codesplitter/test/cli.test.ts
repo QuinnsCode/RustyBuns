@@ -3,6 +3,7 @@ import { local as boot } from "../src/local.ts";
 import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { main, run } from "../cli.ts";
+import { agentPrompt, agentPromptResponse } from "../src/agent-prompt.ts";
 import { installScript } from "../src/install.ts";
 import { tools } from "../src/mcp.ts";
 
@@ -121,5 +122,13 @@ describe("bun cli.ts", () => {
     expect(sh).toContain("curl -fsSL \"$site/cli.js\"");
     expect(sh).toContain("site='https://cs.example'");
     expect(sh).toContain('login --url "$site"');
+  });
+
+  test("the agent prompt names this site's WebMCP tools, MCP line and CLI, and /agent.md and `prompt` serve it", async () => {
+    const text = agentPrompt("https://cs.example");
+    for (const want of ["current_page", "https://cs.example/api/mcp", "https://cs.example/install.sh", "codesplitter tools"]) expect(text).toContain(want);
+    expect(await agentPromptResponse("https://cs.example").text()).toBe(text);
+    expect((await run(["prompt", "--url", "https://cs.example/"], {})).out).toBe(text);
+    expect((await run(["prompt"], { HOME: mkdtempSync(`${tmpdir()}/cs-`) })).code).toBe(2);
   });
 });
