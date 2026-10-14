@@ -238,18 +238,29 @@ export function failures(run: Run, out: string) {
   return names.length ? names : [`${run.dir}: ${run.cmd}`];
 }
 
-/** Installs and runs each of `runs` in `root`, and what failed. */
-export async function testTree(root: string, runs: Run[], env: Record<string, string>) {
-  const done: (Run & { ok: boolean })[] = [], failed: string[] = [], logs: string[] = [];
-  const steps = existsSync(join(root, "package.json")) ? [{ dir: ".", cmd: "bun install" }, ...runs] : runs;
-  for (const run of steps) {
-    const r = await sh(root, run, env);
-    done.push({ ...run, ok: r.ok });
-    if (r.ok) continue;
+/**
+ * Installs once, then runs each of `runs` in `root` (at the same time with `parallel`: they're different apps
+ * or checks over one installed tree, as CI runs them), and what failed. Each run carries its wall time `ms`.
+ */
+export async function testTree(root: string, runs: Run[], env: Record<string, string>, parallel = false) {
+  const done: (Run & { ok: boolean; ms: number })[] = [], failed: string[] = [], logs: string[] = [];
+  const one = async (run: Run) => {
+    const t = performance.now(), r = await sh(root, run, env);
+    return { run, r, ms: Math.round(performance.now() - t) };
+  };
+  const note = ({ run, r, ms }: Awaited<ReturnType<typeof one>>) => {
+    done.push({ ...run, ok: r.ok, ms });
+    if (r.ok) return;
     failed.push(...failures(run, r.out));
     logs.push(r.out.split("\n").slice(-30).join("\n"));
-    if (run.cmd === "bun install") break;
+  };
+  if (existsSync(join(root, "package.json"))) {
+    const i = await one({ dir: ".", cmd: "bun install" });
+    note(i);
+    if (!i.r.ok) return { runs: done, failed, log: logs.join("\n") };
   }
+  if (parallel) (await Promise.all(runs.map(one))).forEach(note);
+  else for (const run of runs) note(await one(run));
   return { runs: done, failed, log: logs.join("\n") };
 }
 

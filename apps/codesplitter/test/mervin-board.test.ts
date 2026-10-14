@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ciOf, order, run, score, type BoardPr } from "../scripts/mervin-board.ts";
+import { ciOf, diskCache, order, run, score, type BoardPr, type StageCache } from "../scripts/mervin-board.ts";
 
 // scripts/mervin-board.ts: the open PRs merged in a sandbox one stage at a time, then scored against what landed.
 describe("mervin board", () => {
@@ -50,6 +50,35 @@ describe("mervin board", () => {
     expect(board.stages[3]!.files[0]!.after).toEqual([1, 3]);
     expect(tree.get("a.ts")).toBe("A\nB\nc\n");
     expect(tree.get("c.ts")).toBe("X\np1\np3\n");
+  });
+
+  test("a cache reuses a stage until main, its head or a file it touches moves", () => {
+    const cache: StageCache = new Map();
+    const first = run(repo, main, order(prs), cache);
+    expect(first.board.stages.some((s) => s.cached)).toBe(false);
+    const again = run(repo, main, order(prs), cache);
+    expect(again.board.stages.every((s) => s.cached)).toBe(true);
+    expect(again.board.stages.map((s) => s.files)).toEqual(first.board.stages.map((s) => s.files));
+    expect([...again.tree]).toEqual([...first.tree]);
+    expect(again.board.clashes).toEqual(first.board.clashes);
+    // p4 pushed again: only it reruns (p1..p3 are before it and unchanged)
+    const moved = prs.map((p) => (p.number === 4 ? { ...p, headRefOid: p3 } : p));
+    expect(run(repo, main, order(moved), cache).board.stages.map((s) => !!s.cached)).toEqual([true, true, true, false]);
+    // p2 pushed again, now touching only d.ts: the later stages share no file with it, so they stay cached
+    git("checkout", "-qb", "p2b", main);
+    const p2b0 = commit({ "d.ts": "d\n" }, "p2 again");
+    const p2b = prs.map((p) => (p.number === 2 ? { ...p, headRefOid: p2b0 } : p));
+    expect(run(repo, main, order(p2b), cache).board.stages.map((s) => !!s.cached)).toEqual([true, false, true, true]);
+  });
+
+  test("the disk cache keeps stages between runs", () => {
+    const dir = mkdtempSync(join(tmpdir(), "mervin-board-cache-"));
+    try {
+      const a = diskCache(dir);
+      run(repo, main, order(prs), a.cache); a.save();
+      const b = diskCache(dir);
+      expect(run(repo, main, order(prs), b.cache).board.stages.every((s) => s.cached)).toBe(true);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
   test("a conflict with main is blamed on main, not on an earlier PR", () => {

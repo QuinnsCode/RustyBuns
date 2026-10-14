@@ -188,6 +188,14 @@ It only reads git and `gh pr list`. It never writes a ref, pushes or touches a w
 own folder, so agents can run it side by side. `--check` builds in shadow.ts's sandbox (empty HOME, none of
 the shell's env).
 
+Reruns are incremental. Each stage is cached in `.mervin/board-cache` (`--cache <dir>` to move it, `--no-cache` to
+redo everything) by main's sha, the PR's head and the state of every file it touches, so a push to one PR reruns
+that stage and only the later ones that share files with it; PRs with no files in common never invalidate each
+other. `--check` installs once and runs the typecheck and the touched apps' tests side by side, as CI does. A
+missing dependency (no `node_modules`) stops the board at the start with "run `bun install`". The board prints
+total wall time and per-stage time. Measured 2026-10-13 on 12 open PRs (59 file merges): 35.6s cold, 12.2s rerun with
+every stage cached (7.0s of it merging, the rest `gh` and writing the tree).
+
 Merge the board for real the usual way: PRs, CI, the merge round. The sandbox tree is a forecast and never
 gets pushed. Afterwards `--score` compares each file the sandbox wrote with main: **exact**, **close** (same
 lines reordered, or only indentation differs), **wrong** (a silent bad merge, so make it a fixture in
