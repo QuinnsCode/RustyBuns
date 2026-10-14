@@ -24,6 +24,9 @@ export const CLAUDE_TOOLS = "Read,Edit,Write,Glob,Grep";
  */
 export const FIX_HARNESSES: Harness[] = ["claude", "pi", "opencode"];
 
+/** The harnesses with a shell, the only ones a GH_TOKEN is any use to (#1428). The rest could only leak it. */
+export const RUNS_COMMANDS: Harness[] = ["codex"];
+
 // opencode reads permissions from config. OPENCODE_CONFIG_CONTENT outranks any
 // global or project config, so a stray opencode.json can't loosen it. Everything
 // is denied except reading and editing inside the working directory.
