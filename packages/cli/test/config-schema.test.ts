@@ -77,6 +77,10 @@ test("stages: each is laid over the config by --stage, and checked as it deploys
   expect(s.bindings).toEqual({ DB: { type: "d1", databaseName: "app-staging", migrationsDir: "db" }, MODE: { type: "var", value: "staging" }, DEBUG: { type: "var", value: "1" } });
   expect(s.targets.edge).toEqual({ provider: "cloudflare", adopt: true, workerName: "app-staging", workersDev: false, previewUrls: false });
   expect(s.worker!.crons).toBeUndefined();
+  // A stage with a Worker of its own doesn't inherit the live Worker's renamedFrom (it would take that one's data).
+  const renamed = { ...base, targets: { edge: { ...base.targets.edge!, renamedFrom: "old-app" } } } as RustyBunsConfig;
+  expect(forStage(renamed, "staging").targets.edge!.renamedFrom).toBeUndefined();
+  expect(forStage(renamed, "prod").targets.edge!.renamedFrom).toBe("old-app");
   // A stage with no entry, or none asked for, is the config as written.
   expect(forStage(base, "prod")).toEqual({ ...base, stages: undefined } as never);
   const stack = generateAlchemy(s);
