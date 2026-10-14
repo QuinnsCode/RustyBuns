@@ -42,6 +42,16 @@ describe("POST /api/mcp", () => {
     expect(ts.find((t) => t.name === "edit_lines")!.inputSchema.properties.body.properties.claim).toBeDefined();
   });
 
+  test("spec and tool catalog list the same operations: paths x methods, each operationId once", () => {
+    // 101 paths but 126 tools (#1702) is not drift: a path can carry several methods, and a tool is one method of one path.
+    const spec = openapi("").paths;
+    const pairs = Object.entries(spec).flatMap(([p, m]) => Object.keys(m).map((method) => `${method.toUpperCase()} ${p}`));
+    const ts = tools();
+    expect(new Set(ts.map((t) => t.name)).size).toBe(ts.length);
+    expect(ts.map((t) => `${t.method} ${t.path}`).sort()).toEqual(pairs.sort());
+    expect(ts.length).toBeGreaterThanOrEqual(Object.keys(spec).length);
+  });
+
   test("a tool call from the internet counts against the rate limits, as the HTTP call would", async () => {
     const { write, raw } = await app();
     const create = async (i: number) => (await (await raw(write, { jsonrpc: "2.0", id: i, method: "tools/call", params: { name: "create_repo", arguments: { body: { name: `r${i}` } } } }, { "cf-connecting-ip": "203.0.113.7" })).json() as any).result;
