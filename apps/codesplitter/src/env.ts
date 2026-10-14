@@ -82,6 +82,8 @@ export interface Env {
   CODEX_API_KEY?: string;
   /** Cloudflare Artifacts (a bare-repo twin on the desktop). Optional: without it, nothing is pushed. */
   ARTIFACTS?: Artifacts;
+  /** The namespace the repos are moving to (artifact-move.ts, #823). Bound only while the move runs. */
+  ARTIFACTS_NEXT?: Artifacts;
   /**
    * Levels too big for an Artifacts repo even from the tarball, packed into chunks (chunks.ts).
    * Without it, such a level stays failed with Artifacts' reason.
