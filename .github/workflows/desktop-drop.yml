@@ -130,10 +130,13 @@ jobs:
     timeout-minutes: 45     # notarization waits on Apple, usually a few minutes
     concurrency: drop-${{ matrix.app }}   # channels.json is read, changed, written: one drop per app at a time
     # The drop secrets live in the `drops` environment, which waits for the owner's approval, so a
-    # workflow_dispatch of an edited copy of this file on some branch can't reach them. A PR gets none.
-    environment: ${{ github.event_name != 'pull_request' && 'drops' || '' }}
+    # workflow_dispatch of an edited copy of this file on some branch can't reach them. A PR and a
+    # dry dispatch (which uploads nothing) get none, so neither asks for the approval either.
+    environment: ${{ github.event_name != 'pull_request' && !inputs.dry && 'drops' || '' }}
+    outputs:
+      signed: ${{ steps.sign.outputs.signed }}   # the release notes say whether the Mac binaries are signed
     permissions:
-      contents: write   # the GitHub Release on a stable tag
+      contents: read    # a PR's drop.ts and sign.sh run here, so nothing in this job can write; the release is its own job
       actions: read     # the artifact count below
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -186,8 +189,32 @@ jobs:
           # (a dry run fills in placeholders).
           CLOUDFLARE_API_TOKEN: ${{ github.event_name != 'pull_request' && secrets.DROPS_CLOUDFLARE_API_TOKEN || '' }}  # R2 token: Object Read & Write on rustybuns-drops only
           DROP_SECRET: ${{ github.event_name != 'pull_request' && secrets.DROP_SECRET || '' }}
-      - name: GitHub Release
+      - name: Keep the signed binaries for the release
         if: github.event_name == 'push' && needs.plan.outputs.channel == 'stable'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.app }}
+          path: bins/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # The only job that can write to the repo, and it never runs a PR's code: it takes the binaries
+  # the drop job signed and attaches them to a release for the tag.
+  release:
+    needs: [plan, drop]
+    if: ${{ github.event_name == 'push' && needs.plan.outputs.channel == 'stable' && needs.drop.result == 'success' }}
+    name: release ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        app: ${{ fromJSON(needs.plan.outputs.apps) }}
+    permissions:
+      contents: write   # the GitHub Release
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { path: bins, name: "release-${{ matrix.app }}" }
+      - name: GitHub Release
         run: |
           app="$APP"; v="$VERSION"
           (cd bins && shasum -a 256 * > SHA256SUMS)
@@ -211,6 +238,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" bins/* --title "$app $v" --notes-file notes.md --latest=false --verify-tag
         env:
           GH_TOKEN: "${{ github.token }}"
+          GH_REPO: ${{ github.repository }}   # no checkout in this job
           APP: ${{ matrix.app }}
           VERSION: ${{ needs.plan.outputs.version }}
-          SIGNED: ${{ steps.sign.outputs.signed }}
+          SIGNED: ${{ needs.drop.outputs.signed }}
