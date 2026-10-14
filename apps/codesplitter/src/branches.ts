@@ -46,6 +46,7 @@ import { alsoFor, fixUnavailable, guardTripped, healUnavailable, openFix, rebuil
 import { hunks, revertOps } from "./review.ts";
 import { MERVIN } from "./mervin.ts";
 import { busyOn, clashIn, taskFiles, waves, type Busy, type Clash, type Side } from "./merge-plan.ts";
+import { sha256 } from "./util.ts";
 
 const TEXT_MAX = 20_000;
 
@@ -324,8 +325,7 @@ export const MAX_ASKED = 3;
 
 /** Which conflict an answer was for: the same line in another conflict needs another answer. */
 async function conflictKey(c: Conflict) {
-  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([c.line, c.base, c.main, c.branch])));
-  return [...new Uint8Array(hash)].map((x) => x.toString(16).padStart(2, "0")).join("").slice(0, 32);
+  return (await sha256(JSON.stringify([c.line, c.base, c.main, c.branch]))).slice(0, 32);
 }
 
 /** The answers kept for the branch's conflicts, by `path\nline`, with the conflict each was for. */

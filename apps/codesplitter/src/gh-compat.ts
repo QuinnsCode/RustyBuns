@@ -31,7 +31,8 @@ import { DONE, fromCheckRun, fromState, get, recordRun, shaped, updateRun, type 
 import { audit } from "./audit.ts";
 import { json, type Env, readBody } from "./env.ts";
 import { limit } from "./limits.ts";
-import { b64url, DAY, hash, MAX_DAYS } from "./tokens.ts";
+import { DAY, MAX_DAYS } from "./tokens.ts";
+import { b64url, sha256 } from "./util.ts";
 
 const MAX_TOKENS = 20;
 export const CI_TOKEN_DAYS = 90;
@@ -59,7 +60,7 @@ export async function ciTokenRoutes(req: Request, env: Env, p: string[], owner: 
     const now = Date.now();
     const t = { id: crypto.randomUUID().slice(0, 8), label, last4: secret.slice(-4), created_by: user, created_at: now, expires_at: now + days * DAY };
     await env.DB.prepare("INSERT INTO ci_tokens (id, owner, repo, label, hash, last4, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(t.id, owner, repo, t.label, await hash(secret), t.last4, t.created_by, t.created_at, t.expires_at).run();
+      .bind(t.id, owner, repo, t.label, await sha256(secret), t.last4, t.created_by, t.created_at, t.expires_at).run();
     await audit(env, req, { actor: user, action: "ci_token.create", owner, repo, target: t.id, detail: label });
     return json({ ...t, token: secret }, 201);
   }
@@ -76,7 +77,7 @@ export async function ciTokenRoutes(req: Request, env: Env, p: string[], owner: 
 async function ciToken(req: Request, env: Env, owner: string, repo: string) {
   const secret = /^(?:token|bearer)\s+(\S+)$/i.exec(req.headers.get("authorization") ?? "")?.[1];
   if (!secret) return null;
-  const t = await env.DB.prepare("SELECT id, label, last_used_at FROM ci_tokens WHERE hash = ? AND owner = ? AND repo = ? AND expires_at > ?").bind(await hash(secret), owner, repo, Date.now()).first() as { id: string; label: string; last_used_at: number | null } | null;
+  const t = await env.DB.prepare("SELECT id, label, last_used_at FROM ci_tokens WHERE hash = ? AND owner = ? AND repo = ? AND expires_at > ?").bind(await sha256(secret), owner, repo, Date.now()).first() as { id: string; label: string; last_used_at: number | null } | null;
   // Last used, to the minute.
   if (t && (!t.last_used_at || Date.now() - t.last_used_at > 60_000)) await env.DB.prepare("UPDATE ci_tokens SET last_used_at = ? WHERE id = ?").bind(Date.now(), t.id).run();
   return t;
