@@ -129,6 +129,7 @@ import { resealRoutes } from "./deploy-keys.ts";
 import { repoFit } from "./fit.ts";
 import { gitState } from "./git-state.ts";
 import { commitGraph } from "./graph.ts";
+import { watchdogRoutes } from "./watchdog.ts";
 import { busiestFiles, fileHistory } from "./gitpath-data.ts";
 import { joinHistory, upstreamBusiest, upstreamFileHistory, type UpstreamRepo } from "./gitpath-upstream.ts";
 import { tagRoutes } from "./tags.ts";
@@ -273,6 +274,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /agent.md  a prompt to hand your own agent so it can steer the site for you (agent-prompt.ts)
   if (p[0] === "agent.md" && !p[1] && req.method === "GET") return agentPromptResponse(url.origin);
   if (p[0] !== "api") return new Response("not found", { status: 404 });
+  // GET /api/health, POST /api/watchdog/rolled-back  the watchdog Worker's check and its rollback report (watchdog.ts)
+  const dog = await watchdogRoutes(req, env, p);
+  if (dog) return dog;
   // A cookie-signed write from another site goes no further (security.ts).
   const foreign = crossSite(req, env);
   if (foreign) return foreign;

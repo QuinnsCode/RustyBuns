@@ -120,6 +120,8 @@ export default defineConfig({
       OPENAI_API_KEY: op("openai/api-key", true),
       CODEX_API_KEY: op("codex/api-key", true),
     } : {}),
+    // The watchdog Worker's shared secret (watchdog/README.md): optional, the rollback report is off without it.
+    WATCHDOG_SECRET: op("WATCHDOG_SECRET/password", true),
     // Hosted deploys: one Durable Object per repo, each run in its own container
     // (deploy-sandbox/Dockerfile), separate from the agents' so no agent sees a
     // deploy key. Keys are sealed in D1 under DEPLOY_SECRETS_KEY.
