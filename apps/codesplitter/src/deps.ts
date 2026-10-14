@@ -488,13 +488,17 @@ export async function health(manifests: Map<string, { pkg: Record<string, any> }
     (["dependencies", "devDependencies"] as const).flatMap((k) =>
       Object.entries((m.pkg[k] ?? {}) as Record<string, string>)
         .filter(([name]) => !own.has(name)).map(([name, spec]) => ({ name, path, spec, dev: k === "devDependencies" }))));
-  const packages = await Promise.all(rows.map(async (row): Promise<Standing> => {
+  // One package at a time: a registry document for express or vite is megabytes, and several at once passed the 128 MB cap (#1675).
+  const metas = new Map<string, Meta | null>();
+  const packages: Standing[] = [];
+  for (const row of rows) packages.push(await (async (): Promise<Standing> => {
     const dig = digs.find((g) => g.name === row.name && (!g.path || g.path === row.path));
     const r = range(row.spec), none = { ...row, ...(dig && { dig: { target: dig.target, status: dig.status } }), version: null, latest: null, behind: null, versions: 0, days: 0, vulns: [] as string[], score: 1 };
     if (!r) return none;
     const version = r.v.join(".");
     const hits = (vulns.get(`${row.name}@${version}`) ?? []).map((h) => h.id);
-    const meta = await registry(row.name).catch(() => null);
+    if (!metas.has(row.name)) metas.set(row.name, await registry(row.name).catch(() => null));
+    const meta = metas.get(row.name) ?? null;
     const stable = (meta?.versions ?? []).map((raw) => ({ raw, v: parse(raw) })).filter((x): x is { raw: string; v: V } => !!x.v).sort((a, b) => cmp(a.v, b.v));
     const latest = stable[stable.length - 1];
     if (!latest) return { ...none, version, vulns: hits, score: hits.length ? 0 : 1 };
@@ -502,7 +506,7 @@ export async function health(manifests: Map<string, { pkg: Record<string, any> }
     const when = (raw: string) => Date.parse(meta!.time[raw] ?? "");
     const days = behind && when(latest.raw) > when(version) ? Math.round((when(latest.raw) - when(version)) / 86_400_000) : 0;
     return { ...none, version, latest: latest.raw, behind, versions: stable.filter((x) => cmp(x.v, r.v) > 0).length, days, vulns: hits, score: hits.length ? 0 : behind ? WEIGHT[behind] : 1 };
-  }));
+  })());
   const scored = packages.filter((p) => p.version);
   const score = scored.length ? Math.round(100 * scored.reduce((a, p) => a + p.score, 0) / scored.length) : null;
   return { packages: packages.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name)), score, at: Date.now() };

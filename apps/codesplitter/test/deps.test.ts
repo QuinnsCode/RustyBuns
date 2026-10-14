@@ -1069,3 +1069,22 @@ test("health: a dig rides on its package's row, dev is flagged, and an empty man
   expect(dev.packages[0].behind).toBeNull();
   expect((await health(new Map(), NPM)).score).toBeNull();
 });
+
+test("health: asks the registry for one package at a time, and once per name, so big documents never pile up (#1675)", async () => {
+  const { health } = await import("../src/deps.ts");
+  let open = 0, peak = 0, calls = 0;
+  const registry = async () => {
+    calls++; peak = Math.max(peak, ++open);
+    await new Promise((r) => setTimeout(r, 5));
+    open--;
+    return { versions: ["1.0.0", "2.0.0"], time: {} };
+  };
+  const m = new Map([
+    ["package.json", { pkg: { dependencies: { express: "1.0.0", vite: "1.0.0", react: "1.0.0" } } }],
+    ["web/package.json", { pkg: { dependencies: { express: "1.0.0" } } }],
+  ]);
+  const h = await health(m, registry);
+  expect(h.packages).toHaveLength(4);
+  expect(peak).toBe(1);
+  expect(calls).toBe(3);
+});
