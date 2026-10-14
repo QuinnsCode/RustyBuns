@@ -14,7 +14,7 @@
 import { handleFor, MAX_BYTES, readTree, toFile } from "./archive.ts";
 import { cleanAvatar, type Avatar } from "./avatar.ts";
 import { renderCity } from "./card.ts";
-import { json, type Env } from "./env.ts";
+import { json, readBody, type Env } from "./env.ts";
 
 /** Districts and buildings a city holds at most, and how many files of a repo's git it looks through. */
 const DISTRICTS = 9, BUILDINGS = 36, WALK = 400;
@@ -217,8 +217,8 @@ const mayVisit = async (env: Env, name: string, viewer: string | null) =>
 export async function cityRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (p[1] === "me" && p[2] === "city" && !p[3] && req.method === "PUT") {
     if (!user) return json({ error: "sign in first" }, 401);
-    const body = (await req.json().catch(() => null)) as { public?: unknown } | null;
-    if (typeof body?.public !== "boolean") return json({ error: "public: true or false" }, 400);
+    const body = await readBody<"public">(req);
+    if (typeof body.public !== "boolean") return json({ error: "public: true or false" }, 400);
     await env.DB.prepare("UPDATE users SET city_public = ? WHERE name = ?").bind(body.public ? 1 : 0, user).run();
     return json({ public: body.public });
   }

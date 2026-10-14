@@ -194,7 +194,7 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
     return json(await settings(env, owner, repo));
   }
   if (req.method === "POST") {
-    const { approve: sha } = (await req.json().catch(() => ({}))) as { approve?: unknown };
+    const { approve: sha } = await readBody<"approve">(req);
     const r = await start(env, owner, repo, user, "button", typeof sha === "string" ? sha : undefined);
     return r.error ? json({ error: r.error, ...(r.review && { review: r.review }) }, r.status ?? (r.error.includes("already") ? 409 : 400)) : json({ run: r.run }, 202);
   }
