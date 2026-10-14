@@ -284,6 +284,17 @@ starts with its neighbours' score.
 - The learned weight only breaks ties in `order` (`scripts/mervin-board.ts`). Stacking and CI holds still win, and
   a PR is never moved ahead of the PR it is stacked on.
 
+**By language.** Cascade is learned per programming language as well as per path, because languages fail
+differently: a `Cargo.lock` or `bun.lock` cascades, a Rust module rarely does, and Mervin settles JS/TS and HTML
+by parsing but only flags the rest (see "Where Mervin is weak"). Language comes from the extension and
+`.gitattributes` (`linguist-language`), with `linguist-generated` marking lockfiles and regenerated files as
+up-front candidates. Each language keeps its own score and its own up-front/at-the-end lean for the repo.
+
+**Mini tag.** The plan line, the board and the PR card show a small language tag like GitHub's: a colored dot and
+the name (`TypeScript`, `Rust`, `Markdown`), one per language the PR touches, biggest first, at most three. A
+cascading language gets a small down-arrow for "goes first" or up-arrow for "goes last", with the reason as
+the tooltip. Colors are fixed per language, not learned, and the tag is an icon plus a word, never a wrapping label.
+
 **Report.** Show the score on the plan line (`wave 1, first: lockfile cascades 6 PRs`) so a person sees why a PR
 was moved, and a PR list given by hand (`bun scripts/mervin-merge.ts 12 9 14`) already beats any learned weight.
 
