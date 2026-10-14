@@ -87,3 +87,16 @@ test("a checkout with no node_modules is installed before the helper runs", asyn
   expect(seen).toEqual([["install"], [expect.stringMatching(/mervin-board\.ts$/)]]);
   expect(mervin.state().phase).toBe("green");
 });
+
+test("a stale node_modules that lacks a package is installed once and the helper retried", async () => {
+  const seen: string[][] = [];
+  const { mervin } = createHelpers(async (cmd, _cwd, push) => {
+    seen.push(cmd.slice(1));
+    if (cmd[1] !== "install" && seen.filter((s) => s[0] !== "install").length === 1) return push("error: Cannot find module '@babel/parser'"), 1;
+    return 0;
+  });
+  mervin.start(repo());
+  await settle();
+  expect(seen.map((s) => s[0]!.replace(/.*\//, ""))).toEqual(["mervin-board.ts", "install", "mervin-board.ts"]);
+  expect(mervin.state().phase).toBe("green");
+});

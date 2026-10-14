@@ -80,8 +80,12 @@ export function createHelper(h: { script: string; cwd: string; args: readonly st
         if (mine.lines.length > KEEP) mine.lines.shift();
       };
       const run = () => spawn([bun, path.join(repo, h.script), ...h.args], path.join(repo, h.cwd), push);
-      // a fresh checkout has no node_modules, so the script can't import its packages: install first
-      (existsSync(path.join(repo, "node_modules")) ? run() : spawn([bun, "install"], repo, push).then((code) => (code === 0 ? run() : 2))).then(
+      const install = () => spawn([bun, "install"], repo, push);
+      // a fresh checkout has no node_modules, and a stale one lacks packages added since: install first, or once on "Cannot find module"
+      (existsSync(path.join(repo, "node_modules"))
+        ? run().then((code) => (code !== 0 && mine.lines.some((l) => l.includes("Cannot find module")) ? install().then((i) => (i === 0 ? run() : 2)) : code))
+        : install().then((code) => (code === 0 ? run() : 2))
+      ).then(
         (code) => Object.assign(mine, { phase: code === 0 ? "green" : code === 1 ? "red" : "error", hold: holdFrom(mine.lines), endedAt: Date.now() }, code > 1 ? { error: `stopped with exit ${code}` } : {}),
         (err: Error) => Object.assign(mine, { phase: "error", endedAt: Date.now(), error: err.message }),
       );
