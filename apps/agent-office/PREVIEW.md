@@ -28,3 +28,6 @@ The destroy removes all of it.
 3. Run checks 1 to 5 from MOVE.md and write each result on the PR.
 4. `rustybuns destroy --stage office-preview`. Read the KEPT/REMOVED list (#1381); KEPT must be empty. Revoke the token
    and delete the throwaway repo.
+
+**Stay up until the owner has seen it.** Once the Druids office is deployed on this stage, don't run step 4 (and don't
+send home the worker driving it) until the owner says they have seen it running ([#1412](https://github.com/QuinnsCode/RustyBuns/issues/1412)).
