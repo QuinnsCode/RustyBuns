@@ -125,6 +125,38 @@ those are engine faults or the person editing around the conflict is not yet loo
 them against `landed` before changing the resolver. Ruby is the other finding: the weak spot is cards (40%),
 not silent mistakes, and Ruby has no `lint.ts` guard (see below).
 
+## Mervin on the open PR board
+
+```sh
+bun scripts/mervin-board.ts            # every open PR, oldest first, stacked ones after their base
+bun scripts/mervin-board.ts --check    # also install, typecheck and test the merged tree in a sandbox
+bun scripts/mervin-board.ts --score <dir>   # after the real merge round: was the sandbox right?
+```
+
+The scorecard and corpus replay old merges. This one merges the board you have now, one stage per PR, onto
+`origin/main` in a temp folder, and files each file in a tier:
+
+- **certain**: no one else changed the file since the PR's base, so it's the PR's own copy. No merge logic ran,
+  which is what makes it 100%.
+- **agree**: git and Mervin both merge it clean, to the same text.
+- **mervin**: git conflicts and Mervin settles it. These are the files that need `--check` to trust.
+- **differ**: both clean, different text. Look at these.
+- **card**: Mervin asks. That PR's change to the file isn't in the tree.
+
+It only reads git and `gh pr list`. It never writes a ref, pushes or touches a worktree, and each run gets its
+own folder, so agents can run it side by side. `--check` builds in shadow.ts's sandbox (empty HOME, none of
+the shell's env).
+
+Merge the board for real the usual way: PRs, CI, the merge round. The sandbox tree is a forecast and never
+gets pushed. Afterwards `--score` compares each file the sandbox wrote with main: **exact**, **close** (same
+lines reordered, or only indentation differs), **wrong** (a silent bad merge, so make it a fixture in
+`test/conflicts.test.ts`), or **asked** (a card, and what landed is the answer). It also prints each tier's
+record, so "certain" and "mervin" earn their confidence from real rounds. Files a commit from outside the board
+touched are `moved` and aren't scored, and neither are files of PRs that haven't landed.
+
+Measured 2026-10-13 on 19 open PRs: 125 file merges, certain 91 (73%), agree 26, mervin 7, differ 0, card 1
+(`shares.ts`, #1467 after #1456).
+
 ## Where Mervin is weak
 
 - **Code outside JS/TS is only flagged.** `src/lint.ts` parses only JavaScript, TypeScript and HTML. For the rest
