@@ -129,6 +129,9 @@ import { resealRoutes } from "./deploy-keys.ts";
 import { repoFit } from "./fit.ts";
 import { gitState } from "./git-state.ts";
 import { commitGraph, GRAPH_MAX, sharedGraph } from "./graph.ts";
+
+/** A share link's read token: a day unless asked, a week at most. */
+const SHARE_DEFAULT_S = 86400, SHARE_MAX_S = 7 * 86400;
 import { watchdogRoutes } from "./watchdog.ts";
 import { busiestFiles, fileHistory } from "./gitpath-data.ts";
 import { joinHistory, upstreamBusiest, upstreamFileHistory, type UpstreamRepo } from "./gitpath-upstream.ts";
@@ -533,6 +536,16 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (p[4] === "git-state" && req.method === "GET") return json(await gitState(env, owner, repo));
     // GET /api/repos/:o/:r/fit[?dir=apps/web]  how easily Rusty Buns could box it, or one app in it
     if (p[4] === "fit" && req.method === "GET") return repoFit(env, (r) => app.fetch(r, env), url.origin, owner, repo, user, url.searchParams.get("dir") ?? "");
+    // GET /api/repos/:o/:r/share[?branch=&ttl=]  a git clone line with a read token that lasts ttl seconds (a day by default, a week at most), to hand to someone
+    if (p[4] === "share" && !p[5] && req.method === "GET") {
+      const branch = url.searchParams.get("branch");
+      if (branch && !/^[\w][\w./-]*$/.test(branch)) return json({ error: "that isn't a branch name" }, 400);
+      const ttl = Math.max(60, Math.min(SHARE_MAX_S, Math.floor(Number(url.searchParams.get("ttl"))) || SHARE_DEFAULT_S));
+      const h = await handleFor(env, owner, repo).catch(() => null);
+      if (!h) return json({ error: "this repo has no git to share" }, 409);
+      const art = await artifactAccess(h.handle, h.remote, "read", ttl);
+      return json({ command: `git clone${branch ? ` -b ${branch}` : ""} ${art.remote.replace("://", `://x:${art.token.split("?")[0]}@`)} ${repo}`, ttl, expiresAt: Date.now() + ttl * 1000, ...(branch && { branch }) });
+    }
     // GET /api/repos/:o/:r/graph[?limit=60]  main's commits, newest first, with the branches merged into them, each upstream's or this copy's
     if (p[4] === "graph" && !p[5] && req.method === "GET") {
       const r = await repoRow(env, owner, repo, "upstream_commit");
