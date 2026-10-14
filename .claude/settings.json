@@ -13,6 +13,15 @@
       "Read(**/.alchemy/state/**)",
       "Read(~/agent-office/.agent-office/**)",
       "Read(**/.agent-office/*.json)",
+      "Read(~/.config/gh/hosts.yml)",
+      "Read(~/.npmrc)",
+      "Read(~/.ssh/id_*)",
+      "Read(~/.aws/credentials)",
+      "Read(~/.netrc)",
+      "Read(~/.codex/auth.json)",
+      "Read(~/.claude/.credentials.json)",
+      "Read(~/Library/Preferences/.wrangler/**)",
+      "Read(~/.config/.wrangler/**)",
       "Bash(op *)",
       "Bash(gh auth token*)",
       "Bash(git push --force)",
@@ -23,7 +32,12 @@
       "Bash(git push --tags*)",
       "Bash(wrangler secret *)",
       "Bash(bunx wrangler secret *)",
-      "Bash(printenv*)"
+      "Bash(printenv*)",
+      "Bash(/usr/bin/env)",
+      "Bash(/usr/bin/printenv*)",
+      "Bash(set)",
+      "Bash(declare -x)",
+      "Bash(declare -p)"
     ]
   },
   "hooks": {

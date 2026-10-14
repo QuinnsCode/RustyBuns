@@ -4,11 +4,18 @@
 // minus a few nested-session vars. Whatever the shell that started the office exported (a CLOUDFLARE_API_TOKEN, a
 // GH_TOKEN, an OP_SERVICE_ACCOUNT_TOKEN, someone's LLM key) would reach every agent. Agents never hold secret values
 // here: deploys resolve them through varlock at run time, behind Touch ID. So names that look like a secret are
-// dropped: ..._TOKEN, ..._SECRET, ..._KEY (and their plurals), anything with PASSWORD, PASSWD or SECRET in it, and
-// 1Password's OP_... The agents' own sign-ins stay (AGENT_AUTH), and AGENT_OFFICE_ENV_PASS, comma separated, lets
+// dropped: ..._TOKEN, ..._SECRET, ..._KEY, ..._PAT, ..._PASS, ..._AUTH, ..._DSN, ..._URL-shaped logins (and their plurals),
+// anything with PASSWORD, PASSWD, SECRET, CREDENTIAL or WEBHOOK in it, 1Password's OP_..., and the handful of cloud
+// and database names that end in something innocent (AWS_ACCESS_KEY_ID, DATABASE_URL, SSH_AUTH_SOCK: with the agent
+// socket a worker pushes with your ssh keys). The agents' own sign-ins stay (AGENT_AUTH), and AGENT_OFFICE_ENV_PASS, comma separated, lets
 // any other name through, e.g. AGENT_OFFICE_ENV_PASS=GH_TOKEN for a machine whose gh has no other login.
 
-const SECRET = [/(^|_)(TOKEN|SECRET|KEY|APIKEY)S?$/i, /PASSWORD|PASSWD|SECRET/i, /^OP_/i];
+const SECRET = [
+  /(^|_)(TOKEN|SECRET|KEY|APIKEY|PAT|PASS|PWD|PASSPHRASE|CREDENTIALS?|AUTH|JWT|BEARER|COOKIE|SESSION|DSN|URI|WEBHOOK(_URL)?|CONNECTION_STRING)S?$/i,
+  /^TOKEN_|PASSWORD|PASSWD|SECRET|CREDENTIAL|PASSPHRASE|WEBHOOK|_AUTH_?TOKEN|AUTHTOKEN/i, /^OP_/i,
+  // cloud and database logins under names that end in something innocent, and the sockets and files that hold a login
+  /^(AWS_ACCESS_KEY_ID|GOOGLE_APPLICATION_CREDENTIALS|DATABASE_URL|REDIS_URL|MONGODB_URI|SSH_AUTH_SOCK|KUBECONFIG|DOCKER_CONFIG|NETRC|RB_JOIN|GPG_PASSPHRASE)$/i,
+];
 
 /** The coding agents' own auth: a worker can't start without it, and the office's sign-ins swap it per person. */
 export const AGENT_AUTH = [
@@ -17,7 +24,8 @@ export const AGENT_AUTH = [
 ];
 
 /** Whether `name` looks like it holds a secret. */
-export const secretName = (name: string) => SECRET.some((re) => re.test(name));
+// (the shell's own PWD and OLDPWD are paths, not passwords)
+export const secretName = (name: string) => !/^(OLD)?PWD$/i.test(name) && SECRET.some((re) => re.test(name));
 
 /** `env` without its secrets (changed in place, and returned), and the names it dropped. */
 export function dropSecrets(env: Record<string, string | undefined>, from: Record<string, string | undefined> = process.env) {

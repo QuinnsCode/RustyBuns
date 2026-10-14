@@ -19,7 +19,7 @@ import path from "node:path";
 import { checksBarClient, checkTallyServer, SERVER_IMPORT } from "../checks/patch.ts";
 import { openNewFirstClient } from "./board.ts";
 import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
-import { floorGuardBin, floorGuardHooks } from "./floorguard.ts";
+import { floorGuardBin, floorGuardHooks, floorGuardQueue } from "./floorguard.ts";
 import { hookTokensManager, hookTokensPersist, hookTokensUtil } from "./hooktokens.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
 import { POWER_PATCHES } from "../power/patch.ts";
@@ -182,6 +182,8 @@ async function prepare(tag: string) {
   // 12b. the agent-to-agent endpoint stops trusting every worker on the floor (#644, live/floorguard.ts): a forced
   // send_home keeps another worker's uncommitted work, tell_worker says who it's from, AGENT_OFFICE_PEOPLE_ONLY
   writeFileSync(path.join(srv, "hooks/office-workers.js"), floorGuardHooks(readFileSync(path.join(srv, "hooks/office-workers.js"), "utf8")));
+  // a board agent's queued tasks too: the same mark and the same guards, under the word `queue`
+  writeFileSync(path.join(srv, "hooks/office-queue.js"), floorGuardQueue(readFileSync(path.join(srv, "hooks/office-queue.js"), "utf8")));
   // and AGENT_OFFICE_ASK_FIRST holds an agent's request for a person's Allow / Deny (#727): asked at /__rb/asks
   // (the card is a page script, asks/), with the office-workers command waiting long enough for the answer
   const bin = path.resolve(srv, "../../../bin/office-workers.js");

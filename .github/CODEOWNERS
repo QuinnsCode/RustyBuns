@@ -6,6 +6,8 @@
 AGENTS.md                                        @QuinnsCode
 CLAUDE.md                                        @QuinnsCode
 scripts/                                         @QuinnsCode
+packages/cli/src/triage/                         @QuinnsCode
+packages/cli/src/errors.ts                       @QuinnsCode
 bunfig.toml                                      @QuinnsCode
 **/.env.schema                                   @QuinnsCode
 **/rustybuns.config.ts                           @QuinnsCode

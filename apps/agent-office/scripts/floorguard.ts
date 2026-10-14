@@ -15,7 +15,8 @@ export function floorGuardHooks(js: string) {
   const pr = "        const err = floor.workers.linkPr(w.id, pr);\n";
   js = once(js, rel, pr, ask("        ", "{ worker: w.id === me.id ? undefined : w.name, pr: pr?.number ?? null }") + pr);
   const hire = "        return send(res, 409, { error: 'Every desk and bean bag is taken: send someone home first' });\n";
-  js = once(js, rel, hire, hire + ask("    ", "body"));
+  // A hired worker's first prompt is marked as from the agent that hired it, like a tell: hiring isn't a way round the mark.
+  js = once(js, rel, hire, hire + ask("    ", "body") + "    ask.prompt = __rbGuard.fromWorker(who, ask.prompt);\n");
   js = once(js, rel, "            const { note, error } = await floor.sendHome(w.id, ask.cleanup);\n",
     "            const __rbHeld = await __rbGuard.forcedHome(floor, w, ask.cleanup, __rbDescribeWork);\n" +
     "            if (__rbHeld)\n                ctx.toastFloor(floor, __rbHeld, 'warn');\n" +
@@ -25,7 +26,8 @@ export function floorGuardHooks(js: string) {
   js = once(js, rel, "        let err = floor.workers.prompt(w.id, text, who);\n",
     ask("        ", "{ worker: w.name, prompt: text }") +
     // #1235: a rebuild is its own task, not a message that waits behind whatever its worker does next
-    "        const __rbPr = __rbGuard.rebuildOf(text);\n" +
+    // (not when hiring is people-only or ask-first: a told rebuild is a hire, and the tell then goes through as a tell)
+    "        const __rbPr = __rbGuard.hireLocked() ? undefined : __rbGuard.rebuildOf(text);\n" +
     "        const __rbTask = __rbPr && await __rbGuard.rebuildAsTask(floor, me, w.name, __rbPr, text, nextFreeSeat((id) => floor.workers.deskOccupied(id), floor.plan.wing)?.id);\n" +
     "        if (__rbTask) {\n            ctx.toastFloor(floor, __rbTask);\n            return send(res, 200, { ok: true, rebuild: __rbTask, worker: row(w.id) });\n        }\n" +
     "        const __rbText = __rbGuard.fromWorker(who, text);\n        let err = floor.workers.prompt(w.id, __rbText, who);\n");
@@ -36,6 +38,21 @@ export function floorGuardHooks(js: string) {
     "        ctx.toastFloor(floor, __rbGuard.toldToast(who, w.name, text));\n" +
     "        return send(res, 200, { ok: true, worker: row(w.id) });\n");
   return "import * as __rbGuard from '../rb-floorguard.js';\nimport { describeWork as __rbDescribeWork } from '../worktrees.js';\n" + js;
+}
+
+/**
+ * server/hooks/office-queue.js: a board agent's queued task is a worker's first prompt, so it gets the same guards
+ * as a hire: people-only and ask-first under the word `queue`, and the prompt marked as from that agent.
+ */
+export function floorGuardQueue(js: string) {
+  const rel = "hooks/office-queue.js";
+  const add = "    const err = floor.queue.add(str(body?.prompt, 20000), agent.name,";
+  js = once(js, rel, add,
+    "    const __rbLocked = __rbGuard.peopleOnly('/queue');\n    if (__rbLocked)\n        return send(res, 403, { error: __rbLocked });\n" +
+    "    const __rbNo = await __rbGuard.askFirst('/queue', floor.id, agent.name, body, (m) => ctx.toastFloor(floor, m));\n" +
+    "    if (__rbNo)\n        return send(res, 403, { error: __rbNo });\n" +
+    "    const err = floor.queue.add(__rbGuard.fromWorker(agent.name, str(body?.prompt, 20000)), agent.name,");
+  return "import * as __rbGuard from '../rb-floorguard.js';\n" + js;
 }
 
 /** bin/office-workers.js: an ask-first office holds a request for up to ASK_MS, so the command waits that much longer. */

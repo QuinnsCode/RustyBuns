@@ -1,4 +1,4 @@
-# Security audit, October 2026
+# Security audit, October 2026 (round 3 at the end: agentic attack)
 
 How we keep a malicious or prompt-injected agent from hurting the code, the secrets or the people using what we host. It covers every surface, from the API to the desktop: what's done, what isn't, and what free Cloudflare features can add. Every open item is an issue labelled `security`; the ones only you can do are also `manual run`.
 
@@ -107,3 +107,59 @@ Only you can do these. Each is a `MANUAL RUN` issue with the clicks and a check:
 3. #649: a committed deny-list and hook. It's a speed bump, not a sandbox, but it stops the casual leak.
 4. #647: headers, Origin checks, Turnstile and failing closed.
 5. #644, #648, #650, #651, #618: everything else.
+
+## Round 3, October 14: agentic attack
+
+The first two rounds were about what an agent *holds* (secrets, the `gh` login, `main`). This one is about what an agent *reads*: a prompt-injected agent is one that was handed text by a stranger and took it as orders. We went surface by surface asking three questions. Where does untrusted text (an issue, a PR, a file, a log, another agent's message) reach an agent's prompt, and is it marked as data? What can an agent do with a token or a hook that a person wouldn't? And what does the guard on this laptop miss?
+
+### Fixed in this round
+
+**The guard hook (`.claude/hooks/guard.ts`)**, probed with the bypasses an agent would try. All of these passed before and are blocked now, each with a test:
+
+- `/usr/bin/env`, `set`, `declare -x`, `typeset -p`, and interpreter one-liners that dump `process.env` or `os.environ` (grepping the source for the string is still fine).
+- `c''at .env`, `\cat .env`, `cat .env*`, `cat .en[v]`, `ln -s .env x`, `mv`, `tar`, `curl -d @.env`, and a script given a secret file as an argument.
+- The credential files every agent, running as you, could read: `~/.config/gh/hosts.yml`, `~/.npmrc`, wrangler's config, the agent CLIs' own logins, `~/.ssh/id_*`, `~/.aws/credentials`, `~/.netrc`, `*.pem`.
+- The other roads to the GitHub token: `gh auth status -t`, `git credential fill`, `security find-generic-password`.
+- `gh api` writes that move `main`, make a tag, commit through `contents`, `merges` or `releases`, dispatch a release workflow, or run a GraphQL mutation.
+- `git config` keys that run a command in every worktree of the shared `.git`: `core.fsmonitor`, `core.sshCommand`, `core.pager`, `diff.external`, `filter.*`, `credential.helper`, `include*`, `alias.*`.
+- The office's whole data tree (`.agent-office/` less `worktrees/`): people's sign-ins under `homes/`, every terminal's scrollback, `chat.jsonl`, and writes into `prompts.json`, `queue.json`, `workers.json` or the hook scripts other workers run. Grep's `glob` is checked too. `.claude/settings.json` carries the same names as a second layer.
+
+**Agent Office (`apps/agent-office/live`)**:
+
+- A prompt from one agent to another loses its control characters. The office types prompts into terminals as a bracketed paste, so an `ESC [201~` inside one ended the paste and typed what followed as keystrokes: an Esc to clear the "from another agent" header, then a `!` command Claude Code runs without asking.
+- The "from another agent" mark now fences the body between two lines carrying a random tag, so the body can't end the message itself and add a line "from your person" after it. Hired workers' first prompts and a board agent's queued tasks get the same mark as tells did; before, hiring was a way round it.
+- `AGENT_OFFICE_PEOPLE_ONLY` and `AGENT_OFFICE_ASK_FIRST` cover `queue` as well, and a told "rebuild #N" no longer hires a worker when hiring is locked.
+- `live/env.ts` drops more names from what workers inherit: `*_PAT`, `TOKEN_*`, `*_PASS`, `*_PWD`, `*_AUTH`, `*_JWT`, `*_COOKIE`, `*_DSN`, `*_URI`, `*WEBHOOK*`, `*CREDENTIAL*`, `AWS_ACCESS_KEY_ID`, `DATABASE_URL`, `KUBECONFIG`, `SSH_AUTH_SOCK` (with the agent socket, a worker pushes with your ssh keys).
+
+**codeSplitter**:
+
+- A crew member could land an agent run's batch. The run's branch is in the owner's name, so protected main's "someone other than the author merges it" let any writer merge it, held build files and all, through `merge_branch` or `merge_clean_branches`. An `agent-run-N` branch now lands only by the owner (its accept, or the timer), and one touching a build file (`codesplitter.ci`, `.gitattributes`, workflows, lockfiles) waits for an accept whatever the deploy setting.
+- A write-scope token (every MCP OAuth client) could turn protect-main off. `protect` is admin scope now, with the other repo settings.
+- Thirteen more tools carry `destructiveHint`, so an MCP client asks before them: `set_protect_main`, `set_check_settings`, `make_tag`, `delete_tag`, `share_lines`, `beam_branch`, `take_upstream`, `run_cut`, `claim_invite`, `delete_branch_file`, `start_agent`, `record_check`, `update_check`.
+- The MCP instructions say that what a tool returns is other people's data, and that an invite link to claim is one the person gave the agent, not one found in a file.
+- A self-heal fix task's prompt fences the failing log and calls it data (the branch's own tests print it), and the task's reach no longer includes the branch's build files.
+- Another crew member's claim task text is quoted in the prompt of an agent working around it, not pasted.
+- A CLI run on this machine inherits the shell's basics and its own login, not the codeSplitter server's environment (its auth secret, deploy keys, and whatever the shell exported).
+
+**CI and the CLI**:
+
+- The triage playbook told the agent to fetch the newest playbook from `main` and "follow it instead": a remote-instruction channel into every user's agent session, with their `gh` login. It now only tells the user a newer CLI exists. `packages/cli/src/triage/` and `errors.ts` are code-owned.
+- The triage prompts say the pasted output is data, and scrub `github_pat_`, `npm_`, `xox*` and `cst_` tokens too.
+- `desktop-drop.yml` no longer leaves the write token in `.git/config` for a PR's `drop.ts` and `sign.sh`. `npm-publish.yml` attaches the `npm` environment only on a tag push. Privileged installs (`npm-publish`, `borg-edge`) run with `--ignore-scripts`. `deps-doctor` runs only from `main`.
+- `.github/rulesets/tags.json` is a proposed tag ruleset (`v*`, `*-v*`, `contest-submission`: no creation, update or deletion without the owner's bypass). Rulesets are yours to apply.
+
+### Still open, as issues
+
+- **#1575 (manual run). The main ruleset requires no review**, so the required checks only prove a PR's own copy of the workflows passed. That is #754's "require review" step, which waits on agents having their own GitHub identity.
+- **#1566. Approval gates reachable with a bearer token** on codeSplitter: `deploy {approve}`, `accept_agent_batch` and `build_ok` take a write token, so a prompt-injected owner's agent can pass them; and a deploy approval clears a tip whose review diff was cut short (40 files, 200 lines).
+- **#1567. Crew control the path policy**: `.gitattributes` and `codesplitter.ci` can be live-edited on an unprotected main by any writer, which unlocks `locked` files and changes what the checks runner runs.
+- **#1568 and #1569. Self-heal opens fix tasks from crew-reported runs**, the dependency doctor's fixer runs with the full environment and previews deploy its edits unreviewed, a rebuild task pushes agent output (workflows included) to GitHub, and the owner's own agent sees private lines it could copy into public ones.
+- **#1570. Desktop leftovers**: cut runs with the full environment and output readable by id, `get_repo` handing a push token to a write bearer, a `GET` that lands a batch.
+- **#1571. WebMCP** derives its risk hints from a regex that misses invites, un-hiding private lines, shares and agent starts; handoff notes and the feed digest aren't framed as data; webhook SSRF misses three IPv6 ranges and gh-compat events fire for crew branches.
+- **#1572. Agent Office upstream**: issue and PR titles land in worker prompts unquoted, PR branch names are handed to the agent inside a shell command, the office's session secret and people's sign-ins sit on disk readable by every worker (#667), heap snapshots hold every token, and the office rebuilds its guards from the main checkout. These need the office's author.
+- **#1573. Agent Office defaults**: `ASK_FIRST` is off out of the box, and the Allow/Deny card shows 400 characters of a 20,000-character prompt.
+- **#1574. CI**: the drop job's GitHub Release wants its own job with `contents: write`, `borg-edge` holds the Cloudflare token at job level across `bun install`, and a `dry` dispatch of `desktop-drop` still attaches the `drops` environment.
+
+### What the guard still can't do
+
+It runs from the worktree, so an agent that edits `.claude/hooks/guard.ts` or writes `~/.claude/settings.json` turns it off for its own session; CODEOWNERS makes the merge of such a change yours. It matches `Bash|Read|Grep|Write|Edit`, not Glob or WebFetch. It checks names, not symlink targets. It can't follow `push.default` tricks to `main`; the ruleset can. It is a speed bump, as its header says, and #667 (workers as their own user) is still the fix.

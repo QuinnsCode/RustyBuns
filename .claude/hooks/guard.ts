@@ -12,22 +12,41 @@ type BranchOf = (cwd: string) => string | null;
 
 const MAIN = new Set(["main", "master"]);
 const SAFE_ENV = new Set([".env.schema", ".env.example"]);
-// Commands that print a file they're given.
+// Commands that print, copy, link, pack or upload a file they're given, and interpreters that would read one.
 const READERS = new Set(["cat", "head", "tail", "less", "more", "bat", "grep", "rg", "egrep", "fgrep", "sed", "awk",
-  "source", ".", "cp", "base64", "xxd", "od", "strings", "nl", "sort", "uniq", "cut", "jq", "diff", "tac", "open"]);
+  "source", ".", "cp", "base64", "xxd", "od", "strings", "nl", "sort", "uniq", "cut", "jq", "diff", "tac", "open",
+  "ln", "mv", "tar", "zip", "gzip", "rsync", "scp", "install", "curl", "wget", "tee", "xargs", "split",
+  "bun", "node", "deno", "python", "python3", "ruby", "perl", "php", "sh", "bash", "zsh"]);
+// Credential files outside the repo that every agent, running as you, could otherwise read: the gh login,
+// npm and wrangler tokens, the agent CLIs' own logins, ssh and cloud keys.
+const HOME_SECRETS = [/\/\.config\/gh\/hosts\.yml$/, /\/\.npmrc$/, /\/\.wrangler\/config\//, /\/\.codex\/auth\.json$/,
+  /\/\.claude\/\.credentials\.json$/, /\/\.local\/share\/opencode\/auth\.json$/, /\/\.pi\/[^/]*auth[^/]*$/,
+  /\/\.ssh\/(?!config$|known_hosts$)[^/]+$/, /\/\.aws\/credentials$/, /\/\.netrc$/, /\/\.config\/op\//, /\/\.docker\/config\.json$/,
+  /\.(pem|p12|pfx)$/, /\/id_(rsa|ed25519|ecdsa|dsa)$/];
+// Script text that dumps the whole environment: `process.env` or `os.environ` not followed by a name.
+const ENV_DUMP = /\b(?:process\.env|Bun\.env|os\.environ|Deno\.env\.toObject\(\)|ENV\.to_h)\b(?!\s*[.[])/;
+const ONE_LINERS = new Set(["bun", "node", "deno", "python", "python3", "ruby", "perl"]);
+
+/**
+ * The office's own data: config and session secret, hook tokens, people's sign-ins (homes/), every terminal's
+ * scrollback and the chat log. Everything under a `.agent-office/` except `worktrees/`, where the agents work.
+ */
+export const officeData = (abs: string) => /\/\.agent-office\/(?!worktrees(\/|$))/.test(abs) || /\/\.agent-office$/.test(abs);
 
 export function secretPath(p: string, cwd = process.cwd()): boolean {
-  const abs = resolve(cwd, p.replace(/^~(?=\/|$)/, homedir()));
+  // a glob that would reach one (`.env*`, `.en[v]`, `.e''nv`) is read as the plainest name it covers
+  const abs = resolve(cwd, p.replace(/^~(?=\/|$)/, homedir()).replace(/['"\\]/g, "").replace(/\[(.)[^\]]*\]/g, "$1").replace(/[*?]/g, ""));
   const name = basename(abs);
   if (name === ".env" || (name.startsWith(".env.") && !SAFE_ENV.has(name))) return true;
   if (name.startsWith(".dev.vars")) return true;
   if (/^\/proc\/[^/]+\/environ$/.test(abs)) return true;
   if (/\/\.alchemy\/state(\/|$)/.test(abs)) return true;
-  if (abs.startsWith(`${homedir()}/agent-office/.agent-office/`)) return true;
-  return /\/\.agent-office\/[^/]+\.json$/.test(abs);
+  if (HOME_SECRETS.some((re) => re.test(abs))) return true;
+  return officeData(abs);
 }
 
-const unquote = (t: string) => t.replace(/^['"]|['"]$/g, "");
+// `\cat`, `c''at` and `"cat"` are `cat`.
+const unquote = (t: string) => t.replace(/\\(?=[a-z])|['"]/gi, "");
 
 // Rough shell split: one token list per simple command. Good enough for a guard.
 export function segments(cmd: string): string[][] {
@@ -94,11 +113,26 @@ function gitShared(t: string[]): string | null {
   if (sub === "branch" && t.slice(i + 1).some((x) => x === "-D" || (x === "--force" && t.includes("--delete"))))
     return "force-delete a branch (git branch -d deletes a merged one)";
   if (t.some((x) => /^core\.hookspath/i.test(x))) return "change the shared git hooks";
+  // config keys that run a command in every worktree (fsmonitor, pager, external diff, filters, ssh, credential helpers), or pull in a file
+  if (sub === "config" && !t.slice(i + 1).some((x) => /^(--get|--get-all|--get-regexp|-l|--list|--show-origin|--unset)/.test(x)) &&
+    t.slice(i + 1).some((x) => /^(core\.(fsmonitor|pager|editor|sshcommand|askpass|gitproxy)|diff\.external|difftool\.|mergetool\.|filter\.|credential\.|include(if)?\.|alias\.|sequence\.editor|gpg\.program|ssh\.)/i.test(x)))
+    return "set a git config key that runs a command in every worktree (the office shares one .git)";
+  return null;
+}
+
+// Other ways to the GitHub login: gh's own print flag, git's credential store, the keychain gh writes it to.
+function tokenGrab(c: string, t: string[]): string | null {
+  if (c === "gh" && t[1] === "auth" && t[2] === "status" && t.some((x) => x === "-t" || x === "--show-token")) return "print the GitHub token (gh auth status -t)";
+  if (c === "git" && t.includes("credential") && t.some((x) => x === "fill" || x === "get")) return "read git's stored credentials";
+  if (c === "git" && t.some((x) => /^credential-(osxkeychain|store|cache|manager)/.test(x)) && t.some((x) => x === "get")) return "read git's stored credentials";
+  if (c === "security" && t.some((x) => /^(find|dump)-/.test(x))) return "read the keychain";
   return null;
 }
 
 // gh calls that change who can merge, what gates a merge, or where secrets go. The owner makes these.
-const GH_ADMIN = /\/(rulesets|protection|environments|secrets|variables|collaborators|hooks|keys)(\/|$)|^repos\/[^/]+\/[^/]+$/;
+const GH_ADMIN = /\/(rulesets|protection|environments|secrets|variables|collaborators|hooks|keys|releases|merges|contents|git\/tags)(\/|$)|^repos\/[^/]+\/[^/]+$/;
+// Writes that move main or make a tag through the API, around the git guard above, and dispatching a release workflow.
+const GH_REFS = /\/git\/refs\/(heads\/(main|master)|tags)(\/|$)|\/(desktop-drop|npm-publish)[^/]*\/dispatches$/;
 function ghAdmin(t: string[]): string | null {
   const [, a1, a2] = t;
   if (a1 === "pr" && a2 === "merge" && t.includes("--admin")) return "gh pr merge --admin";
@@ -113,19 +147,32 @@ function ghAdmin(t: string[]): string | null {
     const m = t.findIndex((x) => x === "-X" || x === "--method");
     const method = (m >= 0 ? t[m + 1] : t.find((x) => /^(-X|--method=)\w+/.test(x))?.replace(/^(-X|--method=)/, "")) ?? "";
     const writes = (method && method.toUpperCase() !== "GET") || t.some((x) => /^(-f|-F|--field|--raw-field|--input)/.test(x));
-    if (writes && GH_ADMIN.test(path)) return `gh api write to ${path}`;
+    if (writes && (GH_ADMIN.test(path) || GH_REFS.test(path))) return `gh api write to ${path}`;
+    if (writes && /\/git\/refs$/.test(path) && t.some((x) => /^ref=refs\/(tags\/|heads\/(main|master)$)/.test(x))) return `gh api write to ${path}`;
+    // GraphQL has no path to check: a mutation can do all of the above
+    if (t[2] === "graphql" && t.some((x) => /\bmutation\b/.test(x))) return "gh api graphql mutation";
   }
   return null;
 }
 
 function checkBash(cmd: string, cwd: string, branchOf: BranchOf): string | null {
-  for (const seg of segments(cmd)) {
+  const segs = segments(cmd);
+  // An interpreter one-liner that dumps the whole environment (grepping the source for `process.env` is fine).
+  // The split above cuts the one-liner at its parentheses, so the command runs it and the whole text is searched.
+  const oneLiner = segs.some((seg) => { const t = strip(seg).rest; return ONE_LINERS.has(basename(t[0] ?? "")) && t.some((x) => /^-(e|p|c|-eval|-print)$/.test(x)); });
+  if (oneLiner && ENV_DUMP.test(cmd)) return "print the environment (a one-liner dumping process.env / os.environ)";
+  for (const seg of segs) {
     const { rest: t, bareEnv } = strip(seg);
     if (bareEnv) return "print the environment (env)";
-    const [c, a1, a2] = t;
-    if (!c) continue;
+    if (!t[0]) continue;
+    // `/usr/bin/env` is `env`.
+    const c = t[0].includes("/") && t[0] !== "." ? basename(t[0]) : t[0], [, a1, a2] = t;
+    if (c === "env" && t.slice(1).every((x) => x.startsWith("-") || /^\w+=/.test(x))) return "print the environment (env)";
     if (c === "printenv") return "print the environment (printenv)";
     if (c === "export" && (!a1 || a1 === "-p")) return "print the environment (export)";
+    // The shell's own dumps: `set` alone, `declare -x`, `typeset -p`.
+    if (c === "set" && !a1) return "print the environment (set)";
+    if ((c === "declare" || c === "typeset") && t.slice(1).every((x) => x.startsWith("-"))) return `print the environment (${c})`;
     // BSD-style `ps e` and macOS `ps -E` print each process's env, other workers' AGENT_OFFICE_HOOK_TOKEN among it (#642)
     if (c === "ps" && ((a1 && /^[a-z]*e[a-z]*$/i.test(a1)) || t.some((x) => /^-[a-zA-Z]*E/.test(x))))
       return "print other processes' environment (ps e / ps -E)";
@@ -134,9 +181,14 @@ function checkBash(cmd: string, cwd: string, branchOf: BranchOf): string | null 
     if (c === "wrangler" && a1 === "secret") return "wrangler secret";
     if (c === "git") { const why = gitPush(t, cwd, branchOf) ?? gitShared(t); if (why) return why; }
     if (c === "gh") { const why = ghAdmin(t); if (why) return why; }
+    { const why = tokenGrab(c, t); if (why) return why; }
     if (t.slice(1).some((x) => /\.git\/hooks(\/|$)/.test(x))) return "change the shared git hooks";
-    // A reader's file arguments, and any `< file` redirect.
-    const inputs = t.slice(1).filter((x, k) => READERS.has(c) || x.startsWith("<") || t[k] === "<").map((x) => x.replace(/^<+/, ""));
+    // Writes into the office's own data (its prompts, queue, worker list and the hook scripts other workers run): `> file`, tee, cp's target.
+    const outs = t.slice(1).filter((x, k) => x.startsWith(">") || t[k] === ">" || t[k] === ">>" || c === "tee" || (["cp", "mv", "ln", "install", "rsync"].includes(c) && k === t.length - 2)).map((x) => x.replace(/^>+/, ""));
+    const o = outs.find((x) => x && !x.startsWith("-") && officeData(resolve(cwd, x.replace(/^~(?=\/|$)/, homedir()))));
+    if (o) return `write into the office's data (${o})`;
+    // A reader's file arguments (curl's `@file` too), and any `< file` redirect.
+    const inputs = t.slice(1).filter((x, k) => READERS.has(c) || x.startsWith("<") || t[k] === "<").map((x) => x.replace(/^[<@]+/, ""));
     const f = inputs.find((x) => x && !x.startsWith("-") && secretPath(x, cwd));
     if (f) return `read ${f}`;
   }
@@ -154,8 +206,12 @@ export function check(input: HookInput, branchOf: BranchOf = gitBranch): string 
   if (input.tool_name === "Bash") return checkBash(String(ti.command ?? ""), cwd, branchOf);
   const p = ti.file_path ?? ti.path;
   if ((input.tool_name === "Read" || input.tool_name === "Grep") && typeof p === "string" && secretPath(p, cwd)) return `read ${p}`;
+  // Grep's glob can name the file its path doesn't: `--glob .env` over the repo
+  if (input.tool_name === "Grep" && typeof ti.glob === "string" && ti.glob.split(/[,\s]+/).some((g) => g && secretPath(g, cwd))) return `read ${ti.glob}`;
   if ((input.tool_name === "Write" || input.tool_name === "Edit") && typeof p === "string" && /\/\.git\/(hooks\/|config$)/.test(resolve(cwd, p)))
     return "change the shared git hooks or config";
+  if ((input.tool_name === "Write" || input.tool_name === "Edit") && typeof p === "string" && officeData(resolve(cwd, p.replace(/^~(?=\/|$)/, homedir()))))
+    return "write into the office's data";
   return null;
 }
 

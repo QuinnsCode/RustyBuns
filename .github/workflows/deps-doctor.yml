@@ -21,6 +21,7 @@ permissions:
 
 jobs:
   doctor:
+    if: github.ref == 'refs/heads/main'   # write permissions, so only main's copy of this file runs
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
