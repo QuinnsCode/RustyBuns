@@ -166,11 +166,12 @@ covers one file's text, not the files around it.
 ```sh
 bun scripts/mervin-merge.ts          # the plan: wave, or HOLD and why, one stamped line per PR
 bun scripts/mervin-merge.ts --go     # turn on `gh pr merge --auto --squash` for wave 1 only
+bun scripts/mervin-merge.ts --stack --push   # join the clean PRs into one PR, one merge commit each
 ```
 
 This is the decision the office's PR agent made (#1506), taken over: Mervin reads the board and holds a PR whose
 CI failed, whose file he carded, that clashes across files, that is stacked on an open PR, or that waits behind a
-held one. The rest go in waves (wave 2 touches files wave 1 does). The merge itself is GitHub's auto-merge, so the
+held one. `--stack` joins the clean ones (go, and every file certain or agree) into one branch with git plumbing, a merge commit per PR, and opens one PR listing what's in it and what isn't and why. Merge it as a merge commit; `git revert -m1` undoes it all or one PR. The rest go in waves (wave 2 touches files wave 1 does). The merge itself is GitHub's auto-merge, so the
 ruleset on `main` still decides. After a wave lands, run it again: the board is rebuilt on the new main. The lines
 are stamped so the owner can tail a run. Not done yet: running it inside a codeSplitter sandbox box, and pushing
 alerts as it goes (the stdout lines are the feed for that).

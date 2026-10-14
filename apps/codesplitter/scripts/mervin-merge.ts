@@ -4,6 +4,14 @@
 // last word.
 //
 //   bun scripts/mervin-merge.ts [1468 1478 ...] [--go] [--from prs.json]
+//   bun scripts/mervin-merge.ts --stack [--push]
+//
+// `--stack` takes the PRs that are clean (go, and every file certain or agree: no merge logic needed) and joins
+// them into one branch, `mervin/stack-<main>`, one merge commit per PR in the board's order, so the whole stack
+// is one PR you merge (as a merge commit, which also marks the PRs inside it merged) and one `git revert -m1`
+// undoes it, or `git revert -m1` of a single inner merge undoes one PR. It builds with git plumbing
+// (merge-tree, commit-tree), so no worktree or checkout is touched. A PR git can't join cleanly onto the stack
+// so far is left out and named. `--push` pushes the branch and opens the PR, its body listing what was combined.
 //
 // With no flag it only prints the plan (reads git and `gh pr list`). `--go` turns on `gh pr merge --auto
 // --squash` for the first wave and nothing else; run it again after that wave lands, and the board is rebuilt
@@ -41,6 +49,28 @@ export function decide(board: Board, prs: BoardPr[]): Verdict[] {
   return [...out.values()];
 }
 
+/** The PRs worth stacking: clear to go, and every file needed no merge logic or both engines agreed. */
+export function stackable(board: Board, verdicts: Verdict[]): number[] {
+  const go = new Set(verdicts.filter((v) => v.go).map((v) => v.pr));
+  return board.stages.filter((s) => go.has(s.pr) && s.files.every((f) => f.tier === "certain" || f.tier === "agree")).map((s) => s.pr);
+}
+
+/** One merge commit per PR on top of main, built with plumbing. Returns the tip and what joined or was left out. */
+export function buildStack(git: (...a: string[]) => { code: number; out: string }, main: string, prs: BoardPr[], titles: Map<number, string>) {
+  let tip = main;
+  const joined: number[] = [], left: { pr: number; why: string }[] = [];
+  for (const pr of prs.map((p) => p.number)) {
+    const head = prs.find((p) => p.number === pr)!.headRefOid;
+    if (git("cat-file", "-e", `${head}^{commit}`).code !== 0) git("fetch", "-q", "origin", `refs/pull/${pr}/head`);
+    const t = git("merge-tree", "--write-tree", tip, head);
+    if (t.code !== 0) { left.push({ pr, why: "does not join cleanly onto the stack so far" }); continue; }
+    const c = git("commit-tree", t.out.split("\n")[0]!, "-p", tip, "-p", head, "-m", `Merge #${pr}: ${titles.get(pr) ?? ""}`);
+    if (c.code !== 0) { left.push({ pr, why: c.out.trim() }); continue; }
+    tip = c.out.trim(); joined.push(pr);
+  }
+  return { tip, joined, left };
+}
+
 if (import.meta.main) {
   const args = process.argv.slice(2);
   const arg = (n: string) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : undefined; };
@@ -55,6 +85,33 @@ if (import.meta.main) {
   const { board } = run(top, main, order(prs, given.length ? given : undefined));
   const verdicts = decide(board, prs);
   for (const v of verdicts) say(`#${v.pr} ${v.go ? `wave ${v.wave}` : "HOLD"}: ${v.why}${v.title ? `  (${v.title})` : ""}`);
+  if (args.includes("--stack")) {
+    const picks = stackable(board, verdicts);
+    const titles = new Map(prs.map((p) => [p.number, p.title ?? ""]));
+    const git = (...a: string[]) => { const r = Bun.spawnSync(["git", ...a], { cwd: top, stderr: "pipe" }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
+    const { tip, joined, left } = buildStack(git, main, picks.map((n) => prs.find((p) => p.number === n)!), titles);
+    const branch = `mervin/stack-${main.slice(0, 9)}`;
+    git("update-ref", `refs/heads/${branch}`, tip);
+    say(`stack ${branch}: ${joined.length} PRs joined${left.length ? `, left out ${left.map((l) => `#${l.pr} (${l.why})`).join(", ")}` : ""}`);
+    const held = verdicts.filter((v) => !v.go || !picks.includes(v.pr));
+    const body = [
+      `Mervin stacked ${joined.length} clean PRs onto main ${main.slice(0, 9)}, one merge commit each, so this is one thing to merge and one thing to undo.`,
+      "", "## Combined", ...joined.map((n) => `- #${n} ${titles.get(n) ?? ""}`),
+      ...(left.length ? ["", "## Left out (would not join cleanly)", ...left.map((l) => `- #${l.pr}: ${l.why}`)] : []),
+      "", "## Not in this stack, and why", ...held.map((v) => `- #${v.pr}: ${v.go ? "needs the merge engine to settle a file, review it" : v.why}`),
+      "", "## Merge and undo", "Merge this as a merge commit (not a squash) so GitHub marks the PRs inside it merged.",
+      `Undo it all: \`git revert -m1 <the merge commit>\`. Undo one PR: \`git revert -m1 <that PR's merge commit in this branch>\`.`,
+    ].join("\n");
+    if (args.includes("--push")) {
+      const pushed = git("push", "-u", "origin", `${branch}:${branch}`);
+      say(pushed.code === 0 ? `pushed ${branch}` : `push FAILED: ${pushed.out.trim()}`);
+      if (pushed.code === 0) {
+        const r = Bun.spawnSync(["gh", "pr", "create", "--head", branch, "--base", "main", "--title", `Mervin stack: ${joined.length} clean PRs (${joined.map((n) => `#${n}`).join(" ")})`, "--body", body], { cwd: top, stderr: "pipe" });
+        say(r.exitCode === 0 ? `opened ${r.stdout.toString().trim()}` : `gh pr create FAILED: ${r.stderr.toString().trim()}`);
+      }
+    } else console.log(`\n${body}\n\n(local branch only; add --push to push it and open the PR)`);
+    process.exit(0);
+  }
   const now = verdicts.filter((v) => v.go && v.wave === 1);
   say(`${now.length} to merge now, ${verdicts.filter((v) => v.go).length - now.length} in later waves, ${verdicts.filter((v) => !v.go).length} held`);
   if (!args.includes("--go")) { say("plan only; add --go to turn on auto-merge for wave 1"); process.exit(0); }
