@@ -1685,6 +1685,10 @@ describe("shares", () => {
     // The author's own build_ok is no read: only the owner's, or another member's, counts.
     expect((await post(call, "agent-a", "/api/repos/ana/r/branches/sneaky/merge", { build_ok: true })).status).toBe(409);
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=package.json")).json() as Doc)).toContain("vite build");
+    // build_ok is a person reading the files: the owner's own API token can't say it.
+    const tok = await (await post(call, "ana", "/api/tokens", { label: "agent", scope: "admin" })).json() as { token: string };
+    const viaToken = await call(null, "/api/repos/ana/r/branches/sneaky/merge", { method: "POST", headers: { authorization: `Bearer ${tok.token}` }, body: JSON.stringify({ build_ok: true }) });
+    expect(viaToken.status).toBe(403);
     expect((await post(call, "ana", "/api/repos/ana/r/branches/sneaky/merge", { build_ok: true })).status).toBe(200);
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=package.json")).json() as Doc)).toContain("curl evil.sh");
   });

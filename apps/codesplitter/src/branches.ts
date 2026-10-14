@@ -33,6 +33,7 @@ import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { branchEdited, mergeBlock, refChecks, waiting } from "./checks.ts";
 import { settings as deploySettings } from "./deploy.ts";
 import { branchNameError, json, type Env, readBody } from "./env.ts";
+import { byToken } from "./tokens.ts";
 import { emit } from "./hooks.ts";
 import { diffToOps, keptPairs } from "./sync.ts";
 import { unindexFile } from "./search.ts";
@@ -676,8 +677,10 @@ async function rebuildOnMain(env: Env, owner: string, repo: string, b: BranchRow
  * Merge an open branch into main: a dry run first, so a conflict anywhere merges nothing (409),
  * then each file for real. `resolve` settles conflicts by line; `build_ok` lets build files land.
  */
-async function mergeBranch(env: Env, owner: string, repo: string, branch: BranchRow, user: string, body: { resolve?: unknown; build_ok?: unknown }): Promise<Response> {
+async function mergeBranch(env: Env, owner: string, repo: string, branch: BranchRow, user: string, body: { resolve?: unknown; build_ok?: unknown }, req: Request): Promise<Response> {
   const name = branch.name;
+  // build_ok is someone reading the build files: an API token (a prompt-injected agent may hold one) can't say it.
+  if (body.build_ok && byToken(req)) return json({ error: "API tokens can't pass build_ok: read the build files and merge on the site, signed in" }, 403);
   // Protected main (#1426): someone other than a branch's author accepts it. The owner's merges are their own to make.
   if (user !== owner && user === branch.by && await protectOn(env, owner, repo)) return json({ error: "main is protected: someone other than the branch's author merges it", protected: true }, 403);
   // An agent run's batch is the owner's to land (its accept, or the timer, agent-routes.ts land()): the branch is in the owner's name,
@@ -851,7 +854,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
       // A branch with nothing on it yet is someone's work about to start: leave it open.
       const left = await env.DB.prepare("SELECT COUNT(*) AS n FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0").bind(owner, repo, name).first() as { n: number } | null;
       if (!left?.n) { skipped.push({ branch: name, error: "nothing to merge" }); continue; }
-      const res = await mergeBranch(env, owner, repo, br, user!, { build_ok: b.build_ok });
+      const res = await mergeBranch(env, owner, repo, br, user!, { build_ok: b.build_ok }, req);
       const out = (await res.json()) as { error?: string; conflicts?: { path: string }[]; build?: string[] };
       if (res.ok) merged.push(name);
       else skipped.push({ branch: name, error: out.error ?? "conflicts", ...((out.conflicts?.length || out.build) && { files: out.build ?? out.conflicts!.map((c) => c.path) }) });
@@ -988,7 +991,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   if (p[6] === "merge" && req.method === "POST") {
     if (!a.write) return json({ error: "no write access" }, 403);
     if (branch.status !== "open") return json({ error: `branch is ${branch.status}` }, 409);
-    return mergeBranch(env, owner, repo, branch, user!, await readBody<"resolve" | "build_ok">(req));
+    return mergeBranch(env, owner, repo, branch, user!, await readBody<"resolve" | "build_ok">(req), req);
   }
   return null;
 }
