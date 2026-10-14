@@ -331,6 +331,8 @@ The plan for testing the paid paths without a bill, and the capped live smoke, i
 
 ### Deploying (Cloudflare)
 
+The steps from config to the world, in one table: [docs/alchemy.md](docs/alchemy.md).
+
 `rustybuns deploy` owns the live site: Alchemy took over the wrangler-made Worker `codesplitter` and D1 `codesplitters-db` on 2026-10-09 (`targets.edge.adopt`), Durable Object storage intact.
 
 **Releases go through `scripts/release.ts`.** The owner runs `zsh ~/release-codesplitters.sh` (a copy of `scripts/release-codesplitters.sh`, which each run refreshes from main, so a fix to it can't sit unused in the repo), which puts a release worktree of the agent-office clone on `origin/main` and hands over to it.
