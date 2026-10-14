@@ -47,6 +47,7 @@
 // works on the branch the stopped one left, whose batch waits, held, till it's done; after HANDOFFS
 // of them it's a person's turn. The run says how much it read (`spent`) and, under `handoff`, why it stopped.
 
+import { protectOn } from "./protect.ts";
 import { json, type Env, readBody } from "./env.ts";
 import { charge, every, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
@@ -413,7 +414,10 @@ async function reviewRun(env: Env, self: (req: Request) => Promise<Response>, or
   if (!row || row.owner !== owner || row.repo !== repo) return json({ error: "no such run" }, 404);
   const run = resultOf(row), p = run.pending;
   if (!p) return json({ error: run.landed ? "it already landed" : run.rejected ? "it was rejected" : "nothing of this run's is waiting" }, 409);
-  if (what === "accept") return land(env, self, origin, id, user);
+  if (what === "accept") {
+    if (user === row.agent && user !== owner && await protectOn(env, owner, repo)) return json({ error: "main is protected: someone other than the agent accepts its batch" }, 403);
+    return land(env, self, origin, id, user);
+  }
   if (what === "reject") {
     const { pending: _, ...rest } = run;
     if (!(await swap(env, id, run, { ...rest, rejected: { at: Date.now(), by: user } }))) return json({ error: "it's landing already" }, 409);
@@ -498,7 +502,9 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
   const { owner, repo, path, harness, agent } = row;
   // Its batch waits on a branch of its own, made as its owner, unless there's no wait. A fix task
   // (heal.ts) works on the branch it's fixing instead, which is left as it is whatever happens.
-  const wait = reviewMs(env), own = !row.branch && wait ? runBranch(id) : undefined, branch = row.branch ?? own;
+  // Protected main (#1426): a batch always has a branch of its own and waits for a person, not a timer.
+  const protectedMain = await protectOn(env, owner, repo).catch(() => false);
+  const wait = reviewMs(env), own = !row.branch && (wait || protectedMain) ? runBranch(id) : undefined, branch = row.branch ?? own;
   // Stop: on the desktop the route aborts it here; a hosted Stop lands on another
   // isolate, so this one checks D1 every couple of seconds, and right as the agent ends.
   const stopper = live.get(id) ?? new AbortController(), signal = stopper.signal;
@@ -565,7 +571,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       note: noteFor({ path, task: row.task, why: r.tripped.why, applied: r.applied, edited: r.edited, conflicts: r.conflicts, failures: r.failures, output: r.output, notes: unheard }),
     });
     // Its batch waits for whoever took over: held till the fresh agent is done, or for a person.
-    const pending = !own || !r.applied ? undefined : !handoff ? { branch: own, until: Date.now() + wait }
+    const pending = !own || !r.applied ? undefined : !handoff ? { branch: own, until: protectedMain ? null : Date.now() + wait, ...(protectedMain && { why: "main is protected: a person accepts it" }) }
       : { branch: own, until: null, why: handoff.next ? `handed off to run ${handoff.next}` : `stopped at ~${short(handoff.at)} tokens (${handoff.why}): a person's turn` };
     const engine = rebuild ? engineLines(r.output) : [];
     // A rebuild that ended with both sides on its branch takes it upstream, so its pull request stops clashing (#1226).

@@ -44,7 +44,8 @@ test("_headers enforces the CSP and lets every page's inline scripts run by hash
   expect(scriptSrc).not.toContain("unsafe-inline");
   for (const page of ["index.html", "play.html", "features.html", "reference.html", "mcp.html"]) {
     const hashes = inlineScriptHashes(await Bun.file(`${dist}/${page}`).text());
-    expect(hashes.length).toBeGreaterThan(0);
+    // The home page keeps none inline: its script is a hashed file under 'self'.
+    if (page === "index.html") expect(hashes).toHaveLength(0); else expect(hashes.length).toBeGreaterThan(0);
     for (const h of hashes) expect(scriptSrc).toContain(`'${h}'`);
   }
 }, 60_000);
@@ -65,4 +66,21 @@ test("the Worker is minified, its source map is linked and leaks nothing", async
   const all = (map.sourcesContent as string[]).join("\n");
   expect(all).not.toMatch(/\/Users\/|\/home\/[a-z]|op:\/\/|sk-ant-|ghp_[A-Za-z0-9]{20}|github_pat_|AKIA[0-9A-Z]{16}/);
   expect(await Bun.file(`${dist}/client/worker.js.map`).exists()).toBe(false);
+}, 60_000);
+
+// The home page's CSS and JS are content-hashed files, cached forever, so the HTML stays small (#1470).
+test("the home page links hashed CSS and JS files that _headers caches as immutable", async () => {
+  const p = Bun.spawn(["bun", "run", "build.ts"], { cwd: `${import.meta.dir}/..`, stdout: "pipe", stderr: "pipe" });
+  expect(await p.exited).toBe(0);
+  const dist = `${import.meta.dir}/../dist/client`;
+  const html = await Bun.file(`${dist}/index.html`).text();
+  expect(html.length).toBeLessThan(50_000);
+  expect(html).not.toContain("<style>");
+  const css = html.match(/<link href="(\/assets\/app-[0-9a-f]{10}\.css)" rel="stylesheet">/)?.[1];
+  const js = html.match(/<script src="(\/assets\/app-[0-9a-f]{10}\.js)"><\/script>/)?.[1];
+  expect(css).toBeTruthy();
+  expect(js).toBeTruthy();
+  expect(await Bun.file(`${dist}${css}`).exists()).toBe(true);
+  expect(await Bun.file(`${dist}${js}`).exists()).toBe(true);
+  expect(await Bun.file(`${dist}/_headers`).text()).toContain("/assets/*\n  cache-control: public, max-age=31536000, immutable");
 }, 60_000);
