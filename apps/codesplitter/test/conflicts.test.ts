@@ -1017,4 +1017,23 @@ describe("over the API", () => {
     expect(ran).toEqual([{ only: ["calc.h"] }]);
     expect((await post("ana", "/api/repos/ana/r/branches/c1/merge", { resolve: { "calc.h": { "lint:tests": "branch" } } })).status).toBe(200);
   });
+
+  test("a repo with a Makefile and no package.json runs its build before settled code lands (#1407)", async () => {
+    const { call, post } = await app();
+    const was = ["int add(int a, int b);", "int sub(int a, int b);", "int mul(int a, int b);", "", "int run(void);"].join("\n");
+    await post("ana", "/api/repos/ana/r/files", { path: "Makefile", content: "all:\n\ttrue" });
+    await post("ana", "/api/repos/ana/r/files", { path: "calc.h", content: was });
+    for (const path of ["calc.h", "Makefile"]) await post("ana", `/api/repos/ana/r/do/commit?path=${path}`, { message: "main" });
+    await post("ana", "/api/repos/ana/r/branches", { name: "c1" });
+    const doc = async () => (await call("ana", "/api/repos/ana/r/do/file?path=calc.h")).json() as Promise<Doc>;
+    const [sub, mul] = [(await doc()).lines[1]!, (await doc()).lines[2]!];
+    await post("ana", "/api/repos/ana/r/do/ops?path=calc.h&branch=c1", { ops: [{ kind: "set", line: sub.id, base: sub.rev, text: "int sub(long a, int b);" }] });
+    await post("ana", "/api/repos/ana/r/do/ops?path=calc.h", { ops: [{ kind: "set", line: mul.id, base: mul.rev, text: "int mul(int a, long b);" }] });
+    const ran: { only?: string[]; build?: string[] }[] = [];
+    call.env.DEPS_TESTER = (async (_remote: string, _files: Record<string, string>, o: { only?: string[]; build?: string[] }) => { ran.push({ only: o.only, build: o.build }); return { ok: false, out: "calc.h: error" }; }) as Tester;
+    await call("ana", "/api/repos/ana/r/deps", { method: "PUT", body: JSON.stringify({ test_merges: true }) });
+    const failed = await post("ana", "/api/repos/ana/r/branches/c1/merge", {});
+    expect(failed.status).toBe(409);
+    expect(ran).toEqual([{ only: ["calc.h"], build: ["make"] }]);
+  });
 });
