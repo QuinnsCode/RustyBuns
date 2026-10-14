@@ -476,13 +476,20 @@ export interface Standing {
   score: number;
 }
 const WEIGHT: Record<Level, number> = { patch: 0.85, minor: 0.6, major: 0.3 };
+/** A stale dev dependency costs less than a stale runtime one: it counts this much in the repo's score. */
+export const DEV_WEIGHT = 0.25;
+const mean = (ps: Standing[], w = (_p: Standing) => 1) => {
+  const total = ps.reduce((a, p) => a + w(p), 0);
+  return total ? Math.round(100 * ps.reduce((a, p) => a + w(p) * p.score, 0) / total) : null;
+};
 
 /**
  * Every dependency of each package.json against the registry's latest, and one 0-100 score for the repo:
- * the mean of each package's own (1 level, less for a patch, minor or major behind, 0 with a known vulnerability).
+ * the mean of each package's own (1 level, less for a patch, minor or major behind, 0 with a known vulnerability),
+ * dev dependencies counting DEV_WEIGHT as much. `runtime` and `dev` are the same mean over each kind alone.
  * Packages the doctor can't read are listed, not scored.
  */
-export async function health(manifests: Map<string, { pkg: Record<string, any> }>, registry: Registry, vulns = new Map<string, Vuln[]>(), digs: Dug[] = []): Promise<{ packages: Standing[]; score: number | null; at: number }> {
+export async function health(manifests: Map<string, { pkg: Record<string, any> }>, registry: Registry, vulns = new Map<string, Vuln[]>(), digs: Dug[] = []): Promise<{ packages: Standing[]; score: number | null; runtime: number | null; dev: number | null; at: number }> {
   const own = new Set([...manifests.values()].map((m) => m.pkg.name).filter(Boolean));
   const rows = [...manifests].flatMap(([path, m]) =>
     (["dependencies", "devDependencies"] as const).flatMap((k) =>
@@ -504,8 +511,8 @@ export async function health(manifests: Map<string, { pkg: Record<string, any> }
     return { ...none, version, latest: latest.raw, behind, versions: stable.filter((x) => cmp(x.v, r.v) > 0).length, days, vulns: hits, score: hits.length ? 0 : behind ? WEIGHT[behind] : 1 };
   }));
   const scored = packages.filter((p) => p.version);
-  const score = scored.length ? Math.round(100 * scored.reduce((a, p) => a + p.score, 0) / scored.length) : null;
-  return { packages: packages.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name)), score, at: Date.now() };
+  const score = mean(scored, (p) => (p.dev ? DEV_WEIGHT : 1));
+  return { packages: packages.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name)), score, runtime: mean(scored.filter((p) => !p.dev)), dev: mean(scored.filter((p) => p.dev)), at: Date.now() };
 }
 
 /** The newest release past the range that's within the level, not held back, old enough, and `fits`. */
