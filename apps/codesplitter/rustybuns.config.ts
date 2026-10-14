@@ -50,6 +50,9 @@ export default defineConfig({
     compatibilityDate: "2026-06-01",
     compatibilityFlags: ["nodejs_compat"],   // Better Auth leans on Node APIs (AsyncLocalStorage)
     build: "bun run build.ts",
+    // An MCP client (Claude Code) has no host cookie; /api/mcp, the OAuth routes and their
+    // discovery documents carry their own auth (tokens, the consent page's session), as on the edge.
+    desktopOpenPaths: ["/api/mcp", "/api/oauth/", "/.well-known/oauth-"],
     // Hourly: each repo's dependency doctor runs when its own schedule says it's due (src/deps.ts),
     // and rate limits are swept. Queued requests and webhook retries ride the JOBS and HOOKS queues.
     // Every 5 minutes: mirrors sync with upstream (src/mirror.ts). They're desktop only, so on

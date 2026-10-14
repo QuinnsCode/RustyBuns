@@ -509,6 +509,8 @@ export interface RustyBunsConfig {
     /** A path no asset matches: index.html (an SPA's client-side routes), the nearest 404.html, or a plain 404. */
     notFoundHandling?: "single-page-application" | "404-page" | "none";
     runWorkerFirst?: string[];
+    /** Desktop only: URL prefixes that reach the Worker without the host's cookie, for clients that bring their own auth (an MCP client, OAuth). */
+    desktopOpenPaths?: string[];
     compatibilityDate: string;
     compatibilityFlags: string[];
     /** Command that produces builtMain + assets. */

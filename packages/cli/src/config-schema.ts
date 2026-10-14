@@ -115,6 +115,7 @@ export const ConfigSchema = Schema.Struct({
     main: opt(Str), builtMain: opt(Str), assets: opt(Str),
     notFoundHandling: opt(Schema.Literals(["single-page-application", "404-page", "none"])),
     runWorkerFirst: opt(Strs),
+    desktopOpenPaths: opt(Strs),
     compatibilityDate: Str.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/, { expected: "a date as YYYY-MM-DD" })),
     compatibilityFlags: Strs,
     build: opt(Str),
