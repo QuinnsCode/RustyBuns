@@ -5,7 +5,7 @@ import { LocalArtifacts, applyD1Migrations, d1, durableObject, gitHttp, installC
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import worker, { FileDurableObject, GameRoom, RepoSearch } from "./worker.ts";
+import worker, { FileDurableObject, GameRoom, RepoSearch, UserSettings } from "./worker.ts";
 
 // Each queue here is consumed at once, not through the host scheduler: that one is the process's, and holds its slots for
 // the CPU budget and for every other instance's deliveries, so in a busy test process a dig waited past a test's timeout (#1446).
@@ -18,6 +18,7 @@ export async function local(extra: Record<string, unknown> = {}) {
   env.FILES = durableObject(FileDurableObject as any, env);
   env.GAMES = durableObject(GameRoom as any, env);
   env.SEARCH = durableObject(RepoSearch as any, env);
+  env.SETTINGS = durableObject(UserSettings as any, env);
   // Webhook tries, consumed in-process as the desktop host does.
   env.HOOKS = queue(":memory:", "codesplitter-hooks");
   const stopHooks = env.HOOKS.consume((batch: any) => worker.queue(batch, env), { scheduler: now });

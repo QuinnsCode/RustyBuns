@@ -49,6 +49,8 @@ export interface Env {
   FILES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** One game room per level or repo: its lobby and multiplayer relay. */
   GAMES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
+  /** One settings object per person, near where they first connected (settings.ts). */
+  SETTINGS: { idFromName(n: string): unknown; get(id: unknown, opts?: { locationHint?: string }): { fetch(r: Request): Promise<Response> } };
   /** One code search index per repo (search.ts). */
   SEARCH: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /**
