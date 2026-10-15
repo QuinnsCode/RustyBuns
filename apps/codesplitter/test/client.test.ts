@@ -533,6 +533,12 @@ test("only a repo that fits is offered Box it", () => {
   expect(["no", "unlikely", undefined].map(boxable)).toEqual([false, false, false]);
 });
 
+test("a PR's tiers read as counts, tier by tier", () => {
+  const tierNote = new Function(`${html.slice(html.indexOf("const tierNote"), html.indexOf("async function copy(text"))}; return tierNote;`)();
+  expect(tierNote({ certain: 3, agree: 0, card: 1 })).toBe("3 certain, 1 card");
+  expect(tierNote({})).toBe("");
+});
+
 // Send-offs: the share panel hands out links into the game, and play.html reads them.
 describe("game send-offs", () => {
   const play = readFileSync(join(import.meta.dir, "../src/play.html"), "utf8");
