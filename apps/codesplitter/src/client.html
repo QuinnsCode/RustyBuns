@@ -226,6 +226,7 @@
   .guide .octo { fill: currentColor; } .guide .gh-list { display: grid; gap: 4px; }
   .guide .guide-rows { display: grid; gap: 2px; } .guide .guide-row { display: grid; grid-template-columns: 18px 1fr 18px; align-items: center; gap: 8px; padding: 7px 8px; text-align: left; background: none; color: var(--fg); border: 0; border-radius: 6px; font: inherit; cursor: pointer; }
   .guide .guide-row:hover { background: var(--select); } .guide .guide-row > svg:last-child { color: var(--muted); } .guide .guide-row.ok { color: var(--muted); } .guide .guide-row.ok > svg:first-child { color: var(--accent); }
+  .tour .tour-scrub { width: 100%; margin: 0; accent-color: var(--accent); cursor: pointer; }
   .tour .tour-dots { display: flex; gap: 3px; } .tour .tour-dots i { flex: 1; height: 3px; border-radius: 2px; background: var(--border); } .tour .tour-dots i.on { background: var(--accent); }
   .tour .tour-queue { display: flex; align-items: center; gap: 4px; font-size: 13px; } .tour .tour-queue .btn { padding: 0 4px; }
   .tour .tour-btns { display: flex; gap: 6px; } .tour .tour-btns .grow, .tour .tour-top .grow { flex: 1; }
@@ -7530,6 +7531,7 @@ function tour() {
     <div class="tour-chs" role="group" aria-label="chapters">${TOUR_CHAPTERS.map(([k, ic, name]) => `<button type="button" class="${k === s.ch ? "on" : ""}" data-ch="${k}" title="${name} (${t.qm ? "queues it next" : "shift-click to queue it next"})" aria-label="${name}"${k === s.ch ? ' aria-current="step"' : ""}>${icon(ic)}</button>`).join("")}<button type="button" class="btn ghost${t.qm ? " on" : ""}" data-qm aria-pressed="${!!t.qm}" title="queue: then pick the chapters to play after this one">${icon("list-plus")}${t.qm ? "Pick chapters" : "Queue"}</button><span class="muted">${esc(ch[2])}</span></div>
     <div class="tour-top">${icon(s.ic)}<b>${esc(title)}</b><span class="muted tour-n">${n}/${mine.length}</span></div>
     <div class="tour-dots">${mine.map((_, k) => `<i class="${k < n ? "on" : ""}"></i>`).join("")}</div>
+    <input type="range" class="tour-scrub" min="0" max="${TOUR.length - 1}" value="${t.i}" aria-label="scrub the tour" title="scrub: drag back to replay any step (${t.i + 1}/${TOUR.length})">
     <p>${esc(say)}</p><p class="tour-said" aria-live="polite"></p>
     ${t.queue?.length ? `<p class="muted tour-queue">Up next: ${esc(t.queue.map(tourName).join(", "))} <button type="button" class="btn ghost" data-unqueue title="clear the queue">${icon("x")}</button></p>` : ""}
     <div class="tour-btns">${t.i > lo ? `<button class="btn" data-back title="back (←)">${icon("arrow-left")}</button>` : ""}<button class="btn" data-auto title="${t.auto ? "pause: take the wheel" : "play: a cursor does the steps for you, with real actions"}">${icon(t.auto ? "pause" : "play")}</button><span class="grow"></span>
@@ -7546,6 +7548,8 @@ function tour() {
   const step = (i, dir) => { if (i < 0 || i >= TOUR.length) return; tourSave({ ...t, i, dir }); tour(); };
   if (t.auto && !away) void tourDrive(tourGen, t, s, hot, said, () => tourGo(t), last);
   else if (t.auto) { delete t.auto; tourSave(t); }
+  // The scrub bar walks the whole tour: drag back to replay any step; autoplay pauses so it stays where you put it.
+  $(".tour-scrub", card).addEventListener("change", (e) => { const k = +e.target.value; if (k !== t.i) { const { auto, scene, ...rest } = t; tourSave({ ...rest, i: k, dir: k > t.i ? 1 : -1 }); tour(); } });
   card.addEventListener("click", async (e) => {
     const b = e.target.closest("button"); if (!b) return;
     if ("x" in b.dataset) return tourStop(true);
