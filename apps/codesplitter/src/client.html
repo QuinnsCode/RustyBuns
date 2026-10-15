@@ -380,7 +380,7 @@
   .cg path, .cg-key path { fill: none; stroke: var(--border-2); stroke-width: 2; stroke-linecap: round; } .cg path.off { stroke-dasharray: 2 4; }
   .cg g, .cg-key .u, .cg-key .m { cursor: default; } .cg .u, .cg-key .u { fill: var(--fg); } .cg .m, .cg-key .m { fill: var(--accent); }
   .cg g:hover, .cg g:focus { outline: none; } .cg g:hover > *, .cg g:focus > *, .cg g.sel > * { stroke: var(--accent-glow); stroke-width: 3; }
-  .cg path.t { fill: var(--brown); stroke: none; } .cg g[data-h] { cursor: pointer; } .cg g.beat > * { stroke: var(--accent-glow); stroke-width: 3; }
+  .cg path.t { fill: var(--brown); stroke: none; } .cg g[data-h] { cursor: pointer; } .cg g.beat > * { stroke: var(--accent-glow); stroke-width: calc(3px + 3px * var(--swell, 0)); }
   /* The pulse travelling the vein: a glowing bead that runs into main's newest commit as the crew lands lines. */
   .cg .bead, .cg-key .bead { fill: var(--accent-glow); } .cg .bead { filter: drop-shadow(0 0 3px var(--accent)); pointer-events: none; }
   .cg-tags { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
@@ -2537,18 +2537,27 @@ async function gitMap(c) {
     if (tagger.sel) pickCard(tagger.sel);
   };
   // The pulse: lines landing here send a bead down the vein into main's newest commit, one at a time.
-  let beatAt = 0;
-  el.beat = () => {
+  // `n` lines landed: the viewer's limits (tv-limits.js) floor, merge and smooth them into beads and a swelling glow on the tip.
+  let beatAt = 0, swell = 0, swellAt = Date.now();
+  el.beat = (n = 1) => {
     const svg = el.querySelector(".cg"), tip = svg?.querySelector("g.tip");
     if (!tip || Date.now() - beatAt < 900) return;
-    beatAt = Date.now();
+    const now = Date.now();
+    const p = tvl ? tvl.pulse(n, swell, (now - swellAt) / 1000, tvLimits()) : { swell: 0, glow: 1, beads: { count: 1, size: 1 } };
+    swell = p.swell; swellAt = now;
+    if (!p.glow) return;
+    beatAt = now;
     const [x, y, from] = svg.dataset.tip.split(",");
     if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      svg.insertAdjacentHTML("beforeend", `<circle class="bead" r="3.5"><animateMotion dur=".8s" fill="freeze" begin="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".4 0 1 1" path="M${from} ${y}H${x}"/></circle>`);
-      const bead = svg.lastElementChild;
-      bead.firstElementChild.beginElement?.();
-      setTimeout(() => bead.remove(), 800);
+      for (let i = 0; i < p.beads.count; i++) {
+        const r = Math.min(7, 3.5 + Math.log2(p.beads.size));
+        svg.insertAdjacentHTML("beforeend", `<circle class="bead" r="${r}"><animateMotion dur=".8s" fill="freeze" begin="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".4 0 1 1" path="M${from} ${y}H${x}"/></circle>`);
+        const bead = svg.lastElementChild;
+        setTimeout(() => bead.firstElementChild.beginElement?.(), i * 60);
+        setTimeout(() => bead.remove(), 800 + i * 60);
+      }
     }
+    tip.style.setProperty("--swell", String(p.glow));
     setTimeout(() => { tip.classList.add("beat"); setTimeout(() => tip.classList.remove("beat"), 500); }, 700);
   };
   // A dot, clicked: revert it on main, or cherry-pick it onto main or an open branch (#880).
@@ -5949,7 +5958,7 @@ const views = {
       for (const a of msg.applied) if (a.op.kind !== "delete") beating.set(a.by, Date.now() + 600);
       firehose(msg.applied.length);
       // The same beat runs down this repo's vein, if it's open.
-      if (msg.applied.some((a) => a.op.kind !== "delete") && $("#gitmap")?.dataset.repo === `${owner}/${repo}`) $("#gitmap").beat?.();
+      if (msg.applied.some((a) => a.op.kind !== "delete") && $("#gitmap")?.dataset.repo === `${owner}/${repo}`) $("#gitmap").beat?.(msg.applied.length);
       schedule(msg.applied.map((a) => a.line));
     };
     connect();
