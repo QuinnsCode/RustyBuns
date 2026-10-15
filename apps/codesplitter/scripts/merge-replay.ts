@@ -13,9 +13,10 @@
 //      applied to main's copy, give the text it would settle, diffed against
 //      the merge commit.
 //
-//   bun scripts/merge-replay.ts [e49e19a 14fa8c3 ...] [--json]
+//   bun scripts/merge-replay.ts [e49e19a 14fa8c3 ...] [--recent 10] [--json]
 //
-// With no commits it replays the five from #1097. Everything runs in-process
+// With no commits it replays the five from #1097. --recent N replays, one at a time, the newest N merge commits
+// git itself conflicted on (clean merges say nothing about the engine), topped up from #1097's five when history has fewer. Everything runs in-process
 // on the local twins (src/local.ts) in a temp dir: no ~/.codesplitters, no
 // GitHub (GH_CLI off, no token), no Cloudflare.
 
@@ -118,8 +119,24 @@ export async function replay(commit: string, pr?: number): Promise<Replay> {
   }
 }
 
+/** The newest `n` merge commits whose two sides git conflicts on, newest first. */
+export function recent(n: number): string[] {
+  const out: string[] = [];
+  for (const line of git("rev-list", "--merges", "--parents", "HEAD").trim().split("\n")) {
+    const [commit, a, b, ...octopus] = line.split(" ");
+    if (!commit || !a || !b || octopus.length) continue;
+    if (gitConflicts(b, a).length) out.push(commit);
+    if (out.length === n) break;
+  }
+  // History may hold fewer than n; the fixes #1097 replayed top it up.
+  for (const c of CASES) if (out.length < n && !out.some((o) => o.startsWith(c.commit))) out.push(c.commit);
+  return out;
+}
+
 if (import.meta.main) {
-  const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+  const flag = process.argv.indexOf("--recent");
+  const args = process.argv.slice(2).filter((a, i, all) => !a.startsWith("--") && all[i - 1] !== "--recent");
+  if (flag > 0) args.push(...recent(Number(process.argv[flag + 1]) || 10));
   const cases = args.length ? args.map((commit) => ({ commit, pr: undefined as number | undefined })) : CASES;
   const out: Replay[] = [];
   for (const c of cases) out.push(await replay(c.commit, c.pr));
