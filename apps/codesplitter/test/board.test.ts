@@ -1,11 +1,7 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { ask, brief, canMerge, pick, hitRate, parseRow, waves, whoShouldTake, whyNot, type BoardRow } from "../src/board.ts";
 import { addHits, ownersOf, reach, rowOf } from "../scripts/mervin-live.ts";
-import { local as boot } from "../src/local.ts";
-
-setDefaultTimeout(20_000);
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
+import { local as boot } from "./app-kit.ts";
 
 const row = (pr: number, extra: Partial<BoardRow> = {}): BoardRow => ({ pr, head: `h${pr}`, ci: "pass", tiers: { certain: 1 }, files: 1, clashes: [], ...extra });
 
@@ -81,7 +77,6 @@ describe("mervin-live", () => {
 describe("GET/POST /api/repos/:o/:r/board", () => {
   test("rows posted show on the board, change on a new post, and drop", async () => {
     const call = await boot({ GH_CLI: "off" });
-    opened.push(call);
     const post = (user: string, url: string, body: unknown) => call(user, url, { method: "POST", body: JSON.stringify(body) });
     await post("ana", "/api/login", { name: "ana" });
     await post("ana", "/api/repos", { name: "r" });

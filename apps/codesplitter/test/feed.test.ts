@@ -1,19 +1,14 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { local as boot } from "../src/local.ts";
+import { local as boot } from "./app-kit.ts";
 import type { Exec } from "../src/agent-run.ts";
 
 // End to end (in-process D1 and file DOs): fine alone, slow on a busy machine.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 /** ryan's public repo lab (a.ts) and private repo vault (s.ts, carol is crew); ana and carol signed in. */
 async function app() {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   const post = (user: string | null, url: string, body: unknown) => call(user, url, { method: "POST", body: JSON.stringify(body) });
   for (const u of ["ryan", "ana", "carol", "bob"]) await post(u, "/api/login", { name: u });
   await post("ryan", "/api/repos", { name: "lab", visibility: "public" });

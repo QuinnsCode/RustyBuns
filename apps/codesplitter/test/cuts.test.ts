@@ -1,9 +1,6 @@
-import { afterAll, expect, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 import { candidates, chunks, follow, imports, pick, readRun } from "../src/cuts.ts";
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 const lines = (text: string) => text.split("\n").map((t, i) => ({ id: `L${i + 1}`, text: t, by: "ryan", rev: i + 1 }));
 
@@ -110,7 +107,6 @@ test("a run's JUnit report marks each test's line, and stack frames mark fails",
 
 test("cut lines out, run them, fix the cut, and merge the fix back", async () => {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
   await send("ryan", "/api/login", { name: "ryan" });
   await send("ryan", "/api/repos", { name: "lab", visibility: "public" });
@@ -183,7 +179,6 @@ test("cut lines out, run them, fix the cut, and merge the fix back", async () =>
 
 test("cut just a test line, and the code it imports comes along to run", async () => {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   const send = (user: string, url: string, body: unknown) => call(user, url, { method: "POST", body: JSON.stringify(body) });
   await send("ryan", "/api/login", { name: "ryan" });
   await send("ryan", "/api/repos", { name: "lab2", visibility: "public" });

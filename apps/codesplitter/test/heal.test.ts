@@ -1,15 +1,11 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { local as boot } from "../src/local.ts";
+import { local as boot } from "./app-kit.ts";
 import type { Exec } from "../src/agent-run.ts";
 import { alsoFor, blame, checkTask, engineLines, healUnavailable, MAX_ALSO, MAX_ATTEMPTS, trustedReporter } from "../src/heal.ts";
 
 // End to end, with real git and the in-process queue: a full run on a busy machine can stretch one past bun's 5s default.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 const sha = (c: string) => c.repeat(40);
 const until = async (f: () => Promise<boolean>) => { for (const end = performance.now() + 15_000; performance.now() < end && !(await f());) await Bun.sleep(20); };
@@ -17,7 +13,6 @@ const until = async (f: () => Promise<boolean>) => { for (const end = performanc
 /** The app with self-healing on (HEAL=1) or not, a fake CLI that drops git's markers and lower-cases a.ts, and a branch `tidy` that shouts its first line. */
 async function app(heal = true) {
   const call = await boot({ GH_CLI: "off", ...(heal && { HEAL: "1" }) });
-  opened.push(call);
   const prompts: string[] = [];
   call.env.AGENT_EXEC = (async (cmd, cwd) => {
     prompts.push(cmd.args.join(" "));

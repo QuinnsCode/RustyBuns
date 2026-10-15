@@ -1,17 +1,12 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { describe, expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 import { renderPulseCard } from "../src/card.ts";
 import { HOURS, spread } from "../src/pulse.ts";
 
 // End to end (in-process D1 and file DOs), like insights.test.ts. The pulse reads the feed's line events.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 async function app() {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   const send = (user: string | null, url: string, body?: unknown, method = body === undefined ? "GET" : "POST") =>
     call(user, url, { method, ...(body !== undefined && { body: JSON.stringify(body) }) });
   for (const u of ["ryan", "mia"]) await send(u, "/api/login", { name: u });

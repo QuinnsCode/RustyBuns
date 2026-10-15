@@ -1,17 +1,11 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { describe, expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 import { tools } from "../src/mcp.ts";
 import { openapi } from "../src/openapi.ts";
-
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 /** The app with ryan signed in, a private repo with a file, a read and a write token, and an MCP client for each. */
 async function app() {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   const send = (url: string, body: unknown) => call("ryan", url, { method: "POST", body: JSON.stringify(body) });
   await send("/api/login", { name: "ryan" });
   await send("/api/repos", { name: "lab", visibility: "private" });
@@ -107,7 +101,6 @@ describe("POST /api/mcp", () => {
 describe("GET /api/mcp/tools", () => {
   test("lists every tool in words, to anyone", async () => {
     const call = await boot({ GH_CLI: "off" });
-    opened.push(call);
     const r = await call(null, "/api/mcp/tools");
     expect(r.status).toBe(200);
     const list = (await r.json()) as any[];

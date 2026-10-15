@@ -1,13 +1,10 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { expect, setDefaultTimeout, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 import { chunksOf, CHUNK, MAX_CHUNKS } from "../src/search.ts";
 
 // Search across repos through one vector index (search.ts, #636), against in-memory stand-ins
 // for Vectorize and Workers AI: a word's hash picks its dimension, so shared words are near.
 setDefaultTimeout(30_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 const DIMS = 384;
 function fakeAi() {
@@ -42,7 +39,6 @@ function fakeVectorize() {
 async function app() {
   const VECTORS = fakeVectorize(), AI = fakeAi();
   const call = await boot({ GH_CLI: "off", ADMINS: "boss", VECTORS, AI });
-  opened.push(call);
   const post = (user: string, url: string, body: unknown = {}) => call(user, url, { method: "POST", body: JSON.stringify(body) });
   const commit = async (user: string, owner: string, repo: string, path: string, content: string) => {
     await post(user, `/api/repos/${owner}/${repo}/files`, { path, content });

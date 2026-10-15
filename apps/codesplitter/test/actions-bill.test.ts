@@ -1,10 +1,6 @@
-import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { afterEach, describe, expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 const real = globalThis.fetch;
 afterEach(() => { globalThis.fetch = real; });
 
@@ -24,7 +20,6 @@ function github(usage: { status?: number; items?: unknown[] }) {
 
 async function app() {
   const call = await boot({ GH_CLI: "off", ADMINS: "boss", GITHUB_TOKEN: "ghp_test" });
-  opened.push(call);
   for (const u of ["boss", "mia"]) await call(u, "/api/login", { method: "POST", body: JSON.stringify({ name: u }) });
   return call;
 }

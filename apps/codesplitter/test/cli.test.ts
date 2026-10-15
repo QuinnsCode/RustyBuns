@@ -1,5 +1,5 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { describe, expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { main, run } from "../cli.ts";
@@ -7,15 +7,9 @@ import { agentPrompt, agentPromptResponse } from "../src/agent-prompt.ts";
 import { installScript } from "../src/install.ts";
 import { tools } from "../src/mcp.ts";
 
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
-
 /** The app with ryan's private repo and a write token, and the CLI pointed at it in-process. */
 async function app() {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   const send = (url: string, body: unknown) => call("ryan", url, { method: "POST", body: JSON.stringify(body) });
   await send("/api/login", { name: "ryan" });
   await send("/api/repos", { name: "lab", visibility: "private" });
