@@ -205,7 +205,7 @@ There's no downloadable build yet; that's one command from source.
 - **Limits.** Every rule is a count per caller per window, and the defaults are the table in [`src/limits.ts`](src/limits.ts) (for example 10 new repos a day, 60 commits an hour, 20 hosted agent runs a day, 5 GitHub digs an hour). A repo's owner sees where they stand at `GET /api/repos/:o/:r/limits`, and admins tune the rules at `#/admin/limits`. Going over answers 429 with `retry-after`. Hosted agent and container runs also share a site-wide daily budget, so they can run out for everyone.
 - **Stability.** This is a hackathon-stage project with no uptime promise. Don't keep your only copy of anything here; clone it out, or run the desktop app, where your git lives on your machine.
 - **The game.** Every repo is a level: the backrooms of the codebase, where the lines tear off the walls as paper birds and you swat them with the rolled-up README.
-  Bop your friends in the lobby. Share lines, then send a link into the game: the wrecking room (everyone smashes the repo together) or the backrooms standing in that file's folder.
+  Bop your friends in the lobby. Share lines, then send a link into the game: the wrecking room (everyone smashes the repo together) or the backrooms standing in that file's folder. For a public GitHub repo you needn't sign in or dig anything: `/play#gh/<owner>/<repo>?mode=wreck` digs one shared read-only copy on the first visit and reuses it (new copies are capped at 20 an hour, site-wide).
 
 ### Point your CI here
 
