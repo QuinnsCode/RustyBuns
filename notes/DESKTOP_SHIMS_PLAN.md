@@ -18,7 +18,7 @@ Each shim is a small script the host injects into the page (one `<script>` tag w
 | 4 | **File access** | `<input type=file>`, drag-drop, `showOpenFilePicker`, `showDirectoryPicker`, download via Blob + `<a download>` | Native open and save dialogs, last folder remembered, "Open with" and drag onto the app icon pass the file in, downloads land in a chosen folder instead of the browser's. Safari has no File System Access API, so the shim also makes it work there | Yes: dialogs and file routes (splat-desktop's host already does this by hand) |
 | 5 | **Notifications** | `Notification.requestPermission()`, `new Notification()` | OS notifications without the permission prompt (`osascript` on macOS, `notify-send` on Linux), a dock/taskbar badge from `navigator.setAppBadge` | Yes: one POST route |
 | 6 | **Menus and shortcuts** | none (browser shortcuts only) | App menu (About, Quit, Copy, Paste), `Cmd+Q`, `Cmd+,`; a config `menu` lists page actions that dispatch a `rb:menu` event | Yes, later; the first three are enough for the demo |
-| 7 | **Server** | `fetch("/control/...")` to a backend that isn't Node | Existing `targets.desktop.server` bundles a Node server. A Go or Rust binary needs a `server.command` that the host starts and proxies, with data in the data dir | Yes: spawn and proxy (the largest item, see AdGuard Home) |
+| 7 | **Server** | `fetch("/control/...")` to a backend that isn't Node (Go, Python, Rust) | The backend stays what it is and the app's Worker proxies to it. The host starts it (`server.command`, data in the data dir) on a loopback port and the Worker's `fetch` handler forwards `/control/*` there, so the page, the desktop build and the edge build all talk to one Worker. On the edge the same proxy points at a URL the user hosts (a box, a container), so a Go daemon's UI works in both places | Yes: spawn the process and wait for its port; the proxy itself is ordinary Worker code (the largest item, see AdGuard Home) |
 
 Ruled out for v1: Cast, WebUSB/Bluetooth, deep links (`myapp://`), auto-update. Each is real but none changes the first five minutes.
 
@@ -46,6 +46,7 @@ Each step is its own PR with one journey test through the running app (open a fi
 
 - Is `--app` mode in the user's Chrome enough, or do you want a real webview (a Rust shell) so the window is ours and not Chrome's? A webview gives true native menus and a dock icon of our own, but it is a native build per OS (`build:native`), where today's path needs none. This plan assumes Chrome.
 - Shims on by default for a ported app, or only the ones `init` detects? The plan assumes detected.
+- The plan now proxies non-Node backends through the Worker (shim 7). Is that the shape you want, with the process started by the host?
 - Is a Go-backed app like AdGuard Home in scope for the wow demo, or is CyberChef plus jellyfin-web enough?
 
 ## Next
