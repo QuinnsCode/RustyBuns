@@ -104,6 +104,9 @@ function valueOf(s: Src, srcs: Src[], key: string): Val | null {
 const CONFIG_NAMES = ["webpack.config", "webpack.common", "webpack.base", "webpack.dev", "webpack.prod", "webpack.development", "webpack.production", "webpack.client"];
 const EXTS = ["", ".js", ".cjs", ".mjs", ".ts", ".babel.js", "/index.js", "/index.ts"];
 
+/** Other tools' configs (a script's `vitest --config vite.config.ts`) are not webpack configs. */
+const NOT_WEBPACK = /(?:^|\/)(?:vite|vitest|rollup|jest|eslint)[.\w-]*\.[cm]?[jt]s$/;
+
 /** The webpack config files for an app: named at the root, in config/ or webpack/, or by a script's --config; plus what they require. */
 export function findConfigs(root: string): Src[] {
   const rel = new Set<string>();
@@ -117,7 +120,7 @@ export function findConfigs(root: string): Src[] {
     if (existsSync(join(root, f)) && /webpack/.test(readFileSync(join(root, f), "utf8"))) rel.add(f);
   try {
     const scripts = Object.values(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).scripts ?? {}) as string[];
-    for (const s of scripts) for (const m of s.matchAll(/(?:--config|-c)[ =]+["']?([^\s"']+)/g)) if (existsSync(join(root, m[1]!)) && /\.[cm]?[jt]s$/.test(m[1]!)) rel.add(m[1]!.replace(/^\.\//, ""));
+    for (const s of scripts) for (const m of s.matchAll(/(?:--config|-c)[ =]+["']?([^\s"']+)/g)) if (existsSync(join(root, m[1]!)) && /\.[cm]?[jt]s$/.test(m[1]!) && !NOT_WEBPACK.test(m[1]!)) rel.add(m[1]!.replace(/^\.\//, ""));
   } catch { /* no package.json */ }
   const out: Src[] = [], seen = new Set<string>();
   const read = (f: string, depth: number) => {
@@ -129,7 +132,7 @@ export function findConfigs(root: string): Src[] {
     for (const r of m.code.matchAll(/(?:require\(\s*|from\s+|import\(\s*)["'](\.[^"']*)["']/g)) {
       const base = join(dirname(f), r[1]!);
       const hit = EXTS.map((e) => base + e).find((p) => /\.[cm]?[jt]s$/.test(p) && existsSync(join(root, p)));
-      if (hit && !hit.startsWith("..") && !/node_modules/.test(hit)) read(hit, depth + 1);
+      if (hit && !hit.startsWith("..") && !/node_modules/.test(hit) && !NOT_WEBPACK.test(hit)) read(hit, depth + 1);
     }
   };
   for (const f of rel) read(f, 0);

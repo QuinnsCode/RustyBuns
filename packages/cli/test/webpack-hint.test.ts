@@ -118,3 +118,13 @@ test("webpack hint: a Gruntfile that drives webpack is read, and run-time entrie
   expect(out).toContain("entries are built at run time");
   expect(out).toContain("DefinePlugin -> define");
 });
+
+test("webpack hint: another tool's config named by a script's --config is not read as webpack", () => {
+  const out = hint({
+    "package.json": JSON.stringify({ scripts: { build: "webpack -c webpack.config.js", test: "vitest --config vite.config.ts" } }),
+    "webpack.config.js": `module.exports = { entry: "./src/main.ts" };`,
+    "vite.config.ts": `export default { test: { environment: "jsdom" } };`,
+  });
+  expect(out).toContain("read: webpack.config.js");
+  expect(out).not.toMatch(/read:.*vite\.config/);
+});
