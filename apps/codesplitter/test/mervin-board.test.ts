@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ciOf, diskCache, order, regenerate, run, score, type BoardPr, type StageCache } from "../scripts/mervin-board.ts";
+import { ciOf, diskCache, lanesOf, linesOf, order, regenerate, run, score, type BoardPr, type StageCache } from "../scripts/mervin-board.ts";
 
 // scripts/mervin-board.ts: the open PRs merged in a sandbox one stage at a time, then scored against what landed.
 describe("mervin board", () => {
@@ -367,5 +367,21 @@ describe("mervin board: a generated file (#1540)", () => {
     expect(out).toContain("| `migrations/` |");
     expect(out.endsWith("\nafter\n")).toBe(true);
     rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe("mervin board: what the watch page streams", () => {
+  test("a merged file carries its changed lines by who wrote them, with a line of context", () => {
+    expect(linesOf("a\nb\nc\nd\ne\n", "a\nb\nc\nd\nE\n", "A\nb\nc\nd\ne\n", "A\nb\nc\nd\nE\n")).toEqual([
+      { text: "A", side: "pr" }, { text: "b", side: "both" }, { text: "d", side: "both" }, { text: "E", side: "main" },
+    ]);
+  });
+
+  test("--check runs become add and build lane steps", () => {
+    expect(lanesOf([{ dir: ".", cmd: "bun install", ok: true }, { dir: ".", cmd: "bun run typecheck", ok: false }, { dir: "apps/x", cmd: "bun test", ok: true }])).toEqual([
+      { lane: "add", name: "bun install", state: "ok" },
+      { lane: "build", name: "bun run typecheck", state: "fail" },
+      { lane: "build", name: "apps/x: bun test", state: "ok" },
+    ]);
   });
 });
