@@ -1,0 +1,5 @@
+{
+  "icon": "party-popper",
+  "title": "Welcome tour",
+  "what": "`bun run welcome` digs up a hello-world app, lets three agents rewrite it at once, shows Mervin settle a clash, then asks why not deploy it and prints the plan, web and desktop commands."
+}
