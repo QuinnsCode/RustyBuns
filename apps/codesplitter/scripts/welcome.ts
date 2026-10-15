@@ -6,6 +6,7 @@
 // to the web and the desktop, which stay yours to run.
 //
 //   bun run welcome [--port 4747] [--rounds 3] [--pace 500] [--wait 20] [--no-serve]
+//   bun run welcome --box      an ephemeral box: serves the app with hello-world dug up and waits for an agent to drive it
 //
 // Open the printed link first: the firehose glow and the shimmering claims are on the file page.
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -37,7 +38,7 @@ const JOBS = [
   { who: "agent-cy", marker: "// Footer", task: "reword the footer", add: "// cy: footer says who built it" },
 ];
 
-export interface Tour { say(who: string, what: string): void; pace: number; rounds: number; url?: string; }
+export interface Tour { say(who: string, what: string): void; pace: number; rounds: number; stopAfterDig?: boolean; }
 
 export async function tour(call: Awaited<ReturnType<typeof local>>, t: Tour) {
   const j = (user: string, path: string, body?: unknown, method = body === undefined ? "GET" : "POST") =>
@@ -63,6 +64,8 @@ export async function tour(call: Awaited<ReturnType<typeof local>>, t: Tour) {
   for (const [path, content] of Object.entries(files)) await ok(j("ryan", `${base}/files`, { path, content }), `add ${path}`);
   for (const a of JOBS) await ok(j("ryan", `${base}/collaborators`, { name: a.who }), `invite ${a.who}`);
   t.say("1 dig", `${Object.keys(files).length} files, ${(await read()).length} lines in ${FILE}, every line with an id and an author`);
+
+  if (t.stopAfterDig) return { landed: 0, held: 0, waves: 0, conflicted: false };
 
   // 2. The firehose: three agents, one file, same moment.
   t.say("2 firehose", "three agents claim a block each and rewrite it line by line");
@@ -130,6 +133,7 @@ if (import.meta.main) {
   const arg = (n: string, d: number) => { const i = process.argv.indexOf(`--${n}`); return i > 0 ? Number(process.argv[i + 1]) : d; };
   const PORT = arg("port", 4747), WAIT = arg("wait", 20);
   const call = await local({ GH_CLI: "off" });
+  const box = process.argv.includes("--box");
   if (!process.argv.includes("--no-serve")) {
     const { serve } = await import("@rustybuns/shell-bun");
     const { default: worker } = await import("../src/worker.ts");
@@ -137,10 +141,13 @@ if (import.meta.main) {
     const shell = serve({ port: PORT, assets: "dist/client", runWorkerFirst: ["/api"], reporter: { escaped: (...a: unknown[]) => console.error("[server]", ...a) } as any });
     shell.mount(worker as any, call.env);
     console.log(`\nOpen: ${shell.url}/#/r/ryan/hello-world\n(sign in as "ryan" first: run  document.cookie = "cs_user=ryan; path=/"  in the page console, then reload)`);
-    console.log(`Then open ${FILE}. The tour starts in ${WAIT}s.\n`);
-    await sleep(WAIT * 1000);
+    if (box) console.log(`Box up on ${shell.url}: sign in as ryan, API at ${shell.url}/api, MCP at ${shell.url}/api/mcp. Nothing runs until an agent does it.`);
+    else {
+      console.log(`Then open ${FILE}. The tour starts in ${WAIT}s.\n`);
+      await sleep(WAIT * 1000);
+    }
   }
-  await tour(call, { pace: arg("pace", 500), rounds: arg("rounds", 3), say: (who, what) => console.log(`${new Date().toISOString().slice(11, 19)}  ${who.padEnd(10)} ${what}`) });
+  await tour(call, { pace: arg("pace", 500), rounds: arg("rounds", 3), stopAfterDig: box, say: (who, what) => console.log(`${new Date().toISOString().slice(11, 19)}  ${who.padEnd(10)} ${what}`) });
   if (!process.argv.includes("--no-serve")) { console.log("\nCtrl-C to stop the server"); await new Promise(() => {}); }
   call.close();
 }
