@@ -6,7 +6,9 @@
 //
 // An app's bindings come from its rustybuns.config.ts (the Dockerfile and its context folder). A binding is
 // touched when the diff is inside its context, or in the CLI's generator (packages/cli/src/gen/).
-import { appendFileSync, existsSync, readdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { type ContainerBinding, buildOne, containerBindings, mb, smokeOne } from "../packages/cli/src/containers.ts";
 
 /** The bindings a diff touches: those whose context folder holds a changed file, all of them when the generator moved. */
@@ -21,15 +23,36 @@ export function failedLine(out: string): string | null {
   return m ? `${m[1]} line ${m[2]}` : null;
 }
 
-export interface Row { name: string; dockerfile: string; ok: boolean; build?: string; size?: string; boot?: string; fail?: string }
+/** A size against main's build of the same image: "+4 MB", "-2 MB", "same", or "new" when main has none. */
+export function delta(size: number, base?: number): string {
+  if (base === undefined) return "new";
+  const d = Math.round((size - base) / 1e6);
+  return d === 0 ? "same" : `${d > 0 ? "+" : "-"}${Math.abs(d)} MB`;
+}
+
+export interface Row { name: string; dockerfile: string; ok: boolean; build?: string; size?: string; delta?: string; boot?: string; fail?: string }
 
 /** The job summary: one row per image, and for each failure its Dockerfile line and the build's last lines. */
 export function summary(rows: Row[]): string {
   if (!rows.length) return "No container images were touched by this PR.\n";
   const table = ["| Image | Build | Size | Boot |", "|---|---|---|---|",
-    ...rows.map((r) => `| \`${r.name}\` (${r.dockerfile}) | ${r.ok ? "✅" : "❌"} ${r.build ?? ""} | ${r.size ?? ""} | ${r.boot ?? ""} |`)];
+    ...rows.map((r) => `| \`${r.name}\` (${r.dockerfile}) | ${r.ok ? "✅" : "❌"} ${r.build ?? ""} | ${r.size ?? ""}${r.delta ? ` (${r.delta} vs main)` : ""} | ${r.boot ?? ""} |`)];
   const fails = rows.filter((r) => !r.ok).map((r) => `\n**${r.name}** failed${failedLine(r.fail ?? "") ? ` at ${failedLine(r.fail!)}` : ""}:\n\`\`\`\n${r.fail}\n\`\`\``);
   return table.join("\n") + "\n" + fails.join("\n") + "\n";
+}
+
+/** The size of `b` as built at `base` (main), or undefined when main has no such image. Builds from a `git archive` of the app at that ref. */
+async function baseSize(app: string, b: ContainerBinding, base: string): Promise<number | undefined> {
+  const dir = mkdtempSync(join(tmpdir(), "ci-base-")), here = process.cwd();
+  try {
+    await Bun.$`git archive ${base} apps/${app} | tar -x -C ${dir}`.quiet();
+    if (!existsSync(`${dir}/apps/${app}/${b.dockerfile}`)) return undefined;
+    process.chdir(`${dir}/apps/${app}`);
+    return (await buildOne(`${app}-base`, b, { ghaCache: !!process.env.ACTIONS_RESULTS_URL, dir })).size;
+  } catch { return undefined; } finally {
+    process.chdir(here);
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 /** The apps with bindings, and the ones the diff touched. */
@@ -69,8 +92,9 @@ if (import.meta.main) {
     for (const b of bs) {
       const row: Row = { name: b.name, dockerfile: b.dockerfile, ok: false };
       try {
-        const r = await buildOne(a1, b);
+        const r = await buildOne(a1, b, { ghaCache: !!process.env.ACTIONS_RESULTS_URL });
         Object.assign(row, { build: `${(r.ms / 1000).toFixed(0)}s`, size: mb(r.size) });
+        if (process.env.BASE) row.delta = delta(r.size, await baseSize(a1, b, process.env.BASE));
         const s = await smokeOne(a1, b, { env: {} });
         row.ok = s.ok;
         if (s.ok) row.boot = /in ([\d.]+s)/.exec(s.note)?.[1]; else row.fail = s.note;

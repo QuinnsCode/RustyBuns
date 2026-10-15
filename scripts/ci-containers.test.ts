@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ContainerBinding } from "../packages/cli/src/containers.ts";
-import { failedLine, summary, touched } from "./ci-containers.ts";
+import { delta, failedLine, summary, touched } from "./ci-containers.ts";
 
 const b = (name: string, dockerfile: string): ContainerBinding => ({ name, className: name, dockerfile, context: dockerfile.slice(0, dockerfile.lastIndexOf("/")), maxInstances: 1, instanceType: "basic" });
 const bindings = [b("AGENT", "sandbox/Dockerfile"), b("DEPLOY", "deploy-sandbox/Dockerfile"), b("CI", "deploy-sandbox/ci.Dockerfile")];
@@ -21,4 +21,12 @@ test("the summary has a row per image, names the failing Dockerfile line, and sa
   expect(md).toContain("| `AGENT` (sandbox/Dockerfile) | ✅ 72s | 812 MB | 0.9s |");
   expect(md).toContain("**CI** failed at Dockerfile line 4");
   expect(summary([])).toContain("No container images were touched");
+});
+
+test("a size is shown against main's build of the same image", () => {
+  expect(delta(812e6, 800e6)).toBe("+12 MB");
+  expect(delta(790e6, 800e6)).toBe("-10 MB");
+  expect(delta(800.2e6, 800e6)).toBe("same");
+  expect(delta(1e6)).toBe("new");
+  expect(summary([{ name: "CI", dockerfile: "ci.Dockerfile", ok: true, size: "812 MB", delta: "+12 MB", boot: "1s" }])).toContain("812 MB (+12 MB vs main)");
 });

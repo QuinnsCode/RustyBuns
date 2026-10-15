@@ -30,8 +30,8 @@ branch each, check `dispatch-hint` and `merge-plan`, merge by line id.
 4. Terms (level, beam, cut, stamp, crew) are never defined in one place.
 5. Unclear how an agent edits a file on a branch, and whether plain `git clone` / `git push` works.
 6. No public repo list or explore endpoint, so nothing to browse cold. Pricing and limits are not stated.
-7. Spec has 101 paths but the MCP catalog has 126 tools; nobody checked they agree.
-8. The configured `codesplitter` MCP server in the sessions failed with ECONNREFUSED (not investigated).
+7. Spec has 101 paths but the MCP catalog has 126 tools. They agree (#1702): a path can carry several methods, and `mcp-tools.ts` makes one tool per method of each path, so both sides are 126 operations with unique operationIds. `test/mcp.test.ts` now pins it.
+8. The configured `codesplitter` MCP server in the sessions failed with ECONNREFUSED. Not the live site (#1702): `POST /api/mcp` there answers 401 without a token and `GET` 405, as built. ECONNREFUSED means nothing listened at the configured URL (a local dev server that was down, or a stale host/port); the config is per-user, not in the repo, so check it with `claude mcp get codesplitter` and point it at `<site>/api/mcp`.
 
 ## Not tried
 

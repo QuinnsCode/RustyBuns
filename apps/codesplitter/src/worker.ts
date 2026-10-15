@@ -240,6 +240,7 @@ import {
   upstreamRemote,
   type Truth,
 } from "./mirror.ts";
+import { LLMS_TXT, ROBOTS_TXT } from "./discover.ts";
 export { FileDurableObject } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
@@ -259,6 +260,8 @@ async function access(env: Env, owner: string, repo: string, user: string | null
 }
 
 // What a page or agent may ask a file's DO directly; forks and merges go through the branch routes.
+/** The profile boxes their owner may take off (users.hidden); everything is shown until they do. */
+const PROFILE_SECTIONS = ["repos", "pulse", "stamps", "collections", "city"] as const;
 const DO_ROUTES = new Set(["file", "ops", "log", "at", "commit", "commits", "ws", "private", "claims", "release"]);
 
 // FTS5 treats punctuation as syntax; quote every word so a search is just words.
@@ -277,6 +280,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (p[0] === "install.sh" && !p[1] && req.method === "GET") return installScript(url.origin);
   // GET /agent.md  a prompt to hand your own agent so it can steer the site for you (agent-prompt.ts)
   if (p[0] === "agent.md" && !p[1] && req.method === "GET") return agentPromptResponse(url.origin);
+  // GET /llms.txt, /robots.txt  where an agent starting at the root is pointed at the API (discover.ts)
+  if ((p[0] === "llms.txt" || p[0] === "robots.txt") && !p[1] && req.method === "GET") return new Response(p[0] === "llms.txt" ? LLMS_TXT : ROBOTS_TXT, { headers: { "content-type": "text/plain; charset=utf-8" } });
   if (p[0] !== "api") return new Response("not found", { status: 404 });
   // GET /api/health, POST /api/watchdog/rolled-back  the watchdog Worker's check and its rollback report (watchdog.ts)
   const dog = await watchdogRoutes(req, env, p);
@@ -419,7 +424,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     let warning: string | undefined;
     if (req.method === "PUT") {
       // Only what's sent changes, so turning the pulse off leaves the bio be.
-      const b = await body<"bio" | "theme_html" | "pulse" | "git_truth" | "avatar" | "share_usage">();
+      const b = await body<"bio" | "theme_html" | "pulse" | "git_truth" | "avatar" | "share_usage" | "hidden">();
+      if (b.hidden !== undefined && (!Array.isArray(b.hidden) || b.hidden.some((h) => !PROFILE_SECTIONS.includes(h as never)))) return json({ error: `hidden: a list of ${PROFILE_SECTIONS.join(", ")}` }, 400);
       if (b.share_usage !== undefined && typeof b.share_usage !== "boolean") return json({ error: "share_usage: true or false" }, 400);
       if (b.pulse !== undefined && typeof b.pulse !== "boolean") return json({ error: "pulse: true or false" }, 400);
       if (b.git_truth !== undefined && !TRUTHS.includes(b.git_truth as Truth)) return json({ error: `git_truth: ${TRUTHS.join(", ")}` }, 400);
@@ -427,8 +433,8 @@ async function route(req: Request, env: Env): Promise<Response> {
       // avatar: the parts (src/avatar.ts), or null to take it off.
       const avatar = b.avatar === undefined ? null : b.avatar === null ? "" : cleanAvatar(b.avatar);
       if (avatar === null && b.avatar !== undefined) return json({ error: `avatar: every part (${Object.keys(PARTS).join(", ")}), each one of its options, colors as #rrggbb` }, 400);
-      await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth), avatar = COALESCE(?, avatar), share_usage = COALESCE(?, share_usage) WHERE name = ?")
-        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, avatar === null ? null : avatar === "" ? "" : JSON.stringify(avatar), b.share_usage === undefined ? null : b.share_usage ? 1 : 0, user).run();
+      await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth), avatar = COALESCE(?, avatar), share_usage = COALESCE(?, share_usage), hidden = COALESCE(?, hidden) WHERE name = ?")
+        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, avatar === null ? null : avatar === "" ? "" : JSON.stringify(avatar), b.share_usage === undefined ? null : b.share_usage ? 1 : 0, b.hidden === undefined ? null : JSON.stringify([...new Set(b.hidden)]), user).run();
       // Saying no (or changing your mind) takes back what was shared (usage.ts).
       if (b.share_usage === false) await forget(env, user).run();
       // A public page repo wins over the saved theme_html, so saving it would otherwise change nothing you can see.
@@ -445,9 +451,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /api/users/:name  profile, the repos you may see, playlists, how many it follows and are following it, the stamps it gave and got;
   // an agent's (agent-…) also says who runs it, where, and its runs (actors.ts)
   if (p[1] === "users" && p[2]) {
-    const row = await env.DB.prepare("SELECT name, bio, theme_html, pulse, city_public, tier, avatar FROM users WHERE name = ?").bind(p[2]).first();
+    const row = await env.DB.prepare("SELECT name, bio, theme_html, pulse, city_public, tier, avatar, hidden FROM users WHERE name = ?").bind(p[2]).first();
     if (!row) return json({ error: "no such user" }, 404);
-    const u = { ...row, tier: tierById(row.tier) };
+    const u = { ...row, tier: tierById(row.tier), hidden: JSON.parse((row.hidden as string) || "[]") };
     const { results: repos } = await env.DB.prepare(
       "SELECT owner, name, visibility, level, created_at, expires_at FROM repos WHERE owner = ? AND (visibility = 'public' OR owner = ?) AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC").bind(p[2], user, Date.now()).all();
     const { results: playlists } = await env.DB.prepare("SELECT * FROM playlists WHERE owner = ? ORDER BY id DESC").bind(p[2]).all();

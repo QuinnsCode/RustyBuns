@@ -100,7 +100,9 @@ const MAX_LOG = 256 * 1024;
 export const STALE = 10 * 60_000;
 /** A run of ours still queued after this long has no runner coming for it: the cron cancels it. */
 export const UNCLAIMED = 6 * 3600_000;
-const COLUMNS = "id, owner, repo, ref, sha, name, runner, status, started_at, finished_at, url, external_id, created_at, runner_label";
+/** Both notes that hand a run to the desktop (queueHere's, handToDesktop's) say this, so a listing can tell a handed-over run from an ordinary queued one. */
+const HANDED = "queued for the desktop app";
+const COLUMNS = `id, owner, repo, ref, sha, name, runner, status, started_at, finished_at, url, external_id, created_at, runner_label, (runner = 'desktop' AND status = 'queued' AND log LIKE '%${HANDED}%') AS needs_desktop`;
 
 /** The setting as stored: JSON, or the comma-separated names it used to be. */
 const parseRequired = (raw: string): Required[] => {
@@ -387,7 +389,7 @@ export async function planChecks(env: Env, owner: string, repo: string, ref: str
  */
 /** A container run that failed because the image lacks a tool goes back in the queue for the desktop, not red. */
 export async function handToDesktop(env: Env, run: CheckRun, tool: Need) {
-  const note = `\n${NEED_LABEL[tool]} isn't in the hosted image. Needs desktop: queued for the desktop app or a runner of your own (scripts/runner.ts).\n`;
+  const note = `\n${NEED_LABEL[tool]} isn't in the hosted image. Needs desktop: ${HANDED} or a runner of your own (scripts/runner.ts).\n`;
   await env.DB.prepare(`UPDATE check_runs SET runner = 'desktop', status = 'queued', started_at = NULL, finished_at = NULL, runner_label = NULL, heartbeat_at = NULL, claimed_by = NULL,
     log = substr(log || ?, -${MAX_LOG}) WHERE id = ?`).bind(note, run.id).run();
   const after = await get(env, run.id);
@@ -409,7 +411,7 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
     // A check the hosted image can't run (Docker, cargo) is queued for the desktop or a runner of the owner's own.
     const needs = runner === "container" && command ? scanNeeds(command) : [];
     const run = await recordRun(env, { owner, repo, ref, sha, name, runner: needs.length ? "desktop" : runner, command }, by);
-    const note = needs.length ? `${needsText(needs)} Queued for the desktop app or a runner of your own (scripts/runner.ts).\n` : "";
+    const note = needs.length ? `${needsText(needs)} Needs desktop: ${HANDED} or a runner of your own (scripts/runner.ts).\n` : "";
     if (why || note) await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(why + note, run.id).run();
   }
   await (await import("./ci-runner.ts")).kick(env, owner, repo).catch(() => null);

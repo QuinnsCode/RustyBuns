@@ -2,6 +2,10 @@
 
 Your profile page is a site you rebuild however you like, and an agent can rebuild it for you.
 
+## Your page is yours, the rest stays
+
+Whatever you build, the profile around it keeps its repos, pulse, stamps, collections and city. They are all there until you take them off: **Edit page** has a checkbox for each, or `PUT /api/me {hidden: ["pulse", "city"]}` (any of `repos`, `pulse`, `stamps`, `collections`, `city`). Visitors don't see a hidden box; you still do, dimmed, so you can put it back.
+
 ## Where it lives
 
 Make a **public repo named `page`**. Its files are your site: `index.html` first, then whatever it loads (`world.js`, `style.css`, `data.json`). It is served at `/api/users/<you>/page/`, and your profile shows it in a frame.

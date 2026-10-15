@@ -47,6 +47,7 @@ export type Site = {
   name: string;
   tagline: string;
   repo: string; // owner/name on GitHub
+  ogImage?: string; // a 1200x630 png in scripts/site/assets/, served as og.png for link previews
   pages(src: Source): Page[];
 };
 
@@ -143,6 +144,8 @@ function layout(site: Site, page: Page, pages: Page[], body: string, src: Source
   const description = page.path === "index.html" ? site.tagline : summary(page.md, site.tagline);
   const url = base() ? `${base()}/${dir}/${src.version}/${page.path}` : "";
   const sheet = (file: string) => esc(posix.join(root, file));
+  // Link previews need an absolute URL, so the image tags appear only when SITE_URL is set and the png exists.
+  const og = site.ogImage && url && existsSync(join(import.meta.dir, "assets", site.ogImage)) ? `${base()}/${dir ? `${dir}/` : ""}og.png` : "";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -159,7 +162,7 @@ ${src.version === "latest" ? "" : '<meta name="robots" content="noindex">\n'}${u
 <meta property="og:type" content="${page.path === "index.html" ? "website" : "article"}">
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(description)}">
-${url ? `<meta property="og:url" content="${esc(url)}">\n` : ""}<meta name="twitter:card" content="summary">
+${url ? `<meta property="og:url" content="${esc(url)}">\n` : ""}${og ? `<meta property="og:image" content="${esc(og)}">\n<meta property="og:image:width" content="1200">\n<meta property="og:image:height" content="630">\n<meta property="og:image:alt" content="${esc(`${site.name}: ${site.tagline}`)}">\n<meta name="twitter:image" content="${esc(og)}">\n` : ""}<meta name="twitter:card" content="${og ? "summary_large_image" : "summary"}">
 <meta name="twitter:title" content="${esc(title)}">
 <meta name="twitter:description" content="${esc(description)}">
 <link rel="icon" href="${sheet("favicon.svg")}" type="image/svg+xml">
@@ -242,6 +245,7 @@ export function buildSite(site: Site, out: string, sources: Source[], dir = ""):
   const assets = join(import.meta.dir, "assets");
   mkdirSync(out, { recursive: true });
   for (const f of ["site.css", "site.js", "votes.js", "favicon.svg"]) writeFileSync(join(out, f), readFileSync(join(assets, f)));
+  if (site.ogImage && existsSync(join(assets, site.ogImage))) writeFileSync(join(out, "og.png"), readFileSync(join(assets, site.ogImage)));
   mkdirSync(join(out, "fonts"), { recursive: true });
   for (const f of readdirSync(join(assets, "fonts"))) writeFileSync(join(out, "fonts", f), readFileSync(join(assets, "fonts", f)));
   const root = base() ? `${base()}/${dir}` : "";

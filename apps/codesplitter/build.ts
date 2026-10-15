@@ -3,6 +3,7 @@
 import { mkdir, copyFile, readdir, readFile, writeFile } from "node:fs/promises";
 import { headersFile, inlineScriptHashes } from "./src/security.ts";
 import { features } from "./features.ts";
+import { LINK_HEADER, LLMS_TXT, ROBOTS_TXT } from "./src/discover.ts";
 import { buildGitpath } from "./src/gitpath/build.ts";
 import { buildLucide } from "./src/lucide-subset.ts";
 
@@ -23,9 +24,17 @@ const hashed = async (body: string, ext: string) => {
 };
 const cssUrl = await hashed(css[0]![1]!, "css");
 const jsUrl = await hashed(js[0]![1]!, "js");
+// The link-preview card: src/og.png (1200x630) is copied and tagged only once it exists, so no tag points at a 404.
+const ogOrigin = "https://codesplitter.notryanquinn.workers.dev";
+const hasOg = await Bun.file("src/og.png").exists();
+if (hasOg) await copyFile("src/og.png", "dist/client/og.png");
+const ogTags = hasOg
+  ? `<meta property="og:site_name" content="codeSplitter"><meta property="og:type" content="website"><meta property="og:title" content="codeSplitter"><meta property="og:image" content="${ogOrigin}/og.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${ogOrigin}/og.png">\n`
+  : "";
 await writeFile("dist/client/index.html", home
   .replace(css[0]![0], () => `<link href="${cssUrl}" rel="stylesheet">`)
-  .replace(js[0]![0], () => `<script src="${jsUrl}"></script>`));
+  .replace(js[0]![0], () => `<script src="${jsUrl}"></script>`)
+  .replace("</head>", () => `${ogTags}</head>`));
 await copyFile("src/play.html", "dist/client/play.html");
 // The game's code city mode, which play.html loads on #c/<name>.
 await copyFile("src/city.js", "dist/client/city.js");
@@ -62,7 +71,10 @@ if (!mr.success) { for (const l of mr.logs) console.error(l); process.exit(1); }
 const pages = ["index.html", "play.html", "features.html", "reference.html", "mcp.html", "map.html", "mervin-watch.html"];
 const hashes = new Set<string>();
 for (const page of pages) for (const h of inlineScriptHashes(await readFile(`dist/client/${page}`, "utf8"))) hashes.add(h);
-await writeFile("dist/client/_headers", headersFile([...hashes]) + "\n/assets/*\n  cache-control: public, max-age=31536000, immutable\n");
+// What a cold agent finds at the root (src/discover.ts): llms.txt, robots.txt and a Link header on /.
+await writeFile("dist/client/llms.txt", LLMS_TXT);
+await writeFile("dist/client/robots.txt", ROBOTS_TXT);
+await writeFile("dist/client/_headers", headersFile([...hashes]) + `\n/\n  link: ${LINK_HEADER}\n` + "\n/assets/*\n  cache-control: public, max-age=31536000, immutable\n");
 // Geist, served from here (no Google Fonts call): the stylesheet, both variable fonts and their license.
 await mkdir("dist/client/fonts", { recursive: true });
 for (const f of ["geist.css", "Geist-Variable.woff2", "GeistMono-Variable.woff2", "LICENSE.txt"]) await copyFile(`src/fonts/${f}`, `dist/client/fonts/${f}`);

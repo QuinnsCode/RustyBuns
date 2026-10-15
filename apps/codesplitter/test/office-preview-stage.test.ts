@@ -28,3 +28,9 @@ test("office-preview takes nothing over from the live Worker, protects nothing a
   expect(preview.bindings.BETTER_AUTH_URL).toEqual({ type: "var", value: "https://codesplitter-office-preview.notryanquinn.workers.dev" });
   expect(preview.bindings.TURNSTILE_SITE_KEY).toEqual({ type: "var", value: "" });
 });
+
+test("the live stage keeps every database, bucket, KV and index through a destroy", () => {
+  const data = Object.entries(live.bindings).filter(([, b]) => ["d1", "r2", "kv", "vectorize"].includes(b.type));
+  expect(data.length).toBeGreaterThan(0);
+  expect(data.filter(([, b]) => !("protect" in b && b.protect)).map(([n]) => n)).toEqual([]);
+});
