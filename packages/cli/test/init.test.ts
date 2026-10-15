@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { inferTsconfigAliases, detectPm, inferPostgres, viteProxyPaths, viteProxyTargets, proxyServers, type SiblingServer } from "../src/glue/infer.ts";
 import { parseWranglerToml, droppedWranglerKeys } from "../src/wrangler.ts";
 import { workspaceRoot } from "../src/glue/deploy-deps.ts";
-import { viteConfig } from "../src/glue/port-vite.ts";
+import { craProxy, viteConfig, vueCliProxy } from "../src/glue/port-vite.ts";
 
 // These tests spawn the CLI, which takes seconds under --parallel load; bun ignores bunfig's timeout.
 setDefaultTimeout(30_000);
@@ -621,17 +621,17 @@ test("init --port-vite: CRA becomes a Vite app, then init goes on", () => {
 
 test("init --port-vite: Vue CLI 2 gets plugin-vue2, Vue 2.7, the @ alias and BASE_URL", () => {
   const p = project({
-    "package.json": JSON.stringify({ name: "yacht", dependencies: { vue: "^2.6.12" }, devDependencies: { "@vue/cli-service": "~4.4.0" },
+    "package.json": JSON.stringify({ name: "yacht", dependencies: { vue: "^2.6.12" }, devDependencies: { "@vue/cli-service": "~4.4.0", "vuetify-loader": "^1.7.0" },
       scripts: { serve: "vue-cli-service serve", build: "vue-cli-service build", lint: "vue-cli-service lint" } }),
     "bun.lock": "",
     "public/index.html": `<html><head><title><%= htmlWebpackPlugin.options.title %></title><link rel="icon" href="<%= BASE_URL %>favicon.ico"></head>\n<body>\n  <div id="app"></div>\n  <!-- built files will be auto injected -->\n</body></html>\n`,
     "src/main.js": `import App from "@/App";\n`,
     "src/App.vue": `<template lang="html"><div /></template>\n`,
-    "vue.config.js": `module.exports = {\n  publicPath: "./",\n  devServer: {\n    proxy: { "/api": {} },\n  },\n};\n`,
+    "vue.config.js": `module.exports = {\n  publicPath: "./",\n  devServer: {\n    proxy: { "/api": { target: "http://localhost:3000", pathRewrite: { "^/api": "" } } },\n  },\n};\n`,
   });
   const r = p.run("init", "--port-vite");
   expect(r.code).toBe(0);
-  expect(r.out).toMatch(/vue\.config\.js isn't read: port publicPath, devServer by hand/);
+  expect(r.out).toMatch(/vue\.config\.js isn't read after this: publicPath and devServer\.proxy are in vite\.config\.ts/);
   expect(r.out).toMatch(/source:\s+src\/ \(vite, aliases @->src\)/);
   const html = p.read("index.html");
   expect(html).toContain("<title>yacht</title>");
@@ -643,10 +643,23 @@ test("init --port-vite: Vue CLI 2 gets plugin-vue2, Vue 2.7, the @ alias and BAS
   expect(cfg).toContain('"process.env.BASE_URL"');
   expect(cfg).toContain('".vue"]');
   expect(cfg).toContain("template-lang-html");
+  expect(cfg).toContain("Components({ resolvers: [VuetifyResolver()] })");   // vuetify-loader's job
+  expect(cfg).toContain('base: "./"');
+  expect(cfg).toContain('"/api": { target: "http://localhost:3000", rewrite:');
   const pkg = JSON.parse(p.read("package.json"));
+  expect(pkg.devDependencies["unplugin-vue-components"]).toBeDefined();
   expect(pkg.dependencies.vue).toBe("^2.7.16");
   expect(pkg.devDependencies).toMatchObject({ vite: "^7.3.0", "@vitejs/plugin-vue2": "^2.3.0" });  // plugin-vue2 stops at Vite 7
   expect(pkg.scripts).toMatchObject({ serve: "vite", build: "vite build", lint: "vue-cli-service lint" });
+});
+
+test("port-vite: proxies come from setupProxy.js and devServer.proxy only when they are plain data", () => {
+  expect(craProxy(`app.use("/api", createProxyMiddleware({ target: "http://localhost:5000", changeOrigin: true }));`))
+    .toEqual({ "/api": { target: "http://localhost:5000", changeOrigin: true } });
+  expect(craProxy(`app.use("/api", createProxyMiddleware({ target: process.env.API }));`)).toBeUndefined();
+  expect(craProxy(`app.use(cors()); app.use("/a", proxy({ target: "http://x" }));`)).toBeUndefined();
+  expect(vueCliProxy(`module.exports = { devServer: { proxy: { "/a": "http://x" } } };`)).toEqual({ "/a": "http://x" });
+  expect(vueCliProxy(`module.exports = { devServer: { proxy: { "/a": { target: URL } } } };`)).toBeUndefined();
 });
 
 test("port-vite: a Vue 3 app gets @vitejs/plugin-vue, and nothing it doesn't need", () => {

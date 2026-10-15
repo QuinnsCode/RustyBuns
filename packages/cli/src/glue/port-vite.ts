@@ -52,9 +52,73 @@ export interface ViteConfigOpts {
   require?: boolean;
   /** `<template lang="html">`: vue-loader ignored it, the Vite plugin looks for an "html" preprocessor. */
   langHtml?: boolean;
+  /** vuetify-loader registered Vuetify components at build time; unplugin-vue-components does the same (#850). */
+  vuetify?: boolean;
+  /** vue.config.js publicPath, as Vite's base. */
+  base?: string;
+  /** devServer.proxy or setupProxy.js, as server.proxy. */
+  proxy?: Record<string, ProxyEntry>;
 }
 
-export function viteConfig({ stack, vue2, jsxInJs, require, langHtml }: ViteConfigOpts): string {
+export type ProxyEntry = string | { target?: string; changeOrigin?: boolean; ws?: boolean; secure?: boolean; pathRewrite?: Record<string, string> };
+
+/** A plain data literal from config source, or undefined if it holds anything else (calls, names, spreads). */
+export function literal(src: string): unknown {
+  const bare = src.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '""').replace(/\b(true|false|null)\b|[A-Za-z_$][\w$]*\s*:/g, "");
+  if (/[()=;`]|\.\.\.|[A-Za-z_$]/.test(bare)) return undefined;
+  try { return new Function(`return (${src});`)(); } catch { return undefined; }
+}
+
+/** The `{...}` starting at src[at], braces balanced and strings skipped. */
+function braces(src: string, at: number): string | undefined {
+  let depth = 0;
+  for (let i = at, q = ""; i < src.length; i++) {
+    const c = src[i]!;
+    if (q) { if (c === "\\") i++; else if (c === q) q = ""; continue; }
+    if (c === '"' || c === "'" || c === "`") q = c;
+    else if (c === "{") depth++;
+    else if (c === "}" && --depth === 0) return src.slice(at, i + 1);
+  }
+}
+
+const isTable = (v: unknown): v is Record<string, ProxyEntry> => !!v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length > 0;
+
+/** server.proxy from Vue CLI's devServer.proxy, or undefined when it isn't a plain object of paths. */
+export function vueCliProxy(config: string): Record<string, ProxyEntry> | undefined {
+  const at = config.search(/\bproxy\s*:\s*\{/);
+  const src = at < 0 ? undefined : braces(config, config.indexOf("{", at));
+  const v = src && literal(src);
+  return isTable(v) ? v : undefined;
+}
+
+/** server.proxy from CRA's `app.use("/api", createProxyMiddleware({...}))` calls; undefined unless every use() is that shape. */
+export function craProxy(setup: string): Record<string, ProxyEntry> | undefined {
+  const calls = [...setup.matchAll(/\.use\(\s*(["'])([^"']+)\1\s*,\s*(?:createProxyMiddleware|proxy)\(\s*(\{)/g)];
+  const out: Record<string, ProxyEntry> = {};
+  for (const m of calls) {
+    const src = braces(setup, m.index! + m[0].length - 1);
+    const v = src && literal(src);
+    if (!v || typeof v !== "object") return undefined;
+    out[m[2]!] = v as ProxyEntry;
+  }
+  return calls.length && calls.length === (setup.match(/\.use\(/g) ?? []).length ? out : undefined;
+}
+
+/** A proxy table as vite.config.ts lines; http-proxy-middleware's pathRewrite becomes Vite's rewrite function. */
+function proxyLines(proxy: Record<string, ProxyEntry>): string[] {
+  return Object.entries(proxy).map(([path, e]) => {
+    if (typeof e === "string") return `        ${JSON.stringify(path)}: ${JSON.stringify(e)},`;
+    const { pathRewrite, ...rest } = e;
+    const props = Object.entries(rest).map(([k, v]) => `${k}: ${JSON.stringify(v)}`);
+    if (pathRewrite) {
+      const rules = Object.entries(pathRewrite).map(([re, to]) => `[new RegExp(${JSON.stringify(re)}), ${JSON.stringify(to)}]`);
+      props.push(`rewrite: (p: string) => ([${rules.join(", ")}] as const).reduce((s, [re, to]) => s.replace(re, to), p)`);
+    }
+    return `        ${JSON.stringify(path)}: { ${props.join(", ")} },`;
+  });
+}
+
+export function viteConfig({ stack, vue2, jsxInJs, require, langHtml, vuetify, base, proxy }: ViteConfigOpts): string {
   const cra = stack === "cra";
   const prefix = cra ? "REACT_APP_" : "VUE_APP_";
   const plugin = cra ? `import react from "@vitejs/plugin-react";` : `import vue from "@vitejs/plugin-vue${vue2 ? "2" : ""}";`;
@@ -63,6 +127,7 @@ export function viteConfig({ stack, vue2, jsxInJs, require, langHtml }: ViteConf
     `import { defineConfig, loadEnv${jsxInJs ? ", transformWithOxc, type Plugin" : ""} } from "vite";`,
     ...(cra ? [] : [`import { fileURLToPath } from "node:url";`]),
     plugin,
+    ...(vuetify ? [`import Components from "unplugin-vue-components/vite";`, `import { VuetifyResolver } from "unplugin-vue-components/resolvers";`] : []),
     ...(jsxInJs ? [
       ``,
       `// JSX in .js files, as CRA allowed: Oxc picks the language from the extension, so parse them as JSX first.`,
@@ -83,11 +148,13 @@ export function viteConfig({ stack, vue2, jsxInJs, require, langHtml }: ViteConf
       `      { name: "template-lang-html", enforce: "pre", transform: (code: string, id: string) =>`,
       `        id.endsWith(".vue") ? code.replace(/<template(\\s[^>]*)?\\slang=["']html["']/g, "<template$1") : undefined },`,
       `      vue(),`,
+      ...(vuetify ? [`      Components({ resolvers: [VuetifyResolver()] }),`] : []),
       `    ],`,
-    ] : [`    plugins: [${cra ? (jsxInJs ? "jsxInJs(), react()" : "react()") : "vue()"}],`]),
+    ] : [`    plugins: [${cra ? (jsxInJs ? "jsxInJs(), react()" : "react()") : vuetify ? "vue(), Components({ resolvers: [VuetifyResolver()] })" : "vue()"}],`]),
+    ...(base ? [`    base: ${JSON.stringify(base)},`] : []),
     `    envPrefix: ["VITE_", "${prefix}"],`,
     `    define: {`,
-    cra ? `      "process.env.PUBLIC_URL": JSON.stringify(""),` : `      "process.env.BASE_URL": JSON.stringify("/"),`,
+    cra ? `      "process.env.PUBLIC_URL": JSON.stringify(""),` : `      "process.env.BASE_URL": JSON.stringify(${JSON.stringify(base ?? "/")}),`,
     `      ...Object.fromEntries(Object.entries(env).map(([k, v]) => [\`process.env.\${k}\`, JSON.stringify(v)])),`,
     `    },`,
     ...(cra ? [] : [
@@ -101,7 +168,8 @@ export function viteConfig({ stack, vue2, jsxInJs, require, langHtml }: ViteConf
       `    // require() in the app's own source: bundle it rather than leave it for the browser.`,
       `    build: { commonjsOptions: { include: [/node_modules/, /src\\//], extensions: [".js", ".jsx", ".ts", ".tsx", ".vue"], transformMixedEsModules: true } },`,
     ] : []),
-    `    server: { port: ${cra ? 3000 : 8080} },`,
+    ...(proxy ? [`    server: {`, `      port: ${cra ? 3000 : 8080},`, `      proxy: {`, ...proxyLines(proxy), `      },`, `    },`]
+      : [`    server: { port: ${cra ? 3000 : 8080} },`]),
     `  };`,
     `});`,
   ];
@@ -183,8 +251,12 @@ export function planPort(root: string, stack: Stack): Port | string {
   const prefix = cra ? "REACT_APP_" : "VUE_APP_";
   const other = [...env].filter((k) => !k.startsWith(prefix) && !["NODE_ENV", "PUBLIC_URL", "BASE_URL"].includes(k));
   if (other.length) notes.push(`process.env.${other.join(", process.env.")}: not ${prefix}*, so not defined; add them to define in vite.config.ts.`);
+  let proxy: Record<string, ProxyEntry> | undefined, base: string | undefined, vuetify = false;
   if (cra) {
-    if (existsSync(join(root, "src/setupProxy.js"))) notes.push("src/setupProxy.js: port its proxies to server.proxy in vite.config.ts.");
+    if (existsSync(join(root, "src/setupProxy.js"))) {
+      proxy = craProxy(text("src/setupProxy.js"));
+      if (!proxy) notes.push("src/setupProxy.js: port its proxies to server.proxy in vite.config.ts.");
+    }
     const svgr = code.filter((f) => /ReactComponent\s+as\b/.test(text(f)));
     if (svgr.length) notes.push(`SVGs imported as components in ${list(svgr)}: add vite-plugin-svgr.`);
     const conf = ["jsconfig.json", "tsconfig.json"].find((f) => existsSync(join(root, f)) && /"baseUrl"\s*:\s*"\.?\/?src"/.test(text(f)));
@@ -193,12 +265,24 @@ export function planPort(root: string, stack: Stack): Port | string {
   } else {
     const vc = ["vue.config.js", "vue.config.ts", "vue.config.cjs"].find((f) => existsSync(join(root, f)));
     if (vc) {
+      const conf = text(vc);
       // Top-level keys only: the indent of the first one.
-      const pad = text(vc).match(/^([ \t]+)\w+\s*:/m)?.[1] ?? "  ";
-      const keys = [...text(vc).matchAll(new RegExp(`^${pad}(\\w+)\\s*:`, "gm"))].map((m) => m[1]!);
-      notes.push(`${vc} isn't read: port ${keys.length ? keys.join(", ") : "its settings"} by hand (devServer.proxy -> server.proxy, publicPath -> base).`);
+      const pad = conf.match(/^([ \t]+)\w+\s*:/m)?.[1] ?? "  ";
+      const keys = [...conf.matchAll(new RegExp(`^${pad}(\\w+)\\s*:`, "gm"))].map((m) => m[1]!);
+      const pub = conf.match(/^\s*publicPath\s*:\s*(["'])([^"']*)\1/m)?.[2];
+      if (pub !== undefined) base = pub;
+      proxy = vueCliProxy(conf);
+      // devServer is done when proxy was all it held.
+      const dev = braces(conf, conf.indexOf("{", Math.max(0, conf.search(/\bdevServer\s*:/))));
+      const devDone = !!proxy && !!dev && !/\w+\s*:/.test(dev.replace(/\bproxy\s*:\s*\{[\s\S]*\}/, ""));
+      const left = keys.filter((k) => !(k === "publicPath" && pub !== undefined) && !(k === "devServer" && devDone));
+      if (left.length || (!keys.length)) notes.push(`${vc} isn't read: port ${left.length ? left.join(", ") : "its settings"} by hand (devServer.proxy -> server.proxy, publicPath -> base).`);
+      else notes.push(`${vc} isn't read after this: publicPath and devServer.proxy are in vite.config.ts; remove it when nothing else uses it.`);
     }
-    if (deps["vuetify-loader"]) notes.push("vuetify-loader registered Vuetify components for you; use unplugin-vue-components with its Vuetify resolver.");
+    if (deps["vuetify-loader"]) {
+      vuetify = true;
+      devDependencies["unplugin-vue-components"] = "^0.27.5";
+    }
   }
   const tilde = src.filter((f) => /@(import|use)\s+["']~/.test(text(f)));
   if (tilde.length) notes.push(`~ in Sass/Less imports (${list(tilde)}): Vite doesn't strip it; drop the ~.`);
@@ -206,7 +290,8 @@ export function planPort(root: string, stack: Stack): Port | string {
   return {
     writes: {
       "vite.config.ts": viteConfig({ stack, vue2, jsxInJs, require: requires.length > 0,
-        langHtml: !cra && src.some((f) => f.endsWith(".vue") && /<template[^>]*\slang=["']html["']/.test(text(f))) }),
+        langHtml: !cra && src.some((f) => f.endsWith(".vue") && /<template[^>]*\slang=["']html["']/.test(text(f))),
+        vuetify, base: base && base !== "/" ? base : undefined, proxy }),
       "index.html": out,
       "package.json": JSON.stringify(next, null, indentOf(raw)) + "\n",
     },
