@@ -37,6 +37,7 @@
 //   DELETE /api/beams/:id                       (whoever beamed it, or the repo's owner) withdraw it
 //   GET    /api/me/beams                        beams sent to you, and the ones you sent
 
+import { parseJson } from "./util.ts";
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -442,7 +443,7 @@ async function changedPaths(env: Env, h: Hosted, a: string | null, b: string | n
 async function hostedFiles(env: Env, h: Hosted, b: BeamRow) {
   const [commit, onto] = await Promise.all([h.handle.readCommit(b.sha), h.handle.readCommit(b.onto)]);
   if (!commit || !onto) return null;
-  return diffAt(env, h, onto.treeHash, commit.treeHash, (JSON.parse(b.files) as Change[]).map((c) => c.path));
+  return diffAt(env, h, onto.treeHash, commit.treeHash, parseJson<Change[]>(b.files, []).map((c) => c.path));
 }
 
 /** A hosted beam as `git format-patch` writes it: a mail per commit, the bottom one first; null when one is gone. */
@@ -473,8 +474,8 @@ const view = (b: BeamRow | null) => b && ({
   id: b.id, owner: b.owner, repo: b.repo, branch: b.branch, kind: b.kind, by: b.by, to: b.to_user, title: b.title, message: b.message,
   onto: { sha: b.onto, label: b.onto_label }, sha: b.sha, commits: b.commits,
   // A stacked branch's beam: its commits, the bottom one first (#1025). One commit otherwise.
-  stack: (b.stack ? JSON.parse(b.stack) : [{ branch: b.branch, sha: b.sha, title: b.title }]) as { branch: string; sha: string; title: string }[],
-  files: JSON.parse(b.files) as Change[], dropped: JSON.parse(b.dropped) as Dropped[],
+  stack: parseJson<{ branch: string; sha: string; title: string }[]>(b.stack, [{ branch: b.branch, sha: b.sha, title: b.title }]),
+  files: parseJson<Change[]>(b.files, []), dropped: parseJson<Dropped[]>(b.dropped, []),
   status: b.status, created_at: b.created_at, page: `/#/beam/${b.id}`, patch: `/api/beams/${b.id}/patch`,
 });
 const summary = (b: BeamRow) => { const v = view(b)!; return { ...v, files: v.files.length, dropped: v.dropped.length }; };

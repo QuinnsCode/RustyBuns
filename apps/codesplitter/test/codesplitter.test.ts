@@ -986,8 +986,8 @@ describe("rate limits", () => {
       ws.onMessage(JSON.stringify({ type: "ops", id, ops }));
       for (const end = performance.now() + 15_000; performance.now() < end;) { const a = got.find((m) => m.id === id); if (a) return a; await Bun.sleep(5); }
     };
-    // An op that makes the file throw is a nack saying why, not silence.
-    expect(await edit(1, [null])).toMatchObject({ type: "nack", error: expect.stringMatching(/couldn't take it/) });
+    // An op the file can't read is a nack saying why, not silence.
+    expect(await edit(1, [null])).toMatchObject({ type: "nack", error: "ops[0]: an object" });
     // D1 down under the edit limit: the edit still lands.
     const prepare = call.env.DB.prepare.bind(call.env.DB);
     call.env.DB.prepare = (sql: string) => { if (/limit_rules/.test(sql)) throw new Error("D1 is down"); return prepare(sql); };

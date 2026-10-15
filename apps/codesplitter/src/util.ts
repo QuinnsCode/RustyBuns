@@ -15,6 +15,13 @@ export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt
 export const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 /** A number padded so keys sort in numeric order as text. */
 export const pad10 = (n: number) => String(n).padStart(10, "0");
+/** `s` parsed as JSON, or `fallback` when it's empty or not JSON: a stored row that went bad spoils one entry, not the whole listing. */
+export const parseJson = <T>(s: string | null | undefined, fallback: T): T => { try { return s ? JSON.parse(s) : fallback; } catch { return fallback; } };
+/** `v` when it's an http(s) URL short enough to store and link to, else null. */
+export const httpUrl = (v: unknown, max = 2048): string | null => {
+  if (typeof v !== "string" || v.length > max) return null;
+  try { return /^https?:$/.test(new URL(v).protocol) ? v : null; } catch { return null; }
+};
 /** `fn` over `items`, `size` at a time, in order. */
 export const inBatches = async <T, R>(items: T[], fn: (t: T) => Promise<R>, size = 8): Promise<R[]> => {
   const out: R[] = [];

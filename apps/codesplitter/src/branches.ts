@@ -48,7 +48,7 @@ import { hunks, revertOps } from "./review.ts";
 import { MERVIN } from "./mervin.ts";
 import { noteConflict } from "./usage.ts";
 import { busyOn, clashIn, taskFiles, waves, type Busy, type Clash, type Side } from "./merge-plan.ts";
-import { sha256 } from "./util.ts";
+import { parseJson, sha256 } from "./util.ts";
 import { countMerge } from "./stats.ts";
 import { answerOf, deleteLearning, hashesPaths, learningOn, learningState, pathKey, recordEvents, setLearning, type Event as LearnEvent } from "./mervin-learning.ts";
 import { answerRows, fightRows, fightWeights, suggestions, weightOrder } from "./mervin-learn.ts";
@@ -549,7 +549,7 @@ export interface Took { branch: string; status: "updated" | "cards" | "rebuildin
 async function afterBlocker(env: Env, owner: string, repo: string, name: string, blocker: string, user: string): Promise<Took> {
   const b = await openBranch(env, owner, repo, name);
   if (!b) return { branch: name, status: "failed", error: "not open any more" };
-  await waitFor(env, owner, repo, name, (JSON.parse(b.waits_on ?? "[]") as string[]).filter((w) => w !== blocker));
+  await waitFor(env, owner, repo, name, parseJson<string[]>(b.waits_on, []).filter((w) => w !== blocker));
   try { return await takeMain(env, owner, repo, b, user, { rebuild: blocker }); }
   finally { if (!await waiting(env, owner, repo, name)) await branchEdited(env, owner, repo, name, Date.now(), b.by); }
 }
@@ -949,7 +949,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     return json({ name: b, by: user, status: "open", parent: on }, 201);
   }
 
-  const branch = name && await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first();
+  const branch = name && await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first<BranchRow>();
   if (!branch) return json({ error: "no such branch" }, 404);
   const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as { path: string; merged: number; deleted: number; blob: string | null; mode: string | null }[]);
 

@@ -129,7 +129,7 @@ type KeyInfo = { set: false } | { set: true; by: string; at: number; last4: stri
 
 /** What anyone, the owner included, may see about one key. */
 export async function keyInfo(env: Env, owner: string, repo: string, provider: Provider = "cloudflare"): Promise<KeyInfo> {
-  const r = await env.DB.prepare("SELECT last4, set_by, set_at FROM deploy_keys WHERE owner = ? AND repo = ? AND provider = ?").bind(owner, repo, provider).first();
+  const r = await env.DB.prepare("SELECT last4, set_by, set_at FROM deploy_keys WHERE owner = ? AND repo = ? AND provider = ?").bind(owner, repo, provider).first<{ last4: string; set_by: string; set_at: number }>();
   return r ? { set: true, by: r.set_by, at: r.set_at, last4: r.last4 } : { set: false };
 }
 

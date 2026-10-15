@@ -118,7 +118,7 @@ async function piece(bucket: R2Like, key: string, offset: number, size: number) 
 export function chunkRepo(env: Env, bucket: R2Like, slug: string, tip: { sha: string; message: string }): ArtifactsRepo {
   const commit: CommitMeta = { hash: tip.sha, treeHash: treeKey(slug, tip.sha, ""), message: tip.message, parents: [], author: { name: "", email: "" }, authoredAt: 0 };
   const tree = async (hash: string): Promise<TreeEntry[] | null> => {
-    const row = await env.DB.prepare("SELECT entries FROM tree_cache WHERE hash = ?").bind(hash).first();
+    const row = await env.DB.prepare("SELECT entries FROM tree_cache WHERE hash = ?").bind(hash).first<{ entries: string }>();
     return row ? JSON.parse(row.entries) : null;
   };
   const refuse = async (): Promise<never> => { throw new Error("this level is too big for Artifacts: it's kept in R2, read-only, with no git"); };

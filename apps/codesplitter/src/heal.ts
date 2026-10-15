@@ -23,6 +23,7 @@
 // too (#1219, rebuildTask): a rebuild, as a person would merge main in and keep both sides (branches.ts).
 // It counts as one of the branch's attempts.
 
+import { parseJson } from "./util.ts";
 import type { Env } from "./env.ts";
 import type { CheckRun } from "./checks.ts";
 import { adminsOnly, agentsUnavailable, hostedBudget, installedHarnesses, policyFor } from "./agent-routes.ts";
@@ -61,7 +62,7 @@ export async function heals(env: Env, owner: string, repo: string, branch: strin
   const a = await attempts(env, owner, repo, branch);
   if (!a) return null;
   const list = a.runs.map((r) => {
-    const x = r.result ? JSON.parse(r.result) as { applied?: number; error?: string; also?: string[]; edited?: string[] } : {};
+    const x = parseJson<{ applied?: number; error?: string; also?: string[]; edited?: string[] }>(r.result, {});
     return { id: r.id, path: r.path, harness: r.harness, status: r.status, started: r.started, why: r.task.split("\n")[0], ...(x.applied !== undefined && { applied: x.applied }), ...(x.error && { error: x.error }), ...(x.also && { also: x.also }), ...(x.edited && { edited: x.edited }) };
   });
   const running = list.some((r) => r.status === "running");
@@ -97,7 +98,7 @@ export async function openFix(env: Env, owner: string, repo: string, branch: str
   const last = a.runs.at(-1);
   if (last && sameFailure(last.task.replace(/^[\s\S]*\nTASK: /, ""), task)) {
     if ((await policyFor(env, owner, repo, path)).over === "escalate") return { skipped: "the same failure twice: a person's turn" };
-    const x = last.result ? JSON.parse(last.result) as { edited?: string[] } : {};
+    const x = parseJson<{ edited?: string[] }>(last.result, {});
     task = `${writeNote({ done: [`fix task ${last.id} edited ${[last.path, ...x.edited ?? []].join(", ")}`], broke: ["same failure after it"], dont: ["that fix again; find the real cause"] })}\nTASK: ${task}`;
   }
   const spent = await hostedBudget(env);

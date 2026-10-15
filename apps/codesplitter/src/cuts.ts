@@ -26,7 +26,7 @@ import { cardFont, renderCard, type CardLine } from "./card.ts";
 import { json, type Body, type Env } from "./env.ts";
 import { isAdmin } from "./identity.ts";
 import type { Doc, Line } from "./lines.ts";
-import { esc } from "./util.ts";
+import { parseJson, esc } from "./util.ts";
 
 export type Mark = "pass" | "fail";
 export interface CutRun { at: number; code: number; passed: number; failed: number; out: string; marks: Record<string, Record<string, Mark>>; note?: string }
@@ -362,7 +362,7 @@ interface CutRow { id: string; owner: string; repo: string; branch: string; path
 
 /** The cut's files as they are on its branch, each line with its line number on main now (null: new in the cut, or gone from main). */
 async function cutFiles(env: Env, c: CutRow) {
-  return Promise.all((JSON.parse(c.paths) as string[]).map(async (path) => {
+  return Promise.all(parseJson<string[]>(c.paths, []).map(async (path) => {
     const [cut, main] = await Promise.all([doc(env, c.owner, c.repo, path, c.branch), doc(env, c.owner, c.repo, path)]);
     const at = new Map(main.lines.map((l, i) => [l.id, i + 1]));
     return { path, lines: cut.lines.map((l) => ({ ...l, n: at.get(l.id) ?? null })) };
@@ -414,7 +414,7 @@ export async function cutRoutes(req: Request, env: Env, p: string[], url: URL, u
 
   // GET /api/cuts/:id/share  link previews read the meta tags; people go on to the cut's page
   if (p[3] === "share" && req.method === "GET") {
-    const title = `${c.owner}/${c.repo}: a cut of ${(JSON.parse(c.paths) as string[]).join(", ")}`;
+    const title = `${c.owner}/${c.repo}: a cut of ${parseJson<string[]>(c.paths, []).join(", ")}`;
     const desc = `${c.note ? c.note + " · " : ""}${summary(run)}. Cut out of the repo on codeSplitter: run it, fix it, merge it back.`;
     const page = `#/c/${c.id}`, font = cardFont(url.searchParams.get("font"));
     const image = `${url.origin}/api/cuts/${c.id}/card.png?at=${run?.at ?? 0}${font === "dejavu" ? "" : `&font=${font}`}`;

@@ -1,6 +1,6 @@
 // The markup of the home page's favourite-features vote. assets/votes.js fills it in: the tier list
 // from data-features, the staircase from /api/votes.
-const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+import { esc } from "./lib.ts";
 
 export function voteSection(features: { slug: string; title: string }[]) {
   return `<section class="vote" id="vote" aria-labelledby="vote-h" data-features="${esc(JSON.stringify(features))}">
