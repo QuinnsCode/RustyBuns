@@ -286,6 +286,19 @@ function serversIn(parent: string, prefix: string, keep: (name: string) => boole
   return out;
 }
 
+/**
+ * The file of an app that is only a Bun server (`Bun.serve(...)`, no client): package.json main or
+ * the file `start` runs, else index/server.{ts,js}. Null when there is none, or the app has a
+ * client of its own (vite config, index.html).
+ */
+export function bunServerEntry(root: string): string | null {
+  if (existsSync(join(root, "index.html")) || readdirSync(root).some((f) => /^vite(\..+)?\.config\./.test(f))) return null;
+  const pkg = readJson(join(root, "package.json")) ?? {};
+  const start = String(pkg.scripts?.start ?? "").match(/^(?:bun|bunx bun)\s+(?:run\s+)?(?:-\S+\s+)*([^\s-]\S*\.[cm]?[jt]s)\b/)?.[1];
+  const named = [start, typeof pkg.main === "string" ? pkg.main : null, "index.ts", "server.ts", "index.js", "server.js"].filter((f): f is string => !!f).map((f) => f.replace(/^\.\//, ""));
+  return named.find((f) => existsSync(join(root, f)) && /\bBun\.serve\s*\(/.test(readFileSync(join(root, f), "utf8"))) ?? null;
+}
+
 /** Apps init can box one level down (frontend/, web/, apps/*, packages/*), for a repo root that isn't one. */
 export function appsBelow(root: string): string[] {
   const kids = (d: string) => { try { return readdirSync(join(root, d), { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith(".") && e.name !== "node_modules").map((e) => d ? `${d}/${e.name}` : e.name); } catch { return []; } };

@@ -1,5 +1,8 @@
 import { test, expect, setDefaultTimeout } from "bun:test";
-import { infer } from "../src/glue/infer.ts";
+import { infer, bunServerEntry } from "../src/glue/infer.ts";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { analyze, plan } from "../src/glue/boundary.ts";
 import { parseWrangler, wranglerToConfig } from "../src/wrangler.ts";
 import { generateAlchemy } from "../src/gen/alchemy.ts";
@@ -1124,4 +1127,16 @@ test("spa entry imports reflect-metadata first when the app's tree has it (#910)
   symlinkSync(join(store, "tsyringe"), join(nested, "node_modules/tsyringe"));
   expect(reflectMetadataImport(nested)).toContain("reflect-metadata/index.js");
   expect(reflectMetadataImport(mkdtempSync(join(tmpdir(), "rb-reflect-")))).toBe("");
+});
+
+test("bunServerEntry: a Bun.serve file with no client is the app, a vite or html app is not", () => {
+  const d = mkdtempSync(join(tmpdir(), "bun-entry-"));
+  try {
+    writeFileSync(join(d, "package.json"), JSON.stringify({ name: "x", scripts: { start: "bun run src/app.ts" } }));
+    mkdirSync(join(d, "src"));
+    writeFileSync(join(d, "src/app.ts"), "Bun.serve({ fetch: () => new Response('hi') });");
+    expect(bunServerEntry(d)).toBe("src/app.ts");
+    writeFileSync(join(d, "index.html"), "<html>");
+    expect(bunServerEntry(d)).toBeNull();
+  } finally { rmSync(d, { recursive: true, force: true }); }
 });
