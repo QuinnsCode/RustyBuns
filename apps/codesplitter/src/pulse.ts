@@ -112,9 +112,9 @@ export async function pulseRoutes(req: Request, env: Env, p: string[], url: URL,
   const desc = pulse ? `${pulseSummary(pulse)}. Line by line, live, with their crew of people and agents.` : "Line by line, live, with their crew of people and agents.";
   const image = pulse ? `${url.origin}/api/users/${encodeURIComponent(name)}/pulse.png?slot=${1 + Math.floor(Math.random() * (SLOTS - 1))}&at=${Math.floor(Date.now() / 86_400_000)}` : null;
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
-<meta property="og:type" content="profile"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
-${image ? `<meta property="og:image" content="${esc(image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image">` : `<meta name="twitter:card" content="summary">`}
-<meta property="og:url" content="${esc(url.href)}">
+<meta name="description" content="${esc(desc)}"><meta property="og:type" content="profile"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
+${image ? `<meta property="og:image" content="${esc(image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${esc(image)}">` : `<meta name="twitter:card" content="summary">`}
+<meta name="twitter:title" content="${esc(title)}"><meta name="twitter:description" content="${esc(desc)}"><meta property="og:url" content="${esc(url.href)}">
 <meta http-equiv="refresh" content="0; url=/${page}"></head><body><a href="/${page}">${esc(title)}</a></body></html>`;
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
 }
