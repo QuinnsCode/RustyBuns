@@ -18,6 +18,8 @@ Mervin is the merge engine this agentic era needs, and layered with a sync layer
 Let Mervin bring the intelligence to your merges, so you don't spend precious token budget on them and
 human minds are free to steer the digsite.
 
+The bigger picture, with Ester: [mervin-and-ester.md](mervin-and-ester.md).
+
 Design note for running it locally and on Cloudflare: [mervin-engine.md](mervin-engine.md).
 
 Real numbers on where a swarm of PRs got stuck, and which helper each jam belongs to: [jams.md](jams.md).
