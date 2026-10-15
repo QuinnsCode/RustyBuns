@@ -27,7 +27,7 @@ export default defineConfig({
     // The arena's daily cap on model calls: a Clef fight is 52 (24 turns a side, 2 plans, 2 judgings) and a pen fight
     // 18 (8 pen turns a side, 2 judgings), so 840 a day; 1,000 leaves room. ~$0.60 a day at worst.
     DAILY_CALLS: { type: "var", value: "1000" },
-    ARCHIVE: { type: "r2", bucketName: "excalibrawl-replays" },
+    ARCHIVE: { type: "r2", bucketName: "excalibrawl-replays", protect: true },
   },
   targets: {
     edge: { provider: "cloudflare" },
