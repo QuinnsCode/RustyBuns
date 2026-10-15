@@ -7297,7 +7297,7 @@ const tourClick = (el, init = {}) => el?.dispatchEvent(new MouseEvent("mousedown
 // A small public repo to dig on the tour: the first level's.
 const TOUR_STARTER = "developit/mitt";
 // The chapters, in order. A step's `on` says where it plays: anywhere, or on the toured repo's file page.
-const TOUR_CHAPTERS = [["signin", "log-in", "Sign in"], ["dig", "shovel", "Dig a repo"], ["code", "file-code", "The code"], ["panels", "panel-right", "The right bar"], ["self", "repeat", "Edit itself"], ["queue", "list-ordered", "Mervin and Ester queue it"], ["play", "gamepad-2", "Play"]];
+const TOUR_CHAPTERS = [["signin", "log-in", "Sign in"], ["dig", "shovel", "Dig a repo"], ["code", "file-code", "The code"], ["panels", "panel-right", "The right bar"], ["self", "repeat", "Edit itself"], ["queue", "list-ordered", "Mervin and Ester queue it"], ["agents", "bot", "Agents on one repo"], ["play", "gamepad-2", "Play"]];
 const TOUR = [
   { ch: "signin", ic: "log-in", t: "Sign in", at: "#who", on: "any",
     say: () => me() ? `You're in as @${me()}. Next, dig up a repo.` : "Everything you dig up, edit and collect goes under your @handle. Sign in, or make an account, at the top right.",
@@ -7388,6 +7388,22 @@ const TOUR = [
   { ch: "queue", ic: "git-merge", t: "Queue the merge", at: '.dpanels > .sec[data-key="branches"] [data-merge]', on: "repo", you: "A merge changes main, so you press this one.",
     go: () => { const b = $('.dpanels > .sec[data-key="branches"] [data-merge]:not([disabled])'); if (!b) return "Nothing is ready: Mervin holds a branch until its checks pass."; b.click(); return "Merged by line id. The next wave is free to go."; },
     say: () => "Mervin suggests the order and Ester clears the tests, but main moves when you press Merge. Agents don't." },
+  // Agents on one repo (features: agents, claims, same-line, smart-merges, agents-rebase, hosted-agents, agents-cant-ship). `feat` is the
+  // feature id in features/order.txt, so tour-smoke can check the strip is covered.
+  { ch: "agents", feat: "agents", ic: "bot", t: "Agents on one repo", at: "#agent", on: "repo",
+    say: () => "Several coding agents work on one repo at once, each on its own branch, next to the people. Claude Code, Codex, pi and opencode all join over MCP." },
+  { ch: "agents", feat: "claims", ic: "lock", t: "Agents claim lines", at: "#lines", on: "repo",
+    say: () => "An agent holds the lines it is editing, so a second agent sees who has them and works elsewhere instead of colliding." },
+  { ch: "agents", feat: "same-line", ic: "git-fork", t: "Two on the same line", at: null, on: "any",
+    say: () => "If two do reach the same line, both edits are kept as versions of one line, not a conflict marker. Nobody's work is thrown away." },
+  { ch: "agents", feat: "smart-merges", ic: "git-merge", t: "Merges settle by line id", at: '.dpanels > .sec[data-key="branches"]', on: "repo",
+    say: () => "Branches merge by line id, so what git would call a conflict is usually settled without anyone reading markers." },
+  { ch: "agents", feat: "agents-rebase", ic: "refresh-cw", t: "Agents rebase themselves", at: null, on: "any",
+    say: () => "When main moves under an agent's branch, the agent takes the new main in and carries on, and the tour of its lines stays blamed on it." },
+  { ch: "agents", feat: "hosted-agents", ic: "cloud", t: "Hosted agents", at: "#agent", on: "repo", you: "A hosted agent run costs money, so you press this one.",
+    say: () => "No agent on your machine? Run one hosted here. It is metered, so starting it is your press." },
+  { ch: "agents", feat: "agents-cant-ship", ic: "shield-check", t: "Agents can't ship", at: '.dpanels > .sec[data-key="deploy"]', on: "repo",
+    say: () => "An agent can edit and open a branch, but merging to main and deploying are buttons only a person has." },
   { ch: "play", ic: "building", t: "Your code city", at: null, on: "any", href: () => `/play.html#c/${encodeURIComponent(me())}`, open: true,
     say: () => "Every repo you own is a district, every file a building: white stone where people wrote it, black glass where agents did. It opens in a new tab." },
   { ch: "play", ic: "gamepad-2", t: "Beat up the code", at: null, on: "any", href: (t) => t.owner ? `/play.html#r/${t.owner}/${t.repo}` : "/play.html#l/mitt",

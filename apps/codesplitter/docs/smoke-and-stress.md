@@ -13,9 +13,13 @@ then `scripts/stress.ts --paid-paths`. Exit 0 means every promise and every stre
 local twins. Nothing leaves the machine. It covers every rule that costs nothing: repos, files,
 branches, search, hooks, commits, line edits, rate limits, webhook fan-out and retries.
 
-The tour has its own smoke run, in a real Chrome on the local twins: `bun scripts/tour-smoke.ts`. Nine checks, three for each way the
-tour is driven (a person's buttons, autoplay, an agent's WebMCP tools), walking the "Mervin and Ester queue it" scene: the board, the
-merge waves, the red tests, and the merge that only a person presses. Needs Chrome (`--chrome` for a path); it takes about 30 s.
+The tour has its own smoke run, in a real Chrome on the local twins: `bun scripts/tour-smoke.ts`. Nine checks per chapter, three for each way the
+tour is driven (a person's buttons, autoplay, an agent's WebMCP tools). A chapter is a row in `CHAPTERS` in the script, so adding one is data:
+- "Mervin and Ester queue it": the board, the merge waves, the red tests, and the merge that only a person presses.
+- "Agents on one repo": claims, same-line, smart merges, rebase, hosted agents (a person's press) and agents that can't ship.
+
+It also checks that every feature id a step carries (`feat`) is on the strip (`features/order.txt`). Needs Chrome (`--chrome` for a path); about 60 s.
+It is not in CI (no Chrome on the runner), so it is a manual run: [#1794](https://github.com/QuinnsCode/RustyBuns/issues/1794).
 
 ## Tier 2: the paid paths, with the paid part faked (hosted agents built, the rest to build)
 
