@@ -19,7 +19,7 @@ Scored 1-5 each: originality as agent collaboration (50%), several agents at onc
 | 6:45 | It is real git | `git clone` the repo, push a commit, see it land. Cloudflare Workers and Artifacts named out loud. | 50% |
 | 7:15 | Close | Repo link (`apps/codesplitter`), where the README run instructions are. | all |
 
-Recording silent and dubbing later? Use the shot list in [feature-walkthrough.md](feature-walkthrough.md).
+Recording silent and dubbing later? Use the shot list in [feature-walkthrough.md](feature-walkthrough.md); [video-map.md](video-map.md) ties each shot to its tour chapter and PRs.
 
 Feature detail for each beat: [feature-map.md](feature-map.md), [line-locks.md](line-locks.md), [agent-takeover.md](agent-takeover.md), [merge-solutions.md](merge-solutions.md).
 
