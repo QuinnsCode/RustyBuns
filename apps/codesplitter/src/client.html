@@ -3864,6 +3864,7 @@ const views = {
     el.querySelector("[data-files]")?.addEventListener("click", () => { const f = el.querySelector(".gfiles"); f.hidden = !f.hidden; });
     el.querySelectorAll("[data-jump]").forEach((b) => b.addEventListener("click", () => {
       const t = document.getElementById(b.dataset.jump);
+      if (t) $(".details")?.showPanel?.(t.closest(".sec")?.dataset.key);
       if (t) t.scrollIntoView({ block: "center", behavior: "smooth" }); else location.hash = `#/r/${owner}/${repo}`;
     }));
     clearTimeout(el._t);
@@ -4026,16 +4027,16 @@ const views = {
     el.innerHTML = `<p>Copied at <code>${esc(t.commit.slice(0, 7))}</code>${note("Make it a mirror and the two listen to each other: upstream's commits come here, yours go back up, never forced.")}</p>
       <div class="gitpic-slot" data-pic="${esc(JSON.stringify(pic))}">${gitPic(pic)}</div>
       <p class="muted" style="font-size:12px">${t.ahead ? `${icon("arrow-up")}${t.ahead}` : "nothing to send"}${note(`${mine}. Upstream has to take your pushes: without the rights, it stays here and says so.`)}</p>
-      <div class="row"><button class="btn" id="mirror-turn-go"${picAttr(...pic)}>${icon("refresh-cw")}Make it a mirror</button></div>`;
+      <div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn" id="mirror-turn-go"${picAttr(...pic)}>${icon("refresh-cw")}Make it a mirror</button><button class="btn" id="mirror-turn-pull" title="Upstream's commits come here and nothing goes back up">${icon("download")}Pull only</button></div>`;
     icons();
-    const go = $("#mirror-turn-go");
-    go.addEventListener("click", async () => {
-      // Once it's up it's up: the first click says so, the second does it.
-      if (t.ahead && !go.dataset.sure) { go.dataset.sure = "1"; go.textContent = `Sure? ${t.ahead === 1 ? "It goes" : "They go"} upstream`; return; }
+    const turn = (go, pullOnly) => go.addEventListener("click", async () => {
+      // Once it's up it's up: the first click says so, the second does it. Pull-only sends nothing, so it asks nothing.
+      if (t.ahead && !pullOnly && !go.dataset.sure) { go.dataset.sure = "1"; go.textContent = `Sure? ${t.ahead === 1 ? "It goes" : "They go"} upstream`; return; }
       go.disabled = true; go.textContent = "syncing…";
-      try { await api(`/repos/${owner}/${repo}/mirror/turn`, { ahead: t.ahead }); toast(`${repo} is a mirror of ${t.url} now`); route(); }
+      try { await api(`/repos/${owner}/${repo}/mirror/turn`, { ahead: t.ahead, ...(pullOnly && { pullOnly: true }) }); toast(`${repo} is a mirror of ${t.url} now`); route(); }
       catch (err) { go.disabled = false; toast(err.message); views.wireMirrorTurn(owner, repo); }
     });
+    turn($("#mirror-turn-go"), false); turn($("#mirror-turn-pull"), true);
   },
   /** A dug fork listening to its upstream (#870): how many commits upstream got since the dig, and Take them onto a branch. */
   async wireListen(owner, repo, hear) {
@@ -4771,7 +4772,7 @@ const views = {
           ? `<a class="btn primary" href="#/b/${esc(owner)}/${esc(repo)}/${encodeURIComponent(b.name)}" title="settle each conflict, then merge">${icon("git-merge")}Settle ${settles(clash)}</a>`
           : settles(clash)
           ? `<button class="btn primary" data-merge="${esc(b.name)}" data-left${picAttr("merge", { branch: b.name })}>${icon("git-merge")}Merge</button> <button class="btn ghost" data-all="main" data-for="${esc(b.name)}" title="settle every conflict as main's version">All main</button><button class="btn ghost" data-all="branch" data-for="${esc(b.name)}" title="settle every conflict as the branch's version">All branch</button>`
-          : `<button class="btn primary" data-merge="${esc(b.name)}"${picAttr("merge", { branch: b.name })}${b.checks?.gate.ok === false ? ` disabled title="required checks haven't passed"` : ""}>${icon("git-merge")}Merge</button>`}${r.canWrite ? ` <button class="btn" data-checks="${esc(b.name)}" title="run our own checks on the branch as it is now, on this machine: no GitHub needed">${icon("list-checks")}Run checks</button>` : ""}${r.mirror && owner === me() ? ` <button class="btn" data-push="${esc(b.name)}"${picAttr("push", { branch: b.name, ref: b.upstream_ref ?? b.name })}>${icon("upload")}Push upstream</button>${b.upstream_ref ? ` <button class="btn" data-pull="${esc(b.name)}"${picAttr("pull", { branch: b.name, ref: b.upstream_ref })}>${icon("download")}Pull upstream</button>` : ""}` : ""}</span>` : ""}</div>`;
+          : `<button class="btn primary" data-merge="${esc(b.name)}"${picAttr("merge", { branch: b.name })}${b.checks?.gate.ok === false ? ` disabled title="required checks haven't passed"` : ""}>${icon("git-merge")}Merge</button>`}${r.canWrite ? ` <button class="btn" data-checks="${esc(b.name)}" title="run our own checks on the branch as it is now, on this machine: no GitHub needed">${icon("list-checks")}Run checks</button>` : ""}${r.mirror && owner === me() ? `${r.pullOnly ? "" : ` <button class="btn" data-push="${esc(b.name)}"${picAttr("push", { branch: b.name, ref: b.upstream_ref ?? b.name })}>${icon("upload")}Push upstream</button>`}${b.upstream_ref ? ` <button class="btn" data-pull="${esc(b.name)}"${picAttr("pull", { branch: b.name, ref: b.upstream_ref })}>${icon("download")}Pull upstream</button>` : ""}` : ""}</span>` : ""}</div>`;
     }).join("");
     const read = (name) => el.querySelector(`[data-read="${CSS.escape(name)}"]`), anyway = (name) => el.querySelector(`[data-anyway="${CSS.escape(name)}"]`);
     // A merge button waits on every box its branch shows, and every conflict card being settled.
