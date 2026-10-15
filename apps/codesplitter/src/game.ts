@@ -36,7 +36,8 @@ export async function gameRoutes(req: Request, env: Env, p: string[], url: URL, 
     const src = await open();
     if (!src) return json({ error: "nothing dug up here yet" }, 409);
     const w = await walls(env, src.handle, src.ref, (url.searchParams.get("path") ?? "").replace(/^\/|\/$/g, ""), src.commit);
-    return w ? json(w) : json({ error: "no such room" }, 404);
+    // A level's rooms are public and fixed to their commit; a repo's may be private and move on, so only this browser keeps it, briefly.
+    return w ? json(w, 200, { "cache-control": room.startsWith("l/") && src.commit ? "public, max-age=86400" : "private, max-age=60" }) : json({ error: "no such room" }, 404);
   }
   if (rest[0] === "ws") {
     // Signed-in players play as themselves; anyone else gets a guest name.

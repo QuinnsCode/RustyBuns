@@ -299,9 +299,10 @@ function fetchRoom(path) {
   }
   return p;
 }
-/** Quietly fetch the rooms behind this room's doors, so walking through one is instant. */
-function preload(doors) {
-  for (const d of doors.slice(0, 8)) fetchRoom(d.path).catch(() => {});
+/** Walking toward a door fetches the room behind it, so the doorway is instant. Only the doors you head for, so no fetch is wasted. */
+function preloadAhead(i, a, d) {
+  if (d > 14) return;
+  for (const x of here.doors) if (x.wall === i && Math.abs(a - x.c) < DOOR_W * 1.5) fetchRoom(x.path).catch(() => {});
 }
 // Wall i: 0 north, 1 east, 2 south, 3 west. Local x along the wall, +z into the room.
 const WALL_ROT = [0, -Math.PI / 2, Math.PI, Math.PI / 2];
@@ -507,7 +508,6 @@ function buildRoom(path, w, minPanels = 8) {
   const furn = layFurniture(path, w, half, group);
   scene.add(group);
   here = { path, half, group, doors, lines, files, furn };
-  preload(doors);
   const lurking = files.reduce((n, f) => n + (f.file.noodles?.length ?? 0), 0);
   $("#where").textContent = (path ? path + "/" : "/") + `  ·  ${w.files.length} files, ${w.doors.length} doors` + (lurking ? `  ·  ${lurking} noodle${lurking > 1 ? "s" : ""} lurking` : "");
 }
@@ -1185,6 +1185,7 @@ function updatePlayer(dt) {
   const m = 0.35;
   for (let i = 0; i < 4 && here; i++) {
     let [a, d] = toWall(i, player.pos.x, player.pos.z, here.half);
+    preloadAhead(i, a, d);
     if (d >= m) continue;
     const door = here.doors.find((x) => x.wall === i && Math.abs(a - x.c) < DOOR_W / 2 - 0.25);
     if (door) { if (d < -0.3 && !transit) { transit = true; const from = here.path; enter(door.path, from).finally(() => (transit = false)); return; } continue; }
