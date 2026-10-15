@@ -3735,7 +3735,7 @@ const views = {
       </div><aside>
         ${mine ? `${boxTop(true, "tokens", `${icon("plug")}<b>Connect your AI</b>`)}<div class="links" style="font-size:12px;padding:8px 12px 0"><a class="muted" href="/reference">the API</a> · <a class="muted" href="/mcp">MCP</a></div><div class="body"><span class="muted">…</span></div></details>` : ""}
         ${page ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page<button type="button" class="btn ghost" id="pg-stage" title="Full page" aria-label="Full page" style="margin-left:auto">${icon("maximize-2")}</button></div><button type="button" class="btn stage-x" id="pg-unstage" title="Back to the profile (Esc)" aria-label="Back to the profile">${icon("minimize-2")}</button><iframe class="theme" sandbox="allow-scripts allow-popups allow-pointer-lock" src="/api/users/${encodeURIComponent(name)}/page/" title="${esc(name)}'s page"></iframe></div>` : ""}
-        ${mine && !agent ? `<form id="talk" class="box"><div class="bar">${icon("message-circle")}<b>Talk to your page</b><button type="button" class="btn ghost" id="pg-hour" title="Put the page back to how it was an hour ago">${icon("history")}</button><button type="button" class="btn ghost" id="pg-default" title="Put the page back to the starter">${icon("rotate-ccw")}</button></div><div class="body row" style="flex-wrap:nowrap"><input name="say" placeholder="make it a night city, one tower per repo" required autocomplete="off" style="flex:1;min-width:0"><button class="btn primary" title="Send it to your coding agent">${icon("send")}</button></div></form>` : ""}
+        ${mine && !agent ? `<form id="talk" class="box"><div class="bar">${icon("message-circle")}<b>Talk to your page</b>${page ? "" : `<button type="button" class="btn" id="pg-make" title="Make my page: start with the starter world, a tower per public repo" aria-label="Make my page">${icon("wand-sparkles")}</button>`}<button type="button" class="btn ghost" id="pg-hour" title="Put the page back to how it was an hour ago">${icon("history")}</button><button type="button" class="btn ghost" id="pg-default" title="Put the page back to the starter">${icon("rotate-ccw")}</button></div><div class="body row" style="flex-wrap:nowrap"><input name="say" placeholder="make it a night city, one tower per repo" required autocomplete="off" style="flex:1;min-width:0"><button class="btn primary" title="Send it to your coding agent">${icon("send")}</button></div></form>` : ""}
         ${agent ? "" : sec("collections", `${boxTop(mine, "collections", `${icon("library")}<b>Collections</b>${playlists.length ? `<span class="muted">${playlists.length}</span>` : ""}`)}<div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || (mine ? "" : '<span class="muted">nothing collected yet</span>')}
           ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div>${boxEnd(mine)}`)}
         ${mine ? `${boxTop(true, "following", `${icon("eye")}<b>Following</b><span class="muted" title="Follow is on profiles, repos, agent runs, shares and collections">${follows.length || "nobody yet"}</span>`)}<div class="body list">${follows.map(followLink).join("") || '<span class="muted">Follow is on profiles, repos, agent runs, shares and collections.</span>'}</div></details>` : ""}
@@ -7635,6 +7635,35 @@ async function pageWatch(name) {
     await new Promise((r) => setTimeout(r, 3000));
   }
 }
+// An agent in the browser (document.modelContext) edits your page with the tools of the box on your profile, for as
+// long as that box is on screen: write a file, look at the page, put it back. The same calls as edit_my_page and revert_my_page.
+let pageToolsOff = null;
+async function pageTools(name, ensure, reload) {
+  const mc = document.modelContext ?? navigator.modelContext;
+  pageToolsOff?.abort();
+  if (!mc?.registerTool) return;
+  const off = (pageToolsOff = new AbortController());
+  const gone = () => { if (!$("#talk")) off.abort(); return off.signal.aborted; };
+  const tools = [
+    { name: "rewrite_my_page", title: "Rewrite a file of my page", description: "Set one file of the profile page (index.html first; text files only) to this whole text, then reload the preview. The page is sandboxed: scripts run, with no cookies and no network beyond its own files; it reads {name, bio, repos} from the JSON block #profile.",
+      inputSchema: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] },
+      annotations: { consequentialHint: true }, execute: async ({ path, content }) => { if (gone()) throw new Error("the page box is closed"); await ensure(); const r = await api("/me/page", { path, content }, "PUT"); reload(); return r; } },
+    { name: "preview_my_page", title: "Look at my page", description: "The files of the profile page as they stand, with where to see it: the sandboxed preview url.",
+      inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true, untrustedContentHint: true }, execute: async () => {
+        const v = (await api(`/users/${encodeURIComponent(name)}/page-version`)).version;
+        return { url: `/api/users/${encodeURIComponent(name)}/page/`, files: v ? v.split(" ").map((x) => x.split(":")[0]) : [] };
+      } },
+    { name: "revert_my_page", title: "Put my page back", description: "Every file of the page as it stood an hour ago (to: hour), or the starter world with other files emptied (to: default).",
+      inputSchema: { type: "object", properties: { to: { type: "string", enum: ["hour", "default"] } }, required: ["to"] },
+      annotations: { destructiveHint: true, consequentialHint: true }, execute: async ({ to }) => { if (gone()) throw new Error("the page box is closed"); await ensure(); const r = await api("/me/page/revert", { to }, "POST"); reload(); return r; } },
+  ];
+  for (const t of tools) {
+    try {
+      const h = await mc.registerTool(t, { signal: off.signal });
+      off.signal.addEventListener("abort", () => { try { h?.unregister ? h.unregister() : mc.unregisterTool?.(t.name); } catch {} });
+    } catch {}
+  }
+}
 // Talk to your page: the box on your profile sends what you say to a coding agent working in your repo `page`
 // (its files are the site, see src/page.ts); the two buttons put the page back an hour, or to the starter.
 async function pageTalk(name, has) {
@@ -7645,6 +7674,10 @@ async function pageTalk(name, has) {
     try { await ensure(); const r = await api("/me/page/revert", { to }, "POST"); toast(r.changed.length ? `Page back to ${what}` : "Nothing to change"); reload(); }
     catch (e) { toast(e.message); }
   };
+  if ($("#pg-make")) $("#pg-make").onclick = async () => {
+    try { await ensure(); toast("Your page is made"); route(); } catch (e) { toast(e.message); }
+  };
+  pageTools(name, ensure, reload);
   $("#pg-hour").onclick = () => back("hour", "an hour ago");
   $("#pg-default").onclick = () => back("default", "the starter");
   $("#talk").onsubmit = async (e) => {

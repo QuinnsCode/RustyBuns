@@ -6,6 +6,9 @@
 //                                      "default" (the starter world below, other files emptied). It is edits like
 //                                      any other, so the log keeps what it replaced and "hour" again goes further back.
 //
+//   PUT /api/me/page/assets/:name       one binary file of the page (image, audio, model, font; up to 5 MB) into R2, served
+//                                      at /api/users/:name/page/assets/:file under the same sandbox (needs LEVEL_CHUNKS)
+//
 // The page is the owner's own code, so it runs, but only in a box with nothing in it:
 //   sandbox      the response's CSP carries `sandbox allow-scripts`, so it runs with an opaque origin even
 //                when opened on its own: no cookies, no storage, no reach into the app or the API as anyone
@@ -46,6 +49,16 @@ const TYPES: Record<string, string> = {
   html: "text/html", htm: "text/html", js: "text/javascript", mjs: "text/javascript", css: "text/css", json: "application/json",
   svg: "image/svg+xml", txt: "text/plain", md: "text/plain", glsl: "text/plain", vert: "text/plain", frag: "text/plain", obj: "text/plain",
 };
+
+/** Binary files a page may carry in R2 (the repo is text only). */
+const ASSET_TYPES: Record<string, string> = {
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", ico: "image/x-icon",
+  mp3: "audio/mpeg", ogg: "audio/ogg", wav: "audio/wav", mp4: "video/mp4", webm: "video/webm",
+  glb: "model/gltf-binary", woff2: "font/woff2", woff: "font/woff", ttf: "font/ttf",
+};
+export const ASSET_MAX = 5_000_000;
+const assetKey = (owner: string, file: string) => `page/${owner}/${file}`;
+const assetName = (file: string | undefined) => (file && /^[\w][\w.-]{0,79}$/.test(file) && ASSET_TYPES[file.split(".").pop()!.toLowerCase()] ? file : null);
 
 /** A path inside the page, or null when it climbs out, hides, or is empty. `""` is the index. */
 export function pagePath(rest: string[]): string | null {
@@ -113,6 +126,24 @@ export async function pageRoutes(req: Request, env: Env, p: string[], user?: str
     if (typeof b.content !== "string") return json({ error: "content: the file's whole text" }, 400);
     if (!(await hasPage(env, user))) return json({ error: "no page repo yet: make a public repo named page" }, 404);
     return json({ path, changed: await setText(env, user, path, b.content) });
+  }
+  if (p[1] === "me" && p[2] === "page" && p[3] === "assets" && p[4] && !p[5] && req.method === "PUT") {
+    if (!user) return json({ error: "sign in first" }, 401);
+    const file = assetName(p[4]);
+    if (!file) return json({ error: `name: letters, digits, . _ -, ending in ${Object.keys(ASSET_TYPES).join(", ")}` }, 400);
+    if (!env.LEVEL_CHUNKS) return json({ error: "binary files need R2, which this server has not got" }, 501);
+    if (!(await hasPage(env, user))) return json({ error: "no page repo yet: make a public repo named page" }, 404);
+    const bytes = new Uint8Array(await req.arrayBuffer());
+    if (!bytes.length || bytes.length > ASSET_MAX) return json({ error: `body: the file's bytes, up to ${ASSET_MAX / 1e6} MB` }, 413);
+    await env.LEVEL_CHUNKS.put(assetKey(user, file), bytes);
+    return json({ path: `assets/${file}`, bytes: bytes.length });
+  }
+  if (p[1] === "users" && p[2] && p[3] === "page" && p[4] === "assets" && p[5] && !p[6] && (req.method === "GET" || req.method === "HEAD")) {
+    const file = assetName(p[5]), obj = file && env.LEVEL_CHUNKS && (await hasPage(env, p[2])) ? await env.LEVEL_CHUNKS.get(assetKey(p[2], file)) : null;
+    if (!file || !obj) return json({ error: "no such file" }, 404);
+    return new Response(req.method === "HEAD" ? null : await obj.arrayBuffer(), { headers: {
+      "content-type": ASSET_TYPES[file.split(".").pop()!.toLowerCase()], "content-security-policy": PAGE_CSP, "x-frame-options": "SAMEORIGIN",
+      "cache-control": "no-cache", "access-control-allow-origin": "*", "x-content-type-options": "nosniff" } });
   }
   // GET /api/users/:name/page-version, changes whenever a file of the page does, so an open page knows when to reload.
   if (p[1] === "users" && p[2] && p[3] === "page-version" && !p[4] && req.method === "GET") return json({ version: await pageVersion(env, p[2]) });
