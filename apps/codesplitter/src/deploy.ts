@@ -36,7 +36,9 @@
 //   GET  /api/repos/:o/:r/deploy/review   what a deploy waits on, with the diff since the last approval
 //   .../deploy/key[/:provider]     the stored deploy keys (deploy-keys.ts)
 
-import { access as artifactAccess, handleFor } from "./archive.ts";
+import { access as artifactAccess, handleFor, toFile } from "./archive.ts";
+import { text, type Doc } from "./lines.ts";
+import { ARM_BOX_WARNING, armBox } from "./needs.ts";
 import { json, readBody, type Env } from "./env.ts";
 import { byToken } from "./tokens.ts";
 import { deployKeyRoutes, hostedWhy, keysInfo } from "./deploy-keys.ts";
@@ -96,7 +98,7 @@ const hostedStub = (env: Env, owner: string, repo: string) => env.DEPLOY_RUNNER!
 
 /** The CLI's `--allow-delete` and `--force`, for one deploy only: never saved with the settings, never passed on a commit-triggered ship. */
 export interface DeployFlags { allowDelete?: boolean; force?: boolean }
-type Started = { run?: Run; queued?: boolean; error?: string; status?: number; review?: Review };
+type Started = { run?: Run; queued?: boolean; error?: string; status?: number; review?: Review; warning?: string };
 
 /** A review as the panel gets it, without the handle it walked. */
 const shown = ({ tip, base, commits, more }: Review) => ({ tip, base, commits, more, cleared: isCleared({ tip, base, commits, more }) });
@@ -131,7 +133,11 @@ async function start(env: Env, owner: string, repo: string, by: string, trigger:
     const held = await gate(env, owner, repo, approved, unseen);
     if ("error" in held) return held;
     const res = await hostedStub(env, owner, repo).fetch(new Request("http://deploy/start", { method: "POST", body: JSON.stringify({ owner, repo, by, trigger, ...flags }) }));
-    return (await res.json()) as Started;
+    const started = (await res.json()) as Started;
+    // Flagged now, not after the run has cloned and installed and then refused it.
+    const cfg = await toFile(env, owner, repo, `${(await settings(env, owner, repo)).dir || "."}/rustybuns.config.ts`.replace(/^\.\//, ""), "upstream", "file").catch(() => null);
+    if (started.run && cfg?.ok && armBox(text(await cfg.json() as Doc))) started.warning = ARM_BOX_WARNING;
+    return started;
   }
   const key = `${owner}/${repo}`, now = live.get(key);
   if (now && !now.run.done) {
@@ -208,7 +214,7 @@ export async function deployRoutes(req: Request, env: Env, p: string[], user: st
     // An approval is a person reading the diff: a token (a prompt-injected agent may hold one) can't give it.
     if (sha !== undefined && byToken(req)) return json({ error: "API tokens can't approve a deploy: approve it in the Deploy panel, signed in on the site" }, 403);
     const r = await start(env, owner, repo, user, "button", typeof sha === "string" ? sha : undefined, { ...(allow_delete === true && { allowDelete: true }), ...(force === true && { force: true }) }, approve_unseen === true);
-    return r.error ? json({ error: r.error, ...(r.review && { review: r.review }) }, r.status ?? (r.error.includes("already") ? 409 : 400)) : json({ run: r.run }, 202);
+    return r.error ? json({ error: r.error, ...(r.review && { review: r.review }) }, r.status ?? (r.error.includes("already") ? 409 : 400)) : json({ run: r.run, ...(r.warning && { warning: r.warning }) }, 202);
   }
   return null;
 }
