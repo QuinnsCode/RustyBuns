@@ -121,6 +121,9 @@ export interface Note { text: string; at: number }
 
 /** A queue consumer's wall time, so a hosted run's limit. */
 const HOSTED_RUN_MS = 15 * 60_000;
+/** Feature runs at once in containers: AGENT_SANDBOX has 2, and the other is for fix and rebuild tasks (#1242). */
+const HOSTED_FEATURE_SLOTS = 1;
+const HELD_RETRY_S = 20;
 /** How long past its deadline a hosted run may still be `running` before a listing calls it cut off. */
 const HOSTED_GRACE_MS = 2 * 60_000;
 /** How many runs each repo keeps. */
@@ -337,7 +340,7 @@ async function tell(req: Request, env: Env, owner: string, repo: string, id: num
 export async function runQueuedAgents(messages: readonly { body: AgentMessage; ack(): void }[], env: Env, self: (req: Request) => Promise<Response>) {
   await Promise.all(messages.map(async (m) => {
     if (m.body.land) await landDue(env, self, m.body.origin, m.body.agent).catch(() => {});
-    else await execute(env, self, m.body.origin, m.body.agent);
+    else if (await execute(env, self, m.body.origin, m.body.agent) === "held") await env.JOBS.send(m.body, { delaySeconds: HELD_RETRY_S });
     m.ack();
   }));
 }
@@ -504,9 +507,12 @@ async function pushRebuilt(env: Env, owner: string, repo: string, branch: string
 }
 
 /** Runs the agent of run `id`, keeping its log and result in D1. Only once: a second try (the queue's retry after a cut-off consumer) fails it instead. */
-async function execute(env: Env, self: (req: Request) => Promise<Response>, origin: string, id: number) {
-  const claimed = await env.DB.prepare("UPDATE agent_runs SET picked = 1 WHERE id = ? AND picked = 0").bind(id).run();
+async function execute(env: Env, self: (req: Request) => Promise<Response>, origin: string, id: number): Promise<"held" | void> {
+  // Hosted, a feature run (no branch of its own) takes a container only while one is left for fix tasks (#1242): else it stays queued.
+  const claimed = await env.DB.prepare(`UPDATE agent_runs SET picked = 1 WHERE id = ? AND picked = 0${env.AGENT_SANDBOX ? " AND (branch IS NOT NULL OR (SELECT COUNT(*) FROM agent_runs WHERE branch IS NULL AND picked = 1 AND status = 'running') < ?)" : ""}`)
+    .bind(...env.AGENT_SANDBOX ? [id, HOSTED_FEATURE_SLOTS] : [id]).run();
   if (!claimed.meta?.changes) {
+    if (env.AGENT_SANDBOX && (await env.DB.prepare("SELECT 1 AS held FROM agent_runs WHERE id = ? AND picked = 0 AND status = 'running'").bind(id).first())) return "held";
     await env.DB.prepare("UPDATE agent_runs SET status = 'failed', result = ? WHERE id = ? AND status = 'running'")
       .bind(JSON.stringify({ error: "the agent was cut off before it finished" }), id).run();
     return;
