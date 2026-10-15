@@ -182,7 +182,14 @@ if (location.hash.startsWith("#c/")) { await import("/city.js"); await new Promi
 // #l/<level> or #r/<owner>/<repo>, and for a diff to smash ?path=&from=&to=; a send-off adds ?mode=wreck (the wrecking room)
 // and/or ?room=<folder> (the room to start in)
 const [hashRoom, hashQuery] = location.hash.slice(1).split("?");
-const room = hashRoom || "l/mitt";
+// #gh/<owner>/<repo> is a public GitHub repo: the server digs one shared read-only copy on first visit, and that is the room.
+const ghRoom = async (repo) => {
+  const r = await fetch("/api/github/wreck", { method: "POST", body: JSON.stringify({ repo }) });
+  const b = await r.json().catch(() => ({}));
+  if (!r.ok) { document.body.textContent = b.error ?? "couldn't dig up that repo"; await new Promise(() => {}); }
+  return `r/${b.owner}/${b.name}`;
+};
+const room = hashRoom?.startsWith("gh/") ? await ghRoom(hashRoom.slice(3)) : hashRoom || "l/mitt";
 const hq = new URLSearchParams(hashQuery ?? "");
 const hashDiff = hq.has("path") ? { path: hq.get("path"), from: Number(hq.get("from")), to: Number(hq.get("to")) } : null;
 const hashMode = hq.get("mode") === "wreck" && !hashDiff ? "wreck" : null;
