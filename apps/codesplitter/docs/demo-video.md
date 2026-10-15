@@ -35,5 +35,30 @@ Feature detail for each beat: [feature-map.md](feature-map.md), [line-locks.md](
 - [ ] Repo link points to `apps/codesplitter`.
 - [ ] README run instructions followed once on a clean machine.
 - [ ] "Yes" to the terms in the application.
-- [ ] `contest-submission` tag requested through a PR (agents never push tags).
+- [ ] `contest-submission` tag: the owner pushes it (agents never push tags), see below.
 - [ ] Winner attends Cloudflare Connect, San Francisco, October 21.
+
+## Rules audit, 2026-10-14
+
+Checked against [the rules](contest-rules.md) on `5ad0f47e`:
+
+| Rule | State |
+| --- | --- |
+| Section 4: Workers and Artifacts | `wrangler.jsonc` binds `ARTIFACTS` (namespace `codesplitters`); concurrent agents are the product |
+| Section 4: license | `LICENSE` is Apache 2.0 at the repo root, `package.json` says `Apache-2.0`, the repo is public |
+| Section 4: no weapons, sexual or political content, no attacks on products | grep of `apps/codesplitter` and the root docs finds none |
+| Section 4: run instructions | `apps/codesplitter/README.md` (`bun install`, `bun run desktop`) |
+| Demo works | `bun run demo-check` on the local twins: every beat held |
+| Video, terms "Yes", eligibility | the owner's (checklist above) |
+
+Open for the owner: the live `release tags` ruleset only covers `*-v*`; `.github/rulesets/tags.json` adds `contest-submission` and `v*` but is not applied yet. Apply it right after pushing the tag.
+
+## Tagging (the owner)
+
+```sh
+git fetch origin main
+git tag -a contest-submission origin/main -m "Cloudflare git competition submission"   # or the deployed commit
+git push origin contest-submission
+```
+
+Tag the commit the video was recorded against and the live worker runs. Then freeze merges to `main` that touch `apps/codesplitter` until October 21.
