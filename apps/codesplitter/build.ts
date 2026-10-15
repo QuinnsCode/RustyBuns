@@ -50,6 +50,9 @@ if (!qr.success) { for (const l of qr.logs) console.error(l); process.exit(1); }
 // Self-heal: the "copy a fix prompt for your agent" text (src/fix-prompt.ts) behind a failure's toast.
 const fp = await Bun.build({ entrypoints: ["src/fix-prompt.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "fix-prompt.js" });
 if (!fp.success) { for (const l of fp.logs) console.error(l); process.exit(1); }
+// The TV view's limits (src/tv-limits.ts): the vein folds its lanes by the viewer's preset.
+const tv = await Bun.build({ entrypoints: ["src/tv-limits.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "tv-limits.js" });
+if (!tv.success) { for (const l of tv.logs) console.error(l); process.exit(1); }
 // gitpath: a file's history played down a highway (src/gitpath/): its page, script and sample.
 await buildGitpath("dist/client");
 await copyFile("src/features.html", "dist/client/features.html");

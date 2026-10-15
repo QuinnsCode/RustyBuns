@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { beads, BOUNDS, glowOnly, logShare, parseLimits, PRESETS, shownLanes, smooth } from "../src/tv-limits.ts";
+import { beads, BOUNDS, foldLanes, glowOnly, logShare, parseLimits, PRESETS, shownLanes, smooth } from "../src/tv-limits.ts";
 import { sharedGraph, GRAPH_MAX, type Graph } from "../src/graph.ts";
 
 test("untouched or broken settings give the calm preset, and values are held to their bounds", () => {
@@ -49,4 +49,15 @@ test("requests that arrive during a walk share it, capped per request, and nothi
   expect(last).toBe(GRAPH_MAX);
   await sharedGraph("a/b", walk, 60);
   expect(walks).toBe(2);
+});
+
+test("lanes past the cap share one folded lane, and a calm vein stays as it was", () => {
+  const dots = [0, 1, 2, 3, 4, 5].map((lane) => ({ lane }));
+  const edges = [{ l1: 0, l2: 5 }, { l1: 3, l2: 4 }];
+  const f = foldLanes(dots, edges, 6, 3);
+  expect(f.lanes).toBe(4);
+  expect(f.dots.map((d) => d.lane)).toEqual([0, 1, 2, 3, 3, 3]);
+  expect(f.edges).toEqual([{ l1: 0, l2: 3 }, { l1: 3, l2: 3 }]);
+  expect(f.folded).toBe(3);
+  expect(foldLanes(dots, edges, 6, 12)).toMatchObject({ lanes: 6, folded: 0 });
 });
