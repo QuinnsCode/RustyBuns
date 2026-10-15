@@ -124,3 +124,29 @@ describe("page tools", () => {
     expect(await (await send(null, "/api/users/ryan/page/")).text()).toContain("two");
   });
 });
+
+describe("binary files of your page", () => {
+  test("go to R2 and come back under the sandbox, only for the owner and only the allowed kinds", async () => {
+    const store = new Map<string, Uint8Array>();
+    const LEVEL_CHUNKS = {
+      put: async (k: string, v: Uint8Array) => void store.set(k, v),
+      get: async (k: string) => (store.has(k) ? { arrayBuffer: async () => store.get(k)!.buffer } : null),
+      list: async () => ({ objects: [], truncated: false }), delete: async () => {},
+    };
+    const call = await boot({ GH_CLI: "off", LEVEL_CHUNKS } as any);
+    opened.push(call);
+    const put = (user: string | null, name: string, bytes: Uint8Array) => call(user, `/api/me/page/assets/${name}`, { method: "PUT", body: bytes as BodyInit });
+    await call("ryan", "/api/login", { method: "POST", body: JSON.stringify({ name: "ryan" }) });
+    expect((await put("ryan", "cat.png", new Uint8Array([1]))).status).toBe(404); // no page repo yet
+    await call("ryan", "/api/repos", { method: "POST", body: JSON.stringify({ name: "page" }) });
+    expect((await put(null, "cat.png", new Uint8Array([1]))).status).toBe(401);
+    expect((await put("ryan", "run.exe", new Uint8Array([1]))).status).toBe(400);
+    expect((await put("ryan", "cat.png", new Uint8Array(5_000_001))).status).toBe(413);
+    expect(await (await put("ryan", "cat.png", new Uint8Array([1, 2, 3]))).json()).toEqual({ path: "assets/cat.png", bytes: 3 });
+    const got = await call(null, "/api/users/ryan/page/assets/cat.png");
+    expect([got.status, got.headers.get("content-type"), got.headers.get("content-security-policy")]).toEqual([200, "image/png", expect.stringContaining("sandbox")]);
+    expect([...new Uint8Array(await got.arrayBuffer())]).toEqual([1, 2, 3]);
+    expect((await call(null, "/api/users/ryan/page/assets/dog.png")).status).toBe(404);
+    expect((await call(null, "/api/users/bob/page/assets/cat.png")).status).toBe(404);
+  });
+});
