@@ -86,7 +86,7 @@ describe("mirrors: primary, pull-only, pushes and tags", () => {
     expect(await get(call, "/api/repos/ana/ci")).toMatchObject({ mirror: true, pullOnly: true });
   });
 
-  test("a file too big to dig comes over as its blob, and waits when main changed it too", async () => {
+  test("a file too big to dig comes over as its blob, and merges by lines when main changed it too", async () => {
     const call = await mirrored("biglock");
     const big = (first: string, last: string) => [first, ...Array.from({ length: 6000 }, (_, i) => `pkg-${i}@1`), last].join("\n") + "\n";
     await upstreamCommit({ "big.lock": big("head", "tail") }, "a lockfile");
@@ -99,18 +99,23 @@ describe("mirrors: primary, pull-only, pushes and tags", () => {
     expect(await (await post(call, "/api/repos/ana/up/mirror/branches", { ref: "bump" })).json()).toMatchObject({ files: ["big.lock"], skipped: [] });
     expect((await get(call, "/api/repos/ana/up/branches/bump")).files).toEqual([expect.objectContaining({ path: "big.lock", binary: true })]);
 
-    // Main changes it too: merging the blob would drop main's change, so it waits.
+    // Main changes other lines of it: the two are merged by lines, as git would, not one dropped (#1773).
     await upstreamCommit({ "big.lock": big("head", "tail moved") }, "main's lockfile");
     expect(await sync(call)).toMatchObject({ state: "ok" });
-    const held = await post(call, "/api/repos/ana/up/branches/bump/merge");
-    expect(held.status).toBe(409);
-    expect(await held.json()).toMatchObject({ files: ["big.lock"] });
-
-    // Main brought into the branch upstream and pulled: it merges with both changes.
-    await sh(`git pull -q --no-rebase --no-edit origin main && git push -q origin bump`, work);
-    expect(await (await post(call, "/api/repos/ana/up/mirror/branches/bump/pull")).json()).toMatchObject({ files: ["big.lock"] });
     expect(await (await post(call, "/api/repos/ana/up/branches/bump/merge")).json()).toMatchObject({ status: "merged" });
     expect(await sh(`git --git-dir ${call.artifacts.path("ana--up")} show main:big.lock`)).toBe(big("head bumped", "tail moved").trimEnd());
+  });
+
+  test("upstream's pull request branches open here on their own at the next sync (#1773)", async () => {
+    const call = await mirrored("prs");
+    const work = mkdtempSync(join(root, "work-"));
+    await sh(`git clone -q ${up} . && git config user.name Bo && git config user.email bo@example.com`, work);
+    for (const b of ["pr-one", "plain"]) await sh(`git checkout -q main && git checkout -qb ${b} && printf '${b}\\n' > ${b}.txt && git add -A && git commit -qm ${b} && git push -q origin ${b}`, work);
+    // GitHub keeps a ref per pull request; only the branch a pull request is for opens, not every branch.
+    await sh(`git --git-dir ${up} update-ref refs/pull/1/head pr-one`);
+    expect(await sync(call)).toMatchObject({ state: "ok" });
+    const list = await get(call, "/api/repos/ana/up/mirror/branches");
+    expect(list.map((b: any) => [b.ref, b.branch])).toEqual(expect.arrayContaining([["pr-one", "pr-one"], ["plain", null]]));
   });
 
   test("a push to this copy's git reaches the files open here, so the next commit here keeps it (#773)", async () => {
