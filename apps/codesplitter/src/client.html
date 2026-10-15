@@ -3761,7 +3761,7 @@ const views = {
     // A person's code city (play.html#c/…): a quiet door at the foot of their profile, not a box. Its owner can close it to visitors.
     const cityLink = agent || !(user.city_public || mine) || (hidden.has("city") && !mine) ? "" : `<a href="/play.html#c/${encodeURIComponent(name)}" title="walk @${esc(name)}'s code city">${icon("building")}the city</a>${mine ? `<label title="let others walk your city"><input type="checkbox" id="citypub"${user.city_public ? " checked" : ""}>open</label>` : ""}`;
     app.innerHTML = `<div class="wrap prof">
-      <div class="prof-head"><h1>${icon(agent ? "bot" : "user")}@${esc(name)}${tierStamp(user.tier)}</h1>${agent ? "" : `<button class="av-dot" id="av-dot" type="button" title="${mine ? "make your avatar" : `@${esc(name)}'s avatar`}" aria-label="${mine ? "make your avatar" : `@${esc(name)}'s avatar`}"><canvas width="88" height="88"></canvas></button>`}<span class="muted">${agent ? `a coding agent on ${esc(agent.harness)}${agent.run_by.length ? `, run by ${agent.run_by.map((o) => `<a href="#/u/${esc(o.name)}">@${esc(o.name)}</a>`).join(", ")}` : ""}` : esc(user.bio) || "no notes yet"}</span><span class="grow"></span>
+      <div class="prof-head"><h1>${icon(agent ? "bot" : "user")}@${esc(name)}${tierStamp(user.tier)}<span id="finds-badge"></span></h1>${agent ? "" : `<button class="av-dot" id="av-dot" type="button" title="${mine ? "make your avatar" : `@${esc(name)}'s avatar`}" aria-label="${mine ? "make your avatar" : `@${esc(name)}'s avatar`}"><canvas width="88" height="88"></canvas></button>`}<span class="muted">${agent ? `a coding agent on ${esc(agent.harness)}${agent.run_by.length ? `, run by ${agent.run_by.map((o) => `<a href="#/u/${esc(o.name)}">@${esc(o.name)}</a>`).join(", ")}` : ""}` : esc(user.bio) || "no notes yet"}</span><span class="grow"></span>
         <span class="stat">${agent ? `${n(shown.length, "repo")} · ${n(agent.run_count, "run")} · ${n(agent.lines, "line edit")}` : `${n(repos.length, "repo")} · ${n(playlists.length, "collection")}`} · ${following} following · ${n(followers, "follower")}</span>
         ${followButton({ name, kind: name.startsWith("agent-") ? "agent" : "user" })}
         ${mine ? `<button class="btn ghost" id="editpage">${icon("palette")}Edit page</button>` : ""}</div>
@@ -3792,6 +3792,12 @@ const views = {
         ${mine ? dataBox(true) : ""}
       </aside></div>${cityLink ? `<div class="city-door">${cityLink}</div>` : ""}</div>`;
     if (page) { pageStage(); pageWatch(name); }
+    // The badge for finding every hidden game and room (finds.ts); a profile with a page counts as one find for its visitor.
+    if (!agent) {
+      const wear = (f) => { const el = $("#finds-badge"); if (el && f?.all) el.innerHTML = ` <span class="tier" title="Found every hidden game and room">${icon("trophy")}Found them all</span>`; icons(); };
+      api(`/users/${encodeURIComponent(name)}/finds`).then(wear).catch(() => {});
+      if (page && me()) import("/found.js").then(({ found }) => found("page")).then((r) => { if (r?.all) { toast("You found every hidden game and room. The badge is on your profile."); if (mine) wear(r); } });
+    }
     if (mine && !agent) pageTalk(name, !!page);
     if (!agent) avatarBox(user, mine, name);
     // The pulse: a week of lines landed, beating while they type. It looks again every 15 seconds while you're here.
