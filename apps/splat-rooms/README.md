@@ -55,10 +55,6 @@ Drag to orbit, shift-drag to pan, wheel to zoom, click to select. The left rail 
 
 `labels.json` is the only file that says what's in a room. `pick-scene.py` (repo root) ranks folders by how many distinct hand-sized categories they hold. Two data points so far: an eyewear shop scored 22 (4 kinds, 340 identical glasses), a café scored 156 (28 kinds: straws, jars, spoons, cup lids, napkins, a coffee maker). Retail with one product is bad; hospitality and homes are good.
 
-## Props
-
-`assets/props/<label>.glb` are our own flat-shaded stand-ins for the things a hunt asks for (chair, table, desk, shelf, bookshelf, cabinet, wardrobe, sofa, stool, monitor, computer, book, cup, plant, trash_can, cart), sized like the real boxes. The scenes' own chairs are splats baked into each room, so they can't be lifted out. `bun scripts/props.ts` regenerates them from the part lists in that file. Nothing draws them in the game yet.
-
 ## Licensing
 
 InteriorGS ships under its own licence, not CC0, so scenes are downloaded by the user at runtime rather than bundled. Read the terms on the dataset page before shipping anything built on them.
