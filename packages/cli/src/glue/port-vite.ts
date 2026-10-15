@@ -16,14 +16,14 @@ export interface Port {
   notes: string[];
 }
 
-// Vite 7: @vitejs/plugin-vue2 doesn't take Vite 8 yet, and 7 still transforms with esbuild,
-// which the JSX-in-.js loader below relies on.
+// Vite 8, except Vue 2: @vitejs/plugin-vue2 takes Vite up to 7, so that port keeps VITE_7 (#851).
 export const PORT_DEPS = {
-  vite: "^7.3.0",
-  "@vitejs/plugin-react": "^5.2.0",
+  vite: "^8.0.0",
+  "@vitejs/plugin-react": "^6.0.0",
   "@vitejs/plugin-vue": "^6.0.0",
   "@vitejs/plugin-vue2": "^2.3.0",
 } as const;
+export const VITE_7 = "^7.3.0";
 
 const CRA_ENTRIES = ["src/index.tsx", "src/index.ts", "src/index.jsx", "src/index.js"];
 const VUE_ENTRIES = ["src/main.ts", "src/main.js"];
@@ -48,7 +48,7 @@ export interface ViteConfigOpts {
   vue2?: boolean;
   /** CRA lets .js files hold JSX; Vite needs telling. */
   jsxInJs?: boolean;
-  /** Source still calls require(): let the build turn it into imports. */
+  /** Source still calls require(): let the build turn it into imports (Vite 7 only; Rolldown bundles it unasked). */
   require?: boolean;
   /** `<template lang="html">`: vue-loader ignored it, the Vite plugin looks for an "html" preprocessor. */
   langHtml?: boolean;
@@ -60,9 +60,18 @@ export function viteConfig({ stack, vue2, jsxInJs, require, langHtml }: ViteConf
   const plugin = cra ? `import react from "@vitejs/plugin-react";` : `import vue from "@vitejs/plugin-vue${vue2 ? "2" : ""}";`;
   const lines = [
     `// Ported from ${cra ? "Create React App" : "Vue CLI"} by \`rustybuns init --port-vite\` (#404).`,
-    `import { defineConfig, loadEnv } from "vite";`,
+    `import { defineConfig, loadEnv${jsxInJs ? ", transformWithOxc, type Plugin" : ""} } from "vite";`,
     ...(cra ? [] : [`import { fileURLToPath } from "node:url";`]),
     plugin,
+    ...(jsxInJs ? [
+      ``,
+      `// JSX in .js files, as CRA allowed: Oxc picks the language from the extension, so parse them as JSX first.`,
+      `const jsxInJs = (): Plugin => ({`,
+      `  name: "jsx-in-js",`,
+      `  enforce: "pre",`,
+      `  transform: { filter: { id: /\\/src\\/.*\\.js$/ }, handler: (code, id) => transformWithOxc(code, id, { lang: "jsx" }) },`,
+      `});`,
+    ] : []),
     ``,
     `export default defineConfig(({ mode }) => {`,
     `  // ${prefix}* from .env files and the shell, inlined as process.env.${prefix}* the way ${cra ? "CRA" : "Vue CLI"} did.`,
@@ -75,7 +84,7 @@ export function viteConfig({ stack, vue2, jsxInJs, require, langHtml }: ViteConf
       `        id.endsWith(".vue") ? code.replace(/<template(\\s[^>]*)?\\slang=["']html["']/g, "<template$1") : undefined },`,
       `      vue(),`,
       `    ],`,
-    ] : [`    plugins: [${cra ? "react()" : "vue()"}],`]),
+    ] : [`    plugins: [${cra ? (jsxInJs ? "jsxInJs(), react()" : "react()") : "vue()"}],`]),
     `    envPrefix: ["VITE_", "${prefix}"],`,
     `    define: {`,
     cra ? `      "process.env.PUBLIC_URL": JSON.stringify(""),` : `      "process.env.BASE_URL": JSON.stringify("/"),`,
@@ -88,12 +97,7 @@ export function viteConfig({ stack, vue2, jsxInJs, require, langHtml }: ViteConf
       `      extensions: [".mjs", ".js", ".mts", ".ts", ".jsx", ".tsx", ".json", ".vue"],`,
       `    },`,
     ]),
-    ...(jsxInJs ? [
-      `    // JSX in .js files, as CRA allowed.`,
-      `    esbuild: { loader: "jsx", include: /src\\/.*\\.jsx?$/, exclude: [] },`,
-      `    optimizeDeps: { esbuildOptions: { loader: { ".js": "jsx" } } },`,
-    ] : []),
-    ...(require ? [
+    ...(require && vue2 ? [
       `    // require() in the app's own source: bundle it rather than leave it for the browser.`,
       `    build: { commonjsOptions: { include: [/node_modules/, /src\\//], extensions: [".js", ".jsx", ".ts", ".tsx", ".vue"], transformMixedEsModules: true } },`,
     ] : []),
@@ -144,7 +148,7 @@ export function planPort(root: string, stack: Stack): Port | string {
   const deps: Record<string, string> = { ...pkg.dependencies, ...pkg.devDependencies };
   const vueMajor = Number(String(deps.vue ?? "").replace(/^[^0-9]*/, "").split(".")[0]);
   const vue2 = !cra && vueMajor === 2;
-  const devDependencies = { ...pkg.devDependencies, vite: PORT_DEPS.vite };
+  const devDependencies = { ...pkg.devDependencies, vite: vue2 ? VITE_7 : PORT_DEPS.vite };
   const plugin = cra ? "@vitejs/plugin-react" : vue2 ? "@vitejs/plugin-vue2" : "@vitejs/plugin-vue";
   devDependencies[plugin] = PORT_DEPS[plugin];
   const next = { ...pkg, devDependencies };
@@ -153,11 +157,11 @@ export function planPort(root: string, stack: Stack): Port | string {
     for (const k of ["dependencies", "devDependencies"] as const) if (next[k]?.vue) next[k] = { ...next[k], vue: "^2.7.16" };
     notes.push(`vue ${deps.vue} -> ^2.7.16: @vitejs/plugin-vue2 needs 2.7. Check your Vue 2 plugins still agree.`);
   }
-  // Vite 7's optional peer: an older @types/node (CRA shipped 16) stops npm installing it.
+  // Vite's optional peer: an older @types/node (CRA shipped 16) stops npm installing it.
   const types = String(deps["@types/node"] ?? "");
   if (types && Number(types.replace(/^[^0-9]*/, "").split(".")[0]) < 20) {
     for (const k of ["dependencies", "devDependencies"] as const) if (next[k]?.["@types/node"]) next[k] = { ...next[k], "@types/node": "^20.19.0" };
-    notes.push(`@types/node ${types} -> ^20.19.0: Vite 7 wants it, and npm won't install around an older one.`);
+    notes.push(`@types/node ${types} -> ^20.19.0: Vite wants it, and npm won't install around an older one.`);
   }
   const scripts: Record<string, string> = { ...pkg.scripts };
   for (const [k, v] of Object.entries(scripts)) scripts[k] = SCRIPT_SWAPS.reduce((s, [re, to]) => s.replace(re, to), v);

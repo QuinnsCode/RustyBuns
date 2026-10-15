@@ -610,11 +610,11 @@ test("init --port-vite: CRA becomes a Vite app, then init goes on", () => {
   expect(html).toContain('    <script type="module" src="/src/index.js"></script>\n  </body>');
   const cfg = p.read("vite.config.ts");
   expect(cfg).toContain('loadEnv(mode, process.cwd(), "REACT_APP_")');
-  expect(cfg).toContain('loader: "jsx"');              // JSX in src/index.js
-  expect(cfg).toContain("transformMixedEsModules");   // require() in src/index.js
+  expect(cfg).toContain('lang: "jsx"');               // JSX in src/index.js, through Oxc
+  expect(cfg).not.toMatch(/esbuild|commonjsOptions/); // Vite 8: Rolldown bundles require() itself
   const pkg = JSON.parse(p.read("package.json"));
   expect(pkg.scripts).toMatchObject({ start: "vite", build: "vite build", test: "react-scripts test", preview: "vite preview" });
-  expect(pkg.devDependencies).toMatchObject({ vite: expect.any(String), "@vitejs/plugin-react": expect.any(String) });
+  expect(pkg.devDependencies).toMatchObject({ vite: "^8.0.0", "@vitejs/plugin-react": "^6.0.0" });
   expect(pkg.dependencies["@types/node"]).toBe("^20.19.0");
   expect(p.read("rustybuns.config.ts")).toContain("vite build --outDir dist/ui");
 });
@@ -645,6 +645,7 @@ test("init --port-vite: Vue CLI 2 gets plugin-vue2, Vue 2.7, the @ alias and BAS
   expect(cfg).toContain("template-lang-html");
   const pkg = JSON.parse(p.read("package.json"));
   expect(pkg.dependencies.vue).toBe("^2.7.16");
+  expect(pkg.devDependencies).toMatchObject({ vite: "^7.3.0", "@vitejs/plugin-vue2": "^2.3.0" });  // plugin-vue2 stops at Vite 7
   expect(pkg.scripts).toMatchObject({ serve: "vite", build: "vite build", lint: "vue-cli-service lint" });
 });
 
