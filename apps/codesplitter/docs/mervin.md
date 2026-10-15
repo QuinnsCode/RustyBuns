@@ -306,12 +306,14 @@ merges anything new without the same guards as today.
 **Opt-in.** Off by default, per repo, switchable in settings, with delete-my-data. Nothing leaves the account
 that owns the repo.
 
-**Not joined up yet.** Three pieces landed side by side and don't meet. The D1 log above (`mervin_events`, outcome
-`settled`/`asked`/`wrong`) is the one that records. `src/mervin-events.ts` sends to a `MERVIN_EVENTS` pipeline that no
-deploy config binds, so it never sends, and its `checks_passed` is always true. `src/mervin-learn.ts` (#1511) holds the
-three queries (fight weights, demoted levels, `.gitattributes` suggestions), but they name columns neither store has
-(`outcome = 'card'`, `level`, `answer`, `path`) and nothing calls them. Picking one store and wiring the queries to it is
-the open work.
+**Store: D1, one path (#1728).** The `mervin_events` table is the store; the Pipeline emitter (`MERVIN_EVENTS`, never bound
+in a deploy) is deleted. A merge records one row per file that fought or was settled (`recordEvents`), with the card's
+answer; `src/mervin-learn.ts` queries those rows. In the merge plan, branches whose files fought more go after calmer ones
+(one place at most, stacks and held branches keep their order), and card answers that repeat come back as `rules` to approve.
+Paths are hashed with the repo's name unless the owner sets `hash_paths: false`; delete-my-data removes every event (no salt
+is kept). Levels are not learned: no event records which level settled a file.
+
+The Pipelines-to-Iceberg design below is where this goes if D1 ever gets too big; it is not built.
 
 **Decision: Pipelines to Iceberg.** Plain R2 NDJSON plus R2 SQL is not an option, because R2 SQL only queries
 Iceberg tables managed by the catalog; NDJSON would need our own reader in a Worker. It is also not cheaper (below).

@@ -2,7 +2,7 @@
 // each file is. Then, once the PRs have merged for real, score the sandbox against what landed.
 //
 //   bun scripts/mervin-board.ts [1468 1478 ...] [--out dir] [--from prs.json] [--check] [--check-stages] [--json]
-//                               [--no-cache] [--cache dir] [--blast]
+//                               [--no-cache] [--cache dir] [--blast] [--round file]
 //   bun scripts/mervin-board.ts --score <dir> [--main origin/main]
 //
 // With no PR numbers it takes every open PR (`gh pr list`, read only), oldest first, a stacked PR right after
@@ -26,6 +26,10 @@
 // `certain` is about one file's text. Clashes that span files get their own list (`clashes`): migrations with
 // one stamp (two PRs, or a PR and main), two PRs adding the same export to a file, two PRs adding the same
 // route. They merge clean as text and break at build or run time, so the board names them.
+//
+// `--check` also records its steps as `lanes` (the install in the add lane, the typecheck and tests in the build
+// lane) in board.json, and in a round file with `--round .mervin/rounds/<file>.json`, for the watch page. Each file
+// merged (not carded) carries its changed `lines` in board.json, which mervin-merge.ts records in the round.
 //
 // `--check-stages` is `--check` once per stage (opt-in: one install per stage): the tree after stage 1, after
 // stage 2 and so on, so a failure the board adds points at the first stage that caused it.
@@ -55,6 +59,7 @@ import { dirname, join, resolve } from "node:path";
 import { describeBlast, load, rank } from "./blast.ts";
 import { hold, hurtLines, keep, kept, packagesChanged, report, rows, triage } from "./ester.ts";
 import { heal, layout } from "../layout.ts";
+import type { Lane, LaneStep, Line } from "../src/mervin-replay.ts";
 import { sandbox, shadow, testRuns, testTree, writeTree } from "./shadow.ts";
 
 export type Tier = "certain" | "agree" | "mervin" | "differ" | "card";
@@ -90,7 +95,7 @@ export function ciOf(pr: BoardPr): { ci: Ci; failing: string[]; ciSecs: number }
   return { ci, failing, ciSecs };
 }
 /** `main` is true when the PR conflicts with main's own copy of the file, whatever earlier stages did. */
-export interface FileRow { path: string; tier: Tier; why: string; after: number[]; main?: boolean }
+export interface FileRow { path: string; tier: Tier; why: string; after: number[]; main?: boolean; lines?: Line[] }
 export interface Stage { pkgs?: string[]; ms?: number; cached?: boolean; pr: number; title?: string; head: string; base: string; stackedOn?: number; ci?: Ci; failing?: string[]; ciSecs?: number; files: FileRow[] }
 /** A clash between files (or PRs) that merges clean as text: `prs` lists the PRs, `main` is true when main holds one side. */
 export interface Clash {
@@ -102,7 +107,7 @@ export interface Clash {
   /** Migrations: the later PRs' files renamed to the next free stamp. */
   renumber?: { pr: number; from: string; to: string }[];
 }
-export interface Board { main: string; at: string; stages: Stage[]; written: string[]; skipped: { pr: number; why: string }[]; clashes: Clash[] }
+export interface Board { main: string; at: string; stages: Stage[]; written: string[]; skipped: { pr: number; why: string }[]; clashes: Clash[]; lanes?: LaneStep[] }
 
 /** A stage's result, kept so a rerun that changes nothing for it skips the merging. */
 export interface CachedStage { files: FileRow[]; mine: [string, string | null][]; claims: Clash[] }
@@ -129,6 +134,28 @@ const gitIn = (repo: string | undefined) => (...a: string[]) => {
   const r = Bun.spawnSync(["git", ...a], { cwd: repo, stderr: "pipe", maxBuffer: BUF });
   return r.exitCode === 0 ? r.stdout.toString() : null;
 };
+
+const LINES_MAX = 60;
+/**
+ * The merged file's lines the watch page streams: each changed line marked by who wrote it (`pr`, `main`; shared
+ * lines are `both`), with one shared line around each change, at most LINES_MAX. Whole-line sets, so a moved line reads as shared.
+ */
+export function linesOf(base: string, main: string, pr: string, merged: string): Line[] {
+  const set = (t: string) => new Set(t.split("\n"));
+  const b = set(base), m = set(main), p = set(pr);
+  const all: Line[] = merged.replace(/\n$/, "").split("\n").map((text) => {
+    if (b.has(text)) return { text, side: "both" as const };
+    const inPr = p.has(text), inMain = m.has(text);
+    return { text, side: inPr && !inMain ? ("pr" as const) : inMain && !inPr ? ("main" as const) : ("both" as const) };
+  });
+  const changed = (i: number) => all[i] !== undefined && all[i]!.side !== "both";
+  return all.filter((_, i) => changed(i - 1) || changed(i) || changed(i + 1)).slice(0, LINES_MAX);
+}
+
+/** The `--check` runs as lane steps: the install is the add lane, the typecheck and tests the build lane. Nothing deploys here. */
+export function lanesOf(runs: { dir: string; cmd: string; ok: boolean }[]): LaneStep[] {
+  return runs.map((r) => ({ lane: (/\binstall\b/.test(r.cmd) ? "add" : "build") as Lane, name: r.dir === "." ? r.cmd : `${r.dir}: ${r.cmd}`, state: r.ok ? "ok" : "fail" }));
+}
 
 const stampOf = (path: string) => (/(^|\/)migrations\//.test(path) ? path.match(/(?:^|\/)(\d+)_[^/]*$/)?.[1] : undefined);
 const DECL = /^\+\s*export\s+(?:default\s+)?(?:async\s+)?(?:const|let|function\*?|class|type|interface|enum)\s+(\w+)/;
@@ -322,9 +349,9 @@ export function run(repo: string | undefined, main: string, prs: BoardPr[], cach
         // Does the PR clash with main's copy alone? (GitHub's CONFLICTING, not only a clash with earlier stages.)
         const mainTxt = show(main, path);
         const clashMain = () => mainTxt !== b && mainTxt !== br && (mainTxt === null || br === null || [b ?? "", mainTxt, br].some((t) => t.includes("\0")) || !shadow(path, b ?? "", mainTxt, br, attributes).git.clean);
-        const row = (tier: Tier, why: string) => stage.files.push({ path, tier, why, after: [...after], ...((tier === "card" || tier === "mervin") && clashMain() && { main: true }) });
+        const row = (tier: Tier, why: string, lines?: Line[]) => stage.files.push({ path, tier, why, after: [...after], ...(lines?.length && { lines }), ...((tier === "card" || tier === "mervin") && clashMain() && { main: true }) });
         if (cur === br) row("certain", "already reads as this PR wrote it");
-        else if (cur === b) { tree.set(path, br); mine.set(path, br); row("certain", br === null ? "deleted, untouched since the base" : "untouched since the base: the PR's copy"); }
+        else if (cur === b) { tree.set(path, br); mine.set(path, br); row("certain", br === null ? "deleted, untouched since the base" : "untouched since the base: the PR's copy", br === null || (br + (b ?? "")).includes("\0") ? undefined : linesOf(b ?? "", cur ?? "", br, br)); }
         else if (br === null || cur === null) row("card", br === null ? "deleted here, changed on main" : "changed here, deleted on main");
         else if ([b ?? "", cur, br].some((t) => t.includes("\0"))) row("card", "binary, both changed");
         else {
@@ -333,10 +360,11 @@ export function run(repo: string | undefined, main: string, prs: BoardPr[], cach
           else if (!s.ours.clean) row("card", s.ours.conflicts.map((c) => c.lint ?? (c.whole ? "lockfile" : `line ${c.line}`)).slice(0, 3).join(", "));
           else {
             tree.set(path, s.ours.text); mine.set(path, s.ours.text);
-            if (path === REFERENCE) row("mervin", "generated: both sides merged clean, but `bun run layout` rewrites the Layout table after the merge");
-            else if (!s.git.clean) row("mervin", "git conflicts, Mervin settles");
-            else if (s.git.text === s.ours.text) row("agree", "git and Mervin agree");
-            else row("differ", "both clean, different text: Mervin's kept");
+            const lines = linesOf(b ?? "", cur ?? "", br ?? "", s.ours.text ?? "");
+            if (path === REFERENCE) row("mervin", "generated: both sides merged clean, but `bun run layout` rewrites the Layout table after the merge", lines);
+            else if (!s.git.clean) row("mervin", "git conflicts, Mervin settles", lines);
+            else if (s.git.text === s.ours.text) row("agree", "git and Mervin agree", lines);
+            else row("differ", "both clean, different text: Mervin's kept", lines);
           }
         }
         if (stage.files.at(-1)!.tier !== "card") touched.set(path, [...after, pr.number]);
@@ -514,6 +542,10 @@ if (import.meta.main) {
       mkdirSync(env.HOME);
       const runs = [{ dir: ".", cmd: "bun run typecheck" }, ...testRuns(readFileSync(join(out, "tree/scripts/ci-apps.ts"), "utf8"), board.written)];
       const r = await testTree(join(out, "tree"), runs, env, true);
+      board.lanes = lanesOf(r.runs);
+      writeFileSync(join(out, "board.json"), JSON.stringify(board, null, 2));
+      const round = arg("round");
+      if (round) { const rec = JSON.parse(readFileSync(round, "utf8")); writeFileSync(round, JSON.stringify({ ...rec, lanes: board.lanes }, null, 2)); }
       for (const x of r.runs) console.log(`${x.ok ? "pass" : "FAIL"}  ${x.dir}: ${x.cmd}  ${(x.ms / 1000).toFixed(1)}s`);
       if (r.failed.length) {
         // The sandbox fails some tests on main too (no claude CLI, no native build): only what the board adds counts.
