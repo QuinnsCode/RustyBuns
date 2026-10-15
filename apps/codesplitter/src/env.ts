@@ -44,8 +44,26 @@ export interface R2Like {
   delete(keys: string | string[]): Promise<void>;
 }
 
+/** A row as D1 hands it over: name the columns you selected with `first<Row>()` / `all<Row>()`. */
+export type Row = Record<string, unknown>;
+export interface D1Result<T = Row> { results: T[]; success: boolean; meta: { changes?: number; last_row_id?: number; rows_read?: number; rows_written?: number; duration?: number } }
+export interface D1Statement {
+  bind(...params: unknown[]): D1Statement;
+  first<T = Row>(): Promise<T | null>;
+  first<T = unknown>(column: string): Promise<T | null>;
+  all<T = Row>(): Promise<D1Result<T>>;
+  run<T = Row>(): Promise<D1Result<T>>;
+  raw<T = unknown[]>(opts?: { columnNames?: boolean }): Promise<T[]>;
+}
+/** The D1 binding (Cloudflare's in production, shell-bun's SQLite in tests and on the desktop): the part of its API this app calls. */
+export interface D1 {
+  prepare(sql: string): D1Statement;
+  batch<T = Row>(stmts: D1Statement[]): Promise<D1Result<T>[]>;
+  exec(sql: string): Promise<{ count: number; duration: number }>;
+}
+
 export interface Env {
-  DB: any;
+  DB: D1;
   FILES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** One game room per level or repo: its lobby and multiplayer relay. */
   GAMES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
@@ -169,7 +187,10 @@ export const json = (v: unknown, status = 200, headers: Record<string, string> =
 
 /** A client's JSON body: the fields a route reads, each unknown until the route checks it. Bad JSON or a non-object just has none. */
 export type Body<K extends string> = { [k in K]?: unknown };
-export const readBody = async <K extends string>(req: Request): Promise<Body<K>> => (await req.json().catch(() => null)) ?? {};
+export const readBody = async <K extends string>(req: Request): Promise<Body<K>> => {
+  const v: unknown = await req.json().catch(() => null);
+  return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Body<K>) : {};
+};
 
 // Single dashes only, so "owner--repo" names an artifact unambiguously.
 export const NAME = /^(?=.{1,39}$)[a-z0-9]+(-[a-z0-9]+)*$/;

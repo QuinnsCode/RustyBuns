@@ -79,7 +79,7 @@ const tooBig = (e: unknown) => tooBigToImport(e) || /size limit|too big to push/
 export async function levelSource(env: Env, slug: string): Promise<{ handle: ArtifactsRepo; ref: string; commit: string | null; r2: boolean } | null> {
   const level = LEVELS.find((l) => l.slug === slug);
   if (!level) return null;
-  const row = await env.DB.prepare("SELECT status, store, commit_hash, commit_message FROM levels WHERE slug = ?").bind(slug).first();
+  const row = await env.DB.prepare("SELECT status, store, commit_hash, commit_message FROM levels WHERE slug = ?").bind(slug).first<{ status: string; store: string; commit_hash: string | null; commit_message: string | null }>();
   if (row?.status !== "ready") return null;
   if (row.store === "r2") {
     if (!env.LEVEL_CHUNKS || !row.commit_hash) return null;

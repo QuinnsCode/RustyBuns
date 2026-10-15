@@ -471,8 +471,10 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     if (!t) return json({ via: null, login: null, repos: [], privateOk, ...temp, ...more });
     const [me, list] = await Promise.all([gh("/user", t.token), gh("/user/repos?per_page=100&sort=pushed", t.token)]);
     if (!me.ok) return json({ via: t.via, login: null, repos: [], privateOk, ...temp, ...more, error: `GitHub said ${me.status}` });
-    const repos = list.ok ? ((await list.json()) as any[]).map((r) => ({ repo: r.full_name, private: r.private, branch: r.default_branch, description: r.description })) : [];
-    return json({ via: t.via, login: ((await me.json()) as any).login, repos, privateOk, ...temp, ...more });
+    const listed = list.ok ? (await list.json().catch(() => [])) as unknown : [];
+    const repos = Array.isArray(listed) ? (listed as Record<string, unknown>[]).filter((r) => typeof r.full_name === "string").map((r) => ({ repo: r.full_name, private: !!r.private, branch: r.default_branch, description: r.description })) : [];
+    const { login } = (await me.json().catch(() => ({}))) as { login?: unknown };
+    return json({ via: t.via, login: typeof login === "string" ? login : null, repos, privateOk, ...temp, ...more });
   }
 
   // POST /api/github/active {id}  dig and list as this one of your linked GitHubs.

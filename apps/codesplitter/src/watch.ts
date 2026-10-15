@@ -145,7 +145,7 @@ export async function checkRepo(env: Env, call: Call, owner: string, repo: strin
 interface State { since: string; after: [string, string] | null; again: boolean }
 
 async function state(env: Env, now: number): Promise<State> {
-  const r = await env.DB.prepare("SELECT value FROM watch_state WHERE key = 'mal'").first();
+  const r = await env.DB.prepare("SELECT value FROM watch_state WHERE key = 'mal'").first<{ value: string }>();
   return r ? JSON.parse(r.value) : { since: new Date(now - FIRST_LOOK).toISOString(), after: null, again: false };
 }
 const save = (env: Env, s: State) => env.DB.prepare("INSERT OR REPLACE INTO watch_state (key, value) VALUES ('mal', ?)").bind(JSON.stringify(s)).run();
@@ -265,7 +265,7 @@ export function newsFrom(input: unknown, seen: Set<string>, now: number): News[]
 /** The news search, when it's on and a day has passed since it last ran. Returns how many it found, or null when it didn't run. */
 export async function takeNews(env: Env, now = Date.now()): Promise<number | null> {
   if (env.WATCH_NEWS !== "1" || !env.ANTHROPIC_API_KEY) return null;
-  const r = await env.DB.prepare("SELECT value FROM watch_state WHERE key = 'news'").first();
+  const r = await env.DB.prepare("SELECT value FROM watch_state WHERE key = 'news'").first<{ value: string }>();
   if (r && now - JSON.parse(r.value).at < NEWS_EVERY) return null;
   // Booked before it runs: one that fails waits a day too, so a broken run never costs more than one a day.
   await env.DB.prepare("INSERT OR REPLACE INTO watch_state (key, value) VALUES ('news', ?)").bind(JSON.stringify({ at: now })).run();

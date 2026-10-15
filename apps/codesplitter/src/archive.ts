@@ -125,7 +125,7 @@ export async function access(handle: ArtifactsRepo, fallbackRemote: string, scop
 
 /** A tree is named by its hash and never changes, so D1 keeps every one we read forever. */
 export async function readTree(env: Env, handle: ArtifactsRepo, hash: string): Promise<TreeEntry[] | null> {
-  const hit = await env.DB.prepare("SELECT entries FROM tree_cache WHERE hash = ?").bind(hash).first();
+  const hit = await env.DB.prepare("SELECT entries FROM tree_cache WHERE hash = ?").bind(hash).first<{ entries: string }>();
   if (hit) return JSON.parse(hit.entries);
   const entries = await handle.readTree(hash);
   if (entries) await env.DB.prepare("INSERT OR IGNORE INTO tree_cache (hash, entries) VALUES (?, ?)").bind(hash, JSON.stringify(entries)).run();
@@ -327,7 +327,7 @@ const WALL_FILES = 12, WALL_DOORS = 12, WALL_LINES = 48, WALL_WIDTH = 90;
  */
 export async function walls(env: Env, handle: ArtifactsRepo, ref: string, dir: string, commit?: string | null): Promise<Walls | null> {
   const cached = async (c: string) => {
-    const hit = await env.DB.prepare("SELECT data FROM walls_cache WHERE key = ?").bind(`${WALLS_V}${c}:${dir}`).first();
+    const hit = await env.DB.prepare("SELECT data FROM walls_cache WHERE key = ?").bind(`${WALLS_V}${c}:${dir}`).first<{ data: string }>();
     return hit ? (JSON.parse(hit.data) as Walls) : null;
   };
   if (commit) { const hit = await cached(commit); if (hit) return hit; }

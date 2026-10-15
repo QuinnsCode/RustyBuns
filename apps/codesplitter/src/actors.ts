@@ -5,6 +5,7 @@
 // it from repos the viewer may read; a run's task stays its owner's, as in
 // agent-routes.ts.
 
+import { parseJson } from "./util.ts";
 import { HARNESSES } from "./harness.ts";
 import type { Env } from "./env.ts";
 
@@ -29,10 +30,10 @@ export async function agentProfile(env: Env, agent: string, viewer: string | nul
     .bind(agent, now, viewer, viewer).all();
   const { results } = await env.DB.prepare(
     `SELECT a.id, a.owner, a.repo, a.path, a.harness, a.task, a.status, a.started, a.result FROM agent_runs a JOIN repos r ON r.owner = a.owner AND r.name = a.repo WHERE a.agent = ? AND ${SEEN} ORDER BY a.started DESC, a.id DESC`)
-    .bind(agent, now, viewer, viewer).all();
-  const rows = results as RunRow[];
+    .bind(agent, now, viewer, viewer).all<RunRow>();
+  const rows = results;
   const runs = rows.map((r) => {
-    const res = r.result ? JSON.parse(r.result) as { applied?: number } : {};
+    const res = parseJson<{ applied?: number }>(r.result, {});
     return { id: r.id, owner: r.owner, repo: r.repo, path: r.path, status: r.status, started: r.started, applied: res.applied ?? 0,
       // Who gave it the task sees the task.
       ...(viewer === r.owner && { task: r.task }) };
