@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { RustyBunsConfig } from "../src/config.ts";
 import { generateAlchemy } from "../src/gen/alchemy.ts";
 import { adoptProblem, adoptQuestion } from "../src/isolation.ts";
+import { realDestroyProblem } from "../src/environment.ts";
 import { protectReport, protectedNames } from "../src/protect.ts";
 
 const cfg = (adopt = false): RustyBunsConfig => ({
@@ -45,4 +46,15 @@ test("under ADOPT a destroy asks about what it deletes, and says what it keeps",
   expect(q).toContain("KEEPS these (protect: true):\n  - Vectorize shop-index");
   expect(q.split("KEEPS")[0]).not.toContain("shop-index");
   expect(adoptProblem("destroy", c, "/nonexistent", "dev", { fresh: false, adoptExisting: false })).not.toContain("shop-index");
+});
+
+test("Durable Objects and Artifacts are reported REMOVED, and a production destroy is refused until --real", () => {
+  const c = { bindings: { ROOM: { type: "durable_object", className: "Room" }, SHARED: { type: "durable_object", className: "X", scriptName: "other" }, REPOS: { type: "artifacts", namespace: "repos" } }, targets: {} } as unknown as RustyBunsConfig;
+  const out = protectReport(c, "destroy");
+  expect(out).toContain("[REMOVED] Durable Object Room");
+  expect(out).toContain("[REMOVED] Artifacts repos");
+  expect(out).not.toContain("X");
+  expect(realDestroyProblem("destroy", c, "prod", false)).toContain("Durable Object Room, Artifacts repos");
+  expect(realDestroyProblem("destroy", c, "prod", true)).toBeNull();
+  expect(realDestroyProblem("destroy", c, "pr-5", false)).toBeNull();
 });
