@@ -2,9 +2,9 @@
 // apps.yml and desktop-drop.yml both read this, so adding an app is one entry here.
 //
 //   bun scripts/ci-apps.ts test <base-ref>     apps a PR touched (all of them if packages/ moved),
-//                                              whether .claude/ moved (the guard hook tests), and the
-//                                              touched apps' desktop smokes, one job per Mac and Linux target,
-//                                              plus a job per bootOn target
+//                                              whether .claude/ moved (the guard hook tests)
+//   bun scripts/ci-apps.ts smoke               every app's desktop smoke, one job per Mac and Linux target,
+//                                              plus a job per bootOn target: desktop-hourly.yml, not PRs
 //   bun scripts/ci-apps.ts drop <all|a,b,c>    the build matrix for desktop-drop.yml
 //   bun scripts/ci-apps.ts drop pr <base-ref>  a PR's dry run: the apps whose rows below changed
 //                                              (all of them if the pipeline itself changed)
@@ -124,15 +124,16 @@ if (cmd === "drop") {
   const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n)));
   out("apps", { include: names.map((app) => ({ app, test: APPS[app]!.test ?? "", boot: !!APPS[app]!.boot, prep: APPS[app]!.prep ?? "", cargo: cargo(app) })) });
   out("any", names.length > 0);
-  const smokes = Object.keys(APPS).filter((n) => APPS[n]!.smoke && (shared || touched.has(n)))
-    .flatMap((app) => RUNNERS.filter((r) => !r.target.startsWith("windows")).map((r) => ({ app, ...r, smoke: APPS[app]!.smoke })))
-    .concat(Object.keys(APPS).filter((n) => APPS[n]!.bootOn && (shared || touched.has(n))).flatMap((app) =>
-      RUNNERS.filter((r) => APPS[app]!.bootOn!.includes(r.target)).map((r) => ({ app, ...r, smoke: `${buildCmd(app, APPS[app]!, [r.target])} && bun ../../scripts/boot.ts --bin ${binFile(app, r.target)}` }))));
-  out("smoke", { include: smokes });
-  out("smokes", smokes.length > 0);
   out("packages", changed.some((f) => f.startsWith("packages/")));
   // bun test skips dot directories, so the agent guard hook's tests (.claude/hooks) get their own job.
   out("hooks", shared || changed.some((f) => f.startsWith(".claude/")));
+} else if (cmd === "smoke") {
+  const smokes = Object.keys(APPS).filter((n) => APPS[n]!.smoke)
+    .flatMap((app) => RUNNERS.filter((r) => !r.target.startsWith("windows")).map((r) => ({ app, ...r, smoke: APPS[app]!.smoke })))
+    .concat(Object.keys(APPS).filter((n) => APPS[n]!.bootOn).flatMap((app) =>
+      RUNNERS.filter((r) => APPS[app]!.bootOn!.includes(r.target)).map((r) => ({ app, ...r, smoke: `${buildCmd(app, APPS[app]!, [r.target])} && bun ../../scripts/boot.ts --bin ${binFile(app, r.target)}` }))));
+  out("smoke", { include: smokes });
+  out("smokes", smokes.length > 0);
 } else {
-  throw new Error("usage: bun scripts/ci-apps.ts test <base-ref> | drop <all|a,b,c>");
+  throw new Error("usage: bun scripts/ci-apps.ts test <base-ref> | smoke | drop <all|a,b,c>");
 }
