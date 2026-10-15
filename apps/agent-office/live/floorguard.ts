@@ -37,21 +37,23 @@ export const ASK_MS = 120_000;
 export interface Ask { id: string; floor: string; who: string; what: string; detail: string; size: number; odd: number; at: number; until: number }
 const asks = new Map<string, Ask & { answer: (why: string) => void }>();
 
-const clip = (s: unknown, n: number) => {
-  const line = String(s ?? "").replace(/\s+/g, " ").trim();
-  return line.length > n ? `${line.slice(0, n - 1)}…` : line;
-};
-
 // C0 controls (bar newline and tab), DEL and C1: what a terminal reads as keystrokes or escapes.
 const ODD = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/g;
 
 /** A prompt for the card whole (newlines kept, no length cap), control characters shown as ␛-style pictures. */
 const full = (s: unknown) => String(s ?? "").replace(ODD, (c) => (c < " " ? String.fromCharCode(0x2400 + c.charCodeAt(0)) : "\u2421"));
 
-/** How long the prompt the card shows is, and how many control characters it holds. */
+/** One line of a field for the card: whitespace collapsed, control characters pictured, cut at `n`. */
+const clip = (s: unknown, n: number) => {
+  const line = full(s).replace(/\s+/g, " ").trim();
+  return line.length > n ? `${line.slice(0, n - 1)}…` : line;
+};
+
+/** How long the prompt the card shows is, and how many control characters any field the card shows holds. */
 function askSize(body: any) {
-  const text = String(body?.prompt ?? "");
-  return { size: text.length, odd: text.match(ODD)?.length ?? 0 };
+  const b = body ?? {};
+  const shown = [b.prompt, b.title, b.worker, b.issue, b.pr, b.cleanup, ...(Array.isArray(b.workers) ? b.workers : [])];
+  return { size: String(b.prompt ?? "").length, odd: shown.reduce((n: number, f) => n + (String(f ?? "").match(ODD)?.length ?? 0), 0) };
 }
 
 /** What the agent is asking to do, for the card: the prompt in full, since a clipped one hides what it ends with. */
