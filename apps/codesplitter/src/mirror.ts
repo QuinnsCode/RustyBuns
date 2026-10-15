@@ -1244,7 +1244,7 @@ async function clashOnlyInGit(env: Env, owner: string, repo: string, s: Setup, n
 /** /api/repos/:o/:r/mirror/branches[/:b/pull|push]: reading is for anyone who can read the repo, the rest for its owner. */
 /** A folder mirror's folder, or null for a whole-repo mirror or any other repo. */
 const folderOf = async (env: Env, owner: string, repo: string) =>
-  ((await env.DB.prepare("SELECT mirror_path FROM repos WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(owner, repo).first())?.mirror_path ?? null) as string | null;
+  ((await repoRow(env, owner, repo, "mirror_path", { mirrored: true }))?.mirror_path ?? null) as string | null;
 const FOLDER_ONLY = "a folder mirror sends its work up as one branch of its own, so upstream's branches and tags stay upstream";
 
 export async function mirrorBranchRoute(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null) {
@@ -1419,7 +1419,7 @@ async function folderMirror(env: Env, lg: LocalGit, user: string, src: { url: st
   const visibility = b.visibility ?? "public";
   if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
   if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
-  if (await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(user, name).first()) return json({ error: "you already have a repo with that name" }, 409);
+  if (await repoRow(env, user, name, "1")) return json({ error: "you already have a repo with that name" }, 409);
   const art = `${user}--${name}`, dir = lg.path(art), net = await remoteEnv(env, user, src.url);
   rmSync(dir, { recursive: true, force: true });   // no row owns this name, so anything here is an orphan
   const fail = (status: number, error: string) => { rmSync(dir, { recursive: true, force: true }); return json({ error }, status); };
