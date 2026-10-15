@@ -287,13 +287,22 @@ const labelTex = (text, color = "#0a0a0a", px = 64) => canvasTex(1024, 128, (g, 
 const H = 5.2, PANEL = 7, DOOR_W = 2.2, DOOR_H = 3.3;
 const roomCache = new Map();
 let here = null;   // { path, half, group, doors:[{wall,c,path}], lines:[{mesh, atlas, line}] }
-async function fetchRoom(path) {
-  if (roomCache.has(path)) return roomCache.get(path);
-  const r = await fetch(`${API}/walls?path=${encodeURIComponent(path)}`);
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "no room");
-  const w = await r.json();
-  roomCache.set(path, w);
-  return w;
+function fetchRoom(path) {
+  let p = roomCache.get(path);
+  if (!p) {
+    p = fetch(`${API}/walls?path=${encodeURIComponent(path)}`).then(async (r) => {
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "no room");
+      return r.json();
+    });
+    roomCache.set(path, p);
+    p.catch(() => roomCache.delete(path));   // a failed room is tried again, not remembered
+  }
+  return p;
+}
+/** Walking toward a door fetches the room behind it, so the doorway is instant. Only the doors you head for, so no fetch is wasted. */
+function preloadAhead(i, a, d) {
+  if (d > 14) return;
+  for (const x of here.doors) if (x.wall === i && Math.abs(a - x.c) < DOOR_W * 1.5) fetchRoom(x.path).catch(() => {});
 }
 // Wall i: 0 north, 1 east, 2 south, 3 west. Local x along the wall, +z into the room.
 const WALL_ROT = [0, -Math.PI / 2, Math.PI, Math.PI / 2];
@@ -1176,6 +1185,7 @@ function updatePlayer(dt) {
   const m = 0.35;
   for (let i = 0; i < 4 && here; i++) {
     let [a, d] = toWall(i, player.pos.x, player.pos.z, here.half);
+    preloadAhead(i, a, d);
     if (d >= m) continue;
     const door = here.doors.find((x) => x.wall === i && Math.abs(a - x.c) < DOOR_W / 2 - 0.25);
     if (door) { if (d < -0.3 && !transit) { transit = true; const from = here.path; enter(door.path, from).finally(() => (transit = false)); return; } continue; }
