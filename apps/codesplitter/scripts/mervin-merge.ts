@@ -23,10 +23,15 @@
 // on the new main. A PR is held when its CI failed, the board carded one of its files (Mervin couldn't carry its
 // change), it is stacked on a PR that hasn't landed, it sits in a clash between files, or it waits behind a
 // held PR that touches the same files. Every line is stamped so the run can be tailed.
+//
+// Live (#1731): `--live` also appends the run's events to `.mervin/live.ndjson` for the watch page
+// (`bun scripts/mervin-watch.ts`). `--go` waits on `.mervin/pause` before each `gh pr merge --auto`, so the page's
+// pause button holds the next merge for real, and resuming lets it go on. `--pause-dir` moves both files.
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { run, order, ciOf, type Board, type BoardPr } from "./mervin-board.ts";
+import { events, FEED, PAUSE, costOf, type Ev, type Round } from "../src/mervin-replay.ts";
 
 export interface Verdict { pr: number; title?: string; go: boolean; wave?: number; why: string; behind: number[]; method?: "squash" | "merge" }
 
@@ -69,6 +74,21 @@ export function decide(board: Board, prs: BoardPr[], mainRed: string[] = []): Ve
   }
   for (const k of board.skipped) out.set(k.pr, { pr: k.pr, go: false, why: `skipped: ${k.why}`, behind: [] });
   return [...out.values()];
+}
+
+/** Appends an event to the live feed the watch page reads. */
+export function emitTo(dir: string, e: Ev) {
+  mkdirSync(dir, { recursive: true });
+  appendFileSync(join(dir, FEED), `${JSON.stringify({ ...e, ms: costOf(e) })}\n`);
+}
+
+/** Blocks while the pause file is there (the watch page's pause button writes it); `held` fires once when it starts waiting. */
+export async function waitWhilePaused(dir: string, held: () => void = () => {}, every = 500, sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))) {
+  const file = join(dir, PAUSE);
+  if (!existsSync(file)) return false;
+  held();
+  while (existsSync(file)) await sleep(every);
+  return true;
 }
 
 /** PRs with auto-merge already on (by hand) whose base is dead or whose parent hasn't landed: merging them strands the commit (#1545). */
@@ -230,12 +250,19 @@ if (import.meta.main) {
     const r = Bun.spawnSync(["gh", "pr", "merge", String(n), "--disable-auto"], { cwd: top, stderr: "pipe" });
     say(`#${n} auto-merge ${r.exitCode === 0 ? "off" : `FAILED to turn off: ${r.stderr.toString().trim()}`}`);
   }
+  const dir = resolve(arg("pause-dir") ?? join(top, ".mervin"));
+  const live = args.includes("--live") ? dir : undefined;
+  const planned = events({ board, verdicts } as unknown as Round);
+  if (live) for (const e of planned) if (e.kind === "round" || e.kind === "hold" || (e.kind === "wave" && e.wave === 1)) emitTo(live, e);
   if (!args.includes("--go")) { say("plan only; add --go to turn on auto-merge for wave 1"); process.exit(0); }
   for (const v of now) {
     const method = (arg("method") as "squash" | "merge" | undefined) ?? v.method ?? "squash";
     if (method !== v.method) say(`#${v.pr} warning: using --${method}, Mervin recommends --${v.method} (${v.method === "merge" ? "part of a stack" : "a plain PR"})`);
+    const paused = await waitWhilePaused(dir, () => { say(`paused: holding #${v.pr} (remove ${join(dir, PAUSE)} or press play on the watch page)`); if (live) emitTo(live, { kind: "pause", paused: true }); });
+    if (paused) { say("resumed"); if (live) emitTo(live, { kind: "pause", paused: false }); }
     const r = Bun.spawnSync(["gh", "pr", "merge", String(v.pr), "--auto", `--${method}`], { cwd: top, stderr: "pipe" });
     say(`#${v.pr} auto-merge ${r.exitCode === 0 ? "on" : `FAILED: ${r.stderr.toString().trim()}`}`);
+    if (live && r.exitCode === 0) for (const e of planned) if ("pr" in e && e.pr === v.pr && e.kind !== "merged" && e.kind !== "hold") emitTo(live, e);
   }
   say("wave 1 is queued; rerun after it lands for the next wave");
 }
