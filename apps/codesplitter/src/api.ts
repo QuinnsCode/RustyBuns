@@ -246,6 +246,9 @@ export const GROUPS: Group[] = [
     endpoints: [
       { method: "POST", path: "/api/follows", body: "{name, kind?} | {owner, repo} | {owner, repo, path, from, to}", who: SIGNED_IN, does: "follow a person or agent, a repo, or some lines (from/to are line numbers now); following again answers the follow you have" },
       { method: "DELETE", path: "/api/follows/:id", who: "the follower", does: "unfollow" },
+      { method: "GET", path: "/api/feature-ranks", does: "how people ranked the features: {signed_in, scores: {feature: {score, votes}}, mine, comments: [{user, text, at}], comment_after}; score is the average of S 4, A 3, B 2, C 1" },
+      { method: "PUT", path: "/api/me/feature-ranks", body: "{tiers: {feature: S|A|B|C}}", who: SIGNED_IN, does: "replace your ranking of the features; one you leave out is unranked" },
+      { method: "POST", path: "/api/feature-comments", body: "{text}", who: SIGNED_IN, does: "say what you think of the features, 280 characters; one every 10 minutes, then a friendly 429 with comment_after" },
       { method: "GET", path: "/api/me/following", who: SIGNED_IN, does: "[{id, kind: user | agent | repo | lines, name? | owner, repo, path?, ids?, from_line?, to_line?, created_at}], newest first" },
     ],
   },

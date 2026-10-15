@@ -4,6 +4,7 @@
 // Cloudflare and in-process under Bun on the desktop.
 
 import { artifactMoveRoutes } from "./artifact-move.ts";
+import { featureRankRoutes } from "./feature-ranks.ts";
 import { rankOf } from "./policy.ts";
 import { fromText } from "./lines.ts";
 import { mainClosed, policyClosed, protectRoute } from "./protect.ts";
@@ -393,6 +394,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // POST /api/follows, DELETE /api/follows/:id, GET /api/me/following (follows.ts)
   const follows = await followRoutes(req, env, p, user, (o, r) => access(env, o, r, user));
   if (follows) return follows;
+  // GET /api/feature-ranks, PUT /api/me/feature-ranks, POST /api/feature-comments (feature-ranks.ts)
+  const ranks = await featureRankRoutes(req, env, p, user);
+  if (ranks) return ranks;
 
   // GET|PUT /api/me/seen, the rev of each file you last saw (seen.ts)
   const seen = await seenRoutes(req, env, p, url, user);
