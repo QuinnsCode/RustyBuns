@@ -211,6 +211,8 @@ Stopping `plan`, `deploy` or `destroy` partway (Ctrl-C, a `kill`, an agent's tim
 
 ### Containers
 
+> **Coming soon.** Container support is still being finished; expect rough edges.
+
 A binding `{ type: "container", className, dockerfile, maxInstances?, instanceType?, egress? }` puts a Dockerfile behind a Durable Object class; the Dockerfile's folder is the build context. `rustybuns containers` works with them locally:
 
 - `containers` lists each binding as built, stale (its context changed since the last build) or not built, with image size. Hashes live in `.rustybuns/containers/`.

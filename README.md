@@ -143,9 +143,9 @@ The copy has no `.env` or `.dev.vars`, gets a fake for every secret the app name
 
 </details>
 
-### Dockerfiles you can build and run locally
+### Dockerfiles you can build and run locally (coming soon)
 
-`rustybuns containers` lists your container bindings and builds, runs and smoke-tests their images for `linux/amd64`.
+Containers are still being finished. `rustybuns containers` lists your container bindings and builds, runs and smoke-tests their images for `linux/amd64`.
 
 <details><summary>More</summary>
 
