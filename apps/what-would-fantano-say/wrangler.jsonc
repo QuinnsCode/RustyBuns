@@ -43,6 +43,6 @@
   ],
   "vars": {
     "DAILY_REVIEWS": "25000",
-    "TURNSTILE_SITE_KEY": ""
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFTyaxcLpAqRT0pg"
   }
 }
