@@ -20,7 +20,7 @@
 //   GET  /api/cuts/:id/card.png     the social card: the code and its test result (?font=geist for Geist Mono)
 //   GET  /api/cuts/:id/share        a page for link previews (og:image), sending people on to the cut
 
-import { checkEnv, runDirs } from "./check-env.ts";
+import { checkEnv, runDirs, sandboxUser, spawnAs } from "./check-env.ts";
 import { materialize, toFile } from "./archive.ts";
 import { cardFont, renderCard, type CardLine } from "./card.ts";
 import { json, type Body, type Env } from "./env.ts";
@@ -274,25 +274,32 @@ export function readRun(out: string, report: string, files: { path: string; line
   return { marks, passed, failed };
 }
 
-/** A scratch directory on this machine: the cut's files, `bun test`, then the directory is deleted. */
-const localTester = (): Tester => async (files) => {
-  const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
+/** A scratch directory on this machine: the cut's files, `bun test` (as CODESPLITTER_CHECKS_USER when set, #1570), then the directory is deleted. */
+const localTester = (user = sandboxUser(process.env.CODESPLITTER_CHECKS_USER)): Tester => async (files) => {
+  const { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { dirname, join, relative } = await import("node:path");
-  const base = mkdtempSync(join(tmpdir(), "codesplitter-cut-")), { repo: dir, home, tmp } = runDirs(base);
+  // A sandbox user can't reach the owner's own temp dir: /tmp is everyone's.
+  const base = mkdtempSync(join(user ? "/tmp" : tmpdir(), "codesplitter-cut-")), { repo: dir, home, tmp } = runDirs(base);
+  const env = checkEnv(process.env, home, tmp, user);
   try {
     for (const d of [dir, home, tmp]) mkdirSync(d);
+    if (user) { chmodSync(base, 0o755); for (const d of [dir, home, tmp]) chmodSync(d, 0o777); }
     for (const [path, text] of Object.entries(files)) {
       const at = join(dir, path);
       if (relative(dir, at).startsWith("..")) continue;
       mkdirSync(dirname(at), { recursive: true });
       writeFileSync(at, text);
+      if (user) chmodSync(at, 0o666);
     }
-    const p = Bun.spawn(["bun", "test", "--reporter=junit", `--reporter-outfile=${REPORT}`], { cwd: dir, stdout: "pipe", stderr: "pipe", timeout: 120_000, env: checkEnv(process.env, home, tmp) });
+    const as = spawnAs(["bun", "test", "--reporter=junit", `--reporter-outfile=${REPORT}`], env, user);
+    const p = Bun.spawn(as.cmd, { cwd: dir, stdout: "pipe", stderr: "pipe", timeout: 120_000, env: as.env });
     const [o, e] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
     const code = await p.exited;
     return { code, out: o + e, report: await Bun.file(join(dir, REPORT)).text().catch(() => "") };
   } finally {
+    // What the sandbox user left, as it: it may have taken its own files out of the owner's reach.
+    if (user) await Bun.spawn(spawnAs(["rm", "-rf", dir, home, tmp], env, user).cmd, { stdout: "ignore", stderr: "ignore" }).exited.catch(() => null);
     rmSync(base, { recursive: true, force: true });
   }
 };
