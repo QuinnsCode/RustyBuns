@@ -111,6 +111,27 @@ test("a hosted run whose consumer died shows as stopped past its deadline, not r
   expect(row.status).toBe("stopped");
 });
 
+test("a hosted feature run stays queued while one container is held back for fix tasks, and a fix task still starts", async () => {
+  const { call } = await app();
+  call.env.AGENT_SANDBOX = {};
+  const sent: any[] = [];
+  call.env.JOBS = { send: async (body: any, opts: any) => { sent.push([body, opts]); } };
+  const sql = "INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started, picked, branch) VALUES ('ryan', 'lab', 'a.js', 'claude', 'x', 'agent-claude', 'running', ?, ?, ?) RETURNING id";
+  await call.env.DB.prepare(sql).bind(Date.now(), 1, null).first();
+  const feature = (await call.env.DB.prepare(sql).bind(Date.now(), 0, null).first() as { id: number }).id;
+  const fix = (await call.env.DB.prepare(sql).bind(Date.now(), 0, "main-fix").first() as { id: number }).id;
+  const { runQueuedAgents } = await import("../src/agent-routes.ts");
+  const acked: number[] = [];
+  const msg = (agent: number) => ({ body: { agent, origin: "http://x" }, ack: () => { acked.push(agent); } });
+  await runQueuedAgents([msg(feature)], call.env, async () => new Response("{}"));
+  expect(acked).toEqual([feature]);
+  expect(sent).toEqual([[{ agent: feature, origin: "http://x" }, { delaySeconds: 20 }]]);
+  const picked = async (id: number) => (await call.env.DB.prepare("SELECT picked FROM agent_runs WHERE id = ?").bind(id).first() as { picked: number }).picked;
+  expect(await picked(feature)).toBe(0);
+  await runQueuedAgents([msg(fix)], call.env, async () => new Response("{}"));
+  expect(await picked(fix)).toBe(1);
+});
+
 /** A CLI that waits: till Stop kills it (signal), or till `go` lets it upper-case the file. Each run's prompt is kept. */
 function gated(call: { env: any }) {
   const prompts: string[] = [];
