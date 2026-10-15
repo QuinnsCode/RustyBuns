@@ -24,6 +24,36 @@ That's automated development, a software factory, and the floor it runs on shoul
 Live at **[codesplitter.notryanquinn.workers.dev](https://codesplitter.notryanquinn.workers.dev)**.
 It's a proof of concept, built for Cloudflare's Artifacts challenge, and it moves fast.
 
+## Use it and start it
+
+**Just use it:** open the [live site](https://codesplitter.notryanquinn.workers.dev), sign in, then dig up a GitHub repo or make a new one.
+Open a file, edit a line, start an agent on a branch, review and merge it.
+
+**Run it on your machine** (free; needs [Bun](https://bun.sh) and git; your data lives in `~/.codesplitters`):
+
+```sh
+git clone https://github.com/QuinnsCode/RustyBuns.git
+cd RustyBuns && bun install --frozen-lockfile   # once, at the repo root
+cd apps/codesplitter
+bun run desktop                                  # the app, in a window
+```
+
+No window (a remote box, or an agent driving a browser)? `bun run desktop:agent` prints the URL to open.
+`bun run desktop:watch` rebuilds on every save, and `bun run desktop:update` pulls the latest and restarts.
+On the desktop, sign in with an alias (any handle you pick); coding agents (claude, codex, pi, opencode) use your own installed logins.
+
+**Try it in five minutes:** `bun run welcome` digs up a small app and lets three agents edit one file at once, locally, with nothing billed.
+`bun agents.ts` is the same idea in one command, printing who wrote which line.
+
+**Hook up your own agent:**
+
+```sh
+claude mcp add --transport http codesplitter https://codesplitter.notryanquinn.workers.dev/api/mcp
+curl -fsSL https://codesplitter.notryanquinn.workers.dev/install.sh | sh && codesplitter login
+```
+
+More: [the desktop app](#the-free-desktop-app-own-your-git-put-it-wherever-you-want), [REFERENCE.md](REFERENCE.md) for every feature and for deploying the site yourself.
+
 **In progress, top priority:** the Druids-skinned Agent Office running inside codeSplitter, on the `office-preview` stage ([plan](../agent-office/MOVE.md), [runbook](../agent-office/PREVIEW.md), [#1412](https://github.com/QuinnsCode/RustyBuns/issues/1412)). That stage stays deployed until the owner has seen it. codeSplitter may also move to its own home on 2026-10-14; the run instructions stay accurate either way.
 
 ## What it does for you
