@@ -261,7 +261,8 @@ async function access(env: Env, owner: string, repo: string, user: string | null
 
 // What a page or agent may ask a file's DO directly; forks and merges go through the branch routes.
 /** The profile boxes their owner may take off (users.hidden); everything is shown until they do. */
-const PROFILE_SECTIONS = ["repos", "pulse", "stamps", "collections", "city"] as const;
+const PROFILE_SECTIONS = ["repos", "pulse", "stamps", "collections", "city", "top8"] as const;
+const TOP_FRIENDS = 7;
 const DO_ROUTES = new Set(["file", "ops", "log", "at", "commit", "commits", "ws", "private", "claims", "release"]);
 
 // FTS5 treats punctuation as syntax; quote every word so a search is just words.
@@ -424,7 +425,13 @@ async function route(req: Request, env: Env): Promise<Response> {
     let warning: string | undefined;
     if (req.method === "PUT") {
       // Only what's sent changes, so turning the pulse off leaves the bio be.
-      const b = await body<"bio" | "theme_html" | "pulse" | "git_truth" | "avatar" | "share_usage" | "hidden">();
+      const b = await body<"bio" | "theme_html" | "pulse" | "git_truth" | "avatar" | "share_usage" | "hidden" | "top8">();
+      if (b.top8 !== undefined) {
+        const names = b.top8 as unknown;
+        let ok = Array.isArray(names) && names.length <= TOP_FRIENDS && names.every((h) => typeof h === "string" && h !== user);
+        for (const h of ok ? (names as string[]) : []) ok &&= !!(await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(h).first());
+        if (!ok) return json({ error: `top8: up to ${TOP_FRIENDS} other people who have a profile` }, 400);
+      }
       if (b.hidden !== undefined && (!Array.isArray(b.hidden) || b.hidden.some((h) => !PROFILE_SECTIONS.includes(h as never)))) return json({ error: `hidden: a list of ${PROFILE_SECTIONS.join(", ")}` }, 400);
       if (b.share_usage !== undefined && typeof b.share_usage !== "boolean") return json({ error: "share_usage: true or false" }, 400);
       if (b.pulse !== undefined && typeof b.pulse !== "boolean") return json({ error: "pulse: true or false" }, 400);
@@ -433,8 +440,8 @@ async function route(req: Request, env: Env): Promise<Response> {
       // avatar: the parts (src/avatar.ts), or null to take it off.
       const avatar = b.avatar === undefined ? null : b.avatar === null ? "" : cleanAvatar(b.avatar);
       if (avatar === null && b.avatar !== undefined) return json({ error: `avatar: every part (${Object.keys(PARTS).join(", ")}), each one of its options, colors as #rrggbb` }, 400);
-      await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth), avatar = COALESCE(?, avatar), share_usage = COALESCE(?, share_usage), hidden = COALESCE(?, hidden) WHERE name = ?")
-        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, avatar === null ? null : avatar === "" ? "" : JSON.stringify(avatar), b.share_usage === undefined ? null : b.share_usage ? 1 : 0, b.hidden === undefined ? null : JSON.stringify([...new Set(b.hidden)]), user).run();
+      await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth), avatar = COALESCE(?, avatar), share_usage = COALESCE(?, share_usage), hidden = COALESCE(?, hidden), top8 = COALESCE(?, top8) WHERE name = ?")
+        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, avatar === null ? null : avatar === "" ? "" : JSON.stringify(avatar), b.share_usage === undefined ? null : b.share_usage ? 1 : 0, b.hidden === undefined ? null : JSON.stringify([...new Set(b.hidden)]), b.top8 === undefined ? null : JSON.stringify([...new Set(b.top8 as string[])]), user).run();
       // Saying no (or changing your mind) takes back what was shared (usage.ts).
       if (b.share_usage === false) await forget(env, user).run();
       // A public page repo wins over the saved theme_html, so saving it would otherwise change nothing you can see.
@@ -451,9 +458,11 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /api/users/:name  profile, the repos you may see, playlists, how many it follows and are following it, the stamps it gave and got;
   // an agent's (agent-…) also says who runs it, where, and its runs (actors.ts)
   if (p[1] === "users" && p[2]) {
-    const row = await env.DB.prepare("SELECT name, bio, theme_html, pulse, city_public, tier, avatar, hidden FROM users WHERE name = ?").bind(p[2]).first();
+    const row = await env.DB.prepare("SELECT name, bio, theme_html, pulse, city_public, tier, avatar, hidden, top8 FROM users WHERE name = ?").bind(p[2]).first();
     if (!row) return json({ error: "no such user" }, 404);
-    const u = { ...row, tier: tierById(row.tier), hidden: JSON.parse((row.hidden as string) || "[]") };
+    // Top 8: Mervin holds slot 1 (the client draws him); the owner's picks fill the rest, else the people they follow, newest first.
+    const top8 = (row.top8 ? JSON.parse(row.top8 as string) as string[] : (await listFollows(env.DB, p[2], null)).flatMap((f) => f.kind === "user" ? [f.name] : [])).slice(0, TOP_FRIENDS);
+    const u = { ...row, tier: tierById(row.tier), hidden: JSON.parse((row.hidden as string) || "[]"), top8 };
     const { results: repos } = await env.DB.prepare(
       "SELECT owner, name, visibility, level, created_at, expires_at FROM repos WHERE owner = ? AND (visibility = 'public' OR owner = ?) AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC").bind(p[2], user, Date.now()).all();
     const { results: playlists } = await env.DB.prepare("SELECT * FROM playlists WHERE owner = ? ORDER BY id DESC").bind(p[2]).all();
