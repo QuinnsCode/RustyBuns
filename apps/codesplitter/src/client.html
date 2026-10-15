@@ -1295,11 +1295,13 @@ const masked = (token) => `${token.slice(0, 4)}${"•".repeat(12)}${token.slice(
 const maskedUrl = (line) => line.replace(/(:\/\/[^:/@\s]+:)([^@\s]+)@/, (_, pre, token) => `${pre}${masked(token)}@`);
 // Connecting an AI needs no token: the MCP client signs in with OAuth (src/oauth.ts) and you say yes.
 const mcpUrl = () => `${location.origin}/api/mcp`;
-const mcpSignIn = () => `claude mcp add --scope user --transport http codesplitter ${mcpUrl()}`;
+// Re-runnable: `claude mcp add` fails with "already exists" when the URL changed (local vs deployed), so drop the old entry first.
+const mcpFresh = (cmd) => `claude mcp remove --scope user codesplitter 2>/dev/null; ${cmd}`;
+const mcpSignIn = () => mcpFresh(`claude mcp add --scope user --transport http codesplitter ${mcpUrl()}`);
 // The CLI (cli.ts), installed from this site (GET /install.sh, src/install.ts).
 const cliInstall = () => `curl -fsSL ${location.origin}/install.sh | sh`;
 const cliLogin = (token) => `codesplitter login --url ${location.origin} --token ${token}`;
-const mcpAdd = (token) => `claude mcp add --scope user --transport http codesplitter ${location.origin}/api/mcp --header "Authorization: Bearer ${token}"`;
+const mcpAdd = (token, fresh = true) => { const cmd = `claude mcp add --scope user --transport http codesplitter ${location.origin}/api/mcp --header "Authorization: Bearer ${token}"`; return fresh ? mcpFresh(cmd) : cmd; };
 // Invites (POST /api/repos/:o/:r/invites): a handle, an email, or nothing for a bare link.
 const invite = (owner, repo, who = "", note = "") => {
   who = who.trim();
@@ -3538,7 +3540,7 @@ const views = {
         <p class="muted">We aren't stuck in history. Every action is one call, and every door into it opens for a person or an agent: click it, type it, or hand it to a model. Same call, same result, same signed line.</p>
         <div class="both">
           <div><span class="ico">${icon("globe")}</span><b>WebMCP</b><p>The page itself is a toolbox. An agent in the browser calls the same commands your palette runs, as whoever is signed in.</p><span class="hand">hand: click it · eye: document.modelContext</span></div>
-          <div><span class="ico">${icon("plug")}</span><b>MCP</b><p>A remote server for Claude Code, Codex, opencode or pi. One line connects it, and every tool is a call to the API.</p><code>${esc(mcpAdd("TOKEN").split(" --header")[0])}</code></div>
+          <div><span class="ico">${icon("plug")}</span><b>MCP</b><p>A remote server for Claude Code, Codex, opencode or pi. One line connects it, and every tool is a call to the API.</p><code>${esc(mcpAdd("TOKEN", false).split(" --header")[0])}</code></div>
           <div><span class="ico">${icon("terminal")}</span><b>CLI</b><p>For the agent that would rather run a command than speak MCP, and for you at a prompt.</p><code>codesplitter tools</code></div>
           <div><span class="ico">${icon("command")}</span><b>Agentic menus</b><p>Press <kbd>⌘K</kbd> for menus that change with the page you're on, whether a finger or a model picks the item.</p><span class="hand">hand: ⌘K · eye: the same list as tools</span></div>
         </div>

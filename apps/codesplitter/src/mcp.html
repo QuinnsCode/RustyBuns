@@ -62,7 +62,7 @@
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const url = `${location.origin}/api/mcp`;
 document.getElementById("url").textContent = url;
-document.getElementById("add").textContent = `claude mcp add --scope user --transport http codesplitter ${url}`;
+document.getElementById("add").textContent = `claude mcp remove --scope user codesplitter 2>/dev/null; claude mcp add --scope user --transport http codesplitter ${url}`;
 document.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
   await navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent);
   b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1500);

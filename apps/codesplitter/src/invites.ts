@@ -49,7 +49,7 @@ const tokenIn = (s: string) => /csi_[A-Za-z0-9_-]+/.exec(s)?.[0] ?? (/^[0-9a-f]{
 export function mcpLines(base: string, token: string): Record<Harness, string> {
   const url = `${base}/api/mcp`, headers = { Authorization: `Bearer ${token}` };
   return {
-    claude: `claude mcp add --scope user --transport http codesplitter ${url} --header "Authorization: Bearer ${token}"`,
+    claude: `claude mcp remove --scope user codesplitter 2>/dev/null; claude mcp add --scope user --transport http codesplitter ${url} --header "Authorization: Bearer ${token}"`,
     codex: `export CODESPLITTER_TOKEN=${token} && codex mcp add codesplitter --url ${url} --bearer-token-env-var CODESPLITTER_TOKEN`,
     // pi and opencode take a config file entry, not a command. pi's is its built-in MCP's
     // (0.99+, ~/.pi/agent/mcp.json, https://pi.dev/docs/latest/mcp): a url picks streamable HTTP.
