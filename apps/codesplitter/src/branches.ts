@@ -199,9 +199,9 @@ export async function blobBytesOf(env: Env, owner: string, repo: string, blob: s
 }
 
 /** Main takes the branch's binary `path` (#446): its bytes, from git, into main's git (and upstream's, at the next sync). */
-async function blobOnMain(env: Env, owner: string, repo: string, f: { path: string; blob: string; mode: string | null }, user: string, message: string) {
+async function blobOnMain(env: Env, owner: string, repo: string, f: { path: string; blob: string; mode: string | null }, user: string, message: string, joined?: Uint8Array) {
   const { kickMirror } = await import("./mirror.ts");
-  const bytes = await blobBytesOf(env, owner, repo, f.blob);
+  const bytes = joined ?? await blobBytesOf(env, owner, repo, f.blob);
   if (!bytes) throw new Error(`${f.path}'s bytes aren't in this repo's git any more`);
   await catalogueBlob(env, owner, repo, f.path, { bytes, mode: f.mode ?? undefined }, user, message);
   await kickMirror(env, owner, repo);
@@ -707,8 +707,15 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   const held = await mergeBlock(env, owner, repo, name);
   if (held) return json(held, 409);
   // A binary (or too big) file has no lines to merge: one main changed too since the branch left it waits, not overwritten.
-  const { blobMovedOnMain } = await import("./mirror.ts");
-  const moved = (await Promise.all(todo.filter((f) => f.blob && !f.deleted).map(async (f) => await blobMovedOnMain(env, owner, repo, name, f.path, f.blob!) ? f.path : null))).filter((p): p is string => !!p);
+  // Text too big to dig is merged by lines against main's, as git would (#1773); the rest waits.
+  const { blobMovedOnMain, mergeBlobWithMain } = await import("./mirror.ts");
+  const joined = new Map<string, Uint8Array>();
+  const moved = (await Promise.all(todo.filter((f) => f.blob && !f.deleted).map(async (f) => {
+    if (!await blobMovedOnMain(env, owner, repo, name, f.path, f.blob!)) return null;
+    const bytes = await mergeBlobWithMain(env, owner, repo, name, f.path, f.blob!);
+    if (bytes) { joined.set(f.path, bytes); return null; }
+    return f.path;
+  }))).filter((p): p is string => !!p);
   if (moved.length) return json({ error: `main changed ${moved.join(", ")} too, and it has no lines to merge: bring main into the branch upstream, then pull`, files: moved }, 409);
   // A dry run first, so a conflict anywhere merges nothing.
   const run = await dryRun(env, owner, repo, branch, rows, resolve, user);
@@ -732,7 +739,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
       continue;
     }
     if (f.blob) {
-      try { await blobOnMain(env, owner, repo, { path: f.path, blob: f.blob, mode: f.mode }, user, `${f.path}, merging ${name}`); }
+      try { await blobOnMain(env, owner, repo, { path: f.path, blob: f.blob, mode: f.mode }, user, `${f.path}, merging ${name}`, joined.get(f.path)); }
       catch (e) {
         await env.DB.prepare("UPDATE branch_files SET merged = 0 WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, name, f.path).run();
         throw e;
@@ -955,7 +962,9 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
       // Prose that settled faithful to both sides, which may now state something one side changed (#1254).
       // For the crew: a stretch can hold main's private lines.
       const checks = a.write ? (m.checks ?? []).map(explain) : [];
-      return { path: f.path, merged: false, build, policy: m.policy, ops, conflicts: shown, hunks: changed, ...(checks.length && { checks }), ...(lines && { lines }) };
+      // Mervin's tier for the file on this branch: asks (a card), settled clashing lines by himself, or nothing clashed (#1773).
+      const tier = conflicts.length ? "card" : m.solved ? "mervin" : "clean";
+      return { path: f.path, merged: false, build, tier, policy: m.policy, ops, conflicts: shown, hunks: changed, ...(checks.length && { checks }), ...(lines && { lines }) };
     }));
     return json({ ...branch, deploys: (await deploySettings(env, owner, repo)).on_commit, checks: await refChecks(env, owner, repo, name), files: out });
   }

@@ -471,13 +471,12 @@ test("the tour's autoplay pauses where a person must act", () => {
   expect(tourPause({ ch: "play", href: () => "/x" }, true)).toContain("Go");
 });
 
-test("the side's panels sit on tabs: code, hosted, features, and shipping apart", () => {
+test("the side's panels sit on tabs: code, hosted, and features (shipping with them)", () => {
   const src = html.slice(html.indexOf("const DOCK_TAB_OF"), html.indexOf("/** Make the details side a dock"));
   const tabOf = new Function(`${src}; return dockTabOf;`)();
   expect(["editing", "commits", "branches", "about"].map(tabOf)).toEqual(["code", "code", "code", "code"]);
   expect(["upstream", "crew", "webhooks", "delete-this-repo"].map(tabOf)).toEqual(["hosted", "hosted", "hosted", "hosted"]);
-  expect(["agents", "beam", "dependencies"].map(tabOf)).toEqual(["features", "features", "features"]);
-  expect(["deploy", "preview-deploy", "rusty-buns"].map(tabOf)).toEqual(["ship", "ship", "ship"]);
+  expect(["agents", "beam", "dependencies", "deploy", "preview-deploy", "rusty-buns"].map(tabOf)).toEqual(Array(6).fill("features"));
 });
 
 describe("scenes a queue or an agent drives", () => {

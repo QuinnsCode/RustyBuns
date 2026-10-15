@@ -196,7 +196,7 @@
   .editor .scroll { flex: 1; min-height: 0; overflow: auto; }
   .details { border-left: 2px solid var(--border-2); box-shadow: -6px 0 10px -8px rgb(0 0 0 / .25); font-size: 13px; container-type: inline-size; }
   /* The details side (dock()): drag its left edge to widen it, or snap it to 2/3 or the whole bench.
-     Tabs along the top (Code, Hosted, Features, Ship) pick which panels show. Each browser keeps its own layout. */
+     Tabs along the top (Code, Hosted, Features) pick which panels show. Each browser keeps its own layout. */
   .drail { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 2px; padding: 4px 8px; background: var(--canvas); border-bottom: 1px solid var(--border); }
   .dtabs { flex: 1; min-width: 0; display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; } .dtabs::-webkit-scrollbar { display: none; }
   .drail button { display: grid; place-items: center; flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--muted); cursor: pointer; }
@@ -2673,12 +2673,11 @@ const tagBar = (c, marks, o) => !c || !o.mine ? "" : `<div class="cg-act"><code>
 /** This browser's layout of the details side: its width (px, "66.667%" or "full") and which tab is up. */
 const dockPrefs = () => { try { return { w: "", tab: "code", ...JSON.parse(localStorage.getItem("cs_dock") ?? "{}") }; } catch { return { w: "", tab: "code" }; } };
 const saveDock = (d) => { try { localStorage.setItem("cs_dock", JSON.stringify({ w: d.w, tab: d.tab })); } catch {} };
-/** The details side's tabs: the code itself, the repo as hosted here, and what it can do. Shipping is its own step, so it gets the last tab. */
-const DOCK_TABS = [["code", "file-code", "Code"], ["hosted", "server", "Hosted"], ["features", "sparkles", "Features"], ["ship", "send", "Ship"]];
+/** The details side's tabs: the code itself, the repo as hosted here, and what it can do and ships (#1773: three tabs, not four). */
+const DOCK_TABS = [["code", "file-code", "Code"], ["hosted", "server", "Hosted"], ["features", "sparkles", "Features"]];
 const DOCK_TAB_OF = {
   hosted: ["upstream", "mirror", "crew", "webhooks", "audit-log", "delete-this-repo"],
-  features: ["agents", "beam", "dependencies"],
-  ship: ["rusty-buns", "deploy", "preview-deploy"],
+  features: ["agents", "beam", "dependencies", "rusty-buns", "deploy", "preview-deploy"],
 };
 const dockTabOf = (key) => Object.keys(DOCK_TAB_OF).find((t) => DOCK_TAB_OF[t].includes(key)) ?? "code";
 /** Make the details side a dock: tabs along the top, width snaps, a resize edge. */
@@ -4748,13 +4747,14 @@ const views = {
     }
     const reviews = await Promise.all(open.map((b) => api(`${base}/${encodeURIComponent(b.name)}`)));
     // Two or more open: the waves to merge them in (#1155), GET /api/repos/:o/:r/merge-plan.
-    const plan = !only && open.length > 1 ? await api(`/repos/${owner}/${repo}/merge-plan`).catch(() => null) : null;
+    // On one branch's merge page too: where it sits among the others (#1773).
+    const plan = open.length > 1 || only ? await api(`/repos/${owner}/${repo}/merge-plan`).catch(() => null) : null;
     // Which coding agents can write a conflict's settled lines here, for each card's Ask.
     const agents = full && r.canWrite && reviews.some((b) => b.files.some((f) => f.conflicts.length || f.checks?.length))
       ? await api("/agents").then((a) => a.available && !a.admins_only ? a.harnesses : []).catch(() => []) : [];
     // Each wave merges together; a branch that clashes with one before it says which, on hover.
     const waits = (w) => w.after.map((a) => `${a.branch}${a.stacked ? " (stacked on it)" : ""}${a.files.length ? `: ${a.files.join(", ")}` : ""}`).join("; ");
-    const planned = plan?.waves.length > 1 ? `<div class="muted" style="white-space:nowrap;overflow-x:auto" title="${esc(`${plan.engine ?? "Mervin"} planned this: merge a wave and the next wave's branches take main in by themselves`)}">${icon("git-merge")} <b>${esc(plan.engine ?? "Mervin")}</b> ${plan.waves.map((wave, i) => `<b>${i + 1}</b> ${wave.map((w) => w.after.length ? `<code title="${esc(`after ${waits(w)}`)}">${esc(w.branch)}</code>` : `<code>${esc(w.branch)}</code>`).join(" ")}`).join(" → ")}</div>` : "";
+    const planned = plan?.waves.length > 1 && plan.waves.flat().length > 1 ? `<div class="muted" style="white-space:nowrap;overflow-x:auto" title="${esc(`${plan.engine ?? "Mervin"} planned this: merge a wave and the next wave's branches take main in by themselves`)}">${icon("git-merge")} <b>${esc(plan.engine ?? "Mervin")}</b> ${plan.waves.map((wave, i) => `<b>${i + 1}</b> ${wave.map((w) => w.after.length ? `<code title="${esc(`after ${waits(w)}`)}">${esc(w.branch)}</code>` : `<code>${esc(w.branch)}</code>`).join(" ")}`).join(" → ")}</div>` : "";
     el.innerHTML = board + planned + reviews.map((b) => {
       // A file only opened on the branch (the switcher reads through its copy) changes nothing: not counted.
       const files = b.files.filter((f) => !f.merged && (f.ops.length || f.deleted || f.binary || f.conflicts.length)), clash = files.flatMap((f) => f.conflicts.map((c) => ({ path: f.path, ...c })));
@@ -4767,6 +4767,7 @@ const views = {
       // Code the merge check says won't build lands only when its own box is ticked, never with "keep the branch's lines".
       const broken = clash.some((c) => c.lint);
       return `<div class="commit"><code>${esc(b.name)}</code><span>@${esc(b.by)} · ${files.length} file${files.length === 1 ? "" : "s"}, ${ops} line op${ops === 1 ? "" : "s"}</span>
+        ${only && files.length ? `<span class="muted" title="Mervin's tier for each file: card = he asks, settled = he settled clashing lines himself, clean = nothing clashed">${files.map((f) => `<code>${esc(f.path)}</code> ${f.tier === "card" ? "card" : f.tier === "mervin" ? "settled" : f.binary ? "binary" : "clean"}`).join(" · ")}</span>` : ""}
         ${gone.length ? `<span class="muted">Deletes ${gone.map((f) => `<code>${esc(f.path)}</code>`).join(", ")}</span>` : ""}
         ${bins.length ? `<span class="muted">${icon("file")}Binary, changed: ${bins.map((f) => `<code>${esc(f.path)}</code>`).join(", ")}</span>` : ""}
         ${clash.filter((c) => c.lint).map((c) => `<span class="muted">${esc(c.path)}: merged, it wouldn't build: ${esc(c.lint)}</span>`).join("")}

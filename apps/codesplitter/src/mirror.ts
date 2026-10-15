@@ -231,7 +231,10 @@ function serial<T>(owner: string, repo: string, run: () => Promise<T>): Promise<
 export function syncMirror(env: Env, owner: string, repo: string, o: { resolve?: Resolve; ask?: boolean } = {}): Promise<State | null> {
   return serial(owner, repo, async () => {
     const state = await step(env, owner, repo, o);
-    if (state === "ok" || state === "held") await followBranches(env, owner, repo).catch(() => {});
+    if (state === "ok" || state === "held") {
+      await openPullBranches(env, owner, repo).catch(() => {});
+      await followBranches(env, owner, repo).catch(() => {});
+    }
     const { pruneWorktrees } = await import("./worktrees.ts");
     await pruneWorktrees(env, owner, repo).catch(() => {});
     return state;
@@ -969,6 +972,22 @@ export async function blobMovedOnMain(env: Env, owner: string, repo: string, nam
   return main !== blob && main !== await blobAt(s.dir, await forkPoint(s, tip), path);
 }
 
+/**
+ * A text file too big to dig that the branch and main both changed (#1773): the branch's blob merged with main's
+ * by lines against where the branch left it (sync.ts merge3), as git would. Null where it's binary or the changes touch the same lines.
+ */
+export async function mergeBlobWithMain(env: Env, owner: string, repo: string, name: string, path: string, blob: string) {
+  const s = await branchSetup(env, owner, repo), br = await branchRow(env, owner, repo, name);
+  if ("error" in s || !br?.upstream_ref) return null;
+  const tip = await taken(s, br.upstream_ref);
+  if (!tip) return null;
+  const read = await git(["cat-file", "blob", blob], s.dir);
+  const [theirs, ours, was] = [read.code ? null : read.out, await show(s.dir, `refs/heads/${s.main}`, path), await show(s.dir, await forkPoint(s, tip), path)];
+  if (theirs === null || ours === null || was === null || !isText(theirs) || !isText(ours)) return null;
+  const merged = merge3(fromDisk(was), fromDisk(ours), fromDisk(theirs));
+  return merged && new TextEncoder().encode(merged.join("\n") + "\n");
+}
+
 /** Branch `name` takes upstream's `ref` up to `theirs`: what it got since the branch here last took it in or pushed. */
 async function catchUp(env: Env, owner: string, repo: string, s: Setup, name: string, ref: string, theirs: string) {
   const had = await taken(s, ref);
@@ -1219,6 +1238,31 @@ async function followBranches(env: Env, owner: string, repo: string) {
       await git(["update-ref", "-d", squashRef(ref)], s.dir);
       await forget(br.name);
     } catch { /* that branch tries again next sync */ }
+  }
+}
+
+/**
+ * Upstream's pull requests come over on their own (#1773): each branch whose tip a `refs/pull/N/head` points at,
+ * not in main yet and never opened here (merged, archived or open), is opened like the ⤓ button does.
+ * A few per sync, so a repo with a long PR list fills in over several. Hosts with no pull refs have none to open.
+ */
+const PULLS_PER_SYNC = 5;
+async function openPullBranches(env: Env, owner: string, repo: string) {
+  const s = await branchSetup(env, owner, repo);
+  if ("error" in s) return;
+  const ls = await git(["ls-remote", s.r.mirror_url, "refs/heads/*", "refs/pull/*/head"], s.dir, s.net);
+  if (ls.code) return;
+  const pulled = new Set(ls.out.split("\n").filter((l) => /\trefs\/pull\/\d+\/head$/.test(l)).map((l) => l.split("\t")[0]));
+  if (!pulled.size) return;
+  const { results } = await env.DB.prepare("SELECT name, upstream_ref FROM branches WHERE owner = ? AND repo = ?").bind(owner, repo).all();
+  const known = new Set((results as { name: string; upstream_ref: string | null }[]).flatMap((b) => [b.name, b.upstream_ref ?? ""]));
+  let opened = 0;
+  for (const [ref, commit] of heads(ls.out.split("\n").filter((l) => l.includes("\trefs/heads/")).join("\n"))) {
+    if (opened >= PULLS_PER_SYNC) break;
+    if (ref === s.main || known.has(ref) || !pulled.has(commit)) continue;
+    const tip = await fetchBranch(s, ref).catch(() => null);
+    if (!tip || await isAncestor(s.dir, tip, `refs/heads/${s.main}`)) continue;
+    if ((await openUpstreamBranch(env, owner, repo, ref, owner))?.status === 201) opened++;
   }
 }
 
