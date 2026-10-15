@@ -238,7 +238,7 @@ describe("mervin stack", () => {
   });
 });
 
-import { nextStamp, settle, type Clash } from "../scripts/mervin-board.ts";
+import { applyRenames, settleLockfiles, LOCK_WHY, nextStamp, settle, type Board, type Clash, type Stage } from "../scripts/mervin-board.ts";
 describe("mervin settles clashes", () => {
   test("migrations: the later PR takes the next free stamp, and main's stamp moves every PR", () => {
     expect(nextStamp(["20261013040000", "20261013050000"])).toBe("20261013050001");
@@ -265,6 +265,36 @@ describe("mervin settles clashes", () => {
     const { board, tree } = run(repo, m, [{ number: 1, headRefOid: q, headRefName: "q", baseRefName: "main" }]);
     expect(board.stages[0]!.files[0]!.tier).toBe("mervin");
     expect(tree.has("bun.lock")).toBe(false);
+  });
+});
+
+describe("mervin carries out its settlements", () => {
+  test("a renumbered migration moves to its new stamp in the tree and its stage's writes", () => {
+    const old = "db/migrations/20261013040000_p2.sql", to = "db/migrations/20261013040001_p2.sql";
+    const tree = new Map<string, string | null>([[old, "create table b;"], ["x.ts", "x"]]);
+    const writes = [new Map<string, string | null>(), new Map<string, string | null>([[old, "create table b;"]])];
+    const stages = [{ pr: 1 }, { pr: 2 }] as Stage[];
+    applyRenames([{ kind: "migration", key: "db/migrations/20261013040000", prs: [1, 2], renumber: [{ pr: 2, from: old, to }] }], tree, writes, stages);
+    expect(tree.get(to)).toBe("create table b;");
+    expect(tree.get(old)).toBeNull();
+    expect(writes[1]!.get(to)).toBe("create table b;");
+    expect(writes[0]!.size).toBe(0);
+  });
+  const lockBoard = (): Board => ({ main: "m", at: "", skipped: [], clashes: [], written: [], stages: [{ pr: 7, head: "", base: "", files: [{ path: "bun.lock", tier: "mervin", why: LOCK_WHY, after: [] }] }] });
+  test("a lockfile the install updates is kept in the tree", async () => {
+    const root = mkdtempSync(join(tmpdir(), "mervin-install-"));
+    const board = lockBoard();
+    await settleLockfiles(root, board, async (r) => { writeFileSync(join(r, "bun.lock"), "new"); return { ok: true, out: "" }; });
+    expect(readFileSync(join(root, "bun.lock"), "utf8")).toBe("new");
+    expect(board.stages[0]!.files[0]!.tier).toBe("mervin");
+    expect(board.written).toContain("bun.lock");
+  });
+  test("a failed install raises a card, which holds the PR", async () => {
+    const board = lockBoard();
+    await settleLockfiles("/nowhere", board, async () => ({ ok: false, out: "error: no matching version\n" }));
+    const f = board.stages[0]!.files[0]!;
+    expect(f.tier).toBe("card");
+    expect(f.why).toContain("no matching version");
   });
 });
 
