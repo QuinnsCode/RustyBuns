@@ -1,12 +1,10 @@
 # History swarm (plan)
 
 A swarm of agents that read this repo's own history in parallel and report what it shows. The first read is
-[jams.md](../apps/codesplitter/docs/jams.md): one script (`apps/codesplitter/scripts/jam-report.ts`) counted jammed PRs. A swarm does
+[jams.md](../apps/codesplitter/docs/jams.md): one script (`scripts/jam-report.ts`) counted jammed PRs. A swarm does
 what one script can't: judge each PR or commit, not just count it.
 
-Status: step 1 is built: `apps/codesplitter/scripts/history-swarm.ts` (`split` writes the slice tasks, `merge` checks the
-readers' rows against `jam-report.ts`), tested on a fixture in `test/history-swarm.test.ts`. No reader has run; step 3
-waits for the owner to approve a fan-out count.
+Status: plan only. Nothing is built. No worker was on this when the plan was started (Oct 15, 2026).
 
 ## Questions worth asking of 1100+ commits and 900+ merged PRs
 
@@ -38,3 +36,16 @@ waits for the owner to approve a fan-out count.
 - Does the owner want this as a script under `scripts/` or as a codeSplitter feature (the swarm reading a repo's
   history inside the product)? Plan assumes the script.
 - Budget: cheapest model, but the owner should approve a fan-out count before step 3.
+
+## First run (Oct 15, 2026)
+
+Four haiku readers, 250 merged PRs each (#80 to #1824), keyword rule on commit headlines. Rows: `notes/history-swarm/`.
+
+- 122 of 1000 PRs jammed (12%). Slices: 34, 45, 20, 23. This is lower than the 25% in jams.md because the
+  squash-merged history drops most branch commit titles; treat both as floors.
+- Why: conflict 74, other 21, renumber 16, churn 11.
+- Files: `client.html` 39 (under the old `codesplitters` path and the new one), `apps/codesplitter/README.md` 12,
+  root `README.md` 4. Same hot spots as jams.md.
+- Known noise: PRs 126, 256 and 262 matched "conflict" in feature titles. The `why` buckets differ by reader, and
+  "file" is the most-churned file per PR, not a measured clash. No Mervin replay or judging of diffs yet (steps 2 and 4).
+- `jams.md` is not updated: these numbers are too rough to replace its table.

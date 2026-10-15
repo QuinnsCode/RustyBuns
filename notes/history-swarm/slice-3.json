@@ -1,0 +1,122 @@
+[
+  {
+    "pr": 1040,
+    "jammed": true,
+    "why": "conflict",
+    "file": "apps/codesplitter/src/beam.ts"
+  },
+  {
+    "pr": 1042,
+    "jammed": true,
+    "why": "conflict",
+    "file": "apps/codesplitter/test/beam-hosted.test.ts"
+  },
+  {
+    "pr": 1045,
+    "jammed": true,
+    "why": "other",
+    "file": "apps/codesplitter/scripts/shadow.ts"
+  },
+  {
+    "pr": 1093,
+    "jammed": true,
+    "why": "conflict",
+    "file": "apps/two-fronts/src/main.ts"
+  },
+  {
+    "pr": 1100,
+    "jammed": true,
+    "why": "conflict",
+    "file": "apps/two-fronts/src/battle/space.ts"
+  },
+  {
+    "pr": 1117,
+    "jammed": true,
+    "why": "conflict",
+    "file": "apps/codesplitter/scripts/merge-replay.ts"
+  },
+  {
+    "pr": 1147,
+    "jammed": true,
+    "why": "conflict",
+    "file": "apps/codesplitter/test/conflicts.test.ts"
+  },
+  {
+    "pr": 1205,
+    "jammed": true,
+    "why": "conflict",
+    "file": "apps/git-recon/tests/battle.test.ts"
+  },
+  {
+    "pr": 1214,
+    "jammed": true,
+    "why": "conflict",
+    "file": "apps/git-recon/tests/battle.test.ts"
+  },
+  {
+    "pr": 1221,
+    "jammed": true,
+    "why": "conflict",
+    "file": "apps/git-recon/tests/battle.test.ts"
+  },
+  {
+    "pr": 1240,
+    "jammed": true,
+    "why": "conflict",
+    "file": "packages/shell-bun/src/bindings/workflow.ts"
+  },
+  {
+    "pr": 1245,
+    "jammed": true,
+    "why": "conflict",
+    "file": "packages/cli/src/addons.ts"
+  },
+  {
+    "pr": 1314,
+    "jammed": true,
+    "why": "conflict",
+    "file": "apps/codesplitter/src/client.html"
+  },
+  {
+    "pr": 1336,
+    "jammed": true,
+    "why": "conflict",
+    "file": "apps/codesplitter/src/gitpath/page.ts"
+  },
+  {
+    "pr": 1337,
+    "jammed": true,
+    "why": "conflict",
+    "file": "apps/codesplitter/src/gitpath/gitpath.ts"
+  },
+  {
+    "pr": 1360,
+    "jammed": true,
+    "why": "conflict",
+    "file": "apps/codesplitter/src/try-out.ts"
+  },
+  {
+    "pr": 1387,
+    "jammed": true,
+    "why": "conflict",
+    "file": "apps/codesplitter/scripts/mervin-corpus.ts"
+  },
+  {
+    "pr": 1398,
+    "jammed": true,
+    "why": "conflict",
+    "file": "apps/codesplitter/docs/mervin.md"
+  },
+  {
+    "pr": 1416,
+    "jammed": true,
+    "why": "conflict",
+    "file": "apps/codesplitter/docs/mervin.md"
+  },
+  {
+    "pr": 1432,
+    "jammed": true,
+    "why": "conflict",
+    "file": "apps/codesplitter/test/protect.test.ts"
+  }
+]
