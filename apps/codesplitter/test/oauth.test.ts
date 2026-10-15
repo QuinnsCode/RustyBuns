@@ -1,20 +1,15 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { describe, expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 import { ownOrigin } from "../src/security.ts";
 
 // These run the app end to end (in-process D1): fine alone, but a full run on a
 // busy machine can stretch one past bun's 5s default.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 const b64url = (b: Uint8Array) => Buffer.from(b).toString("base64url");
 const REDIRECT = "http://127.0.0.1:4788/oauth/callback";
 
 async function app() {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   await call("ryan", "/api/login", { method: "POST", body: JSON.stringify({ name: "ryan" }) });
   await call("ryan", "/api/repos", { method: "POST", body: JSON.stringify({ name: "lab", visibility: "private" }) });
   const form = (fields: Record<string, string>) => ({ method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(fields).toString() });

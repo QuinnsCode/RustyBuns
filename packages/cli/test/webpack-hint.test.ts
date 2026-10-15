@@ -95,3 +95,26 @@ test("webpack hint: webpack-only features in src/ are listed with their files", 
 test("webpack hint: no config file found says where it looked", () => {
   expect(hint({ "package.json": "{}" })).toContain("no webpack.config.* at the root, in config/ or webpack/");
 });
+
+test("webpack hint: pages from HtmlWebpackPlugin keep index.html in the draft's input (AdGuard Home shape)", () => {
+  const out = cfg(`module.exports = { entry: { main: "a", install: "b" }, plugins: [
+    new HtmlWebpackPlugin({ chunks: ["main"], template: "p/index.html" }),
+    new HtmlWebpackPlugin({ chunks: ["install"], filename: "install.html", template: "p/install.html" })] };`);
+  expect(out).toContain('input: { index: "index.html", install: "install.html" }');
+});
+
+test("webpack hint: one page with several entries is not several pages (jellyfin-web shape)", () => {
+  const out = cfg(`module.exports = { entry: { app: "a", serviceworker: "b" }, plugins: [new HtmlWebpackPlugin({ filename: "index.html", chunks: ["app", "serviceworker"] })] };`);
+  expect(out).not.toContain("serviceworker.html");
+  expect(out).not.toContain("input: {");
+});
+
+test("webpack hint: a Gruntfile that drives webpack is read, and run-time entries are flagged (CyberChef shape)", () => {
+  const out = hint({
+    "webpack.config.js": `module.exports = { resolve: { alias: { jquery: "x" } } };`,
+    "Gruntfile.js": `const webpack = require("webpack");\ngrunt.config.set("webpack.web.entry", find());\nconst c = { plugins: [new webpack.DefinePlugin(K), new HtmlWebpackPlugin({ chunks: ["main"] })] };`,
+  });
+  expect(out).toContain("read: webpack.config.js, Gruntfile.js");
+  expect(out).toContain("entries are built at run time");
+  expect(out).toContain("DefinePlugin -> define");
+});

@@ -1,20 +1,15 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { adminRoute } from "../src/tokens.ts";
 import { join } from "node:path";
-import { local as boot } from "../src/local.ts";
+import { local as boot } from "./app-kit.ts";
 
 // These run the app end to end (real git, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 /** The app in alias mode with ryan signed in (and an admin), a private repo with a file, and ryan's tokens maker. */
 async function app() {
   const call = await boot({ GH_CLI: "off", ADMINS: "ryan" });
-  opened.push(call);
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
   await send("ryan", "/api/login", { name: "ryan" });
   await send("ryan", "/api/repos", { name: "lab", visibility: "private" });
@@ -30,9 +25,11 @@ async function app() {
   return { call, send, make, as };
 }
 
-describe("personal API tokens", () => {
-  test("a token acts as its owner, shows once, and is stored only as a hash", async () => {
-    const { call, make, as } = await app();
+test("personal API tokens: made once, scoped, limited and revoked", async () => {
+  const j = await app();
+  // a token acts as its owner, shows once, and is stored only as a hash
+  {
+    const { call, make, as } = j;
     const t = await make("read");
     expect(t.token).toMatch(/^cst_[A-Za-z0-9_-]{43}$/);
     expect(t.last4).toBe(t.token.slice(-4));
@@ -48,10 +45,11 @@ describe("personal API tokens", () => {
     expect(JSON.stringify(list)).not.toContain(t.token);
     const row = await call.env.DB.prepare("SELECT * FROM api_tokens").first();
     expect(JSON.stringify(row)).not.toContain(t.token);
-  });
+  }
 
-  test("read tokens only GET; write tokens do what their owner can", async () => {
-    const { make, as } = await app();
+  // read tokens only GET; write tokens do what their owner can
+  {
+    const { make, as } = j;
     const read = await make("read"), write = await make("write");
     const post = (token: string, url: string, body: unknown) => as(token, url, { method: "POST", body: JSON.stringify(body) });
     const no = await post(read.token, "/api/repos", { name: "nope" });
@@ -62,10 +60,11 @@ describe("personal API tokens", () => {
     const c = await post(write.token, "/api/repos/ryan/made/do/commit?path=x.ts", { message: "from an agent" });
     expect(c.status).toBe(200);
     expect(((await c.json()) as any).by).toBe("ryan");
-  });
+  }
 
-  test("a bad, revoked or expired token is a 401, never signed out or the cookie's", async () => {
-    const { call, make, as } = await app();
+  // a bad, revoked or expired token is a 401, never signed out or the cookie's
+  {
+    const { call, make, as } = j;
     const t = await make("write");
     expect((await as("cst_nonsense", "/api/me")).status).toBe(401);
     expect((await as("", "/api/me", { headers: { authorization: "Bearer" } })).status).toBe(401);
@@ -77,20 +76,22 @@ describe("personal API tokens", () => {
     expect((await call("ryan", `/api/tokens/${u.id}`, { method: "DELETE" })).status).toBe(200);
     expect((await as(u.token, "/api/me")).status).toBe(401);
     expect((await call("mallory", `/api/tokens/${t.id}`, { method: "DELETE" })).status).toBe(404);
-  });
+  }
 
-  test("a token is never an admin, can't touch tokens or the account, and opens no sockets", async () => {
-    const { call, make, as } = await app();
+  // a token is never an admin, can't touch tokens or the account, and opens no sockets
+  {
+    const { call, make, as } = j;
     const t = await make("write");
     expect((await call("ryan", "/api/admin/limits")).status).toBe(200);
     for (const [method, url] of [["GET", "/api/admin/limits"], ["GET", "/api/admin/handles"], ["GET", "/api/tokens"], ["POST", "/api/tokens"],
       ["POST", "/api/logout"], ["POST", "/api/login"], ["GET", "/api/repos/ryan/lab/do/ws?path=a.ts"]] as const)
       expect([method, url, (await as(t.token, url, { method, body: method === "POST" ? "{}" : undefined })).status]).toEqual([method, url, 403]);
     expect((await as(t.token, "/api/levels/mitt/import", { method: "POST" })).status).toBe(403);
-  });
+  }
 
-  test("tokens count against their owner's rate limits, admin or not", async () => {
-    const { send, make, as } = await app();
+  // tokens count against their owner's rate limits, admin or not
+  {
+    const { send, make, as } = j;
     const t = await make("write");
     // Only requests from the internet are counted (cf-connecting-ip). New repos: 10 a day.
     const ip = { "cf-connecting-ip": "203.0.113.9" };
@@ -100,14 +101,15 @@ describe("personal API tokens", () => {
     expect(statuses[10]).toBe(429);
     // The cookie is still the admin's, and isn't limited.
     expect((await send("ryan", "/api/repos", { name: "by-cookie" })).status).toBe(201);
-  });
+  }
 
-  test("a token needs a label, a scope and 1 to 365 days, and a cookie to be made", async () => {
-    const { call, send } = await app();
+  // a token needs a label, a scope and 1 to 365 days, and a cookie to be made
+  {
+    const { call, send } = j;
     for (const body of [{ scope: "read" }, { label: "x", scope: "root" }, { label: "x", scope: "read", days: 0 }, { label: "x", scope: "read", days: 366 }, { label: "x", scope: "read", days: 1.5 }])
       expect((await send("ryan", "/api/tokens", body)).status).toBe(400);
     expect((await call(null, "/api/tokens", { method: "POST", body: JSON.stringify({ label: "x", scope: "read" }) })).status).toBe(401);
-  });
+  }
 });
 
 describe("GET /api/openapi.json", () => {

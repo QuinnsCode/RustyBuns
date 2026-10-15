@@ -1,8 +1,8 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { local as boot } from "../src/local.ts";
+import { local as boot } from "./app-kit.ts";
 import { installFor, planFrom, workspacePatterns } from "../src/checks.ts";
 import { CiRunner, drained } from "../src/ci-runner.ts";
 import type { ContainerApi } from "../src/sandbox.ts";
@@ -13,14 +13,10 @@ import { exec, files } from "../deploy-sandbox/server.mjs";
 // End to end, with real git and real bun test runs: past bun's 5s default on a busy machine.
 setDefaultTimeout(30_000);
 
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
-
 const MATH = 'import { expect, test } from "bun:test";\ntest("adds", () => expect(1 + 1).toBe(2));';
 
 async function app(extra: Record<string, unknown> = {}) {
   const call = await boot({ GH_CLI: "off", ...extra });
-  opened.push(call);
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
   await send("ryan", "/api/login", { name: "ryan" });
   await send("ryan", "/api/repos", { name: "lab" });

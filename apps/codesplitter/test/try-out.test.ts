@@ -1,11 +1,6 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 import type { Runner } from "../src/preview.ts";
-
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 /** A fake machine: each command's output and exit code, by a substring of the command line. */
 function fake(answers: Record<string, { out?: string; code?: number }>) {
@@ -27,7 +22,6 @@ function fake(answers: Record<string, { out?: string; code?: number }>) {
 
 async function app(runner: Runner) {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   call.env.PREVIEW_RUNNER = runner;
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
   await send("ryan", "/api/login", { name: "ryan" });

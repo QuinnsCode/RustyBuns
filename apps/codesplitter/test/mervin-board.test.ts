@@ -385,3 +385,53 @@ describe("mervin board: what the watch page streams", () => {
     ]);
   });
 });
+
+import { conflictWarnings, disjointBatches, redOn, relandOf, rerunnable, settleMergeable, type Verdict } from "../scripts/mervin-merge.ts";
+describe("mervin --go (#1730)", () => {
+  const row = (path: string, tier: "certain" | "card", after: number[] = []) => ({ path, tier, why: "", after });
+  const stage = (pr: number, files: ReturnType<typeof row>[]) => ({ pr, head: "h", base: "b", files });
+  const board = (stages: ReturnType<typeof stage>[]) => ({ main: "m", at: "", stages, written: [], skipped: [], clashes: [] });
+  const v = (pr: number, go: boolean, why = "", wave = 1): Verdict => ({ pr, go, why, wave, behind: [] });
+
+  test("mergeable is polled until GitHub stops saying UNKNOWN", async () => {
+    const seen: Record<number, string[]> = { 1: ["UNKNOWN", "UNKNOWN", "MERGEABLE"], 2: ["CONFLICTING"] };
+    const calls: number[] = [];
+    const got = await settleMergeable(async (n) => { calls.push(n); return seen[n]!.shift() ?? "MERGEABLE"; }, [1, 2], 5, 0, async () => {});
+    expect(Object.fromEntries(got)).toEqual({ 1: "MERGEABLE", 2: "CONFLICTING" });
+    expect(calls).toEqual([1, 2, 1, 1]);
+  });
+
+  test("a PR whose failing check ended before main went green gets a rerun, once", () => {
+    const pr = (end: string): BoardPr => ({ number: 7, headRefOid: "h", statusCheckRollup: [{ name: "apps", conclusion: "FAILURE", status: "COMPLETED", completedAt: end }] });
+    const held = [v(7, false, "CI failed: apps")];
+    expect(redOn([{ name: "apps", conclusion: "failure" }, { name: "typecheck", conclusion: "success" }])).toEqual(["apps"]);
+    expect(rerunnable([pr("2026-10-14T10:00:00Z")], held, ["apps"], "2026-10-14T11:00:00Z")).toEqual([7]);
+    expect(rerunnable([pr("2026-10-14T12:00:00Z")], held, ["apps"], "2026-10-14T11:00:00Z")).toEqual([]);
+    expect(rerunnable([pr("2026-10-14T10:00:00Z")], held, [], "2026-10-14T11:00:00Z")).toEqual([]);
+  });
+
+  test("warns that merging one PR makes a carded one conflict", () => {
+    const b = board([stage(1, [row("a", "certain")]), stage(2, [row("a", "card", [1])]), stage(3, [row("b", "certain", [1])])]);
+    expect(conflictWarnings(b, [v(1, true), v(2, false, "Mervin asks on a"), v(3, true, "", 2)])).toEqual(["merging #1 will make #2 conflict on a"]);
+  });
+
+  test("finds the PR a re-land puts back", () => {
+    expect(relandOf({ title: "Reland: fix the thing (#12)", body: "Reland of #12, which broke main" })).toBe(12);
+    expect(relandOf({ title: "x", body: "Reverts QuinnsCode/RustyBuns#40" })).toBe(40);
+    expect(relandOf({ title: "Add a thing", body: "closes #3" })).toBeUndefined();
+  });
+
+  test("PRs sharing a file go in different batches; the rest go together", () => {
+    const b = board([stage(1, [row("a", "certain")]), stage(2, [row("a", "certain")]), stage(3, [row("b", "certain")])]);
+    expect(disjointBatches(b, [1, 2, 3])).toEqual([[1, 3], [2]]);
+  });
+
+  test("a 30-PR board batches in well under a second", () => {
+    const b = board(Array.from({ length: 30 }, (_, i) => stage(i + 1, [row(`f${i % 10}`, "certain"), row(`own${i}`, "certain")])));
+    const t = performance.now();
+    const batches = disjointBatches(b, b.stages.map((s) => s.pr));
+    expect(performance.now() - t).toBeLessThan(1000);
+    expect(batches.flat().length).toBe(30);
+    expect(batches.length).toBe(3);
+  });
+});

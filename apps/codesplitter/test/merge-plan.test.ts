@@ -1,17 +1,13 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { apply, empty, fromText, type Doc } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
 import { busyOn, clashIn, taskFiles, waves } from "../src/merge-plan.ts";
-import { local as boot } from "../src/local.ts";
+import { local as boot } from "./app-kit.ts";
 import type { Exec } from "../src/agent-run.ts";
 
 // End to end (in-process D1 and file DOs): fine alone, slow on a busy machine.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 /** Main as `content`, and a branch's side: forked there, its copy edited to `to`. */
 const doc = (content: string) => { const d = empty(); apply(d, fromText(content), "me"); return d; };
@@ -59,7 +55,6 @@ describe("clashIn", () => {
 describe("GET /api/repos/:o/:r/merge-plan", () => {
   test("GET /api/mervin names the engine and gives his corpus", async () => {
     const call = await boot({ GH_CLI: "off" });
-    opened.push(call);
     const r = await call(null, "/api/mervin");
     const m = await r.json() as { name: string; corpus: { files: number; settled: number; asked: number; other: number } };
     expect(m.name).toBe("Mervin");
@@ -68,7 +63,6 @@ describe("GET /api/repos/:o/:r/merge-plan", () => {
 
   test("two branches on one line go in two waves, as does one stacked on another; the rest merge with the first", async () => {
     const call = await boot({ GH_CLI: "off" });
-    opened.push(call);
     const post = (user: string, url: string, body: unknown) => call(user, url, { method: "POST", body: JSON.stringify(body) });
     await post("ana", "/api/login", { name: "ana" });
     await post("ana", "/api/repos", { name: "r" });
@@ -97,7 +91,6 @@ describe("a branch that clashed takes main in once its blocker merges (#1162)", 
   /** b1 and b2 change one line of a.ts; b2 changes y(1) too. */
   async function app(env: Record<string, string> = {}) {
     const call = await boot({ GH_CLI: "off", ...env });
-    opened.push(call);
     const post = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
     await post("ana", "/api/login", { name: "ana" });
     await post("ana", "/api/repos", { name: "r" });
@@ -198,7 +191,6 @@ describe("dispatch hint (#1163)", () => {
 
   test("GET .../dispatch-hint: open branches on the task's files, not merged ones or ones elsewhere", async () => {
     const call = await boot({ GH_CLI: "off" });
-    opened.push(call);
     const post = (url: string, body: unknown) => call("ana", url, { method: "POST", body: JSON.stringify(body) });
     await post("/api/login", { name: "ana" });
     await post("/api/repos", { name: "r" });

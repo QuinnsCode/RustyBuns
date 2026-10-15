@@ -380,7 +380,7 @@
   .cg path, .cg-key path { fill: none; stroke: var(--border-2); stroke-width: 2; stroke-linecap: round; } .cg path.off { stroke-dasharray: 2 4; }
   .cg g, .cg-key .u, .cg-key .m { cursor: default; } .cg .u, .cg-key .u { fill: var(--fg); } .cg .m, .cg-key .m { fill: var(--accent); }
   .cg g:hover, .cg g:focus { outline: none; } .cg g:hover > *, .cg g:focus > *, .cg g.sel > * { stroke: var(--accent-glow); stroke-width: 3; }
-  .cg path.t { fill: var(--brown); stroke: none; } .cg g[data-h] { cursor: pointer; } .cg g.beat > * { stroke: var(--accent-glow); stroke-width: 3; }
+  .cg path.t { fill: var(--brown); stroke: none; } .cg g[data-h] { cursor: pointer; } .cg g.beat > * { stroke: var(--accent-glow); stroke-width: calc(3px + 3px * var(--swell, 0)); }
   /* The pulse travelling the vein: a glowing bead that runs into main's newest commit as the crew lands lines. */
   .cg .bead, .cg-key .bead { fill: var(--accent-glow); } .cg .bead { filter: drop-shadow(0 0 3px var(--accent)); pointer-events: none; }
   .cg-tags { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
@@ -430,7 +430,7 @@
   .up-branches .row { flex-wrap: nowrap; gap: 6px; padding: 2px 4px 2px 8px; font-size: 13px; min-height: 28px; }
   .up-branches .row + .row { border-top: 1px solid var(--border); }
   .up-branches code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .up-branches .btn { padding: 2px 6px; } .up-branches .muted { flex: none; display: inline-flex; }
+  .up-branches .btn { padding: 2px 6px; transition: none; } .up-branches .btn:active { transform: none; } .up-branches .muted { flex: none; display: inline-flex; }
   .ln .n:hover { color: var(--fg); }
   .ln .by { color: var(--faint); font-size: 11.5px; padding: 0 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-right: 1px solid var(--border); user-select: none; }
   .ln .t { white-space: pre; padding: 0 16px; }
@@ -1413,6 +1413,10 @@ $(".skip").addEventListener("click", (e) => { e.preventDefault(); app.focus(); }
 /** A link into the game for someone else: `wreck` opens the repo's wrecking room, `room` the backrooms in the file's folder. */
 const sendOffLink = (owner, repo, path, kind) => `${location.origin}/play.html#r/${owner}/${repo}` + (kind === "wreck" ? "?mode=wreck" : `?room=${encodeURIComponent(path.split("/").slice(0, -1).join("/"))}`);
 
+/** A repo whose fit verdict is good enough to offer Box it. */
+const boxable = (verdict) => verdict === "ready" || verdict === "likely";
+/** A PR's files by Mervin's tier, for a hover: "3 certain, 1 card". */
+const tierNote = (tiers) => ["certain", "agree", "mervin", "differ", "card"].filter((t) => tiers?.[t]).map((t) => `${tiers[t]} ${t}`).join(", ");
 async function copy(text, what = "Copied") {
   // An agent's call isn't a click, so the clipboard may refuse it: hand it the text instead.
   if (agentCall) agentCall.copied = text;
@@ -2537,18 +2541,27 @@ async function gitMap(c) {
     if (tagger.sel) pickCard(tagger.sel);
   };
   // The pulse: lines landing here send a bead down the vein into main's newest commit, one at a time.
-  let beatAt = 0;
-  el.beat = () => {
+  // `n` lines landed: the viewer's limits (tv-limits.js) floor, merge and smooth them into beads and a swelling glow on the tip.
+  let beatAt = 0, swell = 0, swellAt = Date.now();
+  el.beat = (n = 1) => {
     const svg = el.querySelector(".cg"), tip = svg?.querySelector("g.tip");
     if (!tip || Date.now() - beatAt < 900) return;
-    beatAt = Date.now();
+    const now = Date.now();
+    const p = tvl ? tvl.pulse(n, swell, (now - swellAt) / 1000, tvLimits()) : { swell: 0, glow: 1, beads: { count: 1, size: 1 } };
+    swell = p.swell; swellAt = now;
+    if (!p.glow) return;
+    beatAt = now;
     const [x, y, from] = svg.dataset.tip.split(",");
     if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      svg.insertAdjacentHTML("beforeend", `<circle class="bead" r="3.5"><animateMotion dur=".8s" fill="freeze" begin="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".4 0 1 1" path="M${from} ${y}H${x}"/></circle>`);
-      const bead = svg.lastElementChild;
-      bead.firstElementChild.beginElement?.();
-      setTimeout(() => bead.remove(), 800);
+      for (let i = 0; i < p.beads.count; i++) {
+        const r = Math.min(7, 3.5 + Math.log2(p.beads.size));
+        svg.insertAdjacentHTML("beforeend", `<circle class="bead" r="${r}"><animateMotion dur=".8s" fill="freeze" begin="indefinite" calcMode="spline" keyTimes="0;1" keySplines=".4 0 1 1" path="M${from} ${y}H${x}"/></circle>`);
+        const bead = svg.lastElementChild;
+        setTimeout(() => bead.firstElementChild.beginElement?.(), i * 60);
+        setTimeout(() => bead.remove(), 800 + i * 60);
+      }
     }
+    tip.style.setProperty("--swell", String(p.glow));
     setTimeout(() => { tip.classList.add("beat"); setTimeout(() => tip.classList.remove("beat"), 500); }, 700);
   };
   // A dot, clicked: revert it on main, or cherry-pick it onto main or an open branch (#880).
@@ -2697,11 +2710,7 @@ function dock() {
   };
   const save = () => saveDock(d);
   aside.append(rail, panels); show(d.tab); setWidth(d.w);
-  panels.addEventListener("click", (e) => {
-    const b = e.target.closest(".sec-i"); if (!b) return;
-    const p = b.classList.contains("inl") ? b.nextElementSibling : b.closest(".sec").querySelector(".sec-info"), on = p.hidden;
-    p.hidden = !on; b.setAttribute("aria-expanded", String(on));
-  });
+  panels.addEventListener("click", toggleInfo);
   rail.addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
     if (b.dataset.w) { setWidth(b.dataset.w); return save(); }
@@ -2794,6 +2803,12 @@ const deleteRepo = async (owner, repo, typed) => {
 };
 /** A side panel. `info` is its long explanation: an "i" in the heading opens it, so the panel itself stays a row of symbols. */
 /** An inline i for a live panel: the status stays a chip, the long wording opens behind it (same toggle as sec's). */
+/** Click handler for the i buttons (`sec` and `note`): show or hide the sentence behind one. */
+const toggleInfo = (e) => {
+  const b = e.target.closest(".sec-i"); if (!b) return;
+  const p = b.classList.contains("inl") ? b.nextElementSibling : b.closest(".sec").querySelector(".sec-info"), on = p.hidden;
+  p.hidden = !on; b.setAttribute("aria-expanded", String(on));
+};
 const note = (html) => `<button type="button" class="sec-i inl" aria-expanded="false" aria-label="More" title="More">${icon("info")}</button><span class="sec-info muted" hidden> ${html}</span>`;
 const sec = (ic, title, html, info = "") => `<section class="sec" data-key="${title.toLowerCase().replace(/\W+/g, "-")}" data-ic="${ic}"><h2>${icon(ic)}${title}${info ? `<button type="button" class="sec-i" aria-expanded="false" aria-label="About ${title}" title="More about ${title}">${icon("info")}</button>` : ""}</h2>${info ? `<p class="sec-info muted" hidden>${info}</p>` : ""}${html}</section>`;
 /** mm:ss gone since `from`, or left until `deadline`. */
@@ -3864,6 +3879,7 @@ const views = {
     el.querySelector("[data-files]")?.addEventListener("click", () => { const f = el.querySelector(".gfiles"); f.hidden = !f.hidden; });
     el.querySelectorAll("[data-jump]").forEach((b) => b.addEventListener("click", () => {
       const t = document.getElementById(b.dataset.jump);
+      if (t) $(".details")?.showPanel?.(t.closest(".sec")?.dataset.key);
       if (t) t.scrollIntoView({ block: "center", behavior: "smooth" }); else location.hash = `#/r/${owner}/${repo}`;
     }));
     clearTimeout(el._t);
@@ -4026,16 +4042,16 @@ const views = {
     el.innerHTML = `<p>Copied at <code>${esc(t.commit.slice(0, 7))}</code>${note("Make it a mirror and the two listen to each other: upstream's commits come here, yours go back up, never forced.")}</p>
       <div class="gitpic-slot" data-pic="${esc(JSON.stringify(pic))}">${gitPic(pic)}</div>
       <p class="muted" style="font-size:12px">${t.ahead ? `${icon("arrow-up")}${t.ahead}` : "nothing to send"}${note(`${mine}. Upstream has to take your pushes: without the rights, it stays here and says so.`)}</p>
-      <div class="row"><button class="btn" id="mirror-turn-go"${picAttr(...pic)}>${icon("refresh-cw")}Make it a mirror</button></div>`;
+      <div class="row" style="gap:6px;flex-wrap:wrap"><button class="btn" id="mirror-turn-go"${picAttr(...pic)}>${icon("refresh-cw")}Make it a mirror</button><button class="btn" id="mirror-turn-pull" title="Upstream's commits come here and nothing goes back up">${icon("download")}Pull only</button></div>`;
     icons();
-    const go = $("#mirror-turn-go");
-    go.addEventListener("click", async () => {
-      // Once it's up it's up: the first click says so, the second does it.
-      if (t.ahead && !go.dataset.sure) { go.dataset.sure = "1"; go.textContent = `Sure? ${t.ahead === 1 ? "It goes" : "They go"} upstream`; return; }
+    const turn = (go, pullOnly) => go.addEventListener("click", async () => {
+      // Once it's up it's up: the first click says so, the second does it. Pull-only sends nothing, so it asks nothing.
+      if (t.ahead && !pullOnly && !go.dataset.sure) { go.dataset.sure = "1"; go.textContent = `Sure? ${t.ahead === 1 ? "It goes" : "They go"} upstream`; return; }
       go.disabled = true; go.textContent = "syncing…";
-      try { await api(`/repos/${owner}/${repo}/mirror/turn`, { ahead: t.ahead }); toast(`${repo} is a mirror of ${t.url} now`); route(); }
+      try { await api(`/repos/${owner}/${repo}/mirror/turn`, { ahead: t.ahead, ...(pullOnly && { pullOnly: true }) }); toast(`${repo} is a mirror of ${t.url} now`); route(); }
       catch (err) { go.disabled = false; toast(err.message); views.wireMirrorTurn(owner, repo); }
     });
+    turn($("#mirror-turn-go"), false); turn($("#mirror-turn-pull"), true);
   },
   /** A dug fork listening to its upstream (#870): how many commits upstream got since the dig, and Take them onto a branch. */
   async wireListen(owner, repo, hear) {
@@ -4169,7 +4185,7 @@ const views = {
     el.innerHTML = (dir ? `<p class="muted"><a href="#" data-fit-dir="">${esc(repo)}</a> / <code>${esc(dir)}</code></p>` : "")
       + `<p><span class="badge fit-${f.verdict}">${say[f.verdict]}</span> <span class="fw-logos">${stackLogos(f.label)}</span></p>
       <ul class="fit-why">${f.reasons.map((r) => `<li>${esc(r).replace(/\x60([^\x60]+)\x60/g, "<code>$1</code>")}</li>`).join("")}</ul>
-      ${owner === me() && (f.verdict === "ready" || f.verdict === "likely") && $("#ship") ? `<p><button class="btn primary" id="box-it" title="Open Ship: build the box, plan it, then stage and deploy it to the web or the desktop">${icon("package")}Box it</button></p>` : ""}
+      ${owner === me() && boxable(f.verdict) && $("#ship") ? `<p><button class="btn primary" id="box-it" title="Open Ship: build the box, plan it, then stage and deploy it to the web or the desktop">${icon("package")}Box it</button></p>` : ""}
       ${f.issue ? `<p class="muted">Support is tracked in <a href="${esc(f.issue)}" target="_blank" rel="noopener">#${esc(f.issue.split("/").pop())}</a>.</p>` : ""}`
       + (ws.length ? `<p class="muted" style="margin-top:8px">Its apps:</p><ul class="fit-why" style="list-style:none;padding-left:0">${ws.map((w) =>
           `<li><a href="#" data-fit-dir="${esc(w.dir)}" title="${esc(w.dir)}">${esc(w.name)}</a> <span class="badge fit-${w.verdict}">${say[w.verdict]}</span> <span class="fw-logos">${stackLogos(w.label)}</span></li>`).join("")}</ul>` : "");
@@ -4186,14 +4202,14 @@ const views = {
     const s = d.settings, rep = d.report;
     const opt = (v, label, cur) => `<option value="${v}"${String(cur) === String(v) ? " selected" : ""}>${label}</option>`;
     el.innerHTML = `<form id="deps-form" style="display:grid;gap:6px;font-size:13px">
-        <label><input type="checkbox" name="on"${s.on ? " checked" : ""}> Check on a schedule, and open a branch as <code>agent-deps</code></label>
+        <label><input type="checkbox" name="on"${s.on ? " checked" : ""}> Check on a schedule${note("Opens a branch as <code>agent-deps</code> when it finds updates.")}</label>
         <div class="row">every <select name="every_hours" aria-label="how often">${opt(6, "6 hours", s.every_hours)}${opt(24, "day", s.every_hours)}${opt(168, "week", s.every_hours)}${opt(720, "month", s.every_hours)}</select>
           up to <select name="max_level" aria-label="largest update">${opt("patch", "patch", s.max_level)}${opt("minor", "minor", s.max_level)}${opt("major", "major", s.max_level)}</select></div>
         <div class="row">releases at least <input name="min_age_days" aria-label="minimum release age in days" type="number" min="0" max="90" value="${s.min_age_days}" style="width:4em"> days old</div>
         <input name="ignore" placeholder="never update: react, typescript" value="${esc(s.ignore.join(", "))}">
-        <label title="${d.can_test ? "" : "Tests run on the desktop app, or in a container for this site's admins"}"><input type="checkbox" name="run_tests"${s.run_tests ? " checked" : ""}${d.can_test ? "" : " disabled"}> Install and test each update in a throwaway clone first <span class="muted">(runs this repo's code)</span></label>
-        <label title="${d.can_test ? "An Ask answer on a merge page is offered once the tests for its file pass with it, in the same sandbox" : "Tests run on the desktop app, or in a container for this site's admins"}"><input type="checkbox" name="test_merges"${s.test_merges ? " checked" : ""}${d.can_test ? "" : " disabled"}> Test a coding agent's merge answers in a throwaway clone too <span class="muted">(runs this repo's code)</span></label>
-        <label title="${d.can_preview ? "Each counts against your preview deploys, and is logged with them" : esc(d.preview_why || "Preview deploys run on the desktop app, with your own logins")}"><input type="checkbox" name="preview"${s.preview ? " checked" : ""}${d.can_preview ? "" : " disabled"}> Then deploy what passed as a preview, check it answers, and tear it down <span class="muted">(costs deploy time)</span></label>
+        <label title="${d.can_test ? "" : "Tests run on the desktop app, or in a container for this site's admins"}"><input type="checkbox" name="run_tests"${s.run_tests ? " checked" : ""}${d.can_test ? "" : " disabled"}> Test each update in a throwaway clone${note("Installs and tests each update before proposing it. Runs this repo's code.")}</label>
+        <label title="${d.can_test ? "An Ask answer on a merge page is offered once the tests for its file pass with it, in the same sandbox" : "Tests run on the desktop app, or in a container for this site's admins"}"><input type="checkbox" name="test_merges"${s.test_merges ? " checked" : ""}${d.can_test ? "" : " disabled"}> Test merge answers too${note("Tries a coding agent's merge answers in a throwaway clone as well. Runs this repo's code.")}</label>
+        <label title="${d.can_preview ? "Each counts against your preview deploys, and is logged with them" : esc(d.preview_why || "Preview deploys run on the desktop app, with your own logins")}"><input type="checkbox" name="preview"${s.preview ? " checked" : ""}${d.can_preview ? "" : " disabled"}> Preview what passed${note("Deploys it as a preview, checks it answers, and tears it down. Costs deploy time.")}</label>
         <div class="row" title="The connected AI for the 🤖 fix and 🔎 web search steps below">AI for 🤖 🔎 <select name="fix_with" aria-label="who fixes a break"${d.can_test ? "" : " disabled"}>${opt("", "none", s.fix_with ?? "")}${["claude", "pi", "opencode"].map((h) => opt(h, h, s.fix_with ?? "")).join("")}</select>
           up to <input name="fix_tries" aria-label="fix tries" type="number" min="1" max="5" value="${s.fix_tries}" style="width:3em"> tries a step</div>
         <div class="row">on a break, in order: <span class="chain" id="deps-chain"></span></div>
@@ -4723,7 +4739,7 @@ const views = {
     const live = only ? null : await api(`/repos/${owner}/${repo}/board`).catch(() => null);
     const board = live?.prs.length ? `<div class="muted" style="overflow-x:auto" title="Mervin's live board: every open PR, its CI, stack, clashes and owner"><b>${icon("git-pull-request")}Board</b>${live.prs.map((p) => {
       const stuck = !live.mergeable.includes(p.pr);
-      return ` <span title="${esc([p.title, p.ci === "fail" ? `CI red: ${(p.failing ?? []).join(", ")}` : p.ci === "pending" ? "CI running" : "", p.stackedOn ? `on #${p.stackedOn}` : "", ...p.clashes.map((c) => `clash ${c.kind} ${c.key}`), p.tiers.card ? `${p.tiers.card} cards` : "", p.owner ? `owner ${p.owner}` : ""].filter(Boolean).join(" · "))}">#${p.pr} ${icon(stuck ? "clock" : "circle-check")}${p.owner ? esc(p.owner) : ""}</span>`;
+      return ` <span title="${esc([p.title, p.ci === "fail" ? `CI red: ${(p.failing ?? []).join(", ")}` : p.ci === "pending" ? "CI running" : "", p.stackedOn ? `on #${p.stackedOn}` : "", ...p.clashes.map((c) => `clash ${c.kind} ${c.key}`), tierNote(p.tiers), p.owner ? `owner ${p.owner}` : ""].filter(Boolean).join(" · "))}">#${p.pr} ${icon(stuck ? "clock" : "circle-check")}${p.owner ? esc(p.owner) : ""}</span>`;
     }).join("")}</div>` : "";
     noBranches[`${owner}/${repo}`] = !open.length && !board && !only ? r : null;
     mervinHint(owner, repo);
@@ -4740,7 +4756,7 @@ const views = {
       ? await api("/agents").then((a) => a.available && !a.admins_only ? a.harnesses : []).catch(() => []) : [];
     // Each wave merges together; a branch that clashes with one before it says which, on hover.
     const waits = (w) => w.after.map((a) => `${a.branch}${a.stacked ? " (stacked on it)" : ""}${a.files.length ? `: ${a.files.join(", ")}` : ""}`).join("; ");
-    const planned = plan?.waves.length > 1 ? `<div class="muted" style="white-space:nowrap;overflow-x:auto" title="${esc(`${plan.engine ?? "Mervin"} planned this: merge a wave and the next wave's branches take main in by themselves`)}">${icon("git-merge")} <b>${esc(plan.engine ?? "Mervin")}</b> ${plan.waves.map((wave, i) => `<b>${i + 1}</b> ${wave.map((w) => w.after.length ? `<code title="${esc(`after ${waits(w)}`)}">${esc(w.branch)}</code>` : `<code>${esc(w.branch)}</code>`).join(" ")}`).join(" → ")}</div>` : "";
+    const planned = plan?.waves.length ? `<div class="muted" style="white-space:nowrap;overflow-x:auto" title="${esc(`${plan.engine ?? "Mervin"} planned this: merge a wave and the next wave's branches take main in by themselves`)}">${icon("git-merge")} <b>${esc(plan.engine ?? "Mervin")}</b> ${plan.waves.map((wave, i) => `<b>${i + 1}</b> ${wave.map((w) => w.after.length ? `<code title="${esc(`after ${waits(w)}`)}">${esc(w.branch)}</code>` : `<code>${esc(w.branch)}</code>`).join(" ")}`).join(" → ")}</div>` : "";
     el.innerHTML = board + planned + reviews.map((b) => {
       // A file only opened on the branch (the switcher reads through its copy) changes nothing: not counted.
       const files = b.files.filter((f) => !f.merged && (f.ops.length || f.deleted || f.binary || f.conflicts.length)), clash = files.flatMap((f) => f.conflicts.map((c) => ({ path: f.path, ...c })));
@@ -4771,7 +4787,7 @@ const views = {
           ? `<a class="btn primary" href="#/b/${esc(owner)}/${esc(repo)}/${encodeURIComponent(b.name)}" title="settle each conflict, then merge">${icon("git-merge")}Settle ${settles(clash)}</a>`
           : settles(clash)
           ? `<button class="btn primary" data-merge="${esc(b.name)}" data-left${picAttr("merge", { branch: b.name })}>${icon("git-merge")}Merge</button> <button class="btn ghost" data-all="main" data-for="${esc(b.name)}" title="settle every conflict as main's version">All main</button><button class="btn ghost" data-all="branch" data-for="${esc(b.name)}" title="settle every conflict as the branch's version">All branch</button>`
-          : `<button class="btn primary" data-merge="${esc(b.name)}"${picAttr("merge", { branch: b.name })}${b.checks?.gate.ok === false ? ` disabled title="required checks haven't passed"` : ""}>${icon("git-merge")}Merge</button>`}${r.canWrite ? ` <button class="btn" data-checks="${esc(b.name)}" title="run our own checks on the branch as it is now, on this machine: no GitHub needed">${icon("list-checks")}Run checks</button>` : ""}${r.mirror && owner === me() ? ` <button class="btn" data-push="${esc(b.name)}"${picAttr("push", { branch: b.name, ref: b.upstream_ref ?? b.name })}>${icon("upload")}Push upstream</button>${b.upstream_ref ? ` <button class="btn" data-pull="${esc(b.name)}"${picAttr("pull", { branch: b.name, ref: b.upstream_ref })}>${icon("download")}Pull upstream</button>` : ""}` : ""}</span>` : ""}</div>`;
+          : `<button class="btn primary" data-merge="${esc(b.name)}"${picAttr("merge", { branch: b.name })}${b.checks?.gate.ok === false ? ` disabled title="required checks haven't passed"` : ""}>${icon("git-merge")}Merge</button>`}${r.canWrite ? ` <button class="btn" data-checks="${esc(b.name)}" title="run our own checks on the branch as it is now, on this machine: no GitHub needed">${icon("list-checks")}Run checks</button>` : ""}${r.mirror && owner === me() ? `${r.pullOnly ? "" : ` <button class="btn" data-push="${esc(b.name)}"${picAttr("push", { branch: b.name, ref: b.upstream_ref ?? b.name })}>${icon("upload")}Push upstream</button>`}${b.upstream_ref ? ` <button class="btn" data-pull="${esc(b.name)}"${picAttr("pull", { branch: b.name, ref: b.upstream_ref })}>${icon("download")}Pull upstream</button>` : ""}` : ""}</span>` : ""}</div>`;
     }).join("");
     const read = (name) => el.querySelector(`[data-read="${CSS.escape(name)}"]`), anyway = (name) => el.querySelector(`[data-anyway="${CSS.escape(name)}"]`);
     // A merge button waits on every box its branch shows, and every conflict card being settled.
@@ -5037,6 +5053,7 @@ const views = {
       ${sec("git-merge", "Branches", `<div id="branches"><span class="muted">none open${note("Agents work on a branch, then someone merges it.")}</span></div>`)}
     </div>`;
     icons();
+    app.querySelector(".phone").addEventListener("click", toggleInfo);
     views.wireBranches(owner, repo, r, { phone: true });
     const f = $("#m-agent");
     if (!f) return;
@@ -5949,7 +5966,7 @@ const views = {
       for (const a of msg.applied) if (a.op.kind !== "delete") beating.set(a.by, Date.now() + 600);
       firehose(msg.applied.length);
       // The same beat runs down this repo's vein, if it's open.
-      if (msg.applied.some((a) => a.op.kind !== "delete") && $("#gitmap")?.dataset.repo === `${owner}/${repo}`) $("#gitmap").beat?.();
+      if (msg.applied.some((a) => a.op.kind !== "delete") && $("#gitmap")?.dataset.repo === `${owner}/${repo}`) $("#gitmap").beat?.(msg.applied.length);
       schedule(msg.applied.map((a) => a.line));
     };
     connect();

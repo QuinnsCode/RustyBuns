@@ -1,13 +1,9 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 import worker from "../src/worker.ts";
 import { changedSince, hitsIn, malFrom, NEWS_EVERY, newsFrom, scheduledWatch, STATUS_PAGES } from "../src/watch.ts";
 
 // End to end with real git and an in-process D1: a busy machine can stretch one past bun's 5s default.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 const NOW = Date.parse("2026-10-11T12:00:00Z");
 const iso = (hoursAgo: number) => new Date(NOW - hoursAgo * 3_600_000).toISOString();
@@ -63,7 +59,6 @@ function internet(csv: () => string, entries: Record<string, unknown>) {
 
 test("the cron: status lines, and every repo checked against new advisories, doctor or not", async () => {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   let csv = [`${iso(3)},MAL-2026-2`, `${iso(5)},MAL-2026-1`, `${iso(24 * 30)},MAL-2025-9`].join("\n");
   call.env.WATCH_FETCH = internet(() => csv, { "MAL-2026-1": EVIL, "MAL-2026-2": CHALK, "MAL-2026-3": DEBUG });
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
@@ -104,7 +99,6 @@ test("the cron: status lines, and every repo checked against new advisories, doc
 
 test("a sweep out of time picks up where it stopped next hour", async () => {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   call.env.WATCH_FETCH = internet(() => `${iso(1)},MAL-2026-1\n`, { "MAL-2026-1": EVIL });
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
   await send("ryan", "/api/login", { name: "ryan" });
@@ -133,7 +127,6 @@ test("newsFrom: only incidents a search turned up, tidied", () => {
 
 test("the news search: off unless asked for, once a day, a search's pause carried on, unverified news only", async () => {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   const asks: any[] = [];
   const msg = (content: unknown[], stop_reason: string) => Response.json({ id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5-5", content, stop_reason, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } });
   const net = internet(() => "", {});

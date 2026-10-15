@@ -1,5 +1,5 @@
-import { afterAll, describe, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { describe, expect, setSystemTime, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 import { bump, costOf, digUpdate, dugVersion, fillPrompt, fixCommand, fixPrompt, localFixer, npmrcHosts, osvAdvisories, outdated, packageManager, parseNpmrc, reached, registryUrl, runDoctor, satisfies, scheduledDoctor, settlePeers, whatsNew, DEFAULTS, MAX_WATCHED, type Advisories, type Fixer, type Notify, type Registry, type Report, type Tester, type Update, type Vuln } from "../src/deps.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 import { gated } from "./fake-gate.ts";
@@ -10,10 +10,6 @@ import { scopedTest } from "../sandbox/scoped.mjs";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 // The app reads the real clock, so the fake releases are dated from it too.
 const NOW = Date.now();
@@ -224,7 +220,6 @@ const kleurTester = (seen: string[][] = []): Tester => async (remote, files) => 
 async function app(tester?: Tester, fixer?: Fixer, pkg = PKG, extra: Record<string, unknown> = {}) {
   const { advisories, ...env } = extra;
   const call = await boot({ GH_CLI: "off", ...env });
-  opened.push(call);
   call.env.DEPS_REGISTRY = NPM;
   call.env.DEPS_ADVISORIES = (advisories as Advisories | undefined) ?? (async () => new Map());
   if (tester) call.env.DEPS_TESTER = tester;

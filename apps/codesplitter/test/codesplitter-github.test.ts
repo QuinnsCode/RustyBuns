@@ -77,6 +77,26 @@ describe("github", () => {
     } finally { globalThis.fetch = real; }
   });
 
+  test("a signed-out GitHub wreck link digs one shared read-only copy and reuses it", async () => {
+    const call = await local({ GH_CLI: "off" });
+    const real = globalThis.fetch;
+    globalThis.fetch = (async (u: string) => {
+      if (new URL(u).pathname.endsWith(".git/info/refs")) return new Response(`${"c".repeat(40)} HEAD\0side-band symref=HEAD:refs/heads/main\n`);
+      return new Response("{}", { status: 404 });
+    }) as any;
+    let imports = 0;
+    call.artifacts.import = (async (params: any) => { imports++; return call.artifacts.create(params.target.name, { setDefaultBranch: "main" }); }) as any;
+    try {
+      const first = await post(call, null, "/api/github/wreck", { repo: "https://github.com/o/Tiny" });
+      expect([first.status, await first.json()]).toEqual([200, { owner: "github", name: "o-tiny" }]);
+      const again = await post(call, null, "/api/github/wreck", { repo: "o/tiny" });
+      expect(await again.json()).toEqual({ owner: "github", name: "o-tiny" });
+      expect(imports).toBe(1);
+      expect((await call(null, "/api/game/r/github/o-tiny")).status).toBe(200);
+      expect((await post(call, null, "/api/github/wreck", { repo: "nope" })).status).toBe(400);
+    } finally { globalThis.fetch = real; }
+  });
+
   test("a sign-in can link several GitHubs, encrypted at rest, and pick which one digs", async () => {
     const { call, person } = await accounts({ GITHUB_CLIENT_ID: "id", GITHUB_CLIENT_SECRET: "s" });
     const origin = "http://codesplitter.local", cookie = await person("ana@example.com", "ana-digger");

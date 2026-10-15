@@ -91,6 +91,62 @@ export async function waitWhilePaused(dir: string, held: () => void = () => {}, 
   return true;
 }
 
+/** `mergeable` after a merge reads UNKNOWN while GitHub recomputes it; poll until every PR has an answer (or the tries run out). */
+export async function settleMergeable(get: (pr: number) => Promise<string>, prs: number[], tries = 6, every = 2000, sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))) {
+  const state = new Map<number, string>();
+  let todo = prs;
+  for (let i = 0; i < tries && todo.length; i++) {
+    if (i) await sleep(every);
+    for (const n of todo) state.set(n, await get(n).catch(() => "UNKNOWN"));
+    todo = todo.filter((n) => state.get(n) === "UNKNOWN");
+  }
+  return state;
+}
+
+/** The checks red on main, read from main's own check runs. */
+export const redOn = (runs: { name: string; conclusion: string | null }[]) => [...new Set(runs.filter((r) => ["failure", "timed_out", "cancelled"].includes(r.conclusion ?? "")).map((r) => r.name))];
+
+/**
+ * Held-for-CI PRs worth a rerun: every failing check finished before main's head commit landed and main is green on it now,
+ * so main's fix came after the failure. A rerun finishes later than main, so it isn't picked twice.
+ */
+export function rerunnable(prs: BoardPr[], verdicts: Verdict[], mainGreen: string[], mainAt: string): number[] {
+  const green = new Set(mainGreen);
+  return verdicts.filter((v) => !v.go && v.why.startsWith("CI failed")).map((v) => v.pr).filter((n) => {
+    const bad = (prs.find((p) => p.number === n)?.statusCheckRollup ?? []).filter((c) => ["FAILURE", "TIMED_OUT", "CANCELLED", "ERROR"].includes(c.conclusion ?? ""));
+    return bad.length > 0 && bad.every((c) => green.has(c.name ?? "") && c.completedAt && Date.parse(c.completedAt) < Date.parse(mainAt));
+  });
+}
+
+/** Merging a wave 1 PR makes a PR behind it conflict when it shares a file Mervin couldn't carry (card) or the engines disagreed on. */
+export function conflictWarnings(board: Board, verdicts: Verdict[]): string[] {
+  const now = new Set(verdicts.filter((v) => v.go && v.wave === 1).map((v) => v.pr));
+  const out: string[] = [];
+  for (const s of board.stages) for (const f of s.files) {
+    if (f.tier !== "card" && f.tier !== "differ") continue;
+    for (const n of f.after) if (now.has(n) && s.pr !== n) out.push(`merging #${n} will make #${s.pr} conflict on ${f.path}`);
+  }
+  return out;
+}
+
+/** The PR a re-land puts back: "Reland of #12", "Re-land #12", "Reverts #12" in the title or body. */
+export function relandOf(pr: Pick<BoardPr, "title" | "body">): number | undefined {
+  const m = /\b(?:re-?land(?:s|ing)?(?: of)?|reverts?)\s*:?\s*(?:\S+\/\S+)?#(\d+)/i.exec(`${pr.title ?? ""}\n${pr.body ?? ""}`);
+  return m ? Number(m[1]) : undefined;
+}
+
+/** Splits the PRs into batches where no two share a file, so each batch can merge concurrently. */
+export function disjointBatches(board: Board, picks: number[]): number[][] {
+  const files = new Map(board.stages.map((s) => [s.pr, new Set(s.files.map((f) => f.path))]));
+  const batches: { prs: number[]; paths: Set<string> }[] = [];
+  for (const n of picks) {
+    const mine = files.get(n) ?? new Set<string>();
+    const b = batches.find((x) => ![...mine].some((p) => x.paths.has(p)));
+    if (b) { b.prs.push(n); for (const p of mine) b.paths.add(p); } else batches.push({ prs: [n], paths: new Set(mine) });
+  }
+  return batches.map((b) => b.prs);
+}
+
 /** PRs with auto-merge already on (by hand) whose base is dead or whose parent hasn't landed: merging them strands the commit (#1545). */
 export function strayAutoMerges(prs: BoardPr[], verdicts: Verdict[]): number[] {
   const auto = new Set(prs.filter((p) => p.autoMergeRequest).map((p) => p.number));
@@ -184,12 +240,16 @@ if (import.meta.main) {
   const rec = replay ? JSON.parse(await Bun.file(replay).text()) : undefined;
   const from = arg("from");
   const prs: BoardPr[] = rec ? rec.prs : JSON.parse(from ? await Bun.file(from).text()
-    : Bun.spawnSync(["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "number,title,headRefOid,headRefName,baseRefName,autoMergeRequest,statusCheckRollup"], { cwd: top }).stdout.toString() || "[]");
+    : Bun.spawnSync(["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "number,title,body,headRefOid,headRefName,baseRefName,autoMergeRequest,statusCheckRollup"], { cwd: top }).stdout.toString() || "[]");
   const main: string = rec ? rec.main : Bun.spawnSync(["git", "rev-parse", "origin/main"], { cwd: top }).stdout.toString().trim();
   const given = args.filter((a, i) => /^\d+$/.test(a) && !args[i - 1]?.startsWith("--")).map(Number);
   say(`reading ${prs.length} open PRs against main ${main.slice(0, 9)}`);
   const { board } = run(top, main, order(prs, given.length ? given : undefined));
-  const verdicts = decide(board, prs, (arg("main-red") ?? "").split(",").filter(Boolean));
+  const sh = (...a: string[]) => Bun.spawnSync(a, { cwd: top, stderr: "pipe" }).stdout.toString().trim();
+  let mainRuns: { name: string; conclusion: string | null }[] = [];
+  if (!rec && !from) try { mainRuns = JSON.parse(sh("gh", "api", `repos/{owner}/{repo}/commits/${main}/check-runs`, "--jq", "[.check_runs[] | {name, conclusion}]") || "[]"); } catch {}
+  const mainRed = [...new Set([...(arg("main-red") ?? "").split(",").filter(Boolean), ...redOn(mainRuns)])];
+  const verdicts = decide(board, prs, mainRed);
   const file = join(resolve(arg("record") ?? join(top, ".mervin/rounds")), `${new Date().toISOString().replace(/[:.]/g, "-")}-${main.slice(0, 9)}.json`);
   const recorded: Record<string, unknown> = { at: new Date().toISOString(), main, replayOf: replay, prs, board, verdicts };
   const save = () => {
@@ -211,7 +271,8 @@ if (import.meta.main) {
   }
   const heads = advise(board, verdicts);
   for (const v of verdicts) say(`#${v.pr} ${v.go ? `wave ${v.wave}` : "HOLD"}: ${v.why}${v.title ? `  (${v.title})` : ""}`);
-  for (const w of heads.warnings) say(`warning: ${w}`);
+  for (const w of [...heads.warnings, ...conflictWarnings(board, verdicts)]) say(`warning: ${w}`);
+  for (const p of prs) { const o = relandOf(p); if (o !== undefined) say(`#${p.number} re-lands #${o}`); }
   for (const a of heads.advice) say(`#${a.pr} suggest ${a.who}: ${a.why}${a.blocks.length ? ` (blocks ${a.blocks.map((n) => `#${n}`).join(" ")})` : ""}`);
   recorded.advice = heads; save();
   if (args.includes("--stack")) {
@@ -255,14 +316,33 @@ if (import.meta.main) {
   const planned = events({ board, verdicts } as unknown as Round);
   if (live) for (const e of planned) if (e.kind === "round" || e.kind === "hold" || (e.kind === "wave" && e.wave === 1)) emitTo(live, e);
   if (!args.includes("--go")) { say("plan only; add --go to turn on auto-merge for wave 1"); process.exit(0); }
-  for (const v of now) {
+  const mergeOne = async (v: Verdict) => {
     const method = (arg("method") as "squash" | "merge" | undefined) ?? v.method ?? "squash";
     if (method !== v.method) say(`#${v.pr} warning: using --${method}, Mervin recommends --${v.method} (${v.method === "merge" ? "part of a stack" : "a plain PR"})`);
-    const paused = await waitWhilePaused(dir, () => { say(`paused: holding #${v.pr} (remove ${join(dir, PAUSE)} or press play on the watch page)`); if (live) emitTo(live, { kind: "pause", paused: true }); });
+    const proc = Bun.spawn(["gh", "pr", "merge", String(v.pr), "--auto", `--${method}`], { cwd: top, stderr: "pipe" });
+    const err = await new Response(proc.stderr).text();
+    const code = await proc.exited;
+    say(`#${v.pr} auto-merge ${code === 0 ? "on" : `FAILED: ${err.trim()}`}`);
+    if (live && code === 0) for (const e of planned) if ("pr" in e && e.pr === v.pr && e.kind !== "merged" && e.kind !== "hold") emitTo(live, e);
+  };
+  // PRs with no shared file merge together; a batch waits for the one before it, and for the pause button.
+  const t0 = Date.now();
+  for (const batch of disjointBatches(board, now.map((v) => v.pr))) {
+    const paused = await waitWhilePaused(dir, () => { say(`paused: holding ${batch.map((n) => `#${n}`).join(" ")} (remove ${join(dir, PAUSE)} or press play on the watch page)`); if (live) emitTo(live, { kind: "pause", paused: true }); });
     if (paused) { say("resumed"); if (live) emitTo(live, { kind: "pause", paused: false }); }
-    const r = Bun.spawnSync(["gh", "pr", "merge", String(v.pr), "--auto", `--${method}`], { cwd: top, stderr: "pipe" });
-    say(`#${v.pr} auto-merge ${r.exitCode === 0 ? "on" : `FAILED: ${r.stderr.toString().trim()}`}`);
-    if (live && r.exitCode === 0) for (const e of planned) if ("pr" in e && e.pr === v.pr && e.kind !== "merged" && e.kind !== "hold") emitTo(live, e);
+    await Promise.all(batch.map((n) => mergeOne(now.find((v) => v.pr === n)!)));
   }
+  say(`queued ${now.length} in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  // Main's fix may have landed since a PR's CI failed: rerun its failed jobs once.
+  const mainAt = sh("git", "log", "-1", "--format=%cI", main);
+  const green = [...new Set(mainRuns.filter((r) => r.conclusion === "success").map((r) => r.name))].filter((n) => !mainRed.includes(n));
+  for (const n of rerunnable(prs, verdicts, green, mainAt)) {
+    const runs = sh("gh", "pr", "checks", String(n), "--json", "link,bucket", "--jq", '[.[] | select(.bucket=="fail") | .link | capture("runs/(?<id>[0-9]+)").id] | unique | .[]').split("\n").filter(Boolean);
+    for (const id of runs) { const r = Bun.spawnSync(["gh", "run", "rerun", id, "--failed"], { cwd: top, stderr: "pipe" }); say(`#${n} main is fixed, rerunning failed jobs of run ${id}: ${r.exitCode === 0 ? "ok" : r.stderr.toString().trim()}`); }
+  }
+  // Each merge changes mergeable for the PRs behind it; GitHub says UNKNOWN until it has recomputed.
+  const behind = verdicts.filter((v) => v.go && v.wave !== 1).map((v) => v.pr);
+  const states = await settleMergeable(async (n) => sh("gh", "pr", "view", String(n), "--json", "mergeable", "--jq", ".mergeable") || "UNKNOWN", behind);
+  for (const [n, st] of states) if (st !== "MERGEABLE") say(`#${n} warning: mergeable is ${st} after wave 1`);
   say("wave 1 is queued; rerun after it lands for the next wave");
 }

@@ -1,0 +1,86 @@
+# The desktop binaries and the long suite, on the hour instead of on every PR: each app's binary built and
+# started on every Mac and Linux runner (scripts/ci-apps.ts smoke), and codeSplitter's whole suite with its slowest
+# tests sorted (scripts/slowest.ts), so a test turning into a hang shows before it eats the budget.
+# A failure opens (or comments on) one issue labelled ci-hourly for triage; a PR is never held for it.
+name: desktop-hourly
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-hourly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      smoke: ${{ steps.p.outputs.smoke }}
+      smokes: ${{ steps.p.outputs.smokes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - id: p
+        run: bun scripts/ci-apps.ts smoke >> "$GITHUB_OUTPUT"
+
+  smoke:
+    needs: plan
+    if: needs.plan.outputs.smokes == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.smoke) }}
+    name: smoke ${{ matrix.app }} ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - run: bun install --frozen-lockfile
+        working-directory: .
+      - run: ${{ matrix.smoke }}
+
+  suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - run: bun install --frozen-lockfile
+      - run: bun ../../scripts/ci-test-count.ts "bun test --parallel test --reporter=junit --reporter-outfile=$RUNNER_TEMP/junit.xml"
+        working-directory: apps/codesplitter
+      - if: always()
+        run: |
+          { echo "### Slowest codeSplitter tests"; bun scripts/slowest.ts "$RUNNER_TEMP/junit.xml"; } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  flag:
+    needs: [smoke, suite]
+    if: always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULTS: smoke ${{ needs.smoke.result }}, suite ${{ needs.suite.result }}
+        run: |
+          gh label create ci-hourly --color B60205 --description "the hourly desktop and suite run" 2>/dev/null || true
+          open=$(gh issue list --label ci-hourly --state open --json number -q '.[0].number')
+          if [ -n "$open" ]; then gh issue comment "$open" --body "Failed again ($RESULTS): $RUN"
+          else gh issue create --label ci-hourly --title "Hourly desktop/suite run is failing" --body "The hourly run failed ($RESULTS): $RUN
+
+          Triage: open the run, read the failing job, and fix or file the cause. This issue gets a comment each hour it keeps failing."; fi
