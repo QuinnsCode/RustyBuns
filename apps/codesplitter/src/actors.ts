@@ -17,7 +17,7 @@ const SEEN = "(r.expires_at IS NULL OR r.expires_at > ?) AND (r.visibility = 'pu
 /** What drives `agent`: a CLI harness, or one of codeSplitter' own (agent-deps is the dependency doctor). */
 export function harnessOf(agent: string) {
   const h = agent.replace(/^agent-/, "");
-  return (HARNESSES as string[]).includes(h) ? h : h === "deps" ? "dependency doctor" : h;
+  return (HARNESSES as string[]).includes(h) ? h : h === "deps" ? "dependency doctor" : h === "rustybuns" ? "Rusty Buns init" : h;
 }
 
 interface RunRow { id: number; owner: string; repo: string; path: string; harness: string; task: string; status: string; started: number; result: string | null }

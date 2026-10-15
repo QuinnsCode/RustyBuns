@@ -4536,7 +4536,7 @@ const views = {
     if (!btn || !el) return;
     popover(btn);
     const tryBase = `/repos/${owner}/${repo}/try`, depBase = `/repos/${owner}/${repo}/deploy`;
-    const BUILD = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["init", "sparkles", "init"]];
+    const BUILD = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["init", "sparkles", "init"], ["save", "git-pull-request", "branch"]];
     const PLAN = [["infra", "waypoints", "map"], ["plan", "list-checks", "plan"]];
     const SHIP = [["clone", "git-branch", "clone"], ["install", "package", "install"], ["deploy", "rocket", "deploy"], ["check", "activity", "check"]];
     let tab = "plan", t = null, d = null, sel = null, node = null, timer = null, branch = "", branches = null, form = null, allowDelete = false, force = false;
@@ -4548,7 +4548,8 @@ const views = {
     const runBar = () => {
       const busy = t?.run && !t.run.done, open = branches;
       return `<div class="row"><select id="ship-branch"${busy ? " disabled" : ""} title="main, or an agent's branch: its files are laid over the clone"><option value="">main</option>${open.map((b) => `<option value="${esc(b.name)}"${b.name === branch ? " selected" : ""}>${esc(b.name)}</option>`).join("")}</select>
-        <button class="btn primary" id="ship-try"${!t?.can_run || busy ? " disabled" : ""} title="${t?.can_run ? "" : "Runs on the desktop app"}">${icon("flask-conical")}${busy ? "Running…" : t?.run ? "Build and plan again" : "Build and plan"}</button></div>`;
+        <button class="btn primary" id="ship-try"${!t?.can_run || busy ? " disabled" : ""} title="${t?.can_run ? "" : "Runs on the desktop app"}">${icon("flask-conical")}${busy ? "Running…" : t?.run ? "Build and plan again" : "Build and plan"}</button>
+        <button class="btn" id="ship-save"${!t?.can_run || busy ? " disabled" : ""} title="${t?.can_run ? "Run rustybuns init and commit its config and deploy dependencies to a branch as agent-rustybuns, for you to review and merge" : "Runs on the desktop app"}">${icon("git-pull-request")}Init on a branch</button></div>`;
     };
     /** The CLI's `--allow-delete` and `--force`: per deploy, never saved, cleared once pressed. Each names what it would put at risk. */
     const deployFlags = (g, s) => {
@@ -4560,8 +4561,8 @@ const views = {
     };
     const body = () => {
       const run = t?.run, g = run?.infra;
-      if (tab === "build") return `${flowRow(BUILD, by(run), sel)}${runTicker(run)}${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}${sel ? log(run, sel) : ""}${runBar()}
-        <p class="muted" style="font-size:12px">Clones the repo (or an agent's branch laid over it), installs, and runs <code>rustybuns init</code> if there is no config. Nothing is deployed.</p>`;
+      if (tab === "build") return `${flowRow(BUILD.filter(([k]) => k !== "save" || by(run).save), by(run), sel)}${runTicker(run)}${run?.note ? `<p class="muted" style="font-size:12px">${esc(run.note)}</p>` : ""}${sel ? log(run, sel) : ""}${runBar()}
+        <p class="muted" style="font-size:12px">Clones the repo (or an agent's branch laid over it), installs, and runs <code>rustybuns init</code> if there is no config. Nothing is deployed. <b>Init on a branch</b> also commits what init wrote (the config and deploy dependencies) to a branch as <code>agent-rustybuns</code>, to review and merge.</p>`;
       if (tab === "plan") return `${g ? infraMap(g, node) : run ? `<p class="muted">${by(run).infra?.status === "failed" ? "No map: this repo's Rusty Buns is older than <code>rustybuns infra</code>. The plan below still ran." : "Drawing the stack…"}</p>` : `<p class="muted">Build and plan draws this repo's stack here: the Worker and what it binds, with what <code>protect: true</code> keeps through destroy.</p>`}
         <div id="ship-note"></div>${flowRow(PLAN, by(run), sel)}${runTicker(run)}${sel ? log(run, sel) : ""}${runBar()}`;
       if (tab === "stage") {
@@ -4611,6 +4612,11 @@ const views = {
       el.querySelector("#ship-try")?.addEventListener("click", async () => {
         sel = null;
         try { await api(tryBase, { branch: el.querySelector("#ship-branch").value || undefined }); } catch (err) { toast(err.message); }
+        poll();
+      });
+      el.querySelector("#ship-save")?.addEventListener("click", async () => {
+        sel = "save"; tab = "build";
+        try { await api(tryBase, { save: true }); } catch (err) { toast(err.message); }
         poll();
       });
       el.querySelector("#ship-more")?.addEventListener("click", () => { el.hidden = true; setTimeout(() => document.getElementById("deploy")?.scrollIntoView({ block: "center", behavior: "smooth" }), 0); });
