@@ -1,10 +1,12 @@
 # History swarm (plan)
 
 A swarm of agents that read this repo's own history in parallel and report what it shows. The first read is
-[jams.md](../apps/codesplitter/docs/jams.md): one script (`scripts/jam-report.ts`) counted jammed PRs. A swarm does
+[jams.md](../apps/codesplitter/docs/jams.md): one script (`apps/codesplitter/scripts/jam-report.ts`) counted jammed PRs. A swarm does
 what one script can't: judge each PR or commit, not just count it.
 
-Status: plan only. Nothing is built. No worker was on this when the plan was started (Oct 15, 2026).
+Status: step 1 is built: `apps/codesplitter/scripts/history-swarm.ts` (`split` writes the slice tasks, `merge` checks the
+readers' rows against `jam-report.ts`), tested on a fixture in `test/history-swarm.test.ts`. No reader has run; step 3
+waits for the owner to approve a fan-out count.
 
 ## Questions worth asking of 1100+ commits and 900+ merged PRs
 
