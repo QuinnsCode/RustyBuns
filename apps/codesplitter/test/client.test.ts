@@ -527,10 +527,10 @@ describe("the dependency doctor's chain report", () => {
 });
 
 // #209: a repo that fits gets a "Box it" button on its fit panel, which opens Ship.
-test("the fit panel offers Box it to the owner when the repo fits", () => {
-  expect(html).toContain('id="box-it"');
-  expect(html).toContain('f.verdict === "ready" || f.verdict === "likely"');
-  expect(html).toContain('$("#box-it")?.addEventListener("click", () => $("#ship").click())');
+test("only a repo that fits is offered Box it", () => {
+  const boxable = new Function(`${html.slice(html.indexOf("const boxable"), html.indexOf("async function copy(text"))}; return boxable;`)();
+  expect(["ready", "likely"].map(boxable)).toEqual([true, true]);
+  expect(["no", "unlikely", undefined].map(boxable)).toEqual([false, false, false]);
 });
 
 // Send-offs: the share panel hands out links into the game, and play.html reads them.
