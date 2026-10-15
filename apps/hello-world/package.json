@@ -1,0 +1,19 @@
+{
+  "name": "hello-world",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop --check"
+  },
+  "dependencies": {
+    "@rustybuns/shell-bun": "workspace:*"
+  },
+  "devDependencies": {
+    "@rustybuns/cli": "workspace:*",
+    "vite": "^6.2.6"
+  }
+}

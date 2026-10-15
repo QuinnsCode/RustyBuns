@@ -25,6 +25,7 @@ clone
 levels
 dig
 show-around
+welcome-tour
 cards
 agents
 fit
