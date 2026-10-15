@@ -287,13 +287,21 @@ const labelTex = (text, color = "#0a0a0a", px = 64) => canvasTex(1024, 128, (g, 
 const H = 5.2, PANEL = 7, DOOR_W = 2.2, DOOR_H = 3.3;
 const roomCache = new Map();
 let here = null;   // { path, half, group, doors:[{wall,c,path}], lines:[{mesh, atlas, line}] }
-async function fetchRoom(path) {
-  if (roomCache.has(path)) return roomCache.get(path);
-  const r = await fetch(`${API}/walls?path=${encodeURIComponent(path)}`);
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "no room");
-  const w = await r.json();
-  roomCache.set(path, w);
-  return w;
+function fetchRoom(path) {
+  let p = roomCache.get(path);
+  if (!p) {
+    p = fetch(`${API}/walls?path=${encodeURIComponent(path)}`).then(async (r) => {
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "no room");
+      return r.json();
+    });
+    roomCache.set(path, p);
+    p.catch(() => roomCache.delete(path));   // a failed room is tried again, not remembered
+  }
+  return p;
+}
+/** Quietly fetch the rooms behind this room's doors, so walking through one is instant. */
+function preload(doors) {
+  for (const d of doors) fetchRoom(d.path).catch(() => {});
 }
 // Wall i: 0 north, 1 east, 2 south, 3 west. Local x along the wall, +z into the room.
 const WALL_ROT = [0, -Math.PI / 2, Math.PI, Math.PI / 2];
@@ -499,6 +507,7 @@ function buildRoom(path, w, minPanels = 8) {
   const furn = layFurniture(path, w, half, group);
   scene.add(group);
   here = { path, half, group, doors, lines, files, furn };
+  preload(doors);
   const lurking = files.reduce((n, f) => n + (f.file.noodles?.length ?? 0), 0);
   $("#where").textContent = (path ? path + "/" : "/") + `  ·  ${w.files.length} files, ${w.doors.length} doors` + (lurking ? `  ·  ${lurking} noodle${lurking > 1 ? "s" : ""} lurking` : "");
 }
