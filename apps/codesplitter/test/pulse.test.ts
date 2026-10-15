@@ -79,6 +79,26 @@ describe("pulse", () => {
   });
 });
 
+describe("mini profile capture", () => {
+  test("the share page's og:image is a random moment of the week, drawn once and kept in R2", async () => {
+    const kept = new Map<string, Uint8Array>();
+    const LEVEL_CHUNKS = { put: async (k: string, v: Uint8Array) => { kept.set(k, v); }, get: async (k: string) => (kept.has(k) ? { arrayBuffer: async () => kept.get(k)!.buffer } : null) };
+    const call = await boot({ GH_CLI: "off", LEVEL_CHUNKS });
+    await call(null, "/api/login", { method: "POST", body: JSON.stringify({ name: "ryan" }) });
+    const share = await (await call(null, "/api/users/ryan/share")).text();
+    const src = share.match(/og:image" content="([^"]+)"/)![1]!.replace(/&amp;/g, "&");
+    expect(src).toMatch(/pulse\.png\?slot=([1-9]|1\d|2[0-3])&/);
+    const path = src.replace(/^https?:\/\/[^/]+/, "");
+    const first = await call(null, path);
+    expect(first.headers.get("content-type")).toBe("image/png");
+    expect(kept.size).toBe(1);
+    const again = new Uint8Array(await (await call(null, path)).arrayBuffer());
+    expect([...again.slice(1, 4)]).toEqual([80, 78, 71]);
+    expect(kept.size).toBe(1);
+    expect((await call(null, "/api/users/ryan/pulse.png?slot=99")).status).toBe(400);
+  });
+});
+
 describe("spread", () => {
   const H = 3_600_000;
   test("a stretch of work spreads over the hours it spans; only the week's share counts", () => {
