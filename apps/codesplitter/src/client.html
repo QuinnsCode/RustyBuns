@@ -2358,6 +2358,11 @@ function wireMap(c) {
     svg.innerHTML = `<path d="${d}"/><path class="hot" d="${hot}"/>`;
   };
   el.addEventListener("scroll", wires, true);
+  el.addEventListener("change", (e) => {
+    if (e.target.id !== "cg-limits") return;
+    try { localStorage.setItem("tv-limits", tvl.storeLimits(e.target.value)); } catch {}
+    drawGraph();
+  });
   el.addEventListener("click", (e) => {
     e.stopPropagation();
     if (e.target.closest("#wm-x")) return close();
@@ -2490,6 +2495,7 @@ async function gitMap(c) {
     api(`/repos/${owner}/${repo}/tags`).then((t) => t.tags, () => []),
   ]);
   if (!el.isConnected) return;
+  tvl ??= await import("/tv-limits.js").catch(() => null);
   const map = gitMapModel({ owner, repo, r, branches, mirror, upBranches });
   el.querySelector(".gm-story").textContent = map.story;
   const tile = (t) => `<${t.href ? `a href="${esc(t.href)}"${t.href.startsWith("http") ? ' target="_blank" rel="noopener"' : ""}` : "div"} class="gm-tile ${t.kind}" data-id="${esc(t.id)}" title="${esc(t.name)}">${icon(t.icon)}<span><b>${esc(t.name)}</b><small>${esc(t.sub)}</small></span></${t.href ? "a" : "div"}>`;
@@ -2609,9 +2615,16 @@ async function gitMap(c) {
   const onSize = () => { place(); wires(); };
   addEventListener("keydown", off); addEventListener("click", off); addEventListener("resize", onSize);
 }
+/** This viewer's TV limits (#1562), kept in their browser; tvl is src/tv-limits.ts, loaded when the vein first draws. */
+let tvl = null;
+const tvStored = () => { try { return localStorage.getItem("tv-limits"); } catch { return null; } };
+const tvLimits = () => tvl.parseLimits(tvStored());
+const tvPreset = () => { try { return JSON.parse(tvStored() ?? "null")?.preset in tvl.PRESETS ? JSON.parse(tvStored()).preset : tvl.DEFAULT; } catch { return tvl.DEFAULT; } };
 /** The vein's history: a head saying what it shows, and the dots and lanes, scrolled sideways. */
 const commitGraph = (g, tags = [], o = {}) => {
-  const DX = 22, LH = 20, PAD = 14, { dots, edges, lanes } = commitLanes(g.commits, g.more), marks = tagMarks(g.commits, tags);
+  const DX = 22, LH = 20, PAD = 14, laid = commitLanes(g.commits, g.more), marks = tagMarks(g.commits, tags);
+  // This viewer's limits (tv-limits.js, #1562): lanes past their preset's cap share one folded lane.
+  const { dots, edges, lanes, folded } = tvl ? tvl.foldLanes(laid.dots, laid.edges, laid.lanes, tvLimits().maxLanes) : { ...laid, folded: 0 };
   const X = (i) => PAD + 8 + i * DX, Y = (l) => PAD + l * LH;
   const line = (e) => {
     const [x1, y1, x2, y2] = [X(e.x1), Y(e.l1), X(e.x2), Y(e.l2)];
@@ -2635,7 +2648,7 @@ const commitGraph = (g, tags = [], o = {}) => {
   const main = dots.filter((c) => c.lane === 0).length, side = dots.length - main;
   const w = X(Math.max(0, dots.length - 1)) + PAD + 8, h = Y(lanes - 1) + PAD;
   return `<div class="cg-head muted">${icon("git-commit-horizontal")}<span>The vein, ${esc(g.branch)}: the last ${main} commit${main === 1 ? "" : "s"}${g.more ? " (older ones trail off left)" : ""}${side ? `, and ${side} on branches merged in` : ""}</span>
-    <span class="cg-key"><svg viewBox="0 0 10 10"><circle class="u" cx="5" cy="5" r="4"/></svg>upstream's</span><span class="cg-key"><svg viewBox="0 0 10 10"><circle class="m" cx="5" cy="5" r="4"/></svg>this copy's</span><span class="cg-key"><svg viewBox="0 0 10 10"><rect x="1.8" y="1.8" width="6.4" height="6.4" transform="rotate(45 5 5)"/></svg>a merge</span><span class="cg-key" title="when the crew lands lines here, a bead runs down the vein into main's newest commit"><svg viewBox="0 0 10 10"><circle class="bead" cx="5" cy="5" r="3"/></svg>the pulse</span>${tagHead(tags, marks, o)}</div>
+    <span class="cg-key"><svg viewBox="0 0 10 10"><circle class="u" cx="5" cy="5" r="4"/></svg>upstream's</span><span class="cg-key"><svg viewBox="0 0 10 10"><circle class="m" cx="5" cy="5" r="4"/></svg>this copy's</span><span class="cg-key"><svg viewBox="0 0 10 10"><rect x="1.8" y="1.8" width="6.4" height="6.4" transform="rotate(45 5 5)"/></svg>a merge</span><span class="cg-key" title="when the crew lands lines here, a bead runs down the vein into main's newest commit"><svg viewBox="0 0 10 10"><circle class="bead" cx="5" cy="5" r="3"/></svg>the pulse</span>${folded ? `<span class="cg-key" title="${folded} commits on branches past the lane limit share the bottom lane">+${folded} more</span>` : ""}${tvl ? `<select id="cg-limits" aria-label="how many lanes the vein draws" title="how many lanes the vein draws">${Object.keys(tvl.PRESETS).map((k) => `<option value="${k}"${k === tvPreset() ? " selected" : ""}>${k}</option>`).join("")}</select>` : ""}${tagHead(tags, marks, o)}</div>
     <div class="cg-scroll"><svg class="cg${o.mine ? " mine" : ""}" width="${w}" height="${h}"${tip ? ` data-tip="${X(tip.x)},${Y(0)},${X(Math.max(0, tip.x - 8))}"` : ""} viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(`${main} commits on ${g.branch}`)}">${edges.map(line).join("")}${dots.map(dot).join("")}</svg></div>${tagBar(dots.find((c) => c.hash === o.sel), marks, o)}`;
 };
 /** The graph head's tags: each a chip (dashed when its commit isn't shown), and for a mirror's owner, fetch upstream's. */
