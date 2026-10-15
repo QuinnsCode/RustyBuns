@@ -311,6 +311,28 @@ function preloadAhead(i, a, d) {
   if (d > 14) return;
   for (const x of here.doors) if (x.wall === i && Math.abs(a - x.c) < DOOR_W * 1.5) fetchRoom(x.path).catch(() => {});
 }
+/** A lit hall seen through a doorway: floor, ceiling and walls running to a bright far wall that carries a door for each folder in it. */
+function hallTex(room) {
+  return canvasTex(256, 384, (g, w, h) => {
+    g.fillStyle = "#16181a"; g.fillRect(0, 0, w, h);
+    const x0 = 14, x1 = w - 14, y0 = 14, y1 = h - 14, fw = 56, fh = 90, fx = (w - fw) / 2, fy = h * 0.42 - fh / 2;
+    const quad = (pts, fill) => { g.fillStyle = fill; g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.fill(); };
+    quad([[x0, y0], [x1, y0], [fx + fw, fy], [fx, fy]], "#e9e8e4");
+    quad([[x0, y1], [x1, y1], [fx + fw, fy + fh], [fx, fy + fh]], "#c9ccce");
+    quad([[x0, y0], [fx, fy], [fx, fy + fh], [x0, y1]], "#dcdad5");
+    quad([[x1, y0], [fx + fw, fy], [fx + fw, fy + fh], [x1, y1]], "#d3d1cc");
+    g.fillStyle = "#fffaf3"; g.fillRect(fx, fy, fw, fh);
+    g.strokeStyle = "rgba(90,100,108,.35)"; g.lineWidth = 1;
+    for (let i = 1; i < 6; i++) { const t = i / 6, y = y1 + (fy + fh - y1) * t * t; g.beginPath(); g.moveTo(x0 + (fx - x0) * t * t, y); g.lineTo(x1 + (fx + fw - x1) * t * t, y); g.stroke(); }
+    if (room) {
+      const n = Math.min(room.doors.length, 4), gap = fw / (n + 1);
+      g.fillStyle = "#0a0a0a"; for (let i = 0; i < n; i++) g.fillRect(fx + gap * (i + 1) - 4, fy + fh - 26, 8, 26);
+      g.fillStyle = "#e8590c"; for (let i = 0; i < Math.min(room.files.length, 6); i++) g.fillRect(fx + 4 + i * 8, fy + 6, 6, 8);
+      g.font = '500 15px "Geist Mono", monospace'; g.textAlign = "center"; g.fillStyle = "#0a0a0a";
+      g.fillText(`${room.files.length} files · ${room.doors.length} doors`, w / 2, h - 28);
+    }
+  });
+}
 // Wall i: 0 north, 1 east, 2 south, 3 west. Local x along the wall, +z into the room.
 const WALL_ROT = [0, -Math.PI / 2, Math.PI, Math.PI / 2];
 const NORMAL = [[0, 1], [-1, 0], [0, -1], [1, 0]];
@@ -491,7 +513,7 @@ function buildRoom(path, w, minPanels = 8) {
   }
   const trimMat = new THREE.MeshBasicMaterial({ color: "#16181a" });
   const doors = [], lines = [], files = [];
-  const doorMat = new THREE.MeshBasicMaterial({ color: "#0a0a0a" });
+  let preloaded = 0;
   panels.forEach((p, k) => {
     const wi = k % 4, slot = Math.floor(k / 4);
     let wall = group.getObjectByName("wall" + wi);
@@ -506,7 +528,10 @@ function buildRoom(path, w, minPanels = 8) {
     }
     const c = -half + PANEL * (slot + 0.5);
     if (p.kind === "door") {
+      const doorMat = new THREE.MeshBasicMaterial({ map: hallTex(null) }); doorMat.userData.own = true;
       const d = new THREE.Mesh(new THREE.PlaneGeometry(DOOR_W, DOOR_H), doorMat); d.position.set(c, DOOR_H / 2, 0.01); wall.add(d);
+      // Load the way out and the first few doors now, so they are open before you reach them; the hall shows what is behind it once it arrives.
+      if (preloaded++ < 8) fetchRoom(p.path).then((room) => { if (here?.group === group) { doorMat.map?.dispose(); doorMat.map = hallTex(room); doorMat.needsUpdate = true; } }).catch(() => {});
       const lab = new THREE.Mesh(new THREE.PlaneGeometry(4, 0.5), new THREE.MeshBasicMaterial({ map: labelTex(p.name, p.name === "../" ? "#6b6b6b" : "#0a0a0a"), transparent: true }));
       lab.position.set(c, DOOR_H + 0.45, 0.02); wall.add(lab);
       doors.push({ wall: wi, c, path: p.path, up: p.name === "../" });
