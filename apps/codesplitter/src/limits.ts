@@ -65,6 +65,7 @@ export const RULES: Rule[] = [
   { name: "newagents", label: "New agents", what: "agent handles made through invites, everyone's together, admins included", group: "Accounts", per: "site", max: 500, window_s: DAY, on_fail: "reject" },
   { name: "handle", label: "Claim a handle", what: "picking your @handle", group: "Accounts", per: "ip", max: 10, window_s: HOUR, on_fail: "reject" },
   { name: "dig", label: "Dig up a repo", what: "GitHub digs and level forks (Artifacts imports)", group: "GitHub", per: "user", max: 5, window_s: HOUR, on_fail: "reject", queueable: true },
+  { name: "wreck", label: "Wrecking-room digs", what: "new shared copies of GitHub repos for /play#gh/ links, everyone's together (a repeat visit reuses the copy)", group: "GitHub", per: "site", max: 20, window_s: HOUR, on_fail: "reject" },
   { name: "github", label: "GitHub lookups", what: "repo lists and search, on the site's GitHub token", group: "GitHub", per: "user", max: 30, window_s: MIN, on_fail: "reject" },
   { name: "search", label: "Code search", what: "full-text search over committed code", group: "Repos", per: "user", max: 30, window_s: MIN, on_fail: "reject" },
   { name: "repo", label: "New repos", what: "empty repos made here", group: "Repos", per: "user", max: 10, window_s: DAY, on_fail: "reject" },

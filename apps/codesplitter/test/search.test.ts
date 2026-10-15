@@ -1,15 +1,11 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { expect, setDefaultTimeout, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 
 // Search, one index per repo (search.ts): end to end, in-process.
 setDefaultTimeout(30_000);
 
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
-
 async function app() {
   const call = await boot({ GH_CLI: "off", ADMINS: "boss" });
-  opened.push(call);
   const post = (user: string, url: string, body: unknown = {}) => call(user, url, { method: "POST", body: JSON.stringify(body) });
   const commit = async (user: string, owner: string, repo: string, path: string, content: string) => {
     await post(user, `/api/repos/${owner}/${repo}/files`, { path, content });

@@ -274,3 +274,13 @@ test("the Allow/Deny card gets the whole prompt, its length, and its control cha
   expect(ask).toMatchObject({ size: prompt.length, odd: 1 });
   expect(await going).toContain("Nobody");
 });
+
+test("control characters in a title or worker name are flagged and pictured too", async () => {
+  process.env.AGENT_OFFICE_ASK_FIRST = "queue";
+  const body = { title: "fix\x1b[2Jit", worker: "Pix\x07el", prompt: "fine" };
+  expect(askDetail("/queue", body)).toContain("fix␛[2Jit");
+  const going = askFirst("/queue", "f", "Pixel", body, () => {}, { ms: 50 });
+  const [ask] = await waiting();
+  expect(ask).toMatchObject({ size: 4, odd: 2 });
+  expect(await going).toContain("Nobody");
+});

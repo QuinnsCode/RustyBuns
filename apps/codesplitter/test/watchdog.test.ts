@@ -97,3 +97,25 @@ test("a rollback is logged with the deploy and branch that shipped the bad versi
     expect(row).toMatchObject({ deploy_id: "d1", commit_hash: "abc123", branch: "risky", from_version: "v2", to_version: "v1" });
   } finally { call.close(); }
 });
+
+test("a rollback opens a fix task on a fresh branch off main, since the shipping branch is merged", async () => {
+  const call = await boot({ GH_CLI: "off", WATCHDOG_SECRET: "s3cret", HEAL: "1" });
+  try {
+    call.env.AGENT_EXEC = (async () => ({ code: 0, out: "ok" })) as never;
+    const send = (url: string, body: unknown) => call("ryan", url, { method: "POST", body: JSON.stringify(body) });
+    await send("/api/login", { name: "ryan" });
+    await send("/api/repos", { name: "lab" });
+    await send("/api/repos/ryan/lab/files", { path: "a.ts", content: "one\ntwo" });
+    await send("/api/repos/ryan/lab/do/commit?path=a.ts", { message: "first" });
+    const db = call.env.DB;
+    await db.prepare("INSERT INTO branches (owner, repo, name, by, status, created_at, merged_by, merged_at) VALUES ('ryan','lab','risky','ryan','merged',1,'ryan',100)").run();
+    await db.prepare("INSERT INTO branch_files (owner, repo, branch, path, merged) VALUES ('ryan','lab','risky','a.ts',1)").run();
+    await db.prepare("INSERT INTO deploys (id, owner, repo, stage, by, trigger, status, commit_hash, at) VALUES ('d1','ryan','lab','prod','ryan','button','done','abc123',200)").run();
+    const res = await call(null, "/api/watchdog/rolled-back", { method: "POST", headers: { authorization: "Bearer s3cret" }, body: JSON.stringify({ repo: "ryan/lab", from: "v2", to: "v1", at: 300 }) });
+    expect(res.status).toBe(200);
+    const body = await res.json() as { fix?: { branch: string; task: number } };
+    expect(body.fix?.branch).toBe("rollback-v1");
+    expect(await db.prepare("SELECT status FROM branches WHERE name = 'rollback-v1'").first()).toMatchObject({ status: "open" });
+    expect(await db.prepare("SELECT path FROM branch_files WHERE branch = 'rollback-v1'").first()).toMatchObject({ path: "a.ts" });
+  } finally { call.close(); }
+});

@@ -1,13 +1,9 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 import { CONFIG_READ, KEEP, logStart, preview, urlIn, type Run, type Runner } from "../src/preview.ts";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 /** A fake machine: each command's output and exit code, by the command's first two words. */
 function fake(answers: Record<string, { out?: string; code?: number }>, status = 200) {
@@ -30,7 +26,6 @@ const CONFIG = 'RB {"adopt":false,"edge":true,"box":false}\n';
 
 async function app(runner: Runner, extra: Record<string, unknown> = {}) {
   const call = await boot({ GH_CLI: "off", ...extra });
-  opened.push(call);
   call.env.PREVIEW_RUNNER = runner;
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
   await send("ryan", "/api/login", { name: "ryan" });

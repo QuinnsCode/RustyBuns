@@ -11,5 +11,10 @@ export const MERVIN = {
     settled: 227, // 200 exactly what landed, 27 the same lines in another order or bar indentation
     asked: 181, // handed back as cards
     other: 59, // settled clean to other text: the number to drive to 0
+    // Line cards from the 2026-10-13 board of this repo's open PRs (#1523): each is a case to find the rule that settles it.
+    cards: [
+      { file: "apps/codesplitter/src/shares.ts", line: 10, pr: 1467, after: 1456, rule: null },
+      { file: "apps/codesplitter/src/deploy.ts", line: 197, pr: 1501, rule: null },
+    ] as { file: string; line: number; pr: number; after?: number; rule: string | null }[],
   },
 };

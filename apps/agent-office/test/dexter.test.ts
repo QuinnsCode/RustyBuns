@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { project, propose, render, tally, trimDiff, trimLine, week, type Report } from "../ester/dexter.ts";
+import { project, propose, standing, render, tally, trimDiff, trimLine, week, type Report } from "../ester/dexter.ts";
 
 const fresh = (): Report => ({ sessions: 1, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0 });
 const j = (o: unknown) => JSON.stringify(o);
@@ -42,6 +42,18 @@ test("the diff skips fences, tables and headings, and counts line numbers from 1
   const src = ["# Please head", "basically fine text", "```", "basically code", "```", "| basically | x |"].join("\n");
   expect(trimDiff("A.md", src)!.diff).toBe("--- a/A.md\n+++ b/A.md\n@@ -2 +2 @@\n-basically fine text\n+fine text");
   expect(trimDiff("B.md", "Already short.")).toBeNull();
+});
+
+test("a skill's description is trimmed, the rest of its front matter is not", () => {
+  const src = ["---", "name: basically-x", "description: Use it in order to merge.", "---", "# T"].join("\n");
+  expect(trimDiff("S.md", src)!.diff).toBe("--- a/S.md\n+++ b/S.md\n@@ -3 +3 @@\n-description: Use it in order to merge.\n+description: Use it to merge.");
+});
+
+test("standing text includes skill files", () => {
+  const repo = mkdtempSync(path.join(tmpdir(), "dexter-"));
+  mkdirSync(path.join(repo, ".claude/skills/x"), { recursive: true });
+  writeFileSync(path.join(repo, ".claude/skills/x/SKILL.md"), "---\ndescription: d\n---\n");
+  expect(standing(repo, path.join(repo, "none")).map(([n]) => n)).toEqual([".claude/skills/x/SKILL.md"]);
 });
 
 test("propose reads the files and writes nothing", () => {

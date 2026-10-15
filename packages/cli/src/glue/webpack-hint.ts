@@ -112,6 +112,9 @@ export function findConfigs(root: string): Src[] {
       const f = join(dir, n + e);
       if (existsSync(join(root, f)) && (dir === "" ? n === "webpack.config" : true)) rel.add(f);
     }
+  // grunt-webpack / gulp keep the config (entries, HtmlWebpackPlugin, DefinePlugin) in the task file, not webpack.config.js.
+  for (const f of ["Gruntfile.js", "Gruntfile.cjs", "gulpfile.js", "gulpfile.cjs", "gulpfile.mjs"])
+    if (existsSync(join(root, f)) && /webpack/.test(readFileSync(join(root, f), "utf8"))) rel.add(f);
   try {
     const scripts = Object.values(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).scripts ?? {}) as string[];
     for (const s of scripts) for (const m of s.matchAll(/(?:--config|-c)[ =]+["']?([^\s"']+)/g)) if (existsSync(join(root, m[1]!)) && /\.[cm]?[jt]s$/.test(m[1]!)) rel.add(m[1]!.replace(/^\.\//, ""));
@@ -210,14 +213,16 @@ export function webpackHint(root: string): string {
   const proxies = names("proxy");
   const publicPath = vals("publicPath").flatMap((v) => v.kind === "string" ? [v.text] : [])[0];
   const devPort = vals("devServer").flatMap((v) => v.kind === "object" ? [/\bport\s*:\s*(\d+)/.exec(v.src.code.slice(v.start, v.end))?.[1]] : []).find(Boolean);
+  // Each HtmlWebpackPlugin is one page; one without a filename writes index.html.
   const pages = uniq(srcs.flatMap((s) => [...s.code.matchAll(/HtmlWebpackPlugin\s*\(\s*\{([^}]*)\}/g)])
-    .flatMap((m) => /filename\s*:\s*["'`]([^"'`]+)/.exec(m[1]!)?.[1] ?? []));
+    .map((m) => /filename\s*:\s*["'`]([^"'`]+)/.exec(m[1]!)?.[1] ?? "index.html"));
   const htmlCount = srcs.reduce((n, s) => n + (s.code.match(/new\s+HtmlWebpackPlugin|HtmlWebpackPlugin\s*\(/g)?.length ?? 0), 0);
 
   const todo: [boolean, string][] = [
     [true, named("index.html at the root, with <script type=\"module\" src=\"/your/entry\"> for each page", entries.length ? entries : entryFiles)],
     [entries.length > 1 || entryFiles.length > 1, "several entries: one HTML page each, listed in build.rollupOptions.input; shared code goes through normal imports"],
-    [htmlCount > 1, "several HtmlWebpackPlugin pages: list them in build.rollupOptions.input"],
+    [htmlCount > 1, named("several HtmlWebpackPlugin pages: list them in build.rollupOptions.input (naming input replaces the default index.html, so list it too)", pages)],
+    [/\bwebpack\.\w+\.entry|\bentry\s*:\s*(?:\w+\.)?(?:glob\w*|findModules|getEntr\w+)\(/.test(all), "entries are built at run time (a task or glob fills them in): list the pages Vite should build, and import the generated modules lazily with import.meta.glob"],
     [htmlCount > 0, "HtmlWebpackPlugin templates: <%= %> tags aren't filled; write the values into index.html"],
     [has(/DefinePlugin/), named("DefinePlugin -> define", defines)],
     [envNames.length > 0, named("EnvironmentPlugin -> define / VITE_* env", envNames)],
@@ -239,7 +244,7 @@ export function webpackHint(root: string): string {
     ...(aliasKeys.length ? [`  resolve: { alias: { ${aliasKeys.map((k) => `${JSON.stringify(k)}: "/* path */"`).join(", ")} } },`] : []),
     ...(defines.length ? [`  define: { ${defines.map((k) => `${JSON.stringify(k)}: "/* value */"`).join(", ")} },`] : []),
     ...(proxies.length || devPort ? [`  server: { ${[devPort ? `port: ${devPort}` : "", proxies.length ? `proxy: { ${proxies.map((k) => `${JSON.stringify(k)}: "/* target */"`).join(", ")} }` : ""].filter(Boolean).join(", ")} },`] : []),
-    ...((pages.length > 1 || entries.length > 1) ? [`  build: { rollupOptions: { input: { ${(pages.length > 1 ? pages.map((p) => p.replace(/\.html$/, "")) : entries).map((k) => `${/^[\w$]+$/.test(k) ? k : JSON.stringify(k)}: "${k.replace(/\.html$/, "")}.html"`).join(", ")} } } },`] : []),
+    ...((pages.length > 1 || (!pages.length && entries.length > 1)) ? [`  build: { rollupOptions: { input: { ${(pages.length ? pages.map((p) => p.replace(/\.html$/, "")) : entries).map((k) => `${/^[\w$]+$/.test(k) ? k : JSON.stringify(k)}: "${k.replace(/\.html$/, "")}.html"`).join(", ")} } } },`] : []),
     `});`,
   ];
   lines.push("Start vite.config.ts from this (plugins for the loaders above go in `plugins`):", ...draft.map((l) => `  ${l}`));

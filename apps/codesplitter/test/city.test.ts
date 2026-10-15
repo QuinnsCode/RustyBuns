@@ -1,17 +1,12 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 import { heightOf, layout, pulseOf } from "../src/city.ts";
 
 // End to end (in-process D1 and file DOs): fine alone, slow on a busy machine.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 /** ryan's public lab (a.ts by ryan, b.ts mostly by agent-claude) and private vault; ana follows ryan, bob doesn't. */
 async function app() {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   const send = (user: string | null, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
   for (const u of ["ryan", "ana", "bob"]) await send(u, "/api/login", { name: u });
   await send("ryan", "/api/repos", { name: "lab", visibility: "public" });

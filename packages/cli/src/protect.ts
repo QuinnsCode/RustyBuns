@@ -26,9 +26,23 @@ export function protectedNames(cfg: Pick<RustyBunsConfig, "bindings">): string[]
   return Object.entries(cfg.bindings ?? {}).filter(([, b]) => isProtected(b)).map(([n, b]) => label(n, b));
 }
 
-/** Names this destroy WILL delete: the data-holding resources that are not protected. */
+/**
+ * Data `protect` cannot keep: Alchemy has no retain for a Durable Object class (deleting its Worker deletes the
+ * classes and their storage) or an Artifacts namespace (deleting it deletes its repos). A class bound from another
+ * Worker (`scriptName`) belongs to that Worker, so this destroy leaves it.
+ */
+export function unprotectableNames(cfg: Pick<RustyBunsConfig, "bindings">): string[] {
+  return Object.entries(cfg.bindings ?? {}).flatMap(([n, b]) =>
+    b.type === "durable_object" && !b.scriptName ? [`Durable Object ${b.className ?? n}`]
+      : b.type === "artifacts" ? [`Artifacts ${b.namespace ?? n}`] : []);
+}
+
+/** Names this destroy WILL delete: the data-holding resources that are not protected, and the ones protect can't keep. */
 export function destroyedNames(cfg: Pick<RustyBunsConfig, "bindings">): string[] {
-  return Object.entries(cfg.bindings ?? {}).filter(([, b]) => b.type in KIND && !isProtected(b)).map(([n, b]) => label(n, b));
+  return [
+    ...Object.entries(cfg.bindings ?? {}).filter(([, b]) => b.type in KIND && !isProtected(b)).map(([n, b]) => label(n, b)),
+    ...unprotectableNames(cfg),
+  ];
 }
 
 /**
@@ -40,8 +54,9 @@ export function protectReport(cfg: Pick<RustyBunsConfig, "bindings">, sub: strin
   if (!kept.length && !gone.length) return "";
   const lines = ["protection (destroy):"];
   for (const n of kept) lines.push(`  [KEPT]    ${n}: destroy leaves it, and its data, on the account`);
-  for (const n of gone) lines.push(`  [REMOVED] ${n}: destroy deletes it, and its data`);
+  const fixed = new Set(unprotectableNames(cfg));
+  for (const n of gone) lines.push(`  [REMOVED] ${n}: destroy deletes it, and its data${fixed.has(n) ? " (protect can't keep this kind)" : ""}`);
   if (kept.length && sub !== "destroy") lines.push(`  protect saves with the resource, so a new \`protect: true\` counts from the next deploy: deploy before you destroy.`);
-  if (!kept.length) lines.push(`  nothing is protected. Set \`protect: true\` on a binding to keep it through destroy.`);
+  if (!kept.length && !fixed.size) lines.push(`  nothing is protected. Set \`protect: true\` on a binding to keep it through destroy.`);
   return lines.join("\n");
 }

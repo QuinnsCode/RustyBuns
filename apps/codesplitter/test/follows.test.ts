@@ -1,17 +1,12 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { listFollows } from "../src/follows.ts";
-import { local as boot } from "../src/local.ts";
+import { local as boot } from "./app-kit.ts";
 
 // End to end (in-process D1 and file DOs), like privacy.test.ts.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 /** ryan with a public repo `pub` and a private `lab`; mia and an agent who's been on lab's crew. */
 async function app() {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   const send = async (user: string, url: string, body?: unknown, method = "POST") => {
     const res = await call(user, url, { method, ...(body !== undefined && { body: JSON.stringify(body) }) });
     return { status: res.status, body: (await res.json()) as any };

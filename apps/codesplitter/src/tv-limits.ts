@@ -79,3 +79,35 @@ export function beads(events: number, maxBeads: number): { count: number; size: 
 
 /** Whether a lane's per-line animation drops to a glow (past the ceiling). */
 export const glowOnly = (lines: number, l: Limits) => lines > l.maxLines;
+
+/** Most beads one landing draws; the rest merge into fatter ones. */
+export const MAX_BEADS = 6;
+
+/**
+ * What the vein draws when `events` lines land at once: under the floor nothing, past the ceiling a glow with no beads,
+ * otherwise merged beads. `swell` is the smoothed rate (carry it to the next call), `glow` its strength in 0..1.
+ */
+export function pulse(events: number, prevSwell: number, dtSecs: number, l: Limits) {
+  const swell = smooth(prevSwell, events, dtSecs, l.smoothSecs);
+  const glow = Math.min(1, swell / 10);
+  if (events < l.minLines || events <= 0) return { swell, glow: 0, beads: { count: 0, size: 0 } };
+  return { swell, glow, beads: glowOnly(events, l) ? { count: 0, size: 0 } : beads(events, MAX_BEADS) };
+}
+
+/** What a viewer stored under localStorage "tv-limits": a preset's name alone, as the select writes it. */
+export const storeLimits = (preset: Preset) => JSON.stringify({ preset });
+
+/**
+ * The vein's lanes capped at `maxLanes` (main is lane 0): every lane past that shares one folded lane, so a flood of
+ * branches stays `maxLanes + 1` rows tall. `folded` counts the dots moved there, for its "+N more" label.
+ */
+export function foldLanes<D extends { lane: number }, E extends { l1: number; l2: number }>(dots: D[], edges: E[], lanes: number, maxLanes: number) {
+  if (lanes <= maxLanes) return { dots, edges, lanes, folded: 0 };
+  const at = (l: number) => Math.min(l, maxLanes);
+  return {
+    dots: dots.map((d) => ({ ...d, lane: at(d.lane) })),
+    edges: edges.map((e) => ({ ...e, l1: at(e.l1), l2: at(e.l2) })),
+    lanes: maxLanes + 1,
+    folded: dots.filter((d) => d.lane >= maxLanes).length,
+  };
+}

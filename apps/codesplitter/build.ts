@@ -24,12 +24,12 @@ const hashed = async (body: string, ext: string) => {
 };
 const cssUrl = await hashed(css[0]![1]!, "css");
 const jsUrl = await hashed(js[0]![1]!, "js");
-// The link-preview card: src/og.png (1200x630) is copied and tagged only once it exists, so no tag points at a 404.
+// The link-preview card: src/og.jpeg (1200x630) is copied and tagged only once it exists, so no tag points at a 404.
 const ogOrigin = "https://codesplitter.notryanquinn.workers.dev";
-const hasOg = await Bun.file("src/og.png").exists();
-if (hasOg) await copyFile("src/og.png", "dist/client/og.png");
+const hasOg = await Bun.file("src/og.jpeg").exists();
+if (hasOg) await copyFile("src/og.jpeg", "dist/client/og.jpeg");
 const ogTags = hasOg
-  ? `<meta property="og:site_name" content="codeSplitter"><meta property="og:type" content="website"><meta property="og:title" content="codeSplitter"><meta property="og:image" content="${ogOrigin}/og.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${ogOrigin}/og.png">\n`
+  ? `<meta property="og:site_name" content="codeSplitter"><meta property="og:type" content="website"><meta property="og:title" content="codeSplitter"><meta property="og:image" content="${ogOrigin}/og.jpeg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:type" content="image/jpeg"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${ogOrigin}/og.jpeg">\n`
   : "";
 await writeFile("dist/client/index.html", home
   .replace(css[0]![0], () => `<link href="${cssUrl}" rel="stylesheet">`)
@@ -50,6 +50,9 @@ if (!qr.success) { for (const l of qr.logs) console.error(l); process.exit(1); }
 // Self-heal: the "copy a fix prompt for your agent" text (src/fix-prompt.ts) behind a failure's toast.
 const fp = await Bun.build({ entrypoints: ["src/fix-prompt.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "fix-prompt.js" });
 if (!fp.success) { for (const l of fp.logs) console.error(l); process.exit(1); }
+// The TV view's limits (src/tv-limits.ts): the vein folds its lanes by the viewer's preset.
+const tv = await Bun.build({ entrypoints: ["src/tv-limits.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "tv-limits.js" });
+if (!tv.success) { for (const l of tv.logs) console.error(l); process.exit(1); }
 // gitpath: a file's history played down a highway (src/gitpath/): its page, script and sample.
 await buildGitpath("dist/client");
 await copyFile("src/features.html", "dist/client/features.html");

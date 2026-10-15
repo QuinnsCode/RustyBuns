@@ -53,7 +53,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describeBlast, load, rank } from "./blast.ts";
-import { hold, hurtLines, packagesChanged, report, rows, triage } from "./ester.ts";
+import { hold, hurtLines, keep, kept, packagesChanged, report, rows, triage } from "./ester.ts";
 import { heal, layout } from "../layout.ts";
 import { sandbox, shadow, testRuns, testTree, writeTree } from "./shadow.ts";
 
@@ -207,6 +207,36 @@ export function settle(list: Clash[], taken: Map<string, string[]> = new Map()):
   return list;
 }
 
+/** Carries out the migration renames `settle` chose: the later PR's file moves to its new stamp in the tree and in its stage's writes. */
+export function applyRenames(list: Clash[], tree: Map<string, string | null>, writes: Map<string, string | null>[], stages: Stage[]) {
+  for (const c of list) for (const r of c.renumber ?? []) {
+    const text = tree.get(r.from);
+    if (text === undefined || text === null) continue;
+    const mine = writes[stages.findIndex((s) => s.pr === r.pr)];
+    for (const w of mine ? [tree, mine] : [tree]) { w.set(r.from, null); w.set(r.to, text); }
+  }
+}
+
+/** The row the board gives a lockfile it left at main's copy, for `bun install` to bring up to date. */
+export const LOCK_WHY = "lockfile: main's copy kept; bun install in the sandbox adds the PR's package.json change";
+
+/**
+ * Runs `install` on the staged tree when a stage left a lockfile at main's copy and keeps the `bun.lock` it writes.
+ * If the install fails, each of those lockfile rows becomes a card carrying the install's tail.
+ */
+export async function settleLockfiles(root: string, board: Board, install: (root: string) => Promise<{ ok: boolean; out: string }>) {
+  const rows = board.stages.flatMap((s) => s.files.filter((f) => f.tier === "mervin" && f.why === LOCK_WHY));
+  if (!rows.length) return;
+  const r = await install(root);
+  if (r.ok) {
+    for (const f of rows) f.why = "lockfile: main's copy plus bun install in the sandbox, which adds the PR's package.json change";
+    for (const f of new Set(rows.map((x) => x.path))) if (existsSync(join(root, f)) && !board.written.includes(f)) board.written = [...board.written, f].sort();
+    return;
+  }
+  const tail = r.out.trim().split("\n").slice(-3).join(" | ");
+  for (const f of rows) { f.tier = "card"; f.why = `bun install failed: ${tail}`; }
+}
+
 /** Every migration stamp in use, per directory: on main, and claimed by any PR. */
 function stampsIn(git: ReturnType<typeof gitIn>, main: string, perStage: { claims: Clash[] }[]): Map<string, string[]> {
   const out = new Map<string, string[]>();
@@ -299,7 +329,7 @@ export function run(repo: string | undefined, main: string, prs: BoardPr[], cach
         else if ([b ?? "", cur, br].some((t) => t.includes("\0"))) row("card", "binary, both changed");
         else {
           const s = shadow(path, b ?? "", cur, br, attributes);
-          if (!s.ours.clean && s.ours.conflicts.every((c) => c.whole)) row("mervin", "lockfile: main's copy kept; bun install in the sandbox adds the PR's package.json change");
+          if (!s.ours.clean && s.ours.conflicts.every((c) => c.whole)) row("mervin", LOCK_WHY);
           else if (!s.ours.clean) row("card", s.ours.conflicts.map((c) => c.lint ?? (c.whole ? "lockfile" : `line ${c.line}`)).slice(0, 3).join(", "));
           else {
             tree.set(path, s.ours.text); mine.set(path, s.ours.text);
@@ -319,8 +349,9 @@ export function run(repo: string | undefined, main: string, prs: BoardPr[], cach
     writes.push(mine);
     if (pr.headRefName) done.set(pr.headRefName, pr.headRefOid);
   }
-  board.written = [...tree.keys()].sort();
   board.clashes = settle(clashes(perStage), stampsIn(git, main, perStage));
+  applyRenames(board.clashes, tree, writes, board.stages);
+  board.written = [...tree.keys()].sort();
   return { board, tree, writes };
 }
 
@@ -423,6 +454,14 @@ if (import.meta.main) {
   writeTree(join(out, "tree"), main);
   for (const [path, t] of tree) applyFile(join(out, "tree"), path, t);
   regenerate(join(out, "tree"));
+  await settleLockfiles(join(out, "tree"), board, async (root) => {
+    const home = mkdtempSync(join(tmpdir(), "mervin-board-home-"));
+    try {
+      const p = Bun.spawn(["bun", "install"], { cwd: root, env: sandbox(home), stdout: "pipe", stderr: "pipe", timeout: 5 * 60_000 });
+      const [o, e] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
+      return { ok: (await p.exited) === 0, out: `${o}${e}` };
+    } finally { rmSync(home, { recursive: true, force: true }); }
+  });
   writeFileSync(join(out, "board.json"), JSON.stringify(board, null, 2));
 
   if (args.includes("--json")) console.log(JSON.stringify(board, null, 2));
@@ -487,7 +526,10 @@ if (import.meta.main) {
         const again = new Set(added.length && bad.length ? (await testTree(join(out, "tree"), bad, env, true)).failed : added);
         const verdicts = triage(r.failed, board.stages, before, again);
         console.log(report(verdicts, r.runs, again.size ? bad.map((x) => r.runs.find((d) => d.dir === x.dir && d.cmd === x.cmd)!.ms) : [], board.stages).join("\n"));
-        const hurt = hurtLines(rows(board.stages, verdicts, board.clashes));
+        const now = rows(board.stages, verdicts, board.clashes);
+        const file = join(top, ".mervin/ester-rows.jsonl");
+        keep(file, now);
+        const hurt = hurtLines(kept(file));
         if (hurt.length) console.log(hurt.join("\n"));
         if (hold(verdicts).length) console.log(`Ester says hold: ${hold(verdicts).map((n) => `#${n}`).join(", ")}`);
         const mine = new Set(verdicts.filter((v) => v.owner === "blocks").map((v) => v.test));

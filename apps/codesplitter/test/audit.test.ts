@@ -1,20 +1,15 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { applyD1Migrations, d1 } from "@rustybuns/shell-bun";
 import { copyFileSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { local as boot } from "../src/local.ts";
+import { local as boot } from "./app-kit.ts";
 import { privateHost } from "../src/hooks.ts";
 
 // #648: the security audit log, CI token expiry, the hashed-invite migration and webhook URLs.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 async function app() {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   call.env.HOOK_FETCH = async () => new Response("ok");
   const send = (user: string | null, url: string, body?: unknown, method = "POST", headers: Record<string, string> = {}) =>
     call(user, url, { method, headers, ...(body !== undefined && { body: JSON.stringify(body) }) });

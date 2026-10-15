@@ -305,10 +305,14 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
   // A bare `/**` or `*/` is no sign of the same line: each side's doc comment opens and closes its own (#1267, lines.ts).
   const twin = (t: string) => {
     if (/^\s*(\/\*+|\*+\/)\s*$/.test(t)) return null;
-    for (let i = after === null ? 0 : (at.get(after) ?? Infinity) + 1; i < main.lines.length && !was.has(main.lines[i]!.id); i++) {
+    const from = after === null ? 0 : (at.get(after) ?? Infinity) + 1;
+    for (let i = from; i < main.lines.length && !was.has(main.lines[i]!.id); i++) {
       const m = main.lines[i]!;
       if (m.text === t && !taken.has(m.id)) { taken.add(m.id); return m.id; }
     }
+    // Both added a `//` comment right here and worded it differently: main's stands, so the lines under it still pair up.
+    const first = main.lines[from];
+    if (kind === "code" && first && !was.has(first.id) && !taken.has(first.id) && /^\s*\/\//.test(t) && /^\s*\/\//.test(first.text)) { taken.add(first.id); return first.id; }
     return null;
   };
   // Main's new lines right at this spot go first (it landed first). A line both added was a twin already.
@@ -434,6 +438,8 @@ function mergeLines(base: Doc, branch: Doc, main: Doc, given: Resolve, deleter: 
       const pick = m?.text === b.text ? "branch" : resolve[l.id];
       const words = m && !pick ? blendLine(b.text, m.text, l.text, loose(b.text)) : null;
       if (words !== null) { solved++; push({ kind: "set", line: m!.id, base: m!.rev, text: words }, l.by); }
+      // Two `//` comments in code that each reworded the same spot: main's wording stands, nothing to decide.
+      else if (!pick && kind === "code" && m && /^\s*\/\//.test(m.text) && /^\s*\/\//.test(l.text)) solved++;
       else if (!pick) conflicts.push({ line: l.id, base: b.text, main: m?.text ?? null, branch: l.text });
       else if (pick !== "main") {
         const own = written(pick);

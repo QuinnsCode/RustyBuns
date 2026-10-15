@@ -151,8 +151,8 @@ const OPS: Record<string, Record<string, Op>> = {
       description: "`can_run` says whether this server can run one (the desktop app can); `run` is the last run's steps (clone, install, init, infra, plan) and their output, or null. `run.infra` is the stack as a graph (`{app, stage, mode, targets, nodes, edges}`), each node with `protected: true` when `protect: true` makes destroy leave it; absent when the repo's Rusty Buns is too old for `rustybuns infra`.",
       ok: obj({ can_run: bool(), run: { description: "the run, or null" } }) },
     post: { id: "start_try", summary: "Try Rusty Buns on the repo or a branch: init, then an offline plan (owner only)", tag: "Repos",
-      description: "Desktop only. Clones the repo's git remote, lays the branch's changed files over it, runs `rustybuns init`, `rustybuns infra --json` and `rustybuns plan --offline`. Nothing is deployed. A run already going is a 409.",
-      body: obj({ branch: str("an open branch to try; main without it") }), ok: obj({ run: { description: "the run just started" } }), status: 202 },
+      description: "Desktop only. Clones the repo's git remote, lays the branch's changed files over it, runs `rustybuns init`, `rustybuns infra --json` and `rustybuns plan --offline`. Nothing is deployed. A run already going is a 409. With `save: true` (main only) a `save` step follows init and commits what init wrote or changed (`rustybuns.config.ts`, the deploy dependencies) to a branch as `agent-rustybuns`, for review.",
+      body: obj({ branch: str("an open branch to try; main without it"), save: bool("commit init's work to a branch as agent-rustybuns") }), ok: obj({ run: { description: "the run just started" } }), status: 202 },
   },
   [`${repo}/tags/{name}`]: { delete: { id: "delete_tag", risky: true, summary: "Delete a tag (owner only). A mirror's upstream keeps its own", tag: "Repos", ok: ref("Ok") } },
   ...Object.fromEntries((["revert", "pick"] as const).map((k) => [`${repo}/commits/{sha}/${k}`, { post: {

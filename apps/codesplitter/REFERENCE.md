@@ -613,9 +613,9 @@ Run on 2026-10-14: 51 promises held, 321 tests, and every stress rule and faked 
 - A shared link shows the lines it names and nothing else.
   `test/codesplitter-github.test.ts`: "share a few lines of a private repo: live, following the lines, nothing else leaks".
 - A `cst_` token is stored as a SHA-256 hash, shown once, always expires, and a read token only reads.
-  `test/tokens.test.ts`: "a token acts as its owner, shows once, and is stored only as a hash"; `test/tokens.test.ts`: "read tokens only GET; write tokens do what their owner can".
+  `test/tokens.test.ts`: "personal API tokens: made once, scoped, limited and revoked"; `test/tokens.test.ts`: "personal API tokens: made once, scoped, limited and revoked".
 - No token is ever an admin, and none can make tokens, sign in, or touch the account: a leaked one can't outlive itself.
-  `test/tokens.test.ts`: "a token is never an admin, can't touch tokens or the account, and opens no sockets".
+  `test/tokens.test.ts`: "personal API tokens: made once, scoped, limited and revoked".
 - An agent let in by invite gets its own handle and a token held to that one repo.
   `test/invites.test.ts`: "an agent's token reaches its repo only, can't show private lines again, and goes when it leaves the crew (#645)".
 - Every answer carries a Content-Security-Policy, no framing, no sniffing and HTTPS only, and a cookie-signed write from another site is refused.
@@ -631,7 +631,7 @@ Run on 2026-10-14: 51 promises held, 321 tests, and every stress rule and faked 
 - A webhook never reaches a private, loopback or link-local address, and every delivery is signed.
   `test/audit.test.ts`: "private, loopback and link-local hosts are refused"; `test/audit.test.ts`: "a delivery to a name that resolves inward isn't sent".
 - Over a rate limit is a 429 with `retry-after`, never a 5xx, on every rule that costs nothing to hit; `bun run stress` fires `cap + 25` at each.
-  `test/tokens.test.ts`: "tokens count against their owner's rate limits, admin or not".
+  `test/tokens.test.ts`: "personal API tokens: made once, scoped, limited and revoked".
 
 **Your app.** Hosted agents and checks run your code in a container, apart from everything else.
 
@@ -683,7 +683,7 @@ Run on 2026-10-14: 51 promises held, 321 tests, and every stress rule and faked 
 | --- | --- | --- | --- |
 | `DELETE /api/me` | Your account, every repo you own with its files, branches, git and Artifacts, your tokens, grants, sessions and audit rows; your OAuth logins are revoked at GitHub and Google first. | Lines and branches you made in other people's repos, under your handle, which is retired so nobody can pass as you. With `scrub=1`, or an admin's scrub later, `@ghost` takes its place. | `test/privacy.test.ts`: "deleting asks for the handle, then buries the account and retires the handle"; `test/privacy.test.ts`: "the Better Auth rows go, the handle is retired, and the old cookie is no one"; `test/privacy.test.ts`: "deleting the account revokes them at GitHub and Google, before the tokens go"; `test/privacy.test.ts`: "asked for at the delete, @ghost takes its place on lines, ops, commits and branches"; `test/privacy.test.ts`: "a token can't export or delete; only the person can" |
 | `DELETE /api/repos/:o/:r` | Rows, files, branches, cuts, shares, follows and git. GitHub never hears. | The repo's audit trail, for its owner, until the account goes. | `test/codesplitter-github.test.ts`: "the owner deletes a repo, once its name is typed back: rows, files, branches, cuts, shares and git"; `test/audit.test.ts`: "a deleted repo's trail stays for its owner; erasing the account takes it"; `test/follows.test.ts`: "deleting a repo drops its follows; deleting an account drops theirs and of them" |
-| `DELETE /api/tokens/:id` | The token: its next request is a 401. | The audit row that says it was made and revoked. | `test/tokens.test.ts`: "a bad, revoked or expired token is a 401, never signed out or the cookie's" |
+| `DELETE /api/tokens/:id` | The token: its next request is a 401. | The audit row that says it was made and revoked. | `test/tokens.test.ts`: "personal API tokens: made once, scoped, limited and revoked" |
 | `DELETE /api/oauth/grants/:id` | The app's grant and every token under it, at once. | | `test/oauth.test.ts`: "you see your apps on your profile and sign them out; revoke ends a grant too" |
 | `DELETE /api/repos/:o/:r/deploy/key[/:provider]` | The sealed key. A run already queued fails instead of deploying. | The audit row, without the key. | `test/deploy-hosted.test.ts`: "a removed key fails the run instead of deploying" |
 | `POST /api/repos/:o/:r/agents/stop` | The agent's process or container, its claim on the lines, and anything it left. | Its run, marked stopped. | `test/agent-routes.test.ts`: "Stop kills a running agent: nothing it left lands, its claim is lifted, and it shows as stopped"; `test/sandbox.test.ts`: "Stop on a hosted run: the run sees it in D1 and destroys its container, and nothing lands" |
@@ -772,7 +772,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/levels.ts` | the levels: import, browse, fork |
 | `src/lines.ts` | the line model: ops, conflicts, replay. Pure functions |
 | `src/merge-plan.ts` | merge plan (#1155): the open branches in waves, by codeSplitter's own merge as the clash test; the dispatch hint's file guess (#1163) |
-| `src/mervin-learn.ts` | Mervin learning (#1511): queries over the D1 `mervin_events` rows, plan weights and rule suggestions out |
+| `src/mervin-learn.ts` | Mervin learning (#1511): the repo's D1 events in, plan weights and rule suggestions out |
 | `src/mirror.ts` | mirrors: keeping a desktop repo in step with its upstream, through outages, with either side leading |
 | `src/noodles.ts` | the game's noodle monsters: finds a file's type guards and their line ranges |
 | `src/openapi.ts` | `GET /api/openapi.json`, the API for outside agents |

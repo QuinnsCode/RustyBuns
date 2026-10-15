@@ -1244,7 +1244,7 @@ async function clashOnlyInGit(env: Env, owner: string, repo: string, s: Setup, n
 /** /api/repos/:o/:r/mirror/branches[/:b/pull|push]: reading is for anyone who can read the repo, the rest for its owner. */
 /** A folder mirror's folder, or null for a whole-repo mirror or any other repo. */
 const folderOf = async (env: Env, owner: string, repo: string) =>
-  ((await env.DB.prepare("SELECT mirror_path FROM repos WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(owner, repo).first())?.mirror_path ?? null) as string | null;
+  ((await repoRow(env, owner, repo, "mirror_path", { mirrored: true }))?.mirror_path ?? null) as string | null;
 const FOLDER_ONLY = "a folder mirror sends its work up as one branch of its own, so upstream's branches and tags stay upstream";
 
 export async function mirrorBranchRoute(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null) {
@@ -1419,7 +1419,7 @@ async function folderMirror(env: Env, lg: LocalGit, user: string, src: { url: st
   const visibility = b.visibility ?? "public";
   if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
   if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
-  if (await env.DB.prepare("SELECT 1 FROM repos WHERE owner = ? AND name = ?").bind(user, name).first()) return json({ error: "you already have a repo with that name" }, 409);
+  if (await repoRow(env, user, name, "1")) return json({ error: "you already have a repo with that name" }, 409);
   const art = `${user}--${name}`, dir = lg.path(art), net = await remoteEnv(env, user, src.url);
   rmSync(dir, { recursive: true, force: true });   // no row owns this name, so anything here is an orphan
   const fail = (status: number, error: string) => { rmSync(dir, { recursive: true, force: true }); return json({ error }, status); };
@@ -1494,17 +1494,18 @@ async function turnable(env: Env, owner: string, repo: string): Promise<Turn | {
 export async function turnRoute(req: Request, env: Env, owner: string, repo: string, user: string | null) {
   if (user !== owner) return json({ error: "owner only" }, 403);
   if (req.method !== "GET" && req.method !== "POST") return json({ error: "GET or POST" }, 405);
-  const b = req.method === "POST" ? (await req.json().catch(() => ({}))) as { ahead?: unknown } : {};
+  const b = req.method === "POST" ? (await req.json().catch(() => ({}))) as { ahead?: unknown; pullOnly?: unknown } : {};
   const turned = await serial(owner, repo, async () => {
     const t = await turnable(env, owner, repo);
     if ("error" in t) return json({ error: t.error }, t.status);
+    if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
     if (req.method === "GET") return json({ url: shownUrl(t.url), branch: t.branch, commit: t.commit, ahead: t.ahead });
     // What goes up is what the owner was shown: a commit made since (or a POST that never looked) asks again.
-    if (b.ahead !== t.ahead) return json({ error: `${t.ahead} commit${t.ahead === 1 ? "" : "s"} made here would go up: say {ahead: ${t.ahead}} to send ${t.ahead === 1 ? "it" : "them"}`, ahead: t.ahead }, 409);
+    if (!b.pullOnly && b.ahead !== t.ahead) return json({ error: `${t.ahead} commit${t.ahead === 1 ? "" : "s"} made here would go up: say {ahead: ${t.ahead}} to send ${t.ahead === 1 ? "it" : "them"}`, ahead: t.ahead }, 409);
     // The agreed commit is upstream's tip as far as this copy knows; a mirror stays, with no dig's time limit.
     await must(["update-ref", `refs/upstream/${t.branch}`, t.commit], localGit(env)!.path(t.artifact));
-    await env.DB.prepare("UPDATE repos SET mirror_url = ?, mirror_state = 'ok', mirror_error = NULL, mirror_clash = NULL, mirror_fails = 0, mirror_down_since = NULL, mirror_next_at = ?, expires_at = NULL WHERE owner = ? AND name = ? AND mirror_url IS NULL")
-      .bind(t.url, Date.now(), owner, repo).run();
+    await env.DB.prepare("UPDATE repos SET mirror_url = ?, mirror_state = 'ok', mirror_error = NULL, mirror_clash = NULL, mirror_fails = 0, mirror_down_since = NULL, mirror_next_at = ?, expires_at = NULL, mirror_pull_only = ? WHERE owner = ? AND name = ? AND mirror_url IS NULL")
+      .bind(t.url, Date.now(), b.pullOnly ? 1 : null, owner, repo).run();
     return null;
   });
   if (turned) return turned;

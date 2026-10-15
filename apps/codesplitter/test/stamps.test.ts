@@ -1,16 +1,11 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { describe, expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 
 // End to end (in-process D1 and file DOs), like privacy.test.ts.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 /** ana's public repo with a file whose second line agent-claude wrote, and bo signed in. */
 async function app() {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   const send = (user: string | null, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
   for (const u of ["ana", "bo"]) await send(u, "/api/login", { name: u });
   await send("ana", "/api/repos", { name: "pub" });

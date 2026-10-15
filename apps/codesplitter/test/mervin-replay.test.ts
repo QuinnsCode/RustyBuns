@@ -71,3 +71,35 @@ test("round files are checked, and the clock keeps its width", () => {
   expect(clockText(7300)).toBe("00:07.3");
   expect(clockText(61_000)).toBe("01:01.0");
 });
+
+const withDiff: Round = {
+  board: { stages: [{ pr: 1, title: "one", files: [{ path: "a.ts", tier: "mervin", lines: [{ text: "x", side: "pr" }, { text: "y", side: "main" }] }] }] },
+  verdicts: [{ pr: 1, go: true, wave: 1, why: "" }],
+  lanes: [{ lane: "build", name: "typecheck", state: "run", pr: 1 }, { lane: "build", name: "typecheck", state: "ok", pr: 1 }, { lane: "deploy", name: "preview", state: "ok" }],
+};
+
+test("lines stream into a file, then settle; lanes fold by step name", () => {
+  const evs = events(withDiff);
+  expect(evs.map((e) => e.kind)).toEqual(["round", "wave", "start", "file", "line", "line", "settle", "step", "step", "merged", "step"]);
+  const mid = view(withDiff, evs.slice(0, 5));
+  expect(mid.prs[0]!.files[0]).toMatchObject({ lines: [{ text: "x", side: "pr" }], settled: false });
+  const done = view(withDiff, evs);
+  expect(done.prs[0]!.files[0]!.settled).toBe(true);
+  expect(done.lanes.build).toEqual([{ name: "typecheck", state: "ok", pr: 1 }]);
+  expect(done.lanes.deploy).toHaveLength(1);
+});
+
+test("a live player waits for more events instead of finishing, and a pause event shows", () => {
+  const p = new Player([], true);
+  p.play();
+  expect(p.mode).toBe("playing");
+  p.push(events(round).slice(0, 2));
+  expect(p.tick(10_000)).toHaveLength(2);
+  expect(p.mode).toBe("playing");
+  p.push([{ kind: "pause", paused: true, ms: 0 }, { kind: "start", pr: 9, ms: 300 }]);
+  const v = view(round, p.steps.slice(0, p.at + 0));
+  expect(v.paused).toBe(false);
+  p.tick(1000);
+  const w = view(round, p.steps.slice(0, p.at));
+  expect([w.paused, w.prs.find((x) => x.pr === 9)?.state]).toEqual([true, "merging"]);
+});

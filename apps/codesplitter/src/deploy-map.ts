@@ -5,6 +5,8 @@
 // A node sits where its `location` says: a Cloudflare colo (IATA code), a provider region
 // ("aws:eu-west-1", "hetzner:fsn1") or "lat,lon". Nodes with none are listed, not drawn.
 
+import type { LaneStep } from "./mervin-replay.ts";
+
 export interface MapNode {
   id: string; kind: string; label: string; name?: string; note?: string;
   /** colo, region or "lat,lon" */
@@ -143,4 +145,11 @@ export function layout(graphs: MapGraph[], mode: Mode) {
     else unplaced.push({ app: g.app, node });
   }
   return { dots, unplaced };
+}
+
+/** The watch page's deploy lane (#1760): one step per node that reports health. Up is ok; degraded and down fail, named so the lane says which. */
+export function deploySteps(graphs: MapGraph[]): LaneStep[] {
+  return graphs.flatMap((g) => g.nodes.flatMap((n) => n.health
+    ? [{ lane: "deploy" as const, name: `${g.app}/${n.label}${n.health.status === "up" ? "" : ` ${n.health.status}`}`, state: n.health.status === "up" ? "ok" as const : "fail" as const }]
+    : []));
 }

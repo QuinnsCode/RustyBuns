@@ -13,9 +13,12 @@ import { git, mirrorsOn, seeGit } from "./mirror.ts";
 import { wipeSearch } from "./search.ts";
 import { repoRow } from "./repos.ts";
 import { hex } from "./util.ts";
+import { charge, SITE } from "./limits.ts";
 
 /** A visitor's dig lasts a day; past the cap, the oldest goes first. Admins' digs keep. */
 export const DIG_TTL = 24 * 3600_000;
+/** Who owns the shared read-only copies the wrecking link digs. */
+export const WRECK_OWNER = "github";
 export const digCap = (env: Env) => Math.max(1, Number(env.DIG_CAP) || 20);
 
 const API = "https://api.github.com";
@@ -363,6 +366,93 @@ async function makeRoom(env: Env, more: number) {
   for (const r of live.slice(0, drop)) await evict(env, r.owner, r.name);
 }
 
+/** Fork a GitHub repo into one `user` owns: the body of POST /api/github/dig, and of the wrecking link's shared copy. */
+async function digRepo(env: Env, user: string, t: Awaited<ReturnType<typeof githubToken>>, b: { repo?: unknown; name?: unknown; visibility?: unknown; path?: unknown }): Promise<Response> {
+  const full = typeof b.repo === "string" ? parseRepo(b.repo) : null;
+  if (!full || typeof b.repo !== "string") return json({ error: "give a GitHub repo as owner/name or its URL" }, 400);
+  if (b.name !== undefined && typeof b.name !== "string") return json({ error: "bad repo name" }, 400);
+  if (b.path !== undefined && typeof b.path !== "string") return json({ error: "path: a folder in the repo" }, 400);
+  // A folder's URL (or a path) digs up just that folder, at the branch the URL names (#381).
+  const tree = parseFolder(b.repo);
+  const at = tree ? await branchAndPath(full, tree, t?.token) : null;
+  const folder = (b.path ?? at?.path ?? "").split("/").filter((w) => w && w !== "." && w !== "..").join("/");
+  const name = b.name || (folder.split("/").at(-1) || full.split("/")[1]!).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
+  const visibility = b.visibility ?? "public";
+  const expires = isAdmin(env, user) ? null : Date.now() + DIG_TTL;
+  if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
+  // The housekeeping runs alongside the lookups on GitHub, not before them. The name check skips
+  // an expired dig of yours, which makeRoom is about to evict. Only once the name is known to be
+  // free is an Artifact under it an orphan to delete: an import cut off halfway stays "being
+  // imported" on Cloudflare and would block the name for good (#348).
+  const ready = (async () => {
+    await makeRoom(env, 0);
+    if (await repoRow(env, user, name, "1")) return false;
+    await env.ARTIFACTS!.delete?.(`${user}--${name}`).catch(() => false);
+    return true;
+  })();
+  ready.catch(() => {});
+
+  let info: { full_name: string; default_branch: string; private: boolean }, sha: string | null;
+  // Set when only this machine's git can read it: the clone then goes without the token too.
+  let machine = false;
+  const hidden = privateDigs(env)
+    ? `GitHub has no ${full} that this machine can read. If it's private, accept its invite on GitHub, then sign in to git as that account (gh auth login)`
+    : `GitHub has no public ${full}. A private one, even one you're invited to, can't be dug up here (Cloudflare Artifacts imports public repos only): dig it up in the desktop app`;
+  if (t) {
+    // The tip rides along with the metadata (HEAD is the default branch), one round trip, not two.
+    const [meta, head] = await Promise.all([gh(`/repos/${full}`, t.token), gh(`/repos/${full}/commits/HEAD`, t.token)]);
+    if (meta.status === 404) {
+      // The token can't see it, but this machine's git might: logged in to git as the account that was invited.
+      const refs = await machineRefs(env, full);
+      if (!refs) return json({ error: hidden }, 404);
+      info = { full_name: full, default_branch: refs.branch, private: true };
+      sha = refs.sha;
+      machine = true;
+    } else {
+      if (!meta.ok) return json({ error: `GitHub said ${meta.status}` }, 502);
+      info = (await meta.json()) as typeof info;
+      // A private repo needs a clone that carries the token, which only local git does.
+      if (info.private && !privateDigs(env)) return json({ error: `${full} is private on GitHub. Cloudflare Artifacts can only import public repos, so dig it up in the desktop app instead` }, 422);
+      sha = head.ok ? ((await head.json()) as { sha: string }).sha : null;
+    }
+  } else {
+    // No token: ask git, not the API (see gitRefs). Only public repos answer it, unless this machine's git can read it.
+    const pub = await gitRefs(full), refs = pub ?? await machineRefs(env, full);
+    if (!refs) return json({ error: hidden }, 404);
+    info = { full_name: full, default_branch: refs.branch, private: !pub };
+    sha = refs.sha;
+    machine = !pub;
+  }
+
+  if (at && at.branch !== info.default_branch) {
+    const c = await githubHead(info.full_name, at.branch, t?.token).catch(() => null);
+    if (!c) return json({ error: `GitHub has no ${at.branch} branch on ${info.full_name}` }, 404);
+    info = { ...info, default_branch: at.branch };
+    sha = c.sha;
+  }
+  const upstream = `github:${info.full_name}${folder ? `/tree/${info.default_branch}/${folder}` : ""}`;
+
+  if (!(await ready)) return json({ error: "you already have a repo with that name" }, 409);
+  if (expires) await makeRoom(env, 1);
+
+  // Shallow, like the levels; writable, because it's yours now.
+  let art;
+  try {
+    art = await importRepo(env, { repo: info.full_name, branch: info.default_branch, token: machine ? undefined : t?.token, private: info.private && !machine, folder: folder || undefined },
+      { name: `${user}--${name}`, opts: { description: `${user}'s fork of ${info.full_name}${folder ? `'s ${folder}` : ""}` } });
+  } catch (e) {
+    return json({ error: `couldn't dig up ${info.full_name}: ${String((e as Error).message ?? e)}` }, 502);
+  }
+  await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, upstream, upstream_commit, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(user, name, visibility, Date.now(), art.name, art.remote, info.default_branch, upstream, sha, expires).run();
+  // On the desktop its git takes pushes from the start: land them from here on (#788). That
+  // waits for the background clone, so the dig answers without it.
+  void seeGit(env, user, name).catch(() => {});
+  return json({ owner: user, name, upstream, commit: sha, ...(expires ? { expires_at: expires } : {}) }, 201);
+
+}
+
 /** /api/github/... */
 export async function githubRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (p[1] !== "github") return null;
@@ -418,90 +508,25 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
   // POST /api/github/dig {repo, name?, visibility?}  fork a GitHub repo into one you own here
   if (p[2] === "dig" && req.method === "POST") {
     if (!user) return json({ error: "sign in first" }, 401);
-    if (!env.ARTIFACTS) return json({ error: "no Artifacts binding" }, 501);
-    const b = await readBody<"repo" | "name" | "visibility" | "path">(req);
-    const full = typeof b.repo === "string" ? parseRepo(b.repo) : null;
-    if (!full || typeof b.repo !== "string") return json({ error: "give a GitHub repo as owner/name or its URL" }, 400);
-    if (b.name !== undefined && typeof b.name !== "string") return json({ error: "bad repo name" }, 400);
-    if (b.path !== undefined && typeof b.path !== "string") return json({ error: "path: a folder in the repo" }, 400);
-    // A folder's URL (or a path) digs up just that folder, at the branch the URL names (#381).
-    const tree = parseFolder(b.repo);
-    const at = tree ? await branchAndPath(full, tree, t?.token) : null;
-    const folder = (b.path ?? at?.path ?? "").split("/").filter((w) => w && w !== "." && w !== "..").join("/");
-    const name = b.name || (folder.split("/").at(-1) || full.split("/")[1]!).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
-    const visibility = b.visibility ?? "public";
-    const expires = isAdmin(env, user) ? null : Date.now() + DIG_TTL;
-    if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
-    // The housekeeping runs alongside the lookups on GitHub, not before them. The name check skips
-    // an expired dig of yours, which makeRoom is about to evict. Only once the name is known to be
-    // free is an Artifact under it an orphan to delete: an import cut off halfway stays "being
-    // imported" on Cloudflare and would block the name for good (#348).
-    const ready = (async () => {
-      await makeRoom(env, 0);
-      if (await repoRow(env, user, name, "1")) return false;
-      await env.ARTIFACTS!.delete?.(`${user}--${name}`).catch(() => false);
-      return true;
-    })();
-    ready.catch(() => {});
+    return digRepo(env, user, t, await readBody<"repo" | "name" | "visibility" | "path">(req));
+  }
 
-    let info: { full_name: string; default_branch: string; private: boolean }, sha: string | null;
-    // Set when only this machine's git can read it: the clone then goes without the token too.
-    let machine = false;
-    const hidden = privateDigs(env)
-      ? `GitHub has no ${full} that this machine can read. If it's private, accept its invite on GitHub, then sign in to git as that account (gh auth login)`
-      : `GitHub has no public ${full}. A private one, even one you're invited to, can't be dug up here (Cloudflare Artifacts imports public repos only): dig it up in the desktop app`;
-    if (t) {
-      // The tip rides along with the metadata (HEAD is the default branch), one round trip, not two.
-      const [meta, head] = await Promise.all([gh(`/repos/${full}`, t.token), gh(`/repos/${full}/commits/HEAD`, t.token)]);
-      if (meta.status === 404) {
-        // The token can't see it, but this machine's git might: logged in to git as the account that was invited.
-        const refs = await machineRefs(env, full);
-        if (!refs) return json({ error: hidden }, 404);
-        info = { full_name: full, default_branch: refs.branch, private: true };
-        sha = refs.sha;
-        machine = true;
-      } else {
-        if (!meta.ok) return json({ error: `GitHub said ${meta.status}` }, 502);
-        info = (await meta.json()) as typeof info;
-        // A private repo needs a clone that carries the token, which only local git does.
-        if (info.private && !privateDigs(env)) return json({ error: `${full} is private on GitHub. Cloudflare Artifacts can only import public repos, so dig it up in the desktop app instead` }, 422);
-        sha = head.ok ? ((await head.json()) as { sha: string }).sha : null;
-      }
-    } else {
-      // No token: ask git, not the API (see gitRefs). Only public repos answer it, unless this machine's git can read it.
-      const pub = await gitRefs(full), refs = pub ?? await machineRefs(env, full);
-      if (!refs) return json({ error: hidden }, 404);
-      info = { full_name: full, default_branch: refs.branch, private: !pub };
-      sha = refs.sha;
-      machine = !pub;
-    }
-
-    if (at && at.branch !== info.default_branch) {
-      const c = await githubHead(info.full_name, at.branch, t?.token).catch(() => null);
-      if (!c) return json({ error: `GitHub has no ${at.branch} branch on ${info.full_name}` }, 404);
-      info = { ...info, default_branch: at.branch };
-      sha = c.sha;
-    }
-    const upstream = `github:${info.full_name}${folder ? `/tree/${info.default_branch}/${folder}` : ""}`;
-
-    if (!(await ready)) return json({ error: "you already have a repo with that name" }, 409);
-    if (expires) await makeRoom(env, 1);
-
-    // Shallow, like the levels; writable, because it's yours now.
-    let art;
-    try {
-      art = await importRepo(env, { repo: info.full_name, branch: info.default_branch, token: machine ? undefined : t?.token, private: info.private && !machine, folder: folder || undefined },
-        { name: `${user}--${name}`, opts: { description: `${user}'s fork of ${info.full_name}${folder ? `'s ${folder}` : ""}` } });
-    } catch (e) {
-      return json({ error: `couldn't dig up ${info.full_name}: ${String((e as Error).message ?? e)}` }, 502);
-    }
-    await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, artifact, artifact_remote, branch, upstream, upstream_commit, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(user, name, visibility, Date.now(), art.name, art.remote, info.default_branch, upstream, sha, expires).run();
-    // On the desktop its git takes pushes from the start: land them from here on (#788). That
-    // waits for the background clone, so the dig answers without it.
-    void seeGit(env, user, name).catch(() => {});
-    return json({ owner: user, name, upstream, commit: sha, ...(expires ? { expires_at: expires } : {}) }, 201);
+  // POST /api/github/wreck {repo}  anyone, signed in or not: the one shared read-only copy of a public
+  // GitHub repo for the wrecking room (/play#gh/<owner>/<repo>?mode=wreck), dug on first visit and reused.
+  if (p[2] === "wreck" && req.method === "POST") {
+    const full = parseRepo(String((await readBody<"repo">(req)).repo ?? ""));
+    if (!full) return json({ error: "give a GitHub repo as owner/name or its URL" }, 400);
+    const name = full.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 39).replace(/^-|-$/g, "");
+    const room = (r: { owner: string; name: string }) => json({ owner: r.owner, name: r.name });
+    const cached = () => repoRow(env, WRECK_OWNER, name, "1", { liveAt: Date.now() });
+    if (await cached()) return room({ owner: WRECK_OWNER, name });
+    // Only a new copy costs an import, so only that counts against the site's hourly budget.
+    const over = await charge(env, "wreck", SITE);
+    if (over) return json({ error: over }, 429);
+    const res = await digRepo(env, WRECK_OWNER, null, { repo: full, name, visibility: "public" });
+    // A second visitor racing the first finds the copy already there.
+    if (res.status === 409 || (await cached())) return room({ owner: WRECK_OWNER, name });
+    return res.ok ? room({ owner: WRECK_OWNER, name }) : res;
   }
   return null;
 }
