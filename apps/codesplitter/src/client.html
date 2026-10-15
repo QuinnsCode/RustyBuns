@@ -3645,6 +3645,7 @@ const views = {
       <h1>Watch it <em>run itself</em>.</h1>
       <p>Each demo is a chapter of the tour: a card and a cursor that press the real buttons. It stops where a person has to act (signing in, spending, merging, shipping).</p>
       <div class="row"><button class="btn primary" id="demo-all">${icon("play")}Play all</button><span class="muted">${TOUR_CHAPTERS.length} chapters, in order</span></div>
+      <p>${icon("users")}<a href="/swarm-watch.html">A week of the swarm</a>: 1,000 of this repo's real PRs replayed, the night the git wall went up, and where Mervin and Ester shipped.</p>
       <div class="levels" id="demo-list">${TOUR_CHAPTERS.map(([id, ic, name]) => `<div class="box"><div class="bar">${icon(ic)}<b>${esc(name)}</b></div><div class="body">
         <ol>${TOUR.filter((s) => s.ch === id).map((s) => `<li>${esc(s.t ?? s.panel)}</li>`).join("")}</ol>
         <button class="btn" data-demo="${id}" title="${anywhere(id) ? "play this chapter" : "this one plays on a repo's code page"}">${icon("play")}Play</button>${anywhere(id) ? "" : `<span class="muted"> on a repo's code page</span>`}</div></div>`).join("")}</div>

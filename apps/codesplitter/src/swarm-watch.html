@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A week of the swarm</title>
+<link href="/fonts/geist.css" rel="stylesheet">
+<script src="/vendor/lucide.min.js"></script>
+<style>
+  :root { --bg: #fff; --fg: #0a0a0a; --muted: #6b6b6b; --border: #cfcfcf; --paper: #fcfbf8; --accent: #e8590c; --ok: #2f7d32; --bad: #b3261e; --work: #9a9a9a; --test: #e8a10c;
+    --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, monospace; }
+  :root[data-theme="dark"] { --bg: #0a0a0a; --fg: #f2f2f2; --muted: #9a9a9a; --border: #3a3a3a; --paper: #151515; --ok: #6fbf73; --bad: #ef7b73; --work: #6b6b6b; --test: #f0b94a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font: 600 26px/1.1 var(--sans); letter-spacing: -0.04em; margin: 0 0 6px; } h1 em { font-style: normal; color: var(--accent); }
+  .lede { color: var(--muted); margin: 0 0 14px; max-width: 70ch; }
+  .bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .grow { flex: 1; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; color: var(--fg); border: 1px solid var(--border); border-radius: 5px; background: var(--paper); cursor: pointer; }
+  .btn[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .btn svg { width: 16px; height: 16px; }
+  #clock { font: 14px var(--mono); width: 18ch; white-space: nowrap; text-align: right; }
+  #speedtxt { font: 12px var(--mono); width: 4ch; white-space: nowrap; color: var(--muted); }
+  input[type=range] { width: 140px; accent-color: var(--accent); }
+  .panel { border: 1px solid var(--border); border-radius: 6px; background: var(--paper); padding: 10px 12px; margin-bottom: 12px; }
+  .panel h2 { font: 600 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 6px; display: flex; gap: 6px; align-items: center; }
+  .panel h2 svg { width: 13px; height: 13px; }
+  #chart { width: 100%; height: 200px; display: block; cursor: ew-resize; touch-action: none; }
+  #counts { display: flex; gap: 14px; flex-wrap: wrap; font: 12px var(--mono); }
+  #counts span { white-space: nowrap; } #counts i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: 0; }
+  .cols { display: grid; grid-template-columns: 1fr 380px; gap: 12px; }
+  @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
+  #dots { width: 100%; display: block; }
+  #tip { font: 12px var(--mono); color: var(--muted); height: 1.5em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #pilefile { text-transform: none; letter-spacing: 0; }
+  #pile { font: 12px/1.5 var(--mono); font-variant-ligatures: none; white-space: pre; overflow: hidden; max-height: 420px; overflow-y: auto; }
+  #pile div { overflow: hidden; text-overflow: ellipsis; }
+  #pile .mk { color: var(--bad); } #pile .ours { background: color-mix(in srgb, var(--bad) 10%, transparent); } #pile .ok { color: var(--muted); }
+  .muted { color: var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>A week of the <em>swarm</em></h1>
+  <p class="lede">Every PR opened on this repo from October 7 to 14, each one a made-up agent at a desk. The chart is what the open PRs were waiting on: still working, stuck on git (a conflict with main), stuck on a red check, or ready. Drag along it to see who was stuck on what.</p>
+  <div class="bar" role="toolbar" aria-label="Playback">
+    <button class="btn" id="play" title="Play"><i data-lucide="play"></i></button>
+    <button class="btn" id="pause" title="Pause"><i data-lucide="pause"></i></button>
+    <button class="btn" id="stop" title="Stop: back to the start"><i data-lucide="square"></i></button>
+    <button class="btn" id="peak" title="Jump to the git wall"><i data-lucide="git-merge"></i></button>
+    <i data-lucide="gauge" title="Speed" style="width:16px;height:16px"></i>
+    <input type="range" id="speed" min="0" max="6" step="1" value="3" aria-label="Speed" title="Speed">
+    <span id="speedtxt">8x</span>
+    <span class="grow"></span>
+    <span id="clock" title="Week time, Pacific">--</span>
+    <button class="btn" id="theme" title="Light or dark"><i data-lucide="sun-moon"></i></button>
+  </div>
+  <div class="panel">
+    <h2><i data-lucide="chart-area"></i>Open PRs, by what they wait on</h2>
+    <svg id="chart" role="img" aria-label="Open PRs over the week by band"></svg>
+    <div id="counts"></div>
+  </div>
+  <div class="cols">
+    <div class="panel">
+      <h2><i data-lucide="users"></i><span id="agents">agents</span></h2>
+      <canvas id="dots"></canvas>
+      <div id="tip">Point at an agent</div>
+    </div>
+    <div class="panel">
+      <h2><i data-lucide="file-text"></i><span id="pilefile">README.md</span></h2>
+      <div id="pile"></div>
+    </div>
+  </div>
+  <p class="muted">The zoomed-in proof: <a href="/mervin-watch.html">watch Mervin settle a merge round</a>, file by file. Data: <code>bun scripts/swarm-week.ts</code>, read only from GitHub and git; conflict and red-check spans are heuristics, so they undercount.</p>
+</div>
+<script type="module">
+import { band, counts, timeline, gitPeak, pile, agentName, readWeek, Playhead, SPEEDS, OPEN } from "/swarm-replay.js";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+try { const t = localStorage.getItem("map-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+if (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches) document.documentElement.dataset.theme = "dark";
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const COLOR = { working: "--work", git: "--bad", test: "--test", ready: "--ok" };
+const LABEL = { working: "working", git: "stuck on git", test: "red check", ready: "ready" };
+
+const week = readWeek(await fetch("/swarm-week.json").then((r) => r.json()));
+if (typeof week === "string") throw new Error(week);
+const STEP = 10, tl = timeline(week, STEP), peak = gitPeak(week, STEP), head = new Playhead(week.minutes);
+head.setSpeed(SPEEDS[$("speed").value]);
+$("agents").textContent = `${week.rows.length} agents, one per PR`;
+const fmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", weekday: "short", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", weekday: "short", month: "numeric", day: "numeric" });
+const when = (t) => `${fmt.format(new Date(week.start + t * 6e4)).replace(",", "")} PT`;
+
+// The chart: a stacked area per band, the ship marks, the git wall, and the playhead.
+const W = 1000, H = 200, top = Math.max(...tl.map((x) => OPEN.reduce((s, b) => s + x[b], 0)), 1);
+const X = (t) => (t / week.minutes) * W, Y = (v) => H - 18 - (v / top) * (H - 40);
+function areas() {
+  let base = tl.map(() => 0), out = "";
+  for (const b of ["git", "test", "working", "ready"]) {
+    const up = tl.map((x, i) => base[i] + x[b]);
+    const pts = tl.map((x, i) => `${X(x.t).toFixed(1)},${Y(up[i]).toFixed(1)}`).concat(tl.map((x, i) => `${X(x.t).toFixed(1)},${Y(base[i]).toFixed(1)}`).reverse());
+    out += `<polygon points="${pts.join(" ")}" fill="${css(COLOR[b])}"/>`;
+    base = up;
+  }
+  return out;
+}
+function drawChart() {
+  const days = [];
+  for (let t = 0; t < week.minutes; t += 1440) days.push(`<text x="${X(t) + 3}" y="${H - 4}" font-size="11" fill="${css("--muted")}">${dayFmt.format(new Date(week.start + t * 6e4))}</text><line x1="${X(t)}" x2="${X(t)}" y1="0" y2="${H - 16}" stroke="${css("--border")}"/>`);
+  // Mervin's label left of his line, Ester's right of hers: they shipped hours apart.
+  const marks = week.marks.map((m, i) => `<line x1="${X(m.at)}" x2="${X(m.at)}" y1="14" y2="${H - 16}" stroke="${css("--accent")}" stroke-dasharray="3 3"/><text x="${X(m.at) + (i ? 4 : -4)}" y="11" font-size="11" text-anchor="${i ? "start" : "end"}" fill="${css("--accent")}">${m.who}</text>`);
+  $("chart").setAttribute("viewBox", `0 0 ${W} ${H}`);
+  $("chart").setAttribute("preserveAspectRatio", "none");
+  $("chart").innerHTML = days.join("") + areas() + marks.join("")
+    + `<text x="${X(peak) - 6}" y="${Y(tl.find((x) => x.t === peak).git) - 6}" font-size="11" text-anchor="end" fill="${css("--bad")}">the git wall</text>`
+    + `<line id="ph" y1="0" y2="${H - 16}" stroke="${css("--fg")}" stroke-width="2"/>`;
+}
+const seekAt = (e) => { const r = $("chart").getBoundingClientRect(); head.seek(((e.clientX - r.left) / r.width) * week.minutes); draw(); };
+$("chart").addEventListener("pointerdown", (e) => { head.pause(); seekAt(e); $("chart").setPointerCapture(e.pointerId); });
+$("chart").addEventListener("pointermove", (e) => { if (e.buttons) seekAt(e); });
+
+// The agents: one dot per PR, at a desk in PR order, coloured by band at the playhead.
+const cv = $("dots"), cx = cv.getContext("2d");
+let cell = 10, perRow = 40;
+function layout() {
+  const w = cv.parentElement.clientWidth - 24, dpr = devicePixelRatio || 1;
+  perRow = Math.max(10, Math.floor(w / 11)); cell = w / perRow;
+  const h = Math.ceil(week.rows.length / perRow) * cell;
+  cv.width = w * dpr; cv.height = h * dpr; cv.style.height = `${h}px`; cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function drawDots() {
+  cx.clearRect(0, 0, cv.width, cv.height);
+  const fill = { working: css("--work"), git: css("--bad"), test: css("--test"), ready: css("--ok"), merged: css("--border"), closed: css("--border") };
+  week.rows.forEach((r, i) => {
+    const b = band(r, head.t), x = (i % perRow) * cell + cell / 2, y = Math.floor(i / perRow) * cell + cell / 2;
+    cx.beginPath();
+    if (b === "unborn") { cx.arc(x, y, cell * 0.18, 0, 7); cx.strokeStyle = css("--border"); cx.stroke(); return; }
+    cx.arc(x, y, b === "merged" || b === "closed" ? cell * 0.2 : cell * 0.42, 0, 7); cx.fillStyle = fill[b]; cx.fill();
+  });
+}
+cv.addEventListener("pointermove", (e) => {
+  const r = cv.getBoundingClientRect(), i = Math.floor((e.clientY - r.top) / cell) * perRow + Math.floor((e.clientX - r.left) / cell), row = week.rows[i];
+  $("tip").textContent = row ? `${agentName(row.n)}, desk ${i + 1}: #${row.n} ${row.t} (${LABEL[band(row, head.t)] ?? band(row, head.t)})` : "Point at an agent";
+});
+
+// The pile: the shared file most stuck agents are in right now; every open PR on it adds its line, the conflicted ones inside conflict markers.
+function drawPile() {
+  const { file, lines } = pile(week, head.t);
+  $("pilefile").textContent = file;
+  $("pile").innerHTML = (lines.length ? "" : `<div class="ok">whole: no agent is in here right now</div>`) + lines.map((p) => p.conflicted
+    ? `<div class="mk">&lt;&lt;&lt;&lt;&lt;&lt;&lt; ${esc(p.agent)} (#${p.n})</div><div class="ours">${esc(p.title)}</div><div class="mk">=======</div><div class="mk">&gt;&gt;&gt;&gt;&gt;&gt;&gt; main</div>`
+    : `<div class="ok">${esc(p.title)}</div>`).join("");
+}
+
+let lastT = -1;
+function draw() {
+  $("ph").setAttribute("x1", X(head.t)); $("ph").setAttribute("x2", X(head.t));
+  const c = counts(week, head.t);
+  $("counts").innerHTML = OPEN.map((b) => `<span><i style="background:var(${COLOR[b]})"></i>${LABEL[b]} ${c[b]}</span>`).join("") + `<span class="muted">merged ${c.merged}</span><span class="muted">not yet opened ${c.unborn}</span>`;
+  $("clock").textContent = when(head.t);
+  if (Math.floor(head.t) !== lastT) { drawDots(); drawPile(); lastT = Math.floor(head.t); }
+  for (const [id, m] of [["play", "playing"], ["pause", "paused"], ["stop", "stopped"]]) $(id).setAttribute("aria-pressed", String(head.mode === m));
+}
+let last = 0;
+function frame(now) { const dt = last ? now - last : 0; last = now; if (head.tick(dt) || head.mode === "done") draw(); requestAnimationFrame(frame); }
+$("play").onclick = () => { head.play(); draw(); };
+$("pause").onclick = () => { head.pause(); draw(); };
+$("stop").onclick = () => { head.stop(); lastT = -1; draw(); };
+$("peak").onclick = () => { head.pause(); head.seek(peak); draw(); };
+$("speed").oninput = () => { head.setSpeed(SPEEDS[$("speed").value]); $("speedtxt").textContent = `${head.speed}x`; };
+$("theme").onclick = () => { const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark"; document.documentElement.dataset.theme = t; try { localStorage.setItem("map-theme", t); } catch {} drawChart(); lastT = -1; draw(); };
+addEventListener("resize", () => { layout(); lastT = -1; draw(); });
+if (new URLSearchParams(location.search).has("peak")) head.seek(peak);
+drawChart(); layout(); draw(); lucide.createIcons(); requestAnimationFrame(frame);
+</script>
+</body>
+</html>

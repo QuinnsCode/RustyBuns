@@ -140,6 +140,9 @@ There's no downloadable build yet; that's one command from source.
 
 ## Everything else it does
 
+- **A week of the swarm, replayed.** `/swarm-watch.html` plays the week of October 7 to 14 back: 1,000 of this repo's real PRs, each a made-up agent, and what the open ones were waiting on, minute by minute. The git wall on the night of October 13 has 18 PRs stuck on conflicts at once, and the pane beside it shows the file they piled into. `bun scripts/swarm-week.ts` pulls the week (read only) and `bun scripts/swarm-readme.ts` draws the animated chart below.
+
+  ![1,000 PRs in a week, one dot each](docs/swarm-week.svg)
 - **Blame and time travel for free.** The op log replays any file at any rev, so every line knows who wrote it and when.
 - **gitpath.** Make code beautiful again: a file's commit graph comes down a guitar-neck highway in real 3D (three.js), main in the middle, branches fanning out and rejoining, an orange hot path through the churn. A rail on the right is time itself (oldest at the bottom) and two date boxes crop the history. The faint controller icon turns on a game: a tiny unicyclist, back to you, rides the hot path on left and right taps (or two keys you bind) timed to the beat, while merges (a car), forks, new branches and big squash merges (a boulder) blow gusts you have to lean into. A commit that names a piece of the stack (D1, R2, Queues, Durable Objects, Containers, Artifacts, rate limiting, static assets, Workers) turns into its 3D model, and a new piece is one registry line and one model. On a repo's page the route icon in the header opens it on that repo, read live from its git (`GET /api/repos/:o/:r/gitpath`), a file at a time. `bun run gitpath`, or feed it any clone with `bun scripts/gitpath-log.ts <clone> <path>`.
 - **Live sync.** Edits go over each file's WebSocket.
