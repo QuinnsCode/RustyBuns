@@ -301,7 +301,7 @@ function fetchRoom(path) {
 }
 /** Quietly fetch the rooms behind this room's doors, so walking through one is instant. */
 function preload(doors) {
-  for (const d of doors) fetchRoom(d.path).catch(() => {});
+  for (const d of doors.slice(0, 8)) fetchRoom(d.path).catch(() => {});
 }
 // Wall i: 0 north, 1 east, 2 south, 3 west. Local x along the wall, +z into the room.
 const WALL_ROT = [0, -Math.PI / 2, Math.PI, Math.PI / 2];
