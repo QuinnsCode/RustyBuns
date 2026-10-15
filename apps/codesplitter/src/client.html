@@ -2706,11 +2706,7 @@ function dock() {
   };
   const save = () => saveDock(d);
   aside.append(rail, panels); show(d.tab); setWidth(d.w);
-  panels.addEventListener("click", (e) => {
-    const b = e.target.closest(".sec-i"); if (!b) return;
-    const p = b.classList.contains("inl") ? b.nextElementSibling : b.closest(".sec").querySelector(".sec-info"), on = p.hidden;
-    p.hidden = !on; b.setAttribute("aria-expanded", String(on));
-  });
+  panels.addEventListener("click", toggleInfo);
   rail.addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
     if (b.dataset.w) { setWidth(b.dataset.w); return save(); }
@@ -2803,6 +2799,12 @@ const deleteRepo = async (owner, repo, typed) => {
 };
 /** A side panel. `info` is its long explanation: an "i" in the heading opens it, so the panel itself stays a row of symbols. */
 /** An inline i for a live panel: the status stays a chip, the long wording opens behind it (same toggle as sec's). */
+/** Click handler for the i buttons (`sec` and `note`): show or hide the sentence behind one. */
+const toggleInfo = (e) => {
+  const b = e.target.closest(".sec-i"); if (!b) return;
+  const p = b.classList.contains("inl") ? b.nextElementSibling : b.closest(".sec").querySelector(".sec-info"), on = p.hidden;
+  p.hidden = !on; b.setAttribute("aria-expanded", String(on));
+};
 const note = (html) => `<button type="button" class="sec-i inl" aria-expanded="false" aria-label="More" title="More">${icon("info")}</button><span class="sec-info muted" hidden> ${html}</span>`;
 const sec = (ic, title, html, info = "") => `<section class="sec" data-key="${title.toLowerCase().replace(/\W+/g, "-")}" data-ic="${ic}"><h2>${icon(ic)}${title}${info ? `<button type="button" class="sec-i" aria-expanded="false" aria-label="About ${title}" title="More about ${title}">${icon("info")}</button>` : ""}</h2>${info ? `<p class="sec-info muted" hidden>${info}</p>` : ""}${html}</section>`;
 /** mm:ss gone since `from`, or left until `deadline`. */
@@ -4195,14 +4197,14 @@ const views = {
     const s = d.settings, rep = d.report;
     const opt = (v, label, cur) => `<option value="${v}"${String(cur) === String(v) ? " selected" : ""}>${label}</option>`;
     el.innerHTML = `<form id="deps-form" style="display:grid;gap:6px;font-size:13px">
-        <label><input type="checkbox" name="on"${s.on ? " checked" : ""}> Check on a schedule, and open a branch as <code>agent-deps</code></label>
+        <label><input type="checkbox" name="on"${s.on ? " checked" : ""}> Check on a schedule${note("Opens a branch as <code>agent-deps</code> when it finds updates.")}</label>
         <div class="row">every <select name="every_hours" aria-label="how often">${opt(6, "6 hours", s.every_hours)}${opt(24, "day", s.every_hours)}${opt(168, "week", s.every_hours)}${opt(720, "month", s.every_hours)}</select>
           up to <select name="max_level" aria-label="largest update">${opt("patch", "patch", s.max_level)}${opt("minor", "minor", s.max_level)}${opt("major", "major", s.max_level)}</select></div>
         <div class="row">releases at least <input name="min_age_days" aria-label="minimum release age in days" type="number" min="0" max="90" value="${s.min_age_days}" style="width:4em"> days old</div>
         <input name="ignore" placeholder="never update: react, typescript" value="${esc(s.ignore.join(", "))}">
-        <label title="${d.can_test ? "" : "Tests run on the desktop app, or in a container for this site's admins"}"><input type="checkbox" name="run_tests"${s.run_tests ? " checked" : ""}${d.can_test ? "" : " disabled"}> Install and test each update in a throwaway clone first <span class="muted">(runs this repo's code)</span></label>
-        <label title="${d.can_test ? "An Ask answer on a merge page is offered once the tests for its file pass with it, in the same sandbox" : "Tests run on the desktop app, or in a container for this site's admins"}"><input type="checkbox" name="test_merges"${s.test_merges ? " checked" : ""}${d.can_test ? "" : " disabled"}> Test a coding agent's merge answers in a throwaway clone too <span class="muted">(runs this repo's code)</span></label>
-        <label title="${d.can_preview ? "Each counts against your preview deploys, and is logged with them" : esc(d.preview_why || "Preview deploys run on the desktop app, with your own logins")}"><input type="checkbox" name="preview"${s.preview ? " checked" : ""}${d.can_preview ? "" : " disabled"}> Then deploy what passed as a preview, check it answers, and tear it down <span class="muted">(costs deploy time)</span></label>
+        <label title="${d.can_test ? "" : "Tests run on the desktop app, or in a container for this site's admins"}"><input type="checkbox" name="run_tests"${s.run_tests ? " checked" : ""}${d.can_test ? "" : " disabled"}> Test each update in a throwaway clone${note("Installs and tests each update before proposing it. Runs this repo's code.")}</label>
+        <label title="${d.can_test ? "An Ask answer on a merge page is offered once the tests for its file pass with it, in the same sandbox" : "Tests run on the desktop app, or in a container for this site's admins"}"><input type="checkbox" name="test_merges"${s.test_merges ? " checked" : ""}${d.can_test ? "" : " disabled"}> Test merge answers too${note("Tries a coding agent's merge answers in a throwaway clone as well. Runs this repo's code.")}</label>
+        <label title="${d.can_preview ? "Each counts against your preview deploys, and is logged with them" : esc(d.preview_why || "Preview deploys run on the desktop app, with your own logins")}"><input type="checkbox" name="preview"${s.preview ? " checked" : ""}${d.can_preview ? "" : " disabled"}> Preview what passed${note("Deploys it as a preview, checks it answers, and tears it down. Costs deploy time.")}</label>
         <div class="row" title="The connected AI for the 🤖 fix and 🔎 web search steps below">AI for 🤖 🔎 <select name="fix_with" aria-label="who fixes a break"${d.can_test ? "" : " disabled"}>${opt("", "none", s.fix_with ?? "")}${["claude", "pi", "opencode"].map((h) => opt(h, h, s.fix_with ?? "")).join("")}</select>
           up to <input name="fix_tries" aria-label="fix tries" type="number" min="1" max="5" value="${s.fix_tries}" style="width:3em"> tries a step</div>
         <div class="row">on a break, in order: <span class="chain" id="deps-chain"></span></div>
@@ -5046,6 +5048,7 @@ const views = {
       ${sec("git-merge", "Branches", `<div id="branches"><span class="muted">none open${note("Agents work on a branch, then someone merges it.")}</span></div>`)}
     </div>`;
     icons();
+    app.querySelector(".phone").addEventListener("click", toggleInfo);
     views.wireBranches(owner, repo, r, { phone: true });
     const f = $("#m-agent");
     if (!f) return;
