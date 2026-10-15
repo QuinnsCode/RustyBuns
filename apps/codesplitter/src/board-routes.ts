@@ -42,7 +42,7 @@ export async function boardRoutes(req: Request, env: Env, owner: string, repo: s
     const a = ask(n, all);
     return a ? json(a) : json({ error: "not on the board" }, 404);
   }
-  if (q.get("brief")) return json({ brief: brief(all).join("\n") });
+  if (/^(1|true)$/.test(q.get("brief") ?? "")) return json({ brief: brief(all).join("\n") });
   const fields = q.get("fields")?.split(",").map((f) => f.trim()).filter(Boolean);
   if (fields?.length) return json({ main: meta?.main ?? null, prs: pick(all, fields), mergeable: canMerge(all) });
   return json({

@@ -302,13 +302,12 @@ merges anything new without the same guards as today.
 **Opt-in.** Off by default, per repo, switchable in settings, with delete-my-data. Nothing leaves the account
 that owns the repo.
 
-**Built so far (#1511).** `src/mervin-learn.ts` holds the three queries and the pure functions over their rows: fight
-weights that only break ties in the plan's order, levels demoted to a card, and `.gitattributes` suggestions. Not wired to a
-store yet; that waits on #1508, #1509 and #1510.
-
-The event (`src/mervin-events.ts`, `MERVIN_EVENTS` binding, per-repo `mervin_learning` row) is built and emitted once per
-merge when both are present; its shape has no content field, and a test pins that. The settings switch and
-delete-my-data are not built yet.
+**Not joined up yet.** Three pieces landed side by side and don't meet. The D1 log above (`mervin_events`, outcome
+`settled`/`asked`/`wrong`) is the one that records. `src/mervin-events.ts` sends to a `MERVIN_EVENTS` pipeline that no
+deploy config binds, so it never sends, and its `checks_passed` is always true. `src/mervin-learn.ts` (#1511) holds the
+three queries (fight weights, demoted levels, `.gitattributes` suggestions), but they name columns neither store has
+(`outcome = 'card'`, `level`, `answer`, `path`) and nothing calls them. Picking one store and wiring the queries to it is
+the open work.
 
 **Decision: Pipelines to Iceberg.** Plain R2 NDJSON plus R2 SQL is not an option, because R2 SQL only queries
 Iceberg tables managed by the catalog; NDJSON would need our own reader in a Worker. It is also not cheaper (below).
@@ -398,12 +397,12 @@ PR's head, its CI or main moved, and posts the rows that changed (`POST /api/rep
 what it's stacked on, its files per tier, its clashes, the Agent Office worker that owns it (`office-workers list --json`), and,
 for a PR touching `package.json`, `bun.lock` or `packages/`, the apps and PRs it reaches. When PRs merge, the board they were
 staged on is scored against main and the tiers' hit rates are kept. The UI (the branches panel) and the MCP tool `get_board` read
+it: `waves` and `mergeable` come off the rows, and `get_board` with `pr` says what blocks that PR, who should take it, and what it blocks.
 
 `get_board` also answers small (#1593): `brief=1` gives about four lines, ids first (`mergeable`, `red`, `waiting` on what, `waves`), and
 `fields=ci,owner` keeps just those row fields. Experiment: do the board check three ways on the same task (raw `gh pr list --json ...`,
 the same narrowed with `jq`/`tail`, and `get_board` with `brief=1`), and compare tokens and turns with Dexter (`bun apps/agent-office/ester/dexter.ts`).
 The unit test prices the three shapes on 30 PRs; the real numbers come from Dexter on live sessions.
-it: `waves` and `mergeable` come off the rows, and `get_board` with `pr` says what blocks that PR, who should take it, and what it blocks.
 
 ```sh
 CODESPLITTER_TOKEN=... bun scripts/mervin-live.ts --url https://<codesplitter> --repo owner/name   # --once, --dry

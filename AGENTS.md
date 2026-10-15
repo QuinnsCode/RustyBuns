@@ -50,8 +50,8 @@ A PR that deletes more than it adds is the goal.
 - codeSplitter's small shared helpers live in `apps/codesplitter/src/util.ts` (imports nothing): `hex`, `b64url`, `digest`,
   `sha256`, `esc`, `plural`, `pad10`, `inBatches`. Responses use `json` and request bodies `readBody` from `env.ts`; git
   runs through `git` and `isAncestor` in `mirror.ts`. Add to these, don't redefine them.
-- Known repeats still to pull up (check before adding another): the `SELECT ... FROM repos WHERE owner = ? AND name = ?`
-  lookup (about 55 inline copies, two `repoRow` variants), `toFile(...)` plus `.json()` wrappers (`fileLines` in
+- One repo's row comes from `repoRow` in `apps/codesplitter/src/repos.ts`, not another inline `FROM repos WHERE owner = ? AND name = ?`.
+- Known repeats still to pull up (check before adding another): `toFile(...)` plus `.json()` wrappers (`fileLines` in
   `stamps.ts` and `shares.ts`), the lockfile list (`buildfiles.ts`, `checks.ts`, `deps.ts`), `.catch(() => null)` on
   `req.json()` (use `readBody`), and `clamp`, seeded `rng`, `escapeHtml` and `json` helpers copied between `apps/*`
   (a shared package is the fix, not a fifth copy).
