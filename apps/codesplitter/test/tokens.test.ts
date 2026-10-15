@@ -1,20 +1,15 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { adminRoute } from "../src/tokens.ts";
 import { join } from "node:path";
-import { local as boot } from "../src/local.ts";
+import { local as boot } from "./app-kit.ts";
 
 // These run the app end to end (real git, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 /** The app in alias mode with ryan signed in (and an admin), a private repo with a file, and ryan's tokens maker. */
 async function app() {
   const call = await boot({ GH_CLI: "off", ADMINS: "ryan" });
-  opened.push(call);
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
   await send("ryan", "/api/login", { name: "ryan" });
   await send("ryan", "/api/repos", { name: "lab", visibility: "private" });

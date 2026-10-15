@@ -1,17 +1,12 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { describe, expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 import { privacyNotice } from "../src/privacy.ts";
 
 // End to end (real git, in-process D1), like tokens.test.ts.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 /** ryan with a private repo, a collection and a token, and a collaborator on mia's repo. */
 async function app() {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
   for (const u of ["ryan", "mia"]) await send(u, "/api/login", { name: u });
   await send("ryan", "/api/repos", { name: "lab", visibility: "private" });
@@ -68,7 +63,6 @@ describe("deleting with accounts on (#513)", () => {
   const origin = "http://codesplitter.local";
   test("the Better Auth rows go, the handle is retired, and the old cookie is no one", async () => {
     const call = await boot({ GH_CLI: "off", BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: origin });
-    opened.push(call);
     const res = await call(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin },
       body: JSON.stringify({ email: "ana@example.com", password: "correct horse battery", name: "ana" }) });
     const cookie = res.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
@@ -206,7 +200,6 @@ describe("GitHub and Google grants (#515)", () => {
   /** ana, signed up with email and a handle, with a GitHub and a Google sign-in linked; `fetch` answers GitHub and Google. */
   async function linked(fetch: (url: string, init: RequestInit) => Response, extra: Record<string, unknown> = { GITHUB_CLIENT_ID: "cid", GITHUB_CLIENT_SECRET: "csecret" }) {
     const call = await boot({ GH_CLI: "off", BETTER_AUTH_SECRET: key, BETTER_AUTH_URL: origin, ...extra });
-    opened.push(call);
     const res = await call(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin },
       body: JSON.stringify({ email: "ana@example.com", password: "correct horse battery", name: "ana" }) });
     const cookie = res.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
@@ -255,7 +248,6 @@ describe("GitHub and Google grants (#515)", () => {
 describe("the change notice", () => {
   test("PRIVACY_NOTICE reaches the page through /api/session, dated", async () => {
     const call = await boot({ GH_CLI: "off", PRIVACY_NOTICE: "2026-11-01  We'll keep request logs 3 days, not 7." });
-    opened.push(call);
     expect(((await (await call(null, "/api/session")).json()) as any).notice).toEqual({ date: "2026-11-01", text: "We'll keep request logs 3 days, not 7." });
   });
 
