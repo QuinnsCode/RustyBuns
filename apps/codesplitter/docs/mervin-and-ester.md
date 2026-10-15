@@ -79,6 +79,22 @@ scores and from this repo's counts, not a measurement of either helper on this o
 a jam is detected from commit titles and force pushes, so quiet ones are missed. The method and its limits are in
 [jams.md](jams.md).
 
+## The docs are code too
+
+The same idea covers the docs. They are generated and checked by scripts, and tied to the version, so they cannot
+drift as the crowd grows:
+
+- `bun run docs` fixes what it can in place: the README's version banner comes from `packages/cli`, and the examples
+  table gets a row per `apps/*` directory, so a new or deleted app updates it.
+- Every relative link and `#anchor` in the root docs must land. A broken one fails `bun run docs --check`.
+- `bun run site` builds the docs site from those files: `latest/` from the working tree, plus a folder per release tag
+  read straight from git. Each version's docs are the docs as they were at that tag.
+- codeSplitter's API reference and MCP tool list are generated from `src/openapi.ts` and `src/mcp-tools.ts`, so changing
+  an endpoint changes its docs in the same PR.
+- CI runs both checks on every pull request (`typecheck.yml`), so a PR that leaves the docs behind does not merge.
+
+Nobody has to remember to update them, and an agent that skips it is told by CI, not by a reader a month later.
+
 ## Where the AI goes
 
 Models are still the point. They write the code. The rest of the system exists so their tokens go to writing it.
