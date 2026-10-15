@@ -26,7 +26,7 @@ import { settings } from "./deploy.ts";
 import { json, type Env } from "./env.ts";
 import { repoRow } from "./repos.ts";
 
-export type StepKey = "clone" | "install" | "deploy" | "check" | "destroy" | "init" | "plan";
+export type StepKey = "clone" | "install" | "deploy" | "check" | "destroy" | "init" | "save" | "plan";
 export interface Step { key: StepKey; status: "waiting" | "running" | "done" | "failed" | "skipped"; out: string; ms?: number }
 /** `deadline`: when a hosted run is cut off (deploy-runner.ts); a desktop one has none. */
 export interface Run { id: string; at: number; stage: string; steps: Step[]; url?: string; done: boolean; kept?: string; note?: string; commit?: string; deadline?: number;

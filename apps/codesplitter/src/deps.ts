@@ -1453,7 +1453,7 @@ async function check(env: Env, call: Call, owner: string, repo: string, s: Setti
  * commit; a file with live edits since gets the fix merged into them, line by
  * line (`merged`), unless the two touch the same lines (`skipped`).
  */
-async function landFix(call: Call, owner: string, base: string, branch: string, agent: string, edits: Edit[]): Promise<{ merged: string[]; skipped: string[] }> {
+export async function landFix(call: Call, owner: string, base: string, branch: string, agent: string, edits: Edit[]): Promise<{ merged: string[]; skipped: string[] }> {
   const add = await call(owner, `${base}/collaborators`, { method: "POST", body: JSON.stringify({ name: agent }) });
   if (!add.ok && add.status !== 409) throw new Error(`adding ${agent}: ${add.status}`);
   const merged: string[] = [], skipped: string[] = [];
