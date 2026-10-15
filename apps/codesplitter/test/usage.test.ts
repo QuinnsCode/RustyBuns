@@ -1,16 +1,11 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { describe, expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 import { extOf, noteConflict } from "../src/usage.ts";
-
-setDefaultTimeout(20_000);
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 const put = (call: any, user: string, body: unknown) => call(user, "/api/me", { method: "PUT", body: JSON.stringify(body) });
 
 async function app() {
   const call = await boot({ GH_CLI: "off", ADMINS: "boss" });
-  opened.push(call);
   for (const u of ["boss", "ryan", "mia"]) await call(u, "/api/login", { method: "POST", body: JSON.stringify({ name: u }) });
   return call;
 }

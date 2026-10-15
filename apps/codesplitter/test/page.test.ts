@@ -1,15 +1,10 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { describe, expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 import { pagePath, withData } from "../src/page.ts";
-
-setDefaultTimeout(20_000);
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 describe("putting your page back", () => {
   test("default restores the starter and empties the rest; an hour back empties what is newer than that", async () => {
     const call = await boot({ GH_CLI: "off" });
-    opened.push(call);
     const send = (user: string | null, url: string, body?: unknown) =>
       call(user, url, { method: body === undefined ? "GET" : "POST", ...(body !== undefined && { body: JSON.stringify(body) }) });
     await send("ryan", "/api/login", { name: "ryan" });
@@ -38,7 +33,6 @@ describe("putting your page back", () => {
 describe("your page", () => {
   test("serves the public page repo in a script sandbox, with only public data", async () => {
     const call = await boot({ GH_CLI: "off" });
-    opened.push(call);
     const send = (user: string | null, url: string, body?: unknown, method = body === undefined ? "GET" : "POST") =>
       call(user, url, { method, ...(body !== undefined && { body: JSON.stringify(body) }) });
     await send("ryan", "/api/login", { name: "ryan" });
@@ -70,7 +64,6 @@ describe("your page", () => {
 
   test("falls back to the saved HTML, and says when there is no page", async () => {
     const call = await boot({ GH_CLI: "off" });
-    opened.push(call);
     const send = (user: string | null, url: string, body?: unknown, method = body === undefined ? "GET" : "PUT") =>
       call(user, url, { method, ...(body !== undefined && { body: JSON.stringify(body) }) });
     await call("mia", "/api/login", { method: "POST", body: JSON.stringify({ name: "mia" }) });
@@ -84,7 +77,6 @@ describe("your page", () => {
 
   test("says so when a public page repo hides the saved HTML", async () => {
     const call = await boot({ GH_CLI: "off" });
-    opened.push(call);
     const put = async (body: unknown) => (await call("ned", "/api/me", { method: "PUT", body: JSON.stringify(body) })).json() as Promise<any>;
     await call("ned", "/api/login", { method: "POST", body: JSON.stringify({ name: "ned" }) });
     expect((await put({ theme_html: "<h1>a</h1>" })).warning).toBeUndefined();
@@ -105,7 +97,6 @@ describe("your page", () => {
 describe("page tools", () => {
   test("edit_my_page writes a file and the page version moves with it", async () => {
     const call = await boot({ GH_CLI: "off" });
-    opened.push(call);
     const send = (user: string | null, url: string, body?: unknown, method = body === undefined ? "GET" : "POST") =>
       call(user, url, { method, ...(body !== undefined && { body: JSON.stringify(body) }) });
     await send("ryan", "/api/login", { name: "ryan" });
@@ -134,7 +125,6 @@ describe("binary files of your page", () => {
       list: async () => ({ objects: [], truncated: false }), delete: async () => {},
     };
     const call = await boot({ GH_CLI: "off", LEVEL_CHUNKS } as any);
-    opened.push(call);
     const put = (user: string | null, name: string, bytes: Uint8Array) => call(user, `/api/me/page/assets/${name}`, { method: "PUT", body: bytes as BodyInit });
     await call("ryan", "/api/login", { method: "POST", body: JSON.stringify({ name: "ryan" }) });
     expect((await put("ryan", "cat.png", new Uint8Array([1]))).status).toBe(404); // no page repo yet

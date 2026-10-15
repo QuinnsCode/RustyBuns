@@ -1,13 +1,8 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
-
-setDefaultTimeout(20_000);
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
+import { expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 
 test("an owner takes boxes off their profile; everything shows until they do", async () => {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   const send = (user: string | null, url: string, body?: unknown, method = "POST") => call(user, url, { method, body: body === undefined ? undefined : JSON.stringify(body) });
   await send("ryan", "/api/login", { name: "ryan" });
   const profile = async (who: string | null) => ((await (await send(who, "/api/users/ryan", undefined, "GET")).json()) as any).user;
@@ -27,7 +22,6 @@ test("an owner takes boxes off their profile; everything shows until they do", a
 
 test("Top 8: the people you follow until you pick, then your picks; strangers and yourself are refused", async () => {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   const send = (user: string | null, url: string, body?: unknown, method = "POST") => call(user, url, { method, body: body === undefined ? undefined : JSON.stringify(body) });
   for (const u of ["ryan", "ana", "bob"]) await send(u, "/api/login", { name: u });
   const top8 = async () => ((await (await send(null, "/api/users/ryan", undefined, "GET")).json()) as any).user.top8;

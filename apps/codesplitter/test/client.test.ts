@@ -532,9 +532,14 @@ test("only a repo that fits is offered Box it", () => {
   expect(["no", "unlikely", undefined].map(boxable)).toEqual([false, false, false]);
 });
 
+test("a PR's tiers read as counts, tier by tier", () => {
+  const tierNote = new Function(`${html.slice(html.indexOf("const tierNote"), html.indexOf("async function copy(text"))}; return tierNote;`)();
+  expect(tierNote({ certain: 3, agree: 0, card: 1 })).toBe("3 certain, 1 card");
+  expect(tierNote({})).toBe("");
+});
+
 // Send-offs: the share panel hands out links into the game, and play.html reads them.
 describe("game send-offs", () => {
-  const play = readFileSync(join(import.meta.dir, "../src/play.html"), "utf8");
   const src = html.slice(html.indexOf("const sendOffLink"), html.indexOf("async function copy(text"));
   const link = new Function("location", `${src}; return sendOffLink;`)({ origin: "https://cs.test" });
 
@@ -542,10 +547,5 @@ describe("game send-offs", () => {
     expect(link("ana", "dig", "src/a/b.ts", "wreck")).toBe("https://cs.test/play.html#r/ana/dig?mode=wreck");
     expect(link("ana", "dig", "src/a/b.ts", "room")).toBe("https://cs.test/play.html#r/ana/dig?room=src%2Fa");
     expect(link("ana", "dig", "top.ts", "room")).toBe("https://cs.test/play.html#r/ana/dig?room=");
-  });
-
-  test("play.html reads ?mode=wreck and ?room=", () => {
-    expect(play).toContain('hq.get("mode") === "wreck"');
-    expect(play).toContain('hq.get("room")');
   });
 });

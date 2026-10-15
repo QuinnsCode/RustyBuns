@@ -1,10 +1,6 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 import { cleanAvatar, defaultAvatar, PARTS, randomAvatar } from "../src/avatar.ts";
-
-setDefaultTimeout(20_000);
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 test("an avatar is every part, each a known option or a #rrggbb color; anything else is refused", () => {
   const a = defaultAvatar("ryan");
@@ -24,7 +20,6 @@ test("an avatar is every part, each a known option or a #rrggbb color; anything 
 
 test("you save your avatar on your profile; others see it, and it walks the city with you", async () => {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   const send = (user: string | null, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
   await send("ryan", "/api/login", { name: "ryan" });
   const mine = defaultAvatar("someone else");

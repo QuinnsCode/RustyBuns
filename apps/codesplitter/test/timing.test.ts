@@ -1,17 +1,13 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { describe, expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 
 // Every API call paid the session lookup's D1 reads before its route ran (#1313).
-setDefaultTimeout(20_000);
 
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 const origin = "http://codesplitter.local";
 
 describe("API timing (#1313)", () => {
   test("answers carry Server-Timing; a known cookie skips D1 until it signs out", async () => {
     const call = await boot({ GH_CLI: "off", BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: origin });
-    opened.push(call);
     const res = await call(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin },
       body: JSON.stringify({ email: "ana@example.com", password: "correct horse battery", name: "ana" }) });
     const cookie = res.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");

@@ -1,12 +1,8 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 import { namesOf } from "../src/artifact-move.ts";
 
 // End to end (real git, in-process D1): copy a repo into a second namespace, then rewrite its stored remote (#823).
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 test("names of a repo's Artifacts: its own and its crew copy, once each", () => {
   expect(namesOf([{ artifact: "a--x", crew_artifact: "a--x.crew" }, { artifact: "a--x", crew_artifact: null }, { artifact: null, crew_artifact: null }])).toEqual(["a--x", "a--x.crew"]);
@@ -26,7 +22,6 @@ function fakeNamespace(namespace: string) {
 test("copy brings each repo over once, and rewrite points the stored remotes at the copies", async () => {
   const next = fakeNamespace("codesplitter");
   const call = await boot({ GH_CLI: "off", ADMINS: "ryan", ARTIFACTS_NEXT: next as any });
-  opened.push(call);
   const send = (user: string, url: string, body: unknown = {}) => call(user, url, { method: "POST", body: JSON.stringify(body) });
   await send("ryan", "/api/login", { name: "ryan" });
   await send("ryan", "/api/repos", { name: "lab" });
