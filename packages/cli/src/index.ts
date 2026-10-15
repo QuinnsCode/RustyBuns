@@ -20,7 +20,7 @@ import { desktopServers, forStage, workerName, type RustyBunsConfig } from "./co
 import { Effect } from "effect";
 import { decodeConfig } from "./config-schema.ts";
 import { AlchemyFailed, ConfigLoadFailed, DeployRefused, UsageError, closest, flag, intFlag, renderError, triagePrompt } from "./errors.ts";
-import { infer, readPackageJson, appsBelow, siblingServers, proxyServers } from "./glue/infer.ts";
+import { infer, readPackageJson, appsBelow, siblingServers, proxyServers, bunServerEntry } from "./glue/infer.ts";
 import { unsupported } from "./glue/fit.ts";
 
 // @sveltejs/adapter-cloudflare builds the Worker and the static assets into one directory.
@@ -498,7 +498,9 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
   const outDir = (d: string) => inf.vite.root ? relative(inf.vite.root, d).split("\\").join("/") : d;
   // The app's prebuild steps first, and the vite config its build names (#403).
   const vite = (d: string) => [...inf.prebuild, `${inf.execCmd("vite")} build${inf.vite.buildConfig ? ` --config ${inf.vite.buildConfig}` : ""} --outDir ${outDir(d)} --emptyOutDir`].join(" && ");
-  clientBuild ??= vite("dist/ui");
+  // An app that is only `Bun.serve(...)` has no client to build: the host runs it as desktop.server, answering every path.
+  const bunServer = astro || clientBuild ? null : bunServerEntry(".");
+  clientBuild ??= bunServer ? `bun -e "require('node:fs').mkdirSync('dist/ui',{recursive:true})"` : vite("dist/ui");
   // The same build, put on the web as an assets-only Worker: Cloudflare serves the files, no
   // code of ours runs. Not for an app with a Node server: its frontend alone wouldn't work.
   // A vite config that names its own outDir keeps it: plugins write there too (a sitemap, a
@@ -508,7 +510,7 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
   // A dev proxy (server.proxy: /api -> :3000) means the frontend talks to a server of its own
   // that the build doesn't contain: on the web every one of those calls would get index.html.
   const proxied = astro ? [] : inf.vite.proxy;
-  const web = inf.serverDeps.length || proxied.length ? null : {
+  const web = bunServer || inf.serverDeps.length || proxied.length ? null : {
     assets: own ?? "dist/web",
     compatibilityDate: new Date().toISOString().slice(0, 10),
     compatibilityFlags: [],
@@ -521,6 +523,7 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
   const servers = proxied.length ? siblingServers(".") : [];
   const { found, left } = proxyServers(Object.fromEntries(proxied.map((p) => [p, inf.vite.proxyTargets[p] ?? null])), servers);
   const specs = found.map((f) => ({ entry: f.server.entry!, paths: f.paths, ...(f.port ? { port: f.port } : {}) }));
+  if (bunServer) specs.push({ entry: bunServer, paths: ["/"] });
   const server = specs.length > 1 ? specs : specs[0] ?? null;
   const cfg = {
     name: inf.name.replace(/^@[^/]+\//, ""),
@@ -542,8 +545,10 @@ async function initSpa(inf: ReturnType<typeof infer>, clientBuild?: string) {
     },
   };
   await Bun.write("rustybuns.config.ts", `import { defineConfig } from "@rustybuns/cli/config";\n\nexport default defineConfig(${JSON.stringify(cfg, null, 2)});\n`);
+  if (bunServer) console.log(`backend:  ${bunServer} is a Bun server with no client: the desktop host runs it beside itself and sends every path to it`);
   const what = astro ? "a static Astro site" : "no wrangler found";
-  console.log(web ? `wrote rustybuns.config.ts (${what}: the desktop, and the web as static files on Workers, from ${web.assets})`
+  console.log(bunServer ? `wrote rustybuns.config.ts (desktop-only: a Bun server, so it can't go on the web as it is)`
+    : web ? `wrote rustybuns.config.ts (${what}: the desktop, and the web as static files on Workers, from ${web.assets})`
     : inf.serverDeps.length ? `wrote rustybuns.config.ts (desktop-only: it runs a Node server (${inf.serverDeps.join(", ")}), so its frontend alone can't go on the web)`
     : `wrote rustybuns.config.ts (desktop-only: ${relative(".", inf.vite.configPath!)} proxies ${proxied.join(", ")} to a separate server in dev, so its frontend alone can't go on the web)`);
   for (const f of found)
