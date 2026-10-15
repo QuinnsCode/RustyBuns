@@ -166,9 +166,20 @@ try {
       must(await page(`!document.querySelector(".tour")`), "the card is still up");
     });
   }
+
+  // The demos page: every chapter is a card, and Play starts the tour's own autoplay on it.
+  await open();
+  await check("demos", "the page lists every chapter and Play runs the desktop one by itself", async () => {
+    await page(`location.hash = "#/demos"`);
+    await until("the cards", `document.querySelectorAll("[data-demo]").length === TOUR_CHAPTERS.length`);
+    await click(`[data-demo="desktop"]`);
+    await until("the first step", `document.querySelector(".tour b")?.textContent === "The same app on your machine"`);
+    await until("autoplay", `JSON.parse(sessionStorage.getItem("cs_tour")).auto === true`);
+    await until("step 2", `document.querySelector(".tour b")?.textContent === "It syncs out, both ways"`, 25000);
+  });
 } finally {
   ws.close(); chrome.kill(); shell.stop?.();
   if (!process.argv.includes("--keep")) rmSync(dir, { recursive: true, force: true });
 }
-console.log(failed ? `\n${failed} failed` : `\nall ${CHAPTERS.length * 9} passed`);
+console.log(failed ? `\n${failed} failed` : `\nall ${CHAPTERS.length * 9 + 1} passed`);
 process.exit(failed ? 1 : 0);

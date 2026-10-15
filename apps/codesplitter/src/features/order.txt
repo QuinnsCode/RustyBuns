@@ -26,6 +26,7 @@ levels
 dig
 show-around
 welcome-tour
+demos
 cards
 agents
 fit
