@@ -53,7 +53,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describeBlast, load, rank } from "./blast.ts";
-import { hold, hurtLines, packagesChanged, report, rows, triage } from "./ester.ts";
+import { hold, hurtLines, keep, kept, packagesChanged, report, rows, triage } from "./ester.ts";
 import { heal, layout } from "../layout.ts";
 import { sandbox, shadow, testRuns, testTree, writeTree } from "./shadow.ts";
 
@@ -487,7 +487,10 @@ if (import.meta.main) {
         const again = new Set(added.length && bad.length ? (await testTree(join(out, "tree"), bad, env, true)).failed : added);
         const verdicts = triage(r.failed, board.stages, before, again);
         console.log(report(verdicts, r.runs, again.size ? bad.map((x) => r.runs.find((d) => d.dir === x.dir && d.cmd === x.cmd)!.ms) : [], board.stages).join("\n"));
-        const hurt = hurtLines(rows(board.stages, verdicts, board.clashes));
+        const now = rows(board.stages, verdicts, board.clashes);
+        const file = join(top, ".mervin/ester-rows.jsonl");
+        keep(file, now);
+        const hurt = hurtLines(kept(file));
         if (hurt.length) console.log(hurt.join("\n"));
         if (hold(verdicts).length) console.log(`Ester says hold: ${hold(verdicts).map((n) => `#${n}`).join(", ")}`);
         const mine = new Set(verdicts.filter((v) => v.owner === "blocks").map((v) => v.test));

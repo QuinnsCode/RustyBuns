@@ -8,8 +8,12 @@
 //   blocks   only the merged tree breaks it: the PRs that touched that app are the suspects, and the first stage
 //            that breaks it (--check-stages) is the one to hold back.
 //
+// Rows are kept in a JSONL file (`.mervin/ester-rows.jsonl`) so the ranking learns across runs.
+//
 // Pure: `triage` takes what the board already knows plus an optional rerun, so it is tested without installing.
 
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname } from "node:path";
 import type { Stage } from "./mervin-board.ts";
 
 export type Owner = "main" | "flaky" | "own" | "wait" | "blocks";
@@ -116,4 +120,24 @@ export function hurtLines(rs: Row[], top = 5): string[] {
   const h = hurting(rs).filter((x) => x.broke || x.clashes).slice(0, top);
   if (!h.length) return [];
   return ["Ester: dependencies that hurt", ...h.map((x) => `  ${x.pkg.padEnd(24)} ${x.touches} PR${x.touches === 1 ? "" : "s"}, ${x.broke} broke a test, ${x.clashes} clashed (${Math.round(x.rate * 100)}%)`)];
+}
+
+/** Appends this run's rows to the JSONL `file`, one line per PR stamped with `at`. */
+export function keep(file: string, rs: Row[], at = new Date().toISOString()) {
+  if (!rs.length) return;
+  mkdirSync(dirname(file), { recursive: true });
+  appendFileSync(file, rs.map((r) => JSON.stringify({ at, ...r })).join("\n") + "\n");
+}
+
+/** Every kept row, a PR's latest line standing for it (a rerun of the same PR replaces, not doubles, its row). */
+export function kept(file: string): Row[] {
+  if (!existsSync(file)) return [];
+  const by = new Map<number, Row>();
+  for (const line of readFileSync(file, "utf8").split("\n")) {
+    try {
+      const { at: _at, ...r } = JSON.parse(line);
+      if (typeof r.pr === "number") by.set(r.pr, r);
+    } catch { /* a torn line is skipped */ }
+  }
+  return [...by.values()];
 }
