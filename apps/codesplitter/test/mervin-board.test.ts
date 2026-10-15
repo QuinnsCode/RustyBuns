@@ -238,7 +238,7 @@ describe("mervin stack", () => {
   });
 });
 
-import { nextStamp, settle, type Clash } from "../scripts/mervin-board.ts";
+import { applyRenames, settleLockfiles, LOCK_WHY, nextStamp, settle, type Board, type Clash, type Stage } from "../scripts/mervin-board.ts";
 describe("mervin settles clashes", () => {
   test("migrations: the later PR takes the next free stamp, and main's stamp moves every PR", () => {
     expect(nextStamp(["20261013040000", "20261013050000"])).toBe("20261013050001");
@@ -265,6 +265,36 @@ describe("mervin settles clashes", () => {
     const { board, tree } = run(repo, m, [{ number: 1, headRefOid: q, headRefName: "q", baseRefName: "main" }]);
     expect(board.stages[0]!.files[0]!.tier).toBe("mervin");
     expect(tree.has("bun.lock")).toBe(false);
+  });
+});
+
+describe("mervin carries out its settlements", () => {
+  test("a renumbered migration moves to its new stamp in the tree and its stage's writes", () => {
+    const old = "db/migrations/20261013040000_p2.sql", to = "db/migrations/20261013040001_p2.sql";
+    const tree = new Map<string, string | null>([[old, "create table b;"], ["x.ts", "x"]]);
+    const writes = [new Map<string, string | null>(), new Map<string, string | null>([[old, "create table b;"]])];
+    const stages = [{ pr: 1 }, { pr: 2 }] as Stage[];
+    applyRenames([{ kind: "migration", key: "db/migrations/20261013040000", prs: [1, 2], renumber: [{ pr: 2, from: old, to }] }], tree, writes, stages);
+    expect(tree.get(to)).toBe("create table b;");
+    expect(tree.get(old)).toBeNull();
+    expect(writes[1]!.get(to)).toBe("create table b;");
+    expect(writes[0]!.size).toBe(0);
+  });
+  const lockBoard = (): Board => ({ main: "m", at: "", skipped: [], clashes: [], written: [], stages: [{ pr: 7, head: "", base: "", files: [{ path: "bun.lock", tier: "mervin", why: LOCK_WHY, after: [] }] }] });
+  test("a lockfile the install updates is kept in the tree", async () => {
+    const root = mkdtempSync(join(tmpdir(), "mervin-install-"));
+    const board = lockBoard();
+    await settleLockfiles(root, board, async (r) => { writeFileSync(join(r, "bun.lock"), "new"); return { ok: true, out: "" }; });
+    expect(readFileSync(join(root, "bun.lock"), "utf8")).toBe("new");
+    expect(board.stages[0]!.files[0]!.tier).toBe("mervin");
+    expect(board.written).toContain("bun.lock");
+  });
+  test("a failed install raises a card, which holds the PR", async () => {
+    const board = lockBoard();
+    await settleLockfiles("/nowhere", board, async () => ({ ok: false, out: "error: no matching version\n" }));
+    const f = board.stages[0]!.files[0]!;
+    expect(f.tier).toBe("card");
+    expect(f.why).toContain("no matching version");
   });
 });
 
@@ -337,5 +367,55 @@ describe("mervin board: a generated file (#1540)", () => {
     expect(out).toContain("| `migrations/` |");
     expect(out.endsWith("\nafter\n")).toBe(true);
     rmSync(root, { recursive: true, force: true });
+  });
+});
+
+import { conflictWarnings, disjointBatches, redOn, relandOf, rerunnable, settleMergeable, type Verdict } from "../scripts/mervin-merge.ts";
+describe("mervin --go (#1730)", () => {
+  const row = (path: string, tier: "certain" | "card", after: number[] = []) => ({ path, tier, why: "", after });
+  const stage = (pr: number, files: ReturnType<typeof row>[]) => ({ pr, head: "h", base: "b", files });
+  const board = (stages: ReturnType<typeof stage>[]) => ({ main: "m", at: "", stages, written: [], skipped: [], clashes: [] });
+  const v = (pr: number, go: boolean, why = "", wave = 1): Verdict => ({ pr, go, why, wave, behind: [] });
+
+  test("mergeable is polled until GitHub stops saying UNKNOWN", async () => {
+    const seen: Record<number, string[]> = { 1: ["UNKNOWN", "UNKNOWN", "MERGEABLE"], 2: ["CONFLICTING"] };
+    const calls: number[] = [];
+    const got = await settleMergeable(async (n) => { calls.push(n); return seen[n]!.shift() ?? "MERGEABLE"; }, [1, 2], 5, 0, async () => {});
+    expect(Object.fromEntries(got)).toEqual({ 1: "MERGEABLE", 2: "CONFLICTING" });
+    expect(calls).toEqual([1, 2, 1, 1]);
+  });
+
+  test("a PR whose failing check ended before main went green gets a rerun, once", () => {
+    const pr = (end: string): BoardPr => ({ number: 7, headRefOid: "h", statusCheckRollup: [{ name: "apps", conclusion: "FAILURE", status: "COMPLETED", completedAt: end }] });
+    const held = [v(7, false, "CI failed: apps")];
+    expect(redOn([{ name: "apps", conclusion: "failure" }, { name: "typecheck", conclusion: "success" }])).toEqual(["apps"]);
+    expect(rerunnable([pr("2026-10-14T10:00:00Z")], held, ["apps"], "2026-10-14T11:00:00Z")).toEqual([7]);
+    expect(rerunnable([pr("2026-10-14T12:00:00Z")], held, ["apps"], "2026-10-14T11:00:00Z")).toEqual([]);
+    expect(rerunnable([pr("2026-10-14T10:00:00Z")], held, [], "2026-10-14T11:00:00Z")).toEqual([]);
+  });
+
+  test("warns that merging one PR makes a carded one conflict", () => {
+    const b = board([stage(1, [row("a", "certain")]), stage(2, [row("a", "card", [1])]), stage(3, [row("b", "certain", [1])])]);
+    expect(conflictWarnings(b, [v(1, true), v(2, false, "Mervin asks on a"), v(3, true, "", 2)])).toEqual(["merging #1 will make #2 conflict on a"]);
+  });
+
+  test("finds the PR a re-land puts back", () => {
+    expect(relandOf({ title: "Reland: fix the thing (#12)", body: "Reland of #12, which broke main" })).toBe(12);
+    expect(relandOf({ title: "x", body: "Reverts QuinnsCode/RustyBuns#40" })).toBe(40);
+    expect(relandOf({ title: "Add a thing", body: "closes #3" })).toBeUndefined();
+  });
+
+  test("PRs sharing a file go in different batches; the rest go together", () => {
+    const b = board([stage(1, [row("a", "certain")]), stage(2, [row("a", "certain")]), stage(3, [row("b", "certain")])]);
+    expect(disjointBatches(b, [1, 2, 3])).toEqual([[1, 3], [2]]);
+  });
+
+  test("a 30-PR board batches in well under a second", () => {
+    const b = board(Array.from({ length: 30 }, (_, i) => stage(i + 1, [row(`f${i % 10}`, "certain"), row(`own${i}`, "certain")])));
+    const t = performance.now();
+    const batches = disjointBatches(b, b.stages.map((s) => s.pr));
+    expect(performance.now() - t).toBeLessThan(1000);
+    expect(batches.flat().length).toBe(30);
+    expect(batches.length).toBe(3);
   });
 });

@@ -14,12 +14,16 @@
 // doctor's previews do. In a monorepo the app's folder (the deploy settings' `dir`)
 // is where init and plan run. Desktop only: it runs the repo's code.
 //
+// With {save: true} a "save" step follows init: what init wrote or changed (the config,
+// the deploy dependencies) goes on a branch as agent-rustybuns, for the owner to review and merge.
+//
 //   GET  /api/repos/:o/:r/try     the current or last run (owner only)
-//   POST /api/repos/:o/:r/try     start one: {branch?} tries that branch's files, else main
+//   POST /api/repos/:o/:r/try     start one: {branch?} tries that branch's files, else main; {save?} commits init's work to a branch
 
 import { access as artifactAccess, handleFor, toFile } from "./archive.ts";
 import { settings } from "./deploy.ts";
 import { json, readBody, type Env } from "./env.ts";
+import { caller, landFix, type Edit } from "./deps.ts";
 import { text, type Doc } from "./lines.ts";
 import { runnerFor, type Run, type Runner } from "./preview.ts";
 import { repoRow } from "./repos.ts";
@@ -42,7 +46,13 @@ export async function branchFiles(env: Env, owner: string, repo: string, branch:
   return out;
 }
 
-export async function tryOut(runner: Runner, remote: string, run: Run, opts: { dir?: string; files?: Record<string, string>; stage?: string } = {}) {
+/** Who commits init's work: its own handle, so blame says Rusty Buns did it. */
+export const INIT_AGENT = "agent-rustybuns";
+
+/** Puts init's edits on a branch as INIT_AGENT; answers the branch's name. */
+export type Save = (edits: Edit[]) => Promise<string>;
+
+export async function tryOut(runner: Runner, remote: string, run: Run, opts: { dir?: string; files?: Record<string, string>; stage?: string; save?: Save } = {}) {
   const fs = await import("node:fs");
   const { dirname, join } = await import("node:path");
   const dir = fs.mkdtempSync(join((await import("node:os")).tmpdir(), "codesplitter-try-"));
@@ -86,7 +96,12 @@ export async function tryOut(runner: Runner, remote: string, run: Run, opts: { d
         return skip("infra", "plan");
       }
       run.note = "init wrote a rustybuns.config.ts in the clone; nothing was saved to your repo";
+      if (opts.save) {
+        const saved = await saveInit(runner, opts.save, `${dir}/repo`, step("save"), (x) => scrub(x));
+        if (saved) run.note = `init's work is on branch ${saved} as ${INIT_AGENT}: review it and merge when it looks right`;
+      }
     }
+    if (opts.save && step("save").status === "waiting") { step("save").status = "skipped"; step("save").out = "the repo already has a rustybuns.config.ts: nothing for init to save\n"; }
     // The map doesn't gate the plan: a config that fails to load fails the plan with the reason.
     if (await go("infra", [rb("infra", "--json", "--stage", opts.stage ?? "prod")])) {
       const g = /^INFRA (\{.*\})$/m.exec(step("infra").out)?.[1];
@@ -99,7 +114,35 @@ export async function tryOut(runner: Runner, remote: string, run: Run, opts: { d
   }
 }
 
-export async function tryRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
+/** What init left in the clone (new or changed text files), saved through `save`; the branch's name, or null with the step marked failed. */
+async function saveInit(runner: Runner, save: Save, repoDir: string, s: Run["steps"][number], scrub: (x: string) => string): Promise<string | null> {
+  const fs = await import("node:fs");
+  const t = Date.now();
+  s.status = "running";
+  const grab = async (cmd: string[]) => { let o = ""; const code = await runner.exec(cmd, repoDir, (x) => { o += x; }).catch(() => 1); return { code, out: o }; };
+  const fail = (why: string) => { s.status = "failed"; s.ms = Date.now() - t; s.out += scrub(why + "\n"); return null; };
+  const st = await grab(["git", "status", "--porcelain", "-z", "--untracked-files=all"]);
+  if (st.code) return fail("couldn't list what init changed");
+  const edits: Edit[] = [];
+  for (const e of st.out.split("\0").filter(Boolean)) {
+    const [code, path] = [e.slice(0, 2), e.slice(3)];
+    if (code.includes("D") || code.includes("R")) continue;
+    const file = `${repoDir}/${path}`;
+    const buf = fs.existsSync(file) ? fs.readFileSync(file) : null;
+    if (!buf || buf.length > 1_000_000 || buf.includes(0)) { s.out += `left out ${path}: not a text file under 1 MB\n`; continue; }
+    const before = code.trim() === "??" ? null : (await grab(["git", "show", `HEAD:${path}`])).out;
+    edits.push({ path, before, after: buf.toString("utf8") });
+  }
+  if (!edits.length) return fail("init changed no files");
+  s.out += `saving ${edits.map((x) => x.path).join(", ")} as ${INIT_AGENT}\n`;
+  try {
+    const branch = await save(edits);
+    s.out += `branch ${branch}\n`; s.status = "done"; s.ms = Date.now() - t;
+    return branch;
+  } catch (e) { return fail((e as Error).message); }
+}
+
+export async function tryRoutes(req: Request, env: Env, p: string[], user: string | null, self: (r: Request) => Promise<Response>): Promise<Response | null> {
   if (!(p[1] === "repos" && p[2] && p[3] && p[4] === "try" && !p[5])) return null;
   const [owner, repo] = [p[2], p[3]], key = `${owner}/${repo}`;
   if (user !== owner) return json({ error: "only the repo's owner can try Rusty Buns on it" }, 403);
@@ -109,7 +152,7 @@ export async function tryRoutes(req: Request, env: Env, p: string[], user: strin
   if (req.method !== "POST") return null;
   if (!runner || runner.workdir) return json({ error: "trying Rusty Buns runs on the desktop app" }, 400);
   if (trials.get(key) && !trials.get(key)!.done) return json({ error: "a trial is already running" }, 409);
-  const body = ((await readBody(req).catch(() => null)) ?? {}) as { branch?: unknown };
+  const body = ((await readBody(req).catch(() => null)) ?? {}) as { branch?: unknown; save?: unknown };
   const branch = typeof body.branch === "string" && body.branch ? body.branch : null;
   if (branch && !(await env.DB.prepare("SELECT 1 FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, branch).first())) return json({ error: `${branch} isn't an open branch` }, 404);
   const h = await handleFor(env, owner, repo, true);
@@ -118,9 +161,31 @@ export async function tryRoutes(req: Request, env: Env, p: string[], user: strin
   const remote = art.remote.replace("://", `://x:${art.token.split("?")[0]}@`);
   const { dir, stage } = await settings(env, owner, repo);
   const files = branch ? await branchFiles(env, owner, repo, branch, user) : undefined;
+  const saving = body.save === true;
+  if (saving && branch) return json({ error: "init's work is saved from main: pick main, or merge the branch first" }, 400);
   const id = crypto.randomUUID().slice(0, 8);
-  const run: Run = { id, at: Date.now(), stage: branch ?? "main", steps: TRY_STEPS.map((key) => ({ key, status: "waiting", out: "" })) as Run["steps"], done: false };
+  const keys = saving ? [...TRY_STEPS.slice(0, 3), "save" as const, ...TRY_STEPS.slice(3)] : TRY_STEPS;
+  const run: Run = { id, at: Date.now(), stage: branch ?? "main", steps: keys.map((key) => ({ key, status: "waiting", out: "" })) as Run["steps"], done: false };
   trials.set(key, run);
-  void tryOut(runner, remote, run, { dir, files, stage }).catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; });
+  const save: Save | undefined = saving ? (edits) => openBranch(self, owner, repo, edits) : undefined;
+  void tryOut(runner, remote, run, { dir, files, stage, save }).catch((e: Error) => { run.note = `failed: ${e.message}`; run.done = true; });
   return json({ run }, 202);
+}
+
+/** A branch for init's work, opened and written by INIT_AGENT, named like the dependency doctor's. */
+async function openBranch(self: (r: Request) => Promise<Response>, owner: string, repo: string, edits: Edit[]): Promise<string> {
+  const call = caller(self, "http://codesplitter.local"), base = `/api/repos/${owner}/${repo}`;
+  const added = await call(owner, `${base}/collaborators`, { method: "POST", body: JSON.stringify({ name: INIT_AGENT }) });
+  if (!added.ok) throw new Error(`adding ${INIT_AGENT}: ${added.status}`);
+  const day = new Date().toISOString().slice(0, 10);
+  for (let n = 1; n < 20; n++) {
+    const name = n === 1 ? `rustybuns-init-${day}` : `rustybuns-init-${day}-${n}`;
+    const r = await call(INIT_AGENT, `${base}/branches`, { method: "POST", body: JSON.stringify({ name }) });
+    if (r.status === 409) continue;
+    if (!r.ok) throw new Error(`opening a branch: ${r.status} ${await r.text()}`);
+    const { skipped } = await landFix(call, owner, base, name, INIT_AGENT, edits);
+    if (skipped.length) throw new Error(`couldn't write ${skipped.join(", ")} to ${name}`);
+    return name;
+  }
+  throw new Error("no free branch name today");
 }

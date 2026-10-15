@@ -2,7 +2,7 @@
 // transcripts for this repo (~/.claude/projects/*RustyBuns*, the last DEXTER_HOURS, default 24), adds up the tokens, and
 // names the tools whose results were biggest, since a result stays in the context and is paid for on every turn after.
 // He prints short, plain lines, and one tip per offender. He also proposes trims to the standing text every session pays
-// for (CLAUDE.md, AGENTS.md, the memory index): filler words and long phrases cut to short plain ones, printed as a diff
+// for (CLAUDE.md, AGENTS.md, the memory index, skill descriptions): filler words and long phrases cut to short plain ones, printed as a diff
 // to approve (`git apply --unidiff-zero`). He never edits a file. No model call, so asking him costs nothing.
 // DEXTER_HOURS=168 adds the week: spend per day, what each helper's job costs, and what it saves at growing PR counts.
 // Run: bun apps/agent-office/ester/dexter.ts
@@ -164,14 +164,14 @@ export function trimLine(line: string): string {
   return /^\s*[A-Z]/.test(line) ? out.replace(/^(\s*)([a-z])/, (_, sp, c) => sp + c.toUpperCase()) : out;
 }
 
-/** A diff of trims for one file's text (null when nothing to trim). Skips code fences, tables, front matter and headings. */
+/** A diff of trims for one file's text (null when nothing to trim). Skips code fences, tables, headings and front matter (but a skill's `description:`, which every session pays for). */
 export function trimDiff(name: string, src: string): { diff: string; saved: number } | null {
   const lines = src.split("\n"), hunks: string[] = [];
   let fence = false, front = lines[0] === "---", saved = 0;
   lines.forEach((l, i) => {
     if (/^\s*```/.test(l)) fence = !fence;
     if (i > 0 && front && l === "---") front = false;
-    if (fence || front || /^\s*(\||#|```|---)/.test(l) || !l.trim()) return;
+    if (fence || (front && !/^description:/.test(l)) || /^\s*(\||#|```|---)/.test(l) || !l.trim()) return;
     const t = trimLine(l);
     if (t === l) return;
     saved += Math.round((l.length - t.length) / 4);
@@ -180,9 +180,11 @@ export function trimDiff(name: string, src: string): { diff: string; saved: numb
   return hunks.length ? { diff: [`--- a/${name}`, `+++ b/${name}`, ...hunks].join("\n"), saved } : null;
 }
 
-/** The standing text of this repo: root CLAUDE.md and AGENTS.md, and the memory index of each project dir for it. */
+/** The standing text of this repo: root CLAUDE.md and AGENTS.md, each skill's SKILL.md (its description is loaded every session), and the memory index of each project dir for it. */
 export function standing(repo: string, projects: string): [string, string][] {
   const files: [string, string][] = ["CLAUDE.md", "AGENTS.md"].map((n) => [n, path.join(repo, n)]);
+  const skills = path.join(repo, ".claude/skills");
+  if (existsSync(skills)) for (const d of readdirSync(skills)) files.push([`.claude/skills/${d}/SKILL.md`, path.join(skills, d, "SKILL.md")]);
   if (existsSync(projects))
     for (const d of readdirSync(projects).filter((d) => d.includes("RustyBuns"))) files.push([path.join(projects, d, "memory/MEMORY.md").replace(homedir(), "~"), path.join(projects, d, "memory/MEMORY.md")]);
   return files.filter(([, f]) => existsSync(f));

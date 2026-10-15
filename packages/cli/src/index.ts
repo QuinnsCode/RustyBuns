@@ -591,7 +591,7 @@ async function generate(opts: { adopt: boolean; stage?: string }) {
   const other = !existsSync("wrangler.jsonc") && !opts.adopt ? ["wrangler.json", "wrangler.toml"].find((f) => existsSync(f)) : undefined;
   if (other) {
     await Bun.write("wrangler.generated.jsonc", generateWrangler(cfg, null));
-    console.log(`${other} is hand-written; wrote wrangler.generated.jsonc beside it. Diff it, then \`rustybuns adopt\` to replace it with wrangler.jsonc.`);
+    console.log(`${other} is hand-written; wrote wrangler.generated.jsonc beside it. Diff it, then delete ${other} and \`rustybuns adopt\` to make wrangler.jsonc the one config (wrangler reads ${other} first while it's there).`);
     return;
   }
   const r = await writeIfChanged("wrangler.jsonc", generateWrangler(cfg, existsSync("wrangler.jsonc") ? readFileSync("wrangler.jsonc", "utf8") : null), opts);

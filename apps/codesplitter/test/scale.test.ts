@@ -1,12 +1,8 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 import { CARDS, stateOf } from "../src/scale.ts";
 
 // End to end (in-process D1), like insights.test.ts.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 test("a reading's state: under half is fine, past 80% is critical, none is unmeasured", () => {
   expect(stateOf({ value: 4, limit: 10, unit: "x", note: "" })).toBe("ok");
@@ -18,7 +14,6 @@ test("a reading's state: under half is fine, past 80% is critical, none is unmea
 
 test("admins get every card with live readings; nobody else does", async () => {
   const call = await boot({ GH_CLI: "off", ADMINS: "boss" });
-  opened.push(call);
   for (const u of ["boss", "ryan"]) await call(u, "/api/login", { method: "POST", body: JSON.stringify({ name: u }) });
   expect((await call("ryan", "/api/admin/scale")).status).toBe(403);
   expect((await call(null, "/api/admin/scale")).status).toBe(403);

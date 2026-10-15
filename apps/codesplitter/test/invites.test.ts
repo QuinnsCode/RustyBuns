@@ -1,17 +1,12 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { describe, expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 
 // End to end (real git, in-process D1), like tokens.test.ts.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 /** ryan owns a private repo; sam has a handle; mail is caught in `sent`. */
 async function app() {
   const sent: { to: string; subject: string; text: string }[] = [];
   const call = await boot({ GH_CLI: "off", EMAIL: { send: async (m: any) => { sent.push(m); } }, EMAIL_FROM: "hi@codesplitter.test" });
-  opened.push(call);
   const send = (user: string | null, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
   for (const u of ["ryan", "sam"]) await send(u, "/api/login", { name: u });
   await send("ryan", "/api/repos", { name: "lab", visibility: "private" });

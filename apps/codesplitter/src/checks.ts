@@ -71,6 +71,7 @@
 //   POST /api/repos/:o/:r/checks/:id/cancel    stop one of ours that's queued or running (the crew)
 
 import { json, readBody, type Env } from "./env.ts";
+import { repoRow } from "./repos.ts";
 import { githubToken, parseRepo } from "./github.ts";
 import { emit } from "./hooks.ts";
 import { LOCKFILES as LOCKFILE_NAMES } from "./lockfiles.ts";
@@ -132,7 +133,7 @@ async function touched(env: Env, owner: string, repo: string, ref: string) {
 
 /** owner/name on GitHub when the repo mirrors a GitHub repo, else null. */
 async function githubOf(env: Env, owner: string, repo: string) {
-  const r = await env.DB.prepare("SELECT mirror_url FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+  const r = await repoRow(env, owner, repo, "mirror_url");
   const url = r?.mirror_url as string | undefined;
   return url && /github\.com[:/]/i.test(url) ? parseRepo(url) : null;
 }
@@ -142,7 +143,7 @@ export async function checkSettings(env: Env, owner: string, repo: string) {
   const github = await githubOf(env, owner, repo);
   const where = (s?.run_where as Where | null) ?? (github ? "github" : null);
   // The mirror couldn't reach GitHub last time it tried: GitHub's checks can't run, so ours stand in.
-  const m = github ? await env.DB.prepare("SELECT mirror_state, mirror_down_since FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first() : null;
+  const m = github ? await repoRow(env, owner, repo, "mirror_state, mirror_down_since") : null;
   const offline = m?.mirror_state === "down";
   return {
     where, required: parseRequired(String(s?.required ?? "")), post_statuses: !!s?.post_statuses, github,
@@ -673,7 +674,7 @@ export async function mergeBlock(env: Env, owner: string, repo: string, ref: str
 /** What `ref` is in git right now, to run checks on: main's commit, or the commit a branch last went upstream as. */
 export async function headOf(env: Env, owner: string, repo: string, ref: string): Promise<string> {
   if (ref === "main") {
-    const r = await env.DB.prepare("SELECT upstream_commit FROM repos WHERE owner = ? AND name = ?").bind(owner, repo).first();
+    const r = await repoRow(env, owner, repo, "upstream_commit");
     const { handleFor, listDir } = await import("./archive.ts");
     const h = await handleFor(env, owner, repo).catch(() => null);
     const listing = h && await listDir(env, h.handle, h.branch, "").catch(() => null);

@@ -1,14 +1,8 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
-
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
+import { expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 
 test("git-state counts files with edits no commit has taken, and clears them on commit", async () => {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   const send = (url: string, body: unknown, method = "POST") => call("ryan", url, { method, body: JSON.stringify(body) });
   const state = async () => (await call("ryan", "/api/repos/ryan/lab/git-state")).json() as Promise<any>;
   await send("/api/login", { name: "ryan" });

@@ -1,15 +1,10 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 import { watchGithub } from "../src/checks.ts";
 import { applyD1Migrations, d1 } from "@rustybuns/shell-bun";
 import { copyFileSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 const SHA = "b".repeat(40);
 const GH = "/api/gh/v3/repos/ryan/lab";
@@ -17,7 +12,6 @@ const GH = "/api/gh/v3/repos/ryan/lab";
 /** The app, a repo with a CI token, and a client that calls it the way a GitHub client would. */
 async function app() {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   const send = (user: string, url: string, body: unknown, method = "POST") => call(user, url, { method, body: JSON.stringify(body) });
   await send("ryan", "/api/login", { name: "ryan" });
   await send("ryan", "/api/repos", { name: "lab" });

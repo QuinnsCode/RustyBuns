@@ -42,6 +42,19 @@ describe("mirrors: a dug fork turned into one (#875)", () => {
     expect((await post(call, "/api/repos/ana/up/mirror/turn")).status).toBe(409);
   });
 
+  test("a fork turned pull-only takes upstream's commits and sends nothing up", async () => {
+    const call = await dug("turn-pull");
+    await editHere(call, "README", 1, "hello from the dig");
+    await upstreamCommit({ "src/b.ts": "export const b = 1\n" }, "bo's b");
+    const before = await upShow("README");
+    const r = await turn(call, { pullOnly: true });
+    expect(r.status).toBe(201);
+    expect(await r.json()).toMatchObject({ pullOnly: true });
+    expect(await get(call, "/api/repos/ana/up")).toMatchObject({ mirror: true, pullOnly: true });
+    expect(await upShow("README")).toBe(before);
+    expect((await turn(call, { pullOnly: "yes" })).status).toBe(409);
+  });
+
   test("turning a fork sends up only what the owner was shown: a blind or stale POST moves nothing (#875)", async () => {
     const call = await dug("turn-blind");
     await editHere(call, "README", 1, "hello from the dig");

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { beads, BOUNDS, glowOnly, logShare, parseLimits, PRESETS, shownLanes, smooth } from "../src/tv-limits.ts";
+import { beads, BOUNDS, foldLanes, glowOnly, logShare, parseLimits, PRESETS, pulse, shownLanes, smooth } from "../src/tv-limits.ts";
 import { sharedGraph, GRAPH_MAX, type Graph } from "../src/graph.ts";
 
 test("untouched or broken settings give the calm preset, and values are held to their bounds", () => {
@@ -49,4 +49,27 @@ test("requests that arrive during a walk share it, capped per request, and nothi
   expect(last).toBe(GRAPH_MAX);
   await sharedGraph("a/b", walk, 60);
   expect(walks).toBe(2);
+});
+
+test("lanes past the cap share one folded lane, and a calm vein stays as it was", () => {
+  const dots = [0, 1, 2, 3, 4, 5].map((lane) => ({ lane }));
+  const edges = [{ l1: 0, l2: 5 }, { l1: 3, l2: 4 }];
+  const f = foldLanes(dots, edges, 6, 3);
+  expect(f.lanes).toBe(4);
+  expect(f.dots.map((d) => d.lane)).toEqual([0, 1, 2, 3, 3, 3]);
+  expect(f.edges).toEqual([{ l1: 0, l2: 3 }, { l1: 3, l2: 3 }]);
+  expect(f.folded).toBe(3);
+  expect(foldLanes(dots, edges, 6, 12)).toMatchObject({ lanes: 6, folded: 0 });
+});
+
+test("a landing is floored, merged into a few beads, or drops to a glow past the ceiling", () => {
+  const l = { ...PRESETS.calm, minLines: 2, maxLines: 100 };
+  expect(pulse(1, 0, 1, l).glow).toBe(0);
+  const merged = pulse(60, 0, 1, l);
+  expect(merged.beads.count).toBeLessThanOrEqual(6);
+  expect(merged.beads.count * merged.beads.size).toBeGreaterThanOrEqual(60);
+  const flood = pulse(500, 0, 1, l);
+  expect(flood.beads.count).toBe(0);
+  expect(flood.glow).toBeGreaterThan(0);
+  expect(pulse(500, 0, 1, { ...l, smoothSecs: 60 }).swell).toBeLessThan(flood.swell);
 });

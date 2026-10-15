@@ -1,20 +1,15 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { local as boot } from "../src/local.ts";
+import { local as boot } from "./app-kit.ts";
 import type { Exec } from "../src/agent-run.ts";
 
 // These run the app end to end (real git, password hashes, in-process D1): fine alone,
 // but a full run on a busy machine can stretch one past bun's 5s default.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 /** The app with a fake CLI that upper-cases the file it is given. */
 async function app() {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   const exec: Exec = async (cmd, cwd) => {
     const f = join(cwd, existsSync(join(cwd, "a.js")) ? "a.js" : "src/deep/b.js");
     writeFileSync(f, readFileSync(f, "utf8").toUpperCase());

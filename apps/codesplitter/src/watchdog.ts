@@ -5,6 +5,8 @@
 // failed sends, so it shows wherever deploys do. Without WATCHDOG_SECRET the second route is off.
 
 import { json, readBody, type Env } from "./env.ts";
+import { materializeOn } from "./branches.ts";
+import { openFix } from "./heal.ts";
 import { emit } from "./hooks.ts";
 import { repoRow } from "./repos.ts";
 import { sha256 } from "./util.ts";
@@ -29,7 +31,28 @@ export async function watchdogRoutes(req: Request, env: Env, p: string[]): Promi
     deployment: { id: `rollback-${b.to.slice(0, 8)}`, sha: who.commit, environment: "production", task: "rollback", creator: { login: "watchdog" } },
     deployment_status: { state: "failure", environment: "production", environment_url: null, description: `rolled back from version ${b.from} to ${b.to}: the app failed its health check${who.branch ? `; shipped by branch ${who.branch}` : ""}` },
   });
-  return json({ ok: true });
+  const fix = await rollbackFix(env, owner, repo, who.branch, b.from, b.to);
+  return json({ ok: true, ...(fix && { fix }) });
+}
+
+/**
+ * The fix task for a rollback: the branch that shipped it is merged, so openFix has nothing to work on there.
+ * It opens on a fresh branch off main, `rollback-<to>`, on a file the shipping branch changed. Null when
+ * self-healing is off, nothing is known of the shipping branch, or a fix task is running on it already.
+ */
+export async function rollbackFix(env: Env, owner: string, repo: string, shipped: string | null, from: string, to: string) {
+  if (!shipped) return null;
+  const changed = ((await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND deleted = 0 AND blob IS NULL ORDER BY path LIMIT 20").bind(owner, repo, shipped).all()).results as { path: string }[]).map((r) => r.path);
+  if (!changed.length) return null;
+  const name = `rollback-${to.replace(/[^\w.-]/g, "").slice(0, 12) || "v"}`;
+  await env.DB.prepare("INSERT OR IGNORE INTO branches (owner, repo, name, by, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)").bind(owner, repo, name, owner, Date.now()).run();
+  const files: string[] = [];
+  for (const f of changed) if ("ok" in (await materializeOn(env, owner, repo, name, f))) files.push(f);
+  const path = files[0];
+  if (!path) return null;
+  const task = `The app failed its health check after branch ${shipped} shipped (version ${from}), and the watchdog rolled back to ${to}. Find what in ${shipped}'s changes broke it and fix it on this branch, built on main. Files it changed: ${files.join(", ")}.`;
+  const r = await openFix(env, owner, repo, name, path, task, files.slice(1));
+  return "id" in r ? { branch: name, task: r.id } : null;
 }
 
 /** The deploy live when the app broke (the last real one to finish by `at`), its commit, and the branch merged last before it. */

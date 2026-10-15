@@ -1,5 +1,5 @@
 {
   "icon": "play",
   "title": "Watch Mervin work",
-  "what": "Replay a merge round on a page: each PR a card moving through the waves, files merging one at a time with their tier, a card popping out when Mervin asks. Play, pause, stop, step and a speed slider."
+  "what": "Watch a merge round on a page: each PR a card moving through the waves, files merging one at a time with their tier, their lines streaming in and settling, a card popping out when Mervin asks, and add, build and deploy lanes. Play, pause, stop, step and a speed slider on a replay; on a live feed (bun scripts/mervin-watch.ts, then mervin-merge.ts --go --live) pause really holds the next gh pr merge --auto."
 }

@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { hold, hurtLines, hurting, packagesChanged, report, rows, triage } from "../scripts/ester.ts";
+import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { hold, hurtLines, hurting, keep, kept, packagesChanged, report, rows, triage } from "../scripts/ester.ts";
 import type { Stage } from "../scripts/mervin-board.ts";
 
 const stage = (pr: number, path: string, ci?: Stage["ci"], failing?: string[]): Stage => ({ pr, head: "h", base: "b", ci, failing, files: [{ path, tier: "certain", why: "", after: [] }] });
@@ -55,5 +58,21 @@ describe("ester: dependencies that hurt", () => {
     expect(hurting(rs)[0]!.rate).toBe(1);
     expect(hurtLines(rs).join("\n")).not.toContain("calm");
     expect(hurtLines(rows(st, [], []))).toEqual([]);
+  });
+});
+
+describe("ester: rows kept across runs", () => {
+  test("a later run adds PRs and replaces a rerun PR's row, and the ranking spans both", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ester-"));
+    try {
+      const file = join(dir, "sub/rows.jsonl");
+      expect(kept(file)).toEqual([]);
+      keep(file, [{ pr: 1, apps: [], pkgs: ["zod"], owners: ["blocks"], clashed: false }], "t1");
+      appendFileSync(file, "{torn\n");
+      keep(file, [{ pr: 1, apps: [], pkgs: ["zod"], owners: [], clashed: false }, { pr: 2, apps: [], pkgs: ["zod"], owners: ["own"], clashed: true }], "t2");
+      const rs = kept(file);
+      expect(rs.map((r) => r.pr)).toEqual([1, 2]);
+      expect(hurting(rs).map((h) => [h.pkg, h.touches, h.broke, h.clashes])).toEqual([["zod", 2, 1, 1]]);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

@@ -41,6 +41,17 @@
   @keyframes pop { from { transform: scale(.9); opacity: 0; } }
   #log { font: 12px/1.6 var(--mono); border: 1px solid var(--border); border-radius: 6px; background: var(--paper); padding: 8px 10px; height: 360px; overflow: auto; white-space: nowrap; }
   #tiers { display: flex; gap: 10px; flex-wrap: wrap; font: 12px var(--mono); color: var(--muted); margin-bottom: 8px; }
+  .lanes { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; font: 12px var(--mono); }
+  .lane { flex: 1; min-width: 180px; border: 1px solid var(--border); border-radius: 6px; background: var(--paper); padding: 6px 10px; }
+  .lane h2 { font: 600 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 4px; }
+  .lane div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .lane .ok { color: var(--ok); } .lane .fail { color: var(--bad); } .lane .run { color: var(--accent); }
+  .lane svg { width: 13px; height: 13px; vertical-align: -2px; }
+  .diff { margin-top: 4px; border-left: 2px solid var(--border); font: 12px/1.45 var(--mono); white-space: pre; overflow: hidden; }
+  .diff.settled { border-left-color: var(--ok); }
+  .diff div { padding: 0 6px; animation: slide .15s ease-out; text-overflow: ellipsis; overflow: hidden; }
+  .diff .pr { background: color-mix(in srgb, var(--ok) 14%, transparent); } .diff .main { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+  .diff.settled div { background: none; color: var(--muted); }
+  @keyframes slide { from { transform: translateX(-8px); opacity: 0; } }
   textarea { width: 100%; height: 80px; margin-top: 12px; font: 12px var(--mono); background: var(--paper); color: var(--fg); border: 1px solid var(--border); border-radius: 5px; padding: 8px; }
   .muted { color: var(--muted); }
 </style>
@@ -60,6 +71,7 @@
     <span id="clock" title="Round time played">00:00.0</span>
     <button class="btn" id="theme" title="Light or dark"><i data-lucide="sun-moon"></i></button>
   </div>
+  <div class="lanes" id="lanes"></div>
   <div class="cols">
     <div id="waves"></div>
     <div><div id="tiers"></div><div id="log" aria-live="polite"></div></div>
@@ -67,13 +79,15 @@
   <textarea id="src" spellcheck="false" aria-label="a round file from .mervin/rounds (bun scripts/mervin-merge.ts)" placeholder="Paste a round file from .mervin/rounds"></textarea>
 </div>
 <script type="module">
-import { events, Player, view, readRound, clockText, SPEEDS } from "/mervin-replay.js";
+import { events, Player, view, readRound, clockText, SPEEDS, LANES } from "/mervin-replay.js";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const SAMPLE = {
   board: { stages: [
     { pr: 1501, title: "Fix the lockfile drift", files: [{ path: "bun.lock", tier: "certain" }, { path: "package.json", tier: "agree" }] },
-    { pr: 1502, title: "Route for the board", stackedOn: 1501, files: [{ path: "src/worker.ts", tier: "mervin", why: "both added a route; line ids settled it" }, { path: "src/api.ts", tier: "differ" }] },
+    { pr: 1502, title: "Route for the board", stackedOn: 1501, files: [{ path: "src/worker.ts", tier: "mervin", why: "both added a route; line ids settled it", lines: [
+      { text: "  app.get(\"/health\", health);", side: "both" }, { text: "+ app.get(\"/board\", board);", side: "pr" },
+      { text: "+ app.get(\"/runs\", runs);", side: "main" }, { text: "  app.listen();", side: "both" }] }, { path: "src/api.ts", tier: "differ" }] },
     { pr: 1503, title: "Rewrite the stamps", files: [{ path: "src/stamps.ts", tier: "card" }] },
   ] },
   verdicts: [
@@ -81,10 +95,16 @@ const SAMPLE = {
     { pr: 1502, go: true, wave: 2, why: "after #1501" },
     { pr: 1503, go: false, why: "Mervin asks on src/stamps.ts" },
   ],
+  lanes: [
+    { lane: "add", name: "bun install", state: "ok", pr: 1501 },
+    { lane: "build", name: "typecheck", state: "run", pr: 1501 }, { lane: "build", name: "typecheck", state: "ok", pr: 1501 },
+    { lane: "deploy", name: "preview", state: "ok", pr: 1501 },
+  ],
 };
+const LIVE = new URLSearchParams(location.search).has("live");
 try { const t = localStorage.getItem("map-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
 if (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches) document.documentElement.dataset.theme = "dark";
-let round = SAMPLE, player = new Player(events(round)), last = 0;
+let round = LIVE ? { board: { stages: [] }, verdicts: [] } : SAMPLE, player = new Player(LIVE ? [] : events(round), LIVE), last = 0, fed = 0, serverPaused = false;
 const ICON = { queued: "clock", held: "octagon-alert", merging: "git-merge", merged: "circle-check" };
 
 function draw() {
@@ -94,15 +114,18 @@ function draw() {
   $("waves").innerHTML = [...groups].sort(([a], [b]) => (a === "held") - (b === "held") || a.localeCompare(b)).map(([k, ps]) => `<div class="wave"><h2>${esc(k)}</h2>${ps.map((p) =>
     `<div class="card ${p.state}"><div class="head"><i class="s" data-lucide="${ICON[p.state]}"></i><b>#${p.pr}</b><span class="t">${esc(p.title)}</span></div>`
     + (p.why ? `<div class="why">${esc(p.why)}</div>` : "")
-    + p.files.map((f) => `<div class="file"><span class="tier ${f.tier}">${f.tier}</span><span class="p" title="${esc(f.why)}">${esc(f.path)}</span></div>`).join("")
+    + p.files.map((f) => `<div class="file"><span class="tier ${f.tier}">${f.tier}</span><span class="p" title="${esc(f.why)}">${esc(f.path)}</span></div>`
+      + (f.lines.length ? `<div class="diff${f.settled ? " settled" : ""}">${f.lines.map((l) => `<div class="${l.side}">${esc(l.text)}</div>`).join("")}</div>` : "")).join("")
     + p.cards.map((c) => `<div class="ask"><i data-lucide="message-circle-question" style="width:13px;height:13px;vertical-align:-2px"></i> Mervin asks about <b>${esc(c)}</b></div>`).join("")
     + `</div>`).join("")}</div>`).join("");
+  $("lanes").innerHTML = LANES.map((l) => `<div class="lane"><h2>${l}</h2>${v.lanes[l].map((x) => `<div class="${x.state}"><i data-lucide="${{ run: "loader", ok: "circle-check", fail: "circle-x" }[x.state]}"></i> ${esc(x.name)}${x.pr ? ` #${x.pr}` : ""}</div>`).join("") || '<div class="muted">idle</div>'}</div>`).join("");
   $("tiers").innerHTML = Object.entries(v.tiers).map(([t, n]) => `<span>${t} ${n}</span>`).join("");
   const log = $("log"), stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
   log.innerHTML = v.log.map((l) => `<div>${esc(l)}</div>`).join("");
   if (stick) log.scrollTop = log.scrollHeight;
   $("clock").textContent = clockText(player.clock);
   for (const [id, m] of [["play", "playing"], ["pause", "paused"], ["stop", "stopped"]]) $(id).setAttribute("aria-pressed", String(player.mode === m));
+  if (LIVE) $("pause").title = serverPaused ? "Held: the next merge waits. Play lets it go" : "Pause: hold the next merge";
   lucide.createIcons();
 }
 function frame(now) {
@@ -110,8 +133,10 @@ function frame(now) {
   if (player.tick(dt).length || player.mode === "playing") draw();
   requestAnimationFrame(frame);
 }
-$("play").onclick = () => { player.play(); draw(); };
-$("pause").onclick = () => { player.pause(); draw(); };
+// A live pause is real: the feed's pause file holds mervin-merge.ts before its next `gh pr merge --auto`.
+const hold = (on) => LIVE && fetch("/pause", { method: on ? "PUT" : "DELETE" }).then(() => { serverPaused = on; draw(); }).catch(() => {});
+$("play").onclick = () => { player.play(); hold(false); draw(); };
+$("pause").onclick = () => { player.pause(); hold(true); draw(); };
 $("stop").onclick = () => { player.stop(); draw(); };
 $("step").onclick = () => { player.step(); draw(); };
 $("speed").oninput = () => { player.setSpeed(SPEEDS[$("speed").value]); $("speedtxt").textContent = `${player.speed}x`; };
@@ -120,6 +145,10 @@ $("src").value = JSON.stringify(SAMPLE, null, 1);
 $("src").addEventListener("input", () => {
   try { const r = readRound(JSON.parse($("src").value)); if (typeof r === "string") return; round = r; player = new Player(events(r)); player.setSpeed(SPEEDS[$("speed").value]); draw(); } catch {}
 });
+if (LIVE) {
+  $("src").style.display = "none"; player.play();
+  setInterval(() => fetch(`/feed?from=${fed}`).then((r) => r.json()).then((f) => { fed = f.next; serverPaused = f.paused; if (f.steps.length) player.push(f.steps); draw(); }).catch(() => {}), 1000);
+}
 draw(); requestAnimationFrame(frame);
 </script>
 </body>

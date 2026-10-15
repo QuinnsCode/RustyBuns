@@ -33,3 +33,8 @@ export const NEED_LABEL: Record<Need, string> = { docker: "Docker", rust: "Rust"
 
 /** The sentence for the chip's tooltip and the run's log. */
 export const needsText = (needs: Need[]) => `Needs ${needs.map((n) => NEED_LABEL[n]).join(" and ")}. Hosted checks don't have ${needs.length === 1 ? "it" : "them"}.`;
+
+/** True when a rustybuns.config.ts asks for an arm64 (Hetzner cax) box: the hosted deploy container can't build its native/ crates (preview.ts refuses that at run time). */
+export const armBox = (config: string) => /\bbox\s*:\s*\{[^}]*\bserverType\s*:\s*["'`]cax/i.test(config);
+
+export const ARM_BOX_WARNING = "This repo deploys an arm64 box (cax): the hosted deploy can't compile native/ crates for it, so it will be refused if there are any. Deploy from the desktop app, or pick an x86 server type.";

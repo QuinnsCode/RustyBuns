@@ -1,15 +1,10 @@
-import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
-import { local as boot } from "../src/local.ts";
+import { expect, test } from "bun:test";
+import { local as boot } from "./app-kit.ts";
 
 // A client's body is checked field by field (env.ts readBody): the wrong shape is a 4xx, never a 500.
-setDefaultTimeout(20_000);
-
-const opened: { close(): void }[] = [];
-afterAll(() => { for (const o of opened) o.close(); });
 
 test("wrong-shaped bodies are turned away, not thrown on", async () => {
   const call = await boot({ GH_CLI: "off" });
-  opened.push(call);
   const send = (url: string, body: string, method = "POST") => call("ana", url, { method, body });
   await send("/api/login", JSON.stringify({ name: "ana" }));
   await send("/api/repos", JSON.stringify({ name: "pub" }));
