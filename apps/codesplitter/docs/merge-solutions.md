@@ -399,6 +399,20 @@ Since #1255 the `scene.ts` and `wrangler.ts` lines are 1 card each. When both si
 they join with different ones of `&&`, `||` and `??`, or if one joins with any of them and the other opens or closes
 a paren it doesn't close or open. The five default replays don't change.
 
+### 2026-10-14 replay: the two `--recent 10` flagged (#1781)
+
+`bun scripts/merge-replay.ts --recent 10` (#1775) settled two files with no cards, to text that differs from the person's fix and
+isn't just reordered. Replayed with `bun scripts/merge-replay.ts e45746ca e49e19a` and graded like the rounds above:
+
+| fix | file | grade | what differs |
+|---|---|---|---|
+| `e45746ca` | codesplitter `test/client.test.ts` | (c) | Both sides added a `describe` after the same one: the branch's "rot mode" tests, and main's "api shares repeated reads". The engine put main's first and the branch's after, and the blank line between `});` and the branch's comment went missing. The fix put the branch's first. It's the same two things as #1191's `merge-plan.test.ts` above, an order tie-break and a blank line both inserts shared, and both orders run the same tests |
+| `e49e19a` | two-fronts `test/rules.test.ts` | **(b)**, stale | The branch renamed both factions across the app (README, `galaxy.ts`, `sim.ts`, `battle.test.ts`). Main, which still had the old names, wrote four new log and comment lines in `rules.test.ts` with them. The merge kept both sides' lines faithfully, so the test asserts a name the game no longer uses. The fix renamed those four lines |
+
+The engine is right on both: it kept what each side wrote. `client.test.ts` is cosmetic. `rules.test.ts` is the "settled, but untrue" class (#1254) in a
+new shape: a name the branch removed from the rest of the app, used by lines main added. No engine change here; the person's fix is the right
+one for `rules.test.ts`, and nothing in the merge for `client.test.ts` needs fixing.
+
 ### Settled, but untrue
 
 The commonest miss in the replay of 14 later "merge main" fixes (#1254) was a README paragraph one side wrote
