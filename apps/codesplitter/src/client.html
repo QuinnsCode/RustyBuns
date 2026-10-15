@@ -4737,7 +4737,7 @@ const views = {
     await wireCheckHead(el, owner, repo, r);
     // Mervin's live board (#1524, GET /api/repos/:o/:r/board): a row per open PR, what holds it up, who owns it.
     const live = only ? null : await api(`/repos/${owner}/${repo}/board`).catch(() => null);
-    const board = live?.prs.length ? `<div class="muted" style="overflow-x:auto" title="Mervin's live board: every open PR, its CI, stack, clashes and owner"><b>${icon("git-pull-request")}Board</b>${live.prs.map((p) => {
+    const board = live?.prs.length ? `<div class="muted" data-board style="overflow-x:auto" title="Mervin's live board: every open PR, its CI, stack, clashes and owner"><b>${icon("git-pull-request")}Board</b>${live.prs.map((p) => {
       const stuck = !live.mergeable.includes(p.pr);
       return ` <span title="${esc([p.title, p.ci === "fail" ? `CI red: ${(p.failing ?? []).join(", ")}` : p.ci === "pending" ? "CI running" : "", p.stackedOn ? `on #${p.stackedOn}` : "", ...p.clashes.map((c) => `clash ${c.kind} ${c.key}`), tierNote(p.tiers), p.owner ? `owner ${p.owner}` : ""].filter(Boolean).join(" · "))}">#${p.pr} ${icon(stuck ? "clock" : "circle-check")}${p.owner ? esc(p.owner) : ""}</span>`;
     }).join("")}</div>` : "";
@@ -4756,7 +4756,7 @@ const views = {
       ? await api("/agents").then((a) => a.available && !a.admins_only ? a.harnesses : []).catch(() => []) : [];
     // Each wave merges together; a branch that clashes with one before it says which, on hover.
     const waits = (w) => w.after.map((a) => `${a.branch}${a.stacked ? " (stacked on it)" : ""}${a.files.length ? `: ${a.files.join(", ")}` : ""}`).join("; ");
-    const planned = plan?.waves.length ? `<div class="muted" style="white-space:nowrap;overflow-x:auto" title="${esc(`${plan.engine ?? "Mervin"} planned this: merge a wave and the next wave's branches take main in by themselves`)}">${icon("git-merge")} <b>${esc(plan.engine ?? "Mervin")}</b> ${plan.waves.map((wave, i) => `<b>${i + 1}</b> ${wave.map((w) => w.after.length ? `<code title="${esc(`after ${waits(w)}`)}">${esc(w.branch)}</code>` : `<code>${esc(w.branch)}</code>`).join(" ")}`).join(" → ")}</div>` : "";
+    const planned = plan?.waves.length ? `<div class="muted" data-plan style="white-space:nowrap;overflow-x:auto" title="${esc(`${plan.engine ?? "Mervin"} planned this: merge a wave and the next wave's branches take main in by themselves`)}">${icon("git-merge")} <b>${esc(plan.engine ?? "Mervin")}</b> ${plan.waves.map((wave, i) => `<b>${i + 1}</b> ${wave.map((w) => w.after.length ? `<code title="${esc(`after ${waits(w)}`)}">${esc(w.branch)}</code>` : `<code>${esc(w.branch)}</code>`).join(" ")}`).join(" → ")}</div>` : "";
     el.innerHTML = board + planned + reviews.map((b) => {
       // A file only opened on the branch (the switcher reads through its copy) changes nothing: not counted.
       const files = b.files.filter((f) => !f.merged && (f.ops.length || f.deleted || f.binary || f.conflicts.length)), clash = files.flatMap((f) => f.conflicts.map((c) => ({ path: f.path, ...c })));
@@ -7295,7 +7295,7 @@ const tourClick = (el, init = {}) => el?.dispatchEvent(new MouseEvent("mousedown
 // A small public repo to dig on the tour: the first level's.
 const TOUR_STARTER = "developit/mitt";
 // The chapters, in order. A step's `on` says where it plays: anywhere, or on the toured repo's file page.
-const TOUR_CHAPTERS = [["signin", "log-in", "Sign in"], ["dig", "shovel", "Dig a repo"], ["code", "file-code", "The code"], ["panels", "panel-right", "The right bar"], ["self", "repeat", "Edit itself"], ["play", "gamepad-2", "Play"]];
+const TOUR_CHAPTERS = [["signin", "log-in", "Sign in"], ["dig", "shovel", "Dig a repo"], ["code", "file-code", "The code"], ["panels", "panel-right", "The right bar"], ["self", "repeat", "Edit itself"], ["queue", "list-ordered", "Mervin and Ester queue it"], ["play", "gamepad-2", "Play"]];
 const TOUR = [
   { ch: "signin", ic: "log-in", t: "Sign in", at: "#who", on: "any",
     say: () => me() ? `You're in as @${me()}. Next, dig up a repo.` : "Everything you dig up, edit and collect goes under your @handle. Sign in, or make an account, at the top right.",
@@ -7373,6 +7373,17 @@ const TOUR = [
     say: () => "Deploy is a button only a person presses. The new version is live once its health check passes." },
   { ch: "self", ic: "shield-check", t: "The watchdog has your back", at: null, on: "any",
     say: () => "A separate Worker checks the live app on a timer. If a deploy goes bad it rolls back to the last good version, and says what shipped it." },
+  // Mervin and Ester, the pair the merge round is built around: he orders the open branches into waves, she sorts what's red, and the
+  // merge that follows is a person's. The steps show only on a repo with open branches (a step whose `at` isn't drawn is skipped).
+  { ch: "queue", ic: "git-pull-request", t: "Mervin reads the board", at: "[data-board]", on: "repo",
+    say: () => "Every open PR on one line: its CI, what it's stacked on, clashes with other PRs, and who owns it. Hover a row for the reasons. A clock is held, a tick can merge." },
+  { ch: "queue", ic: "list-ordered", t: "Mervin queues the merges", at: "[data-plan]", on: "repo",
+    say: () => "He orders the branches into waves: those sharing no file go together, and a clashing one waits for the wave before. Merge a wave and the next wave's branches take main in by themselves." },
+  { ch: "queue", ic: "flask-conical", t: "Ester sorts the red tests", at: "[data-board]", on: "repo",
+    say: () => "When checks go red, Ester sorts each failing test by who owns it: red on main too (not yours), flaky, that PR's own, waiting on its CI, or blocking the merge. What blocks is held back, and the rest queues." },
+  { ch: "queue", ic: "git-merge", t: "Queue the merge", at: '.dpanels > .sec[data-key="branches"] [data-merge]', on: "repo", you: "A merge changes main, so you press this one.",
+    go: () => { const b = $('.dpanels > .sec[data-key="branches"] [data-merge]:not([disabled])'); if (!b) return "Nothing is ready: Mervin holds a branch until its checks pass."; b.click(); return "Merged by line id. The next wave is free to go."; },
+    say: () => "Mervin suggests the order and Ester clears the tests, but main moves when you press Merge. Agents don't." },
   { ch: "play", ic: "building", t: "Your code city", at: null, on: "any", href: () => `/play.html#c/${encodeURIComponent(me())}`, open: true,
     say: () => "Every repo you own is a district, every file a building: white stone where people wrote it, black glass where agents did. It opens in a new tab." },
   { ch: "play", ic: "gamepad-2", t: "Beat up the code", at: null, on: "any", href: (t) => t.owner ? `/play.html#r/${t.owner}/${t.repo}` : "/play.html#l/mitt",
