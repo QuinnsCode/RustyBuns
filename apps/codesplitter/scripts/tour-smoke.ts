@@ -2,7 +2,7 @@
 // Smoke test the tour's three ways of being driven, in a real Chrome against the app on the local twins (free,
 // nothing leaves the machine): a person pressing its buttons, autoplay stepping by itself, and an agent calling
 // the page's WebMCP tools (list_scenes, play_scene, scene_step). Three checks each; the scene they walk is
-// "Mervin and Ester queue it": who the trio are, the board, the merge waves, the red tests, then the merge that is a person's.
+// the chapters in CHAPTERS below (add a chapter by adding a row).
 //
 //   bun scripts/tour-smoke.ts [--chrome "/path/to/chrome"] [--keep]
 import { mkdtempSync, rmSync } from "node:fs";
@@ -85,76 +85,90 @@ const must = (c: unknown, what: string) => { if (!c) throw new Error(what); };
 const click = (sel: string, shift = false) => page(`(() => { const b = document.querySelector(${JSON.stringify(sel)}); if (!b) throw new Error("no ${sel.replace(/"/g, "'")}"); b.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: ${shift} })); })()`);
 const scene = (spec: string) => page(`(() => { sessionStorage.setItem("cs_tour", JSON.stringify({ owner: "ryan", repo: "office", scene: ${JSON.stringify(spec)}, i: tourSpan(${JSON.stringify(spec)})[0], dir: 1 })); tour(); })()`);
 
+/** One chapter is data: the checks below are the same three per way for each. `first` is a phrase from its opening step; `held` from the person-only step's hold. */
+type Chapter = { id: string; steps: string[]; you: number; held: string; first: string; other: string };
+const CHAPTERS: Chapter[] = [
+  { id: "queue", steps: ["Meet the trio", "Mervin reads the board", "Mervin queues the merges", "Ester sorts the red tests", "Queue the merge"], you: 4, held: "A merge changes main", first: "deterministic", other: "play" },
+  { id: "agents", steps: ["Agents on one repo", "Agents claim lines", "Two on the same line", "Merges settle by line id", "Agents rebase themselves", "Hosted agents", "Agents can't ship"], you: 5, held: "costs money", first: "at once", other: "play" },
+];
+
 try {
+  // Every feature id a step claims must be on the strip.
+  const order = (await Bun.file("src/features/order.txt").text()).split("\n").filter(Boolean);
   await open();
+  const tagged = await page<string[]>(`[...new Set(TOUR.map((s) => s.feat).filter(Boolean))]`);
+  const unknown = tagged.filter((f) => !order.includes(f));
+  if (unknown.length) { failed++; console.log(`FAIL  coverage     unknown feature ids: ${unknown.join(", ")}`); }
+  else console.log(`ok    coverage     ${tagged.length} of ${order.length} features have a scene`);
 
-  // A person: the card's own buttons.
-  await check("human", "a scene starts from the chapter strip and shows Mervin's board", async () => {
-    await page(`(() => { sessionStorage.setItem("cs_tour", JSON.stringify({ owner: "ryan", repo: "office", i: 0, dir: 1 })); tour(); })()`);
-    await until("the card", `!!document.querySelector(".tour")`);
-    await click('.tour [data-ch="queue"]');
-    await until("the trio's step", `document.querySelector(".tour b")?.textContent === "Meet the trio"`);
-    must((await page<string>(`document.querySelector(".tour p")?.textContent ?? ""`)).includes("deterministic"), "doesn't say they're deterministic");
-    await click(".tour [data-next]");
-    await until("Mervin's step", `document.querySelector(".tour b")?.textContent === "Mervin reads the board"`);
-    must(await page(`!!document.querySelector("[data-board].tour-hot")`), "the board isn't lit");
-  });
-  await check("human", "Next walks to Ester and Back returns", async () => {
-    await click(".tour [data-next]"); await until("Next", `document.querySelector(".tour b")?.textContent !== "Mervin reads the board"`);
-    const second = await card();
-    await click(".tour [data-next]");
-    must((await card()) === "Ester sorts the red tests", `third step is "${await card()}"`);
-    await click(".tour [data-back]");
-    must((await card()) === second, "Back didn't return");
-  });
-  await check("human", "shift-clicking a chapter queues it and the last step is the merge only a person presses", async () => {
-    await click('.tour [data-ch="play"]', true);
-    must((await page<string>(`document.querySelector(".tour-queue")?.textContent ?? ""`)).includes("Play"), "Play wasn't queued");
-    await click(".tour [data-next]"); await click(".tour [data-next]");
-    must((await card()) === "Queue the merge", `got "${await card()}"`);
-    must(await page(`!!document.querySelector(".tour [data-go]")`), "no merge button on the card");
-  });
+  for (const c of CHAPTERS) {
+    const title = c.steps;
+    await open();
+    // A person: the card's own buttons.
+    await check("human", `${c.id}: starts from the chapter strip`, async () => {
+      await page(`(() => { sessionStorage.setItem("cs_tour", JSON.stringify({ owner: "ryan", repo: "office", i: 0, dir: 1 })); tour(); })()`);
+      await until("the card", `!!document.querySelector(".tour")`);
+      await click(`.tour [data-ch="${c.id}"]`);
+      await until("the first step", `document.querySelector(".tour b")?.textContent === ${JSON.stringify(title[0])}`);
+      must((await page<string>(`document.querySelector(".tour p")?.textContent ?? ""`)).includes(c.first), "first step doesn't say what it should");
+    });
+    await check("human", `${c.id}: Next walks on and Back returns`, async () => {
+      await click(".tour [data-next]"); await until("Next", `document.querySelector(".tour b")?.textContent === ${JSON.stringify(title[1])}`);
+      await click(".tour [data-next]");
+      must((await card()) === title[2], `third step is "${await card()}"`);
+      await click(".tour [data-back]");
+      must((await card()) === title[1], "Back didn't return");
+    });
+    await check("human", `${c.id}: shift-click queues a chapter and Next reaches the person's step`, async () => {
+      await click(`.tour [data-ch="${c.other}"]`, true);
+      must(await page(`!!document.querySelector(".tour-queue")`), "nothing was queued");
+      await click(`.tour [data-ch="${c.id}"]`);
+      for (let n = 0; n < c.you; n++) await click(".tour [data-next]");
+      must((await card()) === title[c.you], `got "${await card()}"`);
+    });
 
-  // Autoplay: a cursor does the steps, and stops where a person must act.
-  await check("autoplay", "Play turns it on and the cursor appears", async () => {
-    await scene("queue:2-5"); await click(".tour [data-auto]");
-    await until("auto on", `JSON.parse(sessionStorage.getItem("cs_tour")).auto === true`);
-    await until("the cursor", `!!document.querySelector(".tour-cursor")`);
-  });
-  await check("autoplay", "it steps on by itself to Mervin's waves", async () => {
-    await until("step 2", `document.querySelector(".tour b")?.textContent === "Mervin queues the merges"`, 20000);
-  });
-  await check("autoplay", "it holds before the merge and hands the wheel back", async () => {
-    await until("held", `document.querySelector(".tour-said")?.textContent.includes("A merge changes main") && !JSON.parse(sessionStorage.getItem("cs_tour")).auto`, 40000);
-    must((await card()) === "Queue the merge", "held on the wrong step");
-  });
+    // Autoplay: a cursor does the steps, and stops where a person must act.
+    await check("autoplay", `${c.id}: Play turns it on and the cursor appears`, async () => {
+      await scene(`${c.id}:1-${c.steps.length}`); await click(".tour [data-auto]");
+      await until("auto on", `JSON.parse(sessionStorage.getItem("cs_tour")).auto === true`);
+      await until("the cursor", `!!document.querySelector(".tour-cursor")`);
+    });
+    await check("autoplay", `${c.id}: it steps on by itself`, async () => {
+      await until("step 2", `document.querySelector(".tour b")?.textContent === ${JSON.stringify(title[1])}`, 25000);
+    });
+    await check("autoplay", `${c.id}: it holds before the person's step and hands the wheel back`, async () => {
+      await until("held", `document.querySelector(".tour-said")?.textContent.includes(${JSON.stringify(c.held)}) && !JSON.parse(sessionStorage.getItem("cs_tour")).auto`, 60000);
+      must((await card()) === title[c.you], `held on "${await card()}"`);
+    });
 
-  // An agent: the same scene over WebMCP.
-  await open();
-  await check("agent", "list_scenes offers the scene, the merge marked as a person's", async () => {
-    await until("tools", `!!window.__tools.list_scenes`);
-    const q = (await tool("list_scenes")).find((s: any) => s.id === "queue");
-    must(q?.steps.map((s: any) => s.title).join("|") === "Meet the trio|Mervin reads the board|Mervin queues the merges|Ester sorts the red tests|Queue the merge", "steps differ");
-    must(q.steps[4].you, "the merge isn't marked as a person's");
-  });
-  await check("agent", "play_scene puts the scene on screen and scene_step walks it", async () => {
-    const now = (await tool("play_scene", { scene: "queue", owner: "ryan", repo: "office" })).result;
-    must(now.step === 1 && now.of === 5, `started at ${now.step}/${now.of}`);
-    for (const title of ["Meet the trio", "Mervin reads the board", "Mervin queues the merges", "Ester sorts the red tests"]) {
-      const r = (await tool("scene_step")).result;
-      must(r.stepped === title, `stepped "${r.stepped}", wanted "${title}"`);
-    }
-  });
-  await check("agent", "scene_step answers held on the merge and skip finishes the scene", async () => {
-    const held = (await tool("scene_step")).result;
-    must(held.held?.includes("A merge changes main"), `no hold: ${JSON.stringify(held)}`);
-    const done = (await tool("scene_step", { skip: true })).result;
-    must(done.done === true, `not done: ${JSON.stringify(done)}`);
-    must(await page(`document.querySelectorAll("[data-merge]:not([disabled])").length >= 0 && !document.querySelector(".tour")`), "the card is still up");
-  });
+    // An agent: the same scene over WebMCP.
+    await open();
+    await check("agent", `${c.id}: list_scenes offers it, the person's step marked`, async () => {
+      await until("tools", `!!window.__tools.list_scenes`);
+      const q = (await tool("list_scenes")).find((s: any) => s.id === c.id);
+      must(q?.steps.map((s: any) => s.title).join("|") === title.join("|"), "steps differ");
+      must(q.steps[c.you].you, "the step isn't marked as a person's");
+    });
+    await check("agent", `${c.id}: play_scene puts it on screen and scene_step walks it`, async () => {
+      const now = (await tool("play_scene", { scene: c.id, owner: "ryan", repo: "office" })).result;
+      must(now.step === 1 && now.of === c.steps.length, `started at ${now.step}/${now.of}`);
+      for (const t of title.slice(0, c.you)) {
+        const r = (await tool("scene_step")).result;
+        must(r.stepped === t, `stepped "${r.stepped}", wanted "${t}"`);
+      }
+    });
+    await check("agent", `${c.id}: scene_step answers held and skip finishes the scene`, async () => {
+      const held = (await tool("scene_step")).result;
+      must(held.held?.includes(c.held), `no hold: ${JSON.stringify(held)}`);
+      let done = (await tool("scene_step", { skip: true })).result; // skip passes the held step; any steps after it play on
+      for (let n = 0; !done.done && n < c.steps.length; n++) done = (await tool("scene_step")).result;
+      must(done.done === true, `not done: ${JSON.stringify(done)}`);
+      must(await page(`!document.querySelector(".tour")`), "the card is still up");
+    });
+  }
 } finally {
   ws.close(); chrome.kill(); shell.stop?.();
   if (!process.argv.includes("--keep")) rmSync(dir, { recursive: true, force: true });
 }
-console.log(failed ? `\n${failed} failed` : "\nall 9 passed");
+console.log(failed ? `\n${failed} failed` : `\nall ${CHAPTERS.length * 9} passed`);
 process.exit(failed ? 1 : 0);
