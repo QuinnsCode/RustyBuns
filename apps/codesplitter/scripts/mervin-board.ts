@@ -360,7 +360,7 @@ export function run(repo: string | undefined, main: string, prs: BoardPr[], cach
           else if (!s.ours.clean) row("card", s.ours.conflicts.map((c) => c.lint ?? (c.whole ? "lockfile" : `line ${c.line}`)).slice(0, 3).join(", "));
           else {
             tree.set(path, s.ours.text); mine.set(path, s.ours.text);
-            const lines = linesOf(b ?? "", cur ?? "", br ?? "", s.ours.text);
+            const lines = linesOf(b ?? "", cur ?? "", br ?? "", s.ours.text ?? "");
             if (path === REFERENCE) row("mervin", "generated: both sides merged clean, but `bun run layout` rewrites the Layout table after the merge", lines);
             else if (!s.git.clean) row("mervin", "git conflicts, Mervin settles", lines);
             else if (s.git.text === s.ours.text) row("agree", "git and Mervin agree", lines);
