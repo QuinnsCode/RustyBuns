@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { deleteLearning, learningOn, learningState, recordEvents, setLearning } from "../src/mervin-learning.ts";
+import { answerRows, fightRows, fightWeights, suggestions } from "../src/mervin-learn.ts";
+import { deleteLearning, hashesPaths, pathKey, learningOn, learningState, recordEvents, setLearning } from "../src/mervin-learning.ts";
 import { local as boot } from "../src/local.ts";
 
 type State = { report: { settled: number; asked: number; fighting: { path_hash: string; ext: string; asked: number }[] } };
@@ -26,5 +27,24 @@ describe("Mervin learning", () => {
     expect(((await learningState(db, "o", "r")) as State).report.asked).toBe(0);
     await setLearning(db, "o", "r", false);
     expect(await learningOn(db, "o", "r")).toBe(false);
+  });
+
+  test("asked events feed the learn queries; hash_paths off keeps the plain path", async () => {
+    const app = await boot({ GH_CLI: "off" });
+    const db = app.env;
+    await setLearning(db, "o", "r", true);
+    expect(await hashesPaths(db, "o", "r")).toBe(true);
+    const ask = { path: "package.json", outcome: "asked" as const, answer: "main" };
+    await recordEvents(db, "o", "r", [ask, ask, ask, { path: "x.ts", outcome: "settled" }]);
+    expect(await fightRows(db, "o", "r")).toEqual([{ ext: "json", path_hash: await pathKey("o", "r", "package.json"), fights: 3 }]);
+    const rules = suggestions(await answerRows(db, "o", "r"));
+    expect(rules).toMatchObject([{ path_hash: await pathKey("o", "r", "package.json"), rule: "merge=ours", n: 3 }]);
+    expect(fightWeights(await fightRows(db, "o", "r")).ext.get("json")).toBe(3);
+
+    await deleteLearning(db, "o", "r");
+    await setLearning(db, "o", "r", true, false);
+    expect(await hashesPaths(db, "o", "r")).toBe(false);
+    await recordEvents(db, "o", "r", [ask]);
+    expect((await fightRows(db, "o", "r"))[0]!.path_hash).toBe("package.json");
   });
 });

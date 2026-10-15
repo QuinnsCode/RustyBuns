@@ -5,7 +5,22 @@ import type { Env } from "./env.ts";
 import { sha256 } from "./util.ts";
 
 export type Outcome = "settled" | "asked" | "wrong";
-export interface Event { path: string; outcome: Outcome }
+/** `answer`: how the card was answered ("main" | "branch" | "both" | "written" | "agent" | "mixed"), for an asked file. */
+export interface Event { path: string; outcome: Outcome; answer?: string }
+
+/** How a card's picks for one file add up, as one answer; "written" for a text, "mixed" when they differ. */
+export function answerOf(picks: Record<string, unknown> | undefined): string | undefined {
+  const kinds = new Set(Object.values(picks ?? {}).map((p) => typeof p === "object" ? "written" : String(p).startsWith("both") ? "both" : String(p)));
+  return kinds.size === 0 ? undefined : kinds.size > 1 ? "mixed" : [...kinds][0];
+}
+
+/** What an event stores for a path: its hash with the repo, or the path itself when the repo turned hashing off. */
+export const pathKey = async (owner: string, repo: string, path: string, hash = true): Promise<string> =>
+  hash ? (await sha256(`${owner}/${repo}:${path}`)).slice(0, 16) : path;
+
+/** Whether the repo hashes paths in its events (the default); false when it opted out. */
+export const hashesPaths = async (env: Env, owner: string, repo: string): Promise<boolean> =>
+  ((await env.DB.prepare("SELECT hash_paths FROM mervin_learning WHERE owner = ? AND repo = ?").bind(owner, repo).first()) as { hash_paths: number } | null)?.hash_paths !== 0;
 
 const WEEK = 7 * 24 * 3600 * 1000;
 /** A path asked this many times in the week is worth a .gitattributes rule for a person to approve. */
@@ -14,13 +29,14 @@ const RULE_AT = 3;
 export const learningOn = async (env: Env, owner: string, repo: string): Promise<boolean> =>
   !!(await env.DB.prepare("SELECT 1 AS x FROM mervin_learning WHERE owner = ? AND repo = ?").bind(owner, repo).first());
 
-export async function setLearning(env: Env, owner: string, repo: string, on: boolean): Promise<void> {
+export async function setLearning(env: Env, owner: string, repo: string, on: boolean, hashPaths?: boolean): Promise<void> {
   await (on
-    ? env.DB.prepare("INSERT OR IGNORE INTO mervin_learning (owner, repo, since) VALUES (?, ?, ?)").bind(owner, repo, Date.now())
+    ? env.DB.prepare("INSERT INTO mervin_learning (owner, repo, since, hash_paths) VALUES (?, ?, ?, ?) ON CONFLICT (owner, repo) DO UPDATE SET hash_paths = COALESCE(?, hash_paths)")
+      .bind(owner, repo, Date.now(), hashPaths === false ? 0 : 1, hashPaths === undefined ? null : hashPaths ? 1 : 0)
     : env.DB.prepare("DELETE FROM mervin_learning WHERE owner = ? AND repo = ?").bind(owner, repo)).run();
 }
 
-/** Delete every event kept for the repo; answers how many. */
+/** Delete every event kept for the repo; answers how many. (No salt is kept: a path's key is its hash with the repo's name.) */
 export async function deleteLearning(env: Env, owner: string, repo: string): Promise<number> {
   const r = await env.DB.prepare("DELETE FROM mervin_events WHERE owner = ? AND repo = ?").bind(owner, repo).run();
   return r.meta?.changes ?? 0;
@@ -30,12 +46,12 @@ export async function deleteLearning(env: Env, owner: string, repo: string): Pro
 export async function recordEvents(env: Env, owner: string, repo: string, events: Event[]): Promise<void> {
   try {
     if (!events.length || !(await learningOn(env, owner, repo))) return;
-    const at = Date.now();
+    const at = Date.now(), hash = await hashesPaths(env, owner, repo);
     const rows = await Promise.all(events.map(async (e) => {
       const base = e.path.split("/").pop() ?? "";
       const ext = base.includes(".") ? base.split(".").pop()!.toLowerCase().slice(0, 12) : "";
-      return env.DB.prepare("INSERT INTO mervin_events (owner, repo, ext, path_hash, outcome, at) VALUES (?, ?, ?, ?, ?, ?)")
-        .bind(owner, repo, ext, (await sha256(`${owner}/${repo}:${e.path}`)).slice(0, 16), e.outcome, at);
+      return env.DB.prepare("INSERT INTO mervin_events (owner, repo, ext, path_hash, outcome, answer, at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        .bind(owner, repo, ext, await pathKey(owner, repo, e.path, hash), e.outcome, e.answer ?? "", at);
     }));
     await env.DB.batch(rows);
   } catch { /* learning never fails a merge */ }
@@ -58,5 +74,5 @@ export async function report(env: Env, owner: string, repo: string) {
 /** What the repo page and GET /api/repos/:o/:r/mervin show. */
 export async function learningState(env: Env, owner: string, repo: string) {
   const on = await learningOn(env, owner, repo);
-  return { learning: on, ...(on && { report: await report(env, owner, repo) }) };
+  return { learning: on, ...(on && { hash_paths: await hashesPaths(env, owner, repo) }), ...(on && { report: await report(env, owner, repo) }) };
 }

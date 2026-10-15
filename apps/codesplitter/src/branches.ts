@@ -50,8 +50,8 @@ import { noteConflict } from "./usage.ts";
 import { busyOn, clashIn, taskFiles, waves, type Busy, type Clash, type Side } from "./merge-plan.ts";
 import { sha256 } from "./util.ts";
 import { countMerge } from "./stats.ts";
-import { deleteLearning, learningState, recordEvents, setLearning, type Event as LearnEvent } from "./mervin-learning.ts";
-import { emitOutcome } from "./mervin-events.ts";
+import { answerOf, deleteLearning, hashesPaths, learningOn, learningState, pathKey, recordEvents, setLearning, type Event as LearnEvent } from "./mervin-learning.ts";
+import { answerRows, fightRows, fightWeights, suggestions, weightOrder } from "./mervin-learn.ts";
 import { boardRoutes } from "./board-routes.ts";
 
 const TEXT_MAX = 20_000;
@@ -721,7 +721,6 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   const merged: { path: string; rev: number; ops: number; deleted?: true; binary?: true }[] = [], conflicts: { path: string; conflicts: Conflict[] }[] = [];
   let solved = 0;
   const learned: LearnEvent[] = [];
-  const outcome: { path: string; picks?: Record<string, unknown>; solved?: number }[] = [];
   for (const f of todo) {
     // Claim the file, so two merges at once can't both apply it.
     const claim = await env.DB.prepare("UPDATE branch_files SET merged = 1 WHERE owner = ? AND repo = ? AND branch = ? AND path = ? AND merged = 0").bind(owner, repo, name, f.path).run();
@@ -745,8 +744,8 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     if ("error" in onMain && onMain.status === 404) await env.DB.prepare("INSERT OR IGNORE INTO files (owner, repo, path) VALUES (?, ?, ?)").bind(owner, repo, f.path).run();
     const m = await mergeFile(env, owner, repo, branch, f.path, user, resolve[f.path], false);
     if (m.status === 200) {
-      merged.push({ path: f.path, rev: m.rev, ops: m.ops?.length ?? 0 }); solved += m.solved ?? 0; outcome.push({ path: f.path, picks: resolve[f.path], solved: m.solved });
-      if (resolve[f.path]) learned.push({ path: f.path, outcome: "asked" }); else if (m.solved) learned.push({ path: f.path, outcome: "settled" });
+      merged.push({ path: f.path, rev: m.rev, ops: m.ops?.length ?? 0 }); solved += m.solved ?? 0;
+      if (resolve[f.path]) learned.push({ path: f.path, outcome: "asked", answer: answerOf(resolve[f.path]) }); else if (m.solved) learned.push({ path: f.path, outcome: "settled" });
       continue;
     }
     // Main moved into a conflict between the dry run and now: this file waits for another merge.
@@ -760,7 +759,6 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     await restackChildren(env, owner, repo, name);
     await countMerge(env, solved);
     await recordEvents(env, owner, repo, learned);
-    await emitOutcome(env, owner, repo, outcome);
     for (const c of clashing) took.push(await afterBlocker(env, owner, repo, c.then, name, user).catch((e) => ({ branch: c.then, status: "failed" as const, error: String((e as Error)?.message ?? e) })));
     // Shaped like a merged pull request, the branch as its head. Git hears about it at the next commit of main.
     await emit(env, owner, repo, "branch.merged", user, {
@@ -810,6 +808,33 @@ async function waitFor(env: Env, owner: string, repo: string, branch: string, on
 }
 
 /**
+ * What a repo that turned learning on has taught Mervin (mervin-learn.ts): the branches that fight more go after calmer
+ * ones among equals, and the card answers that keep repeating come back as `.gitattributes` lines to approve.
+ * Off, or with no history, `sort` leaves the order alone and there are no rules.
+ */
+async function learning(env: Env, owner: string, repo: string, open: string[]) {
+  const none = { sort: (o: string[]) => o, rules: [] as { path: string; rule: string; n: number }[] };
+  try {
+    if (!open.length || !(await learningOn(env, owner, repo))) return none;
+    const [rows, answers, hash] = await Promise.all([fightRows(env, owner, repo), answerRows(env, owner, repo), hashesPaths(env, owner, repo)]);
+    if (!rows.length) return none;
+    const q = open.map(() => "?").join(",");
+    const { results } = await env.DB.prepare(`SELECT branch, path FROM branch_files WHERE owner = ? AND repo = ? AND merged = 0 AND branch IN (${q})`).bind(owner, repo, ...open).all();
+    const files = new Map<string, string[]>(), keys = new Map<string, string>();
+    for (const r of (results ?? []) as { branch: string; path: string }[]) {
+      files.set(r.branch, [...files.get(r.branch) ?? [], r.path]);
+      if (!keys.has(r.path)) keys.set(r.path, await pathKey(owner, repo, r.path, hash));
+    }
+    const w = fightWeights(rows), key = (p: string) => keys.get(p) ?? p;
+    const byKey = new Map([...keys].map(([p, k]) => [k, p]));
+    return {
+      sort: (o: string[]) => weightOrder(o, files, w, key),
+      rules: suggestions(answers).filter((s) => byKey.has(s.path_hash)).map((s) => ({ path: byKey.get(s.path_hash)!, rule: `${byKey.get(s.path_hash)} ${s.rule}`, n: s.n })),
+    };
+  } catch { return none; }
+}
+
+/**
  * The merge plan (#1155): the open branches in waves, each wave merging together, a branch waiting for any
  * before it that it clashes with (merge-plan.ts). They go in the order the bulk merge takes them, oldest
  * first, the ones whose required checks passed ahead of the ones they hold. Only files two branches both
@@ -819,9 +844,11 @@ async function mergePlan(env: Env, owner: string, repo: string, user: string) {
   const open = await openBranches(env, owner, repo);
   const held = new Set((await Promise.all(open.map(async (b) => await mergeBlock(env, owner, repo, b.name) ? b.name : null))).filter((n) => n !== null));
   // A stacked branch can't merge before the one it's on, so that one comes first whatever its age.
+  const learn = await learning(env, owner, repo, open.map((b) => b.name));
   const order: string[] = [], parent = new Map(open.map((b) => [b.name, b.parent]));
   const place = (b: string) => { if (order.includes(b)) return; const on = parent.get(b); if (on && parent.has(on)) place(on); order.push(b); };
-  for (const b of [...open.filter((b) => !held.has(b.name)), ...open.filter((b) => held.has(b.name))]) place(b.name);
+  const names = open.map((b) => b.name), ready = names.filter((n) => !held.has(n)), waiting = names.filter((n) => held.has(n));
+  for (const b of [...learn.sort(ready), ...learn.sort(waiting)]) place(b);
   const clashes = new Map<string, Clash>();
   // A stacked branch waits for the one it's on: its merge refuses until then.
   for (const b of open) if (b.parent && parent.has(b.parent)) clashes.set(`${b.parent}\n${b.name}`, { first: b.parent, then: b.name, files: [], stacked: true });
@@ -829,7 +856,7 @@ async function mergePlan(env: Env, owner: string, repo: string, user: string) {
   const plan = waves(order, [...clashes.values()]);
   // What each branch waits for, kept: its own checks wait till those have merged and it's taken main in (#1162).
   for (const p of plan.flat()) await waitFor(env, owner, repo, p.branch, p.after.filter((a) => !a.stacked).map((a) => a.branch));
-  return { engine: MERVIN.name, order, held: [...held], waves: plan };
+  return { engine: MERVIN.name, order, held: [...held], waves: plan, ...(learn.rules.length && { rules: learn.rules }) };
 }
 
 /**
@@ -879,9 +906,9 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     if (req.method === "PUT" || req.method === "DELETE") {
       if (user !== owner) return json({ error: "only the owner changes this" }, 403);
       if (req.method === "DELETE") return json({ ok: true, deleted: await deleteLearning(env, owner, repo) });
-      const b = await readBody<"learning">(req);
+      const b = await readBody<"learning" | "hash_paths">(req);
       if (typeof b.learning !== "boolean") return json({ error: "learning: true | false" }, 400);
-      await setLearning(env, owner, repo, b.learning);
+      await setLearning(env, owner, repo, b.learning, typeof b.hash_paths === "boolean" ? b.hash_paths : undefined);
       return json(await learningState(env, owner, repo));
     }
   }
