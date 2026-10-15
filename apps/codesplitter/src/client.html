@@ -782,6 +782,12 @@
   .crew-pulse { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; } .crew-pulse svg.pulse { width: 56px; height: 14px; }
   @media (prefers-reduced-motion: reduce) { .live .beat-dot, .beat-dot.live, .who.beat { animation: none; } }
   .prof-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+  .top8 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .top8 .slot { position: relative; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 8px; padding: 10px 4px; min-width: 0; text-align: center; font-size: 12px; }
+  .top8 .slot a { display: grid; justify-items: center; gap: 4px; color: inherit; text-decoration: none; max-width: 100%; } .top8 .slot a:hover span { text-decoration: underline; }
+  .top8 .slot span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  .top8 .slot i, .top8 .slot svg { width: 28px; height: 28px; } .top8 .sad { border-style: dashed; color: var(--faint); gap: 4px; }
+  .top8 .x { position: absolute; top: 2px; right: 2px; padding: 2px; border: 0; background: none; color: var(--faint); cursor: pointer; } .top8 .x i, .top8 .x svg { width: 14px; height: 14px; } .top8 .x:hover { color: var(--fg); }
   .prof .hid { opacity: .5; } .prof .hid:hover { opacity: 1; }
   .shows { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 13px; } .shows label { display: flex; align-items: center; gap: 4px; }
   .prof-grid .box > .body, .prof-grid .fold > form > .body { padding: 8px 12px; }
@@ -3325,6 +3331,14 @@ function mervinHint(owner, repo) {
     : "Dig the repo again as a pull-only mirror (Watch Mervin merge my PRs) to bring its branches in.";
   el.insertAdjacentHTML("beforeend", `<p class="muted" id="mervin-hint">No branches here for him to merge. ${how}</p>`);
 }
+/** Top 8: Mervin holds slot 1; the rest are the owner's picks (or who they follow), and an empty slot is a sad face until they get social. */
+const top8Box = (friends, mine) => {
+  const slot = (inner, cls = "") => `<div class="slot ${cls}">${inner}</div>`;
+  const cells = [slot(`<div title="Mervin, the merge engine: everyone's friend #1" style="display:grid;justify-items:center;gap:4px">${icon("git-merge")}<span>Mervin</span></div>`),
+    ...friends.map((f) => slot(`<a href="#/u/${esc(f)}" title="@${esc(f)}">${icon("user")}<span>${esc(f)}</span></a>${mine ? `<button type="button" class="x" data-drop="${esc(f)}" title="Take @${esc(f)} out of your Top 8" aria-label="Take @${esc(f)} out">${icon("x")}</button>` : ""}`)),
+    ...Array.from({ length: 7 - friends.length }, () => slot(`${icon("frown")}<span>nobody yet</span>`, "sad"))];
+  return `<div class="box" id="top8"><div class="bar">${icon("users")}<b>Top 8</b><span class="muted">${friends.length ? `Mervin and ${friends.length} friend${friends.length === 1 ? "" : "s"}` : "just Mervin so far"}</span></div><div class="body"><div class="top8">${cells.join("")}</div>${mine ? `<form id="addfriend" class="row" style="margin-top:8px;flex-wrap:nowrap"><input name="who" placeholder="add a friend by @handle" style="flex:1;min-width:0" autocomplete="off"${friends.length >= 7 ? " disabled" : ""}><button class="btn"${friends.length >= 7 ? " disabled" : ""}>${icon("plus")}Add</button></form>` : ""}</div></div>`;
+};
 const boxEnd = (fold) => fold ? "</details>" : "</div>";
 // Which folded side boxes start open, until this browser says otherwise (foldSide).
 const SIDE_OPEN = { collections: true, following: true };
@@ -3705,10 +3719,11 @@ const views = {
       ${mine ? `<form id="theme" class="box" hidden><div class="bar">${icon("palette")}<b>Your page</b><span class="muted">HTML, CSS and script, in a sandbox with no way into the app. For a whole site, put files in a public repo named <b>page</b> (index.html first)</span></div><div class="body" style="display:grid;gap:8px">
         <input name="bio" placeholder="a line about you" value="${esc(user.bio)}">
         <textarea name="theme_html" rows="5" placeholder="<style>body{background:url(stars.gif)}</style><marquee>welcome 2 my page</marquee>">${esc(user.theme_html)}</textarea>
-        <div class="shows"><span class="muted">Show on my profile:</span>${[["repos", "Repos"], ["pulse", "Pulse"], ["stamps", "Stamps"], ["collections", "Collections"], ["city", "City"]].map(([id, label]) => `<label><input type="checkbox" name="show" value="${id}"${hidden.has(id) ? "" : " checked"}>${label}</label>`).join("")}</div>
+        <div class="shows"><span class="muted">Show on my profile:</span>${[["top8", "Top 8"], ["repos", "Repos"], ["pulse", "Pulse"], ["stamps", "Stamps"], ["collections", "Collections"], ["city", "City"]].map(([id, label]) => `<label><input type="checkbox" name="show" value="${id}"${hidden.has(id) ? "" : " checked"}>${label}</label>`).join("")}</div>
         <div><button class="btn primary">Save</button></div></div></form>` : ""}
       ${mine ? digBox(DIG_WHY) : ""}
       <div class="prof-grid"><div>
+        ${agent ? "" : sec("top8", top8Box(user.top8 ?? [], mine))}
         ${sec("repos", `<div class="box"><div class="bar">${icon("book-marked")}<b>${agent ? "Works in" : "Repos"}</b>
           ${mine ? `<form id="newrepo" class="barform"><input name="name" placeholder="new-repo" required><select name="visibility" aria-label="Visibility"><option value="public">Public</option><option value="private">Private</option></select><button class="btn" title="an empty repo">${icon("plus")}Create</button></form>` : ""}</div>
           <div class="body folders">${shown.map((r) => `<a href="#/r/${r.owner}/${r.name}" title="${r.level ? `forked from ${esc(r.level)}` : esc(r.name)}">${icon(r.visibility === "private" ? "folder-lock" : "folder")}<span class="fname">${agent ? `${esc(r.owner)}/` : ""}${esc(r.name)}</span><span class="when">${ago(r.created_at)}</span></a>`).join("") || '<span class="muted">empty: dig it up?</span>'}</div></div>`)}
@@ -3755,6 +3770,9 @@ const views = {
     wireDig();
     // The side column folds box by box, like the code page's panels; this browser keeps which are open.
     foldSide($(".prof-grid > aside"), open === "tokens" ? "tokens" : null);
+    const saveTop8 = async (list) => { try { await api("/me", { top8: list }, "PUT"); route(); } catch (e) { toast(e.message); } };
+    $("#addfriend")?.addEventListener("submit", (e) => { e.preventDefault(); const w = e.target.who.value.trim().replace(/^@/, ""); if (w) saveTop8([...(user.top8 ?? []), w]); });
+    for (const b of document.querySelectorAll("#top8 [data-drop]")) b.addEventListener("click", () => saveTop8((user.top8 ?? []).filter((f) => f !== b.dataset.drop)));
     $("#newpl")?.addEventListener("submit", async (e) => { e.preventDefault(); const p = await api("/playlists", { title: e.target.title.value }); location.hash = "#/p/" + p.id; });
     $("#theme")?.addEventListener("submit", async (e) => { e.preventDefault(); await api("/me", { bio: e.target.bio.value, theme_html: e.target.theme_html.value, hidden: [...e.target.querySelectorAll("[name=show]:not(:checked)")].map((c) => c.value) }, "PUT"); route(); });
     $("#citypub")?.addEventListener("change", async (e) => { await api("/me/city", { public: e.target.checked }, "PUT"); route(); });

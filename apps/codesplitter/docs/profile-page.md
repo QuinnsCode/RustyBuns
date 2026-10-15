@@ -4,7 +4,11 @@ Your profile page is a site you rebuild however you like, and an agent can rebui
 
 ## Your page is yours, the rest stays
 
-Whatever you build, the profile around it keeps its repos, pulse, stamps, collections and city. They are all there until you take them off: **Edit page** has a checkbox for each, or `PUT /api/me {hidden: ["pulse", "city"]}` (any of `repos`, `pulse`, `stamps`, `collections`, `city`). Visitors don't see a hidden box; you still do, dimmed, so you can put it back.
+Whatever you build, the profile around it keeps its repos, pulse, stamps, collections and city. They are all there until you take them off: **Edit page** has a checkbox for each, or `PUT /api/me {hidden: ["pulse", "city"]}` (any of `repos`, `pulse`, `stamps`, `collections`, `city`, `top8`). Visitors don't see a hidden box; you still do, dimmed, so you can put it back.
+
+## Top 8
+
+Eight slots: Mervin is always friend #1, then up to seven people. Until you pick, they are the people you follow, newest first; add or drop from the box, or `PUT /api/me {top8: ["ana", "bob"]}`. An empty slot is a sad face until you get social.
 
 ## Where it lives
 
