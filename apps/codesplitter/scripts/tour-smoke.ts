@@ -2,7 +2,7 @@
 // Smoke test the tour's three ways of being driven, in a real Chrome against the app on the local twins (free,
 // nothing leaves the machine): a person pressing its buttons, autoplay stepping by itself, and an agent calling
 // the page's WebMCP tools (list_scenes, play_scene, scene_step). Three checks each; the scene they walk is
-// "Mervin and Ester queue it": the board, the merge waves, the red tests, then the merge that is a person's.
+// "Mervin and Ester queue it": who the trio are, the board, the merge waves, the red tests, then the merge that is a person's.
 //
 //   bun scripts/tour-smoke.ts [--chrome "/path/to/chrome"] [--keep]
 import { mkdtempSync, rmSync } from "node:fs";
@@ -93,6 +93,9 @@ try {
     await page(`(() => { sessionStorage.setItem("cs_tour", JSON.stringify({ owner: "ryan", repo: "office", i: 0, dir: 1 })); tour(); })()`);
     await until("the card", `!!document.querySelector(".tour")`);
     await click('.tour [data-ch="queue"]');
+    await until("the trio's step", `document.querySelector(".tour b")?.textContent === "Meet the trio"`);
+    must((await page<string>(`document.querySelector(".tour p")?.textContent ?? ""`)).includes("deterministic"), "doesn't say they're deterministic");
+    await click(".tour [data-next]");
     await until("Mervin's step", `document.querySelector(".tour b")?.textContent === "Mervin reads the board"`);
     must(await page(`!!document.querySelector("[data-board].tour-hot")`), "the board isn't lit");
   });
@@ -114,7 +117,7 @@ try {
 
   // Autoplay: a cursor does the steps, and stops where a person must act.
   await check("autoplay", "Play turns it on and the cursor appears", async () => {
-    await scene("queue:1-4"); await click(".tour [data-auto]");
+    await scene("queue:2-5"); await click(".tour [data-auto]");
     await until("auto on", `JSON.parse(sessionStorage.getItem("cs_tour")).auto === true`);
     await until("the cursor", `!!document.querySelector(".tour-cursor")`);
   });
@@ -131,13 +134,13 @@ try {
   await check("agent", "list_scenes offers the scene, the merge marked as a person's", async () => {
     await until("tools", `!!window.__tools.list_scenes`);
     const q = (await tool("list_scenes")).find((s: any) => s.id === "queue");
-    must(q?.steps.map((s: any) => s.title).join("|") === "Mervin reads the board|Mervin queues the merges|Ester sorts the red tests|Queue the merge", "steps differ");
-    must(q.steps[3].you, "the merge isn't marked as a person's");
+    must(q?.steps.map((s: any) => s.title).join("|") === "Meet the trio|Mervin reads the board|Mervin queues the merges|Ester sorts the red tests|Queue the merge", "steps differ");
+    must(q.steps[4].you, "the merge isn't marked as a person's");
   });
   await check("agent", "play_scene puts the scene on screen and scene_step walks it", async () => {
     const now = (await tool("play_scene", { scene: "queue", owner: "ryan", repo: "office" })).result;
-    must(now.step === 1 && now.of === 4, `started at ${now.step}/${now.of}`);
-    for (const title of ["Mervin reads the board", "Mervin queues the merges", "Ester sorts the red tests"]) {
+    must(now.step === 1 && now.of === 5, `started at ${now.step}/${now.of}`);
+    for (const title of ["Meet the trio", "Mervin reads the board", "Mervin queues the merges", "Ester sorts the red tests"]) {
       const r = (await tool("scene_step")).result;
       must(r.stepped === title, `stepped "${r.stepped}", wanted "${title}"`);
     }

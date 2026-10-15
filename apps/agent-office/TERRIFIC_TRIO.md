@@ -8,6 +8,8 @@ Three helpers sit in the corner of the Agent Office floor. None of them calls a 
 | **Ester** | Tests. Sorts every failing test by who owns it. | No |
 | **Dexter** | Trims. Finds where the tokens go and proposes the cuts. | No |
 
+They are deterministic scripts, and we think of them as more than that. Each has a name, a badge, a track record and a way of getting better, and the tour introduces them that way.
+
 ## Smartest for the least money
 
 Put the work on three corners.
