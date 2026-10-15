@@ -119,8 +119,8 @@
   .rail a:hover, .rail button:hover { background: var(--select); color: var(--fg); }
   .rail a.on { background: var(--select); color: var(--fg); box-shadow: inset 2px 0 var(--accent); }
   .rail svg.lucide { width: 18px; height: 18px; }
-  body.railed { padding-left: 48px; } body.railed .tour { left: 64px; }
-  @media (max-width: 860px) { .rail { display: none !important; } body.railed { padding-left: 0; } body.railed .tour { left: 16px; } }
+  body.railed { padding-left: 48px; } body.railed .tour, body.railed .guide, body.railed .guide-fab { left: 64px; }
+  @media (max-width: 860px) { .rail { display: none !important; } body.railed { padding-left: 0; } body.railed .tour, body.railed .guide, body.railed .guide-fab { left: 16px; } }
 
   /* Repo pages are a workbench, edge to edge like an editor: a slim header,
      the explorer on the left, the code in the middle, details on the right,
