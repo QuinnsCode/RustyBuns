@@ -151,6 +151,12 @@ describe("settled without asking (#933)", () => {
       .toBe("// routes\nimport { beamRoutes } from \"./beam.ts\";\nimport { kick, land, mirrorTag, seeGit, turnRoute } from \"./mirror.ts\";");
   });
 
+  test("two sides adding the same entries under differently worded comments keep main's comment, once (#1782)", () => {
+    const was = ["const SKIP = new Set([", "  \"a.sql\",", "]);"].join("\n");
+    const added = (note: string) => ["const SKIP = new Set([", "  \"a.sql\",", `  // ${note}`, "  \"b.sql\",", "  \"c.sql\",", "]);"].join("\n");
+    expect(merged(was, added("side by side"), added("same stamp"), "m.test.ts")).toBe(added("side by side"));
+  });
+
   test("a section one side deleted whole stays deleted when the other only edited or trimmed it (docs/mervin.md Next, #1420)", () => {
     const doc = (next: string[]) => ["Intro.", "", "## Measured", "", "A table.", ...(next.length ? ["", "## Next", "", ...next] : [])].join("\n");
     const was = doc(["1. Run the corpus.", "2. Run the score.", "3. Build the arbiter."]);
