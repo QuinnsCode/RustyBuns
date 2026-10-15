@@ -772,7 +772,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/levels.ts` | the levels: import, browse, fork |
 | `src/lines.ts` | the line model: ops, conflicts, replay. Pure functions |
 | `src/merge-plan.ts` | merge plan (#1155): the open branches in waves, by codeSplitter's own merge as the clash test; the dispatch hint's file guess (#1163) |
-| `src/mervin-learn.ts` | Mervin learning (#1511): R2 SQL result rows in, plan weights, demoted levels and rule suggestions out |
+| `src/mervin-learn.ts` | Mervin learning (#1511): the repo's D1 events in, plan weights and rule suggestions out |
 | `src/mirror.ts` | mirrors: keeping a desktop repo in step with its upstream, through outages, with either side leading |
 | `src/noodles.ts` | the game's noodle monsters: finds a file's type guards and their line ranges |
 | `src/openapi.ts` | `GET /api/openapi.json`, the API for outside agents |
