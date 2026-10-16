@@ -81,7 +81,7 @@ export function mount(el, { mode = "story", embed = false, real = "/swarm-watch.
     <div class="sw-desk">
       <div class="sw-faders">
         <label class="sw-fader" title="How fast time runs"><output data-out="speed"></output><input type="range" data-k="speed" min="0" max="${SPEEDS.length - 1}" step="1" aria-label="Speed"><span>speed</span></label>
-        <label class="sw-fader" title="Agents working at once"><output data-out="agents"></output><input type="range" data-k="agents" min="1" max="200" step="1" aria-label="Agents"><span>agents</span></label>
+        <label class="sw-fader" title="Agents working at once"><output data-out="agents"></output><input type="range" data-k="agents" min="1" max="100" step="1" aria-label="Agents"><span>agents</span></label>
         <label class="sw-fader" title="How often two features touch the same file, like the README's feature list"><output data-out="overlap"></output><input type="range" data-k="overlap" min="0" max="100" step="1" aria-label="Shared files"><span>overlap</span></label>
         <label class="sw-fader" title="How often a check goes red: flaky, already red on main, or really yours"><output data-out="flaky"></output><input type="range" data-k="flaky" min="0" max="50" step="1" aria-label="Red checks"><span>red</span></label>
       </div>
@@ -100,7 +100,7 @@ export function mount(el, { mode = "story", embed = false, real = "/swarm-watch.
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   let playing = true, speedIx = 2, storyMs = 0, sceneIx = -1, override = false, layers = { ...ALL };
-  let knobs = { agents: 40, overlap: 0.5, flaky: 0.14 };
+  let knobs = { agents: 30, overlap: 0.35, flaky: 0.12 };
   /** One or two simulations, each with where its dots are drawn. */
   let sims = [];
   let wipe = null, W = 0, H = 0, last = 0, raf = 0, visible = true;

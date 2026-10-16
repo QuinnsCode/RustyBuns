@@ -65,10 +65,11 @@ export interface Stats {
 /** The README is file 0: every feature might add its line there. */
 export const README = 0;
 const FILES = 14;
-const WORK = [18, 36], REBASE = 10, FIX = 12, HOME = 5;
-const LANES = { one: 1, wide: 8 }, PASS = { one: 2, wide: 0.5 };
-const DEPART = 3, RIDE = 2.5, SEATS = 24, SETTLE = 0.87, CARD = 5;
-const STATIONS = 4, BATCH = { one: 1, stacked: 8 }, TEST = 6, OWN_RED = 0.35;
+const WORK = [30, 70], REBASE = 12, FIX = 15, HOME = 5;
+const LANES = { one: 1, wide: 8 }, PASS = { one: 2, wide: 1 };
+// SETTLE: Mervin's corpus run settles about 6 conflicted files in 10 and asks on the rest (docs/mervin.md).
+const DEPART = 3, RIDE = 2.5, SEATS = 24, SETTLE = 0.6, CARD = 10;
+const STATIONS = 4, BATCH = { one: 1, stacked: 4 }, TEST = 8, OWN_RED = 0.35;
 /** Simulated minutes per sub-step. */
 const SUB = 0.25;
 

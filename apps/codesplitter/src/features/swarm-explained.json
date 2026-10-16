@@ -1,5 +1,5 @@
 {
   "icon": "train-front",
   "title": "Git at swarm speed, with dots",
-  "what": "/swarm.html (and the landing page) explains with dots why sixty agents jam the old git way: one lane, a merge wall, a red-check wall. Then each layer takes one down: a Durable Object for a wide lane, Mervin seating PRs on the bullet train, Ester stacking the test stations. A story with wipes between scenes, old git, layer-by-layer switches, side by side, and faders for speed, agents, overlap and red checks."
+  "what": "/swarm.html (and the landing page) explains with dots why thirty agents jam the old git way: one lane, a merge wall, a red-check wall. Then each layer takes one down: a Durable Object for a wide lane, Mervin seating PRs on the bullet train, Ester stacking the test stations. A story with wipes between scenes, old git, layer-by-layer switches, side by side, and faders for speed, agents, overlap and red checks."
 }

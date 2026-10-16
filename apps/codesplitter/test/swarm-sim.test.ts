@@ -2,15 +2,15 @@ import { expect, test } from "bun:test";
 import { ALL, OLD, Sim, type Layers } from "../src/swarm-sim.ts";
 import { at, SCENES, startOf, total } from "../src/swarm-story.ts";
 
-const crowd = { agents: 60, overlap: 0.5, flaky: 0.14 };
+const crowd = { agents: 30, overlap: 0.35, flaky: 0.12 };
 const run = (layers: Layers, knobs = crowd, minutes = 480) => { const s = new Sim(layers, { ...knobs }, 5); s.step(minutes); return s; };
 
 test("each layer takes down the wall the story says it does", () => {
   const old = run(OLD), coord = run({ coord: true, mervin: false, ester: false }), mervin = run({ coord: true, mervin: true, ester: false }), all = run(ALL);
   // one lane: more agents don't help
-  expect(run(OLD, { ...crowd, agents: 150 }).perHour()).toBeLessThan(old.perHour() * 2);
+  expect(run(OLD, { ...crowd, agents: 90 }).perHour()).toBeLessThan(old.perHour() * 2);
   // a wide lane lands more, but conflicts climb with it
-  expect(coord.stats.landed).toBeGreaterThan(old.stats.landed * 3);
+  expect(coord.stats.landed).toBeGreaterThan(old.stats.landed * 1.5);
   expect(coord.stats.bounces.merge).toBeGreaterThan(old.stats.bounces.merge);
   // Mervin: nobody goes back to rebase; a few cards wait on the bench instead
   expect(mervin.stats.bounces.merge).toBe(0);

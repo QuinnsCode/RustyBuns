@@ -3535,7 +3535,7 @@ const views = {
         <span class="stat"><b id="stat-solved">·</b> clashes Mervin settled with no card</span>
       </div></div></section>
       <section class="section"><div class="wrap">
-        <div class="label">wait, let me explain with dots</div><h2>Why sixty agents jam the old git way</h2>
+        <div class="label">wait, let me explain with dots</div><h2>Why thirty agents jam the old git way</h2>
         <p class="muted">Each dot is an agent with a feature to ship. One lane, a merge wall, a test wall: then the three layers that take them down. Grab the faders. <a href="/swarm.html">Open it full size</a>, or <a href="/swarm-watch.html">replay a real week</a> of this repo.</p>
         <div id="swarm-home"></div>
       </div></section>
@@ -3651,7 +3651,7 @@ const views = {
       <h1>Watch it <em>run itself</em>.</h1>
       <p>Each demo is a chapter of the tour: a card and a cursor that press the real buttons. It stops where a person has to act (signing in, spending, merging, shipping).</p>
       <div class="row"><button class="btn primary" id="demo-all">${icon("play")}Play all</button><span class="muted">${TOUR_CHAPTERS.length} chapters, in order</span></div>
-      <p>${icon("train-front")}<a href="/swarm.html">Git at swarm speed</a>: why sixty agents jam the old git way, explained with dots, and the three layers that take the walls down.</p>
+      <p>${icon("train-front")}<a href="/swarm.html">Git at swarm speed</a>: why thirty agents jam the old git way, explained with dots, and the three layers that take the walls down.</p>
       <p>${icon("users")}<a href="/swarm-watch.html">A week of the swarm</a>: 1,000 of this repo's real PRs replayed, the night the git wall went up, and where Mervin and Ester shipped.</p>
       <div class="levels" id="demo-list">${TOUR_CHAPTERS.map(([id, ic, name]) => `<div class="box"><div class="bar">${icon(ic)}<b>${esc(name)}</b></div><div class="body">
         <ol>${TOUR.filter((s) => s.ch === id).map((s) => `<li>${esc(s.t ?? s.panel)}</li>`).join("")}</ol>
