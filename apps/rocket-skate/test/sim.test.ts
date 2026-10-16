@@ -1,6 +1,6 @@
 // Journeys through the ride, headless: the same fixed-step sim the page draws.
 import { expect, test } from "bun:test";
-import { type Level, makeLevel, piece } from "../src/level.ts";
+import { type Level, makeLevel, piece, railY } from "../src/level.ts";
 import { DT, IDLE, type Input, start, step, type State } from "../src/sim.ts";
 
 const run = (s: State, seconds: number, input: (s: State) => Partial<Input>, level?: Level) => {
@@ -75,4 +75,42 @@ test("a level can point any way: a turned ramp has height there, and a diagonal 
   expect(sk.grind).toBe(0);
   expect(sk.x).toBeCloseTo(sk.z, 1); // still on the diagonal
   expect(sk.x).toBeGreaterThan(-7);
+});
+
+const flat = (extra: Partial<Parameters<typeof makeLevel>[0]>) => makeLevel({
+  name: "t", pieces: [], rails: [], spawns: [], bounds: { minX: -80, maxX: 80, minZ: -80, maxZ: 80 }, ...extra,
+});
+
+test("a rider can't ride through a tree, but can pass beside it", () => {
+  const lv = flat({ obstacles: [{ x: 0, z: 10, r: 1, tall: 30 }] });
+  const hit = run(start("car", 0, 0, 0, lv), 3, () => ({ throttle: 1 }), lv);
+  expect(hit.z).toBeLessThan(9);
+  expect(hit.last?.name).toBe("Hit a tree");
+  const past = run(start("car", 4, 0, 0, lv), 3, () => ({ throttle: 1 }), lv);
+  expect(past.z).toBeGreaterThan(20);
+});
+
+test("a skater grinds a rail down a slope and stays on the bar", () => {
+  const lv = flat({ rails: [{ kind: "rail", a: { x: 0, z: 0 }, b: { x: 0, z: 10 }, y: 2, y2: 0.5 }] });
+  const sk = start("skate", 0, -2, 0, lv);
+  sk.air = true; sk.y = 2.1; sk.vy = -1; sk.vz = 4; sk.z = 0.2;
+  step(sk, IDLE, lv);
+  expect(sk.grind).toBe(0);
+  for (let i = 0; i < 60; i++) {
+    step(sk, IDLE, lv);
+    expect(sk.y).toBeCloseTo(railY(lv.rails[0], sk.z / 10), 5);
+  }
+  expect(sk.y).toBeLessThan(1.8);
+});
+
+test("a steep curve carries the roadster up and off the lip, a box side is still a wall", () => {
+  const ramp = flat({ pieces: [{ ...piece("ramp", "q", 0, 12, 0, 6, 8, 0, 0), height: (_: number, lz: number) => (lz > 4 || lz < -4 ? 0 : 3 * (1 - Math.sqrt(1 - ((lz + 4) / 8) ** 2))) } as never] });
+  const car = start("car", 0, -2, 0, ramp);
+  let maxY = 0;
+  run(car, 3, (s) => { maxY = Math.max(maxY, s.y); return { throttle: 1, boost: true }; }, ramp);
+  expect(maxY).toBeGreaterThan(2);
+  const wall = flat({ pieces: [piece("box", "b", 0, 10, 0, 6, 4, 1, 1)] });
+  const c2 = run(start("car", 0, 0, 0, wall), 3, () => ({ throttle: 1 }), wall);
+  expect(c2.y).toBe(0);
+  expect(c2.z).toBeLessThan(8.5);
 });

@@ -21,8 +21,15 @@ export type Rail = {
   kind: RailKind;
   a: { x: number; z: number };
   b: { x: number; z: number };
-  y: number; // height of the bar or lip
+  y: number; // height of the bar or lip at `a`
+  y2?: number; // height at `b` when the bar slopes (a handrail down stairs); `y` when absent
 };
+
+/** Something solid standing on the ground (a sequoia): the rider can't pass below its top. */
+export type Obstacle = { x: number; z: number; r: number; tall: number };
+
+/** The bar's height a fraction `t` (0..1) of the way from `a` to `b`. */
+export const railY = (r: Rail, t: number) => r.y + ((r.y2 ?? r.y) - r.y) * Math.min(1, Math.max(0, t));
 
 export type Spawn = { name: string; x: number; z: number; yaw: number };
 export type Bounds = { minX: number; maxX: number; minZ: number; maxZ: number };
@@ -33,6 +40,7 @@ export type Level = {
   height(x: number, z: number): number;
   pieces: Piece[];
   rails: Rail[];
+  obstacles?: Obstacle[];
   spawns: Spawn[];
   bounds: Bounds;
 };
@@ -65,6 +73,11 @@ export function makeLevel(l: Omit<Level, "height">): Level {
       return h;
     },
   };
+}
+
+/** The obstacle a rider of radius `rider` at height `y` is inside, if any. */
+export function hitObstacle(level: Level, x: number, z: number, y: number, rider = 0.4) {
+  return level.obstacles?.find((o) => Math.hypot(x - o.x, z - o.z) < o.r + rider && y < level.height(o.x, o.z) + o.tall);
 }
 
 /** Where along a rail (0..1) the point projects, and how far off its line it is. */

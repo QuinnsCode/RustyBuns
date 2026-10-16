@@ -14,7 +14,7 @@ export type Goal =
   | { kind: "collect"; count?: number };
 
 export type Site = { x: number; z: number; r: number; parts: Part[] };
-/** A tree to ride between. Scenery only: the sim has no obstacles, so the view draws it and the rails run between. */
+/** A tree to ride between: the view draws it and the sim treats it as solid up to `tall`. */
 export type Tree = { x: number; z: number; r: number; tall: number; name?: string };
 export type Pickup = { x: number; z: number; y: number };
 
@@ -47,7 +47,7 @@ export function parkLevel(spec: ParkSpec): ParkLevel {
   const scaled: Terrain = { R: raw.R, height: (x, z) => raw.height(x, z) * relief };
   const ground = withPads(scaled, spec.sites.map(({ x, z, r }) => ({ x, z, r })), spec.skirt ?? 10);
   const parts = join(...spec.sites.flatMap((s) => s.parts.map((p) => lift(p, scaled.height(s.x, s.z)))));
-  const inner = makeLevel({ name: spec.name, pieces: parts.pieces, rails: parts.rails, spawns: spec.spawns, bounds: spec.bounds });
+  const inner = makeLevel({ name: spec.name, pieces: parts.pieces, rails: parts.rails, obstacles: spec.trees ?? [], spawns: spec.spawns, bounds: spec.bounds });
   const height = (x: number, z: number) => Math.max(ground.height(x, z), inner.height(x, z));
   const trees = spec.trees ?? [];
   return {
