@@ -22,7 +22,7 @@ bun test test            # the ride, headless
 |---|---|
 | Go, brake | <kbd>W</kbd> <kbd>S</kbd> |
 | Steer, or spin in the air | <kbd>A</kbd> <kbd>D</kbd> |
-| Jump | <kbd>Space</kbd> ollie |
+| Jump | <kbd>Space</kbd> ollie: the tail snaps, the nose kicks up and the board levels itself in the air. A ring pulses where each foot works the board (orange the back foot, white the front), like a screen recorder shows clicks. A flip that is nearly round when it lands is caught flat |
 | Rear jets, pump | hold <kbd>Shift</kbd>: speed along the heading, and through a transition it gains speed (fast enough up a quarter pipe and you fly off the wall and drop back down it) |
 | Kickflip | <kbd>F</kbd> in the air | |
 | Manual, nose manual | hold <kbd>Q</kbd> / <kbd>Z</kbd> on the ground (or hold the mouse still for 0.3 s, nudged down for the nose, or the pad right / left trigger); <kbd>W</kbd> / <kbd>S</kbd> hold the balance. Let go to score it, and it keeps your combo alive || Swap skins, back to the start | <kbd>Tab</kbd> (the ride carries on), <kbd>R</kbd> |

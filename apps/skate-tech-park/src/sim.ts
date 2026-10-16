@@ -63,6 +63,11 @@ const STEP = 0.2; // a kerb or stair this low is always rideable
 const FLICK_POINTS: Record<Flick, number> = { kickflip: 300, heelflip: 300, "shove-it": 200 };
 export const FLICK_TIME = 0.45 * T;
 const OLLIE = 7 * T; // m/s up off the tail
+/** An ollie's pop, in the board's own time: the back foot snaps the tail down so the nose kicks up
+ * `angle` radians in `snap` seconds, then the front foot drags up the grip and levels it out over
+ * `level` seconds. The board flattens itself; nobody has to catch it. */
+export const POP = { angle: 0.5, snap: 0.07 * T, level: 0.32 * T };
+const CATCH = 0.3; // land with less than this share of a flick left and the board is caught flat, not a bail
 const CHAIN_WINDOW = 3; // seconds on the ground between tricks before the chain ends
 const CHAIN_MAX = 8;
 const LINK = 1.5; // a trick of a different kind from the last in the chain (grind, manual, air) scores this much more
@@ -87,6 +92,11 @@ export function grindKind(off: number, side: number): GrindKind {
 
 /** Which thruster groups burn this step: all derived from the board. `roll` is the corner jets firing unevenly through a flip (+1 kickflip, -1 heelflip). */
 export type Firing = { rear: boolean; lift: boolean; spin: -1 | 0 | 1; roll: -1 | 0 | 1 };
+
+/** Where a foot works the board: the back foot pops the tail or scoops it (a shove-it), the front foot
+ * drags to the nose to level an ollie or flicks off one side of it. Left is the board's own left. */
+export type Spot = "tail" | "nose" | "nose-left" | "nose-right";
+export type Foot = { foot: "back" | "front"; at: Spot };
 
 export type State = {
   t: number;
@@ -117,6 +127,8 @@ export type State = {
   fan: boolean; // the suction fan is on
   jetT: number; // seconds the lift jets still burn (an ollie, a landing)
   firing: Firing;
+  popT: number; // seconds since the last ollie's pop, or -1 once the board is level again
+  feet: Foot[]; // what the feet did this step, for the view
   plateDown: boolean;
   bail: number; // seconds left on the floor
   score: number;
@@ -131,12 +143,27 @@ export function start(x = 0, z = -20, yaw = 0, level: Level = plaza): State {
     t: 0, x, y: level.height(x, z), z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0, roll: 0, speed: 0,
     air: false, airTime: 0, spun: 0, flipT: 0, flipKind: "kickflip", tricks: [], grind: -1, grindTime: 0,
     grindKind: "50-50", grindOff: 0, balance: 0, manual: 0, manualTime: 0, chain: 0, chainT: 0, combo: [], comboScore: 0, comboKind: null, fan: false, jetT: 0,
-    firing: { rear: false, lift: false, spin: 0, roll: 0 }, plateDown: false,
+    firing: { rear: false, lift: false, spin: 0, roll: 0 }, popT: -1, feet: [], plateDown: false,
     bail: 0, score: 0, last: null, prevJump: false, prevFlip: false, prevFlick: false,
   };
 }
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
+/** How far the board's nose is up over its path from an ollie's pop: up fast as the tail snaps, then eased level. */
+export function noseUp(s: Pick<State, "popT">): number {
+  if (s.popT < 0) return 0;
+  if (s.popT < POP.snap) return POP.angle * (s.popT / POP.snap);
+  const u = (s.popT - POP.snap) / POP.level;
+  return u >= 1 ? 0 : POP.angle * (1 - u) ** 2;
+}
+
+/** The ollie: the tail snaps, the lift jets burn, and the board leaves the ground. */
+function pop(s: State) {
+  s.vy = OLLIE; s.jetT = JETS.pop; s.popT = 0;
+  s.feet.push({ foot: "back", at: "tail" });
+  takeOff(s);
+}
 
 export type TrickKind = "air" | "grind" | "manual";
 
@@ -161,7 +188,7 @@ function award(s: State, name: string, points: number, kind: TrickKind) {
 function bail(s: State, name: string) {
   s.bail = 1.2;
   s.speed = 0; s.vx = s.vz = 0;
-  s.flipT = 0; s.grind = -1; s.manual = 0; endChain(s);
+  s.flipT = 0; s.popT = -1; s.grind = -1; s.manual = 0; endChain(s);
   s.last = { name, points: 0 };
 }
 
@@ -185,9 +212,10 @@ function takeOff(s: State) {
 }
 
 function land(s: State, h: number) {
-  s.y = h; s.vy = 0; s.air = false; s.jetT = JETS.landBurst;
+  s.y = h; s.vy = 0; s.air = false; s.jetT = JETS.landBurst; s.popT = -1;
   const hs = Math.hypot(s.vx, s.vz);
   const off = Math.abs(wrap(Math.atan2(s.vx, s.vz) - s.yaw));
+  if (s.flipT > 0 && s.flipT < FLICK_TIME * CATCH) { s.flipT = 0; s.tricks.push(s.flipKind); } // nearly round: it lands bolts
   if (s.flipT > 0) return bail(s, "Bail: still flipping");
   if (hs < 2) s.speed = s.vx * Math.sin(s.yaw) + s.vz * Math.cos(s.yaw); // dropping back onto a wall: roll off it
   else if (off < 0.9) s.speed = hs;
@@ -222,6 +250,13 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
   s.prevJump = inp.jump; s.prevFlip = inp.flip; s.prevFlick = inp.flick !== null;
   s.t += DT;
   s.firing = { rear: false, lift: false, spin: 0, roll: 0 };
+  s.feet = [];
+  if (s.popT >= 0) {
+    const was = s.popT;
+    s.popT += DT;
+    if (was < POP.snap && s.popT >= POP.snap) s.feet.push({ foot: "front", at: "nose" }); // the front foot drags it level
+    if (s.popT > POP.snap + POP.level) s.popT = -1;
+  }
 
   if (s.chainT > 0 && !s.air && s.grind < 0 && !s.manual && (s.chainT -= DT) <= 0) endChain(s); // the clock only runs on the ground, and a held manual keeps the chain alive
   if (s.bail > 0) {
@@ -252,8 +287,8 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       if (s.grindTime > 0.2) award(s, (ledge ? LEDGE_NAME : GRIND_NAME)[s.grindKind], Math.round(s.grindTime * GRIND_POINTS[s.grindKind]), "grind");
       s.grind = -1;
       s.vx = fx * s.speed; s.vz = fz * s.speed;
-      s.vy = pressed ? OLLIE : 0;
-      takeOff(s);
+      s.vy = 0;
+      if (pressed) pop(s); else takeOff(s);
     }
     return s;
   }
@@ -322,7 +357,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       s.vy = (h - s.y) / DT;
       s.y = h;
     }
-    if (!s.air && pressed) { s.vy = OLLIE; s.jetT = JETS.pop; takeOff(s); }
+    if (!s.air && pressed) pop(s);
   }
 
   if (s.air) {
@@ -334,7 +369,10 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       s.yaw += w; s.spun += w;
       s.firing.spin = inp.steer > 0 ? 1 : -1;
     }
-    if (flickPressed && flick && s.flipT <= 0) { s.flipT = FLICK_TIME; s.flipKind = flick; }
+    if (flickPressed && flick && s.flipT <= 0) {
+      s.flipT = FLICK_TIME; s.flipKind = flick;
+      s.feet.push(flick === "shove-it" ? { foot: "back", at: "tail" } : { foot: "front", at: flick === "kickflip" ? "nose-left" : "nose-right" });
+    }
     if (s.flipT > 0) {
       if (s.flipKind === "shove-it") s.firing.spin = 1; // the nose jets turn it
       else { s.firing.lift = true; s.firing.roll = s.flipKind === "kickflip" ? 1 : -1; } // the corners fire unevenly
@@ -356,7 +394,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
         s.grindKind = grindKind(Math.abs(rel), Math.sign(rel) || 1);
         s.grindOff = s.grindKind === "boardslide" ? Math.PI / 2 : 0;
         s.balance = s.grindKind === "50-50" ? 0 : Math.sign(rel) * 0.3;
-        s.grind = i; s.grindTime = 0;
+        s.grind = i; s.grindTime = 0; s.popT = -1; // locked onto the bar, flat
         s.x = r.a.x + (r.b.x - r.a.x) * o.t; s.z = r.a.z + (r.b.z - r.a.z) * o.t;
         s.y = railY(r, o.t); s.vy = 0;
         s.speed = Math.max(3, Math.abs(s.vx * o.dx + s.vz * o.dz));
