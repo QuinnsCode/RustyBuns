@@ -4,9 +4,10 @@ import { expect, test } from "bun:test";
 import { LEVELS, needsStartScreen, pick } from "../src/levels/index.ts";
 import { trackRun } from "../src/levels/goals.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
-import { IDLE, start, step } from "../src/sim.ts";
+import { IDLE, SCALE, start, step } from "../src/sim.ts";
 
-const SPEEDS = [22, 27, 32]; // m/s held into a gap: every gap clears across the board's range (they all clear from 20 up)
+// m/s held into a gap: every gap clears across the board's range (from 20 up at SCALE 1); a bigger board hangs longer, so the same line needs less speed
+const SPEEDS = [22, 27, 32].map((v) => v / Math.sqrt(SCALE));
 const parks = LEVELS.filter((l) => l.id !== "plaza").map((l) => l.load() as ParkLevel);
 const park = (id: string) => parks.find((l) => l.id === id)!;
 
