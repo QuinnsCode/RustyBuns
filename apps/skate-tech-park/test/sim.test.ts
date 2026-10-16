@@ -1,6 +1,6 @@
 // Journeys through the ride, headless: the same fixed-step sim the page draws.
 import { expect, test } from "bun:test";
-import { hitObstacle, type Level, makeLevel, piece, railY } from "../src/level.ts";
+import { hitObstacle, type Level, makeLevel, piece, postObstacles, railY } from "../src/level.ts";
 import { quarterPipe } from "../src/levels/pieces.ts";
 import { DT, IDLE, type Input, SCALE, start, step, type State, tumble } from "../src/sim.ts";
 
@@ -103,6 +103,17 @@ test("a rider can't ride through a tree, but can pass beside it", () => {
   expect(hit.last?.name).toBe("Hit a tree");
   const past = run(start(4, 0, 0, lv), 3, () => ({ throttle: 1 }), lv);
   expect(past.z).toBeGreaterThan(20);
+});
+
+test("a rider runs into a rail's post but rides over it on the bar", () => {
+  const rails = [{ kind: "rail" as const, a: { x: 0, z: -20 }, b: { x: 0, z: 20 }, y: 0.9 }];
+  const lv = flat({ rails, obstacles: postObstacles(rails, () => 0) });
+  expect(lv.obstacles!.length).toBeGreaterThan(5);
+  const side = run(start(0.8, -10, 0, lv), 0.5, () => ({ throttle: 1 }), lv); // along the bar, a hand off its line
+  expect(hitObstacle(lv, 0, 0.5, 0.9 - 0.05)).toBeUndefined(); // the bar's own height clears every post
+  const across = run(start(-8, 2, Math.PI / 2, lv), 4, () => ({ throttle: 1 }), lv);
+  expect(across.last?.name).toBe("Hit a rail post");
+  expect(side.x).toBeCloseTo(0.8, 0);
 });
 
 test("a tree catches the board's edge, not a circle round its middle", () => {
@@ -241,4 +252,15 @@ test("a bad landing carries on: the rider slides and rolls across the ground, sl
   expect(Math.abs(tumble(sk).roll)).toBeGreaterThan(1.3); // mid-roll, not lying still
   run(sk, 1.2, () => ({}));
   expect(tumble(sk).roll).toBe(0);
+});
+
+test("in the air the board's tips are what hit a box, so the nose stops at its face instead of passing through", () => {
+  const box = piece("box", "wall", 0, 6, 0, 10, 3, 4, 6); // a 3 m block with its near face at z = 4
+  const l = makeLevel({ name: "wall", pieces: [box], rails: [], spawns: [{ name: "car", x: 0, z: 0, yaw: 0 }], bounds: { minX: -30, maxX: 30, minZ: -30, maxZ: 30 } });
+  const s = start(0, 0, 0, l);
+  s.air = true; s.y = 1; s.vy = 0; s.vx = 0; s.vz = 8; s.z = 2;
+  let top = 0;
+  for (let i = 0; i < 90; i++) { step(s, IDLE, l); top = Math.max(top, s.y); }
+  expect(top).toBeLessThan(1.5); // never snapped up onto the box
+  expect(s.z).toBeLessThan(4); // never carried into it
 });

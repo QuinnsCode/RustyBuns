@@ -60,6 +60,18 @@ function footprintTop(level: Level, x: number, z: number, yaw: number) {
   return top;
 }
 
+/** The highest of the board's middle and two tips. The tips are the physics object in the air, so a nose or tail that reaches
+ * a wall stops the board there instead of passing through while only its middle is checked. */
+function tipContact(level: Level, x: number, z: number, yaw: number) {
+  const sn = Math.sin(yaw), cs = Math.cos(yaw);
+  let best = { h: level.height(x, z), x, z };
+  for (const a of [-BOARD.halfLen, BOARD.halfLen]) {
+    const tx = x + sn * a, tz = z + cs * a, h = level.height(tx, tz);
+    if (h > best.h) best = { h, x: tx, z: tz };
+  }
+  return best;
+}
+
 const MAX_SLOPE = 3; // a rise steeper than this (about 72 degrees) in one stride is a wall, not a ramp
 const CARVE = 0.8; // how much speed stiffens the board's turn: at top speed it turns 1/(1+CARVE) as tight
 const CARVE_DRAG = 0.5; // a hard carve at speed scrubs this share of it per second
@@ -366,7 +378,8 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
 
     const nx = s.x + Math.sin(s.yaw) * s.speed * DT, nz = s.z + Math.cos(s.yaw) * s.speed * DT;
     const dist = Math.abs(s.speed * DT);
-    if (hitObstacle(level, nx, nz, s.y, s.yaw)) return crash(s, "Hit a tree");
+    const blocker = hitObstacle(level, nx, nz, s.y, s.yaw);
+    if (blocker) return crash(s, blocker.kind === "post" ? "Hit a rail post" : "Hit a tree");
     // walk the stride in 10 cm strides: a rise too sharp for its length is a wall (the side of a box),
     // a steep curve (a quarter pipe near its lip) is not
     const n = Math.max(1, Math.ceil(dist / 0.1));
@@ -447,6 +460,10 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
         s.air = false;
         return s;
       }
+    }
+    const tip = tipContact(level, s.x, s.z, s.yaw);
+    if (s.y < tip.h - STEP && (tip.x - s.x) * s.vx + (tip.z - s.z) * s.vz > 0 && Math.atan((tip.h - level.height(s.x, s.z)) / BOARD.halfLen) >= SHEER) { // a tip met a sheer face: the board stops against it
+      s.x -= s.vx * DT; s.z -= s.vz * DT; s.vx = s.vz = 0; s.speed = 0;
     }
     const h = level.height(s.x, s.z);
     if (s.y < h && s.vy > 0) {

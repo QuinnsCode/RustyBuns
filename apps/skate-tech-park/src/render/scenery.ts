@@ -152,6 +152,7 @@ const GEOMETRY: Record<Exclude<Kind, "rock">, () => THREE.BufferGeometry> = {
   tent: () => solid([[new THREE.CylinderGeometry(0.5, 0.5, 1, 3, 1).rotateZ(Math.PI / 2).rotateY(Math.PI / 2).scale(1, 0.6, 1).translate(0, 0.25, 0), 0xe2572b]]),
 };
 
+const TINT = new THREE.Color();
 const BY_KIND = (kind: Kind) =>
   kind === "rock"
     ? { geo: new THREE.IcosahedronGeometry(0.5, 0), mat: new THREE.MeshStandardMaterial({ color: 0x8e857a, roughness: 1, flatShading: true }) }
@@ -175,7 +176,7 @@ export class Scenery {
       mesh.frustumCulled = false;
       this.group.add(mesh);
       this.meshes.set(kind, { mesh, mine, shrunk: new Set() });
-      mine.forEach((s, i) => this.place(mesh, s, i, 1));
+      mine.forEach((s, i) => { this.place(mesh, s, i, 1); mesh.setColorAt(i, TINT.setHSL(0, 0, 0.82 + 0.3 * Math.abs(Math.sin(s.x * 3.7 + s.z * 1.3)))); }); // each one a shade of its own, like hand-painted
     };
     for (const kind of ["pine", "rock", "aspen", "stump", "cairn", "sign", "tent", "bush", "fern", "flower"] as Kind[]) {
       const { geo, mat } = BY_KIND(kind);

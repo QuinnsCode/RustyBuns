@@ -6,7 +6,7 @@
 import { mulberry32 } from "@rustybuns/util";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { type Level, type Piece, type Rail, railY } from "../level.ts";
+import { type Level, type Piece, type Rail, railPosts, railY } from "../level.ts";
 
 type Ground = (x: number, z: number) => number;
 const rgb = (hex: number) => new THREE.Color(hex);
@@ -107,9 +107,9 @@ export function railGeometry(r: Rail, ground: Ground = () => 0, seed = 1): THREE
     const t0 = rng() * 0.8, t1 = Math.min(1, t0 + (0.4 + rng() * 0.8) / len);
     out.push(strut(at(t0), at(t1), radius + 0.008, WAX));
   }
-  if (r.kind === "rail") for (let z = 0.5; z < len; z += 4) {
-    const t = z / len, top = at(t), foot = ground(top.x, top.z);
-    if (top.y - foot > 0.05) out.push(strut(new THREE.Vector3(top.x, foot, top.z), top, 0.035, STEEL));
+  for (const p of railPosts(r)) {
+    const top = new THREE.Vector3(p.x, p.y, p.z), foot = ground(p.x, p.z);
+    if (top.y - foot > 0.05) out.push(strut(new THREE.Vector3(p.x, foot, p.z), top, 0.035, STEEL));
   }
   return out;
 }
