@@ -3,7 +3,7 @@
 // wall itself is the big feature: the talus slope under it is a natural quarter pipe, and the goal is to
 // ride up it.
 import { type ParkSpec } from "./park.ts";
-import { outcrop, flatBar, funbox, gap, halfpipe, handrail, hip, hubba, quarterPipe, spine, stairSet, tabletop } from "./pieces.ts";
+import { outcrop, flatBar, funbox, gap, halfpipe, handrail, hip, hubba, quarterPipe, skyRail, spine, stairSet, tabletop } from "./pieces.ts";
 
 const E = Math.PI / 2, W = -Math.PI / 2, N = Math.PI;
 
@@ -24,10 +24,13 @@ export const elCapitan: ParkSpec = {
     { parts: [quarterPipe({ x: 80, z: 100, yaw: E }, { w: 14, d: 7, h: 4 })] },
     { parts: [hip({ x: 60, z: 130 }, { w: 12, d: 12, h: 2.4 }), spine({ x: 30, z: 130, yaw: E }, { w: 12, d: 8, h: 2.4 })] },
     { parts: [stairSet({ x: 0, z: 130, yaw: W }, { w: 8, steps: 8, rise: 0.25, run: 0.9 }), hubba({ x: -30, z: 130, yaw: W }, { steps: 8, rise: 0.25, run: 0.9 })] },
+    // not possible: a bar on stilts that climbs away from the meadow, 160 m long
+    { parts: [skyRail({ x: -50, z: 155, yaw: E }, { len: 160, y: 1.6, y2: 14 })] },
   ],
   spawns: [
     { name: "wall view", x: 36, z: 150, yaw: N },
     { name: "street line", x: -125, z: 100, yaw: E },
+    { name: "sky rail", x: -140, z: 155, yaw: E },
     { name: "return line", x: 90, z: 130, yaw: W },
   ],
   granite: 140,
