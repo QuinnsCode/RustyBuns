@@ -123,6 +123,15 @@ export const handrail = (at: At, o: { len?: number; y?: number; y2?: number } = 
   return part({ rails: [bar("rail", at, 0, -len / 2, 0, len / 2, y, y2)] });
 };
 
+/**
+ * A rail that is not possible: hundreds of metres of bar on stilts, fed by a kicker. `y` is the bar's height above the
+ * ground at the start and `y2` above the ground at the far end, so it can climb into the sky or float across a drop.
+ */
+export const skyRail = (at: At, o: { len?: number; y?: number; y2?: number; kick?: number } = {}): Part => {
+  const { len = 120, y = 1.6, y2 = 30, kick = 4 } = o, h = y - 0.4;
+  return join(kicker({ ...toWorld(at, 0, -len / 2 - kick / 2 - 1), yaw: at.yaw }, { w: 4, d: kick, h, name: "sky rail kicker" }), handrail(at, { len, y, y2 }));
+};
+
 /** A low rail on the flat. */
 export const flatBar = (at: At, o: { len?: number } = {}): Part => handrail(at, { len: o.len ?? 6, y: 0.45 });
 
