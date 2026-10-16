@@ -91,7 +91,7 @@ function level(ground: (x: number, z: number) => number, at: At, reach: number, 
 }
 
 /** Circles laid along a line, close enough that nothing fits between them. */
-function lane([a, b]: [{ x: number; z: number }, { x: number; z: number }]): Circle[] {
+export function lane([a, b]: [{ x: number; z: number }, { x: number; z: number }]): Circle[] {
   const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 5));
   return Array.from({ length: n + 1 }, (_, i) => ({ x: a.x + ((b.x - a.x) * i) / n, z: a.z + ((b.z - a.z) * i) / n, r: 5 }));
 }

@@ -4,7 +4,7 @@ import * as THREE from "three";
 import type { Mood } from "../render/weather.ts";
 import type { Landmark, ParkLevel } from "./park.ts";
 
-const STEP = 4;
+const STEP = 2; // metres between ground vertices: fine enough that a bowl's wall is round, not a staircase
 const DETAIL = 7; // metres per tile of the ground's grain
 
 /** A grayscale grain (blades, grit, mottling) that multiplies the vertex colours, so the ground isn't flat paint. */
@@ -38,7 +38,7 @@ export function groundMesh(level: ParkLevel, mood?: Pick<Mood, "wet" | "snow">):
   const R = level.ground.R, n = Math.round((2 * R) / STEP) + 1;
   const pos = new Float32Array(n * n * 3), uv = new Float32Array(n * n * 2), col = new Float32Array(n * n * 3), idx: number[] = [];
   const wet = mood?.wet ?? 0, snow = mood?.snow ?? 0;
-  const grass = new THREE.Color(0x6f8250), dry = new THREE.Color(0xb4a05a), moss = new THREE.Color(0x4b6b3e).multiplyScalar(1 - 0.35 * wet), rock = new THREE.Color(0xbfb8ab).multiplyScalar(1 - 0.3 * wet), white = new THREE.Color(0xf2f6fb), c = new THREE.Color();
+  const grass = new THREE.Color(0x6f8250), dry = new THREE.Color(0xb4a05a), moss = new THREE.Color(0x4b6b3e).multiplyScalar(1 - 0.35 * wet), rock = new THREE.Color(0xbfb8ab).multiplyScalar(1 - 0.3 * wet), white = new THREE.Color(0xf2f6fb), concrete = new THREE.Color(0xc4bfb4).multiplyScalar(1 - 0.25 * wet), hardpack = new THREE.Color(0xad8658).multiplyScalar(1 - 0.35 * wet), stone = new THREE.Color(0xeeeadf), c = new THREE.Color(), c2 = new THREE.Color();
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
     const x = -R + i * STEP, z = -R + j * STEP, h = level.ground.height(x, z), k = (j * n + i) * 3;
     pos.set([x, h, z], k);
@@ -49,6 +49,13 @@ export function groundMesh(level: ParkLevel, mood?: Pick<Mood, "wet" | "snow">):
     c.lerp(dry, Math.max(0, warm - 0.45) * 1.1 * (1 - wet) * (1 - snow)).lerp(moss, Math.max(0, 0.4 - warm) * 0.9);
     const patch = 0.5 + 0.5 * Math.sin(x * 0.11 + 1.7) * Math.cos(z * 0.09), flat = 1 - Math.min(1, slope * 1.4); // snow settles in hollows and on flats, and blows off steep rock
     c.lerp(white, Math.min(1, snow * (0.55 + 0.45 * patch) * (0.35 + 0.65 * flat)));
+    const paint = level.paint(x, z); // the earthworks: poured concrete, packed dirt, and a pale coping stone along each lip
+    if (paint.surface) {
+      const tone = 0.93 + 0.07 * Math.sin(x * 0.9) * Math.cos(z * 1.1), base = paint.surface === "concrete" ? concrete : hardpack;
+      c.lerp(c2.copy(base).multiplyScalar(tone).lerp(stone, paint.coping * (paint.surface === "concrete" ? 0.75 : 0.3)), paint.k * (1 - 0.7 * snow));
+    }
+    const hollow = (level.ground.height(x + 3, z) + level.ground.height(x - 3, z) + level.ground.height(x, z + 3) + level.ground.height(x, z - 3)) / 4 - h; // shade hollows, so a bowl reads as a bowl
+    c.multiplyScalar(1 - Math.min(0.4, Math.max(-0.08, hollow * 0.14)));
     col.set([c.r, c.g, c.b], k);
     if (i < n - 1 && j < n - 1) { const a = j * n + i; idx.push(a, a + n, a + 1, a + 1, a + n, a + n + 1); }
   }
