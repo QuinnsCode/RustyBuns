@@ -9,3 +9,5 @@
 .start-grid button { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; padding: 12px 14px; text-align: left; font: inherit; color: var(--ink); background: var(--paper); border: 1.5px solid var(--ink); border-radius: 8px; cursor: pointer; }
 .start-grid button:hover, .start-grid button:focus-visible { background: #fff; outline: 2px solid var(--hot); }
 .start-grid strong { display: flex; gap: 6px; align-items: center; }
+.start-grid .thumb { align-self: stretch; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 5px; background: #405638; perspective: 400px; }
+.start-grid .thumb canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; transform: translate(var(--tx, 0), var(--ty, 0)) rotateX(var(--rx, 0)) rotateY(var(--ry, 0)) scale(1.25); transition: transform 0.12s ease-out; }

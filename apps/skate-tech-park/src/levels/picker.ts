@@ -8,6 +8,7 @@ import "./levels.css";
 import { groundMesh, props } from "./ground.ts";
 import { trackRun, type Run } from "./goals.ts";
 import { LEVELS, needsStartScreen, pick } from "./index.ts";
+import { terrainCanvas } from "./thumb.ts";
 import type { Goal, ParkLevel } from "./park.ts";
 
 const entry = pick(location.search);
@@ -35,7 +36,19 @@ function startScreen() {
     card.type = "button";
     name.append(createElement(MapPin, { width: 16, height: 16 }), l.name);
     blurb.textContent = l.blurb;
-    card.append(name, blurb);
+    const thumb = document.createElement("div");
+    thumb.className = "thumb";
+    card.append(thumb, name, blurb);
+    setTimeout(() => thumb.append(terrainCanvas(l.load())), 0); // one map per tick so the cards fill in without freezing the page
+    // Parallax: the map tilts and slides against the pointer, the card's text stays put.
+    card.addEventListener("pointermove", (e) => {
+      const r = card.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
+      thumb.style.setProperty("--tx", `${(-x * 14).toFixed(1)}px`);
+      thumb.style.setProperty("--ty", `${(-y * 10).toFixed(1)}px`);
+      thumb.style.setProperty("--rx", `${(-y * 10).toFixed(1)}deg`);
+      thumb.style.setProperty("--ry", `${(x * 12).toFixed(1)}deg`);
+    });
+    card.addEventListener("pointerleave", () => { for (const v of ["--tx", "--ty", "--rx", "--ry"]) thumb.style.removeProperty(v); });
     card.addEventListener("click", () => { location.search = `?level=${l.id}`; });
     grid.append(card);
   }
