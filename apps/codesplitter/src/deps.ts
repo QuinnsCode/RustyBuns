@@ -112,6 +112,7 @@ import { charge } from "./limits.ts";
 import { scopedTest } from "../sandbox/scoped.mjs";
 import { logEnd, logStart, preview, runnerFor, runs as livePreviews, STEPS as PREVIEW_STEPS, type Run as PreviewDeploy } from "./preview.ts";
 import { repoRow } from "./repos.ts";
+import { privateHost } from "./hooks.ts";
 
 export type Level = "patch" | "minor" | "major";
 const LEVELS: Level[] = ["patch", "minor", "major"];
@@ -267,7 +268,9 @@ export function registryUrl(rcs: Npmrc[], name: string): { url: string; token?: 
   for (const rc of rcs) { base = (scope && rc.scopes[scope]) || rc.registry || base; Object.assign(tokens, rc.tokens); }
   base = base.replace(/\/?$/, "/");
   const bare = base.replace(/^https?:\/\//, "");
-  const host = Object.keys(tokens).filter((k) => bare.startsWith(k)).sort((a, b) => b.length - a.length)[0];
+  // A repo's file picks the registry, so a token never goes in cleartext or to a private address.
+  const safe = URL.canParse(base) && new URL(base).protocol === "https:" && !privateHost(new URL(base).hostname);
+  const host = !safe ? undefined : Object.keys(tokens).filter((k) => bare.startsWith(k)).sort((a, b) => b.length - a.length)[0];
   return { url: base + name.replace("/", "%2f"), ...(host ? { token: tokens[host] } : {}) };
 }
 
