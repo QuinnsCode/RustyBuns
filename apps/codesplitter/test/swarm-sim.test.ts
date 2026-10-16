@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { ALL, OLD, Sim, type Layers } from "../src/swarm-sim.ts";
+import { ALL, OLD, Sim, TRACKS, type Layers } from "../src/swarm-sim.ts";
 import { at, SCENES, startOf, total } from "../src/swarm-story.ts";
 
 const crowd = { agents: 30, overlap: 0.35, flaky: 0.12 };
@@ -53,4 +53,12 @@ test("the story loops, its faders glide from the last scene's, and a scene can b
   expect(at(crowdStart + SCENES[1]!.ms - 1).knobs.agents).toBe(SCENES[1]!.knobs.agents);
   expect(at(total() + crowdStart + 1).scene.id).toBe("agents");
   expect(SCENES.filter((s) => s.wipe).map((s) => s.id)).toEqual(["calm", "coord", "mervin", "ester", "both"]);
+});
+
+test("Mervin loads several platforms at once, never more than four", () => {
+  const s = new Sim({ coord: true, mervin: true, ester: false }, { ...crowd, agents: 45 }, 5);
+  let most = 0;
+  for (let i = 0; i < 480 * 4; i++) { s.step(0.25); most = Math.max(most, new Set(s.trains.map((t) => t.track)).size); }
+  expect(most).toBeGreaterThan(1);
+  expect(most).toBeLessThanOrEqual(TRACKS);
 });

@@ -38,6 +38,10 @@ on, Mervin's and Ester's ship marks, and the shared file the stuck agents piled 
 (read-only `gh`/`git` collector, writing `src/swarm-week.json`), `src/swarm-replay.ts`, `src/swarm-watch.html`,
 `scripts/swarm-readme.ts` (an animated SVG in `docs/swarm-week.svg`), and `test/swarm-replay.test.ts`.
 
+## The picture: a rush-hour station
+
+The stage is drawn as a subway: agents come down stairs (one narrow flight the old way, wide with the Durable Object), through a ticket gate (the merge wall). Mervin is a plain function, not an AI, so he loads `TRACKS` (4) bullet trains at once. The four tracks run into one exit (the tests), where Ester loads the cars full like a flight crew. Trains lift off and fade at the far end; agents step onto parallel platforms, land in main, then go underground back to their desks. Copy is written for high schoolers: keep it that way.
+
 ## Decisions already made (don't relitigate without the owner)
 
 - **No host's name on the jammed lane.** It's "the old git way". The contest rules ban attacks on competitor products
