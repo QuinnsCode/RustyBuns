@@ -11,6 +11,7 @@ import { LEVELS, needsStartScreen, pick } from "./index.ts";
 import type { Goal, ParkLevel } from "./park.ts";
 
 const entry = pick(location.search);
+export const levelId = entry.id;
 export const level: Level | ParkLevel = entry.load();
 export const park = "goals" in level;
 
