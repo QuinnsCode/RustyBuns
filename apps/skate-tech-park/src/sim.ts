@@ -15,7 +15,7 @@ const G = 20; // gamey gravity: snappier than 9.8
 /** How many times bigger the board is than the one these numbers were cut for. Lengths grow by
  * SCALE, so under the same gravity speeds and times grow by its square root (`T`): an ollie goes
  * SCALE times as high and hangs T times as long, and a trick takes T times as long to turn. */
-export const SCALE = 1; // raise it once the parks are retuned for a bigger board
+export const SCALE = 2; // a toy twice the size: 3 and up need the trick and rail journeys retimed
 const T = Math.sqrt(SCALE);
 
 /** Which skin is drawn. step() never reads it: the same inputs give the same ride in either. */
