@@ -9,6 +9,7 @@ import { createNativeEngine } from "../src/engine/native.ts";
 import { renderPattern } from "../src/engine/sequencer.ts";
 import { CEILING, NPARAMS, TRACKS, P } from "../src/engine/params.ts";
 import { demoProject, randomPatch } from "../src/presets.ts";
+import { nightShift } from "../src/songs.ts";
 import { audible, loopBeats, type Project } from "../src/project.ts";
 
 const SR = 48000;
@@ -93,16 +94,17 @@ test("200 random patches stay finite and under the ceiling", () => {
   }
 }, HEAVY);
 
-async function compare(name: string, make: () => Promise<FmEngine | null>) {
+async function compare(name: string, make: () => Promise<FmEngine | null>, p: Project = demoProject()) {
   const rust = await make();
   if (!rust) { console.log(`  (skipped: ${name} not built; run \`bun run build:native\`)`); return; }
-  const p = demoProject();
-  const a = renderPattern(rust, SR, 8, load(rust, p));
+  // the Space send bus too: what the reverb hears has to match as well
+  const sa = new Float32Array(SR * 8 * 2), sb = new Float32Array(SR * 8 * 2);
+  const a = renderPattern(rust, SR, 8, load(rust, p), sa);
   rust.free?.();
   const ts = new TsEngine(SR);
-  const b = renderPattern(ts, SR, 8, load(ts, p));
+  const b = renderPattern(ts, SR, 8, load(ts, p), sb);
   let maxDiff = 0;
-  for (let i = 0; i < a.length; i++) maxDiff = Math.max(maxDiff, Math.abs(a[i] - b[i]));
+  for (let i = 0; i < a.length; i++) maxDiff = Math.max(maxDiff, Math.abs(a[i] - b[i]), Math.abs(sa[i] - sb[i]));
   console.log(`  ${name}: max |rust - ts| = ${maxDiff.toExponential(2)} over ${a.length / 2} frames`);
   expect(maxDiff).toBeLessThan(1e-4);
 }
@@ -114,3 +116,6 @@ test("rust (wasm, what the AudioWorklet runs) matches ts sample for sample", () 
   if (!existsSync(f)) return null;
   return new WasmEngine(await instantiateFm(readFileSync(f)), SR);
 }), HEAVY);
+
+test("rust matches ts on the analog voice too (Night Shift's womp bass: saws, filter, LFO, glide, drive)",
+  () => compare("cdylib, analog", () => createNativeEngine(SR), nightShift()), HEAVY);

@@ -33,7 +33,7 @@ export interface RosterEntry { id: number; name: string; team: Team; score: numb
 /** A file's height and lines left, by path; a height of 0 is razed. */
 export type FileState = [path: string, h: number, lines: number];
 
-/** [id, x, y, z, vx, vy, vz, yaw, pitch, hp, shield, flags, weapon, roll] */
+/** [id, x, y, z, vx, vy, vz, yaw, pitch, hp, shield, flags, weapon, roll, lean] */
 export type SoldierState = number[];
 export type ShotState = [id: number, owner: number, team: Team, weapon: WeaponId, x: number, y: number, z: number, vx: number, vy: number, vz: number, age: number];
 export type StashState = [id: number, x: number, y: number, z: number];
@@ -148,6 +148,7 @@ const SOLDIER: [scale: number, kind: Kind][] = [
   [1000, "i32"], [1000, "i16"], // yaw (it winds on), pitch
   [1, "u16"], [1, "u16"], [1, "u16"], [1, "u8"], // hp shield flags weapon
   [100, "i16"], // roll
+  [100, "i8"], // lean
 ];
 const RANGE: Record<Kind, [number, number]> = { i8: [-128, 127], u8: [0, 255], i16: [-32768, 32767], u16: [0, 65535], i32: [-(2 ** 31), 2 ** 31 - 1] };
 /** v as the wire carries it: scaled, rounded, clamped to the width, and scaled back. */
@@ -156,22 +157,22 @@ const fit = (v: number, scale: number, kind: Kind) => {
   return Math.max(lo, Math.min(hi, Math.round(v * scale))) / scale;
 };
 
-const F = { alive: 1, grounded: 2, crouch: 4, prone: 8, scoped: 16, heavy: 32, gone: 64, burning: 128, tagged: 256 };
+const F = { alive: 1, grounded: 2, crouch: 4, prone: 8, scoped: 16, heavy: 32, gone: 64, burning: 128, tagged: 256, chute: 512 };
 
 export function packSoldier(s: Soldier): SoldierState {
   const flags = (s.alive ? F.alive : 0) | (s.grounded ? F.grounded : 0) | (s.crouch ? F.crouch : 0) | (s.prone ? F.prone : 0) | (s.scoped ? F.scoped : 0)
-    | (s.heavy ? F.heavy : 0) | (s.gone ? F.gone : 0) | (s.burn > 0 ? F.burning : 0) | (s.tagged > 0 ? F.tagged : 0);
-  const raw = [s.x, s.y, s.z, s.vx, s.vy, s.vz, s.yaw, s.pitch, Math.ceil(s.hp), Math.ceil(s.shield), flags, ORDER.indexOf(s.weapon), s.roll];
+    | (s.heavy ? F.heavy : 0) | (s.gone ? F.gone : 0) | (s.burn > 0 ? F.burning : 0) | (s.tagged > 0 ? F.tagged : 0) | (s.chute ? F.chute : 0);
+  const raw = [s.x, s.y, s.z, s.vx, s.vy, s.vz, s.yaw, s.pitch, Math.ceil(s.hp), Math.ceil(s.shield), flags, ORDER.indexOf(s.weapon), s.roll, s.lean];
   return [s.id, ...raw.map((v, i) => fit(v, ...SOLDIER[i]!))];
 }
 
 /** Puts a packed soldier's public state onto s. Burning and tagged come back as on or off. */
 export function unpackSoldier(st: SoldierState, s: Soldier) {
-  const [, x, y, z, vx, vy, vz, yaw, pitch, hp, shield, flags, weapon, roll] = st as [number, number, number, number, number, number, number, number, number, number, number, number, number, number];
+  const [, x, y, z, vx, vy, vz, yaw, pitch, hp, shield, flags, weapon, roll, lean = 0] = st as [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number?];
   Object.assign(s, {
-    x, y, z, vx, vy, vz, yaw, pitch, hp, shield, roll,
+    x, y, z, vx, vy, vz, yaw, pitch, hp, shield, roll, lean,
     alive: !!(flags & F.alive), grounded: !!(flags & F.grounded), crouch: !!(flags & F.crouch), prone: !!(flags & F.prone), scoped: !!(flags & F.scoped),
-    heavy: !!(flags & F.heavy), gone: !!(flags & F.gone), burn: flags & F.burning ? 1 : 0, tagged: flags & F.tagged ? 1 : 0,
+    heavy: !!(flags & F.heavy), gone: !!(flags & F.gone), burn: flags & F.burning ? 1 : 0, tagged: flags & F.tagged ? 1 : 0, chute: !!(flags & F.chute),
     weapon: ORDER[weapon] ?? "commit",
   });
 }
@@ -188,6 +189,7 @@ export function cleanInput(raw: unknown): Input | null {
     right: num(i.right, -1, 1), forward: num(i.forward, -1, 1),
     yaw: num(i.yaw, -1e6, 1e6), pitch: num(i.pitch, -1.6, 1.6),
     jump: i.jump === true, roll: i.roll === true, crouch: i.crouch === true, prone: i.prone === true, scope: i.scope === true, fire: i.fire === true, reload: i.reload === true,
+    lean: num(i.lean, -1, 1),
     aim, weapon: ORDER.includes(i.weapon as WeaponId) ? (i.weapon as WeaponId) : undefined,
     ...(typeof i.seq === "number" && Number.isInteger(i.seq) && i.seq >= 0 ? { seq: i.seq } : {}),
     ...(typeof i.view === "number" && Number.isFinite(i.view) ? { view: i.view } : {}),
@@ -219,11 +221,12 @@ type EventField = "soldier" | "int" | "cm" | "weapon" | "bool" | "str" | readonl
 const VEHICLE: VehicleKind[] = ["roadster", "heli"], PICKUP: PickupKind[] = ["ammo", "health", "reset"];
 const EVENTS: { [K in GameEvent["kind"]]: [keyof Extract<GameEvent, { kind: K }>, EventField][] } = {
   fire: [["id", "soldier"], ["weapon", "weapon"]],
-  hit: [["target", "soldier"], ["by", "int"], ["damage", "cm"], ["shield", "bool"]],
+  hit: [["target", "soldier"], ["by", "int"], ["damage", "cm"], ["shield", "bool"], ["head", "bool"]],
   shield: [["id", "soldier"], ["state", ["broke", "charging", "full"]]],
   boom: [["x", "cm"], ["y", "cm"], ["z", "cm"], ["r", "cm"]],
   down: [["id", "soldier"], ["by", "int"]],
   respawn: [["id", "soldier"], ["lives", "int"]],
+  chute: [["id", "soldier"], ["open", "bool"]],
   cleared: [["compound", "int"]],
   pickup: [["id", "soldier"], ["item", PICKUP]],
   blamed: [["id", "soldier"]],

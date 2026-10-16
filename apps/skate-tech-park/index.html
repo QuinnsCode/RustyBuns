@@ -9,15 +9,20 @@
   </head>
   <body>
     <canvas id="view"></canvas>
+    <div id="taps" class="taps"></div>
     <header class="hud">
       <div class="score"><span id="score">0</span><small id="speed">0 km/h</small></div>
-      <div id="tank" class="tank" title="Air tank: refills on the ground"><span id="tank-icon"></span><div class="bar"><div id="tank-fill"></div></div></div>
       <div class="buttons">
+        <button type="button" id="pve" class="icon-btn" hidden></button>
+        <button type="button" id="together" class="icon-btn"></button>
         <button type="button" id="swap" class="icon-btn"></button>
         <button type="button" id="reset" class="icon-btn" title="Back to the start (R)" aria-label="Back to the start"></button>
       </div>
     </header>
+    <div id="room" class="room"></div>
     <div id="trick" class="trick" aria-live="polite"></div>
+    <div id="combo" class="combo"></div>
+    <div id="tip" class="tip" hidden></div>
     <footer id="keys" class="keys"></footer>
     <script type="module" src="/src/main.ts"></script>
   </body>

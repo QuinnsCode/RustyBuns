@@ -1,6 +1,7 @@
 // The whole game, with no rendering: a toy-soldier third-person shooter on a codebase.
-// You run, strafe, jump, crouch, go prone and dive-roll (no damage from direct hits
-// mid-roll) round a repo's compounds and take each one by downing its guards. The
+// You run, strafe, jump, crouch, go prone, lean out round corners and dive-roll (direct hits
+// pass through you early in the roll) round a repo's compounds and take each one by downing its
+// guards. Jump at a wall and you mantle up onto it; fall from high up and a parachute opens. The
 // level's mission (missions.ts) says what wins it. Go down and you come back from the
 // reflog, three times. Crates in the field and in cleared yards hold ammo and health.
 // Guns fire from a magazine and have to be reloaded (R, or by themselves when it runs dry).
@@ -20,10 +21,10 @@
 // Coordinates as in terrain.ts: x east, z south, y up. Facing: yaw 0 looks
 // along -z; forward is (-sin yaw, -cos yaw).
 
-import { mapRepo, mulberry32, reachable, type Block, type CodeMap, type RepoSnapshot } from "./codemap.ts";
+import { gateDir, mapRepo, mulberry32, reachable, type Block, type CodeMap, type RepoSnapshot } from "./codemap.ts";
 import { BRANCH_RADIUS, HEAD_RADIUS, OVERRUN, type Mission } from "./missions.ts";
 import { CLIFF, slope, wet, type Terrain } from "@rustybuns/terrain";
-import { ORDER, splashDamage, WEAPONS, type Weapon, type WeaponId } from "./weapons.ts";
+import { ORDER, rangeDamage, splashDamage, WEAPONS, type Weapon, type WeaponId } from "./weapons.ts";
 import { ROLES, type RoleId } from "./roles.ts";
 import { BOARD_REACH, HELI_CEILING, HELI_FLOOR, RUN_OVER, STREAKS, THRUST_LIFT, THRUST_REFILL, THRUST_SECONDS, VEHICLES, type Vehicle, type VehicleKind } from "./vehicles.ts";
 
@@ -55,6 +56,9 @@ export interface Brain {
   lastHp: number;
   /** Sent at the branch in a defend mission: it goes there, whatever it sees. */
   raid: boolean;
+  /** Where it last heard a gun go off, and seconds left hunting towards it (0: not hunting). */
+  heard: { x: number; z: number } | null;
+  hunt: number;
 }
 
 export interface Soldier {
@@ -96,6 +100,10 @@ export interface Soldier {
   prone: boolean;
   /** Looking down the rebase scope: the sight sways. */
   scoped: boolean;
+  /** Leaning out round a corner: -1 left to 1 right, eased; the upper body, gun and camera go with it. */
+  lean: number;
+  /** A parachute open over it: it falls slowly and steers. */
+  chute: boolean;
   /** Seconds left of a git blame tag: you see it through walls. */
   tagged: number;
   /** Radians of spread a held machine gun has climbed to; it cools off when you stop. */
@@ -177,6 +185,8 @@ export interface Input {
   prone?: boolean;
   /** Looking down the rebase scope. */
   scope?: boolean;
+  /** Lean out round a corner: -1 left, 1 right. */
+  lean?: number;
   fire: boolean;
   /** Put a fresh magazine in; get in or out of a vehicle (edge-triggered). */
   reload?: boolean;
@@ -194,12 +204,14 @@ export interface Input {
 
 export type GameEvent =
   | { kind: "fire"; id: number; weapon: WeaponId }
-  | { kind: "hit"; target: number; by: number; damage: number; shield: boolean }
+  | { kind: "hit"; target: number; by: number; damage: number; shield: boolean; head: boolean }
   /** A shield popping, starting to refill, or full again. */
   | { kind: "shield"; id: number; state: "broke" | "charging" | "full" }
   | { kind: "boom"; x: number; y: number; z: number; r: number }
   | { kind: "down"; id: number; by: number }
   | { kind: "respawn"; id: number; lives: number }
+  /** A parachute opening or being cut. */
+  | { kind: "chute"; id: number; open: boolean }
   | { kind: "cleared"; compound: number }
   | { kind: "pickup"; id: number; item: PickupKind }
   | { kind: "blamed"; id: number }
@@ -223,13 +235,24 @@ export type GameEvent =
   | { kind: "left"; id: number };
 
 export const RUN = 7.5, CROUCH_SPEED = 3.2, PRONE_SPEED = 1.5, GRAVITY = 26, JUMP = 8.5;
-export const ROLL_TIME = 0.42, ROLL_SPEED = 12.5, ROLL_COOLDOWN = 0.6;
+/** A dive-roll: short and slower than a run, with a real wait before the next, so it's a dodge, not a way to travel. Direct hits pass through only its first ROLL_SAFE. */
+export const ROLL_TIME = 0.38, ROLL_SPEED = 7, ROLL_COOLDOWN = 1.4, ROLL_SAFE = 0.6, ROLL_RECOVER = 0.3;
+/** How far the upper body goes out when you lean, in metres, and how fast the lean eases in and out. */
+export const LEAN_REACH = 0.6, LEAN_RATE = 9;
+/** A ledge within this much above your feet can be mantled from a jump. */
+export const MANTLE = 2.4;
+/** The parachute: opens by itself falling this far above the ground, by hand (Space) above this much, then sinks and drifts at these speeds. */
+export const CHUTE_AUTO = 7, CHUTE_MIN = 3.5, CHUTE_FALL = 3.5, CHUTE_DRIFT = 6.5;
 export const RADIUS = 0.45, HEIGHT = 1.8, CROUCH_HEIGHT = 1.2, PRONE_HEIGHT = 0.5, STEP = 0.6;
+/** A round above this much of the body's height is a headshot. */
+export const HEAD_FROM = 0.8;
 export const MAX_HP = 100, HEAVY_HP = 260, LIVES = 3;
 /** Your shield and a heavy's; guards have none. It waits this long after a hit, then refills this much a second. */
 export const MAX_SHIELD = 70, HEAVY_SHIELD = 80, SHIELD_DELAY = 4, SHIELD_RATE = 35;
 /** How far a guard sees, and how far it strays from home chasing you. */
 export const SIGHT = 55, LEASH = 45;
+/** How far a gun is heard (times the weapon's loudness), how long guards hunt towards it, and how far from home they'll go to. */
+export const HEAR = 85, HUNT_SECONDS = 14, HUNT_LEASH = 130;
 /** git revert sends a guard back this many seconds (as far as its trail goes). */
 export const TRAIL_EVERY = 0.25, TRAIL_SECONDS = 3;
 /** The furthest back a battle player's rounds are checked against where soldiers were, in seconds. */
@@ -256,6 +279,16 @@ const fwd = (yaw: number) => ({ x: -Math.sin(yaw), z: -Math.cos(yaw) });
 const yawTo = (dx: number, dz: number) => Math.atan2(-dx, -dz);
 
 export const bodyHeight = (s: Soldier) => (s.prone ? PRONE_HEIGHT : s.crouch ? CROUCH_HEIGHT : HEIGHT);
+
+/** How far a leaning soldier's body is off its feet at a height h up it (the hips stay put, the head goes LEAN_REACH). */
+export function leanOffset(s: Soldier, h = bodyHeight(s)): { x: number; z: number } {
+  if (!s.lean) return { x: 0, z: 0 };
+  const f = fwd(s.yaw), k = Math.max(0, Math.min(1, h / bodyHeight(s))) * s.lean * LEAN_REACH;
+  return { x: -f.z * k, z: f.x * k };
+}
+
+/** Where to go next, for the HUD's marker: a point, what it is, and whether it's a thing to take or a place to get to. */
+export interface Waypoint { x: number; y: number; z: number; label: string; kind: "compound" | "commit" | "head" | "branch" }
 
 /** How far the rebase scope wanders off where you point it, in radians of yaw and pitch, at time t. Steadier crouched, steadiest prone. */
 export function scopeSway(t: number, stance: "stand" | "crouch" | "prone"): { yaw: number; pitch: number } {
@@ -424,7 +457,8 @@ export class Game {
    * as from the compounds' guards (coming in under fire is no start). Null: they share HEAD.
    */
   private farGround(seed: number): { x: number; z: number; yaw: number } | null {
-    const r = mulberry32(seed ^ 0x5eed), { spawn, compounds } = this.map, R = this.terrain.R, canReach = reachable(this.terrain, spawn.x, spawn.z);
+    // Walkable from HEAD on the finished ground (its trails cut): nothing steeper than what slides you back.
+    const r = mulberry32(seed ^ 0x5eed), { spawn, compounds } = this.map, R = this.terrain.R, canReach = reachable(this.terrain, spawn.x, spawn.z, 2, SLIDE);
     let best: { x: number; z: number; yaw: number } | null = null, bestScore = 0;
     for (let i = 0; i < 600; i++) {
       const a = r() * Math.PI * 2, d = Math.sqrt(r()) * (R - 14), x = Math.cos(a) * d, z = Math.sin(a) * d;
@@ -446,10 +480,10 @@ export class Game {
     return {
       id, team, name, x, y: this.ground(x, z, Infinity), z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0,
       hp: MAX_HP, maxHp: MAX_HP, shield: player ? MAX_SHIELD : 0, maxShield: player ? MAX_SHIELD : 0, shieldT: SHIELD_DELAY, alive: true, heavy: false, weapon: "commit", ammo, loaded, reload: 0, kit: ORDER.filter((w) => ammo[w] !== 0), vehicle: -1, cd: 0, roll: 0, rollCd: 0, rollDir: { x: 0, z: 0 },
-      grounded: true, crouch: false, prone: false, scoped: false, tagged: 0, heat: 0, burn: 0, burnBy: -1, burnT: 0, trail: [], compound,
+      grounded: true, crouch: false, prone: false, scoped: false, lean: 0, chute: false, tagged: 0, heat: 0, burn: 0, burnBy: -1, burnT: 0, trail: [], compound,
       brain: player ? null : {
         home: { x, z }, alert: false, wait: 0, lost: 0, seen: null, strafe: 1, strafeT: 0, burst: 0, think: 0,
-        role: "hold", side: 1, cover: null, coverT: 0, lastHp: MAX_HP, raid: false,
+        role: "hold", side: 1, cover: null, coverT: 0, lastHp: MAX_HP, raid: false, heard: null, hunt: 0,
       },
       score: 0, deaths: 0, respawn: 0, gone: false,
     };
@@ -587,7 +621,7 @@ export class Game {
       s.respawn -= dt;
       if (s.respawn > 0) continue;
       const { x, z, yaw } = this.spawnPoint(s.team);
-      Object.assign(s, { x, z, y: this.ground(x, z, Infinity), vx: 0, vy: 0, vz: 0, yaw, hp: s.maxHp, shield: s.maxShield, shieldT: SHIELD_DELAY, alive: true, roll: 0, cd: 0.5, burn: 0, trail: [], reload: 0 });
+      Object.assign(s, { x, z, y: this.ground(x, z, Infinity), vx: 0, vy: 0, vz: 0, yaw, hp: s.maxHp, shield: s.maxShield, shieldT: SHIELD_DELAY, alive: true, roll: 0, cd: 0.5, burn: 0, trail: [], reload: 0, lean: 0, chute: false });
       this.events.push({ kind: "respawn", id: s.id, lives: -1 });
     }
   }
@@ -641,6 +675,10 @@ export class Game {
     s.prone = !!input.prone && s.grounded;
     s.crouch = !s.prone && input.crouch && s.grounded;
     s.scoped = !!input.scope && s.weapon === "rebase";
+    // Leaning: out round a corner on your feet, never prone, mid-roll or in the air.
+    const wantLean = s.grounded && !s.prone && s.roll <= 0 ? Math.max(-1, Math.min(1, input.lean ?? 0)) : 0;
+    s.lean += (wantLean - s.lean) * Math.min(1, LEAN_RATE * dt);
+    if (Math.abs(s.lean) < 0.01) s.lean = 0;
     if (input.weapon && input.weapon !== s.weapon && s.ammo[input.weapon] !== 0) s.weapon = input.weapon, s.reload = 0;
     if (input.reload) this.startReload(s);
     const f = fwd(s.yaw), r = { x: -f.z, z: f.x };
@@ -657,7 +695,16 @@ export class Game {
     const carrying = this.objective.kind === "carry" && this.objective.carried && this.objective.by === s.id;
     this.walk(s, mx, mz, dt, (input.forward < 0 ? 0.75 : 1) * (carrying ? 0.85 : 1));
     if (input.jump && s.grounded && s.roll <= 0 && !s.prone) s.vy = JUMP, s.grounded = false;
+    else if (input.jump && !s.grounded) this.chute(s, !s.chute, CHUTE_MIN);
     if (input.fire) this.fire(s, input.aim);
+  }
+
+  /** Opens the parachute (if there's room under you) or cuts it. */
+  private chute(s: Soldier, open: boolean, above: number) {
+    if (open === s.chute || s.vehicle >= 0) return;
+    if (open && s.y - this.ground(s.x, s.z, Infinity) < above) return;
+    s.chute = open;
+    this.events.push({ kind: "chute", id: s.id, open });
   }
 
   /** Steers velocity towards the wished direction; a roll overrides it. */
@@ -673,7 +720,9 @@ export class Game {
       const ux = mx / m, uz = mz / m, here = this.terrain.height(s.x, s.z);
       k *= climb((this.terrain.height(s.x + ux * 0.8, s.z + uz * 0.8) - here) / 0.8);
     }
-    const top = (s.prone ? PRONE_SPEED : s.crouch ? CROUCH_SPEED : RUN) * k * (s.heavy ? 0.7 : 1), accel = s.grounded ? 60 : 20;
+    // Getting up out of a roll is slow for a moment, so rolling is never a quicker way across open ground.
+    if (s.rollCd > ROLL_COOLDOWN - ROLL_RECOVER) k *= 0.5;
+    const top = s.chute ? CHUTE_DRIFT : (s.prone ? PRONE_SPEED : s.crouch ? CROUCH_SPEED : RUN) * k * (s.heavy ? 0.7 : 1), accel = s.grounded ? 60 : s.chute ? 14 : 20;
     let tx = mx * top, tz = mz * top;
     // Too steep to stand on (and not on a file): it slides you back down, the steeper the faster.
     if (s.grounded && this.ground(s.x, s.z, s.y) <= this.terrain.height(s.x, s.z) + 0.05) {
@@ -725,14 +774,44 @@ export class Game {
       else s.vx = 0, s.vz = 0;
     }
     this.pushOutOfBlocks(s);
+    if (!s.grounded && !s.prone && !s.brain) this.mantle(s);
 
-    s.vy -= GRAVITY * dt;
+    // Under a parachute you sink at a walking pace; otherwise you fall, and a long fall opens one by itself.
+    if (s.chute) s.vy += (-CHUTE_FALL - s.vy) * Math.min(1, 4 * dt);
+    else {
+      s.vy -= GRAVITY * dt;
+      if (!s.grounded && !s.brain && s.vy < -9) this.chute(s, true, CHUTE_AUTO);
+    }
     s.y += s.vy * dt;
     const g = this.ground(s.x, s.z, s.y);
     // A shove (a push round) carries you through the air; on the ground, walk() steers it away.
     // Grounded and going downhill: stick to the slope rather than hop down it.
-    if (s.y <= g || (s.grounded && s.vy <= 0 && s.y - g < 0.4)) s.y = g, s.vy = Math.max(0, s.vy), s.grounded = true;
-    else if (s.y > g + 0.05) s.grounded = false;
+    if (s.y <= g || (s.grounded && s.vy <= 0 && s.y - g < 0.4)) {
+      s.y = g, s.vy = Math.max(0, s.vy), s.grounded = true;
+      if (s.chute) this.chute(s, false, 0);
+    } else if (s.y > g + 0.05) s.grounded = false;
+  }
+
+  /** A ledge just above you that you're pushing into: up and onto it. */
+  private mantle(s: Soldier) {
+    if (s.vy > 3) return;
+    const f = fwd(s.yaw);
+    for (const b of this.blocks()) {
+      const top = b.y + b.h;
+      if (top <= s.y + STEP || top > s.y + MANTLE) continue;
+      const px = Math.max(b.x - b.w / 2, Math.min(s.x, b.x + b.w / 2)), pz = Math.max(b.z - b.d / 2, Math.min(s.z, b.z + b.d / 2));
+      if (Math.hypot(s.x - px, s.z - pz) > RADIUS + 0.3) continue;
+      // Only a ledge you face and are moving into, so passing a wall sideways doesn't pull you onto it.
+      const tx = b.x - s.x, tz = b.z - s.z;
+      if (f.x * tx + f.z * tz <= 0 || s.vx * tx + s.vz * tz < -0.5) continue;
+      // Nothing solid stacked on it where you'd stand.
+      if (this.blockAt(px + (b.x - px) * 0.05, top + 0.3, pz + (b.z - pz) * 0.05)) continue;
+      s.y = top, s.vy = 0, s.grounded = true;
+      const d = Math.hypot(tx, tz) || 1;
+      s.x += (tx / d) * (RADIUS + 0.05), s.z += (tz / d) * (RADIUS + 0.05);
+      if (s.chute) this.chute(s, false, 0);
+      return;
+    }
   }
 
   private pushOutOfBlocks(s: Soldier) {
@@ -864,9 +943,9 @@ export class Game {
   /* ---------------- shooting ---------------- */
 
   muzzle(s: Soldier) {
-    const f = fwd(s.yaw), eye = s.prone ? 0.35 : s.crouch ? 1.0 : 1.4;
-    // Held at the right hip, a little ahead: the over-the-shoulder camera sees it go.
-    return { x: s.x + f.x * 0.5 - f.z * 0.3, y: s.y + eye, z: s.z + f.z * 0.5 + f.x * 0.3 };
+    const f = fwd(s.yaw), eye = s.prone ? 0.35 : s.crouch ? 1.0 : 1.4, lean = leanOffset(s, eye);
+    // Held at the right hip, a little ahead: the over-the-shoulder camera sees it go. A lean carries it out round the corner.
+    return { x: s.x + f.x * 0.5 - f.z * 0.3 + lean.x, y: s.y + eye, z: s.z + f.z * 0.5 + f.x * 0.3 + lean.z };
   }
 
   /** Starts putting a fresh magazine in, if there's one to put in and this one isn't full. */
@@ -890,6 +969,7 @@ export class Game {
     s.loaded[s.weapon]--;
     if (s.ammo[s.weapon]! > 0) s.ammo[s.weapon]!--;
     this.events.push({ kind: "fire", id: s.id, weapon: s.weapon });
+    if (!s.brain) this.heard(s, w);
     // The magazine's dry: straight into the reload.
     if (s.loaded[s.weapon] <= 0 && s.ammo[s.weapon] !== 0) this.startReload(s);
   }
@@ -906,8 +986,8 @@ export class Game {
       dx = f.x * Math.cos(p), dy = Math.sin(p), dz = f.z * Math.cos(p);
     }
     const d = Math.hypot(dx, dy, dz) || 1;
-    // Lying down steadies a rifle; crouching, a little. A held machine gun climbs off target.
-    const spread = (w.spread + extraSpread + s.heat) * (s.prone ? 0.3 : s.crouch ? 0.6 : 1);
+    // Lying down steadies a rifle; crouching, a little. A held machine gun climbs off target, and a sniper rifle fired from the hip is a guess.
+    const spread = (w.spread + extraSpread + s.heat + (w.hipSpread && !s.scoped ? w.hipSpread : 0)) * (s.prone ? 0.3 : s.crouch ? 0.6 : 1);
     for (let i = 0; i < w.pellets; i++) {
       let ux = dx / d + (this.rand() - 0.5) * 2 * spread, uy = dy / d + (this.rand() - 0.5) * 2 * spread, uz = dz / d + (this.rand() - 0.5) * 2 * spread;
       // A lob goes up a little more than you aim, so a grenade clears the crate in front of you.
@@ -954,7 +1034,7 @@ export class Game {
         p.x += (p.vx * dt) / n, p.y += (p.vy * dt) / n, p.z += (p.vz * dt) / n;
         const hit = this.soldierAt(p);
         if (hit) {
-          this.land(p, hit);
+          this.land(p, hit.s, hit.head);
           break;
         }
         const car = p.team !== "you" ? this.vehicleAt(p) : null, barrel = car ? null : this.barrelAt(p);
@@ -994,19 +1074,21 @@ export class Game {
    * A body the shot is inside, other than its own side's (and never the shooter's, by a direct hit).
    * A battle player's round is checked against where everyone was when the shooter saw them.
    */
-  private soldierAt(p: Shot): Soldier | null {
+  private soldierAt(p: Shot): { s: Soldier; head: boolean } | null {
     for (const s of this.soldiers) {
       if (!s.alive || s.vehicle >= 0 || !this.hostile(s, { id: p.owner, team: p.team })) continue;
-      // Rolling: direct hits pass through.
-      if (s.roll > 0) continue;
+      // Early in a roll, direct hits pass through.
+      if (s.roll > ROLL_TIME * (1 - ROLL_SAFE)) continue;
       const b = p.rewind ? this.where(s, this.time - p.rewind) : { x: s.x, y: s.y, z: s.z, h: bodyHeight(s) };
       if (p.y < b.y || p.y > b.y + b.h) continue;
-      if (Math.hypot(p.x - b.x, p.z - b.z) < RADIUS + 0.1) return s;
+      // A lean carries the upper body out sideways: the hitbox goes with it.
+      const off = leanOffset(s, p.y - b.y);
+      if (Math.hypot(p.x - b.x - off.x, p.z - b.z - off.z) < RADIUS + 0.1) return { s, head: p.y > b.y + b.h * HEAD_FROM };
     }
     return null;
   }
 
-  private land(p: Shot, direct: Soldier | null) {
+  private land(p: Shot, direct: Soldier | null, head = false) {
     p.dead = true;
     const w = WEAPONS[p.weapon];
     if (w.effect === "stash") return this.stash(p.x, p.z, p.y);
@@ -1023,7 +1105,10 @@ export class Game {
       if (w.effect === "blame") direct.tagged = BLAME_SECONDS, this.events.push({ kind: "blamed", id: direct.id });
       if (w.effect === "revert") this.revert(direct);
       if (w.burn > 0) direct.burn = Math.max(direct.burn, w.burn), direct.burnBy = p.owner;
-      this.hurt(direct, w.damage, p.owner);
+      // A shotgun's pellets lose their punch with distance; a precision round to the head does more.
+      let dmg = rangeDamage(w, p.age * w.speed);
+      if (head) dmg *= w.headshot;
+      if (dmg > 0) this.hurt(direct, dmg, p.owner, head);
     }
   }
 
@@ -1312,11 +1397,11 @@ export class Game {
     if (back) Object.assign(s, { x: back.x, y: back.y, z: back.z, vx: 0, vy: 0, vz: 0 });
     s.trail = back ? [back] : [];
     this.past.delete(s.id);
-    if (s.brain) Object.assign(s.brain, { alert: false, seen: null, wait: 1.5, cover: null, coverT: 0, burst: 0 });
+    if (s.brain) Object.assign(s.brain, { alert: false, seen: null, wait: 1.5, cover: null, coverT: 0, burst: 0, heard: null, hunt: 0 });
     this.events.push({ kind: "reverted", id: s.id });
   }
 
-  hurt(s: Soldier, damage: number, by: number) {
+  hurt(s: Soldier, damage: number, by: number, head = false) {
     if (!s.alive || this.status !== "playing") return;
     // In a vehicle, the vehicle takes it.
     const ride = s.vehicle >= 0 ? this.vehicles.find((v) => v.id === s.vehicle) : undefined;
@@ -1326,7 +1411,7 @@ export class Game {
     s.shieldT = 0, s.shield -= soak;
     if (soak > 0 && s.shield <= 0) this.events.push({ kind: "shield", id: s.id, state: "broke" });
     s.hp -= damage - soak;
-    this.events.push({ kind: "hit", target: s.id, by, damage, shield: soak > 0 });
+    this.events.push({ kind: "hit", target: s.id, by, damage, shield: soak > 0, head });
     // A revert's victim has forgotten you; anything else alarms its yard.
     if (s.brain && s.brain.wait < 1) this.alarm(s.compound);
     if (s.hp > 0) return;
@@ -1368,12 +1453,12 @@ export class Game {
       return this.lose();
     }
     const { x, z, yaw } = this.map.spawn;
-    Object.assign(s, { x, z, y: this.ground(x, z, Infinity), vx: 0, vy: 0, vz: 0, yaw, hp: s.maxHp, shield: s.maxShield, shieldT: SHIELD_DELAY, alive: true, roll: 0, cd: 0.5, burn: 0 });
+    Object.assign(s, { x, z, y: this.ground(x, z, Infinity), vx: 0, vy: 0, vz: 0, yaw, hp: s.maxHp, shield: s.maxShield, shieldT: SHIELD_DELAY, alive: true, roll: 0, cd: 0.5, burn: 0, lean: 0, chute: false });
     // A fresh life: the role you picked for it, with full magazines.
     if (this.nextRole) this.role = this.nextRole, this.nextRole = null;
     if (this.role) this.arm(s, this.role);
     // Guards lose track of you (raiders keep coming).
-    for (const g of this.soldiers) if (g.brain && !g.brain.raid) g.brain.alert = false, g.brain.seen = null;
+    for (const g of this.soldiers) if (g.brain && !g.brain.raid) g.brain.alert = false, g.brain.seen = null, g.brain.heard = null, g.brain.hunt = 0;
     this.events.push({ kind: "respawn", id: s.id, lives: this.lives });
   }
 
@@ -1395,6 +1480,38 @@ export class Game {
     for (const g of this.soldiers) if (g.brain && g.alive && g.compound === ci && !g.brain.alert) {
       g.brain.alert = true, g.brain.wait = 0.3 + this.rand() * 0.4, g.brain.lost = 0;
     }
+  }
+
+  /**
+   * A gun going off is heard: every guard within earshot (farther for a loud gun) that isn't already on
+   * you comes hunting towards where it was fired, past its yard's leash. So you can't sit out of sight
+   * and pick a compound apart: the shots bring them to you.
+   */
+  private heard(s: Soldier, w: Weapon) {
+    const reach = HEAR * w.loud;
+    for (const g of this.soldiers) {
+      if (!g.brain || !g.alive || g.brain.raid || Math.hypot(g.x - s.x, g.z - s.z) > reach) continue;
+      g.brain.heard = { x: s.x, z: s.z }, g.brain.hunt = HUNT_SECONDS;
+      if (!g.brain.alert) g.brain.alert = true, g.brain.wait = 0.4 + this.rand() * 0.5, g.brain.lost = 0;
+    }
+  }
+
+  /** Where to go next: the nearest compound still held (the trail ends at its gate), or the mission's own point. Null in a battle on downs, or when it's done. */
+  waypoint(): Waypoint | null {
+    if (this.status !== "playing" || (this.mode && this.mode !== "coop")) return null;
+    const you = this.you(), o = this.objective, { spawn } = this.map;
+    if (o.kind === "carry") {
+      if (o.carried && o.by === you.id) return { x: spawn.x, y: this.terrain.height(spawn.x, spawn.z), z: spawn.z, label: "HEAD", kind: "head" };
+      if (!o.carried) return { x: o.x, y: o.y, z: o.z, label: "the commit", kind: "commit" };
+    }
+    if (o.kind === "defend") return { x: o.x, y: this.terrain.height(o.x, o.z), z: o.z, label: "main", kind: "branch" };
+    let best: Waypoint | null = null, bestD = Infinity;
+    this.map.compounds.forEach((c, i) => {
+      if (this.cleared[i]) return;
+      const g = gateDir(c.gate ?? 0), x = c.x + g.x * ((c.half ?? c.r * 0.66) + 1), z = c.z + g.z * ((c.half ?? c.r * 0.66) + 1), d = Math.hypot(x - you.x, z - you.z);
+      if (d < bestD) best = { x, y: this.terrain.height(x, z), z, label: c.folder, kind: "compound" }, bestD = d;
+    });
+    return best;
   }
 
   /* ---------------- guards ---------------- */
@@ -1447,11 +1564,13 @@ export class Game {
         if (!b.alert) this.alarm(s.compound);
         b.seen = seen, b.lost = 0;
       } else b.lost += 0.2;
-      if (b.alert && b.lost > 6 && !b.raid) b.alert = false, b.seen = null;
+      if (b.alert && b.lost > 6 && !b.raid && b.hunt <= 0) b.alert = false, b.seen = null;
       // Hit: duck behind something.
       if (s.hp < b.lastHp && b.alert && b.seen && !b.cover) this.takeCover(s, 1.2);
       b.lastHp = s.hp;
     }
+    b.hunt = Math.max(0, b.hunt - dt);
+    if (b.hunt <= 0) b.heard = null;
     if (s.burn > 0) {
       // On fire: it runs about flailing, and doesn't shoot.
       const a = this.time * 2.3 + s.id * 1.7;
@@ -1461,11 +1580,25 @@ export class Game {
     }
     let mx = 0, mz = 0;
     const toHome = Math.hypot(b.home.x - s.x, b.home.z - s.z);
-    if (!b.alert || (!b.seen && !b.raid)) {
+    if (!b.alert || (!b.seen && !b.raid && !b.heard)) {
       // On watch: drift about the yard.
       if (toHome > 3) mx = (b.home.x - s.x) / toHome * 0.4, mz = (b.home.z - s.z) / toHome * 0.4;
       s.crouch = false;
       this.walk(s, mx, mz, dt);
+      return;
+    }
+    if (!b.seen && b.heard && !b.raid) {
+      // Heard a gun, seen nobody: go and look where it came from, as far as the hunt leash allows.
+      b.wait -= dt;
+      const hx = b.heard.x - s.x, hz = b.heard.z - s.z, hd = Math.hypot(hx, hz);
+      s.crouch = false;
+      if (hd > 4 && toHome < HUNT_LEASH) s.yaw = yawTo(hx, hz), this.walk(s, (hx / hd) * 0.9, (hz / hd) * 0.9, dt);
+      else {
+        // There: look about where the shots came from, then the hunt runs down and it wanders home.
+        s.yaw += dt * 1.2;
+        this.walk(s, 0, 0, dt);
+        b.hunt = Math.min(b.hunt, 4);
+      }
       return;
     }
     b.wait -= dt;
@@ -1496,7 +1629,9 @@ export class Game {
         const p = this.flankPoint(s);
         if (Math.hypot(p.x - s.x, p.z - s.z) > 3) to(p.x, p.z);
       }
-      if (toHome > LEASH && (mx * (b.home.x - s.x) + mz * (b.home.z - s.z)) < 0) mx = (b.home.x - s.x) / toHome, mz = (b.home.z - s.z) / toHome;
+      // The leash: the yard's, or the hunt's once it has heard you shooting.
+      const leash = b.hunt > 0 ? HUNT_LEASH : LEASH;
+      if (toHome > leash && (mx * (b.home.x - s.x) + mz * (b.home.z - s.z)) < 0) mx = (b.home.x - s.x) / toHome, mz = (b.home.z - s.z) / toHome;
     }
     this.walk(s, mx * 0.8, mz * 0.8, dt);
     if (b.wait > 0 || b.lost > 0 || !b.seen || b.coverT > 0) return;

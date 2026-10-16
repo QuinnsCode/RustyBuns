@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "test": "bun test test",
+    "edge:dev": "vite build && bunx wrangler dev",
+    "deploy": "vite build && bunx wrangler deploy",
     "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
     "desktop:build": "rustybuns build desktop --check"
   },

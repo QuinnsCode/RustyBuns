@@ -1,37 +1,46 @@
-// A bowl by Old Faithful on the flat geyser basin, a boardwalk of flat bars to the west, and a hop over
-// a steaming vent to the east.
+// A bowl sunk where Old Faithful blows, on the flat geyser basin; a boardwalk of bars along the west,
+// a hop over a steaming vent to the east, and the basin's own low rise beyond it as a launch.
 import { type ParkSpec } from "./park.ts";
-import { bowl, flatBar, funbox, gap, hip, quarterPipe, stairSet } from "./pieces.ts";
+import { bowl, fallenLog, flatBar, funbox, gap, geyserCone, hip, quarterPipe, rollers, spine, stairSet, skyRail } from "./pieces.ts";
 
 const E = Math.PI / 2;
 
-const vent = gap({ x: 24, z: 30, yaw: E }, { name: "Geyser Hop", span: 7, h: 1.4, landH: 0.9, bonus: 600 });
+const vent = gap({ x: 56, z: 75, yaw: E }, { name: "Geyser Hop", span: 30, h: 2.4, w: 8, landH: 1.8, landLen: 14, reach: 75, bonus: 800 });
 
 export const oldFaithful: ParkSpec = {
   id: "old-faithful",
+  weather: "overcast",
   name: "Old Faithful Bowl",
-  blurb: "A bowl sunk where the geyser blows, a boardwalk of bars along the basin, and a hop over a steaming vent.",
+  blurb: "A bowl where the geyser blows, a boardwalk of bars along the basin, and a hop over a steaming vent.",
   zone: "old-faithful",
+  fill: { lines: 8 },
+  relief: 0.7, // the basin is flat: at the default relief no slope is steep enough for a ribbon
   sites: [
-    { x: -6, z: 27, r: 22, parts: [bowl({ x: -6, z: 27 }, { w: 34, d: 24, h: 2.4 })] },
-    { x: -50, z: 60, r: 8, parts: [flatBar({ x: -52, z: 60, yaw: E }, { len: 8 })] },
-    { x: -38, z: 60, r: 8, parts: [flatBar({ x: -40, z: 60, yaw: E }, { len: 8 }), stairSet({ x: -32, z: 62, yaw: E }, { w: 4, steps: 4 })] },
-    { x: -20, z: 62, r: 8, parts: [funbox({ x: -20, z: 62, yaw: E }, { w: 6, d: 12, h: 0.7 })] },
-    { x: 24, z: 30, r: 10, parts: [vent.launch, vent.landing, hip({ x: 28.5, z: 30, yaw: E }, { w: 5, d: 3, h: 1, name: "vent" })] },
-    { x: 46, z: 30, r: 8, parts: [quarterPipe({ x: 48, z: 30, yaw: E }, { w: 8, d: 4, h: 2.2 })] },
-    { x: -58, z: 40, r: 6, parts: [] },
-    { x: -6, z: 47, r: 5, parts: [] },
+    { parts: [geyserCone({ x: -130, z: 100 }, { r: 8, h: 2.4 })] },
+    { parts: [rollers({ x: -60, z: 120, yaw: E }, { w: 8, n: 5, period: 7, h: 0.8 })] },
+    { parts: [fallenLog({ x: 60, z: 110, yaw: E }, { len: 16, r: 0.8 }), fallenLog({ x: 60, z: 122, yaw: E }, { len: 12, r: 0.6 })] },
+    { parts: [bowl({ x: -17, z: 75 }, { w: 44, d: 32, h: 3.5, deck: 4 })] },
+    { parts: [flatBar({ x: -150, z: 20, yaw: E }, { len: 14 }), flatBar({ x: -125, z: 20, yaw: E }, { len: 14 })] },
+    { parts: [stairSet({ x: -100, z: 20, yaw: E }, { w: 8, steps: 6, rise: 0.25, run: 0.9 }), funbox({ x: -70, z: 20, yaw: E }, { w: 10, d: 24, h: 1.2, ramp: 7 })] },
+    { parts: [vent.launch, vent.landing, hip({ x: 74, z: 75, yaw: E }, { w: 8, d: 6, h: 1.8, name: "vent" })] },
+    { parts: [quarterPipe({ x: 120, z: 75, yaw: E }, { w: 14, d: 7, h: 3.6 }), spine({ x: 100, z: 100, yaw: E }, { w: 12, d: 8, h: 2.2 })] },
+    // not possible: a bar on stilts that climbs away from the ground
+    { parts: [skyRail({ x: -20, z: 140, yaw: E }, { len: 120, y: 1.6, y2: 12 })] },
   ],
   spawns: [
-    { name: "boardwalk", x: -58, z: 40, yaw: 0 },
-    { name: "bowl deck", x: -6, z: 47, yaw: Math.PI },
+    { name: "geyser view", x: -150, z: 75, yaw: E },
+    { name: "boardwalk", x: -175, z: 20, yaw: E },
+    { name: "vent line", x: 24, z: 75, yaw: E },
+    { name: "bowl deck", x: -17, z: 130, yaw: Math.PI },
+    { name: "sky rail", x: -100, z: 140, yaw: E },
   ],
-  bounds: { minX: -70, maxX: 58, minZ: 0, maxZ: 80 },
+  landmarks: [{ kind: "plume", x: -17, z: 75, tall: 55, r: 8 }],
+  bounds: { minX: -190, maxX: 150, minZ: -20, maxZ: 150 },
   goals: [
-    { kind: "score", target: 2000 },
-    { kind: "combo", target: 700 },
+    { kind: "score", target: 2500 },
+    { kind: "combo", target: 800 },
     { kind: "gap", name: "Geyser Hop" },
     { kind: "collect", count: 5 },
   ],
-  pickups: [{ x: -22, z: 27, lift: 1.4 }, { x: 10, z: 27, lift: 1.4 }, { x: -6, z: 36, lift: 1.4 }, { x: -52, z: 60, lift: 1.4 }, { x: -20, z: 62, lift: 1.6 }],
+  pickups: [{ x: -45, z: 75, lift: 2 }, { x: 10, z: 75, lift: 2 }, { x: -17, z: 95, lift: 2 }, { x: -150, z: 20, lift: 1.5 }, { x: -70, z: 20, lift: 2 }],
 };

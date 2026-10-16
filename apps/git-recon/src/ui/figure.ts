@@ -1,6 +1,6 @@
-// The soldiers: soft clay mannequins. Fat rounded limbs that run into each other,
-// a ball for a head, no hands, feet or face, all inked round the edge like a comic.
-// Yours is glossy black, the guards are orange. The head is a slot: a plain ball, or a
+// The soldiers: soft clay mannequins. Fat rounded limbs that run into each other, a ball for a
+// head on a short neck, ball hands and flat little feet, no face, all inked round the edge like a
+// comic. Yours is glossy black, the guards are orange. The head is a slot: a plain ball, or a
 // block with a logo on it (heads.ts). The gun in the hands is whichever git command is up.
 //
 // Joints are groups; every limb hangs down its group's -y, so rotating a joint by +x
@@ -10,15 +10,17 @@
 //   root     at the feet, turned to the soldier's yaw
 //   tumble   at the waist, for rolls and lying prone
 //   body     the figure, feet at the root again
-//     hips → legL/legR (hip → knee) and spine → armL/armR (shoulder), head, the gun in the right hand
+//     hips → legL/legR (hip → knee → foot) and spine → armL/armR (shoulder → elbow → hand), head
+//     the gun hangs off the right forearm, in the `hand` group
 //
 // pose() works out where every joint should be from what the soldier is doing, then (given a
 // blend rate) eases the joints there, so one pose flows into the next instead of snapping.
 
 import * as THREE from "three";
+import { LEAN_REACH } from "../sim/game.ts";
 import type { WeaponId } from "../sim/weapons.ts";
 
-export type Pose = "stand" | "kneel" | "prone" | "tuck" | "star" | "surrender" | "air";
+export type Pose = "stand" | "kneel" | "prone" | "tuck" | "star" | "surrender" | "air" | "hang";
 
 /** Body types. Looks only: every build has the same hitbox and speed. */
 export type BuildId = "thick" | "average" | "lank";
@@ -40,12 +42,12 @@ export const BUILDS: Record<BuildId, Build> = {
   lank: { name: "Lank", girth: 0.62, chest: 0.72, tall: 1.12, head: 0.95 },
 };
 
-/** A build's joints, in metres. */
-interface Dims { waist: number; hip: number; thigh: number; shin: number; shoulder: number; arm: number; neck: number; girth: number; chest: number; head: number }
+/** A build's joints, in metres. `arm` is the whole arm, shoulder to wrist: `upper` and `fore` split it at the elbow. */
+interface Dims { waist: number; hip: number; thigh: number; shin: number; shoulder: number; arm: number; upper: number; fore: number; neck: number; girth: number; chest: number; head: number }
 
 function dims(b: Build): Dims {
-  const t = b.tall;
-  return { waist: 0.9 * t, hip: 0.88 * t, thigh: 0.44 * t, shin: 0.44 * t, shoulder: 0.5 * t, arm: 0.46 * t, neck: 0.78 * t, girth: b.girth, chest: b.chest, head: b.head };
+  const t = b.tall, arm = 0.46 * t;
+  return { waist: 0.9 * t, hip: 0.88 * t, thigh: 0.44 * t, shin: 0.44 * t, shoulder: 0.5 * t, arm, upper: arm * 0.54, fore: arm * 0.46, neck: 0.78 * t, girth: b.girth, chest: b.chest, head: b.head };
 }
 
 export interface Figure {
@@ -87,6 +89,15 @@ function limb(mat: THREE.Material, r: number, len: number, name: string): THREE.
   return inked(m);
 }
 
+/** A ball of the body's clay: a hand, or squashed, a foot. */
+function ball(mat: THREE.Material, r: number, name: string, x = 0, y = 0, z = 0): THREE.Mesh {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), mat);
+  m.position.set(x, y, z);
+  m.castShadow = true;
+  m.name = name;
+  return inked(m);
+}
+
 const group = (name: string, x = 0, y = 0, z = 0) => {
   const g = new THREE.Group();
   g.name = name;
@@ -98,9 +109,23 @@ function leg(mat: THREE.Material, d: Dims, side: number): THREE.Group {
   const hip = group(side < 0 ? "legL" : "legR", side * 0.13 * d.chest, 0, 0);
   hip.add(limb(mat, 0.13 * d.girth, d.thigh + 0.06, "thigh"));
   const knee = group(side < 0 ? "kneeL" : "kneeR", 0, -d.thigh, 0);
-  knee.add(limb(mat, 0.12 * d.girth, d.shin + 0.08, "shin"));
+  knee.add(limb(mat, 0.12 * d.girth, d.shin, "shin"));
+  // The foot: a flattened ball under the shin, toes forward.
+  const foot = ball(mat, 0.09 * d.girth, side < 0 ? "footL" : "footR", 0, -d.shin + 0.02, -0.05);
+  foot.scale.set(1.1, 0.5, 1.45);
+  knee.add(foot);
   hip.add(knee);
   return hip;
+}
+
+function arm(mat: THREE.Material, d: Dims, side: number): { shoulder: THREE.Group; elbow: THREE.Group } {
+  const shoulder = group(side < 0 ? "armL" : "armR", side * 0.3 * d.chest, d.shoulder, 0);
+  shoulder.add(limb(mat, 0.095 * d.girth, d.upper + 0.04, "arm"));
+  const elbow = group(side < 0 ? "elbowL" : "elbowR", 0, -d.upper, 0);
+  elbow.add(limb(mat, 0.085 * d.girth, d.fore, "forearm"));
+  elbow.add(ball(mat, 0.075 * d.girth, side < 0 ? "handL" : "handR", 0, -d.fore, 0));
+  shoulder.add(elbow);
+  return { shoulder, elbow };
 }
 
 /** The plain head: a ball the same stuff as the body. */
@@ -113,7 +138,7 @@ export function ballHead(mat: THREE.Material, size = 1): THREE.Mesh {
 /* ---------------- guns ---------------- */
 
 // Each git command's gun, as a silhouette: how long, how fat the barrel, and what hangs off it.
-// They lie along the right forearm and stick out past the hand. In the arm's frame -y runs
+// They lie along the right forearm and stick out past the hand. In the forearm's frame -y runs
 // out along the barrel, and +z is the gun's underside (the arm points forward when aiming).
 interface GunShape { body: number; barrel: number; bore: number; tube?: boolean; scope?: boolean; drum?: boolean; tank?: boolean; pump?: boolean }
 const GUNS: Record<WeaponId, GunShape> = {
@@ -186,25 +211,26 @@ export function buildFigure(color: number, gloss: number, build: BuildId = "aver
   pelvis.scale.set(1.05 * d.chest, 0.8, 0.85 * Math.max(1, d.girth * 0.9));
   pelvis.castShadow = true;
   const spine = group("spine");
-  const torso = limb(mat, 0.25, 0.62 * (d.neck / 0.78), "torso");
-  torso.position.y = 0.3 * (d.neck / 0.78);
+  const k = d.neck / 0.78;
+  const torso = limb(mat, 0.25, 0.56 * k, "torso");
+  torso.position.y = 0.28 * k;
   torso.scale.set(d.chest, 1, 0.8 * Math.max(0.8, d.chest * 0.9));
-  const sx = 0.3 * d.chest;
-  const armL = group("armL", -sx, d.shoulder, 0), armR = group("armR", sx, d.shoulder, 0);
-  armL.add(limb(mat, 0.095 * d.girth, d.arm, "arm"));
-  armR.add(limb(mat, 0.095 * d.girth, d.arm, "arm"));
-  const hand = group("hand", 0, -d.arm, 0.02);
-  armR.add(hand);
+  // A short neck between the chest's dome and the head.
+  const neck = limb(mat, 0.07 * Math.max(0.8, d.girth), 0.16 * k, "neck");
+  neck.position.y = d.neck - 0.08 * k;
+  const { shoulder: armL, elbow: elbowL } = arm(mat, d, -1), { shoulder: armR, elbow: elbowR } = arm(mat, d, 1);
+  const hand = group("hand", 0, -d.fore, 0.02);
+  elbowR.add(hand);
   const head = group("head", 0, d.neck, 0);
   head.userData.size = d.head;
   head.add(ballHead(mat, d.head));
-  spine.add(torso, armL, armR, head);
+  spine.add(torso, neck, armL, armR, head);
   const legL = leg(mat, d, -1), legR = leg(mat, d, 1);
   hips.add(pelvis, spine, legL, legR);
   body.add(hips);
   tumble.add(body);
   root.add(tumble);
-  const joints = { tumble, body, spine, legL, legR, kneeL: legL.getObjectByName("kneeL")!, kneeR: legR.getObjectByName("kneeR")!, armL, armR, head, hand };
+  const joints = { tumble, body, spine, legL, legR, kneeL: legL.getObjectByName("kneeL")!, kneeR: legR.getObjectByName("kneeR")!, armL, armR, elbowL, elbowR, head, hand };
   const f: Figure = { root, head, stride: 0, clock: 0, dims: d, joints, gun: null };
   setGun(f, "commit");
   return f;
@@ -229,6 +255,8 @@ export interface PoseState {
   /** How the figure is moving against where it faces, m/s: forward (+) or back, right (+) or left. */
   forward?: number;
   side?: number;
+  /** -1..1: leaning out round a corner, left (-) or right. The upper body (gun and all) tips over so the head goes LEAN_REACH sideways; the feet stay planted. */
+  lean?: number;
   /** 0..1: a shot just went off (the gun kicks up), it just got hit (it jolts back, to `flinchSide`), it just landed (it dips). */
   kick?: number;
   flinch?: number;
@@ -241,14 +269,14 @@ export interface PoseState {
 }
 
 const RUN = 7.5;
-const NAMES = ["tumble", "body", "spine", "legL", "legR", "kneeL", "kneeR", "armL", "armR", "head"] as const;
+const NAMES = ["tumble", "body", "spine", "legL", "legR", "kneeL", "kneeR", "armL", "armR", "elbowL", "elbowR", "head"] as const;
 const was = NAMES.map(() => ({ q: new THREE.Quaternion(), p: new THREE.Vector3() }));
 
 /** Puts the figure in a pose. Runs every frame; walking advances its stride. */
 export function pose(f: Figure, s: PoseState) {
   const { waist: WAIST, hip: HIP, thigh: THIGH } = f.dims;
   const j = f.joints;
-  const { tumble, body, spine, legL, legR, kneeL, kneeR, armL, armR, head } = j as Record<(typeof NAMES)[number], THREE.Object3D>;
+  const { tumble, body, spine, legL, legR, kneeL, kneeR, armL, armR, elbowL, elbowR, head } = j as Record<(typeof NAMES)[number], THREE.Object3D>;
   const blending = !!s.blend && s.dt > 0;
   if (blending) NAMES.forEach((n, i) => (was[i]!.q.copy(j[n]!.quaternion), was[i]!.p.copy(j[n]!.position)));
   f.clock += s.dt;
@@ -257,12 +285,13 @@ export function pose(f: Figure, s: PoseState) {
   for (const g of [tumble, spine, legL, legR, kneeL, kneeR, head]) set(g, 0);
   tumble.position.y = WAIST;
   body.position.y = -WAIST;
-  // Holding the gun: both arms out along the aim, the left reaching across to the barrel. Aiming up
-  // leans the chest back a little and the arms do the rest; the head looks where the gun does.
+  // Holding the gun: the right upper arm hangs a little under the aim with the forearm (and the gun along
+  // it) bent up onto the line; the left arm reaches across, elbow bent, to the barrel. Aiming up leans the
+  // chest back a little and the arms do the rest; the head looks where the gun does.
   const tilt = s.pitch * 0.3, kick = s.kick ?? 0, flinch = s.flinch ?? 0;
-  const aim = Math.PI / 2 + s.pitch - tilt + kick * 0.4;
-  set(armR, aim, 0.05);
-  set(armL, aim, -0.45, -0.5);
+  const aim = Math.PI / 2 + s.pitch - tilt + kick * 0.4, bendR = 0.35, bendL = 0.6;
+  set(armR, aim - bendR, -0.2), set(elbowR, bendR);
+  set(armL, aim - bendL, 0.85), set(elbowL, bendL);
   spine.rotation.x = tilt + kick * 0.1 + flinch * 0.35;
   spine.rotation.z = -(s.flinchSide ?? 0) * flinch * 0.3;
   head.rotation.x = s.pitch * 0.45 - tilt;
@@ -270,12 +299,16 @@ export function pose(f: Figure, s: PoseState) {
   const sp = Math.max(1e-6, s.speed), fw = (s.forward ?? s.speed) / sp, sd = (s.side ?? 0) / sp;
   if (s.pose === "stand") {
     // Running: legs swing the way you're going (sideways when strafing, the stride reversed backing
-    // up), the body leans into it and bobs twice a stride. Standing still, it breathes.
+    // up), the body leans into it and bobs twice a stride, and the elbows give with each step so the
+    // gun rides the stride instead of floating. Standing still, it breathes.
     const k = Math.min(1, s.speed / RUN), back = fw < -0.3 ? -1 : 1;
     f.stride += s.speed * s.dt * 1.9 * back;
     const a = Math.sin(f.stride) * 0.8 * k, swingX = Math.max(Math.abs(fw), 0.25) * Math.sign(fw || 1) * back, swingZ = sd * 0.55;
     set(legL, a * swingX, a * swingZ), set(legR, -a * swingX, -a * swingZ);
     set(kneeL, -Math.max(0, -Math.cos(f.stride) * back) * 1.2 * k), set(kneeR, -Math.max(0, Math.cos(f.stride) * back) * 1.2 * k);
+    const give = Math.abs(Math.sin(f.stride)) * 0.18 * k;
+    elbowR.rotation.x += give, elbowL.rotation.x += give;
+    armR.rotation.x -= give * 0.6, armL.rotation.x -= give * 0.6;
     spine.rotation.x -= 0.2 * k * fw;
     spine.rotation.y = Math.sin(f.stride) * 0.12 * k;
     tumble.rotation.z = -sd * 0.12 * k;
@@ -284,27 +317,29 @@ export function pose(f: Figure, s: PoseState) {
     spine.rotation.x += (1 - k) * Math.sin(f.clock * 2.2) * 0.02;
   } else if (s.pose === "kneel") {
     // Down on the right knee, the left foot planted ahead; shuffling, it bobs.
-    body.position.y = -WAIST - (HIP - THIGH - 0.06) - Math.abs(Math.sin(f.stride)) * 0.03 * Math.min(1, s.speed / 3);
+    body.position.y = -WAIST - (HIP - THIGH - 0.1) - Math.abs(Math.sin(f.stride)) * 0.03 * Math.min(1, s.speed / 3);
     f.stride += s.speed * s.dt * 2.4;
     set(legL, 1.5), set(kneeL, -1.5);
     set(legR, -0.1), set(kneeR, -1.45);
     spine.rotation.x += -0.12;
   } else if (s.pose === "prone") {
-    // Face down, head forward, the gun out in front; the legs scissor and the elbows dig when crawling.
+    // Face down, head forward, the gun out in front on bent elbows; the legs scissor and the elbows dig when crawling.
     tumble.rotation.x = -Math.PI / 2;
-    tumble.position.y = 0.26 * Math.max(0.85, f.dims.chest * 0.9);
+    tumble.position.y = 0.3 * Math.max(0.85, f.dims.chest * 0.9);
     f.stride += s.speed * s.dt * 3;
     const k = Math.min(1, s.speed / 1.5);
     set(legL, Math.sin(f.stride) * 0.3 * k, -0.1), set(legR, -Math.sin(f.stride) * 0.3 * k, 0.1);
     set(kneeL, -Math.max(0, Math.sin(f.stride)) * 0.8 * k), set(kneeR, -Math.max(0, -Math.sin(f.stride)) * 0.8 * k);
-    set(armR, Math.PI - 0.15 + s.pitch * 0.5 + kick * 0.2 + Math.sin(f.stride) * 0.15 * k, 0.05), set(armL, Math.PI - 0.2 - Math.sin(f.stride) * 0.15 * k, -0.3);
+    const dig = 0.15;
+    set(armR, Math.PI - 0.1 - dig + s.pitch * 0.5 + kick * 0.2 + Math.sin(f.stride) * 0.15 * k, 0.05), set(elbowR, dig);
+    set(armL, Math.PI - 0.15 - dig - Math.sin(f.stride) * 0.15 * k, -0.3), set(elbowL, dig);
     spine.rotation.set(0, 0, 0);
     head.rotation.x = 1.1 + s.pitch * 0.3;
   } else if (s.pose === "tuck") {
     // A dive-roll: balled up, one full forward somersault round the waist.
     set(legL, 2.1), set(legR, 2.1), set(kneeL, -2.4), set(kneeR, -2.4);
     spine.rotation.set(-0.7, 0, 0);
-    set(armL, 1.2, -0.2), set(armR, 1.2, 0.2);
+    set(armL, 0.9, -0.2), set(armR, 0.9, 0.2), set(elbowL, 1.5), set(elbowR, 1.5);
     tumble.rotation.x = -s.roll * Math.PI * 2;
     tumble.position.y = WAIST * 0.6;
   } else if (s.pose === "air") {
@@ -315,24 +350,44 @@ export function pose(f: Figure, s: PoseState) {
   } else if (s.pose === "star") {
     // Thrown by a blast or on fire: arms and legs flung wide, flailing.
     const w = Math.sin(f.clock * 18) * 0.35;
-    set(armL, w, -2.1), set(armR, -w, 2.1);
+    set(armL, w, -2.1), set(armR, -w, 2.1), set(elbowL, 0.3 + w), set(elbowR, 0.3 - w);
     set(legL, -w, -0.5), set(legR, w, 0.5), set(kneeL, -0.3), set(kneeR, -0.3);
     tumble.rotation.x = -0.4;
     spine.rotation.set(0.2, 0, 0);
+  } else if (s.pose === "hang") {
+    // Under a parachute: arms straight up on the risers, legs dangling a little bent, the whole
+    // figure swinging slowly in the harness.
+    const sway = f.clock * 1.1;
+    set(armL, Math.PI - 0.1, -0.3), set(armR, Math.PI - 0.1, 0.3), set(elbowL, 0.12), set(elbowR, 0.12);
+    set(legL, 0.3 + Math.sin(sway) * 0.08, -0.12), set(legR, 0.18 - Math.sin(sway) * 0.08, 0.12);
+    set(kneeL, -0.55), set(kneeR, -0.4);
+    tumble.rotation.set(Math.sin(sway * 0.8) * 0.06, 0, Math.sin(sway) * 0.07);
+    spine.rotation.set(0.1, 0, 0);
+    head.rotation.x = -0.25 + s.pitch * 0.3;
   } else {
-    // Surrender: on its knees, hands up.
-    body.position.y = -WAIST - (HIP - THIGH - 0.1);
+    // Surrender: on its knees, hands up, elbows out.
+    body.position.y = -WAIST - (HIP - THIGH - 0.14);
     set(legL, -0.05), set(legR, -0.05), set(kneeL, -1.5), set(kneeR, -1.5);
-    set(armL, Math.PI - 0.25, -0.35), set(armR, Math.PI - 0.25, 0.35);
+    set(armL, Math.PI - 0.7, -0.4), set(armR, Math.PI - 0.7, 0.4), set(elbowL, 0.55), set(elbowR, 0.55);
     spine.rotation.set(0.15, 0, 0);
     head.rotation.x = 0.35;
   }
+  // Leaning out round a corner: the waist tips a little and the spine the rest, so the head ends up
+  // LEAN_REACH out to the side with the gun along; the legs tip back the other way to stay planted.
+  const lean = s.lean ?? 0;
+  if (lean && s.pose !== "prone" && s.pose !== "tuck" && s.pose !== "hang") {
+    const a = Math.asin(Math.min(0.95, LEAN_REACH / f.dims.neck)) * lean;
+    tumble.rotation.z -= a * 0.35;
+    legL.rotation.z += a * 0.35, legR.rotation.z += a * 0.35;
+    spine.rotation.z -= a * 0.65;
+    head.rotation.z += a * 0.3;
+  }
   // Reloading: the gun tips down and the left hand drops to the magazine and back.
   const rl = s.reload ? Math.sin(s.reload * Math.PI) : 0;
-  if (rl > 0 && s.pose !== "tuck" && s.pose !== "star" && s.pose !== "surrender") armR.rotation.x -= 0.55 * rl, armL.rotation.x -= 1.2 * rl, head.rotation.x -= 0.3 * rl;
+  if (rl > 0 && s.pose !== "tuck" && s.pose !== "star" && s.pose !== "surrender" && s.pose !== "hang") armR.rotation.x -= 0.55 * rl, armL.rotation.x -= 1.2 * rl, elbowL.rotation.x += 0.4 * rl, head.rotation.x -= 0.3 * rl;
   // Landing: the knees give and the body dips.
   const land = s.land ?? 0;
-  if (land > 0 && s.pose !== "prone" && s.pose !== "tuck") {
+  if (land > 0 && s.pose !== "prone" && s.pose !== "tuck" && s.pose !== "hang") {
     body.position.y -= land * 0.16;
     legL.rotation.x += land * 0.5, legR.rotation.x += land * 0.5;
     kneeL.rotation.x -= land * 0.9, kneeR.rotation.x -= land * 0.9;

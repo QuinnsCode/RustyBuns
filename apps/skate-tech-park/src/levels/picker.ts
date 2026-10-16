@@ -1,37 +1,89 @@
 // Which level the page rides (`?level=` or the menu), and the level's side of the HUD: the menu, the
 // goal list, the pickups. main.ts asks for the chosen level and calls `ui.update` each frame.
-import { Check, Circle, createElement } from "lucide";
-import type * as THREE from "three";
+import { Check, Circle, createElement, MapPin, Mountain } from "lucide";
+import { Fog, type Scene } from "three";
 import type { Level } from "../level.ts";
-import type { Mode, State } from "../sim.ts";
+import type { State } from "../sim.ts";
 import "./levels.css";
 import { groundMesh, props } from "./ground.ts";
 import { trackRun, type Run } from "./goals.ts";
-import { LEVELS } from "./index.ts";
+import { LEVELS, needsStartScreen, pick, wantsReal } from "./index.ts";
+import { terrainCanvas } from "./thumb.ts";
 import type { Goal, ParkLevel } from "./park.ts";
+import { moodFor } from "../render/weather.ts";
 
-const entry = LEVELS.find((l) => l.id === new URLSearchParams(location.search).get("level")) ?? LEVELS[0]!;
-export const level: Level | ParkLevel = entry.load();
+const entry = pick(location.search);
+export const levelId = entry.id;
+export const level: Level | ParkLevel = entry.load(wantsReal(location.search));
 export const park = "goals" in level;
+/** The air over this level: its own weather, or `?weather=` (rain, snow, storm, dusk...). */
+export const mood = moodFor(location.search, park ? (level as ParkLevel).weather : undefined);
 
-/** Where a ride starts: the spawn named for the mode, else the first. */
-export function spawn(l: Level, mode: Mode) {
-  return l.spawns.find((s) => s.name === mode) ?? l.spawns[0]!;
+/** Where a ride starts: the spawn named "skate", else the first. The skin never moves the start. */
+export function spawn(l: Level) {
+  return l.spawns.find((s) => s.name === "skate") ?? l.spawns[0]!;
 }
 
-const label = (g: Goal) => g.kind === "score" ? `Score ${g.target.toLocaleString("en-US")}` : g.kind === "combo" ? `Combo ${g.target.toLocaleString("en-US")}` : g.kind === "gap" ? `Gap: ${g.name}` : "Collect the rings";
+const label = (g: Goal) => g.kind === "score" ? `Score ${g.target.toLocaleString("en-US")}` : g.kind === "combo" ? `Combo ${g.target.toLocaleString("en-US")}` : g.kind === "gap" ? `Gap: ${g.name}` : g.kind === "climb" ? `Climb ${g.name}: ${g.metres} m` : "Collect the rings";
 
-export function mountLevelUi(scene: THREE.Scene) {
+const real = wantsReal(location.search);
+/** A link target for a level, keeping the real-height choice. */
+const to = (id: string) => `?level=${id}${real ? "&real" : ""}`;
+
+/** The start screen: one card per level; choosing one reloads the page on it. */
+function startScreen() {
+  const wrap = document.createElement("div");
+  wrap.className = "start";
+  const title = document.createElement("h1");
+  title.textContent = "Pick a park";
+  const grid = document.createElement("div");
+  grid.className = "start-grid";
+  for (const l of LEVELS) {
+    const card = document.createElement("button"), name = document.createElement("strong"), blurb = document.createElement("span");
+    card.type = "button";
+    name.append(createElement(MapPin, { width: 16, height: 16 }), l.name);
+    blurb.textContent = l.blurb;
+    const thumb = document.createElement("div");
+    thumb.className = "thumb";
+    card.append(thumb, name, blurb);
+    setTimeout(() => thumb.append(terrainCanvas(l.load())), 0); // one map per tick so the cards fill in without freezing the page
+    // Parallax: the map tilts and slides against the pointer, the card's text stays put.
+    card.addEventListener("pointermove", (e) => {
+      const r = card.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
+      thumb.style.setProperty("--tx", `${(-x * 14).toFixed(1)}px`);
+      thumb.style.setProperty("--ty", `${(-y * 10).toFixed(1)}px`);
+      thumb.style.setProperty("--rx", `${(-y * 10).toFixed(1)}deg`);
+      thumb.style.setProperty("--ry", `${(x * 12).toFixed(1)}deg`);
+    });
+    card.addEventListener("pointerleave", () => { for (const v of ["--tx", "--ty", "--rx", "--ry"]) thumb.style.removeProperty(v); });
+    card.addEventListener("click", () => { location.search = to(l.id); });
+    grid.append(card);
+  }
+  wrap.append(title, grid);
+  document.body.append(wrap);
+  wrap.querySelector("button")?.focus();
+}
+
+export function mountLevelUi(scene: Scene) {
+  if (needsStartScreen(location.search)) startScreen();
   const menu = document.createElement("select");
   menu.className = "level-menu";
   menu.title = "Level";
   for (const l of LEVELS) menu.add(new Option(l.name, l.id, false, l.id === entry.id));
-  menu.addEventListener("change", () => { location.search = `?level=${menu.value}`; });
-  document.body.append(menu);
+  menu.addEventListener("change", () => { location.search = to(menu.value); });
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "level-menu";
+  toggle.title = real ? "Real height: on (click for friendly height)" : "Friendly height (click for real height)";
+  toggle.setAttribute("aria-pressed", String(real));
+  toggle.append(createElement(Mountain, { width: 16, height: 16 }));
+  toggle.addEventListener("click", () => { location.search = `?level=${entry.id}${real ? "" : "&real"}`; });
+  document.body.append(menu, toggle);
   if (!park) return { reset() {}, update(_s: State) {} };
 
   const p = level as ParkLevel, rings = props(p);
-  scene.add(groundMesh(p), rings.group);
+  scene.add(groundMesh(p, mood), rings.group);
+  if (scene.fog instanceof Fog) { scene.fog.near = 120; scene.fog.far = 420; } // the park is a few hundred metres across
   const panel = document.createElement("ul");
   panel.className = "goals";
   document.body.append(panel);
