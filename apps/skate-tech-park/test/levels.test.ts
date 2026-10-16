@@ -45,9 +45,9 @@ test("every park loads with finite ground, goals and spawns on rideable ground i
 });
 
 test("the named gaps are cleared at any speed from 22 to 32 by driving at the launch and jumping at the lip, and a hop onto the obstacle does not count", () => {
-  for (const [id, spawn, name] of [["el-capitan", "car", "Boulder Gap"], ["old-faithful", "vent line", "Geyser Hop"], ["mariposa-grove", "clearing", "Fallen Giant"], ["glacier-point", "car", "Glacier Point Gap"]] as const) {
+  for (const [id, spawn, name] of [["el-capitan", "car", "Boulder Gap"], ["old-faithful", "vent line", "Geyser Hop"], ["mariposa-grove", "clearing", "Fallen Giant"], ["glacier-point", "car", "Glacier Point Gap"], ["half-dome", "dome run", "Half Dome Face"], ["yosemite-falls", "shelf", "Upper Fall"], ["yosemite-falls", "valley line", "Valley Hop"], ["grand-prismatic", "street line", "Sinter Jump"]] as const) {
     for (const line of SPEEDS) {
-      const { s, run } = drive(park(id), spawn, 12, name, line);
+      const { s, run } = drive(park(id), spawn, 20, name, line);
       expect(run.gaps.get(name)).toBe(1);
       expect(s.score).toBeGreaterThanOrEqual(park(id).gaps.find((g) => g.name === name)!.bonus);
       expect(run.bestCombo).toBeGreaterThan(0);
@@ -76,7 +76,17 @@ test("the start screen shows until a level is chosen, and a query picks its leve
   expect(needsStartScreen("?showroom")).toBe(false);
   expect(pick("?level=glacier-point").id).toBe("glacier-point");
   expect(pick("?level=nowhere").id).toBe("plaza");
-  expect(LEVELS.map((l) => l.id)).toEqual(["plaza", "el-capitan", "glacier-point", "old-faithful", "mariposa-grove"]);
+  expect(LEVELS.map((l) => l.id)).toEqual(["plaza", "el-capitan", "glacier-point", "old-faithful", "mariposa-grove", "half-dome", "yosemite-falls", "grand-prismatic"]);
+});
+
+test("a short hop onto the boulder is not the Boulder Gap", () => {
+  const { run } = drive(park("el-capitan"), "car", 10, "Boulder Gap", 14);
+  expect(run.gaps.size).toBe(0);
+});
+
+test("Half Dome's east shoulder is a natural ramp: driving up it climbs the dome", () => {
+  const l = park("half-dome"), { run } = drive(l, "dome run", 12, "Half Dome Face");
+  expect(run.done(l.goals.find((g) => g.kind === "climb")!)).toBe(true);
 });
 
 test("a short hop onto the boulder is not the Boulder Gap", () => {
