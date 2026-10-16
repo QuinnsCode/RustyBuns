@@ -10,7 +10,8 @@ import { MATCH_MODES, type BattleResult, type Faction, type MatchMode, type Spac
 import { replayGround, replaySpace } from "../battle/replay.ts";
 import { run } from "../battle/sim.ts";
 import { runSpace } from "../battle/space.ts";
-import { aiDeploys, aiOrders, aiRetreats } from "./ai.ts";
+import { fightPicks, replayPicks } from "../battle/space-picks.ts";
+import { aiDeploys, aiOrders, aiRetreats, aiSpacePick } from "./ai.ts";
 import type { GalaxyId } from "./galaxy.ts";
 import {
   CARDS, FACTIONS, ORBIT, applyBattleResult, applySpaceResult, checkRetreats, declareAttacks, deployTurn, heroReady, involved, newCampaign, planDeploys, planOrders, resolveTurn, sectorAt,
@@ -165,9 +166,18 @@ export function report(t: Table, f: Faction, res: BattleResult | SpaceBattleResu
   if (!res.auto && (typeof res.inputs !== "string" || res.inputs.length > MAX_INPUTS)) return { ok: false, error: "A played battle needs the hero's inputs" };
   let after: Campaign, battle: BattleResult | SpaceBattleResult;
   if (c.pending.kind === "space") {
-    const r = res.auto ? runSpace(c.pending.spec).over : replaySpace(c.pending.spec, res.inputs!);
+    // Fought by picking, or flown. A pick battle is fought again from the hero's picks, with the
+    // AI picking for the other side (and for the hero's, past the last pick or left to the AI).
+    const spec = c.pending.spec, picked = (res as SpaceBattleResult).picks;
+    if (picked !== undefined && picked !== true) return { ok: false, error: "That result doesn't add up" };
+    const r = picked
+      ? res.auto ? fightPicks(spec, [], aiSpacePick)?.over ?? null : replayPicks(spec, res.inputs!, aiSpacePick)
+      : res.auto ? runSpace(spec).over : replaySpace(spec, res.inputs!);
     if (!r) return { ok: false, error: "Those inputs don't make a battle" };
-    const clean = { id: r.id, winner: r.winner, fleets: { attacker: r.fleets.attacker, defender: r.fleets.defender }, heroDown: r.heroDown, ...(res.auto && { auto: true as const }) };
+    const clean: SpaceBattleResult = {
+      id: r.id, winner: r.winner, fleets: { attacker: r.fleets.attacker, defender: r.fleets.defender }, heroDown: r.heroDown,
+      ...(r.ground && { picks: true as const, ground: { attacker: r.ground.attacker, defender: r.ground.defender } }), ...(res.auto && { auto: true as const }),
+    };
     after = applySpaceResult(c, clean);
     battle = clean;
   } else {

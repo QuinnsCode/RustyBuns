@@ -1,7 +1,9 @@
 // The AI faction's orders: spend everything, play its cards on the front, push fleets into weaker
 // orbits next door, and land troops behind them. After the fighting, it moves what it has spare up
 // to the front. Every order goes through the rules' own checks, so it never queues one they refuse.
-import type { Faction } from "../battle/contract.ts";
+import { other, type Faction, type Side, type SpaceOrder } from "../battle/contract.ts";
+import { HULL_PER_SHIP, ROUNDS, exchange, legalPicks, type PickBattle } from "../battle/space-picks.ts";
+import { mulberry32 } from "@rustybuns/util";
 import { galaxyOf } from "./galaxy.ts";
 import { COST, ORBIT, checkRetreats, enemy, handOf, planDeploys, planOrders, sectorAt, type Campaign, type Order, type Orders, type Retreat, type SystemState } from "./rules.ts";
 
@@ -131,4 +133,35 @@ export function aiDeploys(c: Campaign, f: Faction): Order[] {
     });
   }
   return moves;
+}
+
+// The AI's order in a space battle fought by picking, for whichever side it's on. An exchange is
+// worth the hull dealt less the hull taken, prizes counted, and armies killed or lost below (an
+// army's worth a bit over half a ship), at its average. The AI guesses what the other side will
+// pick (the orders that would do best for them against anything) and weighs each of its own
+// against that guess, then picks at random, weighted to the better ones, so it can't be read like
+// a book. It only sees the rounds already fought, never the other side's pick, and plays both
+// sides alike.
+const ARMY_HULL = 6;
+// In the last round, coming out ahead is what holds the orbit, and worth this much hull on top.
+const LAST_WORD = 3 * HULL_PER_SHIP;
+const net = (b: PickBattle, side: Side, mine: SpaceOrder, theirs: SpaceOrder) => {
+  const foe = other(side), r = exchange(b, { [side]: mine, [foe]: theirs } as Record<Side, SpaceOrder>);
+  const v = r.hit[foe] - r.hit[side] + r.prizes[side] - r.prizes[foe] + (r.killed[foe] + r.boarders[foe] - r.killed[side] - r.boarders[side]) * ARMY_HULL;
+  if (b.round < ROUNDS - 1) return v;
+  const left = (s: Side) => b.hull[s] - r.hit[s] + r.prizes[s];
+  return v + (left(side) > left(foe) || (left(side) === left(foe) && side === "defender") ? LAST_WORD : -LAST_WORD);
+};
+// Weights for picking among orders by their values: the better, the likelier, none ruled out.
+const lean = (values: number[]) => {
+  const low = Math.min(...values);
+  return values.map((v) => (v - low + HULL_PER_SHIP / 5) ** 2);
+};
+export function aiSpacePick(b: PickBattle, side: Side): SpaceOrder {
+  const foe = other(side), mine = legalPicks(b, side), theirs = legalPicks(b, foe);
+  const guess = lean(theirs.map((t) => mine.reduce((n, o) => n + net(b, foe, t, o), 0)));
+  const weights = lean(mine.map((o) => theirs.reduce((n, t, i) => n + guess[i]! * net(b, side, o, t), 0) / guess.reduce((a, w) => a + w, 0)));
+  let roll = mulberry32((b.spec.seed ^ Math.imul(b.round + 1, 0x9e3779b1) ^ (side === "attacker" ? 0x51ed : 0xa11e)) >>> 0)() * weights.reduce((a, w) => a + w, 0);
+  for (let i = 0; i < mine.length; i++) if ((roll -= weights[i]!) < 0) return mine[i]!;
+  return mine.at(-1)!;
 }
