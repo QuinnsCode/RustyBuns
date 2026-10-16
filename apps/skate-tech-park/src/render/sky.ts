@@ -6,6 +6,11 @@ import type { Mood } from "./weather.ts";
 
 export const HAZE = 0xf2c49a; // golden hour, the default
 
+/** Ridge rings from the farthest: how much of the haze they wear, how tall, and where their hills fall. */
+const RIDGES: [number, number, number][] = [[0.78, 0.07, 0.0], [0.62, 0.075, 1.7], [0.45, 0.08, 3.1], [0.28, 0.07, 4.6]];
+/** A ridge is the sky's overhead colour darkened and pulled toward the haze, so the far ones go pale and warm. */
+const ridgeColor = (zenith: number, haze: number, k: number) => new THREE.Color(zenith).multiplyScalar(0.5).lerp(new THREE.Color(haze), RIDGES[k]![0]);
+
 export function sky(haze = HAZE) {
   const group = new THREE.Group();
   const dome = new THREE.Mesh(
@@ -25,9 +30,11 @@ export function sky(haze = HAZE) {
         float fbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 5; i++) { s += a * noise(p); p = p * 2.03 + 11.7; a *= 0.5; } return s; }
         void main() {
           float up = clamp(v.y, 0.0, 1.0);
-          vec3 c = mix(haze, zenith, pow(up, 0.55));
+          vec3 mid = mix(haze, zenith, 0.5) * vec3(1.08, 0.9, 1.04); // a rosier band between the horizon and the blue
+          vec3 c = mix(haze, mid, smoothstep(0.0, 0.22, up));
+          c = mix(c, zenith, smoothstep(0.12, 0.8, up));
           float s = max(dot(v, sun), 0.0);
-          c += sunColor * pow(s, 24.0) * 0.5 + sunColor * pow(s, 400.0) * 1.5; // glow round the sun, and its disc
+          c += sunColor * pow(s, 6.0) * 0.22 + sunColor * pow(s, 24.0) * 0.5 + sunColor * pow(s, 400.0) * 1.5; // a wide warm wash, the glow round the sun, and its disc
           // Clouds on a plane overhead: they drift, thin toward the horizon, and the side facing the sun is lit.
           vec2 uv = v.xz / (v.y + 0.12) * 0.9 + vec2(time * 0.012, time * 0.005);
           float d = fbm(uv * 1.3) * 0.75 + fbm(uv * 3.1 + 5.0) * 0.25;
@@ -42,19 +49,23 @@ export function sky(haze = HAZE) {
   dome.renderOrder = -2;
   group.userData.dome = dome.material;
   group.add(dome);
-  // Far ridges: jagged rings, nearest the darkest, each fading toward the haze.
-  [[0.55, 0x8a8aa0, 0.0], [0.7, 0xa59aa5, 1.7]].forEach(([fade, color, phase], k) => {
-    const n = 96, r = 0.9 - k * 0.03;
+  // Far ridges: layered, conifer-toothed silhouettes like a painted backdrop. The nearest is the darkest and
+  // tallest, each one further out fades toward the haze, so the valley reads as bands of colour.
+  RIDGES.forEach(([fade, height, phase], k) => {
+    const n = 180, r = 0.92 - k * 0.025;
     const geo = new THREE.BufferGeometry(), pos: number[] = [];
+    const top = (i: number) => {
+      const a = (i / n) * Math.PI * 2, hill = height * (0.55 + 0.45 * Math.abs(Math.sin(a * 3 + phase) * Math.cos(a * 2 + phase * 2)) + 0.25 * Math.sin(a * 7 + phase));
+      return hill * (i % 2 ? 1.18 : 0.88) * (0.9 + 0.2 * Math.abs((Math.sin(i * 12.9898 + phase) * 43758.5453) % 1)); // alternate tall and short firs
+    };
     for (let i = 0; i < n; i++) {
-      const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2;
-      const h = (a: number) => 0.035 + 0.03 * Math.abs(Math.sin(a * 5 + phase!) * Math.cos(a * 3 + phase! * 2)) + 0.012 * Math.sin(a * 23);
-      pos.push(Math.sin(a0) * r, 0, Math.cos(a0) * r, Math.sin(a1) * r, 0, Math.cos(a1) * r, Math.sin(a0) * r, h(a0), Math.cos(a0) * r);
-      pos.push(Math.sin(a1) * r, 0, Math.cos(a1) * r, Math.sin(a1) * r, h(a1), Math.cos(a1) * r, Math.sin(a0) * r, h(a0), Math.cos(a0) * r);
+      const a0 = (i / n) * Math.PI * 2, a1 = (((i + 1) % n) / n) * Math.PI * 2, i1 = (i + 1) % n, h0 = top(i), h1 = top(i1);
+      const x0 = Math.sin(a0) * r, z0 = Math.cos(a0) * r, x1 = Math.sin(a1) * r, z1 = Math.cos(a1) * r;
+      pos.push(x0, -0.05, z0, x1, -0.05, z1, x0, h0, z0, x1, -0.05, z1, x1, h1, z1, x0, h0, z0);
     }
     geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-    const ridge = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: new THREE.Color(color as number).lerp(new THREE.Color(haze), fade as number), side: THREE.DoubleSide, fog: false, depthWrite: false }));
-    ridge.renderOrder = -1;
+    const ridge = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: ridgeColor(0x6f9fd8, haze, k), side: THREE.DoubleSide, fog: false, depthWrite: false }));
+    ridge.renderOrder = -1.5 + k * 0.1;
     group.add(ridge);
   });
   return group;
@@ -66,13 +77,12 @@ export function followCamera(g: THREE.Object3D, camera: THREE.Camera, radius = 9
   g.scale.setScalar(radius);
 }
 
-const RIDGES: [number, number][] = [[0x8a8aa0, 0.55], [0xa59aa5, 0.7]];
 /** Paints the dome and ridges with a mood's colours. */
 export function skyMood(g: THREE.Object3D, m: Mood) {
   const u = (g.userData.dome as THREE.ShaderMaterial).uniforms;
   u.haze!.value.set(m.haze); u.zenith!.value.set(m.zenith); u.sunColor!.value.set(m.sunColor);
   u.sun!.value.set(...m.sun).normalize(); u.cloud!.value = m.cloud; u.cloudTone!.value.set(m.cloudTone);
-  g.children.slice(1).forEach((r, k) => ((r as THREE.Mesh).material as THREE.MeshBasicMaterial).color.set(RIDGES[k]![0]).lerp(new THREE.Color(m.haze), RIDGES[k]![1]));
+  g.children.slice(1).forEach((r, k) => ((r as THREE.Mesh).material as THREE.MeshBasicMaterial).color.copy(ridgeColor(m.zenith, m.haze, k)));
 }
 
 /** Drifts the clouds; `flash` (0..1) is a lightning strike lighting the whole sky. */
