@@ -5,7 +5,7 @@ import type { Pose, Rider, View } from "./room.ts";
 const SEND_MS = 50;
 
 /** A secret id kept in this browser; the server only ever shows others a hash of it. */
-function uid(): string {
+export function uid(): string {
   try {
     const kept = localStorage.getItem("stp-uid");
     if (kept) return kept;
