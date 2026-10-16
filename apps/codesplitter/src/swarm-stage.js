@@ -11,9 +11,9 @@ export const MODES = [
   ["layers", "layers", "Layer by layer", "Switch each layer on and off: Durable Objects, Mervin, Ester"],
   ["split", "columns-2", "Side by side", "The same agents through the old git way (top) and codeSplitter (bottom)"],
 ];
-const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16];
+const SPEEDS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3];
 /** Simulated minutes per real second at 1x, outside the story (each scene sets its own). */
-const BASE = 6;
+const BASE = 3;
 const SEED = 11;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const ease = (k) => (k < 0.5 ? 4 * k * k * k : 1 - (-2 * k + 2) ** 3 / 2);
@@ -81,7 +81,7 @@ export function mount(el, { mode = "story", embed = false, real = "/swarm-watch.
     <div class="sw-desk">
       <div class="sw-faders">
         <label class="sw-fader" title="How fast time runs"><output data-out="speed"></output><input type="range" data-k="speed" min="0" max="${SPEEDS.length - 1}" step="1" aria-label="Speed"><span>speed</span></label>
-        <label class="sw-fader" title="Agents working at once"><output data-out="agents"></output><input type="range" data-k="agents" min="1" max="100" step="1" aria-label="Agents"><span>agents</span></label>
+        <label class="sw-fader" title="Agents working at once"><output data-out="agents"></output><input type="range" data-k="agents" min="1" max="50" step="1" aria-label="Agents"><span>agents</span></label>
         <label class="sw-fader" title="How often two features touch the same file, like the README's feature list"><output data-out="overlap"></output><input type="range" data-k="overlap" min="0" max="100" step="1" aria-label="Shared files"><span>overlap</span></label>
         <label class="sw-fader" title="How often a check goes red: flaky, already red on main, or really yours"><output data-out="flaky"></output><input type="range" data-k="flaky" min="0" max="50" step="1" aria-label="Red checks"><span>red</span></label>
       </div>
@@ -99,7 +99,7 @@ export function mount(el, { mode = "story", embed = false, real = "/swarm-watch.
   const cv = $("canvas"), cx = cv.getContext("2d"), stage = $(".sw-stage");
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  let playing = true, speedIx = 2, storyMs = 0, sceneIx = -1, override = false, layers = { ...ALL };
+  let playing = true, speedIx = 3, storyMs = 0, sceneIx = -1, override = false, layers = { ...ALL };
   let knobs = { agents: 30, overlap: 0.35, flaky: 0.12 };
   /** One or two simulations, each with where its dots are drawn. */
   let sims = [];
