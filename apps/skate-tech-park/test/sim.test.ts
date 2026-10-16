@@ -1,6 +1,7 @@
 // Journeys through the ride, headless: the same fixed-step sim the page draws.
 import { expect, test } from "bun:test";
 import { type Level, makeLevel, piece, railY } from "../src/level.ts";
+import { quarterPipe } from "../src/levels/pieces.ts";
 import { DT, IDLE, type Input, start, step, type State } from "../src/sim.ts";
 
 const run = (s: State, seconds: number, input: (s: State) => Partial<Input>, level?: Level) => {
@@ -137,4 +138,27 @@ test("a board rolling across a slope falls toward downhill, and a hard carve at 
 
   const carve = (steer: number) => run(Object.assign(start("skate", 0, -10, 0, flat), { speed: 9 }), 1, () => ({ steer }), flat).speed;
   expect(carve(1)).toBeLessThan(carve(0));
+});
+
+// A quarter pipe vertical at the lip, rising toward +z from a flat run-in.
+const pipe = quarterPipe({ x: 0, z: 0 }, { w: 6, d: 4, h: 2, deck: 3 });
+const pipeLevel = flat({ pieces: pipe.pieces, rails: pipe.rails });
+
+test("a skater pumping the transition rides higher than one rolling it", () => {
+  const peak = (pump: boolean) => {
+    const sk = Object.assign(start("skate", 0, -6, 0, pipeLevel), { speed: 9 });
+    let max = 0;
+    run(sk, 4, (s) => { max = Math.max(max, s.y); return { boost: pump }; }, pipeLevel);
+    return max;
+  };
+  expect(peak(true)).toBeGreaterThan(peak(false) + 0.15);
+});
+
+test("a skater rides up the wall, goes up past the coping and drops back down it", () => {
+  const sk = Object.assign(start("skate", 0, -6, 0, pipeLevel), { speed: 10 });
+  let flew = false;
+  run(sk, 5, (s) => { flew ||= s.air && s.y > 1.5; return { throttle: 1, boost: true }; }, pipeLevel);
+  expect(flew).toBe(true);
+  expect(sk.last?.name).not.toMatch(/Bail/);
+  expect(sk.bail).toBeLessThanOrEqual(0);
 });

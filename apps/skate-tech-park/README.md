@@ -23,7 +23,7 @@ bun test test            # the ride, headless
 | Go, brake | <kbd>W</kbd> <kbd>S</kbd> | <kbd>W</kbd> <kbd>S</kbd> |
 | Steer, or spin in the air | <kbd>A</kbd> <kbd>D</kbd> | <kbd>A</kbd> <kbd>D</kbd> (the nose thrusters) |
 | Jump | <kbd>Space</kbd> ollie | hold <kbd>Space</kbd> for the lift thrusters |
-| Boost | | hold <kbd>Shift</kbd> for the rear thrusters |
+| Boost, pump | hold <kbd>Shift</kbd> through a transition to gain speed (fast enough up a quarter pipe and you fly off the wall and drop back down it) | hold <kbd>Shift</kbd> for the rear thrusters |
 | Kickflip | <kbd>F</kbd> in the air | |
 | Swap rides, back to the start | <kbd>Tab</kbd>, <kbd>R</kbd> | <kbd>Tab</kbd>, <kbd>R</kbd> |
 
