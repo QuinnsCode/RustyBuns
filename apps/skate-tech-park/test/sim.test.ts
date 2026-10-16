@@ -213,6 +213,16 @@ test("the board never passes through a vertical ramp, slow or fast: it rides the
   }
 });
 
+test("a board that reaches the vertical lip flies out over the coping onto the deck, nose up the wall, instead of hanging on the face", () => {
+  for (const speed of [8, 12, 20]) {
+    const sk = Object.assign(start(0, -12, 0, pipeLevel), { speed });
+    let lip = 0, apexZ = 0, apex = 0;
+    run(sk, 2, (s) => { lip = Math.max(lip, s.lip); if (s.y > apex) { apex = s.y; apexZ = s.z; } return { throttle: 1 }; }, pipeLevel);
+    expect(lip).toBeGreaterThan(1); // the view tips it up the wall instead of snapping it level
+    expect(apexZ).toBeGreaterThan(0.75); // the apex is past the coping, over the deck
+  }
+});
+
 test("a bigger board is a bigger toy: an ollie goes SCALE times as high and hangs sqrt(SCALE) times as long", () => {
   const sk = start(0, -20);
   let apex = 0, hang = 0;
