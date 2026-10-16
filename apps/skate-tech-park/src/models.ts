@@ -37,7 +37,9 @@ function sheet(z0: number, z1: number, rows: number, drop: number, inset: number
     const a = i * (cols + 1) + j, b = a + cols + 1;
     idx.push(...(facing > 0 ? [a, b, a + 1, a + 1, b, b + 1] : [a, a + 1, b, a + 1, b + 1, b]));
   }
-  return new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)).setIndex(idx);
+  const uv: number[] = [];
+  for (let k = 0; k < pos.length; k += 3) uv.push(pos[k]! / DECK.width + 0.5, pos[k + 2]! / DECK.length + 0.5); // for a graphic on the underside
+  return new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)).setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2)).setIndex(idx);
 }
 
 /** The ply edge: a strip round the outline from the top face down to the underside. */
@@ -116,7 +118,13 @@ export function fingerboard(parts: Parts = DEFAULT_PARTS) {
     mats.core.color.setHex(w.core);
   };
   paint(parts);
+  /** Prints an image on the deck's underside (what a kickflip shows), or clears it with null. */
+  const graphic = (source: TexImageSource | null) => {
+    mats.deck.map?.dispose();
+    mats.deck.map = source ? Object.assign(new THREE.Texture(source), { colorSpace: THREE.SRGBColorSpace, needsUpdate: true }) : null;
+    mats.deck.needsUpdate = true;
+  };
   g.add(flipper);
-  g.userData = { model: "fingerboard", flipper, paint };
+  g.userData = { model: "fingerboard", flipper, paint, graphic };
   return g;
 }

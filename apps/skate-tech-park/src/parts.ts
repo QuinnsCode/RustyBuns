@@ -10,6 +10,7 @@ export const CATALOG = {
     { id: "teal", name: "Teal", color: 0x1f8a8a, accent: 0xf4c542 },
     { id: "ink", name: "Ink", color: 0x23262d, accent: 0xe2572b },
     { id: "bone", name: "Bone", color: 0xece4d2, accent: 0x2b5f9e },
+    { id: "custom", name: "Your own graphic", color: 0xffffff, accent: 0xf2e8d0, price: 299 }, // the underside wears an uploaded image (graphic.ts)
     { id: "midnight", name: "Midnight foil", color: 0x1b1f4a, accent: 0xc9a227, price: 199 },
     { id: "magma", name: "Magma", color: 0xb3261e, accent: 0xffb347, price: 199 },
   ] satisfies Deck[],

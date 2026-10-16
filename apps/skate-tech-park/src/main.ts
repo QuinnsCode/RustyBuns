@@ -96,7 +96,7 @@ const showroom = new URLSearchParams(location.search).has("showroom");
 const PIVOT_Y = { fingerboard: 0.45, roadster: 0.6 }; // what a flip turns about
 const board = fingerboard();
 const skins = new Skins({ fingerboard: board, roadster: car }, showroom ? "roadster" : "fingerboard", PIVOT_Y);
-mountPartsPicker(board.userData.paint);
+mountPartsPicker(board.userData.paint, board.userData.graphic);
 const plumes = new Plumes();
 scene.add(skins.root, plumes.puffs.points);
 const thrusters = car.userData.thrusters as Thruster[];

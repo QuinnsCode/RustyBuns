@@ -34,3 +34,5 @@ kbd { display: inline-block; min-width: 1.6em; padding: 0 4px; margin: 0 2px; bo
 .parts-row button { display: grid; place-items: center; color: #fff; }
 .parts-row button svg { filter: drop-shadow(0 0 1px #000); }
 .parts-row button svg[hidden] { display: none; }
+.upload { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; }
+.upload[hidden] { display: none; }
