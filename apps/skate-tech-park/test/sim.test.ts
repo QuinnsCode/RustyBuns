@@ -1,6 +1,6 @@
 // Journeys through the ride, headless: the same fixed-step sim the page draws.
 import { expect, test } from "bun:test";
-import { hitObstacle, type Level, makeLevel, piece, postObstacles, railY } from "../src/level.ts";
+import { FOOT, hitObstacle, type Level, makeLevel, piece, postObstacles, railY } from "../src/level.ts";
 import { quarterPipe } from "../src/levels/pieces.ts";
 import { DT, IDLE, type Input, SCALE, start, step, type State, tumble } from "../src/sim.ts";
 
@@ -263,6 +263,16 @@ test("in the air the board's tips are what hit a box, so the nose stops at its f
   for (let i = 0; i < 90; i++) { step(s, IDLE, l); top = Math.max(top, s.y); }
   expect(top).toBeLessThan(1.5); // never snapped up onto the box
   expect(s.z).toBeLessThan(4); // never carried into it
+});
+
+test("landing beside a box with the nose over its face slides the board back out, so the deck never sits inside it", () => {
+  const box = piece("box", "wall", 0, 6, 0, 10, 3, 4, 6);
+  const l = makeLevel({ name: "wall", pieces: [box], rails: [], spawns: [{ name: "car", x: 0, z: 0, yaw: 0 }], bounds: { minX: -30, maxX: 30, minZ: -30, maxZ: 30 } });
+  const s = start(0, 0, 0, l);
+  s.air = true; s.y = 0.4; s.vy = -1; s.vx = 0; s.vz = 1; s.z = 3.9;
+  for (let i = 0; i < 120; i++) step(s, IDLE, l);
+  expect(s.air).toBe(false);
+  expect(s.z + FOOT.halfLen).toBeLessThanOrEqual(4.51); // the nose is at the face (z = 4.5), not in it
 });
 
 test("driving into a wall stops the board: it never rebounds backwards or jitters against it", () => {
