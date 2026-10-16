@@ -48,9 +48,9 @@ test("fewer agents mid-run, and Mervin switched off with PRs seated, loses nobod
 
 test("the story loops, its faders glide from the last scene's, and a scene can be jumped to", () => {
   expect(at(0).scene.id).toBe(SCENES[0]!.id);
-  const crowdStart = startOf("crowd");
+  const crowdStart = startOf("agents");
   expect(at(crowdStart).knobs.agents).toBe(SCENES[0]!.knobs.agents);
   expect(at(crowdStart + SCENES[1]!.ms - 1).knobs.agents).toBe(SCENES[1]!.knobs.agents);
-  expect(at(total() + crowdStart + 1).scene.id).toBe("crowd");
+  expect(at(total() + crowdStart + 1).scene.id).toBe("agents");
   expect(SCENES.filter((s) => s.wipe).map((s) => s.id)).toEqual(["calm", "coord", "mervin", "ester", "both"]);
 });

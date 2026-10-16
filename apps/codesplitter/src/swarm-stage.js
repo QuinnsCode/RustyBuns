@@ -11,9 +11,9 @@ export const MODES = [
   ["layers", "layers", "Layer by layer", "Switch each layer on and off: Durable Objects, Mervin, Ester"],
   ["split", "columns-2", "Side by side", "The same agents through the old git way (top) and codeSplitter (bottom)"],
 ];
-const SPEEDS = [0.25, 0.5, 0.75, 1, 1.5, 2, 3];
+const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5];
 /** Simulated minutes per real second at 1x, outside the story (each scene sets its own). */
-const BASE = 3;
+const BASE = 1;
 const SEED = 11;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const ease = (k) => (k < 0.5 ? 4 * k * k * k : 1 - (-2 * k + 2) ** 3 / 2);
@@ -30,6 +30,11 @@ const CSS = `
 .swst .sw-tab svg, .swst .sw-btn svg { width: 15px; height: 15px; flex: none; }
 .swst .sw-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid var(--sw-border); border-radius: 5px; background: var(--sw-paper); cursor: pointer; }
 .swst .sw-btn[aria-pressed="true"] { background: var(--sw-fg); color: var(--sw-bg); border-color: var(--sw-fg); }
+.swst .sw-guide { display: inline-flex; gap: 6px; }
+.swst .sw-next { display: inline-flex; gap: 4px; align-items: center; height: 32px; padding: 0 10px 0 12px; border: 1px solid var(--sw-accent); border-radius: 5px; background: var(--sw-accent); color: #fff; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.swst .sw-next svg { width: 15px; height: 15px; }
+.swst .sw-next.ready { animation: sw-nudge 1.4s ease-in-out infinite; }
+@keyframes sw-nudge { 50% { transform: translateX(3px); box-shadow: 0 0 0 4px color-mix(in srgb, var(--sw-accent) 25%, transparent); } }
 .swst .sw-stage { position: relative; border: 1px solid var(--sw-border); border-radius: 8px; overflow: hidden; background: var(--sw-paper); }
 .swst canvas { display: block; width: 100%; }
 .swst .sw-cap { min-height: 84px; padding: 12px 14px 4px; transition: opacity .35s, transform .35s; }
@@ -70,6 +75,7 @@ export function mount(el, { mode = "story", embed = false, real = "/swarm-watch.
         `<button class="sw-tab" role="tab" data-mode="${id}" title="${what}"><i data-lucide="${ic}"></i><span>${name}</span></button>`).join("")}
         ${real ? `<a class="sw-tab" href="${real}" title="A real week of this repo's PRs, replayed"><i data-lucide="calendar-days"></i><span>Real week</span></a>` : ""}</div>
       <span class="sw-grow"></span>
+      <span class="sw-guide"><button class="sw-btn" data-act="back" title="Back a scene (left arrow)"><i data-lucide="chevron-left"></i></button><button class="sw-next" data-act="next" title="Next scene (right arrow)">Next<i data-lucide="chevron-right"></i></button><button class="sw-btn" data-act="auto" title="Play the story on its own"><i data-lucide="timer"></i></button></span>
       <button class="sw-btn" data-act="play" title="Play or pause (space)"><i data-lucide="pause"></i></button>
       <button class="sw-btn" data-act="restart" title="Start over"><i data-lucide="rotate-ccw"></i></button>
     </div>
@@ -99,7 +105,7 @@ export function mount(el, { mode = "story", embed = false, real = "/swarm-watch.
   const cv = $("canvas"), cx = cv.getContext("2d"), stage = $(".sw-stage");
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  let playing = true, speedIx = 3, storyMs = 0, sceneIx = -1, override = false, layers = { ...ALL };
+  let playing = true, speedIx = 3, storyMs = 0, sceneIx = -1, override = false, layers = { ...ALL }, auto = false;
   let knobs = { agents: 30, overlap: 0.35, flaky: 0.12 };
   /** One or two simulations, each with where its dots are drawn. */
   let sims = [];
@@ -133,6 +139,8 @@ export function mount(el, { mode = "story", embed = false, real = "/swarm-watch.
     $(".sw-switches").style.display = show ? "" : "none";
     for (const b of $$("[data-layer]")) { b.setAttribute("aria-pressed", String(!!layers[b.dataset.layer])); b.disabled = mode !== "layers"; }
     $(".sw-scenes").style.display = mode === "story" ? "" : "none";
+    $(".sw-guide").style.display = mode === "story" ? "" : "none";
+    $('[data-act="auto"]').setAttribute("aria-pressed", String(auto));
     window.lucide?.createIcons?.();
   }
   function caption(title, text) {
@@ -163,10 +171,23 @@ export function mount(el, { mode = "story", embed = false, real = "/swarm-watch.
     const t = e.target.closest("[data-mode]"); if (t) return setMode(t.dataset.mode);
     const a = e.target.closest("[data-act]"); if (!a) return;
     if (a.dataset.act === "play") playing = !playing;
+    if (a.dataset.act === "next") step(1);
+    if (a.dataset.act === "back") step(-1);
+    if (a.dataset.act === "auto") auto = !auto;
     if (a.dataset.act === "restart") { if (mode === "story") goto(SCENES[0].id); else setMode(mode); }
     syncUi();
   });
-  stage.addEventListener("keydown", (e) => { if (e.key === " ") { e.preventDefault(); playing = !playing; syncUi(); } });
+  stage.addEventListener("keydown", (e) => {
+    if (e.key === " ") { e.preventDefault(); playing = !playing; syncUi(); }
+    if (mode === "story" && (e.key === "ArrowRight" || e.key === "ArrowLeft")) { e.preventDefault(); step(e.key === "ArrowRight" ? 1 : -1); }
+  });
+  /** The next or last scene; past the end goes back to the start. */
+  function step(by) {
+    // Forward plays straight on, so the same crowd carries into the next scene; back is a jump, with a fresh crowd.
+    const i = (Math.max(0, sceneIx) + by + SCENES.length) % SCENES.length;
+    if (by < 0) return goto(SCENES[i].id);
+    storyMs = startOf(SCENES[i].id); override = false; playing = true; syncUi();
+  }
   root.addEventListener("input", (e) => {
     const k = e.target.dataset?.k; if (!k) return;
     const v = +e.target.value;
@@ -187,8 +208,13 @@ export function mount(el, { mode = "story", embed = false, real = "/swarm-watch.
 
   // ---- the story --------------------------------------------------------------------------------------------------
   function story(dt) {
-    if (playing) storyMs = (storyMs + dt) % total();
+    // Guided: a scene plays to its end and waits there (the crowd keeps moving) until Next. On its own: it moves on.
+    if (playing) {
+      const cur = at(storyMs).scene, end = startOf(cur.id) + cur.ms - 1; // the scene the clock is in, which Next just moved
+      storyMs = auto ? (storyMs + dt) % total() : Math.min(storyMs + dt, end);
+    }
     const a = at(storyMs);
+    $(".sw-next").classList.toggle("ready", !auto && a.progress > 0.99);
     if (a.i !== sceneIx) {
       const s = a.scene, prev = SCENES[sceneIx];
       override = false;
@@ -310,7 +336,7 @@ export function mount(el, { mode = "story", embed = false, real = "/swarm-watch.
       }
       return [r.x, mid];
     };
-    const k = 1 - Math.exp(-dtReal / 1000 * 7);
+    const k = 1 - Math.exp(-dtReal / 1000 * 3.5); // dots glide, they don't jump
     sim.dots.forEach((d, i) => {
       const [tx, ty] = target(d, i), key = `${entry.id}:${d.id}`;
       let p = pos.get(key);
