@@ -188,47 +188,55 @@ export interface TrailNode extends TrailPoint { gx: number; gz: number }
 export function trail(t: Terrain, from: { x: number; z: number }, to: { x: number; z: number }, cell = 2, rules: TrailRules = {}): TrailNode[] | null {
   const { blocked, cheap, beside, pinned } = rules;
   const n = Math.ceil((2 * t.R) / cell) + 1, N = n * n;
-  const hs = new Float32Array(N);
+  // Everything about a cell, worked out once: its height, and whether it's out of bounds, wet or blocked, cheap, beside.
+  const hs = new Float32Array(N), off = new Uint8Array(N), cheapAt = new Uint8Array(N), besideAt = new Uint8Array(N);
   const pos = (i: number) => ({ x: -t.R + (i % n) * cell, z: -t.R + Math.floor(i / n) * cell });
-  for (let i = 0; i < N; i++) {
-    const p = pos(i);
-    hs[i] = t.height(p.x, p.z);
-  }
   const index = (p: { x: number; z: number }) => Math.round((p.z + t.R) / cell) * n + Math.round((p.x + t.R) / cell);
   const start = index(from), goal = index(to);
   if (start < 0 || goal < 0 || start >= N || goal >= N) return null;
+  for (let i = 0; i < N; i++) {
+    const { x, z } = pos(i);
+    hs[i] = t.height(x, z);
+    off[i] = Math.hypot(x, z) > t.R - 2 || (t.water !== undefined && hs[i]! < t.water) || (i !== goal && !!blocked?.(x, z)) ? 1 : 0;
+    cheapAt[i] = cheap?.(x, z) ? 1 : 0;
+    besideAt[i] = beside?.(x, z) ? 1 : 0;
+  }
   // The search runs over (cell, way in): a bend costs extra, the sharper the more, so the path
   // sweeps round a hill in long legs rather than switching back on itself.
   const steps = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]] as const, TURN = [0, 1.5, 5, 12, 24];
   const S = N * 8, dist = new Float64Array(S).fill(Infinity), prev = new Int32Array(S).fill(-1), done = new Uint8Array(S);
-  // A binary heap of [cost, state].
-  const heap: [number, number][] = [];
-  const push = (e: [number, number]) => {
-    heap.push(e);
-    for (let i = heap.length - 1; i > 0;) {
+  // A binary heap of states by cost, in flat arrays: no allocation per step.
+  let hc = new Float64Array(1 << 14), hv = new Int32Array(1 << 14), size = 0;
+  const push = (cost: number, st: number) => {
+    if (size === hc.length) {
+      const c2 = new Float64Array(size * 2), v2 = new Int32Array(size * 2);
+      c2.set(hc), v2.set(hv), hc = c2, hv = v2;
+    }
+    let i = size++;
+    while (i > 0) {
       const p = (i - 1) >> 1;
-      if (heap[p]![0] <= heap[i]![0]) break;
-      [heap[p], heap[i]] = [heap[i]!, heap[p]!], i = p;
+      if (hc[p]! <= cost) break;
+      hc[i] = hc[p]!, hv[i] = hv[p]!, i = p;
     }
+    hc[i] = cost, hv[i] = st;
   };
-  const pop = () => {
-    const top = heap[0]!, last = heap.pop()!;
-    if (heap.length) {
-      heap[0] = last;
-      for (let i = 0; ;) {
-        const l = i * 2 + 1, r = l + 1;
-        let m = i;
-        if (l < heap.length && heap[l]![0] < heap[m]![0]) m = l;
-        if (r < heap.length && heap[r]![0] < heap[m]![0]) m = r;
-        if (m === i) break;
-        [heap[m], heap[i]] = [heap[i]!, heap[m]!], i = m;
-      }
+  const pop = (): [number, number] => {
+    const cost = hc[0]!, st = hv[0]!, lc = hc[--size]!, lv = hv[size]!;
+    let i = 0;
+    for (;;) {
+      const l = i * 2 + 1, r = l + 1;
+      let m = -1;
+      if (l < size && hc[l]! < lc) m = l;
+      if (r < size && hc[r]! < (m < 0 ? lc : hc[l]!)) m = r;
+      if (m < 0) break;
+      hc[i] = hc[m]!, hv[i] = hv[m]!, i = m;
     }
-    return top;
+    if (size > 0) hc[i] = lc, hv[i] = lv;
+    return [cost, st];
   };
-  for (let d = 0; d < 8; d++) dist[start * 8 + d] = 0, push([0, start * 8 + d]);
+  for (let d = 0; d < 8; d++) dist[start * 8 + d] = 0, push(0, start * 8 + d);
   let end = -1;
-  while (heap.length) {
+  while (size > 0) {
     const [d, st] = pop();
     if (done[st]) continue;
     done[st] = 1;
@@ -238,14 +246,14 @@ export function trail(t: Terrain, from: { x: number; z: number }, to: { x: numbe
     for (let k = 0; k < 8; k++) {
       const [dc, dr] = steps[k]!, cc = c + dc, rr = r + dr;
       if (cc < 0 || rr < 0 || cc >= n || rr >= n) continue;
-      const j = rr * n + cc, sj = j * 8 + k, p = pos(j);
-      if (done[sj] || Math.hypot(p.x, p.z) > t.R - 2 || wet(t, p.x, p.z) || (j !== goal && blocked?.(p.x, p.z))) continue;
-      const len = cell * Math.hypot(dc, dr), grade = Math.abs(hs[j]! - hs[i]!) / len;
+      const j = rr * n + cc, sj = j * 8 + k;
+      if (done[sj] || off[j]) continue;
+      const len = cell * (dc && dr ? Math.SQRT2 : 1), grade = Math.abs(hs[j]! - hs[i]!) / len;
       if (grade > TRAIL_MAX) continue;
       const turn = Math.min(Math.abs(k - way), 8 - Math.abs(k - way));
       // A step along a path already cut costs less, so paths share a shelf rather than run beside each other.
-      const nd = d + len * (1 + 8 * grade * grade + (grade > WALK ? 6 : 0)) * (cheap?.(p.x, p.z) ? 0.5 : 1) + TURN[turn]! + (!cheap?.(p.x, p.z) && beside?.(p.x, p.z) ? 30 : 0);
-      if (nd < dist[sj]!) dist[sj] = nd, prev[sj] = st, push([nd, sj]);
+      const nd = d + len * (1 + 8 * grade * grade + (grade > WALK ? 6 : 0)) * (cheapAt[j] ? 0.5 : 1) + TURN[turn]! + (!cheapAt[j] && besideAt[j] ? 30 : 0);
+      if (nd < dist[sj]!) dist[sj] = nd, prev[sj] = st, push(nd, sj);
     }
   }
   if (end < 0) return null;
