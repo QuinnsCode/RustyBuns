@@ -11,6 +11,7 @@
     "desktop:build": "rustybuns build desktop --check"
   },
   "dependencies": {
+    "@rustybuns/terrain": "workspace:*",
     "@rustybuns/util": "workspace:*",
     "@rustybuns/shell-bun": "workspace:*",
     "lucide": "1.55.0",
