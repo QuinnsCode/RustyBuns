@@ -1,5 +1,5 @@
 // The skater and the board, from three.js primitives: nothing to load or license. The roadster
-// is packages/models; this gives each of its ten nozzles a plume.
+// is packages/models; its ten nozzles are where the exhaust comes from.
 import { roadster as shared } from "@rustybuns/models";
 import * as THREE from "three";
 
@@ -11,21 +11,12 @@ const box = (w: number, h: number, d: number, m: THREE.Material, x = 0, y = 0, z
   return o;
 };
 
-export type Thruster = { group: "rear" | "lift" | "spinL" | "spinR"; plume: THREE.Mesh };
+export type Thruster = { group: "rear" | "lift" | "spinL" | "spinR"; mount: THREE.Object3D };
 
-const PLUME = new THREE.MeshBasicMaterial({ color: 0xe4f2ff, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending });
-
-/** The shared roadster with a plume on each nozzle for the view to scale by what the sim says is firing. */
+/** The shared roadster; `render/plumes.ts` draws the exhaust out of each nozzle's mount. */
 export function roadster() {
   const car = shared();
-  const thrusters: Thruster[] = car.nozzles.map((n) => {
-    const plume = new THREE.Mesh(new THREE.ConeGeometry(0.2, 1, 12, 1, true), PLUME);
-    plume.position.y = 0.5;
-    plume.visible = false;
-    n.mount.add(plume);
-    return { group: n.group, plume };
-  });
-  car.group.userData = { model: "roadster", thrusters, plate: car.plate };
+  car.group.userData = { model: "roadster", thrusters: car.nozzles as Thruster[], plate: car.plate };
   return car.group;
 }
 
