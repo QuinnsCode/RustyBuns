@@ -678,6 +678,7 @@ describe("account email", () => {
     expect(ruleFor("PUT", ["", "repos", "o", "r", "deploy"])).toBeNull();
     expect(ruleFor("PUT", ["", "repos", "o", "r", "deploy", "key"])).toBeNull();
     expect(ruleFor("GET", ["", "repos", "o", "r", "preview"])).toBeNull();
+    expect(ruleFor("GET", ["", "repos", "o", "r", "gitpath"])).toBe("github");
     expect(ruleFor("PUT", ["", "repos", "o", "r", "deps"])).toBeNull();
   });
 

@@ -95,6 +95,8 @@ export function ruleFor(method: string, p: string[]): string | null {
   if (method === "GET") {
     if (p[1] === "github" && (p[2] === "repos" || p[2] === "search")) return "github";
     if (p[1] === "search") return "search";
+    // gitpath reads a dug repo's earlier history from GitHub, up to ~41 calls a request (gitpath-upstream.ts).
+    if (p[1] === "repos" && p[4] === "gitpath" && !p[5]) return "github";
     return null;
   }
   if (method !== "POST") return null;

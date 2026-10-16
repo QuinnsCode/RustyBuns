@@ -601,7 +601,8 @@ async function route(req: Request, env: Env): Promise<Response> {
         if (!h) return json({ repo: `${owner}/${repo}`, ...(path ? { path, commits: [] } : { files: [] }) });
         // A repo dug from GitHub has only its import in its own git; what came before is read from GitHub (gitpath-upstream.ts).
         const r = await repoRow(env, owner, repo, "upstream, upstream_commit, branch") as UpstreamRepo | null;
-        const token = (await githubToken(env, user).catch(() => null))?.token;
+        // An anonymous caller never spends the site's GitHub token: they get GitHub's unauthenticated quota, if any.
+        const token = user ? (await githubToken(env, user).catch(() => null))?.token : undefined;
         if (path) {
           const own = await fileHistory(h.handle, h.branch, path, limit);
           const before = own.more ? null : await upstreamFileHistory(r, path, limit - own.commits.length, token);
