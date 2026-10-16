@@ -1,7 +1,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import type { BattleSpec } from "../src/battle/contract.ts";
 import {
-  CHAMP_AT, DT, SPRINT_AFTER, FLAVOR, HALF, LAYOUTS, ROLES, ROLE_STATS, STATS, STRIKE_RADIUS, TROOPERS, aimTarget, flies, heroUnit, hitChance, inCover, isVehicle, run, sees, startBattle, statsOf, step, type UnitKind, type WookaRole,
+  CHAMP_AT, DT, SPRINT_AFTER, FLAVOR, HALF, LAYOUTS, ROLES, ROLE_STATS, STATS, STRIKE_RADIUS, TROOPERS, aimTarget, flies, heroUnit, hitChance, inCover, isVehicle, run, sees, startBattle, statsOf, step, type Unit, type UnitKind, type WookaRole,
 } from "../src/battle/sim.ts";
 
 // Whole battles run here, and a CI runner is slower than a laptop. bunfig's timeout is ignored,
@@ -270,6 +270,49 @@ test("a Sticky throws a spear and falls back", () => {
   const z = s.z;
   for (let i = 0; i < 20; i++) step(b, null);
   expect(s.z).toBeLessThan(z); // further off, towards home
+});
+
+test("Warbur spears from afar, throws his kin, then rips a head off up close", () => {
+  const b = bare();
+  const bear: Unit = unit(b, "defender", "champion", 0, -35);
+  Object.assign(bear, { champ: "warbur" as const, hp: 1100, maxHp: 1100, cool: 0, jav: 0, toss: 0 });
+  const marine = unit(b, "attacker", "assault", 0, 0);
+  const kin = [wookaOf(b, "defender", "fodder", 3, -40), wookaOf(b, "defender", "fodder", -3, -40)];
+  for (const k of kin) k.cool = 99;
+  // 35 away: a spear, no kin thrown yet.
+  step(b, null);
+  expect(b.fx.some((f) => f.kind === "spear" && f.big)).toBe(true);
+  expect(b.fx.some((f) => f.kind === "toss")).toBe(false);
+  // 12 away: kin go flying while they're healthy.
+  bear.z = -12; bear.toss = 0; bear.look = 0;
+  for (const k of kin) k.z = -12;
+  step(b, null);
+  expect(b.fx.some((f) => f.kind === "toss")).toBe(true);
+  // Beaten up kin are left alone: spears instead.
+  b.fx = []; bear.toss = 0; bear.jav = 0; bear.look = 0;
+  for (const k of kin) k.hp = 5;
+  step(b, null);
+  expect(b.fx.some((f) => f.kind === "toss")).toBe(false);
+  expect(b.fx.some((f) => f.kind === "spear")).toBe(true);
+  // Up close, the head comes off.
+  bear.x = 0; bear.z = -2; bear.cool = 0; bear.look = 0; marine.hp = STATS.assault.hp;
+  for (let i = 0; i < 40 && marine.hp > 0; i++) step(b, null);
+  expect(marine.hp).toBeLessThanOrEqual(0);
+});
+
+test("a spear pins whoever it hits to a nearby trunk", () => {
+  let pinned = 0;
+  for (let seed = 1; seed <= 12; seed++) {
+    const b = bare({ seed });
+    b.trees = [{ x: 2, z: 2, r: 1 }];
+    const marine: Unit = unit(b, "attacker", "assault", 0, 2);
+    marine.cool = 99;
+    wookaOf(b, "defender", "sticky", 0, -10).cool = 0;
+    for (let i = 0; i < 3; i++) step(b, null);
+    if (marine.hp < marine.maxHp && (marine.stun ?? 0) > 0) pinned++;
+    else expect(marine.hp < marine.maxHp).toBe(false); // every hit pins
+  }
+  expect(pinned).toBeGreaterThan(0);
 });
 
 test("three Wooka on a Marine tear them apart, and cover is no help up close", () => {
