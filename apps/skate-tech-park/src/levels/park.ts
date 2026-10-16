@@ -105,8 +105,8 @@ export function parkLevel(spec: ParkSpec, real = false): ParkLevel {
   const landmarks = (spec.landmarks ?? []).flatMap(landmarkCircle);
   const filled = spec.fill ? fillContours(ground.height, spec.bounds, keepOut({ pieces: sited.pieces, spawns: spec.spawns, gaps, trees, pickups: spec.pickups ?? [], landmarks: (spec.landmarks ?? []).flatMap((l) => (l.kind === "falls" ? [l.from, l.to] : [l])) }), spec.fill) : undefined;
   const placed = filled ? join(sited, drape(filled.part, ground.height)) : sited;
-  // The kit scatter leaves room (under half the cells) for the earthworks, which are cut into whatever it leaves open.
-  const spread = spec.scatter === false ? [] : scatter({ bounds: spec.bounds, R: ground.R, ground: ground.height, spawns: spec.spawns, lanes: lanes(gaps, spec.spawns), taken: [...footprint(placed), ...trees, ...landmarks] }, { fill: 0.4, ...spec.scatter }).map((p) => drape(p, ground.height));
+  // The earthworks are cut into whatever the kit leaves open, so the kit spreads exactly as it did before them.
+  const spread = spec.scatter === false ? [] : scatter({ bounds: spec.bounds, R: ground.R, ground: ground.height, spawns: spec.spawns, lanes: lanes(gaps, spec.spawns), taken: [...footprint(placed), ...trees, ...landmarks] }, spec.scatter).map((p) => drape(p, ground.height));
   const kit = join(placed, ...spread);
   const works = spec.earthworks === false ? [] : layOut({ bounds: spec.bounds, R: ground.R, ground: ground.height, spawns: spec.spawns, lanes: lanes(gaps, spec.spawns), taken: [...footprint(kit), ...trees, ...landmarks, ...(spec.pickups ?? []).map((p) => ({ x: p.x, z: p.z, r: 6 }))] }, spec.earthworks);
   const land = sculpt(ground, works);
