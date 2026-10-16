@@ -11,3 +11,5 @@
 .start-grid strong { display: flex; gap: 6px; align-items: center; }
 .start-grid .thumb { align-self: stretch; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 5px; background: #405638; perspective: 400px; }
 .start-grid .thumb canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; transform: translate(var(--tx, 0), var(--ty, 0)) rotateX(var(--rx, 0)) rotateY(var(--ry, 0)) scale(1.25); transition: transform 0.12s ease-out; }
+button.level-menu { top: 92px; cursor: pointer; display: flex; }
+button.level-menu[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
