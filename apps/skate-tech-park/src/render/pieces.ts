@@ -14,6 +14,8 @@ const rgb = (hex: number) => new THREE.Color(hex);
 const WOOD = rgb(0xc98a52), SEAM = rgb(0x6e4526), CONCRETE = rgb(0xb9b3aa), SIDE = rgb(0x9d978d);
 const BAND = { wood: rgb(0xe2572b), concrete: rgb(0x2e7f86) };
 const STEEL = rgb(0xa5acb4), WAX = rgb(0xf3ead2);
+/** A park of more pieces than this meshes each one coarser, so scattering a map full of them keeps its vertex count where it was. */
+const DETAIL_PIECES = 36;
 const CONCRETE_NAMES = /bowl|roll-in|landing|boulder|log|cone|roller|contour/;
 
 /** Painted wood or concrete, by what the piece is. */
@@ -23,9 +25,9 @@ const isConcrete = (p: Piece) => p.kind === "box" || CONCRETE_NAMES.test(p.name)
  * A piece as a closed solid hanging from `base`: its top sampled from its own height function on a grid
  * (finer where a stair's risers or a plank seam need it), the sides dropped straight to `base`.
  */
-export function pieceGeometry(p: Piece, base = 0): THREE.BufferGeometry {
+export function pieceGeometry(p: Piece, base = 0, detail = 1): THREE.BufferGeometry {
   const concrete = isConcrete(p);
-  const cell = Math.max(concrete ? 0.25 : 0.1, Math.sqrt((p.w * p.d) / 30000));
+  const cell = Math.max(concrete ? 0.25 : 0.1, Math.sqrt((p.w * p.d) / 30000)) / Math.sqrt(detail);
   const nx = Math.max(2, Math.ceil(p.w / cell)), nz = Math.max(2, Math.ceil(p.d / cell));
   const top = (lx: number, lz: number) => Math.max(base, p.height(lx, lz));
   const pos: number[] = [], col: number[] = [], idx: number[] = [];
@@ -128,7 +130,7 @@ export function levelMeshes(level: Level, ground?: Ground) {
     return m;
   };
   if (level.pieces.length) {
-    const m = new THREE.Mesh(mergeGeometries(level.pieces.map((p) => pieceGeometry(p, low(p))))!, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
+    const m = new THREE.Mesh(mergeGeometries(level.pieces.map((p) => pieceGeometry(p, low(p), Math.min(1, DETAIL_PIECES / level.pieces.length))))!, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
     m.castShadow = m.receiveShadow = true;
     m.name = "pieces";
     group.add(m);

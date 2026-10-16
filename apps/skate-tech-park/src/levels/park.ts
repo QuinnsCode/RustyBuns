@@ -6,6 +6,7 @@
 import { heightmapTerrain, withPads, zoneData, type Terrain } from "@rustybuns/terrain";
 import { type Bounds, type Level, makeLevel, postObstacles, type Spawn } from "../level.ts";
 import { drape, type Gap, join, lift, type Part } from "./pieces.ts";
+import { type Circle, footprint, scatter, type Scatter } from "./scatter.ts";
 import { type Fill, fillContours, keepOut, type Pt } from "./ribbons.ts";
 
 /** Real terrain is shrunk this many times across (a 1 km zone becomes a ~333 m disc). One constant for the whole game. */
@@ -44,6 +45,8 @@ export type ParkSpec = {
   relief?: number;
   skirt?: number;
   sites: Site[];
+  /** Parts spread over everything the sites leave empty, like a skate game's map. On by default; `false` leaves the park to its sites. */
+  scatter?: Scatter | false;
   /** Gaps the ground makes by itself (a canyon, a drop): no kit piece needed. */
   gaps?: Gap[];
   spawns: Spawn[];
@@ -75,6 +78,15 @@ export type ParkLevel = Level & {
   ribbons: { profile: string; path: Pt[] }[];
 };
 
+/** The ground a landmark's drawing covers, so scattered parts don't stand in the steam or the spring. */
+const landmarkCircle = (l: Landmark): Circle[] => (l.kind === "plume" ? [{ x: l.x, z: l.z, r: l.r + 4 }] : l.kind === "rings" ? [{ x: l.x, z: l.z, r: Math.max(...l.rings.map((g) => g.r)) }] : []);
+
+/** Lines scatter keeps open: each gap's flight, the way in to it from every spawn in reach, and straight ahead of every spawn. */
+const lanes = (gaps: Gap[], spawns: Spawn[]): [Pt, Pt][] => [
+  ...gaps.flatMap((g) => [[g.a, g.b] as [Pt, Pt], ...spawns.filter((s) => Math.hypot(s.x - g.a.x, s.z - g.a.z) < 130).map((s) => [s, g.a] as [Pt, Pt])]),
+  ...spawns.map((s) => [s, { x: s.x + Math.sin(s.yaw) * 160, z: s.z + Math.cos(s.yaw) * 160 }] as [Pt, Pt]),
+];
+
 export function parkLevel(spec: ParkSpec, real = false): ParkLevel {
   const zone = zoneData(spec.zone), raw = heightmapTerrain(zone, TERRAIN_SCALE), relief = real ? REAL_RELIEF : spec.relief ?? RELIEF;
   const scaled: Terrain = { R: raw.R, height: (x, z) => raw.height(x, z) * relief };
@@ -84,7 +96,9 @@ export function parkLevel(spec: ParkSpec, real = false): ParkLevel {
   const trees = spec.trees ?? [];
   const gaps = [...sited.gaps, ...(spec.gaps ?? [])];
   const filled = spec.fill ? fillContours(ground.height, spec.bounds, keepOut({ pieces: sited.pieces, spawns: spec.spawns, gaps, trees, pickups: spec.pickups ?? [], landmarks: (spec.landmarks ?? []).flatMap((l) => (l.kind === "falls" ? [l.from, l.to] : [l])) }), spec.fill) : undefined;
-  const parts = filled ? join(sited, drape(filled.part, ground.height)) : sited;
+  const placed = filled ? join(sited, drape(filled.part, ground.height)) : sited;
+  const spread = spec.scatter === false ? [] : scatter({ bounds: spec.bounds, R: ground.R, ground: ground.height, spawns: spec.spawns, lanes: lanes(gaps, spec.spawns), taken: [...footprint(placed), ...trees, ...(spec.landmarks ?? []).flatMap(landmarkCircle)] }, spec.scatter).map((p) => drape(p, ground.height));
+  const parts = join(placed, ...spread);
   const inner = makeLevel({ name: spec.name, pieces: parts.pieces, rails: parts.rails, obstacles: trees, spawns: spec.spawns, bounds: spec.bounds });
   const height = (x: number, z: number) => Math.max(ground.height(x, z), inner.height(x, z));
   const obstacles = [...trees, ...postObstacles(parts.rails, height)];
