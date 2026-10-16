@@ -8,6 +8,7 @@
 // On the Wooka's end of the field the trees are lived in: huts up the trunks, rope bridges
 // between them, and totems wearing the helmets of Marines who came this way before.
 import * as THREE from "three";
+import { FLOORS, buildFoliage, foliageQuality, instancer, makeWind, mergeAll } from "./foliage.ts";
 import { hut, lumpy, texture, totem } from "./models.ts";
 import { EYE, HALF, POST_RADIUS, SPAWN, type Battle, type Block, type Tree } from "./sim.ts";
 
@@ -200,12 +201,14 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   const groundGeo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG).rotateX(-Math.PI / 2);
   const gp = groundGeo.attributes.position as THREE.BufferAttribute, gc: number[] = [];
   const base = new THREE.Color(look.ground), litter = new THREE.Color(look.litter), dirt = new THREE.Color(look.trail);
+  const mossy = new THREE.Color(0x2f4a1c);
   const paved = new THREE.Color(spec.sector === "capital" ? 0x8d8a82 : spec.sector === "spaceport" ? 0x8f8b80 : 0x86775c);
   const paves = spec.sector === "capital" || spec.sector === "spaceport" || spec.sector === "cannon";
   for (let i = 0; i < gp.count; i++) {
     const x = gp.getX(i), z = gp.getZ(i), h = heightAt(x, z);
     gp.setY(i, h);
     col.copy(base).lerp(litter, smooth(-0.3, 0.6, n(x / 14 + 40, z / 14, 3)));
+    col.lerp(mossy, smooth(-0.1, 0.7, n(x / 10 - 30, z / 10 + 8, 3)) * FLOORS[spec.sector].mossAmount);
     if (woods === "canyon") col.offsetHSL(0, 0, 0.06 * Math.sin(h * 1.7));
     const t = onTrail(x, z);
     col.lerp(dirt, 1 - smooth(1.5, 5.5, t + n(x / 3, z / 3) * 1.5));
@@ -224,22 +227,24 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     onTrail(x, z) < 3.5 || b.posts.some((post) => Math.hypot(x - post.x, z - post.z) < 5) ||
     b.blocks.some((blk) => blockGap(blk, x, z) < room) || b.trees.some((t) => Math.hypot(x - t.x, z - t.z) < t.r + 0.3);
   const anywhere = (spread = 1) => ({ x: (r() - 0.5) * HALF * 2 * spread, z: (r() - 0.5) * HALF * 2 * spread });
-  const inst = (geo: THREE.BufferGeometry, mat: THREE.Material, count: number, cast = false) => {
-    const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, count));
-    mesh.count = 0;
-    mesh.castShadow = cast;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-    return mesh;
-  };
-  const put = (mesh: THREE.InstancedMesh, matrix: THREE.Matrix4, color?: THREE.Color) => {
-    if (mesh.count >= mesh.instanceMatrix.count) return;
-    mesh.setMatrixAt(mesh.count, matrix);
-    if (color) mesh.setColorAt(mesh.count, color);
-    mesh.count++;
-  };
+  const { inst, put, done } = instancer(scene);
+  const wind = makeWind(), Q = foliageQuality();
+
+  // Fern fronds, and the leaf material every frond and clump shares: it sways, and bends away from units.
+  const frond = new THREE.PlaneGeometry(0.55, 1.5, 1, 6).translate(0, 0.75, 0);
+  const fp = frond.attributes.position as THREE.BufferAttribute;
+  for (let v = 0; v < fp.count; v++) { const y = fp.getY(v), f = y / 1.5; fp.setXYZ(v, fp.getX(v), Math.sin(f * 2.1) * 0.75, -f * 1.25); }
+  const fronds: THREE.BufferGeometry[] = [];
+  const per = woods === "jungle" ? 9 : 8;
+  for (let i = 0; i < per; i++) fronds.push(frond.clone().rotateX(-0.15 * (i % 3)).rotateY((i / per) * Math.PI * 2 + (i % 2) * 0.3));
+  const fernGeo = mergeAll(fronds);
+  fernGeo.computeVertexNormals();
+  
+  const frondTex = frondMap();
+  const leafMat = wind.patch(std(0xffffff, 0.85, { map: frondTex, alphaTest: 0.45, side: THREE.DoubleSide }), { h: 1.5, amp: 0.1, bend: 1.4 });
 
   // --- The trees: the field's trunks (the sim's, which block), and more on the banks behind. ---
+  let allTrees: Tree[] = b.trees;
   if (woods !== "canyon") {
     const jungle = woods === "jungle";
     const back: Tree[] = [];
@@ -249,15 +254,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       back.push({ x, z, r: jungle ? 0.6 + r() : 1.4 + r() * 2.6 });
     }
     const all = [...b.trees, ...back];
-    const frond = new THREE.PlaneGeometry(0.55, 1.5, 1, 6).translate(0, 0.75, 0);
-    const fp = frond.attributes.position as THREE.BufferAttribute;
-    for (let v = 0; v < fp.count; v++) { const y = fp.getY(v), f = y / 1.5; fp.setXYZ(v, fp.getX(v), Math.sin(f * 2.1) * 0.75, -f * 1.25); }
-    const fronds: THREE.BufferGeometry[] = [];
-    const per = jungle ? 9 : 8;
-    for (let i = 0; i < per; i++) fronds.push(frond.clone().rotateX(-0.15 * (i % 3)).rotateY((i / per) * Math.PI * 2 + (i % 2) * 0.3));
-    const fernGeo = mergeAll(fronds);
-    fernGeo.computeVertexNormals();
-    const leafMat = std(0xffffff, 0.85, { map: frondMap(), alphaTest: 0.45, side: THREE.DoubleSide });
+    allTrees = all;
     const trunkGeo = jungle
       ? new THREE.LatheGeometry([[0, -0.02], [1.6, -0.02], [1.15, 0.015], [1, 0.04], [0.85, 0.5], [0.6, 1]].map(([x, y]) => new THREE.Vector2(x, y)), 10)
       : new THREE.LatheGeometry([[0, -0.02], [2.1, -0.02], [1.45, 0.008], [1.12, 0.025], [1, 0.05], [0.82, 0.55], [0.5, 1]].map(([x, y]) => new THREE.Vector2(x, y)), 16);
@@ -267,7 +264,6 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     // Boughs: thin limbs off the upper trunk, each ending in a clump of needles; a few dead twigs lower down.
     const limbs = inst(new THREE.CylinderGeometry(0.5, 1, 1, 5).translate(0, 0.5, 0), std(0x5a3622, 1), all.length * 8, true);
     const clumps = inst(fernGeo, leafMat, all.length * (jungle ? 6 : 14), true);
-    const vines = inst(new THREE.CylinderGeometry(0.08, 0.08, 1, 4).translate(0, -0.5, 0), std(0x3c4a1e, 1), jungle ? all.length * 3 : 0);
     const branch = (x: number, y: number, z: number, a: number, len: number, droop: number, rad: number) => {
       q.setFromEuler(new THREE.Euler(0, a, Math.PI / 2 - droop, "YXZ"));
       put(limbs, m.compose(p.set(x, y, z), q, k.set(rad, len, rad)));
@@ -292,17 +288,11 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       // A crown on top, lost in the haze.
       col.setHSL(0.26, 0.45, 0.22 + r() * 0.06);
       put(clumps, m.compose(p.set(t.x, y0 + h * 0.97, t.z), q.setFromAxisAngle(UP, r() * 6), k.set(t.r * 2 + 3, 4, t.r * 2 + 3)), col);
-      if (jungle) for (let v = 0; v < 3; v++) {
-        const top = new THREE.Vector3(t.x + (r() - 0.5) * 6, y0 + h * (0.7 + r() * 0.2), t.z + (r() - 0.5) * 6);
-        const low = new THREE.Vector3(top.x + (r() - 0.5) * 3, y0 + r() * 6, top.z + (r() - 0.5) * 3);
-        q.setFromUnitVectors(new THREE.Vector3(0, -1, 0), low.clone().sub(top).normalize());
-        put(vines, m.compose(top, q, k.set(1, top.distanceTo(low), 1)));
-      }
     }
-    for (const mesh of [limbs, clumps, vines, trunks, moss]) { mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; }
+    done(limbs, clumps, trunks, moss);
 
     // The undergrowth: ferns most of all, bushes, logs, stumps, mushrooms.
-    const nFerns = jungle ? 3200 : 3000;
+    const nFerns = Math.round((jungle ? 3200 : 3000) * Q);
     const ferns = inst(fernGeo, leafMat, nFerns);
     for (let i = 0; i < nFerns * 3 && ferns.count < nFerns; i++) {
       // Ferns crowd round the trunks and thin out in the open.
@@ -313,8 +303,8 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       col.setHSL(0.21 + r() * 0.08, 0.5 + r() * 0.2, 0.3 + r() * 0.16);
       put(ferns, m.compose(p.set(at.x, heightAt(at.x, at.z) - 0.05, at.z), q.setFromAxisAngle(UP, r() * 6), k.set(sz, sz * (0.8 + r() * 0.4), sz)), col);
     }
-    const bushes = inst(fernGeo, leafMat, 320, true);
-    for (let i = 0; i < 1200 && bushes.count < 320; i++) {
+    const nBush = Math.round(320 * Q), bushes = inst(fernGeo, leafMat, nBush, true);
+    for (let i = 0; i < 1200 && bushes.count < nBush; i++) {
       const at = anywhere(1.2);
       if (bare(at.x, at.z, 3)) continue;
       const w = 2.4 + r() * 2;
@@ -352,6 +342,12 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       }
     }
   }
+
+  // The forest floor and the jungle's storeys: foliage.ts.
+  const foliage = buildFoliage({
+    scene, b, kind: spec.sector, r, n, heightAt, bare, trees: allTrees, trail, shiftAt: (z) => n(z / 40, 3.7) * 6,
+    fernGeo, frond: frondTex, bark: barkMap(), wind, fog: new THREE.Color(look.sky),
+  });
 
   // Rocks, mossy in the woods, red in the canyon.
   const rocks = inst(lumpy(1, 2, 0.22, 3, false), std(woods === "canyon" ? 0x9a5634 : 0x7d7d70, 0.95, { map: strataMap() }), woods === "canyon" ? 140 : 70, true);
@@ -572,6 +568,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   return {
     heightAt,
     update(t, eye, at) {
+      foliage.update(t, eye);
       sun.target.position.set(at.x, heightAt(at.x, at.z), at.z);
       sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 200);
       sky.position.copy(eye);
@@ -590,18 +587,4 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       moteGeo.attributes.position!.needsUpdate = true;
     },
   };
-}
-
-function mergeAll(geos: THREE.BufferGeometry[]) {
-  const parts = geos.map((g) => (g.index ? g.toNonIndexed() : g));
-  let total = 0;
-  for (const g of parts) total += g.attributes.position!.count;
-  const out = new THREE.BufferGeometry();
-  for (const name of ["position", "uv"]) {
-    const size = parts[0]!.attributes[name]!.itemSize, arr = new Float32Array(total * size);
-    let o = 0;
-    for (const g of parts) { arr.set(g.attributes[name]!.array as Float32Array, o); o += g.attributes[name]!.array.length; }
-    out.setAttribute(name, new THREE.BufferAttribute(arr, size));
-  }
-  return out;
 }
