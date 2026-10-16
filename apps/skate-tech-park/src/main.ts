@@ -119,7 +119,8 @@ window.addEventListener("keyup", (e) => keys.delete(e.code));
 window.addEventListener("blur", () => keys.clear());
 // The mouse and the right stick: a drag up is an ollie, across or down is a flick trick (see gesture.ts).
 const gestures = new Gestures();
-canvas.addEventListener("pointerdown", (e) => gestures.down(e.clientX, e.clientY));
+canvas.addEventListener("pointerdown", (e) => gestures.down(e.clientX, e.clientY, performance.now() / 1000));
+window.addEventListener("pointermove", (e) => gestures.move(e.clientX, e.clientY));
 window.addEventListener("pointerup", (e) => gestures.up(e.clientX, e.clientY));
 const input = (): Input => ({
   ...IDLE,
@@ -130,7 +131,7 @@ const input = (): Input => ({
   flip: keys.has("KeyF"),
   flick: keys.has("KeyG") ? "heelflip" : keys.has("KeyV") ? "shove-it" : null,
   fan: keys.has("KeyE"),
-  manual: keys.has("KeyQ") ? 1 : keys.has("KeyZ") ? -1 : 0,
+  manual: keys.has("KeyQ") ? 1 : keys.has("KeyZ") ? -1 : gestures.manual(performance.now() / 1000),
 });
 
 // The HUD: lucide icons with their words as tooltips.
@@ -148,7 +149,7 @@ function hud() {
   swapBtn.replaceChildren(icon(mode === "car" ? RectangleHorizontal : Car));
   swapBtn.title = mode === "car" ? "Fingerboard (Tab)" : "Roadster (Tab)";
   if (skins.show(mode === "car" ? "roadster" : "fingerboard")) plumes.landed(sim.x, sim.y, sim.z, 4); // the swap pops in a ring of puffs
-  $("keys").innerHTML = "<kbd>W</kbd><kbd>S</kbd> push <kbd>A</kbd><kbd>D</kbd> steer, spin in the air <kbd>Space</kbd> ollie <kbd>F</kbd> kickflip <kbd>G</kbd> heelflip <kbd>V</kbd> shove-it (or drag the mouse or push the right stick: up ollies, across and down flick) <kbd>Shift</kbd> rear jets, and pump a transition <kbd>E</kbd> suction fan <kbd>Q</kbd> hold a manual, <kbd>Z</kbd> a nose manual (W and S hold the balance)";
+  $("keys").innerHTML = "<kbd>W</kbd><kbd>S</kbd> push <kbd>A</kbd><kbd>D</kbd> steer, spin in the air <kbd>Space</kbd> ollie <kbd>F</kbd> kickflip <kbd>G</kbd> heelflip <kbd>V</kbd> shove-it (or drag the mouse or push the right stick: up ollies, across and down flick) <kbd>Shift</kbd> rear jets, and pump a transition <kbd>E</kbd> suction fan <kbd>Q</kbd> hold a manual, <kbd>Z</kbd> a nose manual (W and S hold the balance; or hold the mouse still, nudged down for the nose, or the pad's right and left triggers)";
 }
 hud();
 
@@ -163,7 +164,7 @@ function frame(now: number) {
   const inp = input();
   landVy = 0;
   const pad = navigator.getGamepads?.().find((g) => g);
-  if (pad) gestures.stick(pad.axes[2] ?? 0, pad.axes[3] ?? 0);
+  if (pad) { gestures.stick(pad.axes[2] ?? 0, pad.axes[3] ?? 0); gestures.shoulders(pad.buttons[6]?.value ?? 0, pad.buttons[7]?.value ?? 0); }
   while (acc >= DT) {
     const was = sim.air, vy = sim.vy;
     step(sim, { ...inp, ...gestures.take() }, level); // a gesture is one step's press
