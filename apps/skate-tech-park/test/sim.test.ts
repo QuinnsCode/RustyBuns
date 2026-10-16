@@ -185,3 +185,21 @@ test("a bigger board is a bigger toy: an ollie goes SCALE times as high and hang
   expect(apex).toBeCloseTo(SCALE * (base * base) / (2 * g), 0);
   expect(hang).toBeCloseTo(Math.sqrt(SCALE) * (2 * base) / g, 1);
 });
+
+test("a push is gentle and tops out at a speed you can steer at, while the jets and a downhill still carry the board past it", () => {
+  const flatLv = makeLevel({ name: "f", pieces: [], rails: [], spawns: [], bounds: { minX: -300, maxX: 300, minZ: -300, maxZ: 300 } });
+  const kmh = (s: State) => s.speed * 3.6;
+
+  const pushed = run(start(0, -100, 0, flatLv), 3, () => ({ throttle: 1 }), flatLv);
+  expect(kmh(pushed)).toBeGreaterThan(40); // it does get going
+  expect(kmh(pushed)).toBeLessThan(75); // but not 150 km/h in 3 s
+  run(pushed, 10, () => ({ throttle: 1 }), flatLv);
+  expect(kmh(pushed)).toBeLessThan(75); // and pushing alone stops there
+
+  const jets = run(start(0, -100, 0, flatLv), 3, () => ({ throttle: 1, boost: true }), flatLv);
+  expect(kmh(jets)).toBeGreaterThan(110); // the jets are the real speed
+
+  const hill = makeLevel({ name: "h", pieces: [piece("ramp", "slope", 0, 0, Math.PI, 20, 400, 0, 120)], rails: [], spawns: [], bounds: { minX: -300, maxX: 300, minZ: -400, maxZ: 400 } });
+  const down = run(start(0, -198, 0, hill), 10, () => ({}), hill); // heading downhill, no push at all
+  expect(kmh(down)).toBeGreaterThan(75); // gravity carries it past what pushing reaches
+});

@@ -12,14 +12,14 @@ const BOX = level.bounds;
 const onScreen = (c: Chase, cam: THREE.PerspectiveCamera, b: { x: number; y: number; z: number }) =>
   1 / (c.pos.distanceTo(new THREE.Vector3(b.x, b.y, b.z)) * Math.tan((cam.fov * Math.PI) / 360));
 
-test("holding W to top speed keeps the board the same size on screen", () => {
+test("pushing and firing the jets to top speed keeps the board the same size on screen", () => {
   const p = level.spawns[0]!, sim = start(p.x, p.z, p.yaw, level), cam = new THREE.PerspectiveCamera(66, 1.6, 0.1, 2000), chase = new Chase(cam);
   chase.snap(sim, "roadster");
   chase.apply(BOX);
   const rest = onScreen(chase, cam, sim);
   let worst = 1, top = 0;
   for (let i = 0; i < 60 * 8; i++) {
-    step(sim, { ...IDLE, throttle: 1 }, level);
+    step(sim, { ...IDLE, throttle: 1, boost: true }, level); // the push alone tops out near 71 km/h; the jets carry past it
     chase.update(sim, "roadster", 1 / 60);
     chase.apply(BOX, level.height);
     top = Math.max(top, Math.abs(sim.speed));
