@@ -1,0 +1,5 @@
+.level-menu { position: fixed; top: 56px; right: 12px; font: inherit; padding: 4px 6px; border: 1.5px solid var(--ink); border-radius: 6px; background: var(--paper); color: var(--ink); }
+.goals { position: fixed; top: 64px; left: 12px; margin: 0; padding: 8px 10px; list-style: none; border: 1.5px solid var(--ink); border-radius: 6px; background: var(--paper); font-size: 13px; }
+.goals li { display: flex; gap: 6px; align-items: center; padding: 2px 0; }
+.goals li.done { opacity: 0.55; text-decoration: line-through; }
+.goals small { margin-left: auto; padding-left: 12px; font-variant-numeric: tabular-nums; opacity: 0.7; }

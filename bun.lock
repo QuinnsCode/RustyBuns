@@ -254,6 +254,7 @@
       "dependencies": {
         "@rustybuns/models": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/terrain": "workspace:*",
         "@rustybuns/util": "workspace:*",
         "lucide": "1.55.0",
         "three": "^0.180.0",
