@@ -4,7 +4,7 @@
 // is one seat at it.
 import { GALAXIES, SECTOR_NAMES, FACTION_NAMES, galaxyOf, type GalaxyId } from "./war/galaxy.ts";
 import {
-  CARDS, CARD_NAMES, COST, FACTIONS, ORBIT, TROOP_CARD, checkRetreats, enemy, fogged, handOf, heroReady, income, incomeBreakdown, keyShare, planDeploys, planOrders, regionHolder, supplied,
+  CARDS, CARD_NAMES, COST, FACTIONS, MUSTER_MAX, MUSTER_MIN, ORBIT, checkRetreats, enemy, fogged, handOf, heroReady, income, incomeBreakdown, keyShare, musterOf, planDeploys, planOrders, regionHolder, supplied,
   type Attack, type Campaign, type Card, type Order, type Orders, type Retreat, type Where,
 } from "./war/rules.ts";
 import { aiVote, castVote, handIn, heroFaction, humans, newTable, report, tally, waitingOn, type Seats, type Table, type Vote } from "./war/table.ts";
@@ -13,8 +13,9 @@ import { drawMap } from "./ui/map.ts";
 import { icon } from "./ui/icons.ts";
 import { MODE_INFO, voteScreen, type VoteSeat } from "./ui/vote.ts";
 import { FLAVOR, run } from "./battle/sim.ts";
-import { runSpace } from "./battle/space.ts";
-import { VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type Side, type SpaceBattleResult, type SpaceBattleSpec } from "./battle/contract.ts";
+import { HULL_PER_SHIP, ROUNDS, clash, encodePicks, fightPicks, playRound, startPicks, whyNot, type PickRound } from "./battle/space-picks.ts";
+import { aiSpacePick } from "./war/ai.ts";
+import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 // v2 gained the cannon sectors, v3 renamed the factions, v4 had a galaxy per campaign, v5 had
@@ -58,10 +59,10 @@ const ownMoves = (): Orders | null => {
 const sameWhere = (a: Where, b: Where) => a.system === b.system && a.sector === b.sector;
 const myTurn = () => !c.winner && !c.pending && waiting().includes(me);
 const deploying = () => !!c.deploying && myTurn();
-const CARD_ICONS: Record<Card, string> = { guns: "crosshair", troops: "user-plus", trap: "bomb" };
+const CARD_ICONS: Record<Card, string> = { guns: "crosshair", troops: "shield-plus", trap: "bomb" };
 const CARD_TIPS: Record<Card, string> = {
   guns: "Weapon upgrade: every die your side rolls defending this sector is a d8, until it's taken",
-  troops: `Troop bonus: ${TROOP_CARD} armies here, free`,
+  troops: `Muster: free armies here, one for every two you have on this world already (${MUSTER_MIN} at least, ${MUSTER_MAX} at most)`,
   trap: "Trap: blows up half of whatever attacks here this turn, and everyone of yours there with it. For a place you hold with one army or ship",
 };
 
@@ -174,7 +175,8 @@ function render() {
     html = `<div class="sys-head"><h2>${d.name}</h2><span class="small">${galaxyOf(c).regions.find((r) => r.id === d.region)?.name ?? ""}</span></div>
       <div class="orbit-row"><span title="Orbit held by ${s.orbit ? FACTION_NAMES[s.orbit] : "nobody"}">${icon("orbit", 15)}<i class="dot ${s.orbit ?? ""}"></i></span>
         <span class="count" title="Ships here: yours, then theirs">${icon("rocket", 14)}<b class="${me}">${s.fleets[me]}</b><b class="${foe}">${theirs(s.fleets[foe], s.orbit === foe)}</b></span>
-        ${heroButton(ORBIT, "Fly the space battle here yourself, if one happens this turn")}</div>
+        ${musterCount(s, theirs)}
+        ${heroButton(ORBIT,"Fly the space battle here yourself, if one happens this turn")}</div>
       ${s.sectors.some((x) => x.armies[me]) && !supplied(c, me).has(selected) ? note("Cut off: your armies here lose one a turn. Clear the enemy orbit on the way back to a capital.", true) : ""}
       ${s.sectors.some((x) => x.kind === "cannon") ? note("The cannon knocks a ship a turn out of an enemy fleet in orbit.") : ""}
       ${s.sectors.some((x) => x.kind === "canyon") ? note("The canyon's ore pays like a capital.") : ""}
@@ -231,6 +233,14 @@ function render() {
     : answering && myTurn() ? (rs.length ? "Confirm retreats" : "Hold everywhere")
     : g ? (myTurn() ? "Send orders" : waitingLine()) : hotseat() ? "Hand in orders" : "Next turn") + icon("chevrons-right", 18);
   if (c.winner) showModal(`<h2>${hotseat() ? `${FACTION_NAMES[c.winner]} win` : c.winner === me ? "Victory" : "Defeat"}</h2><p>${FACTION_NAMES[c.winner]} wins the war on turn ${c.turn - 1}.</p><button type="button" id="new-war" class="primary">New campaign</button>`);
+}
+
+// A world's muster force, yours then theirs: the armies on it, which feed the space battle over it.
+// Theirs is a question mark where nobody of ours is there to count it.
+function musterCount(s: Campaign["systems"][string], theirs: (n: number, there: boolean) => number | string) {
+  const foe = enemy(me), mine = musterOf(s, me), their = musterOf(s, foe);
+  const tip = `Muster force: armies on this world, yours then theirs. In the space battle over it they send boarding parties up, and a bigger muster boards harder; batteries below (yours: ${mine.batteries}) add to a screen or a bombardment. A muster card raises more where it's bigger.`;
+  return `<span class="count" title="${esc(tip)}">${icon("shield-plus", 14)}<b class="${me}">${mine.troops}</b><b class="${foe}">${theirs(their.troops, s.sectors.some((x) => x.owner === foe || x.armies[foe] > 0))}</b></span>`;
 }
 
 // Once the attacks are declared: each one against you, with where you could pull back to, and
@@ -550,16 +560,29 @@ function brief(spec: BattleSpec, done: (r: BattleResult) => void) {
   $("auto-battle").onclick = () => { hideModal(); done({ ...run(spec).over!, auto: true }); };
 }
 
-// The space battle's briefing: the fleets over the system, a cruiser for each ship.
+// The orders of a pick battle, as the hand shows them.
+const ORDER_INFO: Record<SpaceOrder, { name: string; icon: string; tip: string }> = {
+  broadside: { name: "Broadside", icon: "zap", tip: "The gun lines fire. Beats boarders crossing the gap, and a fleet bombarding" },
+  screen: { name: "Screen", icon: "shield", tip: "Fighters out front. Beats a broadside and a bombardment. Your batteries below add flak" },
+  board: { name: "Board", icon: "anchor", tip: "Close in and send troops across. Beats a screen and a bombardment, and takes prize ships. Needs troops below, a big muster boards harder, and a broadside costs half of them" },
+  bombard: { name: "Bombard", icon: "flame", tip: "Turn the guns on the world: kills their armies below, twice as many if they pull back or bombard too. But every hit lands, and none goes back" },
+  withdraw: { name: "Pull back", icon: "undo-2", tip: "Take half the fire, give none, and come back harder next round. Nobody can board you" },
+};
+
+// The space battle's briefing: the fleets over the system and the muster force below. Fight it by
+// picking orders (the default), fly it in a fighter, or leave it to the AI.
 function briefSpace(spec: SpaceBattleSpec, done: (r: SpaceBattleResult) => void) {
-  const me = spec.hero, foe = me === "attacker" ? "defender" : "attacker";
+  const me = spec.hero, foe = other(me);
   showModal(`<h2>Space battle: over ${spec.system}</h2>
-    <p>You fly a ${spec.factions[me] === "wooka" ? "Wooka log glider" : "Thunder Marine fighter"} for the orbit. Knock out their cruisers and the orbit is yours.</p>
+    <p>You command the ${spec.factions[me] === "wooka" ? "Wooka raft fleet" : "Thunder Marine line"} for the orbit. ${ROUNDS} rounds: each round you pick an order, they pick one, and you see theirs once yours is in. More hull at the end holds the orbit.</p>
     <table class="spec"><tr><th></th><td>You</td><td>Enemy</td></tr>
-      <tr><th>Cruisers</th><td>${spec.fleets[me]}</td><td>${spec.fleets[foe]}</td></tr>
+      <tr><th>${icon("rocket", 13)} Ships</th><td>${spec.fleets[me]}</td><td>${spec.fleets[foe]}</td></tr>
+      <tr><th title="Armies on the world below: they board, and a bigger muster boards harder">${icon("shield-plus", 13)} Muster below</th><td>${spec.muster?.[me] ?? 0}</td><td>${spec.muster?.[foe] ?? 0}</td></tr>
+      <tr><th title="Cannons, shields and upgraded guns below: they add to a screen or a bombardment">${icon("crosshair", 13)} Batteries below</th><td>${spec.batteries?.[me] ?? 0}</td><td>${spec.batteries?.[foe] ?? 0}</td></tr>
     </table>
-    <p class="small">Each ship on the map is a cruiser here, launching its wing of fighters. A cruiser under half its hull doesn't fly on after the battle. Win the orbit and the turn's landings can come down under it.</p>
-    <button type="button" id="launch" class="primary">Launch</button> <button type="button" id="auto-battle">Let the AI fight it</button>`);
+    <p class="small">Lose the orbit and the world is blockaded: nothing gets built there, supply through it is cut, their landings come down, and a fleet of two or more bombards the armies below every turn.</p>
+    <button type="button" id="fight-picks" class="primary">${icon("swords", 15)} Fight it</button> <button type="button" id="launch" title="Fly a fighter in the battle yourself">${icon("rocket", 15)} Fly it</button> <button type="button" id="auto-battle">Let the AI fight it</button>`);
+  $("fight-picks").onclick = () => pickBattle(spec, done);
   $("launch").onclick = async () => {
     hideModal();
     document.body.classList.add("in-battle");
@@ -568,7 +591,56 @@ function briefSpace(spec: SpaceBattleSpec, done: (r: SpaceBattleResult) => void)
     document.body.classList.remove("in-battle");
     done(result);
   };
-  $("auto-battle").onclick = () => { hideModal(); done({ ...runSpace(spec).over!, auto: true }); };
+  $("auto-battle").onclick = () => { hideModal(); done({ ...fightPicks(spec, [], aiSpacePick)!.over!, auto: true }); };
+}
+
+// The pick battle: a round at a time, the hand of orders, the enemy's pick shown once yours is in.
+// The result carries the hero's picks, so whoever checks it can fight it again.
+function pickBattle(spec: SpaceBattleSpec, done: (r: SpaceBattleResult) => void) {
+  const b = startPicks(spec), me = spec.hero, foe = other(me), picks: SpaceOrder[] = [];
+  let last: PickRound | null = null;
+  const finish = () => { hideModal(); done({ ...b.over!, inputs: encodePicks(picks) }); };
+  const fleet = (s: Side) => `<div class="fleet-row"><span class="who"><i class="dot ${spec.factions[s]}"></i>${s === me ? "You" : "Enemy"}</span>
+    <span class="hull" title="Hull: ${b.hull[s]}"><i class="${spec.factions[s]}" style="width:${(100 * b.hull[s]) / Math.max(1, b.top[s])}%"></i></span>
+    <span class="count" title="Ships still fit to fly">${icon("rocket", 13)}<b>${Math.floor(b.hull[s] / HULL_PER_SHIP)}</b></span>
+    <span class="count" title="Muster force below: armies that can board">${icon("shield-plus", 13)}<b>${b.troops[s]}</b></span></div>`;
+  const card = (o: SpaceOrder, cls: string) => `<span class="order-card ${cls}" title="${ORDER_INFO[o].tip}">${icon(ORDER_INFO[o].icon, 18)}<span>${ORDER_INFO[o].name}</span></span>`;
+  const say = (r: PickRound) => {
+    const v = clash(r.picks[me], r.picks[foe]), out: string[] = [];
+    if (r.hit[foe]) out.push(`${r.hit[foe]} hull into theirs`);
+    if (r.hit[me]) out.push(`${r.hit[me]} into yours`);
+    if (r.prizes[me]) out.push(`${r.prizes[me]} taken as prizes`);
+    if (r.prizes[foe]) out.push(`${r.prizes[foe]} of yours taken as prizes`);
+    if (r.killed[foe]) out.push(`${r.killed[foe]} of their armies below killed`);
+    if (r.killed[me]) out.push(`${r.killed[me]} of your armies below killed`);
+    if (r.boarders[me]) out.push(`${r.boarders[me]} boarding ${r.boarders[me] === 1 ? "party" : "parties"} lost`);
+    return `<p class="verdict ${v}">${v === "win" ? "You read them right." : v === "lose" ? "They read you." : "Neither side has the edge."} ${out.join(", ") || "Nothing hits"}.</p>`;
+  };
+  const draw = () => {
+    const end = b.over && (b.over.winner === me ? `<h3>The orbit is ours</h3>` : `<h3>The orbit is lost</h3>`);
+    showModal(`<div class="picks"><h2>Over ${spec.system} <small>${b.over ? "Over" : `Round ${b.round + 1} of ${ROUNDS}`}</small></h2>
+      ${fleet(me)}${fleet(foe)}
+      ${last ? `<div class="reveal">${card(last.picks[me], "mine")}<span class="vs">vs</span>${card(last.picks[foe], "theirs flip")}</div>${say(last)}` : `<p class="small">Pick an order. They pick at the same moment, and you see theirs once yours is in.</p>`}
+      ${end || `<div class="hand">${SPACE_ORDERS.map((o) => {
+        const why = whyNot(b, me, o);
+        return `<button type="button" class="order" data-pick="${o}" ${why ? `disabled title="${esc(why)}"` : `title="${ORDER_INFO[o].tip}"`}>${icon(ORDER_INFO[o].icon, 20)}<span>${ORDER_INFO[o].name}</span></button>`;
+      }).join("")}</div>`}
+      ${b.over ? `<button type="button" id="picks-done" class="primary">Back to the war</button>` : `<button type="button" id="picks-ai" class="link">${icon("bot", 14)} Let the AI finish it</button>`}</div>`);
+    $("modal-body").classList.add("wide");
+    document.querySelectorAll<HTMLButtonElement>("[data-pick]").forEach((btn) => (btn.onclick = () => {
+      const o = btn.dataset.pick as SpaceOrder;
+      // The enemy's pick is made from what it's seen so far, never from this one.
+      last = playRound(b, { [me]: o, [foe]: aiSpacePick(b, foe) } as Record<Side, SpaceOrder>);
+      picks.push(o);
+      draw();
+    }));
+    if (b.over) $("picks-done").onclick = finish;
+    else $("picks-ai").onclick = () => {
+      while (!b.over) playRound(b, { [me]: aiSpacePick(b, me), [foe]: aiSpacePick(b, foe) } as Record<Side, SpaceOrder>);
+      finish();
+    };
+  };
+  draw();
 }
 
 // Hand the hero battle's result to the table, here or in the campaign's Durable Object.
@@ -601,9 +673,12 @@ async function finishSpace(result: SpaceBattleResult) {
   if (c.pending?.kind !== "space") return;
   const spec = c.pending.spec, won = result.winner === spec.hero;
   if (!(await sendResult(result, () => void finishSpace(result)))) return;
+  // What the orbit meant on the map: the toll below, the blockade, the landings and what they took.
+  const after = c.log.filter((l) => l.includes(spec.system) && !l.startsWith("Hero space battle"));
   showModal(`<h2>${won ? "Orbit taken" : "Orbit lost"}</h2>
     <p>${won ? `The orbit over ${spec.system} is ours.` : "The fleet went down fighting."}
-      Cruisers left: ${result.fleets[spec.hero]} to ${result.fleets[spec.hero === "attacker" ? "defender" : "attacker"]}.${result.heroDown ? " Your hero was shot down." : ""}</p>
+      Ships left: ${result.fleets[spec.hero]} to ${result.fleets[other(spec.hero)]}.${result.heroDown ? " Your hero was shot down." : ""}</p>
+    ${after.length ? `<ul class="cascade">${after.map((l) => `<li>${icon(won ? "orbit" : "triangle-alert", 14)}<span>${esc(l)}</span></li>`).join("")}</ul>` : ""}
     ${backButton(spec.factions[spec.hero])}`);
 }
 
@@ -651,11 +726,14 @@ $("orders-h").insertAdjacentHTML("afterbegin", icon("list-checks", 14));
 $("log-h").insertAdjacentHTML("afterbegin", icon("scroll-text", 14));
 $("hold-line").onclick = () => skirmish(false);
 $("be-horde").onclick = () => skirmish(true);
-// Quick play in orbit: three Marine cruisers hold the orbit against three Wooka ones.
+// Quick play in orbit: three Marine ships hold the orbit over Doren against three Wooka ones,
+// with a Marine outpost and its shield below and the Wooka horde in the ferns.
+$("dogfight").title = "Quick battle: hold the orbit over Doren, picking orders or flying a fighter";
 $("dogfight").onclick = () => {
   const spec: SpaceBattleSpec = {
     id: `dogfight-${Date.now()}`, turn: 0, system: "Doren", factions: { attacker: "wooka", defender: "marines" },
-    hero: "defender", heroLevel: 1, fleets: { attacker: 3, defender: 3 }, seed: Math.floor(Math.random() * 2 ** 31),
+    hero: "defender", heroLevel: 1, fleets: { attacker: 3, defender: 3 },
+    muster: { attacker: 4, defender: 2 }, batteries: { attacker: 0, defender: 1 }, seed: Math.floor(Math.random() * 2 ** 31),
   };
   briefSpace(spec, (r) => {
     const won = r.winner === spec.hero;
@@ -665,7 +743,7 @@ $("dogfight").onclick = () => {
   });
 };
 
-function showModal(html: string) { $("modal-body").innerHTML = html; $("modal").hidden = false; }
+function showModal(html: string) { $("modal-body").innerHTML = html; $("modal-body").className = "modal-body"; $("modal").hidden = false; }
 function hideModal() { $("modal").hidden = true; }
 
 // Back from the battle's result: the next seat, or the waiting room.
