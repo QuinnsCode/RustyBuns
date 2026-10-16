@@ -114,3 +114,27 @@ test("a steep curve carries the roadster up and off the lip, a box side is still
   expect(c2.y).toBe(0);
   expect(c2.z).toBeLessThan(8.5);
 });
+
+test("a board rolling across a slope falls toward downhill, and a hard carve at speed costs speed", () => {
+  const hill = makeLevel({
+    name: "hill",
+    pieces: [piece("ramp", "hillside", 0, 0, Math.PI / 2, 40, 40, 0, 8)], // rises toward +x
+    rails: [], obstacles: [], spawns: [],
+    bounds: { minX: -40, maxX: 40, minZ: -40, maxZ: 40 },
+  });
+  const flat = makeLevel({ ...hill, pieces: [] });
+
+  const across = (level: Level) => {
+    const sk = start("skate", 0, -10, 0, level);
+    sk.speed = 5;
+    run(sk, 1, () => ({}), level);
+    return sk;
+  };
+  const onHill = across(hill), onFlat = across(flat);
+  expect(onFlat.vx).toBeCloseTo(0, 3); // straight on flat ground stays straight
+  expect(onHill.vx).toBeLessThan(-0.3); // turned toward -x, the way down
+  expect(onHill.roll).not.toBe(0);
+
+  const carve = (steer: number) => run(Object.assign(start("skate", 0, -10, 0, flat), { speed: 9 }), 1, () => ({ steer }), flat).speed;
+  expect(carve(1)).toBeLessThan(carve(0));
+});

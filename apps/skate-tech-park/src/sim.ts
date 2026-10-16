@@ -33,6 +33,9 @@ const LIFT = 34; // m/s² up from the four under the corners, more than gravity
 const DRAIN = { boost: 0.18, lift: 0.3, spin: 0.08 }; // tank per second
 const REFILL = 0.06;
 const MAX_SLOPE = 3; // a rise steeper than this (about 72 degrees) in one stride is a wall, not a ramp
+const CARVE = 0.8; // how much speed stiffens the board's turn: at top speed it turns 1/(1+CARVE) as tight
+const CARVE_DRAG = 0.5; // a hard carve at speed scrubs this share of it per second
+const DRIFT = 0.8; // rad/s the board falls toward downhill per unit of cross slope
 const STEP = 0.2; // a kerb or stair this low is always rideable
 
 export type Firing = { rear: boolean; lift: boolean; spin: -1 | 0 | 1 };
@@ -43,6 +46,8 @@ export type State = {
   x: number; y: number; z: number;
   vx: number; vy: number; vz: number;
   yaw: number; // forward is (sin yaw, cos yaw)
+  pitch: number; // radians the ground rises ahead of the rider (nose up is +)
+  roll: number; // radians the ground rises to the rider's right (leaning left is +)
   speed: number; // signed, along yaw, while on the ground
   air: boolean;
   airTime: number;
@@ -63,7 +68,7 @@ export type State = {
 
 export function start(mode: Mode, x = 0, z = -20, yaw = 0, level: Level = plaza): State {
   return {
-    mode, t: 0, x, y: level.height(x, z), z, vx: 0, vy: 0, vz: 0, yaw, speed: 0,
+    mode, t: 0, x, y: level.height(x, z), z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0, roll: 0, speed: 0,
     air: false, airTime: 0, spun: 0, flipT: 0, flips: 0, grind: -1, grindTime: 0,
     tank: 1, firing: { rear: false, lift: false, spin: 0 }, plateDown: false,
     bail: 0, score: 0, last: null, prevJump: false, prevFlip: false,
@@ -112,6 +117,12 @@ function land(s: State, h: number) {
   if (s.speed < 0) parts.push(s.mode === "car" ? "reverse" : "fakie");
   const points = Math.round(s.airTime * 100 + (turns / 180) * 250 + s.flips * 300);
   award(s, parts.length ? parts.join(" ") : "Air", points);
+}
+
+/** The floor's rise per metre in x and z, by central difference. */
+function gradient(level: Level, x: number, z: number): [number, number] {
+  const e = 0.25;
+  return [(level.height(x + e, z) - level.height(x - e, z)) / (2 * e), (level.height(x, z + e) - level.height(x, z - e)) / (2 * e)];
 }
 
 /** One fixed step on `level` (the plaza unless told otherwise). Mutates and returns `s`. */
@@ -163,7 +174,17 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     s.speed += inp.throttle * tune.accel * DT + (boosting ? BOOST * DT : 0);
     if (!inp.throttle && !boosting) s.speed *= 1 - 0.6 * DT;
     s.speed = clamp(s.speed, -top * 0.5, top);
-    s.yaw += inp.steer * tune.turn * DT * Math.min(1, Math.abs(s.speed) / 3) * Math.sign(s.speed || 1);
+    const dir = Math.sign(s.speed || 1);
+    const [gx, gz] = gradient(level, s.x, s.z);
+    const along = gx * fx + gz * fz, across = gx * fz - gz * fx; // rise ahead, and to the right
+    s.pitch = Math.atan(along); s.roll = Math.atan(across);
+    if (car) s.yaw += inp.steer * tune.turn * DT * Math.min(1, Math.abs(s.speed) / 3) * dir;
+    else { // a board carves: weight over the trucks, tighter when slow, and it falls toward downhill
+      const load = Math.abs(s.speed) / tune.top;
+      s.yaw += inp.steer * tune.turn * DT * Math.min(1, Math.abs(s.speed) / 3) * dir / (1 + CARVE * load);
+      s.yaw -= DRIFT * across * DT * Math.min(1, Math.abs(s.speed) / 3) * dir;
+      s.speed *= 1 - CARVE_DRAG * Math.abs(inp.steer) * load * DT;
+    }
 
     const nx = s.x + Math.sin(s.yaw) * s.speed * DT, nz = s.z + Math.cos(s.yaw) * s.speed * DT;
     const dist = Math.abs(s.speed * DT);
