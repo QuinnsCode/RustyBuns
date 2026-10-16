@@ -60,7 +60,9 @@ export class Sequencer {
 
   setNotes(track: number, notes: Note[]) {
     if (track < 0 || track >= TRACKS) return;
-    this.notes[track] = notes;
+    // sorted by start (sanitized notes already are; stable, so ties keep their order),
+    // so each tick finds its notes by binary search: long songs stay cheap
+    this.notes[track] = notes.slice().sort((a, b) => a.s - b.s);
     this.rewarp(track);
   }
   /** Automation for a track (already sanitized: sorted, clamped). */
@@ -186,18 +188,25 @@ export class Sequencer {
     for (let t = 0; t < TRACKS; t++) {
       if (!this.audible[t]) continue;
       const ns = this.notes[t], w = this.warped[t];
-      for (let i = 0; i < ns.length; i++) {
-        const s = w[i];
-        if ((s >= b0 && s < b1) || (b1 > L && s < b1 - L)) {
-          const id = this.nextId;
-          this.nextId = this.nextId >= LIVE_ID - 1 ? 1 : this.nextId + 1;
-          this.engine.noteOn(t, id, ns[i].m, ns[i].v);
-          this.hold(t, id, Math.max(1, Math.round(ns[i].l / bpf)));
-        }
-      }
+      for (let i = firstAtOrAfter(w, b0); i < ns.length && w[i] < b1; i++) this.fire(t, ns[i], bpf);
+      if (b1 > L) for (let i = 0; i < ns.length && w[i] < b1 - L; i++) this.fire(t, ns[i], bpf);
     }
     this.pos = b1 >= L ? b1 - L : b1;
   }
+
+  private fire(t: number, n: Note, bpf: number) {
+    const id = this.nextId;
+    this.nextId = this.nextId >= LIVE_ID - 1 ? 1 : this.nextId + 1;
+    this.engine.noteOn(t, id, n.m, n.v);
+    this.hold(t, id, Math.max(1, Math.round(n.l / bpf)));
+  }
+}
+
+/** Index of the first value >= x in a sorted array (length if none). */
+function firstAtOrAfter(a: Float64Array, x: number): number {
+  let lo = 0, hi = a.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (a[mid] < x) lo = mid + 1; else hi = mid; }
+  return lo;
 }
 
 /** A lane's value at beat `b`: straight lines between points, held past the ends. */
@@ -205,8 +214,10 @@ export function laneAt(bs: Float64Array, vs: Float64Array, b: number): number {
   const n = bs.length;
   if (n === 0) return NaN;
   if (b < bs[0]) return vs[0];
-  let i = 0;
-  while (i + 1 < n && bs[i + 1] <= b) i++;
+  // the last point at or before b (binary search: lanes can be long)
+  let lo = 0, hi = n - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (bs[mid] <= b) lo = mid; else hi = mid - 1; }
+  const i = lo;
   if (i === n - 1) return vs[i];
   return vs[i] + (vs[i + 1] - vs[i]) * ((b - bs[i]) / (bs[i + 1] - bs[i]));
 }

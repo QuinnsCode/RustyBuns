@@ -11,6 +11,8 @@ export function DrumGrid(props: {
   colors: string[];
   selected: number;
   loopBeats: number;
+  /** Where this window starts in the song, beats (for the playhead). */
+  from?: number;
   onSelect(i: number): void;
   onNotes(i: number, notes: Note[]): void;
   onAudition(i: number): void;
@@ -35,7 +37,7 @@ export function DrumGrid(props: {
                   onClick={(e) => props.onNotes(i, toggle(t, s, e.shiftKey))}
                 />
               ))}
-              <Playhead loopBeats={props.loopBeats} />
+              <Playhead loopBeats={props.loopBeats} from={props.from} />
             </div>
           </div>
         );

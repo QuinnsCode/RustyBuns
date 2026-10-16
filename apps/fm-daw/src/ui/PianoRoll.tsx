@@ -13,6 +13,8 @@ export function PianoRoll(props: {
   track: TrackDoc;
   color: string;
   loopBeats: number;
+  /** Where this window starts in the song, beats (for the playhead). */
+  from?: number;
   grid: number;
   onNotes(notes: Note[]): void;
   onPreview(midi: number, on: boolean): void;
@@ -70,7 +72,7 @@ export function PianoRoll(props: {
           />
         ))}
         {draft && <div className="note draft" style={pos(draft.s0 * grid, (draft.s1 - draft.s0 + 1) * grid, draft.m, high, loopBeats, 0.8)} />}
-        <Playhead loopBeats={loopBeats} />
+        <Playhead loopBeats={loopBeats} from={props.from} />
       </div>
     </div>
   );

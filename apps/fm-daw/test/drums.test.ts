@@ -4,6 +4,8 @@
 import { test, expect, setDefaultTimeout } from "bun:test";
 import { GROOVES, KITS, applyGroove, applyKit, laneNotes } from "../src/drums.ts";
 import { nightShift } from "../src/songs.ts";
+import { longTrail } from "../src/longtrail.ts";
+import { P } from "../src/engine/params.ts";
 import { demoProject } from "../src/presets.ts";
 import { apply, sanitize } from "../src/project.ts";
 import { TsEngine } from "../src/engine/engine.ts";
@@ -88,4 +90,36 @@ test("an old 8-track project loads with four silent tracks added", () => {
   expect(p.tracks.length).toBe(12);
   expect(p.tracks[11].params[31]).toBe(0);
   expect(p.tracks[0]).toEqual(sanitize(demoProject())!.tracks[0]);
+});
+
+test("track filters: the hi-cut darkens and the low-cut thins, and at 0 they leave the sound alone", () => {
+  const level = (hicut: number, locut: number) => {
+    const e = new TsEngine(48000);
+    e.setMaster(1);
+    e.setParam(0, P.GAIN, 0.5); e.setParam(0, P.ratio(0), 1); e.setParam(0, P.level(0), 1); e.setParam(0, P.sustain(0), 1);
+    e.setParam(0, P.HICUT, hicut); e.setParam(0, P.LOCUT, locut);
+    e.noteOn(0, 1, 93, 1); // A6, 1760 Hz
+    const out = new Float32Array(48000);
+    e.render(out, 24000);
+    let s = 0; for (let i = 24000; i < out.length; i++) s += out[i] * out[i];
+    return Math.sqrt(s / 24000);
+  };
+  const open = level(0, 0);
+  expect(open).toBeGreaterThan(0.05);
+  expect(level(0.7, 0)).toBeLessThan(open * 0.1);  // hi-cut down near 160 Hz
+  expect(level(0, 0.9)).toBeLessThan(open * 0.1);  // low-cut up near 10 kHz
+  expect(level(0.05, 0.05)).toBeGreaterThan(open * 0.9);
+});
+
+test("Long Trail: ten minutes that fit the project limits, and its opening plays clean", () => {
+  const p = longTrail();
+  expect(p.bars * 4 / p.bpm).toBeGreaterThan(9.5);
+  const q = sanitize(p)!;
+  q.tracks.forEach((t, i) => { expect(t.notes.length).toBe(p.tracks[i].notes.length); expect(t.auto).toEqual(p.tracks[i].auto); });
+  const out = renderProject(new TsEngine(48000), p, 48000, 12, 1);
+  let peak = 0, finite = true;
+  for (const x of out) { finite &&= Number.isFinite(x); peak = Math.max(peak, Math.abs(x)); }
+  expect(finite).toBe(true);
+  expect(peak).toBeLessThanOrEqual(CEILING);
+  expect(peak).toBeGreaterThan(0.05);
 });

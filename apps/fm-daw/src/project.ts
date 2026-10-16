@@ -32,10 +32,13 @@ export type Op =
   | { t: "replace"; project: Project };
 
 export const BEATS_PER_BAR = 4;
-export const MAX_NOTES = 512;
-export const MAX_LANES = 8;
-export const MAX_POINTS = 128;
+export const MAX_NOTES = 8192;
+export const MAX_LANES = 16;
+export const MAX_POINTS = 1024;
+export const MAX_BARS = 512;
+/** The loop-length buttons; a song can be any whole number of bars up to MAX_BARS. */
 export const BAR_CHOICES = [1, 2, 4, 8, 16, 32] as const;
+const okBars = (b: unknown): b is number => Number.isInteger(b) && (b as number) >= 1 && (b as number) <= MAX_BARS;
 export const loopBeats = (p: Project) => p.bars * BEATS_PER_BAR;
 
 const num = (x: unknown, lo: number, hi: number, d: number) =>
@@ -80,7 +83,7 @@ export function sanitize(x: unknown): Project | null {
   // older projects had fewer tracks: pad with silent synth tracks (gain 0)
   const given = p.tracks.length;
   const tracks = [...p.tracks, ...Array.from({ length: TRACKS - given }, (_, k) => ({ name: `Track ${given + k + 1}`, kind: "synth" }))] as TrackDoc[];
-  const bars = BAR_CHOICES.includes(p.bars as 1) ? p.bars : 2;
+  const bars = okBars(p.bars) ? p.bars : 2;
   const beats = bars * BEATS_PER_BAR;
   return {
     v: 1,
@@ -125,7 +128,7 @@ export function apply(p: Project, op: Op): Project {
         ...(typeof op.name === "string" ? { name: op.name.slice(0, 24) } : {}),
       }));
     case "global": {
-      const bars = BAR_CHOICES.includes(op.bars as 1) ? op.bars! : p.bars;
+      const bars = okBars(op.bars) ? op.bars : p.bars;
       const next: Project = {
         ...p,
         bpm: op.bpm === undefined ? p.bpm : num(op.bpm, 40, 240, p.bpm),
