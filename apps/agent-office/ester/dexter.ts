@@ -5,13 +5,15 @@
 // for (CLAUDE.md, AGENTS.md, the memory index, skill descriptions): filler words and long phrases cut to short plain ones, printed as a diff
 // to approve (`git apply --unidiff-zero`). He never edits a file. No model call, so asking him costs nothing.
 // DEXTER_HOURS=168 adds the week: spend per day, what each helper's job costs, and what it saves at growing PR counts.
+// He also watches how big each live session's context has grown (what its next turn carries), and says when one should
+// write a handoff and start fresh: warn at CONTEXT.warn, and again at CONTEXT.handoff, once each per session.
 // Run: bun apps/agent-office/ester/dexter.ts
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
 type Block = { type?: string; id?: string; name?: string; tool_use_id?: string; input?: { command?: string }; content?: unknown; text?: string };
-type Line = { type?: string; timestamp?: string; message?: { id?: string; usage?: Record<string, number>; content?: unknown } };
+type Line = { type?: string; timestamp?: string; sessionId?: string; cwd?: string; message?: { id?: string; usage?: Record<string, number>; content?: unknown } };
 
 export interface Report {
   sessions: number;
@@ -141,6 +143,74 @@ export function render(r: Report): string[] {
   return out;
 }
 
+/** Context size, in tokens, where Dexter warns and where he says to hand off. */
+export const CONTEXT = { warn: 150_000, handoff: 250_000 } as const;
+const ACTIVE_HOURS = 1;
+const TAIL = 512 * 1024; // the latest turn is at the end of a transcript: read only that much
+
+export interface Context { session: string; cwd: string; tokens: number }
+
+/** The context a session carries now: the latest reply's input, cache read and cache write tokens. Null when it has no reply yet. */
+export function contextOf(lines: Iterable<string>, fallback = ""): Context | null {
+  let found: Context | null = null;
+  for (const raw of lines) {
+    let l: Line;
+    try { l = JSON.parse(raw); } catch { continue; }
+    const u = l.type === "assistant" ? l.message?.usage : undefined;
+    if (!u) continue;
+    found = { session: l.sessionId ?? fallback, cwd: l.cwd ?? "", tokens: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) };
+  }
+  return found;
+}
+
+const tail = (file: string): string[] => {
+  const size = statSync(file).size, start = Math.max(0, size - TAIL), buf = Buffer.alloc(size - start), fd = openSync(file, "r");
+  try { readSync(fd, buf, 0, buf.length, start); } finally { closeSync(fd); }
+  const lines = buf.toString("utf8").split("\n");
+  return start ? lines.slice(1) : lines; // the first line of a tail is cut short
+};
+
+/** Every session touched in the last hour, with the context it carries. */
+export function contexts(root: string, now = Date.now()): Context[] {
+  return recent(root, ACTIVE_HOURS, now).flatMap((f) => contextOf(tail(f), path.basename(f, ".jsonl")) ?? []);
+}
+
+export type ContextLevel = "warn" | "handoff";
+export interface ContextAlert extends Context { name: string; level: ContextLevel; message: string }
+
+/** An office worker's name when the session runs in its worktree (.agent-office/worktrees/<name>), else the session and where it runs. */
+export const nameOf = (c: Context) => {
+  const worker = /\.agent-office\/worktrees\/([^/]+)/.exec(c.cwd)?.[1];
+  return worker ?? `session ${c.session.slice(0, 8)} in ${c.cwd || "an unknown directory"}`;
+};
+
+const levelOf = (tokens: number): ContextLevel | null => (tokens >= CONTEXT.handoff ? "handoff" : tokens >= CONTEXT.warn ? "warn" : null);
+
+/** Remembers which line each session has crossed, so each alert fires once. A session that drops back under the warn line (a fresh one, a compaction) can fire again. */
+export class ContextWatch {
+  private told = new Map<string, ContextLevel>();
+  /** `over`: every session now past the warn line. `fresh`: the ones that crossed a line since the last check. */
+  check(sessions: Context[], name: (c: Context) => string = nameOf): { over: ContextAlert[]; fresh: ContextAlert[] } {
+    const over: ContextAlert[] = [], fresh: ContextAlert[] = [];
+    for (const c of sessions) {
+      const level = levelOf(c.tokens);
+      if (!level) { this.told.delete(c.session); continue; }
+      const who = name(c), lead = level === "handoff" ? `${who} is carrying ${k(c.tokens)} tokens of context, past ${k(CONTEXT.handoff)}.` : `${who} is carrying ${k(c.tokens)} tokens of context, past ${k(CONTEXT.warn)}.`;
+      const alert = { ...c, name: who, level, message: `${lead} Write a handoff and start a fresh session.` };
+      over.push(alert);
+      const before = this.told.get(c.session);
+      if (before !== level && before !== "handoff") { fresh.push(alert); this.told.set(c.session, level); }
+    }
+    return { over, fresh };
+  }
+}
+
+/** The CLI's lines for it: each active session past the warn line, biggest first. */
+export function contextLines(sessions: Context[], name: (c: Context) => string = nameOf): string[] {
+  const { over } = new ContextWatch().check(sessions, name);
+  return over.length ? ["Context to hand off:", ...over.sort((a, b) => b.tokens - a.tokens).map((a) => `  ${a.message}`)] : [`No active session is past ${k(CONTEXT.warn)} tokens of context.`];
+}
+
 /** Phrase -> short word. Only filler and wordy phrases; jargon that steers is left alone. */
 const CAVEMAN: [RegExp, string][] = [
   [/\bin order to\b/gi, "to"],
@@ -211,5 +281,5 @@ if (import.meta.main) {
   const files = recent(path.join(homedir(), ".claude/projects"), Number(process.env.DEXTER_HOURS) || 24);
   const r: Report = { sessions: files.length, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0 };
   for (const f of files) tally(readFileSync(f, "utf8").split("\n"), r);
-  console.log([...render(r), ...(Number(process.env.DEXTER_HOURS) >= 168 ? week(r, Number(process.env.DEXTER_GROWTH) || 1.5) : []), "", ...propose(standing(process.cwd(), path.join(homedir(), ".claude/projects")))].join("\n"));
+  console.log([...render(r), ...contextLines(contexts(path.join(homedir(), ".claude/projects"))), ...(Number(process.env.DEXTER_HOURS) >= 168 ? week(r, Number(process.env.DEXTER_GROWTH) || 1.5) : []), "", ...propose(standing(process.cwd(), path.join(homedir(), ".claude/projects")))].join("\n"));
 }

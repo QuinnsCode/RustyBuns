@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { project, propose, standing, render, tally, trimDiff, trimLine, week, type Report } from "../ester/dexter.ts";
+import { ContextWatch, contextLines, contexts, project, propose, standing, render, tally, trimDiff, trimLine, week, type Report } from "../ester/dexter.ts";
 
 const fresh = (): Report => ({ sessions: 1, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0 });
 const j = (o: unknown) => JSON.stringify(o);
@@ -99,4 +99,35 @@ test("turns between a conflict and the commit that settles it are a fight", () =
     r,
   );
   expect(r.fights).toBe(100); // m2 and m3: 50 units each; m4 is after the commit
+});
+
+test("Dexter names a session once as its context crosses the warn line and then the handoff line", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "rb-dexter-ctx-")), dir = path.join(root, "-Users-x-RustyBuns");
+  mkdirSync(dir);
+  const worker = path.join(dir, "s-1234abcd.jsonl"), other = path.join(dir, "abcdef123456.jsonl");
+  // a turn carrying `tokens` of context: input + cache read + cache write
+  const turn = (session: string, cwd: string, tokens: number) => j({ type: "assistant", sessionId: session, cwd, message: { id: `m${tokens}`, usage: { input_tokens: 5, cache_read_input_tokens: tokens - 5000, cache_creation_input_tokens: 4995, output_tokens: 99 } } }) + "\n";
+  const cwd = "/Users/x/RustyBuns/.agent-office/worktrees/sprocket-b93a";
+  const watch = new ContextWatch();
+  const poll = () => watch.check(contexts(root));
+
+  writeFileSync(worker, turn("s-1234abcd", cwd, 100_000));
+  expect(poll()).toEqual({ over: [], fresh: [] }); // 100k: nothing yet
+
+  appendFileSync(worker, turn("s-1234abcd", cwd, 160_000));
+  writeFileSync(other, turn("abcdef123456", "/tmp/elsewhere", 200_000));
+  const warn = poll();
+  const byName = [...warn.fresh].sort((x, y) => x.name.localeCompare(y.name)); // the directory's order is not promised
+  expect(byName.map((a) => [a.name, a.level, a.tokens])).toEqual([["session abcdef12 in /tmp/elsewhere", "warn", 200_000], ["sprocket-b93a", "warn", 160_000]]);
+  expect(byName[1]!.message).toContain("Write a handoff and start a fresh session");
+  expect(poll().fresh).toEqual([]); // each fires once
+  expect(poll().over).toHaveLength(2); // but both are still over the line
+
+  appendFileSync(worker, turn("s-1234abcd", cwd, 260_000));
+  const handoff = poll();
+  expect(handoff.fresh.map((a) => [a.name, a.level])).toEqual([["sprocket-b93a", "handoff"]]);
+  expect(handoff.fresh[0]!.message).toContain("260k tokens");
+  expect(poll().fresh).toEqual([]);
+
+  expect(contextLines(contexts(root)).join("\n")).toMatch(/Context to hand off:\n  sprocket-b93a is carrying 260k.*\n  session abcdef12 in \/tmp\/elsewhere is carrying 200k/);
 });
