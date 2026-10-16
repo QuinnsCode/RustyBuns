@@ -29,7 +29,7 @@ bun test test            # the ride, headless
 
 ## How it's built
 
-- `src/spot.ts`: the spot as a list of ramps and rails. The sim reads heights from it and the view builds its meshes from the same numbers.
+- `src/level.ts`: the `Level` the sim rides on: a height at any point, pieces, rails, spawns and bounds. `src/levels/plaza.ts` is the first one. The view meshes each piece by sampling its own height.
 - `src/sim.ts`: the ride as a pure fixed-step simulation (60 steps a second), with no three.js or DOM. It handles grounded rolling with slopes and walls, launching off lips, air with spins and flips, grinds, landings and bails, and the roadster's tank and which thrusters are firing.
 - `src/models.ts`: the skater, the board and the roadster from three.js primitives, so there is nothing to load or license. The roadster's body is a side profile extruded across its width. Each nozzle carries a plume that the view shows when the sim says it fires.
 - `src/main.ts`: the scene, the chase camera, the keys and the HUD.
