@@ -1,6 +1,7 @@
 // The page: draws the sim, turns keys into its input, and keeps the chase camera behind the rider.
 import { Car, createElement, Info, RectangleHorizontal, RotateCcw } from "lucide";
 import * as THREE from "three";
+import { mountPartsPicker } from "./parts-picker.ts";
 import { fingerboard, roadster, type Thruster } from "./models.ts";
 import { levelMeshes } from "./render/pieces.ts";
 import { Plumes } from "./render/plumes.ts";
@@ -92,7 +93,9 @@ for (let i = 0; i < 28; i++) {
 const car = roadster();
 const showroom = new URLSearchParams(location.search).has("showroom");
 const PIVOT_Y = { fingerboard: 0.45, roadster: 0.6 }; // what a flip turns about
-const skins = new Skins({ fingerboard: fingerboard(), roadster: car }, showroom ? "roadster" : "fingerboard", PIVOT_Y);
+const board = fingerboard();
+const skins = new Skins({ fingerboard: board, roadster: car }, showroom ? "roadster" : "fingerboard", PIVOT_Y);
+mountPartsPicker(board.userData.paint);
 const plumes = new Plumes();
 scene.add(skins.root, plumes.puffs.points);
 const thrusters = car.userData.thrusters as Thruster[];

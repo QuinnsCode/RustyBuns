@@ -51,3 +51,19 @@ test("a skin turns about its own middle, so a flip keeps it where it was", () =>
   skins.pivot().rotation.z = Math.PI;
   expect(centre().distanceTo(before)).toBeLessThan(0.6);
 });
+
+test("the parts picker repaints the board in place: deck, trucks, wheels and grip each take their colour", () => {
+  const b = fingerboard();
+  const colours = () => {
+    const seen: number[] = [];
+    b.traverse((o) => { if ((o as THREE.Mesh).isMesh) seen.push(((o as THREE.Mesh).material as THREE.MeshStandardMaterial).color.getHex()); });
+    return seen;
+  };
+  const before = colours();
+  b.userData.paint({ deck: "teal", trucks: "gold", wheels: "red", grip: "grey" });
+  const after = colours();
+  expect(after.length).toBe(before.length);
+  for (const hex of [0x1f8a8a, 0xc9a227, 0xd6382b, 0x6b6e73]) expect(after).toContain(hex);
+  b.userData.paint({ deck: "nope", trucks: "nope", wheels: "nope", grip: "nope" }); // a stale saved choice falls back to the first
+  expect(colours()).toEqual(before);
+});
