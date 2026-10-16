@@ -8,6 +8,7 @@ import { Plumes } from "./render/plumes.ts";
 import { Chase } from "./render/chase.ts";
 import { Scenery, scatter } from "./render/scenery.ts";
 import { followCamera, HAZE, sky } from "./render/sky.ts";
+import { comboLine } from "./render/combo.ts";
 import { Skins } from "./render/skins.ts";
 import { Taps } from "./render/feet.ts";
 import { lieOnGround, manualPose, popPose, TiltEase } from "./render/tilt.ts";
@@ -239,6 +240,7 @@ function frame(now: number) {
   sun.target.position.set(sim.x, sim.y, sim.z);
 
   $("score").textContent = String(sim.score);
+  $("combo").textContent = comboLine(sim.combo, sim.comboScore);
   $("speed").textContent = `${Math.round(Math.abs(sim.air ? Math.hypot(sim.vx, sim.vz) : sim.speed) * 3.6)} km/h`;
   if (sim.last !== shownTrick) { shownTrick = sim.last; trickAt = now; }
   const trick = $("trick");
