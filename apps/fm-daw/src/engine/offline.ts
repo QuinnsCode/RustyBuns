@@ -5,15 +5,16 @@ import { Space } from "./space.ts";
 import { audible, loopBeats, type Project } from "../project.ts";
 
 export function renderProject(engine: FmEngine, p: Project, sampleRate: number, seconds: number, masterGain: number): Float32Array {
+  const send = new Float32Array(Math.round(seconds * sampleRate) * 2);
   const out = renderPattern(engine, sampleRate, seconds, (seq) => {
-    p.tracks.forEach((t, ti) => { t.params.forEach((v, i) => engine.setParam(ti, i, v)); seq.setNotes(ti, t.notes); });
+    p.tracks.forEach((t, ti) => { t.params.forEach((v, i) => engine.setParam(ti, i, v)); seq.setNotes(ti, t.notes); seq.setAuto(ti, t.auto ?? []); });
     seq.bpm = p.bpm; seq.setSwing(p.swing); seq.setLoopBeats(loopBeats(p)); seq.setAudible(audible(p));
     engine.setMaster(masterGain);
-  });
+  }, send);
   const space = new Space(sampleRate);
   space.setTempo(p.bpm);
   space.setAmount(p.space);
-  space.process(out, out.length >> 1);
+  space.process(out, send, out.length >> 1);
   return out;
 }
 

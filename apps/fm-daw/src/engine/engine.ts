@@ -1,5 +1,6 @@
-// The TypeScript engine: 8 tracks of 4-operator FM with a pitch envelope and
-// noise, then the master safety chain. native/crates/fm_daw mirrors it line for
+// The TypeScript engine: 8 tracks, each either 4-operator FM or the analog
+// voice (detuned saws + sub, resonant low-pass, filter envelope, LFO, glide,
+// drive), with a pitch envelope and noise, then the master safety chain. native/crates/fm_daw mirrors it line for
 // line (same order of operations, f64 inside, f32 out), so the golden test can
 // hold the two to the same output. render() allocates nothing.
 //
@@ -15,6 +16,16 @@ const MASTER_SMOOTH = 0.0005;
 const SILENT = 1e-5;
 const TAU = 2 * Math.PI;
 const CARRIERS = [[1, 0, 0, 0], [1, 0, 1, 0], [1, 0, 0, 0], [1, 1, 1, 1]];
+const MAX_CUTOFF = 0.45; // of the sample rate
+const VIB_FADE = 0.3;    // seconds for an analog note's vibrato to come in, as a player's would
+
+/** A naive saw with PolyBLEP smoothing at the wrap: cheap, and no aliasing fizz. */
+function saw(ph: number, dt: number): number {
+  let y = 2 * ph - 1;
+  if (ph < dt) { const x = ph / dt; y -= x + x - x * x - 1; }
+  else if (ph > 1 - dt) { const x = (ph - 1) / dt; y -= x * x + x + x + 1; }
+  return y;
+}
 
 export interface FmEngine {
   setParam(track: number, index: number, value: number): void;
@@ -25,8 +36,11 @@ export interface FmEngine {
   allOff(): void;
   panic(): void;
   click(accent: boolean): void;
-  /** Interleaved stereo into `out` (length >= frames * 2). */
-  render(out: Float32Array, frames: number): void;
+  /**
+   * Interleaved stereo into `out` (length >= frames * 2). With `send`, also
+   * the Space send bus: each track times its SEND, after pan and master.
+   */
+  render(out: Float32Array, frames: number, send?: Float32Array): void;
   /** [peakL, peakR, lowest limiter gain, NaN resets] since the last call. */
   meter(out: Float32Array): void;
   free?(): void;
@@ -47,6 +61,15 @@ export class TsEngine implements FmEngine {
   private readonly panR = new Float64Array(TRACKS);
   private readonly muted = new Uint8Array(TRACKS);
   private readonly gainNow = new Float64Array(TRACKS);
+  // analog voice, per track
+  private readonly detUp = new Float64Array(TRACKS);
+  private readonly fAtkInc = new Float64Array(TRACKS);
+  private readonly fDecCoef = new Float64Array(TRACKS);
+  private readonly glideCoef = new Float64Array(TRACKS);
+  private readonly driveG = new Float64Array(TRACKS);
+  private readonly driveNorm = new Float64Array(TRACKS);
+  private readonly lfoPhase = new Float64Array(TRACKS);
+  private readonly lastFreq = new Float64Array(TRACKS);
   // voices, struct of arrays: [track * VOICES + v]
   private readonly active = new Uint8Array(TRACKS * VOICES);
   private readonly gate = new Uint8Array(TRACKS * VOICES);
@@ -59,6 +82,16 @@ export class TsEngine implements FmEngine {
   private readonly noiseLp = new Float64Array(TRACKS * VOICES);
   private readonly fb1 = new Float64Array(TRACKS * VOICES);
   private readonly fb2 = new Float64Array(TRACKS * VOICES);
+  private readonly freqNow = new Float64Array(TRACKS * VOICES);
+  private readonly saw1 = new Float64Array(TRACKS * VOICES);
+  private readonly saw2 = new Float64Array(TRACKS * VOICES);
+  private readonly subPh = new Float64Array(TRACKS * VOICES);
+  private readonly ic1 = new Float64Array(TRACKS * VOICES);
+  private readonly ic2 = new Float64Array(TRACKS * VOICES);
+  private readonly fEnv = new Float64Array(TRACKS * VOICES);
+  private readonly fStage = new Uint8Array(TRACKS * VOICES);
+  private readonly vel = new Float64Array(TRACKS * VOICES);
+  private readonly age = new Float64Array(TRACKS * VOICES);
   // operators: [(track * VOICES + v) * OPS + op]
   private readonly phase = new Float64Array(TRACKS * VOICES * OPS);
   private readonly env = new Float64Array(TRACKS * VOICES * OPS);
@@ -97,6 +130,11 @@ export class TsEngine implements FmEngine {
       this.panL[t] = Math.cos(angle);
       this.panR[t] = Math.sin(angle);
     }
+    else if (i === P.DETUNE) this.detUp[t] = Math.pow(2, (v * 0.5) / 12);
+    else if (i === P.FENV_ATTACK) this.fAtkInc[t] = 1 / (v * sr);
+    else if (i === P.FENV_DECAY) this.fDecCoef[t] = decayCoef(v, sr);
+    else if (i === P.GLIDE) this.glideCoef[t] = v > 0 ? Math.exp(-1 / (v * sr)) : 0;
+    else if (i === P.DRIVE) { this.driveG[t] = 1 + 6 * v; this.driveNorm[t] = 1 / Math.tanh(1 + 6 * v); }
   }
 
   setMute(track: number, muted: boolean) { if (track >= 0 && track < TRACKS) this.muted[track | 0] = muted ? 1 : 0; }
@@ -119,7 +157,12 @@ export class TsEngine implements FmEngine {
     this.active[k] = 1; this.gate[k] = 1; this.vid[k] = id;
     this.born[k] = ++this.births;
     this.freq[k] = 440 * Math.pow(2, (Math.min(Math.max(midi, 0), 127) - 69) / 12);
+    this.freqNow[k] = this.glideCoef[t] > 0 && this.lastFreq[t] > 0 ? this.lastFreq[t] : this.freq[k];
+    this.lastFreq[t] = this.freq[k];
+    this.saw1[k] = 0; this.saw2[k] = 0.5; this.subPh[k] = 0;
+    this.ic1[k] = 0; this.ic2[k] = 0; this.fEnv[k] = 0; this.fStage[k] = 0;
     this.amp[k] = 1 - vs + vs * vel;
+    this.vel[k] = vel; this.age[k] = 0;
     this.pitchEnv[k] = 1; this.noiseEnv[k] = 1; this.noiseLp[k] = 0;
     this.fb1[k] = 0; this.fb2[k] = 0;
     for (let op = 0; op < OPS; op++) {
@@ -162,11 +205,11 @@ export class TsEngine implements FmEngine {
     return (x / 4294967296) * 2 - 1;
   }
 
-  render(out: Float32Array, frames: number) {
-    const n = Math.min(frames, out.length >> 1);
+  render(out: Float32Array, frames: number, send?: Float32Array) {
+    const n = Math.min(frames, out.length >> 1, send ? send.length >> 1 : Infinity);
     const sr = this.sr;
     for (let f = 0; f < n; f++) {
-      let l = 0, r = 0;
+      let l = 0, r = 0, sl = 0, sr2 = 0;
       for (let t = 0; t < TRACKS; t++) {
         const p = t * NPARAMS;
         const gainTarget = this.muted[t] ? 0 : this.params[p + P.GAIN];
@@ -178,13 +221,84 @@ export class TsEngine implements FmEngine {
         const pitchAmt = this.params[p + P.PITCH_AMT];
         const noise = this.params[p + P.NOISE];
         const tone = 0.05 + 0.95 * this.params[p + P.NOISE_TONE];
+        // the LFO runs for every track, every frame, so it's free-running across notes
+        const lfo = Math.sin(TAU * this.lfoPhase[t]);
+        let lp = this.lfoPhase[t] + this.params[p + P.LFO_RATE] / sr;
+        lp -= Math.floor(lp);
+        this.lfoPhase[t] = lp;
+        const analog = this.params[p + P.MODE] >= 0.5;
+        const vibAmt = this.params[p + P.LFO_PITCH];
+        const velTone = this.params[p + P.VEL_TONE];
+        const cutOct = this.params[p + P.CUTOFF] * 10 + this.params[p + P.LFO_CUT] * 4 * lfo;
+        const fenvOct = this.params[p + P.FENV_AMT] * 6;
+        const k2 = 2 - 1.8 * this.params[p + P.RES]; // resonance tops out near Q 5, musical not screaming
+        const sub = this.params[p + P.SUB];
+        const drive = this.params[p + P.DRIVE] > 0;
         let mono = 0;
         for (let v = 0; v < VOICES; v++) {
           const k = t * VOICES + v;
           if (!this.active[k]) continue;
           const pm = pitchAmt > 0 ? Math.pow(2, (pitchAmt * this.pitchEnv[k]) / 12) : 1;
           this.pitchEnv[k] *= this.pitchCoef[t];
+          if (analog) {
+            const target = this.freq[k];
+            this.freqNow[k] = target + (this.freqNow[k] - target) * this.glideCoef[t];
+            const fade = Math.min(this.age[k] / VIB_FADE, 1);
+            this.age[k] += 1 / sr;
+            const vib = vibAmt > 0 ? Math.pow(2, (lfo * vibAmt * 0.5 * fade) / 12) : 1;
+            const base = this.freqNow[k] * pm * vib;
+            // amp envelope: operator 1's
+            const oi = k * OPS, ti = t * OPS;
+            let e = this.env[oi];
+            const st = this.stage[oi];
+            let attacking = false;
+            if (st === 0) {
+              e += this.atkInc[ti];
+              if (e >= 1) { e = 1; this.stage[oi] = 1; }
+              attacking = true;
+            } else if (st === 1) {
+              const s = this.params[p + P.sustain(0)];
+              e = s + (e - s) * this.decCoef[ti];
+            } else e *= this.relCoef[ti];
+            this.env[oi] = e;
+            // filter envelope: attack, then decay to nothing
+            let fe = this.fEnv[k];
+            if (this.fStage[k] === 0) {
+              fe += this.fAtkInc[t];
+              if (fe >= 1) { fe = 1; this.fStage[k] = 1; }
+            } else fe *= this.fDecCoef[t];
+            this.fEnv[k] = fe;
+            // oscillators
+            const dt1 = (base * this.detUp[t]) / sr, dt2 = base / this.detUp[t] / sr;
+            const s1 = saw(this.saw1[k], dt1), s2 = saw(this.saw2[k], dt2);
+            let q = this.saw1[k] + dt1; q -= Math.floor(q); this.saw1[k] = q;
+            q = this.saw2[k] + dt2; q -= Math.floor(q); this.saw2[k] = q;
+            const sv = Math.sin(TAU * this.subPh[k]) * sub;
+            q = this.subPh[k] + (base * 0.5) / sr; q -= Math.floor(q); this.subPh[k] = q;
+            let x = (s1 + s2) * 0.5 + sv;
+            // noise goes into the filter here (bow and breath), held by the amp envelope
+            if (noise > 0) {
+              const nl = this.noiseLp[k] + tone * (this.nextNoise() - this.noiseLp[k]);
+              this.noiseLp[k] = nl;
+              x += nl * noise;
+            }
+            // resonant low-pass: a trapezoidal state-variable filter, stable at any cutoff
+            const velOct = velTone * 3 * (2 * this.vel[k] - 1);
+            const fc = Math.min(Math.max(20 * Math.pow(2, cutOct + fenvOct * fe + velOct), 20), MAX_CUTOFF * sr);
+            const g = Math.tan((Math.PI * fc) / sr);
+            const a1 = 1 / (1 + g * (g + k2)), a2 = g * a1, a3 = g * a2;
+            const v3 = x - this.ic2[k];
+            const v1 = a1 * this.ic1[k] + a2 * v3;
+            const v2 = this.ic2[k] + a2 * this.ic1[k] + a3 * v3;
+            this.ic1[k] = 2 * v1 - this.ic1[k];
+            this.ic2[k] = 2 * v2 - this.ic2[k];
+            const y = drive ? Math.tanh(v2 * this.driveG[t]) * this.driveNorm[t] : v2;
+            mono += y * e * this.params[p + P.level(0)] * this.amp[k];
+            if (!attacking && e < SILENT) this.active[k] = 0;
+            continue;
+          }
           const base = this.freq[k] * pm;
+          const mv = 1 + velTone * (2 * this.vel[k] - 1);
           // operators 4..1 (indices 3..0); oN holds this sample's output of operator N+1
           let o3 = 0, o2 = 0, o1 = 0;
           let carrierSum = 0, loudest = 0, attacking = false;
@@ -209,6 +323,7 @@ export class TsEngine implements FmEngine {
             else if (algo === 1) mod = op === 2 ? o3 * MOD_DEPTH : op === 0 ? o1 * MOD_DEPTH : 0;
             else if (algo === 2) mod = op === 0 ? (o1 + o2 + o3) * MOD_DEPTH : 0;
             else mod = 0;
+            mod *= mv;
             const ph = this.phase[oi];
             const y = Math.sin(TAU * (ph + mod)) * e * this.params[p + P.level(op)];
             let np = ph + (base * this.params[p + P.ratio(op)]) / sr;
@@ -231,8 +346,12 @@ export class TsEngine implements FmEngine {
           if (!attacking && loudest < SILENT) this.active[k] = 0;
         }
         mono *= this.gainNow[t];
-        l += mono * this.panL[t];
-        r += mono * this.panR[t];
+        const ml = mono * this.panL[t], mr = mono * this.panR[t];
+        l += ml;
+        r += mr;
+        const sa = this.params[p + P.SEND];
+        sl += ml * sa;
+        sr2 += mr * sa;
       }
       if (this.clickEnv > SILENT) {
         const c = Math.sin(TAU * this.clickPhase) * this.clickEnv;
@@ -265,6 +384,12 @@ export class TsEngine implements FmEngine {
       if (Math.abs(r) > this.peakR) this.peakR = Math.abs(r);
       out[f * 2] = l;
       out[f * 2 + 1] = r;
+      if (send) {
+        const a = sl * this.master, b = sr2 * this.master;
+        const ok = Number.isFinite(a) && Number.isFinite(b);
+        send[f * 2] = ok ? Math.min(Math.max(a, -1), 1) : 0;
+        send[f * 2 + 1] = ok ? Math.min(Math.max(b, -1), 1) : 0;
+      }
     }
   }
 

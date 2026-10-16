@@ -10,6 +10,17 @@ interface PatchSpec {
   pitch?: [amount: number, decay: number];
   noise?: [level: number, decay: number, tone: number];
   gain?: number; pan?: number; vel?: number;
+  /** How much goes to Space, the shared reverb and delay. */
+  send?: number;
+  /** How much harder hits brighten the note (see P.VEL_TONE). */
+  velTone?: number;
+  /** The analog voice instead of FM: op 1's envelope and level shape the amp. */
+  analog?: {
+    detune?: number; sub?: number; cutoff?: number; res?: number;
+    fenv?: [amount: number, attack: number, decay: number];
+    lfo?: [rate: number, toCutoff: number, toPitch: number];
+    glide?: number; drive?: number;
+  };
 }
 
 const OFF: OpSpec = [1, 0, 0.001, 0.3, 0, 0.1];
@@ -30,13 +41,29 @@ export function patch(s: PatchSpec): number[] {
   p[P.GAIN] = s.gain ?? 0.7;
   p[P.PAN] = s.pan ?? 0;
   p[P.VEL] = s.vel ?? 0.6;
+  p[P.SEND] = s.send ?? 0.3;
+  p[P.VEL_TONE] = s.velTone ?? 0;
+  const a = s.analog;
+  p[P.MODE] = a ? 1 : 0;
+  p[P.DETUNE] = a?.detune ?? 0.3;
+  p[P.SUB] = a?.sub ?? 0.5;
+  p[P.CUTOFF] = a?.cutoff ?? 0.7;
+  p[P.RES] = a?.res ?? 0.2;
+  p[P.FENV_AMT] = a?.fenv?.[0] ?? 0.3;
+  p[P.FENV_ATTACK] = a?.fenv?.[1] ?? 0.002;
+  p[P.FENV_DECAY] = a?.fenv?.[2] ?? 0.4;
+  p[P.LFO_RATE] = a?.lfo?.[0] ?? 0.2;
+  p[P.LFO_CUT] = a?.lfo?.[1] ?? 0;
+  p[P.LFO_PITCH] = a?.lfo?.[2] ?? 0;
+  p[P.GLIDE] = a?.glide ?? 0;
+  p[P.DRIVE] = a?.drive ?? 0;
   return p.map((v, i) => clampParam(i, v));
 }
 
 export const KIT: { name: string; kind: "drum" | "synth"; root: number; params: number[] }[] = [
   { name: "Kick", kind: "drum", root: 33, params: patch({
     ops: { 0: [1, 1, 0.0005, 0.5, 0, 0.08], 1: [1, 0.22, 0.0005, 0.04, 0, 0.03] },
-    pitch: [30, 0.07], noise: [0.08, 0.008, 1], gain: 0.95, vel: 0.4 }) },
+    pitch: [30, 0.07], noise: [0.08, 0.008, 1], gain: 0.95, vel: 0.4, send: 0 }) },
   { name: "Snare", kind: "drum", root: 50, params: patch({
     ops: { 0: [1, 0.7, 0.0005, 0.16, 0, 0.06], 1: [1.6, 0.35, 0.0005, 0.08, 0, 0.05] },
     pitch: [10, 0.03], noise: [0.75, 0.2, 0.75], gain: 0.7 }) },
@@ -52,7 +79,7 @@ export const KIT: { name: string; kind: "drum" | "synth"; root: number; params: 
     pitch: [12, 0.09], gain: 0.7, pan: -0.3 }) },
   { name: "Bass", kind: "synth", root: 36, params: patch({
     ops: { 0: [1, 1, 0.002, 0.4, 0.55, 0.08], 1: [1, 0.45, 0.002, 0.25, 0.15, 0.08], 2: [2, 0.12, 0.002, 0.1, 0, 0.05] },
-    gain: 0.6, vel: 0.5 }) },
+    gain: 0.6, vel: 0.5, send: 0 }) },
   { name: "Keys", kind: "synth", root: 60, params: patch({
     ops: { 0: [1, 1, 0.002, 1.4, 0.25, 0.35], 1: [1, 0.3, 0.002, 1.0, 0.1, 0.3],
            2: [1, 0.55, 0.002, 1.1, 0.2, 0.35], 3: [14, 0.12, 0.001, 0.12, 0, 0.1] },
@@ -61,6 +88,17 @@ export const KIT: { name: string; kind: "drum" | "synth"; root: number; params: 
     ops: { 0: [1, 0.8, 0.5, 1.5, 0.8, 1.2], 1: [2, 0.18, 0.6, 2, 0.6, 1.2],
            2: [1.004, 0.7, 0.5, 1.5, 0.8, 1.2], 3: [3, 0.12, 0.8, 2, 0.5, 1.2] },
     algo: 1, fb: 0.15, gain: 0.3, pan: -0.2, vel: 0.3 }) },
+  // four more synths, quiet until a song or you give them notes
+  { name: "Lead", kind: "synth", root: 72, params: patch({
+    ops: { 0: [1, 1, 0.01, 0.8, 0.7, 0.25], 1: [1, 0.35, 0.01, 0.4, 0.3, 0.2] }, gain: 0.4 }) },
+  { name: "Strings", kind: "synth", root: 60, params: patch({
+    ops: { 0: [1, 0.8, 0.25, 2, 0.8, 0.8] },
+    analog: { detune: 0.25, sub: 0, cutoff: 0.6, res: 0.2, fenv: [0.1, 0.3, 1], lfo: [5, 0, 0.3] }, gain: 0.35, send: 0.6 }) },
+  { name: "Analog bass", kind: "synth", root: 36, params: patch({
+    ops: { 0: [1, 1, 0.003, 0.6, 0.6, 0.1] },
+    analog: { detune: 0.3, sub: 0.5, cutoff: 0.35, res: 0.35, fenv: [0.4, 0.002, 0.3], drive: 0.3 }, gain: 0.45, send: 0 }) },
+  { name: "Bells", kind: "synth", root: 72, params: patch({
+    ops: { 0: [1, 1, 0.001, 2.5, 0, 1.5], 1: [3.5, 0.3, 0.001, 1.5, 0, 1] }, gain: 0.3, send: 0.7 }) },
 ];
 
 const step = (i: number, m: number, v = 0.85, l = 0.25): Note => ({ s: i * 0.25, l, m, v });
@@ -89,6 +127,18 @@ export function demoProject(): Project {
 /** Random but tame: levels and feedback capped, envelopes short-ish, gain kept. */
 export function randomPatch(kind: "drum" | "synth", keep: number[], rnd: () => number = Math.random): number[] {
   const pick = <T,>(xs: readonly T[]) => xs[Math.floor(rnd() * xs.length)];
+  if (keep[P.MODE] >= 0.5) {
+    // analog stays analog: a tame cutoff, resonance and drive, slow LFOs
+    return patch({
+      ops: { 0: [1, 0.8 + rnd() * 0.2, kind === "drum" ? 0.0005 : 0.002 + rnd() * 0.2, 0.1 + rnd() * 1.5, kind === "drum" ? 0 : rnd() * 0.9, 0.05 + rnd() * 0.6] },
+      analog: {
+        detune: rnd() * 0.6, sub: rnd() * 0.7, cutoff: 0.25 + rnd() * 0.5, res: rnd() * 0.6,
+        fenv: [rnd() * 0.8 - 0.2, 0.001 + rnd() * rnd() * 0.5, 0.05 + rnd() * 1.5],
+        lfo: [0.05 + rnd() * rnd() * 4, rnd() * 0.5, rnd() < 0.3 ? rnd() * 0.3 : 0], glide: rnd() < 0.4 ? rnd() * 0.15 : 0, drive: rnd() * 0.6,
+      },
+      gain: keep[P.GAIN], pan: keep[P.PAN], vel: keep[P.VEL],
+    });
+  }
   const ratios = [0.5, 1, 1, 2, 2, 3, 4, 5, 7, 1.41, 2.73];
   const ops: PatchSpec["ops"] = {};
   for (let op = 0; op < OPS; op++) {

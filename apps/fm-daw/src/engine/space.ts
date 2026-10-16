@@ -2,8 +2,8 @@
 // It runs in TypeScript after either engine (worklet and bounce alike), so the
 // Rust/TS parity of the engine itself is untouched.
 //
-// The send is high-passed (~450 Hz) so kick and sub stay dry while hats,
-// snares, leads and pads float. The reverb is the classic Schroeder/Moorer
+// Its input is the engine's send bus (each track's SEND knob), lightly
+// high-passed (~150 Hz) so nothing muddy gets in. The reverb is the classic Schroeder/Moorer
 // layout Freeverb made famous (8 damped combs into 4 allpasses per side; the
 // algorithm is public domain). The delay feeds the reverb, so echoes smear
 // into the tail. The wet signal is widened (side boosted) and slowly rotated
@@ -59,7 +59,7 @@ export class Space {
     const max = Math.ceil(MAX_DELAY_S * sampleRate);
     this.dl = new Float64Array(max);
     this.dr = new Float64Array(max);
-    this.hpA = Math.exp((-2 * Math.PI * 450) / sampleRate);
+    this.hpA = Math.exp((-2 * Math.PI * 150) / sampleRate);
     this.limRel = Math.exp(-1 / (0.1 * sampleRate));
     this.swirlInc = (2 * Math.PI * SWIRL_HZ) / sampleRate;
     this.wowInc = (2 * Math.PI * WOW_HZ) / sampleRate;
@@ -83,16 +83,17 @@ export class Space {
     this.dLpL = 0; this.dLpR = 0; this.hpL = 0; this.hpR = 0; this.hpXL = 0; this.hpXR = 0; this.limEnv = 0;
   }
 
-  /** In place on interleaved stereo. */
-  process(buf: Float32Array, frames: number) {
-    const n = Math.min(frames, buf.length >> 1);
+  /** Adds the wet signal from `send` into `buf`, in place, both interleaved stereo. */
+  process(buf: Float32Array, send: Float32Array, frames: number) {
+    const n = Math.min(frames, buf.length >> 1, send.length >> 1);
     if (this.amount === 0 && this.amountNow < 1e-4) { this.amountNow = 0; return; }
     for (let f = 0; f < n; f++) {
       const l = buf[f * 2], r = buf[f * 2 + 1];
+      const il = send[f * 2], ir = send[f * 2 + 1];
       this.amountNow += (this.amount - this.amountNow) * 0.0005;
       // one-pole high-pass on the send
-      this.hpL = this.hpA * (this.hpL + l - this.hpXL); this.hpXL = l;
-      this.hpR = this.hpA * (this.hpR + r - this.hpXR); this.hpXR = r;
+      this.hpL = this.hpA * (this.hpL + il - this.hpXL); this.hpXL = il;
+      this.hpR = this.hpA * (this.hpR + ir - this.hpXR); this.hpXR = ir;
       // ping-pong delay with a darkening loop
       this.wow += this.wowInc;
       if (this.wow > 2 * Math.PI) this.wow -= 2 * Math.PI;

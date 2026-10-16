@@ -8,7 +8,7 @@
 // and allocation-free; nobody hears a third of a millisecond.
 import type { FmEngine } from "./engine.ts";
 import { TRACKS } from "./params.ts";
-import type { Note } from "../project.ts";
+import type { Lane, Note } from "../project.ts";
 
 export const QUANTUM = 16;
 const MAX_HELD = 256;
@@ -41,6 +41,7 @@ export class Sequencer {
   private notes: Note[][] = Array.from({ length: TRACKS }, () => []);
   private warped: Float64Array[] = Array.from({ length: TRACKS }, () => new Float64Array(0));
   private audible = new Uint8Array(TRACKS).fill(1);
+  private lanes: { i: number; b: Float64Array; v: Float64Array; last: number }[][] = Array.from({ length: TRACKS }, () => []);
   // sounding sequenced notes: track, id, frames left
   private heldTrack = new Int32Array(MAX_HELD);
   private heldId = new Int32Array(MAX_HELD);
@@ -62,6 +63,13 @@ export class Sequencer {
     this.notes[track] = notes;
     this.rewarp(track);
   }
+  /** Automation for a track (already sanitized: sorted, clamped). */
+  setAuto(track: number, lanes: Lane[]) {
+    if (track < 0 || track >= TRACKS) return;
+    this.lanes[track] = lanes.map((l) => ({ i: l.i, b: Float64Array.from(l.pts, (p) => p[0]), v: Float64Array.from(l.pts, (p) => p[1]), last: NaN }));
+  }
+  /** Forget what automation last sent (after an engine swap), so it's sent again. */
+  resendAuto() { for (const ls of this.lanes) for (const l of ls) l.last = NaN; }
   setSwing(s: number) { this.swing = s; for (let t = 0; t < TRACKS; t++) this.rewarp(t); }
   setLoopBeats(b: number) { this.loopBeats = b; if (this.pos >= b) this.pos %= b; }
   setAudible(mask: boolean[]) {
@@ -134,11 +142,11 @@ export class Sequencer {
   }
 
   /** Render `frames` of interleaved stereo into out, firing events on the way. */
-  process(out: Float32Array, frames: number) {
+  process(out: Float32Array, frames: number, send?: Float32Array) {
     for (let at = 0; at < frames; at += QUANTUM) {
       const n = Math.min(QUANTUM, frames - at);
       this.tick(n);
-      this.engine.render(out.subarray(at * 2, (at + n) * 2), n);
+      this.engine.render(out.subarray(at * 2, (at + n) * 2), n, send?.subarray(at * 2, (at + n) * 2));
     }
   }
 
@@ -164,6 +172,13 @@ export class Sequencer {
     if (!this.playing) return;
     const L = this.loopBeats;
     const b0 = this.pos, b1 = b0 + span;
+    for (let t = 0; t < TRACKS; t++) {
+      const ls = this.lanes[t];
+      for (let j = 0; j < ls.length; j++) {
+        const l = ls[j], v = laneAt(l.b, l.v, b0);
+        if (v !== l.last) { l.last = v; this.engine.setParam(t, l.i, v); }
+      }
+    }
     if (this.metronome || this.recording) {
       const beat = Math.ceil(b0);
       if (beat < b1) this.engine.click((beat % L) % 4 === 0);
@@ -185,12 +200,25 @@ export class Sequencer {
   }
 }
 
+/** A lane's value at beat `b`: straight lines between points, held past the ends. */
+export function laneAt(bs: Float64Array, vs: Float64Array, b: number): number {
+  const n = bs.length;
+  if (n === 0) return NaN;
+  if (b < bs[0]) return vs[0];
+  let i = 0;
+  while (i + 1 < n && bs[i + 1] <= b) i++;
+  if (i === n - 1) return vs[i];
+  return vs[i] + (vs[i + 1] - vs[i]) * ((b - bs[i]) / (bs[i + 1] - bs[i]));
+}
+
 /** Offline: render `seconds` of a pattern. Bounce, bench and the golden test use this. */
 export function renderPattern(
   engine: FmEngine,
   sampleRate: number,
   seconds: number,
   setup: (seq: Sequencer) => void,
+  /** Filled with the Space send bus when given (same length as the result). */
+  send?: Float32Array,
 ): Float32Array {
   const seq = new Sequencer(engine, sampleRate);
   setup(seq);
@@ -200,7 +228,7 @@ export function renderPattern(
   const BLOCK = 128;
   for (let at = 0; at < frames; at += BLOCK) {
     const n = Math.min(BLOCK, frames - at);
-    seq.process(out.subarray(at * 2, (at + n) * 2), n);
+    seq.process(out.subarray(at * 2, (at + n) * 2), n, send?.subarray(at * 2, (at + n) * 2));
   }
   return out;
 }

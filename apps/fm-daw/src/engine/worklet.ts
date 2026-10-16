@@ -23,6 +23,7 @@ class FmProcessor extends AudioWorkletProcessor {
   private seq = new Sequencer(this.engine, sampleRate);
   private space = new Space(sampleRate);
   private buf = new Float32Array(256);
+  private send = new Float32Array(256);
   private meter = new Float32Array(4);
   private sinceReport = 0;
 
@@ -39,6 +40,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "load":
         m.params.forEach((v, i) => { this.params[i] = v; this.engine.setParam((i / NPARAMS) | 0, i % NPARAMS, v); });
         m.notes.forEach((n, t) => s.setNotes(t, n));
+        m.auto.forEach((a, t) => s.setAuto(t, a));
         s.bpm = m.bpm; s.setSwing(m.swing); s.setLoopBeats(m.loopBeats);
         this.setAudible(m.audible);
         this.space.setTempo(m.bpm); this.space.setAmount(m.space);
@@ -80,6 +82,7 @@ class FmProcessor extends AudioWorkletProcessor {
       const old = this.engine;
       this.engine = next;
       this.seq.engine = next;
+      this.seq.resendAuto();
       this.kind = m.kind;
       old.panic();
       old.free?.();
@@ -93,10 +96,10 @@ class FmProcessor extends AudioWorkletProcessor {
     const out = outputs[0];
     const L = out[0], R = out[1] ?? out[0];
     const frames = L.length;
-    if (this.buf.length < frames * 2) this.buf = new Float32Array(frames * 2);
+    if (this.buf.length < frames * 2) { this.buf = new Float32Array(frames * 2); this.send = new Float32Array(frames * 2); }
     try {
-      this.seq.process(this.buf, frames);
-      this.space.process(this.buf, frames);
+      this.seq.process(this.buf, frames, this.send);
+      this.space.process(this.buf, this.send, frames);
     } catch (e) {
       // A trapped wasm engine: fall back to TS rather than go silent for good.
       this.buf.fill(0);

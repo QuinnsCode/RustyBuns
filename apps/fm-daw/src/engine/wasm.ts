@@ -14,7 +14,7 @@ interface Exports {
   fm_all_off(e: number): void;
   fm_panic(e: number): void;
   fm_click(e: number, accent: number): void;
-  fm_render(e: number, out: number, frames: number): void;
+  fm_render(e: number, out: number, send: number, frames: number): void;
   fm_meter(e: number, out: number): void;
   fm_alloc(len: number): number;
   fm_dealloc(p: number, len: number): void;
@@ -31,11 +31,13 @@ export async function instantiateFm(bytes: BufferSource): Promise<Exports> {
 export class WasmEngine implements FmEngine {
   private readonly h: number;
   private readonly buf: number;
+  private readonly snd: number;
   private readonly met: number;
   constructor(private readonly x: Exports, sampleRate: number) {
     this.h = x.fm_new(sampleRate);
     if (!this.h) throw new Error("rust engine rejected the sample rate");
     this.buf = x.fm_alloc(CHUNK * 2);
+    this.snd = x.fm_alloc(CHUNK * 2);
     this.met = x.fm_alloc(4);
   }
   setParam(t: number, i: number, v: number) { this.x.fm_set_param(this.h, t >>> 0, i >>> 0, v); }
@@ -46,18 +48,19 @@ export class WasmEngine implements FmEngine {
   allOff() { this.x.fm_all_off(this.h); }
   panic() { this.x.fm_panic(this.h); }
   click(accent: boolean) { this.x.fm_click(this.h, accent ? 1 : 0); }
-  render(out: Float32Array, frames: number) {
-    const n = Math.min(frames, out.length >> 1);
+  render(out: Float32Array, frames: number, send?: Float32Array) {
+    const n = Math.min(frames, out.length >> 1, send ? send.length >> 1 : Infinity);
     for (let at = 0; at < n; at += CHUNK) {
       const k = Math.min(CHUNK, n - at);
-      this.x.fm_render(this.h, this.buf, k);
+      this.x.fm_render(this.h, this.buf, send ? this.snd : 0, k);
       // a fresh view each time: memory.grow detaches old ones
       out.set(new Float32Array(this.x.memory.buffer, this.buf, k * 2), at * 2);
+      if (send) send.set(new Float32Array(this.x.memory.buffer, this.snd, k * 2), at * 2);
     }
   }
   meter(out: Float32Array) {
     this.x.fm_meter(this.h, this.met);
     out.set(new Float32Array(this.x.memory.buffer, this.met, 4));
   }
-  free() { this.x.fm_dealloc(this.buf, CHUNK * 2); this.x.fm_dealloc(this.met, 4); this.x.fm_free(this.h); }
+  free() { this.x.fm_dealloc(this.buf, CHUNK * 2); this.x.fm_dealloc(this.snd, CHUNK * 2); this.x.fm_dealloc(this.met, 4); this.x.fm_free(this.h); }
 }
