@@ -11,6 +11,7 @@
 // shield shows as an orange shimmer round the body when it takes a hit, and a band sweeping up
 // it as it refills.
 
+import { roadster as sharedRoadster, type RoadsterLook } from "@rustybuns/models";
 import * as THREE from "three";
 import { structureOf, type CodeMap, type RepoSnapshot, type Structure } from "../sim/codemap.ts";
 import { contourStep } from "../sim/terrain.ts";
@@ -569,70 +570,36 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     const shape = new THREE.Shape(pts.map(([z, y]) => new THREE.Vector2(-z, y)));
     return new THREE.ExtrudeGeometry(shape, { depth: wide, bevelEnabled: false }).rotateY(Math.PI / 2).translate(-wide / 2, 0, 0);
   };
-  // The rocket roadster: a faceted paper wedge on an ink sill with a gold-tinted visor for glass, a
-  // light bar the width of its tail, a wing on struts that stands up as it picks up speed, and ten
-  // thrusters round its edge (four in the diffuser, one under each corner, one in each flank), each
-  // with a flame that only shows while they fire.
+  // The rocket roadster is packages/models in paper and ink, turned to face -z like everything here,
+  // with a wing on struts that stands up as it picks up speed and a gun behind the cockpit. Each of
+  // its ten thrusters gets a flame that only shows while they fire.
   const visorMat = new THREE.MeshStandardMaterial({ color: 0x2b2210, roughness: 0.15, metalness: 0.8 });
+  const roadsterLook: RoadsterLook = { paint: boxMat, ink: inkMat, glass: visorMat, tyre: inkMat, rim: orangeMat, nozzle: boxMat, headlight: inkMat, taillight: orangeMat, plate: boxMat, edges: edgeInk };
+  const jetGeo = new THREE.ConeGeometry(0.1, 0.7, 10).translate(0, 0.35, 0);
   function roadster(): THREE.Group {
     const g = new THREE.Group();
-    g.add(piece(new THREE.BoxGeometry(1.9, 0.24, 4.2), inkMat, 0, 0.36, 0, false));
-    g.add(piece(profile([[-2.35, 0.34], [-2.4, 0.52], [-0.95, 0.84], [1.45, 0.96], [2.25, 1.0], [2.25, 0.6], [2.05, 0.34]], 2.1), boxMat, 0, 0, 0));
-    g.add(piece(profile([[-0.95, 0.84], [-0.05, 1.24], [0.55, 1.28], [1.7, 0.99], [1.45, 0.96]], 1.6), visorMat, 0, 0, 0));
-    // The headlights hide in a slit across the nose; the tail is a light bar over an ink diffuser.
-    g.add(piece(new THREE.BoxGeometry(1.7, 0.04, 0.04), inkMat, 0, 0.56, -2.39, false));
-    g.add(piece(new THREE.BoxGeometry(2.12, 0.06, 0.04), orangeMat, 0, 0.94, 2.26, false));
-    g.add(piece(new THREE.BoxGeometry(0.5, 0.15, 0.03), boxMat, 0, 0.72, 2.26));
-    g.add(piece(new THREE.BoxGeometry(2.0, 0.26, 0.26), inkMat, 0, 0.47, 2.12, false));
-    // Intakes behind the doors.
-    for (const x of [-1.06, 1.06]) g.add(piece(new THREE.BoxGeometry(0.02, 0.22, 0.55), inkMat, x, 0.66, 1.0, false));
+    const car = sharedRoadster(roadsterLook);
+    car.group.rotation.y = Math.PI;
+    g.add(car.group);
+    const flames = car.nozzles.map((n) => {
+      const f = new THREE.Mesh(jetGeo, flameMat);
+      f.visible = false;
+      n.mount.add(f);
+      return f;
+    });
     const wing = new THREE.Group();
     for (const x of [-0.55, 0.55]) wing.add(piece(new THREE.BoxGeometry(0.06, 0.5, 0.16), inkMat, x, 0.25, 0, false));
     wing.add(piece(new THREE.BoxGeometry(2.4, 0.05, 0.55), boxMat, 0, 0.5, 0));
     for (const x of [-1.18, 1.18]) wing.add(piece(new THREE.BoxGeometry(0.04, 0.42, 0.55), boxMat, x, 0.3, 0));
     wing.position.set(0, 0.95, 1.95);
     g.add(wing);
-    const flames: THREE.Object3D[] = [];
-    const nozzleGeo = new THREE.CylinderGeometry(0.1, 0.13, 0.18, 12);
-    const flameGeo = new THREE.ConeGeometry(0.1, 0.7, 10).translate(0, 0.35, 0);
-    /** A nozzle at (x, y, z) firing along `dir`. */
-    const thruster = (x: number, y: number, z: number, dir: THREE.Vector3) => {
-      const n = piece(nozzleGeo, boxMat, x, y, z);
-      n.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-      g.add(n);
-      const f = new THREE.Mesh(flameGeo, flameMat);
-      f.position.set(x, y, z);
-      f.quaternion.copy(n.quaternion);
-      f.visible = false;
-      g.add(f);
-      flames.push(f);
-    };
-    for (const x of [-0.72, -0.24, 0.24, 0.72]) thruster(x, 0.45, 2.27, new THREE.Vector3(0, 0, 1));
-    for (const [x, z] of [[-0.75, -1.85], [0.75, -1.85], [-0.75, 1.75], [0.75, 1.75]] as const) thruster(x, 0.22, z, new THREE.Vector3(0, -1, 0));
-    for (const x of [-1.0, 1.0]) thruster(x * 1.06, 0.5, 0.1, new THREE.Vector3(x, 0, 0));
-    const wheels: THREE.Object3D[] = [];
-    const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.34, 18).rotateZ(Math.PI / 2), rimGeo = new THREE.TorusGeometry(0.3, 0.025, 6, 24).rotateY(Math.PI / 2);
-    for (const [x, z] of [[-1.0, -1.4], [1.0, -1.4], [-1.0, 1.45], [1.0, 1.45]] as const) {
-      const w = inked(new THREE.Mesh(wheelGeo, inkMat));
-      w.position.set(x, 0.42, z);
-      w.castShadow = true;
-      // A thin orange ring on each face, and a spoke to see it turn.
-      for (const side of [-0.18, 0.18]) {
-        const rim = new THREE.Mesh(rimGeo, orangeMat);
-        rim.position.x = side;
-        w.add(rim);
-      }
-      w.add(new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.06, 0.6), boxMat));
-      wheels.push(w);
-      g.add(w);
-    }
     // The gun rides behind the cockpit and turns to where you aim.
     const gun = new THREE.Group();
     gun.position.set(0, 1.42, 0.8);
     gun.add(piece(new THREE.BoxGeometry(0.22, 0.2, 0.45), boxMat, 0, 0, 0));
     gun.add(piece(new THREE.CylinderGeometry(0.05, 0.05, 0.9, 10).rotateX(Math.PI / 2), inkMat, 0, 0, -0.65, false));
     g.add(gun);
-    g.userData = { wheels, gun, flames, wing };
+    g.userData = { wheels: car.wheels, gun, flames, wing };
     return g;
   }
   function heli(): THREE.Group {
@@ -788,7 +755,7 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         // The gun points along the driver's aim, against the vehicle's heading.
         const aimYaw = driven ? you1.yaw - v.yaw : 0, aimPitch = driven ? you1.pitch : 0;
         if (v.kind === "roadster") {
-          for (const w of u.wheels as THREE.Object3D[]) w.rotation.x = -v.odo / 0.42;
+          for (const w of u.wheels as THREE.Object3D[]) w.rotation.x = v.odo / 0.42;
           (u.gun as THREE.Object3D).rotation.set(aimPitch, aimYaw, 0, "YXZ");
           // The wing stands up with speed, and all the way while the thrusters fire.
           const wing = u.wing as THREE.Object3D, up = v.burn ? 1 : Math.min(1, Math.hypot(v.vx, v.vz) / 20);
