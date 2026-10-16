@@ -13,6 +13,7 @@ export const yosemiteFalls: ParkSpec = {
   name: "Yosemite Falls",
   blurb: "Build speed on the shelf above the falls and clear the drop, then skate the valley floor.",
   zone: "yosemite-falls",
+  fill: { lines: 8 },
   sites: [
     { parts: [halfpipe({ x: 100, z: -40 }, { w: 20, d: 40, h: 3 })] },
     { parts: [tabletop({ x: 220, z: 100, yaw: E }, { w: 8, d: 26, h: 1.6 })] },

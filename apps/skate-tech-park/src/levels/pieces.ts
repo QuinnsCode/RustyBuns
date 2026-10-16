@@ -18,13 +18,13 @@ export type Gap = { name: string; a: { x: number; z: number }; b: { x: number; z
 
 export type Part = { pieces: Piece[]; rails: Rail[]; gaps: Gap[] };
 
-const part = (p: Partial<Part> = {}): Part => ({ pieces: [], rails: [], gaps: [], ...p });
+export const part = (p: Partial<Part> = {}): Part => ({ pieces: [], rails: [], gaps: [], ...p });
 export const join = (...ps: Part[]): Part => part({ pieces: ps.flatMap((p) => p.pieces), rails: ps.flatMap((p) => p.rails), gaps: ps.flatMap((p) => p.gaps) });
 
-const clamp01 = (t: number) => (t < 0 ? 0 : t > 1 ? 1 : t);
+export const clamp01 = (t: number) => (t < 0 ? 0 : t > 1 ? 1 : t);
 /** Flat at 0, vertical at 1: the curve of a quarter pipe's transition. */
-const arc = (t: number) => 1 - Math.sqrt(1 - clamp01(t) ** 2);
-const smooth = (t: number) => clamp01(t) ** 2 * (3 - 2 * clamp01(t));
+export const arc = (t: number) => 1 - Math.sqrt(1 - clamp01(t) ** 2);
+export const smooth = (t: number) => clamp01(t) ** 2 * (3 - 2 * clamp01(t));
 
 /** A point given in a piece's own frame, as a world point. */
 export function toWorld(at: At, lx: number, lz: number) {
@@ -32,12 +32,12 @@ export function toWorld(at: At, lx: number, lz: number) {
   return { x: at.x + lx * c + lz * s, z: at.z - lx * s + lz * c };
 }
 
-const shape = (kind: PieceKind, name: string, at: At, w: number, d: number, f: (lx: number, lz: number) => number): Piece => ({
+export const shape = (kind: PieceKind, name: string, at: At, w: number, d: number, f: (lx: number, lz: number) => number): Piece => ({
   kind, name, x: at.x, z: at.z, yaw: at.yaw ?? 0, w, d, h0: f(0, -d / 2), h1: f(0, d / 2),
   height: (lx, lz) => (Math.abs(lx) > w / 2 || Math.abs(lz) > d / 2 ? 0 : f(lx, lz)),
 });
 
-const bar = (kind: RailKind, at: At, lx1: number, lz1: number, lx2: number, lz2: number, y: number, y2?: number): Rail =>
+export const bar = (kind: RailKind, at: At, lx1: number, lz1: number, lx2: number, lz2: number, y: number, y2?: number): Rail =>
   ({ kind, a: toWorld(at, lx1, lz1), b: toWorld(at, lx2, lz2), y, ...(y2 === undefined ? {} : { y2 }) });
 
 /** Raises a part onto a floor at `base`. */

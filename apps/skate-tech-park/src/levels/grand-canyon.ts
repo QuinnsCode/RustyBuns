@@ -12,6 +12,7 @@ export const grandCanyon: ParkSpec = {
   name: "Grand Canyon",
   blurb: "Build speed across the South Rim, hit the lip at Mather Point and clear the first drop into the canyon.",
   zone: "grand-canyon",
+  fill: { lines: 8 },
   sites: [
     { parts: [flatBar({ x: -120, z: 200, yaw: E }, { len: 14 }), stairSet({ x: -95, z: 200, yaw: E }, { w: 8, steps: 6, rise: 0.25, run: 0.9 })] },
     { parts: [funbox({ x: -40, z: 200, yaw: E }, { w: 10, d: 24, h: 1.2, ramp: 7 }), hip({ x: 0, z: 200 }, { w: 12, d: 12, h: 2.4 })] },

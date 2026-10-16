@@ -14,6 +14,7 @@ export const elCapitan: ParkSpec = {
   name: "El Capitan Meadow",
   blurb: "A street line across the meadow, and the wall above it: ride the talus up the face.",
   zone: "el-capitan",
+  fill: { lines: 8 },
   sites: [
     { parts: [halfpipe({ x: -85, z: 133, yaw: E }, { w: 20, d: 40, h: 3 })] },
     { parts: [tabletop({ x: -40, z: 20, yaw: E }, { w: 8, d: 26, h: 1.6 })] },

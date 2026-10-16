@@ -13,6 +13,7 @@ export const grandPrismatic: ParkSpec = {
   name: "Grand Prismatic",
   blurb: "A bowl on the spring basin, a street line round it and the sinter terraces to pump over.",
   zone: "grand-prismatic",
+  fill: { lines: 8 },
   sites: [
     { parts: [geyserCone({ x: -200, z: -100 }, { r: 8, h: 2.4 })] },
     { parts: [tabletop({ x: -250, z: -120, yaw: E }, { w: 8, d: 26, h: 1.6 })] },
