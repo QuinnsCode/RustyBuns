@@ -12,7 +12,7 @@ import { followCamera, sky, skyMood, skyTime } from "./render/sky.ts";
 import { comboLine } from "./render/combo.ts";
 import { Skins } from "./render/skins.ts";
 import { Taps } from "./render/feet.ts";
-import { lieOnGround, manualPose, rideableRise, popPose, TiltEase } from "./render/tilt.ts";
+import { lieOnGround, manualPose, popPose, TiltEase } from "./render/tilt.ts";
 import { DT, FLICK_TIME, IDLE, type Input, type Mode, noseUp, start, step, type State, tumble } from "./sim.ts";
 import { HALF } from "./levels/plaza.ts";
 import type { ParkLevel } from "./levels/park.ts";
@@ -211,7 +211,7 @@ pveBtn.addEventListener("click", () => { const q = new URLSearchParams(location.
 const chase = new Chase(camera);
 const manualEase = new TiltEase();
 const taps = new Taps($("taps")); // rings where the feet pop, drag and flick
-const groundRise = (x: number, z: number): [number, number] => { const e = 0.25; return rideableRise((level.height(x + e, z) - level.height(x - e, z)) / (2 * e), (level.height(x, z + e) - level.height(x, z - e)) / (2 * e)); };
+const groundRise = (x: number, z: number): [number, number] => { const e = 0.25; return [(level.height(x + e, z) - level.height(x - e, z)) / (2 * e), (level.height(x, z + e) - level.height(x, z - e)) / (2 * e)]; };
 const slope = { x: 0, z: 0 }; // the ground's tilt under the board, eased
 reset();
 let critterAt = performance.now(), lastFrame = performance.now(), landVy = 0, acc = 0, then = performance.now(), shownTrick: State["last"] = null, trickAt = 0;

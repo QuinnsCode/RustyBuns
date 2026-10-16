@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { fingerboard, roadster } from "../src/models.ts";
 import { makeLevel } from "../src/level.ts";
 import { Skins } from "../src/render/skins.ts";
-import { lieOnGround, manualPose, REST_TILT, rideableRise, TiltEase } from "../src/render/tilt.ts";
+import { lieOnGround, manualPose, REST_TILT, TiltEase } from "../src/render/tilt.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 
 const PIVOT = { fingerboard: 0.45, roadster: 0.6 };
@@ -71,11 +71,4 @@ test("on a slope the board's up is the ground's normal, whatever the heading", (
     const n = new THREE.Vector3(-gx, 1, -gz).normalize();
     expect(up(gx, gz, yaw).distanceTo(n)).toBeLessThan(1e-9);
   }
-});
-
-test("a cliff-steep read of the ground never lays the board past the steepest ramp the sim rides", () => {
-  expect(rideableRise(0.4, -0.2)).toEqual([0.4, -0.2]); // a gentle slope is untouched
-  const [gx, gz] = rideableRise(0, -14.5); // the dome's face, 86 degrees
-  expect(Math.abs(lieOnGround(gx, gz, 0).x)).toBeLessThan(Math.atan(3) + 1e-9); // about 72 degrees
-  expect(gz).toBeLessThan(0); // still the same way up
 });
