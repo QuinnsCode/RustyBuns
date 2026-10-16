@@ -36,7 +36,10 @@ export type Input = {
 
 export const IDLE: Input = { throttle: 0, steer: 0, jump: false, boost: false, flip: false, flick: null, fan: false, manual: 0 };
 
-const TUNE = { accel: 20, top: 32 * T, turn: 2.2 / T, airSpin: 7 / T };
+// Pushing is gentle and tops out at a speed you can steer at (about 70 km/h at SCALE 2). The jets and
+// a downhill carry the board past it, up to the jets' own top speed, and the board sheds the extra
+// slowly once they stop.
+const TUNE = { accel: 6, brake: 14, top: 14 * T, over: 0.5, turn: 2.2 / T, airSpin: 7 / T };
 // The rocket jets, in the board's own numbers.
 export const JETS = {
   boost: 32, // m/s² from the rear jets
@@ -68,6 +71,7 @@ const GRIND_POINTS: Record<GrindKind, number> = { "50-50": 300, "5-0": 350, nose
 const LEDGE_NAME: Record<GrindKind, string> = { "50-50": "50-50 slide", "5-0": "5-0 slide", nosegrind: "Nose slide", boardslide: "Boardslide" };
 const GRIND_NAME: Record<GrindKind, string> = { "50-50": "50-50 grind", "5-0": "5-0 grind", nosegrind: "Nosegrind", boardslide: "Boardslide" };
 const BALANCE_DRIFT = 1.1; // how fast a grind pulls off balance per unit of lean, per second
+const COAST = 0.2; // share of speed a rolling board loses a second with nobody pushing
 const MANUAL_MIN = 2; // m/s: slower than this and the board just drops back onto its wheels
 const MANUAL_POINTS = 150; // a second
 const BALANCE_PUSH = 3.2; // how hard steering pulls it back
@@ -250,10 +254,14 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       if (inp.manual !== s.manual || Math.abs(s.speed) < MANUAL_MIN) endManual(s);
       else if (Math.abs(s.balance) >= 1) { bail(s, `Bail: lost the ${s.manual > 0 ? "manual" : "nose manual"}`); return s; }
     }
-    const top = s.fan ? tune.top * JETS.fanTop : boosting ? BOOST_TOP : tune.top;
-    s.speed += inp.throttle * tune.accel * DT + (boosting ? BOOST * DT : 0);
-    if (!inp.throttle && !boosting) s.speed *= 1 - 0.6 * DT;
-    s.speed = clamp(s.speed, -top * 0.5, top);
+    const push = s.fan ? tune.top * JETS.fanTop : tune.top; // what pushing alone reaches
+    const top = s.fan ? push : BOOST_TOP; // the most a downhill or the jets can carry it to
+    if (inp.throttle < 0 && s.speed > 0) s.speed += inp.throttle * tune.brake * DT;
+    else if (inp.throttle > 0 ? s.speed < push : inp.throttle < 0) s.speed += inp.throttle * tune.accel * DT;
+    if (boosting) s.speed += BOOST * DT;
+    else if (s.speed > push) s.speed -= (s.speed - push) * tune.over * DT;
+    if (!inp.throttle && !boosting) s.speed *= 1 - COAST * DT;
+    s.speed = clamp(s.speed, -push * 0.5, top);
     const dir = Math.sign(s.speed || 1);
     const [gx, gz] = gradient(level, s.x, s.z);
     const along = gx * fx + gz * fz, across = gx * fz - gz * fx; // rise ahead, and to the right
@@ -289,9 +297,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       prev = h;
     }
     const h = prev;
-    if (dist > 1e-6) { // slopes slow you going up and speed you coming down
-      s.speed -= G * Math.sin(s.pitch) * DT;
-    }
+    s.speed -= G * Math.sin(s.pitch) * DT; // slopes slow you going up and speed you coming down, even from rest
     const vy = s.vy;
     s.vx = Math.sin(s.yaw) * s.speed; s.vz = Math.cos(s.yaw) * s.speed;
     s.x = nx; s.z = nz;
