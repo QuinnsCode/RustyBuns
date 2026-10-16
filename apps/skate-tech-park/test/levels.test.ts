@@ -4,19 +4,20 @@ import { expect, test } from "bun:test";
 import { LEVELS, needsStartScreen, pick } from "../src/levels/index.ts";
 import { trackRun } from "../src/levels/goals.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
-import { IDLE, type Input, type Mode, start, step } from "../src/sim.ts";
+import { IDLE, start, step } from "../src/sim.ts";
 
+const LINE = 27; // m/s held into a gap: the board clears all four at this speed (Glacier Point only from 26 to 28)
 const parks = LEVELS.filter((l) => l.id !== "plaza").map((l) => l.load() as ParkLevel);
 const park = (id: string) => parks.find((l) => l.id === id)!;
 
 /** Drives from a spawn, steering at a gap's launch and tapping jump at its lip, feeding the tracker. */
 function drive(level: ParkLevel, spawn: string, seconds: number, gapName?: string) {
   const sp = level.spawns.find((p) => p.name === spawn)!, g = level.gaps.find((x) => x.name === gapName);
-  const s = start("car", sp.x, sp.z, sp.yaw, level), run = trackRun(level);
+  const s = start(sp.x, sp.z, sp.yaw, level), run = trackRun(level);
   for (let i = 0; i < seconds * 60; i++) {
     const aim = g ? Math.atan2(g.a.x - s.x, g.a.z - s.z) : s.yaw, err = Math.atan2(Math.sin(aim - s.yaw), Math.cos(aim - s.yaw));
     const along = g ? (s.x - g.a.x) * Math.sin(s.yaw) + (s.z - g.a.z) * Math.cos(s.yaw) : -99;
-    step(s, { ...IDLE, throttle: 1, steer: s.air ? 0 : Math.max(-1, Math.min(1, err * 3)), jump: along > 3 && along < 8 && !s.air }, level);
+    step(s, { ...IDLE, throttle: s.speed < LINE ? 1 : -1, boost: s.speed < LINE - 2, steer: s.air ? 0 : Math.max(-1, Math.min(1, err * 3)), jump: along > 3 && along < 8 && !s.air }, level);
     run.update(s);
   }
   return { s, run };

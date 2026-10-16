@@ -40,7 +40,7 @@ test("a pine shrinks away as the rider nears it, and grows back when they leave"
 
 test("the chase camera sits behind and above a rider going down the park, and the view widens with speed", () => {
   const level = LEVELS[0]!.load(), p = level.spawns[0]!;
-  const sim = start("car", p.x, p.z, p.yaw, level);
+  const sim = start(p.x, p.z, p.yaw, level);
   const camera = new THREE.PerspectiveCamera(FOV.base, 1, 0.1, 2000), chase = new Chase(camera);
   chase.snap(sim, "roadster");
   expect(camera.fov).toBe(FOV.base);
