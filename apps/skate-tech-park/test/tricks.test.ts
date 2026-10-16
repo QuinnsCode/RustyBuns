@@ -189,3 +189,35 @@ test("holding the mouse still, or a pad trigger, holds a manual; a quick drag is
   run(sk, 1, (s) => ({ manual: pad.manual(s.t), throttle: clamp(s.balance * 2 + 0.1, -1, 1) }), lv);
   expect(sk.manual).toBe(1);
 });
+
+test("grind into manual is one chain, and a different kind of trick scores a link bonus over a repeat", () => {
+  const hold = (s: State) => clamp(s.balance * 2 + 0.1, -1, 1);
+
+  // a 50-50 down a short rail, off its end, and straight into a manual
+  const lv = flat({ rails: [{ kind: "rail", a: { x: 0, z: 0 }, b: { x: 0, z: 8 }, y: 0.9 }] });
+  const sk = start(0, 2, 0, lv);
+  sk.air = true; sk.y = 1.0; sk.vy = -1; sk.vz = 6; // dropped onto the bar
+  run(sk, 2.2, (s) => ({ steer: clamp(s.balance * 2, -1, 1), manual: s.grind < 0 ? 1 : 0, throttle: s.grind < 0 ? hold(s) : 0 }), lv);
+  expect(sk.manual).toBe(1);
+  expect(sk.combo).toEqual(["50-50 grind"]);
+  run(sk, 0.05, () => ({}), lv); // let go
+  expect(sk.combo).toEqual(["50-50 grind", "Manual"]);
+  expect(sk.chain).toBe(2);
+  expect(sk.last?.name).toMatch(/Manual x2 link/);
+  expect(sk.comboScore).toBe(sk.score);
+
+  // the same manual twice in a row is multiplied by the chain but gets no link bonus
+  const flatLv = flat(), twice = start(0, -40, 0, flatLv);
+  twice.speed = 8;
+  const manual = (secs: number) => {
+    run(twice, secs, (s) => ({ manual: 1, throttle: hold(s) }), flatLv);
+    run(twice, 0.05, () => ({}), flatLv);
+  };
+  manual(1.6);
+  const first = twice.score;
+  run(twice, 1, () => ({ throttle: 1 }), flatLv);
+  manual(1.6);
+  expect(twice.chain).toBe(2);
+  expect(twice.last?.name).toBe("Manual x2");
+  expect(twice.score - first).toBeLessThan(Math.round(1.7 * 150 * 2 * 1.5)); // x2 for the chain, not x3 for a link
+});
