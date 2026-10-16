@@ -23,7 +23,6 @@ export const mariposaGrove: ParkSpec = {
   trees: [...pair("Faithful Couple", -80, 0), ...pair("Clothespin", 50, -50)],
   spawns: [
     { name: "grove road", x: -80, z: -60, yaw: 0 },
-    { name: "car", x: -74, z: -60, yaw: 0 },
     { name: "clearing", x: 50, z: -90, yaw: 0 },
   ],
   bounds: { minX: -150, maxX: 120, minZ: -110, maxZ: 160 },
