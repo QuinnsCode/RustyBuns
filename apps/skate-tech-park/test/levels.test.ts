@@ -4,10 +4,10 @@ import { expect, test } from "bun:test";
 import { LEVELS, needsStartScreen, pick } from "../src/levels/index.ts";
 import { trackRun } from "../src/levels/goals.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
-import { IDLE, SCALE, start, step } from "../src/sim.ts";
+import { IDLE, start, step } from "../src/sim.ts";
 
-// m/s held into a gap: every gap clears across the board's range (from 20 up at SCALE 1); a bigger board hangs longer, so the same line needs less speed
-const SPEEDS = [22, 27, 32].map((v) => v / Math.sqrt(SCALE));
+// m/s held into a gap: every gap clears at any of these (a ramp's launch does not scale with the board, so the line is not divided by SCALE)
+const SPEEDS = [22, 27, 32];
 const parks = LEVELS.filter((l) => l.id !== "plaza").map((l) => l.load() as ParkLevel);
 const park = (id: string) => parks.find((l) => l.id === id)!;
 
@@ -87,4 +87,9 @@ test("a short hop onto the boulder is not the Boulder Gap", () => {
 test("Half Dome's east shoulder is a natural ramp: driving up it climbs the dome", () => {
   const l = park("half-dome"), { run } = drive(l, "dome run", 12, "Half Dome Face");
   expect(run.done(l.goals.find((g) => g.kind === "climb")!)).toBe(true);
+});
+
+test("a short hop onto the boulder is not the Boulder Gap", () => {
+  const { run } = drive(park("el-capitan"), "car", 10, "Boulder Gap", 14);
+  expect(run.gaps.size).toBe(0);
 });
