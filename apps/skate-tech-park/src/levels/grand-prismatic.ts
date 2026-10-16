@@ -5,7 +5,7 @@ import { outcrop, bowl, flatBar, funbox, gap, geyserCone, halfpipe, hip, quarter
 
 const E = Math.PI / 2;
 
-const sinter = gap({ x: -150, z: -180, yaw: E }, { name: "Sinter Jump", span: 30, h: 2.4, w: 8, landH: 2, landLen: 14, reach: 55, bonus: 800 });
+const sinter = gap({ x: -150, z: -180, yaw: E }, { name: "Sinter Jump", span: 30, h: 2.4, w: 8, landH: 2, landLen: 14, reach: 75, bonus: 800 });
 
 export const grandPrismatic: ParkSpec = {
   id: "grand-prismatic",
@@ -15,7 +15,7 @@ export const grandPrismatic: ParkSpec = {
   sites: [
     { parts: [geyserCone({ x: -200, z: -100 }, { r: 8, h: 2.4 })] },
     { parts: [tabletop({ x: -250, z: -120, yaw: E }, { w: 8, d: 26, h: 1.6 })] },
-    { parts: [halfpipe({ x: -100, z: -215 }, { w: 20, d: 40, h: 3, name: "spring runoff pipe" })] },
+    { parts: [halfpipe({ x: -100, z: -245 }, { w: 20, d: 40, h: 3, name: "spring runoff pipe" })] },
     { parts: [outcrop({ x: -170, z: -240 }, { r: 3, h: 2 })] },
     { parts: [bowl({ x: -100, z: -60 }, { w: 80, d: 56, h: 5, deck: 6 })] },
     { parts: [flatBar({ x: -230, z: -180, yaw: E }, { len: 14 }), funbox({ x: -190, z: -180, yaw: E }, { w: 10, d: 24, h: 1.2, ramp: 7 })] },

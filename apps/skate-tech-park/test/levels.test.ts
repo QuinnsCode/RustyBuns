@@ -4,6 +4,7 @@ import { expect, test } from "bun:test";
 import { LEVELS, needsStartScreen, pick } from "../src/levels/index.ts";
 import { trackRun } from "../src/levels/goals.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
+import { DECK } from "../src/models.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 
 // m/s held into a gap: every gap clears at any of these (a ramp's launch does not scale with the board, so the line is not divided by SCALE)
@@ -104,4 +105,10 @@ test("a sky rail is a bar you can ride from a kicker, 160 m long and climbing aw
     expect(ground).toBeGreaterThan(60);
     expect(top - l.height(bar.a.x, bar.a.z)).toBeGreaterThan(4);
   }
+});
+
+test("the kit is toy-sized beside the deck: every piece is wider than the board, and a straight run rolls up the stairs and over the funbox", () => {
+  for (const l of parks) for (const p of l.pieces) expect(Math.min(p.w, p.d)).toBeGreaterThan(DECK.width);
+  const { s } = drive(park("old-faithful"), "boardwalk", 9, undefined, 27, { x: 40, z: 20 });
+  expect(s.x).toBeGreaterThan(0); // past the stair set at -100 and the funbox at -70, not stopped at the first riser
 });
