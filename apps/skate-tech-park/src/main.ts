@@ -201,7 +201,7 @@ function frame(now: number) {
     chase.pos.set(sim.x + Math.sin(a) * 9, sim.y + 2, sim.z + Math.cos(a) * 9);
     chase.look.set(sim.x, sim.y + 0.6, sim.z);
   }
-  chase.apply(level.bounds); // stay inside the walls
+  chase.apply(level.bounds, level.height); // stay inside the walls
   followCamera(air, camera);
   scenery?.update([sim, camera.position]);
   sun.position.set(sim.x - 60, sim.y + 22, sim.z - 30); // a low sun, so the board throws a long shadow; the shadow box follows the rider
