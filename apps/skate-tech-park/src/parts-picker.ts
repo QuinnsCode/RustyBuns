@@ -1,7 +1,9 @@
 // The parts picker: a wrench button opens a panel of swatches for the deck, trucks, wheels and grip, and the
-// board on the page is repainted as you choose. The choice is remembered between visits.
-import { createElement, Wrench } from "lucide";
+// board on the page is repainted as you choose. The choice is remembered between visits. Priced finishes show a lock
+// and their price until bought (see shop.ts).
+import { createElement, Lock, Wrench } from "lucide";
 import { CATALOG, DEFAULT_PARTS, type Part, type Parts } from "./parts.ts";
+import { dollars, localWallet, priceOf, testCheckout } from "./shop.ts";
 
 const KEY = "skate-tech-park.parts";
 const LABELS: Record<Part, string> = { deck: "Deck", trucks: "Trucks", wheels: "Wheels", grip: "Grip tape" };
@@ -12,7 +14,8 @@ function saved(): Parts {
 
 /** Mounts the button into `.buttons`; `paint` is called now and on every choice. */
 export function mountPartsPicker(paint: (p: Parts) => void) {
-  const parts = saved();
+  const wallet = localWallet();
+  const parts = wallet.allowed(saved());
   const panel = document.createElement("div"), button = document.createElement("button");
   panel.className = "parts";
   panel.hidden = true;
@@ -24,7 +27,11 @@ export function mountPartsPicker(paint: (p: Parts) => void) {
   button.addEventListener("click", () => { panel.hidden = !panel.hidden; button.blur(); });
   const swatches = new Map<string, HTMLButtonElement>();
   const show = () => {
-    for (const [k, b] of swatches) b.setAttribute("aria-pressed", String(parts[k.split(":")[0] as Part] === k.split(":")[1]));
+    for (const [k, b] of swatches) {
+      const [part, id] = k.split(":") as [Part, string];
+      b.setAttribute("aria-pressed", String(parts[part] === id));
+      b.querySelector("svg")?.toggleAttribute("hidden", wallet.owns({ part, id }));
+    }
     paint(parts);
     try { localStorage.setItem(KEY, JSON.stringify(parts)); } catch { /* private window: it just isn't remembered */ }
   };
@@ -39,7 +46,14 @@ export function mountPartsPicker(paint: (p: Parts) => void) {
       b.title = c.name;
       b.setAttribute("aria-label", `${LABELS[part]}: ${c.name}`);
       b.style.background = `#${c.color.toString(16).padStart(6, "0")}`;
-      b.addEventListener("click", () => { parts[part] = c.id; show(); b.blur(); });
+      const item = { part, id: c.id }, cents = priceOf(item);
+      if (cents) { b.title = `${c.name}, ${dollars(cents)}`; b.append(createElement(Lock, { width: 12, height: 12 })); }
+      b.addEventListener("click", async () => {
+        b.blur();
+        if (!(await wallet.buy(item, testCheckout))) return;
+        parts[part] = c.id;
+        show();
+      });
       swatches.set(`${part}:${c.id}`, b);
       row.append(b);
     }
