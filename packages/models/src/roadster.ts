@@ -1,4 +1,4 @@
-// The rocket roadster, shared by Rocket Skate and Git Recon: a faceted wedge on a dark sill with a
+// The rocket roadster, shared by Skate Tech Park and Git Recon: a faceted wedge on a dark sill with a
 // gold-tinted visor, a headlight slit across the nose, a full-width tail light bar, four wheels and
 // ten cold-gas thrusters. The nose points +z. Each app brings its own materials and draws its own
 // plumes: every nozzle is a `mount` (at the bell's mouth, +y along the exhaust) to attach one to.
