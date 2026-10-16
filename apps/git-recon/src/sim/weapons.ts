@@ -10,9 +10,11 @@
 //   git revert        undoes a guard: it's back where it was a few seconds ago, and has forgotten you.
 //   git stash         thrown down, it's a box to hide behind, and the guards shoot at it instead of you.
 //   git blame         tags a guard, so you see it through walls.
+//   git commit --amend  the pistol. Every soldier's sidearm: one accurate round at a time, and the spare magazines never run out.
+//   git merge --squash  the plasma grenade. Thrown, it sticks to whatever it lands on (a soldier included) and goes off when the fuse runs out.
 //   git reset --hard  a rare crate, not a starting weapon: wherever it lands, that yard is wiped clean.
 
-export type WeaponId = "commit" | "add" | "fetch" | "clean" | "push" | "merge" | "rebase" | "cherry" | "revert" | "stash" | "blame" | "reset";
+export type WeaponId = "commit" | "add" | "fetch" | "clean" | "push" | "merge" | "rebase" | "cherry" | "revert" | "stash" | "blame" | "reset" | "amend" | "squash";
 
 /** What a round does besides damage. */
 export type Effect = "revert" | "stash" | "blame" | "reset";
@@ -65,6 +67,8 @@ export interface Weapon {
   hipSpread?: number;
   /** How far guards hear it, against HEAR: a rifle 1, a sniper rifle or bazooka more, a stash nothing. */
   loud: number;
+  /** Sticks to the first thing it touches (a soldier, a file, the ground) and goes off when its fuse runs out. */
+  sticky?: boolean;
   effect?: Effect;
 }
 
@@ -88,13 +92,17 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
   stash: W({ id: "stash", mag: 1, reload: 0.8, cmd: "git stash", damage: 0, splash: 0, knock: 0, speed: 14, gravity: 22, cooldown: 1.2, ammo: 2, spread: 0, life: 2, impact: true, effect: "stash", loud: 0 }),
   blame: W({ id: "blame", mag: 2, reload: 1.4, cmd: "git blame", damage: 5, splash: 0, knock: 0, speed: 200, gravity: 0, cooldown: 0.5, ammo: 4, spread: 0, life: 1, impact: true, effect: "blame" }),
   reset: W({ id: "reset", mag: 1, reload: 1.5, cmd: "git reset --hard", damage: 400, splash: 9, knock: 20, speed: 22, gravity: 22, cooldown: 1.5, ammo: 0, spread: 0, life: 2, impact: true, effect: "reset" }),
+  // The sidearm: every kit has it, so nobody is ever without a gun. Slow and accurate, and a headshot nearly triples.
+  amend: W({ id: "amend", mag: 12, reload: 1.2, cmd: "git commit --amend", damage: 16, splash: 0, knock: 1.2, speed: 140, gravity: 0, cooldown: 0.3, ammo: -1, spread: 0.006, life: 0.9, impact: true, kick: 0.014, headshot: 2.5, loud: 0.7 }),
+  // Plasma: lobbed, it sticks where it lands and burns a long beat before it goes off, so you can stick a soldier and run.
+  squash: W({ id: "squash", mag: 1, reload: 1.0, cmd: "git merge --squash", damage: 95, splash: 4.2, knock: 8, speed: 24, gravity: 16, cooldown: 1.1, ammo: 3, spread: 0, life: 2.4, impact: false, sticky: true, loud: 0.6 }),
 };
 
-export const ORDER: WeaponId[] = ["commit", "add", "fetch", "clean", "push", "merge", "rebase", "cherry", "revert", "stash", "blame", "reset"];
+export const ORDER: WeaponId[] = ["commit", "add", "fetch", "clean", "push", "merge", "rebase", "cherry", "revert", "stash", "blame", "reset", "amend", "squash"];
 
 /** The keys that pick each weapon in ORDER: 1-9, 0, then - and =. */
-export const KEYS = ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9", "Digit0", "Minus", "Equal"];
-export const keyLabel = (code: string) => ({ Minus: "-", Equal: "=" } as Record<string, string>)[code] ?? code.slice(5);
+export const KEYS = ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9", "Digit0", "Minus", "Equal", "BracketLeft", "BracketRight"];
+export const keyLabel = (code: string) => ({ Minus: "-", Equal: "=", BracketLeft: "[", BracketRight: "]" } as Record<string, string>)[code] ?? code.slice(5);
 
 /** Damage at distance d from an explosion's centre. */
 export function splashDamage(w: Weapon, d: number): number {

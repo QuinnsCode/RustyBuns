@@ -96,6 +96,9 @@ export interface Soldier {
   rollCd: number;
   rollDir: { x: number; z: number };
   grounded: boolean;
+  /** Seconds since its feet left the ground (a jump is still allowed for a moment: coyote time), and seconds a jump pressed just before landing stays pending. */
+  air: number;
+  jumpBuf: number;
   crouch: boolean;
   prone: boolean;
   /** Looking down the rebase scope: the sight sways. */
@@ -139,6 +142,8 @@ export interface Shot {
   rewind?: number;
   /** The soldier a cherry-pick picked. */
   target?: number;
+  /** A sticky round that has landed: on soldier `id` at this offset from it (-1: on the ground or a file, where it is). */
+  stuck?: { id: number; dx: number; dy: number; dz: number };
 }
 
 /** A build artifact in a yard: shoot it and it blows up, and sets off any others near it. */
@@ -243,6 +248,12 @@ export const LEAN_REACH = 0.6, LEAN_RATE = 9;
 export const MANTLE = 2.4;
 /** The parachute: opens by itself falling this far above the ground, by hand (Space) above this much, then sinks and drifts at these speeds. */
 export const CHUTE_AUTO = 7, CHUTE_MIN = 3.5, CHUTE_FALL = 3.5, CHUTE_DRIFT = 6.5;
+/** Jumping feels fair: a jump still works this long after walking off a ledge, and one pressed this long before landing fires on touchdown. */
+export const COYOTE = 0.12, JUMP_BUFFER = 0.12;
+/** Falling is heavier than rising (gravity times this once you're on the way down), so a jump arcs instead of floating. */
+export const FALL_BOOST = 1.35;
+/** Landing faster than this (metres per second) costs half your run, unless a dive-roll takes it. */
+export const HARD_LAND = 11;
 export const RADIUS = 0.45, HEIGHT = 1.8, CROUCH_HEIGHT = 1.2, PRONE_HEIGHT = 0.5, STEP = 0.6;
 /** A round above this much of the body's height is a headshot. */
 export const HEAD_FROM = 0.8;
@@ -260,7 +271,7 @@ export const MAX_REWIND = 0.3;
 export const STASH_HP = 150, STASH_TTL = 30, STASHES = 2, BLAME_SECONDS = 20;
 /** What a crate gives. */
 export const HEALTH_CRATE = 40;
-export const AMMO_CRATE: Partial<Record<WeaponId, number>> = { add: 8, fetch: 40, clean: 60, push: 2, merge: 2, rebase: 3, cherry: 2, revert: 1, stash: 1, blame: 2 };
+export const AMMO_CRATE: Partial<Record<WeaponId, number>> = { add: 8, fetch: 40, clean: 60, push: 2, merge: 2, rebase: 3, cherry: 2, revert: 1, stash: 1, blame: 2, squash: 1 };
 /** How much a file takes before it's gone: more lines, more to delete. */
 export const fileHp = (lines: number) => 40 + lines * 0.15;
 /** A file shorter than this is rubble, and gone. */
@@ -480,7 +491,7 @@ export class Game {
     return {
       id, team, name, x, y: this.ground(x, z, Infinity), z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0,
       hp: MAX_HP, maxHp: MAX_HP, shield: player ? MAX_SHIELD : 0, maxShield: player ? MAX_SHIELD : 0, shieldT: SHIELD_DELAY, alive: true, heavy: false, weapon: "commit", ammo, loaded, reload: 0, kit: ORDER.filter((w) => ammo[w] !== 0), vehicle: -1, cd: 0, roll: 0, rollCd: 0, rollDir: { x: 0, z: 0 },
-      grounded: true, crouch: false, prone: false, scoped: false, lean: 0, chute: false, tagged: 0, heat: 0, burn: 0, burnBy: -1, burnT: 0, trail: [], compound,
+      grounded: true, air: 0, jumpBuf: 0, crouch: false, prone: false, scoped: false, lean: 0, chute: false, tagged: 0, heat: 0, burn: 0, burnBy: -1, burnT: 0, trail: [], compound,
       brain: player ? null : {
         home: { x, z }, alert: false, wait: 0, lost: 0, seen: null, strafe: 1, strafeT: 0, burst: 0, think: 0,
         role: "hold", side: 1, cover: null, coverT: 0, lastHp: MAX_HP, raid: false, heard: null, hunt: 0,
@@ -694,8 +705,12 @@ export class Game {
     }
     const carrying = this.objective.kind === "carry" && this.objective.carried && this.objective.by === s.id;
     this.walk(s, mx, mz, dt, (input.forward < 0 ? 0.75 : 1) * (carrying ? 0.85 : 1));
-    if (input.jump && s.grounded && s.roll <= 0 && !s.prone) s.vy = JUMP, s.grounded = false;
-    else if (input.jump && !s.grounded) this.chute(s, !s.chute, CHUTE_MIN);
+    if (input.jump && (s.grounded || (s.air < COYOTE && s.vy <= 0.5 && !s.chute)) && s.roll <= 0 && !s.prone) s.vy = JUMP, s.grounded = false, s.air = COYOTE;
+    else if (input.jump && !s.grounded) {
+      // Close to the ground the press waits for touchdown; higher up it works the parachute.
+      if (s.y - this.ground(s.x, s.z, Infinity) < CHUTE_MIN) s.jumpBuf = JUMP_BUFFER;
+      else this.chute(s, !s.chute, CHUTE_MIN);
+    }
     if (input.fire) this.fire(s, input.aim);
   }
 
@@ -722,7 +737,7 @@ export class Game {
     }
     // Getting up out of a roll is slow for a moment, so rolling is never a quicker way across open ground.
     if (s.rollCd > ROLL_COOLDOWN - ROLL_RECOVER) k *= 0.5;
-    const top = s.chute ? CHUTE_DRIFT : (s.prone ? PRONE_SPEED : s.crouch ? CROUCH_SPEED : RUN) * k * (s.heavy ? 0.7 : 1), accel = s.grounded ? 60 : s.chute ? 14 : 20;
+    const top = s.chute ? CHUTE_DRIFT : (s.prone ? PRONE_SPEED : s.crouch ? CROUCH_SPEED : RUN) * k * (s.heavy ? 0.7 : 1), accel = s.grounded ? 60 : s.chute ? 14 : 16;
     let tx = mx * top, tz = mz * top;
     // Too steep to stand on (and not on a file): it slides you back down, the steeper the faster.
     if (s.grounded && this.ground(s.x, s.z, s.y) <= this.terrain.height(s.x, s.z) + 0.05) {
@@ -738,6 +753,7 @@ export class Game {
     s.cd = Math.max(0, s.cd - dt);
     s.roll = Math.max(0, s.roll - dt);
     s.rollCd = Math.max(0, s.rollCd - dt);
+    s.jumpBuf = Math.max(0, s.jumpBuf - dt);
     s.tagged = Math.max(0, s.tagged - dt);
     s.heat = Math.max(0, s.heat - HEAT_COOL * dt);
     if (s.reload > 0 && (s.reload -= dt) <= 0) s.reload = 0, s.loaded[s.weapon] = full(s.weapon, s.ammo[s.weapon]);
@@ -779,7 +795,7 @@ export class Game {
     // Under a parachute you sink at a walking pace; otherwise you fall, and a long fall opens one by itself.
     if (s.chute) s.vy += (-CHUTE_FALL - s.vy) * Math.min(1, 4 * dt);
     else {
-      s.vy -= GRAVITY * dt;
+      s.vy -= GRAVITY * (s.vy < 0 ? FALL_BOOST : 1) * dt;
       if (!s.grounded && !s.brain && s.vy < -9) this.chute(s, true, CHUTE_AUTO);
     }
     s.y += s.vy * dt;
@@ -787,9 +803,13 @@ export class Game {
     // A shove (a push round) carries you through the air; on the ground, walk() steers it away.
     // Grounded and going downhill: stick to the slope rather than hop down it.
     if (s.y <= g || (s.grounded && s.vy <= 0 && s.y - g < 0.4)) {
-      s.y = g, s.vy = Math.max(0, s.vy), s.grounded = true;
+      // A hard landing takes the legs out from under a run; a dive-roll soaks it up, a chute never lands hard.
+      if (!s.grounded && s.vy < -HARD_LAND && s.roll <= 0) s.vx *= 0.5, s.vz *= 0.5;
+      s.y = g, s.vy = Math.max(0, s.vy), s.grounded = true, s.air = 0;
       if (s.chute) this.chute(s, false, 0);
-    } else if (s.y > g + 0.05) s.grounded = false;
+      // A jump pressed just before touchdown goes straight off the ground.
+      if (s.jumpBuf > 0 && s.roll <= 0 && !s.prone && !s.brain) s.vy = JUMP, s.grounded = false, s.air = COYOTE, s.jumpBuf = 0;
+    } else if (s.y > g + 0.05) s.grounded = false, s.air += dt;
   }
 
   /** A ledge just above you that you're pushing into: up and onto it. */
@@ -823,6 +843,9 @@ export class Game {
       if (d >= RADIUS) continue;
       if (d > 1e-6) {
         s.x = px + (dx / d) * RADIUS, s.z = pz + (dz / d) * RADIUS;
+        // Slide along the wall rather than keep pushing into it.
+        const into = s.vx * (dx / d) + s.vz * (dz / d);
+        if (into < 0) s.vx -= into * (dx / d), s.vz -= into * (dz / d);
       } else {
         // Centre inside the box: out the nearest face.
         const ox = b.w / 2 + RADIUS - Math.abs(s.x - b.x), oz = b.d / 2 + RADIUS - Math.abs(s.z - b.z);
@@ -1019,6 +1042,17 @@ export class Game {
     for (const p of this.shots) {
       const w = WEAPONS[p.weapon];
       p.age += dt;
+      if (p.stuck) {
+        // Stuck on a soldier it rides along; the fuse runs the same wherever it is. If its host goes down, it drops.
+        const host = p.stuck.id >= 0 ? this.soldiers[p.stuck.id] : undefined;
+        if (host?.alive) p.x = host.x + p.stuck.dx, p.y = host.y + p.stuck.dy, p.z = host.z + p.stuck.dz;
+        else if (p.stuck.id >= 0) p.stuck = undefined;
+        if (p.stuck) {
+          p.vx = p.vy = p.vz = 0;
+          if (p.age >= w.life) this.land(p, null);
+          continue;
+        }
+      }
       p.vy -= w.gravity * dt;
       const t = p.target !== undefined ? this.soldiers[p.target] : undefined;
       if (w.homing > 0 && t?.alive) {
@@ -1034,7 +1068,8 @@ export class Game {
         p.x += (p.vx * dt) / n, p.y += (p.vy * dt) / n, p.z += (p.vz * dt) / n;
         const hit = this.soldierAt(p);
         if (hit) {
-          this.land(p, hit.s, hit.head);
+          if (w.sticky) p.stuck = { id: hit.s.id, dx: p.x - hit.s.x, dy: p.y - hit.s.y, dz: p.z - hit.s.z }, (p.vx = p.vy = p.vz = 0);
+          else this.land(p, hit.s, hit.head);
           break;
         }
         const car = p.team !== "you" ? this.vehicleAt(p) : null, barrel = car ? null : this.barrelAt(p);
@@ -1053,6 +1088,10 @@ export class Game {
             if (w.effect === "stash") p.x = ox, p.y = oy, p.z = oz;
             if (w.splash <= 0 && !w.effect && w.burn <= 0) this.events.push({ kind: "impact", x: p.x, y: p.y, z: p.z, weapon: p.weapon });
             this.land(p, null);
+          } else if (w.sticky) {
+            // Plasma stays where it touched.
+            p.x = ox, p.y = oy, p.z = oz, p.vx = p.vy = p.vz = 0, p.stuck = { id: -1, dx: 0, dy: 0, dz: 0 };
+            break;
           } else {
             // Bounce: back out, lose most of the speed, flip the way it came in.
             p.x = ox, p.y = oy, p.z = oz;

@@ -843,6 +843,9 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
           m.scale.setScalar(0.5 + k * 2.6);
           m.rotation.set(p.id, p.age * 6, 0);
           (m.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - k * k);
+        } else if (p.weapon === "squash") {
+          // The plasma ball throbs faster as its fuse burns down.
+          m.scale.setScalar(1 + 0.25 * Math.sin(p.age * (10 + p.age * 12)));
         } else if (tracer(p.weapon)) {
           // The streak trails behind the round, so it never pokes out ahead of what it hits.
           tmp.set(p.x - p.vx, p.y - p.vy, p.z - p.vz);

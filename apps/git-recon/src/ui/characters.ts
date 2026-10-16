@@ -1,4 +1,4 @@
-// The heads from src/sim/heads.ts, drawn: cartoony toy takes on the tools' marks, a handful of
+// The heads from src/sim/heads.ts, drawn: the web languages' own shields and tiles (near enough, then a notch off), cartoony toy takes on the other tools' marks, a handful of
 // primitives each in their brand colours, for the figure's neck slot
 // (heads.ts's buildHead shrinks them to it). Each faces -z, the way the figure does, and stands on y = 0.
 
@@ -52,10 +52,12 @@ const BUILD: Record<string, (g: THREE.Group) => void> = {
   // Starters
   html5(g) {
     plate(g, SHIELD, 0xe34f26);
+    plate(g, [[0, 0.8], [0.38, 0.8], [0.32, 0.24], [0, 0.06]], 0xef652a, 0.12, -0.04);
     glyph(g, S, PAPER, -0.15, 0.26, 0.1, -0.12);
   },
   css3(g) {
     plate(g, SHIELD, 0x264de4);
+    plate(g, [[0, 0.8], [0.38, 0.8], [0.32, 0.24], [0, 0.06]], 0x2965f1, 0.12, -0.04);
     glyph(g, THREE_, PAPER, -0.15, 0.26, 0.1, -0.12);
   },
   js(g) {
