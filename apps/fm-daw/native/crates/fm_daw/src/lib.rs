@@ -15,7 +15,7 @@ use std::f64::consts::PI;
 
 pub const TRACKS: usize = 12;
 pub const OPS: usize = 4;
-pub const NPARAMS: usize = 49;
+pub const NPARAMS: usize = 51;
 pub const VOICES: usize = 8;
 pub const CEILING: f64 = 0.891;
 pub const MOD_DEPTH: f64 = 1.5;
@@ -46,9 +46,11 @@ const P_GLIDE: usize = 45;
 const P_DRIVE: usize = 46;
 const P_SEND: usize = 47;
 const P_VEL_TONE: usize = 48;
+const P_HICUT: usize = 49;
+const P_LOCUT: usize = 50;
 
 const OP_RANGES: [(f64, f64); 6] = [(0.25, 16.0), (0.0, 1.0), (0.0005, 4.0), (0.005, 8.0), (0.0, 1.0), (0.005, 8.0)];
-const TAIL_RANGES: [(f64, f64); 25] = [
+const TAIL_RANGES: [(f64, f64); 27] = [
     (0.0, 3.0), (0.0, 1.0), (0.0, 48.0), (0.005, 2.0), (0.0, 1.0),
     (0.005, 2.0), (0.0, 1.0), (0.0, 1.0), (-1.0, 1.0), (0.0, 1.0),
     // analog: mode, detune, sub, cutoff, res, fenv amt/attack/decay, lfo rate/cut/pitch, glide, drive
@@ -57,6 +59,8 @@ const TAIL_RANGES: [(f64, f64); 25] = [
     (0.0, 1.0), (0.0, 1.0), (0.0, 1.0),
     (0.0, 1.0), // send to Space
     (0.0, 1.0), // velocity to tone
+    (0.0, 1.0), // hi-cut
+    (0.0, 1.0), // low-cut
 ];
 
 fn range(i: usize) -> (f64, f64) {
@@ -75,6 +79,25 @@ const SILENT: f64 = 1e-5;
 const TAU: f64 = 2.0 * PI;
 const MAX_CUTOFF: f64 = 0.45;
 const VIB_FADE: f64 = 0.3;
+const SQRT2: f64 = std::f64::consts::SQRT_2;
+
+/// Trapezoidal SVF coefficients [a1, a2, a3] for cutoff 20 Hz * 2^(10 x).
+fn svf_coefs(x: f64, sr: f64) -> [f64; 3] {
+    let fc = (20.0 * (2.0f64).powf(10.0 * x)).min(MAX_CUTOFF * sr);
+    let g = ((PI * fc) / sr).tan();
+    let a1 = 1.0 / (1.0 + g * (g + SQRT2));
+    [a1, g * a1, g * g * a1]
+}
+
+#[inline]
+fn svf(k: &[f64; 3], s: &mut [f64; 2], x: f64) -> (f64, f64) {
+    let v3 = x - s[1];
+    let v1 = k[0] * s[0] + k[1] * v3;
+    let v2 = s[1] + k[1] * s[0] + k[2] * v3;
+    s[0] = 2.0 * v1 - s[0];
+    s[1] = 2.0 * v2 - s[1];
+    (v1, v2)
+}
 
 /// A naive saw with PolyBLEP smoothing at the wrap.
 #[inline]
@@ -105,6 +128,7 @@ struct Track {
     muted: bool, gain_now: f64,
     det_up: f64, f_atk_inc: f64, f_dec_coef: f64, glide_coef: f64, drive_g: f64, drive_norm: f64,
     lfo_phase: f64, last_freq: f64,
+    lp_on: bool, hp_on: bool, lp_k: [f64; 3], hp_k: [f64; 3], lp_s: [f64; 2], hp_s: [f64; 2],
     voices: [Voice; VOICES],
 }
 
@@ -117,6 +141,7 @@ impl Default for Track {
             muted: false, gain_now: 0.0,
             det_up: 0.0, f_atk_inc: 0.0, f_dec_coef: 0.0, glide_coef: 0.0, drive_g: 0.0, drive_norm: 0.0,
             lfo_phase: 0.0, last_freq: 0.0,
+            lp_on: false, hp_on: false, lp_k: [0.0; 3], hp_k: [0.0; 3], lp_s: [0.0; 2], hp_s: [0.0; 2],
             voices: [Voice::default(); VOICES],
         }
     }
@@ -173,6 +198,8 @@ impl Engine {
         else if i == P_FENV_ATTACK { tr.f_atk_inc = 1.0 / (v * sr); }
         else if i == P_FENV_DECAY { tr.f_dec_coef = decay_coef(v, sr); }
         else if i == P_GLIDE { tr.glide_coef = if v > 0.0 { (-1.0 / (v * sr)).exp() } else { 0.0 }; }
+        else if i == P_HICUT { tr.lp_on = v > 0.001; tr.lp_k = svf_coefs(1.0 - v, sr); }
+        else if i == P_LOCUT { tr.hp_on = v > 0.001; tr.hp_k = svf_coefs(v, sr); }
         else if i == P_DRIVE { tr.drive_g = 1.0 + 6.0 * v; tr.drive_norm = 1.0 / (1.0 + 6.0 * v).tanh(); }
     }
 
@@ -232,6 +259,7 @@ impl Engine {
         self.click_env = 0.0;
         self.dc_xl = 0.0; self.dc_yl = 0.0; self.dc_xr = 0.0; self.dc_yr = 0.0;
         self.lim_env = 0.0;
+        for tr in self.tracks.iter_mut() { tr.lp_s = [0.0; 2]; tr.hp_s = [0.0; 2]; }
     }
 
     pub fn click(&mut self, accent: bool) {
@@ -408,7 +436,9 @@ impl Engine {
                     mono += (carrier_sum / nc + ns) * vo.amp;
                     if !attacking && loudest < SILENT { vo.active = false; }
                 }
-                let tr = &self.tracks[t];
+                let tr = &mut self.tracks[t];
+                if tr.lp_on { let k = tr.lp_k; let (_, low) = svf(&k, &mut tr.lp_s, mono); mono = low; }
+                if tr.hp_on { let k = tr.hp_k; let (band, low) = svf(&k, &mut tr.hp_s, mono); mono = mono - SQRT2 * band - low; }
                 mono *= tr.gain_now;
                 let ml = mono * tr.pan_l;
                 let mr = mono * tr.pan_r;

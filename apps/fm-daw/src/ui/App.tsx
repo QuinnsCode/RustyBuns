@@ -10,7 +10,7 @@ import { PatchEditor } from "./PatchEditor.tsx";
 import { Keys } from "./Keys.tsx";
 import { Meter } from "./Meter.tsx";
 import { Bench } from "./Bench.tsx";
-import { apply, audible, loopBeats, BAR_CHOICES, type Note, type Op, type Project } from "../project.ts";
+import { apply, audible, loopBeats, BAR_CHOICES, BEATS_PER_BAR, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
 import { demoProject, KIT, randomPatch } from "../presets.ts";
 import { GROOVES, KITS, applyGroove, applyKit } from "../drums.ts";
 import { SONGS } from "../songs.ts";
@@ -30,6 +30,20 @@ import "@fontsource/ibm-plex-mono/500.css";
 import "./app.css";
 
 const UNDO_LIMIT = 100;
+const PAGE_BEATS = 8 * BEATS_PER_BAR;
+/** A song (past 32 bars) bounces once; a loop four times. */
+const bounceLoops = (p: Project) => (p.bars > 32 ? 1 : 4);
+
+function Pager(props: { page: number; pages: number; onPage(p: number): void }) {
+  const bar = props.page * 8 + 1;
+  return (
+    <div className="machine" aria-label="Page">
+      <button className="ghost" onClick={() => props.onPage(Math.max(props.page - 1, 0))} disabled={props.page === 0} title="Earlier 8 bars">‹</button>
+      <span className="silk">Bars {bar}–{bar + 7} of {props.pages * 8}</span>
+      <button className="ghost" onClick={() => props.onPage(Math.min(props.page + 1, props.pages - 1))} disabled={props.page === props.pages - 1} title="Later 8 bars">›</button>
+    </div>
+  );
+}
 const GROUP_MS = 800;
 const COUNT_IN = 4;
 
@@ -75,6 +89,7 @@ export function App() {
   const [midiDevices, setMidiDevices] = useState<string[]>([]);
   const [netStatus, setNetStatus] = useState<NetStatus>({ state: "connecting", peers: 0 });
   const [view, setView] = useState<"pattern" | "engines">("pattern");
+  const [page, setPage] = useState(0);
   const [bounce, setBounce] = useState<{ busy: boolean; path?: string; saved?: boolean; error?: string }>({ busy: false });
   const transportOn = useTick((t) => t.playing || t.countIn > 0);
   const counting = useTick((t) => (t.countIn > 0 ? Math.ceil(t.countIn) : 0));
@@ -275,7 +290,7 @@ export function App() {
         const bytes = await fetchWasm();
         if (bytes) e = new WasmEngine(await instantiateFm(bytes), sr);
       }
-      const pcm = renderProject(e, p, sr, loopSeconds(p, 4), dbToGain(-6));
+      const pcm = renderProject(e, p, sr, loopSeconds(p, bounceLoops(p)), dbToGain(-6));
       e.free?.();
       const wav = encodeWav(pcm, sr);
       try {
@@ -295,6 +310,14 @@ export function App() {
   const t = project.tracks[selected];
   const L = loopBeats(project);
   const grid = GRIDS[gridIdx];
+  // Long songs are edited 8 bars at a time: the grid and roll see a window of
+  // the timeline, and edits are mapped back into the whole thing.
+  const pages = Math.max(1, Math.ceil(L / PAGE_BEATS));
+  const pg = Math.min(page, pages - 1);
+  const win = { from: pg * PAGE_BEATS, span: Math.min(PAGE_BEATS, L - pg * PAGE_BEATS) };
+  const inWin = (n: Note) => n.s >= win.from && n.s < win.from + win.span;
+  const windowed = (tr: TrackDoc): TrackDoc => ({ ...tr, notes: tr.notes.filter(inWin).map((n) => ({ ...n, s: n.s - win.from })) });
+  const unwindow = (tr: TrackDoc, ns: Note[]) => [...tr.notes.filter((n) => !inWin(n)), ...ns.map((n) => ({ ...n, s: n.s + win.from }))];
   const color = TRACK_COLORS[selected];
 
   return (
@@ -338,6 +361,7 @@ export function App() {
           </label>
           <div className="field"><span className="silk">Bars</span>
             <div className="seg">
+              {!(BAR_CHOICES as readonly number[]).includes(project.bars) && <button className="on">{project.bars}</button>}
               {BAR_CHOICES.map((b) => (
                 <button key={b} className={project.bars === b ? "on" : ""} onClick={() => commit({ t: "global", bars: b })}
                   title={b < project.bars ? "Notes past the new end are removed (undo brings them back)" : undefined}>{b}</button>
@@ -416,14 +440,16 @@ export function App() {
                 </select>
               </label>
             </div>
-            <DrumGrid tracks={project.tracks} colors={TRACK_COLORS} selected={selected} loopBeats={L}
+            {pages > 1 && <Pager page={pg} pages={pages} onPage={setPage} />}
+            <DrumGrid tracks={project.tracks.map(windowed)} colors={TRACK_COLORS} selected={selected} loopBeats={win.span} from={win.from}
               onSelect={setSelected} onAudition={audition}
-              onNotes={(i, notes) => commit({ t: "notes", track: i, notes })} />
-          </>) : (
-            <PianoRoll key={selected} track={t} color={color} loopBeats={L} grid={Math.min(grid.beats, 0.25)}
-              onNotes={(notes: Note[]) => commit({ t: "notes", track: selected, notes })}
+              onNotes={(i, notes) => commit({ t: "notes", track: i, notes: unwindow(project.tracks[i], notes) })} />
+          </>) : (<>
+            {pages > 1 && <Pager page={pg} pages={pages} onPage={setPage} />}
+            <PianoRoll key={selected} track={windowed(t)} color={color} loopBeats={win.span} from={win.from} grid={Math.min(grid.beats, 0.25)}
+              onNotes={(notes: Note[]) => commit({ t: "notes", track: selected, notes: unwindow(t, notes) })}
               onPreview={(m, on) => (on ? noteOn(`roll:${m}`, selected, m, 0.8) : noteOff(`roll:${m}`))} />
-          )}
+          </>)}
 
           <PatchEditor track={t} color={color}
             onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}
@@ -446,7 +472,7 @@ export function App() {
         {bounce.path && <span className="dim">{bounce.path}</span>}
         {bounce.saved && <button className="ghost" onClick={() => reveal(bounce.path!)}>Show</button>}
         {bounce.error && <span className="err">{bounce.error}</span>}
-        <button className="ghost" onClick={doBounce} disabled={bounce.busy}>{bounce.busy ? "Bouncing…" : "Bounce 4 loops to WAV"}</button>
+        <button className="ghost" onClick={doBounce} disabled={bounce.busy}>{bounce.busy ? "Bouncing…" : bounceLoops(project) === 1 ? "Bounce the song to WAV" : "Bounce 4 loops to WAV"}</button>
       </footer>
 
       {!audio && (

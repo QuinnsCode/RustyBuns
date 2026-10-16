@@ -26,8 +26,18 @@ test.each(parks.map((e) => [e.name, e.id]))("%s: scenery is seeded and keeps off
   for (const s of spots) expect(s.size).toBeLessThan(DECK.length / 2); // every pine, rock and tent is a toy beside the board
   let calls = 0;
   new Scenery(spots).group.traverse((o) => { if ((o as THREE.Mesh).isMesh) calls++; });
-  expect(calls).toBeLessThanOrEqual(7); // one draw call a kind: pines, rocks, aspens, stumps, cairns, signs, tents
+  expect(calls).toBeLessThanOrEqual(10); // one draw call a kind: pines, rocks, aspens, stumps, cairns, signs, tents, bushes, ferns, flowers
   expect(new Set(spots.map((s) => s.kind)).size).toBeGreaterThan(4); // and a park has most of them
+});
+
+test.each(parks.map((e) => [e.name, e.id]))("%s: the kit stands in a clearing and the forest thickens past it", (_, id) => {
+  const park = LEVELS.find((e) => e.id === id)!.load() as ParkLevel;
+  const spots = scatter(park, park.ground), trees = spots.filter((s) => s.kind === "pine" || s.kind === "aspen");
+  const dist = (s: { x: number; z: number }) => Math.min(...park.pieces.map((p) => Math.hypot(p.x - s.x, p.z - s.z) - Math.hypot(p.w, p.d) / 2));
+  expect(trees.length).toBeGreaterThan(100);
+  expect(trees.filter((s) => dist(s) < 5).length).toBe(0); // nothing tall crowds the kit
+  expect(spots.filter((s) => s.kind === "flower" || s.kind === "fern").length).toBeGreaterThan(20); // the clearing has meadow in it
+  expect(trees.filter((s) => dist(s) > 40).length).toBeGreaterThan(trees.filter((s) => dist(s) < 25).length * 0.5); // and the woods are further out
 });
 
 test("a pine shrinks away as the rider nears it, and grows back when they leave", () => {

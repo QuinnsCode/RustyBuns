@@ -5,7 +5,7 @@ import { clamp } from "@rustybuns/util";
 import { Gestures, resolve } from "../src/gesture.ts";
 import { type Level, makeLevel, piece, type RailKind } from "../src/level.ts";
 import { DT, IDLE, type Input, start, step, type State } from "../src/sim.ts";
-
+import { comboLine } from "../src/render/combo.ts";
 const run = (s: State, seconds: number, input: (s: State) => Partial<Input>, level?: Level) => {
   for (let i = 0; i < seconds / DT; i++) step(s, { ...IDLE, ...input(s) }, level);
   return s;
@@ -220,4 +220,19 @@ test("grind into manual is one chain, and a different kind of trick scores a lin
   expect(twice.chain).toBe(2);
   expect(twice.last?.name).toBe("Manual x2");
   expect(twice.score - first).toBeLessThan(Math.round(1.7 * 150 * 2 * 1.5)); // x2 for the chain, not x3 for a link
+});
+
+test("the HUD's combo line follows a real chain: grind into manual, and it clears when the chain ends", () => {
+  const hold = (s: State) => clamp(s.balance * 2 + 0.1, -1, 1);
+  const lv = flat({ rails: [{ kind: "rail", a: { x: 0, z: 0 }, b: { x: 0, z: 8 }, y: 0.9 }] });
+  const sk = start(0, 2, 0, lv);
+  sk.air = true; sk.y = 1.0; sk.vy = -1; sk.vz = 6;
+  run(sk, 2.2, (s) => ({ steer: clamp(s.balance * 2, -1, 1), manual: s.grind < 0 ? 1 : 0, throttle: s.grind < 0 ? hold(s) : 0 }), lv);
+  run(sk, 0.05, () => ({}), lv);
+  expect(comboLine(sk.combo, sk.comboScore)).toBe(`50-50 grind > Manual   ${sk.comboScore}`);
+  expect(comboLine([], 0)).toBe("");
+  expect(comboLine(["Ollie", "Ollie", "Ollie", "Kickflip"], 400)).toBe("Ollie x3 > Kickflip   400"); // a repeat folds
+  expect(comboLine(["a", "b", "c", "d", "e", "f", "g"], 9)).toBe("... c > d > e > f > g   9"); // old ones scroll off
+  run(sk, 4, () => ({}), lv); // the chain's clock runs out on the ground
+  expect(comboLine(sk.combo, sk.comboScore)).toBe("");
 });
