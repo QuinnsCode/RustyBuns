@@ -242,3 +242,14 @@ test("a bad landing carries on: the rider slides and rolls across the ground, sl
   run(sk, 1.2, () => ({}));
   expect(tumble(sk).roll).toBe(0);
 });
+
+test("in the air the board's tips are what hit a box, so the nose stops at its face instead of passing through", () => {
+  const box = piece("box", "wall", 0, 6, 0, 10, 3, 4, 6); // a 3 m block with its near face at z = 4
+  const l = makeLevel({ name: "wall", pieces: [box], rails: [], spawns: [{ name: "car", x: 0, z: 0, yaw: 0 }], bounds: { minX: -30, maxX: 30, minZ: -30, maxZ: 30 } });
+  const s = start(0, 0, 0, l);
+  s.air = true; s.y = 1; s.vy = 0; s.vx = 0; s.vz = 8; s.z = 2;
+  let top = 0;
+  for (let i = 0; i < 90; i++) { step(s, IDLE, l); top = Math.max(top, s.y); }
+  expect(top).toBeLessThan(1.5); // never snapped up onto the box
+  expect(s.z).toBeLessThan(4); // never carried into it
+});
