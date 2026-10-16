@@ -3,8 +3,11 @@ import type { Level } from "../level.ts";
 import { plaza } from "./plaza.ts";
 import { elCapitan } from "./el-capitan.ts";
 import { glacierPoint } from "./glacier-point.ts";
+import { grandPrismatic } from "./grand-prismatic.ts";
+import { halfDome } from "./half-dome.ts";
 import { mariposaGrove } from "./mariposa-grove.ts";
 import { oldFaithful } from "./old-faithful.ts";
+import { yosemiteFalls } from "./yosemite-falls.ts";
 import { type ParkLevel, parkLevel } from "./park.ts";
 
 export type Entry = { id: string; name: string; blurb: string; load: () => Level | ParkLevel };
@@ -17,6 +20,9 @@ export const LEVELS: Entry[] = [
   park(glacierPoint),
   park(oldFaithful),
   park(mariposaGrove),
+  park(halfDome),
+  park(yosemiteFalls),
+  park(grandPrismatic),
 ];
 
 /** The level a query string asks for (`?level=el-capitan`), else the first. */
