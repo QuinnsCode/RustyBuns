@@ -5,7 +5,7 @@ import { checkHits, churnGuards, mapRepo, structureOf, type RepoSnapshot } from 
 import { addWin, STARTERS, UNLOCKABLE as HEADS, unlocked, winKey } from "../src/sim/heads.ts";
 import { HEADS as ALL_HEADS, isOpen } from "../src/ui/heads.ts";
 import { folderLinks, importsOf, isAgentCommit, resolveImport, tally, workspacePackages } from "../src/sim/intel.ts";
-import type { Terrain } from "../src/sim/terrain.ts";
+import type { Terrain } from "@rustybuns/terrain";
 import { headModel } from "../src/ui/characters.ts";
 
 const flat: Terrain = { R: 80, height: () => 0 };

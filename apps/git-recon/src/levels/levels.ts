@@ -7,11 +7,8 @@
 //   garden        vegetable rows, a hose snaking across, and a pond standing in a crater (the water table)
 // and placeLevel() makes one more from any lat/long (src/levels/place.ts reads the ground in the page).
 
-import { heightmapTerrain, stampTerrain, type Stamp, type Terrain, type ZoneData } from "../sim/terrain.ts";
+import { heightmapTerrain, stampTerrain, zoneData, type Stamp, type Terrain, type ZoneData } from "@rustybuns/terrain";
 import { COMPOUNDS, mapRepo, type RepoSnapshot } from "../sim/codemap.ts";
-import elCapitan from "./data/el-capitan.json";
-import glacierPoint from "./data/glacier-point.json";
-import halfDome from "./data/half-dome.json";
 import rustybunsSnapshot from "./repos/rustybuns.json";
 
 export interface LevelDef {
@@ -42,7 +39,7 @@ export const LEVELS: LevelDef[] = [
     id: "el-capitan",
     name: "El Capitan",
     blurb: "Yosemite Valley's floor under the big wall. Real USGS ground, one eighth size.",
-    ground: realGround(elCapitan as unknown as ZoneData),
+    ground: realGround(zoneData("el-capitan")),
     repo: rustybuns,
     seed: 7,
   },
@@ -50,7 +47,7 @@ export const LEVELS: LevelDef[] = [
     id: "half-dome",
     name: "Half Dome",
     blurb: "The granite dome's sheer north face and the pine shoulders round it. Real USGS ground, one eighth size.",
-    ground: realGround(halfDome as unknown as ZoneData),
+    ground: realGround(zoneData("half-dome")),
     repo: rustybuns,
     seed: 11,
   },
@@ -58,7 +55,7 @@ export const LEVELS: LevelDef[] = [
     id: "glacier-point",
     name: "Glacier Point",
     blurb: "The rim, a long way above the valley. Real USGS ground, one eighth size.",
-    ground: realGround(glacierPoint as unknown as ZoneData),
+    ground: realGround(zoneData("glacier-point")),
     repo: rustybuns,
     seed: 5,
   },

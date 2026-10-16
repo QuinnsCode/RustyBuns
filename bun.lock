@@ -145,6 +145,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/terrain": "workspace:*",
         "@rustybuns/util": "workspace:*",
         "three": "^0.180.0",
       },
@@ -231,6 +232,7 @@
       "dependencies": {
         "@fontsource/ultra": "^5.3.0",
         "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/terrain": "workspace:*",
         "@rustybuns/util": "workspace:*",
         "three": "^0.180.0",
       },
@@ -467,6 +469,10 @@
         "react",
         "react-dom",
       ],
+    },
+    "packages/terrain": {
+      "name": "@rustybuns/terrain",
+      "version": "0.0.0",
     },
     "packages/util": {
       "name": "@rustybuns/util",
@@ -1225,6 +1231,8 @@
     "@rustybuns/ports": ["@rustybuns/ports@workspace:packages/ports"],
 
     "@rustybuns/shell-bun": ["@rustybuns/shell-bun@workspace:packages/shell-bun"],
+
+    "@rustybuns/terrain": ["@rustybuns/terrain@workspace:packages/terrain"],
 
     "@rustybuns/util": ["@rustybuns/util@workspace:packages/util"],
 
