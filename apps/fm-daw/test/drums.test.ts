@@ -3,7 +3,7 @@
 // the ceiling.
 import { test, expect, setDefaultTimeout } from "bun:test";
 import { GROOVES, KITS, applyGroove, applyKit, laneNotes } from "../src/drums.ts";
-import { nebulaDrift } from "../src/songs.ts";
+import { nightShift } from "../src/songs.ts";
 import { demoProject } from "../src/presets.ts";
 import { apply, sanitize } from "../src/project.ts";
 import { TsEngine } from "../src/engine/engine.ts";
@@ -40,8 +40,8 @@ test("space is part of the project and survives the world's sanitizer", () => {
   expect(sanitize({ ...p, space: undefined })!.space).toBe(0);
 });
 
-test("Nebula Drift through Space: audible, finite, under the ceiling", () => {
-  const p = nebulaDrift();
+test("Night Shift through Space: audible, finite, under the ceiling", () => {
+  const p = nightShift();
   expect(sanitize(p)).toEqual(p);
   const out = renderProject(new TsEngine(48000), p, 48000, 12, 1);
   let peak = 0, finite = true;

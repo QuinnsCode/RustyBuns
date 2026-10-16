@@ -35,6 +35,16 @@ export const GROOVES: Groove[] = [
     fill: [null, "....X..o.oX.XoXo", null, null, "..x...x...x.X..."],
   },
   {
+    name: "Late night", bpm: 172, swing: 0.2,
+    lanes: [
+      ["X.........x.....", "X..............."],
+      ["........X.......", "........X......o"],
+      ["x...x...x...x...", "x...x...x...o.x."],
+      ["................"],
+      ["................"],
+    ],
+  },
+  {
     name: "Half-time", bpm: 172, swing: 0.04,
     lanes: [
       ["X......x..X.....", "X......x...x.x.."],
