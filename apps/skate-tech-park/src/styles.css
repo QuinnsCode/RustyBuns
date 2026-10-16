@@ -18,3 +18,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #f2c49a; fon
 .tip[hidden] { display: none; }
 .tip p { margin: 8px 0; }
 kbd { display: inline-block; min-width: 1.6em; padding: 0 4px; margin: 0 2px; border: 1.5px solid var(--ink); border-radius: 4px; background: #fff; font: 12px ui-monospace, monospace; text-align: center; }
+.parts { position: fixed; top: 60px; right: 12px; background: rgba(251, 247, 240, 0.96); border: 2px solid var(--ink); border-radius: 8px; box-shadow: 3px 3px 0 var(--ink); padding: 8px 12px; display: grid; gap: 8px; }
+.parts[hidden] { display: none; }
+.parts-row { display: flex; align-items: center; gap: 6px; }
+.parts-row span { width: 70px; font-size: 13px; }
+.parts-row button { width: 24px; height: 24px; border: 2px solid var(--ink); border-radius: 50%; cursor: pointer; padding: 0; }
+.parts-row button[aria-pressed="true"] { outline: 2px solid var(--hot); outline-offset: 2px; }
