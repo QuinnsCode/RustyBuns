@@ -1,8 +1,10 @@
 // The giant fingerboard and the rocket roadster, from three.js primitives: nothing to load or
 // license. The roadster is packages/models; its ten nozzles are where the exhaust comes from.
+// `dressBoard` then swaps the board's meshes for the one modelled in Blender (blender/fingerboard.py).
 // Both face +z and stand on y = 0, so either one can be the skin over the same transform.
 import { roadster as shared } from "@rustybuns/models";
 import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { BOARD } from "./level.ts";
 import { DEFAULT_PARTS, pickPart, type Parts } from "./parts.ts";
@@ -118,6 +120,31 @@ export function fingerboard(parts: Parts = DEFAULT_PARTS) {
   };
   paint(parts);
   g.add(flipper);
-  g.userData = { model: "fingerboard", flipper, paint };
+  g.userData = { model: "fingerboard", flipper, paint, mats };
   return g;
+}
+
+/** The modelled board's polygon budgets (triangles), from blender/fingerboard.py. */
+export const BOARD_BUDGETS = ["hi", "mid", "low"] as const;
+export type BoardBudget = (typeof BOARD_BUDGETS)[number];
+
+/**
+ * Swap the built board's meshes for the Blender model, a glTF whose materials are named after the picker's
+ * slots, so they take the board's own materials and `paint` keeps working. The built meshes stay if it fails.
+ */
+export async function dressBoard(board: THREE.Group, glb: ArrayBuffer | string) {
+  const loader = new GLTFLoader();
+  const gltf = typeof glb === "string" ? await loader.loadAsync(glb) : await loader.parseAsync(glb, "");
+  const { flipper, mats } = board.userData as { flipper: THREE.Group; mats: Record<string, THREE.Material> };
+  const meshes: THREE.Mesh[] = [];
+  gltf.scene.updateMatrixWorld(true);
+  gltf.scene.traverse((o) => { if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh); });
+  if (!meshes.length) return false;
+  flipper.clear();
+  for (const m of meshes) {
+    const o = new THREE.Mesh(m.geometry.applyMatrix4(m.matrixWorld), mats[(m.material as THREE.Material).name] ?? m.material);
+    o.castShadow = o.receiveShadow = true;
+    flipper.add(o);
+  }
+  return true;
 }

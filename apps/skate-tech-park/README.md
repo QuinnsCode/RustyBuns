@@ -18,6 +18,10 @@ Beyond the hand-placed kit, every park is filled with contour ribbons (`src/leve
 
 The hand-placed kit and ribbons stand on the ground; the earthworks (`src/levels/earthworks.ts`) *are* the ground. Bowls and pools are dug into the meadow, a pump track of rollers and a row of dirt jumps are packed on top, spillway channels are cut along the slope, and earth quarter pipes and mounds are piled up. Each is held at the height of the ground under its centre and blended back into the hillside, so the sim, camera, mesh and map see one heightfield. `layOut` tries every cell of the map for one (crowded meadows get the small ones), clear of spawns, gap lines, trees and landmarks; lips carry coping you can grind. The ground mesh is 2 m fine, painted concrete or hardpack with a pale coping stone along each lip, and shades hollows. `earthworks: false` in a `ParkSpec` turns it off.
 
+## The board is modelled in Blender
+
+`blender/fingerboard.py` builds the fingerboard as a real mesh, at the built board's size: a pressed deck whose round ends are squeezed onto a disk instead of pinched to a point, bevelled ply, grip with bolt heads, shaped hangers, stacked bushings, crowned wheels on cores. It then decimates that mesh to three polygon budgets: `hi` (about 26k triangles), `mid` (6k, the default) and `low` (1.5k). `bun run models` writes them to `public/models/` (`-- --render out.png` adds a three-quarter and an underside render to judge it by eye). The game loads one with `?board=hi|mid|low`, and `?board=built` keeps the three.js board. Each material is named after a parts-picker slot, so the picker paints the model.
+
 ## Run it
 
 ```
@@ -26,6 +30,7 @@ bun install
 bun run dev              # in the browser
 bun run desktop:dev      # as a desktop app
 bun test test            # the ride, headless
+bun run models           # rebuild the board in Blender (needs `blender` on PATH)
 ```
 
 ## Ride together, on Cloudflare
