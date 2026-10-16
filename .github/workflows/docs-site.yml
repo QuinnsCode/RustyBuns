@@ -1,6 +1,6 @@
 # Publishes the docs sites (`bun run site`) to a Cloudflare Worker with static assets, on each release
 # tag (v* for RustyBuns, codesplitter-v* for codeSplitter). Every version's docs are rebuilt from git, so
-# either tag refreshes both sites. Run it by hand from the Actions tab to only build, without deploying.
+# either tag refreshes both sites. `latest/` therefore only updates on a tag, never on a push to main. Run it by hand from the Actions tab to only build, without deploying.
 # Needs, in the `docs-site` environment: the CLOUDFLARE_API_TOKEN secret (Workers Scripts: Edit),
 # CLOUDFLARE_ACCOUNT_ID, and optionally the SITE_URL variable (the address the site is served from).
 name: docs-site
