@@ -4,6 +4,7 @@
 import { roadster as shared } from "@rustybuns/models";
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { BOARD } from "./level.ts";
 import { DEFAULT_PARTS, pickPart, type Parts } from "./parts.ts";
 
 const mat = (color: number, rough = 0.6, metal = 0) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
@@ -18,7 +19,7 @@ export function roadster() {
 }
 
 /** Deck length and width, in metres: a fingerboard is about 3.5 times as long as it is wide. */
-export const DECK = { length: 4.4, width: 1.25 };
+export const DECK = { length: BOARD.halfLen * 2, width: 1.25 };
 
 const TOP = 0.52, THICK = 0.1, CONCAVE = 0.04, FLAT = 1.45, RISE = 0.34, NOSE = 0.6; // deck: top height, ply, dish, where the kick starts, how high it goes, end radius
 const lift = (z: number) => (Math.abs(z) <= FLAT ? 0 : RISE * Math.min(1, (Math.abs(z) - FLAT) / (DECK.length / 2 - FLAT)) ** 1.6);
