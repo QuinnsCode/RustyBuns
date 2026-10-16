@@ -216,7 +216,7 @@ const CLOCKS = ["reload", "cd", "heat", "shieldT", "rollCd"] as const;
 // Each event kind's fields, in order, and how each goes: a soldier id (u16), any other id or
 // count (i32), a length in cm (i32), a weapon, a yes/no, a string, or one of a few words (u8).
 type EventField = "soldier" | "int" | "cm" | "weapon" | "bool" | "str" | readonly string[];
-const VEHICLE: VehicleKind[] = ["buggy", "heli"], PICKUP: PickupKind[] = ["ammo", "health", "reset"];
+const VEHICLE: VehicleKind[] = ["roadster", "heli"], PICKUP: PickupKind[] = ["ammo", "health", "reset"];
 const EVENTS: { [K in GameEvent["kind"]]: [keyof Extract<GameEvent, { kind: K }>, EventField][] } = {
   fire: [["id", "soldier"], ["weapon", "weapon"]],
   hit: [["target", "soldier"], ["by", "int"], ["damage", "cm"], ["shield", "bool"]],

@@ -564,31 +564,57 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     if (edged) m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 25), edgeInk));
     return m;
   };
-  function buggy(): THREE.Group {
+  /** A side profile, (along, up) pairs from the nose back, pushed out wide across the car. */
+  const profile = (pts: [number, number][], wide: number) => {
+    const shape = new THREE.Shape(pts.map(([z, y]) => new THREE.Vector2(-z, y)));
+    return new THREE.ExtrudeGeometry(shape, { depth: wide, bevelEnabled: false }).rotateY(Math.PI / 2).translate(-wide / 2, 0, 0);
+  };
+  // The rocket roadster: a low paper wedge on an ink sill, a wing up on struts, a light bar across
+  // the tail and thrusters all round, four in the diffuser and one under each corner.
+  function roadster(): THREE.Group {
     const g = new THREE.Group();
-    g.add(piece(new THREE.BoxGeometry(1.9, 0.45, 3.2), boxMat, 0, 0.75, 0));
-    g.add(piece(new THREE.BoxGeometry(1.7, 0.3, 0.9), orangeMat, 0, 1.05, -1.1));
-    g.add(piece(new THREE.BoxGeometry(1.95, 0.12, 0.5), inkMat, 0, 0.6, 1.55, false));
-    // The roll cage: two hoops of ink tube.
-    const tube = new THREE.TorusGeometry(0.85, 0.05, 6, 20, Math.PI);
-    for (const z of [-0.2, 0.9]) g.add(piece(tube, inkMat, 0, 0.95, z, false));
+    g.add(piece(new THREE.BoxGeometry(1.9, 0.26, 4.3), inkMat, 0, 0.4, 0, false));
+    g.add(piece(profile([[-2.25, 0.5], [-2.25, 0.68], [-0.6, 0.98], [0.1, 1.36], [1.0, 1.3], [2.2, 1.0], [2.2, 0.5]], 2), boxMat, 0, 0, 0));
+    const glass = new THREE.Mesh(profile([[-0.5, 1.0], [0.1, 1.39], [0.95, 1.34], [1.6, 1.04]], 1.6), glassMat);
+    g.add(glass);
+    g.add(piece(new THREE.BoxGeometry(2.02, 0.07, 0.05), orangeMat, 0, 0.88, 2.21, false));
+    // The wing.
+    for (const x of [-0.65, 0.65]) g.add(piece(new THREE.BoxGeometry(0.06, 0.6, 0.18), inkMat, x, 1.25, 1.95, false));
+    g.add(piece(new THREE.BoxGeometry(2.3, 0.06, 0.6), boxMat, 0, 1.58, 2.0));
+    for (const x of [-1.15, 1.15]) g.add(piece(new THREE.BoxGeometry(0.05, 0.3, 0.65), boxMat, x, 1.5, 2.0));
+    // Thrusters, each with a flame that only shows while they fire.
+    const flames: THREE.Object3D[] = [];
+    const nozzleGeo = new THREE.CylinderGeometry(0.11, 0.14, 0.2, 12);
+    const back = new THREE.ConeGeometry(0.1, 0.7, 10).translate(0, 0.35, 0).rotateX(Math.PI / 2), down = new THREE.ConeGeometry(0.14, 0.9, 10).translate(0, 0.45, 0).rotateX(Math.PI);
+    const thruster = (x: number, y: number, z: number, rear: boolean) => {
+      const n = piece(nozzleGeo, inkMat, x, y, z, false);
+      if (rear) n.rotation.x = Math.PI / 2;
+      g.add(n);
+      const f = new THREE.Mesh(rear ? back : down, flameMat);
+      f.position.set(x, rear ? y : y - 0.1, rear ? z + 0.1 : z);
+      f.visible = false;
+      g.add(f);
+      flames.push(f);
+    };
+    for (const x of [-0.72, -0.24, 0.24, 0.72]) thruster(x, 0.42, 2.18, true);
+    for (const [x, z] of [[-0.75, -1.85], [0.75, -1.85], [-0.75, 1.85], [0.75, 1.85]] as const) thruster(x, 0.24, z, false);
     const wheels: THREE.Object3D[] = [];
-    const wheelGeo = new THREE.CylinderGeometry(0.46, 0.46, 0.38, 16).rotateZ(Math.PI / 2), hubGeo = new THREE.BoxGeometry(0.4, 0.12, 0.6);
-    for (const [x, z] of [[-1.05, -1.1], [1.05, -1.1], [-1.05, 1.15], [1.05, 1.15]] as const) {
+    const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.34, 18).rotateZ(Math.PI / 2), hubGeo = new THREE.BoxGeometry(0.36, 0.1, 0.56);
+    for (const [x, z] of [[-1.0, -1.35], [1.0, -1.35], [-1.0, 1.4], [1.0, 1.4]] as const) {
       const w = inked(new THREE.Mesh(wheelGeo, inkMat));
-      w.position.set(x, 0.46, z);
+      w.position.set(x, 0.42, z);
       w.castShadow = true;
-      w.add(new THREE.Mesh(hubGeo, boxMat));
+      w.add(new THREE.Mesh(hubGeo, orangeMat));
       wheels.push(w);
       g.add(w);
     }
-    // The gun on the roll bar turns to where you aim.
+    // The gun on the rear deck turns to where you aim.
     const gun = new THREE.Group();
-    gun.position.set(0, 1.85, 0.3);
-    gun.add(piece(new THREE.BoxGeometry(0.22, 0.22, 0.5), boxMat, 0, 0, 0));
-    gun.add(piece(new THREE.CylinderGeometry(0.05, 0.05, 1, 10).rotateX(Math.PI / 2), inkMat, 0, 0, -0.7, false));
+    gun.position.set(0, 1.5, 0.75);
+    gun.add(piece(new THREE.BoxGeometry(0.22, 0.2, 0.45), boxMat, 0, 0, 0));
+    gun.add(piece(new THREE.CylinderGeometry(0.05, 0.05, 0.9, 10).rotateX(Math.PI / 2), inkMat, 0, 0, -0.65, false));
     g.add(gun);
-    g.userData = { wheels, gun };
+    g.userData = { wheels, gun, flames };
     return g;
   }
   function heli(): THREE.Group {
@@ -737,15 +763,16 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
       for (const v of game.vehicles) {
         have.add(v.id);
         let m = rides.get(v.id);
-        if (!m) rides.set(v.id, (m = v.kind === "buggy" ? buggy() : heli())), m.rotation.order = "YXZ", scene.add(m);
+        if (!m) rides.set(v.id, (m = v.kind === "roadster" ? roadster() : heli())), m.rotation.order = "YXZ", scene.add(m);
         m.position.set(v.x, v.y, v.z);
         m.rotation.y = v.yaw;
         const u = m.userData, driven = v.driver >= 0;
         // The gun points along the driver's aim, against the vehicle's heading.
         const aimYaw = driven ? you1.yaw - v.yaw : 0, aimPitch = driven ? you1.pitch : 0;
-        if (v.kind === "buggy") {
-          for (const w of u.wheels as THREE.Object3D[]) w.rotation.x = -v.odo / 0.46;
+        if (v.kind === "roadster") {
+          for (const w of u.wheels as THREE.Object3D[]) w.rotation.x = -v.odo / 0.42;
           (u.gun as THREE.Object3D).rotation.set(aimPitch, aimYaw, 0, "YXZ");
+          (u.flames as THREE.Object3D[]).forEach((f, i) => (f.visible = v.burn, f.scale.set(1, 1, 1).multiplyScalar(0.7 + Math.abs(Math.sin(game.time * 23 + i * 1.7)) * 0.5)));
         } else {
           const f = { x: -Math.sin(v.yaw), z: -Math.cos(v.yaw) }, ahead = v.vx * f.x + v.vz * f.z, side = v.vx * -f.z + v.vz * f.x;
           // It noses down to fly forward and banks into a strafe; the rotor spins up once someone's in.
@@ -882,7 +909,7 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         if (b) b.kick = Math.min(1.2, b.kick + Math.min(1, WEAPONS[e.weapon].kick * 12 + 0.3));
         if (e.weapon === "clean") return;
         const ride = game.vehicles.find((v) => v.id === s.vehicle);
-        const at = ride ? { x: ride.x, y: ride.y + (ride.kind === "buggy" ? 1.9 : 0.6), z: ride.z } : game.muzzle(s), big = WEAPONS[e.weapon].splash > 0 || e.weapon === "add" || e.weapon === "rebase";
+        const at = ride ? { x: ride.x, y: ride.y + (ride.kind === "roadster" ? 1.5 : 0.6), z: ride.z } : game.muzzle(s), big = WEAPONS[e.weapon].splash > 0 || e.weapon === "add" || e.weapon === "rebase";
         pop(at.x, at.y, at.z, big ? 0.9 : 0.55, 0.05);
         flare(at.x, at.y, at.z, big ? 40 : 18, big ? 9 : 6, 0.08);
       }

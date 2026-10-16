@@ -160,7 +160,7 @@ describe("the wire", () => {
       { kind: "blamed", id: 4 }, { kind: "reverted", id: 4 }, { kind: "stashed", x: 1, y: 2, z: 3 }, { kind: "impact", x: 0.01, y: 0, z: -9.99, weapon: "fetch" },
       { kind: "razed", path: "src/ünïcode.ts", lines: 120, by: 3, x: 1, y: 0, z: 2, w: 4.5, h: 12, d: 6 },
       { kind: "objective", text: "main held" }, { kind: "reload", id: 3, weapon: "add" }, { kind: "streak", vehicle: "heli", kills: 5 },
-      { kind: "board", vehicle: "buggy", on: false }, { kind: "vehicleHit", id: 100_000, damage: 40 }, { kind: "wrecked", id: 100_000, vehicle: "heli" },
+      { kind: "board", vehicle: "roadster", on: false }, { kind: "vehicleHit", id: 100_000, damage: 40 }, { kind: "wrecked", id: 100_000, vehicle: "heli" },
       { kind: "won" }, { kind: "lost" }, { kind: "joined", id: 7 }, { kind: "left", id: 7 },
     ];
     const snap: Snap = { t: "snap", seq: 1, base: 0, input: 0, time: 0, status: "playing", soldiers: [], gone: [], shots: [], spent: [], stashes: [], files: [], events };

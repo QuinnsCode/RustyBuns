@@ -1,17 +1,19 @@
-// Killstreak vehicles. Down 15 guards in a level and a buggy drops in beside you; 25 and it's
-// an attack helicopter. Walk up and press E to get in, E again to get out.
+// Killstreak vehicles. Down 15 guards in a level and a rocket roadster drops in beside you; 25
+// and it's an attack helicopter. Walk up and press E to get in, E again to get out.
 //
-//   buggy  W/S throttle, A/D steer. Runs guards over and smashes files it hits at speed.
-//          A gun on the roll bar fires where you aim.
-//   heli   W/A/S/D fly the way you look, Space climbs, C drops. Click for the chin gun,
-//          right click for rockets.
+//   roadster  W/S throttle, A/D steer. Runs guards over and smashes files it hits at speed.
+//             Hold Space and its thrusters lift it and push it whichever way W/A/S/D say,
+//             against where you look, until they run dry; they fill again on the ground.
+//             A gun on the rear deck fires where you aim.
+//   heli      W/A/S/D fly the way you look, Space climbs, C drops. Click for the chin gun,
+//             right click for rockets.
 //
 // Both soak the hits meant for you while you're in them. When one is wrecked it blows up and
 // throws you clear.
 
 import type { WeaponId } from "./weapons.ts";
 
-export type VehicleKind = "buggy" | "heli";
+export type VehicleKind = "roadster" | "heli";
 
 export interface Vehicle {
   id: number;
@@ -29,6 +31,9 @@ export interface Vehicle {
   rocketCd: number;
   /** Distance driven, for turning the wheels. */
   odo: number;
+  /** The roadster's thrusters: what's left in them, 0 to 1, and whether they're firing. */
+  fuel: number;
+  burn: boolean;
 }
 
 export interface VehicleSpec {
@@ -44,22 +49,26 @@ export interface VehicleSpec {
   gunCd: number;
   rockets?: WeaponId;
   rocketCd?: number;
+  /** Thrusters (roadster only): how fast they push it across, m/s. */
+  thrust?: number;
 }
 
 export const VEHICLES: Record<VehicleKind, VehicleSpec> = {
-  buggy: { hp: 260, top: 22, accel: 16, radius: 1.6, mid: 0.8, gun: "fetch", gunCd: 0.08 },
+  roadster: { hp: 260, top: 30, accel: 24, radius: 1.8, mid: 0.7, gun: "fetch", gunCd: 0.08, thrust: 18 },
   heli: { hp: 420, top: 20, accel: 14, radius: 2.4, mid: 1.6, gun: "fetch", gunCd: 0.06, rockets: "push", rocketCd: 0.55 },
 };
 
 /** Kills in a level that earn each vehicle. */
 export const STREAKS: { kills: number; kind: VehicleKind }[] = [
-  { kills: 15, kind: "buggy" },
+  { kills: 15, kind: "roadster" },
   { kills: 25, kind: "heli" },
 ];
 
-/** How near you have to be to get in; how hard a buggy has to be going to run a guard over. */
+/** How near you have to be to get in; how hard a roadster has to be going to run a guard over. */
 export const BOARD_REACH = 3.5, RUN_OVER = 5;
 /** How high a helicopter can climb over the ground under it, and how low it hovers. */
 export const HELI_CEILING = 35, HELI_FLOOR = 1.5;
+/** How long the roadster's thrusters fire on a full load, how long they take to fill on the ground, and how fast they lift it. */
+export const THRUST_SECONDS = 3, THRUST_REFILL = 4, THRUST_LIFT = 7;
 
-export const vehicleName = (k: VehicleKind) => (k === "buggy" ? "buggy" : "attack helicopter");
+export const vehicleName = (k: VehicleKind) => (k === "roadster" ? "rocket roadster" : "attack helicopter");
