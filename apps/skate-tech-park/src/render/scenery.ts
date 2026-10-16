@@ -1,4 +1,4 @@
-// Small things for scale: tiny pines and rocks strewn over a park's ground, so the board reads as
+// Small things for scale: tiny pines, undergrowth and rocks strewn over a park's ground, so the board reads as
 // giant beside them. `scatter` picks the spots (seeded, so a park always looks the same, and clear of
 // every piece, rail, tree and spawn); `sceneryMeshes` draws them as two instanced meshes.
 import { mulberry32 } from "@rustybuns/util";
@@ -6,13 +6,15 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { type Level, onRail } from "../level.ts";
 
-export type Kind = "pine" | "rock" | "aspen" | "cairn" | "tent" | "sign" | "stump";
+export type Kind = "pine" | "rock" | "aspen" | "cairn" | "tent" | "sign" | "stump" | "bush" | "fern" | "flower";
 export type Spot = { kind: Kind; x: number; z: number; y: number; size: number; yaw: number };
 type Ground = { R: number; height(x: number, z: number): number };
 
-const CELL = 7; // one candidate per cell, jittered
+const CELL = 4.5; // one candidate per cell, jittered
 const MAX_SLOPE = 0.55;
 const CLEAR = 3; // metres kept between a spot and a piece, rail or spawn
+const TREE_CLEAR = 6; // trees (the tall things) keep further back from the kit, so the park sits in a clearing
+const MEADOW = 12, FOREST = 45; // metres from the kit: open meadow out to MEADOW, full forest from FOREST on
 
 /** Pines (0.5..1.5 m tall) and rocks (0.2..0.7 m): toys beside a board 4.4 m long, so the park reads as giant. */
 export const PINE = { min: 0.5, max: 1.5 }, ROCK = { min: 0.2, max: 0.7 };
@@ -31,6 +33,41 @@ const EXTRA: (Range & { chance: number })[] = [
 
 type Range = { kind: Kind; min: number; max: number };
 
+const smooth = (a: number, b: number, v: number) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+/** Slow hash-free noise, 0..1: where the groves are and where the glades. */
+const grove = (x: number, z: number) => 0.5 + 0.25 * Math.sin(x * 0.045 + 1.3) * Math.cos(z * 0.052) + 0.25 * Math.sin((x + z) * 0.09 + 2) * Math.cos((x - z) * 0.07);
+
+/** How far a point is from the nearest piece, rail or spawn: the kit is the clearing, and this is the edge of it. */
+function clearingDistance(level: Level) {
+  const discs = level.pieces.map((p) => ({ x: p.x, z: p.z, r: Math.hypot(p.w, p.d) / 2 }));
+  return (x: number, z: number) => {
+    let d = Infinity;
+    for (const c of discs) d = Math.min(d, Math.hypot(c.x - x, c.z - z) - c.r);
+    for (const r of level.rails) { const o = onRail(r, x, z); d = Math.min(d, o.t < 0 ? Math.hypot(x - r.a.x, z - r.a.z) : o.t > 1 ? Math.hypot(x - r.b.x, z - r.b.z) : o.off); }
+    for (const s of level.spawns) d = Math.min(d, Math.hypot(s.x - x, s.z - z) - 8);
+    return d;
+  };
+}
+
+/** Meadow ground cover: flowers, ferns, a bush or a rock, never a tree. */
+const MEADOW_KINDS: (Range & { chance: number })[] = [
+  { kind: "flower", chance: 0.4, min: 0.4, max: 0.8 },
+  { kind: "fern", chance: 0.25, min: 0.4, max: 0.8 },
+  { kind: "rock", chance: 0.2, min: 0.2, max: 0.5 },
+  { kind: "bush", chance: 0.15, min: 0.5, max: 0.9 },
+];
+/** The forest floor under the trees. */
+const FOREST_KINDS: (Range & { chance: number })[] = [
+  { kind: "pine", chance: 0.5, ...PINE },
+  { kind: "bush", chance: 0.14, min: 0.6, max: 1.1 },
+  { kind: "fern", chance: 0.14, min: 0.5, max: 0.9 },
+  { kind: "rock", chance: 0.1, ...ROCK },
+  { kind: "flower", chance: 0.06, min: 0.4, max: 0.7 },
+  { kind: "stump", chance: 0.03, min: 0.2, max: 0.4 },
+  { kind: "aspen", chance: 0.03, min: 0.8, max: 1.6 },
+];
+const pickKind = (table: (Range & { chance: number })[], roll: number) => { let acc = 0; return table.find((e) => roll < (acc += e.chance)) ?? table[0]!; };
+
 /** Some pine and rock spots become one of the rarer things, by a hash of where they are (so the rng stream is untouched). */
 function pickExtra(x: number, z: number, fallback: Range): Range {
   const h = Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1;
@@ -38,9 +75,12 @@ function pickExtra(x: number, z: number, fallback: Range): Range {
   return EXTRA.find((e) => h < (acc += e.chance)) ?? fallback;
 }
 
-/** Spots for pines and rocks, off anything the rider can use. */
+/**
+ * Spots for the wild around a park: the kit stands in a clearing (meadow flowers, ferns and the odd rock),
+ * and past its edge the forest thickens into groves and glades, all off anything the rider can use.
+ */
 export function scatter(level: Level, ground: Ground, seed = 7): Spot[] {
-  const rng = mulberry32(seed), spots: Spot[] = [], R = ground.R;
+  const rng = mulberry32(seed), spots: Spot[] = [], R = ground.R, away = clearingDistance(level);
   const raised = (x: number, z: number) => level.height(x, z) - ground.height(x, z) > 0.02;
   const near = (x: number, z: number) => {
     for (const [dx, dz] of [[0, 0], [CLEAR, 0], [-CLEAR, 0], [0, CLEAR], [0, -CLEAR], [CLEAR, CLEAR], [-CLEAR, -CLEAR], [CLEAR, -CLEAR], [-CLEAR, CLEAR]]) if (raised(x + dx, z + dz)) return true;
@@ -49,14 +89,17 @@ export function scatter(level: Level, ground: Ground, seed = 7): Spot[] {
     return (level.obstacles ?? []).some((o) => Math.hypot(o.x - x, o.z - z) < o.r + 4);
   };
   for (let gz = -R; gz < R; gz += CELL) for (let gx = -R; gx < R; gx += CELL) {
-    const x = gx + rng() * CELL, z = gz + rng() * CELL, roll = rng(), size = rng(), yaw = rng() * Math.PI * 2;
-    if (Math.hypot(x, z) > R - 6 || roll > 0.7) continue;
+    const x = gx + rng() * CELL, z = gz + rng() * CELL, roll = rng(), size = rng(), yaw = rng() * Math.PI * 2, pick = rng();
+    if (Math.hypot(x, z) > R - 6) continue;
+    const d = away(x, z), woods = smooth(MEADOW, FOREST, d) * (0.45 + 0.55 * grove(x, z)); // 0 in the clearing, up to 1 in a deep grove
+    if (roll > 0.12 + 0.88 * woods || (d < MEADOW && roll > 0.25)) continue;
     const y = ground.height(x, z);
     if (Math.hypot(ground.height(x + 1, z) - ground.height(x - 1, z), ground.height(x, z + 1) - ground.height(x, z - 1)) / 2 > MAX_SLOPE) continue;
     if (near(x, z)) continue;
-    const range = roll < 0.5 ? { kind: "pine" as Kind, ...PINE } : { kind: "rock" as Kind, ...ROCK };
-    const kind = pickExtra(x, z, range);
-    spots.push({ kind: kind.kind, x, z, y, size: kind.min + size * (kind.max - kind.min), yaw });
+    let range: Range = pickKind(d < MEADOW ? MEADOW_KINDS : FOREST_KINDS, pick);
+    if (range.kind === "pine" || range.kind === "aspen") { if (d < TREE_CLEAR) continue; }
+    else if (range.kind === "rock" && d >= MEADOW) range = pickExtra(x, z, range); // a few rocks are cairns, signs or tents
+    spots.push({ kind: range.kind, x, z, y, size: range.min + size * (range.max - range.min), yaw });
   }
   return spots;
 }
@@ -93,6 +136,18 @@ const GEOMETRY: Record<Exclude<Kind, "rock">, () => THREE.BufferGeometry> = {
     [new THREE.CylinderGeometry(0.03, 0.03, 0.8, 6).translate(0, 0.4, 0), 0x6b4429],
     [new THREE.BoxGeometry(0.5, 0.2, 0.04).translate(0.05, 0.8, 0), 0xb58a4f],
   ]),
+  // Low dark-green undergrowth: two lumpy domes.
+  bush: () => solid([
+    [new THREE.IcosahedronGeometry(0.36, 0).scale(1, 0.75, 1).translate(0, 0.27, 0), 0x3f6b3a],
+    [new THREE.IcosahedronGeometry(0.26, 0).scale(1, 0.8, 1).translate(0.26, 0.2, 0.1), 0x4d7a43],
+  ]),
+  // A fern: fronds fanning out and up from one point.
+  fern: () => solid([0, 1, 2, 3, 4, 5].map((i): [THREE.BufferGeometry, number] => [new THREE.ConeGeometry(0.07, 0.55, 4).translate(0, 0.275, 0).rotateZ(0.9).translate(0.04, 0, 0).rotateY((i * Math.PI) / 3), i % 2 ? 0x5a8a3c : 0x4a7a35])),
+  // Wildflowers: three thin stems with yellow, white and violet heads.
+  flower: () => solid([[-0.14, 0xf2d03b], [0.1, 0xf4f0e6], [0.0, 0x8e6fd0]].flatMap(([dx, color], i): [THREE.BufferGeometry, number][] => [
+    [new THREE.CylinderGeometry(0.012, 0.012, 0.4, 4).translate(dx!, 0.2, i * 0.1 - 0.1), 0x4f7a37],
+    [new THREE.IcosahedronGeometry(0.06, 0).translate(dx!, 0.42, i * 0.1 - 0.1), color!],
+  ])),
   // A two-person tent: a triangular prism in park-ranger orange.
   tent: () => solid([[new THREE.CylinderGeometry(0.5, 0.5, 1, 3, 1).rotateZ(Math.PI / 2).rotateY(Math.PI / 2).scale(1, 0.6, 1).translate(0, 0.25, 0), 0xe2572b]]),
 };
@@ -122,7 +177,7 @@ export class Scenery {
       this.meshes.set(kind, { mesh, mine, shrunk: new Set() });
       mine.forEach((s, i) => this.place(mesh, s, i, 1));
     };
-    for (const kind of ["pine", "rock", "aspen", "stump", "cairn", "sign", "tent"] as Kind[]) {
+    for (const kind of ["pine", "rock", "aspen", "stump", "cairn", "sign", "tent", "bush", "fern", "flower"] as Kind[]) {
       const { geo, mat } = BY_KIND(kind);
       make(kind, geo, mat);
     }
