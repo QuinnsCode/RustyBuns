@@ -52,6 +52,8 @@ export const GROUPS: Group[] = [
       { method: "PUT", path: "/api/me/seen", body: "{key, rev}", who: SIGNED_IN, does: "you've seen that file at rev; the newest 500 files are kept" },
       { method: "GET", path: "/api/me/settings", who: SIGNED_IN, does: "your settings, kept in a Durable Object of your own near where you first connected: {theme?: light | dark | system}, only what you have set" },
       { method: "PUT", path: "/api/me/settings", body: "{theme?}", who: SIGNED_IN, does: "set your light/dark choice across devices; only what you send changes, null puts one back to its default" },
+      { method: "PUT", path: "/api/me/finds", body: "{key}", who: SIGNED_IN, does: "mark a hidden game or room as found (horde, wreck, removed, unicycle, city, bartender or page; any other key is a 400): {ok, count, total, all, found}" },
+      { method: "GET", path: "/api/users/:name/finds", who: "anyone", does: "how many of the hidden games and rooms a person has found, and `all` when the badge is theirs: {count, total, all, found?}" },
       { method: "GET", path: "/api/me/export", who: SIGNED_IN, does: "everything here about you, as one JSON download (cookie only, never a token or agent)" },
       { method: "DELETE", path: "/api/me?confirm=:handle&scrub=1", who: SIGNED_IN, does: "delete your account, your repos and everything of them; your handle is retired, and with scrub=1 @ghost takes its place in other people's repos (cookie only)" },
       { method: "GET", path: "/api/users/:name", does: "a profile: {user, repos you may see, playlists, following, followers, stamps: {given, got}}; following counts what you may see of it; an agent's (agent-…) adds agent: {harness, run_by, repos it works in, lines, pulse per day, runs}" },
