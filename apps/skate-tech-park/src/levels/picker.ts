@@ -1,16 +1,16 @@
 // Which level the page rides (`?level=` or the menu), and the level's side of the HUD: the menu, the
 // goal list, the pickups. main.ts asks for the chosen level and calls `ui.update` each frame.
-import { Check, Circle, createElement } from "lucide";
+import { Check, Circle, createElement, MapPin } from "lucide";
 import { Fog, type Scene } from "three";
 import type { Level } from "../level.ts";
 import type { Mode, State } from "../sim.ts";
 import "./levels.css";
 import { groundMesh, props } from "./ground.ts";
 import { trackRun, type Run } from "./goals.ts";
-import { LEVELS } from "./index.ts";
+import { LEVELS, needsStartScreen, pick } from "./index.ts";
 import type { Goal, ParkLevel } from "./park.ts";
 
-const entry = LEVELS.find((l) => l.id === new URLSearchParams(location.search).get("level")) ?? LEVELS[0]!;
+const entry = pick(location.search);
 export const level: Level | ParkLevel = entry.load();
 export const park = "goals" in level;
 
@@ -21,7 +21,30 @@ export function spawn(l: Level, mode: Mode) {
 
 const label = (g: Goal) => g.kind === "score" ? `Score ${g.target.toLocaleString("en-US")}` : g.kind === "combo" ? `Combo ${g.target.toLocaleString("en-US")}` : g.kind === "gap" ? `Gap: ${g.name}` : g.kind === "climb" ? `Climb ${g.name}: ${g.metres} m` : "Collect the rings";
 
+/** The start screen: one card per level; choosing one reloads the page on it. */
+function startScreen() {
+  const wrap = document.createElement("div");
+  wrap.className = "start";
+  const title = document.createElement("h1");
+  title.textContent = "Pick a park";
+  const grid = document.createElement("div");
+  grid.className = "start-grid";
+  for (const l of LEVELS) {
+    const card = document.createElement("button"), name = document.createElement("strong"), blurb = document.createElement("span");
+    card.type = "button";
+    name.append(createElement(MapPin, { width: 16, height: 16 }), l.name);
+    blurb.textContent = l.blurb;
+    card.append(name, blurb);
+    card.addEventListener("click", () => { location.search = `?level=${l.id}`; });
+    grid.append(card);
+  }
+  wrap.append(title, grid);
+  document.body.append(wrap);
+  wrap.querySelector("button")?.focus();
+}
+
 export function mountLevelUi(scene: Scene) {
+  if (needsStartScreen(location.search)) startScreen();
   const menu = document.createElement("select");
   menu.className = "level-menu";
   menu.title = "Level";

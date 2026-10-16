@@ -1,7 +1,7 @@
 // Journeys over the park levels: each loads, spawns on flat ground, and every named gap can be cleared
 // by driving the sim along a scripted line.
 import { expect, test } from "bun:test";
-import { LEVELS } from "../src/levels/index.ts";
+import { LEVELS, needsStartScreen, pick } from "../src/levels/index.ts";
 import { trackRun } from "../src/levels/goals.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { IDLE, type Input, type Mode, start, step } from "../src/sim.ts";
@@ -64,4 +64,13 @@ test("kit parts lie on the ground: a rail on the grove's hillside slopes with it
   expect(Math.abs((bar.y2 ?? bar.y) - bar.y)).toBeGreaterThan(1);
   const { run } = drive(l, "grove road", 8);
   expect(run.collected.size).toBeGreaterThan(0);
+});
+
+test("the start screen shows until a level is chosen, and a query picks its level", () => {
+  expect(needsStartScreen("")).toBe(true);
+  expect(needsStartScreen("?level=glacier-point")).toBe(false);
+  expect(needsStartScreen("?showroom")).toBe(false);
+  expect(pick("?level=glacier-point").id).toBe("glacier-point");
+  expect(pick("?level=nowhere").id).toBe("plaza");
+  expect(LEVELS.map((l) => l.id)).toEqual(["plaza", "el-capitan", "glacier-point", "old-faithful", "mariposa-grove"]);
 });
