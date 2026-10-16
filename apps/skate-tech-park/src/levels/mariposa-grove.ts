@@ -6,7 +6,7 @@ import { fallenLog, flatBar, funbox, gap, handrail, hip, kicker, quarterPipe, ro
 // Sequoias at the scale of the giant board: wide enough that the bar between a pair reads as a needle.
 const pair = (name: string, x: number, z: number): Tree[] => [-8, 8].map((dx) => ({ x: x + dx, z, r: 4.5, tall: 80, name }));
 
-const giant = gap({ x: 50, z: 30 }, { name: "Fallen Giant", span: 30, h: 2.4, w: 8, landH: 1.8, landLen: 14, reach: 55, bonus: 800 });
+const giant = gap({ x: 50, z: 30 }, { name: "Fallen Giant", span: 30, h: 2.4, w: 8, landH: 1.8, landLen: 14, reach: 75, bonus: 800 });
 
 export const mariposaGrove: ParkSpec = {
   id: "mariposa-grove",

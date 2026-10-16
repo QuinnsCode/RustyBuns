@@ -11,7 +11,7 @@ export const halfDome: ParkSpec = {
   blurb: "Ride up the dome's east shoulder, cross the crest and fly off the sheer west face.",
   zone: "half-dome",
   sites: [
-    { parts: [outcrop({ x: 200, z: 230 }, { r: 4, h: 2.6 }), outcrop({ x: 214, z: 238 }, { r: 3, h: 1.8 }), outcrop({ x: 188, z: 240 }, { r: 2.6, h: 1.6 })] },
+    { parts: [outcrop({ x: 200, z: 230 }, { r: 4, h: 2.6 }), outcrop({ x: 232, z: 250 }, { r: 3, h: 1.8 }), outcrop({ x: 168, z: 252 }, { r: 2.6, h: 1.6 })] },
     { parts: [fallenLog({ x: 120, z: 230, yaw: E }, { len: 18, r: 0.9 })] },
     { parts: [flatBar({ x: 130, z: 190, yaw: E }, { len: 14 }), stairSet({ x: 155, z: 190, yaw: E }, { w: 8, steps: 6, rise: 0.25, run: 0.9 })] },
     { parts: [funbox({ x: 195, z: 190, yaw: E }, { w: 10, d: 24, h: 1.2, ramp: 7 }), hip({ x: 230, z: 190 }, { w: 12, d: 12, h: 2.4 })] },

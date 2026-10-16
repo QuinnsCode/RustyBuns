@@ -5,7 +5,7 @@ import { bowl, fallenLog, flatBar, funbox, gap, geyserCone, hip, quarterPipe, ro
 
 const E = Math.PI / 2;
 
-const vent = gap({ x: 56, z: 75, yaw: E }, { name: "Geyser Hop", span: 30, h: 2.4, w: 8, landH: 1.8, landLen: 14, reach: 55, bonus: 800 });
+const vent = gap({ x: 56, z: 75, yaw: E }, { name: "Geyser Hop", span: 30, h: 2.4, w: 8, landH: 1.8, landLen: 14, reach: 75, bonus: 800 });
 
 export const oldFaithful: ParkSpec = {
   id: "old-faithful",
@@ -16,7 +16,7 @@ export const oldFaithful: ParkSpec = {
     { parts: [geyserCone({ x: -130, z: 100 }, { r: 8, h: 2.4 })] },
     { parts: [rollers({ x: -60, z: 120, yaw: E }, { w: 8, n: 5, period: 7, h: 0.8 })] },
     { parts: [fallenLog({ x: 60, z: 110, yaw: E }, { len: 16, r: 0.8 }), fallenLog({ x: 60, z: 122, yaw: E }, { len: 12, r: 0.6 })] },
-    { parts: [bowl({ x: -17, z: 75 }, { w: 64, d: 46, h: 4.5, deck: 5 })] },
+    { parts: [bowl({ x: -17, z: 75 }, { w: 44, d: 32, h: 3.5, deck: 4 })] },
     { parts: [flatBar({ x: -150, z: 20, yaw: E }, { len: 14 }), flatBar({ x: -125, z: 20, yaw: E }, { len: 14 })] },
     { parts: [stairSet({ x: -100, z: 20, yaw: E }, { w: 8, steps: 6, rise: 0.25, run: 0.9 }), funbox({ x: -70, z: 20, yaw: E }, { w: 10, d: 24, h: 1.2, ramp: 7 })] },
     { parts: [vent.launch, vent.landing, hip({ x: 74, z: 75, yaw: E }, { w: 8, d: 6, h: 1.8, name: "vent" })] },
@@ -25,7 +25,7 @@ export const oldFaithful: ParkSpec = {
   spawns: [
     { name: "geyser view", x: -150, z: 75, yaw: E },
     { name: "boardwalk", x: -175, z: 20, yaw: E },
-    { name: "vent line", x: 20, z: 75, yaw: E },
+    { name: "vent line", x: 24, z: 75, yaw: E },
     { name: "bowl deck", x: -17, z: 130, yaw: Math.PI },
   ],
   landmarks: [{ kind: "plume", x: -17, z: 75, tall: 55, r: 8 }],
