@@ -1,0 +1,225 @@
+// The page: draws the sim, turns keys into its input, and keeps the chase camera behind the rider.
+import { Car, createElement, PersonStanding, RotateCcw, Wind } from "lucide";
+import * as THREE from "three";
+import { roadster, skater, type Thruster } from "./models.ts";
+import { DT, IDLE, type Input, type Mode, start, step, type State } from "./sim.ts";
+import { HALF, RAILS, RAMPS } from "./spot.ts";
+
+const canvas = document.querySelector<HTMLCanvasElement>("#view")!;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xf2c49a);
+scene.fog = new THREE.Fog(0xf2c49a, 60, 140);
+const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 400);
+
+// Golden hour: a low warm sun and a cool sky fill.
+scene.add(new THREE.HemisphereLight(0xbcd3ff, 0x8a6a50, 0.9));
+const sun = new THREE.DirectionalLight(0xffd2a0, 2.4);
+sun.position.set(-40, 30, -25);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -50, right: 50, top: 50, bottom: -50, far: 150 });
+scene.add(sun);
+
+// Concrete, drawn on a canvas: slabs with expansion joints.
+function concrete() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#b9b3aa";
+  g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 3000; i++) {
+    g.fillStyle = `rgba(${Math.random() < 0.5 ? "0,0,0" : "255,255,255"},${Math.random() * 0.06})`;
+    g.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+  }
+  g.strokeStyle = "rgba(60,50,40,0.35)";
+  g.lineWidth = 2;
+  g.strokeRect(0, 0, 256, 256);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const slab = concrete();
+slab.repeat.set(20, 20);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2, HALF * 2), new THREE.MeshStandardMaterial({ map: slab, roughness: 0.95 }));
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+// Each ramp from the same numbers the sim rides on: a box whose top corners follow h0 and h1.
+const rampMat = new THREE.MeshStandardMaterial({ color: 0xd8d2c8, roughness: 0.85 });
+for (const r of RAMPS) {
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const u = pos.getZ(i) + 0.5;
+    const top = pos.getY(i) > 0;
+    pos.setXYZ(i, r.x0 + (pos.getX(i) + 0.5) * (r.x1 - r.x0), top ? r.h0 + u * (r.h1 - r.h0) : 0, r.z0 + u * (r.z1 - r.z0));
+  }
+  geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, rampMat);
+  m.castShadow = m.receiveShadow = true;
+  scene.add(m);
+}
+const steel = new THREE.MeshStandardMaterial({ color: 0x9aa3ad, roughness: 0.25, metalness: 0.9 });
+for (const r of RAILS) {
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, r.z1 - r.z0, 12), steel);
+  bar.rotation.x = Math.PI / 2;
+  bar.position.set(r.x, r.y, (r.z0 + r.z1) / 2);
+  bar.castShadow = true;
+  scene.add(bar);
+  for (let z = r.z0 + 0.5; z < r.z1; z += 4) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, r.y, 8), steel);
+    post.position.set(r.x, r.y / 2, z);
+    scene.add(post);
+  }
+}
+// A low wall round the plaza, and a few blocks of city past it.
+const wallMat = new THREE.MeshStandardMaterial({ color: 0x8d7f72, roughness: 0.9 });
+for (const [w, d, x, z] of [[HALF * 2, 1, 0, HALF + 0.5], [HALF * 2, 1, 0, -HALF - 0.5], [1, HALF * 2, HALF + 0.5, 0], [1, HALF * 2, -HALF - 0.5, 0]]) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, 1.2, d), wallMat);
+  m.position.set(x, 0.6, z);
+  m.receiveShadow = true;
+  scene.add(m);
+}
+const towerMat = [0x6f6a75, 0x84766a, 0x5d6670, 0x9b8a7a].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 1 }));
+for (let i = 0; i < 28; i++) {
+  const a = (i / 28) * Math.PI * 2, d = HALF + 14 + (i % 3) * 7, h = 12 + ((i * 37) % 23);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(10, h, 10), towerMat[i % 4]);
+  m.position.set(Math.cos(a) * d, h / 2, Math.sin(a) * d);
+  scene.add(m);
+}
+
+const car = roadster(), board = skater();
+scene.add(car, board);
+const thrusters = car.userData.thrusters as Thruster[];
+const plate = car.userData.plate as THREE.Group;
+
+const showroom = new URLSearchParams(location.search).has("showroom");
+let mode: Mode = "car";
+let sim: State = start(mode, 27, -38);
+const reset = () => {
+  sim = showroom ? start(mode, 0, -20) : mode === "car" ? start("car", 27, -38) : start("skate", -12, -20);
+  camPos.set(sim.x, sim.y + 4, Math.max(sim.z - 9, -HALF + 1));
+};
+
+// Keys → input. Space is the ollie on the board and the lift thrusters in the car.
+const keys = new Set<string>();
+window.addEventListener("keydown", (e) => {
+  if (e.code === "Tab") { e.preventDefault(); swap(); return; }
+  if (e.code === "KeyR") reset();
+  keys.add(e.code);
+  if (e.code === "Space") e.preventDefault();
+});
+window.addEventListener("keyup", (e) => keys.delete(e.code));
+window.addEventListener("blur", () => keys.clear());
+const input = (): Input => ({
+  ...IDLE,
+  throttle: (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0),
+  steer: (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0) - (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0),
+  jump: keys.has("Space"),
+  boost: keys.has("ShiftLeft") || keys.has("ShiftRight"),
+  flip: keys.has("KeyF"),
+});
+
+// The HUD: lucide icons with their words as tooltips.
+const $ = (id: string) => document.getElementById(id)!;
+const icon = (node: Parameters<typeof createElement>[0]) => createElement(node, { width: 18, height: 18 });
+const swapBtn = $("swap") as HTMLButtonElement;
+$("reset").append(icon(RotateCcw));
+$("reset").addEventListener("click", () => { reset(); (document.activeElement as HTMLElement)?.blur(); });
+$("tank-icon").append(icon(Wind));
+swapBtn.addEventListener("click", () => { swap(); swapBtn.blur(); });
+function swap() {
+  mode = mode === "car" ? "skate" : "car";
+  reset();
+  hud();
+}
+function hud() {
+  swapBtn.replaceChildren(icon(mode === "car" ? PersonStanding : Car));
+  swapBtn.title = mode === "car" ? "Skate (Tab)" : "Roadster (Tab)";
+  $("tank").hidden = mode !== "car";
+  $("keys").innerHTML = mode === "car"
+    ? "<kbd>W</kbd><kbd>S</kbd> drive <kbd>A</kbd><kbd>D</kbd> steer, spin in the air <kbd>Shift</kbd> rear thrusters <kbd>Space</kbd> lift thrusters"
+    : "<kbd>W</kbd><kbd>S</kbd> push <kbd>A</kbd><kbd>D</kbd> steer, spin in the air <kbd>Space</kbd> ollie <kbd>F</kbd> kickflip";
+}
+hud();
+
+const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
+reset();
+let acc = 0, then = performance.now(), shownTrick: State["last"] = null, trickAt = 0;
+
+function frame(now: number) {
+  acc = Math.min(acc + (now - then) / 1000, 0.25);
+  then = now;
+  const inp = input();
+  while (acc >= DT) { step(sim, inp); acc -= DT; }
+
+  const rider = mode === "car" ? car : board;
+  car.visible = mode === "car";
+  board.visible = mode === "skate";
+  rider.position.set(sim.x, sim.y, sim.z);
+  rider.rotation.set(0, sim.yaw, 0);
+  if (sim.bail > 0) rider.rotation.z = mode === "car" ? Math.sin(sim.bail * 30) * 0.08 : 1.3;
+  if (mode === "skate") {
+    const b = board.userData.board as THREE.Group, body = board.userData.body as THREE.Group;
+    b.rotation.z = sim.flipT > 0 ? (1 - sim.flipT / 0.45) * Math.PI * 2 : 0;
+    b.position.y = sim.flipT > 0 ? 0.25 : 0;
+    body.position.y = sim.air ? 0.15 : 0;
+    body.scale.y = sim.air || sim.grind >= 0 ? 0.85 : 1;
+  } else {
+    const f = sim.firing;
+    for (const t of thrusters) {
+      const on = t.group === "rear" ? f.rear : t.group === "lift" ? f.lift : t.group === "spinL" ? f.spin === 1 : f.spin === -1;
+      t.plume.visible = on;
+      if (on) {
+        const len = 1.4 + Math.random() * 0.6;
+        t.plume.scale.set(1, len, 1);
+        t.plume.position.y = 0.14 + len / 2;
+      }
+    }
+    plate.rotation.x = THREE.MathUtils.lerp(plate.rotation.x, sim.plateDown ? -Math.PI * 0.95 : 0, 0.3);
+  }
+
+  // Chase from behind and above; in the air, hold back so the spin reads.
+  const back = mode === "car" ? 9 : 5, up = mode === "car" ? 3.5 : 2.4;
+  const dir = Math.hypot(sim.vx, sim.vz) > 3 && sim.air ? Math.atan2(sim.vx, sim.vz) : sim.yaw + (sim.speed < -0.5 ? Math.PI : 0);
+  camPos.lerp(new THREE.Vector3(sim.x - Math.sin(dir) * back, sim.y + up, sim.z - Math.cos(dir) * back), 0.08);
+  camLook.lerp(new THREE.Vector3(sim.x, sim.y + 1, sim.z), 0.2);
+  if (showroom) { // ?showroom: the car parked, the camera circling it
+    const a = now / 4000;
+    camPos.set(sim.x + Math.sin(a) * 7, sim.y + 1.6, sim.z + Math.cos(a) * 7);
+    camLook.set(sim.x, sim.y + 0.6, sim.z);
+  }
+  camPos.x = THREE.MathUtils.clamp(camPos.x, -HALF + 1, HALF - 1); // stay inside the plaza wall
+  camPos.z = THREE.MathUtils.clamp(camPos.z, -HALF + 1, HALF - 1);
+  camera.position.copy(camPos);
+  camera.lookAt(camLook);
+
+  $("score").textContent = String(sim.score);
+  $("speed").textContent = `${Math.round(Math.abs(sim.air ? Math.hypot(sim.vx, sim.vz) : sim.speed) * 3.6)} km/h`;
+  ($("tank-fill") as HTMLElement).style.width = `${sim.tank * 100}%`;
+  if (sim.last !== shownTrick) { shownTrick = sim.last; trickAt = now; }
+  const trick = $("trick");
+  trick.textContent = shownTrick ? (shownTrick.points ? `${shownTrick.name}  +${shownTrick.points}` : shownTrick.name) : "";
+  trick.classList.toggle("bail", !!shownTrick && !shownTrick.points);
+  trick.style.opacity = shownTrick && now - trickAt < 2200 ? "1" : "0";
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+resize();
+requestAnimationFrame(frame);
