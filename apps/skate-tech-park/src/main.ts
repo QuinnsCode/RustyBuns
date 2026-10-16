@@ -8,6 +8,7 @@ import { Chase } from "./render/chase.ts";
 import { Scenery, scatter } from "./render/scenery.ts";
 import { followCamera, HAZE, sky } from "./render/sky.ts";
 import { Skins } from "./render/skins.ts";
+import { manualPose, TiltEase } from "./render/tilt.ts";
 import { DT, FLICK_TIME, IDLE, type Input, type Mode, start, step, type State } from "./sim.ts";
 import { HALF } from "./levels/plaza.ts";
 import type { ParkLevel } from "./levels/park.ts";
@@ -152,6 +153,7 @@ function hud() {
 hud();
 
 const chase = new Chase(camera);
+const manualEase = new TiltEase();
 reset();
 let lastFrame = performance.now(), landVy = 0, acc = 0, then = performance.now(), shownTrick: State["last"] = null, trickAt = 0;
 
@@ -180,6 +182,11 @@ function frame(now: number) {
   const turn = sim.flipT > 0 ? (1 - sim.flipT / FLICK_TIME) * Math.PI * 2 : 0;
   pivot.rotation.set(0, sim.flipKind === "shove-it" ? turn / 2 : 0, sim.flipKind === "heelflip" ? -turn : sim.flipKind === "kickflip" ? turn : 0);
   pivot.position.y = PIVOT_Y[skins.current] + (sim.flipT > 0 ? 0.25 : 0);
+  // A manual: nose (or tail) up on two wheels, shaking as the balance runs out.
+  const tilt = manualPose(manualEase.last, sim.balance, skins.current, PIVOT_Y[skins.current], sim.manualTime, manualEase.update(sim.manual, dt));
+  pivot.rotation.x = tilt.pitch;
+  pivot.rotation.z += tilt.roll;
+  pivot.position.y += tilt.lift;
   {
     const f = sim.firing;
     plumes.update(dt, thrusters, thrusters.map((t) => (mode === "car" && (t.group === "rear" ? f.rear : t.group === "lift" ? f.lift : t.group === "spinL" ? f.spin === 1 : f.spin === -1))), sim.vx, sim.vy, sim.vz);
