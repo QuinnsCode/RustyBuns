@@ -1,6 +1,6 @@
 // Journeys through the ride, headless: the same fixed-step sim the page draws.
 import { expect, test } from "bun:test";
-import { hitObstacle, type Level, makeLevel, piece, railY } from "../src/level.ts";
+import { hitObstacle, type Level, makeLevel, piece, postObstacles, railY } from "../src/level.ts";
 import { quarterPipe } from "../src/levels/pieces.ts";
 import { DT, IDLE, type Input, SCALE, start, step, type State, tumble } from "../src/sim.ts";
 
@@ -105,6 +105,17 @@ test("a rider can't ride through a tree, but can pass beside it", () => {
   expect(past.z).toBeGreaterThan(20);
 });
 
+test("a rider runs into a rail's post but rides over it on the bar", () => {
+  const rails = [{ kind: "rail" as const, a: { x: 0, z: -20 }, b: { x: 0, z: 20 }, y: 0.9 }];
+  const lv = flat({ rails, obstacles: postObstacles(rails, () => 0) });
+  expect(lv.obstacles!.length).toBeGreaterThan(5);
+  const side = run(start(0.8, -10, 0, lv), 0.5, () => ({ throttle: 1 }), lv); // along the bar, a hand off its line
+  expect(hitObstacle(lv, 0, 0.5, 0.9 - 0.05)).toBeUndefined(); // the bar's own height clears every post
+  const across = run(start(-8, 2, Math.PI / 2, lv), 4, () => ({ throttle: 1 }), lv);
+  expect(across.last?.name).toBe("Hit a rail post");
+  expect(side.x).toBeCloseTo(0.8, 0);
+});
+
 test("a tree catches the board's edge, not a circle round its middle", () => {
   const lv = flat({ obstacles: [{ x: 0, z: 10, r: 0.5, tall: 30 }] });
   expect(hitObstacle(lv, 0.9, 9.5, 0, 0)).toBeUndefined(); // heading at it, 0.9 m to the side: clear
@@ -192,6 +203,16 @@ test("a skater rides up the wall, goes up past the coping and drops back down it
   expect(sk.bail).toBeLessThanOrEqual(0);
 });
 
+test("the board never passes through a vertical ramp, slow or fast: it rides the wall, or flies off the lip", () => {
+  for (const speed of [8, 14, 25, 40]) {
+    const sk = Object.assign(start(0, -12, 0, pipeLevel), { speed });
+    let inside = 0, top = 0;
+    run(sk, 4, (s) => { inside = Math.max(inside, pipeLevel.height(s.x, s.z) - s.y); top = Math.max(top, s.y); return { throttle: 1 }; }, pipeLevel);
+    expect(inside).toBeLessThan(0.01);
+    expect(top).toBeGreaterThan(2); // up the wall and over the lip, not bounced back at the foot of it
+  }
+});
+
 test("a bigger board is a bigger toy: an ollie goes SCALE times as high and hangs sqrt(SCALE) times as long", () => {
   const sk = start(0, -20);
   let apex = 0, hang = 0;
@@ -231,4 +252,15 @@ test("a bad landing carries on: the rider slides and rolls across the ground, sl
   expect(Math.abs(tumble(sk).roll)).toBeGreaterThan(1.3); // mid-roll, not lying still
   run(sk, 1.2, () => ({}));
   expect(tumble(sk).roll).toBe(0);
+});
+
+test("in the air the board's tips are what hit a box, so the nose stops at its face instead of passing through", () => {
+  const box = piece("box", "wall", 0, 6, 0, 10, 3, 4, 6); // a 3 m block with its near face at z = 4
+  const l = makeLevel({ name: "wall", pieces: [box], rails: [], spawns: [{ name: "car", x: 0, z: 0, yaw: 0 }], bounds: { minX: -30, maxX: 30, minZ: -30, maxZ: 30 } });
+  const s = start(0, 0, 0, l);
+  s.air = true; s.y = 1; s.vy = 0; s.vx = 0; s.vz = 8; s.z = 2;
+  let top = 0;
+  for (let i = 0; i < 90; i++) { step(s, IDLE, l); top = Math.max(top, s.y); }
+  expect(top).toBeLessThan(1.5); // never snapped up onto the box
+  expect(s.z).toBeLessThan(4); // never carried into it
 });

@@ -60,12 +60,25 @@ function footprintTop(level: Level, x: number, z: number, yaw: number) {
   return top;
 }
 
+/** The highest of the board's middle and two tips. The tips are the physics object in the air, so a nose or tail that reaches
+ * a wall stops the board there instead of passing through while only its middle is checked. */
+function tipContact(level: Level, x: number, z: number, yaw: number) {
+  const sn = Math.sin(yaw), cs = Math.cos(yaw);
+  let best = { h: level.height(x, z), x, z };
+  for (const a of [-BOARD.halfLen, BOARD.halfLen]) {
+    const tx = x + sn * a, tz = z + cs * a, h = level.height(tx, tz);
+    if (h > best.h) best = { h, x: tx, z: tz };
+  }
+  return best;
+}
+
 const MAX_SLOPE = 3; // a rise steeper than this (about 72 degrees) in one stride is a wall, not a ramp
 const CARVE = 0.8; // how much speed stiffens the board's turn: at top speed it turns 1/(1+CARVE) as tight
 const CARVE_DRAG = 0.5; // a hard carve at speed scrubs this share of it per second
 const DRIFT = 0.8; // rad/s the board falls toward downhill per unit of cross slope
 const PUMP = 0.6; // board: speed gained per radian the ground curves up ahead, as a share of speed, while pumping
 const WALL = 1; // radians: a rider this far up a curve who meets a sharper rise is on a wall, and flies off it
+const SHEER = 1.25; // radians: a face this steep (a vertical ramp, a cliff) stops a board in the air; anything gentler it lands on and climbs
 const STEP = 0.2; // a kerb or stair this low is always rideable
 
 const FLICK_POINTS: Record<Flick, number> = { kickflip: 300, heelflip: 300, "shove-it": 200 };
@@ -365,7 +378,8 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
 
     const nx = s.x + Math.sin(s.yaw) * s.speed * DT, nz = s.z + Math.cos(s.yaw) * s.speed * DT;
     const dist = Math.abs(s.speed * DT);
-    if (hitObstacle(level, nx, nz, s.y, s.yaw)) return crash(s, "Hit a tree");
+    const blocker = hitObstacle(level, nx, nz, s.y, s.yaw);
+    if (blocker) return crash(s, blocker.kind === "post" ? "Hit a rail post" : "Hit a tree");
     // walk the stride in 10 cm strides: a rise too sharp for its length is a wall (the side of a box),
     // a steep curve (a quarter pipe near its lip) is not
     const n = Math.max(1, Math.ceil(dist / 0.1));
@@ -378,10 +392,12 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       const rise = Math.max(h - prev, wall - wallPrev);
       wallPrev = wall;
       if (rise > Math.max(s.fan ? JETS.fanStep : STEP, (dist / n) * MAX_SLOPE)) { // the fan sucks it up a kerb or box side
-        if (Math.abs(s.pitch) < WALL || s.pitch * dir < 0 || s.vy < 0.5 * Math.abs(s.speed)) return crash(s, null);
+        // (a stride can reach a vertical lip before `pitch` has caught up with it, so judge by the steepest rise seen)
+        const slope = Math.atan((h - prev) / (dist / n)), steep = Math.max(Math.abs(s.pitch), s.pitch * dir > 0.4 ? slope : 0);
+        if (steep < WALL || s.pitch * dir < 0 || s.vy < 0.2 * Math.abs(s.speed)) return crash(s, null);
         // already climbing a curve and it goes vertical: leave the wall along its face, up past the coping
-        const v = Math.abs(s.speed), c = Math.cos(s.pitch);
-        s.vx = fx * v * c * dir; s.vz = fz * v * c * dir; s.vy = v * Math.sin(Math.abs(s.pitch));
+        const v = Math.abs(s.speed), c = Math.cos(steep);
+        s.vx = fx * v * c * dir; s.vz = fz * v * c * dir; s.vy = Math.max(s.vy, v * Math.sin(steep));
         takeOff(s);
         return s;
       }
@@ -423,10 +439,10 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     if (hit) { s.vx = s.vz = 0; s.speed = 0; } // thrown against the trunk: drop down it
     s.x += s.vx * DT; s.y += s.vy * DT; s.z += s.vz * DT;
 
-    if (s.vy < 0) { // dropping onto a rail starts a grind
+    { // dropping onto a rail starts a grind; a bar climbing faster than you fall meets you from below just the same
       const i = level.rails.findIndex((r) => {
-        const o = onRail(r, s.x, s.z);
-        return o.off < 0.45 && o.t > 0 && o.t < 1 && Math.abs(s.y - railY(r, o.t)) < 0.25;
+        const o = onRail(r, s.x, s.z), climb = (((r.y2 ?? r.y) - r.y) / o.len) * (s.vx * o.dx + s.vz * o.dz); // the bar's own rise under you, m/s
+        return s.vy < Math.max(0, climb) && o.off < 0.45 && o.t > 0 && o.t < 1 && Math.abs(s.y - railY(r, o.t)) < 0.25 + Math.max(0, climb - s.vy) * DT;
       });
       if (i >= 0 && s.flipT <= 0) {
         const r = level.rails[i], o = onRail(r, s.x, s.z);
@@ -445,7 +461,20 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
         return s;
       }
     }
+    const tip = tipContact(level, s.x, s.z, s.yaw);
+    if (s.y < tip.h - STEP && (tip.x - s.x) * s.vx + (tip.z - s.z) * s.vz > 0 && Math.atan((tip.h - level.height(s.x, s.z)) / BOARD.halfLen) >= SHEER) { // a tip met a sheer face: the board stops against it
+      s.x -= s.vx * DT; s.z -= s.vz * DT; s.vx = s.vz = 0; s.speed = 0;
+    }
     const h = level.height(s.x, s.z);
+    if (s.y < h && s.vy > 0) {
+      const [gx, gz] = gradient(level, s.x, s.z);
+      if (Math.atan(Math.hypot(gx, gz)) >= SHEER) { // flew into a wall: the surface stops the board, it never passes through (a gentler slope is landed on below)
+        const k = (s.vy - gx * s.vx - gz * s.vz) / (1 + gx * gx + gz * gz);
+        if (k < 0) { s.vx += gx * k; s.vz += gz * k; s.vy -= k; } // keep only the part of the velocity along the surface
+        s.y = h;
+        if (s.vy > 0 && s.vy < 0.5) s.vy = 0;
+      }
+    }
     if (s.y <= h && s.vy <= 0) land(s, h);
   }
 

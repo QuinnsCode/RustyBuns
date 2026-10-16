@@ -4,7 +4,7 @@
 // site's kit parts onto the slope (or cuts a flat pad under a site that asks for one), and answers `height`
 // as the higher of ground and piece.
 import { heightmapTerrain, withPads, zoneData, type Terrain } from "@rustybuns/terrain";
-import { type Bounds, type Level, makeLevel, type Spawn } from "../level.ts";
+import { type Bounds, type Level, makeLevel, postObstacles, type Spawn } from "../level.ts";
 import { drape, type Gap, join, lift, type Part } from "./pieces.ts";
 
 /** Real terrain is shrunk this many times across (a 1 km zone becomes a ~333 m disc). One constant for the whole game. */
@@ -54,6 +54,8 @@ export type ParkSpec = {
   landmarks?: Landmark[];
   /** Ground above this height is bare granite (a dome's cap), so a high summit reads against the green below. */
   granite?: number;
+  /** The air over the park (a name from render/weather.ts): rain on the valley, snow on the dome. Golden hour when absent. */
+  weather?: string;
 };
 
 export type ParkLevel = Level & {
@@ -65,6 +67,7 @@ export type ParkLevel = Level & {
   trees: Tree[];
   landmarks: Landmark[];
   granite: number;
+  weather?: string;
 };
 
 export function parkLevel(spec: ParkSpec, real = false): ParkLevel {
@@ -76,8 +79,9 @@ export function parkLevel(spec: ParkSpec, real = false): ParkLevel {
   const trees = spec.trees ?? [];
   const inner = makeLevel({ name: spec.name, pieces: parts.pieces, rails: parts.rails, obstacles: trees, spawns: spec.spawns, bounds: spec.bounds });
   const height = (x: number, z: number) => Math.max(ground.height(x, z), inner.height(x, z));
+  const obstacles = [...trees, ...postObstacles(parts.rails, height)];
   return {
-    ...inner, height, id: spec.id, blurb: spec.blurb, ground, gaps: [...parts.gaps, ...(spec.gaps ?? [])], goals: spec.goals.map((g) => (g.kind === "climb" ? { ...g, metres: Math.max(1, Math.round((g.metres * relief) / GOAL_RELIEF)) } : g)), trees, landmarks: spec.landmarks ?? [], granite: spec.granite ?? Infinity,
+    ...inner, obstacles, height, id: spec.id, blurb: spec.blurb, ground, gaps: [...parts.gaps, ...(spec.gaps ?? [])], goals: spec.goals.map((g) => (g.kind === "climb" ? { ...g, metres: Math.max(1, Math.round((g.metres * relief) / GOAL_RELIEF)) } : g)), trees, landmarks: spec.landmarks ?? [], granite: spec.granite ?? Infinity, weather: spec.weather,
     pickups: (spec.pickups ?? []).map((p) => ({ x: p.x, z: p.z, y: height(p.x, p.z) + (p.lift ?? 1) })),
   };
 }

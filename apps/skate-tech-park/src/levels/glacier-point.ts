@@ -2,12 +2,13 @@
 // away in a cliff, and the long gap over that drop is the mega ramp. A funbox and a bar on the plateau
 // keep the board busy on the way.
 import { type ParkSpec } from "./park.ts";
-import { outcrop, flatBar, funbox, kicker, tabletop } from "./pieces.ts";
+import { outcrop, flatBar, funbox, kicker, tabletop, skyRail } from "./pieces.ts";
 
 const E = Math.PI / 2, N = Math.PI;
 
 export const glacierPoint: ParkSpec = {
   id: "glacier-point",
+  weather: "dusk",
   name: "Glacier Point Rim",
   blurb: "Build speed across the plateau, hit the lip at the overlook and clear the drop to the slope below.",
   zone: "glacier-point",
@@ -17,6 +18,8 @@ export const glacierPoint: ParkSpec = {
     { parts: [flatBar({ x: -60, z: 20, yaw: N }, { len: 16 }), funbox({ x: -40, z: 20, yaw: N }, { w: 10, d: 24, h: 1.2, ramp: 7 })] },
     { parts: [kicker({ x: -40, z: -48, yaw: N }, { w: 12, d: 16, h: 3.5, curve: 1.5, name: "overlook lip" })] },
     { parts: [kicker({ x: 90, z: 40, yaw: E }, { w: 10, d: 8, h: 2, name: "slope hop" })] },
+    // not possible: a bar on stilts that climbs away from the ground
+    { parts: [skyRail({ x: -40, z: 95, yaw: E }, { len: 100, y: 1.6, y2: 16.6 })] },
   ],
   gaps: [
     { name: "Glacier Point Gap", a: { x: -40, z: -52 }, b: { x: -40, z: -150 }, r: 16, rb: 100, bonus: 3000, min: 50 },
@@ -25,6 +28,7 @@ export const glacierPoint: ParkSpec = {
     { name: "overlook", x: -40, z: 62, yaw: N },
     { name: "plateau", x: -40, z: 100, yaw: N },
     { name: "slope", x: 40, z: 40, yaw: E },
+    { name: "sky rail", x: -105, z: 95, yaw: E },
   ],
   bounds: { minX: -150, maxX: 250, minZ: -200, maxZ: 130 },
   goals: [
