@@ -1,6 +1,7 @@
 // Journeys for the tricks: gestures into flicks, grinds by approach angle with balance, bails and the
 // combo chain, and the roadster's suction fan. All headless, through the same step() the page runs.
 import { expect, test } from "bun:test";
+import { clamp } from "@rustybuns/util";
 import { Gestures, resolve } from "../src/gesture.ts";
 import { type Level, makeLevel, piece, type RailKind } from "../src/level.ts";
 import { DT, IDLE, type Input, start, step, type State } from "../src/sim.ts";
@@ -133,4 +134,34 @@ test("the suction fan holds the roadster to a lip it would otherwise fly off, an
   let top = 0;
   run(start(0, 0, 0, box), 3, (s) => { top = Math.max(top, s.y); return { throttle: 1, fan: true }; }, box);
   expect(top).toBeCloseTo(1.2, 1);
+});
+
+test("a held manual scores when you let go, falls over if left alone, and links into the next trick's chain", () => {
+  const lv = flat();
+  const hold = (s: State) => clamp(s.balance * 2 + 0.1, -1, 1); // push or brake against the tip
+  const roll = () => { const s = start(0, -40, 0, lv); s.speed = 8; return s; };
+
+  const sk = roll();
+  run(sk, 2.5, (s) => ({ manual: 1, throttle: hold(s) }), lv);
+  expect(sk.manual).toBe(1);
+  run(sk, 0.05, () => ({}), lv); // let go
+  expect(sk.last?.name).toBe("Manual");
+  expect(sk.last?.points).toBeGreaterThan(300);
+
+  const nose = roll();
+  run(nose, 2.5, (s) => ({ manual: -1, throttle: -hold(s) }), lv);
+  run(nose, 0.05, () => ({}), lv);
+  expect(nose.last?.name).toBe("Nose manual");
+
+  const left = roll();
+  run(left, 2.2, () => ({ manual: 1 }), lv);
+  expect(left.last?.name).toMatch(/Bail: lost the manual/);
+  expect(left.bail).toBeGreaterThan(0);
+
+  // a manual, then an ollie and a kickflip: the second trick is multiplied by the chain
+  const link = roll();
+  run(link, 2.5, (s) => ({ manual: 1, throttle: hold(s) }), lv);
+  run(link, 2, (s) => ({ jump: s.t < 2.56 && !s.air, flick: s.air && !s.flipT && !s.tricks.length ? "kickflip" : null }), lv);
+  expect(link.chain).toBe(2);
+  expect(link.last?.name).toMatch(/kickflip x2/);
 });

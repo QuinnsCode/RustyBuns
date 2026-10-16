@@ -31,9 +31,10 @@ export type Input = {
   flip: boolean; // board: kickflip (on press, in the air); shorthand for flick "kickflip"
   flick: Flick | null; // board: a flick trick, on press, in the air (the gesture layer resolves a drag or stick into this)
   fan: boolean; // the suction fan, held: sticks the board to banks and walls at speed
+  manual: -1 | 0 | 1; // held on the ground: 1 balances on the back wheels (manual), -1 on the front (nose manual)
 };
 
-export const IDLE: Input = { throttle: 0, steer: 0, jump: false, boost: false, flip: false, flick: null, fan: false };
+export const IDLE: Input = { throttle: 0, steer: 0, jump: false, boost: false, flip: false, flick: null, fan: false, manual: 0 };
 
 const TUNE = { accel: 20, top: 32 * T, turn: 2.2 / T, airSpin: 7 / T };
 // The rocket jets, in the board's own numbers.
@@ -67,6 +68,8 @@ const GRIND_POINTS: Record<GrindKind, number> = { "50-50": 300, "5-0": 350, nose
 const LEDGE_NAME: Record<GrindKind, string> = { "50-50": "50-50 slide", "5-0": "5-0 slide", nosegrind: "Nose slide", boardslide: "Boardslide" };
 const GRIND_NAME: Record<GrindKind, string> = { "50-50": "50-50 grind", "5-0": "5-0 grind", nosegrind: "Nosegrind", boardslide: "Boardslide" };
 const BALANCE_DRIFT = 1.1; // how fast a grind pulls off balance per unit of lean, per second
+const MANUAL_MIN = 2; // m/s: slower than this and the board just drops back onto its wheels
+const MANUAL_POINTS = 150; // a second
 const BALANCE_PUSH = 3.2; // how hard steering pulls it back
 
 /** What the approach to a rail makes of the grind: `off` is the angle between the rider and the bar, `side` +1 if coming in from its left. */
@@ -98,7 +101,9 @@ export type State = {
   grindTime: number;
   grindKind: GrindKind;
   grindOff: number; // radians the board sits across the bar (boardslide), for the view
-  balance: number; // -1..1 on a grind; at either end the rider falls off
+  balance: number; // -1..1 on a grind or a manual; at either end the rider falls off
+  manual: -1 | 0 | 1; // which manual is being held, if any
+  manualTime: number; // seconds in it
   chain: number; // tricks landed in a row; the score multiplier
   chainT: number; // seconds left to extend it
   fan: boolean; // the suction fan is on
@@ -117,7 +122,7 @@ export function start(x = 0, z = -20, yaw = 0, level: Level = plaza): State {
   return {
     t: 0, x, y: level.height(x, z), z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0, roll: 0, speed: 0,
     air: false, airTime: 0, spun: 0, flipT: 0, flipKind: "kickflip", tricks: [], grind: -1, grindTime: 0,
-    grindKind: "50-50", grindOff: 0, balance: 0, chain: 0, chainT: 0, fan: false, jetT: 0,
+    grindKind: "50-50", grindOff: 0, balance: 0, manual: 0, manualTime: 0, chain: 0, chainT: 0, fan: false, jetT: 0,
     firing: { rear: false, lift: false, spin: 0, roll: 0 }, plateDown: false,
     bail: 0, score: 0, last: null, prevJump: false, prevFlip: false, prevFlick: false,
   };
@@ -138,7 +143,7 @@ function award(s: State, name: string, points: number) {
 function bail(s: State, name: string) {
   s.bail = 1.2;
   s.speed = 0; s.vx = s.vz = 0;
-  s.flipT = 0; s.grind = -1; s.chain = 0; s.chainT = 0;
+  s.flipT = 0; s.grind = -1; s.manual = 0; s.chain = 0; s.chainT = 0;
   s.last = { name, points: 0 };
 }
 
@@ -149,7 +154,14 @@ function crash(s: State, name: string | null) {
   return s;
 }
 
+/** Set the board back on all four wheels: a manual held for more than half a second is a trick. */
+function endManual(s: State) {
+  if (s.manualTime > 0.5) award(s, s.manual > 0 ? "Manual" : "Nose manual", Math.round(s.manualTime * MANUAL_POINTS));
+  s.manual = 0; s.manualTime = 0;
+}
+
 function takeOff(s: State) {
+  if (s.manual) endManual(s);
   s.air = true;
   s.airTime = 0; s.spun = 0; s.tricks = [];
 }
@@ -193,7 +205,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
   s.t += DT;
   s.firing = { rear: false, lift: false, spin: 0, roll: 0 };
 
-  if (s.chainT > 0 && !s.air && s.grind < 0 && (s.chainT -= DT) <= 0) s.chain = 0; // the clock only runs on the ground
+  if (s.chainT > 0 && !s.air && s.grind < 0 && !s.manual && (s.chainT -= DT) <= 0) s.chain = 0; // the clock only runs on the ground, and a held manual keeps the chain alive
   if (s.bail > 0) {
     s.bail -= DT;
     s.plateDown = false;
@@ -229,6 +241,15 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
   }
 
   if (!s.air) {
+    // a manual: balance on two wheels. It drifts toward tipping over; push or brake to hold it
+    if (inp.manual && !s.manual && Math.abs(s.speed) > MANUAL_MIN) { s.manual = inp.manual; s.manualTime = 0; s.balance = 0; }
+    if (s.manual) {
+      s.manualTime += DT;
+      s.speed *= 1 - 0.1 * DT;
+      s.balance += (BALANCE_DRIFT * (s.balance + (s.balance >= 0 ? 0.15 : -0.15)) - BALANCE_PUSH * inp.throttle * s.manual) * DT;
+      if (inp.manual !== s.manual || Math.abs(s.speed) < MANUAL_MIN) endManual(s);
+      else if (Math.abs(s.balance) >= 1) { bail(s, `Bail: lost the ${s.manual > 0 ? "manual" : "nose manual"}`); return s; }
+    }
     const top = s.fan ? tune.top * JETS.fanTop : boosting ? BOOST_TOP : tune.top;
     s.speed += inp.throttle * tune.accel * DT + (boosting ? BOOST * DT : 0);
     if (!inp.throttle && !boosting) s.speed *= 1 - 0.6 * DT;

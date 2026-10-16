@@ -174,6 +174,7 @@ const input = (): Input => ({
   flip: keys.has("KeyF"),
   flick: keys.has("KeyG") ? "heelflip" : keys.has("KeyV") ? "shove-it" : null,
   fan: keys.has("KeyE"),
+  manual: keys.has("KeyQ") ? 1 : keys.has("KeyZ") ? -1 : 0,
 });
 
 // The HUD: lucide icons with their words as tooltips.
@@ -191,7 +192,7 @@ function hud() {
   swapBtn.replaceChildren(icon(mode === "car" ? RectangleHorizontal : Car));
   swapBtn.title = mode === "car" ? "Fingerboard (Tab)" : "Roadster (Tab)";
   if (skins.show(mode === "car" ? "roadster" : "fingerboard")) plumes.landed(sim.x, sim.y, sim.z, 4); // the swap pops in a ring of puffs
-  $("keys").innerHTML = "<kbd>W</kbd><kbd>S</kbd> push <kbd>A</kbd><kbd>D</kbd> steer, spin in the air <kbd>Space</kbd> ollie <kbd>F</kbd> kickflip <kbd>G</kbd> heelflip <kbd>V</kbd> shove-it (or drag the mouse or push the right stick: up ollies, across and down flick) <kbd>Shift</kbd> rear jets, and pump a transition <kbd>E</kbd> suction fan";
+  $("keys").innerHTML = "<kbd>W</kbd><kbd>S</kbd> push <kbd>A</kbd><kbd>D</kbd> steer, spin in the air <kbd>Space</kbd> ollie <kbd>F</kbd> kickflip <kbd>G</kbd> heelflip <kbd>V</kbd> shove-it (or drag the mouse or push the right stick: up ollies, across and down flick) <kbd>Shift</kbd> rear jets, and pump a transition <kbd>E</kbd> suction fan <kbd>Q</kbd> hold a manual, <kbd>Z</kbd> a nose manual (W and S hold the balance)";
 }
 hud();
 
