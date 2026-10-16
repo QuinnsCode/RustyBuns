@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { fingerboard, roadster } from "../src/models.ts";
 import { makeLevel } from "../src/level.ts";
 import { Skins } from "../src/render/skins.ts";
-import { manualPose, REST_TILT, TiltEase } from "../src/render/tilt.ts";
+import { lieOnGround, manualPose, REST_TILT, TiltEase } from "../src/render/tilt.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 
 const PIVOT = { fingerboard: 0.45, roadster: 0.6 };
@@ -57,4 +57,19 @@ test("the nearer balance is to falling the steeper and shakier it gets, and a ma
   expect(e.ease).toBeLessThan(0.5); // not a snap
   for (let i = 0; i < 60; i++) e.update(0, 1 / 60);
   expect(e.ease).toBe(0);
+});
+
+test("on a slope the board lies along the ground: nose down going downhill, right side up where the ground rises to the right", () => {
+  const board = (pitch: number, roll: number) => {
+    const o = new THREE.Object3D(), lie = lieOnGround(pitch, roll);
+    o.rotation.set(lie.x, 0.7, lie.z, "YXZ"); // any heading
+    o.updateMatrixWorld(true);
+    const m = o.matrixWorld.elements;
+    const fwd = new THREE.Vector3(m[8], m[9], m[10]), left = new THREE.Vector3(m[0], m[1], m[2]);
+    return { rise: fwd.y / Math.hypot(fwd.x, fwd.z), right: -left.y };
+  };
+  expect(board(0.4, 0).rise).toBeCloseTo(Math.tan(0.4), 5); // the ground rises ahead: the nose rises with it
+  expect(board(-0.4, 0).rise).toBeCloseTo(-Math.tan(0.4), 5); // downhill: nose down, not floating nose-up
+  expect(board(0, 0.3).right).toBeGreaterThan(0.2); // the ground rises to its right: so does its right side
+  expect(board(0, -0.3).right).toBeLessThan(-0.2);
 });

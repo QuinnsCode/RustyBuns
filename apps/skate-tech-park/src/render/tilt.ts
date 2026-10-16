@@ -37,3 +37,6 @@ export class TiltEase {
     return this.ease;
   }
 }
+
+/** The turns (about x, then z, after yaw: Euler order YXZ) that lay a board on ground rising `pitch` ahead and `roll` to its right. */
+export const lieOnGround = (pitch: number, roll: number) => ({ x: -pitch, z: -roll });
