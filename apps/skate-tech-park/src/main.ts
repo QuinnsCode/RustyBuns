@@ -2,7 +2,7 @@
 import { Car, createElement, Info, RectangleHorizontal, RotateCcw, Shield, ShieldOff, Users } from "lucide";
 import * as THREE from "three";
 import { mountPartsPicker } from "./parts-picker.ts";
-import { fingerboard, roadster, type Thruster } from "./models.ts";
+import { BOARD_BUDGETS, type BoardBudget, dressBoard, fingerboard, roadster, type Thruster } from "./models.ts";
 import { levelMeshes } from "./render/pieces.ts";
 import { Plumes } from "./render/plumes.ts";
 import { Chase } from "./render/chase.ts";
@@ -114,6 +114,11 @@ const car = roadster();
 const showroom = new URLSearchParams(location.search).has("showroom");
 const PIVOT_Y = { fingerboard: 0.45, roadster: 0.6 }; // what a flip turns about
 const board = fingerboard();
+// The Blender model at a polygon budget (?board=hi|mid|low, or ?board=built for the three.js one alone).
+const budget = new URLSearchParams(location.search).get("board") ?? "mid";
+if (BOARD_BUDGETS.includes(budget as BoardBudget)) {
+  dressBoard(board, new URL(`models/fingerboard-${budget}.glb`, document.baseURI).href).catch((e) => console.warn("board model", e));
+}
 const skins = new Skins({ fingerboard: board, roadster: car }, showroom ? "roadster" : "fingerboard", PIVOT_Y);
 mountPartsPicker(board.userData.paint);
 const plumes = new Plumes();
