@@ -321,6 +321,29 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       col.setHSL(0.24 + r() * 0.07, 0.45, 0.2 + r() * 0.08);
       put(bushes, m.compose(p.set(at.x, heightAt(at.x, at.z) - 0.1, at.z), q.setFromAxisAngle(UP, r() * 6), k.set(w, w * 1.1, w)), col);
     }
+    // Round, cheerful bushes: lumpy green balls in bunches, some with red and yellow berries or little
+    // flowers on them, a touch toy-like. Thick enough to hide a Wooka's silhouette, never in the way.
+    const nBush = jungle ? 90 : 150;
+    const puffGeo = lumpy(1, 2, 0.12, 21, true);
+    const puffs = inst(puffGeo, std(0xffffff, 0.8), nBush * 4, true);
+    const dots = inst(new THREE.SphereGeometry(0.16, 6, 4), std(0xffffff, 0.5), nBush * 10, true);
+    for (let i = 0, made = 0; i < 1200 && made < nBush; i++) {
+      const at = anywhere(1.15);
+      if (bare(at.x, at.z, 3) || onTrail(at.x, at.z) < 3) continue;
+      made++;
+      const w = 1.1 + r() * 1.3, hue = 0.25 + r() * 0.08, fruit = r() < 0.55 ? (r() < 0.5 ? 0.0 : 0.13) : -1;
+      for (let j = 0; j < 4; j++) {
+        const px = at.x + (r() - 0.5) * w * 1.6, pz = at.z + (r() - 0.5) * w * 1.6, ps = w * (0.55 + r() * 0.45);
+        col.setHSL(hue + (r() - 0.5) * 0.03, 0.55, 0.3 + r() * 0.12);
+        put(puffs, m.compose(p.set(px, heightAt(px, pz) + ps * 0.6, pz), q.setFromAxisAngle(UP, r() * 6), k.set(ps, ps * 0.8, ps)), col);
+        if (fruit >= 0) for (let d = 0; d < 2; d++) {
+          const a = r() * 6.28, e = 0.3 + r() * 0.9;
+          col.setHSL(fruit, 0.9, 0.5);
+          put(dots, m.compose(p.set(px + Math.cos(a) * ps * 0.85 * Math.cos(e), heightAt(px, pz) + ps * (0.6 + Math.sin(e) * 0.7), pz + Math.sin(a) * ps * 0.85 * Math.cos(e)), q.identity(), k.set(1, 1, 1)), col);
+        }
+      }
+    }
+    for (const mesh of [puffs, dots]) { mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; }
     const logs = inst(new THREE.CylinderGeometry(1, 1, 1, 12), std(0x6a4128, 0.95, { map: barkMap() }), 18, true);
     const logMoss = inst(new THREE.CylinderGeometry(1.05, 1.05, 0.98, 12, 1, true, Math.PI / 2 - 0.9, 1.8), std(0x3d5520, 1, { map: barkMap() }), 18);
     for (let i = 0; i < 200 && logs.count < 18; i++) {
@@ -411,6 +434,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   // Cover in the woods: rocks, stumps and fallen logs, and the Wooka's trench lines, earth
   // banked up behind a row of sharpened stakes leaning out at whoever's coming.
   const barkMat = std(0x5a3a26, 0.95, { map: barkMap() }), cutMat = std(0xc89a62, 0.9), dirtMat = std(0x5a3b22, 1, { flatShading: true }), stakeMat = std(0x8a6a44, 0.9);
+  const plankMat = std(0x6a4a2a, 0.95, { map: barkMap() }), bannerMat = std(0xb3261e, 0.9, { side: THREE.DoubleSide }), lanternMat = new THREE.MeshBasicMaterial({ color: 0xffb347 }), sackMat = std(0xb89a5a, 1, { flatShading: true });
   const solidAt = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, ry = 0) => {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(x, y, z);
@@ -446,6 +470,16 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
         put(stakes, m.compose(p.set(blk.x + x, y + blk.h * 0.7, blk.z + out * (blk.d / 2 + 0.4)), q.setFromAxisAngle(new THREE.Vector3(1, 0, 0), out * 0.7 + (r() - 0.5) * 0.2), k.set(1, 0.8 + r() * 0.4, 1)));
         if (r() < 0.06) solidAt(lumpy(0.22, 1, 0.05, 7, false), std(0xeee6cf, 0.6), blk.x + x, y + blk.h + 0.6, blk.z + out * (blk.d / 2 + 0.9));
       }
+      // The trench itself behind the berm: a dark cut with duckboards, a row of lashed log posts
+      // along the lip, hide banners and a lantern now and then.
+      const back = -out;
+      solidAt(new THREE.BoxGeometry(blk.w, 0.12, 1.4), plankMat, blk.x, y + 0.1, blk.z + back * (blk.d / 2 + 1.1));
+      for (let x = -blk.w / 2 + 1.2; x < blk.w / 2; x += 3.2) {
+        solidAt(new THREE.CylinderGeometry(0.14, 0.18, blk.h + 1.6, 6), barkMat, blk.x + x, y + (blk.h + 1.6) / 2, blk.z + back * (blk.d / 2 + 0.4));
+        if (r() < 0.35) solidAt(new THREE.PlaneGeometry(0.9, 1.3).translate(0, -0.65, 0), bannerMat, blk.x + x + 0.3, y + blk.h + 1.5, blk.z + back * (blk.d / 2 + 0.4), r() * 0.4);
+        if (r() < 0.2) solidAt(new THREE.SphereGeometry(0.15, 8, 6), lanternMat, blk.x + x, y + blk.h + 1.35, blk.z + back * (blk.d / 2 + 0.55));
+      }
+      for (let x = -blk.w / 2 + 0.6; x < blk.w / 2; x += 2.3) if (r() < 0.6) solidAt(lumpy(0.3, 1, 0.2, 5, false), sackMat, blk.x + x, y + blk.h * 0.55, blk.z + back * (blk.d / 2 + 0.9)); // loot sacks
     }
   }
   stakes.instanceMatrix.needsUpdate = true;
