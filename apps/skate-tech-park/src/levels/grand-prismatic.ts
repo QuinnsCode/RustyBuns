@@ -5,7 +5,7 @@ import { bowl, flatBar, funbox, gap, hip, quarterPipe, spine } from "./pieces.ts
 
 const E = Math.PI / 2;
 
-const sinter = gap({ x: -150, z: -180, yaw: E }, { name: "Sinter Jump", span: 30, h: 2.4, w: 8, landH: 2, landLen: 14, reach: 40, bonus: 800 });
+const sinter = gap({ x: -150, z: -180, yaw: E }, { name: "Sinter Jump", span: 30, h: 2.4, w: 8, landH: 2, landLen: 14, reach: 55, bonus: 800 });
 
 export const grandPrismatic: ParkSpec = {
   id: "grand-prismatic",

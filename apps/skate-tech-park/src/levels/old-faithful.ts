@@ -5,7 +5,7 @@ import { bowl, flatBar, funbox, gap, hip, quarterPipe, spine, stairSet } from ".
 
 const E = Math.PI / 2;
 
-const vent = gap({ x: 56, z: 75, yaw: E }, { name: "Geyser Hop", span: 30, h: 2.4, w: 8, landH: 1.8, landLen: 14, reach: 40, bonus: 800 });
+const vent = gap({ x: 56, z: 75, yaw: E }, { name: "Geyser Hop", span: 30, h: 2.4, w: 8, landH: 1.8, landLen: 14, reach: 55, bonus: 800 });
 
 export const oldFaithful: ParkSpec = {
   id: "old-faithful",

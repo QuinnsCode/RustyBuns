@@ -5,7 +5,7 @@ import { bowl, flatBar, funbox, gap, hip, stairSet } from "./pieces.ts";
 
 const E = Math.PI / 2;
 
-const hop = gap({ x: 150, z: 80, yaw: E }, { name: "Valley Hop", span: 30, h: 2.4, w: 8, landH: 2, landLen: 14, reach: 40, bonus: 800 });
+const hop = gap({ x: 150, z: 80, yaw: E }, { name: "Valley Hop", span: 30, h: 2.4, w: 8, landH: 2, landLen: 14, reach: 55, bonus: 800 });
 
 export const yosemiteFalls: ParkSpec = {
   id: "yosemite-falls",

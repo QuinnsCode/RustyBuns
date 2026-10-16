@@ -16,7 +16,7 @@ export const halfDome: ParkSpec = {
     { parts: [quarterPipe({ x: 265, z: 190, yaw: E }, { w: 14, d: 7, h: 3.6 })] },
   ],
   gaps: [
-    { name: "Half Dome Face", a: { x: -30, z: 20 }, b: { x: -110, z: 20 }, r: 45, rb: 80, bonus: 4000, min: 45 },
+    { name: "Half Dome Face", a: { x: -30, z: 20 }, b: { x: -120, z: -30 }, r: 45, rb: 110, bonus: 4000, min: 45 },
   ],
   spawns: [
     { name: "dome view", x: 280, z: 60, yaw: -1.5 },
