@@ -24,6 +24,17 @@ Design note for running it locally and on Cloudflare: [mervin-engine.md](mervin-
 
 Real numbers on where a swarm of PRs got stuck, and which helper each jam belongs to: [jams.md](jams.md).
 
+## Try it on your repo
+
+```sh
+bun scripts/mervin-try.ts https://github.com/you/your-repo.git   # or a local path
+```
+
+Clones the history bare (nothing checked out, nothing written to a local path) and says, in words, how many of the
+conflicts your merges hit Mervin would have settled, how many merges needed no person to stop and resolve, and how
+many fights the merge plan flagged while the PR was open. It reads merge commits, so a repo that squash-merges
+every PR has nothing to replay and the report says so.
+
 ## The live count
 
 Every merge that lands adds to a counter, and every stretch both sides changed that Mervin blended with no card and
