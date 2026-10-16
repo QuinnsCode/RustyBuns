@@ -17,7 +17,7 @@ export const glacierPoint: ParkSpec = {
     { parts: [kicker({ x: 90, z: 40, yaw: E }, { w: 10, d: 8, h: 2, name: "slope hop" })] },
   ],
   gaps: [
-    { name: "Glacier Point Gap", a: { x: -40, z: -52 }, b: { x: -40, z: -125 }, r: 16, rb: 45, bonus: 3000 },
+    { name: "Glacier Point Gap", a: { x: -40, z: -52 }, b: { x: -40, z: -150 }, r: 16, rb: 100, bonus: 3000, min: 50 },
   ],
   spawns: [
     { name: "plateau", x: -40, z: 100, yaw: N },

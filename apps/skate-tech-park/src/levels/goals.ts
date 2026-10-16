@@ -39,7 +39,7 @@ export function trackRun(level: ParkLevel): Run {
     if (!air && s.air) takeoff = { x: s.x, z: s.z };
     if (air && !s.air && s.bail <= 0) {
       for (const g of level.gaps) {
-        if (Math.hypot(takeoff.x - g.a.x, takeoff.z - g.a.z) > g.r || Math.hypot(s.x - g.b.x, s.z - g.b.z) > g.rb) continue;
+        if (Math.hypot(takeoff.x - g.a.x, takeoff.z - g.a.z) > g.r || Math.hypot(s.x - g.b.x, s.z - g.b.z) > g.rb || Math.hypot(s.x - takeoff.x, s.z - takeoff.z) < g.min) continue;
         run.gaps.set(g.name, (run.gaps.get(g.name) ?? 0) + 1);
         s.score += g.bonus; s.last = { name: `Gap: ${g.name}`, points: g.bonus };
         run.combo += g.bonus; run.bestCombo = Math.max(run.bestCombo, run.combo); comboT = s.t;

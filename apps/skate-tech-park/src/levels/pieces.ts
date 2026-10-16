@@ -6,7 +6,9 @@ import { type Piece, type PieceKind, type Rail, type RailKind, piece } from "../
 export type At = { x: number; z: number; yaw?: number };
 
 /** Score for taking off within `r` of `a` (the launch's centre) and landing within `rb` of `b` (the landing's); */
-export type Gap = { name: string; a: { x: number; z: number }; b: { x: number; z: number }; r: number; rb: number; bonus: number };
+export type Gap = { name: string; a: { x: number; z: number }; b: { x: number; z: number }; r: number; rb: number; bonus: number;
+  /** It only counts if the flight covers at least this far, so a short hop onto the thing in the middle doesn't. */
+  min: number };
 
 export type Part = { pieces: Piece[]; rails: Rail[]; gaps: Gap[] };
 
@@ -157,7 +159,7 @@ export function gap(at: At, o: { name: string; span: number; h?: number; landH?:
   const { name, span, h = 1.5, landH = 1, landLen = 6, w = 4, bonus = 500, curve = 1, kick = 4, reach = landLen / 2 + 3 } = o;
   const land = toWorld(at, 0, kick / 2 + span + landLen / 2);
   return {
-    launch: join(kicker(at, { w, d: kick, h, curve, name: `${name} launch` }), part({ gaps: [{ name, a: { x: at.x, z: at.z }, b: land, r: kick / 2 + 3, rb: reach, bonus }] })),
+    launch: join(kicker(at, { w, d: kick, h, curve, name: `${name} launch` }), part({ gaps: [{ name, a: { x: at.x, z: at.z }, b: land, r: kick / 2 + 3, rb: reach, bonus, min: Math.round(span * 0.8) }] })),
     landing: part({ pieces: [piece("ramp", `${name} landing`, land.x, land.z, at.yaw ?? 0, w + 2, landLen, landH, 0)] }),
     /** The landing's centre, for placing its site. */
     land,
