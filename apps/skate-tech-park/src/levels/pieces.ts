@@ -29,14 +29,14 @@ const shape = (kind: PieceKind, name: string, at: At, w: number, d: number, f: (
   height: (lx, lz) => (Math.abs(lx) > w / 2 || Math.abs(lz) > d / 2 ? 0 : f(lx, lz)),
 });
 
-const bar = (kind: RailKind, at: At, lx1: number, lz1: number, lx2: number, lz2: number, y: number): Rail =>
-  ({ kind, a: toWorld(at, lx1, lz1), b: toWorld(at, lx2, lz2), y });
+const bar = (kind: RailKind, at: At, lx1: number, lz1: number, lx2: number, lz2: number, y: number, y2?: number): Rail =>
+  ({ kind, a: toWorld(at, lx1, lz1), b: toWorld(at, lx2, lz2), y, ...(y2 === undefined ? {} : { y2 }) });
 
 /** Raises a part onto a floor at `base`. */
 export function lift(p: Part, base: number): Part {
   return part({
     pieces: p.pieces.map((q) => ({ ...q, h0: q.h0 + base, h1: q.h1 + base, height: (lx, lz) => q.height(lx, lz) + base })),
-    rails: p.rails.map((r) => ({ ...r, y: r.y + base })),
+    rails: p.rails.map((r) => ({ ...r, y: r.y + base, ...(r.y2 === undefined ? {} : { y2: r.y2 + base }) })),
     gaps: p.gaps,
   });
 }
@@ -98,10 +98,10 @@ export const ledge = (at: At, o: { len?: number; w?: number; h?: number; name?: 
   return part({ pieces: [piece("box", name, at.x, at.z, at.yaw ?? 0, w, len, h, h)], rails: [bar("ledge", at, 0, -len / 2, 0, len / 2, h)] });
 };
 
-/** A round-bar rail along local z. */
-export const handrail = (at: At, o: { len?: number; y?: number } = {}): Part => {
-  const { len = 8, y = 0.9 } = o;
-  return part({ rails: [bar("rail", at, 0, -len / 2, 0, len / 2, y)] });
+/** A round-bar rail along local z; `y2` is its height at the +z end when it slopes (down a stair set). */
+export const handrail = (at: At, o: { len?: number; y?: number; y2?: number } = {}): Part => {
+  const { len = 8, y = 0.9, y2 } = o;
+  return part({ rails: [bar("rail", at, 0, -len / 2, 0, len / 2, y, y2)] });
 };
 
 /** A low rail on the flat. */

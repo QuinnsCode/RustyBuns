@@ -5,7 +5,7 @@
 // behind the licence plate, which drops to uncover it), four under the corners for lift, and two at
 // the nose for spinning in the air. The tank refills slowly while the car is on the ground.
 import { clamp } from "@rustybuns/util";
-import { type Level, onRail } from "./level.ts";
+import { hitObstacle, type Level, onRail, railY } from "./level.ts";
 import { plaza } from "./levels/plaza.ts";
 
 export const DT = 1 / 60;
@@ -32,6 +32,8 @@ const BOOST_TOP = 48;
 const LIFT = 34; // m/s² up from the four under the corners, more than gravity
 const DRAIN = { boost: 0.18, lift: 0.3, spin: 0.08 }; // tank per second
 const REFILL = 0.06;
+const MAX_SLOPE = 3; // a rise steeper than this (about 72 degrees) in one stride is a wall, not a ramp
+const STEP = 0.2; // a kerb or stair this low is always rideable
 
 export type Firing = { rear: boolean; lift: boolean; spin: -1 | 0 | 1 };
 
@@ -80,6 +82,13 @@ function bail(s: State, name: string) {
   s.speed = 0; s.vx = s.vz = 0;
   s.flipT = 0;
   s.last = { name, points: 0 };
+}
+
+/** Run into something solid: lose most of the speed, and bail if it was fast and the thing was worth a name. */
+function crash(s: State, name: string | null) {
+  if (name && Math.abs(s.speed) > 6) { bail(s, name); return s; }
+  s.speed *= -0.2;
+  return s;
 }
 
 function takeOff(s: State) {
@@ -138,6 +147,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     s.speed *= 1 - 0.15 * DT;
     s.x += fx * s.speed * DT; s.z += fz * s.speed * DT;
     const t = onRail(r, s.x, s.z).t;
+    s.y = railY(r, t);
     if (pressed || t < 0 || t > 1) {
       if (s.grindTime > 0.2) award(s, "50-50 grind", Math.round(s.grindTime * 300));
       s.grind = -1;
@@ -156,12 +166,18 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     s.yaw += inp.steer * tune.turn * DT * Math.min(1, Math.abs(s.speed) / 3) * Math.sign(s.speed || 1);
 
     const nx = s.x + Math.sin(s.yaw) * s.speed * DT, nz = s.z + Math.cos(s.yaw) * s.speed * DT;
-    const h = level.height(nx, nz);
-    if (h - s.y > 0.35) { // a wall: the side of a ramp or box
-      s.speed *= -0.2;
-      return s;
-    }
     const dist = Math.abs(s.speed * DT);
+    if (hitObstacle(level, nx, nz, s.y)) return crash(s, "Hit a tree");
+    // walk the stride in 10 cm strides: a rise too sharp for its length is a wall (the side of a box),
+    // a steep curve (a quarter pipe near its lip) is not
+    const n = Math.max(1, Math.ceil(dist / 0.1));
+    let prev = s.y;
+    for (let i = 1; i <= n; i++) {
+      const h = level.height(s.x + ((nx - s.x) * i) / n, s.z + ((nz - s.z) * i) / n);
+      if (h - prev > Math.max(STEP, (dist / n) * MAX_SLOPE)) return crash(s, null);
+      prev = h;
+    }
+    const h = prev;
     if (dist > 1e-6) { // slopes slow you going up and speed you coming down
       const slope = (h - s.y) / dist;
       s.speed -= Math.sign(s.speed) * G * (slope / Math.hypot(1, slope)) * DT;
@@ -193,19 +209,21 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     }
     if (!car && flipPressed && s.flipT <= 0) s.flipT = 0.45;
     if (s.flipT > 0) { s.flipT -= DT; if (s.flipT <= 0) { s.flipT = 0; s.flips++; } }
+    const hit = hitObstacle(level, s.x + s.vx * DT, s.z + s.vz * DT, s.y + s.vy * DT);
+    if (hit) { s.vx = s.vz = 0; s.speed = 0; } // thrown against the trunk: drop down it
     s.x += s.vx * DT; s.y += s.vy * DT; s.z += s.vz * DT;
 
     if (!car && s.vy < 0) { // dropping onto a rail starts a grind
       const i = level.rails.findIndex((r) => {
         const o = onRail(r, s.x, s.z);
-        return o.off < 0.45 && o.t > 0 && o.t < 1 && Math.abs(s.y - r.y) < 0.25;
+        return o.off < 0.45 && o.t > 0 && o.t < 1 && Math.abs(s.y - railY(r, o.t)) < 0.25;
       });
       if (i >= 0 && s.flipT <= 0) {
         const r = level.rails[i], o = onRail(r, s.x, s.z);
         const dir = s.vx * o.dx + s.vz * o.dz >= 0 ? 1 : -1; // ride the way you came in
         s.grind = i; s.grindTime = 0;
         s.x = r.a.x + (r.b.x - r.a.x) * o.t; s.z = r.a.z + (r.b.z - r.a.z) * o.t;
-        s.y = r.y; s.vy = 0;
+        s.y = railY(r, o.t); s.vy = 0;
         s.speed = Math.max(3, Math.abs(s.vx * o.dx + s.vz * o.dz));
         s.yaw = Math.atan2(dir * o.dx, dir * o.dz);
         s.air = false;
