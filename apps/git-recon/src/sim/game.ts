@@ -1096,8 +1096,9 @@ export class Game {
   private dropVehicle(kind: VehicleKind) {
     const you = this.you(), f = fwd(you.yaw), R = this.terrain.R - 4;
     let x = you.x + f.x * 6, z = you.z + f.z * 6;
-    // Not on top of one already down: further off to the right.
-    for (let i = 0; i < 4 && this.vehicles.some((v) => Math.hypot(v.x - x, v.z - z) < 6); i++) x -= f.z * 6, z += f.x * 6;
+    // Not on top of one already down, nor in a file's side: further off to the right.
+    const g = (x: number, z: number) => this.ground(x, z, Infinity);
+    for (let i = 0; i < 8 && (this.vehicles.some((v) => Math.hypot(v.x - x, v.z - z) < 6) || this.filesAt(x, z, g(x, z)).length); i++) x -= f.z * 3, z += f.x * 3;
     const d = Math.hypot(x, z);
     if (d > R) x *= R / d, z *= R / d;
     const spec = VEHICLES[kind];
@@ -1183,8 +1184,9 @@ export class Game {
     // Off the ground with the thrusters quiet, it coasts.
     const nx = v.x + v.vx * dt, nz = v.z + v.vz * dt, speed = Math.hypot(v.vx, v.vz);
     const here = this.terrain.height(v.x, v.z), there = this.terrain.height(nx, nz), run = Math.hypot(nx - v.x, nz - v.z);
-    // Files and cliffs stop it (it can fly over both); a file hit at speed loses lines for it.
-    const wall = this.map.blocks.find((b) => b.h > 0 && b.y + b.h > v.y + 0.7 && Math.abs(nx - b.x) < b.w / 2 + 1.1 && Math.abs(nz - b.z) < b.d / 2 + 1.1);
+    // Files and cliffs stop it (it can fly over both); a file hit at speed loses lines for it. One it's
+    // already in, say dropped half into one, doesn't hold it: it can always drive back out.
+    const inside = this.filesAt(v.x, v.z, v.y), wall = this.filesAt(nx, nz, v.y).find((b) => !inside.includes(b));
     if (wall || Math.hypot(nx, nz) > this.terrain.R - 2 || (run > 0 && there > v.y + 0.3 && (there - here) / run > CLIFF * 1.3)) {
       if (wall && speed > 4) this.wreck(wall, speed * 8, driver);
       v.vx *= -0.3, v.vz *= -0.3;
@@ -1199,6 +1201,11 @@ export class Game {
       t.vx += v.vx * 0.8, t.vz += v.vz * 0.8, t.vy += 6, t.grounded = false;
       this.hurt(t, t.hp + t.shield, driver);
     }
+  }
+
+  /** The files whose sides a car's body at (x, y, z) would be in. */
+  private filesAt(x: number, z: number, y: number): Block[] {
+    return this.map.blocks.filter((b) => b.h > 0 && b.y + b.h > y + 0.7 && Math.abs(x - b.x) < b.w / 2 + 1.1 && Math.abs(z - b.z) < b.d / 2 + 1.1);
   }
 
   private flyHeli(v: Vehicle, input: Input, dt: number) {

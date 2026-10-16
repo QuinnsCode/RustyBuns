@@ -176,6 +176,19 @@ describe("killstreak vehicles", () => {
     expect(car.fuel).toBeGreaterThan(0.2);
   });
 
+  test("a roadster half in a file drives back out of it", () => {
+    const { g, guards } = streaky();
+    for (let i = 0; i < 15; i++) g.hurt(guards[i]!, 1e9, 0);
+    const car = g.vehicles[0]!, you = g.you();
+    run(g, 2);
+    g.map.blocks.push({ path: "big.ts", lines: 400, compound: -1, x: car.x + 1.5, z: car.z, y: 0, w: 2, d: 6, h: 4 });
+    Object.assign(you, { x: car.x - 1, z: car.z });
+    g.step(1 / 60, { ...idle, use: true });
+    const z0 = car.z;
+    run(g, 1.5, { forward: 1, yaw: car.yaw });
+    expect(z0 - car.z).toBeGreaterThan(8);
+  });
+
   test("the helicopter climbs and soaks hits; wrecked, it throws you clear", () => {
     const { g, guards } = streaky();
     for (let i = 0; i < 25; i++) g.hurt(guards[i]!, 1e9, 0);
