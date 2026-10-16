@@ -365,10 +365,12 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     for (let i = 1; i <= n; i++) {
       const h = level.height(s.x + ((nx - s.x) * i) / n, s.z + ((nz - s.z) * i) / n);
       if (h - prev > Math.max(s.fan ? JETS.fanStep : STEP, (dist / n) * MAX_SLOPE)) { // the fan sucks it up a kerb or box side
-        if (Math.abs(s.pitch) < WALL || s.pitch * dir < 0 || s.vy < 0.5 * Math.abs(s.speed)) return crash(s, null);
+        // (a stride can reach a vertical lip before `pitch` has caught up with it, so judge by the steepest rise seen)
+        const rise = Math.atan((h - prev) / (dist / n)), steep = Math.max(Math.abs(s.pitch), s.pitch * dir > 0.4 ? rise : 0);
+        if (steep < WALL || s.pitch * dir < 0 || s.vy < 0.2 * Math.abs(s.speed)) return crash(s, null);
         // already climbing a curve and it goes vertical: leave the wall along its face, up past the coping
-        const v = Math.abs(s.speed), c = Math.cos(s.pitch);
-        s.vx = fx * v * c * dir; s.vz = fz * v * c * dir; s.vy = v * Math.sin(Math.abs(s.pitch));
+        const v = Math.abs(s.speed), c = Math.cos(steep);
+        s.vx = fx * v * c * dir; s.vz = fz * v * c * dir; s.vy = Math.max(s.vy, v * Math.sin(steep));
         takeOff(s);
         return s;
       }
@@ -433,6 +435,12 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       }
     }
     const h = level.height(s.x, s.z);
+    if (s.y < h && s.vy > 0) { // flew into a wall or a steep transition: the surface stops the board, it never passes through
+      const [gx, gz] = gradient(level, s.x, s.z), k = (s.vy - gx * s.vx - gz * s.vz) / (1 + gx * gx + gz * gz);
+      if (k < 0) { s.vx += gx * k; s.vz += gz * k; s.vy -= k; } // keep only the part of the velocity along the surface
+      s.y = h;
+      if (s.vy > 0 && s.vy < 0.5) s.vy = 0;
+    }
     if (s.y <= h && s.vy <= 0) land(s, h);
   }
 

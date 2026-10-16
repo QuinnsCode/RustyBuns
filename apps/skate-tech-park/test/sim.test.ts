@@ -184,6 +184,16 @@ test("a skater rides up the wall, goes up past the coping and drops back down it
   expect(sk.bail).toBeLessThanOrEqual(0);
 });
 
+test("the board never passes through a vertical ramp, slow or fast: it rides the wall, or flies off the lip", () => {
+  for (const speed of [8, 14, 25, 40]) {
+    const sk = Object.assign(start(0, -12, 0, pipeLevel), { speed });
+    let inside = 0, top = 0;
+    run(sk, 4, (s) => { inside = Math.max(inside, pipeLevel.height(s.x, s.z) - s.y); top = Math.max(top, s.y); return { throttle: 1 }; }, pipeLevel);
+    expect(inside).toBeLessThan(0.01);
+    expect(top).toBeGreaterThan(2); // up the wall and over the lip, not bounced back at the foot of it
+  }
+});
+
 test("a bigger board is a bigger toy: an ollie goes SCALE times as high and hangs sqrt(SCALE) times as long", () => {
   const sk = start(0, -20);
   let apex = 0, hang = 0;
