@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { fingerboard, roadster } from "../src/models.ts";
 import { makeLevel } from "../src/level.ts";
 import { Skins } from "../src/render/skins.ts";
-import { lieOnGround, manualPose, REST_TILT, TiltEase } from "../src/render/tilt.ts";
+import { lieOnGround, manualPose, REST_TILT, rideableRise, TiltEase } from "../src/render/tilt.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 
 const PIVOT = { fingerboard: 0.45, roadster: 0.6 };
@@ -71,4 +71,10 @@ test("on a slope the board's up is the ground's normal, whatever the heading", (
     const n = new THREE.Vector3(-gx, 1, -gz).normalize();
     expect(up(gx, gz, yaw).distanceTo(n)).toBeLessThan(1e-9);
   }
+});
+
+test("a wall under the board reads as level ground, not a ramp to lean on", () => {
+  expect(rideableRise(0.4, -0.2)).toEqual([0.4, -0.2]); // a gentle slope is untouched
+  expect(rideableRise(0, -14.5)).toEqual([0, 0]); // the face of a cliff
+  expect(rideableRise(2.9, 0)).toEqual([2.9, 0]); // a steep ramp the sim still rides
 });
