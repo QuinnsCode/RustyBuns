@@ -73,9 +73,8 @@ test("on a slope the board's up is the ground's normal, whatever the heading", (
   }
 });
 
-test("a cliff-steep read of the ground never lays the board past the steepest ramp the sim rides", () => {
+test("a wall under the board reads as level ground, not a ramp to lean on", () => {
   expect(rideableRise(0.4, -0.2)).toEqual([0.4, -0.2]); // a gentle slope is untouched
-  const [gx, gz] = rideableRise(0, -14.5); // the dome's face, 86 degrees
-  expect(Math.abs(lieOnGround(gx, gz, 0).x)).toBeLessThan(Math.atan(3) + 1e-9); // about 72 degrees
-  expect(gz).toBeLessThan(0); // still the same way up
+  expect(rideableRise(0, -14.5)).toEqual([0, 0]); // the face of a cliff
+  expect(rideableRise(2.9, 0)).toEqual([2.9, 0]); // a steep ramp the sim still rides
 });
