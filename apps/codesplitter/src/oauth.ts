@@ -32,7 +32,7 @@ import { identify } from "./identity.ts";
 import { ownOrigin } from "./security.ts";
 import { DAY, MAX_DAYS } from "./tokens.ts";
 import { OAUTH_SCOPES } from "./openapi.ts";
-import { b64url, digest, esc, sha256 } from "./util.ts";
+import { parseJson, b64url, digest, esc, sha256 } from "./util.ts";
 
 const HOUR = 3_600_000, CODE_MS = 10 * 60_000, REFRESH_MS = 30 * DAY, GRANT_MS = MAX_DAYS * DAY;
 
@@ -100,7 +100,7 @@ async function client(env: Env, clientId: string, redirectUri: string): Promise<
   if (clientId.startsWith("csc_")) {
     const c = await env.DB.prepare("SELECT name, redirect_uris FROM oauth_clients WHERE id = ?").bind(clientId).first() as { name: string; redirect_uris: string } | null;
     if (!c) return "no such client: register again";
-    if (!(JSON.parse(c.redirect_uris) as string[]).some((r) => sameRedirect(r, redirectUri))) return "that redirect_uri isn't one this client registered";
+    if (!parseJson<string[]>(c.redirect_uris, []).some((r) => sameRedirect(r, redirectUri))) return "that redirect_uri isn't one this client registered";
     return { name: c.name, local: loopback(redirect), registered: true };
   }
   // Unregistered: only an app on this computer, named by itself.

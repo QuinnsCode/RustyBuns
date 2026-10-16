@@ -3,7 +3,9 @@
 // is a playlist of code you like. Plain fetch handler: it runs as a Worker on
 // Cloudflare and in-process under Bun on the desktop.
 
+import { parseJson } from "./util.ts";
 import { artifactMoveRoutes } from "./artifact-move.ts";
+import { featureRankRoutes } from "./feature-ranks.ts";
 import { rankOf } from "./policy.ts";
 import { fromText } from "./lines.ts";
 import { mainClosed, policyClosed, protectRoute } from "./protect.ts";
@@ -263,6 +265,8 @@ async function access(env: Env, owner: string, repo: string, user: string | null
 /** The profile boxes their owner may take off (users.hidden); everything is shown until they do. */
 const PROFILE_SECTIONS = ["repos", "pulse", "stamps", "collections", "city", "top8"] as const;
 const TOP_FRIENDS = 7;
+/** A profile's notes, and the HTML theme a page wears: text a person wrote, with a size. */
+const BIO_MAX = 1000, THEME_MAX = 64 * 1024;
 const DO_ROUTES = new Set(["file", "ops", "log", "at", "commit", "commits", "ws", "private", "claims", "release"]);
 
 // FTS5 treats punctuation as syntax; quote every word so a search is just words.
@@ -393,6 +397,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // POST /api/follows, DELETE /api/follows/:id, GET /api/me/following (follows.ts)
   const follows = await followRoutes(req, env, p, user, (o, r) => access(env, o, r, user));
   if (follows) return follows;
+  // GET /api/feature-ranks, PUT /api/me/feature-ranks, POST /api/feature-comments (feature-ranks.ts)
+  const ranks = await featureRankRoutes(req, env, p, user);
+  if (ranks) return ranks;
 
   // GET|PUT /api/me/seen, the rev of each file you last saw (seen.ts)
   const seen = await seenRoutes(req, env, p, url, user);
@@ -437,6 +444,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       if (b.pulse !== undefined && typeof b.pulse !== "boolean") return json({ error: "pulse: true or false" }, 400);
       if (b.git_truth !== undefined && !TRUTHS.includes(b.git_truth as Truth)) return json({ error: `git_truth: ${TRUTHS.join(", ")}` }, 400);
       if ((b.bio !== undefined && typeof b.bio !== "string") || (b.theme_html !== undefined && typeof b.theme_html !== "string")) return json({ error: "bio and theme_html: text" }, 400);
+      if ((b.bio?.length ?? 0) > BIO_MAX || (b.theme_html?.length ?? 0) > THEME_MAX) return json({ error: `bio: up to ${BIO_MAX} characters; theme_html: up to ${THEME_MAX}` }, 400);
       // avatar: the parts (src/avatar.ts), or null to take it off.
       const avatar = b.avatar === undefined ? null : b.avatar === null ? "" : cleanAvatar(b.avatar);
       if (avatar === null && b.avatar !== undefined) return json({ error: `avatar: every part (${Object.keys(PARTS).join(", ")}), each one of its options, colors as #rrggbb` }, 400);
@@ -461,8 +469,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     const row = await env.DB.prepare("SELECT name, bio, theme_html, pulse, city_public, tier, avatar, hidden, top8 FROM users WHERE name = ?").bind(p[2]).first();
     if (!row) return json({ error: "no such user" }, 404);
     // Top 8: Mervin holds slot 1 (the client draws him); the owner's picks fill the rest, else the people they follow, newest first.
-    const top8 = (row.top8 ? JSON.parse(row.top8 as string) as string[] : (await listFollows(env.DB, p[2], null)).flatMap((f) => f.kind === "user" ? [f.name] : [])).slice(0, TOP_FRIENDS);
-    const u = { ...row, tier: tierById(row.tier), hidden: JSON.parse((row.hidden as string) || "[]"), top8 };
+    const top8 = (row.top8 ? parseJson<string[]>(row.top8 as string, []) : (await listFollows(env.DB, p[2], null)).flatMap((f) => f.kind === "user" ? [f.name] : [])).slice(0, TOP_FRIENDS);
+    const u = { ...row, tier: tierById(row.tier), hidden: parseJson<string[]>(row.hidden as string, []), top8 };
     const { results: repos } = await env.DB.prepare(
       "SELECT owner, name, visibility, level, created_at, expires_at FROM repos WHERE owner = ? AND (visibility = 'public' OR owner = ?) AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC").bind(p[2], user, Date.now()).all();
     const { results: playlists } = await env.DB.prepare("SELECT * FROM playlists WHERE owner = ? ORDER BY id DESC").bind(p[2]).all();
@@ -612,9 +620,9 @@ async function route(req: Request, env: Env): Promise<Response> {
     // POST /api/repos/:o/:r/commits/:sha/pick {branch?}  a commit taken again, onto main or an open branch
     if (p[4] === "commits" && p[5] && (p[6] === "revert" || p[6] === "pick") && !p[7] && req.method === "POST") {
       if (!a.write) return json({ error: "no write access" }, 403);
-      const picked = (await req.clone().json().catch(() => ({})) as { branch?: unknown }).branch;
-      if (!picked || picked === "main") { const closed = await mainClosed(env, owner, repo, user); if (closed) return closed; }
-      return pickRoute(env, owner, repo, user!, p[6], p[5], await req.json().catch(() => ({})) as { branch?: unknown });
+      const b = await readBody<"branch">(req);
+      if (!b.branch || b.branch === "main") { const closed = await mainClosed(env, owner, repo, user); if (closed) return closed; }
+      return pickRoute(env, owner, repo, user!, p[6], p[5], b);
     }
     // GET /api/repos/:o/:r/tree?path=dir[&branch=b]  the repo's git tree, plus files written here but not catalogued yet
     if (p[4] === "tree") {
@@ -796,7 +804,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       }
       // Only the crew reads private lines; everyone else gets placeholders.
       const res = await toFile(env, owner, repo, path, user ?? "anon", p[5]!, { method: req.method, body: sent, headers: { "x-codesplitter-crew": a.write ? "1" : "0", ...(live && { "x-codesplitter-live": live }), ...(rank !== undefined && { "x-codesplitter-rank": rank }) } },
-        url.searchParams.has("rev") ? `?rev=${url.searchParams.get("rev")}` : url.searchParams.has("since") ? `?since=${url.searchParams.get("since")}` : p[5] === "file" && (url.searchParams.has("from") || url.searchParams.has("limit")) ? `?${new URLSearchParams([...url.searchParams].filter(([k]) => k === "from" || k === "limit"))}` : "", branch);
+        url.searchParams.has("rev") ? `?${new URLSearchParams({ rev: url.searchParams.get("rev")! })}` : url.searchParams.has("since") ? `?${new URLSearchParams({ since: url.searchParams.get("since")! })}` : p[5] === "file" && (url.searchParams.has("from") || url.searchParams.has("limit")) ? `?${new URLSearchParams([...url.searchParams].filter(([k]) => k === "from" || k === "limit"))}` : "", branch);
       if (p[5] === "private" && req.method === "POST" && res.ok) {
         // From the first private line on, the crew has a remote of its own to clone and deploy from.
         if ((JSON.parse(sent!) as { private?: boolean }).private) await ensureCrewRemote(env, owner, repo).catch(() => null);
@@ -848,8 +856,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (!user) return json({ error: "sign in first" }, 401);
     const { title } = await body<"title">();
     if (typeof title !== "string" || !title.trim()) return json({ error: "title required" }, 400);
-    const r = await env.DB.prepare("INSERT INTO playlists (owner, title) VALUES (?, ?) RETURNING id").bind(user, title.trim().slice(0, 80)).first();
-    return json({ id: r.id, owner: user, title }, 201);
+    const r = await env.DB.prepare("INSERT INTO playlists (owner, title) VALUES (?, ?) RETURNING id").bind(user, title.trim().slice(0, 80)).first<{ id: number }>();
+    return json({ id: r!.id, owner: user, title }, 201);
   }
   // POST /api/playlists/:id/tracks {owner, repo, path, from, to, note}
   if (p[1] === "playlists" && p[2] && p[3] === "tracks" && req.method === "POST") {

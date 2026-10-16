@@ -13,6 +13,7 @@
 
 import { betterAuth } from "better-auth";
 import { json, NAME, type Env, readBody } from "./env.ts";
+import { esc } from "./util.ts";
 import { privacyNotice } from "./privacy.ts";
 import { turnstileOn } from "./security.ts";
 import { tierOf } from "./tiers.ts";
@@ -45,14 +46,14 @@ export const mailOn = (env: Env) => !!(env.EMAIL && env.EMAIL_FROM);
  */
 export async function mail(env: Env, to: string, subject: string, lines: string[], link: string, foot = "If this wasn't you, ignore this email.") {
   const text = [...lines, "", link, "", foot].join("\n");
-  const html = `${lines.map((l) => `<p>${escapeHtml(l)}</p>`).join("")}<p><a href="${escapeHtml(link)}">${escapeHtml(link)}</a></p><p style="color:#57606a">${escapeHtml(foot)}</p>`;
+  const html = `${lines.map((l) => `<p>${esc(l)}</p>`).join("")}<p><a href="${esc(link)}">${esc(link)}</a></p><p style="color:#57606a">${esc(foot)}</p>`;
   try { await env.EMAIL!.send({ from: { email: env.EMAIL_FROM!, name: "codeSplitter" }, to, subject, text, html }); }
   catch (e) { console.error("codeSplitter: account email failed", (e as { code?: string }).code ?? "", String((e as Error)?.message ?? e)); }
 }
-const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 const make = (env: Env, origin: string) => betterAuth({
-  database: env.DB,
+  // better-auth wants Cloudflare's D1Database class; Env.DB is the part of it this app calls.
+  database: env.DB as never,
   secret: env.BETTER_AUTH_SECRET,
   baseURL: env.BETTER_AUTH_URL ?? origin,
   basePath: "/api/auth",

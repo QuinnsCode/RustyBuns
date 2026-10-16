@@ -4,7 +4,7 @@
 // The owner's own work on main is untouched.
 //
 //   GET|PUT /api/repos/:o/:r/protect   {on: boolean}  (PUT: owner only)
-import { json, type Env } from "./env.ts";
+import { json, readBody, type Env } from "./env.ts";
 
 export async function protectOn(env: Env, owner: string, repo: string): Promise<boolean> {
   const r = await env.DB.prepare("SELECT on_ FROM protect_main WHERE owner = ? AND repo = ?").bind(owner, repo).first();
@@ -30,7 +30,7 @@ export async function protectRoute(req: Request, env: Env, owner: string, repo: 
   if (req.method === "GET") return json({ on: await protectOn(env, owner, repo) });
   if (req.method !== "PUT") return json({ error: "GET or PUT" }, 405);
   if (user !== owner) return json({ error: "only the owner protects main" }, 403);
-  const b = await req.json().catch(() => ({})) as { on?: unknown };
+  const b = await readBody<"on">(req);
   if (typeof b.on !== "boolean") return json({ error: "{on: true|false}, please" }, 400);
   await env.DB.prepare("INSERT INTO protect_main (owner, repo, on_) VALUES (?, ?, ?) ON CONFLICT (owner, repo) DO UPDATE SET on_ = excluded.on_").bind(owner, repo, b.on ? 1 : 0).run();
   return json({ on: b.on });

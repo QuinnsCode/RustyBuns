@@ -11,8 +11,10 @@
 // (PUT /api/me {pulse: false}); then only they see it.
 //
 //   GET /api/users/:name/pulse       {name, hours: [168 counts, oldest first], from, total, live_at}
-//   GET /api/users/:name/pulse.png   the pulse as a 1200x630 card (card.ts), for X and og:image
-//   GET /api/users/:name/share       a page for link previews, sending people on to the profile
+//   GET /api/users/:name/pulse.png   the pulse as a 1200x630 card (card.ts), for X and og:image; ?slot=0..23 is the
+//                                    card as it stood that many 7-hour steps ago, kept in R2 (LEVEL_CHUNKS) for the day
+//   GET /api/users/:name/share       a page for link previews, sending people on to the profile; its og:image is
+//                                    the mini profile at a random moment of the week
 //   GET /api/pulse?names=a,b         many pulses at once, for crew lists (off ones left out)
 
 import { json, type Env } from "./env.ts";
@@ -62,6 +64,15 @@ export async function pulses(env: Env, names: string[], viewer: string | null, n
   return out;
 }
 
+/** The mini profile's moments: slot 0 is now, each step is 7 hours earlier, 24 of them span the week. */
+export const SLOTS = 24, SLOT_HOURS = 7;
+
+/** The pulse as it stood `slot` steps ago: the hours after that moment are still to come, so they're blank. */
+export function pulseAt(p: Pulse, slot: number): Pulse {
+  const keep = HOURS - slot * SLOT_HOURS, hours = p.hours.map((n, i) => (i < keep ? n : 0));
+  return { ...p, hours, total: hours.reduce((a, b) => a + b, 0) };
+}
+
 const lines = (n: number) => `${n.toLocaleString("en-US")} line${n === 1 ? "" : "s"}`;
 export const pulseSummary = (p: Pulse) => p.total ? `${lines(p.total)} landed this week` : "quiet this week";
 
@@ -81,17 +92,29 @@ export async function pulseRoutes(req: Request, env: Env, p: string[], url: URL,
   // The card and the share page are for the world: public repos only, whoever asks.
   if (route === "pulse.png") {
     if (!pulse) return json({ error: "no public pulse" }, 404);
-    const png = await renderPulseCard({ title: `@${name}'s pulse`, hours: pulse.hours, from: pulse.from, status: pulseSummary(pulse), bot: name.startsWith("agent-") });
+    const slot = Number(url.searchParams.get("slot") ?? 0);
+    if (!Number.isInteger(slot) || slot < 0 || slot >= SLOTS) return json({ error: `slot is 0 to ${SLOTS - 1}` }, 400);
+    // A capture is drawn once and kept in R2 for the day, so a link unfurling a lot costs one render.
+    const key = `og/${name}/${Math.floor(Date.now() / 86_400_000)}-${slot}.png`;
+    const kept = slot && env.LEVEL_CHUNKS ? await env.LEVEL_CHUNKS.get(key) : null;
+    let png: Uint8Array<ArrayBuffer> | ArrayBuffer;
+    if (kept) png = await kept.arrayBuffer();
+    else {
+      const then = pulseAt(pulse, slot);
+      png = await renderPulseCard({ title: `@${name}'s pulse`, hours: then.hours, from: then.from,
+        status: slot ? `${pulseSummary(then).replace(" this week", "")} by ${new Date(pulse.from + (HOURS - slot * SLOT_HOURS) * HOUR).toUTCString().slice(0, 22)} UTC` : pulseSummary(then), bot: name.startsWith("agent-") });
+      if (slot && env.LEVEL_CHUNKS) await env.LEVEL_CHUNKS.put(key, png as Uint8Array<ArrayBuffer>).catch(() => {});
+    }
     return new Response(png, { headers: { "content-type": "image/png", "cache-control": "public, max-age=300" } });
   }
   // GET /api/users/:name/share  link previews read the meta tags; people go on to the profile
   const title = `@${name} on codeSplitter`, page = `#/u/${encodeURIComponent(name)}`;
   const desc = pulse ? `${pulseSummary(pulse)}. Line by line, live, with their crew of people and agents.` : "Line by line, live, with their crew of people and agents.";
-  const image = pulse ? `${url.origin}/api/users/${encodeURIComponent(name)}/pulse.png?at=${Math.floor(Date.now() / HOUR)}` : null;
+  const image = pulse ? `${url.origin}/api/users/${encodeURIComponent(name)}/pulse.png?slot=${1 + Math.floor(Math.random() * (SLOTS - 1))}&at=${Math.floor(Date.now() / 86_400_000)}` : null;
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
-<meta property="og:type" content="profile"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
-${image ? `<meta property="og:image" content="${esc(image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image">` : `<meta name="twitter:card" content="summary">`}
-<meta property="og:url" content="${esc(url.href)}">
+<meta name="description" content="${esc(desc)}"><meta property="og:type" content="profile"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
+${image ? `<meta property="og:image" content="${esc(image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${esc(image)}">` : `<meta name="twitter:card" content="summary">`}
+<meta name="twitter:title" content="${esc(title)}"><meta name="twitter:description" content="${esc(desc)}"><meta property="og:url" content="${esc(url.href)}">
 <meta http-equiv="refresh" content="0; url=/${page}"></head><body><a href="/${page}">${esc(title)}</a></body></html>`;
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
 }

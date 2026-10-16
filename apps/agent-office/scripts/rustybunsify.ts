@@ -19,6 +19,7 @@ import { $ } from "bun";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { checksBarClient, checkTallyServer, SERVER_IMPORT } from "../checks/patch.ts";
+import { EXTERNAL_IMPORT, externalServer } from "../external/patch.ts";
 import { openNewFirstClient } from "./board.ts";
 import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
 import { floorGuardBin, floorGuardHooks, floorGuardQueue } from "./floorguard.ts";
@@ -61,7 +62,7 @@ const SHARED = ["codesplitter/index.ts", ...(skin === "druids" ? ["druids/index.
 let shared: Promise<Map<string, string>> | undefined;
 // (sharedBuild() below; up here because the top-level build runs before the rest of the file is reached)
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitter hosts hooktokens env ticks power board guard asks brawl ester dexter reload` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitter hosts hooktokens env ticks power board guard asks brawl ester dexter reload external` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids" && (!only || only.includes("skin"))) { await buildSkin(path.join(office, "dist/public/druids")); lap("skin (druids + shared chunk)"); }
@@ -194,6 +195,10 @@ async function prepare(tag: string) {
   // 11. a health bar of each PR's checks on the PR board (checks/), its tally from the list the board already fetches
   writeFileSync(path.join(srv, "github.js"), checkTallyServer(readFileSync(path.join(srv, "github.js"), "utf8")));
   prepend("github.js", SERVER_IMPORT);
+
+  // 11b. an orange `external` label on issues and PRs from outside the repo's team (external/)
+  writeFileSync(path.join(srv, "github.js"), externalServer(readFileSync(path.join(srv, "github.js"), "utf8")));
+  prepend("github.js", EXTERNAL_IMPORT);
   patchAsk(checksBarClient);
 
   // 12. workers.json keeps a hash of each worker's hook token, not the token, so a worker can't read another's (#642)
@@ -224,7 +229,7 @@ async function prepare(tag: string) {
   if (skin === "druids") await druids(cache);
   lap("druids skin (assets + build)");
 
-  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitter hosts hooktokens env ticks power board guard asks brawl ester dexter reload\n`);
+  writeFileSync(stamp, `${tag} ${skin} lucide live clock mem pulls checks triage vale codesplitter hosts hooktokens env ticks power board guard asks brawl ester dexter reload external\n`);
   console.log("   ✓ ./office  (bun run office starts it)");
 }
 
@@ -324,7 +329,7 @@ async function buildSkin(dir: string) {
 
 // next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
-  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["checks/server.ts", "rb-checks.js"], ["triage/server.ts", "rb-triage.js"],
+  for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["checks/server.ts", "rb-checks.js"], ["external/server.ts", "rb-external.js"], ["triage/server.ts", "rb-triage.js"],
     ["codesplitter/server.ts", "rb-codesplitter.js"], ["live/brawl.ts", "rb-brawl.js"],
     // beside bin/office-workers.js, the workers' MCP server
     ["triage/mcp.ts", "../../../bin/rb-triage.js"]]) {

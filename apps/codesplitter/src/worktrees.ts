@@ -23,7 +23,7 @@
 import { existsSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { git, localGit } from "./mirror.ts";
-import { json, type Env } from "./env.ts";
+import { json, readBody, type Env } from "./env.ts";
 import { repoRow } from "./repos.ts";
 
 /** How long a run's worktree is kept if nobody removes it. */
@@ -136,10 +136,10 @@ export async function worktreeRoute(req: Request, env: Env, p: string[], owner: 
   }
   if (req.method !== "POST" || p[5]) return null;
 
-  const b = (await req.json().catch(() => ({}))) as { branch?: unknown; from?: unknown; sha?: unknown };
+  const b = await readBody<"branch" | "from" | "sha">(req);
   const branch = typeof b.branch === "string" ? b.branch : undefined, sha = typeof b.sha === "string" ? b.sha : undefined;
   if (!branch === !sha) return json({ error: "give a git branch, or a sha for a run" }, 400);
-  if (b.from !== undefined && (typeof b.from !== "string" || !branch)) return json({ error: "from: a branch or commit to start a new branch off" }, 400);
+  if (b.from !== undefined && (typeof b.from !== "string" || !branch || b.from.startsWith("-"))) return json({ error: "from: a branch or commit to start a new branch off" }, 400);
   if (branch) {
     if (branch === main) return json({ error: `${main} moves by itself here: ask for its commit (sha), or start a branch off it` }, 409);
     if ((await git(["check-ref-format", "--branch", branch])).code || branch.startsWith("-")) return json({ error: "bad branch name" }, 400);

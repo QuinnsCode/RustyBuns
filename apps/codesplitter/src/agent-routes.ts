@@ -47,6 +47,7 @@
 // works on the branch the stopped one left, whose batch waits, held, till it's done; after HANDOFFS
 // of them it's a person's turn. The run says how much it read (`spent`) and, under `handoff`, why it stopped.
 
+import { parseJson } from "./util.ts";
 import { protectOn } from "./protect.ts";
 import { json, type Env, readBody } from "./env.ts";
 import { byToken } from "./tokens.ts";
@@ -239,8 +240,8 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
     if (user !== owner) return json({ error: "only the repo's owner can see its coding agents" }, 403);
     const path = url.searchParams.get("path");
     const { results } = await env.DB.prepare(`SELECT * FROM agent_runs WHERE owner = ? AND repo = ?${path ? " AND path = ?" : ""} ORDER BY id DESC LIMIT ${KEEP}`)
-      .bind(...[owner, repo, path].filter((x) => x !== null)).all();
-    const rows = results as Row[];
+      .bind(...[owner, repo, path].filter((x) => x !== null)).all<Row>();
+    const rows = results;
     if (!env.AGENT_SANDBOX) for (const r of rows) if (r.status === "running" && !liveOf(env).has(r.id)) {
       const error = "the app stopped before the agent finished";
       await finish(env, r.id, "failed", { error });
@@ -301,10 +302,10 @@ async function stopRuns(req: Request, env: Env, owner: string, repo: string, use
   const { ids, path, harness, lines } = await readBody<"ids" | "path" | "harness" | "lines">(req);
   if (ids !== undefined && !(Array.isArray(ids) && ids.every((i): i is number => Number.isInteger(i)))) return json({ error: "ids: run ids" }, 400);
   if (lines !== undefined && !(Array.isArray(lines) && lines.every((l): l is string => typeof l === "string"))) return json({ error: "lines: line ids" }, 400);
-  const { results } = await env.DB.prepare("SELECT * FROM agent_runs WHERE owner = ? AND repo = ? AND status = 'running'").bind(owner, repo).all();
+  const { results } = await env.DB.prepare("SELECT * FROM agent_runs WHERE owner = ? AND repo = ? AND status = 'running'").bind(owner, repo).all<Row>();
   const want = lines && new Set(lines);
-  const hit = (results as Row[]).filter((r) => {
-    const claimed = (r.result ? JSON.parse(r.result) as Partial<Run> : {}).lines;
+  const hit = results.filter((r) => {
+    const claimed = parseJson<Partial<Run>>(r.result, {}).lines;
     return (!ids || ids.includes(r.id)) && (!path || r.path === path) && (!harness || r.harness === harness)
       // On lines: the runs that claimed any of them. One given no lines works on the whole file, so it's left be.
       && (!want || !!claimed?.some((l) => want.has(l)));
@@ -366,8 +367,8 @@ export interface Waiting { id: number; agent: string; started: number; pending: 
 async function waitingOn(env: Env, self: (req: Request) => Promise<Response>, url: URL, owner: string, repo: string, user: string | null, crew: boolean) {
   const path = url.searchParams.get("path");
   if (!path) return json({ error: "path is required" }, 400);
-  const { results } = await env.DB.prepare(`SELECT * FROM agent_runs WHERE owner = ? AND repo = ? AND path = ? ORDER BY id DESC LIMIT ${KEEP}`).bind(owner, repo, path).all();
-  const rows = results as Row[], day = Date.now() - 86_400_000;
+  const { results } = await env.DB.prepare(`SELECT * FROM agent_runs WHERE owner = ? AND repo = ? AND path = ? ORDER BY id DESC LIMIT ${KEEP}`).bind(owner, repo, path).all<Row>();
+  const rows = results, day = Date.now() - 86_400_000;
   const call = caller(self, url.origin);
   const waiting: Waiting[] = await Promise.all(rows.flatMap((r) => {
     const p = resultOf(r).pending;
@@ -495,7 +496,7 @@ async function engineSaid(env: Env, owner: string, repo: string) {
   const { results } = await env.DB.prepare("SELECT id, branch, started, result FROM agent_runs WHERE owner = ? AND repo = ? AND json_extract(result, '$.engine') IS NOT NULL ORDER BY id DESC")
     .bind(owner, repo).all();
   return (results as { id: number; branch: string; started: number; result: string }[]).map((r) => {
-    const x = JSON.parse(r.result) as Partial<Run>;
+    const x = parseJson<Partial<Run>>(r.result, {});
     return { run: r.id, branch: r.branch, after: x.rebuild, started: r.started, engine: x.engine! };
   });
 }
@@ -542,7 +543,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
   const cutoff = env.AGENT_SANDBOX ? setTimeout(() => void env.DB.prepare("UPDATE agent_runs SET status = 'stopped', result = json_set(COALESCE(result, '{}'), '$.error', ?) WHERE id = ? AND status = 'running'")
     .bind(`out of time: a hosted run gets ${every(HOSTED_RUN_MS / 1000)}`, id).run().catch(() => {}).finally(() => stopper.abort()), Math.max(0, row.started + HOSTED_RUN_MS - Date.now())) : undefined;
   const call = caller(self, origin);
-  const { lines, also, from, hops, rebuild } = row.result ? JSON.parse(row.result) as Partial<Run> : {};
+  const { lines, also, from, hops, rebuild } = parseJson<Partial<Run>>(row.result, {});
   const extra: Partial<Run> = { ...(lines && { lines }), ...(also && { also }), ...(from && { from, hops }), ...(rebuild && { rebuild }) };
   try {
     const box = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
@@ -580,7 +581,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       log: (s) => {
         log.push(s);
         const tail = JSON.stringify(log.slice(-LOG_LINES));
-        logged = logged.then(() => env.DB.prepare("UPDATE agent_runs SET log = ? WHERE id = ?").bind(tail, id).run()).catch(() => {});
+        logged = logged.then(async () => { await env.DB.prepare("UPDATE agent_runs SET log = ? WHERE id = ?").bind(tail, id).run(); }).catch(() => {});
       },
     });
     await logged;
@@ -613,7 +614,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
   } catch (e) {
     if (signal.aborted) {
       const stopped = await getRow(env, id);
-      const was = stopped?.result ? JSON.parse(stopped.result) as Partial<Run> : {};
+      const was = parseJson<Partial<Run>>(stopped?.result, {});
       await env.DB.prepare("UPDATE agent_runs SET result = ? WHERE id = ? AND status = 'stopped'").bind(JSON.stringify({ ...extra, error: was.error ?? "stopped" }), id).run();
     } else await finish(env, id, "failed", { ...extra, error: String((e as Error)?.message ?? e).slice(-4000) });
     // Whatever it left on its branch goes with it.

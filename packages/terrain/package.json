@@ -1,0 +1,10 @@
+{
+  "name": "@rustybuns/terrain",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "Ground for the 3D example apps: real park heightmaps (the seven zones), noise-and-stamp terrain, and level pads. No dependencies, plain TS. Not published.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" }
+}

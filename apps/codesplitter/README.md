@@ -24,6 +24,36 @@ That's automated development, a software factory, and the floor it runs on shoul
 Live at **[codesplitter.notryanquinn.workers.dev](https://codesplitter.notryanquinn.workers.dev)**.
 It's a proof of concept, built for Cloudflare's Artifacts challenge, and it moves fast.
 
+## Use it and start it
+
+**Just use it:** open the [live site](https://codesplitter.notryanquinn.workers.dev), sign in, then dig up a GitHub repo or make a new one.
+Open a file, edit a line, start an agent on a branch, review and merge it.
+
+**Run it on your machine** (free; needs [Bun](https://bun.sh) and git; your data lives in `~/.codesplitters`):
+
+```sh
+git clone https://github.com/QuinnsCode/RustyBuns.git
+cd RustyBuns && bun install --frozen-lockfile   # once, at the repo root
+cd apps/codesplitter
+bun run desktop                                  # the app, in a window
+```
+
+No window (a remote box, or an agent driving a browser)? `bun run desktop:agent` prints the URL to open.
+`bun run desktop:watch` rebuilds on every save, and `bun run desktop:update` pulls the latest and restarts.
+On the desktop, sign in with an alias (any handle you pick); coding agents (claude, codex, pi, opencode) use your own installed logins.
+
+**Try it in five minutes:** `bun run welcome` digs up a small app and lets three agents edit one file at once, locally, with nothing billed.
+`bun agents.ts` is the same idea in one command, printing who wrote which line.
+
+**Hook up your own agent:**
+
+```sh
+claude mcp add --transport http codesplitter https://codesplitter.notryanquinn.workers.dev/api/mcp
+curl -fsSL https://codesplitter.notryanquinn.workers.dev/install.sh | sh && codesplitter login
+```
+
+More: [the desktop app](#the-free-desktop-app-own-your-git-put-it-wherever-you-want), [REFERENCE.md](REFERENCE.md) for every feature and for deploying the site yourself.
+
 **In progress, top priority:** the Druids-skinned Agent Office running inside codeSplitter, on the `office-preview` stage ([plan](../agent-office/MOVE.md), [runbook](../agent-office/PREVIEW.md), [#1412](https://github.com/QuinnsCode/RustyBuns/issues/1412)). That stage stays deployed until the owner has seen it. codeSplitter may also move to its own home on 2026-10-14; the run instructions stay accurate either way.
 
 ## What it does for you
@@ -36,7 +66,7 @@ The highest-value things, in order:
    Agents work on branches, and a three-way merge **by line id** settles what git would call a conflict (a moved block that someone else edited, the same line added twice).
    What's left is a card each on the branch's merge page: keep main's, the branch's, both, or write it, with a suggestion when both sides added words at one spot and an Ask button for a coding agent's answer, which is offered only once the merged file parses and the repo's tests for that file pass with it in a throwaway clone, where you turn that on in the dependency doctor's settings. The agent hears why each side changed the file: main's commit messages, and the branch's agent task or, for a branch from upstream, its upstream commit messages.
    Agents settle the same conflicts over MCP, the CLI or WebMCP.
-   The engine doing this is Mervin ([docs/mervin.md](docs/mervin.md)), your agentic git and merge guy: a deterministic, non-AI merge engine built for the agentic era, so many agents collaborate with minimal friction and merge conflicts dissolve into merge solutions without spending tokens. (Opt-in learning of your repo's merge patterns, kept in R2 and queried with R2 SQL, is designed, not built.) He is held to real history: on 470 files git itself gave up on across 400 conflicted merges in git/git, it settled 49% to what the person committed, asked on 39%, and settled 13% to other text (`bun scripts/mervin-corpus.ts`).
+   The engine doing this is Mervin ([docs/mervin.md](docs/mervin.md); with Ester the tester, [why they exist](docs/mervin-and-ester.md)), your agentic git and merge guy: a deterministic, non-AI merge engine built for the agentic era, so many agents collaborate with minimal friction and merge conflicts dissolve into merge solutions without spending tokens. (Opt-in learning of your repo's merge patterns, kept in R2 and queried with R2 SQL, is designed, not built.) He is held to real history: on 470 files git itself gave up on across 400 conflicted merges in git/git, it settled 49% to what the person committed, asked on 39%, and settled 13% to other text (`bun scripts/mervin-corpus.ts`).
    Hot spots get their own rules in `.gitattributes`, as git's merge drivers do: `CHANGELOG.md merge=union` and its rewrites stack instead of conflicting.
    Each path gives an agent a budget too: past it, failing the same way twice or on a third conflict round, it stops and leaves a four-line note (DONE, NEXT, BROKE, DONT), and a fresh agent, a cheaper model or a person picks up from that.
    A branch whose merge meets changed conflicts a third time gets the same: the next answer comes from fresh eyes reading a note of what the last ones tried, or a person.

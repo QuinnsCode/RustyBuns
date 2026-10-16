@@ -9,13 +9,14 @@
 // orange starbursts, blasts are an orange core under inked puffs of smoke with a shockwave ring
 // running out along the ground, and each throws a short orange light on what's near it. A
 // shield shows as an orange shimmer round the body when it takes a hit, and a band sweeping up
-// it as it refills.
+// it as it refills. A parachute is a paper dome with an orange band, hung off the shoulders.
 
+import { roadster as sharedRoadster, type RoadsterLook } from "@rustybuns/models";
 import * as THREE from "three";
-import { structureOf, type CodeMap, type RepoSnapshot, type Structure } from "../sim/codemap.ts";
-import { contourStep } from "../sim/terrain.ts";
+import { ORCHARD_HEIGHT, structureOf, WATCH_HEIGHT, type CodeMap, type RepoSnapshot, type Structure } from "../sim/codemap.ts";
+import { contourStep } from "@rustybuns/terrain";
 import type { Game, GameEvent } from "../sim/game.ts";
-import { HEIGHT, ROLL_TIME, type Soldier } from "../sim/game.ts";
+import { CROUCH_HEIGHT, HEIGHT, PRONE_HEIGHT, ROLL_TIME, type Soldier } from "../sim/game.ts";
 import { WEAPONS } from "../sim/weapons.ts";
 import { buildFigure, inked, pose, setGun, setHead, type BuildId, type Figure, type Pose } from "./figure.ts";
 import { buildHead, HEADS, type HeadDef } from "./heads.ts";
@@ -67,6 +68,7 @@ function label(text: string, sub: string): THREE.Sprite {
 
 /** How a soldier looks this frame, from what it's doing. */
 function poseOf(s: Soldier): Pose {
+  if (s.chute) return "hang";
   if (s.roll > 0 && !s.prone) return "tuck";
   if (s.prone) return "prone";
   if (!s.grounded && Math.hypot(s.vx, s.vz) > 9) return "star";
@@ -336,17 +338,21 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
   const mud = new THREE.MeshLambertMaterial({ color: 0xc9ae82 }), mudEdge = new THREE.LineBasicMaterial({ color: 0x8a6d44 });
   for (const b of map.blocks) {
     if (b.wall) {
-      // Mud-brick: a plain slab, with a lip of battlements on top of the curtain walls and a flat cap on the towers.
+      // Mud-brick: a plain slab. The curtain and inner walls get a lip of battlements, the towers a flat
+      // cap (the watchtower a wider one); the stair's steps and the low orchard walls are bare blocks.
       const m = new THREE.Mesh(new THREE.BoxGeometry(b.w, b.h, b.d), mud);
       m.position.set(b.x, b.y + b.h / 2, b.z);
       m.castShadow = m.receiveShadow = true;
       m.add(new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), mudEdge));
-      const tower = b.h > 4;
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(b.w + (tower ? 0.5 : 0.2), 0.35, b.d + (tower ? 0.5 : 0.2)), mud);
-      cap.position.y = b.h / 2 + 0.17;
-      cap.castShadow = true;
-      cap.add(new THREE.LineSegments(new THREE.EdgesGeometry(cap.geometry), mudEdge));
-      m.add(cap);
+      const step = b.h < 3 && b.w < 1.2 && b.d < 1.2, low = b.h <= ORCHARD_HEIGHT + 0.01;
+      if (!step && !low) {
+        const tower = b.h > 4, watch = b.h >= WATCH_HEIGHT - 0.01, out = watch ? 0.8 : tower ? 0.5 : 0.2, thick = watch ? 0.45 : 0.35;
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(b.w + out, thick, b.d + out), mud);
+        cap.position.y = b.h / 2 + thick / 2 - 0.01;
+        cap.castShadow = true;
+        cap.add(new THREE.LineSegments(new THREE.EdgesGeometry(cap.geometry), mudEdge));
+        m.add(cap);
+      }
       scene.add(m);
       solids.push(m);
       continue;
@@ -394,6 +400,14 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
       scene.add(line);
     }
   }
+  // Footpaths: a faint dotted orange line from HEAD to each gate, along the shelf cut for it.
+  const trailMat = new THREE.LineDashedMaterial({ color: ORANGE, transparent: true, opacity: 0.4, dashSize: 0.5, gapSize: 0.7 });
+  for (const trail of map.trails ?? []) {
+    if (trail.length < 2) continue;
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(trail.map((p) => new THREE.Vector3(p.x, map.terrain.height(p.x, p.z) + 0.08, p.z))), trailMat);
+    line.computeLineDistances();
+    scene.add(line);
+  }
 
   // Fires: flames on a burning compound's tallest files and smoke above them, out once it's merged.
   const flameGeo = new THREE.ConeGeometry(0.35, 1.2, 7), smokeGeo = new THREE.SphereGeometry(0.6, 10, 8);
@@ -421,7 +435,7 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
   });
 
   interface Body {
-    fig: Figure; tag: THREE.Mesh; fire: THREE.Group; down: number; shell: THREE.Mesh;
+    fig: Figure; tag: THREE.Mesh; fire: THREE.Group; chute: THREE.Group; down: number; shell: THREE.Mesh;
     /** Who it was built as: a battle slot taken by someone else gets a new body. */
     as: string;
     /** Recoil, a hit's jolt (and which side it came from), a landing's dip; the shell's flash and refill sweep. */
@@ -470,6 +484,25 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
       f.userData.phase = k;
       g.add(f);
     }
+    g.visible = false;
+    return g;
+  }
+  // The parachute: a paper half-dome 3.2 m across, inked round its rim with an orange band, 3 m over the
+  // head, and four riser lines down to the shoulders. It rides on the figure's root, so it turns with it.
+  const canopyGeo = new THREE.SphereGeometry(1.6, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2), bandGeoChute = new THREE.SphereGeometry(1.615, 24, 2, 0, Math.PI * 2, 0.95, 0.22);
+  const canopyMat = new THREE.MeshLambertMaterial({ color: PAPER, side: THREE.DoubleSide });
+  const riserPts = (dims: Figure["dims"]) => {
+    const rim = dims.neck + dims.hip + 3, pts: THREE.Vector3[] = [];
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) pts.push(new THREE.Vector3(sx * 0.3 * dims.chest, dims.hip + dims.shoulder, 0), new THREE.Vector3(sx * 1.05, rim, sz * 1.05));
+    return pts;
+  };
+  function canopy(fig: Figure): THREE.Group {
+    const g = new THREE.Group();
+    const dome = inked(new THREE.Mesh(canopyGeo, canopyMat));
+    dome.castShadow = true;
+    dome.add(new THREE.Mesh(bandGeoChute, orangeMat), new THREE.LineSegments(new THREE.EdgesGeometry(canopyGeo, 30), edgeInk));
+    dome.position.y = fig.dims.neck + fig.dims.hip + 3;
+    g.add(dome, new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(riserPts(fig.dims)), edgeInk));
     g.visible = false;
     return g;
   }
@@ -564,31 +597,41 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     if (edged) m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 25), edgeInk));
     return m;
   };
-  function buggy(): THREE.Group {
+  /** A side profile, (along, up) pairs from the nose back, pushed out wide across the car. */
+  const profile = (pts: [number, number][], wide: number) => {
+    const shape = new THREE.Shape(pts.map(([z, y]) => new THREE.Vector2(-z, y)));
+    return new THREE.ExtrudeGeometry(shape, { depth: wide, bevelEnabled: false }).rotateY(Math.PI / 2).translate(-wide / 2, 0, 0);
+  };
+  // The rocket roadster is packages/models in paper and ink, turned to face -z like everything here,
+  // with a wing on struts that stands up as it picks up speed and a gun behind the cockpit. Each of
+  // its ten thrusters gets a flame that only shows while they fire.
+  const visorMat = new THREE.MeshStandardMaterial({ color: 0x2b2210, roughness: 0.15, metalness: 0.8 });
+  const roadsterLook: RoadsterLook = { paint: boxMat, ink: inkMat, glass: visorMat, tyre: inkMat, rim: orangeMat, nozzle: boxMat, headlight: inkMat, taillight: orangeMat, plate: boxMat, edges: edgeInk };
+  const jetGeo = new THREE.ConeGeometry(0.1, 0.7, 10).translate(0, 0.35, 0);
+  function roadster(): THREE.Group {
     const g = new THREE.Group();
-    g.add(piece(new THREE.BoxGeometry(1.9, 0.45, 3.2), boxMat, 0, 0.75, 0));
-    g.add(piece(new THREE.BoxGeometry(1.7, 0.3, 0.9), orangeMat, 0, 1.05, -1.1));
-    g.add(piece(new THREE.BoxGeometry(1.95, 0.12, 0.5), inkMat, 0, 0.6, 1.55, false));
-    // The roll cage: two hoops of ink tube.
-    const tube = new THREE.TorusGeometry(0.85, 0.05, 6, 20, Math.PI);
-    for (const z of [-0.2, 0.9]) g.add(piece(tube, inkMat, 0, 0.95, z, false));
-    const wheels: THREE.Object3D[] = [];
-    const wheelGeo = new THREE.CylinderGeometry(0.46, 0.46, 0.38, 16).rotateZ(Math.PI / 2), hubGeo = new THREE.BoxGeometry(0.4, 0.12, 0.6);
-    for (const [x, z] of [[-1.05, -1.1], [1.05, -1.1], [-1.05, 1.15], [1.05, 1.15]] as const) {
-      const w = inked(new THREE.Mesh(wheelGeo, inkMat));
-      w.position.set(x, 0.46, z);
-      w.castShadow = true;
-      w.add(new THREE.Mesh(hubGeo, boxMat));
-      wheels.push(w);
-      g.add(w);
-    }
-    // The gun on the roll bar turns to where you aim.
+    const car = sharedRoadster(roadsterLook);
+    car.group.rotation.y = Math.PI;
+    g.add(car.group);
+    const flames = car.nozzles.map((n) => {
+      const f = new THREE.Mesh(jetGeo, flameMat);
+      f.visible = false;
+      n.mount.add(f);
+      return f;
+    });
+    const wing = new THREE.Group();
+    for (const x of [-0.55, 0.55]) wing.add(piece(new THREE.BoxGeometry(0.06, 0.5, 0.16), inkMat, x, 0.25, 0, false));
+    wing.add(piece(new THREE.BoxGeometry(2.4, 0.05, 0.55), boxMat, 0, 0.5, 0));
+    for (const x of [-1.18, 1.18]) wing.add(piece(new THREE.BoxGeometry(0.04, 0.42, 0.55), boxMat, x, 0.3, 0));
+    wing.position.set(0, 0.95, 1.95);
+    g.add(wing);
+    // The gun rides behind the cockpit and turns to where you aim.
     const gun = new THREE.Group();
-    gun.position.set(0, 1.85, 0.3);
-    gun.add(piece(new THREE.BoxGeometry(0.22, 0.22, 0.5), boxMat, 0, 0, 0));
-    gun.add(piece(new THREE.CylinderGeometry(0.05, 0.05, 1, 10).rotateX(Math.PI / 2), inkMat, 0, 0, -0.7, false));
+    gun.position.set(0, 1.42, 0.8);
+    gun.add(piece(new THREE.BoxGeometry(0.22, 0.2, 0.45), boxMat, 0, 0, 0));
+    gun.add(piece(new THREE.CylinderGeometry(0.05, 0.05, 0.9, 10).rotateX(Math.PI / 2), inkMat, 0, 0, -0.65, false));
     g.add(gun);
-    g.userData = { wheels, gun };
+    g.userData = { wheels: car.wheels, gun, flames, wing };
     return g;
   }
   function heli(): THREE.Group {
@@ -658,10 +701,10 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
           const fig = buildFigure(!look ? ORANGE : s.team === "theirs" ? SLATE : INK, look ? 0.22 : 0.45, build);
           if (look) setHead(fig, buildHead(look.head, fig.root.userData.mat, fig.head.userData.size));
           if (s.heavy) fig.root.scale.setScalar(1.25);
-          const tag = ghost(), fire = onFire(), sh = shell(look ? ORANGE : INK);
-          fig.root.add(tag, fire);
+          const tag = ghost(), fire = onFire(), chute = canopy(fig), sh = shell(look ? ORANGE : INK);
+          fig.root.add(tag, fire, chute);
           fig.joints.tumble!.add(sh);
-          bodies.set(s.id, (b = { fig, tag, fire, down: -1, shell: sh, as, kick: 0, flinch: 0, flinchSide: 0, land: 0, air: 0, flash: 0, sweep: -1 }));
+          bodies.set(s.id, (b = { fig, tag, fire, chute, down: -1, shell: sh, as, kick: 0, flinch: 0, flinchSide: 0, land: 0, air: 0, flash: 0, sweep: -1 }));
           scene.add(fig.root);
         }
         const { fig } = b;
@@ -685,6 +728,9 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         b.tag.visible = s.alive && s.tagged > 0;
         b.fire.visible = s.alive && s.burn > 0;
         if (b.fire.visible) for (const f of b.fire.children) f.scale.set(1, 0.6 + Math.abs(Math.sin(game.time * 11 + f.userData.phase * 2.1)) * 0.8, 1);
+        // The canopy swings a little in the harness.
+        b.chute.visible = s.alive && s.chute;
+        if (b.chute.visible) b.chute.rotation.set(Math.sin(game.time * 0.7 + s.id) * 0.05, 0, Math.sin(game.time * 0.9 + s.id * 1.3) * 0.06);
         // How it's moving against the way it faces, so it strafes and backs up rather than moonwalks.
         const fx = -Math.sin(s.yaw), fz = -Math.cos(s.yaw);
         pose(fig, {
@@ -696,6 +742,7 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
           dt,
           roll: s.roll > 0 ? (ROLL_TIME - s.roll) / ROLL_TIME : 0,
           pitch: s.pitch * 0.8,
+          lean: s.lean,
           kick: b.kick, flinch: b.flinch, flinchSide: b.flinchSide, land: b.land,
           blend: BLEND,
         });
@@ -737,15 +784,19 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
       for (const v of game.vehicles) {
         have.add(v.id);
         let m = rides.get(v.id);
-        if (!m) rides.set(v.id, (m = v.kind === "buggy" ? buggy() : heli())), m.rotation.order = "YXZ", scene.add(m);
+        if (!m) rides.set(v.id, (m = v.kind === "roadster" ? roadster() : heli())), m.rotation.order = "YXZ", scene.add(m);
         m.position.set(v.x, v.y, v.z);
         m.rotation.y = v.yaw;
         const u = m.userData, driven = v.driver >= 0;
         // The gun points along the driver's aim, against the vehicle's heading.
         const aimYaw = driven ? you1.yaw - v.yaw : 0, aimPitch = driven ? you1.pitch : 0;
-        if (v.kind === "buggy") {
-          for (const w of u.wheels as THREE.Object3D[]) w.rotation.x = -v.odo / 0.46;
+        if (v.kind === "roadster") {
+          for (const w of u.wheels as THREE.Object3D[]) w.rotation.x = v.odo / 0.42;
           (u.gun as THREE.Object3D).rotation.set(aimPitch, aimYaw, 0, "YXZ");
+          // The wing stands up with speed, and all the way while the thrusters fire.
+          const wing = u.wing as THREE.Object3D, up = v.burn ? 1 : Math.min(1, Math.hypot(v.vx, v.vz) / 20);
+          wing.position.y += (0.95 + up * 0.3 - wing.position.y) * Math.min(1, dt * 6);
+          (u.flames as THREE.Object3D[]).forEach((f, i) => (f.visible = v.burn, f.scale.set(1, 1, 1).multiplyScalar(0.7 + Math.abs(Math.sin(game.time * 23 + i * 1.7)) * 0.5)));
         } else {
           const f = { x: -Math.sin(v.yaw), z: -Math.cos(v.yaw) }, ahead = v.vx * f.x + v.vz * f.z, side = v.vx * -f.z + v.vz * f.x;
           // It noses down to fly forward and banks into a strafe; the rotor spins up once someone's in.
@@ -857,6 +908,8 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         if (by) b.flinchSide = Math.sign((by.x - s.x) * Math.cos(s.yaw) - (by.z - s.z) * Math.sin(s.yaw)) || 1;
         if (e.shield) b.flash = Math.max(b.flash, 1);
         else throwChips(s.x, s.y + 1.1, s.z, 3, 0.06, 2.5, false);
+        // Your headshot: a bigger burst at the head than a body hit gets, so you know it landed.
+        if (e.head && e.by === game.me) pop(s.x, s.y + (s.prone ? PRONE_HEIGHT : s.crouch ? CROUCH_HEIGHT : HEIGHT) - 0.15, s.z, 1.1, 0.1);
       } else if (e.kind === "shield") {
         const b = bodies.get(e.id), s = game.soldiers[e.id];
         if (!b || !s) return;
@@ -882,7 +935,7 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         if (b) b.kick = Math.min(1.2, b.kick + Math.min(1, WEAPONS[e.weapon].kick * 12 + 0.3));
         if (e.weapon === "clean") return;
         const ride = game.vehicles.find((v) => v.id === s.vehicle);
-        const at = ride ? { x: ride.x, y: ride.y + (ride.kind === "buggy" ? 1.9 : 0.6), z: ride.z } : game.muzzle(s), big = WEAPONS[e.weapon].splash > 0 || e.weapon === "add" || e.weapon === "rebase";
+        const at = ride ? { x: ride.x, y: ride.y + (ride.kind === "roadster" ? 1.5 : 0.6), z: ride.z } : game.muzzle(s), big = WEAPONS[e.weapon].splash > 0 || e.weapon === "add" || e.weapon === "rebase";
         pop(at.x, at.y, at.z, big ? 0.9 : 0.55, 0.05);
         flare(at.x, at.y, at.z, big ? 40 : 18, big ? 9 : 6, 0.08);
       }

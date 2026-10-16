@@ -8,11 +8,11 @@ import {
   type Geometry, type Input, type Layout, type Note, type RepoRef, type RideEvent, type Side,
 } from "./gitpath.ts";
 import { createScene } from "./scene.ts";
+import { esc } from "../util.ts";
 
 declare const lucide: { createIcons(): void } | undefined;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const icon = (name: string) => `<i data-lucide="${name}"></i>`;
 const icons = () => {
   try { lucide?.createIcons(); } catch {}

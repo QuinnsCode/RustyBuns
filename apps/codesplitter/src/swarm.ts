@@ -36,8 +36,9 @@ export async function planSwarm(env: Env & { LEVEL_DIGS: NonNullable<Env["LEVEL_
     headers: { accept: "application/vnd.github+json", "user-agent": "codesplitter", ...(p.token ? { authorization: `Bearer ${p.token}` } : {}) },
   });
   if (!res.ok) throw new Error(`GitHub said ${res.status} listing ${p.repo}'s tree`);
-  const tree = (await res.json()) as { truncated: boolean; tree: { path: string; mode: string; type: string; sha: string; size?: number }[] };
-  if (tree.truncated) return null;
+  const tree = (await res.json().catch(() => null)) as { truncated?: boolean; tree?: { path: string; mode: string; type: string; sha: string; size?: number }[] } | null;
+  if (!tree || tree.truncated) return null;
+  if (!Array.isArray(tree.tree)) throw new Error(`GitHub's tree for ${p.repo} had no entries`);
 
   // Too big to dig is listed and not fetched; a submodule (type "commit") is a gitlink to its commit.
   const unstored: ChunkFile[] = [], parts: DigPart[] = [];

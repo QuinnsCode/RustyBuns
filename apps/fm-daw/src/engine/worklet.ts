@@ -4,6 +4,7 @@
 import { TsEngine, type FmEngine } from "./engine.ts";
 import { WasmEngine, instantiateFm } from "./wasm.ts";
 import { Sequencer } from "./sequencer.ts";
+import { Space } from "./space.ts";
 import { TRACKS, NPARAMS } from "./params.ts";
 import type { ToWorklet } from "./messages.ts";
 
@@ -20,7 +21,9 @@ class FmProcessor extends AudioWorkletProcessor {
   private engine: FmEngine = new TsEngine(sampleRate);
   private kind: "ts" | "rust" = "ts";
   private seq = new Sequencer(this.engine, sampleRate);
+  private space = new Space(sampleRate);
   private buf = new Float32Array(256);
+  private send = new Float32Array(256);
   private meter = new Float32Array(4);
   private sinceReport = 0;
 
@@ -37,8 +40,10 @@ class FmProcessor extends AudioWorkletProcessor {
       case "load":
         m.params.forEach((v, i) => { this.params[i] = v; this.engine.setParam((i / NPARAMS) | 0, i % NPARAMS, v); });
         m.notes.forEach((n, t) => s.setNotes(t, n));
+        m.auto.forEach((a, t) => s.setAuto(t, a));
         s.bpm = m.bpm; s.setSwing(m.swing); s.setLoopBeats(m.loopBeats);
         this.setAudible(m.audible);
+        this.space.setTempo(m.bpm); this.space.setAmount(m.space);
         break;
       case "param":
         this.params[m.track * NPARAMS + m.i] = m.v;
@@ -46,7 +51,8 @@ class FmProcessor extends AudioWorkletProcessor {
         break;
       case "notes": s.setNotes(m.track, m.notes); break;
       case "audible": this.setAudible(m.mask); break;
-      case "tempo": s.bpm = m.bpm; s.setSwing(m.swing); s.setLoopBeats(m.loopBeats); break;
+      case "tempo": s.bpm = m.bpm; s.setSwing(m.swing); s.setLoopBeats(m.loopBeats); this.space.setTempo(m.bpm); break;
+      case "space": this.space.setAmount(m.amount); break;
       case "master": this.master = m.gain; this.engine.setMaster(m.gain); break;
       case "play": s.play(m.countIn); break;
       case "stop": s.stop(); this.engine.allOff(); break;
@@ -55,7 +61,7 @@ class FmProcessor extends AudioWorkletProcessor {
       case "latency": s.latency = m.seconds; break;
       case "on": s.liveOn(m.track, m.midi, m.vel); break;
       case "off": s.liveOff(m.track, m.midi); break;
-      case "panic": s.stop(); this.engine.panic(); break;
+      case "panic": s.stop(); this.engine.panic(); this.space.reset(); break;
       case "engine": await this.swap(m); break;
     }
   }
@@ -76,6 +82,7 @@ class FmProcessor extends AudioWorkletProcessor {
       const old = this.engine;
       this.engine = next;
       this.seq.engine = next;
+      this.seq.resendAuto();
       this.kind = m.kind;
       old.panic();
       old.free?.();
@@ -89,9 +96,10 @@ class FmProcessor extends AudioWorkletProcessor {
     const out = outputs[0];
     const L = out[0], R = out[1] ?? out[0];
     const frames = L.length;
-    if (this.buf.length < frames * 2) this.buf = new Float32Array(frames * 2);
+    if (this.buf.length < frames * 2) { this.buf = new Float32Array(frames * 2); this.send = new Float32Array(frames * 2); }
     try {
-      this.seq.process(this.buf, frames);
+      this.seq.process(this.buf, frames, this.send);
+      this.space.process(this.buf, this.send, frames);
     } catch (e) {
       // A trapped wasm engine: fall back to TS rather than go silent for good.
       this.buf.fill(0);

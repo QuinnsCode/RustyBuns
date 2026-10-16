@@ -1,0 +1,206 @@
+[
+ {
+  "pr": 101,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 118,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 123,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/play.html"
+ },
+ {
+  "pr": 126,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/README.md"
+ },
+ {
+  "pr": 127,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 128,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 130,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/README.md"
+ },
+ {
+  "pr": 131,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/README.md"
+ },
+ {
+  "pr": 160,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/hippo-tycoon/README.md"
+ },
+ {
+  "pr": 165,
+  "jammed": true,
+  "why": "renumber",
+  "file": "packages/cli/src/index.ts"
+ },
+ {
+  "pr": 185,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/agent-office/druids/council.ts"
+ },
+ {
+  "pr": 187,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/agent-office/druids/council.ts"
+ },
+ {
+  "pr": 205,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 215,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 225,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/worker.ts"
+ },
+ {
+  "pr": 228,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 232,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 237,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 240,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 241,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 243,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 244,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 245,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/test/deps.test.ts"
+ },
+ {
+  "pr": 250,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 256,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 262,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 280,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 290,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/test/codesplitters.test.ts"
+ },
+ {
+  "pr": 291,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 293,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 308,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 359,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 390,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 393,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ }
+]

@@ -2,7 +2,7 @@
 
 > **What it proves:** one Rust crate runs as wasm in the audio thread and over FFI on the host, bit for bit the same as the TypeScript engine, and one world class saves your groove on a laptop or on Cloudflare. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
-A small FM groovebox: five FM drums and three FM synths, a step sequencer and a piano roll, live recording from the computer keyboard or a MIDI keyboard, and quantize. The sound engine is written twice, once in Rust and once in TypeScript, and you can switch between them while the groove plays.
+A small FM groovebox: twelve tracks (five drums and seven synths, each FM or analog), a drum machine (grooves and kits), a reverb and delay called Space with a send on every track, automation lanes, a step sequencer and a piano roll, live recording from the computer keyboard or a MIDI keyboard, and quantize. The sound engine is written twice, once in Rust and once in TypeScript, and you can switch between them while the groove plays.
 
 ## Run it
 
@@ -47,10 +47,19 @@ bun run desktop:build           # dist/fm-daw-<os>-<arch>
 | <kbd>Shift</kbd> + key | accented note |
 | <kbd>Z</kbd> / <kbd>X</kbd> | octave down / up |
 | <kbd>R</kbd> | record; with **Count-in** on, one bar of clicks first |
-| <kbd>1</kbd> to <kbd>8</kbd> | pick a track |
+| <kbd>1</kbd> to <kbd>0</kbd> | pick a track (the first ten) |
 | <kbd>⌘Z</kbd> / <kbd>⇧⌘Z</kbd> | undo / redo |
 | <kbd>Esc</kbd> | panic: stop everything, silence every voice |
 
+- **Song** loads a whole project. **Long Trail** is ten minutes (432 bars) of dark, symphonic, dubby liquid drum and bass at 172 in A minor, a ride through the parks at night, in nine sections: Dawn, Trailhead, Canyon, Starfield, Summit, Dub Valley, Switchbacks, Ridgeline, Last Light. The drums never leave for long (an octave down through most of it, back up for the drops); the violin is there nearly throughout, plucked in the quiet parts and the builds and bowed for its two themes; the trumpet throws Spanish turns into the dub delay; long horn chords bloom underneath; and the big moves are hi-cut and low-cut sweeps across whole sections, written as automation, with one-beat cuts before each drop. **Night Shift** is the same material as a 32-bar loop. Every sound is a patch in `src/themes.ts` and `src/drums.ts`, so the songs are under this repo's license and use no samples.
+- **Analog voice:** any track's patch can switch from **FM** to **Analog**: two band-limited saws detuned apart (up to ±50 cents), a sine sub an octave down, and noise, all through a resonant low-pass with its own envelope; one free-running LFO per track (a 50-second sweep up to 20 Hz) on cutoff and pitch, with vibrato fading in over the first 0.3 s of each note; glide and drive. Its amp envelope and level are operator 1's. This is the voice for detuned-saw basses, womps, brass and bowed strings (the noise is the bow) that FM can't make. Rust has it too, bit for bit.
+- **Vel tone** (every patch): how much harder hits change the sound, not just its level. Analog: the cutoff moves up to 3 octaves either way. FM: modulation depth and feedback scale from nothing to double.
+- **Hi-cut and low-cut** on every track: a low-pass closing from 20 kHz and a high-pass rising from 20 Hz, after the track's voices. At 0 they're off. Set them to carve room for one part, or automate them for long sweeps over a section.
+- **Automation:** a track can carry lanes (`auto` in the project) that move any parameter along straight lines between points; two points on one beat make a jump, which is how cuts and articulation changes (the violin going from plucked to bowed) are written. The sequencer applies them, so both engines hear the same thing. Songs write them today; there's no lane editor yet.
+- **Long songs:** a project can run up to 512 bars. The step grid and piano roll show 8 bars at a time with ‹ › to page, and Bounce renders a song (anything past 32 bars) once instead of four times.
+- **Drum machine** (above the step grid): **Groove** writes a pattern onto the five drum tracks and moves BPM and swing to it (liquid roller, late night, half-time, chopped break, steppers, four on the floor). Loops run 1 to 32 bars. Loops of 2 bars or more get the groove's fill in the last bar. **Kit** swaps the drum patches and keeps the pattern. Each is one undo.
+- **Space** is a reverb and a dotted-eighth ping-pong delay fed by each track's **Send** (lightly high-passed at 150 Hz), so the kick and bass can stay dry and mono while stabs and leads drown. The tails go wide and drift slowly across the stereo field. Higher Space also means more delay feedback; a saturator in the loop keeps the repeats from running away, and a slow wobble on the delay time bends them a little. The engine renders the send bus next to the mix (Rust and TS match on it too); Space runs after either engine, in the audio thread and in the bounce, and has its own limiter at −1 dBFS.
+- **Hear a song without the app:** `bun scripts/listen.ts 3` renders Long Trail to a WAV and plays it (`afplay` on a Mac); `2` is Night Shift. It streams to disk, so ten minutes takes about a minute and little memory. Add a loop count (`bun scripts/listen.ts 2 4`) or `--quiet` to only write the file.
 - **Drums** show as a step grid: click toggles, shift-click accents. Notes you play in freely land between steps and show striped until you quantize them.
 - **Synths** show as a piano roll: drag to draw a note (you hear it as you press), click a note to delete it.
 - **Quantize** a track to 1/4 through 1/32 or triplets, at any strength. 50% keeps half the feel. **Quantize input** does it as you record.
@@ -85,17 +94,19 @@ Then check by ear, **speakers down first**:
 
 | Path | What it is |
 |---|---|
-| `src/engine/engine.ts` | The TypeScript engine: 8 tracks × 8 voices of 4-operator FM (4 algorithms, op 4 feedback), a pitch envelope and noise for drums, then the master safety chain. No allocation in `render`. |
+| `src/engine/engine.ts` | The TypeScript engine: 12 tracks × 8 voices of 4-operator FM (4 algorithms, op 4 feedback) or the analog voice (PolyBLEP saws, a trapezoidal state-variable low-pass, LFO, glide, drive), a pitch envelope and noise for drums, then the master safety chain. No allocation in `render`. |
 | `native/crates/fm_daw` | The Rust engine, a line-for-line mirror. One crate, two builds: a cdylib for `bun:ffi` on the host, and `wasm32` for the audio thread. |
 | `src/engine/sequencer.ts` | Loops the pattern, swings it, counts in, clicks, records live notes with output latency taken off. Drives either engine, so both hear exactly the same events. |
 | `src/engine/worklet.ts` | The AudioWorklet. Owns the engine and sequencer; swaps TS and Rust mid-groove by replaying its parameter mirror into the new engine. |
+| `src/engine/space.ts` | Space: reverb (8 combs and 4 allpasses a side), ping-pong delay with feedback and wobble, a slow stereo swirl, then a limiter. TypeScript only and after the engine, so Rust/TS parity is untouched. |
+| `src/drums.ts`, `src/themes.ts`, `src/songs.ts`, `src/longtrail.ts` | The drum machine's grooves and kits, the shared sounds and phrases, and the songs. |
 | `src/project.ts` | The project document and the ops that change it, with validation. Shared by the page, the world and the bounce. |
 | `packages/desktop/world.ts` | The world. On the desktop the host runs it in-process with sqlite, so your project survives a restart. On Cloudflare the same class is a Durable Object per `?room=`, so a room shares one groove. |
 | `src/actions/files.ts` | `"use server"` actions the host runs: save a bounce, reveal it, and the host side of the engine race. |
 
 ## Rust vs TypeScript
 
-The golden tests render 8 seconds of the demo groove with each engine. Both the cdylib and the wasm build match TypeScript **bit for bit** (max difference 0 over 384,000 frames), so switching engines changes nothing you can hear.
+The golden tests render 8 seconds of the demo groove with each engine, and 8 seconds of Night Shift (the analog voice) over FFI. Both the cdylib and the wasm build match TypeScript **bit for bit** (max difference 0 over 384,000 frames), so switching engines changes nothing you can hear.
 
 **Engine race** renders 20 s of the current groove on each lane. On an M-series Mac: TypeScript in the window about 15× realtime, Rust as wasm about 18×, Rust over FFI on the host about 18 to 21×, TypeScript under Bun about 16 to 19×. Rust's lead is small here because both engines spend their time in the same `sin` and `pow` calls. The interesting part is that the same audio comes out of four runtimes.
 
@@ -116,5 +127,5 @@ The golden tests render 8 seconds of the demo groove with each engine. Both the 
 
 1. MIDI learn for any slider, and pitch bend.
 2. Song mode: chain patterns.
-3. Per-track sends to a shared reverb and delay, and a sidechain from the kick.
+3. Per-track sends to Space (it's one master send today, high-passed), and a sidechain from the kick.
 4. Deploy the jam room to Cloudflare and try it with two people.
