@@ -111,16 +111,16 @@ test("a rider runs into a rail's post but rides over it on the bar", () => {
   expect(lv.obstacles!.length).toBeGreaterThan(5);
   const side = run(start(0.8, -10, 0, lv), 0.5, () => ({ throttle: 1 }), lv); // along the bar, a hand off its line
   expect(hitObstacle(lv, 0, 0.5, 0.9 - 0.05)).toBeUndefined(); // the bar's own height clears every post
-  const across = run(start(-8, 2, Math.PI / 2, lv), 4, () => ({ throttle: 1 }), lv);
+  const across = run(start(-14, 2, Math.PI / 2, lv), 4, () => ({ throttle: 1 }), lv);
   expect(across.last?.name).toBe("Hit a rail post");
   expect(side.x).toBeCloseTo(0.8, 0);
 });
 
 test("a tree catches the board's edge, not a circle round its middle", () => {
   const lv = flat({ obstacles: [{ x: 0, z: 10, r: 0.5, tall: 30 }] });
-  expect(hitObstacle(lv, 0.9, 9.5, 0, 0)).toBeUndefined(); // heading at it, 0.9 m to the side: clear
-  expect(hitObstacle(lv, 0.9, 9.5, 0, Math.PI / 2)).toBeDefined(); // turned across: the long edge reaches it
-  expect(hitObstacle(lv, 0, 8.8, 0, 0)).toBeDefined(); // the nose catches it 1.2 m out, before the centre could
+  expect(hitObstacle(lv, 1.3, 9.5, 0, 0)).toBeUndefined(); // heading at it, 1.3 m to the side: clear (the deck is 1.3 m wide)
+  expect(hitObstacle(lv, 1.3, 9.5, 0, Math.PI / 2)).toBeDefined(); // turned across: the long edge reaches it
+  expect(hitObstacle(lv, 0, 7.5, 0, 0)).toBeDefined(); // the nose catches it 2.5 m out, before the centre could
 });
 
 test("a skater grinds a rail down a slope and stays on the bar", () => {
@@ -152,7 +152,7 @@ test("a box side stops the board's edge, not just its middle", () => {
   const box = flat({ pieces: [piece("box", "b", 0, 10, 0, 6, 4, 1, 1)] }); // sides at x = +-3
   const graze = run(start(3.2, 0, 0, box), 3, () => ({ throttle: 1 }), box); // the middle is 0.2 m clear, the edge is not
   expect(graze.z).toBeLessThan(8.5);
-  const beside = run(start(3.6, 0, 0, box), 3, () => ({ throttle: 1 }), box);
+  const beside = run(start(3.8, 0, 0, box), 3, () => ({ throttle: 1 }), box);
   expect(beside.z).toBeGreaterThan(14); // fully clear: rides past
 });
 
@@ -285,5 +285,20 @@ test("on the ground the whole board stops at a box's side, even turning into it,
       for (const a of [-0.8, 0, 0.8]) for (const c of [-0.3, 0.3]) worst = Math.max(worst, l.height(s.x + sn * a + cs * c, s.z + cs * a - sn * c) - s.y);
     }
     expect(worst).toBeLessThan(0.2);
+  }
+});
+
+test("the poles are hard steel: a board's drawn deck never overlaps a rail post, however it comes in", () => {
+  const rails = [{ kind: "rail" as const, a: { x: 0, z: -20 }, b: { x: 0, z: 20 }, y: 0.9 }];
+  const lv = flat({ rails, obstacles: postObstacles(rails, () => 0) });
+  const post = lv.obstacles![0]!;
+  for (const yaw of [0, 0.7, 1.4, 2.2, 3.1, 4, 5]) for (const boost of [false, true]) {
+    const sk = start(post.x - Math.sin(yaw) * 14, post.z - Math.cos(yaw) * 14, yaw, lv);
+    for (let i = 0; i < 3 / DT; i++) {
+      step(sk, { ...IDLE, throttle: 1, boost }, lv);
+      const dx = post.x - sk.x, dz = post.z - sk.z;
+      const along = Math.abs(dx * Math.sin(sk.yaw) + dz * Math.cos(sk.yaw)), across = Math.abs(dx * Math.cos(sk.yaw) - dz * Math.sin(sk.yaw));
+      if (sk.grind < 0) expect(along < 2.1 && across < 0.6).toBe(false); // the deck is 4.4 m by 1.25 m
+    }
   }
 });

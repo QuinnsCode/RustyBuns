@@ -6,7 +6,7 @@
 // the tricks. `firing` is derived from the board's state after each step and never feeds back, so
 // swapping skins changes nothing in the ride.
 import { clamp } from "@rustybuns/util";
-import { BOARD, hitObstacle, type Level, onRail, railY } from "./level.ts";
+import { FOOT, hitObstacle, type Level, onRail, railY } from "./level.ts";
 import { plaza } from "./levels/plaza.ts";
 
 export const DT = 1 / 60;
@@ -56,7 +56,7 @@ const BOOST_TOP = JETS.boostTop;
 function footprintTop(level: Level, x: number, z: number, yaw: number) {
   const sn = Math.sin(yaw), cs = Math.cos(yaw);
   let top = level.height(x, z);
-  for (const a of [-1, -0.5, 0, 0.5, 1].map((k) => k * BOARD.halfLen)) for (const c of [-BOARD.halfWid, 0, BOARD.halfWid]) top = Math.max(top, level.height(x + sn * a + cs * c, z + cs * a - sn * c));
+  for (const a of [-1, -0.5, 0, 0.5, 1].map((k) => k * FOOT.halfLen)) for (const c of [-FOOT.halfWid, 0, FOOT.halfWid]) top = Math.max(top, level.height(x + sn * a + cs * c, z + cs * a - sn * c));
   return top;
 }
 
@@ -65,7 +65,7 @@ function footprintTop(level: Level, x: number, z: number, yaw: number) {
 function tipContact(level: Level, x: number, z: number, yaw: number) {
   const sn = Math.sin(yaw), cs = Math.cos(yaw);
   let best = { h: level.height(x, z), x, z };
-  for (const a of [-BOARD.halfLen, BOARD.halfLen]) {
+  for (const a of [-FOOT.halfLen, FOOT.halfLen]) {
     const tx = x + sn * a, tz = z + cs * a, h = level.height(tx, tz);
     if (h > best.h) best = { h, x: tx, z: tz };
   }
@@ -463,7 +463,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       }
     }
     const tip = tipContact(level, s.x, s.z, s.yaw);
-    if (s.y < tip.h - STEP && (tip.x - s.x) * s.vx + (tip.z - s.z) * s.vz > 0 && Math.atan((tip.h - level.height(s.x, s.z)) / BOARD.halfLen) >= SHEER) { // a tip met a sheer face: the board stops against it
+    if (s.y < tip.h - STEP && (tip.x - s.x) * s.vx + (tip.z - s.z) * s.vz > 0 && Math.atan((tip.h - level.height(s.x, s.z)) / FOOT.halfLen) >= SHEER) { // a tip met a sheer face: the board stops against it
       s.x -= s.vx * DT; s.z -= s.vz * DT; s.vx = s.vz = 0; s.speed = 0;
     }
     const h = level.height(s.x, s.z);
