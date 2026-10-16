@@ -1,4 +1,4 @@
-# Rocket Skate
+# Skate Tech Park
 
 > **What it proves:** a three.js game whose physics is a pure fixed-step sim, so the same code runs in the page and in headless tests, with no backend and a ten-line desktop config. One of the [Rusty Buns](../../README.md#see-it-work) examples.
 
@@ -9,7 +9,7 @@ Tricks score when you land them: air time, every 180 you spin, kickflips, grinds
 ## Run it
 
 ```
-cd apps/rocket-skate
+cd apps/skate-tech-park
 bun install
 bun run dev              # in the browser
 bun run desktop:dev      # as a desktop app
