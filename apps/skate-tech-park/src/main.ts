@@ -178,7 +178,7 @@ function hud() {
   $("tank").hidden = mode !== "car";
   $("keys").innerHTML = mode === "car"
     ? "<kbd>W</kbd><kbd>S</kbd> drive <kbd>A</kbd><kbd>D</kbd> steer, spin in the air <kbd>Shift</kbd> rear thrusters <kbd>Space</kbd> lift thrusters"
-    : "<kbd>W</kbd><kbd>S</kbd> push <kbd>A</kbd><kbd>D</kbd> steer, spin in the air <kbd>Space</kbd> ollie <kbd>F</kbd> kickflip";
+    : "<kbd>W</kbd><kbd>S</kbd> push <kbd>A</kbd><kbd>D</kbd> steer, spin in the air <kbd>Space</kbd> ollie <kbd>F</kbd> kickflip <kbd>Shift</kbd> pump a transition";
 }
 hud();
 

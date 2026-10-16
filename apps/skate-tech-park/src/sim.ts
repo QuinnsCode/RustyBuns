@@ -17,7 +17,7 @@ export type Input = {
   throttle: number; // -1..1
   steer: number; // -1..1, left is +
   jump: boolean; // board: ollie (on press). car: lift thrusters (held)
-  boost: boolean; // car: rear thrusters
+  boost: boolean; // car: rear thrusters. board: pump (held through a transition)
   flip: boolean; // board: kickflip (on press, in the air)
 };
 
@@ -36,6 +36,8 @@ const MAX_SLOPE = 3; // a rise steeper than this (about 72 degrees) in one strid
 const CARVE = 0.8; // how much speed stiffens the board's turn: at top speed it turns 1/(1+CARVE) as tight
 const CARVE_DRAG = 0.5; // a hard carve at speed scrubs this share of it per second
 const DRIFT = 0.8; // rad/s the board falls toward downhill per unit of cross slope
+const PUMP = 0.6; // board: speed gained per radian the ground curves up ahead, as a share of speed, while pumping
+const WALL = 1; // radians: a rider this far up a curve who meets a sharper rise is on a wall, and flies off it
 const STEP = 0.2; // a kerb or stair this low is always rideable
 
 export type Firing = { rear: boolean; lift: boolean; spin: -1 | 0 | 1 };
@@ -106,7 +108,8 @@ function land(s: State, h: number) {
   const hs = Math.hypot(s.vx, s.vz);
   const off = Math.abs(wrap(Math.atan2(s.vx, s.vz) - s.yaw));
   if (s.flipT > 0) return bail(s, "Bail: still flipping");
-  if (hs < 2 || off < 0.9) s.speed = hs;
+  if (hs < 2) s.speed = s.vx * Math.sin(s.yaw) + s.vz * Math.cos(s.yaw); // dropping back onto a wall: roll off it
+  else if (off < 0.9) s.speed = hs;
   else if (off > Math.PI - 0.9) s.speed = -hs;
   else return bail(s, s.mode === "car" ? "Spun out" : "Bail: landed sideways");
   if (s.airTime < 0.35) return;
@@ -170,14 +173,17 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
   }
 
   if (!s.air) {
-    const top = boosting ? BOOST_TOP : tune.top;
+    const top = boosting ? BOOST_TOP : !car && inp.boost ? tune.top * 1.5 : tune.top; // pumping can carry a board past its pushing speed
     s.speed += inp.throttle * tune.accel * DT + (boosting ? BOOST * DT : 0);
     if (!inp.throttle && !boosting) s.speed *= 1 - 0.6 * DT;
     s.speed = clamp(s.speed, -top * 0.5, top);
     const dir = Math.sign(s.speed || 1);
     const [gx, gz] = gradient(level, s.x, s.z);
     const along = gx * fx + gz * fz, across = gx * fz - gz * fx; // rise ahead, and to the right
+    const pitched = Math.atan(along) - s.pitch;
     s.pitch = Math.atan(along); s.roll = Math.atan(across);
+    // pumping: weight the board as the floor curves up under it and the curve gives back speed
+    if (!car && inp.boost) s.speed += dir * PUMP * Math.abs(s.speed) * Math.max(0, pitched * dir);
     if (car) s.yaw += inp.steer * tune.turn * DT * Math.min(1, Math.abs(s.speed) / 3) * dir;
     else { // a board carves: weight over the trucks, tighter when slow, and it falls toward downhill
       const load = Math.abs(s.speed) / tune.top;
@@ -195,13 +201,19 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     let prev = s.y;
     for (let i = 1; i <= n; i++) {
       const h = level.height(s.x + ((nx - s.x) * i) / n, s.z + ((nz - s.z) * i) / n);
-      if (h - prev > Math.max(STEP, (dist / n) * MAX_SLOPE)) return crash(s, null);
+      if (h - prev > Math.max(STEP, (dist / n) * MAX_SLOPE)) {
+        if (Math.abs(s.pitch) < WALL || s.pitch * dir < 0 || s.vy < 0.5 * Math.abs(s.speed)) return crash(s, null);
+        // already climbing a curve and it goes vertical: leave the wall along its face, up past the coping
+        const v = Math.abs(s.speed), c = Math.cos(s.pitch);
+        s.vx = fx * v * c * dir; s.vz = fz * v * c * dir; s.vy = v * Math.sin(Math.abs(s.pitch));
+        takeOff(s);
+        return s;
+      }
       prev = h;
     }
     const h = prev;
     if (dist > 1e-6) { // slopes slow you going up and speed you coming down
-      const slope = (h - s.y) / dist;
-      s.speed -= Math.sign(s.speed) * G * (slope / Math.hypot(1, slope)) * DT;
+      s.speed -= G * Math.sin(s.pitch) * DT;
     }
     const vy = s.vy;
     s.vx = Math.sin(s.yaw) * s.speed; s.vz = Math.cos(s.yaw) * s.speed;
