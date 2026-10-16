@@ -5,7 +5,7 @@
   "main": "src/edge/worker.ts",
   "compatibility_date": "2026-09-01",
   "assets": { "binding": "ASSETS", "directory": "dist/ui" },
-  "durable_objects": { "bindings": [{ "name": "WORLD", "class_name": "World" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["World"] }],
+  "durable_objects": { "bindings": [{ "name": "WORLD", "class_name": "World" }, { "name": "PURCHASES", "class_name": "Purchases" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["World"] }, { "tag": "v2", "new_sqlite_classes": ["Purchases"] }],
   "observability": { "enabled": true }
 }

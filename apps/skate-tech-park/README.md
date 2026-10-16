@@ -37,6 +37,12 @@ bun run edge:dev         # the whole thing locally, with wrangler
 bun run deploy           # to Cloudflare (the owner runs this: it needs the account)
 ```
 
+## Paying for finishes
+
+Priced deck, truck and wheel finishes (looks only) are bought through Stripe Checkout (`src/edge/pay.ts`). The page asks `/api/checkout` for a hosted payment page; the Worker prices the item from the catalog, never from the page. A purchase is recorded only when Stripe's signed webhook (`/api/stripe-webhook`) says it was paid, into a `Purchases` Durable Object per player id, and the page reads it back from `/api/owned`. Players are guests: the id is the secret one kept in the browser, so clearing site data loses the purchases until accounts exist. The dev server has no Worker, so there the free test checkout is used; the desktop app can't buy priced finishes.
+
+The owner sets this up once (agents don't touch secrets): put `STRIPE_SECRET_KEY` (a restricted key that can create Checkout Sessions) and `STRIPE_WEBHOOK_SECRET` on the Worker as secrets, through varlock and 1Password, then `bun run deploy`. In the Stripe dashboard add a webhook endpoint `https://<your worker>/api/stripe-webhook` for the event `checkout.session.completed`, and try it in test mode first with card `4242 4242 4242 4242`.
+
 `/?showroom` parks the roadster and circles the camera round it, to check the model against reference photos.
 
 | Do this | Keys |

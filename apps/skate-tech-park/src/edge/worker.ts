@@ -2,10 +2,11 @@
 // to that room's World Durable Object. Up to 4 riders a room. Everyone is a guest: the Worker checks the
 // player's id and name from the query, strips any identity headers the client sent, and vouches its own.
 import { RoomMintGate, originAllowed } from "./limits.ts";
+import { Purchases, handlePay, type PayEnv } from "./pay.ts";
 import { World } from "./world.ts";
-export { World };
+export { World, Purchases };
 
-interface Env {
+interface Env extends PayEnv {
   ASSETS: { fetch(r: Request): Promise<Response> };
   WORLD: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
 }
@@ -18,8 +19,9 @@ const clean = (s: string | null, max: number) => (s ?? "").replace(/\p{C}/gu, ""
 const mintGate = new RoomMintGate();
 
 export default {
-  fetch(req: Request, env: Env): Response | Promise<Response> {
+  async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
+    if (url.pathname.startsWith("/api/")) return (await handlePay(req, env, url)) ?? new Response("not found", { status: 404 });
     if (url.pathname !== "/ws") return env.ASSETS.fetch(req);
     if (req.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response("websocket only", { status: 426 });
     if (!originAllowed(req.headers.get("Origin"), url)) return new Response("cross-origin websocket refused", { status: 403 });

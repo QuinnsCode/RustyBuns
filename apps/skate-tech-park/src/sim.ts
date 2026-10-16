@@ -72,6 +72,21 @@ function tipContact(level: Level, x: number, z: number, yaw: number) {
   return best;
 }
 
+/** Is any part of the deck (nose, tail, edges) behind a face from the middle: a rise too sharp for its length, as the ground check counts a wall? */
+function deckInFace(level: Level, x: number, z: number, yaw: number) {
+  const sn = Math.sin(yaw), cs = Math.cos(yaw);
+  for (const a of [-1, -0.5, 0.5, 1].map((k) => k * FOOT.halfLen)) for (const c of [-FOOT.halfWid, 0, FOOT.halfWid]) {
+    const n = Math.max(1, Math.ceil(Math.hypot(a, c) / 0.1));
+    let prev = level.height(x, z);
+    for (let i = 1; i <= n; i++) {
+      const h = level.height(x + (sn * a + cs * c) * i / n, z + (cs * a - sn * c) * i / n);
+      if (h - prev > Math.max(STEP, 0.1 * MAX_SLOPE)) return true;
+      prev = h;
+    }
+  }
+  return false;
+}
+
 const MAX_SLOPE = 3; // a rise steeper than this (about 72 degrees) in one stride is a wall, not a ramp
 const CARVE = 0.8; // how much speed stiffens the board's turn: at top speed it turns 1/(1+CARVE) as tight
 const CARVE_DRAG = 0.5; // a hard carve at speed scrubs this share of it per second
@@ -476,7 +491,14 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
         if (s.vy > 0 && s.vy < 0.5) s.vy = 0;
       }
     }
-    if (s.y <= h && s.vy <= 0) land(s, h);
+    if (s.y <= h && s.vy <= 0) {
+      if (deckInFace(level, s.x, s.z, s.yaw)) { // landed with the deck in a steep face: slide back out along it, stopped against it
+        const hs = Math.hypot(s.vx, s.vz), bx = hs > 0.01 ? -s.vx / hs : -Math.sin(s.yaw), bz = hs > 0.01 ? -s.vz / hs : -Math.cos(s.yaw);
+        for (let i = 0; i < 80 && deckInFace(level, s.x, s.z, s.yaw); i++) { s.x += bx * 0.1; s.z += bz * 0.1; }
+        s.vx = s.vz = 0;
+      }
+      land(s, level.height(s.x, s.z));
+    }
   }
 
   const b = level.bounds;
