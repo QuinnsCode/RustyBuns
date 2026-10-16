@@ -158,6 +158,11 @@ const W = {
   get silverDark() { return lazy("w.silverDark", () => std(0x6e7178, 0.9, { map: furMap() })); },
   get hex() { return lazy("w.hex", () => glow(0x7dff6a)); },        // a Shanti's magic
   get powder() { return lazy("w.powder", () => std(0x3a2a1a, 0.7, { map: grainMap() })); }, // a Boomie's keg
+  get mange() { return lazy("w.mange", () => std(0x6a5c48, 0.98, { map: furMap() })); },       // a Mossback's matted coat
+  get mangeLight() { return lazy("w.mangeLight", () => std(0x8a7d66, 0.98, { map: furMap() })); },
+  get skin() { return lazy("w.skin", () => std(0x8a7f78, 0.9, { map: furMap() })); },          // the bald, scabbed patches
+  get moss() { return lazy("w.moss", () => std(0x62982f, 1, { map: furMap() })); },             // and what grows on it
+  get mossDark() { return lazy("w.mossDark", () => std(0x2f4a1c, 1, { map: furMap() })); },
 };
 const made = new Map<string, unknown>();
 function lazy<T>(key: string, make: () => T): T {
@@ -623,7 +628,64 @@ function buildWooka(hero: boolean, role: WookaRole | "warbur" = "fodder") {
 }
 
 export function wooka(hero = false, role: WookaRole | "warbur" = "fodder") {
-  return cloneOf(`wooka:${hero}:${role}`, () => buildWooka(hero, role));
+  return cloneOf(`wooka:${hero}:${role}`, () => (role === "mossback" ? buildMossback() : buildWooka(hero, role)));
+}
+
+// The Mossback: a Wooka that kept growing. Big as a Marine from the shoulder, mangy and
+// matted, with moss in the back of its coat and bald scabs where it doesn't take, arms so long
+// the knuckles drag, and a heavy brow over small red eyes. It lopes on its fists. Its arms are
+// two joints each (upper arm, forearm), so it can swing them down and stretch them out in a leap.
+function buildMossback() {
+  const k = new Kit();
+  const body = k.joint("body", k.root, 0, 1.0, 0);
+  body.rotation.x = -0.45; // hunched over, head forward
+  k.add(body, lumpy(0.8, 3, 0.16, 21), W.mange, { y: 0.6, s: [1.2, 1.1, 1.05] });                    // the great matted chest
+  k.add(body, lumpy(0.55, 2, 0.12, 22), W.mangeLight, { y: 0.2, z: -0.38, s: [1.1, 1, 0.55] });     // a paler belly
+  k.add(body, lumpy(0.62, 2, 0.14, 23), W.mange, { y: 0.0, z: 0.28, s: [1.1, 0.9, 1] });             // the haunches
+  // Moss on the shoulders and the back, in clumps, and strands of it hanging off.
+  for (let i = 0; i < 22; i++) {
+    const a = (i / 22) * Math.PI * 2, r = 0.5 + ((i * 37) % 5) * 0.05;
+    k.add(body, lumpy(0.17 + ((i * 13) % 4) * 0.03, 1, 0.25, 30 + i), i % 3 ? W.moss : W.mossDark, { x: Math.cos(a) * r * 1.1, y: 0.95 + Math.sin(a * 2) * 0.12, z: 0.22 + Math.sin(a) * r * 0.7, s: [1, 0.6, 1] });
+  }
+  for (let i = 0; i < 6; i++) k.rod(body, [-0.6 + i * 0.24, 1.05, 0.5], [-0.65 + i * 0.26, 0.45 - (i % 2) * 0.2, 0.62], 0.025, W.moss, 4);
+  // Bald scabs where the coat gave out.
+  for (const [x, y, z] of [[0.45, 0.7, -0.55], [-0.5, 0.35, -0.5], [0.3, 0.1, 0.62]] as const) k.add(body, lumpy(0.2, 1, 0.1, 40 + x), W.skin, { x, y, z, s: [1.2, 1, 0.4] });
+  // Head, low and forward: a brow like a shelf, small red eyes under it, an underbite with tusks.
+  const head = k.joint("head", body, 0, 1.15, -0.6);
+  head.rotation.x = 0.5; // it carries it level though the body leans
+  k.add(head, lumpy(0.42, 3, 0.1, 25), W.mange, { s: [1.1, 0.95, 1.05] });
+  k.add(head, rbox(0.8, 0.16, 0.3, 0.05), W.mangeLight, { y: 0.1, z: -0.3, rx: 0.1 });              // the brow
+  k.add(head, ball(0.2, 14, 10), W.skin, { y: -0.08, z: -0.36, s: [1.3, 0.8, 0.7] });                // the muzzle
+  for (const s of [-1, 1]) {
+    k.add(head, ball(0.065, 10, 8), W.eye, { x: s * 0.17, y: 0.0, z: -0.4 });
+    k.add(head, ball(0.025, 6, 4), W.glint, { x: s * 0.17, y: 0.0, z: -0.45 });
+    k.add(head, cone(0.04, 0.32, 6), W.tooth, { x: s * 0.16, y: -0.2, z: -0.5, rx: -0.2, rz: -s * 0.1 }); // tusks
+    k.add(head, lumpy(0.1, 1, 0.2, 50 + s), W.mange, { x: s * 0.4, y: 0.15, z: 0.0, s: [0.7, 1, 0.5] });  // ears, chewed
+  }
+  k.add(head, rbox(0.34, 0.1, 0.2, 0.03), W.mouth, { y: -0.22, z: -0.42 });
+  for (let i = 0; i < 5; i++) k.add(head, cone(0.018, 0.07, 4), W.tooth, { x: -0.12 + i * 0.06, y: -0.19, z: -0.5, rx: Math.PI });
+  for (let i = 0; i < 4; i++) k.add(head, lumpy(0.1, 1, 0.25, 60 + i), W.moss, { x: -0.2 + i * 0.13, y: 0.4, z: 0.05, s: [1, 0.6, 1] }); // moss on the crown
+  // Arms: long. Upper arm from the shoulder, forearm from the elbow, a fist with knuckles at the end.
+  for (const s of [-1, 1]) {
+    const side = s < 0 ? "L" : "R";
+    const arm = k.joint(`arm${side}`, body, s * 0.98, 1.0, -0.05);
+    arm.rotation.z = s * 0.1;
+    k.add(arm, lumpy(0.3, 2, 0.12, 70 + s), W.mange, { y: 0.0, s: [1.1, 1, 1] });                       // the shoulder
+    k.add(arm, capsule(0.2, 1.0, 8), W.mange, { y: -0.48 });
+    k.add(arm, lumpy(0.2, 1, 0.3, 80 + s), W.moss, { x: s * 0.08, y: -0.1, z: 0.1, s: [1, 0.6, 1] });
+    const fore = k.joint(`fore${side}`, arm, 0, -0.95, 0);
+    k.add(fore, capsule(0.17, 0.8, 8), W.mangeLight, { y: -0.4 });
+    k.add(fore, lumpy(0.27, 2, 0.1, 90 + s), W.skin, { y: -0.85, s: [1, 0.9, 1.1] });                       // the fist
+    for (const x of [-0.12, 0, 0.12]) k.add(fore, ball(0.07, 6, 4), W.bone, { x, y: -1.05, z: -0.1 });  // knuckles
+  }
+  // Legs: short, bowed, big in the thigh.
+  for (const s of [-1, 1]) {
+    const leg = k.joint(s < 0 ? "legL" : "legR", k.root, s * 0.42, 0.85, 0.1);
+    k.add(leg, capsule(0.27, 0.85, 8), W.mange, { y: -0.3, rz: -s * 0.1 });
+    k.add(leg, ball(0.3, 12, 8), W.furDark, { y: -0.74, z: -0.1, s: [1, 0.5, 1.5] });
+  }
+  k.root.scale.setScalar(0.85);
+  return k.bake("mossback", {});
 }
 
 // ============================================================================================
@@ -908,6 +970,22 @@ export function animate(g: THREE.Object3D, m: Motion) {
     set(p, "head", -0.1 * a, Math.sin(t * 0.6 + g.id) * 0.2 * (1 - a), Math.sin(t * 0.9 + g.id) * 0.18 * (1 - a));
     set(p, "earL", 0, 0, 0.15 + Math.sin(t * 3 + g.id) * 0.08 + s * 0.2 * a);
     set(p, "earR", 0, 0, -0.15 - Math.sin(t * 2.6 + g.id) * 0.08 + s * 0.2 * a);
+  } else if (model === "mossback") {
+    // Knuckle-running: the fists land in turn, the great back rocks, and the head stays level.
+    // Fast enough (the leap) and it stretches out, arms thrown forward and legs kicked back. A
+    // swing brings both fists up over the head and down hard.
+    p.phase += (m.moved / 2.6) * Math.PI * 2;
+    const s = Math.sin(p.phase), c = Math.cos(p.phase), leap = Math.min(1, Math.max(0, (p.speed - 14) / 6));
+    const swing = m.since < 0.7 ? m.since / 0.7 : 1;
+    const slam = swing < 0.3 ? -2.5 * (swing / 0.3) : swing < 1 ? -2.5 + 2.2 * ((swing - 0.3) / 0.7) : 0;
+    set(p, "body", (-0.12 * leap) + Math.sin(t * 1.4 + g.id) * 0.02 + 0.08 * a * s * s, s * 0.1 * a, s * 0.06 * a, 0, a * Math.abs(c) * 0.12 + leap * 0.2);
+    set(p, "head", 0.1 * leap - 0.05 * a, Math.sin(t * 0.7 + g.id) * 0.25 * (1 - a), Math.sin(t * 1.1 + g.id) * 0.1 * (1 - a));
+    set(p, "armL", -s * 0.9 * a - 0.1 + slam - 2.4 * leap);
+    set(p, "armR", s * 0.9 * a - 0.1 + slam - 2.4 * leap);
+    set(p, "foreL", -Math.max(0, -s) * 0.7 * a - 0.15 * (1 - leap));
+    set(p, "foreR", -Math.max(0, s) * 0.7 * a - 0.15 * (1 - leap));
+    set(p, "legL", s * 0.7 * a + leap * 1.0);
+    set(p, "legR", -s * 0.7 * a + leap * 1.0);
   } else if (model === "walker") {
     p.phase += (m.moved / 7) * Math.PI * 2;
     const s = Math.sin(p.phase), c = Math.cos(p.phase);
