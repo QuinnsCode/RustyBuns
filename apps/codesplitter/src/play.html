@@ -176,7 +176,7 @@ if (location.hash.startsWith("#c/")) {
 import * as THREE from "three";
 
 // #c/<name> is someone's code city, a mode of its own (city.js): the backrooms never start.
-if (location.hash.startsWith("#c/")) { await import("/city.js"); await new Promise(() => {}); }
+if (location.hash.startsWith("#c/")) { import("/found.js").then(({ found }) => found("city")); await import("/city.js"); await new Promise(() => {}); }
 
 // ---- where we are -------------------------------------------------------------
 // #l/<level> or #r/<owner>/<repo>, and for a diff to smash ?path=&from=&to=; a send-off adds ?mode=wreck (the wrecking room)
@@ -1447,6 +1447,7 @@ async function begin(seed, startAt) {
     return;
   }
   for (const l of here.lines) if (!l.mesh.parent) l.wall.add(l.mesh);
+  import("/found.js").then(({ found }) => found(mode)).then((r) => { if (r?.all) banner("ALL FOUND", "the badge is on your profile", 4); });
   // Whatever started the round (a button pressed with Enter, say) lets go of focus, so Space swats.
   document.activeElement?.blur?.();
   keySwat = held = false;

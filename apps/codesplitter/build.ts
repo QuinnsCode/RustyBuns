@@ -38,6 +38,8 @@ await writeFile("dist/client/index.html", home
 await copyFile("src/play.html", "dist/client/play.html");
 // The game's code city mode, which play.html loads on #c/<name>.
 await copyFile("src/city.js", "dist/client/city.js");
+// Reports a hidden game or room found (src/found.js), for the game, the city, gitpath and the profile.
+await copyFile("src/found.js", "dist/client/found.js");
 // The shop interiors it loads when you walk up to a ground floor (city.js: SHOP_MODULES).
 await mkdir("dist/client/city-shops", { recursive: true });
 for (const f of await readdir("src/city-shops")) await copyFile(`src/city-shops/${f}`, `dist/client/city-shops/${f}`);

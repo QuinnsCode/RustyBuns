@@ -6,6 +6,7 @@
 import { parseJson } from "./util.ts";
 import { artifactMoveRoutes } from "./artifact-move.ts";
 import { featureRankRoutes } from "./feature-ranks.ts";
+import { findRoutes } from "./finds.ts";
 import { rankOf } from "./policy.ts";
 import { fromText } from "./lines.ts";
 import { mainClosed, policyClosed, protectRoute } from "./protect.ts";
@@ -397,6 +398,10 @@ async function route(req: Request, env: Env): Promise<Response> {
   // POST /api/follows, DELETE /api/follows/:id, GET /api/me/following (follows.ts)
   const follows = await followRoutes(req, env, p, user, (o, r) => access(env, o, r, user));
   if (follows) return follows;
+  // PUT /api/me/finds, GET /api/users/:name/finds: the hidden games found, and the badge (finds.ts)
+  const finds = await findRoutes(req, env, p, user);
+  if (finds) return finds;
+
   // GET /api/feature-ranks, PUT /api/me/feature-ranks, POST /api/feature-comments (feature-ranks.ts)
   const ranks = await featureRankRoutes(req, env, p, user);
   if (ranks) return ranks;

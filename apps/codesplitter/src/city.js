@@ -1254,6 +1254,7 @@ function updateWalk(dt, now) {
   const what = $("#city-what");
   const bar = rooms.find((s) => s.secret && s.group?.visible && s.folks.some((f) => f.clerk && Math.hypot(f.x - player.pos.x, f.z - player.pos.z) < 1.5));
   if (bar) { // at the bar: the barkeep talks, E for the next thing he has to say
+    import("/found.js").then(({ found }) => found("bartender"));
     if (chatNext) bar.chat++;
     what.innerHTML = `<b>The barkeep</b><br>&ldquo;${esc(bar.talk[bar.chat % bar.talk.length])}&rdquo;<br><small>E to reply</small>`;
     what.hidden = false; chatNext = false;
