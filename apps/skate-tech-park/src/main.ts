@@ -254,7 +254,7 @@ function frame(now: number) {
     rider.position.y += fall.hop;
   }
   const turn = sim.flipT > 0 ? (1 - sim.flipT / FLICK_TIME) * Math.PI * 2 : 0;
-  pivot.rotation.set(0, sim.flipKind === "shove-it" ? turn / 2 : 0, sim.flipKind === "heelflip" ? -turn : sim.flipKind === "kickflip" ? turn : 0);
+  pivot.rotation.set(0, sim.flipKind === "shove-it" ? turn : 0, sim.flipKind === "heelflip" ? -turn : sim.flipKind === "kickflip" ? turn : 0);
   pivot.position.y = PIVOT_Y[skins.current] + (sim.flipT > 0 ? 0.25 : 0);
   // A manual: nose (or tail) up on two wheels, shaking as the balance runs out.
   const tilt = manualPose(manualEase.last, sim.balance, skins.current, PIVOT_Y[skins.current], sim.manualTime, manualEase.update(sim.manual, dt));
