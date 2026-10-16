@@ -5,6 +5,7 @@ import { mulberry32 } from "@rustybuns/util";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { type Level, onRail } from "../level.ts";
+import { circles, type Earthwork } from "../levels/earthworks.ts";
 
 export type Kind = "pine" | "rock" | "aspen" | "cairn" | "tent" | "sign" | "stump" | "bush" | "fern" | "flower";
 export type Spot = { kind: Kind; x: number; z: number; y: number; size: number; yaw: number };
@@ -38,8 +39,8 @@ const smooth = (a: number, b: number, v: number) => { const t = Math.min(1, Math
 const grove = (x: number, z: number) => 0.5 + 0.25 * Math.sin(x * 0.045 + 1.3) * Math.cos(z * 0.052) + 0.25 * Math.sin((x + z) * 0.09 + 2) * Math.cos((x - z) * 0.07);
 
 /** How far a point is from the nearest piece, rail or spawn: the kit is the clearing, and this is the edge of it. */
-function clearingDistance(level: Level) {
-  const discs = level.pieces.map((p) => ({ x: p.x, z: p.z, r: Math.hypot(p.w, p.d) / 2 }));
+function clearingDistance(level: Level, works: { x: number; z: number; r: number }[]) {
+  const discs = [...level.pieces.map((p) => ({ x: p.x, z: p.z, r: Math.hypot(p.w, p.d) / 2 })), ...works];
   return (x: number, z: number) => {
     let d = Infinity;
     for (const c of discs) d = Math.min(d, Math.hypot(c.x - x, c.z - z) - c.r);
@@ -80,12 +81,13 @@ function pickExtra(x: number, z: number, fallback: Range): Range {
  * and past its edge the forest thickens into groves and glades, all off anything the rider can use.
  */
 export function scatter(level: Level, ground: Ground, seed = 7): Spot[] {
-  const rng = mulberry32(seed), spots: Spot[] = [], R = ground.R, away = clearingDistance(level);
+  const rng = mulberry32(seed), spots: Spot[] = [], R = ground.R, works = ((level as { earthworks?: Earthwork[] }).earthworks ?? []).flatMap(circles), away = clearingDistance(level, works);
   const raised = (x: number, z: number) => level.height(x, z) - ground.height(x, z) > 0.02;
   const near = (x: number, z: number) => {
     for (const [dx, dz] of [[0, 0], [CLEAR, 0], [-CLEAR, 0], [0, CLEAR], [0, -CLEAR], [CLEAR, CLEAR], [-CLEAR, -CLEAR], [CLEAR, -CLEAR], [-CLEAR, CLEAR]]) if (raised(x + dx, z + dz)) return true;
     if (level.rails.some((r) => { const o = onRail(r, x, z); return o.t > -0.05 && o.t < 1.05 && o.off < CLEAR; })) return true;
     if (level.spawns.some((s) => Math.hypot(s.x - x, s.z - z) < 12)) return true;
+    if (works.some((c) => Math.hypot(c.x - x, c.z - z) < c.r + 1)) return true; // the earthworks and the slopes that blend them in
     return (level.obstacles ?? []).some((o) => Math.hypot(o.x - x, o.z - z) < o.r + 4);
   };
   for (let gz = -R; gz < R; gz += CELL) for (let gx = -R; gx < R; gx += CELL) {

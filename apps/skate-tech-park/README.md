@@ -14,6 +14,10 @@ Every park has its own air (`weather` in its spec, moods in `src/render/weather.
 
 Beyond the hand-placed kit, every park is filled with contour ribbons (`src/levels/ribbons.ts`): a ribbon traces the hillside at one height and extrudes a profile along it (a berm, a cut bank, a channel, rollers, whoop berms) as a chain of short pieces with coping along the crest, so it follows the land instead of standing on it. A profile is a recipe with a width and a height, so one berm molds into a low roller or a tall wall, and `add`, `mirror` and `waves` make new profiles from old ones. `fill: { lines: 8 }` in a `ParkSpec` lays them across the slopes the sites leave empty, clear of spawns, gaps, trees and each other.
 
+## The park is cut into the terrain
+
+The hand-placed kit and ribbons stand on the ground; the earthworks (`src/levels/earthworks.ts`) *are* the ground. Bowls and pools are dug into the meadow, a pump track of rollers and a row of dirt jumps are packed on top, spillway channels are cut along the slope, and earth quarter pipes and mounds are piled up. Each is held at the height of the ground under its centre and blended back into the hillside, so the sim, camera, mesh and map see one heightfield. `layOut` tries every cell of the map for one (crowded meadows get the small ones), clear of spawns, gap lines, trees and landmarks; lips carry coping you can grind. The ground mesh is 2 m fine, painted concrete or hardpack with a pale coping stone along each lip, and shades hollows. `earthworks: false` in a `ParkSpec` turns it off.
+
 ## Run it
 
 ```
