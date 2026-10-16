@@ -16,7 +16,7 @@ const BAND = { wood: rgb(0xe2572b), concrete: rgb(0x2e7f86) };
 const STEEL = rgb(0xa5acb4), WAX = rgb(0xf3ead2);
 /** A park of more pieces than this meshes each one coarser, so scattering a map full of them keeps its vertex count where it was. */
 const DETAIL_PIECES = 36;
-const CONCRETE_NAMES = /bowl|roll-in|landing|boulder|log|cone|roller/;
+const CONCRETE_NAMES = /bowl|roll-in|landing|boulder|log|cone|roller|contour/;
 
 /** Painted wood or concrete, by what the piece is. */
 const isConcrete = (p: Piece) => p.kind === "box" || CONCRETE_NAMES.test(p.name);

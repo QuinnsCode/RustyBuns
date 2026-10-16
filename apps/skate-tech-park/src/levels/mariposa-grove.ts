@@ -16,6 +16,7 @@ export const mariposaGrove: ParkSpec = {
   name: "Mariposa Grove",
   blurb: "Skate the needle between the Faithful Couple and the Clothespin, and jump the fallen giant.",
   zone: "mariposa-grove",
+  fill: { lines: 8 },
   sites: [
     { parts: [fallenLog({ x: 0, z: 60 }, { len: 18, r: 0.9 }), fallenLog({ x: 10, z: 100, yaw: Math.PI / 2 }, { len: 14, r: 0.7 })] },
     { parts: [rollers({ x: -40, z: 90 }, { w: 8, n: 5, period: 7, h: 0.8 })] },

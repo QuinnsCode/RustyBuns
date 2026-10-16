@@ -91,8 +91,12 @@ export function makeLevel(l: Omit<Level, "height">): Level {
   };
 }
 
-/** The board's footprint: half its length (along the heading) and half its width, in metres. */
-export const BOARD = { halfLen: 0.8, halfWid: 0.3 };
+/** The board's footprint: half its length (along the heading) and half its width, in metres. The drawn deck
+ * (`DECK` in models.ts) is exactly this big, so anything it touches on screen it touches in the ride. */
+export const BOARD = { halfLen: 2.2, halfWid: 0.65 };
+/** What the terrain tests (a box side, a ramp lip, a wall face) sample: the deck's width, but only the middle of its length,
+ * since the ground follows under a long deck and its overhanging ends ride up over a rise instead of stopping at it. */
+export const FOOT = { halfLen: 0.8, halfWid: BOARD.halfWid };
 
 /**
  * The obstacle the board is inside, if any. The board is a rectangle pointing along `yaw`, so a tree

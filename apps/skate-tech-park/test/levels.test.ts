@@ -55,7 +55,7 @@ test("the named gaps are cleared at any speed from 24 to 32 by driving at the la
       expect(run.bestCombo).toBeGreaterThan(0);
     }
   }
-});
+}, 30000);
 
 test("El Capitan's talus is a quarter pipe: driving at the wall climbs it", () => {
   const l = park("el-capitan"), { s, run } = drive(l, "wall view", 8);

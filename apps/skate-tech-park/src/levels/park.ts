@@ -7,6 +7,7 @@ import { heightmapTerrain, withPads, zoneData, type Terrain } from "@rustybuns/t
 import { type Bounds, type Level, makeLevel, postObstacles, type Spawn } from "../level.ts";
 import { drape, type Gap, join, lift, type Part } from "./pieces.ts";
 import { type Circle, footprint, scatter, type Scatter } from "./scatter.ts";
+import { type Fill, fillContours, keepOut, type Pt } from "./ribbons.ts";
 
 /** Real terrain is shrunk this many times across (a 1 km zone becomes a ~333 m disc). One constant for the whole game. */
 export const TERRAIN_SCALE = 3;
@@ -59,6 +60,8 @@ export type ParkSpec = {
   granite?: number;
   /** The air over the park (a name from render/weather.ts): rain on the valley, snow on the dome. Golden hour when absent. */
   weather?: string;
+  /** Contour ribbons across the slopes the sites leave empty (see ribbons.ts): how many, how long. Absent for none. */
+  fill?: Fill;
 };
 
 export type ParkLevel = Level & {
@@ -71,12 +74,13 @@ export type ParkLevel = Level & {
   landmarks: Landmark[];
   granite: number;
   weather?: string;
+  /** The contour each ribbon follows, for the map. */
+  ribbons: { profile: string; path: Pt[] }[];
 };
 
 /** The ground a landmark's drawing covers, so scattered parts don't stand in the steam or the spring. */
 const landmarkCircle = (l: Landmark): Circle[] => (l.kind === "plume" ? [{ x: l.x, z: l.z, r: l.r + 4 }] : l.kind === "rings" ? [{ x: l.x, z: l.z, r: Math.max(...l.rings.map((g) => g.r)) }] : []);
 
-type Pt = { x: number; z: number };
 /** Lines scatter keeps open: each gap's flight, the way in to it from every spawn in reach, and straight ahead of every spawn. */
 const lanes = (gaps: Gap[], spawns: Spawn[]): [Pt, Pt][] => [
   ...gaps.flatMap((g) => [[g.a, g.b] as [Pt, Pt], ...spawns.filter((s) => Math.hypot(s.x - g.a.x, s.z - g.a.z) < 130).map((s) => [s, g.a] as [Pt, Pt])]),
@@ -88,15 +92,18 @@ export function parkLevel(spec: ParkSpec, real = false): ParkLevel {
   const scaled: Terrain = { R: raw.R, height: (x, z) => raw.height(x, z) * relief };
   const pads = spec.sites.flatMap((s) => (s.pad ? [s.pad] : []));
   const ground = pads.length ? withPads(scaled, pads, spec.skirt ?? 10) : scaled;
-  const placed = spec.sites.flatMap((s) => s.parts.map((p) => (s.pad ? lift(p, scaled.height(s.pad.x, s.pad.z)) : drape(p, ground.height))));
+  const sited = join(...spec.sites.flatMap((s) => s.parts.map((p) => (s.pad ? lift(p, scaled.height(s.pad.x, s.pad.z)) : drape(p, ground.height)))));
   const trees = spec.trees ?? [];
-  const parts0 = join(...placed);
-  const parts = join(...placed, ...(spec.scatter === false ? [] : scatter({ bounds: spec.bounds, R: ground.R, ground: ground.height, spawns: spec.spawns, lanes: lanes([...parts0.gaps, ...(spec.gaps ?? [])], spec.spawns), taken: [...placed.flatMap(footprint), ...trees, ...(spec.landmarks ?? []).flatMap(landmarkCircle)] }, spec.scatter).map((p) => drape(p, ground.height))));
+  const gaps = [...sited.gaps, ...(spec.gaps ?? [])];
+  const filled = spec.fill ? fillContours(ground.height, spec.bounds, keepOut({ pieces: sited.pieces, spawns: spec.spawns, gaps, trees, pickups: spec.pickups ?? [], landmarks: (spec.landmarks ?? []).flatMap((l) => (l.kind === "falls" ? [l.from, l.to] : [l])) }), spec.fill) : undefined;
+  const placed = filled ? join(sited, drape(filled.part, ground.height)) : sited;
+  const spread = spec.scatter === false ? [] : scatter({ bounds: spec.bounds, R: ground.R, ground: ground.height, spawns: spec.spawns, lanes: lanes(gaps, spec.spawns), taken: [...footprint(placed), ...trees, ...(spec.landmarks ?? []).flatMap(landmarkCircle)] }, spec.scatter).map((p) => drape(p, ground.height));
+  const parts = join(placed, ...spread);
   const inner = makeLevel({ name: spec.name, pieces: parts.pieces, rails: parts.rails, obstacles: trees, spawns: spec.spawns, bounds: spec.bounds });
   const height = (x: number, z: number) => Math.max(ground.height(x, z), inner.height(x, z));
   const obstacles = [...trees, ...postObstacles(parts.rails, height)];
   return {
-    ...inner, obstacles, height, id: spec.id, blurb: spec.blurb, ground, gaps: [...parts.gaps, ...(spec.gaps ?? [])], goals: spec.goals.map((g) => (g.kind === "climb" ? { ...g, metres: Math.max(1, Math.round((g.metres * relief) / GOAL_RELIEF)) } : g)), trees, landmarks: spec.landmarks ?? [], granite: spec.granite ?? Infinity, weather: spec.weather,
+    ...inner, obstacles, height, id: spec.id, blurb: spec.blurb, ground, gaps: [...parts.gaps, ...(spec.gaps ?? [])], goals: spec.goals.map((g) => (g.kind === "climb" ? { ...g, metres: Math.max(1, Math.round((g.metres * relief) / GOAL_RELIEF)) } : g)), ribbons: filled?.paths ?? [], trees, landmarks: spec.landmarks ?? [], granite: spec.granite ?? Infinity, weather: spec.weather,
     pickups: (spec.pickups ?? []).map((p) => ({ x: p.x, z: p.z, y: height(p.x, p.z) + (p.lift ?? 1) })),
   };
 }
