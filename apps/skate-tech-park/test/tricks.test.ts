@@ -165,3 +165,27 @@ test("a held manual scores when you let go, falls over if left alone, and links 
   expect(link.chain).toBe(2);
   expect(link.last?.name).toMatch(/kickflip x2/);
 });
+
+test("holding the mouse still, or a pad trigger, holds a manual; a quick drag is still a flick", () => {
+  const g = new Gestures();
+  g.down(100, 100, 0);
+  expect(g.manual(0.1)).toBe(0); // not held long enough yet
+  expect(g.manual(0.5)).toBe(1);
+  g.move(100, 120);
+  expect(g.manual(0.6)).toBe(-1); // nudged down: the nose
+  g.move(100, 160);
+  expect(g.manual(0.7)).toBe(0); // a long drag is a flick, not a hold
+  g.up(100, 160);
+  expect(g.take()).toEqual({ flick: "shove-it" });
+  g.shoulders(0.9, 0);
+  expect(g.manual(1)).toBe(-1);
+  g.shoulders(0, 0.9);
+  expect(g.manual(1)).toBe(1);
+
+  const lv = flat(), sk = start(0, -40, 0, lv);
+  sk.speed = 8;
+  const pad = new Gestures();
+  pad.shoulders(0, 1);
+  run(sk, 1, (s) => ({ manual: pad.manual(s.t), throttle: clamp(s.balance * 2 + 0.1, -1, 1) }), lv);
+  expect(sk.manual).toBe(1);
+});
