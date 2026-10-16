@@ -3,10 +3,12 @@
 // wood on the ramps, concrete on the bowls and landings, a bright band round each edge), and every piece
 // of a level merges into one mesh. Rails, ledge edges and coping merge into a second: steel, with pale
 // grind wax rubbed onto it in streaks. Two draw calls for a whole park, however many pieces it has.
+// Given the Blender kit (kit.ts), ramps, stairs and blocks wear its modules instead of the sampled mesh.
 import { mulberry32 } from "@rustybuns/util";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { type Level, type Piece, type Rail, railPosts, railY } from "../level.ts";
+import { type Kit, kitGeometry } from "./kit.ts";
 
 type Ground = (x: number, z: number) => number;
 const rgb = (hex: number) => new THREE.Color(hex);
@@ -117,7 +119,7 @@ export function railGeometry(r: Rail, ground: Ground = () => 0, seed = 1): THREE
 }
 
 /** Every piece and rail of a level, as two meshes. `ground` is the terrain under them (0 on a plaza floor). */
-export function levelMeshes(level: Level, ground?: Ground) {
+export function levelMeshes(level: Level, ground?: Ground, kit?: Kit) {
   const group = new THREE.Group();
   const low = (p: Piece) => { // a piece hangs from its pad's floor: the lowest ground under its footprint
     if (!ground) return 0;
@@ -130,7 +132,9 @@ export function levelMeshes(level: Level, ground?: Ground) {
     return m;
   };
   if (level.pieces.length) {
-    const m = new THREE.Mesh(mergeGeometries(level.pieces.map((p) => pieceGeometry(p, low(p), Math.min(1, DETAIL_PIECES / level.pieces.length))))!, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
+    const detail = Math.min(1, DETAIL_PIECES / level.pieces.length);
+    const mesh = (p: Piece) => (kit && kitGeometry(p, kit, low(p))) || pieceGeometry(p, low(p), detail);
+    const m = new THREE.Mesh(mergeGeometries(level.pieces.map(mesh))!, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
     m.castShadow = m.receiveShadow = true;
     m.name = "pieces";
     group.add(m);

@@ -13,7 +13,12 @@ export type Piece = {
   h0: number; h1: number; // top height at local z = -d/2 and +d/2 (a straight rise)
   /** Top height at a point in the piece's own frame (centre origin); 0 outside the footprint. */
   height(localX: number, localZ: number): number;
+  /** Which Blender module (src/render/kit.ts) dresses it; none keeps the sampled mesh. */
+  look?: Look;
 };
+
+/** A wooden ramp whose surface runs along z, a concrete block, or stairs of `steps` treads `run` deep. */
+export type Look = { kind: "ramp" } | { kind: "block" } | { kind: "stairs"; steps: number; run: number };
 
 export type RailKind = "rail" | "ledge" | "coping";
 

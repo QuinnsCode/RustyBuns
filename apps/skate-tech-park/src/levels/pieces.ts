@@ -1,7 +1,7 @@
 // The piece kit for arcade-skate-park lines: every item is a pure height function plus rail segments,
 // sized and rotated by `at` (centre x, z and yaw; local +z points along (sin yaw, cos yaw)). Parts are
 // built on a floor at 0; park.ts lifts them onto the pad they stand on.
-import { type Piece, type PieceKind, type Rail, type RailKind, piece } from "../level.ts";
+import { type Look, type Piece, type PieceKind, type Rail, type RailKind, piece } from "../level.ts";
 
 /**
  * Kit parts are authored in person-sized metres and built toy-sized beside the 4.4 m deck: widths and heights
@@ -32,10 +32,12 @@ export function toWorld(at: At, lx: number, lz: number) {
   return { x: at.x + lx * c + lz * s, z: at.z - lx * s + lz * c };
 }
 
-export const shape = (kind: PieceKind, name: string, at: At, w: number, d: number, f: (lx: number, lz: number) => number): Piece => ({
+export const shape = (kind: PieceKind, name: string, at: At, w: number, d: number, f: (lx: number, lz: number) => number, look?: Look): Piece => ({
   kind, name, x: at.x, z: at.z, yaw: at.yaw ?? 0, w, d, h0: f(0, -d / 2), h1: f(0, d / 2),
   height: (lx, lz) => (Math.abs(lx) > w / 2 || Math.abs(lz) > d / 2 ? 0 : f(lx, lz)),
+  ...(look ? { look } : {}),
 });
+const RAMP: Look = { kind: "ramp" }, BLOCK: Look = { kind: "block" };
 
 export const bar = (kind: RailKind, at: At, lx1: number, lz1: number, lx2: number, lz2: number, y: number, y2?: number): Rail =>
   ({ kind, a: toWorld(at, lx1, lz1), b: toWorld(at, lx2, lz2), y, ...(y2 === undefined ? {} : { y2 }) });
@@ -69,7 +71,7 @@ export function drape(p: Part, ground: (x: number, z: number) => number): Part {
 /** A straight or curved launch: `curve` 1 is a wedge, 2 pitches steeper at the lip. */
 export const kicker = (at: At, o: { w?: number; d?: number; h?: number; curve?: number; name?: string } = {}): Part => {
   const { curve = 1, name = "kicker" } = o, w = (o.w ?? 3) * K, d = (o.d ?? 3) * L, h = (o.h ?? 1) * K;
-  return part({ pieces: [shape("ramp", name, at, w, d, (_, lz) => h * ((lz + d / 2) / d) ** curve)] });
+  return part({ pieces: [shape("ramp", name, at, w, d, (_, lz) => h * ((lz + d / 2) / d) ** curve, RAMP)] });
 };
 
 /** Drops from a deck of height `h` down to the floor along local +z, easing out at both ends. */
@@ -81,14 +83,14 @@ export const rollIn = (at: At, o: { w?: number; d?: number; h?: number; name?: s
 /** A flat-topped block. */
 export const box = (at: At, o: { w?: number; d?: number; h?: number; name?: string } = {}): Part => {
   const { name = "box" } = o, w = (o.w ?? 4) * K, d = (o.d ?? 4) * L, h = (o.h ?? 0.5) * K;
-  return part({ pieces: [piece("box", name, at.x, at.z, at.yaw ?? 0, w, d, h, h)] });
+  return part({ pieces: [{ ...piece("box", name, at.x, at.z, at.yaw ?? 0, w, d, h, h), look: BLOCK }] });
 };
 
 /** Rises along local +z on a quarter-circle curve to a deck, with coping across the lip. */
 export const quarterPipe = (at: At, o: { w?: number; d?: number; h?: number; deck?: number; name?: string } = {}): Part => {
   const { name = "quarter pipe" } = o, w = (o.w ?? 6) * K, d = (o.d ?? 4) * L, h = (o.h ?? 2) * K, deck = (o.deck ?? 1.5) * L, D = d + deck;
   return part({
-    pieces: [shape("ramp", name, at, w, D, (_, lz) => (lz + D / 2 < d ? h * arc((lz + D / 2) / d) : h))],
+    pieces: [shape("ramp", name, at, w, D, (_, lz) => (lz + D / 2 < d ? h * arc((lz + D / 2) / d) : h), RAMP)],
     rails: [bar("coping", at, -w / 2, d - D / 2, w / 2, d - D / 2, h)],
   });
 };
@@ -112,7 +114,7 @@ export const funbox = (at: At, o: { w?: number; d?: number; h?: number; ramp?: n
   const { name = "funbox" } = o, w = (o.w ?? 6) * K, d = (o.d ?? 14) * L, h = (o.h ?? 0.7) * K, ramp = (o.ramp ?? 4) * L;
   const z = d / 2 - ramp;
   return part({
-    pieces: [shape("ramp", name, at, w, d, (_, lz) => h * clamp01(Math.min(lz + d / 2, d / 2 - lz) / ramp))],
+    pieces: [shape("ramp", name, at, w, d, (_, lz) => h * clamp01(Math.min(lz + d / 2, d / 2 - lz) / ramp), RAMP)],
     rails: [bar("ledge", at, -w / 2, -z, -w / 2, z, h), bar("ledge", at, w / 2, -z, w / 2, z, h)],
   });
 };
@@ -120,7 +122,7 @@ export const funbox = (at: At, o: { w?: number; d?: number; h?: number; ramp?: n
 /** A long low block with a ledge along its top. */
 export const ledge = (at: At, o: { len?: number; w?: number; h?: number; name?: string } = {}): Part => {
   const { name = "ledge" } = o, len = (o.len ?? 8) * L, w = (o.w ?? 0.7) * K, h = (o.h ?? 0.5) * K;
-  return part({ pieces: [piece("box", name, at.x, at.z, at.yaw ?? 0, w, len, h, h)], rails: [bar("ledge", at, 0, -len / 2, 0, len / 2, h)] });
+  return part({ pieces: [{ ...piece("box", name, at.x, at.z, at.yaw ?? 0, w, len, h, h), look: BLOCK }], rails: [bar("ledge", at, 0, -len / 2, 0, len / 2, h)] });
 };
 
 /** A round-bar rail along local z; `y2` is its height at the +z end when it slopes (down a stair set). */
@@ -144,7 +146,7 @@ export const flatBar = (at: At, o: { len?: number } = {}): Part => handrail(at, 
 /** Steps climbing along local +z to a landing. Turn it round to ride down. */
 export const stairSet = (at: At, o: { w?: number; steps?: number; rise?: number; run?: number; land?: number; name?: string } = {}): Part => {
   const { name = "stairs" } = o, steps = Math.round((o.steps ?? 5) * K), w = (o.w ?? 4) * K, rise = o.rise ?? 0.18, run = o.run ?? 0.6, D = steps * run + (o.land ?? 2) * L; // more steps, not taller ones: the board rolls up a rise of 0.3 m or less
-  return part({ pieces: [shape("ramp", name, at, w, D, (_, lz) => Math.min(steps, Math.floor((lz + D / 2) / run) + 1) * rise)] });
+  return part({ pieces: [shape("ramp", name, at, w, D, (_, lz) => Math.min(steps, Math.floor((lz + D / 2) / run) + 1) * rise, { kind: "stairs", steps, run })] });
 };
 
 /** A ledge as tall as the top of a stair set, running down beside it. */
@@ -162,7 +164,7 @@ export const hip = (at: At, o: { w?: number; d?: number; h?: number; name?: stri
 /** Two banks back to back, with coping along the ridge. */
 export const spine = (at: At, o: { w?: number; d?: number; h?: number; name?: string } = {}): Part => {
   const { name = "spine" } = o, w = (o.w ?? 8) * K, d = (o.d ?? 5) * L, h = (o.h ?? 1.6) * K;
-  return part({ pieces: [shape("ramp", name, at, w, d, (_, lz) => h * arc(1 - Math.abs(lz) / (d / 2)))], rails: [bar("coping", at, -w / 2, 0, w / 2, 0, h)] });
+  return part({ pieces: [shape("ramp", name, at, w, d, (_, lz) => h * arc(1 - Math.abs(lz) / (d / 2)), RAMP)], rails: [bar("coping", at, -w / 2, 0, w / 2, 0, h)] });
 };
 
 /**
@@ -175,7 +177,7 @@ export function gap(at: At, o: { name: string; span: number; h?: number; landH?:
   const land = toWorld(at, 0, kick / 2 + span + landLen / 2);
   return {
     launch: join(kicker(at, { w: w / K, d: kick / L, h: o.h ?? 1.5, curve, name: `${name} launch` }), part({ gaps: [{ name, a: { x: at.x, z: at.z }, b: land, r: kick / 2 + 3, rb: reach, bonus, min: Math.round(span * 0.8) }] })),
-    landing: part({ pieces: [piece("ramp", `${name} landing`, land.x, land.z, at.yaw ?? 0, w + 2, landLen, (o.landH ?? 1) * K, 0)] }),
+    landing: part({ pieces: [{ ...piece("ramp", `${name} landing`, land.x, land.z, at.yaw ?? 0, w + 2, landLen, (o.landH ?? 1) * K, 0), look: RAMP }] }),
     /** The landing's centre, for placing its site. */
     land,
   };
@@ -197,7 +199,7 @@ export const halfpipe = (at: At, o: { w?: number; d?: number; h?: number; floor?
 /** Up a kicker, a long flat top, and down: the snow park's tabletop to clear. */
 export const tabletop = (at: At, o: { w?: number; d?: number; h?: number; ramp?: number; name?: string } = {}): Part => {
   const { name = "tabletop" } = o, w = (o.w ?? 8) * K, d = (o.d ?? 26) * L, h = (o.h ?? 1.6) * K, ramp = (o.ramp ?? 5) * L;
-  return part({ pieces: [shape("ramp", name, at, w, d, (_, lz) => h * smooth(Math.min(lz + d / 2, d / 2 - lz) / ramp))] });
+  return part({ pieces: [shape("ramp", name, at, w, d, (_, lz) => h * smooth(Math.min(lz + d / 2, d / 2 - lz) / ramp), RAMP)] });
 };
 
 /** A run of rolling bumps along local z to pump: the park's own whoops. */

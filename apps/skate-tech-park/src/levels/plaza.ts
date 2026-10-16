@@ -5,7 +5,7 @@ export const HALF = 40;
 
 // A ramp from world-space corners, as it was first written: rises along z from h0 to h1.
 const ramp = (name: string, x0: number, x1: number, z0: number, z1: number, h0: number, h1: number) =>
-  piece(h0 === h1 ? "box" : "ramp", name, (x0 + x1) / 2, (z0 + z1) / 2, 0, x1 - x0, z1 - z0, h0, h1);
+  ({ ...piece(h0 === h1 ? "box" : "ramp", name, (x0 + x1) / 2, (z0 + z1) / 2, 0, x1 - x0, z1 - z0, h0, h1), look: { kind: h0 === h1 ? "block" : "ramp" } as const });
 
 export const plaza = makeLevel({
   name: "plaza",
