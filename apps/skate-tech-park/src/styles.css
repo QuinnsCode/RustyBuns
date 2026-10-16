@@ -24,3 +24,10 @@ kbd { display: inline-block; min-width: 1.6em; padding: 0 4px; margin: 0 2px; bo
 .parts-row span { width: 70px; font-size: 13px; }
 .parts-row button { width: 24px; height: 24px; border: 2px solid var(--ink); border-radius: 50%; cursor: pointer; padding: 0; }
 .parts-row button[aria-pressed="true"] { outline: 2px solid var(--hot); outline-offset: 2px; }
+.taps { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+.tap { position: absolute; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%; border: 3px solid var(--paper); box-shadow: 0 0 0 2px rgba(27, 27, 31, 0.5); animation: tap 0.6s ease-out forwards; }
+.tap::after { content: ""; position: absolute; inset: 18px; border-radius: 50%; background: var(--paper); animation: dot 0.6s ease-out forwards; }
+.tap.back { border-color: var(--hot); }
+.tap.back::after { background: var(--hot); }
+@keyframes tap { from { transform: scale(0.25); opacity: 1; } to { transform: scale(1.5); opacity: 0; } }
+@keyframes dot { from { opacity: 0.9; } to { opacity: 0; } }

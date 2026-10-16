@@ -9,8 +9,9 @@ import { Chase } from "./render/chase.ts";
 import { Scenery, scatter } from "./render/scenery.ts";
 import { followCamera, HAZE, sky } from "./render/sky.ts";
 import { Skins } from "./render/skins.ts";
-import { lieOnGround, manualPose, TiltEase } from "./render/tilt.ts";
-import { DT, FLICK_TIME, IDLE, type Input, type Mode, start, step, type State } from "./sim.ts";
+import { Taps } from "./render/feet.ts";
+import { lieOnGround, manualPose, popPose, TiltEase } from "./render/tilt.ts";
+import { DT, FLICK_TIME, IDLE, type Input, type Mode, noseUp, start, step, type State } from "./sim.ts";
 import { HALF } from "./levels/plaza.ts";
 import type { ParkLevel } from "./levels/park.ts";
 import { Gestures } from "./gesture.ts";
@@ -170,6 +171,7 @@ hud();
 
 const chase = new Chase(camera);
 const manualEase = new TiltEase();
+const taps = new Taps($("taps")); // rings where the feet pop, drag and flick
 const slope = { x: 0, z: 0 }; // the ground's tilt under the board, eased
 reset();
 let lastFrame = performance.now(), landVy = 0, acc = 0, then = performance.now(), shownTrick: State["last"] = null, trickAt = 0;
@@ -184,7 +186,8 @@ function frame(now: number) {
   while (acc >= DT) {
     const was = sim.air, vy = sim.vy;
     step(sim, { ...inp, ...gestures.take() }, level); // a gesture is one step's press
- ui.update(sim); acc -= DT;
+    ui.update(sim); acc -= DT;
+    for (const f of sim.feet) taps.add(f);
     if (was && !sim.air) landVy = vy;
   }
 
@@ -208,6 +211,10 @@ function frame(now: number) {
   pivot.rotation.x = tilt.pitch;
   pivot.rotation.z += tilt.roll;
   pivot.position.y += tilt.lift;
+  // An ollie: the tail snaps, the nose kicks up, and the board levels itself out in the air.
+  const popped = popPose(noseUp(sim), skins.current, PIVOT_Y[skins.current]);
+  pivot.rotation.x += popped.pitch;
+  pivot.position.y += popped.lift;
   {
     const f = sim.firing;
     plumes.update(dt, thrusters, thrusters.map((t) => (mode === "car" && (t.group === "rear" ? f.rear : t.group === "lift" ? f.lift : t.group === "spinL" ? f.spin === 1 : f.spin === -1))), sim.vx, sim.vy, sim.vz);
@@ -236,6 +243,8 @@ function frame(now: number) {
   trick.classList.toggle("bail", !!shownTrick && !shownTrick.points);
   trick.style.opacity = (shownTrick || sim.grind >= 0) && (sim.grind >= 0 || now - trickAt < 2200) ? "1" : "0";
 
+  camera.updateMatrixWorld();
+  taps.update(dt, pivot, skins.current, camera);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }

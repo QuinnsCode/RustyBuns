@@ -40,3 +40,12 @@ export class TiltEase {
 
 /** The turns (about x, then z, after yaw: Euler order YXZ) that lay a board on ground rising `pitch` ahead and `roll` to its right. */
 export const lieOnGround = (pitch: number, roll: number) => ({ x: -pitch, z: -roll });
+
+/** How far behind the middle the tail meets the floor when an ollie snaps it down. */
+export const TAIL: Record<Skin, number> = { fingerboard: 1.9, roadster: 1.45 };
+
+/** An ollie's pop on the view: the nose `up` radians, turned about the tail so the tail stays on the floor as it snaps. */
+export function popPose(up: number, skin: Skin, pivotY: number): Tilt {
+  if (up <= 0) return { pitch: 0, roll: 0, lift: 0 };
+  return { pitch: -up, roll: 0, lift: pivotY * (Math.cos(up) - 1) + TAIL[skin] * Math.sin(up) };
+}
