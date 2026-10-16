@@ -28,7 +28,7 @@ const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 const ssh = (host: string, script: string) => Bun.spawn(["ssh", host, script], { stdout: "pipe", stderr: "pipe" });
 
 async function stream(p: ReturnType<typeof ssh>, label: string) {
-  const pipe = async (s: ReadableStream<Uint8Array>) => { for await (const line of new Response(s).text().then((t) => t.split("\n"))) if (line) console.log(`[${label}] ${line}`); };
+  const pipe = async (s: ReadableStream<Uint8Array>) => { for (const line of (await new Response(s).text()).split("\n")) if (line) console.log(`[${label}] ${line}`); };
   await Promise.all([pipe(p.stdout as ReadableStream<Uint8Array>), pipe(p.stderr as ReadableStream<Uint8Array>)]);
   return p.exited;
 }
