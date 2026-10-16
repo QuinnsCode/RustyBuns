@@ -137,6 +137,14 @@ test("a steep curve carries the roadster up and off the lip, a box side is still
   expect(c2.z).toBeLessThan(8.5);
 });
 
+test("a box side stops the board's edge, not just its middle", () => {
+  const box = flat({ pieces: [piece("box", "b", 0, 10, 0, 6, 4, 1, 1)] }); // sides at x = +-3
+  const graze = run(start(3.2, 0, 0, box), 3, () => ({ throttle: 1 }), box); // the middle is 0.2 m clear, the edge is not
+  expect(graze.z).toBeLessThan(8.5);
+  const beside = run(start(3.6, 0, 0, box), 3, () => ({ throttle: 1 }), box);
+  expect(beside.z).toBeGreaterThan(14); // fully clear: rides past
+});
+
 test("a board rolling across a slope falls toward downhill, and a hard carve at speed costs speed", () => {
   const hill = makeLevel({
     name: "hill",

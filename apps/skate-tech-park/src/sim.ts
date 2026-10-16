@@ -6,7 +6,7 @@
 // the tricks. `firing` is derived from the board's state after each step and never feeds back, so
 // swapping skins changes nothing in the ride.
 import { clamp } from "@rustybuns/util";
-import { hitObstacle, type Level, onRail, railY } from "./level.ts";
+import { BOARD, hitObstacle, type Level, onRail, railY } from "./level.ts";
 import { plaza } from "./levels/plaza.ts";
 
 export const DT = 1 / 60;
@@ -52,6 +52,14 @@ export const JETS = {
 };
 const BOOST = JETS.boost;
 const BOOST_TOP = JETS.boostTop;
+/** The highest floor under the board's footprint (nose, middle, tail, both edges), so a box side stops a wide board by its edge. */
+function footprintTop(level: Level, x: number, z: number, yaw: number) {
+  const sn = Math.sin(yaw), cs = Math.cos(yaw);
+  let top = level.height(x, z);
+  for (const a of [-BOARD.halfLen, 0, BOARD.halfLen]) for (const c of [-BOARD.halfWid, BOARD.halfWid]) top = Math.max(top, level.height(x + sn * a + cs * c, z + cs * a - sn * c));
+  return top;
+}
+
 const MAX_SLOPE = 3; // a rise steeper than this (about 72 degrees) in one stride is a wall, not a ramp
 const CARVE = 0.8; // how much speed stiffens the board's turn: at top speed it turns 1/(1+CARVE) as tight
 const CARVE_DRAG = 0.5; // a hard carve at speed scrubs this share of it per second
@@ -362,11 +370,16 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     // a steep curve (a quarter pipe near its lip) is not
     const n = Math.max(1, Math.ceil(dist / 0.1));
     let prev = s.y;
+    let wallPrev = footprintTop(level, s.x, s.z, s.yaw);
     for (let i = 1; i <= n; i++) {
-      const h = level.height(s.x + ((nx - s.x) * i) / n, s.z + ((nz - s.z) * i) / n);
-      if (h - prev > Math.max(s.fan ? JETS.fanStep : STEP, (dist / n) * MAX_SLOPE)) { // the fan sucks it up a kerb or box side
+      const px = s.x + ((nx - s.x) * i) / n, pz = s.z + ((nz - s.z) * i) / n;
+      const h = level.height(px, pz);
+      const wall = footprintTop(level, px, pz, s.yaw); // the highest point under the board's nose, tail and edges
+      const rise = Math.max(h - prev, wall - wallPrev);
+      wallPrev = wall;
+      if (rise > Math.max(s.fan ? JETS.fanStep : STEP, (dist / n) * MAX_SLOPE)) { // the fan sucks it up a kerb or box side
         // (a stride can reach a vertical lip before `pitch` has caught up with it, so judge by the steepest rise seen)
-        const rise = Math.atan((h - prev) / (dist / n)), steep = Math.max(Math.abs(s.pitch), s.pitch * dir > 0.4 ? rise : 0);
+        const slope = Math.atan(rise / (dist / n)), steep = Math.max(Math.abs(s.pitch), s.pitch * dir > 0.4 ? slope : 0);
         if (steep < WALL || s.pitch * dir < 0 || s.vy < 0.2 * Math.abs(s.speed)) return crash(s, null);
         // already climbing a curve and it goes vertical: leave the wall along its face, up past the coping
         const v = Math.abs(s.speed), c = Math.cos(steep);

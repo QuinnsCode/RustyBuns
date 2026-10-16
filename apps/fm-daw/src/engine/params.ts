@@ -48,8 +48,16 @@ export const P = {
    * feedback) scales from nothing to double.
    */
   VEL_TONE: 48,
+  /**
+   * The track's own filters, after its voices, before gain and pan. 0 is open
+   * (and costs nothing). HICUT closes a low-pass from 20 kHz down to 20 Hz;
+   * LOCUT raises a high-pass from 20 Hz up to 20 kHz. Automate them for
+   * sweeps across sections, or set them to carve room for another part.
+   */
+  HICUT: 49,
+  LOCUT: 50,
 } as const;
-export const NPARAMS = 49;
+export const NPARAMS = 51;
 
 const OP_RANGES: [number, number][] = [[0.25, 16], [0, 1], [0.0005, 4], [0.005, 8], [0, 1], [0.005, 8]];
 export const RANGES: [number, number][] = [
@@ -79,6 +87,8 @@ export const RANGES: [number, number][] = [
   [0, 1],        // drive after the filter
   [0, 1],        // send to Space
   [0, 1],        // velocity to tone
+  [0, 1],        // hi-cut: 0 open, 1 closed down to 20 Hz
+  [0, 1],        // low-cut: 0 open, 1 up to 20 kHz
 ];
 
 export const clampParam = (i: number, v: number) => {
