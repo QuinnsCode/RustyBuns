@@ -1,8 +1,6 @@
-// The skater, the board and the roadster, from three.js primitives: nothing to load or license.
-// The roadster is a low white wedge with ten cold-gas thrusters. Four point back, the main one
-// behind a licence plate that hinges down to uncover it. Four point down from the corners for
-// lift, and two point sideways from the nose to spin it. Each nozzle has a plume the view scales
-// by what the sim says is firing.
+// The skater and the board, from three.js primitives: nothing to load or license. The roadster
+// is packages/models; this gives each of its ten nozzles a plume.
+import { roadster as shared } from "@rustybuns/models";
 import * as THREE from "three";
 
 const mat = (color: number, rough = 0.6, metal = 0) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
@@ -17,68 +15,18 @@ export type Thruster = { group: "rear" | "lift" | "spinL" | "spinR"; plume: THRE
 
 const PLUME = new THREE.MeshBasicMaterial({ color: 0xe4f2ff, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending });
 
-function nozzle(group: Thruster["group"], dir: THREE.Vector3, at: THREE.Vector3, out: Thruster[]) {
-  const g = new THREE.Group();
-  g.position.copy(at);
-  g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-  const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.1, 0.14, 12, 1, true), mat(0x2a2a2e, 0.3, 0.9));
-  bell.position.y = 0.07;
-  const plume = new THREE.Mesh(new THREE.ConeGeometry(0.2, 1, 12, 1, true), PLUME);
-  plume.position.y = 0.64; // wide at the bell, its tip trailing away
-  plume.visible = false;
-  g.add(bell, plume);
-  out.push({ group, plume });
-  return g;
-}
-
-/** A side profile (z forward, y up) pulled across the car's width. */
-function wedge(points: [number, number][], width: number, m: THREE.Material) {
-  const shape = new THREE.Shape(points.map(([z, y]) => new THREE.Vector2(z, y)));
-  const geo = new THREE.ExtrudeGeometry(shape, { depth: width, bevelEnabled: true, bevelSize: 0.03, bevelThickness: 0.03, bevelSegments: 2 });
-  geo.translate(0, 0, -width / 2);
-  geo.rotateY(-Math.PI / 2); // the shape's x becomes the car's z
-  const o = new THREE.Mesh(geo, m);
-  o.castShadow = true;
-  return o;
-}
-
+/** The shared roadster with a plume on each nozzle for the view to scale by what the sim says is firing. */
 export function roadster() {
-  const car = new THREE.Group();
-  const paint = mat(0xf4f5f2, 0.25, 0.1);
-  // Long nose, a canopy set well back, a short squared tail: angles, no curves.
-  car.add(wedge([[2.2, 0.32], [2.25, 0.5], [0.9, 0.78], [-1.6, 0.92], [-2.15, 0.88], [-2.2, 0.32]], 1.9, paint));
-  car.add(wedge([[0.75, 0.8], [-0.35, 1.18], [-1.45, 1.12], [-1.85, 0.92], [-0.9, 0.92]], 1.36, mat(0x15181d, 0.1, 0.6)));
-  car.add(box(1.86, 0.22, 4.3, mat(0x1b1c1f, 0.8), 0, 0.3, 0)); // the dark sill and diffuser band
-  car.add(box(1.7, 0.04, 0.04, new THREE.MeshBasicMaterial({ color: 0xffffff }), 0, 0.52, 2.22)); // light bar
-  car.add(box(1.8, 0.05, 0.04, new THREE.MeshBasicMaterial({ color: 0xff2a2a }), 0, 0.8, -2.2)); // tail bar
-  const tyre = mat(0x111111, 0.9), rim = mat(0xb9bcc2, 0.3, 0.8);
-  for (const [x, z] of [[0.97, 1.4], [-0.97, 1.4], [0.99, -1.35], [-0.99, -1.35]]) {
-    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.3, 24), tyre);
-    w.rotation.z = Math.PI / 2;
-    w.position.set(x, 0.36, z);
-    w.castShadow = true;
-    const r = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.31, 10), rim);
-    r.rotation.z = Math.PI / 2;
-    r.position.copy(w.position);
-    car.add(w, r);
-  }
-  const thrusters: Thruster[] = [];
-  const back = new THREE.Vector3(0, 0, -1), down = new THREE.Vector3(0, -1, 0);
-  car.add(nozzle("rear", back, new THREE.Vector3(0, 0.55, -2.22), thrusters)); // the main one, behind the plate
-  for (const x of [-0.72, 0.72]) car.add(nozzle("rear", back, new THREE.Vector3(x, 0.45, -2.22), thrusters));
-  car.add(nozzle("rear", back, new THREE.Vector3(0, 0.28, -2.18), thrusters)); // in the diffuser
-  for (const [x, z] of [[0.7, 1.9], [-0.7, 1.9], [0.7, -1.9], [-0.7, -1.9]]) car.add(nozzle("lift", down, new THREE.Vector3(x, 0.2, z), thrusters));
-  // A push out of the right side of the nose turns the car left, and the other way round.
-  car.add(nozzle("spinL", new THREE.Vector3(-1, 0, 0), new THREE.Vector3(-0.95, 0.45, 1.9), thrusters));
-  car.add(nozzle("spinR", new THREE.Vector3(1, 0, 0), new THREE.Vector3(0.95, 0.45, 1.9), thrusters));
-
-  // The licence plate, hinged along its bottom edge.
-  const plate = new THREE.Group();
-  plate.position.set(0, 0.44, -2.26);
-  plate.add(box(0.52, 0.24, 0.02, mat(0xe9e6d8, 0.5), 0, 0.12, 0));
-  car.add(plate);
-  car.userData = { model: "roadster", thrusters, plate };
-  return car;
+  const car = shared();
+  const thrusters: Thruster[] = car.nozzles.map((n) => {
+    const plume = new THREE.Mesh(new THREE.ConeGeometry(0.2, 1, 12, 1, true), PLUME);
+    plume.position.y = 0.5;
+    plume.visible = false;
+    n.mount.add(plume);
+    return { group: n.group, plume };
+  });
+  car.group.userData = { model: "roadster", thrusters, plate: car.plate };
+  return car.group;
 }
 
 export function skater() {
