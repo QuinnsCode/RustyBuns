@@ -1,7 +1,7 @@
 // A bowl sunk where Old Faithful blows, on the flat geyser basin; a boardwalk of bars along the west,
 // a hop over a steaming vent to the east, and the basin's own low rise beyond it as a launch.
 import { type ParkSpec } from "./park.ts";
-import { bowl, flatBar, funbox, gap, hip, quarterPipe, spine, stairSet } from "./pieces.ts";
+import { bowl, fallenLog, flatBar, funbox, gap, geyserCone, hip, quarterPipe, rollers, spine, stairSet } from "./pieces.ts";
 
 const E = Math.PI / 2;
 
@@ -13,6 +13,9 @@ export const oldFaithful: ParkSpec = {
   blurb: "A bowl where the geyser blows, a boardwalk of bars along the basin, and a hop over a steaming vent.",
   zone: "old-faithful",
   sites: [
+    { parts: [geyserCone({ x: -130, z: 100 }, { r: 8, h: 2.4 })] },
+    { parts: [rollers({ x: -60, z: 120, yaw: E }, { w: 8, n: 5, period: 7, h: 0.8 })] },
+    { parts: [fallenLog({ x: 60, z: 110, yaw: E }, { len: 16, r: 0.8 }), fallenLog({ x: 60, z: 122, yaw: E }, { len: 12, r: 0.6 })] },
     { parts: [bowl({ x: -17, z: 75 }, { w: 64, d: 46, h: 4.5, deck: 5 })] },
     { parts: [flatBar({ x: -150, z: 20, yaw: E }, { len: 14 }), flatBar({ x: -125, z: 20, yaw: E }, { len: 14 })] },
     { parts: [stairSet({ x: -100, z: 20, yaw: E }, { w: 8, steps: 6, rise: 0.25, run: 0.9 }), funbox({ x: -70, z: 20, yaw: E }, { w: 10, d: 24, h: 1.2, ramp: 7 })] },

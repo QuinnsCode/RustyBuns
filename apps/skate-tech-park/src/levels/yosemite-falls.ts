@@ -1,7 +1,7 @@
 // Yosemite Falls: a flat shelf above the falls, with the valley 90 m below. Hit the lip at the edge and
 // clear the drop to the valley slope, then ride the valley floor's street line.
 import { type ParkSpec } from "./park.ts";
-import { bowl, flatBar, funbox, gap, hip, stairSet } from "./pieces.ts";
+import { bowl, flatBar, funbox, gap, halfpipe, hip, stairSet, tabletop } from "./pieces.ts";
 
 const E = Math.PI / 2;
 
@@ -13,6 +13,8 @@ export const yosemiteFalls: ParkSpec = {
   blurb: "Build speed on the shelf above the falls and clear the drop, then skate the valley floor.",
   zone: "yosemite-falls",
   sites: [
+    { parts: [halfpipe({ x: 100, z: -40 }, { w: 20, d: 40, h: 3 })] },
+    { parts: [tabletop({ x: 220, z: 100, yaw: E }, { w: 8, d: 26, h: 1.6 })] },
     { parts: [flatBar({ x: 20, z: 60, yaw: E }, { len: 14 }), funbox({ x: 70, z: 60, yaw: E }, { w: 10, d: 24, h: 1.2, ramp: 7 })] },
     { parts: [hop.launch, hop.landing, hip({ x: 177, z: 80, yaw: E }, { w: 8, d: 6, h: 1.8, name: "boulder" })] },
     { parts: [bowl({ x: 140, z: 170 }, { w: 64, d: 46, h: 4.5, deck: 5 }), stairSet({ x: 60, z: 130, yaw: E }, { w: 8, steps: 6, rise: 0.25, run: 0.9 })] },

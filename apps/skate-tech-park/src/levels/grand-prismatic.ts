@@ -1,7 +1,7 @@
 // Grand Prismatic: the spring basin, flat as a table, and the low sinter terraces to the south-west.
 // A kit park on the basin (a bowl in the middle, a street line round it) with the terraces to pump over.
 import { type ParkSpec } from "./park.ts";
-import { bowl, flatBar, funbox, gap, hip, quarterPipe, spine } from "./pieces.ts";
+import { outcrop, bowl, flatBar, funbox, gap, geyserCone, halfpipe, hip, quarterPipe, spine, tabletop } from "./pieces.ts";
 
 const E = Math.PI / 2;
 
@@ -13,6 +13,10 @@ export const grandPrismatic: ParkSpec = {
   blurb: "A bowl on the spring basin, a street line round it and the sinter terraces to pump over.",
   zone: "grand-prismatic",
   sites: [
+    { parts: [geyserCone({ x: -200, z: -100 }, { r: 8, h: 2.4 })] },
+    { parts: [tabletop({ x: -250, z: -120, yaw: E }, { w: 8, d: 26, h: 1.6 })] },
+    { parts: [halfpipe({ x: -100, z: -215 }, { w: 20, d: 40, h: 3, name: "spring runoff pipe" })] },
+    { parts: [outcrop({ x: -170, z: -240 }, { r: 3, h: 2 })] },
     { parts: [bowl({ x: -100, z: -60 }, { w: 80, d: 56, h: 5, deck: 6 })] },
     { parts: [flatBar({ x: -230, z: -180, yaw: E }, { len: 14 }), funbox({ x: -190, z: -180, yaw: E }, { w: 10, d: 24, h: 1.2, ramp: 7 })] },
     { parts: [sinter.launch, sinter.landing, hip({ x: -123, z: -180, yaw: E }, { w: 8, d: 6, h: 1.8, name: "geyser cone" })] },

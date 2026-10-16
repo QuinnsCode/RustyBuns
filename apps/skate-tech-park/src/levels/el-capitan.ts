@@ -3,7 +3,7 @@
 // wall itself is the big feature: the talus slope under it is a natural quarter pipe, and the goal is to
 // ride up it.
 import { type ParkSpec } from "./park.ts";
-import { flatBar, funbox, gap, handrail, hip, hubba, quarterPipe, skyRail, spine, stairSet } from "./pieces.ts";
+import { outcrop, flatBar, funbox, gap, halfpipe, handrail, hip, hubba, quarterPipe, skyRail, spine, stairSet, tabletop } from "./pieces.ts";
 
 const E = Math.PI / 2, W = -Math.PI / 2, N = Math.PI;
 
@@ -15,6 +15,9 @@ export const elCapitan: ParkSpec = {
   blurb: "A street line across the meadow, and the wall above it: ride the talus up the face.",
   zone: "el-capitan",
   sites: [
+    { parts: [halfpipe({ x: -100, z: 150 }, { w: 20, d: 40, h: 3 })] },
+    { parts: [tabletop({ x: -60, z: 150, yaw: E }, { w: 8, d: 26, h: 1.6 })] },
+    { parts: [outcrop({ x: -20, z: 60 }, { r: 3.5, h: 2.2 }), outcrop({ x: -34, z: 68 }, { r: 2.5, h: 1.5 }), outcrop({ x: -8, z: 72 }, { r: 2.8, h: 1.8 })] },
     { parts: [flatBar({ x: -100, z: 100, yaw: E }, { len: 14 }), handrail({ x: -76, z: 100, yaw: E }, { len: 14, y: 1.1 })] },
     { parts: [funbox({ x: -48, z: 100, yaw: E }, { w: 10, d: 24, h: 1.2, ramp: 7 })] },
     { parts: [boulder.launch, boulder.landing, hip({ x: 8, z: 100, yaw: E }, { w: 8, d: 6, h: 1.8, name: "boulder" })] },
