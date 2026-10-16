@@ -23,6 +23,26 @@ export type Op =
   | { kind: "set"; line: string; text: string; base: number }
   | { kind: "delete"; line: string; base: number };
 
+/** A batch is at most this many ops (a big file pasted line by line is tens of thousands), each line at most this long. */
+export const MAX_OPS = 100_000, MAX_TEXT = 10_000;
+const lineText = (v: unknown): v is string => typeof v === "string" && v.length <= MAX_TEXT && !v.includes("\n");
+/** `v` as a batch of ops, or what's wrong with it. A line's text is one line; an unknown kind is refused, not taken for a delete. */
+export function parseOps(v: unknown): Op[] | string {
+  if (!Array.isArray(v)) return "ops: a list of {kind, …}";
+  if (v.length > MAX_OPS) return `ops: at most ${MAX_OPS} in one batch`;
+  for (const [i, op] of v.entries()) {
+    const bad = (why: string) => `ops[${i}]: ${why}`;
+    if (!op || typeof op !== "object") return bad("an object");
+    const { kind, text, after, line, base } = op as Record<string, unknown>;
+    if (kind === "insert") { if (!lineText(text)) return bad(`text: one line, up to ${MAX_TEXT} characters`); if (after !== null && typeof after !== "string") return bad("after: a line id, or null for the top"); continue; }
+    if (kind !== "set" && kind !== "delete") return bad("kind: insert, set or delete");
+    if (typeof line !== "string") return bad("line: a line id");
+    if (!Number.isInteger(base)) return bad("base: the line's rev");
+    if (kind === "set" && !lineText(text)) return bad(`text: one line, up to ${MAX_TEXT} characters`);
+  }
+  return v as Op[];
+}
+
 export interface Applied { rev: number; by: string; at: number; op: Op; line: string }
 
 export interface Doc { rev: number; nextId: number; lines: Line[] }

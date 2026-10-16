@@ -70,6 +70,7 @@
 //   PUT  /api/repos/:o/:r/checks/:id {status?, log?, append?, junit?, runner_label?}  a runner reports, and says it's alive (whoever claimed it, or the owner)
 //   POST /api/repos/:o/:r/checks/:id/cancel    stop one of ours that's queued or running (the crew)
 
+import { httpUrl, parseJson } from "./util.ts";
 import { json, readBody, type Env } from "./env.ts";
 import { repoRow } from "./repos.ts";
 import { githubToken, parseRepo } from "./github.ts";
@@ -421,7 +422,7 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
 /** The open branches `name` waits for to merge first: the merge plan's `after` (branches.ts) still open. */
 async function blockers(env: Env, owner: string, repo: string, name: string) {
   const row = await env.DB.prepare("SELECT waits_on FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first() as { waits_on: string | null } | null;
-  const on = JSON.parse(row?.waits_on ?? "[]") as string[];
+  const on = parseJson<string[]>(row?.waits_on, []);
   if (!on.length) return [];
   const { results } = await env.DB.prepare(`SELECT name FROM branches WHERE owner = ? AND repo = ? AND status = 'open' AND name IN (${on.map(() => "?").join(", ")}) ORDER BY name`).bind(owner, repo, ...on).all();
   return (results as { name: string }[]).map((r) => r.name);
@@ -556,13 +557,13 @@ export async function importGithub(env: Env, owner: string, repo: string, ref: s
   if (!runs.ok) return { error: `GitHub said ${runs.status} for ${sha.slice(0, 7)}'s check runs` };
   const jobs = [
     ...((await runs.json()) as { check_runs?: any[] }).check_runs?.map((c) => ({
-      external_id: `run:${c.id}`, name: String(c.name), status: fromCheckRun(c), url: c.html_url ?? null,
+      external_id: `run:${c.id}`, name: String(c.name), status: fromCheckRun(c), url: httpUrl(c.html_url),
       started_at: c.started_at ? Date.parse(c.started_at) : null, finished_at: c.completed_at ? Date.parse(c.completed_at) : null,
     })) ?? [],
     ...(statuses.ok ? ((await statuses.json()) as { statuses?: any[] }).statuses ?? [] : [])
       .filter((s) => !String(s.context).startsWith(CONTEXT))
       .map((s) => ({
-        external_id: `status:${s.context}`, name: String(s.context), status: fromState(s.state), url: s.target_url ?? null,
+        external_id: `status:${s.context}`, name: String(s.context), status: fromState(s.state), url: httpUrl(s.target_url),
         started_at: s.created_at ? Date.parse(s.created_at) : null, finished_at: s.state !== "pending" && s.updated_at ? Date.parse(s.updated_at) : null,
       })),
   ];

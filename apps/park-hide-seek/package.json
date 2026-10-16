@@ -17,6 +17,8 @@
   "dependencies": {
     "@fontsource/ultra": "^5.3.0",
     "@rustybuns/shell-bun": "workspace:*",
+    "@rustybuns/terrain": "workspace:*",
+    "@rustybuns/util": "workspace:*",
     "three": "^0.180.0"
   },
   "devDependencies": {

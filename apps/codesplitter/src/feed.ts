@@ -24,7 +24,7 @@ import { localSandbox, type Exec, type Sandbox } from "./agent-run.ts";
 import { KEEP_MS } from "./line-events.ts";
 import { containerSandbox } from "./sandbox.ts";
 import { ADMINS_ONLY, adminsOnly, agentsUnavailable, hostedBudget, installedHarnesses } from "./agent-routes.ts";
-import { plural } from "./util.ts";
+import { parseJson, plural } from "./util.ts";
 
 const WEEK = 7 * 24 * 3600_000;
 /** Events one feed read looks at. */
@@ -67,7 +67,7 @@ function followed(e: LineEvent & { ids: string }, f: Follow) {
   if (f.kind !== "lines") return e.who === f.name;
   if (e.owner !== f.owner || e.repo !== f.repo || e.path !== f.path) return false;
   const want = new Set(f.ids);
-  return (JSON.parse(e.ids) as string[]).some((id) => want.has(id));
+  return parseJson<string[]>(e.ids, []).some((id) => want.has(id));
 }
 
 
@@ -95,15 +95,15 @@ export async function feedFor(env: Env, handle: string, since: number, follows?:
   const { results: stamped } = await env.DB.prepare(`SELECT e.owner, e.repo, e.path, e.line, e.stamp, e.by, e.author, e.created_at FROM stamps e ${readable}
     WHERE e.created_at > ?3 AND e.by != ?2 AND (e.by IN (SELECT value FROM json_each(?4)) OR e.author IN (SELECT value FROM json_each(?4))
       OR (e.owner || '/' || e.repo) IN (SELECT value FROM json_each(?5)) OR (e.owner || '/' || e.repo || '/' || e.path) IN (SELECT value FROM json_each(?6)))
-    ORDER BY e.created_at DESC LIMIT ${STAMPS}`).bind(now, handle, since, JSON.stringify(names), JSON.stringify(repos), JSON.stringify(files)).all();
-  const stamps = (stamped as FeedStamp[]).filter((s) => names.includes(s.by) || names.includes(s.author) || repos.includes(`${s.owner}/${s.repo}`)
+    ORDER BY e.created_at DESC LIMIT ${STAMPS}`).bind(now, handle, since, JSON.stringify(names), JSON.stringify(repos), JSON.stringify(files)).all<FeedStamp>();
+  const stamps = stamped.filter((s) => names.includes(s.by) || names.includes(s.author) || repos.includes(`${s.owner}/${s.repo}`)
     || follows!.some((f) => f.kind === "lines" && f.owner === s.owner && f.repo === s.repo && f.path === s.path && f.ids.includes(s.line)));
   const empty = { since, through: now, follows: follows.length, groups: [] as Group[], stamps };
   const { results } = await env.DB.prepare(`SELECT e.* FROM line_events e ${readable}
     WHERE e.last_at > ?3 AND e.who != ?2 AND (e.who IN (SELECT value FROM json_each(?4)) OR (e.owner || '/' || e.repo) IN (SELECT value FROM json_each(?5))
       OR (e.owner || '/' || e.repo || '/' || e.path) IN (SELECT value FROM json_each(?6)))
-    ORDER BY e.last_at DESC LIMIT ${EVENTS}`).bind(now, handle, since, JSON.stringify(names), JSON.stringify(repos), JSON.stringify(files)).all();
-  const events = (results as (LineEvent & { ids: string })[]).filter((e) => follows!.some((f) => followed(e, f)));
+    ORDER BY e.last_at DESC LIMIT ${EVENTS}`).bind(now, handle, since, JSON.stringify(names), JSON.stringify(repos), JSON.stringify(files)).all<LineEvent & { ids: string }>();
+  const events = results.filter((e) => follows!.some((f) => followed(e, f)));
   if (!events.length) return empty;
 
   // Who came along after, on the same files: anyone, followed or not (the files are readable already).

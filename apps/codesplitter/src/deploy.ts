@@ -62,7 +62,7 @@ export const stateSuffix = (dir: string | undefined) => dir ? `~${dir.replaceAll
 const live = new Map<string, { run: Run; again?: string }>();
 
 export async function settings(env: Env, owner: string, repo: string): Promise<Settings> {
-  const r = await env.DB.prepare("SELECT stage, dir, on_commit, production FROM deploy_settings WHERE owner = ? AND repo = ?").bind(owner, repo).first();
+  const r = await env.DB.prepare("SELECT stage, dir, on_commit, production FROM deploy_settings WHERE owner = ? AND repo = ?").bind(owner, repo).first<{ stage: string; dir: string; on_commit: number; production: number }>();
   return r ? { stage: r.stage, dir: r.dir, on_commit: !!r.on_commit, production: !!r.production } : { ...DEFAULTS };
 }
 

@@ -217,7 +217,8 @@ export const osvAdvisories = (get: typeof fetch = fetch): Advisories => async (p
   const res = await get(`${OSV}/querybatch`, { method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ queries: pkgs.map((p) => ({ package: { name: p.name, ecosystem: "npm" }, version: p.version })) }) });
   if (!res.ok) throw new Error(`osv.dev: ${res.status}`);
-  const { results } = (await res.json()) as { results: { vulns?: { id: string }[] }[] };
+  const { results } = (await res.json().catch(() => ({}))) as { results?: { vulns?: { id: string }[] }[] };
+  if (!Array.isArray(results)) throw new Error("osv.dev: no results");
   const details = new Map<string, Promise<any>>();
   const detail = (id: string) => {
     if (!details.has(id)) details.set(id, get(`${OSV}/vulns/${encodeURIComponent(id)}`).then((r) => r.ok ? r.json() : null).catch(() => null));
@@ -1641,8 +1642,8 @@ export async function depRoutes(req: Request, env: Env, p: string[], url: URL, u
   await env.DB.prepare("INSERT OR IGNORE INTO dep_watches (owner, repo) VALUES (?, ?)").bind(owner, repo).run();
 
   if (!p[5] && req.method === "GET") {
-    const r = await env.DB.prepare("SELECT last_run, last_report, running_since FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first();
-    return json({ settings: await settings(env, owner, repo), last_run: r.last_run, report: r.last_report ? JSON.parse(r.last_report) : null, running: !!r.running_since && r.running_since > Date.now() - STALE, can_test: !!testerAt(env, owner), can_preview: !!runnerFor(env) || !(await hostedPreviewWhy(env, owner, repo)), ...(!runnerFor(env) && { preview_why: await hostedPreviewWhy(env, owner, repo) }), malicious: await hitsFor(env, owner, repo) });
+    const r = await env.DB.prepare("SELECT last_run, last_report, running_since FROM dep_watches WHERE owner = ? AND repo = ?").bind(owner, repo).first<{ last_run: number | null; last_report: string | null; running_since: number | null }>();
+    return json({ settings: await settings(env, owner, repo), last_run: r?.last_run ?? null, report: r?.last_report ? JSON.parse(r.last_report) : null, running: !!r?.running_since && r.running_since > Date.now() - STALE, can_test: !!testerAt(env, owner), can_preview: !!runnerFor(env) || !(await hostedPreviewWhy(env, owner, repo)), ...(!runnerFor(env) && { preview_why: await hostedPreviewWhy(env, owner, repo) }), malicious: await hitsFor(env, owner, repo) });
   }
   if (!p[5] && req.method === "PUT") {
     // Only what's sent changes; each field's write() checks it before it lands.

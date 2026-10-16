@@ -37,6 +37,7 @@ export const APPS: Record<string, App> = {
   "meshy-studio":      { test: "bun test --parallel tests", check: true, boot: true },
   "motion-midi":       { test: "bun test test", prep: "bun run build:native", perOs: true, check: true, boot: true },
   "park-hide-seek":    { test: "bun test", boot: true },
+  "skate-tech-park":   { test: "bun test test", drop: false },
   "splat-desktop":     { test: "bun test", boot: true },
   "splat-rooms":       { test: "bun test test", boot: true },
   "splat-spray":       { test: "bun test --parallel", boot: true, bootOn: ["windows-arm64"] },

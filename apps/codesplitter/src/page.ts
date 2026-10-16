@@ -20,6 +20,7 @@
 // (private lines come back blank). Text only; the repo is the page's storage, so its history, its line
 // claims and its conflict handling are the page's too, and an agent edits it with the tools it has already.
 
+import { esc } from "./util.ts";
 import { json, readBody, type Env } from "./env.ts";
 import { toFile } from "./archive.ts";
 import type { Applied, Line, Op } from "./lines.ts";
@@ -156,7 +157,7 @@ export async function pageRoutes(req: Request, env: Env, p: string[], user?: str
   let body = await repoFile(env, name, path);
   // No page repo (or no index in it): the HTML saved on the profile is the index.
   if (body === null && path === "index.html") body = ((await env.DB.prepare("SELECT theme_html FROM users WHERE name = ?").bind(name).first()) as { theme_html: string | null } | null)?.theme_html || null;
-  if (body === null) return path === "index.html" ? note(`@${name} hasn't made a page yet`, 404) : json({ error: "no such file" }, 404);
+  if (body === null) return path === "index.html" ? note(`@${esc(name)} hasn't made a page yet`, 404) : json({ error: "no such file" }, 404);
   if (type === "text/html" && path === "index.html") body = withData(body, await visible(env, name));
   return new Response(req.method === "HEAD" ? null : body, {
     headers: {

@@ -11,6 +11,8 @@ export function DrumGrid(props: {
   colors: string[];
   selected: number;
   loopBeats: number;
+  /** Where this window starts in the song, beats (for the playhead). */
+  from?: number;
   onSelect(i: number): void;
   onNotes(i: number, notes: Note[]): void;
   onAudition(i: number): void;
@@ -22,7 +24,7 @@ export function DrumGrid(props: {
       {drums.map(({ t, i }) => {
         const cells = cellsFor(t.notes, steps);
         return (
-          <div key={i} role="row" className={i === props.selected ? "drum-row sel" : "drum-row"} style={{ "--track": props.colors[i] } as React.CSSProperties}>
+          <div key={i} role="row" className={i === props.selected ? "drum-row sel" : "drum-row"} style={{ "--track": props.colors[i], minWidth: Math.max(640, 86 + steps * 14) } as React.CSSProperties}>
             <button className="row-name" onClick={() => { props.onSelect(i); props.onAudition(i); }}>{t.name}</button>
             <div className="steps" style={{ gridTemplateColumns: `repeat(${steps}, 1fr)` }}>
               {cells.map((c, s) => (
@@ -35,7 +37,7 @@ export function DrumGrid(props: {
                   onClick={(e) => props.onNotes(i, toggle(t, s, e.shiftKey))}
                 />
               ))}
-              <Playhead loopBeats={props.loopBeats} />
+              <Playhead loopBeats={props.loopBeats} from={props.from} />
             </div>
           </div>
         );

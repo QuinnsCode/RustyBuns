@@ -1,0 +1,272 @@
+[
+ {
+  "pr": 545,
+  "jammed": true,
+  "why": "renumber",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 549,
+  "jammed": true,
+  "why": "other",
+  "file": "apps/codesplitters/src/worker.ts"
+ },
+ {
+  "pr": 556,
+  "jammed": true,
+  "why": "renumber",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 562,
+  "jammed": true,
+  "why": "other",
+  "file": "apps/codesplitters/src/worker.ts"
+ },
+ {
+  "pr": 573,
+  "jammed": true,
+  "why": "other",
+  "file": "packages/cli/src/build.ts"
+ },
+ {
+  "pr": 577,
+  "jammed": true,
+  "why": "other",
+  "file": "packages/cli/src/index.ts"
+ },
+ {
+  "pr": 580,
+  "jammed": true,
+  "why": "other",
+  "file": "apps/agent-office/scripts/rustybunsify.ts"
+ },
+ {
+  "pr": 632,
+  "jammed": true,
+  "why": "churn",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 633,
+  "jammed": true,
+  "why": "churn",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 634,
+  "jammed": true,
+  "why": "churn",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 639,
+  "jammed": true,
+  "why": "churn",
+  "file": "apps/codesplitters/src/file-do.ts"
+ },
+ {
+  "pr": 658,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 676,
+  "jammed": true,
+  "why": "churn",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 687,
+  "jammed": true,
+  "why": "renumber",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 715,
+  "jammed": true,
+  "why": "renumber",
+  "file": "apps/codesplitters/test/migrations.test.ts"
+ },
+ {
+  "pr": 730,
+  "jammed": true,
+  "why": "renumber",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 732,
+  "jammed": true,
+  "why": "renumber",
+  "file": "apps/codesplitters/migrations/0055_drop_file_search.sql"
+ },
+ {
+  "pr": 756,
+  "jammed": true,
+  "why": "renumber",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 759,
+  "jammed": true,
+  "why": "other",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 787,
+  "jammed": true,
+  "why": "renumber",
+  "file": "apps/codesplitters/src/limits.ts"
+ },
+ {
+  "pr": 792,
+  "jammed": true,
+  "why": "renumber",
+  "file": "apps/codesplitters/src/client.html"
+ },
+ {
+  "pr": 876,
+  "jammed": true,
+  "why": "other",
+  "file": "apps/codesplitter/README.md"
+ },
+ {
+  "pr": 884,
+  "jammed": true,
+  "why": "churn",
+  "file": "apps/codesplitter/README.md"
+ },
+ {
+  "pr": 886,
+  "jammed": true,
+  "why": "churn",
+  "file": "apps/codesplitter/README.md"
+ },
+ {
+  "pr": 890,
+  "jammed": true,
+  "why": "other",
+  "file": "apps/codesplitter/README.md"
+ },
+ {
+  "pr": 891,
+  "jammed": true,
+  "why": "churn",
+  "file": "apps/codesplitter/README.md"
+ },
+ {
+  "pr": 893,
+  "jammed": true,
+  "why": "churn",
+  "file": "apps/codesplitter/README.md"
+ },
+ {
+  "pr": 895,
+  "jammed": true,
+  "why": "churn",
+  "file": "README.md"
+ },
+ {
+  "pr": 896,
+  "jammed": true,
+  "why": "churn",
+  "file": "README.md"
+ },
+ {
+  "pr": 903,
+  "jammed": true,
+  "why": "other",
+  "file": "apps/codesplitter/src/client.html"
+ },
+ {
+  "pr": 932,
+  "jammed": true,
+  "why": "renumber",
+  "file": "packages/cli/src/build.ts"
+ },
+ {
+  "pr": 936,
+  "jammed": true,
+  "why": "other",
+  "file": "apps/codesplitter/docs/merge-solutions.md"
+ },
+ {
+  "pr": 937,
+  "jammed": true,
+  "why": "conflict",
+  "file": ".github/workflows/typecheck.yml"
+ },
+ {
+  "pr": 939,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitter/docs/merge-solutions.md"
+ },
+ {
+  "pr": 949,
+  "jammed": true,
+  "why": "other",
+  "file": "README.md"
+ },
+ {
+  "pr": 960,
+  "jammed": true,
+  "why": "other",
+  "file": "apps/git-recon/README.md"
+ },
+ {
+  "pr": 968,
+  "jammed": true,
+  "why": "other",
+  "file": ".github/workflows/typecheck.yml"
+ },
+ {
+  "pr": 987,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitter/README.md"
+ },
+ {
+  "pr": 989,
+  "jammed": true,
+  "why": "other",
+  "file": "apps/codesplitter/README.md"
+ },
+ {
+  "pr": 995,
+  "jammed": true,
+  "why": "other",
+  "file": "apps/codesplitter/README.md"
+ },
+ {
+  "pr": 1004,
+  "jammed": true,
+  "why": "conflict",
+  "file": "apps/codesplitter/README.md"
+ },
+ {
+  "pr": 1020,
+  "jammed": true,
+  "why": "other",
+  "file": "apps/codesplitter/REFERENCE.md"
+ },
+ {
+  "pr": 1027,
+  "jammed": true,
+  "why": "other",
+  "file": "README.md"
+ },
+ {
+  "pr": 1032,
+  "jammed": true,
+  "why": "other",
+  "file": "apps/codesplitter/README.md"
+ },
+ {
+  "pr": 1035,
+  "jammed": true,
+  "why": "renumber",
+  "file": "apps/codesplitter/README.md"
+ }
+]

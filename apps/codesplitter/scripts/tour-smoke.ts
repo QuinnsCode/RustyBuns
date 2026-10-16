@@ -127,6 +127,12 @@ try {
       must((await card()) === title[c.you], `got "${await card()}"`);
     });
 
+    await check("human", `${c.id}: the scrub bar jumps back and pauses autoplay`, async () => {
+      await click(".tour [data-auto]"); await click(".tour [data-next]");
+      await page(`(() => { const r = document.querySelector(".tour-scrub"); r.value = String(+r.value - 1); r.dispatchEvent(new Event("change")); })()`);
+      await until("scrubbed", `document.querySelector(".tour b")?.textContent === ${JSON.stringify(title[0])} && !JSON.parse(sessionStorage.getItem("cs_tour")).auto`);
+    });
+
     // Autoplay: a cursor does the steps, and stops where a person must act.
     await check("autoplay", `${c.id}: Play turns it on and the cursor appears`, async () => {
       await scene(`${c.id}:1-${c.steps.length}`); await click(".tour [data-auto]");

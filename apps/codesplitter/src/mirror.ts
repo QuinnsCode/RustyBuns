@@ -1389,7 +1389,7 @@ export async function mirrorTagRoute(req: Request, env: Env, p: string[], owner:
   else if (req.method !== "POST") return null;
   else if (user !== owner) return json({ error: "owner only" }, 403);
   else if (!p[6]) {
-    const b = (await req.json().catch(() => ({}))) as { names?: unknown };
+    const b = await readBody<"names">(req);
     if (b.names !== undefined && !(Array.isArray(b.names) && b.names.every((n) => typeof n === "string" && !tagNameError(n)))) return json({ error: "names: a list of tag names" }, 400);
     run = () => fetchTags(env, owner, repo, b.names as string[] | undefined);
   } else if (p.at(-1) === "push" && p.length > 7) {
@@ -1538,7 +1538,7 @@ async function turnable(env: Env, owner: string, repo: string): Promise<Turn | {
 export async function turnRoute(req: Request, env: Env, owner: string, repo: string, user: string | null) {
   if (user !== owner) return json({ error: "owner only" }, 403);
   if (req.method !== "GET" && req.method !== "POST") return json({ error: "GET or POST" }, 405);
-  const b = req.method === "POST" ? (await req.json().catch(() => ({}))) as { ahead?: unknown; pullOnly?: unknown } : {};
+  const b = req.method === "POST" ? await readBody<"ahead" | "pullOnly">(req) : {};
   const turned = await serial(owner, repo, async () => {
     const t = await turnable(env, owner, repo);
     if ("error" in t) return json({ error: t.error }, t.status);

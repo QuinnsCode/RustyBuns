@@ -32,7 +32,7 @@ import { audit } from "./audit.ts";
 import { json, type Env, readBody } from "./env.ts";
 import { limit } from "./limits.ts";
 import { DAY, MAX_DAYS } from "./tokens.ts";
-import { b64url, sha256 } from "./util.ts";
+import { httpUrl, b64url, sha256 } from "./util.ts";
 
 const MAX_TOKENS = 20;
 export const CI_TOKEN_DAYS = 90;
@@ -137,7 +137,7 @@ export async function ghCompatRoutes(req: Request, env: Env, p: string[], url: U
     const state = (["pending", "success", "failure", "error"] as const).find((x) => x === b.state);
     if (!state) return fail("state: pending, success, failure or error", 422);
     const context = String(b.context ?? "default").slice(0, 100), status = fromState(state);
-    const target = typeof b.target_url === "string" ? b.target_url : null, about = typeof b.description === "string" ? b.description.slice(0, 140) : "";
+    const target = httpUrl(b.target_url), about = typeof b.description === "string" ? b.description.slice(0, 140) : "";
     const had = await env.DB.prepare("SELECT * FROM check_runs WHERE owner = ? AND repo = ? AND sha = ? AND external_id = ? AND runner = 'external' ORDER BY id DESC LIMIT 1")
       .bind(owner, repo, sha, `status:${context}`).first() as CheckRun | null;
     const run = had && !DONE.has(had.status)
@@ -156,7 +156,7 @@ export async function ghCompatRoutes(req: Request, env: Env, p: string[], url: U
     const sha = b.head_sha;
     let run = await recordRun(env, {
       owner, repo, ref: await refOf(env, owner, repo, sha), sha, name: b.name, runner: "external", runner_label: t.label, status: s.status,
-      url: typeof b.details_url === "string" ? b.details_url : null, external_id: typeof b.external_id === "string" ? `check:${b.external_id}` : null,
+      url: httpUrl(b.details_url), external_id: typeof b.external_id === "string" ? `check:${b.external_id}` : null,
       started_at: ms(b.started_at), finished_at: ms(b.completed_at),
     }, by);
     const log = outputLog(b.output);
@@ -172,7 +172,7 @@ export async function ghCompatRoutes(req: Request, env: Env, p: string[], url: U
     const b = await body();
     const s = checkStatus(b);
     if ("error" in s) return fail(s.error, 422);
-    const after = await updateRun(env, run, { status: s.status, url: typeof b.details_url === "string" ? b.details_url : null, log: outputLog(b.output) }, by);
+    const after = await updateRun(env, run, { status: s.status, url: httpUrl(b.details_url), log: outputLog(b.output) }, by);
     return after ? json(shaped(after)) : fail(`it's ${run.status} already`, 422);
   }
 
@@ -180,7 +180,7 @@ export async function ghCompatRoutes(req: Request, env: Env, p: string[], url: U
   if (rest[0] === "commits" && rest[1] && !rest[3] && req.method === "GET" && (rest[2] === "status" || rest[2] === "check-runs")) {
     const { results } = await env.DB.prepare("SELECT * FROM check_runs WHERE owner = ? AND repo = ? AND sha = ? ORDER BY id").bind(owner, repo, rest[1]).all();
     const latest = new Map<string, CheckRun>();
-    for (const r of results as CheckRun[]) latest.set(r.name, r);
+    for (const r of results as unknown as CheckRun[]) latest.set(r.name, r);
     const runs = [...latest.values()];
     if (rest[2] === "check-runs") {
       const checks = runs.filter((r) => !r.external_id?.startsWith("status:"));

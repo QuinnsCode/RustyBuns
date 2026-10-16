@@ -9,7 +9,7 @@ import { LEVELS, placeLevel, type LevelDef } from "../levels/levels.ts";
 import { placeName } from "../levels/place.ts";
 import { Game, MAX_REWIND, type GameEvent, type Input } from "../sim/game.ts";
 import { missionFor } from "../sim/missions.ts";
-import type { ZoneData } from "../sim/terrain.ts";
+import type { ZoneData } from "@rustybuns/terrain";
 import { ORDER } from "../sim/weapons.ts";
 import { cleanInput, diffShot, diffSoldier, fly, KEPT, MAX_PLAYERS, packSoldier, VIEW, type FileState, type Look, type RosterEntry, type Setup, type ShotState, type Snap, type SoldierDelta, type SoldierState, type StashState } from "./wire.ts";
 
