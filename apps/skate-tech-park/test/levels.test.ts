@@ -6,13 +6,14 @@ import { trackRun } from "../src/levels/goals.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { IDLE, type Input, type Mode, start, step } from "../src/sim.ts";
 
+const ROLL = 10; // m/s: an easy roll, what these lines were cut for
 const parks = LEVELS.filter((l) => l.id !== "plaza").map((l) => l.load() as ParkLevel);
 const park = (id: string) => parks.find((l) => l.id === id)!;
 
 /** Drives from a spawn, feeding the tracker, until `seconds` pass. */
 function drive(level: ParkLevel, mode: Mode, spawn: string, seconds: number, input: (s: ReturnType<typeof start>) => Partial<Input>) {
   const sp = level.spawns.find((p) => p.name === spawn)!;
-  const s = start(mode, sp.x, sp.z, sp.yaw, level), run = trackRun(level);
+  const s = start(sp.x, sp.z, sp.yaw, level), run = trackRun(level);
   for (let i = 0; i < seconds * 60; i++) {
     step(s, { ...IDLE, ...input(s) }, level);
     run.update(s);
@@ -41,7 +42,7 @@ test("every park loads with finite ground, goals and spawns on flat ground insid
 });
 
 test("the boulder gap in the meadow is cleared on a board, ollieing off the kicker", () => {
-  const { s, run } = drive(park("el-capitan"), "skate", "skate", 12, (s) => ({ throttle: 1, jump: s.x > -1.5 && s.x < 0 }));
+  const { s, run } = drive(park("el-capitan"), "skate", "skate", 12, (s) => ({ throttle: s.speed < ROLL ? 1 : 0, jump: s.x > -1.5 && s.x < 0 }));
   expect(run.gaps.get("Boulder Gap")).toBe(1);
   expect(s.score).toBeGreaterThanOrEqual(600);
   expect(run.bestCombo).toBeGreaterThanOrEqual(600); // the gap bonus counts toward the combo
@@ -57,9 +58,9 @@ test("the roadster drops in, crosses the plateau and flies Glacier Point's void 
 test("the vent in the geyser basin and the fallen giant in the grove are both hopped on a board", () => {
   for (const [id, name, line] of [["old-faithful", "Geyser Hop", { x: 14, z: 30 }], ["mariposa-grove", "Fallen Giant", { x: 12, z: 40 }]] as const) {
     const l = park(id), g = l.gaps.find((x) => x.name === name)!;
-    const s = start("skate", line.x, line.z, Math.PI / 2, l), run = trackRun(l);
+    const s = start(line.x, line.z, Math.PI / 2, l), run = trackRun(l);
     for (let i = 0; i < 60 * 8; i++) {
-      step(s, { ...IDLE, throttle: 1, jump: s.x > g.a.x + 0.5 && s.x < g.a.x + 2 }, l);
+      step(s, { ...IDLE, throttle: s.speed < ROLL ? 1 : 0, jump: s.x > g.a.x + 0.5 && s.x < g.a.x + 2 }, l);
       run.update(s);
     }
     expect(run.gaps.get(name)).toBe(1);

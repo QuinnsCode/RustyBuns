@@ -2,7 +2,7 @@
 
 > **What it proves:** a three.js game whose physics is a pure fixed-step sim, so the same code runs in the page and in headless tests, with no backend and a ten-line desktop config. One of the [Rusty Buns](../../README.md#see-it-work) examples.
 
-A street skating spot at golden hour: a kicker, a funbox, a rail, and a gap no board can clear. Ride it on a skateboard, or press Tab and take the rocket roadster: a low white wedge with ten cold-gas thrusters fed from one air tank. Four push from the back. The main one sits behind the licence plate, which drops to uncover it. Four under the corners lift the car off the ground, and two at the nose spin it in the air. The tank refills slowly while you're on the ground.
+A street skating spot at golden hour: a kicker, a funbox, a rail, and a gap no board can clear. It is one board with one physics. Ride it as a skateboard, or press Tab and the same board wears the rocket roadster: a low white wedge with ten cold-gas thrusters. They fire in time with what the board does, as if the rockets did the tricks: the four at the back on a push, a pump or a boost, the four under the corners on a pop and (unevenly) through a flip, the two at the nose on a spin, and a short burst on a landing. Tab changes only how it looks, never how it rides.
 
 Tricks score when you land them: air time, every 180 you spin, kickflips, grinds, and riding away fakie or in reverse. Land sideways or mid-flip and you bail.
 
@@ -18,19 +18,19 @@ bun test test            # the ride, headless
 
 `/?showroom` parks the roadster and circles the camera round it, to check the model against reference photos.
 
-| Do this | On the board | In the roadster |
-|---|---|---|
-| Go, brake | <kbd>W</kbd> <kbd>S</kbd> | <kbd>W</kbd> <kbd>S</kbd> |
-| Steer, or spin in the air | <kbd>A</kbd> <kbd>D</kbd> | <kbd>A</kbd> <kbd>D</kbd> (the nose thrusters) |
-| Jump | <kbd>Space</kbd> ollie | hold <kbd>Space</kbd> for the lift thrusters |
-| Boost, pump | hold <kbd>Shift</kbd> through a transition to gain speed (fast enough up a quarter pipe and you fly off the wall and drop back down it) | hold <kbd>Shift</kbd> for the rear thrusters |
+| Do this | Keys |
+|---|---|
+| Go, brake | <kbd>W</kbd> <kbd>S</kbd> |
+| Steer, or spin in the air | <kbd>A</kbd> <kbd>D</kbd> |
+| Jump | <kbd>Space</kbd> ollie |
+| Rear jets, pump | hold <kbd>Shift</kbd>: speed along the heading, and through a transition it gains speed (fast enough up a quarter pipe and you fly off the wall and drop back down it) |
 | Kickflip | <kbd>F</kbd> in the air | |
-| Swap rides, back to the start | <kbd>Tab</kbd>, <kbd>R</kbd> | <kbd>Tab</kbd>, <kbd>R</kbd> |
+| Swap skins, back to the start | <kbd>Tab</kbd> (the ride carries on), <kbd>R</kbd> |
 
 ## How it's built
 
 - `src/level.ts`: the `Level` the sim rides on: a height at any point, pieces, rails, spawns and bounds. `src/levels/plaza.ts` is the first one. The view meshes each piece by sampling its own height.
 - `src/levels/`: skate parks on real ground. `pieces.ts` is the kit (kicker, quarter pipe, bowl, funbox, ledge, handrail, flat bar, stairs, hubba, hip, spine, and a named `gap`), each a pure height function plus rail segments. `park.ts` shrinks a [park zone](../../packages/terrain) to a 120 m disc, cuts a flat pad under each site with `withPads`, and carries each level's gaps, goals, pickups and spawns as data. `goals.ts` watches a run (gap bonuses, combo, pickups). Levels: El Capitan Meadow, Glacier Point Mega Ramp, Old Faithful Bowl, Mariposa Grove.
-- `src/sim.ts`: the ride as a pure fixed-step simulation (60 steps a second), with no three.js or DOM. It handles grounded rolling with slopes and walls, launching off lips, air with spins and flips, grinds, landings and bails, and the roadster's tank and which thrusters are firing.
+- `src/sim.ts`: the ride as a pure fixed-step simulation (60 steps a second), with no three.js or DOM. It handles grounded rolling with slopes and walls, launching off lips, air with spins and flips, grinds, landings and bails, and which thrusters are firing, derived from the board's state each step.
 - `src/models.ts`: the skater, the board and the roadster from three.js primitives, so there is nothing to load or license. The roadster's body is a side profile extruded across its width. Each nozzle carries a plume that the view shows when the sim says it fires.
 - `src/main.ts`: the scene, the chase camera, the keys and the HUD.

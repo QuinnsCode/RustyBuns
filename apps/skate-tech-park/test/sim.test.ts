@@ -9,35 +9,49 @@ const run = (s: State, seconds: number, input: (s: State) => Partial<Input>, lev
   return s;
 };
 
-test("the roadster's rear thrusters carry it over the gap that a board can't clear", () => {
-  const car = run(start("car", 27, -38), 5, () => ({ throttle: 1, boost: true }));
-  expect(car.last?.name).not.toMatch(/Spun|Bail/);
-  expect(car.z).toBeGreaterThan(-2); // past the gap
-  expect(car.last?.points).toBeGreaterThan(0);
-  expect(car.tank).toBeLessThan(1);
+test("rear jets carry the board over the gap that a standing start can't clear", () => {
+  const boosted = run(start(27, -38), 5, () => ({ throttle: 1, boost: true }));
+  expect(boosted.last?.name).not.toMatch(/Bail/);
+  expect(boosted.z).toBeGreaterThan(-2); // past the gap
+  expect(boosted.last?.points).toBeGreaterThan(0);
 
-  const board = run(start("skate", 27, -38), 5, () => ({ throttle: 1 }));
-  expect(board.z).toBeLessThan(-2); // it rolled back off the kicker, or fell in
+  const pushed = run(start(27, -20), 3, () => ({ throttle: 1 }));
+  expect(pushed.z).toBeLessThan(-2); // with no run-up it is too slow: it rolled back off the kicker, or fell in
 });
 
-test("lift and spin thrusters hover the roadster through a 360 and set it down clean", () => {
-  const car = start("car", 0, -20);
-  run(car, 4, (s) => ({ jump: s.t < 0.7, steer: s.air && s.spun < 2 * Math.PI ? 1 : 0 }));
-  expect(car.air).toBe(false);
-  expect(car.last?.name).toBe("360");
-  expect(car.tank).toBeLessThan(0.9);
+test("the jets fire in time with the board: lift on a pop, corners on a flip, nose on a spin, rear on a push, a burst on landing", () => {
+  const sk = start(0, -20);
+  const seen = { rear: false, lift: false, roll: 0, spin: 0, landed: false };
+  const watch = (s: State) => {
+    seen.rear ||= s.firing.rear; seen.lift ||= s.firing.lift; seen.roll ||= s.firing.roll; seen.spin ||= s.firing.spin;
+  };
+  run(sk, 1, (s) => { watch(s); return { throttle: 1 }; });
+  expect(seen).toMatchObject({ rear: true, lift: false, roll: 0, spin: 0 }); // pushing: the rear jets only
+  run(sk, 0.1, (s) => ({ throttle: 1, jump: s.t < 1.01 }));
+  expect(sk.firing.lift).toBe(true); // the pop
+  run(sk, 0.3, (s) => { watch(s); return { flick: s.air && !s.flipT ? "kickflip" : null }; });
+  expect(seen.roll).toBe(1); // corners, unevenly
+  run(sk, 3, (s) => { if (s.firing.lift && !s.air) seen.landed = true; watch(s); return { steer: s.air && s.spun < Math.PI ? 1 : 0 }; });
+  expect(seen.spin).toBe(1);
+  expect(seen.landed).toBe(true); // the landing cushion
 });
 
-test("an empty tank fires nothing", () => {
-  const car = start("car", 0, -20);
-  car.tank = 0;
-  step(car, { ...IDLE, boost: true, jump: true });
-  expect(car.firing).toEqual({ rear: false, lift: false, spin: 0 });
-  expect(car.air).toBe(false);
+test("the skin changes nothing: one run replayed with each skin gives identical state", () => {
+  const ride = (skin: "skate" | "car") => {
+    const s = start(-12, -20);
+    const log: string[] = [];
+    run(s, 6, (st) => {
+      void skin; // the page's skin is not an input to step(): nothing here can differ
+      log.push(JSON.stringify(st));
+      return { throttle: 1, boost: st.t > 2, jump: st.t > 3 && st.t < 3.05, steer: st.air ? 1 : 0.2 };
+    });
+    return log;
+  };
+  expect(ride("skate")).toEqual(ride("car"));
 });
 
 test("a skater ollies onto the rail, grinds it, and kickflips out of the grind", () => {
-  const sk = start("skate", -12, -18);
+  const sk = start(-12, -18);
   const names: string[] = [];
   run(sk, 6, (s) => {
     if (s.last && names.at(-1) !== s.last.name) names.push(s.last.name);
@@ -49,7 +63,7 @@ test("a skater ollies onto the rail, grinds it, and kickflips out of the grind",
 });
 
 test("landing sideways is a bail, and the rider gets back up", () => {
-  const sk = start("skate", 0, -20);
+  const sk = start(0, -20);
   run(sk, 2.5, (s) => ({ throttle: s.t < 1.5 ? 1 : 0, jump: s.t > 1.5 && s.t < 1.55, steer: s.air && s.spun < Math.PI / 2 ? 1 : 0 }));
   expect(sk.last?.name).toMatch(/Bail/);
   run(sk, 1.5, () => ({ throttle: 1 }));
@@ -69,7 +83,7 @@ test("a level can point any way: a turned ramp has height there, and a diagonal 
   expect(diag.height(3, 0)).toBeCloseTo(2);
   expect(diag.height(0, 5)).toBe(0); // beside it
 
-  const sk = start("skate", -8, -8, Math.PI / 4, diag);
+  const sk = start(-8, -8, Math.PI / 4, diag);
   sk.y = 1.1; sk.vx = sk.vz = 4; sk.vy = -1; sk.air = true; // dropping onto the rail from the side it runs
   step(sk, IDLE, diag);
   run(sk, 0.5, () => ({}), diag);
@@ -84,16 +98,16 @@ const flat = (extra: Partial<Parameters<typeof makeLevel>[0]>) => makeLevel({
 
 test("a rider can't ride through a tree, but can pass beside it", () => {
   const lv = flat({ obstacles: [{ x: 0, z: 10, r: 1, tall: 30 }] });
-  const hit = run(start("car", 0, 0, 0, lv), 3, () => ({ throttle: 1 }), lv);
+  const hit = run(start(0, 0, 0, lv), 3, () => ({ throttle: 1 }), lv);
   expect(hit.z).toBeLessThan(9);
   expect(hit.last?.name).toBe("Hit a tree");
-  const past = run(start("car", 4, 0, 0, lv), 3, () => ({ throttle: 1 }), lv);
+  const past = run(start(4, 0, 0, lv), 3, () => ({ throttle: 1 }), lv);
   expect(past.z).toBeGreaterThan(20);
 });
 
 test("a skater grinds a rail down a slope and stays on the bar", () => {
   const lv = flat({ rails: [{ kind: "rail", a: { x: 0, z: 0 }, b: { x: 0, z: 10 }, y: 2, y2: 0.5 }] });
-  const sk = start("skate", 0, -2, 0, lv);
+  const sk = start(0, -2, 0, lv);
   sk.air = true; sk.y = 2.1; sk.vy = -1; sk.vz = 4; sk.z = 0.2;
   step(sk, IDLE, lv);
   expect(sk.grind).toBe(0);
@@ -106,12 +120,12 @@ test("a skater grinds a rail down a slope and stays on the bar", () => {
 
 test("a steep curve carries the roadster up and off the lip, a box side is still a wall", () => {
   const ramp = flat({ pieces: [{ ...piece("ramp", "q", 0, 12, 0, 6, 8, 0, 0), height: (_: number, lz: number) => (lz > 4 || lz < -4 ? 0 : 3 * (1 - Math.sqrt(1 - ((lz + 4) / 8) ** 2))) } as never] });
-  const car = start("car", 0, -2, 0, ramp);
+  const car = start(0, -2, 0, ramp);
   let maxY = 0;
   run(car, 3, (s) => { maxY = Math.max(maxY, s.y); return { throttle: 1, boost: true }; }, ramp);
   expect(maxY).toBeGreaterThan(2);
   const wall = flat({ pieces: [piece("box", "b", 0, 10, 0, 6, 4, 1, 1)] });
-  const c2 = run(start("car", 0, 0, 0, wall), 3, () => ({ throttle: 1 }), wall);
+  const c2 = run(start(0, 0, 0, wall), 3, () => ({ throttle: 1 }), wall);
   expect(c2.y).toBe(0);
   expect(c2.z).toBeLessThan(8.5);
 });
@@ -126,7 +140,7 @@ test("a board rolling across a slope falls toward downhill, and a hard carve at 
   const flat = makeLevel({ ...hill, pieces: [] });
 
   const across = (level: Level) => {
-    const sk = start("skate", 0, -10, 0, level);
+    const sk = start(0, -10, 0, level);
     sk.speed = 5;
     run(sk, 1, () => ({}), level);
     return sk;
@@ -136,7 +150,7 @@ test("a board rolling across a slope falls toward downhill, and a hard carve at 
   expect(onHill.vx).toBeLessThan(-0.3); // turned toward -x, the way down
   expect(onHill.roll).not.toBe(0);
 
-  const carve = (steer: number) => run(Object.assign(start("skate", 0, -10, 0, flat), { speed: 9 }), 1, () => ({ steer }), flat).speed;
+  const carve = (steer: number) => run(Object.assign(start(0, -10, 0, flat), { speed: 9 }), 1, () => ({ steer }), flat).speed;
   expect(carve(1)).toBeLessThan(carve(0));
 });
 
@@ -146,7 +160,7 @@ const pipeLevel = flat({ pieces: pipe.pieces, rails: pipe.rails });
 
 test("a skater pumping the transition rides higher than one rolling it", () => {
   const peak = (pump: boolean) => {
-    const sk = Object.assign(start("skate", 0, -6, 0, pipeLevel), { speed: 9 });
+    const sk = Object.assign(start(0, -6, 0, pipeLevel), { speed: 9 });
     let max = 0;
     run(sk, 4, (s) => { max = Math.max(max, s.y); return { boost: pump }; }, pipeLevel);
     return max;
@@ -155,7 +169,7 @@ test("a skater pumping the transition rides higher than one rolling it", () => {
 });
 
 test("a skater rides up the wall, goes up past the coping and drops back down it", () => {
-  const sk = Object.assign(start("skate", 0, -6, 0, pipeLevel), { speed: 10 });
+  const sk = Object.assign(start(0, -6, 0, pipeLevel), { speed: 10 });
   let flew = false;
   run(sk, 5, (s) => { flew ||= s.air && s.y > 1.5; return { throttle: 1, boost: true }; }, pipeLevel);
   expect(flew).toBe(true);

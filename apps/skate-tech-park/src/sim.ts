@@ -1,9 +1,10 @@
 // The ride as a pure fixed-step simulation: no three.js, no DOM, so the tests drive it headless
-// and the page only draws what it says. One rider at a time, on a board or in the roadster.
+// and the page only draws what it says. One giant fingerboard, one physics.
 //
-// The roadster carries ten cold-gas thrusters fed by one air tank: four at the back (the main one
-// behind the licence plate, which drops to uncover it), four under the corners for lift, and two at
-// the nose for spinning in the air. The tank refills slowly while the car is on the ground.
+// The rocket roadster is a skin over that board: its ten cold-gas thrusters (four at the back, four
+// under the corners, two at the nose) fire in time with what the board does, as if the rockets did
+// the tricks. `firing` is derived from the board's state after each step and never feeds back, so
+// swapping skins changes nothing in the ride.
 import { clamp } from "@rustybuns/util";
 import { hitObstacle, type Level, onRail, railY } from "./level.ts";
 import { plaza } from "./levels/plaza.ts";
@@ -11,6 +12,7 @@ import { plaza } from "./levels/plaza.ts";
 export const DT = 1 / 60;
 const G = 20; // gamey gravity: snappier than 9.8
 
+/** Which skin is drawn. step() never reads it: the same inputs give the same ride in either. */
 export type Mode = "skate" | "car";
 
 export type Flick = "kickflip" | "heelflip" | "shove-it";
@@ -18,35 +20,28 @@ export type Flick = "kickflip" | "heelflip" | "shove-it";
 export type Input = {
   throttle: number; // -1..1
   steer: number; // -1..1, left is +
-  jump: boolean; // board: ollie (on press). car: lift thrusters (held)
-  boost: boolean; // car: rear thrusters. board: pump (held through a transition)
+  jump: boolean; // ollie, on press
+  boost: boolean; // rear jets: speed on the ground and along the heading in the air, and a pump through a transition (held)
   flip: boolean; // board: kickflip (on press, in the air); shorthand for flick "kickflip"
   flick: Flick | null; // board: a flick trick, on press, in the air (the gesture layer resolves a drag or stick into this)
-  fan: boolean; // car: the suction fan, held
+  fan: boolean; // the suction fan, held: sticks the board to banks and walls at speed
 };
 
 export const IDLE: Input = { throttle: 0, steer: 0, jump: false, boost: false, flip: false, flick: null, fan: false };
 
-const TUNE = {
-  skate: { accel: 7, top: 10, turn: 2.6, airSpin: 7 },
-  car: { accel: 20, top: 32, turn: 1.9, airSpin: 6 },
-};
-// The roadster's whole tuning block: thrusters, tank and the suction fan.
-export const ROADSTER = {
-  boost: 32, // m/s² from the rear thrusters
+const TUNE = { accel: 20, top: 32, turn: 2.2, airSpin: 7 };
+// The rocket jets, in the board's own numbers.
+export const JETS = {
+  boost: 32, // m/s² from the rear jets
   boostTop: 48,
-  lift: 34, // m/s² up from the four under the corners, more than gravity
-  drain: { boost: 0.18, lift: 0.3, spin: 0.08, fan: 0.12 }, // tank per second
-  refill: 0.06,
   fanTop: 0.6, // the fan holds it to this share of top speed
   fanPull: 26, // m/s² extra downward in the air with the fan on
   fanStep: 1.6, // metres: with the fan on, a kerb, box side or stair this low is driven up
+  pop: 0.25, // seconds the lift jets burn on an ollie, and the cushion burst on a landing
+  landBurst: 0.15,
 };
-const BOOST = ROADSTER.boost;
-const BOOST_TOP = ROADSTER.boostTop;
-const LIFT = ROADSTER.lift;
-const DRAIN = ROADSTER.drain;
-const REFILL = ROADSTER.refill;
+const BOOST = JETS.boost;
+const BOOST_TOP = JETS.boostTop;
 const MAX_SLOPE = 3; // a rise steeper than this (about 72 degrees) in one stride is a wall, not a ramp
 const CARVE = 0.8; // how much speed stiffens the board's turn: at top speed it turns 1/(1+CARVE) as tight
 const CARVE_DRAG = 0.5; // a hard carve at speed scrubs this share of it per second
@@ -75,10 +70,10 @@ export function grindKind(off: number, side: number): GrindKind {
   return side > 0 ? "nosegrind" : "5-0";
 }
 
-export type Firing = { rear: boolean; lift: boolean; spin: -1 | 0 | 1 };
+/** Which thruster groups burn this step: all derived from the board. `roll` is the corner jets firing unevenly through a flip (+1 kickflip, -1 heelflip). */
+export type Firing = { rear: boolean; lift: boolean; spin: -1 | 0 | 1; roll: -1 | 0 | 1 };
 
 export type State = {
-  mode: Mode;
   t: number;
   x: number; y: number; z: number;
   vx: number; vy: number; vz: number;
@@ -100,7 +95,7 @@ export type State = {
   chain: number; // tricks landed in a row; the score multiplier
   chainT: number; // seconds left to extend it
   fan: boolean; // the suction fan is on
-  tank: number; // 0..1
+  jetT: number; // seconds the lift jets still burn (an ollie, a landing)
   firing: Firing;
   plateDown: boolean;
   bail: number; // seconds left on the floor
@@ -111,12 +106,12 @@ export type State = {
   prevFlick: boolean;
 };
 
-export function start(mode: Mode, x = 0, z = -20, yaw = 0, level: Level = plaza): State {
+export function start(x = 0, z = -20, yaw = 0, level: Level = plaza): State {
   return {
-    mode, t: 0, x, y: level.height(x, z), z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0, roll: 0, speed: 0,
+    t: 0, x, y: level.height(x, z), z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0, roll: 0, speed: 0,
     air: false, airTime: 0, spun: 0, flipT: 0, flipKind: "kickflip", tricks: [], grind: -1, grindTime: 0,
-    grindKind: "50-50", grindOff: 0, balance: 0, chain: 0, chainT: 0, fan: false,
-    tank: 1, firing: { rear: false, lift: false, spin: 0 }, plateDown: false,
+    grindKind: "50-50", grindOff: 0, balance: 0, chain: 0, chainT: 0, fan: false, jetT: 0,
+    firing: { rear: false, lift: false, spin: 0, roll: 0 }, plateDown: false,
     bail: 0, score: 0, last: null, prevJump: false, prevFlip: false, prevFlick: false,
   };
 }
@@ -134,7 +129,7 @@ function award(s: State, name: string, points: number) {
 
 /** Fall: wipe the chain, and get back up after `bail` seconds. */
 function bail(s: State, name: string) {
-  s.bail = s.mode === "car" ? 0.8 : 1.2;
+  s.bail = 1.2;
   s.speed = 0; s.vx = s.vz = 0;
   s.flipT = 0; s.grind = -1; s.chain = 0; s.chainT = 0;
   s.last = { name, points: 0 };
@@ -153,14 +148,14 @@ function takeOff(s: State) {
 }
 
 function land(s: State, h: number) {
-  s.y = h; s.vy = 0; s.air = false;
+  s.y = h; s.vy = 0; s.air = false; s.jetT = JETS.landBurst;
   const hs = Math.hypot(s.vx, s.vz);
   const off = Math.abs(wrap(Math.atan2(s.vx, s.vz) - s.yaw));
   if (s.flipT > 0) return bail(s, "Bail: still flipping");
   if (hs < 2) s.speed = s.vx * Math.sin(s.yaw) + s.vz * Math.cos(s.yaw); // dropping back onto a wall: roll off it
   else if (off < 0.9) s.speed = hs;
   else if (off > Math.PI - 0.9) s.speed = -hs;
-  else return bail(s, s.mode === "car" ? "Spun out" : "Bail: landed sideways");
+  else return bail(s, "Bail: landed sideways");
   if (s.airTime < 0.35) return;
   const turns = Math.round(Math.abs(s.spun) / Math.PI) * 180;
   const parts: string[] = [];
@@ -169,7 +164,7 @@ function land(s: State, h: number) {
     const n = s.tricks.filter((x) => x === t).length;
     parts.push(n > 1 ? `${n}x ${t}` : t);
   }
-  if (s.speed < 0) parts.push(s.mode === "car" ? "reverse" : "fakie");
+  if (s.speed < 0) parts.push("fakie");
   const points = Math.round(s.airTime * 100 + (turns / 180) * 250 + s.tricks.reduce((n, t) => n + FLICK_POINTS[t], 0));
   award(s, parts.length ? parts.join(" ") : "Air", points);
 }
@@ -182,35 +177,28 @@ function gradient(level: Level, x: number, z: number): [number, number] {
 
 /** One fixed step on `level` (the plaza unless told otherwise). Mutates and returns `s`. */
 export function step(s: State, inp: Input, level: Level = plaza): State {
-  const tune = TUNE[s.mode];
-  const car = s.mode === "car";
+  const tune = TUNE;
   const pressed = inp.jump && !s.prevJump;
   const flipPressed = inp.flip && !s.prevFlip;
   const flick = inp.flick ?? (flipPressed ? "kickflip" : null);
   const flickPressed = flick !== null && (!inp.flick || !s.prevFlick);
   s.prevJump = inp.jump; s.prevFlip = inp.flip; s.prevFlick = inp.flick !== null;
   s.t += DT;
-  s.firing = { rear: false, lift: false, spin: 0 };
+  s.firing = { rear: false, lift: false, spin: 0, roll: 0 };
 
   if (s.chainT > 0 && !s.air && s.grind < 0 && (s.chainT -= DT) <= 0) s.chain = 0; // the clock only runs on the ground
   if (s.bail > 0) {
     s.bail -= DT;
     s.plateDown = false;
     s.fan = false;
-    if (car && !s.air) s.tank = Math.min(1, s.tank + REFILL * DT);
     return s;
   }
 
   const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw);
-  const thrust = (kind: keyof typeof DRAIN) => {
-    if (!car || s.tank <= 0) return false;
-    s.tank = Math.max(0, s.tank - DRAIN[kind] * DT);
-    return true;
-  };
-  const boosting = inp.boost && thrust("boost");
-  s.firing.rear = boosting;
-  s.plateDown = boosting || (s.plateDown && inp.boost);
-  s.fan = car && inp.fan && thrust("fan");
+  if (s.jetT > 0) { s.jetT = Math.max(0, s.jetT - DT); s.firing.lift = true; } // an ollie's pop, a landing's cushion
+  const boosting = inp.boost;
+  s.plateDown = boosting;
+  s.fan = inp.fan;
 
   if (s.grind >= 0) {
     const r = level.rails[s.grind];
@@ -222,6 +210,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     const t = onRail(r, s.x, s.z).t;
     s.y = railY(r, t);
     if (Math.abs(s.balance) >= 1) { s.y = level.height(s.x, s.z); bail(s, `Bail: fell off the ${ledge ? "ledge" : "rail"}`); return s; }
+    s.firing.rear = s.speed > 1; // the jets hold the slide
     if (pressed || t < 0 || t > 1) {
       if (s.grindTime > 0.2) award(s, (ledge ? LEDGE_NAME : GRIND_NAME)[s.grindKind], Math.round(s.grindTime * GRIND_POINTS[s.grindKind]));
       s.grind = -1;
@@ -233,7 +222,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
   }
 
   if (!s.air) {
-    const top = s.fan ? tune.top * ROADSTER.fanTop : boosting ? BOOST_TOP : !car && inp.boost ? tune.top * 1.5 : tune.top; // pumping can carry a board past its pushing speed
+    const top = s.fan ? tune.top * JETS.fanTop : boosting ? BOOST_TOP : tune.top;
     s.speed += inp.throttle * tune.accel * DT + (boosting ? BOOST * DT : 0);
     if (!inp.throttle && !boosting) s.speed *= 1 - 0.6 * DT;
     s.speed = clamp(s.speed, -top * 0.5, top);
@@ -243,14 +232,14 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     const pitched = Math.atan(along) - s.pitch;
     s.pitch = Math.atan(along); s.roll = Math.atan(across);
     // pumping: weight the board as the floor curves up under it and the curve gives back speed
-    if (!car && inp.boost) s.speed += dir * PUMP * Math.abs(s.speed) * Math.max(0, pitched * dir);
-    if (car) s.yaw += inp.steer * tune.turn * DT * Math.min(1, Math.abs(s.speed) / 3) * dir;
-    else { // a board carves: weight over the trucks, tighter when slow, and it falls toward downhill
+    if (inp.boost) s.speed += dir * PUMP * Math.abs(s.speed) * Math.max(0, pitched * dir);
+    { // the board carves: weight over the trucks, tighter when fast, and it falls toward downhill
       const load = Math.abs(s.speed) / tune.top;
       s.yaw += inp.steer * tune.turn * DT * Math.min(1, Math.abs(s.speed) / 3) * dir / (1 + CARVE * load);
       s.yaw -= DRIFT * across * DT * Math.min(1, Math.abs(s.speed) / 3) * dir;
       s.speed *= 1 - CARVE_DRAG * Math.abs(inp.steer) * load * DT;
     }
+    s.firing.rear = boosting || (inp.throttle > 0 && s.speed < tune.top);
 
     const nx = s.x + Math.sin(s.yaw) * s.speed * DT, nz = s.z + Math.cos(s.yaw) * s.speed * DT;
     const dist = Math.abs(s.speed * DT);
@@ -261,7 +250,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     let prev = s.y;
     for (let i = 1; i <= n; i++) {
       const h = level.height(s.x + ((nx - s.x) * i) / n, s.z + ((nz - s.z) * i) / n);
-      if (h - prev > Math.max(s.fan ? ROADSTER.fanStep : STEP, (dist / n) * MAX_SLOPE)) { // the fan sucks it up a kerb or box side
+      if (h - prev > Math.max(s.fan ? JETS.fanStep : STEP, (dist / n) * MAX_SLOPE)) { // the fan sucks it up a kerb or box side
         if (Math.abs(s.pitch) < WALL || s.pitch * dir < 0 || s.vy < 0.5 * Math.abs(s.speed)) return crash(s, null);
         // already climbing a curve and it goes vertical: leave the wall along its face, up past the coping
         const v = Math.abs(s.speed), c = Math.cos(s.pitch);
@@ -285,28 +274,28 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       s.vy = (h - s.y) / DT;
       s.y = h;
     }
-    if (!s.air && pressed && !car) { s.vy = 7; takeOff(s); }
-    if (!s.air && inp.jump && car && s.tank > 0 && !s.fan) { s.vy = Math.max(s.vy, 2); takeOff(s); }
-    if (!s.air && car && !boosting && !s.fan) s.tank = Math.min(1, s.tank + REFILL * DT);
+    if (!s.air && pressed) { s.vy = 7; s.jetT = JETS.pop; takeOff(s); }
   }
 
   if (s.air) {
     s.airTime += DT;
-    s.vy -= (G + (s.fan ? ROADSTER.fanPull : 0)) * DT;
-    if (car && inp.jump && thrust("lift")) { s.vy += LIFT * DT; s.firing.lift = true; }
-    if (boosting) { s.vx += fx * BOOST * DT; s.vz += fz * BOOST * DT; }
-    if (inp.steer && (!car || thrust("spin"))) {
+    s.vy -= (G + (s.fan ? JETS.fanPull : 0)) * DT;
+    if (boosting) { s.vx += fx * BOOST * DT; s.vz += fz * BOOST * DT; s.firing.rear = true; }
+    if (inp.steer) {
       const w = inp.steer * tune.airSpin * DT;
       s.yaw += w; s.spun += w;
-      if (car) s.firing.spin = inp.steer > 0 ? 1 : -1;
+      s.firing.spin = inp.steer > 0 ? 1 : -1;
     }
-    if (!car && flickPressed && flick && s.flipT <= 0) { s.flipT = FLICK_TIME; s.flipKind = flick; }
-    if (s.flipT > 0) { s.flipT -= DT; if (s.flipT <= 0) { s.flipT = 0; s.tricks.push(s.flipKind); } }
+    if (flickPressed && flick && s.flipT <= 0) { s.flipT = FLICK_TIME; s.flipKind = flick; }
+    if (s.flipT > 0) {
+      if (s.flipKind === "shove-it") s.firing.spin = 1; // the nose jets turn it
+      else { s.firing.lift = true; s.firing.roll = s.flipKind === "kickflip" ? 1 : -1; } // the corners fire unevenly
+      s.flipT -= DT; if (s.flipT <= 0) { s.flipT = 0; s.tricks.push(s.flipKind); } }
     const hit = hitObstacle(level, s.x + s.vx * DT, s.z + s.vz * DT, s.y + s.vy * DT);
     if (hit) { s.vx = s.vz = 0; s.speed = 0; } // thrown against the trunk: drop down it
     s.x += s.vx * DT; s.y += s.vy * DT; s.z += s.vz * DT;
 
-    if (!car && s.vy < 0) { // dropping onto a rail starts a grind
+    if (s.vy < 0) { // dropping onto a rail starts a grind
       const i = level.rails.findIndex((r) => {
         const o = onRail(r, s.x, s.z);
         return o.off < 0.45 && o.t > 0 && o.t < 1 && Math.abs(s.y - railY(r, o.t)) < 0.25;
