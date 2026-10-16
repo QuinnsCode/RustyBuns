@@ -14,6 +14,7 @@ export const oldFaithful: ParkSpec = {
   blurb: "A bowl where the geyser blows, a boardwalk of bars along the basin, and a hop over a steaming vent.",
   zone: "old-faithful",
   fill: { lines: 8 },
+  relief: 0.7, // the basin is flat: at the default relief no slope is steep enough for a ribbon
   sites: [
     { parts: [geyserCone({ x: -130, z: 100 }, { r: 8, h: 2.4 })] },
     { parts: [rollers({ x: -60, z: 120, yaw: E }, { w: 8, n: 5, period: 7, h: 0.8 })] },
