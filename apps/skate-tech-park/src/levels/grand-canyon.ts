@@ -8,6 +8,7 @@ const E = Math.PI / 2;
 
 export const grandCanyon: ParkSpec = {
   id: "grand-canyon",
+  weather: "dust",
   name: "Grand Canyon",
   blurb: "Build speed across the South Rim, hit the lip at Mather Point and clear the first drop into the canyon.",
   zone: "grand-canyon",

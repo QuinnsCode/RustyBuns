@@ -9,6 +9,7 @@ const vent = gap({ x: 56, z: 75, yaw: E }, { name: "Geyser Hop", span: 30, h: 2.
 
 export const oldFaithful: ParkSpec = {
   id: "old-faithful",
+  weather: "overcast",
   name: "Old Faithful Bowl",
   blurb: "A bowl where the geyser blows, a boardwalk of bars along the basin, and a hop over a steaming vent.",
   zone: "old-faithful",

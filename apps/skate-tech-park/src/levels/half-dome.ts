@@ -7,6 +7,7 @@ const E = Math.PI / 2, W = -Math.PI / 2;
 
 export const halfDome: ParkSpec = {
   id: "half-dome",
+  weather: "snow",
   name: "Half Dome",
   blurb: "Ride up the dome's east shoulder, cross the crest and fly off the sheer west face.",
   zone: "half-dome",

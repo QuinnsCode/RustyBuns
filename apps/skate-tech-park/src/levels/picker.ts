@@ -10,11 +10,14 @@ import { trackRun, type Run } from "./goals.ts";
 import { LEVELS, needsStartScreen, pick } from "./index.ts";
 import { terrainCanvas } from "./thumb.ts";
 import type { Goal, ParkLevel } from "./park.ts";
+import { moodFor } from "../render/weather.ts";
 
 const entry = pick(location.search);
 export const levelId = entry.id;
 export const level: Level | ParkLevel = entry.load();
 export const park = "goals" in level;
+/** The air over this level: its own weather, or `?weather=` (rain, snow, storm, dusk...). */
+export const mood = moodFor(location.search, park ? (level as ParkLevel).weather : undefined);
 
 /** Where a ride starts: the spawn named "skate", else the first. The skin never moves the start. */
 export function spawn(l: Level) {
@@ -68,7 +71,7 @@ export function mountLevelUi(scene: Scene) {
   if (!park) return { reset() {}, update(_s: State) {} };
 
   const p = level as ParkLevel, rings = props(p);
-  scene.add(groundMesh(p), rings.group);
+  scene.add(groundMesh(p, mood), rings.group);
   if (scene.fog instanceof Fog) { scene.fog.near = 120; scene.fog.far = 420; } // the park is a few hundred metres across
   const panel = document.createElement("ul");
   panel.className = "goals";

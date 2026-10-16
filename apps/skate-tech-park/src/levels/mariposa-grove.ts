@@ -12,6 +12,7 @@ const giant = gap({ x: 50, z: 30 }, { name: "Fallen Giant", span: 30, h: 2.4, w:
 
 export const mariposaGrove: ParkSpec = {
   id: "mariposa-grove",
+  weather: "mist",
   name: "Mariposa Grove",
   blurb: "Skate the needle between the Faithful Couple and the Clothespin, and jump the fallen giant.",
   zone: "mariposa-grove",

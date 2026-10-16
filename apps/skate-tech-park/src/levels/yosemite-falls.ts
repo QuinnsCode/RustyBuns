@@ -9,6 +9,7 @@ const hop = gap({ x: 150, z: 80, yaw: E }, { name: "Valley Hop", span: 30, h: 2.
 
 export const yosemiteFalls: ParkSpec = {
   id: "yosemite-falls",
+  weather: "rain",
   name: "Yosemite Falls",
   blurb: "Build speed on the shelf above the falls and clear the drop, then skate the valley floor.",
   zone: "yosemite-falls",

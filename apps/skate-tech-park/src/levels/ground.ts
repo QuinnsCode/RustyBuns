@@ -1,28 +1,62 @@
 // What a park level looks like beyond its pieces and rails: the real ground as a mesh, the sequoias,
 // and the pickups. Sampled from the level, so it needs nothing the sim doesn't already know.
 import * as THREE from "three";
+import type { Mood } from "../render/weather.ts";
 import type { Landmark, ParkLevel } from "./park.ts";
 
 const STEP = 4;
+const DETAIL = 7; // metres per tile of the ground's grain
 
-export function groundMesh(level: ParkLevel): THREE.Mesh {
+/** A grayscale grain (blades, grit, mottling) that multiplies the vertex colours, so the ground isn't flat paint. */
+function grain() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#cfcfcf";
+  g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 70; i++) { // soft patches
+    const x = Math.random() * 256, y = Math.random() * 256, r = 14 + Math.random() * 40, v = 150 + Math.random() * 105;
+    const grad = g.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, `rgba(${v},${v},${v},0.35)`);
+    grad.addColorStop(1, `rgba(${v},${v},${v},0)`);
+    g.fillStyle = grad;
+    g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  for (let i = 0; i < 9000; i++) { // blades and grit
+    const v = 120 + Math.random() * 135;
+    g.fillStyle = `rgba(${v},${v},${v},0.5)`;
+    g.fillRect(Math.random() * 256, Math.random() * 256, 1, 1 + Math.random() * 3);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
+export function groundMesh(level: ParkLevel, mood?: Pick<Mood, "wet" | "snow">): THREE.Mesh {
   const R = level.ground.R, n = Math.round((2 * R) / STEP) + 1;
-  const pos = new Float32Array(n * n * 3), col = new Float32Array(n * n * 3), idx: number[] = [];
-  const grass = new THREE.Color(0x6f8250), rock = new THREE.Color(0xbfb8ab), c = new THREE.Color();
+  const pos = new Float32Array(n * n * 3), uv = new Float32Array(n * n * 2), col = new Float32Array(n * n * 3), idx: number[] = [];
+  const wet = mood?.wet ?? 0, snow = mood?.snow ?? 0;
+  const grass = new THREE.Color(0x6f8250).multiplyScalar(1 - 0.35 * wet), rock = new THREE.Color(0xbfb8ab).multiplyScalar(1 - 0.3 * wet), white = new THREE.Color(0xf2f6fb), c = new THREE.Color();
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
     const x = -R + i * STEP, z = -R + j * STEP, h = level.ground.height(x, z), k = (j * n + i) * 3;
     pos.set([x, h, z], k);
+    uv.set([x / DETAIL, z / DETAIL], (j * n + i) * 2);
     const slope = Math.hypot(level.ground.height(x + 1, z) - level.ground.height(x - 1, z), level.ground.height(x, z + 1) - level.ground.height(x, z - 1)) / 2;
     c.copy(grass).lerp(rock, Math.min(1, Math.max(Math.max(0, slope - 0.6) * 2.5, (h - level.granite) / 12))); // steep ground is bare granite
+    const patch = 0.5 + 0.5 * Math.sin(x * 0.11 + 1.7) * Math.cos(z * 0.09), flat = 1 - Math.min(1, slope * 1.4); // snow settles in hollows and on flats, and blows off steep rock
+    c.lerp(white, Math.min(1, snow * (0.55 + 0.45 * patch) * (0.35 + 0.65 * flat)));
     col.set([c.r, c.g, c.b], k);
     if (i < n - 1 && j < n - 1) { const a = j * n + i; idx.push(a, a + n, a + 1, a + 1, a + n, a + n + 1); }
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
   geo.setIndex(idx);
   geo.computeVertexNormals();
-  const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
+  const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, map: grain(), roughness: 1 - 0.6 * wet, metalness: 0 }));
   m.receiveShadow = true;
   return m;
 }
