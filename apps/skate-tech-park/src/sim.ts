@@ -232,10 +232,10 @@ export function tumble(s: Pick<State, "bail" | "tumbleDir">): { roll: number; ho
   return { roll: s.tumbleDir * LIE * (1 - ease((u - 0.75) / 0.25)), hop: 0 };
 }
 
-/** Run into something solid: lose most of the speed, and bail if it was fast and the thing was worth a name. */
+/** Run into something solid: stop against it (no rebound, so pushing on never jitters the board back and forth), and bail if it was fast and the thing was worth a name. */
 function crash(s: State, name: string | null) {
   if (name && Math.abs(s.speed) > 6 * T) { bail(s, name); s.vx = s.vz = 0; return s; }
-  s.speed *= -0.2;
+  s.speed = 0;
   return s;
 }
 
