@@ -6,6 +6,7 @@ import { LEVELS } from "../src/levels/index.ts";
 import { onRail } from "../src/level.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { Chase, FOV } from "../src/render/chase.ts";
+import { DECK } from "../src/models.ts";
 import { Scenery, scatter } from "../src/render/scenery.ts";
 import { sky } from "../src/render/sky.ts";
 import { IDLE, start, step } from "../src/sim.ts";
@@ -22,6 +23,7 @@ test.each(parks.map((e) => [e.name, e.id]))("%s: scenery is seeded and keeps off
     for (const r of park.rails) { const o = onRail(r, s.x, s.z); expect(o.t < -0.05 || o.t > 1.05 || o.off >= 3).toBe(true); }
     for (const sp of park.spawns) expect(Math.hypot(sp.x - s.x, sp.z - s.z)).toBeGreaterThan(11);
   }
+  for (const s of spots) expect(s.size).toBeLessThan(DECK.length / 2); // every pine and rock is a toy beside the board
   let calls = 0;
   new Scenery(spots).group.traverse((o) => { if ((o as THREE.Mesh).isMesh) calls++; });
   expect(calls).toBeLessThanOrEqual(2); // every pine, one draw call; every rock, one
@@ -32,7 +34,7 @@ test("a pine shrinks away as the rider nears it, and grows back when they leave"
   const spots = scatter(level, level.ground), scenery = new Scenery(spots);
   const i = spots.filter((s) => s.kind === "pine").length >> 1, pine = spots.filter((s) => s.kind === "pine")[i]!;
   expect(scenery.scaleOf("pine", i)).toBeCloseTo(1);
-  scenery.update([{ x: pine.x + 1, z: pine.z }]);
+  scenery.update([{ x: pine.x + 0.3, z: pine.z }]);
   expect(scenery.scaleOf("pine", i)).toBeLessThan(0.1);
   scenery.update([{ x: pine.x + 40, z: pine.z }]);
   expect(scenery.scaleOf("pine", i)).toBeCloseTo(1);
