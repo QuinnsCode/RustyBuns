@@ -621,9 +621,9 @@ function hud(game: Game, aimingAt: Block | null) {
   // A battle won on downs counts down.
   $("clock").textContent = clock(game.mode && game.mode !== "coop" ? Math.max(0, BATTLE_SECONDS - game.time) : game.time);
   const ride = game.vehicles.find((v) => v.id === you.vehicle), near = !ride && you.alive ? game.boardable(you) : null;
-  $("stance").textContent = game.mode && !you.alive ? "down: back in a moment" : ride ? `${vehicleName(ride.kind)} ${Math.ceil((ride.hp / ride.maxHp) * 100)}%` : you.burn > 0 ? "on fire: roll!" : you.reload > 0 ? "reloading" : you.prone ? "prone" : you.crouch ? "crouched" : "";
+  $("stance").textContent = game.mode && !you.alive ? "down: back in a moment" : ride ? `${vehicleName(ride.kind)} ${Math.ceil((ride.hp / ride.maxHp) * 100)}%${ride.kind === "roadster" ? ` · thrust ${Math.round(ride.fuel * 100)}%` : ""}` : you.burn > 0 ? "on fire: roll!" : you.reload > 0 ? "reloading" : you.prone ? "prone" : you.crouch ? "crouched" : "";
   $("stance").classList.toggle("hot", you.burn > 0 || (!!ride && ride.hp < ride.maxHp * 0.3));
-  $("prompt").textContent = near ? `E · get in the ${vehicleName(near.kind)}` : ride ? `E · get out${ride.kind === "heli" ? " · Space up · C down · right click rockets" : ""}` : "";
+  $("prompt").textContent = near ? `E · get in the ${vehicleName(near.kind)}` : ride ? `E · get out${ride.kind === "heli" ? " · Space up · C down · right click rockets" : " · hold Space for thrusters"}` : "";
   // Kills, and what the next streak brings.
   const next = STREAKS.find((st) => st.kills > game.kills);
   $("kills").textContent = `${game.kills} kills${next ? ` · ${vehicleName(next.kind)} at ${next.kills}` : ""}`;

@@ -125,34 +125,68 @@ describe("killstreak vehicles", () => {
     return { g, guards };
   }
 
-  test("15 kills drops a buggy, 25 a helicopter", () => {
+  test("15 kills drops a rocket roadster, 25 a helicopter", () => {
     const { g, guards } = streaky();
     const seen: string[] = [];
     for (let i = 0; i < 25; i++) g.hurt(guards[i]!, 1e9, 0);
     for (const e of g.events) if (e.kind === "streak") seen.push(`${e.kills}:${e.vehicle}`);
     expect(seen).toEqual(STREAKS.map((s) => `${s.kills}:${s.kind}`));
-    expect(g.vehicles.map((v) => v.kind)).toEqual(["buggy", "heli"]);
+    expect(g.vehicles.map((v) => v.kind)).toEqual(["roadster", "heli"]);
   });
 
-  test("get in the buggy, drive it, run a guard over, get out", () => {
+  test("get in the roadster, drive it, run a guard over, get out", () => {
     const { g, guards } = streaky();
     for (let i = 0; i < 15; i++) g.hurt(guards[i]!, 1e9, 0);
-    const buggy = g.vehicles[0]!, you = g.you();
+    const car = g.vehicles[0]!, you = g.you();
     run(g, 2);
-    expect(buggy.y).toBeCloseTo(0, 1);
-    Object.assign(you, { x: buggy.x + 1, z: buggy.z });
+    expect(car.y).toBeCloseTo(0, 1);
+    Object.assign(you, { x: car.x + 1, z: car.z });
     g.step(1 / 60, { ...idle, use: true });
-    expect(you.vehicle).toBe(buggy.id);
+    expect(you.vehicle).toBe(car.id);
     const victim = guards[20]!;
-    Object.assign(victim, { x: buggy.x, z: buggy.z - 25, y: 0 });
+    Object.assign(victim, { x: car.x, z: car.z - 25, y: 0 });
     const kills = g.kills;
-    run(g, 2.5, { forward: 1, yaw: buggy.yaw });
-    expect(buggy.z).toBeLessThan(-10);
+    run(g, 2.5, { forward: 1, yaw: car.yaw });
+    expect(car.z).toBeLessThan(-10);
     expect(victim.alive).toBe(false);
     expect(g.kills).toBe(kills + 1);
     g.step(1 / 60, { ...idle, use: true });
     expect(you.vehicle).toBe(-1);
-    expect(buggy.driver).toBe(-1);
+    expect(car.driver).toBe(-1);
+  });
+
+  test("the roadster's thrusters lift it and push it sideways until they run dry, then fill on the ground", () => {
+    const { g, guards } = streaky();
+    for (let i = 0; i < 15; i++) g.hurt(guards[i]!, 1e9, 0);
+    const car = g.vehicles[0]!, you = g.you();
+    run(g, 2);
+    Object.assign(you, { x: car.x + 1, z: car.z });
+    g.step(1 / 60, { ...idle, use: true });
+    const x0 = car.x;
+    // Looking down -z, D pushes it toward +x.
+    run(g, 1, { up: true, right: 1, yaw: 0 });
+    expect(car.burn).toBe(true);
+    expect(car.y).toBeGreaterThan(3);
+    expect(car.x - x0).toBeGreaterThan(5);
+    run(g, 2.2, { up: true });
+    expect(car.fuel).toBe(0);
+    expect(car.burn).toBe(false);
+    run(g, 3);
+    expect(car.y).toBeCloseTo(0, 1);
+    expect(car.fuel).toBeGreaterThan(0.2);
+  });
+
+  test("a roadster half in a file drives back out of it", () => {
+    const { g, guards } = streaky();
+    for (let i = 0; i < 15; i++) g.hurt(guards[i]!, 1e9, 0);
+    const car = g.vehicles[0]!, you = g.you();
+    run(g, 2);
+    g.map.blocks.push({ path: "big.ts", lines: 400, compound: -1, x: car.x + 1.5, z: car.z, y: 0, w: 2, d: 6, h: 4 });
+    Object.assign(you, { x: car.x - 1, z: car.z });
+    g.step(1 / 60, { ...idle, use: true });
+    const z0 = car.z;
+    run(g, 1.5, { forward: 1, yaw: car.yaw });
+    expect(z0 - car.z).toBeGreaterThan(8);
   });
 
   test("the helicopter climbs and soaks hits; wrecked, it throws you clear", () => {

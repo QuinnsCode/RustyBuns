@@ -6,7 +6,7 @@
 // Guns fire from a magazine and have to be reloaded (R, or by themselves when it runs dry).
 // What you carry is your role (roles.ts), picked for your next life. Steep ground is slow
 // to climb, and too steep and you slide. Build artifacts (barrels) in the yards blow up
-// when shot, setting each other off. Down 15 guards and a buggy drops in; 25, an attack
+// when shot, setting each other off. Down 15 guards and a rocket roadster drops in; 25, an attack
 // helicopter (vehicles.ts).
 // The files are the cover, and they don't last: blasts, fire and bullets delete their
 // lines, a file sinks as it loses them, and one with none left is gone.
@@ -25,7 +25,7 @@ import { BRANCH_RADIUS, HEAD_RADIUS, OVERRUN, type Mission } from "./missions.ts
 import { CLIFF, slope, wet, type Terrain } from "./terrain.ts";
 import { ORDER, splashDamage, WEAPONS, type Weapon, type WeaponId } from "./weapons.ts";
 import { ROLES, type RoleId } from "./roles.ts";
-import { BOARD_REACH, HELI_CEILING, HELI_FLOOR, RUN_OVER, STREAKS, VEHICLES, type Vehicle, type VehicleKind } from "./vehicles.ts";
+import { BOARD_REACH, HELI_CEILING, HELI_FLOOR, RUN_OVER, STREAKS, THRUST_LIFT, THRUST_REFILL, THRUST_SECONDS, VEHICLES, type Vehicle, type VehicleKind } from "./vehicles.ts";
 
 /** "you" are the players on their own or side by side; "ours" and "theirs" the two sides of a team battle; "conflict" the guards. */
 export type Team = "you" | "conflict" | "ours" | "theirs";
@@ -181,7 +181,7 @@ export interface Input {
   /** Put a fresh magazine in; get in or out of a vehicle (edge-triggered). */
   reload?: boolean;
   use?: boolean;
-  /** Held: a helicopter climbs, or drops. */
+  /** Held: a helicopter climbs, or drops; a roadster fires its thrusters. */
   up?: boolean;
   down?: boolean;
   /** What the crosshair is on; shots go from the muzzle to here. Without it, straight along yaw and pitch. */
@@ -1096,13 +1096,14 @@ export class Game {
   private dropVehicle(kind: VehicleKind) {
     const you = this.you(), f = fwd(you.yaw), R = this.terrain.R - 4;
     let x = you.x + f.x * 6, z = you.z + f.z * 6;
-    // Not on top of one already down: further off to the right.
-    for (let i = 0; i < 4 && this.vehicles.some((v) => Math.hypot(v.x - x, v.z - z) < 6); i++) x -= f.z * 6, z += f.x * 6;
+    // Not on top of one already down, nor in a file's side: further off to the right.
+    const g = (x: number, z: number) => this.ground(x, z, Infinity);
+    for (let i = 0; i < 8 && (this.vehicles.some((v) => Math.hypot(v.x - x, v.z - z) < 6) || this.filesAt(x, z, g(x, z)).length); i++) x -= f.z * 3, z += f.x * 3;
     const d = Math.hypot(x, z);
     if (d > R) x *= R / d, z *= R / d;
     const spec = VEHICLES[kind];
     // It comes down out of the sky beside you.
-    this.vehicles.push({ id: this.nextId++, kind, x, y: this.ground(x, z, Infinity) + (kind === "heli" ? 30 : 14), z, vx: 0, vy: 0, vz: 0, yaw: you.yaw, hp: spec.hp, maxHp: spec.hp, driver: -1, alive: true, cd: 0, rocketCd: 0, odo: 0 });
+    this.vehicles.push({ id: this.nextId++, kind, x, y: this.ground(x, z, Infinity) + (kind === "heli" ? 30 : 14), z, vx: 0, vy: 0, vz: 0, yaw: you.yaw, hp: spec.hp, maxHp: spec.hp, driver: -1, alive: true, cd: 0, rocketCd: 0, odo: 0, fuel: 1, burn: false });
     this.events.push({ kind: "streak", vehicle: kind, kills: this.kills });
   }
 
@@ -1137,11 +1138,11 @@ export class Game {
     const spec = VEHICLES[v.kind];
     s.yaw = input.yaw, s.pitch = input.pitch;
     v.cd = Math.max(0, v.cd - dt), v.rocketCd = Math.max(0, v.rocketCd - dt);
-    if (v.kind === "buggy") this.driveBuggy(v, input, dt, s.id);
+    if (v.kind === "roadster") this.driveRoadster(v, input, dt, s.id);
     else this.flyHeli(v, input, dt);
     // The driver rides along.
-    Object.assign(s, { x: v.x, y: v.y + (v.kind === "buggy" ? 0.55 : 0.9), z: v.z, vx: v.vx, vy: 0, vz: v.vz, grounded: true, roll: 0 });
-    const top = { x: v.x, y: v.y + (v.kind === "buggy" ? 1.9 : 0.6), z: v.z };
+    Object.assign(s, { x: v.x, y: v.y + (v.kind === "roadster" ? 0.35 : 0.9), z: v.z, vx: v.vx, vy: 0, vz: v.vz, grounded: true, roll: 0 });
+    const top = { x: v.x, y: v.y + (v.kind === "roadster" ? 1.5 : 0.6), z: v.z };
     if (input.fire && v.cd <= 0) {
       this.shoot(s, spec.gun, top, input.aim, 0.01);
       v.cd = spec.gunCd;
@@ -1155,35 +1156,56 @@ export class Game {
     }
   }
 
-  private driveBuggy(v: Vehicle, input: Input, dt: number, driver: number) {
-    const spec = VEHICLES.buggy, f = fwd(v.yaw);
-    let speed = v.vx * f.x + v.vz * f.z;
+  private driveRoadster(v: Vehicle, input: Input, dt: number, driver: number) {
+    const spec = VEHICLES.roadster, f = fwd(v.yaw);
     const onGround = v.y <= this.terrain.height(v.x, v.z) + 0.1;
-    if (onGround) {
+    v.burn = !!input.up && v.fuel > 0;
+    v.fuel = v.burn ? Math.max(0, v.fuel - dt / THRUST_SECONDS) : onGround ? Math.min(1, v.fuel + dt / THRUST_REFILL) : v.fuel;
+    if (v.burn) {
+      // The thrusters hold it up and push it any way you steer against where you look, and turn it to face there.
+      const l = fwd(input.yaw), r = { x: -l.z, z: l.x };
+      let mx = l.x * input.forward + r.x * input.right, mz = l.z * input.forward + r.z * input.right;
+      const m = Math.hypot(mx, mz), k = Math.min(1, 3 * dt);
+      if (m > 1) mx /= m, mz /= m;
+      v.vx += (mx * spec.thrust! - v.vx) * k, v.vz += (mz * spec.thrust! - v.vz) * k;
+      v.vy += ((input.down || input.crouch ? -2 : THRUST_LIFT) - v.vy) * k;
+      v.yaw += (((input.yaw - v.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI) * Math.min(1, 4 * dt);
+    } else if (onGround) {
+      let speed = v.vx * f.x + v.vz * f.z;
       const grade = (this.terrain.height(v.x + f.x * 1.5, v.z + f.z * 1.5) - this.terrain.height(v.x, v.z)) / 1.5 * Math.sign(speed || input.forward || 1);
       const target = input.forward > 0 ? spec.top * input.forward * climb(grade * 0.5) : input.forward < 0 ? -8 : 0;
       const a = (input.forward ? spec.accel : 9) * dt;
       speed += Math.max(-a, Math.min(a, target - speed));
       // Steering bites harder the faster it goes, and reverses backing up.
       v.yaw -= input.right * 2.1 * Math.max(-1, Math.min(1, speed / 6)) * dt;
+      const g = fwd(v.yaw);
+      v.vx = g.x * speed, v.vz = g.z * speed;
     }
-    const g = fwd(v.yaw);
-    v.vx = g.x * speed, v.vz = g.z * speed;
-    const nx = v.x + v.vx * dt, nz = v.z + v.vz * dt;
+    // Off the ground with the thrusters quiet, it coasts.
+    const nx = v.x + v.vx * dt, nz = v.z + v.vz * dt, speed = Math.hypot(v.vx, v.vz);
     const here = this.terrain.height(v.x, v.z), there = this.terrain.height(nx, nz), run = Math.hypot(nx - v.x, nz - v.z);
-    // Files and cliffs stop it; a file hit at speed loses lines for it.
-    const wall = this.map.blocks.find((b) => b.h > 0 && b.y + b.h > v.y + 0.7 && Math.abs(nx - b.x) < b.w / 2 + 1.1 && Math.abs(nz - b.z) < b.d / 2 + 1.1);
-    if (wall || Math.hypot(nx, nz) > this.terrain.R - 2 || (run > 0 && (there - here) / run > CLIFF * 1.3)) {
-      if (wall && Math.abs(speed) > 4) this.wreck(wall, Math.abs(speed) * 8, driver);
+    // Files and cliffs stop it (it can fly over both); a file hit at speed loses lines for it. One it's
+    // already in, say dropped half into one, doesn't hold it: it can always drive back out.
+    const inside = this.filesAt(v.x, v.z, v.y), wall = this.filesAt(nx, nz, v.y).find((b) => !inside.includes(b));
+    if (wall || Math.hypot(nx, nz) > this.terrain.R - 2 || (run > 0 && there > v.y + 0.3 && (there - here) / run > CLIFF * 1.3)) {
+      if (wall && speed > 4) this.wreck(wall, speed * 8, driver);
       v.vx *= -0.3, v.vz *= -0.3;
-    } else v.x = nx, v.z = nz, v.odo += speed * dt;
-    this.fall(v, dt);
+    } else {
+      v.x = nx, v.z = nz;
+      if (onGround) v.odo += (v.vx * f.x + v.vz * f.z) * dt;
+    }
+    this.fall(v, dt, v.burn ? 0 : GRAVITY);
     // Run them over.
-    if (Math.abs(speed) > RUN_OVER) for (const t of this.soldiers) {
+    if (speed > RUN_OVER) for (const t of this.soldiers) {
       if (!t.alive || t.team === "you" || Math.hypot(t.x - v.x, t.z - v.z) > 1.8 || Math.abs(t.y - v.y) > 2) continue;
       t.vx += v.vx * 0.8, t.vz += v.vz * 0.8, t.vy += 6, t.grounded = false;
       this.hurt(t, t.hp + t.shield, driver);
     }
+  }
+
+  /** The files whose sides a car's body at (x, y, z) would be in. */
+  private filesAt(x: number, z: number, y: number): Block[] {
+    return this.map.blocks.filter((b) => b.h > 0 && b.y + b.h > y + 0.7 && Math.abs(x - b.x) < b.w / 2 + 1.1 && Math.abs(z - b.z) < b.d / 2 + 1.1);
   }
 
   private flyHeli(v: Vehicle, input: Input, dt: number) {
@@ -1204,8 +1226,8 @@ export class Game {
   }
 
   /** Under gravity onto the ground or a file's top; a helicopter with nobody in it settles gently. */
-  private fall(v: Vehicle, dt: number) {
-    v.vy -= (v.kind === "heli" ? 6 : GRAVITY) * dt;
+  private fall(v: Vehicle, dt: number, gravity = v.kind === "heli" ? 6 : GRAVITY) {
+    v.vy -= gravity * dt;
     v.y += v.vy * dt;
     const g = this.ground(v.x, v.z, v.y + 0.5);
     if (v.y <= g) v.y = g, v.vy = 0;
@@ -1217,6 +1239,8 @@ export class Game {
     v.x += v.vx * dt, v.z += v.vz * dt;
     this.fall(v, dt);
     if (v.kind === "heli") v.vy = Math.max(v.vy, -5);
+    // Parked, a roadster's thrusters go quiet and fill again.
+    v.burn = false, v.fuel = Math.min(1, v.fuel + dt / THRUST_REFILL);
   }
 
   private vehicleAt(p: Shot): Vehicle | null {
