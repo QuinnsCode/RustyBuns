@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test";
 import { type Level, makeLevel, piece, railY } from "../src/level.ts";
 import { quarterPipe } from "../src/levels/pieces.ts";
-import { DT, IDLE, type Input, SCALE, start, step, type State } from "../src/sim.ts";
+import { DT, IDLE, type Input, SCALE, start, step, type State, tumble } from "../src/sim.ts";
 
 const run = (s: State, seconds: number, input: (s: State) => Partial<Input>, level?: Level) => {
   for (let i = 0; i < seconds / DT; i++) step(s, { ...IDLE, ...input(s) }, level);
@@ -202,4 +202,18 @@ test("a push is gentle and tops out at a speed you can steer at, while the jets 
   const hill = makeLevel({ name: "h", pieces: [piece("ramp", "slope", 0, 0, Math.PI, 20, 400, 0, 120)], rails: [], spawns: [], bounds: { minX: -300, maxX: 300, minZ: -400, maxZ: 400 } });
   const down = run(start(0, -198, 0, hill), 10, () => ({}), hill); // heading downhill, no push at all
   expect(kmh(down)).toBeGreaterThan(75); // gravity carries it past what pushing reaches
+});
+
+test("a bad landing carries on: the rider slides and rolls across the ground, slowing, before standing up", () => {
+  const sk = start(0, -20);
+  run(sk, 2.5, (s) => ({ throttle: s.t < 1.5 ? 1 : 0, jump: s.t > 1.5 && s.t < 1.55, steer: s.air && s.spun < Math.PI / 2 ? 1 : 0 }));
+  expect(sk.bail).toBeGreaterThan(0);
+  const z0 = sk.z, v0 = Math.hypot(sk.vx, sk.vz);
+  expect(v0).toBeGreaterThan(1); // not stopped dead
+  run(sk, 0.4, () => ({}));
+  expect(Math.abs(sk.z - z0) + Math.abs(sk.x)).toBeGreaterThan(0.3);
+  expect(Math.hypot(sk.vx, sk.vz)).toBeLessThan(v0);
+  expect(Math.abs(tumble(sk).roll)).toBeGreaterThan(1.3); // mid-roll, not lying still
+  run(sk, 1.2, () => ({}));
+  expect(tumble(sk).roll).toBe(0);
 });
