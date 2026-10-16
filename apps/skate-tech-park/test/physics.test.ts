@@ -1,5 +1,5 @@
 // The board keeps its energy: a transition gives back what it takes, a landing keeps the speed along the
-// ground, and a vert wall throws the board straight up to drop back in.
+// ground, and a vert wall throws the board out over the coping.
 import { expect, test } from "bun:test";
 import { makeLevel, piece } from "../src/level.ts";
 import { halfpipe, quarterPipe } from "../src/levels/pieces.ts";
@@ -27,15 +27,14 @@ test("rolling across a halfpipe it rides wall to wall, each wall a little lower"
   expect(p[1]).toBeLessThan(p[0]); // and nothing comes for free
 });
 
-test("fast up a vert wall the board flies straight up past the coping and drops back in, riding away fakie", () => {
+test("fast up a vert wall the board keeps its speed all the way up and flies out over the coping onto the deck", () => {
   const level = flat({ pieces: quarterPipe({ x: 0, z: 0 }, { w: 6, d: 4, h: 2, deck: 3 }).pieces });
   const s = Object.assign(start(0, -12, 0, level), { speed: 15 });
   let top = 0;
-  run(s, 5, level, () => ({}), (st) => { top = Math.max(top, st.y); });
-  expect(top).toBeGreaterThan(4); // the wall is 4 m tall
-  expect(s.last?.name).not.toMatch(/Bail/);
-  expect(s.speed).toBeLessThan(-5); // rolling back out of it fast
-  expect(s.z).toBeLessThan(-10);
+  run(s, 3, level, () => ({}), (st) => { top = Math.max(top, st.y); });
+  expect(top).toBeGreaterThan(4.5); // the wall is 4 m tall, and 15 m/s still has speed to spare at the lip
+  expect(s.last?.name ?? "").not.toMatch(/Bail/);
+  expect(s.z).toBeGreaterThan(0.75); // past the coping, on the deck
 });
 
 test("a drop onto a slope rolls away with the speed the fall gave it, not just what it had across the ground", () => {
