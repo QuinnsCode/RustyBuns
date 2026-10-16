@@ -7,7 +7,7 @@ import { flatBar, funbox, gap, handrail, hip, hubba, quarterPipe, spine, stairSe
 
 const E = Math.PI / 2, W = -Math.PI / 2, N = Math.PI;
 
-const boulder = gap({ x: -10, z: 100, yaw: E }, { name: "Boulder Gap", span: 30, h: 2.4, w: 8, landH: 2, landLen: 14, reach: 40, bonus: 800 });
+const boulder = gap({ x: -10, z: 100, yaw: E }, { name: "Boulder Gap", span: 30, h: 2.4, w: 8, landH: 2, landLen: 14, reach: 55, bonus: 800 });
 
 export const elCapitan: ParkSpec = {
   id: "el-capitan",
