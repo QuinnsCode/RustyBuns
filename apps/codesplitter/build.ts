@@ -73,9 +73,14 @@ for (const name of ["mervin", "swarm"]) {
 }
 // The swarm week's data (scripts/swarm-week.ts).
 await copyFile("src/swarm-week.json", "dist/client/swarm-week.json");
+// The swarm explained with dots: its page, and the stage (src/swarm-stage.js, over swarm-sim.ts and swarm-story.ts),
+// which the landing page mounts too.
+await copyFile("src/swarm.html", "dist/client/swarm.html");
+const ss = await Bun.build({ entrypoints: ["src/swarm-stage.js"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "swarm-stage.js" });
+if (!ss.success) { for (const l of ss.logs) console.error(l); process.exit(1); }
 // The pages' security headers, the same ones the Worker puts on its answers (src/security.ts),
 // with the hashes of the pages' inline scripts: the enforced CSP runs those and no others.
-const pages = ["index.html", "play.html", "features.html", "reference.html", "mcp.html", "map.html", "mervin-watch.html", "swarm-watch.html"];
+const pages = ["index.html", "play.html", "features.html", "reference.html", "mcp.html", "map.html", "mervin-watch.html", "swarm-watch.html", "swarm.html"];
 const hashes = new Set<string>();
 for (const page of pages) for (const h of inlineScriptHashes(await readFile(`dist/client/${page}`, "utf8"))) hashes.add(h);
 // What a cold agent finds at the root (src/discover.ts): llms.txt, robots.txt and a Link header on /.

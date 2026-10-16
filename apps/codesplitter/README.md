@@ -140,6 +140,7 @@ There's no downloadable build yet; that's one command from source.
 
 ## Everything else it does
 
+- **Git at swarm speed, with dots.** `/swarm.html`, also on the landing page, is a simulation of agents getting their work into main: the old git way's one lane, merge wall and red-check wall, then codeSplitter's layers one at a time (a Durable Object, Mervin's bullet train, Ester's stations). Story mode plays it as scenes; the others are old git, layer by layer, and side by side, with faders for speed, agents, overlap and red checks.
 - **A week of the swarm, replayed.** `/swarm-watch.html` plays the week of October 7 to 14 back: 1,000 of this repo's real PRs, each a made-up agent, and what the open ones were waiting on, minute by minute. The git wall on the night of October 13 has 18 PRs stuck on conflicts at once, and the pane beside it shows the file they piled into. `bun scripts/swarm-week.ts` pulls the week (read only) and `bun scripts/swarm-readme.ts` draws the animated chart below.
 
   ![1,000 PRs in a week, one dot each](docs/swarm-week.svg)

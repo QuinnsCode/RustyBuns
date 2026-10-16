@@ -76,6 +76,7 @@
         "@babel/parser": "7.28.5",
         "@rustybuns/cli": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/util": "workspace:*",
         "better-auth": "1.7.7",
         "lucide": "0.469.0",
         "smol-toml": "1.9.0",
