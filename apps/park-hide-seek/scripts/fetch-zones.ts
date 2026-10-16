@@ -1,4 +1,4 @@
-// Builds src/zones/data/<id>.json: the real terrain around one attraction, for
+// Builds packages/terrain/src/zones/<id>.json: the real terrain around one attraction, for
 // the 3D hunt. Committed, so the game never downloads anything.
 //
 //   bun scripts/fetch-zones.ts              every zone in ZONES not on disk yet
@@ -33,7 +33,7 @@ const REAL_RADIUS = 1000;
 const N = 161;
 const ZOOM = 14;
 const TILES = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium";
-const OUT = join(import.meta.dir, "../src/zones/data");
+const OUT = join(import.meta.dir, "../../../packages/terrain/src/zones");
 
 // ---- a minimal PNG reader: 8-bit RGB/RGBA, non-interlaced (what Terrarium serves)
 function decodePng(buf: Uint8Array): { w: number; h: number; rgb: (x: number, y: number) => [number, number, number] } {

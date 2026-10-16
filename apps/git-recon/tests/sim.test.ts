@@ -4,7 +4,7 @@ import { groundAt, parsePlace, placeName, worldPx, type TileSource } from "../sr
 import { folderOf, heightOf, mapRepo, type Block, type RepoSnapshot } from "../src/sim/codemap.ts";
 import { AMMO_CRATE, fileHp, Game, HEALTH_CRATE, MAX_HEAT, HEAVY_HP, HEAVY_SHIELD, MAX_HP, MAX_SHIELD, SHIELD_DELAY, PRONE_SPEED, ROLL_TIME, scopeSway, STASH_HP, type Input, type Objective } from "../src/sim/game.ts";
 import { briefing, missionFor, OVERRUN, type Mission } from "../src/sim/missions.ts";
-import { contourStep, slope, stampTerrain, wet, withPads, type Terrain } from "../src/sim/terrain.ts";
+import { contourStep, slope, stampTerrain, wet, withPads, type Terrain } from "@rustybuns/terrain";
 import { ORDER, splashDamage, WEAPONS } from "../src/sim/weapons.ts";
 import { VOICES } from "../src/ui/audio.ts";
 

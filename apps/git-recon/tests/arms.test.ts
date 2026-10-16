@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import type { Block, CodeMap } from "../src/sim/codemap.ts";
 import { BARREL_HP, climb, Game, MAX_HP, type Input } from "../src/sim/game.ts";
 import { ROLES } from "../src/sim/roles.ts";
-import type { Terrain } from "../src/sim/terrain.ts";
+import type { Terrain } from "@rustybuns/terrain";
 import { STREAKS, VEHICLES } from "../src/sim/vehicles.ts";
 import { WEAPONS } from "../src/sim/weapons.ts";
 

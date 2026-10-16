@@ -22,7 +22,7 @@
 
 import { mapRepo, mulberry32, reachable, type Block, type CodeMap, type RepoSnapshot } from "./codemap.ts";
 import { BRANCH_RADIUS, HEAD_RADIUS, OVERRUN, type Mission } from "./missions.ts";
-import { CLIFF, slope, wet, type Terrain } from "./terrain.ts";
+import { CLIFF, slope, wet, type Terrain } from "@rustybuns/terrain";
 import { ORDER, splashDamage, WEAPONS, type Weapon, type WeaponId } from "./weapons.ts";
 import { ROLES, type RoleId } from "./roles.ts";
 import { BOARD_REACH, HELI_CEILING, HELI_FLOOR, RUN_OVER, STREAKS, THRUST_LIFT, THRUST_REFILL, THRUST_SECONDS, VEHICLES, type Vehicle, type VehicleKind } from "./vehicles.ts";

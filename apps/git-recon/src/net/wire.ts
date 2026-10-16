@@ -10,7 +10,7 @@
 
 import type { RepoSnapshot } from "../sim/codemap.ts";
 import type { GameEvent, Input, Mode, Objective, Pickup, PickupKind, Soldier, Team } from "../sim/game.ts";
-import type { ZoneData } from "../sim/terrain.ts";
+import type { ZoneData } from "@rustybuns/terrain";
 import type { VehicleKind } from "../sim/vehicles.ts";
 import { ORDER, type WeaponId } from "../sim/weapons.ts";
 

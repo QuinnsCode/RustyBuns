@@ -7,7 +7,7 @@
 //   - a file agents mostly wrote is black glass, not paper (codeSplitter's city does this); a failing check sets its compound on fire
 // The same repo on the same ground with the same seed is always the same level.
 
-import { CLIFF, slope, wet, withPads, type Pad, type Terrain } from "./terrain.ts";
+import { CLIFF, slope, wet, withPads, type Pad, type Terrain } from "@rustybuns/terrain";
 import { mulberry32 } from "@rustybuns/util";
 export { mulberry32 };
 
