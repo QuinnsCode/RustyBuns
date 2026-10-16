@@ -66,6 +66,7 @@ const CARVE_DRAG = 0.5; // a hard carve at speed scrubs this share of it per sec
 const DRIFT = 0.8; // rad/s the board falls toward downhill per unit of cross slope
 const PUMP = 0.6; // board: speed gained per radian the ground curves up ahead, as a share of speed, while pumping
 const WALL = 1; // radians: a rider this far up a curve who meets a sharper rise is on a wall, and flies off it
+const SHEER = 1.25; // radians: a face this steep (a vertical ramp, a cliff) stops a board in the air; anything gentler it lands on and climbs
 const STEP = 0.2; // a kerb or stair this low is always rideable
 
 const FLICK_POINTS: Record<Flick, number> = { kickflip: 300, heelflip: 300, "shove-it": 200 };
@@ -378,10 +379,12 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       const rise = Math.max(h - prev, wall - wallPrev);
       wallPrev = wall;
       if (rise > Math.max(s.fan ? JETS.fanStep : STEP, (dist / n) * MAX_SLOPE)) { // the fan sucks it up a kerb or box side
-        if (Math.abs(s.pitch) < WALL || s.pitch * dir < 0 || s.vy < 0.5 * Math.abs(s.speed)) return crash(s, null);
+        // (a stride can reach a vertical lip before `pitch` has caught up with it, so judge by the steepest rise seen)
+        const slope = Math.atan((h - prev) / (dist / n)), steep = Math.max(Math.abs(s.pitch), s.pitch * dir > 0.4 ? slope : 0);
+        if (steep < WALL || s.pitch * dir < 0 || s.vy < 0.2 * Math.abs(s.speed)) return crash(s, null);
         // already climbing a curve and it goes vertical: leave the wall along its face, up past the coping
-        const v = Math.abs(s.speed), c = Math.cos(s.pitch);
-        s.vx = fx * v * c * dir; s.vz = fz * v * c * dir; s.vy = v * Math.sin(Math.abs(s.pitch));
+        const v = Math.abs(s.speed), c = Math.cos(steep);
+        s.vx = fx * v * c * dir; s.vz = fz * v * c * dir; s.vy = Math.max(s.vy, v * Math.sin(steep));
         takeOff(s);
         return s;
       }
@@ -446,6 +449,15 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       }
     }
     const h = level.height(s.x, s.z);
+    if (s.y < h && s.vy > 0) {
+      const [gx, gz] = gradient(level, s.x, s.z);
+      if (Math.atan(Math.hypot(gx, gz)) >= SHEER) { // flew into a wall: the surface stops the board, it never passes through (a gentler slope is landed on below)
+        const k = (s.vy - gx * s.vx - gz * s.vz) / (1 + gx * gx + gz * gz);
+        if (k < 0) { s.vx += gx * k; s.vz += gz * k; s.vy -= k; } // keep only the part of the velocity along the surface
+        s.y = h;
+        if (s.vy > 0 && s.vy < 0.5) s.vy = 0;
+      }
+    }
     if (s.y <= h && s.vy <= 0) land(s, h);
   }
 
