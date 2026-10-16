@@ -159,7 +159,7 @@ const KIT: Make[] = [
 ];
 
 export type Works = { cell?: number; fill?: number; slope?: number; seed?: number };
-export const WORKS: Required<Works> = { cell: 34, fill: 0.95, slope: 0.2, seed: 5 };
+export const WORKS: Required<Works> = { cell: 30, fill: 0.95, slope: 0.2, seed: 5 };
 
 /** An earthwork as circles on the ground, skirt included: a long one is a line of them, so a pump track doesn't hide a whole cell. */
 export function circles(e: Earthwork) {

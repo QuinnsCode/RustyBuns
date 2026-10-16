@@ -7,7 +7,7 @@ import { heightmapTerrain, withPads, zoneData, type Terrain } from "@rustybuns/t
 import { type Bounds, type Level, makeLevel, postObstacles, type Spawn } from "../level.ts";
 import { drape, type Gap, join, lift, type Part } from "./pieces.ts";
 import { type Circle, footprint, scatter, type Scatter } from "./scatter.ts";
-import { circles, copings, layOut, paintAt, sculpt, type Earthwork, type Paint, type Works } from "./earthworks.ts";
+import { copings, layOut, paintAt, sculpt, type Earthwork, type Paint, type Works } from "./earthworks.ts";
 import { type Fill, fillContours, keepOut, type Pt } from "./ribbons.ts";
 
 /** Real terrain is shrunk this many times across (a 1 km zone becomes a ~333 m disc). One constant for the whole game. */
@@ -103,13 +103,14 @@ export function parkLevel(spec: ParkSpec, real = false): ParkLevel {
   const trees = spec.trees ?? [];
   const gaps = [...sited.gaps, ...(spec.gaps ?? [])];
   const landmarks = (spec.landmarks ?? []).flatMap(landmarkCircle);
-  // The earthworks go in after the hand-laid kit has its place, clear of it, and before anything is draped on what they leave.
-  const works = spec.earthworks === false ? [] : layOut({ bounds: spec.bounds, R: ground.R, ground: ground.height, spawns: spec.spawns, lanes: lanes(gaps, spec.spawns), taken: [...footprint(sited), ...trees, ...landmarks, ...(spec.pickups ?? []).map((p) => ({ x: p.x, z: p.z, r: 6 }))] }, spec.earthworks);
-  const land = sculpt(ground, works), cleared = works.flatMap(circles);
-  const filled = spec.fill ? fillContours(land.height, spec.bounds, [...cleared, ...keepOut({ pieces: sited.pieces, spawns: spec.spawns, gaps, trees, pickups: spec.pickups ?? [], landmarks: (spec.landmarks ?? []).flatMap((l) => (l.kind === "falls" ? [l.from, l.to] : [l])) })], spec.fill) : undefined;
-  const placed = filled ? join(sited, drape(filled.part, land.height)) : sited;
-  const spread = spec.scatter === false ? [] : scatter({ bounds: spec.bounds, R: land.R, ground: land.height, spawns: spec.spawns, lanes: lanes(gaps, spec.spawns), taken: [...footprint(placed), ...trees, ...landmarks, ...cleared] }, spec.scatter).map((p) => drape(p, land.height));
-  const parts = join(placed, drape(copings(works), land.height), ...spread);
+  const filled = spec.fill ? fillContours(ground.height, spec.bounds, keepOut({ pieces: sited.pieces, spawns: spec.spawns, gaps, trees, pickups: spec.pickups ?? [], landmarks: (spec.landmarks ?? []).flatMap((l) => (l.kind === "falls" ? [l.from, l.to] : [l])) }), spec.fill) : undefined;
+  const placed = filled ? join(sited, drape(filled.part, ground.height)) : sited;
+  // The kit scatter leaves room (under half the cells) for the earthworks, which are cut into whatever it leaves open.
+  const spread = spec.scatter === false ? [] : scatter({ bounds: spec.bounds, R: ground.R, ground: ground.height, spawns: spec.spawns, lanes: lanes(gaps, spec.spawns), taken: [...footprint(placed), ...trees, ...landmarks] }, { fill: 0.4, ...spec.scatter }).map((p) => drape(p, ground.height));
+  const kit = join(placed, ...spread);
+  const works = spec.earthworks === false ? [] : layOut({ bounds: spec.bounds, R: ground.R, ground: ground.height, spawns: spec.spawns, lanes: lanes(gaps, spec.spawns), taken: [...footprint(kit), ...trees, ...landmarks, ...(spec.pickups ?? []).map((p) => ({ x: p.x, z: p.z, r: 6 }))] }, spec.earthworks);
+  const land = sculpt(ground, works);
+  const parts = join(kit, drape(copings(works), land.height));
   const inner = makeLevel({ name: spec.name, pieces: parts.pieces, rails: parts.rails, obstacles: trees, spawns: spec.spawns, bounds: spec.bounds });
   const height = (x: number, z: number) => Math.max(land.height(x, z), inner.height(x, z));
   const obstacles = [...trees, ...postObstacles(parts.rails, height)];
