@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test";
 import { type Level, makeLevel, piece, railY } from "../src/level.ts";
 import { quarterPipe } from "../src/levels/pieces.ts";
-import { DT, IDLE, type Input, start, step, type State } from "../src/sim.ts";
+import { DT, IDLE, type Input, SCALE, start, step, type State } from "../src/sim.ts";
 
 const run = (s: State, seconds: number, input: (s: State) => Partial<Input>, level?: Level) => {
   for (let i = 0; i < seconds / DT; i++) step(s, { ...IDLE, ...input(s) }, level);
@@ -175,4 +175,13 @@ test("a skater rides up the wall, goes up past the coping and drops back down it
   expect(flew).toBe(true);
   expect(sk.last?.name).not.toMatch(/Bail/);
   expect(sk.bail).toBeLessThanOrEqual(0);
+});
+
+test("a bigger board is a bigger toy: an ollie goes SCALE times as high and hangs sqrt(SCALE) times as long", () => {
+  const sk = start(0, -20);
+  let apex = 0, hang = 0;
+  run(sk, 3, (s) => { apex = Math.max(apex, s.y); if (s.air) hang += DT; return { jump: s.t < 0.05 }; });
+  const g = 20, base = 7; // the numbers the board was cut for at SCALE 1
+  expect(apex).toBeCloseTo(SCALE * (base * base) / (2 * g), 0);
+  expect(hang).toBeCloseTo(Math.sqrt(SCALE) * (2 * base) / g, 1);
 });

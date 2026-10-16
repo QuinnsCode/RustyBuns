@@ -12,6 +12,12 @@ import { plaza } from "./levels/plaza.ts";
 export const DT = 1 / 60;
 const G = 20; // gamey gravity: snappier than 9.8
 
+/** How many times bigger the board is than the one these numbers were cut for. Lengths grow by
+ * SCALE, so under the same gravity speeds and times grow by its square root (`T`): an ollie goes
+ * SCALE times as high and hangs T times as long, and a trick takes T times as long to turn. */
+export const SCALE = 2;
+const T = Math.sqrt(SCALE);
+
 /** Which skin is drawn. step() never reads it: the same inputs give the same ride in either. */
 export type Mode = "skate" | "car";
 
@@ -29,11 +35,11 @@ export type Input = {
 
 export const IDLE: Input = { throttle: 0, steer: 0, jump: false, boost: false, flip: false, flick: null, fan: false };
 
-const TUNE = { accel: 20, top: 32, turn: 2.2, airSpin: 7 };
+const TUNE = { accel: 20, top: 32 * T, turn: 2.2 / T, airSpin: 7 / T };
 // The rocket jets, in the board's own numbers.
 export const JETS = {
   boost: 32, // m/s² from the rear jets
-  boostTop: 48,
+  boostTop: 48 * T,
   fanTop: 0.6, // the fan holds it to this share of top speed
   fanPull: 26, // m/s² extra downward in the air with the fan on
   fanStep: 1.6, // metres: with the fan on, a kerb, box side or stair this low is driven up
@@ -51,7 +57,8 @@ const WALL = 1; // radians: a rider this far up a curve who meets a sharper rise
 const STEP = 0.2; // a kerb or stair this low is always rideable
 
 const FLICK_POINTS: Record<Flick, number> = { kickflip: 300, heelflip: 300, "shove-it": 200 };
-const FLICK_TIME = 0.45;
+export const FLICK_TIME = 0.45 * T;
+const OLLIE = 7 * T; // m/s up off the tail
 const CHAIN_WINDOW = 3; // seconds on the ground between tricks before the chain ends
 const CHAIN_MAX = 8;
 
@@ -137,7 +144,7 @@ function bail(s: State, name: string) {
 
 /** Run into something solid: lose most of the speed, and bail if it was fast and the thing was worth a name. */
 function crash(s: State, name: string | null) {
-  if (name && Math.abs(s.speed) > 6) { bail(s, name); return s; }
+  if (name && Math.abs(s.speed) > 6 * T) { bail(s, name); return s; }
   s.speed *= -0.2;
   return s;
 }
@@ -215,7 +222,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       if (s.grindTime > 0.2) award(s, (ledge ? LEDGE_NAME : GRIND_NAME)[s.grindKind], Math.round(s.grindTime * GRIND_POINTS[s.grindKind]));
       s.grind = -1;
       s.vx = fx * s.speed; s.vz = fz * s.speed;
-      s.vy = pressed ? 7 : 0;
+      s.vy = pressed ? OLLIE : 0;
       takeOff(s);
     }
     return s;
@@ -235,8 +242,8 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     if (inp.boost) s.speed += dir * PUMP * Math.abs(s.speed) * Math.max(0, pitched * dir);
     { // the board carves: weight over the trucks, tighter when fast, and it falls toward downhill
       const load = Math.abs(s.speed) / tune.top;
-      s.yaw += inp.steer * tune.turn * DT * Math.min(1, Math.abs(s.speed) / 3) * dir / (1 + CARVE * load);
-      s.yaw -= DRIFT * across * DT * Math.min(1, Math.abs(s.speed) / 3) * dir;
+      s.yaw += inp.steer * tune.turn * DT * Math.min(1, Math.abs(s.speed) / (3 * T)) * dir / (1 + CARVE * load);
+      s.yaw -= DRIFT * across * DT * Math.min(1, Math.abs(s.speed) / (3 * T)) * dir;
       s.speed *= 1 - CARVE_DRAG * Math.abs(inp.steer) * load * DT;
     }
     s.firing.rear = boosting || (inp.throttle > 0 && s.speed < tune.top);
@@ -274,7 +281,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       s.vy = (h - s.y) / DT;
       s.y = h;
     }
-    if (!s.air && pressed) { s.vy = 7; s.jetT = JETS.pop; takeOff(s); }
+    if (!s.air && pressed) { s.vy = OLLIE; s.jetT = JETS.pop; takeOff(s); }
   }
 
   if (s.air) {

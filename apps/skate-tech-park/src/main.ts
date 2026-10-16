@@ -5,7 +5,7 @@ import { fingerboard, roadster, type Thruster } from "./models.ts";
 import { Plumes } from "./render/plumes.ts";
 import { Skins } from "./render/skins.ts";
 import { railY } from "./level.ts";
-import { DT, IDLE, type Input, type Mode, start, step, type State } from "./sim.ts";
+import { DT, FLICK_TIME, IDLE, type Input, type Mode, start, step, type State } from "./sim.ts";
 import { HALF } from "./levels/plaza.ts";
 import type { ParkLevel } from "./levels/park.ts";
 import { Gestures } from "./gesture.ts";
@@ -214,7 +214,7 @@ function frame(now: number) {
   rider.position.set(sim.x, sim.y, sim.z);
   rider.rotation.set(0, sim.yaw + (sim.grind >= 0 ? sim.grindOff : 0), 0);
   if (sim.bail > 0) rider.rotation.z = mode === "car" ? Math.sin(sim.bail * 30) * 0.08 : 1.3;
-  const turn = sim.flipT > 0 ? (1 - sim.flipT / 0.45) * Math.PI * 2 : 0;
+  const turn = sim.flipT > 0 ? (1 - sim.flipT / FLICK_TIME) * Math.PI * 2 : 0;
   pivot.rotation.set(0, sim.flipKind === "shove-it" ? turn / 2 : 0, sim.flipKind === "heelflip" ? -turn : sim.flipKind === "kickflip" ? turn : 0);
   pivot.position.y = PIVOT_Y[skins.current] + (sim.flipT > 0 ? 0.25 : 0);
   {
