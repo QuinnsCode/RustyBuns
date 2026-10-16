@@ -54,7 +54,8 @@ describe("a battle", () => {
   test("on every level, the two sides come in far apart and clear of the compounds", () => {
     for (const l of LEVELS) {
       const g = new Room(setup("teams", l.id)).game, ours = g.join("a"), theirs = g.join("b");
-      expect(Math.hypot(ours.x - theirs.x, ours.z - theirs.z)).toBeGreaterThan(100);
+      // Far apart, and somewhere theirs can walk from (Glacier Point's rim is a narrow shelf).
+      expect(Math.hypot(ours.x - theirs.x, ours.z - theirs.z)).toBeGreaterThan(60);
       for (const c of g.map.compounds) expect(Math.hypot(c.x - theirs.x, c.z - theirs.z) - c.r).toBeGreaterThan(15);
     }
   });
@@ -139,7 +140,7 @@ describe("the wire", () => {
   test("a snapshot goes through the binary frame and back the same", () => {
     const snap: Snap = {
       t: "snap", seq: 70_000, base: 69_998, input: 1_234, time: 12.345, status: "won", winner: "ada",
-      soldiers: [[3, 1.25, null, -80.5, null, null, null, 6.283, null, 100, null, 5, 2, null], [9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
+      soldiers: [[3, 1.25, null, -80.5, null, null, null, 6.283, null, 100, null, 5, 2, null, -0.5], [9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
       gone: [4, 7], shots: [[123_456, 3, "theirs", "push", 1.5, 2, -3.25, 110, 0, -5.5, 0.42]], spent: [200_000], stashes: [[99, 1, 2, 3]],
       cleared: [true, false], files: [["src/a.ts", 0, 0]], events: [{ kind: "cleared", compound: 1 }],
       you: { ammo: [-1, 30, 0], loaded: [-1, 12, 0], reload: 1.25, cd: 0.08, heat: 0.3, shieldT: 4, rollCd: 0 },
@@ -154,9 +155,9 @@ describe("the wire", () => {
 
   test("every kind of event goes through the frame and back, to the centimetre", () => {
     const events: GameEvent[] = [
-      { kind: "fire", id: 3, weapon: "push" }, { kind: "hit", target: 3, by: -1, damage: 12.5, shield: true },
+      { kind: "fire", id: 3, weapon: "push" }, { kind: "hit", target: 3, by: -1, damage: 12.5, shield: true, head: false },
       { kind: "shield", id: 3, state: "charging" }, { kind: "boom", x: 1.25, y: -2, z: 300.5, r: 4.5 }, { kind: "down", id: 3, by: 9 },
-      { kind: "respawn", id: 3, lives: -1 }, { kind: "cleared", compound: 2 }, { kind: "pickup", id: 3, item: "reset" },
+      { kind: "respawn", id: 3, lives: -1 }, { kind: "chute", id: 3, open: true }, { kind: "cleared", compound: 2 }, { kind: "pickup", id: 3, item: "reset" },
       { kind: "blamed", id: 4 }, { kind: "reverted", id: 4 }, { kind: "stashed", x: 1, y: 2, z: 3 }, { kind: "impact", x: 0.01, y: 0, z: -9.99, weapon: "fetch" },
       { kind: "razed", path: "src/ünïcode.ts", lines: 120, by: 3, x: 1, y: 0, z: 2, w: 4.5, h: 12, d: 6 },
       { kind: "objective", text: "main held" }, { kind: "reload", id: 3, weapon: "add" }, { kind: "streak", vehicle: "heli", kills: 5 },
@@ -171,7 +172,7 @@ describe("the wire", () => {
 
   test("inputs are cleaned: numbers in range, real weapons, a finite aim", () => {
     expect(cleanInput({ right: 9, forward: "x", yaw: 1, pitch: 9, fire: 1, weapon: "rm -rf", aim: { x: 1, y: NaN, z: 0 } }))
-      .toEqual({ right: 1, forward: 0, yaw: 1, pitch: 1.6, jump: false, roll: false, crouch: false, prone: false, scope: false, fire: false, reload: false, aim: undefined, weapon: undefined });
+      .toEqual({ right: 1, forward: 0, yaw: 1, pitch: 1.6, jump: false, roll: false, crouch: false, prone: false, scope: false, fire: false, reload: false, lean: 0, aim: undefined, weapon: undefined });
     expect(cleanInput({ seq: 7, view: 12.5 })).toMatchObject({ seq: 7, view: 12.5 });
     const bad = cleanInput({ seq: -1.5, view: Infinity })!;
     expect("seq" in bad || "view" in bad).toBe(false);

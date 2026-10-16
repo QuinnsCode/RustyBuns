@@ -77,6 +77,8 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .crosshair::after { content: ""; position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px; background: var(--accent); border-radius: 50%; }
 .crosshair.hit { border-color: var(--accent); transform: scale(1.25); }
 .crosshair.kill { border-color: var(--accent); border-width: 3px; transform: scale(1.6); }
+/* A headshot: an orange double ring. */
+.crosshair.head { border-color: var(--accent); border-width: 2px; transform: scale(1.6); box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--accent); }
 .crosshair.scope { width: 60vmin; height: 60vmin; margin: -30vmin; border-width: 1px; box-shadow: 0 0 0 100vmax rgba(255, 255, 255, 0.92); }
 .target { position: absolute; left: 50%; top: calc(50% + 18px); transform: translateX(-50%); font-size: 11px; color: var(--muted); background: rgba(255, 255, 255, 0.85); padding: 0 4px; white-space: nowrap; }
 .target:empty { display: none; }
@@ -160,6 +162,12 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .tl .role { color: var(--accent-ink); pointer-events: auto; cursor: help; }
 .prompt { position: absolute; left: 50%; top: calc(50% + 44px); transform: translateX(-50%); font: 600 13px var(--mono); background: var(--fg); color: #fff; padding: 3px 10px; white-space: nowrap; }
 .prompt:empty { display: none; }
+/* Where to go next: a paper tag over the point, pinned to the screen's edge with an arrow when it's out of view. */
+.waypoint { position: absolute; left: 0; top: 0; display: grid; justify-items: center; gap: 1px; padding: 3px 8px; font: 11px var(--mono); background: rgba(255, 255, 255, 0.9); border: 1px solid var(--hair); white-space: nowrap; will-change: transform; }
+.waypoint b { font-weight: 600; }
+.waypoint small { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.waypoint.edge { border-color: var(--line); }
+.waypoint.edge::before { content: ""; position: absolute; left: 50%; top: 50%; width: 0; height: 0; border: 6px solid transparent; border-left: 9px solid var(--accent); border-right: 0; transform: rotate(var(--arrow, 0rad)) translate(44px, -6px); }
 .weapons small { color: var(--muted); }
 .weapons li { grid-template-columns: 2ch 17ch 7ch; }
 .crosshair.reloading { border-color: var(--hair); background: conic-gradient(var(--accent) calc(var(--reload, 0) * 360deg), transparent 0) border-box; -webkit-mask: radial-gradient(circle, transparent 6px, #000 7px); mask: radial-gradient(circle, transparent 6px, #000 7px); }

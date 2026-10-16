@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { LEVELS, PLAY_RADIUS, placeLevel } from "../src/levels/levels.ts";
 import { groundAt, parsePlace, placeName, worldPx, type TileSource } from "../src/levels/place.ts";
-import { folderOf, heightOf, mapRepo, type Block, type RepoSnapshot } from "../src/sim/codemap.ts";
-import { AMMO_CRATE, fileHp, Game, HEALTH_CRATE, MAX_HEAT, HEAVY_HP, HEAVY_SHIELD, MAX_HP, MAX_SHIELD, SHIELD_DELAY, PRONE_SPEED, ROLL_TIME, scopeSway, STASH_HP, type Input, type Objective } from "../src/sim/game.ts";
+import { folderOf, gateDir, heightOf, mapRepo, STAIR_STEPS, TOWER_HEIGHT, trail, WALK, WALL_HEIGHT, WATCH_HEIGHT, type Block, type RepoSnapshot } from "../src/sim/codemap.ts";
+import { AMMO_CRATE, CHUTE_FALL, fileHp, Game, HEALTH_CRATE, HEAR, LEAN_REACH, MAX_HEAT, HEAVY_HP, HEAVY_SHIELD, MAX_HP, MAX_SHIELD, ROLL_COOLDOWN, ROLL_SPEED, RUN, SHIELD_DELAY, SIGHT, PRONE_SPEED, ROLL_TIME, scopeSway, STASH_HP, STEP, type Input, type Objective } from "../src/sim/game.ts";
 import { briefing, missionFor, OVERRUN, type Mission } from "../src/sim/missions.ts";
 import { contourStep, slope, stampTerrain, wet, withPads, type Terrain } from "@rustybuns/terrain";
-import { ORDER, splashDamage, WEAPONS } from "../src/sim/weapons.ts";
+import { ORDER, rangeDamage, splashDamage, WEAPONS } from "../src/sim/weapons.ts";
+import { ROLES } from "../src/sim/roles.ts";
 import { VOICES } from "../src/ui/audio.ts";
 
 const flat: Terrain = { R: 80, height: () => 0 };
@@ -116,18 +117,47 @@ describe("codemap", () => {
     }
   });
 
-  test("each compound is a walled compound: four towers, a gate toward HEAD, its files inside", () => {
+  test("each compound is a qalat: four corner towers with one watchtower, a gate toward HEAD, an inner wall, a stair onto the wall walk, its files inside", () => {
     const m = mapRepo(flat, repo, 9);
     m.compounds.forEach((c, ci) => {
-      const mine = m.blocks.filter((b) => b.compound === ci);
-      expect(mine.filter((b) => b.wall && b.h > 4)).toHaveLength(4);
+      const mine = m.blocks.filter((b) => b.compound === ci), walls = mine.filter((b) => b.wall);
+      const towers = walls.filter((b) => b.h >= TOWER_HEIGHT);
+      expect(towers).toHaveLength(4);
+      expect(towers.filter((b) => b.h === WATCH_HEIGHT)).toHaveLength(1);
       const gx = m.spawn.x - c.x, gz = m.spawn.z - c.z;
       expect(c.gate).toBe(Math.abs(gx) > Math.abs(gz) ? (gx > 0 ? 0 : 1) : gz > 0 ? 2 : 3);
+      // An inner wall across the yard, behind the centre, with a doorway.
+      const g = gateDir(c.gate!), inner = walls.filter((b) => b.h < WALL_HEIGHT && b.h > 2 && (b.x - c.x) * g.x + (b.z - c.z) * g.z < -1);
+      expect(inner.length).toBeGreaterThanOrEqual(2);
+      // Stairs climb in steps no taller than a soldier steps up, and the top one reaches the wall walk.
+      const steps = walls.filter((b) => b.h < 3 && b.w < 1.1 && b.d < 1.1).sort((a, b) => a.h - b.h);
+      expect(steps).toHaveLength(STAIR_STEPS);
+      steps.forEach((st, i) => expect(st.h - (steps[i - 1]?.h ?? 0)).toBeLessThanOrEqual(STEP));
+      expect(WALL_HEIGHT - steps[steps.length - 1]!.h).toBeLessThanOrEqual(STEP);
       for (const b of mine.filter((b) => !b.wall)) {
         expect(Math.abs(b.x - c.x)).toBeLessThan(c.half!);
         expect(Math.abs(b.z - c.z)).toBeLessThan(c.half!);
       }
     });
+  });
+
+  test("a footpath is cut to every compound's gate, never steeper than a soldier walks", () => {
+    const m = mapRepo(flat, repo, 9);
+    expect(m.trails).toHaveLength(m.compounds.length);
+    for (const [i, t] of m.trails!.entries()) {
+      const c = m.compounds[i]!, g = gateDir(c.gate!);
+      expect(Math.hypot(t[0]!.x - m.spawn.x, t[0]!.z - m.spawn.z)).toBeLessThan(3);
+      const end = t[t.length - 1]!;
+      expect(Math.hypot(end.x - (c.x + g.x * (c.half! + 3)), end.z - (c.z + g.z * (c.half! + 3)))).toBeLessThan(3);
+    }
+    // Up a hill too steep to climb straight, the path is graded into it.
+    const hill: Terrain = { R: 60, height: (x) => (x > 0 ? Math.min(12, x * 1.0) : 0) };
+    const path = trail(hill, { x: -20, z: 0 }, { x: 30, z: 0 })!;
+    expect(path).not.toBeNull();
+    for (let i = 1; i < path.length; i++) {
+      const run = Math.hypot(path[i]!.x - path[i - 1]!.x, path[i]!.z - path[i - 1]!.z);
+      expect(Math.abs(path[i]!.y - path[i - 1]!.y) / run).toBeLessThanOrEqual(WALK + 0.01);
+    }
   });
 
   test("no two blocks overlap, and nothing lands on the spawn", () => {
@@ -141,8 +171,30 @@ describe("codemap", () => {
     }
   });
 
-  test.each(LEVELS.map((l) => [l.id, l] as const))("%s maps the repo into compounds you can walk to", (_, l) => {
-    const m = mapRepo(l.ground(), l.repo, l.seed);
+  test.each(LEVELS.map((l) => [l.id, l] as const))("%s: a soldier walks the footpath to every compound's gate", (_, l) => {
+    const m = mapRepo(l.ground(), l.repo, l.seed), g = new Game(m, l.seed);
+    for (const s of g.soldiers.slice(1)) s.alive = false;
+    const you = g.you();
+    for (const [ci, path] of m.trails!.entries()) {
+      Object.assign(you, { x: m.spawn.x, z: m.spawn.z, vx: 0, vz: 0, chute: false });
+      you.y = g.ground(you.x, you.z, Infinity);
+      let at = 0, t = 0;
+      // Follow the path the way a player would, eyes on the ground a little ahead, until the gate or the clock runs out.
+      while (t < 150) {
+        while (at + 1 < path.length) {
+          const a = path[at]!, b = path[at + 1]!, ex = b.x - a.x, ez = b.z - a.z;
+          if (((you.x - a.x) * ex + (you.z - a.z) * ez) / (ex * ex + ez * ez || 1) >= 1) at++; else break;
+        }
+        const a = path[at]!, b = path[Math.min(path.length - 1, at + 1)]!, ex = b.x - a.x, ez = b.z - a.z, len = Math.hypot(ex, ez) || 1;
+        const u = Math.max(0, Math.min(1, ((you.x - a.x) * ex + (you.z - a.z) * ez) / (len * len))), ahead = Math.min(1, u + 1.2 / len);
+        const dx = a.x + ex * ahead - you.x, dz = a.z + ez * ahead - you.z;
+        if (at >= path.length - 1 && Math.hypot(dx, dz) < 1.5) break;
+        g.step(1 / 60, { ...idle, forward: 1, yaw: Math.atan2(-dx, -dz) });
+        t += 1 / 60;
+      }
+      const end = path[path.length - 1]!;
+      expect(Math.hypot(end.x - you.x, end.z - you.z), `${l.id}: ${m.compounds[ci]!.folder} after ${Math.round(t)} s`).toBeLessThan(3);
+    }
     expect(m.compounds.length).toBeGreaterThanOrEqual(4);
     expect(m.blocks.length).toBeGreaterThan(40);
     // Nobody starts in the pond, and no folder or crate is built under it.
@@ -351,6 +403,45 @@ describe("toy-soldier combat", () => {
     });
   });
 
+  describe("shotty snipes", () => {
+    test("the shotgun ends a soldier up close and does nothing past fifteen metres", () => {
+      const close = target();
+      Object.assign(close.guard, { z: -4 });
+      close.you.weapon = "add";
+      run(close.g, 0.5, { fire: true, aim: { x: 0, y: 1, z: -4 } });
+      expect(close.guard.alive).toBe(false);
+      const far = target();
+      Object.assign(far.guard, { z: -22 });
+      far.you.weapon = "add";
+      run(far.g, 0.5, { fire: true, aim: { x: 0, y: 1, z: -22 } });
+      expect(far.guard.hp).toBe(MAX_HP);
+      expect(rangeDamage(WEAPONS.add, 0)).toBe(WEAPONS.add.damage);
+      expect(rangeDamage(WEAPONS.add, 15)).toBe(0);
+      expect(rangeDamage(WEAPONS.commit, 500)).toBe(WEAPONS.commit.damage);
+    });
+
+    test("the sniper rifle: two to the body, one to the head, and a guess from the hip", () => {
+      const body = target();
+      body.guard.shield = body.guard.maxShield = MAX_SHIELD;
+      body.you.weapon = "rebase";
+      run(body.g, 0.1, { fire: true, scope: true, aim: { x: 0, y: 1, z: -10 } });
+      expect(body.guard.alive).toBe(true);
+      expect(body.guard.hp + body.guard.shield).toBeCloseTo(MAX_HP + MAX_SHIELD - WEAPONS.rebase.damage, 0);
+      run(body.g, 1.5, { fire: true, scope: true, aim: { x: 0, y: 1, z: -10 } });
+      expect(body.guard.alive).toBe(false);
+      const head = target(), hits: boolean[] = [];
+      head.guard.shield = head.guard.maxShield = MAX_SHIELD;
+      head.you.weapon = "rebase";
+      for (let i = 0; i < 6; i++) for (const e of head.g.step(1 / 60, { ...idle, fire: true, scope: true, aim: { x: 0, y: 1.7, z: -10 } })) if (e.kind === "hit") hits.push(e.head);
+      expect(hits).toEqual([true]);
+      expect(head.guard.alive).toBe(false);
+      expect(WEAPONS.rebase.hipSpread).toBeGreaterThan(0);
+      expect(WEAPONS.rebase.speed).toBeGreaterThan(500);
+      // Shotgun and sniper rifle in one kit.
+      expect(ROLES.reviewer.weapons).toEqual(expect.arrayContaining(["rebase", "add"]));
+    });
+  });
+
   describe("the feel of the guns", () => {
     test("git add -A is a shotgun: a fistful of pellets, deadly close, thin far off", () => {
       const near = target();
@@ -507,6 +598,76 @@ describe("toy-soldier combat", () => {
       expect(p.you().prone).toBe(true);
     });
 
+    test("a dive-roll is a short dodge: slower than running and a wait before the next", () => {
+      expect(ROLL_SPEED * ROLL_TIME).toBeLessThan(RUN * (ROLL_TIME + ROLL_COOLDOWN) * 0.5);
+      const g = field([]), you = g.you();
+      run(g, 2, { roll: true, forward: 1 });
+      const rolled = -you.z;
+      const r = field([]);
+      run(r, 2, { forward: 1 });
+      expect(rolled).toBeLessThan(-r.you().z);
+    });
+
+    test("leaning takes the gun and the upper body out round the corner, and the hitbox with it", () => {
+      const g = field([]), you = g.you();
+      run(g, 1, { lean: 1 });
+      expect(you.lean).toBeCloseTo(1, 1);
+      // Facing -z, right is +x: the muzzle and the head are off to the right, the feet where they were.
+      expect(g.muzzle(you).x).toBeGreaterThan(LEAN_REACH * 0.5);
+      const shot = (x: number, y: number) => ({ id: 99, owner: 5, team: "conflict" as const, weapon: "commit" as const, x, y, z: you.z + 0.3, vx: 0, vy: 0, vz: -100, age: 0, dead: false });
+      g.shots.push(shot(LEAN_REACH, 1.6));
+      g.step(1 / 60, { ...idle, lean: 1 });
+      expect(you.shield).toBeLessThan(MAX_SHIELD);
+      const before = you.shield;
+      // Head height, straight over the feet: nothing there now.
+      g.shots.push(shot(-0.2, 1.6));
+      g.step(1 / 60, { ...idle, lean: 1 });
+      expect(you.shield).toBe(before);
+      // Off your feet the lean comes back in.
+      run(g, 1, { lean: 1, jump: true });
+      run(g, 0.2, { lean: 1, jump: true });
+      expect(Math.abs(you.lean)).toBeLessThan(0.5);
+    });
+
+    test("jump at a wall and you mantle up onto it", () => {
+      const g = field([], { blocks: [box(0, -2, 2.8)] }), you = g.you();
+      run(g, 0.3, { forward: 1 });
+      expect(you.y).toBeLessThan(0.1);
+      run(g, 1 / 60, { forward: 1, jump: true });
+      run(g, 0.4, { forward: 1 });
+      expect(you.y).toBeCloseTo(2.8, 1);
+      expect(you.grounded).toBe(true);
+    });
+
+    test("fall from high up and a parachute opens; it sinks slowly, steers, and folds on landing", () => {
+      const cliff: Terrain = { R: 80, height: (_x, z) => (z < -3 ? 0 : 30) };
+      const g = new Game({ terrain: cliff, spawn: { x: 0, z: 0, yaw: 0 }, compounds: [], blocks: [] }), you = g.you();
+      const events: string[] = [];
+      const go = (seconds: number, inp: Partial<Input>) => { for (let i = 0; i < seconds * 60; i++) for (const e of g.step(1 / 60, { ...idle, ...inp })) if (e.kind === "chute") events.push(e.open ? "open" : "cut"); };
+      go(1.5, { forward: 1 });
+      expect(you.chute).toBe(true);
+      expect(events).toEqual(["open"]);
+      go(1, {});
+      expect(you.vy).toBeCloseTo(-CHUTE_FALL, 0);
+      const x0 = you.x;
+      go(1, { right: 1 });
+      expect(you.x).toBeGreaterThan(x0 + 2);
+      go(12, {});
+      expect(you.chute).toBe(false);
+      expect(you.grounded).toBe(true);
+      expect(you.y).toBeCloseTo(0, 1);
+      expect(you.hp).toBe(MAX_HP);
+      expect(events).toEqual(["open", "cut"]);
+      // By hand: Space in the air opens it over a shorter drop, and again cuts it.
+      Object.assign(you, { x: 0, z: -10, y: 30, vy: 0, grounded: false });
+      go(0.25, {});
+      expect(you.chute).toBe(false);
+      go(1 / 60, { jump: true });
+      expect(you.chute).toBe(true);
+      go(1 / 60, { jump: true });
+      expect(you.chute).toBe(false);
+    });
+
     test("the sniper scope sways, less crouched, least prone", () => {
       const amp = (st: "stand" | "crouch" | "prone") => Math.max(...Array.from({ length: 200 }, (_, i) => Math.abs(scopeSway(i * 0.05, st).yaw)));
       expect(amp("stand")).toBeGreaterThan(amp("crouch"));
@@ -542,6 +703,25 @@ describe("toy-soldier combat", () => {
       expect(angle).toBeGreaterThan(Math.PI / 4);
     });
 
+    test("guards out of sight come hunting when they hear you shoot, then drift home", () => {
+      const g = field([{ x: 0, z: -75, guards: 2 }]), you = g.you(), guards = g.soldiers.filter((s) => s.brain);
+      expect(75).toBeGreaterThan(SIGHT);
+      expect(75).toBeLessThan(HEAR);
+      run(g, 1);
+      expect(guards.every((s) => !s.brain!.alert)).toBe(true);
+      run(g, 0.2, { fire: true, aim: { x: 0, y: 1, z: -75 } });
+      expect(guards.every((s) => s.brain!.alert && s.brain!.hunt > 0)).toBe(true);
+      const start = guards.map((s) => s.z);
+      run(g, 4);
+      // Past the yard's own leash and closing on where the shots came from.
+      guards.forEach((s, i) => expect(s.z).toBeGreaterThan(start[i]! + 10));
+      // Far beyond earshot, nobody stirs.
+      const q = field([{ x: 0, z: -140, guards: 1 }]);
+      run(q, 0.3, { fire: true, aim: { x: 0, y: 1, z: -140 } });
+      expect(q.soldiers[1]!.brain!.alert).toBe(false);
+      void you;
+    });
+
     test("a guard takes cover on the far side of a block when hit", () => {
       const g = field([{ x: 0, z: -14, guards: 1 }], { blocks: [box(0, -10)] }), guard = g.soldiers[1]!;
       Object.assign(guard, { x: 3, z: -14 });
@@ -556,6 +736,19 @@ describe("toy-soldier combat", () => {
   });
 
   describe("objectives", () => {
+    test("the waypoint is the nearest compound still held, then the mission's own point", () => {
+      const g = field([{ x: 0, z: -40, guards: 1 }, { x: 60, z: 0, guards: 1 }]);
+      expect(g.waypoint()!.label).toBe("apps/c0");
+      for (const s of g.soldiers.slice(1)) if (s.compound === 0) g.hurt(s, 1e9, 0);
+      expect(g.waypoint()!.label).toBe("apps/c1");
+      const carry = field([{ x: 0, z: -40, guards: 1 }], { mission: { kind: "carry" } });
+      expect(carry.waypoint()!.kind).toBe("commit");
+      const o = carry.objective as Extract<Objective, { kind: "carry" }>;
+      Object.assign(o, { carried: true, by: 0 });
+      expect(carry.waypoint()!.kind).toBe("head");
+      expect(field([{ x: 0, z: -40, guards: 1 }], { mission: { kind: "defend", seconds: 60, wave: 20 } }).waypoint()!.kind).toBe("branch");
+    });
+
     test("each level has its own mission", () => {
       expect(missionFor("el-capitan").kind).toBe("carry");
       expect(missionFor("backyard").kind).toBe("defend");
