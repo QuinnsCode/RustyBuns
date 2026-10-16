@@ -83,7 +83,7 @@ export function demoProject(): Project {
   const tracks: TrackDoc[] = KIT.map((k, i) => ({
     ...k, params: k.params.slice(), notes: notes[i].sort((a, b) => a.s - b.s || a.m - b.m), mute: false, solo: false,
   }));
-  return { v: 1, bpm: 118, swing: 0.12, bars, tracks };
+  return { v: 1, bpm: 118, swing: 0.12, space: 0.15, bars, tracks };
 }
 
 /** Random but tame: levels and feedback capped, envelopes short-ish, gain kept. */
