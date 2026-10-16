@@ -3,6 +3,9 @@ import { Car, createElement, RectangleHorizontal, RotateCcw } from "lucide";
 import * as THREE from "three";
 import { fingerboard, roadster, type Thruster } from "./models.ts";
 import { Plumes } from "./render/plumes.ts";
+import { Chase } from "./render/chase.ts";
+import { Scenery, scatter } from "./render/scenery.ts";
+import { followCamera, HAZE, sky } from "./render/sky.ts";
 import { Skins } from "./render/skins.ts";
 import { railY } from "./level.ts";
 import { DT, FLICK_TIME, IDLE, type Input, type Mode, start, step, type State } from "./sim.ts";
@@ -19,19 +22,23 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xf2c49a);
-scene.fog = new THREE.Fog(0xf2c49a, 60, 140);
-const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 400);
+scene.background = new THREE.Color(HAZE);
+scene.fog = new THREE.Fog(HAZE, 60, 140);
+const camera = new THREE.PerspectiveCamera(66, 1, 0.1, 2000);
+const air = sky();
+scene.add(air);
 
 // Golden hour: a low warm sun and a cool sky fill.
 scene.add(new THREE.HemisphereLight(0xbcd3ff, 0x8a6a50, 0.9));
 const sun = new THREE.DirectionalLight(0xffd2a0, 2.4);
-sun.position.set(-40, 30, -25);
+sun.position.set(-60, 22, -30);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-Object.assign(sun.shadow.camera, { left: -50, right: 50, top: 50, bottom: -50, far: 150 });
+Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, far: 200 });
 scene.add(sun, sun.target);
 const ui = mountLevelUi(scene);
+const scenery = park ? new Scenery(scatter(level, (level as ParkLevel).ground)) : null; // small pines and rocks, for scale
+if (scenery) scene.add(scenery.group);
 // The plaza's own floor, wall and towers; a park draws its ground instead.
 const decor = new THREE.Group();
 decor.visible = !park;
@@ -140,7 +147,7 @@ const begin = (m: Mode) => { const p = spawn(level, m); return start(p.x, p.z, p
 let sim: State = begin(mode);
 const reset = () => {
   sim = showroom ? start(0, -20, 0, level) : begin(mode);
-  camPos.set(sim.x - Math.sin(sim.yaw) * 9, sim.y + 4, Math.max(sim.z - Math.cos(sim.yaw) * 9, level.bounds.minZ + 1));
+  chase.snap(sim, skins.current);
   ui.reset();
 };
 
@@ -188,7 +195,7 @@ function hud() {
 }
 hud();
 
-const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
+const chase = new Chase(camera);
 reset();
 let lastFrame = performance.now(), landVy = 0, acc = 0, then = performance.now(), shownTrick: State["last"] = null, trickAt = 0;
 
@@ -224,22 +231,17 @@ function frame(now: number) {
     plate.rotation.x = THREE.MathUtils.lerp(plate.rotation.x, sim.plateDown ? -Math.PI * 0.95 : 0, 0.3);
   }
 
-  // Chase from behind and above; in the air, hold back so the spin reads.
-  const back = mode === "car" ? 9 : 5, up = mode === "car" ? 3.5 : 2.4;
-  const dir = Math.hypot(sim.vx, sim.vz) > 3 && sim.air ? Math.atan2(sim.vx, sim.vz) : sim.yaw + (sim.speed < -0.5 ? Math.PI : 0);
-  camPos.lerp(new THREE.Vector3(sim.x - Math.sin(dir) * back, sim.y + up, sim.z - Math.cos(dir) * back), 0.08);
-  camLook.lerp(new THREE.Vector3(sim.x, sim.y + 1, sim.z), 0.2);
+  chase.update(sim, skins.current, dt);
   if (showroom) { // ?showroom: the car parked, the camera circling it
     const a = now / 4000;
-    camPos.set(sim.x + Math.sin(a) * 7, sim.y + 1.6, sim.z + Math.cos(a) * 7);
-    camLook.set(sim.x, sim.y + 0.6, sim.z);
+    chase.pos.set(sim.x + Math.sin(a) * 9, sim.y + 2, sim.z + Math.cos(a) * 9);
+    chase.look.set(sim.x, sim.y + 0.6, sim.z);
   }
-  camPos.x = THREE.MathUtils.clamp(camPos.x, level.bounds.minX + 1, level.bounds.maxX - 1); // stay inside the walls
-  camPos.z = THREE.MathUtils.clamp(camPos.z, level.bounds.minZ + 1, level.bounds.maxZ - 1);
-  sun.position.set(sim.x - 40, sim.y + 30, sim.z - 25); // the shadow box follows the rider
+  chase.apply(level.bounds); // stay inside the walls
+  followCamera(air, camera);
+  scenery?.update([sim, camera.position]);
+  sun.position.set(sim.x - 60, sim.y + 22, sim.z - 30); // a low sun, so the board throws a long shadow; the shadow box follows the rider
   sun.target.position.set(sim.x, sim.y, sim.z);
-  camera.position.copy(camPos);
-  camera.lookAt(camLook);
 
   $("score").textContent = String(sim.score);
   $("speed").textContent = `${Math.round(Math.abs(sim.air ? Math.hypot(sim.vx, sim.vz) : sim.speed) * 3.6)} km/h`;
