@@ -6,6 +6,7 @@ import { fingerboard, roadster, type Thruster } from "./models.ts";
 import { levelMeshes } from "./render/pieces.ts";
 import { Plumes } from "./render/plumes.ts";
 import { Chase } from "./render/chase.ts";
+import { Critters } from "./render/critters.ts";
 import { Scenery, scatter } from "./render/scenery.ts";
 import { followCamera, HAZE, sky } from "./render/sky.ts";
 import { comboLine } from "./render/combo.ts";
@@ -47,6 +48,8 @@ scene.add(sun, sun.target);
 const ui = mountLevelUi(scene);
 const scenery = park ? new Scenery(scatter(level, (level as ParkLevel).ground)) : null; // small pines and rocks, for scale
 if (scenery) scene.add(scenery.group);
+const critters = park ? new Critters((level as ParkLevel).ground, level.spawns[0]) : null; // birds and small animals that bolt from the rider
+if (critters) scene.add(critters.group);
 // The plaza's own floor, wall and towers; a park draws its ground instead.
 const decor = new THREE.Group();
 decor.visible = !park;
@@ -200,7 +203,7 @@ const manualEase = new TiltEase();
 const taps = new Taps($("taps")); // rings where the feet pop, drag and flick
 const slope = { x: 0, z: 0 }; // the ground's tilt under the board, eased
 reset();
-let lastFrame = performance.now(), landVy = 0, acc = 0, then = performance.now(), shownTrick: State["last"] = null, trickAt = 0;
+let critterAt = performance.now(), lastFrame = performance.now(), landVy = 0, acc = 0, then = performance.now(), shownTrick: State["last"] = null, trickAt = 0;
 
 function frame(now: number) {
   acc = Math.min(acc + (now - then) / 1000, 0.25);
@@ -263,6 +266,8 @@ function frame(now: number) {
   chase.apply(level.bounds, level.height); // stay inside the walls
   followCamera(air, camera);
   scenery?.update([sim, camera.position]);
+  critters?.update(Math.min((now - critterAt) / 1000, 0.1), [sim, camera.position]);
+  critterAt = now;
   sun.position.set(sim.x - 60, sim.y + 22, sim.z - 30); // a low sun, so the board throws a long shadow; the shadow box follows the rider
   sun.target.position.set(sim.x, sim.y, sim.z);
 
