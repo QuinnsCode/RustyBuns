@@ -8,7 +8,7 @@ import { Plumes } from "./render/plumes.ts";
 import { Chase } from "./render/chase.ts";
 import { Critters } from "./render/critters.ts";
 import { Scenery, scatter } from "./render/scenery.ts";
-import { followCamera, HAZE, sky } from "./render/sky.ts";
+import { followCamera, sky, skyMood, skyTime } from "./render/sky.ts";
 import { comboLine } from "./render/combo.ts";
 import { Skins } from "./render/skins.ts";
 import { Taps } from "./render/feet.ts";
@@ -17,11 +17,12 @@ import { DT, FLICK_TIME, IDLE, type Input, type Mode, noseUp, start, step, type 
 import { HALF } from "./levels/plaza.ts";
 import type { ParkLevel } from "./levels/park.ts";
 import { Gestures } from "./gesture.ts";
-import { level, levelId, mountLevelUi, park, spawn } from "./levels/picker.ts";
+import { level, levelId, mood, mountLevelUi, park, spawn } from "./levels/picker.ts";
 import { newRoomCode, Online, roomCode, pveMode } from "./net/client.ts";
 import { bump } from "./net/bump.ts";
 import { MAX_RIDERS } from "./net/room.ts";
 import { Ghosts } from "./render/ghosts.ts";
+import { Lightning, Precip } from "./render/weather.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#view")!;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -31,21 +32,30 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(HAZE);
-scene.fog = new THREE.Fog(HAZE, 60, 140);
+scene.background = new THREE.Color(mood.haze);
+scene.fog = new THREE.Fog(mood.haze, 60, 140);
+renderer.toneMappingExposure = mood.exposure;
 const camera = new THREE.PerspectiveCamera(66, 1, 0.1, 2000);
 const air = sky();
 scene.add(air);
 
-// Golden hour: a low warm sun and a cool sky fill.
-scene.add(new THREE.HemisphereLight(0xbcd3ff, 0x8a6a50, 0.9));
-const sun = new THREE.DirectionalLight(0xffd2a0, 2.4);
-sun.position.set(-60, 22, -30);
+// The mood's light (golden hour unless the park says otherwise): a low sun and a sky fill.
+const fill = new THREE.HemisphereLight(mood.skyFill, mood.groundFill, mood.fill);
+scene.add(fill);
+const sun = new THREE.DirectionalLight(mood.sunColor, mood.sunPower);
+const sunAt = new THREE.Vector3(...mood.sun);
+sun.position.copy(sunAt);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, far: 200 });
 scene.add(sun, sun.target);
+skyMood(air, mood);
 const ui = mountLevelUi(scene);
+if (scene.fog instanceof THREE.Fog) { scene.fog.near *= mood.fog[0]; scene.fog.far *= mood.fog[1]; } // rain and mist close the view in
+const precip = new Precip(); // rain, snow, dust or drifting motes round the camera
+precip.begin(mood);
+scene.add(precip.object);
+const lightning = mood.lightning ? new Lightning() : null;
 const scenery = park ? new Scenery(scatter(level, (level as ParkLevel).ground)) : null; // small pines and rocks, for scale
 if (scenery) scene.add(scenery.group);
 const critters = park ? new Critters((level as ParkLevel).ground, level.spawns[0]) : null; // birds and small animals that bolt from the rider
@@ -266,10 +276,14 @@ function frame(now: number) {
   }
   chase.apply(level.bounds, level.height); // stay inside the walls
   followCamera(air, camera);
+  precip.update(dt, camera.position);
+  const flash = lightning?.update(dt) ?? 0;
+  fill.intensity = mood.fill + flash * 3;
+  skyTime(air, now / 1000, flash);
   scenery?.update([sim, camera.position]);
   critters?.update(Math.min((now - critterAt) / 1000, 0.1), [sim, camera.position]);
   critterAt = now;
-  sun.position.set(sim.x - 60, sim.y + 22, sim.z - 30); // a low sun, so the board throws a long shadow; the shadow box follows the rider
+  sun.position.set(sim.x + sunAt.x, sim.y + sunAt.y, sim.z + sunAt.z); // a low sun, so the board throws a long shadow; the shadow box follows the rider
   sun.target.position.set(sim.x, sim.y, sim.z);
 
   $("score").textContent = String(sim.score);

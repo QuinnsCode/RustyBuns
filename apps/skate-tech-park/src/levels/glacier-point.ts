@@ -8,6 +8,7 @@ const E = Math.PI / 2, N = Math.PI;
 
 export const glacierPoint: ParkSpec = {
   id: "glacier-point",
+  weather: "dusk",
   name: "Glacier Point Rim",
   blurb: "Build speed across the plateau, hit the lip at the overlook and clear the drop to the slope below.",
   zone: "glacier-point",

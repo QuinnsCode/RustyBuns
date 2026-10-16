@@ -9,6 +9,7 @@ const sinter = gap({ x: -150, z: -180, yaw: E }, { name: "Sinter Jump", span: 30
 
 export const grandPrismatic: ParkSpec = {
   id: "grand-prismatic",
+  weather: "noon",
   name: "Grand Prismatic",
   blurb: "A bowl on the spring basin, a street line round it and the sinter terraces to pump over.",
   zone: "grand-prismatic",
