@@ -56,7 +56,7 @@ const BOOST_TOP = JETS.boostTop;
 function footprintTop(level: Level, x: number, z: number, yaw: number) {
   const sn = Math.sin(yaw), cs = Math.cos(yaw);
   let top = level.height(x, z);
-  for (const a of [-BOARD.halfLen, 0, BOARD.halfLen]) for (const c of [-BOARD.halfWid, BOARD.halfWid]) top = Math.max(top, level.height(x + sn * a + cs * c, z + cs * a - sn * c));
+  for (const a of [-1, -0.5, 0, 0.5, 1].map((k) => k * BOARD.halfLen)) for (const c of [-BOARD.halfWid, 0, BOARD.halfWid]) top = Math.max(top, level.height(x + sn * a + cs * c, z + cs * a - sn * c));
   return top;
 }
 
@@ -368,6 +368,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     s.pitch = Math.atan(along); s.roll = Math.atan(across);
     // pumping: weight the board as the floor curves up under it and the curve gives back speed
     if (inp.boost) s.speed += dir * PUMP * Math.abs(s.speed) * Math.max(0, pitched * dir);
+    const yaw0 = s.yaw; // where the footprint was before it turned: turning into a wall is meeting the wall
     { // the board carves: weight over the trucks, tighter when fast, and it falls toward downhill
       const load = Math.abs(s.speed) / tune.top;
       s.yaw += inp.steer * tune.turn * DT * Math.min(1, Math.abs(s.speed) / (3 * T)) * dir / (1 + CARVE * load);
@@ -378,12 +379,12 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
 
     const nx = s.x + Math.sin(s.yaw) * s.speed * DT, nz = s.z + Math.cos(s.yaw) * s.speed * DT;
     const dist = Math.abs(s.speed * DT);
-    if (hitObstacle(level, nx, nz, s.y, s.yaw)) return crash(s, "Hit a tree");
+    if (hitObstacle(level, nx, nz, s.y, s.yaw)) { s.yaw = yaw0; return crash(s, "Hit a tree"); }
     // walk the stride in 10 cm strides: a rise too sharp for its length is a wall (the side of a box),
     // a steep curve (a quarter pipe near its lip) is not
     const n = Math.max(1, Math.ceil(dist / 0.1));
     let prev = s.y;
-    let wallPrev = footprintTop(level, s.x, s.z, s.yaw);
+    let wallPrev = footprintTop(level, s.x, s.z, yaw0);
     for (let i = 1; i <= n; i++) {
       const px = s.x + ((nx - s.x) * i) / n, pz = s.z + ((nz - s.z) * i) / n;
       const h = level.height(px, pz);
@@ -393,7 +394,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       if (rise > Math.max(s.fan ? JETS.fanStep : STEP, (dist / n) * MAX_SLOPE)) { // the fan sucks it up a kerb or box side
         // (a stride can reach a vertical lip before `pitch` has caught up with it, so judge by the steepest rise seen)
         const slope = Math.atan((h - prev) / (dist / n)), steep = Math.max(Math.abs(s.pitch), s.pitch * dir > 0.4 ? slope : 0);
-        if (steep < WALL || s.pitch * dir < 0 || s.vy < 0.2 * Math.abs(s.speed)) return crash(s, null);
+        if (steep < WALL || s.pitch * dir < 0 || s.vy < 0.2 * Math.abs(s.speed)) { s.yaw = yaw0; return crash(s, null); } // the board stays as it was, not turned into the wall
         // already climbing a curve and it goes vertical: leave the wall along its face, up past the coping
         const v = Math.abs(s.speed), c = Math.cos(steep);
         s.vx = fx * v * c * dir; s.vz = fz * v * c * dir; s.vy = Math.max(s.vy, v * Math.sin(steep));
