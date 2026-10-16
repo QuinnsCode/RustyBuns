@@ -153,6 +153,8 @@ const GUNS: Record<WeaponId, GunShape> = {
   revert: { body: 0.3, barrel: 0.2, bore: 0.035 },
   stash: { body: 0.3, barrel: 0.18, bore: 0.03 },
   blame: { body: 0.3, barrel: 0.28, bore: 0.02, scope: true },
+  amend: { body: 0.24, barrel: 0.14, bore: 0.02 },
+  squash: { body: 0.22, barrel: 0.12, bore: 0.08, drum: true },
   reset: { body: 0.3, barrel: 0.5, bore: 0.11, tube: true },
 };
 

@@ -26,6 +26,10 @@ const ICONS: Record<WeaponId, string> = {
   stash: `<rect x="7" y="3" width="14" height="10" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M7 6.5h14M12 3v3.5m4-3.5v3.5" stroke="currentColor" stroke-width="1"/>`,
   // Blame: an eye that sees through walls.
   blame: `<path d="M3 7.5c3-5 19-5 22 0-3 5-19 5-22 0z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="14" cy="7.5" r="2.6"/>`,
+  // Pistol: a short slide over a grip.
+  amend: `<path d="M5 5h17v3.2H12l-1 5H8l.6-5H5z"/><rect x="22" y="5.6" width="3" height="1.4"/>`,
+  // Plasma grenade: a ball with a glowing core.
+  squash: `<circle cx="14" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="14" cy="8" r="2.4" fill="#e8590c"/><rect x="12.5" y="1.5" width="3" height="2"/>`,
   // Reset --hard: a bomb with a lit fuse.
   reset: `<circle cx="12" cy="9" r="4.5"/><rect x="14.5" y="3.4" width="2.4" height="2" transform="rotate(40 15.7 4.4)"/><path d="M17 3c1-1.5 2.5-1.5 3-.5" fill="none" stroke="currentColor" stroke-width="0.9"/><circle cx="21" cy="2.2" r="1.2" fill="#e8590c"/>`,
 };
