@@ -9,3 +9,5 @@
 .start-grid button { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; padding: 12px 14px; text-align: left; font: inherit; color: var(--ink); background: var(--paper); border: 1.5px solid var(--ink); border-radius: 8px; cursor: pointer; }
 .start-grid button:hover, .start-grid button:focus-visible { background: #fff; outline: 2px solid var(--hot); }
 .start-grid strong { display: flex; gap: 6px; align-items: center; }
+button.level-menu { top: 92px; cursor: pointer; display: flex; }
+button.level-menu[aria-pressed="true"] { background: var(--ink); color: var(--paper); }

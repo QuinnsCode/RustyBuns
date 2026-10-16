@@ -112,3 +112,11 @@ test("the kit is toy-sized beside the deck: every piece is wider than the board,
   const { s } = drive(park("old-faithful"), "boardwalk", 9, undefined, 27, { x: 40, z: 20 });
   expect(s.x).toBeGreaterThan(0); // past the stair set at -100 and the funbox at -70, not stopped at the first riser
 });
+
+test("?real rides the terrain at full height: taller ground, and climb goals scale with it", () => {
+  const e = LEVELS.find((l) => l.id === "half-dome")!;
+  const friendly = e.load() as ParkLevel, real = e.load(true) as ParkLevel;
+  expect(real.ground.height(0, 0) + real.ground.height(60, 60)).toBeGreaterThan(friendly.ground.height(0, 0) + friendly.ground.height(60, 60));
+  const m = (l: ParkLevel) => (l.goals.find((g) => g.kind === "climb") as { metres: number }).metres;
+  expect(m(real)).toBeGreaterThan(m(friendly));
+});
