@@ -7,6 +7,7 @@ import { railY } from "./level.ts";
 import { DT, IDLE, type Input, type Mode, start, step, type State } from "./sim.ts";
 import { HALF } from "./levels/plaza.ts";
 import type { ParkLevel } from "./levels/park.ts";
+import { Gestures } from "./gesture.ts";
 import { level, mountLevelUi, park, spawn } from "./levels/picker.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#view")!;
@@ -150,6 +151,10 @@ window.addEventListener("keydown", (e) => {
 });
 window.addEventListener("keyup", (e) => keys.delete(e.code));
 window.addEventListener("blur", () => keys.clear());
+// The mouse and the right stick: a drag up is an ollie, across or down is a flick trick (see gesture.ts).
+const gestures = new Gestures();
+canvas.addEventListener("pointerdown", (e) => gestures.down(e.clientX, e.clientY));
+window.addEventListener("pointerup", (e) => gestures.up(e.clientX, e.clientY));
 const input = (): Input => ({
   ...IDLE,
   throttle: (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0),
@@ -157,6 +162,8 @@ const input = (): Input => ({
   jump: keys.has("Space"),
   boost: keys.has("ShiftLeft") || keys.has("ShiftRight"),
   flip: keys.has("KeyF"),
+  flick: keys.has("KeyG") ? "heelflip" : keys.has("KeyV") ? "shove-it" : null,
+  fan: keys.has("KeyE"),
 });
 
 // The HUD: lucide icons with their words as tooltips.
@@ -177,8 +184,8 @@ function hud() {
   swapBtn.title = mode === "car" ? "Skate (Tab)" : "Roadster (Tab)";
   $("tank").hidden = mode !== "car";
   $("keys").innerHTML = mode === "car"
-    ? "<kbd>W</kbd><kbd>S</kbd> drive <kbd>A</kbd><kbd>D</kbd> steer, spin in the air <kbd>Shift</kbd> rear thrusters <kbd>Space</kbd> lift thrusters"
-    : "<kbd>W</kbd><kbd>S</kbd> push <kbd>A</kbd><kbd>D</kbd> steer, spin in the air <kbd>Space</kbd> ollie <kbd>F</kbd> kickflip <kbd>Shift</kbd> pump a transition";
+    ? "<kbd>W</kbd><kbd>S</kbd> drive <kbd>A</kbd><kbd>D</kbd> steer, spin in the air <kbd>Shift</kbd> rear thrusters <kbd>Space</kbd> lift thrusters <kbd>E</kbd> suction fan"
+    : "<kbd>W</kbd><kbd>S</kbd> push <kbd>A</kbd><kbd>D</kbd> steer, spin in the air <kbd>Space</kbd> ollie <kbd>F</kbd> kickflip <kbd>G</kbd> heelflip <kbd>V</kbd> shove-it (or drag the mouse or push the right stick: up ollies, across and down flick) <kbd>Shift</kbd> pump a transition";
 }
 hud();
 
@@ -191,9 +198,12 @@ function frame(now: number) {
   then = now;
   const inp = input();
   landVy = 0;
+  const pad = navigator.getGamepads?.().find((g) => g);
+  if (pad) gestures.stick(pad.axes[2] ?? 0, pad.axes[3] ?? 0);
   while (acc >= DT) {
     const was = sim.air, vy = sim.vy;
-    step(sim, inp, level); ui.update(sim); acc -= DT;
+    step(sim, { ...inp, ...gestures.take() }, level); // a gesture is one step's press
+ ui.update(sim); acc -= DT;
     if (was && !sim.air) landVy = vy;
   }
 
@@ -207,7 +217,9 @@ function frame(now: number) {
   if (sim.bail > 0) rider.rotation.z = mode === "car" ? Math.sin(sim.bail * 30) * 0.08 : 1.3;
   if (mode === "skate") {
     const b = board.userData.board as THREE.Group, body = board.userData.body as THREE.Group;
-    b.rotation.z = sim.flipT > 0 ? (1 - sim.flipT / 0.45) * Math.PI * 2 : 0;
+    const turn = sim.flipT > 0 ? (1 - sim.flipT / 0.45) * Math.PI * 2 : 0;
+    b.rotation.set(0, sim.flipKind === "shove-it" ? turn / 2 : 0, sim.flipKind === "heelflip" ? -turn : sim.flipKind === "kickflip" ? turn : 0);
+    board.rotation.y += sim.grind >= 0 ? sim.grindOff : 0;
     b.position.y = sim.flipT > 0 ? 0.25 : 0;
     body.position.y = sim.air ? 0.15 : 0;
     body.scale.y = sim.air || sim.grind >= 0 ? 0.85 : 1;
@@ -241,8 +253,9 @@ function frame(now: number) {
   if (sim.last !== shownTrick) { shownTrick = sim.last; trickAt = now; }
   const trick = $("trick");
   trick.textContent = shownTrick ? (shownTrick.points ? `${shownTrick.name}  +${shownTrick.points}` : shownTrick.name) : "";
+  if (sim.grind >= 0) trick.textContent = `${sim.grindKind}  balance ${"<".repeat(Math.max(0, Math.round(-sim.balance * 4)))}|${">".repeat(Math.max(0, Math.round(sim.balance * 4)))}`, trickAt = now;
   trick.classList.toggle("bail", !!shownTrick && !shownTrick.points);
-  trick.style.opacity = shownTrick && now - trickAt < 2200 ? "1" : "0";
+  trick.style.opacity = (shownTrick || sim.grind >= 0) && (sim.grind >= 0 || now - trickAt < 2200) ? "1" : "0";
 
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
