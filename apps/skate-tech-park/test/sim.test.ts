@@ -1,6 +1,6 @@
 // Journeys through the ride, headless: the same fixed-step sim the page draws.
 import { expect, test } from "bun:test";
-import { hitObstacle, type Level, makeLevel, piece, postObstacles, railY } from "../src/level.ts";
+import { BOARD, hitObstacle, type Level, makeLevel, piece, postObstacles, railY } from "../src/level.ts";
 import { quarterPipe } from "../src/levels/pieces.ts";
 import { DT, IDLE, type Input, SCALE, start, step, type State, tumble } from "../src/sim.ts";
 
@@ -111,16 +111,16 @@ test("a rider runs into a rail's post but rides over it on the bar", () => {
   expect(lv.obstacles!.length).toBeGreaterThan(5);
   const side = run(start(0.8, -10, 0, lv), 0.5, () => ({ throttle: 1 }), lv); // along the bar, a hand off its line
   expect(hitObstacle(lv, 0, 0.5, 0.9 - 0.05)).toBeUndefined(); // the bar's own height clears every post
-  const across = run(start(-8, 2, Math.PI / 2, lv), 4, () => ({ throttle: 1 }), lv);
+  const across = run(start(-14, 2, Math.PI / 2, lv), 4, () => ({ throttle: 1 }), lv);
   expect(across.last?.name).toBe("Hit a rail post");
   expect(side.x).toBeCloseTo(0.8, 0);
 });
 
 test("a tree catches the board's edge, not a circle round its middle", () => {
   const lv = flat({ obstacles: [{ x: 0, z: 10, r: 0.5, tall: 30 }] });
-  expect(hitObstacle(lv, 0.9, 9.5, 0, 0)).toBeUndefined(); // heading at it, 0.9 m to the side: clear
-  expect(hitObstacle(lv, 0.9, 9.5, 0, Math.PI / 2)).toBeDefined(); // turned across: the long edge reaches it
-  expect(hitObstacle(lv, 0, 8.8, 0, 0)).toBeDefined(); // the nose catches it 1.2 m out, before the centre could
+  expect(hitObstacle(lv, 1.3, 9.5, 0, 0)).toBeUndefined(); // heading at it, 1.3 m to the side: clear
+  expect(hitObstacle(lv, 1.3, 9.5, 0, Math.PI / 2)).toBeDefined(); // turned across: the long edge reaches it
+  expect(hitObstacle(lv, 0, 7.8, 0, 0)).toBeDefined(); // the nose catches it 2.2 m out, before the centre could
 });
 
 test("a skater grinds a rail down a slope and stays on the bar", () => {
@@ -150,9 +150,9 @@ test("a steep curve carries the roadster up and off the lip, a box side is still
 
 test("a box side stops the board's edge, not just its middle", () => {
   const box = flat({ pieces: [piece("box", "b", 0, 10, 0, 6, 4, 1, 1)] }); // sides at x = +-3
-  const graze = run(start(3.2, 0, 0, box), 3, () => ({ throttle: 1 }), box); // the middle is 0.2 m clear, the edge is not
+  const graze = run(start(3.4, 0, 0, box), 3, () => ({ throttle: 1 }), box); // the middle is 0.4 m clear, the edge is not
   expect(graze.z).toBeLessThan(8.5);
-  const beside = run(start(3.6, 0, 0, box), 3, () => ({ throttle: 1 }), box);
+  const beside = run(start(3.8, 0, 0, box), 3, () => ({ throttle: 1 }), box);
   expect(beside.z).toBeGreaterThan(14); // fully clear: rides past
 });
 
@@ -236,7 +236,7 @@ test("a push is gentle and tops out at a speed you can steer at, while the jets 
   expect(kmh(jets)).toBeGreaterThan(110); // the jets are the real speed
 
   const hill = makeLevel({ name: "h", pieces: [piece("ramp", "slope", 0, 0, Math.PI, 20, 400, 0, 120)], rails: [], spawns: [], bounds: { minX: -300, maxX: 300, minZ: -400, maxZ: 400 } });
-  const down = run(start(0, -198, 0, hill), 10, () => ({}), hill); // heading downhill, no push at all
+  const down = run(start(0, -190, 0, hill), 10, () => ({}), hill); // heading downhill, no push at all
   expect(kmh(down)).toBeGreaterThan(75); // gravity carries it past what pushing reaches
 });
 
@@ -258,9 +258,19 @@ test("in the air the board's tips are what hit a box, so the nose stops at its f
   const box = piece("box", "wall", 0, 6, 0, 10, 3, 4, 6); // a 3 m block with its near face at z = 4
   const l = makeLevel({ name: "wall", pieces: [box], rails: [], spawns: [{ name: "car", x: 0, z: 0, yaw: 0 }], bounds: { minX: -30, maxX: 30, minZ: -30, maxZ: 30 } });
   const s = start(0, 0, 0, l);
-  s.air = true; s.y = 1; s.vy = 0; s.vx = 0; s.vz = 8; s.z = 2;
+  s.air = true; s.y = 1; s.vy = 0; s.vx = 0; s.vz = 8; s.z = 0.5; // the tail end is 2.2 m behind the middle, the nose 2.2 ahead
   let top = 0;
   for (let i = 0; i < 90; i++) { step(s, IDLE, l); top = Math.max(top, s.y); }
   expect(top).toBeLessThan(1.5); // never snapped up onto the box
   expect(s.z).toBeLessThan(4); // never carried into it
+});
+
+test("the whole deck is solid: driving at a wall stops the nose at its face, never inside it", () => {
+  const wall = flat({ pieces: [piece("box", "wall", 0, 20, 0, 30, 4, 6, 6)] }); // a 6 m block, its near face at z = 18
+  const hit = run(start(0, 0, 0, wall), 4, () => ({ throttle: 1 }), wall);
+  expect(hit.z + BOARD.halfLen).toBeLessThan(18.01); // nose at or short of the face
+  const drift = run(Object.assign(start(0, 15, 0.2, wall), { speed: 3 }), 3, () => ({ steer: 1 }), wall); // up to the face and turning into it
+  for (const a of [-BOARD.halfLen, BOARD.halfLen]) for (const c of [-BOARD.halfWid, BOARD.halfWid]) {
+    expect(wall.height(drift.x + Math.sin(drift.yaw) * a + Math.cos(drift.yaw) * c, drift.z + Math.cos(drift.yaw) * a - Math.sin(drift.yaw) * c)).toBeLessThan(drift.y + 0.2);
+  }
 });

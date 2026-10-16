@@ -91,8 +91,9 @@ export function makeLevel(l: Omit<Level, "height">): Level {
   };
 }
 
-/** The board's footprint: half its length (along the heading) and half its width, in metres. */
-export const BOARD = { halfLen: 0.8, halfWid: 0.3 };
+/** The board's footprint: half its length (along the heading) and half its width, in metres. It is the deck you see
+ * (`DECK` in models.ts, 4.4 by 1.25), so a nose or edge that reaches a wall stops the board there. */
+export const BOARD = { halfLen: 2.2, halfWid: 0.625 };
 
 /**
  * The obstacle the board is inside, if any. The board is a rectangle pointing along `yaw`, so a tree

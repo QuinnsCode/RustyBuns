@@ -72,3 +72,9 @@ test("on a slope the board's up is the ground's normal, whatever the heading", (
     expect(up(gx, gz, yaw).distanceTo(n)).toBeLessThan(1e-9);
   }
 });
+
+test("the board that hits walls is the deck you see", async () => {
+  const { BOARD } = await import("../src/level.ts"), { DECK } = await import("../src/models.ts");
+  expect(BOARD.halfLen).toBe(DECK.length / 2);
+  expect(BOARD.halfWid).toBe(DECK.width / 2);
+});

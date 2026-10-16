@@ -56,7 +56,7 @@ const BOOST_TOP = JETS.boostTop;
 function footprintTop(level: Level, x: number, z: number, yaw: number) {
   const sn = Math.sin(yaw), cs = Math.cos(yaw);
   let top = level.height(x, z);
-  for (const a of [-BOARD.halfLen, 0, BOARD.halfLen]) for (const c of [-BOARD.halfWid, BOARD.halfWid]) top = Math.max(top, level.height(x + sn * a + cs * c, z + cs * a - sn * c));
+  for (const a of [-RIDE.halfLen, 0, RIDE.halfLen]) for (const c of [-RIDE.halfWid, RIDE.halfWid]) top = Math.max(top, level.height(x + sn * a + cs * c, z + cs * a - sn * c));
   return top;
 }
 
@@ -72,6 +72,32 @@ function tipContact(level: Level, x: number, z: number, yaw: number) {
   return best;
 }
 
+/** The part of the board that rides up a ramp: its wheels. A rigid deck's tips would dig into a curve the wheels roll up. */
+const RIDE = { halfLen: 0.8, halfWid: 0.3 };
+
+/** The highest floor under the whole deck (nose, tail, edges): what the board you see would be touching. */
+function deckTop(level: Level, x: number, z: number, yaw: number) {
+  const sn = Math.sin(yaw), cs = Math.cos(yaw);
+  let top = level.height(x, z);
+  for (const a of [-BOARD.halfLen, 0, BOARD.halfLen]) for (const c of [-BOARD.halfWid, 0, BOARD.halfWid]) top = Math.max(top, level.height(x + sn * a + cs * c, z + cs * a - sn * c));
+  return top;
+}
+
+const LEVEL_RIDE = 0.3; // radians: a board on ground this flat that meets a face has hit a wall; a steeper one is on a transition
+/** Is the deck in a face: any point of it above the board, on ground steeper than a ramp? The stride walk below catches a
+ * face met head on; this catches one met at a glance, where each stride rises too little to notice. */
+function inFace(level: Level, x: number, z: number, yaw: number) {
+  const sn = Math.sin(yaw), cs = Math.cos(yaw), h0 = level.height(x, z), e = 0.25;
+  for (const a of [-BOARD.halfLen, 0, BOARD.halfLen]) for (const c of [-BOARD.halfWid, 0, BOARD.halfWid]) {
+    const px = x + sn * a + cs * c, pz = z + cs * a - sn * c;
+    if (level.height(px, pz) - h0 <= STEP) continue;
+    const gx = level.height(px + e, pz) - level.height(px - e, pz), gz = level.height(px, pz + e) - level.height(px, pz - e);
+    if (Math.hypot(gx, gz) > 2 * e * MAX_SLOPE && gx * (px - x) + gz * (pz - z) > 0) return true; // steep, and rising away from the board: not the lip of a drop
+  }
+  return false;
+}
+
+const FACE = 5; // a rise steeper than this (about 79 degrees) in a stride is a face the deck can't pass; a curve's lip rolls into it gently
 const MAX_SLOPE = 3; // a rise steeper than this (about 72 degrees) in one stride is a wall, not a ramp
 const CARVE = 0.8; // how much speed stiffens the board's turn: at top speed it turns 1/(1+CARVE) as tight
 const CARVE_DRAG = 0.5; // a hard carve at speed scrubs this share of it per second
@@ -369,10 +395,11 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     // pumping: weight the board as the floor curves up under it and the curve gives back speed
     if (inp.boost) s.speed += dir * PUMP * Math.abs(s.speed) * Math.max(0, pitched * dir);
     { // the board carves: weight over the trucks, tighter when fast, and it falls toward downhill
-      const load = Math.abs(s.speed) / tune.top;
+      const load = Math.abs(s.speed) / tune.top, yaw0 = s.yaw;
       s.yaw += inp.steer * tune.turn * DT * Math.min(1, Math.abs(s.speed) / (3 * T)) * dir / (1 + CARVE * load);
       s.yaw -= DRIFT * across * DT * Math.min(1, Math.abs(s.speed) / (3 * T)) * dir;
       s.speed *= 1 - CARVE_DRAG * Math.abs(inp.steer) * load * DT;
+      if (Math.abs(s.pitch) < LEVEL_RIDE && !s.fan && (deckTop(level, s.x, s.z, s.yaw) - deckTop(level, s.x, s.z, yaw0) > STEP || (inFace(level, s.x, s.z, s.yaw) && !inFace(level, s.x, s.z, yaw0)))) s.yaw = yaw0; // a wall is hard: turning can't swing the deck into it
     }
     s.firing.rear = boosting || (inp.throttle > 0 && s.speed < tune.top);
 
@@ -384,9 +411,13 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     // a steep curve (a quarter pipe near its lip) is not
     const n = Math.max(1, Math.ceil(dist / 0.1));
     let prev = s.y;
-    let wallPrev = footprintTop(level, s.x, s.z, s.yaw);
+    let wallPrev = footprintTop(level, s.x, s.z, s.yaw), deckPrev = deckTop(level, s.x, s.z, s.yaw);
     for (let i = 1; i <= n; i++) {
       const px = s.x + ((nx - s.x) * i) / n, pz = s.z + ((nz - s.z) * i) / n;
+      const deck = deckTop(level, px, pz, s.yaw);
+      const hit = deck - deckPrev > Math.max(STEP, (dist / n) * FACE); // the nose, tail or an edge meets a face: the deck is solid
+      deckPrev = deck;
+      if (hit && Math.abs(s.pitch) < LEVEL_RIDE && !s.fan) return crash(s, null); // (a rider already climbing a curve, or sucked up a side by the fan, is let on)
       const h = level.height(px, pz);
       const wall = footprintTop(level, px, pz, s.yaw); // the highest point under the board's nose, tail and edges
       const rise = Math.max(h - prev, wall - wallPrev);
@@ -403,6 +434,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       }
       prev = h;
     }
+    if (Math.abs(s.pitch) < LEVEL_RIDE && !s.fan && inFace(level, nx, nz, s.yaw) && !inFace(level, s.x, s.z, s.yaw)) return crash(s, null); // the stride would end with the deck in a face
     const h = prev;
     s.speed -= G * Math.sin(s.pitch) * DT; // slopes slow you going up and speed you coming down, even from rest
     const vy = s.vy;
