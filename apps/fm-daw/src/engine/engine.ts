@@ -17,7 +17,16 @@ const SILENT = 1e-5;
 const TAU = 2 * Math.PI;
 const CARRIERS = [[1, 0, 0, 0], [1, 0, 1, 0], [1, 0, 0, 0], [1, 1, 1, 1]];
 const MAX_CUTOFF = 0.45; // of the sample rate
-const VIB_FADE = 0.3;    // seconds for an analog note's vibrato to come in, as a player's would
+const VIB_FADE = 0.3;
+const SQRT2 = Math.SQRT2; // the track filters' damping: Butterworth, no peak
+
+/** Trapezoidal SVF coefficients [a1, a2, a3] for cutoff 20 Hz * 2^(10 x). */
+function svfCoefs(x: number, sr: number, out: Float64Array, at: number) {
+  const fc = Math.min(20 * Math.pow(2, 10 * x), MAX_CUTOFF * sr);
+  const g = Math.tan((Math.PI * fc) / sr);
+  const a1 = 1 / (1 + g * (g + SQRT2));
+  out[at] = a1; out[at + 1] = g * a1; out[at + 2] = g * g * a1;
+}    // seconds for an analog note's vibrato to come in, as a player's would
 
 /** A naive saw with PolyBLEP smoothing at the wrap: cheap, and no aliasing fizz. */
 function saw(ph: number, dt: number): number {
@@ -70,6 +79,13 @@ export class TsEngine implements FmEngine {
   private readonly driveNorm = new Float64Array(TRACKS);
   private readonly lfoPhase = new Float64Array(TRACKS);
   private readonly lastFreq = new Float64Array(TRACKS);
+  // track filters: on flags, coefficients [a1, a2, a3] per track, state [ic1, ic2]
+  private readonly lpOn = new Uint8Array(TRACKS);
+  private readonly hpOn = new Uint8Array(TRACKS);
+  private readonly lpK = new Float64Array(TRACKS * 3);
+  private readonly hpK = new Float64Array(TRACKS * 3);
+  private readonly lpS = new Float64Array(TRACKS * 2);
+  private readonly hpS = new Float64Array(TRACKS * 2);
   // voices, struct of arrays: [track * VOICES + v]
   private readonly active = new Uint8Array(TRACKS * VOICES);
   private readonly gate = new Uint8Array(TRACKS * VOICES);
@@ -134,6 +150,8 @@ export class TsEngine implements FmEngine {
     else if (i === P.FENV_ATTACK) this.fAtkInc[t] = 1 / (v * sr);
     else if (i === P.FENV_DECAY) this.fDecCoef[t] = decayCoef(v, sr);
     else if (i === P.GLIDE) this.glideCoef[t] = v > 0 ? Math.exp(-1 / (v * sr)) : 0;
+    else if (i === P.HICUT) { this.lpOn[t] = v > 0.001 ? 1 : 0; svfCoefs(1 - v, sr, this.lpK, t * 3); }
+    else if (i === P.LOCUT) { this.hpOn[t] = v > 0.001 ? 1 : 0; svfCoefs(v, sr, this.hpK, t * 3); }
     else if (i === P.DRIVE) { this.driveG[t] = 1 + 6 * v; this.driveNorm[t] = 1 / Math.tanh(1 + 6 * v); }
   }
 
@@ -187,6 +205,7 @@ export class TsEngine implements FmEngine {
     this.clickEnv = 0;
     this.dcXL = 0; this.dcYL = 0; this.dcXR = 0; this.dcYR = 0;
     this.limEnv = 0;
+    this.lpS.fill(0); this.hpS.fill(0);
   }
 
   click(accent: boolean) { this.clickFreq = accent ? 1760 : 1320; this.clickEnv = 0.3; this.clickPhase = 0; }
@@ -344,6 +363,24 @@ export class TsEngine implements FmEngine {
           }
           mono += (carrierSum / nc + ns) * this.amp[k];
           if (!attacking && loudest < SILENT) this.active[k] = 0;
+        }
+        if (this.lpOn[t]) {
+          const c = t * 3, z = t * 2;
+          const v3 = mono - this.lpS[z + 1];
+          const v1 = this.lpK[c] * this.lpS[z] + this.lpK[c + 1] * v3;
+          const v2 = this.lpS[z + 1] + this.lpK[c + 1] * this.lpS[z] + this.lpK[c + 2] * v3;
+          this.lpS[z] = 2 * v1 - this.lpS[z];
+          this.lpS[z + 1] = 2 * v2 - this.lpS[z + 1];
+          mono = v2;
+        }
+        if (this.hpOn[t]) {
+          const c = t * 3, z = t * 2;
+          const v3 = mono - this.hpS[z + 1];
+          const v1 = this.hpK[c] * this.hpS[z] + this.hpK[c + 1] * v3;
+          const v2 = this.hpS[z + 1] + this.hpK[c + 1] * this.hpS[z] + this.hpK[c + 2] * v3;
+          this.hpS[z] = 2 * v1 - this.hpS[z];
+          this.hpS[z + 1] = 2 * v2 - this.hpS[z + 1];
+          mono = mono - SQRT2 * v1 - v2;
         }
         mono *= this.gainNow[t];
         const ml = mono * this.panL[t], mr = mono * this.panR[t];
