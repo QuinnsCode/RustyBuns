@@ -2,6 +2,7 @@
 import type { Level } from "../level.ts";
 import { plaza } from "./plaza.ts";
 import { elCapitan } from "./el-capitan.ts";
+import { grandCanyon } from "./grand-canyon.ts";
 import { glacierPoint } from "./glacier-point.ts";
 import { grandPrismatic } from "./grand-prismatic.ts";
 import { halfDome } from "./half-dome.ts";
@@ -23,6 +24,7 @@ export const LEVELS: Entry[] = [
   park(halfDome),
   park(yosemiteFalls),
   park(grandPrismatic),
+  park(grandCanyon),
 ];
 
 /** The level a query string asks for (`?level=el-capitan`), else El Capitan Meadow: the game starts in a national park. */
