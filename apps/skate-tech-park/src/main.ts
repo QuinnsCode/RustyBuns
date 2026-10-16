@@ -90,19 +90,19 @@ for (let i = 0; i < 28; i++) {
 }
 
 const car = roadster();
+const showroom = new URLSearchParams(location.search).has("showroom");
 const PIVOT_Y = { fingerboard: 0.45, roadster: 0.6 }; // what a flip turns about
-const skins = new Skins({ fingerboard: fingerboard(), roadster: car }, "roadster", PIVOT_Y);
+const skins = new Skins({ fingerboard: fingerboard(), roadster: car }, showroom ? "roadster" : "fingerboard", PIVOT_Y);
 const plumes = new Plumes();
 scene.add(skins.root, plumes.puffs.points);
 const thrusters = car.userData.thrusters as Thruster[];
 const plate = car.userData.plate as THREE.Group;
 
-const showroom = new URLSearchParams(location.search).has("showroom");
-let mode: Mode = "car";
-const begin = (m: Mode) => { const p = spawn(level, m); return start(p.x, p.z, p.yaw, level); };
-let sim: State = begin(mode);
+let mode: Mode = showroom ? "car" : "skate"; // the board is the game; the roadster is the skin you swap to
+const begin = () => { const p = spawn(level); return start(p.x, p.z, p.yaw, level); };
+let sim: State = begin();
 const reset = () => {
-  sim = showroom ? start(0, -20, 0, level) : begin(mode);
+  sim = showroom ? start(0, -20, 0, level) : begin();
   chase.snap(sim, skins.current);
   ui.reset();
 };

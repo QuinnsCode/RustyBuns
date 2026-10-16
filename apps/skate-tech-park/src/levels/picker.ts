@@ -3,7 +3,7 @@
 import { Check, Circle, createElement, MapPin } from "lucide";
 import { Fog, type Scene } from "three";
 import type { Level } from "../level.ts";
-import type { Mode, State } from "../sim.ts";
+import type { State } from "../sim.ts";
 import "./levels.css";
 import { groundMesh, props } from "./ground.ts";
 import { trackRun, type Run } from "./goals.ts";
@@ -14,9 +14,9 @@ const entry = pick(location.search);
 export const level: Level | ParkLevel = entry.load();
 export const park = "goals" in level;
 
-/** Where a ride starts: the spawn named for the mode, else the first. */
-export function spawn(l: Level, mode: Mode) {
-  return l.spawns.find((s) => s.name === mode) ?? l.spawns[0]!;
+/** Where a ride starts: the spawn named "skate", else the first. The skin never moves the start. */
+export function spawn(l: Level) {
+  return l.spawns.find((s) => s.name === "skate") ?? l.spawns[0]!;
 }
 
 const label = (g: Goal) => g.kind === "score" ? `Score ${g.target.toLocaleString("en-US")}` : g.kind === "combo" ? `Combo ${g.target.toLocaleString("en-US")}` : g.kind === "gap" ? `Gap: ${g.name}` : g.kind === "climb" ? `Climb ${g.name}: ${g.metres} m` : "Collect the rings";
