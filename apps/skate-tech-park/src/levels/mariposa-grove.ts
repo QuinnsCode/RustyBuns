@@ -1,7 +1,9 @@
 // Rails between the sequoias of the Mariposa Grove, down the grove's own hillside: bars threaded through
 // two pairs of giants, a funbox in a clearing, and a fallen giant to jump. Everything follows the slope.
 import { type ParkSpec, type Tree } from "./park.ts";
-import { fallenLog, flatBar, funbox, gap, handrail, hip, kicker, quarterPipe, rollers } from "./pieces.ts";
+import { fallenLog, flatBar, funbox, gap, handrail, hip, kicker, quarterPipe, rollers, skyRail } from "./pieces.ts";
+
+const E = Math.PI / 2;
 
 // Sequoias at the scale of the giant board: wide enough that the bar between a pair reads as a needle.
 const pair = (name: string, x: number, z: number): Tree[] => [-8, 8].map((dx) => ({ x: x + dx, z, r: 4.5, tall: 80, name }));
@@ -21,11 +23,14 @@ export const mariposaGrove: ParkSpec = {
     { parts: [handrail({ x: 50, z: -50 }, { len: 40, y: 1.2 }), flatBar({ x: 50, z: -5 }, { len: 14 })] },
     { parts: [giant.launch, giant.landing, hip({ x: 50, z: 48, yaw: 0 }, { w: 14, d: 5, h: 2, name: "fallen giant" })] },
     { parts: [quarterPipe({ x: 50, z: 100 }, { w: 14, d: 7, h: 3.6 }), kicker({ x: -80, z: 110 }, { w: 8, d: 8, h: 1.6 })] },
+    // not possible: a bar on stilts that climbs away from the ground
+    { parts: [skyRail({ x: -50, z: 140, yaw: E }, { len: 120, y: 1.6, y2: 18 })] },
   ],
   trees: [...pair("Faithful Couple", -80, 0), ...pair("Clothespin", 50, -50)],
   spawns: [
     { name: "grove road", x: -80, z: -60, yaw: 0 },
     { name: "clearing", x: 50, z: -90, yaw: 0 },
+    { name: "sky rail", x: -125, z: 140, yaw: E },
   ],
   bounds: { minX: -150, maxX: 120, minZ: -110, maxZ: 160 },
   goals: [

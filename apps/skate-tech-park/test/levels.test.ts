@@ -90,19 +90,21 @@ test("Half Dome's east shoulder is a natural ramp: driving up it climbs the dome
   expect(run.done(l.goals.find((g) => g.kind === "climb")!)).toBe(true);
 });
 
-test("a sky rail is a bar you can ride from a kicker, 160 m long and climbing away from the ground", () => {
-  for (const [id, spawn] of [["el-capitan", "sky rail"]] as const) {
-    const l = park(id), sp = l.spawns.find((p) => p.name === spawn)!, bar = l.rails.find((r) => Math.abs((r.y2 ?? r.y) - r.y) > 10)!;
+test("every park has a sky rail: a long bar on stilts you can ride from its kicker, steep or shallow, climbing away from the ground", () => {
+  for (const l of parks) {
+    const sp = l.spawns.find((p) => p.name === "sky rail")!, bar = l.rails.find((r) => Math.abs((r.y2 ?? r.y) - r.y) > 10)!;
+    expect(sp).toBeDefined();
     expect(bar).toBeDefined();
     const s = start(sp.x, sp.z, sp.yaw, l);
     let ground = 0, top = 0;
     for (let i = 0; i < 12 * 60; i++) {
       const lip = (s.x - bar.a.x) * Math.sin(s.yaw) + (s.z - bar.a.z) * Math.cos(s.yaw);
-      step(s, { ...IDLE, throttle: s.speed < 30 ? 1 : -1, boost: !s.air && s.speed < 30, jump: lip > -3 && lip < -1.5 && !s.air }, l);
+      const len = Math.hypot(bar.b.x - bar.a.x, bar.b.z - bar.a.z), ux = (bar.b.x - bar.a.x) / len, uz = (bar.b.z - bar.a.z) / len, ahead = (s.x - bar.a.x) * ux + (s.z - bar.a.z) * uz + 6, to = { x: bar.a.x + ux * ahead, z: bar.a.z + uz * ahead }, err = Math.atan2(Math.sin(Math.atan2(to.x - s.x, to.z - s.z) - s.yaw), Math.cos(Math.atan2(to.x - s.x, to.z - s.z) - s.yaw));
+      step(s, { ...IDLE, throttle: s.speed < 30 ? 1 : -1, boost: !s.air && s.speed < 30, steer: s.air ? 0 : Math.max(-1, Math.min(1, err * 8)), jump: lip > -3 && lip < -1.5 && !s.air }, l);
       if (s.grind >= 0) ground++;
       top = Math.max(top, s.y);
     }
-    expect(ground).toBeGreaterThan(60);
+    expect([l.id, ground > 60]).toEqual([l.id, true]);
     expect(top - l.height(bar.a.x, bar.a.z)).toBeGreaterThan(4);
   }
 });

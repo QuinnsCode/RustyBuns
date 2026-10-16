@@ -1,7 +1,7 @@
 // Yosemite Falls: a flat shelf above the falls, with the valley 90 m below. Hit the lip at the edge and
 // clear the drop to the valley slope, then ride the valley floor's street line.
 import { type ParkSpec } from "./park.ts";
-import { bowl, flatBar, funbox, gap, halfpipe, hip, stairSet, tabletop } from "./pieces.ts";
+import { bowl, flatBar, funbox, gap, halfpipe, hip, stairSet, tabletop, skyRail } from "./pieces.ts";
 
 const E = Math.PI / 2;
 
@@ -18,6 +18,8 @@ export const yosemiteFalls: ParkSpec = {
     { parts: [flatBar({ x: 20, z: 60, yaw: E }, { len: 14 }), funbox({ x: 70, z: 60, yaw: E }, { w: 10, d: 24, h: 1.2, ramp: 7 })] },
     { parts: [hop.launch, hop.landing, hip({ x: 177, z: 80, yaw: E }, { w: 8, d: 6, h: 1.8, name: "boulder" })] },
     { parts: [bowl({ x: 140, z: 170 }, { w: 64, d: 46, h: 4.5, deck: 5 }), stairSet({ x: 60, z: 130, yaw: E }, { w: 8, steps: 6, rise: 0.25, run: 0.9 })] },
+    // not possible: a bar on stilts that climbs away from the ground
+    { parts: [skyRail({ x: 100, z: 215, yaw: E }, { len: 160, y: 1.6, y2: 14 })] },
   ],
   gaps: [
     { name: "Upper Fall", a: { x: -195, z: -220 }, b: { x: -105, z: -215 }, r: 30, rb: 70, bonus: 3500, min: 40 },
@@ -26,6 +28,7 @@ export const yosemiteFalls: ParkSpec = {
     { name: "falls view", x: 20, z: -190, yaw: -1.7 },
     { name: "shelf", x: -285, z: -220, yaw: E },
     { name: "valley line", x: -20, z: 60, yaw: E },
+    { name: "sky rail", x: -5, z: 215, yaw: E },
   ],
   landmarks: [{ kind: "falls", from: { x: -195, z: -220 }, to: { x: -135, z: -220 }, width: 18 }],
   bounds: { minX: -300, maxX: 280, minZ: -300, maxZ: 260 },

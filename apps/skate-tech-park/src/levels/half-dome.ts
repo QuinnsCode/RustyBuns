@@ -1,7 +1,7 @@
 // Half Dome: a street line on the quiet east flat, and the dome itself. Ride up its east shoulder (a long
 // natural ramp), cross the crest, and fly off the sheer west face.
 import { type ParkSpec } from "./park.ts";
-import { outcrop, fallenLog, flatBar, funbox, hip, quarterPipe, stairSet } from "./pieces.ts";
+import { outcrop, fallenLog, flatBar, funbox, hip, quarterPipe, stairSet, skyRail } from "./pieces.ts";
 
 const E = Math.PI / 2, W = -Math.PI / 2;
 
@@ -16,6 +16,8 @@ export const halfDome: ParkSpec = {
     { parts: [flatBar({ x: 130, z: 190, yaw: E }, { len: 14 }), stairSet({ x: 155, z: 190, yaw: E }, { w: 8, steps: 6, rise: 0.25, run: 0.9 })] },
     { parts: [funbox({ x: 195, z: 190, yaw: E }, { w: 10, d: 24, h: 1.2, ramp: 7 }), hip({ x: 230, z: 190 }, { w: 12, d: 12, h: 2.4 })] },
     { parts: [quarterPipe({ x: 265, z: 190, yaw: E }, { w: 14, d: 7, h: 3.6 })] },
+    // not possible: a bar on stilts that climbs away from the ground
+    { parts: [skyRail({ x: 90, z: 260, yaw: E }, { len: 100, y: 1.6, y2: 21.6 })] },
   ],
   gaps: [
     { name: "Half Dome Face", a: { x: -30, z: 20 }, b: { x: -120, z: -30 }, r: 45, rb: 110, bonus: 4000, min: 45 },
@@ -25,6 +27,7 @@ export const halfDome: ParkSpec = {
     { name: "flat line", x: 100, z: 190, yaw: E },
     { name: "dome run", x: 150, z: 20, yaw: W },
     { name: "return line", x: 285, z: 215, yaw: W },
+    { name: "sky rail", x: 15, z: 260, yaw: E },
   ],
   granite: 195,
   bounds: { minX: -250, maxX: 300, minZ: -100, maxZ: 300 },
