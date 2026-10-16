@@ -1,5 +1,5 @@
 // The page: draws the sim, turns keys into its input, and keeps the chase camera behind the rider.
-import { Car, createElement, Info, RectangleHorizontal, RotateCcw } from "lucide";
+import { Car, createElement, Info, RectangleHorizontal, RotateCcw, Users } from "lucide";
 import * as THREE from "three";
 import { mountPartsPicker } from "./parts-picker.ts";
 import { fingerboard, roadster, type Thruster } from "./models.ts";
@@ -16,7 +16,10 @@ import { DT, FLICK_TIME, IDLE, type Input, type Mode, noseUp, start, step, type 
 import { HALF } from "./levels/plaza.ts";
 import type { ParkLevel } from "./levels/park.ts";
 import { Gestures } from "./gesture.ts";
-import { level, mountLevelUi, park, spawn } from "./levels/picker.ts";
+import { level, levelId, mountLevelUi, park, spawn } from "./levels/picker.ts";
+import { newRoomCode, Online, roomCode } from "./net/client.ts";
+import { MAX_RIDERS } from "./net/room.ts";
+import { Ghosts } from "./render/ghosts.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#view")!;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -167,9 +170,24 @@ function hud() {
   swapBtn.title = mode === "car" ? "Fingerboard (Tab)" : "Roadster (Tab)";
   if (skins.show(mode === "car" ? "roadster" : "fingerboard")) plumes.landed(sim.x, sim.y, sim.z, 4); // the swap pops in a ring of puffs
   $("keys").replaceChildren(...ESSENTIALS(), help); // the rest sits behind the info button
+  const n = (online?.riders.length ?? 0) + 1;
+  $("room").textContent = !online ? "" : online.status === "in" ? `Room ${online.room}: ${n} of ${MAX_RIDERS}` : online.status === "full" ? `Room ${online.room} is full or offline` : online.status === "off" ? `Room ${online.room} is open in another tab` : `Joining ${online.room}...`;
+  togetherBtn.title = online ? "Copy the room link" : "Ride with friends";
 }
-hud();
 
+// Playing together: `?room=ABCD` joins a room of up to four riders; the button makes one and copies its link.
+const ghosts = new Ghosts(scene);
+const code = roomCode(location.search);
+const online = code ? new Online(code, levelId, () => { ghosts.set(online!.riders); hud(); }) : null;
+const togetherBtn = $("together") as HTMLButtonElement;
+togetherBtn.append(icon(Users));
+togetherBtn.addEventListener("click", () => {
+  if (!code) { location.search = `?${new URLSearchParams({ level: levelId, room: newRoomCode() })}`; return; }
+  navigator.clipboard?.writeText(location.href).catch(() => {});
+  togetherBtn.title = "Link copied";
+  togetherBtn.blur();
+});
+hud();
 const chase = new Chase(camera);
 const manualEase = new TiltEase();
 const taps = new Taps($("taps")); // rings where the feet pop, drag and flick
@@ -227,6 +245,7 @@ function frame(now: number) {
     plate.rotation.x = THREE.MathUtils.lerp(plate.rotation.x, sim.plateDown ? -Math.PI * 0.95 : 0, 0.3);
   }
 
+  online?.send({ skin: skins.current, n: [rider.position.x, rider.position.y, rider.position.z, rider.rotation.x, rider.rotation.y, rider.rotation.z, pivot.rotation.x, pivot.rotation.y, pivot.rotation.z, pivot.position.y] }, now);
   chase.update(sim, skins.current, dt);
   if (showroom) { // ?showroom: the car parked, the camera circling it
     const a = now / 4000;
@@ -250,6 +269,7 @@ function frame(now: number) {
   trick.style.opacity = (shownTrick || sim.grind >= 0) && (sim.grind >= 0 || now - trickAt < 2200) ? "1" : "0";
 
   camera.updateMatrixWorld();
+  ghosts.update(dt, camera);
   taps.update(dt, pivot, skins.current, camera);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
