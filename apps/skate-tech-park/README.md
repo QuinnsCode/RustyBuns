@@ -10,6 +10,10 @@ Tricks score when you land them: air time, every 180 you spin, kickflips, grinds
 
 Every park has its own air (`weather` in its spec, moods in `src/render/weather.ts`): drifting clouds and a sun disc in the sky, fog that closes in, grain on the ground, rain streaks that lean into the wind, snow that whitens the flats, dust, mist, drifting motes, and lightning in a storm. Yosemite Falls is rainy, Half Dome snowy, the Grand Canyon dusty. Add `?weather=rain|storm|snow|dust|mist|noon|dusk|overcast|golden` to any park to change it.
 
+## The whole park is the skate park
+
+Beyond the hand-placed kit, every park is filled with contour ribbons (`src/levels/ribbons.ts`): a ribbon traces the hillside at one height and extrudes a profile along it (a berm, a cut bank, a channel, rollers, whoop berms) as a chain of short pieces with coping along the crest, so it follows the land instead of standing on it. A profile is a recipe with a width and a height, so one berm molds into a low roller or a tall wall, and `add`, `mirror` and `waves` make new profiles from old ones. `fill: { lines: 8 }` in a `ParkSpec` lays them across the slopes the sites leave empty, clear of spawns, gaps, trees and each other.
+
 ## Run it
 
 ```

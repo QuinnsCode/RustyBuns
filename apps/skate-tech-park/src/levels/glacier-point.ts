@@ -12,6 +12,7 @@ export const glacierPoint: ParkSpec = {
   name: "Glacier Point Rim",
   blurb: "Build speed across the plateau, hit the lip at the overlook and clear the drop to the slope below.",
   zone: "glacier-point",
+  fill: { lines: 8 },
   sites: [
     { parts: [tabletop({ x: 20, z: 90 }, { w: 8, d: 26, h: 1.6 })] },
     { parts: [outcrop({ x: -80, z: 110 }, { r: 3.5, h: 2.2 }), outcrop({ x: -100, z: 80 }, { r: 3, h: 1.8 })] },
