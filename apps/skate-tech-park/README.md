@@ -18,11 +18,13 @@ Beyond the hand-placed kit, every park is filled with contour ribbons (`src/leve
 
 The hand-placed kit and ribbons stand on the ground; the earthworks (`src/levels/earthworks.ts`) *are* the ground. Bowls and pools are dug into the meadow, a pump track of rollers and a row of dirt jumps are packed on top, spillway channels are cut along the slope, and earth quarter pipes and mounds are piled up. Each is held at the height of the ground under its centre and blended back into the hillside, so the sim, camera, mesh and map see one heightfield. `layOut` tries every cell of the map for one (crowded meadows get the small ones), clear of spawns, gap lines, trees and landmarks; lips carry coping you can grind. The ground mesh is 2 m fine, painted concrete or hardpack with a pale coping stone along each lip, and shades hollows. `earthworks: false` in a `ParkSpec` turns it off.
 
-## The board and the kit are modelled in Blender
+## The board, the kit and the roadster are modelled in Blender
 
 `blender/fingerboard.py` builds the fingerboard as a real mesh, at the built board's size: a pressed deck whose round ends are squeezed onto a disk instead of pinched to a point, bevelled ply, grip with bolt heads, shaped hangers, stacked bushings, crowned wheels on cores. It then decimates that mesh to three polygon budgets: `hi` (about 26k triangles), `mid` (6k, the default) and `low` (1.5k). `bun run models` writes them to `public/models/` (`blender -b --factory-startup -P blender/fingerboard.py -- --render out.png` adds a three-quarter render and an underside render to judge it by eye). The game loads one with `?board=hi|mid|low`, and `?board=built` keeps the three.js board. Each material is named after a parts-picker slot, so the picker paints the model.
 
 `blender/kit.py` models the kit the same way: a wooden ramp (riding sheets with dark joints, rounded trim, ply sides on a frame of ribs, a steel plate where it meets the ground), a concrete stair (steel nosing over a recessed riser, cheek walls) and a concrete block. A piece's surface is its own height function, often draped over real ground, so each module is a unit box that `src/render/kit.ts` fits to the piece: its top follows that function, so what you see is what you ride, and its edge bands keep their size in metres. Ramps (kicker, quarter pipe, funbox, spine, tabletop, gap landings), stair sets and boxes and ledges wear it; earthworks, bowls, boulders and logs keep the sampled mesh. `?kit=hi|mid|low` picks the budget (`mid` by default) and `?kit=built` turns it off. `kit.html` on the dev server is the kit room: one of each piece and the board, under a circling camera (`?at=2` frames the stairs).
+
+`blender/roadster.py` models the rocket roadster: a low two-seat body lofted through cross-sections and subdivided, wheel arches cut into it, a tinted glass canopy, slit headlights and a full-width tail bar that glow, mirrors, and turbine wheels, at the shared roadster's footprint. `dressRoadster` swaps it in over the shared one and keeps that one's ten nozzle bells and its hinged plate, so the plumes and the plate drop still work. `?car=hi|mid|low` (`mid` by default, 6k triangles) or `?car=built`; `?showroom` parks it under a circling camera.
 
 ## Run it
 
@@ -32,7 +34,7 @@ bun install
 bun run dev              # in the browser
 bun run desktop:dev      # as a desktop app
 bun test test            # the ride, headless
-bun run models           # rebuild the board and the kit in Blender (needs `blender` on PATH)
+bun run models           # rebuild the board, the kit and the roadster in Blender (needs `blender` on PATH)
 ```
 
 ## Ride together, on Cloudflare

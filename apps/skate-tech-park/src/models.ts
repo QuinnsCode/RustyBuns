@@ -1,6 +1,6 @@
 // The giant fingerboard and the rocket roadster, from three.js primitives: nothing to load or
 // license. The roadster is packages/models; its ten nozzles are where the exhaust comes from.
-// `dressBoard` then swaps the board's meshes for the one modelled in Blender (blender/fingerboard.py).
+// `dressBoard` and `dressRoadster` then swap in the ones modelled in Blender (blender/fingerboard.py, roadster.py).
 // Both face +z and stand on y = 0, so either one can be the skin over the same transform.
 import { roadster as shared } from "@rustybuns/models";
 import * as THREE from "three";
@@ -128,23 +128,52 @@ export function fingerboard(parts: Parts = DEFAULT_PARTS) {
 export const BOARD_BUDGETS = ["hi", "mid", "low"] as const;
 export type BoardBudget = (typeof BOARD_BUDGETS)[number];
 
+/** A GLB's meshes, each with its transform baked into its geometry. */
+async function glbMeshes(glb: ArrayBuffer | string) {
+  const loader = new GLTFLoader();
+  const gltf = typeof glb === "string" ? await loader.loadAsync(glb) : await loader.parseAsync(glb, "");
+  const meshes: THREE.Mesh[] = [];
+  gltf.scene.updateMatrixWorld(true);
+  gltf.scene.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    const out = new THREE.Mesh(m.geometry.applyMatrix4(m.matrixWorld), m.material);
+    out.castShadow = out.receiveShadow = true;
+    meshes.push(out);
+  });
+  return meshes;
+}
+
 /**
  * Swap the built board's meshes for the Blender model, a glTF whose materials are named after the picker's
  * slots, so they take the board's own materials and `paint` keeps working. The built meshes stay if it fails.
  */
 export async function dressBoard(board: THREE.Group, glb: ArrayBuffer | string) {
-  const loader = new GLTFLoader();
-  const gltf = typeof glb === "string" ? await loader.loadAsync(glb) : await loader.parseAsync(glb, "");
+  const meshes = await glbMeshes(glb);
   const { flipper, mats } = board.userData as { flipper: THREE.Group; mats: Record<string, THREE.Material> };
-  const meshes: THREE.Mesh[] = [];
-  gltf.scene.updateMatrixWorld(true);
-  gltf.scene.traverse((o) => { if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh); });
   if (!meshes.length) return false;
   flipper.clear();
   for (const m of meshes) {
-    const o = new THREE.Mesh(m.geometry.applyMatrix4(m.matrixWorld), mats[(m.material as THREE.Material).name] ?? m.material);
-    o.castShadow = o.receiveShadow = true;
-    flipper.add(o);
+    m.material = mats[(m.material as THREE.Material).name] ?? m.material;
+    flipper.add(m);
   }
+  return true;
+}
+
+/** The modelled roadster's polygon budgets, from blender/roadster.py. */
+export const ROADSTER_BUDGETS = ["hi", "mid", "low"] as const;
+export type RoadsterBudget = (typeof ROADSTER_BUDGETS)[number];
+
+/**
+ * Swap the shared roadster's body, glass, lights and wheels for the Blender model, keeping its nozzle bells
+ * (the plumes come out of their mounts) and its hinged plate. The shared body stays if it fails.
+ */
+export async function dressRoadster(car: THREE.Group, glb: ArrayBuffer | string) {
+  const meshes = await glbMeshes(glb);
+  if (!meshes.length) return false;
+  const { thrusters, plate } = car.userData as { thrusters: Thruster[]; plate: THREE.Object3D };
+  const keep = new Set<THREE.Object3D>([plate, ...thrusters.map((t) => t.mount.parent!)]);
+  for (const o of [...car.children]) if (!keep.has(o)) car.remove(o);
+  car.add(...meshes);
   return true;
 }
