@@ -38,6 +38,13 @@
   #pile div { overflow: hidden; text-overflow: ellipsis; }
   #pile .mk { color: var(--bad); } #pile .ours { background: color-mix(in srgb, var(--bad) 10%, transparent); } #pile .ok { color: var(--muted); }
   .muted { color: var(--muted); }
+  table { border-collapse: collapse; font: 12px var(--mono); } th, td { padding: 2px 14px 2px 0; text-align: right; white-space: nowrap; } th:first-child, td:first-child { text-align: left; } th { color: var(--muted); font-weight: 500; }
+  td.mk { color: var(--accent); text-align: left; }
+  .round { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; margin-top: 8px; }
+  .rpr { border: 1px solid var(--border); border-radius: 5px; padding: 6px 8px; font: 12px var(--mono); transition: opacity .2s; }
+  .rpr.queued { opacity: .45; } .rpr.merged { border-color: var(--ok); } .rpr.merging { border-color: var(--accent); }
+  .rpr .t { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin: 4px 2px 0 0; }
   a { color: var(--accent); }
 </style>
 </head>
@@ -62,6 +69,11 @@
     <svg id="chart" role="img" aria-label="Open PRs over the week by band"></svg>
     <div id="counts"></div>
   </div>
+  <div class="panel">
+    <h2><i data-lucide="chart-no-axes-column"></i>The widest each band got, night by night</h2>
+    <table id="nights"></table>
+    <p class="muted" style="margin:6px 0 0">Peaks, not averages: averaged over the whole window the git band is higher after Mervin's mark than before it, because the tail of the October 13 pile-up sits there. How many PRs were stuck at once is the fairer measure.</p>
+  </div>
   <div class="cols">
     <div class="panel">
       <h2><i data-lucide="users"></i><span id="agents">agents</span></h2>
@@ -73,10 +85,21 @@
       <div id="pile"></div>
     </div>
   </div>
-  <p class="muted">The zoomed-in proof: <a href="/mervin-watch.html">watch Mervin settle a merge round</a>, file by file. Data: <code>bun scripts/swarm-week.ts</code>, read only from GitHub and git; conflict and red-check spans are heuristics, so they undercount.</p>
+  <div class="panel">
+    <h2><i data-lucide="git-merge"></i>At the git wall: Mervin settles a round</h2>
+    <div class="bar" role="toolbar" aria-label="Merge round">
+      <button class="btn" id="rplay" title="Play the merge round"><i data-lucide="play"></i></button>
+      <button class="btn" id="rstop" title="Back to the start"><i data-lucide="square"></i></button>
+      <span id="rtiers" class="muted" style="font:12px var(--mono)"></span>
+    </div>
+    <div class="round" id="round"></div>
+    <p class="muted" style="margin:6px 0 0">Five real conflicted merges from this repo's history, run through codeSplitter (<code>bun scripts/swarm-round.ts</code>); a card is where Mervin asks a person. <a href="/mervin-watch.html">The full replay page</a> has lines, lanes and speeds.</p>
+  </div>
+  <p class="muted">Data: <code>bun scripts/swarm-week.ts</code>, read only from GitHub and git; conflict and red-check spans are heuristics, so they undercount.</p>
 </div>
 <script type="module">
-import { band, counts, timeline, gitPeak, pile, agentName, readWeek, Playhead, SPEEDS, OPEN } from "/swarm-replay.js";
+import { Player, events, view, readRound, TIERS } from "/mervin-replay.js";
+import { band, counts, timeline, gitPeak, nightPeaks, pile, agentName, readWeek, Playhead, SPEEDS, OPEN } from "/swarm-replay.js";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 try { const t = localStorage.getItem("map-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
@@ -154,6 +177,28 @@ function drawPile() {
     ? `<div class="mk">&lt;&lt;&lt;&lt;&lt;&lt;&lt; ${esc(p.agent)} (#${p.n})</div><div class="ours">${esc(p.title)}</div><div class="mk">=======</div><div class="mk">&gt;&gt;&gt;&gt;&gt;&gt;&gt; main</div>`
     : `<div class="ok">${esc(p.title)}</div>`).join("");
 }
+
+// The numbers: the widest each band got per night, with the ship marks on the night they fell.
+$("nights").innerHTML = `<tr><th>night</th><th>open</th><th>stuck on git</th><th>red check</th><th></th></tr>` + nightPeaks(week).map((n) =>
+  `<tr><td>${dayFmt.format(new Date(week.start + n.day * 864e5 + 36e5))}</td><td>${n.open}</td><td>${n.git}</td><td>${n.test}</td><td class="mk">${n.marks.map((m) => `${m} ships`).join(", ")}</td></tr>`).join("");
+
+// The recorded merge round at the git wall, played by the Mervin replay engine.
+const round = readRound(await fetch("/swarm-round.json").then((r) => r.json()));
+if (typeof round === "string") throw new Error(round);
+const TIER_COLOR = { certain: "--ok", agree: "--ok", mervin: "--accent", differ: "--test", card: "--bad" };
+let rp = new Player(events(round));
+rp.setSpeed(4);
+function drawRound() {
+  const v = view(round, rp.steps.slice(0, rp.at));
+  $("round").innerHTML = v.prs.map((p) => `<div class="rpr ${p.state}"><b>#${p.pr}</b> ${p.state}${p.wave ? `, wave ${p.wave}` : ""}<div class="t">${esc(p.title)}</div>${p.files.map((f) => `<span class="chip" title="${esc(f.path)}: ${f.tier}" style="background:var(${TIER_COLOR[f.tier]})"></span>`).join("")}</div>`).join("");
+  $("rtiers").textContent = TIERS.map((t) => `${t} ${v.tiers[t]}`).join("  ");
+  $("rplay").setAttribute("aria-pressed", String(rp.mode === "playing"));
+}
+$("rplay").onclick = () => { if (rp.mode === "playing") rp.pause(); else rp.play(); drawRound(); };
+$("rstop").onclick = () => { rp.stop(); drawRound(); };
+let rlast = 0;
+function rframe(now) { const dt = rlast ? now - rlast : 0; rlast = now; if (rp.tick(dt).length || rp.mode === "done") drawRound(); requestAnimationFrame(rframe); }
+drawRound(); requestAnimationFrame(rframe);
 
 let lastT = -1;
 function draw() {
