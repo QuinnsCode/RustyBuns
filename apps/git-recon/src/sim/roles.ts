@@ -19,7 +19,8 @@ export interface Role {
 export const ROLES: Record<RoleId, Role> = {
   committer: { id: "committer", name: "Committer", blurb: "rifle, shotgun, grenades, a stash to hide behind", weapons: ["commit", "add", "merge", "stash", "blame"] },
   maintainer: { id: "maintainer", name: "Maintainer", blurb: "machine gun, flamethrower, bazooka", weapons: ["fetch", "clean", "push", "stash"] },
-  reviewer: { id: "reviewer", name: "Reviewer", blurb: "sniper, homing rounds, revert and blame", weapons: ["rebase", "commit", "cherry", "revert", "blame"] },
+  // The shotty-snipes kit: a sniper rifle for across the map and a shotgun for round the corner.
+  reviewer: { id: "reviewer", name: "Reviewer", blurb: "sniper rifle, shotgun, homing rounds, revert and blame", weapons: ["rebase", "add", "cherry", "revert", "blame"] },
   releaser: { id: "releaser", name: "Releaser", blurb: "shotgun, bazooka, grenades, fire", weapons: ["add", "push", "merge", "clean"] },
 };
 

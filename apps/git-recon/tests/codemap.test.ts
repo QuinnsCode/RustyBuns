@@ -1,4 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setDefaultTimeout, test } from "bun:test";
+
+// Every level is mapped (paths searched and cut) in a few tests, and one walks every path: slow on CI.
+setDefaultTimeout(60_000);
 import { failingChecks, loadRepo, LoadError, parseSlug } from "../src/levels/github.ts";
 import { LEVELS } from "../src/levels/levels.ts";
 import { checkHits, churnGuards, mapRepo, structureOf, type RepoSnapshot } from "../src/sim/codemap.ts";
