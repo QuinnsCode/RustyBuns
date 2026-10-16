@@ -22,7 +22,7 @@ export function DrumGrid(props: {
       {drums.map(({ t, i }) => {
         const cells = cellsFor(t.notes, steps);
         return (
-          <div key={i} role="row" className={i === props.selected ? "drum-row sel" : "drum-row"} style={{ "--track": props.colors[i] } as React.CSSProperties}>
+          <div key={i} role="row" className={i === props.selected ? "drum-row sel" : "drum-row"} style={{ "--track": props.colors[i], minWidth: Math.max(640, 86 + steps * 14) } as React.CSSProperties}>
             <button className="row-name" onClick={() => { props.onSelect(i); props.onAudition(i); }}>{t.name}</button>
             <div className="steps" style={{ gridTemplateColumns: `repeat(${steps}, 1fr)` }}>
               {cells.map((c, s) => (

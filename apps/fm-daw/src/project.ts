@@ -14,18 +14,19 @@ export interface TrackDoc {
   mute: boolean;
   solo: boolean;
 }
-export interface Project { v: 1; bpm: number; swing: number; bars: number; tracks: TrackDoc[] }
+/** space: the reverb and delay send after the engine, 0 dry to 1 drenched (src/engine/space.ts). */
+export interface Project { v: 1; bpm: number; swing: number; space: number; bars: number; tracks: TrackDoc[] }
 
 export type Op =
   | { t: "param"; track: number; i: number; v: number }
   | { t: "notes"; track: number; notes: Note[] }
   | { t: "track"; track: number; mute?: boolean; solo?: boolean; name?: string }
-  | { t: "global"; bpm?: number; swing?: number; bars?: number }
+  | { t: "global"; bpm?: number; swing?: number; space?: number; bars?: number }
   | { t: "replace"; project: Project };
 
 export const BEATS_PER_BAR = 4;
 export const MAX_NOTES = 512;
-export const BAR_CHOICES = [1, 2, 4] as const;
+export const BAR_CHOICES = [1, 2, 4, 8] as const;
 export const loopBeats = (p: Project) => p.bars * BEATS_PER_BAR;
 
 const num = (x: unknown, lo: number, hi: number, d: number) =>
@@ -58,6 +59,7 @@ export function sanitize(x: unknown): Project | null {
     v: 1,
     bpm: num(p.bpm, 40, 240, 120),
     swing: num(p.swing, 0, 0.6, 0),
+    space: num(p.space, 0, 1, 0),
     bars,
     tracks: p.tracks.map((t, ti) => ({
       name: typeof t?.name === "string" ? t.name.slice(0, 24) : `Track ${ti + 1}`,
@@ -100,6 +102,7 @@ export function apply(p: Project, op: Op): Project {
         ...p,
         bpm: op.bpm === undefined ? p.bpm : num(op.bpm, 40, 240, p.bpm),
         swing: op.swing === undefined ? p.swing : num(op.swing, 0, 0.6, p.swing),
+        space: op.space === undefined ? p.space : num(op.space, 0, 1, p.space),
         bars,
       };
       // shrinking the loop drops notes past the new end

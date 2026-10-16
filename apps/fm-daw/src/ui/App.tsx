@@ -12,6 +12,8 @@ import { Meter } from "./Meter.tsx";
 import { Bench } from "./Bench.tsx";
 import { apply, audible, loopBeats, BAR_CHOICES, type Note, type Op, type Project } from "../project.ts";
 import { demoProject, KIT, randomPatch } from "../presets.ts";
+import { GROOVES, KITS, applyGroove, applyKit } from "../drums.ts";
+import { SONGS } from "../songs.ts";
 import { GRIDS, quantize, quantizeNote } from "../quantize.ts";
 import { TsEngine, type FmEngine } from "../engine/engine.ts";
 import { WasmEngine, instantiateFm } from "../engine/wasm.ts";
@@ -35,7 +37,7 @@ const COUNT_IN = 4;
 function loadMsg(p: Project): ToWorklet {
   return {
     t: "load", params: p.tracks.flatMap((t) => t.params), notes: p.tracks.map((t) => t.notes),
-    bpm: p.bpm, swing: p.swing, loopBeats: loopBeats(p), audible: audible(p),
+    bpm: p.bpm, swing: p.swing, loopBeats: loopBeats(p), audible: audible(p), space: p.space,
   };
 }
 
@@ -45,6 +47,9 @@ function opMsg(op: Op, next: Project): ToWorklet {
     case "param": return { t: "param", track: op.track, i: op.i, v: next.tracks[op.track].params[op.i] };
     case "notes": return { t: "notes", track: op.track, notes: next.tracks[op.track].notes };
     case "track": return { t: "audible", mask: audible(next) };
+    case "global":
+      if (op.space !== undefined && op.bpm === undefined && op.swing === undefined && op.bars === undefined) return { t: "space", amount: next.space };
+      return loadMsg(next);
     default: return loadMsg(next);
   }
 }
@@ -300,6 +305,13 @@ export function App() {
           <span className="dim">8 tracks · 4-op FM · Rust or TS</span>
         </div>
 
+        <label className="field"><span className="silk">Song</span>
+          <select value="" onChange={(e) => { const s = SONGS[Number(e.currentTarget.value)]; if (s) commit({ t: "replace", project: s.make() }); }}>
+            <option value="" disabled>Load a song…</option>
+            {SONGS.map((s, i) => <option key={s.name} value={i}>{s.name}</option>)}
+          </select>
+        </label>
+
         <div className="transport" aria-label="Transport">
           <button className={transportOn ? "play on" : "play"} onClick={transportOn ? stop : play} disabled={!audio} title="Play / stop (Space)">
             {transportOn ? "■ Stop" : "▶ Play"}
@@ -319,6 +331,10 @@ export function App() {
           <label className="field"><span className="silk">Swing {Math.round(project.swing * 100)}%</span>
             <input type="range" min={0} max={60} value={Math.round(project.swing * 100)}
               onChange={(e) => commit({ t: "global", swing: Number(e.currentTarget.value) / 100 }, { group: "swing" })} />
+          </label>
+          <label className="field" title="Reverb and dotted-eighth delay on everything above the bass"><span className="silk">Space {Math.round(project.space * 100)}%</span>
+            <input type="range" min={0} max={100} value={Math.round(project.space * 100)}
+              onChange={(e) => commit({ t: "global", space: Number(e.currentTarget.value) / 100 }, { group: "space" })} />
           </label>
           <div className="field"><span className="silk">Bars</span>
             <div className="seg">
@@ -384,11 +400,26 @@ export function App() {
 
           {view === "engines" ? (
             <Bench project={project} wasm={fetchWasm} />
-          ) : t.kind === "drum" ? (
+          ) : t.kind === "drum" ? (<>
+            <div className="machine" aria-label="Drum machine">
+              <span className="silk">Drum machine</span>
+              <label className="field inline"><span className="silk">Groove</span>
+                <select value="" onChange={(e) => { const g = GROOVES[Number(e.currentTarget.value)]; if (g) commit({ t: "replace", project: applyGroove(proj.current, g) }); }}>
+                  <option value="" disabled>Write a groove…</option>
+                  {GROOVES.map((g, i) => <option key={g.name} value={i}>{g.name} · {g.bpm}</option>)}
+                </select>
+              </label>
+              <label className="field inline"><span className="silk">Kit</span>
+                <select value="" onChange={(e) => { const k = KITS[Number(e.currentTarget.value)]; if (k) commit({ t: "replace", project: applyKit(proj.current, k) }); }}>
+                  <option value="" disabled>Swap the kit…</option>
+                  {KITS.map((k, i) => <option key={k.name} value={i}>{k.name}</option>)}
+                </select>
+              </label>
+            </div>
             <DrumGrid tracks={project.tracks} colors={TRACK_COLORS} selected={selected} loopBeats={L}
               onSelect={setSelected} onAudition={audition}
               onNotes={(i, notes) => commit({ t: "notes", track: i, notes })} />
-          ) : (
+          </>) : (
             <PianoRoll key={selected} track={t} color={color} loopBeats={L} grid={Math.min(grid.beats, 0.25)}
               onNotes={(notes: Note[]) => commit({ t: "notes", track: selected, notes })}
               onPreview={(m, on) => (on ? noteOn(`roll:${m}`, selected, m, 0.8) : noteOff(`roll:${m}`))} />

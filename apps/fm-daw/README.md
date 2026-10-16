@@ -2,7 +2,7 @@
 
 > **What it proves:** one Rust crate runs as wasm in the audio thread and over FFI on the host, bit for bit the same as the TypeScript engine, and one world class saves your groove on a laptop or on Cloudflare. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
-A small FM groovebox: five FM drums and three FM synths, a step sequencer and a piano roll, live recording from the computer keyboard or a MIDI keyboard, and quantize. The sound engine is written twice, once in Rust and once in TypeScript, and you can switch between them while the groove plays.
+A small FM groovebox: five FM drums and three FM synths, a drum machine (grooves and kits), a reverb and delay called Space, a step sequencer and a piano roll, live recording from the computer keyboard or a MIDI keyboard, and quantize. The sound engine is written twice, once in Rust and once in TypeScript, and you can switch between them while the groove plays.
 
 ## Run it
 
@@ -51,6 +51,10 @@ bun run desktop:build           # dist/fm-daw-<os>-<arch>
 | <kbd>⌘Z</kbd> / <kbd>⇧⌘Z</kbd> | undo / redo |
 | <kbd>Esc</kbd> | panic: stop everything, silence every voice |
 
+- **Song** loads a whole project. **Nebula Drift** is liquid drum and bass at 174 in A minor: a swung two-step, a rolling detuned bass, a drone, and a lead that plays a phrase and answers it with one tone thrown into the delay. Every sound is an FM patch from `src/songs.ts` and `src/drums.ts`, so the song is under this repo's license and uses no samples.
+- **Drum machine** (above the step grid): **Groove** writes a pattern onto the five drum tracks and moves BPM and swing to it (liquid roller, half-time, chopped break, steppers, four on the floor). Loops of 2 bars or more get the groove's fill in the last bar. **Kit** swaps the drum patches and keeps the pattern. Each is one undo.
+- **Space** sends everything above about 280 Hz into a reverb and a dotted-eighth ping-pong delay, so the kick and bass stay dry and mono while the tails go wide and drift slowly across the stereo field. Higher Space also means more delay feedback; a saturator in the loop keeps the repeats from running away, and a slow wobble on the delay time bends them a little. Space runs after either engine, in the audio thread and in the bounce, and has its own limiter at −1 dBFS.
+- **Hear a song without the app:** `bun scripts/listen.ts 2` renders Nebula Drift to a WAV and plays it (`afplay` on a Mac). Add a loop count (`bun scripts/listen.ts 2 4`) or `--quiet` to only write the file.
 - **Drums** show as a step grid: click toggles, shift-click accents. Notes you play in freely land between steps and show striped until you quantize them.
 - **Synths** show as a piano roll: drag to draw a note (you hear it as you press), click a note to delete it.
 - **Quantize** a track to 1/4 through 1/32 or triplets, at any strength. 50% keeps half the feel. **Quantize input** does it as you record.
@@ -89,6 +93,8 @@ Then check by ear, **speakers down first**:
 | `native/crates/fm_daw` | The Rust engine, a line-for-line mirror. One crate, two builds: a cdylib for `bun:ffi` on the host, and `wasm32` for the audio thread. |
 | `src/engine/sequencer.ts` | Loops the pattern, swings it, counts in, clicks, records live notes with output latency taken off. Drives either engine, so both hear exactly the same events. |
 | `src/engine/worklet.ts` | The AudioWorklet. Owns the engine and sequencer; swaps TS and Rust mid-groove by replaying its parameter mirror into the new engine. |
+| `src/engine/space.ts` | Space: reverb (8 combs and 4 allpasses a side), ping-pong delay with feedback and wobble, a slow stereo swirl, then a limiter. TypeScript only and after the engine, so Rust/TS parity is untouched. |
+| `src/drums.ts`, `src/songs.ts` | The drum machine's grooves and kits, and the songs. |
 | `src/project.ts` | The project document and the ops that change it, with validation. Shared by the page, the world and the bounce. |
 | `packages/desktop/world.ts` | The world. On the desktop the host runs it in-process with sqlite, so your project survives a restart. On Cloudflare the same class is a Durable Object per `?room=`, so a room shares one groove. |
 | `src/actions/files.ts` | `"use server"` actions the host runs: save a bounce, reveal it, and the host side of the engine race. |
@@ -116,5 +122,5 @@ The golden tests render 8 seconds of the demo groove with each engine. Both the 
 
 1. MIDI learn for any slider, and pitch bend.
 2. Song mode: chain patterns.
-3. Per-track sends to a shared reverb and delay, and a sidechain from the kick.
+3. Per-track sends to Space (it's one master send today, high-passed), and a sidechain from the kick.
 4. Deploy the jam room to Cloudflare and try it with two people.
