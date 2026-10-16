@@ -6,6 +6,7 @@
 import { heightmapTerrain, withPads, zoneData, type Terrain } from "@rustybuns/terrain";
 import { type Bounds, type Level, makeLevel, postObstacles, type Spawn } from "../level.ts";
 import { drape, type Gap, join, lift, type Part } from "./pieces.ts";
+import { type Circle, footprint, scatter, type Scatter } from "./scatter.ts";
 
 /** Real terrain is shrunk this many times across (a 1 km zone becomes a ~333 m disc). One constant for the whole game. */
 export const TERRAIN_SCALE = 3;
@@ -43,6 +44,8 @@ export type ParkSpec = {
   relief?: number;
   skirt?: number;
   sites: Site[];
+  /** Parts spread over everything the sites leave empty, like a skate game's map. On by default; `false` leaves the park to its sites. */
+  scatter?: Scatter | false;
   /** Gaps the ground makes by itself (a canyon, a drop): no kit piece needed. */
   gaps?: Gap[];
   spawns: Spawn[];
@@ -70,13 +73,25 @@ export type ParkLevel = Level & {
   weather?: string;
 };
 
+/** The ground a landmark's drawing covers, so scattered parts don't stand in the steam or the spring. */
+const landmarkCircle = (l: Landmark): Circle[] => (l.kind === "plume" ? [{ x: l.x, z: l.z, r: l.r + 4 }] : l.kind === "rings" ? [{ x: l.x, z: l.z, r: Math.max(...l.rings.map((g) => g.r)) }] : []);
+
+type Pt = { x: number; z: number };
+/** Lines scatter keeps open: each gap's flight, the way in to it from every spawn in reach, and straight ahead of every spawn. */
+const lanes = (gaps: Gap[], spawns: Spawn[]): [Pt, Pt][] => [
+  ...gaps.flatMap((g) => [[g.a, g.b] as [Pt, Pt], ...spawns.filter((s) => Math.hypot(s.x - g.a.x, s.z - g.a.z) < 130).map((s) => [s, g.a] as [Pt, Pt])]),
+  ...spawns.map((s) => [s, { x: s.x + Math.sin(s.yaw) * 160, z: s.z + Math.cos(s.yaw) * 160 }] as [Pt, Pt]),
+];
+
 export function parkLevel(spec: ParkSpec, real = false): ParkLevel {
   const zone = zoneData(spec.zone), raw = heightmapTerrain(zone, TERRAIN_SCALE), relief = real ? REAL_RELIEF : spec.relief ?? RELIEF;
   const scaled: Terrain = { R: raw.R, height: (x, z) => raw.height(x, z) * relief };
   const pads = spec.sites.flatMap((s) => (s.pad ? [s.pad] : []));
   const ground = pads.length ? withPads(scaled, pads, spec.skirt ?? 10) : scaled;
-  const parts = join(...spec.sites.flatMap((s) => s.parts.map((p) => (s.pad ? lift(p, scaled.height(s.pad.x, s.pad.z)) : drape(p, ground.height)))));
+  const placed = spec.sites.flatMap((s) => s.parts.map((p) => (s.pad ? lift(p, scaled.height(s.pad.x, s.pad.z)) : drape(p, ground.height))));
   const trees = spec.trees ?? [];
+  const parts0 = join(...placed);
+  const parts = join(...placed, ...(spec.scatter === false ? [] : scatter({ bounds: spec.bounds, R: ground.R, ground: ground.height, spawns: spec.spawns, lanes: lanes([...parts0.gaps, ...(spec.gaps ?? [])], spec.spawns), taken: [...placed.flatMap(footprint), ...trees, ...(spec.landmarks ?? []).flatMap(landmarkCircle)] }, spec.scatter).map((p) => drape(p, ground.height))));
   const inner = makeLevel({ name: spec.name, pieces: parts.pieces, rails: parts.rails, obstacles: trees, spawns: spec.spawns, bounds: spec.bounds });
   const height = (x: number, z: number) => Math.max(ground.height(x, z), inner.height(x, z));
   const obstacles = [...trees, ...postObstacles(parts.rails, height)];
