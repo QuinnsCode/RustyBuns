@@ -11,7 +11,7 @@ import { followCamera, HAZE, sky } from "./render/sky.ts";
 import { Skins } from "./render/skins.ts";
 import { Taps } from "./render/feet.ts";
 import { lieOnGround, manualPose, popPose, TiltEase } from "./render/tilt.ts";
-import { DT, FLICK_TIME, IDLE, type Input, type Mode, noseUp, start, step, type State } from "./sim.ts";
+import { DT, FLICK_TIME, IDLE, type Input, type Mode, noseUp, start, step, type State, tumble } from "./sim.ts";
 import { HALF } from "./levels/plaza.ts";
 import type { ParkLevel } from "./levels/park.ts";
 import { Gestures } from "./gesture.ts";
@@ -202,7 +202,11 @@ function frame(now: number) {
   slope.x += (lie.x - slope.x) * k;
   slope.z += (lie.z - slope.z) * k;
   rider.rotation.set(slope.x, sim.yaw + (sim.grind >= 0 ? sim.grindOff : 0), slope.z, "YXZ");
-  if (sim.bail > 0) rider.rotation.z = mode === "car" ? Math.sin(sim.bail * 30) * 0.08 : 1.3;
+  if (sim.bail > 0) { // a fall rolls on, hops and settles, then the rider stands up
+    const fall = tumble(sim);
+    rider.rotation.z = fall.roll;
+    rider.position.y += fall.hop;
+  }
   const turn = sim.flipT > 0 ? (1 - sim.flipT / FLICK_TIME) * Math.PI * 2 : 0;
   pivot.rotation.set(0, sim.flipKind === "shove-it" ? turn / 2 : 0, sim.flipKind === "heelflip" ? -turn : sim.flipKind === "kickflip" ? turn : 0);
   pivot.position.y = PIVOT_Y[skins.current] + (sim.flipT > 0 ? 0.25 : 0);

@@ -131,6 +131,7 @@ export type State = {
   feet: Foot[]; // what the feet did this step, for the view
   plateDown: boolean;
   bail: number; // seconds left on the floor
+  tumbleDir: 1 | -1; // which way the fall rolls
   score: number;
   last: { name: string; points: number } | null;
   prevJump: boolean;
@@ -144,7 +145,7 @@ export function start(x = 0, z = -20, yaw = 0, level: Level = plaza): State {
     air: false, airTime: 0, spun: 0, flipT: 0, flipKind: "kickflip", tricks: [], grind: -1, grindTime: 0,
     grindKind: "50-50", grindOff: 0, balance: 0, manual: 0, manualTime: 0, chain: 0, chainT: 0, combo: [], comboScore: 0, comboKind: null, fan: false, jetT: 0,
     firing: { rear: false, lift: false, spin: 0, roll: 0 }, popT: -1, feet: [], plateDown: false,
-    bail: 0, score: 0, last: null, prevJump: false, prevFlip: false, prevFlick: false,
+    bail: 0, tumbleDir: 1, score: 0, last: null, prevJump: false, prevFlip: false, prevFlick: false,
   };
 }
 
@@ -184,17 +185,35 @@ function award(s: State, name: string, points: number, kind: TrickKind) {
   s.score += total;
 }
 
-/** Fall: wipe the chain, and get back up after `bail` seconds. */
+export const BAIL_TIME = 1.2;
+const SKID = 2.4; // per second: how fast a fall's slide bleeds off on the ground
+
+/** Fall: wipe the chain and keep the momentum, so the rider slides and tumbles on (`vx`/`vz` carry on),
+ * then gets back up after `BAIL_TIME`. */
 function bail(s: State, name: string) {
-  s.bail = 1.2;
-  s.speed = 0; s.vx = s.vz = 0;
+  s.bail = BAIL_TIME;
+  s.tumbleDir = Math.sin(s.yaw) * s.vz - Math.cos(s.yaw) * s.vx >= 0 ? 1 : -1; // roll toward the side it was sliding
+  s.speed = 0;
   s.flipT = 0; s.popT = -1; s.grind = -1; s.manual = 0; endChain(s);
   s.last = { name, points: 0 };
 }
 
+/** How the fall looks `bail` seconds in: a roll over the ground that eases to lying flat, the body hopping
+ * as it hits, then standing back up. `roll` is radians about the board's length. */
+export function tumble(s: Pick<State, "bail" | "tumbleDir">): { roll: number; hop: number } {
+  const u = clamp(1 - s.bail / BAIL_TIME, 0, 1);
+  const ease = (x: number) => 1 - (1 - clamp(x, 0, 1)) ** 3;
+  const LIE = 1.3;
+  if (u < 0.75) {
+    const p = u / 0.75;
+    return { roll: s.tumbleDir * (LIE + 2 * Math.PI) * ease(p), hop: 0.4 * Math.abs(Math.sin(p * Math.PI * 3)) * (1 - p) };
+  }
+  return { roll: s.tumbleDir * LIE * (1 - ease((u - 0.75) / 0.25)), hop: 0 };
+}
+
 /** Run into something solid: lose most of the speed, and bail if it was fast and the thing was worth a name. */
 function crash(s: State, name: string | null) {
-  if (name && Math.abs(s.speed) > 6 * T) { bail(s, name); return s; }
+  if (name && Math.abs(s.speed) > 6 * T) { bail(s, name); s.vx = s.vz = 0; return s; }
   s.speed *= -0.2;
   return s;
 }
@@ -240,6 +259,15 @@ function gradient(level: Level, x: number, z: number): [number, number] {
   return [(level.height(x + e, z) - level.height(x - e, z)) / (2 * e), (level.height(x, z + e) - level.height(x, z - e)) / (2 * e)];
 }
 
+/** The slide of a fall: carry on along the old heading, bleeding speed, stopping dead at a wall or a tree. */
+function skid(s: State, level: Level) {
+  const k = Math.exp(-SKID * DT);
+  s.vx *= k; s.vz *= k; s.vy = 0;
+  const nx = s.x + s.vx * DT, nz = s.z + s.vz * DT, b = level.bounds, h = level.height(nx, nz);
+  if (hitObstacle(level, nx, nz, s.y) || h - s.y > STEP || nx < b.minX || nx > b.maxX || nz < b.minZ || nz > b.maxZ) { s.vx = s.vz = 0; return; }
+  s.x = nx; s.z = nz; s.y = h;
+}
+
 /** One fixed step on `level` (the plaza unless told otherwise). Mutates and returns `s`. */
 export function step(s: State, inp: Input, level: Level = plaza): State {
   const tune = TUNE;
@@ -263,6 +291,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     s.bail -= DT;
     s.plateDown = false;
     s.fan = false;
+    skid(s, level);
     return s;
   }
 
@@ -281,7 +310,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     s.x += fx * s.speed * DT; s.z += fz * s.speed * DT;
     const t = onRail(r, s.x, s.z).t;
     s.y = railY(r, t);
-    if (Math.abs(s.balance) >= 1) { s.y = level.height(s.x, s.z); bail(s, `Bail: fell off the ${ledge ? "ledge" : "rail"}`); return s; }
+    if (Math.abs(s.balance) >= 1) { s.y = level.height(s.x, s.z); s.vx = fx * s.speed; s.vz = fz * s.speed; bail(s, `Bail: fell off the ${ledge ? "ledge" : "rail"}`); return s; }
     s.firing.rear = s.speed > 1; // the jets hold the slide
     if (pressed || t < 0 || t > 1) {
       if (s.grindTime > 0.2) award(s, (ledge ? LEDGE_NAME : GRIND_NAME)[s.grindKind], Math.round(s.grindTime * GRIND_POINTS[s.grindKind]), "grind");
@@ -301,7 +330,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       s.speed *= 1 - 0.1 * DT;
       s.balance += (BALANCE_DRIFT * (s.balance + (s.balance >= 0 ? 0.15 : -0.15)) - BALANCE_PUSH * inp.throttle * s.manual) * DT;
       if (inp.manual !== s.manual || Math.abs(s.speed) < MANUAL_MIN) endManual(s);
-      else if (Math.abs(s.balance) >= 1) { bail(s, `Bail: lost the ${s.manual > 0 ? "manual" : "nose manual"}`); return s; }
+      else if (Math.abs(s.balance) >= 1) { s.vx = fx * s.speed; s.vz = fz * s.speed; bail(s, `Bail: lost the ${s.manual > 0 ? "manual" : "nose manual"}`); return s; }
     }
     const push = s.fan ? tune.top * JETS.fanTop : tune.top; // what pushing alone reaches
     const top = s.fan ? push : BOOST_TOP; // the most a downhill or the jets can carry it to
