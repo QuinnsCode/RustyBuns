@@ -38,8 +38,14 @@ export class TiltEase {
   }
 }
 
-/** The turns (about x, then z, after yaw: Euler order YXZ) that lay a board on ground rising `pitch` ahead and `roll` to its right. */
-export const lieOnGround = (pitch: number, roll: number) => ({ x: -pitch, z: -roll });
+/** The turns (about x, then z, after yaw: Euler order YXZ) that stand a board's up exactly on the ground's normal, given the
+ * ground's rise `gx` along +x and `gz` along +z under it. Pitch and roll read off the slope separately are only right on a plane. */
+export function lieOnGround(gx: number, gz: number, yaw: number) {
+  const len = Math.hypot(gx, 1, gz), nx = -gx / len, ny = 1 / len, nz = -gz / len;
+  const c = Math.cos(yaw), s = Math.sin(yaw);
+  const mx = nx * c - nz * s, mz = nx * s + nz * c; // the normal in the board's own heading frame
+  return { x: Math.atan2(mz, ny), z: -Math.asin(mx) };
+}
 
 /** How far behind the middle the tail meets the floor when an ollie snaps it down. */
 export const TAIL: Record<Skin, number> = { fingerboard: 1.9, roadster: 1.45 };
