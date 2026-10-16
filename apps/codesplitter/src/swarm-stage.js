@@ -412,6 +412,17 @@ export function mount(el, { mode = "story", embed = false, real = "/swarm-watch.
     const line = `${entry.label ? `${entry.label} · ` : ""}${s.landed} home · ${sim.perHour()}/h · ${sim.waiting()} waiting · ${s.bounces.merge + s.bounces.test} sent back · ${Math.round(s.wasted)} agent-min redoing`;
     cx.font = `${entry.label ? 600 : 500} 12px ui-monospace, SFMono-Regular, Menlo, monospace`; cx.fillStyle = entry.label === "codeSplitter" ? C.accent : C.fg;
     cx.fillText(line, r.x + 8, r.y + 14);
+    if (sims.length > 1) {
+      // side by side the count who got home is the point, so it gets big type, right-aligned in the row
+      const by = r.y + Math.max(36, Math.min(60, r.h * 0.25));
+      cx.textAlign = "right";
+      cx.font = `700 ${Math.max(28, Math.min(56, r.h * 0.22))}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+      cx.fillStyle = entry.label === "codeSplitter" ? C.accent : C.fg;
+      cx.fillText(String(s.landed), r.x + r.w - 12, by);
+      cx.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace"; cx.fillStyle = C.muted;
+      cx.fillText("got home", r.x + r.w - 12, by + 14);
+      cx.textAlign = "left";
+    }
   }
 
   function frame(now) {
