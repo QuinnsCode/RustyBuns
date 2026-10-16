@@ -143,40 +143,47 @@ export function render(r: Report): string[] {
   return out;
 }
 
-/** Context size, in tokens, where Dexter warns and where he says to hand off. */
-export const CONTEXT = { warn: 150_000, handoff: 250_000 } as const;
+/** Where Dexter warns and where he says to hand off. `warn` and `handoff` are the context a session carries into its next turn (tokens);
+ * `total.warn` and `total.handoff` are all it has used over its life, since every turn re-reads the whole context. */
+export const CONTEXT = { warn: 150_000, handoff: 250_000, total: { warn: 10_000_000, handoff: 25_000_000 } } as const;
 const ACTIVE_HOURS = 1;
-const TAIL = 512 * 1024; // the latest turn is at the end of a transcript: read only that much
 
-export interface Context { session: string; cwd: string; tokens: number }
+/** One live session: the context it carries now, what it has used in all, and what its latest turn took (tokens). */
+export interface Context { session: string; cwd: string; tokens: number; total: number; turn: number }
 
-/** The context a session carries now: the latest reply's input, cache read and cache write tokens. Null when it has no reply yet. */
-export function contextOf(lines: Iterable<string>, fallback = ""): Context | null {
-  let found: Context | null = null;
-  for (const raw of lines) {
-    let l: Line;
-    try { l = JSON.parse(raw); } catch { continue; }
-    const u = l.type === "assistant" ? l.message?.usage : undefined;
-    if (!u) continue;
-    found = { session: l.sessionId ?? fallback, cwd: l.cwd ?? "", tokens: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) };
+/** Reads sessions' transcripts without re-reading them: each scan takes only the lines added since the last one. */
+export class Meter {
+  private files = new Map<string, { pos: number; seen: Set<string>; total: number; now: Omit<Context, "total"> | null }>();
+
+  /** Every session touched in the last hour. A reply counts once by message id, in the total and as the latest turn. */
+  scan(root: string, now = Date.now()): Context[] {
+    return recent(root, ACTIVE_HOURS, now).flatMap((f) => {
+      let st = this.files.get(f);
+      const size = statSync(f).size;
+      if (!st || size < st.pos) this.files.set(f, (st = { pos: 0, seen: new Set(), total: 0, now: null })); // a new file, or one that was rewritten
+      if (size > st.pos) {
+        const buf = Buffer.alloc(size - st.pos), fd = openSync(f, "r");
+        try { readSync(fd, buf, 0, buf.length, st.pos); } finally { closeSync(fd); }
+        const end = buf.lastIndexOf(10) + 1; // only whole lines: the last one may still be being written
+        st.pos += end;
+        for (const raw of buf.subarray(0, end).toString("utf8").split("\n")) {
+          let l: Line;
+          try { l = JSON.parse(raw); } catch { continue; }
+          const u = l.type === "assistant" ? l.message?.usage : undefined, id = l.message?.id;
+          if (!u || (id && st.seen.has(id))) continue;
+          if (id) st.seen.add(id);
+          const turn = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.output_tokens ?? 0);
+          st.total += turn;
+          st.now = { session: l.sessionId ?? path.basename(f, ".jsonl"), cwd: l.cwd ?? "", turn, tokens: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) };
+        }
+      }
+      return st.now ? [{ ...st.now, total: st.total }] : [];
+    });
   }
-  return found;
-}
-
-const tail = (file: string): string[] => {
-  const size = statSync(file).size, start = Math.max(0, size - TAIL), buf = Buffer.alloc(size - start), fd = openSync(file, "r");
-  try { readSync(fd, buf, 0, buf.length, start); } finally { closeSync(fd); }
-  const lines = buf.toString("utf8").split("\n");
-  return start ? lines.slice(1) : lines; // the first line of a tail is cut short
-};
-
-/** Every session touched in the last hour, with the context it carries. */
-export function contexts(root: string, now = Date.now()): Context[] {
-  return recent(root, ACTIVE_HOURS, now).flatMap((f) => contextOf(tail(f), path.basename(f, ".jsonl")) ?? []);
 }
 
 export type ContextLevel = "warn" | "handoff";
-export interface ContextAlert extends Context { name: string; level: ContextLevel; message: string }
+export interface ContextAlert extends Context { name: string; measure: "context" | "total"; level: ContextLevel; message: string }
 
 /** An office worker's name when the session runs in its worktree (.agent-office/worktrees/<name>), else the session and where it runs. */
 export const nameOf = (c: Context) => {
@@ -184,31 +191,42 @@ export const nameOf = (c: Context) => {
   return worker ?? `session ${c.session.slice(0, 8)} in ${c.cwd || "an unknown directory"}`;
 };
 
-const levelOf = (tokens: number): ContextLevel | null => (tokens >= CONTEXT.handoff ? "handoff" : tokens >= CONTEXT.warn ? "warn" : null);
+const levelOf = (n: number, line: { warn: number; handoff: number }): ContextLevel | null => (n >= line.handoff ? "handoff" : n >= line.warn ? "warn" : null);
 
-/** Remembers which line each session has crossed, so each alert fires once. A session that drops back under the warn line (a fresh one, a compaction) can fire again. */
+/** Remembers which line each session has crossed on each measure, so each alert fires once. A session whose context falls back under the warn line (a fresh one, a compaction) can fire again. */
 export class ContextWatch {
   private told = new Map<string, ContextLevel>();
-  /** `over`: every session now past the warn line. `fresh`: the ones that crossed a line since the last check. */
+  /** `over`: every alert standing now. `fresh`: the ones that crossed a line since the last check. */
   check(sessions: Context[], name: (c: Context) => string = nameOf): { over: ContextAlert[]; fresh: ContextAlert[] } {
     const over: ContextAlert[] = [], fresh: ContextAlert[] = [];
     for (const c of sessions) {
-      const level = levelOf(c.tokens);
-      if (!level) { this.told.delete(c.session); continue; }
-      const who = name(c), lead = level === "handoff" ? `${who} is carrying ${k(c.tokens)} tokens of context, past ${k(CONTEXT.handoff)}.` : `${who} is carrying ${k(c.tokens)} tokens of context, past ${k(CONTEXT.warn)}.`;
-      const alert = { ...c, name: who, level, message: `${lead} Write a handoff and start a fresh session.` };
-      over.push(alert);
-      const before = this.told.get(c.session);
-      if (before !== level && before !== "handoff") { fresh.push(alert); this.told.set(c.session, level); }
+      const who = name(c);
+      for (const [measure, n, line] of [["context", c.tokens, CONTEXT], ["total", c.total, CONTEXT.total]] as const) {
+        const key = `${c.session}:${measure}`, level = levelOf(n, line);
+        if (!level) { this.told.delete(key); continue; }
+        const lead = measure === "context"
+          ? `${who} is carrying ${k(c.tokens)} tokens of context, past ${k(line[level])}.`
+          : `${who} has used ${k(c.total)} tokens in all (${k(c.turn)} on its latest turn), past ${k(line[level])}.`;
+        const alert = { ...c, name: who, measure, level, message: `${lead} Write a handoff and start a fresh session.` };
+        over.push(alert);
+        const before = this.told.get(key);
+        if (before !== level && before !== "handoff") { fresh.push(alert); this.told.set(key, level); }
+      }
     }
     return { over, fresh };
   }
 }
 
-/** The CLI's lines for it: each active session past the warn line, biggest first. */
+/** What each live session is carrying and has used (biggest total first), for the card and the CLI. */
+export const sessionLines = (sessions: Context[], name: (c: Context) => string = nameOf): string[] =>
+  [...sessions].sort((a, b) => b.total - a.total).map((c) => `${name(c)}: context ${k(c.tokens)}, ${k(c.total)} used in all, latest turn ${k(c.turn)}`);
+
+/** The CLI's lines: every session active in the last hour with its numbers, then the ones to hand off. */
 export function contextLines(sessions: Context[], name: (c: Context) => string = nameOf): string[] {
+  if (!sessions.length) return ["No session was active in the last hour."];
   const { over } = new ContextWatch().check(sessions, name);
-  return over.length ? ["Context to hand off:", ...over.sort((a, b) => b.tokens - a.tokens).map((a) => `  ${a.message}`)] : [`No active session is past ${k(CONTEXT.warn)} tokens of context.`];
+  return ["Live sessions (context carried, used in all, latest turn):", ...sessionLines(sessions, name).map((l) => `  ${l}`),
+    ...(over.length ? ["Hand off:", ...over.map((a) => `  ${a.message}`)] : [`None is past ${k(CONTEXT.warn)} of context or ${k(CONTEXT.total.warn)} used in all.`])];
 }
 
 /** Phrase -> short word. Only filler and wordy phrases; jargon that steers is left alone. */
@@ -281,5 +299,5 @@ if (import.meta.main) {
   const files = recent(path.join(homedir(), ".claude/projects"), Number(process.env.DEXTER_HOURS) || 24);
   const r: Report = { sessions: files.length, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0 };
   for (const f of files) tally(readFileSync(f, "utf8").split("\n"), r);
-  console.log([...render(r), ...contextLines(contexts(path.join(homedir(), ".claude/projects"))), ...(Number(process.env.DEXTER_HOURS) >= 168 ? week(r, Number(process.env.DEXTER_GROWTH) || 1.5) : []), "", ...propose(standing(process.cwd(), path.join(homedir(), ".claude/projects")))].join("\n"));
+  console.log([...render(r), ...contextLines(new Meter().scan(path.join(homedir(), ".claude/projects"))), ...(Number(process.env.DEXTER_HOURS) >= 168 ? week(r, Number(process.env.DEXTER_GROWTH) || 1.5) : []), "", ...propose(standing(process.cwd(), path.join(homedir(), ".claude/projects")))].join("\n"));
 }

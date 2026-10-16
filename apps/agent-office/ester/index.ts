@@ -61,7 +61,7 @@ else document.addEventListener("DOMContentLoaded", boot, { once: true });
 function start(m: { box: HTMLElement; row: HTMLElement }) {
   const states: Record<Name, EsterState> = { ester: IDLE, mervin: IDLE, dexter: IDLE };
   let open: Name | undefined, card: HTMLElement | undefined, timer: ReturnType<typeof setTimeout> | undefined;
-  let over: ContextAlert[] = []; // sessions whose context has bloated (Dexter's watch): a dot on his badge, the lines on his card
+  let over: ContextAlert[] = [], live: string[] = []; // Dexter's watch on live sessions: what each carries and has used, and which should hand off (a dot on his badge, the lines on his card)
   const badges = {} as Record<Name, HTMLButtonElement>;
 
   const render = () => {
@@ -78,7 +78,7 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
     card = el("div", { className: "rb-helper-card" },
       el("div", { className: "rb-helper-head" }, el("span", {}, `${who.label}: ${s.phase === "idle" ? who.ask : s.phase}`), el("span", { className: "rb-helper-clock" }, s.startedAt ? clock(s) : "")),
       el("div", { className: "rb-helper-job" }, who.job),
-      el("div", { className: "rb-helper-log" }, held + (open === "dexter" && over.length ? over.map((a) => a.message).join("\n") + "\n" : "") + (s.error ? s.error + "\n" : "") + s.lines.slice(-40).join("\n")),
+      el("div", { className: "rb-helper-log" }, held + (open === "dexter" && live.length ? [...live, ...over.map((a) => a.message)].join("\n") + "\n" : "") + (s.error ? s.error + "\n" : "") + s.lines.slice(-40).join("\n")),
       go);
     m.box.prepend(card);
   };
@@ -91,9 +91,9 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
       // signed out (sent to /login), or an office without the route: nothing to show, no point asking again
       if (res.redirected || res.status === 401 || res.status === 404) return;
       if (res.ok) Object.assign(states, await res.json());
-      const ctx = await fetch("/__rb/context", { credentials: "same-origin" }).then((c) => (c.ok ? (c.json() as Promise<{ over: ContextAlert[]; fresh: ContextAlert[] }>) : null), () => null);
+      const ctx = await fetch("/__rb/context", { credentials: "same-origin" }).then((c) => (c.ok ? (c.json() as Promise<{ lines: string[]; over: ContextAlert[]; fresh: ContextAlert[] }>) : null), () => null);
       if (ctx) {
-        over = ctx.over;
+        over = ctx.over; live = ctx.lines;
         if (ctx.fresh.some((a) => a.level === "handoff")) open = "dexter"; // a session just passed the handoff line: his card opens once, naming it
       }
       render();
