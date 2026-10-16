@@ -1,5 +1,5 @@
 // The page: draws the sim, turns keys into its input, and keeps the chase camera behind the rider.
-import { Car, createElement, RectangleHorizontal, RotateCcw, Wind } from "lucide";
+import { Car, createElement, RectangleHorizontal, RotateCcw } from "lucide";
 import * as THREE from "three";
 import { fingerboard, roadster, type Thruster } from "./models.ts";
 import { Plumes } from "./render/plumes.ts";
@@ -136,10 +136,10 @@ const plate = car.userData.plate as THREE.Group;
 
 const showroom = new URLSearchParams(location.search).has("showroom");
 let mode: Mode = "car";
-const begin = (m: Mode) => { const p = spawn(level, m); return start(m, p.x, p.z, p.yaw, level); };
+const begin = (m: Mode) => { const p = spawn(level, m); return start(p.x, p.z, p.yaw, level); };
 let sim: State = begin(mode);
 const reset = () => {
-  sim = showroom ? start(mode, 0, -20, 0, level) : begin(mode);
+  sim = showroom ? start(0, -20, 0, level) : begin(mode);
   camPos.set(sim.x - Math.sin(sim.yaw) * 9, sim.y + 4, Math.max(sim.z - Math.cos(sim.yaw) * 9, level.bounds.minZ + 1));
   ui.reset();
 };
@@ -175,21 +175,16 @@ const icon = (node: Parameters<typeof createElement>[0]) => createElement(node, 
 const swapBtn = $("swap") as HTMLButtonElement;
 $("reset").append(icon(RotateCcw));
 $("reset").addEventListener("click", () => { reset(); (document.activeElement as HTMLElement)?.blur(); });
-$("tank-icon").append(icon(Wind));
 swapBtn.addEventListener("click", () => { swap(); swapBtn.blur(); });
 function swap() {
-  mode = mode === "car" ? "skate" : "car";
-  reset();
+  mode = mode === "car" ? "skate" : "car"; // a skin: the ride carries on as it was
   hud();
 }
 function hud() {
   swapBtn.replaceChildren(icon(mode === "car" ? RectangleHorizontal : Car));
   swapBtn.title = mode === "car" ? "Fingerboard (Tab)" : "Roadster (Tab)";
   if (skins.show(mode === "car" ? "roadster" : "fingerboard")) plumes.landed(sim.x, sim.y, sim.z, 4); // the swap pops in a ring of puffs
-  $("tank").hidden = mode !== "car";
-  $("keys").innerHTML = mode === "car"
-    ? "<kbd>W</kbd><kbd>S</kbd> drive <kbd>A</kbd><kbd>D</kbd> steer, spin in the air <kbd>Shift</kbd> rear thrusters <kbd>Space</kbd> lift thrusters <kbd>E</kbd> suction fan"
-    : "<kbd>W</kbd><kbd>S</kbd> push <kbd>A</kbd><kbd>D</kbd> steer, spin in the air <kbd>Space</kbd> ollie <kbd>F</kbd> kickflip <kbd>G</kbd> heelflip <kbd>V</kbd> shove-it (or drag the mouse or push the right stick: up ollies, across and down flick) <kbd>Shift</kbd> pump a transition";
+  $("keys").innerHTML = "<kbd>W</kbd><kbd>S</kbd> push <kbd>A</kbd><kbd>D</kbd> steer, spin in the air <kbd>Space</kbd> ollie <kbd>F</kbd> kickflip <kbd>G</kbd> heelflip <kbd>V</kbd> shove-it (or drag the mouse or push the right stick: up ollies, across and down flick) <kbd>Shift</kbd> rear jets, and pump a transition <kbd>E</kbd> suction fan";
 }
 hud();
 
@@ -248,7 +243,6 @@ function frame(now: number) {
 
   $("score").textContent = String(sim.score);
   $("speed").textContent = `${Math.round(Math.abs(sim.air ? Math.hypot(sim.vx, sim.vz) : sim.speed) * 3.6)} km/h`;
-  ($("tank-fill") as HTMLElement).style.width = `${sim.tank * 100}%`;
   if (sim.last !== shownTrick) { shownTrick = sim.last; trickAt = now; }
   const trick = $("trick");
   trick.textContent = shownTrick ? (shownTrick.points ? `${shownTrick.name}  +${shownTrick.points}` : shownTrick.name) : "";
