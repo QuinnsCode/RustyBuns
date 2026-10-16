@@ -9,11 +9,14 @@ import { type Level, onRail } from "../level.ts";
 export type Spot = { kind: "pine" | "rock"; x: number; z: number; y: number; size: number; yaw: number };
 type Ground = { R: number; height(x: number, z: number): number };
 
-const CELL = 11; // one candidate per cell, jittered
+const CELL = 7; // one candidate per cell, jittered
 const MAX_SLOPE = 0.55;
 const CLEAR = 3; // metres kept between a spot and a piece, rail or spawn
 
-/** Spots for pines (2..6 m tall, in trees' sizes) and rocks, off anything the rider can use. */
+/** Pines (0.5..1.5 m tall) and rocks (0.2..0.7 m): toys beside a board 4.4 m long, so the park reads as giant. */
+export const PINE = { min: 0.5, max: 1.5 }, ROCK = { min: 0.2, max: 0.7 };
+
+/** Spots for pines and rocks, off anything the rider can use. */
 export function scatter(level: Level, ground: Ground, seed = 7): Spot[] {
   const rng = mulberry32(seed), spots: Spot[] = [], R = ground.R;
   const raised = (x: number, z: number) => level.height(x, z) - ground.height(x, z) > 0.02;
@@ -29,7 +32,7 @@ export function scatter(level: Level, ground: Ground, seed = 7): Spot[] {
     const y = ground.height(x, z);
     if (Math.hypot(ground.height(x + 1, z) - ground.height(x - 1, z), ground.height(x, z + 1) - ground.height(x, z - 1)) / 2 > MAX_SLOPE) continue;
     if (near(x, z)) continue;
-    spots.push(roll < 0.5 ? { kind: "pine", x, z, y, size: 2 + size * 4, yaw } : { kind: "rock", x, z, y, size: 0.6 + size * 1.6, yaw });
+    spots.push(roll < 0.5 ? { kind: "pine", x, z, y, size: PINE.min + size * (PINE.max - PINE.min), yaw } : { kind: "rock", x, z, y, size: ROCK.min + size * (ROCK.max - ROCK.min), yaw });
   }
   return spots;
 }
@@ -50,7 +53,7 @@ function pineGeometry() {
 }
 
 /** Scenery is only for looking at: riders pass through it, so a spot shrinks away as one nears. */
-export const SQUASH = 7; // metres
+export const SQUASH = 3; // metres
 export const squash = (spot: Spot, d: number) => (d >= SQUASH ? 1 : Math.max(0, d / SQUASH) ** 2);
 
 export class Scenery {
