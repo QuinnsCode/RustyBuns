@@ -9,7 +9,7 @@ import bpy
 from mathutils import Matrix, Vector
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "public", "models")
-# name -> (r, g, b, roughness, metalness), colours in sRGB like a hex code
+# name -> (r, g, b, roughness, metalness[, glow]), colours in sRGB like a hex code
 PALETTE = {}
 
 
@@ -19,11 +19,14 @@ def linear(c):
 
 def material(name):
     m = bpy.data.materials.get(name) or bpy.data.materials.new(name)
-    r, g, b, rough, metal = PALETTE[name]
+    r, g, b, rough, metal, *glow = PALETTE[name]  # a sixth value makes it glow (a lamp) that strongly
     bsdf = m.node_tree.nodes["Principled BSDF"]
     bsdf.inputs["Base Color"].default_value = (linear(r), linear(g), linear(b), 1)
     bsdf.inputs["Roughness"].default_value = rough
     bsdf.inputs["Metallic"].default_value = metal
+    if glow:
+        bsdf.inputs["Emission Color"].default_value = (linear(r), linear(g), linear(b), 1)
+        bsdf.inputs["Emission Strength"].default_value = glow[0]
     return m
 
 

@@ -2,7 +2,7 @@
 import { Car, createElement, Info, RectangleHorizontal, RotateCcw, Shield, ShieldOff, Users } from "lucide";
 import * as THREE from "three";
 import { mountPartsPicker } from "./parts-picker.ts";
-import { BOARD_BUDGETS, type BoardBudget, dressBoard, fingerboard, roadster, type Thruster } from "./models.ts";
+import { BOARD_BUDGETS, type BoardBudget, dressBoard, dressRoadster, fingerboard, ROADSTER_BUDGETS, type RoadsterBudget, roadster, type Thruster } from "./models.ts";
 import { levelMeshes } from "./render/pieces.ts";
 import { KIT_BUDGETS, type KitBudget, loadKit } from "./render/kit.ts";
 import { Plumes } from "./render/plumes.ts";
@@ -124,6 +124,11 @@ for (let i = 0; i < 28; i++) {
 }
 
 const car = roadster();
+// The Blender roadster at a polygon budget (?car=hi|mid|low, or ?car=built for the shared one).
+const carBudget = new URLSearchParams(location.search).get("car") ?? "mid";
+if (ROADSTER_BUDGETS.includes(carBudget as RoadsterBudget)) {
+  dressRoadster(car, new URL(`models/roadster-${carBudget}.glb`, document.baseURI).href).catch((e) => console.warn("roadster model", e));
+}
 const showroom = new URLSearchParams(location.search).has("showroom");
 const PIVOT_Y = { fingerboard: 0.45, roadster: 0.6 }; // what a flip turns about
 const board = fingerboard();
