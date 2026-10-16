@@ -201,6 +201,7 @@ pveBtn.addEventListener("click", () => { const q = new URLSearchParams(location.
 const chase = new Chase(camera);
 const manualEase = new TiltEase();
 const taps = new Taps($("taps")); // rings where the feet pop, drag and flick
+const groundRise = (x: number, z: number): [number, number] => { const e = 0.25; return [(level.height(x + e, z) - level.height(x - e, z)) / (2 * e), (level.height(x, z + e) - level.height(x, z - e)) / (2 * e)]; };
 const slope = { x: 0, z: 0 }; // the ground's tilt under the board, eased
 reset();
 let critterAt = performance.now(), lastFrame = performance.now(), landVy = 0, acc = 0, then = performance.now(), shownTrick: State["last"] = null, trickAt = 0;
@@ -227,8 +228,8 @@ function frame(now: number) {
   // Both skins ride the same pose; a flip or a grind turns whichever one is showing.
   const rider = skins.root, pivot = skins.pivot();
   rider.position.set(sim.x, sim.y, sim.z);
-  const grounded = !sim.air && sim.bail <= 0 && sim.grind < 0, k = 1 - Math.exp(-12 * dt);
-  const lie = lieOnGround(grounded ? sim.pitch : 0, grounded ? sim.roll : 0); // along the ground, level again in the air
+  const grounded = !sim.air && sim.bail <= 0 && sim.grind < 0, k = 1 - Math.exp(-40 * dt);
+  const lie = grounded ? lieOnGround(...groundRise(sim.x, sim.z), sim.yaw) : { x: 0, z: 0 }; // along the ground, level again in the air
   slope.x += (lie.x - slope.x) * k;
   slope.z += (lie.z - slope.z) * k;
   rider.rotation.set(slope.x, sim.yaw + (sim.grind >= 0 ? sim.grindOff : 0), slope.z, "YXZ");

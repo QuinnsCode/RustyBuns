@@ -59,17 +59,16 @@ test("the nearer balance is to falling the steeper and shakier it gets, and a ma
   expect(e.ease).toBe(0);
 });
 
-test("on a slope the board lies along the ground: nose down going downhill, right side up where the ground rises to the right", () => {
-  const board = (pitch: number, roll: number) => {
-    const o = new THREE.Object3D(), lie = lieOnGround(pitch, roll);
-    o.rotation.set(lie.x, 0.7, lie.z, "YXZ"); // any heading
+test("on a slope the board's up is the ground's normal, whatever the heading", () => {
+  const up = (gx: number, gz: number, yaw: number) => {
+    const o = new THREE.Object3D(), lie = lieOnGround(gx, gz, yaw);
+    o.rotation.set(lie.x, yaw, lie.z, "YXZ");
     o.updateMatrixWorld(true);
     const m = o.matrixWorld.elements;
-    const fwd = new THREE.Vector3(m[8], m[9], m[10]), left = new THREE.Vector3(m[0], m[1], m[2]);
-    return { rise: fwd.y / Math.hypot(fwd.x, fwd.z), right: -left.y };
+    return new THREE.Vector3(m[4], m[5], m[6]);
   };
-  expect(board(0.4, 0).rise).toBeCloseTo(Math.tan(0.4), 5); // the ground rises ahead: the nose rises with it
-  expect(board(-0.4, 0).rise).toBeCloseTo(-Math.tan(0.4), 5); // downhill: nose down, not floating nose-up
-  expect(board(0, 0.3).right).toBeGreaterThan(0.2); // the ground rises to its right: so does its right side
-  expect(board(0, -0.3).right).toBeLessThan(-0.2);
+  for (const [gx, gz, yaw] of [[0.5, 0, 0.7], [0.3, -0.8, 2.1], [-1.5, 1.2, -1]]) {
+    const n = new THREE.Vector3(-gx, 1, -gz).normalize();
+    expect(up(gx, gz, yaw).distanceTo(n)).toBeLessThan(1e-9);
+  }
 });
