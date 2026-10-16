@@ -20,8 +20,8 @@ export const glacierPoint: ParkSpec = {
     { name: "Glacier Point Gap", a: { x: -40, z: -52 }, b: { x: -40, z: -150 }, r: 16, rb: 100, bonus: 3000, min: 50 },
   ],
   spawns: [
+    { name: "overlook", x: -40, z: 62, yaw: N },
     { name: "plateau", x: -40, z: 100, yaw: N },
-    { name: "car", x: -40, z: 106, yaw: N },
     { name: "slope", x: 40, z: 40, yaw: E },
   ],
   bounds: { minX: -150, maxX: 250, minZ: -200, maxZ: 130 },

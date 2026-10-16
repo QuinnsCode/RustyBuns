@@ -19,10 +19,12 @@ export const grandPrismatic: ParkSpec = {
     { parts: [quarterPipe({ x: -40, z: -180, yaw: E }, { w: 14, d: 7, h: 3.6 }), spine({ x: -10, z: -140, yaw: E }, { w: 12, d: 8, h: 2.4 })] },
   ],
   spawns: [
+    { name: "spring view", x: 55, z: 50, yaw: 1.93 },
     { name: "street line", x: -270, z: -180, yaw: E },
     { name: "bowl deck", x: -100, z: 10, yaw: Math.PI },
   ],
-  bounds: { minX: -290, maxX: 100, minZ: -290, maxZ: 100 },
+  landmarks: [{ kind: "plume", x: 140, z: 20, tall: 32, r: 6 }, { kind: "rings", x: 140, z: 20, rings: [{ r: 72, color: 0xd9a441 }, { r: 56, color: 0x6aa84f }, { r: 40, color: 0x2fb5a8 }, { r: 24, color: 0x1f5fbf }] }],
+  bounds: { minX: -290, maxX: 230, minZ: -290, maxZ: 140 },
   goals: [
     { kind: "score", target: 2500 },
     { kind: "combo", target: 800 },

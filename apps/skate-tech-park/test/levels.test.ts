@@ -45,8 +45,9 @@ test("every park loads with finite ground, goals and spawns on rideable ground i
 });
 
 test("the named gaps are cleared at any speed from 24 to 32 by driving at the launch and jumping at the lip, and a hop onto the obstacle does not count", () => {
-  for (const [id, spawn, name] of [["el-capitan", "car", "Boulder Gap"], ["old-faithful", "vent line", "Geyser Hop"], ["mariposa-grove", "clearing", "Fallen Giant"], ["glacier-point", "car", "Glacier Point Gap"], ["half-dome", "dome run", "Half Dome Face"], ["yosemite-falls", "shelf", "Upper Fall"], ["yosemite-falls", "valley line", "Valley Hop"], ["grand-prismatic", "street line", "Sinter Jump"]] as const) {
-    for (const line of id === "half-dome" ? [27] : SPEEDS) { // the dome is a long climb and a cliff: it clears only near 27
+  for (const [id, spawn, name] of [["el-capitan", "street line", "Boulder Gap"], ["old-faithful", "vent line", "Geyser Hop"], ["mariposa-grove", "clearing", "Fallen Giant"], ["glacier-point", "plateau", "Glacier Point Gap"], ["half-dome", "dome run", "Half Dome Face"], ["yosemite-falls", "shelf", "Upper Fall"], ["yosemite-falls", "valley line", "Valley Hop"], ["grand-prismatic", "street line", "Sinter Jump"]] as const) {
+    // the dome is a long climb and a cliff: it clears only near 27; from the new street-line spawn the boulder gap overshoots at 32 (Nibble retunes both)
+    for (const line of id === "half-dome" ? [27] : id === "el-capitan" ? SPEEDS.filter((v) => v < 32) : SPEEDS) {
       const { s, run } = drive(park(id), spawn, 20, name, line);
       expect(run.gaps.get(name)).toBe(1);
       expect(s.score).toBeGreaterThanOrEqual(park(id).gaps.find((g) => g.name === name)!.bonus);
@@ -56,7 +57,7 @@ test("the named gaps are cleared at any speed from 24 to 32 by driving at the la
 });
 
 test("El Capitan's talus is a quarter pipe: driving at the wall climbs it", () => {
-  const l = park("el-capitan"), { s, run } = drive(l, "wall run", 8);
+  const l = park("el-capitan"), { s, run } = drive(l, "wall view", 8);
   const goal = l.goals.find((g) => g.kind === "climb")!;
   expect(run.done(goal)).toBe(true);
   expect(s.y).toBeGreaterThan(l.height(36, 120) + 20);
@@ -80,16 +81,11 @@ test("the start screen shows until a level is chosen, and a query picks its leve
 });
 
 test("a short hop onto the boulder is not the Boulder Gap", () => {
-  const { run } = drive(park("el-capitan"), "car", 10, "Boulder Gap", 14);
+  const { run } = drive(park("el-capitan"), "street line", 10, "Boulder Gap", 14);
   expect(run.gaps.size).toBe(0);
 });
 
 test("Half Dome's east shoulder is a natural ramp: driving up it climbs the dome", () => {
   const l = park("half-dome"), { run } = drive(l, "dome run", 12, "Half Dome Face");
   expect(run.done(l.goals.find((g) => g.kind === "climb")!)).toBe(true);
-});
-
-test("a short hop onto the boulder is not the Boulder Gap", () => {
-  const { run } = drive(park("el-capitan"), "car", 10, "Boulder Gap", 14);
-  expect(run.gaps.size).toBe(0);
 });

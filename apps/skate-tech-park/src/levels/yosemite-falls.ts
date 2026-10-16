@@ -21,9 +21,11 @@ export const yosemiteFalls: ParkSpec = {
     { name: "Upper Fall", a: { x: -195, z: -220 }, b: { x: -105, z: -215 }, r: 30, rb: 70, bonus: 3500, min: 40 },
   ],
   spawns: [
+    { name: "falls view", x: 20, z: -190, yaw: -1.7 },
     { name: "shelf", x: -285, z: -220, yaw: E },
     { name: "valley line", x: -20, z: 60, yaw: E },
   ],
+  landmarks: [{ kind: "falls", from: { x: -195, z: -220 }, to: { x: -135, z: -220 }, width: 18 }],
   bounds: { minX: -300, maxX: 280, minZ: -300, maxZ: 260 },
   goals: [
     { kind: "score", target: 3000 },

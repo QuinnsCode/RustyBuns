@@ -23,12 +23,12 @@ export const elCapitan: ParkSpec = {
     { parts: [stairSet({ x: 0, z: 130, yaw: W }, { w: 8, steps: 8, rise: 0.25, run: 0.9 }), hubba({ x: -30, z: 130, yaw: W }, { steps: 8, rise: 0.25, run: 0.9 })] },
   ],
   spawns: [
-    { name: "skate", x: -125, z: 100, yaw: E },
-    { name: "car", x: -125, z: 106, yaw: E },
-    { name: "wall run", x: 36, z: 120, yaw: N },
+    { name: "wall view", x: 36, z: 150, yaw: N },
+    { name: "street line", x: -125, z: 100, yaw: E },
     { name: "return line", x: 90, z: 130, yaw: W },
   ],
-  bounds: { minX: -150, maxX: 120, minZ: -70, maxZ: 150 },
+  granite: 140,
+  bounds: { minX: -150, maxX: 120, minZ: -70, maxZ: 170 },
   goals: [
     { kind: "score", target: 3000 },
     { kind: "combo", target: 1000 },
