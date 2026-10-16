@@ -38,13 +38,15 @@ export function groundMesh(level: ParkLevel, mood?: Pick<Mood, "wet" | "snow">):
   const R = level.ground.R, n = Math.round((2 * R) / STEP) + 1;
   const pos = new Float32Array(n * n * 3), uv = new Float32Array(n * n * 2), col = new Float32Array(n * n * 3), idx: number[] = [];
   const wet = mood?.wet ?? 0, snow = mood?.snow ?? 0;
-  const grass = new THREE.Color(0x6f8250).multiplyScalar(1 - 0.35 * wet), rock = new THREE.Color(0xbfb8ab).multiplyScalar(1 - 0.3 * wet), white = new THREE.Color(0xf2f6fb), c = new THREE.Color();
+  const grass = new THREE.Color(0x6f8250), dry = new THREE.Color(0xb4a05a), moss = new THREE.Color(0x4b6b3e).multiplyScalar(1 - 0.35 * wet), rock = new THREE.Color(0xbfb8ab).multiplyScalar(1 - 0.3 * wet), white = new THREE.Color(0xf2f6fb), c = new THREE.Color();
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
     const x = -R + i * STEP, z = -R + j * STEP, h = level.ground.height(x, z), k = (j * n + i) * 3;
     pos.set([x, h, z], k);
     uv.set([x / DETAIL, z / DETAIL], (j * n + i) * 2);
     const slope = Math.hypot(level.ground.height(x + 1, z) - level.ground.height(x - 1, z), level.ground.height(x, z + 1) - level.ground.height(x, z - 1)) / 2;
     c.copy(grass).lerp(rock, Math.min(1, Math.max(Math.max(0, slope - 0.6) * 2.5, (h - level.granite) / 12))); // steep ground is bare granite
+    const warm = 0.5 + 0.5 * Math.sin(x * 0.037 + 0.6) * Math.sin(z * 0.041 - 1.1); // broad drifts of dry gold meadow and deep green moss
+    c.lerp(dry, Math.max(0, warm - 0.45) * 1.1 * (1 - wet) * (1 - snow)).lerp(moss, Math.max(0, 0.4 - warm) * 0.9);
     const patch = 0.5 + 0.5 * Math.sin(x * 0.11 + 1.7) * Math.cos(z * 0.09), flat = 1 - Math.min(1, slope * 1.4); // snow settles in hollows and on flats, and blows off steep rock
     c.lerp(white, Math.min(1, snow * (0.55 + 0.45 * patch) * (0.35 + 0.65 * flat)));
     col.set([c.r, c.g, c.b], k);
@@ -100,12 +102,22 @@ function landmark(level: ParkLevel, l: Landmark): THREE.Object3D {
 /** The trees and the pickups. `pickups[i]` is the mesh for `level.pickups[i]`. */
 export function props(level: ParkLevel) {
   const group = new THREE.Group(), bark = new THREE.MeshStandardMaterial({ color: 0x8a4a2b, roughness: 1 });
-  for (const t of level.trees) {
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(t.r * 0.8, t.r, t.tall, 14), bark);
-    m.position.set(t.x, level.ground.height(t.x, t.z) + t.tall / 2, t.z);
-    m.castShadow = true;
-    group.add(m);
-  }
+  const needles = [0x2d5a3a, 0x3a6b3f, 0x24503a].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 1, flatShading: true }));
+  level.trees.forEach((t, i) => {
+    const y = level.ground.height(t.x, t.z), tree = new THREE.Group();
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(t.r * 0.8, t.r * 1.15, t.tall, 10), bark);
+    trunk.position.y = t.tall / 2;
+    tree.add(trunk);
+    for (let k = 0; k < 3; k++) { // stacked low-poly boughs high on the trunk, wide below and narrow above
+      const w = t.r * (7 - k * 1.8), h = t.tall * 0.22, bough = new THREE.Mesh(new THREE.ConeGeometry(w, h * 1.6, 7), needles[(i + k) % needles.length]);
+      bough.position.y = t.tall * (0.72 + k * 0.13);
+      bough.rotation.y = i + k;
+      tree.add(bough);
+    }
+    tree.position.set(t.x, y, t.z);
+    tree.traverse((o) => { o.castShadow = true; });
+    group.add(tree);
+  });
   for (const l of level.landmarks) group.add(landmark(level, l));
   const gold = new THREE.MeshStandardMaterial({ color: 0xe2572b, emissive: 0xe2572b, emissiveIntensity: 0.4 });
   const pickups = level.pickups.map((p) => {
