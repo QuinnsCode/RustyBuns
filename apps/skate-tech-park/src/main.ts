@@ -244,7 +244,7 @@ function frame(now: number) {
   const rider = skins.root, pivot = skins.pivot();
   rider.position.set(shown.x, shown.y, shown.z);
   const grounded = !sim.air && sim.bail <= 0 && sim.grind < 0, k = 1 - Math.exp(-40 * dt);
-  const lie = grounded ? lieOnGround(...groundRise(shown.x, shown.z), shown.yaw) : { x: 0, z: 0 }; // along the ground, level again in the air
+  const lie = grounded ? lieOnGround(...groundRise(shown.x, shown.z), shown.yaw) : sim.lip ? lieOnGround(Math.tan(sim.lip) * Math.sin(shown.yaw), Math.tan(sim.lip) * Math.cos(shown.yaw), shown.yaw) : { x: 0, z: 0 }; // along the ground, level again in the air (nose up the wall it just left)
   slope.x += (lie.x - slope.x) * k;
   slope.z += (lie.z - slope.z) * k;
   rider.rotation.set(slope.x, shown.yaw + (sim.grind >= 0 ? sim.grindOff : 0), slope.z, "YXZ");
