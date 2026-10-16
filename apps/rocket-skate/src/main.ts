@@ -3,7 +3,8 @@ import { Car, createElement, PersonStanding, RotateCcw, Wind } from "lucide";
 import * as THREE from "three";
 import { roadster, skater, type Thruster } from "./models.ts";
 import { DT, IDLE, type Input, type Mode, start, step, type State } from "./sim.ts";
-import { HALF, plaza as level } from "./levels/plaza.ts";
+import { HALF } from "./levels/plaza.ts";
+import { level, mountLevelUi, park, spawn } from "./levels/picker.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#view")!;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -24,7 +25,12 @@ sun.position.set(-40, 30, -25);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -50, right: 50, top: 50, bottom: -50, far: 150 });
-scene.add(sun);
+scene.add(sun, sun.target);
+const ui = mountLevelUi(scene);
+// The plaza's own floor, wall and towers; a park draws its ground instead.
+const decor = new THREE.Group();
+decor.visible = !park;
+scene.add(decor);
 
 // Concrete, drawn on a canvas: slabs with expansion joints.
 function concrete() {
@@ -50,7 +56,7 @@ slab.repeat.set(20, 20);
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2, HALF * 2), new THREE.MeshStandardMaterial({ map: slab, roughness: 0.95 }));
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
-scene.add(floor);
+decor.add(floor);
 
 // Each piece meshed by sampling its own height, in its own frame: the box's top follows it.
 const rampMat = new THREE.MeshStandardMaterial({ color: 0xd8d2c8, roughness: 0.85 });
@@ -92,14 +98,14 @@ for (const [w, d, x, z] of [[HALF * 2, 1, 0, HALF + 0.5], [HALF * 2, 1, 0, -HALF
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, 1.2, d), wallMat);
   m.position.set(x, 0.6, z);
   m.receiveShadow = true;
-  scene.add(m);
+  decor.add(m);
 }
 const towerMat = [0x6f6a75, 0x84766a, 0x5d6670, 0x9b8a7a].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 1 }));
 for (let i = 0; i < 28; i++) {
   const a = (i / 28) * Math.PI * 2, d = HALF + 14 + (i % 3) * 7, h = 12 + ((i * 37) % 23);
   const m = new THREE.Mesh(new THREE.BoxGeometry(10, h, 10), towerMat[i % 4]);
   m.position.set(Math.cos(a) * d, h / 2, Math.sin(a) * d);
-  scene.add(m);
+  decor.add(m);
 }
 
 const car = roadster(), board = skater();
@@ -109,10 +115,12 @@ const plate = car.userData.plate as THREE.Group;
 
 const showroom = new URLSearchParams(location.search).has("showroom");
 let mode: Mode = "car";
-let sim: State = start(mode, 27, -38);
+const begin = (m: Mode) => { const p = spawn(level, m); return start(m, p.x, p.z, p.yaw, level); };
+let sim: State = begin(mode);
 const reset = () => {
-  sim = showroom ? start(mode, 0, -20) : mode === "car" ? start("car", 27, -38) : start("skate", -12, -20);
-  camPos.set(sim.x, sim.y + 4, Math.max(sim.z - 9, -HALF + 1));
+  sim = showroom ? start(mode, 0, -20, 0, level) : begin(mode);
+  camPos.set(sim.x - Math.sin(sim.yaw) * 9, sim.y + 4, Math.max(sim.z - Math.cos(sim.yaw) * 9, level.bounds.minZ + 1));
+  ui.reset();
 };
 
 // Keys → input. Space is the ollie on the board and the lift thrusters in the car.
@@ -165,7 +173,7 @@ function frame(now: number) {
   acc = Math.min(acc + (now - then) / 1000, 0.25);
   then = now;
   const inp = input();
-  while (acc >= DT) { step(sim, inp); acc -= DT; }
+  while (acc >= DT) { step(sim, inp, level); ui.update(sim); acc -= DT; }
 
   const rider = mode === "car" ? car : board;
   car.visible = mode === "car";
@@ -203,8 +211,10 @@ function frame(now: number) {
     camPos.set(sim.x + Math.sin(a) * 7, sim.y + 1.6, sim.z + Math.cos(a) * 7);
     camLook.set(sim.x, sim.y + 0.6, sim.z);
   }
-  camPos.x = THREE.MathUtils.clamp(camPos.x, -HALF + 1, HALF - 1); // stay inside the plaza wall
-  camPos.z = THREE.MathUtils.clamp(camPos.z, -HALF + 1, HALF - 1);
+  camPos.x = THREE.MathUtils.clamp(camPos.x, level.bounds.minX + 1, level.bounds.maxX - 1); // stay inside the walls
+  camPos.z = THREE.MathUtils.clamp(camPos.z, level.bounds.minZ + 1, level.bounds.maxZ - 1);
+  sun.position.set(sim.x - 40, sim.y + 30, sim.z - 25); // the shadow box follows the rider
+  sun.target.position.set(sim.x, sim.y, sim.z);
   camera.position.copy(camPos);
   camera.lookAt(camLook);
 
