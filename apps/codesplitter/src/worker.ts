@@ -885,7 +885,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     const tracks = await Promise.all(results.map(async (t: any) => {
       // A track pointing into a repo that went private just disappears for you; private lines are placeholders unless you're crew.
       const can = await access(env, t.owner, t.repo, user);
-      if (!can.read) return null;
+      if (!can.read || (token?.repo && token.repo !== `${t.owner}/${t.repo}`)) return null;
       const doc = await (await toFile(env, t.owner, t.repo, t.path, user ?? "anon", "file", { headers: { "x-codesplitter-crew": can.write ? "1" : "0" } })).json() as { lines: { id: string; text: string; by: string }[] };
       // Follow the lines by id; if either end was deleted, fall back to the numbers.
       const i = doc.lines.findIndex((l) => l.id === t.from_id), j = doc.lines.findIndex((l) => l.id === t.to_id);
