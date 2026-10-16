@@ -25,7 +25,7 @@ bun test test            # the ride, headless
 | Jump | <kbd>Space</kbd> ollie |
 | Rear jets, pump | hold <kbd>Shift</kbd>: speed along the heading, and through a transition it gains speed (fast enough up a quarter pipe and you fly off the wall and drop back down it) |
 | Kickflip | <kbd>F</kbd> in the air | |
-| Swap skins, back to the start | <kbd>Tab</kbd> (the ride carries on), <kbd>R</kbd> |
+| Manual, nose manual | hold <kbd>Q</kbd> / <kbd>Z</kbd> on the ground; <kbd>W</kbd> / <kbd>S</kbd> hold the balance. Let go to score it, and it keeps your combo alive || Swap skins, back to the start | <kbd>Tab</kbd> (the ride carries on), <kbd>R</kbd> |
 
 ## How it's built
 
