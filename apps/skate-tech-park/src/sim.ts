@@ -379,7 +379,8 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
 
     const nx = s.x + Math.sin(s.yaw) * s.speed * DT, nz = s.z + Math.cos(s.yaw) * s.speed * DT;
     const dist = Math.abs(s.speed * DT);
-    if (hitObstacle(level, nx, nz, s.y, s.yaw)) { s.yaw = yaw0; return crash(s, "Hit a tree"); }
+    const blocker = hitObstacle(level, nx, nz, s.y, s.yaw);
+    if (blocker) { s.yaw = yaw0; return crash(s, blocker.kind === "post" ? "Hit a rail post" : "Hit a tree"); }
     // walk the stride in 10 cm strides: a rise too sharp for its length is a wall (the side of a box),
     // a steep curve (a quarter pipe near its lip) is not
     const n = Math.max(1, Math.ceil(dist / 0.1));

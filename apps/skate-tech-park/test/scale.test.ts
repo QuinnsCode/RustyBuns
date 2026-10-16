@@ -68,8 +68,8 @@ test("the chase camera sits behind and above a rider going down the park, and th
   expect(camera.fov).toBeGreaterThan(FOV.base + 3);
 });
 
-test("the sky is a dome and two ridge rings", () => {
+test("the sky is a dome and four ridge rings", () => {
   let n = 0;
   sky().traverse((o) => { if ((o as THREE.Mesh).isMesh) n++; });
-  expect(n).toBe(3);
+  expect(n).toBe(5);
 });

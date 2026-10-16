@@ -16,6 +16,7 @@ const park = (id: string) => parks.find((l) => l.id === id)!;
 function drive(level: ParkLevel, spawn: string, seconds: number, gapName?: string, line = 27, target?: { x: number; z: number }) {
   const sp = level.spawns.find((p) => p.name === spawn)!, g = level.gaps.find((x) => x.name === gapName);
   const s = start(sp.x, sp.z, sp.yaw, level), run = trackRun(level);
+  level = { ...level, obstacles: level.trees }; // these lines ride gaps and pickups, not rail posts: a handrail on the spawn line is in the way, not the point
   for (let i = 0; i < seconds * 60; i++) {
     const to = g?.a ?? target, aim = to ? Math.atan2(to.x - s.x, to.z - s.z) : s.yaw, err = Math.atan2(Math.sin(aim - s.yaw), Math.cos(aim - s.yaw));
     const along = g ? (s.x - g.a.x) * Math.sin(s.yaw) + (s.z - g.a.z) * Math.cos(s.yaw) : -99;
@@ -113,4 +114,12 @@ test("the kit is toy-sized beside the deck: every piece is wider than the board,
   for (const l of parks) for (const p of l.pieces) expect(Math.min(p.w, p.d)).toBeGreaterThan(DECK.width);
   const { s } = drive(park("old-faithful"), "boardwalk", 9, undefined, 27, { x: 40, z: 20 });
   expect(s.x).toBeGreaterThan(0); // past the stair set at -100 and the funbox at -70, not stopped at the first riser
+});
+
+test("?real rides the terrain at full height: taller ground, and climb goals scale with it", () => {
+  const e = LEVELS.find((l) => l.id === "half-dome")!;
+  const friendly = e.load() as ParkLevel, real = e.load(true) as ParkLevel;
+  expect(real.ground.height(0, 0) + real.ground.height(60, 60)).toBeGreaterThan(friendly.ground.height(0, 0) + friendly.ground.height(60, 60));
+  const m = (l: ParkLevel) => (l.goals.find((g) => g.kind === "climb") as { metres: number }).metres;
+  expect(m(real)).toBeGreaterThan(m(friendly));
 });
