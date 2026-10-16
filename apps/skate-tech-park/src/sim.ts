@@ -65,6 +65,7 @@ export const FLICK_TIME = 0.45 * T;
 const OLLIE = 7 * T; // m/s up off the tail
 const CHAIN_WINDOW = 3; // seconds on the ground between tricks before the chain ends
 const CHAIN_MAX = 8;
+const LINK = 1.5; // a trick of a different kind from the last in the chain (grind, manual, air) scores this much more
 
 export type GrindKind = "50-50" | "boardslide" | "nosegrind" | "5-0";
 const GRIND_POINTS: Record<GrindKind, number> = { "50-50": 300, "5-0": 350, nosegrind: 400, boardslide: 450 };
@@ -110,6 +111,9 @@ export type State = {
   manualTime: number; // seconds in it
   chain: number; // tricks landed in a row; the score multiplier
   chainT: number; // seconds left to extend it
+  combo: string[]; // the tricks in the running chain, in order
+  comboScore: number; // what the running chain has scored so far
+  comboKind: TrickKind | null; // what the last trick in it was
   fan: boolean; // the suction fan is on
   jetT: number; // seconds the lift jets still burn (an ollie, a landing)
   firing: Firing;
@@ -126,7 +130,7 @@ export function start(x = 0, z = -20, yaw = 0, level: Level = plaza): State {
   return {
     t: 0, x, y: level.height(x, z), z, vx: 0, vy: 0, vz: 0, yaw, pitch: 0, roll: 0, speed: 0,
     air: false, airTime: 0, spun: 0, flipT: 0, flipKind: "kickflip", tricks: [], grind: -1, grindTime: 0,
-    grindKind: "50-50", grindOff: 0, balance: 0, manual: 0, manualTime: 0, chain: 0, chainT: 0, fan: false, jetT: 0,
+    grindKind: "50-50", grindOff: 0, balance: 0, manual: 0, manualTime: 0, chain: 0, chainT: 0, combo: [], comboScore: 0, comboKind: null, fan: false, jetT: 0,
     firing: { rear: false, lift: false, spin: 0, roll: 0 }, plateDown: false,
     bail: 0, score: 0, last: null, prevJump: false, prevFlip: false, prevFlick: false,
   };
@@ -134,12 +138,22 @@ export function start(x = 0, z = -20, yaw = 0, level: Level = plaza): State {
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
-/** Score a trick; each one landed within the window of the last is multiplied by how long the chain is. */
-function award(s: State, name: string, points: number) {
-  s.chain = s.chainT > 0 ? Math.min(CHAIN_MAX, s.chain + 1) : 1;
+export type TrickKind = "air" | "grind" | "manual";
+
+function endChain(s: State) {
+  s.chain = 0; s.chainT = 0; s.combo = []; s.comboScore = 0; s.comboKind = null;
+}
+
+/** Score a trick; each one landed within the window of the last is multiplied by how long the chain is,
+ * and more again if it is a different kind of trick from the one before (grind to manual to air). */
+function award(s: State, name: string, points: number, kind: TrickKind) {
+  if (s.chainT <= 0) endChain(s);
+  const linked = s.comboKind !== null && s.comboKind !== kind;
+  s.chain = s.chain > 0 ? Math.min(CHAIN_MAX, s.chain + 1) : 1;
   s.chainT = CHAIN_WINDOW;
-  const total = points * s.chain;
-  s.last = { name: s.chain > 1 ? `${name} x${s.chain}` : name, points: total };
+  const total = Math.round(points * s.chain * (linked ? LINK : 1));
+  s.combo.push(name); s.comboScore += total; s.comboKind = kind;
+  s.last = { name: s.chain > 1 ? `${name} x${s.chain}${linked ? " link" : ""}` : name, points: total };
   s.score += total;
 }
 
@@ -147,7 +161,7 @@ function award(s: State, name: string, points: number) {
 function bail(s: State, name: string) {
   s.bail = 1.2;
   s.speed = 0; s.vx = s.vz = 0;
-  s.flipT = 0; s.grind = -1; s.manual = 0; s.chain = 0; s.chainT = 0;
+  s.flipT = 0; s.grind = -1; s.manual = 0; endChain(s);
   s.last = { name, points: 0 };
 }
 
@@ -160,7 +174,7 @@ function crash(s: State, name: string | null) {
 
 /** Set the board back on all four wheels: a manual held for more than half a second is a trick. */
 function endManual(s: State) {
-  if (s.manualTime > 0.5) award(s, s.manual > 0 ? "Manual" : "Nose manual", Math.round(s.manualTime * MANUAL_POINTS));
+  if (s.manualTime > 0.5) award(s, s.manual > 0 ? "Manual" : "Nose manual", Math.round(s.manualTime * MANUAL_POINTS), "manual");
   s.manual = 0; s.manualTime = 0;
 }
 
@@ -189,7 +203,7 @@ function land(s: State, h: number) {
   }
   if (s.speed < 0) parts.push("fakie");
   const points = Math.round(s.airTime * 100 + (turns / 180) * 250 + s.tricks.reduce((n, t) => n + FLICK_POINTS[t], 0));
-  award(s, parts.length ? parts.join(" ") : "Air", points);
+  award(s, parts.length ? parts.join(" ") : "Air", points, "air");
 }
 
 /** The floor's rise per metre in x and z, by central difference. */
@@ -209,7 +223,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
   s.t += DT;
   s.firing = { rear: false, lift: false, spin: 0, roll: 0 };
 
-  if (s.chainT > 0 && !s.air && s.grind < 0 && !s.manual && (s.chainT -= DT) <= 0) s.chain = 0; // the clock only runs on the ground, and a held manual keeps the chain alive
+  if (s.chainT > 0 && !s.air && s.grind < 0 && !s.manual && (s.chainT -= DT) <= 0) endChain(s); // the clock only runs on the ground, and a held manual keeps the chain alive
   if (s.bail > 0) {
     s.bail -= DT;
     s.plateDown = false;
@@ -235,7 +249,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     if (Math.abs(s.balance) >= 1) { s.y = level.height(s.x, s.z); bail(s, `Bail: fell off the ${ledge ? "ledge" : "rail"}`); return s; }
     s.firing.rear = s.speed > 1; // the jets hold the slide
     if (pressed || t < 0 || t > 1) {
-      if (s.grindTime > 0.2) award(s, (ledge ? LEDGE_NAME : GRIND_NAME)[s.grindKind], Math.round(s.grindTime * GRIND_POINTS[s.grindKind]));
+      if (s.grindTime > 0.2) award(s, (ledge ? LEDGE_NAME : GRIND_NAME)[s.grindKind], Math.round(s.grindTime * GRIND_POINTS[s.grindKind]), "grind");
       s.grind = -1;
       s.vx = fx * s.speed; s.vz = fz * s.speed;
       s.vy = pressed ? OLLIE : 0;
