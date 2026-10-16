@@ -379,7 +379,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       wallPrev = wall;
       if (rise > Math.max(s.fan ? JETS.fanStep : STEP, (dist / n) * MAX_SLOPE)) { // the fan sucks it up a kerb or box side
         // (a stride can reach a vertical lip before `pitch` has caught up with it, so judge by the steepest rise seen)
-        const slope = Math.atan(rise / (dist / n)), steep = Math.max(Math.abs(s.pitch), s.pitch * dir > 0.4 ? slope : 0);
+        const slope = Math.atan((h - prev) / (dist / n)), steep = Math.max(Math.abs(s.pitch), s.pitch * dir > 0.4 ? slope : 0);
         if (steep < WALL || s.pitch * dir < 0 || s.vy < 0.2 * Math.abs(s.speed)) return crash(s, null);
         // already climbing a curve and it goes vertical: leave the wall along its face, up past the coping
         const v = Math.abs(s.speed), c = Math.cos(steep);
