@@ -8,7 +8,7 @@ import { Chase } from "./render/chase.ts";
 import { Scenery, scatter } from "./render/scenery.ts";
 import { followCamera, HAZE, sky } from "./render/sky.ts";
 import { Skins } from "./render/skins.ts";
-import { manualPose, TiltEase } from "./render/tilt.ts";
+import { lieOnGround, manualPose, TiltEase } from "./render/tilt.ts";
 import { DT, FLICK_TIME, IDLE, type Input, type Mode, start, step, type State } from "./sim.ts";
 import { HALF } from "./levels/plaza.ts";
 import type { ParkLevel } from "./levels/park.ts";
@@ -155,6 +155,7 @@ hud();
 
 const chase = new Chase(camera);
 const manualEase = new TiltEase();
+const slope = { x: 0, z: 0 }; // the ground's tilt under the board, eased
 reset();
 let lastFrame = performance.now(), landVy = 0, acc = 0, then = performance.now(), shownTrick: State["last"] = null, trickAt = 0;
 
@@ -178,7 +179,11 @@ function frame(now: number) {
   // Both skins ride the same pose; a flip or a grind turns whichever one is showing.
   const rider = skins.root, pivot = skins.pivot();
   rider.position.set(sim.x, sim.y, sim.z);
-  rider.rotation.set(0, sim.yaw + (sim.grind >= 0 ? sim.grindOff : 0), 0);
+  const grounded = !sim.air && sim.bail <= 0 && sim.grind < 0, k = 1 - Math.exp(-12 * dt);
+  const lie = lieOnGround(grounded ? sim.pitch : 0, grounded ? sim.roll : 0); // along the ground, level again in the air
+  slope.x += (lie.x - slope.x) * k;
+  slope.z += (lie.z - slope.z) * k;
+  rider.rotation.set(slope.x, sim.yaw + (sim.grind >= 0 ? sim.grindOff : 0), slope.z, "YXZ");
   if (sim.bail > 0) rider.rotation.z = mode === "car" ? Math.sin(sim.bail * 30) * 0.08 : 1.3;
   const turn = sim.flipT > 0 ? (1 - sim.flipT / FLICK_TIME) * Math.PI * 2 : 0;
   pivot.rotation.set(0, sim.flipKind === "shove-it" ? turn / 2 : 0, sim.flipKind === "heelflip" ? -turn : sim.flipKind === "kickflip" ? turn : 0);
