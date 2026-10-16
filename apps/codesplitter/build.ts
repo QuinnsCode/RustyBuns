@@ -71,8 +71,9 @@ for (const name of ["mervin", "swarm"]) {
   const r = await Bun.build({ entrypoints: [`src/${name}-replay.ts`], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: `${name}-replay.js` });
   if (!r.success) { for (const l of r.logs) console.error(l); process.exit(1); }
 }
-// The swarm week's data (scripts/swarm-week.ts).
+// The swarm week's data (scripts/swarm-week.ts) and the merge round it plays at the git wall (scripts/swarm-round.ts).
 await copyFile("src/swarm-week.json", "dist/client/swarm-week.json");
+await copyFile("src/swarm-round.json", "dist/client/swarm-round.json");
 // The swarm explained with dots: its page, and the stage (src/swarm-stage.js, over swarm-sim.ts and swarm-story.ts),
 // which the landing page mounts too.
 await copyFile("src/swarm.html", "dist/client/swarm.html");

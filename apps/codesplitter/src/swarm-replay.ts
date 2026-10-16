@@ -54,13 +54,15 @@ export function timeline(week: Week, step = 60) {
   return out;
 }
 
-/** Average git and test band before and after each ship mark: the honest before and after. */
-export function beforeAfter(week: Week, step = 60) {
-  const tl = timeline(week, step), avg = (l: typeof tl, k: "git" | "test") => (l.length ? +(l.reduce((s, x) => s + x[k], 0) / l.length).toFixed(1) : 0);
-  return week.marks.map((m) => {
-    const k = m.who === "Mervin" ? "git" : "test", before = tl.filter((x) => x.t < m.at), after = tl.filter((x) => x.t >= m.at);
-    return { who: m.who, band: k, before: avg(before, k), after: avg(after, k) };
-  });
+/** The widest the git and test bands got each day (the week starts at midnight Pacific), and the ship marks that fell in it.
+ * Peaks, not averages: after Mervin's mark the git average reads higher than before it, because the cascade's tail sits there. */
+export function nightPeaks(week: Week, step = 10) {
+  const tl = timeline(week, step), DAY = 1440, out: { day: number; open: number; git: number; test: number; marks: Mark["who"][] }[] = [];
+  for (let d = 0; d * DAY < week.minutes; d++) {
+    const s = tl.filter((x) => x.t >= d * DAY && x.t < (d + 1) * DAY);
+    out.push({ day: d, open: Math.max(...s.map((x) => OPEN.reduce((n, b) => n + x[b], 0))), git: Math.max(...s.map((x) => x.git)), test: Math.max(...s.map((x) => x.test)), marks: week.marks.filter((m) => m.at >= d * DAY && m.at < (d + 1) * DAY).map((m) => m.who) });
+  }
+  return out;
 }
 
 /** The minute the git band was widest: where the stuck agents pile up. */

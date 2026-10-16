@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { band, changes, counts, gitPeak, pile, Playhead, readWeek, SPEEDS, type Week, type WeekRow } from "../src/swarm-replay.ts";
+import { band, changes, counts, gitPeak, nightPeaks, pile, Playhead, readWeek, SPEEDS, type Week, type WeekRow } from "../src/swarm-replay.ts";
+import { events, Player, readRound, view } from "../src/mervin-replay.ts";
 import { gitSpans, redSpans } from "../scripts/swarm-week.ts";
 
 const row = (o: Partial<WeekRow>): WeekRow => ({ n: 1, t: "one", a: 10, z: 100, m: true, w: 60, g: [], r: [], ...o });
@@ -74,4 +75,29 @@ test("red runs until the same workflow passes on the branch; another workflow pa
   ]);
   expect(spans.get("b")).toEqual([[10, 30]]);
   expect(spans.get("c")).toEqual([[40, null]]);
+});
+
+test("night peaks: the widest band per day, the ship marks on the night they fell, git pile-up of the 13th over the 14th's tail", async () => {
+  const week = readWeek(await Bun.file(`${import.meta.dir}/../src/swarm-week.json`).json());
+  if (typeof week === "string") throw new Error(week);
+  const nights = nightPeaks(week);
+  expect(nights.length).toBe(Math.ceil(week.minutes / 1440));
+  expect(nights.flatMap((n) => n.marks).sort()).toEqual(["Ester", "Mervin"]);
+  const peak = nights.reduce((a, b) => (b.git > a.git ? b : a));
+  expect(peak.git).toBeGreaterThan(nights.at(-1)!.git);
+  expect(nights.every((n) => n.git <= n.open && n.test <= n.open)).toBe(true);
+});
+
+test("the recorded merge round plays to the end: every PR merged, with the cards Mervin asks about", async () => {
+  const round = readRound(await Bun.file(`${import.meta.dir}/../src/swarm-round.json`).json());
+  if (typeof round === "string") throw new Error(round);
+  const p = new Player(events(round));
+  p.play();
+  const played = p.tick(p.total + 1);
+  expect(p.mode).toBe("done");
+  const v = view(round, played);
+  expect(v.prs.length).toBe(5);
+  expect(v.prs.every((x) => x.state === "merged")).toBe(true);
+  expect(v.tiers.mervin + v.tiers.agree).toBeGreaterThan(v.tiers.card);
+  expect(v.prs.flatMap((x) => x.cards).length).toBe(v.tiers.card);
 });
