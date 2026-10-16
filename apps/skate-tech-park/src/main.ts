@@ -1,5 +1,5 @@
 // The page: draws the sim, turns keys into its input, and keeps the chase camera behind the rider.
-import { Car, createElement, RectangleHorizontal, RotateCcw } from "lucide";
+import { Car, createElement, Info, RectangleHorizontal, RotateCcw } from "lucide";
 import * as THREE from "three";
 import { fingerboard, roadster, type Thruster } from "./models.ts";
 import { levelMeshes } from "./render/pieces.ts";
@@ -145,11 +145,23 @@ function swap() {
   mode = mode === "car" ? "skate" : "car"; // a skin: the ride carries on as it was
   hud();
 }
+const ESSENTIALS = () => {
+  const k = (t: string) => Object.assign(document.createElement("kbd"), { textContent: t });
+  const w = (t: string) => document.createTextNode(` ${t} `);
+  return [k("W"), k("S"), w("push"), k("A"), k("D"), w("steer"), k("Space"), w("ollie"), k("F"), k("G"), k("V"), w("flips"), k("Q"), k("Z"), w("manuals")];
+};
+const help = document.createElement("button");
+help.id = "help";
+help.title = "All the controls";
+help.append(icon(Info));
+const tip = $("tip");
+tip.innerHTML = "<p><kbd>W</kbd><kbd>S</kbd> push, <kbd>A</kbd><kbd>D</kbd> steer, and spin in the air</p><p><kbd>Space</kbd> ollie, <kbd>F</kbd> kickflip, <kbd>G</kbd> heelflip, <kbd>V</kbd> shove-it</p><p>Or drag the mouse or push the right stick: up ollies, across and down flick</p><p><kbd>Shift</kbd> rear jets and pump a transition, <kbd>E</kbd> suction fan</p><p><kbd>Q</kbd> hold a manual, <kbd>Z</kbd> a nose manual: <kbd>W</kbd> and <kbd>S</kbd> hold the balance, or hold the mouse still (nudged down for the nose), or use the pad's right and left triggers</p><p><kbd>Tab</kbd> swap board and roadster, <kbd>R</kbd> reset</p>";
+help.addEventListener("click", () => { tip.hidden = !tip.hidden; help.blur(); });
 function hud() {
   swapBtn.replaceChildren(icon(mode === "car" ? RectangleHorizontal : Car));
   swapBtn.title = mode === "car" ? "Fingerboard (Tab)" : "Roadster (Tab)";
   if (skins.show(mode === "car" ? "roadster" : "fingerboard")) plumes.landed(sim.x, sim.y, sim.z, 4); // the swap pops in a ring of puffs
-  $("keys").innerHTML = "<kbd>W</kbd><kbd>S</kbd> push <kbd>A</kbd><kbd>D</kbd> steer, spin in the air <kbd>Space</kbd> ollie <kbd>F</kbd> kickflip <kbd>G</kbd> heelflip <kbd>V</kbd> shove-it (or drag the mouse or push the right stick: up ollies, across and down flick) <kbd>Shift</kbd> rear jets, and pump a transition <kbd>E</kbd> suction fan <kbd>Q</kbd> hold a manual, <kbd>Z</kbd> a nose manual (W and S hold the balance; or hold the mouse still, nudged down for the nose, or the pad's right and left triggers)";
+  $("keys").replaceChildren(...ESSENTIALS(), help); // the rest sits behind the info button
 }
 hud();
 
