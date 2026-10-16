@@ -6,19 +6,19 @@ import { trackRun } from "../src/levels/goals.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { IDLE, SCALE, start, step } from "../src/sim.ts";
 
-// m/s held into a gap: at SCALE 1 the board clears all four at 27 (Glacier Point only from 26 to 28); a bigger board hangs longer, so the same line needs less speed
-const LINE = 27 / Math.sqrt(SCALE);
+// m/s held into a gap: every gap clears across the board's range (from 20 up at SCALE 1); a bigger board hangs longer, so the same line needs less speed
+const SPEEDS = [22, 27, 32].map((v) => v / Math.sqrt(SCALE));
 const parks = LEVELS.filter((l) => l.id !== "plaza").map((l) => l.load() as ParkLevel);
 const park = (id: string) => parks.find((l) => l.id === id)!;
 
 /** Drives from a spawn, steering at a gap's launch and tapping jump at its lip, feeding the tracker. */
-function drive(level: ParkLevel, spawn: string, seconds: number, gapName?: string) {
+function drive(level: ParkLevel, spawn: string, seconds: number, gapName?: string, line = 27) {
   const sp = level.spawns.find((p) => p.name === spawn)!, g = level.gaps.find((x) => x.name === gapName);
   const s = start(sp.x, sp.z, sp.yaw, level), run = trackRun(level);
   for (let i = 0; i < seconds * 60; i++) {
     const aim = g ? Math.atan2(g.a.x - s.x, g.a.z - s.z) : s.yaw, err = Math.atan2(Math.sin(aim - s.yaw), Math.cos(aim - s.yaw));
     const along = g ? (s.x - g.a.x) * Math.sin(s.yaw) + (s.z - g.a.z) * Math.cos(s.yaw) : -99;
-    step(s, { ...IDLE, throttle: s.speed < LINE ? 1 : -1, boost: s.speed < LINE - 2, steer: s.air ? 0 : Math.max(-1, Math.min(1, err * 3)), jump: along > 3 && along < 8 && !s.air }, level);
+    step(s, { ...IDLE, throttle: s.speed < line ? 1 : -1, boost: s.speed < line - 2, steer: s.air ? 0 : Math.max(-1, Math.min(1, err * 3)), jump: along > 3 && along < 8 && !s.air }, level);
     run.update(s);
   }
   return { s, run };
@@ -44,12 +44,14 @@ test("every park loads with finite ground, goals and spawns on rideable ground i
   }
 });
 
-test("the named gaps are cleared by driving at the launch and jumping at the lip", () => {
+test("the named gaps are cleared at any speed from 22 to 32 by driving at the launch and jumping at the lip, and a hop onto the obstacle does not count", () => {
   for (const [id, spawn, name] of [["el-capitan", "car", "Boulder Gap"], ["old-faithful", "vent line", "Geyser Hop"], ["mariposa-grove", "clearing", "Fallen Giant"], ["glacier-point", "car", "Glacier Point Gap"]] as const) {
-    const { s, run } = drive(park(id), spawn, 10, name);
-    expect(run.gaps.get(name)).toBe(1);
-    expect(s.score).toBeGreaterThanOrEqual(park(id).gaps.find((g) => g.name === name)!.bonus);
-    expect(run.bestCombo).toBeGreaterThan(0);
+    for (const line of SPEEDS) {
+      const { s, run } = drive(park(id), spawn, 12, name, line);
+      expect(run.gaps.get(name)).toBe(1);
+      expect(s.score).toBeGreaterThanOrEqual(park(id).gaps.find((g) => g.name === name)!.bonus);
+      expect(run.bestCombo).toBeGreaterThan(0);
+    }
   }
 });
 
@@ -75,4 +77,9 @@ test("the start screen shows until a level is chosen, and a query picks its leve
   expect(pick("?level=glacier-point").id).toBe("glacier-point");
   expect(pick("?level=nowhere").id).toBe("plaza");
   expect(LEVELS.map((l) => l.id)).toEqual(["plaza", "el-capitan", "glacier-point", "old-faithful", "mariposa-grove"]);
+});
+
+test("a short hop onto the boulder is not the Boulder Gap", () => {
+  const { run } = drive(park("el-capitan"), "car", 10, "Boulder Gap", 14);
+  expect(run.gaps.size).toBe(0);
 });
