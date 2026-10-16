@@ -68,7 +68,8 @@ const FILES = 14;
 const WORK = [30, 70], REBASE = 12, FIX = 15, HOME = 5;
 const LANES = { one: 1, wide: 8 }, PASS = { one: 2, wide: 1 };
 // SETTLE: Mervin's corpus run settles about 6 conflicted files in 10 and asks on the rest (docs/mervin.md).
-const DEPART = 3, RIDE = 2.5, SEATS = 24, SETTLE = 0.6, CARD = 10;
+// BOARD: the doors stay open this long while the seated settle in, then the train lifts off and rides.
+const DEPART = 3, BOARD = 1.2, RIDE = 2.5, SEATS = 24, SETTLE = 0.6, CARD = 10;
 const STATIONS = 4, BATCH = { one: 1, stacked: 4 }, TEST = 8, OWN_RED = 0.35;
 /** Simulated minutes per sub-step. */
 const SUB = 0.25;
@@ -200,7 +201,7 @@ export class Sim {
     // Mervin sends a train when one is due and anyone is seated.
     if (mervin && t >= this.nextTrain && this.platform.length) {
       const riders = this.platform.splice(0, SEATS).filter((id) => this.get(id));
-      const train = { id: this.trainId++, departs: t, arrives: t + RIDE, riders };
+      const train = { id: this.trainId++, departs: t + BOARD, arrives: t + BOARD + RIDE, riders };
       for (const id of riders) { const d = this.get(id)!; d.stage = "train"; d.train = train.id; }
       this.trains.push(train); this.stats.trains++; this.nextTrain = t + DEPART;
     }

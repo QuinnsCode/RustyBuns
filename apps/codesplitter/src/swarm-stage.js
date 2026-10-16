@@ -262,31 +262,40 @@ export function mount(el, { mode = "story", embed = false, real = "/swarm-watch.
   function drawSim(entry, r, focus, dtReal) {
     const { sim } = entry, L = sim.layers, t = sim.t;
     const X = (f) => r.x + r.w * f;
-    const top = r.y + 30, bot = r.y + r.h - (r.y + r.h >= H - 1 ? 40 : 22), mid = (top + bot) / 2, bodyH = bot - top;
+    const top = r.y + 30, bot = r.y + r.h - (r.y + r.h >= H - 1 ? 56 : 38), mid = (top + bot) / 2, bodyH = bot - top;
     const rad = clamp(Math.min(r.w / 190, bodyH / 48), 2, 5.2), sp = rad * 2.6;
     const Z = { desks: [X(0.012), X(0.17)], lane: [X(0.2), X(0.4)], wall: X(0.42), plat: [X(0.445), X(0.555)], track: [X(0.45), X(0.625)], testq: [X(0.635), X(0.71)], st: [X(0.735), X(0.855)], home: [X(0.88), X(0.99)] };
+    const tun = bot + 9; // the underground way back from main to the desks
     const grid = (x0, x1, y0, i, s = sp) => { const cols = Math.max(1, Math.floor((x1 - x0) / s)); return [x0 + s / 2 + (i % cols) * s, Math.min(bot - s / 2, y0 + s / 2 + Math.floor(i / cols) * s)]; };
 
     // focus: a soft orange outline round the part the scene is about
     const FZ = { desks: [Z.desks[0], Z.desks[1]], lane: [Z.lane[0] - 6, Z.lane[1] + 4], wall: [Z.wall - 16, L.mervin ? Z.plat[1] + 4 : Z.wall + 16], train: [Z.plat[0] - 4, Z.track[1] + 4], tests: [Z.testq[0] - 4, Z.st[1] + 4], home: [Z.home[0] - 4, Z.home[1]] }[focus];
     if (FZ) { cx.save(); cx.strokeStyle = C.accent; cx.lineWidth = 2; cx.shadowColor = C.accent; cx.shadowBlur = 12; rr(FZ[0], top - 8, FZ[1] - FZ[0], bodyH + 16, 10); cx.stroke(); cx.restore(); }
 
-    // the coordination layer: a Durable Object every desk talks to live, or one narrow lane
+    // the way in: stairs down from the street. One narrow flight the old way, wide stairs on a Durable Object.
+    const stairs = (y0, y1) => {
+      cx.save(); cx.fillStyle = C.border; cx.globalAlpha = 0.22; cx.fillRect(Z.lane[0], y0, Z.wall - Z.lane[0], y1 - y0); cx.globalAlpha = 1;
+      cx.strokeStyle = C.border; cx.lineWidth = 1;
+      for (let x = Z.lane[0] + 4; x < Z.wall - 2; x += 7) { cx.globalAlpha = 0.35 + 0.4 * ((x - Z.lane[0]) / (Z.wall - Z.lane[0])); cx.beginPath(); cx.moveTo(x, y0); cx.lineTo(x, y1); cx.stroke(); }
+      cx.globalAlpha = 1; cx.strokeStyle = C.fg; cx.lineWidth = 1.5; cx.beginPath(); cx.moveTo(Z.lane[0], y0); cx.lineTo(Z.wall, y0); cx.moveTo(Z.lane[0], y1); cx.lineTo(Z.wall, y1); cx.stroke(); cx.restore();
+    };
     if (L.coord) {
       const hx = Z.lane[0], hw = Z.lane[1] - Z.lane[0], hy = top - 2;
       cx.save(); cx.strokeStyle = C.accent; cx.globalAlpha = 0.18; cx.setLineDash([3, 5]); cx.lineDashOffset = -t * 6;
       sim.dots.forEach((d, i) => { if (d.stage !== "work") return; const [dx, dy] = grid(Z.desks[0], Z.desks[1], top, i); cx.beginPath(); cx.moveTo(dx, dy); cx.lineTo(hx, hy + 9); cx.stroke(); });
       cx.restore();
+      stairs(top + 22, bot);
       rr(hx, hy, hw, 18, 9); cx.fillStyle = C.fg; cx.fill();
       cx.font = "600 11px ui-monospace, monospace"; cx.fillStyle = C.bg; cx.textAlign = "center"; cx.fillText(hw > 150 ? "Durable Object · Artifacts" : "DO", hx + hw / 2, hy + 13); cx.textAlign = "left";
-      for (let k = 0; k < 8; k++) { const y = mid + (k - 3.5) * Math.min(sp * 1.7, bodyH / 9); cx.strokeStyle = C.border; cx.beginPath(); cx.moveTo(Z.lane[0], y); cx.lineTo(Z.wall, y); cx.stroke(); }
-    } else {
-      cx.strokeStyle = C.border; cx.lineWidth = 1; cx.beginPath(); cx.moveTo(Z.lane[0], mid - sp * 0.8); cx.lineTo(Z.wall, mid - sp * 0.8); cx.moveTo(Z.lane[0], mid + sp * 0.8); cx.lineTo(Z.wall, mid + sp * 0.8); cx.stroke();
-    }
+    } else stairs(mid - sp * 3.4, mid + sp * 3.4); // one flight, funnelling into a single gate
+    // the street above the stairs and the tunnel under the stage: where agents come from, and where they go back to
+    cx.save(); cx.fillStyle = C.border; cx.globalAlpha = 0.18; cx.fillRect(r.x + 2, tun - 5, r.w - 4, 12); cx.globalAlpha = 1;
+    cx.strokeStyle = C.border; cx.setLineDash([2, 4]); cx.beginPath(); cx.moveTo(r.x + 4, tun + 1); cx.lineTo(r.x + r.w - 4, tun + 1); cx.stroke(); cx.restore();
     // the merge wall, or Mervin's platform
     if (!L.mervin) {
       cx.fillStyle = C.bad; cx.globalAlpha = 0.85;
       cx.fillRect(Z.wall - 4, top, 8, mid - sp - top); cx.fillRect(Z.wall - 4, mid + sp, 8, bot - mid - sp); cx.globalAlpha = 1;
+      cx.fillStyle = C.fg; for (const y of [mid - sp, mid + sp]) { cx.fillRect(Z.wall - 7, y - 2, 14, 4); } // the one ticket gate that is open
     } else {
       cx.strokeStyle = C.border; cx.lineWidth = 3; cx.beginPath(); cx.moveTo(Z.plat[0], top + 34); cx.lineTo(Z.plat[1], top + 34); cx.stroke(); cx.lineWidth = 1;
       person((Z.plat[0] + Z.plat[1]) / 2, top + 14, 7, C.accent, "Mervin");
@@ -296,21 +305,39 @@ export function mount(el, { mode = "story", embed = false, real = "/swarm-watch.
     const stH = (bodyH - 18) / 4;
     for (let k = 0; k < 4; k++) {
       const y = top + 18 + k * stH, s = sim.stations[k];
-      rr(Z.st[0], y, Z.st[1] - Z.st[0], stH - 5, 5); cx.strokeStyle = C.border; cx.stroke();
+      // a platform slab with its track beside it, running back to where the train comes in
+      cx.save(); cx.strokeStyle = C.border; cx.globalAlpha = 0.6; cx.beginPath(); cx.moveTo(Z.testq[0], y + stH - 3); cx.lineTo(Z.st[0], y + stH - 3); cx.stroke(); cx.restore();
+      rr(Z.st[0], y, Z.st[1] - Z.st[0], stH - 7, 5); cx.save(); cx.globalAlpha = 0.07; cx.fillStyle = C.fg; cx.fill(); cx.restore(); cx.strokeStyle = C.border; cx.stroke();
       if (s.riders.length) { const p = clamp(1 - (s.busyUntil - t) / 6, 0, 1); cx.fillStyle = C.test; cx.globalAlpha = 0.25; cx.fillRect(Z.st[0] + 1, y + stH - 9, (Z.st[1] - Z.st[0] - 2) * p, 3); cx.globalAlpha = 1; }
     }
     if (!L.ester) { cx.fillStyle = C.test; cx.globalAlpha = 0.85; cx.fillRect(Z.st[0] - 12, top, 7, bodyH); cx.globalAlpha = 1; }
     else person((Z.st[0] + Z.st[1]) / 2, top + 2, 6, C.accent, "");
 
-    // the trains
+    // the platform's yellow line, and the trains: doors open while the seated settle in, then lift and go
     const trW = 8 * sp + sp, trH = 3 * sp + sp * 0.8;
+    if (L.mervin) { cx.save(); cx.strokeStyle = C.test; cx.lineWidth = 2; cx.setLineDash([6, 4]); cx.beginPath(); cx.moveTo(Z.track[0], mid - trH / 2 - 7); cx.lineTo(Z.track[1], mid - trH / 2 - 7); cx.stroke(); cx.restore(); }
     for (const tr of sim.trains) {
-      const k = ease(clamp((t - tr.departs) / (tr.arrives - tr.departs), 0, 1)), x = Z.track[0] + (Z.track[1] - trW - sp * 1.5 - Z.track[0]) * k, y = mid - trH / 2;
-      if (k > 0.02 && k < 0.98) { cx.strokeStyle = C.accent; cx.globalAlpha = 0.5; for (let j = 0; j < 3; j++) { cx.beginPath(); cx.moveTo(x - 6 - j * 7, y + 5 + j * (trH - 10) / 2); cx.lineTo(x - 18 - j * 7 - 30 * k, y + 5 + j * (trH - 10) / 2); cx.stroke(); } cx.globalAlpha = 1; }
+      const k = ease(clamp((t - tr.departs) / (tr.arrives - tr.departs), 0, 1)), boarding = t < tr.departs;
+      const x = Z.track[0] + (Z.track[1] - trW - sp * 1.5 - Z.track[0]) * k, lift = clamp(k * 8, 0, 1) * 3, y = mid - trH / 2 - lift;
+      cx.save(); cx.globalAlpha = k > 0.94 ? (1 - k) / 0.06 : 1;
+      if (lift) { cx.fillStyle = C.fg; cx.globalAlpha *= 0.15; cx.fillRect(x + 4, mid + trH / 2 + 2, trW, 3); cx.globalAlpha = k > 0.94 ? (1 - k) / 0.06 : 1; }
+      if (k > 0.02 && k < 0.98) { cx.strokeStyle = C.accent; cx.globalAlpha *= 0.5; for (let j = 0; j < 3; j++) { cx.beginPath(); cx.moveTo(x - 6 - j * 7, y + 5 + j * (trH - 10) / 2); cx.lineTo(x - 18 - j * 7 - 30 * k, y + 5 + j * (trH - 10) / 2); cx.stroke(); } cx.globalAlpha = k > 0.94 ? (1 - k) / 0.06 : 1; }
       cx.fillStyle = C.fg; cx.beginPath(); cx.moveTo(x + 4, y); cx.lineTo(x + trW, y); cx.quadraticCurveTo(x + trW + sp * 1.8, y + trH * 0.55, x + trW, y + trH); cx.lineTo(x + 4, y + trH); cx.quadraticCurveTo(x, y + trH, x, y + trH - 4); cx.lineTo(x, y + 4); cx.quadraticCurveTo(x, y, x + 4, y); cx.fill();
       cx.fillStyle = C.accent; cx.fillRect(x, y + trH - 4, trW + sp, 2);
-      tr.seat = (id) => { const j = tr.riders.indexOf(id); return [x + sp * 0.9 + (j % 8) * sp, y + sp * 0.75 + Math.floor(j / 8) * sp]; };
+      // doors in the side facing the platform: open (a gap of light) while boarding
+      cx.fillStyle = boarding ? C.bg : C.work; cx.globalAlpha *= boarding ? 0.9 : 0.5;
+      for (let c = 0; c < 4; c++) cx.fillRect(x + sp * 0.5 + c * sp * 2.2, y, sp * 1.1, boarding ? 3 : 2);
+      cx.restore();
+      // Ester loads a train the way a flight crew loads a plane: seat by seat, row by row. Without her it is a scrum at the doors.
+      tr.seat = (id) => {
+        const j = tr.riders.indexOf(id);
+        if (L.ester) return [x + sp * 0.9 + (j % 8) * sp, y + sp * 0.75 + Math.floor(j / 8) * sp];
+        const h = Math.sin(id * 12.9898) * 43758.5453, u = h - Math.floor(h), v = Math.sin(id * 78.233) * 12345.6 - Math.floor(Math.sin(id * 78.233) * 12345.6);
+        return [x + sp * 0.8 + u * (trW - sp * 1.4), y + sp * 0.7 + v * (trH - sp * 1.4)];
+      };
+      tr.crew = [x + sp * 2, y - 2];
     }
+    if (L.ester) for (const tr of sim.trains) if (t < tr.departs + 0.3 && tr.crew) { person(tr.crew[0], tr.crew[1] - 4, 4.5, C.accent, ""); person(tr.crew[0] + sp * 4.4, tr.crew[1] - 4, 4.5, C.accent, ""); }
 
     // where each dot belongs right now
     const lanes = L.coord ? 8 : 1, perRow = Math.max(1, Math.floor((Z.wall - Z.lane[0]) / sp) - 1);
@@ -338,10 +365,18 @@ export function mount(el, { mode = "story", embed = false, real = "/swarm-watch.
     };
     const k = 1 - Math.exp(-dtReal / 1000 * 3.5); // dots glide, they don't jump
     sim.dots.forEach((d, i) => {
-      const [tx, ty] = target(d, i), key = `${entry.id}:${d.id}`;
+      let [tx, ty] = target(d, i);
+      const key = `${entry.id}:${d.id}`;
       let p = pos.get(key);
-      if (!p) { p = { x: tx, y: ty }; pos.set(key, p); }
-      p.x += (tx - p.x) * k; p.y += (ty - p.y) * k;
+      if (!p) { p = { x: tx, y: ty, was: d.stage }; pos.set(key, p); }
+      // back to the desks: down into the tunnel under main, along it, and up the stairs at the other end
+      if (p.was === "home" && d.stage === "work") p.leg = 1;
+      p.was = d.stage;
+      if (p.leg === 1) { ty = tun; tx = p.x; if (Math.abs(p.y - tun) < 2) p.leg = 2; }
+      else if (p.leg === 2) { ty = tun; if (Math.abs(p.x - tx) < 3) p.leg = 3; }
+      else if (p.leg === 3 && Math.abs(p.y - ty) < 2) p.leg = 0;
+      const under = p.leg === 1 || p.leg === 2;
+      p.x += (tx - p.x) * k * (p.leg === 2 ? 1.2 : 1); p.y += (ty - p.y) * k;
       const fr = sim.frustration(d), jit = fr * rad * 0.8;
       const x = p.x + (jit ? Math.sin(t * 9 + d.id * 1.7) * jit : 0), y = p.y + (jit ? Math.cos(t * 11 + d.id) * jit : 0);
       let fill = C.work;
@@ -349,26 +384,30 @@ export function mount(el, { mode = "story", embed = false, real = "/swarm-watch.
       else if (d.stage === "station") fill = C.test;
       else if (d.stage === "train") fill = C.accent;
       else if (d.stage !== "work") fill = fr > 0.5 ? C.bad : C.accent;
-      cx.beginPath(); cx.arc(x, y, rad, 0, 7); cx.fillStyle = fill; cx.fill();
+      if (under) cx.globalAlpha = 0.55;
+      cx.beginPath(); cx.arc(x, y, rad, 0, 7); cx.fillStyle = fill; cx.fill(); cx.globalAlpha = 1;
       if (d.stage === "work" && d.redo) { cx.strokeStyle = d.redo === "merge" ? C.bad : C.test; cx.lineWidth = 1.6; cx.stroke(); cx.lineWidth = 1; }
       if (d.stage === "bench") { cx.strokeStyle = C.bad; cx.setLineDash([2, 2]); cx.beginPath(); cx.arc(x, y, rad + 2, 0, 7); cx.stroke(); cx.setLineDash([]); }
       if (d.flash) {
         const age = (t - d.flash.at) / 1.5;
         if (age < 1) {
           cx.globalAlpha = 1 - age; cx.strokeStyle = { conflict: C.bad, red: C.test, settled: C.accent, card: C.bad, rerun: C.test, landed: C.ok }[d.flash.kind];
-          cx.lineWidth = 1.5; cx.beginPath(); cx.arc(x, y, rad * (1 + 2.5 * age), 0, 7); cx.stroke(); cx.lineWidth = 1; cx.globalAlpha = 1;
+          cx.lineWidth = 1.5; cx.beginPath(); cx.arc(x, y, rad * (1 + 2.5 * age), 0, 7); cx.stroke(); cx.lineWidth = 1;
+          if (d.flash.kind === "settled" && L.mervin) { cx.beginPath(); cx.moveTo((Z.plat[0] + Z.plat[1]) / 2, top + 20); cx.lineTo(x, y); cx.stroke(); }
+          cx.globalAlpha = 1;
         }
       }
     });
 
     // labels and the numbers
-    const ly = bot + 13;
-    label("desks", Z.desks[0], ly);
-    label(L.coord ? "wide lane" : "one lane", Z.lane[0], ly);
-    label(L.mervin ? "the train" : "merge wall", L.mervin ? Z.plat[0] : Z.wall - 30, ly, L.mervin ? C.muted : C.bad);
-    label("tests", Z.testq[0], ly);
-    label(L.ester ? "Ester's stations" : "test wall", Z.st[0] - (L.ester ? 0 : 12), ly, L.ester ? C.muted : C.test);
+    const ly = bot + 30;
+    label("the street: PRs done", Z.desks[0], ly);
+    label(L.coord ? "wide stairs" : "one narrow stair", Z.lane[0], ly);
+    label(L.mervin ? "the platform + train" : "ticket gate: jammed", L.mervin ? Z.plat[0] : Z.wall - 70, ly, L.mervin ? C.muted : C.bad);
+    label("arrivals", Z.testq[0], ly);
+    label(L.ester ? "Ester's platforms" : "test gate", Z.st[0] - (L.ester ? 0 : 12), ly, L.ester ? C.muted : C.test);
     label("home: main", Z.home[0], ly, C.ok);
+    label("underground, back to the street", r.x + r.w * 0.45, tun + 3, C.muted);
     const s = sim.stats;
     const line = `${entry.label ? `${entry.label} · ` : ""}${s.landed} home · ${sim.perHour()}/h · ${sim.waiting()} waiting · ${s.bounces.merge + s.bounces.test} sent back · ${Math.round(s.wasted)} agent-min redoing`;
     cx.font = `${entry.label ? 600 : 500} 12px ui-monospace, SFMono-Regular, Menlo, monospace`; cx.fillStyle = entry.label === "codeSplitter" ? C.accent : C.fg;
