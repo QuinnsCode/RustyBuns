@@ -7,15 +7,9 @@
 import { hashString, rng } from "../geo.ts";
 import type { Landmark } from "../parks/types.ts";
 import type { ZoneData } from "./types.ts";
-import halfDome from "./data/half-dome.json";
-import elCapitan from "./data/el-capitan.json";
-import yosemiteFalls from "./data/yosemite-falls.json";
-import glacierPoint from "./data/glacier-point.json";
-import mariposaGrove from "./data/mariposa-grove.json";
-import oldFaithful from "./data/old-faithful.json";
-import grandPrismatic from "./data/grand-prismatic.json";
+import { ZONE_DATA } from "@rustybuns/terrain";
 
-export const ZONES: ZoneData[] = [halfDome, elCapitan, yosemiteFalls, glacierPoint, mariposaGrove, oldFaithful, grandPrismatic] as ZoneData[];
+export const ZONES = ZONE_DATA as unknown as ZoneData[];
 
 /** The parks with zones, in lobby order. */
 export const PARKS: { code: string; name: string }[] = [

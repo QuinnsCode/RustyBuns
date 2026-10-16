@@ -14,7 +14,7 @@
 import { roadster as sharedRoadster, type RoadsterLook } from "@rustybuns/models";
 import * as THREE from "three";
 import { structureOf, type CodeMap, type RepoSnapshot, type Structure } from "../sim/codemap.ts";
-import { contourStep } from "../sim/terrain.ts";
+import { contourStep } from "@rustybuns/terrain";
 import type { Game, GameEvent } from "../sim/game.ts";
 import { HEIGHT, ROLL_TIME, type Soldier } from "../sim/game.ts";
 import { WEAPONS } from "../sim/weapons.ts";

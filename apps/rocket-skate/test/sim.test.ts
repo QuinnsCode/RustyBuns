@@ -1,9 +1,10 @@
 // Journeys through the ride, headless: the same fixed-step sim the page draws.
 import { expect, test } from "bun:test";
+import { type Level, makeLevel, piece } from "../src/level.ts";
 import { DT, IDLE, type Input, start, step, type State } from "../src/sim.ts";
 
-const run = (s: State, seconds: number, input: (s: State) => Partial<Input>) => {
-  for (let i = 0; i < seconds / DT; i++) step(s, { ...IDLE, ...input(s) });
+const run = (s: State, seconds: number, input: (s: State) => Partial<Input>, level?: Level) => {
+  for (let i = 0; i < seconds / DT; i++) step(s, { ...IDLE, ...input(s) }, level);
   return s;
 };
 
@@ -53,4 +54,25 @@ test("landing sideways is a bail, and the rider gets back up", () => {
   run(sk, 1.5, () => ({ throttle: 1 }));
   expect(sk.bail).toBeLessThanOrEqual(0);
   expect(sk.speed).toBeGreaterThan(0);
+});
+
+test("a level can point any way: a turned ramp has height there, and a diagonal rail is ground along its line", () => {
+  const diag = makeLevel({
+    name: "diag",
+    pieces: [piece("ramp", "turned", 0, 0, Math.PI / 2, 4, 6, 0, 2)], // rises toward +x
+    rails: [{ kind: "rail", a: { x: -10, z: -10 }, b: { x: 10, z: 10 }, y: 0.9 }],
+    spawns: [],
+    bounds: { minX: -40, maxX: 40, minZ: -40, maxZ: 40 },
+  });
+  expect(diag.height(-3, 0)).toBeCloseTo(0);
+  expect(diag.height(3, 0)).toBeCloseTo(2);
+  expect(diag.height(0, 5)).toBe(0); // beside it
+
+  const sk = start("skate", -8, -8, Math.PI / 4, diag);
+  sk.y = 1.1; sk.vx = sk.vz = 4; sk.vy = -1; sk.air = true; // dropping onto the rail from the side it runs
+  step(sk, IDLE, diag);
+  run(sk, 0.5, () => ({}), diag);
+  expect(sk.grind).toBe(0);
+  expect(sk.x).toBeCloseTo(sk.z, 1); // still on the diagonal
+  expect(sk.x).toBeGreaterThan(-7);
 });

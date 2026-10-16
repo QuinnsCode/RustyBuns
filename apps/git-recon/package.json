@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@rustybuns/models": "workspace:*",
+    "@rustybuns/terrain": "workspace:*",
     "@rustybuns/util": "workspace:*",
     "@rustybuns/shell-bun": "workspace:*",
     "three": "^0.180.0"

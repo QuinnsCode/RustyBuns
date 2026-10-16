@@ -9,7 +9,7 @@ import { LEVELS, placeLevel, type LevelDef } from "../levels/levels.ts";
 import { groundAt, parsePlace } from "../levels/place.ts";
 import type { Block, RepoSnapshot } from "../sim/codemap.ts";
 import { addWin, winKey } from "../sim/heads.ts";
-import type { ZoneData } from "../sim/terrain.ts";
+import type { ZoneData } from "@rustybuns/terrain";
 import { BATTLE_SECONDS, FFA_SCORE, Game, scopeSway, SHIELD_DELAY, stanceOf, TEAM_SCORE, type GameEvent, type Input, type Mode } from "../sim/game.ts";
 import { Mirror } from "../net/mirror.ts";
 import { levelOf, NEXT_ROUND } from "../net/room.ts";

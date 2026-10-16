@@ -4,7 +4,7 @@
 // scripts/fetch-zones.ts but with the browser's own DecompressionStream for zlib.
 // The result is a ZoneData, so heightmapTerrain() takes it like El Capitan's.
 
-import type { ZoneData } from "../sim/terrain.ts";
+import type { ZoneData } from "@rustybuns/terrain";
 
 export const TILES = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium";
 export const ZOOM = 14;

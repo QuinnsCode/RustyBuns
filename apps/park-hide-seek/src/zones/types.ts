@@ -1,6 +1,6 @@
 import type { Landmark } from "../parks/types.ts";
 
-/** One drop zone as committed in src/zones/data: real terrain round an attraction. */
+/** One drop zone as committed in packages/terrain/src/zones: real terrain round an attraction. */
 export interface ZoneData {
   id: string;
   /** Park code, e.g. "YOSE". */
