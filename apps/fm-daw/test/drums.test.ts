@@ -57,6 +57,35 @@ test("Space at full on a hot, broken signal stays clamped and recovers from NaN"
   const buf = new Float32Array(48000 * 2);
   for (let i = 0; i < buf.length; i++) buf[i] = i % 7 === 0 ? 0.89 : -0.89;
   buf[1000] = NaN;
-  s.process(buf, buf.length / 2);
+  s.process(buf, buf.slice(), buf.length / 2);
   for (const x of buf) { expect(Number.isFinite(x)).toBe(true); expect(Math.abs(x)).toBeLessThanOrEqual(CEILING); }
+});
+
+test("automation: lines between points, jumps for cuts, and the sequencer sends each change once", async () => {
+  const { Sequencer, laneAt } = await import("../src/engine/sequencer.ts");
+  const b = Float64Array.of(0, 4, 4, 5, 5), v = Float64Array.of(0.2, 0.6, 0, 0, 0.6);
+  expect(laneAt(b, v, 2)).toBeCloseTo(0.4);
+  expect(laneAt(b, v, 4.5)).toBe(0);   // inside the cut
+  expect(laneAt(b, v, 5)).toBe(0.6);   // back
+  expect(laneAt(b, v, 9)).toBe(0.6);   // held past the end
+  const sent: number[] = [];
+  const e = { setParam: (_t: number, i: number, x: number) => { if (i === 31) sent.push(x); }, setMute() {}, setMaster() {}, noteOn() {}, noteOff() {}, allOff() {}, panic() {}, click() {}, render() {}, meter() {} };
+  const s = new Sequencer(e, 1000);
+  s.bpm = 60; s.setLoopBeats(8);
+  s.setAuto(0, [{ i: 31, pts: [[0, 0.5], [2, 0.5], [2, 0], [3, 0], [3, 0.5]] }]);
+  s.play();
+  const out = new Float32Array(256);
+  for (let f = 0; f < 4000; f += 128) s.process(out, 128);
+  expect(sent[0]).toBe(0.5);
+  expect(sent).toContain(0);
+  expect(sent.at(-1)).toBe(0.5);
+  expect(sent.length).toBe(3); // flat stretches send nothing
+});
+
+test("an old 8-track project loads with four silent tracks added", () => {
+  const old = { ...demoProject(), tracks: demoProject().tracks.slice(0, 8) };
+  const p = sanitize(old)!;
+  expect(p.tracks.length).toBe(12);
+  expect(p.tracks[11].params[31]).toBe(0);
+  expect(p.tracks[0]).toEqual(sanitize(demoProject())!.tracks[0]);
 });

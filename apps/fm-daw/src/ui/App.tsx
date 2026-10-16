@@ -36,7 +36,7 @@ const COUNT_IN = 4;
 /** Everything the worklet needs to mirror a project. */
 function loadMsg(p: Project): ToWorklet {
   return {
-    t: "load", params: p.tracks.flatMap((t) => t.params), notes: p.tracks.map((t) => t.notes),
+    t: "load", params: p.tracks.flatMap((t) => t.params), notes: p.tracks.map((t) => t.notes), auto: p.tracks.map((t) => t.auto ?? []),
     bpm: p.bpm, swing: p.swing, loopBeats: loopBeats(p), audible: audible(p), space: p.space,
   };
 }
@@ -227,8 +227,8 @@ export function App() {
       if (e.code === "KeyR") { toggleRecord(); return; }
       if (e.code === "KeyZ") { setOctave((o) => Math.max(o - 1, -3)); return; }
       if (e.code === "KeyX") { setOctave((o) => Math.min(o + 1, 3)); return; }
-      const digit = /^Digit([1-8])$/.exec(e.code);
-      if (digit) { setSelected(Number(digit[1]) - 1); return; }
+      const digit = /^Digit([0-9])$/.exec(e.code);
+      if (digit) { setSelected(digit[1] === "0" ? 9 : Number(digit[1]) - 1); return; }
       const semi = QWERTY[e.code];
       if (semi !== undefined) {
         e.preventDefault();
@@ -302,7 +302,7 @@ export function App() {
       <header className="top">
         <div className="brand">
           <h1>FM DAW</h1>
-          <span className="dim">8 tracks · 4-op FM · Rust or TS</span>
+          <span className="dim">12 tracks · FM or analog · Rust or TS</span>
         </div>
 
         <label className="field"><span className="silk">Song</span>
@@ -368,7 +368,7 @@ export function App() {
           {project.tracks.map((tr, i) => (
             <div key={i} className={i === selected ? "track sel" : "track"} style={{ "--track": TRACK_COLORS[i] } as React.CSSProperties}>
               <button className="track-name" onClick={() => { setSelected(i); }} onDoubleClick={() => audition(i)}>
-                <kbd>{i + 1}</kbd> {tr.name}<span className="kind">{tr.kind}</span>
+                {i < 10 && <kbd>{(i + 1) % 10}</kbd>} {tr.name}<span className="kind">{tr.kind}</span>
               </button>
               <button className={tr.mute ? "ms on" : "ms"} aria-pressed={tr.mute} onClick={() => commit({ t: "track", track: i, mute: !tr.mute })} title="Mute">M</button>
               <button className={tr.solo ? "ms solo on" : "ms solo"} aria-pressed={tr.solo} onClick={() => commit({ t: "track", track: i, solo: !tr.solo })} title="Solo">S</button>
