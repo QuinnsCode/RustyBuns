@@ -6,6 +6,7 @@ import { fingerboard, roadster, type Thruster } from "./models.ts";
 import { levelMeshes } from "./render/pieces.ts";
 import { Plumes } from "./render/plumes.ts";
 import { Chase } from "./render/chase.ts";
+import { between, poseOf } from "./render/interp.ts";
 import { Critters } from "./render/critters.ts";
 import { Scenery, scatter } from "./render/scenery.ts";
 import { followCamera, sky, skyMood, skyTime } from "./render/sky.ts";
@@ -123,8 +124,10 @@ const plate = car.userData.plate as THREE.Group;
 let mode: Mode = showroom ? "car" : "skate"; // the board is the game; the roadster is the skin you swap to
 const begin = () => { const p = spawn(level); return start(p.x, p.z, p.yaw, level); };
 let sim: State = begin();
+let before = poseOf(sim); // where the board was one step ago, so a frame can draw between the two
 const reset = () => {
   sim = showroom ? start(0, -20, 0, level) : begin();
+  before = poseOf(sim);
   chase.snap(sim, skins.current);
   ui.reset();
 };
@@ -225,6 +228,7 @@ function frame(now: number) {
   if (pad) { gestures.stick(pad.axes[2] ?? 0, pad.axes[3] ?? 0); gestures.shoulders(pad.buttons[6]?.value ?? 0, pad.buttons[7]?.value ?? 0); }
   while (acc >= DT) {
     const was = sim.air, vy = sim.vy;
+    before = poseOf(sim);
     step(sim, { ...inp, ...gestures.take() }, level); // a gesture is one step's press
     if (online && !pve) bump(sim, online.riders);
     ui.update(sim); acc -= DT;
@@ -234,15 +238,16 @@ function frame(now: number) {
 
   const dt = Math.min((now - lastFrame) / 1000, 0.1);
   lastFrame = now;
+  const shown = { ...sim, ...between(before, sim, acc / DT) }; // the pose on screen: between the last two steps
   skins.update(dt);
   // Both skins ride the same pose; a flip or a grind turns whichever one is showing.
   const rider = skins.root, pivot = skins.pivot();
-  rider.position.set(sim.x, sim.y, sim.z);
+  rider.position.set(shown.x, shown.y, shown.z);
   const grounded = !sim.air && sim.bail <= 0 && sim.grind < 0, k = 1 - Math.exp(-40 * dt);
-  const lie = grounded ? lieOnGround(...groundRise(sim.x, sim.z), sim.yaw) : { x: 0, z: 0 }; // along the ground, level again in the air
+  const lie = grounded ? lieOnGround(...groundRise(shown.x, shown.z), shown.yaw) : { x: 0, z: 0 }; // along the ground, level again in the air
   slope.x += (lie.x - slope.x) * k;
   slope.z += (lie.z - slope.z) * k;
-  rider.rotation.set(slope.x, sim.yaw + (sim.grind >= 0 ? sim.grindOff : 0), slope.z, "YXZ");
+  rider.rotation.set(slope.x, shown.yaw + (sim.grind >= 0 ? sim.grindOff : 0), slope.z, "YXZ");
   if (sim.bail > 0) { // a fall rolls on, hops and settles, then the rider stands up
     const fall = tumble(sim);
     rider.rotation.z = fall.roll;
@@ -268,7 +273,7 @@ function frame(now: number) {
   }
 
   online?.send({ skin: skins.current, n: [rider.position.x, rider.position.y, rider.position.z, rider.rotation.x, rider.rotation.y, rider.rotation.z, pivot.rotation.x, pivot.rotation.y, pivot.rotation.z, pivot.position.y] }, now);
-  chase.update(sim, skins.current, dt);
+  chase.update(shown, skins.current, dt);
   if (showroom) { // ?showroom: the car parked, the camera circling it
     const a = now / 4000;
     chase.pos.set(sim.x + Math.sin(a) * 9, sim.y + 2, sim.z + Math.cos(a) * 9);
