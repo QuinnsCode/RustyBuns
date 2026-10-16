@@ -3,7 +3,7 @@
 // and their price until bought (see shop.ts).
 import { createElement, Lock, Wrench } from "lucide";
 import { CATALOG, DEFAULT_PARTS, type Part, type Parts } from "./parts.ts";
-import { dollars, localWallet, priceOf, testCheckout } from "./shop.ts";
+import { dollars, fetchOwned, localWallet, priceOf, stripeCheckout, takePending } from "./shop.ts";
 
 const KEY = "skate-tech-park.parts";
 const LABELS: Record<Part, string> = { deck: "Deck", trucks: "Trucks", wheels: "Wheels", grip: "Grip tape" };
@@ -50,7 +50,7 @@ export function mountPartsPicker(paint: (p: Parts) => void) {
       if (cents) { b.title = `${c.name}, ${dollars(cents)}`; b.append(createElement(Lock, { width: 12, height: 12 })); }
       b.addEventListener("click", async () => {
         b.blur();
-        if (!(await wallet.buy(item, testCheckout))) return;
+        if (!(await wallet.buy(item, stripeCheckout))) return;
         parts[part] = c.id;
         show();
       });
@@ -62,4 +62,11 @@ export function mountPartsPicker(paint: (p: Parts) => void) {
   document.querySelector(".buttons")!.prepend(button);
   document.body.append(panel);
   show();
+  // Back from Stripe, or on another device: take what the server says was paid, and wear what was just bought.
+  void fetchOwned().then((owned) => {
+    wallet.sync(owned);
+    const was = takePending();
+    if (was && wallet.owns(was)) parts[was.part] = was.id;
+    show();
+  });
 }
