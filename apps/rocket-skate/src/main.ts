@@ -3,7 +3,7 @@ import { Car, createElement, PersonStanding, RotateCcw, Wind } from "lucide";
 import * as THREE from "three";
 import { roadster, skater, type Thruster } from "./models.ts";
 import { DT, IDLE, type Input, type Mode, start, step, type State } from "./sim.ts";
-import { HALF, RAILS, RAMPS } from "./spot.ts";
+import { HALF, plaza as level } from "./levels/plaza.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#view")!;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -52,33 +52,39 @@ floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
 
-// Each ramp from the same numbers the sim rides on: a box whose top corners follow h0 and h1.
+// Each piece meshed by sampling its own height, in its own frame: the box's top follows it.
 const rampMat = new THREE.MeshStandardMaterial({ color: 0xd8d2c8, roughness: 0.85 });
-for (const r of RAMPS) {
+for (const p of level.pieces) {
   const geo = new THREE.BoxGeometry(1, 1, 1);
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
-    const u = pos.getZ(i) + 0.5;
-    const top = pos.getY(i) > 0;
-    pos.setXYZ(i, r.x0 + (pos.getX(i) + 0.5) * (r.x1 - r.x0), top ? r.h0 + u * (r.h1 - r.h0) : 0, r.z0 + u * (r.z1 - r.z0));
+    const lx = pos.getX(i) * p.w, lz = pos.getZ(i) * p.d;
+    pos.setXYZ(i, lx, pos.getY(i) > 0 ? p.height(lx, lz) : 0, lz);
   }
   geo.computeVertexNormals();
   const m = new THREE.Mesh(geo, rampMat);
+  m.position.set(p.x, 0, p.z);
+  m.rotation.y = p.yaw;
   m.castShadow = m.receiveShadow = true;
   scene.add(m);
 }
 const steel = new THREE.MeshStandardMaterial({ color: 0x9aa3ad, roughness: 0.25, metalness: 0.9 });
-for (const r of RAILS) {
-  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, r.z1 - r.z0, 12), steel);
+for (const r of level.rails) {
+  const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z);
+  const rail = new THREE.Group();
+  rail.position.set((r.a.x + r.b.x) / 2, 0, (r.a.z + r.b.z) / 2);
+  rail.rotation.y = Math.atan2(r.b.x - r.a.x, r.b.z - r.a.z);
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, len, 12), steel);
   bar.rotation.x = Math.PI / 2;
-  bar.position.set(r.x, r.y, (r.z0 + r.z1) / 2);
+  bar.position.y = r.y;
   bar.castShadow = true;
-  scene.add(bar);
-  for (let z = r.z0 + 0.5; z < r.z1; z += 4) {
+  rail.add(bar);
+  for (let z = -len / 2 + 0.5; z < len / 2; z += 4) {
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, r.y, 8), steel);
-    post.position.set(r.x, r.y / 2, z);
-    scene.add(post);
+    post.position.set(0, r.y / 2, z);
+    rail.add(post);
   }
+  scene.add(rail);
 }
 // A low wall round the plaza, and a few blocks of city past it.
 const wallMat = new THREE.MeshStandardMaterial({ color: 0x8d7f72, roughness: 0.9 });

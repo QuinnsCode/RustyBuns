@@ -5,7 +5,8 @@
 // behind the licence plate, which drops to uncover it), four under the corners for lift, and two at
 // the nose for spinning in the air. The tank refills slowly while the car is on the ground.
 import { clamp } from "@rustybuns/util";
-import { groundAt, HALF, RAILS } from "./spot.ts";
+import { type Level, onRail } from "./level.ts";
+import { plaza } from "./levels/plaza.ts";
 
 export const DT = 1 / 60;
 const G = 20; // gamey gravity: snappier than 9.8
@@ -58,9 +59,9 @@ export type State = {
   prevFlip: boolean;
 };
 
-export function start(mode: Mode, x = 0, z = -20, yaw = 0): State {
+export function start(mode: Mode, x = 0, z = -20, yaw = 0, level: Level = plaza): State {
   return {
-    mode, t: 0, x, y: groundAt(x, z), z, vx: 0, vy: 0, vz: 0, yaw, speed: 0,
+    mode, t: 0, x, y: level.height(x, z), z, vx: 0, vy: 0, vz: 0, yaw, speed: 0,
     air: false, airTime: 0, spun: 0, flipT: 0, flips: 0, grind: -1, grindTime: 0,
     tank: 1, firing: { rear: false, lift: false, spin: 0 }, plateDown: false,
     bail: 0, score: 0, last: null, prevJump: false, prevFlip: false,
@@ -104,8 +105,8 @@ function land(s: State, h: number) {
   award(s, parts.length ? parts.join(" ") : "Air", points);
 }
 
-/** One fixed step. Mutates and returns `s`. */
-export function step(s: State, inp: Input): State {
+/** One fixed step on `level` (the plaza unless told otherwise). Mutates and returns `s`. */
+export function step(s: State, inp: Input, level: Level = plaza): State {
   const tune = TUNE[s.mode];
   const car = s.mode === "car";
   const pressed = inp.jump && !s.prevJump;
@@ -132,14 +133,15 @@ export function step(s: State, inp: Input): State {
   s.plateDown = boosting || (s.plateDown && inp.boost);
 
   if (s.grind >= 0) {
-    const r = RAILS[s.grind];
+    const r = level.rails[s.grind];
     s.grindTime += DT;
     s.speed *= 1 - 0.15 * DT;
-    s.z += s.speed * Math.sign(fz) * DT;
-    if (pressed || s.z < r.z0 || s.z > r.z1) {
+    s.x += fx * s.speed * DT; s.z += fz * s.speed * DT;
+    const t = onRail(r, s.x, s.z).t;
+    if (pressed || t < 0 || t > 1) {
       if (s.grindTime > 0.2) award(s, "50-50 grind", Math.round(s.grindTime * 300));
       s.grind = -1;
-      s.vx = 0; s.vz = s.speed * Math.sign(fz);
+      s.vx = fx * s.speed; s.vz = fz * s.speed;
       s.vy = pressed ? 7 : 0;
       takeOff(s);
     }
@@ -154,7 +156,7 @@ export function step(s: State, inp: Input): State {
     s.yaw += inp.steer * tune.turn * DT * Math.min(1, Math.abs(s.speed) / 3) * Math.sign(s.speed || 1);
 
     const nx = s.x + Math.sin(s.yaw) * s.speed * DT, nz = s.z + Math.cos(s.yaw) * s.speed * DT;
-    const h = groundAt(nx, nz);
+    const h = level.height(nx, nz);
     if (h - s.y > 0.35) { // a wall: the side of a ramp or box
       s.speed *= -0.2;
       return s;
@@ -194,22 +196,29 @@ export function step(s: State, inp: Input): State {
     s.x += s.vx * DT; s.y += s.vy * DT; s.z += s.vz * DT;
 
     if (!car && s.vy < 0) { // dropping onto a rail starts a grind
-      const i = RAILS.findIndex((r) => Math.abs(s.x - r.x) < 0.45 && s.z > r.z0 && s.z < r.z1 && Math.abs(s.y - r.y) < 0.25);
+      const i = level.rails.findIndex((r) => {
+        const o = onRail(r, s.x, s.z);
+        return o.off < 0.45 && o.t > 0 && o.t < 1 && Math.abs(s.y - r.y) < 0.25;
+      });
       if (i >= 0 && s.flipT <= 0) {
+        const r = level.rails[i], o = onRail(r, s.x, s.z);
+        const dir = s.vx * o.dx + s.vz * o.dz >= 0 ? 1 : -1; // ride the way you came in
         s.grind = i; s.grindTime = 0;
-        s.x = RAILS[i].x; s.y = RAILS[i].y; s.vy = 0;
-        s.speed = Math.max(3, Math.abs(s.vz));
-        s.yaw = s.vz >= 0 ? 0 : Math.PI;
+        s.x = r.a.x + (r.b.x - r.a.x) * o.t; s.z = r.a.z + (r.b.z - r.a.z) * o.t;
+        s.y = r.y; s.vy = 0;
+        s.speed = Math.max(3, Math.abs(s.vx * o.dx + s.vz * o.dz));
+        s.yaw = Math.atan2(dir * o.dx, dir * o.dz);
         s.air = false;
         return s;
       }
     }
-    const h = groundAt(s.x, s.z);
+    const h = level.height(s.x, s.z);
     if (s.y <= h && s.vy <= 0) land(s, h);
   }
 
-  if (Math.abs(s.x) > HALF || Math.abs(s.z) > HALF) { // the plaza wall
-    s.x = clamp(s.x, -HALF, HALF); s.z = clamp(s.z, -HALF, HALF);
+  const b = level.bounds;
+  if (s.x < b.minX || s.x > b.maxX || s.z < b.minZ || s.z > b.maxZ) { // the wall
+    s.x = clamp(s.x, b.minX, b.maxX); s.z = clamp(s.z, b.minZ, b.maxZ);
     s.speed *= -0.3; s.vx *= -0.3; s.vz *= -0.3;
   }
   return s;
