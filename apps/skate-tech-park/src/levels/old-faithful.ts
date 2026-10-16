@@ -20,11 +20,12 @@ export const oldFaithful: ParkSpec = {
     { parts: [quarterPipe({ x: 120, z: 75, yaw: E }, { w: 14, d: 7, h: 3.6 }), spine({ x: 100, z: 100, yaw: E }, { w: 12, d: 8, h: 2.2 })] },
   ],
   spawns: [
+    { name: "geyser view", x: -150, z: 75, yaw: E },
     { name: "boardwalk", x: -175, z: 20, yaw: E },
-    { name: "car", x: -175, z: 26, yaw: E },
     { name: "vent line", x: 20, z: 75, yaw: E },
     { name: "bowl deck", x: -17, z: 130, yaw: Math.PI },
   ],
+  landmarks: [{ kind: "plume", x: -17, z: 75, tall: 55, r: 8 }],
   bounds: { minX: -190, maxX: 150, minZ: -20, maxZ: 150 },
   goals: [
     { kind: "score", target: 2500 },

@@ -19,10 +19,12 @@ export const halfDome: ParkSpec = {
     { name: "Half Dome Face", a: { x: -30, z: 20 }, b: { x: -110, z: 20 }, r: 45, rb: 80, bonus: 4000, min: 45 },
   ],
   spawns: [
+    { name: "dome view", x: 280, z: 60, yaw: -1.5 },
     { name: "flat line", x: 100, z: 190, yaw: E },
     { name: "dome run", x: 150, z: 20, yaw: W },
     { name: "return line", x: 285, z: 215, yaw: W },
   ],
+  granite: 195,
   bounds: { minX: -250, maxX: 300, minZ: -100, maxZ: 300 },
   goals: [
     { kind: "score", target: 3000 },

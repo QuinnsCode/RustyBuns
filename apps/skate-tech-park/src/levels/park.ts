@@ -24,6 +24,13 @@ export type Goal =
 export type Site = { parts: Part[]; pad?: { x: number; z: number; r: number } };
 /** A tree to ride between: the view draws it and the sim treats it as solid up to `tall`. */
 export type Tree = { x: number; z: number; r: number; tall: number; name?: string };
+/** What a park is known for, drawn so its silhouette reads from the start: a geyser's steam, a spring's coloured rings, a waterfall. */
+export type Landmark =
+  | { kind: "plume"; x: number; z: number; tall: number; r: number }
+  /** Concentric terraces, outermost first (and lowest), one colour each. */
+  | { kind: "rings"; x: number; z: number; rings: { r: number; color: number }[] }
+  | { kind: "falls"; from: { x: number; z: number }; to: { x: number; z: number }; width: number };
+
 export type Pickup = { x: number; z: number; y: number };
 
 export type ParkSpec = {
@@ -40,6 +47,9 @@ export type ParkSpec = {
   /** `lift` is metres above the floor (or above a rail's y when it sits on one). */
   pickups?: { x: number; z: number; lift?: number }[];
   trees?: Tree[];
+  landmarks?: Landmark[];
+  /** Ground above this height is bare granite (a dome's cap), so a high summit reads against the green below. */
+  granite?: number;
 };
 
 export type ParkLevel = Level & {
@@ -49,6 +59,8 @@ export type ParkLevel = Level & {
   goals: Goal[];
   pickups: Pickup[];
   trees: Tree[];
+  landmarks: Landmark[];
+  granite: number;
 };
 
 export function parkLevel(spec: ParkSpec): ParkLevel {
@@ -61,7 +73,7 @@ export function parkLevel(spec: ParkSpec): ParkLevel {
   const inner = makeLevel({ name: spec.name, pieces: parts.pieces, rails: parts.rails, obstacles: trees, spawns: spec.spawns, bounds: spec.bounds });
   const height = (x: number, z: number) => Math.max(ground.height(x, z), inner.height(x, z));
   return {
-    ...inner, height, id: spec.id, blurb: spec.blurb, ground, gaps: [...parts.gaps, ...(spec.gaps ?? [])], goals: spec.goals, trees,
+    ...inner, height, id: spec.id, blurb: spec.blurb, ground, gaps: [...parts.gaps, ...(spec.gaps ?? [])], goals: spec.goals, trees, landmarks: spec.landmarks ?? [], granite: spec.granite ?? Infinity,
     pickups: (spec.pickups ?? []).map((p) => ({ x: p.x, z: p.z, y: height(p.x, p.z) + (p.lift ?? 1) })),
   };
 }
