@@ -272,3 +272,18 @@ test("driving into a wall stops the board: it never rebounds backwards or jitter
   expect(minSpeed).toBeGreaterThanOrEqual(0);
   expect(Math.abs(s.speed)).toBeLessThan(0.5);
 });
+
+test("on the ground the whole board stops at a box's side, even turning into it, and never sits inside it", () => {
+  const box = piece("box", "wall", 0, 10, 0, 10, 3, 2, 2);
+  const l = makeLevel({ name: "wall", pieces: [box], rails: [], spawns: [], bounds: { minX: -30, maxX: 30, minZ: -30, maxZ: 30 } });
+  for (const steer of [0, 1, -1]) {
+    const s = start(0, 3, 0, l);
+    let worst = 0;
+    for (let i = 0; i < 400; i++) {
+      step(s, { ...IDLE, throttle: 1, boost: i > 30, steer: i > 60 && i < 120 ? steer : 0 }, l);
+      const sn = Math.sin(s.yaw), cs = Math.cos(s.yaw);
+      for (const a of [-0.8, 0, 0.8]) for (const c of [-0.3, 0.3]) worst = Math.max(worst, l.height(s.x + sn * a + cs * c, s.z + cs * a - sn * c) - s.y);
+    }
+    expect(worst).toBeLessThan(0.2);
+  }
+});
