@@ -264,3 +264,11 @@ test("in the air the board's tips are what hit a box, so the nose stops at its f
   expect(top).toBeLessThan(1.5); // never snapped up onto the box
   expect(s.z).toBeLessThan(4); // never carried into it
 });
+
+test("driving into a wall stops the board: it never rebounds backwards or jitters against it", () => {
+  const s = start(0, -20, Math.PI / 2); // along +x at the plaza's east wall
+  let minSpeed = 0;
+  run(s, 6, () => { minSpeed = Math.min(minSpeed, s.speed); return { throttle: 1 }; });
+  expect(minSpeed).toBeGreaterThanOrEqual(0);
+  expect(Math.abs(s.speed)).toBeLessThan(0.5);
+});
