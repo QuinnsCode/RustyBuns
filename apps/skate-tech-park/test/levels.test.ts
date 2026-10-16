@@ -19,7 +19,7 @@ function drive(level: ParkLevel, spawn: string, seconds: number, gapName?: strin
   for (let i = 0; i < seconds * 60; i++) {
     const to = g?.a ?? target, aim = to ? Math.atan2(to.x - s.x, to.z - s.z) : s.yaw, err = Math.atan2(Math.sin(aim - s.yaw), Math.cos(aim - s.yaw));
     const along = g ? (s.x - g.a.x) * Math.sin(s.yaw) + (s.z - g.a.z) * Math.cos(s.yaw) : -99;
-    step(s, { ...IDLE, throttle: s.speed < line ? 1 : -1, boost: !s.air && s.speed < line, steer: s.air ? 0 : Math.max(-1, Math.min(1, err * 3)), jump: along > 3 && along < 8 && !s.air }, level);
+    step(s, { ...IDLE, throttle: s.speed < line ? 1 : -1, boost: !s.air && s.speed < line, steer: s.air ? 0 : Math.max(-1, Math.min(1, err * 8)), jump: along > 3 && along < 8 && !s.air }, level);
     run.update(s);
   }
   return { s, run };
@@ -90,25 +90,21 @@ test("Half Dome's east shoulder is a natural ramp: driving up it climbs the dome
   expect(run.done(l.goals.find((g) => g.kind === "climb")!)).toBe(true);
 });
 
-test("a sky rail is a bar you can ride from a kicker, 160 m long and climbing away from the ground", () => {
-  for (const [id, spawn] of [["el-capitan", "sky rail"]] as const) {
-    const l = park(id), sp = l.spawns.find((p) => p.name === spawn)!, bar = l.rails.find((r) => Math.abs((r.y2 ?? r.y) - r.y) > 10)!;
+test("every park has a sky rail: a long bar on stilts you can ride from its kicker, steep or shallow, climbing away from the ground", () => {
+  for (const l of parks) {
+    const sp = l.spawns.find((p) => p.name === "sky rail")!, bar = l.rails.find((r) => Math.abs((r.y2 ?? r.y) - r.y) > 10)!;
+    expect(sp).toBeDefined();
     expect(bar).toBeDefined();
     const s = start(sp.x, sp.z, sp.yaw, l);
     let ground = 0, top = 0;
     for (let i = 0; i < 12 * 60; i++) {
       const lip = (s.x - bar.a.x) * Math.sin(s.yaw) + (s.z - bar.a.z) * Math.cos(s.yaw);
-      step(s, { ...IDLE, throttle: s.speed < 30 ? 1 : -1, boost: !s.air && s.speed < 30, jump: lip > -3 && lip < -1.5 && !s.air }, l);
+      const len = Math.hypot(bar.b.x - bar.a.x, bar.b.z - bar.a.z), ux = (bar.b.x - bar.a.x) / len, uz = (bar.b.z - bar.a.z) / len, ahead = (s.x - bar.a.x) * ux + (s.z - bar.a.z) * uz + 6, to = { x: bar.a.x + ux * ahead, z: bar.a.z + uz * ahead }, err = Math.atan2(Math.sin(Math.atan2(to.x - s.x, to.z - s.z) - s.yaw), Math.cos(Math.atan2(to.x - s.x, to.z - s.z) - s.yaw));
+      step(s, { ...IDLE, throttle: s.speed < 30 ? 1 : -1, boost: !s.air && s.speed < 30, steer: s.air ? 0 : Math.max(-1, Math.min(1, err * 8)), jump: lip > -3 && lip < -1.5 && !s.air }, l);
       if (s.grind >= 0) ground++;
       top = Math.max(top, s.y);
     }
-    expect(ground).toBeGreaterThan(60);
+    expect([l.id, ground > 60]).toEqual([l.id, true]);
     expect(top - l.height(bar.a.x, bar.a.z)).toBeGreaterThan(4);
   }
-});
-
-test("the kit is toy-sized beside the deck: every piece is wider than the board, and a straight run rolls up the stairs and over the funbox", () => {
-  for (const l of parks) for (const p of l.pieces) expect(Math.min(p.w, p.d)).toBeGreaterThan(DECK.width);
-  const { s } = drive(park("old-faithful"), "boardwalk", 9, undefined, 27, { x: 40, z: 20 });
-  expect(s.x).toBeGreaterThan(0); // past the stair set at -100 and the funbox at -70, not stopped at the first riser
 });

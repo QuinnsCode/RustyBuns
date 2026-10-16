@@ -410,10 +410,10 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     if (hit) { s.vx = s.vz = 0; s.speed = 0; } // thrown against the trunk: drop down it
     s.x += s.vx * DT; s.y += s.vy * DT; s.z += s.vz * DT;
 
-    if (s.vy < 0) { // dropping onto a rail starts a grind
+    { // dropping onto a rail starts a grind; a bar climbing faster than you fall meets you from below just the same
       const i = level.rails.findIndex((r) => {
-        const o = onRail(r, s.x, s.z);
-        return o.off < 0.45 && o.t > 0 && o.t < 1 && Math.abs(s.y - railY(r, o.t)) < 0.25;
+        const o = onRail(r, s.x, s.z), climb = (((r.y2 ?? r.y) - r.y) / o.len) * (s.vx * o.dx + s.vz * o.dz); // the bar's own rise under you, m/s
+        return s.vy < Math.max(0, climb) && o.off < 0.45 && o.t > 0 && o.t < 1 && Math.abs(s.y - railY(r, o.t)) < 0.25 + Math.max(0, climb - s.vy) * DT;
       });
       if (i >= 0 && s.flipT <= 0) {
         const r = level.rails[i], o = onRail(r, s.x, s.z);
