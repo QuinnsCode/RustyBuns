@@ -1,7 +1,7 @@
 // Which level the page rides (`?level=` or the menu), and the level's side of the HUD: the menu, the
 // goal list, the pickups. main.ts asks for the chosen level and calls `ui.update` each frame.
 import { Check, Circle, createElement } from "lucide";
-import type * as THREE from "three";
+import { Fog, type Scene } from "three";
 import type { Level } from "../level.ts";
 import type { Mode, State } from "../sim.ts";
 import "./levels.css";
@@ -19,9 +19,9 @@ export function spawn(l: Level, mode: Mode) {
   return l.spawns.find((s) => s.name === mode) ?? l.spawns[0]!;
 }
 
-const label = (g: Goal) => g.kind === "score" ? `Score ${g.target.toLocaleString("en-US")}` : g.kind === "combo" ? `Combo ${g.target.toLocaleString("en-US")}` : g.kind === "gap" ? `Gap: ${g.name}` : "Collect the rings";
+const label = (g: Goal) => g.kind === "score" ? `Score ${g.target.toLocaleString("en-US")}` : g.kind === "combo" ? `Combo ${g.target.toLocaleString("en-US")}` : g.kind === "gap" ? `Gap: ${g.name}` : g.kind === "climb" ? `Climb ${g.name}: ${g.metres} m` : "Collect the rings";
 
-export function mountLevelUi(scene: THREE.Scene) {
+export function mountLevelUi(scene: Scene) {
   const menu = document.createElement("select");
   menu.className = "level-menu";
   menu.title = "Level";
@@ -32,6 +32,7 @@ export function mountLevelUi(scene: THREE.Scene) {
 
   const p = level as ParkLevel, rings = props(p);
   scene.add(groundMesh(p), rings.group);
+  if (scene.fog instanceof Fog) { scene.fog.near = 120; scene.fog.far = 420; } // the park is a few hundred metres across
   const panel = document.createElement("ul");
   panel.className = "goals";
   document.body.append(panel);

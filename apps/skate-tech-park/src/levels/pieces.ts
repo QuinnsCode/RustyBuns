@@ -5,8 +5,8 @@ import { type Piece, type PieceKind, type Rail, type RailKind, piece } from "../
 
 export type At = { x: number; z: number; yaw?: number };
 
-/** Score for taking off within `r` of `a` (the launch's centre) and landing within `rb` of `b` (the landing's); `mode` is who it is cut for (the roadster for the long ones). */
-export type Gap = { name: string; a: { x: number; z: number }; b: { x: number; z: number }; r: number; rb: number; bonus: number; mode: "skate" | "car" };
+/** Score for taking off within `r` of `a` (the launch's centre) and landing within `rb` of `b` (the landing's); */
+export type Gap = { name: string; a: { x: number; z: number }; b: { x: number; z: number }; r: number; rb: number; bonus: number };
 
 export type Part = { pieces: Piece[]; rails: Rail[]; gaps: Gap[] };
 
@@ -37,6 +37,23 @@ export function lift(p: Part, base: number): Part {
   return part({
     pieces: p.pieces.map((q) => ({ ...q, h0: q.h0 + base, h1: q.h1 + base, height: (lx, lz) => q.height(lx, lz) + base })),
     rails: p.rails.map((r) => ({ ...r, y: r.y + base, ...(r.y2 === undefined ? {} : { y2: r.y2 + base }) })),
+    gaps: p.gaps,
+  });
+}
+
+/**
+ * Lays a part on sloping ground instead of a pad: each piece's surface is its own shape plus the ground
+ * under that point, and a rail's ends ride the ground at each end, so a kicker, a bowl or a bar follows the hill.
+ */
+export function drape(p: Part, ground: (x: number, z: number) => number): Part {
+  return part({
+    pieces: p.pieces.map((q) => ({
+      ...q,
+      h0: q.h0 + ground(toWorld(q, 0, -q.d / 2).x, toWorld(q, 0, -q.d / 2).z),
+      h1: q.h1 + ground(toWorld(q, 0, q.d / 2).x, toWorld(q, 0, q.d / 2).z),
+      height: (lx, lz) => { const w = toWorld(q, lx, lz); return q.height(lx, lz) + ground(w.x, w.z); },
+    })),
+    rails: p.rails.map((r) => ({ ...r, y: r.y + ground(r.a.x, r.a.z), y2: (r.y2 ?? r.y) + ground(r.b.x, r.b.z) })),
     gaps: p.gaps,
   });
 }
@@ -136,11 +153,11 @@ export const spine = (at: At, o: { w?: number; d?: number; h?: number; name?: st
  * goes on its own site: the launch at `at` (it carries the gap's name and bonus), and the landing `span`
  * metres past its lip, running back down. Whatever stands in the void (a boulder, a log) is its own part.
  */
-export function gap(at: At, o: { name: string; span: number; h?: number; landH?: number; landLen?: number; w?: number; bonus?: number; mode?: "skate" | "car"; curve?: number; kick?: number }) {
-  const { name, span, h = 1.5, landH = 1, landLen = 6, w = 4, bonus = 500, mode = "skate", curve = 1, kick = 4 } = o;
+export function gap(at: At, o: { name: string; span: number; h?: number; landH?: number; landLen?: number; w?: number; bonus?: number; curve?: number; kick?: number; reach?: number }) {
+  const { name, span, h = 1.5, landH = 1, landLen = 6, w = 4, bonus = 500, curve = 1, kick = 4, reach = landLen / 2 + 3 } = o;
   const land = toWorld(at, 0, kick / 2 + span + landLen / 2);
   return {
-    launch: join(kicker(at, { w, d: kick, h, curve, name: `${name} launch` }), part({ gaps: [{ name, a: { x: at.x, z: at.z }, b: land, r: kick / 2 + 3, rb: landLen / 2 + 3, bonus, mode }] })),
+    launch: join(kicker(at, { w, d: kick, h, curve, name: `${name} launch` }), part({ gaps: [{ name, a: { x: at.x, z: at.z }, b: land, r: kick / 2 + 3, rb: reach, bonus }] })),
     landing: part({ pieces: [piece("ramp", `${name} landing`, land.x, land.z, at.yaw ?? 0, w + 2, landLen, landH, 0)] }),
     /** The landing's centre, for placing its site. */
     land,
