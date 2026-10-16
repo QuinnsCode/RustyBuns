@@ -76,7 +76,7 @@ test("the start screen shows until a level is chosen, and a query picks its leve
   expect(needsStartScreen("?level=glacier-point")).toBe(false);
   expect(needsStartScreen("?showroom")).toBe(false);
   expect(pick("?level=glacier-point").id).toBe("glacier-point");
-  expect(pick("?level=nowhere").id).toBe("plaza");
+  expect(pick("?level=nowhere").id).toBe("el-capitan");
   expect(LEVELS.map((l) => l.id)).toEqual(["plaza", "el-capitan", "glacier-point", "old-faithful", "mariposa-grove", "half-dome", "yosemite-falls", "grand-prismatic"]);
 });
 
