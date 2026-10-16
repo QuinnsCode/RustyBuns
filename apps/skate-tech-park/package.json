@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "test": "bun test test",
-    "models": "blender -b --factory-startup -P blender/fingerboard.py",
+    "models": "blender -b --factory-startup -P blender/fingerboard.py && blender -b --factory-startup -P blender/kit.py",
     "edge:dev": "vite build && bunx wrangler dev",
     "deploy": "vite build && bunx wrangler deploy",
     "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",

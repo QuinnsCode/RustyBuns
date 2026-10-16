@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { mountPartsPicker } from "./parts-picker.ts";
 import { BOARD_BUDGETS, type BoardBudget, dressBoard, fingerboard, roadster, type Thruster } from "./models.ts";
 import { levelMeshes } from "./render/pieces.ts";
+import { KIT_BUDGETS, type KitBudget, loadKit } from "./render/kit.ts";
 import { Plumes } from "./render/plumes.ts";
 import { Chase } from "./render/chase.ts";
 import { between, poseOf } from "./render/interp.ts";
@@ -92,8 +93,20 @@ floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 decor.add(floor);
 
-// Every piece and rail, meshed by sampling its own height: two draw calls for the level.
-scene.add(levelMeshes(level, park ? (level as ParkLevel).ground.height : undefined));
+// Every piece and rail, meshed by sampling its own height: two draw calls for the level. Then the Blender kit
+// dresses the ramps, stairs and blocks (?kit=hi|mid|low, or ?kit=built to keep the sampled ones).
+const groundOf = park ? (level as ParkLevel).ground.height : undefined;
+let pieceMeshes = levelMeshes(level, groundOf);
+scene.add(pieceMeshes);
+const kitBudget = new URLSearchParams(location.search).get("kit") ?? "mid";
+if (KIT_BUDGETS.includes(kitBudget as KitBudget)) {
+  loadKit(kitBudget as KitBudget, async (f) => new URL(f, document.baseURI).href).then((kit) => {
+    scene.remove(pieceMeshes);
+    pieceMeshes.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+    pieceMeshes = levelMeshes(level, groundOf, kit);
+    scene.add(pieceMeshes);
+  }).catch((e) => console.warn("kit models", e));
+}
 // A low wall round the plaza, and a few blocks of city past it.
 const wallMat = new THREE.MeshStandardMaterial({ color: 0x8d7f72, roughness: 0.9 });
 for (const [w, d, x, z] of [[HALF * 2, 1, 0, HALF + 0.5], [HALF * 2, 1, 0, -HALF - 0.5], [1, HALF * 2, HALF + 0.5, 0], [1, HALF * 2, -HALF - 0.5, 0]]) {

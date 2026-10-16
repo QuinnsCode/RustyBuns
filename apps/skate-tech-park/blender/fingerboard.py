@@ -12,11 +12,11 @@ import os
 import sys
 
 import bmesh
-import bpy
 from mathutils import Matrix, Vector
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-OUT = os.path.join(HERE, "..", "public", "models")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from common import OUT, PALETTE, apply_all, args, join, modify, obj, render, reset, write_glb  # noqa: E402
+
 # Triangles per budget. "hi" keeps everything the modifiers made.
 BUDGETS = {"hi": None, "mid": 6000, "low": 1500}
 
@@ -24,45 +24,11 @@ LENGTH, WIDTH = 4.4, 1.25
 TOP, THICK, CONCAVE, FLAT, RISE, NOSE = 0.52, 0.1, 0.04, 1.45, 0.34, 0.6
 TRUCK_Z, WHEEL_R, WHEEL_H, WHEEL_X = 0.95, 0.19, 0.11, 0.5
 # Colours here are only for the preview render: the page paints every slot from the parts picker.
-MATERIALS = {
+PALETTE.update({
     "deck": (0.85, 0.34, 0.17, 0.55, 0), "accent": (0.95, 0.91, 0.82, 0.6, 0), "edge": (0.85, 0.72, 0.54, 0.7, 0),
     "grip": (0.11, 0.11, 0.12, 0.95, 0), "steel": (0.65, 0.67, 0.71, 0.3, 0.9), "bushing": (0.91, 0.83, 0.29, 0.8, 0),
     "tyre": (0.95, 0.94, 0.89, 0.45, 0), "core": (0.17, 0.17, 0.17, 0.5, 0),
-}
-
-
-def material(name):
-    m = bpy.data.materials.get(name) or bpy.data.materials.new(name)
-    r, g, b, rough, metal = MATERIALS[name]
-    bsdf = m.node_tree.nodes["Principled BSDF"]
-    bsdf.inputs["Base Color"].default_value = (r, g, b, 1)
-    bsdf.inputs["Roughness"].default_value = rough
-    bsdf.inputs["Metallic"].default_value = metal
-    return m
-
-
-def obj(name, bm, mats):
-    me = bpy.data.meshes.new(name)
-    bm.to_mesh(me)
-    bm.free()
-    o = bpy.data.objects.new(name, me)
-    bpy.context.collection.objects.link(o)
-    for m in mats:
-        o.data.materials.append(material(m))
-    return o
-
-
-def modify(o, kind, **props):
-    m = o.modifiers.new(kind.lower(), kind)
-    for k, v in props.items():
-        setattr(m, k, v)
-    return m
-
-
-def apply_all(o):
-    bpy.context.view_layer.objects.active = o
-    for m in list(o.modifiers):
-        bpy.ops.object.modifier_apply(modifier=m.name)
+})
 
 
 # ---- deck ----
@@ -199,79 +165,21 @@ def wheel(x, z):
     return tyre, core
 
 
-# ---- build, budget, export ----
+# ---- build, budget, write ----
 
-def build():
-    bpy.ops.wm.read_factory_settings(use_empty=True)
+def main():
+    reset()
     parts = [deck()]
     for z in (-TRUCK_Z, TRUCK_Z):
         parts += truck(z)
         for x in (-WHEEL_X, WHEEL_X):
             parts += wheel(x, z)
-    bpy.ops.object.select_all(action="DESELECT")
-    for o in parts:
-        o.select_set(True)
-    bpy.context.view_layer.objects.active = parts[0]
-    bpy.ops.object.join()
-    board = bpy.context.active_object
-    board.name = board.data.name = "fingerboard"
-    # Game frame (y up, nose +z) to Blender's (z up, nose -y); the exporter turns it back.
-    board.data.transform(Matrix.Rotation(math.pi / 2, 4, "X"))
-    bpy.ops.object.shade_auto_smooth(angle=math.radians(35))
-    return board
-
-
-def tris(o):
-    return sum(len(p.vertices) - 2 for p in o.data.polygons)
-
-
-def export(board, budget, target):
-    bpy.ops.object.select_all(action="DESELECT")
-    lod = board.copy()
-    lod.data = board.data.copy()
-    bpy.context.collection.objects.link(lod)
-    if target:
-        modify(lod, "DECIMATE", ratio=min(1, target / tris(board)), use_collapse_triangulate=True)
-        apply_all(lod)
-    lod.select_set(True)
-    path = os.path.join(OUT, f"fingerboard-{budget}.glb")
-    bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_apply=True,
-                              export_yup=True, export_normals=True, export_materials="EXPORT")
-    print(f"{budget}: {tris(lod)} triangles -> {os.path.relpath(path)} ({os.path.getsize(path) // 1024} KB)")
-    bpy.data.objects.remove(lod)
-
-
-def render(board, path):
-    """A quick three-quarter look at the board, to judge the model by eye without the game."""
-    scene = bpy.context.scene
-    scene.render.engine = "BLENDER_EEVEE"
-    scene.render.resolution_x, scene.render.resolution_y = 1200, 700
-    world = bpy.data.worlds.new("world")
-    world.color = (0.75, 0.8, 0.85)
-    scene.world = world
-    sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
-    sun.data.energy = 4
-    sun.rotation_euler = (math.radians(50), 0, math.radians(30))
-    scene.collection.objects.link(sun)
-    cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
-    scene.collection.objects.link(cam)
-    scene.camera = cam
-    stem, ext = os.path.splitext(path)
-    for name, where in (("", (5.5, 4.2, 3.2)), ("-under", (3.2, 2.6, -1.6))):  # three-quarter from above, then from below
-        cam.location = where
-        cam.rotation_euler = (Vector((0, 0, 0.4)) - cam.location).to_track_quat("-Z", "Y").to_euler()
-        scene.render.filepath = stem + name + ext
-        bpy.ops.render.render(write_still=True)
-
-
-def main():
-    args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-    os.makedirs(OUT, exist_ok=True)
-    board = build()
+    board = join(parts, "fingerboard")
     for budget, target in BUDGETS.items():
-        export(board, budget, target)
-    if "--render" in args:
-        render(board, os.path.abspath(args[args.index("--render") + 1]))
+        write_glb(board, os.path.join(OUT, f"fingerboard-{budget}.glb"), target)
+    if "--render" in args():
+        path = os.path.abspath(args()[args().index("--render") + 1])
+        render(path, (("", (5.5, 4.2, 3.2)), ("-under", (3.2, 2.6, -1.6))))  # three-quarter from above, then from below
 
 
 main()
