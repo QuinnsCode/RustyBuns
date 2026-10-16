@@ -4,9 +4,10 @@ import { expect, test } from "bun:test";
 import { LEVELS, needsStartScreen, pick } from "../src/levels/index.ts";
 import { trackRun } from "../src/levels/goals.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
-import { IDLE, start, step } from "../src/sim.ts";
+import { IDLE, SCALE, start, step } from "../src/sim.ts";
 
-const LINE = 27; // m/s held into a gap: the board clears all four at this speed (Glacier Point only from 26 to 28)
+// m/s held into a gap: at SCALE 1 the board clears all four at 27 (Glacier Point only from 26 to 28); a bigger board hangs longer, so the same line needs less speed
+const LINE = 27 / Math.sqrt(SCALE);
 const parks = LEVELS.filter((l) => l.id !== "plaza").map((l) => l.load() as ParkLevel);
 const park = (id: string) => parks.find((l) => l.id === id)!;
 
