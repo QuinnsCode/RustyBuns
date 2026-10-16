@@ -1,6 +1,6 @@
 // Journeys through the ride, headless: the same fixed-step sim the page draws.
 import { expect, test } from "bun:test";
-import { type Level, makeLevel, piece, railY } from "../src/level.ts";
+import { hitObstacle, type Level, makeLevel, piece, railY } from "../src/level.ts";
 import { quarterPipe } from "../src/levels/pieces.ts";
 import { DT, IDLE, type Input, SCALE, start, step, type State } from "../src/sim.ts";
 
@@ -103,6 +103,13 @@ test("a rider can't ride through a tree, but can pass beside it", () => {
   expect(hit.last?.name).toBe("Hit a tree");
   const past = run(start(4, 0, 0, lv), 3, () => ({ throttle: 1 }), lv);
   expect(past.z).toBeGreaterThan(20);
+});
+
+test("a tree catches the board's edge, not a circle round its middle", () => {
+  const lv = flat({ obstacles: [{ x: 0, z: 10, r: 0.5, tall: 30 }] });
+  expect(hitObstacle(lv, 0.9, 9.5, 0, 0)).toBeUndefined(); // heading at it, 0.9 m to the side: clear
+  expect(hitObstacle(lv, 0.9, 9.5, 0, Math.PI / 2)).toBeDefined(); // turned across: the long edge reaches it
+  expect(hitObstacle(lv, 0, 8.8, 0, 0)).toBeDefined(); // the nose catches it 1.2 m out, before the centre could
 });
 
 test("a skater grinds a rail down a slope and stays on the bar", () => {

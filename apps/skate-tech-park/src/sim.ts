@@ -328,7 +328,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
 
     const nx = s.x + Math.sin(s.yaw) * s.speed * DT, nz = s.z + Math.cos(s.yaw) * s.speed * DT;
     const dist = Math.abs(s.speed * DT);
-    if (hitObstacle(level, nx, nz, s.y)) return crash(s, "Hit a tree");
+    if (hitObstacle(level, nx, nz, s.y, s.yaw)) return crash(s, "Hit a tree");
     // walk the stride in 10 cm strides: a rise too sharp for its length is a wall (the side of a box),
     // a steep curve (a quarter pipe near its lip) is not
     const n = Math.max(1, Math.ceil(dist / 0.1));
@@ -377,7 +377,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       if (s.flipKind === "shove-it") s.firing.spin = 1; // the nose jets turn it
       else { s.firing.lift = true; s.firing.roll = s.flipKind === "kickflip" ? 1 : -1; } // the corners fire unevenly
       s.flipT -= DT; if (s.flipT <= 0) { s.flipT = 0; s.tricks.push(s.flipKind); } }
-    const hit = hitObstacle(level, s.x + s.vx * DT, s.z + s.vz * DT, s.y + s.vy * DT);
+    const hit = hitObstacle(level, s.x + s.vx * DT, s.z + s.vz * DT, s.y + s.vy * DT, s.yaw);
     if (hit) { s.vx = s.vz = 0; s.speed = 0; } // thrown against the trunk: drop down it
     s.x += s.vx * DT; s.y += s.vy * DT; s.z += s.vz * DT;
 

@@ -75,9 +75,22 @@ export function makeLevel(l: Omit<Level, "height">): Level {
   };
 }
 
-/** The obstacle a rider of radius `rider` at height `y` is inside, if any. */
-export function hitObstacle(level: Level, x: number, z: number, y: number, rider = 0.4) {
-  return level.obstacles?.find((o) => Math.hypot(x - o.x, z - o.z) < o.r + rider && y < level.height(o.x, o.z) + o.tall);
+/** The board's footprint: half its length (along the heading) and half its width, in metres. */
+export const BOARD = { halfLen: 0.8, halfWid: 0.3 };
+
+/**
+ * The obstacle the board is inside, if any. The board is a rectangle pointing along `yaw`, so a tree
+ * grazes its side or catches its nose well before the middle of the board gets there.
+ */
+export function hitObstacle(level: Level, x: number, z: number, y: number, yaw = 0) {
+  const sn = Math.sin(yaw), cs = Math.cos(yaw);
+  return level.obstacles?.find((o) => {
+    if (y >= level.height(o.x, o.z) + o.tall) return false;
+    const dx = o.x - x, dz = o.z - z;
+    const along = dx * sn + dz * cs, across = dx * cs - dz * sn; // the tree in the board's frame
+    const gx = Math.max(0, Math.abs(along) - BOARD.halfLen), gz = Math.max(0, Math.abs(across) - BOARD.halfWid);
+    return gx * gx + gz * gz < o.r * o.r;
+  });
 }
 
 /** Where along a rail (0..1) the point projects, and how far off its line it is. */
