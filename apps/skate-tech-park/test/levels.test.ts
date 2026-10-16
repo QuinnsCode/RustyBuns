@@ -16,6 +16,7 @@ const park = (id: string) => parks.find((l) => l.id === id)!;
 function drive(level: ParkLevel, spawn: string, seconds: number, gapName?: string, line = 27, target?: { x: number; z: number }) {
   const sp = level.spawns.find((p) => p.name === spawn)!, g = level.gaps.find((x) => x.name === gapName);
   const s = start(sp.x, sp.z, sp.yaw, level), run = trackRun(level);
+  level = { ...level, obstacles: level.trees }; // these lines ride gaps and pickups, not rail posts: a handrail on the spawn line is in the way, not the point
   for (let i = 0; i < seconds * 60; i++) {
     const to = g?.a ?? target, aim = to ? Math.atan2(to.x - s.x, to.z - s.z) : s.yaw, err = Math.atan2(Math.sin(aim - s.yaw), Math.cos(aim - s.yaw));
     const along = g ? (s.x - g.a.x) * Math.sin(s.yaw) + (s.z - g.a.z) * Math.cos(s.yaw) : -99;

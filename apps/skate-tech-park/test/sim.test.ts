@@ -111,7 +111,7 @@ test("a rider runs into a rail's post but rides over it on the bar", () => {
   expect(lv.obstacles!.length).toBeGreaterThan(5);
   const side = run(start(0.8, -10, 0, lv), 0.5, () => ({ throttle: 1 }), lv); // along the bar, a hand off its line
   expect(hitObstacle(lv, 0, 0.5, 0.9 - 0.05)).toBeUndefined(); // the bar's own height clears every post
-  const across = run(start(-8, 0.5, Math.PI / 2, lv), 4, () => ({ throttle: 1 }), lv);
+  const across = run(start(-8, 2, Math.PI / 2, lv), 4, () => ({ throttle: 1 }), lv);
   expect(across.last?.name).toBe("Hit a rail post");
   expect(side.x).toBeCloseTo(0.8, 0);
 });
