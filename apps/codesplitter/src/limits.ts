@@ -77,6 +77,7 @@ export const RULES: Rule[] = [
   { name: "hook", label: "Webhooks", what: "webhooks added to repos", group: "Repos", per: "user", max: 20, window_s: HOUR, on_fail: "reject" },
   { name: "invite", label: "Invites", what: "crew invites made, emailed ones included", group: "Editing and sharing", per: "user", max: 30, window_s: HOUR, on_fail: "reject" },
   { name: "share", label: "Shares, stamps and collections", what: "share links, line stamps, collections and tracks, and follows", group: "Editing and sharing", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
+  { name: "page", label: "Page files", what: "text and image files saved to your profile page", group: "Editing and sharing", per: "user", max: 60, window_s: HOUR, on_fail: "reject" },
   { name: "agent", label: "Coding agents", what: "hosted agent runs, on the site's API keys", group: "Agents", per: "user", max: 20, window_s: DAY, on_fail: "reject" },
   { name: "hosted", label: "Hosted runs", what: "coding agent, conflict agent and feed digest runs on the site's API keys, everyone's together, admins included", group: "Agents", per: "site", max: 30, window_s: DAY, on_fail: "reject" },
   { name: "preview", label: "Preview deploys", what: "stacks stood up and torn down to try a repo", group: "Deploys and checks", per: "user", max: 6, window_s: HOUR, on_fail: "reject", queueable: true },
@@ -97,6 +98,7 @@ export function ruleFor(method: string, p: string[]): string | null {
     if (p[1] === "search") return "search";
     return null;
   }
+  if (method === "PUT") return p[1] === "me" && p[2] === "page" && !p[5] ? "page" : null;
   if (method !== "POST") return null;
   if (p[1] === "auth") return p[2] === "sign-in" ? "signin" : p[2] === "sign-up" ? "signup"
     : p[2] === "request-password-reset" || p[2] === "send-verification-email" ? "mail" : null;
