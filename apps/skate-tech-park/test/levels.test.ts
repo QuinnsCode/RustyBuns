@@ -88,3 +88,20 @@ test("Half Dome's east shoulder is a natural ramp: driving up it climbs the dome
   const l = park("half-dome"), { run } = drive(l, "dome run", 12, "Half Dome Face");
   expect(run.done(l.goals.find((g) => g.kind === "climb")!)).toBe(true);
 });
+
+test("a sky rail is a bar you can ride from a kicker, 160 m long and climbing away from the ground", () => {
+  for (const [id, spawn] of [["el-capitan", "sky rail"]] as const) {
+    const l = park(id), sp = l.spawns.find((p) => p.name === spawn)!, bar = l.rails.find((r) => Math.abs((r.y2 ?? r.y) - r.y) > 10)!;
+    expect(bar).toBeDefined();
+    const s = start(sp.x, sp.z, sp.yaw, l);
+    let ground = 0, top = 0;
+    for (let i = 0; i < 12 * 60; i++) {
+      const lip = (s.x - bar.a.x) * Math.sin(s.yaw) + (s.z - bar.a.z) * Math.cos(s.yaw);
+      step(s, { ...IDLE, throttle: s.speed < 30 ? 1 : -1, boost: !s.air && s.speed < 30, jump: lip > -3 && lip < -1.5 && !s.air }, l);
+      if (s.grind >= 0) ground++;
+      top = Math.max(top, s.y);
+    }
+    expect(ground).toBeGreaterThan(60);
+    expect(top - l.height(bar.a.x, bar.a.z)).toBeGreaterThan(4);
+  }
+});
