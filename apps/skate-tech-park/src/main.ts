@@ -2,6 +2,7 @@
 import { Car, createElement, PersonStanding, RotateCcw, Wind } from "lucide";
 import * as THREE from "three";
 import { roadster, skater, type Thruster } from "./models.ts";
+import { Plumes } from "./render/plumes.ts";
 import { railY } from "./level.ts";
 import { DT, IDLE, type Input, type Mode, start, step, type State } from "./sim.ts";
 import { HALF } from "./levels/plaza.ts";
@@ -124,7 +125,8 @@ for (let i = 0; i < 28; i++) {
 }
 
 const car = roadster(), board = skater();
-scene.add(car, board);
+const plumes = new Plumes();
+scene.add(car, board, plumes.puffs.points);
 const thrusters = car.userData.thrusters as Thruster[];
 const plate = car.userData.plate as THREE.Group;
 
@@ -182,17 +184,24 @@ hud();
 
 const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
 reset();
-let acc = 0, then = performance.now(), shownTrick: State["last"] = null, trickAt = 0;
+let lastFrame = performance.now(), landVy = 0, acc = 0, then = performance.now(), shownTrick: State["last"] = null, trickAt = 0;
 
 function frame(now: number) {
   acc = Math.min(acc + (now - then) / 1000, 0.25);
   then = now;
   const inp = input();
-  while (acc >= DT) { step(sim, inp, level); ui.update(sim); acc -= DT; }
+  landVy = 0;
+  while (acc >= DT) {
+    const was = sim.air, vy = sim.vy;
+    step(sim, inp, level); ui.update(sim); acc -= DT;
+    if (was && !sim.air) landVy = vy;
+  }
 
   const rider = mode === "car" ? car : board;
   car.visible = mode === "car";
   board.visible = mode === "skate";
+  const dt = Math.min((now - lastFrame) / 1000, 0.1);
+  lastFrame = now;
   rider.position.set(sim.x, sim.y, sim.z);
   rider.rotation.set(0, sim.yaw, 0);
   if (sim.bail > 0) rider.rotation.z = mode === "car" ? Math.sin(sim.bail * 30) * 0.08 : 1.3;
@@ -204,15 +213,8 @@ function frame(now: number) {
     body.scale.y = sim.air || sim.grind >= 0 ? 0.85 : 1;
   } else {
     const f = sim.firing;
-    for (const t of thrusters) {
-      const on = t.group === "rear" ? f.rear : t.group === "lift" ? f.lift : t.group === "spinL" ? f.spin === 1 : f.spin === -1;
-      t.plume.visible = on;
-      if (on) {
-        const len = 1.4 + Math.random() * 0.6;
-        t.plume.scale.set(1, len, 1);
-        t.plume.position.y = 0.14 + len / 2;
-      }
-    }
+    plumes.update(dt, thrusters, thrusters.map((t) => (t.group === "rear" ? f.rear : t.group === "lift" ? f.lift : t.group === "spinL" ? f.spin === 1 : f.spin === -1)), sim.vx, sim.vy, sim.vz);
+    if (landVy) plumes.landed(sim.x, sim.y, sim.z, Math.abs(landVy));
     plate.rotation.x = THREE.MathUtils.lerp(plate.rotation.x, sim.plateDown ? -Math.PI * 0.95 : 0, 0.3);
   }
 
