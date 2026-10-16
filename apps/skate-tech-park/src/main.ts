@@ -2,12 +2,12 @@
 import { Car, createElement, RectangleHorizontal, RotateCcw } from "lucide";
 import * as THREE from "three";
 import { fingerboard, roadster, type Thruster } from "./models.ts";
+import { levelMeshes } from "./render/pieces.ts";
 import { Plumes } from "./render/plumes.ts";
 import { Chase } from "./render/chase.ts";
 import { Scenery, scatter } from "./render/scenery.ts";
 import { followCamera, HAZE, sky } from "./render/sky.ts";
 import { Skins } from "./render/skins.ts";
-import { railY } from "./level.ts";
 import { DT, FLICK_TIME, IDLE, type Input, type Mode, start, step, type State } from "./sim.ts";
 import { HALF } from "./levels/plaza.ts";
 import type { ParkLevel } from "./levels/park.ts";
@@ -70,53 +70,8 @@ floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 decor.add(floor);
 
-// Each piece meshed by sampling its own height, in its own frame: the box's top follows it.
-const rampMat = new THREE.MeshStandardMaterial({ color: 0xd8d2c8, roughness: 0.85 });
-// The mesh hangs from its pad's floor (the lowest ground under its footprint), not from y=0.
-const floorUnder = (p: (typeof level.pieces)[number]) => {
-  if (!park) return 0;
-  const g = (level as ParkLevel).ground, c = Math.cos(p.yaw), s = Math.sin(p.yaw);
-  let low = Infinity;
-  for (const [lx, lz] of [[0, 0], [-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-    const x = (lx * p.w) / 2, z = (lz * p.d) / 2;
-    low = Math.min(low, g.height(p.x + x * c + z * s, p.z - x * s + z * c));
-  }
-  return low;
-};
-for (const p of level.pieces) {
-  const geo = new THREE.BoxGeometry(1, 1, 1);
-  const pos = geo.attributes.position;
-  const base = floorUnder(p);
-  for (let i = 0; i < pos.count; i++) {
-    const lx = pos.getX(i) * p.w, lz = pos.getZ(i) * p.d;
-    pos.setXYZ(i, lx, pos.getY(i) > 0 ? Math.max(base, p.height(lx, lz)) : base, lz);
-  }
-  geo.computeVertexNormals();
-  const m = new THREE.Mesh(geo, rampMat);
-  m.position.set(p.x, 0, p.z);
-  m.rotation.y = p.yaw;
-  m.castShadow = m.receiveShadow = true;
-  scene.add(m);
-}
-const steel = new THREE.MeshStandardMaterial({ color: 0x9aa3ad, roughness: 0.25, metalness: 0.9 });
-for (const r of level.rails) {
-  const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z);
-  const rail = new THREE.Group();
-  rail.position.set((r.a.x + r.b.x) / 2, 0, (r.a.z + r.b.z) / 2);
-  rail.rotation.y = Math.atan2(r.b.x - r.a.x, r.b.z - r.a.z);
-  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, len, 12), steel);
-  bar.rotation.x = Math.PI / 2 - Math.atan2((r.y2 ?? r.y) - r.y, len); // tilt to the slope
-  bar.position.y = (r.y + (r.y2 ?? r.y)) / 2;
-  bar.castShadow = true;
-  rail.add(bar);
-  for (let z = -len / 2 + 0.5; z < len / 2; z += 4) {
-    const top = railY(r, (z + len / 2) / len);
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, top, 8), steel);
-    post.position.set(0, top / 2, z);
-    rail.add(post);
-  }
-  scene.add(rail);
-}
+// Every piece and rail, meshed by sampling its own height: two draw calls for the level.
+scene.add(levelMeshes(level, park ? (level as ParkLevel).ground.height : undefined));
 // A low wall round the plaza, and a few blocks of city past it.
 const wallMat = new THREE.MeshStandardMaterial({ color: 0x8d7f72, roughness: 0.9 });
 for (const [w, d, x, z] of [[HALF * 2, 1, 0, HALF + 0.5], [HALF * 2, 1, 0, -HALF - 0.5], [1, HALF * 2, HALF + 0.5, 0], [1, HALF * 2, -HALF - 0.5, 0]]) {
