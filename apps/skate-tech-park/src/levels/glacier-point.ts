@@ -2,7 +2,7 @@
 // away in a cliff, and the long gap over that drop is the mega ramp. A funbox and a bar on the plateau
 // keep the board busy on the way.
 import { type ParkSpec } from "./park.ts";
-import { flatBar, funbox, kicker } from "./pieces.ts";
+import { outcrop, flatBar, funbox, kicker, tabletop } from "./pieces.ts";
 
 const E = Math.PI / 2, N = Math.PI;
 
@@ -12,6 +12,8 @@ export const glacierPoint: ParkSpec = {
   blurb: "Build speed across the plateau, hit the lip at the overlook and clear the drop to the slope below.",
   zone: "glacier-point",
   sites: [
+    { parts: [tabletop({ x: 20, z: 90 }, { w: 8, d: 26, h: 1.6 })] },
+    { parts: [outcrop({ x: -80, z: 110 }, { r: 3.5, h: 2.2 }), outcrop({ x: -100, z: 80 }, { r: 3, h: 1.8 })] },
     { parts: [flatBar({ x: -60, z: 20, yaw: N }, { len: 16 }), funbox({ x: -40, z: 20, yaw: N }, { w: 10, d: 24, h: 1.2, ramp: 7 })] },
     { parts: [kicker({ x: -40, z: -48, yaw: N }, { w: 12, d: 16, h: 3.5, curve: 1.5, name: "overlook lip" })] },
     { parts: [kicker({ x: 90, z: 40, yaw: E }, { w: 10, d: 8, h: 2, name: "slope hop" })] },

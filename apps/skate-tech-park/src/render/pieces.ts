@@ -14,7 +14,7 @@ const rgb = (hex: number) => new THREE.Color(hex);
 const WOOD = rgb(0xc98a52), SEAM = rgb(0x6e4526), CONCRETE = rgb(0xb9b3aa), SIDE = rgb(0x9d978d);
 const BAND = { wood: rgb(0xe2572b), concrete: rgb(0x2e7f86) };
 const STEEL = rgb(0xa5acb4), WAX = rgb(0xf3ead2);
-const CONCRETE_NAMES = /bowl|roll-in|landing|boulder|log/;
+const CONCRETE_NAMES = /bowl|roll-in|landing|boulder|log|cone|roller/;
 
 /** Painted wood or concrete, by what the piece is. */
 const isConcrete = (p: Piece) => p.kind === "box" || CONCRETE_NAMES.test(p.name);

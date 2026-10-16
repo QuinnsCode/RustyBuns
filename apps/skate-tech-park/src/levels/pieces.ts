@@ -165,3 +165,52 @@ export function gap(at: At, o: { name: string; span: number; h?: number; landH?:
     land,
   };
 }
+
+// Landscape features: what a snow park builds out of a mountain, built out of a national park. Each is
+// a height function like the rest of the kit, named so the mesher paints rock and log as concrete.
+
+/** A snow park's pipe: two walls curving up to coping either side of a flat channel, running along local z. */
+export const halfpipe = (at: At, o: { w?: number; d?: number; h?: number; floor?: number; deck?: number; name?: string } = {}): Part => {
+  const { w = 20, d = 40, h = 3, floor = 4, deck = 1.5, name = "creek halfpipe" } = o, wall = (w - floor) / 2 - deck, lip = floor / 2 + wall;
+  const f = (lx: number, lz: number) => {
+    const e = (Math.abs(lx) - floor / 2) / wall, ends = clamp01((d / 2 - Math.abs(lz)) / 3); // the mouth eases in so it can be entered
+    return (e <= 0 ? 0 : h * arc(e)) * ends;
+  };
+  return part({ pieces: [shape("ramp", name, at, w, d, f)], rails: [-lip, lip].map((x) => bar("coping", at, x, -d / 2 + 3, x, d / 2 - 3, h)) });
+};
+
+/** Up a kicker, a long flat top, and down: the snow park's tabletop to clear. */
+export const tabletop = (at: At, o: { w?: number; d?: number; h?: number; ramp?: number; name?: string } = {}): Part => {
+  const { w = 8, d = 26, h = 1.6, ramp = 5, name = "tabletop" } = o;
+  return part({ pieces: [shape("ramp", name, at, w, d, (_, lz) => h * smooth(Math.min(lz + d / 2, d / 2 - lz) / ramp))] });
+};
+
+/** A run of rolling bumps along local z to pump: the park's own whoops. */
+export const rollers = (at: At, o: { w?: number; n?: number; period?: number; h?: number; name?: string } = {}): Part => {
+  const { w = 8, n = 5, period = 7, h = 0.7, name = "rollers" } = o, d = n * period;
+  return part({ pieces: [shape("ramp", name, at, w, d, (_, lz) => (h / 2) * (1 - Math.cos((2 * Math.PI * (lz + d / 2)) / period)) * clamp01(Math.min(lz + d / 2, d / 2 - lz) / period))] });
+};
+
+/** A fallen log: a round trunk along local z with a ledge to grind along its top. */
+export const fallenLog = (at: At, o: { len?: number; r?: number; name?: string } = {}): Part => {
+  const { len = 14, r = 0.7, name = "fallen log" } = o;
+  return part({
+    pieces: [shape("ramp", name, at, r * 2, len, (lx, lz) => r * Math.sqrt(Math.max(0, 1 - (lx / r) ** 2)) * clamp01((len / 2 - Math.abs(lz)) / 0.8))],
+    rails: [bar("ledge", at, 0, -len / 2 + 0.8, 0, len / 2 - 0.8, r)],
+  });
+};
+
+/** A round granite boulder to hop onto or round: a dome, steep at its foot. */
+export const outcrop = (at: At, o: { r?: number; h?: number; name?: string } = {}): Part => {
+  const { r = 3, h = 2, name = "boulder" } = o;
+  return part({ pieces: [shape("ramp", name, at, r * 2, r * 2, (lx, lz) => h * Math.sqrt(Math.max(0, 1 - (Math.hypot(lx, lz) / r) ** 2)))] });
+};
+
+/** A geyser cone: a mound rising to a rim with a crater sunk in the middle, to ride round the lip of. */
+export const geyserCone = (at: At, o: { r?: number; h?: number; name?: string } = {}): Part => {
+  const { r = 7, h = 2.2, name = "geyser cone" } = o;
+  return part({ pieces: [shape("ramp", name, at, r * 2, r * 2, (lx, lz) => {
+    const t = Math.hypot(lx, lz) / r;
+    return t >= 1 ? 0 : t < 0.35 ? h * (0.55 + 0.45 * smooth(t / 0.35)) : h * (1 - smooth((t - 0.35) / 0.65));
+  })] });
+};

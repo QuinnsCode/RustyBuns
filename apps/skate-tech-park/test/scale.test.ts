@@ -23,10 +23,11 @@ test.each(parks.map((e) => [e.name, e.id]))("%s: scenery is seeded and keeps off
     for (const r of park.rails) { const o = onRail(r, s.x, s.z); expect(o.t < -0.05 || o.t > 1.05 || o.off >= 3).toBe(true); }
     for (const sp of park.spawns) expect(Math.hypot(sp.x - s.x, sp.z - s.z)).toBeGreaterThan(11);
   }
-  for (const s of spots) expect(s.size).toBeLessThan(DECK.length / 2); // every pine and rock is a toy beside the board
+  for (const s of spots) expect(s.size).toBeLessThan(DECK.length / 2); // every pine, rock and tent is a toy beside the board
   let calls = 0;
   new Scenery(spots).group.traverse((o) => { if ((o as THREE.Mesh).isMesh) calls++; });
-  expect(calls).toBeLessThanOrEqual(2); // every pine, one draw call; every rock, one
+  expect(calls).toBeLessThanOrEqual(7); // one draw call a kind: pines, rocks, aspens, stumps, cairns, signs, tents
+  expect(new Set(spots.map((s) => s.kind)).size).toBeGreaterThan(4); // and a park has most of them
 });
 
 test("a pine shrinks away as the rider nears it, and grows back when they leave", () => {
