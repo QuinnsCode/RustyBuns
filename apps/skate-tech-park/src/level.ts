@@ -26,10 +26,26 @@ export type Rail = {
 };
 
 /** Something solid standing on the ground (a sequoia): the rider can't pass below its top. */
-export type Obstacle = { x: number; z: number; r: number; tall: number };
+export type Obstacle = { x: number; z: number; r: number; tall: number; kind?: "post" };
 
 /** The bar's height a fraction `t` (0..1) of the way from `a` to `b`. */
 export const railY = (r: Rail, t: number) => r.y + ((r.y2 ?? r.y) - r.y) * Math.min(1, Math.max(0, t));
+
+/** Where a rail's posts stand: a post every 4 m from half a metre in, each topped by the bar. */
+export function railPosts(r: Rail): { x: number; y: number; z: number }[] {
+  if (r.kind !== "rail") return [];
+  const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) || 1, out = [];
+  for (let d = 0.5; d < len; d += 4) out.push({ x: r.a.x + ((r.b.x - r.a.x) * d) / len, y: railY(r, d / len), z: r.a.z + ((r.b.z - r.a.z) * d) / len });
+  return out;
+}
+
+/** The rail posts of a level as obstacles, standing from its floor to just under the bar so a grind passes over them. */
+export function postObstacles(rails: Rail[], floor: (x: number, z: number) => number): Obstacle[] {
+  return rails.flatMap(railPosts).flatMap((p) => {
+    const tall = p.y - floor(p.x, p.z) - 0.05;
+    return tall > 0.05 ? [{ x: p.x, z: p.z, r: 0.05, tall, kind: "post" as const }] : [];
+  });
+}
 
 export type Spawn = { name: string; x: number; z: number; yaw: number };
 export type Bounds = { minX: number; maxX: number; minZ: number; maxZ: number };
