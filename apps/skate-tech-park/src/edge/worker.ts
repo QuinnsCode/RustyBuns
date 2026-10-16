@@ -36,7 +36,7 @@ export default {
     for (const k of [...headers.keys()]) if (k.toLowerCase().startsWith("x-")) headers.delete(k);
     headers.set("X-User-Id", uid);
     headers.set("X-User-Name", clean(url.searchParams.get("name"), 24) || "Skater");
-    // A room is a level and a code: the same code on two levels is two rooms.
-    return env.WORLD.get(env.WORLD.idFromName(`${level}:${room}`)).fetch(new Request(req, { headers }));
+    // A room is a level, a code and a mode: the same code on two levels, or with and without collisions, is two rooms.
+    return env.WORLD.get(env.WORLD.idFromName(`${level}:${room}${url.searchParams.get("pve") === "1" ? ":pve" : ""}`)).fetch(new Request(req, { headers }));
   },
 };

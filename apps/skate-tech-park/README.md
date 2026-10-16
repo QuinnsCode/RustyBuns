@@ -18,7 +18,7 @@ bun test test            # the ride, headless
 
 ## Ride together, on Cloudflare
 
-The users button (or `?room=ABCD`) opens a room of up to four riders on the level you are on; the link is the invite. Everyone rides their own sim and sees the others as boards with a name tag. The server only relays poses, so it costs next to nothing idle. `src/edge/worker.ts` serves the built page and sends `/ws` to a `World` Durable Object per level and room code (`src/edge/world.ts`, rules in `src/net/room.ts`, the cap is `MAX_RIDERS`). Where there is no `/ws` (the dev server, the desktop app) it stays single player.
+The users button (or `?room=ABCD`) opens a room of up to four riders on the level you are on; the link is the invite. Everyone rides their own sim and sees the others as boards with a name tag, and you can run into them (`src/net/bump.ts`: pushed out and bounced). The shield button switches the room to PvE (`&pve=1`), where boards pass through each other; a room is one mode, so it is a different room from the same code with collisions. The server only relays poses, so it costs next to nothing idle. `src/edge/worker.ts` serves the built page and sends `/ws` to a `World` Durable Object per level and room code (`src/edge/world.ts`, rules in `src/net/room.ts`, the cap is `MAX_RIDERS`). Where there is no `/ws` (the dev server, the desktop app) it stays single player.
 
 ```
 bun run edge:dev         # the whole thing locally, with wrangler

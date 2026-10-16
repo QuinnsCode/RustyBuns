@@ -44,3 +44,20 @@ describe("the worker", () => {
 });
 
 test("the world exports its Durable Object", () => { expect(typeof World).toBe("function"); });
+
+import { bump } from "../src/net/bump.ts";
+describe("running into another board", () => {
+  const me = () => ({ x: 0, y: 0, z: 0, vx: 0, vz: 3, yaw: 0, speed: 3, air: false, grind: -1 });
+  const other = (z: number, y = 0) => ({ pose: { skin: "fingerboard" as const, n: [0, y, z, 0, 0, 0, 0, 0, 0, 0] as never } });
+  test("head on: pushed out and bounced back", () => {
+    const s = me();
+    expect(bump(s, [other(2)])).toBe(true);
+    expect(s.z).toBeLessThan(0);
+    expect(s.speed).toBeLessThan(0);
+  });
+  test("a board far off, or on another level of the park, is no obstacle", () => {
+    const s = me();
+    expect(bump(s, [other(10), other(1, 5)])).toBe(false);
+    expect(s.z).toBe(0);
+  });
+});

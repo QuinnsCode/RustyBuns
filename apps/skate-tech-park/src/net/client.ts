@@ -16,6 +16,8 @@ function uid(): string {
 }
 
 export const roomCode = (search: string) => (new URLSearchParams(search).get("room") ?? "").toUpperCase().match(/^[A-Z0-9]{4,8}$/)?.[0] ?? null;
+/** `&pve=1`: a room where boards pass through each other. */
+export const pveMode = (search: string) => new URLSearchParams(search).get("pve") === "1";
 export const newRoomCode = () => Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[b % 32]).join("");
 
 export type Status = "joining" | "in" | "full" | "off";
@@ -27,11 +29,11 @@ export class Online {
   private sentAt = 0;
   private retry = 0;
 
-  constructor(readonly room: string, private level: string, private onChange: () => void) { this.connect(); }
+  constructor(readonly room: string, private level: string, private pve: boolean, private onChange: () => void) { this.connect(); }
 
   private connect() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const q = new URLSearchParams({ room: this.room, level: this.level, uid: uid() });
+    const q = new URLSearchParams({ room: this.room, level: this.level, uid: uid(), ...(this.pve ? { pve: "1" } : {}) });
     const ws = new WebSocket(`${proto}://${location.host}/ws?${q}`);
     this.ws = ws;
     ws.onopen = () => { this.status = "in"; this.retry = 0; this.onChange(); };

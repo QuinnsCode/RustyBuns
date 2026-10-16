@@ -1,5 +1,5 @@
 // The page: draws the sim, turns keys into its input, and keeps the chase camera behind the rider.
-import { Car, createElement, Info, RectangleHorizontal, RotateCcw, Users } from "lucide";
+import { Car, createElement, Info, RectangleHorizontal, RotateCcw, Shield, ShieldOff, Users } from "lucide";
 import * as THREE from "three";
 import { mountPartsPicker } from "./parts-picker.ts";
 import { fingerboard, roadster, type Thruster } from "./models.ts";
@@ -17,7 +17,8 @@ import { HALF } from "./levels/plaza.ts";
 import type { ParkLevel } from "./levels/park.ts";
 import { Gestures } from "./gesture.ts";
 import { level, levelId, mountLevelUi, park, spawn } from "./levels/picker.ts";
-import { newRoomCode, Online, roomCode } from "./net/client.ts";
+import { newRoomCode, Online, roomCode, pveMode } from "./net/client.ts";
+import { bump } from "./net/bump.ts";
 import { MAX_RIDERS } from "./net/room.ts";
 import { Ghosts } from "./render/ghosts.ts";
 
@@ -178,7 +179,8 @@ function hud() {
 // Playing together: `?room=ABCD` joins a room of up to four riders; the button makes one and copies its link.
 const ghosts = new Ghosts(scene);
 const code = roomCode(location.search);
-const online = code ? new Online(code, levelId, () => { ghosts.set(online!.riders); hud(); }) : null;
+const pve = pveMode(location.search); // PvE: boards pass through each other
+const online = code ? new Online(code, levelId, pve, () => { ghosts.set(online!.riders); hud(); }) : null;
 const togetherBtn = $("together") as HTMLButtonElement;
 togetherBtn.append(icon(Users));
 togetherBtn.addEventListener("click", () => {
@@ -188,6 +190,11 @@ togetherBtn.addEventListener("click", () => {
   togetherBtn.blur();
 });
 hud();
+const pveBtn = $("pve") as HTMLButtonElement;
+pveBtn.hidden = !online;
+pveBtn.append(icon(pve ? ShieldOff : Shield));
+pveBtn.title = pve ? "PvE: boards pass through each other (click for collisions)" : "Collisions on (click for PvE)";
+pveBtn.addEventListener("click", () => { const q = new URLSearchParams(location.search); if (pve) q.delete("pve"); else q.set("pve", "1"); location.search = `?${q}`; }); // a room is one mode, so this moves you to the other room
 const chase = new Chase(camera);
 const manualEase = new TiltEase();
 const taps = new Taps($("taps")); // rings where the feet pop, drag and flick
@@ -205,6 +212,7 @@ function frame(now: number) {
   while (acc >= DT) {
     const was = sim.air, vy = sim.vy;
     step(sim, { ...inp, ...gestures.take() }, level); // a gesture is one step's press
+    if (online && !pve) bump(sim, online.riders);
     ui.update(sim); acc -= DT;
     for (const f of sim.feet) taps.add(f);
     if (was && !sim.air) landVy = vy;
