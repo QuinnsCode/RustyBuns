@@ -38,6 +38,16 @@ export class TiltEase {
   }
 }
 
+/** The sim calls a rise steeper than this (about 72 degrees) a wall, not a ramp (MAX_SLOPE in sim.ts). */
+export const RAMP_RISE = 3;
+
+/** The ground's rise `gx`, `gz` as the board can lie on it: the view reads the height a quarter metre either side, which at a
+ * cliff lip or a cliff face is far steeper than anything the sim lets a board stand on, so cap it at the sim's own ramp. */
+export function rideableRise(gx: number, gz: number): [number, number] {
+  const m = Math.hypot(gx, gz);
+  return m > RAMP_RISE ? [(gx / m) * RAMP_RISE, (gz / m) * RAMP_RISE] : [gx, gz];
+}
+
 /** The turns (about x, then z, after yaw: Euler order YXZ) that stand a board's up exactly on the ground's normal, given the
  * ground's rise `gx` along +x and `gz` along +z under it. Pitch and roll read off the slope separately are only right on a plane. */
 export function lieOnGround(gx: number, gz: number, yaw: number) {
