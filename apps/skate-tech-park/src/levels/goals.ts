@@ -23,11 +23,12 @@ export function trackRun(level: ParkLevel): Run {
     combo: 0, bestCombo: 0, gaps: new Map(), collected: new Set(),
     update, done, progress,
   };
-  let air = false, takeoff = { x: 0, z: 0 }, last: State["last"] = null, score = 0, comboT = -Infinity, score0 = false, topScore = 0;
+  let air = false, takeoff = { x: 0, z: 0 }, last: State["last"] = null, score = 0, comboT = -Infinity, score0 = false, topScore = 0, y0 = 0, topY = 0;
 
   function update(s: State) {
     const events: string[] = [];
-    if (!score0) { score = s.score; last = s.last; score0 = true; air = s.air; }
+    if (!score0) { score = s.score; last = s.last; score0 = true; air = s.air; y0 = topY = s.y; }
+    topY = Math.max(topY, s.y);
     if (s.last !== last && s.score > score) {
       if (s.t - comboT > COMBO_WINDOW) run.combo = 0;
       run.combo += s.score - score;
@@ -60,6 +61,7 @@ export function trackRun(level: ParkLevel): Run {
       case "combo": return run.bestCombo >= g.target;
       case "gap": return (run.gaps.get(g.name) ?? 0) > 0;
       case "collect": return run.collected.size >= (g.count ?? level.pickups.length);
+      case "climb": return topY - y0 >= g.metres;
     }
   }
 
@@ -69,6 +71,7 @@ export function trackRun(level: ParkLevel): Run {
       case "combo": return `${Math.min(run.bestCombo, g.target).toLocaleString("en-US")} / ${g.target.toLocaleString("en-US")}`;
       case "gap": return done(g) ? "cleared" : "not yet";
       case "collect": return `${run.collected.size} / ${g.count ?? level.pickups.length}`;
+      case "climb": return `${Math.round(Math.min(g.metres, topY - y0))} / ${g.metres} m`;
     }
   }
 

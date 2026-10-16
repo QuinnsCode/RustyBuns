@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import type { ParkLevel } from "./park.ts";
 
-const STEP = 2;
+const STEP = 4;
 
 export function groundMesh(level: ParkLevel): THREE.Mesh {
   const R = level.ground.R, n = Math.round((2 * R) / STEP) + 1;

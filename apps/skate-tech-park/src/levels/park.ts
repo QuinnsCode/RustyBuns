@@ -1,19 +1,27 @@
-// A skate park laid on real ground. The spec lists sites (a flat pad with kit parts on it), where to
-// spawn, named gaps, goals and pickups; the builder shrinks a park-hide-seek zone to a 120 m disc,
-// cuts each site's pad into the slope with withPads, and answers `height` as the higher of ground and piece.
+// A skate park laid on real ground, at the scale of the giant board: the terrain is the park. The spec lists
+// kit parts, where to spawn, named gaps (natural ones are just data: where you leave the ground and where
+// you must land), goals and pickups. The builder shrinks a park-hide-seek zone by TERRAIN_SCALE, drapes each
+// site's kit parts onto the slope (or cuts a flat pad under a site that asks for one), and answers `height`
+// as the higher of ground and piece.
 import { heightmapTerrain, withPads, zoneData, type Terrain } from "@rustybuns/terrain";
 import { type Bounds, type Level, makeLevel, type Spawn } from "../level.ts";
-import { type Gap, join, lift, type Part } from "./pieces.ts";
+import { drape, type Gap, join, lift, type Part } from "./pieces.ts";
 
-export const PLAY_RADIUS = 120;
+/** Real terrain is shrunk this many times across (a 1 km zone becomes a ~333 m disc). One constant for the whole game. */
+export const TERRAIN_SCALE = 3;
+/** And its height is scaled this much further, so cliff faces are steep enough to ride up instead of sheer. */
+export const RELIEF = 0.5;
 
 export type Goal =
   | { kind: "score"; target: number }
   | { kind: "combo"; target: number }
   | { kind: "gap"; name: string }
-  | { kind: "collect"; count?: number };
+  | { kind: "collect"; count?: number }
+  /** Get this high above where the ride began: up a cliff face, off a ridge. */
+  | { kind: "climb"; metres: number; name: string };
 
-export type Site = { x: number; z: number; r: number; parts: Part[] };
+/** Kit parts on a spot of the park. They follow the ground, unless `pad` cuts a flat shelf under them. */
+export type Site = { parts: Part[]; pad?: { x: number; z: number; r: number } };
 /** A tree to ride between: the view draws it and the sim treats it as solid up to `tall`. */
 export type Tree = { x: number; z: number; r: number; tall: number; name?: string };
 export type Pickup = { x: number; z: number; y: number };
@@ -21,10 +29,11 @@ export type Pickup = { x: number; z: number; y: number };
 export type ParkSpec = {
   id: string; name: string; blurb: string;
   zone: string;
-  /** Vertical scale of the real ground: 1 is as shrunk, less is rolling hills instead of cliffs. */
   relief?: number;
   skirt?: number;
   sites: Site[];
+  /** Gaps the ground makes by itself (a canyon, a drop): no kit piece needed. */
+  gaps?: Gap[];
   spawns: Spawn[];
   bounds: Bounds;
   goals: Goal[];
@@ -43,15 +52,16 @@ export type ParkLevel = Level & {
 };
 
 export function parkLevel(spec: ParkSpec): ParkLevel {
-  const zone = zoneData(spec.zone), raw = heightmapTerrain(zone, zone.realRadius / PLAY_RADIUS), relief = spec.relief ?? 0.35;
+  const zone = zoneData(spec.zone), raw = heightmapTerrain(zone, TERRAIN_SCALE), relief = spec.relief ?? RELIEF;
   const scaled: Terrain = { R: raw.R, height: (x, z) => raw.height(x, z) * relief };
-  const ground = withPads(scaled, spec.sites.map(({ x, z, r }) => ({ x, z, r })), spec.skirt ?? 10);
-  const parts = join(...spec.sites.flatMap((s) => s.parts.map((p) => lift(p, scaled.height(s.x, s.z)))));
-  const inner = makeLevel({ name: spec.name, pieces: parts.pieces, rails: parts.rails, obstacles: spec.trees ?? [], spawns: spec.spawns, bounds: spec.bounds });
-  const height = (x: number, z: number) => Math.max(ground.height(x, z), inner.height(x, z));
+  const pads = spec.sites.flatMap((s) => (s.pad ? [s.pad] : []));
+  const ground = pads.length ? withPads(scaled, pads, spec.skirt ?? 10) : scaled;
+  const parts = join(...spec.sites.flatMap((s) => s.parts.map((p) => (s.pad ? lift(p, scaled.height(s.pad.x, s.pad.z)) : drape(p, ground.height)))));
   const trees = spec.trees ?? [];
+  const inner = makeLevel({ name: spec.name, pieces: parts.pieces, rails: parts.rails, obstacles: trees, spawns: spec.spawns, bounds: spec.bounds });
+  const height = (x: number, z: number) => Math.max(ground.height(x, z), inner.height(x, z));
   return {
-    ...inner, height, id: spec.id, blurb: spec.blurb, ground, gaps: parts.gaps, goals: spec.goals, trees,
+    ...inner, height, id: spec.id, blurb: spec.blurb, ground, gaps: [...parts.gaps, ...(spec.gaps ?? [])], goals: spec.goals, trees,
     pickups: (spec.pickups ?? []).map((p) => ({ x: p.x, z: p.z, y: height(p.x, p.z) + (p.lift ?? 1) })),
   };
 }

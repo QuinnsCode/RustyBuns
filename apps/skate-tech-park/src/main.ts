@@ -1,8 +1,9 @@
 // The page: draws the sim, turns keys into its input, and keeps the chase camera behind the rider.
-import { Car, createElement, PersonStanding, RotateCcw } from "lucide";
+import { Car, createElement, RectangleHorizontal, RotateCcw } from "lucide";
 import * as THREE from "three";
-import { roadster, skater, type Thruster } from "./models.ts";
+import { fingerboard, roadster, type Thruster } from "./models.ts";
 import { Plumes } from "./render/plumes.ts";
+import { Skins } from "./render/skins.ts";
 import { railY } from "./level.ts";
 import { DT, IDLE, type Input, type Mode, start, step, type State } from "./sim.ts";
 import { HALF } from "./levels/plaza.ts";
@@ -125,9 +126,11 @@ for (let i = 0; i < 28; i++) {
   decor.add(m);
 }
 
-const car = roadster(), board = skater();
+const car = roadster();
+const PIVOT_Y = { fingerboard: 0.45, roadster: 0.6 }; // what a flip turns about
+const skins = new Skins({ fingerboard: fingerboard(), roadster: car }, "roadster", PIVOT_Y);
 const plumes = new Plumes();
-scene.add(car, board, plumes.puffs.points);
+scene.add(skins.root, plumes.puffs.points);
 const thrusters = car.userData.thrusters as Thruster[];
 const plate = car.userData.plate as THREE.Group;
 
@@ -178,8 +181,9 @@ function swap() {
   hud();
 }
 function hud() {
-  swapBtn.replaceChildren(icon(mode === "car" ? PersonStanding : Car));
-  swapBtn.title = mode === "car" ? "Skate (Tab)" : "Roadster (Tab)";
+  swapBtn.replaceChildren(icon(mode === "car" ? RectangleHorizontal : Car));
+  swapBtn.title = mode === "car" ? "Fingerboard (Tab)" : "Roadster (Tab)";
+  if (skins.show(mode === "car" ? "roadster" : "fingerboard")) plumes.landed(sim.x, sim.y, sim.z, 4); // the swap pops in a ring of puffs
   $("keys").innerHTML = "<kbd>W</kbd><kbd>S</kbd> push <kbd>A</kbd><kbd>D</kbd> steer, spin in the air <kbd>Space</kbd> ollie <kbd>F</kbd> kickflip <kbd>G</kbd> heelflip <kbd>V</kbd> shove-it (or drag the mouse or push the right stick: up ollies, across and down flick) <kbd>Shift</kbd> rear jets, and pump a transition <kbd>E</kbd> suction fan";
 }
 hud();
@@ -202,25 +206,20 @@ function frame(now: number) {
     if (was && !sim.air) landVy = vy;
   }
 
-  const rider = mode === "car" ? car : board;
-  car.visible = mode === "car";
-  board.visible = mode === "skate";
   const dt = Math.min((now - lastFrame) / 1000, 0.1);
   lastFrame = now;
+  skins.update(dt);
+  // Both skins ride the same pose; a flip or a grind turns whichever one is showing.
+  const rider = skins.root, pivot = skins.pivot();
   rider.position.set(sim.x, sim.y, sim.z);
-  rider.rotation.set(0, sim.yaw, 0);
+  rider.rotation.set(0, sim.yaw + (sim.grind >= 0 ? sim.grindOff : 0), 0);
   if (sim.bail > 0) rider.rotation.z = mode === "car" ? Math.sin(sim.bail * 30) * 0.08 : 1.3;
-  if (mode === "skate") {
-    const b = board.userData.board as THREE.Group, body = board.userData.body as THREE.Group;
-    const turn = sim.flipT > 0 ? (1 - sim.flipT / 0.45) * Math.PI * 2 : 0;
-    b.rotation.set(0, sim.flipKind === "shove-it" ? turn / 2 : 0, sim.flipKind === "heelflip" ? -turn : sim.flipKind === "kickflip" ? turn : 0);
-    board.rotation.y += sim.grind >= 0 ? sim.grindOff : 0;
-    b.position.y = sim.flipT > 0 ? 0.25 : 0;
-    body.position.y = sim.air ? 0.15 : 0;
-    body.scale.y = sim.air || sim.grind >= 0 ? 0.85 : 1;
-  } else {
+  const turn = sim.flipT > 0 ? (1 - sim.flipT / 0.45) * Math.PI * 2 : 0;
+  pivot.rotation.set(0, sim.flipKind === "shove-it" ? turn / 2 : 0, sim.flipKind === "heelflip" ? -turn : sim.flipKind === "kickflip" ? turn : 0);
+  pivot.position.y = PIVOT_Y[skins.current] + (sim.flipT > 0 ? 0.25 : 0);
+  {
     const f = sim.firing;
-    plumes.update(dt, thrusters, thrusters.map((t) => (t.group === "rear" ? f.rear : t.group === "lift" ? f.lift : t.group === "spinL" ? f.spin === 1 : f.spin === -1)), sim.vx, sim.vy, sim.vz);
+    plumes.update(dt, thrusters, thrusters.map((t) => (mode === "car" && (t.group === "rear" ? f.rear : t.group === "lift" ? f.lift : t.group === "spinL" ? f.spin === 1 : f.spin === -1))), sim.vx, sim.vy, sim.vz);
     if (landVy) plumes.landed(sim.x, sim.y, sim.z, Math.abs(landVy));
     plate.rotation.x = THREE.MathUtils.lerp(plate.rotation.x, sim.plateDown ? -Math.PI * 0.95 : 0, 0.3);
   }
