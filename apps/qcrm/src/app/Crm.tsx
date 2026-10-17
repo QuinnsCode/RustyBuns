@@ -476,6 +476,8 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
   const [hookUrl, setHookUrl] = useState("");
   const [hookErr, setHookErr] = useState("");
   const [inviteErr, setInviteErr] = useState("");
+  const [seeding, setSeeding] = useState("");
+  const [seedBusy, setSeedBusy] = useState(false);
   const base = `/orgs/${org.id}`;
   const refresh = useCallback(() => {
     api(`${base}/members`).then((r) => setMembers(rowsOf(r))).catch(() => {});
@@ -540,7 +542,12 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
         <h3><Icon name="download" /> Your data</h3>
         <div className="row">
           {can("owner") && <a className="btn" href={`/api${base}/export`} download={`qcrm-${org.id}.json`}><Icon name="download" /> Export every row</a>}
-          {can("owner") && <button type="button" onClick={() => { const n = Number(prompt("Seed how many contacts? (up to 100000)", "1000")); if (n > 0) act(async () => { await api(`${base}/seed`, { method: "POST", body: JSON.stringify({ n }) }); await reload(); setMsg(`Seeded ${n.toLocaleString()} contacts. Open Contacts to see them.`); }); }}><Icon name="flask-conical" /> Seed sample data</button>}
+          {can("owner") && !seeding && <button type="button" onClick={() => setSeeding("1000")}><Icon name="flask-conical" /> Seed sample data</button>}
+          {can("owner") && seeding && <form className="row" onSubmit={(e) => { e.preventDefault(); const n = Math.floor(Number(seeding)); if (!(n > 0 && n <= 100000)) { setMsg("Seed between 1 and 100,000 contacts."); return; } act(async () => { setSeedBusy(true); try { await api(`${base}/seed`, { method: "POST", body: JSON.stringify({ n }) }); await reload(); setMsg(`Seeded ${n.toLocaleString()} contacts. Open Contacts to see them.`); setSeeding(""); } finally { setSeedBusy(false); } }); }}>
+            <input type="number" min={1} max={100000} aria-label="How many contacts (up to 100,000)" value={seeding} onChange={(e) => setSeeding(e.target.value)} disabled={seedBusy} autoFocus />
+            <button type="submit" disabled={seedBusy}><Icon name="flask-conical" /> {seedBusy ? "Seeding..." : "Seed"}</button>
+            <button type="button" disabled={seedBusy} onClick={() => setSeeding("")}>Cancel</button>
+          </form>}
           <span className="grow" />
           <button type="button" style={{ color: "var(--bad)" }} onClick={() => { const c = prompt(`Delete your account, the orgs you own and all their rows? Type your email to confirm.`); if (c) act(() => api(`/me?confirm=${encodeURIComponent(c)}`, { method: "DELETE" }).then(() => { location.href = "/"; })); }}>Delete my account</button>
         </div>
