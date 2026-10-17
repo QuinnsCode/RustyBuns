@@ -674,7 +674,7 @@ function buildWooka(hero: boolean, role: WookaRole | "warbur" = "fodder") {
       k.add(body, ball(0.014, 6, 4), W.nose, { x: x + 0.02, y: 0.79 - Math.abs(i - 2) * 0.03, z: z - 0.05 });
     }
   }
-  return k.bake("wooka", { hero });
+  return k.bake("wooka", { hero, role });
 }
 
 export function wooka(hero = false, role: WookaRole | "warbur" = "fodder") {
@@ -958,15 +958,16 @@ export interface Motion {
   dt: number;     // since the last frame
   moved: number;  // metres covered since the last frame
   since: number;  // seconds since it last fired or swung
+  call?: number;  // seconds since it last bellowed (sfx.howl and the like); a Wooka rears up and beats its chest
 }
-interface Pose { base: Map<THREE.Object3D, { p: THREE.Vector3; q: THREE.Quaternion }>; joints: Record<string, THREE.Object3D>; phase: number; walk: number; speed: number }
+interface Pose { base: Map<THREE.Object3D, { p: THREE.Vector3; q: THREE.Quaternion; s: THREE.Vector3 }>; joints: Record<string, THREE.Object3D>; phase: number; walk: number; speed: number }
 const poses = new WeakMap<THREE.Object3D, Pose>();
 const e = new THREE.Euler(), dq = new THREE.Quaternion();
 function poseOf(g: THREE.Object3D): Pose {
   let p = poses.get(g);
   if (!p) {
-    const joints: Record<string, THREE.Object3D> = {}, base = new Map<THREE.Object3D, { p: THREE.Vector3; q: THREE.Quaternion }>();
-    g.traverse((o) => { if (o.name) { joints[o.name] = o; base.set(o, { p: o.position.clone(), q: o.quaternion.clone() }); } });
+    const joints: Record<string, THREE.Object3D> = {}, base = new Map<THREE.Object3D, { p: THREE.Vector3; q: THREE.Quaternion; s: THREE.Vector3 }>();
+    g.traverse((o) => { if (o.name) { joints[o.name] = o; base.set(o, { p: o.position.clone(), q: o.quaternion.clone(), s: o.scale.clone() }); } });
     poses.set(g, (p = { base, joints, phase: (g.id * 1.7) % 6.28, walk: 0, speed: 0 }));
   }
   return p;
@@ -978,6 +979,12 @@ function set(p: Pose, name: string, rx = 0, ry = 0, rz = 0, dx = 0, dy = 0, dz =
   j.position.set(b.p.x + dx, b.p.y + dy, b.p.z + dz);
   j.quaternion.copy(b.q).multiply(dq.setFromEuler(e.set(rx, ry, rz)));
 }
+// Stretches a joint to a multiple of its rest size: a squash on landing, a breath in.
+function fat(p: Pose, name: string, x = 1, y = 1, z = 1) {
+  const j = p.joints[name], b = j && p.base.get(j);
+  if (j && b) j.scale.set(b.s.x * x, b.s.y * y, b.s.z * z);
+}
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const ease = (from: number, to: number, rate: number, dt: number) => from + (to - from) * (1 - Math.exp(-rate * dt));
 
 // Poses a model from what its unit is doing this frame.
@@ -988,41 +995,72 @@ export function animate(g: THREE.Object3D, m: Motion) {
   const a = p.walk, t = m.t;
   if (model === "marine") {
     p.phase += (m.moved / 1.7) * Math.PI * 2;
-    const s = Math.sin(p.phase), c = Math.cos(p.phase);
-    set(p, "legL", s * 0.6 * a);
-    set(p, "legR", -s * 0.6 * a);
-    set(p, "kneeL", -a * (0.1 + 0.9 * Math.max(0, c)));
-    set(p, "kneeR", -a * (0.1 + 0.9 * Math.max(0, -c)));
+    const s = Math.sin(p.phase), c = Math.cos(p.phase), id = g.id, idle = 1 - a;
+    // Past a walk the Marine breaks into a run: leans in, longer strides, arms pumping.
+    const run = clamp01((p.speed - 4.5) / 3.5), stride = 0.6 + 0.35 * run;
     const kick = m.since < 0.15 ? 1 - m.since / 0.15 : 0;
-    set(p, "hips", 0, 0, 0, 0, -a * 0.06 * Math.abs(s) - a * 0.02);
-    set(p, "torso", 0.1 * a - kick * 0.06, s * 0.1 * a, 0, 0, Math.sin(t * 2) * 0.006);
-    set(p, "head", -0.08 * a, -s * 0.08 * a);
+    // Standing about, weight goes from one foot to the other.
+    const shift = Math.sin(t * 0.45 + id) * idle;
+    set(p, "legL", s * stride * a, 0, shift * 0.04);
+    set(p, "legR", -s * stride * a, 0, shift * 0.04);
+    // The knee that comes forward bends high; the firing Marine takes the recoil in the knees.
+    set(p, "kneeL", -a * (0.1 + (0.9 + 0.4 * run) * Math.max(0, c)) - kick * 0.1);
+    set(p, "kneeR", -a * (0.1 + (0.9 + 0.4 * run) * Math.max(0, -c)) - kick * 0.1);
+    // Hips turn against the shoulders as the stride goes, and drop with each footfall.
+    set(p, "hips", 0, -s * 0.1 * a, shift * 0.05 + s * 0.03 * a, 0, -a * 0.06 * Math.abs(s) - a * 0.02 - kick * 0.03 - run * 0.04);
+    set(p, "torso", -0.05 * a - 0.2 * run + kick * 0.07, s * 0.12 * a, -shift * 0.03, 0, Math.sin(t * 2 + id) * 0.007);
+    // Idle, the head scans the treeline (and does a double take); on the move it looks where it's going.
+    const scan = (Math.sin(t * 0.5 + id) + 0.5 * Math.sin(t * 1.3 + id * 2)) * 0.3 * idle;
+    set(p, "head", -0.06 * a - 0.12 * run + kick * 0.04, -s * 0.08 * a + scan, Math.sin(t * 0.7 + id) * 0.04 * idle);
     set(p, "gun", 0, 0, 0, 0, 0, kick * 0.07);
+    // The arms ride the recoil with the gun, and pump a little in a run.
+    set(p, "armL", -kick * 0.14 - s * 0.08 * run, 0, s * 0.03 * a);
+    set(p, "armR", -kick * 0.14 + s * 0.08 * run, 0, s * 0.03 * a);
+    set(p, "elbowL", -kick * 0.1);
+    set(p, "elbowR", -kick * 0.1);
     // The antennas lag behind the walk and wobble on their own.
     for (let i = 0; i < 3; i++) {
-      const w = 0.04 + 0.16 * a;
-      set(p, `ant${i}`, 0.08 * a + Math.cos(t * (4 + i)) * w * 0.7, 0, Math.sin(t * (5 + i) + i) * w);
+      const w = 0.04 + 0.16 * a + 0.1 * run;
+      set(p, `ant${i}`, 0.08 * a + kick * 0.15 + Math.cos(t * (4 + i)) * w * 0.7, 0, Math.sin(t * (5 + i) + i) * w);
       set(p, `ant${i}b`, Math.cos(t * (4 + i) - 0.6) * w, 0, Math.sin(t * (5 + i) + i - 0.6) * w * 1.4);
     }
   } else if (model === "wooka") {
-    // A waddle: short fast steps, rocking side to side, bouncing.
+    // A waddle: short fast steps, rocking side to side, bouncing. Flat out, it leans in and
+    // charges like a gorilla.
     p.phase += (m.moved / 1.0) * Math.PI * 2;
-    const s = Math.sin(p.phase);
-    set(p, "body", 0.14 * a, 0, s * 0.16 * a, 0, a * Math.abs(s) * 0.13);
+    const s = Math.sin(p.phase), id = g.id, role = g.userData.role as string, idle = 1 - a;
+    const run = clamp01((p.speed - 4.5) / 3);
+    // A call (m.call) lasts a second and a half: it rears up, throws its head back and beats its chest.
+    const call = m.call ?? 9, roar = call < 1.5 ? Math.sqrt(Math.sin(Math.PI * clamp01(call / 1.5))) : 0;
+    const beat = roar * (0.5 + 0.5 * Math.sin(call * 26));
+    // A strike: wind up, then throw the whole body at the target.
+    const swing = m.since < 0.4 ? m.since / 0.4 : 1, lunge = swing > 0.3 && swing < 1 ? Math.sin(((swing - 0.3) / 0.7) * Math.PI) : 0;
+    set(p, "body", -(0.1 * a + 0.3 * run) + 0.5 * roar - lunge * 0.3, 0, s * 0.16 * a * (1 - 0.5 * run), 0, a * Math.abs(s) * 0.13 + roar * 0.04, -lunge * 0.25);
+    // Squash and stretch: a breath standing still, a squash on every footfall, taller in the rear-up.
+    const sy = 1 + Math.sin(t * 2.2 + id) * 0.02 * idle + (Math.abs(s) - 0.5) * 0.07 * a + roar * 0.08;
+    fat(p, "body", 1 / Math.sqrt(sy), sy, 1 / Math.sqrt(sy));
     set(p, "footL", s * 0.8 * a, 0, 0, 0, Math.max(0, s) * 0.08 * a);
     set(p, "footR", -s * 0.8 * a, 0, 0, 0, Math.max(0, -s) * 0.08 * a);
-    set(p, "armL", -s * 0.6 * a - 0.2 * a);
-    // The club comes up over the head and down hard.
-    const swing = m.since < 0.4 ? m.since / 0.4 : 1, rest = 0.35 + Math.sin(t * 3 + g.id) * 0.08;
+    // The free arm swings with the stride, and drums on the chest in a call.
+    set(p, "armL", -s * 0.6 * a - 0.2 * a - roar * 0.9 - beat * 0.5, 0, roar * 0.45 + beat * 0.15);
+    // The club comes up over the head and down hard, and goes straight up for a call.
+    const rest = 0.35 + Math.sin(t * 3 + id) * 0.08;
     const club = swing < 0.35 ? rest + (2.7 - rest) * (swing / 0.35) : swing < 1 ? 2.7 - 1.9 * ((swing - 0.35) / 0.65) : rest;
-    set(p, "armR", club);
-    // The head tilts, slowly, the way a thing does when it's working out if you're food.
-    set(p, "head", -0.1 * a, Math.sin(t * 0.6 + g.id) * 0.2 * (1 - a), Math.sin(t * 0.9 + g.id) * 0.18 * (1 - a));
+    set(p, "armR", club + (2.7 - club) * roar);
+    if (role === "boomie" && a > 0.3) {
+      // A lit keg on its back: it runs with both arms in the air.
+      set(p, "armL", -2.5 + Math.sin(t * 16 + id) * 0.4, 0, 0.3);
+      set(p, "armR", -2.5 + Math.cos(t * 16 + id) * 0.4, 0, -0.3);
+    }
+    if (role === "shanti") set(p, "armL", -s * 0.2 * a - 1.5 * Math.sin(Math.PI * clamp01(m.since / 0.7)) - roar * 1.2, 0, 0.1 + roar * 0.2); // the staff goes up to cast
+    // The head tilts, slowly, the way a thing does when it's working out if you're food; it bobs
+    // on the run, and goes back with the roar.
+    set(p, "head", -0.1 * a - 0.12 * run + 0.75 * roar + Math.sin(p.phase * 2) * 0.05 * a, Math.sin(t * 0.6 + id) * 0.2 * idle, Math.sin(t * 0.9 + id) * 0.18 * idle);
     // The war flag streams back behind a run and flaps in its own time.
-    set(p, "flag", 0.15 * a + Math.sin(t * 2 + g.id) * 0.04, 0, Math.cos(t * 2.4 + g.id) * 0.05);
-    set(p, "flagB", 0, Math.sin(t * 7 + g.id) * (0.2 + 0.3 * a), Math.sin(t * 5 + g.id) * 0.1);
-    set(p, "earL", 0, 0, 0.15 + Math.sin(t * 3 + g.id) * 0.08 + s * 0.2 * a);
-    set(p, "earR", 0, 0, -0.15 - Math.sin(t * 2.6 + g.id) * 0.08 + s * 0.2 * a);
+    set(p, "flag", 0.15 * a + 0.25 * run + Math.sin(t * 2 + id) * 0.04, 0, Math.cos(t * 2.4 + id) * 0.05);
+    set(p, "flagB", 0, Math.sin(t * 7 + id) * (0.2 + 0.3 * a), Math.sin(t * 5 + id) * 0.1);
+    set(p, "earL", 0, 0, 0.15 + Math.sin(t * 3 + id) * 0.08 + s * 0.2 * a + roar * 0.5);
+    set(p, "earR", 0, 0, -0.15 - Math.sin(t * 2.6 + id) * 0.08 + s * 0.2 * a - roar * 0.5);
   } else if (model === "mossback") {
     // Knuckle-running: the fists land in turn, the great back rocks, and the head stays level.
     // Fast enough (the leap) and it stretches out, arms thrown forward and legs kicked back. A
@@ -1031,10 +1069,13 @@ export function animate(g: THREE.Object3D, m: Motion) {
     const s = Math.sin(p.phase), c = Math.cos(p.phase), leap = Math.min(1, Math.max(0, (p.speed - 14) / 6));
     const swing = m.since < 0.7 ? m.since / 0.7 : 1;
     const slam = swing < 0.3 ? -2.5 * (swing / 0.3) : swing < 1 ? -2.5 + 2.2 * ((swing - 0.3) / 0.7) : 0;
-    set(p, "body", (-0.12 * leap) + Math.sin(t * 1.4 + g.id) * 0.02 + 0.08 * a * s * s, s * 0.1 * a, s * 0.06 * a, 0, a * Math.abs(c) * 0.12 + leap * 0.2);
-    set(p, "head", 0.1 * leap - 0.05 * a, Math.sin(t * 0.7 + g.id) * 0.25 * (1 - a), Math.sin(t * 1.1 + g.id) * 0.1 * (1 - a));
-    set(p, "armL", -s * 0.9 * a - 0.1 + slam - 2.4 * leap);
-    set(p, "armR", s * 0.9 * a - 0.1 + slam - 2.4 * leap);
+    // A call: it rears up and hammers its chest with both fists, one then the other.
+    const call = m.call ?? 9, roar = call < 2 ? Math.sqrt(Math.sin(Math.PI * clamp01(call / 2))) : 0;
+    set(p, "body", (-0.12 * leap) + Math.sin(t * 1.4 + g.id) * 0.02 + 0.08 * a * s * s + 0.8 * roar, s * 0.1 * a, s * 0.06 * a, 0, a * Math.abs(c) * 0.12 + leap * 0.2 + roar * 0.15);
+    fat(p, "body", 1, 1 + Math.sin(t * 1.6 + g.id) * 0.015 * (1 - a) + roar * 0.06, 1); // it heaves, breathing
+    set(p, "head", 0.1 * leap - 0.05 * a + 0.9 * roar, Math.sin(t * 0.7 + g.id) * 0.25 * (1 - a), Math.sin(t * 1.1 + g.id) * 0.1 * (1 - a));
+    set(p, "armL", -s * 0.9 * a - 0.1 + slam - 2.4 * leap - roar * (1.5 + 0.7 * Math.sin(call * 18)), 0, roar * 0.3);
+    set(p, "armR", s * 0.9 * a - 0.1 + slam - 2.4 * leap - roar * (1.5 - 0.7 * Math.sin(call * 18)), 0, -roar * 0.3);
     set(p, "foreL", -Math.max(0, -s) * 0.7 * a - 0.15 * (1 - leap));
     set(p, "foreR", -Math.max(0, s) * 0.7 * a - 0.15 * (1 - leap));
     set(p, "legL", s * 0.7 * a + leap * 1.0);

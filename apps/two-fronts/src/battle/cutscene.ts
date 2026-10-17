@@ -11,7 +11,7 @@ import type { WookaRole, Trooper } from "./sim.ts";
 // What an actor is drawn as: a Marine of a class, or a Wooka of a kind.
 export type Actor = { marine: Trooper } | { wooka: WookaRole | "warbur" };
 export type Vec = [number, number, number]; // x, height, z
-export type Noise = "chatter" | "whoop" | "squeal" | "grunt" | "boom" | "chime" | "warn" | "drum";
+export type Noise = "chatter" | "hoot" | "bark" | "howl" | "thump" | "whoop" | "squeal" | "grunt" | "boom" | "chime" | "warn" | "drum";
 
 export type Cue =
   | { at: number; do: "actor"; id: string; as: Actor; x: number; z: number; face?: number; scale?: number }
