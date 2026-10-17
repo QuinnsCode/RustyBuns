@@ -235,7 +235,7 @@ function Sheet({ entity, row, onClose, onSave, onDelete, canEdit }: { entity: st
   );
 }
 
-/** Start of the week bucket `ago` weeks back, as "Oct 9". */
+/** Date `ago` weeks back, as "Oct 9": the axis label of that week bucket. */
 const weekLabel = (ago: number) => new Date(Date.now() - ago * 7 * 86_400_000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
 function Insights({ org }: { org: string }) {
