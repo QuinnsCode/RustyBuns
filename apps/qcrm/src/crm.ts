@@ -67,8 +67,8 @@ export const shape = (entity: Entity, r: Row) => ("tags" in ENTITIES[entity]!.fi
 export const getRow = (env: Env, org: string, entity: Entity, id: string, includeDeleted = false) =>
   env.DB.prepare(`SELECT * FROM ${entity} WHERE org_id = ? AND id = ?${includeDeleted ? "" : " AND deleted_at IS NULL"}`).bind(org, id).first();
 
-const cursorOf = (r: Row) => b64url(new TextEncoder().encode(JSON.stringify([r.updated_at, r.id])));
-const parseCursor = (c: string | null): [number, string] | null => {
+export const cursorOf = (r: Row, col = "updated_at") => b64url(new TextEncoder().encode(JSON.stringify([r[col], r.id])));
+export const parseCursor = (c: string | null): [number, string] | null => {
   if (!c) return null;
   try { const v = JSON.parse(atob(c.replace(/-/g, "+").replace(/_/g, "/"))); return Number.isInteger(v[0]) && typeof v[1] === "string" ? [v[0], v[1]] : null; } catch { return null; }
 };

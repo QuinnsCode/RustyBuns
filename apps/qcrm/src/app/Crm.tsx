@@ -357,15 +357,24 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
   const [hooks, setHooks] = useState<Row[]>([]);
   const [keys, setKeys] = useState<Row[]>([]);
   const [audit, setAudit] = useState<Row[]>([]);
+  const [auditNext, setAuditNext] = useState<string | null>(null);
+  const [auditAction, setAuditAction] = useState("");
   const [fresh, setFresh] = useState("");
   const [msg, setMsg] = useState("");
   const base = `/orgs/${org.id}`;
   const refresh = useCallback(() => {
     api(`${base}/members`).then((r) => setMembers(rowsOf(r))).catch(() => {});
     if (can("owner")) { api(`${base}/webhooks`).then((r) => setHooks(r.webhooks ?? rowsOf(r))).catch(() => {}); api(`${base}/keys`).then((r) => setKeys(rowsOf(r))).catch(() => {}); }
-    if (can("manager")) api(`${base}/audit`).then((r) => setAudit(rowsOf(r))).catch(() => {});
   }, [base, can]);
   useEffect(refresh, [refresh]);
+  const loadAudit = useCallback((more: string | null) => {
+    if (!can("manager")) return;
+    const q = new URLSearchParams({ limit: "50" });
+    if (auditAction.trim()) q.set("action", auditAction.trim());
+    if (more) q.set("cursor", more);
+    api(`${base}/audit?${q}`).then((r) => { setAudit((old) => more ? [...old, ...rowsOf(r)] : rowsOf(r)); setAuditNext(nextOf(r)); }).catch(() => {});
+  }, [base, can, auditAction]);
+  useEffect(() => { loadAudit(null); }, [loadAudit]);
   const act = async (fn: () => Promise<unknown>) => { setMsg(""); try { await fn(); refresh(); } catch (e) { setMsg((e as Error).message); } };
   const mcp = useMemo(() => `claude mcp add --transport http qcrm ${location.origin}/api/mcp --header "Authorization: Bearer ${fresh || "qk_…"}"`, [fresh]);
   return (
@@ -408,9 +417,11 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
         <h3><Icon name="monitor" /> Look and feel</h3>
         <div className="row"><button type="button" onClick={() => theme("light")}>Cream</button><button type="button" onClick={() => theme("dark")}>Blackest black</button><button type="button" onClick={() => theme("auto")}>Follow system</button></div>
       </div>
-      {can("manager") && audit.length > 0 && <div className="card">
+      {can("manager") && (audit.length > 0 || auditAction) && <div className="card">
         <h3><Icon name="scroll-text" /> Audit log</h3>
-        <div className="table"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th></tr></thead><tbody>{audit.slice(0, 50).map((a) => <tr key={a.id}><td>{when(a.at)}</td><td>{a.actor_email ?? a.actor_user_id}</td><td>{a.action}</td><td>{a.target}</td></tr>)}</tbody></table></div>
+        <input value={auditAction} onChange={(e) => setAuditAction(e.target.value)} placeholder="Filter by action, e.g. key or member.role" aria-label="Filter audit log by action" />
+        <div className="table"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th></tr></thead><tbody>{audit.map((a) => <tr key={a.id}><td>{when(a.at)}</td><td>{a.actor_email ?? a.actor_user_id}</td><td>{a.action}</td><td>{a.target}</td></tr>)}</tbody></table></div>
+        {auditNext && <button type="button" onClick={() => loadAudit(auditNext)}>More</button>}
       </div>}
       <div className="card">
         <h3><Icon name="download" /> Your data</h3>

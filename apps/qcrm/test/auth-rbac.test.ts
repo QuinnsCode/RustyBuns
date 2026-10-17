@@ -82,3 +82,30 @@ test("accounts off answers 503; cross-site cookie writes are refused", async () 
   const noOrigin = await handleApi(new Request(`${ORIGIN}/api/orgs`, { method: "POST", body: JSON.stringify({ name: "x" }), headers: { cookie, "sec-fetch-site": "cross-site", "content-type": "application/json" } }), app.env);
   expect(noOrigin.status).toBe(403);
 });
+
+test("the audit log filters by actor, action family and time, and pages by cursor", async () => {
+  const app = await local();
+  const alice = await person(app, "alice@qcrm.test");
+  await person(app, "bob@qcrm.test");
+  const org = alice.org;
+  await post(app, alice.cookie, `/api/orgs/${org}/members`, { email: "bob@qcrm.test" });
+  for (const name of ["a", "b", "c"]) await post(app, alice.cookie, `/api/orgs/${org}/keys`, { name });
+  const get = async (q: string) => (await app(alice.cookie, `/api/orgs/${org}/audit?${q}`)).json();
+
+  const all = (await get("")).items;
+  expect(all.length).toBeGreaterThanOrEqual(4);
+  expect((await get("action=key")).items.map((r: any) => r.action)).toEqual(["key.create", "key.create", "key.create"]);
+  expect((await get("action=key.create&actor=nobody")).items).toEqual([]);
+  expect((await get(`actor=${alice.user.id}&action=member`)).items.every((r: any) => r.action.startsWith("member."))).toBe(true);
+  expect((await get(`since=${Date.now() + 60_000}`)).items).toEqual([]);
+
+  const seen: string[] = [];
+  let cursor = "";
+  for (let i = 0; i < 10; i++) {
+    const page = await get(`limit=2${cursor && `&cursor=${cursor}`}`);
+    seen.push(...page.items.map((r: any) => r.id));
+    if (!page.next) break;
+    cursor = page.next;
+  }
+  expect(seen).toEqual(all.map((r: any) => r.id));
+});

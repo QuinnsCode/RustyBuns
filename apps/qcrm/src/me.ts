@@ -3,9 +3,11 @@
 //   GET    /api/me                          {user, orgs: [{id, name, role}], superAdmin}
 //   DELETE /api/me?confirm=<email>          the account, the orgs it owns and every row of them
 //   GET    /api/orgs/:org/export            every row of the org as one JSON (owner+)
-//   GET    /api/orgs/:org/audit?limit=      who did what to the org (manager+)
+//   GET    /api/orgs/:org/audit?actor=&action=&since=&cursor=&limit=
+//                                          who did what to the org, newest first: {items, next} (manager+)
 
 import type { User } from "./auth.ts";
+import { cursorOf, parseCursor } from "./crm.ts";
 import { error, json, parseJson, type Env } from "./env.ts";
 import { deleteOrg, ensureOwnOrg, listOrgs, orgRow, superAdmin, type Ctx } from "./orgs.ts";
 
@@ -42,9 +44,19 @@ export async function exportRoutes({ req, env, org, p, audit }: Ctx): Promise<Re
     return json(out, 200, { "content-disposition": `attachment; filename="qcrm-${org}.json"` });
   }
   if (p[0] === "audit") {
-    const limit = Math.min(500, Math.max(1, Number(new URL(req.url).searchParams.get("limit")) || 100));
-    const { results } = await env.DB.prepare("SELECT id, actor_user_id, action, target, at, detail FROM audit WHERE org_id = ? ORDER BY at DESC LIMIT ?").bind(org, limit).all();
-    return json(results.map((r) => ({ ...r, detail: parseJson(r.detail, null) })));
+    const q = new URL(req.url).searchParams;
+    const limit = Math.min(500, Math.max(1, Number(q.get("limit")) || 100));
+    const where = ["org_id = ?"], args: unknown[] = [org];
+    const actor = q.get("actor"), action = q.get("action"), since = Number(q.get("since"));
+    if (actor) { where.push("actor_user_id = ?"); args.push(actor); }
+    // "member" matches member.add and member.role; a full name matches only itself.
+    if (action) { where.push("(action = ? OR action LIKE ? ESCAPE '\\')"); args.push(action, action.replace(/[\\%_]/g, (c) => "\\" + c) + ".%"); }
+    if (since > 0) { where.push("at >= ?"); args.push(since); }
+    const cur = parseCursor(q.get("cursor"));
+    if (cur) { where.push("(at < ? OR (at = ? AND id < ?))"); args.push(cur[0], cur[0], cur[1]); }
+    const { results } = await env.DB.prepare(`SELECT id, actor_user_id, action, target, at, detail FROM audit WHERE ${where.join(" AND ")} ORDER BY at DESC, id DESC LIMIT ?`).bind(...args, limit + 1).all();
+    const page = results.slice(0, limit);
+    return json({ items: page.map((r) => ({ ...r, detail: parseJson(r.detail, null) })), next: results.length > limit ? cursorOf(page[limit - 1]!, "at") : null });
   }
   return null;
 }
