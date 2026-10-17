@@ -1,5 +1,6 @@
 // The Blender kit (blender/kit.py) fitted to real levels: still two draw calls, and at every budget the
-// dressed ramps, stairs and blocks show their top where the sim's floor is, on the plaza and on a park's slopes.
+// dressed ramps, stairs, blocks, boulders, logs and hips show their top where the sim's floor is, on the plaza and
+// on a park's slopes.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
 import { LEVELS } from "../src/levels/index.ts";
@@ -13,15 +14,17 @@ const read = (f: string) => Bun.file(new URL(`../public/${f}`, import.meta.url))
 const down = (m: THREE.Object3D, x: number, z: number) =>
   new THREE.Raycaster(new THREE.Vector3(x, 500, z), new THREE.Vector3(0, -1, 0)).intersectObject(m, true)[0]?.point.y;
 
-test.each([...KIT_BUDGETS])("the %s kit dresses ramps, stairs and blocks where the sim rides them", async (budget) => {
+test.each([...KIT_BUDGETS])("the %s kit dresses ramps, stairs, blocks, boulders, logs and hips where the sim rides them", async (budget) => {
   const kit = await loadKit(budget, read);
-  for (const id of ["plaza", "yosemite-falls"]) {
+  const kinds = new Set<string>();
+  for (const id of ["plaza", "yosemite-falls", "half-dome"]) {
     const level = LEVELS.find((e) => e.id === id)!.load(), ground = "ground" in level ? (level as ParkLevel).ground.height : undefined;
     const group = levelMeshes(level, ground, kit);
     expect(group.children.length).toBeLessThanOrEqual(2);
     const dressed = level.pieces.filter((p) => p.look);
     expect(dressed.length).toBeGreaterThan(0);
     for (const p of dressed) {
+      kinds.add(p.look!.kind);
       // Away from a stair's step edges, the seams and the fixed-size trim: the middle of the riding surface.
       for (const [fx, fz] of [[0.2, 0.05], [-0.25, -0.2], [0.1, 0.3]]) {
         const lx = fx * p.w, lz = fz * p.d, x = p.x + lx * Math.cos(p.yaw) + lz * Math.sin(p.yaw), z = p.z - lx * Math.sin(p.yaw) + lz * Math.cos(p.yaw);
@@ -34,6 +37,7 @@ test.each([...KIT_BUDGETS])("the %s kit dresses ramps, stairs and blocks where t
       }
     }
   }
+  expect([...kinds].sort()).toEqual(["block", "bowl", "cliff", "hip", "log", "ramp", "rock", "stairs"]);
 });
 
 test.each([...KIT_BUDGETS])("the %s landscape: a boulder, a rock face that turns to vertical, a log and a pool are drawn where they are ridden", async (budget) => {

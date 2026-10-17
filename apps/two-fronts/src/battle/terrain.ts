@@ -119,6 +119,44 @@ const glowMap = (name: string, long: boolean) => texture(name, 64, long ? 256 : 
   }
 });
 
+// Foliage parts for whoever walks through it, in the vertex shader only (the sim never sees it):
+// each slot is x, y, z and a radius. The view fills them with the units nearest the camera.
+export const PUSHERS = 24;
+export const pushers = Array.from({ length: PUSHERS }, () => new THREE.Vector4(0, -999, 0, 0));
+const foliageClock = { value: 0 };
+// Leaves lean away from a body, more the higher up the leaf, and sway a little in a breeze.
+function bendy<M extends THREE.Material>(mat: M, lo: number, span: number): M {
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uPush = { value: pushers };
+    sh.uniforms.uTime = foliageClock;
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", `#include <common>\nuniform vec4 uPush[${PUSHERS}];\nuniform float uTime;`)
+      .replace("#include <project_vertex>", `
+        vec4 wp = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+        wp = instanceMatrix * wp;
+        #endif
+        wp = modelMatrix * wp;
+        float wgt = clamp((transformed.y - (${lo.toFixed(2)})) / ${span.toFixed(2)}, 0.0, 1.0);
+        wgt *= wgt;
+        vec3 off = vec3(0.0);
+        for (int i = 0; i < ${PUSHERS}; i++) {
+          vec4 pu = uPush[i];
+          vec2 d = wp.xz - pu.xz;
+          float l = length(d);
+          float f = (1.0 - smoothstep(0.0, pu.w, l)) * step(abs(wp.y - pu.y), 6.0);
+          off.xz += d / max(l, 0.01) * f * pu.w * 0.9;
+          off.y -= f * 0.4;
+        }
+        off *= wgt;
+        off.xz += vec2(sin(uTime * 1.3 + wp.x * 0.5), cos(uTime * 1.1 + wp.z * 0.5)) * 0.06 * wgt;
+        vec4 mvPosition = viewMatrix * vec4(wp.xyz + off, 1.0);
+        gl_Position = projectionMatrix * mvPosition;`);
+  };
+  mat.customProgramCacheKey = () => `bend:${lo}:${span}`;
+  return mat;
+}
+
 const std = (color: number, roughness = 0.9, extra: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color, roughness, metalness: 0, ...extra });
 const additive = (map: THREE.Texture | null, color: number, opacity: number) =>
   new THREE.MeshBasicMaterial({ map, color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide });
@@ -257,7 +295,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     for (let i = 0; i < per; i++) fronds.push(frond.clone().rotateX(-0.15 * (i % 3)).rotateY((i / per) * Math.PI * 2 + (i % 2) * 0.3));
     const fernGeo = mergeAll(fronds);
     fernGeo.computeVertexNormals();
-    const leafMat = std(0xffffff, 0.85, { map: frondMap(), alphaTest: 0.45, side: THREE.DoubleSide });
+    const leafMat = bendy(std(0xffffff, 0.85, { map: frondMap(), alphaTest: 0.45, side: THREE.DoubleSide }), 0, 0.9);
     const trunkGeo = jungle
       ? new THREE.LatheGeometry([[0, -0.02], [1.6, -0.02], [1.15, 0.015], [1, 0.04], [0.85, 0.5], [0.6, 1]].map(([x, y]) => new THREE.Vector2(x, y)), 10)
       : new THREE.LatheGeometry([[0, -0.02], [2.1, -0.02], [1.45, 0.008], [1.12, 0.025], [1, 0.05], [0.82, 0.55], [0.5, 1]].map(([x, y]) => new THREE.Vector2(x, y)), 16);
@@ -325,7 +363,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     // flowers on them, a touch toy-like. Thick enough to hide a Wooka's silhouette, never in the way.
     const nBush = jungle ? 90 : 150;
     const puffGeo = lumpy(1, 2, 0.12, 21, true);
-    const puffs = inst(puffGeo, std(0xffffff, 0.8), nBush * 4, true);
+    const puffs = inst(puffGeo, bendy(std(0xffffff, 0.8), -1, 2), nBush * 4, true);
     const dots = inst(new THREE.SphereGeometry(0.16, 6, 4), std(0xffffff, 0.5), nBush * 10, true);
     for (let i = 0, made = 0; i < 1200 && made < nBush; i++) {
       const at = anywhere(1.15);
@@ -606,6 +644,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   return {
     heightAt,
     update(t, eye, at) {
+      foliageClock.value = t;
       sun.target.position.set(at.x, heightAt(at.x, at.z), at.z);
       sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 200);
       sky.position.copy(eye);

@@ -17,8 +17,11 @@ export type Piece = {
   look?: Look;
 };
 
-/** A wooden ramp whose surface runs along z, a concrete block, stairs of `steps` treads `run` deep, a granite rock, a poured pool or a fallen log. */
-export type Look = { kind: "ramp" } | { kind: "block" } | { kind: "rock" } | { kind: "bowl" } | { kind: "log" } | { kind: "stairs"; steps: number; run: number };
+/**
+ * A wooden ramp whose surface runs along z, a concrete block, stairs of `steps` treads `run` deep, a granite boulder,
+ * a fallen log lying along z, or a wooden hip.
+ */
+export type Look = { kind: "ramp" | "block" | "rock" | "log" | "hip" | "cliff" | "bowl" } | { kind: "stairs"; steps: number; run: number };
 
 export type RailKind = "rail" | "ledge" | "coping";
 

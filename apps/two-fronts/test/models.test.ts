@@ -17,7 +17,7 @@ const bounds = (g: THREE.Object3D) => {
 const ground: [string, () => THREE.Group, number][] = [
   ["hero", () => marine(true), 26], ["assault", () => marine(), 26], ["heavy", () => marine(false, "heavy"), 26],
   ["sniper", () => marine(false, "sniper"), 26], ["engineer", () => marine(false, "engineer"), 26],
-  ["wooka", () => wooka(), 12], ["chieftain", () => wooka(true), 12],
+  ["wooka", () => wooka(), 12], ["chieftain", () => wooka(true), 15],
   ["tank", tank, 8], ["walker", walker, 12], ["speeder", speeder, 8], ["gunship", gunship, 12],
   ["gun tower", () => turret("marines"), 6], ["rock-chucker", () => turret("wooka"), 6], ["totem", totem, 6],
 ];

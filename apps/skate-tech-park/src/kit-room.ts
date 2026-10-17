@@ -3,7 +3,7 @@
 // ?kit=hi|mid|low picks the budget, ?kit=built shows the sampled meshes; ?board= works as in the game.
 import * as THREE from "three";
 import { makeLevel } from "./level.ts";
-import { bowl, box, fallenLog, funbox, gap, join, kicker, ledge, outcrop, quarterPipe, rockFace, spine, stairSet, tabletop, type Part } from "./levels/pieces.ts";
+import { bowl, box, fallenLog, funbox, gap, hip, join, kicker, ledge, outcrop, quarterPipe, rockFace, spine, stairSet, tabletop, type Part } from "./levels/pieces.ts";
 import { BOARD_BUDGETS, type BoardBudget, dressBoard, fingerboard } from "./models.ts";
 import { KIT_BUDGETS, type KitBudget, loadKit } from "./render/kit.ts";
 import { levelMeshes } from "./render/pieces.ts";
@@ -38,15 +38,13 @@ const row: ((x: number) => Part)[] = [
   (x) => box({ x, z: 0 }),
   (x) => tabletop({ x, z: 0 }),
   (x) => gap({ x, z: -12 }, { name: "gap", span: 8 }).landing,
+  (x) => outcrop({ x, z: 0 }),
+  (x) => rockFace({ x, z: 0 }, { w: 5, d: 3, h: 1.6 }),
+  (x) => bowl({ x, z: 0 }, { w: 14, d: 10, h: 1.2 }),
+  (x) => fallenLog({ x, z: 0 }),
+  (x) => hip({ x, z: 0 }),
 ];
-// The landscape row, behind: a granite boulder, a rock face that turns to vertical, a fallen log and a pool.
-const land: ((x: number) => Part)[] = [
-  (x) => outcrop({ x, z: 70 }),
-  (x) => rockFace({ x, z: 70 }),
-  (x) => fallenLog({ x, z: 70 }),
-  (x) => bowl({ x, z: 70 }, { w: 24, d: 18 }),
-];
-const part = join(...row.map((f, i) => f((i - (row.length - 1) / 2) * 16)), ...land.map((f, i) => f((i - (land.length - 1) / 2) * 40)));
+const part = join(...row.map((f, i) => f((i - (row.length - 1) / 2) * 16)));
 const level = makeLevel({ name: "kit room", pieces: part.pieces, rails: part.rails, spawns: [], bounds: { minX: -150, maxX: 150, minZ: -150, maxZ: 150 } });
 let meshes = levelMeshes(level);
 scene.add(meshes);
@@ -75,11 +73,8 @@ addEventListener("resize", resize);
 resize();
 // ?at=<index> frames one piece close up; otherwise the camera circles the whole row.
 const at = q.has("at") ? (Number(q.get("at")) - (row.length - 1) / 2) * 16 : null;
-// ?land=<index> frames one landscape piece the same way.
-const landAt = q.has("land") ? (Number(q.get("land")) - (land.length - 1) / 2) * 40 : null;
 renderer.setAnimationLoop((ms) => {
   const a = ms / 9000;
-  if (landAt !== null) { camera.position.set(landAt + Math.cos(a) * 34, 12, 70 + Math.sin(a) * 34); camera.lookAt(landAt, 2, 70); renderer.render(scene, camera); return; }
   if (at === null) camera.position.set(Math.cos(a) * 70, 28, Math.sin(a) * 50 - 10);
   else camera.position.set(at + Math.cos(a) * 16, 7, Math.sin(a) * 16);
   camera.lookAt(at ?? 0, 1.5, 0);

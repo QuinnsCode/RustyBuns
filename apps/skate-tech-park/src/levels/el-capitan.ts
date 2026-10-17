@@ -40,7 +40,6 @@ export const elCapitan: ParkSpec = {
     { name: "return line", x: 90, z: 130, yaw: W },
   ],
   granite: 140,
-  bounds: { minX: -150, maxX: 120, minZ: -70, maxZ: 170 },
   goals: [
     { kind: "score", target: 3000 },
     { kind: "combo", target: 1000 },

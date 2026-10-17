@@ -32,7 +32,6 @@ export const glacierPoint: ParkSpec = {
     { name: "slope", x: 40, z: 40, yaw: E },
     { name: "sky rail", x: -105, z: 95, yaw: E },
   ],
-  bounds: { minX: -150, maxX: 250, minZ: -200, maxZ: 130 },
   goals: [
     { kind: "score", target: 3000 },
     { kind: "combo", target: 1200 },

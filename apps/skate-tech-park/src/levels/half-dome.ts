@@ -35,7 +35,6 @@ export const halfDome: ParkSpec = {
     { name: "sky rail", x: 15, z: 260, yaw: E },
   ],
   granite: 195,
-  bounds: { minX: -250, maxX: 300, minZ: -100, maxZ: 300 },
   goals: [
     { kind: "score", target: 3000 },
     { kind: "combo", target: 1200 },

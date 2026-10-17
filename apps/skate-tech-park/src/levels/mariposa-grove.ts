@@ -35,7 +35,6 @@ export const mariposaGrove: ParkSpec = {
     { name: "clearing", x: 50, z: -90, yaw: 0 },
     { name: "sky rail", x: -125, z: 140, yaw: E },
   ],
-  bounds: { minX: -150, maxX: 120, minZ: -110, maxZ: 160 },
   goals: [
     { kind: "score", target: 2500 },
     { kind: "combo", target: 900 },

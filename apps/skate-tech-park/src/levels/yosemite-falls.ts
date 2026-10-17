@@ -33,7 +33,6 @@ export const yosemiteFalls: ParkSpec = {
     { name: "sky rail", x: -5, z: 215, yaw: E },
   ],
   landmarks: [{ kind: "falls", from: { x: -195, z: -220 }, to: { x: -135, z: -220 }, width: 18 }],
-  bounds: { minX: -300, maxX: 280, minZ: -300, maxZ: 260 },
   goals: [
     { kind: "score", target: 3000 },
     { kind: "combo", target: 1000 },

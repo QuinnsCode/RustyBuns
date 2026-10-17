@@ -37,7 +37,7 @@ export const shape = (kind: PieceKind, name: string, at: At, w: number, d: numbe
   height: (lx, lz) => (Math.abs(lx) > w / 2 || Math.abs(lz) > d / 2 ? 0 : f(lx, lz)),
   ...(look ? { look } : {}),
 });
-const RAMP: Look = { kind: "ramp" }, BLOCK: Look = { kind: "block" }, ROCK: Look = { kind: "rock" }, POOL: Look = { kind: "bowl" }, LOG: Look = { kind: "log" };
+const RAMP: Look = { kind: "ramp" }, BLOCK: Look = { kind: "block" }, ROCK: Look = { kind: "rock" }, LOG: Look = { kind: "log" }, POOL: Look = { kind: "bowl" }, CLIFF: Look = { kind: "cliff" };
 
 export const bar = (kind: RailKind, at: At, lx1: number, lz1: number, lx2: number, lz2: number, y: number, y2?: number): Rail =>
   ({ kind, a: toWorld(at, lx1, lz1), b: toWorld(at, lx2, lz2), y, ...(y2 === undefined ? {} : { y2 }) });
@@ -155,10 +155,11 @@ export const hubba = (at: At, o: { steps?: number; rise?: number; run?: number }
   return join(stairSet(at, { w: 3, steps, rise, run, name: "hubba stairs" }), ledge({ ...toWorld(at, 2.4 * K, 0), yaw: at.yaw }, { len, w: 0.8, h: steps * rise, name: "hubba" }));
 };
 
-/** Four faces meeting in a point: a hip to jump over, or a boulder. */
+/** Four faces meeting in a point: a hip to jump over (wood), or a boulder (granite). Under any other name it keeps the sampled mesh. */
 export const hip = (at: At, o: { w?: number; d?: number; h?: number; name?: string } = {}): Part => {
   const { name = "hip" } = o, w = (o.w ?? 6) * K, d = (o.d ?? 6) * L, h = (o.h ?? 1.2) * K;
-  return part({ pieces: [shape("ramp", name, at, w, d, (lx, lz) => h * clamp01(Math.min(1 - Math.abs(lx) / (w / 2), 1 - Math.abs(lz) / (d / 2))))] });
+  return part({ pieces: [shape("ramp", name, at, w, d, (lx, lz) => h * clamp01(Math.min(1 - Math.abs(lx) / (w / 2), 1 - Math.abs(lz) / (d / 2))),
+    name === "hip" ? { kind: "hip" } : name === "boulder" ? ROCK : undefined)] });
 };
 
 /** Two banks back to back, with coping along the ridge. */
@@ -234,7 +235,7 @@ export const rockFace = (at: At, o: { w?: number; d?: number; h?: number; deck?:
   const tier = (u: number) => tiers.reduce((y, t, i) => y + (i ? (t.h - tiers[i - 1]!.h) * smooth((u - tiers[i - 1]!.to) / 0.05 + 0.5) : t.h), 0);
   const f = (lx: number, lz: number) => { const t = lz + D / 2, H = tier(Math.abs(lx) / half); return t < d ? H * arc(t / d) : H; };
   const z = d - D / 2, edge = (a: number, b: number, hh: number): Rail[] => [bar("coping", at, a * half, z, b * half, z, hh), bar("coping", at, -a * half, z, -b * half, z, hh)];
-  return part({ pieces: [shape("ramp", name, at, w, D, f, ROCK)], rails: [bar("coping", at, -0.28 * half, z, 0.28 * half, z, h), ...edge(0.4, 0.62, tiers[1]!.h), ...edge(0.74, 0.95, tiers[2]!.h)] });
+  return part({ pieces: [shape("ramp", name, at, w, D, f, CLIFF)], rails: [bar("coping", at, -0.28 * half, z, 0.28 * half, z, h), ...edge(0.4, 0.62, tiers[1]!.h), ...edge(0.74, 0.95, tiers[2]!.h)] });
 };
 
 /** A geyser cone: a mound rising to a rim with a crater sunk in the middle, to ride round the lip of. */
