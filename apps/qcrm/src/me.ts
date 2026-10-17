@@ -23,6 +23,8 @@ export async function meRoutes(req: Request, env: Env, url: URL, user: User): Pr
   await env.DB.batch([
     env.DB.prepare("DELETE FROM memberships WHERE user_id = ?").bind(user.id),
     env.DB.prepare("DELETE FROM api_keys WHERE user_id = ?").bind(user.id),
+    env.DB.prepare("DELETE FROM oauth_grants WHERE user_id = ?").bind(user.id),
+    env.DB.prepare("DELETE FROM oauth_requests WHERE user_id = ?").bind(user.id),
     env.DB.prepare('DELETE FROM "session" WHERE "userId" = ?').bind(user.id),
     env.DB.prepare('DELETE FROM "account" WHERE "userId" = ?').bind(user.id),
     env.DB.prepare('DELETE FROM "user" WHERE id = ?').bind(user.id),
