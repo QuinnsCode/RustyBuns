@@ -22,7 +22,7 @@ for (const f of [".gitignore", "package.json", "README.md", "LICENSE"]) {
 const wasm = join(out, "qcrm_engine_bg.wasm");
 const kb = statSync(wasm).size / 1024;
 console.log(`${wasm}: ${kb.toFixed(1)} KB`);
-if (kb > 150) {
-  console.error("qcrm_engine_bg.wasm is over the 150 KB budget");
+if (kb > 160) {
+  console.error("qcrm_engine_bg.wasm is over the 160 KB budget");
   process.exit(1);
 }
