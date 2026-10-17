@@ -6,7 +6,7 @@ interface Step { at: string; title: string; body: string; go?: string; wait?: nu
 
 const STEPS: Step[] = [
   { at: "#hero", title: "A CRM your agents can use", body: "The wave is a Rust program compiled to wasm, drawing pixels in your browser. The words around it are plain HTML, so search engines read the pitch." },
-  { at: "#edge", title: "What a CRM doesn't offer", body: "MCP for agents, a Rust engine for analysis, a free desktop app, office sync, signed webhooks, hashed orgs. Each card is a thing that ships today." },
+  { at: "#edge", title: "What you get", body: "MCP for agents, a Rust engine for analysis, a free desktop app, office sync, signed webhooks, hashed orgs. Each card is a thing that ships today." },
   { at: "#mcp", title: "Two lines to connect Claude", body: "An owner mints a key, pastes one command, and every API operation is a tool. Risky ones say so." },
   { at: "#cta-demo", title: "Now the real thing", body: "The demo is the site inside the site: a throwaway org with 2,000 contacts. Let's go.", go: "/demo" },
   { at: "#demo-frame", title: "The site, inside the site", body: "That banner is honest: this frame is a real qCRM org on a throwaway account. The frame is loading your demo; give it a moment, then open it full-screen for the rest of the tour.", go: "/app?demo=1&tour=1", wait: 2500 },
@@ -84,6 +84,11 @@ export function mountTour() {
   if (typeof document === "undefined") return;
   document.addEventListener("click", (e) => {
     if ((e.target as HTMLElement).closest?.("[data-tour-start]")) { save({ i: 0 }); show(); }
+    const copy = (e.target as HTMLElement).closest?.("[data-copy]") as HTMLElement | null;
+    if (copy) {
+      const text = document.querySelector(copy.dataset.copy!)?.textContent ?? "";
+      navigator.clipboard?.writeText(text).then(() => { copy.title = "Copied"; setTimeout(() => { copy.title = "Copy"; }, 1500); }).catch(() => {});
+    }
   });
   const q = new URLSearchParams(location.search);
   if (q.get("tour") === "1" && !read()) save({ i: location.pathname.startsWith("/app") ? 5 : 0 });

@@ -133,6 +133,9 @@ td .num { color: var(--dim); }
 .empty { color: var(--dim); padding: 32px; text-align: center; }
 .list { display: grid; gap: 8px; }
 .list .card { padding: 12px 14px; }
+.codebox { position: relative; }
+.codebox .copy { position: absolute; top: 8px; right: 8px; padding: 6px; }
+.codebox pre.code { padding-right: 52px; }
 pre.code { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 12px; overflow: auto; font-size: 13px; margin: 0; }
 .muted { color: var(--dim); font-size: 13px; }
 .spark { display: flex; align-items: flex-end; gap: 3px; height: 48px; }

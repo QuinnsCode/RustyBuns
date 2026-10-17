@@ -1,5 +1,6 @@
 // A few lucide icons as inline SVG (24-unit grid, stroke), so the page loads no icon font. Names are lucide's.
 const PATHS: Record<string, string> = {
+  copy: "M8 8h12v12H8zM4 16V4h12",
   plug: "M12 22v-5M9 8V2M15 8V2M18 8H6a2 2 0 0 0-2 2v2a6 6 0 0 0 12 0v-2a2 2 0 0 0-2-2z",
   cpu: "M4 4h16v16H4zM9 9h6v6H9zM9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3",
   monitor: "M2 3h20v14H2zM8 21h8M12 17v4",
