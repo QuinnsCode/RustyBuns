@@ -11,7 +11,8 @@ import { OutlinePass } from "three/addons/postprocessing/OutlinePass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { animate, gunship, marine, speeder, tank, turret, walker, wooka } from "./models.ts";
 import { buildWorld } from "./terrain.ts";
-import { CHAMP_AT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, startBattle, statsOf, step, timeLimit, vipUnit, type Fx, type Trooper, type Unit } from "./sim.ts";
+import { boom, whoosh, wooka as wookaCall, zap } from "./sound.ts";
+import { CHAMP_AT, SPRINT_AFTER, DT, POST_RADIUS, SPAWN, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, startBattle, statsOf, step, timeLimit, vipUnit, type Fx, type Trooper, type Unit } from "./sim.ts";
 
 export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTMLElement): Promise<BattleResult> {
   const b = startBattle(spec);
@@ -178,7 +179,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const STREAK: Record<number, string> = foeHorde
     ? { 2: "Two in a row", 3: "Three. Fluff everywhere", 5: "Five. They'll sing about you. Badly", 8: "Eight. The forest has gone quiet", 12: "Twelve. Command is concerned about you" }
     : { 2: "Two backpacks", 3: "Three. Start a collection", 5: "Five. The totems need helmets", 8: "Eight. The shiny ones are all crying", 12: "Twelve. The chieftain wants a word" };
-  let hurt = 0, shake = 0, lastHp = Infinity, lastKills = 0, toastT = 0, markT = 0;
+  let hurt = 0, shake = 0, lastHp = Infinity, lastKills = 0, toastT = 0, markT = 0, chatterT = 0;
   // What the mode asks of you right now, over the posts.
   const objectiveLine = () => {
     const live = b.posts[b.live]!, vip = vipUnit(b), vipName = isHorde(b, "attacker") ? "Warbur" : "Gumpert";
@@ -271,8 +272,15 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
           if (f.kind === "blast" && me) shake = Math.max(shake, (f.big ? 1.2 : 0.4) * Math.max(0, 1 - Math.hypot(f.x - me.x, f.z - me.z) / 35));
           if (f.kind === "gore") burst(f.x, fy + 0.8 + (f.y ?? 0), f.z, f.big ? 46 : 16, GORE[spec.factions[f.side ?? "attacker"]]!, f.big ? 9 : 6);
           if (f.kind === "blast") burst(f.x, fy + 0.3, f.z, f.big ? 60 : 14, DIRT, f.big ? 14 : 7);
+          // Sound, loudest near the hero: bolts, booms, thrown spears and the Wooka's cries.
+          const dist = me ? Math.hypot(f.x - me.x, f.z - me.z) : 60, shooter = f.from === undefined ? undefined : b.units.find((u) => u.id === f.from);
+          if (f.kind === "shot") zap(dist, !shooter || !isHorde(b, shooter.side));
+          else if (f.kind === "blast") boom(dist, !!f.big);
+          else if (f.kind === "spear" || f.kind === "hex") { whoosh(dist); wookaCall(dist, shooter?.role === "chub" ? 1.5 : 1); }
+          else if (f.kind === "toss") wookaCall(dist, 2, true);
+          else if (f.kind === "gore" && f.side && isHorde(b, f.side)) wookaCall(dist, f.big ? 1.6 : 1, true);
         }
-        if (f.kind === "shot") pts.push(f.x, (f.y ?? 0) + 1.4 + fy, f.z, f.tx, (f.ty ?? 0) + 1.2 + ground(f.tx, f.tz), f.tz);
+        if (f.kind === "shot") pts.push(f.x, (f.y ?? 0) + 1.0 + fy, f.z, f.tx, (f.ty ?? 0) + 0.8 + ground(f.tx, f.tz), f.tz);
         else if (f.kind === "spear" || f.kind === "hex") {
           // A spear flies in an arc, a hex in a wobble; both from thrower to target over the throw.
           const c = f.kind === "spear" ? [0.55, 0.38, 0.2] : [0.5, 1, 0.42], k = 1 - f.t / 0.3, k0 = Math.max(0, k - 0.25);
@@ -334,11 +342,18 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       const fov = b.hero.run > SPRINT_AFTER ? 74 : 65;
       if (Math.abs(camera.fov - fov) > 0.1) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 6); camera.updateProjectionMatrix(); }
       shake = Math.max(0, shake - dt * 2.5);
+      // The horde chatters: now and then one of the Wooka nearest the hero calls out.
+      if ((chatterT -= dt) <= 0) {
+        chatterT = 0.4 + Math.random() * 1.1;
+        const me = heroUnit(b), near = b.units.filter((u) => u.kind === "wooka" && me && Math.hypot(u.x - me.x, u.z - me.z) < 90);
+        const u = near[Math.floor(Math.random() * near.length)];
+        if (u && me) wookaCall(Math.hypot(u.x - me.x, u.z - me.z), u.role === "chub" ? 1.5 : u.role === "boomie" ? 0.8 : 1, u.role === "boomie");
+      }
 
       // Third-person camera over the hero's shoulder (or the vehicle's), or over the spawn while down.
       const hero = heroUnit(b);
       const body = (b.hero.inVehicle !== null && b.units.find((u) => u.id === b.hero.inVehicle)) || hero;
-      const at = body ?? { x: 0, z: heroSide === "attacker" ? 100 : -100 };
+      const at = body ?? { x: 0, z: heroSide === "attacker" ? SPAWN.attacker.z : SPAWN.defender.z };
       const [back, high] = body?.champ === "warbur" ? [11, 5.5] : !body || body.kind === "hero" ? [7, 3.2] : body.kind === "walker" ? [15, 10] : body.kind === "gunship" ? [18, 6] : [13, 6];
       const floor = ground(at.x, at.z), up = high + (body ? altitude(body) : 0) + floor;
       const f = facing(yaw);
