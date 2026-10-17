@@ -1,6 +1,6 @@
 // Sounds, all synthesized: footsteps, rustling bushes, and the ranger's call
-// (a radio squelch, then the browser's speech synthesis, quieter the farther
-// away it is). Score is the music: a low dread bed that tightens as rangers close in.
+// (a radio squelch, then a recorded line from public/voices, quieter the farther
+// away it is; the browser's speech synthesis if the clip can't load). Score is the music: a low dread bed that tightens as rangers close in.
 
 let ctx: AudioContext | null = null;
 const ac = () => (ctx ??= new AudioContext());
@@ -38,11 +38,14 @@ export const sounds = {
   call(vol: number, line: string) {
     if (vol <= 0.03) return;
     squelch(vol);
-    if (!("speechSynthesis" in window)) return;
-    // Slow and low: a voice in the dark trees, not a friendly hello.
-    const u = new SpeechSynthesisUtterance(line);
-    u.volume = Math.min(1, vol); u.rate = 0.88; u.pitch = 0.55;
-    setTimeout(() => speechSynthesis.speak(u), 180);
+    const i = CALLS.indexOf(line);
+    void (i < 0 ? Promise.resolve(null) : clip(i)).then((buf) => {
+      if (!buf) return speak(line, vol);
+      const a = ac(), src = a.createBufferSource(), g = a.createGain();
+      src.buffer = buf; g.gain.value = Math.min(1, vol);
+      src.connect(g).connect(a.destination);
+      src.start(a.currentTime + 0.18);
+    });
   },
   /** Bigfoot: a long, low whoop that rises and falls. */
   howl(vol: number, pan: number) {
@@ -66,6 +69,25 @@ export const sounds = {
   },
   unlock() { const a = ac(); if (a.state === "suspended") void a.resume(); },
 };
+
+const clips = new Map<number, Promise<AudioBuffer | null>>();
+/** The recorded line for CALLS[i], fetched and decoded once. null if it can't load. */
+function clip(i: number): Promise<AudioBuffer | null> {
+  let p = clips.get(i);
+  if (!p) {
+    p = fetch(`/voices/ranger-${i}.ogg`).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status))))).then((b) => ac().decodeAudioData(b)).catch(() => null);
+    clips.set(i, p);
+  }
+  return p;
+}
+
+/** The fallback voice. Slow and low: a voice in the dark trees, not a friendly hello. */
+function speak(line: string, vol: number) {
+  if (!("speechSynthesis" in window)) return;
+  const u = new SpeechSynthesisUtterance(line);
+  u.volume = Math.min(1, vol); u.rate = 0.88; u.pitch = 0.55;
+  setTimeout(() => speechSynthesis.speak(u), 180);
+}
 
 /** A radio keying up: a click, a burst of static, a short tone. */
 function squelch(vol: number) {
