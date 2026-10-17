@@ -44,6 +44,11 @@ function crud(entity: string, one: string, fields: Schema, filters: Record<strin
       get: { id: `list_${entity}`, summary: `List ${entity}, newest change first`, tag: Row, role: "seasonal", query: { ...page, ...filters }, ok: obj({ items: arr(ref(Row)), next: { type: ["string", "null"], description: "cursor for the next page" } }) },
       post: { id: `create_${one}`, summary: `Add a ${one}`, tag: Row, role: one === "activity" ? "seasonal" : "employee", body: obj((fields as { properties: Record<string, Schema> }).properties, required), ok: ref(Row), status: 201 },
     },
+    ...(entity === "contacts" || entity === "companies" ? { [`${org}/${entity}/import`]: {
+      post: { id: `import_${entity}`, summary: `Import ${entity} from a CSV, skipping ones already there`, tag: Row, role: "employee", status: 201,
+        description: "Send text/csv, a multipart file field, or this JSON. Headers map by name; map renames the rest. Rows with an email (contacts) or domain (companies) already in the org or earlier in the file are counted as duplicates.",
+        body: obj({ csv: str("the file's text, header row first, up to 5000 rows"), map: loose("header to field, e.g. {\"E-mail\": \"email\"}; \"\" skips a column") }, ["csv"]),
+        ok: obj({ created: int(), duplicates: int(), failed: int(), errors: arr(obj({ row: int(), error: str() })) }) } } } : {}),
     [`${org}/${entity}/{id}`]: {
       get: { id: `get_${one}`, summary: `One ${one}`, tag: Row, role: "seasonal", ok: ref(Row) },
       put: { id: `update_${one}`, summary: `Change a ${one}: only the fields sent change`, tag: Row, role: "employee", body: fields, ok: ref(Row) },

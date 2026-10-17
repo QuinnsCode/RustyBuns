@@ -10,6 +10,7 @@
 //
 // Lists are keyset-paginated on (updated_at, id) descending: `next` is the cursor for the page after.
 
+import { importRoute } from "./csv-import.ts";
 import { b64url, error, json, parseJson, readBody, type Env, type Row } from "./env.ts";
 import type { Ctx } from "./orgs.ts";
 import { can, type Action } from "./rbac.ts";
@@ -143,10 +144,12 @@ export async function deleteRow(env: Env, org: string, entity: Entity, id: strin
 
 export const createAction = (entity: Entity): Action => `create:${ENTITIES[entity]!.event}` as Action;
 
-export async function crmRoutes({ req, env, url, user, org, role, p }: Ctx): Promise<Response | null> {
+export async function crmRoutes(ctx: Ctx): Promise<Response | null> {
+  const { req, env, url, user, org, role, p } = ctx;
   const entity = p[0];
   if (!isEntity(entity) || p[2]) return null;
   const id = p[1];
+  if (id === "import" && req.method === "POST" && (entity === "contacts" || entity === "companies")) return importRoute(ctx, entity);
   if (!id && req.method === "GET") return json(await listRows(env, org, entity, url.searchParams));
   if (!id && req.method === "POST") {
     if (!can(role, createAction(entity))) return error(403, `a ${role} can't add ${entity}`);
