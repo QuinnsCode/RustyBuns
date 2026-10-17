@@ -31,6 +31,7 @@ export type Rail = {
   b: { x: number; z: number };
   y: number; // height of the bar or lip at `a`
   y2?: number; // height at `b` when the bar slopes (a handrail down stairs); `y` when absent
+  chain?: true; // one segment of a bar bent along a path: a grind runs on into the segment that meets its end
 };
 
 /** Something solid standing on the ground (a sequoia): the rider can't pass below its top. */
@@ -42,6 +43,7 @@ export const railY = (r: Rail, t: number) => r.y + ((r.y2 ?? r.y) - r.y) * Math.
 /** Where a rail's posts stand: a post every 4 m, none within 10 m of either end so the bar can be entered and left from the ground. */
 export function railPosts(r: Rail): { x: number; y: number; z: number }[] {
   if (r.kind !== "rail") return [];
+  if (r.chain) return [{ x: r.a.x, y: r.y, z: r.a.z }]; // a bent bar stands on a post at each joint
   const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) || 1, out = [];
   for (let d = 10; d <= len - 10; d += 4) out.push({ x: r.a.x + ((r.b.x - r.a.x) * d) / len, y: railY(r, d / len), z: r.a.z + ((r.b.z - r.a.z) * d) / len });
   return out;
@@ -119,6 +121,20 @@ export function hitObstacle(level: Level, x: number, z: number, y: number, yaw =
     const gx = Math.max(0, Math.abs(along) - BOARD.halfLen), gz = Math.max(0, Math.abs(across) - BOARD.halfWid);
     return gx * gx + gz * gz < o.r * o.r;
   });
+}
+
+/** The chained segment a grind carries on to when it leaves `r` at one end (`forward`: the `b` end), and the way it runs on it (+1 from its `a`, -1 from its `b`). */
+export function nextRail(rails: Rail[], from: number, forward: boolean): { i: number; dir: 1 | -1 } | null {
+  const r = rails[from]!;
+  if (!r.chain) return null;
+  const e = forward ? r.b : r.a;
+  for (let i = 0; i < rails.length; i++) {
+    const q = rails[i]!;
+    if (i === from || !q.chain) continue;
+    if (Math.hypot(q.a.x - e.x, q.a.z - e.z) < 0.05) return { i, dir: 1 };
+    if (Math.hypot(q.b.x - e.x, q.b.z - e.z) < 0.05) return { i, dir: -1 };
+  }
+  return null;
 }
 
 /** Where along a rail (0..1) the point projects, and how far off its line it is. */

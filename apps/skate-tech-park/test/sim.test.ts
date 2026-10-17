@@ -1,7 +1,7 @@
 // Journeys through the ride, headless: the same fixed-step sim the page draws.
 import { expect, test } from "bun:test";
 import { FOOT, hitObstacle, type Level, makeLevel, piece, postObstacles, railY } from "../src/level.ts";
-import { quarterPipe } from "../src/levels/pieces.ts";
+import { quarterPipe, railLine } from "../src/levels/pieces.ts";
 import { DT, IDLE, type Input, SCALE, start, step, type State, tumble } from "../src/sim.ts";
 
 const run = (s: State, seconds: number, input: (s: State) => Partial<Input>, level?: Level) => {
@@ -320,5 +320,16 @@ test("the poles are hard steel: a board's drawn deck never overlaps a rail post,
       const along = Math.abs(dx * Math.sin(sk.yaw) + dz * Math.cos(sk.yaw)), across = Math.abs(dx * Math.cos(sk.yaw) - dz * Math.sin(sk.yaw));
       if (sk.grind < 0) expect(along < 2.1 && across < 0.6).toBe(false); // the deck is 4.4 m by 1.25 m
     }
+  }
+});
+
+test("a rail bent along a path carries one grind round the bend and down the drop", () => {
+  for (const line of ["curve", "kink"] as const) {
+    const lv = flat({ rails: railLine({ x: 0, z: 0 }, { line, len: 18 }).rails });
+    const first = lv.rails[0]!, sk = start(first.a.x, first.a.z + 1.5, 0, lv);
+    sk.y = first.y + 0.1; sk.vz = 10; sk.vy = -1; sk.air = true; sk.speed = 10;
+    const seen = new Set<number>();
+    run(sk, 3, (s) => { if (s.grind >= 0) seen.add(s.grind); return { steer: Math.max(-1, Math.min(1, s.balance * 3)) }; }, lv);
+    expect(seen.size).toBeGreaterThan(lv.rails.length / 2); // it rode past most of the joints without leaving the bar
   }
 });

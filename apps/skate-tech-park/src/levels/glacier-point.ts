@@ -2,6 +2,7 @@
 // away in a cliff, and the long gap over that drop is the mega ramp. A funbox and a bar on the plateau
 // keep the board busy on the way.
 import { type ParkSpec } from "./park.ts";
+import { line } from "./lines.ts";
 import { bowl, outcrop, flatBar, rockFace, funbox, kicker, tabletop, skyRail } from "./pieces.ts";
 
 const E = Math.PI / 2, N = Math.PI;
@@ -20,6 +21,8 @@ export const glacierPoint: ParkSpec = {
     { parts: [kicker({ x: -40, z: -48, yaw: N }, { w: 12, d: 16, h: 3.5, curve: 1.5, name: "overlook lip" })] },
     { parts: [kicker({ x: 90, z: 40, yaw: E }, { w: 10, d: 8, h: 2, name: "slope hop" })] },
     { parts: [bowl({ x: 170, z: -150 }, { w: 30, d: 22, h: 2.4, deck: 3, name: "point bowl" }), rockFace({ x: 190, z: -110, yaw: Math.PI }, { w: 10, d: 5, h: 3.4 })] },
+    // a line: up a kicker, along a bar, across a manual pad, up a bank onto a ledge and down off its far end
+    { parts: [line({ x: 20, z: 190, yaw: N }, ["kicker", "bar", "manualPad", "bankLedge", "downLedge"], { name: "plateau line" })] },
     // not possible: a bar on stilts that climbs away from the ground
     { parts: [skyRail({ x: -40, z: 95, yaw: E }, { len: 100, y: 1.6, y2: 16.6 })] },
   ],
@@ -37,6 +40,7 @@ export const glacierPoint: ParkSpec = {
     { kind: "combo", target: 1200 },
     { kind: "gap", name: "Glacier Point Gap" },
     { kind: "collect", count: 6 },
+    { kind: "line", name: "plateau line" },
   ],
   pickups: [60, 40, 20, 0, -20, -40].map((z) => ({ x: -40, z, lift: 1.4 })),
 };

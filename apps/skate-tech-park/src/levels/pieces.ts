@@ -16,10 +16,13 @@ export type Gap = { name: string; a: { x: number; z: number }; b: { x: number; z
   /** It only counts if the flight covers at least this far, so a short hop onto the thing in the middle doesn't. */
   min: number };
 
-export type Part = { pieces: Piece[]; rails: Rail[]; gaps: Gap[] };
+/** A chain of beats to ride in order (see lines.ts): the points to pass, each within `r`, no more than `within` seconds after the last. */
+export type Route = { name: string; points: { x: number; z: number; r: number }[]; within: number };
 
-export const part = (p: Partial<Part> = {}): Part => ({ pieces: [], rails: [], gaps: [], ...p });
-export const join = (...ps: Part[]): Part => part({ pieces: ps.flatMap((p) => p.pieces), rails: ps.flatMap((p) => p.rails), gaps: ps.flatMap((p) => p.gaps) });
+export type Part = { pieces: Piece[]; rails: Rail[]; gaps: Gap[]; routes: Route[] };
+
+export const part = (p: Partial<Part> = {}): Part => ({ pieces: [], rails: [], gaps: [], routes: [], ...p });
+export const join = (...ps: Part[]): Part => part({ pieces: ps.flatMap((p) => p.pieces), rails: ps.flatMap((p) => p.rails), gaps: ps.flatMap((p) => p.gaps), routes: ps.flatMap((p) => p.routes) });
 
 export const clamp01 = (t: number) => (t < 0 ? 0 : t > 1 ? 1 : t);
 /** Flat at 0, vertical at 1: the curve of a quarter pipe's transition. */
@@ -48,6 +51,7 @@ export function lift(p: Part, base: number): Part {
     pieces: p.pieces.map((q) => ({ ...q, h0: q.h0 + base, h1: q.h1 + base, height: (lx, lz) => q.height(lx, lz) + base })),
     rails: p.rails.map((r) => ({ ...r, y: r.y + base, ...(r.y2 === undefined ? {} : { y2: r.y2 + base }) })),
     gaps: p.gaps,
+    routes: p.routes,
   });
 }
 
@@ -65,6 +69,7 @@ export function drape(p: Part, ground: (x: number, z: number) => number): Part {
     })),
     rails: p.rails.map((r) => ({ ...r, y: r.y + ground(r.a.x, r.a.z), y2: (r.y2 ?? r.y) + ground(r.b.x, r.b.z) })),
     gaps: p.gaps,
+    routes: p.routes,
   });
 }
 
@@ -125,6 +130,30 @@ export const ledge = (at: At, o: { len?: number; w?: number; h?: number; name?: 
   return part({ pieces: [{ ...piece("box", name, at.x, at.z, at.yaw ?? 0, w, len, h, h), look: BLOCK }], rails: [bar("ledge", at, 0, -len / 2, 0, len / 2, h)] });
 };
 
+/** A short low box with a flat top, to manual across: sited between two bigger features so the line's speed carries over. */
+export const manualPad = (at: At, o: { len?: number; w?: number; h?: number; name?: string } = {}): Part => {
+  const { name = "manual pad" } = o, len = (o.len ?? 5) * L, w = (o.w ?? 2.5) * K, h = (o.h ?? 0.12) * K; // a rise the board rolls up (0.3 m or less)
+  return part({ pieces: [{ ...piece("box", name, at.x, at.z, at.yaw ?? 0, w, len, h, h), look: BLOCK }] });
+};
+
+/** A bank up to a ledge: the slope rises along local +z to a flat top with a ledge to grind along, and the end drops off. */
+export const bankLedge = (at: At, o: { len?: number; bank?: number; w?: number; h?: number; name?: string } = {}): Part => {
+  const { name = "bank to ledge" } = o, len = (o.len ?? 14) * L, bank = (o.bank ?? 4) * L, w = (o.w ?? 2.4) * K, h = (o.h ?? 0.6) * K;
+  return part({
+    pieces: [shape("ramp", name, at, w, len, (_, lz) => h * clamp01((lz + len / 2) / bank), RAMP)],
+    rails: [bar("ledge", at, 0, -len / 2 + bank, 0, len / 2, h)],
+  });
+};
+
+/** A ledge that falls away along local +z, from `h` to `h2`, as a handrail does beside a stair set. */
+export const downLedge = (at: At, o: { len?: number; w?: number; h?: number; h2?: number; name?: string } = {}): Part => {
+  const { name = "down ledge" } = o, len = (o.len ?? 10) * L, w = (o.w ?? 0.8) * K, h = (o.h ?? 0.8) * K, h2 = (o.h2 ?? 0.1) * K;
+  return part({
+    pieces: [shape("box", name, at, w, len, (_, lz) => h + ((lz + len / 2) / len) * (h2 - h))],
+    rails: [bar("ledge", at, 0, -len / 2, 0, len / 2, h, h2)],
+  });
+};
+
 /** A round-bar rail along local z; `y2` is its height at the +z end when it slopes (down a stair set). */
 export const handrail = (at: At, o: { len?: number; y?: number; y2?: number } = {}): Part => {
   const len = (o.len ?? 8) * L, y = (o.y ?? 0.9) * K, y2 = o.y2 === undefined ? undefined : o.y2 * K;
@@ -138,6 +167,27 @@ export const handrail = (at: At, o: { len?: number; y?: number; y2?: number } = 
 export const skyRail = (at: At, o: { len?: number; y?: number; y2?: number; kick?: number } = {}): Part => {
   const { len = 120, y = 1.6, y2 = 30, kick = 4 } = o, h = y - 0.4; // its own metres: the dimensions below undo the kit scale
   return join(kicker({ ...toWorld(at, 0, -len / 2 - kick / 2 - 1), yaw: at.yaw }, { w: 4 / K, d: kick / L, h: h / K, name: "sky rail kicker" }), handrail(at, { len: len / L, y: y / K, y2: y2 / K }));
+};
+
+/** How a bar bends along its run: sideways `x` and height `y` (both in kit units) at a fraction `u` of the way from the start. */
+export const RAIL_LINES = {
+  /** Flat, a drop down a set of stairs, flat again. */
+  kink: (u: number) => ({ x: 0, y: 1.1 - 0.9 * smooth((u - 0.35) / 0.3) }),
+  /** A quarter turn to the right at one height. */
+  curve: (u: number) => ({ x: 4 * (1 - Math.cos(u * Math.PI / 2)) * 1.5, y: 0.8 }),
+  /** Out one way and back the other. */
+  s: (u: number) => ({ x: 2.5 * Math.sin(u * Math.PI * 2), y: 0.8 }),
+  /** Up and down like a roller. */
+  wave: (u: number) => ({ x: 0, y: 0.7 + 0.35 * Math.sin(u * Math.PI * 2) }),
+} satisfies Record<string, (u: number) => { x: number; y: number }>;
+
+/**
+ * One rail extruded along a path: a bar whose bends and drops are a profile (`RAIL_LINES`) walked in short straight
+ * segments that meet end to end, so a grind carries round the bend or down the drop instead of ending at each joint.
+ */
+export const railLine = (at: At, o: { line?: keyof typeof RAIL_LINES; len?: number } = {}): Part => {
+  const f = RAIL_LINES[o.line ?? "kink"], len = (o.len ?? 18) * L, n = Math.max(2, Math.round(len / 2.5)), pt = (i: number) => { const u = i / n, p = f(u); return { lx: p.x * K, lz: (u - 0.5) * len, y: p.y * K }; };
+  return part({ rails: Array.from({ length: n }, (_, i) => { const a = pt(i), b = pt(i + 1); return { ...bar("rail", at, a.lx, a.lz, b.lx, b.lz, a.y, b.y), chain: true as const }; }) });
 };
 
 /** A low rail on the flat. */

@@ -14,9 +14,10 @@ import { Preview } from "./preview.ts";
 import { LocalSession, NetSession, playerId, tabPlayerId, type Session } from "./session.ts";
 import { World3D } from "./world3d.ts";
 import { ZoneMap } from "./zonemap.ts";
-import "@fontsource/ultra/latin-400.css";
+import "@fontsource/lacquer/latin-400.css";
+import "@fontsource/gloria-hallelujah/latin-400.css";
 // The ranger station's sign is drawn on a canvas: have the lettering ready for it.
-void document.fonts?.load("46px Ultra");
+void document.fonts?.load("46px Lacquer");
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
