@@ -10,7 +10,7 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { OutlinePass } from "three/addons/postprocessing/OutlinePass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { animate, gunship, marine, speeder, tank, turret, walker, wooka } from "./models.ts";
-import { buildWorld, pushers } from "./terrain.ts";
+import { buildWorld } from "./terrain.ts";
 import { CHAMP_AT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, startBattle, statsOf, step, timeLimit, vipUnit, type Fx, type Trooper, type Unit } from "./sim.ts";
 
 // A few lucide icons (ISC licence) for the rhythm strip: the HUD says it with icons and a ticking clock.
@@ -556,13 +556,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       if (shake > 0) camera.position.add(new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake));
       world.update(now / 1000, camera.position, { x: at.x + f.x * 30, z: at.z + f.z * 30 });
 
-      // Foliage bends round the units nearest the eye; the enemy gets the outline.
-      const near = b.units.filter((u) => u.hp > 0 && altitude(u) < 3).sort((p, q) => Math.hypot(p.x - camera.position.x, p.z - camera.position.z) - Math.hypot(q.x - camera.position.x, q.z - camera.position.z));
-      pushers.forEach((v, i) => {
-        const u = near[i];
-        if (!u) return v.set(0, -999, 0, 0);
-        v.set(u.x, ground(u.x, u.z), u.z, u.kind === "tank" || u.champ === "warbur" ? 3.6 : u.kind === "walker" ? 3.2 : u.role === "chub" ? 2 : u.role || u.kind === "wooka" ? 1.4 : 1.7);
-      });
+      // The enemy gets an outline that shows through foliage.
       const eyeUnit = heroUnit(b);
       outline.selectedObjects = b.units.filter((u) => u.hp > 0 && eyeUnit && u.side !== eyeUnit.side && Math.hypot(u.x - eyeUnit.x, u.z - eyeUnit.z) < OUTLINE_RANGE).map((u) => meshes.get(u.id)).filter((g): g is THREE.Group => !!g);
       composer.render();

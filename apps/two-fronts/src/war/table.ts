@@ -12,6 +12,7 @@ import { run } from "../battle/sim.ts";
 import { runSpace } from "../battle/space.ts";
 import { fightPicks, replayPicks } from "../battle/space-picks.ts";
 import { aiDeploys, aiOrders, aiRetreats, aiSpacePick } from "./ai.ts";
+import { aiDeployment, beginWar, planDeployment } from "./fleet.ts";
 import type { GalaxyId } from "./galaxy.ts";
 import {
   CARDS, FACTIONS, ORBIT, applyBattleResult, applySpaceResult, checkRetreats, declareAttacks, deployTurn, heroReady, involved, newCampaign, planDeploys, planOrders, resolveTurn, sectorAt,
@@ -50,11 +51,12 @@ const MAX_DEPLOYS = 200;
 // Ten minutes of ground battle with the mouse never still logs about 48 KB; this is well past that.
 export const MAX_INPUTS = 192 * 1024;
 
-export function newTable(seats: Seats, galaxy: GalaxyId = "short", seed = Math.floor(Math.random() * 1e9)): Table {
+// With `setup`, the war opens with each side picking a fleet and placing it (src/war/fleet.ts).
+export function newTable(seats: Seats, galaxy: GalaxyId = "short", seed = Math.floor(Math.random() * 1e9), setup = false): Table {
   // The rules' `player` is the side whose hero sits at the table against the AI. With two
   // humans it's the Marines, and each side's hero comes from its own orders.
   const player = seats.marines === "human" || seats.wooka !== "human" ? "marines" : "wooka";
-  return { seats, campaign: newCampaign(seed, player, galaxy), handedIn: {}, resolving: null };
+  return { seats, campaign: newCampaign(seed, player, galaxy, setup), handedIn: {}, resolving: null };
 }
 
 export const humans = (t: Table) => FACTIONS.filter((f) => t.seats[f] === "human");
@@ -66,6 +68,7 @@ export function waitingOn(t: Table): Faction[] {
   const h = heroFaction(t.campaign);
   if (h) return [h];
   const c = t.campaign;
+  if (c.setup) return humans(t).filter((f) => !t.handedIn[f] && c.setup!.includes(f));
   if (c.deploying) return humans(t).filter((f) => !t.handedIn[f] && c.deploying!.includes(f));
   return humans(t).filter((f) => !t.handedIn[f] && (!c.attacks || involved(c, f)));
 }
@@ -78,7 +81,8 @@ export function handIn(t: Table, f: Faction, o: Orders): Step {
   if (c.winner) return { ok: false, error: "The war is over" };
   if (c.pending) return { ok: false, error: "A hero battle has to be fought first" };
   if (t.seats[f] !== "human") return { ok: false, error: "That side isn't yours" };
-  if (t.handedIn[f]) return { ok: false, error: c.deploying ? "Deploys already in for this turn" : c.attacks ? "Retreats already in for this turn" : "Orders already in for this turn" };
+  if (t.handedIn[f]) return { ok: false, error: c.setup ? "Fleet already placed" : c.deploying ? "Deploys already in for this turn" : c.attacks ? "Retreats already in for this turn" : "Orders already in for this turn" };
+  if (c.setup) return handInSetup(t, f, o);
   if (c.deploying) return handInDeploys(t, f, o);
   if (c.attacks) return handInRetreats(t, f, o);
   const error = checkOrders(c, f, o);
@@ -92,6 +96,19 @@ export function handIn(t: Table, f: Faction, o: Orders): Step {
   const ask: Table = { ...next, campaign: declared, handedIn: {}, moves: all };
   if (declared.attacks!.length && waitingOn(ask).length) return { ok: true, table: ask, done: null };
   return resolve(ask);
+}
+
+// A seat places its fleet. When every seat has, the AI's fleets go down with them and the war begins.
+function handInSetup(t: Table, f: Faction, o: Orders): Step {
+  const c = t.campaign;
+  if (!c.setup!.includes(f)) return { ok: false, error: "Your fleet is already placed" };
+  if (!o || o.faction !== f || !o.deployment) return { ok: false, error: "Place your fleet first" };
+  const error = planDeployment(c, f, o.deployment);
+  if (error) return { ok: false, error };
+  const next: Table = { ...t, handedIn: { ...t.handedIn, [f]: { faction: f, orders: [], deployment: o.deployment } } };
+  if (waitingOn(next).length) return { ok: true, table: next, done: null };
+  const all = Object.fromEntries(FACTIONS.map((g) => [g, next.handedIn[g]?.deployment ?? aiDeployment(c, g)])) as Record<Faction, NonNullable<Orders["deployment"]>>;
+  return { ok: true, table: { ...next, campaign: beginWar(c, all), handedIn: {} }, done: null };
 }
 
 // A seat answers the declared attacks: its retreats, and the hero's battle if it picks one now.
@@ -230,9 +247,10 @@ export function castVote(t: Table, f: Faction, match: string, mode: MatchMode): 
 function checkOrders(c: Campaign, f: Faction, o: Orders): string | null {
   if (!o || o.faction !== f || !Array.isArray(o.orders)) return "Those aren't orders";
   if (o.orders.length > MAX_ORDERS) return "Too many orders";
-  if (o.orders.some((x) => !x || typeof x !== "object" || !["build", "fleet", "army", "card"].includes(x.kind) || (x.kind === "build" && x.unit !== "fleet" && x.unit !== "army") || (x.kind === "card" && !CARDS.includes(x.card)))) return "Those aren't orders";
+  if (o.orders.some((x) => !x || typeof x !== "object" || !["build", "fleet", "army", "card", "bombard"].includes(x.kind) || (x.kind === "build" && x.unit !== "fleet" && x.unit !== "army") || (x.kind === "card" && !CARDS.includes(x.card)))) return "Those aren't orders";
   if (o.retreats?.length) return "Retreats come after the attacks are declared";
   if (o.deploys?.length) return "Deploys come after the fighting";
+  if (o.deployment) return "Fleets are placed before the war begins";
   if (o.hero) {
     const err = checkHero(c, f, o.hero);
     if (err) return err;

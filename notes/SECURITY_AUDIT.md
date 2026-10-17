@@ -180,7 +180,7 @@ A sweep of `apps/codesplitter/src` for where a type was claimed rather than chec
 - **#1818.** A repo's `.npmrc` can point the owner's home npm token at plain http or a private host (desktop).
 - **#1819.** A removed crew member's `/share` read token lives up to 7 days.
 - **#1820.** A token held to one repo reads other repos through search, game walls and playlists.
-- **#1821.** Page assets have no per-user quota or rate rule, and read the body before the size check.
+- **#1821.** Fixed: page assets are capped at 50 files per account, a page file's text at 1 MB, an oversize body is refused on `content-length` before it is read, and `PUT /api/me/page*` counts under a new `page` rule (60 an hour).
 - **#1822.** Anonymous `gitpath` requests fan out to GitHub (about 41 calls) with no rate rule.
 
 Smaller caps not taken this round, each a line or two when wanted: board rows (8 KB each, 50 clashes), agent log lines (2,000 characters), `junit` and `external_id` on checks, a hex check on the `sha` in gh-compat paths, and `esc()` on the tier and state fields in mervin-watch.html (local feed data).
