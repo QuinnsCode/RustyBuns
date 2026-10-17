@@ -94,6 +94,22 @@
         "postgres": "^3.4.7",
       },
     },
+    "apps/geoboxq": {
+      "name": "geoboxq",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@alchemy.run/frontend-frameworks": "2.0.0-beta.77",
+        "@cloudflare/vite-plugin": "1.60.2",
+        "@effect/platform-bun": "4.0.0-rc.112",
+        "@effect/platform-node": "4.0.0-rc.112",
+        "@rustybuns/cli": "workspace:*",
+        "@rustybuns/shell-bun": "workspace:*",
+        "alchemy": "2.0.0-beta.77",
+        "effect": "4.0.0-rc.112",
+        "vite": "8.3.1",
+        "wrangler": "4.141.0",
+      },
+    },
     "apps/codesplitter": {
       "name": "codesplitter",
       "dependencies": {
@@ -1655,6 +1671,8 @@
     "borg-postgres": ["borg-postgres@workspace:apps/borg-postgres"],
 
     "bowser": ["bowser@2.14.1", "", {}, "sha512-tzPjzCxygAKWFOJP011oxFHs57HzIhOEracIgAePE4pqB3LikALKnSzUyU4MGs9/iCEUuHlAJTjTc5M+u7YEGg=="],
+
+    "geoboxq": ["geoboxq@workspace:apps/geoboxq"],
 
     "bpc-graph": ["bpc-graph@0.0.57", "", { "peerDependencies": { "@tscircuit/schematic-corpus": "*", "typescript": "^5" } }, "sha512-kgFB+o1D2YM9aJBVVFvSo7Qv0xAiY0/tqPf5wH+tPgEYU5572/YU0xgF1rDfN+4vGsqRzTxEqUaaW7IMe33V7A=="],
 
