@@ -1,7 +1,8 @@
 // Battle sound, all of it made on the spot with Web Audio: no files to fetch. Blaster bolts are a
 // falling pitch, blasts are filtered noise over a thump, Marines grunt low through their masks and
-// the Wooka chatter, squeak and squeal in a high gibberish. Each sound is placed: quieter with
-// distance, panned to the side it came from. M mutes, and the choice is remembered.
+// the Wooka hoot, bark and howl like gorillas and howler monkeys, rough in the throat, with a
+// chest-beat now and then. Each sound is placed: quieter with distance, panned to the side it came
+// from. M mutes, and the choice is remembered.
 export type Voice = "marines" | "wooka";
 export interface Ear { x: number; z: number; rx: number; rz: number } // where you hear from, and which way is right
 type At = { x: number; z: number };
@@ -123,13 +124,17 @@ export function makeSfx(far = 1) {
   // A voiced sound through two vowel formants that glide syllable by syllable: the base of both
   // the Wooka's chatter and the Marines' grunts.
   type Syllable = { f0: [number, number]; f1: [number, number]; f2: [number, number]; len: number; gap: number };
-  const speak = (at: At | null, loud: number, syllables: Syllable[], mask: boolean) => {
+  const speak = (at: At | null, loud: number, syllables: Syllable[], mask: boolean, grit = 0) => {
     const c = place(at, loud, 26);
     if (!c) return;
     const { out, t } = c;
     const g = ctx!.createGain();
     g.gain.value = 0;
-    const src = osc("sawtooth", g), f1 = filter("bandpass", 600, 6), f2 = filter("bandpass", 1200, 8), mix = ctx!.createGain();
+    // Grit: the voice is chopped by a fast buzz (a rough throat), with breath blown through it.
+    const am = ctx!.createGain();
+    am.gain.value = 1 - grit * 0.5;
+    am.connect(g);
+    const src = osc("sawtooth", am), f1 = filter("bandpass", 600, 6), f2 = filter("bandpass", 1200, 8), mix = ctx!.createGain();
     // A little wobble in the voice, so it sounds alive.
     const wobAmt = ctx!.createGain(), wob = osc("sine", wobAmt);
     wobAmt.gain.value = syllables[0]!.f0[0] * 0.03;
@@ -151,37 +156,107 @@ export function makeSfx(far = 1) {
     }
     src.start(t); src.stop(s + 0.05); wob.start(t); wob.stop(s + 0.05);
     hold(src);
+    if (grit > 0) {
+      const buzzAmt = ctx!.createGain(), buzz = osc("square", buzzAmt);
+      buzzAmt.gain.value = grit * 0.5;
+      buzzAmt.connect(am.gain);
+      buzz.frequency.value = r(26, 48);
+      buzz.start(t); buzz.stop(s + 0.05);
+      const breath = ctx!.createGain();
+      breath.gain.value = grit * 0.35;
+      breath.connect(g);
+      const bp = filter("bandpass", 900, 0.8);
+      bp.connect(breath);
+      const n = noiseSrc(bp);
+      n.start(t); n.stop(s + 0.05);
+    }
   };
   const r = (a: number, b: number) => a + Math.random() * (b - a);
   // Vowels as formant pairs: oo, ah, ee, uh, eh.
   const VOWELS: [number, number][] = [[350, 800], [800, 1250], [300, 2300], [620, 1200], [530, 1850]];
   const vowel = () => VOWELS[Math.floor(Math.random() * VOWELS.length)]!;
 
-  // The Wooka: a run of quick high syllables, each a different vowel, pitch hopping about.
-  const chatter = (at: At | null, loud = 0.3) => {
-    const n = 2 + Math.floor(Math.random() * 3), base = r(380, 560), out: Syllable[] = [];
+  // The Wooka are built like gorillas and howler monkeys, and sound it: low, rough in the throat,
+  // chesty. `size` stretches the pitch down for a bigger one (a Chub 0.8, Warbur 0.55, a Mossback
+  // 0.45; the small ones are 1). A "hoo" is the vowel at the back of the mouth.
+  const OO: [number, number] = [340, 760], AH: [number, number] = [760, 1180], UH: [number, number] = [560, 1050];
+  // A gorilla's hoot: "hoo, hoo, hoo-hoo-hoohoo", each shorter than the last and climbing.
+  const hoot = (at: At | null, loud = 0.4, size = 1) => {
+    const n = 3 + Math.floor(Math.random() * 4), base = r(170, 230) * size, out: Syllable[] = [];
     for (let i = 0; i < n; i++) {
-      const a = vowel(), b = vowel(), p = base * r(0.85, 1.3);
-      out.push({ f0: [p, p * r(0.8, 1.25)], f1: [a[0] * 1.3, b[0] * 1.3], f2: [a[1] * 1.3, b[1] * 1.3], len: r(0.07, 0.13), gap: r(0.02, 0.06) });
+      const p = base * (1 + i * 0.06), len = 0.2 * Math.pow(0.82, i) + 0.05;
+      out.push({ f0: [p * 0.92, p * 1.08], f1: [OO[0] * 0.95, OO[0]], f2: [OO[1], OO[1] * 0.9], len, gap: len * 0.5 });
     }
-    speak(at, loud, out, false);
+    speak(at, loud, out, false, 0.5);
   };
-  // A Wooka hit or dying: one squeal that starts high on "ee" and falls away to "ah".
-  const squeal = (at: At | null, loud = 0.45) => {
-    const p = r(700, 950);
-    speak(at, loud, [{ f0: [p, p * 0.45], f1: [380, 1000], f2: [2900, 1500], len: r(0.3, 0.45), gap: 0 }], false);
+  // A short sharp bark, "WAH": a warning, or a Wooka picking its target.
+  const bark = (at: At | null, loud = 0.45, size = 1) => {
+    const p = r(260, 340) * size;
+    speak(at, loud, [{ f0: [p * 1.2, p * 0.75], f1: [AH[0] * 0.9, AH[0]], f2: [AH[1], AH[1] * 0.9], len: r(0.1, 0.16), gap: 0 }], false, 0.7);
   };
-  // A Wooka on the charge or thrown: a rising "yee-ha" sort of whoop.
-  const whoop = (at: At | null, loud = 0.4) => {
-    const p = r(450, 600);
-    speak(at, loud, [{ f0: [p, p * 1.6], f1: [380, 900], f2: [2600, 1400], len: 0.18, gap: 0.03 }, { f0: [p * 1.6, p * 1.1], f1: [900, 700], f2: [1400, 1200], len: 0.22, gap: 0 }], false);
+  // A howler monkey's roar: a deep pulsing "RO-O-O-OAH" that carries across the whole forest.
+  const howl = (at: At | null, loud = 0.6, size = 1) => {
+    const p = r(150, 190) * size;
+    speak(at, loud, [
+      { f0: [p, p * 1.5], f1: [OO[0], UH[0]], f2: [OO[1], UH[1]], len: 0.28, gap: 0.03 },
+      { f0: [p * 1.5, p * 1.7], f1: [UH[0], AH[0]], f2: [UH[1], AH[1]], len: 0.32, gap: 0.03 },
+      { f0: [p * 1.7, p * 1.55], f1: [AH[0], AH[0]], f2: [AH[1], AH[1]], len: 0.36, gap: 0.04 },
+      { f0: [p * 1.55, p * 0.8], f1: [AH[0], OO[0]], f2: [AH[1], OO[1]], len: r(0.5, 0.7), gap: 0 },
+    ], false, 0.85);
+  };
+  // A fist on a chest: a few hollow thumps, quick, getting louder.
+  const thump = (at: At | null, loud = 0.5, size = 1) => {
+    const c = place(at, loud, 30);
+    if (!c) return;
+    const n = 3 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      const s = c.t + i * r(0.11, 0.15);
+      const g = ctx!.createGain();
+      env(g.gain, s, 0.6 + i * 0.12, 0.003, 0.13);
+      g.connect(c.out);
+      const o = osc("sine", g);
+      o.frequency.setValueAtTime(95 * size, s); o.frequency.exponentialRampToValueAtTime(48 * size, s + 0.1);
+      o.start(s); o.stop(s + 0.16);
+      hold(o);
+      const ng = ctx!.createGain();
+      env(ng.gain, s, 0.35, 0.002, 0.05);
+      ng.connect(filter("lowpass", 700)).connect(c.out);
+      const nz = noiseSrc(ng);
+      nz.start(s); nz.stop(s + 0.08);
+      hold(nz);
+    }
+  };
+  // The usual din: mostly hoots and barks, now and then a low rumbling mutter, "grrm-wubba-grm".
+  const chatter = (at: At | null, loud = 0.3, size = 1) => {
+    const roll = Math.random();
+    if (roll < 0.4) return hoot(at, loud, size);
+    if (roll < 0.65) return bark(at, loud, size);
+    const n = 2 + Math.floor(Math.random() * 3), base = r(190, 280) * size, out: Syllable[] = [];
+    for (let i = 0; i < n; i++) {
+      const a = vowel(), b = vowel(), p = base * r(0.85, 1.2);
+      out.push({ f0: [p, p * r(0.8, 1.15)], f1: [a[0] * 0.95, b[0] * 0.95], f2: [a[1] * 0.95, b[1] * 0.95], len: r(0.09, 0.16), gap: r(0.02, 0.07) });
+    }
+    speak(at, loud, out, false, 0.45);
+  };
+  // A Wooka hit or dying: a gorilla's scream, harsh, starting high and falling away to a growl.
+  const squeal = (at: At | null, loud = 0.45, size = 1) => {
+    const p = r(520, 700) * size;
+    speak(at, loud, [{ f0: [p, p * 0.4], f1: [AH[0], 700], f2: [AH[1], 1300], len: r(0.35, 0.5), gap: 0 }], false, 0.8);
+  };
+  // A Wooka on the charge or thrown: a rising whoop that breaks into a roar.
+  const whoop = (at: At | null, loud = 0.4, size = 1) => {
+    const p = r(230, 300) * size;
+    speak(at, loud, [
+      { f0: [p, p * 1.9], f1: [OO[0], AH[0]], f2: [OO[1], AH[1]], len: 0.2, gap: 0.02 },
+      { f0: [p * 1.9, p * 1.2], f1: [AH[0], UH[0]], f2: [AH[1], UH[1]], len: 0.26, gap: 0 },
+    ], false, 0.65);
   };
   // A Marine: one low "uh" or "hngh", through the mask. Dying, it's longer and falls further.
   const grunt = (at: At | null, dying = false, loud = 0.5) => {
     const p = r(105, 140), [f1, f2] = dying ? [700, 1150] : [560, 1000];
     speak(at, loud, [{ f0: [p * 1.15, p * (dying ? 0.7 : 0.9)], f1: [f1, f1 * 0.85], f2: [f2, f2 * 0.9], len: dying ? r(0.35, 0.5) : r(0.14, 0.2), gap: 0 }], true);
   };
-  const hurt = (who: Voice, at: At | null, dying = false, loud?: number) => (who === "wooka" ? squeal(at, loud) : grunt(at, dying, loud));
+  const hurt = (who: Voice, at: At | null, dying = false, loud?: number, size = 1) => (who === "wooka" ? squeal(at, loud, size) : grunt(at, dying, loud));
 
   // A thrown spear or a hex: a short swish of noise through a sweeping band.
   const swish = (at: At, loud = 0.25) => {
@@ -246,7 +321,7 @@ export function makeSfx(far = 1) {
   };
 
   return {
-    wake, laser, boom, chatter, squeal, whoop, grunt, hurt, swish, tick, chime, warn, drum, vent,
+    wake, laser, boom, chatter, hoot, bark, howl, thump, squeal, whoop, grunt, hurt, swish, tick, chime, warn, drum, vent,
     hear: (e: Ear) => { ear = e; },
     get muted() { return muted; },
     toggle: () => setMuted(!muted),

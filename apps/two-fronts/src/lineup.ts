@@ -87,7 +87,7 @@ renderer.setAnimationLoop((now) => {
   t0 = now;
   for (const m of spin) {
     m.rotation.y = turn;
-    animate(m, { t: now / 1000, dt, moved: walk ? dt * (m.userData.model === "walker" ? 3.5 : 5) : 0, since: (now / 1000 + m.id * 0.2) % 1.5 });
+    animate(m, { t: now / 1000, dt, moved: walk ? dt * (m.userData.model === "walker" ? 3.5 : 5) : 0, since: (now / 1000 + m.id * 0.2) % 1.5, call: (now / 1000 + m.id * 0.5) % 5 });
   }
   renderer.render(scene, camera);
 });

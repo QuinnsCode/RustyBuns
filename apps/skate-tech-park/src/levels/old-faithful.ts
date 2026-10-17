@@ -28,7 +28,7 @@ export const oldFaithful: ParkSpec = {
     { parts: [skyRail({ x: -20, z: 140, yaw: E }, { len: 120, y: 1.6, y2: 12 })] },
   ],
   spawns: [
-    { name: "geyser view", x: -150, z: 75, yaw: E },
+    { name: "geyser view", x: -115, z: 75, yaw: E },
     { name: "boardwalk", x: -175, z: 20, yaw: E },
     { name: "vent line", x: 24, z: 75, yaw: E },
     { name: "bowl deck", x: -17, z: 130, yaw: Math.PI },
