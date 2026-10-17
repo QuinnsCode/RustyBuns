@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { handleApi } from "../src/api.ts";
 import { hourly } from "../src/demo.ts";
 import { local } from "./app-kit.ts";
 
@@ -32,4 +33,18 @@ test("POST /api/demo signs a throwaway account in, owning Demo Co with 2,000 con
   await hourly(app.env);
   expect((await app(cookie, `/api/orgs/${org.id}`)).status).toBe(401);
   expect((await app.env.DB.prepare("SELECT COUNT(*) AS n FROM contacts WHERE org_id = ?").bind(org.id).first<{ n: number }>())?.n).toBe(0);
+});
+
+test("POST /api/demo answers with the first page seeded and the rest follows the response", async () => {
+  const app = await local();
+  const later: Promise<unknown>[] = [];
+  const res = await handleApi(new Request("http://qcrm.local/api/demo", { method: "POST", headers: { origin: "http://qcrm.local" } }), app.env, (w) => later.push(w));
+  expect(res.status).toBe(201);
+  const { org } = await res.json();
+  const cookie = res.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
+  const count = async () => (await (await app(cookie, `/api/orgs/${org.id}/insights`)).json()).counts.contacts;
+  expect(org.seeded.contacts).toBe(200);
+  expect(later).toHaveLength(1);
+  await Promise.all(later);
+  expect(await count()).toBe(2000);
 });
