@@ -55,7 +55,7 @@ export function* seedRows(n: number, seed = 1, per = 100): Generator<Batch> {
       const contact: Row = {
         id: crypto.randomUUID(), first_name: first, last_name: last, email: `${first}.${last}.${i}@${company.domain}`.toLowerCase(),
         phone: `+1 555 ${String(1000 + Math.floor(r() * 9000))} ${String(1000 + Math.floor(r() * 9000))}`, title: pick(TITLES), company_id: company.id,
-        tags: JSON.stringify([...new Set(tags)]), notes: r() < 0.3 ? pick(NOTES) : null, created_at, updated_at: created_at + Math.floor(r() * 30) * day,
+        tags: JSON.stringify([...new Set(tags)]), notes: r() < 0.3 ? pick(NOTES) : null, created_at, updated_at: Math.min(now, created_at + Math.floor(r() * 30) * day),
       };
       b.contacts.push(contact);
       if (i % 3 === 0) {
