@@ -213,6 +213,31 @@ export function makeSfx(far = 1) {
   const tick = () => beep([2400], 0.04, "square", 0.08);
   const chime = () => beep([660, 990], 0.14, "triangle", 0.3);
   const warn = () => beep([220, 220], 0.12, "square", 0.12);
+  // A war drum: a hide skin hit hard, a low thump that falls, twice.
+  const drum = () => {
+    const c = place(null, 0.7, 1);
+    if (!c) return;
+    for (const [i, f] of [[0, 90], [0.22, 70]] as const) {
+      const g = ctx!.createGain(), s = c.t + i;
+      env(g.gain, s, 1, 0.004, 0.35);
+      g.connect(c.out);
+      const o = osc("sine", g);
+      o.frequency.setValueAtTime(f, s); o.frequency.exponentialRampToValueAtTime(f * 0.5, s + 0.3);
+      o.start(s); o.stop(s + 0.4);
+      hold(o);
+    }
+  };
+  // The blaster venting: a hiss of steam that dies away.
+  const vent = () => {
+    const c = place(null, 0.22, 1);
+    if (!c) return;
+    const g = ctx!.createGain(), hp = filter("highpass", 2600, 0.8);
+    env(g.gain, c.t, 1, 0.02, 1.1);
+    g.connect(hp).connect(c.out);
+    const n = noiseSrc(g);
+    n.start(c.t); n.stop(c.t + 1.2);
+    hold(n);
+  };
 
   const setMuted = (m: boolean) => {
     muted = m;
@@ -221,7 +246,7 @@ export function makeSfx(far = 1) {
   };
 
   return {
-    wake, laser, boom, chatter, squeal, whoop, grunt, hurt, swish, tick, chime, warn,
+    wake, laser, boom, chatter, squeal, whoop, grunt, hurt, swish, tick, chime, warn, drum, vent,
     hear: (e: Ear) => { ear = e; },
     get muted() { return muted; },
     toggle: () => setMuted(!muted),
