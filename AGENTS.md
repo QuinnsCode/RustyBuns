@@ -42,6 +42,14 @@ codeSplitter's site (`scripts/site/codesplitter.ts`, tags `codesplitter-v*`) gen
 and MCP tool list from `apps/codesplitter/src/openapi.ts` and `src/mcp-tools.ts`, so an endpoint change
 updates its docs in the same PR. Those two files must keep importing nothing else.
 
+## Effect: where it fits
+
+Reach for `effect` where something must be cleaned up, cancelled, retried, or can lose state (child processes, sockets,
+saves, deploys, CI and agent runs), and the right answer to a failure depends on which failure it is. Keep it out of
+per-tick and per-frame code, the sim, and anything pure or size-sensitive, and use it at the edges (`runScoped` and
+`spawnScoped` in `packages/cli` first) so plain functions never import it. If a plain `try/finally` or `AbortController`
+already covers it, leave it plain; read the rest as a lean, not a law.
+
 ## Cut before you add
 
 Grep before writing a helper. If it exists twice, pull it up and delete the copies in the same PR.
