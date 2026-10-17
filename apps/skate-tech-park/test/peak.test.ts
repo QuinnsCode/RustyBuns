@@ -27,7 +27,7 @@ test.each([...PEAK_BUDGETS])("the %s Half Dome stands past the park's west edge,
     const m = o as THREE.Mesh;
     if (!m.isMesh) return;
     tris += (m.geometry.index?.count ?? 0) / 3;
-    expect((m.material as THREE.Material).fog).toBe(false);
+    expect((m.material as THREE.MeshBasicMaterial).fog).toBe(false);
   });
   expect(tris).toBeLessThan(BUDGET[budget]);
 });
