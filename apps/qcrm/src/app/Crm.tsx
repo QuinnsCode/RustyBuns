@@ -21,6 +21,7 @@ const rowsOf = (r: any): Row[] => (Array.isArray(r) ? r : r?.items ?? r?.rows ??
 const nextOf = (r: any): string | null => r?.next ?? r?.cursor ?? null;
 const money = (cents: unknown, cur = "USD") => typeof cents === "number" ? new Intl.NumberFormat(undefined, { style: "currency", currency: cur, maximumFractionDigits: 0 }).format(cents / 100) : "";
 const when = (v: unknown) => (typeof v === "number" || typeof v === "string") && v ? new Date(v).toLocaleDateString() : "";
+const whenAt = (v: unknown) => (typeof v === "number" || typeof v === "string") && v ? new Date(v).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
 /** What a linked row is called in a table or a picker. */
 const nameOf = (r: Row) => r.name ?? ([r.first_name, r.last_name].filter(Boolean).join(" ") || r.email || r.id);
 const ROLES = ["seasonal", "employee", "manager", "owner", "admin"] as const;
@@ -106,6 +107,12 @@ function Auth({ onDone, demo, err }: { onDone: () => Promise<void>; demo: boolea
   const [msg, setMsg] = useState(err);
   const [note, setNote] = useState("");
   const go = (m: typeof mode) => { setMsg(""); setNote(""); setMode(m); };
+  const [social, setSocial] = useState<string[]>([]);
+  useEffect(() => { api("/providers").then((p: string[]) => setSocial(p.filter((x) => x !== "email"))).catch(() => {}); }, []);
+  const via = async (provider: string) => {
+    try { const r = await api("/auth/sign-in/social", { method: "POST", body: JSON.stringify({ provider, callbackURL: location.pathname + location.search }) }); if (r?.url) location.href = r.url; }
+    catch (x) { setMsg((x as Error).message); }
+  };
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -121,6 +128,7 @@ function Auth({ onDone, demo, err }: { onDone: () => Promise<void>; demo: boolea
   return (
     <div className="auth" data-tour="auth">
       <h2>{{ in: "Sign in", up: "Create your account", forgot: "Reset your password", reset: "Pick a new password" }[mode]}</h2>
+      {social.length > 0 && <div className="row">{social.map((p) => <button key={p} type="button" onClick={() => via(p)}><Icon name={p === "github" ? "github" : "mail"} /> Continue with {p === "github" ? "GitHub" : "Google"}</button>)}</div>}
       <p className="muted">Email and password, kept by Better Auth. Your first org is made when you sign up.</p>
       <form onSubmit={submit}>
         {mode === "up" && <label><span>Name</span><input name="name" autoComplete="name" /></label>}
@@ -160,6 +168,8 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
   const [ms, setMs] = useState<number | null>(null);
   const [edit, setEdit] = useState<Row | null>(null);
   const [msg, setMsg] = useState("");
+  const [board, setBoard] = useState(false);
+  const [rev, setRev] = useState(0);
   const cols = COLS[entity]!;
   const [names, setNames] = useState<Record<string, string>>({});
   const fetchPage = useCallback(async (cursor: string | null, replace: boolean) => {
@@ -189,9 +199,19 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
   const save = async (data: Row) => {
     const id = edit?.id;
     await api(`/orgs/${org}/${entity}${id ? "/" + id : ""}`, { method: id ? "PUT" : "POST", body: JSON.stringify(data) });
-    setEdit(null); await fetchPage(null, true);
+    setEdit(null); setRev((n) => n + 1); await fetchPage(null, true);
   };
-  const remove = async (id: string) => { await api(`/orgs/${org}/${entity}/${id}`, { method: "DELETE" }); setEdit(null); await fetchPage(null, true); };
+  const remove = async (id: string) => { await api(`/orgs/${org}/${entity}/${id}`, { method: "DELETE" }); setEdit(null); setRev((n) => n + 1); await fetchPage(null, true); };
+  const importFile = async (file: File | undefined) => {
+    if (!file) return;
+    setMsg("");
+    try {
+      const r = await api(`/orgs/${org}/${entity}/import`, { method: "POST", body: JSON.stringify({ csv: await file.text() }) });
+      setMsg(`Imported ${r.created.toLocaleString()}, skipped ${r.duplicates.toLocaleString()} duplicates${r.failed ? `, ${r.failed} rows failed (first: row ${r.errors[0].row}, ${r.errors[0].error})` : ""}.`);
+      await fetchPage(null, true);
+    } catch (e) { setMsg((e as Error).message); }
+  };
+  const [over, setOver] = useState(false);
   const minCreate = entity === "activities" ? "seasonal" : "employee";
   return (
     <>
@@ -200,10 +220,16 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
         <input type="search" placeholder={`Search ${entity}…`} value={q} onChange={(e) => setQ(e.target.value)} data-tour="search" aria-label="Search" />
         {ms !== null && <span className="num" title="Round trip to the edge, this page">{ms} ms</span>}
         {total !== null && <span className="num">{total.toLocaleString()} rows</span>}
+        {entity === "deals" && <div className="seg" role="group" aria-label="View">
+          <button type="button" aria-pressed={!board} title="Table" aria-label="Table" onClick={() => setBoard(false)}><Icon name="table" /></button>
+          <button type="button" aria-pressed={board} title="Board by stage" aria-label="Board" onClick={() => setBoard(true)}><Icon name="kanban" /></button>
+        </div>}
+        {(entity === "contacts" || entity === "companies") && can("employee") && <label className="btn" title="Import a CSV"><Icon name="upload" /> Import<input type="file" accept=".csv,text/csv" hidden onChange={(e) => { void importFile(e.target.files?.[0]); e.target.value = ""; }} /></label>}
         {can(minCreate) && <button className="primary" type="button" onClick={() => setEdit({})}><Icon name="plus" /> New</button>}
       </div>
       {msg && <p className="err">{msg}</p>}
-      <div className="table">
+      {(entity === "contacts" || entity === "companies") && can("employee") && <div className={`dropzone${over ? " over" : ""}`} onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(e) => { e.preventDefault(); setOver(false); void importFile(e.dataTransfer.files[0]); }}>Drop a CSV here to import {entity}</div>}
+      {entity === "deals" && board ? <Board org={org} q={q} rev={rev} canEdit={can("employee")} onOpen={setEdit} onError={setMsg} /> : <div className="table">
         <table>
           <thead><tr>{cols.map((c) => <th key={c.key}>{c.label}</th>)}</tr></thead>
           <tbody>
@@ -215,10 +241,54 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
           </tbody>
         </table>
         {!rows.length && <div className="empty">{q ? "Nothing matches." : `No ${entity} yet.`}</div>}
-      </div>
-      {next && <button type="button" onClick={() => fetchPage(next, false)}>Load more</button>}
+      </div>}
+      {next && !(entity === "deals" && board) && <button type="button" onClick={() => fetchPage(next, false)}>Load more</button>}
       {edit && <Sheet org={org} entity={entity} row={edit} onClose={() => setEdit(null)} onSave={save} onDelete={can("manager") && edit.id ? () => remove(edit.id) : undefined} canEdit={can("employee") || !edit.id} />}
     </>
+  );
+}
+
+/** Deals as columns by stage. Dropping a card on another column is one PUT of its stage. */
+function Board({ org, q, rev, canEdit, onOpen, onError }: { org: string; q: string; rev: number; canEdit: boolean; onOpen: (r: Row) => void; onError: (m: string) => void }) {
+  const [cols, setCols] = useState<Record<string, { rows: Row[]; next: string | null }>>({});
+  const [over, setOver] = useState("");
+  const load = useCallback(async (stage: string, cursor: string | null) => {
+    const p = new URLSearchParams({ limit: "50", stage });
+    if (q) p.set("q", q);
+    if (cursor) p.set("cursor", cursor);
+    const r = await api(`/orgs/${org}/deals?${p}`);
+    setCols((c) => ({ ...c, [stage]: { rows: cursor ? [...(c[stage]?.rows ?? []), ...rowsOf(r)] : rowsOf(r), next: nextOf(r) } }));
+  }, [org, q]);
+  useEffect(() => { void Promise.all(STAGES.map((s) => load(s, null))).catch((e) => onError((e as Error).message)); }, [load, rev]); // eslint-disable-line react-hooks/exhaustive-deps
+  const drop = async (stage: string, id: string) => {
+    setOver("");
+    const from = STAGES.find((s) => cols[s]?.rows.some((r) => r.id === id));
+    if (!from || from === stage) return;
+    const row = cols[from]!.rows.find((r) => r.id === id)!;
+    setCols((c) => ({ ...c, [from]: { ...c[from]!, rows: c[from]!.rows.filter((r) => r.id !== id) }, [stage]: { ...c[stage]!, rows: [{ ...row, stage }, ...(c[stage]?.rows ?? [])] } }));
+    try { await api(`/orgs/${org}/deals/${id}`, { method: "PUT", body: JSON.stringify({ stage }) }); }
+    catch (e) { onError((e as Error).message); await Promise.all([load(from, null), load(stage, null)]).catch(() => {}); }
+  };
+  return (
+    <div className="board" data-testid="board">
+      {STAGES.map((s) => {
+        const col = cols[s]?.rows ?? [];
+        const sum = col.reduce((a, r) => a + (typeof r.amount_cents === "number" ? r.amount_cents : 0), 0);
+        return (
+          <section key={s} className={`lane${over === s ? " over" : ""}`} data-stage={s}
+            onDragOver={(e) => { if (canEdit) { e.preventDefault(); setOver(s); } }} onDragLeave={() => setOver("")}
+            onDrop={(e) => { e.preventDefault(); void drop(s, e.dataTransfer.getData("text/plain")); }}>
+            <header><Stage v={s} /><span className="num">{col.length}{cols[s]?.next ? "+" : ""} · {money(sum)}</span></header>
+            {col.map((r) => (
+              <article key={r.id} className="deal" draggable={canEdit} onDragStart={(e) => e.dataTransfer.setData("text/plain", r.id)} onClick={() => onOpen(r)}>
+                <strong>{r.name}</strong><span className="num">{money(r.amount_cents, r.currency || "USD")}</span>
+              </article>
+            ))}
+            {cols[s]?.next && <button type="button" onClick={() => void load(s, cols[s]!.next)}>More</button>}
+          </section>
+        );
+      })}
+    </div>
   );
 }
 
@@ -270,6 +340,9 @@ function Sheet({ org, entity, row, onClose, onSave, onDelete, canEdit }: { org: 
   );
 }
 
+/** Date `ago` weeks back, as "Oct 9": the axis label of that week bucket. */
+const weekLabel = (ago: number) => new Date(Date.now() - ago * 7 * 86_400_000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
 function Insights({ org }: { org: string }) {
   const [d, setD] = useState<any>(null);
   const [msg, setMsg] = useState("");
@@ -292,8 +365,8 @@ function Insights({ org }: { org: string }) {
         <div className="kpi"><span className="tag">Win rate, 90 d</span><span className="num">{winRate == null ? "–" : `${Math.round(Number(winRate) * 100)}%`}</span></div>
       </div>
       {stages.length > 0 && <div className="card"><h3>Pipeline by stage</h3><div className="bars">{stages.map((s) => <div className="bar" key={s.stage}><Stage v={s.stage} /><i style={{ width: `${(100 * s.amount_cents) / max}%` }} /><span className="num">{money(s.amount_cents)} · {s.n}</span></div>)}</div></div>}
-      {weeks.length > 0 && <div className="card"><h3>Activities, last 12 weeks</h3><div className="spark">{weeks.map((w) => <i key={w.weeks_ago} title={`${w.weeks_ago} weeks ago: ${w.total}`} style={{ height: `${(100 * w.total) / wmax}%` }} />)}</div></div>}
-      {top.length > 0 && <div className="card"><h3>Open pipeline by company</h3><div className="bars">{top.map((c) => <div className="bar" key={c.name}><span>{c.name}</span><i style={{ width: `${(100 * c.amount_cents) / tmax}%` }} /><span className="num">{money(c.amount_cents)} · {c.deals}</span></div>)}</div></div>}
+      {weeks.length > 0 && <div className="card"><h3>Activities, last 12 weeks</h3><div className="spark">{weeks.map((w) => <div className="col" key={w.weeks_ago} title={`${weekLabel(w.weeks_ago)}: ${w.total} activities`}><span className="num">{w.total}</span><i style={{ height: `${(100 * w.total) / wmax}%` }} /><span className="axis">{weekLabel(w.weeks_ago)}</span></div>)}</div></div>}
+      {top.length > 0 && <div className="card"><h3>Open pipeline by company</h3><div className="bars">{top.map((c) => <div className="bar" key={c.name}><span className="name" title={c.name}>{c.name}</span><i style={{ width: `${(100 * c.amount_cents) / tmax}%` }} /><span className="num">{money(c.amount_cents)} · {c.deals}</span></div>)}</div></div>}
     </>
   );
 }
@@ -468,6 +541,8 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
   const [hookUrl, setHookUrl] = useState("");
   const [hookErr, setHookErr] = useState("");
   const [inviteErr, setInviteErr] = useState("");
+  const [seeding, setSeeding] = useState("");
+  const [seedBusy, setSeedBusy] = useState(false);
   const base = `/orgs/${org.id}`;
   const refresh = useCallback(() => {
     api(`${base}/members`).then((r) => setMembers(rowsOf(r))).catch(() => {});
@@ -526,13 +601,18 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
       </div>
       {can("manager") && audit.length > 0 && <div className="card">
         <h3><Icon name="scroll-text" /> Audit log</h3>
-        <div className="table"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th></tr></thead><tbody>{audit.slice(0, 50).map((a) => <tr key={a.id}><td>{when(a.at)}</td><td>{a.actor_email ?? a.actor_user_id}</td><td>{a.action}</td><td>{a.target}</td></tr>)}</tbody></table></div>
+        <div className="table"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th></tr></thead><tbody>{audit.slice(0, 50).map((a) => <tr key={a.id}><td>{whenAt(a.at)}</td><td>{a.actor_name ?? a.actor_email ?? a.actor_user_id ?? "system"}{a.actor_name && <span className="muted"> {a.actor_email}</span>}</td><td>{a.action}</td><td>{a.target_name ?? a.target}{a.target_type && <span className="muted"> {a.target_type}</span>}</td></tr>)}</tbody></table></div>
       </div>}
       <div className="card">
         <h3><Icon name="download" /> Your data</h3>
         <div className="row">
           {can("owner") && <a className="btn" href={`/api${base}/export`} download={`qcrm-${org.id}.json`}><Icon name="download" /> Export every row</a>}
-          {can("owner") && <button type="button" onClick={() => { const n = Number(prompt("Seed how many contacts? (up to 100000)", "1000")); if (n > 0) act(async () => { await api(`${base}/seed`, { method: "POST", body: JSON.stringify({ n }) }); await reload(); setMsg(`Seeded ${n.toLocaleString()} contacts. Open Contacts to see them.`); }); }}><Icon name="flask-conical" /> Seed sample data</button>}
+          {can("owner") && !seeding && <button type="button" onClick={() => setSeeding("1000")}><Icon name="flask-conical" /> Seed sample data</button>}
+          {can("owner") && seeding && <form className="row" onSubmit={(e) => { e.preventDefault(); const n = Math.floor(Number(seeding)); if (!(n > 0 && n <= 100000)) { setMsg("Seed between 1 and 100,000 contacts."); return; } act(async () => { setSeedBusy(true); try { await api(`${base}/seed`, { method: "POST", body: JSON.stringify({ n }) }); await reload(); setMsg(`Seeded ${n.toLocaleString()} contacts. Open Contacts to see them.`); setSeeding(""); } finally { setSeedBusy(false); } }); }}>
+            <input type="number" min={1} max={100000} aria-label="How many contacts (up to 100,000)" value={seeding} onChange={(e) => setSeeding(e.target.value)} disabled={seedBusy} autoFocus />
+            <button type="submit" disabled={seedBusy}><Icon name="flask-conical" /> {seedBusy ? "Seeding..." : "Seed"}</button>
+            <button type="button" disabled={seedBusy} onClick={() => setSeeding("")}>Cancel</button>
+          </form>}
           <span className="grow" />
           <button type="button" style={{ color: "var(--bad)" }} onClick={() => { const c = prompt(`Delete your account, the orgs you own and all their rows? Type your email to confirm.`); if (c) act(() => api(`/me?confirm=${encodeURIComponent(c)}`, { method: "DELETE" }).then(() => { location.href = "/"; })); }}>Delete my account</button>
         </div>

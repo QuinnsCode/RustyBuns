@@ -1,5 +1,9 @@
 // A few lucide icons as inline SVG (24-unit grid, stroke), so the page loads no icon font. Names are lucide's.
 const PATHS: Record<string, string> = {
+  table: "M12 3v18M3 3h18v18H3zM3 9h18M3 15h18",
+  kanban: "M5 3v14M12 3v8M19 3v18",
+  github: "M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65S8.93 17.38 9 18v4M9 18c-4.51 2-5-2-7-2",
+  mail: "M22 7l-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z",
   plug: "M12 22v-5M9 8V2M15 8V2M18 8H6a2 2 0 0 0-2 2v2a6 6 0 0 0 12 0v-2a2 2 0 0 0-2-2z",
   cpu: "M4 4h16v16H4zM9 9h6v6H9zM9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3",
   monitor: "M2 3h20v14H2zM8 21h8M12 17v4",
@@ -15,6 +19,7 @@ const PATHS: Record<string, string> = {
   "key-round": "M2.59 13.41A2 2 0 0 1 2 12V7a5 5 0 0 1 10 0v5a2 2 0 0 1-.59 1.41L7 17.83V21h3l1-1v-2l1-1h2l1-1v-2l.59-.59M12 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0z",
   "scroll-text": "M15 12h-5M15 8h-5M19 17V5a2 2 0 0 0-2-2H4M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3",
   download: "M12 15V3M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5",
+  upload: "M12 3v12M17 8l-5-5-5 5M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4",
   "log-out": "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
   plus: "M5 12h14M12 5v14",
   search: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35",
