@@ -114,14 +114,15 @@ tbody tr:hover td { background: var(--hover); }
 td .num { color: var(--dim); }
 .stage { font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; border-radius: 6px; padding: 2px 6px; background: var(--hover); border: 1px solid var(--line); }
 .stage.won { color: var(--ok); } .stage.lost { color: var(--bad); } .stage.proposal, .stage.qualified { color: var(--accent); }
-.kpis { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+.kpis { display: grid; gap: 12px; grid-template-columns: repeat(5, 1fr); }
 .kpi { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 2px; }
 .kpi .tag { font-size: 11px; }
 .kpi .num { font-size: 26px; font-weight: 650; letter-spacing: -0.02em; }
 .bars { display: grid; gap: 6px; }
-.bar { display: grid; grid-template-columns: 90px 1fr 80px; gap: 10px; align-items: center; font-size: 13px; }
+.bar { display: grid; grid-template-columns: 140px 1fr 110px; gap: 10px; align-items: center; font-size: 13px; }
 .bar i { display: block; height: 10px; border-radius: 5px; background: var(--sky); min-width: 2px; }
-.bar .num { text-align: right; color: var(--dim); }
+.bar .num { text-align: right; color: var(--dim); white-space: nowrap; }
+.bar .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheet { position: fixed; inset: 0; background: #0b1f3a66; display: grid; justify-items: end; z-index: 50; }
 .sheet form, .sheet .panel { background: var(--paper); height: 100%; width: min(480px, 100%); padding: 20px; display: grid; gap: 12px; align-content: start; overflow: auto; border-left: 1px solid var(--line); box-shadow: var(--shadow); }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -135,8 +136,10 @@ td .num { color: var(--dim); }
 .list .card { padding: 12px 14px; }
 pre.code { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 12px; overflow: auto; font-size: 13px; margin: 0; }
 .muted { color: var(--dim); font-size: 13px; }
-.spark { display: flex; align-items: flex-end; gap: 3px; height: 48px; }
-.spark i { flex: 1; background: var(--sky); border-radius: 2px 2px 0 0; min-height: 2px; }
+.spark { display: flex; gap: 4px; height: 110px; }
+.spark .col { flex: 1; min-width: 0; display: grid; grid-template-rows: auto 1fr auto; justify-items: center; align-items: end; gap: 2px; font-size: 11px; color: var(--dim); }
+.spark .col i { width: 100%; background: var(--sky); border-radius: 2px 2px 0 0; min-height: 2px; }
+.spark .axis { white-space: nowrap; font-size: 10px; }
 
 /* The tour: a spotlight and one card. */
 .tour-dim { position: fixed; inset: 0; z-index: 1000; }
@@ -152,7 +155,10 @@ pre.code { background: var(--paper); border: 1px solid var(--line); border-radiu
   .rail { border-right: 0; border-bottom: 1px solid var(--line); display: flex; overflow-x: auto; gap: 4px; }
   .rail .org { display: none; }
   .rail a, .rail button.nav-item { width: auto; white-space: nowrap; }
-  .bar { grid-template-columns: 70px 1fr 60px; }
+  .bar { grid-template-columns: 90px 1fr 90px; }
+  .kpis { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+  .spark .axis { display: none; }
+  .spark .col:nth-child(3n+1) .axis { display: block; }
   .hero { min-height: 340px; }
 }
 @media (prefers-reduced-motion: reduce) { .tour-dim .hole { transition: none; } }

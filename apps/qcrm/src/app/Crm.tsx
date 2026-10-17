@@ -235,6 +235,9 @@ function Sheet({ entity, row, onClose, onSave, onDelete, canEdit }: { entity: st
   );
 }
 
+/** Start of the week bucket `ago` weeks back, as "Oct 9". */
+const weekLabel = (ago: number) => new Date(Date.now() - ago * 7 * 86_400_000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
 function Insights({ org }: { org: string }) {
   const [d, setD] = useState<any>(null);
   const [msg, setMsg] = useState("");
@@ -257,8 +260,8 @@ function Insights({ org }: { org: string }) {
         <div className="kpi"><span className="tag">Win rate, 90 d</span><span className="num">{winRate == null ? "–" : `${Math.round(Number(winRate) * 100)}%`}</span></div>
       </div>
       {stages.length > 0 && <div className="card"><h3>Pipeline by stage</h3><div className="bars">{stages.map((s) => <div className="bar" key={s.stage}><span className={`stage ${s.stage}`}>{s.stage}</span><i style={{ width: `${(100 * s.amount_cents) / max}%` }} /><span className="num">{money(s.amount_cents)} · {s.n}</span></div>)}</div></div>}
-      {weeks.length > 0 && <div className="card"><h3>Activities, last 12 weeks</h3><div className="spark">{weeks.map((w) => <i key={w.weeks_ago} title={`${w.weeks_ago} weeks ago: ${w.total}`} style={{ height: `${(100 * w.total) / wmax}%` }} />)}</div></div>}
-      {top.length > 0 && <div className="card"><h3>Open pipeline by company</h3><div className="bars">{top.map((c) => <div className="bar" key={c.name}><span>{c.name}</span><i style={{ width: `${(100 * c.amount_cents) / tmax}%` }} /><span className="num">{money(c.amount_cents)} · {c.deals}</span></div>)}</div></div>}
+      {weeks.length > 0 && <div className="card"><h3>Activities, last 12 weeks</h3><div className="spark">{weeks.map((w) => <div className="col" key={w.weeks_ago} title={`${weekLabel(w.weeks_ago)}: ${w.total} activities`}><span className="num">{w.total}</span><i style={{ height: `${(100 * w.total) / wmax}%` }} /><span className="axis">{weekLabel(w.weeks_ago)}</span></div>)}</div></div>}
+      {top.length > 0 && <div className="card"><h3>Open pipeline by company</h3><div className="bars">{top.map((c) => <div className="bar" key={c.name}><span className="name" title={c.name}>{c.name}</span><i style={{ width: `${(100 * c.amount_cents) / tmax}%` }} /><span className="num">{money(c.amount_cents)} · {c.deals}</span></div>)}</div></div>}
     </>
   );
 }
