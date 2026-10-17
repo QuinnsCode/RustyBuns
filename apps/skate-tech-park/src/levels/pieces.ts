@@ -37,7 +37,7 @@ export const shape = (kind: PieceKind, name: string, at: At, w: number, d: numbe
   height: (lx, lz) => (Math.abs(lx) > w / 2 || Math.abs(lz) > d / 2 ? 0 : f(lx, lz)),
   ...(look ? { look } : {}),
 });
-const RAMP: Look = { kind: "ramp" }, BLOCK: Look = { kind: "block" };
+const RAMP: Look = { kind: "ramp" }, BLOCK: Look = { kind: "block" }, ROCK: Look = { kind: "rock" }, LOG: Look = { kind: "log" };
 
 export const bar = (kind: RailKind, at: At, lx1: number, lz1: number, lx2: number, lz2: number, y: number, y2?: number): Rail =>
   ({ kind, a: toWorld(at, lx1, lz1), b: toWorld(at, lx2, lz2), y, ...(y2 === undefined ? {} : { y2 }) });
@@ -155,10 +155,11 @@ export const hubba = (at: At, o: { steps?: number; rise?: number; run?: number }
   return join(stairSet(at, { w: 3, steps, rise, run, name: "hubba stairs" }), ledge({ ...toWorld(at, 2.4 * K, 0), yaw: at.yaw }, { len, w: 0.8, h: steps * rise, name: "hubba" }));
 };
 
-/** Four faces meeting in a point: a hip to jump over, or a boulder. */
+/** Four faces meeting in a point: a hip to jump over (wood), or a boulder (granite). Under any other name it keeps the sampled mesh. */
 export const hip = (at: At, o: { w?: number; d?: number; h?: number; name?: string } = {}): Part => {
   const { name = "hip" } = o, w = (o.w ?? 6) * K, d = (o.d ?? 6) * L, h = (o.h ?? 1.2) * K;
-  return part({ pieces: [shape("ramp", name, at, w, d, (lx, lz) => h * clamp01(Math.min(1 - Math.abs(lx) / (w / 2), 1 - Math.abs(lz) / (d / 2))))] });
+  return part({ pieces: [shape("ramp", name, at, w, d, (lx, lz) => h * clamp01(Math.min(1 - Math.abs(lx) / (w / 2), 1 - Math.abs(lz) / (d / 2))),
+    name === "hip" ? { kind: "hip" } : name === "boulder" ? ROCK : undefined)] });
 };
 
 /** Two banks back to back, with coping along the ridge. */
@@ -212,7 +213,7 @@ export const rollers = (at: At, o: { w?: number; n?: number; period?: number; h?
 export const fallenLog = (at: At, o: { len?: number; r?: number; name?: string } = {}): Part => {
   const { name = "fallen log" } = o, len = (o.len ?? 14) * L, r = (o.r ?? 0.7) * K;
   return part({
-    pieces: [shape("ramp", name, at, r * 2, len, (lx, lz) => r * Math.sqrt(Math.max(0, 1 - (lx / r) ** 2)) * clamp01((len / 2 - Math.abs(lz)) / 0.8))],
+    pieces: [shape("ramp", name, at, r * 2, len, (lx, lz) => r * Math.sqrt(Math.max(0, 1 - (lx / r) ** 2)) * clamp01((len / 2 - Math.abs(lz)) / 0.8), LOG)],
     rails: [bar("ledge", at, 0, -len / 2 + 0.8, 0, len / 2 - 0.8, r)],
   });
 };
@@ -220,7 +221,7 @@ export const fallenLog = (at: At, o: { len?: number; r?: number; name?: string }
 /** A round granite boulder to hop onto or round: a dome, steep at its foot. */
 export const outcrop = (at: At, o: { r?: number; h?: number; name?: string } = {}): Part => {
   const { name = "boulder" } = o, r = (o.r ?? 3) * K, h = (o.h ?? 2) * K;
-  return part({ pieces: [shape("ramp", name, at, r * 2, r * 2, (lx, lz) => h * Math.sqrt(Math.max(0, 1 - (Math.hypot(lx, lz) / r) ** 2)))] });
+  return part({ pieces: [shape("ramp", name, at, r * 2, r * 2, (lx, lz) => h * Math.sqrt(Math.max(0, 1 - (Math.hypot(lx, lz) / r) ** 2)), ROCK)] });
 };
 
 /** A geyser cone: a mound rising to a rim with a crater sunk in the middle, to ride round the lip of. */
