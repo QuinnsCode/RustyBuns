@@ -10,7 +10,7 @@
 // Nothing here logs an email or a row.
 
 import { adminRoutes } from "./admin.ts";
-import { accountsOff, accountsOn, authFor, crossSite, keyRoutes, sessionUser } from "./auth.ts";
+import { accountsOff, accountsOn, authFor, crossSite, keyRoutes, providers, sessionUser } from "./auth.ts";
 import { crmRoutes } from "./crm.ts";
 import { demoRoute } from "./demo.ts";
 import { error, json, type Env, type HookMessage } from "./env.ts";
@@ -48,6 +48,8 @@ async function route(req: Request, env: Env, defer?: Defer): Promise<Response> {
   if (p[1] === "openapi.json" && !p[2]) return json(openapi(env.BETTER_AUTH_URL ?? url.origin));
   if (p[1] === "mcp" && !p[2]) return mcp(req, env, (r) => handleApi(r, env));
   if (!accountsOn(env)) return accountsOff();
+  // Which sign-in methods the form offers: public, it has to load before anyone is signed in.
+  if (p[1] === "providers" && !p[2] && req.method === "GET") return json(providers(env));
   if (p[1] === "demo" && !p[2]) return demoRoute(req, env, defer);
 
   const refused = crossSite(req, env);
