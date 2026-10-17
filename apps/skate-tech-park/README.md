@@ -38,6 +38,10 @@ The hand-placed kit and ribbons stand on the ground; the earthworks (`src/levels
 
 `blender/roadster.py` models the rocket roadster as the October 2026 reveal shows it, not the 2017 prototype: a body lofted through cross-sections into flat facets with hard creases and a chine down each flank, Ano White over a dark sill, a gold visor canopy, dual triangular headlights, a plain tail light bar over the diffuser that holds the four rear nozzles, arches cut round the wheels, and the pop-out wing up on its struts, at the shared roadster's footprint. `dressRoadster` swaps it in over the shared one and keeps that one's ten nozzle bells and its hinged plate, so the plumes and the plate drop still work. `?car=hi|mid|low` (`mid` by default, about 1.5k triangles; the budgets differ in how round the wheels and arches are) or `?car=built`; `?showroom` parks it under a circling camera.
 
+## The home page flies over a park
+
+Open the page with no level and there is no rider: a slow camera tours a park chosen at random (`?tour=half-dome` picks one, `?at=40` starts forty seconds in) behind a few rounded, 80% opaque panels. It sweeps round the spawn, the park's landmark and its biggest pieces from a high, narrow, near-isometric angle, then flies up the hill to the highest ground for one wide pan over everything (`src/render/tour.ts`, a pure function of time). It is the live game scene, so nothing is recorded or served as video. **Ride** and **With friends** start the park on show, **Next park** flies over another, and a card per park starts that one.
+
 ## Run it
 
 ```

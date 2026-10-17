@@ -38,3 +38,9 @@ export const needsStartScreen = (search: string) => {
 
 /** `?real` rides the terrain at its true height instead of squashed vertically. */
 export const wantsReal = (search: string) => new URLSearchParams(search).has("real");
+
+/** The park the home page flies over: `?tour=half-dome`, else one at random, so each visit shows a different one. */
+export const tourPick = (search: string, rand = Math.random): Entry => {
+  const parks = LEVELS.filter((l) => l.id !== "plaza");
+  return parks.find((l) => l.id === new URLSearchParams(search).get("tour")) ?? parks[Math.floor(rand() * parks.length)]!;
+};

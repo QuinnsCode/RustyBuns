@@ -1,18 +1,21 @@
 // Which level the page rides (`?level=` or the menu), and the level's side of the HUD: the menu, the
 // goal list, the pickups. main.ts asks for the chosen level and calls `ui.update` each frame.
-import { Check, Circle, createElement, MapPin, Mountain } from "lucide";
+import { Check, ChevronRight, Circle, createElement, Mountain, Play, Users } from "lucide";
 import { Fog, type Scene } from "three";
 import type { Level } from "../level.ts";
 import type { State } from "../sim.ts";
 import "./levels.css";
 import { groundMesh, props } from "./ground.ts";
 import { trackRun, type Run } from "./goals.ts";
-import { LEVELS, needsStartScreen, pick, wantsReal } from "./index.ts";
+import { LEVELS, needsStartScreen, pick, tourPick, wantsReal } from "./index.ts";
+import { newRoomCode } from "../net/client.ts";
 import { terrainCanvas } from "./thumb.ts";
 import type { Goal, ParkLevel } from "./park.ts";
 import { moodFor } from "../render/weather.ts";
 
-const entry = pick(location.search);
+/** True on the home page: no level asked for, so the camera tours a park instead of a rider riding it. */
+export const touring = needsStartScreen(location.search);
+const entry = touring ? tourPick(location.search) : pick(location.search);
 export const levelId = entry.id;
 export const level: Level | ParkLevel = entry.load(wantsReal(location.search));
 export const park = "goals" in level;
@@ -30,42 +33,54 @@ const real = wantsReal(location.search);
 /** A link target for a level, keeping the real-height choice. */
 const to = (id: string) => `?level=${id}${real ? "&real" : ""}`;
 
-/** The start screen: one card per level; choosing one reloads the page on it. */
-function startScreen() {
-  const wrap = document.createElement("div");
-  wrap.className = "start";
-  const title = document.createElement("h1");
-  title.textContent = "Pick a park";
-  const grid = document.createElement("div");
-  grid.className = "start-grid";
+/** The home page: the camera flies over a park (main.ts) behind a few rounded panels: what this is, a way in, and a card per park. */
+function homePage() {
+  document.body.classList.add("home");
+  const icon = (n: Parameters<typeof createElement>[0]) => createElement(n, { width: 18, height: 18 });
+  const pill = (cls: string, node: Parameters<typeof createElement>[0], text: string, go: () => void) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = `pill ${cls}`;
+    b.append(icon(node), text);
+    b.addEventListener("click", go);
+    return b;
+  };
+  const hero = document.createElement("section");
+  hero.className = "panel hero";
+  const title = document.createElement("h1"), pitch = document.createElement("p"), now = document.createElement("p"), row = document.createElement("div");
+  title.textContent = "Skate Tech Park";
+  pitch.textContent = "A giant fingerboard on the real hills of Yosemite. One board, one physics: every flip, grind and bail is real, and up to four friends can ride the same park.";
+  now.className = "now";
+  now.append("Flying over ", Object.assign(document.createElement("strong"), { textContent: entry.name }), `. ${entry.blurb}`);
+  const next = LEVELS.filter((l) => l.id !== "plaza"), after = next[(next.findIndex((l) => l.id === entry.id) + 1) % next.length]!;
+  row.className = "row";
+  const nextBtn = pill("quiet", ChevronRight, "Next park", () => { location.search = `?tour=${after.id}`; });
+  nextBtn.title = `Next park: ${after.name}`;
+  row.append(pill("go", Play, "Ride", () => { location.search = to(entry.id); }), pill("", Users, "With friends", () => { location.search = `${to(entry.id)}&room=${newRoomCode()}`; }), nextBtn);
+  hero.append(title, pitch, now, row);
+
+  const parks = document.createElement("section");
+  parks.className = "panel parks";
   for (const l of LEVELS) {
-    const card = document.createElement("button"), name = document.createElement("strong"), blurb = document.createElement("span");
+    const card = document.createElement("button"), name = document.createElement("strong"), thumb = document.createElement("div");
     card.type = "button";
-    name.append(createElement(MapPin, { width: 16, height: 16 }), l.name);
-    blurb.textContent = l.blurb;
-    const thumb = document.createElement("div");
+    card.title = l.blurb;
+    card.className = l.id === entry.id ? "card here" : "card";
     thumb.className = "thumb";
-    card.append(thumb, name, blurb);
+    name.textContent = l.name;
+    card.append(thumb, name);
     setTimeout(() => thumb.append(terrainCanvas(l.load())), 0); // one map per tick so the cards fill in without freezing the page
-    // Parallax: the map tilts and slides against the pointer, the card's text stays put.
-    card.addEventListener("pointermove", (e) => {
-      const r = card.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
-      thumb.style.setProperty("--tx", `${(-x * 14).toFixed(1)}px`);
-      thumb.style.setProperty("--ty", `${(-y * 10).toFixed(1)}px`);
-      thumb.style.setProperty("--rx", `${(-y * 10).toFixed(1)}deg`);
-      thumb.style.setProperty("--ry", `${(x * 12).toFixed(1)}deg`);
-    });
-    card.addEventListener("pointerleave", () => { for (const v of ["--tx", "--ty", "--rx", "--ry"]) thumb.style.removeProperty(v); });
     card.addEventListener("click", () => { location.search = to(l.id); });
-    grid.append(card);
+    parks.append(card);
   }
-  wrap.append(title, grid);
+  const wrap = document.createElement("div");
+  wrap.className = "home-ui";
+  wrap.append(hero, parks);
   document.body.append(wrap);
-  wrap.querySelector("button")?.focus();
 }
 
 export function mountLevelUi(scene: Scene) {
-  if (needsStartScreen(location.search)) startScreen();
+  if (touring) homePage();
   const menu = document.createElement("select");
   menu.className = "level-menu";
   menu.title = "Level";
