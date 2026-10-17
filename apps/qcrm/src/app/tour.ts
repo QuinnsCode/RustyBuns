@@ -45,7 +45,9 @@ function step(d: number) {
 function show(tries = 0) {
   const s = read(); if (!s) return;
   const st = STEPS[s.i]!;
-  const el = document.querySelector<HTMLElement>(st.at);
+  const target = document.querySelector<HTMLElement>(st.at);
+  // Under 760 px the rail items are hidden behind the menu button: spotlight the button instead of a 0x0 box.
+  const el = target && !target.getClientRects().length ? document.querySelector<HTMLElement>(".rail .menu-btn") ?? target : target;
   // Pages render in steps (the demo frame signs in first); wait for the target up to ~8 s.
   if (!el) { if (tries < 40) setTimeout(() => show(tries + 1), 200); return; }
   if (!dim) {
