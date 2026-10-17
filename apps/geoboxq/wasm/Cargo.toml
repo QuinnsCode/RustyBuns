@@ -1,9 +1,9 @@
 [package]
-name = "boxfit_engine"
+name = "geoboxq_engine"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "boxFit's geometry engine: can these fit in that box, and can a box go in a box (scripts/wasm.ts)"
+description = "GeoBoxQ's geometry engine: can these fit in that box, and can a box go in a box (scripts/wasm.ts)"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

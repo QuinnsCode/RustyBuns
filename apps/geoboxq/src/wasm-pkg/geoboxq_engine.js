@@ -1,4 +1,4 @@
-/* @ts-self-types="./boxfit_engine.d.ts" */
+/* @ts-self-types="./geoboxq_engine.d.ts" */
 
 /**
  * `{ boxes, items, pad? }` in, `{ boxes, best, packed, pieces, nested }` out, or `{ error }`.
@@ -29,7 +29,7 @@ function __wbg_get_imports() {
     };
     return {
         __proto__: null,
-        "./boxfit_engine_bg.js": import0,
+        "./geoboxq_engine_bg.js": import0,
     };
 }
 
@@ -201,7 +201,7 @@ async function __wbg_init(module_or_path) {
     }
 
     if (module_or_path === undefined) {
-        module_or_path = new URL('boxfit_engine_bg.wasm', import.meta.url);
+        module_or_path = new URL('geoboxq_engine_bg.wasm', import.meta.url);
     }
     const imports = __wbg_get_imports();
 

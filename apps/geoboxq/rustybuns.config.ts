@@ -1,14 +1,14 @@
 import { defineConfig } from "@rustybuns/cli/config";
 
-// boxFit: one Worker, no database. The page and the Rust engine run in the browser; the Worker only
+// GeoBoxQ: one Worker, no database. The page and the Rust engine run in the browser; the Worker only
 // serves them and hands the sealed engine's key to a paid license (src/seal.ts, apps/artstewengine).
 //
-// Secrets (see .env.schema): BOXFIT_LICENSE resolves through varlock. Unset, the sealed engine stays locked.
+// Secrets (see .env.schema): GEOBOXQ_LICENSE resolves through varlock. Unset, the sealed engine stays locked.
 export default defineConfig({
-  name: "boxfit",
+  name: "geoboxq",
   worker: {
     main: "src/worker.ts",
-    builtMain: "dist/boxfit/index.js",
+    builtMain: "dist/geoboxq/index.js",
     assets: "dist/client",
     notFoundHandling: "single-page-application",
     runWorkerFirst: ["/api/*"],
@@ -17,10 +17,10 @@ export default defineConfig({
     build: "bun run build",
   },
   bindings: {
-    BOXFIT_URL: { type: "var", value: "https://boxfit.qntbr.com" },
+    GEOBOXQ_URL: { type: "var", value: "https://geoboxq.qntbr.com" },
     // The sealed engine asks artstewengine "have you paid?" with this license. Either unset: the engine stays locked.
     ARTSTEW_URL: { type: "var", value: "https://artstewengine.qntbr.com" },
-    BOXFIT_LICENSE: { type: "secret", op: "op://qcrm/boxfit/license", optional: true },
+    GEOBOXQ_LICENSE: { type: "secret", op: "op://qcrm/geoboxq/license", optional: true },
   },
   experimental: { wheel: "human" },
   targets: { edge: { provider: "cloudflare" } },

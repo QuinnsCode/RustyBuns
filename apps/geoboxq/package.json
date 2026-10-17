@@ -1,5 +1,5 @@
 {
-  "name": "boxfit",
+  "name": "geoboxq",
   "private": true,
   "type": "module",
   "version": "0.1.0",
@@ -10,6 +10,8 @@
     "gen": "bun ../../packages/cli/src/index.ts generate",
     "test": "bun test test",
     "wasm": "bun scripts/wasm.ts",
+    "serve": "bun src/serve.ts",
+    "stress": "bun scripts/stress.ts",
     "seal": "bun scripts/seal.ts",
     "deploy": "bun ../../packages/cli/src/index.ts deploy"
   },

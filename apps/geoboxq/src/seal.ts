@@ -18,7 +18,7 @@ export async function unseal(sealed: Uint8Array, key: string): Promise<Uint8Arra
 }
 
 /** `host` and `version` are only told to artstewengine, so the owner can see where a license is running. */
-export interface LeaseEnv { ARTSTEW_URL?: string; BOXFIT_LICENSE?: string; host?: string; version?: string }
+export interface LeaseEnv { ARTSTEW_URL?: string; GEOBOXQ_LICENSE?: string; host?: string; version?: string }
 
 /** A lease is trusted this long past its end when artstewengine can't be reached. Being unpaid is never forgiven. */
 export const OUTAGE_GRACE_MS = 24 * 3600_000;
@@ -30,10 +30,10 @@ let held: { key: string; until: number } | undefined;
  * once per lease; a network failure rides the last lease for a day, a 402 ends it at once.
  */
 export async function engineKey(conf: LeaseEnv, fetcher: typeof fetch = fetch, now = Date.now()): Promise<string | null> {
-  if (!conf.ARTSTEW_URL || !conf.BOXFIT_LICENSE) return null;
+  if (!conf.ARTSTEW_URL || !conf.GEOBOXQ_LICENSE) return null;
   if (held && now < held.until) return held.key;
   try {
-    const res = await fetcher(new URL("/lease", conf.ARTSTEW_URL), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ license: conf.BOXFIT_LICENSE, host: conf.host, version: conf.version }) });
+    const res = await fetcher(new URL("/lease", conf.ARTSTEW_URL), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ license: conf.GEOBOXQ_LICENSE, host: conf.host, version: conf.version }) });
     if (res.status === 402) { held = undefined; return null; }
     const body = await res.json() as { ok?: boolean; key?: string; seconds?: number };
     if (!res.ok || !body.ok || !body.key) throw new Error(`lease ${res.status}`);

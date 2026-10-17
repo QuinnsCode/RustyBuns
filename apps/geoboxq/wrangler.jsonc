@@ -2,7 +2,7 @@
 // infra; this file only feeds RWSDK's local dev. Do not hand-edit.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "boxfit",
+  "name": "geoboxq",
   "main": "src/worker.ts",
   "compatibility_date": "2026-09-01",
   "compatibility_flags": [
@@ -17,7 +17,7 @@
     "not_found_handling": "single-page-application"
   },
   "vars": {
-    "BOXFIT_URL": "https://boxfit.qntbr.com",
+    "GEOBOXQ_URL": "https://geoboxq.qntbr.com",
     "ARTSTEW_URL": "https://artstewengine.qntbr.com"
   }
 }

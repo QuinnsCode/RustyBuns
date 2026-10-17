@@ -1,18 +1,22 @@
-// boxFit's engine. One call: `solve(json) -> json`.
+// GeoBoxQ's engine. One call: `solve(json) -> json`.
 //
 // Things are boxes with a length, width and height (any unit, the engine never converts). A shipping
-// box's numbers are its inside; a product's are its outside. A product with a `wall` above zero is
-// itself a box that opens, with a cavity of its size minus a wall on every side, and anything smaller
-// can ride inside it. That is the part shipping software misses: a box in a box in a box.
+// box's numbers are its inside; a product's are its outside. A product with an `inner` size, or a `wall`
+// above zero (cavity = size minus a wall on every side), is itself a box that opens, and anything
+// smaller can ride inside it. That is the part shipping software misses: a box in a box in a box.
 //
 // Packing is axis-aligned with all six turns, placed at extreme points, largest first. It is a fast
 // heuristic: "fits" is always true when it says so, "doesn't fit" can be a tight case it didn't find.
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+/// Tolerance for float noise (0.1 + 0.2 against 0.3): relative, so it scales with the sizes people type.
 const EPS: f64 = 1e-9;
+fn le(a: f64, b: f64) -> bool { a <= b + EPS * (1.0 + b.abs()) }
 /// More than this many pieces and a heuristic that is quadratic per piece stops being instant.
 const MAX_PIECES: usize = 400;
+/// Every box gets its own packing attempt; 400 pieces against 200 boxes took 8 s, against 30 about a second.
+const MAX_BOXES: usize = 30;
 
 fn one() -> u32 { 1 }
 
@@ -22,6 +26,8 @@ struct Thing {
     l: f64, w: f64, h: f64,
     #[serde(default = "one")] qty: u32,
     #[serde(default)] wall: f64,
+    /// Explicit cavity, centred; wins over `wall`.
+    #[serde(default)] inner: Option<V3>,
 }
 
 #[derive(Deserialize)]
@@ -37,30 +43,34 @@ type V3 = [f64; 3];
 /// A piece in its parent's frame: turned `size`, corner at `pos`, with what rides inside it
 /// (in its own frame, so turning the piece turns its contents with it).
 #[derive(Serialize, Clone)]
-struct Placed { name: String, size: V3, pos: V3, inside: Vec<Placed> }
+struct Placed {
+    name: String,
+    /// Size as turned; axis k of the parent frame is axis `turn[k]` of the piece's own frame.
+    size: V3, turn: [usize; 3], pos: V3,
+    /// Where the cavity starts in the piece's own frame; `inside` positions are relative to it.
+    cav: V3,
+    inside: Vec<Placed>,
+}
 
 /// A piece plus whatever it already carries.
 #[derive(Clone)]
-struct Bundle { name: String, dims: V3, wall: f64, inside: Vec<Placed> }
+struct Bundle { name: String, dims: V3, inner: Option<V3>, inside: Vec<Placed> }
 
 fn vol(d: V3) -> f64 { d[0] * d[1] * d[2] }
 
-fn cavity(b: &Bundle) -> Option<V3> {
-    let c = b.dims.map(|d| d - 2.0 * b.wall);
-    (b.wall > 0.0 && c.iter().all(|&d| d > EPS)).then_some(c)
-}
+fn cavity(b: &Bundle) -> Option<V3> { b.inner }
 
-fn turns(d: V3) -> Vec<V3> {
-    let mut out: Vec<V3> = Vec::with_capacity(6);
+fn turns(d: V3) -> Vec<(V3, [usize; 3])> {
+    let mut out: Vec<(V3, [usize; 3])> = Vec::with_capacity(6);
     for p in [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]] {
         let t = [d[p[0]], d[p[1]], d[p[2]]];
-        if !out.iter().any(|o| (0..3).all(|k| (o[k] - t[k]).abs() < EPS)) { out.push(t); }
+        if !out.iter().any(|(o, _)| (0..3).all(|k| (o[k] - t[k]).abs() <= EPS * (1.0 + t[k].abs()))) { out.push((t, p)); }
     }
     out
 }
 
 fn overlaps(a: (V3, V3), b: (V3, V3)) -> bool {
-    (0..3).all(|k| a.0[k] < b.0[k] + b.1[k] - EPS && b.0[k] < a.0[k] + a.1[k] - EPS)
+    (0..3).all(|k| a.0[k] < b.0[k] + b.1[k] - EPS * (1.0 + b.1[k].abs()) && b.0[k] < a.0[k] + a.1[k] - EPS * (1.0 + a.1[k].abs()))
 }
 
 /// Put every bundle inside `cav`, or say none of this arrangement works.
@@ -75,19 +85,20 @@ fn pack(items: &[&Bundle], cav: V3, pad: f64) -> Option<Vec<Placed>> {
         points.sort_by(|p, q| p[2].total_cmp(&q[2]).then(p[1].total_cmp(&q[1])).then(p[0].total_cmp(&q[0])));
         let mut spot = None;
         'search: for (i, p) in points.iter().enumerate() {
-            for t in turns(b.dims) {
+            for (t, perm) in turns(b.dims) {
                 let s = t.map(|d| d + pad);
-                if (0..3).any(|k| p[k] + s[k] > room[k] + EPS) { continue; }
+                if !(0..3).all(|k| le(p[k] + s[k], room[k])) { continue; }
                 if taken.iter().any(|&o| overlaps((*p, s), o)) { continue; }
-                spot = Some((i, t, s));
+                spot = Some((i, t, perm, s));
                 break 'search;
             }
         }
-        let (i, t, s) = spot?;
+        let (i, t, perm, s) = spot?;
         let p = points.remove(i);
         taken.push((p, s));
         points.extend([[p[0] + s[0], p[1], p[2]], [p[0], p[1] + s[1], p[2]], [p[0], p[1], p[2] + s[2]]]);
-        out.push(Placed { name: b.name.clone(), size: t, pos: p, inside: b.inside.clone() });
+        let cav = b.inner.map_or([0.0; 3], |c| [0, 1, 2].map(|k| (b.dims[k] - c[k]) / 2.0));
+        out.push(Placed { name: b.name.clone(), size: t, turn: perm, pos: p, cav, inside: b.inside.clone() });
     }
     Some(out)
 }
@@ -141,20 +152,35 @@ struct Output {
 
 fn positive(t: &Thing, what: &str) -> Result<(), String> {
     let ok = [t.l, t.w, t.h].iter().all(|d| d.is_finite() && *d > 0.0) && t.wall.is_finite() && t.wall >= 0.0;
-    if ok { Ok(()) } else { Err(format!("{what} \"{}\" needs a positive length, width and height", t.name)) }
+    if !ok { return Err(format!("{what} \"{}\" needs a positive length, width and height", t.name)); }
+    if let Some(c) = t.inner {
+        if !(0..3).all(|k| c[k].is_finite() && c[k] > 0.0 && le(c[k], [t.l, t.w, t.h][k])) {
+            return Err(format!("{what} \"{}\" needs an inside size that is positive and no bigger than its outside", t.name));
+        }
+    }
+    Ok(())
+}
+
+/// The cavity a product opens up, if it opens at all.
+fn inner_of(t: &Thing) -> Option<V3> {
+    t.inner.or_else(|| {
+        let c = [t.l, t.w, t.h].map(|d| d - 2.0 * t.wall);
+        (t.wall > 0.0 && c.iter().all(|&d| d > EPS)).then_some(c)
+    })
 }
 
 fn count(p: &[Placed]) -> usize { p.iter().map(|x| 1 + count(&x.inside)).sum() }
 
 fn run(input: Input) -> Result<Output, String> {
     if !(input.pad.is_finite() && input.pad >= 0.0) { return Err("padding can't be negative".into()); }
+    if input.boxes.len() > MAX_BOXES { return Err(format!("{} boxes is more than the {MAX_BOXES} this checks at once", input.boxes.len())); }
     input.boxes.iter().try_for_each(|b| positive(b, "box"))?;
     input.items.iter().try_for_each(|b| positive(b, "item"))?;
     let total: usize = input.items.iter().map(|t| t.qty as usize).sum();
     if total > MAX_PIECES { return Err(format!("{total} pieces is more than the {MAX_PIECES} this checks at once")); }
 
     let pieces: Vec<Bundle> = input.items.iter()
-        .flat_map(|t| std::iter::repeat_with(move || Bundle { name: t.name.clone(), dims: [t.l, t.w, t.h], wall: t.wall, inside: vec![] }).take(t.qty as usize))
+        .flat_map(|t| std::iter::repeat_with(move || Bundle { name: t.name.clone(), dims: [t.l, t.w, t.h], inner: inner_of(t), inside: vec![] }).take(t.qty as usize))
         .collect();
     let pieces = nest(pieces, input.pad);
     let nested = pieces.iter().map(|p| count(&p.inside)).sum();
@@ -170,8 +196,7 @@ fn run(input: Input) -> Result<Output, String> {
     let (mut best, mut packed) = (None, vec![]);
     for i in by_size {
         let b = &input.boxes[i];
-        let cav = [b.l, b.w, b.h].map(|d| d - 2.0 * b.wall);
-        if cav.iter().any(|&d| d <= EPS) { continue; }
+        let cav = [b.l, b.w, b.h];
         boxes[i].fill = load / vol(cav);
         if let Some(p) = pack(&refs, cav, input.pad) {
             boxes[i].fits = true;

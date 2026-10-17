@@ -3,7 +3,7 @@ Version 1.0, October 2026
 
 Copyright (c) 2026 Ryan Quinn (QNTBR). All rights reserved.
 
-This license covers the boxFit software in this directory (apps/boxfit) and any
+This license covers the GeoBoxQ software in this directory (apps/geoboxq) and any
 file it says it covers. It does not cover the rest of this repository, which
 stays under the repository's own LICENSE.
 
@@ -14,7 +14,7 @@ stays under the repository's own LICENSE.
 
 2. WHAT YOU MAY DO
    a. Read the source and run it on your own machine to evaluate it.
-   b. Use a hosted or desktop copy of boxFit that QNTBR gave you, under the terms
+   b. Use a hosted or desktop copy of GeoBoxQ that QNTBR gave you, under the terms
       of that service or purchase.
    c. Send fixes back. A contribution you send is licensed to QNTBR without
       restriction, so it can ship.
@@ -23,12 +23,12 @@ stays under the repository's own LICENSE.
    a. Copy, fork, redistribute, sublicense or sell this software or a
       substantial part of it.
    b. Run it as a service for anyone other than yourself or your own org.
-   c. Strip this notice, the name boxFit or the QNTBR mark from it.
+   c. Strip this notice, the name GeoBoxQ or the QNTBR mark from it.
    d. Train a model on it to reproduce it.
 
 4. YOUR DATA IS YOURS
    Nothing here gives QNTBR any right to the boxes and products you put into
-   boxFit. They stay in your browser; the engine never sends them anywhere.
+   GeoBoxQ. They stay in your browser; the engine never sends them anywhere.
 
 5. NO WARRANTY
    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR

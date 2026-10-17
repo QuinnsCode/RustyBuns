@@ -94,8 +94,8 @@
         "postgres": "^3.4.7",
       },
     },
-    "apps/boxfit": {
-      "name": "boxfit",
+    "apps/geoboxq": {
+      "name": "geoboxq",
       "version": "0.1.0",
       "devDependencies": {
         "@alchemy.run/frontend-frameworks": "2.0.0-beta.77",
@@ -1672,7 +1672,7 @@
 
     "bowser": ["bowser@2.14.1", "", {}, "sha512-tzPjzCxygAKWFOJP011oxFHs57HzIhOEracIgAePE4pqB3LikALKnSzUyU4MGs9/iCEUuHlAJTjTc5M+u7YEGg=="],
 
-    "boxfit": ["boxfit@workspace:apps/boxfit"],
+    "geoboxq": ["geoboxq@workspace:apps/geoboxq"],
 
     "bpc-graph": ["bpc-graph@0.0.57", "", { "peerDependencies": { "@tscircuit/schematic-corpus": "*", "typescript": "^5" } }, "sha512-kgFB+o1D2YM9aJBVVFvSo7Qv0xAiY0/tqPf5wH+tPgEYU5572/YU0xgF1rDfN+4vGsqRzTxEqUaaW7IMe33V7A=="],
 

@@ -1,36 +1,49 @@
 // What the page keeps and how it talks to the engine: pure functions, no DOM, so the tests drive them directly.
-import type { Placed, Solution, Thing } from "./engine.ts";
+import type { Placed, Solution, Thing, V3 } from "./engine.ts";
 
-export interface Row { name: string; l: number; w: number; h: number; qty: number; holds: boolean }
+/** `inner` is what a product that opens (`holds`) has room for inside; null until it is typed, then half a unit of wall all round. */
+export interface Row { name: string; l: number; w: number; h: number; qty: number; holds: boolean; inner: V3 | null }
 export interface State {
   unit: "in" | "cm";
   /** Room kept between things, in the unit. */
   pad: number;
-  /** Wall of any product marked as a box that holds things, in the unit. */
-  wall: number;
+  /** Which of the five looks the packed box wears (viz.ts THEMES). */
+  theme: number;
   /** Let boxes ride inside boxes. Off, every product is solid: what shipping software does today. */
   nest: boolean;
   boxes: Row[];
   items: Row[];
 }
 
-export const blank = (): Row => ({ name: "", l: 0, w: 0, h: 0, qty: 1, holds: false });
-const row = (name: string, l: number, w: number, h: number, qty = 1, holds = false): Row => ({ name, l, w, h, qty, holds });
+export const blank = (): Row => ({ name: "", l: 0, w: 0, h: 0, qty: 1, holds: false, inner: null });
+const row = (name: string, l: number, w: number, h: number, qty = 1, holds = false): Row => ({ name, l, w, h, qty, holds, inner: null });
+
+/** A half inch of wall, or the same in centimetres. */
+export const wallOf = (unit: State["unit"]) => (unit === "in" ? 0.5 : 1.25);
+/** The cavity a product opens up: what was typed, or its size less a default wall on every side (never below nothing). */
+export const innerOf = (r: Row, unit: State["unit"]): V3 =>
+  r.inner ?? ([r.l, r.w, r.h].map((d) => Math.max(0, Math.round((d - 2 * wallOf(unit)) * 1e6) / 1e6)) as V3);
 
 /** A first visit's page: the small shipper only works once the gift tin carries the candles. */
 export const example = (): State => ({
-  unit: "in", pad: 0, wall: 0.2, nest: true,
+  unit: "in", pad: 0, theme: 0, nest: true,
   boxes: [row("Small", 8, 6, 4), row("Medium", 12, 9, 6), row("Large", 16, 12, 8)],
-  items: [row("Gift tin", 7, 5, 3.5, 1, true), row("Candle", 3, 3, 3.5, 2), row("Matchbook", 2, 1.5, 0.3)],
+  items: [row("Gift tin", 7, 5, 4, 1, true), row("Candle", 3, 3, 3.5, 2), row("Matchbook", 2, 1.5, 0.3)],
 });
 
 const usable = (r: Row) => [r.l, r.w, r.h].every((d) => d > 0);
 
 export function toInput(s: State): { boxes: Thing[]; items: Thing[]; pad: number } {
-  const thing = (r: Row, wall: number): Thing => ({ name: r.name || "(unnamed)", l: r.l, w: r.w, h: r.h, qty: Math.max(1, Math.floor(r.qty) || 1), wall });
+  const thing = (r: Row, inner?: V3): Thing => ({ name: r.name || "(unnamed)", l: r.l, w: r.w, h: r.h, qty: Math.max(1, Math.floor(r.qty) || 1), ...(inner ? { inner } : {}) });
+  const opens = (r: Row) => {
+    if (!s.nest || !r.holds) return undefined;
+    const c = innerOf(r, s.unit);
+    // A cavity typed bigger than the product, or none left, is no cavity: the product stays solid.
+    return c.every((v) => v > 0) && c.every((v, k) => v <= [r.l, r.w, r.h][k]!) ? c : undefined;
+  };
   return {
-    boxes: s.boxes.filter(usable).map((r) => thing(r, 0)),
-    items: s.items.filter(usable).map((r) => thing(r, s.nest && r.holds ? s.wall : 0)),
+    boxes: s.boxes.filter(usable).map((r) => thing(r)),
+    items: s.items.filter(usable).map((r) => thing(r, opens(r))),
     pad: s.pad,
   };
 }
@@ -64,7 +77,7 @@ export function verdict(sol: Solution): Verdict {
   return { kind: "fits", box: b.name, fill: b.fill, others: sol.boxes.filter((x, i) => x.fits && i !== sol.best).length };
 }
 
-const ALIASES: Record<keyof Row, string[]> = {
+const ALIASES: Record<Exclude<keyof Row, "inner">, string[]> = {
   name: ["name", "title", "product", "sku", "item", "description"],
   l: ["l", "length", "len", "long"],
   w: ["w", "width", "wide"],
@@ -88,10 +101,10 @@ export function parseRows(text: string): { rows: Row[]; skipped: number } {
   const split = (l: string) => l.split(sep).map((c) => c.trim().replace(/^"|"$/g, ""));
   const first = split(lines[0]!);
   const header = !first.some((c) => NUM.test(c) || SIZE.test(c));
-  const col = {} as Partial<Record<keyof Row, number>>;
+  const col = {} as Partial<Record<keyof typeof ALIASES, number>>;
   if (header) {
     first.forEach((c, i) => {
-      const k = (Object.keys(ALIASES) as (keyof Row)[]).find((key) => ALIASES[key].includes(c.toLowerCase()));
+      const k = (Object.keys(ALIASES) as (keyof typeof ALIASES)[]).find((key) => ALIASES[key].includes(c.toLowerCase()));
       if (k && col[k] === undefined) col[k] = i;
     });
   } else Object.assign(col, { name: 0, l: 1, w: 2, h: 3, qty: 4 });
@@ -99,12 +112,12 @@ export function parseRows(text: string): { rows: Row[]; skipped: number } {
   let skipped = 0;
   for (const line of header ? lines.slice(1) : lines) {
     const cells = split(line);
-    const at = (k: keyof Row) => (col[k] === undefined ? "" : cells[col[k]!] ?? "");
+    const at = (k: keyof typeof ALIASES) => (col[k] === undefined ? "" : cells[col[k]!] ?? "");
     const packed = cells.map((c) => SIZE.exec(c)).find(Boolean);
     const [l, w, h] = packed ? [packed[1], packed[2], packed[3]].map(Number) : [at("l"), at("w"), at("h")].map(Number);
     if (![l, w, h].every((d) => Number.isFinite(d) && d! > 0)) { skipped++; continue; }
     const name = at("name") && !SIZE.test(at("name")) ? at("name") : "";
-    rows.push({ name, l: l!, w: w!, h: h!, qty: Math.max(1, Math.floor(Number(at("qty"))) || 1), holds: truthy(at("holds")) });
+    rows.push({ name, l: l!, w: w!, h: h!, qty: Math.max(1, Math.floor(Number(at("qty"))) || 1), holds: truthy(at("holds")), inner: null });
   }
   return { rows, skipped };
 }

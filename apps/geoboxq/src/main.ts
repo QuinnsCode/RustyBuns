@@ -1,7 +1,8 @@
 // The page: two lists (boxes, products), one answer. Everything is computed here, in the browser, and kept in
 // localStorage; nothing about your boxes leaves the machine.
 import { solve, type Solution } from "./engine.ts";
-import { blank, example, group, parseRows, toInput, usableBoxes, verdict, type Group, type Row, type State } from "./model.ts";
+import { blank, example, group, innerOf, parseRows, toInput, usableBoxes, verdict, wallOf, type Group, type Row, type State } from "./model.ts";
+import { parts, sceneSvg, shapeSvg, THEMES } from "./viz.ts";
 
 // Lucide icons (24-unit grid, stroke), inline so the page loads no icon font.
 const icon = (paths: string) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
@@ -12,15 +13,18 @@ const ICON = {
   upload: icon('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>'),
   check: icon('<path d="M20 6 9 17l-5-5"/>'),
   x: icon('<path d="M18 6 6 18M6 6l12 12"/>'),
+  play: icon('<path d="m6 3 14 9-14 9z"/>'),
+  pause: icon('<path d="M14 4h4v16h-4zM6 4h4v16H6z"/>'),
+  repeat: icon('<path d="m17 2 4 4-4 4M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H3"/>'),
   sparkles: icon('<path d="M9.94 14.06 9 17l-.94-2.94L5 13l3.06-.94L9 9l.94 3.06L13 13zM19 3v4M21 5h-4M19 17v4M21 19h-4"/>'),
 };
 
-const KEY = "boxfit:v1";
+const KEY = "geoboxq:v2";
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 const num = (n: number) => String(Math.round(n * 100) / 100);
 
 function load(): State {
-  try { const s = localStorage.getItem(KEY); if (s) return JSON.parse(s) as State; } catch { /* private window: start fresh */ }
+  try { const s = localStorage.getItem(KEY); if (s) return { ...example(), ...JSON.parse(s) } as State; } catch { /* private window: start fresh */ }
   return example();
 }
 let state = load();
@@ -28,7 +32,7 @@ const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } c
 
 const app = document.getElementById("app")!;
 app.innerHTML = `
-  <h1>${ICON.package} boxFit</h1>
+  <h1>${ICON.package} GeoBoxQ</h1>
   <p class="lede">Will it fit in the box? Including a box in a box in a box.</p>
   <section id="boxes"></section>
   <section id="items"></section>
@@ -39,19 +43,31 @@ const $ = (id: string) => document.getElementById(id)!;
 const field = (r: Row, k: "l" | "w" | "h", label: string) =>
   `<input type="number" min="0" step="any" inputmode="decimal" data-k="${k}" value="${r[k] || ""}" aria-label="${label}" placeholder="${label[0]}">`;
 
+const theme = () => THEMES[state.theme] ?? THEMES[0]!;
+const dims = (r: Row) => [r.l, r.w, r.h] as [number, number, number];
+const thumbOf = (r: Row, items: boolean) => shapeSvg(dims(r), items && r.holds ? innerOf(r, state.unit) : null, theme(), items ? theme().pieces[0] : theme().shell);
+
 function list(id: "boxes" | "items") {
   const items = id === "items";
   const rows = state[id];
   $(id).innerHTML = `
     <h2>${items ? "Products" : "Shipping boxes"}</h2>
-    <p class="hint">${items ? "Outside size. Tick the checkbox on anything that opens and can carry other things." : "Inside size, what actually fits."} In ${state.unit}.</p>
+    <p class="hint">${items ? "Outside size. Tick the checkbox on anything that opens and can carry other things." : "Inside size, what actually fits."} In ${state.unit}. Any number works: type one and watch it become a line, a square, a box.</p>
     ${rows.map((r, i) => `
-      <div class="row ${items ? "item" : ""}" data-i="${i}">
-        <input class="name" data-k="name" value="${esc(r.name)}" placeholder="Name" aria-label="Name">
-        ${field(r, "l", "Length")}${field(r, "w", "Width")}${field(r, "h", "Height")}
-        ${items ? `<input type="number" min="1" step="1" data-k="qty" value="${r.qty}" aria-label="How many">
-          <label title="Opens and can hold other products"><input type="checkbox" data-k="holds" ${r.holds ? "checked" : ""} aria-label="Opens and can hold other products"></label>` : ""}
-        <button class="icon" data-act="del" title="Remove" aria-label="Remove">${ICON.trash}</button>
+      <div class="entry" data-i="${i}">
+        <div class="row ${items ? "item" : ""}">
+          <div class="thumb">${thumbOf(r, items)}</div>
+          <input class="name" data-k="name" value="${esc(r.name)}" placeholder="Name" aria-label="Name">
+          ${field(r, "l", "Length")}${field(r, "w", "Width")}${field(r, "h", "Height")}
+          ${items ? `<input type="number" min="1" step="1" data-k="qty" value="${r.qty}" aria-label="How many">
+            <label title="Opens and can hold other products"><input type="checkbox" data-k="holds" ${r.holds ? "checked" : ""} aria-label="Opens and can hold other products"></label>` : ""}
+          <button class="icon" data-act="del" title="Remove" aria-label="Remove">${ICON.trash}</button>
+        </div>
+        ${items && r.holds ? `<div class="row inside">
+          <span class="dim">Room inside</span>
+          ${innerOf(r, state.unit).map((v, k) => `<input type="number" min="0" step="any" inputmode="decimal" data-k="in${k}" value="${v}" aria-label="Inside ${["length", "width", "height"][k]}">`).join("")}
+          <span class="dim">${r.inner ? "yours" : `${wallOf(state.unit)} ${state.unit} walls assumed`}</span>
+        </div>` : ""}
       </div>`).join("")}
     <div class="tools">
       <button data-act="add">${ICON.plus} Add</button>
@@ -59,7 +75,7 @@ function list(id: "boxes" | "items") {
       <input type="file" accept=".csv,.tsv,.txt" hidden data-act="file">
     </div>
     <div data-slot="import" hidden>
-      <textarea placeholder="${items ? "Gift tin, 7, 5, 3.5, 1\nCandle, 3, 3, 3.5, 2" : "Small, 8, 6, 4\nMedium, 12x9x6"}" aria-label="Paste rows"></textarea>
+      <textarea placeholder="${items ? "Gift tin, 7, 5, 4, 1\nCandle, 3, 3, 3.5, 2" : "Small, 8, 6, 4\nMedium, 12x9x6"}" aria-label="Paste rows"></textarea>
       <p class="hint">Paste rows or drop a CSV: name, length, width, height${items ? ", quantity" : ""}. A header line works, and so does 10x8x4 in one cell.</p>
       <button data-act="import">${ICON.check} Add these</button>
     </div>`;
@@ -69,7 +85,6 @@ function options() {
   $("options").innerHTML = `
     <label>Unit <select data-k="unit"><option ${state.unit === "in" ? "selected" : ""}>in</option><option ${state.unit === "cm" ? "selected" : ""}>cm</option></select></label>
     <label>Padding <input type="number" min="0" step="any" data-k="pad" value="${state.pad}"></label>
-    <label>Box wall <input type="number" min="0" step="any" data-k="wall" value="${state.wall}"></label>
     <label><input type="checkbox" data-k="nest" ${state.nest ? "checked" : ""}> Box in a box</label>
     <button data-act="example">${ICON.sparkles} Example</button>`;
 }
@@ -96,35 +111,85 @@ async function answer() {
     ? `<div class="answer yes">${ICON.check} Fits in ${esc(v.box)}</div><div class="meter" title="${Math.round(v.fill * 100)}% of the box"><i style="width:${Math.min(100, Math.round(v.fill * 100))}%"></i></div>`
     : v.kind === "none" ? `<div class="answer no">${ICON.x} Doesn't fit in any box</div>` : `<p class="msg">${v.why}</p>`;
   const pieces = group(sol.pieces);
+  stopPlayer();
+  scene = v.kind === "fits" ? { box: names[sol.best!]!, parts: parts(sol.packed) } : null;
   el.innerHTML = `${head}
     ${sol.nested ? `<p class="hint">${sol.nested} packed inside another.</p>` : ""}
+    ${v.kind === "fits" ? `<div class="stage" id="stage"></div><div class="player" id="player"></div>` : ""}
     ${tree(pieces, true)}
     <ul class="verdicts">${sol.boxes.map((b, i) => `<li class="${b.fits ? "y" : "n"}">${b.fits ? ICON.check : ICON.x} ${esc(b.name)} <span class="dim">${num(names[i]!.l)} &times; ${num(names[i]!.w)} &times; ${num(names[i]!.h)}, ${Math.round(b.fill * 100)}% full</span></li>`).join("")}</ul>`;
+  if (scene) { step = scene.parts.length; drawScene(); }
 }
+// The packed box as a scene, filled one piece at a time: play, loop, or scrub.
+let scene: { box: { l: number; w: number; h: number }; parts: ReturnType<typeof parts> } | null = null;
+let step = 0, playing = false, looping = false, tick: ReturnType<typeof setTimeout> | undefined;
+const STEP_MS = 520;
+
+function stopPlayer() { clearTimeout(tick); playing = false; }
+function showStep(n: number) {
+  step = n;
+  document.querySelectorAll<SVGGElement>("#stage .part").forEach((g) => g.classList.toggle("on", Number(g.dataset.step) < n));
+  const range = document.getElementById("scrub") as HTMLInputElement | null;
+  if (range) range.value = String(n);
+  const label = document.getElementById("stepno");
+  if (label && scene) label.textContent = `${n} / ${scene.parts.length}`;
+}
+function frame() {
+  if (!scene || !playing) return;
+  if (step < scene.parts.length) { showStep(step + 1); tick = setTimeout(frame, STEP_MS); }
+  else if (looping) { tick = setTimeout(() => { showStep(0); tick = setTimeout(frame, STEP_MS); }, STEP_MS * 3); }
+  else { playing = false; drawPlayer(); }
+}
+function drawScene() {
+  const stage = document.getElementById("stage"), player = document.getElementById("player");
+  if (!stage || !player || !scene) return;
+  const t = theme();
+  stage.style.background = t.bg;
+  stage.innerHTML = sceneSvg([scene.box.l, scene.box.w, scene.box.h], scene.parts, t);
+  drawPlayer();
+}
+function drawPlayer() {
+  const player = document.getElementById("player");
+  if (!player || !scene) return;
+  player.innerHTML = `
+    <button data-act="play" title="${playing ? "Pause" : "Play"}" aria-label="${playing ? "Pause" : "Play"}">${playing ? ICON.pause : ICON.play}</button>
+    <input type="range" id="scrub" min="0" max="${scene.parts.length}" value="${step}" aria-label="Step">
+    <span class="dim" id="stepno"></span>
+    <button data-act="loop" class="icon ${looping ? "on" : ""}" aria-pressed="${looping}" title="Loop" aria-label="Loop">${ICON.repeat}</button>
+    <span class="swatches">${THEMES.map((th, i) => `<button class="swatch ${i === state.theme ? "on" : ""}" data-act="theme" data-theme="${i}" title="${th.name}" aria-label="${th.name} theme" aria-pressed="${i === state.theme}" style="background:linear-gradient(135deg,${th.bg} 50%,${th.pieces[0]} 50%)"></button>`).join("")}</span>`;
+  showStep(step);
+}
+
 let timer: ReturnType<typeof setTimeout> | undefined;
 const later = () => { save(); clearTimeout(timer); timer = setTimeout(answer, 120); };
 
 function render() { list("boxes"); list("items"); options(); void answer(); }
 
 function rowOf(el: Element) {
-  const rowEl = el.closest<HTMLElement>(".row");
+  const rowEl = el.closest<HTMLElement>(".entry");
   const sect = el.closest<HTMLElement>("section")!.id as "boxes" | "items";
   return { sect, i: rowEl ? Number(rowEl.dataset.i) : -1 };
 }
 
 app.addEventListener("input", (e) => {
   const t = e.target as HTMLInputElement;
+  if (t.id === "scrub") { stopPlayer(); showStep(Number(t.value)); drawPlayer(); return; }
   const k = t.dataset.k;
   if (!k) return;
-  if (t.closest(".row")) {
+  if (t.closest(".entry")) {
     const { sect, i } = rowOf(t);
     const r = state[sect][i]!;
+    const entry = t.closest<HTMLElement>(".entry")!;
     if (k === "name") r.name = t.value;
-    else if (k === "holds") r.holds = t.checked;
+    else if (k === "holds") { r.holds = t.checked; save(); list(sect); void answer(); return; }
+    else if (k.startsWith("in")) r.inner = [0, 1, 2].map((n) => Number(entry.querySelector<HTMLInputElement>(`[data-k=in${n}]`)!.value) || 0) as [number, number, number];
     else (r as unknown as Record<string, number>)[k] = Number(t.value) || 0;
+    // The drawing follows the numbers; so do the default inside sizes until they are typed.
+    if (!r.inner) innerOf(r, state.unit).forEach((v, n) => { const f = entry.querySelector<HTMLInputElement>(`[data-k=in${n}]`); if (f) f.value = String(v); });
+    entry.querySelector(".thumb")!.innerHTML = thumbOf(r, sect === "items");
   } else if (k === "unit") { state.unit = t.value as State["unit"]; render(); save(); return; }
   else if (k === "nest") state.nest = t.checked;
-  else if (k === "pad" || k === "wall") state[k] = Math.max(0, Number(t.value) || 0);
+  else if (k === "pad") state[k] = Math.max(0, Number(t.value) || 0);
   later();
 });
 
@@ -140,7 +205,17 @@ app.addEventListener("click", (e) => {
   const b = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
   if (!b) return;
   const act = b.dataset.act!;
-  if (act === "example") { state = example(); save(); render(); return; }
+  if (act === "example") { state = { ...example(), theme: state.theme }; save(); render(); return; }
+  if (act === "play") {
+    if (!scene) return;
+    if (playing) { stopPlayer(); drawPlayer(); return; }
+    playing = true;
+    if (step >= scene.parts.length) showStep(0);
+    drawPlayer(); tick = setTimeout(frame, 200);
+    return;
+  }
+  if (act === "loop") { looping = !looping; drawPlayer(); return; }
+  if (act === "theme") { state.theme = Number(b.dataset.theme); save(); render(); return; }
   const { sect, i } = rowOf(b);
   if (act === "del") { state[sect].splice(i, 1); save(); render(); }
   else if (act === "add") { state[sect].push(blank()); save(); list(sect); void answer(); }
