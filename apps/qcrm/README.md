@@ -33,6 +33,7 @@ qCRM is accounts only: there is no alias mode. `vite dev` reads `BETTER_AUTH_SEC
 | CRUD | `src/crm.ts` | Four entities, one generic helper, keyset paging, `?q=` search, soft delete. Every query carries `org_id`. |
 | Sync engine | `src/sync.ts` | Every write appends to `changes`. `GET …/sync?since=N` replays; `POST …/sync` applies client ops and names conflicts. |
 | Webhooks | `src/webhooks.ts` | HMAC-SHA256 signed, queued, retried with backoff for a day, every delivery on record. |
+| Scripts | `src/scripts.ts` | Stored async functions an org runs by hand, from the API or from an agent (`run_script`). Each run is a dynamic Worker with no network and one binding back to the org's API, scoped to the caller's role, 200 calls and 10 s. Three examples install in a click. The desktop twin runs them in-process, not sandboxed. |
 | Insights | `src/insights.ts` | Cheap SQL aggregates: counts, pipeline by stage, win rate, activity per week. |
 | Rust engine | `wasm/`, `src/engine.ts` | Dedupe (Jaro-Winkler and friends), weighted forecast, stale-deal sweep, and the hero wave. Compiled to wasm and checked in (`bun run wasm` rebuilds). |
 | MCP | `src/openapi.ts`, `src/mcp.ts` | One tool per API operation, generated from the OpenAPI spec. Risky ones are flagged so an agent asks first. |
