@@ -41,7 +41,7 @@ function crud(entity: string, one: string, fields: Schema, filters: Record<strin
   const Row = one[0]!.toUpperCase() + one.slice(1);
   return {
     [`${org}/${entity}`]: {
-      get: { id: `list_${entity}`, summary: `List ${entity}, newest change first`, tag: Row, role: "seasonal", query: { ...page, ...filters }, ok: obj({ items: arr(ref(Row)), next: { type: ["string", "null"], description: "cursor for the next page" } }) },
+      get: { id: `list_${entity}`, summary: `List ${entity}, newest change first`, tag: Row, role: "seasonal", query: { ...page, ...filters }, ok: obj({ items: arr(ref(Row)), total: { type: "integer", description: "rows matching the search and filters, across all pages" }, next: { type: ["string", "null"], description: "cursor for the next page" } }) },
       post: { id: `create_${one}`, summary: `Add a ${one}`, tag: Row, role: one === "activity" ? "seasonal" : "employee", body: obj((fields as { properties: Record<string, Schema> }).properties, required), ok: ref(Row), status: 201 },
     },
     ...(entity === "contacts" || entity === "companies" ? { [`${org}/${entity}/import`]: {
