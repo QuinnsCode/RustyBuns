@@ -359,10 +359,14 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
   const [audit, setAudit] = useState<Row[]>([]);
   const [fresh, setFresh] = useState("");
   const [msg, setMsg] = useState("");
+  const [hookEvents, setHookEvents] = useState<string[]>([]);
+  const [hookPick, setHookPick] = useState<string[]>([]);
+  const [hookUrl, setHookUrl] = useState("");
+  const [hookErr, setHookErr] = useState("");
   const base = `/orgs/${org.id}`;
   const refresh = useCallback(() => {
     api(`${base}/members`).then((r) => setMembers(rowsOf(r))).catch(() => {});
-    if (can("owner")) { api(`${base}/webhooks`).then((r) => setHooks(r.webhooks ?? rowsOf(r))).catch(() => {}); api(`${base}/keys`).then((r) => setKeys(rowsOf(r))).catch(() => {}); }
+    if (can("owner")) { api(`${base}/webhooks`).then((r) => { setHooks(r.webhooks ?? rowsOf(r)); if (Array.isArray(r.events)) { setHookEvents(r.events); setHookPick((p) => (p.length ? p : r.events)); } }).catch(() => {}); api(`${base}/keys`).then((r) => setKeys(rowsOf(r))).catch(() => {}); }
     if (can("manager")) api(`${base}/audit`).then((r) => setAudit(rowsOf(r))).catch(() => {});
   }, [base, can]);
   useEffect(refresh, [refresh]);
@@ -399,8 +403,14 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
       {can("owner") && <div className="card" data-tour="webhooks">
         <h3><Icon name="webhook" /> Webhooks</h3>
         <div className="list">{hooks.map((h) => <div className="row" key={h.id}><span className="grow mono">{h.url}</span><span className="pill">{Array.isArray(h.events) ? h.events.join(", ") : String(h.events ?? "*")}</span><button type="button" onClick={() => act(() => api(`${base}/webhooks/${h.id}`, { method: "DELETE" }))}><Icon name="x" /></button></div>)}</div>
-        <form className="row" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); act(() => api(`${base}/webhooks`, { method: "POST", body: JSON.stringify({ url: f.get("url"), events: String(f.get("events") || "*").split(",").map((s) => s.trim()).filter(Boolean) }) })); e.currentTarget.reset(); }}>
-          <input name="url" type="url" placeholder="https://example.com/hooks/qcrm" required className="grow" /><input name="events" placeholder="contact.created, deal.updated" style={{ maxWidth: 260 }} /><button className="primary" type="submit"><Icon name="plus" /> Add</button>
+        <form onSubmit={async (e) => { e.preventDefault(); setHookErr(""); if (!hookPick.length) { setHookErr("Pick at least one event."); return; } try { await api(`${base}/webhooks`, { method: "POST", body: JSON.stringify({ url: hookUrl, events: hookPick }) }); setHookUrl(""); refresh(); } catch (er) { setHookErr((er as Error).message); } }}>
+          <div className="row">
+            <input name="url" type="url" placeholder="https://example.com/hooks/qcrm" required className="grow" value={hookUrl} onChange={(e) => setHookUrl(e.target.value)} /><button className="primary" type="submit"><Icon name="plus" /> Add</button>
+          </div>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            {hookEvents.map((ev) => <label key={ev} className="mono"><input type="checkbox" checked={hookPick.includes(ev)} onChange={(e) => setHookPick((p) => (e.target.checked ? [...p, ev] : p.filter((x) => x !== ev)))} /> {ev}</label>)}
+          </div>
+          {hookErr && <p className="err">{hookErr}</p>}
         </form>
         <p className="muted">Each delivery carries x-qcrm-signature (HMAC-SHA256 of the body with the webhook's secret), retried with backoff for a day.</p>
       </div>}
