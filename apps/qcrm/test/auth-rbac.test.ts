@@ -82,3 +82,10 @@ test("accounts off answers 503; cross-site cookie writes are refused", async () 
   const noOrigin = await handleApi(new Request(`${ORIGIN}/api/orgs`, { method: "POST", body: JSON.stringify({ name: "x" }), headers: { cookie, "sec-fetch-site": "cross-site", "content-type": "application/json" } }), app.env);
   expect(noOrigin.status).toBe(403);
 });
+
+test("the sign-in form learns which social providers are on, signed out", async () => {
+  const off = await local();
+  expect(await (await off("", "/api/providers")).json()).toEqual(["email"]);
+  const on = await local({ GITHUB_CLIENT_ID: "id", GITHUB_CLIENT_SECRET: "secret", GOOGLE_CLIENT_ID: "only-half" });
+  expect(await (await on("", "/api/providers")).json()).toEqual(["email", "github"]);
+});

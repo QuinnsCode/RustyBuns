@@ -102,6 +102,12 @@ export function Crm() {
 function Auth({ onDone, demo, err }: { onDone: () => Promise<void>; demo: boolean; err: string }) {
   const [mode, setMode] = useState<"in" | "up">("in");
   const [msg, setMsg] = useState(err);
+  const [social, setSocial] = useState<string[]>([]);
+  useEffect(() => { api("/providers").then((p: string[]) => setSocial(p.filter((x) => x !== "email"))).catch(() => {}); }, []);
+  const via = async (provider: string) => {
+    try { const r = await api("/auth/sign-in/social", { method: "POST", body: JSON.stringify({ provider, callbackURL: location.pathname + location.search }) }); if (r?.url) location.href = r.url; }
+    catch (x) { setMsg((x as Error).message); }
+  };
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -113,6 +119,7 @@ function Auth({ onDone, demo, err }: { onDone: () => Promise<void>; demo: boolea
   return (
     <div className="auth" data-tour="auth">
       <h2>{mode === "in" ? "Sign in" : "Create your account"}</h2>
+      {social.length > 0 && <div className="row">{social.map((p) => <button key={p} type="button" onClick={() => via(p)}><Icon name={p === "github" ? "github" : "mail"} /> Continue with {p === "github" ? "GitHub" : "Google"}</button>)}</div>}
       <p className="muted">Email and password, kept by Better Auth. Your first org is made when you sign up.</p>
       <form onSubmit={submit}>
         {mode === "up" && <label><span>Name</span><input name="name" autoComplete="name" /></label>}
