@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Git at swarm speed</title>
+<meta name="description" content="Why thirty agents get stuck in the old git way, explained with dots, and the three layers codeSplitter adds: Durable Objects, Mervin and Ester.">
+<link href="/fonts/geist.css" rel="stylesheet">
+<script src="/vendor/lucide.min.js"></script>
+<style>
+  :root { --bg: #fff; --fg: #0a0a0a; --muted: #6b6b6b; --border: #e6e6e6; --border-2: #cfcfcf; --paper: #fcfbf8; --accent: #e8590c;
+    --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, monospace; }
+  :root[data-theme="dark"] { --bg: #0e0e0e; --fg: #f2f2f2; --muted: #a0a0a0; --border: #2a2a2a; --border-2: #3d3d3d; --paper: #151515; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 var(--sans); }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  header a { color: var(--fg); text-decoration: none; font-weight: 600; letter-spacing: -.02em; }
+  header .grow { flex: 1; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; color: var(--fg); border: 1px solid var(--border-2); border-radius: 5px; background: var(--paper); cursor: pointer; }
+  .btn svg { width: 15px; height: 15px; }
+  .label { font: 600 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  h1 { font: 600 clamp(30px, 5vw, 46px)/1.05 var(--sans); letter-spacing: -.045em; margin: 6px 0 10px; } h1 em, h2 em { font-style: normal; color: var(--accent); }
+  .lede { color: var(--muted); max-width: 68ch; margin: 0 0 20px; font-size: 16px; }
+  h2 { font: 600 24px/1.15 var(--sans); letter-spacing: -.035em; margin: 0 0 8px; }
+  .acts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-top: 40px; }
+  .act { border: 1px solid var(--border); border-radius: 8px; background: var(--paper); padding: 16px 18px; }
+  .act p { margin: 0 0 10px; }
+  .act.old { border-top: 3px solid #b3261e; } .act.new { border-top: 3px solid var(--accent); }
+  .act button { display: inline-flex; gap: 6px; align-items: center; font: 13px var(--sans); color: var(--fg); border: 1px solid var(--border-2); border-radius: 5px; background: var(--bg); padding: 4px 10px; cursor: pointer; white-space: nowrap; }
+  .act button svg { width: 14px; height: 14px; }
+  .muted { color: var(--muted); }
+  a { color: var(--accent); }
+  footer { margin-top: 40px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><a href="/">codeSplitter</a><span class="grow"></span><button class="btn" id="theme" title="Light or dark"><i data-lucide="sun-moon"></i></button></header>
+  <div class="label">wait, let me explain with dots</div>
+  <h1>Git, at <em>swarm speed</em>.</h1>
+  <p class="lede">Each dot is an AI agent with a feature to ship. Think of a subway at rush hour: they all want onto the train to main. Watch the old git way jam up, then watch codeSplitter fix it in three steps. Try the sliders: more agents, more clashes, more failing tests.</p>
+  <div id="stage"></div>
+
+  <div class="acts">
+    <div class="act old"><div class="label">the old way</div><h2>One staircase</h2>
+      <p>Git was built for people: a few changes a day, one way in, everyone takes a turn. At that pace it works fine.</p>
+      <button data-go="calm"><i data-lucide="play"></i>Show me</button></div>
+    <div class="act old"><div class="label">wall one</div><h2>Merge conflicts</h2>
+      <p>Start thirty agents and each one works from a copy that's already out of date by the time it finishes. Five of them add a line to the README and git calls that a conflict: back up the stairs, redo the work, wait in line again.</p>
+      <button data-go="merge-wall"><i data-lucide="play"></i>Show me</button></div>
+    <div class="act old"><div class="label">wall two</div><h2>The red check nobody owns</h2>
+      <p>Get through the gate and a test fails. Was it you, was it already broken, or is it flaky? Nobody can tell, so the agent goes back to fix something it may not have broken, then waits in line again.</p>
+      <button data-go="test-wall"><i data-lucide="play"></i>Show me</button></div>
+    <div class="act new"><div class="label">layer one</div><h2>A computer on the internet</h2>
+      <p>codeSplitter keeps the code on a Durable Object: a tiny computer on the internet that every agent talks to live, line by line, with git in Artifacts behind it. The stairs get wide. The clashes are still there, though: agents working at the same time still bump into each other.</p>
+      <button data-go="coord"><i data-lucide="play"></i>Show me</button></div>
+    <div class="act new"><div class="label">layer two</div><h2><em>Mervin</em> and the four trains</h2>
+      <p>Mervin is not an AI. He's a plain program, so he runs as fast as the computer can. He fixes most clashes by looking at the exact lines, then loads four bullet trains at the same time, which is four times as many people on board. The few clashes that need a human decision wait as a card.</p>
+      <button data-go="mervin"><i data-lucide="play"></i>Show me</button></div>
+    <div class="act new"><div class="label">layer three</div><h2><em>Ester</em> at the exit</h2>
+      <p>Four trains, one exit: the tests are the last hurdle. Ester loads the cars full like flight attendants boarding a plane, so lots of PRs go through in one test run. A flaky test just runs again, and only a real failure goes back. Then everyone gets home.</p>
+      <button data-go="ester"><i data-lucide="play"></i>Show me</button></div>
+  </div>
+  <footer class="muted">A simulation with made-up agents: the walls are real, the numbers are illustrative. For the real thing, <a href="/swarm-watch.html">replay a real week</a> of this repo's 1,000 PRs, or read <a href="https://github.com/QuinnsCode/RustyBuns/blob/main/apps/codesplitter/docs/mervin-and-ester.md">why Mervin and Ester exist</a>.</footer>
+</div>
+<script type="module">
+import { mount } from "/swarm-stage.js";
+try { const t = localStorage.getItem("map-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+if (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches) document.documentElement.dataset.theme = "dark";
+const q = new URLSearchParams(location.search);
+const stage = mount(document.getElementById("stage"), { mode: q.get("mode") ?? "story" });
+if (q.get("scene")) stage.goto(q.get("scene"));
+document.querySelector(".acts").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-go]"); if (!b) return;
+  stage.goto(b.dataset.go); document.getElementById("stage").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+document.getElementById("theme").onclick = () => { const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark"; document.documentElement.dataset.theme = t; try { localStorage.setItem("map-theme", t); } catch {} };
+lucide.createIcons();
+</script>
+</body>
+</html>

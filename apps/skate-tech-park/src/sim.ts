@@ -6,8 +6,11 @@
 // the tricks. `firing` is derived from the board's state after each step and never feeds back, so
 // swapping skins changes nothing in the ride.
 import { clamp } from "@rustybuns/util";
-import { FOOT, hitObstacle, type Level, onRail, railY } from "./level.ts";
+import { FOOT, hitObstacle, type Level, nextRail, onRail, railY } from "./level.ts";
 import { plaza } from "./levels/plaza.ts";
+import { type Flick, flickLong, TRICKS } from "./tricks.ts";
+
+export type { Flick };
 
 export const DT = 1 / 60;
 const G = 20; // gamey gravity: snappier than 9.8
@@ -20,8 +23,6 @@ const T = Math.sqrt(SCALE);
 
 /** Which skin is drawn. step() never reads it: the same inputs give the same ride in either. */
 export type Mode = "skate" | "car";
-
-export type Flick = "kickflip" | "heelflip" | "shove-it";
 
 export type Input = {
   throttle: number; // -1..1
@@ -105,8 +106,9 @@ const SHEER = 1.25; // radians: a face this steep (a vertical ramp, a cliff) sto
 const STEP = 0.2; // a kerb or stair this low is always rideable
 const COYOTE = 0.12; // seconds after the wheels leave the ground that an ollie still pops
 
-const FLICK_POINTS: Record<Flick, number> = { kickflip: 300, heelflip: 300, "shove-it": 200 };
 export const FLICK_TIME = 0.45 * T;
+/** How long a flick takes: a 360 comes round slower. */
+export const flickTime = (k: Flick) => FLICK_TIME * (flickLong(k) ? 1.4 : 1);
 const OLLIE = 7 * T; // m/s up off the tail
 const SPIN_EASE = 0.12; // seconds for a spin in the air to build to what the steering asks, or to slow when let go
 /** An ollie's pop, in the board's own time: the back foot snaps the tail down so the nose kicks up
@@ -118,10 +120,10 @@ const CHAIN_WINDOW = 3; // seconds on the ground between tricks before the chain
 const CHAIN_MAX = 8;
 const LINK = 1.5; // a trick of a different kind from the last in the chain (grind, manual, air) scores this much more
 
-export type GrindKind = "50-50" | "boardslide" | "nosegrind" | "5-0";
-const GRIND_POINTS: Record<GrindKind, number> = { "50-50": 300, "5-0": 350, nosegrind: 400, boardslide: 450 };
-const LEDGE_NAME: Record<GrindKind, string> = { "50-50": "50-50 slide", "5-0": "5-0 slide", nosegrind: "Nose slide", boardslide: "Boardslide" };
-const GRIND_NAME: Record<GrindKind, string> = { "50-50": "50-50 grind", "5-0": "5-0 grind", nosegrind: "Nosegrind", boardslide: "Boardslide" };
+export type GrindKind = "50-50" | "boardslide" | "lipslide" | "nosegrind" | "5-0" | "smith" | "feeble";
+const GRIND_POINTS: Record<GrindKind, number> = { "50-50": 300, "5-0": 350, nosegrind: 400, boardslide: 450, lipslide: 500, smith: 500, feeble: 500 };
+const LEDGE_NAME: Record<GrindKind, string> = { "50-50": "50-50 slide", "5-0": "5-0 slide", nosegrind: "Nose slide", boardslide: "Boardslide", lipslide: "Lipslide", smith: "Smith slide", feeble: "Feeble slide" };
+const GRIND_NAME: Record<GrindKind, string> = { "50-50": "50-50 grind", "5-0": "5-0 grind", nosegrind: "Nosegrind", boardslide: "Boardslide", lipslide: "Lipslide", smith: "Smith grind", feeble: "Feeble grind" };
 const BALANCE_DRIFT = 1.1; // how fast a grind pulls off balance per unit of lean, per second
 const ROLL = 0.3; // m/s² the wheels lose rolling with nobody pushing
 const DRAG = 0.002; // per metre: the air's share, growing with the square of speed
@@ -133,7 +135,8 @@ const BALANCE_PUSH = 3.2; // how hard steering pulls it back
 export function grindKind(off: number, side: number): GrindKind {
   const a = off > Math.PI / 2 ? Math.PI - off : off; // riding the bar backwards is the same trick
   if (a < 0.35) return "50-50";
-  if (a > 1.1) return "boardslide";
+  if (a > 1.1) return side > 0 ? "boardslide" : "lipslide"; // across the bar: which truck is over it
+  if (a > 0.85) return side > 0 ? "smith" : "feeble"; // nearly across: the back truck hangs over, then the front
   return side > 0 ? "nosegrind" : "5-0";
 }
 
@@ -294,20 +297,22 @@ function land(s: State, level: Level) {
   s.pitch = Math.atan(a); s.roll = Math.atan(gx * fz - gz * fx);
   const hs = Math.hypot(vx, vz), along = (vx * fx + vz * fz + vy * a) / Math.sqrt(1 + a * a); // along the surface under the heading
   const off = Math.abs(wrap(Math.atan2(vx, vz) - s.yaw));
-  if (s.flipT > 0 && s.flipT < FLICK_TIME * CATCH) { s.flipT = 0; s.tricks.push(s.flipKind); } // nearly round: it lands bolts
+  if (s.flipT > 0 && s.flipT < flickTime(s.flipKind) * CATCH) { s.flipT = 0; s.tricks.push(s.flipKind); } // nearly round: it lands bolts
   if (s.flipT > 0) return bail(s, "Bail: still flipping");
   if (hs >= 2 && off > 0.9 && off < Math.PI - 0.9) return bail(s, "Bail: landed sideways");
   s.speed = along; // (slowly, onto a wall: it just rolls off whichever way it faces)
   if (s.airTime < 0.35) return;
   const turns = Math.round(Math.abs(s.spun) / Math.PI) * 180;
   const parts: string[] = [];
-  if (turns >= 180) parts.push(String(turns));
-  for (const t of new Set(s.tricks)) {
+  const big = turns === 180 && s.tricks.length === 1 && s.tricks[0] === "tre flip"; // a tre flip with the rider turning 180 too
+  if (turns >= 180 && !big) parts.push(String(turns));
+  if (big) parts.push("big flip");
+  else for (const t of new Set(s.tricks)) {
     const n = s.tricks.filter((x) => x === t).length;
     parts.push(n > 1 ? `${n}x ${t}` : t);
   }
   if (s.speed < 0) parts.push("fakie");
-  const points = Math.round(s.airTime * 100 + (turns / 180) * 250 + s.tricks.reduce((n, t) => n + FLICK_POINTS[t], 0));
+  const points = Math.round(s.airTime * 100 + (turns / 180) * 250 + s.tricks.reduce((n, t) => n + TRICKS[t].points, 0));
   award(s, parts.length ? parts.join(" ") : "Air", points, "air");
 }
 
@@ -372,6 +377,15 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     s.speed = Math.sign(s.speed) * Math.sqrt(Math.max(0, v2));
     if (Math.abs(s.balance) >= 1) { s.y = level.height(s.x, s.z); s.vx = fx * s.speed; s.vz = fz * s.speed; bail(s, `Bail: fell off the ${ledge ? "ledge" : "rail"}`); return s; }
     s.firing.rear = s.speed > 1; // the jets hold the slide
+    const next = !pressed && (t < 0 || t > 1) && s.speed > 0.5 ? nextRail(level.rails, s.grind, t > 1) : null;
+    if (next) { // a bent bar: round the joint and on along the next segment, keeping the grind going
+      const q = level.rails[next.i]!, o = onRail(q, s.x, s.z), turn = Math.abs(wrap(Math.atan2(next.dir * o.dx, next.dir * o.dz) - s.yaw));
+      if (turn < 1.8) {
+        const e = next.dir > 0 ? q.a : q.b;
+        s.grind = next.i; s.yaw = Math.atan2(next.dir * o.dx, next.dir * o.dz); s.x = e.x; s.z = e.z; s.y = railY(q, next.dir > 0 ? 0 : 1);
+        return s;
+      }
+    }
     if (pressed || t < 0 || t > 1 || Math.abs(s.speed) < 0.5) { // off either end, popped off, or stalled on a climbing bar
       if (s.grindTime > 0.2) award(s, (ledge ? LEDGE_NAME : GRIND_NAME)[s.grindKind], Math.round(s.grindTime * GRIND_POINTS[s.grindKind]), "grind");
       s.grind = -1;
@@ -480,12 +494,15 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     s.yaw += s.spin * DT; s.spun += s.spin * DT;
     if (inp.steer) s.firing.spin = inp.steer > 0 ? 1 : -1;
     if (flickPressed && flick && s.flipT <= 0) {
-      s.flipT = FLICK_TIME; s.flipKind = flick;
-      s.feet.push(flick === "shove-it" ? { foot: "back", at: "tail" } : { foot: "front", at: flick === "kickflip" ? "nose-left" : "nose-right" });
+      s.flipT = flickTime(flick); s.flipKind = flick;
+      const { board, flip } = TRICKS[flick];
+      if (board) s.feet.push({ foot: "back", at: "tail" });
+      if (flip) s.feet.push({ foot: "front", at: flip > 0 ? "nose-left" : "nose-right" });
     }
     if (s.flipT > 0) {
-      if (s.flipKind === "shove-it") s.firing.spin = 1; // the nose jets turn it
-      else { s.firing.lift = true; s.firing.roll = s.flipKind === "kickflip" ? 1 : -1; } // the corners fire unevenly
+      const { board, flip } = TRICKS[s.flipKind];
+      if (board) s.firing.spin = board > 0 ? 1 : -1; // the nose jets turn it
+      if (flip) { s.firing.lift = true; s.firing.roll = flip; } // the corners fire unevenly
       s.flipT -= DT; if (s.flipT <= 0) { s.flipT = 0; s.tricks.push(s.flipKind); } }
     const hit = hitObstacle(level, s.x + s.vx * DT, s.z + s.vz * DT, s.y + s.vy * DT, s.yaw);
     if (hit) { s.vx = s.vz = 0; s.speed = 0; } // thrown against the trunk: drop down it
@@ -502,7 +519,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
         // the approach angle names the grind: along the bar is a 50-50, across it a boardslide, between a nosegrind or 5-0
         const rel = wrap(s.yaw - Math.atan2(dir * o.dx, dir * o.dz));
         s.grindKind = grindKind(Math.abs(rel), Math.sign(rel) || 1);
-        s.grindOff = s.grindKind === "boardslide" ? Math.PI / 2 : 0;
+        s.grindOff = s.grindKind === "boardslide" || s.grindKind === "lipslide" ? Math.PI / 2 : 0;
         s.balance = s.grindKind === "50-50" ? 0 : Math.sign(rel) * 0.3;
         s.grind = i; s.grindTime = 0; s.popT = -1; s.spin = 0; // locked onto the bar, flat
         s.x = r.a.x + (r.b.x - r.a.x) * o.t; s.z = r.a.z + (r.b.z - r.a.z) * o.t;

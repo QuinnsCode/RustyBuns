@@ -16,10 +16,12 @@ import { comboLine } from "./render/combo.ts";
 import { Skins } from "./render/skins.ts";
 import { Taps } from "./render/feet.ts";
 import { lieOnGround, manualPose, rideableRise, popPose, TiltEase } from "./render/tilt.ts";
-import { DT, FLICK_TIME, IDLE, type Input, type Mode, noseUp, start, step, type State, tumble } from "./sim.ts";
+import { DT, type Flick, flickTime, IDLE, type Input, type Mode, noseUp, start, step, type State, tumble } from "./sim.ts";
 import { HALF } from "./levels/plaza.ts";
 import type { ParkLevel } from "./levels/park.ts";
+import { TRICKS } from "./tricks.ts";
 import { Gestures } from "./gesture.ts";
+import { mountTouch } from "./touch.ts";
 import { level, levelId, mood, mountLevelUi, park, spawn } from "./levels/picker.ts";
 import { newRoomCode, Online, roomCode, pveMode } from "./net/client.ts";
 import { bump } from "./net/bump.ts";
@@ -170,19 +172,30 @@ window.addEventListener("keyup", (e) => keys.delete(e.code));
 window.addEventListener("blur", () => keys.clear());
 // The mouse and the right stick: a drag up is an ollie, across or down is a flick trick (see gesture.ts).
 const gestures = new Gestures();
-canvas.addEventListener("pointerdown", (e) => gestures.down(e.clientX, e.clientY, performance.now() / 1000));
-window.addEventListener("pointermove", (e) => gestures.move(e.clientX, e.clientY));
-window.addEventListener("pointerup", (e) => gestures.up(e.clientX, e.clientY));
+// On a touch screen the left thumb drives (touch.ts), so only the right half of the screen is the flick pad.
+const touch = mountTouch();
+let flicking = -1; // the pointer the gesture follows
+canvas.addEventListener("pointerdown", (e) => {
+  if (flicking >= 0 || touch.claims(e.pointerId) || (e.pointerType === "touch" && e.clientX < innerWidth / 2)) return;
+  flicking = e.pointerId;
+  gestures.down(e.clientX, e.clientY, performance.now() / 1000);
+});
+window.addEventListener("pointermove", (e) => { if (e.pointerId === flicking) gestures.move(e.clientX, e.clientY); });
+const lift = (e: PointerEvent) => { if (e.pointerId === flicking) { flicking = -1; gestures.up(e.clientX, e.clientY); } };
+window.addEventListener("pointerup", lift);
+window.addEventListener("pointercancel", lift);
+// G and V are the plain flicks beside F's kickflip; the compound tricks sit on the row above (see tricks.ts).
+const FLICK_KEYS: [string, Flick][] = [["KeyG", "heelflip"], ["KeyV", "shove-it"], ["KeyR", "varial"], ["KeyT", "tre flip"], ["KeyY", "laser flip"], ["KeyU", "hardflip"], ["KeyI", "inward heel"], ["KeyO", "varial heel"]];
 const input = (): Input => ({
   ...IDLE,
-  throttle: (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0),
-  steer: (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0) - (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0),
+  throttle: (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0) || touch.throttle,
+  steer: (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0) - (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) || touch.steer,
   jump: keys.has("Space"),
-  boost: keys.has("ShiftLeft") || keys.has("ShiftRight"),
+  boost: keys.has("ShiftLeft") || keys.has("ShiftRight") || touch.boost,
   flip: keys.has("KeyF"),
-  flick: keys.has("KeyG") ? "heelflip" : keys.has("KeyV") ? "shove-it" : null,
+  flick: FLICK_KEYS.find(([code]) => keys.has(code))?.[1] ?? null,
   fan: keys.has("KeyE"),
-  manual: keys.has("KeyQ") ? 1 : keys.has("KeyZ") ? -1 : gestures.manual(performance.now() / 1000),
+  manual: keys.has("KeyQ") || touch.manual ? 1 : keys.has("KeyZ") ? -1 : gestures.manual(performance.now() / 1000),
 });
 
 // The HUD: lucide icons with their words as tooltips.
@@ -206,7 +219,7 @@ help.id = "help";
 help.title = "All the controls";
 help.append(icon(Info));
 const tip = $("tip");
-tip.innerHTML = "<p><kbd>W</kbd><kbd>S</kbd> push, <kbd>A</kbd><kbd>D</kbd> steer, and spin in the air</p><p><kbd>Space</kbd> ollie, <kbd>F</kbd> kickflip, <kbd>G</kbd> heelflip, <kbd>V</kbd> shove-it</p><p>Or drag the mouse or push the right stick: up ollies, across and down flick</p><p><kbd>Shift</kbd> rear jets and pump a transition, <kbd>E</kbd> suction fan</p><p><kbd>Q</kbd> hold a manual, <kbd>Z</kbd> a nose manual: <kbd>W</kbd> and <kbd>S</kbd> hold the balance, or hold the mouse still (nudged down for the nose), or use the pad's right and left triggers</p><p><kbd>Tab</kbd> swap board and roadster, <kbd>R</kbd> reset</p>";
+tip.innerHTML = "<p><kbd>W</kbd><kbd>S</kbd> push, <kbd>A</kbd><kbd>D</kbd> steer, and spin in the air</p><p><kbd>Space</kbd> ollie, <kbd>F</kbd> kickflip, <kbd>G</kbd> heelflip, <kbd>V</kbd> shove-it</p><p><kbd>R</kbd> varial, <kbd>O</kbd> varial heel, <kbd>U</kbd> hardflip, <kbd>I</kbd> inward heel, <kbd>T</kbd> tre flip, <kbd>Y</kbd> laser flip</p><p>Or drag the mouse or push the right stick: up ollies, across and down flick, diagonals are the compound tricks, a long one down a double turn</p><p><kbd>Shift</kbd> rear jets and pump a transition, <kbd>E</kbd> suction fan</p><p><kbd>Q</kbd> hold a manual, <kbd>Z</kbd> a nose manual: <kbd>W</kbd> and <kbd>S</kbd> hold the balance, or hold the mouse still (nudged down for the nose), or use the pad's right and left triggers</p><p><kbd>Tab</kbd> swap board and roadster, <kbd>R</kbd> reset</p>";
 help.addEventListener("click", () => { tip.hidden = !tip.hidden; help.blur(); });
 function hud() {
   swapBtn.replaceChildren(icon(mode === "car" ? RectangleHorizontal : Car));
@@ -279,8 +292,8 @@ function frame(now: number) {
     rider.rotation.z = fall.roll;
     rider.position.y += fall.hop;
   }
-  const turn = sim.flipT > 0 ? (1 - sim.flipT / FLICK_TIME) * Math.PI * 2 : 0;
-  pivot.rotation.set(0, sim.flipKind === "shove-it" ? turn : 0, sim.flipKind === "heelflip" ? -turn : sim.flipKind === "kickflip" ? turn : 0);
+  const done = sim.flipT > 0 ? 1 - sim.flipT / flickTime(sim.flipKind) : 0, { board, flip } = TRICKS[sim.flipKind];
+  pivot.rotation.set(0, (board * Math.PI / 180) * done, flip * Math.PI * 2 * done);
   pivot.position.y = PIVOT_Y[skins.current] + (sim.flipT > 0 ? 0.25 : 0);
   // A manual: nose (or tail) up on two wheels, shaking as the balance runs out.
   const tilt = manualPose(manualEase.last, sim.balance, skins.current, PIVOT_Y[skins.current], sim.manualTime, manualEase.update(sim.manual, dt));

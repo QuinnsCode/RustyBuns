@@ -4,16 +4,19 @@
 // is decided: it checks the player's id and name from the query, strips any
 // identity headers the client sent, and vouches its own. Everyone is a guest
 // here, so whoever reaches a room first hosts it. /api/match is quick play:
-// the Matchmaker hands out the room that's filling up right now.
+// the Matchmaker hands out the room that's filling up right now. /api/parks is
+// "Request a park": votes for the next national park (src/edge/requests.ts).
 import World from "../../packages/desktop/world.ts";
 import { RoomMintGate, originAllowed } from "./limits.ts";
 import { Matchmaker, type DONamespace } from "./match.ts";
-export { World, Matchmaker };
+import { ParkRequests } from "./requests.ts";
+export { World, Matchmaker, ParkRequests };
 
 interface Env {
   ASSETS: { fetch(r: Request): Promise<Response> };
   WORLD: DONamespace;
   MATCH: DONamespace;
+  PARKS: DONamespace;
 }
 
 export const ROOM = /^[A-Z0-9]{4,8}$/;
@@ -23,6 +26,10 @@ const clean = (s: string | null, max: number) => (s ?? "").replace(/\p{C}/gu, ""
 const mintGate = new RoomMintGate();
 /** New player ids one address may bring to quick play a minute, so a script can't flood the room filling up. */
 const matchGate = new RoomMintGate(6);
+/** Park votes one address may cast a minute. */
+const voteGate = new RoomMintGate(5);
+/** Votes are kept under a hash of the player's id, which is their login. */
+const voter = async (uid: string) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`park-vote:${uid}`)))].slice(0, 12).map((b) => b.toString(16).padStart(2, "0")).join("");
 
 export default {
   fetch(req: Request, env: Env): Response | Promise<Response> {
@@ -34,6 +41,7 @@ export default {
       if (ip && !matchGate.allow(ip, uid, Date.now())) return new Response("too many players from here, try again in a minute", { status: 429 });
       return env.MATCH.get(env.MATCH.idFromName("quick")).fetch(new Request(`https://match/?uid=${uid}`));
     }
+    if (url.pathname === "/api/parks") return parks(req, url, env);
     if (url.pathname !== "/ws") return env.ASSETS.fetch(req);
 
     if (req.headers.get("Upgrade")?.toLowerCase() !== "websocket") return new Response("websocket only", { status: 426 });
@@ -53,3 +61,14 @@ export default {
     return env.WORLD.get(env.WORLD.idFromName(room)).fetch(new Request(req, { headers }));
   },
 };
+
+async function parks(req: Request, url: URL, env: Env): Promise<Response> {
+  const stub = env.PARKS.get(env.PARKS.idFromName("parks"));
+  if (req.method !== "POST") return stub.fetch(new Request("https://parks/"));
+  if (!originAllowed(req.headers.get("Origin"), url)) return new Response("cross-origin vote refused", { status: 403 });
+  const uid = url.searchParams.get("uid") ?? "", code = (url.searchParams.get("code") ?? "").toUpperCase();
+  if (!UID.test(uid) || !/^[A-Z]{4}$/.test(code)) return new Response("bad vote", { status: 400 });
+  const ip = req.headers.get("CF-Connecting-IP");
+  if (ip && !voteGate.allow(ip, code, Date.now())) return new Response("too many votes, try again in a minute", { status: 429 });
+  return stub.fetch(new Request(`https://parks/?code=${code}&voter=${await voter(uid)}`, { method: "POST" }));
+}

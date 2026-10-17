@@ -1,6 +1,7 @@
 :root {
   --bg: #0e1117; --panel: #161b24; --line: #2a3140; --text: #e5e7eb; --dim: #9aa3b2;
   --marines: #dfe6ee; --wooka: #c8833a; --accent: #ff7a1a; --gold: #ffc640;
+  --f-marines: "Grenze Gotisch", serif; --f-wooka: "Love Ya Like A Sister", cursive; --f-title: Bungee, sans-serif; --f-lore: Babylonica, cursive;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -473,3 +474,9 @@ button.preset { white-space: normal; display: flex; flex-direction: column; gap:
 .cut.wooka .cut-title b, .cut.wooka .cut-title small, .cut.wooka .cut-caption { font-family: var(--tribal); }
 .cut.wooka .cut-title b { color: #ffcf86; letter-spacing: 0.08em; transform: rotate(-2deg); }
 .cut.wooka .cut-caption b { color: #ffcf86; }
+
+/* Type: Bungee for the game's own titles, Grenze Gotisch for the Marines, Love Ya Like A Sister for the Wooka, Babylonica for troop notes. */
+.panel h1, .panel h2, .panel h3, .modal-body h2, .modal-body h3, .vote-box h2, .ov-head, button.next, .b-toast { font-family: var(--f-title); font-weight: 400; }
+.marines, .tickets.marines b { font-family: var(--f-marines); }
+.wooka, .tickets.wooka b, .tagline, .flavor { font-family: var(--f-wooka); }
+.b-feed { font-family: var(--f-lore); font-size: 18px; }

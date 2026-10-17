@@ -3,19 +3,21 @@
 // and online games talk to a world (see session.ts).
 
 import { allAsks, askBlocked, askText, radioGrid, RADIO, type Ask, type Clue } from "../clues.ts";
-import { HATS, HUNT, PANTS, SHIRTS, SKINS, circleAt, closed, dropOk, outside, randomLook, type BotLevel, type Look, type Msg, type View } from "../hunt/game.ts";
-import { step, type Body } from "../hunt/sim.ts";
+import { HATS, HUNT, PANTS, SHIRTS, SKINS, circleAt, closed, disguiseFor, dropOk, outside, randomLook, type BotLevel, type Look, type Mode, type Msg, type View } from "../hunt/game.ts";
+import { step, wrap, type Body } from "../hunt/sim.ts";
 import { PARKS, ZONES, zoneById, zonesFor, type Zone } from "../zones/zone.ts";
 import { describe } from "../weather.ts";
-import { CALLS, place, sounds } from "./audio.ts";
+import { CALLS, Score, place, sounds } from "./audio.ts";
+import { REQUESTABLE } from "../edge/requests.ts";
 import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
 import { LocalSession, NetSession, playerId, tabPlayerId, type Session } from "./session.ts";
 import { World3D } from "./world3d.ts";
 import { ZoneMap } from "./zonemap.ts";
-import "@fontsource/ultra/latin-400.css";
+import "@fontsource/lacquer/latin-400.css";
+import "@fontsource/gloria-hallelujah/latin-400.css";
 // The ranger station's sign is drawn on a canvas: have the lettering ready for it.
-void document.fonts?.load("46px Ultra");
+void document.fonts?.load("46px Lacquer");
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -51,6 +53,10 @@ const heard = new Set<number>();
 let sent: [number, number][] = [];
 let checkedView: View | null = null;
 let flash: { text: string; until: number } | null = null;
+/** Were you caught as of the last frame (for the music's hit). */
+let wasCaught = false;
+/** How close the nearest ranger came last frame, for the stinger. */
+let lastThreat = 0;
 
 const world = new World3D($<HTMLCanvasElement>("view"));
 const zmap = new ZoneMap($<HTMLCanvasElement>("zonemap"));
@@ -60,6 +66,8 @@ const serverNow = () => Date.now() + (session?.offset ?? 0);
 const send = (m: Msg) => session?.send(m);
 const nameOf = (v: View, id: string) => v.players.find((p) => p.id === id)?.name ?? "someone";
 const note = (text: string, ms = 2500) => { flash = { text, until: Date.now() + ms }; };
+const score = new Score();
+score.muted = store.get("music") === "off";
 
 // ---- menu -----------------------------------------------------------------------
 
@@ -87,6 +95,35 @@ const roomLink = (code: string) => `${location.origin}${location.pathname}?room=
   const shared = new URLSearchParams(location.search).get("room")?.toUpperCase() ?? "";
   if (!desktop && ROOM.test(shared)) { $<HTMLInputElement>("room").value = shared; $("room-join").hidden = false; }
 })();
+
+// ---- request a park ---------------------------------------------------------------
+
+$<HTMLSelectElement>("park-pick").innerHTML = REQUESTABLE.map((p) => `<option value="${p.code}">${esc(p.name)}</option>`).join("");
+const voted = new Set(store.get("voted").split(",").filter(Boolean));
+function showVotes(votes: Record<string, number>) {
+  const top = Object.entries(votes).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  $("park-votes").innerHTML = top.length
+    ? top.map(([code, n]) => `<li><span>${esc(REQUESTABLE.find((p) => p.code === code)?.name ?? code)}</span><b>${n}</b></li>`).join("")
+    : `<li class="note">No requests yet. Be the first.</li>`;
+}
+$("show-parks").onclick = async () => {
+  const f = $("park-request");
+  f.hidden = !f.hidden;
+  if (f.hidden) return;
+  const r = await fetch("/api/parks").then((x) => (x.ok ? x.json() : null)).catch(() => null) as { votes: Record<string, number> } | null;
+  showVotes(r?.votes ?? {});
+};
+$<HTMLFormElement>("park-request").onsubmit = async (e) => {
+  e.preventDefault();
+  const code = $<HTMLSelectElement>("park-pick").value;
+  const name = REQUESTABLE.find((p) => p.code === code)?.name ?? code;
+  const res = await fetch(`/api/parks?code=${code}&uid=${encodeURIComponent(playerId())}`, { method: "POST" }).catch(() => null);
+  if (!res?.ok) { $("park-said").textContent = res?.status === 429 ? "That's a lot of requests. Try again in a minute." : "Couldn't send that. Try again later."; return; }
+  voted.add(code);
+  store.set("voted", [...voted].join(","));
+  $("park-said").textContent = `Thanks! ${name} is on the list.`;
+  showVotes(((await res.json()) as { votes: Record<string, number> }).votes);
+};
 
 /** Against AI, here in the page. Quick play skips the lobby: a random zone, the live weather, three AI players. */
 function solo(go: boolean) {
@@ -198,7 +235,7 @@ async function leave() {
 function onPhase(v: View) {
   const you = v.round?.you;
   if (v.phase === "drop") note(you?.role === "ranger" ? "You're a ranger this round. Campers are picking where to drop." : "Pick where to drop in: click the map.", 4000);
-  if (v.phase === "hide") { controls.clearPresses(); note(you?.role === "camper" ? "Find somewhere to hide! C to crouch in a bush." : "Counting at the ranger station…", 3500); }
+  if (v.phase === "hide") { controls.clearPresses(); note(you?.role === "camper" ? (v.mode === "props" ? "Find somewhere to hide! E next to a bush, boulder or log turns you into one." : "Find somewhere to hide! C to crouch in a bush.") : "Counting at the ranger station…", 3500); }
   if (v.phase === "hunt") note(you?.role === "ranger" ? "Go find them! Q to call out, M for the radio." : "Here come the rangers. Stay still, stay quiet.", 3500);
   if (v.phase !== "hide" && v.phase !== "hunt") controls.release();
   // Once a quick match is under way it's an ordinary room, with settings back in the lobby.
@@ -218,7 +255,9 @@ function renderLobby(v: View) {
     ...PARKS.map((p) => `<button data-zone="random:${p.code}" aria-pressed="${park === p}" ${dis}>${esc(p.name)}</button>`)].join("");
   const zones = park ? [`<button data-zone="random:${park.code}" aria-pressed="${v.zonePick === `random:${park.code}`}" ${dis}>Random drop zone<small>A new ${esc(park.name)} attraction every round</small></button>`,
     ...zonesFor(`random:${park.code}`).map((z) => `<button data-zone="${z.id}" aria-pressed="${v.zonePick === z.id}" ${dis}>${esc(z.name)}<small>${esc(z.blurb)}</small></button>`)].join("") : "";
+  const modes: [Mode, string, string][] = [["classic", "Hide and seek", "Crouch in the bushes"], ["props", "Prop hunt", "Campers turn into bushes, boulders and logs"]];
   const html = `
+    <section><h2>Game</h2><div class="row-btns">${modes.map(([m, label, sub]) => `<button data-mode="${m}" aria-pressed="${v.mode === m}" ${dis}>${label}<small>${sub}</small></button>`).join("")}</div></section>
     <section><h2>${park ? `${esc(park.name)} National Park` : "National park"}</h2><div class="row-btns">${parks}</div>${park ? `<div class="zones">${zones}</div>` : `<p class="note">A random drop zone in a random park every round.</p>`}</section>
     <section><h2>Time of day and weather</h2><div class="row-btns"><button data-live="1" aria-pressed="${v.live}" ${dis}>Live: the park right now<small>Real weather and time of day</small></button>${(["day", "dusk", "night"] as const).map((t) => `<button data-tod="${t}" aria-pressed="${!v.live && v.tod === t}" ${dis}>${t === "day" ? "Day" : t === "dusk" ? "Dusk" : "Night (flashlights)"}</button>`).join("")}</div>${v.live ? `<p class="note">Rain hides footsteps, fog cuts how far anyone sees, wind makes rustles hard to place. If the weather can't be reached, it's ${v.tod}.</p>` : ""}</section>
     ${host ? `<section><h2>Rounds</h2><div class="row-btns"><button data-laps="1" aria-pressed="${v.laps === 1}">Everyone's a ranger once</button><button data-laps="2" aria-pressed="${v.laps === 2}">Twice</button></div></section>
@@ -271,6 +310,7 @@ document.addEventListener("click", (e) => {
   if (!b || b.disabled) return;
   const d = b.dataset;
   if (d.zone) send({ t: "settings", zone: d.zone });
+  else if (d.mode) send({ t: "settings", mode: d.mode as Mode });
   else if (d.live) send({ t: "settings", live: true });
   else if (d.tod) send({ t: "settings", tod: d.tod as View["tod"], live: false });
   else if (d.laps) send({ t: "settings", laps: Number(d.laps) });
@@ -400,6 +440,7 @@ function frame() {
   lastFrame = t;
   world.resize();
   const v = view;
+  score.update(mood(v, serverNow()));
   if (!v) {
     controls.active = false;
     // Behind the menu: the valley under Yosemite Falls, at dusk.
@@ -427,7 +468,10 @@ function frame() {
   if (controls.take("KeyV")) { camMode = camMode === "first" ? "third" : "first"; store.set("cam", camMode); }
   if (controls.take("Tab")) spectate++;
   // Taken every frame, so a press while counting in the cabin doesn't fire once the hunt starts.
-  const lightKey = controls.take("KeyF"), callKey = controls.take("KeyQ");
+  const lightKey = controls.take("KeyF"), callKey = controls.take("KeyQ"), propKey = controls.take("KeyE");
+  if (controls.take("KeyN")) { score.setMuted(!score.muted); store.set("music", score.muted ? "off" : "on"); note(score.muted ? "Music off" : "Music on", 1200); }
+  if (you?.caughtAt != null && !wasCaught) score.boom();
+  wasCaught = you?.caughtAt != null;
 
   // Your body: move it here, tell the host where it went.
   const ranger = you?.role === "ranger";
@@ -447,6 +491,12 @@ function frame() {
       sent = [];
     }
     const inp = mapOpen ? { fwd: 0, right: 0, run: false, crouch: body.crouch } : controls.move();
+    // A prop shuffles: crouch speed, never a run.
+    if (you!.disguise) { inp.crouch = true; inp.run = false; }
+    if (propKey && v.mode === "props" && !ranger) {
+      if (you!.disguise || disguiseFor(z, body.x, body.y)) send({ t: "disguise" });
+      else note("Get next to a bush, boulder or log first.", 1800);
+    }
     body.yaw = controls.yaw; body.pitch = controls.pitch;
     const ox = body.x, oy = body.y;
     step(z, body, you!.role, inp, dt);
@@ -534,11 +584,13 @@ function hud(v: View, z: Zone, now: number) {
     const cd = last ? HUNT.callCooldownSecs * 1000 - (now - last.at) : 0;
     call = cd > 0 ? ` · call ready in ${Math.ceil(cd / 1000)} s` : " · call ready (Q)";
   }
-  $("role").textContent = !you ? "Watching" : ranger ? `Park ranger${call}` : you.caughtAt != null ? "Caught" : body?.crouch ? (z.bushAt(body.x, body.y) ? "Camper · hidden in a bush" : "Camper · crouching") : "Camper";
+  $("role").textContent = !you ? "Watching" : ranger ? `Park ranger${call}` : you.caughtAt != null ? "Caught" : you.disguise ? `Camper · a ${you.disguise.kind}` : body?.crouch ? (z.bushAt(body.x, body.y) ? "Camper · hidden in a bush" : "Camper · crouching") : "Camper";
   $("stamina").style.width = `${Math.round((body?.stamina ?? 1) * 100)}%`;
   const hints = ranger
-    ? "<kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>Q</kbd> call out · <kbd>F</kbd> flashlight · <kbd>M</kbd> radio · <kbd>V</kbd> camera"
-    : "<kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>C</kbd> crouch (hide in bushes) · <kbd>M</kbd> map · <kbd>V</kbd> camera";
+    ? "<kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>Q</kbd> call out · <kbd>F</kbd> flashlight · <kbd>M</kbd> radio · <kbd>V</kbd> camera · <kbd>N</kbd> music"
+    : v.mode === "props"
+      ? `<kbd>WASD</kbd> move · <kbd>E</kbd> ${you?.disguise ? "drop the disguise" : "turn into the prop next to you"} · <kbd>Shift</kbd> run · <kbd>M</kbd> map · <kbd>V</kbd> camera · <kbd>N</kbd> music`
+      : "<kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>C</kbd> crouch (hide in bushes) · <kbd>M</kbd> map · <kbd>V</kbd> camera · <kbd>N</kbd> music";
   if ($("hints").innerHTML !== hints) $("hints").innerHTML = hints;
   $("crosshair").hidden = !body;
   $("clickme").hidden = !body || controls.locked || mapOpen;
@@ -555,6 +607,30 @@ function hud(v: View, z: Zone, now: number) {
     return `<li class="${a && a.caughtAt !== null ? "out" : ""}"><span>${r.rangers.includes(p.id) ? "★ " : ""}${esc(p.name)}</span><b>${p.score}</b></li>`;
   }).join("");
   if ($("scores").innerHTML !== scores) $("scores").innerHTML = scores;
+}
+
+/**
+ * What the music should feel like. A camper's threat is the nearest ranger they can
+ * see, worse if he's looking their way; a ranger's is the hunt closing in. Quiet in menus.
+ */
+function mood(v: View | null, now: number): { on: boolean; threat: number; night: boolean; heart: boolean } {
+  const r = v?.round, you = r?.you;
+  if (!v || !r || (v.phase !== "hide" && v.phase !== "hunt")) return { on: false, threat: 0, night: false, heart: false };
+  const night = r.sky.tod !== "day";
+  const late = v.phase === "hunt" ? closed(r.huntStartedAt, now) : 0;
+  if (!you || you.role === "ranger" || you.caughtAt !== null) return { on: true, threat: 0.1 + 0.3 * late, night, heart: false };
+  const me = body ?? you;
+  let threat = 0.1 + 0.25 * late;
+  for (const o of r.others) {
+    if (o.role !== "ranger") continue;
+    const d = Math.hypot(o.x - me.x, o.y - me.y);
+    const facing = Math.abs(wrap(Math.atan2(me.x - o.x, me.y - o.y) - o.yaw)) < 0.5;
+    threat = Math.max(threat, (70 - d) / 60 + (facing && d < 40 ? 0.2 : 0));
+  }
+  threat = Math.min(1, threat);
+  if (threat > 0.75 && lastThreat <= 0.75) score.stinger();
+  lastThreat = threat;
+  return { on: true, threat, night, heart: true };
 }
 
 requestAnimationFrame(loop);

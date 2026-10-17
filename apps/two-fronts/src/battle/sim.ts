@@ -149,11 +149,12 @@ export interface Battle {
 }
 
 export const DT = 1 / 30;
-export const HALF = 120;           // the usual plain runs -HALF..HALF on x and z; a big map's runs further (Battle.half)
+export const HALF = 180;           // the plain runs -HALF..HALF on x and z
 export const TIME_LIMIT = 600;
-export const SPAWN: PerSide<{ x: number; z: number }> = { attacker: { x: 0, z: 100 }, defender: { x: 10, z: -100 } };
+// the usual plain's spawns; a bigger map's come from spawnsFor
+export const SPAWN: PerSide<{ x: number; z: number }> = { attacker: { x: 0, z: 150 }, defender: { x: 10, z: -150 } };
 // On a field of another size, each side comes in the same way from its own edge.
-const spawnsFor = (half: number): PerSide<{ x: number; z: number }> => ({ attacker: { x: 0, z: half - 20 }, defender: { x: 10, z: -(half - 20) } });
+const spawnsFor = (half: number): PerSide<{ x: number; z: number }> => ({ attacker: { x: 0, z: half - 30 }, defender: { x: 10, z: -(half - 30) } });
 export const POST_RADIUS = 12;
 const HOLD_FOR = 40;               // assault: seconds to hold a post once taken before the next comes live
 const HILL_EVERY = 75;             // hill: seconds before the live post moves on
@@ -169,21 +170,21 @@ export const timeLimit = (spec: BattleSpec) => (spec.mode === "holdout" ? HOLDOU
 // and their turrets ring it. `scenery` below lays out what stands on it; the view draws that.
 export interface Layout { name: string; posts: { name: string; x: number; z: number }[]; half?: number }
 export const LAYOUTS: Record<SectorKind, Layout> = {
-  shield: { name: "Shield generator clearing", posts: [{ name: "Old stump", x: -40, z: 20 }, { name: "Generator", x: 30, z: -50 }] },
-  capital: { name: "Capital city", posts: [{ name: "Transit hub", x: 45, z: 25 }, { name: "Market square", x: -35, z: -5 }, { name: "Palace", x: 5, z: -60 }] },
-  spaceport: { name: "Spaceport", posts: [{ name: "Landing pads", x: -30, z: 5 }, { name: "Control tower", x: 35, z: -55 }] },
-  cannon: { name: "Cannon battery", posts: [{ name: "Ammo depot", x: 40, z: 10 }, { name: "Cannon", x: -25, z: -55 }] },
-  canyon: { name: "Mining canyon", posts: [{ name: "Ore crusher", x: -20, z: 30 }, { name: "Mine head", x: 15, z: -55 }] },
-  jungle: { name: "Jungle temple", posts: [{ name: "Fallen idol", x: 35, z: 20 }, { name: "Rope bridge", x: -35, z: -10 }, { name: "Sunken temple", x: 0, z: -60 }] },
+  shield: { name: "Shield generator clearing", posts: [{ name: "Old stump", x: -60, z: 40 }, { name: "Fern hollow", x: 55, z: 5 }, { name: "Mossy ridge", x: -50, z: -40 }, { name: "Generator", x: 45, z: -80 }] },
+  capital: { name: "Capital city", posts: [{ name: "Transit hub", x: 65, z: 55 }, { name: "Market square", x: -50, z: 15 }, { name: "Water tower", x: 60, z: -20 }, { name: "Old quarter", x: -60, z: -55 }, { name: "Palace", x: 5, z: -95 }] },
+  spaceport: { name: "Spaceport", posts: [{ name: "Landing pads", x: -45, z: 35 }, { name: "Fuel depot", x: 55, z: 10 }, { name: "Hangar", x: -55, z: -30 }, { name: "Control tower", x: 50, z: -85 }] },
+  cannon: { name: "Cannon battery", posts: [{ name: "Ammo depot", x: 60, z: 40 }, { name: "Spotter nest", x: -55, z: 5 }, { name: "Gun pit", x: 50, z: -30 }, { name: "Cannon", x: -35, z: -85 }] },
+  canyon: { name: "Mining canyon", posts: [{ name: "Ore crusher", x: -25, z: 60 }, { name: "Cart yard", x: 30, z: 15 }, { name: "Slag heap", x: -30, z: -25 }, { name: "Mine head", x: 15, z: -85 }] },
+  jungle: { name: "Jungle temple", posts: [{ name: "Fallen idol", x: 55, z: 50 }, { name: "Rope bridge", x: -55, z: 5 }, { name: "Strangler fig", x: 50, z: -35 }, { name: "Sunken temple", x: 0, z: -95 }] },
 };
 // The big fields: the same kinds of sector, half as wide again and more, with a post or two more
 // to fight over. A spec names one with `map`; the war hands them out to the bigger battles.
 export const BIG_MAPS: Record<string, Layout & { sector: SectorKind; half: number }> = {
   ridge: { sector: "shield", name: "Generator ridge", half: 175, posts: [{ name: "Fern hollow", x: -70, z: 70 }, { name: "Old stump", x: 45, z: 25 }, { name: "Relay mast", x: -50, z: -40 }, { name: "Generator", x: 30, z: -100 }] },
   outskirts: { sector: "capital", name: "Old city outskirts", half: 175, posts: [{ name: "Burnt farm", x: 75, z: 80 }, { name: "Transit hub", x: -40, z: 40 }, { name: "Market square", x: 50, z: -20 }, { name: "Palace", x: -5, z: -100 }] },
-  yards: { sector: "spaceport", name: "Cargo yards", half: 165, posts: [{ name: "Cargo stacks", x: 60, z: 55 }, { name: "Landing pads", x: -40, z: 0 }, { name: "Control tower", x: 40, z: -90 }] },
-  gorge: { sector: "canyon", name: "Deep gorge", half: 170, posts: [{ name: "Slag heap", x: 25, z: 75 }, { name: "Ore crusher", x: -25, z: 15 }, { name: "Mine head", x: 15, z: -95 }] },
-  valley: { sector: "jungle", name: "Temple valley", half: 180, posts: [{ name: "Waterfall", x: -70, z: 75 }, { name: "Fallen idol", x: 55, z: 35 }, { name: "Rope bridge", x: -45, z: -25 }, { name: "Sunken temple", x: 0, z: -105 }] },
+  yards: { sector: "spaceport", name: "Cargo yards", half: 250, posts: [{ name: "Cargo stacks", x: 60, z: 55 }, { name: "Landing pads", x: -40, z: 0 }, { name: "Control tower", x: 40, z: -90 }] },
+  gorge: { sector: "canyon", name: "Deep gorge", half: 255, posts: [{ name: "Slag heap", x: 25, z: 75 }, { name: "Ore crusher", x: -25, z: 15 }, { name: "Mine head", x: 15, z: -95 }] },
+  valley: { sector: "jungle", name: "Temple valley", half: 270, posts: [{ name: "Waterfall", x: -70, z: 75 }, { name: "Fallen idol", x: 55, z: 35 }, { name: "Rope bridge", x: -45, z: -25 }, { name: "Sunken temple", x: 0, z: -105 }] },
 };
 export const layoutOf = (spec: Pick<BattleSpec, "sector" | "map">): Layout => {
   const big = spec.map ? BIG_MAPS[spec.map] : undefined;
@@ -192,10 +193,11 @@ export const layoutOf = (spec: Pick<BattleSpec, "sector" | "map">): Layout => {
 // The big maps there are for a kind of sector.
 export const bigMapsFor = (sector: SectorKind) => Object.keys(BIG_MAPS).filter((k) => BIG_MAPS[k]!.sector === sector);
 // The trees on each map: the redwood forest, a dense jungle of thinner trunks, none in the canyon.
-const REDWOODS = { n: 110, r: [1.2, 3.4], gap: 5, clear: 26 } as const;
+const GROW = 2.25;                 // the plain grew from 240 to 360 across: this much more ground to fill
+const REDWOODS = { n: Math.round(110 * GROW), r: [1.2, 3.4], gap: 5, clear: 26 } as const;
 const WOODS: Record<SectorKind, { n: number; r: readonly [number, number]; gap: number; clear: number }> = {
   shield: REDWOODS, capital: REDWOODS, spaceport: REDWOODS, cannon: REDWOODS,
-  jungle: { n: 230, r: [0.6, 1.6], gap: 2.5, clear: 18 },
+  jungle: { n: Math.round(230 * GROW), r: [0.6, 1.6], gap: 2.5, clear: 18 },
   canyon: { n: 0, r: [0, 0], gap: 0, clear: 0 },
 };
 export const EYE = 1.6;            // blocks this high or more block sight
@@ -442,7 +444,7 @@ const reach = (b: Battle) => b.half / HALF;
 function scenery(b: Battle) {
   const keep = b.posts.at(-1)!, put = (x: number, z: number, w: number, d: number, h: number) => b.blocks.push({ x, z, w, d, h });
   const scatter = (n0: number, size: [number, number], h: [number, number], room: number, lane = 18) => {
-    const n = Math.round(n0 * area(b));
+    const n = Math.round(n0 * GROW * area(b));
     for (let placed = 0, tries = 0; placed < n && tries < n * 30; tries++) {
       const k = { x: (rand(b) - 0.5) * b.half * 1.9, z: (rand(b) - 0.5) * b.half * 1.9, w: size[0] + rand(b) * (size[1] - size[0]), d: size[0] + rand(b) * (size[1] - size[0]), h: h[0] + rand(b) * (h[1] - h[0]) };
       if (Math.abs(k.x) < lane + k.w / 2) continue;

@@ -1,7 +1,7 @@
 // The hero's squad orders, the heavy weapons out on the field, and the big maps, through the sim.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { BIG_MAP_FOR, type BattleSpec } from "../src/battle/contract.ts";
-import { BIG_MAPS, CACHE_BACK, HEAVY, ORDER_FOR, facing, heroUnit, run, startBattle, step, yawTo, type Input } from "../src/battle/sim.ts";
+import { BIG_MAPS, CACHE_BACK, HALF, HEAVY, ORDER_FOR, facing, heroUnit, run, startBattle, step, yawTo, type Input } from "../src/battle/sim.ts";
 
 setDefaultTimeout(30_000);
 
@@ -37,8 +37,9 @@ test("hold keeps the squad where it stood; forward sends it where the gun points
 
 test("focus fire points the squad's guns at whatever is round the spot", () => {
   const b = startBattle(spec());
-  steps(b, 30 * 25); // a surge is out
-  const hero = heroUnit(b)!, foe = b.units.filter((u) => u.side === "defender" && u.kind !== "turret").sort((a, c) => Math.hypot(a.x - hero.x, a.z - hero.z) - Math.hypot(c.x - hero.x, c.z - hero.z))[0]!;
+  steps(b, 30 * 10); // a surge is out, the squad still round the hero
+  const hero = heroUnit(b)!, foe = b.units.find((u) => u.side === "defender" && u.hp > 0 && u.kind !== "turret")!;
+  foe.x = hero.x + 15; foe.z = hero.z - 15; foe.hp = 1e6; // the plain is wide: bring a tough foe to the squad
   step(b, { ...idle(), order: { kind: "focus", x: foe.x, z: foe.z } });
   steps(b, 15);
   const o = b.order!, aimed = b.units.filter((u) => o.ids.includes(u.id) && u.target !== undefined).map((u) => b.units.find((v) => v.id === u.target)).filter((v) => !!v);
@@ -80,7 +81,7 @@ test("big maps: a bigger field, more posts, and the war hands them to the bigger
     for (const u of done.units) expect(Math.abs(u.x) <= done.half && Math.abs(u.z) <= done.half).toBe(true);
   }
   // A map named for another kind of sector is ignored.
-  expect(startBattle(spec({ sector: "cannon", map: "ridge" })).half).toBe(120);
+  expect(startBattle(spec({ sector: "cannon", map: "ridge" })).half).toBe(HALF);
   // The hero still faces the enemy's end from their spawn on a big field.
   const big = startBattle(spec({ map: "ridge" })), me = heroUnit(big)!;
   expect(Math.abs(yawTo(me, big.spawn.defender))).toBeLessThan(0.6);

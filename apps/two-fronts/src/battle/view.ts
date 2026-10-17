@@ -757,7 +757,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       // Third-person camera over the hero's shoulder (or the vehicle's), or over the spawn while down.
       const hero = heroUnit(b);
       const body = (b.hero.inVehicle !== null && b.units.find((u) => u.id === b.hero.inVehicle)) || hero;
-      const at = body ?? { x: 0, z: heroSide === "attacker" ? 100 : -100 };
+      const at = body ?? { x: 0, z: heroSide === "attacker" ? b.spawn.attacker.z : b.spawn.defender.z };
       const [back, high] = body?.champ === "warbur" ? [11, 5.5] : !body || body.kind === "hero" ? [7, 3.2] : body.kind === "walker" ? [15, 10] : body.kind === "gunship" ? [18, 6] : [13, 6];
       const floor = ground(at.x, at.z), up = high + (body ? altitude(body) : 0) + floor;
       const f = facing(yaw);
