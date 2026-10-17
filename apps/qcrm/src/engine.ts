@@ -63,10 +63,39 @@ export interface StaleDeal {
   days_idle: number | null;
 }
 
-/** Likely duplicate contacts, best first. */
-export async function dedupe(rows: ContactRow[]): Promise<DupePair[]> {
-  const e = await loadEngine();
-  return JSON.parse(e.dedupe(JSON.stringify(rows)));
+/** Below this many contacts one thread is faster than starting workers. */
+const PARALLEL_FROM = 1500;
+
+/** Row ranges holding equal shares of the n²/2 pairs: row i compares against every row after it. */
+export function splitRows(n: number, parts: number): [number, number][] {
+  const out: [number, number][] = [];
+  let start = 0;
+  for (let k = 1; k <= parts; k++) {
+    // Pairs before row r: r(2n - r - 1)/2. Solve for the r that reaches k/parts of n(n-1)/2.
+    const end = k === parts ? n : Math.min(n, Math.round(n - 0.5 - Math.sqrt((n - 0.5) ** 2 - (k / parts) * n * (n - 1))));
+    if (end > start) out.push([start, end]);
+    start = Math.max(start, end);
+  }
+  return out;
+}
+
+/**
+ * Likely duplicate contacts, best first. Big lists are split across `workers` Web Workers (default:
+ * one per core), each comparing its share of the pairs; small ones, or no Worker, run right here.
+ */
+export async function dedupe(rows: ContactRow[], workers = globalThis.navigator?.hardwareConcurrency ?? 1): Promise<DupePair[]> {
+  if (rows.length < PARALLEL_FROM || workers < 2 || typeof Worker === "undefined") {
+    const e = await loadEngine();
+    return JSON.parse(e.dedupe(JSON.stringify(rows)));
+  }
+  const json = JSON.stringify(rows);
+  const parts = await Promise.all(splitRows(rows.length, workers).map(([start, end]) => new Promise<DupePair[]>((resolve, reject) => {
+    const w = new Worker(new URL("./engine-worker.ts", import.meta.url), { type: "module" });
+    w.onmessage = (m) => { w.terminate(); resolve(JSON.parse(m.data)); };
+    w.onerror = (err) => { w.terminate(); reject(new Error(err.message || "dedupe worker failed")); };
+    w.postMessage({ json, start, end });
+  })));
+  return parts.flat().sort((p, q) => q.score - p.score);
 }
 
 /** Weighted pipeline per stage and expected close per month for six months from `now`. */

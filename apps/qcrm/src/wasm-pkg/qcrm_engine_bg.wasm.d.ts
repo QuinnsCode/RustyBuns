@@ -2,6 +2,7 @@
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
 export const dedupe: (a: number, b: number, c: number) => void;
+export const dedupe_slice: (a: number, b: number, c: number, d: number, e: number) => void;
 export const forecast: (a: number, b: number, c: number, d: number) => void;
 export const stale: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
 export const wave_frame: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
