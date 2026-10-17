@@ -26,6 +26,33 @@ export function dedupe(contacts_json) {
 }
 
 /**
+ * `dedupe` for the pairs whose first row index is in `start..end`, unsorted-merge friendly: the
+ * browser runs one slice per core in Web Workers and merges the results by score.
+ * @param {string} contacts_json
+ * @param {number} start
+ * @param {number} end
+ * @returns {string}
+ */
+export function dedupe_slice(contacts_json, start, end) {
+    let deferred2_0;
+    let deferred2_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(contacts_json, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.dedupe_slice(retptr, ptr0, len0, start, end);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        deferred2_0 = r0;
+        deferred2_1 = r1;
+        return getStringFromWasm0(r0, r1);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export3(deferred2_0, deferred2_1, 1);
+    }
+}
+
+/**
  * Weighted pipeline per stage (lead .1, qualified .3, proposal .6) over the open deals, and the
  * expected (weighted) close per month for the six months starting at `now_ms`'s month.
  * @param {string} deals_json

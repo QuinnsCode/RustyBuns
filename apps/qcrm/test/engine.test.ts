@@ -1,5 +1,5 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
-import { dedupe, forecast, loadEngine, stale, waveFrame } from "../src/engine.ts";
+import { dedupe, forecast, loadEngine, splitRows, stale, waveFrame } from "../src/engine.ts";
 
 setDefaultTimeout(30_000);
 
@@ -47,6 +47,26 @@ describe("analysis", () => {
     expect(pairs[0]!.score).toBeGreaterThanOrEqual(0.5);
     expect(pairs[0]!.score).toBeLessThanOrEqual(1);
     expect(pairs[0]!.why).toContain("same last name and company");
+  });
+
+  test("dedupe across workers finds the same pairs as one thread", async () => {
+    const rows = Array.from({ length: 1600 }, (_, i) => ({
+      id: i, first_name: `Name${i % 800}`, last_name: `Last${i % 800}`, email: `p${i % 800}@x${i % 7}.com`, company_id: `c${i % 40}`,
+    }));
+    const one = await dedupe(rows, 1);
+    const many = await dedupe(rows, 4);
+    expect(one.length).toBeGreaterThan(700);
+    const key = (p: { a: unknown; b: unknown }) => `${p.a}-${p.b}`;
+    expect(many.map(key).sort()).toEqual(one.map(key).sort());
+  }, 60_000);
+
+  test("splitRows covers every row once, in near-equal pair shares", () => {
+    const parts = splitRows(10_000, 8);
+    expect(parts[0]![0]).toBe(0);
+    expect(parts.at(-1)![1]).toBe(10_000);
+    parts.forEach(([, end], i) => { if (i) expect(parts[i - 1]![1]).toBe(parts[i]![0]); });
+    const pairs = parts.map(([a, b]) => { let t = 0; for (let r = a; r < b; r++) t += 10_000 - r - 1; return t; });
+    expect(Math.max(...pairs) / Math.min(...pairs)).toBeLessThan(1.05);
   });
 
   test("forecast weights a proposal at 60% and buckets it by close month", async () => {

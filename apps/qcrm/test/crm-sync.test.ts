@@ -22,6 +22,7 @@ test("contacts: create, list, search, paginate, update, soft-delete", async () =
   expect(all.items).toHaveLength(3);
   expect(all.items[0].tags).toEqual(["lead"]);
   expect(all.next).toBeNull();
+  expect(all.total).toBe(3);
 
   const ad = await (await app(cookie, `${base}?q=AD`)).json();
   expect(ad.items.map((c: { first_name: string }) => c.first_name).sort()).toEqual(["Ada", "Adam"]);
@@ -30,9 +31,12 @@ test("contacts: create, list, search, paginate, update, soft-delete", async () =
   const page1 = await (await app(cookie, `${base}?limit=2`)).json();
   expect(page1.items).toHaveLength(2);
   expect(page1.next).toBeString();
+  expect(page1.total).toBe(3);
   const page2 = await (await app(cookie, `${base}?limit=2&cursor=${page1.next}`)).json();
   expect(page2.items).toHaveLength(1);
   expect(page2.next).toBeNull();
+  expect(page2.total).toBe(3);
+  expect((await (await app(cookie, `${base}?q=AD`)).json()).total).toBe(2);
   const seen = new Set([...page1.items, ...page2.items].map((c: { id: string }) => c.id));
   expect(seen.size).toBe(3);
 

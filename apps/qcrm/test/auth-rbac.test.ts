@@ -82,3 +82,36 @@ test("accounts off answers 503; cross-site cookie writes are refused", async () 
   const noOrigin = await handleApi(new Request(`${ORIGIN}/api/orgs`, { method: "POST", body: JSON.stringify({ name: "x" }), headers: { cookie, "sec-fetch-site": "cross-site", "content-type": "application/json" } }), app.env);
   expect(noOrigin.status).toBe(403);
 });
+
+test("sign-in is capped by the AUTH_LIMIT binding: its refusal is a 429, and no IP header means no limit", async () => {
+  const keys: string[] = [];
+  const app = await local({ AUTH_LIMIT: { limit: async ({ key }: { key: string }) => (keys.push(key), { success: false }) } });
+  const body = JSON.stringify({ email: "a@qcrm.test", password: "correct horse battery" });
+  const hit = (headers: Record<string, string>) => handleApi(new Request(`${ORIGIN}/api/auth/sign-in/email`, { method: "POST", body, headers: { "content-type": "application/json", origin: ORIGIN, ...headers } }), app.env);
+  const res = await hit({ "cf-connecting-ip": "203.0.113.9" });
+  expect(res.status).toBe(429);
+  expect(res.headers.get("retry-after")).toBe("60");
+  expect(keys).toEqual(["203.0.113.9"]);
+  expect((await hit({})).status).not.toBe(429);
+});
+
+test("the audit log names who and what; the last admin can't demote or remove themselves", async () => {
+  const app = await local();
+  const alice = await person(app, "alice@qcrm.test");
+  const bob = await person(app, "bob@qcrm.test");
+  const org = alice.org;
+  await post(app, alice.cookie, `/api/orgs/${org}/members`, { email: "bob@qcrm.test", role: "employee" });
+  const log = await (await app(alice.cookie, `/api/orgs/${org}/audit`)).json();
+  expect(log[0]).toMatchObject({ actor_email: "alice@qcrm.test", target_type: "member", target_name: expect.any(String) });
+  const members = await (await app(alice.cookie, `/api/orgs/${org}/members`)).json();
+  expect(members.find((m: { user_id: string }) => m.user_id === bob.user.id).email).toBe("bob@qcrm.test");
+  expect((await post(app, alice.cookie, `/api/orgs/${org}/members/${alice.user.id}`, { role: "manager" }, "PUT")).status).toBe(409);
+  expect((await app(alice.cookie, `/api/orgs/${org}/members/${alice.user.id}`, { method: "DELETE" })).status).toBe(409);
+});
+
+test("the sign-in form learns which social providers are on, signed out", async () => {
+  const off = await local();
+  expect(await (await off("", "/api/providers")).json()).toEqual(["email"]);
+  const on = await local({ GITHUB_CLIENT_ID: "id", GITHUB_CLIENT_SECRET: "secret", GOOGLE_CLIENT_ID: "only-half" });
+  expect(await (await on("", "/api/providers")).json()).toEqual(["email", "github"]);
+});
