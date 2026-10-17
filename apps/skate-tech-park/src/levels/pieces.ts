@@ -140,6 +140,27 @@ export const skyRail = (at: At, o: { len?: number; y?: number; y2?: number; kick
   return join(kicker({ ...toWorld(at, 0, -len / 2 - kick / 2 - 1), yaw: at.yaw }, { w: 4 / K, d: kick / L, h: h / K, name: "sky rail kicker" }), handrail(at, { len: len / L, y: y / K, y2: y2 / K }));
 };
 
+/** How a bar bends along its run: sideways `x` and height `y` (both in kit units) at a fraction `u` of the way from the start. */
+export const RAIL_LINES = {
+  /** Flat, a drop down a set of stairs, flat again. */
+  kink: (u: number) => ({ x: 0, y: 1.1 - 0.9 * smooth((u - 0.35) / 0.3) }),
+  /** A quarter turn to the right at one height. */
+  curve: (u: number) => ({ x: 4 * (1 - Math.cos(u * Math.PI / 2)) * 1.5, y: 0.8 }),
+  /** Out one way and back the other. */
+  s: (u: number) => ({ x: 2.5 * Math.sin(u * Math.PI * 2), y: 0.8 }),
+  /** Up and down like a roller. */
+  wave: (u: number) => ({ x: 0, y: 0.7 + 0.35 * Math.sin(u * Math.PI * 2) }),
+} satisfies Record<string, (u: number) => { x: number; y: number }>;
+
+/**
+ * One rail extruded along a path: a bar whose bends and drops are a profile (`RAIL_LINES`) walked in short straight
+ * segments that meet end to end, so a grind carries round the bend or down the drop instead of ending at each joint.
+ */
+export const railLine = (at: At, o: { line?: keyof typeof RAIL_LINES; len?: number } = {}): Part => {
+  const f = RAIL_LINES[o.line ?? "kink"], len = (o.len ?? 18) * L, n = Math.max(2, Math.round(len / 2.5)), pt = (i: number) => { const u = i / n, p = f(u); return { lx: p.x * K, lz: (u - 0.5) * len, y: p.y * K }; };
+  return part({ rails: Array.from({ length: n }, (_, i) => { const a = pt(i), b = pt(i + 1); return { ...bar("rail", at, a.lx, a.lz, b.lx, b.lz, a.y, b.y), chain: true as const }; }) });
+};
+
 /** A low rail on the flat. */
 export const flatBar = (at: At, o: { len?: number } = {}): Part => handrail(at, { len: o.len ?? 6, y: 0.45 });
 

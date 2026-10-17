@@ -3,7 +3,7 @@
 // flat enough and nothing else is in the way. Hand-placed sites win; scatter fills what they leave empty.
 import { mulberry32 } from "@rustybuns/util";
 import type { Bounds, Spawn } from "../level.ts";
-import { bowl, box, fallenLog, flatBar, funbox, handrail, hip, hubba, kicker, ledge, outcrop, rockRidge, rockSlab, type At, type Part, quarterPipe, rockFace, rollers, spine, stairSet, tabletop } from "./pieces.ts";
+import { bowl, box, fallenLog, flatBar, funbox, handrail, hip, hubba, kicker, ledge, outcrop, rockRidge, rockSlab, type At, type Part, quarterPipe, railLine, rockFace, rollers, spine, stairSet, tabletop } from "./pieces.ts";
 
 export type Scatter = {
   /** Same seed, same park. */
@@ -27,7 +27,8 @@ const KIT: Make[] = [
   (at, r) => kicker(at, { w: between(r, 3, 5), h: between(r, 0.8, 1.6), curve: pick(r, [1, 2]) }),
   (at, r) => box(at, { w: between(r, 3, 6), d: between(r, 3, 6), h: between(r, 0.3, 0.7) }),
   (at, r) => flatBar(at, { len: between(r, 8, 16) }),
-  (at, r) => handrail(at, { len: between(r, 8, 14), y: between(r, 0.7, 1.1) }),
+  // a third of the rails bend or drop along a path (picked by where they stand, so the draws after it are the same stream)
+  (at, r) => { const len = between(r, 8, 14), y = between(r, 0.7, 1.1), n = Math.abs(Math.floor(at.x * 7 + at.z * 13)); return n % 3 ? handrail(at, { len, y }) : railLine(at, { line: (["kink", "curve", "s", "wave"] as const)[n % 4], len: len + 6 }); },
   (at, r) => ledge(at, { len: between(r, 7, 12), h: between(r, 0.4, 0.7) }),
   (at, r) => funbox(at, { w: between(r, 6, 9), d: between(r, 14, 22), h: between(r, 0.7, 1.2), ramp: between(r, 4, 6) }),
   (at, r) => quarterPipe(at, { w: between(r, 8, 12), d: between(r, 4, 6), h: between(r, 2, 3.4) }),

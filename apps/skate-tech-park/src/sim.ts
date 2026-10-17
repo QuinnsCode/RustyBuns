@@ -6,7 +6,7 @@
 // the tricks. `firing` is derived from the board's state after each step and never feeds back, so
 // swapping skins changes nothing in the ride.
 import { clamp } from "@rustybuns/util";
-import { FOOT, hitObstacle, type Level, onRail, railY } from "./level.ts";
+import { FOOT, hitObstacle, type Level, nextRail, onRail, railY } from "./level.ts";
 import { plaza } from "./levels/plaza.ts";
 import { type Flick, flickLong, TRICKS } from "./tricks.ts";
 
@@ -377,6 +377,15 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     s.speed = Math.sign(s.speed) * Math.sqrt(Math.max(0, v2));
     if (Math.abs(s.balance) >= 1) { s.y = level.height(s.x, s.z); s.vx = fx * s.speed; s.vz = fz * s.speed; bail(s, `Bail: fell off the ${ledge ? "ledge" : "rail"}`); return s; }
     s.firing.rear = s.speed > 1; // the jets hold the slide
+    const next = !pressed && (t < 0 || t > 1) && s.speed > 0.5 ? nextRail(level.rails, s.grind, t > 1) : null;
+    if (next) { // a bent bar: round the joint and on along the next segment, keeping the grind going
+      const q = level.rails[next.i]!, o = onRail(q, s.x, s.z), turn = Math.abs(wrap(Math.atan2(next.dir * o.dx, next.dir * o.dz) - s.yaw));
+      if (turn < 1.8) {
+        const e = next.dir > 0 ? q.a : q.b;
+        s.grind = next.i; s.yaw = Math.atan2(next.dir * o.dx, next.dir * o.dz); s.x = e.x; s.z = e.z; s.y = railY(q, next.dir > 0 ? 0 : 1);
+        return s;
+      }
+    }
     if (pressed || t < 0 || t > 1 || Math.abs(s.speed) < 0.5) { // off either end, popped off, or stalled on a climbing bar
       if (s.grindTime > 0.2) award(s, (ledge ? LEDGE_NAME : GRIND_NAME)[s.grindKind], Math.round(s.grindTime * GRIND_POINTS[s.grindKind]), "grind");
       s.grind = -1;

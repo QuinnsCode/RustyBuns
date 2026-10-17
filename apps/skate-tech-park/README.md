@@ -10,6 +10,10 @@ Tricks score when you land them: air time, every 180 you spin, kickflips, grinds
 
 A flick trick is data (`src/tricks.ts`): how far the board turns under the rider and which way it flips, the same grid [SkateBench](https://github.com/T3-Content/skatebench) (MIT) asks models to name. Nine tricks: kickflip (`F`), heelflip (`G`), shove-it (`V`), varial (`R`), varial heel (`O`), hardflip (`U`), inward heel (`I`), tre flip (`T`) and laser flip (`Y`). With the mouse or right stick the diagonals are the compound ones (up-right varial, up-left varial heel, down-right hardflip, down-left inward heel) and a long diagonal drag down is a double turn. A tre flip with a half turn of the rider on top lands as a big flip. The approach angle and side name seven grinds (50-50, 5-0, nosegrind, smith, feeble, boardslide, lipslide), on rails and ledges alike.
 
+## Rails bend and drop
+
+`railLine` (`src/levels/pieces.ts`) extrudes one rail along a path with a profile (`kink`, `curve`, `s`, `wave`), and a grind rides on from segment to segment round the bend or down the drop. How we plan to fill out the levels, what mobile has today and a chasing animal for timed runs are in [LEVEL_DESIGN.md](LEVEL_DESIGN.md).
+
 ## Weather
 
 Every park has its own air (`weather` in its spec, moods in `src/render/weather.ts`): drifting clouds and a sun disc in the sky, fog that closes in, grain on the ground, rain streaks that lean into the wind, snow that whitens the flats, dust, mist, drifting motes, and lightning in a storm. Yosemite Falls is rainy, Half Dome snowy, the Grand Canyon dusty. Add `?weather=rain|storm|snow|dust|mist|noon|dusk|overcast|golden` to any park to change it.
