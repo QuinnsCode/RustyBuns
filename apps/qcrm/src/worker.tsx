@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { render, route } from "rwsdk/router";
 import { defineApp } from "rwsdk/worker";
 import { handleApi, handleQueue } from "./api.ts";
+import { runDue } from "./scripts.ts";
 import { Document } from "./app/Document.tsx";
 import { setCommonHeaders } from "./app/headers.ts";
 import { App } from "./app/pages/App.tsx";
@@ -61,6 +62,6 @@ const app = defineApp([
 export default {
   fetch: app.fetch,
   queue: (batch: unknown) => handleQueue(batch as never, e()),
-  // On the hour: demo orgs older than a day go, dead webhook deliveries are swept.
-  scheduled: () => hourly(e()),
+  // On the hour: demo orgs older than a day go, dead webhook deliveries are swept, scheduled scripts run.
+  scheduled: async () => { await hourly(e()); await runDue(e(), (r) => handleApi(r, e())); },
 };

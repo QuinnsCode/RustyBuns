@@ -45,10 +45,21 @@ export function authFor(req: Request, env: Env) {
 
 const bearerOf = (req: Request) => /^Bearer\s+(\S+)$/i.exec(req.headers.get("authorization") ?? "")?.[1] ?? null;
 
+// A scheduled script has no cookie or key to carry, so each run gets a one-use token for the run_as
+// person, good in this isolate for the length of the run (scripts.ts). It opens one org, like a key.
+const runGrants = new Map<string, { user: User; org: string }>();
+export function grantRun(user: User, org: string) {
+  const token = "qs_" + b64url(crypto.getRandomValues(new Uint8Array(24)));
+  runGrants.set(token, { user, org });
+  return { token, revoke: () => runGrants.delete(token) };
+}
+
 /** Who the request's API key is, or null when it carries none; a Response for a bad key. */
 async function byKey(req: Request, env: Env): Promise<User | Response | null> {
   const secret = bearerOf(req);
   if (secret === null) return null;
+  const granted = runGrants.get(secret);
+  if (granted) return { ...granted.user, key: { id: "schedule", org_id: granted.org } };
   const k = secret.startsWith("qk_") && await env.DB.prepare(`SELECT k.id, k.org_id, k.last_used_at, u.id AS user_id, u.email, u.name FROM api_keys k
     JOIN "user" u ON u.id = k.user_id WHERE k.hash = ?`).bind(await sha256(secret)).first<{ id: string; org_id: string; last_used_at: number | null; user_id: string; email: string; name: string }>();
   if (!k) return json({ error: "this API key is revoked or wrong" }, 401, { "www-authenticate": 'Bearer error="invalid_token"' });
