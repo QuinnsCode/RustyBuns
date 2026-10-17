@@ -1,7 +1,7 @@
 // The API: every /api/* request comes here from worker.tsx (and from src/local.ts in tests),
 // every HOOKS message to handleQueue. A small manual router: method and path segments.
 //
-//   /api/auth/*          Better Auth (rate limited: 20 a minute per IP)
+//   /api/auth/*          Better Auth (rate limited: 20 a minute per IP, across isolates)
 //   /api/openapi.json    the spec            /api/mcp   the MCP server
 //   /api/demo            a throwaway account
 //   /api/me, /api/admin/*, /api/orgs, /api/orgs/:org/*   signed in (key or cookie)
@@ -10,7 +10,7 @@
 // Nothing here logs an email or a row.
 
 import { adminRoutes } from "./admin.ts";
-import { accountsOff, accountsOn, authFor, crossSite, keyRoutes, sessionUser } from "./auth.ts";
+import { accountsOff, accountsOn, authFor, crossSite, keyRoutes, providers, sessionUser } from "./auth.ts";
 import { crmRoutes } from "./crm.ts";
 import { demoRoute } from "./demo.ts";
 import { error, json, type Env, type HookMessage } from "./env.ts";
@@ -25,16 +25,12 @@ import { seedRoutes } from "./seed-data.ts";
 import { syncRoutes } from "./sync.ts";
 import { deliver, webhookRoutes } from "./webhooks.ts";
 
-/** Sign-in attempts per IP per minute, per isolate: a speed bump against password guessing. */
-const AUTH_LIMIT = 20;
-const hits = new Map<string, { n: number; until: number }>();
-function limited(req: Request) {
-  // Cloudflare always sets the header; without it (the desktop, the tests) there is one person and no limit.
-  const ip = req.headers.get("cf-connecting-ip"), now = Date.now();
-  if (!ip) return false;
-  let h = hits.get(ip);
-  if (!h || h.until < now) { h = { n: 0, until: now + 60_000 }; hits.set(ip, h); if (hits.size > 10_000) hits.clear(); }
-  return ++h.n > AUTH_LIMIT;
+/** Sign-in attempts per IP per minute, counted by the AUTH_LIMIT binding (rustybuns.config.ts) at each location. */
+async function limited(req: Request, env: Env) {
+  // Cloudflare always sets the header; without it or the binding (the desktop, the tests) there is one person and no limit.
+  const ip = req.headers.get("cf-connecting-ip");
+  if (!ip || !env.AUTH_LIMIT) return false;
+  return !(await env.AUTH_LIMIT.limit({ key: ip })).success;
 }
 
 /** The least role each org sub-route takes, before its own checks. */
@@ -46,12 +42,14 @@ async function route(req: Request, env: Env, defer?: Defer): Promise<Response> {
   const p = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
   if (p[0] !== "api") return error(404, "not found");
   if (p[1] === "auth") {
-    if (limited(req)) return json({ error: "too many sign-in attempts: wait a minute" }, 429, { "retry-after": "60" });
+    if (await limited(req, env)) return json({ error: "too many sign-in attempts: wait a minute" }, 429, { "retry-after": "60" });
     return accountsOn(env) ? authFor(req, env).handler(req) : accountsOff();
   }
   if (p[1] === "openapi.json" && !p[2]) return json(openapi(env.BETTER_AUTH_URL ?? url.origin));
   if (p[1] === "mcp" && !p[2]) return mcp(req, env, (r) => handleApi(r, env));
   if (!accountsOn(env)) return accountsOff();
+  // Which sign-in methods the form offers: public, it has to load before anyone is signed in.
+  if (p[1] === "providers" && !p[2] && req.method === "GET") return json(providers(env));
   if (p[1] === "demo" && !p[2]) return demoRoute(req, env, defer);
 
   const refused = crossSite(req, env);
