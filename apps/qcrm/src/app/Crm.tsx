@@ -91,7 +91,7 @@ export function Crm() {
         {err && <p className="err">{err}</p>}
         {view in COLS && <Table key={current.id + view} org={current.id} entity={view} can={can} />}
         {view === "insights" && <Insights org={current.id} />}
-        {view === "engine" && <Engine org={current.id} />}
+        {view === "engine" && <Engine org={current.id} can={can} />}
         {view === "scripts" && <Scripts org={current.id} can={can} />}
         {view === "settings" && <Settings me={me} org={current} role={role} can={can} reload={load} />}
       </section>
@@ -320,23 +320,34 @@ async function allRows(org: string, entity: string, cap = 20_000) {
   return out;
 }
 
-function Engine({ org }: { org: string }) {
-  const [out, setOut] = useState<{ kind: string; ms: number; rows: number; data: any } | null>(null);
+type EngineOut =
+  | { kind: "dedupe"; pairs: any[]; people: Map<string, Row> }
+  | { kind: "forecast"; f: any }
+  | { kind: "stale"; deals: any[]; rows: Map<string, Row>; days: number };
+
+function Engine({ org, can }: { org: string; can: (r: string) => boolean }) {
+  const [out, setOut] = useState<{ res: EngineOut; load: number; ms: number; rows: number } | null>(null);
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState("");
+  const [edit, setEdit] = useState<{ entity: string; row: Row } | null>(null);
   const run = async (kind: "dedupe" | "forecast" | "stale") => {
     setBusy(kind); setMsg("");
     try {
       const eng = await import("../engine.ts");
-      const t = performance.now();
-      let data: any, rows = 0;
-      if (kind === "dedupe") { const c = await allRows(org, "contacts"); rows = c.length; data = await eng.dedupe(c as never); }
-      else if (kind === "forecast") { const d = await allRows(org, "deals"); rows = d.length; data = await eng.forecast(d as never, Date.now()); }
-      else { const [d, a] = await Promise.all([allRows(org, "deals"), allRows(org, "activities")]); rows = d.length + a.length; data = await eng.stale(d as never, a as never, Date.now(), 30); }
-      setOut({ kind, ms: Math.round(performance.now() - t), rows, data });
+      const t0 = performance.now();
+      let res: EngineOut, rows = 0, t1 = 0;
+      const byId = (l: Row[]) => new Map(l.map((r) => [String(r.id), r]));
+      if (kind === "dedupe") { const c = await allRows(org, "contacts"); rows = c.length; t1 = performance.now(); res = { kind, pairs: await eng.dedupe(c as never), people: byId(c) }; }
+      else if (kind === "forecast") { const d = await allRows(org, "deals"); rows = d.length; t1 = performance.now(); res = { kind, f: await eng.forecast(d as never, Date.now()) }; }
+      else { const [d, a] = await Promise.all([allRows(org, "deals"), allRows(org, "activities")]); rows = d.length + a.length; t1 = performance.now(); res = { kind, deals: await eng.stale(d as never, a as never, Date.now(), 30), rows: byId(d), days: 30 }; }
+      setOut({ res, rows, load: Math.round(t1 - t0), ms: Math.round(performance.now() - t1) });
     } catch (e) { setMsg((e as Error).message); }
     setBusy("");
   };
+  const open = (entity: string, id: unknown, m: Map<string, Row>) => { const row = m.get(String(id)); if (row) setEdit({ entity, row }); };
+  const link = (entity: string, id: unknown, m: Map<string, Row>, label: string) => <button type="button" className="link" onClick={() => open(entity, id, m)}>{label}</button>;
+  const res = out?.res;
+  const label = (r: Row | undefined, id: unknown) => (r ? nameOf(r) : String(id));
   return (
     <>
       <h2>Engine</h2>
@@ -348,7 +359,37 @@ function Engine({ org }: { org: string }) {
         {busy && <span className="muted">Running {busy}…</span>}
       </div>
       {msg && <p className="err">{msg}</p>}
-      {out && <div className="card"><h3>{out.kind} · {out.rows.toLocaleString()} rows in · {out.ms} ms</h3><pre className="code">{JSON.stringify(out.data, null, 2).slice(0, 20_000)}</pre></div>}
+      {out && res && (
+        <div className="card">
+          <h3>{res.kind === "dedupe" ? `${res.pairs.length.toLocaleString()} likely duplicate pairs` : res.kind === "stale" ? `${res.deals.length.toLocaleString()} open deals idle over ${res.days} days` : "Pipeline forecast"}</h3>
+          <p className="muted num">{out.rows.toLocaleString()} rows in · {out.load} ms to fetch · {out.ms} ms in the engine</p>
+          {res.kind === "dedupe" && (res.pairs.length ? <div className="table"><table>
+            <thead><tr><th>Contact</th><th>Looks like</th><th>Match</th><th>Why</th></tr></thead>
+            <tbody>{res.pairs.slice(0, 500).map((p) => (
+              <tr key={`${p.a}-${p.b}`}>
+                <td>{link("contacts", p.a, res.people, label(res.people.get(String(p.a)), p.a))}<br /><span className="muted">{res.people.get(String(p.a))?.email}</span></td>
+                <td>{link("contacts", p.b, res.people, label(res.people.get(String(p.b)), p.b))}<br /><span className="muted">{res.people.get(String(p.b))?.email}</span></td>
+                <td className="num">{Math.round(p.score * 100)}%</td><td>{(p.why ?? []).join(", ")}</td>
+              </tr>))}</tbody></table></div> : <div className="empty">No duplicates found.</div>)}
+          {res.kind === "stale" && (res.deals.length ? <div className="table"><table>
+            <thead><tr><th>Deal</th><th>Stage</th><th>Amount</th><th>Last touch</th><th>Days idle</th></tr></thead>
+            <tbody>{res.deals.slice(0, 500).map((d) => (
+              <tr key={d.id}><td>{link("deals", d.id, res.rows, d.name || String(d.id))}</td><td><Stage v={d.stage} /></td><td className="num">{money(d.amount_cents, res.rows.get(String(d.id))?.currency || "USD")}</td>
+                <td>{d.last_touch_at ? when(d.last_touch_at) : "never"}</td><td className="num">{d.days_idle == null ? "" : Math.round(d.days_idle)}</td></tr>))}</tbody></table></div> : <div className="empty">Nothing stale.</div>)}
+          {res.kind === "forecast" && <>
+            <div className="table"><table><thead><tr><th>Stage</th><th>Weight</th><th>Deals</th><th>Amount</th><th>Weighted</th></tr></thead>
+              <tbody>{res.f.stages.map((s: any) => <tr key={s.stage}><td><Stage v={s.stage} /></td><td className="num">{Math.round(s.weight * 100)}%</td><td className="num">{s.count}</td><td className="num">{money(s.amount_cents)}</td><td className="num">{money(s.weighted_cents)}</td></tr>)}</tbody></table></div>
+            <div className="table"><table><thead><tr><th>Close month</th><th>Deals</th><th>Amount</th><th>Weighted</th></tr></thead>
+              <tbody>{res.f.months.map((m: any) => <tr key={m.month}><td>{m.month}</td><td className="num">{m.count}</td><td className="num">{money(m.amount_cents)}</td><td className="num">{money(m.weighted_cents)}</td></tr>)}
+                <tr><td>No close date</td><td></td><td className="num">{money(res.f.unscheduled_cents)}</td><td className="num">{money(res.f.unscheduled_weighted_cents)}</td></tr></tbody></table></div>
+            <p><b>Total weighted: {money(res.f.total_weighted_cents)}</b></p>
+          </>}
+        </div>
+      )}
+      {edit && <Sheet org={org} entity={edit.entity} row={edit.row} onClose={() => setEdit(null)}
+        onSave={async (data) => { await api(`/orgs/${org}/${edit.entity}/${edit.row.id}`, { method: "PUT", body: JSON.stringify(data) }); setEdit(null); }}
+        onDelete={can("manager") ? async () => { await api(`/orgs/${org}/${edit.entity}/${edit.row.id}`, { method: "DELETE" }); setEdit(null); } : undefined}
+        canEdit={can("employee")} />}
     </>
   );
 }
