@@ -1,7 +1,7 @@
 // Rails between the sequoias of the Mariposa Grove, down the grove's own hillside: bars threaded through
 // two pairs of giants, a funbox in a clearing, and a fallen giant to jump. Everything follows the slope.
 import { type ParkSpec, type Tree } from "./park.ts";
-import { fallenLog, flatBar, funbox, gap, handrail, hip, kicker, quarterPipe, rollers, skyRail } from "./pieces.ts";
+import { bowl, fallenLog, flatBar, funbox, gap, handrail, hip, kicker, quarterPipe, rollers, skyRail } from "./pieces.ts";
 
 const E = Math.PI / 2;
 
@@ -25,6 +25,7 @@ export const mariposaGrove: ParkSpec = {
     { parts: [handrail({ x: 50, z: -50 }, { len: 40, y: 1.2 }), flatBar({ x: 50, z: -5 }, { len: 14 })] },
     { parts: [giant.launch, giant.landing, hip({ x: 50, z: 48, yaw: 0 }, { w: 14, d: 5, h: 2, name: "fallen giant" })] },
     { parts: [quarterPipe({ x: 50, z: 100 }, { w: 14, d: 7, h: 3.6 }), kicker({ x: -80, z: 110 }, { w: 8, d: 8, h: 1.6 })] },
+    { parts: [bowl({ x: -10, z: -60 }, { w: 30, d: 22, h: 2.4, deck: 3, name: "grove bowl" })] },
     // not possible: a bar on stilts that climbs away from the ground
     { parts: [skyRail({ x: -50, z: 140, yaw: E }, { len: 120, y: 1.6, y2: 18 })] },
   ],

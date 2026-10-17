@@ -3,7 +3,7 @@
 // wall itself is the big feature: the talus slope under it is a natural quarter pipe, and the goal is to
 // ride up it.
 import { type ParkSpec } from "./park.ts";
-import { outcrop, flatBar, funbox, gap, halfpipe, handrail, hip, hubba, quarterPipe, skyRail, spine, stairSet, tabletop } from "./pieces.ts";
+import { bowl, outcrop, flatBar, funbox, gap, halfpipe, handrail, hip, hubba, quarterPipe, skyRail, spine, stairSet, tabletop } from "./pieces.ts";
 
 const E = Math.PI / 2, W = -Math.PI / 2, N = Math.PI;
 
@@ -15,6 +15,9 @@ export const elCapitan: ParkSpec = {
   blurb: "A street line across the meadow, and the wall above it: ride the talus up the face.",
   zone: "el-capitan",
   fill: { lines: 8 },
+  // the smallest park and the first one you see: pack it tighter than the rest, onto steeper ground
+  scatter: { cell: 18, slope: 0.32 },
+  earthworks: { cell: 24, slope: 0.3 },
   sites: [
     { parts: [halfpipe({ x: -85, z: 133, yaw: E }, { w: 20, d: 40, h: 3 })] },
     { parts: [tabletop({ x: -40, z: 20, yaw: E }, { w: 8, d: 26, h: 1.6 })] },
@@ -25,6 +28,8 @@ export const elCapitan: ParkSpec = {
     { parts: [quarterPipe({ x: 80, z: 100, yaw: E }, { w: 14, d: 7, h: 4 })] },
     { parts: [hip({ x: 60, z: 130 }, { w: 12, d: 12, h: 2.4 }), spine({ x: 22, z: 130, yaw: E }, { w: 12, d: 8, h: 2.4 })] },
     { parts: [stairSet({ x: 0, z: 130, yaw: W }, { w: 8, steps: 8, rise: 0.25, run: 0.9 }), hubba({ x: -30, z: 130, yaw: W }, { steps: 8, rise: 0.25, run: 0.9 })] },
+    // a poured bowl in the west meadow, the first thing to find off the street line
+    { parts: [bowl({ x: -110, z: 30 }, { w: 26, d: 20, h: 2.4, deck: 3, name: "meadow bowl" })] },
     // not possible: a bar on stilts that climbs away from the meadow, 160 m long
     { parts: [skyRail({ x: -50, z: 155, yaw: E }, { len: 160, y: 1.6, y2: 14 })] },
   ],

@@ -15,6 +15,9 @@
 #   block  a concrete box or ledge: chamfered top, a darker plinth
 #   rock   a granite boulder: fine rings whose top is roughened by noise, in patches of pale and dark granite and lichen
 #   log    a fallen trunk: bark furrowed along its length with moss on it, end grain with rings where it tapers to the ground
+#   cliff  a granite buttress that turns to vertical (a rock face): a jittered square grid in patches of granite and lichen; its
+#          roughness lives in x, z and the top band of y, so the ridden surface stays where the sim has it
+#   bowl   a poured concrete pool: saw-cut panel joints, with its tile band and floor shaded by height in kit.ts
 #   hip    a wooden hip: sheets meeting in four creases, each with an orange trim strip, a steel plate round the foot
 #
 # The landscape pieces (rock, log, hip) are their whole shape, so they are fitted linearly instead (the log keeps its
@@ -36,14 +39,15 @@ hexes = {
     "tread": 0xB9B3AA, "nosing": 0xA5ACB4, "riser": 0x9D978D, "cheek": 0x8A847B, "concrete": 0xB9B3AA, "plinth": 0x7A746B,
     "granite": 0xA8A39A, "granite-dark": 0x8E8981, "lichen": 0x9AA06A,
     "bark": 0x5C4433, "moss": 0x66753A, "grain": 0xD8B888, "ring": 0xA9814F,
+    "pool": 0xAFA9A0, "joint": 0x77716A,
 }
 PALETTE.update({k: ((h >> 16) / 255, (h >> 8 & 255) / 255, (h & 255) / 255, 0.85, 0) for k, h in hexes.items()})
 # Per budget: rows along the ramp (its curve) and columns across (the ground under a draped piece): enough at every budget
 # that the drawn top stays within a hand of the ridden one, then ribs per side, bevel segments, sheets along the top.
 BUDGETS = {
-    "hi": {"rows": 64, "cols": 10, "ribs": 9, "segs": 3, "sheets": 8, "rock": 20, "log": (32, 28, 8), "hip": 24},
-    "mid": {"rows": 48, "cols": 8, "ribs": 5, "segs": 2, "sheets": 6, "rock": 14, "log": (24, 20, 5), "hip": 16},
-    "low": {"rows": 32, "cols": 6, "ribs": 0, "segs": 1, "sheets": 4, "rock": 9, "log": (16, 14, 3), "hip": 12},
+    "hi": {"rows": 64, "cols": 10, "ribs": 9, "segs": 3, "sheets": 8, "rock": 20, "log": (32, 28, 8), "hip": 24, "cliff": 72, "pool": 80, "joints": 10},
+    "mid": {"rows": 48, "cols": 8, "ribs": 5, "segs": 2, "sheets": 6, "rock": 14, "log": (24, 20, 5), "hip": 16, "cliff": 48, "pool": 60, "joints": 8},
+    "low": {"rows": 32, "cols": 6, "ribs": 0, "segs": 1, "sheets": 4, "rock": 9, "log": (16, 14, 3), "hip": 12, "cliff": 30, "pool": 40, "joints": 5},
 }
 BAND = 0.4  # where the fixed-size edge band starts, in x and z; y's starts at 0.9
 
@@ -252,9 +256,62 @@ def hip(b):
     return parts
 
 
+def vnoise(x, z, seed, cell):
+    """Value noise in 0..1: random at each corner of a grid `cell` wide, smoothly blended between."""
+    def at(i, j):
+        return (math.sin(i * 127.1 + j * 311.7 + seed * 74.7) * 43758.5453) % 1.0
+    u, v = x / cell, z / cell
+    i, j = math.floor(u), math.floor(v)
+    fu, fv = u - i, v - j
+    fu, fv = fu * fu * (3 - 2 * fu), fv * fv * (3 - 2 * fv)
+    return (at(i, j) * (1 - fu) + at(i + 1, j) * fu) * (1 - fv) + (at(i, j + 1) * (1 - fu) + at(i + 1, j + 1) * fu) * fv
+
+
+def cliff(b):
+    n = b["cliff"]
+    bm = slab(grid(n), grid(n), [0, 1])
+    for v in bm.verts:
+        if v.co.y < 1 and not (abs(v.co.x) == 0.5 or abs(v.co.z) == 0.5):
+            continue
+        inner = abs(v.co.x) < 0.5 and abs(v.co.z) < 0.5
+        # The top band of y is a fixed size in metres, so this is a hand's depth of facet whatever the face's size; in x and z
+        # the jitter is a fraction of a cell (it reads as strata and cracks once the face has turned to vertical).
+        if v.co.y == 1:
+            v.co.y = 0.93 + 0.14 * (0.6 * vnoise(v.co.x, v.co.z, 1, 0.09) + 0.4 * vnoise(v.co.x, v.co.z, 2, 0.03))
+        if inner:
+            v.co.x += (vnoise(v.co.x, v.co.z, 3, 2.3 / n) - 0.5) * 0.9 / n
+            v.co.z += (vnoise(v.co.x, v.co.z, 4, 2.3 / n) - 0.5) * 0.9 / n
+    mats = ["granite", "granite-dark", "lichen"]
+
+    def pick(c, nrm):
+        if nrm.y < 0.5:
+            return "granite-dark"
+        k, l = vnoise(c.x, c.z, 5, 0.3), vnoise(c.x, c.z, 6, 0.14)
+        return "lichen" if k > 0.8 and l > 0.5 else "granite-dark" if k < 0.3 else "granite"
+
+    return [paint(obj("cliff", bm, mats), mats, pick)]
+
+
+def bowl(b):
+    n, j = b["pool"], b["joints"]
+    cuts = [-0.5 + (i + 1) / (j + 1) for i in range(j)]
+    w = 0.0006  # a saw cut, thin even on a 90 m pool
+    xs = sorted({*grid(n), *(c + d for c in cuts for d in (-w, w))})
+    bm = slab(xs, xs, [0, 0.9, 1])
+    mats = ["pool", "joint", "plinth"]
+
+    def pick(c, nrm):
+        if nrm.y < 0.5:
+            return "plinth"
+        near = lambda v: any(abs(v - k) <= w * 1.01 for k in cuts)
+        return "joint" if near(c.x) or near(c.z) else "pool"
+
+    return [paint(obj("bowl", bm, mats), mats, pick)]
+
+
 def main():
     for budget, b in BUDGETS.items():
-        for name, build in (("ramp", ramp), ("step", step), ("block", block), ("rock", rock), ("log", log), ("hip", hip)):
+        for name, build in (("ramp", ramp), ("step", step), ("block", block), ("rock", rock), ("log", log), ("hip", hip), ("cliff", cliff), ("bowl", bowl)):
             reset()
             write_glb(join(build(b), name, smooth=30), os.path.join(OUT, f"kit-{name}-{budget}.glb"))
 

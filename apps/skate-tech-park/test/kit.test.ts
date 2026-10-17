@@ -5,7 +5,8 @@ import { expect, test } from "bun:test";
 import * as THREE from "three";
 import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
-import { toLocal } from "../src/level.ts";
+import { makeLevel, toLocal } from "../src/level.ts";
+import { bowl, fallenLog, join, outcrop, rockFace } from "../src/levels/pieces.ts";
 import { KIT_BUDGETS, fitAcross, fitUp, loadKit } from "../src/render/kit.ts";
 import { levelMeshes } from "../src/render/pieces.ts";
 
@@ -36,7 +37,33 @@ test.each([...KIT_BUDGETS])("the %s kit dresses ramps, stairs, blocks, boulders,
       }
     }
   }
-  expect([...kinds].sort()).toEqual(["block", "hip", "log", "ramp", "rock", "stairs"]);
+  expect([...kinds].sort()).toEqual(["block", "bowl", "cliff", "hip", "log", "ramp", "rock", "stairs"]);
+});
+
+test.each([...KIT_BUDGETS])("the %s landscape: a boulder, a rock face that turns to vertical, a log and a pool are drawn where they are ridden", async (budget) => {
+  const kit = await loadKit(budget, read);
+  const part = join(outcrop({ x: -60, z: 0 }), rockFace({ x: -20, z: 0 }), fallenLog({ x: 20, z: 0 }), bowl({ x: 70, z: 0 }, { w: 30, d: 22 }));
+  expect(part.pieces.every((p) => p.look)).toBe(true);
+  const level = makeLevel({ name: "landscape", pieces: part.pieces, rails: part.rails, spawns: [], bounds: { minX: -100, maxX: 100, minZ: -40, maxZ: 40 } });
+  const group = levelMeshes(level, undefined, kit);
+  expect(group.children.length).toBeLessThanOrEqual(2);
+  const [rock, face, log, pool] = part.pieces as [typeof part.pieces[0], ...typeof part.pieces];
+  // The crest of the boulder and of the log, the shelf behind the face's lip, and the pool's floor and deck.
+  const spots: [number, number][] = [
+    [rock!.x, rock!.z], [log!.x, log!.z], [face!.x, face!.z + face!.d / 2 - 1], [face!.x + face!.w * 0.3, face!.z + face!.d / 2 - 1],
+    [pool!.x, pool!.z], [pool!.x + pool!.w / 2 - 2, pool!.z], [pool!.x, pool!.z - pool!.d / 2 + 2],
+  ];
+  for (const [x, z] of spots) {
+    const at = down(group, x, z);
+    expect(at).toBeDefined();
+    expect(Math.abs(at! - level.height(x, z))).toBeLessThan(0.25);
+  }
+  // The face really does turn to vertical: it only ever climbs along z, ends at its full height, and its last steps are the steep ones.
+  const hs = Array.from({ length: 61 }, (_, i) => face!.height(0, -face!.d / 2 + (face!.d * i) / 60));
+  const rises = hs.slice(1).map((h, i) => h - hs[i]!);
+  expect(rises.every((r) => r >= -1e-9)).toBe(true);
+  expect(hs.at(-1)).toBeCloseTo(face!.h1);
+  expect(Math.max(...rises)).toBeGreaterThan(face!.h1 * 0.15);
 });
 
 test("the fixed-size bands: a trim keeps its metres on a small piece and a big one", () => {
