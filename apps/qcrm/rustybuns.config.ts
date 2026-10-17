@@ -26,6 +26,8 @@ export default defineConfig({
     // Stored scripts run in a dynamic Worker of their own, no network, one service binding back to the API (src/scripts.ts).
     LOADER: { type: "worker_loader" },
     HOOKS: { type: "queue", queueName: "qcrm-hooks", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } },
+    // Sign-in attempts: 20 a minute per IP, counted by Cloudflare rather than in each isolate (src/api.ts).
+    AUTH_LIMIT: { type: "ratelimit", namespaceId: "8201", simple: { limit: 20, period: 60 } },
     BETTER_AUTH_SECRET: { type: "secret", op: "op://qcrm/better-auth/secret" },
     BETTER_AUTH_URL: { type: "var", value: "https://qcrm.qntbr.com" },
     // Optional social sign-in: a button shows once both halves of a provider are set (src/auth.ts).
