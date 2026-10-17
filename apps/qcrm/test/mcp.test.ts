@@ -17,7 +17,7 @@ test("tools/list has every operation of the spec; tools/call runs one as the API
   expect(info.claude).toContain("/api/mcp");
 
   const list = await (await app("", "/api/mcp", { method: "POST", headers: bearer, body: rpc("tools/list") })).json();
-  const ids = Object.values(openapi("").paths).flatMap((m) => Object.values(m).map((op) => (op as { operationId: string }).operationId)).sort();
+  const ids = Object.values(openapi("", "0").paths).flatMap((m) => Object.values(m).map((op) => (op as { operationId: string }).operationId)).sort();
   expect(list.result.tools.map((t: { name: string }) => t.name).sort()).toEqual(ids);
   const del = list.result.tools.find((t: { name: string }) => t.name === "delete_contact");
   expect(del.annotations.destructiveHint).toBe(true);
@@ -57,4 +57,11 @@ test("a bad key is 401, no key is 401, a revoked key is 401", async () => {
   // The session cookie works on the MCP server too.
   const viaCookie = await (await app(cookie, "/api/mcp", { method: "POST", body: rpc("tools/call", { name: "get_me" }) })).json();
   expect(JSON.parse(viaCookie.result.content[0].text).orgs[0].id).toBe(org);
+});
+
+test("one version everywhere", async () => {
+  const call = await local();
+  const v = (await (await call("", "/api/mcp")).json()).version;
+  const spec = await (await call("", "/api/openapi.json")).json();
+  expect(spec.info.version).toBe(v);
 });

@@ -13,7 +13,7 @@ import { adminRoutes } from "./admin.ts";
 import { accountsOff, accountsOn, authFor, crossSite, keyRoutes, sessionUser } from "./auth.ts";
 import { crmRoutes } from "./crm.ts";
 import { demoRoute } from "./demo.ts";
-import { error, json, type Env, type HookMessage } from "./env.ts";
+import { error, json, VERSION, type Env, type HookMessage } from "./env.ts";
 import { insightRoutes } from "./insights.ts";
 import { mcp } from "./mcp.ts";
 import { exportRoutes, meRoutes } from "./me.ts";
@@ -49,7 +49,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (limited(req)) return json({ error: "too many sign-in attempts: wait a minute" }, 429, { "retry-after": "60" });
     return accountsOn(env) ? authFor(req, env).handler(req) : accountsOff();
   }
-  if (p[1] === "openapi.json" && !p[2]) return json(openapi(env.BETTER_AUTH_URL ?? url.origin));
+  if (p[1] === "openapi.json" && !p[2]) return json(openapi(env.BETTER_AUTH_URL ?? url.origin, VERSION));
   if (p[1] === "mcp" && !p[2]) return mcp(req, env, (r) => handleApi(r, env));
   if (!accountsOn(env)) return accountsOff();
   if (p[1] === "demo" && !p[2]) return demoRoute(req, env);

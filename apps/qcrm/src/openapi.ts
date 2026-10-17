@@ -155,7 +155,7 @@ const params = (path: string, query: Op["query"] = {}) => [
 const err = (description: string) => ({ description, content: { "application/json": { schema: ref("Error") } } });
 
 /** The spec, with this origin as its server. */
-export function openapi(origin: string) {
+export function openapi(origin: string, version: string) {
   const paths: Record<string, Record<string, unknown>> = {};
   for (const [path, methods] of Object.entries(OPS)) {
     paths[path] = {};
@@ -178,7 +178,7 @@ export function openapi(origin: string) {
   return {
     openapi: "3.1.0",
     info: {
-      title: "qCRM", version: "1",
+      title: "qCRM", version,
       description: "A small CRM for teams and the agents that work for them. Sign in on the site, or send an org API key (an owner makes one) as `Authorization: Bearer qk_…`: "
         + "it acts as the person who made it, inside that org. Roles: seasonal < employee < manager < owner < admin; each operation says the least role it takes (`x-qcrm-role`). "
         + "Everything under /orgs/{org} answers 404 to anyone who isn't a member, so an id never says whether it exists. "

@@ -21,7 +21,7 @@ const inline = (s: unknown, defs: Record<string, Schema>): any => {
 };
 
 export function tools(): Tool[] {
-  const spec = openapi("");
+  const spec = openapi("", "0");
   const defs = spec.components.schemas as Record<string, Schema>;
   const out: Tool[] = [];
   for (const [path, methods] of Object.entries(spec.paths)) {
