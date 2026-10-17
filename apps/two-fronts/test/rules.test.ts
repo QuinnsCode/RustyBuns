@@ -319,7 +319,7 @@ for (const [id, least] of [["short", 3], ["full", 10]] as const) test(`the AI gi
   const mirrored = aiOrders(c, "marines").orders.map((o) =>
     o.kind === "build" ? { ...o, at: { ...o.at, system: twin(o.at.system) } }
     : o.kind === "fleet" ? { ...o, from: twin(o.from), to: twin(o.to) }
-    : o.kind === "card" ? { ...o, at: { ...o.at, system: twin(o.at.system) } }
+    : o.kind === "card" || o.kind === "bombard" ? { ...o, at: { ...o.at, system: twin(o.at.system) } }
     : { ...o, from: { ...o.from, system: twin(o.from.system) }, to: { ...o.to, system: twin(o.to.system) } });
   expect(mirrored.length).toBeGreaterThan(least);
   expect(aiOrders(c, "wooka").orders).toEqual(mirrored);
