@@ -21,21 +21,23 @@ const rowsOf = (r: any): Row[] => (Array.isArray(r) ? r : r?.items ?? r?.rows ??
 const nextOf = (r: any): string | null => r?.next ?? r?.cursor ?? null;
 const money = (cents: unknown, cur = "USD") => typeof cents === "number" ? new Intl.NumberFormat(undefined, { style: "currency", currency: cur, maximumFractionDigits: 0 }).format(cents / 100) : "";
 const when = (v: unknown) => (typeof v === "number" || typeof v === "string") && v ? new Date(v).toLocaleDateString() : "";
+/** What a linked row is called in a table or a picker. */
+const nameOf = (r: Row) => r.name ?? ([r.first_name, r.last_name].filter(Boolean).join(" ") || r.email || r.id);
 const ROLES = ["seasonal", "employee", "manager", "owner", "admin"] as const;
 const RANK: Record<string, number> = { seasonal: 1, employee: 2, manager: 3, owner: 4, admin: 5, super_admin: 6 };
 const STAGES = ["lead", "qualified", "proposal", "won", "lost"];
 
-const COLS: Record<string, { key: string; label: string; kind?: "money" | "date" | "stage" | "num" }[]> = {
-  contacts: [{ key: "first_name", label: "First" }, { key: "last_name", label: "Last" }, { key: "email", label: "Email" }, { key: "phone", label: "Phone" }, { key: "title", label: "Title" }, { key: "updated_at", label: "Updated", kind: "date" }],
+const COLS: Record<string, { key: string; label: string; kind?: "money" | "date" | "stage" | "num"; ref?: string }[]> = {
+  contacts: [{ key: "first_name", label: "First" }, { key: "last_name", label: "Last" }, { key: "email", label: "Email" }, { key: "phone", label: "Phone" }, { key: "title", label: "Title" }, { key: "company_id", label: "Company", ref: "companies" }, { key: "updated_at", label: "Updated", kind: "date" }],
   companies: [{ key: "name", label: "Name" }, { key: "domain", label: "Domain" }, { key: "industry", label: "Industry" }, { key: "size", label: "Size", kind: "num" }, { key: "updated_at", label: "Updated", kind: "date" }],
-  deals: [{ key: "name", label: "Deal" }, { key: "stage", label: "Stage", kind: "stage" }, { key: "amount_cents", label: "Amount", kind: "money" }, { key: "close_at", label: "Close", kind: "date" }, { key: "updated_at", label: "Updated", kind: "date" }],
-  activities: [{ key: "type", label: "Type" }, { key: "body", label: "Note" }, { key: "at", label: "When", kind: "date" }],
+  deals: [{ key: "name", label: "Deal" }, { key: "stage", label: "Stage", kind: "stage" }, { key: "amount_cents", label: "Amount", kind: "money" }, { key: "company_id", label: "Company", ref: "companies" }, { key: "contact_id", label: "Contact", ref: "contacts" }, { key: "close_at", label: "Close", kind: "date" }, { key: "updated_at", label: "Updated", kind: "date" }],
+  activities: [{ key: "type", label: "Type" }, { key: "body", label: "Note" }, { key: "contact_id", label: "Contact", ref: "contacts" }, { key: "deal_id", label: "Deal", ref: "deals" }, { key: "at", label: "When", kind: "date" }],
 };
-const FIELDS: Record<string, { key: string; label: string; type?: string; options?: string[] }[]> = {
-  contacts: [{ key: "first_name", label: "First name" }, { key: "last_name", label: "Last name" }, { key: "email", label: "Email", type: "email" }, { key: "phone", label: "Phone" }, { key: "title", label: "Title" }, { key: "company_id", label: "Company id" }, { key: "notes", label: "Notes", type: "textarea" }],
+const FIELDS: Record<string, { key: string; label: string; type?: string; options?: string[]; ref?: string }[]> = {
+  contacts: [{ key: "first_name", label: "First name" }, { key: "last_name", label: "Last name" }, { key: "email", label: "Email", type: "email" }, { key: "phone", label: "Phone" }, { key: "title", label: "Title" }, { key: "company_id", label: "Company", ref: "companies" }, { key: "notes", label: "Notes", type: "textarea" }],
   companies: [{ key: "name", label: "Name" }, { key: "domain", label: "Domain" }, { key: "industry", label: "Industry" }, { key: "size", label: "Size", type: "number" }],
-  deals: [{ key: "name", label: "Name" }, { key: "stage", label: "Stage", type: "select", options: STAGES }, { key: "amount_cents", label: "Amount (cents)", type: "number" }, { key: "currency", label: "Currency" }, { key: "contact_id", label: "Contact id" }, { key: "company_id", label: "Company id" }, { key: "close_at", label: "Close (ms)", type: "number" }],
-  activities: [{ key: "type", label: "Type", type: "select", options: ["call", "email", "meeting", "note"] }, { key: "body", label: "Body", type: "textarea" }, { key: "contact_id", label: "Contact id" }, { key: "deal_id", label: "Deal id" }],
+  deals: [{ key: "name", label: "Name" }, { key: "stage", label: "Stage", type: "select", options: STAGES }, { key: "amount_cents", label: "Amount (cents)", type: "number" }, { key: "currency", label: "Currency" }, { key: "contact_id", label: "Contact", ref: "contacts" }, { key: "company_id", label: "Company", ref: "companies" }, { key: "close_at", label: "Close (ms)", type: "number" }],
+  activities: [{ key: "type", label: "Type", type: "select", options: ["call", "email", "meeting", "note"] }, { key: "body", label: "Body", type: "textarea" }, { key: "contact_id", label: "Contact", ref: "contacts" }, { key: "deal_id", label: "Deal", ref: "deals" }],
 };
 
 const theme = (t: "light" | "dark" | "auto") => {
@@ -146,6 +148,7 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
   const [edit, setEdit] = useState<Row | null>(null);
   const [msg, setMsg] = useState("");
   const cols = COLS[entity]!;
+  const [names, setNames] = useState<Record<string, string>>({});
   const fetchPage = useCallback(async (cursor: string | null, replace: boolean) => {
     const t = performance.now();
     const p = new URLSearchParams({ limit: "50" });
@@ -160,6 +163,16 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
     } catch (e) { setMsg((e as Error).message); }
   }, [org, entity, q]);
   useEffect(() => { const h = setTimeout(() => void fetchPage(null, true), q ? 120 : 0); return () => clearTimeout(h); }, [fetchPage, q]);
+  // Rows hold ids of linked rows; look up the ones this page shows and put names in their place.
+  useEffect(() => {
+    const want = new Set<string>();
+    for (const c of cols) if (c.ref) for (const r of rows) { const id = r[c.key]; if (id && !(c.ref + id in names)) want.add(c.ref + "/" + id); }
+    if (!want.size) return;
+    let live = true;
+    void Promise.all([...want].map((k) => api(`/orgs/${org}/${k}`).then((r) => [k.replace("/", ""), nameOf(r)] as const).catch(() => [k.replace("/", ""), ""] as const)))
+      .then((got) => { if (live) setNames((n) => ({ ...n, ...Object.fromEntries(got) })); });
+    return () => { live = false; };
+  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
   const save = async (data: Row) => {
     const id = edit?.id;
     await api(`/orgs/${org}/${entity}${id ? "/" + id : ""}`, { method: id ? "PUT" : "POST", body: JSON.stringify(data) });
@@ -183,7 +196,7 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} onClick={() => setEdit(r)}>
-                {cols.map((c) => <td key={c.key} className={c.kind === "money" || c.kind === "num" ? "num" : ""}>{cell(r[c.key], c.kind, r.currency)}</td>)}
+                {cols.map((c) => <td key={c.key} className={c.kind === "money" || c.kind === "num" ? "num" : ""}>{c.ref ? (names[c.ref + r[c.key]] ?? "") : cell(r[c.key], c.kind, r.currency)}</td>)}
               </tr>
             ))}
           </tbody>
@@ -191,7 +204,7 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
         {!rows.length && <div className="empty">{q ? "Nothing matches." : `No ${entity} yet.`}</div>}
       </div>
       {next && <button type="button" onClick={() => fetchPage(next, false)}>Load more</button>}
-      {edit && <Sheet entity={entity} row={edit} onClose={() => setEdit(null)} onSave={save} onDelete={can("manager") && edit.id ? () => remove(edit.id) : undefined} canEdit={can("employee") || !edit.id} />}
+      {edit && <Sheet org={org} entity={entity} row={edit} onClose={() => setEdit(null)} onSave={save} onDelete={can("manager") && edit.id ? () => remove(edit.id) : undefined} canEdit={can("employee") || !edit.id} />}
     </>
   );
 }
@@ -204,7 +217,7 @@ const cell = (v: unknown, kind?: string, cur?: string) => {
   return String(v);
 };
 
-function Sheet({ entity, row, onClose, onSave, onDelete, canEdit }: { entity: string; row: Row; onClose: () => void; onSave: (d: Row) => Promise<void>; onDelete?: () => Promise<void>; canEdit: boolean }) {
+function Sheet({ org, entity, row, onClose, onSave, onDelete, canEdit }: { org: string; entity: string; row: Row; onClose: () => void; onSave: (d: Row) => Promise<void>; onDelete?: () => Promise<void>; canEdit: boolean }) {
   const [msg, setMsg] = useState("");
   const fields = FIELDS[entity]!;
   return (
@@ -219,7 +232,8 @@ function Sheet({ entity, row, onClose, onSave, onDelete, canEdit }: { entity: st
         {row.id && <p className="muted mono">{row.id}</p>}
         {fields.map((x) => (
           <label key={x.key}><span>{x.label}</span>
-            {x.type === "select" ? <select name={x.key} defaultValue={row[x.key] ?? x.options![0]} disabled={!canEdit}>{x.options!.map((o) => <option key={o}>{o}</option>)}</select>
+            {x.ref ? <Picker org={org} entity={x.ref} name={x.key} initial={row[x.key]} disabled={!canEdit} />
+              : x.type === "select" ? <select name={x.key} defaultValue={row[x.key] ?? x.options![0]} disabled={!canEdit}>{x.options!.map((o) => <option key={o}>{o}</option>)}</select>
               : x.type === "textarea" ? <textarea name={x.key} defaultValue={row[x.key] ?? ""} rows={4} disabled={!canEdit} />
               : <input name={x.key} type={x.type ?? "text"} defaultValue={row[x.key] ?? ""} disabled={!canEdit} />}
           </label>
@@ -260,6 +274,34 @@ function Insights({ org }: { org: string }) {
       {weeks.length > 0 && <div className="card"><h3>Activities, last 12 weeks</h3><div className="spark">{weeks.map((w) => <i key={w.weeks_ago} title={`${w.weeks_ago} weeks ago: ${w.total}`} style={{ height: `${(100 * w.total) / wmax}%` }} />)}</div></div>}
       {top.length > 0 && <div className="card"><h3>Open pipeline by company</h3><div className="bars">{top.map((c) => <div className="bar" key={c.name}><span>{c.name}</span><i style={{ width: `${(100 * c.amount_cents) / tmax}%` }} /><span className="num">{money(c.amount_cents)} · {c.deals}</span></div>)}</div></div>}
     </>
+  );
+}
+
+/** Pick a linked row by typing its name; the form gets its id. */
+function Picker({ org, entity, name, initial, disabled }: { org: string; entity: string; name: string; initial?: string; disabled: boolean }) {
+  const [id, setId] = useState<string>(initial ?? "");
+  const [text, setText] = useState("");
+  const [hits, setHits] = useState<Row[]>([]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (initial) api(`/orgs/${org}/${entity}/${initial}`).then((r) => setText(nameOf(r))).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!open) return;
+    const h = setTimeout(() => api(`/orgs/${org}/${entity}?${new URLSearchParams({ limit: "8", ...(text ? { q: text } : {}) })}`).then((r) => setHits(rowsOf(r))).catch(() => setHits([])), 120);
+    return () => clearTimeout(h);
+  }, [text, open, org, entity]);
+  return (
+    <span style={{ position: "relative", display: "block" }}>
+      <input type="hidden" name={name} value={id} />
+      <input type="search" value={text} placeholder={`Search ${entity}…`} disabled={disabled} autoComplete="off"
+        onChange={(e) => { setText(e.target.value); setId(""); setOpen(true); }} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} />
+      {open && hits.length > 0 && (
+        <ul role="listbox" style={{ position: "absolute", left: 0, right: 0, zIndex: 5, margin: 0, padding: 4, listStyle: "none", background: "var(--paper)", border: "1px solid var(--line)", boxShadow: "var(--shadow)" }}>
+          {hits.map((h) => <li key={h.id} role="option" style={{ padding: "6px 8px", cursor: "pointer" }} onMouseDown={() => { setId(h.id); setText(nameOf(h)); setOpen(false); }}>{nameOf(h)}</li>)}
+        </ul>
+      )}
+    </span>
   );
 }
 
