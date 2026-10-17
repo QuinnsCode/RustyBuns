@@ -18,16 +18,19 @@ Still to do: a rail that forks, a rail on the lip of a ribbon's crest (the copin
 
 ## Blocks we can grind on
 
-Already: `ledge` (a long low block), `hubba` (a ledge as tall as the stairs beside it), `rockRidge` and `rockSlab` (grindable granite), the top of a `fallenLog`, the coping on every ribbon, bowl lip and quarter pipe, and the pool terraces. To add:
+Already: `ledge` (a long low block), `hubba` (a ledge as tall as the stairs beside it), `rockRidge` and `rockSlab` (grindable granite), the top of a `fallenLog`, the coping on every ribbon, bowl lip and quarter pipe, and the pool terraces. Also in the kit (`src/levels/pieces.ts`):
 
-- **Manual pad.** A short low box with a flat top, sited between two bigger features so the line's speed carries across. We have manuals on the ground; the pad is a place to want one.
-- **Bank to ledge.** A bank whose top is a ledge, so a line goes up, grinds along, and drops off the end.
-- **Down ledge.** A ledge that falls away beside a stair set (a sloped `y2` on a `ledge`, as handrails already have).
-- **Gap-to-ledge.** A named `gap` that lands on a ledge instead of the ground.
+- **Manual pad** (`manualPad`). A short low box with a flat top, a rise the board rolls up, sited between two bigger features so the line's speed carries across.
+- **Bank to ledge** (`bankLedge`). A bank whose top is a ledge, so a line goes up, grinds along, and drops off the end.
+- **Down ledge** (`downLedge`). A ledge that falls away along its length (a sloped `y2`, as handrails already have).
+
+To add: a gap-to-ledge, a named `gap` that lands on a ledge instead of the ground.
 
 ## Lines, as data
 
-A `ParkSpec` should be able to say "a line": an ordered list of parts with spacing and heading so each exit meets the next entry, with a goal that scores finishing it. The pieces exist; the thing missing is a `line()` that places a chain of them by exit speed (a kicker's throw distance fixes where the rail goes). One line per site, a flat run-up before each, and a gap between beats of about 1.5 s of travel at cruising speed.
+`line(at, steps, { name })` (`src/levels/lines.ts`) lays an ordered list of beats (`kicker`, `bar`, `rail`, `railLine`, `ledge`, `manualPad`, `bankLedge`, `downLedge`) end to end along a heading. After each beat it leaves a gap of its exit speed times 1.5 s (`GAP_SECONDS`), so one beat's exit meets the next one's entry; a step can set its own `exit` speed or a `turn` after it. Put it in a `Site` like any other part. It also records a route (a point at each beat), and a `{ kind: "line", name }` goal completes when the rider passes the points in order, each soon enough after the last, with no bail on the way (`trackRun`). Glacier Point has one: `plateau line`.
+
+Still to do: a kicker's throw distance fixing where the next beat goes (today the gap is a flat 1.5 s of travel), and one line per site with a flat run-up checked.
 
 ## Mobile today
 
