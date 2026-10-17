@@ -28,7 +28,7 @@ const GOLDEN: Mood = {
 export const MOODS = {
   golden: GOLDEN,
   noon: { ...GOLDEN, haze: 0xcfe0f0, zenith: 0x3f7fd0, sun: [-20, 60, -15], sunColor: 0xfff4e0, sunPower: 2.8, skyFill: 0xcfe2ff, groundFill: 0x8a7a60, cloud: 0.3, cloudTone: 0xd8e2ee, fog: [1.2, 1.3], amount: 0.12 },
-  dusk: { ...GOLDEN, haze: 0xd9788a, zenith: 0x2b3a78, sun: [-70, 6, -20], sunColor: 0xff8a5a, sunPower: 1.6, skyFill: 0x8a8ad0, groundFill: 0x553a50, fill: 0.7, cloud: 0.45, cloudTone: 0xff7a7a, fog: [0.8, 0.9], exposure: 0.95 },
+  dusk: { ...GOLDEN, haze: 0xd9788a, zenith: 0x2b3a78, sun: [-70, 16, -20], sunColor: 0xffa070, sunPower: 2.6, skyFill: 0xb4b4f0, groundFill: 0x9a7080, fill: 1.2, cloud: 0.45, cloudTone: 0xff7a7a, fog: [0.8, 0.9], exposure: 1.15 },
   overcast: { ...GOLDEN, haze: 0xb7bec6, zenith: 0x8a96a6, sun: [-30, 40, -20], sunColor: 0xe8eef5, sunPower: 0.9, skyFill: 0xc8d2de, groundFill: 0x77786c, fill: 1.25, cloud: 0.9, cloudTone: 0x8c96a2, fog: [0.5, 0.75], fall: "none", amount: 0, wind: [3, 1] },
   rain: { ...GOLDEN, haze: 0x8d98a4, zenith: 0x56626f, sun: [-30, 35, -20], sunColor: 0xcbd6e2, sunPower: 0.9, skyFill: 0xb4c0cf, groundFill: 0x6a7060, fill: 1.7, cloud: 1, cloudTone: 0x5d6772, fog: [0.25, 0.55], exposure: 0.95, fall: "rain", amount: 0.9, wind: [4, 1.5], wet: 1 },
   storm: { ...GOLDEN, haze: 0x59616e, zenith: 0x2a303b, sun: [-30, 30, -20], sunColor: 0x9fb0c8, sunPower: 0.5, skyFill: 0x8d9ab0, groundFill: 0x50564f, fill: 1.3, cloud: 1, cloudTone: 0x363d48, fog: [0.15, 0.4], exposure: 0.9, fall: "rain", amount: 1, wind: [9, 3], wet: 1, lightning: true },
