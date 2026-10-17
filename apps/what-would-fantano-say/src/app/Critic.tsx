@@ -13,7 +13,7 @@ const ACCEPT = "audio/*,video/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.oga,.opus,.webm,
 
 declare global {
   interface Window {
-    turnstile?: { render(el: HTMLElement, o: { sitekey: string; callback(t: string): void; "expired-callback"(): void; theme: string }): string; reset(id: string): void };
+    turnstile?: { render(el: HTMLElement, o: { sitekey: string; callback(t: string): void; "expired-callback"(): void; "error-callback"(code?: string): boolean | void; theme: string }): string; reset(id: string): void };
   }
 }
 
@@ -67,13 +67,16 @@ export function Critic({ siteKey }: { siteKey: string }) {
     if (!siteKey || !widget.current) return;
     const mount = () => {
       if (widgetId.current || !window.turnstile || !widget.current) return;
-      widgetId.current = window.turnstile.render(widget.current, { sitekey: siteKey, theme: "dark", callback: setToken, "expired-callback": () => setToken("") });
+      widgetId.current = window.turnstile.render(widget.current, { sitekey: siteKey, theme: "dark", callback: setToken, "expired-callback": () => setToken(""),
+        // A hostname missing from the widget, or a bad site key, lands here: say so instead of a dead button.
+        "error-callback": (code) => { setStage({ kind: "error", message: `The human check didn't load (error ${code ?? "unknown"}). This site's address may not be on the widget's list.` }); return true; } });
     };
     if (window.turnstile) return mount();
     const s = document.createElement("script");
     s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
     s.async = true;
     s.onload = mount;
+    s.onerror = () => setStage({ kind: "error", message: "The human check script was blocked or offline. Reload to try again." });
     document.head.appendChild(s);
   }, [siteKey]);
 
