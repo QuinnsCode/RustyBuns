@@ -42,7 +42,10 @@ export type Landmark =
   | { kind: "plume"; x: number; z: number; tall: number; r: number }
   /** Concentric terraces, outermost first (and lowest), one colour each. */
   | { kind: "rings"; x: number; z: number; rings: { r: number; color: number }[] }
-  | { kind: "falls"; from: { x: number; z: number }; to: { x: number; z: number }; width: number };
+  | { kind: "falls"; from: { x: number; z: number }; to: { x: number; z: number }; width: number }
+  /** A whole mountain modelled in Blender (blender/landmark.py) standing past the park's edge: its crest `tall` metres above `y`, its sheer face to the west before `yaw` turns it. Drawn by render/peak.ts. */
+  | Peak;
+export type Peak = { kind: "peak"; model: "half-dome"; x: number; y: number; z: number; tall: number; yaw?: number };
 
 export type Pickup = { x: number; z: number; y: number };
 

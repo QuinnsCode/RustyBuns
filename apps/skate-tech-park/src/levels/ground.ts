@@ -73,6 +73,7 @@ export function groundMesh(level: ParkLevel, mood?: Pick<Mood, "wet" | "snow">):
 /** One landmark as meshes, standing on the ground where it is placed. */
 function landmark(level: ParkLevel, l: Landmark): THREE.Object3D {
   const g = new THREE.Group(), at = (x: number, z: number) => level.ground.height(x, z);
+  if (l.kind === "peak") return g; // a model, loaded and drawn by render/peak.ts
   if (l.kind === "plume") {
     const steam = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xcfd6dc, emissiveIntensity: 0.8, transparent: true, opacity: 0.8, roughness: 1, depthWrite: false });
     for (let i = 0; i < 8; i++) {
