@@ -41,6 +41,7 @@ qCRM is accounts only: there is no alias mode. `vite dev` reads `BETTER_AUTH_SEC
 | Tour | `src/app/tour.ts` | Spotlight steps across the home page, the demo and the app. `?tour=1` or the button. |
 | Privacy | `src/me.ts`, `/privacy` | `GET …/export` gives an owner every row; `DELETE /api/me` removes an account and its orgs. |
 | Seed | `src/seed-data.ts`, `scripts/seed.ts` | Deterministic fake rows, 100,000 contacts in one run. |
+| CSV import | `src/csv-import.ts` | `POST …/contacts/import` and `…/companies/import`: header mapping, rows already in the org or earlier in the file skipped as duplicates. A drop zone on each table. |
 | Clave | `scripts/fetch-qlave.ts` | Pulls QNTBR's calls-and-recordings tool into `vendor/` until it is a package. |
 
 ## Connect an agent
@@ -62,6 +63,7 @@ has the switch; it follows the system otherwise.
 ## Security notes
 
 - Cookie-authenticated writes check the `origin` header against `BETTER_AUTH_URL`.
+- Account email is opt-in: deploy with `QCRM_MAIL_FROM=accounts@your-domain` (a sender onboarded to Cloudflare Email Sending) and sign-up sends a verification link while the sign-in page offers "Forgot password?". Without it neither is offered to work; sign-in is not gated on verification.
 - A row in another org is a 404, never a 403, so ids don't leak what exists.
 - `/api/*` answers are `cache-control: no-store`; pages are cached at the edge for a minute.
 - CSP allows `wasm-unsafe-eval` for the engine and nothing off-origin. `/demo` frames `/app`, so `frame-ancestors 'self'`.

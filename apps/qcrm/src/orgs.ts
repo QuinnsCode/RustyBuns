@@ -125,7 +125,7 @@ export async function orgRoutes(c: Ctx): Promise<Response | null> {
   }
   if (p[0] !== "members") return null;
   if (!p[1] && req.method === "GET") {
-    const { results } = await env.DB.prepare('SELECT m.user_id, u.name, m.role, m.created_at FROM memberships m JOIN "user" u ON u.id = m.user_id WHERE m.org_id = ? ORDER BY m.created_at').bind(org).all();
+    const { results } = await env.DB.prepare('SELECT m.user_id, u.name, u.email, m.role, m.created_at FROM memberships m JOIN "user" u ON u.id = m.user_id WHERE m.org_id = ? ORDER BY m.created_at').bind(org).all();
     return json(results);
   }
   if (!can(role, "members")) return error(403, "managers and up manage members");
@@ -137,11 +137,13 @@ export async function orgRoutes(c: Ctx): Promise<Response | null> {
   const target = await memberOf(env, org, p[1]);
   if (!target) return error(404, "not a member");
   if (!canSetRole(role, target)) return error(403, `a ${role} can't change a ${target}`);
+  const lastAdmin = async () => target === "admin" && (await env.DB.prepare("SELECT count(*) AS n FROM memberships WHERE org_id = ? AND role = 'admin'").bind(org).first<{ n: number }>())!.n < 2;
   if (req.method === "PUT") {
     const b = await readBody<{ role?: unknown }>(req);
     const r = b?.role;
     if (!isRole(r) || !GRANTABLE.includes(r)) return error(400, `role: one of ${GRANTABLE.join(", ")}`);
     if (!canSetRole(role, r)) return error(403, `a ${role} can't grant ${r}`);
+    if (r !== "admin" && (await lastAdmin())) return error(409, "the org needs at least one admin");
     await env.DB.prepare("UPDATE memberships SET role = ? WHERE org_id = ? AND user_id = ?").bind(r, org, p[1]).run();
     await c.audit("member.role", p[1], { from: target, to: r });
     await emit(env, org, "member.changed", { user_id: p[1], role: r });
@@ -150,6 +152,7 @@ export async function orgRoutes(c: Ctx): Promise<Response | null> {
   if (req.method === "DELETE") {
     const o = await orgRow(env, org);
     if (o?.owner_user_id === p[1] && rank(role) < rank("admin")) return error(403, "the org's owner stays until an admin says otherwise");
+    if (await lastAdmin()) return error(409, "the org needs at least one admin");
     await env.DB.prepare("DELETE FROM memberships WHERE org_id = ? AND user_id = ?").bind(org, p[1]).run();
     await c.audit("member.remove", p[1], { role: target });
     await emit(env, org, "member.removed", { user_id: p[1] });
