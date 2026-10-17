@@ -38,9 +38,9 @@ const cached = (body: string, type: string) =>
 
 const app = defineApp([
   setCommonHeaders(),
-  route("/api/*", async ({ request }) => {
+  route("/api/*", async ({ request, cf }) => {
     if (import.meta.env.VITE_IS_DEV_SERVER) await devMigrate(e().DB);
-    return handleApi(request, e(request));
+    return handleApi(request, e(request), (work) => cf.waitUntil(work));
   }),
   route("/robots.txt", () => cached("User-agent: *\nAllow: /\nDisallow: /app\nDisallow: /api\nSitemap: /sitemap.xml\n", "text/plain")),
   route("/sitemap.xml", ({ request }) => {
