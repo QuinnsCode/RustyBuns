@@ -82,3 +82,15 @@ test("accounts off answers 503; cross-site cookie writes are refused", async () 
   const noOrigin = await handleApi(new Request(`${ORIGIN}/api/orgs`, { method: "POST", body: JSON.stringify({ name: "x" }), headers: { cookie, "sec-fetch-site": "cross-site", "content-type": "application/json" } }), app.env);
   expect(noOrigin.status).toBe(403);
 });
+
+test("sign-in is capped by the AUTH_LIMIT binding: its refusal is a 429, and no IP header means no limit", async () => {
+  const keys: string[] = [];
+  const app = await local({ AUTH_LIMIT: { limit: async ({ key }: { key: string }) => (keys.push(key), { success: false }) } });
+  const body = JSON.stringify({ email: "a@qcrm.test", password: "correct horse battery" });
+  const hit = (headers: Record<string, string>) => handleApi(new Request(`${ORIGIN}/api/auth/sign-in/email`, { method: "POST", body, headers: { "content-type": "application/json", origin: ORIGIN, ...headers } }), app.env);
+  const res = await hit({ "cf-connecting-ip": "203.0.113.9" });
+  expect(res.status).toBe(429);
+  expect(res.headers.get("retry-after")).toBe("60");
+  expect(keys).toEqual(["203.0.113.9"]);
+  expect((await hit({})).status).not.toBe(429);
+});
