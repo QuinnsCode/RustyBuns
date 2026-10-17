@@ -48,7 +48,7 @@ export function validate(entity: Entity, data: Record<string, unknown>, partial:
   for (const [col, f] of Object.entries(ENTITIES[entity]!.fields)) {
     const v = data[col];
     if (v === undefined) { if (f.required && !partial) return `${col} is required`; continue; }
-    if (v === null) { if (f.required) return `${col} is required`; out[col] = f.kind === "tags" ? "[]" : null; continue; }
+    if (v === null) { if (f.required || (f.kind === "enum" && col === "stage")) return `${col} is required`; out[col] = f.kind === "tags" ? "[]" : null; continue; }
     switch (f.kind) {
       case "str": if (typeof v !== "string" || v.length > MAX_STR) return `${col}: a string of at most ${MAX_STR} characters`; if (f.required && !v.trim()) return `${col} is required`; out[col] = v; break;
       case "email": if (typeof v !== "string" || v.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return `${col}: an email address`; out[col] = v.toLowerCase(); break;
@@ -107,9 +107,11 @@ export async function createRow(env: Env, org: string, entity: Entity, data: Rec
   if (opts.id !== undefined && !ID.test(opts.id)) return "id: up to 64 letters, digits, - or _";
   const now = Date.now();
   if (entity === "activities") { v.at ??= now; v.actor_user_id ??= actor; }
-  const row: Row = { ...v, id: opts.id ?? crypto.randomUUID(), org_id: org, created_at: now, updated_at: opts.updated_at ?? now, deleted_at: null };
-  const cols = Object.keys(row);
-  await env.DB.prepare(`INSERT INTO ${entity} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`).bind(...cols.map((c) => row[c])).run();
+  const ins: Row = { ...v, id: opts.id ?? crypto.randomUUID(), org_id: org, created_at: now, updated_at: opts.updated_at ?? now, deleted_at: null };
+  const cols = Object.keys(ins);
+  await env.DB.prepare(`INSERT INTO ${entity} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`).bind(...cols.map((c) => ins[c])).run();
+  // Read back so column defaults (a deal's stage, amount, currency) reach the response and the change feed.
+  const row = (await getRow(env, org, entity, ins.id as string))!;
   const out = shape(entity, row);
   await record(env, org, entity, row.id as string, "upsert", out, actor);
   await emit(env, org, `${ENTITIES[entity]!.event}.created` as Event, out);

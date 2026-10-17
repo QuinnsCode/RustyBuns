@@ -211,11 +211,13 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
   );
 }
 
+const Stage = ({ v }: { v: unknown }) => { const t = typeof v === "string" && v.trim() ? v : "no stage"; return <span className={`stage ${STAGES.includes(t as never) ? t : "none"}`}>{t}</span>; };
+
 const cell = (v: unknown, kind?: string, cur?: string) => {
+  if (kind === "stage") return <Stage v={v} />;
   if (v == null) return "";
   if (kind === "money") return money(v, cur || "USD");
   if (kind === "date") return when(v);
-  if (kind === "stage") return <span className={`stage ${v}`}>{String(v)}</span>;
   return String(v);
 };
 
@@ -272,7 +274,7 @@ function Insights({ org }: { org: string }) {
         {Object.entries(counts).map(([k, v]) => <div className="kpi" key={k}><span className="tag">{k}</span><span className="num">{Number(v).toLocaleString()}</span></div>)}
         <div className="kpi"><span className="tag">Win rate, 90 d</span><span className="num">{winRate == null ? "–" : `${Math.round(Number(winRate) * 100)}%`}</span></div>
       </div>
-      {stages.length > 0 && <div className="card"><h3>Pipeline by stage</h3><div className="bars">{stages.map((s) => <div className="bar" key={s.stage}><span className={`stage ${s.stage}`}>{s.stage}</span><i style={{ width: `${(100 * s.amount_cents) / max}%` }} /><span className="num">{money(s.amount_cents)} · {s.n}</span></div>)}</div></div>}
+      {stages.length > 0 && <div className="card"><h3>Pipeline by stage</h3><div className="bars">{stages.map((s) => <div className="bar" key={s.stage}><Stage v={s.stage} /><i style={{ width: `${(100 * s.amount_cents) / max}%` }} /><span className="num">{money(s.amount_cents)} · {s.n}</span></div>)}</div></div>}
       {weeks.length > 0 && <div className="card"><h3>Activities, last 12 weeks</h3><div className="spark">{weeks.map((w) => <i key={w.weeks_ago} title={`${w.weeks_ago} weeks ago: ${w.total}`} style={{ height: `${(100 * w.total) / wmax}%` }} />)}</div></div>}
       {top.length > 0 && <div className="card"><h3>Open pipeline by company</h3><div className="bars">{top.map((c) => <div className="bar" key={c.name}><span>{c.name}</span><i style={{ width: `${(100 * c.amount_cents) / tmax}%` }} /><span className="num">{money(c.amount_cents)} · {c.deals}</span></div>)}</div></div>}
     </>
