@@ -32,7 +32,6 @@ export const grandCanyon: ParkSpec = {
     { name: "street line", x: -140, z: 200, yaw: E },
     { name: "sky rail", x: -115, z: 260, yaw: E },
   ],
-  bounds: { minX: -300, maxX: 250, minZ: -100, maxZ: 300 },
   goals: [
     { kind: "score", target: 3000 },
     { kind: "combo", target: 1200 },

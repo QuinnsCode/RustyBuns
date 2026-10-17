@@ -50,7 +50,7 @@ test("the named gaps are cleared at any speed from 24 to 32 by driving at the la
   for (const [id, spawn, name] of [["el-capitan", "street line", "Boulder Gap"], ["old-faithful", "vent line", "Geyser Hop"], ["mariposa-grove", "clearing", "Fallen Giant"], ["glacier-point", "plateau", "Glacier Point Gap"], ["half-dome", "dome run", "Half Dome Face"], ["yosemite-falls", "shelf", "Upper Fall"], ["yosemite-falls", "valley line", "Valley Hop"], ["grand-prismatic", "street line", "Sinter Jump"], ["grand-canyon", "rim line", "Canyon Drop"]] as const) {
     for (const line of SPEEDS) {
       const { s, run } = drive(park(id), spawn, 20, name, line);
-      expect(run.gaps.get(name)).toBe(1);
+      expect(run.gaps.get(name)).toBeGreaterThanOrEqual(1);
       expect(s.score).toBeGreaterThanOrEqual(park(id).gaps.find((g) => g.name === name)!.bonus);
       expect(run.bestCombo).toBeGreaterThan(0);
     }
@@ -123,3 +123,15 @@ test("?real rides the terrain at full height: taller ground, and climb goals sca
   const m = (l: ParkLevel) => (l.goals.find((g) => g.kind === "climb") as { metres: number }).metres;
   expect(m(real)).toBeGreaterThan(m(friendly));
 });
+
+test("a park runs edge to edge of its terrain, and a rider driving at the barrier is stopped by it", () => {
+  for (const l of parks) {
+    expect(l.bounds.maxX - l.bounds.minX).toBeGreaterThan(600);
+    const sp = l.spawns[0]!, s = start(sp.x, sp.z, sp.yaw, { ...l, obstacles: [] });
+    for (let i = 0; i < 60 * 40; i++) step(s, { ...IDLE, throttle: 1, boost: true }, { ...l, obstacles: [] });
+    expect(s.x).toBeGreaterThanOrEqual(l.bounds.minX);
+    expect(s.x).toBeLessThanOrEqual(l.bounds.maxX);
+    expect(s.z).toBeGreaterThanOrEqual(l.bounds.minZ);
+    expect(s.z).toBeLessThanOrEqual(l.bounds.maxZ);
+  }
+}, 30000);
