@@ -92,8 +92,12 @@ section.block > p.lead { color: var(--dim); max-width: 640px; }
 .frame iframe { width: 100%; height: min(78vh, 860px); border: 0; display: block; background: var(--cream); }
 
 /* The CRM. A rail on the left (bottom on phones), a toolbar, a table. */
-.crm { display: grid; grid-template-columns: 220px 1fr; min-height: calc(100vh - 56px); border-top: 1px solid var(--line); }
-.rail { border-right: 1px solid var(--line); padding: 12px; display: grid; gap: 4px; align-content: start; background: var(--paper); }
+.crm { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: calc(100vh - 56px); border-top: 1px solid var(--line); }
+.rail { border-right: 1px solid var(--line); padding: 12px; display: grid; gap: 4px; align-content: start; background: var(--paper); position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; }
+/* Framed in /demo (?demo=1): the outer page already has the site nav, so the inner one keeps only the brand and Sign in. */
+html[data-framed] .nav { height: 40px; }
+html[data-framed] .nav a:not(.brand):not(.btn.primary) { display: none; }
+html[data-framed] .crm { min-height: calc(100vh - 40px); }
 .rail a, .rail button.nav-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; color: var(--ink); font-size: 14px; border: 0; background: none; width: 100%; text-align: left; font-weight: 500; }
 .rail a:hover, .rail button.nav-item:hover { background: var(--hover); text-decoration: none; }
 .rail .on { background: var(--navy); color: var(--cream); }
@@ -156,7 +160,7 @@ pre.code { background: var(--paper); border: 1px solid var(--line); border-radiu
   .nav { gap: 8px; } .nav a:not(.brand):not(.btn) { display: none; } .nav .btn { padding: 6px 10px; }
   pre.code { white-space: pre-wrap; overflow-wrap: anywhere; }
   .crm { grid-template-columns: 1fr; }
-  .rail { border-right: 0; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .rail { border-right: 0; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 4px; max-height: none; position: static; }
   .rail .org { flex: 1; min-width: 0; padding: 0 10px; }
   .rail .org > :not(b) { display: none; }
   .rail .menu-btn { display: flex; width: auto; }

@@ -5,6 +5,7 @@ import { Nav } from "../Nav.tsx";
 export function App() {
   return (
     <>
+      <script dangerouslySetInnerHTML={{ __html: `if(location.search.includes("demo=1"))document.documentElement.setAttribute("data-framed","")` }} />
       <Nav inner />
       <Crm />
     </>
