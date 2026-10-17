@@ -53,6 +53,10 @@ An owner makes a key under Settings, then:
 claude mcp add --transport http qcrm https://qcrm.qntbr.com/api/mcp --header "Authorization: Bearer qk_…"
 ```
 
+Or leave the header off: `claude mcp add --transport http qcrm https://qcrm.qntbr.com/api/mcp`, then `/mcp` in
+Claude Code (or Add custom connector in Claude's desktop app) opens a qCRM page where you pick an org and say yes
+(OAuth 2.1 with PKCE, `src/oauth.ts`). The token lasts an hour and refreshes; end it under `GET/DELETE /api/oauth/grants`.
+
 `GET /api/mcp` describes the same. OpenAI and others follow the same spec when their MCP clients land.
 
 ## Look

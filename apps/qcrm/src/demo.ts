@@ -7,6 +7,7 @@ import type { Defer } from "./api.ts";
 import { authFor, type User } from "./auth.ts";
 import { b64url, error, json, type Env } from "./env.ts";
 import { createOrg, deleteOrg } from "./orgs.ts";
+import { sweepOAuth } from "./oauth.ts";
 import { seedOrg } from "./seed-data.ts";
 
 const DEMO_CONTACTS = 2000;
@@ -43,6 +44,7 @@ export async function hourly(env: Env): Promise<void> {
       env.DB.prepare('DELETE FROM "user" WHERE id = ? AND email LIKE ?').bind(o.owner_user_id, "demo-%@qcrm.local"),
     ]);
   }
+  await sweepOAuth(env);
   // A retry whose queue message was lost (the delay window passed by more than an hour) gets a fresh one.
   const stale = await env.DB.prepare("SELECT id, attempts FROM webhook_deliveries WHERE status = 'pending' AND next_at < ? LIMIT 100").bind(Date.now() - 3600_000).all<{ id: string; attempts: number }>();
   for (const d of stale.results) await env.HOOKS?.send({ delivery: d.id, attempt: d.attempts + 1 });

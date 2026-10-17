@@ -80,9 +80,10 @@ const bearerOf = (req: Request) => /^Bearer\s+(\S+)$/i.exec(req.headers.get("aut
 async function byKey(req: Request, env: Env): Promise<User | Response | null> {
   const secret = bearerOf(req);
   if (secret === null) return null;
-  const k = secret.startsWith("qk_") && await env.DB.prepare(`SELECT k.id, k.org_id, k.last_used_at, u.id AS user_id, u.email, u.name FROM api_keys k
-    JOIN "user" u ON u.id = k.user_id WHERE k.hash = ?`).bind(await sha256(secret)).first<{ id: string; org_id: string; last_used_at: number | null; user_id: string; email: string; name: string }>();
-  if (!k) return json({ error: "this API key is revoked or wrong" }, 401, { "www-authenticate": 'Bearer error="invalid_token"' });
+  // qk_ is a key an owner made; qo_ is an OAuth access token (oauth.ts), which expires.
+  const k = /^q[ko]_/.test(secret) && await env.DB.prepare(`SELECT k.id, k.org_id, k.last_used_at, u.id AS user_id, u.email, u.name FROM api_keys k
+    JOIN "user" u ON u.id = k.user_id WHERE k.hash = ? AND (k.expires_at IS NULL OR k.expires_at > ?)`).bind(await sha256(secret), Date.now()).first<{ id: string; org_id: string; last_used_at: number | null; user_id: string; email: string; name: string }>();
+  if (!k) return json({ error: "this API key is revoked, expired or wrong" }, 401, { "www-authenticate": 'Bearer error="invalid_token"' });
   // Last used, to the minute: one write a minute at most, not one a request.
   if (!k.last_used_at || Date.now() - k.last_used_at > 60_000) await env.DB.prepare("UPDATE api_keys SET last_used_at = ? WHERE id = ?").bind(Date.now(), k.id).run();
   return { id: k.user_id, email: k.email, name: k.name, key: { id: k.id, org_id: k.org_id } };
@@ -131,7 +132,7 @@ export async function keyRoutes({ req, env, user, org, p, audit }: Ctx): Promise
   if (p[0] !== "keys") return null;
   if (user.key) return error(403, "API keys can't manage keys: sign in on the site");
   if (!p[1] && req.method === "GET") {
-    const { results } = await env.DB.prepare("SELECT id, name, prefix, user_id, created_at, last_used_at FROM api_keys WHERE org_id = ? ORDER BY created_at DESC").bind(org).all();
+    const { results } = await env.DB.prepare("SELECT id, name, prefix, user_id, created_at, last_used_at FROM api_keys WHERE org_id = ? AND grant_id IS NULL ORDER BY created_at DESC").bind(org).all();
     return json(results);
   }
   if (!p[1] && req.method === "POST") {
@@ -146,7 +147,7 @@ export async function keyRoutes({ req, env, user, org, p, audit }: Ctx): Promise
     return json({ ...key, secret }, 201);
   }
   if (p[1] && !p[2] && req.method === "DELETE") {
-    const r = await env.DB.prepare("DELETE FROM api_keys WHERE id = ? AND org_id = ?").bind(p[1], org).run();
+    const r = await env.DB.prepare("DELETE FROM api_keys WHERE id = ? AND org_id = ? AND grant_id IS NULL").bind(p[1], org).run();
     if (!r.meta.changes) return error(404, "no such key");
     await audit("key.delete", p[1]);
     return json({ ok: true });

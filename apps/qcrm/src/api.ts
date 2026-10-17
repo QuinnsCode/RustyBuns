@@ -16,6 +16,7 @@ import { demoRoute } from "./demo.ts";
 import { error, json, type Env, type HookMessage } from "./env.ts";
 import { insightRoutes } from "./insights.ts";
 import { mcp } from "./mcp.ts";
+import { oauthRoutes, wellKnown } from "./oauth.ts";
 import { exportRoutes, meRoutes } from "./me.ts";
 import { openapi } from "./openapi.ts";
 import { orgListRoutes, orgRoutes, orgRow, roleIn, writeAudit, type Ctx } from "./orgs.ts";
@@ -40,17 +41,22 @@ const ORG_ROUTES = [orgRoutes, crmRoutes, syncRoutes, webhookRoutes, keyRoutes, 
 async function route(req: Request, env: Env, defer?: Defer): Promise<Response> {
   const url = new URL(req.url);
   const p = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  const origin = env.BETTER_AUTH_URL ?? url.origin;
+  const known = wellKnown(req, p, origin);
+  if (known) return known;
   if (p[0] !== "api") return error(404, "not found");
   if (p[1] === "auth") {
     if (await limited(req, env)) return json({ error: "too many sign-in attempts: wait a minute" }, 429, { "retry-after": "60" });
     return accountsOn(env) ? authFor(req, env).handler(req) : accountsOff();
   }
-  if (p[1] === "openapi.json" && !p[2]) return json(openapi(env.BETTER_AUTH_URL ?? url.origin));
+  if (p[1] === "openapi.json" && !p[2]) return json(openapi(origin));
   if (p[1] === "mcp" && !p[2]) return mcp(req, env, (r) => handleApi(r, env));
   if (!accountsOn(env)) return accountsOff();
   // Which sign-in methods the form offers: public, it has to load before anyone is signed in.
   if (p[1] === "providers" && !p[2] && req.method === "GET") return json(providers(env));
   if (p[1] === "demo" && !p[2]) return demoRoute(req, env, defer);
+  const oauth = await oauthRoutes(req, env, p, url, origin);
+  if (oauth) return oauth;
 
   const refused = crossSite(req, env);
   if (refused) return refused;

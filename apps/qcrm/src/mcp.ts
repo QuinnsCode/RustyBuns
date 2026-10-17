@@ -3,6 +3,7 @@
 // HTTP call made back through the app as the caller, with the API key or session cookie the
 // POST came in on. No sessions, no server-sent stream: each POST is one JSON-RPC request.
 //
+//   claude mcp add --transport http qcrm https://<site>/api/mcp          (then /mcp to sign in with OAuth, oauth.ts)
 //   claude mcp add --transport http qcrm https://<site>/api/mcp --header "Authorization: Bearer qk_…"
 //
 // GET /api/mcp says the same in JSON. Risky tools (openapi.ts) are marked destructive so a
@@ -23,12 +24,14 @@ const listed = (t: Tool) => ({ name: t.name, title: t.title, description: t.desc
 
 const rpc = (id: unknown, result: unknown) => json({ jsonrpc: "2.0", id, result });
 const rpcError = (id: unknown, code: number, message: string, status = 200) => json({ jsonrpc: "2.0", id: id ?? null, error: { code, message } }, status);
-const unauthorized = (why: string) => json({ error: why }, 401, { "www-authenticate": `Bearer realm="${NAME}", error="invalid_token"` });
+// resource_metadata (RFC 9728) is how an MCP client finds the OAuth sign-in (oauth.ts).
+const unauthorized = (why: string, origin: string) => json({ error: why }, 401, { "www-authenticate": `Bearer realm="${NAME}", error="invalid_token", resource_metadata="${origin}/.well-known/oauth-protected-resource/api/mcp"` });
 
 /** How to connect, for GET /api/mcp and the docs. */
 export const connectInfo = (origin: string) => ({
   name: NAME, version: VERSION, transport: "http", url: `${origin}/api/mcp`, openapi: `${origin}/api/openapi.json`,
-  auth: "Authorization: Bearer qk_… (an org API key, made by an owner at POST /api/orgs/:org/keys), or the site's session cookie",
+  auth: "OAuth (clients find it at /.well-known/oauth-protected-resource/api/mcp), or Authorization: Bearer qk_… (an org API key, made by an owner at POST /api/orgs/:org/keys), or the site's session cookie",
+  oauth: `${origin}/.well-known/oauth-authorization-server`,
   claude: `claude mcp add --transport http qcrm ${origin}/api/mcp --header "Authorization: Bearer qk_…"`,
   tools: all().length,
   note: `${all().length} tools, one per operation (method + path) of the spec; openapi.json lists fewer paths because a path can have several methods`,
@@ -52,7 +55,7 @@ export async function mcp(req: Request, env: Env, dispatch: (r: Request) => Prom
   // Origin, so the inner writes pass the cross-site check the outer POST already passed.
   const auth = req.headers.get("authorization"), cookie = req.headers.get("cookie");
   const carried: Record<string, string> = auth ? { authorization: auth } : cookie ? { cookie, origin } : {};
-  if (!auth && !cookie) return unauthorized("send an org API key: Authorization: Bearer qk_…");
+  if (!auth && !cookie) return unauthorized("sign in with OAuth, or send an org API key: Authorization: Bearer qk_…", origin);
 
   let msg: { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown } | null;
   try { msg = await req.json(); } catch { return rpcError(null, -32700, "parse error", 400); }
@@ -61,7 +64,7 @@ export async function mcp(req: Request, env: Env, dispatch: (r: Request) => Prom
   if (msg.id === undefined) return new Response(null, { status: 202 });
 
   const who = await dispatch(new Request(`${origin}/api/me`, { headers: carried }));
-  if (who.status === 401 || who.status === 503) return who.status === 503 ? who : unauthorized(((await who.json().catch(() => ({}))) as { error?: string }).error ?? "bad key");
+  if (who.status === 401 || who.status === 503) return who.status === 503 ? who : unauthorized(((await who.json().catch(() => ({}))) as { error?: string }).error ?? "bad key", origin);
 
   const { id, method } = msg, params = (msg.params ?? {}) as { protocolVersion?: unknown; name?: unknown; arguments?: unknown };
   switch (method) {
