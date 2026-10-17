@@ -508,6 +508,10 @@
       "name": "@rustybuns/native",
       "version": "0.1.12",
     },
+    "packages/ops": {
+      "name": "@rustybuns/ops",
+      "version": "0.0.0",
+    },
     "packages/ports": {
       "name": "@rustybuns/ports",
       "version": "0.1.12",
@@ -1297,6 +1301,8 @@
     "@rustybuns/models": ["@rustybuns/models@workspace:packages/models"],
 
     "@rustybuns/native": ["@rustybuns/native@workspace:packages/native"],
+
+    "@rustybuns/ops": ["@rustybuns/ops@workspace:packages/ops"],
 
     "@rustybuns/ports": ["@rustybuns/ports@workspace:packages/ports"],
 

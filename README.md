@@ -29,6 +29,16 @@ A brand-new release not installing? Your package manager's minimum release age i
 
 Each feature is one line. Click **More** for the long version.
 
+### Things are functions
+
+An operation is one function with a name, a schema and a permission; HTTP, MCP, WebMCP, a CLI and a skill file are thin views of it.
+
+<details><summary>More</summary>
+
+`@rustybuns/ops` has no dependencies. Auth happens at the edge, and `ops.call` checks the permission again on every run. See [OPS.md](OPS.md).
+
+</details>
+
 ### One config, three targets
 
 Your app runs as a desktop binary, a Cloudflare Worker and a Linux server, all from `rustybuns.config.ts`.
