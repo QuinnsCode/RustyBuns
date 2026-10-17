@@ -173,6 +173,7 @@ pre.code { background: var(--paper); border: 1px solid var(--line); border-radiu
 
 button.link { all: unset; cursor: pointer; color: var(--accent, inherit); text-decoration: underline; font-weight: 600; }
 button.link:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.nav-email { max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .copy-id { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; font: inherit; }
 .copy-id svg { width: 12px; height: 12px; }
 

@@ -81,6 +81,8 @@ export function Crm() {
     } else void load();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => { if (me !== undefined) window.dispatchEvent(new Event("qcrm-session")); }, [me?.user?.id]); // tell the nav
+
   if (me === undefined) return <div className="empty">Loading…</div>;
   if (!me.user) return <Auth onDone={load} demo={demo} err={err} />;
   const current = me.orgs.find((o) => o.id === org) ?? me.orgs[0];
