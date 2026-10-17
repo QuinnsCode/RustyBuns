@@ -32,10 +32,19 @@ export const LEVELS: Entry[] = [
 export const pick = (search: string): Entry => LEVELS.find((l) => l.id === new URLSearchParams(search).get("level")) ?? LEVELS.find((l) => l.id === "el-capitan")!;
 
 /** The start screen shows when the page was opened without choosing a level (or asking for the showroom); the title screen comes first on a bare address. */
-export const needsStartScreen = (search: string) => {
+export const needsStartScreen = (search: string) => touring(search) && !showFront(search);
+
+/** The home page, title screen and park picker alike, has no rider: a camera flies over a park behind them. */
+export const touring = (search: string) => {
   const q = new URLSearchParams(search);
-  return !q.has("level") && !q.has("showroom") && !showFront(search);
+  return !q.has("level") && !q.has("showroom");
 };
 
 /** `?real` rides the terrain at its true height instead of squashed vertically. */
 export const wantsReal = (search: string) => new URLSearchParams(search).has("real");
+
+/** The park the home page flies over: `?tour=half-dome`, else one at random, so each visit shows a different one. */
+export const tourPick = (search: string, rand = Math.random): Entry => {
+  const parks = LEVELS.filter((l) => l.id !== "plaza");
+  return parks.find((l) => l.id === new URLSearchParams(search).get("tour")) ?? parks[Math.floor(rand() * parks.length)]!;
+};
