@@ -496,7 +496,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
         const o = onRail(r, s.x, s.z), climb = (((r.y2 ?? r.y) - r.y) / o.len) * (s.vx * o.dx + s.vz * o.dz); // the bar's own rise under you, m/s
         return s.vy < Math.max(0, climb) && o.off < 0.45 && o.t > 0 && o.t < 1 && Math.abs(s.y - railY(r, o.t)) < 0.25 + Math.max(0, climb - s.vy) * DT;
       });
-      if (i >= 0 && s.flipT <= 0 && Math.hypot(s.vx, s.vz) > 3) { // a board hanging at the top of a wall isn't carried onto a bar
+      if (i >= 0 && s.flipT <= 0) {
         const r = level.rails[i], o = onRail(r, s.x, s.z);
         const dir = s.vx * o.dx + s.vz * o.dz >= 0 ? 1 : -1; // ride the way you came in
         // the approach angle names the grind: along the bar is a 50-50, across it a boardslide, between a nosegrind or 5-0
