@@ -74,3 +74,25 @@ test("a failing endpoint is retried with backoff, then the delivery is dead", as
     expect(rx.got).toHaveLength(8);
   } finally { rx.stop(); }
 });
+
+test("the hourly sweep re-queues a retry whose queue message was lost", async () => {
+  const { hourly } = await import("../src/demo.ts");
+  const app = await local();
+  const { cookie, org } = await person(app, "alice@qcrm.test");
+  const rx = receiver();
+  try {
+    const hook = await (await post(app, cookie, `/api/orgs/${org}/webhooks`, { url: rx.url, events: ["company.created"] })).json();
+    // Two pending deliveries with no message on the queue: one overdue by two hours, one not due until later.
+    const insert = (id: string, nextAt: number) => app.env.DB.prepare("INSERT INTO webhook_deliveries (id, webhook_id, org_id, event, payload, status, attempts, next_at, created_at) VALUES (?, ?, ?, 'company.created', '{}', 'pending', 0, ?, ?)")
+      .bind(id, hook.id, org, nextAt, Date.now()).run();
+    await insert("lost", Date.now() - 2 * 3600_000);
+    await insert("later", Date.now() + 3600_000);
+
+    await hourly(app.env);
+    await (app.env.HOOKS as any).drain(Date.now() + 1);
+    expect(rx.got.map((g) => g.headers.get("x-qcrm-delivery"))).toEqual(["lost"]);
+    const deliveries: { id: string; status: string }[] = await (await app(cookie, `/api/orgs/${org}/webhooks/${hook.id}/deliveries`)).json();
+    expect(deliveries.find((d) => d.id === "lost")?.status).toBe("ok");
+    expect(deliveries.find((d) => d.id === "later")?.status).toBe("pending");
+  } finally { rx.stop(); }
+});
