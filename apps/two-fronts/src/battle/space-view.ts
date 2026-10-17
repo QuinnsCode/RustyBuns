@@ -8,6 +8,7 @@ import { FACTION_COLORS, type Side, type SpaceBattleResult, type SpaceBattleSpec
 import { animate, cruiser, fighter, texture } from "./models.ts";
 import { spaceRecorder } from "./replay.ts";
 import { DT, LINE, SPACE_LIMIT, SPACE_STATS, heroCraft, startSpaceBattle, stepSpace } from "./space.ts";
+import { makeSfx } from "./sfx.ts";
 
 const BOLT_COLORS = { marines: 0xff4a4a, wooka: 0x8cff5a };
 
@@ -81,8 +82,10 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
   const keys = new Set<string>(), mouse = new THREE.Vector2(0, 0.3), ray = new THREE.Raycaster();
   const back = heroSide === "attacker" ? 1 : -1; // the camera sits behind your own line
   let aimYaw = heroSide === "attacker" ? 0 : Math.PI, aimPitch = 0, firing = false, zoom = 1;
-  const kd = (e: KeyboardEvent) => keys.add(e.key.toLowerCase()), ku = (e: KeyboardEvent) => keys.delete(e.key.toLowerCase());
-  const md = (e: MouseEvent) => { if (e.button === 0) firing = true; };
+  // Sound: bolts and blasts, as on the ground (sfx.ts), carrying further. M mutes.
+  const sfx = makeSfx(6), heard = new WeakSet<object>();
+  const kd = (e: KeyboardEvent) => { sfx.wake(); if (e.key.toLowerCase() === "m" && !e.repeat) sfx.toggle(); keys.add(e.key.toLowerCase()); }, ku = (e: KeyboardEvent) => keys.delete(e.key.toLowerCase());
+  const md = (e: MouseEvent) => { sfx.wake(); if (e.button === 0) firing = true; };
   const mu = (e: MouseEvent) => { if (e.button === 0) firing = false; };
   const mm = (e: MouseEvent) => {
     const box = canvas.getBoundingClientRect();
@@ -125,7 +128,7 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
       return `<div class="tickets ${spec.factions[s]}" title="Cruisers still up, and their hull left"><b>${s === mine ? "You" : "Enemy"}</b><span>▲ ${line.length}</span><i style="width:${Math.max(0, hull) * 100}%"></i></div>`;
     };
     const boost = keys.has("w") ? "▶▶" : keys.has("s") ? "◀" : "▶";
-    const help = b.time < 10 ? `Mouse steers · hold the button to fire · W boost · S brake · wheel zooms` : "";
+    const help = b.time < 10 ? `Mouse steers · hold the button to fire · W boost · S brake · wheel zooms · M sound` : "";
     hud.innerHTML = `
       <div class="b-top">${fleet(mine)}
         <div class="b-clock" title="Time left. When it runs out, the side with more cruiser hull left holds the orbit (the defender on a tie)."><span class="clock">${fmt(Math.max(0, SPACE_LIMIT - b.time))}</span><sup>i</sup></div>
@@ -183,6 +186,11 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
       dotGeo.setAttribute("position", new THREE.Float32BufferAttribute(dotPts, 3));
       dotGeo.setAttribute("color", new THREE.Float32BufferAttribute(dotCols, 3));
       const pts: number[] = [], cols: number[] = [];
+      const me = heroCraft(b);
+      sfx.hear({ x: follow.x, z: follow.z, rx: back === 1 ? 1 : -1, rz: 0 });
+      let lasers = 0;
+      for (const f of b.bolts) if (!heard.has(f)) { heard.add(f); const mine = !!me && Math.hypot(f.x - me.x, f.z - me.z) < 8; if (mine || lasers++ < 6) sfx.laser(mine ? null : f, f.heavy, mine ? 0.28 : 0.3); }
+      for (const f of b.blasts) if (!heard.has(f)) { heard.add(f); sfx.boom(f, f.big); }
       for (const f of b.bolts) {
         pts.push(f.x, f.y, f.z, f.tx, f.ty, f.tz);
         col.setHex(BOLT_COLORS[spec.factions[f.side]]);
@@ -216,6 +224,7 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
         canvas.removeEventListener("mousedown", md); canvas.removeEventListener("wheel", wheel);
         document.body.classList.remove("space-2d");
         renderer.dispose();
+        sfx.close();
         hud.onpointerdown = null;
         resolve({ ...b.over, inputs: rec.log() });
         return;

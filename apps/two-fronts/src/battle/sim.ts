@@ -554,7 +554,7 @@ function shoot(b: Battle, u: Unit, t: Unit | null, yaw = u.yaw) {
     // A shot at nothing stops at the first wall or trunk.
     const f = facing(yaw), end = { x: u.x + f.x * s.range, z: u.z + f.z * s.range };
     const k = flies(u) ? 1 : blocked(b, u, end);
-    if (!melee(u)) b.fx.push({ kind, x: u.x, z: u.z, tx: u.x + (end.x - u.x) * k, tz: u.z + (end.z - u.z) * k, t: 0.08, y: altitude(u) });
+    if (!melee(u)) b.fx.push({ kind, x: u.x, z: u.z, tx: u.x + (end.x - u.x) * k, tz: u.z + (end.z - u.z) * k, t: 0.08, y: altitude(u), from: u.id });
     else swing(b, u, yaw);
     return;
   }
