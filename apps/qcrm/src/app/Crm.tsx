@@ -157,6 +157,8 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
   const [ms, setMs] = useState<number | null>(null);
   const [edit, setEdit] = useState<Row | null>(null);
   const [msg, setMsg] = useState("");
+  const [board, setBoard] = useState(false);
+  const [rev, setRev] = useState(0);
   const cols = COLS[entity]!;
   const [names, setNames] = useState<Record<string, string>>({});
   const fetchPage = useCallback(async (cursor: string | null, replace: boolean) => {
@@ -186,9 +188,9 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
   const save = async (data: Row) => {
     const id = edit?.id;
     await api(`/orgs/${org}/${entity}${id ? "/" + id : ""}`, { method: id ? "PUT" : "POST", body: JSON.stringify(data) });
-    setEdit(null); await fetchPage(null, true);
+    setEdit(null); setRev((n) => n + 1); await fetchPage(null, true);
   };
-  const remove = async (id: string) => { await api(`/orgs/${org}/${entity}/${id}`, { method: "DELETE" }); setEdit(null); await fetchPage(null, true); };
+  const remove = async (id: string) => { await api(`/orgs/${org}/${entity}/${id}`, { method: "DELETE" }); setEdit(null); setRev((n) => n + 1); await fetchPage(null, true); };
   const importFile = async (file: File | undefined) => {
     if (!file) return;
     setMsg("");
@@ -207,12 +209,16 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
         <input type="search" placeholder={`Search ${entity}…`} value={q} onChange={(e) => setQ(e.target.value)} data-tour="search" aria-label="Search" />
         {ms !== null && <span className="num" title="Round trip to the edge, this page">{ms} ms</span>}
         {total !== null && <span className="num">{total.toLocaleString()} rows</span>}
+        {entity === "deals" && <div className="seg" role="group" aria-label="View">
+          <button type="button" aria-pressed={!board} title="Table" aria-label="Table" onClick={() => setBoard(false)}><Icon name="table" /></button>
+          <button type="button" aria-pressed={board} title="Board by stage" aria-label="Board" onClick={() => setBoard(true)}><Icon name="kanban" /></button>
+        </div>}
         {(entity === "contacts" || entity === "companies") && can("employee") && <label className="btn" title="Import a CSV"><Icon name="upload" /> Import<input type="file" accept=".csv,text/csv" hidden onChange={(e) => { void importFile(e.target.files?.[0]); e.target.value = ""; }} /></label>}
         {can(minCreate) && <button className="primary" type="button" onClick={() => setEdit({})}><Icon name="plus" /> New</button>}
       </div>
       {msg && <p className="err">{msg}</p>}
       {(entity === "contacts" || entity === "companies") && can("employee") && <div className={`dropzone${over ? " over" : ""}`} onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(e) => { e.preventDefault(); setOver(false); void importFile(e.dataTransfer.files[0]); }}>Drop a CSV here to import {entity}</div>}
-      <div className="table">
+      {entity === "deals" && board ? <Board org={org} q={q} rev={rev} canEdit={can("employee")} onOpen={setEdit} onError={setMsg} /> : <div className="table">
         <table>
           <thead><tr>{cols.map((c) => <th key={c.key}>{c.label}</th>)}</tr></thead>
           <tbody>
@@ -224,10 +230,54 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
           </tbody>
         </table>
         {!rows.length && <div className="empty">{q ? "Nothing matches." : `No ${entity} yet.`}</div>}
-      </div>
-      {next && <button type="button" onClick={() => fetchPage(next, false)}>Load more</button>}
+      </div>}
+      {next && !(entity === "deals" && board) && <button type="button" onClick={() => fetchPage(next, false)}>Load more</button>}
       {edit && <Sheet org={org} entity={entity} row={edit} onClose={() => setEdit(null)} onSave={save} onDelete={can("manager") && edit.id ? () => remove(edit.id) : undefined} canEdit={can("employee") || !edit.id} />}
     </>
+  );
+}
+
+/** Deals as columns by stage. Dropping a card on another column is one PUT of its stage. */
+function Board({ org, q, rev, canEdit, onOpen, onError }: { org: string; q: string; rev: number; canEdit: boolean; onOpen: (r: Row) => void; onError: (m: string) => void }) {
+  const [cols, setCols] = useState<Record<string, { rows: Row[]; next: string | null }>>({});
+  const [over, setOver] = useState("");
+  const load = useCallback(async (stage: string, cursor: string | null) => {
+    const p = new URLSearchParams({ limit: "50", stage });
+    if (q) p.set("q", q);
+    if (cursor) p.set("cursor", cursor);
+    const r = await api(`/orgs/${org}/deals?${p}`);
+    setCols((c) => ({ ...c, [stage]: { rows: cursor ? [...(c[stage]?.rows ?? []), ...rowsOf(r)] : rowsOf(r), next: nextOf(r) } }));
+  }, [org, q]);
+  useEffect(() => { void Promise.all(STAGES.map((s) => load(s, null))).catch((e) => onError((e as Error).message)); }, [load, rev]); // eslint-disable-line react-hooks/exhaustive-deps
+  const drop = async (stage: string, id: string) => {
+    setOver("");
+    const from = STAGES.find((s) => cols[s]?.rows.some((r) => r.id === id));
+    if (!from || from === stage) return;
+    const row = cols[from]!.rows.find((r) => r.id === id)!;
+    setCols((c) => ({ ...c, [from]: { ...c[from]!, rows: c[from]!.rows.filter((r) => r.id !== id) }, [stage]: { ...c[stage]!, rows: [{ ...row, stage }, ...(c[stage]?.rows ?? [])] } }));
+    try { await api(`/orgs/${org}/deals/${id}`, { method: "PUT", body: JSON.stringify({ stage }) }); }
+    catch (e) { onError((e as Error).message); await Promise.all([load(from, null), load(stage, null)]).catch(() => {}); }
+  };
+  return (
+    <div className="board" data-testid="board">
+      {STAGES.map((s) => {
+        const col = cols[s]?.rows ?? [];
+        const sum = col.reduce((a, r) => a + (typeof r.amount_cents === "number" ? r.amount_cents : 0), 0);
+        return (
+          <section key={s} className={`lane${over === s ? " over" : ""}`} data-stage={s}
+            onDragOver={(e) => { if (canEdit) { e.preventDefault(); setOver(s); } }} onDragLeave={() => setOver("")}
+            onDrop={(e) => { e.preventDefault(); void drop(s, e.dataTransfer.getData("text/plain")); }}>
+            <header><Stage v={s} /><span className="num">{col.length}{cols[s]?.next ? "+" : ""} · {money(sum)}</span></header>
+            {col.map((r) => (
+              <article key={r.id} className="deal" draggable={canEdit} onDragStart={(e) => e.dataTransfer.setData("text/plain", r.id)} onClick={() => onOpen(r)}>
+                <strong>{r.name}</strong><span className="num">{money(r.amount_cents, r.currency || "USD")}</span>
+              </article>
+            ))}
+            {cols[s]?.next && <button type="button" onClick={() => void load(s, cols[s]!.next)}>More</button>}
+          </section>
+        );
+      })}
+    </div>
   );
 }
 

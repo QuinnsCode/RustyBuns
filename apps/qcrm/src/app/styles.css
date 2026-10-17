@@ -173,5 +173,16 @@ pre.code { background: var(--paper); border: 1px solid var(--line); border-radiu
 
 button.link { all: unset; cursor: pointer; color: var(--accent, inherit); text-decoration: underline; font-weight: 600; }
 button.link:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+.seg { display: inline-flex; }
+.seg button { border-radius: 0; }
+.seg button:first-child { border-radius: 8px 0 0 8px; } .seg button:last-child { border-radius: 0 8px 8px 0; }
+.seg button[aria-pressed="true"] { background: var(--hover); color: var(--accent); }
+.board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 1fr); gap: 12px; overflow-x: auto; align-items: start; }
+.lane { background: var(--hover); border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: grid; gap: 8px; align-content: start; min-height: 160px; }
+.lane.over { outline: 2px dashed var(--accent); }
+.lane header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.deal { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; gap: 4px; cursor: grab; }
+.deal .num { color: var(--dim); font-size: 13px; }
 .dropzone { border: 1px dashed var(--line); border-radius: 8px; padding: 10px; text-align: center; color: var(--dim); font-size: 13px; }
 .dropzone.over { border-color: var(--sky); color: var(--ink); }

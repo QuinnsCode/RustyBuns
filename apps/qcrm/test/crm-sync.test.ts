@@ -99,3 +99,16 @@ test("sync: the change log replays every write, and a stale op is a conflict", a
   expect(fresh.rejected).toHaveLength(1);
   expect((await app(cookie, `/api/orgs/${org}/companies/${id}`)).status).toBe(200);
 });
+
+test("deals board: a column is a stage filter and a drop is one PUT of the stage", async () => {
+  const app = await local();
+  const { cookie, org } = await person(app, "board@qcrm.test");
+  const base = `/api/orgs/${org}/deals`;
+  const d = await (await post(app, cookie, base, { name: "Acme renewal", amount_cents: 5000 })).json();
+  await post(app, cookie, base, { name: "Other", stage: "proposal" });
+  const names = async (stage: string) => (await (await app(cookie, `${base}?stage=${stage}`)).json()).items.map((r: { name: string }) => r.name);
+  expect(await names("lead")).toEqual(["Acme renewal"]);
+  expect((await post(app, cookie, `${base}/${d.id}`, { stage: "won" }, "PUT")).status).toBe(200);
+  expect(await names("lead")).toEqual([]);
+  expect(await names("won")).toEqual(["Acme renewal"]);
+});
