@@ -310,7 +310,7 @@ function Picker({ org, entity, name, initial, disabled }: { org: string; entity:
 }
 
 /** Every row of an entity, 200 a page, for the engine. Stays in this tab; never sent anywhere. */
-async function allRows(org: string, entity: string, cap = 20_000) {
+async function allRows(org: string, entity: string, cap = 100_000) {
   const out: Row[] = []; let cursor: string | null = null;
   do {
     const p = new URLSearchParams({ limit: "200" }); if (cursor) p.set("cursor", cursor);
@@ -340,7 +340,7 @@ function Engine({ org }: { org: string }) {
   return (
     <>
       <h2>Engine</h2>
-      <p className="muted">Rust, compiled to wasm, running in this tab. Rows are pulled from your org and analysed here; nothing goes back up. Capped at 20,000 rows per run for now.</p>
+      <p className="muted">Rust, compiled to wasm, running in this tab. Rows are pulled from your org and analysed here; nothing goes back up. Duplicate search spreads over every core; capped at 100,000 rows per run.</p>
       <div className="row">
         <button type="button" className="primary" disabled={!!busy} onClick={() => run("dedupe")}><Icon name="users" /> Find duplicates</button>
         <button type="button" disabled={!!busy} onClick={() => run("forecast")}><Icon name="chart-column" /> Forecast pipeline</button>
