@@ -111,9 +111,9 @@ function Auth({ onDone, demo, err }: { onDone: () => Promise<void>; demo: boolea
       <h2>{mode === "in" ? "Sign in" : "Create your account"}</h2>
       <p className="muted">Email and password, kept by Better Auth. Your first org is made when you sign up.</p>
       <form onSubmit={submit}>
-        {mode === "up" && <label><span>Name</span><input name="name" autoComplete="name" /></label>}
-        <label><span>Email</span><input name="email" type="email" required autoComplete="email" /></label>
-        <label><span>Password</span><input name="password" type="password" required minLength={8} autoComplete={mode === "in" ? "current-password" : "new-password"} /></label>
+        {mode === "up" && <label><span>Name</span><input aria-label="Name" name="name" autoComplete="name" /></label>}
+        <label><span>Email</span><input aria-label="Email" name="email" type="email" required autoComplete="email" /></label>
+        <label><span>Password</span><input aria-label="Password" name="password" type="password" required minLength={8} autoComplete={mode === "in" ? "current-password" : "new-password"} /></label>
         {msg && <p className="err">{msg}</p>}
         <div className="row"><button className="primary" type="submit">{mode === "in" ? "Sign in" : "Sign up"}</button><button type="button" onClick={() => setMode(mode === "in" ? "up" : "in")}>{mode === "in" ? "New here? Sign up" : "Have an account? Sign in"}</button></div>
       </form>
@@ -129,7 +129,7 @@ function NewOrg({ onDone }: { onDone: () => Promise<void> }) {
       <h2>Name your org</h2>
       <p className="muted">Its id is a hash of your account and the server secret: nothing in the URL names you.</p>
       <form onSubmit={async (e) => { e.preventDefault(); try { await api("/orgs", { method: "POST", body: JSON.stringify({ name: new FormData(e.currentTarget).get("name") }) }); await onDone(); } catch (x) { setMsg((x as Error).message); } }}>
-        <label><span>Org name</span><input name="name" required maxLength={80} /></label>
+        <label><span>Org name</span><input aria-label="Org name" name="name" required maxLength={80} /></label>
         {msg && <p className="err">{msg}</p>}
         <button className="primary" type="submit">Create</button>
       </form>
