@@ -2,7 +2,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import type { BattleSpec, SpaceBattleSpec } from "../src/battle/contract.ts";
 import { acos, atan2, cos, hypot, sin } from "../src/battle/fmath.ts";
 import { groundInputs, groundRecorder, replayGround, replaySpace, spaceRecorder } from "../src/battle/replay.ts";
-import { startBattle, step, type Battle, type Input } from "../src/battle/sim.ts";
+import { ORDERS, startBattle, step, type Battle, type Input } from "../src/battle/sim.ts";
 import { startSpaceBattle, stepSpace, type SpaceBattle, type SpaceInput } from "../src/battle/space.ts";
 import { MAX_INPUTS } from "../src/war/table.ts";
 
@@ -22,7 +22,7 @@ const space: SpaceBattleSpec = {
   hero: "attacker", heroLevel: 1, fleets: { attacker: 3, defender: 3 }, seed: 9,
 };
 
-// A restless player: keys held for a while, the mouse always moving, a strike and a vehicle now and then.
+// A restless player: keys held for a while, the mouse always moving, a strike, a vehicle and an order to the squad now and then.
 function player(seed: number) {
   let s = seed, yaw = 0, pitch = 0, keys = [0, 0], fire = false;
   const r = () => ((s = (Math.imul(s, 1103515245) + 12345) >>> 0) / 4294967296);
@@ -31,7 +31,7 @@ function player(seed: number) {
       if (i % 20 === 0) keys = [Math.floor(r() * 3) - 1, Math.floor(r() * 3) - 1];
       if (i % 7 === 0) fire = r() < 0.6;
       yaw += (r() - 0.5) * 0.1;
-      return { forward: keys[0]!, right: keys[1]!, yaw, fire, ...(i % 200 === 50 && { use: true }), ...(i % 900 === 300 && { strike: { x: r() * 200 - 100, z: r() * 200 - 100 } }) };
+      return { forward: keys[0]!, right: keys[1]!, yaw, fire, ...(i % 200 === 50 && { use: true }), ...(i % 900 === 300 && { strike: { x: r() * 200 - 100, z: r() * 200 - 100 } }), ...(i % 400 === 120 && { order: { kind: ORDERS[(i / 400) % 4 | 0]!, x: r() * 200 - 100, z: r() * 200 - 100 } }) };
     },
     space(i: number): SpaceInput {
       if (i % 20 === 0) keys = [Math.floor(r() * 3) - 1, 0];

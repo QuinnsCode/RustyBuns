@@ -3,6 +3,9 @@
 // you're aiming, E to climb into or out of a vehicle (as a champion: Warbur's throw, or Gumpert's
 // change of kit). Things that die come apart in chunks, and blasts throw dirt. Blaster fire is
 // glowing bolts that fly; sound is sfx.ts (M mutes), and the mission card and waypoint, mission.ts.
+// 1 to 4 order the squad round you (forward, hold, fall back, focus fire where the gun points).
+// Heavy weapons wait out in the open under a beacon. An intro cutscene plays first, once, and
+// a sting when a Mossback walks in (cutscenes.ts). Comrades talk in bubbles over their heads.
 import * as THREE from "three";
 import { FACTION_COLORS, type BattleResult, type BattleSpec, type Side } from "./contract.ts";
 import { groundRecorder } from "./replay.ts";
@@ -15,7 +18,34 @@ import { buildWorld } from "./terrain.ts";
 import { mission, sameMission, standing, type Mission, type Standing } from "./mission.ts";
 import { makeSfx } from "./sfx.ts";
 import { icon } from "../ui/icons.ts";
-import { CHAMP_AT, SPRINT_AFTER, DT, POST_RADIUS, SPAWN, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, startBattle, statsOf, step, timeLimit, vipUnit, type Fx, type Trooper, type Unit } from "./sim.ts";
+import { makeBubbles } from "../ui/bubbles.ts";
+import { INTROS, mossbackSting } from "./cutscenes.ts";
+import { playCutscene, shouldPlay } from "./cutscene-view.ts";
+import { CHAMP_AT, HEAVY, ORDERS, ORDER_FOR, OVERHEAT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, startBattle, statsOf, step, timeLimit, vipUnit, yawTo, type Fx, type OrderKind, type Trooper, type Unit } from "./sim.ts";
+
+// The squad orders, by key, with their icons and what the HUD calls them.
+const ORDER_KEYS: Record<string, OrderKind> = { "1": "forward", "2": "hold", "3": "back", "4": "focus", f: "focus" };
+const ORDER_INFO: Record<OrderKind, { icon: string; name: string; color: number }> = {
+  forward: { icon: "chevrons-up", name: "Forward", color: 0x7ad87a },
+  hold: { icon: "shield", name: "Hold", color: 0xffd27a },
+  back: { icon: "undo-2", name: "Fall back", color: 0x9fd3ff },
+  focus: { icon: "crosshair", name: "Focus fire", color: 0xff5a3a },
+};
+// What comrades say over their heads: something daft when it's quiet, something worried when it isn't.
+const CHATTER = {
+  marines: {
+    calm: ["Is it meant to be this quiet?", "My snorkel's fogging up", "Anyone else hear humming?", "Mum said join the navy", "I signed up for the brochure", "Smells like wet dog out here", "They can't be THAT bad, right?", "Who packed my backpack? It weighs a tonne", "I think a fern just blinked"],
+    scared: ["THERE'S SO MANY", "It's looking at me", "Too fluffy, TOO FLUFFY", "Reloading! Cover me!", "They're in the ferns!", "I want to go home", "Don't let them near the backpacks!", "Keep shooting, keep SHOOTING"],
+    big: ["What IS that?!", "That one's the size of a hut", "Rockets! Who has rockets?", "I'm not paid enough for this"],
+    hurt: ["I'm hit! I'm fine. I'm hit!", "Medic? Medic?!", "It bit my ARMOUR"],
+  },
+  wooka: {
+    calm: ["Hoo-ka?", "wub wub", "Shiny ones smell funny", "Bonk soon?", "Mine helmet. MINE.", "Kakka-takka!", "Snack?"],
+    scared: ["HOO! HOO! HOO!", "Bonk the shiny!", "Grunna-WUB!", "Get the backpack!", "Up the tree, up the tree!"],
+    big: ["BIG ONE!", "Big one go bonk!", "Wheee-ka!"],
+    hurt: ["Ow-ka!", "Ouchy wub", "Still fluffy!"],
+  },
+} as const;
 
 // A few lucide icons (ISC licence) for the rhythm strip: the HUD says it with icons and a ticking clock.
 const HUD_ICONS: Record<string, string> = {
@@ -40,7 +70,16 @@ const RHYTHM_CSS = `
 .b-alarm { position: absolute; inset: 0; opacity: 0; box-shadow: inset 0 0 90px 24px rgb(200 20 10 / 0.7); }
 .b-alarm.on { animation: beat-alarm 0.5s ease-in-out infinite alternate; }
 @keyframes beat-alarm { from { opacity: 0.1; } to { opacity: 0.8; } }`;
-const FEED_KEEP = /^(Surge|Dig in|Out in|Left behind|Hold |.*FALL BACK)/;
+const FEED_KEEP = /^(Surge|Dig in|Out in|Left behind|Hold |.*FALL BACK|Squad|Chieftain|Picked up)/;
+// The heat gauge under the crosshair: ten segments along an arc, lit as the blaster heats (or as
+// a heavy weapon's ammo runs down).
+const HEAT_N = 10;
+const HEAT_SEGS = Array.from({ length: HEAT_N }, (_, i) => {
+  // From lower left, round the bottom, to lower right.
+  const span = (140 / HEAT_N) * (Math.PI / 180), a0 = ((200 * Math.PI) / 180) + i * span + 0.03, a1 = a0 + span - 0.06, r = 34;
+  const pt = (a: number) => `${(Math.cos(a) * r).toFixed(2)} ${(-Math.sin(a) * r).toFixed(2)}`;
+  return `<path d="M ${pt(a0)} A ${r} ${r} 0 0 0 ${pt(a1)}"/>`;
+}).join("");
 
 export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTMLElement): Promise<BattleResult> {
   const b = startBattle(spec);
@@ -164,6 +203,9 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   };
 
   const sfx = makeSfx();
+  sfx.wake(); // the click that dropped you in is still fresh enough to open the sound
+  const section = canvas.parentElement!;
+  section.classList.add(`hud-${spec.factions[heroSide]}`);
   // The chaos: shells and strikes coming down out of the sky, gunships going past, trees burning,
   // smoke and flares. All of it is for the eye. What it hurts is in the sim (b.strikes, b.passes).
   if (!document.getElementById("rhythm-css")) {
@@ -189,6 +231,24 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     return g;
   };
   const fallMark = ringMark(0x6dff8a, POST_RADIUS), digMark = ringMark(0xffd27a, POST_RADIUS + 1.5);
+  // Where the last order sent the squad.
+  const orderMarks = Object.fromEntries(ORDERS.map((k) => [k, ringMark(ORDER_INFO[k].color, 5)])) as Record<OrderKind, THREE.Group>;
+  // Heavy weapons out on the field: a crate under a beacon you can see from across it.
+  const cacheMeshes = b.caches.map((c) => {
+    const g = new THREE.Group(), y = ground(c.x, c.z);
+    const crate = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.8, 1), new THREE.MeshStandardMaterial({ color: 0x2b2f36, metalness: 0.6, roughness: 0.45 }));
+    crate.position.y = 0.4;
+    crate.castShadow = true;
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(1.84, 0.12, 1.04), additive(0x6ad8ff));
+    strip.position.y = 0.55;
+    const gun = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 1.6, 8).rotateZ(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x9aa2ad, metalness: 0.8, roughness: 0.3 }));
+    gun.position.y = 1.1;
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 50, 12, 1, true).translate(0, 25, 0), new THREE.MeshBasicMaterial({ color: 0x6ad8ff, transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    g.add(crate, strip, gun, beam);
+    g.position.set(c.x, y, c.z);
+    scene.add(g);
+    return { g, gun };
+  });
   const jets: THREE.Group[] = [];
   // Fires: a tree struck by a blast burns for a while, some of them up where the huts are.
   type Fire = { x: number; z: number; y: number; life: number; seed: number; emit: number };
@@ -233,13 +293,14 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
 
   // Input. Any click or key also wakes the sound, which browsers keep shut till then.
   const keys = new Set<string>();
-  let yaw = heroSide === "attacker" ? 0 : Math.PI, pitch = -0.12, firing = false, strike = false, use = false;
+  let yaw = heroSide === "attacker" ? 0 : Math.PI, pitch = -0.12, firing = false, strike = false, use = false, order: OrderKind | null = null;
   const onKey = (e: KeyboardEvent, down: boolean) => {
     const k = e.key.toLowerCase();
     if (down) sfx.wake();
     if (down && k === "m" && !e.repeat) sfx.toggle();
     if (down && k === "q") strike = true;
     if (down && k === "e") use = true;
+    if (down && !e.repeat && ORDER_KEYS[k]) order = ORDER_KEYS[k]!;
     down ? keys.add(k) : keys.delete(k);
   };
   const kd = (e: KeyboardEvent) => onKey(e, true), ku = (e: KeyboardEvent) => onKey(e, false);
@@ -259,6 +320,10 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     const me = heroUnit(b), floor = me ? ground(me.x, me.z) : 0; // the strike lands on the floor about where you stand
     const hit = ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -floor), new THREE.Vector3());
     return hit && hit.distanceTo(camera.position) < 160 ? { x: hit.x, z: hit.z } : null;
+  };
+  const gunPoint = () => {
+    const me = heroUnit(b), f = facing(yaw);
+    return aimPoint() ?? (me ? { x: me.x + f.x * 40, z: me.z + f.z * 40 } : { x: 0, z: 0 });
   };
 
   // Halo-style outline on the enemy: bright where you can see them, dim where foliage or a wall
@@ -293,8 +358,13 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const cross = document.querySelector<HTMLElement>(".crosshair");
   const feel = document.createElement("div");
   feel.className = "b-feel";
-  feel.innerHTML = `<div class="b-alarm"></div><div class="b-hurt"></div><div class="b-heat"><i></i></div><div class="b-toast"></div><div class="b-leave">${icon("triangle-alert", 18)}<span></span></div><div class="b-note"></div><div class="b-way"><i class="b-way-arrow">${icon("arrow-right", 14)}</i><span class="b-way-icon"></span><b></b></div>`;
+  feel.innerHTML = `<div class="b-alarm"></div><div class="b-hurt"></div><div class="b-heat"><svg viewBox="-50 -50 100 100" aria-hidden="true">${HEAT_SEGS}</svg><span class="b-heat-label"></span></div><div class="b-caches"></div><div class="b-toast"></div><div class="b-leave">${icon("triangle-alert", 18)}<span></span></div><div class="b-note"></div><div class="b-way"><i class="b-way-arrow">${icon("arrow-right", 14)}</i><span class="b-way-icon"></span><b></b></div>`;
   canvas.parentElement!.append(feel);
+  const bubbles = makeBubbles(feel);
+  const cachesEl = feel.querySelector<HTMLElement>(".b-caches")!;
+  cachesEl.innerHTML = b.caches.map(() => `<div class="b-cache">${icon("package", 14)}<b></b></div>`).join("");
+  const cacheEls = [...cachesEl.children] as HTMLElement[];
+  const segEls = [...feel.querySelectorAll<SVGPathElement>(".b-heat path")], heatLabel = feel.querySelector<HTMLElement>(".b-heat-label")!;
   const alarmEl = feel.querySelector<HTMLElement>(".b-alarm")!, hurtEl = feel.querySelector<HTMLElement>(".b-hurt")!, heatEl = feel.querySelector<HTMLElement>(".b-heat")!, toastEl = feel.querySelector<HTMLElement>(".b-toast")!;
   const leaveEl = feel.querySelector<HTMLElement>(".b-leave")!, noteEl = feel.querySelector<HTMLElement>(".b-note")!, wayEl = feel.querySelector<HTMLElement>(".b-way")!;
   const wayArrow = wayEl.querySelector<HTMLElement>(".b-way-arrow")!, wayIcon = wayEl.querySelector<HTMLElement>(".b-way-icon")!, wayDist = wayEl.querySelector<HTMLElement>("b")!;
@@ -308,6 +378,9 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const STREAK: Record<number, string> = foeHorde
     ? { 2: "Two in a row", 3: "Three. Fluff everywhere", 5: "Five. They'll sing about you. Badly", 8: "Eight. The forest has gone quiet", 12: "Twelve. Command is concerned about you" }
     : { 2: "Two backpacks", 3: "Three. Start a collection", 5: "Five. The totems need helmets", 8: "Eight. The shiny ones are all crying", 12: "Twelve. The chieftain wants a word" };
+  let wasVent = false, nextTalk = 3, stung = false;
+  const noCuts = new URLSearchParams(location.search).get("cutscenes") === "off";
+  const talk: { id: number; text: string; until: number }[] = [];
   let hurt = 0, shake = 0, lastHp = Infinity, lastKills = 0, toastT = 0, markT = 0, gruntAt = 0, chatterAt = 0;
   let ear = { x: 0, z: 0 };
   // What the mode asks of you right now, over the posts.
@@ -346,34 +419,60 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       return `<li class="${cut ? "cut" : ""} ${over ? "over" : ""}">${cut ? `${e.slice(0, Math.ceil(e.length * 0.6))}--` : e}</li>`;
     }).join("");
   };
+  // The squad's orders, by key, the one in force lit with what's left of it.
+  const orderBar = () => {
+    const o = b.order && b.time - b.order.at < ORDER_FOR ? b.order : null;
+    return `<div class="b-orders">${ORDERS.map((k, i) => `<span class="ord${o?.kind === k ? " on" : ""}" title="${ORDER_INFO[k].name}${k === "forward" || k === "focus" ? ": where your gun points" : k === "back" ? ": towards home" : ": where they stand"}"><kbd>${i + 1}</kbd>${icon(ORDER_INFO[k].icon, 16)}${o?.kind === k ? `<i style="width:${Math.round((100 * (ORDER_FOR - (b.time - o.at))) / ORDER_FOR)}%"></i>` : ""}</span>`).join("")}</div>`;
+  };
   const drawHud = () => {
     const hero = heroUnit(b), mine = heroSide, foe = mine === "attacker" ? "defender" : "attacker";
     const riding = b.hero.inVehicle === null ? null : b.units.find((u) => u.id === b.hero.inVehicle);
-    const bar = (s: Side) => `<div class="tickets ${spec.factions[s]}"><b>${s === mine ? "You" : "Enemy"}</b><span>${Math.max(0, Math.ceil(b.tickets[s]))}</span><i style="width:${Math.min(100, (100 * Math.max(0, b.tickets[s])) / (spec.tickets[s] + spec.reinforcements[s]))}%"></i></div>`;
+    const bar = (s: Side) => `<div class="tickets ${spec.factions[s]}"><b>${spec.factions[s] === "wooka" ? "Kin" : "Marines"}</b><span>${Math.max(0, Math.ceil(b.tickets[s]))}</span><i style="width:${Math.min(100, (100 * Math.max(0, b.tickets[s])) / (spec.tickets[s] + spec.reinforcements[s]))}%"></i></div>`;
     hud.innerHTML = `
       <div class="b-top">${bar(mine)}
         <div class="b-clock" title="${b.mode === "conquest" || b.mode === "hill" ? "Time left. When it runs out, the side with more tickets wins (the defender on a tie)." : "Time left. When it runs out, the defender has held."}"><span class="clock">${fmt(Math.max(0, timeLimit(spec) - b.time))}</span><sup>i</sup></div>
         ${bar(foe)}</div>
-      ${job ? `<div class="b-mission ${stand}"><small>Mission</small><b>${icon(VERB_ICON[job.verb], 15)}${job.verb} ${job.name}</b><span>${stand === "travel" ? `Make it to ${job.name} · ${Math.round(jobDist)} m` : stand === "in" ? IN_AREA[job.verb] : "Leaving the area"}</span></div>` : ""}
+      ${job ? `<div class="b-mission ${stand}"><small>${spec.factions[heroSide] === "wooka" ? "The chieftain says" : "Orders of the Fleet"}</small><b>${icon(VERB_ICON[job.verb], 15)}${job.verb} ${job.name}</b><span>${stand === "travel" ? `Make it to ${job.name} · ${Math.round(jobDist)} m` : stand === "in" ? IN_AREA[job.verb] : "Leaving the area"}</span></div>` : ""}
       <div class="b-posts">${objectiveLine()}${b.posts.map((p, i) => `<span class="post ${p.owner ? spec.factions[p.owner] : ""}${inPlay(b, i) ? "" : " out"}">${p.name}</span>`).join("")}</div>
       ${beatLine()}
       <div class="b-hero">
         ${hero ? `<div class="hp"><i style="width:${(100 * hero.hp) / hero.maxHp}%"></i></div>` : `<div class="respawn">${b.hero.lives > 0 ? `Back in ${Math.ceil(b.hero.respawn)}s` : "Your hero is down"}</div>`}
-        <span title="Lives">♥ ${b.hero.lives}</span>
-        <span title="Orbital strikes (Q)">☄ ${b.strikesLeft[mine]}</span>
-        ${riding ? `<span title="Driving a ${riding.kind} (E to get out)">▣</span>` : ""}
+        <span class="stat" title="Lives">${icon("heart", 15)}${b.hero.lives}</span>
+        <span class="stat" title="Orbital strikes (Q)">${icon("zap", 15)}${b.strikesLeft[mine]}</span>
+        ${b.hero.arm ? `<span class="stat arm" title="Heavy weapon: fires till it's empty, never overheats">${icon("package", 15)}${HEAVY[b.hero.arm.kind].name[spec.factions[mine]]} · ${b.hero.arm.ammo}</span>` : ""}
+        ${riding ? `<span class="stat" title="Driving a ${riding.kind} (E to get out)">${icon("car-front", 15)}</span>` : ""}
         ${sfx.muted ? `<span class="muted" title="Sound off (M)">${icon("volume-x", 15)}</span>` : ""}
         ${hero?.champ ? `<span class="champ-on">${hero.champ === "warbur" ? "WARBUR · E throws a Wooka" : `GUMPERT · ${hero.kit} · E swaps kit`}</span>`
           : `<span class="champ" title="Kills till your champion takes the field">${champName}<i style="width:${Math.min(100, (100 * b.kills[mine]) / CHAMP_AT)}%"></i></span>`}
       </div>
       <ul class="b-feed">${feedLines()}</ul>
-      ${document.pointerLockElement === canvas ? "" : `<div class="b-help">Click the field to take control · WASD move · mouse look · click fire · Q orbital strike · E vehicle · M sound · Esc to let go<button id="b-auto" type="button">Let the AI finish it</button></div>`}`;
+      ${orderBar()}
+      ${document.pointerLockElement === canvas ? "" : `<div class="b-help">Click the field to take control · WASD move · mouse look · click fire · Q orbital strike · E vehicle · 1-4 squad orders · M sound · Esc to let go<button id="b-auto" type="button">Let the AI finish it</button></div>`}`;
   };
 
   return new Promise((resolve) => {
     let last = performance.now(), acc = 0, hudAt = 0, raf = 0;
     const rec = groundRecorder();
+    const stage = { scene, camera, render: () => composer.render(), ground, sfx, host: section };
+    // A cutscene holds the battle: the sim doesn't step and the HUD steps aside till it's over.
+    const cut = (c: Parameters<typeof playCutscene>[0], origin: Parameters<typeof playCutscene>[2]) => {
+      section.classList.add("cutting");
+      return playCutscene(c, stage, origin).then(() => {
+        section.classList.remove("cutting");
+        firing = false;
+        last = performance.now();
+        raf = requestAnimationFrame(frame);
+      });
+    };
     const frame = (now: number) => {
+      // The first Mossback of the battle gets its moment.
+      const big = !stung && !noCuts ? b.units.find((u) => u.role === "mossback" && !seenBig.has(u.id)) : undefined;
+      if (big) {
+        stung = true;
+        const me = heroUnit(b) ?? b.spawn[heroSide];
+        void cut(mossbackSting(spec.factions[heroSide]), { x: big.x, z: big.z, yaw: yawTo(big, me) });
+        return;
+      }
       const dt = Math.min(0.25, (now - last) / 1000);
       acc += dt;
       last = now;
@@ -384,8 +483,10 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
           right: (keys.has("d") ? 1 : 0) - (keys.has("a") ? 1 : 0),
           yaw, fire: firing, use,
           strike: strike ? aimPoint() ?? undefined : undefined,
+          order: order ? { kind: order, ...gunPoint() } : undefined,
         });
         strike = use = false;
+        order = null;
         step(b, input);
         acc -= DT;
       }
@@ -429,7 +530,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
           if (f.from !== undefined && f.from === b.hero.id && (f.hit || f.kind === "blast")) { markT = 0.15; if (f.kind !== "blast") sfx.tick(); }
           const by = f.from === undefined ? undefined : byId.get(f.from);
           if (f.kind === "shot") {
-            const heavy = !!by && (isVehicle(by.kind) || by.kind === "turret"), mine = f.from === b.hero.id;
+            const heavy = f.big || (!!by && (isVehicle(by.kind) || by.kind === "turret")), mine = f.from === b.hero.id;
             const a = new THREE.Vector3(f.x, (f.y ?? 0) + (heavy ? 2.2 : 1.4) + fy, f.z), z = new THREE.Vector3(f.tx, (f.ty ?? 0) + 1.2 + ground(f.tx, f.tz), f.tz);
             const rocks = spec.factions[by?.side ?? "attacker"] === "wooka", c = new THREE.Color(BOLT_COLORS[rocks ? "wooka" : "marines"]!);
             if (bolts.length < BOLTS) bolts.push({ a, b: z, t: 0, speed: Math.min(BOLT_SPEED, a.distanceTo(z) / BOLT_MIN), len: heavy ? 5 : mine ? 4 : 3.2, w: heavy ? 0.4 : mine ? 0.28 : 0.2, color: c, hit: !!f.hit });
@@ -598,6 +699,12 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       const dg = b.beat.dig;
       digMark.visible = !!dg && !fb;
       if (dg) { const p = b.posts[dg.post]!; digMark.position.set(p.x, ground(p.x, p.z) + 0.25, p.z); digMark.scale.setScalar(1 + Math.sin(now / 220) * 0.04); }
+      // The order's spot, while it lasts.
+      const od = b.order && b.time - b.order.at < ORDER_FOR && b.order.kind !== "hold" ? b.order : null;
+      for (const k of ORDERS) orderMarks[k].visible = od?.kind === k;
+      if (od) { orderMarks[od.kind].position.set(od.x, ground(od.x, od.z) + 0.2, od.z); orderMarks[od.kind].scale.setScalar(1 + Math.sin(now / 150) * 0.08); }
+      // The heavy weapons, while they're there to take.
+      b.caches.forEach((c, i) => { const m = cacheMeshes[i]!; m.g.visible = c.ready <= b.time; m.gun.rotation.y = now / 700; m.gun.position.y = 1.1 + Math.sin(now / 300 + i) * 0.12; });
       // A Mossback walks in: the screen goes red for a while.
       for (const u of b.units) if (u.role === "mossback" && !seenBig.has(u.id)) { seenBig.add(u.id); alarmT = 7; shake = Math.max(shake, 0.5); }
       alarmT = Math.max(0, alarmT - dt);
@@ -622,9 +729,20 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       hurt = Math.max(0, hurt - dt * 1.5);
       hurtEl.style.opacity = String(hurt);
       cross?.classList.toggle("hit", (markT -= dt) > 0);
-      heatEl.style.opacity = b.hero.heat > 0.05 || b.hero.overheated > 0 ? "1" : "0";
-      heatEl.classList.toggle("hot", b.hero.overheated > 0);
-      heatEl.firstElementChild!.setAttribute("style", `width:${Math.round(b.hero.heat * 100)}%`);
+      // The gauge: heat by segment, yellow to red, a warning near the top and a vent countdown
+      // once it's locked; with a heavy weapon in hand, the ammo left instead.
+      const arm = b.hero.arm, vent = b.hero.overheated > 0;
+      if (vent && !wasVent) sfx.vent();
+      wasVent = vent;
+      const fill = arm ? arm.ammo / HEAVY[arm.kind].ammo : vent ? b.hero.overheated / OVERHEAT : b.hero.heat;
+      const lit = Math.ceil(fill * HEAT_N - 0.001);
+      segEls.forEach((el, i) => el.setAttribute("class", i < lit ? (arm ? "ammo" : vent ? "vent" : i >= HEAT_N * 0.8 ? "red" : i >= HEAT_N * 0.5 ? "amber" : "on") : ""));
+      const warm = !arm && !vent && b.hero.heat >= 0.75;
+      heatEl.classList.toggle("show", !!arm || vent || b.hero.heat > 0.05);
+      heatEl.classList.toggle("hot", vent);
+      heatEl.classList.toggle("warm", warm);
+      heatLabel.textContent = arm ? `${HEAVY[arm.kind].name[spec.factions[heroSide]]} ${arm.ammo}` : vent ? `Venting ${b.hero.overheated.toFixed(1)}` : warm ? "Overheating" : "";
+      cross?.classList.toggle("locked", vent);
       if (b.hero.kills > lastKills) {
         toastEl.textContent = STREAK[b.hero.streak] ?? `+${b.hero.kills - lastKills}`;
         toastEl.classList.remove("show"); void toastEl.offsetWidth; toastEl.classList.add("show");
@@ -639,7 +757,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       // Third-person camera over the hero's shoulder (or the vehicle's), or over the spawn while down.
       const hero = heroUnit(b);
       const body = (b.hero.inVehicle !== null && b.units.find((u) => u.id === b.hero.inVehicle)) || hero;
-      const at = body ?? { x: 0, z: heroSide === "attacker" ? SPAWN.attacker.z : SPAWN.defender.z };
+      const at = body ?? { x: 0, z: heroSide === "attacker" ? b.spawn.attacker.z : b.spawn.defender.z };
       const [back, high] = body?.champ === "warbur" ? [11, 5.5] : !body || body.kind === "hero" ? [7, 3.2] : body.kind === "walker" ? [15, 10] : body.kind === "gunship" ? [18, 6] : [13, 6];
       const floor = ground(at.x, at.z), up = high + (body ? altitude(body) : 0) + floor;
       const f = facing(yaw);
@@ -684,6 +802,35 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       wayEl.classList.toggle("off", off);
       wayEl.classList.toggle("here", stand === "in");
       wayArrow.style.transform = `rotate(${Math.atan2(wy, wx)}rad)`;
+      // A marker over each heavy weapon in reach, with how far it is.
+      const onScreen = (x: number, y: number, z: number) => {
+        wayPos.set(x, y, z).project(camera);
+        return wayPos.z < 1 && Math.abs(wayPos.x) < 1 && Math.abs(wayPos.y) < 1 ? { x: (wayPos.x * 0.5 + 0.5) * W, y: (-wayPos.y * 0.5 + 0.5) * H } : null;
+      };
+      b.caches.forEach((c, i) => {
+        const el = cacheEls[i]!, d = Math.hypot(at.x - c.x, at.z - c.z), p = c.ready <= b.time && d < 220 ? onScreen(c.x, ground(c.x, c.z) + 3, c.z) : null;
+        el.hidden = !p;
+        if (!p) return;
+        el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+        el.lastElementChild!.textContent = `${HEAVY[c.kind].name[spec.factions[heroSide]]} ${Math.round(d)} m`;
+      });
+      // Comrades talk: now and then one near you says something, daft when it's quiet, worried when it isn't.
+      const pals = b.units.filter((u) => u.side === heroSide && u.id !== b.hero.id && u.hp > 0 && (TROOPERS.includes(u.kind as Trooper) || !!u.role) && Math.hypot(u.x - at.x, u.z - at.z) < 30);
+      if ((nextTalk -= dt) <= 0 && talk.length < 2) {
+        nextTalk = 3 + Math.random() * 4;
+        const quiet = pals.filter((u) => !talk.some((x) => x.id === u.id)), who = quiet[Math.floor(Math.random() * quiet.length)];
+        if (who) {
+          const lines = CHATTER[spec.factions[heroSide]], foes = b.units.filter((u) => u.side !== heroSide && u.kind !== "turret" && Math.hypot(u.x - at.x, u.z - at.z) < 30).length;
+          const pool = b.units.some((u) => u.role === "mossback" && u.side !== heroSide) ? lines.big : who.hp < who.maxHp * 0.5 ? lines.hurt : foes >= 4 ? lines.scared : lines.calm;
+          talk.push({ id: who.id, text: pool[Math.floor(Math.random() * pool.length)]!, until: now + 3200 });
+        }
+      }
+      for (let i = talk.length - 1; i >= 0; i--) {
+        const x = talk[i]!, u = b.units.find((v) => v.id === x.id), m = meshes.get(x.id);
+        if (now > x.until || !u || !m) { talk.splice(i, 1); continue; }
+        bubbles.put(x.id, x.text, onScreen(m.position.x, m.position.y + (u.role ? 1.5 : 2.3), m.position.z), spec.factions[heroSide]);
+      }
+      bubbles.sweep();
 
       // The enemy gets an outline that shows through foliage.
       const eyeUnit = heroUnit(b);
@@ -696,6 +843,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         canvas.removeEventListener("mousedown", md);
         if (document.pointerLockElement === canvas) document.exitPointerLock();
         feel.remove();
+        section.classList.remove(`hud-${spec.factions[heroSide]}`, "cutting");
         sfx.close();
         cross?.classList.remove("hit");
         composer.dispose();
@@ -706,6 +854,9 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       }
       raf = requestAnimationFrame(frame);
     };
-    raf = requestAnimationFrame(frame);
+    // The intro, once, from where the hero stands; then the battle.
+    const intro = INTROS[spec.factions[heroSide]], h0 = heroUnit(b);
+    if (h0 && shouldPlay(intro.id)) void cut(intro, { x: h0.x, z: h0.z, yaw });
+    else raf = requestAnimationFrame(frame);
   });
 }

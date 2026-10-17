@@ -5,6 +5,10 @@
 
 export type Faction = "marines" | "wooka";
 export type SectorKind = "capital" | "spaceport" | "shield" | "cannon" | "canyon" | "jungle";
+// The big map each kind of sector has, if it has one (the battle lays them out: BIG_MAPS in sim.ts),
+// and how many armies between the two sides make a battle big enough to be fought on it.
+export const BIG_MAP_FOR: Partial<Record<SectorKind, string>> = { shield: "ridge", capital: "outskirts", spaceport: "yards", canyon: "gorge", jungle: "valley" };
+export const BIG_BATTLE = 6;
 // What a side can field on the ground besides its troops. Tanks and speeders come with any army;
 // walkers and gunships come from what the side holds on the map (see buildSpec in rules.ts).
 export type VehicleKind = "tank" | "walker" | "speeder" | "gunship";
@@ -38,6 +42,7 @@ export interface BattleSpec {
   reinforcements: PerSide<number>; // tickets dropped in once, at half tickets; only with orbit
   turrets: number;                 // the defender's fortifications
   mode?: MatchMode;                // conquest when absent
+  map?: string;                    // a big map for the sector (BIG_MAPS in sim.ts); its usual layout when absent
   seed: number;
 }
 
