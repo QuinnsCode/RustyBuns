@@ -42,6 +42,14 @@ codeSplitter's site (`scripts/site/codesplitter.ts`, tags `codesplitter-v*`) gen
 and MCP tool list from `apps/codesplitter/src/openapi.ts` and `src/mcp-tools.ts`, so an endpoint change
 updates its docs in the same PR. Those two files must keep importing nothing else.
 
+## Effect: where it fits
+
+Reach for `effect` where something must be cleaned up, cancelled, retried, or can lose state (child processes, sockets,
+saves, deploys, CI and agent runs), and the right answer to a failure depends on which failure it is. Keep it out of
+per-tick and per-frame code, the sim, and anything pure or size-sensitive, and use it at the edges (`runScoped` and
+`spawnScoped` in `packages/cli` first) so plain functions never import it. If a plain `try/finally` or `AbortController`
+already covers it, leave it plain; read the rest as a lean, not a law.
+
 ## Cut before you add
 
 Grep before writing a helper. If it exists twice, pull it up and delete the copies in the same PR.
@@ -79,6 +87,15 @@ app exists, so changes to it must keep the entry valid:
   plan in [apps/agent-office/MOVE.md](apps/agent-office/MOVE.md)). Until the owner says they have seen it running, never
   `rustybuns destroy --stage office-preview` and don't send home the worker driving it. The owner may also move codeSplitter
   to its own home on 2026-10-14; the meaning of that is open on the issue, so don't guess.
+
+## Manual runs: the owner's hands, in plain sight
+
+When something needs the owner to do it (a token, a sign-in, a live run, a hands-on check), it gets its own
+issue: title prefix `MANUAL RUN:` (or `MANUAL CHECK (not a bug):` when nothing is broken), the `manual run`
+label, the steps and a rough time at the top. Never fold it as a line into another open issue, #609 included:
+the owner doesn't see that board easily, so a buried line never gets done. #609 is an old roll-up; don't add
+to it. Say in your final message that you filed one, with the link. A PR that touches a manual-run issue
+writes "Part of #N" or "Leaves #N open", never a closing word next to its number.
 
 ## Secrets and pushes
 

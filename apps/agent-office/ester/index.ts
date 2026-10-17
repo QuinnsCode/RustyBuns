@@ -4,6 +4,7 @@
 // The runs are the office's (ester/run.ts, /__rb/helpers); this polls them while one is going.
 import { Skull, GitMerge, Scissors, createElement, type IconNode } from "lucide";
 import { hot } from "../reload/hot.ts";
+import type { ContextAlert } from "./dexter.ts";
 import type { EsterState } from "./run.ts";
 
 type Name = "ester" | "mervin" | "dexter";
@@ -35,6 +36,8 @@ function mount() {
     ".rb-helper{width:40px;height:40px;border:2px solid #e8a33d;border-radius:50%;background:#fffdf7;color:#222;cursor:pointer;display:grid;place-items:center;position:relative}" +
     ".rb-helper svg{width:22px;height:22px}.rb-helper[data-phase=running]{animation:rb-helper-bob 1s ease-in-out infinite}" +
     ".rb-helper[data-phase=red]::after,.rb-helper[data-phase=green]::after{content:'';position:absolute;top:-2px;right:-2px;width:11px;height:11px;border-radius:50%;border:2px solid #fffdf7}" +
+    ".rb-helper[data-context]::before{content:'';position:absolute;top:-2px;left:-2px;width:11px;height:11px;border-radius:50%;border:2px solid #fffdf7;background:#e8a33d}" +
+    ".rb-helper[data-context=handoff]::before{background:#c0392b;animation:rb-helper-bob 1s ease-in-out infinite}" +
     ".rb-helper[data-phase=red]::after{background:#c0392b}.rb-helper[data-phase=green]::after{background:#2f8f46}" +
     "@keyframes rb-helper-bob{50%{transform:translateY(-4px)}}" +
     ".rb-helper-card{width:min(420px,calc(100vw - 24px));background:#fffdf7;color:#222;border:2px solid #e8a33d;border-radius:10px;padding:10px 12px;box-shadow:0 6px 20px #0004}" +
@@ -58,10 +61,13 @@ else document.addEventListener("DOMContentLoaded", boot, { once: true });
 function start(m: { box: HTMLElement; row: HTMLElement }) {
   const states: Record<Name, EsterState> = { ester: IDLE, mervin: IDLE, dexter: IDLE };
   let open: Name | undefined, card: HTMLElement | undefined, timer: ReturnType<typeof setTimeout> | undefined;
+  let over: ContextAlert[] = [], live: string[] = []; // Dexter's watch on live sessions: what each carries and has used, and which should hand off (a dot on his badge, the lines on his card)
   const badges = {} as Record<Name, HTMLButtonElement>;
 
   const render = () => {
     for (const n of Object.keys(WHO) as Name[]) badges[n].dataset.phase = states[n].phase;
+    if (over.length) badges.dexter.dataset.context = over.some((a) => a.level === "handoff") ? "handoff" : "warn";
+    else delete badges.dexter.dataset.context;
     card?.remove();
     card = undefined;
     if (!open) return;
@@ -72,7 +78,7 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
     card = el("div", { className: "rb-helper-card" },
       el("div", { className: "rb-helper-head" }, el("span", {}, `${who.label}: ${s.phase === "idle" ? who.ask : s.phase}`), el("span", { className: "rb-helper-clock" }, s.startedAt ? clock(s) : "")),
       el("div", { className: "rb-helper-job" }, who.job),
-      el("div", { className: "rb-helper-log" }, held + (s.error ? s.error + "\n" : "") + s.lines.slice(-40).join("\n")),
+      el("div", { className: "rb-helper-log" }, held + (open === "dexter" && live.length ? [...live, ...over.map((a) => a.message)].join("\n") + "\n" : "") + (s.error ? s.error + "\n" : "") + s.lines.slice(-40).join("\n")),
       go);
     m.box.prepend(card);
   };
@@ -85,6 +91,11 @@ function start(m: { box: HTMLElement; row: HTMLElement }) {
       // signed out (sent to /login), or an office without the route: nothing to show, no point asking again
       if (res.redirected || res.status === 401 || res.status === 404) return;
       if (res.ok) Object.assign(states, await res.json());
+      const ctx = await fetch("/__rb/context", { credentials: "same-origin" }).then((c) => (c.ok ? (c.json() as Promise<{ lines: string[]; over: ContextAlert[]; fresh: ContextAlert[] }>) : null), () => null);
+      if (ctx) {
+        over = ctx.over; live = ctx.lines;
+        if (ctx.fresh.some((a) => a.level === "handoff")) open = "dexter"; // a session just passed the handoff line: his card opens once, naming it
+      }
       render();
     } catch {}
     if (!stopped) timer = setTimeout(poll, Object.values(states).some((s) => s.phase === "running") ? 2000 : 15000);

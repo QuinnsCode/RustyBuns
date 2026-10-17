@@ -14,7 +14,7 @@
 // turn pauses on it until the result comes back. Every die comes from the campaign's seed, so a
 // turn played online replays the same.
 import type { BattleResult, BattleSpec, Faction, MatchMode, SectorKind, SpaceBattleResult, SpaceBattleSpec, VehicleKind, VehiclePool } from "../battle/contract.ts";
-import { other as otherSide } from "../battle/contract.ts";
+import { BIG_BATTLE, BIG_MAP_FOR, other as otherSide } from "../battle/contract.ts";
 import { mulberry32 } from "@rustybuns/util";
 import { FACTION_NAMES, GALAXIES, SECTOR_INCOME, SECTOR_NAMES, galaxyOf, type GalaxyId } from "./galaxy.ts";
 
@@ -646,6 +646,7 @@ export function buildSpec(c: Campaign, at: Where, seed: number, heroOf: Faction 
     reinforcements: { attacker: reinf(att), defender: reinf(def) },
     turrets: (x.kind === "shield" || x.kind === "cannon" ? 2 : 1) + (x.guns ? 1 : 0),
     ...(c.mode && c.mode !== "conquest" && { mode: c.mode }),
+    ...(x.armies[att] + x.armies[def] >= BIG_BATTLE && BIG_MAP_FOR[x.kind] && { map: BIG_MAP_FOR[x.kind] }),
     seed,
   };
 }

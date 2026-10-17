@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { project, propose, standing, render, tally, trimDiff, trimLine, week, type Report } from "../ester/dexter.ts";
+import { ContextWatch, Meter, contextLines, project, propose, standing, render, tally, trimDiff, trimLine, week, type Report } from "../ester/dexter.ts";
 
 const fresh = (): Report => ({ sessions: 1, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0 });
 const j = (o: unknown) => JSON.stringify(o);
@@ -99,4 +99,60 @@ test("turns between a conflict and the commit that settles it are a fight", () =
     r,
   );
   expect(r.fights).toBe(100); // m2 and m3: 50 units each; m4 is after the commit
+});
+
+test("Dexter names a session once as its context, and then everything it has used, crosses the warn and handoff lines", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "rb-dexter-ctx-")), dir = path.join(root, "-Users-x-RustyBuns");
+  mkdirSync(dir);
+  const worker = path.join(dir, "s-1234abcd.jsonl"), other = path.join(dir, "abcdef123456.jsonl");
+  const cwd = "/Users/x/RustyBuns/.agent-office/worktrees/sprocket-b93a";
+  let id = 0;
+  // a reply carrying `tokens` of context (input + cache read + cache write) and writing 99 more; its own message id unless given
+  const turn = (session: string, where: string, tokens: number, mid = `m${id++}`) => j({ type: "assistant", sessionId: session, cwd: where, message: { id: mid, usage: { input_tokens: 5, cache_read_input_tokens: tokens - 5000, cache_creation_input_tokens: 4995, output_tokens: 99 } } }) + "\n";
+  const meter = new Meter(), watch = new ContextWatch();
+  const poll = () => { const sessions = meter.scan(root); return { sessions, ...watch.check(sessions) }; };
+  const mine = (r: ReturnType<typeof poll>) => r.sessions.find((c) => c.session === "s-1234abcd")!;
+  const names = (a: { name: string; measure: string; level: string }[]) => a.map((x) => `${x.name} ${x.measure} ${x.level}`).sort();
+
+  writeFileSync(worker, turn("s-1234abcd", cwd, 100_000));
+  const first = poll();
+  expect(first.over).toEqual([]); // 100k: nothing yet
+  expect(mine(first)).toMatchObject({ tokens: 100_000, turn: 100_099, total: 100_099 });
+
+  // context past warn, in two sessions
+  appendFileSync(worker, turn("s-1234abcd", cwd, 160_000));
+  writeFileSync(other, turn("abcdef123456", "/tmp/elsewhere", 200_000));
+  const warn = poll();
+  expect(names(warn.fresh)).toEqual(["session abcdef12 in /tmp/elsewhere context warn", "sprocket-b93a context warn"]);
+  expect(warn.fresh.find((a) => a.name === "sprocket-b93a")!.message).toContain("Write a handoff and start a fresh session");
+  expect(poll().fresh).toEqual([]); // each fires once
+  expect(poll().over).toHaveLength(2); // but both stand while over the line
+
+  appendFileSync(worker, turn("s-1234abcd", cwd, 260_000));
+  expect(names(poll().fresh)).toEqual(["sprocket-b93a context handoff"]);
+  expect(poll().fresh).toEqual([]);
+
+  // a reply is counted once by its message id, and half a line still being written waits for its newline
+  const before = mine(poll()).total;
+  appendFileSync(worker, turn("s-1234abcd", cwd, 260_000, "m3"));
+  const half = turn("s-1234abcd", cwd, 260_000, "late");
+  appendFileSync(worker, half.slice(0, 60));
+  expect(mine(poll()).total).toBe(before);
+  appendFileSync(worker, half.slice(60));
+  expect(mine(poll()).total).toBe(before + 260_099);
+
+  // what it has used over its life: 10M warns, 25M says to hand off
+  const turns = (n: number) => appendFileSync(worker, Array.from({ length: n }, () => turn("s-1234abcd", cwd, 260_000)).join(""));
+  turns(40);
+  const spend = poll();
+  expect(names(spend.fresh)).toEqual(["sprocket-b93a total warn"]);
+  expect(spend.fresh[0]!.message).toMatch(/has used 1\d\.\dM tokens in all \(260k on its latest turn\), past 10\.0M\. Write a handoff/);
+  expect(poll().fresh).toEqual([]);
+  turns(60);
+  expect(names(poll().fresh)).toEqual(["sprocket-b93a total handoff"]);
+  expect(poll().fresh).toEqual([]);
+
+  const cli = contextLines(meter.scan(root)).join("\n");
+  expect(cli).toMatch(/sprocket-b93a: context 260k, 2\d\.\dM used in all, latest turn 260k/);
+  expect(cli).toContain("Hand off:");
 });

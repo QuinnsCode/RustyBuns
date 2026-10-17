@@ -153,3 +153,17 @@ test("a line is placed beat by beat and its goal completes when the rider rides 
   expect(ride(route.points).done(goal)).toBe(true);
   expect(ride([route.points[0]!, route.points[4]!]).done(goal)).toBe(false);
 });
+
+test("Old Faithful starts facing the geyser and the bowl: riding straight from spawn reaches the bowl's rim, and the plume stands in the view", () => {
+  const l = park("old-faithful"), sp = l.spawns[0]!, plume = l.landmarks.find((m) => m.kind === "plume")!;
+  const bowl = l.pieces.reduce((a, p) => (Math.hypot(p.x - plume.x, p.z - plume.z) < Math.hypot(a.x - plume.x, a.z - plume.z) ? p : a));
+  const bearing = (x: number, z: number) => Math.abs(Math.atan2(Math.sin(Math.atan2(x - sp.x, z - sp.z) - sp.yaw), Math.cos(Math.atan2(x - sp.x, z - sp.z) - sp.yaw)));
+  const rise = (x: number, z: number, y: number) => Math.atan2(y - (l.height(sp.x, sp.z) + 1.5), Math.hypot(x - sp.x, z - sp.z));
+  expect(bearing(plume.x, plume.z)).toBeLessThan(0.2);
+  expect(Math.hypot(plume.x - sp.x, plume.z - sp.z)).toBeLessThan(110); // near enough to read, not a speck on the horizon
+  expect(rise(plume.x, plume.z, l.height(plume.x, plume.z) + plume.tall)).toBeLessThan((66 / 2) * Math.PI / 180); // its top inside the 66 degree lens
+  const s = start(sp.x, sp.z, sp.yaw, l);
+  let reached = false;
+  for (let i = 0; i < 20 * 60 && !reached; i++) { step(s, { ...IDLE, throttle: 1, boost: true }, { ...l, obstacles: l.trees }); reached = Math.hypot(s.x - bowl.x, s.z - bowl.z) < 40; }
+  expect(reached).toBe(true);
+});

@@ -295,14 +295,15 @@ export interface Foliage { update(t: number, eye: THREE.Vector3): void }
 export function buildFoliage(ctx: FoliageCtx): Foliage {
   const { scene, b, kind, r, n, heightAt, bare, trees, wind } = ctx;
   const fl = FLOORS[kind], Q = foliageQuality(), jungle = kind === "jungle", woods = kind !== "canyon";
-  const cnt = (v: number) => Math.round(v * Q);
+  // A big map gets more of everything, though not quite as thick, to keep the frame rate.
+  const cnt = (v: number) => Math.round(v * Q * Math.min(1.6, (b.half / HALF) ** 2));
   const { inst, put, done } = instancer(scene);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), k = new THREE.Vector3(), col = new THREE.Color(), e = new THREE.Euler();
   const UP = new THREE.Vector3(0, 1, 0);
   const std = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, ...extra });
   const leafy = (map: THREE.Texture | null, extra: THREE.MeshStandardMaterialParameters = {}) => std(0xffffff, { map, alphaTest: 0.4, side: THREE.DoubleSide, ...extra });
   const flat = (geo: THREE.BufferGeometry) => geo.rotateX(-Math.PI / 2);
-  const anywhere = (spread = 1.1) => ({ x: (r() - 0.5) * HALF * 2 * spread, z: (r() - 0.5) * HALF * 2 * spread });
+  const anywhere = (spread = 1.1) => ({ x: (r() - 0.5) * b.half * 2 * spread, z: (r() - 0.5) * b.half * 2 * spread });
   const field = trees.slice(0, b.trees.length);
   // A spot where something may grow; half the time round a trunk, where the woods are thickest.
   const spot = (room = 1, nearTrunks = 0.5) => {

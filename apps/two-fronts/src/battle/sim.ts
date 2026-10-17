@@ -45,10 +45,11 @@ export interface Unit {
   leap?: number;      // a Mossback: seconds left in the leap it's making, towards lx, lz
   lx?: number; lz?: number;
   leapCd?: number;    // seconds till it can leap again
+  hx?: number; hz?: number; // where the hero's last order sent it
 }
 export interface Post { name: string; x: number; z: number; owner: Side | null; progress: number } // progress: +1 attacker, -1 defender
 // An orbital strike or an artillery shell on its way down. A shell has its own radius and punch.
-export interface Strike { side: Side; x: number; z: number; t: number; r?: number; dmg?: number; shell?: boolean }
+export interface Strike { side: Side; x: number; z: number; t: number; r?: number; dmg?: number; shell?: boolean; by?: number }
 // A gunship strafing run across the field, from x0, z0 to x1, z1 over dur seconds.
 export interface Pass { side: Side; x0: number; z0: number; x1: number; z1: number; age: number; dur: number; hurtAt: number }
 // The fall-back the radio has called: get to x, z before the window runs out.
@@ -74,7 +75,32 @@ export interface Beat {
 export interface Fx { kind: "shot" | "spear" | "hex" | "blast" | "gore" | "toss" | "smash"; x: number; z: number; tx: number; tz: number; t: number; y?: number; ty?: number; side?: Side; big?: boolean; from?: number; hit?: boolean; pin?: boolean }
 
 // What the player does this step. Movement is relative to where the hero faces.
-export interface Input { forward: number; right: number; yaw: number; fire: boolean; strike?: { x: number; z: number }; use?: boolean }
+export interface Input { forward: number; right: number; yaw: number; fire: boolean; strike?: { x: number; z: number }; use?: boolean; order?: { kind: OrderKind; x: number; z: number } }
+
+// The hero's orders to the squad round them: push forward to where the gun points, hold where you
+// stand, fall back towards home, or pour fire on whatever is round where the gun points.
+export type OrderKind = "forward" | "hold" | "back" | "focus";
+export const ORDERS: OrderKind[] = ["forward", "hold", "back", "focus"];
+export interface Order { kind: OrderKind; x: number; z: number; ids: number[]; at: number }
+export const COMMAND = 60;         // squadmates this close to the hero hear an order
+export const ORDER_FOR = 40;       // seconds an order lasts before they go back to fighting their own way
+export const FOCUS_R = 14;         // focus fire: enemies this close to the spot are the targets
+const BACK_BY = 35;                // fall back: this far towards home
+
+// Heavy weapons left out on the field, in the open between the lines: walk over one to pick it
+// up. Each fires till its ammo runs out, and never overheats. A rail lance goes through
+// everyone on its line, a mortar lobs a shell where you aim, a repeater hoses heavy rounds.
+export type Heavy = "lance" | "mortar" | "repeater";
+export const HEAVIES: Heavy[] = ["lance", "mortar", "repeater"];
+export const HEAVY: Record<Heavy, { range: number; cool: number; dmg: number; ammo: number; name: Record<"marines" | "wooka", string> }> = {
+  lance: { range: 110, cool: 1.1, dmg: 150, ammo: 8, name: { marines: "rail lance", wooka: "thunder spear" } },
+  mortar: { range: 70, cool: 1.5, dmg: 160, ammo: 6, name: { marines: "plasma mortar", wooka: "keg sling" } },
+  repeater: { range: 70, cool: 0.1, dmg: 12, ammo: 120, name: { marines: "repeater", wooka: "rock-chucker" } },
+};
+export interface Cache { id: number; kind: Heavy; x: number; z: number; ready: number } // ready: when it's back after someone took it
+export const CACHE_BACK = 60;      // seconds before a taken cache is restocked
+const GRAB = 3;                    // metres from a cache to pick it up
+const MORTAR_R = 7, LANCE_W = 1.4;
 
 export interface Tree { x: number; z: number; r: number }
 // A building, wall or rock: centred on x, z, w wide (along x), d deep (along z) and h high.
@@ -84,6 +110,9 @@ export interface Block { x: number; z: number; w: number; d: number; h: number; 
 
 export interface Battle {
   spec: BattleSpec;
+  map: string;             // the layout's name
+  half: number;            // the plain runs -half..half on x and z
+  spawn: PerSide<{ x: number; z: number }>;
   trees: Tree[];           // trunks: nobody walks or shoots through them
   blocks: Block[];         // buildings, walls and rock, the same
   time: number;
@@ -96,7 +125,7 @@ export interface Battle {
   reinforced: PerSide<boolean>;
   // The hero: their blaster's heat (overheated: seconds till it fires again), how long they've
   // run straight ahead (past SPRINT_AFTER they sprint), and what they've killed.
-  hero: { id: number | null; lives: number; respawn: number; inVehicle: number | null; heat: number; overheated: number; run: number; kills: number; streak: number };
+  hero: { id: number | null; lives: number; respawn: number; inVehicle: number | null; heat: number; overheated: number; run: number; kills: number; streak: number; arm: { kind: Heavy; ammo: number } | null };
   fx: Fx[];
   events: string[]; // for the HUD feed, newest last
   eventAt: number[]; // when each was said, so lines that land on top of each other garble
@@ -115,12 +144,17 @@ export interface Battle {
   live: number;              // assault and hill: the one post in play
   phase: number;             // assault: seconds left holding the live post (0 while taking it); hill: till it moves on
   vip: number | null;        // escort: the attacker's champion, while they live
+  order: Order | null;       // the hero's last order to their squad
+  caches: Cache[];           // heavy weapons out on the field
 }
 
 export const DT = 1 / 30;
 export const HALF = 180;           // the plain runs -HALF..HALF on x and z
 export const TIME_LIMIT = 600;
+// the usual plain's spawns; a bigger map's come from spawnsFor
 export const SPAWN: PerSide<{ x: number; z: number }> = { attacker: { x: 0, z: 150 }, defender: { x: 10, z: -150 } };
+// On a field of another size, each side comes in the same way from its own edge.
+const spawnsFor = (half: number): PerSide<{ x: number; z: number }> => ({ attacker: { x: 0, z: half - 30 }, defender: { x: 10, z: -(half - 30) } });
 export const POST_RADIUS = 12;
 const HOLD_FOR = 40;               // assault: seconds to hold a post once taken before the next comes live
 const HILL_EVERY = 75;             // hill: seconds before the live post moves on
@@ -134,7 +168,8 @@ export const timeLimit = (spec: BattleSpec) => (spec.mode === "holdout" ? HOLDOU
 
 // Each kind of sector is its own map. The last post is the defender's keep: it starts theirs,
 // and their turrets ring it. `scenery` below lays out what stands on it; the view draws that.
-export const LAYOUTS: Record<SectorKind, { name: string; posts: { name: string; x: number; z: number }[] }> = {
+export interface Layout { name: string; posts: { name: string; x: number; z: number }[]; half?: number }
+export const LAYOUTS: Record<SectorKind, Layout> = {
   shield: { name: "Shield generator clearing", posts: [{ name: "Old stump", x: -60, z: 40 }, { name: "Fern hollow", x: 55, z: 5 }, { name: "Mossy ridge", x: -50, z: -40 }, { name: "Generator", x: 45, z: -80 }] },
   capital: { name: "Capital city", posts: [{ name: "Transit hub", x: 65, z: 55 }, { name: "Market square", x: -50, z: 15 }, { name: "Water tower", x: 60, z: -20 }, { name: "Old quarter", x: -60, z: -55 }, { name: "Palace", x: 5, z: -95 }] },
   spaceport: { name: "Spaceport", posts: [{ name: "Landing pads", x: -45, z: 35 }, { name: "Fuel depot", x: 55, z: 10 }, { name: "Hangar", x: -55, z: -30 }, { name: "Control tower", x: 50, z: -85 }] },
@@ -142,6 +177,21 @@ export const LAYOUTS: Record<SectorKind, { name: string; posts: { name: string; 
   canyon: { name: "Mining canyon", posts: [{ name: "Ore crusher", x: -25, z: 60 }, { name: "Cart yard", x: 30, z: 15 }, { name: "Slag heap", x: -30, z: -25 }, { name: "Mine head", x: 15, z: -85 }] },
   jungle: { name: "Jungle temple", posts: [{ name: "Fallen idol", x: 55, z: 50 }, { name: "Rope bridge", x: -55, z: 5 }, { name: "Strangler fig", x: 50, z: -35 }, { name: "Sunken temple", x: 0, z: -95 }] },
 };
+// The big fields: the same kinds of sector, half as wide again and more, with a post or two more
+// to fight over. A spec names one with `map`; the war hands them out to the bigger battles.
+export const BIG_MAPS: Record<string, Layout & { sector: SectorKind; half: number }> = {
+  ridge: { sector: "shield", name: "Generator ridge", half: 175, posts: [{ name: "Fern hollow", x: -70, z: 70 }, { name: "Old stump", x: 45, z: 25 }, { name: "Relay mast", x: -50, z: -40 }, { name: "Generator", x: 30, z: -100 }] },
+  outskirts: { sector: "capital", name: "Old city outskirts", half: 175, posts: [{ name: "Burnt farm", x: 75, z: 80 }, { name: "Transit hub", x: -40, z: 40 }, { name: "Market square", x: 50, z: -20 }, { name: "Palace", x: -5, z: -100 }] },
+  yards: { sector: "spaceport", name: "Cargo yards", half: 250, posts: [{ name: "Cargo stacks", x: 60, z: 55 }, { name: "Landing pads", x: -40, z: 0 }, { name: "Control tower", x: 40, z: -90 }] },
+  gorge: { sector: "canyon", name: "Deep gorge", half: 255, posts: [{ name: "Slag heap", x: 25, z: 75 }, { name: "Ore crusher", x: -25, z: 15 }, { name: "Mine head", x: 15, z: -95 }] },
+  valley: { sector: "jungle", name: "Temple valley", half: 270, posts: [{ name: "Waterfall", x: -70, z: 75 }, { name: "Fallen idol", x: 55, z: 35 }, { name: "Rope bridge", x: -45, z: -25 }, { name: "Sunken temple", x: 0, z: -105 }] },
+};
+export const layoutOf = (spec: Pick<BattleSpec, "sector" | "map">): Layout => {
+  const big = spec.map ? BIG_MAPS[spec.map] : undefined;
+  return big && big.sector === spec.sector ? big : LAYOUTS[spec.sector];
+};
+// The big maps there are for a kind of sector.
+export const bigMapsFor = (sector: SectorKind) => Object.keys(BIG_MAPS).filter((k) => BIG_MAPS[k]!.sector === sector);
 // The trees on each map: the redwood forest, a dense jungle of thinner trunks, none in the canyon.
 const GROW = 2.25;                 // the plain grew from 240 to 360 across: this much more ground to fill
 const REDWOODS = { n: Math.round(110 * GROW), r: [1.2, 3.4], gap: 5, clear: 26 } as const;
@@ -165,7 +215,7 @@ const AGGRO = 35;                  // how far a Wooka will charge at someone it 
 const FLAVOR_EVERY = 30;
 export const CHAMP_AT = 70;        // tickets' worth of kills a side needs to earn its champion
 const MOB = 3;                     // this many Wooka on one Marine and they tear them apart
-const MAUL = 25;                   // hp a second a mob takes off whoever it's on, on top of the clubs
+const MAUL = 20;                   // hp a second a mob takes off whoever it's on, on top of the clubs
 const HEAL = 6;                    // hp a second a Shanti puts back into each Wooka near it
 const FLANK = 30;                  // how wide a flanking pack swings
 const TOSS_EVERY = 3;
@@ -197,7 +247,7 @@ const SPENT = 0.4;                 // a Wooka under this share of its health is 
 // The hero's blaster heats with each shot and cools when it's quiet; full, it locks up a while.
 export const HEAT_PER_SHOT = 0.12;
 const COOL_RATE = 0.45;
-const OVERHEAT = 1.8;
+export const OVERHEAT = 1.8;
 export const SPRINT_AFTER = 0.8;   // seconds running straight ahead, not firing, before you sprint
 export const SPRINT = 1.55;
 
@@ -225,7 +275,31 @@ export const FLAVOR = [
   "Reminder: the fluffy ones are the dangerous ones. They are all the fluffy ones.",
   "A Boomie waved at Corporal Diaz before it went off. Diaz waved back. Briefly.",
   "The Shanti are chanting again. Our dead are getting up. Theirs are getting up faster.",
-];
+  "Look at the bones! LOOK at the BONES! Somebody should really stop looking at the bones.",
+  "Command says it's just a Wooka. Command is eleven light years away and has never been bitten.",
+  "That's no ordinary Wooka. That's an ordinary Wooka with a plan. Somehow worse.",
+  "Command: do not engage the cute ones. Us: which ones are the cute ones? Command: all of them. Us: ...",
+  "The medic would like everyone to know she is a medic, and not a snack.",
+  "Sergeant Moreau says stay calm. Sergeant Moreau is standing on a tree. Nobody knows how.",
+  "Radio check. Radio check. Radio. Why is the radio humming back?",
+  "I love the smell of bug spray in the morning. It smells like... nothing is working.",
+  "Intel says the enemy has no air support. Intel has not seen the one throwing the other one.",
+  "Casualty report: forty-one wounded, nine missing, one very small bite. The bite is the problem.",
+  "We are going to need a bigger fence. Also a smaller fence, for the little ones.",
+  "Private Kowalski asks what we're fighting for. The Sergeant says: the backpacks. Kowalski nods.",
+  "Good news: we've stopped them. Bad news: they were just reloading.",
+  "I've got a good feeling about this. Disregard. The feeling was gas.",
+  "Hold your fire, they might be friendly. Cancel that. It ate Hale's fire.",
+  "Nobody panic. Repeat, nobody panic. Okafor, put the backpack down. We are not panicking and neither is the backpack.",
+  "Surely you can't be serious. I am serious. And stop calling me Shirley, Private.",
+  "Looks like I picked the wrong planet to quit napping on.",
+  "Is anyone else seeing a rabbit? No? Then why does the Sergeant keep shouting for the Holy Hand Grenade?",
+  "There's a Wooka in the supply tent. It's wearing the quartermaster's glasses. Sir, it's doing the inventory.",
+  "I'm too old for this, said the Sergeant, who is twenty-six.",
+  "Reminder: in the event of a Wooka, remain calm, remain together, and remain in the helicopter. There is no helicopter. Remain anyway.",
+  "Charge! Run away! Charge again! Sir, make up your mind, they're keeping score.",
+  "The forest is on the radio. It says 'hoo'. We said 'roger'. It said 'hoo'. I think we're losing.",
+]; // radio gags in the key of a deadpan disaster film
 
 // What a Marine says on the way out, when a mob gets them. The radio picks it all up.
 const SCREAMS = [
@@ -239,6 +313,16 @@ const SCREAMS = [
   "They're under the floor! How is there a floor out here?!",
   "Sarge, they took the snorkel! I need the snorkel!",
   "It's humming. Why is it humming while it does that?",
+  "I'm not dead. I'm just... resting. Facing the sky. With a Wooka on my chest.",
+  "Tell the Sarge his bunker's fine. It's the Sarge that isn't.",
+  "Look at the bones! No, behind you! No, don't turn aro--",
+  "It's only a flesh wound! It's a LOT of flesh wounds!",
+  "It nibbled my leg! It's nibbled the other leg! Sir, I'm shorter!",
+  "I can see my house from here. That's a problem. I'm on a tree.",
+  "I've got a bad feeling about this. Pass it on. No, don't turn it around, pass it ON!",
+  "Cover me! I'm going in! I'm going in! I'm going in? I'm going in. They've taken the floor.",
+  "Tell my wife I love her. Tell my other wife it was a joke. Tell the Wooka, put me DOWN.",
+  "Roger that, I think I see the light. Oh. It's a campfire. They're roasting something. They're roasting ME.",
 ];
 const NAMES = ["Pvt. Okafor", "Pvt. Brandt", "Cpl. Diaz", "Pvt. Hale", "Sgt. Moreau", "Pvt. Kowalski", "Pvt. Achebe", "L/Cpl. Finch", "Pvt. Nakamura", "Pvt. Rourke"];
 
@@ -321,10 +405,11 @@ export function startBattle(spec: BattleSpec): Battle {
   const mode = spec.mode ?? "conquest";
   // The keep starts the defender's; in an assault or a hold-out, every post does. A hill starts nobody's.
   const theirs = (i: number, n: number) => mode === "assault" || mode === "holdout" || (mode !== "hill" && i === n - 1);
+  const layout = layoutOf(spec), half = layout.half ?? HALF;
   const b: Battle = {
-    spec, time: 0, trees: [], blocks: [],
+    spec, map: layout.name, half, spawn: spawnsFor(half), time: 0, trees: [], blocks: [],
     tickets: { ...spec.tickets },
-    posts: [...(mode === "hill" ? [HILL] : []), ...LAYOUTS[spec.sector].posts].map((p, i, all) => (theirs(i, all.length) ? { ...p, owner: "defender", progress: -1 } : { ...p, owner: null, progress: 0 })),
+    posts: [...(mode === "hill" ? [HILL] : []), ...layout.posts].map((p, i, all) => (theirs(i, all.length) ? { ...p, owner: "defender", progress: -1 } : { ...p, owner: null, progress: 0 })),
     units: [], strikes: [], fx: [], events: [], eventAt: [], radio: [], passes: [],
     beat: {
       surge: 0, nextSurge: SURGE_FIRST, digAt: SURGE_FIRST + DIG_AFTER, dig: null, digs: 0, overrun: 0, fall: null, fallCd: 0, out: 0, lost: 0, cost: 0,
@@ -333,12 +418,12 @@ export function startBattle(spec: BattleSpec): Battle {
     strikesLeft: { ...spec.strikes },
     vehiclesLeft: { attacker: pool("attacker"), defender: pool("defender") },
     reinforced: { attacker: false, defender: false },
-    hero: { id: null, lives: HERO_LIVES, respawn: 0, inVehicle: null, heat: 0, overheated: 0, run: 0, kills: 0, streak: 0 },
+    hero: { id: null, lives: HERO_LIVES, respawn: 0, inVehicle: null, heat: 0, overheated: 0, run: 0, kills: 0, streak: 0, arm: null },
     over: null, seed: spec.seed >>> 0, nextId: 1,
     aiStrikeAt: { attacker: 20, defender: 25 },
     spawnAt: { attacker: 0, defender: 0 },
     kills: { attacker: 0, defender: 0 }, champ: { attacker: false, defender: false }, screamAt: -99,
-    mode, live: 0, phase: mode === "hill" ? HILL_EVERY : 0, vip: null,
+    mode, live: 0, phase: mode === "hill" ? HILL_EVERY : 0, vip: null, order: null, caches: [],
   };
   // The turrets ring the keep; in a hold-out, every post.
   for (const gen of mode === "holdout" ? b.posts : [b.posts.at(-1)!]) for (let i = 0; i < spec.turrets; i++) {
@@ -347,9 +432,10 @@ export function startBattle(spec: BattleSpec): Battle {
   }
   scenery(b);
   // The woods: trees everywhere except on the posts, the spawns, the keep's ring and the scenery.
-  const w = WOODS[spec.sector], clear = [...b.posts, SPAWN.attacker, SPAWN.defender];
-  for (let tries = 0; b.trees.length < w.n && tries < w.n * 20; tries++) {
-    const t = { x: (rand(b) - 0.5) * HALF * 2, z: (rand(b) - 0.5) * HALF * 2, r: w.r[0] + rand(b) * (w.r[1] - w.r[0]) };
+  caches(b);
+  const w = WOODS[spec.sector], clear = [...b.posts, b.spawn.attacker, b.spawn.defender, ...b.caches], n = Math.round(w.n * Math.min(2, area(b)));
+  for (let tries = 0; b.trees.length < n && tries < n * 20; tries++) {
+    const t = { x: (rand(b) - 0.5) * b.half * 2, z: (rand(b) - 0.5) * b.half * 2, r: w.r[0] + rand(b) * (w.r[1] - w.r[0]) };
     if (clear.some((c) => dist(c, t) < w.clear) || b.trees.some((o) => dist(o, t) < o.r + t.r + w.gap) || b.blocks.some((k) => gap(k, t) < t.r + 3)) continue;
     b.trees.push(t);
   }
@@ -382,18 +468,21 @@ export const vipUnit = (b: Battle) => (b.vip === null ? null : b.units.find((u) 
 // The nearest point on a block's footprint to p, and how far p is from it (0 inside).
 const nearestOn = (k: Block, p: { x: number; z: number }) => ({ x: clamp(p.x, k.x - k.w / 2, k.x + k.w / 2), z: clamp(p.z, k.z - k.d / 2, k.z + k.d / 2) });
 const gap = (k: Block, p: { x: number; z: number }) => dist(nearestOn(k, p), p);
+// How much more ground than the usual field this one has, and how much further it runs.
+const area = (b: Battle) => (b.half / HALF) ** 2;
+const reach = (b: Battle) => b.half / HALF;
 
 // What stands on each map: its landmark by the keep, buildings or rock that block sight, and
 // low walls to fight from. Random pieces keep off the posts, the spawns, the turrets and the
 // lane down the middle, so the scenery never walls a side in.
 function scenery(b: Battle) {
   const keep = b.posts.at(-1)!, put = (x: number, z: number, w: number, d: number, h: number) => b.blocks.push({ x, z, w, d, h });
-  const scatter = (n: number, size: [number, number], h: [number, number], room: number, lane = 18) => {
-    n = Math.round(n * GROW);
+  const scatter = (n0: number, size: [number, number], h: [number, number], room: number, lane = 18) => {
+    const n = Math.round(n0 * GROW * area(b));
     for (let placed = 0, tries = 0; placed < n && tries < n * 30; tries++) {
-      const k = { x: (rand(b) - 0.5) * HALF * 1.9, z: (rand(b) - 0.5) * HALF * 1.9, w: size[0] + rand(b) * (size[1] - size[0]), d: size[0] + rand(b) * (size[1] - size[0]), h: h[0] + rand(b) * (h[1] - h[0]) };
+      const k = { x: (rand(b) - 0.5) * b.half * 1.9, z: (rand(b) - 0.5) * b.half * 1.9, w: size[0] + rand(b) * (size[1] - size[0]), d: size[0] + rand(b) * (size[1] - size[0]), h: h[0] + rand(b) * (h[1] - h[0]) };
       if (Math.abs(k.x) < lane + k.w / 2) continue;
-      if (b.posts.some((p) => gap(k, p) < room) || [SPAWN.attacker, SPAWN.defender].some((p) => gap(k, p) < 14)) continue;
+      if (b.posts.some((p) => gap(k, p) < room) || [b.spawn.attacker, b.spawn.defender].some((p) => gap(k, p) < 14)) continue;
       if (b.units.some((u) => gap(k, u) < 4) || b.blocks.some((o) => dist(o, k) < Math.max(o.w, o.d) / 2 + Math.max(k.w, k.d) / 2 + 3)) continue;
       b.blocks.push(k);
       placed++;
@@ -418,9 +507,9 @@ function scenery(b: Battle) {
     const sides = (["attacker", "defender"] as Side[]).filter((s) => isHorde(b, s));
     for (const s of sides) for (const depth of [38, 72]) {
       const z0 = s === "attacker" ? depth : -depth;
-      for (let x = -HALF + 6, i = 0; x < HALF - 6; x += 15, i++) {
+      for (let x = -b.half + 6, i = 0; x < b.half - 6; x += 15, i++) {
         const k: Block = { x: x + 5, z: z0 + (i % 2 ? 2.5 : -2.5), w: 10, d: 1.4, h: 1.25, kind: "trench" };
-        if (b.posts.some((p) => gap(k, p) < POST_RADIUS + 2) || [SPAWN.attacker, SPAWN.defender].some((p) => gap(k, p) < 12)) continue;
+        if (b.posts.some((p) => gap(k, p) < POST_RADIUS + 2) || [b.spawn.attacker, b.spawn.defender].some((p) => gap(k, p) < 12)) continue;
         if (b.blocks.some((o) => Math.abs(o.x - k.x) < (o.w + k.w) / 2 + 1 && Math.abs(o.z - k.z) < (o.d + k.d) / 2 + 1)) continue;
         b.blocks.push(k);
       }
@@ -452,10 +541,10 @@ function scenery(b: Battle) {
       break;
     case "canyon":
       // Rock walls down both sides, winding, then boulders and ore carts on the canyon floor.
-      for (let z = -HALF; z < HALF; z += 16) {
-        const l = -62 + 14 * sin(z / 23), r = 60 + 14 * sin(z / 31 + 1);
-        put((l - HALF) / 2, z + 8, l + HALF, 16, 30);
-        put((r + HALF) / 2, z + 8, HALF - r, 16, 30);
+      for (let z = -b.half; z < b.half; z += 16) {
+        const l = (-62 + 14 * sin(z / 23)) * reach(b), r = (60 + 14 * sin(z / 31 + 1)) * reach(b);
+        put((l - b.half) / 2, z + 8, l + b.half, 16, 30);
+        put((r + b.half) / 2, z + 8, b.half - r, 16, 30);
       }
       put(keep.x + 12, keep.z - 16, 10, 6, 8); // the mine head's rig
       scatter(14, [4, 9], [4, 10], POST_RADIUS + 6, 10);
@@ -526,7 +615,7 @@ function add(b: Battle, side: Side, kind: UnitKind, x: number, z: number, role?:
 // Fresh troops come in at the spawn, or at a held post nearer the fight that isn't under attack.
 function spawnPoint(b: Battle, side: Side) {
   const held = b.posts.filter((p) => p.owner === side && !b.units.some((u) => u.side !== side && u.kind !== "turret" && dist(u, p) < 30));
-  const home = SPAWN[side], foe = SPAWN[other(side)];
+  const home = b.spawn[side], foe = b.spawn[other(side)];
   const p = held.sort((a, c) => dist(a, foe) - dist(c, foe))[0];
   const base = p && dist(p, foe) < dist(home, foe) ? { x: p.x, z: p.z + (side === "attacker" ? 8 : -8) } : home;
   return { x: base.x + (rand(b) - 0.5) * 12, z: base.z + (rand(b) - 0.5) * 6 };
@@ -552,7 +641,7 @@ function crown(b: Battle, u: Unit) {
 // horde: more of them, and no vehicles, so their share of the pool comes as yet more Wooka.
 export const isHorde = (b: Battle, side: Side) => b.spec.factions[side] === "wooka";
 const baseCap = (b: Battle, side: Side) =>
-  isHorde(b, side) ? Math.min(28, 8 + b.spec.armies[side] * 5 + poolSize(b.spec.vehicles[side]) * 3) : Math.min(14, 4 + b.spec.armies[side] * 3);
+  isHorde(b, side) ? Math.min(24, 7 + b.spec.armies[side] * 4 + poolSize(b.spec.vehicles[side]) * 3) : Math.min(14, 4 + b.spec.armies[side] * 3);
 // In a hold-out the attacker's waves start small and grow as the clock runs, to twice the usual by the end.
 const troopCap = (b: Battle, side: Side) =>
   b.mode === "holdout" && side === "attacker" ? Math.min(32, Math.max(2, Math.round(baseCap(b, side) * (0.5 + (1.5 * b.time) / HOLDOUT_TIME)))) : baseCap(b, side);
@@ -658,8 +747,8 @@ function swat(b: Battle, u: Unit, t: Unit) {
 function shove(b: Battle, v: Unit, from: { x: number; z: number }, d: number) {
   if (armoured(v.kind) || flies(v) || v.champ) return;
   const len = dist(v, from) || 1;
-  v.x = clamp(v.x + ((v.x - from.x) / len) * d, -HALF, HALF);
-  v.z = clamp(v.z + ((v.z - from.z) / len) * d, -HALF, HALF);
+  v.x = clamp(v.x + ((v.x - from.x) / len) * d, -b.half, b.half);
+  v.z = clamp(v.z + ((v.z - from.z) / len) * d, -b.half, b.half);
   unstick(b, v);
   v.stun = Math.max(v.stun ?? 0, 0.4);
 }
@@ -682,7 +771,7 @@ function toss(b: Battle, u: Unit, at: { x: number; z: number }, spent = true) {
   const ammo = b.units.filter((v) => v.side === u.side && v.hp > 0 && v.role && v.role !== "shanti" && v.role !== "mossback" && dist(v, u) < 6 && (spent || v.hp > v.maxHp * SPENT)).sort((a, c) => dist(u, a) - dist(u, c))[0];
   if (!ammo) return false;
   u.toss = TOSS_EVERY;
-  const d = Math.min(35, dist(u, at)) || 1, x = clamp(u.x + ((at.x - u.x) / dist(u, at)) * d, -HALF, HALF), z = clamp(u.z + ((at.z - u.z) / dist(u, at)) * d, -HALF, HALF);
+  const d = Math.min(35, dist(u, at)) || 1, x = clamp(u.x + ((at.x - u.x) / dist(u, at)) * d, -b.half, b.half), z = clamp(u.z + ((at.z - u.z) / dist(u, at)) * d, -b.half, b.half);
   b.fx.push({ kind: "toss", x: ammo.x, z: ammo.z, tx: x, tz: z, t: 0.6, side: u.side });
   ammo.x = x; ammo.z = z; unstick(b, ammo);
   ammo.hp -= 20; // it'll live. Probably.
@@ -727,9 +816,11 @@ function think(b: Battle, u: Unit) {
   tend(u);
   if (u.toss !== undefined) u.toss -= DT;
   if (u.stun && (u.stun -= DT) > 0) return; // dazed
+  const o = ordered(b, u);
+  if (!o && u.hx !== undefined) u.hx = u.hz = undefined;
   if ((u.look = (u.look ?? 0) - DT) <= 0) {
     u.look = LOOK_EVERY;
-    u.target = nearestSeen(b, u, s.range)?.id;
+    u.target = (o?.kind === "focus" ? focusTarget(b, u, o, s.range) : undefined) ?? nearestSeen(b, u, s.range)?.id;
   }
   let foe = u.target === undefined ? null : b.units.find((v) => v.id === u.target && v.hp > 0 && !hidden(b, v)) ?? null;
   if (foe && dist(u, foe) > s.range) foe = null;
@@ -753,6 +844,16 @@ function think(b: Battle, u: Unit) {
     if (b.units.some((v) => v.side === u.side && v.id !== u.id && v.kind !== "turret" && dist(u, v) < ESCORT_NEAR)) move(b, u, keep.x - u.x, keep.z - u.z, Math.min(s.speed, ESCORT_PACE));
     return;
   }
+  // The hero's orders come before the radio's.
+  if (o && u.hx !== undefined && u.hz !== undefined) {
+    const spot = { x: u.hx, z: u.hz }, d = dist(u, spot);
+    if (o.kind === "focus") {
+      if (foe && dist(foe, o) < FOCUS_R) return; // on target: keep pouring it on
+      if (d > s.range * 0.6) return move(b, u, spot.x - u.x, spot.z - u.z, s.speed);
+    } else if (d > 3) return move(b, u, spot.x - u.x, spot.z - u.z, s.speed);
+    else if (o.kind === "forward") u.hx = u.hz = undefined; // there: back to the fight, from further up
+    else return; // holding
+  }
   // The radio has called a fall-back: the hero's side near the overrun post makes for the new post.
   const fall = b.beat.fall;
   if (fall && u.side === b.spec.hero && u.kind !== "turret" && u.hp > 0 && dist(u, b.posts[fall.from]!) < 70) {
@@ -775,7 +876,7 @@ function think(b: Battle, u: Unit) {
     // Witch doctors keep behind their own front line.
     const front = b.units.filter((v) => v.side === u.side && (v.role === "fodder" || v.role === "chub")).sort((a, c) => dist(u, a) - dist(u, c))[0];
     if (front) {
-      const home = SPAWN[u.side], d = dist(front, home) || 1;
+      const home = b.spawn[u.side], d = dist(front, home) || 1;
       const x = front.x + ((home.x - front.x) / d) * 12, z = front.z + ((home.z - front.z) / d) * 12;
       return move(b, u, x - u.x, z - u.z, s.speed);
     }
@@ -807,6 +908,84 @@ function hunt(b: Battle, u: Unit) {
     if (t && dist(v, t) < 6) return t;
   }
   return null;
+}
+
+// The hero's order, if this unit heard it and it hasn't run out.
+const ordered = (b: Battle, u: Unit) => (b.order && b.time - b.order.at < ORDER_FOR && b.order.ids.includes(u.id) ? b.order : null);
+// Focus fire: the nearest enemy round the spot that the unit can see and reach.
+function focusTarget(b: Battle, u: Unit, o: Order, range: number) {
+  const near = b.units.filter((v) => v.side !== u.side && v.hp > 0 && !hidden(b, v) && dist(v, o) < FOCUS_R && dist(u, v) < range).sort((a, c) => dist(u, a) - dist(u, c));
+  return near.find((v) => sees(b, u, v))?.id;
+}
+
+// What the squad shouts back.
+const ORDER_SAID: Record<OrderKind, [string, string]> = {
+  forward: ["Squad: FORWARD! Move up, move up!", "Chieftain points: everybody runs that way, shrieking"],
+  hold: ["Squad: HOLD here! Dig in, nobody moves!", "Chieftain stamps: the kin sit down where they are"],
+  back: ["Squad: FALL BACK! Pull back towards home!", "Chieftain waves them home: the kin scatter back into the green"],
+  focus: ["Squad: focus fire, THERE! Everything you've got!", "Chieftain points his club: everybody throws at THAT"],
+};
+
+// The hero gives an order to everyone of theirs close enough to hear it. Forward and focus go
+// where the gun points; fall back goes towards home; hold stays put.
+export function command(b: Battle, hero: Unit, kind: OrderKind, at: { x: number; z: number }) {
+  const squad = b.units.filter((u) => u.side === hero.side && u.hp > 0 && u.id !== hero.id && u.id !== b.vip && u.kind !== "turret" && u.role !== "boomie" && u.role !== "mossback" && dist(u, hero) < COMMAND);
+  let x = clamp(at.x, -b.half, b.half), z = clamp(at.z, -b.half, b.half);
+  if (kind === "back") {
+    const home = b.spawn[hero.side], d = dist(hero, home) || 1, k = Math.min(BACK_BY, d) / d;
+    x = hero.x + (home.x - hero.x) * k; z = hero.z + (home.z - hero.z) * k;
+  }
+  for (const u of squad) {
+    if (kind === "hold") { u.hx = u.x; u.hz = u.z; }
+    else { u.hx = clamp(x + u.jx * 0.5, -b.half, b.half); u.hz = clamp(z + u.jz * 0.5, -b.half, b.half); }
+    u.look = 0; // look again, now
+  }
+  b.order = { kind, x, z, ids: squad.map((u) => u.id), at: b.time };
+  say(b, `${ORDER_SAID[kind][isHorde(b, hero.side) ? 1 : 0]}${squad.length ? "" : " (nobody near enough to hear)"}`);
+}
+
+// The heavy weapons are left out between the lines, two on the flanks and one in the middle, so
+// getting one means a run into the open. On a canyon floor they keep off the cliffs.
+function caches(b: Battle) {
+  const h = b.half, wide = b.spec.sector === "canyon" ? 0.3 : 0.7;
+  const spots: [Heavy, number, number][] = [["lance", -wide * h, 0.1 * h], ["mortar", wide * h, -0.1 * h], ["repeater", -0.22 * h, -0.04 * h]];
+  for (const [kind, x0, z0] of spots) {
+    let at = { x: x0, z: z0 };
+    for (let i = 0; i < 20 && (b.blocks.some((k) => gap(k, at) < 4) || b.posts.some((p) => dist(p, at) < POST_RADIUS + 4)); i++) at = { x: at.x * 0.9, z: at.z + 6 };
+    b.caches.push({ id: b.caches.length, kind, x: at.x, z: at.z, ready: 0 });
+  }
+}
+
+// The hero fires the heavy weapon they're carrying.
+function fireHeavy(b: Battle, u: Unit, yaw: number) {
+  const arm = b.hero.arm!, w = HEAVY[arm.kind], f = facing(yaw);
+  u.cool = w.cool;
+  if (arm.kind === "lance") {
+    // Through everyone on the line, to the first wall or trunk.
+    const end = { x: u.x + f.x * w.range, z: u.z + f.z * w.range }, k = blocked(b, u, end), len = w.range * k;
+    b.fx.push({ kind: "shot", x: u.x, z: u.z, tx: u.x + f.x * len, tz: u.z + f.z * len, t: 0.12, from: u.id, hit: true, big: true });
+    for (const v of b.units) {
+      if (v.side === u.side || v.hp <= 0 || hidden(b, v)) continue;
+      const along = (v.x - u.x) * f.x + (v.z - u.z) * f.z, off = Math.abs((v.x - u.x) * f.z - (v.z - u.z) * f.x);
+      if (along > 0 && along < len && off < LANCE_W + bodyOf(v) * 0.5) damage(b, v, armoured(v.kind) ? w.dmg * 2 : w.dmg, u.id, true);
+    }
+  } else if (arm.kind === "mortar") {
+    // Lobbed where you aim: at whoever's under the crosshair, or 40 m on.
+    const t = aimTarget(b, u, yaw, w.range), d = t ? dist(u, t) : 40;
+    const x = clamp(u.x + f.x * d, -b.half, b.half), z = clamp(u.z + f.z * d, -b.half, b.half);
+    b.strikes.push({ side: u.side, x, z, t: 0.9, r: MORTAR_R, dmg: w.dmg, shell: true, by: u.id });
+    b.fx.push({ kind: "shot", x: u.x, z: u.z, tx: x, tz: z, t: 0.08, from: u.id, big: true });
+  } else {
+    const t = aimTarget(b, u, yaw, w.range);
+    if (!t) shoot(b, u, null, yaw);
+    else {
+      const hit = rand(b) < clamp(0.85 - (dist(u, t) / w.range) * 0.3, 0.2, 0.9) * (inCover(b, u, t) ? 0.6 : 1);
+      b.fx.push({ kind: "shot", x: u.x, z: u.z, tx: t.x + (hit ? 0 : (rand(b) - 0.5) * 5), tz: t.z + (hit ? 0 : (rand(b) - 0.5) * 5), t: 0.08, from: u.id, hit, big: true });
+      if (hit) damage(b, t, armoured(t.kind) ? w.dmg * 2 : w.dmg, u.id, true);
+    }
+    u.cool = w.cool;
+  }
+  if (--arm.ammo <= 0) { b.hero.arm = null; say(b, `The ${w.name[b.spec.factions[u.side]]} is empty`); }
 }
 
 // A Boomie runs at the thickest knot of the enemy it can smell and goes off in the middle of it.
@@ -870,7 +1049,7 @@ export function objective(b: Battle, side: Side): { x: number; z: number } {
     const d = Math.max(1, dist(c, keep)), ahead = Math.min(10, d);
     return { x: c.x + ((keep.x - c.x) / d) * ahead, z: c.z + ((keep.z - c.z) / d) * ahead };
   }
-  const home = SPAWN[side], foe = SPAWN[other(side)];
+  const home = b.spawn[side], foe = b.spawn[other(side)];
   const open = b.posts.filter((p) => p.owner !== side || Math.abs(p.progress) < 1);
   if (open.length) return open.sort((a, c) => dist(a, home) - dist(c, home))[0]!;
   return [...b.posts].sort((a, c) => dist(a, foe) - dist(c, foe))[0]!;
@@ -880,7 +1059,7 @@ export function objective(b: Battle, side: Side): { x: number; z: number } {
 function guardPost(b: Battle, side: Side) {
   if (b.mode === "escort") return side === "defender" ? b.posts.at(-1)! : undefined; // the defender's guards wait at the keep
   if (b.mode === "hill") return undefined; // nothing to hold but the hill
-  const foe = SPAWN[other(side)];
+  const foe = b.spawn[other(side)];
   return b.posts.filter((p) => p.owner === side).sort((a, c) => dist(a, foe) - dist(c, foe))[0];
 }
 
@@ -896,8 +1075,8 @@ function move(b: Battle, u: Unit, dx: number, dz: number, speed: number, steer =
   const turn = u.detour ?? (u.id % 2 ? 1.1 : -1.1);
   for (const a of !steer ? [0] : u.detour ? [turn, 0, -turn] : [0, turn, -turn]) {
     const c = cos(a), s = sin(a);
-    u.x = clamp(x + ((dx * c - dz * s) / len) * step, -HALF, HALF);
-    u.z = clamp(z + ((dx * s + dz * c) / len) * step, -HALF, HALF);
+    u.x = clamp(x + ((dx * c - dz * s) / len) * step, -b.half, b.half);
+    u.z = clamp(z + ((dx * s + dz * c) / len) * step, -b.half, b.half);
     unstick(b, u);
     if (hypot(u.x - x, u.z - z) > step * 0.3) {
       if (a && a !== u.detour) { u.detour = a; u.detourT = DETOUR; }
@@ -926,12 +1105,12 @@ function unstick(b: Battle, u: Unit) {
       continue;
     }
     // Out the nearest side, unless that's off the map.
-    const outs = [[u.x - l, l, u.z], [r - u.x, r, u.z], [u.z - n, u.x, n], [f - u.z, u.x, f]].filter((o) => Math.abs(o[1]!) <= HALF && Math.abs(o[2]!) <= HALF);
+    const outs = [[u.x - l, l, u.z], [r - u.x, r, u.z], [u.z - n, u.x, n], [f - u.z, u.x, f]].filter((o) => Math.abs(o[1]!) <= b.half && Math.abs(o[2]!) <= b.half);
     const out = outs.sort((a, c) => a[0]! - c[0]!)[0];
     if (out) { u.x = out[1]!; u.z = out[2]!; }
   }
-  u.x = clamp(u.x, -HALF, HALF);
-  u.z = clamp(u.z, -HALF, HALF);
+  u.x = clamp(u.x, -b.half, b.half);
+  u.z = clamp(u.z, -b.half, b.half);
 }
 
 // Aim assist: the nearest enemy in sight within a few degrees of where the hero is looking.
@@ -951,7 +1130,7 @@ export function aimTarget(b: Battle, from: Unit, yaw: number, range: number) {
 function callStrike(b: Battle, side: Side, x: number, z: number) {
   if (b.strikesLeft[side] <= 0) return false;
   b.strikesLeft[side]--;
-  b.strikes.push({ side, x: clamp(x, -HALF, HALF), z: clamp(z, -HALF, HALF), t: STRIKE_DELAY });
+  b.strikes.push({ side, x: clamp(x, -b.half, b.half), z: clamp(z, -b.half, b.half), t: STRIKE_DELAY });
   say(b, `${side === b.spec.hero ? "Your" : "Enemy"} orbital strike inbound`);
   return true;
 }
@@ -979,8 +1158,20 @@ const SURGE_LINES = [
   "Movement everywhere. Everywhere. EVERYWHERE",
   "They're singing again, and there are a LOT of them",
   "Treeline's moving. Make every shot count",
+  "Here they come. Nobody say 'what could possibly go wrong.' Okafor, I'm looking at you.",
+  "That is not a forest, that is a very large crowd in a very small hat.",
+  "They're coming in from the left, the right, the front, and one of them is coming in from a place called Under.",
+  "Steady... steady... on my mark... Mark! Mark? Where did the Sergeant go? He's been marked.",
+  "Hundreds of them. Hundreds. Maybe four. They run in circles, it feels like hundreds.",
+  "Fix bayonets. Sir, we don't have bayonets. Then fix something, Private.",
+  "Okay, who counted them? Moreau counted them. And? He stopped counting. That's it. That's the count.",
+  "I love the smell of Wooka in the morning. It smells like a wet dog that's decided to be a dog.",
 ];
-const HORDE_SURGE_LINES = ["The trees empty out. Our kin run, laughing", "Drums! The forest sends more!", "Out of the green, all together, shouting"];
+const HORDE_SURGE_LINES = [
+  "The trees empty out. Our kin run, laughing", "Drums! The forest sends more!", "Out of the green, all together, shouting",
+  "Hoo-HOO-hoo! Everybody, bonk! Bonk the shiny!", "Chief says 'attack'. Chief says it with his whole face", "Up the tree, down the tree, over the shiny one, bonk",
+  "Look at the bones! Cheers for the bones! Bring more bones!", "Hoo hoo hoo HOO. Translation: yes, all of it",
+];
 const PANIC = [
   "BIG ONE, BIG ONE, BIG ONE",
   "That's not a Wooka, that's a landslide with arms!",
@@ -989,8 +1180,14 @@ const PANIC = [
   "All units, Mossback! Rockets! Anybody with rockets!",
   "Don't shoot it, it LIKES it -- use the big stuff!",
   "It's moving like a -- oh no. Oh no no no",
+  "Mossback! Repeat, MOSSBACK! No, I'm not joking, and don't call me Shirley!",
+  "It's the size of a hut and it's eating the hut!",
+  "That's no ordinary Wooka! That's the ordinary Wooka's mother!",
+  "Aim for the legs! It's got four! It's got six! Stop counting, FIRE!",
+  "Run away! RUN AWAY! ...Wait, which way is away?",
+  "Somebody hand me the Holy Hand Grenade! It's a rocket, Private, but fine, close enough!",
 ];
-const HORDE_PANIC = ["The drums go wild: the Mossback walks!", "Our big one is loose. Everybody get behind it"];
+const HORDE_PANIC = ["The drums go wild: the Mossback walks!", "Our big one is loose. Everybody get behind it", "Big one go! Big one go! Everybody point at the shiny ones!", "Our big one has seen the shiny ones. Our big one is not happy. Our big one is hungry"];
 // How hard the rhythm hits in this mode.
 const heat = (b: Battle) => (b.mode === "holdout" ? 1.5 : b.mode === "assault" ? 1.25 : 1);
 // The posts the fighting is over: the live one in an assault or on the hill, all of them otherwise.
@@ -1019,12 +1216,12 @@ function surge(b: Battle) {
   const mine = isHorde(b, b.spec.hero);
   say(b, `Surge ${beat.surge}: ${(mine ? HORDE_SURGE_LINES : SURGE_LINES)[Math.floor(rand(b) * (mine ? HORDE_SURGE_LINES : SURGE_LINES).length)]}`);
   for (const s of sides) {
-    const n = Math.min(b.mode === "holdout" ? 36 : 30, Math.round((6 + 2.2 * beat.surge) * heat(b)));
+    const n = Math.min(b.mode === "holdout" ? 32 : 26, Math.round((5 + 1.8 * beat.surge) * heat(b)));
     // The treeline is the side edges of the field, or the far end where rock closes the sides in (the canyon).
     const open = (c: { x: number; z: number }) => !b.blocks.some((k) => !k.broken && gap(k, c) < 6) && !b.trees.some((t) => dist(t, c) < t.r + 3);
     const centre = () => {
       for (let tries = 0; tries < 12; tries++) {
-        const c = tries < 6 ? { x: (rand(b) < 0.5 ? -1 : 1) * (HALF - 4), z: (s === "attacker" ? 1 : -1) * (25 + rand(b) * 85) } : { x: (rand(b) - 0.5) * 70, z: (s === "attacker" ? 1 : -1) * (HALF - 6) };
+        const c = tries < 6 ? { x: (rand(b) < 0.5 ? -1 : 1) * (b.half - 4), z: (s === "attacker" ? 1 : -1) * (25 + rand(b) * 85) * reach(b) } : { x: (rand(b) - 0.5) * 70 * reach(b), z: (s === "attacker" ? 1 : -1) * (b.half - 6) };
         if (open(c)) return c;
       }
       return spawnPoint(b, s);
@@ -1037,7 +1234,7 @@ function surge(b: Battle) {
     }
     // Rarely, and only once the fight has been going a while, something much bigger comes out with them.
     const big = b.units.filter((u) => u.side === s && u.role === "mossback").length;
-    if (beat.surge >= (b.mode === "holdout" ? 2 : 3) && big < (beat.surge >= 6 ? 2 : 1) && rand(b) < (b.mode === "holdout" ? 0.55 : 0.4)) {
+    if (beat.surge >= (b.mode === "holdout" ? 2 : 3) && big < (beat.surge >= 6 ? 2 : 1) && rand(b) < (b.mode === "holdout" ? 0.5 : 0.33)) {
       const c = centres[0]!, m = add(b, s, "wooka", c.x, c.z, "mossback");
       m.wild = true;
       const lines = mine ? HORDE_PANIC : pick3(b);
@@ -1061,9 +1258,9 @@ function volley(b: Battle, s: Side) {
     const n = b.units.filter((v) => v.side === foe && dist(u, v) < 12).length;
     if (n > most) { most = n; best = u; }
   }
-  const aim = best ?? { x: (rand(b) - 0.5) * HALF * 1.6, z: (foe === "defender" ? -1 : 1) * (15 + rand(b) * 95) };
+  const aim = best ?? { x: (rand(b) - 0.5) * b.half * 1.6, z: (foe === "defender" ? -1 : 1) * (15 + rand(b) * 95) * reach(b) };
   for (let i = 0; i < 3 + (heat(b) > 1 ? 1 : 0); i++) {
-    b.strikes.push({ side: s, x: clamp(aim.x + (rand(b) - 0.5) * 24, -HALF, HALF), z: clamp(aim.z + (rand(b) - 0.5) * 24, -HALF, HALF), t: 2 + i * 0.35, r: SHELL_R, dmg: SHELL_DMG, shell: true });
+    b.strikes.push({ side: s, x: clamp(aim.x + (rand(b) - 0.5) * 24, -b.half, b.half), z: clamp(aim.z + (rand(b) - 0.5) * 24, -b.half, b.half), t: 2 + i * 0.35, r: SHELL_R, dmg: SHELL_DMG, shell: true });
   }
   if (rand(b) < 0.3) say(b, s === b.spec.hero ? "Our guns are walking it in" : "Incoming! Shelling on the line!");
 }
@@ -1075,9 +1272,9 @@ function airPass(b: Battle) {
   if (!air.length) return;
   const side = air[Math.floor(rand(b) * air.length)]!, foe = other(side);
   const crowd = b.units.filter((u) => u.side === foe && u.kind !== "turret");
-  const z = crowd.length ? crowd[Math.floor(rand(b) * crowd.length)]!.z : (foe === "defender" ? -50 : 50);
+  const z = crowd.length ? crowd[Math.floor(rand(b) * crowd.length)]!.z : (foe === "defender" ? -50 : 50) * reach(b);
   const dir = rand(b) < 0.5 ? 1 : -1;
-  b.passes.push({ side, x0: -dir * (HALF + 15), z0: z, x1: dir * (HALF + 15), z1: clamp(z + (rand(b) - 0.5) * 30, -HALF, HALF), age: 0, dur: PASS_FOR, hurtAt: 0 });
+  b.passes.push({ side, x0: -dir * (b.half + 15), z0: z, x1: dir * (b.half + 15), z1: clamp(z + (rand(b) - 0.5) * 30, -b.half, b.half), age: 0, dur: PASS_FOR, hurtAt: 0 });
   say(b, side === b.spec.hero ? "Gunship on a run: keep your heads up, we're keeping theirs down" : "Gunship! Gunship! Get under something!");
 }
 function flyPasses(b: Battle) {
@@ -1094,7 +1291,7 @@ function flyPasses(b: Battle) {
 
 // The radio calls a dig-in at the post the side holds nearest the enemy. Holding none, there is nothing to dig in at yet.
 function digIn(b: Battle) {
-  const side = b.spec.hero, posts = fightPosts(b), foe = SPAWN[other(side)];
+  const side = b.spec.hero, posts = fightPosts(b), foe = b.spawn[other(side)];
   const mine = posts.filter(({ p }) => p.owner === side).sort((a, c) => dist(a.p, foe) - dist(c.p, foe));
   const at = mine[0];
   if (!at) { b.beat.digAt = b.time + 8; return; }
@@ -1104,7 +1301,7 @@ function digIn(b: Battle) {
 }
 
 function callFall(b: Battle, from: number) {
-  const side = b.spec.hero, beat = b.beat, post = b.posts[from]!, home = SPAWN[side];
+  const side = b.spec.hero, beat = b.beat, post = b.posts[from]!, home = b.spawn[side];
   const next = fightPosts(b).filter(({ p, i }) => i !== from && dist(p, post) > 20 && !pressure(b, side, p).over).sort((a, c) => dist(a.p, home) - dist(c.p, home))[0];
   const evac = !next;
   const dest = next ? { x: next.p.x, z: next.p.z, name: next.p.name } : { x: home.x, z: home.z + (side === "attacker" ? -12 : 12), name: "the evac point" };
@@ -1202,10 +1399,18 @@ export function step(b: Battle, input: Input | null) {
     const blaster = !ride && !melee(body) && body.kit !== "rockets";
     if (b.hero.overheated > 0 && (b.hero.overheated -= DT) <= 0) b.hero.heat = 0.4;
     else b.hero.heat = Math.max(0, b.hero.heat - COOL_RATE * DT * (input.fire ? 0.3 : 1));
-    if (input.fire && body.cool <= 0 && b.hero.overheated <= 0) {
+    if (input.fire && body.cool <= 0 && b.hero.arm && !ride) fireHeavy(b, body, input.yaw);
+    else if (input.fire && body.cool <= 0 && b.hero.overheated <= 0) {
       shoot(b, body, aimTarget(b, body, input.yaw, s.range), input.yaw);
       if (blaster && (b.hero.heat += HEAT_PER_SHOT) >= 1) { b.hero.heat = 1; b.hero.overheated = OVERHEAT; }
     }
+    // Walk over a heavy weapon to pick it up.
+    if (!ride) for (const c of b.caches) if (c.ready <= b.time && dist(c, hero) < GRAB) {
+      c.ready = b.time + CACHE_BACK;
+      b.hero.arm = { kind: c.kind, ammo: HEAVY[c.kind].ammo };
+      say(b, `Picked up a ${HEAVY[c.kind].name[b.spec.factions[hero.side]]}: ${HEAVY[c.kind].ammo} shots`);
+    }
+    if (input.order) command(b, hero, input.order.kind, input.order);
     if (input.strike) callStrike(b, hero.side, input.strike.x, input.strike.z);
     if (hero.toss !== undefined) hero.toss -= DT;
     if (hero.stun) hero.stun -= DT;
@@ -1235,7 +1440,7 @@ export function step(b: Battle, input: Input | null) {
   for (const s of sides) if (!(input && s === b.spec.hero)) aiStrike(b, s);
 
   // Strikes land.
-  for (const st of b.strikes) if ((st.t -= DT) <= 0) blast(b, st.side, st.x, st.z, st.r ?? STRIKE_RADIUS, st.dmg ?? 260, 0, st.side === b.spec.hero && input && !st.shell ? b.hero.id ?? undefined : undefined);
+  for (const st of b.strikes) if ((st.t -= DT) <= 0) blast(b, st.side, st.x, st.z, st.r ?? STRIKE_RADIUS, st.dmg ?? 260, 0, st.by ?? (st.side === b.spec.hero && input && !st.shell ? b.hero.id ?? undefined : undefined));
   b.strikes = b.strikes.filter((st) => st.t > 0);
 
   // A vehicle going up throws its driver out hurt; the dead cost their side tickets.
@@ -1271,6 +1476,7 @@ export function step(b: Battle, input: Input | null) {
     if (u.id === b.vip) { b.vip = null; say(b, "The champion is down"); }
     if (u.id === b.hero.id) {
       b.hero.streak = 0;
+      b.hero.arm = null;
       b.hero.lives--;
       b.hero.id = null;
       b.hero.respawn = 5;

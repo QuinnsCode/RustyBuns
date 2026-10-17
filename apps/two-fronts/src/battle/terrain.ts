@@ -10,7 +10,7 @@
 import * as THREE from "three";
 import { FLOORS, buildFoliage, foliageQuality, instancer, makeWind, mergeAll } from "./foliage.ts";
 import { hut, lumpy, texture, totem } from "./models.ts";
-import { EYE, HALF, POST_RADIUS, SPAWN, type Battle, type Block, type Tree } from "./sim.ts";
+import { EYE, POST_RADIUS, type Battle, type Block, type Tree } from "./sim.ts";
 
 type Woods = "redwood" | "jungle" | "canyon";
 export interface World {
@@ -138,7 +138,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
 
   // The trail the fighting wears in: from the attacker's drop, through each post, to the keep and
   // on to the defender's end, wandering a little.
-  const trail = [SPAWN.attacker, ...b.posts, SPAWN.defender];
+  const trail = [b.spawn.attacker, ...b.posts, b.spawn.defender];
   const wander = (x: number, z: number) => x + n(z / 40, 3.7) * 6;
   const onTrail = (x: number, z: number) => {
     const wx = wander(x, z);
@@ -156,7 +156,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     for (const blk of b.blocks) flat = Math.min(flat, smooth(1, 7, blockGap(blk, x, z)));
     let h = (n(x / 34, z / 34, 3) * amp + n(x / 8, z / 8, 2) * 0.25) * flat;
     h -= 0.25 * (1 - smooth(1.5, 4, onTrail(x, z)));
-    const out = Math.max(Math.abs(x), Math.abs(z)) - HALF;
+    const out = Math.max(Math.abs(x), Math.abs(z)) - b.half;
     if (out > 0) h += (woods === "canyon" ? 45 : 32) * (1 - Math.exp(-out / 40)) * (0.75 + 0.5 * n(x / 60, z / 60, 2)) + n(x / 12, z / 12) * out * 0.04;
     return h;
   };
@@ -197,7 +197,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   scene.add(sun, sun.target);
 
   // --- The floor ---
-  const SIZE = HALF * 5, SEG = 260;
+  const SIZE = b.half * 5, SEG = 260;
   const groundGeo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG).rotateX(-Math.PI / 2);
   const gp = groundGeo.attributes.position as THREE.BufferAttribute, gc: number[] = [];
   const base = new THREE.Color(look.ground), litter = new THREE.Color(look.litter), dirt = new THREE.Color(look.trail);
@@ -226,7 +226,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   const bare = (x: number, z: number, room = 1.5) =>
     onTrail(x, z) < 3.5 || b.posts.some((post) => Math.hypot(x - post.x, z - post.z) < 5) ||
     b.blocks.some((blk) => blockGap(blk, x, z) < room) || b.trees.some((t) => Math.hypot(x - t.x, z - t.z) < t.r + 0.3);
-  const anywhere = (spread = 1) => ({ x: (r() - 0.5) * HALF * 2 * spread, z: (r() - 0.5) * HALF * 2 * spread });
+  const anywhere = (spread = 1) => ({ x: (r() - 0.5) * b.half * 2 * spread, z: (r() - 0.5) * b.half * 2 * spread });
   const { inst, put, done } = instancer(scene);
   const wind = makeWind(), Q = foliageQuality();
 
@@ -249,7 +249,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     const jungle = woods === "jungle";
     const back: Tree[] = [];
     for (let i = 0; i < (jungle ? 420 : 320); i++) {
-      const a = r() * Math.PI * 2, d = HALF + 4 + r() * HALF * 1.3;
+      const a = r() * Math.PI * 2, d = b.half + 4 + r() * b.half * 1.3;
       const x = Math.max(-1, Math.min(1, Math.cos(a) * 1.5)) * d, z = Math.max(-1, Math.min(1, Math.sin(a) * 1.5)) * d;
       back.push({ x, z, r: jungle ? 0.6 + r() : 1.4 + r() * 2.6 });
     }
@@ -377,7 +377,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   for (let i = 0; i < 1000 && rocks.count < rocks.instanceMatrix.count; i++) {
     const at = anywhere(1.3);
     if (bare(at.x, at.z, 2)) continue;
-    const out = Math.max(Math.abs(at.x), Math.abs(at.z)) > HALF;
+    const out = Math.max(Math.abs(at.x), Math.abs(at.z)) > b.half;
     const sz = out ? 2 + r() * 6 : 0.4 + r() * 1.1;
     col.setHSL(woods === "canyon" ? 0.05 : 0.15, woods === "canyon" ? 0.25 : 0.06, 0.7 + r() * 0.3);
     put(rocks, m.compose(p.set(at.x, heightAt(at.x, at.z) + sz * 0.2, at.z), q.setFromEuler(new THREE.Euler(r(), r() * 6, r())), k.set(sz * 1.3, sz * 0.8, sz)), col);
@@ -385,7 +385,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
 
   // --- The Wooka's end: huts up the trunks nearest their drop, bridges between, and totems. ---
   if (wookaSide && woods !== "canyon") {
-    const home = SPAWN[wookaSide];
+    const home = b.spawn[wookaSide];
     const near = [...b.trees].filter((t) => t.r > 1).sort((a, c) => Math.hypot(a.x - home.x, a.z - home.z) - Math.hypot(c.x - home.x, c.z - home.z)).slice(0, 6);
     const decks: THREE.Vector3[] = [];
     near.forEach((t, i) => {
