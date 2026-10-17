@@ -26,6 +26,8 @@ import { TRICKS } from "./tricks.ts";
 import { Gestures } from "./gesture.ts";
 import { mountTouch } from "./touch.ts";
 import { level, levelId, mood, mountLevelUi, park, spawn } from "./levels/picker.ts";
+import { touring as isTouring } from "./levels/index.ts";
+import { tourShot, tourStops } from "./render/tour.ts";
 import { newRoomCode, Online, roomCode, pveMode } from "./net/client.ts";
 import { bump } from "./net/bump.ts";
 import { MAX_RIDERS } from "./net/room.ts";
@@ -276,7 +278,40 @@ const slope = { x: 0, z: 0 }; // the ground's tilt under the board, eased
 reset();
 let caughtAt = -Infinity, critterAt = performance.now(), lastFrame = performance.now(), landVy = 0, acc = 0, then = performance.now(), shownTrick: State["last"] = null, trickAt = 0;
 
+// The home page: no rider, and the camera flies a slow tour of the park (render/tour.ts) behind the panels.
+const touring = isTouring(location.search);
+const stops = touring ? tourStops(level) : [];
+if (touring) {
+  skins.root.visible = false;
+  Object.assign(sun.shadow.camera, { left: -150, right: 150, top: 150, bottom: -150, far: 500 });
+  sun.shadow.camera.updateProjectionMatrix();
+}
+const tourAt = Number(new URLSearchParams(location.search).get("at")) || 0; // ?at=40 starts forty seconds in, for a still
+function tourFrame(now: number) {
+  const dt = Math.min((now - lastFrame) / 1000, 0.1);
+  lastFrame = now;
+  const shot = tourShot(level, stops, tourAt + now / 1000);
+  camera.fov = shot.fov;
+  camera.updateProjectionMatrix();
+  camera.position.set(...shot.pos);
+  camera.lookAt(...shot.look);
+  camera.updateMatrixWorld();
+  followCamera(air, camera);
+  precip.update(dt, camera.position);
+  const flash = lightning?.update(dt) ?? 0;
+  fill.intensity = mood.fill + flash * 3;
+  skyTime(air, now / 1000, flash);
+  scenery?.update([camera.position]);
+  critters?.update(Math.min((now - critterAt) / 1000, 0.1), [camera.position]);
+  critterAt = now;
+  const [lx, ly, lz] = shot.look;
+  sun.position.set(lx + sunAt.x, ly + sunAt.y, lz + sunAt.z);
+  sun.target.position.set(lx, ly, lz);
+  renderer.render(scene, camera);
+}
+
 function frame(now: number) {
+  if (touring) { tourFrame(now); requestAnimationFrame(frame); return; }
   acc = Math.min(acc + (now - then) / 1000, 0.25);
   then = now;
   const inp = input();

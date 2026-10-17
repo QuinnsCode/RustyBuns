@@ -44,6 +44,10 @@ The hand-placed kit and ribbons stand on the ground; the earthworks (`src/levels
 
 A bare address opens on the logo: a redwood whose trunk runs down into the end of a skateboard deck, bark furrows carrying on through the board, with trucks and wheels under it (`src/front/logo.ts`). The intro drifts from the canopy down the trunk like a nature film, then "SKATE TECH PARK" is skated in left to right and the menu opens: Single (free skate, run from the bear) or Multi (free skate in a room, or join a code). Any key or click skips the film; reduced motion goes straight to the menu. A choice adds `?mode=` (and `room`/`chase`), and the park picker carries those through (`carry` in `src/front/menu.ts`), so every old link that names a level or room skips the title. Multi also lists Race (first through the finish, landing a set trick inside a ring) and S.K.A.T.E. (set a trick, the next rider lands it or takes a letter), greyed until they are built.
 
+## The home page flies over a park
+
+With no level in the address there is no rider: a slow camera tours a park chosen at random (`?tour=half-dome` picks one, `?at=40` starts forty seconds in) behind the title menu and the park picker, whose text sits in rounded, 80% opaque panels. It sweeps round the spawn, the park's landmark and its biggest pieces from a high, narrow, near-isometric angle, then flies up the hill to the highest ground for one wide pan over everything (`src/render/tour.ts`, a pure function of time). It is the live game scene, so nothing is recorded or served as video. On the picker, **Ride** starts the park on show, **Next park** flies over another, and a card per park starts that one.
+
 ## Run it
 
 ```
