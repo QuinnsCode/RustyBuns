@@ -3,6 +3,10 @@
 // a Wooka horde of five kinds that hunts in packs and comes round the flanks, the defender's
 // turrets, orbital strikes and drop-pod reinforcements from the spec. Trunks, buildings, rock,
 // stumps, logs and the Wooka's trenches block movement, and give cover to whoever is behind them.
+// The fight has a rhythm: surges of Wooka pour out of the treeline in waves, between them the
+// radio calls a dig-in (hold a post for a countdown and a drop or a strike is yours), and a post
+// that is overrun gets a fall-back to the next one, or an evac point, with a short window.
+// Artillery and gunship passes land across the whole field, not only on one side.
 // Kill enough of the other side and your champion takes the field: Warbur for the Wooka, Gumpert
 // for the Marines.
 // The view draws it and feeds the hero's input; the tests run it headless with the autopilot.
@@ -16,8 +20,9 @@ export type UnitKind = Trooper | VehicleKind | "wooka" | "turret" | "hero" | "ch
 // The horde's five kinds. Chubs are big tribal brutes that lead the charge. Stickies throw spears
 // and fall back. Fodder are the front line, and at least they are devout. Boomies run at you
 // with a lit charge strapped on. Shanti are witch doctors who keep the rest going.
-export type WookaRole = "fodder" | "chub" | "sticky" | "boomie" | "shanti";
-export const ROLES: WookaRole[] = ["fodder", "chub", "sticky", "boomie", "shanti"];
+// A sixth, the Mossback, never comes with the usual mix: it walks out of a surge, rarely.
+export type WookaRole = "fodder" | "chub" | "sticky" | "boomie" | "shanti" | "mossback";
+export const ROLES: WookaRole[] = ["fodder", "chub", "sticky", "boomie", "shanti", "mossback"];
 // Each side's champion, and Gumpert's three kits.
 export type Champ = "warbur" | "gumpert";
 export type Kit = "rockets" | "baton" | "jetpack";
@@ -35,12 +40,38 @@ export interface Unit {
   toss?: number;      // seconds till Warbur can throw another Wooka
   jav?: number;       // seconds till Warbur can throw another spear
   hitBy?: number;     // who hit it last, for the hero's kill count
+  wild?: boolean;     // came out of a surge: it costs its side no tickets, and counts for no kills
+  wound?: number;     // a Mossback: seconds before it starts to heal again (a heavy hit sets it)
+  leap?: number;      // a Mossback: seconds left in the leap it's making, towards lx, lz
+  lx?: number; lz?: number;
+  leapCd?: number;    // seconds till it can leap again
 }
 export interface Post { name: string; x: number; z: number; owner: Side | null; progress: number } // progress: +1 attacker, -1 defender
-export interface Strike { side: Side; x: number; z: number; t: number }
+// An orbital strike or an artillery shell on its way down. A shell has its own radius and punch.
+export interface Strike { side: Side; x: number; z: number; t: number; r?: number; dmg?: number; shell?: boolean }
+// A gunship strafing run across the field, from x0, z0 to x1, z1 over dur seconds.
+export interface Pass { side: Side; x0: number; z0: number; x1: number; z1: number; age: number; dur: number; hurtAt: number }
+// The fall-back the radio has called: get to x, z before the window runs out.
+export interface Fall { x: number; z: number; name: string; evac: boolean; left: number; from: number; ids: number[]; calm: number }
+// The fight's rhythm. Surges come in waves; between them, a dig-in; and a post that's overrun gets a fall-back.
+export interface Beat {
+  surge: number;          // surges so far
+  nextSurge: number;      // when the next one comes out of the treeline
+  digAt: number;          // when the radio next calls a dig-in
+  dig: { post: number; left: number; until: number } | null; // the post to hold, the seconds of holding still needed, and when the call lapses
+  digs: number;           // dig-ins held so far (odd ones pay in a drop, even ones in a strike)
+  overrun: number;        // seconds the worst post has been overrun
+  fall: Fall | null;
+  fallCd: number;         // not again before this
+  out: number;            // falls that got out in time
+  lost: number;           // falls that were left behind
+  cost: number;           // tickets the falls have cost the hero's side
+  arty: PerSide<number>;  // when each side's guns next fire
+  nextPass: number;       // when the next gunship goes past
+}
 // Shots, spears and hexes fly; blasts go off; gore is something coming apart, in its side's
 // colours (big: torn apart, or a vehicle going up); a toss is Warbur throwing a Wooka.
-export interface Fx { kind: "shot" | "spear" | "hex" | "blast" | "gore" | "toss"; x: number; z: number; tx: number; tz: number; t: number; y?: number; ty?: number; side?: Side; big?: boolean; from?: number; hit?: boolean; pin?: boolean }
+export interface Fx { kind: "shot" | "spear" | "hex" | "blast" | "gore" | "toss" | "smash"; x: number; z: number; tx: number; tz: number; t: number; y?: number; ty?: number; side?: Side; big?: boolean; from?: number; hit?: boolean; pin?: boolean }
 
 // What the player does this step. Movement is relative to where the hero faces.
 export interface Input { forward: number; right: number; yaw: number; fire: boolean; strike?: { x: number; z: number }; use?: boolean }
@@ -49,7 +80,7 @@ export interface Tree { x: number; z: number; r: number }
 // A building, wall or rock: centred on x, z, w wide (along x), d deep (along z) and h high.
 // Anything at eye height or more blocks sight; anything lower is a wall to crouch behind. The
 // kind is only for the view: a sandbag wall unless it says otherwise.
-export interface Block { x: number; z: number; w: number; d: number; h: number; kind?: "rock" | "stump" | "log" | "trench" }
+export interface Block { x: number; z: number; w: number; d: number; h: number; kind?: "rock" | "stump" | "log" | "trench"; broken?: boolean }
 
 export interface Battle {
   spec: BattleSpec;
@@ -68,6 +99,10 @@ export interface Battle {
   hero: { id: number | null; lives: number; respawn: number; inVehicle: number | null; heat: number; overheated: number; run: number; kills: number; streak: number };
   fx: Fx[];
   events: string[]; // for the HUD feed, newest last
+  eventAt: number[]; // when each was said, so lines that land on top of each other garble
+  radio: { at: number; text: string }[]; // lines waiting their turn on the air
+  passes: Pass[];
+  beat: Beat;
   over: BattleResult | null;
   seed: number;
   nextId: number;
@@ -134,6 +169,26 @@ const MAUL = 25;                   // hp a second a mob takes off whoever it's o
 const HEAL = 6;                    // hp a second a Shanti puts back into each Wooka near it
 const FLANK = 30;                  // how wide a flanking pack swings
 const TOSS_EVERY = 3;
+// The Mossback: huge, mangy, long in the arm. It runs on its knuckles, leaps the last few metres,
+// swats troopers aside and walks through low cover. Light fire barely marks it, and it heals,
+// slowly, unless something heavy hit it lately.
+export const MOSS_LIGHT = 0.25;    // the share of a light hit (a rifle, a blaster) that gets through
+export const MOSS_HEAL = 14;       // hp a second it mends when nothing heavy has hit it
+export const MOSS_WOUND = 6;       // seconds a heavy hit keeps it from mending
+const MOSS_HEAVY = 45;             // a single hit this big counts as heavy, whatever it came from
+const LEAP_SPEED = 24, LEAP_MIN = 5, LEAP_MAX = 17, LEAP_EVERY = 7;
+const SWAT = 4.5;                  // metres it throws a trooper aside
+// The rhythm. Times are seconds into the battle; a hold-out comes faster.
+const SURGE_FIRST = 20, SURGE_EVERY = 45, HOLDOUT_SURGE_EVERY = 34;
+const DIG_AFTER = 22;              // seconds after a surge that the radio calls a dig-in
+const DIG_FOR = 14;                // seconds of holding a post still needed
+const DIG_DROP = 8;                // tickets (and troopers) a held dig-in drops in
+const FALL_WINDOW = 20, EVAC_WINDOW = 14;
+const FALL_OUT = 3, FALL_LOST = 16; // tickets a fall-back costs when you get out, and when you're left in place
+const OVERRUN_FOR = 2.5;           // seconds a post must stay overrun before the radio calls it
+const FALL_EVERY = 25;
+const ARTY_EVERY = 16, PASS_EVERY = 42, SHELL_R = 6, SHELL_DMG = 70;
+const PASS_FIRST = 30, PASS_FOR = 4.5, PASS_DMG = 24;
 const JAV_EVERY = 2.4;             // Warbur's spears: big ones, thrown from afar
 const JAV_DMG = 70;
 const JAV_FAR = 16;                // past this he throws spears; inside it he throws his kin, then goes for the head
@@ -210,8 +265,10 @@ export const ROLE_STATS: Record<WookaRole, (typeof STATS)[UnitKind]> = {
   sticky: { hp: 55, speed: 7, range: 30, cool: 2.4, dmg: 24, aim: 0.6, cost: 0.6 },
   boomie: { hp: 45, speed: 9, range: 2.4, cool: 99, dmg: 0, aim: 1, cost: 0.6 },
   shanti: { hp: 60, speed: 5, range: 28, cool: 3, dmg: 14, aim: 0.7, cost: 0.8 },
+  mossback: { hp: 900, speed: 7.5, range: 3.8, cool: 1.5, dmg: 48, aim: 0.9, cost: 4 },
 };
-export const ROLE_MIX: Record<WookaRole, number> = { fodder: 0.5, chub: 0.17, sticky: 0.15, boomie: 0.1, shanti: 0.08 };
+// The mix a wave comes in. A Mossback is never in it: they only walk out of a surge.
+export const ROLE_MIX: Record<WookaRole, number> = { fodder: 0.5, chub: 0.17, sticky: 0.15, boomie: 0.1, shanti: 0.08, mossback: 0 };
 // The champions. Warbur is a silverback, half Wooka and half bear, who throws Wooka at people.
 // Gumpert is the Marines' own, in whichever kit he's carrying.
 export const CHAMP_STATS: Record<Champ | Kit, (typeof STATS)[UnitKind]> = {
@@ -239,7 +296,7 @@ const armoured = (k: UnitKind) => isVehicle(k) || k === "turret";
 const jets = (u: { champ?: Champ; kit?: Kit }) => u.champ === "gumpert" && u.kit === "jetpack";
 export const flies = (u: { kind: UnitKind; champ?: Champ; kit?: Kit }) => u.kind === "gunship" || jets(u);
 export const altitude = (u: { kind: UnitKind; champ?: Champ; kit?: Kit }) => (u.kind === "gunship" ? GUNSHIP_ALT : jets(u) ? 5 : 0);
-const bodyOf = (u: Unit) => (u.kind === "tank" ? 2.5 : u.kind === "walker" ? 2.2 : u.kind === "speeder" ? 1.4 : u.champ === "warbur" ? 1.4 : u.role === "chub" ? 0.9 : 0.6);
+const bodyOf = (u: Unit) => (u.kind === "tank" ? 2.5 : u.kind === "walker" ? 2.2 : u.kind === "speeder" ? 1.4 : u.champ === "warbur" ? 1.4 : u.role === "mossback" ? 1.5 : u.role === "chub" ? 0.9 : 0.6);
 
 const rand = (b: Battle) => {
   let t = (b.seed = (b.seed + 0x6d2b79f5) >>> 0);
@@ -248,6 +305,13 @@ const rand = (b: Battle) => {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 };
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => hypot(a.x - b.x, a.z - b.z);
+// A line on the radio, with the time it was said.
+function say(b: Battle, text: string) {
+  b.events.push(text);
+  b.eventAt.push(b.time);
+}
+// Lines the radio gets to a moment apart, one over the next when it's panicking.
+const queue = (b: Battle, lines: string[], gap = 0.45) => lines.forEach((text, i) => b.radio.push({ at: b.time + i * gap, text }));
 // yaw 0 faces -z, towards the defender's end of the plain, like a three.js camera.
 export const facing = (yaw: number) => ({ x: -sin(yaw), z: -cos(yaw) });
 export const yawTo = (from: { x: number; z: number }, to: { x: number; z: number }) => atan2(-(to.x - from.x), -(to.z - from.z));
@@ -261,7 +325,11 @@ export function startBattle(spec: BattleSpec): Battle {
     spec, time: 0, trees: [], blocks: [],
     tickets: { ...spec.tickets },
     posts: [...(mode === "hill" ? [HILL] : []), ...LAYOUTS[spec.sector].posts].map((p, i, all) => (theirs(i, all.length) ? { ...p, owner: "defender", progress: -1 } : { ...p, owner: null, progress: 0 })),
-    units: [], strikes: [], fx: [], events: [],
+    units: [], strikes: [], fx: [], events: [], eventAt: [], radio: [], passes: [],
+    beat: {
+      surge: 0, nextSurge: SURGE_FIRST, digAt: SURGE_FIRST + DIG_AFTER, dig: null, digs: 0, overrun: 0, fall: null, fallCd: 0, out: 0, lost: 0, cost: 0,
+      arty: { attacker: ARTY_EVERY * 0.7, defender: ARTY_EVERY }, nextPass: PASS_FIRST,
+    },
     strikesLeft: { ...spec.strikes },
     vehiclesLeft: { attacker: pool("attacker"), defender: pool("defender") },
     reinforced: { attacker: false, defender: false },
@@ -294,7 +362,7 @@ export function startBattle(spec: BattleSpec): Battle {
     vip.hp = vip.maxHp = Math.round(vip.maxHp * 1.5); // the whole other side is after them
     b.vip = vip.id;
   }
-  if (mode !== "conquest") b.events.push(BRIEF[mode]);
+  if (mode !== "conquest") say(b, BRIEF[mode]);
   return b;
 }
 
@@ -436,7 +504,7 @@ export const sees = (b: Battle, a: Unit, c: Unit) => flies(a) || flies(c) || blo
 export function inCover(b: Battle, from: Unit, t: Unit) {
   if (flies(from) || flies(t)) return false;
   const toward = (p: { x: number; z: number }) => (p.x - t.x) * (from.x - t.x) + (p.z - t.z) * (from.z - t.z) > 0;
-  return b.trees.some((o) => dist(o, t) - o.r < COVER && toward(o)) || b.blocks.some((k) => gap(k, t) < COVER && toward(nearestOn(k, t)));
+  return b.trees.some((o) => dist(o, t) - o.r < COVER && toward(o)) || b.blocks.some((k) => !k.broken && gap(k, t) < COVER && toward(nearestOn(k, t)));
 }
 
 // Cover halves the odds of a hit from range. Nothing helps against a club at arm's length.
@@ -490,10 +558,11 @@ const troopCap = (b: Battle, side: Side) =>
   b.mode === "holdout" && side === "attacker" ? Math.min(32, Math.max(2, Math.round(baseCap(b, side) * (0.5 + (1.5 * b.time) / HOLDOUT_TIME)))) : baseCap(b, side);
 // The Wooka kind the horde is furthest short of, against its mix.
 function nextRole(b: Battle, side: Side): WookaRole {
-  const n = { fodder: 0, chub: 0, sticky: 0, boomie: 0, shanti: 0 };
-  for (const u of b.units) if (u.side === side && u.role) n[u.role]++;
-  const total = ROLES.reduce((t, k) => t + n[k], 0) + 1, short = (k: WookaRole) => ROLE_MIX[k] * total - n[k];
-  return ROLES.reduce((best, k) => (short(k) > short(best) ? k : best));
+  const n = { fodder: 0, chub: 0, sticky: 0, boomie: 0, shanti: 0, mossback: 0 };
+  for (const u of b.units) if (u.side === side && u.role && !u.wild) n[u.role]++;
+  const mix = ROLES.filter((k) => ROLE_MIX[k] > 0);
+  const total = mix.reduce((t, k) => t + n[k], 0) + 1, short = (k: WookaRole) => ROLE_MIX[k] * total - n[k];
+  return mix.reduce((best, k) => (short(k) > short(best) ? k : best));
 }
 // The class the side is furthest short of, against the mix.
 function nextClass(b: Battle, side: Side): Trooper {
@@ -569,17 +638,40 @@ function shoot(b: Battle, u: Unit, t: Unit | null, yaw = u.yaw) {
   if (u.role === "sticky") pin(b, t);
   const splash = splashOf(u);
   if (splash) blast(b, u.side, t.x, t.z, splash, s.dmg, 0, u.id);
-  else damage(b, t, (u.kind === "heavy" || u.kit === "rockets") && armoured(t.kind) ? s.dmg * ARMOUR_BANE : s.dmg, u.id);
+  else {
+    const rocket = u.kind === "heavy" || u.kit === "rockets";
+    damage(b, t, rocket && (armoured(t.kind) || t.role === "mossback") ? s.dmg * ARMOUR_BANE : s.dmg, u.id, rocket);
+    if (u.role === "mossback") swat(b, u, t);
+  }
   if (u.kit === "baton") t.stun = 2;
+}
+
+// A Mossback's backhand: the one it hit and whoever stands by them are thrown aside, hurt.
+function swat(b: Battle, u: Unit, t: Unit) {
+  shove(b, t, u, SWAT);
+  for (const v of b.units) if (v !== t && v.side !== u.side && v.hp > 0 && !hidden(b, v) && !flies(v) && dist(v, t) < 3.5) {
+    damage(b, v, statsOf(u).dmg * 0.6, u.id);
+    shove(b, v, u, SWAT);
+  }
+}
+// Throws v away from `from` by d metres, unless it's a vehicle or a turret, which don't budge.
+function shove(b: Battle, v: Unit, from: { x: number; z: number }, d: number) {
+  if (armoured(v.kind) || flies(v) || v.champ) return;
+  const len = dist(v, from) || 1;
+  v.x = clamp(v.x + ((v.x - from.x) / len) * d, -HALF, HALF);
+  v.z = clamp(v.z + ((v.z - from.z) / len) * d, -HALF, HALF);
+  unstick(b, v);
+  v.stun = Math.max(v.stun ?? 0, 0.4);
 }
 
 // A melee swing at nothing in particular: whatever's just in front gets it.
 function swing(b: Battle, u: Unit, yaw: number) {
   const s = statsOf(u), f = facing(yaw), at = { x: u.x + f.x * s.range * 0.6, z: u.z + f.z * s.range * 0.6 };
   const near = b.units.filter((v) => v.side !== u.side && v.hp > 0 && !hidden(b, v) && dist(v, at) < s.range * 0.8);
-  for (const v of near.slice(0, u.champ ? 4 : 1)) {
+  for (const v of near.slice(0, u.champ || u.role === "mossback" ? 4 : 1)) {
     if (u.champ === "warbur" && isTrooper(v.kind)) { rip(b, u, v); continue; }
     damage(b, v, s.dmg, u.id);
+    if (u.role === "mossback") shove(b, v, u, SWAT);
     if (u.kit === "baton") v.stun = 2;
   }
 }
@@ -587,7 +679,7 @@ function swing(b: Battle, u: Unit, yaw: number) {
 // Warbur picks up the nearest Wooka of his own and throws it: it lands where he's aiming, hard.
 function toss(b: Battle, u: Unit, at: { x: number; z: number }, spent = true) {
   if ((u.toss ?? 0) > 0) return false;
-  const ammo = b.units.filter((v) => v.side === u.side && v.hp > 0 && v.role && v.role !== "shanti" && dist(v, u) < 6 && (spent || v.hp > v.maxHp * SPENT)).sort((a, c) => dist(u, a) - dist(u, c))[0];
+  const ammo = b.units.filter((v) => v.side === u.side && v.hp > 0 && v.role && v.role !== "shanti" && v.role !== "mossback" && dist(v, u) < 6 && (spent || v.hp > v.maxHp * SPENT)).sort((a, c) => dist(u, a) - dist(u, c))[0];
   if (!ammo) return false;
   u.toss = TOSS_EVERY;
   const d = Math.min(35, dist(u, at)) || 1, x = clamp(u.x + ((at.x - u.x) / dist(u, at)) * d, -HALF, HALF), z = clamp(u.z + ((at.z - u.z) / dist(u, at)) * d, -HALF, HALF);
@@ -596,7 +688,7 @@ function toss(b: Battle, u: Unit, at: { x: number; z: number }, spent = true) {
   ammo.hp -= 20; // it'll live. Probably.
   blast(b, u.side, x, z, 4, ammo.role === "boomie" ? 160 : 60, 0, u.id);
   if (ammo.role === "boomie") { ammo.hp = 0; ammo.back = -1; } // a thrown Boomie goes off where it lands
-  if (rand(b) < 0.3) b.events.push(ammo.role === "boomie" ? "Warbur threw a Boomie. Of course he did." : "Warbur threw a Wooka. It got up again, delighted.");
+  if (rand(b) < 0.3) say(b, ammo.role === "boomie" ? "Warbur threw a Boomie. Of course he did." : "Warbur threw a Wooka. It got up again, delighted.");
   return true;
 }
 
@@ -604,13 +696,27 @@ function toss(b: Battle, u: Unit, at: { x: number; z: number }, spent = true) {
 // doesn't care, and neither do they.
 function blast(b: Battle, side: Side, x: number, z: number, r: number, dmg: number, own = 0, from?: number) {
   b.fx.push({ kind: "blast", x, z, tx: x, tz: z, t: r > 6 ? 0.6 : 0.25, big: r > 6, from });
-  for (const v of b.units) if (v.hp > 0 && dist(v, { x, z }) <= r && (v.side !== side || own)) damage(b, v, v.side === side ? dmg * own : dmg, from);
+  for (const v of b.units) if (v.hp > 0 && dist(v, { x, z }) <= r && (v.side !== side || own)) damage(b, v, v.side === side ? dmg * own : dmg, from, true);
 }
 
-function damage(b: Battle, v: Unit, dmg: number, from?: number) {
+// A hit. A Mossback shrugs off light ones (a rifle, a blaster) for a quarter of the damage and
+// mends between them; a heavy one (a rocket, a blast, a strike, a Boomie) lands in full and
+// keeps it from mending for a few seconds.
+export function damage(b: Battle, v: Unit, dmg: number, from?: number, heavy = false) {
   if (hidden(b, v)) return;
+  if (v.role === "mossback") {
+    if (heavy || dmg >= MOSS_HEAVY) v.wound = MOSS_WOUND;
+    else dmg *= MOSS_LIGHT;
+  }
   v.hp -= dmg;
   if (from !== undefined) v.hitBy = from;
+}
+
+// A Mossback mends, slowly, unless something heavy has hit it lately.
+export function tend(u: Unit, dt = DT) {
+  if (u.role !== "mossback" || u.hp <= 0) return;
+  if ((u.wound ?? 0) > 0) { u.wound! -= dt; return; }
+  u.hp = Math.min(u.maxHp, u.hp + MOSS_HEAL * dt);
 }
 
 // The side the player isn't on, and the player's own squadmates, think for themselves. Every so
@@ -618,6 +724,7 @@ function damage(b: Battle, v: Unit, dmg: number, from?: number) {
 function think(b: Battle, u: Unit) {
   const s = statsOf(u);
   u.cool -= DT;
+  tend(u);
   if (u.toss !== undefined) u.toss -= DT;
   if (u.stun && (u.stun -= DT) > 0) return; // dazed
   if ((u.look = (u.look ?? 0) - DT) <= 0) {
@@ -627,6 +734,7 @@ function think(b: Battle, u: Unit) {
   let foe = u.target === undefined ? null : b.units.find((v) => v.id === u.target && v.hp > 0 && !hidden(b, v)) ?? null;
   if (foe && dist(u, foe) > s.range) foe = null;
   if (u.role === "boomie") return boomie(b, u);
+  if (u.role === "mossback") return mossback(b, u, foe);
   if (u.role === "shanti") mend(b, u);
   if (u.jav !== undefined) u.jav -= DT;
   if (u.champ === "warbur") {
@@ -644,6 +752,12 @@ function think(b: Battle, u: Unit) {
     const keep = b.posts.at(-1)!;
     if (b.units.some((v) => v.side === u.side && v.id !== u.id && v.kind !== "turret" && dist(u, v) < ESCORT_NEAR)) move(b, u, keep.x - u.x, keep.z - u.z, Math.min(s.speed, ESCORT_PACE));
     return;
+  }
+  // The radio has called a fall-back: the hero's side near the overrun post makes for the new post.
+  const fall = b.beat.fall;
+  if (fall && u.side === b.spec.hero && u.kind !== "turret" && u.hp > 0 && dist(u, b.posts[fall.from]!) < 70) {
+    if (dist(u, fall) < POST_RADIUS - 3) return;
+    return move(b, u, fall.x - u.x + u.jx * 0.25, fall.z - u.z + u.jz * 0.25, s.speed);
   }
   // A Sticky that's thrown, or has someone too close, backs off towards home.
   if (u.role === "sticky") {
@@ -706,9 +820,43 @@ function boomie(b: Battle, u: Unit) {
   move(b, u, goal.x - u.x, goal.z - u.z, s.speed);
 }
 
+// A Mossback goes on its knuckles at the nearest of the enemy it can smell, leaps the last few
+// metres, comes down hard on whoever is under it, and swings at anything within reach.
+function mossback(b: Battle, u: Unit, foe: Unit | null) {
+  const s = statsOf(u);
+  if (u.leap! > 0) {
+    move(b, u, u.lx!, u.lz!, LEAP_SPEED, false);
+    if ((u.leap! -= DT) <= 0) {
+      u.leap = undefined;
+      b.fx.push({ kind: "smash", x: u.x, z: u.z, tx: u.x, tz: u.z, t: 0.5, big: true });
+      for (const v of b.units) if (v.side !== u.side && v.hp > 0 && !hidden(b, v) && !flies(v) && dist(v, u) < SWAT) {
+        damage(b, v, s.dmg, u.id);
+        shove(b, v, u, SWAT);
+      }
+    }
+    return;
+  }
+  u.leapCd = Math.max(0, (u.leapCd ?? 0) - DT);
+  if (foe && u.cool <= 0) shoot(b, u, foe);
+  const prey = nearestEnemy(b, u, AGGRO + 15);
+  if (!prey) {
+    const goal = objective(b, u.side);
+    return move(b, u, goal.x + u.jx - u.x, goal.z + u.jz - u.z, s.speed);
+  }
+  const d = dist(u, prey);
+  if (u.leapCd <= 0 && d > LEAP_MIN && d < LEAP_MAX && !flies(prey) && blocked(b, u, prey) >= 1) {
+    u.leap = Math.min(0.8, d / LEAP_SPEED);
+    u.lx = prey.x - u.x; u.lz = prey.z - u.z;
+    u.leapCd = LEAP_EVERY;
+    return;
+  }
+  if (foe && d < s.range * 0.6) return; // in reach: swing
+  move(b, u, prey.x - u.x, prey.z - u.z, s.speed);
+}
+
 // A Shanti's chant mends the Wooka round it.
 function mend(b: Battle, u: Unit) {
-  for (const v of b.units) if (v.side === u.side && (v.role || v.champ === "warbur") && v !== u && v.hp < v.maxHp && dist(u, v) < 10) v.hp = Math.min(v.maxHp, v.hp + HEAL * DT);
+  for (const v of b.units) if (v.side === u.side && (v.role || v.champ === "warbur") && v !== u && v.hp < v.maxHp && !(v.wound! > 0) && dist(u, v) < 10) v.hp = Math.min(v.maxHp, v.hp + HEAL * DT);
 }
 
 // The nearest post the side doesn't hold; with both held, the one nearer the enemy. In an assault
@@ -768,8 +916,15 @@ function unstick(b: Battle, u: Unit) {
     if (d < min && d > 1e-6) { u.x = t.x + (ox / d) * min; u.z = t.z + (oz / d) * min; }
   }
   for (const k of b.blocks) {
+    if (k.broken) continue;
     const l = k.x - k.w / 2 - body, r = k.x + k.w / 2 + body, n = k.z - k.d / 2 - body, f = k.z + k.d / 2 + body;
     if (u.x <= l || u.x >= r || u.z <= n || u.z >= f) continue;
+    // A Mossback goes through low cover (a trench, a log, a stump, sandbags), and it's gone.
+    if (u.role === "mossback" && k.h < EYE && k.kind !== "rock") {
+      k.broken = true;
+      b.fx.push({ kind: "smash", x: k.x, z: k.z, tx: k.x, tz: k.z, t: 0.5, side: u.side, from: u.id });
+      continue;
+    }
     // Out the nearest side, unless that's off the map.
     const outs = [[u.x - l, l, u.z], [r - u.x, r, u.z], [u.z - n, u.x, n], [f - u.z, u.x, f]].filter((o) => Math.abs(o[1]!) <= HALF && Math.abs(o[2]!) <= HALF);
     const out = outs.sort((a, c) => a[0]! - c[0]!)[0];
@@ -797,7 +952,7 @@ function callStrike(b: Battle, side: Side, x: number, z: number) {
   if (b.strikesLeft[side] <= 0) return false;
   b.strikesLeft[side]--;
   b.strikes.push({ side, x: clamp(x, -HALF, HALF), z: clamp(z, -HALF, HALF), t: STRIKE_DELAY });
-  b.events.push(`${side === b.spec.hero ? "Your" : "Enemy"} orbital strike inbound`);
+  say(b, `${side === b.spec.hero ? "Your" : "Enemy"} orbital strike inbound`);
   return true;
 }
 
@@ -811,6 +966,218 @@ function aiStrike(b: Battle, side: Side) {
     if (n > most) { most = n; best = u; }
   }
   if (best) callStrike(b, side, best.x, best.z);
+}
+
+// ============================================================================================
+// The rhythm: surges, dig-ins and fall-backs, and the guns and gunships that go on across the
+// whole field. All of it is the hero's side's radio; every mode has it, and a hold-out and an
+// assault lean on it hardest.
+// ============================================================================================
+const SURGE_LINES = [
+  "Contact, treeline! Here they come!",
+  "The ferns just exhaled Wooka. Hundreds. Maybe forty. It feels like hundreds",
+  "Movement everywhere. Everywhere. EVERYWHERE",
+  "They're singing again, and there are a LOT of them",
+  "Treeline's moving. Make every shot count",
+];
+const HORDE_SURGE_LINES = ["The trees empty out. Our kin run, laughing", "Drums! The forest sends more!", "Out of the green, all together, shouting"];
+const PANIC = [
+  "BIG ONE, BIG ONE, BIG ONE",
+  "That's not a Wooka, that's a landslide with arms!",
+  "It's running on its HANDS--",
+  "Say again, you're breaking up -- it just went through the trench!",
+  "All units, Mossback! Rockets! Anybody with rockets!",
+  "Don't shoot it, it LIKES it -- use the big stuff!",
+  "It's moving like a -- oh no. Oh no no no",
+];
+const HORDE_PANIC = ["The drums go wild: the Mossback walks!", "Our big one is loose. Everybody get behind it"];
+// How hard the rhythm hits in this mode.
+const heat = (b: Battle) => (b.mode === "holdout" ? 1.5 : b.mode === "assault" ? 1.25 : 1);
+// The posts the fighting is over: the live one in an assault or on the hill, all of them otherwise.
+const fightPosts = (b: Battle) => b.posts.map((p, i) => ({ p, i })).filter(({ i }) => b.mode === "escort" || inPlay(b, i));
+const isMine = (b: Battle, u: Unit) => u.side === b.spec.hero;
+
+// Friends and foes round a post, weighted: a Mossback is worth four, a turret a friend.
+function pressure(b: Battle, side: Side, p: { x: number; z: number }) {
+  let e = 0, f = 0;
+  for (const u of b.units) {
+    if (u.hp <= 0 || flies(u) || hidden(b, u) || dist(u, p) > POST_RADIUS + 10) continue;
+    if (u.side === side) f++;
+    else if (u.kind !== "turret") e += u.role === "mossback" ? 4 : 1;
+  }
+  return { e, f, over: e >= 4 && e >= 2.2 * (f + 0.5) };
+}
+
+// A surge pours out of the treeline: clumps at the edge of the field, on the horde's side.
+function surge(b: Battle) {
+  const beat = b.beat;
+  beat.surge++;
+  beat.nextSurge = b.time + (b.mode === "holdout" ? HOLDOUT_SURGE_EVERY : SURGE_EVERY);
+  beat.digAt = b.time + DIG_AFTER;
+  const sides = (["attacker", "defender"] as Side[]).filter((s) => isHorde(b, s) && b.tickets[s] > 0);
+  if (!sides.length) return;
+  const mine = isHorde(b, b.spec.hero);
+  say(b, `Surge ${beat.surge}: ${(mine ? HORDE_SURGE_LINES : SURGE_LINES)[Math.floor(rand(b) * (mine ? HORDE_SURGE_LINES : SURGE_LINES).length)]}`);
+  for (const s of sides) {
+    const n = Math.min(b.mode === "holdout" ? 36 : 30, Math.round((6 + 2.2 * beat.surge) * heat(b)));
+    // The treeline is the side edges of the field, or the far end where rock closes the sides in (the canyon).
+    const open = (c: { x: number; z: number }) => !b.blocks.some((k) => !k.broken && gap(k, c) < 6) && !b.trees.some((t) => dist(t, c) < t.r + 3);
+    const centre = () => {
+      for (let tries = 0; tries < 12; tries++) {
+        const c = tries < 6 ? { x: (rand(b) < 0.5 ? -1 : 1) * (HALF - 4), z: (s === "attacker" ? 1 : -1) * (25 + rand(b) * 85) } : { x: (rand(b) - 0.5) * 70, z: (s === "attacker" ? 1 : -1) * (HALF - 6) };
+        if (open(c)) return c;
+      }
+      return spawnPoint(b, s);
+    };
+    const centres = [centre(), centre()];
+    const roll = () => { let r = rand(b), acc = 0; for (const k of ROLES) { acc += ROLE_MIX[k]; if (r < acc) return k; } return "fodder" as WookaRole; };
+    for (let i = 0; i < n; i++) {
+      const c = centres[i % 2]!, u = add(b, s, "wooka", c.x + (rand(b) - 0.5) * 10, c.z + (rand(b) - 0.5) * 14, roll());
+      u.wild = true;
+    }
+    // Rarely, and only once the fight has been going a while, something much bigger comes out with them.
+    const big = b.units.filter((u) => u.side === s && u.role === "mossback").length;
+    if (beat.surge >= (b.mode === "holdout" ? 2 : 3) && big < (beat.surge >= 6 ? 2 : 1) && rand(b) < (b.mode === "holdout" ? 0.55 : 0.4)) {
+      const c = centres[0]!, m = add(b, s, "wooka", c.x, c.z, "mossback");
+      m.wild = true;
+      const lines = mine ? HORDE_PANIC : pick3(b);
+      queue(b, lines, 0.4);
+    }
+  }
+}
+// Three of the radio's panicked lines, the first always the same.
+function pick3(b: Battle) {
+  const rest = PANIC.slice(1), a = Math.floor(rand(b) * rest.length), c = (a + 1 + Math.floor(rand(b) * (rest.length - 1))) % rest.length;
+  return [PANIC[0]!, rest[a]!, rest[c]!];
+}
+
+// A side's guns lay a salvo on the other's thickest crowd, or on the ground behind it.
+function volley(b: Battle, s: Side) {
+  const foe = other(s);
+  b.beat.arty[s] = b.time + (ARTY_EVERY * (0.7 + rand(b) * 0.8)) / (heat(b) > 1 ? 1.25 : 1);
+  if (b.tickets[s] <= 0 || !b.units.some((u) => u.side === s && u.kind !== "turret")) return;
+  let best: Unit | null = null, most = 1;
+  for (const u of b.units) if (u.side === foe && u.kind !== "turret" && !flies(u)) {
+    const n = b.units.filter((v) => v.side === foe && dist(u, v) < 12).length;
+    if (n > most) { most = n; best = u; }
+  }
+  const aim = best ?? { x: (rand(b) - 0.5) * HALF * 1.6, z: (foe === "defender" ? -1 : 1) * (15 + rand(b) * 95) };
+  for (let i = 0; i < 3 + (heat(b) > 1 ? 1 : 0); i++) {
+    b.strikes.push({ side: s, x: clamp(aim.x + (rand(b) - 0.5) * 24, -HALF, HALF), z: clamp(aim.z + (rand(b) - 0.5) * 24, -HALF, HALF), t: 2 + i * 0.35, r: SHELL_R, dmg: SHELL_DMG, shell: true });
+  }
+  if (rand(b) < 0.3) say(b, s === b.spec.hero ? "Our guns are walking it in" : "Incoming! Shelling on the line!");
+}
+
+// A gunship goes past, low, firing: from one edge of the field to the other through the enemy.
+function airPass(b: Battle) {
+  b.beat.nextPass = b.time + PASS_EVERY * (0.8 + rand(b) * 0.5);
+  const air = (["attacker", "defender"] as Side[]).filter((s) => !isHorde(b, s) && b.tickets[s] > 0);
+  if (!air.length) return;
+  const side = air[Math.floor(rand(b) * air.length)]!, foe = other(side);
+  const crowd = b.units.filter((u) => u.side === foe && u.kind !== "turret");
+  const z = crowd.length ? crowd[Math.floor(rand(b) * crowd.length)]!.z : (foe === "defender" ? -50 : 50);
+  const dir = rand(b) < 0.5 ? 1 : -1;
+  b.passes.push({ side, x0: -dir * (HALF + 15), z0: z, x1: dir * (HALF + 15), z1: clamp(z + (rand(b) - 0.5) * 30, -HALF, HALF), age: 0, dur: PASS_FOR, hurtAt: 0 });
+  say(b, side === b.spec.hero ? "Gunship on a run: keep your heads up, we're keeping theirs down" : "Gunship! Gunship! Get under something!");
+}
+function flyPasses(b: Battle) {
+  for (const p of b.passes) {
+    p.age += DT;
+    if (p.age < p.hurtAt) continue;
+    p.hurtAt = p.age + 0.4;
+    const k = clamp(p.age / p.dur, 0, 1), x = p.x0 + (p.x1 - p.x0) * k, z = p.z0 + (p.z1 - p.z0) * k;
+    b.fx.push({ kind: "blast", x, z, tx: x, tz: z, t: 0.2, from: undefined });
+    for (const v of b.units) if (v.side !== p.side && v.hp > 0 && !flies(v) && !hidden(b, v) && dist(v, { x, z }) < 6) damage(b, v, PASS_DMG, undefined, true);
+  }
+  b.passes = b.passes.filter((p) => p.age < p.dur);
+}
+
+// The radio calls a dig-in at the post the side holds nearest the enemy. Holding none, there is nothing to dig in at yet.
+function digIn(b: Battle) {
+  const side = b.spec.hero, posts = fightPosts(b), foe = SPAWN[other(side)];
+  const mine = posts.filter(({ p }) => p.owner === side).sort((a, c) => dist(a.p, foe) - dist(c.p, foe));
+  const at = mine[0];
+  if (!at) { b.beat.digAt = b.time + 8; return; }
+  b.beat.dig = { post: at.i, left: DIG_FOR, until: b.beat.nextSurge + 10 };
+  b.beat.digAt = Infinity;
+  say(b, `Dig in at ${at.p.name}: hold it ${DIG_FOR}s for ${b.beat.digs % 2 ? "an orbital strike" : "a drop"}`);
+}
+
+function callFall(b: Battle, from: number) {
+  const side = b.spec.hero, beat = b.beat, post = b.posts[from]!, home = SPAWN[side];
+  const next = fightPosts(b).filter(({ p, i }) => i !== from && dist(p, post) > 20 && !pressure(b, side, p).over).sort((a, c) => dist(a.p, home) - dist(c.p, home))[0];
+  const evac = !next;
+  const dest = next ? { x: next.p.x, z: next.p.z, name: next.p.name } : { x: home.x, z: home.z + (side === "attacker" ? -12 : 12), name: "the evac point" };
+  const window = evac ? EVAC_WINDOW : FALL_WINDOW;
+  const ids = b.units.filter((u) => isMine(b, u) && u.kind !== "turret" && u.hp > 0 && dist(u, post) < 60).map((u) => u.id);
+  if (beat.dig) { beat.dig = null; beat.digAt = Infinity; }
+  beat.fall = { ...dest, evac, left: window, from, ids, calm: 0 };
+  queue(b, [`${post.name} is overrun! FALL BACK to ${dest.name}, ${window} seconds!`, "Everybody out, NOW. Leave the heavy stuff!"], 0.5);
+}
+
+function rhythm(b: Battle) {
+  const beat = b.beat, side = b.spec.hero;
+  // The radio gets its queued lines out.
+  if (b.radio.length) {
+    for (const r of b.radio) if (r.at <= b.time) say(b, r.text);
+    b.radio = b.radio.filter((r) => r.at > b.time);
+  }
+  if (b.time >= beat.nextSurge) surge(b);
+  for (const s of ["attacker", "defender"] as Side[]) if (b.time >= beat.arty[s]) volley(b, s);
+  if (b.time >= beat.nextPass) airPass(b);
+  flyPasses(b);
+  if (b.tickets[side] <= 0) return;
+
+  // A dig-in: hold the post for the countdown, and a drop or a strike is yours.
+  if (!beat.dig && !beat.fall && b.time >= beat.digAt) digIn(b);
+  if (beat.dig) {
+    const post = b.posts[beat.dig.post]!, p = pressure(b, side, post);
+    if (p.f >= 2 && !p.over && (beat.dig.left -= DT) <= 0) {
+      beat.digs++;
+      beat.dig = null;
+      if (beat.digs % 2) {
+        const n = Math.round(DIG_DROP * heat(b));
+        b.tickets[side] += n;
+        for (let i = 0; i < 3; i++) {
+          const x = post.x + (rand(b) - 0.5) * 8, z = post.z + (rand(b) - 0.5) * 8;
+          if (isHorde(b, side)) add(b, side, "wooka", x, z, nextRole(b, side)); else add(b, side, nextClass(b, side), x, z);
+        }
+        say(b, `${post.name} held: a drop comes down, +${n} tickets`);
+      } else {
+        b.strikesLeft[side]++;
+        say(b, `${post.name} held: an orbital strike is yours`);
+      }
+    } else if (b.time > beat.dig.until) {
+      beat.dig = null;
+      say(b, "Dig-in lapsed");
+    }
+  }
+
+  // A post that's overrun: the enemy well past your side's round it, for a few seconds running.
+  const watched = fightPosts(b).filter(({ p, i }) => p.owner === side || i === beat.dig?.post);
+  const worst = watched.find(({ p }) => pressure(b, side, p).over);
+  beat.overrun = worst ? beat.overrun + DT : 0;
+  if (!beat.fall && worst && beat.overrun >= OVERRUN_FOR && b.time >= beat.fallCd) callFall(b, worst.i);
+
+  const fall = beat.fall;
+  if (!fall) return;
+  fall.left -= DT;
+  // Out in time: the hero, if they were on the post, or half the squad that was there, are at the new post. Fresh drops don't count.
+  const squad = b.units.filter((u) => fall.ids.includes(u.id) && u.hp > 0 && dist(u, fall) < POST_RADIUS);
+  const heroIn = fall.ids.includes(b.hero.id ?? -1) && squad.some((u) => u.id === b.hero.id);
+  const made = fall.left < (fall.evac ? EVAC_WINDOW : FALL_WINDOW) - 1.5 && (!fall.ids.length || heroIn || squad.length >= Math.ceil(fall.ids.length / 2));
+  fall.calm = pressure(b, side, b.posts[fall.from]!).over ? 0 : fall.calm + DT;
+  const done = (cost: number, line: string) => {
+    b.tickets[side] -= cost;
+    beat.cost += cost;
+    beat.fall = null;
+    beat.fallCd = b.time + FALL_EVERY;
+    beat.overrun = 0;
+    say(b, line);
+  };
+  if (made) { beat.out++; done(Math.round(FALL_OUT * heat(b)), `Out in time: ${fall.name} holds the line (-${Math.round(FALL_OUT * heat(b))} tickets)`); }
+  else if (fall.calm >= 3) { beat.fall = null; beat.fallCd = b.time + FALL_EVERY; say(b, `${b.posts[fall.from]!.name} is holding after all: stand down`); }
+  else if (fall.left <= 0) { beat.lost++; done(Math.round(FALL_LOST * heat(b)), `Left behind: ${b.posts[fall.from]!.name} is lost (-${Math.round(FALL_LOST * heat(b))} tickets)`); }
 }
 
 export function step(b: Battle, input: Input | null) {
@@ -845,17 +1212,17 @@ export function step(b: Battle, input: Input | null) {
     // As a champion, E is Warbur's throw or Gumpert's change of kit; otherwise it's a vehicle.
     if (input.use && hero.champ === "warbur") {
       const f = facing(input.yaw);
-      if (!toss(b, hero, { x: hero.x + f.x * 25, z: hero.z + f.z * 25 })) b.events.push("No Wooka near enough to throw");
+      if (!toss(b, hero, { x: hero.x + f.x * 25, z: hero.z + f.z * 25 })) say(b, "No Wooka near enough to throw");
     } else if (input.use && hero.champ === "gumpert") {
       hero.kit = KITS[(KITS.indexOf(hero.kit ?? "rockets") + 1) % KITS.length]!;
       hero.cool = 0.3;
       unstick(b, hero);
-      b.events.push(hero.kit === "baton" ? "Gumpert: stun baton. Up close and personal." : hero.kit === "jetpack" ? "Gumpert: jetpack. Up and over." : "Gumpert: rocket launcher. Everything goes boom.");
+      say(b, hero.kit === "baton" ? "Gumpert: stun baton. Up close and personal." : hero.kit === "jetpack" ? "Gumpert: jetpack. Up and over." : "Gumpert: rocket launcher. Everything goes boom.");
     } else if (input.use) {
-      if (ride) { b.hero.inVehicle = null; hero.x = ride.x + 3; hero.z = ride.z; unstick(b, hero); b.events.push(`Out of the ${ride.kind}`); }
+      if (ride) { b.hero.inVehicle = null; hero.x = ride.x + 3; hero.z = ride.z; unstick(b, hero); say(b, `Out of the ${ride.kind}`); }
       else {
         const v = b.units.find((v) => isVehicle(v.kind) && v.side === hero.side && v.hp > 0 && dist(v, hero) < 7);
-        if (v) { b.hero.inVehicle = v.id; b.events.push(`In the ${v.kind}`); }
+        if (v) { b.hero.inVehicle = v.id; say(b, `In the ${v.kind}`); }
       }
     }
     if (ride && b.hero.inVehicle === ride.id) { hero.x = ride.x; hero.z = ride.z; }
@@ -868,7 +1235,7 @@ export function step(b: Battle, input: Input | null) {
   for (const s of sides) if (!(input && s === b.spec.hero)) aiStrike(b, s);
 
   // Strikes land.
-  for (const st of b.strikes) if ((st.t -= DT) <= 0) blast(b, st.side, st.x, st.z, STRIKE_RADIUS, 260, 0, st.side === b.spec.hero && input ? b.hero.id ?? undefined : undefined);
+  for (const st of b.strikes) if ((st.t -= DT) <= 0) blast(b, st.side, st.x, st.z, st.r ?? STRIKE_RADIUS, st.dmg ?? 260, 0, st.side === b.spec.hero && input && !st.shell ? b.hero.id ?? undefined : undefined);
   b.strikes = b.strikes.filter((st) => st.t > 0);
 
   // A vehicle going up throws its driver out hurt; the dead cost their side tickets.
@@ -876,7 +1243,7 @@ export function step(b: Battle, input: Input | null) {
   if (wreck && wreck.hp <= 0) {
     b.hero.inVehicle = null;
     if (hero) { hero.hp -= 150; unstick(b, hero); }
-    b.events.push(`Your ${wreck.kind} is destroyed`);
+    say(b, `Your ${wreck.kind} is destroyed`);
   }
   // A mob on a Marine tears into them, on top of the clubs.
   for (const u of b.units) {
@@ -890,21 +1257,24 @@ export function step(b: Battle, input: Input | null) {
       u.back = -1;
       blast(b, u.side, u.x, u.z, 7, 140, 0.2);
       again = true;
-      if (rand(b) < 0.15) b.events.push("A Boomie went off. Nobody asked it to.");
+      if (rand(b) < 0.15) say(b, "A Boomie went off. Nobody asked it to.");
     }
   }
   for (const u of b.units) if (u.hp <= 0) {
-    b.tickets[u.side] -= statsOf(u).cost;
-    b.kills[other(u.side)] += statsOf(u).cost;
+    if (!u.wild) { // a surge is the swarm itself: it costs the horde nothing, and killing it earns no champion
+      b.tickets[u.side] -= statsOf(u).cost;
+      b.kills[other(u.side)] += statsOf(u).cost;
+    }
+    if (u.role === "mossback") say(b, isHorde(b, other(u.side)) ? "Drums stop: the Mossback is down." : "The Mossback is down. Somebody count the rockets we have left.");
     if (b.hero.id !== null && u.hitBy === b.hero.id && u.side !== b.spec.hero) { b.hero.kills++; b.hero.streak++; } // a Chub counts for more than a Fodder, a walker for more than both
     die(b, u);
-    if (u.id === b.vip) { b.vip = null; b.events.push("The champion is down"); }
+    if (u.id === b.vip) { b.vip = null; say(b, "The champion is down"); }
     if (u.id === b.hero.id) {
       b.hero.streak = 0;
       b.hero.lives--;
       b.hero.id = null;
       b.hero.respawn = 5;
-      b.events.push(b.hero.lives > 0 ? `Hero down: ${b.hero.lives} ${b.hero.lives === 1 ? "life" : "lives"} left` : "Hero down for good");
+      say(b, b.hero.lives > 0 ? `Hero down: ${b.hero.lives} ${b.hero.lives === 1 ? "life" : "lives"} left` : "Hero down for good");
     }
   }
   b.units = b.units.filter((u) => u.hp > 0);
@@ -922,8 +1292,10 @@ export function step(b: Battle, input: Input | null) {
     if (p.progress >= 1) p.owner = "attacker";
     else if (p.progress <= -1) p.owner = "defender";
     else if ((p.owner === "attacker" && p.progress <= 0) || (p.owner === "defender" && p.progress >= 0)) p.owner = null;
-    if (p.owner !== before) b.events.push(p.owner ? `${p.name} taken by ${p.owner === b.spec.hero ? "your side" : "the enemy"}` : `${p.name} lost`);
+    if (p.owner !== before) say(b, p.owner ? `${p.name} taken by ${p.owner === b.spec.hero ? "your side" : "the enemy"}` : `${p.name} lost`);
   }
+
+  rhythm(b);
 
   // Bleed, drop pods, fresh troops and vehicles.
   const held = (s: Side) => b.posts.filter((p) => p.owner === s).length;
@@ -938,12 +1310,12 @@ export function step(b: Battle, input: Input | null) {
     if (!b.reinforced[s] && b.spec.reinforcements[s] > 0 && b.tickets[s] <= b.spec.tickets[s] / 2) {
       b.reinforced[s] = true;
       b.tickets[s] += b.spec.reinforcements[s];
-      b.events.push(`${s === b.spec.hero ? "Our" : "Enemy"} drop pods: +${b.spec.reinforcements[s]} tickets`);
+      say(b, `${s === b.spec.hero ? "Our" : "Enemy"} drop pods: +${b.spec.reinforcements[s]} tickets`);
     }
     // Troops come in waves, so a side doesn't feed itself in one at a time.
     if (b.tickets[s] <= 0 || b.time < b.spawnAt[s]) continue;
     b.spawnAt[s] = b.time + WAVE_EVERY;
-    const horde = isHorde(b, s), alive = (f: (k: UnitKind) => boolean) => b.units.filter((u) => u.side === s && f(u.kind)).length;
+    const horde = isHorde(b, s), alive = (f: (k: UnitKind) => boolean) => b.units.filter((u) => u.side === s && !u.wild && f(u.kind)).length;
     // Two vehicles out at a time, of whichever kind the side has most of left.
     const left = b.vehiclesLeft[s], next = VEHICLE_KINDS.reduce((a, k) => (left[k] > left[a] ? k : a));
     if (!horde && alive(isVehicle) < 2 && left[next] > 0) { const at = spawnPoint(b, s); left[next]--; add(b, s, next, at.x, at.z); }
@@ -954,12 +1326,12 @@ export function step(b: Battle, input: Input | null) {
     }
   }
   if (Math.floor(b.time / FLAVOR_EVERY) !== Math.floor((b.time - DT) / FLAVOR_EVERY) && sides.some((s) => isHorde(b, s))) {
-    b.events.push(FLAVOR[Math.floor(rand(b) * FLAVOR.length)]!);
+    say(b, FLAVOR[Math.floor(rand(b) * FLAVOR.length)]!);
   }
 
   for (const f of b.fx) f.t -= DT;
   b.fx = b.fx.filter((f) => f.t > 0);
-  if (b.events.length > 40) b.events.splice(0, b.events.length - 40);
+  if (b.events.length > 40) { b.events.splice(0, b.events.length - 40); b.eventAt.splice(0, b.eventAt.length - 40); }
 
   const out = sides.find((s) => b.tickets[s] <= 0);
   if (decided || out || b.time >= timeLimit(b.spec)) {
@@ -983,7 +1355,7 @@ function die(b: Battle, u: Unit) {
   if (torn || rand(b) < 0.3) {
     b.screamAt = b.time;
     const who = NAMES[Math.floor(rand(b) * NAMES.length)]!;
-    b.events.push(torn && rand(b) < 0.5 ? `${who} was torn apart.` : `${who}: "${SCREAMS[Math.floor(rand(b) * SCREAMS.length)]}"`);
+    say(b, torn && rand(b) < 0.5 ? `${who} was torn apart.` : `${who}: "${SCREAMS[Math.floor(rand(b) * SCREAMS.length)]}"`);
   }
 }
 
@@ -999,7 +1371,7 @@ function champion(b: Battle, s: Side) {
     const p = spawnPoint(b, s);
     crown(b, add(b, s, "champion", p.x, p.z));
   }
-  b.events.push(warbur
+  say(b, warbur
     ? `${mine ? "You are" : "Something big is coming. It's"} WARBUR: half Wooka, half bear, all silverback.${mine ? " E throws a Wooka." : ""}`
     : `${mine ? "You are" : "The Marines have"} GUMPERT.${mine ? " E swaps kit: rockets, stun baton, jetpack." : ""}`);
 }
@@ -1011,12 +1383,12 @@ function objectives(b: Battle, tick: (every: number) => boolean): Side | null {
     case "assault":
       if (b.phase > 0) {
         // Holding: they counter-attack. Lose it and it's back to taking it; hold on and the next comes live.
-        if (live.owner !== "attacker") { b.phase = 0; b.events.push(`${live.name} retaken: take it back`); }
-        else if ((b.phase -= DT) <= 0) { b.phase = 0; b.live++; b.events.push(`${b.posts[b.live]!.name} is live: attack`); }
+        if (live.owner !== "attacker") { b.phase = 0; say(b, `${live.name} retaken: take it back`); }
+        else if ((b.phase -= DT) <= 0) { b.phase = 0; b.live++; say(b, `${b.posts[b.live]!.name} is live: attack`); }
       } else if (live.owner === "attacker") {
         if (b.live === b.posts.length - 1) return "attacker";
         b.phase = HOLD_FOR;
-        b.events.push(`Hold ${live.name} for ${HOLD_FOR}s`);
+        say(b, `Hold ${live.name} for ${HOLD_FOR}s`);
       }
       // Whoever's pushing bleeds: the attacker while taking a post, the defender while it's held against them.
       if (tick(BLEED_EVERY)) b.tickets[b.phase > 0 ? "defender" : "attacker"]--;
@@ -1027,7 +1399,7 @@ function objectives(b: Battle, tick: (every: number) => boolean): Side | null {
         live.owner = null; live.progress = 0;
         b.live = (b.live + 1) % b.posts.length;
         b.phase = HILL_EVERY;
-        b.events.push(`The hill moves to ${b.posts[b.live]!.name}`);
+        say(b, `The hill moves to ${b.posts[b.live]!.name}`);
       }
       return null;
     case "holdout":
@@ -1035,7 +1407,7 @@ function objectives(b: Battle, tick: (every: number) => boolean): Side | null {
     case "escort": {
       const c = vipUnit(b);
       if (!c) return "defender";
-      if (dist(c, b.posts.at(-1)!) < POST_RADIUS) { b.events.push("The champion reaches the keep"); return "attacker"; }
+      if (dist(c, b.posts.at(-1)!) < POST_RADIUS) { say(b, "The champion reaches the keep"); return "attacker"; }
       return null;
     }
     default:
