@@ -10,8 +10,8 @@
   --gold: #e8c547;
   --line: #d3c6a6;
   /* 80s park service: routed wooden signs, Unigrid black bands, sunset stripes. */
-  --sign: "Ultra", "Rockwell Extra Bold", Rockwell, Georgia, serif;
-  --grid: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --sign: "Lacquer", "Rockwell Extra Bold", Rockwell, Georgia, serif;
+  --grid: "Gloria Hallelujah", "Comic Sans MS", cursive;
   --rust: #b4441c;
   --orange: #e07a1f;
   --sun: #f2b33d;
@@ -120,8 +120,8 @@ select { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-
 .scores li { display: flex; justify-content: space-between; gap: 10px; }
 .scores .out { opacity: 0.5; text-decoration: line-through; }
 .clickme { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); background: rgba(20, 16, 10, 0.6); padding: 6px 12px; border-radius: 6px; font-size: 13px; }
-.cabin { position: absolute; inset: 0; display: grid; place-items: center; background: radial-gradient(circle, rgba(40, 25, 10, 0.55), rgba(10, 6, 2, 0.92)); font: 700 28px ui-serif, Georgia, serif; text-align: center; }
-.cabin small { display: block; font: 400 15px ui-sans-serif, system-ui; opacity: 0.85; margin-top: 8px; }
+.cabin { position: absolute; inset: 0; display: grid; place-items: center; background: radial-gradient(circle, rgba(40, 25, 10, 0.55), rgba(10, 6, 2, 0.92)); font: 400 28px var(--sign); text-align: center; }
+.cabin small { display: block; font: 400 15px var(--grid); opacity: 0.85; margin-top: 8px; }
 
 /* Map */
 .mapview { position: fixed; inset: 0; display: grid; grid-template-columns: 1fr 340px; background: rgba(16, 18, 12, 0.88); }

@@ -232,7 +232,8 @@
       "name": "park-hide-seek",
       "version": "0.0.1",
       "dependencies": {
-        "@fontsource/ultra": "^5.3.0",
+        "@fontsource/gloria-hallelujah": "^5.3.0",
+        "@fontsource/lacquer": "^5.3.0",
         "@rustybuns/shell-bun": "workspace:*",
         "@rustybuns/terrain": "workspace:*",
         "@rustybuns/util": "workspace:*",
@@ -826,11 +827,13 @@
 
     "@fontsource/barlow-condensed": ["@fontsource/barlow-condensed@5.3.0", "", {}, "sha512-RA7MmIx0v3eQ6Gcf74qLVLOwLB0GpPOzx+eU9iG/AmCnSJGcIWYeU8y6CEMGZ210MGwGg5CZhzLkkvyZdTTk1g=="],
 
+    "@fontsource/gloria-hallelujah": ["@fontsource/gloria-hallelujah@5.3.0", "", {}, "sha512-U4gt7qqWGn4bysvZZ9BBv8dlRzb11dFUMV8t7xQg26th2zPou/obRjR7MlxeTvVxYd1geWnvZAJprh/bQOG3dw=="],
+
     "@fontsource/ibm-plex-mono": ["@fontsource/ibm-plex-mono@5.3.0", "", {}, "sha512-eTgnZjZEGk1QtD3ZstF+Vclo2HLAni8YMy34/DxllwZvyz1lR/1RF/xTiAquOBO7MvqBx8D2Ig2WCPMVfdZu7Q=="],
 
     "@fontsource/ibm-plex-sans": ["@fontsource/ibm-plex-sans@5.3.0", "", {}, "sha512-CbE4CbbEEZJX860XyUiRpsksXIQR8Rp2XDva2VO53NJox9tVNtusrysd2x5YkUEY3ErQ66W1IiiQL8/wihhw5w=="],
 
-    "@fontsource/ultra": ["@fontsource/ultra@5.3.0", "", {}, "sha512-mV1do792j1WQTTNVpRiv0zaLhd4U6hLSKnYFKZJyoMVwGXy5QrU7EtjikO57Gm4guRB3UNi9wbJhKLuveUlomw=="],
+    "@fontsource/lacquer": ["@fontsource/lacquer@5.3.0", "", {}, "sha512-4xCHyYtvo7HuTd0oLhMNXJzdH7fTjkAESTIpl28MmNeNGRJ3eXOrOUlEVFSoPWR04pZkyKWbmINKW4TLmPoOiQ=="],
 
     "@gltf-transform/core": ["@gltf-transform/core@4.5.1", "", { "dependencies": { "property-graph": "^4.1.0" } }, "sha512-OWgBYssKHKoXMIrMb2N20jXqWRnMP9HdtcTFQBEAJtz4P+OOxx5fozl5eAeK7nktIs5uDE/lu4NbkE5VCZaR9g=="],
 
