@@ -27,6 +27,7 @@ export const APPS: Record<string, App> = {
   "agent-office":      { test: "bun test test", build: "bun scripts/rustybunsify.ts compile --all", smoke: "bun run desktop:build && bun run desktop:smoke" },
   "auto-rig":          { test: "bun test test", prep: "bun run build:native", perOs: true, boot: true },
   "artstewengine":     { test: "bun test test", drop: false },
+  "geoboxq":            { test: "bun test test", drop: false },
   "borg":              { test: "bun test test", drop: false },
   "borg-postgres":     { test: "bun test test", drop: false },
   "excalibrawl":       { test: "bun test test", drop: false },
