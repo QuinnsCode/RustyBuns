@@ -2,7 +2,7 @@
 //
 //   GET    /api/me                          {user, orgs: [{id, name, role}], superAdmin}
 //   DELETE /api/me?confirm=<email>          the account, the orgs it owns and every row of them
-//   GET    /api/orgs/:org/export            every row of the org as one JSON (owner+)
+//   GET    /api/orgs/:org/export[?deleted=1] every live row of the org as one JSON (owner+); deleted=1 adds soft-deleted rows
 //   GET    /api/orgs/:org/audit?limit=      who did what to the org (manager+)
 
 import type { User } from "./auth.ts";
@@ -30,13 +30,15 @@ export async function meRoutes(req: Request, env: Env, url: URL, user: User): Pr
   return json({ ok: true, orgs_deleted: results.length }, 200, { "set-cookie": "better-auth.session_token=; Path=/; Max-Age=0; SameSite=Lax" });
 }
 
+const SOFT = new Set(["contacts", "companies", "deals", "activities"]);
 const EXPORTED = ["contacts", "companies", "deals", "activities", "memberships", "webhooks", "audit"] as const;
 
 export async function exportRoutes({ req, env, org, p, audit }: Ctx): Promise<Response | null> {
   if (p[1] || req.method !== "GET") return null;
   if (p[0] === "export") {
-    const tables = await env.DB.batch(EXPORTED.map((t) => env.DB.prepare(`SELECT * FROM ${t} WHERE org_id = ?`).bind(org)));
-    const out: Record<string, unknown> = { org: await orgRow(env, org), exported_at: Date.now() };
+    const withDeleted = new URL(req.url).searchParams.get("deleted") === "1";
+    const tables = await env.DB.batch(EXPORTED.map((t) => env.DB.prepare(`SELECT * FROM ${t} WHERE org_id = ?${SOFT.has(t) && !withDeleted ? " AND deleted_at IS NULL" : ""}`).bind(org)));
+    const out: Record<string, unknown> = { org: await orgRow(env, org), exported_at: Date.now(), includes_deleted: withDeleted };
     EXPORTED.forEach((t, i) => { out[t] = tables[i]!.results; });
     await audit("export", null, Object.fromEntries(EXPORTED.map((t, i) => [t, tables[i]!.results.length])));
     return json(out, 200, { "content-disposition": `attachment; filename="qcrm-${org}.json"` });

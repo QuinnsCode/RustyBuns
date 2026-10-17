@@ -1,6 +1,24 @@
 import { expect, test } from "bun:test";
 import { local, person, post } from "./app-kit.ts";
 
+test("the org file leaves soft-deleted rows out unless ?deleted=1, and says which it is", async () => {
+  const app = await local();
+  const { cookie, org } = await person(app, "dump@qcrm.test");
+  const base = `/api/orgs/${org}/contacts`;
+  const keep = await (await post(app, cookie, base, { first_name: "Keep", email: "keep@example.com" })).json();
+  const gone = await (await post(app, cookie, base, { first_name: "Gone", email: "gone@example.com" })).json();
+  await app(cookie, `${base}/${gone.id}`, { method: "DELETE" });
+
+  const live = await (await app(cookie, `/api/orgs/${org}/export`)).json();
+  expect(live.includes_deleted).toBe(false);
+  expect(live.contacts.map((c: { id: string }) => c.id)).toEqual([keep.id]);
+
+  const all = await (await app(cookie, `/api/orgs/${org}/export?deleted=1`)).json();
+  expect(all.includes_deleted).toBe(true);
+  expect(all.contacts.map((c: { id: string }) => c.id).sort()).toEqual([keep.id, gone.id].sort());
+  expect(all.contacts.find((c: { id: string }) => c.id === gone.id).deleted_at).toBeNumber();
+});
+
 test("contacts: create, list, search, paginate, update, soft-delete", async () => {
   const app = await local();
   const { cookie, org } = await person(app, "alice@qcrm.test");
