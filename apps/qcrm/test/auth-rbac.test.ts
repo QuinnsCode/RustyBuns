@@ -82,3 +82,17 @@ test("accounts off answers 503; cross-site cookie writes are refused", async () 
   const noOrigin = await handleApi(new Request(`${ORIGIN}/api/orgs`, { method: "POST", body: JSON.stringify({ name: "x" }), headers: { cookie, "sec-fetch-site": "cross-site", "content-type": "application/json" } }), app.env);
   expect(noOrigin.status).toBe(403);
 });
+
+test("the audit log names who and what; the last admin can't demote or remove themselves", async () => {
+  const app = await local();
+  const alice = await person(app, "alice@qcrm.test");
+  const bob = await person(app, "bob@qcrm.test");
+  const org = alice.org;
+  await post(app, alice.cookie, `/api/orgs/${org}/members`, { email: "bob@qcrm.test", role: "employee" });
+  const log = await (await app(alice.cookie, `/api/orgs/${org}/audit`)).json();
+  expect(log[0]).toMatchObject({ actor_email: "alice@qcrm.test", target_type: "member", target_name: expect.any(String) });
+  const members = await (await app(alice.cookie, `/api/orgs/${org}/members`)).json();
+  expect(members.find((m: { user_id: string }) => m.user_id === bob.user.id).email).toBe("bob@qcrm.test");
+  expect((await post(app, alice.cookie, `/api/orgs/${org}/members/${alice.user.id}`, { role: "manager" }, "PUT")).status).toBe(409);
+  expect((await app(alice.cookie, `/api/orgs/${org}/members/${alice.user.id}`, { method: "DELETE" })).status).toBe(409);
+});

@@ -145,7 +145,7 @@ const SCHEMAS: Record<string, Schema> = {
   Key: obj({ id: str(), name: str(), prefix: str("the first 8 characters"), secret: str("when made only"), user_id: str(), created_at: int(), last_used_at: { type: ["integer", "null"] } }),
   Script: obj({ id: str(), org_id: str(), name: str(), body: str("in the single-script read only"), lang: str("js"), created_by: str(), created_at: int(), updated_at: int(), enabled: bool() }),
   ScriptRun: obj({ id: str(), script_id: str(), actor_user_id: str(), started_at: int(), finished_at: int(), status: en(["ok", "error", "timeout"]), log: str("lines, 16 KB at most"), result: loose("what the script returned"), calls: int("API calls the run made") }),
-  AuditEntry: obj({ id: str(), actor_user_id: { type: ["string", "null"] }, action: str(), target: { type: ["string", "null"] }, at: int(), detail: loose("what changed") }),
+  AuditEntry: obj({ id: str(), actor_user_id: { type: ["string", "null"] }, actor_name: { type: ["string", "null"] }, actor_email: { type: ["string", "null"] }, action: str(), target: { type: ["string", "null"] }, target_name: { type: ["string", "null"] }, target_type: str("member, key, webhook, export, seed…"), at: int(), detail: loose("what changed") }),
 };
 
 const params = (path: string, query: Op["query"] = {}) => [

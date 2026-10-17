@@ -21,6 +21,7 @@ const rowsOf = (r: any): Row[] => (Array.isArray(r) ? r : r?.items ?? r?.rows ??
 const nextOf = (r: any): string | null => r?.next ?? r?.cursor ?? null;
 const money = (cents: unknown, cur = "USD") => typeof cents === "number" ? new Intl.NumberFormat(undefined, { style: "currency", currency: cur, maximumFractionDigits: 0 }).format(cents / 100) : "";
 const when = (v: unknown) => (typeof v === "number" || typeof v === "string") && v ? new Date(v).toLocaleDateString() : "";
+const whenAt = (v: unknown) => (typeof v === "number" || typeof v === "string") && v ? new Date(v).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
 const ROLES = ["seasonal", "employee", "manager", "owner", "admin"] as const;
 const RANK: Record<string, number> = { seasonal: 1, employee: 2, manager: 3, owner: 4, admin: 5, super_admin: 6 };
 const STAGES = ["lead", "qualified", "proposal", "won", "lost"];
@@ -410,7 +411,7 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
       </div>
       {can("manager") && audit.length > 0 && <div className="card">
         <h3><Icon name="scroll-text" /> Audit log</h3>
-        <div className="table"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th></tr></thead><tbody>{audit.slice(0, 50).map((a) => <tr key={a.id}><td>{when(a.at)}</td><td>{a.actor_email ?? a.actor_user_id}</td><td>{a.action}</td><td>{a.target}</td></tr>)}</tbody></table></div>
+        <div className="table"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th></tr></thead><tbody>{audit.slice(0, 50).map((a) => <tr key={a.id}><td>{whenAt(a.at)}</td><td>{a.actor_name ?? a.actor_email ?? a.actor_user_id ?? "system"}{a.actor_name && <span className="muted"> {a.actor_email}</span>}</td><td>{a.action}</td><td>{a.target_name ?? a.target}{a.target_type && <span className="muted"> {a.target_type}</span>}</td></tr>)}</tbody></table></div>
       </div>}
       <div className="card">
         <h3><Icon name="download" /> Your data</h3>
