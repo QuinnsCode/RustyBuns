@@ -40,6 +40,10 @@ The hand-placed kit and ribbons stand on the ground; the earthworks (`src/levels
 
 `blender/roadster.py` models the rocket roadster as the October 2026 reveal shows it, not the 2017 prototype: a body lofted through cross-sections into flat facets with hard creases and a chine down each flank, Ano White over a dark sill, a gold visor canopy, dual triangular headlights, a plain tail light bar over the diffuser that holds the four rear nozzles, arches cut round the wheels, and the pop-out wing up on its struts, at the shared roadster's footprint. `dressRoadster` swaps it in over the shared one and keeps that one's ten nozzle bells and its hinged plate, so the plumes and the plate drop still work. `?car=hi|mid|low` (`mid` by default, about 1.5k triangles; the budgets differ in how round the wheels and arches are) or `?car=built`; `?showroom` parks it under a circling camera.
 
+## The title screen
+
+A bare address opens on the logo: a redwood whose trunk runs down into the end of a skateboard deck, bark furrows carrying on through the board, with trucks and wheels under it (`src/front/logo.ts`). The intro drifts from the canopy down the trunk like a nature film, then "SKATE TECH PARK" is skated in left to right and the menu opens: Single (free skate, run from the bear) or Multi (free skate in a room, or join a code). Any key or click skips the film; reduced motion goes straight to the menu. A choice adds `?mode=` (and `room`/`chase`), and the park picker carries those through (`carry` in `src/front/menu.ts`), so every old link that names a level or room skips the title. Multi also lists Race (first through the finish, landing a set trick inside a ring) and S.K.A.T.E. (set a trick, the next rider lands it or takes a letter), greyed until they are built.
+
 ## Run it
 
 ```

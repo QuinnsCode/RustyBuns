@@ -1,5 +1,6 @@
 // Every level the picker offers: the training plaza, then the parks on real ground.
 import type { Level } from "../level.ts";
+import { showFront } from "../front/menu.ts";
 import { plaza } from "./plaza.ts";
 import { elCapitan } from "./el-capitan.ts";
 import { grandCanyon } from "./grand-canyon.ts";
@@ -30,10 +31,10 @@ export const LEVELS: Entry[] = [
 /** The level a query string asks for (`?level=el-capitan`), else El Capitan Meadow: the game starts in a national park. */
 export const pick = (search: string): Entry => LEVELS.find((l) => l.id === new URLSearchParams(search).get("level")) ?? LEVELS.find((l) => l.id === "el-capitan")!;
 
-/** The start screen shows when the page was opened without choosing a level (or asking for the showroom). */
+/** The start screen shows when the page was opened without choosing a level (or asking for the showroom); the title screen comes first on a bare address. */
 export const needsStartScreen = (search: string) => {
   const q = new URLSearchParams(search);
-  return !q.has("level") && !q.has("showroom");
+  return !q.has("level") && !q.has("showroom") && !showFront(search);
 };
 
 /** `?real` rides the terrain at its true height instead of squashed vertically. */

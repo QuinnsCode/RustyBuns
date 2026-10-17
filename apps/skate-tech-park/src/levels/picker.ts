@@ -7,6 +7,7 @@ import type { State } from "../sim.ts";
 import "./levels.css";
 import { groundMesh, props } from "./ground.ts";
 import { trackRun, type Run } from "./goals.ts";
+import { carry } from "../front/menu.ts";
 import { LEVELS, needsStartScreen, pick, wantsReal } from "./index.ts";
 import { terrainCanvas } from "./thumb.ts";
 import type { Goal, ParkLevel } from "./park.ts";
@@ -28,7 +29,7 @@ const label = (g: Goal) => g.kind === "score" ? `Score ${g.target.toLocaleString
 
 const real = wantsReal(location.search);
 /** A link target for a level, keeping the real-height choice. */
-const to = (id: string) => `?level=${id}${real ? "&real" : ""}`;
+const to = (id: string, height = real) => `?${new URLSearchParams({ level: id, ...Object.fromEntries(carry(location.search)) })}${height ? "&real" : ""}`;
 
 /** The start screen: one card per level; choosing one reloads the page on it. */
 function startScreen() {
@@ -77,7 +78,7 @@ export function mountLevelUi(scene: Scene) {
   toggle.title = real ? "Real height: on (click for friendly height)" : "Friendly height (click for real height)";
   toggle.setAttribute("aria-pressed", String(real));
   toggle.append(createElement(Mountain, { width: 16, height: 16 }));
-  toggle.addEventListener("click", () => { location.search = `?level=${entry.id}${real ? "" : "&real"}`; });
+  toggle.addEventListener("click", () => { location.search = to(entry.id, !real); });
   document.body.append(menu, toggle);
   if (!park) return { reset() {}, update(_s: State) {} };
 
