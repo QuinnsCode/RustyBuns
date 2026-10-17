@@ -41,6 +41,9 @@ export default defineConfig({
     GOOGLE_CLIENT_SECRET: { type: "secret", op: "op://qcrm/google/client-secret", optional: true },
     // Optional: without it there is no super admin, and the first org owner is on their own.
     SUPER_ADMIN_EMAIL: { type: "secret", op: "op://qcrm/admin/email", optional: true },
+    // The sealed engine asks artstewengine "have you paid?" with this license (src/seal.ts). Either unset: the engine stays locked.
+    ARTSTEW_URL: { type: "var", value: "https://artstewengine.qntbr.com" },
+    QCRM_LICENSE: { type: "secret", op: "op://qcrm/engine/license", optional: true },
     ...(mailFrom ? {
       EMAIL: { type: "send_email", allowedSenderAddresses: [mailFrom] } as const,
       EMAIL_FROM: { type: "var", value: mailFrom } as const,

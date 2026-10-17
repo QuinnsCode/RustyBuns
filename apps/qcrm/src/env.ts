@@ -43,6 +43,9 @@ export interface Env extends SocialEnv {
   /** Cloudflare Email Sending. With EMAIL_FROM it turns on verification and reset links (auth.ts). */
   EMAIL?: { send(m: { from: string | { email: string; name?: string }; to: string; subject: string; text: string; html?: string }): Promise<unknown> };
   EMAIL_FROM?: string;
+  /** artstewengine's address and this deployment's license: together they ask "have you paid?" (seal.ts). */
+  ARTSTEW_URL?: string;
+  QCRM_LICENSE?: string;
 }
 
 /** `s` safe inside HTML text and attributes. */
