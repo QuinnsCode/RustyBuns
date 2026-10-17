@@ -13,6 +13,31 @@ import { animate, gunship, marine, speeder, tank, turret, walker, wooka } from "
 import { buildWorld } from "./terrain.ts";
 import { CHAMP_AT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, startBattle, statsOf, step, timeLimit, vipUnit, type Fx, type Trooper, type Unit } from "./sim.ts";
 
+// A few lucide icons (ISC licence) for the rhythm strip: the HUD says it with icons and a ticking clock.
+const HUD_ICONS: Record<string, string> = {
+  shovel: '<path d="M21.56 4.56a1.5 1.5 0 0 1 0 2.122l-.47.47a3 3 0 0 1-4.212-.03 3 3 0 0 1 0-4.243l.44-.44a1.5 1.5 0 0 1 2.121 0z"/><path d="M3 22a1 1 0 0 1-1-1v-3.586a1 1 0 0 1 .293-.707l3.355-3.355a1.205 1.205 0 0 1 1.704 0l3.296 3.296a1.205 1.205 0 0 1 0 1.704l-3.355 3.355a1 1 0 0 1-.707.293z"/><path d="m9 15 7.879-7.878"/>',
+  "log-out": '<path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>',
+  siren: '<path d="M7 18v-6a5 5 0 1 1 10 0v6"/><path d="M5 21a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z"/><path d="M21 12h1"/><path d="M18.5 4.5 18 5"/><path d="M2 12h1"/><path d="M12 2v1"/><path d="m4.929 4.929.707.707"/><path d="M12 12v6"/>',
+  skull: '<path d="m12.5 17-.5-1-.5 1h1z"/><path d="M15 22a1 1 0 0 0 1-1v-1a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20v1a1 1 0 0 0 1 1z"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="12" r="1"/>',
+  plane: '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>',
+};
+const hudIcon = (name: string) => `<svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${HUD_ICONS[name] ?? ""}</svg>`;
+// The strip's own rules live here, with the thing that draws it.
+const RHYTHM_CSS = `
+.b-beat { position: absolute; top: 84px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; white-space: nowrap; }
+.b-beat .chip { display: inline-flex; align-items: center; gap: 6px; background: rgb(0 0 0 / 0.55); border-radius: 6px; padding: 3px 9px; border-bottom: 3px solid #888; pointer-events: auto; cursor: help; }
+.b-beat .chip .clock { min-width: 3.2em; }
+.b-beat .chip sup { font-style: italic; opacity: 0.7; }
+.b-beat .surge { border-color: #ff9a3c; } .b-beat .dig { border-color: #ffd27a; color: #ffd27a; }
+.b-beat .fall { border-color: #ff4a3a; color: #fff; background: rgb(150 20 10 / 0.75); animation: beat-flash 0.7s ease-in-out infinite alternate; }
+.b-beat .moss { border-color: #7dff6a; color: #bfffa8; } .b-beat .air { border-color: #9fe6ff; }
+@keyframes beat-flash { from { opacity: 0.65; } to { opacity: 1; } }
+.b-feed li.cut { opacity: 0.6; font-style: italic; } .b-feed li.over { color: #ffb0a0; letter-spacing: 0.03em; }
+.b-alarm { position: absolute; inset: 0; opacity: 0; box-shadow: inset 0 0 90px 24px rgb(200 20 10 / 0.7); }
+.b-alarm.on { animation: beat-alarm 0.5s ease-in-out infinite alternate; }
+@keyframes beat-alarm { from { opacity: 0.1; } to { opacity: 0.8; } }`;
+const FEED_KEEP = /^(Surge|Dig in|Out in|Left behind|Hold |.*FALL BACK)/;
+
 export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTMLElement): Promise<BattleResult> {
   const b = startBattle(spec);
   const heroSide = spec.hero;
@@ -111,6 +136,73 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     return pool[i]!;
   };
 
+  // The chaos: shells and strikes coming down out of the sky, gunships going past, trees burning,
+  // smoke and flares. All of it is for the eye. What it hurts is in the sim (b.strikes, b.passes).
+  if (!document.getElementById("rhythm-css")) {
+    const st = document.createElement("style");
+    st.id = "rhythm-css";
+    st.textContent = RHYTHM_CSS;
+    document.head.append(st);
+  }
+  const shellMat = new THREE.MeshBasicMaterial({ color: 0xffb040, side: THREE.DoubleSide, transparent: true, opacity: 0.6 });
+  const colGeo = new THREE.CylinderGeometry(1, 1, 120, 10, 1, true).translate(0, 60, 0);
+  const colMat = new THREE.MeshBasicMaterial({ color: 0xff4a30, transparent: true, opacity: 0.18, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const streakMat = new THREE.MeshBasicMaterial({ color: 0xffd58a, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending });
+  const columns: THREE.Mesh[] = [];
+  // A ring on the ground with a shaft of light over it, for where to run to and where to hold.
+  const ringMark = (color: number, r: number) => {
+    const g = new THREE.Group();
+    const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.9, r, 48), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.85, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2;
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.4, r * 0.4, 70, 16, 1, true).translate(0, 35, 0), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.14, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    g.add(ring, beam);
+    g.visible = false;
+    scene.add(g);
+    return g;
+  };
+  const fallMark = ringMark(0x6dff8a, POST_RADIUS), digMark = ringMark(0xffd27a, POST_RADIUS + 1.5);
+  const jets: THREE.Group[] = [];
+  // Fires: a tree struck by a blast burns for a while, some of them up where the huts are.
+  type Fire = { x: number; z: number; y: number; life: number; seed: number; emit: number };
+  const fires: Fire[] = [];
+  const flameGeo = new THREE.ConeGeometry(0.75, 2.6, 7).translate(0, 1.3, 0);
+  const flameOuter = new THREE.MeshBasicMaterial({ color: 0xff5a14, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending });
+  const flameInner = new THREE.MeshBasicMaterial({ color: 0xffd65a, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending });
+  const flamesA: THREE.Mesh[] = [], flamesB: THREE.Mesh[] = [];
+  const ignite = (x: number, z: number) => {
+    let near: { x: number; z: number } | null = null, bd = 10;
+    for (const t of b.trees) { const d = Math.hypot(t.x - x, t.z - z); if (d < bd) { bd = d; near = t; } }
+    if (!near || fires.some((f) => Math.hypot(f.x - near!.x, f.z - near!.z) < 0.5)) return;
+    if (fires.length >= 22) fires.shift();
+    fires.push({ x: near.x, z: near.z, y: ground(near.x, near.z) + (Math.random() < 0.35 ? 6 + Math.random() * 4 : 0.4), life: 14 + Math.random() * 16, seed: Math.random() * 10, emit: 0 });
+  };
+  // Smoke: grey puffs that rise, swell and thin out.
+  const SMOKES = 260;
+  const smokeMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.5, 6, 5), new THREE.MeshBasicMaterial({ color: 0x2e2c2a, transparent: true, opacity: 0.4, depthWrite: false }), SMOKES);
+  smokeMesh.count = 0;
+  smokeMesh.frustumCulled = false;
+  scene.add(smokeMesh);
+  type Puff = { p: THREE.Vector3; v: THREE.Vector3; life: number; max: number };
+  const puffs: Puff[] = [];
+  const puff = (x: number, y: number, z: number, up = 2.5) => {
+    if (puffs.length >= SMOKES) puffs.shift();
+    const max = 3 + Math.random() * 3;
+    puffs.push({ p: new THREE.Vector3(x + (Math.random() - 0.5), y, z + (Math.random() - 0.5)), v: new THREE.Vector3(1 + Math.random(), up * (0.6 + Math.random() * 0.8), (Math.random() - 0.5)), life: max, max });
+  };
+  // Flares: one rises, hangs, and comes down slowly, lighting the trees.
+  type Flare = { x: number; z: number; age: number; sway: number; color: number };
+  const flares: Flare[] = [];
+  const flareMesh = new THREE.Mesh(new THREE.SphereGeometry(0.9, 10, 8), new THREE.MeshBasicMaterial({ color: 0xfff0b8, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
+  const flareLight = new THREE.PointLight(0xffe2a0, 0, 140, 1.4);
+  flareMesh.visible = false;
+  scene.add(flareMesh, flareLight);
+  const FLARE_LIFE = 9;
+  const launchFlare = (x: number, z: number, color = 0xffe2a0) => { if (flares.length < 3) flares.push({ x, z, age: 0, sway: Math.random() * 6, color }); };
+  let nextFlare = 4, lastSurge = 0;
+  const seenBig = new Set<number>();
+  let alarmT = 0;
+  const smashPalette = [0x7a4f2a, 0x5a3b22, 0x3d4a22, 0x9b8b6a, 0x4f7a2c];
+
   // Input.
   const keys = new Set<string>();
   let yaw = heroSide === "attacker" ? 0 : Math.PI, pitch = -0.12, firing = false, strike = false, use = false;
@@ -171,9 +263,9 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const cross = document.querySelector<HTMLElement>(".crosshair");
   const feel = document.createElement("div");
   feel.className = "b-feel";
-  feel.innerHTML = `<div class="b-hurt"></div><div class="b-heat"><i></i></div><div class="b-toast"></div>`;
+  feel.innerHTML = `<div class="b-alarm"></div><div class="b-hurt"></div><div class="b-heat"><i></i></div><div class="b-toast"></div>`;
   canvas.parentElement!.append(feel);
-  const hurtEl = feel.querySelector<HTMLElement>(".b-hurt")!, heatEl = feel.querySelector<HTMLElement>(".b-heat")!, toastEl = feel.querySelector<HTMLElement>(".b-toast")!;
+  const alarmEl = feel.querySelector<HTMLElement>(".b-alarm")!, hurtEl = feel.querySelector<HTMLElement>(".b-hurt")!, heatEl = feel.querySelector<HTMLElement>(".b-heat")!, toastEl = feel.querySelector<HTMLElement>(".b-toast")!;
   const foeHorde = isHorde(b, heroSide === "attacker" ? "defender" : "attacker");
   const STREAK: Record<number, string> = foeHorde
     ? { 2: "Two in a row", 3: "Three. Fluff everywhere", 5: "Five. They'll sing about you. Badly", 8: "Eight. The forest has gone quiet", 12: "Twelve. Command is concerned about you" }
@@ -190,6 +282,31 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     return text ? `<span class="objective">${text}</span>` : "";
   };
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  // The rhythm, in icons and ticking clocks: the next surge, the post to dig in at, the fall-back to run for.
+  const clock = (s: number) => `<span class="clock">${fmt(Math.max(0, s))}</span>`;
+  const beatLine = () => {
+    const beat = b.beat, chips: string[] = [], mossN = b.units.filter((u) => u.role === "mossback").length;
+    if (beat.fall) {
+      const f = beat.fall;
+      chips.push(`<span class="chip fall" title="${f.evac ? "Nowhere left to fall back to: reach the evac point" : "Overrun: get to the next post"} before the clock runs out. Out in time costs a few tickets; left behind costs a lot.">${hudIcon("log-out")}${f.evac ? "Evac" : "Fall back"}: ${f.name} ${clock(f.left)}<sup>i</sup></span>`);
+    } else if (beat.dig) {
+      chips.push(`<span class="chip dig" title="Hold this post with at least two of yours and nobody overrunning it, and the countdown runs. Held, it pays a drop of troops and tickets, then an orbital strike.">${hudIcon("shovel")}Dig in: ${b.posts[beat.dig.post]!.name} ${clock(beat.dig.left)}<sup>i</sup></span>`);
+    }
+    if (mossN) chips.push(`<span class="chip moss" title="Rifles barely mark it and it mends. Rockets, strikes and Boomies finish it.">${hudIcon("skull")}Mossback${mossN > 1 ? ` x${mossN}` : ""}</span>`);
+    if (b.passes.length) chips.push(`<span class="chip air" title="A gunship is making a run across the field.">${hudIcon("plane")}Gunship</span>`);
+    if (b.units.some((u) => u.wild) || isHorde(b, "attacker") || isHorde(b, "defender")) chips.push(`<span class="chip surge" title="The next surge of Wooka out of the treeline. Between surges the radio calls a dig-in.">${hudIcon("siren")}Surge ${beat.surge + 1} ${clock(beat.nextSurge - b.time)}<sup>i</sup></span>`);
+    return `<div class="b-beat">${chips.join("")}</div>`;
+  };
+  // The radio, with lines that land on top of each other cutting each other off.
+  const feedLines = () => {
+    const from = Math.max(0, b.events.length - 5);
+    return b.events.slice(from).map((e, k) => {
+      const i = from + k, t = b.eventAt[i] ?? 0, next = b.eventAt[i + 1];
+      const cut = !FEED_KEEP.test(e) && e.length > 24 && next !== undefined && next - t < 1;
+      const over = i > 0 && t - (b.eventAt[i - 1] ?? -9) < 1;
+      return `<li class="${cut ? "cut" : ""} ${over ? "over" : ""}">${cut ? `${e.slice(0, Math.ceil(e.length * 0.6))}--` : e}</li>`;
+    }).join("");
+  };
   const drawHud = () => {
     const hero = heroUnit(b), mine = heroSide, foe = mine === "attacker" ? "defender" : "attacker";
     const riding = b.hero.inVehicle === null ? null : b.units.find((u) => u.id === b.hero.inVehicle);
@@ -199,6 +316,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         <div class="b-clock" title="${b.mode === "conquest" || b.mode === "hill" ? "Time left. When it runs out, the side with more tickets wins (the defender on a tie)." : "Time left. When it runs out, the defender has held."}"><span class="clock">${fmt(Math.max(0, timeLimit(spec) - b.time))}</span><sup>i</sup></div>
         ${bar(foe)}</div>
       <div class="b-posts">${objectiveLine()}${b.posts.map((p, i) => `<span class="post ${p.owner ? spec.factions[p.owner] : ""}${inPlay(b, i) ? "" : " out"}">${p.name}</span>`).join("")}</div>
+      ${beatLine()}
       <div class="b-hero">
         ${hero ? `<div class="hp"><i style="width:${(100 * hero.hp) / hero.maxHp}%"></i></div>` : `<div class="respawn">${b.hero.lives > 0 ? `Back in ${Math.ceil(b.hero.respawn)}s` : "Your hero is down"}</div>`}
         <span title="Lives">♥ ${b.hero.lives}</span>
@@ -207,7 +325,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         ${hero?.champ ? `<span class="champ-on">${hero.champ === "warbur" ? "WARBUR · E throws a Wooka" : `GUMPERT · ${hero.kit} · E swaps kit`}</span>`
           : `<span class="champ" title="Kills till your champion takes the field">${champName}<i style="width:${Math.min(100, (100 * b.kills[mine]) / CHAMP_AT)}%"></i></span>`}
       </div>
-      <ul class="b-feed">${b.events.slice(-5).map((e) => `<li>${e}</li>`).join("")}</ul>
+      <ul class="b-feed">${feedLines()}</ul>
       ${document.pointerLockElement === canvas ? "" : `<div class="b-help">Click the field to take control · WASD move · mouse look · click fire · Q orbital strike · E vehicle · Esc to let go<button id="b-auto" type="button">Let the AI finish it</button></div>`}`;
   };
 
@@ -270,7 +388,17 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
           if (f.from !== undefined && f.from === b.hero.id && (f.hit || f.kind === "blast")) markT = 0.15;
           if (f.kind === "blast" && me) shake = Math.max(shake, (f.big ? 1.2 : 0.4) * Math.max(0, 1 - Math.hypot(f.x - me.x, f.z - me.z) / 35));
           if (f.kind === "gore") burst(f.x, fy + 0.8 + (f.y ?? 0), f.z, f.big ? 46 : 16, GORE[spec.factions[f.side ?? "attacker"]]!, f.big ? 9 : 6);
-          if (f.kind === "blast") burst(f.x, fy + 0.3, f.z, f.big ? 60 : 14, DIRT, f.big ? 14 : 7);
+          if (f.kind === "blast") {
+            burst(f.x, fy + 0.3, f.z, f.big ? 60 : 14, DIRT, f.big ? 14 : 7);
+            for (let i = 0; i < (f.big ? 6 : 1); i++) puff(f.x, fy + 0.5, f.z, 3);
+            if (f.big || Math.random() < 0.25) ignite(f.x, f.z);
+          }
+          if (f.kind === "smash") {
+            // Something big came down on the ground, or through a log: wood, earth and moss everywhere.
+            burst(f.x, fy + 0.4, f.z, f.big ? 70 : 34, smashPalette, f.big ? 12 : 8);
+            for (let i = 0; i < 3; i++) puff(f.x, fy + 0.3, f.z, 2);
+            if (me) shake = Math.max(shake, (f.big ? 1.6 : 0.7) * Math.max(0, 1 - Math.hypot(f.x - me.x, f.z - me.z) / 30));
+          }
         }
         if (f.kind === "shot") pts.push(f.x, (f.y ?? 0) + 1.4 + fy, f.z, f.tx, (f.ty ?? 0) + 1.2 + ground(f.tx, f.tz), f.tz);
         else if (f.kind === "spear" || f.kind === "hex") {
@@ -312,8 +440,87 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       chunkMesh.instanceMatrix.needsUpdate = true;
       if (chunkMesh.instanceColor) chunkMesh.instanceColor.needsUpdate = true;
       for (let i = chunks.length - 1; i >= 0; i--) if (chunks[i]!.life <= 0) { chunks.splice(i, 1); chunkCol.splice(i, 1); }
-      b.strikes.forEach((s, i) => { const m = pooled(marks, i, () => { const x = new THREE.Mesh(markGeo, markMat); x.rotation.x = -Math.PI / 2; return x; }); m.position.set(s.x, 0.15 + ground(s.x, s.z), s.z); });
-      for (let i = b.strikes.length; i < marks.length; i++) marks[i]!.visible = false;
+      // Strikes and shells: a ring on the ground. A strike has a shaft of light that swells as it lands; a shell, a streak falling.
+      b.strikes.forEach((s, i) => {
+        const m = pooled(marks, i, () => { const x = new THREE.Mesh(markGeo, markMat); x.rotation.x = -Math.PI / 2; return x; });
+        const gy = ground(s.x, s.z), r = (s.r ?? STRIKE_RADIUS) / STRIKE_RADIUS;
+        m.material = s.shell ? shellMat : markMat;
+        m.position.set(s.x, 0.15 + gy, s.z);
+        m.scale.setScalar(r);
+        const c = pooled(columns, i, () => new THREE.Mesh(colGeo, colMat));
+        c.material = s.shell ? streakMat : colMat;
+        if (s.shell) { c.scale.set(0.25, 0.25, 0.25); c.position.set(s.x, gy + Math.max(0, s.t) * 45, s.z); }
+        else { const k = 1 + Math.max(0, 2.5 - s.t); c.scale.set(STRIKE_RADIUS * 0.3 * k * 0.5, 1, STRIKE_RADIUS * 0.3 * k * 0.5); c.position.set(s.x, gy, s.z); }
+      });
+      for (let i = b.strikes.length; i < marks.length; i++) { marks[i]!.visible = false; if (columns[i]) columns[i]!.visible = false; }
+
+      // Gunships going past, firing down.
+      b.passes.forEach((p, i) => {
+        const g = jets[i] ?? (jets[i] = gunship());
+        if (!g.parent) scene.add(g);
+        g.visible = true;
+        const k = Math.min(1, p.age / p.dur), x = p.x0 + (p.x1 - p.x0) * k, z = p.z0 + (p.z1 - p.z0) * k, gy = ground(x, z);
+        g.position.set(x, gy + 13, z);
+        g.rotation.y = Math.atan2(-(p.x1 - p.x0), -(p.z1 - p.z0));
+        animate(g, { t: now / 1000, dt, moved: 0.3, since: 1 });
+        const tx = x + (Math.random() - 0.5) * 8, tz = z + (Math.random() - 0.5) * 8;
+        pts.push(x, gy + 12, z, tx, ground(tx, tz) + 0.3, tz);
+      });
+      for (let i = b.passes.length; i < jets.length; i++) jets[i]!.visible = false;
+      shotGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3)); // with the gunships' tracers in
+      // Fires and smoke.
+      let nf = 0;
+      for (const f of fires) {
+        f.life -= dt;
+        if (f.life <= 0) continue;
+        const flick = 0.85 + Math.sin(now / 70 + f.seed) * 0.18 + Math.sin(now / 130 + f.seed * 3) * 0.1, fade = Math.min(1, f.life / 3);
+        const a = pooled(flamesA, nf, () => new THREE.Mesh(flameGeo, flameOuter)), c = pooled(flamesB, nf, () => new THREE.Mesh(flameGeo, flameInner));
+        a.position.set(f.x, f.y, f.z); c.position.set(f.x, f.y, f.z);
+        a.scale.set(flick * fade, (1.1 + flick * 0.5) * fade, flick * fade);
+        c.scale.set(0.55 * flick * fade, 0.7 * (1 + flick * 0.4) * fade, 0.55 * flick * fade);
+        nf++;
+        if ((f.emit -= dt) <= 0) { f.emit = 0.18; puff(f.x, f.y + 2, f.z, 2.6); }
+      }
+      for (let i = nf; i < flamesA.length; i++) { flamesA[i]!.visible = false; flamesB[i]!.visible = false; }
+      for (let i = fires.length - 1; i >= 0; i--) if (fires[i]!.life <= 0) fires.splice(i, 1);
+      let np = 0;
+      for (const q of puffs) {
+        if ((q.life -= dt) <= 0) continue;
+        q.p.addScaledVector(q.v, dt);
+        const grow = 0.6 + (1 - q.life / q.max) * 2.4;
+        smokeMesh.setMatrixAt(np++, chunkM.compose(q.p, chunkQ.identity(), chunkS.setScalar(grow * Math.min(1, q.life / 0.8))));
+      }
+      smokeMesh.count = np;
+      smokeMesh.instanceMatrix.needsUpdate = true;
+      for (let i = puffs.length - 1; i >= 0; i--) if (puffs[i]!.life <= 0) puffs.splice(i, 1);
+      // Flares: now and then, and a pair of red ones over the treeline when a surge breaks.
+      const hz = heroUnit(b);
+      if ((nextFlare -= dt) <= 0) { nextFlare = 8 + Math.random() * 8; const at = hz ?? { x: 0, z: 0 }; launchFlare(at.x + (Math.random() - 0.5) * 120, at.z + (Math.random() - 0.5) * 120); }
+      if (b.beat.surge !== lastSurge) { lastSurge = b.beat.surge; for (let i = 0; i < 2; i++) launchFlare((Math.random() - 0.5) * 200, (Math.random() < 0.5 ? -1 : 1) * 60, 0xff6a50); }
+      for (const f of flares) f.age += dt;
+      for (let i = flares.length - 1; i >= 0; i--) if (flares[i]!.age > FLARE_LIFE) flares.splice(i, 1);
+      const fl = flares[flares.length - 1];
+      flareMesh.visible = !!fl;
+      if (fl) {
+        const y = fl.age < 1.2 ? 4 + (fl.age / 1.2) * 52 : 56 - (fl.age - 1.2) * 4.5, fade = Math.min(1, (FLARE_LIFE - fl.age) / 2) * Math.min(1, fl.age * 2);
+        flareMesh.position.set(fl.x + Math.sin(fl.age * 0.8 + fl.sway) * 3, y, fl.z);
+        flareMesh.scale.setScalar(0.7 + fade * 0.6);
+        (flareMesh.material as THREE.MeshBasicMaterial).color.setHex(fl.color);
+        flareLight.color.setHex(fl.color);
+        flareLight.position.copy(flareMesh.position);
+        flareLight.intensity = 5000 * fade * (0.9 + Math.sin(now / 90) * 0.1);
+      } else flareLight.intensity = 0;
+      // The fall-back's destination, and the post to dig in at.
+      const fb = b.beat.fall;
+      fallMark.visible = !!fb;
+      if (fb) { fallMark.position.set(fb.x, ground(fb.x, fb.z) + 0.2, fb.z); fallMark.scale.setScalar(1 + Math.sin(now / 160) * 0.06); }
+      const dg = b.beat.dig;
+      digMark.visible = !!dg && !fb;
+      if (dg) { const p = b.posts[dg.post]!; digMark.position.set(p.x, ground(p.x, p.z) + 0.25, p.z); digMark.scale.setScalar(1 + Math.sin(now / 220) * 0.04); }
+      // A Mossback walks in: the screen goes red for a while.
+      for (const u of b.units) if (u.role === "mossback" && !seenBig.has(u.id)) { seenBig.add(u.id); alarmT = 7; shake = Math.max(shake, 0.5); }
+      alarmT = Math.max(0, alarmT - dt);
+      alarmEl.classList.toggle("on", alarmT > 0);
 
       // Feel: the hit marker, heat, the red edge, a kill toast, and the sprint's wider view.
       const me = heroUnit(b);
