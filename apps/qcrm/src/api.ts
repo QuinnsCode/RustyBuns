@@ -13,7 +13,7 @@ import { adminRoutes } from "./admin.ts";
 import { accountsOff, accountsOn, authFor, crossSite, keyRoutes, providers, sessionUser } from "./auth.ts";
 import { crmRoutes } from "./crm.ts";
 import { demoRoute } from "./demo.ts";
-import { error, json, type Env, type HookMessage } from "./env.ts";
+import { error, json, VERSION, type Env, type HookMessage } from "./env.ts";
 import { insightRoutes } from "./insights.ts";
 import { mcp } from "./mcp.ts";
 import { oauthRoutes, wellKnown } from "./oauth.ts";
@@ -53,7 +53,7 @@ async function route(req: Request, env: Env, defer?: Defer): Promise<Response> {
   if (p[1] === "openapi.json" && !p[2]) return json(openapi(origin));
   // The sealed engine's key, for the browser to open it: public, the hero wave needs it before sign-in.
   if (p[1] === "engine" && p[2] === "key" && !p[3] && req.method === "GET") {
-    const key = await engineKey(env);
+    const key = await engineKey({ ...env, host: env.BETTER_AUTH_URL, version: VERSION });
     return key ? json({ key }) : error(402, "engine locked: license not paid");
   }
   if (p[1] === "mcp" && !p[2]) return mcp(req, env, (r) => handleApi(r, env));
