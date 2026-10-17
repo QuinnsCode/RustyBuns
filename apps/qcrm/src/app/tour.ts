@@ -102,5 +102,5 @@ export function mountTour() {
   if (q.get("tour") === "1" && !read()) save({ i: location.pathname.startsWith("/app") ? 5 : 0 });
   if (read()) show();
   // A bfcache restore or a late reload brings the page back without running this module again.
-  addEventListener("pageshow", (e) => { if (e.persisted && read() && !dim?.isConnected) { dim = hole = card = undefined; show(); } });
+  addEventListener("pageshow", (e) => { if ((e as PageTransitionEvent).persisted && read() && !dim?.isConnected) { dim = hole = card = undefined; show(); } });
 }
