@@ -74,3 +74,28 @@ test("a failing endpoint is retried with backoff, then the delivery is dead", as
     expect(rx.got).toHaveLength(8);
   } finally { rx.stop(); }
 });
+
+test("replaying a dead delivery sends it again with a fresh set of tries", async () => {
+  const app = await local();
+  const { cookie, org } = await person(app, "alice@qcrm.test");
+  const rx = receiver(500);
+  try {
+    const hook = await (await post(app, cookie, `/api/orgs/${org}/webhooks`, { url: rx.url, events: ["company.created"] })).json();
+    const arrived = rx.next();
+    await post(app, cookie, `/api/orgs/${org}/companies`, { name: "Cedar Labs" });
+    await arrived;
+    const path = `/api/orgs/${org}/webhooks/${hook.id}/deliveries`;
+    for (let i = 0; i < 12; i++) await (app.env.HOOKS as any).drain(Date.now() + 86_400_000);
+    let [d] = await (await app(cookie, path)).json();
+    expect(d.status).toBe("dead");
+    expect((await post(app, cookie, `${path}/nope/replay`, {})).status).toBe(404);
+
+    const again = rx.next();
+    expect((await post(app, cookie, `${path}/${d.id}/replay`, {})).status).toBe(200);
+    await again;
+    [d] = await (await app(cookie, path)).json();
+    expect(d.attempts).toBe(1);
+    expect(d.status).toBe("pending");
+    expect(rx.got).toHaveLength(9);
+  } finally { rx.stop(); }
+});

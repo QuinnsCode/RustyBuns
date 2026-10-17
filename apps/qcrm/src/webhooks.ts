@@ -9,6 +9,7 @@
 //   PUT    /api/orgs/:org/webhooks/:id {url?, events?, disabled?}
 //   DELETE /api/orgs/:org/webhooks/:id
 //   GET    /api/orgs/:org/webhooks/:id/deliveries      the last 50
+//   POST   /api/orgs/:org/webhooks/:id/deliveries/:delivery/replay   send it again
 //
 // URLs must be https, and never a private or loopback address literal. When BETTER_AUTH_URL is
 // http:// the app runs on someone's own machine (the desktop, tests), and there http and
@@ -138,6 +139,15 @@ export async function webhookRoutes({ req, env, org, p, audit }: Ctx): Promise<R
   if (p[2] === "deliveries" && !p[3] && req.method === "GET") {
     const { results } = await env.DB.prepare("SELECT id, event, status, attempts, next_at, last_code, created_at FROM webhook_deliveries WHERE webhook_id = ? ORDER BY created_at DESC LIMIT 50").bind(hook.id).all();
     return json(results);
+  }
+  if (p[2] === "deliveries" && p[3] && p[4] === "replay" && !p[5] && req.method === "POST") {
+    // Start the delivery over: a fresh set of tries. A retry still queued from before carries a
+    // higher attempt number than the row now, so deliver() drops it.
+    const done = await env.DB.prepare("UPDATE webhook_deliveries SET status = 'pending', attempts = 0, next_at = ? WHERE id = ? AND webhook_id = ?").bind(Date.now(), p[3], hook.id).run();
+    if (!done.meta.changes) return error(404, "no such delivery");
+    await env.HOOKS?.send({ delivery: p[3], attempt: 1 });
+    await audit("webhook.replay", hook.id as string, p[3]);
+    return json({ ok: true });
   }
   return null;
 }

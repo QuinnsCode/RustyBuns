@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "./icons.tsx";
 
 // The CRM in the browser: sign in, pick an org, then tables of the four entities, insights from
@@ -359,6 +359,8 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
   const [audit, setAudit] = useState<Row[]>([]);
   const [fresh, setFresh] = useState("");
   const [msg, setMsg] = useState("");
+  const [open, setOpen] = useState("");
+  const [deliveries, setDeliveries] = useState<Row[]>([]);
   const base = `/orgs/${org.id}`;
   const refresh = useCallback(() => {
     api(`${base}/members`).then((r) => setMembers(rowsOf(r))).catch(() => {});
@@ -366,6 +368,8 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
     if (can("manager")) api(`${base}/audit`).then((r) => setAudit(rowsOf(r))).catch(() => {});
   }, [base, can]);
   useEffect(refresh, [refresh]);
+  const loadDeliveries = useCallback((id: string) => api(`${base}/webhooks/${id}/deliveries`).then((r) => setDeliveries(rowsOf(r))).catch(() => {}), [base]);
+  const toggleDeliveries = (id: string) => { setDeliveries([]); setOpen(open === id ? "" : id); if (open !== id) loadDeliveries(id); };
   const act = async (fn: () => Promise<unknown>) => { setMsg(""); try { await fn(); refresh(); } catch (e) { setMsg((e as Error).message); } };
   const mcp = useMemo(() => `claude mcp add --transport http qcrm ${location.origin}/api/mcp --header "Authorization: Bearer ${fresh || "qk_…"}"`, [fresh]);
   return (
@@ -398,7 +402,11 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
       </div>}
       {can("owner") && <div className="card" data-tour="webhooks">
         <h3><Icon name="webhook" /> Webhooks</h3>
-        <div className="list">{hooks.map((h) => <div className="row" key={h.id}><span className="grow mono">{h.url}</span><span className="pill">{Array.isArray(h.events) ? h.events.join(", ") : String(h.events ?? "*")}</span><button type="button" onClick={() => act(() => api(`${base}/webhooks/${h.id}`, { method: "DELETE" }))}><Icon name="x" /></button></div>)}</div>
+        <div className="list">{hooks.map((h) => <Fragment key={h.id}><div className="row"><span className="grow mono">{h.url}</span><span className="pill">{Array.isArray(h.events) ? h.events.join(", ") : String(h.events ?? "*")}</span><button type="button" title="Deliveries" aria-label="Deliveries" onClick={() => toggleDeliveries(h.id)}><Icon name="scroll-text" /></button><button type="button" title="Remove" aria-label="Remove" onClick={() => act(() => api(`${base}/webhooks/${h.id}`, { method: "DELETE" }))}><Icon name="x" /></button></div>
+          {open === h.id && <div className="list" data-deliveries={h.id}>
+            {deliveries.length === 0 && <p className="muted">No deliveries yet.</p>}
+            {deliveries.map((d) => <div className="row" key={d.id}><span className="pill">{d.status}</span><span className="grow mono">{d.event}</span><span className="muted">{d.last_code ? `HTTP ${d.last_code}` : "no reply"} · {d.attempts} {d.attempts === 1 ? "try" : "tries"} · {new Date(d.created_at).toLocaleString()}</span><button type="button" title="Replay" aria-label="Replay" onClick={() => act(async () => { await api(`${base}/webhooks/${h.id}/deliveries/${d.id}/replay`, { method: "POST" }); await loadDeliveries(h.id); })}><Icon name="refresh-cw" /></button></div>)}
+          </div>}</Fragment>)}</div>
         <form className="row" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); act(() => api(`${base}/webhooks`, { method: "POST", body: JSON.stringify({ url: f.get("url"), events: String(f.get("events") || "*").split(",").map((s) => s.trim()).filter(Boolean) }) })); e.currentTarget.reset(); }}>
           <input name="url" type="url" placeholder="https://example.com/hooks/qcrm" required className="grow" /><input name="events" placeholder="contact.created, deal.updated" style={{ maxWidth: 260 }} /><button className="primary" type="submit"><Icon name="plus" /> Add</button>
         </form>

@@ -102,6 +102,7 @@ const OPS: Record<string, Record<string, Op>> = {
     delete: { id: "delete_webhook", summary: "Remove a webhook and its deliveries", tag: "Webhooks", role: "owner", risky: true, ok: ref("Ok") },
   },
   [`${org}/webhooks/{id}/deliveries`]: { get: { id: "list_deliveries", summary: "A webhook's last 50 deliveries", tag: "Webhooks", role: "owner", risky: true, ok: arr(ref("Delivery")) } },
+  [`${org}/webhooks/{id}/deliveries/{delivery}/replay`]: { post: { id: "replay_delivery", summary: "Send a delivery again, with a fresh set of tries", tag: "Webhooks", role: "owner", risky: true, ok: ref("Ok") } },
   [`${org}/keys`]: {
     get: { id: "list_keys", summary: "The org's API keys, by prefix", tag: "Keys", role: "owner", risky: true, ok: arr(ref("Key")) },
     post: { id: "create_key", summary: "A new API key (qk_…): the secret is shown this once", tag: "Keys", role: "owner", risky: true, description: "From a signed-in browser only; a key can't make keys.", body: obj({ name: str() }, ["name"]), ok: ref("Key"), status: 201 },
