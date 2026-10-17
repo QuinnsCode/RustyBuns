@@ -20,6 +20,7 @@ import { exportRoutes, meRoutes } from "./me.ts";
 import { openapi } from "./openapi.ts";
 import { orgListRoutes, orgRoutes, orgRow, roleIn, writeAudit, type Ctx } from "./orgs.ts";
 import { can, type Action } from "./rbac.ts";
+import { scriptRoutes } from "./scripts.ts";
 import { seedRoutes } from "./seed-data.ts";
 import { syncRoutes } from "./sync.ts";
 import { deliver, webhookRoutes } from "./webhooks.ts";
@@ -28,7 +29,9 @@ import { deliver, webhookRoutes } from "./webhooks.ts";
 const AUTH_LIMIT = 20;
 const hits = new Map<string, { n: number; until: number }>();
 function limited(req: Request) {
-  const ip = req.headers.get("cf-connecting-ip") ?? "local", now = Date.now();
+  // Cloudflare always sets the header; without it (the desktop, the tests) there is one person and no limit.
+  const ip = req.headers.get("cf-connecting-ip"), now = Date.now();
+  if (!ip) return false;
   let h = hits.get(ip);
   if (!h || h.until < now) { h = { n: 0, until: now + 60_000 }; hits.set(ip, h); if (hits.size > 10_000) hits.clear(); }
   return ++h.n > AUTH_LIMIT;
@@ -68,7 +71,9 @@ async function route(req: Request, env: Env): Promise<Response> {
     const need = GUARDS[p[3] ?? ""];
     if (need && !can(role, need)) return error(403, `a ${role} can't do that`);
     const ctx: Ctx = { req, env, url, user, org, role, p: p.slice(3), audit: (action, target, detail) => writeAudit(env, org, user.id, action, target, detail) };
-    for (const r of ORG_ROUTES) if ((res = await r(ctx))) break;
+    // A script's calls come back in through the whole API, as the person who pressed run.
+    res = await scriptRoutes(ctx, (r) => handleApi(r, env));
+    for (const r of ORG_ROUTES) if (res || (res = await r(ctx))) break;
   }
   return res ?? error(404, "not found");
 }

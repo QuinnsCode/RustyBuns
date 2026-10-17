@@ -23,6 +23,8 @@ export default defineConfig({
     // Accounts, orgs, memberships, contacts, companies, deals, activities, webhooks, the change log.
     DB: { type: "d1", databaseName: "qcrm-db", protect: true, migrationsDir: "migrations" },
     // Webhook deliveries, one message each, retried with a delay (src/webhooks.ts).
+    // Stored scripts run in a dynamic Worker of their own, no network, one service binding back to the API (src/scripts.ts).
+    LOADER: { type: "worker_loader" },
     HOOKS: { type: "queue", queueName: "qcrm-hooks", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } },
     BETTER_AUTH_SECRET: { type: "secret", op: "op://qcrm/better-auth/secret" },
     BETTER_AUTH_URL: { type: "var", value: "https://qcrm.qntbr.com" },

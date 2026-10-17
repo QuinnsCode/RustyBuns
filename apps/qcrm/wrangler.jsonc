@@ -34,6 +34,11 @@
       }
     ]
   },
+  "worker_loaders": [
+    {
+      "binding": "LOADER"
+    }
+  ],
   "vars": {
     "BETTER_AUTH_URL": "https://qcrm.qntbr.com"
   },

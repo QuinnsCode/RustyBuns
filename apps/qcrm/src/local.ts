@@ -1,6 +1,8 @@
 // The whole API in-process with the local twins (in-memory D1, an in-process hooks queue):
 // what the tests run against. The desktop build wires the same pieces onto sqlite.
-import { applyD1Migrations, d1, queue } from "@rustybuns/shell-bun";
+import { applyD1Migrations, d1, queue, workerLoader } from "@rustybuns/shell-bun";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { handleApi, handleQueue } from "./api.ts";
 import type { Env } from "./env.ts";
@@ -13,6 +15,9 @@ export async function local(extra: Record<string, unknown> = {}) {
   const env: any = { DB: d1(":memory:"), BETTER_AUTH_SECRET: "test-secret-".padEnd(40, "x"), BETTER_AUTH_URL: ORIGIN, ...extra };
   env.HOOKS = queue(":memory:", "qcrm-hooks");
   const stopHooks = env.HOOKS.consume((batch: any) => handleQueue(batch, env as Env), { scheduler: now });
+  // Scripts run in the local Worker Loader, which writes each script's module to disk first.
+  const loaderDir = mkdtempSync(join(tmpdir(), "qcrm-scripts-"));
+  if (!("LOADER" in extra)) env.LOADER = workerLoader(loaderDir);
   await applyD1Migrations(env.DB, join(import.meta.dir, "../migrations"));
   /** Call the API with a cookie string (or "" for signed out). */
   const call = (cookie: string, path: string, init: RequestInit = {}) => {
@@ -22,7 +27,7 @@ export async function local(extra: Record<string, unknown> = {}) {
     headers.set("origin", ORIGIN);
     return handleApi(new Request(ORIGIN + path, { ...init, headers }), env as Env);
   };
-  return Object.assign(call, { env: env as Env, close() { stopHooks(); } });
+  return Object.assign(call, { env: env as Env, close() { stopHooks(); rmSync(loaderDir, { recursive: true, force: true }); } });
 }
 
 export type Call = Awaited<ReturnType<typeof local>>;

@@ -22,9 +22,17 @@ export interface QueueLike<T> { send(body: T, opts?: { delaySeconds?: number }):
 /** Social sign-in, on when both halves are set (auth.ts). */
 export interface SocialEnv { GITHUB_CLIENT_ID?: string; GITHUB_CLIENT_SECRET?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string }
 
+/** The part of a dynamic Worker's code (worker_loader) this app writes, and of the loader it calls (scripts.ts). */
+export interface WorkerCode { compatibilityDate?: string; mainModule: string; modules: Record<string, string>; env?: Record<string, unknown>; globalOutbound?: unknown }
+export interface WorkerLoaderLike {
+  get(id: string, code: () => WorkerCode | Promise<WorkerCode>): { getEntrypoint(): { fetch(input: string, init?: RequestInit): Promise<Response> } };
+}
+
 export interface Env extends SocialEnv {
   DB: D1;
   HOOKS?: QueueLike<HookMessage>;
+  /** Dynamic Workers for org scripts. Without it scripts answer 503. */
+  LOADER?: WorkerLoaderLike;
   /** Signs sessions, salts org ids. Without it nobody signs in (every route answers 503). */
   BETTER_AUTH_SECRET?: string;
   BETTER_AUTH_URL?: string;

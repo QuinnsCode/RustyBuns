@@ -8,7 +8,7 @@ import { Icon } from "./icons.tsx";
 // webhooks, keys, export, delete). Every call goes to /api with the session cookie.
 
 type Row = Record<string, any>;
-type View = "contacts" | "companies" | "deals" | "activities" | "insights" | "engine" | "settings";
+type View = "contacts" | "companies" | "deals" | "activities" | "insights" | "engine" | "scripts" | "settings";
 interface Me { user: { id: string; email: string; name: string } | null; orgs: { id: string; name: string; role: string }[]; superAdmin?: boolean }
 
 const api = async (path: string, init: RequestInit = {}) => {
@@ -71,7 +71,7 @@ export function Crm() {
   if (!current) return <NewOrg onDone={load} />;
   const role = me.superAdmin ? "super_admin" : current.role;
   const can = (min: string) => RANK[role]! >= RANK[min]!;
-  const items: [View, string, string][] = [["contacts", "Contacts", "users"], ["companies", "Companies", "building"], ["deals", "Deals", "badge-dollar-sign"], ["activities", "Activities", "activity"], ["insights", "Insights", "chart-column"], ["engine", "Engine", "cpu"], ["settings", "Settings", "key-round"]];
+  const items: [View, string, string][] = [["contacts", "Contacts", "users"], ["companies", "Companies", "building"], ["deals", "Deals", "badge-dollar-sign"], ["activities", "Activities", "activity"], ["insights", "Insights", "chart-column"], ["engine", "Engine", "cpu"], ["scripts", "Scripts", "scroll-text"], ["settings", "Settings", "key-round"]];
   return (
     <div className="crm">
       <aside className="rail" data-tour="rail">
@@ -85,6 +85,7 @@ export function Crm() {
         {view in COLS && <Table key={current.id + view} org={current.id} entity={view} can={can} />}
         {view === "insights" && <Insights org={current.id} />}
         {view === "engine" && <Engine org={current.id} />}
+        {view === "scripts" && <Scripts org={current.id} can={can} />}
         {view === "settings" && <Settings me={me} org={current} role={role} can={can} reload={load} />}
       </section>
     </div>
@@ -299,6 +300,51 @@ function Engine({ org }: { org: string }) {
       </div>
       {msg && <p className="err">{msg}</p>}
       {out && <div className="card"><h3>{out.kind} · {out.rows.toLocaleString()} rows in · {out.ms} ms</h3><pre className="code">{JSON.stringify(out.data, null, 2).slice(0, 20_000)}</pre></div>}
+    </>
+  );
+}
+
+/** Stored scripts: small async functions an org keeps and runs, by hand here, from the API, or from an agent through MCP. */
+function Scripts({ org, can }: { org: string; can: (r: string) => boolean }) {
+  const [list, setList] = useState<Row[]>([]);
+  const [open, setOpen] = useState<Row | null>(null);
+  const [runs, setRuns] = useState<Row[]>([]);
+  const [out, setOut] = useState<any>(null);
+  const [msg, setMsg] = useState("");
+  const base = `/orgs/${org}/scripts`;
+  const refresh = useCallback(() => api(base).then((r) => setList(rowsOf(r))).catch((e) => setMsg(e.message)), [base]);
+  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { if (open?.id) api(`${base}/${open.id}/runs`).then((r) => setRuns(rowsOf(r))).catch(() => setRuns([])); else setRuns([]); }, [open?.id, base, out]);
+  const act = async (fn: () => Promise<unknown>) => { setMsg(""); try { await fn(); await refresh(); } catch (e) { setMsg((e as Error).message); } };
+  const run = (id: string) => act(async () => setOut(await api(`${base}/${id}/run`, { method: "POST", body: JSON.stringify({ input: {} }) })));
+  return (
+    <>
+      <div className="toolbar"><h2>Scripts</h2><span className="grow" />
+        {can("manager") && list.length === 0 && <button type="button" onClick={() => act(() => api(`${base}/examples`, { method: "POST" }))}><Icon name="download" /> Install the examples</button>}
+        {can("manager") && <button className="primary" type="button" onClick={() => setOpen({ name: "", body: "async ({ input, qcrm, log }) => {\n  const { items } = await qcrm.list(\"contacts\", { limit: 5 });\n  log(items.length, \"contacts\");\n  return items.map((c) => c.email);\n}" })}><Icon name="plus" /> New script</button>}
+      </div>
+      <p className="muted">Each run is its own isolated Worker with no network: the script sees <code>qcrm</code> (list, get, create, update, remove, insights, scoped to this org and your role), <code>input</code> and <code>log</code>; 200 calls and 10 s per run. Agents run them through MCP as <code>run_script</code>.</p>
+      {msg && <p className="err">{msg}</p>}
+      <div className="list">{list.map((s) => (
+        <div className="card" key={s.id}><div className="row"><b className="grow">{s.name}</b>{can("employee") && <button className="primary" type="button" onClick={() => run(s.id)}><Icon name="activity" /> Run</button>}<button type="button" onClick={() => setOpen(s)}>Open</button></div>
+          <p className="muted mono">{String(s.body ?? "").split("\n")[0]}</p></div>))}
+        {!list.length && <div className="empty">No scripts yet.</div>}
+      </div>
+      {out && <div className="card"><h3>Last run · {out.status ?? "ok"} · {out.calls ?? 0} calls · {out.ms ?? ""} ms</h3>{Array.isArray(out.log) && out.log.length > 0 && <pre className="code">{out.log.join("\n")}</pre>}<pre className="code">{JSON.stringify(out.result ?? out, null, 2).slice(0, 20_000)}</pre></div>}
+      {open && <div className="sheet" onClick={(e) => { if (e.target === e.currentTarget) setOpen(null); }}>
+        <form onSubmit={async (e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const d = { name: f.get("name"), body: f.get("body") }; await act(() => api(open.id ? `${base}/${open.id}` : base, { method: open.id ? "PUT" : "POST", body: JSON.stringify(d) })); setOpen(null); }}>
+          <div className="row"><h2>{open.id ? "Edit script" : "New script"}</h2><span className="grow" /><button type="button" onClick={() => setOpen(null)} aria-label="Close"><Icon name="x" /></button></div>
+          <label><span>Name</span><input name="name" defaultValue={open.name ?? ""} required maxLength={80} disabled={!can("manager")} /></label>
+          <label><span>Body: an async function of {"{ input, qcrm, log }"}</span><textarea name="body" defaultValue={open.body ?? ""} rows={16} className="mono" required disabled={!can("manager")} /></label>
+          <div className="row">
+            {open.id && can("owner") && <button type="button" style={{ color: "var(--bad)" }} onClick={() => act(() => api(`${base}/${open.id}`, { method: "DELETE" })).then(() => setOpen(null))}>Delete</button>}
+            <span className="grow" />
+            {open.id && can("employee") && <button type="button" onClick={() => run(open.id)}>Run</button>}
+            {can("manager") && <button className="primary" type="submit">Save</button>}
+          </div>
+          {runs.length > 0 && <div className="table"><table><thead><tr><th>When</th><th>Status</th><th>Calls</th><th>Log</th></tr></thead><tbody>{runs.map((r) => <tr key={r.id}><td>{when(r.started_at)}</td><td>{r.status}</td><td className="num">{r.calls}</td><td>{String(r.log ?? "").slice(0, 80)}</td></tr>)}</tbody></table></div>}
+        </form>
+      </div>}
     </>
   );
 }

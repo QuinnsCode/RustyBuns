@@ -60,7 +60,7 @@ const app = defineApp([
 
 export default {
   fetch: app.fetch,
-  queue: (batch) => handleQueue(batch as never, e()),
+  queue: (batch: unknown) => handleQueue(batch as never, e()),
   // On the hour: demo orgs older than a day go, dead webhook deliveries are swept.
   scheduled: () => hourly(e()),
-} satisfies ExportedHandler<Env>;
+};
