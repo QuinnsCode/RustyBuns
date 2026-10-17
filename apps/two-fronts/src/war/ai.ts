@@ -5,7 +5,7 @@ import { other, type Faction, type Side, type SpaceOrder } from "../battle/contr
 import { HULL_PER_SHIP, ROUNDS, exchange, legalPicks, type PickBattle } from "../battle/space-picks.ts";
 import { mulberry32 } from "@rustybuns/util";
 import { galaxyOf } from "./galaxy.ts";
-import { COST, ORBIT, checkRetreats, enemy, handOf, planDeploys, planOrders, sectorAt, type Campaign, type Order, type Orders, type Retreat, type SystemState } from "./rules.ts";
+import { COST, ORBIT, checkRetreats, enemy, handOf, idleShips, planDeploys, planOrders, sectorAt, type Campaign, type Order, type Orders, type Retreat, type SystemState } from "./rules.ts";
 
 export function aiOrders(c: Campaign, f: Faction): Orders {
   const orders: Order[] = [];
@@ -80,6 +80,15 @@ export function aiOrders(c: Campaign, f: Faction): Orders {
     s.sectors.forEach((x, j) => {
       if (x.owner === f && x.armies[f] >= 2 && x.armies[f] > s.sectors[foeAt]!.armies[foe]) tryAdd({ kind: "army", from: { system: s.id, sector: j }, to: { system: s.id, sector: foeAt }, count: x.armies[f] - 1 });
     });
+  }
+
+  // Bombard: where it holds the sky alone, its ships left over train on the thickest garrison below.
+  const sky = planOrders(c, [{ faction: f, orders }]).c;
+  for (const s of systems(sky)) {
+    if (s.orbit !== f || s.fleets[foe]) continue;
+    const target = s.sectors.reduce<number>((best, x, j) => (x.owner === foe && x.armies[foe] > (s.sectors[best]?.armies[foe] ?? 0) ? j : best), -1);
+    const free = idleShips(sky, s)[f];
+    if (target >= 0 && free > 0) tryAdd({ kind: "bombard", at: { system: s.id, sector: target }, count: free });
   }
   return { faction: f, orders };
 }
