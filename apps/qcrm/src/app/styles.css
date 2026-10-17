@@ -54,8 +54,13 @@ svg.i { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-widt
 
 .wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
 .nav { display: flex; align-items: center; gap: 14px; height: 56px; }
-.nav .brand { font-weight: 700; letter-spacing: -0.03em; color: var(--ink); font-size: 18px; display: inline-flex; align-items: center; gap: 8px; }
-.nav .brand b { color: var(--accent); }
+/* Bagel Fat One (OFL), subset to the four letters of the wordmark so it costs 7 KB and the CSP stays self-only. */
+@font-face { font-family: "Bagel Fat One"; font-display: swap; src: url("./bagel-fat-one-qcrm.ttf") format("truetype"); }
+.nav .brand { position: relative; overflow: hidden; isolation: isolate; font: 400 20px/1 "Bagel Fat One", Geist, system-ui, sans-serif; letter-spacing: .01em; color: var(--ink); display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--paper); text-decoration: none; -webkit-tap-highlight-color: transparent; }
+.nav .brand b { font-weight: 400; color: var(--accent); }
+.nav .brand::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(105deg, transparent 35%, color-mix(in srgb, var(--accent) 35%, transparent) 50%, transparent 65%); transform: translateX(-120%); }
+.nav .brand:hover::after, .nav .brand:active::after, .nav .brand:focus-visible::after { transform: translateX(120%); transition: transform .7s ease; }
+@media (prefers-reduced-motion: reduce) { .nav .brand::after { display: none; } }
 .nav .grow { flex: 1; }
 .nav a:not(.brand):not(.btn) { color: var(--dim); font-size: 14px; }
 .tag { font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
