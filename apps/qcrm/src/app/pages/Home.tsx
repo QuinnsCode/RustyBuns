@@ -14,7 +14,7 @@ const EDGE = [
   { icon: "lock-keyhole", title: "Hashed orgs, real roles", body: "An org's id is a hash of its owner's account and the server secret, so URLs carry nothing a stranger can walk back to a person. Seasonal, employee, manager, owner, admin and a super admin: who can delete, invite or export is one table you can read." },
   { icon: "download", title: "Export and delete, for real", body: "One request gives an owner every row of their org as JSON. One request deletes an account, its orgs and all their rows. Privacy isn't a page here; it's two routes." },
   { icon: "brain-circuit", title: "Private AI, opt-in", body: "Analysis runs locally. When you choose, the engine can hand summaries to a model you run yourself. Nothing leaves without a click." },
-  { icon: "phone", title: "Calls and recordings (soon)", body: "qlave, QNTBR's call tool (Clave) with Whisper transcripts processed mostly on the client, docks in as a package. Until then, bun run qlave pulls its source." },
+  { icon: "phone", title: "Calls and recordings (soon)", body: "Clave, QNTBR's call tool with Whisper transcripts processed mostly on the client, will ship the way the engine does: sealed, and opened by a lease from artstewengine." },
 ];
 
 export function Home() {
