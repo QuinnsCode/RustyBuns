@@ -37,7 +37,7 @@ test.each(parks.map((e) => [e.name, e.id]))("%s: the kit stands in a clearing an
   expect(trees.length).toBeGreaterThan(100);
   expect(trees.filter((s) => dist(s) < 5).length).toBe(0); // nothing tall crowds the kit
   expect(spots.filter((s) => s.kind === "flower" || s.kind === "fern").length).toBeGreaterThan(20); // the clearing has meadow in it
-  expect(trees.filter((s) => dist(s) > 40).length).toBeGreaterThan(trees.filter((s) => dist(s) < 25).length * 0.5); // and the woods are further out
+  expect(trees.filter((s) => dist(s) > 25).length).toBeGreaterThan(trees.filter((s) => dist(s) < 15).length * 0.5); // and the woods are further out (the kit now spreads over the whole map, so the clearing is the 12 m around each part, not a 40 m belt)
 });
 
 test("a pine shrinks away as the rider nears it, and grows back when they leave", () => {
