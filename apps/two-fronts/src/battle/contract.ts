@@ -60,8 +60,18 @@ export interface SpaceBattleSpec {
   hero: Side;
   heroLevel: number;
   fleets: PerSide<number>;    // ships on each side
+  // Each side's muster force: its armies on the world below, which send boarding parties up, and
+  // its gun sectors there (cannons, shields, upgraded guns), which add to a screen or a bombard.
+  // Absent in a save from before the pick battle: none on either side.
+  muster?: PerSide<number>;
+  batteries?: PerSide<number>;
   seed: number;
 }
+
+// The space battle fought by picking (space-picks.ts): a few rounds, each side picking one order a
+// round, shown to the other only once both are in.
+export type SpaceOrder = "broadside" | "screen" | "board" | "bombard" | "withdraw";
+export const SPACE_ORDERS: SpaceOrder[] = ["broadside", "screen", "board", "bombard", "withdraw"];
 
 export interface SpaceBattleResult {
   id: string;
@@ -69,7 +79,9 @@ export interface SpaceBattleResult {
   fleets: PerSide<number>;    // cruisers still flying at the end
   heroDown: boolean;
   auto?: true;                // left to the AI, as on the ground
-  inputs?: string;            // played: the hero's input log, as on the ground
+  inputs?: string;            // played: the hero's input log, as on the ground; a pick battle's is the hero's picks
+  picks?: true;               // fought by picking orders rather than flown
+  ground?: PerSide<number>;   // a pick battle's toll on the world below: armies each side lost to bombardment or boarding
 }
 
 export const other = (s: Side): Side => (s === "attacker" ? "defender" : "attacker");

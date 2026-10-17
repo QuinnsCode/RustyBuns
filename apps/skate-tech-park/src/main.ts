@@ -2,13 +2,14 @@
 import { Car, createElement, Info, RectangleHorizontal, RotateCcw, Shield, ShieldOff, Users } from "lucide";
 import * as THREE from "three";
 import { mountPartsPicker } from "./parts-picker.ts";
-import { BOARD_BUDGETS, type BoardBudget, dressBoard, fingerboard, roadster, type Thruster } from "./models.ts";
+import { BOARD_BUDGETS, type BoardBudget, dressBoard, dressRoadster, fingerboard, ROADSTER_BUDGETS, type RoadsterBudget, roadster, type Thruster } from "./models.ts";
 import { levelMeshes } from "./render/pieces.ts";
 import { KIT_BUDGETS, type KitBudget, loadKit } from "./render/kit.ts";
 import { Plumes } from "./render/plumes.ts";
 import { Chase } from "./render/chase.ts";
 import { between, poseOf } from "./render/interp.ts";
 import { Critters } from "./render/critters.ts";
+import { Barrier } from "./render/barrier.ts";
 import { Scenery, scatter } from "./render/scenery.ts";
 import { followCamera, sky, skyMood, skyTime } from "./render/sky.ts";
 import { comboLine } from "./render/combo.ts";
@@ -60,6 +61,8 @@ scene.add(precip.object);
 const lightning = mood.lightning ? new Lightning() : null;
 const scenery = park ? new Scenery(scatter(level, (level as ParkLevel).ground)) : null; // small pines and rocks, for scale
 if (scenery) scene.add(scenery.group);
+const barrier = park ? new Barrier(level.bounds, level.height) : null; // the edge of the park, where the sim stops the board
+if (barrier) scene.add(barrier.group);
 const critters = park ? new Critters((level as ParkLevel).ground, level.spawns[0]) : null; // birds and small animals that bolt from the rider
 if (critters) scene.add(critters.group);
 // The plaza's own floor, wall and towers; a park draws its ground instead.
@@ -124,6 +127,11 @@ for (let i = 0; i < 28; i++) {
 }
 
 const car = roadster();
+// The Blender roadster at a polygon budget (?car=hi|mid|low, or ?car=built for the shared one).
+const carBudget = new URLSearchParams(location.search).get("car") ?? "mid";
+if (ROADSTER_BUDGETS.includes(carBudget as RoadsterBudget)) {
+  dressRoadster(car, new URL(`models/roadster-${carBudget}.glb`, document.baseURI).href).catch((e) => console.warn("roadster model", e));
+}
 const showroom = new URLSearchParams(location.search).has("showroom");
 const PIVOT_Y = { fingerboard: 0.45, roadster: 0.6 }; // what a flip turns about
 const board = fingerboard();
@@ -303,6 +311,7 @@ function frame(now: number) {
   const flash = lightning?.update(dt) ?? 0;
   fill.intensity = mood.fill + flash * 3;
   skyTime(air, now / 1000, flash);
+  barrier?.update(sim.x, sim.z);
   scenery?.update([sim, camera.position]);
   critters?.update(Math.min((now - critterAt) / 1000, 0.1), [sim, camera.position]);
   critterAt = now;

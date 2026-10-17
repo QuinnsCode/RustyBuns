@@ -5,6 +5,10 @@
 import * as THREE from "three";
 import { FACTION_COLORS, type BattleResult, type BattleSpec, type Side } from "./contract.ts";
 import { groundRecorder } from "./replay.ts";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { OutlinePass } from "three/addons/postprocessing/OutlinePass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { animate, gunship, marine, speeder, tank, turret, walker, wooka } from "./models.ts";
 import { buildWorld } from "./terrain.ts";
 import { CHAMP_AT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, startBattle, statsOf, step, timeLimit, vipUnit, type Fx, type Trooper, type Unit } from "./sim.ts";
@@ -135,9 +139,23 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     return hit && hit.distanceTo(camera.position) < 160 ? { x: hit.x, z: hit.z } : null;
   };
 
+  // Halo-style outline on the enemy: bright where you can see them, dim where foliage or a wall
+  // is in front, so a Wooka coming through the ferns still reads.
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const outline = new OutlinePass(new THREE.Vector2(innerWidth, innerHeight), scene, camera);
+  outline.edgeStrength = 5;
+  outline.edgeThickness = 2;
+  outline.visibleEdgeColor.set(0xff5a2a);
+  outline.hiddenEdgeColor.set(0xc0381c);
+  composer.addPass(outline);
+  composer.addPass(new OutputPass());
+  const OUTLINE_RANGE = 80;
   const resize = () => {
     const w = canvas.clientWidth, h = canvas.clientHeight;
     renderer.setSize(w, h, false);
+    composer.setSize(w, h);
+    outline.resolution.set(w, h);
     camera.aspect = w / Math.max(1, h);
     camera.updateProjectionMatrix();
   };
@@ -331,7 +349,10 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       if (shake > 0) camera.position.add(new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake));
       world.update(now / 1000, camera.position, { x: at.x + f.x * 30, z: at.z + f.z * 30 });
 
-      renderer.render(scene, camera);
+      // The enemy gets an outline that shows through foliage.
+      const eyeUnit = heroUnit(b);
+      outline.selectedObjects = b.units.filter((u) => u.hp > 0 && eyeUnit && u.side !== eyeUnit.side && Math.hypot(u.x - eyeUnit.x, u.z - eyeUnit.z) < OUTLINE_RANGE).map((u) => meshes.get(u.id)).filter((g): g is THREE.Group => !!g);
+      composer.render();
       if (now - hudAt > 100 || b.over) { drawHud(); hudAt = now; }
       if (b.over) {
         cancelAnimationFrame(raf);
@@ -340,6 +361,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         if (document.pointerLockElement === canvas) document.exitPointerLock();
         feel.remove();
         cross?.classList.remove("hit");
+        composer.dispose();
         renderer.dispose();
         hud.onpointerdown = null;
         resolve({ ...b.over, inputs: rec.log() });

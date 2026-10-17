@@ -33,13 +33,14 @@ export interface Unit {
   champ?: Champ;      // the hero, or an AI champion, once their side has earned one
   kit?: Kit;          // Gumpert's kit
   toss?: number;      // seconds till Warbur can throw another Wooka
+  jav?: number;       // seconds till Warbur can throw another spear
   hitBy?: number;     // who hit it last, for the hero's kill count
 }
 export interface Post { name: string; x: number; z: number; owner: Side | null; progress: number } // progress: +1 attacker, -1 defender
 export interface Strike { side: Side; x: number; z: number; t: number }
 // Shots, spears and hexes fly; blasts go off; gore is something coming apart, in its side's
 // colours (big: torn apart, or a vehicle going up); a toss is Warbur throwing a Wooka.
-export interface Fx { kind: "shot" | "spear" | "hex" | "blast" | "gore" | "toss"; x: number; z: number; tx: number; tz: number; t: number; y?: number; ty?: number; side?: Side; big?: boolean; from?: number; hit?: boolean }
+export interface Fx { kind: "shot" | "spear" | "hex" | "blast" | "gore" | "toss"; x: number; z: number; tx: number; tz: number; t: number; y?: number; ty?: number; side?: Side; big?: boolean; from?: number; hit?: boolean; pin?: boolean }
 
 // What the player does this step. Movement is relative to where the hero faces.
 export interface Input { forward: number; right: number; yaw: number; fire: boolean; strike?: { x: number; z: number }; use?: boolean }
@@ -132,6 +133,11 @@ const MAUL = 25;                   // hp a second a mob takes off whoever it's o
 const HEAL = 6;                    // hp a second a Shanti puts back into each Wooka near it
 const FLANK = 30;                  // how wide a flanking pack swings
 const TOSS_EVERY = 3;
+const JAV_EVERY = 2.4;             // Warbur's spears: big ones, thrown from afar
+const JAV_DMG = 70;
+const JAV_FAR = 16;                // past this he throws spears; inside it he throws his kin, then goes for the head
+const PIN = 3;                     // seconds a spear holds someone to a trunk
+const SPENT = 0.4;                 // a Wooka under this share of its health is too beat up to throw
 // The hero's blaster heats with each shot and cools when it's quiet; full, it locks up a while.
 export const HEAT_PER_SHOT = 0.12;
 const COOL_RATE = 0.45;
@@ -514,6 +520,33 @@ function nearestSeen(b: Battle, u: Unit, range: number) {
   return near.find((v) => sees(b, u, v)) ?? null;
 }
 
+// A spear that lands next to a trunk pins whoever it hit to it, and they can't move till they're free.
+function pin(b: Battle, t: Unit) {
+  if (t.hp <= 0 || armoured(t.kind) || flies(t) || !b.trees.some((tr) => dist(tr, t) < tr.r + 1.8)) return false;
+  t.stun = PIN;
+  return true;
+}
+
+// Warbur's spear: a big one, from a long way off.
+function spear(b: Battle, u: Unit, t: Unit) {
+  u.jav = JAV_EVERY;
+  u.yaw = yawTo(u, t);
+  const hit = rand(b) < hitChance(b, u, t);
+  const pinned = hit && pin(b, t);
+  b.fx.push({ kind: "spear", x: u.x, z: u.z, tx: t.x + (hit ? 0 : (rand(b) - 0.5) * 6), tz: t.z + (hit ? 0 : (rand(b) - 0.5) * 6), t: 0.5, big: true, from: u.id, hit, pin: pinned });
+  if (!hit) return;
+  damage(b, t, JAV_DMG, u.id);
+  if (pinned && rand(b) < 0.4) b.events.push("Warbur pinned someone to a tree.");
+}
+
+// Warbur gets hold of a trooper and takes their head off.
+function rip(b: Battle, u: Unit, t: Unit) {
+  t.hp = 0;
+  t.hitBy = u.id;
+  b.fx.push({ kind: "gore", x: t.x, z: t.z, tx: t.x, tz: t.z, t: 1.5, side: t.side, big: true, y: 1.2 });
+  if (rand(b) < 0.4) b.events.push("Warbur ripped a head clean off.");
+}
+
 function shoot(b: Battle, u: Unit, t: Unit | null, yaw = u.yaw) {
   const s = statsOf(u), kind: Fx["kind"] = u.role === "sticky" ? "spear" : u.role === "shanti" ? "hex" : "shot";
   u.cool = s.cool;
@@ -530,6 +563,8 @@ function shoot(b: Battle, u: Unit, t: Unit | null, yaw = u.yaw) {
   if (!melee(u)) b.fx.push({ kind, x: u.x, z: u.z, tx: t.x + (hit ? 0 : (rand(b) - 0.5) * 6), tz: t.z + (hit ? 0 : (rand(b) - 0.5) * 6), t: kind === "shot" ? 0.08 : 0.3, y: altitude(u), ty: altitude(t), from: u.id, hit });
   if (u.role === "sticky") u.back = 1.6; // throw, then get out of there
   if (!hit) return;
+  if (u.champ === "warbur" && isTrooper(t.kind)) return rip(b, u, t);
+  if (u.role === "sticky") pin(b, t);
   const splash = splashOf(u);
   if (splash) blast(b, u.side, t.x, t.z, splash, s.dmg, 0, u.id);
   else damage(b, t, (u.kind === "heavy" || u.kit === "rockets") && armoured(t.kind) ? s.dmg * ARMOUR_BANE : s.dmg, u.id);
@@ -541,15 +576,16 @@ function swing(b: Battle, u: Unit, yaw: number) {
   const s = statsOf(u), f = facing(yaw), at = { x: u.x + f.x * s.range * 0.6, z: u.z + f.z * s.range * 0.6 };
   const near = b.units.filter((v) => v.side !== u.side && v.hp > 0 && !hidden(b, v) && dist(v, at) < s.range * 0.8);
   for (const v of near.slice(0, u.champ ? 4 : 1)) {
+    if (u.champ === "warbur" && isTrooper(v.kind)) { rip(b, u, v); continue; }
     damage(b, v, s.dmg, u.id);
     if (u.kit === "baton") v.stun = 2;
   }
 }
 
 // Warbur picks up the nearest Wooka of his own and throws it: it lands where he's aiming, hard.
-function toss(b: Battle, u: Unit, at: { x: number; z: number }) {
+function toss(b: Battle, u: Unit, at: { x: number; z: number }, spent = true) {
   if ((u.toss ?? 0) > 0) return false;
-  const ammo = b.units.filter((v) => v.side === u.side && v.role && v.role !== "shanti" && dist(v, u) < 6).sort((a, c) => dist(u, a) - dist(u, c))[0];
+  const ammo = b.units.filter((v) => v.side === u.side && v.hp > 0 && v.role && v.role !== "shanti" && dist(v, u) < 6 && (spent || v.hp > v.maxHp * SPENT)).sort((a, c) => dist(u, a) - dist(u, c))[0];
   if (!ammo) return false;
   u.toss = TOSS_EVERY;
   const d = Math.min(35, dist(u, at)) || 1, x = clamp(u.x + ((at.x - u.x) / dist(u, at)) * d, -HALF, HALF), z = clamp(u.z + ((at.z - u.z) / dist(u, at)) * d, -HALF, HALF);
@@ -590,9 +626,14 @@ function think(b: Battle, u: Unit) {
   if (foe && dist(u, foe) > s.range) foe = null;
   if (u.role === "boomie") return boomie(b, u);
   if (u.role === "shanti") mend(b, u);
-  if (u.champ === "warbur" && foe) {
-    const far = nearestSeen(b, u, 35);
-    if (far && dist(u, far) > 8) toss(b, u, far);
+  if (u.jav !== undefined) u.jav -= DT;
+  if (u.champ === "warbur") {
+    // Spears from afar, then his kin until they're too beat up to throw, then the head.
+    const far = nearestSeen(b, u, 40), d = far ? dist(u, far) : 0;
+    if (far && d > 6) {
+      if (d <= JAV_FAR && toss(b, u, far, false)) { /* thrown */ }
+      else if ((u.jav ?? 0) <= 0) spear(b, u, far);
+    }
   }
   if (foe && u.cool <= 0) shoot(b, u, foe);
   if (!s.speed) return;
@@ -798,6 +839,7 @@ export function step(b: Battle, input: Input | null) {
     }
     if (input.strike) callStrike(b, hero.side, input.strike.x, input.strike.z);
     if (hero.toss !== undefined) hero.toss -= DT;
+    if (hero.stun) hero.stun -= DT;
     // As a champion, E is Warbur's throw or Gumpert's change of kit; otherwise it's a vehicle.
     if (input.use && hero.champ === "warbur") {
       const f = facing(input.yaw);

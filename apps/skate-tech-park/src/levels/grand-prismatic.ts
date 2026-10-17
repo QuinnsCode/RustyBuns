@@ -33,7 +33,6 @@ export const grandPrismatic: ParkSpec = {
     { name: "sky rail", x: -155, z: -120, yaw: E },
   ],
   landmarks: [{ kind: "plume", x: 140, z: 20, tall: 32, r: 6 }, { kind: "rings", x: 140, z: 20, rings: [{ r: 72, color: 0xd9a441 }, { r: 56, color: 0x6aa84f }, { r: 40, color: 0x2fb5a8 }, { r: 24, color: 0x1f5fbf }] }],
-  bounds: { minX: -290, maxX: 230, minZ: -290, maxZ: 140 },
   goals: [
     { kind: "score", target: 2500 },
     { kind: "combo", target: 800 },

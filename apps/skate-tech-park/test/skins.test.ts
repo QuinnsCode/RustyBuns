@@ -67,3 +67,13 @@ test("the parts picker repaints the board in place: deck, trucks, wheels and gri
   b.userData.paint({ deck: "nope", trucks: "nope", wheels: "nope", grip: "nope" }); // a stale saved choice falls back to the first
   expect(colours()).toEqual(before);
 });
+
+test("the grip tape marks the nose: an orange cap over the +z end only, so a board rolling fakie reads as backwards", () => {
+  const b = fingerboard();
+  const mark = (b.userData.nose as THREE.Mesh);
+  const box = new THREE.Box3().setFromObject(mark);
+  expect(box.max.z).toBeGreaterThan(DECK.length / 2 - 0.2);
+  expect(box.min.z).toBeGreaterThan(0); // nothing printed toward the tail
+  b.userData.paint({ deck: "teal", trucks: "gold", wheels: "red", grip: "grey" });
+  expect((mark.material as THREE.MeshStandardMaterial).color.getHex()).toBe(0xff7a1a); // the graphic stays the same through the parts picker
+});

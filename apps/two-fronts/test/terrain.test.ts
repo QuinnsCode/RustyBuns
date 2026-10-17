@@ -28,8 +28,8 @@ const build = (kind: SectorKind) => {
 };
 
 const KINDS: SectorKind[] = ["shield", "capital", "spaceport", "cannon", "canyon", "jungle"];
-// Measured at full quality, with room to grow a little.
-const BUDGET = { draws: 480, instances: 40_000 };
+// Measured at full quality (the jungle is the most, 711 draws once main's bushes and trench dressing joined the PR's floor), with room to grow a little.
+const BUDGET = { draws: 760, instances: 40_000 };
 
 test.each(KINDS)("%s scenery builds, sways and stays in budget", (kind) => {
   const { b, scene, world } = build(kind);

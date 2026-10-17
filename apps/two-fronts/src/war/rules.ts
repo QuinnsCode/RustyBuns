@@ -1,6 +1,6 @@
 // The strategy layer: a deterministic rules engine over plain JSON. A turn runs in phases, like a
 // board game of territories and armies, both sides at once and blind to each other's numbers:
-//   1. Draw: each side draws a card (a weapon upgrade, a troop bonus or a trap).
+//   1. Draw: each side draws a card (a weapon upgrade, a muster or a trap).
 //   2. Place: raise troops and ships, then play cards on places you hold.
 //   3. Declare: move, and any move into the enemy's orbit or sectors is an attack. The attacks are
 //      declared (where, and from where, but not with how many), and each side declares its
@@ -35,14 +35,19 @@ export interface Where { system: string; sector: number }
 export const ORBIT = -1;
 interface Transit { faction: Faction; from: Where; to: Where; count: number }
 // A paused space battle holds the turn's landings: where they can land waits on who wins the orbit.
-// The cards. A weapon upgrade arms a sector you hold for good, a troop bonus raises armies for
-// free, and a trap, set on a sector or orbit you hold for the turn, blows up half of whatever
+// The cards. A weapon upgrade arms a sector you hold for good, a muster raises armies for free,
+// more where your muster force on the world is bigger (between MUSTER_MIN and MUSTER_MAX, so it
+// can't snowball), and a trap, set on a sector or orbit you hold for the turn, blows up half of whatever
 // attacks it, and everyone of yours there with it. It's for a place you hold with one army or ship.
 export type Card = "guns" | "troops" | "trap";
 export const CARDS: Card[] = ["guns", "troops", "trap"];
-export const CARD_NAMES: Record<Card, string> = { guns: "Weapon upgrade", troops: "Troop bonus", trap: "Trap" };
+// "troops" is the muster card: the id stays as old saves have it.
+export const CARD_NAMES: Record<Card, string> = { guns: "Weapon upgrade", troops: "Muster", trap: "Trap" };
 export const HAND_MAX = 5;
-export const TROOP_CARD = 2; // armies a troop bonus raises
+export const MUSTER_MIN = 2, MUSTER_MAX = 4;
+// The armies a muster raises on a world where the side has `force` armies already: one for every
+// two there, from MUSTER_MIN up to MUSTER_MAX.
+export const musterRaise = (force: number) => Math.max(MUSTER_MIN, Math.min(MUSTER_MAX, Math.floor(force / 2)));
 export const BONUS_PLACES = 3; // take this many places in a turn and earn a card
 export interface Trap { faction: Faction; at: Where }
 
@@ -138,6 +143,15 @@ const die = (r: () => number, sides: number) => 1 + Math.floor(r() * sides);
 export const sectorAt = (c: Campaign, w: Where) => c.systems[w.system]?.sectors[w.sector];
 export const holds = (s: SystemState, f: Faction) => s.sectors.find((x) => x.kind === "capital")?.owner === f;
 export const holdsShield = (s: SystemState, f: Faction) => s.sectors.some((x) => x.kind === "shield" && x.owner === f);
+// A side's muster force on a world: its armies there, which feed the space battle over it with
+// boarding parties, and its batteries (cannons, shields and upgraded guns it holds), which add to a
+// screen or a bombardment.
+export function musterOf(s: SystemState, f: Faction) {
+  return {
+    troops: s.sectors.reduce((n, x) => n + x.armies[f], 0),
+    batteries: s.sectors.filter((x) => x.owner === f && (x.kind === "cannon" || x.kind === "shield" || x.guns)).length,
+  };
+}
 
 export function keyShare(c: Campaign, f: Faction) {
   let held = 0, total = 0;
@@ -258,7 +272,7 @@ function apply(d: Draft, f: Faction, o: Order) {
     const hand = c.hands![f];
     hand.splice(hand.indexOf(o.card), 1);
     if (o.card === "guns") sectorAt(c, o.at)!.guns = true;
-    else if (o.card === "troops") sectorAt(c, o.at)!.armies[f] += TROOP_CARD;
+    else if (o.card === "troops") sectorAt(c, o.at)!.armies[f] += musterRaise(musterOf(c.systems[o.at.system]!, f).troops);
     else (c.traps ??= []).push({ faction: f, at: { system: o.at.system, sector: o.at.sector } });
   } else if (o.kind === "fleet") {
     c.systems[o.from]!.fleets[f] -= o.count;
@@ -629,25 +643,54 @@ export function buildSpaceSpec(c: Campaign, system: string, def: Faction, seed: 
     hero: att === heroOf ? "attacker" : "defender",
     heroLevel: c.heroes[heroOf].level,
     fleets: { attacker: s.fleets[att], defender: s.fleets[def] },
+    muster: { attacker: musterOf(s, att).troops, defender: musterOf(s, def).troops },
+    batteries: { attacker: musterOf(s, att).batteries, defender: musterOf(s, def).batteries },
     seed,
   };
 }
 
-// The winner's cruisers still fit to fly keep the orbit (one at least); the loser's fleet there
-// is gone. Then the turn goes on: landings under the orbit as it now stands, and ground battles.
+// The winner's cruisers still fit to fly keep the orbit (one at least, and boarding can bring
+// prizes home); the loser's fleet there is gone. A pick battle's toll on the world below comes off
+// its armies. Then the turn goes on: landings under the orbit as it now stands, and ground battles.
 export function applySpaceResult(c0: Campaign, res: SpaceBattleResult): Campaign {
   const p = c0.pending;
   if (p?.kind !== "space" || p.spec.id !== res.id) throw new Error("that isn't the battle being fought");
   const c = structuredClone(c0), spec = p.spec, s = c.systems[p.system]!;
-  const win = res.winner, lose = otherSide(win), kept = Math.max(1, Math.min(spec.fleets[win], res.fleets[win]));
-  s.fleets[spec.factions[win]] = kept;
-  s.fleets[spec.factions[lose]] = 0;
-  if (spec.factions[win] === spec.factions.attacker && s.orbit === spec.factions.defender) took(c, spec.factions[win]);
-  s.orbit = spec.factions[win];
-  c.log.push(`Hero space battle over ${name(c, p.system)}: ${FACTION_NAMES[spec.factions[win]]} holds the orbit with ${kept} ${kept === 1 ? "ship" : "ships"} left.`);
+  const win = res.winner, lose = otherSide(win), kept = Math.max(1, Math.min(spec.fleets.attacker + spec.fleets.defender, res.fleets[win]));
+  const winner = spec.factions[win], loser = spec.factions[lose];
+  s.fleets[winner] = kept;
+  s.fleets[loser] = 0;
+  if (winner === spec.factions.attacker && s.orbit === spec.factions.defender) took(c, winner);
+  s.orbit = winner;
+  c.log.push(`Hero space battle over ${name(c, p.system)}: ${FACTION_NAMES[winner]} holds the orbit with ${kept} ${kept === 1 ? "ship" : "ships"} left.`);
+  for (const side of ["attacker", "defender"] as const) {
+    const n = thin(s, spec.factions[side], res.ground?.[side] ?? 0);
+    if (n) c.log.push(`${FACTION_NAMES[spec.factions[side]]} lose ${n} ${n === 1 ? "army" : "armies"} on ${name(c, p.system)} to bombardment and boarding.`);
+  }
+  // What the orbit means now, felt at once: a blockade, the bombardment to come, who lands.
+  if (s.sectors.some((x) => x.owner === loser)) {
+    c.log.push(`${FACTION_NAMES[winner]} blockade ${name(c, p.system)}: ${FACTION_NAMES[loser]} can't build there, and supply through it is cut.`);
+    if (kept >= BOMBARD_FLEETS && musterOf(s, loser).troops) c.log.push(holdsShield(s, loser)
+      ? `The shield on ${name(c, p.system)} keeps ${FACTION_NAMES[winner]}'s guns off the armies below.`
+      : `${FACTION_NAMES[winner]}'s ${kept} ships will bombard the ${FACTION_NAMES[loser]} on ${name(c, p.system)} every turn they hold the orbit.`);
+  }
+  for (const t of p.landings) if (t.to.system === p.system && t.from.system !== p.system && t.faction === winner) {
+    c.log.push(`${t.count} ${FACTION_NAMES[t.faction]} ${t.count === 1 ? "army comes" : "armies come"} down on ${where(c, t.to)} under their orbit.`);
+  }
   heroBack(c, spec.factions[spec.hero], win === spec.hero, res.heroDown);
   c.pending = null;
   return landAndFight(c, p.landings, [], rng((c.seed * 1000 + c.turn) ^ 0x2545f491));
+}
+
+// Takes n armies of a side off a world, from wherever it has the most, and says how many went.
+function thin(s: SystemState, f: Faction, n: number) {
+  let gone = 0;
+  for (; gone < n; gone++) {
+    const x = s.sectors.reduce<Sector | null>((best, y) => (y.armies[f] > (best?.armies[f] ?? 0) ? y : best), null);
+    if (!x) break;
+    x.armies[f]--;
+  }
+  return gone;
 }
 
 // Shot down or carried off, the hero sits out three turns; otherwise they learn from it.
