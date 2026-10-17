@@ -10,8 +10,8 @@
     "gen": "bun ../../packages/cli/src/index.ts generate",
     "test": "bun test test",
     "seed": "bun scripts/seed.ts",
-    "qlave": "bun scripts/fetch-qlave.ts",
     "wasm": "bun scripts/wasm.ts",
+    "seal": "bun scripts/seal.ts",
     "deploy": "bun ../../packages/cli/src/index.ts deploy",
     "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
     "desktop:build": "rustybuns build desktop --check"

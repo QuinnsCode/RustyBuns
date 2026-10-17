@@ -18,6 +18,7 @@ bun test test                        # the whole journey, in-process
 bun run seed                         # 100,000 contacts into a fresh org; prints the timing
 bun run deploy                       # Cloudflare, with DEPLOYS=1 and secrets through varlock (.env.schema)
 bun run desktop:build                # the desktop app: same Worker on Bun with sqlite, data in ~/.qcrm
+                                     # (127.0.0.1 only; sessions are signed with a random secret kept in its database)
 ```
 
 qCRM is accounts only: there is no alias mode. `vite dev` reads `BETTER_AUTH_SECRET` from
@@ -41,7 +42,8 @@ qCRM is accounts only: there is no alias mode. `vite dev` reads `BETTER_AUTH_SEC
 | Tour | `src/app/tour.ts` | Spotlight steps across the home page, the demo and the app. `?tour=1` or the button. |
 | Privacy | `src/me.ts`, `/privacy` | `GET …/export` gives an owner every row; `DELETE /api/me` removes an account and its orgs. |
 | Seed | `src/seed-data.ts`, `scripts/seed.ts` | Deterministic fake rows, 100,000 contacts in one run. |
-| Clave | `scripts/fetch-qlave.ts` | Pulls QNTBR's calls-and-recordings tool into `vendor/` until it is a package. |
+| CSV import | `src/csv-import.ts` | `POST …/contacts/import` and `…/companies/import`: header mapping, rows already in the org or earlier in the file skipped as duplicates. A drop zone on each table. |
+| Command menu | `src/app/commands.ts` | Ctrl/Cmd-K lists everything the signed-in person can do (go to a page, new contact/company/deal/activity, theme, switch org, sign out). The same registry is on the page as `window.crmCommands.list()` and `.run(id, args)`, so scripts, agents and end-to-end tests drive the app without clicking. |
 
 ## Connect an agent
 
@@ -50,6 +52,10 @@ An owner makes a key under Settings, then:
 ```sh
 claude mcp add --transport http qcrm https://qcrm.qntbr.com/api/mcp --header "Authorization: Bearer qk_…"
 ```
+
+Or leave the header off: `claude mcp add --transport http qcrm https://qcrm.qntbr.com/api/mcp`, then `/mcp` in
+Claude Code (or Add custom connector in Claude's desktop app) opens a qCRM page where you pick an org and say yes
+(OAuth 2.1 with PKCE, `src/oauth.ts`). The token lasts an hour and refreshes; end it under `GET/DELETE /api/oauth/grants`.
 
 `GET /api/mcp` describes the same. OpenAI and others follow the same spec when their MCP clients land.
 
@@ -62,6 +68,7 @@ has the switch; it follows the system otherwise.
 ## Security notes
 
 - Cookie-authenticated writes check the `origin` header against `BETTER_AUTH_URL`.
+- Account email is opt-in: deploy with `QCRM_MAIL_FROM=accounts@your-domain` (a sender onboarded to Cloudflare Email Sending) and sign-up sends a verification link while the sign-in page offers "Forgot password?". Without it neither is offered to work; sign-in is not gated on verification.
 - A row in another org is a 404, never a 403, so ids don't leak what exists.
 - `/api/*` answers are `cache-control: no-store`; pages are cached at the edge for a minute.
 - CSP allows `wasm-unsafe-eval` for the engine and nothing off-origin. `/demo` frames `/app`, so `frame-ancestors 'self'`.

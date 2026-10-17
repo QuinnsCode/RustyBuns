@@ -2,12 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "./icons.tsx";
+import { register, type Command } from "./commands.ts";
+import { Palette } from "./Palette.tsx";
 
 // The CRM in the browser: sign in, pick an org, then tables of the four entities, insights from
 // SQL, the Rust engine's analysis over rows pulled into the page, and settings (members,
 // webhooks, keys, export, delete). Every call goes to /api with the session cookie.
 
 type Row = Record<string, any>;
+/** Something a command asks the open table to do once it is showing. */
+type Intent = { type: "new" } | { type: "search"; q: string };
 type View = "contacts" | "companies" | "deals" | "activities" | "insights" | "engine" | "scripts" | "settings";
 interface Me { user: { id: string; email: string; name: string } | null; orgs: { id: string; name: string; role: string }[]; superAdmin?: boolean }
 
@@ -21,6 +25,7 @@ const rowsOf = (r: any): Row[] => (Array.isArray(r) ? r : r?.items ?? r?.rows ??
 const nextOf = (r: any): string | null => r?.next ?? r?.cursor ?? null;
 const money = (cents: unknown, cur = "USD") => typeof cents === "number" ? new Intl.NumberFormat(undefined, { style: "currency", currency: cur, maximumFractionDigits: 0 }).format(cents / 100) : "";
 const when = (v: unknown) => (typeof v === "number" || typeof v === "string") && v ? new Date(v).toLocaleDateString() : "";
+const whenAt = (v: unknown) => (typeof v === "number" || typeof v === "string") && v ? new Date(v).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
 /** What a linked row is called in a table or a picker. */
 const nameOf = (r: Row) => r.name ?? ([r.first_name, r.last_name].filter(Boolean).join(" ") || r.email || r.id);
 const ROLES = ["seasonal", "employee", "manager", "owner", "admin"] as const;
@@ -45,6 +50,33 @@ const theme = (t: "light" | "dark" | "auto") => {
   t === "auto" ? document.documentElement.removeAttribute("data-theme") : document.documentElement.setAttribute("data-theme", t);
 };
 
+/** Truncated id that copies the whole thing on click; the full id is the tooltip. */
+/** Registers what this person can do right now as commands: the Ctrl/Cmd-K menu and `window.crmCommands` both run these. */
+function Commands({ items, me, org, can, setView, setOrg, setIntent }: { items: [View, string, string][]; me: Me; org: string; can: (r: string) => boolean; setView: (v: View) => void; setOrg: (id: string) => void; setIntent: (i: Intent | null) => void }) {
+  useEffect(() => {
+    const entities = ["contacts", "companies", "deals", "activities"] as const;
+    const cmds: Command[] = [
+      ...items.map(([v, label, icon]): Command => ({ id: `go.${v}`, title: `Go to ${label}`, icon, run: () => setView(v) })),
+      ...entities.map((e): Command => ({ id: `${e}.new`, title: `New ${e.replace(/s$/, "")}`, icon: "plus", enabled: can(e === "activities" ? "seasonal" : "employee"), run: () => { setView(e); setIntent({ type: "new" }); } })),
+      ...entities.map((e): Command => ({ id: `${e}.search`, title: `Search ${e}`, icon: "search", menu: false, run: (a) => { setView(e); setIntent({ type: "search", q: String(a?.q ?? "") }); } })),
+      ...(["light", "dark", "auto"] as const).map((t): Command => ({ id: `theme.${t}`, title: `Theme: ${t}`, icon: "monitor", keywords: "appearance", run: () => theme(t) })),
+      { id: "org.switch", title: "Switch org", menu: false, run: (a) => setOrg(String(a?.id)) },
+      ...me.orgs.filter((o) => o.id !== org).map((o): Command => ({ id: `org.switch.${o.id}`, title: `Switch to ${o.name}`, icon: "building", keywords: "org", run: () => setOrg(o.id) })),
+      { id: "sign-out", title: "Sign out", icon: "log-out", run: async () => { await api("/auth/sign-out", { method: "POST", body: "{}" }); location.href = "/"; } },
+    ];
+    return register(cmds);
+  });
+  return null;
+}
+
+function CopyId({ id }: { id: string }) {
+  const [done, setDone] = useState(false);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(id); setDone(true); setTimeout(() => setDone(false), 1500); } catch { /* clipboard blocked */ }
+  };
+  return <button type="button" className="copy-id" title={done ? "Copied" : `Copy ${id}`} aria-label={`Copy org id ${id}`} onClick={copy}><code>{id.slice(0, 12)}…</code><Icon name={done ? "check" : "copy"} /></button>;
+}
+
 export function Crm() {
   const [me, setMe] = useState<Me | undefined>(undefined);
   const [org, setOrg] = useState<string | null>(null);
@@ -52,6 +84,7 @@ export function Crm() {
   const [err, setErr] = useState("");
   const [demo, setDemo] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [intent, setIntent] = useState<Intent | null>(null);
 
   const load = useCallback(async () => {
     try { const m = await api("/me"); setMe(m); if (!org && m.orgs?.[0]) setOrg(m.orgs[0].id); }
@@ -71,6 +104,8 @@ export function Crm() {
     } else void load();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => { if (me !== undefined) window.dispatchEvent(new Event("qcrm-session")); }, [me?.user?.id]); // tell the nav
+
   if (me === undefined) return <div className="empty">Loading…</div>;
   if (!me.user) return <Auth onDone={load} demo={demo} err={err} />;
   const current = me.orgs.find((o) => o.id === org) ?? me.orgs[0];
@@ -80,8 +115,10 @@ export function Crm() {
   const items: [View, string, string][] = [["contacts", "Contacts", "users"], ["companies", "Companies", "building"], ["deals", "Deals", "badge-dollar-sign"], ["activities", "Activities", "activity"], ["insights", "Insights", "chart-column"], ["engine", "Engine", "cpu"], ["scripts", "Scripts", "scroll-text"], ["settings", "Settings", "key-round"]];
   return (
     <div className="crm">
+      <Commands items={items} me={me} org={current.id} can={can} setView={setView} setOrg={setOrg} setIntent={setIntent} />
+      <Palette />
       <aside className={"rail" + (menu ? " open" : "")} data-tour="rail">
-        <div className="org"><span className="tag">Org</span><b title={current.id}>{current.name}</b><span>{role} · <code>{current.id.slice(0, 12)}…</code></span></div>
+        <div className="org"><span className="tag">Org</span><b title={current.id}>{current.name}</b><span>{role} · <CopyId id={current.id} /></span></div>
         <button type="button" className="nav-item menu-btn" aria-expanded={menu} aria-label="Menu" title="Menu" onClick={() => setMenu(!menu)}><Icon name={menu ? "x" : "menu"} /></button>
         {items.map(([v, label, icon]) => <button key={v} type="button" className={"nav-item" + (view === v ? " on" : "")} onClick={() => { setView(v); setMenu(false); }} data-tour={`nav-${v}`}><Icon name={icon} /> {label}</button>)}
         {me.orgs.length > 1 && <select value={current.id} onChange={(e) => setOrg(e.target.value)} aria-label="Switch org">{me.orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>}
@@ -89,7 +126,7 @@ export function Crm() {
       </aside>
       <section className="pane">
         {err && <p className="err">{err}</p>}
-        {view in COLS && <Table key={current.id + view} org={current.id} entity={view} can={can} />}
+        {view in COLS && <Table key={current.id + view} org={current.id} entity={view} can={can} intent={intent} onIntent={() => setIntent(null)} />}
         {view === "insights" && <Insights org={current.id} />}
         {view === "engine" && <Engine org={current.id} can={can} />}
         {view === "scripts" && <Scripts org={current.id} can={can} />}
@@ -100,26 +137,44 @@ export function Crm() {
 }
 
 function Auth({ onDone, demo, err }: { onDone: () => Promise<void>; demo: boolean; err: string }) {
-  const [mode, setMode] = useState<"in" | "up">("in");
+  // The reset link lands on /app?token=… (Better Auth redirects there from the emailed link).
+  const token = new URLSearchParams(location.search).get("token");
+  const [mode, setMode] = useState<"in" | "up" | "forgot" | "reset">(token ? "reset" : "in");
   const [msg, setMsg] = useState(err);
+  const [note, setNote] = useState("");
+  const go = (m: typeof mode) => { setMsg(""); setNote(""); setMode(m); };
+  const [social, setSocial] = useState<string[]>([]);
+  useEffect(() => { api("/providers").then((p: string[]) => setSocial(p.filter((x) => x !== "email"))).catch(() => {}); }, []);
+  const via = async (provider: string) => {
+    try { const r = await api("/auth/sign-in/social", { method: "POST", body: JSON.stringify({ provider, callbackURL: location.pathname + location.search }) }); if (r?.url) location.href = r.url; }
+    catch (x) { setMsg((x as Error).message); }
+  };
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const body = { email: f.get("email"), password: f.get("password"), name: f.get("name") || String(f.get("email")).split("@")[0] };
-    try { await api(mode === "in" ? "/auth/sign-in/email" : "/auth/sign-up/email", { method: "POST", body: JSON.stringify(body) }); await onDone(); }
-    catch (x) { setMsg((x as Error).message); }
+    const post = (path: string, b: unknown) => api(path, { method: "POST", body: JSON.stringify(b) });
+    try {
+      if (mode === "forgot") { await post("/auth/request-password-reset", { email: body.email, redirectTo: "/app" }); setNote("If that email has an account, a reset link is on its way."); return; }
+      if (mode === "reset") { await post("/auth/reset-password", { newPassword: body.password, token }); history.replaceState(null, "", location.pathname); go("in"); setNote("Password changed. Sign in with it."); return; }
+      await post(mode === "in" ? "/auth/sign-in/email" : "/auth/sign-up/email", body); await onDone();
+    } catch (x) { setMsg((x as Error).message); }
   };
   if (demo && !msg) return <div className="empty">Setting up your demo org, 2,000 contacts and all…</div>;
   return (
     <div className="auth" data-tour="auth">
-      <h2>{mode === "in" ? "Sign in" : "Create your account"}</h2>
+      <h2>{{ in: "Sign in", up: "Create your account", forgot: "Reset your password", reset: "Pick a new password" }[mode]}</h2>
+      {social.length > 0 && <div className="row">{social.map((p) => <button key={p} type="button" onClick={() => via(p)}><Icon name={p === "github" ? "github" : "mail"} /> Continue with {p === "github" ? "GitHub" : "Google"}</button>)}</div>}
       <p className="muted">Email and password, kept by Better Auth. Your first org is made when you sign up.</p>
       <form onSubmit={submit}>
         {mode === "up" && <label><span>Name</span><input name="name" autoComplete="name" /></label>}
-        <label><span>Email</span><input name="email" type="email" required autoComplete="email" /></label>
-        <label><span>Password</span><input name="password" type="password" required minLength={8} autoComplete={mode === "in" ? "current-password" : "new-password"} /></label>
+        {mode !== "reset" && <label><span>Email</span><input name="email" type="email" required autoComplete="email" /></label>}
+        {mode !== "forgot" && <label><span>{mode === "reset" ? "New password" : "Password"}</span><input name="password" type="password" required minLength={8} autoComplete={mode === "in" ? "current-password" : "new-password"} /></label>}
         {msg && <p className="err">{msg}</p>}
-        <div className="row"><button className="primary" type="submit">{mode === "in" ? "Sign in" : "Sign up"}</button><button type="button" onClick={() => setMode(mode === "in" ? "up" : "in")}>{mode === "in" ? "New here? Sign up" : "Have an account? Sign in"}</button></div>
+        {note && <p className="muted">{note}</p>}
+        <div className="row"><button className="primary" type="submit">{{ in: "Sign in", up: "Sign up", forgot: "Send link", reset: "Change password" }[mode]}</button>
+          {mode !== "reset" && <button type="button" onClick={() => go(mode === "in" ? "up" : "in")}>{mode === "in" ? "New here? Sign up" : "Have an account? Sign in"}</button>}
+          {mode === "in" && <button type="button" onClick={() => go("forgot")}>Forgot password?</button>}</div>
       </form>
       <p className="muted">Just looking? <a href="/demo">Try the demo</a> instead.</p>
     </div>
@@ -141,7 +196,7 @@ function NewOrg({ onDone }: { onDone: () => Promise<void> }) {
   );
 }
 
-function Table({ org, entity, can }: { org: string; entity: string; can: (r: string) => boolean }) {
+function Table({ org, entity, can, intent, onIntent }: { org: string; entity: string; can: (r: string) => boolean; intent: Intent | null; onIntent: () => void }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [q, setQ] = useState("");
   const [next, setNext] = useState<string | null>(null);
@@ -149,6 +204,8 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
   const [ms, setMs] = useState<number | null>(null);
   const [edit, setEdit] = useState<Row | null>(null);
   const [msg, setMsg] = useState("");
+  const [board, setBoard] = useState(false);
+  const [rev, setRev] = useState(0);
   const cols = COLS[entity]!;
   const [names, setNames] = useState<Record<string, string>>({});
   const fetchPage = useCallback(async (cursor: string | null, replace: boolean) => {
@@ -178,10 +235,26 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
   const save = async (data: Row) => {
     const id = edit?.id;
     await api(`/orgs/${org}/${entity}${id ? "/" + id : ""}`, { method: id ? "PUT" : "POST", body: JSON.stringify(data) });
-    setEdit(null); await fetchPage(null, true);
+    setEdit(null); setRev((n) => n + 1); await fetchPage(null, true);
   };
-  const remove = async (id: string) => { await api(`/orgs/${org}/${entity}/${id}`, { method: "DELETE" }); setEdit(null); await fetchPage(null, true); };
+  const remove = async (id: string) => { await api(`/orgs/${org}/${entity}/${id}`, { method: "DELETE" }); setEdit(null); setRev((n) => n + 1); await fetchPage(null, true); };
+  const importFile = async (file: File | undefined) => {
+    if (!file) return;
+    setMsg("");
+    try {
+      const r = await api(`/orgs/${org}/${entity}/import`, { method: "POST", body: JSON.stringify({ csv: await file.text() }) });
+      setMsg(`Imported ${r.created.toLocaleString()}, skipped ${r.duplicates.toLocaleString()} duplicates${r.failed ? `, ${r.failed} rows failed (first: row ${r.errors[0].row}, ${r.errors[0].error})` : ""}.`);
+      await fetchPage(null, true);
+    } catch (e) { setMsg((e as Error).message); }
+  };
+  const [over, setOver] = useState(false);
   const minCreate = entity === "activities" ? "seasonal" : "employee";
+  useEffect(() => {
+    if (!intent) return;
+    if (intent.type === "new" && can(minCreate)) setEdit({});
+    if (intent.type === "search") setQ(intent.q);
+    onIntent();
+  }, [intent]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       <div className="toolbar" data-tour="toolbar">
@@ -189,10 +262,16 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
         <input type="search" placeholder={`Search ${entity}…`} value={q} onChange={(e) => setQ(e.target.value)} data-tour="search" aria-label="Search" />
         {ms !== null && <span className="num" title="Round trip to the edge, this page">{ms} ms</span>}
         {total !== null && <span className="num">{total.toLocaleString()} rows</span>}
+        {entity === "deals" && <div className="seg" role="group" aria-label="View">
+          <button type="button" aria-pressed={!board} title="Table" aria-label="Table" onClick={() => setBoard(false)}><Icon name="table" /></button>
+          <button type="button" aria-pressed={board} title="Board by stage" aria-label="Board" onClick={() => setBoard(true)}><Icon name="kanban" /></button>
+        </div>}
+        {(entity === "contacts" || entity === "companies") && can("employee") && <label className="btn" title="Import a CSV"><Icon name="upload" /> Import<input type="file" accept=".csv,text/csv" hidden onChange={(e) => { void importFile(e.target.files?.[0]); e.target.value = ""; }} /></label>}
         {can(minCreate) && <button className="primary" type="button" onClick={() => setEdit({})}><Icon name="plus" /> New</button>}
       </div>
       {msg && <p className="err">{msg}</p>}
-      <div className="table">
+      {(entity === "contacts" || entity === "companies") && can("employee") && <div className={`dropzone${over ? " over" : ""}`} onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(e) => { e.preventDefault(); setOver(false); void importFile(e.dataTransfer.files[0]); }}>Drop a CSV here to import {entity}</div>}
+      {entity === "deals" && board ? <Board org={org} q={q} rev={rev} canEdit={can("employee")} onOpen={setEdit} onError={setMsg} /> : <div className="table">
         <table>
           <thead><tr>{cols.map((c) => <th key={c.key}>{c.label}</th>)}</tr></thead>
           <tbody>
@@ -204,10 +283,54 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
           </tbody>
         </table>
         {!rows.length && <div className="empty">{q ? "Nothing matches." : `No ${entity} yet.`}</div>}
-      </div>
-      {next && <button type="button" onClick={() => fetchPage(next, false)}>Load more</button>}
+      </div>}
+      {next && !(entity === "deals" && board) && <button type="button" onClick={() => fetchPage(next, false)}>Load more</button>}
       {edit && <Sheet org={org} entity={entity} row={edit} onClose={() => setEdit(null)} onSave={save} onDelete={can("manager") && edit.id ? () => remove(edit.id) : undefined} canEdit={can("employee") || !edit.id} />}
     </>
+  );
+}
+
+/** Deals as columns by stage. Dropping a card on another column is one PUT of its stage. */
+function Board({ org, q, rev, canEdit, onOpen, onError }: { org: string; q: string; rev: number; canEdit: boolean; onOpen: (r: Row) => void; onError: (m: string) => void }) {
+  const [cols, setCols] = useState<Record<string, { rows: Row[]; next: string | null }>>({});
+  const [over, setOver] = useState("");
+  const load = useCallback(async (stage: string, cursor: string | null) => {
+    const p = new URLSearchParams({ limit: "50", stage });
+    if (q) p.set("q", q);
+    if (cursor) p.set("cursor", cursor);
+    const r = await api(`/orgs/${org}/deals?${p}`);
+    setCols((c) => ({ ...c, [stage]: { rows: cursor ? [...(c[stage]?.rows ?? []), ...rowsOf(r)] : rowsOf(r), next: nextOf(r) } }));
+  }, [org, q]);
+  useEffect(() => { void Promise.all(STAGES.map((s) => load(s, null))).catch((e) => onError((e as Error).message)); }, [load, rev]); // eslint-disable-line react-hooks/exhaustive-deps
+  const drop = async (stage: string, id: string) => {
+    setOver("");
+    const from = STAGES.find((s) => cols[s]?.rows.some((r) => r.id === id));
+    if (!from || from === stage) return;
+    const row = cols[from]!.rows.find((r) => r.id === id)!;
+    setCols((c) => ({ ...c, [from]: { ...c[from]!, rows: c[from]!.rows.filter((r) => r.id !== id) }, [stage]: { ...c[stage]!, rows: [{ ...row, stage }, ...(c[stage]?.rows ?? [])] } }));
+    try { await api(`/orgs/${org}/deals/${id}`, { method: "PUT", body: JSON.stringify({ stage }) }); }
+    catch (e) { onError((e as Error).message); await Promise.all([load(from, null), load(stage, null)]).catch(() => {}); }
+  };
+  return (
+    <div className="board" data-testid="board">
+      {STAGES.map((s) => {
+        const col = cols[s]?.rows ?? [];
+        const sum = col.reduce((a, r) => a + (typeof r.amount_cents === "number" ? r.amount_cents : 0), 0);
+        return (
+          <section key={s} className={`lane${over === s ? " over" : ""}`} data-stage={s}
+            onDragOver={(e) => { if (canEdit) { e.preventDefault(); setOver(s); } }} onDragLeave={() => setOver("")}
+            onDrop={(e) => { e.preventDefault(); void drop(s, e.dataTransfer.getData("text/plain")); }}>
+            <header><Stage v={s} /><span className="num">{col.length}{cols[s]?.next ? "+" : ""} · {money(sum)}</span></header>
+            {col.map((r) => (
+              <article key={r.id} className="deal" draggable={canEdit} onDragStart={(e) => e.dataTransfer.setData("text/plain", r.id)} onClick={() => onOpen(r)}>
+                <strong>{r.name}</strong><span className="num">{money(r.amount_cents, r.currency || "USD")}</span>
+              </article>
+            ))}
+            {cols[s]?.next && <button type="button" onClick={() => void load(s, cols[s]!.next)}>More</button>}
+          </section>
+        );
+      })}
+    </div>
   );
 }
 
@@ -259,6 +382,9 @@ function Sheet({ org, entity, row, onClose, onSave, onDelete, canEdit }: { org: 
   );
 }
 
+/** Date `ago` weeks back, as "Oct 9": the axis label of that week bucket. */
+const weekLabel = (ago: number) => new Date(Date.now() - ago * 7 * 86_400_000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
 function Insights({ org }: { org: string }) {
   const [d, setD] = useState<any>(null);
   const [msg, setMsg] = useState("");
@@ -281,8 +407,8 @@ function Insights({ org }: { org: string }) {
         <div className="kpi"><span className="tag">Win rate, 90 d</span><span className="num">{winRate == null ? "–" : `${Math.round(Number(winRate) * 100)}%`}</span></div>
       </div>
       {stages.length > 0 && <div className="card"><h3>Pipeline by stage</h3><div className="bars">{stages.map((s) => <div className="bar" key={s.stage}><Stage v={s.stage} /><i style={{ width: `${(100 * s.amount_cents) / max}%` }} /><span className="num">{money(s.amount_cents)} · {s.n}</span></div>)}</div></div>}
-      {weeks.length > 0 && <div className="card"><h3>Activities, last 12 weeks</h3><div className="spark">{weeks.map((w) => <i key={w.weeks_ago} title={`${w.weeks_ago} weeks ago: ${w.total}`} style={{ height: `${(100 * w.total) / wmax}%` }} />)}</div></div>}
-      {top.length > 0 && <div className="card"><h3>Open pipeline by company</h3><div className="bars">{top.map((c) => <div className="bar" key={c.name}><span>{c.name}</span><i style={{ width: `${(100 * c.amount_cents) / tmax}%` }} /><span className="num">{money(c.amount_cents)} · {c.deals}</span></div>)}</div></div>}
+      {weeks.length > 0 && <div className="card"><h3>Activities, last 12 weeks</h3><div className="spark">{weeks.map((w) => <div className="col" key={w.weeks_ago} title={`${weekLabel(w.weeks_ago)}: ${w.total} activities`}><span className="num">{w.total}</span><i style={{ height: `${(100 * w.total) / wmax}%` }} /><span className="axis">{weekLabel(w.weeks_ago)}</span></div>)}</div></div>}
+      {top.length > 0 && <div className="card"><h3>Open pipeline by company</h3><div className="bars">{top.map((c) => <div className="bar" key={c.name}><span className="name" title={c.name}>{c.name}</span><i style={{ width: `${(100 * c.amount_cents) / tmax}%` }} /><span className="num">{money(c.amount_cents)} · {c.deals}</span></div>)}</div></div>}
     </>
   );
 }
@@ -457,6 +583,8 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
   const [hookUrl, setHookUrl] = useState("");
   const [hookErr, setHookErr] = useState("");
   const [inviteErr, setInviteErr] = useState("");
+  const [seeding, setSeeding] = useState("");
+  const [seedBusy, setSeedBusy] = useState(false);
   const base = `/orgs/${org.id}`;
   const refresh = useCallback(() => {
     api(`${base}/members`).then((r) => setMembers(rowsOf(r))).catch(() => {});
@@ -515,13 +643,18 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
       </div>
       {can("manager") && audit.length > 0 && <div className="card">
         <h3><Icon name="scroll-text" /> Audit log</h3>
-        <div className="table"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th></tr></thead><tbody>{audit.slice(0, 50).map((a) => <tr key={a.id}><td>{when(a.at)}</td><td>{a.actor_email ?? a.actor_user_id}</td><td>{a.action}</td><td>{a.target}</td></tr>)}</tbody></table></div>
+        <div className="table"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th></tr></thead><tbody>{audit.slice(0, 50).map((a) => <tr key={a.id}><td>{whenAt(a.at)}</td><td>{a.actor_name ?? a.actor_email ?? a.actor_user_id ?? "system"}{a.actor_name && <span className="muted"> {a.actor_email}</span>}</td><td>{a.action}</td><td>{a.target_name ?? a.target}{a.target_type && <span className="muted"> {a.target_type}</span>}</td></tr>)}</tbody></table></div>
       </div>}
       <div className="card">
         <h3><Icon name="download" /> Your data</h3>
         <div className="row">
           {can("owner") && <a className="btn" href={`/api${base}/export`} download={`qcrm-${org.id}.json`}><Icon name="download" /> Export every row</a>}
-          {can("owner") && <button type="button" onClick={() => { const n = Number(prompt("Seed how many contacts? (up to 100000)", "1000")); if (n > 0) act(async () => { await api(`${base}/seed`, { method: "POST", body: JSON.stringify({ n }) }); await reload(); setMsg(`Seeded ${n.toLocaleString()} contacts. Open Contacts to see them.`); }); }}><Icon name="flask-conical" /> Seed sample data</button>}
+          {can("owner") && !seeding && <button type="button" onClick={() => setSeeding("1000")}><Icon name="flask-conical" /> Seed sample data</button>}
+          {can("owner") && seeding && <form className="row" onSubmit={(e) => { e.preventDefault(); const n = Math.floor(Number(seeding)); if (!(n > 0 && n <= 100000)) { setMsg("Seed between 1 and 100,000 contacts."); return; } act(async () => { setSeedBusy(true); try { await api(`${base}/seed`, { method: "POST", body: JSON.stringify({ n }) }); await reload(); setMsg(`Seeded ${n.toLocaleString()} contacts. Open Contacts to see them.`); setSeeding(""); } finally { setSeedBusy(false); } }); }}>
+            <input type="number" min={1} max={100000} aria-label="How many contacts (up to 100,000)" value={seeding} onChange={(e) => setSeeding(e.target.value)} disabled={seedBusy} autoFocus />
+            <button type="submit" disabled={seedBusy}><Icon name="flask-conical" /> {seedBusy ? "Seeding..." : "Seed"}</button>
+            <button type="button" disabled={seedBusy} onClick={() => setSeeding("")}>Cancel</button>
+          </form>}
           <span className="grow" />
           <button type="button" style={{ color: "var(--bad)" }} onClick={() => { const c = prompt(`Delete your account, the orgs you own and all their rows? Type your email to confirm.`); if (c) act(() => api(`/me?confirm=${encodeURIComponent(c)}`, { method: "DELETE" }).then(() => { location.href = "/"; })); }}>Delete my account</button>
         </div>

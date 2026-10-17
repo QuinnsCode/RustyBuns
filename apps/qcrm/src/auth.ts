@@ -6,7 +6,7 @@
 // letting anyone in as anyone.
 
 import { betterAuth } from "better-auth";
-import { b64url, error, json, readBody, sha256, type Env } from "./env.ts";
+import { b64url, error, esc, json, NAME, readBody, sha256, type Env } from "./env.ts";
 import type { Ctx } from "./orgs.ts";
 
 export interface User { id: string; email: string; name: string; /** Set when the request came in on an API key: the one org it opens. */ key?: { id: string; org_id: string } }
@@ -21,6 +21,21 @@ export function providers(env: Env) {
   return out;
 }
 
+/** EMAIL and EMAIL_FROM are both set: verification and reset links go out. */
+export const mailOn = (env: Env) => !!(env.EMAIL && env.EMAIL_FROM);
+
+/**
+ * One account email. A failure is logged, not thrown: a reset request answers the same whether
+ * the address has an account or not, so an error mustn't tell them apart.
+ */
+async function mail(env: Env, to: string, subject: string, line: string, link: string) {
+  const foot = "If this wasn't you, ignore this email.";
+  const text = [line, "", link, "", foot].join("\n");
+  const html = `<p>${esc(line)}</p><p><a href="${esc(link)}">${esc(link)}</a></p><p style="color:#57606a">${esc(foot)}</p>`;
+  try { await env.EMAIL!.send({ from: { email: env.EMAIL_FROM!, name: NAME }, to, subject, text, html }); }
+  catch (e) { console.error("qCRM: account email failed", String((e as Error)?.message ?? e)); }
+}
+
 const make = (env: Env, origin: string) => betterAuth({
   // better-auth wants Cloudflare's D1Database class; Env.DB is the part of it this app calls.
   database: env.DB as never,
@@ -28,7 +43,23 @@ const make = (env: Env, origin: string) => betterAuth({
   baseURL: env.BETTER_AUTH_URL ?? origin,
   basePath: "/api/auth",
   trustedOrigins: [env.BETTER_AUTH_URL ?? origin],
-  emailAndPassword: { enabled: true },
+  emailAndPassword: {
+    enabled: true,
+    ...(mailOn(env) ? {
+      sendResetPassword: ({ user, url }: { user: { email: string }; url: string }) =>
+        mail(env, user.email, `Reset your ${NAME} password`, `Someone asked to reset the password for this ${NAME} account. To pick a new one, open this link within the hour:`, url),
+      // A reset proves the inbox, so it signs every other session out.
+      revokeSessionsOnPasswordReset: true,
+    } : {}),
+  },
+  ...(mailOn(env) ? {
+    emailVerification: {
+      sendOnSignUp: true,
+      autoSignInAfterVerification: true,
+      sendVerificationEmail: ({ user, url }: { user: { email: string }; url: string }) =>
+        mail(env, user.email, `Verify your ${NAME} email`, `Welcome to ${NAME}. To verify this email, open this link within the hour:`, url),
+    },
+  } : {}),
   socialProviders: {
     ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET ? { github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET } } : {}),
     ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } } : {}),
@@ -49,9 +80,10 @@ const bearerOf = (req: Request) => /^Bearer\s+(\S+)$/i.exec(req.headers.get("aut
 async function byKey(req: Request, env: Env): Promise<User | Response | null> {
   const secret = bearerOf(req);
   if (secret === null) return null;
-  const k = secret.startsWith("qk_") && await env.DB.prepare(`SELECT k.id, k.org_id, k.last_used_at, u.id AS user_id, u.email, u.name FROM api_keys k
-    JOIN "user" u ON u.id = k.user_id WHERE k.hash = ?`).bind(await sha256(secret)).first<{ id: string; org_id: string; last_used_at: number | null; user_id: string; email: string; name: string }>();
-  if (!k) return json({ error: "this API key is revoked or wrong" }, 401, { "www-authenticate": 'Bearer error="invalid_token"' });
+  // qk_ is a key an owner made; qo_ is an OAuth access token (oauth.ts), which expires.
+  const k = /^q[ko]_/.test(secret) && await env.DB.prepare(`SELECT k.id, k.org_id, k.last_used_at, u.id AS user_id, u.email, u.name FROM api_keys k
+    JOIN "user" u ON u.id = k.user_id WHERE k.hash = ? AND (k.expires_at IS NULL OR k.expires_at > ?)`).bind(await sha256(secret), Date.now()).first<{ id: string; org_id: string; last_used_at: number | null; user_id: string; email: string; name: string }>();
+  if (!k) return json({ error: "this API key is revoked, expired or wrong" }, 401, { "www-authenticate": 'Bearer error="invalid_token"' });
   // Last used, to the minute: one write a minute at most, not one a request.
   if (!k.last_used_at || Date.now() - k.last_used_at > 60_000) await env.DB.prepare("UPDATE api_keys SET last_used_at = ? WHERE id = ?").bind(Date.now(), k.id).run();
   return { id: k.user_id, email: k.email, name: k.name, key: { id: k.id, org_id: k.org_id } };
@@ -100,7 +132,7 @@ export async function keyRoutes({ req, env, user, org, p, audit }: Ctx): Promise
   if (p[0] !== "keys") return null;
   if (user.key) return error(403, "API keys can't manage keys: sign in on the site");
   if (!p[1] && req.method === "GET") {
-    const { results } = await env.DB.prepare("SELECT id, name, prefix, user_id, created_at, last_used_at FROM api_keys WHERE org_id = ? ORDER BY created_at DESC").bind(org).all();
+    const { results } = await env.DB.prepare("SELECT id, name, prefix, user_id, created_at, last_used_at FROM api_keys WHERE org_id = ? AND grant_id IS NULL ORDER BY created_at DESC").bind(org).all();
     return json(results);
   }
   if (!p[1] && req.method === "POST") {
@@ -115,7 +147,7 @@ export async function keyRoutes({ req, env, user, org, p, audit }: Ctx): Promise
     return json({ ...key, secret }, 201);
   }
   if (p[1] && !p[2] && req.method === "DELETE") {
-    const r = await env.DB.prepare("DELETE FROM api_keys WHERE id = ? AND org_id = ?").bind(p[1], org).run();
+    const r = await env.DB.prepare("DELETE FROM api_keys WHERE id = ? AND org_id = ? AND grant_id IS NULL").bind(p[1], org).run();
     if (!r.meta.changes) return error(404, "no such key");
     await audit("key.delete", p[1]);
     return json({ ok: true });

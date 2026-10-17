@@ -1,20 +1,38 @@
 // The Rust engine (wasm/src/lib.rs) from TypeScript: one memoized load, typed wrappers around
 // the JSON-string API. Works in the browser (Vite resolves the .wasm URL) and under Bun (tests).
 import init, * as wasm from "./wasm-pkg/qcrm_engine.js";
+import { unseal } from "./seal.ts";
 
 export type Engine = typeof wasm;
 
 let loading: Promise<Engine> | undefined;
 
+/**
+ * Sealed builds (VITE_QCRM_SEALED=1) fetch the encrypted wasm and the key the server gets from
+ * artstewengine; no payment, no key, no engine. Plain builds (dev, tests) load the wasm as is.
+ */
+async function sealedSource(): Promise<ArrayBuffer> {
+  const res = await fetch("/api/engine/key");
+  if (!res.ok) throw new Error("engine locked: license not paid");
+  const { key } = await res.json() as { key: string };
+  const sealed = new Uint8Array(await (await fetch("/engine.sealed")).arrayBuffer());
+  return (await unseal(sealed, key)).buffer as ArrayBuffer;
+}
+
 /** Load and instantiate the engine once; later calls share the promise. */
 export function loadEngine(): Promise<Engine> {
   loading ??= (async () => {
+    if ((import.meta as { env?: Record<string, string> }).env?.VITE_QCRM_SEALED === "1") {
+      await init({ module_or_path: await sealedSource() });
+      return wasm;
+    }
     const url = new URL("./wasm-pkg/qcrm_engine_bg.wasm", import.meta.url);
     // Bun: read the file instead of fetching a file: URL.
     const source = typeof Bun !== "undefined" && url.protocol === "file:" ? await Bun.file(url).arrayBuffer() : url;
     await init({ module_or_path: source });
     return wasm;
   })();
+  loading.catch(() => { loading = undefined; }); // locked today, paid tomorrow: ask again
   return loading;
 }
 

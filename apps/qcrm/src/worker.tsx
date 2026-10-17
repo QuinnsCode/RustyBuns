@@ -14,10 +14,22 @@ import initSql from "../migrations/0001_init.sql?raw";
 
 // vite dev hands the Worker the production BETTER_AUTH_URL from wrangler.jsonc and no secret; on the
 // dev server the request's own origin is the trusted one and a throwaway secret signs sessions.
-const e = (req?: Request): AppEnv => {
+// The desktop app (a Bun twin on 127.0.0.1) gets the same URL and no secret: it also trusts the request's own
+// origin (a loopback address never reaches the edge, and a launch token gates the port), and signs sessions with a
+// random secret made on first run and kept in its own database, so org ids (hashed with it) survive restarts.
+const loopback = (req: Request) => ["127.0.0.1", "localhost", "[::1]"].includes(new URL(req.url).hostname);
+const deskSecret = (db: AppEnv["DB"]) => (secret ??= (async () => {
+  const fresh = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
+  await db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('session_secret', ?)").bind(fresh).run();
+  return (await db.prepare("SELECT value FROM meta WHERE key = 'session_secret'").first<{ value: string }>())!.value;
+})());
+let secret: Promise<string> | undefined;
+const e = async (req?: Request): Promise<AppEnv> => {
   const base = env as unknown as AppEnv;
-  if (!import.meta.env.VITE_IS_DEV_SERVER || !req) return base;
-  return { ...base, BETTER_AUTH_URL: new URL(req.url).origin, BETTER_AUTH_SECRET: base.BETTER_AUTH_SECRET ?? "dev-only-secret-never-in-production-0000" };
+  if (!req) return base;
+  if (import.meta.env.VITE_IS_DEV_SERVER) return { ...base, BETTER_AUTH_URL: new URL(req.url).origin, BETTER_AUTH_SECRET: base.BETTER_AUTH_SECRET ?? "dev-only-secret-never-in-production-0000" };
+  if (!loopback(req)) return base;
+  return { ...base, BETTER_AUTH_URL: new URL(req.url).origin, BETTER_AUTH_SECRET: base.BETTER_AUTH_SECRET || await deskSecret(base.DB) };
 };
 
 // vite dev's local D1 starts empty; the first API call applies the migration itself, so `bun run dev`
@@ -39,9 +51,10 @@ const cached = (body: string, type: string) =>
 const app = defineApp([
   setCommonHeaders(),
   route("/api/*", async ({ request, cf }) => {
-    if (import.meta.env.VITE_IS_DEV_SERVER) await devMigrate(e().DB);
-    return handleApi(request, e(request), (work) => cf.waitUntil(work));
+    if (import.meta.env.VITE_IS_DEV_SERVER) await devMigrate((await e()).DB);
+    return handleApi(request, await e(request), (work) => cf.waitUntil(work));
   }),
+  route("/.well-known/*", async ({ request }) => handleApi(request, await e(request))),
   route("/robots.txt", () => cached("User-agent: *\nAllow: /\nDisallow: /app\nDisallow: /api\nSitemap: /sitemap.xml\n", "text/plain")),
   route("/sitemap.xml", ({ request }) => {
     const o = new URL(request.url).origin;
@@ -60,7 +73,7 @@ const app = defineApp([
 
 export default {
   fetch: app.fetch,
-  queue: (batch: unknown) => handleQueue(batch as never, e()),
+  queue: async (batch: unknown) => handleQueue(batch as never, await e()),
   // On the hour: demo orgs older than a day go, dead webhook deliveries are swept.
-  scheduled: () => hourly(e()),
+  scheduled: async () => hourly(await e()),
 };

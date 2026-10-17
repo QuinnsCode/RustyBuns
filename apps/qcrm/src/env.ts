@@ -31,6 +31,8 @@ export interface WorkerLoaderLike {
 export interface Env extends SocialEnv {
   DB: D1;
   HOOKS?: QueueLike<HookMessage>;
+  /** Workers Rate Limiting for /api/auth/*: 20 a minute per IP. Absent on the desktop. */
+  AUTH_LIMIT?: { limit(o: { key: string }): Promise<{ success: boolean }> };
   /** Dynamic Workers for org scripts. Without it scripts answer 503. */
   LOADER?: WorkerLoaderLike;
   /** Signs sessions, salts org ids. Without it nobody signs in (every route answers 503). */
@@ -38,9 +40,18 @@ export interface Env extends SocialEnv {
   BETTER_AUTH_URL?: string;
   /** The one account above every org: sees every org, grants admins, never a member of any. */
   SUPER_ADMIN_EMAIL?: string;
+  /** Cloudflare Email Sending. With EMAIL_FROM it turns on verification and reset links (auth.ts). */
+  EMAIL?: { send(m: { from: string | { email: string; name?: string }; to: string; subject: string; text: string; html?: string }): Promise<unknown> };
+  EMAIL_FROM?: string;
+  /** artstewengine's address and this deployment's license: together they ask "have you paid?" (seal.ts). */
+  ARTSTEW_URL?: string;
+  QCRM_LICENSE?: string;
 }
 
-export const NAME = "qCRM";
+/** `s` safe inside HTML text and attributes. */
+export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+export const NAME ="qCRM";
 export const VERSION = "0.1.4";
 
 const CACHE = "no-store";
