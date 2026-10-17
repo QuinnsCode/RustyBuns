@@ -2,12 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "./icons.tsx";
+import { register, type Command } from "./commands.ts";
+import { Palette } from "./Palette.tsx";
 
 // The CRM in the browser: sign in, pick an org, then tables of the four entities, insights from
 // SQL, the Rust engine's analysis over rows pulled into the page, and settings (members,
 // webhooks, keys, export, delete). Every call goes to /api with the session cookie.
 
 type Row = Record<string, any>;
+/** Something a command asks the open table to do once it is showing. */
+type Intent = { type: "new" } | { type: "search"; q: string };
 type View = "contacts" | "companies" | "deals" | "activities" | "insights" | "engine" | "scripts" | "settings";
 interface Me { user: { id: string; email: string; name: string } | null; orgs: { id: string; name: string; role: string }[]; superAdmin?: boolean }
 
@@ -47,6 +51,24 @@ const theme = (t: "light" | "dark" | "auto") => {
 };
 
 /** Truncated id that copies the whole thing on click; the full id is the tooltip. */
+/** Registers what this person can do right now as commands: the Ctrl/Cmd-K menu and `window.crmCommands` both run these. */
+function Commands({ items, me, org, can, setView, setOrg, setIntent }: { items: [View, string, string][]; me: Me; org: string; can: (r: string) => boolean; setView: (v: View) => void; setOrg: (id: string) => void; setIntent: (i: Intent | null) => void }) {
+  useEffect(() => {
+    const entities = ["contacts", "companies", "deals", "activities"] as const;
+    const cmds: Command[] = [
+      ...items.map(([v, label, icon]): Command => ({ id: `go.${v}`, title: `Go to ${label}`, icon, run: () => setView(v) })),
+      ...entities.map((e): Command => ({ id: `${e}.new`, title: `New ${e.replace(/s$/, "")}`, icon: "plus", enabled: can(e === "activities" ? "seasonal" : "employee"), run: () => { setView(e); setIntent({ type: "new" }); } })),
+      ...entities.map((e): Command => ({ id: `${e}.search`, title: `Search ${e}`, icon: "search", menu: false, run: (a) => { setView(e); setIntent({ type: "search", q: String(a?.q ?? "") }); } })),
+      ...(["light", "dark", "auto"] as const).map((t): Command => ({ id: `theme.${t}`, title: `Theme: ${t}`, icon: "monitor", keywords: "appearance", run: () => theme(t) })),
+      { id: "org.switch", title: "Switch org", menu: false, run: (a) => setOrg(String(a?.id)) },
+      ...me.orgs.filter((o) => o.id !== org).map((o): Command => ({ id: `org.switch.${o.id}`, title: `Switch to ${o.name}`, icon: "building", keywords: "org", run: () => setOrg(o.id) })),
+      { id: "sign-out", title: "Sign out", icon: "log-out", run: async () => { await api("/auth/sign-out", { method: "POST", body: "{}" }); location.href = "/"; } },
+    ];
+    return register(cmds);
+  });
+  return null;
+}
+
 function CopyId({ id }: { id: string }) {
   const [done, setDone] = useState(false);
   const copy = async () => {
@@ -62,6 +84,7 @@ export function Crm() {
   const [err, setErr] = useState("");
   const [demo, setDemo] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [intent, setIntent] = useState<Intent | null>(null);
 
   const load = useCallback(async () => {
     try { const m = await api("/me"); setMe(m); if (!org && m.orgs?.[0]) setOrg(m.orgs[0].id); }
@@ -92,6 +115,8 @@ export function Crm() {
   const items: [View, string, string][] = [["contacts", "Contacts", "users"], ["companies", "Companies", "building"], ["deals", "Deals", "badge-dollar-sign"], ["activities", "Activities", "activity"], ["insights", "Insights", "chart-column"], ["engine", "Engine", "cpu"], ["scripts", "Scripts", "scroll-text"], ["settings", "Settings", "key-round"]];
   return (
     <div className="crm">
+      <Commands items={items} me={me} org={current.id} can={can} setView={setView} setOrg={setOrg} setIntent={setIntent} />
+      <Palette />
       <aside className={"rail" + (menu ? " open" : "")} data-tour="rail">
         <div className="org"><span className="tag">Org</span><b title={current.id}>{current.name}</b><span>{role} · <CopyId id={current.id} /></span></div>
         <button type="button" className="nav-item menu-btn" aria-expanded={menu} aria-label="Menu" title="Menu" onClick={() => setMenu(!menu)}><Icon name={menu ? "x" : "menu"} /></button>
@@ -101,7 +126,7 @@ export function Crm() {
       </aside>
       <section className="pane">
         {err && <p className="err">{err}</p>}
-        {view in COLS && <Table key={current.id + view} org={current.id} entity={view} can={can} />}
+        {view in COLS && <Table key={current.id + view} org={current.id} entity={view} can={can} intent={intent} onIntent={() => setIntent(null)} />}
         {view === "insights" && <Insights org={current.id} />}
         {view === "engine" && <Engine org={current.id} can={can} />}
         {view === "scripts" && <Scripts org={current.id} can={can} />}
@@ -171,7 +196,7 @@ function NewOrg({ onDone }: { onDone: () => Promise<void> }) {
   );
 }
 
-function Table({ org, entity, can }: { org: string; entity: string; can: (r: string) => boolean }) {
+function Table({ org, entity, can, intent, onIntent }: { org: string; entity: string; can: (r: string) => boolean; intent: Intent | null; onIntent: () => void }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [q, setQ] = useState("");
   const [next, setNext] = useState<string | null>(null);
@@ -224,6 +249,12 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
   };
   const [over, setOver] = useState(false);
   const minCreate = entity === "activities" ? "seasonal" : "employee";
+  useEffect(() => {
+    if (!intent) return;
+    if (intent.type === "new" && can(minCreate)) setEdit({});
+    if (intent.type === "search") setQ(intent.q);
+    onIntent();
+  }, [intent]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       <div className="toolbar" data-tour="toolbar">
