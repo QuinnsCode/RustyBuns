@@ -45,3 +45,7 @@ const PATHS: Record<string, string> = {
 
 export const icon = (name: keyof typeof PATHS | string, size = 16) =>
   `<svg class="icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PATHS[name] ?? ""}</svg>`;
+
+// A small "i" that opens its text when clicked (wired in main.ts), so the page itself stays bare.
+export const tip = (text: string, warn = false) =>
+  `<span class="tip"><button type="button" class="tip-btn${warn ? " warn" : ""}" aria-label="More info" aria-expanded="false">${icon(warn ? "triangle-alert" : "info", 14)}</button><span class="tip-text" hidden>${text}</span></span>`;
