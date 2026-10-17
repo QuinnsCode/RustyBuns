@@ -123,7 +123,7 @@ const OPS: Record<string, Record<string, Op>> = {
     put: { id: "update_script", summary: "Change a script's name, body or switch it off", tag: "Scripts", role: "manager", body: obj({ name: str(), body: str(), enabled: bool() }), ok: ref("Script") },
     delete: { id: "delete_script", summary: "Delete a script", tag: "Scripts", role: "owner", risky: true, ok: ref("Ok") },
   },
-  [`${org}/scripts/{id}/run`]: { post: { id: "run_script", summary: "Run a script now, as you, and get the run row back (status, log, result, calls)", tag: "Scripts", role: "employee", body: obj({ input: loose("anything JSON, handed to the script as `input`") }), ok: ref("ScriptRun"), status: 201 } },
+  [`${org}/scripts/{id}/run`]: { post: { id: "run_script", summary: "Run a script now, as you, and get the run row back (status, log, result, calls). The script reaches only contacts, companies, deals, activities and insights; members, webhooks, keys and other scripts answer 403", tag: "Scripts", role: "employee", body: obj({ input: loose("anything JSON, handed to the script as `input`") }), ok: ref("ScriptRun"), status: 201 } },
   [`${org}/scripts/{id}/runs`]: { get: { id: "list_script_runs", summary: "A script's last 50 runs", tag: "Scripts", role: "seasonal", ok: arr(ref("ScriptRun")) } },
   "/admin/orgs": { get: { id: "admin_list_orgs", summary: "Every org (super admin)", tag: "Admin", role: "super_admin", ok: arr(ref("Org")) } },
   "/admin/orgs/{org}/members": { post: { id: "admin_add_member", summary: "Put an account into any org with any role (super admin)", tag: "Admin", role: "super_admin", risky: true, body: obj({ email: str(), role: ROLE }, ["email"]), ok: ref("Member"), status: 201 } },

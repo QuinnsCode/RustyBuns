@@ -323,7 +323,7 @@ function Scripts({ org, can }: { org: string; can: (r: string) => boolean }) {
         {can("manager") && list.length === 0 && <button type="button" onClick={() => act(() => api(`${base}/examples`, { method: "POST" }))}><Icon name="download" /> Install the examples</button>}
         {can("manager") && <button className="primary" type="button" onClick={() => setOpen({ name: "", body: "async ({ input, qcrm, log }) => {\n  const { items } = await qcrm.list(\"contacts\", { limit: 5 });\n  log(items.length, \"contacts\");\n  return items.map((c) => c.email);\n}" })}><Icon name="plus" /> New script</button>}
       </div>
-      <p className="muted">Each run is its own isolated Worker with no network: the script sees <code>qcrm</code> (list, get, create, update, remove, insights, scoped to this org and your role), <code>input</code> and <code>log</code>; 200 calls and 10 s per run. Agents run them through MCP as <code>run_script</code>.</p>
+      <p className="muted">Each run is its own isolated Worker with no network: the script sees <code>qcrm</code> (list, get, create, update, remove, insights, scoped to this org and your role; only contacts, companies, deals, activities and insights, never members, webhooks, keys or other scripts), <code>input</code> and <code>log</code>; 200 calls and 10 s per run. Agents run them through MCP as <code>run_script</code>.</p>
       {msg && <p className="err">{msg}</p>}
       <div className="list">{list.map((s) => (
         <div className="card" key={s.id}><div className="row"><b className="grow">{s.name}</b>{can("employee") && <button className="primary" type="button" onClick={() => run(s.id)}><Icon name="activity" /> Run</button>}<button type="button" onClick={() => setOpen(s)}>Open</button></div>
