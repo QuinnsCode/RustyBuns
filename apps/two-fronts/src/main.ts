@@ -13,7 +13,7 @@ import { drawMap } from "./ui/map.ts";
 import { icon, tip } from "./ui/icons.ts";
 import { PRESETS, PRESET_IDS, deploy, emptyDeployment, loadoutOf, placeLoadout, presetDeployment, room, totals, valueOf, type Loadout, type PresetId } from "./war/fleet.ts";
 import { MODE_INFO, voteScreen, type VoteSeat } from "./ui/vote.ts";
-import { FLAVOR, run } from "./battle/sim.ts";
+import { run } from "./battle/sim.ts";
 import { HULL_PER_SHIP, ROUNDS, clash, encodePicks, fightPicks, playRound, startPicks, whyNot, type PickRound } from "./battle/space-picks.ts";
 import { aiSpacePick } from "./war/ai.ts";
 import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
