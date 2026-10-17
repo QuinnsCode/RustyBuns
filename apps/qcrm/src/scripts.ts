@@ -69,10 +69,12 @@ interface Caller { headers: Record<string, string>; org: string; origin: string 
  * values cross (method, path, text), so it works the same as an RPC stub on the edge and as an
  * object in the local twin.
  */
-function fetcher(env: Env, c: Caller, dispatch: (r: Request) => Promise<Response>) {
+function fetcher(env: Env, c: Caller, dispatch: (r: Request) => Promise<Response>, Base: new () => object = Object) {
   let calls = 0;
-  return {
-    calls: () => calls,
+  // On the edge the binding must be an RpcTarget: a plain object holding a function is not a
+  // documented env value for a dynamic Worker. Locally (no cloudflare:workers) a plain base does.
+  return new (class extends Base {
+    calls = () => calls;
     async call(method: string, path: string, body: string | null) {
       if (++calls > MAX_CALLS) return { status: 429, text: JSON.stringify({ error: `a run makes at most ${MAX_CALLS} calls` }) };
       const url = new URL(`${c.origin}/api/orgs/${c.org}${path}`);
@@ -80,9 +82,12 @@ function fetcher(env: Env, c: Caller, dispatch: (r: Request) => Promise<Response
       if (!url.pathname.startsWith(`/api/orgs/${c.org}/`) || !REACHABLE.has(first)) return { status: 403, text: JSON.stringify({ error: "scripts reach contacts, companies, deals, activities and insights" }) };
       const res = await dispatch(new Request(url, { method, headers: { ...c.headers, ...(body !== null && { "content-type": "application/json" }) }, ...(body !== null && method !== "GET" && { body }) }));
       return { status: res.status, text: await res.text() };
-    },
-  };
+    }
+  })() as { calls(): number; call(method: string, path: string, body: string | null): Promise<{ status: number; text: string }> };
 }
+
+/** RpcTarget where the runtime has it (the edge); undefined under Bun, where an object is enough. */
+const rpcBase = import("cloudflare:workers").then((m) => (m as unknown as { RpcTarget: new () => object }).RpcTarget, () => undefined);
 
 const shown = (s: Row) => ({ ...s, enabled: !!s.enabled });
 const scriptRow = (env: Env, org: string, id: string) =>
@@ -108,7 +113,7 @@ async function run(env: Env, c: Ctx, script: Row, input: unknown, dispatch: (r: 
   const origin = env.BETTER_AUTH_URL ?? c.url.origin;
   const auth = c.req.headers.get("authorization"), cookie = c.req.headers.get("cookie");
   const headers: Record<string, string> = auth ? { authorization: auth } : { cookie: cookie ?? "", origin };
-  const q = fetcher(env, { headers, org: c.org, origin }, dispatch);
+  const q = fetcher(env, { headers, org: c.org, origin }, dispatch, await rpcBase);
   const started = Date.now(), id = crypto.randomUUID();
   let status = "ok", log: string[] = [], result: unknown = null, timer: ReturnType<typeof setTimeout> | undefined;
   try {
