@@ -26,6 +26,7 @@ export function tools(): Tool[] {
   const out: Tool[] = [];
   for (const [path, methods] of Object.entries(spec.paths)) {
     for (const [method, op] of Object.entries(methods) as [string, Schema][]) {
+      if (op["x-qcrm-cookie-only"]) continue;
       const properties: Schema = {}, required: string[] = [], pathParams: string[] = [], queryParams: string[] = [];
       for (const p of op.parameters as Schema[]) {
         properties[p.name] = p.schema;

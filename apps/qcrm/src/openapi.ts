@@ -3,7 +3,8 @@
 // routes: a route that changes shape changes here too (test/mcp.test.ts walks every operation).
 // Operations that change who can get in or see what, can't be undone, or hand out the whole org
 // carry `x-qcrm-risky: true`, so a client asks a person before calling them. That is advice;
-// the server's own checks are what hold.
+// the server's own checks are what hold. Operations an API key is refused (the account, API keys)
+// carry `x-qcrm-cookie-only: true`, security `cookie` alone, and no MCP tool.
 //
 // It imports nothing, so a docs page can load it from any version.
 
@@ -26,6 +27,8 @@ interface Op {
   open?: true;
   /** Changes who can get in or see what, can't be undone, or hands out the whole org. */
   risky?: true;
+  /** A signed-in browser only: an API key gets a 403, so the MCP tools leave it out. */
+  cookieOnly?: true;
   /** The least role that may call it, for the docs. */
   role?: string;
 }
@@ -61,7 +64,7 @@ const ACTIVITY_BODY = obj({ type: ACTIVITY, contact_id: str(), deal_id: str(), b
 const OPS: Record<string, Record<string, Op>> = {
   "/me": {
     get: { id: "get_me", summary: "Who you are, your orgs and your role in each", tag: "Account", ok: obj({ user: obj({ id: str(), email: str(), name: str() }), orgs: arr(obj({ id: str(), name: str(), role: ROLE })), superAdmin: bool() }) },
-    delete: { id: "delete_me", summary: "Delete your account, the orgs you own and every row of them", tag: "Account", risky: true, query: { confirm: { ...str("your email, to be sure"), required: true } }, ok: obj({ ok: bool(), orgs_deleted: int() }) },
+    delete: { id: "delete_me", summary: "Delete your account, the orgs you own and every row of them", tag: "Account", risky: true, cookieOnly: true, query: { confirm: { ...str("your email, to be sure"), required: true } }, ok: obj({ ok: bool(), orgs_deleted: int() }) },
   },
   "/demo": { post: { id: "make_demo", summary: "A throwaway account signed in on the spot, owning Demo Co with 2,000 seeded contacts; gone after a day", tag: "Account", open: true, status: 201, ok: obj({ org: ref("Org"), user: obj({ id: str(), email: str(), name: str() }) }) } },
   "/orgs": {
@@ -103,10 +106,10 @@ const OPS: Record<string, Record<string, Op>> = {
   },
   [`${org}/webhooks/{id}/deliveries`]: { get: { id: "list_deliveries", summary: "A webhook's last 50 deliveries", tag: "Webhooks", role: "owner", risky: true, ok: arr(ref("Delivery")) } },
   [`${org}/keys`]: {
-    get: { id: "list_keys", summary: "The org's API keys, by prefix", tag: "Keys", role: "owner", risky: true, ok: arr(ref("Key")) },
-    post: { id: "create_key", summary: "A new API key (qk_…): the secret is shown this once", tag: "Keys", role: "owner", risky: true, description: "From a signed-in browser only; a key can't make keys.", body: obj({ name: str() }, ["name"]), ok: ref("Key"), status: 201 },
+    get: { id: "list_keys", summary: "The org's API keys, by prefix", tag: "Keys", role: "owner", risky: true, cookieOnly: true, ok: arr(ref("Key")) },
+    post: { id: "create_key", summary: "A new API key (qk_…): the secret is shown this once", tag: "Keys", role: "owner", risky: true, cookieOnly: true, description: "From a signed-in browser only; a key can't make keys.", body: obj({ name: str() }, ["name"]), ok: ref("Key"), status: 201 },
   },
-  [`${org}/keys/{id}`]: { delete: { id: "revoke_key", summary: "Revoke an API key", tag: "Keys", role: "owner", risky: true, ok: ref("Ok") } },
+  [`${org}/keys/{id}`]: { delete: { id: "revoke_key", summary: "Revoke an API key", tag: "Keys", role: "owner", risky: true, cookieOnly: true, ok: ref("Ok") } },
   [`${org}/seed`]: { post: { id: "seed_org", summary: "Fill the org with realistic fake data: n contacts and their companies, deals and activities", tag: "Org", role: "owner", body: obj({ n: int("1 to 100000"), seed: int("same seed, same data") }, ["n"]), ok: obj({ contacts: int(), companies: int(), deals: int(), activities: int() }), status: 201 } },
   [`${org}/insights`]: { get: { id: "get_insights", summary: "Counts, deals per stage, win rate over 90 days, activities per week, top companies by open pipeline", tag: "Org", role: "seasonal", ok: loose("{counts, deals_by_stage, last_90_days, activities_per_week, top_companies_by_open_pipeline}") } },
   [`${org}/export`]: { get: { id: "export_org", summary: "Every row of the org as one JSON", tag: "Org", role: "owner", risky: true, ok: loose("{org, contacts, companies, deals, activities, memberships, webhooks, audit}") } },
@@ -164,7 +167,8 @@ export function openapi(origin: string) {
         operationId: o.id, summary: o.summary, tags: [o.tag], ...(o.description && { description: o.description }),
         parameters: params(path, o.query),
         ...(o.body && { requestBody: { required: true, content: { "application/json": { schema: o.body } } } }),
-        security: o.open ? [{}] : [{ key: [] }, { cookie: [] }],
+        security: o.open ? [{}] : o.cookieOnly ? [{ cookie: [] }] : [{ key: [] }, { cookie: [] }],
+        ...(o.cookieOnly && { "x-qcrm-cookie-only": true }),
         ...(o.role && { "x-qcrm-role": o.role }),
         ...(o.risky && { "x-qcrm-risky": true }),
         responses: {

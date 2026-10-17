@@ -17,7 +17,9 @@ test("tools/list has every operation of the spec; tools/call runs one as the API
   expect(info.claude).toContain("/api/mcp");
 
   const list = await (await app("", "/api/mcp", { method: "POST", headers: bearer, body: rpc("tools/list") })).json();
-  const ids = Object.values(openapi("").paths).flatMap((m) => Object.values(m).map((op) => (op as { operationId: string }).operationId)).sort();
+  const ids = Object.values(openapi("").paths).flatMap((m) => Object.values(m).filter((op) => !(op as Record<string, unknown>)["x-qcrm-cookie-only"]).map((op) => (op as { operationId: string }).operationId)).sort();
+  expect(ids).not.toContain("delete_me");
+  expect(ids).not.toContain("create_key");
   expect(list.result.tools.map((t: { name: string }) => t.name).sort()).toEqual(ids);
   const del = list.result.tools.find((t: { name: string }) => t.name === "delete_contact");
   expect(del.annotations.destructiveHint).toBe(true);
