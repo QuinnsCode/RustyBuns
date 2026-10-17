@@ -124,6 +124,8 @@ td .num { color: var(--dim); }
 .bar .num { text-align: right; color: var(--dim); }
 .sheet { position: fixed; inset: 0; background: #0b1f3a66; display: grid; justify-items: end; z-index: 50; }
 .sheet form, .sheet .panel { background: var(--paper); height: 100%; width: min(480px, 100%); padding: 20px; display: grid; gap: 12px; align-content: start; overflow: auto; border-left: 1px solid var(--line); box-shadow: var(--shadow); }
+.sheet form, .sheet .panel { max-height: 100%; }
+.sheet .actions { position: sticky; bottom: -20px; margin: 0 -20px -20px; padding: 12px 20px 20px; background: var(--paper); border-top: 1px solid var(--line); }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .row .grow { flex: 1; }
 .auth { max-width: 420px; margin: 40px auto; display: grid; gap: 12px; }
