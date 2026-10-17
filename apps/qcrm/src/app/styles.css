@@ -188,3 +188,10 @@ button.link:focus-visible { outline: 2px solid currentColor; outline-offset: 2px
 .deal .num { color: var(--dim); font-size: 13px; }
 .dropzone { border: 1px dashed var(--line); border-radius: 8px; padding: 10px; text-align: center; color: var(--dim); font-size: 13px; }
 .dropzone.over { border-color: var(--sky); color: var(--ink); }
+
+.palette-wrap { position: fixed; inset: 0; background: #0b1f3a66; display: grid; justify-items: center; align-items: start; padding-top: 12vh; z-index: 60; }
+.palette { background: var(--paper); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 10px; width: min(560px, calc(100% - 32px)); overflow: hidden; }
+.palette input { width: 100%; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 14px 16px; font-size: 16px; background: transparent; }
+.palette ul { list-style: none; margin: 0; padding: 6px; max-height: 50vh; overflow: auto; }
+.palette li button { width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; border: 0; background: transparent; padding: 9px 10px; border-radius: 6px; }
+.palette li button.on { background: var(--line); }

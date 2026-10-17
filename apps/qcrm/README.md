@@ -42,6 +42,7 @@ qCRM is accounts only: there is no alias mode. `vite dev` reads `BETTER_AUTH_SEC
 | Privacy | `src/me.ts`, `/privacy` | `GET …/export` gives an owner every row; `DELETE /api/me` removes an account and its orgs. |
 | Seed | `src/seed-data.ts`, `scripts/seed.ts` | Deterministic fake rows, 100,000 contacts in one run. |
 | CSV import | `src/csv-import.ts` | `POST …/contacts/import` and `…/companies/import`: header mapping, rows already in the org or earlier in the file skipped as duplicates. A drop zone on each table. |
+| Command menu | `src/app/commands.ts` | Ctrl/Cmd-K lists everything the signed-in person can do (go to a page, new contact/company/deal/activity, theme, switch org, sign out). The same registry is on the page as `window.crmCommands.list()` and `.run(id, args)`, so scripts, agents and end-to-end tests drive the app without clicking. |
 | Clave | `scripts/fetch-qlave.ts` | Pulls QNTBR's calls-and-recordings tool into `vendor/` until it is a package. |
 
 ## Connect an agent
