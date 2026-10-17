@@ -188,6 +188,16 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
     setEdit(null); await fetchPage(null, true);
   };
   const remove = async (id: string) => { await api(`/orgs/${org}/${entity}/${id}`, { method: "DELETE" }); setEdit(null); await fetchPage(null, true); };
+  const importFile = async (file: File | undefined) => {
+    if (!file) return;
+    setMsg("");
+    try {
+      const r = await api(`/orgs/${org}/${entity}/import`, { method: "POST", body: JSON.stringify({ csv: await file.text() }) });
+      setMsg(`Imported ${r.created.toLocaleString()}, skipped ${r.duplicates.toLocaleString()} duplicates${r.failed ? `, ${r.failed} rows failed (first: row ${r.errors[0].row}, ${r.errors[0].error})` : ""}.`);
+      await fetchPage(null, true);
+    } catch (e) { setMsg((e as Error).message); }
+  };
+  const [over, setOver] = useState(false);
   const minCreate = entity === "activities" ? "seasonal" : "employee";
   return (
     <>
@@ -196,9 +206,11 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
         <input type="search" placeholder={`Search ${entity}…`} value={q} onChange={(e) => setQ(e.target.value)} data-tour="search" aria-label="Search" />
         {ms !== null && <span className="num" title="Round trip to the edge, this page">{ms} ms</span>}
         {total !== null && <span className="num">{total.toLocaleString()} rows</span>}
+        {(entity === "contacts" || entity === "companies") && can("employee") && <label className="btn" title="Import a CSV"><Icon name="upload" /> Import<input type="file" accept=".csv,text/csv" hidden onChange={(e) => { void importFile(e.target.files?.[0]); e.target.value = ""; }} /></label>}
         {can(minCreate) && <button className="primary" type="button" onClick={() => setEdit({})}><Icon name="plus" /> New</button>}
       </div>
       {msg && <p className="err">{msg}</p>}
+      {(entity === "contacts" || entity === "companies") && can("employee") && <div className={`dropzone${over ? " over" : ""}`} onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(e) => { e.preventDefault(); setOver(false); void importFile(e.dataTransfer.files[0]); }}>Drop a CSV here to import {entity}</div>}
       <div className="table">
         <table>
           <thead><tr>{cols.map((c) => <th key={c.key}>{c.label}</th>)}</tr></thead>

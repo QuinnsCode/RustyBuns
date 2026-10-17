@@ -167,3 +167,5 @@ pre.code { background: var(--paper); border: 1px solid var(--line); border-radiu
 
 button.link { all: unset; cursor: pointer; color: var(--accent, inherit); text-decoration: underline; font-weight: 600; }
 button.link:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.dropzone { border: 1px dashed var(--line); border-radius: 8px; padding: 10px; text-align: center; color: var(--dim); font-size: 13px; }
+.dropzone.over { border-color: var(--sky); color: var(--ink); }
