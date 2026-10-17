@@ -1,0 +1,3 @@
+{ "name": "artstewengine", "private": true, "type": "module", "version": "0.0.1",
+  "scripts": { "test": "bun test test", "deploy": "bun ../../packages/cli/src/index.ts deploy" },
+  "dependencies": { "@rustybuns/cli": "workspace:*", "@rustybuns/shell-bun": "workspace:*" } }
