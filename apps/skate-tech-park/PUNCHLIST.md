@@ -19,7 +19,7 @@ every air and holds a manual now and then, with the chase camera running behind 
 
 Sheer faces the rider cannot ride up (the biggest snag clusters, checked against the height field):
 - **Old Faithful**, z 98, x -44..10: ground jumps 2.6 m to 9.5 m in one step, the outside of the bowl. Ridden from the
-  south it is a wall with no ramp; ~95 snags at (-16, 100). The "bowl deck" and "sky rail" spawns cannot reach the vent line from it.
+  south it is a wall with no ramp; ~95 snags at (-16, 100).
 - **El Capitan**, z 90, x -112..-65: 2.7 m to 5.0 m in one step under the rails. ~50 snags at (-53, 89).
 - **Half Dome**, route points (265, 190) and (285, 215) sit on top of quarter pipes, so the "return line" cannot be
   ridden to its first beat from the front.
@@ -32,7 +32,7 @@ Clusters not checked by hand (each is 50+ snags, nearest feature in brackets):
 
 Others:
 - **Mariposa Grove** caught no grind although it has two handrails and a flat bar (x -80 and x 50): check they can be ollied on.
-- **Pickups**: the tour collected 0 to 4 of each park's 4 to 6. Either they sit off the lines or the 1.8 m / 1.8 m pickup box is tight at speed.
+- **Pickups**: the tour collected 0 to 4 of each park's 4 to 6. Either they sit off the lines or the 1.8 m pickup radius is tight at speed.
 - **Combo goals are tiny**: goals ask for 800 to 1,200, a chained tour makes 6,000 to 140,000 (Grand Prismatic 138k at x8).
   The combo goal is met on every park in minutes; raise the targets, or cap what a chain can add.
 - Named gaps (Boulder Gap, Glacier Point Gap, Valley Hop, Canyon Drop, Half Dome Face) were cleared by a tour on only
