@@ -82,3 +82,20 @@ test("accounts off answers 503; cross-site cookie writes are refused", async () 
   const noOrigin = await handleApi(new Request(`${ORIGIN}/api/orgs`, { method: "POST", body: JSON.stringify({ name: "x" }), headers: { cookie, "sec-fetch-site": "cross-site", "content-type": "application/json" } }), app.env);
   expect(noOrigin.status).toBe(403);
 });
+
+test("with mail on, sign-up sends a verification link and a reset link changes the password", async () => {
+  const sent: { to: string; subject: string; text: string }[] = [];
+  const app = await local({ EMAIL_FROM: "accounts@qcrm.test", EMAIL: { send: async (m: any) => { sent.push(m); } } });
+  await signup(app, "mia@qcrm.test");
+  expect(sent[0]!.to).toBe("mia@qcrm.test");
+  expect(sent[0]!.subject).toContain("Verify");
+  const verify = new URL(/https?:\/\/\S+/.exec(sent[0]!.text)![0]);
+  expect((await app("", verify.pathname + verify.search)).status).toBeLessThan(400);
+
+  expect((await post(app, "", "/api/auth/request-password-reset", { email: "mia@qcrm.test", redirectTo: "/app" })).status).toBe(200);
+  const reset = sent.find((m) => m.subject.includes("Reset"))!;
+  const token = /reset-password\/([^?\s]+)/.exec(reset.text)![1]!;
+  expect((await post(app, "", "/api/auth/reset-password", { newPassword: "a brand new passphrase", token })).status).toBe(200);
+  expect((await post(app, "", "/api/auth/sign-in/email", { email: "mia@qcrm.test", password: "a brand new passphrase" })).status).toBe(200);
+  expect((await post(app, "", "/api/auth/sign-in/email", { email: "mia@qcrm.test", password: "correct horse battery" })).status).toBe(401);
+});
