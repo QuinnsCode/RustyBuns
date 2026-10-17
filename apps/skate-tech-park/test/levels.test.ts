@@ -73,7 +73,8 @@ test("kit parts lie on the ground: a rail on the grove's hillside slopes with it
 });
 
 test("the start screen shows until a level is chosen, and a query picks its level", () => {
-  expect(needsStartScreen("")).toBe(true);
+  expect(needsStartScreen("")).toBe(false); // a bare address opens the title screen first
+  expect(needsStartScreen("?mode=single")).toBe(true); // the mode chosen there, no level yet: pick a park
   expect(needsStartScreen("?level=glacier-point")).toBe(false);
   expect(needsStartScreen("?showroom")).toBe(false);
   expect(pick("?level=glacier-point").id).toBe("glacier-point");
