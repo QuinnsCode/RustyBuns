@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { CLIFF, PARKS, SCALE, ZONES, zoneById, zonesFor, type Zone } from "../src/zones/zone.ts";
 import { MOVE, canSee, clearLine, step, type Body } from "../src/hunt/sim.ts";
-import { HUNT, Hunt, circleAt, dropOk, parseMsg } from "../src/hunt/game.ts";
+import { HUNT, Hunt, circleAt, disguiseFor, dropOk, parseMsg } from "../src/hunt/game.ts";
 import { fits, radioGrid, toKm } from "../src/clues.ts";
 import { cellAt } from "../src/grid.ts";
 import { Room, TICK_MS } from "../src/room.ts";
@@ -145,12 +145,12 @@ describe("seeing", () => {
  * A two-player hunt on one zone. The first ranger is random, so the players
  * are renamed to match: "r" is this round's ranger, "c" the camper.
  */
-function hunt(zone = "el-capitan", tod: "day" | "night" = "night") {
+function hunt(zone = "el-capitan", tod: "day" | "night" = "night", mode: "classic" | "props" = "classic") {
   const g = new Hunt(3);
   let now = 1_000_000;
   g.join("a", "A", now, { host: true });
   g.join("b", "B", now);
-  g.handle("a", { t: "settings", zone, tod }, now);
+  g.handle("a", { t: "settings", zone, tod, mode }, now);
   g.handle("a", { t: "start" }, now);
   const rid = g.round!.rangers[0], cid = rid === "a" ? "b" : "a";
   const id = (x: string) => (x === "r" ? rid : x === "c" ? cid : x);
@@ -293,6 +293,57 @@ describe("the hunt", () => {
   });
 });
 
+describe("prop hunt", () => {
+  /** Put the camper next to a bush in daylight, the ranger 25 m off with a clear view. */
+  function nextToBush(mode: "classic" | "props") {
+    const h = hunt("el-capitan", "day", mode);
+    h.tick((HUNT.dropSecs + HUNT.hideSecs) * 1000);
+    const c = h.g.round!.actors.get("c")!, r = h.g.round!.actors.get("r")!;
+    const z = h.z;
+    const bush = z.props.find((p) => p.kind === "bush" && z.slope(p.x, p.y) < 0.1 && clearLine(z, p.x + 25, p.y, z.height(p.x + 25, p.y) + 1.6, p.x + 1.5, p.y, z.height(p.x + 1.5, p.y) + 1.1))!;
+    c.x = bush.x + 1.5; c.y = bush.y;
+    r.x = bush.x + 25; r.y = bush.y;
+    return { ...h, c, r };
+  }
+
+  test("a camper turns into the bush next to them: the ranger sees a bush, and it's silent", () => {
+    const { g, now, c, tick } = nextToBush("props");
+    g.handle("c", { t: "disguise" }, now());
+    expect(c.disguise?.kind).toBe("bush");
+    const seen = g.view("r", now()).round!.others.find((o) => o.id === "c");
+    expect(seen?.disguise?.kind).toBe("bush");
+    // A prop holding still neither rustles when called nor makes footsteps.
+    for (let i = 0; i < 20; i++) { tick(TICK_MS); g.handle("c", { t: "pos", x: c.x, y: c.y, yaw: 0, pitch: 0, crouch: false, run: true, light: false }, now()); }
+    g.handle("r", { t: "call" }, now());
+    tick(1500);
+    expect(c.run).toBe(false);
+    expect(g.round!.cues.filter((q) => q.kind === "rustle" || q.kind === "step")).toHaveLength(0);
+    // Back out of it.
+    g.handle("c", { t: "disguise" }, now());
+    expect(c.disguise).toBeNull();
+  });
+
+  test("only in prop hunt, and only next to a prop", () => {
+    const a = nextToBush("classic");
+    a.g.handle("c", { t: "disguise" }, a.now());
+    expect(a.c.disguise).toBeNull();
+    const b = nextToBush("props");
+    [b.c.x, b.c.y] = openSpot(b.z, HUNT.disguiseReach + 2);
+    expect(disguiseFor(b.z, b.c.x, b.c.y)).toBeNull();
+    b.g.handle("c", { t: "disguise" }, b.now());
+    expect(b.c.disguise).toBeNull();
+  });
+
+  test("standing still is quiet: footsteps only come from a camper who moves", () => {
+    const { g, now, c, r, tick } = nextToBush("classic");
+    r.x = c.x + 10;
+    for (let i = 0; i < 40; i++) { tick(TICK_MS); g.handle("c", { t: "pos", x: c.x, y: c.y, yaw: 0, pitch: 0, crouch: false, run: false, light: false }, now()); }
+    expect(g.round!.cues.filter((q) => q.kind === "step")).toHaveLength(0);
+    for (let i = 0; i < 40; i++) { tick(TICK_MS); g.handle("c", { t: "pos", x: c.x, y: c.y + 0.15, yaw: 0, pitch: 0, crouch: false, run: false, light: false }, now()); }
+    expect(g.round!.cues.filter((q) => q.kind === "step").length).toBeGreaterThan(0);
+  });
+});
+
 describe("Bigfoot", () => {
   test("hides in the final circle, and is only seen up close", () => {
     const { g, tick, now, z } = hunt("el-capitan", "day");
@@ -360,6 +411,24 @@ test("bots play a whole match in every zone", () => {
   }
 }, 120_000);
 
+test("bots play prop hunt to the end, and turn into props", () => {
+  const room = new Room(12);
+  const g = room.game;
+  let now = 1_000_000, props = 0;
+  g.join("h", "Host", now, { host: true });
+  g.handle("h", { t: "settings", zone: "el-capitan", mode: "props" }, now);
+  for (let i = 0; i < 3; i++) g.handle("h", { t: "bot", level: "normal" }, now);
+  g.leave("h", now);
+  g.hostId = g.players[0].id;
+  g.handle(g.hostId, { t: "start" }, now);
+  while (g.phase !== "over" && now < 1_000_000 + 3_600_000) {
+    now += TICK_MS; room.tick(now);
+    for (const a of g.round?.actors.values() ?? []) if (a.disguise) props++;
+  }
+  expect(g.phase).toBe("over");
+  expect(props).toBeGreaterThan(0);
+}, 60_000);
+
 test("lobby picks: any park, any zone in one park, or one zone", () => {
   for (const p of PARKS) expect(zonesFor(`random:${p.code}`).length).toBeGreaterThan(0);
   expect(zonesFor("random")).toEqual(ZONES);
@@ -398,6 +467,7 @@ test("parseMsg rejects junk from the wire", () => {
   expect(parseMsg(42)).toBeNull();
   expect(parseMsg({ t: "look", look: null })).toBeNull();
   expect(parseMsg({ t: "ask", ask: 7 })).toBeNull();
-  expect(parseMsg({ t: "settings", tod: { evil: 1 } })).toEqual({ t: "settings", zone: undefined, tod: undefined, live: undefined, laps: undefined });
+  expect(parseMsg({ t: "settings", tod: { evil: 1 }, mode: "chaos" })).toEqual({ t: "settings", zone: undefined, tod: undefined, live: undefined, laps: undefined, mode: undefined });
+  expect(parseMsg({ t: "disguise" })).toEqual({ t: "disguise" });
   expect(parseMsg({ t: "settings", tod: "dusk" })).toMatchObject({ tod: "dusk" });
 });

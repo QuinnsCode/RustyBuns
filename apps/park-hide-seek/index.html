@@ -13,10 +13,19 @@
     <main id="menu" class="menu">
       <div class="menu-card">
         <div class="unigrid"><b>National Parks</b><span>Yosemite · Yellowstone</span></div>
+        <svg class="ridges" viewBox="0 0 520 120" preserveAspectRatio="none" aria-hidden="true">
+          <rect width="520" height="120" fill="url(#dusk)" />
+          <defs><linearGradient id="dusk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3d2b4f" /><stop offset="0.55" stop-color="#d9603b" /><stop offset="1" stop-color="#f6b45a" /></linearGradient></defs>
+          <circle cx="380" cy="78" r="22" fill="#ffd98a" />
+          <path d="M0 80 L60 52 L110 70 L170 38 L230 66 L300 44 L360 72 L420 50 L470 64 L520 46 V120 H0Z" fill="#b8503a" />
+          <path d="M0 94 L50 76 L100 88 L150 68 L210 90 L270 72 L330 92 L390 74 L450 90 L520 70 V120 H0Z" fill="#7a3434" />
+          <path d="M0 120 V100 L14 100 L22 82 L30 100 L60 104 L72 80 L84 104 L130 106 L150 104 L160 78 L172 104 L250 108 L300 104 L312 74 L318 60 L324 74 L336 104 L420 106 L440 102 L452 80 L464 102 L520 100 V120Z" fill="#2a1b24" />
+          <path d="M310 104 h16 v-22 h-16z M306 82 h24 l-12 -10z" fill="#2a1b24" />
+        </svg>
         <div class="stripes" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
         <div class="menu-body">
           <h1>Park Hide <span>&amp;</span> Seek</h1>
-          <p class="lede">Hide from the rangers in real national park terrain. Find Bigfoot, or just don't get caught for three minutes.</p>
+          <p class="lede">The rangers are out after dark, and they're coming for you. Hide in real national park terrain. Find Bigfoot, or just don't get caught for three minutes.</p>
           <label class="field">Your name <input id="name" maxlength="24" autocomplete="nickname" placeholder="Camper" /></label>
           <button id="play" class="play">Play</button>
           <p id="play-note" class="note">Straight into a game. AI fills the empty spots.</p>
@@ -26,7 +35,15 @@
             <button id="show-room" class="link" data-online hidden>Join with a code</button>
             <button id="host" class="link" data-desktop>Host a LAN game</button>
             <button id="show-join" class="link" data-desktop>Join a LAN game</button>
+            <button id="show-parks" class="link" data-online hidden>Request a park</button>
           </div>
+          <form id="park-request" class="join" hidden>
+            <label class="field">Which national park should be next? <select id="park-pick"></select></label>
+            <button class="primary" type="submit">Request it</button>
+            <p id="park-said" class="note" role="status"></p>
+            <h2 style="margin-top:12px">Most requested</h2>
+            <ul id="park-votes" class="votes"></ul>
+          </form>
           <form id="room-join" class="join" hidden>
             <label class="field">Room code <input id="room" maxlength="8" placeholder="PIKA" autocomplete="off" autocapitalize="characters" required /></label>
             <button class="primary" type="submit">Join</button>
