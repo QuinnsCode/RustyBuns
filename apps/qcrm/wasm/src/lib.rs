@@ -492,6 +492,13 @@ struct Norm {
 /// signals noisy-or style; pairs under 0.5 are dropped.
 #[wasm_bindgen]
 pub fn dedupe(contacts_json: &str) -> String {
+    dedupe_slice(contacts_json, 0, u32::MAX)
+}
+
+/// `dedupe` for the pairs whose first row index is in `start..end`, unsorted-merge friendly: the
+/// browser runs one slice per core in Web Workers and merges the results by score.
+#[wasm_bindgen]
+pub fn dedupe_slice(contacts_json: &str, start: u32, end: u32) -> String {
     let contacts: Vec<Contact> = rows(contacts_json);
     let norms: Vec<Norm> = contacts
         .iter()
@@ -531,7 +538,9 @@ pub fn dedupe(contacts_json: &str) -> String {
     candidates.sort();
     candidates.dedup();
     let mut pairs = Vec::new();
-    for (i, j) in candidates {
+    let lo = (start as usize).min(contacts.len());
+    let hi = (end as usize).min(contacts.len());
+    for (i, j) in candidates.into_iter().filter(|(i, _)| (lo..hi).contains(i)) {
         {
             let (x, y) = (&norms[i], &norms[j]);
             let mut miss = 1.0f64;

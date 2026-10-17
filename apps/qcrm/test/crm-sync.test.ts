@@ -22,6 +22,7 @@ test("contacts: create, list, search, paginate, update, soft-delete", async () =
   expect(all.items).toHaveLength(3);
   expect(all.items[0].tags).toEqual(["lead"]);
   expect(all.next).toBeNull();
+  expect(all.total).toBe(3);
 
   const ad = await (await app(cookie, `${base}?q=AD`)).json();
   expect(ad.items.map((c: { first_name: string }) => c.first_name).sort()).toEqual(["Ada", "Adam"]);
@@ -30,9 +31,12 @@ test("contacts: create, list, search, paginate, update, soft-delete", async () =
   const page1 = await (await app(cookie, `${base}?limit=2`)).json();
   expect(page1.items).toHaveLength(2);
   expect(page1.next).toBeString();
+  expect(page1.total).toBe(3);
   const page2 = await (await app(cookie, `${base}?limit=2&cursor=${page1.next}`)).json();
   expect(page2.items).toHaveLength(1);
   expect(page2.next).toBeNull();
+  expect(page2.total).toBe(3);
+  expect((await (await app(cookie, `${base}?q=AD`)).json()).total).toBe(2);
   const seen = new Set([...page1.items, ...page2.items].map((c: { id: string }) => c.id));
   expect(seen.size).toBe(3);
 
@@ -94,4 +98,17 @@ test("sync: the change log replays every write, and a stale op is a conflict", a
   expect(fresh.applied).toBe(1);
   expect(fresh.rejected).toHaveLength(1);
   expect((await app(cookie, `/api/orgs/${org}/companies/${id}`)).status).toBe(200);
+});
+
+test("deals board: a column is a stage filter and a drop is one PUT of the stage", async () => {
+  const app = await local();
+  const { cookie, org } = await person(app, "board@qcrm.test");
+  const base = `/api/orgs/${org}/deals`;
+  const d = await (await post(app, cookie, base, { name: "Acme renewal", amount_cents: 5000 })).json();
+  await post(app, cookie, base, { name: "Other", stage: "proposal" });
+  const names = async (stage: string) => (await (await app(cookie, `${base}?stage=${stage}`)).json()).items.map((r: { name: string }) => r.name);
+  expect(await names("lead")).toEqual(["Acme renewal"]);
+  expect((await post(app, cookie, `${base}/${d.id}`, { stage: "won" }, "PUT")).status).toBe(200);
+  expect(await names("lead")).toEqual([]);
+  expect(await names("won")).toEqual(["Acme renewal"]);
 });

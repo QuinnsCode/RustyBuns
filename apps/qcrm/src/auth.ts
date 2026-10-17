@@ -6,7 +6,7 @@
 // letting anyone in as anyone.
 
 import { betterAuth } from "better-auth";
-import { b64url, error, json, readBody, sha256, type Env } from "./env.ts";
+import { b64url, error, esc, json, NAME, readBody, sha256, type Env } from "./env.ts";
 import type { Ctx } from "./orgs.ts";
 
 export interface User { id: string; email: string; name: string; /** Set when the request came in on an API key: the one org it opens. */ key?: { id: string; org_id: string } }
@@ -21,6 +21,21 @@ export function providers(env: Env) {
   return out;
 }
 
+/** EMAIL and EMAIL_FROM are both set: verification and reset links go out. */
+export const mailOn = (env: Env) => !!(env.EMAIL && env.EMAIL_FROM);
+
+/**
+ * One account email. A failure is logged, not thrown: a reset request answers the same whether
+ * the address has an account or not, so an error mustn't tell them apart.
+ */
+async function mail(env: Env, to: string, subject: string, line: string, link: string) {
+  const foot = "If this wasn't you, ignore this email.";
+  const text = [line, "", link, "", foot].join("\n");
+  const html = `<p>${esc(line)}</p><p><a href="${esc(link)}">${esc(link)}</a></p><p style="color:#57606a">${esc(foot)}</p>`;
+  try { await env.EMAIL!.send({ from: { email: env.EMAIL_FROM!, name: NAME }, to, subject, text, html }); }
+  catch (e) { console.error("qCRM: account email failed", String((e as Error)?.message ?? e)); }
+}
+
 const make = (env: Env, origin: string) => betterAuth({
   // better-auth wants Cloudflare's D1Database class; Env.DB is the part of it this app calls.
   database: env.DB as never,
@@ -28,7 +43,23 @@ const make = (env: Env, origin: string) => betterAuth({
   baseURL: env.BETTER_AUTH_URL ?? origin,
   basePath: "/api/auth",
   trustedOrigins: [env.BETTER_AUTH_URL ?? origin],
-  emailAndPassword: { enabled: true },
+  emailAndPassword: {
+    enabled: true,
+    ...(mailOn(env) ? {
+      sendResetPassword: ({ user, url }: { user: { email: string }; url: string }) =>
+        mail(env, user.email, `Reset your ${NAME} password`, `Someone asked to reset the password for this ${NAME} account. To pick a new one, open this link within the hour:`, url),
+      // A reset proves the inbox, so it signs every other session out.
+      revokeSessionsOnPasswordReset: true,
+    } : {}),
+  },
+  ...(mailOn(env) ? {
+    emailVerification: {
+      sendOnSignUp: true,
+      autoSignInAfterVerification: true,
+      sendVerificationEmail: ({ user, url }: { user: { email: string }; url: string }) =>
+        mail(env, user.email, `Verify your ${NAME} email`, `Welcome to ${NAME}. To verify this email, open this link within the hour:`, url),
+    },
+  } : {}),
   socialProviders: {
     ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET ? { github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET } } : {}),
     ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } } : {}),
