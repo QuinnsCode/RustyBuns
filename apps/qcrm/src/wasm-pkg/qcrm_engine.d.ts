@@ -8,6 +8,12 @@
 export function dedupe(contacts_json: string): string;
 
 /**
+ * `dedupe` for the pairs whose first row index is in `start..end`, unsorted-merge friendly: the
+ * browser runs one slice per core in Web Workers and merges the results by score.
+ */
+export function dedupe_slice(contacts_json: string, start: number, end: number): string;
+
+/**
  * Weighted pipeline per stage (lead .1, qualified .3, proposal .6) over the open deals, and the
  * expected (weighted) close per month for the six months starting at `now_ms`'s month.
  */
@@ -29,6 +35,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly dedupe: (a: number, b: number, c: number) => void;
+    readonly dedupe_slice: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly forecast: (a: number, b: number, c: number, d: number) => void;
     readonly stale: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly wave_frame: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => void;
