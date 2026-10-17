@@ -96,3 +96,10 @@ test("the audit log names who and what; the last admin can't demote or remove th
   expect((await post(app, alice.cookie, `/api/orgs/${org}/members/${alice.user.id}`, { role: "manager" }, "PUT")).status).toBe(409);
   expect((await app(alice.cookie, `/api/orgs/${org}/members/${alice.user.id}`, { method: "DELETE" })).status).toBe(409);
 });
+
+test("the sign-in form learns which social providers are on, signed out", async () => {
+  const off = await local();
+  expect(await (await off("", "/api/providers")).json()).toEqual(["email"]);
+  const on = await local({ GITHUB_CLIENT_ID: "id", GITHUB_CLIENT_SECRET: "secret", GOOGLE_CLIENT_ID: "only-half" });
+  expect(await (await on("", "/api/providers")).json()).toEqual(["email", "github"]);
+});

@@ -28,6 +28,11 @@ export default defineConfig({
     HOOKS: { type: "queue", queueName: "qcrm-hooks", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } },
     BETTER_AUTH_SECRET: { type: "secret", op: "op://qcrm/better-auth/secret" },
     BETTER_AUTH_URL: { type: "var", value: "https://qcrm.qntbr.com" },
+    // Optional social sign-in: a button shows once both halves of a provider are set (src/auth.ts).
+    GITHUB_CLIENT_ID: { type: "secret", op: "op://qcrm/github/client-id", optional: true },
+    GITHUB_CLIENT_SECRET: { type: "secret", op: "op://qcrm/github/client-secret", optional: true },
+    GOOGLE_CLIENT_ID: { type: "secret", op: "op://qcrm/google/client-id", optional: true },
+    GOOGLE_CLIENT_SECRET: { type: "secret", op: "op://qcrm/google/client-secret", optional: true },
     // Optional: without it there is no super admin, and the first org owner is on their own.
     SUPER_ADMIN_EMAIL: { type: "secret", op: "op://qcrm/admin/email", optional: true },
   },

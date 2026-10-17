@@ -22,21 +22,23 @@ const nextOf = (r: any): string | null => r?.next ?? r?.cursor ?? null;
 const money = (cents: unknown, cur = "USD") => typeof cents === "number" ? new Intl.NumberFormat(undefined, { style: "currency", currency: cur, maximumFractionDigits: 0 }).format(cents / 100) : "";
 const when = (v: unknown) => (typeof v === "number" || typeof v === "string") && v ? new Date(v).toLocaleDateString() : "";
 const whenAt = (v: unknown) => (typeof v === "number" || typeof v === "string") && v ? new Date(v).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
+/** What a linked row is called in a table or a picker. */
+const nameOf = (r: Row) => r.name ?? ([r.first_name, r.last_name].filter(Boolean).join(" ") || r.email || r.id);
 const ROLES = ["seasonal", "employee", "manager", "owner", "admin"] as const;
 const RANK: Record<string, number> = { seasonal: 1, employee: 2, manager: 3, owner: 4, admin: 5, super_admin: 6 };
 const STAGES = ["lead", "qualified", "proposal", "won", "lost"];
 
-const COLS: Record<string, { key: string; label: string; kind?: "money" | "date" | "stage" | "num" }[]> = {
-  contacts: [{ key: "first_name", label: "First" }, { key: "last_name", label: "Last" }, { key: "email", label: "Email" }, { key: "phone", label: "Phone" }, { key: "title", label: "Title" }, { key: "updated_at", label: "Updated", kind: "date" }],
+const COLS: Record<string, { key: string; label: string; kind?: "money" | "date" | "stage" | "num"; ref?: string }[]> = {
+  contacts: [{ key: "first_name", label: "First" }, { key: "last_name", label: "Last" }, { key: "email", label: "Email" }, { key: "phone", label: "Phone" }, { key: "title", label: "Title" }, { key: "company_id", label: "Company", ref: "companies" }, { key: "updated_at", label: "Updated", kind: "date" }],
   companies: [{ key: "name", label: "Name" }, { key: "domain", label: "Domain" }, { key: "industry", label: "Industry" }, { key: "size", label: "Size", kind: "num" }, { key: "updated_at", label: "Updated", kind: "date" }],
-  deals: [{ key: "name", label: "Deal" }, { key: "stage", label: "Stage", kind: "stage" }, { key: "amount_cents", label: "Amount", kind: "money" }, { key: "close_at", label: "Close", kind: "date" }, { key: "updated_at", label: "Updated", kind: "date" }],
-  activities: [{ key: "type", label: "Type" }, { key: "body", label: "Note" }, { key: "at", label: "When", kind: "date" }],
+  deals: [{ key: "name", label: "Deal" }, { key: "stage", label: "Stage", kind: "stage" }, { key: "amount_cents", label: "Amount", kind: "money" }, { key: "company_id", label: "Company", ref: "companies" }, { key: "contact_id", label: "Contact", ref: "contacts" }, { key: "close_at", label: "Close", kind: "date" }, { key: "updated_at", label: "Updated", kind: "date" }],
+  activities: [{ key: "type", label: "Type" }, { key: "body", label: "Note" }, { key: "contact_id", label: "Contact", ref: "contacts" }, { key: "deal_id", label: "Deal", ref: "deals" }, { key: "at", label: "When", kind: "date" }],
 };
-const FIELDS: Record<string, { key: string; label: string; type?: string; options?: string[] }[]> = {
-  contacts: [{ key: "first_name", label: "First name" }, { key: "last_name", label: "Last name" }, { key: "email", label: "Email", type: "email" }, { key: "phone", label: "Phone" }, { key: "title", label: "Title" }, { key: "company_id", label: "Company id" }, { key: "notes", label: "Notes", type: "textarea" }],
+const FIELDS: Record<string, { key: string; label: string; type?: string; options?: string[]; ref?: string }[]> = {
+  contacts: [{ key: "first_name", label: "First name" }, { key: "last_name", label: "Last name" }, { key: "email", label: "Email", type: "email" }, { key: "phone", label: "Phone" }, { key: "title", label: "Title" }, { key: "company_id", label: "Company", ref: "companies" }, { key: "notes", label: "Notes", type: "textarea" }],
   companies: [{ key: "name", label: "Name" }, { key: "domain", label: "Domain" }, { key: "industry", label: "Industry" }, { key: "size", label: "Size", type: "number" }],
-  deals: [{ key: "name", label: "Name" }, { key: "stage", label: "Stage", type: "select", options: STAGES }, { key: "amount_cents", label: "Amount (cents)", type: "number" }, { key: "currency", label: "Currency" }, { key: "contact_id", label: "Contact id" }, { key: "company_id", label: "Company id" }, { key: "close_at", label: "Close (ms)", type: "number" }],
-  activities: [{ key: "type", label: "Type", type: "select", options: ["call", "email", "meeting", "note"] }, { key: "body", label: "Body", type: "textarea" }, { key: "contact_id", label: "Contact id" }, { key: "deal_id", label: "Deal id" }],
+  deals: [{ key: "name", label: "Name" }, { key: "stage", label: "Stage", type: "select", options: STAGES }, { key: "amount_cents", label: "Amount (cents)", type: "number" }, { key: "currency", label: "Currency" }, { key: "contact_id", label: "Contact", ref: "contacts" }, { key: "company_id", label: "Company", ref: "companies" }, { key: "close_at", label: "Close (ms)", type: "number" }],
+  activities: [{ key: "type", label: "Type", type: "select", options: ["call", "email", "meeting", "note"] }, { key: "body", label: "Body", type: "textarea" }, { key: "contact_id", label: "Contact", ref: "contacts" }, { key: "deal_id", label: "Deal", ref: "deals" }],
 };
 
 const theme = (t: "light" | "dark" | "auto") => {
@@ -50,6 +52,7 @@ export function Crm() {
   const [view, setView] = useState<View>("contacts");
   const [err, setErr] = useState("");
   const [demo, setDemo] = useState(false);
+  const [menu, setMenu] = useState(false);
 
   const load = useCallback(async () => {
     try { const m = await api("/me"); setMe(m); if (!org && m.orgs?.[0]) setOrg(m.orgs[0].id); }
@@ -78,9 +81,10 @@ export function Crm() {
   const items: [View, string, string][] = [["contacts", "Contacts", "users"], ["companies", "Companies", "building"], ["deals", "Deals", "badge-dollar-sign"], ["activities", "Activities", "activity"], ["insights", "Insights", "chart-column"], ["engine", "Engine", "cpu"], ["scripts", "Scripts", "scroll-text"], ["settings", "Settings", "key-round"]];
   return (
     <div className="crm">
-      <aside className="rail" data-tour="rail">
+      <aside className={"rail" + (menu ? " open" : "")} data-tour="rail">
         <div className="org"><span className="tag">Org</span><b title={current.id}>{current.name}</b><span>{role} · <code>{current.id.slice(0, 12)}…</code></span></div>
-        {items.map(([v, label, icon]) => <button key={v} type="button" className={"nav-item" + (view === v ? " on" : "")} onClick={() => setView(v)} data-tour={`nav-${v}`}><Icon name={icon} /> {label}</button>)}
+        <button type="button" className="nav-item menu-btn" aria-expanded={menu} aria-label="Menu" title="Menu" onClick={() => setMenu(!menu)}><Icon name={menu ? "x" : "menu"} /></button>
+        {items.map(([v, label, icon]) => <button key={v} type="button" className={"nav-item" + (view === v ? " on" : "")} onClick={() => { setView(v); setMenu(false); }} data-tour={`nav-${v}`}><Icon name={icon} /> {label}</button>)}
         {me.orgs.length > 1 && <select value={current.id} onChange={(e) => setOrg(e.target.value)} aria-label="Switch org">{me.orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>}
         <button type="button" className="nav-item" onClick={async () => { await api("/auth/sign-out", { method: "POST", body: "{}" }); location.href = "/"; }}><Icon name="log-out" /> Sign out</button>
       </aside>
@@ -88,7 +92,7 @@ export function Crm() {
         {err && <p className="err">{err}</p>}
         {view in COLS && <Table key={current.id + view} org={current.id} entity={view} can={can} />}
         {view === "insights" && <Insights org={current.id} />}
-        {view === "engine" && <Engine org={current.id} />}
+        {view === "engine" && <Engine org={current.id} can={can} />}
         {view === "scripts" && <Scripts org={current.id} can={can} />}
         {view === "settings" && <Settings me={me} org={current} role={role} can={can} reload={load} />}
       </section>
@@ -99,6 +103,12 @@ export function Crm() {
 function Auth({ onDone, demo, err }: { onDone: () => Promise<void>; demo: boolean; err: string }) {
   const [mode, setMode] = useState<"in" | "up">("in");
   const [msg, setMsg] = useState(err);
+  const [social, setSocial] = useState<string[]>([]);
+  useEffect(() => { api("/providers").then((p: string[]) => setSocial(p.filter((x) => x !== "email"))).catch(() => {}); }, []);
+  const via = async (provider: string) => {
+    try { const r = await api("/auth/sign-in/social", { method: "POST", body: JSON.stringify({ provider, callbackURL: location.pathname + location.search }) }); if (r?.url) location.href = r.url; }
+    catch (x) { setMsg((x as Error).message); }
+  };
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -110,6 +120,7 @@ function Auth({ onDone, demo, err }: { onDone: () => Promise<void>; demo: boolea
   return (
     <div className="auth" data-tour="auth">
       <h2>{mode === "in" ? "Sign in" : "Create your account"}</h2>
+      {social.length > 0 && <div className="row">{social.map((p) => <button key={p} type="button" onClick={() => via(p)}><Icon name={p === "github" ? "github" : "mail"} /> Continue with {p === "github" ? "GitHub" : "Google"}</button>)}</div>}
       <p className="muted">Email and password, kept by Better Auth. Your first org is made when you sign up.</p>
       <form onSubmit={submit}>
         {mode === "up" && <label><span>Name</span><input name="name" autoComplete="name" /></label>}
@@ -147,6 +158,7 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
   const [edit, setEdit] = useState<Row | null>(null);
   const [msg, setMsg] = useState("");
   const cols = COLS[entity]!;
+  const [names, setNames] = useState<Record<string, string>>({});
   const fetchPage = useCallback(async (cursor: string | null, replace: boolean) => {
     const t = performance.now();
     const p = new URLSearchParams({ limit: "50" });
@@ -161,12 +173,32 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
     } catch (e) { setMsg((e as Error).message); }
   }, [org, entity, q]);
   useEffect(() => { const h = setTimeout(() => void fetchPage(null, true), q ? 120 : 0); return () => clearTimeout(h); }, [fetchPage, q]);
+  // Rows hold ids of linked rows; look up the ones this page shows and put names in their place.
+  useEffect(() => {
+    const want = new Set<string>();
+    for (const c of cols) if (c.ref) for (const r of rows) { const id = r[c.key]; if (id && !(c.ref + id in names)) want.add(c.ref + "/" + id); }
+    if (!want.size) return;
+    let live = true;
+    void Promise.all([...want].map((k) => api(`/orgs/${org}/${k}`).then((r) => [k.replace("/", ""), nameOf(r)] as const).catch(() => [k.replace("/", ""), ""] as const)))
+      .then((got) => { if (live) setNames((n) => ({ ...n, ...Object.fromEntries(got) })); });
+    return () => { live = false; };
+  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
   const save = async (data: Row) => {
     const id = edit?.id;
     await api(`/orgs/${org}/${entity}${id ? "/" + id : ""}`, { method: id ? "PUT" : "POST", body: JSON.stringify(data) });
     setEdit(null); await fetchPage(null, true);
   };
   const remove = async (id: string) => { await api(`/orgs/${org}/${entity}/${id}`, { method: "DELETE" }); setEdit(null); await fetchPage(null, true); };
+  const importFile = async (file: File | undefined) => {
+    if (!file) return;
+    setMsg("");
+    try {
+      const r = await api(`/orgs/${org}/${entity}/import`, { method: "POST", body: JSON.stringify({ csv: await file.text() }) });
+      setMsg(`Imported ${r.created.toLocaleString()}, skipped ${r.duplicates.toLocaleString()} duplicates${r.failed ? `, ${r.failed} rows failed (first: row ${r.errors[0].row}, ${r.errors[0].error})` : ""}.`);
+      await fetchPage(null, true);
+    } catch (e) { setMsg((e as Error).message); }
+  };
+  const [over, setOver] = useState(false);
   const minCreate = entity === "activities" ? "seasonal" : "employee";
   return (
     <>
@@ -175,16 +207,18 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
         <input type="search" placeholder={`Search ${entity}…`} value={q} onChange={(e) => setQ(e.target.value)} data-tour="search" aria-label="Search" />
         {ms !== null && <span className="num" title="Round trip to the edge, this page">{ms} ms</span>}
         {total !== null && <span className="num">{total.toLocaleString()} rows</span>}
+        {(entity === "contacts" || entity === "companies") && can("employee") && <label className="btn" title="Import a CSV"><Icon name="upload" /> Import<input type="file" accept=".csv,text/csv" hidden onChange={(e) => { void importFile(e.target.files?.[0]); e.target.value = ""; }} /></label>}
         {can(minCreate) && <button className="primary" type="button" onClick={() => setEdit({})}><Icon name="plus" /> New</button>}
       </div>
       {msg && <p className="err">{msg}</p>}
+      {(entity === "contacts" || entity === "companies") && can("employee") && <div className={`dropzone${over ? " over" : ""}`} onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(e) => { e.preventDefault(); setOver(false); void importFile(e.dataTransfer.files[0]); }}>Drop a CSV here to import {entity}</div>}
       <div className="table">
         <table>
           <thead><tr>{cols.map((c) => <th key={c.key}>{c.label}</th>)}</tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} onClick={() => setEdit(r)}>
-                {cols.map((c) => <td key={c.key} className={c.kind === "money" || c.kind === "num" ? "num" : ""}>{cell(r[c.key], c.kind, r.currency)}</td>)}
+                {cols.map((c) => <td key={c.key} className={c.kind === "money" || c.kind === "num" ? "num" : ""}>{c.ref ? (names[c.ref + r[c.key]] ?? "") : cell(r[c.key], c.kind, r.currency)}</td>)}
               </tr>
             ))}
           </tbody>
@@ -192,21 +226,24 @@ function Table({ org, entity, can }: { org: string; entity: string; can: (r: str
         {!rows.length && <div className="empty">{q ? "Nothing matches." : `No ${entity} yet.`}</div>}
       </div>
       {next && <button type="button" onClick={() => fetchPage(next, false)}>Load more</button>}
-      {edit && <Sheet entity={entity} row={edit} onClose={() => setEdit(null)} onSave={save} onDelete={can("manager") && edit.id ? () => remove(edit.id) : undefined} canEdit={can("employee") || !edit.id} />}
+      {edit && <Sheet org={org} entity={entity} row={edit} onClose={() => setEdit(null)} onSave={save} onDelete={can("manager") && edit.id ? () => remove(edit.id) : undefined} canEdit={can("employee") || !edit.id} />}
     </>
   );
 }
 
+const Stage = ({ v }: { v: unknown }) => { const t = typeof v === "string" && v.trim() ? v : "no stage"; return <span className={`stage ${STAGES.includes(t as never) ? t : "none"}`}>{t}</span>; };
+
 const cell = (v: unknown, kind?: string, cur?: string) => {
+  if (kind === "stage") return <Stage v={v} />;
   if (v == null) return "";
   if (kind === "money") return money(v, cur || "USD");
   if (kind === "date") return when(v);
-  if (kind === "stage") return <span className={`stage ${v}`}>{String(v)}</span>;
   return String(v);
 };
 
-function Sheet({ entity, row, onClose, onSave, onDelete, canEdit }: { entity: string; row: Row; onClose: () => void; onSave: (d: Row) => Promise<void>; onDelete?: () => Promise<void>; canEdit: boolean }) {
+function Sheet({ org, entity, row, onClose, onSave, onDelete, canEdit }: { org: string; entity: string; row: Row; onClose: () => void; onSave: (d: Row) => Promise<void>; onDelete?: () => Promise<void>; canEdit: boolean }) {
   const [msg, setMsg] = useState("");
+  const [sure, setSure] = useState(false);
   const fields = FIELDS[entity]!;
   return (
     <div className="sheet" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -220,14 +257,20 @@ function Sheet({ entity, row, onClose, onSave, onDelete, canEdit }: { entity: st
         {row.id && <p className="muted mono">{row.id}</p>}
         {fields.map((x) => (
           <label key={x.key}><span>{x.label}</span>
-            {x.type === "select" ? <select name={x.key} defaultValue={row[x.key] ?? x.options![0]} disabled={!canEdit}>{x.options!.map((o) => <option key={o}>{o}</option>)}</select>
+            {x.ref ? <Picker org={org} entity={x.ref} name={x.key} initial={row[x.key]} disabled={!canEdit} />
+              : x.type === "select" ? <select name={x.key} defaultValue={row[x.key] ?? x.options![0]} disabled={!canEdit}>{x.options!.map((o) => <option key={o}>{o}</option>)}</select>
               : x.type === "textarea" ? <textarea name={x.key} defaultValue={row[x.key] ?? ""} rows={4} disabled={!canEdit} />
               : <input name={x.key} type={x.type ?? "text"} defaultValue={row[x.key] ?? ""} disabled={!canEdit} />}
           </label>
         ))}
         {msg && <p className="err">{msg}</p>}
-        <div className="row">
-          {onDelete && <button type="button" onClick={async () => { try { await onDelete(); } catch (x) { setMsg((x as Error).message); } }} style={{ color: "var(--bad)" }}>Delete</button>}
+        <div className="row actions">
+          {onDelete && !sure && <button type="button" onClick={() => setSure(true)} style={{ color: "var(--bad)" }}>Delete</button>}
+          {onDelete && sure && <>
+            <span className="muted">Delete this {entity.slice(0, -1)}?</span>
+            <button type="button" onClick={async () => { try { await onDelete(); } catch (x) { setMsg((x as Error).message); setSure(false); } }} style={{ color: "var(--bad)" }}>Yes, delete</button>
+            <button type="button" onClick={() => setSure(false)}>Keep</button>
+          </>}
           <span className="grow" />
           {canEdit && <button className="primary" type="submit">Save</button>}
         </div>
@@ -235,6 +278,9 @@ function Sheet({ entity, row, onClose, onSave, onDelete, canEdit }: { entity: st
     </div>
   );
 }
+
+/** Date `ago` weeks back, as "Oct 9": the axis label of that week bucket. */
+const weekLabel = (ago: number) => new Date(Date.now() - ago * 7 * 86_400_000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
 function Insights({ org }: { org: string }) {
   const [d, setD] = useState<any>(null);
@@ -257,15 +303,43 @@ function Insights({ org }: { org: string }) {
         {Object.entries(counts).map(([k, v]) => <div className="kpi" key={k}><span className="tag">{k}</span><span className="num">{Number(v).toLocaleString()}</span></div>)}
         <div className="kpi"><span className="tag">Win rate, 90 d</span><span className="num">{winRate == null ? "–" : `${Math.round(Number(winRate) * 100)}%`}</span></div>
       </div>
-      {stages.length > 0 && <div className="card"><h3>Pipeline by stage</h3><div className="bars">{stages.map((s) => <div className="bar" key={s.stage}><span className={`stage ${s.stage}`}>{s.stage}</span><i style={{ width: `${(100 * s.amount_cents) / max}%` }} /><span className="num">{money(s.amount_cents)} · {s.n}</span></div>)}</div></div>}
-      {weeks.length > 0 && <div className="card"><h3>Activities, last 12 weeks</h3><div className="spark">{weeks.map((w) => <i key={w.weeks_ago} title={`${w.weeks_ago} weeks ago: ${w.total}`} style={{ height: `${(100 * w.total) / wmax}%` }} />)}</div></div>}
-      {top.length > 0 && <div className="card"><h3>Open pipeline by company</h3><div className="bars">{top.map((c) => <div className="bar" key={c.name}><span>{c.name}</span><i style={{ width: `${(100 * c.amount_cents) / tmax}%` }} /><span className="num">{money(c.amount_cents)} · {c.deals}</span></div>)}</div></div>}
+      {stages.length > 0 && <div className="card"><h3>Pipeline by stage</h3><div className="bars">{stages.map((s) => <div className="bar" key={s.stage}><Stage v={s.stage} /><i style={{ width: `${(100 * s.amount_cents) / max}%` }} /><span className="num">{money(s.amount_cents)} · {s.n}</span></div>)}</div></div>}
+      {weeks.length > 0 && <div className="card"><h3>Activities, last 12 weeks</h3><div className="spark">{weeks.map((w) => <div className="col" key={w.weeks_ago} title={`${weekLabel(w.weeks_ago)}: ${w.total} activities`}><span className="num">{w.total}</span><i style={{ height: `${(100 * w.total) / wmax}%` }} /><span className="axis">{weekLabel(w.weeks_ago)}</span></div>)}</div></div>}
+      {top.length > 0 && <div className="card"><h3>Open pipeline by company</h3><div className="bars">{top.map((c) => <div className="bar" key={c.name}><span className="name" title={c.name}>{c.name}</span><i style={{ width: `${(100 * c.amount_cents) / tmax}%` }} /><span className="num">{money(c.amount_cents)} · {c.deals}</span></div>)}</div></div>}
     </>
   );
 }
 
+/** Pick a linked row by typing its name; the form gets its id. */
+function Picker({ org, entity, name, initial, disabled }: { org: string; entity: string; name: string; initial?: string; disabled: boolean }) {
+  const [id, setId] = useState<string>(initial ?? "");
+  const [text, setText] = useState("");
+  const [hits, setHits] = useState<Row[]>([]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (initial) api(`/orgs/${org}/${entity}/${initial}`).then((r) => setText(nameOf(r))).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!open) return;
+    const h = setTimeout(() => api(`/orgs/${org}/${entity}?${new URLSearchParams({ limit: "8", ...(text ? { q: text } : {}) })}`).then((r) => setHits(rowsOf(r))).catch(() => setHits([])), 120);
+    return () => clearTimeout(h);
+  }, [text, open, org, entity]);
+  return (
+    <span style={{ position: "relative", display: "block" }}>
+      <input type="hidden" name={name} value={id} />
+      <input type="search" value={text} placeholder={`Search ${entity}…`} disabled={disabled} autoComplete="off"
+        onChange={(e) => { setText(e.target.value); setId(""); setOpen(true); }} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} />
+      {open && hits.length > 0 && (
+        <ul role="listbox" style={{ position: "absolute", left: 0, right: 0, zIndex: 5, margin: 0, padding: 4, listStyle: "none", background: "var(--paper)", border: "1px solid var(--line)", boxShadow: "var(--shadow)" }}>
+          {hits.map((h) => <li key={h.id} role="option" style={{ padding: "6px 8px", cursor: "pointer" }} onMouseDown={() => { setId(h.id); setText(nameOf(h)); setOpen(false); }}>{nameOf(h)}</li>)}
+        </ul>
+      )}
+    </span>
+  );
+}
+
 /** Every row of an entity, 200 a page, for the engine. Stays in this tab; never sent anywhere. */
-async function allRows(org: string, entity: string, cap = 20_000) {
+async function allRows(org: string, entity: string, cap = 100_000) {
   const out: Row[] = []; let cursor: string | null = null;
   do {
     const p = new URLSearchParams({ limit: "200" }); if (cursor) p.set("cursor", cursor);
@@ -275,27 +349,38 @@ async function allRows(org: string, entity: string, cap = 20_000) {
   return out;
 }
 
-function Engine({ org }: { org: string }) {
-  const [out, setOut] = useState<{ kind: string; ms: number; rows: number; data: any } | null>(null);
+type EngineOut =
+  | { kind: "dedupe"; pairs: any[]; people: Map<string, Row> }
+  | { kind: "forecast"; f: any }
+  | { kind: "stale"; deals: any[]; rows: Map<string, Row>; days: number };
+
+function Engine({ org, can }: { org: string; can: (r: string) => boolean }) {
+  const [out, setOut] = useState<{ res: EngineOut; load: number; ms: number; rows: number } | null>(null);
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState("");
+  const [edit, setEdit] = useState<{ entity: string; row: Row } | null>(null);
   const run = async (kind: "dedupe" | "forecast" | "stale") => {
     setBusy(kind); setMsg("");
     try {
       const eng = await import("../engine.ts");
-      const t = performance.now();
-      let data: any, rows = 0;
-      if (kind === "dedupe") { const c = await allRows(org, "contacts"); rows = c.length; data = await eng.dedupe(c as never); }
-      else if (kind === "forecast") { const d = await allRows(org, "deals"); rows = d.length; data = await eng.forecast(d as never, Date.now()); }
-      else { const [d, a] = await Promise.all([allRows(org, "deals"), allRows(org, "activities")]); rows = d.length + a.length; data = await eng.stale(d as never, a as never, Date.now(), 30); }
-      setOut({ kind, ms: Math.round(performance.now() - t), rows, data });
+      const t0 = performance.now();
+      let res: EngineOut, rows = 0, t1 = 0;
+      const byId = (l: Row[]) => new Map(l.map((r) => [String(r.id), r]));
+      if (kind === "dedupe") { const c = await allRows(org, "contacts"); rows = c.length; t1 = performance.now(); res = { kind, pairs: await eng.dedupe(c as never), people: byId(c) }; }
+      else if (kind === "forecast") { const d = await allRows(org, "deals"); rows = d.length; t1 = performance.now(); res = { kind, f: await eng.forecast(d as never, Date.now()) }; }
+      else { const [d, a] = await Promise.all([allRows(org, "deals"), allRows(org, "activities")]); rows = d.length + a.length; t1 = performance.now(); res = { kind, deals: await eng.stale(d as never, a as never, Date.now(), 30), rows: byId(d), days: 30 }; }
+      setOut({ res, rows, load: Math.round(t1 - t0), ms: Math.round(performance.now() - t1) });
     } catch (e) { setMsg((e as Error).message); }
     setBusy("");
   };
+  const open = (entity: string, id: unknown, m: Map<string, Row>) => { const row = m.get(String(id)); if (row) setEdit({ entity, row }); };
+  const link = (entity: string, id: unknown, m: Map<string, Row>, label: string) => <button type="button" className="link" onClick={() => open(entity, id, m)}>{label}</button>;
+  const res = out?.res;
+  const label = (r: Row | undefined, id: unknown) => (r ? nameOf(r) : String(id));
   return (
     <>
       <h2>Engine</h2>
-      <p className="muted">Rust, compiled to wasm, running in this tab. Rows are pulled from your org and analysed here; nothing goes back up. Capped at 20,000 rows per run for now.</p>
+      <p className="muted">Rust, compiled to wasm, running in this tab. Rows are pulled from your org and analysed here; nothing goes back up. Duplicate search spreads over every core; capped at 100,000 rows per run.</p>
       <div className="row">
         <button type="button" className="primary" disabled={!!busy} onClick={() => run("dedupe")}><Icon name="users" /> Find duplicates</button>
         <button type="button" disabled={!!busy} onClick={() => run("forecast")}><Icon name="chart-column" /> Forecast pipeline</button>
@@ -303,7 +388,37 @@ function Engine({ org }: { org: string }) {
         {busy && <span className="muted">Running {busy}…</span>}
       </div>
       {msg && <p className="err">{msg}</p>}
-      {out && <div className="card"><h3>{out.kind} · {out.rows.toLocaleString()} rows in · {out.ms} ms</h3><pre className="code">{JSON.stringify(out.data, null, 2).slice(0, 20_000)}</pre></div>}
+      {out && res && (
+        <div className="card">
+          <h3>{res.kind === "dedupe" ? `${res.pairs.length.toLocaleString()} likely duplicate pairs` : res.kind === "stale" ? `${res.deals.length.toLocaleString()} open deals idle over ${res.days} days` : "Pipeline forecast"}</h3>
+          <p className="muted num">{out.rows.toLocaleString()} rows in · {out.load} ms to fetch · {out.ms} ms in the engine</p>
+          {res.kind === "dedupe" && (res.pairs.length ? <div className="table"><table>
+            <thead><tr><th>Contact</th><th>Looks like</th><th>Match</th><th>Why</th></tr></thead>
+            <tbody>{res.pairs.slice(0, 500).map((p) => (
+              <tr key={`${p.a}-${p.b}`}>
+                <td>{link("contacts", p.a, res.people, label(res.people.get(String(p.a)), p.a))}<br /><span className="muted">{res.people.get(String(p.a))?.email}</span></td>
+                <td>{link("contacts", p.b, res.people, label(res.people.get(String(p.b)), p.b))}<br /><span className="muted">{res.people.get(String(p.b))?.email}</span></td>
+                <td className="num">{Math.round(p.score * 100)}%</td><td>{(p.why ?? []).join(", ")}</td>
+              </tr>))}</tbody></table></div> : <div className="empty">No duplicates found.</div>)}
+          {res.kind === "stale" && (res.deals.length ? <div className="table"><table>
+            <thead><tr><th>Deal</th><th>Stage</th><th>Amount</th><th>Last touch</th><th>Days idle</th></tr></thead>
+            <tbody>{res.deals.slice(0, 500).map((d) => (
+              <tr key={d.id}><td>{link("deals", d.id, res.rows, d.name || String(d.id))}</td><td><Stage v={d.stage} /></td><td className="num">{money(d.amount_cents, res.rows.get(String(d.id))?.currency || "USD")}</td>
+                <td>{d.last_touch_at ? when(d.last_touch_at) : "never"}</td><td className="num">{d.days_idle == null ? "" : Math.round(d.days_idle)}</td></tr>))}</tbody></table></div> : <div className="empty">Nothing stale.</div>)}
+          {res.kind === "forecast" && <>
+            <div className="table"><table><thead><tr><th>Stage</th><th>Weight</th><th>Deals</th><th>Amount</th><th>Weighted</th></tr></thead>
+              <tbody>{res.f.stages.map((s: any) => <tr key={s.stage}><td><Stage v={s.stage} /></td><td className="num">{Math.round(s.weight * 100)}%</td><td className="num">{s.count}</td><td className="num">{money(s.amount_cents)}</td><td className="num">{money(s.weighted_cents)}</td></tr>)}</tbody></table></div>
+            <div className="table"><table><thead><tr><th>Close month</th><th>Deals</th><th>Amount</th><th>Weighted</th></tr></thead>
+              <tbody>{res.f.months.map((m: any) => <tr key={m.month}><td>{m.month}</td><td className="num">{m.count}</td><td className="num">{money(m.amount_cents)}</td><td className="num">{money(m.weighted_cents)}</td></tr>)}
+                <tr><td>No close date</td><td></td><td className="num">{money(res.f.unscheduled_cents)}</td><td className="num">{money(res.f.unscheduled_weighted_cents)}</td></tr></tbody></table></div>
+            <p><b>Total weighted: {money(res.f.total_weighted_cents)}</b></p>
+          </>}
+        </div>
+      )}
+      {edit && <Sheet org={org} entity={edit.entity} row={edit.row} onClose={() => setEdit(null)}
+        onSave={async (data) => { await api(`/orgs/${org}/${edit.entity}/${edit.row.id}`, { method: "PUT", body: JSON.stringify(data) }); setEdit(null); }}
+        onDelete={can("manager") ? async () => { await api(`/orgs/${org}/${edit.entity}/${edit.row.id}`, { method: "DELETE" }); setEdit(null); } : undefined}
+        canEdit={can("employee")} />}
     </>
   );
 }
@@ -340,7 +455,7 @@ function Scripts({ org, can }: { org: string; can: (r: string) => boolean }) {
           <div className="row"><h2>{open.id ? "Edit script" : "New script"}</h2><span className="grow" /><button type="button" onClick={() => setOpen(null)} aria-label="Close"><Icon name="x" /></button></div>
           <label><span>Name</span><input name="name" defaultValue={open.name ?? ""} required maxLength={80} disabled={!can("manager")} /></label>
           <label><span>Body: an async function of {"{ input, qcrm, log }"}</span><textarea name="body" defaultValue={open.body ?? ""} rows={16} className="mono" required disabled={!can("manager")} /></label>
-          <div className="row">
+          <div className="row actions">
             {open.id && can("owner") && <button type="button" style={{ color: "var(--bad)" }} onClick={() => act(() => api(`${base}/${open.id}`, { method: "DELETE" })).then(() => setOpen(null))}>Delete</button>}
             <span className="grow" />
             {open.id && can("employee") && <button type="button" onClick={() => run(open.id)}>Run</button>}
@@ -360,10 +475,17 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
   const [audit, setAudit] = useState<Row[]>([]);
   const [fresh, setFresh] = useState("");
   const [msg, setMsg] = useState("");
+  const [hookEvents, setHookEvents] = useState<string[]>([]);
+  const [hookPick, setHookPick] = useState<string[]>([]);
+  const [hookUrl, setHookUrl] = useState("");
+  const [hookErr, setHookErr] = useState("");
+  const [inviteErr, setInviteErr] = useState("");
+  const [seeding, setSeeding] = useState("");
+  const [seedBusy, setSeedBusy] = useState(false);
   const base = `/orgs/${org.id}`;
   const refresh = useCallback(() => {
     api(`${base}/members`).then((r) => setMembers(rowsOf(r))).catch(() => {});
-    if (can("owner")) { api(`${base}/webhooks`).then((r) => setHooks(r.webhooks ?? rowsOf(r))).catch(() => {}); api(`${base}/keys`).then((r) => setKeys(rowsOf(r))).catch(() => {}); }
+    if (can("owner")) { api(`${base}/webhooks`).then((r) => { setHooks(r.webhooks ?? rowsOf(r)); if (Array.isArray(r.events)) { setHookEvents(r.events); setHookPick((p) => (p.length ? p : r.events)); } }).catch(() => {}); api(`${base}/keys`).then((r) => setKeys(rowsOf(r))).catch(() => {}); }
     if (can("manager")) api(`${base}/audit`).then((r) => setAudit(rowsOf(r))).catch(() => {});
   }, [base, can]);
   useEffect(refresh, [refresh]);
@@ -381,11 +503,12 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
             {can("manager") ? <select value={m.role} onChange={(e) => act(() => api(`${base}/members/${m.user_id ?? m.id}`, { method: "PUT", body: JSON.stringify({ role: e.target.value }) }))}>{ROLES.map((r) => <option key={r} disabled={!can(r === "admin" || r === "owner" ? "admin" : r === "manager" ? "owner" : "manager")}>{r}</option>)}</select> : <span className="pill">{m.role}</span>}
             {can("manager") && <button type="button" aria-label="Remove" onClick={() => act(() => api(`${base}/members/${m.user_id ?? m.id}`, { method: "DELETE" }))}><Icon name="x" /></button>}
           </div>))}</div>
-        {can("manager") && <form className="row" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); act(() => api(`${base}/members`, { method: "POST", body: JSON.stringify({ email: f.get("email"), role: f.get("role") }) })); e.currentTarget.reset(); }}>
-          <input name="email" type="email" placeholder="colleague@company.com" required className="grow" />
+        {can("manager") && <form className="row" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; const f = new FormData(form); setInviteErr(""); api(`${base}/members`, { method: "POST", body: JSON.stringify({ email: f.get("email"), role: f.get("role") }) }).then(() => { form.reset(); refresh(); }).catch((x) => setInviteErr((x as Error).message)); }}>
+          <input name="email" type="email" placeholder="colleague@company.com" required className="grow" aria-describedby="invite-note" />
           <select name="role" defaultValue="seasonal">{ROLES.map((r) => <option key={r} disabled={!can(r === "admin" || r === "owner" ? "admin" : r === "manager" ? "owner" : "manager")}>{r}</option>)}</select>
           <button className="primary" type="submit"><Icon name="plus" /> Invite</button>
         </form>}
+        {can("manager") && <p id="invite-note" className={inviteErr ? "err" : "muted"}>{inviteErr || "They need a qCRM account first: ask them to sign up, then invite the email they used."}</p>}
         <p className="muted">Roles: seasonal (notes only) · employee (edit) · manager (delete, invite) · owner (webhooks, keys, export) · admin (everything in this org).</p>
       </div>
       {can("owner") && <div className="card" data-tour="mcp">
@@ -400,8 +523,14 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
       {can("owner") && <div className="card" data-tour="webhooks">
         <h3><Icon name="webhook" /> Webhooks</h3>
         <div className="list">{hooks.map((h) => <div className="row" key={h.id}><span className="grow mono">{h.url}</span><span className="pill">{Array.isArray(h.events) ? h.events.join(", ") : String(h.events ?? "*")}</span><button type="button" onClick={() => act(() => api(`${base}/webhooks/${h.id}`, { method: "DELETE" }))}><Icon name="x" /></button></div>)}</div>
-        <form className="row" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); act(() => api(`${base}/webhooks`, { method: "POST", body: JSON.stringify({ url: f.get("url"), events: String(f.get("events") || "*").split(",").map((s) => s.trim()).filter(Boolean) }) })); e.currentTarget.reset(); }}>
-          <input name="url" type="url" placeholder="https://example.com/hooks/qcrm" required className="grow" /><input name="events" placeholder="contact.created, deal.updated" style={{ maxWidth: 260 }} /><button className="primary" type="submit"><Icon name="plus" /> Add</button>
+        <form onSubmit={async (e) => { e.preventDefault(); setHookErr(""); if (!hookPick.length) { setHookErr("Pick at least one event."); return; } try { await api(`${base}/webhooks`, { method: "POST", body: JSON.stringify({ url: hookUrl, events: hookPick }) }); setHookUrl(""); refresh(); } catch (er) { setHookErr((er as Error).message); } }}>
+          <div className="row">
+            <input name="url" type="url" placeholder="https://example.com/hooks/qcrm" required className="grow" value={hookUrl} onChange={(e) => setHookUrl(e.target.value)} /><button className="primary" type="submit"><Icon name="plus" /> Add</button>
+          </div>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            {hookEvents.map((ev) => <label key={ev} className="mono"><input type="checkbox" checked={hookPick.includes(ev)} onChange={(e) => setHookPick((p) => (e.target.checked ? [...p, ev] : p.filter((x) => x !== ev)))} /> {ev}</label>)}
+          </div>
+          {hookErr && <p className="err">{hookErr}</p>}
         </form>
         <p className="muted">Each delivery carries x-qcrm-signature (HMAC-SHA256 of the body with the webhook's secret), retried with backoff for a day.</p>
       </div>}
@@ -417,7 +546,12 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
         <h3><Icon name="download" /> Your data</h3>
         <div className="row">
           {can("owner") && <a className="btn" href={`/api${base}/export`} download={`qcrm-${org.id}.json`}><Icon name="download" /> Export every row</a>}
-          {can("owner") && <button type="button" onClick={() => { const n = Number(prompt("Seed how many contacts? (up to 100000)", "1000")); if (n > 0) act(async () => { await api(`${base}/seed`, { method: "POST", body: JSON.stringify({ n }) }); await reload(); setMsg(`Seeded ${n.toLocaleString()} contacts. Open Contacts to see them.`); }); }}><Icon name="flask-conical" /> Seed sample data</button>}
+          {can("owner") && !seeding && <button type="button" onClick={() => setSeeding("1000")}><Icon name="flask-conical" /> Seed sample data</button>}
+          {can("owner") && seeding && <form className="row" onSubmit={(e) => { e.preventDefault(); const n = Math.floor(Number(seeding)); if (!(n > 0 && n <= 100000)) { setMsg("Seed between 1 and 100,000 contacts."); return; } act(async () => { setSeedBusy(true); try { await api(`${base}/seed`, { method: "POST", body: JSON.stringify({ n }) }); await reload(); setMsg(`Seeded ${n.toLocaleString()} contacts. Open Contacts to see them.`); setSeeding(""); } finally { setSeedBusy(false); } }); }}>
+            <input type="number" min={1} max={100000} aria-label="How many contacts (up to 100,000)" value={seeding} onChange={(e) => setSeeding(e.target.value)} disabled={seedBusy} autoFocus />
+            <button type="submit" disabled={seedBusy}><Icon name="flask-conical" /> {seedBusy ? "Seeding..." : "Seed"}</button>
+            <button type="button" disabled={seedBusy} onClick={() => setSeeding("")}>Cancel</button>
+          </form>}
           <span className="grow" />
           <button type="button" style={{ color: "var(--bad)" }} onClick={() => { const c = prompt(`Delete your account, the orgs you own and all their rows? Type your email to confirm.`); if (c) act(() => api(`/me?confirm=${encodeURIComponent(c)}`, { method: "DELETE" }).then(() => { location.href = "/"; })); }}>Delete my account</button>
         </div>

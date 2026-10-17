@@ -10,6 +10,7 @@
 //
 // Lists are keyset-paginated on (updated_at, id) descending: `next` is the cursor for the page after.
 
+import { importRoute } from "./csv-import.ts";
 import { b64url, error, json, parseJson, readBody, type Env, type Row } from "./env.ts";
 import type { Ctx } from "./orgs.ts";
 import { can, type Action } from "./rbac.ts";
@@ -48,7 +49,7 @@ export function validate(entity: Entity, data: Record<string, unknown>, partial:
   for (const [col, f] of Object.entries(ENTITIES[entity]!.fields)) {
     const v = data[col];
     if (v === undefined) { if (f.required && !partial) return `${col} is required`; continue; }
-    if (v === null) { if (f.required) return `${col} is required`; out[col] = f.kind === "tags" ? "[]" : null; continue; }
+    if (v === null) { if (f.required || (f.kind === "enum" && col === "stage")) return `${col} is required`; out[col] = f.kind === "tags" ? "[]" : null; continue; }
     switch (f.kind) {
       case "str": if (typeof v !== "string" || v.length > MAX_STR) return `${col}: a string of at most ${MAX_STR} characters`; if (f.required && !v.trim()) return `${col} is required`; out[col] = v; break;
       case "email": if (typeof v !== "string" || v.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return `${col}: an email address`; out[col] = v.toLowerCase(); break;
@@ -85,12 +86,17 @@ export async function listRows(env: Env, org: string, entity: Entity, q: URLSear
     args.push(...cols.map(() => like));
   }
   for (const f of spec.filters) { const v = q.get(f); if (v !== null) { where.push(`${f} = ?`); args.push(v); } }
+  // Count what matches the search and filters, before the cursor narrows it to the rest of the pages.
+  const counted = env.DB.prepare(`SELECT COUNT(*) AS n FROM ${entity} WHERE ${where.join(" AND ")}`).bind(...args).first<{ n: number }>();
   const cur = parseCursor(q.get("cursor"));
   if (cur) { where.push("(updated_at < ? OR (updated_at = ? AND id < ?))"); args.push(cur[0], cur[0], cur[1]); }
   const limit = Math.min(200, Math.max(1, Number(q.get("limit")) || 50));
-  const { results } = await env.DB.prepare(`SELECT * FROM ${entity} WHERE ${where.join(" AND ")} ORDER BY updated_at DESC, id DESC LIMIT ?`).bind(...args, limit + 1).all();
+  const [{ results }, count] = await Promise.all([
+    env.DB.prepare(`SELECT * FROM ${entity} WHERE ${where.join(" AND ")} ORDER BY updated_at DESC, id DESC LIMIT ?`).bind(...args, limit + 1).all(),
+    counted,
+  ]);
   const page = results.slice(0, limit);
-  return { items: page.map((r) => shape(entity, r)), next: results.length > limit ? cursorOf(page[limit - 1]!) : null };
+  return { items: page.map((r) => shape(entity, r)), total: count?.n ?? 0, next: results.length > limit ? cursorOf(page[limit - 1]!) : null };
 }
 
 /** The change log entry and the webhook for one write. */
@@ -107,9 +113,11 @@ export async function createRow(env: Env, org: string, entity: Entity, data: Rec
   if (opts.id !== undefined && !ID.test(opts.id)) return "id: up to 64 letters, digits, - or _";
   const now = Date.now();
   if (entity === "activities") { v.at ??= now; v.actor_user_id ??= actor; }
-  const row: Row = { ...v, id: opts.id ?? crypto.randomUUID(), org_id: org, created_at: now, updated_at: opts.updated_at ?? now, deleted_at: null };
-  const cols = Object.keys(row);
-  await env.DB.prepare(`INSERT INTO ${entity} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`).bind(...cols.map((c) => row[c])).run();
+  const ins: Row = { ...v, id: opts.id ?? crypto.randomUUID(), org_id: org, created_at: now, updated_at: opts.updated_at ?? now, deleted_at: null };
+  const cols = Object.keys(ins);
+  await env.DB.prepare(`INSERT INTO ${entity} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`).bind(...cols.map((c) => ins[c])).run();
+  // Read back so column defaults (a deal's stage, amount, currency) reach the response and the change feed.
+  const row = (await getRow(env, org, entity, ins.id as string))!;
   const out = shape(entity, row);
   await record(env, org, entity, row.id as string, "upsert", out, actor);
   await emit(env, org, `${ENTITIES[entity]!.event}.created` as Event, out);
@@ -141,10 +149,12 @@ export async function deleteRow(env: Env, org: string, entity: Entity, id: strin
 
 export const createAction = (entity: Entity): Action => `create:${ENTITIES[entity]!.event}` as Action;
 
-export async function crmRoutes({ req, env, url, user, org, role, p }: Ctx): Promise<Response | null> {
+export async function crmRoutes(ctx: Ctx): Promise<Response | null> {
+  const { req, env, url, user, org, role, p } = ctx;
   const entity = p[0];
   if (!isEntity(entity) || p[2]) return null;
   const id = p[1];
+  if (id === "import" && req.method === "POST" && (entity === "contacts" || entity === "companies")) return importRoute(ctx, entity);
   if (!id && req.method === "GET") return json(await listRows(env, org, entity, url.searchParams));
   if (!id && req.method === "POST") {
     if (!can(role, createAction(entity))) return error(403, `a ${role} can't add ${entity}`);
