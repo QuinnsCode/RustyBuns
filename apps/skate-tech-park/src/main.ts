@@ -9,6 +9,8 @@ import { Plumes } from "./render/plumes.ts";
 import { Chase } from "./render/chase.ts";
 import { between, poseOf } from "./render/interp.ts";
 import { Critters } from "./render/critters.ts";
+import { type Chaser, chase as runAfter, chaseOf, gap, release } from "./chaser.ts";
+import { ChaserView } from "./render/chaser.ts";
 import { Barrier } from "./render/barrier.ts";
 import { Scenery, scatter } from "./render/scenery.ts";
 import { followCamera, sky, skyMood, skyTime } from "./render/sky.ts";
@@ -66,6 +68,11 @@ const barrier = park ? new Barrier(level.bounds, level.height) : null; // the ed
 if (barrier) scene.add(barrier.group);
 const critters = park ? new Critters((level as ParkLevel).ground, level.spawns[0]) : null; // birds and small animals that bolt from the rider
 if (critters) scene.add(critters.group);
+// ?chase=moose|bear|bigfoot: an animal runs the rider down; a bail while it is close ends the run.
+const species = chaseOf(location.search);
+const beast = species ? new ChaserView(species) : null;
+if (beast) scene.add(beast.group);
+let hunter: Chaser | null = null;
 // The plaza's own floor, wall and towers; a park draws its ground instead.
 const decor = new THREE.Group();
 decor.visible = !park;
@@ -157,6 +164,7 @@ const reset = () => {
   before = poseOf(sim);
   chase.snap(sim, skins.current);
   ui.reset();
+  if (species) hunter = release(species, sim, level.height, level.bounds);
 };
 
 // Keys → input. Space is the ollie on the board and the lift thrusters in the car.
@@ -246,7 +254,7 @@ const taps = new Taps($("taps")); // rings where the feet pop, drag and flick
 const groundRise = (x: number, z: number): [number, number] => { const e = 0.25; return rideableRise((level.height(x + e, z) - level.height(x - e, z)) / (2 * e), (level.height(x, z + e) - level.height(x, z - e)) / (2 * e)); };
 const slope = { x: 0, z: 0 }; // the ground's tilt under the board, eased
 reset();
-let critterAt = performance.now(), lastFrame = performance.now(), landVy = 0, acc = 0, then = performance.now(), shownTrick: State["last"] = null, trickAt = 0;
+let caughtAt = -Infinity, critterAt = performance.now(), lastFrame = performance.now(), landVy = 0, acc = 0, then = performance.now(), shownTrick: State["last"] = null, trickAt = 0;
 
 function frame(now: number) {
   acc = Math.min(acc + (now - then) / 1000, 0.25);
@@ -261,6 +269,7 @@ function frame(now: number) {
     step(sim, { ...inp, ...gestures.take() }, level); // a gesture is one step's press
     if (online && !pve) bump(sim, online.riders);
     ui.update(sim); acc -= DT;
+    if (hunter) { runAfter(hunter, sim, level.height, level.bounds, DT); if (hunter.caught) { caughtAt = now; reset(); } }
     for (const f of sim.feet) taps.add(f);
     if (was && !sim.air) landVy = vy;
   }
@@ -321,6 +330,11 @@ function frame(now: number) {
   sun.position.set(sim.x + sunAt.x, sim.y + sunAt.y, sim.z + sunAt.z); // a low sun, so the board throws a long shadow; the shadow box follows the rider
   sun.target.position.set(sim.x, sim.y, sim.z);
 
+  if (hunter && beast) {
+    beast.update(hunter);
+    const note = now - caughtAt < 2500 ? `Caught by the ${species}` : `${species} ${Math.round(gap(hunter, sim))} m back`;
+    if ($("chase").textContent !== note) $("chase").textContent = note;
+  }
   $("score").textContent = String(sim.score);
   $("combo").textContent = comboLine(sim.combo, sim.comboScore);
   $("speed").textContent = `${Math.round(Math.abs(sim.air ? Math.hypot(sim.vx, sim.vz) : sim.speed) * 3.6)} km/h`;

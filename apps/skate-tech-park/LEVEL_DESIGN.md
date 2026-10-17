@@ -36,3 +36,5 @@ Mostly absent. The page has a viewport tag and uses pointer events for the flick
 ## Chased by something
 
 Park Hide & Seek already has Bigfoot as a hiding target. A Skate Tech Park timed run could use him the other way round: an animal that chases the rider (a moose, a bear, Bigfoot) at a pace just under cruising speed, so standing still or bailing costs you, and a run is "outrun it to the next checkpoint". The animal follows the heightfield and ignores kit; a bail while it is close ends the run. Tuning knob: its speed relative to the rider's boosted speed. In Park Hide & Seek the same code could make Bigfoot a roaming chaser in a late round.
+
+**Built:** `?chase=moose|bear|bigfoot` (`src/chaser.ts`). It stands for 3 s, then runs at 70-80% of the jets' top speed, follows the ground and ignores kit. Within 3 m it has you; a bail within 14 m ends the run and resets. Still to do: checkpoints ("outrun it to the next one") and Bigfoot roaming in a late Park Hide & Seek round.
