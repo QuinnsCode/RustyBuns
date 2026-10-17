@@ -409,6 +409,7 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
   const [hookPick, setHookPick] = useState<string[]>([]);
   const [hookUrl, setHookUrl] = useState("");
   const [hookErr, setHookErr] = useState("");
+  const [inviteErr, setInviteErr] = useState("");
   const base = `/orgs/${org.id}`;
   const refresh = useCallback(() => {
     api(`${base}/members`).then((r) => setMembers(rowsOf(r))).catch(() => {});
@@ -430,11 +431,12 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
             {can("manager") ? <select value={m.role} onChange={(e) => act(() => api(`${base}/members/${m.user_id ?? m.id}`, { method: "PUT", body: JSON.stringify({ role: e.target.value }) }))}>{ROLES.map((r) => <option key={r} disabled={!can(r === "admin" || r === "owner" ? "admin" : r === "manager" ? "owner" : "manager")}>{r}</option>)}</select> : <span className="pill">{m.role}</span>}
             {can("manager") && <button type="button" aria-label="Remove" onClick={() => act(() => api(`${base}/members/${m.user_id ?? m.id}`, { method: "DELETE" }))}><Icon name="x" /></button>}
           </div>))}</div>
-        {can("manager") && <form className="row" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); act(() => api(`${base}/members`, { method: "POST", body: JSON.stringify({ email: f.get("email"), role: f.get("role") }) })); e.currentTarget.reset(); }}>
-          <input name="email" type="email" placeholder="colleague@company.com" required className="grow" />
+        {can("manager") && <form className="row" onSubmit={(e) => { e.preventDefault(); const form = e.currentTarget; const f = new FormData(form); setInviteErr(""); api(`${base}/members`, { method: "POST", body: JSON.stringify({ email: f.get("email"), role: f.get("role") }) }).then(() => { form.reset(); refresh(); }).catch((x) => setInviteErr((x as Error).message)); }}>
+          <input name="email" type="email" placeholder="colleague@company.com" required className="grow" aria-describedby="invite-note" />
           <select name="role" defaultValue="seasonal">{ROLES.map((r) => <option key={r} disabled={!can(r === "admin" || r === "owner" ? "admin" : r === "manager" ? "owner" : "manager")}>{r}</option>)}</select>
           <button className="primary" type="submit"><Icon name="plus" /> Invite</button>
         </form>}
+        {can("manager") && <p id="invite-note" className={inviteErr ? "err" : "muted"}>{inviteErr || "They need a qCRM account first: ask them to sign up, then invite the email they used."}</p>}
         <p className="muted">Roles: seasonal (notes only) · employee (edit) · manager (delete, invite) · owner (webhooks, keys, export) · admin (everything in this org).</p>
       </div>
       {can("owner") && <div className="card" data-tour="mcp">
