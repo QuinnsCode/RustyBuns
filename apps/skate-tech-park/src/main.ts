@@ -9,6 +9,7 @@ import { Plumes } from "./render/plumes.ts";
 import { Chase } from "./render/chase.ts";
 import { between, poseOf } from "./render/interp.ts";
 import { Critters } from "./render/critters.ts";
+import { Barrier } from "./render/barrier.ts";
 import { Scenery, scatter } from "./render/scenery.ts";
 import { followCamera, sky, skyMood, skyTime } from "./render/sky.ts";
 import { comboLine } from "./render/combo.ts";
@@ -60,6 +61,8 @@ scene.add(precip.object);
 const lightning = mood.lightning ? new Lightning() : null;
 const scenery = park ? new Scenery(scatter(level, (level as ParkLevel).ground)) : null; // small pines and rocks, for scale
 if (scenery) scene.add(scenery.group);
+const barrier = park ? new Barrier(level.bounds, level.height) : null; // the edge of the park, where the sim stops the board
+if (barrier) scene.add(barrier.group);
 const critters = park ? new Critters((level as ParkLevel).ground, level.spawns[0]) : null; // birds and small animals that bolt from the rider
 if (critters) scene.add(critters.group);
 // The plaza's own floor, wall and towers; a park draws its ground instead.
@@ -308,6 +311,7 @@ function frame(now: number) {
   const flash = lightning?.update(dt) ?? 0;
   fill.intensity = mood.fill + flash * 3;
   skyTime(air, now / 1000, flash);
+  barrier?.update(sim.x, sim.z);
   scenery?.update([sim, camera.position]);
   critters?.update(Math.min((now - critterAt) / 1000, 0.1), [sim, camera.position]);
   critterAt = now;

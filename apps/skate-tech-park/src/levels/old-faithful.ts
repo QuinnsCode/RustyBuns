@@ -35,7 +35,6 @@ export const oldFaithful: ParkSpec = {
     { name: "sky rail", x: -100, z: 140, yaw: E },
   ],
   landmarks: [{ kind: "plume", x: -17, z: 75, tall: 55, r: 8 }],
-  bounds: { minX: -190, maxX: 150, minZ: -20, maxZ: 150 },
   goals: [
     { kind: "score", target: 2500 },
     { kind: "combo", target: 800 },
