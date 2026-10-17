@@ -14,6 +14,9 @@ test("contacts: create, list, search, paginate, update, soft-delete", async () =
   expect((await post(app, cookie, base, { first_name: "Bad", email: "not-an-email" })).status).toBe(400);
   expect((await post(app, cookie, `/api/orgs/${org}/deals`, { name: "x", stage: "maybe" })).status).toBe(400);
   expect((await post(app, cookie, `/api/orgs/${org}/deals`, { name: "x", amount_cents: -1 })).status).toBe(400);
+  expect((await post(app, cookie, `/api/orgs/${org}/deals`, { name: "x", stage: null })).status).toBe(400);
+  const deal = await (await post(app, cookie, `/api/orgs/${org}/deals`, { name: "no stage given" })).json();
+  expect(deal).toMatchObject({ stage: "lead", amount_cents: 0, currency: "USD" });
 
   const all = await (await app(cookie, base)).json();
   expect(all.items).toHaveLength(3);
