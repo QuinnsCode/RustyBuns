@@ -18,6 +18,7 @@ bun test test                        # the whole journey, in-process
 bun run seed                         # 100,000 contacts into a fresh org; prints the timing
 bun run deploy                       # Cloudflare, with DEPLOYS=1 and secrets through varlock (.env.schema)
 bun run desktop:build                # the desktop app: same Worker on Bun with sqlite, data in ~/.qcrm
+                                     # (127.0.0.1 only; sessions are signed with a random secret kept in its database)
 ```
 
 qCRM is accounts only: there is no alias mode. `vite dev` reads `BETTER_AUTH_SECRET` from
