@@ -17,7 +17,7 @@ const down = (m: THREE.Object3D, x: number, z: number) =>
 test.each([...KIT_BUDGETS])("the %s kit dresses ramps, stairs, blocks, boulders, logs and hips where the sim rides them", async (budget) => {
   const kit = await loadKit(budget, read);
   const kinds = new Set<string>();
-  for (const id of ["plaza", "yosemite-falls", "half-dome"]) {
+  for (const id of ["plaza", "yosemite-falls", "half-dome", "mariposa-grove"]) {
     const level = LEVELS.find((e) => e.id === id)!.load(), ground = "ground" in level ? (level as ParkLevel).ground.height : undefined;
     const group = levelMeshes(level, ground, kit);
     expect(group.children.length).toBeLessThanOrEqual(2);
