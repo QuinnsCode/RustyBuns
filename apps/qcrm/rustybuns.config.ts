@@ -6,6 +6,10 @@ import { defineConfig } from "@rustybuns/cli/config";
 //
 // Secrets (see .env.schema): BETTER_AUTH_SECRET signs sessions and salts org ids;
 // SUPER_ADMIN_EMAIL names the one account above every org. Both resolve through varlock.
+// Account email (verification and password reset) is opt-in, once the sender's domain is onboarded
+// to Cloudflare Email Sending (Workers Paid): QCRM_MAIL_FROM=accounts@your-domain binds EMAIL and sends from it.
+const mailFrom = process.env.QCRM_MAIL_FROM;
+
 export default defineConfig({
   name: "qcrm",
   worker: {
@@ -37,6 +41,10 @@ export default defineConfig({
     GOOGLE_CLIENT_SECRET: { type: "secret", op: "op://qcrm/google/client-secret", optional: true },
     // Optional: without it there is no super admin, and the first org owner is on their own.
     SUPER_ADMIN_EMAIL: { type: "secret", op: "op://qcrm/admin/email", optional: true },
+    ...(mailFrom ? {
+      EMAIL: { type: "send_email", allowedSenderAddresses: [mailFrom] } as const,
+      EMAIL_FROM: { type: "var", value: mailFrom } as const,
+    } : {}),
   },
   experimental: { wheel: "human" },
   targets: {

@@ -101,8 +101,12 @@ export function Crm() {
 }
 
 function Auth({ onDone, demo, err }: { onDone: () => Promise<void>; demo: boolean; err: string }) {
-  const [mode, setMode] = useState<"in" | "up">("in");
+  // The reset link lands on /app?token=… (Better Auth redirects there from the emailed link).
+  const token = new URLSearchParams(location.search).get("token");
+  const [mode, setMode] = useState<"in" | "up" | "forgot" | "reset">(token ? "reset" : "in");
   const [msg, setMsg] = useState(err);
+  const [note, setNote] = useState("");
+  const go = (m: typeof mode) => { setMsg(""); setNote(""); setMode(m); };
   const [social, setSocial] = useState<string[]>([]);
   useEffect(() => { api("/providers").then((p: string[]) => setSocial(p.filter((x) => x !== "email"))).catch(() => {}); }, []);
   const via = async (provider: string) => {
@@ -113,21 +117,28 @@ function Auth({ onDone, demo, err }: { onDone: () => Promise<void>; demo: boolea
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const body = { email: f.get("email"), password: f.get("password"), name: f.get("name") || String(f.get("email")).split("@")[0] };
-    try { await api(mode === "in" ? "/auth/sign-in/email" : "/auth/sign-up/email", { method: "POST", body: JSON.stringify(body) }); await onDone(); }
-    catch (x) { setMsg((x as Error).message); }
+    const post = (path: string, b: unknown) => api(path, { method: "POST", body: JSON.stringify(b) });
+    try {
+      if (mode === "forgot") { await post("/auth/request-password-reset", { email: body.email, redirectTo: "/app" }); setNote("If that email has an account, a reset link is on its way."); return; }
+      if (mode === "reset") { await post("/auth/reset-password", { newPassword: body.password, token }); history.replaceState(null, "", location.pathname); go("in"); setNote("Password changed. Sign in with it."); return; }
+      await post(mode === "in" ? "/auth/sign-in/email" : "/auth/sign-up/email", body); await onDone();
+    } catch (x) { setMsg((x as Error).message); }
   };
   if (demo && !msg) return <div className="empty">Setting up your demo org, 2,000 contacts and all…</div>;
   return (
     <div className="auth" data-tour="auth">
-      <h2>{mode === "in" ? "Sign in" : "Create your account"}</h2>
+      <h2>{{ in: "Sign in", up: "Create your account", forgot: "Reset your password", reset: "Pick a new password" }[mode]}</h2>
       {social.length > 0 && <div className="row">{social.map((p) => <button key={p} type="button" onClick={() => via(p)}><Icon name={p === "github" ? "github" : "mail"} /> Continue with {p === "github" ? "GitHub" : "Google"}</button>)}</div>}
       <p className="muted">Email and password, kept by Better Auth. Your first org is made when you sign up.</p>
       <form onSubmit={submit}>
         {mode === "up" && <label><span>Name</span><input name="name" autoComplete="name" /></label>}
-        <label><span>Email</span><input name="email" type="email" required autoComplete="email" /></label>
-        <label><span>Password</span><input name="password" type="password" required minLength={8} autoComplete={mode === "in" ? "current-password" : "new-password"} /></label>
+        {mode !== "reset" && <label><span>Email</span><input name="email" type="email" required autoComplete="email" /></label>}
+        {mode !== "forgot" && <label><span>{mode === "reset" ? "New password" : "Password"}</span><input name="password" type="password" required minLength={8} autoComplete={mode === "in" ? "current-password" : "new-password"} /></label>}
         {msg && <p className="err">{msg}</p>}
-        <div className="row"><button className="primary" type="submit">{mode === "in" ? "Sign in" : "Sign up"}</button><button type="button" onClick={() => setMode(mode === "in" ? "up" : "in")}>{mode === "in" ? "New here? Sign up" : "Have an account? Sign in"}</button></div>
+        {note && <p className="muted">{note}</p>}
+        <div className="row"><button className="primary" type="submit">{{ in: "Sign in", up: "Sign up", forgot: "Send link", reset: "Change password" }[mode]}</button>
+          {mode !== "reset" && <button type="button" onClick={() => go(mode === "in" ? "up" : "in")}>{mode === "in" ? "New here? Sign up" : "Have an account? Sign in"}</button>}
+          {mode === "in" && <button type="button" onClick={() => go("forgot")}>Forgot password?</button>}</div>
       </form>
       <p className="muted">Just looking? <a href="/demo">Try the demo</a> instead.</p>
     </div>

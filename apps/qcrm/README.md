@@ -63,6 +63,7 @@ has the switch; it follows the system otherwise.
 ## Security notes
 
 - Cookie-authenticated writes check the `origin` header against `BETTER_AUTH_URL`.
+- Account email is opt-in: deploy with `QCRM_MAIL_FROM=accounts@your-domain` (a sender onboarded to Cloudflare Email Sending) and sign-up sends a verification link while the sign-in page offers "Forgot password?". Without it neither is offered to work; sign-in is not gated on verification.
 - A row in another org is a 404, never a 403, so ids don't leak what exists.
 - `/api/*` answers are `cache-control: no-store`; pages are cached at the edge for a minute.
 - CSP allows `wasm-unsafe-eval` for the engine and nothing off-origin. `/demo` frames `/app`, so `frame-ancestors 'self'`.
