@@ -6,7 +6,7 @@
 // the tricks. `firing` is derived from the board's state after each step and never feeds back, so
 // swapping skins changes nothing in the ride.
 import { clamp } from "@rustybuns/util";
-import { FOOT, hitObstacle, type Level, nextRail, onRail, railY } from "./level.ts";
+import { BOARD, FOOT, hitObstacle, type Level, nextRail, onRail, railY } from "./level.ts";
 import { plaza } from "./levels/plaza.ts";
 import { type Flick, flickLong, TRICKS } from "./tricks.ts";
 
@@ -375,7 +375,12 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     s.y = railY(r, t);
     const v2 = s.speed * s.speed - 2 * G * (s.y - y0); // a bar down the stairs speeds the slide up; one climbing slows it
     s.speed = Math.sign(s.speed) * Math.sqrt(Math.max(0, v2));
-    if (Math.abs(s.balance) >= 1) { s.y = level.height(s.x, s.z); s.vx = fx * s.speed; s.vz = fz * s.speed; bail(s, `Bail: fell off the ${ledge ? "ledge" : "rail"}`); return s; }
+    if (Math.abs(s.balance) >= 1) {
+      const side = Math.sign(s.balance) * (BOARD.halfWid + 0.2); // off the bar's line, the whole deck clear of its posts, so the fall doesn't land inside one and pin the board
+      s.x += fz * side; s.z -= fx * side;
+      s.y = level.height(s.x, s.z); s.vx = fx * s.speed; s.vz = fz * s.speed; bail(s, `Bail: fell off the ${ledge ? "ledge" : "rail"}`);
+      return s;
+    }
     s.firing.rear = s.speed > 1; // the jets hold the slide
     const next = !pressed && (t < 0 || t > 1) && s.speed > 0.5 ? nextRail(level.rails, s.grind, t > 1) : null;
     if (next) { // a bent bar: round the joint and on along the next segment, keeping the grind going
