@@ -19,12 +19,13 @@ const KEY = "qcrm-tour";
 const read = (): { i: number } | null => { try { return JSON.parse(sessionStorage.getItem(KEY) ?? "null"); } catch { return null; } };
 const save = (s: { i: number } | null) => { try { s ? sessionStorage.setItem(KEY, JSON.stringify(s)) : sessionStorage.removeItem(KEY); } catch {} };
 
-let dim: HTMLDivElement | undefined, hole: HTMLDivElement | undefined, card: HTMLDivElement | undefined;
+let dim: HTMLDivElement | undefined, hole: HTMLDivElement | undefined, card: HTMLDivElement | undefined, keep: MutationObserver | undefined;
 
 const make = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLElementTagNameMap[K]> = {}): HTMLElementTagNameMap[K] => Object.assign(document.createElement(tag), props);
 
 function end() {
   save(null);
+  keep?.disconnect(); keep = undefined;
   dim?.remove(); card?.remove();
   dim = hole = card = undefined;
   document.removeEventListener("keydown", onKey);
@@ -57,6 +58,13 @@ function show(tries = 0) {
     dim = d; hole = h; card = c;
     document.addEventListener("keydown", onKey);
     addEventListener("resize", () => place(), { passive: true });
+    // Hydration and dev-server HMR can strip nodes appended to body; put the tour back while it is running.
+    keep = new MutationObserver(() => {
+      if (!read()) return;
+      if (dim && !dim.isConnected) document.body.appendChild(dim);
+      if (card && !card.isConnected) document.body.appendChild(card);
+    });
+    keep.observe(document.body, { childList: true });
   }
   el.scrollIntoView({ block: "center", behavior: "smooth" });
   card!.innerHTML = "";
@@ -93,4 +101,6 @@ export function mountTour() {
   const q = new URLSearchParams(location.search);
   if (q.get("tour") === "1" && !read()) save({ i: location.pathname.startsWith("/app") ? 5 : 0 });
   if (read()) show();
+  // A bfcache restore or a late reload brings the page back without running this module again.
+  addEventListener("pageshow", (e) => { if (e.persisted && read() && !dim?.isConnected) { dim = hole = card = undefined; show(); } });
 }
