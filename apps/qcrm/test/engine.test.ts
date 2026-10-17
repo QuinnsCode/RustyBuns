@@ -1,5 +1,5 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
-import { dedupe, forecast, loadEngine, stale, waveFrame } from "../src/engine.ts";
+import { dedupe, forecast, loadEngine, splitRows, stale, waveFrame } from "../src/engine.ts";
 
 setDefaultTimeout(30_000);
 
@@ -49,6 +49,26 @@ describe("analysis", () => {
     expect(pairs[0]!.why).toContain("same last name and company");
   });
 
+  test("dedupe across workers finds the same pairs as one thread", async () => {
+    const rows = Array.from({ length: 1600 }, (_, i) => ({
+      id: i, first_name: `Name${i % 800}`, last_name: `Last${i % 800}`, email: `p${i % 800}@x${i % 7}.com`, company_id: `c${i % 40}`,
+    }));
+    const one = await dedupe(rows, 1);
+    const many = await dedupe(rows, 4);
+    expect(one.length).toBeGreaterThan(700);
+    const key = (p: { a: unknown; b: unknown }) => `${p.a}-${p.b}`;
+    expect(many.map(key).sort()).toEqual(one.map(key).sort());
+  }, 60_000);
+
+  test("splitRows covers every row once, in near-equal pair shares", () => {
+    const parts = splitRows(10_000, 8);
+    expect(parts[0]![0]).toBe(0);
+    expect(parts.at(-1)![1]).toBe(10_000);
+    parts.forEach(([, end], i) => { if (i) expect(parts[i - 1]![1]).toBe(parts[i]![0]); });
+    const pairs = parts.map(([a, b]) => { let t = 0; for (let r = a; r < b; r++) t += 10_000 - r - 1; return t; });
+    expect(Math.max(...pairs) / Math.min(...pairs)).toBeLessThan(1.05);
+  });
+
   test("forecast weights a proposal at 60% and buckets it by close month", async () => {
     const now = Date.UTC(2026, 9, 16);
     const f = await forecast([
@@ -80,5 +100,26 @@ describe("analysis", () => {
     );
     expect(rows.map((r) => r.id)).toEqual([3, 2]);
     expect(rows[1]!.days_idle).toBe(30);
+  });
+});
+
+describe("dedupe at scale", () => {
+  test("2,000 contacts dedupe fast and still find the planted pairs", async () => {
+    const rows = Array.from({ length: 2000 }, (_, i) => ({
+      id: i,
+      first_name: `F${i}x`,
+      last_name: `L${i}y`,
+      email: `person${i}@co${i % 50}.com`,
+      phone: `55501${String(10000 + i).padStart(5, "0")}`,
+      company_id: `c${i % 50}`,
+    }));
+    rows[1500] = { ...rows[1500]!, email: "person7+x@other.com" };
+    await dedupe(rows.slice(0, 5)); // warm up
+    const start = performance.now();
+    const pairs = await dedupe(rows);
+    const ms = performance.now() - start;
+    console.log(`dedupe 2,000 contacts: ${ms.toFixed(0)} ms`);
+    expect(pairs.some((p) => p.a === 7 && p.b === 1500)).toBe(true);
+    expect(ms).toBeLessThan(400);
   });
 });

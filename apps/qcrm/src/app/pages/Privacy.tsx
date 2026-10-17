@@ -1,3 +1,4 @@
+import { Footer } from "../Footer.tsx";
 import { Nav } from "../Nav.tsx";
 
 // Short, true, and matched by routes: /api/orgs/:org/export and DELETE /api/me do what this page says.
@@ -10,7 +11,7 @@ export function Privacy() {
         <h1 style={{ fontSize: 40 }}>Your rows are yours.</h1>
         <p>qCRM stores what your org types in: contacts, companies, deals, activities, members, webhooks and an audit log of who changed what. It stores nothing it doesn't show you.</p>
         <h2>What we keep</h2>
-        <p>Your account (email, name, a password hash or a linked GitHub or Google account), your sessions (expiry, IP and browser string, for your own session list), and your orgs' rows. Deploy logs drop query strings. We never log emails or row contents.</p>
+        <p>Your account (email, name, a password hash, or a GitHub or Google account if this host offers those sign-ins), your sessions (expiry, IP and browser string, for your own session list), and your orgs' rows. Deploy logs drop query strings. We never log emails or row contents.</p>
         <h2>Where it lives</h2>
         <p>One Cloudflare D1 database for the hosted service, in Cloudflare's network. The desktop app keeps a sqlite file in your home folder and talks to no server unless you add a sync target.</p>
         <h2>Who can see it</h2>
@@ -23,6 +24,7 @@ export function Privacy() {
         <p>The demo org is seeded with made-up people and is deleted within 24 hours of being made. Don't type anything real into it.</p>
         <p className="muted">Questions: hello@qntbr.com</p>
       </main>
+      <Footer />
     </>
   );
 }

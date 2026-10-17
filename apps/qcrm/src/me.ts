@@ -45,7 +45,13 @@ export async function exportRoutes({ req, env, org, p, audit }: Ctx): Promise<Re
   }
   if (p[0] === "audit") {
     const limit = Math.min(500, Math.max(1, Number(new URL(req.url).searchParams.get("limit")) || 100));
-    const { results } = await env.DB.prepare("SELECT id, actor_user_id, action, target, at, detail FROM audit WHERE org_id = ? ORDER BY at DESC LIMIT ?").bind(org, limit).all();
+    const { results } = await env.DB.prepare(`SELECT a.id, a.actor_user_id, au.name AS actor_name, au.email AS actor_email, a.action, a.target,
+      CASE substr(a.action, 1, instr(a.action, '.') - 1)
+        WHEN 'member' THEN (SELECT coalesce(u.name, u.email) FROM "user" u WHERE u.id = a.target)
+        WHEN 'key' THEN (SELECT k.name FROM api_keys k WHERE k.id = a.target)
+        WHEN 'webhook' THEN (SELECT w.url FROM webhooks w WHERE w.id = a.target) END AS target_name,
+      substr(a.action, 1, instr(a.action || '.', '.') - 1) AS target_type, a.at, a.detail
+      FROM audit a LEFT JOIN "user" au ON au.id = a.actor_user_id WHERE a.org_id = ? ORDER BY a.at DESC LIMIT ?`).bind(org, limit).all();
     return json(results.map((r) => ({ ...r, detail: parseJson(r.detail, null) })));
   }
   return null;

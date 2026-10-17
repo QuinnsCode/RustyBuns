@@ -82,3 +82,53 @@ test("accounts off answers 503; cross-site cookie writes are refused", async () 
   const noOrigin = await handleApi(new Request(`${ORIGIN}/api/orgs`, { method: "POST", body: JSON.stringify({ name: "x" }), headers: { cookie, "sec-fetch-site": "cross-site", "content-type": "application/json" } }), app.env);
   expect(noOrigin.status).toBe(403);
 });
+
+test("with mail on, sign-up sends a verification link and a reset link changes the password", async () => {
+  const sent: { to: string; subject: string; text: string }[] = [];
+  const app = await local({ EMAIL_FROM: "accounts@qcrm.test", EMAIL: { send: async (m: any) => { sent.push(m); } } });
+  await signup(app, "mia@qcrm.test");
+  expect(sent[0]!.to).toBe("mia@qcrm.test");
+  expect(sent[0]!.subject).toContain("Verify");
+  const verify = new URL(/https?:\/\/\S+/.exec(sent[0]!.text)![0]);
+  expect((await app("", verify.pathname + verify.search)).status).toBeLessThan(400);
+
+  expect((await post(app, "", "/api/auth/request-password-reset", { email: "mia@qcrm.test", redirectTo: "/app" })).status).toBe(200);
+  const reset = sent.find((m) => m.subject.includes("Reset"))!;
+  const token = /reset-password\/([^?\s]+)/.exec(reset.text)![1]!;
+  expect((await post(app, "", "/api/auth/reset-password", { newPassword: "a brand new passphrase", token })).status).toBe(200);
+  expect((await post(app, "", "/api/auth/sign-in/email", { email: "mia@qcrm.test", password: "a brand new passphrase" })).status).toBe(200);
+  expect((await post(app, "", "/api/auth/sign-in/email", { email: "mia@qcrm.test", password: "correct horse battery" })).status).toBe(401);
+});
+
+test("sign-in is capped by the AUTH_LIMIT binding: its refusal is a 429, and no IP header means no limit", async () => {
+  const keys: string[] = [];
+  const app = await local({ AUTH_LIMIT: { limit: async ({ key }: { key: string }) => (keys.push(key), { success: false }) } });
+  const body = JSON.stringify({ email: "a@qcrm.test", password: "correct horse battery" });
+  const hit = (headers: Record<string, string>) => handleApi(new Request(`${ORIGIN}/api/auth/sign-in/email`, { method: "POST", body, headers: { "content-type": "application/json", origin: ORIGIN, ...headers } }), app.env);
+  const res = await hit({ "cf-connecting-ip": "203.0.113.9" });
+  expect(res.status).toBe(429);
+  expect(res.headers.get("retry-after")).toBe("60");
+  expect(keys).toEqual(["203.0.113.9"]);
+  expect((await hit({})).status).not.toBe(429);
+});
+
+test("the audit log names who and what; the last admin can't demote or remove themselves", async () => {
+  const app = await local();
+  const alice = await person(app, "alice@qcrm.test");
+  const bob = await person(app, "bob@qcrm.test");
+  const org = alice.org;
+  await post(app, alice.cookie, `/api/orgs/${org}/members`, { email: "bob@qcrm.test", role: "employee" });
+  const log = await (await app(alice.cookie, `/api/orgs/${org}/audit`)).json();
+  expect(log[0]).toMatchObject({ actor_email: "alice@qcrm.test", target_type: "member", target_name: expect.any(String) });
+  const members = await (await app(alice.cookie, `/api/orgs/${org}/members`)).json();
+  expect(members.find((m: { user_id: string }) => m.user_id === bob.user.id).email).toBe("bob@qcrm.test");
+  expect((await post(app, alice.cookie, `/api/orgs/${org}/members/${alice.user.id}`, { role: "manager" }, "PUT")).status).toBe(409);
+  expect((await app(alice.cookie, `/api/orgs/${org}/members/${alice.user.id}`, { method: "DELETE" })).status).toBe(409);
+});
+
+test("the sign-in form learns which social providers are on, signed out", async () => {
+  const off = await local();
+  expect(await (await off("", "/api/providers")).json()).toEqual(["email"]);
+  const on = await local({ GITHUB_CLIENT_ID: "id", GITHUB_CLIENT_SECRET: "secret", GOOGLE_CLIENT_ID: "only-half" });
+  expect(await (await on("", "/api/providers")).json()).toEqual(["email", "github"]);
+});

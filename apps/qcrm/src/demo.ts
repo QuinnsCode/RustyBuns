@@ -3,6 +3,7 @@
 // Demo orgs are plan 'demo'; the hourly cron (`hourly`, called from worker.tsx) deletes them,
 // and their accounts, a day after they were made.
 
+import type { Defer } from "./api.ts";
 import { authFor, type User } from "./auth.ts";
 import { b64url, error, json, type Env } from "./env.ts";
 import { createOrg, deleteOrg } from "./orgs.ts";
@@ -10,9 +11,10 @@ import { sweepOAuth } from "./oauth.ts";
 import { seedOrg } from "./seed-data.ts";
 
 const DEMO_CONTACTS = 2000;
+const FIRST_PAGE = 200; // seeded before the response, so the frame has rows at once; the rest follows it
 const DEMO_TTL = 24 * 3600_000;
 
-export async function demoRoute(req: Request, env: Env): Promise<Response> {
+export async function demoRoute(req: Request, env: Env, defer?: Defer): Promise<Response> {
   if (req.method !== "POST") return error(405, "POST to make a demo account");
   const id = b64url(crypto.getRandomValues(new Uint8Array(9))).toLowerCase().replace(/[^a-z0-9]/g, "x");
   const email = `demo-${id}@qcrm.local`;
@@ -21,7 +23,10 @@ export async function demoRoute(req: Request, env: Env): Promise<Response> {
   if (!response?.user) return error(500, "could not make the demo account");
   const user: User = { id: response.user.id, email, name: "Demo" };
   const org = await createOrg(env, user, "Demo Co", "demo");
-  const seeded = await seedOrg(env, org.id, user.id, DEMO_CONTACTS, Date.now() % 100_000);
+  const seed = Date.now() % 100_000;
+  const seeded = await seedOrg(env, org.id, user.id, FIRST_PAGE, seed);
+  const rest = seedOrg(env, org.id, user.id, DEMO_CONTACTS - FIRST_PAGE, seed + 1);
+  if (defer) defer(rest.catch(() => {})); else await rest;
   const res = json({ org: { ...org, role: "admin", seeded }, user: { id: user.id, email, name: user.name } }, 201);
   for (const c of headers.getSetCookie()) res.headers.append("set-cookie", c);
   return res;
