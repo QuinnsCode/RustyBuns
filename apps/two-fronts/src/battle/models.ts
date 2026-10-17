@@ -601,9 +601,21 @@ function buildWooka(hero: boolean, role: WookaRole | "warbur" = "fodder") {
     }
     k.add(head, cone(0.02, 0.07, 4), W.tooth, { x: -0.07, y: -0.16, z: -0.41, rx: Math.PI, rz: 0.2 }); // snaggletooth
   }
+  // War flags, the Wooka's answer to the Marines' antennas: a pole lashed to the back with a ragged
+  // hide banner that streams and flaps. Chubs, Stickies and the champions carry one; Warbur's is huge.
+  if (role === "chub" || role === "sticky" || warbur || hero) {
+    const h = warbur ? 2.3 : role === "chub" ? 1.9 : 1.5, w = warbur ? 1.1 : 0.6;
+    const pole = k.joint("flag", body, 0.15, 0.5, 0.4);
+    k.add(pole, cyl(0.025, 0.035, h, 6), W.wood, { y: h / 2 });
+    k.add(pole, cone(0.045, 0.14, 5), W.bone, { y: h + 0.07 });
+    const cloth = k.joint("flagB", pole, 0, h - 0.08, 0);
+    const rag = new THREE.Shape([new THREE.Vector2(0, 0.0), new THREE.Vector2(w * 0.5, 0.04), new THREE.Vector2(w, -0.02), new THREE.Vector2(w * 0.8, -0.14), new THREE.Vector2(w, -0.28), new THREE.Vector2(w * 0.55, -0.24), new THREE.Vector2(w * 0.3, -0.34), new THREE.Vector2(0, -0.3)]);
+    k.add(cloth, new THREE.ShapeGeometry(rag), role === "sticky" ? W.hideDark : W.hide, { ry: Math.PI / 2 });
+    k.add(cloth, ball(0.07, 8, 6), W.bone, { z: -w * 0.45, y: -0.15, s: [1, 1.1, 0.5] }); // a skull sewn on
+  }
   // Feet.
   for (const s of [-1, 1]) {
-    const foot = k.joint(s < 0 ? "footL" : "footR", body, s * 0.19, 0.2, 0);
+    const foot =k.joint(s < 0 ? "footL" : "footR", body, s * 0.19, 0.2, 0);
     k.add(foot, capsule(0.1, 0.22, 8), fur, { y: -0.04 });
     k.add(foot, ball(0.12, 12, 8), W.furDark, { y: -0.13, z: -0.06, s: [1, 0.55, 1.4] });
     for (const x of [-0.05, 0, 0.05]) k.add(foot, ball(0.035, 6, 4), W.furDark, { x, y: -0.16, z: -0.21 });
@@ -944,6 +956,9 @@ export function animate(g: THREE.Object3D, m: Motion) {
     set(p, "armR", club);
     // The head tilts, slowly, the way a thing does when it's working out if you're food.
     set(p, "head", -0.1 * a, Math.sin(t * 0.6 + g.id) * 0.2 * (1 - a), Math.sin(t * 0.9 + g.id) * 0.18 * (1 - a));
+    // The war flag streams back behind a run and flaps in its own time.
+    set(p, "flag", 0.15 * a + Math.sin(t * 2 + g.id) * 0.04, 0, Math.cos(t * 2.4 + g.id) * 0.05);
+    set(p, "flagB", 0, Math.sin(t * 7 + g.id) * (0.2 + 0.3 * a), Math.sin(t * 5 + g.id) * 0.1);
     set(p, "earL", 0, 0, 0.15 + Math.sin(t * 3 + g.id) * 0.08 + s * 0.2 * a);
     set(p, "earR", 0, 0, -0.15 - Math.sin(t * 2.6 + g.id) * 0.08 + s * 0.2 * a);
   } else if (model === "walker") {
