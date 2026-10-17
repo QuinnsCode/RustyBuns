@@ -5,8 +5,8 @@
 interface Step { at: string; title: string; body: string; go?: string; wait?: number }
 
 const STEPS: Step[] = [
-  { at: "#hero", title: "A CRM your agents can use", body: "The wave is a Rust program compiled to wasm, drawing pixels in your browser. The words around it are plain HTML, so search engines read the pitch." },
-  { at: "#edge", title: "What a CRM doesn't offer", body: "MCP for agents, a Rust engine for analysis, a free desktop app, office sync, signed webhooks, hashed orgs. Each card is a thing that ships today." },
+  { at: "#hero .copy", title: "A CRM your agents can use", body: "The wave is a Rust program compiled to wasm, drawing pixels in your browser. The words around it are plain HTML, so search engines read the pitch." },
+  { at: "#edge .grid", title: "What a CRM doesn't offer", body: "MCP for agents, a Rust engine for analysis, a free desktop app, office sync, signed webhooks, hashed orgs. Each card is a thing that ships today." },
   { at: "#mcp", title: "Two lines to connect Claude", body: "An owner mints a key, pastes one command, and every API operation is a tool. Risky ones say so." },
   { at: "#cta-demo", title: "Now the real thing", body: "The demo is the site inside the site: a throwaway org with 2,000 contacts. Let's go.", go: "/demo" },
   { at: "#demo-frame", title: "The site, inside the site", body: "That banner is honest: this frame is a real qCRM org on a throwaway account. The frame is loading your demo; give it a moment, then open it full-screen for the rest of the tour.", go: "/app?demo=1&tour=1", wait: 2500 },
@@ -72,6 +72,11 @@ function show(tries = 0) {
   const place = () => {
     const r = el.getBoundingClientRect();
     Object.assign(hole!.style, { left: `${r.left - 6}px`, top: `${r.top - 6}px`, width: `${r.width + 12}px`, height: `${r.height + 12}px` });
+    // A rail item sits beside the table: put the card to its right, not over the rows under it.
+    if (el.closest(".rail") && r.right + 12 + card!.offsetWidth < innerWidth) {
+      Object.assign(card!.style, { top: `${Math.min(Math.max(12, r.top), innerHeight - card!.offsetHeight - 12)}px`, left: `${r.right + 12}px` });
+      return;
+    }
     const below = r.bottom + 12 + card!.offsetHeight < innerHeight;
     Object.assign(card!.style, { top: `${below ? r.bottom + 12 : Math.max(12, r.top - card!.offsetHeight - 12)}px`, left: `${Math.min(Math.max(16, r.left), innerWidth - card!.offsetWidth - 16)}px` });
   };
