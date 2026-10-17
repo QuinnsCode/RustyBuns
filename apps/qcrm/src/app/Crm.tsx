@@ -223,6 +223,7 @@ const cell = (v: unknown, kind?: string, cur?: string) => {
 
 function Sheet({ org, entity, row, onClose, onSave, onDelete, canEdit }: { org: string; entity: string; row: Row; onClose: () => void; onSave: (d: Row) => Promise<void>; onDelete?: () => Promise<void>; canEdit: boolean }) {
   const [msg, setMsg] = useState("");
+  const [sure, setSure] = useState(false);
   const fields = FIELDS[entity]!;
   return (
     <div className="sheet" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -244,7 +245,12 @@ function Sheet({ org, entity, row, onClose, onSave, onDelete, canEdit }: { org: 
         ))}
         {msg && <p className="err">{msg}</p>}
         <div className="row actions">
-          {onDelete && <button type="button" onClick={async () => { try { await onDelete(); } catch (x) { setMsg((x as Error).message); } }} style={{ color: "var(--bad)" }}>Delete</button>}
+          {onDelete && !sure && <button type="button" onClick={() => setSure(true)} style={{ color: "var(--bad)" }}>Delete</button>}
+          {onDelete && sure && <>
+            <span className="muted">Delete this {entity.slice(0, -1)}?</span>
+            <button type="button" onClick={async () => { try { await onDelete(); } catch (x) { setMsg((x as Error).message); setSure(false); } }} style={{ color: "var(--bad)" }}>Yes, delete</button>
+            <button type="button" onClick={() => setSure(false)}>Keep</button>
+          </>}
           <span className="grow" />
           {canEdit && <button className="primary" type="submit">Save</button>}
         </div>
