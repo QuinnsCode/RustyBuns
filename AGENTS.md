@@ -49,6 +49,7 @@ saves, deploys, CI and agent runs), and the right answer to a failure depends on
 per-tick and per-frame code, the sim, and anything pure or size-sensitive, and use it at the edges (`runScoped` and
 `spawnScoped` in `packages/cli` first) so plain functions never import it. If a plain `try/finally` or `AbortController`
 already covers it, leave it plain; read the rest as a lean, not a law.
+Patterns and rulings, with credits: [EFFECT.md](EFFECT.md).
 
 ## Cut before you add
 

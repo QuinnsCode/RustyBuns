@@ -54,7 +54,7 @@ const app = defineApp([
     if (import.meta.env.VITE_IS_DEV_SERVER) await devMigrate((await e()).DB);
     return handleApi(request, await e(request), (work) => cf.waitUntil(work));
   }),
-  route("/.well-known/*", ({ request }) => handleApi(request, e(request))),
+  route("/.well-known/*", async ({ request }) => handleApi(request, await e(request))),
   route("/robots.txt", () => cached("User-agent: *\nAllow: /\nDisallow: /app\nDisallow: /api\nSitemap: /sitemap.xml\n", "text/plain")),
   route("/sitemap.xml", ({ request }) => {
     const o = new URL(request.url).origin;
