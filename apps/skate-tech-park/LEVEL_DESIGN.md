@@ -31,7 +31,7 @@ A `ParkSpec` should be able to say "a line": an ordered list of parts with spaci
 
 ## Mobile today
 
-Mostly absent. The page has a viewport tag and uses pointer events for the flick gestures (`src/gesture.ts`), so a drag on a phone does resolve to an ollie or a flick. Everything else is keyboard or gamepad: no throttle, steer, boost or manual on touch, no `touch-action: none` on the canvas (the page scrolls and zooms under a drag), and the HUD and parts picker were laid out for a desktop. A phone player can drag but cannot go. The smallest useful version: a left-thumb stick for steer and throttle, a boost button, a hold-to-manual button, a flick on the right half, and `touch-action: none`.
+A left-thumb stick (steer, throttle) with hold buttons for boost and manual appears once a finger touches the page (`src/touch.ts`); the right half of the screen is the flick pad (`src/gesture.ts`) and the canvas has `touch-action: none`. Still desktop-shaped: the HUD, the parts picker and the key legend, which a phone does not need.
 
 ## Chased by something
 
