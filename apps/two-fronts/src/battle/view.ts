@@ -34,16 +34,20 @@ const ORDER_INFO: Record<OrderKind, { icon: string; name: string; color: number 
 // What comrades say over their heads: something daft when it's quiet, something worried when it isn't.
 const CHATTER = {
   marines: {
-    calm: ["Is it meant to be this quiet?", "My snorkel's fogging up", "Anyone else hear humming?", "Mum said join the navy", "I signed up for the brochure", "Smells like wet dog out here", "They can't be THAT bad, right?", "Who packed my backpack? It weighs a tonne", "I think a fern just blinked"],
-    scared: ["THERE'S SO MANY", "It's looking at me", "Too fluffy, TOO FLUFFY", "Reloading! Cover me!", "They're in the ferns!", "I want to go home", "Don't let them near the backpacks!", "Keep shooting, keep SHOOTING"],
-    big: ["What IS that?!", "That one's the size of a hut", "Rockets! Who has rockets?", "I'm not paid enough for this"],
-    hurt: ["I'm hit! I'm fine. I'm hit!", "Medic? Medic?!", "It bit my ARMOUR"],
+    calm: ["Is it meant to be this quiet?", "My snorkel's fogging up", "Anyone else hear humming?", "Mum said join the navy", "I signed up for the brochure", "Smells like wet dog out here", "They can't be THAT bad, right?", "Who packed my backpack? It weighs a tonne", "I think a fern just blinked",
+      "Does anyone else feel like a lamb to the slaughter? Just me?", "I'm not saying it's a trap. I'm saying there's a very polite sign saying TRAP", "Last week I picked the wrong planet to quit coffee on", "I haven't felt this alone since the bus", "If this is a jungle, where's the helicopter music?", "Is anyone else hearing a rabbit? No? Just me?", "I'd like to speak to whoever drew this map. And thank them. And never see them again.", "Sergeant says stay frosty. It's thirty-eight degrees"],
+    scared: ["THERE'S SO MANY", "It's looking at me", "Too fluffy, TOO FLUFFY", "Reloading! Cover me!", "They're in the ferns!", "I want to go home", "Don't let them near the backpacks!", "Keep shooting, keep SHOOTING",
+      "Look at the bones! LOOK AT THE BONES!", "Run away! Not you, you. Everybody else, stay!", "Surely this is not serious? It's serious. Don't call me Shirley!", "That's the third one! It keeps coming back and it keeps being small!", "I can't feel my legs. Oh, there. Good. They've gone to a better place", "Mommy! Mommy's here? Oh. It's a Wooka. Mommy's a Wooka?", "They've got my boot. They've got my other boot. They've got the foot in the boot"],
+    big: ["What IS that?!", "That one's the size of a hut", "Rockets! Who has rockets?", "I'm not paid enough for this", "That's no ordinary Wooka!", "I've seen a lot of things, and now I've seen that", "It's the one from the bones! The bones were its! Look at the BONES!", "I'm gonna need a bigger backpack. No wait, a smaller me"],
+    hurt: ["I'm hit! I'm fine. I'm hit!", "Medic? Medic?!", "It bit my ARMOUR", "'Tis but a scratch! It's a leg. It was a leg", "I've had worse. Not much worse. But, some", "Tell my squad I'm fine. They can see I'm not. Tell them anyway"],
   },
   wooka: {
-    calm: ["Hoo-ka?", "wub wub", "Shiny ones smell funny", "Bonk soon?", "Mine helmet. MINE.", "Kakka-takka!", "Snack?"],
-    scared: ["HOO! HOO! HOO!", "Bonk the shiny!", "Grunna-WUB!", "Get the backpack!", "Up the tree, up the tree!"],
-    big: ["BIG ONE!", "Big one go bonk!", "Wheee-ka!"],
-    hurt: ["Ow-ka!", "Ouchy wub", "Still fluffy!"],
+    calm: ["Hoo-ka?", "wub wub", "Shiny ones smell funny", "Bonk soon?", "Mine helmet. MINE.", "Kakka-takka!", "Snack?",
+      "Hoo. Hoo hoo. Hoo?", "Shiny one dropped a thing. Is a thing", "Look at bones. Lots bones. Nice bones", "Is it bonk-time? Chief said bonk-time", "Little one ate the pin. Little one is fine. Little one is not fine", "Grrrm. Grrrm-wub", "We win? We win. We lose? We also win"],
+    scared: ["HOO! HOO! HOO!", "Bonk the shiny!", "Grunna-WUB!", "Get the backpack!", "Up the tree, up the tree!",
+      "Hoo-ROOOO!", "Too many shiny! Fewer shiny please!", "WAH! WAH! WAH-WAH-WAH!", "Chief said bonk. Chief did not say THIS many"],
+    big: ["BIG ONE!", "Big one go bonk!", "Wheee-ka!", "Big one see shiny, shiny not see big one", "Hoo-ROAR! Big one say hello!"],
+    hurt: ["Ow-ka!", "Ouchy wub", "Still fluffy!", "Is only a scratch! Is a leg! Was a leg", "Bite me back! Nobody bite me back!"],
   },
 } as const;
 
@@ -503,7 +507,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         // Walk cycles from how far it moved; recoil and club swings from how long since it fired.
         const last = m.userData.last as { x: number; z: number }, moved = Math.hypot(u.x - last.x, u.z - last.z);
         last.x = u.x; last.z = u.z;
-        animate(m, { t: now / 1000, dt, moved: moved < 5 ? moved : 0, since: Math.max(0, statsOf(u).cool - u.cool) });
+        animate(m, { t: now / 1000, dt, moved: moved < 5 ? moved : 0, since: Math.max(0, statsOf(u).cool - u.cool), call: (now - ((m.userData.calledAt as number | undefined) ?? -1e9)) / 1000 });
         m.visible = !(u.kind === "hero" && b.hero.inVehicle !== null);
       }
       for (const [id, m] of meshes) if (!seen.has(id)) { scene.remove(m); meshes.delete(id); }
@@ -541,7 +545,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
           }
           if (f.kind === "spear" || f.kind === "hex") sfx.swish(f);
           if (f.kind === "blast") sfx.boom(f, f.big);
-          if (f.kind === "gore") sfx.hurt(spec.factions[f.side ?? "attacker"], f, true);
+          if (f.kind === "gore") sfx.hurt(spec.factions[f.side ?? "attacker"], f, true, undefined, f.big ? 0.6 : 1);
           if (f.kind === "toss") sfx.whoop(f);
           if (f.kind === "blast" && me) shake = Math.max(shake, (f.big ? 1.2 : 0.4) * Math.max(0, 1 - Math.hypot(f.x - me.x, f.z - me.z) / 35));
           if (f.kind === "gore") burst(f.x, fy + 0.8 + (f.y ?? 0), f.z, f.big ? 46 : 16, GORE[spec.factions[f.side ?? "attacker"]]!, f.big ? 9 : 6);
@@ -724,7 +728,16 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         chatterAt = now + 700 + Math.random() * 1800;
         const near = b.units.filter((u) => u.hp > 0 && (u.role || u.champ === "warbur") && u.id !== b.hero.id && Math.hypot(u.x - ear.x, u.z - ear.z) < 60);
         const who = near[Math.floor(Math.random() * near.length)];
-        if (who) (Math.random() < 0.25 ? sfx.whoop : sfx.chatter)(who);
+        if (who) {
+          // Bigger Wooka are lower. The Mossback howls, the Chubs roar, and the odd one beats its chest.
+          const size = who.role === "mossback" ? 0.45 : who.champ === "warbur" ? 0.55 : who.role === "chub" ? 0.8 : 1, roll = Math.random();
+          const mesh = meshes.get(who.id);
+          if (mesh && roll < 0.5) mesh.userData.calledAt = now;
+          if (size < 1 && roll < 0.35) sfx.howl(who, 0.5, size);
+          else if (size < 1 && roll < 0.5) sfx.thump(who, 0.45, size);
+          else if (roll < 0.7) sfx.chatter(who, 0.3, size);
+          else sfx.whoop(who, 0.4, size);
+        }
       }
       hurt = Math.max(0, hurt - dt * 1.5);
       hurtEl.style.opacity = String(hurt);

@@ -275,7 +275,31 @@ export const FLAVOR = [
   "Reminder: the fluffy ones are the dangerous ones. They are all the fluffy ones.",
   "A Boomie waved at Corporal Diaz before it went off. Diaz waved back. Briefly.",
   "The Shanti are chanting again. Our dead are getting up. Theirs are getting up faster.",
-];
+  "Look at the bones! LOOK at the BONES! Somebody should really stop looking at the bones.",
+  "Command says it's just a Wooka. Command is eleven light years away and has never been bitten.",
+  "That's no ordinary Wooka. That's an ordinary Wooka with a plan. Somehow worse.",
+  "Command: do not engage the cute ones. Us: which ones are the cute ones? Command: all of them. Us: ...",
+  "The medic would like everyone to know she is a medic, and not a snack.",
+  "Sergeant Moreau says stay calm. Sergeant Moreau is standing on a tree. Nobody knows how.",
+  "Radio check. Radio check. Radio. Why is the radio humming back?",
+  "I love the smell of bug spray in the morning. It smells like... nothing is working.",
+  "Intel says the enemy has no air support. Intel has not seen the one throwing the other one.",
+  "Casualty report: forty-one wounded, nine missing, one very small bite. The bite is the problem.",
+  "We are going to need a bigger fence. Also a smaller fence, for the little ones.",
+  "Private Kowalski asks what we're fighting for. The Sergeant says: the backpacks. Kowalski nods.",
+  "Good news: we've stopped them. Bad news: they were just reloading.",
+  "I've got a good feeling about this. Disregard. The feeling was gas.",
+  "Hold your fire, they might be friendly. Cancel that. It ate Hale's fire.",
+  "Nobody panic. Repeat, nobody panic. Okafor, put the backpack down. We are not panicking and neither is the backpack.",
+  "Surely you can't be serious. I am serious. And stop calling me Shirley, Private.",
+  "Looks like I picked the wrong planet to quit napping on.",
+  "Is anyone else seeing a rabbit? No? Then why does the Sergeant keep shouting for the Holy Hand Grenade?",
+  "There's a Wooka in the supply tent. It's wearing the quartermaster's glasses. Sir, it's doing the inventory.",
+  "I'm too old for this, said the Sergeant, who is twenty-six.",
+  "Reminder: in the event of a Wooka, remain calm, remain together, and remain in the helicopter. There is no helicopter. Remain anyway.",
+  "Charge! Run away! Charge again! Sir, make up your mind, they're keeping score.",
+  "The forest is on the radio. It says 'hoo'. We said 'roger'. It said 'hoo'. I think we're losing.",
+]; // radio gags in the key of a deadpan disaster film
 
 // What a Marine says on the way out, when a mob gets them. The radio picks it all up.
 const SCREAMS = [
@@ -289,6 +313,16 @@ const SCREAMS = [
   "They're under the floor! How is there a floor out here?!",
   "Sarge, they took the snorkel! I need the snorkel!",
   "It's humming. Why is it humming while it does that?",
+  "I'm not dead. I'm just... resting. Facing the sky. With a Wooka on my chest.",
+  "Tell the Sarge his bunker's fine. It's the Sarge that isn't.",
+  "Look at the bones! No, behind you! No, don't turn aro--",
+  "It's only a flesh wound! It's a LOT of flesh wounds!",
+  "It nibbled my leg! It's nibbled the other leg! Sir, I'm shorter!",
+  "I can see my house from here. That's a problem. I'm on a tree.",
+  "I've got a bad feeling about this. Pass it on. No, don't turn it around, pass it ON!",
+  "Cover me! I'm going in! I'm going in! I'm going in? I'm going in. They've taken the floor.",
+  "Tell my wife I love her. Tell my other wife it was a joke. Tell the Wooka, put me DOWN.",
+  "Roger that, I think I see the light. Oh. It's a campfire. They're roasting something. They're roasting ME.",
 ];
 const NAMES = ["Pvt. Okafor", "Pvt. Brandt", "Cpl. Diaz", "Pvt. Hale", "Sgt. Moreau", "Pvt. Kowalski", "Pvt. Achebe", "L/Cpl. Finch", "Pvt. Nakamura", "Pvt. Rourke"];
 
@@ -1124,8 +1158,20 @@ const SURGE_LINES = [
   "Movement everywhere. Everywhere. EVERYWHERE",
   "They're singing again, and there are a LOT of them",
   "Treeline's moving. Make every shot count",
+  "Here they come. Nobody say 'what could possibly go wrong.' Okafor, I'm looking at you.",
+  "That is not a forest, that is a very large crowd in a very small hat.",
+  "They're coming in from the left, the right, the front, and one of them is coming in from a place called Under.",
+  "Steady... steady... on my mark... Mark! Mark? Where did the Sergeant go? He's been marked.",
+  "Hundreds of them. Hundreds. Maybe four. They run in circles, it feels like hundreds.",
+  "Fix bayonets. Sir, we don't have bayonets. Then fix something, Private.",
+  "Okay, who counted them? Moreau counted them. And? He stopped counting. That's it. That's the count.",
+  "I love the smell of Wooka in the morning. It smells like a wet dog that's decided to be a dog.",
 ];
-const HORDE_SURGE_LINES = ["The trees empty out. Our kin run, laughing", "Drums! The forest sends more!", "Out of the green, all together, shouting"];
+const HORDE_SURGE_LINES = [
+  "The trees empty out. Our kin run, laughing", "Drums! The forest sends more!", "Out of the green, all together, shouting",
+  "Hoo-HOO-hoo! Everybody, bonk! Bonk the shiny!", "Chief says 'attack'. Chief says it with his whole face", "Up the tree, down the tree, over the shiny one, bonk",
+  "Look at the bones! Cheers for the bones! Bring more bones!", "Hoo hoo hoo HOO. Translation: yes, all of it",
+];
 const PANIC = [
   "BIG ONE, BIG ONE, BIG ONE",
   "That's not a Wooka, that's a landslide with arms!",
@@ -1134,8 +1180,14 @@ const PANIC = [
   "All units, Mossback! Rockets! Anybody with rockets!",
   "Don't shoot it, it LIKES it -- use the big stuff!",
   "It's moving like a -- oh no. Oh no no no",
+  "Mossback! Repeat, MOSSBACK! No, I'm not joking, and don't call me Shirley!",
+  "It's the size of a hut and it's eating the hut!",
+  "That's no ordinary Wooka! That's the ordinary Wooka's mother!",
+  "Aim for the legs! It's got four! It's got six! Stop counting, FIRE!",
+  "Run away! RUN AWAY! ...Wait, which way is away?",
+  "Somebody hand me the Holy Hand Grenade! It's a rocket, Private, but fine, close enough!",
 ];
-const HORDE_PANIC = ["The drums go wild: the Mossback walks!", "Our big one is loose. Everybody get behind it"];
+const HORDE_PANIC = ["The drums go wild: the Mossback walks!", "Our big one is loose. Everybody get behind it", "Big one go! Big one go! Everybody point at the shiny ones!", "Our big one has seen the shiny ones. Our big one is not happy. Our big one is hungry"];
 // How hard the rhythm hits in this mode.
 const heat = (b: Battle) => (b.mode === "holdout" ? 1.5 : b.mode === "assault" ? 1.25 : 1);
 // The posts the fighting is over: the live one in an assault or on the hill, all of them otherwise.

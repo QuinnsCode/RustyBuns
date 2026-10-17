@@ -77,6 +77,10 @@ export function playCutscene(cut: Cutscene, stage: Stage, origin: Origin): Promi
     host.addEventListener("pointerdown", finish);
     const noise = (n: Noise, p: { x: number; z: number } | null) => {
       if (n === "chatter") sfx.chatter(p, 0.5);
+      else if (n === "hoot") sfx.hoot(p, 0.55);
+      else if (n === "bark") sfx.bark(p, 0.6);
+      else if (n === "howl") sfx.howl(p, 0.8, 0.8);
+      else if (n === "thump") sfx.thump(p, 0.7);
       else if (n === "whoop") sfx.whoop(p, 0.55);
       else if (n === "squeal") sfx.hurt("wooka", p, true, 0.6);
       else if (n === "grunt") sfx.hurt("marines", p, true, 0.6);
@@ -93,7 +97,11 @@ export function playCutscene(cut: Cutscene, stage: Stage, origin: Origin): Promi
       const actors = actorsAt(cut, t), byId = new Map(actors.map((a) => [a.id, a]));
       for (const c of firedBetween(cut, t0, t)) {
         if (c.do === "shake") shake = Math.max(shake, c.amount);
-        else if (c.do === "sound") { const a = c.id ? byId.get(c.id) : undefined; noise(c.noise, a ? place(origin, a.x, a.z) : null); }
+        else if (c.do === "sound") {
+          const a = c.id ? byId.get(c.id) : undefined, who = c.id ? meshes.get(c.id) : undefined;
+          if (who && ["howl", "hoot", "bark", "thump"].includes(c.noise)) who.userData.calledAt = performance.now();
+          noise(c.noise, a ? place(origin, a.x, a.z) : null);
+        }
       }
       for (const [id, g] of meshes) {
         const a = byId.get(id);
@@ -105,7 +113,7 @@ export function playCutscene(cut: Cutscene, stage: Stage, origin: Origin): Promi
         g.position.copy(p);
         g.scale.setScalar(a.scale);
         g.rotation.set(a.flying ? now / 90 : 0, a.yaw + origin.yaw, a.flying ? now / 130 : 0);
-        animate(g, { t: now / 1000, dt, moved: a.moving && moved < 3 ? moved : 0, since: 1 });
+        animate(g, { t: now / 1000, dt, moved: a.moving && moved < 3 ? moved : 0, since: 1, call: (performance.now() - ((g.userData.calledAt as number | undefined) ?? -1e9)) / 1000 });
       }
       const cam = cameraAt(cut, t);
       if (cam) {
