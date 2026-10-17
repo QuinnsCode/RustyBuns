@@ -35,6 +35,8 @@ export const halfDome: ParkSpec = {
     { name: "sky rail", x: 15, z: 260, yaw: E },
   ],
   granite: 195,
+  // The dome itself, modelled: the park's own ground has its shape but not the sheer face, and from the spawn it is grey on grey. It stands past the west edge, its toe meeting the park's.
+  landmarks: [{ kind: "peak", model: "half-dome", x: -830, y: 30, z: 40, tall: 330 }],
   goals: [
     { kind: "score", target: 3000 },
     { kind: "combo", target: 1200 },

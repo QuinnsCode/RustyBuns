@@ -12,6 +12,7 @@ import { Critters } from "./render/critters.ts";
 import { type Chaser, chase as runAfter, chaseOf, gap, release } from "./chaser.ts";
 import { ChaserView } from "./render/chaser.ts";
 import { Barrier } from "./render/barrier.ts";
+import { dressPeak, PEAK_BUDGETS, type PeakBudget } from "./render/peak.ts";
 import { Scenery, scatter } from "./render/scenery.ts";
 import { followCamera, sky, skyMood, skyTime } from "./render/sky.ts";
 import { comboLine } from "./render/combo.ts";
@@ -65,6 +66,12 @@ scene.add(precip.object);
 const lightning = mood.lightning ? new Lightning() : null;
 const scenery = park ? new Scenery(scatter(level, (level as ParkLevel).ground)) : null; // small pines and rocks, for scale
 if (scenery) scene.add(scenery.group);
+const peakBudget = new URLSearchParams(location.search).get("peak") ?? "mid"; // the far mountain a park may have (?peak=hi|mid|low, or ?peak=off)
+if (park && PEAK_BUDGETS.includes(peakBudget as PeakBudget)) {
+  for (const l of (level as ParkLevel).landmarks) {
+    if (l.kind === "peak") dressPeak(l, new URL(`models/landmark-${l.model}-${peakBudget}.glb`, document.baseURI).href, mood.haze).then((g) => scene.add(g)).catch((e) => console.warn("peak model", e));
+  }
+}
 const barrier = park ? new Barrier(level.bounds, level.height) : null; // the edge of the park, where the sim stops the board
 if (barrier) scene.add(barrier.group);
 const critters = park ? new Critters((level as ParkLevel).ground, level.spawns[0]) : null; // birds and small animals that bolt from the rider
