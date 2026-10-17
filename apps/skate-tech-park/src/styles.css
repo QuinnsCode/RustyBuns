@@ -1,4 +1,5 @@
-:root { --ink: #1b1b1f; --paper: #fbf7f0; --hot: #e2572b; }
+@font-face { font-family: "Rock 3D"; src: url(/fonts/rock3d.ttf) format("truetype"); font-display: swap; }
+:root { --ink: #1b1b1f; --paper: #fbf7f0; --hot: #e2572b; --title-font: "Rock 3D", system-ui, sans-serif; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #f2c49a; font: 14px/1.3 system-ui, sans-serif; color: var(--ink); }
 #view { touch-action: none; position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
