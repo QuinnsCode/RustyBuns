@@ -26,7 +26,7 @@ export function tourStops(level: Level | ParkLevel): Stop[] {
   const add = (x: number, z: number) => { if (far(x, z)) stops.push({ x, z, peak: false }); };
   const spawn = level.spawns.find((s) => s.name === "skate") ?? level.spawns[0];
   if (spawn) add(spawn.x, spawn.z);
-  const marks = "landmarks" in level ? level.landmarks : [];
+  const marks = "landmarks" in level ? level.landmarks.filter((m) => m.kind !== "peak") : []; // a backdrop mountain stands past the edge
   for (const m of marks.slice(0, 1)) { const p = landmarkAt(m); add(p.x, p.z); }
   for (const p of [...level.pieces].sort((a, b) => b.w * b.d - a.w * a.d).slice(0, 12)) { if (stops.length >= 4) break; add(p.x, p.z); }
   const b = level.bounds, step = 12;

@@ -33,7 +33,6 @@ const to = (id: string, height = real) => `?${new URLSearchParams({ level: id, .
 
 /** The home page: the camera flies over a park (main.ts) behind a few rounded panels: what this is, a way in, and a card per park. */
 function homePage() {
-  document.body.classList.add("home");
   const icon = (n: Parameters<typeof createElement>[0]) => createElement(n, { width: 18, height: 18 });
   const pill = (cls: string, node: Parameters<typeof createElement>[0], text: string, go: () => void) => {
     const b = document.createElement("button");
@@ -78,6 +77,7 @@ function homePage() {
 }
 
 export function mountLevelUi(scene: Scene) {
+  if (touring(location.search)) document.body.classList.add("home"); // no rider: the game's own HUD stays hidden
   if (needsStartScreen(location.search)) homePage();
   const menu = document.createElement("select");
   menu.className = "level-menu";
