@@ -3535,6 +3535,11 @@ const views = {
         <span class="stat"><b id="stat-solved">·</b> clashes Mervin settled with no card</span>
       </div></div></section>
       <section class="section"><div class="wrap">
+        <div class="label">wait, let me explain with dots</div><h2>Why thirty agents jam the old git way</h2>
+        <p class="muted">Each dot is an agent with a feature to ship. Picture a subway at rush hour: one jammed staircase, a ticket gate, a test exit. Then the three layers that fix it. Try the sliders. <a href="/swarm.html">Open it full size</a>, or <a href="/swarm-watch.html">replay a real week</a> of this repo.</p>
+        <div id="swarm-home"></div>
+      </div></section>
+      <section class="section"><div class="wrap">
         <div class="label">the whole map</div><h2>Everything it does, by what you're doing</h2>
         <p class="muted">Pick where you're standing. Every feature is on one of these tabs, with a picture of how it fits.</p>
         <div class="fmap" id="fmap"><div class="fmap-tabs" role="tablist" aria-label="Feature areas"></div><div class="fmap-body"></div></div>
@@ -3597,6 +3602,7 @@ const views = {
         <div class="levels" id="levels"></div>
         <div style="margin-top:16px">${digBox(DIG_WHY)}</div>
       </div></section>${siteFoot()}`;
+    import("/swarm-stage.js").then((m) => { const el = $("#swarm-home"); if (el && !el.children.length) m.mount(el, { embed: true }); }).catch(() => {});
     $("#hero-cmd").addEventListener("click", () => palette.open());
     $("#hero-tour").addEventListener("click", () => { tourStart(); tour(); });
     $("#hand-agent").addEventListener("click", async () => copy(await (await fetch("/agent.md")).text(), "Prompt copied: paste it to your agent, then say what you want done"));
@@ -3645,6 +3651,8 @@ const views = {
       <h1>Watch it <em>run itself</em>.</h1>
       <p>Each demo is a chapter of the tour: a card and a cursor that press the real buttons. It stops where a person has to act (signing in, spending, merging, shipping).</p>
       <div class="row"><button class="btn primary" id="demo-all">${icon("play")}Play all</button><span class="muted">${TOUR_CHAPTERS.length} chapters, in order</span></div>
+      <p>${icon("train-front")}<a href="/swarm.html">Git at swarm speed</a>: why thirty agents jam the old git way, explained with dots, and the three layers that take the walls down.</p>
+      <p>${icon("users")}<a href="/swarm-watch.html">A week of the swarm</a>: 1,000 of this repo's real PRs replayed, the night the git wall went up, and where Mervin and Ester shipped.</p>
       <div class="levels" id="demo-list">${TOUR_CHAPTERS.map(([id, ic, name]) => `<div class="box"><div class="bar">${icon(ic)}<b>${esc(name)}</b></div><div class="body">
         <ol>${TOUR.filter((s) => s.ch === id).map((s) => `<li>${esc(s.t ?? s.panel)}</li>`).join("")}</ol>
         <button class="btn" data-demo="${id}" title="${anywhere(id) ? "play this chapter" : "this one plays on a repo's code page"}">${icon("play")}Play</button>${anywhere(id) ? "" : `<span class="muted"> on a repo's code page</span>`}</div></div>`).join("")}</div>

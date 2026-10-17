@@ -6,6 +6,24 @@ show the swarm stuck in a README, then show Mervin settling the round.
 
 Most of the machinery exists. This plan wires it together; it adds one fixture, one generator and one README section.
 
+## Status
+
+Built: steps 1-5, 8 and 9. `scripts/swarm-week.ts` writes `src/swarm-week.json` (1,000 PRs), `src/swarm-replay.ts` is the
+engine, `src/swarm-watch.html` the page, `scripts/swarm-readme.ts` the animated SVG (`docs/swarm-week.svg`, in the
+codeSplitter README and `docs/mervin-and-ester.md`), linked from `#/demos`, tested in `test/swarm-replay.test.ts`.
+
+What the real data says, honestly:
+- PRs are short: median 7 minutes open, p90 45. At any minute the open count is small; the wall is a spike, not a plateau.
+- The git wall is the night of October 13 (22:40 PT): 39 open, 18 stuck on git. The shared file the stuck agents
+  piled into was `apps/codesplitter/src/client.html`, not the root README (no README PR was open at the peak), so the
+  page's pane follows whichever shared file the most conflicted PRs are in, the README on a tie.
+- Mervin's first board landed at 00:17 PT on October 14 and the git band drained in the hours after, but that is
+  one night of "after", and averaged over the window the git band is higher after the mark than before (1.5 vs 0.3),
+  because the cascade's tail sits after it. The page shows the marks and the bands; it claims no before/after number.
+
+Not built: step 6's in-page Mervin replay (the page links to `mervin-watch.html` instead), step 7's numbers panel,
+and a PNG fallback for the SVG.
+
 ## What already exists
 
 | Piece | Where |

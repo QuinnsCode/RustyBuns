@@ -67,13 +67,23 @@ await copyFile("src/mcp.html", "dist/client/mcp.html");
 await copyFile("src/map.html", "dist/client/map.html");
 const dm = await Bun.build({ entrypoints: ["src/deploy-map.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "deploy-map.js" });
 if (!dm.success) { for (const l of dm.logs) console.error(l); process.exit(1); }
-// Watch Mervin work: its page, and the replay (src/mervin-replay.ts) bundled for the browser.
-await copyFile("src/mervin-watch.html", "dist/client/mervin-watch.html");
-const mr = await Bun.build({ entrypoints: ["src/mervin-replay.ts"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "mervin-replay.js" });
-if (!mr.success) { for (const l of mr.logs) console.error(l); process.exit(1); }
+// Watch Mervin work and the swarm week: each page, and its replay (src/<name>-replay.ts) bundled for the browser.
+for (const name of ["mervin", "swarm"]) {
+  await copyFile(`src/${name}-watch.html`, `dist/client/${name}-watch.html`);
+  const r = await Bun.build({ entrypoints: [`src/${name}-replay.ts`], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: `${name}-replay.js` });
+  if (!r.success) { for (const l of r.logs) console.error(l); process.exit(1); }
+}
+// The swarm week's data (scripts/swarm-week.ts) and the merge round it plays at the git wall (scripts/swarm-round.ts).
+await copyFile("src/swarm-week.json", "dist/client/swarm-week.json");
+await copyFile("src/swarm-round.json", "dist/client/swarm-round.json");
+// The swarm explained with dots: its page, and the stage (src/swarm-stage.js, over swarm-sim.ts and swarm-story.ts),
+// which the landing page mounts too.
+await copyFile("src/swarm.html", "dist/client/swarm.html");
+const ss = await Bun.build({ entrypoints: ["src/swarm-stage.js"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "swarm-stage.js" });
+if (!ss.success) { for (const l of ss.logs) console.error(l); process.exit(1); }
 // The pages' security headers, the same ones the Worker puts on its answers (src/security.ts),
 // with the hashes of the pages' inline scripts: the enforced CSP runs those and no others.
-const pages = ["index.html", "play.html", "features.html", "reference.html", "mcp.html", "map.html", "mervin-watch.html"];
+const pages = ["index.html", "play.html", "features.html", "reference.html", "mcp.html", "map.html", "mervin-watch.html", "swarm-watch.html", "swarm.html"];
 const hashes = new Set<string>();
 for (const page of pages) for (const h of inlineScriptHashes(await readFile(`dist/client/${page}`, "utf8"))) hashes.add(h);
 // What a cold agent finds at the root (src/discover.ts): llms.txt, robots.txt and a Link header on /.
