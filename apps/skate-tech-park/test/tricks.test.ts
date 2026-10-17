@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { clamp } from "@rustybuns/util";
 import { Gestures, resolve } from "../src/gesture.ts";
-import { type Level, makeLevel, piece, type RailKind } from "../src/level.ts";
+import { type Level, makeLevel, piece, postObstacles, type RailKind } from "../src/level.ts";
 import { DT, IDLE, type Input, start, step, type State } from "../src/sim.ts";
 import { comboLine } from "../src/render/combo.ts";
 const run = (s: State, seconds: number, input: (s: State) => Partial<Input>, level?: Level) => {
@@ -235,4 +235,18 @@ test("the HUD's combo line follows a real chain: grind into manual, and it clear
   expect(comboLine(["a", "b", "c", "d", "e", "f", "g"], 9)).toBe("... c > d > e > f > g   9"); // old ones scroll off
   run(sk, 4, () => ({}), lv); // the chain's clock runs out on the ground
   expect(comboLine(sk.combo, sk.comboScore)).toBe("");
+});
+
+test("falling off a railed bar right at a post does not pin the board against it", () => {
+  const bar = { kind: "rail" as const, a: { x: 0, z: 0 }, b: { x: 0, z: 60 }, y: 0.9 }; // posts every 4 m from 10 m: one at z = 30
+  const lv = flat({ rails: [bar], obstacles: postObstacles([bar], () => 0) });
+  const sk = start(0, 29.9, 0, lv);
+  sk.air = true; sk.y = 1.0; sk.vy = -1; sk.vz = 0.5;
+  run(sk, 0.3, () => ({}), lv);
+  expect(sk.grind).toBe(0);
+  sk.balance = 0.99; sk.speed = 0.3;
+  run(sk, 3, () => ({}), lv);
+  expect(sk.last?.name).toMatch(/Bail: fell off/);
+  run(sk, 3, () => ({ throttle: 1 }), lv);
+  expect(sk.speed).toBeGreaterThan(1);
 });
