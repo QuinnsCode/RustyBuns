@@ -48,3 +48,9 @@ test("clear weather has only a few motes, and the storm flashes then goes dark",
   expect(peak).toBeGreaterThan(0.5);
   expect(end).toBeLessThan(peak);
 });
+
+test("Glacier Point's dusk keeps enough light on the ground for the board to read at spawn", () => {
+  const d = MOODS.dusk, lum = (c: number) => ((c >> 16) & 255) * 0.3 + ((c >> 8) & 255) * 0.59 + (c & 255) * 0.11;
+  const light = (lum(d.skyFill) + lum(d.groundFill)) / 2 / 255 * d.fill + d.sunPower * Math.sin(Math.atan2(d.sun[1], Math.hypot(d.sun[0], d.sun[2])));
+  expect(light * d.exposure).toBeGreaterThan(1.3);
+});
