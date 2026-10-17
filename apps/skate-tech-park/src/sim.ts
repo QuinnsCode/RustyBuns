@@ -6,7 +6,7 @@
 // the tricks. `firing` is derived from the board's state after each step and never feeds back, so
 // swapping skins changes nothing in the ride.
 import { clamp } from "@rustybuns/util";
-import { FOOT, hitObstacle, type Level, nextRail, onRail, railY } from "./level.ts";
+import { BOARD, FOOT, hitObstacle, type Level, nextRail, onRail, railY } from "./level.ts";
 import { plaza } from "./levels/plaza.ts";
 import { type Flick, flickLong, TRICKS } from "./tricks.ts";
 
@@ -376,7 +376,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     const v2 = s.speed * s.speed - 2 * G * (s.y - y0); // a bar down the stairs speeds the slide up; one climbing slows it
     s.speed = Math.sign(s.speed) * Math.sqrt(Math.max(0, v2));
     if (Math.abs(s.balance) >= 1) {
-      const side = Math.sign(s.balance) * 0.6; // off the bar's line, clear of its posts, so the fall doesn't land inside one and pin the board
+      const side = Math.sign(s.balance) * (BOARD.halfWid + 0.2); // off the bar's line, the whole deck clear of its posts, so the fall doesn't land inside one and pin the board
       s.x += fz * side; s.z -= fx * side;
       s.y = level.height(s.x, s.z); s.vx = fx * s.speed; s.vz = fz * s.speed; bail(s, `Bail: fell off the ${ledge ? "ledge" : "rail"}`);
       return s;
@@ -438,7 +438,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
 
     const sx = Math.sin(s.yaw), sz = Math.cos(s.yaw);
     const blocker = hitObstacle(level, s.x + sx * s.speed * DT, s.z + sz * s.speed * DT, s.y, s.yaw);
-    if (blocker && !hitObstacle(level, s.x, s.z, s.y, yaw0)) { s.yaw = yaw0; return crash(s, blocker.kind === "post" ? "Hit a rail post" : "Hit a tree"); }
+    if (blocker) { s.yaw = yaw0; return crash(s, blocker.kind === "post" ? "Hit a rail post" : "Hit a tree"); }
     // Ride the surface in 10 cm strides, so the slope under the board is fresh at every one. `speed` is along the
     // surface: a stride covers less ground the steeper it climbs, and the height it gains or loses is paid for out
     // of speed (v² - 2gh), so a transition gives back on the way down exactly what it took on the way up.
