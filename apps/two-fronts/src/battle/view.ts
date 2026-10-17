@@ -123,6 +123,11 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const throwGeo = new THREE.BufferGeometry();
   const throws = new THREE.LineSegments(throwGeo, new THREE.LineBasicMaterial({ vertexColors: true }));
   scene.add(throws);
+  // Gunship tracers: pale lines from the pass down to the ground.
+  const shotGeo = new THREE.BufferGeometry();
+  const shots = new THREE.LineSegments(shotGeo, new THREE.LineBasicMaterial({ color: 0xfff2a8 }));
+  shots.frustumCulled = false;
+  scene.add(shots);
   // Chunks: voxel bits of whatever came apart, and dirt from blasts. They fly, fall and bounce.
   const CHUNKS = 1600;
   const chunkMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), new THREE.MeshStandardMaterial({ roughness: 0.8 }), CHUNKS);
@@ -530,6 +535,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       for (let i = b.strikes.length; i < marks.length; i++) { marks[i]!.visible = false; if (columns[i]) columns[i]!.visible = false; }
 
       // Gunships going past, firing down.
+      const pts: number[] = [];
       b.passes.forEach((p, i) => {
         const g = jets[i] ?? (jets[i] = gunship());
         if (!g.parent) scene.add(g);
@@ -542,7 +548,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         pts.push(x, gy + 12, z, tx, ground(tx, tz) + 0.3, tz);
       });
       for (let i = b.passes.length; i < jets.length; i++) jets[i]!.visible = false;
-      shotGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3)); // with the gunships' tracers in
+      shotGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
       // Fires and smoke.
       let nf = 0;
       for (const f of fires) {
