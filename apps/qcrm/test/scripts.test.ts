@@ -50,11 +50,10 @@ test("no network, a cap on time, and a script can't reach past the CRM rows", as
   const make = async (body: string) => (await (await post(app, cookie, scripts, { name: "t", body })).json()).id as string;
   const runIt = async (id: string) => (await post(app, cookie, `${scripts}/${id}/run`, {})).json();
 
-  // The local twin runs the script in-process, so "no network" is read as the fetch failing or
-  // being absent; on the edge globalOutbound: null makes every fetch throw.
-  const outbound = await runIt(await make(`globalThis.fetch = () => { throw new Error("no outbound"); }; await fetch("https://example.com"); return 1;`));
+  // The local twin runs each script in a Bun Worker of its own with fetch stubbed out.
+  const outbound = await runIt(await make(`await fetch("https://example.com"); return 1;`));
   expect(outbound.status).toBe("error");
-  expect(outbound.log).toContain("error:");
+  expect(outbound.log).toContain("network access is blocked");
 
   const thrown = await runIt(await make(`await qcrm.get("contacts", "nope");`));
   expect(thrown.status).toBe("error");
@@ -64,10 +63,12 @@ test("no network, a cap on time, and a script can't reach past the CRM rows", as
   expect(reach.status).toBe("error");
   expect(reach.log).toContain("scripts reach");
 
-  // A loop that yields (a synchronous one would hold the local twin's thread; the edge kills it).
-  const forever = await runIt(await make(`for (;;) await new Promise((r) => setTimeout(r, 5));`));
-  expect(forever.status).toBe("timeout");
-  expect(forever.finished_at - forever.started_at).toBeGreaterThanOrEqual(9_900);
+  // A loop that never returns, even a synchronous one, is killed at the cap and the host stays up.
+  for (const loop of [`for (;;) await new Promise((r) => setTimeout(r, 5));`, `for (;;) {}`]) {
+    const forever = await runIt(await make(loop));
+    expect(forever.status).toBe("timeout");
+    expect(forever.finished_at - forever.started_at).toBeGreaterThanOrEqual(9_900);
+  }
 }, 40_000);
 
 test("roles: seasonal reads but cannot write or run; employee runs; owner deletes; no loader is 503", async () => {
