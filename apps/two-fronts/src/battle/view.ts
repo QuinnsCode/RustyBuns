@@ -1,7 +1,8 @@
 // Draws a Battle in three.js and turns the keyboard and mouse into the hero's Input.
 // Third person: WASD to move, the mouse to look, click to fire, Q for an orbital strike where
 // you're aiming, E to climb into or out of a vehicle (as a champion: Warbur's throw, or Gumpert's
-// change of kit). Things that die come apart in chunks, and blasts throw dirt.
+// change of kit). Things that die come apart in chunks, and blasts throw dirt. Blaster fire is
+// glowing bolts that fly; sound is sfx.ts (M mutes), and the mission card and waypoint, mission.ts.
 import * as THREE from "three";
 import { FACTION_COLORS, type BattleResult, type BattleSpec, type Side } from "./contract.ts";
 import { groundRecorder } from "./replay.ts";
@@ -11,8 +12,10 @@ import { OutlinePass } from "three/addons/postprocessing/OutlinePass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { animate, gunship, marine, speeder, tank, turret, walker, wooka } from "./models.ts";
 import { buildWorld } from "./terrain.ts";
-import { boom, whoosh, wooka as wookaCall, zap } from "./sound.ts";
-import { CHAMP_AT, SPRINT_AFTER, DT, POST_RADIUS, SPAWN, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, startBattle, statsOf, step, timeLimit, vipUnit, type Fx, type Trooper, type Unit } from "./sim.ts";
+import { mission, sameMission, standing, type Mission, type Standing } from "./mission.ts";
+import { makeSfx } from "./sfx.ts";
+import { icon } from "../ui/icons.ts";
+import { CHAMP_AT, SPRINT_AFTER, DT, POST_RADIUS, SPAWN, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, startBattle, statsOf, step, timeLimit, vipUnit, type Fx, type Trooper, type Unit } from "./sim.ts";
 
 // A few lucide icons (ISC licence) for the rhythm strip: the HUD says it with icons and a ticking clock.
 const HUD_ICONS: Record<string, string> = {
@@ -96,12 +99,35 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     return g;
   };
 
-  // Shots are one batch of line segments; blasts and strike markers are pooled meshes.
-  const shotGeo = new THREE.BufferGeometry();
-  const shots = new THREE.LineSegments(shotGeo, new THREE.LineBasicMaterial({ color: 0xfff2a8 }));
+  // Blaster bolts: a glow in the shooter's colour round a hot core, flying from muzzle to target,
+  // with a flash where they leave and a spark where they land. The sim's shot lasts a frame or
+  // two; the bolt is the view's own and takes as long as the flight does.
+  // Fast over distance, but never quicker than BOLT_MIN in the air, so a shot up close is still seen.
+  const BOLTS = 400, BOLT_SPEED = 140, BOLT_MIN = 0.12;
+  const boltGeo = new THREE.CylinderGeometry(1, 1, 1, 6, 1).rotateX(Math.PI / 2);
+  // Out of the fog and tone mapping, so a bolt stays its own colour against Doren's bright haze;
+  // the glow is solid rather than added, or it washes out pink on the mist.
+  const glowing = (color: number, add: boolean) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: add ? 1 : 0.9, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending, depthWrite: false, toneMapped: false, fog: false });
+  const additive = (color = 0xffffff) => glowing(color, true);
+  const boltGlow = new THREE.InstancedMesh(boltGeo, glowing(0xffffff, false), BOLTS), boltCore = new THREE.InstancedMesh(boltGeo, additive(0xfff4ec), BOLTS);
+  const flashes = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), additive(), BOLTS);
+  for (const m of [boltGlow, boltCore, flashes]) { m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.count = 0; m.frustumCulled = false; scene.add(m); }
+  boltCore.renderOrder = 1; // the hot core over its glow
+  // The Marines' blasters fire red; the Wooka's only "shots" are rock-chuckers, a blur of amber.
+  const BOLT_COLORS: Record<string, number> = { marines: 0xff3326, wooka: 0xd08a3a };
+  type Bolt = { a: THREE.Vector3; b: THREE.Vector3; t: number; speed: number; len: number; w: number; color: THREE.Color; hit: boolean };
+  type Flash = { p: THREE.Vector3; t: number; life: number; s: number; color: THREE.Color };
+  const bolts: Bolt[] = [], flashList: Flash[] = [];
+  const boltDir = new THREE.Vector3(), boltZ = new THREE.Vector3(0, 0, 1), boltP = new THREE.Vector3(), boltM = new THREE.Matrix4(), boltQ = new THREE.Quaternion(), boltS = new THREE.Vector3();
+  const flash = (p: THREE.Vector3, s: number, color: THREE.Color, life = 0.06) => { if (flashList.length < BOLTS) flashList.push({ p: p.clone(), t: 0, life, s, color }); };
   const throwGeo = new THREE.BufferGeometry();
   const throws = new THREE.LineSegments(throwGeo, new THREE.LineBasicMaterial({ vertexColors: true }));
-  scene.add(shots, throws);
+  scene.add(throws);
+  // Gunship tracers: pale lines from the pass down to the ground.
+  const shotGeo = new THREE.BufferGeometry();
+  const shots = new THREE.LineSegments(shotGeo, new THREE.LineBasicMaterial({ color: 0xfff2a8 }));
+  shots.frustumCulled = false;
+  scene.add(shots);
   // Chunks: voxel bits of whatever came apart, and dirt from blasts. They fly, fall and bounce.
   const CHUNKS = 1600;
   const chunkMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), new THREE.MeshStandardMaterial({ roughness: 0.8 }), CHUNKS);
@@ -137,6 +163,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     return pool[i]!;
   };
 
+  const sfx = makeSfx();
   // The chaos: shells and strikes coming down out of the sky, gunships going past, trees burning,
   // smoke and flares. All of it is for the eye. What it hurts is in the sim (b.strikes, b.passes).
   if (!document.getElementById("rhythm-css")) {
@@ -204,17 +231,19 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   let alarmT = 0;
   const smashPalette = [0x7a4f2a, 0x5a3b22, 0x3d4a22, 0x9b8b6a, 0x4f7a2c];
 
-  // Input.
+  // Input. Any click or key also wakes the sound, which browsers keep shut till then.
   const keys = new Set<string>();
   let yaw = heroSide === "attacker" ? 0 : Math.PI, pitch = -0.12, firing = false, strike = false, use = false;
   const onKey = (e: KeyboardEvent, down: boolean) => {
     const k = e.key.toLowerCase();
+    if (down) sfx.wake();
+    if (down && k === "m" && !e.repeat) sfx.toggle();
     if (down && k === "q") strike = true;
     if (down && k === "e") use = true;
     down ? keys.add(k) : keys.delete(k);
   };
   const kd = (e: KeyboardEvent) => onKey(e, true), ku = (e: KeyboardEvent) => onKey(e, false);
-  const md = (e: MouseEvent) => { if (document.pointerLockElement !== canvas) canvas.requestPointerLock(); else if (e.button === 0) firing = true; };
+  const md = (e: MouseEvent) => { sfx.wake(); if (document.pointerLockElement !== canvas) canvas.requestPointerLock(); else if (e.button === 0) firing = true; };
   const mu = (e: MouseEvent) => { if (e.button === 0) firing = false; };
   const mm = (e: MouseEvent) => {
     if (document.pointerLockElement !== canvas) return;
@@ -264,14 +293,23 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const cross = document.querySelector<HTMLElement>(".crosshair");
   const feel = document.createElement("div");
   feel.className = "b-feel";
-  feel.innerHTML = `<div class="b-alarm"></div><div class="b-hurt"></div><div class="b-heat"><i></i></div><div class="b-toast"></div>`;
+  feel.innerHTML = `<div class="b-alarm"></div><div class="b-hurt"></div><div class="b-heat"><i></i></div><div class="b-toast"></div><div class="b-leave">${icon("triangle-alert", 18)}<span></span></div><div class="b-note"></div><div class="b-way"><i class="b-way-arrow">${icon("arrow-right", 14)}</i><span class="b-way-icon"></span><b></b></div>`;
   canvas.parentElement!.append(feel);
   const alarmEl = feel.querySelector<HTMLElement>(".b-alarm")!, hurtEl = feel.querySelector<HTMLElement>(".b-hurt")!, heatEl = feel.querySelector<HTMLElement>(".b-heat")!, toastEl = feel.querySelector<HTMLElement>(".b-toast")!;
+  const leaveEl = feel.querySelector<HTMLElement>(".b-leave")!, noteEl = feel.querySelector<HTMLElement>(".b-note")!, wayEl = feel.querySelector<HTMLElement>(".b-way")!;
+  const wayArrow = wayEl.querySelector<HTMLElement>(".b-way-arrow")!, wayIcon = wayEl.querySelector<HTMLElement>(".b-way-icon")!, wayDist = wayEl.querySelector<HTMLElement>("b")!;
+  // The mission: what it is, where the hero stands against it, and what they're told on the way.
+  const VERB_ICON: Record<Mission["verb"], string> = { Defend: "shield", Take: "flag", Escort: "users", Stop: "crosshair", Reach: "map-pin" };
+  const IN_AREA: Record<Mission["verb"], string> = { Defend: "Hold the area", Take: "Stand in the ring till it turns", Escort: "Stay close", Stop: "Bring them down", Reach: "Step into the ring" };
+  let job: Mission | null = null, stand: Standing = "travel", jobDist = 0, warnAt = 0, noteT = 0, wayIconOf = "";
+  const noteFor = (was: Mission, now: Mission) => was.name === now.name ? (now.verb === "Defend" ? `${now.name} is ours. Hold it` : `${now.name} lost. Take it back`) : `Next: ${now.verb} ${now.name}`;
+  const wayPos = new THREE.Vector3();
   const foeHorde = isHorde(b, heroSide === "attacker" ? "defender" : "attacker");
   const STREAK: Record<number, string> = foeHorde
     ? { 2: "Two in a row", 3: "Three. Fluff everywhere", 5: "Five. They'll sing about you. Badly", 8: "Eight. The forest has gone quiet", 12: "Twelve. Command is concerned about you" }
     : { 2: "Two backpacks", 3: "Three. Start a collection", 5: "Five. The totems need helmets", 8: "Eight. The shiny ones are all crying", 12: "Twelve. The chieftain wants a word" };
-  let hurt = 0, shake = 0, lastHp = Infinity, lastKills = 0, toastT = 0, markT = 0, chatterT = 0;
+  let hurt = 0, shake = 0, lastHp = Infinity, lastKills = 0, toastT = 0, markT = 0, gruntAt = 0, chatterAt = 0;
+  let ear = { x: 0, z: 0 };
   // What the mode asks of you right now, over the posts.
   const objectiveLine = () => {
     const live = b.posts[b.live]!, vip = vipUnit(b), vipName = isHorde(b, "attacker") ? "Warbur" : "Gumpert";
@@ -316,6 +354,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       <div class="b-top">${bar(mine)}
         <div class="b-clock" title="${b.mode === "conquest" || b.mode === "hill" ? "Time left. When it runs out, the side with more tickets wins (the defender on a tie)." : "Time left. When it runs out, the defender has held."}"><span class="clock">${fmt(Math.max(0, timeLimit(spec) - b.time))}</span><sup>i</sup></div>
         ${bar(foe)}</div>
+      ${job ? `<div class="b-mission ${stand}"><small>Mission</small><b>${icon(VERB_ICON[job.verb], 15)}${job.verb} ${job.name}</b><span>${stand === "travel" ? `Make it to ${job.name} · ${Math.round(jobDist)} m` : stand === "in" ? IN_AREA[job.verb] : "Leaving the area"}</span></div>` : ""}
       <div class="b-posts">${objectiveLine()}${b.posts.map((p, i) => `<span class="post ${p.owner ? spec.factions[p.owner] : ""}${inPlay(b, i) ? "" : " out"}">${p.name}</span>`).join("")}</div>
       ${beatLine()}
       <div class="b-hero">
@@ -323,11 +362,12 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         <span title="Lives">♥ ${b.hero.lives}</span>
         <span title="Orbital strikes (Q)">☄ ${b.strikesLeft[mine]}</span>
         ${riding ? `<span title="Driving a ${riding.kind} (E to get out)">▣</span>` : ""}
+        ${sfx.muted ? `<span class="muted" title="Sound off (M)">${icon("volume-x", 15)}</span>` : ""}
         ${hero?.champ ? `<span class="champ-on">${hero.champ === "warbur" ? "WARBUR · E throws a Wooka" : `GUMPERT · ${hero.kit} · E swaps kit`}</span>`
           : `<span class="champ" title="Kills till your champion takes the field">${champName}<i style="width:${Math.min(100, (100 * b.kills[mine]) / CHAMP_AT)}%"></i></span>`}
       </div>
       <ul class="b-feed">${feedLines()}</ul>
-      ${document.pointerLockElement === canvas ? "" : `<div class="b-help">Click the field to take control · WASD move · mouse look · click fire · Q orbital strike · E vehicle · Esc to let go<button id="b-auto" type="button">Let the AI finish it</button></div>`}`;
+      ${document.pointerLockElement === canvas ? "" : `<div class="b-help">Click the field to take control · WASD move · mouse look · click fire · Q orbital strike · E vehicle · M sound · Esc to let go<button id="b-auto" type="button">Let the AI finish it</button></div>`}`;
   };
 
   return new Promise((resolve) => {
@@ -377,8 +417,8 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         p.core.position.y = ground(post.x - 4, post.z - 4) + 2.6 + Math.sin(now / 400 + i) * 0.2;
         p.flag.rotation.y = Math.sin(now / 700 + i) * 0.25; // it flaps
       });
-      const pts: number[] = [];
-      let nb = 0;
+      let nb = 0, lasers = 0;
+      const byId = new Map(b.units.map((u) => [u.id, u]));
       const tpts: number[] = [], tcols: number[] = [];
       let nt = 0;
       for (const f of b.fx) {
@@ -386,7 +426,22 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         if (!spawned.has(f)) {
           spawned.add(f);
           const me = heroUnit(b);
-          if (f.from !== undefined && f.from === b.hero.id && (f.hit || f.kind === "blast")) markT = 0.15;
+          if (f.from !== undefined && f.from === b.hero.id && (f.hit || f.kind === "blast")) { markT = 0.15; if (f.kind !== "blast") sfx.tick(); }
+          const by = f.from === undefined ? undefined : byId.get(f.from);
+          if (f.kind === "shot") {
+            const heavy = !!by && (isVehicle(by.kind) || by.kind === "turret"), mine = f.from === b.hero.id;
+            const a = new THREE.Vector3(f.x, (f.y ?? 0) + (heavy ? 2.2 : 1.4) + fy, f.z), z = new THREE.Vector3(f.tx, (f.ty ?? 0) + 1.2 + ground(f.tx, f.tz), f.tz);
+            const rocks = spec.factions[by?.side ?? "attacker"] === "wooka", c = new THREE.Color(BOLT_COLORS[rocks ? "wooka" : "marines"]!);
+            if (bolts.length < BOLTS) bolts.push({ a, b: z, t: 0, speed: Math.min(BOLT_SPEED, a.distanceTo(z) / BOLT_MIN), len: heavy ? 5 : mine ? 4 : 3.2, w: heavy ? 0.4 : mine ? 0.28 : 0.2, color: c, hit: !!f.hit });
+            flash(a, heavy ? 0.9 : 0.45, c);
+            // The hero's own shots always sound; the battle's, a handful a frame.
+            if (rocks) sfx.swish(f, 0.35);
+            else if (mine || lasers++ < 6) sfx.laser(mine ? null : f, heavy, mine ? 0.32 : 0.3);
+          }
+          if (f.kind === "spear" || f.kind === "hex") sfx.swish(f);
+          if (f.kind === "blast") sfx.boom(f, f.big);
+          if (f.kind === "gore") sfx.hurt(spec.factions[f.side ?? "attacker"], f, true);
+          if (f.kind === "toss") sfx.whoop(f);
           if (f.kind === "blast" && me) shake = Math.max(shake, (f.big ? 1.2 : 0.4) * Math.max(0, 1 - Math.hypot(f.x - me.x, f.z - me.z) / 35));
           if (f.kind === "gore") burst(f.x, fy + 0.8 + (f.y ?? 0), f.z, f.big ? 46 : 16, GORE[spec.factions[f.side ?? "attacker"]]!, f.big ? 9 : 6);
           if (f.kind === "blast") {
@@ -400,16 +455,8 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
             for (let i = 0; i < 3; i++) puff(f.x, fy + 0.3, f.z, 2);
             if (me) shake = Math.max(shake, (f.big ? 1.6 : 0.7) * Math.max(0, 1 - Math.hypot(f.x - me.x, f.z - me.z) / 30));
           }
-          // Sound, loudest near the hero: bolts, booms, thrown spears and the Wooka's cries.
-          const dist = me ? Math.hypot(f.x - me.x, f.z - me.z) : 60, shooter = f.from === undefined ? undefined : b.units.find((u) => u.id === f.from);
-          if (f.kind === "shot") zap(dist, !shooter || !isHorde(b, shooter.side));
-          else if (f.kind === "blast") boom(dist, !!f.big);
-          else if (f.kind === "spear" || f.kind === "hex") { whoosh(dist); wookaCall(dist, shooter?.role === "chub" ? 1.5 : 1); }
-          else if (f.kind === "toss") wookaCall(dist, 2, true);
-          else if (f.kind === "gore" && f.side && isHorde(b, f.side)) wookaCall(dist, f.big ? 1.6 : 1, true);
         }
-        if (f.kind === "shot") pts.push(f.x, (f.y ?? 0) + 1.0 + fy, f.z, f.tx, (f.ty ?? 0) + 0.8 + ground(f.tx, f.tz), f.tz);
-        else if (f.kind === "spear" || f.kind === "hex") {
+        if (f.kind === "spear" || f.kind === "hex") {
           // A spear flies in an arc, a hex in a wobble; both from thrower to target over the throw.
           const c = f.kind === "spear" ? [0.55, 0.38, 0.2] : [0.5, 1, 0.42], k = 1 - f.t / 0.3, k0 = Math.max(0, k - 0.25);
           const at = (u: number) => [f.x + (f.tx - f.x) * u, fy + 1.4 + Math.sin(u * Math.PI) * (f.kind === "spear" ? 4 : 1.5), f.z + (f.tz - f.z) * u];
@@ -427,7 +474,32 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       }
       for (let i = nt; i < tossed.length; i++) tossed[i]!.visible = false;
       for (let i = nb; i < blasts.length; i++) blasts[i]!.visible = false;
-      shotGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+      // Bolts fly; one that gets there leaves a spark, a bigger one if it hit something.
+      let nbolt = 0;
+      for (let i = bolts.length - 1; i >= 0; i--) {
+        const o = bolts[i]!, d = o.a.distanceTo(o.b);
+        o.t += dt;
+        const head = Math.min(d, o.t * o.speed), tail = Math.max(0, head - Math.min(o.len, d * 0.5));
+        if (head >= d) { flash(o.b, o.hit ? 0.7 : 0.35, o.color, 0.09); bolts.splice(i, 1); continue; }
+        boltDir.subVectors(o.b, o.a).divideScalar(d || 1);
+        boltP.copy(o.a).addScaledVector(boltDir, (head + tail) / 2);
+        boltQ.setFromUnitVectors(boltZ, boltDir);
+        boltGlow.setMatrixAt(nbolt, boltM.compose(boltP, boltQ, boltS.set(o.w, o.w, head - tail)));
+        boltGlow.setColorAt(nbolt, o.color);
+        boltCore.setMatrixAt(nbolt, boltM.compose(boltP, boltQ, boltS.set(o.w * 0.35, o.w * 0.35, head - tail)));
+        nbolt++;
+      }
+      boltGlow.count = boltCore.count = nbolt;
+      let nflash = 0;
+      for (let i = flashList.length - 1; i >= 0; i--) {
+        const o = flashList[i]!;
+        if ((o.t += dt) >= o.life) { flashList.splice(i, 1); continue; }
+        flashes.setMatrixAt(nflash, boltM.compose(o.p, boltQ.identity(), boltS.setScalar(o.s * (1 - o.t / o.life * 0.5))));
+        flashes.setColorAt(nflash, o.color);
+        nflash++;
+      }
+      flashes.count = nflash;
+      for (const m of [boltGlow, boltCore, flashes]) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
       throwGeo.setAttribute("position", new THREE.Float32BufferAttribute(tpts, 3));
       throwGeo.setAttribute("color", new THREE.Float32BufferAttribute(tcols, 3));
       // The chunks fall, bounce on the floor and fade out by shrinking.
@@ -463,6 +535,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       for (let i = b.strikes.length; i < marks.length; i++) { marks[i]!.visible = false; if (columns[i]) columns[i]!.visible = false; }
 
       // Gunships going past, firing down.
+      const pts: number[] = [];
       b.passes.forEach((p, i) => {
         const g = jets[i] ?? (jets[i] = gunship());
         if (!g.parent) scene.add(g);
@@ -475,7 +548,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         pts.push(x, gy + 12, z, tx, ground(tx, tz) + 0.3, tz);
       });
       for (let i = b.passes.length; i < jets.length; i++) jets[i]!.visible = false;
-      shotGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3)); // with the gunships' tracers in
+      shotGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
       // Fires and smoke.
       let nf = 0;
       for (const f of fires) {
@@ -532,7 +605,20 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
 
       // Feel: the hit marker, heat, the red edge, a kill toast, and the sprint's wider view.
       const me = heroUnit(b);
-      if (me) { if (me.hp < lastHp && lastHp !== Infinity) hurt = Math.min(1, hurt + (lastHp - me.hp) / 60); lastHp = me.hp; } else lastHp = Infinity;
+      if (me) {
+        if (me.hp < lastHp && lastHp !== Infinity) {
+          hurt = Math.min(1, hurt + (lastHp - me.hp) / 60);
+          if (now - gruntAt > 450) { sfx.hurt(spec.factions[heroSide], null, false, 0.4); gruntAt = now; }
+        }
+        lastHp = me.hp;
+      } else lastHp = Infinity;
+      // Now and then a Wooka near you has something to say about it.
+      if (now > chatterAt) {
+        chatterAt = now + 700 + Math.random() * 1800;
+        const near = b.units.filter((u) => u.hp > 0 && (u.role || u.champ === "warbur") && u.id !== b.hero.id && Math.hypot(u.x - ear.x, u.z - ear.z) < 60);
+        const who = near[Math.floor(Math.random() * near.length)];
+        if (who) (Math.random() < 0.25 ? sfx.whoop : sfx.chatter)(who);
+      }
       hurt = Math.max(0, hurt - dt * 1.5);
       hurtEl.style.opacity = String(hurt);
       cross?.classList.toggle("hit", (markT -= dt) > 0);
@@ -549,13 +635,6 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       const fov = b.hero.run > SPRINT_AFTER ? 74 : 65;
       if (Math.abs(camera.fov - fov) > 0.1) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 6); camera.updateProjectionMatrix(); }
       shake = Math.max(0, shake - dt * 2.5);
-      // The horde chatters: now and then one of the Wooka nearest the hero calls out.
-      if ((chatterT -= dt) <= 0) {
-        chatterT = 0.4 + Math.random() * 1.1;
-        const me = heroUnit(b), near = b.units.filter((u) => u.kind === "wooka" && me && Math.hypot(u.x - me.x, u.z - me.z) < 90);
-        const u = near[Math.floor(Math.random() * near.length)];
-        if (u && me) wookaCall(Math.hypot(u.x - me.x, u.z - me.z), u.role === "chub" ? 1.5 : u.role === "boomie" ? 0.8 : 1, u.role === "boomie");
-      }
 
       // Third-person camera over the hero's shoulder (or the vehicle's), or over the spawn while down.
       const hero = heroUnit(b);
@@ -570,6 +649,41 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       camera.lookAt(at.x + f.x * 20, floor + (body ? altitude(body) : 0) + 1.6 + Math.sin(pitch) * 20, at.z + f.z * 20);
       if (shake > 0) camera.position.add(new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake));
       world.update(now / 1000, camera.position, { x: at.x + f.x * 30, z: at.z + f.z * 30 });
+      ear = { x: at.x, z: at.z };
+      sfx.hear({ x: at.x, z: at.z, rx: -f.z, rz: f.x });
+
+      // The mission, and the waypoint that points at it: on it when it's on screen, at the edge
+      // pointing the way when it isn't.
+      const next = mission(b, heroSide);
+      if (job && !sameMission(job, next)) {
+        noteEl.textContent = noteFor(job, next);
+        noteEl.classList.remove("show"); void noteEl.offsetWidth; noteEl.classList.add("show");
+        noteT = 2.5;
+        stand = "travel";
+        sfx.chime();
+      }
+      job = next;
+      if ((noteT -= dt) <= 0) noteEl.classList.remove("show");
+      jobDist = Math.hypot(at.x - job.x, at.z - job.z);
+      if (body) stand = standing(job, body, stand);
+      if (stand === "leaving" && now - warnAt > 1100) { sfx.warn(); warnAt = now; }
+      leaveEl.classList.toggle("show", stand === "leaving");
+      leaveEl.lastElementChild!.textContent = `Leaving the area. Get back to ${job.name}`;
+      if (wayIconOf !== job.verb) { wayIcon.innerHTML = icon(VERB_ICON[job.verb], 16); wayIconOf = job.verb; }
+      wayDist.textContent = `${Math.round(jobDist)} m`;
+      wayPos.set(job.x, ground(job.x, job.z) + 5, job.z).project(camera);
+      const W = canvas.clientWidth, H = canvas.clientHeight, EDGE = 44, behind = wayPos.z > 1;
+      let wx = (behind ? -wayPos.x : wayPos.x) * 0.5 * W, wy = -(behind ? -wayPos.y : wayPos.y) * 0.5 * H; // from the centre
+      const off = behind || Math.abs(wx) > W / 2 - EDGE || Math.abs(wy) > H / 2 - EDGE;
+      if (off) {
+        if (behind && Math.hypot(wx, wy) < 1) wy = 1;
+        const k = Math.min((W / 2 - EDGE) / Math.max(1e-6, Math.abs(wx)), (H / 2 - EDGE) / Math.max(1e-6, Math.abs(wy)));
+        wx *= k; wy *= k;
+      }
+      wayEl.style.transform = `translate(${W / 2 + wx}px, ${H / 2 + wy}px)`;
+      wayEl.classList.toggle("off", off);
+      wayEl.classList.toggle("here", stand === "in");
+      wayArrow.style.transform = `rotate(${Math.atan2(wy, wx)}rad)`;
 
       // The enemy gets an outline that shows through foliage.
       const eyeUnit = heroUnit(b);
@@ -582,6 +696,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         canvas.removeEventListener("mousedown", md);
         if (document.pointerLockElement === canvas) document.exitPointerLock();
         feel.remove();
+        sfx.close();
         cross?.classList.remove("hit");
         composer.dispose();
         renderer.dispose();
