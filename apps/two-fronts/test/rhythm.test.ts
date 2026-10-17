@@ -34,11 +34,17 @@ test("a surge overruns a post, the radio calls a fall-back, and getting out in t
   const fall = a.beat.fall!, post = a.posts[fall.from]!;
   const before = a.tickets.defender;
 
+  // The squad is on the post when the call goes out, wherever the fields put them.
+  for (const b of [a, left]) b.beat.fall!.ids = mine(b).map((u) => u.id);
   // One squad runs for it; the other dies where it stands.
   for (const u of mine(a)) { u.x = fall.x + (u.id % 5) - 2; u.z = fall.z + (u.id % 3) - 1; }
   for (const u of mine(left)) { u.x = post.x; u.z = post.z; u.hp = 0; } // they die where they stand
   while (!a.over && a.beat.fall && a.time < 300) step(a, null);
-  while (!left.over && left.beat.fall && left.time < 300) step(left, null);
+  // The horde stays on the post it took, as it did when the posts were close together.
+  while (!left.over && left.beat.fall && left.time < 300) {
+    left.units.filter((u) => u.side !== left.spec.hero && u.kind !== "turret" && u.hp > 0).slice(0, 8).forEach((u, i) => { u.x = post.x + (i % 4) - 2; u.z = post.z + (i >> 2); });
+    step(left, null);
+  }
 
   expect(a.beat.out).toBe(1);
   expect(a.beat.lost).toBe(0);
