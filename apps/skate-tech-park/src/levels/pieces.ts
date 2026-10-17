@@ -205,11 +205,11 @@ export const hubba = (at: At, o: { steps?: number; rise?: number; run?: number }
   return join(stairSet(at, { w: 3, steps, rise, run, name: "hubba stairs" }), ledge({ ...toWorld(at, 2.4 * K, 0), yaw: at.yaw }, { len, w: 0.8, h: steps * rise, name: "hubba" }));
 };
 
-/** Four faces meeting in a point: a hip to jump over (wood), or a boulder (granite). Under any other name it keeps the sampled mesh. */
+/** Four faces meeting in a point: a hip to jump over (wood), or under any other name a rock in the way (a boulder, a geyser's vent). */
 export const hip = (at: At, o: { w?: number; d?: number; h?: number; name?: string } = {}): Part => {
   const { name = "hip" } = o, w = (o.w ?? 6) * K, d = (o.d ?? 6) * L, h = (o.h ?? 1.2) * K;
   return part({ pieces: [shape("ramp", name, at, w, d, (lx, lz) => h * clamp01(Math.min(1 - Math.abs(lx) / (w / 2), 1 - Math.abs(lz) / (d / 2))),
-    name === "hip" ? { kind: "hip" } : name === "boulder" ? ROCK : undefined)] });
+    name === "hip" ? { kind: "hip" } : ROCK)] });
 };
 
 /** Two banks back to back, with coping along the ridge. */
