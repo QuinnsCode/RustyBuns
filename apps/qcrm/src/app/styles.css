@@ -164,3 +164,6 @@ pre.code { background: var(--paper); border: 1px solid var(--line); border-radiu
   .hero { min-height: 340px; }
 }
 @media (prefers-reduced-motion: reduce) { .tour-dim .hole { transition: none; } }
+
+button.link { all: unset; cursor: pointer; color: var(--accent, inherit); text-decoration: underline; font-weight: 600; }
+button.link:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
