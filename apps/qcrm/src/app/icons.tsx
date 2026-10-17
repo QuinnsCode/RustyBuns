@@ -17,6 +17,8 @@ const PATHS: Record<string, string> = {
   download: "M12 15V3M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5",
   "log-out": "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
   plus: "M5 12h14M12 5v14",
+  copy: "M8 8h12v12H8zM4 16V4h12",
+  check: "M20 6 9 17l-5-5",
   search: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35",
   x: "M18 6 6 18M6 6l12 12",
   menu: "M4 6h16M4 12h16M4 18h16",

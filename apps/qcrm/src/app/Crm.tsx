@@ -45,6 +45,15 @@ const theme = (t: "light" | "dark" | "auto") => {
   t === "auto" ? document.documentElement.removeAttribute("data-theme") : document.documentElement.setAttribute("data-theme", t);
 };
 
+/** Truncated id that copies the whole thing on click; the full id is the tooltip. */
+function CopyId({ id }: { id: string }) {
+  const [done, setDone] = useState(false);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(id); setDone(true); setTimeout(() => setDone(false), 1500); } catch { /* clipboard blocked */ }
+  };
+  return <button type="button" className="copy-id" title={done ? "Copied" : `Copy ${id}`} aria-label={`Copy org id ${id}`} onClick={copy}><code>{id.slice(0, 12)}…</code><Icon name={done ? "check" : "copy"} /></button>;
+}
+
 export function Crm() {
   const [me, setMe] = useState<Me | undefined>(undefined);
   const [org, setOrg] = useState<string | null>(null);
@@ -81,7 +90,7 @@ export function Crm() {
   return (
     <div className="crm">
       <aside className={"rail" + (menu ? " open" : "")} data-tour="rail">
-        <div className="org"><span className="tag">Org</span><b title={current.id}>{current.name}</b><span>{role} · <code>{current.id.slice(0, 12)}…</code></span></div>
+        <div className="org"><span className="tag">Org</span><b title={current.id}>{current.name}</b><span>{role} · <CopyId id={current.id} /></span></div>
         <button type="button" className="nav-item menu-btn" aria-expanded={menu} aria-label="Menu" title="Menu" onClick={() => setMenu(!menu)}><Icon name={menu ? "x" : "menu"} /></button>
         {items.map(([v, label, icon]) => <button key={v} type="button" className={"nav-item" + (view === v ? " on" : "")} onClick={() => { setView(v); setMenu(false); }} data-tour={`nav-${v}`}><Icon name={icon} /> {label}</button>)}
         {me.orgs.length > 1 && <select value={current.id} onChange={(e) => setOrg(e.target.value)} aria-label="Switch org">{me.orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>}
