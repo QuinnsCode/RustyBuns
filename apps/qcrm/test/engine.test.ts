@@ -102,3 +102,24 @@ describe("analysis", () => {
     expect(rows[1]!.days_idle).toBe(30);
   });
 });
+
+describe("dedupe at scale", () => {
+  test("2,000 contacts dedupe fast and still find the planted pairs", async () => {
+    const rows = Array.from({ length: 2000 }, (_, i) => ({
+      id: i,
+      first_name: `F${i}x`,
+      last_name: `L${i}y`,
+      email: `person${i}@co${i % 50}.com`,
+      phone: `55501${String(10000 + i).padStart(5, "0")}`,
+      company_id: `c${i % 50}`,
+    }));
+    rows[1500] = { ...rows[1500]!, email: "person7+x@other.com" };
+    await dedupe(rows.slice(0, 5)); // warm up
+    const start = performance.now();
+    const pairs = await dedupe(rows);
+    const ms = performance.now() - start;
+    console.log(`dedupe 2,000 contacts: ${ms.toFixed(0)} ms`);
+    expect(pairs.some((p) => p.a === 7 && p.b === 1500)).toBe(true);
+    expect(ms).toBeLessThan(400);
+  });
+});

@@ -510,9 +510,38 @@ pub fn dedupe_slice(contacts_json: &str, start: u32, end: u32) -> String {
             name: norm_name(&format!("{} {}", c.first_name.as_deref().unwrap_or(""), c.last_name.as_deref().unwrap_or(""))),
         })
         .collect();
+    // Only pairs that share a signal can reach 0.5, so compare those instead of all n^2.
+    // A bare name match needs an exact normalised name (near-identical names alone score
+    // under 0.5 for all but very long names).
+    let mut keys: Vec<(String, usize)> = Vec::new();
+    for (i, n) in norms.iter().enumerate() {
+        if let Some((local, _)) = &n.email {
+            keys.push((["e", local].concat(), i));
+        }
+        if let Some(p) = &n.phone {
+            keys.push((["p", p].concat(), i));
+        }
+        if let (Some(l), Some(c)) = (&n.last, &n.company) {
+            keys.push((["c", l, "\u{0}", c].concat(), i));
+        }
+        if !n.name.is_empty() {
+            keys.push((["n", &n.name].concat(), i));
+        }
+    }
+    keys.sort();
+    let mut candidates: Vec<(usize, usize)> = Vec::new();
+    for (k, x) in keys.iter().enumerate() {
+        for y in keys[k + 1..].iter().take_while(|y| y.0 == x.0) {
+            candidates.push((x.1.min(y.1), x.1.max(y.1)));
+        }
+    }
+    candidates.sort();
+    candidates.dedup();
     let mut pairs = Vec::new();
-    for i in (start as usize).min(contacts.len())..(end as usize).min(contacts.len()) {
-        for j in i + 1..contacts.len() {
+    let lo = (start as usize).min(contacts.len());
+    let hi = (end as usize).min(contacts.len());
+    for (i, j) in candidates.into_iter().filter(|(i, _)| (lo..hi).contains(i)) {
+        {
             let (x, y) = (&norms[i], &norms[j]);
             let mut miss = 1.0f64;
             let mut why = Vec::new();
