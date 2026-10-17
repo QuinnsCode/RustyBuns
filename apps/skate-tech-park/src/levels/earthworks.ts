@@ -11,7 +11,7 @@ import { lane, type ScatterWorld } from "./scatter.ts";
 
 /** What a work is laid in: poured concrete, or packed dirt. */
 export type Surface = "concrete" | "hardpack";
-export type WorkKind = "bowl" | "pool" | "pump" | "spillway" | "jumps" | "earthQuarter" | "mound";
+export type WorkKind = "bowl" | "pool" | "pump" | "spillway" | "jumps" | "earthQuarter" | "mound" | "kidney" | "keyhole" | "terraced";
 
 export type Earthwork = {
   kind: WorkKind; surface: Surface;
@@ -59,15 +59,54 @@ const lip = (e: Earthwork, ax: number, az: number, bx: number, bz: number): Rail
   return { kind: "coping", a: at(ax, az), b: at(bx, bz), y: SKIN };
 };
 
+/** A pit dug to depth `h`: `inner` says how many metres in from the lip a point is (negative on the deck round it), and the wall curves down over `1.4 h`. */
+const dug = (kind: WorkKind, at: At, y0: number, o: { w: number; d: number; cr: number; h: number; inner: (lx: number, lz: number) => number; rails?: (e: Earthwork) => Rail[] }) => {
+  const trans = o.h * 1.4;
+  return work(kind, "concrete", at, y0, {
+    w: o.w, d: o.d, cr: o.cr, skirt: 10,
+    shape: (lx, lz) => { const e = o.inner(lx, lz); return e <= 0 ? 0 : -o.h + o.h * wall(1 - e / trans); },
+    coping: (lx, lz) => edge(o.inner(lx, lz)),
+    rails: o.rails,
+  });
+};
+
 /** A bowl dug into the meadow: a deck all round, then walls curving down to a flat floor. */
 export const bowl = (at: At, y0: number, o: { w?: number; d?: number; h?: number; deck?: number; cr?: number } = {}): Earthwork => {
-  const { w = 30, d = 22, h = 2.6, deck = 3, cr = 7 } = o, trans = h * 1.4, ir = Math.max(1, cr - deck);
-  const inner = (lx: number, lz: number) => -sdf(lx, lz, w - 2 * deck, d - 2 * deck, ir); // metres in from the lip, negative on the deck
-  return work("bowl", "concrete", at, y0, {
-    w, d, cr, skirt: 10,
-    shape: (lx, lz) => { const e = inner(lx, lz); return e <= 0 ? 0 : -h + h * wall(1 - e / trans); },
-    coping: (lx, lz) => edge(inner(lx, lz)),
+  const { w = 30, d = 22, h = 2.6, deck = 3, cr = 7 } = o, ir = Math.max(1, cr - deck);
+  return dug("bowl", at, y0, {
+    w, d, cr, h, inner: (lx, lz) => -sdf(lx, lz, w - 2 * deck, d - 2 * deck, ir),
     rails: (e) => { const x = w / 2 - deck - ir, z = d / 2 - deck - ir, X = w / 2 - deck, Z = d / 2 - deck; return [lip(e, -x, -Z, x, -Z), lip(e, X, -z, X, z), lip(e, x, Z, -x, Z), lip(e, -X, z, -X, -z)]; },
+  });
+};
+
+/** Two round pools run together, a big lobe and a small one: the kidney of a classic backyard pool. Lobes meet in a pinch to carve through. */
+export const kidney = (at: At, y0: number, o: { r1?: number; r2?: number; h?: number; deck?: number } = {}): Earthwork => {
+  const { r1 = 12, r2 = 8, h = 2.6, deck = 3 } = o, c = (r1 + r2) * 0.55, R = Math.max(r1, r2);
+  const lobes: [number, number][] = [[-c * (r2 / (r1 + r2)) * 2, r1], [c * (r1 / (r1 + r2)) * 2, r2]];
+  return dug("kidney", at, y0, { w: 2 * (c + R), d: 2 * R, cr: R, h, inner: (lx, lz) => Math.max(...lobes.map(([cx, r]) => r - deck - Math.hypot(lx - cx, lz))) });
+};
+
+/** A round pool with a square-ended bay off one side, the keyhole in its plan: a cradle at one end, a bowl at the other. */
+export const keyhole = (at: At, y0: number, o: { r?: number; bay?: number; w?: number; h?: number; deck?: number } = {}): Earthwork => {
+  const { r = 10, bay = 14, w = 14, h = 2.8, deck = 3 } = o, d = 2 * r + bay, cz = -d / 2 + r, len = d / 2 - cz;
+  return dug("keyhole", at, y0, {
+    w: Math.max(2 * r, w), d, cr: 4, h,
+    inner: (lx, lz) => Math.max(r - deck - Math.hypot(lx, lz - cz), -sdf(lx, lz - (cz + d / 2) / 2, w - 2 * deck, len - 2 * deck, 2)),
+  });
+};
+
+/** A pit stepped down in three terraces, each with a lip you can grind and a ramp to the next: drop in a level at a time. */
+export const terraced = (at: At, y0: number, o: { w?: number; d?: number; h?: number; run?: number; deck?: number } = {}): Earthwork => {
+  const { w = 40, d = 32, h = 3.6, run = 7, deck = 3 } = o, levels = 3, ramp = 3.2, step = h / levels;
+  const inner = (lx: number, lz: number) => -sdf(lx, lz, w - 2 * deck, d - 2 * deck, 3);
+  return work("terraced", "concrete", at, y0, {
+    w, d, cr: 4, skirt: 10,
+    shape: (lx, lz) => { const e = inner(lx, lz); let down = 0; for (let k = 0; k < levels; k++) down += step * smooth((e - k * run) / ramp); return -down; },
+    coping: (lx, lz) => { const e = inner(lx, lz); return Math.max(...Array.from({ length: levels }, (_, k) => edge(e - k * run))); },
+    rails: (e) => Array.from({ length: levels }, (_, k) => {
+      const x = w / 2 - deck - k * run - 3, z = d / 2 - deck - k * run;
+      return x > 2 && z > 2 ? [lip(e, -x, -z, x, -z), lip(e, -x, z, x, z)] : [];
+    }).flat(),
   });
 };
 
@@ -150,6 +189,13 @@ const KIT: Make[] = [
   (at, r, y) => jumps(at, y, { n: Math.round(between(r, 3, 5)), h: between(r, 1.4, 2.2) }),
   (at, r, y) => earthQuarter(at, y, { w: between(r, 14, 20), h: between(r, 3, 4.4) }),
   (at, r, y) => mound(at, y, { w: between(r, 12, 18), d: between(r, 26, 36), h: between(r, 1.2, 1.9) }),
+  // into the earth: deep, steep and odd-shaped
+  (at, r, y) => kidney(at, y, { r1: between(r, 10, 14), r2: between(r, 6, 9), h: between(r, 2.2, 3.2) }),
+  (at, r, y) => keyhole(at, y, { r: between(r, 8, 11), bay: between(r, 10, 16), w: between(r, 12, 16), h: between(r, 2.4, 3.4) }),
+  (at, r, y) => terraced(at, y, { w: between(r, 36, 44), d: between(r, 28, 36) }),
+  (at, r, y) => bowl(at, y, { w: between(r, 22, 28), d: between(r, 22, 28), h: between(r, 4, 5), cr: 10 }), // a deep vert bowl
+  (at, r, y) => pool(at, y, { r: between(r, 6, 8), h: between(r, 3.4, 4.4) }), // a cradle
+  (at, r, y) => spillway(at, y, { w: between(r, 12, 15), d: between(r, 50, 70), h: between(r, 3.8, 5) }), // a storm drain
   // the small ones fit where the big ones don't
   (at, r, y) => pool(at, y, { r: between(r, 7, 9), h: between(r, 1.6, 2.2) }),
   (at, r, y) => bowl(at, y, { w: between(r, 16, 20), d: between(r, 14, 18), h: between(r, 1.6, 2.2), cr: 5 }),
