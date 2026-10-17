@@ -225,7 +225,7 @@ function Sheet({ entity, row, onClose, onSave, onDelete, canEdit }: { entity: st
           </label>
         ))}
         {msg && <p className="err">{msg}</p>}
-        <div className="row">
+        <div className="row actions">
           {onDelete && <button type="button" onClick={async () => { try { await onDelete(); } catch (x) { setMsg((x as Error).message); } }} style={{ color: "var(--bad)" }}>Delete</button>}
           <span className="grow" />
           {canEdit && <button className="primary" type="submit">Save</button>}
@@ -339,7 +339,7 @@ function Scripts({ org, can }: { org: string; can: (r: string) => boolean }) {
           <div className="row"><h2>{open.id ? "Edit script" : "New script"}</h2><span className="grow" /><button type="button" onClick={() => setOpen(null)} aria-label="Close"><Icon name="x" /></button></div>
           <label><span>Name</span><input name="name" defaultValue={open.name ?? ""} required maxLength={80} disabled={!can("manager")} /></label>
           <label><span>Body: an async function of {"{ input, qcrm, log }"}</span><textarea name="body" defaultValue={open.body ?? ""} rows={16} className="mono" required disabled={!can("manager")} /></label>
-          <div className="row">
+          <div className="row actions">
             {open.id && can("owner") && <button type="button" style={{ color: "var(--bad)" }} onClick={() => act(() => api(`${base}/${open.id}`, { method: "DELETE" })).then(() => setOpen(null))}>Delete</button>}
             <span className="grow" />
             {open.id && can("employee") && <button type="button" onClick={() => run(open.id)}>Run</button>}
