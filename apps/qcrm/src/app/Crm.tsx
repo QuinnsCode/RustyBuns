@@ -49,6 +49,7 @@ export function Crm() {
   const [view, setView] = useState<View>("contacts");
   const [err, setErr] = useState("");
   const [demo, setDemo] = useState(false);
+  const [menu, setMenu] = useState(false);
 
   const load = useCallback(async () => {
     try { const m = await api("/me"); setMe(m); if (!org && m.orgs?.[0]) setOrg(m.orgs[0].id); }
@@ -77,9 +78,10 @@ export function Crm() {
   const items: [View, string, string][] = [["contacts", "Contacts", "users"], ["companies", "Companies", "building"], ["deals", "Deals", "badge-dollar-sign"], ["activities", "Activities", "activity"], ["insights", "Insights", "chart-column"], ["engine", "Engine", "cpu"], ["scripts", "Scripts", "scroll-text"], ["settings", "Settings", "key-round"]];
   return (
     <div className="crm">
-      <aside className="rail" data-tour="rail">
+      <aside className={"rail" + (menu ? " open" : "")} data-tour="rail">
         <div className="org"><span className="tag">Org</span><b title={current.id}>{current.name}</b><span>{role} · <code>{current.id.slice(0, 12)}…</code></span></div>
-        {items.map(([v, label, icon]) => <button key={v} type="button" className={"nav-item" + (view === v ? " on" : "")} onClick={() => setView(v)} data-tour={`nav-${v}`}><Icon name={icon} /> {label}</button>)}
+        <button type="button" className="nav-item menu-btn" aria-expanded={menu} aria-label="Menu" title="Menu" onClick={() => setMenu(!menu)}><Icon name={menu ? "x" : "menu"} /></button>
+        {items.map(([v, label, icon]) => <button key={v} type="button" className={"nav-item" + (view === v ? " on" : "")} onClick={() => { setView(v); setMenu(false); }} data-tour={`nav-${v}`}><Icon name={icon} /> {label}</button>)}
         {me.orgs.length > 1 && <select value={current.id} onChange={(e) => setOrg(e.target.value)} aria-label="Switch org">{me.orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>}
         <button type="button" className="nav-item" onClick={async () => { await api("/auth/sign-out", { method: "POST", body: "{}" }); location.href = "/"; }}><Icon name="log-out" /> Sign out</button>
       </aside>
