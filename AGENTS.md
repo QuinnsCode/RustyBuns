@@ -80,6 +80,15 @@ app exists, so changes to it must keep the entry valid:
   `rustybuns destroy --stage office-preview` and don't send home the worker driving it. The owner may also move codeSplitter
   to its own home on 2026-10-14; the meaning of that is open on the issue, so don't guess.
 
+## Manual runs: the owner's hands, in plain sight
+
+When something needs the owner to do it (a token, a sign-in, a live run, a hands-on check), it gets its own
+issue: title prefix `MANUAL RUN:` (or `MANUAL CHECK (not a bug):` when nothing is broken), the `manual run`
+label, the steps and a rough time at the top. Never fold it as a line into another open issue, #609 included:
+the owner doesn't see that board easily, so a buried line never gets done. #609 is an old roll-up; don't add
+to it. Say in your final message that you filed one, with the link. A PR that touches a manual-run issue
+writes "Part of #N" or "Leaves #N open", never a closing word next to its number.
+
 ## Secrets and pushes
 
 Secret values live in 1Password and resolve through varlock at deploy time, behind the owner's
