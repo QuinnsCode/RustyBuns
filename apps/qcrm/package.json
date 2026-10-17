@@ -1,0 +1,41 @@
+{
+  "name": "qcrm",
+  "private": true,
+  "type": "module",
+  "version": "0.1.4",
+  "license": "SEE LICENSE IN LICENSE",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "gen": "bun ../../packages/cli/src/index.ts generate",
+    "test": "bun test test",
+    "seed": "bun scripts/seed.ts",
+    "qlave": "bun scripts/fetch-qlave.ts",
+    "wasm": "bun scripts/wasm.ts",
+    "deploy": "bun ../../packages/cli/src/index.ts deploy",
+    "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop --check"
+  },
+  "dependencies": {
+    "better-auth": "1.7.7",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-server-dom-webpack": "19.2.8",
+    "rwsdk": "1.7.4"
+  },
+  "devDependencies": {
+    "@alchemy.run/frontend-frameworks": "2.0.0-beta.77",
+    "@cloudflare/vite-plugin": "1.60.2",
+    "@cloudflare/workers-types": "5.20260801.1",
+    "@effect/platform-bun": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.112",
+    "@rustybuns/cli": "workspace:*",
+    "@rustybuns/shell-bun": "workspace:*",
+    "@types/react": "19",
+    "@types/react-dom": "19",
+    "alchemy": "2.0.0-beta.77",
+    "effect": "4.0.0-rc.112",
+    "vite": "8.3.1",
+    "wrangler": "4.141.0"
+  }
+}
