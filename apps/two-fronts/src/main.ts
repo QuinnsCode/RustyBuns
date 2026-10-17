@@ -10,10 +10,10 @@ import {
 import { aiVote, castVote, handIn, heroFaction, humans, newTable, report, tally, waitingOn, type Seats, type Table, type Vote } from "./war/table.ts";
 import { fetchView, linkInHash, pointerSocket, seatLink, sendBattle, sendOrders, sendVote, startOnline, type Online, type View } from "./net.ts";
 import { drawMap } from "./ui/map.ts";
-import { icon } from "./ui/icons.ts";
+import { icon, tip } from "./ui/icons.ts";
 import { PRESETS, PRESET_IDS, deploy, emptyDeployment, loadoutOf, placeLoadout, presetDeployment, room, totals, valueOf, type Loadout, type PresetId } from "./war/fleet.ts";
 import { MODE_INFO, voteScreen, type VoteSeat } from "./ui/vote.ts";
-import { FLAVOR, run } from "./battle/sim.ts";
+import { run } from "./battle/sim.ts";
 import { HULL_PER_SHIP, ROUNDS, clash, encodePicks, fightPicks, playRound, startPicks, whyNot, type PickRound } from "./battle/space-picks.ts";
 import { aiSpacePick } from "./war/ai.ts";
 import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
@@ -173,7 +173,7 @@ function render() {
     const sendRow = (what: string, n: string, to: string, go: string) =>
       `<div class="act send"><span class="what">${what}</span>${n}${icon("arrow-right", 14)}${to}${go}</div>`;
     const goBtn = (attr: string, title: string) => `<button type="button" class="icon-btn go" ${attr} title="${title}" aria-label="${title}">${icon("send", 15)}</button>`;
-    const note = (text: string, warn = false) => `<p class="note${warn ? " warn" : ""}">${icon(warn ? "triangle-alert" : "info", 14)}<span>${text}</span></p>`;
+    const note = (text: string, warn = false) => tip(text, warn);
     const targets: Where[] = [
       ...s.sectors.map((_, i) => ({ system: selected!, sector: i })),
       ...neighbours(selected).flatMap((n) => c.systems[n]!.sectors.map((_, i) => ({ system: n, sector: i }))),
@@ -285,7 +285,7 @@ function retreatPanel() {
   return `<div class="attacks"><h2>Attacks declared</h2>
     ${against ? `<h3>Against you</h3><ul class="sectors">${against}</ul>` : ""}
     ${ours ? `<h3>Yours</h3><ul class="sectors">${ours}</ul>` : ""}
-    <p class="small">Hold, and the fight happens. Pull out, and the ground is theirs but your troops live.</p></div>`;
+    ${tip("Hold, and the fight happens. Pull out, and the ground is theirs but your troops live.")}</div>`;
 }
 
 // The turn's six phases, the one we're in lit: draw and place happen with the orders, declare
@@ -321,6 +321,15 @@ function waitingLine() {
   if (waiting().includes(me)) return c.setup ? "Place your fleet" : c.deploying ? "Deploy" : c.attacks ? "Answer the attacks" : "Your move";
   return `Waiting for the ${waiting().map((f) => FACTION_NAMES[f]).join(" and ")}${c.deploying ? " to deploy" : c.attacks ? " to answer the attacks" : ""}`;
 }
+
+// An "i" opens or closes its text.
+document.addEventListener("click", (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLElement>(".tip-btn");
+  if (!b) return;
+  const t = b.nextElementSibling as HTMLElement;
+  t.hidden = !t.hidden;
+  b.setAttribute("aria-expanded", String(!t.hidden));
+});
 
 // Clicks, delegated.
 document.addEventListener("click", (e) => {
@@ -631,10 +640,10 @@ function brief(spec: BattleSpec, done: (r: BattleResult) => void) {
     return list.join(", ") || "none";
   };
   const row = (label: string, a: number | string, b: number | string) => `<tr><th>${label}</th><td>${a}</td><td>${b}</td></tr>`;
+  const role = `You ${me === "attacker" ? "attack" : "defend"} as ${spec.factions[me] === "wooka" ? "a Wooka chieftain. The armoured ones came to hunt. Show them who the forest belongs to" : "a Thunder Marine"}.${spec.mode && spec.mode !== "conquest" ? "" : " Take the command posts and run their tickets out."}`;
+  const about = `${MODE_INFO[spec.mode ?? "conquest"].blurb} ${role}${horde && spec.factions[me] === "marines" ? " You are not the hunter here. They know the trees, they know your smell, and they are already in the ferns." : ""}`;
   showModal(`<h2>Hero battle: ${spec.system}, ${SECTOR_NAMES[spec.sector].toLowerCase()}</h2>
-    <p class="mode-line">${icon(MODE_INFO[spec.mode ?? "conquest"].icon, 16)}<b>${MODE_INFO[spec.mode ?? "conquest"].name}</b> <span class="small">${MODE_INFO[spec.mode ?? "conquest"].blurb}</span></p>
-    <p>You ${me === "attacker" ? "attack" : "defend"} as ${spec.factions[me] === "wooka" ? "a Wooka chieftain. The armoured ones came to hunt. Show them who the forest belongs to" : "a Thunder Marine"}.${spec.mode && spec.mode !== "conquest" ? "" : " Take the command posts and run their tickets out."}</p>
-    ${horde ? `<p class="small">${spec.factions[me] === "marines" ? "You are not the hunter here. They know the trees, they know your smell, and they are already in the ferns." : ""}</p><p class="flavor">“${FLAVOR[Math.floor(Math.random() * FLAVOR.length)]}”</p>` : ""}
+    <p class="mode-line">${icon(MODE_INFO[spec.mode ?? "conquest"].icon, 16)}<b>${MODE_INFO[spec.mode ?? "conquest"].name}</b>${tip(about)}</p>
     <table class="spec"><tr><th></th><td>You</td><td>Enemy</td></tr>
       ${row("Armies", spec.armies[me], spec.armies[foe])}
       ${row("Tickets", spec.tickets[me], spec.tickets[foe])}
@@ -643,7 +652,7 @@ function brief(spec: BattleSpec, done: (r: BattleResult) => void) {
       ${row("Drop pods", spec.reinforcements[me] ? `+${spec.reinforcements[me]}` : "none", spec.reinforcements[foe] ? `+${spec.reinforcements[foe]}` : "none")}
       ${row("Turrets", me === "defender" ? spec.turrets : 0, me === "attacker" ? spec.turrets : 0)}
     </table>
-    <p class="small">Strikes, drop pods and gunships come from holding the orbit, and walkers from holding the world's capital. A shield generator held by the other side cuts strikes to one.</p>
+    ${tip("Strikes, drop pods and gunships come from holding the orbit, and walkers from holding the world's capital. A shield generator held by the other side cuts strikes to one.")}
     <button type="button" id="drop-in" class="primary">Drop in</button> <button type="button" id="auto-battle">Let the AI fight it</button>`);
   $("drop-in").onclick = async () => {
     hideModal();
@@ -670,13 +679,13 @@ const ORDER_INFO: Record<SpaceOrder, { name: string; icon: string; tip: string }
 function briefSpace(spec: SpaceBattleSpec, done: (r: SpaceBattleResult) => void) {
   const me = spec.hero, foe = other(me);
   showModal(`<h2>Space battle: over ${spec.system}</h2>
-    <p>You command the ${spec.factions[me] === "wooka" ? "Wooka raft fleet" : "Thunder Marine line"} for the orbit. ${ROUNDS} rounds: each round you pick an order, they pick one, and you see theirs once yours is in. More hull at the end holds the orbit.</p>
+    <p class="mode-line">${icon("orbit", 16)}<b>${ROUNDS} rounds</b>${tip(`You command the ${spec.factions[me] === "wooka" ? "Wooka raft fleet" : "Thunder Marine line"} for the orbit. Each round you pick an order, they pick one, and you see theirs once yours is in. More hull at the end holds the orbit.`)}</p>
     <table class="spec"><tr><th></th><td>You</td><td>Enemy</td></tr>
       <tr><th>${icon("rocket", 13)} Ships</th><td>${spec.fleets[me]}</td><td>${spec.fleets[foe]}</td></tr>
       <tr><th title="Armies on the world below: they board, and a bigger muster boards harder">${icon("shield-plus", 13)} Muster below</th><td>${spec.muster?.[me] ?? 0}</td><td>${spec.muster?.[foe] ?? 0}</td></tr>
       <tr><th title="Cannons, shields and upgraded guns below: they add to a screen or a bombardment">${icon("crosshair", 13)} Batteries below</th><td>${spec.batteries?.[me] ?? 0}</td><td>${spec.batteries?.[foe] ?? 0}</td></tr>
     </table>
-    <p class="small">Lose the orbit and the world is blockaded: nothing gets built there, supply through it is cut, their landings come down, and a fleet of two or more bombards the armies below every turn.</p>
+    ${tip("Lose the orbit and the world is blockaded: nothing gets built there, supply through it is cut, their landings come down, and a fleet of two or more bombards the armies below every turn.")}
     <button type="button" id="fight-picks" class="primary">${icon("swords", 15)} Fight it</button> <button type="button" id="launch" title="Fly a fighter in the battle yourself">${icon("rocket", 15)} Fly it</button> <button type="button" id="auto-battle">Let the AI fight it</button>`);
   $("fight-picks").onclick = () => pickBattle(spec, done);
   $("launch").onclick = async () => {
