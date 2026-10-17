@@ -15,6 +15,9 @@ test("tools/list has every operation of the spec; tools/call runs one as the API
 
   const info = await (await app("", "/api/mcp")).json();
   expect(info.claude).toContain("/api/mcp");
+  const ops = Object.values(openapi("").paths).reduce((n, m) => n + Object.keys(m).length, 0);
+  expect(info.tools).toBe(ops);
+  expect(info.note).toContain(`${ops} tools, one per operation`);
 
   const list = await (await app("", "/api/mcp", { method: "POST", headers: bearer, body: rpc("tools/list") })).json();
   const ids = Object.values(openapi("").paths).flatMap((m) => Object.values(m).map((op) => (op as { operationId: string }).operationId)).sort();

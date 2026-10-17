@@ -31,6 +31,7 @@ export const connectInfo = (origin: string) => ({
   auth: "Authorization: Bearer qk_… (an org API key, made by an owner at POST /api/orgs/:org/keys), or the site's session cookie",
   claude: `claude mcp add --transport http qcrm ${origin}/api/mcp --header "Authorization: Bearer qk_…"`,
   tools: all().length,
+  note: `${all().length} tools, one per operation (method + path) of the spec; openapi.json lists fewer paths because a path can have several methods`,
 });
 
 /** The HTTP call a tool stands for, or what's missing from its arguments. */
