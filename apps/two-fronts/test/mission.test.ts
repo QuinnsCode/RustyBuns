@@ -13,15 +13,15 @@ const spec = (mode: MatchMode, hero: "attacker" | "defender" = "attacker"): Batt
 });
 
 test("assault: take the live post, defend it once it's ours, then on to the next", () => {
-  const b = startBattle(spec("assault"));
-  expect(mission(b, "attacker")).toMatchObject({ verb: "Take", name: "Old stump" });
-  expect(mission(b, "defender")).toMatchObject({ verb: "Defend", name: "Old stump" });
+  const b = startBattle(spec("assault")), first = b.posts[0]!.name;
+  expect(mission(b, "attacker")).toMatchObject({ verb: "Take", name: first });
+  expect(mission(b, "defender")).toMatchObject({ verb: "Defend", name: first });
   Object.assign(b.posts[0]!, { owner: "attacker", progress: 1 });
   step(b, null);
-  expect(mission(b, "attacker")).toMatchObject({ verb: "Defend", name: "Old stump" });
+  expect(mission(b, "attacker")).toMatchObject({ verb: "Defend", name: first });
   b.phase = DT / 2;
   step(b, null);
-  expect(mission(b, "attacker")).toMatchObject({ verb: "Take", name: "Generator" });
+  expect(mission(b, "attacker")).toMatchObject({ verb: "Take", name: b.posts[1]!.name });
 });
 
 test("arriving puts you in the area; stepping out warns you; going far is travelling again", () => {

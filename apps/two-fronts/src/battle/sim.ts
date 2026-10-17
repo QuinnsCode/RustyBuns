@@ -118,9 +118,9 @@ export interface Battle {
 }
 
 export const DT = 1 / 30;
-export const HALF = 120;           // the plain runs -HALF..HALF on x and z
+export const HALF = 180;           // the plain runs -HALF..HALF on x and z
 export const TIME_LIMIT = 600;
-export const SPAWN: PerSide<{ x: number; z: number }> = { attacker: { x: 0, z: 100 }, defender: { x: 10, z: -100 } };
+export const SPAWN: PerSide<{ x: number; z: number }> = { attacker: { x: 0, z: 150 }, defender: { x: 10, z: -150 } };
 export const POST_RADIUS = 12;
 const HOLD_FOR = 40;               // assault: seconds to hold a post once taken before the next comes live
 const HILL_EVERY = 75;             // hill: seconds before the live post moves on
@@ -135,18 +135,19 @@ export const timeLimit = (spec: BattleSpec) => (spec.mode === "holdout" ? HOLDOU
 // Each kind of sector is its own map. The last post is the defender's keep: it starts theirs,
 // and their turrets ring it. `scenery` below lays out what stands on it; the view draws that.
 export const LAYOUTS: Record<SectorKind, { name: string; posts: { name: string; x: number; z: number }[] }> = {
-  shield: { name: "Shield generator clearing", posts: [{ name: "Old stump", x: -40, z: 20 }, { name: "Generator", x: 30, z: -50 }] },
-  capital: { name: "Capital city", posts: [{ name: "Transit hub", x: 45, z: 25 }, { name: "Market square", x: -35, z: -5 }, { name: "Palace", x: 5, z: -60 }] },
-  spaceport: { name: "Spaceport", posts: [{ name: "Landing pads", x: -30, z: 5 }, { name: "Control tower", x: 35, z: -55 }] },
-  cannon: { name: "Cannon battery", posts: [{ name: "Ammo depot", x: 40, z: 10 }, { name: "Cannon", x: -25, z: -55 }] },
-  canyon: { name: "Mining canyon", posts: [{ name: "Ore crusher", x: -20, z: 30 }, { name: "Mine head", x: 15, z: -55 }] },
-  jungle: { name: "Jungle temple", posts: [{ name: "Fallen idol", x: 35, z: 20 }, { name: "Rope bridge", x: -35, z: -10 }, { name: "Sunken temple", x: 0, z: -60 }] },
+  shield: { name: "Shield generator clearing", posts: [{ name: "Old stump", x: -60, z: 40 }, { name: "Fern hollow", x: 55, z: 5 }, { name: "Mossy ridge", x: -50, z: -40 }, { name: "Generator", x: 45, z: -80 }] },
+  capital: { name: "Capital city", posts: [{ name: "Transit hub", x: 65, z: 55 }, { name: "Market square", x: -50, z: 15 }, { name: "Water tower", x: 60, z: -20 }, { name: "Old quarter", x: -60, z: -55 }, { name: "Palace", x: 5, z: -95 }] },
+  spaceport: { name: "Spaceport", posts: [{ name: "Landing pads", x: -45, z: 35 }, { name: "Fuel depot", x: 55, z: 10 }, { name: "Hangar", x: -55, z: -30 }, { name: "Control tower", x: 50, z: -85 }] },
+  cannon: { name: "Cannon battery", posts: [{ name: "Ammo depot", x: 60, z: 40 }, { name: "Spotter nest", x: -55, z: 5 }, { name: "Gun pit", x: 50, z: -30 }, { name: "Cannon", x: -35, z: -85 }] },
+  canyon: { name: "Mining canyon", posts: [{ name: "Ore crusher", x: -25, z: 60 }, { name: "Cart yard", x: 30, z: 15 }, { name: "Slag heap", x: -30, z: -25 }, { name: "Mine head", x: 15, z: -85 }] },
+  jungle: { name: "Jungle temple", posts: [{ name: "Fallen idol", x: 55, z: 50 }, { name: "Rope bridge", x: -55, z: 5 }, { name: "Strangler fig", x: 50, z: -35 }, { name: "Sunken temple", x: 0, z: -95 }] },
 };
 // The trees on each map: the redwood forest, a dense jungle of thinner trunks, none in the canyon.
-const REDWOODS = { n: 110, r: [1.2, 3.4], gap: 5, clear: 26 } as const;
+const GROW = 2.25;                 // the plain grew from 240 to 360 across: this much more ground to fill
+const REDWOODS = { n: Math.round(110 * GROW), r: [1.2, 3.4], gap: 5, clear: 26 } as const;
 const WOODS: Record<SectorKind, { n: number; r: readonly [number, number]; gap: number; clear: number }> = {
   shield: REDWOODS, capital: REDWOODS, spaceport: REDWOODS, cannon: REDWOODS,
-  jungle: { n: 230, r: [0.6, 1.6], gap: 2.5, clear: 18 },
+  jungle: { n: Math.round(230 * GROW), r: [0.6, 1.6], gap: 2.5, clear: 18 },
   canyon: { n: 0, r: [0, 0], gap: 0, clear: 0 },
 };
 export const EYE = 1.6;            // blocks this high or more block sight
@@ -388,6 +389,7 @@ const gap = (k: Block, p: { x: number; z: number }) => dist(nearestOn(k, p), p);
 function scenery(b: Battle) {
   const keep = b.posts.at(-1)!, put = (x: number, z: number, w: number, d: number, h: number) => b.blocks.push({ x, z, w, d, h });
   const scatter = (n: number, size: [number, number], h: [number, number], room: number, lane = 18) => {
+    n = Math.round(n * GROW);
     for (let placed = 0, tries = 0; placed < n && tries < n * 30; tries++) {
       const k = { x: (rand(b) - 0.5) * HALF * 1.9, z: (rand(b) - 0.5) * HALF * 1.9, w: size[0] + rand(b) * (size[1] - size[0]), d: size[0] + rand(b) * (size[1] - size[0]), h: h[0] + rand(b) * (h[1] - h[0]) };
       if (Math.abs(k.x) < lane + k.w / 2) continue;

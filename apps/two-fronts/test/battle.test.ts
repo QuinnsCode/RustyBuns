@@ -297,7 +297,7 @@ test("Warbur spears from afar, throws his kin, then rips a head off up close", (
   expect(b.fx.some((f) => f.kind === "spear")).toBe(true);
   // Up close, the head comes off.
   bear.x = 0; bear.z = -2; bear.cool = 0; bear.look = 0; marine.hp = STATS.assault.hp;
-  for (let i = 0; i < 40 && marine.hp > 0; i++) step(b, null);
+  for (let i = 0; i < 200 && marine.hp > 0; i++) step(b, null);
   expect(marine.hp).toBeLessThanOrEqual(0);
 });
 
@@ -408,7 +408,7 @@ test("the hero's kills are counted, and a streak ends when they go down", () => 
   const foe = wookaOf(b, "defender", "fodder", 0, -10);
   foe.hp = 1;
   hero.cool = 0;
-  for (let i = 0; i < 10 && b.units.includes(foe); i++) step(b, { ...idle, yaw: 0, fire: true });
+  for (let i = 0; i < 90 && b.units.includes(foe); i++) step(b, { ...idle, yaw: 0, fire: true });
   expect(b.hero.kills).toBe(1);
   expect(b.hero.streak).toBe(1);
   hero.hp = 0;

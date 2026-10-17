@@ -15,7 +15,7 @@ import { buildWorld } from "./terrain.ts";
 import { mission, sameMission, standing, type Mission, type Standing } from "./mission.ts";
 import { makeSfx } from "./sfx.ts";
 import { icon } from "../ui/icons.ts";
-import { CHAMP_AT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, startBattle, statsOf, step, timeLimit, vipUnit, type Fx, type Trooper, type Unit } from "./sim.ts";
+import { CHAMP_AT, SPRINT_AFTER, DT, POST_RADIUS, SPAWN, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, startBattle, statsOf, step, timeLimit, vipUnit, type Fx, type Trooper, type Unit } from "./sim.ts";
 
 // A few lucide icons (ISC licence) for the rhythm strip: the HUD says it with icons and a ticking clock.
 const HUD_ICONS: Record<string, string> = {
@@ -639,7 +639,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       // Third-person camera over the hero's shoulder (or the vehicle's), or over the spawn while down.
       const hero = heroUnit(b);
       const body = (b.hero.inVehicle !== null && b.units.find((u) => u.id === b.hero.inVehicle)) || hero;
-      const at = body ?? { x: 0, z: heroSide === "attacker" ? 100 : -100 };
+      const at = body ?? { x: 0, z: heroSide === "attacker" ? SPAWN.attacker.z : SPAWN.defender.z };
       const [back, high] = body?.champ === "warbur" ? [11, 5.5] : !body || body.kind === "hero" ? [7, 3.2] : body.kind === "walker" ? [15, 10] : body.kind === "gunship" ? [18, 6] : [13, 6];
       const floor = ground(at.x, at.z), up = high + (body ? altitude(body) : 0) + floor;
       const f = facing(yaw);

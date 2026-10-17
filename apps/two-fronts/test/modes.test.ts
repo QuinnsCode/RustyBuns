@@ -17,7 +17,7 @@ const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.
 test("assault: one post live at a time; take it, hold it, and the next comes live", () => {
   const b = startBattle(spec("assault"));
   expect(b.posts.every((p) => p.owner === "defender")).toBe(true);
-  expect(b.posts.map((_, i) => inPlay(b, i))).toEqual([true, false]);
+  expect(b.posts.map((_, i) => inPlay(b, i))).toEqual(b.posts.map((_, i) => i === 0));
   Object.assign(b.posts[0]!, { owner: "attacker", progress: 1 });
   step(b, null);
   expect(b.phase).toBeGreaterThan(39);
@@ -25,9 +25,10 @@ test("assault: one post live at a time; take it, hold it, and the next comes liv
   b.phase = DT / 2;
   step(b, null);
   expect(b.live).toBe(1);
-  expect(b.posts.map((_, i) => inPlay(b, i))).toEqual([false, true]);
+  expect(b.posts.map((_, i) => inPlay(b, i))).toEqual(b.posts.map((_, i) => i === 1));
   // The keep falls, and so does the sector.
-  Object.assign(b.posts[1]!, { owner: "attacker", progress: 1 });
+  b.live = b.posts.length - 1;
+  Object.assign(b.posts.at(-1)!, { owner: "attacker", progress: 1 });
   step(b, null);
   expect(b.over?.winner).toBe("attacker");
 });
@@ -51,7 +52,7 @@ test("king of the hill: the first hill is as far from either spawn, and it moves
   const hill = b.posts[0]!;
   expect(Math.abs(dist(hill, SPAWN.attacker) - dist(hill, SPAWN.defender))).toBeLessThan(1);
   expect(b.posts.every((p) => p.owner === null)).toBe(true);
-  expect(b.posts.map((_, i) => inPlay(b, i))).toEqual([true, false, false]);
+  expect(b.posts.map((_, i) => inPlay(b, i))).toEqual(b.posts.map((_, i) => i === 0));
   Object.assign(hill, { owner: "defender", progress: -1 });
   const before = b.tickets.attacker;
   for (let i = 0; i < 4 / DT; i++) step(b, null);
