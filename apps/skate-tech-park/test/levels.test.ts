@@ -135,3 +135,21 @@ test("a park runs edge to edge of its terrain, and a rider driving at the barrie
     expect(s.z).toBeLessThanOrEqual(l.bounds.maxZ);
   }
 }, 30000);
+
+test("a line is placed beat by beat and its goal completes when the rider rides it through, and not when they skip a beat", () => {
+  const level = park("glacier-point"), route = level.routes.find((r) => r.name === "plateau line")!;
+  expect(route.points.length).toBe(5);
+  const goal = level.goals.find((g) => g.kind === "line")!;
+  const ride = (points: { x: number; z: number; r: number }[]) => {
+    const first = points[0]!, s = start(first.x, first.z + 14, Math.PI, level), run = trackRun(level);
+    for (const to of points) for (let i = 0; i < 20 * 60; i++) {
+      const err = Math.atan2(Math.sin(Math.atan2(to.x - s.x, to.z - s.z) - s.yaw), Math.cos(Math.atan2(to.x - s.x, to.z - s.z) - s.yaw));
+      step(s, { ...IDLE, throttle: s.speed < 12 ? 1 : 0, steer: Math.max(-1, Math.min(1, err * 3)), jump: !s.air && s.speed > 8 && Math.abs(Math.hypot(to.x - s.x, to.z - s.z) - (to.r - 2)) < 1.5 }, { ...level, obstacles: level.trees }); // pops onto each beat
+      run.update(s);
+      if (Math.hypot(to.x - s.x, to.z - s.z) < 3) break;
+    }
+    return run;
+  };
+  expect(ride(route.points).done(goal)).toBe(true);
+  expect(ride([route.points[0]!, route.points[4]!]).done(goal)).toBe(false);
+});
