@@ -6,6 +6,10 @@ A street skating spot at golden hour: a kicker, a funbox, a rail, and a gap no b
 
 Tricks score when you land them: air time, every 180 you spin, kickflips, grinds, and riding away fakie or in reverse. Land sideways or mid-flip and you bail: you keep your momentum, slide and tumble across the ground, then stand back up.
 
+## The trick compendium
+
+A flick trick is data (`src/tricks.ts`): how far the board turns under the rider and which way it flips, the same grid [SkateBench](https://github.com/T3-Content/skatebench) (MIT) asks models to name. Nine tricks: kickflip (`F`), heelflip (`G`), shove-it (`V`), varial (`R`), varial heel (`O`), hardflip (`U`), inward heel (`I`), tre flip (`T`) and laser flip (`Y`). With the mouse or right stick the diagonals are the compound ones (up-right varial, up-left varial heel, down-right hardflip, down-left inward heel) and a long diagonal drag down is a double turn. A tre flip with a half turn of the rider on top lands as a big flip. The approach angle and side name seven grinds (50-50, 5-0, nosegrind, smith, feeble, boardslide, lipslide), on rails and ledges alike.
+
 ## Weather
 
 Every park has its own air (`weather` in its spec, moods in `src/render/weather.ts`): drifting clouds and a sun disc in the sky, fog that closes in, grain on the ground, rain streaks that lean into the wind, snow that whitens the flats, dust, mist, drifting motes, and lightning in a storm. Yosemite Falls is rainy, Half Dome snowy, the Grand Canyon dusty. Add `?weather=rain|storm|snow|dust|mist|noon|dusk|overcast|golden` to any park to change it.
@@ -20,7 +24,7 @@ A park spans all of its terrain (about 640 m across, `edgeOf` in `src/levels/par
 
 ## The park is cut into the terrain
 
-The hand-placed kit and ribbons stand on the ground; the earthworks (`src/levels/earthworks.ts`) *are* the ground. Bowls and pools are dug into the meadow, a pump track of rollers and a row of dirt jumps are packed on top, spillway channels are cut along the slope, and earth quarter pipes and mounds are piled up. Each is held at the height of the ground under its centre and blended back into the hillside, so the sim, camera, mesh and map see one heightfield. `layOut` tries every cell of the map for one (crowded meadows get the small ones), clear of spawns, gap lines, trees and landmarks; lips carry coping you can grind. The ground mesh is 2 m fine, painted concrete or hardpack with a pale coping stone along each lip, and shades hollows. `earthworks: false` in a `ParkSpec` turns it off.
+The hand-placed kit and ribbons stand on the ground; the earthworks (`src/levels/earthworks.ts`) *are* the ground. Bowls and pools are dug into the meadow, a pump track of rollers and a row of dirt jumps are packed on top, spillway channels are cut along the slope, and earth quarter pipes and mounds are piled up. Kidney pools, a keyhole (round end and square bay), a three-terrace pit with a lip to grind on each step, and deep vert bowls, cradles and storm drains are cut too; granite ridges and slabs stand with ledges along their crests to grind. Each is held at the height of the ground under its centre and blended back into the hillside, so the sim, camera, mesh and map see one heightfield. `layOut` tries every cell of the map for one (crowded meadows get the small ones), clear of spawns, gap lines, trees and landmarks; lips carry coping you can grind. The ground mesh is 2 m fine, painted concrete or hardpack with a pale coping stone along each lip, and shades hollows. `earthworks: false` in a `ParkSpec` turns it off.
 
 ## The board, the kit and the roadster are modelled in Blender
 

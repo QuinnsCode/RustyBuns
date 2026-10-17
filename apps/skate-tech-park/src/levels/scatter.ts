@@ -3,7 +3,7 @@
 // flat enough and nothing else is in the way. Hand-placed sites win; scatter fills what they leave empty.
 import { mulberry32 } from "@rustybuns/util";
 import type { Bounds, Spawn } from "../level.ts";
-import { bowl, box, fallenLog, flatBar, funbox, handrail, hip, hubba, kicker, ledge, outcrop, type At, type Part, quarterPipe, rockFace, rollers, spine, stairSet, tabletop } from "./pieces.ts";
+import { bowl, box, fallenLog, flatBar, funbox, handrail, hip, hubba, kicker, ledge, outcrop, rockRidge, rockSlab, type At, type Part, quarterPipe, rockFace, rollers, spine, stairSet, tabletop } from "./pieces.ts";
 
 export type Scatter = {
   /** Same seed, same park. */
@@ -39,7 +39,8 @@ const KIT: Make[] = [
   (at, r) => rollers(at, { w: 8, n: Math.round(between(r, 3, 5)), period: 7, h: between(r, 0.5, 0.8) }),
   (at, r) => outcrop(at, { r: between(r, 2, 3.5), h: between(r, 1.2, 2.2) }),
   (at, r) => rockFace(at, { w: between(r, 7, 11), d: between(r, 4, 6), h: between(r, 2.6, 4) }),
-  (at, r) => outcrop(at, { r: between(r, 1.6, 2.6), h: between(r, 1, 1.8) }),
+  // grindable rock: a ridge with a crest ledge, or (the wider draws) a slab with a ledge on each edge
+  (at, r) => { const n = between(r, 7, 14); return n > 12 ? rockSlab(at, { w: 5, d: n - 4, h: between(r, 0.5, 0.9) }) : rockRidge(at, { len: n, h: between(r, 1, 1.8) }); },
   (at, r) => fallenLog(at, { len: between(r, 10, 16), r: between(r, 0.6, 0.9) }),
   (at, r) => bowl(at, { w: between(r, 24, 34), d: between(r, 18, 24), h: between(r, 2, 3) }),
 ];

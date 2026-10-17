@@ -224,6 +224,24 @@ export const outcrop = (at: At, o: { r?: number; h?: number; name?: string } = {
   return part({ pieces: [shape("ramp", name, at, r * 2, r * 2, (lx, lz) => h * Math.sqrt(Math.max(0, 1 - (Math.hypot(lx, lz) / r) ** 2)), ROCK)] });
 };
 
+/** A granite ridge (the sampled mesh: the boulder module only fits domes): a long spine of rock, steep on both sides, with a ledge along its crest to grind end to end. */
+export const rockRidge = (at: At, o: { len?: number; w?: number; h?: number; name?: string } = {}): Part => {
+  const { name = "boulder ridge" } = o, len = (o.len ?? 12) * L, w = (o.w ?? 3.2) * K, h = (o.h ?? 1.4) * K;
+  return part({
+    pieces: [shape("ramp", name, at, w, len, (lx, lz) => h * clamp01(1 - Math.abs(lx) / (w / 2)) ** 0.6 * smooth((len / 2 - Math.abs(lz)) / (len * 0.18)))],
+    rails: [bar("ledge", at, 0, -len * 0.3, 0, len * 0.3, h)],
+  });
+};
+
+/** A flat-topped slab of granite on a sloped skirt, with a ledge along each long edge of its top: a rock box to ollie onto and slide. */
+export const rockSlab = (at: At, o: { w?: number; d?: number; h?: number; name?: string } = {}): Part => {
+  const { name = "rock slab" } = o, w = (o.w ?? 5) * K, d = (o.d ?? 9) * L, h = (o.h ?? 0.7) * K, e = 0.2, x = w / 2 * (1 - e * 2);
+  return part({
+    pieces: [shape("ramp", name, at, w, d, (lx, lz) => h * smooth(Math.min(1 - Math.abs(lx) / (w / 2), 1 - Math.abs(lz) / (d / 2)) / e))],
+    rails: [-x, x].map((lx) => bar("ledge", at, lx, -d / 2 * (1 - e * 2), lx, d / 2 * (1 - e * 2), h)),
+  });
+};
+
 /**
  * A granite buttress that turns to vertical: the slab rises along local +z on a quarter-circle curve to a sheer lip, in three
  * tiers across (the tallest in the middle, a step down to each side), each with its own coping to grind, and a rock shelf
