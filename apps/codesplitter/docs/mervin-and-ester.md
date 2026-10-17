@@ -29,6 +29,12 @@ jam rate climbed with the crowd: 18% when 0-2 other PRs were open, 51% when 10 o
 proportionally more shipped work. Past a point they meant more of one agent waiting on another. The full counts, and
 how they are measured, are in [jams.md](jams.md).
 
+You can watch that week happen. Every dot below is one of its PRs, coloured by what it was waiting on, and the red
+spike is the night of October 13, when 18 PRs sat stuck on git at once. The page behind it, `/swarm-watch.html` (also reached from "We got git problems with agent swarm" (`/git-problems.html`), which pairs it with the rush-hour station animation), lets
+you drag through the week and shows which file the stuck agents piled into (`bun scripts/swarm-week.ts` collects it).
+
+![1,000 PRs in a week, one dot each](swarm-week.svg)
+
 ## So: rethink git, sideways
 
 The fix is not a smarter agent standing in the way of the collisions. It is to take the collisions out of the path,
