@@ -30,7 +30,7 @@ proportionally more shipped work. Past a point they meant more of one agent wait
 how they are measured, are in [jams.md](jams.md).
 
 You can watch that week happen. Every dot below is one of its PRs, coloured by what it was waiting on, and the red
-spike is the night of October 13, when 18 PRs sat stuck on git at once. The page behind it, `/swarm-watch.html`, lets
+spike is the night of October 13, when 18 PRs sat stuck on git at once. The page behind it, `/swarm-watch.html` (also reached from "We got git problems with agent swarm" (`/git-problems.html`), which pairs it with the rush-hour station animation), lets
 you drag through the week and shows which file the stuck agents piled into (`bun scripts/swarm-week.ts` collects it).
 
 ![1,000 PRs in a week, one dot each](swarm-week.svg)
