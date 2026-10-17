@@ -47,8 +47,8 @@ function sheet(z0: number, z1: number, rows: number, drop: number, inset: number
  * board's graphic. The deck is the same at both ends and there is no rider to tell nose from tail, so a board rolling backwards
  * (fakie) reads as the chevrons pointing back at where it's going. Sits just above the grip and follows the dish and kick. */
 function noseMark() {
-  const half = DECK.length / 2, cap = sheet(half - 0.75, half - 0.06, 8, -0.034, 0.1, 1);
-  const pos: number[] = [], idx: number[] = [], SEG = 6;
+  const half = DECK.length / 2, cap = sheet(half - 0.75, half - 0.06, 4, -0.034, 0.1, 1);
+  const pos: number[] = [], idx: number[] = [], SEG = 4;
   const at = (x: number, z: number) => [x, TOP + 0.034 + lift(z) + CONCAVE * (x / (DECK.width / 2)) ** 2, z] as const;
   for (const z0 of [0.65, 1.15]) for (const side of [-1, 1]) { // each chevron: two arms from the tip back to the edges
     const base = pos.length / 3;

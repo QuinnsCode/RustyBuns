@@ -1,5 +1,6 @@
 // The Blender board (blender/fingerboard.py) at each polygon budget: it takes the built board's place at the
 // same size, so the sim's collision deck still matches what you see, and the parts picker still paints it.
+// The budget counts the model; the grip tape's nose mark is drawn over it either way.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
 import { BOARD_BUDGETS, DECK, dressBoard, fingerboard } from "../src/models.ts";
@@ -20,7 +21,7 @@ test.each([...BOARD_BUDGETS])("the %s board sits where the built one does, withi
   expect(box.min.y).toBeCloseTo(0, 2); // on its wheels
   expect(box.getSize(new THREE.Vector3()).z).toBeCloseTo(DECK.length, 1);
   for (const k of ["x", "y", "z"] as const) expect(Math.abs(box.max[k] - built.max[k])).toBeLessThan(0.05);
-  expect(triangles(board)).toBeLessThanOrEqual({ hi: 30000, mid: 6000, low: 1500 }[budget]!);
+  expect(triangles(board) - triangles(board.userData.nose)).toBeLessThanOrEqual({ hi: 30000, mid: 6000, low: 1500 }[budget]!);
 
   board.userData.paint({ deck: "teal", trucks: "gold", wheels: "red", grip: "grey" });
   const colours = new Set<number>();
