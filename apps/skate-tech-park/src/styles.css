@@ -1,7 +1,7 @@
 :root { --ink: #1b1b1f; --paper: #fbf7f0; --hot: #e2572b; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #f2c49a; font: 14px/1.3 system-ui, sans-serif; color: var(--ink); }
-#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#view { touch-action: none; position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 .hud { position: fixed; top: 12px; left: 12px; right: 12px; display: flex; gap: 12px; align-items: center; pointer-events: none; }
 .hud > * { pointer-events: auto; }
 .score { background: var(--paper); border: 2px solid var(--ink); border-radius: 8px; padding: 4px 12px; display: flex; gap: 10px; align-items: baseline; box-shadow: 3px 3px 0 var(--ink); }
@@ -39,3 +39,12 @@ kbd { display: inline-block; min-width: 1.6em; padding: 0 4px; margin: 0 2px; bo
 .room { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); font: 600 13px system-ui, sans-serif; color: #fff; text-shadow: 0 1px 3px #000a; pointer-events: none; }
 .ghost-tag { position: fixed; left: 0; top: 0; padding: 1px 8px; border-radius: 9px; font: 600 12px system-ui, sans-serif; color: #111; background: var(--tint); pointer-events: none; white-space: nowrap; }
 #chase { top: calc(22% + 88px); }
+.touch[hidden] { display: none; }
+.touch { position: fixed; inset: auto 0 0 0; height: 0; pointer-events: none; }
+.touch > * { pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; }
+.stick { position: fixed; left: max(20px, env(safe-area-inset-left)); bottom: max(20px, env(safe-area-inset-bottom)); width: 128px; height: 128px; border-radius: 50%; border: 2px solid var(--ink); background: rgba(251, 247, 240, 0.55); }
+.nub { position: absolute; left: 36px; top: 36px; width: 56px; height: 56px; border-radius: 50%; border: 2px solid var(--ink); background: var(--paper); box-shadow: 2px 2px 0 var(--ink); }
+.hold { position: fixed; right: max(16px, env(safe-area-inset-right)); display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; border: 2px solid var(--ink); background: var(--paper); color: var(--ink); box-shadow: 3px 3px 0 var(--ink); padding: 0; }
+.hold.boost { bottom: max(20px, env(safe-area-inset-bottom)); }
+.hold.manual { bottom: calc(max(20px, env(safe-area-inset-bottom)) + 68px); }
+.hold[data-on] { background: var(--hot); color: #fff; }
