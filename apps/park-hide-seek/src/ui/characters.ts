@@ -1,11 +1,13 @@
-// Campers and rangers, built from primitives so there's nothing to download.
-// A camper wears their Look; a ranger wears the flat hat and carries a flashlight.
-// Rounded parts on real joints (hips, knees, shoulders, elbows), so walking and crouching bend
-// like a person. Geometry and materials are shared between characters, so a full park stays cheap.
+// Campers and rangers. A camper wears their Look; a ranger wears the flat hat and carries a flashlight.
+// Parts hang on real joints (hips, knees, shoulders, elbows, head), so walking and crouching bend like a
+// person. The parts are modelled in Blender (blender/characters.py -> public/models/characters.glb) and
+// recoloured per Look; until that file has loaded (or if it can't), the same joints wear parts built from
+// primitives, and every character made meanwhile changes into the modelled parts once it arrives.
 
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { PANTS, SHIRTS, SKINS, type Look } from "../hunt/game.ts";
 import type { Role } from "../hunt/sim.ts";
 import { rng } from "../geo.ts";
@@ -230,7 +232,7 @@ export function makeCharacter(role: Role, look: Look, name: string): Character {
     legs: legs as [THREE.Group, THREE.Group], knees: knees as [THREE.Group, THREE.Group],
     arms: arms as [THREE.Group, THREE.Group], elbows: elbows as [THREE.Group, THREE.Group],
   };
-  bake(root);
+  wear(ch, () => outfit(ranger, look), () => colors(ranger, look));
   pose(ch, 0, false, 0, 0);
   return ch;
 }
@@ -345,6 +347,7 @@ function hat(kind: Look["hat"] | "ranger", look: Look): THREE.Object3D[] {
 }
 
 export function nameTag(text: string, color: string): THREE.Sprite {
+  if (typeof document === "undefined") return new THREE.Sprite(); // tests: no canvas to draw on
   const c = document.createElement("canvas");
   c.width = 256; c.height = 64;
   const g = c.getContext("2d")!;
@@ -487,9 +490,170 @@ export function makeBigfoot(): Character {
   tag.visible = false;
   root.add(tag);
   root.scale.setScalar(1.4);
-  return {
+  const ch: Character = {
     root, head, body, upper, light: null, beam: null, tag, role: "camper", phase: 0, crouchT: 1,
     legs: legs as [THREE.Group, THREE.Group], knees: knees as [THREE.Group, THREE.Group],
     arms: arms as [THREE.Group, THREE.Group], elbows: elbows as [THREE.Group, THREE.Group],
+  };
+  wear(ch, () => BIGFOOT, () => ({ fur: "#4a3423", furDark: "#33231a", hide: "#2a1e17", pupil: "#1b1712" }), false);
+  return ch;
+}
+
+// ---- The modelled parts -------------------------------------------------------------------------------------
+
+/** A part from blender/characters.py, split by material slot ("shirt", "skin", ...). Its origin is its joint. */
+type Part = { slot: string; geo: THREE.BufferGeometry }[];
+type Joint = "upper" | "head" | "legs0" | "legs1" | "knees0" | "knees1" | "arms0" | "arms1" | "elbows0" | "elbows1";
+type Outfit = Record<Joint, string[]>;
+
+let parts: Map<string, Part> | null = null;
+/** Characters still in primitives, to change once the parts arrive. */
+const waiting = new Set<WeakRef<THREE.Object3D>>();
+let loading: Promise<boolean> | null = null;
+
+/** Resolves true once characters wear the modelled parts, false if the model couldn't load. */
+export function charactersReady(): Promise<boolean> {
+  if (!loading) {
+    loading = typeof document === "undefined" ? Promise.resolve(false)
+      : new GLTFLoader().loadAsync(new URL("models/characters.glb", document.baseURI).href).then(
+        (gltf) => { useCharacterModel(gltf.scene); return true; },
+        (e) => { console.warn("character model", e); return false; });
+  }
+  return loading;
+}
+if (typeof document !== "undefined") void charactersReady();
+
+/** Takes the parts out of a loaded characters.glb and dresses every character made so far. */
+export function useCharacterModel(scene: THREE.Object3D) {
+  const found = new Map<string, Part>();
+  scene.updateMatrixWorld(true);
+  for (const node of scene.children) {
+    const part: Part = [];
+    node.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", m.geometry.attributes.position.clone());
+      geo.setAttribute("normal", m.geometry.attributes.normal.clone());
+      if (m.geometry.index) geo.setIndex(m.geometry.index.clone());
+      geo.applyMatrix4(m.matrixWorld);
+      part.push({ slot: (m.material as THREE.Material).name, geo });
+    });
+    found.set(node.name, part);
+  }
+  parts = found;
+  for (const ref of waiting) ref.deref()?.userData.redress?.();
+  waiting.clear();
+}
+
+/** Puts the modelled parts on now if they're here, else bakes the primitives and waits for them. */
+function wear(ch: Character, fit: () => Outfit, cols: () => Record<string, string>, primitives = true) {
+  const redress = () => dress(ch, fit(), cols());
+  if (parts) return redress();
+  if (primitives) bake(ch.root);
+  ch.root.userData.redress = redress;
+  waiting.add(new WeakRef(ch.root));
+}
+
+/** Swaps whatever hangs on each joint for the outfit's parts; lights, beam, tag and child joints stay. */
+function dress(ch: Character, fit: Outfit, cols: Record<string, string>) {
+  const joints: Record<Joint, THREE.Object3D> = {
+    upper: ch.upper, head: ch.head, legs0: ch.legs[0], legs1: ch.legs[1], knees0: ch.knees[0], knees1: ch.knees[1],
+    arms0: ch.arms[0], arms1: ch.arms[1], elbows0: ch.elbows[0], elbows1: ch.elbows[1],
+  };
+  const keep = new Set<THREE.Object3D>([ch.tag, ...Object.values(joints)]);
+  if (ch.light) keep.add(ch.light).add(ch.light.target);
+  if (ch.beam) keep.add(ch.beam);
+  for (const [j, names] of Object.entries(fit) as [Joint, string[]][]) {
+    const g = joints[j];
+    for (const o of [...g.children]) if (!keep.has(o)) g.remove(o);
+    g.add(...assemble(names, cols));
+  }
+  delete ch.root.userData.redress;
+}
+
+const assembled = new Map<string, THREE.BufferGeometry>();
+/**
+ * One joint's parts as one vertex-coloured mesh (one draw call per joint), plus a mesh each for the shiny or
+ * glowing bits. Merged geometry is shared by every character dressed the same way.
+ */
+function assemble(names: string[], cols: Record<string, string>): THREE.Mesh[] {
+  const plain: { geo: THREE.BufferGeometry; color: string }[] = [], out: THREE.Mesh[] = [];
+  for (const name of names) {
+    for (const { slot, geo } of parts?.get(name) ?? []) {
+      const special = SPECIAL[slot];
+      if (special) out.push(new THREE.Mesh(geo, special()));
+      else plain.push({ geo, color: cols[slot] ?? "#ff00ff" });
+    }
+  }
+  if (!plain.length) return out;
+  const key = names.join() + "|" + plain.map((p) => p.color).join();
+  let merged = assembled.get(key);
+  if (!merged) {
+    const geos = plain.map(({ geo, color }) => {
+      const g = geo.clone();
+      const c = new THREE.Color(color);
+      const n = g.attributes.position.count;
+      const col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) col.set([c.r, c.g, c.b], i * 3);
+      g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+      return g;
+    });
+    merged = mergeGeometries(geos.some((g) => !g.index) ? geos.map((g) => (g.index ? g.toNonIndexed() : g)) : geos)!;
+    assembled.set(key, merged);
+  }
+  const m = new THREE.Mesh(merged, baked);
+  m.castShadow = true;
+  return [m, ...out];
+}
+
+const SPECIAL: Record<string, () => THREE.Material> = {
+  badge: () => mat("#e8c547", { metalness: 0.7, roughness: 0.3 }),
+  buckle: () => mat("#c9a646", { metalness: 0.7, roughness: 0.35 }),
+  stripe: () => mat("#d8ff3a", { emissive: "#556600" }),
+  torch: () => mat("#2a2a2a", { metalness: 0.5, roughness: 0.4 }),
+  lens: () => mat("#fff8e0", { emissive: "#fff2c4", emissiveIntensity: 1.5 }),
+  bfEye: () => mat("#f2c14e", { emissive: "#5a3a00" }),
+};
+
+/** Which parts hang on which joint: the same table blender/characters.py renders its previews from. */
+function outfit(ranger: boolean, look: Look): Outfit {
+  const top = ranger ? "rangerHat" : look.hat;
+  const fit: Outfit = {
+    legs0: ["thigh"], legs1: ["thigh"], knees0: ["shin", "boot"], knees1: ["shin", "boot"],
+    upper: ["pelvis", ranger ? "rangerTorso" : "torso"], arms0: ["upperArm"], arms1: ["upperArm"],
+    elbows0: ["forearm", "handL"], elbows1: ["forearm", "handR"],
+    head: ["head", top === "none" ? "hair" : "hairHat", ...(top === "none" ? [] : [top])],
+  };
+  if (ranger) {
+    fit.upper.push("buckle", "badge", "stripe");
+    fit.arms0.push("patchL");
+    fit.arms1.push("patchR");
+    fit.elbows1.push("flashlight", "lens");
+  } else if (look.pack) fit.upper.push("pack");
+  return fit;
+}
+
+const BIGFOOT: Outfit = {
+  legs0: ["bfThigh"], legs1: ["bfThigh"], knees0: ["bfShin"], knees1: ["bfShin"], upper: ["bfTorso"],
+  arms0: ["bfUpperArm"], arms1: ["bfUpperArm"], elbows0: ["bfForearmL"], elbows1: ["bfForearmR"], head: ["bfHead"],
+};
+
+/** Each material slot's colour for a Look. */
+function colors(ranger: boolean, look: Look): Record<string, string> {
+  const shirt = ranger ? RANGER_SHIRT : SHIRTS[look.shirt];
+  const pants = ranger ? RANGER_PANTS : PANTS[look.pants];
+  const skin = SKINS[look.skin];
+  const hair = HAIR[(look.skin * 3 + look.shirt) % HAIR.length];
+  const hat = ranger ? "#8a6a3e" : SHIRTS[(look.shirt + 5) % SHIRTS.length];
+  const pack = SHIRTS[(look.shirt + 3) % SHIRTS.length];
+  const boot = ranger ? "#2c2018" : "#5a3b24";
+  return {
+    shirt, shirtDark: shade(shirt, 0.62), zip: shade(shirt, 0.45), pocket: shade(shirt, 0.85),
+    pants, pantsDark: shade(pants, 0.75), skin, skinDark: shade(skin, 0.9),
+    boot, bootDark: shade(boot, 0.7), sole: "#1d1611",
+    hair, brow: shade(hair, 0.8), hat, hatDark: shade(hat, 0.7), pom: "#f2efe6", band: "#3b2a1a",
+    pack, packDark: shade(pack, 0.6), strap: shade(pack, 0.45), roll: "#5a6b3a",
+    eyeWhite: "#f7f4ee", pupil: "#1b1712", mouth: "#6e2f26", belt: "#3b2a1a", patch: "#5b6b3a",
   };
 }

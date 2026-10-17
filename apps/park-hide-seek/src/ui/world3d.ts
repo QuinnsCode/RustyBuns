@@ -1,22 +1,30 @@
 // The 3D park. Game coordinates (x east, y north, h up) map to three.js as
 // X = x, Y = h, Z = -y. Yaw 0 faces north; a model facing +Z turns by PI - yaw.
+//
+// The look is an illustrated poster of the park: a gradient sky, flat warm
+// colours, and ridge after ridge fading into the haze towards the horizon, so the
+// fog colour is the sky's horizon colour and far things melt into it.
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { hashString, rng } from "../geo.ts";
-import { HUNT, circleAt, type ActorView, type Circle, type Cue, type Look, type View } from "../hunt/game.ts";
+import { HUNT, circleAt, type ActorView, type Circle, type Cue, type Disguise, type DisguiseKind, type Look, type View } from "../hunt/game.ts";
 import { clearSky, type Sky, type TimeOfDay } from "../hunt/sim.ts";
 import { zoneById, type Prop, type PropKind, type Zone } from "../zones/zone.ts";
 import { makeBigfoot, makeCharacter, nameTag, pose, type Character } from "./characters.ts";
 
 export const toThree = (x: number, y: number, h: number) => new THREE.Vector3(x, h, -y);
 
-interface Remote { ch: Character; x: number; y: number; yaw: number; pitch: number; tx: number; ty: number; tyaw: number; crouch: boolean; seenAt: number; speed: number; light: boolean; caught: boolean }
+/** A prop-hunt camper is drawn as the prop they've turned into. */
+interface PropBody { prop: THREE.Mesh | null; propKey: string }
+interface Remote extends PropBody { ch: Character; x: number; y: number; yaw: number; pitch: number; tx: number; ty: number; tyaw: number; crouch: boolean; seenAt: number; speed: number; light: boolean; caught: boolean; disguise: Disguise | null }
 
-const SKY: Record<TimeOfDay, { sky: string; fog: string; near: number; far: number; hemi: [string, string, number]; sun: [string, number]; elev: number }> = {
-  day: { sky: "#9cc7e8", fog: "#c9dceb", near: 60, far: 420, hemi: ["#dfefff", "#4c5a33", 0.9], sun: ["#fff3dc", 2.4], elev: 0.9 },
-  dusk: { sky: "#e79a6b", fog: "#b98a78", near: 30, far: 230, hemi: ["#ffcfae", "#2d2a2a", 0.55], sun: ["#ffb177", 1.3], elev: 0.12 },
-  night: { sky: "#070b16", fog: "#05070d", near: 8, far: 95, hemi: ["#5d6f9e", "#0c0d12", 0.32], sun: ["#9fb4ff", 0.22], elev: 0.7 },
+// top: the sky overhead; sky: at the horizon, which is also the fog, so far ridges melt into it.
+// ridge: the nearest silhouette ridge (the farther ones fade towards the horizon).
+const SKY: Record<TimeOfDay, { top: string; sky: string; fog: string; ridge: string; near: number; far: number; hemi: [string, string, number]; sun: [string, number]; elev: number; exposure: number }> = {
+  day: { top: "#6fa6bd", sky: "#f1dcb0", fog: "#e2cfa4", ridge: "#6e7f6a", near: 60, far: 420, hemi: ["#fff1d6", "#5b6236", 0.95], sun: ["#ffe6bb", 2.5], elev: 0.9, exposure: 1.05 },
+  dusk: { top: "#2f2549", sky: "#f2803f", fog: "#cf6a45", ridge: "#5a2c3a", near: 30, far: 240, hemi: ["#ffb48a", "#3a2430", 0.62], sun: ["#ff9a52", 1.6], elev: 0.1, exposure: 1.15 },
+  night: { top: "#02050d", sky: "#13284a", fog: "#0c1a30", ridge: "#08101f", near: 8, far: 95, hemi: ["#4f6ea8", "#0a0c14", 0.34], sun: ["#9fc0ff", 0.25], elev: 0.7, exposure: 1 },
 };
 /** What cloud and fog wash the sky towards. */
 const GREY: Record<TimeOfDay, { cloud: string; mist: string }> = {
@@ -36,6 +44,42 @@ const ERUPTS = 14;
 /** How far bushes sit into the ground. */
 const BUSH_SINK = 0.1;
 
+// Bushes, boulders and logs: placed by the thousand in a zone, or one at a time as a prop-hunt camper.
+const PROP_GEO: Record<DisguiseKind, () => THREE.BufferGeometry> = {
+  bush: () => new THREE.IcosahedronGeometry(1, 1).scale(1, 0.75, 1).translate(0, 0.55, 0),
+  boulder: () => new THREE.DodecahedronGeometry(1, 0).scale(1, 0.75, 1.1),
+  log: () => new THREE.CylinderGeometry(0.35, 0.4, 4, 9).rotateZ(Math.PI / 2).translate(0, 0.3, 0),
+};
+/** How far each sits into the ground. */
+const PROP_SINK: Record<DisguiseKind, number> = { bush: BUSH_SINK, boulder: -0.1, log: 0 };
+/** A disguise's colour: the middle of what that kind is tinted in a zone. */
+const PROP_COLOR: Record<DisguiseKind, THREE.Color> = {
+  bush: new THREE.Color().setHSL(0.24, 0.42, 0.28),
+  boulder: new THREE.Color().setHSL(0.07, 0.08, 0.5),
+  log: new THREE.Color("#6b432a"),
+};
+
+/** The sky: a gradient from the horizon up, with a glow round the sun. */
+function skyDome(): THREE.Mesh {
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false, fog: false,
+    uniforms: { top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, sun: { value: new THREE.Color() }, sunDir: { value: new THREE.Vector3(0, 1, 0) }, glow: { value: 0 } },
+    vertexShader: "varying vec3 vDir; void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+    fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 sun; uniform vec3 sunDir; uniform float glow; varying vec3 vDir;
+      void main() {
+        float h = max(vDir.y, 0.0);
+        vec3 c = mix(horizon, top, pow(h, 0.55));
+        float s = max(dot(normalize(vDir), normalize(sunDir)), 0.0);
+        c += sun * glow * (pow(s, 12.0) * 0.6 + pow(s, 400.0) * 1.5);
+        gl_FragColor = vec4(c, 1.0);
+        #include <colorspace_fragment>
+      }`,
+  });
+  const m = new THREE.Mesh(new THREE.SphereGeometry(1000, 32, 16), mat);
+  m.renderOrder = -10;
+  m.frustumCulled = false;
+  return m;
+}
 export class World3D {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -64,6 +108,12 @@ export class World3D {
   private fog = new THREE.Fog("#000", 1, 2);
   private clock = new THREE.Clock();
   private plumes: Plume[] = [];
+  private dome = skyDome();
+  /** The valley floor, then silhouette ridges round the zone, nearest first; their colours follow the sky. */
+  private ridges: THREE.Mesh[] = [];
+  private propMats: Record<DisguiseKind, THREE.Material>;
+  private propGeos: Record<DisguiseKind, THREE.BufferGeometry>;
+  private meProp: PropBody = { prop: null, propKey: "" };
 
   constructor(readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
@@ -91,7 +141,28 @@ export class World3D {
     this.wall = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 128, 1, true),
       new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false }));
     this.wall.renderOrder = 5;
-    this.scene.add(this.wall);
+    this.scene.add(this.wall, this.dome);
+    this.propGeos = { bush: PROP_GEO.bush(), boulder: PROP_GEO.boulder(), log: PROP_GEO.log() };
+    const pm = (k: DisguiseKind, flat: boolean) => new THREE.MeshStandardMaterial({ color: PROP_COLOR[k], roughness: 0.9, flatShading: flat });
+    this.propMats = { bush: this.swaying(pm("bush", true), 0.14), boulder: pm("boulder", true), log: pm("log", false) };
+  }
+
+  // Bend the top of a mesh in the wind, more the higher up (k per local metre).
+  private swaying<M extends THREE.Material>(mat: M, k: number): M {
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uTime = this.sway.uTime; sh.uniforms.uWind = this.sway.uWind;
+      sh.vertexShader = "uniform float uTime;\nuniform float uWind;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
+        #ifdef USE_INSTANCING
+          vec3 swayAt = instanceMatrix[3].xyz;
+        #else
+          vec3 swayAt = modelMatrix[3].xyz;
+        #endif
+        float sw = uWind * ${k.toFixed(4)} * max(0.0, position.y);
+        transformed.x += sin(uTime * (1.2 + uWind) + swayAt.x * 0.37 + swayAt.z * 0.21) * sw;
+        transformed.z += cos(uTime * (0.9 + uWind) + swayAt.x * 0.19 - swayAt.z * 0.31) * sw * 0.6;`);
+    };
+    mat.customProgramCacheKey = () => `sway${k}`;
+    return mat;
   }
 
   resize() {
@@ -115,7 +186,41 @@ export class World3D {
     this.plumes = [];
     for (const r of this.remotes.values()) this.scene.remove(r.ch.root);
     this.remotes.clear();
-    this.zoneGroup.add(this.terrain(z), ...this.props(z));
+    this.zoneGroup.add(this.terrain(z), ...this.props(z), ...(this.ridges = this.makeRidges(z)));
+    this.skyKey = "";
+  }
+
+  /**
+   * Three rings of ridgeline beyond the zone's edge, each a flat silhouette a
+   * shade closer to the horizon than the one in front: the far valley walls.
+   */
+  private makeRidges(z: Zone): THREE.Mesh[] {
+    let lo = Infinity, hi = 0;
+    for (const h of z.h) { lo = Math.min(lo, h); hi = Math.max(hi, h); }
+    const r = rng(hashString(z.data.id + ":ridges"));
+    // The valley floor out to the far ridges, under the zone's square of terrain.
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(z.R * 3.6, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: "#000", fog: false }));
+    floor.position.y = lo - 0.5;
+    floor.renderOrder = -6;
+    return [floor, ...[1.5, 2.3, 3.5].map((k, layer) => {
+      const n = 160, pos = new Float32Array((n + 1) * 2 * 3), idx: number[] = [];
+      const phase = [r() * 6, r() * 6, r() * 6], base = lo - 40;
+      for (let i = 0; i <= n; i++) {
+        const a = (i / n) * Math.PI * 2, R = z.R * k;
+        // A few octaves of ridge, taller the farther out, so each layer peeks over the last.
+        const bumps = 0.5 + 0.3 * Math.sin(a * 3 + phase[0]) + 0.15 * Math.sin(a * 7 + phase[1]) + 0.08 * Math.sin(a * 17 + phase[2]) + 0.04 * Math.sin(a * 41 + layer);
+        const top = hi * (0.45 + 0.35 * layer) + 25 + bumps * (40 + 60 * layer);
+        pos.set([Math.cos(a) * R, top, Math.sin(a) * R, Math.cos(a) * R, base, Math.sin(a) * R], i * 6);
+        if (i < n) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      geo.setIndex(idx);
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: "#000", fog: false, side: THREE.DoubleSide }));
+      m.frustumCulled = false;
+      m.renderOrder = -5 + layer;
+      return m;
+    })];
   }
 
   private terrain(z: Zone): THREE.Mesh {
@@ -125,7 +230,8 @@ export class World3D {
     const pos = geo.attributes.position as THREE.BufferAttribute;
     const colors = new Float32Array(pos.count * 3);
     const r = rng(hashString(z.data.id + ":ground"));
-    const grass = new THREE.Color("#6d8a4a"), forest = new THREE.Color("#4d6634"), dirt = new THREE.Color("#8b7a55"), rock = new THREE.Color("#8f8d86"), pale = new THREE.Color("#b9b6ac");
+    // Warm and flat: ochre meadows, olive under the trees, rust-brown dirt, pinkish granite.
+    const grass = new THREE.Color("#a39a4c"), forest = new THREE.Color("#5e6a34"), dirt = new THREE.Color("#a5784a"), rock = new THREE.Color("#9d8d86"), pale = new THREE.Color("#d1c3b2");
     // Pale sinter round geysers and hot pools, where nothing grows.
     const sinter = new THREE.Color("#d9d3c2"), hot = z.props.filter((p) => p.kind === "geyser" || p.kind === "pool");
     const c = new THREE.Color();
@@ -170,23 +276,7 @@ export class World3D {
       mesh.castShadow = true; mesh.receiveShadow = true;
       out.push(mesh);
     };
-    // Bend the top of a mesh in the wind, more the higher up (k per local metre).
-    const swaying = <M extends THREE.Material>(mat: M, k: number): M => {
-      mat.onBeforeCompile = (sh) => {
-        sh.uniforms.uTime = this.sway.uTime; sh.uniforms.uWind = this.sway.uWind;
-        sh.vertexShader = "uniform float uTime;\nuniform float uWind;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
-          #ifdef USE_INSTANCING
-            vec3 swayAt = instanceMatrix[3].xyz;
-          #else
-            vec3 swayAt = vec3(0.0);
-          #endif
-          float sw = uWind * ${k.toFixed(4)} * max(0.0, position.y);
-          transformed.x += sin(uTime * (1.2 + uWind) + swayAt.x * 0.37 + swayAt.z * 0.21) * sw;
-          transformed.z += cos(uTime * (0.9 + uWind) + swayAt.x * 0.19 - swayAt.z * 0.31) * sw * 0.6;`);
-      };
-      mat.customProgramCacheKey = () => `sway${k}`;
-      return mat;
-    };
+    const swaying = <M extends THREE.Material>(mat: M, k: number) => this.swaying(mat, k);
     const r = rng(hashString(z.data.id + ":tint"));
     // Pines: a trunk and three stacked cones.
     const pineTrunk = new THREE.CylinderGeometry(0.18, 0.3, 4, 7).translate(0, 2, 0);
@@ -196,8 +286,9 @@ export class World3D {
       new THREE.ConeGeometry(1.4, 3.8, 9).translate(0, 10.2, 0),
     ])!;
     const pines = by.get("pine") ?? [];
-    place(pineTrunk, m("#5b4029"), pines, (p) => [p.size, p.size, p.size], undefined, 0.2);
-    place(pineTop, swaying(m("#ffffff"), 0.025), pines, (p) => [p.size, p.size, p.size], (_, c) => c.setHSL(0.3 + r() * 0.06, 0.35 + r() * 0.15, 0.17 + r() * 0.06));
+    place(pineTrunk, m("#6b3f2a"), pines, (p) => [p.size, p.size, p.size], undefined, 0.2);
+    // Deep teal-green pines, flat-shaded so each tier reads as one shape.
+    place(pineTop, swaying(m("#ffffff", { flatShading: true }), 0.025), pines, (p) => [p.size, p.size, p.size], (_, c) => c.setHSL(0.38 + r() * 0.06, 0.28 + r() * 0.12, 0.16 + r() * 0.06));
     // Sequoias: huge red trunks, crowns high up.
     const seqs = by.get("sequoia") ?? [];
     place(new THREE.CylinderGeometry(1.1, 2.0, 30, 12).translate(0, 15, 0), m("#8a4a2b"), seqs, (p) => [p.size, p.size, p.size], undefined, 0.5);
@@ -207,11 +298,11 @@ export class World3D {
       new THREE.DodecahedronGeometry(3).scale(1, 0.8, 1).translate(-1.2, 26, -1),
     ])!, swaying(m("#ffffff", { flatShading: true }), 0.01), seqs, (p) => [p.size, p.size, p.size], (_, c) => c.setHSL(0.28, 0.4, 0.2 + r() * 0.05));
     // Bushes: soft lumps you can crouch in.
-    place(new THREE.IcosahedronGeometry(1, 1).scale(1, 0.75, 1).translate(0, 0.55, 0), swaying(m("#ffffff", { flatShading: true }), 0.14), by.get("bush") ?? [],
-      (p) => [p.size, p.size, p.size], (_, c) => c.setHSL(0.24 + r() * 0.08, 0.45, 0.22 + r() * 0.08), BUSH_SINK);
-    place(new THREE.DodecahedronGeometry(1, 0).scale(1, 0.75, 1.1), m("#8b8a84", { flatShading: true }), by.get("boulder") ?? [],
-      (p) => [p.size, p.size, p.size], (_, c) => c.setHSL(0.1, 0.05, 0.42 + r() * 0.15), -0.1);
-    place(new THREE.CylinderGeometry(0.35, 0.4, 4, 9).rotateZ(Math.PI / 2).translate(0, 0.3, 0), m("#6b4a2e"), by.get("log") ?? [], (p) => [p.size, p.size, p.size]);
+    place(PROP_GEO.bush(), swaying(m("#ffffff", { flatShading: true }), 0.14), by.get("bush") ?? [],
+      (p) => [p.size, p.size, p.size], (_, c) => c.copy(PROP_COLOR.bush).offsetHSL((r() - 0.5) * 0.08, 0, (r() - 0.5) * 0.08), PROP_SINK.bush);
+    place(PROP_GEO.boulder(), m("#8b8a84", { flatShading: true }), by.get("boulder") ?? [],
+      (p) => [p.size, p.size, p.size], (_, c) => c.copy(PROP_COLOR.boulder).offsetHSL(0, 0, (r() - 0.5) * 0.15), PROP_SINK.boulder);
+    place(PROP_GEO.log(), m("#ffffff"), by.get("log") ?? [], (p) => [p.size, p.size, p.size], (_, c) => c.copy(PROP_COLOR.log), PROP_SINK.log);
     place(new THREE.ConeGeometry(1.6, 2.1, 4).translate(0, 1.05, 0), m("#ffffff"), by.get("tent") ?? [], () => [1, 1, 1],
       (_, c) => c.set(["#e0702b", "#2b78c2", "#e3b52b", "#3f8f4a"][Math.floor(r() * 4)]));
     place(mergeGeometries([new THREE.BoxGeometry(1.8, 0.08, 0.8).translate(0, 0.75, 0), new THREE.BoxGeometry(1.8, 0.06, 0.3).translate(0, 0.45, 0.55), new THREE.BoxGeometry(1.8, 0.06, 0.3).translate(0, 0.45, -0.55), new THREE.BoxGeometry(0.1, 0.75, 1.4).translate(0.7, 0.37, 0), new THREE.BoxGeometry(0.1, 0.75, 1.4).translate(-0.7, 0.37, 0)])!,
@@ -319,17 +410,26 @@ export class World3D {
     this.skyKey = key;
     const tod = this.tod = sky.tod;
     const s = SKY[tod], grey = GREY[tod];
-    const skyCol = new THREE.Color(s.sky), fogCol = new THREE.Color(s.fog);
+    const skyCol = new THREE.Color(s.sky), fogCol = new THREE.Color(s.fog), topCol = new THREE.Color(s.top);
     let hemi = s.hemi[2], sun = s.sun[1], near = s.near, far = s.far;
     if (sky.overcast || sky.rain > 0.2) {
-      skyCol.lerp(new THREE.Color(grey.cloud), 0.7); fogCol.lerp(new THREE.Color(grey.cloud), 0.6);
+      skyCol.lerp(new THREE.Color(grey.cloud), 0.7); fogCol.lerp(new THREE.Color(grey.cloud), 0.6); topCol.lerp(new THREE.Color(grey.cloud), 0.8);
       hemi *= 0.75; sun *= 0.35;
     }
     if (sky.fog > 0) {
       fogCol.lerp(new THREE.Color(grey.mist), sky.fog);
-      skyCol.lerp(fogCol, sky.fog);
+      skyCol.lerp(fogCol, sky.fog); topCol.lerp(fogCol, sky.fog);
       near *= 1 - 0.85 * sky.fog; far *= 1 - 0.8 * sky.fog;
     }
+    const u = (this.dome.material as THREE.ShaderMaterial).uniforms;
+    u.top.value.copy(topCol); u.horizon.value.copy(fogCol);
+    u.sun.value.set(s.sun[0]);
+    u.glow.value = tod === "night" || sky.overcast ? 0.15 : tod === "dusk" ? 1 : 0.5;
+    u.sunDir.value.set(-60, 80 * s.elev + 20, 40).normalize();
+    this.renderer.toneMappingExposure = s.exposure;
+    // Each ridge a step from the nearest one's colour towards the haze.
+    const ridge = new THREE.Color(s.ridge).lerp(fogCol, sky.fog * 0.7);
+    this.ridges.forEach((m, i) => (m.material as THREE.MeshBasicMaterial).color.copy(ridge).lerp(fogCol, i ? 0.25 + 0.27 * (i - 1) : 0.2));
     this.fogNear = near; this.fogFar = far; this.hemiBase = hemi;
     this.scene.background = skyCol;
     this.fog.color.copy(fogCol);
@@ -421,12 +521,12 @@ export class World3D {
         const p = v.players.find((q) => q.id === a.id);
         const ch = makeCharacter(a.role, p?.look ?? look, p?.name ?? "?");
         this.scene.add(ch.root);
-        rem = { ch, x: a.x, y: a.y, yaw: a.yaw, pitch: a.pitch, tx: a.x, ty: a.y, tyaw: a.yaw, crouch: a.crouch, seenAt: now, speed: 0, light: a.light, caught: false };
+        rem = { ch, x: a.x, y: a.y, yaw: a.yaw, pitch: a.pitch, tx: a.x, ty: a.y, tyaw: a.yaw, crouch: a.crouch, seenAt: now, speed: 0, light: a.light, caught: false, disguise: null, prop: null, propKey: "" };
         this.remotes.set(a.id, rem);
       }
-      rem.tx = a.x; rem.ty = a.y; rem.tyaw = a.yaw; rem.pitch = a.pitch; rem.crouch = a.crouch; rem.light = a.light; rem.caught = a.caughtAt !== null;
+      rem.tx = a.x; rem.ty = a.y; rem.tyaw = a.yaw; rem.pitch = a.pitch; rem.crouch = a.crouch; rem.light = a.light; rem.caught = a.caughtAt !== null; rem.disguise = a.disguise;
     }
-    for (const [id, rem] of this.remotes) if (!live.has(id)) { this.scene.remove(rem.ch.root); this.remotes.delete(id); }
+    for (const [id, rem] of this.remotes) if (!live.has(id)) { this.scene.remove(rem.ch.root); this.dress(rem, null, z, 0, 0); this.remotes.delete(id); }
     for (const rem of this.remotes.values()) {
       const k = Math.min(1, dt * 10);
       const ox = rem.x, oy = rem.y;
@@ -434,6 +534,7 @@ export class World3D {
       rem.yaw += Math.atan2(Math.sin(rem.tyaw - rem.yaw), Math.cos(rem.tyaw - rem.yaw)) * k;
       rem.speed = Math.hypot(rem.x - ox, rem.y - oy) / Math.max(dt, 1e-3);
       this.placeChar(rem.ch, z, rem.x, rem.y, rem.yaw, rem.pitch, rem.crouch, rem.speed, rem.light, dt, rem.caught);
+      rem.ch.root.visible = !this.dress(rem, rem.disguise, z, rem.x, rem.y);
     }
 
     // Bigfoot, when you can see him: crouched in his bush, standing tall once he's found.
@@ -466,14 +567,38 @@ export class World3D {
       // Your own flashlight works in first person too.
       if (this.me.light) { this.me.light.castShadow = true; this.me.light.shadow.mapSize.set(1024, 1024); }
       if (this.me.beam && !third) this.me.beam.visible = false;
-    }
+      // As a prop you see the prop in third person; in first person it would wrap the camera.
+      const d = r?.you?.disguise ?? null;
+      this.dress(this.meProp, third ? d : null, z, me.x, me.y);
+      if (d) this.me.root.visible = false;
+      else this.me.root.visible = true;
+    } else this.dress(this.meProp, null, z, 0, 0);
 
     this.cues(v, z, now);
     this.circle(r?.circle ?? null, z, now, v.phase === "hunt");
     if (me) this.place(z, me, cam);
     else if (follow) this.follow(z, follow.x, follow.y, follow.yaw);
     this.fall(dt);
+    this.dome.position.copy(this.camera.position);
     this.renderer.render(this.scene, this.camera);
+  }
+
+  /** Draw a disguised camper as their prop (true), or take the prop away (false). */
+  private dress(b: PropBody, d: Disguise | null, z: Zone, x: number, y: number): boolean {
+    const key = d ? `${d.kind}/${d.size}/${d.rot}` : "";
+    if (key !== b.propKey) {
+      if (b.prop) { this.scene.remove(b.prop); b.prop = null; }
+      if (d) {
+        b.prop = new THREE.Mesh(this.propGeos[d.kind], this.propMats[d.kind]);
+        b.prop.castShadow = b.prop.receiveShadow = true;
+        b.prop.scale.setScalar(d.size);
+        b.prop.rotation.y = d.rot;
+        this.scene.add(b.prop);
+      }
+      b.propKey = key;
+    }
+    if (b.prop && d) b.prop.position.copy(toThree(x, y, z.height(x, y) - PROP_SINK[d.kind]));
+    return !!d;
   }
 
   /** Where a remote actor is drawn right now (smoothed), for the spectator camera. */
@@ -606,6 +731,7 @@ export class World3D {
     this.camera.lookAt(target);
     this.sun.position.set(-80, 150, 60);
     this.sun.target.position.set(0, 0, 0);
+    this.dome.position.copy(this.camera.position);
     this.renderer.render(this.scene, this.camera);
     this.hemi.intensity = this.hemiBase;
   }
