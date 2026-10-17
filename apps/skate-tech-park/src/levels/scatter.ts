@@ -3,7 +3,7 @@
 // flat enough and nothing else is in the way. Hand-placed sites win; scatter fills what they leave empty.
 import { mulberry32 } from "@rustybuns/util";
 import type { Bounds, Spawn } from "../level.ts";
-import { bowl, box, fallenLog, flatBar, funbox, handrail, hip, hubba, kicker, ledge, outcrop, type At, type Part, quarterPipe, rollers, spine, stairSet, tabletop } from "./pieces.ts";
+import { bowl, box, fallenLog, flatBar, funbox, handrail, hip, hubba, kicker, ledge, outcrop, type At, type Part, quarterPipe, rockFace, rollers, spine, stairSet, tabletop } from "./pieces.ts";
 
 export type Scatter = {
   /** Same seed, same park. */
@@ -16,7 +16,7 @@ export type Scatter = {
   slope?: number;
 };
 
-export const SCATTER: Required<Scatter> = { seed: 1, cell: 28, fill: 0.9, slope: 0.25 };
+export const SCATTER: Required<Scatter> = { seed: 1, cell: 22, fill: 0.92, slope: 0.25 };
 
 type Make = (at: At, r: () => number) => Part;
 const pick = <T>(r: () => number, xs: T[]) => xs[Math.floor(r() * xs.length)]!;
@@ -38,6 +38,8 @@ const KIT: Make[] = [
   (at, r) => tabletop(at, { w: between(r, 6, 8), d: between(r, 20, 26), h: between(r, 1.2, 1.8) }),
   (at, r) => rollers(at, { w: 8, n: Math.round(between(r, 3, 5)), period: 7, h: between(r, 0.5, 0.8) }),
   (at, r) => outcrop(at, { r: between(r, 2, 3.5), h: between(r, 1.2, 2.2) }),
+  (at, r) => rockFace(at, { w: between(r, 7, 11), d: between(r, 4, 6), h: between(r, 2.6, 4) }),
+  (at, r) => outcrop(at, { r: between(r, 1.6, 2.6), h: between(r, 1, 1.8) }),
   (at, r) => fallenLog(at, { len: between(r, 10, 16), r: between(r, 0.6, 0.9) }),
   (at, r) => bowl(at, { w: between(r, 24, 34), d: between(r, 18, 24), h: between(r, 2, 3) }),
 ];
@@ -70,14 +72,15 @@ export type ScatterWorld = {
 export function scatter(world: ScatterWorld, o: Scatter = {}): Part[] {
   const { seed, cell, fill, slope } = { ...SCATTER, ...o }, r = mulberry32(seed), b = world.bounds;
   const taken = [...world.taken, ...(world.lanes ?? []).flatMap(lane), ...world.spawns.map((s) => ({ x: s.x, z: s.z, r: 14 }))], made: Part[] = [];
-  for (let x0 = b.minX; x0 + cell <= b.maxX; x0 += cell) for (let z0 = b.minZ; z0 + cell <= b.maxZ; z0 += cell) {
+  // Two sweeps, the second half a cell over, so what the first leaves between its parts gets one too.
+  for (const off of [0, cell / 2]) for (let x0 = b.minX + off; x0 + cell <= b.maxX; x0 += cell) for (let z0 = b.minZ + off; z0 + cell <= b.maxZ; z0 += cell) {
     const make = pick(r, KIT), at = { x: x0 + cell * between(r, 0.25, 0.75), z: z0 + cell * between(r, 0.25, 0.75), yaw: (Math.PI / 4) * Math.floor(r() * 8) };
     const part = make(at, r), roll = r(), fp = footprint(part), reach = Math.max(...fp.map((c) => Math.hypot(c.x - at.x, c.z - at.z) + c.r));
     if (roll > fill) continue;
     if (at.x - reach < b.minX + 4 || at.x + reach > b.maxX - 4 || at.z - reach < b.minZ + 4 || at.z + reach > b.maxZ - 4) continue;
     if (Math.hypot(at.x, at.z) + reach > world.R * 0.95) continue;
     if (!level(world.ground, at, reach, slope)) continue;
-    if (fp.some((c) => taken.some((t) => Math.hypot(c.x - t.x, c.z - t.z) < c.r + t.r + 5))) continue;
+    if (fp.some((c) => taken.some((t) => Math.hypot(c.x - t.x, c.z - t.z) < c.r + t.r + 2))) continue;
     made.push(part);
     taken.push(...fp);
   }

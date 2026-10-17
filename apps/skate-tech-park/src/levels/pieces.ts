@@ -37,7 +37,7 @@ export const shape = (kind: PieceKind, name: string, at: At, w: number, d: numbe
   height: (lx, lz) => (Math.abs(lx) > w / 2 || Math.abs(lz) > d / 2 ? 0 : f(lx, lz)),
   ...(look ? { look } : {}),
 });
-const RAMP: Look = { kind: "ramp" }, BLOCK: Look = { kind: "block" };
+const RAMP: Look = { kind: "ramp" }, BLOCK: Look = { kind: "block" }, ROCK: Look = { kind: "rock" }, POOL: Look = { kind: "bowl" }, LOG: Look = { kind: "log" };
 
 export const bar = (kind: RailKind, at: At, lx1: number, lz1: number, lx2: number, lz2: number, y: number, y2?: number): Rail =>
   ({ kind, a: toWorld(at, lx1, lz1), b: toWorld(at, lx2, lz2), y, ...(y2 === undefined ? {} : { y2 }) });
@@ -104,7 +104,7 @@ export const bowl = (at: At, o: { w?: number; d?: number; h?: number; deck?: num
   };
   const x = w / 2 - deck, z = d / 2 - deck;
   return part({
-    pieces: [shape("ramp", name, at, w, d, f)],
+    pieces: [shape("ramp", name, at, w, d, f, POOL)],
     rails: [bar("coping", at, -x, -z, x, -z, h), bar("coping", at, x, -z, x, z, h), bar("coping", at, x, z, -x, z, h), bar("coping", at, -x, z, -x, -z, h)],
   });
 };
@@ -212,7 +212,7 @@ export const rollers = (at: At, o: { w?: number; n?: number; period?: number; h?
 export const fallenLog = (at: At, o: { len?: number; r?: number; name?: string } = {}): Part => {
   const { name = "fallen log" } = o, len = (o.len ?? 14) * L, r = (o.r ?? 0.7) * K;
   return part({
-    pieces: [shape("ramp", name, at, r * 2, len, (lx, lz) => r * Math.sqrt(Math.max(0, 1 - (lx / r) ** 2)) * clamp01((len / 2 - Math.abs(lz)) / 0.8))],
+    pieces: [shape("ramp", name, at, r * 2, len, (lx, lz) => r * Math.sqrt(Math.max(0, 1 - (lx / r) ** 2)) * clamp01((len / 2 - Math.abs(lz)) / 0.8), LOG)],
     rails: [bar("ledge", at, 0, -len / 2 + 0.8, 0, len / 2 - 0.8, r)],
   });
 };
@@ -220,7 +220,21 @@ export const fallenLog = (at: At, o: { len?: number; r?: number; name?: string }
 /** A round granite boulder to hop onto or round: a dome, steep at its foot. */
 export const outcrop = (at: At, o: { r?: number; h?: number; name?: string } = {}): Part => {
   const { name = "boulder" } = o, r = (o.r ?? 3) * K, h = (o.h ?? 2) * K;
-  return part({ pieces: [shape("ramp", name, at, r * 2, r * 2, (lx, lz) => h * Math.sqrt(Math.max(0, 1 - (Math.hypot(lx, lz) / r) ** 2)))] });
+  return part({ pieces: [shape("ramp", name, at, r * 2, r * 2, (lx, lz) => h * Math.sqrt(Math.max(0, 1 - (Math.hypot(lx, lz) / r) ** 2)), ROCK)] });
+};
+
+/**
+ * A granite buttress that turns to vertical: the slab rises along local +z on a quarter-circle curve to a sheer lip, in three
+ * tiers across (the tallest in the middle, a step down to each side), each with its own coping to grind, and a rock shelf
+ * behind. The talus under a real wall, built where the park has none.
+ */
+export const rockFace = (at: At, o: { w?: number; d?: number; h?: number; deck?: number; name?: string } = {}): Part => {
+  const { name = "rock face" } = o, w = (o.w ?? 10) * K, d = (o.d ?? 5) * L, h = (o.h ?? 3.5) * K, deck = (o.deck ?? 3) * L, D = d + deck, half = w / 2;
+  const tiers = [{ to: 0.34, h }, { to: 0.68, h: h * 0.68 }, { to: 1, h: h * 0.42 }]; // out to this fraction of the half-width
+  const tier = (u: number) => tiers.reduce((y, t, i) => y + (i ? (t.h - tiers[i - 1]!.h) * smooth((u - tiers[i - 1]!.to) / 0.05 + 0.5) : t.h), 0);
+  const f = (lx: number, lz: number) => { const t = lz + D / 2, H = tier(Math.abs(lx) / half); return t < d ? H * arc(t / d) : H; };
+  const z = d - D / 2, edge = (a: number, b: number, hh: number): Rail[] => [bar("coping", at, a * half, z, b * half, z, hh), bar("coping", at, -a * half, z, -b * half, z, hh)];
+  return part({ pieces: [shape("ramp", name, at, w, D, f, ROCK)], rails: [bar("coping", at, -0.28 * half, z, 0.28 * half, z, h), ...edge(0.4, 0.62, tiers[1]!.h), ...edge(0.74, 0.95, tiers[2]!.h)] });
 };
 
 /** A geyser cone: a mound rising to a rim with a crater sunk in the middle, to ride round the lip of. */

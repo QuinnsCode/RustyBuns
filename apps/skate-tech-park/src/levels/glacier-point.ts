@@ -2,7 +2,7 @@
 // away in a cliff, and the long gap over that drop is the mega ramp. A funbox and a bar on the plateau
 // keep the board busy on the way.
 import { type ParkSpec } from "./park.ts";
-import { outcrop, flatBar, funbox, kicker, tabletop, skyRail } from "./pieces.ts";
+import { bowl, outcrop, flatBar, rockFace, funbox, kicker, tabletop, skyRail } from "./pieces.ts";
 
 const E = Math.PI / 2, N = Math.PI;
 
@@ -19,6 +19,7 @@ export const glacierPoint: ParkSpec = {
     { parts: [flatBar({ x: -60, z: 20, yaw: N }, { len: 16 }), funbox({ x: -40, z: 20, yaw: N }, { w: 10, d: 24, h: 1.2, ramp: 7 })] },
     { parts: [kicker({ x: -40, z: -48, yaw: N }, { w: 12, d: 16, h: 3.5, curve: 1.5, name: "overlook lip" })] },
     { parts: [kicker({ x: 90, z: 40, yaw: E }, { w: 10, d: 8, h: 2, name: "slope hop" })] },
+    { parts: [bowl({ x: 170, z: -150 }, { w: 30, d: 22, h: 2.4, deck: 3, name: "point bowl" }), rockFace({ x: 190, z: -110, yaw: Math.PI }, { w: 10, d: 5, h: 3.4 })] },
     // not possible: a bar on stilts that climbs away from the ground
     { parts: [skyRail({ x: -40, z: 95, yaw: E }, { len: 100, y: 1.6, y2: 16.6 })] },
   ],

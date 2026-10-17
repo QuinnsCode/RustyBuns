@@ -9,29 +9,35 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Piece } from "../level.ts";
 
-export const KIT_MODULES = ["ramp", "step", "block"] as const;
+export const KIT_MODULES = ["ramp", "step", "block", "rock", "bowl", "log"] as const;
 export const KIT_BUDGETS = ["hi", "mid", "low"] as const;
 export type KitModule = (typeof KIT_MODULES)[number];
 export type KitBudget = (typeof KIT_BUDGETS)[number];
 
 /**
- * A module as flat arrays: unit positions, baked colours, and which vertices are the steel ground plate, with
- * the riding surface's colour for a plate that has risen off the ground.
+ * A module as flat arrays: unit positions, baked colours, and which vertices are the steel ground plate (1) or a pool's
+ * shaded surface (2), with the riding surface's colour for a plate that has risen off the ground.
  */
 export type Module = { pos: Float32Array; color: Float32Array; plate: Uint8Array; surface: number[]; index: number[] };
 export type Kit = Record<KitModule, Module>;
 
-/** Metres the edge band (x and z) and the top band (y) keep, per module. */
+/**
+ * Metres the edge band (x and z) and the top band (y) keep, per module. A negative edge is a fraction of the half-span
+ * instead, so -0.2 is a plain linear fit: a rock has no trim to keep, and its roughness would stretch if it did.
+ */
 const MARGIN: Record<KitModule, { edge: number; trim: number }> = {
   ramp: { edge: 0.4, trim: 0.15 }, step: { edge: 0.12, trim: 0.05 }, block: { edge: 0.2, trim: 0.08 },
+  rock: { edge: -0.2, trim: 0.3 }, bowl: { edge: 0.3, trim: 0.1 }, log: { edge: 0.8, trim: 0.12 },
 };
 const BAND = 0.4, TOP_BAND = 0.9;
+/** A pool's surface is shaded by how far up the wall it is (0 the floor, 1 the deck): a darker floor and a band of tile near the lip. */
+const POOL_FLOOR = new THREE.Color(0x8f8a82), POOL_TILE = new THREE.Color(0x2e7f86);
 /** A ramp's ground plate shows steel only where the ramp is lower than this; higher up it is riding surface. */
 const PLATE_UNDER = 0.4;
 
 /** A unit coordinate (-0.5..0.5, or past it) to metres from the middle of a span `half` wide, the band kept at `edge`. */
 export function fitAcross(u: number, half: number, edge: number) {
-  const e = Math.min(edge, half * 0.4), a = Math.abs(u), inner = half - e;
+  const e = edge < 0 ? -edge * half : Math.min(edge, half * 0.4), a = Math.abs(u), inner = half - e;
   return Math.sign(u) * (a <= BAND ? (a / BAND) * inner : inner + ((a - BAND) / (0.5 - BAND)) * e);
 }
 
@@ -57,7 +63,7 @@ export async function parseModule(glb: ArrayBuffer | string): Promise<Module> {
     for (let i = 0; i < p.count; i++) {
       pos.push(p.getX(i), p.getY(i), p.getZ(i));
       color.push(mat.color.r, mat.color.g, mat.color.b);
-      plate.push(mat.name === "plate" ? 1 : 0);
+      plate.push(mat.name === "plate" ? 1 : mat.name === "pool" ? 2 : 0);
     }
     const idx = g.index ? Array.from(g.index.array) : Array.from({ length: p.count }, (_, i) => i);
     for (const i of idx) index.push(first + i);
@@ -77,13 +83,24 @@ export async function loadKit(budget: KitBudget, read: (file: string) => Promise
  */
 function fit(m: Module, kind: KitModule, w: number, z0: number, z1: number, base: number, top: (lx: number, lz: number) => number) {
   const { edge, trim } = MARGIN[kind], n = m.pos.length / 3, mid = (z0 + z1) / 2, halfD = (z1 - z0) / 2;
-  const pos = new Float32Array(n * 3), col = new Float32Array(m.color);
+  const pos = new Float32Array(n * 3), col = new Float32Array(m.color), hs = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const lx = fitAcross(m.pos[i * 3]!, w / 2, edge), lz = mid + fitAcross(m.pos[i * 3 + 2]!, halfD, edge);
     // Sample the surface inside the footprint, so a rib standing past the side still reads the edge's height.
-    const h = top(THREE.MathUtils.clamp(lx, -w / 2 + 1e-3, w / 2 - 1e-3), THREE.MathUtils.clamp(lz, z0 + 1e-3, z1 - 1e-3));
+    const h = hs[i] = top(THREE.MathUtils.clamp(lx, -w / 2 + 1e-3, w / 2 - 1e-3), THREE.MathUtils.clamp(lz, z0 + 1e-3, z1 - 1e-3));
     pos.set([lx, fitUp(m.pos[i * 3 + 1]!, base, h, trim), lz], i * 3);
-    if (m.plate[i] && h - base > PLATE_UNDER) col.set(m.surface, i * 3);
+    if (m.plate[i] === 1 && h - base > PLATE_UNDER) col.set(m.surface, i * 3);
+  }
+  if (kind === "bowl") {
+    const peak = Math.max(0.1, hs.reduce((a, h) => Math.max(a, h), base) - base), c = new THREE.Color();
+    for (let i = 0; i < n; i++) {
+      if (m.plate[i] !== 2) continue;
+      const r = (hs[i]! - base) / peak;
+      c.fromArray(col, i * 3);
+      if (r < 0.04) c.lerp(POOL_FLOOR, 0.9);
+      else if (r > 0.55 && r < 0.7) c.lerp(POOL_TILE, 0.85);
+      c.toArray(col, i * 3);
+    }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
