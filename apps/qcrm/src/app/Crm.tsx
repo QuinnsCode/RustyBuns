@@ -17,7 +17,7 @@ const api = async (path: string, init: RequestInit = {}) => {
   if (!res.ok) throw new Error((body as any)?.error ?? body?.message ?? `${res.status}`);
   return body as any;
 };
-const rowsOf = (r: any): Row[] => (Array.isArray(r) ? r : r?.items ?? r?.rows ?? r?.results ?? r?.contacts ?? r?.deals ?? []);
+const rowsOf = (r: any): Row[] => (Array.isArray(r) ? r : r?.items ?? r?.rows ?? r?.results ?? (r && typeof r === "object" ? Object.values(r).find(Array.isArray) as Row[] | undefined : undefined) ?? []);
 const nextOf = (r: any): string | null => r?.next ?? r?.cursor ?? null;
 const money = (cents: unknown, cur = "USD") => typeof cents === "number" ? new Intl.NumberFormat(undefined, { style: "currency", currency: cur, maximumFractionDigits: 0 }).format(cents / 100) : "";
 const when = (v: unknown) => (typeof v === "number" || typeof v === "string") && v ? new Date(v).toLocaleDateString() : "";
@@ -52,7 +52,7 @@ export function Crm() {
 
   const load = useCallback(async () => {
     try { const m = await api("/me"); setMe(m); if (!org && m.orgs?.[0]) setOrg(m.orgs[0].id); }
-    catch (e) { setMe({ user: null, orgs: [] }); if (String((e as Error).message) !== "401") setErr((e as Error).message); }
+    catch { setMe({ user: null, orgs: [] }); }
   }, [org]);
 
   useEffect(() => {
@@ -61,7 +61,10 @@ export function Crm() {
     if (q.get("demo") === "1") {
       setDemo(true);
       // The demo frame: ask for a throwaway org, then carry on as that account.
-      api("/me").then((m) => (m?.user ? m : Promise.reject(new Error("no session")))).catch(() => api("/demo", { method: "POST" })).then(load).catch((e) => setErr(e.message));
+      api("/me").then((m) => (m?.user && m.orgs?.some((o: Row) => o.plan === "demo") ? m : Promise.reject(new Error("no demo"))))
+        .catch(() => api("/demo", { method: "POST" }))
+        .then(() => api("/me")).then((m) => { setMe(m); setOrg(m.orgs.find((o: Row) => o.plan === "demo")?.id ?? m.orgs[0]?.id ?? null); })
+        .catch((e) => setErr(e.message));
     } else void load();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -78,7 +81,7 @@ export function Crm() {
         <div className="org"><span className="tag">Org</span><b title={current.id}>{current.name}</b><span>{role} · <code>{current.id.slice(0, 12)}…</code></span></div>
         {items.map(([v, label, icon]) => <button key={v} type="button" className={"nav-item" + (view === v ? " on" : "")} onClick={() => setView(v)} data-tour={`nav-${v}`}><Icon name={icon} /> {label}</button>)}
         {me.orgs.length > 1 && <select value={current.id} onChange={(e) => setOrg(e.target.value)} aria-label="Switch org">{me.orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select>}
-        <button type="button" className="nav-item" onClick={async () => { await api("/auth/sign-out", { method: "POST" }); location.href = "/"; }}><Icon name="log-out" /> Sign out</button>
+        <button type="button" className="nav-item" onClick={async () => { await api("/auth/sign-out", { method: "POST", body: "{}" }); location.href = "/"; }}><Icon name="log-out" /> Sign out</button>
       </aside>
       <section className="pane">
         {err && <p className="err">{err}</p>}
@@ -359,7 +362,7 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
   const base = `/orgs/${org.id}`;
   const refresh = useCallback(() => {
     api(`${base}/members`).then((r) => setMembers(rowsOf(r))).catch(() => {});
-    if (can("owner")) { api(`${base}/webhooks`).then((r) => setHooks(rowsOf(r))).catch(() => {}); api(`${base}/keys`).then((r) => setKeys(rowsOf(r))).catch(() => {}); }
+    if (can("owner")) { api(`${base}/webhooks`).then((r) => setHooks(r.webhooks ?? rowsOf(r))).catch(() => {}); api(`${base}/keys`).then((r) => setKeys(rowsOf(r))).catch(() => {}); }
     if (can("manager")) api(`${base}/audit`).then((r) => setAudit(rowsOf(r))).catch(() => {});
   }, [base, can]);
   useEffect(refresh, [refresh]);
@@ -390,7 +393,7 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
         <form className="row" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); act(async () => { const r = await api(`${base}/keys`, { method: "POST", body: JSON.stringify({ name: f.get("name") }) }); setFresh(r.secret ?? r.key ?? ""); }); e.currentTarget.reset(); }}>
           <input name="name" placeholder="Key name, e.g. Claude on my laptop" required className="grow" /><button className="primary" type="submit"><Icon name="key-round" /> New key</button>
         </form>
-        {fresh && <p className="ok">Copy it now; it is shown once.</p>}
+        {fresh && <label><span className="ok">Your new key. Copy it now; it is shown once.</span><input readOnly value={fresh} onFocus={(e) => e.currentTarget.select()} className="mono" /></label>}
         <pre className="code">{mcp}</pre>
       </div>}
       {can("owner") && <div className="card" data-tour="webhooks">
@@ -413,7 +416,7 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
         <h3><Icon name="download" /> Your data</h3>
         <div className="row">
           {can("owner") && <a className="btn" href={`/api${base}/export`} download={`qcrm-${org.id}.json`}><Icon name="download" /> Export every row</a>}
-          {can("owner") && <button type="button" onClick={() => { const n = Number(prompt("Seed how many contacts? (up to 100000)", "1000")); if (n > 0) act(() => api(`${base}/seed`, { method: "POST", body: JSON.stringify({ n }) }).then(reload)); }}><Icon name="flask-conical" /> Seed sample data</button>}
+          {can("owner") && <button type="button" onClick={() => { const n = Number(prompt("Seed how many contacts? (up to 100000)", "1000")); if (n > 0) act(async () => { await api(`${base}/seed`, { method: "POST", body: JSON.stringify({ n }) }); await reload(); setMsg(`Seeded ${n.toLocaleString()} contacts. Open Contacts to see them.`); }); }}><Icon name="flask-conical" /> Seed sample data</button>}
           <span className="grow" />
           <button type="button" style={{ color: "var(--bad)" }} onClick={() => { const c = prompt(`Delete your account, the orgs you own and all their rows? Type your email to confirm.`); if (c) act(() => api(`/me?confirm=${encodeURIComponent(c)}`, { method: "DELETE" }).then(() => { location.href = "/"; })); }}>Delete my account</button>
         </div>
