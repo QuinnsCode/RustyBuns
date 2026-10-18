@@ -49,3 +49,8 @@ kbd { display: inline-block; min-width: 1.6em; padding: 0 4px; margin: 0 2px; bo
 .hold.boost { bottom: max(20px, env(safe-area-inset-bottom)); }
 .hold.manual { bottom: calc(max(20px, env(safe-area-inset-bottom)) + 68px); }
 .hold[data-on] { background: var(--hot); color: #fff; }
+.pause { position: fixed; inset: 0; z-index: 15; display: grid; place-items: center; background: rgba(27, 27, 31, 0.5); }
+.pause[hidden] { display: none; }
+.pause-panel { display: grid; gap: 10px; width: min(320px, 90vw); padding: 18px; background: var(--paper); border: 2px solid var(--ink); border-radius: 8px; box-shadow: 4px 4px 0 var(--ink); }
+.pause-panel h2 { margin: 0 0 4px; font: 400 32px/1 var(--title-font); text-align: center; }
+.pause-btn { position: fixed; bottom: 12px; right: 12px; z-index: 5; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; color: var(--ink); background: var(--paper); border: 2px solid var(--ink); border-radius: 8px; box-shadow: 2px 2px 0 var(--ink); cursor: pointer; }
