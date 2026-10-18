@@ -132,3 +132,31 @@ test("the API answers a store's wrapper in a small shape, and refuses bad or hea
   expect((await call("x".repeat(MAX_BODY + 1))).status).toBe(413);
   expect((await call("", "GET")).status).toBe(405);
 });
+
+test("the shipper link: 501 until linked, then rates cheapest first through the Worker", async () => {
+  const post = (env: object, body: unknown) => handle(new Request("http://x/api/rates", { method: "POST", body: JSON.stringify(body) }), env);
+  const ask = { box: { l: 8, w: 6, h: 4 }, from: "10001", to: "94103" };
+  expect((await post({}, ask)).status).toBe(501);
+
+  const seen: { auth: string | null; body: unknown }[] = [];
+  const aggregator = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      seen.push({ auth: req.headers.get("authorization"), body: await req.json() });
+      return Response.json({ rates: [
+        { carrier: "B", service: "Ground", amount: "9.5", currency: "USD", days: 5 },
+        { carrier: "A", service: "Air", amount: 20, currency: "USD" },
+        { carrier: "C", service: "", amount: 1, currency: "USD" }, // badly filled: dropped
+      ] });
+    },
+  });
+  try {
+    const env = { RATES_URL: `http://localhost:${aggregator.port}`, RATES_KEY: "k" };
+    const ok = await post(env, { ...ask, weight: 2 });
+    expect(ok.status).toBe(200);
+    expect((await ok.json() as { rates: { carrier: string }[] }).rates.map((r) => r.carrier)).toEqual(["B", "A"]);
+    expect(seen[0]).toEqual({ auth: "Bearer k", body: { parcel: { l: 8, w: 6, h: 4, unit: "in", weight: 2 }, from: "10001", to: "94103" } });
+    expect((await post(env, { box: { l: 0, w: 1, h: 1 }, from: "a", to: "b" })).status).toBe(400);
+  } finally { aggregator.stop(true); }
+  expect((await post({ RATES_URL: "http://localhost:1" }, ask)).status).toBe(502);
+});
