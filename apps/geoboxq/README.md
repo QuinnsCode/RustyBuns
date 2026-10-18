@@ -27,7 +27,7 @@ bun run deploy                  # secrets through varlock (.env.schema)
 | Animation | `src/viz.ts`, `src/main.ts` | The packed box as an isometric scene, filled a piece at a time with the holders as glass: play, loop or scrub, in five themes (Kraft, Neon, Mint, Ocean, Candy). |
 | API | `src/worker.ts` | `POST /api/solve` with `{ boxes, items, pad? }`, answered with the smallest box that fits and the nesting as a tree. Bodies over 256 KB, over 400 pieces or over 30 boxes get a 4xx. For a Shopify wrapper to call. |
 | Stress | `scripts/stress.ts` | Local load and error-storm run against `src/serve.ts`: req/s, latency percentiles, status counts, memory; exits 1 on any 5xx. On a laptop: about 4,800 mixed req/s and 22,000 storm req/s, no 5xx. |
-| Import | `src/model.ts` | Paste or drop a CSV (comma, tab or semicolon): name, length, width, height, quantity; a header line is read by name; `10 x 8 x 4` in one cell works. |
+| Import | `src/model.ts` | Paste or drop a CSV (comma, tab or semicolon): name, length, width, height, quantity; a header line is read by name. Reads a Shopify product export (variant lines take the product title; size columns or metafields) and a carrier box chart (`11-5/8" x 8 x 3`, `Medium Box 1: 13 x 11 x 3.5`). |
 | Sealed engine | `src/seal.ts`, `src/worker.ts` | The wasm ships AES-256-GCM encrypted (`bun run seal` with `ENGINE_KEY` from varlock, then build with `VITE_GEOBOXQ_SEALED=1`) and opens with the key [artstewengine](../artstewengine/README.md) hands a paid `GEOBOXQ_LICENSE`. |
 
 A shipping box's size is its inside; a product's is its outside. A product that opens has room inside (half an inch of wall assumed, editable). Padding is kept between neighbours, not against walls.

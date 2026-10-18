@@ -59,7 +59,7 @@ test("pasting rows: headers, sizes in one cell, tabs and rows with no size", () 
     { name: "Candle", l: 3, w: 3, h: 3.5, qty: 2, holds: false, inner: null },
   ]);
   const odd = parseRows("Mailer\t10 x 8 x 4\nGhost\t\nCrate 12x12x6\n");
-  expect(odd.rows.map((r) => [r.name, r.l, r.w, r.h])).toEqual([["Mailer", 10, 8, 4], ["", 12, 12, 6]]);
+  expect(odd.rows.map((r) => [r.name, r.l, r.w, r.h])).toEqual([["Mailer", 10, 8, 4], ["Crate", 12, 12, 6]]);
   expect(odd.skipped).toBe(1);
   // A box row with a blank size is kept out of the engine's list, and out of the verdict's names.
   const s = { ...example(), boxes: [{ name: "half", l: 0, w: 3, h: 3, qty: 1, holds: false, inner: null }, ...example().boxes] };

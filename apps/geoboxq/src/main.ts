@@ -76,7 +76,7 @@ function list(id: "boxes" | "items") {
     </div>
     <div data-slot="import" hidden>
       <textarea placeholder="${items ? "Gift tin, 7, 5, 4, 1\nCandle, 3, 3, 3.5, 2" : "Small, 8, 6, 4\nMedium, 12x9x6"}" aria-label="Paste rows"></textarea>
-      <p class="hint">Paste rows or drop a CSV: name, length, width, height${items ? ", quantity" : ""}. A header line works, and so does 10x8x4 in one cell.</p>
+      <p class="hint">Paste rows, a Shopify product export or a carrier box chart, or drop a CSV: name, length, width, height${items ? ", quantity" : ""}. A header line works, and so does 10x8x4 in one cell.</p>
       <button data-act="import">${ICON.check} Add these</button>
     </div>`;
 }
