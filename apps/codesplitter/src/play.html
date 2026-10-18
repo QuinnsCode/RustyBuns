@@ -158,7 +158,7 @@ if (location.hash.startsWith("#c/")) {
     <button data-mode="removed">smash the removed<small id="diff-name">pick a diff in a file's History</small></button>
   </div>
   <ul id="lobby-players"></ul>
-  <div class="row"><button class="primary" id="start">start now</button><button id="ready">ready</button><span class="muted" id="lobby-msg"></span></div>
+  <div class="row"><button class="primary" id="start">start now</button><button id="ready">ready</button><button id="invite" title="copy a link that drops others into this room, in this mode">invite others</button><span class="muted" id="lobby-msg"></span></div>
   <div class="keys touch-only">left stick: walk (push it all the way to run) · drag anywhere else: look · <b>swat</b>: tap to swat, hold to press the README into a line · <b>jump</b><br>scraps on the floor split again when you swat them · walk into a doorway to go into that folder</div>
   <div class="keys mouse-only"><kbd>WASD</kbd> move · <kbd>mouse</kbd> look · <kbd>click</kbd> swat · <kbd>hold</kbd> press the README into a line · <kbd>space</kbd> jump · <kbd>shift</kbd> run<br>no mouse? <kbd>↑</kbd><kbd>↓</kbd> walk · <kbd>←</kbd><kbd>→</kbd> turn · <kbd>PgUp</kbd><kbd>PgDn</kbd> look · <kbd>space</kbd> swat (hold to press) · <kbd>J</kbd> jump<br>let go of a press in the orange sweet spot to split the line clean · low birds go for your legs<br>walk into a doorway to go into that folder · club other players too</div>
   <p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p>
@@ -1423,6 +1423,19 @@ $("#modes").addEventListener("click", (e) => {
   if (!b || b.disabled) return;
   if (ws) return send({ t: "mode", mode: b.dataset.mode, diff });
   mode = b.dataset.mode; renderModes();
+});
+/** A link into this very room: the same game, the mode picked, the folder you stand in (or the diff being smashed). */
+const inviteLink = () => {
+  const q = new URLSearchParams();
+  if (mode === "removed" && diff) { q.set("path", diff.path); q.set("from", diff.from); q.set("to", diff.to); }
+  else if (mode === "wreck") q.set("mode", "wreck");
+  if (here?.path) q.set("room", here.path);
+  return `${location.origin}/play.html#${room}${q.size ? `?${q}` : ""}`;
+};
+$("#invite").addEventListener("click", async () => {
+  const url = inviteLink();
+  try { await navigator.clipboard.writeText(url); $("#lobby-msg").textContent = "Invite link copied. Send it to anyone."; }
+  catch { window.prompt("Copy this invite link", url); }
 });
 $("#start").addEventListener("click", () => { sound.init(); ws ? send({ t: "start" }) : begin(Math.floor(Math.random() * 2 ** 31), Date.now() + 3000); });
 $("#ready").addEventListener("click", () => { sound.init(); send({ t: "ready" }); });
