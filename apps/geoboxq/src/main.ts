@@ -1,5 +1,6 @@
 // The page: two lists (boxes, products), one answer. Everything is computed here, in the browser, and kept in
 // localStorage; nothing about your boxes leaves the machine.
+import { learn, suggest, type Memory } from "./baxter.ts";
 import { solve, type Solution } from "./engine.ts";
 import { blank, example, group, innerOf, parseRows, toInput, usableBoxes, verdict, wallOf, type Group, type Row, type State } from "./model.ts";
 import { parts, sceneSvg, shapeSvg, THEMES } from "./viz.ts";
@@ -30,6 +31,15 @@ function load(): State {
 let state = load();
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* not kept */ } };
 
+// Baxter the Boxer is off until ticked; what he learned stays in this browser, under its own key.
+const BAXTER = "geoboxq:baxter";
+function loadBaxter(): Memory {
+  try { const m = JSON.parse(localStorage.getItem(BAXTER) ?? "null"); if (m && Array.isArray(m.seen)) return { on: !!m.on, seen: m.seen }; } catch { /* start fresh */ }
+  return { on: false, seen: [] };
+}
+let baxter = loadBaxter();
+const saveBaxter = () => { try { localStorage.setItem(BAXTER, JSON.stringify(baxter)); } catch { /* not kept */ } };
+
 const app = document.getElementById("app")!;
 app.innerHTML = `
   <h1>${ICON.package} GeoBoxQ</h1>
@@ -37,6 +47,7 @@ app.innerHTML = `
   <section id="boxes"></section>
   <section id="items"></section>
   <section class="options" id="options"></section>
+  <section id="baxter"></section>
   <section id="answer" aria-live="polite"></section>`;
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -86,6 +97,7 @@ function options() {
     <label>Unit <select data-k="unit"><option ${state.unit === "in" ? "selected" : ""}>in</option><option ${state.unit === "cm" ? "selected" : ""}>cm</option></select></label>
     <label>Padding <input type="number" min="0" step="any" data-k="pad" value="${state.pad}"></label>
     <label><input type="checkbox" data-k="nest" ${state.nest ? "checked" : ""}> Box in a box</label>
+    <label title="Baxter the Boxer learns the shapes you pack and suggests box sizes. Kept in this browser only."><input type="checkbox" data-k="baxter" ${baxter.on ? "checked" : ""}> Baxter</label>
     <button data-act="example">${ICON.sparkles} Example</button>`;
 }
 
@@ -94,11 +106,30 @@ function tree(gs: Group[], top = false): string {
   return `<ul${top ? ' class="tree"' : ""}>${gs.map((g) => `<li>${esc(g.name)}${g.count > 1 ? ` &times; ${g.count}` : ""} <span class="dim">${g.size.map(num).join(" &times; ")}</span>${tree(g.inside)}</li>`).join("")}</ul>`;
 }
 
+/** Called when a value is settled (a field committed, rows imported, Baxter ticked), not on every keystroke. */
+function teach() {
+  baxter = learn(baxter, state.items, state.unit);
+  if (baxter.on) saveBaxter();
+}
+function baxterPanel() {
+  const el = $("baxter");
+  if (!baxter.on) { el.innerHTML = ""; return; }
+  const tips = suggest(baxter.seen, state.boxes, state.unit);
+  el.innerHTML = `
+    <h2>Baxter the Boxer</h2>
+    <p class="hint">${baxter.seen.length} product shape${baxter.seen.length === 1 ? "" : "s"} learned, kept in this browser.
+      ${tips.length ? "Boxes that would suit them:" : baxter.seen.length ? "Your boxes already suit what he has seen." : "Pack something and he will have an opinion."}</p>
+    ${tips.map((t, i) => `<div class="row"><span>${esc(t.name)} <span class="dim">${t.size.map(num).join(" &times; ")} ${state.unit}, for ${t.covers} product${t.covers === 1 ? "" : "s"}</span></span>
+      <button data-act="baxter-add" data-i="${i}">${ICON.plus} Add box</button></div>`).join("")}
+    ${baxter.seen.length ? `<div class="tools"><button data-act="baxter-forget">${ICON.trash} Forget</button></div>` : ""}`;
+}
+
 let ticket = 0;
 async function answer() {
   const mine = ++ticket;
   const el = $("answer");
   const input = toInput(state);
+  baxterPanel();
   if (!input.boxes.length) { el.innerHTML = `<p class="msg">Add a shipping box with a size.</p>`; return; }
   if (!input.items.length) { el.innerHTML = `<p class="msg">Add a product with a size.</p>`; return; }
   let sol: Solution;
@@ -188,6 +219,7 @@ app.addEventListener("input", (e) => {
     if (!r.inner) innerOf(r, state.unit).forEach((v, n) => { const f = entry.querySelector<HTMLInputElement>(`[data-k=in${n}]`); if (f) f.value = String(v); });
     entry.querySelector(".thumb")!.innerHTML = thumbOf(r, sect === "items");
   } else if (k === "unit") { state.unit = t.value as State["unit"]; render(); save(); return; }
+  else if (k === "baxter") { baxter.on = t.checked; teach(); saveBaxter(); void answer(); return; }
   else if (k === "nest") state.nest = t.checked;
   else if (k === "pad") state[k] = Math.max(0, Number(t.value) || 0);
   later();
@@ -197,6 +229,7 @@ async function takeRows(sect: "boxes" | "items", text: string) {
   const { rows, skipped } = parseRows(text);
   if (sect === "boxes") rows.forEach((r) => (r.holds = false));
   state[sect].push(...rows);
+  if (sect === "items") teach();
   save(); render();
   if (skipped) $("answer").insertAdjacentHTML("afterbegin", `<p class="hint">Skipped ${skipped} line${skipped > 1 ? "s" : ""} with no size.</p>`);
 }
@@ -206,6 +239,12 @@ app.addEventListener("click", (e) => {
   if (!b) return;
   const act = b.dataset.act!;
   if (act === "example") { state = { ...example(), theme: state.theme }; save(); render(); return; }
+  if (act === "baxter-forget") { baxter = { on: false, seen: [] }; saveBaxter(); options(); void answer(); return; }
+  if (act === "baxter-add") {
+    const t = suggest(baxter.seen, state.boxes, state.unit)[Number(b.dataset.i)];
+    if (t) { state.boxes.push({ ...blank(), name: t.name, l: t.size[0], w: t.size[1], h: t.size[2] }); save(); render(); }
+    return;
+  }
   if (act === "play") {
     if (!scene) return;
     if (playing) { stopPlayer(); drawPlayer(); return; }
@@ -231,6 +270,7 @@ app.addEventListener("click", (e) => {
 
 app.addEventListener("change", async (e) => {
   const f = e.target as HTMLInputElement;
+  if (baxter.on && f.closest("#items") && f.dataset.k) { teach(); baxterPanel(); }
   if (f.dataset.act !== "file" || !f.files?.[0]) return;
   await takeRows(rowOf(f).sect, await f.files[0].text());
 });
