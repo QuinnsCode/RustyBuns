@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { solve } from "../src/engine.ts";
 import { THEMES, parts, sceneSvg, shapeSvg } from "../src/viz.ts";
 import { example, group, parseRows, toInput, usableBoxes, verdict } from "../src/model.ts";
-import { forgetLease } from "../src/seal.ts";
+import { forgetLease } from "@rustybuns/seal";
 import { MAX_BODY, handle } from "../src/worker.ts";
 
 afterEach(forgetLease);

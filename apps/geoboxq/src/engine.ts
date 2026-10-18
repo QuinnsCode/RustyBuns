@@ -1,7 +1,7 @@
 // The Rust engine (wasm/src/lib.rs) from TypeScript: one memoized load and one typed call.
 // Works in the browser (Vite resolves the .wasm URL) and under Bun (tests).
 import init, { solve as solveJson } from "./wasm-pkg/geoboxq_engine.js";
-import { unseal } from "./seal.ts";
+import { unseal } from "@rustybuns/seal";
 
 /** A box (its inside) or a product (its outside). `wall` above 0 makes a product a box that opens. */
 export interface Thing { name: string; l: number; w: number; h: number; qty?: number; wall?: number; inner?: V3 }
