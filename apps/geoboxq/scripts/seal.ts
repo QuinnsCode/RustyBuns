@@ -3,7 +3,7 @@
 // never typed or committed.
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { seal } from "../src/seal.ts";
+import { seal } from "@rustybuns/seal";
 
 const key = Bun.env.ENGINE_KEY;
 if (!key) { console.error("ENGINE_KEY is not set (run through varlock)"); process.exit(1); }

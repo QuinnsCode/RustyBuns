@@ -1,40 +1,16 @@
-import { afterEach, expect, test } from "bun:test";
-import { engineKey, forgetLease, seal, unseal } from "../src/seal.ts";
-import { ORIGIN, local } from "../src/local.ts";
+import { expect, test } from "bun:test";
+import { local } from "./app-kit.ts";
 
 const KEY = btoa(String.fromCharCode(...new Uint8Array(32).fill(7)));
 const conf = { ARTSTEW_URL: "https://stew.example", QCRM_LICENSE: "buddy" };
-const answer = (status: number, body: unknown): typeof fetch => (async () => new Response(JSON.stringify(body), { status })) as never;
-afterEach(forgetLease);
-
-test("the sealed engine opens with the key and not without it", async () => {
-  const wasm = new Uint8Array(await Bun.file(new URL("../src/wasm-pkg/qcrm_engine_bg.wasm", import.meta.url)).arrayBuffer());
-  const sealed = await seal(wasm, KEY);
-  expect(Buffer.from(sealed).includes(Buffer.from(wasm.slice(0, 16)))).toBe(false);
-  expect(Buffer.compare(Buffer.from(await unseal(sealed, KEY)), Buffer.from(wasm))).toBe(0);
-  await expect(unseal(sealed, btoa(String.fromCharCode(...new Uint8Array(32).fill(8))))).rejects.toThrow();
-});
-
-test("paid gets the key; revoked is locked at once; an outage rides the last lease", async () => {
-  const paid = answer(200, { ok: true, key: KEY, seconds: 60 });
-  const t0 = 1_000_000;
-  expect(await engineKey(conf, paid, t0)).toBe(KEY);
-  const down = (async () => { throw new Error("offline"); }) as never;
-  expect(await engineKey(conf, down, t0 + 3_600_000)).toBe(KEY); // lease over, artstewengine down: grace
-  expect(await engineKey(conf, down, t0 + 3 * 86_400_000)).toBeNull(); // grace over
-  expect(await engineKey(conf, answer(402, { ok: false }), t0 + 3_600_000)).toBeNull();
-  expect(await engineKey(conf, down, t0 + 3_700_000)).toBeNull(); // revoked: no riding the old lease
-  expect(await engineKey({}, paid)).toBeNull(); // no license set
-});
 
 test("GET /api/engine/key is 402 until the license is paid", async () => {
   const c = await local();
   expect((await c("", "/api/engine/key")).status).toBe(402);
   const realFetch = globalThis.fetch;
-  globalThis.fetch = answer(200, { ok: true, key: KEY, seconds: 60 });
+  globalThis.fetch = (async () => new Response(JSON.stringify({ ok: true, key: KEY, seconds: 60 }))) as never;
   try {
     Object.assign(c.env, conf);
     expect(await (await c("", "/api/engine/key")).json()).toEqual({ key: KEY });
   } finally { globalThis.fetch = realFetch; c.close(); }
-  void ORIGIN;
 });
