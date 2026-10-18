@@ -56,9 +56,19 @@ onmessage = async ({ data: m }) => {
 };
 `;
 
-/** Plain values copy across; an object holding functions becomes the list of its method names. */
-const boundSpec = (bound: Record<string, unknown>) => Object.fromEntries(Object.entries(bound).map(([k, v]) =>
-  [k, v && typeof v === "object" && Object.values(v).some((f) => typeof f === "function") ? { __rpc: Object.keys(v).filter((f) => typeof (v as any)[f] === "function") } : v]));
+/** Names of an object's own and inherited methods (a class instance's live on its prototype). */
+const methodsOf = (v: object) => {
+  const names = new Set<string>();
+  for (let o: object | null = v; o && o !== Object.prototype; o = Object.getPrototypeOf(o))
+    for (const k of Object.getOwnPropertyNames(o)) if (k !== "constructor" && typeof (v as any)[k] === "function") names.add(k);
+  return [...names];
+};
+
+/** Plain values copy across; an object with methods becomes the list of their names. */
+const boundSpec = (bound: Record<string, unknown>) => Object.fromEntries(Object.entries(bound).map(([k, v]) => {
+  const fns = v && typeof v === "object" ? methodsOf(v) : [];
+  return [k, fns.length ? { __rpc: fns } : v];
+}));
 
 let shimmed = false;
 /** Dynamic code that imports cloudflare:workers (or :workflows, :email) gets the same shim the host was built with. */
