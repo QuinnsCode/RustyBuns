@@ -132,3 +132,27 @@ test("the API answers a store's wrapper in a small shape, and refuses bad or hea
   expect((await call("x".repeat(MAX_BODY + 1))).status).toBe(413);
   expect((await call("", "GET")).status).toBe(405);
 });
+
+// Failover: the front sends traffic to the first healthy host and falls through to AWS only when the others are down.
+test("the front picks the first healthy host and uses the last only when the rest are down", async () => {
+  const { front } = await import("../src/front.ts");
+  const up = { cf: true, railway: true, aws: true };
+  const hosts = Object.fromEntries(Object.keys(up).map((name) => [name, Bun.serve({
+    port: 0,
+    fetch: (req) => new URL(req.url).pathname === "/api/health" ? (up[name as keyof typeof up] ? Response.json({ ok: true }) : new Response("down", { status: 503 })) : new Response(name),
+  })]));
+  let clock = 0;
+  const go = front(["cf", "railway", "aws"].map((n) => `http://localhost:${hosts[n]!.port}`), () => clock);
+  const who = async () => (await go(new Request("http://front/anything"))).text();
+  try {
+    expect(await who()).toBe("cf");
+    up.cf = false; clock += 11_000;
+    expect(await who()).toBe("railway");
+    up.railway = false; clock += 11_000;
+    expect(await who()).toBe("aws");
+    up.cf = true; clock += 11_000;
+    expect(await who()).toBe("cf"); // back to the primary once it recovers
+  } finally {
+    for (const s of Object.values(hosts)) s.stop(true);
+  }
+});
