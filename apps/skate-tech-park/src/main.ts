@@ -35,6 +35,7 @@ import { Ghosts } from "./render/ghosts.ts";
 import { Lightning, Precip } from "./render/weather.ts";
 import { mountFront } from "./front/front.ts";
 import { showFront } from "./front/menu.ts";
+import { mountPause } from "./pause.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#view")!;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -310,8 +311,12 @@ function tourFrame(now: number) {
   renderer.render(scene, camera);
 }
 
+// Esc pauses the ride. Not on the title screen or the home-page tour, where there is no ride to stop.
+const pause = touring || showFront(location.search) ? null : mountPause(reset, () => { location.search = "?front"; });
+
 function frame(now: number) {
   if (touring) { tourFrame(now); requestAnimationFrame(frame); return; }
+  if (pause?.paused()) { then = lastFrame = critterAt = now; keys.clear(); renderer.render(scene, camera); requestAnimationFrame(frame); return; }
   acc = Math.min(acc + (now - then) / 1000, 0.25);
   then = now;
   const inp = input();
