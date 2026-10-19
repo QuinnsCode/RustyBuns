@@ -962,6 +962,7 @@
   .insights .steps { display: inline-flex; gap: 3px; } .insights .steps i { width: 9px; height: 9px; border-radius: 2px; border: 1px solid var(--border-2); } .insights .steps i.on { background: var(--accent); border-color: var(--accent); }
   .insights .heat { display: grid; grid-template-columns: 28px repeat(24, minmax(0, 1fr)); gap: 2px; padding: 12px 16px; font-size: 10px; color: var(--muted); align-items: center; }
   .insights .heat i { aspect-ratio: 1; border-radius: 2px; background: var(--canvas); border: 1px solid var(--border); } .insights .heat i.on { background: var(--accent); border-color: transparent; }
+  .connectdlg { max-width: 520px; width: calc(100% - 32px); border: 1px solid var(--border); border-radius: 8px; padding: 0; } .connectdlg::backdrop { background: rgba(0,0,0,.4); } .connectdlg .bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); } .connectdlg ol { margin: 0; padding: 16px 16px 16px 36px; display: grid; gap: 12px; font-size: 14px; } .connectdlg li::marker { font-weight: 600; color: var(--accent-ink, var(--accent)); } .connectdlg .copyline { margin-top: 6px; }
   .usagedlg { max-width: 460px; width: calc(100% - 32px); border: 1px solid var(--border); border-radius: 8px; padding: 0; } .usagedlg .body { display: grid; gap: 10px; padding: 16px; font-size: 14px; } .usagedlg .bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
   .insights .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); } .insights .tag.person { color: var(--accent-ink); border-color: var(--accent); }
   @media (max-width: 720px) { .insights .tiles, .insights .cols { grid-template-columns: 1fr; } .insights .way > div { grid-template-columns: 110px 1fr 56px; } }
@@ -1317,13 +1318,28 @@ const inviteSaid = (i) => i.kind === "email" ? (i.mailed ? `Emailed ${i.target}.
   : i.kind === "handle" ? `Only @${i.target} can use it.` : "Anyone with it can join once, a person or an agent.";
 // An agent's MCP line for each harness, from POST /api/invites/claim; the token in it stays masked here.
 const HARNESS_HOW = { claude: "Claude Code: run", codex: "Codex: run", opencode: "opencode: add to opencode.json", pi: "pi (0.99 or later): add to ~/.pi/agent/mcp.json" };
+// The four steps to hook Claude Code up, as a dialog: Claude running first, the command in a second terminal, /mcp, then ask.
+function openConnect() {
+  $("#connectdlg")?.remove();
+  document.body.insertAdjacentHTML("beforeend", `<dialog id="connectdlg" class="connectdlg"><div class="bar">${icon("plug")}<b>Connect Claude Code</b><span class="grow" style="flex:1"></span><button type="button" class="btn ghost" id="connect-x" aria-label="close" title="close">${icon("x")}</button></div>
+    <ol><li>Have <code>claude</code> running in a terminal.</li>
+      <li>In a separate terminal, run this:<div class="copyline"><input readonly value="${esc(mcpSignIn())}"><button class="btn" id="connect-step" title="copy the command">${icon("copy")}</button></div></li>
+      <li>In Claude, type <code>/mcp</code>, pick <b>codesplitter</b> and choose <b>Authenticate</b>. A page here asks you to say yes.</li>
+      <li>Ask it to edit your page, like <i>make it a night city, one tower per repo</i>.</li></ol></dialog>`);
+  const d = $("#connectdlg"); icons();
+  $("#connect-step").addEventListener("click", () => copy(mcpSignIn(), "Command copied"));
+  $("#connect-x").addEventListener("click", () => d.close());
+  d.addEventListener("click", (e) => { if (e.target === d) d.close(); });
+  d.addEventListener("close", () => d.remove());
+  d.showModal();
+}
 // The connect line shows; other clients and tokens fold under "More", which #/me/tokens opens (#729).
 async function wireTokens(made, open = !!made) {
   const el = $("#tokens .body");
   if (!el) return;
   const [list, apps] = await Promise.all([api("/tokens").catch(() => []), api("/oauth/grants").catch(() => [])]);
   const when = (t) => t.expired ? "expired" : `expires ${new Date(t.expires_at).toLocaleDateString()}`;
-  const connect = `<div style="display:grid;gap:4px;margin-bottom:10px"><span class="muted" style="font-size:12px">Paste in a terminal, then <b>/mcp</b> → Authenticate.</span>
+  const connect = `<div style="display:grid;gap:4px;margin-bottom:10px"><span class="muted" style="font-size:12px">Paste in a second terminal, then <b>/mcp</b> → Authenticate. <a href="#" id="connect-how">Step by step</a></span>
       <div class="copyline"><input readonly value="${esc(mcpSignIn())}"><button class="btn" id="connect-cmd" title="copy the command">${icon("copy")}</button></div></div>`;
   const url = `<span class="muted" style="font-size:12px">Server URL, any MCP client</span>
       <div class="copyline" style="margin:4px 0 10px"><input readonly value="${esc(mcpUrl())}"><button class="btn" id="connect-url" title="copy the server URL">${icon("copy")}</button></div>`;
@@ -1348,6 +1364,7 @@ async function wireTokens(made, open = !!made) {
   icons();
   $("#my-audit").addEventListener("toggle", (e) => { if (e.target.open) wireAudit(e.target.lastElementChild, "/tokens/audit", true); }, { once: true });
   $("#connect-cmd").addEventListener("click", () => copy(mcpSignIn(), "Command copied"));
+  $("#connect-how").addEventListener("click", (e) => { e.preventDefault(); openConnect(); });
   $("#connect-url").addEventListener("click", () => copy(mcpUrl(), "URL copied"));
   $("#token-copy")?.addEventListener("click", () => copy(made.token, "Token copied"));
   $("#token-mcp")?.addEventListener("click", () => copy(mcpAdd(made.token), "Command copied"));
