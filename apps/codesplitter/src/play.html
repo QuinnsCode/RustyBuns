@@ -566,6 +566,7 @@ async function enter(path, from, built) {
   const w = built ?? await fetchRoom(path).catch((e) => { banner("locked", e.message); return null; });
   if (!w) return false;
   buildRoom(path, w, w.minPanels);
+  opening = null;
   // Come in through the door you used: going down, the "../" door; going up, the folder you left.
   const door = here.doors.find((d) => !d.up && d.path === from) ?? here.doors.find((d) => d.up);
   if (door) {
@@ -1065,6 +1066,10 @@ function updateBreaking(dt) {
 const bosses = [];
 const awoken = new Set();   // "path:start" of every guard that has come for you this round
 const MAX_BOSSES = 2;
+// The opening room's welcome: one record guard comes at you at once, two when the room holds over a dozen.
+// Set when a round starts; leaving the room clears it.
+let opening = null;
+const DOZEN = 12;
 
 /** The signature, then a strand per line; a short guard is torn into strands of its own code. */
 function noodleLines(n) {
@@ -1146,9 +1151,11 @@ function snap(b, dir) {
 
 function updateBosses(dt, time) {
   // Walk into a room whose files hold guards and they wake, a couple at a time. Not in a panic room.
-  if (mode === "horde" && player.alive && here && bosses.length < MAX_BOSSES)
-    for (const f of here.files) for (const n of f.file.noodles ?? [])
-      if (bosses.length < MAX_BOSSES && !awoken.has(`${f.file.path}:${n.start}`)) awaken(f, n);
+  const cap = opening ?? MAX_BOSSES;
+  if (mode === "horde" && player.alive && here && bosses.length < cap)
+    // Record guards first.
+    for (const rec of [true, false]) for (const f of here.files) for (const n of f.file.noodles ?? [])
+      if (n.record === rec && bosses.length < cap && !awoken.has(`${f.file.path}:${n.start}`)) awaken(f, n);
   let nearest = Infinity;
   for (const b of bosses) {
     b.hurtT -= dt;
@@ -1467,6 +1474,8 @@ async function begin(seed, startAt) {
     return;
   }
   for (const l of here.lines) if (!l.mesh.parent) l.wall.add(l.mesh);
+  const records = here.files.reduce((n, f) => n + (f.file.noodles ?? []).filter((g) => g.record).length, 0);
+  opening = records > DOZEN ? 2 : records ? 1 : null;
   import("/found.js").then(({ found }) => found(mode)).then((r) => { if (r?.all) banner("ALL FOUND", "the badge is on your profile", 4); });
   // Whatever started the round (a button pressed with Enter, say) lets go of focus, so Space swats.
   document.activeElement?.blur?.();

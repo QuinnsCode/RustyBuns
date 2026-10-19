@@ -53,7 +53,9 @@ export function noodles(text: string, width = 90): Noodle[] {
     const name = m[1] ?? m[2]!;
     const start = lineAt(m.index!), end = lineAt(endOf(text, m.index! + m[0].length));
     const lines = text.split("\n").slice(start - 1, Math.min(end, start - 1 + MAX_NOODLE_LINES)).map((l) => l.replace(/\t/g, "  ").slice(0, width));
-    out.push({ name, start, end, lines, record: /^is(Plain)?Record$/i.test(name) });
+    // The big one: named `isRecord`, or guarding `Record<string, unknown | undefined | any>` whatever it's called.
+    const record = /^is(Plain)?Record$/i.test(name) || /^Record<\s*string\s*,\s*(?:unknown|undefined|any)\s*>/.test(text.slice(m.index! + m[0].length));
+    out.push({ name, start, end, lines, record });
   }
   return out;
 }
