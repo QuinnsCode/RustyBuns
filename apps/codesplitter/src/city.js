@@ -33,12 +33,16 @@ document.body.insertAdjacentHTML("beforeend", `
   <div class="label">code city</div><h1>@${esc(name)}</h1>
   <p class="muted" id="city-sum" style="margin:6px 0 0">…</p>
   <div class="legend"><span><i class="stone"></i>people's lines</span><span><i class="glass"></i>agents' lines</span><span><i class="lit"></i>lines landed lately</span></div>
-  <div class="row"><button class="primary" id="city-walk">walk in</button><a class="btn" id="city-card" target="_blank" rel="noopener">postcard</a><span class="muted" id="city-msg"></span></div>
+  <div class="row"><button class="primary" id="city-walk">walk in</button><a class="btn" id="city-card" target="_blank" rel="noopener">postcard</a><button id="city-share">copy share link</button><span class="muted" id="city-msg"></span></div>
   <div class="keys"><kbd>WASD</kbd> walk · <kbd>mouse</kbd> look · <kbd>shift</kbd> run · <kbd>space</kbd> jump · <kbd>esc</kbd> back up to the skyline<br>a district per public repo, a building per file: tall is long, lit is lately<br>busy streets are a week of commits; traffic chaos is failing checks</div>
   <p class="exits"><a href="/#/u/${encodeURIComponent(name)}">← @${esc(name)}'s profile</a></p>
 </div></div>`);
 $("#title").textContent = `@${name}'s city`;
 $("#city-card").href = `${API}.png`;
+$("#city-share").onclick = async () => {
+  const link = `${location.origin}${API}/share`;
+  try { await navigator.clipboard.writeText(link); $("#city-msg").textContent = "link copied"; } catch { prompt("Share this link", link); }
+};
 
 // ---- three: blue hour, wet streets, rain ----------------------------------------------
 const renderer = new THREE.WebGLRenderer({ canvas: $("#c"), antialias: true });
@@ -289,7 +293,7 @@ const res = await fetch(API);
 const city = await res.json().catch(() => ({ error: "couldn't read the city" }));
 if (!res.ok) {
   $("#city-sum").textContent = res.status === 404 ? `@${name} has no public city.` : city.error;
-  $("#city-walk").hidden = $("#city-card").hidden = true;
+  $("#city-walk").hidden = $("#city-card").hidden = $("#city-share").hidden = true;
   window.cityLoaded?.();
   await new Promise(() => {});
 }
