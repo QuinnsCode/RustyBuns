@@ -5,8 +5,10 @@
 // above zero (cavity = size minus a wall on every side), is itself a box that opens, and anything
 // smaller can ride inside it. That is the part shipping software misses: a box in a box in a box.
 //
-// Packing is axis-aligned with all six turns, placed at extreme points, largest first. It is a fast
-// heuristic: "fits" is always true when it says so, "doesn't fit" can be a tight case it didn't find.
+// Packing is axis-aligned with all six turns (no tilting), placed at extreme points, largest first. It is
+// a fast heuristic: "fits" is always true when it says so. When it says no and the order is tiny
+// (EXACT_MAX pieces or fewer), an exhaustive search settles it, so "doesn't fit" is exact there; for
+// bigger orders it can still be a tight case the heuristic didn't find.
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
@@ -17,6 +19,11 @@ fn le(a: f64, b: f64) -> bool { a <= b + EPS * (1.0 + b.abs()) }
 const MAX_PIECES: usize = 400;
 /// Every box gets its own packing attempt; 400 pieces against 200 boxes took 8 s, against 30 about a second.
 const MAX_BOXES: usize = 30;
+
+/// At most this many pieces and a failed heuristic is followed by an exhaustive search.
+const EXACT_MAX: usize = 7;
+/// Cap on the exhaustive search's placements tried, so a tiny order can't stall the page.
+const EXACT_NODES: usize = 200_000;
 
 fn one() -> u32 { 1 }
 
@@ -73,8 +80,53 @@ fn overlaps(a: (V3, V3), b: (V3, V3)) -> bool {
     (0..3).all(|k| a.0[k] < b.0[k] + b.1[k] - EPS * (1.0 + b.1[k].abs()) && b.0[k] < a.0[k] + a.1[k] - EPS * (1.0 + a.1[k].abs()))
 }
 
+/// Exhaustive axis-aligned search: any packing can be pushed until each corner coordinate is 0 or the far
+/// face of another piece, so those are the only positions tried, for every piece, turn and order.
+fn exact(items: &[&Bundle], room: V3, pad: f64, done: &mut Vec<(V3, V3, usize, [usize; 3], V3)>, used: &mut Vec<bool>, nodes: &mut usize) -> bool {
+    if done.len() == items.len() { return true; }
+    let cand: [Vec<f64>; 3] = [0, 1, 2].map(|k| {
+        let mut v = vec![0.0];
+        v.extend(done.iter().map(|d| d.0[k] + d.1[k]));
+        v
+    });
+    for (i, b) in items.iter().enumerate() {
+        if used[i] || (0..i).any(|j| !used[j] && items[j].dims == b.dims && items[j].inner == b.inner && items[j].name == b.name) { continue; }
+        for (t, perm) in turns(b.dims) {
+            let s = t.map(|d| d + pad);
+            if !(0..3).all(|k| le(s[k], room[k])) { continue; }
+            for &z in &cand[2] { for &y in &cand[1] { for &x in &cand[0] {
+                let p = [x, y, z];
+                if !(0..3).all(|k| le(p[k] + s[k], room[k])) || done.iter().any(|d| overlaps((p, s), (d.0, d.1))) { continue; }
+                *nodes += 1;
+                if *nodes > EXACT_NODES { return false; }
+                used[i] = true;
+                done.push((p, s, i, perm, t));
+                if exact(items, room, pad, done, used, nodes) { return true; }
+                done.pop();
+                used[i] = false;
+            }}}
+        }
+    }
+    false
+}
+
 /// Put every bundle inside `cav`, or say none of this arrangement works.
 fn pack(items: &[&Bundle], cav: V3, pad: f64) -> Option<Vec<Placed>> {
+    pack_fast(items, cav, pad).or_else(|| {
+        if items.len() > EXACT_MAX { return None; }
+        let room = cav.map(|c| c + pad);
+        let (mut done, mut used, mut nodes) = (Vec::new(), vec![false; items.len()], 0);
+        if !exact(items, room, pad, &mut done, &mut used, &mut nodes) { return None; }
+        Some(done.into_iter().map(|(p, _, i, perm, t)| {
+            let b = items[i];
+            let cav = b.inner.map_or([0.0; 3], |c| [0, 1, 2].map(|k| (b.dims[k] - c[k]) / 2.0));
+            Placed { name: b.name.clone(), size: t, turn: perm, pos: p, cav, inside: b.inside.clone() }
+        }).collect())
+    })
+}
+
+/// The fast heuristic: extreme points, largest first.
+fn pack_fast(items: &[&Bundle], cav: V3, pad: f64) -> Option<Vec<Placed>> {
     let room = cav.map(|c| c + pad);
     let mut order: Vec<&Bundle> = items.to_vec();
     order.sort_by(|a, b| vol(b.dims).total_cmp(&vol(a.dims)));

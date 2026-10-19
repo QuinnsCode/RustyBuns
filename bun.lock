@@ -175,6 +175,7 @@
         "@effect/platform-bun": "4.0.0-rc.112",
         "@effect/platform-node": "4.0.0-rc.112",
         "@rustybuns/cli": "workspace:*",
+        "@rustybuns/seal": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
         "alchemy": "2.0.0-beta.77",
         "effect": "4.0.0-rc.112",
@@ -315,6 +316,7 @@
         "@effect/platform-bun": "4.0.0-rc.112",
         "@effect/platform-node": "4.0.0-rc.112",
         "@rustybuns/cli": "workspace:*",
+        "@rustybuns/seal": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
         "@types/react": "19",
         "@types/react-dom": "19",
@@ -538,6 +540,10 @@
     "packages/ports": {
       "name": "@rustybuns/ports",
       "version": "0.1.12",
+    },
+    "packages/seal": {
+      "name": "@rustybuns/seal",
+      "version": "0.0.0",
     },
     "packages/shell-bun": {
       "name": "@rustybuns/shell-bun",
@@ -1328,6 +1334,8 @@
     "@rustybuns/ops": ["@rustybuns/ops@workspace:packages/ops"],
 
     "@rustybuns/ports": ["@rustybuns/ports@workspace:packages/ports"],
+
+    "@rustybuns/seal": ["@rustybuns/seal@workspace:packages/seal"],
 
     "@rustybuns/shell-bun": ["@rustybuns/shell-bun@workspace:packages/shell-bun"],
 
