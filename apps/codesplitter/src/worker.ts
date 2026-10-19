@@ -286,6 +286,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (p[0] === "install.sh" && !p[1] && req.method === "GET") return installScript(url.origin);
   // GET /agent.md  a prompt to hand your own agent so it can steer the site for you (agent-prompt.ts)
   if (p[0] === "agent.md" && !p[1] && req.method === "GET") return agentPromptResponse(url.origin);
+  // GET /demo, /why  the rush-hour subway swarm demo (swarm.html, which /swarm already serves) under two more names
+  if ((p[0] === "demo" || p[0] === "why") && !p[1] && req.method === "GET" && env.ASSETS) return env.ASSETS.fetch(new Request(new URL("/swarm", url.origin), req));
   // GET /llms.txt, /robots.txt  where an agent starting at the root is pointed at the API (discover.ts)
   if ((p[0] === "llms.txt" || p[0] === "robots.txt") && !p[1] && req.method === "GET") return new Response(p[0] === "llms.txt" ? LLMS_TXT : ROBOTS_TXT, { headers: { "content-type": "text/plain; charset=utf-8" } });
   if (p[0] !== "api") return new Response("not found", { status: 404 });
