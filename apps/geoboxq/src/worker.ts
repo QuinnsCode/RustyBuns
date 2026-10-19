@@ -11,16 +11,18 @@ export const VERSION = "0.1.0";
 /** A request body bigger than this is refused before it is parsed. A few hundred pieces is far under it. */
 export const MAX_BODY = 256 * 1024;
 
-export interface Env extends RatesEnv { ARTSTEW_URL?: string; GEOBOXQ_LICENSE?: string; GEOBOXQ_URL?: string; ASSETS?: { fetch(req: Request): Promise<Response> } }
+export interface Env extends RatesEnv { ARTSTEW_URL?: string; GEOBOXQ_LICENSE?: string; GEOBOXQ_URL?: string; /** Comma-separated store keys. Set: `POST /api/solve` needs `Authorization: Bearer <key>`. Unset: open. */ GEOBOXQ_API_KEYS?: string; ASSETS?: { fetch(req: Request): Promise<Response> } }
 
-const CORS = { "access-control-allow-origin": "*", "access-control-allow-methods": "POST, GET, OPTIONS", "access-control-allow-headers": "content-type" };
+const CORS = { "access-control-allow-origin": "*", "access-control-allow-methods": "POST, GET, OPTIONS", "access-control-allow-headers": "content-type, authorization" };
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "no-store", ...CORS } });
 
 /**
  * `POST /api/solve` with `{ boxes: [{name,l,w,h}], items: [{name,l,w,h,qty?,inner?}], pad? }`: the smallest box
  * everything fits in, and the nesting as a tree. Small on purpose, so a store's wrapper can map it to its own box set.
  */
-async function solveApi(req: Request) {
+async function solveApi(req: Request, env: Env) {
+  const keys = env.GEOBOXQ_API_KEYS?.split(",").map((k) => k.trim()).filter(Boolean) ?? [];
+  if (keys.length && !keys.includes(req.headers.get("authorization")?.replace(/^Bearer /i, "") ?? "")) return json({ error: "send Authorization: Bearer <key>" }, 401);
   const text = await req.text();
   if (text.length > MAX_BODY) return json({ error: `body is over ${MAX_BODY} bytes` }, 413);
   let body: { boxes?: Thing[]; items?: Thing[]; pad?: number };
@@ -40,7 +42,7 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   const { pathname } = new URL(req.url);
   if (req.method === "OPTIONS" && pathname.startsWith("/api/")) return new Response(null, { status: 204, headers: CORS });
   if (pathname === "/api/health") return json({ ok: true, version: VERSION, sealed: Boolean(env.ARTSTEW_URL && env.GEOBOXQ_LICENSE) });
-  if (pathname === "/api/solve") return req.method === "POST" ? solveApi(req) : json({ error: "POST only" }, 405);
+  if (pathname === "/api/solve") return req.method === "POST" ? solveApi(req, env) : json({ error: "POST only" }, 405);
   if (pathname === "/api/rates") {
     if (req.method !== "POST") return json({ error: "POST only" }, 405);
     const text = await req.text();
