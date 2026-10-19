@@ -826,6 +826,7 @@
   @media (max-width: 860px) { .prof-grid { grid-template-columns: 1fr; } .bar .barform { margin-left: 0; } }
   .photo iframe { width: 100%; height: 220px; border: 0; display: block; background: #fff; }
   /* Full page: the page box fills the window (a circular wipe from the corner, where the browser has view transitions) and the profile's cards scroll over it. */
+  .btn.danger { color: var(--del-fg); border-color: var(--del-fg); }
   .stage-x { display: none; }
   body.staged .photo { position: fixed; inset: 0; z-index: -1; margin: 0; border: 0; border-radius: 0; }
   body.staged, body.staged main { background: transparent; }
@@ -7799,8 +7800,17 @@ async function pageTalk(name, has) {
     try { await ensure(); toast("Your page is made"); route(); } catch (e) { toast(e.message); }
   };
   pageTools(name, ensure, reload);
-  $("#pg-hour").onclick = () => back("hour", "an hour ago");
-  $("#pg-default").onclick = () => back("default", "the starter");
+  // A first click arms the button (it says what it will do); only a second one within 4s resets the background.
+  const sure = (b, ask, go) => {
+    let t = 0, was = b.innerHTML;
+    b.onclick = () => {
+      if (t) { clearTimeout(t); t = 0; b.innerHTML = was; b.classList.remove("danger"); return go(); }
+      b.innerHTML = was + `<span> ${ask}</span>`; b.classList.add("danger");
+      t = setTimeout(() => { t = 0; b.innerHTML = was; b.classList.remove("danger"); }, 4000);
+    };
+  };
+  sure($("#pg-hour"), "Put the background back an hour? Click again", () => back("hour", "an hour ago"));
+  sure($("#pg-default"), "Are you sure you want to reset the background? Click again", () => back("default", "the starter"));
   $("#talk").onsubmit = async (e) => {
     e.preventDefault();
     const f = e.target, say = f.say.value.trim(), btn = f.querySelector("button.primary");
