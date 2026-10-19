@@ -3,14 +3,14 @@
 // and on a plain Bun server (src/serve.ts), so a host can go down without the API going with it.
 import { loadEngine, solve, type Thing } from "./engine.ts";
 import { group } from "./model.ts";
-import { engineKey, type LeaseEnv } from "./seal.ts";
+import { engineKey } from "@rustybuns/seal";
 import wasm from "./wasm-pkg/geoboxq_engine_bg.wasm";
 
 export const VERSION = "0.1.0";
 /** A request body bigger than this is refused before it is parsed. A few hundred pieces is far under it. */
 export const MAX_BODY = 256 * 1024;
 
-export interface Env extends LeaseEnv { GEOBOXQ_URL?: string; ASSETS?: { fetch(req: Request): Promise<Response> } }
+export interface Env { ARTSTEW_URL?: string; GEOBOXQ_LICENSE?: string; GEOBOXQ_URL?: string; ASSETS?: { fetch(req: Request): Promise<Response> } }
 
 const CORS = { "access-control-allow-origin": "*", "access-control-allow-methods": "POST, GET, OPTIONS", "access-control-allow-headers": "content-type" };
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "no-store", ...CORS } });
@@ -41,7 +41,7 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   if (pathname === "/api/health") return json({ ok: true, version: VERSION, sealed: Boolean(env.ARTSTEW_URL && env.GEOBOXQ_LICENSE) });
   if (pathname === "/api/solve") return req.method === "POST" ? solveApi(req) : json({ error: "POST only" }, 405);
   if (pathname === "/api/engine/key" && req.method === "GET") {
-    const key = await engineKey({ ...env, host: env.GEOBOXQ_URL, version: VERSION });
+    const key = await engineKey({ ARTSTEW_URL: env.ARTSTEW_URL, license: env.GEOBOXQ_LICENSE, host: env.GEOBOXQ_URL, version: VERSION });
     return key ? json({ key }) : json({ error: "engine locked: license not paid" }, 402);
   }
   if (pathname.startsWith("/api/")) return json({ error: "not found" }, 404);

@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { solve } from "../src/engine.ts";
 import { THEMES, parts, sceneSvg, shapeSvg } from "../src/viz.ts";
 import { example, group, parseRows, toInput, usableBoxes, verdict } from "../src/model.ts";
-import { forgetLease } from "../src/seal.ts";
+import { forgetLease } from "@rustybuns/seal";
 import { MAX_BODY, handle } from "../src/worker.ts";
 
 afterEach(forgetLease);
@@ -154,4 +154,28 @@ test("a carrier's box chart: fractions, inch marks and a size written after the 
     { name: "Small mailer", l: 10.5, w: 6, h: 2 },
   ]);
   expect(parseRows("Name,Length (in),Width (in),Height (in)\nBox A,12,9,6").rows).toMatchObject([{ name: "Box A", l: 12, w: 9, h: 6 }]);
+});
+
+// Failover: the front sends traffic to the first healthy host and falls through to AWS only when the others are down.
+test("the front picks the first healthy host and uses the last only when the rest are down", async () => {
+  const { front } = await import("../src/front.ts");
+  const up = { cf: true, railway: true, aws: true };
+  const hosts = Object.fromEntries(Object.keys(up).map((name) => [name, Bun.serve({
+    port: 0,
+    fetch: (req) => new URL(req.url).pathname === "/api/health" ? (up[name as keyof typeof up] ? Response.json({ ok: true }) : new Response("down", { status: 503 })) : new Response(name),
+  })]));
+  let clock = 0;
+  const go = front(["cf", "railway", "aws"].map((n) => `http://localhost:${hosts[n]!.port}`), () => clock);
+  const who = async () => (await go(new Request("http://front/anything"))).text();
+  try {
+    expect(await who()).toBe("cf");
+    up.cf = false; clock += 11_000;
+    expect(await who()).toBe("railway");
+    up.railway = false; clock += 11_000;
+    expect(await who()).toBe("aws");
+    up.cf = true; clock += 11_000;
+    expect(await who()).toBe("cf"); // back to the primary once it recovers
+  } finally {
+    for (const s of Object.values(hosts)) s.stop(true);
+  }
 });
