@@ -831,7 +831,9 @@
   body.staged, body.staged main { background: transparent; }
   body.staged .photo .bar, body.staged .tour, body.staged .guide, body.staged .guide-fab { display: none; }
   body.staged .photo iframe { height: 100% !important; }
-  body.staged .stage-x { display: inline-flex; position: fixed; top: 12px; right: 12px; z-index: 52; }
+  body.staged .stage-x { display: inline-flex; position: fixed; top: 64px; right: 12px; z-index: 52; box-shadow: 0 4px 16px rgba(0,0,0,.3); }
+  /* Loose text gets a card of its own so it reads over the world. */
+  body.staged .prof-head, body.staged .pulse-free { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; }
   ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
   ::view-transition-new(root) { animation: stage-wipe .55s ease-in-out both; }
   @keyframes stage-wipe { from { clip-path: circle(0 at 100% 0); } to { clip-path: circle(150% at 100% 0); } }
