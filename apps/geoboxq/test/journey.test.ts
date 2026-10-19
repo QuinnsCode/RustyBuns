@@ -59,7 +59,7 @@ test("pasting rows: headers, sizes in one cell, tabs and rows with no size", () 
     { name: "Candle", l: 3, w: 3, h: 3.5, qty: 2, holds: false, inner: null },
   ]);
   const odd = parseRows("Mailer\t10 x 8 x 4\nGhost\t\nCrate 12x12x6\n");
-  expect(odd.rows.map((r) => [r.name, r.l, r.w, r.h])).toEqual([["Mailer", 10, 8, 4], ["", 12, 12, 6]]);
+  expect(odd.rows.map((r) => [r.name, r.l, r.w, r.h])).toEqual([["Mailer", 10, 8, 4], ["Crate", 12, 12, 6]]);
   expect(odd.skipped).toBe(1);
   // A box row with a blank size is kept out of the engine's list, and out of the verdict's names.
   const s = { ...example(), boxes: [{ name: "half", l: 0, w: 3, h: 3, qty: 1, holds: false, inner: null }, ...example().boxes] };
@@ -131,6 +131,29 @@ test("the API answers a store's wrapper in a small shape, and refuses bad or hea
   expect((await call(JSON.stringify({ boxes: Array.from({ length: 31 }, () => boxes[0]), items }))).status).toBe(400);
   expect((await call("x".repeat(MAX_BODY + 1))).status).toBe(413);
   expect((await call("", "GET")).status).toBe(405);
+});
+
+test("a Shopify product export: quoted cells, variant lines under a product, image lines left alone", () => {
+  const csv = [
+    'Handle,Title,Body (HTML),Option1 Value,Variant SKU,Length (product.metafields.custom.length),Width (product.metafields.custom.width),Height (product.metafields.custom.height),Image Src',
+    'mug,Mug,"<p>Big, blue,\nand round</p>",Blue,MUG-B,4,4,"4.5",',
+    'mug,,,Red,MUG-R,4,4,4.5,',
+    'mug,,,,,,,,https://cdn.example/mug.png',
+    'poster,Poster,,Default Title,POST-1,24,3,3,',
+    'gift,Gift card,,Default Title,GC,,,,',
+  ].join("\n");
+  const { rows, skipped } = parseRows(csv);
+  expect(rows.map((r) => [r.name, r.l, r.w, r.h])).toEqual([["Mug (Blue)", 4, 4, 4.5], ["Mug (Red)", 4, 4, 4.5], ["Poster", 24, 3, 3]]);
+  expect(skipped).toBe(1); // the gift card has no size; the image line is not counted
+});
+
+test("a carrier's box chart: fractions, inch marks and a size written after the name", () => {
+  expect(parseRows('Box,Inside dimensions\nFlat Rate Box 1,"11-1/8"" x 13-5/8"" x 3-3/8"""').rows).toMatchObject([{ name: "Flat Rate Box 1", l: 11.125, w: 13.625, h: 3.375 }]);
+  expect(parseRows("Medium Box 1: 13 x 11 x 3.5\nSmall mailer - 10 1/2 x 6 x 2\n").rows).toMatchObject([
+    { name: "Medium Box 1", l: 13, w: 11, h: 3.5 },
+    { name: "Small mailer", l: 10.5, w: 6, h: 2 },
+  ]);
+  expect(parseRows("Name,Length (in),Width (in),Height (in)\nBox A,12,9,6").rows).toMatchObject([{ name: "Box A", l: 12, w: 9, h: 6 }]);
 });
 
 // Failover: the front sends traffic to the first healthy host and falls through to AWS only when the others are down.
