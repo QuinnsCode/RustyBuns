@@ -1,7 +1,7 @@
 // The Rust engine (wasm/src/lib.rs) from TypeScript: one memoized load, typed wrappers around
 // the JSON-string API. Works in the browser (Vite resolves the .wasm URL) and under Bun (tests).
 import init, * as wasm from "./wasm-pkg/qcrm_engine.js";
-import { unseal } from "./seal.ts";
+import { unseal } from "@rustybuns/seal";
 
 export type Engine = typeof wasm;
 

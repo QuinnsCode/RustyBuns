@@ -21,6 +21,9 @@ export default defineConfig({
     // The sealed engine asks artstewengine "have you paid?" with this license. Either unset: the engine stays locked.
     ARTSTEW_URL: { type: "var", value: "https://artstewengine.qntbr.com" },
     GEOBOXQ_LICENSE: { type: "secret", op: "op://qcrm/geoboxq/license", optional: true },
+    // The shipper link (src/rates.ts): unset, /api/rates answers 501 "no aggregator linked".
+    RATES_URL: { type: "secret", op: "op://qcrm/geoboxq/rates-url", optional: true },
+    RATES_KEY: { type: "secret", op: "op://qcrm/geoboxq/rates-key", optional: true },
   },
   experimental: { wheel: "human" },
   targets: { edge: { provider: "cloudflare" } },

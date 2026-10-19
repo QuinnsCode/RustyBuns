@@ -3,7 +3,7 @@
 // `bun scripts/seal.ts --new` prints a fresh key to put in 1Password as op://qcrm/engine/key.
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { seal } from "../src/seal.ts";
+import { seal } from "@rustybuns/seal";
 
 if (process.argv.includes("--new")) {
   console.log(btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))));
