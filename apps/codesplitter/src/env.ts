@@ -162,6 +162,8 @@ export interface Env {
   WATCH_NEWS?: string;
   /** Tests only: stands in for fetch to the status pages, osv.dev and the news search (see watch.ts). */
   WATCH_FETCH?: unknown;
+  /** The built pages (dist/client), for the routes that serve one page under a second name (worker.ts). Unset in tests. */
+  ASSETS?: { fetch(req: Request): Promise<Response> };
   /** Where desktop deploys keep each repo's Alchemy state (deploy.ts); ~/.codesplitters/alchemy if unset. */
   DEPLOY_STATE_DIR?: string;
   /** Tests only: stands in for the commands and the fetch a preview deploy runs (see preview.ts). */
