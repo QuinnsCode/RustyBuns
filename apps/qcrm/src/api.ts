@@ -23,7 +23,7 @@ import { orgListRoutes, orgRoutes, orgRow, roleIn, writeAudit, type Ctx } from "
 import { can, type Action } from "./rbac.ts";
 import { scriptRoutes } from "./scripts.ts";
 import { seedRoutes } from "./seed-data.ts";
-import { engineKey } from "./seal.ts";
+import { engineKey } from "@rustybuns/seal";
 import { syncRoutes } from "./sync.ts";
 import { deliver, webhookRoutes } from "./webhooks.ts";
 
@@ -53,7 +53,7 @@ async function route(req: Request, env: Env, defer?: Defer): Promise<Response> {
   if (p[1] === "openapi.json" && !p[2]) return json(openapi(origin));
   // The sealed engine's key, for the browser to open it: public, the hero wave needs it before sign-in.
   if (p[1] === "engine" && p[2] === "key" && !p[3] && req.method === "GET") {
-    const key = await engineKey({ ...env, host: env.BETTER_AUTH_URL, version: VERSION });
+    const key = await engineKey({ ARTSTEW_URL: env.ARTSTEW_URL, license: env.QCRM_LICENSE, host: env.BETTER_AUTH_URL, version: VERSION });
     return key ? json({ key }) : error(402, "engine locked: license not paid");
   }
   if (p[1] === "mcp" && !p[2]) return mcp(req, env, (r) => handleApi(r, env));

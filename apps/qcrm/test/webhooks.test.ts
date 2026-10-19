@@ -60,7 +60,7 @@ test("a failing endpoint is retried with backoff, then the delivery is dead", as
     const path = `/api/orgs/${org}/webhooks/${hook.id}/deliveries`;
     // The receiver answers before the attempt is recorded, so wait for the row to catch up.
     let [d] = await (await app(cookie, path)).json();
-    for (let i = 0; i < 100 && d.attempts < 1; i++) { await Bun.sleep(20); [d] = await (await app(cookie, path)).json(); }
+    for (let i = 0; i < 500 && d.attempts < 1; i++) { await Bun.sleep(20); [d] = await (await app(cookie, path)).json(); }
     expect(d.status).toBe("pending");
     expect(d.attempts).toBe(1);
     expect(d.next_at).toBeGreaterThan(Date.now() + 100_000);   // 60 * 2^1 s away

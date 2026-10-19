@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { solve } from "../src/engine.ts";
 import { THEMES, parts, sceneSvg, shapeSvg } from "../src/viz.ts";
 import { example, group, parseRows, toInput, usableBoxes, verdict } from "../src/model.ts";
-import { forgetLease } from "../src/seal.ts";
+import { forgetLease } from "@rustybuns/seal";
 import { MAX_BODY, handle } from "../src/worker.ts";
 
 afterEach(forgetLease);
@@ -59,7 +59,7 @@ test("pasting rows: headers, sizes in one cell, tabs and rows with no size", () 
     { name: "Candle", l: 3, w: 3, h: 3.5, qty: 2, holds: false, inner: null },
   ]);
   const odd = parseRows("Mailer\t10 x 8 x 4\nGhost\t\nCrate 12x12x6\n");
-  expect(odd.rows.map((r) => [r.name, r.l, r.w, r.h])).toEqual([["Mailer", 10, 8, 4], ["", 12, 12, 6]]);
+  expect(odd.rows.map((r) => [r.name, r.l, r.w, r.h])).toEqual([["Mailer", 10, 8, 4], ["Crate", 12, 12, 6]]);
   expect(odd.skipped).toBe(1);
   // A box row with a blank size is kept out of the engine's list, and out of the verdict's names.
   const s = { ...example(), boxes: [{ name: "half", l: 0, w: 3, h: 3, qty: 1, holds: false, inner: null }, ...example().boxes] };
@@ -135,10 +135,101 @@ test("the API answers a store's wrapper in a small shape, and refuses bad or hea
 
 // A tiny order the extreme-point heuristic misses (it says no) is settled by the exhaustive search.
 test("a tight small order that the heuristic misses still fits", async () => {
-  const items = [[3, 1, 4], [4, 2, 2], [1, 3, 2], [3, 3, 3]].map(([l, w, h], i) => ({ name: `p${i}`, l, w, h }));
+  const items = ([[3, 1, 4], [4, 2, 2], [1, 3, 2], [3, 3, 3]] as [number, number, number][]).map(([l, w, h], i) => ({ name: `p${i}`, l, w, h }));
   const out = await solve([{ name: "snug", l: 5, w: 6, h: 3 }], items);
   expect(out.best).toBe(0);
   expect(out.packed).toHaveLength(4);
   // 3 x 3 x 3 + 3 x 1 x 4 + 4 x 2 x 2 + 1 x 3 x 2 = 27 + 12 + 16 + 6 = 61 of 90.
   expect((await solve([{ name: "too small", l: 5, w: 6, h: 2 }], items)).best).toBeNull();
+});
+
+test("Baxter learns the shapes packed, and suggests boxes for them once", async () => {
+  const { learn, suggest } = await import("../src/baxter.ts");
+  const row = (l: number, w: number, h: number, qty = 1) => ({ name: "", l, w, h, qty, holds: false, inner: null });
+  const off = learn({ on: false, seen: [] }, [row(1, 2, 3)], "in");
+  expect(off.seen).toEqual([]); // opt-in: nothing is kept until he is on
+  let mem = learn({ on: true, seen: [] }, [row(3, 2, 1), row(1, 3, 2), row(10, 8, 4), row(20, 15, 10)], "in");
+  expect(mem.seen.length).toBe(3); // the first two are one shape, turned
+  mem = learn(mem, [row(3, 2, 1)], "in");
+  expect(mem.seen.length).toBe(3);
+  const tips = suggest(mem.seen, [], "in");
+  expect(tips.map((t) => t.size)).toEqual([[3, 2, 1], [10, 8, 4], [20, 15, 10]]);
+  // A box that already holds a group without much air quiets that suggestion.
+  expect(suggest(mem.seen, [row(20, 15, 10)], "in").map((t) => t.size)).toEqual([[3, 2, 1], [10, 8, 4]]);
+  expect(suggest([], [], "in")).toEqual([]);
+});
+
+test("the shipper link: 501 until linked, then rates cheapest first through the Worker", async () => {
+  const post = (env: object, body: unknown) => handle(new Request("http://x/api/rates", { method: "POST", body: JSON.stringify(body) }), env);
+  const ask = { box: { l: 8, w: 6, h: 4 }, from: "10001", to: "94103" };
+  expect((await post({}, ask)).status).toBe(501);
+
+  const seen: { auth: string | null; body: unknown }[] = [];
+  const aggregator = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      seen.push({ auth: req.headers.get("authorization"), body: await req.json() });
+      return Response.json({ rates: [
+        { carrier: "B", service: "Ground", amount: "9.5", currency: "USD", days: 5 },
+        { carrier: "A", service: "Air", amount: 20, currency: "USD" },
+        { carrier: "C", service: "", amount: 1, currency: "USD" }, // badly filled: dropped
+      ] });
+    },
+  });
+  try {
+    const env = { RATES_URL: `http://localhost:${aggregator.port}`, RATES_KEY: "k" };
+    const ok = await post(env, { ...ask, weight: 2 });
+    expect(ok.status).toBe(200);
+    expect((await ok.json() as { rates: { carrier: string }[] }).rates.map((r) => r.carrier)).toEqual(["B", "A"]);
+    expect(seen[0]).toEqual({ auth: "Bearer k", body: { parcel: { l: 8, w: 6, h: 4, unit: "in", weight: 2 }, from: "10001", to: "94103" } });
+    expect((await post(env, { box: { l: 0, w: 1, h: 1 }, from: "a", to: "b" })).status).toBe(400);
+  } finally { aggregator.stop(true); }
+  expect((await post({ RATES_URL: "http://localhost:1" }, ask)).status).toBe(502);
+});
+
+test("a Shopify product export: quoted cells, variant lines under a product, image lines left alone", () => {
+  const csv = [
+    'Handle,Title,Body (HTML),Option1 Value,Variant SKU,Length (product.metafields.custom.length),Width (product.metafields.custom.width),Height (product.metafields.custom.height),Image Src',
+    'mug,Mug,"<p>Big, blue,\nand round</p>",Blue,MUG-B,4,4,"4.5",',
+    'mug,,,Red,MUG-R,4,4,4.5,',
+    'mug,,,,,,,,https://cdn.example/mug.png',
+    'poster,Poster,,Default Title,POST-1,24,3,3,',
+    'gift,Gift card,,Default Title,GC,,,,',
+  ].join("\n");
+  const { rows, skipped } = parseRows(csv);
+  expect(rows.map((r) => [r.name, r.l, r.w, r.h])).toEqual([["Mug (Blue)", 4, 4, 4.5], ["Mug (Red)", 4, 4, 4.5], ["Poster", 24, 3, 3]]);
+  expect(skipped).toBe(1); // the gift card has no size; the image line is not counted
+});
+
+test("a carrier's box chart: fractions, inch marks and a size written after the name", () => {
+  expect(parseRows('Box,Inside dimensions\nFlat Rate Box 1,"11-1/8"" x 13-5/8"" x 3-3/8"""').rows).toMatchObject([{ name: "Flat Rate Box 1", l: 11.125, w: 13.625, h: 3.375 }]);
+  expect(parseRows("Medium Box 1: 13 x 11 x 3.5\nSmall mailer - 10 1/2 x 6 x 2\n").rows).toMatchObject([
+    { name: "Medium Box 1", l: 13, w: 11, h: 3.5 },
+    { name: "Small mailer", l: 10.5, w: 6, h: 2 },
+  ]);
+  expect(parseRows("Name,Length (in),Width (in),Height (in)\nBox A,12,9,6").rows).toMatchObject([{ name: "Box A", l: 12, w: 9, h: 6 }]);
+});
+
+// Failover: the front sends traffic to the first healthy host and falls through to AWS only when the others are down.
+test("the front picks the first healthy host and uses the last only when the rest are down", async () => {
+  const { front } = await import("../src/front.ts");
+  const up = { cf: true, railway: true, aws: true };
+  const hosts = Object.fromEntries(Object.keys(up).map((name) => [name, Bun.serve({
+    port: 0,
+    fetch: (req) => new URL(req.url).pathname === "/api/health" ? (up[name as keyof typeof up] ? Response.json({ ok: true }) : new Response("down", { status: 503 })) : new Response(name),
+  })]));
+  let clock = 0;
+  const go = front(["cf", "railway", "aws"].map((n) => `http://localhost:${hosts[n]!.port}`), () => clock);
+  const who = async () => (await go(new Request("http://front/anything"))).text();
+  try {
+    expect(await who()).toBe("cf");
+    up.cf = false; clock += 11_000;
+    expect(await who()).toBe("railway");
+    up.railway = false; clock += 11_000;
+    expect(await who()).toBe("aws");
+    up.cf = true; clock += 11_000;
+    expect(await who()).toBe("cf"); // back to the primary once it recovers
+  } finally {
+    for (const s of Object.values(hosts)) s.stop(true);
+  }
 });
