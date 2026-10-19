@@ -21,7 +21,7 @@ bun run deploy                  # secrets through varlock (.env.schema)
 
 | Piece | Where | Notes |
 | --- | --- | --- |
-| Engine | `wasm/src/lib.rs` | `solve(json) -> json`. Six turns per piece, placed at extreme points, largest first; nesting folds small pieces into the boxes that hold them, smallest holder first. "Fits" is always true when it says so; "no" can be a tight arrangement it did not find. Any unit. |
+| Engine | `wasm/src/lib.rs` | `solve(json) -> json`. Six turns per piece, placed at extreme points, largest first; nesting folds small pieces into the boxes that hold them, smallest holder first. "Fits" is always true when it says so. Orders of seven pieces or fewer that the heuristic can't place get an exhaustive search, so "no" is exact there (axis-aligned, no tilting); bigger orders can still be a tight arrangement it did not find. Any unit. |
 | Page | `src/main.ts`, `src/model.ts` | Two lists and one answer, all in the browser, kept in `localStorage`. Nothing you enter is sent anywhere. |
 | Builder | `src/viz.ts` | Type a size and the row draws it: a dot at 0 0 0, a line, a rectangle, a box. Tick "opens" and it is hollowed out; the room inside defaults to half an inch of wall (1.25 cm) and is yours to edit. Any float works. |
 | Animation | `src/viz.ts`, `src/main.ts` | The packed box as an isometric scene, filled a piece at a time with the holders as glass: play, loop or scrub, in five themes (Kraft, Neon, Mint, Ocean, Candy). |

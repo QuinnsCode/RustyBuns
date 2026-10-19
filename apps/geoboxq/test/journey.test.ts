@@ -133,6 +133,16 @@ test("the API answers a store's wrapper in a small shape, and refuses bad or hea
   expect((await call("", "GET")).status).toBe(405);
 });
 
+// A tiny order the extreme-point heuristic misses (it says no) is settled by the exhaustive search.
+test("a tight small order that the heuristic misses still fits", async () => {
+  const items = ([[3, 1, 4], [4, 2, 2], [1, 3, 2], [3, 3, 3]] as [number, number, number][]).map(([l, w, h], i) => ({ name: `p${i}`, l, w, h }));
+  const out = await solve([{ name: "snug", l: 5, w: 6, h: 3 }], items);
+  expect(out.best).toBe(0);
+  expect(out.packed).toHaveLength(4);
+  // 3 x 3 x 3 + 3 x 1 x 4 + 4 x 2 x 2 + 1 x 3 x 2 = 27 + 12 + 16 + 6 = 61 of 90.
+  expect((await solve([{ name: "too small", l: 5, w: 6, h: 2 }], items)).best).toBeNull();
+});
+
 test("Baxter learns the shapes packed, and suggests boxes for them once", async () => {
   const { learn, suggest } = await import("../src/baxter.ts");
   const row = (l: number, w: number, h: number, qty = 1) => ({ name: "", l, w, h, qty, holds: false, inner: null });
