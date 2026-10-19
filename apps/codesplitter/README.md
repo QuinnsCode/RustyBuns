@@ -81,6 +81,7 @@ The highest-value things, in order:
 4. **Share some lines, not the repo.** A live link to just a range, which follows those lines by id as the file changes.
    It works from a private repo, too.
 5. **Hook it to your AI in one command.**
+   With `claude` running, run this in a separate terminal, then type `/mcp` in Claude, pick codesplitter and Authenticate. Then ask it to edit your page.
    ```sh
    claude mcp add --transport http codesplitter https://codesplitter.notryanquinn.workers.dev/api/mcp
    ```
