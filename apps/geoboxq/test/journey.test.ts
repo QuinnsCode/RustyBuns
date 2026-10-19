@@ -133,6 +133,22 @@ test("the API answers a store's wrapper in a small shape, and refuses bad or hea
   expect((await call("", "GET")).status).toBe(405);
 });
 
+test("Baxter learns the shapes packed, and suggests boxes for them once", async () => {
+  const { learn, suggest } = await import("../src/baxter.ts");
+  const row = (l: number, w: number, h: number, qty = 1) => ({ name: "", l, w, h, qty, holds: false, inner: null });
+  const off = learn({ on: false, seen: [] }, [row(1, 2, 3)], "in");
+  expect(off.seen).toEqual([]); // opt-in: nothing is kept until he is on
+  let mem = learn({ on: true, seen: [] }, [row(3, 2, 1), row(1, 3, 2), row(10, 8, 4), row(20, 15, 10)], "in");
+  expect(mem.seen.length).toBe(3); // the first two are one shape, turned
+  mem = learn(mem, [row(3, 2, 1)], "in");
+  expect(mem.seen.length).toBe(3);
+  const tips = suggest(mem.seen, [], "in");
+  expect(tips.map((t) => t.size)).toEqual([[3, 2, 1], [10, 8, 4], [20, 15, 10]]);
+  // A box that already holds a group without much air quiets that suggestion.
+  expect(suggest(mem.seen, [row(20, 15, 10)], "in").map((t) => t.size)).toEqual([[3, 2, 1], [10, 8, 4]]);
+  expect(suggest([], [], "in")).toEqual([]);
+});
+
 test("the shipper link: 501 until linked, then rates cheapest first through the Worker", async () => {
   const post = (env: object, body: unknown) => handle(new Request("http://x/api/rates", { method: "POST", body: JSON.stringify(body) }), env);
   const ask = { box: { l: 8, w: 6, h: 4 }, from: "10001", to: "94103" };
