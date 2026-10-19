@@ -32,7 +32,7 @@ export default defineConfig({
     // A few reviews a minute per address. Cloudflare's limiter, so it's per colo.
     REVIEW_LIMIT: { type: "ratelimit", namespaceId: "7401", simple: { limit: 4, period: 60 } },
     TURNSTILE_SITE_KEY: { type: "var", value: turnstileSiteKey },
-    TURNSTILE_SECRET: op("turnstile/secret"),
+    TURNSTILE_SECRET: op("turnstile/password"),
   },
   targets: {
     // adopt names the Worker `workerName`, so the URL is what-would-fantano-say.<subdomain>.workers.dev
