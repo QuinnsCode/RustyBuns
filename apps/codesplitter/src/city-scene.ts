@@ -151,7 +151,7 @@ export function paintCity(out: Uint8Array, W: number, H: number, city: CityCard,
     .concat(all.map((b) => iso(b.x - b.w / 2, b.z - b.w / 2, sq(b.h) + 4)));
   const [x0, x1] = [Math.min(...corners.map((p) => p[0])), Math.max(...corners.map((p) => p[0]))];
   const [y0, y1] = [Math.min(...corners.map((p) => p[1])), Math.max(...corners.map((p) => p[1]))];
-  const s = Math.min((W - 140) / Math.max(1, x1 - x0), (bottom - top) / Math.max(1, y1 - y0));
+  const s = Math.min((W - 80) / Math.max(1, x1 - x0), (bottom - top) / Math.max(1, y1 - y0));
   const P = (x: number, z: number, y = 0): Pt => { const p = iso(x, z, y); return [W / 2 + (p[0] - (x0 + x1) / 2) * s, bottom - (y1 - p[1]) * s]; };
   const keys = all.map((b) => b.x + b.z), kMin = Math.min(...keys), kMax = Math.max(...keys, kMin + 1);
   const fogAt = (key: number) => 0.38 * (1 - (key - kMin) / (kMax - kMin));
@@ -356,7 +356,7 @@ function finish(px: Pix, out: Uint8Array, W: number, H: number, seed: number) {
   const shifted = new Float32Array(d.length), mid = H * 0.52;
   const rows = new Float32Array(d.length);
   for (let y = 0; y < H; y++) {
-    const r = Math.min(4, Math.ceil(Math.max(0, Math.abs(y - mid) - 140) / 40));
+    const r = Math.min(2, Math.ceil(Math.max(0, Math.abs(y - mid) - 200) / 60));
     for (let k = 0; k < 3; k++) {
       let sum = 0;
       if (r === 0) { for (let x = 0; x < W; x++) rows[(y * W + x) * 3 + k] = d[(y * W + x) * 3 + k]!; continue; }
@@ -368,7 +368,7 @@ function finish(px: Pix, out: Uint8Array, W: number, H: number, seed: number) {
     }
   }
   for (let y = 0; y < H; y++) {
-    const r = Math.min(4, Math.ceil(Math.max(0, Math.abs(y - mid) - 140) / 40));
+    const r = Math.min(2, Math.ceil(Math.max(0, Math.abs(y - mid) - 200) / 60));
     for (let x = 0; x < W * 3; x++) {
       let sum = 0;
       for (let dy = -r; dy <= r; dy++) sum += rows[clamp(y + dy, 0, H - 1) * W * 3 + x]!;

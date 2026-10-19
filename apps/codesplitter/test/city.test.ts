@@ -71,9 +71,16 @@ test("the postcard is a PNG; the owner can switch the public city off", async ()
   expect(png.headers.get("content-type")).toBe("image/png");
   expect([...new Uint8Array(await png.arrayBuffer()).slice(1, 4)]).toEqual([80, 78, 71]);
 
+  // The share link unfurls with the postcard and sends people on to the city.
+  const share = await call(null, "/api/users/ryan/city/share");
+  const html = await share.text();
+  expect(html).toContain('og:image" content="http://codesplitter.local/api/users/ryan/city.png');
+  expect(html).toContain("/play.html#c/ryan");
+
   expect((await send("ryan", "/api/me/city", { public: false }, "PUT")).status).toBe(200);
   expect((await city("ana")).status).toBe(404);
   expect((await call(null, "/api/users/ryan/city.png")).status).toBe(404);
+  expect((await call(null, "/api/users/ryan/city/share")).status).toBe(404);
   // Its owner still sees it.
   expect((await city("ryan")).body).toMatchObject({ public: false });
   expect((await (await call("ryan", "/api/users/ryan")).json() as any).user.city_public).toBe(0);

@@ -5,6 +5,7 @@
 // right now walks its streets. play.html#c/:name renders it, as a mode of the game.
 //   GET /api/users/:name/city       the city, laid out
 //   GET /api/users/:name/city.png   its postcard (card.ts)
+//   GET /api/users/:name/city/share a page for link previews (og:image is the postcard), sending people on to the city
 //   WS  /api/users/:name/city/ws    walk it with others: its owner and their followers (a GameRoom, "c/:name")
 //   PUT /api/me/city {public}       switch your public city off, or back on
 // Private repos are never in it, nor a visitor's dig that has expired.
@@ -15,6 +16,7 @@ import { handleFor, MAX_BYTES, readTree, toFile } from "./archive.ts";
 import { cleanAvatar, type Avatar } from "./avatar.ts";
 import { renderCity } from "./card.ts";
 import { json, readBody, type Env } from "./env.ts";
+import { esc, plural } from "./util.ts";
 
 /** Districts and buildings a city holds at most, and how many files of a repo's git it looks through. */
 const DISTRICTS = 9, BUILDINGS = 36, WALK = 400;
@@ -223,6 +225,7 @@ export async function cityRoutes(req: Request, env: Env, p: string[], user: stri
     return json({ public: body.public });
   }
   if (p[1] !== "users" || !p[2] || (p[3] !== "city" && p[3] !== "city.png") || req.method !== "GET") return null;
+  const sharing = p[3] === "city" && p[4] === "share";
   const name = p[2];
   if (p[3] === "city" && p[4] === "ws") {
     if (!(await visible(env, name, user)) || !(await mayVisit(env, name, user))) return json({ error: "follow them to walk their city" }, 403);
@@ -231,9 +234,21 @@ export async function cityRoutes(req: Request, env: Env, p: string[], user: stri
     h.set("x-codesplitter-user", user!);
     return env.GAMES.get(env.GAMES.idFromName(`c/${name}`)).fetch(new Request(req.url, { headers: h }));
   }
-  if (p[4]) return null;
+  if (p[4] && !sharing) return null;
   const city = await cityOf(env, name, user);
   if (!city) return json({ error: "no public city here" }, 404);
+  if (sharing) {
+    if (!city.public) return json({ error: "no public city here" }, 404);
+    const url = new URL(req.url), title = `@${name}'s code city`, to = `/play.html#c/${encodeURIComponent(name)}`;
+    const desc = `${plural(city.districts.length, "district")}, ${plural(city.files, "building")}, ${plural(city.lines, "line")}: a rainy night in miniature. Walk in on codeSplitter.`;
+    const image = `${url.origin}/api/users/${encodeURIComponent(name)}/city.png?at=${Math.floor(Date.now() / 86_400_000)}`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
+<meta name="description" content="${esc(desc)}"><meta property="og:type" content="website"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}">
+<meta property="og:image" content="${esc(image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:url" content="${esc(url.href)}">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${esc(title)}"><meta name="twitter:description" content="${esc(desc)}"><meta name="twitter:image" content="${esc(image)}">
+<meta http-equiv="refresh" content="0; url=${to}"></head><body><a href="${to}">${esc(title)}</a></body></html>`;
+    return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+  }
   if (p[3] === "city") return json({ ...city, visit: await mayVisit(env, name, user) });
   // The postcard is the public city, whoever asks: a link to it unfurls the same for everyone.
   if (!city.public) return json({ error: "no public city here" }, 404);
