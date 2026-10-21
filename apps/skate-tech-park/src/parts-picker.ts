@@ -3,7 +3,7 @@
 // and their price until bought (see shop.ts).
 import { createElement, Lock, Wrench } from "lucide";
 import { CATALOG, DEFAULT_PARTS, type Part, type Parts } from "./parts.ts";
-import { dollars, fetchOwned, localWallet, priceOf, stripeCheckout, takePending } from "./shop.ts";
+import { PAYMENTS_ON, dollars, fetchOwned, localWallet, priceOf, stripeCheckout, takePending } from "./shop.ts";
 
 const KEY = "skate-tech-park.parts";
 const LABELS: Record<Part, string> = { deck: "Deck", trucks: "Trucks", wheels: "Wheels", grip: "Grip tape" };
@@ -30,7 +30,10 @@ export function mountPartsPicker(paint: (p: Parts) => void) {
     for (const [k, b] of swatches) {
       const [part, id] = k.split(":") as [Part, string];
       b.setAttribute("aria-pressed", String(parts[part] === id));
-      b.querySelector("svg")?.toggleAttribute("hidden", wallet.owns({ part, id }));
+      const owned = wallet.owns({ part, id });
+      b.querySelector("svg")?.toggleAttribute("hidden", owned);
+      b.classList.toggle("soon", !owned && !PAYMENTS_ON);
+      b.disabled = !owned && !PAYMENTS_ON;
     }
     paint(parts);
     try { localStorage.setItem(KEY, JSON.stringify(parts)); } catch { /* private window: it just isn't remembered */ }
@@ -47,7 +50,7 @@ export function mountPartsPicker(paint: (p: Parts) => void) {
       b.setAttribute("aria-label", `${LABELS[part]}: ${c.name}`);
       b.style.background = `#${c.color.toString(16).padStart(6, "0")}`;
       const item = { part, id: c.id }, cents = priceOf(item);
-      if (cents) { b.title = `${c.name}, ${dollars(cents)}`; b.append(createElement(Lock, { width: 12, height: 12 })); }
+      if (cents) { b.title = PAYMENTS_ON ? `${c.name}, ${dollars(cents)}` : `${c.name}, coming soon`; b.append(createElement(Lock, { width: 12, height: 12 })); }
       b.addEventListener("click", async () => {
         b.blur();
         if (!(await wallet.buy(item, stripeCheckout))) return;

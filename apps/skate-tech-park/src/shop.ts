@@ -9,6 +9,9 @@ export type Item = { part: Part; id: string };
 /** Resolves true once the item is paid for. */
 export type Checkout = (item: Item, cents: number) => Promise<boolean>;
 
+/** The feature flag: priced finishes stay locked and faded ("coming soon") until the build sets `VITE_PAYMENTS=1`. */
+export const PAYMENTS_ON = import.meta.env.VITE_PAYMENTS === "1";
+
 export const testCheckout: Checkout = async () => true;
 
 const PENDING = "skate-tech-park.pending";
