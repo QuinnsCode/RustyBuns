@@ -3,7 +3,11 @@
 // and their price until bought (see shop.ts).
 import { createElement, Lock, Wrench } from "lucide";
 import { CATALOG, DEFAULT_PARTS, type Part, type Parts } from "./parts.ts";
-import { PAYMENTS_ON, dollars, fetchOwned, localWallet, priceOf, stripeCheckout, takePending } from "./shop.ts";
+import { dollars, fetchOwned, localWallet, priceOf, stripeCheckout, takePending } from "./shop.ts";
+
+/** The feature flag: priced finishes stay locked and faded ("coming soon") until the build sets `VITE_PAYMENTS=1`.
+ * Kept here, not in shop.ts, because the Worker bundles shop.ts and has no `import.meta.env`. */
+const PAYMENTS_ON = import.meta.env.VITE_PAYMENTS === "1";
 
 const KEY = "skate-tech-park.parts";
 const LABELS: Record<Part, string> = { deck: "Deck", trucks: "Trucks", wheels: "Wheels", grip: "Grip tape" };
