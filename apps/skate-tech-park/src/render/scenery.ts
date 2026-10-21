@@ -1,13 +1,18 @@
 // Small things for scale: tiny pines, undergrowth and rocks strewn over a park's ground, so the board reads as
 // giant beside them. `scatter` picks the spots (seeded, so a park always looks the same, and clear of
-// every piece, rail, tree and spawn); `sceneryMeshes` draws them as two instanced meshes.
+// every piece, rail, tree and spawn); `Scenery` draws them as one instanced mesh per kind, from the Blender
+// set (blender/scenery.py, `loadScenery`) or from the built primitives. A park's biome says which kinds
+// grow on it: pine forest, desert, hardwood, swamp or alpine.
 import { mulberry32 } from "@rustybuns/util";
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { type Level, onRail } from "../level.ts";
 import { circles, type Earthwork } from "../levels/earthworks.ts";
 
-export type Kind = "pine" | "rock" | "aspen" | "cairn" | "tent" | "sign" | "stump" | "bush" | "fern" | "flower";
+export type Kind = "pine" | "rock" | "aspen" | "cairn" | "tent" | "sign" | "stump" | "bush" | "fern" | "flower" | "oak" | "joshua" | "saguaro" | "palm" | "snag" | "sage";
+export const KINDS: Kind[] = ["pine", "rock", "aspen", "cairn", "tent", "sign", "stump", "bush", "fern", "flower", "oak", "joshua", "saguaro", "palm", "snag", "sage"];
+import type { Biome } from "../levels/park.ts";
 export type Spot = { kind: Kind; x: number; z: number; y: number; size: number; yaw: number };
 type Ground = { R: number; height(x: number, z: number): number };
 
@@ -57,16 +62,66 @@ const MEADOW_KINDS: (Range & { chance: number })[] = [
   { kind: "rock", chance: 0.2, min: 0.2, max: 0.5 },
   { kind: "bush", chance: 0.15, min: 0.5, max: 0.9 },
 ];
-/** The forest floor under the trees. */
-const FOREST_KINDS: (Range & { chance: number })[] = [
-  { kind: "pine", chance: 0.5, ...PINE },
-  { kind: "bush", chance: 0.14, min: 0.6, max: 1.1 },
-  { kind: "fern", chance: 0.14, min: 0.5, max: 0.9 },
-  { kind: "rock", chance: 0.1, ...ROCK },
-  { kind: "flower", chance: 0.06, min: 0.4, max: 0.7 },
-  { kind: "stump", chance: 0.03, min: 0.2, max: 0.4 },
-  { kind: "aspen", chance: 0.03, min: 0.8, max: 1.6 },
-];
+/** The forest floor under the trees, per biome. The pine table is the one every park had before there were biomes. */
+const FOREST_KINDS: Record<Biome, (Range & { chance: number })[]> = {
+  pine: [
+    { kind: "pine", chance: 0.5, ...PINE },
+    { kind: "bush", chance: 0.14, min: 0.6, max: 1.1 },
+    { kind: "fern", chance: 0.14, min: 0.5, max: 0.9 },
+    { kind: "rock", chance: 0.1, ...ROCK },
+    { kind: "flower", chance: 0.06, min: 0.4, max: 0.7 },
+    { kind: "stump", chance: 0.03, min: 0.2, max: 0.4 },
+    { kind: "aspen", chance: 0.03, min: 0.8, max: 1.6 },
+  ],
+  desert: [
+    { kind: "joshua", chance: 0.22, min: 0.8, max: 1.5 },
+    { kind: "saguaro", chance: 0.12, min: 0.9, max: 1.7 },
+    { kind: "sage", chance: 0.3, min: 0.4, max: 0.8 },
+    { kind: "rock", chance: 0.26, min: 0.3, max: 0.9 },
+    { kind: "snag", chance: 0.04, min: 0.6, max: 1.1 },
+    { kind: "cairn", chance: 0.06, min: 0.3, max: 0.5 },
+  ],
+  hardwood: [
+    { kind: "oak", chance: 0.42, min: 0.8, max: 1.6 },
+    { kind: "bush", chance: 0.18, min: 0.6, max: 1.1 },
+    { kind: "fern", chance: 0.2, min: 0.5, max: 0.9 },
+    { kind: "flower", chance: 0.08, min: 0.4, max: 0.7 },
+    { kind: "stump", chance: 0.05, min: 0.2, max: 0.4 },
+    { kind: "rock", chance: 0.07, ...ROCK },
+  ],
+  swamp: [
+    { kind: "palm", chance: 0.38, min: 0.8, max: 1.6 },
+    { kind: "fern", chance: 0.3, min: 0.5, max: 1 },
+    { kind: "bush", chance: 0.2, min: 0.6, max: 1.1 },
+    { kind: "flower", chance: 0.08, min: 0.4, max: 0.7 },
+    { kind: "snag", chance: 0.04, min: 0.6, max: 1 },
+  ],
+  alpine: [
+    { kind: "pine", chance: 0.28, min: 0.4, max: 1 },
+    { kind: "snag", chance: 0.14, min: 0.6, max: 1.2 },
+    { kind: "rock", chance: 0.3, min: 0.3, max: 0.9 },
+    { kind: "sage", chance: 0.14, min: 0.3, max: 0.6 },
+    { kind: "cairn", chance: 0.08, min: 0.3, max: 0.5 },
+    { kind: "flower", chance: 0.06, min: 0.3, max: 0.5 },
+  ],
+};
+/** The clearing's ground cover per biome: the meadow, or the sand and scrub where there is no meadow. */
+const CLEARING_KINDS: Record<Biome, (Range & { chance: number })[]> = {
+  pine: MEADOW_KINDS,
+  hardwood: MEADOW_KINDS,
+  swamp: MEADOW_KINDS,
+  desert: [
+    { kind: "sage", chance: 0.5, min: 0.3, max: 0.6 },
+    { kind: "rock", chance: 0.4, min: 0.2, max: 0.5 },
+    { kind: "flower", chance: 0.1, min: 0.3, max: 0.5 },
+  ],
+  alpine: [
+    { kind: "rock", chance: 0.45, min: 0.2, max: 0.5 },
+    { kind: "sage", chance: 0.3, min: 0.3, max: 0.5 },
+    { kind: "flower", chance: 0.25, min: 0.3, max: 0.5 },
+  ],
+};
+const TREES: Set<Kind> = new Set(["pine", "aspen", "oak", "joshua", "saguaro", "palm", "snag"]);
 const pickKind = (table: (Range & { chance: number })[], roll: number) => { let acc = 0; return table.find((e) => roll < (acc += e.chance)) ?? table[0]!; };
 
 /** Some pine and rock spots become one of the rarer things, by a hash of where they are (so the rng stream is untouched). */
@@ -80,8 +135,9 @@ function pickExtra(x: number, z: number, fallback: Range): Range {
  * Spots for the wild around a park: the kit stands in a clearing (meadow flowers, ferns and the odd rock),
  * and past its edge the forest thickens into groves and glades, all off anything the rider can use.
  */
-export function scatter(level: Level, ground: Ground, seed = 7): Spot[] {
+export function scatter(level: Level, ground: Ground, seed = 7, biome: Biome = (level as { biome?: Biome }).biome ?? "pine"): Spot[] {
   const rng = mulberry32(seed), spots: Spot[] = [], R = ground.R, works = ((level as { earthworks?: Earthwork[] }).earthworks ?? []).flatMap(circles), away = clearingDistance(level, works);
+  const forest = FOREST_KINDS[biome], clearing = CLEARING_KINDS[biome];
   const raised = (x: number, z: number) => level.height(x, z) - ground.height(x, z) > 0.02;
   const near = (x: number, z: number) => {
     for (const [dx, dz] of [[0, 0], [CLEAR, 0], [-CLEAR, 0], [0, CLEAR], [0, -CLEAR], [CLEAR, CLEAR], [-CLEAR, -CLEAR], [CLEAR, -CLEAR], [-CLEAR, CLEAR]]) if (raised(x + dx, z + dz)) return true;
@@ -98,9 +154,9 @@ export function scatter(level: Level, ground: Ground, seed = 7): Spot[] {
     const y = ground.height(x, z);
     if (Math.hypot(ground.height(x + 1, z) - ground.height(x - 1, z), ground.height(x, z + 1) - ground.height(x, z - 1)) / 2 > MAX_SLOPE) continue;
     if (near(x, z)) continue;
-    let range: Range = pickKind(d < MEADOW ? MEADOW_KINDS : FOREST_KINDS, pick);
-    if (range.kind === "pine" || range.kind === "aspen") { if (d < TREE_CLEAR) continue; }
-    else if (range.kind === "rock" && d >= MEADOW) range = pickExtra(x, z, range); // a few rocks are cairns, signs or tents
+    let range: Range = pickKind(d < MEADOW ? clearing : forest, pick);
+    if (TREES.has(range.kind)) { if (d < TREE_CLEAR) continue; }
+    else if (range.kind === "rock" && d >= MEADOW && biome === "pine") range = pickExtra(x, z, range); // a few rocks are cairns, signs or tents
     spots.push({ kind: range.kind, x, z, y, size: range.min + size * (range.max - range.min), yaw });
   }
   return spots;
@@ -152,7 +208,61 @@ const GEOMETRY: Record<Exclude<Kind, "rock">, () => THREE.BufferGeometry> = {
   ])),
   // A two-person tent: a triangular prism in park-ranger orange.
   tent: () => solid([[new THREE.CylinderGeometry(0.5, 0.5, 1, 3, 1).rotateZ(Math.PI / 2).rotateY(Math.PI / 2).scale(1, 0.6, 1).translate(0, 0.25, 0), 0xe2572b]]),
+  // The biome kinds are modelled in Blender; these stand in when the set is off (`?scenery=built`).
+  oak: () => solid([
+    [new THREE.CylinderGeometry(0.06, 0.09, 0.5, 6).translate(0, 0.25, 0), 0x4e3220],
+    [new THREE.IcosahedronGeometry(0.36, 0).translate(0, 0.75, 0), 0x4f7a37],
+  ]),
+  joshua: () => solid([
+    [new THREE.CylinderGeometry(0.05, 0.07, 0.5, 6).translate(0, 0.25, 0), 0x7a6a52],
+    ...[0.3, 2.4, 4.3].map((a): [THREE.BufferGeometry, number] => [new THREE.IcosahedronGeometry(0.16, 0).translate(Math.cos(a) * 0.25, 0.75, Math.sin(a) * 0.25), 0x6e8a52]),
+  ]),
+  saguaro: () => solid([
+    [new THREE.CylinderGeometry(0.09, 0.11, 0.95, 8).translate(0, 0.475, 0), 0x4f7a4a],
+    [new THREE.CylinderGeometry(0.05, 0.05, 0.4, 6).translate(0.18, 0.65, 0), 0x3f6a3c],
+    [new THREE.CylinderGeometry(0.05, 0.05, 0.3, 6).translate(-0.18, 0.7, 0), 0x3f6a3c],
+  ]),
+  palm: () => solid([
+    [new THREE.CylinderGeometry(0.04, 0.06, 0.9, 6).translate(0, 0.45, 0), 0x8a7556],
+    ...[0, 1, 2, 3, 4, 5].map((i): [THREE.BufferGeometry, number] => [new THREE.ConeGeometry(0.07, 0.5, 4).translate(0, 0.25, 0).rotateZ(1.75).rotateY((i * Math.PI) / 3).translate(0, 0.9, 0), i % 2 ? 0x4a8a3a : 0x3a7030]),
+  ]),
+  snag: () => solid([[new THREE.CylinderGeometry(0.035, 0.08, 0.95, 6).translate(0, 0.475, 0), 0x9a9082]]),
+  sage: () => solid([
+    [new THREE.IcosahedronGeometry(0.36, 0).scale(1, 0.6, 1).translate(0, 0.2, 0), 0x8c9a80],
+    [new THREE.IcosahedronGeometry(0.24, 0).scale(1, 0.6, 1).translate(0.3, 0.14, 0.12), 0xa3b094],
+  ]),
 };
+
+export const SCENERY_BUDGETS = ["hi", "mid", "low"] as const;
+export type SceneryBudget = (typeof SCENERY_BUDGETS)[number];
+/** Geometry for each kind, in vertex colours, ready for one instanced mesh per kind. */
+export type ScenerySet = Record<Kind, THREE.BufferGeometry>;
+
+/**
+ * The Blender scenery set (blender/scenery.py) at a budget: one GLB with an object per kind, its material colours baked
+ * into vertex colours so every kind draws with the one material the built primitives use.
+ */
+export async function loadScenery(budget: SceneryBudget, read: (file: string) => Promise<ArrayBuffer | string> = async (f) => f): Promise<ScenerySet> {
+  const glb = await read(`models/scenery-${budget}.glb`), loader = new GLTFLoader();
+  const gltf = typeof glb === "string" ? await loader.loadAsync(glb) : await loader.parseAsync(glb, "");
+  gltf.scene.updateMatrixWorld(true);
+  const byKind = new Map<string, THREE.BufferGeometry[]>();
+  gltf.scene.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    // The exporter splits an object into one mesh per material and names them after it; the kind is the object.
+    let kind = m.name;
+    for (let p: THREE.Object3D | null = m; p; p = p.parent) if ((KINDS as string[]).includes(p.name)) kind = p.name;
+    const g = m.geometry.clone().applyMatrix4(m.matrixWorld), c = (m.material as THREE.MeshStandardMaterial).color, n = g.attributes.position!.count, a = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) a.set([c.r, c.g, c.b], i * 3);
+    g.setAttribute("color", new THREE.BufferAttribute(a, 3));
+    for (const k of ["normal", "uv", "uv1", "tangent"]) if (k !== "normal") g.deleteAttribute(k);
+    byKind.set(kind, [...(byKind.get(kind) ?? []), g.index ? g.toNonIndexed() : g]);
+  });
+  const missing = KINDS.filter((k) => !byKind.has(k));
+  if (missing.length) throw new Error(`scenery set is missing ${missing.join(", ")}`);
+  return Object.fromEntries(KINDS.map((k) => [k, mergeGeometries(byKind.get(k)!)!])) as ScenerySet;
+}
 
 const TINT = new THREE.Color();
 const BY_KIND = (kind: Kind) =>
@@ -169,7 +279,7 @@ export class Scenery {
   private meshes = new Map<Kind, { mesh: THREE.InstancedMesh; mine: Spot[]; shrunk: Set<number> }>();
   private o = new THREE.Object3D();
 
-  constructor(spots: Spot[]) {
+  constructor(spots: Spot[], set?: ScenerySet) {
     const make = (kind: Kind, geo: THREE.BufferGeometry, mat: THREE.Material) => {
       const mine = spots.filter((s) => s.kind === kind);
       const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, mine.length));
@@ -180,9 +290,9 @@ export class Scenery {
       this.meshes.set(kind, { mesh, mine, shrunk: new Set() });
       mine.forEach((s, i) => { this.place(mesh, s, i, 1); mesh.setColorAt(i, TINT.setHSL(0, 0, 0.82 + 0.3 * Math.abs(Math.sin(s.x * 3.7 + s.z * 1.3)))); }); // each one a shade of its own, like hand-painted
     };
-    for (const kind of ["pine", "rock", "aspen", "stump", "cairn", "sign", "tent", "bush", "fern", "flower"] as Kind[]) {
+    for (const kind of KINDS) {
       const { geo, mat } = BY_KIND(kind);
-      make(kind, geo, mat);
+      make(kind, set ? set[kind] : geo, set ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }) : mat);
     }
   }
 
