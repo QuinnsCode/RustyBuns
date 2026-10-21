@@ -45,8 +45,10 @@ $("#city-share").onclick = async () => {
 };
 
 // ---- three: blue hour, wet streets, rain ----------------------------------------------
-const renderer = new THREE.WebGLRenderer({ canvas: $("#c"), antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+// A phone's GPU and memory are the first to give out: no antialiasing, a lower pixel ratio and a smaller shadow map.
+const phone = matchMedia("(pointer: coarse)").matches;
+const renderer = new THREE.WebGLRenderer({ canvas: $("#c"), antialias: !phone });
+renderer.setPixelRatio(Math.min(devicePixelRatio, phone ? 1.5 : 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.3;
 renderer.shadowMap.enabled = true;
@@ -61,7 +63,7 @@ scene.add(new THREE.HemisphereLight("#4a5a90", "#1c1630", 1.5));
 for (const [c, x] of [["#ff2f9a", -1], ["#19d3ff", 1]]) { const l = new THREE.DirectionalLight(c, 0.8); l.position.set(x * 80, 14, -x * 30); scene.add(l); }
 const sun = new THREE.DirectionalLight("#8fa8e8", 1.6);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(phone ? 1024 : 2048, phone ? 1024 : 2048);
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.03;
 scene.add(sun, sun.target);
@@ -1196,6 +1198,8 @@ addEventListener("mousemove", (e) => {
   player.yaw -= e.movementX * 0.0022;
   player.pitch = Math.max(-1.4, Math.min(1.4, player.pitch - e.movementY * 0.0022));
 });
+// Pointer lock is how you walk in, and phones have none: they get the skyline.
+if (!renderer.domElement.requestPointerLock) { $("#city-walk").hidden = true; $("#city-msg").textContent ||= "walking in needs a keyboard and mouse"; }
 $("#city-walk").addEventListener("click", () => renderer.domElement.requestPointerLock?.()?.catch?.(() => {}));
 document.addEventListener("pointerlockchange", () => {
   walking = document.pointerLockElement === renderer.domElement;
