@@ -1,0 +1,6 @@
+// Splat Spray in the browser: the built page as static assets, no Worker code. `bun run deploy` ships it.
+{
+  "name": "splat-spray",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": "dist/ui" }
+}
