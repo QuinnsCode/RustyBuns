@@ -1198,15 +1198,52 @@ addEventListener("mousemove", (e) => {
   player.yaw -= e.movementX * 0.0022;
   player.pitch = Math.max(-1.4, Math.min(1.4, player.pitch - e.movementY * 0.0022));
 });
-// Pointer lock is how you walk in, and phones have none: they get the skyline.
-if (!renderer.domElement.requestPointerLock) { $("#city-walk").hidden = true; $("#city-msg").textContent ||= "walking in needs a keyboard and mouse"; }
-$("#city-walk").addEventListener("click", () => renderer.domElement.requestPointerLock?.()?.catch?.(() => {}));
-document.addEventListener("pointerlockchange", () => {
-  walking = document.pointerLockElement === renderer.domElement;
+// Walking in: a mouse locks the pointer; a phone gets a stick on the left to walk, a drag on the right to look, and a jump button.
+const touchWalk = phone || !renderer.domElement.requestPointerLock;
+const stick = { x: 0, y: 0 };
+function setWalking(on) {
+  walking = on;
   $("#city-gate").hidden = walking;
   $("#city-cross").hidden = !walking;
-  if (!walking) $("#city-what").hidden = true;
-});
+  $("#city-touch").hidden = !(walking && touchWalk);
+  if (!walking) { $("#city-what").hidden = true; stick.x = stick.y = 0; keys.delete("Space"); }
+}
+document.body.insertAdjacentHTML("beforeend", `<div id="city-touch" hidden style="position:fixed;inset:0;pointer-events:none;touch-action:none;user-select:none;-webkit-user-select:none;z-index:5">
+  <div id="city-stick" style="position:absolute;left:max(18px,env(safe-area-inset-left));bottom:max(22px,env(safe-area-inset-bottom));width:116px;height:116px;border-radius:50%;border:1px solid rgba(230,237,248,.4);background:rgba(10,14,22,.35);pointer-events:auto;touch-action:none"><i style="position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;background:rgba(230,237,248,.7)"></i></div>
+  <button id="city-jump" style="position:absolute;right:max(18px,env(safe-area-inset-right));bottom:max(30px,env(safe-area-inset-bottom));width:64px;height:64px;border-radius:50%;pointer-events:auto;touch-action:none">jump</button>
+  <button id="city-exit" aria-label="back up to the skyline" style="position:absolute;right:14px;top:14px;pointer-events:auto;touch-action:none">skyline</button>
+</div>`);
+if (touchWalk) {
+  const pad = $("#city-stick"), nub = pad.firstElementChild, R = 58;
+  let sid = null, lid = null, lx = 0, ly = 0;
+  const aim = (e) => {
+    const r = pad.getBoundingClientRect();
+    let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+    const m = Math.hypot(dx, dy); if (m > R) { dx *= R / m; dy *= R / m; }
+    stick.x = dx / R; stick.y = dy / R; nub.style.transform = `translate(${dx}px, ${dy}px)`;
+  };
+  const rest = () => { sid = null; stick.x = stick.y = 0; nub.style.transform = ""; };
+  pad.addEventListener("pointerdown", (e) => { sid = e.pointerId; pad.setPointerCapture(e.pointerId); aim(e); });
+  pad.addEventListener("pointermove", (e) => { if (e.pointerId === sid) aim(e); });
+  pad.addEventListener("pointerup", rest); pad.addEventListener("pointercancel", rest);
+  // Dragging anywhere else on the canvas looks round.
+  const cv = renderer.domElement;
+  cv.addEventListener("pointerdown", (e) => { if (walking && lid === null) { lid = e.pointerId; lx = e.clientX; ly = e.clientY; cv.setPointerCapture(e.pointerId); } });
+  cv.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== lid) return;
+    player.yaw -= (e.clientX - lx) * 0.005; player.pitch = Math.max(-1.4, Math.min(1.4, player.pitch - (e.clientY - ly) * 0.005));
+    lx = e.clientX; ly = e.clientY;
+  });
+  const lookEnd = (e) => { if (e.pointerId === lid) lid = null; };
+  cv.addEventListener("pointerup", lookEnd); cv.addEventListener("pointercancel", lookEnd);
+  const jump = $("#city-jump");
+  jump.addEventListener("pointerdown", () => keys.add("Space")); jump.addEventListener("pointerup", () => keys.delete("Space")); jump.addEventListener("pointercancel", () => keys.delete("Space"));
+  $("#city-exit").addEventListener("click", () => setWalking(false));
+  $("#city-walk").addEventListener("click", () => setWalking(true));
+} else {
+  $("#city-walk").addEventListener("click", () => renderer.domElement.requestPointerLock?.()?.catch?.(() => {}));
+  document.addEventListener("pointerlockchange", () => setWalking(document.pointerLockElement === renderer.domElement));
+}
 
 /** Walls round a shop: a thin box on each side, the front split round a door. */
 function doorway(b, pw, ph, y0, [fx, fz]) {
@@ -1239,9 +1276,9 @@ const onBlock = (x, z) => blocks.some((b) => Math.abs(x - b.cx) < b.e && Math.ab
 const ray = new THREE.Raycaster(), mid = new THREE.Vector2();
 function updateWalk(dt, now) {
   setFov(62);
-  const f = (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0);
-  const s = (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0);
-  const speed = keys.has("ShiftLeft") || keys.has("ShiftRight") ? 11 * FOLK_EYE : 5.5 * FOLK_EYE;
+  const f = (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0) - stick.y;
+  const s = (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0) + stick.x;
+  const speed = keys.has("ShiftLeft") || keys.has("ShiftRight") || Math.hypot(stick.x, stick.y) > 0.95 ? 11 * FOLK_EYE : 5.5 * FOLK_EYE;
   const sin = Math.sin(player.yaw), cos = Math.cos(player.yaw);
   const move = new THREE.Vector3(-sin * f + cos * s, 0, -cos * f - sin * s);
   if (move.lengthSq() > 1) move.normalize();
