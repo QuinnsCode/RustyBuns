@@ -11,6 +11,7 @@ import { IDLE, start, step, type Input, type State } from "../src/sim.ts";
 import { TRICKS, type Flick } from "../src/tricks.ts";
 
 type Pt = { x: number; z: number };
+type Stop = Pt & { then?: Pt };
 export type Ride = {
   id: string; seconds: number; reached: number; stops: number; bails: number; snags: Pt[]; stuck: string[]; badNumbers: boolean; outOfBounds: number;
   bestCombo: number; chainMax: number; tricks: number; grinds: number; manuals: number; gaps: string[]; missedGaps: string[];
@@ -28,12 +29,16 @@ function runIn(r: Rail): Pt[] {
 
 /** What a rider can see from a spawn: lines, gap launches and pickups within 150 m, nearest first, six at most. */
 export function tour(l: ParkLevel, from: Pt): Pt[] {
-  const todo: Pt[] = [...l.routes.flatMap((r) => r.points), ...l.gaps.map((g) => g.a), ...l.pickups, ...l.rails.filter((r) => r.kind !== "coping").flatMap(runIn)].filter((p) => Math.hypot(p.x - from.x, p.z - from.z) < 150);
+  // a hillside work is ridden from below: its run-in first, then the far side of its lip
+  const hills: Stop[] = l.earthworks.flatMap((e) => (e.run ? [{ ...e.run.from, then: e.run.to }] : []));
+  const todo: Stop[] = [...l.routes.flatMap((r) => r.points), ...l.gaps.map((g) => g.a), ...l.pickups, ...l.rails.filter((r) => r.kind !== "coping").flatMap(runIn), ...hills.filter((_, i) => i % 3 === 0)].filter((p) => Math.hypot(p.x - from.x, p.z - from.z) < 150);
   const out: Pt[] = [];
-  let at = from;
+  let at: Pt = from;
   while (todo.length && out.length < 8) {
     todo.sort((p, q) => Math.hypot(p.x - at.x, p.z - at.z) - Math.hypot(q.x - at.x, q.z - at.z));
-    at = todo.shift()!; out.push(at);
+    const next = todo.shift()!;
+    out.push(next); at = next;
+    if (next.then) { out.push(next.then); at = next.then; }
   }
   return out;
 }
