@@ -176,7 +176,7 @@ if (location.hash.startsWith("#c/")) {
 import * as THREE from "three";
 
 // #c/<name> is someone's code city, a mode of its own (city.js): the backrooms never start.
-if (location.hash.startsWith("#c/")) { import("/found.js").then(({ found }) => found("city")); await import("/city.js"); await new Promise(() => {}); }
+if (location.hash.startsWith("#c/")) { import("/found.js").then(({ found }) => found("city")); await import("/city.js").catch((e) => { console.error(e); window.cityLoaded?.(); document.body.insertAdjacentHTML("beforeend", `<p style="position:fixed;inset:auto 16px 16px;color:#e6edf8;font:14px ui-monospace,monospace;text-align:center">the city couldn't start on this device</p>`); }); await new Promise(() => {}); }
 
 // ---- where we are -------------------------------------------------------------
 // #l/<level> or #r/<owner>/<repo>, and for a diff to smash ?path=&from=&to=; a send-off adds ?mode=wreck (the wrecking room)
