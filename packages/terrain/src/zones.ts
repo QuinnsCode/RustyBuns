@@ -3,7 +3,6 @@
 import elCapitan from "./zones/el-capitan.json";
 import glacierPoint from "./zones/glacier-point.json";
 import grandPrismatic from "./zones/grand-prismatic.json";
-import grandCanyon from "./zones/grand-canyon.json";
 import halfDome from "./zones/half-dome.json";
 import mariposaGrove from "./zones/mariposa-grove.json";
 import oldFaithful from "./zones/old-faithful.json";
@@ -13,11 +12,8 @@ import type { ZoneData } from "./terrain.ts";
 /** Park Hide & Seek's lobby order. Each zone also carries its park, blurb, trees and landmarks; see its zones/types.ts. */
 export const ZONE_DATA = [halfDome, elCapitan, yosemiteFalls, glacierPoint, mariposaGrove, oldFaithful, grandPrismatic];
 
-/** Places added with scripts/fetch-place.ts: real ground with no park around it, so Park Hide & Seek's lobby does not offer them. */
-export const PLACES = [grandCanyon];
-
 export const zoneData = (id: string): ZoneData => {
-  const z = [...ZONE_DATA, ...PLACES].find((d) => d.id === id);
+  const z = ZONE_DATA.find((d) => d.id === id);
   if (!z) throw new Error(`no zone ${id}`);
   return z as unknown as ZoneData;
 };

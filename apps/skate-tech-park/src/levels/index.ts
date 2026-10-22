@@ -1,4 +1,5 @@
 // Every level the picker offers: the training plaza, then the parks on real ground.
+import { loadZone } from "@rustybuns/terrain";
 import type { Level } from "../level.ts";
 import { showFront } from "../front/menu.ts";
 import { plaza } from "./plaza.ts";
@@ -10,14 +11,26 @@ import { halfDome } from "./half-dome.ts";
 import { mariposaGrove } from "./mariposa-grove.ts";
 import { oldFaithful } from "./old-faithful.ts";
 import { yosemiteFalls } from "./yosemite-falls.ts";
+import { zion } from "./zion.ts";
+import { arches } from "./arches.ts";
+import { bryceCanyon } from "./bryce-canyon.ts";
+import { rockyMountain } from "./rocky-mountain.ts";
+import { grandTeton } from "./grand-teton.ts";
+import { glacier } from "./glacier.ts";
+import { olympic } from "./olympic.ts";
+import { joshuaTree } from "./joshua-tree.ts";
+import { deathValley } from "./death-valley.ts";
+import { craterLake } from "./crater-lake.ts";
 import { type ParkLevel, parkLevel } from "./park.ts";
+import { PARKS, regionOf, type Region } from "./parks.ts";
 
-export type Entry = { id: string; name: string; blurb: string; load: (real?: boolean) => Level | ParkLevel };
+export type Entry = { id: string; name: string; blurb: string; region?: Region; load: (real?: boolean) => Promise<Level | ParkLevel> };
 
-const park = (spec: Parameters<typeof parkLevel>[0]): Entry => ({ id: spec.id, name: spec.name, blurb: spec.blurb, load: (real) => parkLevel(spec, real) });
+const regionFor = (id: string) => { const row = PARKS.find((p) => p.id === id || p.places?.includes(id)); return row && regionOf(row.state); };
+const park = (spec: Parameters<typeof parkLevel>[0]): Entry => ({ id: spec.id, name: spec.name, blurb: spec.blurb, region: regionFor(spec.id), load: async (real) => parkLevel(spec, await loadZone(spec.zone), real) });
 
 export const LEVELS: Entry[] = [
-  { id: "plaza", name: "Training Plaza", blurb: "An 80 m walled plaza to learn on: a kicker, a funbox, a rail and a gap.", load: () => plaza },
+  { id: "plaza", name: "Training Plaza", blurb: "An 80 m walled plaza to learn on: a kicker, a funbox, a rail and a gap.", load: async () => plaza },
   park(elCapitan),
   park(glacierPoint),
   park(oldFaithful),
@@ -26,6 +39,16 @@ export const LEVELS: Entry[] = [
   park(yosemiteFalls),
   park(grandPrismatic),
   park(grandCanyon),
+  park(zion),
+  park(arches),
+  park(bryceCanyon),
+  park(rockyMountain),
+  park(grandTeton),
+  park(glacier),
+  park(olympic),
+  park(joshuaTree),
+  park(deathValley),
+  park(craterLake),
 ];
 
 /** The level a query string asks for (`?level=el-capitan`), else El Capitan Meadow: the game starts in a national park. */

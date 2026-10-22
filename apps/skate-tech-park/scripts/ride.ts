@@ -108,7 +108,8 @@ export function ride(l: ParkLevel, spawns = l.spawns.length): Ride {
 
 if (import.meta.main) {
   const only = process.argv.slice(2).find((a) => !a.startsWith("--")), json = process.argv.includes("--json");
-  const rides = LEVELS.filter((e) => e.id !== "plaza" && (!only || e.id === only)).map((e) => ride(e.load() as ParkLevel));
+  const rides = [];
+  for (const e of LEVELS.filter((e) => e.id !== "plaza" && (!only || e.id === only))) rides.push(ride((await e.load()) as ParkLevel));
   if (json) console.log(JSON.stringify(rides, null, 2));
   else for (const r of rides) {
     console.log(`\n${r.id}: ${r.seconds.toFixed(0)}s, ${r.reached}/${r.stops} stops, ${r.bails} bails, ${r.grinds} grinds, ${r.manuals} manuals, ${r.tricks} tricks, chain x${r.chainMax}, combo ${r.bestCombo}`);

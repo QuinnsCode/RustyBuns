@@ -5,6 +5,7 @@ import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 import { TRICKS, type Flick } from "../src/tricks.ts";
+import { build } from "./parks.ts";
 
 setDefaultTimeout(60000);
 
@@ -25,8 +26,8 @@ function tryTrick(l: ParkLevel, trick: Flick) {
 }
 
 for (const e of LEVELS.filter((l) => l.id !== "plaza")) {
-  test(`${e.id}: every trick on the list lands from the first spawn`, () => {
-    const l = e.load() as ParkLevel, failed: string[] = [];
+  test(`${e.id}: every trick on the list lands from the first spawn`, async () => {
+    const l = (await build(e)) as ParkLevel, failed: string[] = [];
     for (const trick of Object.keys(TRICKS) as Flick[]) {
       const r = tryTrick(l, trick);
       if (r.bailed || !r.landed || !r.last.startsWith(trick)) failed.push(`${trick}: ${r.bailed || (r.landed ? `scored "${r.last}"` : "never landed")}`);

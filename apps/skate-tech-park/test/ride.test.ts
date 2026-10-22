@@ -5,12 +5,13 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { ride } from "../scripts/ride.ts";
+import { build } from "./parks.ts";
 
 setDefaultTimeout(60000);
 
 for (const e of LEVELS.filter((l) => l.id !== "plaza")) {
-  test(`${e.id}: the first spawn's tour stays finite, inside the walls, with the camera holding the board`, () => {
-    const r = ride(e.load() as ParkLevel, 1);
+  test(`${e.id}: the first spawn's tour stays finite, inside the walls, with the camera holding the board`, async () => {
+    const r = ride((await build(e)) as ParkLevel, 1);
     expect(r.badNumbers).toBe(false);
     expect(r.outOfBounds).toBe(0);
     expect(r.cameraBelowGround).toBe(0);

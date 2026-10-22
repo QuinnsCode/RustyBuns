@@ -4,8 +4,9 @@ import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { berm, extrude, mirror, trace } from "../src/levels/ribbons.ts";
 import { IDLE, start, step } from "../src/sim.ts";
+import { allParks } from "./parks.ts";
 
-const parks = LEVELS.filter((l) => l.id !== "plaza").map((l) => l.load() as ParkLevel);
+const parks = await allParks();
 
 test("every park is filled with ribbons, each holding one height along the slope and clear of spawns", () => {
   for (const l of parks) {

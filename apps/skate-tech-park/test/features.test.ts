@@ -5,6 +5,7 @@ import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { fallenLog, geyserCone, halfpipe, K, L, outcrop, rollers, tabletop } from "../src/levels/pieces.ts";
 import { IDLE, start, step } from "../src/sim.ts";
+import { level as loadLevel } from "./parks.ts";
 
 const at = { x: 0, z: 0 };
 // Parts are authored in person-sized metres and built K (widths, heights) and L (lengths) times bigger.
@@ -44,8 +45,8 @@ test("a log is round with a grind along its top, a boulder a dome, and a geyser 
   expect(h(c, 0, 0)).toBeLessThan(rim - 0.8 * K);
 });
 
-test("driving at a halfpipe wall climbs it, on the creek at Yosemite Falls", () => {
-  const level = LEVELS.find((l) => l.id === "yosemite-falls")!.load() as ParkLevel;
+test("driving at a halfpipe wall climbs it, on the creek at Yosemite Falls", async () => {
+  const level = (await loadLevel("yosemite-falls")) as ParkLevel;
   const pipe = level.pieces.find((p) => p.name === "creek halfpipe")!;
   const s = start(pipe.x - 7, pipe.z, Math.PI / 2, level); // in the channel, facing the +x wall
   let top = s.y;

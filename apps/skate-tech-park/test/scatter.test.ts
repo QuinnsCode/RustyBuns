@@ -2,8 +2,9 @@
 import { expect, test } from "bun:test";
 import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
+import { allParks } from "./parks.ts";
 
-const parks = LEVELS.filter((l) => l.id !== "plaza").map((l) => l.load() as ParkLevel);
+const parks = await allParks();
 
 test("each park has parts in most of its map, not one cluster", () => {
   for (const l of parks) {
@@ -12,9 +13,9 @@ test("each park has parts in most of its map, not one cluster", () => {
   }
 });
 
-test("scatter is the same every load and leaves every spawn clear", () => {
+test("scatter is the same every load and leaves every spawn clear", async () => {
   for (const [i, l] of parks.entries()) {
-    const again = LEVELS.filter((e) => e.id !== "plaza")[i]!.load() as ParkLevel;
+    const again = (await LEVELS.filter((e) => e.id !== "plaza")[i]!.load()) as ParkLevel; // built again, not the shared one
     expect(again.pieces.map((p) => [p.x, p.z])).toEqual(l.pieces.map((p) => [p.x, p.z]));
     for (const s of l.spawns) for (const p of l.pieces) expect(Math.hypot(p.x - s.x, p.z - s.z)).toBeGreaterThan(5);
   }

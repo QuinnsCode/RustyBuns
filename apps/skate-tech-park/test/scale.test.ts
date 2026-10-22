@@ -10,11 +10,12 @@ import { DECK } from "../src/models.ts";
 import { Scenery, scatter } from "../src/render/scenery.ts";
 import { sky } from "../src/render/sky.ts";
 import { IDLE, start, step } from "../src/sim.ts";
+import { build, level as loadLevel } from "./parks.ts";
 
-const parks = LEVELS.filter((e) => "goals" in e.load());
+const parks = LEVELS.filter((e) => e.id !== "plaza");
 
-test.each(parks.map((e) => [e.name, e.id]))("%s: scenery is seeded and keeps off pieces, rails and the spawn", (_, id) => {
-  const park = LEVELS.find((e) => e.id === id)!.load() as ParkLevel;
+test.each(parks.map((e) => [e.name, e.id]))("%s: scenery is seeded and keeps off pieces, rails and the spawn", async (_, id) => {
+  const park = (await loadLevel(id)) as ParkLevel;
   const spots = scatter(park, park.ground);
   expect(spots.length).toBeGreaterThan(50);
   expect(scatter(park, park.ground)).toEqual(spots); // the same every time
@@ -30,8 +31,8 @@ test.each(parks.map((e) => [e.name, e.id]))("%s: scenery is seeded and keeps off
   expect(new Set(spots.map((s) => s.kind)).size).toBeGreaterThan(4); // and a park has most of them
 });
 
-test.each(parks.map((e) => [e.name, e.id]))("%s: the kit stands in a clearing and the forest thickens past it", (_, id) => {
-  const park = LEVELS.find((e) => e.id === id)!.load() as ParkLevel;
+test.each(parks.map((e) => [e.name, e.id]))("%s: the kit stands in a clearing and the forest thickens past it", async (_, id) => {
+  const park = (await loadLevel(id)) as ParkLevel;
   const spots = scatter(park, park.ground), trees = spots.filter((s) => s.kind === "pine" || s.kind === "aspen");
   const dist = (s: { x: number; z: number }) => Math.min(...park.pieces.map((p) => Math.hypot(p.x - s.x, p.z - s.z) - Math.hypot(p.w, p.d) / 2));
   expect(trees.length).toBeGreaterThan(100);
@@ -40,8 +41,8 @@ test.each(parks.map((e) => [e.name, e.id]))("%s: the kit stands in a clearing an
   expect(trees.filter((s) => dist(s) > 25).length).toBeGreaterThan(trees.filter((s) => dist(s) < 15).length * 0.5); // and the woods are further out (the kit now spreads over the whole map, so the clearing is the 12 m around each part, not a 40 m belt)
 });
 
-test("a pine shrinks away as the rider nears it, and grows back when they leave", () => {
-  const level = LEVELS.find((e) => e.id === "mariposa-grove")!.load() as ParkLevel;
+test("a pine shrinks away as the rider nears it, and grows back when they leave", async () => {
+  const level = (await loadLevel("mariposa-grove")) as ParkLevel;
   const spots = scatter(level, level.ground), scenery = new Scenery(spots);
   const i = spots.filter((s) => s.kind === "pine").length >> 1, pine = spots.filter((s) => s.kind === "pine")[i]!;
   expect(scenery.scaleOf("pine", i)).toBeCloseTo(1);
@@ -51,8 +52,8 @@ test("a pine shrinks away as the rider nears it, and grows back when they leave"
   expect(scenery.scaleOf("pine", i)).toBeCloseTo(1);
 });
 
-test("the chase camera sits behind and above a rider going down the park, and the view widens with speed", () => {
-  const level = LEVELS[0]!.load(), p = level.spawns[0]!;
+test("the chase camera sits behind and above a rider going down the park, and the view widens with speed", async () => {
+  const level = await build(LEVELS[0]!), p = level.spawns[0]!;
   const sim = start(p.x, p.z, p.yaw, level);
   const camera = new THREE.PerspectiveCamera(FOV.base, 1, 0.1, 2000), chase = new Chase(camera);
   chase.snap(sim, "roadster");

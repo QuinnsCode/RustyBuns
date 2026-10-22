@@ -3,7 +3,7 @@
 // you must land), goals and pickups. The builder shrinks a park-hide-seek zone by TERRAIN_SCALE, drapes each
 // site's kit parts onto the slope (or cuts a flat pad under a site that asks for one), and answers `height`
 // as the higher of ground and piece.
-import { heightmapTerrain, withPads, zoneData, type Terrain } from "@rustybuns/terrain";
+import { heightmapTerrain, withPads, type Terrain, type ZoneData } from "@rustybuns/terrain";
 import { type Bounds, type Level, makeLevel, postObstacles, type Spawn } from "../level.ts";
 import { drape, type Gap, join, lift, type Part, type Route } from "./pieces.ts";
 import { type Circle, footprint, scatter, type Scatter } from "./scatter.ts";
@@ -104,8 +104,9 @@ const lanes = (gaps: Gap[], spawns: Spawn[]): [Pt, Pt][] => [
   ...spawns.map((s) => [s, { x: s.x + Math.sin(s.yaw) * 160, z: s.z + Math.cos(s.yaw) * 160 }] as [Pt, Pt]),
 ];
 
-export function parkLevel(spec: ParkSpec, real = false): ParkLevel {
-  const zone = zoneData(spec.zone), raw = heightmapTerrain(zone, TERRAIN_SCALE), relief = real ? REAL_RELIEF : spec.relief ?? RELIEF;
+/** Builds the level from its spec and the ground `loadZone(spec.zone)` fetched. */
+export function parkLevel(spec: ParkSpec, zone: ZoneData, real = false): ParkLevel {
+  const raw = heightmapTerrain(zone, TERRAIN_SCALE), relief = real ? REAL_RELIEF : spec.relief ?? RELIEF;
   const scaled: Terrain = { R: raw.R, height: (x, z) => raw.height(x, z) * relief };
   const bounds = edgeOf(raw.R), pads = spec.sites.flatMap((s) => (s.pad ? [s.pad] : []));
   const ground = pads.length ? withPads(scaled, pads, spec.skirt ?? 10) : scaled;

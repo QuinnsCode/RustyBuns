@@ -6,10 +6,13 @@ import { trackRun } from "../src/levels/goals.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { DECK } from "../src/models.ts";
 import { IDLE, start, step } from "../src/sim.ts";
+import { allParks, build } from "./parks.ts";
 
 // m/s held into a gap: every gap clears at any of these (a ramp's launch does not scale with the board, so the line is not divided by SCALE)
 const SPEEDS = [24, 27, 32];
-const parks = LEVELS.filter((l) => l.id !== "plaza").map((l) => l.load() as ParkLevel);
+/** The parks laid out from a survey of their ground (scripts/survey.ts), and the named gap each one has. */
+const SURVEYED = [["zion", "Angels Drop"], ["arches", "Delicate Gap"], ["bryce-canyon", "Hoodoo Hop"], ["rocky-mountain", "Hallett Leap"], ["grand-teton", "Cathedral Gap"], ["glacier", "Logan Pass Leap"], ["olympic", "Ridge Hop"], ["joshua-tree", "Skull Rock Gap"], ["death-valley", "Zabriskie Drop"], ["crater-lake", "Rim Jump"]] as const;
+const parks = await allParks();
 const park = (id: string) => parks.find((l) => l.id === id)!;
 
 /** Drives from a spawn, steering at a gap's launch and tapping jump at its lip, feeding the tracker. */
@@ -47,7 +50,7 @@ test("every park loads with finite ground, goals and spawns on rideable ground i
 });
 
 test("the named gaps are cleared at any speed from 24 to 32 by driving at the launch and jumping at the lip, and a hop onto the obstacle does not count", () => {
-  for (const [id, spawn, name] of [["el-capitan", "street line", "Boulder Gap"], ["old-faithful", "vent line", "Geyser Hop"], ["mariposa-grove", "clearing", "Fallen Giant"], ["glacier-point", "plateau", "Glacier Point Gap"], ["half-dome", "dome run", "Half Dome Face"], ["yosemite-falls", "shelf", "Upper Fall"], ["yosemite-falls", "valley line", "Valley Hop"], ["grand-prismatic", "street line", "Sinter Jump"], ["grand-canyon", "rim line", "Canyon Drop"]] as const) {
+  for (const [id, spawn, name] of [["el-capitan", "street line", "Boulder Gap"], ["old-faithful", "vent line", "Geyser Hop"], ["mariposa-grove", "clearing", "Fallen Giant"], ["glacier-point", "plateau", "Glacier Point Gap"], ["half-dome", "dome run", "Half Dome Face"], ["yosemite-falls", "shelf", "Upper Fall"], ["yosemite-falls", "valley line", "Valley Hop"], ["grand-prismatic", "street line", "Sinter Jump"], ["grand-canyon", "rim line", "Canyon Drop"], ...SURVEYED.map(([id, gap]) => [id, `${gap} run`, gap] as const)] as const) {
     for (const line of SPEEDS) {
       const { s, run } = drive(park(id), spawn, 20, name, line);
       expect(run.gaps.get(name)).toBeGreaterThanOrEqual(1);
@@ -79,7 +82,7 @@ test("the start screen shows until a level is chosen, and a query picks its leve
   expect(needsStartScreen("?showroom")).toBe(false);
   expect(pick("?level=glacier-point").id).toBe("glacier-point");
   expect(pick("?level=nowhere").id).toBe("el-capitan");
-  expect(LEVELS.map((l) => l.id)).toEqual(["plaza", "el-capitan", "glacier-point", "old-faithful", "mariposa-grove", "half-dome", "yosemite-falls", "grand-prismatic", "grand-canyon"]);
+  expect(LEVELS.map((l) => l.id)).toEqual(["plaza", "el-capitan", "glacier-point", "old-faithful", "mariposa-grove", "half-dome", "yosemite-falls", "grand-prismatic", "grand-canyon", "zion", "arches", "bryce-canyon", "rocky-mountain", "grand-teton", "glacier", "olympic", "joshua-tree", "death-valley", "crater-lake"]);
 });
 
 test("a short hop onto the boulder is not the Boulder Gap", () => {
@@ -117,9 +120,9 @@ test("the kit is toy-sized beside the deck: every piece is wider than the board,
   expect(s.x).toBeGreaterThan(0); // past the stair set at -100 and the funbox at -70, not stopped at the first riser
 });
 
-test("?real rides the terrain at full height: taller ground, and climb goals scale with it", () => {
+test("?real rides the terrain at full height: taller ground, and climb goals scale with it", async () => {
   const e = LEVELS.find((l) => l.id === "half-dome")!;
-  const friendly = e.load() as ParkLevel, real = e.load(true) as ParkLevel;
+  const friendly = (await build(e)) as ParkLevel, real = (await build(e, true)) as ParkLevel;
   expect(real.ground.height(0, 0) + real.ground.height(60, 60)).toBeGreaterThan(friendly.ground.height(0, 0) + friendly.ground.height(60, 60));
   const m = (l: ParkLevel) => (l.goals.find((g) => g.kind === "climb") as { metres: number }).metres;
   expect(m(real)).toBeGreaterThan(m(friendly));
@@ -167,4 +170,13 @@ test("Old Faithful starts facing the geyser and the bowl: riding straight from s
   let reached = false;
   for (let i = 0; i < 20 * 60 && !reached; i++) { step(s, { ...IDLE, throttle: 1, boost: true }, { ...l, obstacles: l.trees }); reached = Math.hypot(s.x - bowl.x, s.z - bowl.z) < 40; }
   expect(reached).toBe(true);
+});
+
+test("a surveyed park spawns the rider facing its signature spot, near enough to read and with the whole way clear of the edge", () => {
+  for (const [id] of SURVEYED) {
+    const l = park(id), sp = l.spawns.find((p) => p.name === "view")!, bearing = Math.atan2(-sp.x, -sp.z);
+    expect([id, Math.abs(Math.atan2(Math.sin(bearing - sp.yaw), Math.cos(bearing - sp.yaw))) < 0.05]).toEqual([id, true]);
+    expect(Math.hypot(sp.x, sp.z)).toBeGreaterThan(40);
+    expect(Math.hypot(sp.x, sp.z)).toBeLessThan(l.ground.R);
+  }
 });

@@ -3,8 +3,9 @@ import { expect, test } from "bun:test";
 import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { IDLE, start, step } from "../src/sim.ts";
+import { allParks } from "./parks.ts";
 
-const parks = LEVELS.filter((l) => l.id !== "plaza").map((l) => l.load() as ParkLevel);
+const parks = await allParks();
 
 test("every park has earthworks spread across the map, not clumped in one corner", () => {
   for (const l of parks) {
