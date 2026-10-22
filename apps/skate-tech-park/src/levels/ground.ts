@@ -50,8 +50,8 @@ export function groundMesh(level: ParkLevel, mood?: Pick<Mood, "wet" | "snow">):
     const patch = 0.5 + 0.5 * Math.sin(x * 0.11 + 1.7) * Math.cos(z * 0.09), flat = 1 - Math.min(1, slope * 1.4); // snow settles in hollows and on flats, and blows off steep rock
     c.lerp(white, Math.min(1, snow * (0.55 + 0.45 * patch) * (0.35 + 0.65 * flat)));
     const paint = level.paint(x, z); // the earthworks: poured concrete, packed dirt, and a pale coping stone along each lip
-    if (paint.surface) {
-      const tone = 0.93 + 0.07 * Math.sin(x * 0.9) * Math.cos(z * 1.1), base = paint.surface === "concrete" ? concrete : hardpack;
+    if (paint.surface) { // swept concrete is darker than the snow round it, so a cut reads
+      const tone = (0.93 + 0.07 * Math.sin(x * 0.9) * Math.cos(z * 1.1)) * (paint.surface === "concrete" ? 1 - 0.18 * snow : 1), base = paint.surface === "concrete" ? concrete : hardpack;
       c.lerp(c2.copy(base).multiplyScalar(tone).lerp(stone, paint.coping * (paint.surface === "concrete" ? 0.75 : 0.3)), paint.k * (1 - (paint.surface === "concrete" ? 0.3 : 0.7) * snow)); // poured concrete is swept clear of snow, packed dirt is not
     }
     const hollow = (level.ground.height(x + 3, z) + level.ground.height(x - 3, z) + level.ground.height(x, z + 3) + level.ground.height(x, z - 3)) / 4 - h; // shade hollows, so a bowl reads as a bowl

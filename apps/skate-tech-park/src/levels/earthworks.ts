@@ -314,6 +314,9 @@ const HILLSIDE: Cut[] = [
   (at, r, y, t) => hillShelf(at, y, t, { w: between(r, 14, 20), h: between(r, 2.2, 3.4) }),
 ];
 
+/** What each `HILLSIDE` entry makes, so a park can be balanced across them. */
+const HILL_KINDS: WorkKind[] = ["hillQuarter", "hillQuarter", "hillHalf", "hillBank", "hillBank", "hillSnake", "hillSnake", "hillShelf"];
+
 /** The hill's plane under a spot, fitted over a 24 m square: its height there, its gradient, and how far the real ground strays from it. */
 export function hillPlane(ground: (x: number, z: number) => number, x: number, z: number, half = 12) {
   const n = 5, pts: { dx: number; dz: number; h: number }[] = [];
@@ -346,7 +349,10 @@ export function layOut(world: ScatterWorld, o: Works = {}): Earthwork[] {
     // a real hillside gets works cut into it, yawed so uphill is local +z; gentle ground keeps the level kit
     const hill = hillPlane(world.ground, x, z), onHill = hill.slope >= hillMin && hill.slope <= HILL.max && hill.off <= HILL.snakeOff;
     if (hillOnly ? !onHill : hill.slope > hillMin && !onHill) return false;
-    const e = onHill ? pick(r, HILLSIDE)({ ...at, yaw: hill.yaw }, r, hill.y0, hill.slope) : pick(r, KIT)(at, r, world.ground(x, z));
+    // the kinds a park has fewest of go first (with some jitter), so the mix stays even whichever shape the hill suits best
+    let e: Earthwork | null = null;
+    if (onHill) for (const { make } of HILLSIDE.map((make, i) => ({ make, n: made.filter((w) => w.kind === HILL_KINDS[i]).length + r() * 1.5 })).sort((p, q) => p.n - q.n)) if ((e = make({ ...at, yaw: hill.yaw }, r, hill.y0, hill.slope))) break;
+    if (!onHill) e = pick(r, KIT)(at, r, world.ground(x, z));
     if (!e || (onHill && e.kind !== "hillSnake" && hill.off > HILL.off)) return false;
     const reach = e.reach, inside = reach - e.skirt + 2; // the skirt may run past the bounds; the work itself may not
     if (x - inside < b.minX || x + inside > b.maxX || z - inside < b.minZ || z + inside > b.maxZ) return false;
