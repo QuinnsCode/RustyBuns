@@ -7,7 +7,7 @@ import { heightmapTerrain, withPads, zoneData, type Terrain } from "@rustybuns/t
 import { type Bounds, type Level, makeLevel, postObstacles, type Spawn } from "../level.ts";
 import { drape, type Gap, join, lift, type Part, type Route } from "./pieces.ts";
 import { type Circle, footprint, scatter, type Scatter } from "./scatter.ts";
-import { circles, copings, layOut, paintAt, sculpt, type Earthwork, type Paint, type Works } from "./earthworks.ts";
+import { circles, copings, hillSpawn, layOut, paintAt, sculpt, type Earthwork, type Paint, type Works } from "./earthworks.ts";
 import { type Fill, fillContours, keepOut, type Pt } from "./ribbons.ts";
 
 /** Real terrain is shrunk this many times across (a 1 km zone becomes a ~333 m disc). One constant for the whole game. */
@@ -122,7 +122,8 @@ export function parkLevel(spec: ParkSpec, real = false): ParkLevel {
   const kit = join(placed, ...spread);
   const land = sculpt(ground, works);
   const parts = join(kit, drape(copings(works), land.height));
-  const inner = makeLevel({ name: spec.name, pieces: parts.pieces, rails: parts.rails, obstacles: trees, spawns: spec.spawns, bounds });
+  const extra = hillSpawn(works, spec.spawns); // a park with no hillside cut near its spawns starts a rider below one
+  const inner = makeLevel({ name: spec.name, pieces: parts.pieces, rails: parts.rails, obstacles: trees, spawns: extra ? [...spec.spawns, extra] : spec.spawns, bounds });
   const height = (x: number, z: number) => Math.max(land.height(x, z), inner.height(x, z));
   const obstacles = [...trees, ...postObstacles(parts.rails, height)];
   return {
