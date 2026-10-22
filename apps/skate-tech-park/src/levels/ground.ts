@@ -123,6 +123,8 @@ export function props(level: ParkLevel) {
       tree.add(bough);
     }
     tree.position.set(t.x, y, t.z);
+    tree.rotation.y = i * 1.7;
+    tree.userData.tree = t; // dressTrees (render/scenery.ts) swaps it for the Blender sequoia once the set loads
     tree.traverse((o) => { o.castShadow = true; });
     group.add(tree);
   });
