@@ -823,6 +823,7 @@
   .list .when { margin-left: auto; font: 12px var(--mono); color: var(--faint); white-space: nowrap; }
   .bar .barform { margin-left: auto; display: flex; gap: 6px; }
   .bar .barform input, .bar .barform select { padding: 2px 8px; font-size: 12.5px; } .bar .barform input { width: 150px; } .bar .barform .btn { padding: 2px 8px; font-size: 12.5px; }
+  .bar .barform .seg button { font-size: 12.5px; padding: 2px 8px; display: inline-flex; gap: 4px; align-items: center; } .bar .barform .seg .octo, .bar .barform .seg svg { width: 14px; height: 14px; } .bar .barform[data-mode=gh] input { width: 230px; }
   @media (max-width: 860px) { .prof-grid { grid-template-columns: 1fr; } .bar .barform { margin-left: 0; } }
   .photo iframe { width: 100%; height: 220px; border: 0; display: block; background: #fff; }
   /* Full page: the page box fills the window (a circular wipe from the corner, where the browser has view transitions) and the profile's cards scroll over it. */
@@ -3806,7 +3807,7 @@ const views = {
       <div class="prof-grid"><div>
         ${agent ? "" : sec("top8", top8Box(user.top8 ?? [], mine))}
         ${sec("repos", `<div class="box"><div class="bar">${icon("book-marked")}<b>${agent ? "Works in" : "Repos"}</b>
-          ${mine ? `<form id="newrepo" class="barform"><input name="name" placeholder="new-repo" required><select name="visibility" aria-label="Visibility"><option value="public">Public</option><option value="private">Private</option></select><button class="btn" title="an empty repo">${icon("plus")}Create</button></form>` : ""}</div>
+          ${mine ? `<form id="newrepo" class="barform"><div class="seg" role="group" aria-label="Add a repo"><button type="button" class="on" aria-pressed="true" data-mode="new" title="Start an empty repo">${icon("plus")}Create new</button><button type="button" aria-pressed="false" data-mode="gh" title="Bring in a repo that already exists on GitHub">${OCTOCAT}Dig from GitHub</button></div><input name="name" placeholder="new-repo" required><select name="visibility" aria-label="Visibility"><option value="public">Public</option><option value="private">Private</option></select><button class="btn" title="an empty repo">${icon("plus")}Create</button></form>` : ""}</div>
           <div class="body folders">${shown.map((r) => `<a href="#/r/${r.owner}/${r.name}" title="${r.level ? `forked from ${esc(r.level)}` : esc(r.name)}">${icon(r.visibility === "private" ? "folder-lock" : "folder")}<span class="fname">${agent ? `${esc(r.owner)}/` : ""}${esc(r.name)}</span><span class="when">${ago(r.created_at)}</span></a>`).join("") || '<span class="muted">empty: dig it up?</span>'}</div></div>`)}
         ${sec("pulse", pulse ? `<div class="pulse-free" id="pulse-box"></div>` : "")}
         ${invites.length ? `<div class="box" id="invites"><div class="bar">${icon("mail")}<b>Invited to</b><span class="muted">crews waiting on you: open one to look, then join</span></div><div class="body list">${invites.map(inviteRow).join("")}</div></div>` : ""}
@@ -3853,7 +3854,20 @@ const views = {
       }, 15_000);
     }
     $("#editpage")?.addEventListener("click", () => { const f = $("#theme"); f.hidden = !f.hidden; if (!f.hidden) f.bio.focus(); });
-    $("#newrepo")?.addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target; await api("/repos", { name: f.name.value, visibility: f.visibility.value }); location.hash = `#/r/${me()}/${f.name.value}`; });
+    $("#newrepo")?.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => {
+      const f = $("#newrepo"), gh = b.dataset.mode === "gh";
+      f.dataset.mode = b.dataset.mode;
+      f.querySelectorAll("[data-mode]").forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-pressed", on); });
+      f.name.placeholder = gh ? "paste a GitHub link or owner/name" : "new-repo";
+      f.visibility.hidden = gh; f.querySelector(".btn").lastChild.textContent = gh ? "Dig" : "Create"; f.name.focus();
+    }));
+    $("#newrepo")?.addEventListener("submit", async (e) => {
+      e.preventDefault(); const f = e.target;
+      if (f.dataset.mode === "gh") { const g = openDig(); g.repo.value = f.name.value; g.repo.dispatchEvent(new Event("input", { bubbles: true })); return; }
+      if (/[\/:@]/.test(f.name.value)) return toast("That looks like a link: switch to “Dig from GitHub” to bring it in.", 5000);
+      try { await api("/repos", { name: f.name.value, visibility: f.visibility.value }); } catch (err) { return toast(err.message === "bad repo name" ? "Repo names are letters, numbers, dots, dashes and underscores." : err.message, 5000); }
+      location.hash = `#/r/${me()}/${f.name.value}`;
+    });
     wireDig();
     // The side column folds box by box, like the code page's panels; this browser keeps which are open.
     foldSide($(".prof-grid > aside"), open === "tokens" ? "tokens" : null);
