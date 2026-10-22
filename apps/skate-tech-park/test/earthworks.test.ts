@@ -112,3 +112,10 @@ test("every park has a hillside cut within 60 m of a spawn, so a rider sees one 
     expect([l.id, l.spawns.some((sp) => hills.some((e) => Math.hypot(e.x - sp.x, e.z - sp.z) < 60))]).toEqual([l.id, true]);
   }
 });
+
+test("a snake run stays one surface on rough ground that strays a metre from its plane", () => {
+  const rough = { R: 500, height: (x: number, z: number) => PLANE(x, z) + 0.9 * Math.sin(x / 7) * Math.cos(z / 9) }, e = hillSnake(at, y0, SLOPE), land = sculpt(rough, [e]), h = 0.1;
+  let worst = 0;
+  for (let x = e.x - e.reach; x < e.x + e.reach; x += h) for (let z = e.z - e.reach; z < e.z + e.reach; z += h) worst = Math.max(worst, Math.abs(land.height(x + h, z) - land.height(x, z)), Math.abs(land.height(x, z + h) - land.height(x, z)));
+  expect(worst).toBeLessThan(0.5);
+});

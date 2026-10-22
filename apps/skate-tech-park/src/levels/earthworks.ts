@@ -323,7 +323,8 @@ export function hillPlane(ground: (x: number, z: number) => number, x: number, z
   return { y0, slope: Math.hypot(gx, gz), yaw: Math.atan2(gx, gz), off: Math.max(...pts.map((p) => Math.abs(p.h - (y0 + gx * p.dx + gz * p.dz)))) };
 }
 
-export const HILL = { min: 0.12, max: 0.6, off: 0.6 };
+/** Slope range a hillside work is cut in, and how far the ground may stray from its plane: a snake follows the fall line so it tolerates more than a pipe. */
+export const HILL = { min: 0.12, max: 0.6, off: 0.6, snakeOff: 1.2 };
 
 /** `hillMin` is the slope from which a cell gets a hillside work instead of the level kit (a park with little hill lowers it); `near` is how close to a spawn a hillside work is guaranteed to stand. */
 export type Works = { cell?: number; fill?: number; slope?: number; seed?: number; hillMin?: number; near?: number };
@@ -343,10 +344,10 @@ export function layOut(world: ScatterWorld, o: Works = {}): Earthwork[] {
   const place = (x: number, z: number, hillOnly: boolean) => {
     const at = { x, z, yaw: (Math.PI / 4) * Math.floor(r() * 8) };
     // a real hillside gets works cut into it, yawed so uphill is local +z; gentle ground keeps the level kit
-    const hill = hillPlane(world.ground, x, z), onHill = hill.slope >= hillMin && hill.slope <= HILL.max && hill.off <= HILL.off;
+    const hill = hillPlane(world.ground, x, z), onHill = hill.slope >= hillMin && hill.slope <= HILL.max && hill.off <= HILL.snakeOff;
     if (hillOnly ? !onHill : hill.slope > hillMin && !onHill) return false;
     const e = onHill ? pick(r, HILLSIDE)({ ...at, yaw: hill.yaw }, r, hill.y0, hill.slope) : pick(r, KIT)(at, r, world.ground(x, z));
-    if (!e) return false;
+    if (!e || (onHill && e.kind !== "hillSnake" && hill.off > HILL.off)) return false;
     const reach = e.reach, inside = reach - e.skirt + 2; // the skirt may run past the bounds; the work itself may not
     if (x - inside < b.minX || x + inside > b.maxX || z - inside < b.minZ || z + inside > b.maxZ) return false;
     if (Math.hypot(x, z) + reach > world.R * 0.95) return false;
