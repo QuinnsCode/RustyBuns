@@ -8,4 +8,4 @@ export const haleakala = streetPark("haleakala", {
   bowl: { x: -93, z: -3 },
   gap: { at: { x: 29, z: 164, yaw: 2.356194490192345 }, run: { x: -20, z: 213 }, land: { x: 80, z: 122 }, rb: 26, min: 42 },
   view: { x: -113, z: 107 },
-}, { gap: "Crater Rim Leap", blurb: "Skate the cinder benches beside the crater and clear the first drop toward the cones." });
+}, { gap: "Crater Rim Leap", peak: { model: "volcano", tall: 150, y: 7.6 }, blurb: "Skate the cinder benches beside the crater and clear the first drop toward the cones." });

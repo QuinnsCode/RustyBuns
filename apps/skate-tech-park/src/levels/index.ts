@@ -36,6 +36,21 @@ import { mountRainier } from "./mount-rainier.ts";
 import { lassenVolcanic } from "./lassen-volcanic.ts";
 import { sequoia } from "./sequoia.ts";
 import { redwood } from "./redwood.ts";
+import { denali } from "./denali.ts";
+import { glacierBay } from "./glacier-bay.ts";
+import { greatBasin } from "./great-basin.ts";
+import { guadalupeMountains } from "./guadalupe-mountains.ts";
+import { kenaiFjords } from "./kenai-fjords.ts";
+import { kingsCanyon } from "./kings-canyon.ts";
+import { mesaVerde } from "./mesa-verde.ts";
+import { newRiverGorge } from "./new-river-gorge.ts";
+import { northCascades } from "./north-cascades.ts";
+import { petrifiedForest } from "./petrified-forest.ts";
+import { pinnacles } from "./pinnacles.ts";
+import { saguaro } from "./saguaro.ts";
+import { shenandoah } from "./shenandoah.ts";
+import { wrangellStElias } from "./wrangell-st-elias.ts";
+import { channelIslands } from "./channel-islands.ts";
 import { type ParkLevel, parkLevel } from "./park.ts";
 import { PARKS, regionOf, type Region } from "./parks.ts";
 
@@ -79,6 +94,21 @@ export const LEVELS: Entry[] = [
   park(lassenVolcanic),
   park(sequoia),
   park(redwood),
+  park(denali),
+  park(glacierBay),
+  park(greatBasin),
+  park(guadalupeMountains),
+  park(kenaiFjords),
+  park(kingsCanyon),
+  park(mesaVerde),
+  park(newRiverGorge),
+  park(northCascades),
+  park(petrifiedForest),
+  park(pinnacles),
+  park(saguaro),
+  park(shenandoah),
+  park(wrangellStElias),
+  park(channelIslands),
 ];
 
 /** The level a query string asks for (`?level=el-capitan`), else El Capitan Meadow: the game starts in a national park. */

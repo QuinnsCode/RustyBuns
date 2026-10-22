@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { LEVELS, needsStartScreen, pick } from "../src/levels/index.ts";
 import { trackRun } from "../src/levels/goals.ts";
-import type { ParkLevel } from "../src/levels/park.ts";
+import type { ParkLevel, Peak } from "../src/levels/park.ts";
 import { DECK } from "../src/models.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 import { allParks, build } from "./parks.ts";
@@ -11,7 +11,7 @@ import { allParks, build } from "./parks.ts";
 // m/s held into a gap: every gap clears at any of these (a ramp's launch does not scale with the board, so the line is not divided by SCALE)
 const SPEEDS = [24, 27, 32];
 /** The parks laid out from a survey of their ground (scripts/survey.ts), and the named gap each one has. */
-const SURVEYED = [["zion", "Angels Drop"], ["arches", "Delicate Gap"], ["bryce-canyon", "Hoodoo Hop"], ["rocky-mountain", "Hallett Leap"], ["grand-teton", "Cathedral Gap"], ["glacier", "Logan Pass Leap"], ["olympic", "Ridge Hop"], ["joshua-tree", "Skull Rock Gap"], ["death-valley", "Zabriskie Drop"], ["crater-lake", "Rim Jump"], ["acadia", "Cadillac Leap"], ["badlands", "Gully Gap"], ["big-bend", "Santa Elena Leap"], ["black-canyon", "Painted Wall Gap"], ["canyonlands", "Mesa Arch Gap"], ["capitol-reef", "Waterpocket Hop"], ["carlsbad-caverns", "Sinkhole Jump"], ["great-sand-dunes", "Dune Drop"], ["great-smoky-mountains", "Clingmans Drop"], ["haleakala", "Crater Rim Leap"], ["hawaii-volcanoes", "Caldera Drop"], ["mount-rainier", "Paradise Leap"], ["lassen-volcanic", "Bumpass Hop"], ["sequoia", "Giant Forest Gap"], ["redwood", "Fern Gap"]] as const;
+const SURVEYED = [["zion", "Angels Drop"], ["arches", "Delicate Gap"], ["bryce-canyon", "Hoodoo Hop"], ["rocky-mountain", "Hallett Leap"], ["grand-teton", "Cathedral Gap"], ["glacier", "Logan Pass Leap"], ["olympic", "Ridge Hop"], ["joshua-tree", "Skull Rock Gap"], ["death-valley", "Zabriskie Drop"], ["crater-lake", "Rim Jump"], ["acadia", "Cadillac Leap"], ["badlands", "Gully Gap"], ["big-bend", "Santa Elena Leap"], ["black-canyon", "Painted Wall Gap"], ["canyonlands", "Mesa Arch Gap"], ["capitol-reef", "Waterpocket Hop"], ["carlsbad-caverns", "Sinkhole Jump"], ["great-sand-dunes", "Dune Drop"], ["great-smoky-mountains", "Clingmans Drop"], ["haleakala", "Crater Rim Leap"], ["hawaii-volcanoes", "Caldera Drop"], ["mount-rainier", "Paradise Leap"], ["lassen-volcanic", "Bumpass Hop"], ["sequoia", "Giant Forest Gap"], ["redwood", "Fern Gap"], ["denali", "Wonder Lake Leap"], ["glacier-bay", "Margerie Gap"], ["great-basin", "Bristlecone Jump"], ["guadalupe-mountains", "Reef Edge Leap"], ["kenai-fjords", "Exit Glacier Gap"], ["kings-canyon", "Zumwalt Gap"], ["mesa-verde", "Cliff Palace Gap"], ["new-river-gorge", "Gorge Hop"], ["north-cascades", "Diablo Leap"], ["petrified-forest", "Blue Mesa Hop"], ["pinnacles", "High Peaks Gap"], ["saguaro", "Cactus Gap"], ["shenandoah", "Stony Man Leap"], ["wrangell-st-elias", "Kennecott Gap"], ["channel-islands", "Island Gap"]] as const;
 const parks = await allParks();
 const park = (id: string) => parks.find((l) => l.id === id)!;
 
@@ -50,15 +50,17 @@ test("every park loads with finite ground, goals and spawns on rideable ground i
 });
 
 test("the named gaps are cleared at any speed from 24 to 32 by driving at the launch and jumping at the lip, and a hop onto the obstacle does not count", () => {
+  const failed: string[] = [];
   for (const [id, spawn, name] of [["el-capitan", "street line", "Boulder Gap"], ["old-faithful", "vent line", "Geyser Hop"], ["mariposa-grove", "clearing", "Fallen Giant"], ["glacier-point", "plateau", "Glacier Point Gap"], ["half-dome", "dome run", "Half Dome Face"], ["yosemite-falls", "shelf", "Upper Fall"], ["yosemite-falls", "valley line", "Valley Hop"], ["grand-prismatic", "street line", "Sinter Jump"], ["grand-canyon", "rim line", "Canyon Drop"], ...SURVEYED.map(([id, gap]) => [id, `${gap} run`, gap] as const)] as const) {
     for (const line of SPEEDS) {
       const { s, run } = drive(park(id), spawn, 20, name, line);
-      expect(run.gaps.get(name)).toBeGreaterThanOrEqual(1);
+      if (!run.gaps.get(name)) { failed.push(`${id} at ${line} m/s`); continue; }
       expect(s.score).toBeGreaterThanOrEqual(park(id).gaps.find((g) => g.name === name)!.bonus);
       expect(run.bestCombo).toBeGreaterThan(0);
     }
   }
-}, 30000);
+  expect(failed).toEqual([]);
+}, 60000);
 
 test("El Capitan's talus is a quarter pipe: driving at the wall climbs it", () => {
   const l = park("el-capitan"), { s, run } = drive(l, "wall view", 8);
@@ -82,7 +84,7 @@ test("the start screen shows until a level is chosen, and a query picks its leve
   expect(needsStartScreen("?showroom")).toBe(false);
   expect(pick("?level=glacier-point").id).toBe("glacier-point");
   expect(pick("?level=nowhere").id).toBe("el-capitan");
-  expect(LEVELS.map((l) => l.id)).toEqual(["plaza", "el-capitan", "glacier-point", "old-faithful", "mariposa-grove", "half-dome", "yosemite-falls", "grand-prismatic", "grand-canyon", "zion", "arches", "bryce-canyon", "rocky-mountain", "grand-teton", "glacier", "olympic", "joshua-tree", "death-valley", "crater-lake", "acadia", "badlands", "big-bend", "black-canyon", "canyonlands", "capitol-reef", "carlsbad-caverns", "great-sand-dunes", "great-smoky-mountains", "haleakala", "hawaii-volcanoes", "mount-rainier", "lassen-volcanic", "sequoia", "redwood"]);
+  expect(LEVELS.map((l) => l.id)).toEqual(["plaza", "el-capitan", "glacier-point", "old-faithful", "mariposa-grove", "half-dome", "yosemite-falls", "grand-prismatic", "grand-canyon", "zion", "arches", "bryce-canyon", "rocky-mountain", "grand-teton", "glacier", "olympic", "joshua-tree", "death-valley", "crater-lake", "acadia", "badlands", "big-bend", "black-canyon", "canyonlands", "capitol-reef", "carlsbad-caverns", "great-sand-dunes", "great-smoky-mountains", "haleakala", "hawaii-volcanoes", "mount-rainier", "lassen-volcanic", "sequoia", "redwood", "denali", "glacier-bay", "great-basin", "guadalupe-mountains", "kenai-fjords", "kings-canyon", "mesa-verde", "new-river-gorge", "north-cascades", "petrified-forest", "pinnacles", "saguaro", "shenandoah", "wrangell-st-elias", "channel-islands"]);
 });
 
 test("a short hop onto the boulder is not the Boulder Gap", () => {
@@ -178,5 +180,18 @@ test("a surveyed park spawns the rider facing its signature spot, near enough to
     expect([id, Math.abs(Math.atan2(Math.sin(bearing - sp.yaw), Math.cos(bearing - sp.yaw))) < 0.05]).toEqual([id, true]);
     expect(Math.hypot(sp.x, sp.z)).toBeGreaterThan(40);
     expect(Math.hypot(sp.x, sp.z)).toBeLessThan(l.ground.R);
+  }
+});
+
+test("a far landmark stands straight ahead of the view spawn, past the park's edge, with its toe on the edge", () => {
+  const withPeak = parks.filter((l) => l.landmarks.some((m) => m.kind === "peak" && m.model !== "half-dome"));
+  expect(withPeak.length).toBeGreaterThanOrEqual(9);
+  for (const l of withPeak) {
+    const sp = l.spawns.find((p) => p.name === "view")!, m = l.landmarks.find((x): x is Peak => x.kind === "peak")!;
+    const dist = Math.hypot(m.x, m.z), toward = Math.atan2(m.x - sp.x, m.z - sp.z), off = Math.abs(Math.atan2(Math.sin(toward - sp.yaw), Math.cos(toward - sp.yaw)));
+    expect([l.id, off < 0.08]).toEqual([l.id, true]); // the spawn looks at it
+    expect(dist - 1.5 * m.tall).toBeGreaterThan(l.ground.R - 10); // standing past the edge,
+    expect(dist - 1.5 * m.tall).toBeLessThan(l.ground.R + 15); // its toe meeting it
+    expect(m.y).toBeCloseTo(l.ground.height(m.x / dist * (l.ground.R - 14), m.z / dist * (l.ground.R - 14)), 0);
   }
 });

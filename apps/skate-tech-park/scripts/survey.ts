@@ -105,6 +105,10 @@ const sky = strips.find((s) => street && clear(along(s, 200), taken, 40));
 const bowl = discs.find((d) => clear([d], taken, 45) && (!sky || clear([d], along(sky, 200), 45)));
 const away = [...taken, ...(sky ? along(sky, 200) : []), ...(bowl ? [bowl] : [])];
 const view = discs.find((d) => Math.hypot(d.x, d.z) > 50 && clear([d], away, 40));
-const gap = gaps.find((g) => clear([g.at, g.land, g.run, { x: (g.at.x + g.land.x) / 2, z: (g.at.z + g.land.z) / 2 }], away, 40));
+const natural = gaps.find((g) => clear([g.at, g.land, g.run, { x: (g.at.x + g.land.x) / 2, z: (g.at.z + g.land.z) / 2 }], away, 40));
+// no drop to launch from (level ground): a flat run for a kit gap instead
+const flat = distinct.find((s) => clear(along(s, 140), away, 40));
+const gap = natural ?? (flat && { built: bench(flat, 0) });
+if (view) { const len = Math.hypot(view.x, view.z), ex = (-view.x / len) * (R - 14), ez = (-view.z / len) * (R - 14); console.log(`\nground at the edge behind the spot (a far landmark's y): ${h(ex, ez).toFixed(1)}`); }
 console.log(`\nplan for ${id}:`);
-console.log(JSON.stringify({ street: street && bench(street, 0), sky: sky && bench(sky, 0), bowl: bowl && { x: Math.round(bowl.x), z: Math.round(bowl.z) }, gap: gap && { at: gap.at, run: gap.run, land: gap.land, rb: gap.rb, min: gap.min }, view: view && { x: Math.round(view.x), z: Math.round(view.z) } }).replace(/\n\s*/g, " "));
+console.log(JSON.stringify({ street: street && bench(street, 0), sky: sky && bench(sky, 0), bowl: bowl && { x: Math.round(bowl.x), z: Math.round(bowl.z) }, gap: gap && ("built" in gap ? gap : { at: gap.at, run: gap.run, land: gap.land, rb: gap.rb, min: gap.min }), view: view && { x: Math.round(view.x), z: Math.round(view.z) } }).replace(/\n\s*/g, " "));
