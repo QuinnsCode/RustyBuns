@@ -130,6 +130,24 @@ export const ledge = (at: At, o: { len?: number; w?: number; h?: number; name?: 
   return part({ pieces: [{ ...piece("box", name, at.x, at.z, at.yaw ?? 0, w, len, h, h), look: BLOCK }], rails: [bar("ledge", at, 0, -len / 2, 0, len / 2, h)] });
 };
 
+/**
+ * A giant picnic table: the top is a box to manual across and grind along either edge, and the two seats are low ledges
+ * either side of it, each a piece of its own so the sim rides them. `w` is the top's width; the seats stand `gap` out from it.
+ */
+export const picnicTable = (at: At, o: { w?: number; d?: number; h?: number; gap?: number; name?: string } = {}): Part => {
+  const { name = "picnic table" } = o, w = (o.w ?? 1.6) * K, d = (o.d ?? 5) * L, h = (o.h ?? 0.78) * K, seatW = 0.55 * K, seatH = h * 0.58, gap = (o.gap ?? 0.25) * K, yaw = at.yaw ?? 0;
+  const c = Math.cos(yaw), s = Math.sin(yaw), side = (lx: number) => ({ x: at.x + lx * c, z: at.z - lx * s });
+  const seat = (lx: number, i: number) => {
+    const p = side(lx);
+    return { ...piece("box", `${name} seat ${i}`, p.x, p.z, yaw, seatW, d, seatH, seatH), look: { kind: "bench" } as Look };
+  };
+  const sx = w / 2 + gap + seatW / 2;
+  return part({
+    pieces: [{ ...piece("box", name, at.x, at.z, yaw, w, d, h, h), look: { kind: "table" } as Look }, seat(-sx, 1), seat(sx, 2)],
+    rails: [bar("ledge", at, -w / 2, -d / 2, -w / 2, d / 2, h), bar("ledge", at, w / 2, -d / 2, w / 2, d / 2, h), bar("ledge", at, -sx - seatW / 2, -d / 2, -sx - seatW / 2, d / 2, seatH), bar("ledge", at, sx + seatW / 2, -d / 2, sx + seatW / 2, d / 2, seatH)],
+  });
+};
+
 /** A short low box with a flat top, to manual across: sited between two bigger features so the line's speed carries over. */
 export const manualPad = (at: At, o: { len?: number; w?: number; h?: number; name?: string } = {}): Part => {
   const { name = "manual pad" } = o, len = (o.len ?? 5) * L, w = (o.w ?? 2.5) * K, h = (o.h ?? 0.12) * K; // a rise the board rolls up (0.3 m or less)
