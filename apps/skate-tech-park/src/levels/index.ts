@@ -21,6 +21,21 @@ import { olympic } from "./olympic.ts";
 import { joshuaTree } from "./joshua-tree.ts";
 import { deathValley } from "./death-valley.ts";
 import { craterLake } from "./crater-lake.ts";
+import { acadia } from "./acadia.ts";
+import { badlands } from "./badlands.ts";
+import { bigBend } from "./big-bend.ts";
+import { blackCanyon } from "./black-canyon.ts";
+import { canyonlands } from "./canyonlands.ts";
+import { capitolReef } from "./capitol-reef.ts";
+import { carlsbadCaverns } from "./carlsbad-caverns.ts";
+import { greatSandDunes } from "./great-sand-dunes.ts";
+import { greatSmokyMountains } from "./great-smoky-mountains.ts";
+import { haleakala } from "./haleakala.ts";
+import { hawaiiVolcanoes } from "./hawaii-volcanoes.ts";
+import { mountRainier } from "./mount-rainier.ts";
+import { lassenVolcanic } from "./lassen-volcanic.ts";
+import { sequoia } from "./sequoia.ts";
+import { redwood } from "./redwood.ts";
 import { type ParkLevel, parkLevel } from "./park.ts";
 import { PARKS, regionOf, type Region } from "./parks.ts";
 
@@ -49,6 +64,21 @@ export const LEVELS: Entry[] = [
   park(joshuaTree),
   park(deathValley),
   park(craterLake),
+  park(acadia),
+  park(badlands),
+  park(bigBend),
+  park(blackCanyon),
+  park(canyonlands),
+  park(capitolReef),
+  park(carlsbadCaverns),
+  park(greatSandDunes),
+  park(greatSmokyMountains),
+  park(haleakala),
+  park(hawaiiVolcanoes),
+  park(mountRainier),
+  park(lassenVolcanic),
+  park(sequoia),
+  park(redwood),
 ];
 
 /** The level a query string asks for (`?level=el-capitan`), else El Capitan Meadow: the game starts in a national park. */

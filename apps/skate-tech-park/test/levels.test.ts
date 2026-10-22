@@ -11,7 +11,7 @@ import { allParks, build } from "./parks.ts";
 // m/s held into a gap: every gap clears at any of these (a ramp's launch does not scale with the board, so the line is not divided by SCALE)
 const SPEEDS = [24, 27, 32];
 /** The parks laid out from a survey of their ground (scripts/survey.ts), and the named gap each one has. */
-const SURVEYED = [["zion", "Angels Drop"], ["arches", "Delicate Gap"], ["bryce-canyon", "Hoodoo Hop"], ["rocky-mountain", "Hallett Leap"], ["grand-teton", "Cathedral Gap"], ["glacier", "Logan Pass Leap"], ["olympic", "Ridge Hop"], ["joshua-tree", "Skull Rock Gap"], ["death-valley", "Zabriskie Drop"], ["crater-lake", "Rim Jump"]] as const;
+const SURVEYED = [["zion", "Angels Drop"], ["arches", "Delicate Gap"], ["bryce-canyon", "Hoodoo Hop"], ["rocky-mountain", "Hallett Leap"], ["grand-teton", "Cathedral Gap"], ["glacier", "Logan Pass Leap"], ["olympic", "Ridge Hop"], ["joshua-tree", "Skull Rock Gap"], ["death-valley", "Zabriskie Drop"], ["crater-lake", "Rim Jump"], ["acadia", "Cadillac Leap"], ["badlands", "Gully Gap"], ["big-bend", "Santa Elena Leap"], ["black-canyon", "Painted Wall Gap"], ["canyonlands", "Mesa Arch Gap"], ["capitol-reef", "Waterpocket Hop"], ["carlsbad-caverns", "Sinkhole Jump"], ["great-sand-dunes", "Dune Drop"], ["great-smoky-mountains", "Clingmans Drop"], ["haleakala", "Crater Rim Leap"], ["hawaii-volcanoes", "Caldera Drop"], ["mount-rainier", "Paradise Leap"], ["lassen-volcanic", "Bumpass Hop"], ["sequoia", "Giant Forest Gap"], ["redwood", "Fern Gap"]] as const;
 const parks = await allParks();
 const park = (id: string) => parks.find((l) => l.id === id)!;
 
@@ -82,7 +82,7 @@ test("the start screen shows until a level is chosen, and a query picks its leve
   expect(needsStartScreen("?showroom")).toBe(false);
   expect(pick("?level=glacier-point").id).toBe("glacier-point");
   expect(pick("?level=nowhere").id).toBe("el-capitan");
-  expect(LEVELS.map((l) => l.id)).toEqual(["plaza", "el-capitan", "glacier-point", "old-faithful", "mariposa-grove", "half-dome", "yosemite-falls", "grand-prismatic", "grand-canyon", "zion", "arches", "bryce-canyon", "rocky-mountain", "grand-teton", "glacier", "olympic", "joshua-tree", "death-valley", "crater-lake"]);
+  expect(LEVELS.map((l) => l.id)).toEqual(["plaza", "el-capitan", "glacier-point", "old-faithful", "mariposa-grove", "half-dome", "yosemite-falls", "grand-prismatic", "grand-canyon", "zion", "arches", "bryce-canyon", "rocky-mountain", "grand-teton", "glacier", "olympic", "joshua-tree", "death-valley", "crater-lake", "acadia", "badlands", "big-bend", "black-canyon", "canyonlands", "capitol-reef", "carlsbad-caverns", "great-sand-dunes", "great-smoky-mountains", "haleakala", "hawaii-volcanoes", "mount-rainier", "lassen-volcanic", "sequoia", "redwood"]);
 });
 
 test("a short hop onto the boulder is not the Boulder Gap", () => {
