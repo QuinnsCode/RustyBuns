@@ -10,7 +10,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Piece } from "../level.ts";
 
-export const KIT_MODULES = ["ramp", "step", "block", "rock", "log", "hip", "cliff", "bowl", "table", "bench"] as const;
+export const KIT_MODULES = ["ramp", "step", "block", "rock", "log", "hip", "cliff", "bowl", "table", "bench", "boardwalk"] as const;
 export const KIT_BUDGETS = ["hi", "mid", "low"] as const;
 export type KitModule = (typeof KIT_MODULES)[number];
 export type KitBudget = (typeof KIT_BUDGETS)[number];
@@ -31,7 +31,7 @@ const MARGIN: Record<KitModule, { x: number | null; z: number | null; trim: numb
   rock: { x: null, z: null, trim: 0.3 }, log: { x: null, z: 0.8, trim: 0.15 }, hip: { x: null, z: null, trim: 0.1 },
   cliff: { x: null, z: null, trim: 0.3 }, bowl: { x: 0.3, z: 0.3, trim: 0.1 },
   // furniture stretches with its piece: the planks and legs are where the piece has them, only the top's thickness is fixed
-  table: { x: null, z: null, trim: 0.12 }, bench: { x: null, z: null, trim: 0.1 },
+  table: { x: null, z: null, trim: 0.12 }, bench: { x: null, z: null, trim: 0.1 }, boardwalk: { x: null, z: null, trim: 0.12 },
 };
 const BAND = 0.4, TOP_BAND = 0.9;
 /** A pool's surface is shaded by how far up the wall it is (0 the floor, 1 the deck): a darker floor and a band of tile near the lip. */

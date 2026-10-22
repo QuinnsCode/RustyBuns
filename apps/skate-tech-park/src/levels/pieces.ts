@@ -148,6 +148,19 @@ export const picnicTable = (at: At, o: { w?: number; d?: number; h?: number; gap
   });
 };
 
+/**
+ * A boardwalk, as the geyser basins and the swamps have: a raised plank walk to manual along, with a ledge down each edge
+ * and a handrail along one side (`rail: "left" | "right" | "both" | "none"`) standing a metre over the deck to grind.
+ */
+export const boardwalk = (at: At, o: { len?: number; w?: number; h?: number; rail?: "left" | "right" | "both" | "none"; name?: string } = {}): Part => {
+  const { name = "boardwalk", rail = "right" } = o, len = (o.len ?? 24) * L, w = (o.w ?? 2.4) * K, h = (o.h ?? 0.6) * K, top = h + 1 * K;
+  const sides = rail === "both" ? [-1, 1] : rail === "left" ? [-1] : rail === "right" ? [1] : [];
+  return part({
+    pieces: [{ ...piece("box", name, at.x, at.z, at.yaw ?? 0, w, len, h, h), look: { kind: "boardwalk" } as Look }],
+    rails: [bar("ledge", at, -w / 2, -len / 2, -w / 2, len / 2, h), bar("ledge", at, w / 2, -len / 2, w / 2, len / 2, h), ...sides.map((sgn) => bar("rail", at, sgn * (w / 2 - 0.15), -len / 2, sgn * (w / 2 - 0.15), len / 2, top))],
+  });
+};
+
 /** A short low box with a flat top, to manual across: sited between two bigger features so the line's speed carries over. */
 export const manualPad = (at: At, o: { len?: number; w?: number; h?: number; name?: string } = {}): Part => {
   const { name = "manual pad" } = o, len = (o.len ?? 5) * L, w = (o.w ?? 2.5) * K, h = (o.h ?? 0.12) * K; // a rise the board rolls up (0.3 m or less)

@@ -4,7 +4,7 @@
 // Behind the row stands the scenery set, every kind blown up to 3 m (?scenery=hi|mid|low|built, ?at=14 frames it).
 import * as THREE from "three";
 import { makeLevel } from "./level.ts";
-import { bowl, box, fallenLog, funbox, gap, hip, join, kicker, ledge, outcrop, picnicTable, quarterPipe, rockFace, spine, stairSet, tabletop, type Part } from "./levels/pieces.ts";
+import { boardwalk, bowl, box, fallenLog, funbox, gap, hip, join, kicker, ledge, outcrop, picnicTable, quarterPipe, rockFace, spine, stairSet, tabletop, type Part } from "./levels/pieces.ts";
 import { BOARD_BUDGETS, type BoardBudget, dressBoard, fingerboard } from "./models.ts";
 import { KIT_BUDGETS, type KitBudget, loadKit } from "./render/kit.ts";
 import { KINDS, SCENERY_BUDGETS, type SceneryBudget, Scenery, type Spot, loadScenery } from "./render/scenery.ts";
@@ -46,6 +46,7 @@ const row: ((x: number) => Part)[] = [
   (x) => fallenLog({ x, z: 0 }),
   (x) => hip({ x, z: 0 }),
   (x) => picnicTable({ x, z: 0 }),
+  (x) => boardwalk({ x, z: 0 }, { len: 12 }),
 ];
 const part = join(...row.map((f, i) => f((i - (row.length - 1) / 2) * 16)));
 const level = makeLevel({ name: "kit room", pieces: part.pieces, rails: part.rails, spawns: [], bounds: { minX: -150, maxX: 150, minZ: -150, maxZ: 150 } });

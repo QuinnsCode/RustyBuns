@@ -37,7 +37,7 @@ test.each([...KIT_BUDGETS])("the %s kit dresses ramps, stairs, blocks, boulders,
       }
     }
   }
-  expect([...kinds].sort()).toEqual(["bench", "block", "bowl", "cliff", "hip", "log", "ramp", "rock", "stairs", "table"]);
+  expect([...kinds].sort()).toEqual(["bench", "block", "boardwalk", "bowl", "cliff", "hip", "log", "ramp", "rock", "stairs", "table"]);
 });
 
 test.each([...KIT_BUDGETS])("the %s landscape: a boulder, a rock face that turns to vertical, a log and a pool are drawn where they are ridden", async (budget) => {

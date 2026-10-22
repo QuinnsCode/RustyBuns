@@ -1,7 +1,7 @@
 // Grand Prismatic: the spring basin, flat as a table, and the low sinter terraces to the south-west.
 // A kit park on the basin (a bowl in the middle, a street line round it) with the terraces to pump over.
 import { type ParkSpec } from "./park.ts";
-import { outcrop, bowl, flatBar, funbox, gap, geyserCone, halfpipe, hip, quarterPipe, spine, tabletop, skyRail } from "./pieces.ts";
+import { boardwalk, bowl, flatBar, funbox, gap, geyserCone, halfpipe, hip, outcrop, quarterPipe, skyRail, spine, tabletop } from "./pieces.ts";
 
 const E = Math.PI / 2;
 
@@ -16,6 +16,8 @@ export const grandPrismatic: ParkSpec = {
   fill: { lines: 8 },
   sites: [
     { parts: [geyserCone({ x: -200, z: -100 }, { r: 8, h: 2.4 })] },
+    // the basin's boardwalk: a plank walk round the spring to manual along, its handrail to grind
+    { parts: [boardwalk({ x: 20, z: 110, yaw: E }, { len: 60, rail: "left", name: "spring boardwalk" })] },
     { parts: [tabletop({ x: -250, z: -120, yaw: E }, { w: 8, d: 26, h: 1.6 })] },
     { parts: [halfpipe({ x: -100, z: -245 }, { w: 20, d: 40, h: 3, name: "spring runoff pipe" })] },
     { parts: [outcrop({ x: -170, z: -240 }, { r: 3, h: 2 })] },

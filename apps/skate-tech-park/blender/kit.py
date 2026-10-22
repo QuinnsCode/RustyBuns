@@ -21,6 +21,8 @@
 #   hip    a wooden hip: sheets meeting in four creases, each with an orange trim strip, a steel plate round the foot
 #   table  a picnic table's top on A-frame legs: planks along z with gaps between, bolt heads at the ends, a cross brace
 #   bench  one of its seats: a plank on two pedestal legs (a piece of its own, so the seat is ridden and grinds)
+#   boardwalk  a raised plank walk: planks laid across it with grooves between, a kerb board along each edge, two stringers
+#          and a row of posts under it (the handrail is a rail of the piece, drawn by the page)
 #
 # The landscape pieces (rock, log, hip) are their whole shape, so they are fitted linearly instead (the log keeps its
 # end bands, which are exactly its taper): their top is a plain grid (rings on the rock), at every budget fine enough for the drape.
@@ -199,6 +201,23 @@ def table(b):
     return out
 
 
+def boardwalk(b):
+    out = []
+    n = b["sheets"] * 3
+    w = 1 / n
+    for i in range(n):  # planks run across the walk (x), laid along it (z), a groove between each
+        z0 = -0.5 + i * w
+        out.append(part_("plank", "wood", box(-0.5, 0.5, 0.94, 1, z0 + 0.004, z0 + w - 0.004)))
+        out.append(part_("groove", "wood-dark", box(-0.5, 0.5, 0.94, 0.985, z0 - 0.004, z0 + 0.004)))
+    for sgn in (-1, 1):  # a kerb board along each edge, proud of the planks, and a stringer under them
+        out.append(part_("kerb", "wood-dark", box(sgn * 0.5 - 0.03, sgn * 0.5 + 0.03, 0.9, 1.03, -0.5, 0.5)))
+        out.append(part_("stringer", "wood-dark", box(sgn * 0.36 - 0.03, sgn * 0.36 + 0.03, 0.82, 0.94, -0.5, 0.5)))
+        for k in range(b["ribs"] + 2):
+            z = -0.46 + 0.92 * k / (b["ribs"] + 1)
+            out.append(part_("post", "wood-dark", box(sgn * 0.36 - 0.035, sgn * 0.36 + 0.035, 0, 0.82, z - 0.035, z + 0.035)))
+    return out
+
+
 def bench(b):
     out = planks(2, 0.9, 1)
     for z in (-0.34, 0.34):
@@ -362,7 +381,7 @@ def bowl(b):
 
 def main():
     for budget, b in BUDGETS.items():
-        for name, build in (("ramp", ramp), ("step", step), ("block", block), ("rock", rock), ("log", log), ("hip", hip), ("cliff", cliff), ("bowl", bowl), ("table", table), ("bench", bench)):
+        for name, build in (("ramp", ramp), ("step", step), ("block", block), ("rock", rock), ("log", log), ("hip", hip), ("cliff", cliff), ("bowl", bowl), ("table", table), ("bench", bench), ("boardwalk", boardwalk)):
             reset()
             write_glb(join(build(b), name, smooth=30), os.path.join(OUT, f"kit-{name}-{budget}.glb"))
 
