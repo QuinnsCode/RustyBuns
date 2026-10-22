@@ -1,7 +1,7 @@
 // A bowl sunk where Old Faithful blows, on the flat geyser basin; a boardwalk of bars along the west,
 // a hop over a steaming vent to the east, and the basin's own low rise beyond it as a launch.
 import { type ParkSpec } from "./park.ts";
-import { bowl, fallenLog, flatBar, funbox, gap, geyserCone, hip, quarterPipe, rollers, spine, stairSet, skyRail } from "./pieces.ts";
+import { boardwalk, bowl, fallenLog, flatBar, funbox, gap, geyserCone, hip, quarterPipe, rollers, skyRail, spine, stairSet } from "./pieces.ts";
 
 const E = Math.PI / 2;
 
@@ -18,6 +18,8 @@ export const oldFaithful: ParkSpec = {
   relief: 0.7, // the basin is flat: at the default relief no slope is steep enough for a ribbon
   sites: [
     { parts: [geyserCone({ x: -130, z: 100 }, { r: 8, h: 2.4 })] },
+    // the viewing boardwalk round the geyser
+    { parts: [boardwalk({ x: -180, z: 50, yaw: E }, { len: 50, rail: "right", name: "geyser boardwalk" })] },
     { parts: [rollers({ x: -60, z: 120, yaw: E }, { w: 8, n: 5, period: 7, h: 0.8 })] },
     { parts: [fallenLog({ x: 60, z: 110, yaw: E }, { len: 16, r: 0.8 }), fallenLog({ x: 60, z: 122, yaw: E }, { len: 12, r: 0.6 })] },
     { parts: [bowl({ x: -17, z: 75 }, { w: 44, d: 32, h: 3.5, deck: 4 })] },
