@@ -43,11 +43,18 @@ export type Landmark =
   /** Concentric terraces, outermost first (and lowest), one colour each. */
   | { kind: "rings"; x: number; z: number; rings: { r: number; color: number }[] }
   | { kind: "falls"; from: { x: number; z: number }; to: { x: number; z: number }; width: number }
-  /** A whole mountain modelled in Blender (blender/landmark.py) standing past the park's edge: its crest `tall` metres above `y`, its sheer face to the west before `yaw` turns it. Drawn by render/peak.ts. */
+  /** A whole mountain modelled in Blender (blender/landmark.py, landmarks.py) standing past the park's edge: its crest `tall` metres above `y`, its sheer face to the west before `yaw` turns it. Drawn by render/peak.ts. */
   | Peak;
-export type Peak = { kind: "peak"; model: "half-dome"; x: number; y: number; z: number; tall: number; yaw?: number };
+/** The landmark models in `public/models/landmark-<model>-<budget>.glb`: Half Dome, and for the parks beyond the Sierra a sandstone arch, an amphitheatre of hoodoos, a flat-topped mesa and a snow-capped volcano. */
+export const PEAK_MODELS = ["half-dome", "arch", "hoodoos", "mesa", "volcano"] as const;
+export type PeakModel = (typeof PEAK_MODELS)[number];
+export type Peak = { kind: "peak"; model: PeakModel; x: number; y: number; z: number; tall: number; yaw?: number };
 
 export type Pickup = { x: number; z: number; y: number };
+
+/** What grows over a park (render/scenery.ts): the pine forest of the Sierra, the desert, the hardwood east, the swamps and islands, the high and dry. */
+export type Biome = "pine" | "desert" | "hardwood" | "swamp" | "alpine";
+export const BIOMES: Biome[] = ["pine", "desert", "hardwood", "swamp", "alpine"];
 
 export type ParkSpec = {
   id: string; name: string; blurb: string;
@@ -69,6 +76,8 @@ export type ParkSpec = {
   granite?: number;
   /** The air over the park (a name from render/weather.ts): rain on the valley, snow on the dome. Golden hour when absent. */
   weather?: string;
+  /** What is strewn over the ground: pines unless said otherwise. */
+  biome?: Biome;
   /** Contour ribbons across the slopes the sites leave empty (see ribbons.ts): how many, how long. Absent for none. */
   fill?: Fill;
   /** Bowls, pumps, jumps and channels cut into the ground itself, one per cell across the whole map. On by default; `false` leaves the ground as it was. */
@@ -87,6 +96,7 @@ export type ParkLevel = Level & {
   landmarks: Landmark[];
   granite: number;
   weather?: string;
+  biome: Biome;
   /** The contour each ribbon follows, for the map. */
   ribbons: { profile: string; path: Pt[] }[];
   /** What is cut into the ground (the height already includes it), for the map and for keeping scenery out. */
@@ -127,7 +137,7 @@ export function parkLevel(spec: ParkSpec, zone: ZoneData, real = false): ParkLev
   const height = (x: number, z: number) => Math.max(land.height(x, z), inner.height(x, z));
   const obstacles = [...trees, ...postObstacles(parts.rails, height)];
   return {
-    ...inner, obstacles, height, id: spec.id, blurb: spec.blurb, ground: land, earthworks: works, paint: (x, z) => paintAt(works, x, z), gaps: [...parts.gaps, ...(spec.gaps ?? [])], routes: parts.routes, goals: spec.goals.map((g) => (g.kind === "climb" ? { ...g, metres: Math.max(1, Math.round((g.metres * relief) / GOAL_RELIEF)) } : g)), ribbons: filled?.paths ?? [], trees, landmarks: spec.landmarks ?? [], granite: spec.granite ?? Infinity, weather: spec.weather,
+    ...inner, obstacles, height, id: spec.id, blurb: spec.blurb, ground: land, earthworks: works, paint: (x, z) => paintAt(works, x, z), gaps: [...parts.gaps, ...(spec.gaps ?? [])], routes: parts.routes, goals: spec.goals.map((g) => (g.kind === "climb" ? { ...g, metres: Math.max(1, Math.round((g.metres * relief) / GOAL_RELIEF)) } : g)), ribbons: filled?.paths ?? [], trees, landmarks: spec.landmarks ?? [], granite: spec.granite ?? Infinity, weather: spec.weather, biome: spec.biome ?? "pine",
     pickups: (spec.pickups ?? []).map((p) => ({ x: p.x, z: p.z, y: height(p.x, p.z) + (p.lift ?? 1) })),
   };
 }

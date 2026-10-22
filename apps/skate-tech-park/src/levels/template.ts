@@ -27,7 +27,7 @@ export function streetPark(id: string, plan: Plan, o: { gap: string; spawns?: Sp
   const { gap: gapName, spawns, extra = [], sites, goals, blurb, ...rest } = o;
   const facing = Math.atan2(-plan.view.x, -plan.view.z);
   return {
-    id, name: row.name, blurb: blurb ?? row.blurb, zone: id, weather: row.weather, ...(row.relief ? { relief: row.relief } : {}), fill: { lines: 8 },
+    id, name: row.name, blurb: blurb ?? row.blurb, zone: id, weather: row.weather, biome: row.biome, ...(row.relief ? { relief: row.relief } : {}), fill: { lines: 8 },
     sites: sites ?? [
       { parts: [flatBar(ahead(S, 30), { len: 14 }), stairSet(ahead(S, 55), { w: 8, steps: 6, rise: 0.25, run: 0.9 })] },
       { parts: [funbox(ahead(S, 85), { w: 10, d: 24, h: 1.2, ramp: 7 }), hip(ahead(S, 112), { w: 12, d: 12, h: 2.4 })] },

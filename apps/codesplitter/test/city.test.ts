@@ -150,3 +150,13 @@ test("pulseOf: bustle climbs with commits and saturates; chaos tops out at 1", (
   expect(pulseOf(500, 0, []).bustle).toBe(1);
   expect(pulseOf(0, 0, ["a", "b", "c", "d"].map((name) => ({ name, status: "failed" }))).chaos).toBe(1);
 });
+
+test("the street reader: a public file comes a page at a time to anyone passing, a private one to no stranger", async () => {
+  const { call } = await app();
+  const r = await call(null, "/api/repos/ryan/lab/do/file?path=a.ts&from=1&limit=1");
+  expect(r.status).toBe(200);
+  const page = (await r.json()) as any;
+  expect(page).toMatchObject({ total: 3, from: 1 });
+  expect(page.lines.map((l: any) => [l.text, l.by])).toEqual([["two", "ryan"]]);
+  expect((await call(null, "/api/repos/ryan/vault/do/file?path=s.ts&from=0&limit=60")).status).toBeGreaterThanOrEqual(400);
+});

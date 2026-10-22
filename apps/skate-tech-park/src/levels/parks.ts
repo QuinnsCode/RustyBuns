@@ -2,7 +2,7 @@
 // fetched with `bun scripts/fetch-parks.ts`), a line about it, the air over it. A park with a level of its own
 // lists it in `levels.ts`; the picker groups the cards by `regionOf(state)`.
 
-export type Biome = "pine" | "desert" | "hardwood" | "swamp" | "alpine";
+import type { Biome } from "./park.ts";
 
 export type ParkRow = {
   id: string; name: string;

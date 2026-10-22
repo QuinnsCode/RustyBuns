@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import * as THREE from "three";
 import { halfDome } from "../src/levels/half-dome.ts";
-import type { Peak } from "../src/levels/park.ts";
+import { PEAK_MODELS, type Peak } from "../src/levels/park.ts";
 import { dressPeak, PEAK_BUDGETS } from "../src/render/peak.ts";
 import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
@@ -43,4 +43,18 @@ test("the west face is sheer and the east shoulder is not", async () => {
   const crest = peak.x, face = crest - 0.03 * peak.tall, shoulder = crest + 0.5 * peak.tall;
   expect(rise(face, 0.02 * peak.tall)).toBeGreaterThan(3);
   expect(rise(shoulder, 0.02 * peak.tall)).toBeLessThan(1);
+});
+
+// The landmarks for the parks beyond the Sierra (blender/landmarks.py), each normalised like Half Dome: crest at `tall`, foot on `y`.
+test.each(PEAK_MODELS.filter((m) => m !== "half-dome").flatMap((m) => PEAK_BUDGETS.map((b) => [m, b] as const)))("the %s landmark at %s stands on its ground with its crest at the height the spec gives", async (model, budget) => {
+  const p: Peak = { kind: "peak", model, x: 500, y: 20, z: -300, tall: 240, yaw: 0.3 };
+  const g = await dressPeak(p, await Bun.file(new URL(`../public/models/landmark-${model}-${budget}.glb`, import.meta.url)).arrayBuffer(), 0xdfe5ec);
+  const box = new THREE.Box3().setFromObject(g);
+  expect(box.max.y - p.y).toBeGreaterThan(p.tall * 0.95);
+  expect(box.max.y - p.y).toBeLessThan(p.tall * 1.05);
+  expect(box.min.y).toBeCloseTo(p.y, 0);
+  expect(Math.max(box.max.x - p.x, p.x - box.min.x, box.max.z - p.z, p.z - box.min.z)).toBeLessThan(p.tall * 2.2); // inside the frame peak() expects (x -1..1.5, z +-1.3, turned by yaw)
+  let tris = 0;
+  g.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) tris += (m.geometry.index?.count ?? m.geometry.attributes.position!.count) / 3; });
+  expect(tris).toBeLessThan(BUDGET[budget]);
 });

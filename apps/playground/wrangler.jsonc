@@ -1,0 +1,7 @@
+// Playground: one static page that lists every app with a way to try it. Assets only, no Worker code,
+// so it bills nothing beyond the free static tier. `bun run deploy` ships it.
+{
+  "name": "rustybuns-playground",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": "public" }
+}

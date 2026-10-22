@@ -325,6 +325,7 @@ Every example is one codebase that runs as a desktop binary. The multiplayer one
 | [artstewengine](apps/artstewengine/README.md) | A tiny RWSDK app on D1 with a Better Auth admin page: add who has paid, and qCRM's sealed engine gets its key only for a paid license |
 | [geoboxq](apps/geoboxq/README.md) | Shipping box fit checker with a Rust engine that packs boxes inside boxes. Private license. |
 | [geoboxq-shopify](apps/geoboxq-shopify/README.md) | A small wrapper that turns a Shopify cart into the store's own box. |
+| [playground](apps/playground/README.md) | One page that lists every app with a way to try it: Play, Download or Source. Static assets only, so it bills nothing |
 
 **Try one without building anything:** download the desktop binary for [Hippo Tycoon](https://github.com/QuinnsCode/RustyBuns/releases?q=hippo-tycoon-v&expanded=true), [Park Hide & Seek](https://github.com/QuinnsCode/RustyBuns/releases?q=park-hide-seek-v&expanded=true), [Splat Spray](https://github.com/QuinnsCode/RustyBuns/releases?q=splat-spray-v&expanded=true) or [FM Groovebox](https://github.com/QuinnsCode/RustyBuns/releases?q=fm-daw-v&expanded=true). Each is one file for Mac, Windows or Linux. They aren't signed yet, so the first launch takes one Terminal command on a Mac (the release page has it; [APPLE_SIGNING.md](APPLE_SIGNING.md) is the road to fixing that) and a click past SmartScreen on Windows.
 
