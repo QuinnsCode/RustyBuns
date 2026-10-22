@@ -31,7 +31,7 @@ function runIn(r: Rail): Pt[] {
 export function tour(l: ParkLevel, from: Pt): Pt[] {
   // a hillside work is ridden from below: its run-in first, then the far side of its lip
   const hills: Stop[] = l.earthworks.flatMap((e) => (e.run ? [{ ...e.run.from, then: e.run.to }] : []));
-  const todo: Stop[] = [...l.routes.flatMap((r) => r.points), ...l.gaps.map((g) => g.a), ...l.pickups, ...l.rails.filter((r) => r.kind !== "coping").flatMap(runIn), ...hills.filter((_, i) => i % 3 === 0)].filter((p) => Math.hypot(p.x - from.x, p.z - from.z) < 150);
+  const todo: Stop[] = [...l.routes.flatMap((r) => r.points), ...l.gaps.map((g) => g.a), ...l.pickups, ...l.rails.filter((r) => r.kind !== "coping").flatMap(runIn), ].filter((p) => Math.hypot(p.x - from.x, p.z - from.z) < 150);
   const out: Pt[] = [];
   let at: Pt = from;
   while (todo.length && out.length < 8) {
@@ -40,6 +40,9 @@ export function tour(l: ParkLevel, from: Pt): Pt[] {
     out.push(next); at = next;
     if (next.then) { out.push(next.then); at = next.then; }
   }
+  // the hillside works come last, so the lines and rails of a tour are ridden first: the nearest two, each from its run-in to past its lip
+  const near = hills.filter((p) => Math.hypot(p.x - from.x, p.z - from.z) < 150).sort((p, q) => Math.hypot(p.x - from.x, p.z - from.z) - Math.hypot(q.x - from.x, q.z - from.z)).slice(0, 2);
+  for (const h of near) out.push(h, h.then!);
   return out;
 }
 

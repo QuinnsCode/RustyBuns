@@ -12,7 +12,7 @@ export const oldFaithful: ParkSpec = {
   weather: "overcast",
   name: "Old Faithful Bowl",
   blurb: "A bowl where the geyser blows, a boardwalk of bars along the basin, and a hop over a steaming vent.",
-  earthworks: { hillMin: 0.06 }, // little hill here, so even a gentle rise gets a cut
+  earthworks: { hillMin: 0.05 }, // little hill here, so even a gentle rise gets a cut
   zone: "old-faithful",
   fill: { lines: 8 },
   relief: 0.7, // the basin is flat: at the default relief no slope is steep enough for a ribbon
