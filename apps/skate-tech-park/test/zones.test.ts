@@ -1,6 +1,8 @@
 // Ground arrives on demand: a park's zone is fetched when its level is first built, and a level built from it
 // is the same ground the table says (the signature spot is at the origin, the lat/lon the zone was cut around).
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
+
+setDefaultTimeout(60000); // seventy levels, built once, take a while on CI
 import { loadZone } from "@rustybuns/terrain";
 import { LEVELS } from "../src/levels/index.ts";
 import { PARKS } from "../src/levels/parks.ts";

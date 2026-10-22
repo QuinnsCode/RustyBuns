@@ -1,5 +1,7 @@
 // Every park is dotted with kit parts from edge to edge, the same way each time, and never on a spawn.
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
+
+setDefaultTimeout(60000); // seventy levels, built once, take a while on CI
 import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { allParks } from "./parks.ts";

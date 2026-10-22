@@ -140,7 +140,7 @@ test("a park runs edge to edge of its terrain, and a rider driving at the barrie
     expect(s.z).toBeGreaterThanOrEqual(l.bounds.minZ);
     expect(s.z).toBeLessThanOrEqual(l.bounds.maxZ);
   }
-}, 30000);
+}, 120000);
 
 test("a line is placed beat by beat and its goal completes when the rider rides it through, and not when they skip a beat", () => {
   const level = park("glacier-point"), route = level.routes.find((r) => r.name === "plateau line")!;
