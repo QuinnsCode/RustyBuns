@@ -7,7 +7,7 @@ import { onRail } from "../src/level.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { Chase, FOV } from "../src/render/chase.ts";
 import { DECK } from "../src/models.ts";
-import { Scenery, scatter } from "../src/render/scenery.ts";
+import { Scenery, TREES, scatter } from "../src/render/scenery.ts";
 import { sky } from "../src/render/sky.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 import { build, level as loadLevel } from "./parks.ts";
@@ -33,11 +33,11 @@ test.each(parks.map((e) => [e.name, e.id]))("%s: scenery is seeded and keeps off
 
 test.each(parks.map((e) => [e.name, e.id]))("%s: the kit stands in a clearing and the forest thickens past it", async (_, id) => {
   const park = (await loadLevel(id)) as ParkLevel;
-  const spots = scatter(park, park.ground), trees = spots.filter((s) => s.kind === "pine" || s.kind === "aspen");
+  const spots = scatter(park, park.ground), trees = spots.filter((s) => TREES.has(s.kind));
   const dist = (s: { x: number; z: number }) => Math.min(...park.pieces.map((p) => Math.hypot(p.x - s.x, p.z - s.z) - Math.hypot(p.w, p.d) / 2));
   expect(trees.length).toBeGreaterThan(100);
   expect(trees.filter((s) => dist(s) < 5).length).toBe(0); // nothing tall crowds the kit
-  expect(spots.filter((s) => s.kind === "flower" || s.kind === "fern").length).toBeGreaterThan(20); // the clearing has meadow in it
+  expect(spots.filter((s) => s.kind === "flower" || s.kind === "fern" || s.kind === "sage").length).toBeGreaterThan(20); // the clearing has meadow in it
   expect(trees.filter((s) => dist(s) > 25).length).toBeGreaterThan(trees.filter((s) => dist(s) < 15).length * 0.5); // and the woods are further out (the kit now spreads over the whole map, so the clearing is the 12 m around each part, not a 40 m belt)
 });
 
