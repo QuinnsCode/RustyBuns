@@ -12,6 +12,7 @@ export const grandPrismatic: ParkSpec = {
   weather: "noon",
   name: "Grand Prismatic",
   blurb: "A bowl on the spring basin, a street line round it and the sinter terraces to pump over.",
+  earthworks: { hillMin: 0.06 }, // little hill here, so even a gentle rise gets a cut
   zone: "grand-prismatic",
   fill: { lines: 8 },
   sites: [

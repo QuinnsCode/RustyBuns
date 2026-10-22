@@ -15,6 +15,7 @@ export const mariposaGrove: ParkSpec = {
   weather: "mist",
   name: "Mariposa Grove",
   blurb: "Skate the needle between the Faithful Couple and the Clothespin, and jump the fallen giant.",
+  earthworks: { hillMin: 0.08 }, // little hill here, so even a gentle rise gets a cut
   zone: "mariposa-grove",
   fill: { lines: 8 },
   sites: [

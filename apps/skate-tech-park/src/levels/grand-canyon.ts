@@ -11,6 +11,7 @@ export const grandCanyon: ParkSpec = {
   weather: "dust",
   name: "Grand Canyon",
   blurb: "Build speed across the South Rim, hit the lip at Mather Point and clear the first drop into the canyon.",
+  earthworks: { hillMin: 0.06 }, // little hill here, so even a gentle rise gets a cut
   zone: "grand-canyon",
   fill: { lines: 8 },
   sites: [
