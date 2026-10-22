@@ -5,6 +5,7 @@
 //   bun scripts/survey.ts zion            the map, benches, bowl spots and gaps, then a plan for template.ts's `streetPark`
 //   bun scripts/survey.ts zion --relief 1  with another relief
 //   bun scripts/survey.ts zion --quiet     just the plan
+//   bun scripts/survey.ts zion --bench 1   the street on the next bench along (when the first does not ride well)
 import { heightmapTerrain, loadZone } from "@rustybuns/terrain";
 import { parkLevel, TERRAIN_SCALE, RELIEF, type ParkSpec } from "../src/levels/park.ts";
 import { kicker } from "../src/levels/pieces.ts";
@@ -98,7 +99,8 @@ if (!quiet) {
 const along = (s: { x: number; z: number; yaw: number }, len: number) => Array.from({ length: Math.floor(len / 15) + 1 }, (_, k) => ({ x: s.x + Math.sin(s.yaw) * k * 15, z: s.z + Math.cos(s.yaw) * k * 15 }));
 const clear = (pts: { x: number; z: number }[], from: { x: number; z: number }[], d: number) => pts.every((p) => from.every((q) => Math.hypot(p.x - q.x, p.z - q.z) > d));
 const bench = (s: (typeof strips)[number], at: number) => ({ x: Math.round(s.x + Math.sin(s.yaw) * at), z: Math.round(s.z + Math.cos(s.yaw) * at), yaw: Math.round(s.yaw * 1000) / 1000 });
-const street = strips[0], taken = street ? along(street, 160) : [];
+const skip = process.argv.indexOf("--bench"), distinct = strips.filter((s, i) => strips.slice(0, i).every((o) => Math.hypot(o.x - s.x, o.z - s.z) > 50));
+const street = distinct[skip > 0 ? Number(process.argv[skip + 1]) : 0], taken = street ? along(street, 160) : [];
 const sky = strips.find((s) => street && clear(along(s, 200), taken, 40));
 const bowl = discs.find((d) => clear([d], taken, 45) && (!sky || clear([d], along(sky, 200), 45)));
 const away = [...taken, ...(sky ? along(sky, 200) : []), ...(bowl ? [bowl] : [])];
