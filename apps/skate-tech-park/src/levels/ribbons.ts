@@ -79,7 +79,7 @@ export function extrude(path: Pt[], p: Profile, o: { taper?: number } = {}): Par
   const total = cum[cum.length - 1]!, ease = (s: number) => smooth(Math.min(s, total - s) / taper);
   const heading = (i: number) => Math.atan2(path[i + 1]!.x - path[i]!.x, path[i + 1]!.z - path[i]!.z);
   for (let i = 0; i + 1 < path.length; i++) {
-    const a = path[i]!, b = path[i + 1]!, len = cum[i + 1]! - cum[i]!, yaw = heading(i), mid = (cum[i]! + cum[i + 1]!) / 2, d = len * 1.3;
+    const a = path[i]!, b = path[i + 1]!, len = cum[i + 1]! - cum[i]!, yaw = heading(i), mid = (cum[i]! + cum[i + 1]!) / 2, d = Math.max(len * 1.3, 1.5); // a step the trace pulled short still makes a piece wider than the deck
     const at = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2, yaw };
     const rails: Rail[] = [];
     for (const u of p.crests) { // a rail along each crest, from this point to the next, each turned to its own heading
