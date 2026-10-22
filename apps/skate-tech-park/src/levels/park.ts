@@ -43,9 +43,12 @@ export type Landmark =
   /** Concentric terraces, outermost first (and lowest), one colour each. */
   | { kind: "rings"; x: number; z: number; rings: { r: number; color: number }[] }
   | { kind: "falls"; from: { x: number; z: number }; to: { x: number; z: number }; width: number }
-  /** A whole mountain modelled in Blender (blender/landmark.py) standing past the park's edge: its crest `tall` metres above `y`, its sheer face to the west before `yaw` turns it. Drawn by render/peak.ts. */
+  /** A whole mountain modelled in Blender (blender/landmark.py, landmarks.py) standing past the park's edge: its crest `tall` metres above `y`, its sheer face to the west before `yaw` turns it. Drawn by render/peak.ts. */
   | Peak;
-export type Peak = { kind: "peak"; model: "half-dome"; x: number; y: number; z: number; tall: number; yaw?: number };
+/** The landmark models in `public/models/landmark-<model>-<budget>.glb`: Half Dome, and for the parks beyond the Sierra a sandstone arch, an amphitheatre of hoodoos, a flat-topped mesa and a snow-capped volcano. */
+export const PEAK_MODELS = ["half-dome", "arch", "hoodoos", "mesa", "volcano"] as const;
+export type PeakModel = (typeof PEAK_MODELS)[number];
+export type Peak = { kind: "peak"; model: PeakModel; x: number; y: number; z: number; tall: number; yaw?: number };
 
 export type Pickup = { x: number; z: number; y: number };
 
