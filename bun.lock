@@ -299,6 +299,10 @@
         "vite": "^6.2.6",
       },
     },
+    "apps/playground": {
+      "name": "playground",
+      "version": "0.0.1",
+    },
     "apps/qcrm": {
       "name": "qcrm",
       "version": "0.1.4",
@@ -2450,6 +2454,8 @@
     "pirates": ["pirates@4.0.7", "", {}, "sha512-TfySrs/5nm8fQJDcBDuUng3VOUKsd7S+zqvbOTiGXHfxX4wK31ard+hoNuvkicM/2YFzlpDgABOevKSsB4G/FA=="],
 
     "playcanvas": ["playcanvas@2.22.2", "", { "dependencies": { "@types/webxr": "^0.5.24", "@webgpu/types": "^0.1.70" } }, "sha512-ePc1zbdrXikBdyOZrxpwSdWSZEUbV0NLdZkA4XDVZJfYqrr7PqWXQ9bY69UpG2dsNVM8d8gTKUJmCx7PO4ITRQ=="],
+
+    "playground": ["playground@workspace:apps/playground"],
 
     "playwright-core": ["playwright-core@1.62.1", "", { "bin": { "playwright-core": "cli.js" } }, "sha512-wPYSwEBJY9GHraISXqyqtx0na0LpO3XEX7jNDhntbex7tzUS7kLnZsOlFruFJB4Hi/rhDMjXGqHewDZ68nYZVw=="],
 

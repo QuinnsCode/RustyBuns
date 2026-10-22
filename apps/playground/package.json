@@ -1,0 +1,11 @@
+{
+  "name": "playground",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "bunx wrangler dev",
+    "test": "bun test test",
+    "deploy": "bunx wrangler deploy"
+  }
+}

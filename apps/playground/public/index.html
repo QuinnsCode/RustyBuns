@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rusty Buns Playground</title>
+<style>
+  :root { --bg: #fff; --fg: #1f2328; --mute: #59636e; --line: #d1d9e0; --acc: #d9480f; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0d1117; --fg: #e6edf3; --mute: #9198a1; --line: #3d444d; --acc: #ff8a4c; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { margin: 0 0 4px; font-size: 28px; }
+  header p { margin: 0 0 24px; color: var(--mute); }
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .card h2 { margin: 0; font-size: 18px; }
+  .card p { margin: 0; color: var(--mute); flex: 1; }
+  .links { display: flex; flex-wrap: wrap; gap: 8px; }
+  .btn { padding: 4px 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--fg); text-decoration: none; font-size: 14px; }
+  .btn.play { background: var(--acc); border-color: var(--acc); color: #fff; }
+  .soon { color: var(--mute); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Rusty Buns Playground</h1>
+    <p>Try the apps. Playable ones open in your browser; the rest are a download away.</p>
+  </header>
+  <div id="grid"></div>
+</main>
+<script type="module">
+const REPO = "https://github.com/QuinnsCode/RustyBuns";
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) n[k] = v;
+  n.append(...kids);
+  return n;
+};
+const link = (text, href, cls = "btn") => el("a", { href, className: cls, textContent: text, rel: "noopener" });
+
+const apps = await (await fetch("apps.json")).json();
+const grid = document.getElementById("grid");
+for (const a of apps) {
+  const links = el("div", { className: "links" });
+  if (a.play) links.append(link("Play", a.play, "btn play"));
+  if (a.download) links.append(link("Download", `${REPO}/releases?q=${a.download}&expanded=true`));
+  if (a.app) links.append(link("Source", `${REPO}/tree/main/apps/${a.app}`));
+  if (!a.play) links.append(el("span", { className: "soon", textContent: a.download ? "Browser version soon" : "Coming soon" }));
+  grid.append(el("div", { className: "card" }, el("h2", { textContent: a.name }), el("p", { textContent: a.line }), links));
+}
+</script>
+</body>
+</html>
