@@ -1,5 +1,7 @@
 // The park is cut into the ground: bowls, pumps and channels across the whole map, ridden by the same sim.
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
+
+setDefaultTimeout(60000); // seventy levels take a while on CI
 import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { IDLE, start, step } from "../src/sim.ts";
