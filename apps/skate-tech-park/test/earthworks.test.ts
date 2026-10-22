@@ -48,7 +48,7 @@ const ASPECT = 0.6, SLOPE = 0.3, PLANE = (x: number, z: number) => 40 + SLOPE * 
 const hillside = { R: 500, height: PLANE };
 const at = { x: 12, z: -20, yaw: ASPECT }, y0 = PLANE(at.x, at.z);
 const family: [string, () => Earthwork | null][] = [
-  ["quarter", () => hillQuarter(at, y0, SLOPE)], ["half pipe", () => hillHalf(at, y0, SLOPE)], ["bank", () => hillBank(at, y0, SLOPE)],
+  ["quarter", () => hillQuarter(at, y0, SLOPE)], ["half pipe", () => hillHalf(at, y0, SLOPE)], ["bank", () => hillBank(at, y0, SLOPE)], ["hip", () => hillBank(at, y0, SLOPE, { hip: 0.5 })],
   ["snake", () => hillSnake(at, y0, SLOPE)], ["shelf", () => hillShelf(at, y0, SLOPE)],
 ];
 
@@ -105,4 +105,18 @@ test("a rider climbs a hillside quarter from the flat below, airs out of its lip
   expect(along(s.x, s.z)).toBeGreaterThan(lipAt); // over the lip, on the hill behind it
   expect(s.bail).toBe(0);
   expect(s.y - p.height(s.x, s.z)).toBeLessThan(0.5);
+});
+
+test("every park has a hillside cut within 60 m of a spawn, so a rider sees one from the start", () => {
+  for (const l of parks) {
+    const hills = l.earthworks.filter((e) => e.tilt);
+    expect([l.id, l.spawns.some((sp) => hills.some((e) => Math.hypot(e.x - sp.x, e.z - sp.z) < 60))]).toEqual([l.id, true]);
+  }
+});
+
+test("a snake run stays one surface on rough ground that strays a metre from its plane", () => {
+  const rough = { R: 500, height: (x: number, z: number) => PLANE(x, z) + 0.9 * Math.sin(x / 7) * Math.cos(z / 9) }, e = hillSnake(at, y0, SLOPE), land = sculpt(rough, [e]), h = 0.1;
+  let worst = 0;
+  for (let x = e.x - e.reach; x < e.x + e.reach; x += h) for (let z = e.z - e.reach; z < e.z + e.reach; z += h) worst = Math.max(worst, Math.abs(land.height(x + h, z) - land.height(x, z)), Math.abs(land.height(x, z + h) - land.height(x, z)));
+  expect(worst).toBeLessThan(0.5);
 });

@@ -13,7 +13,7 @@ import { type Chaser, chase as runAfter, chaseOf, gap, release } from "./chaser.
 import { ChaserView } from "./render/chaser.ts";
 import { Barrier } from "./render/barrier.ts";
 import { dressPeak, PEAK_BUDGETS, type PeakBudget } from "./render/peak.ts";
-import { SCENERY_BUDGETS, type SceneryBudget, Scenery, loadScenery, scatter } from "./render/scenery.ts";
+import { SCENERY_BUDGETS, type SceneryBudget, Scenery, dressTrees, loadScenery, scatter } from "./render/scenery.ts";
 import { BIOMES, type Biome } from "./levels/park.ts";
 import { followCamera, sky, skyMood, skyTime } from "./render/sky.ts";
 import { comboLine } from "./render/combo.ts";
@@ -81,6 +81,7 @@ if (scenery && SCENERY_BUDGETS.includes(sceneryBudget as SceneryBudget)) {
     scene.remove(scenery!.group);
     scenery = new Scenery(spots, models);
     scene.add(scenery.group);
+    dressTrees(scene, models.sequoia);
   }).catch((e) => console.warn("scenery models", e));
 }
 const peakBudget = new URLSearchParams(location.search).get("peak") ?? "mid"; // the far mountain a park may have (?peak=hi|mid|low, or ?peak=off)

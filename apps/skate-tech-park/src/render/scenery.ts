@@ -10,8 +10,8 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { type Level, onRail } from "../level.ts";
 import { circles, type Earthwork } from "../levels/earthworks.ts";
 
-export type Kind = "pine" | "rock" | "aspen" | "cairn" | "tent" | "sign" | "stump" | "bush" | "fern" | "flower" | "oak" | "joshua" | "saguaro" | "palm" | "snag" | "sage";
-export const KINDS: Kind[] = ["pine", "rock", "aspen", "cairn", "tent", "sign", "stump", "bush", "fern", "flower", "oak", "joshua", "saguaro", "palm", "snag", "sage"];
+export type Kind = "pine" | "rock" | "aspen" | "cairn" | "tent" | "sign" | "stump" | "bush" | "fern" | "flower" | "oak" | "joshua" | "saguaro" | "palm" | "snag" | "sage" | "sequoia";
+export const KINDS: Kind[] = ["pine", "rock", "aspen", "cairn", "tent", "sign", "stump", "bush", "fern", "flower", "oak", "joshua", "saguaro", "palm", "snag", "sage", "sequoia"];
 import type { Biome } from "../levels/park.ts";
 export type Spot = { kind: Kind; x: number; z: number; y: number; size: number; yaw: number };
 type Ground = { R: number; height(x: number, z: number): number };
@@ -121,7 +121,7 @@ const CLEARING_KINDS: Record<Biome, (Range & { chance: number })[]> = {
     { kind: "flower", chance: 0.25, min: 0.3, max: 0.5 },
   ],
 };
-export const TREES: Set<Kind> = new Set(["pine", "aspen", "oak", "joshua", "saguaro", "palm", "snag"]);
+export const TREES: Set<Kind> = new Set(["pine", "aspen", "oak", "joshua", "saguaro", "palm", "snag", "sequoia"]);
 const pickKind = (table: (Range & { chance: number })[], roll: number) => { let acc = 0; return table.find((e) => roll < (acc += e.chance)) ?? table[0]!; };
 
 /** Some pine and rock spots become one of the rarer things, by a hash of where they are (so the rng stream is untouched). */
@@ -227,6 +227,10 @@ const GEOMETRY: Record<Exclude<Kind, "rock">, () => THREE.BufferGeometry> = {
     ...[0, 1, 2, 3, 4, 5].map((i): [THREE.BufferGeometry, number] => [new THREE.ConeGeometry(0.07, 0.5, 4).translate(0, 0.25, 0).rotateZ(1.75).rotateY((i * Math.PI) / 3).translate(0, 0.9, 0), i % 2 ? 0x4a8a3a : 0x3a7030]),
   ]),
   snag: () => solid([[new THREE.CylinderGeometry(0.035, 0.08, 0.95, 6).translate(0, 0.475, 0), 0x9a9082]]),
+  sequoia: () => solid([
+    [new THREE.CylinderGeometry(0.05, 0.14, 1, 8).translate(0, 0.5, 0), 0x8a4a2b],
+    ...[0.45, 0.6, 0.75, 0.88].map((y, k): [THREE.BufferGeometry, number] => [new THREE.ConeGeometry(0.3 - k * 0.05, 0.2, 7).translate(0, y + 0.1, 0), k % 2 ? 0x24503a : 0x2f5d3a]),
+  ]),
   sage: () => solid([
     [new THREE.IcosahedronGeometry(0.36, 0).scale(1, 0.6, 1).translate(0, 0.2, 0), 0x8c9a80],
     [new THREE.IcosahedronGeometry(0.24, 0).scale(1, 0.6, 1).translate(0.3, 0.14, 0.12), 0xa3b094],
@@ -325,4 +329,22 @@ export class Scenery {
     this.meshes.get(kind)!.mesh.getMatrixAt(i, m);
     return new THREE.Vector3().setFromMatrixScale(m).x / this.meshes.get(kind)!.mine[i]!.size;
   }
+}
+
+/** A park's big trees (ground.ts draws them as a trunk and boughs) wear the sequoia from the set, each scaled to its own girth and height. */
+export function dressTrees(root: THREE.Object3D, sequoia: THREE.BufferGeometry) {
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }), swap: [THREE.Object3D, THREE.Mesh][] = [];
+  root.traverse((o) => {
+    const t = o.userData.tree as { r: number; tall: number } | undefined;
+    if (!t) return;
+    const m = new THREE.Mesh(sequoia, mat);
+    m.position.copy(o.position);
+    m.rotation.copy(o.rotation);
+    m.scale.set(t.r / 0.09, t.tall, t.r / 0.09); // the model's trunk is 0.09 wide at a metre tall
+    m.castShadow = true;
+    m.userData.tree = t;
+    swap.push([o, m]);
+  });
+  for (const [o, m] of swap) { o.parent!.add(m); o.parent!.remove(o); }
+  return swap.length;
 }

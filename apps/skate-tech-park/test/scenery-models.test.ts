@@ -5,10 +5,11 @@ import { expect, test } from "bun:test";
 import * as THREE from "three";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { level as loadLevel } from "./parks.ts";
-import { KINDS, SCENERY_BUDGETS, Scenery, loadScenery, scatter } from "../src/render/scenery.ts";
+import { KINDS, SCENERY_BUDGETS, Scenery, dressTrees, loadScenery, scatter } from "../src/render/scenery.ts";
+import { props } from "../src/levels/ground.ts";
 
 const read = (f: string) => Bun.file(new URL(`../public/${f}`, import.meta.url)).arrayBuffer();
-const TREES = ["pine", "aspen", "oak", "joshua", "saguaro", "palm", "snag"];
+const TREES = ["pine", "aspen", "oak", "joshua", "saguaro", "palm", "snag", "sequoia"];
 
 test.each([...SCENERY_BUDGETS])("the %s scenery set has every kind, standing on the ground about a metre tall", async (budget) => {
   const models = await loadScenery(budget, read);
@@ -50,4 +51,19 @@ test("a desert park grows joshua trees, saguaros and sage, and a pine park none 
   expect(kinds(desert).has("pine")).toBe(false);
   expect(kinds(pine).has("pine")).toBe(true);
   expect(level.biome).toBe("pine"); // a park says nothing and gets the forest it always had
+});
+
+test("Mariposa Grove's named sequoias wear the Blender sequoia, each as tall and as wide as its spec", async () => {
+  const level = LEVELS.find((e) => e.id === "mariposa-grove")!.load() as ParkLevel, models = await loadScenery("mid", read);
+  const { group } = props(level);
+  expect(dressTrees(group, models.sequoia)).toBe(level.trees.length);
+  const meshes: THREE.Mesh[] = [];
+  group.traverse((o) => { if (o.userData.tree) meshes.push(o as THREE.Mesh); });
+  expect(meshes.length).toBe(level.trees.length);
+  for (const m of meshes) {
+    const t = m.userData.tree as { x: number; z: number; r: number; tall: number }, box = new THREE.Box3().setFromObject(m);
+    expect(Math.abs(box.max.y - box.min.y - t.tall)).toBeLessThan(t.tall * 0.03); // the model is a metre tall give or take its ruffle
+    expect(Math.abs(m.position.x - t.x) + Math.abs(m.position.z - t.z)).toBeLessThan(1e-6);
+    expect(box.max.x - box.min.x).toBeGreaterThan(t.r * 2); // the crown spreads wider than the trunk
+  }
 });

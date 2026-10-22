@@ -14,7 +14,7 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--sans); }
-canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 [hidden] { display: none !important; }
 code, kbd { font-family: var(--mono); }
 button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 3px; padding: 8px 14px; cursor: pointer; box-shadow: 0 2px 0 var(--line); }
@@ -160,7 +160,7 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .tl code { background: rgba(255, 255, 255, 0.9); padding: 2px 6px; border: 1px solid var(--hair); white-space: nowrap; }
 .tl code:empty { display: none; }
 .tl .role { color: var(--accent-ink); pointer-events: auto; cursor: help; }
-.prompt { position: absolute; left: 50%; top: calc(50% + 44px); transform: translateX(-50%); font: 600 13px var(--mono); background: var(--fg); color: #fff; padding: 3px 10px; white-space: nowrap; }
+.prompt { position: absolute; left: 50%; top: calc(50% + 44px); transform: translateX(-50%); font: 600 13px var(--mono); background: var(--fg); color: #fff; padding: 3px 10px; white-space: nowrap; pointer-events: auto; cursor: pointer; }
 .prompt:empty { display: none; }
 /* Where to go next: a paper tag over the point, pinned to the screen's edge with an arrow when it's out of view. */
 .waypoint { position: absolute; left: 0; top: 0; display: grid; justify-items: center; gap: 1px; padding: 3px 8px; font: 11px var(--mono); background: rgba(255, 255, 255, 0.9); border: 1px solid var(--hair); white-space: nowrap; will-change: transform; }
@@ -172,3 +172,35 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .weapons li { grid-template-columns: 2ch 17ch 7ch; }
 .crosshair.reloading { border-color: var(--hair); background: conic-gradient(var(--accent) calc(var(--reload, 0) * 360deg), transparent 0) border-box; -webkit-mask: radial-gradient(circle, transparent 6px, #000 7px); mask: radial-gradient(circle, transparent 6px, #000 7px); }
 .results .look { margin: 12px 0 0; }
+
+/* Touch: the stick bottom-left, fire under the right thumb with the rest of the buttons in an arc above it. */
+.touch { position: absolute; inset: auto 0 0 0; height: 0; pointer-events: none; }
+.touch > * { pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+.stick { position: fixed; left: max(18px, env(safe-area-inset-left)); bottom: max(18px, env(safe-area-inset-bottom)); width: 124px; height: 124px; border-radius: 50%; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.55); }
+.nub { position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; margin: -24px 0 0 -24px; border-radius: 50%; background: var(--fg); opacity: 0.8; }
+.tb { position: fixed; display: grid; place-items: center; width: 52px; height: 52px; padding: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.9); --x: 0px; --y: 0px; right: calc(max(18px, env(safe-area-inset-right)) + var(--x)); bottom: calc(max(18px, env(safe-area-inset-bottom)) + var(--y)); }
+.tb[data-on] { background: var(--accent); color: #fff; border-color: var(--accent-ink); }
+.tb.fire { width: 76px; height: 76px; --x: 10px; --y: 8px; }
+.tb.jump { --x: 96px; --y: 0px; }
+.tb.roll { --x: 96px; --y: 62px; }
+.tb.crouch { --x: 34px; --y: 100px; }
+.tb.crouch[aria-pressed="true"] { background: var(--fg); color: #fff; }
+.tb.reload { --x: 104px; --y: 128px; }
+.tb.next { --x: 160px; --y: 100px; }
+.tb.leave { --x: 0px; --y: 190px; width: 40px; height: 40px; box-shadow: none; }
+.tb.leave svg { width: 18px; height: 18px; }
+/* Driven by touch: the key hints and the mouse-capture hint go, inputs don't zoom the page, the HUD makes room. */
+.touch-hint { display: none; margin: 16px 0 0; padding-top: 12px; border-top: 1px solid var(--hair); font-size: 12px; color: var(--muted); }
+html.touch .keys, html.touch .clickme { display: none !important; }
+html.touch .touch-hint { display: block; }
+html.touch input, html.touch select { font-size: 16px; }
+/* The gun in hand only, beside the stick: the next-gun button swaps it. */
+html.touch .weapons { right: auto; left: 156px; bottom: 18px; }
+html.touch .weapons li { grid-template-columns: 28px 12ch 3ch; font-size: 11px; padding: 2px 6px; }
+html.touch .weapons li:not(.on), html.touch .weapons kbd { display: none; }
+html.touch .bl { bottom: 156px; }
+@media (max-width: 760px) {
+  .top { gap: 2px 12px; flex-wrap: wrap; white-space: normal; font-size: 12px; padding: 4px 8px; }
+  .feed { max-width: 55vw; }
+  .feed li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+}
