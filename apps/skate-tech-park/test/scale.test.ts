@@ -26,7 +26,7 @@ test.each(parks.map((e) => [e.name, e.id]))("%s: scenery is seeded and keeps off
   for (const s of spots) expect(s.size).toBeLessThan(DECK.length / 2); // every pine, rock and tent is a toy beside the board
   let calls = 0;
   new Scenery(spots).group.traverse((o) => { if ((o as THREE.Mesh).isMesh) calls++; });
-  expect(calls).toBeLessThanOrEqual(10); // one draw call a kind: pines, rocks, aspens, stumps, cairns, signs, tents, bushes, ferns, flowers
+  expect(calls).toBeLessThanOrEqual(10); // one draw call a kind the park grows: pines, rocks, aspens, stumps, cairns, signs, tents, bushes, ferns, flowers
   expect(new Set(spots.map((s) => s.kind)).size).toBeGreaterThan(4); // and a park has most of them
 });
 
