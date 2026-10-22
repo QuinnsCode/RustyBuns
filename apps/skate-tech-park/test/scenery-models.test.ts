@@ -54,7 +54,7 @@ test("a desert park grows joshua trees, saguaros and sage, and a pine park none 
 });
 
 test("Mariposa Grove's named sequoias wear the Blender sequoia, each as tall and as wide as its spec", async () => {
-  const level = LEVELS.find((e) => e.id === "mariposa-grove")!.load() as ParkLevel, models = await loadScenery("mid", read);
+  const level = (await loadLevel("mariposa-grove")) as ParkLevel, models = await loadScenery("mid", read);
   const { group } = props(level);
   expect(dressTrees(group, models.sequoia)).toBe(level.trees.length);
   const meshes: THREE.Mesh[] = [];

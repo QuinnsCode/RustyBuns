@@ -12,7 +12,7 @@ import { allParks, build } from "./parks.ts";
 const SPEEDS = [24, 27, 32];
 /** The parks laid out from a survey of their ground (scripts/survey.ts), and the named gap each one has. */
 const SURVEYED = [["zion", "Angels Drop"], ["arches", "Delicate Gap"], ["bryce-canyon", "Hoodoo Hop"], ["rocky-mountain", "Hallett Leap"], ["grand-teton", "Cathedral Gap"], ["glacier", "Logan Pass Leap"], ["olympic", "Ridge Hop"], ["joshua-tree", "Skull Rock Gap"], ["death-valley", "Zabriskie Drop"], ["crater-lake", "Rim Jump"], ["acadia", "Cadillac Leap"], ["badlands", "Gully Gap"], ["big-bend", "Santa Elena Leap"], ["black-canyon", "Painted Wall Gap"], ["canyonlands", "Mesa Arch Gap"], ["capitol-reef", "Waterpocket Hop"], ["carlsbad-caverns", "Sinkhole Jump"], ["great-sand-dunes", "Dune Drop"], ["great-smoky-mountains", "Clingmans Drop"], ["haleakala", "Crater Rim Leap"], ["hawaii-volcanoes", "Caldera Drop"], ["mount-rainier", "Paradise Leap"], ["lassen-volcanic", "Bumpass Hop"], ["sequoia", "Giant Forest Gap"], ["redwood", "Fern Gap"], ["american-samoa", "Ofu Ridge Drop"], ["biscayne", "Boca Chita Gap"], ["channel-islands", "Scorpion Anchorage Drop"], ["congaree", "Cedar Creek Drop"], ["cuyahoga-valley", "Brandywine Drop"], ["denali", "Wonder Lake Drop"], ["dry-tortugas", "Fort Jefferson Hop"], ["everglades", "Anhinga Trail Hop"], ["gates-of-the-arctic", "Frigid Crags Gap"], ["gateway-arch", "Grand Staircase Gap"], ["glacier-bay", "Margerie Leap"], ["great-basin", "Wheeler Peak Drop"], ["guadalupe-mountains", "El Capitan Ledge"], ["hot-springs", "Bathhouse Row Hop"], ["indiana-dunes", "Mount Baldy Drop"], ["isle-royale", "Greenstone Drop"], ["katmai", "Brooks Falls Leap"], ["kenai-fjords", "Exit Glacier Gap"], ["kings-canyon", "Zumwalt Drop"], ["kobuk-valley", "Great Kobuk Drop"], ["lake-clark", "Twin Lakes Leap"], ["mammoth-cave", "Sinkhole Drop"], ["mesa-verde", "Cliff Palace Gap"], ["new-river-gorge", "Endless Wall Leap"], ["north-cascades", "Diablo Leap"], ["petrified-forest", "Blue Mesa Drop"], ["pinnacles", "High Peaks Gap"], ["saguaro", "Signal Hill Drop"], ["shenandoah", "Stony Man Leap"], ["theodore-roosevelt", "Painted Canyon Drop"], ["virgin-islands", "Trunk Bay Drop"], ["voyageurs", "Kettle Falls Hop"], ["white-sands", "Alkali Flat Drop"], ["wind-cave", "Prairie Breath Drop"], ["wrangell-st-elias", "Kennecott Gap"]] as const;
-setDefaultTimeout(120000); // sixty named gaps, three speeds each, twenty seconds of sim apiece
+setDefaultTimeout(60000);
 const parks = await allParks();
 const park = (id: string) => parks.find((l) => l.id === id)!;
 
@@ -50,16 +50,17 @@ test("every park loads with finite ground, goals and spawns on rideable ground i
   }
 });
 
-test("the named gaps are cleared at any speed from 24 to 32 by driving at the launch and jumping at the lip, and a hop onto the obstacle does not count", () => {
-  for (const [id, spawn, name] of [["el-capitan", "street line", "Boulder Gap"], ["old-faithful", "vent line", "Geyser Hop"], ["mariposa-grove", "clearing", "Fallen Giant"], ["glacier-point", "plateau", "Glacier Point Gap"], ["half-dome", "dome run", "Half Dome Face"], ["yosemite-falls", "shelf", "Upper Fall"], ["yosemite-falls", "valley line", "Valley Hop"], ["grand-prismatic", "street line", "Sinter Jump"], ["grand-canyon", "rim line", "Canyon Drop"], ...SURVEYED.map(([id, gap]) => [id, `${gap} run`, gap] as const)] as const) {
+// One test per gap: each is twenty seconds of sim at three speeds, and the list is long.
+for (const [id, spawn, name] of [["el-capitan", "street line", "Boulder Gap"], ["old-faithful", "vent line", "Geyser Hop"], ["mariposa-grove", "clearing", "Fallen Giant"], ["glacier-point", "plateau", "Glacier Point Gap"], ["half-dome", "dome run", "Half Dome Face"], ["yosemite-falls", "shelf", "Upper Fall"], ["yosemite-falls", "valley line", "Valley Hop"], ["grand-prismatic", "street line", "Sinter Jump"], ["grand-canyon", "rim line", "Canyon Drop"], ...SURVEYED.map(([id, gap]) => [id, `${gap} run`, gap] as const)] as const) {
+  test(`${id}: ${name} is cleared at any speed from 24 to 32 by driving at the launch and jumping at the lip, and a hop onto the obstacle does not count`, () => {
     for (const line of SPEEDS) {
       const { s, run } = drive(park(id), spawn, 20, name, line);
       expect(run.gaps.get(name)).toBeGreaterThanOrEqual(1);
       expect(s.score).toBeGreaterThanOrEqual(park(id).gaps.find((g) => g.name === name)!.bonus);
       expect(run.bestCombo).toBeGreaterThan(0);
     }
-  }
-}, 30000);
+  });
+}
 
 test("El Capitan's talus is a quarter pipe: driving at the wall climbs it", () => {
   const l = park("el-capitan"), { s, run } = drive(l, "wall view", 8);

@@ -133,7 +133,8 @@ export function parkLevel(spec: ParkSpec, zone: ZoneData, real = false): ParkLev
   const kit = join(placed, ...spread);
   const land = sculpt(ground, works);
   const parts = join(kit, drape(copings(works), land.height));
-  const extra = hillSpawn(works, spec.spawns); // a park with no hillside cut near its spawns starts a rider below one
+  // a park with no hillside cut near its spawns starts a rider below one, on ground the ribbons and the scattered kit left open
+  const extra = hillSpawn(works, spec.spawns, [...parts.pieces.map((p) => ({ x: p.x, z: p.z, r: 6 })), ...(filled?.paths ?? []).flatMap((r) => r.path.map((p) => ({ x: p.x, z: p.z, r: 15 })))]);
   const inner = makeLevel({ name: spec.name, pieces: parts.pieces, rails: parts.rails, obstacles: trees, spawns: extra ? [...spec.spawns, extra] : spec.spawns, bounds });
   const height = (x: number, z: number) => Math.max(land.height(x, z), inner.height(x, z));
   const obstacles = [...trees, ...postObstacles(parts.rails, height)];
