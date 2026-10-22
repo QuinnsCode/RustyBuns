@@ -290,7 +290,8 @@ export class Scenery {
       this.meshes.set(kind, { mesh, mine, shrunk: new Set() });
       mine.forEach((s, i) => { this.place(mesh, s, i, 1); mesh.setColorAt(i, TINT.setHSL(0, 0, 0.82 + 0.3 * Math.abs(Math.sin(s.x * 3.7 + s.z * 1.3)))); }); // each one a shade of its own, like hand-painted
     };
-    for (const kind of KINDS) {
+    // one draw call a kind, and only the kinds this park grows: a pine park never pays for a saguaro
+    for (const kind of KINDS.filter((k) => spots.some((s) => s.kind === k))) {
       const { geo, mat } = BY_KIND(kind);
       make(kind, set ? set[kind] : geo, set ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }) : mat);
     }

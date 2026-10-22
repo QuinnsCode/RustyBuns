@@ -32,7 +32,7 @@ test("a park drawn with the set has one instanced mesh per kind, placed where it
   const spots = scatter(level, level.ground), models = await loadScenery("low", read);
   const scenery = new Scenery(spots, models);
   const meshes = scenery.group.children.filter((o): o is THREE.InstancedMesh => (o as THREE.InstancedMesh).isInstancedMesh);
-  expect(meshes.length).toBe(KINDS.length);
+  expect(meshes.length).toBe(new Set(spots.map((s) => s.kind)).size); // one draw call a kind the park grows, none for the rest
   expect(meshes.reduce((n, m) => n + m.count, 0)).toBe(spots.length);
   const pine = spots.findIndex((s) => s.kind === "pine");
   expect(pine).toBeGreaterThanOrEqual(0);
