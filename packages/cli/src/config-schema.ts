@@ -81,7 +81,7 @@ const DesktopTarget = Schema.Struct({
   dataDir: opt(Str),
   actions: opt(Schema.Struct({ include: opt(Strs), exclude: opt(Strs) })),
   mounts: opt(StrMap), r2: opt(StrMap),
-  storageCodec: opt(Schema.Literals(["json", "v8"])),
+  storageCodec: opt(Schema.Literals(["json", "v8"])), sourceMaps: opt(Bool),
   advisories: opt(Str), define: opt(StrMap), workers: opt(Strs), warm: opt(int(0, Number.MAX_SAFE_INTEGER)),
 });
 

@@ -48,7 +48,8 @@ export function declaredSecrets(dir: string): string[] {
   const pkg = (() => { try { return JSON.parse(readFileSync(join(dir, "package.json"), "utf8")); } catch { return {}; } })();
   const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
   for (const [dep, vars] of Object.entries(IMPLICIT)) if (deps.some((d) => d === dep || d.startsWith(dep + "/"))) vars.forEach((v) => names.add(v));
-  return [...names].sort();
+  // `import.meta.env.VITE_${key}` reads a family of names, not one called VITE_
+  return [...names].filter((n) => !n.endsWith("_")).sort();
 }
 
 /** Variables an SDK reads by itself when present. */

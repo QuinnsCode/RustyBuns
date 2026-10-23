@@ -379,7 +379,8 @@ async function trialSteps(app: App, slug: string, log: string, tag: string): Pro
   const site = staticBuild(initCfg), tool = site && staticTool(site);
   if (site) r.traits.push("static");
   for (const mode of MODES) {
-    if (mode === "worker" && !/"builtMain"/.test(initCfg)) { r.modes[mode] = { stage: "skipped", error: "init found no Worker build" }; continue; }
+    // A Pages app's Worker is the TypeScript rustybuns writes from functions/, run as it is.
+    if (mode === "worker" && !/"builtMain"|"main": "\.rustybuns\/pages\//.test(initCfg)) { r.modes[mode] = { stage: "skipped", error: "init found no Worker build" }; continue; }
     // init chose worker itself (TanStack Start's server, Astro's adapter): there is no SPA to try
     if (mode === "spa" && initMode === "worker") { r.modes[mode] = { stage: "skipped", error: "init chose worker mode" }; continue; }
     // Jekyll, Hugo, MkDocs come from outside npm: this machine lacking one says nothing about the site

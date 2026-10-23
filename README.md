@@ -117,6 +117,16 @@ Jekyll copies every file it doesn't exclude into the site, so `init` layers `_co
 
 </details>
 
+### Pages Functions run as a Worker
+
+A Cloudflare Pages project's `functions/` folder becomes a Worker on every target, with each handler unchanged.
+
+<details><summary>More</summary>
+
+`init` spots a Pages project: a `functions/` folder with handlers in it and no Worker `main`. It sets the Worker's build to start with `rustybuns pages-functions`, which writes `.rustybuns/pages/`: one route per file (`[id].ts` is a param, `[[path]].ts` a catch-all) in Pages' order, the `_middleware` chain, and a small adapter that hands each handler Pages' own context (`request`, `env`, `params`, `data`, `next`, `waitUntil`). The Worker sees requests before the static files, as Pages Functions do, and `public/_routes.json` still sends its excludes straight to the files. A request no Function answers, or one whose method no handler exports, gets the static files. A new file under `functions/` is a new route on the next build. The adapter is copied into the app and imports nothing, so Rusty Buns stays out of the bundle. Tried on a Pages app with 100 routes, two middlewares, D1, KV, R2 and Vectorize: it boots on the desktop with no edits.
+
+</details>
+
 ### Every Cloudflare binding has a local twin
 
 D1, KV, R2 and Durable Objects run on sqlite and a folder on your disk, so the whole stack boots with no cloud account and no bill.

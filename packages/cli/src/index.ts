@@ -6,7 +6,8 @@ import { mkdir, rm } from "node:fs/promises";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseWrangler, parseWranglerToml, wranglerToConfig, wranglerStages, droppedWranglerKeys } from "./wrangler.ts";
+import { parseWrangler, parseWranglerToml, wranglerToConfig, wranglerStages, droppedWranglerKeys, embeddingDims } from "./wrangler.ts";
+import { hasPagesFunctions, writePagesWorker, PAGES_ENTRY } from "./pages-functions.ts";
 import { generateAlchemy } from "./gen/alchemy.ts";
 import { generateWrangler } from "./gen/wrangler.ts";
 import { buildDesktop } from "./build.ts";
@@ -14,7 +15,7 @@ import { smoke } from "./smoke.ts";
 import { signDarwin } from "./sign.ts";
 import { buildBox, checkBox } from "./box.ts";
 import { watchDesktop } from "./watch.ts";
-import { codeSecrets, wranglerNames } from "./glue/secrets.ts";
+import { codeSecrets, eachSource, wranglerNames } from "./glue/secrets.ts";
 import { buildEnv, emptyHome, hostCommand, withLocalBins, hostEnv, wantsSandbox } from "./sandbox.ts";
 import { desktopServers, forStage, workerName, type RustyBunsConfig } from "./config.ts";
 import { Effect } from "effect";
@@ -231,6 +232,21 @@ async function init() {
   // none (a plain Worker; Alchemy bundles its main). Astro's adapter is set up below.
   const built = inf.framework === "rwsdk" ? "rwsdk" : !astroWorker && inf.vite.plugins.includes("cloudflare") ? "vite" : null;
   const cfg = wranglerToConfig(w, inf.scripts, built);
+  // Cloudflare Pages: no Worker main, a functions/ folder routed by file name. The Worker is the one
+  // `rustybuns pages-functions` writes from that folder, its build writes it first, and it sees every
+  // request before the static files, as Pages Functions do (_routes.json sends the rest straight there).
+  const pagesWorker = !w.main && !astroWorker && !svelteWorker && hasPagesFunctions();
+  if (pagesWorker) {
+    // vite's outDir is relative to its root (root: "src", outDir: "../dist" builds into dist/)
+    const viteOut = inf.vite.outDir ? join(inf.vite.root ?? ".", inf.vite.outDir).split("\\").join("/") : null;
+    const assets = (w.pages_build_output_dir ?? viteOut ?? "dist").replace(/^\.\//, "").replace(/\/$/, "");
+    const n = writePagesWorker("functions", assets);
+    cfg.worker!.main = PAGES_ENTRY;
+    cfg.worker!.assets = assets;
+    cfg.worker!.runWorkerFirst = ["/*"];
+    cfg.worker!.build = [`${inf.execCmd("rustybuns")} pages-functions`, cfg.worker!.build].filter(Boolean).join(" && ");
+    console.log(`pages:    functions/ -> ${PAGES_ENTRY} (${n.routes} routes, ${n.middleware} middleware), ahead of ${assets}/`);
+  }
   // Astro: no worker source of its own unless the app set one. The adapter builds
   // dist/server/entry.mjs and the client into dist/client, and keeps sessions in KV.
   if (astroWorker) {
@@ -280,11 +296,12 @@ async function init() {
     if (img && !Object.values(cfg.bindings).some((b) => b.type === "images")) { cfg.bindings[img] = { type: "images" }; console.log(`images:   ${img} (Cloudflare Images, for the adapter's /_image; a passthrough on the desktop)`); }
   }
   // Secrets: names only, from .dev.vars. Values are read from .dev.vars at deploy time.
-  const secrets = Object.keys(readDevVars()).filter((k) => !cfg.bindings[k]);
+  // Not the client build's (VITE_*, PUBLIC_*: Vite inlines those), nor a bare prefix.
+  const secrets = Object.keys(readDevVars()).filter((k) => !cfg.bindings[k] && !/^(?:VITE_|PUBLIC_|NEXT_PUBLIC_)|_$/.test(k));
   for (const k of secrets) cfg.bindings[k] = { type: "secret" };
   if (secrets.length) console.log(`secrets:  ${secrets.join(" ")}  (names from .dev.vars)`);
   // and the ones its code reads that nothing declares: they live in Cloudflare, not in the clone
-  const read = codeSecrets(inf.srcDir ?? "src", new Set([...Object.keys(cfg.bindings), ...wranglerNames(w)]), inf.framework);
+  const read = codeSecrets(pagesWorker ? [inf.srcDir ?? "src", "functions"] : inf.srcDir ?? "src", new Set([...Object.keys(cfg.bindings), ...wranglerNames(w)]), inf.framework);
   for (const k of read.required) cfg.bindings[k] = { type: "secret" };
   for (const k of read.optional) cfg.bindings[k] = { type: "secret", optional: true };
   if (read.required.length) console.log(`secrets:  ${read.required.join(" ")}  (rwsdk's session store needs it; put it in .dev.vars)`);
@@ -301,7 +318,7 @@ async function init() {
   // app's build runs before vite (prisma generate, codegen) runs first, as in initSpa (#403).
   const host = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
   // Astro and React Router: the desktop runs the Worker build under Bun, same bundle as the edge.
-  if (astroWorker || rrWorker || svelteWorker) cfg.targets.desktop = { mode: "worker", targets: [host as any] };
+  if (astroWorker || rrWorker || svelteWorker || pagesWorker) cfg.targets.desktop = { mode: "worker", targets: [host as any] };
   else {
     const d = cfg.targets.desktop!;
     const { preViteSteps } = await import("./glue/build-script.ts");
@@ -317,6 +334,16 @@ async function init() {
     if (Object.keys(stages).length) { cfg.stages = stages; console.log(`stages:   ${Object.keys(stages).join(" ")}  (from wrangler's env blocks; deploy one with --stage <name>)`); }
     if (missing.length) console.log(`warning:  wrangler doesn't bind these in their env, but the stage keeps the top level's: ${missing.join(", ")}`);
   }
+  // A Vectorize index's dimensions, from the embedding model the code names, when it names one.
+  if (Object.values(cfg.bindings).some((b) => b.type === "vectorize" && !b.dimensions)) {
+    const texts: string[] = [];
+    for (const dir of new Set([inf.srcDir ?? "src", "functions", "worker", "server"])) eachSource(dir, (t) => texts.push(t));
+    const found = embeddingDims(texts);
+    if (found) for (const [n, b] of Object.entries(cfg.bindings)) if (b.type === "vectorize" && !b.dimensions) {
+      b.dimensions = found.dimensions;
+      console.log(`vectors:  ${n}: ${found.dimensions} dimensions, from ${found.models.join(", ")} in the code (\`wrangler vectorize info ${b.indexName}\` to check)`);
+    }
+  }
   const body = `import { defineConfig } from "@rustybuns/cli/config";\n\nexport default defineConfig(${JSON.stringify(cfg, null, 2)});\n`;
   await Bun.write("rustybuns.config.ts", body);
   console.log(`wrote rustybuns.config.ts${src ? ` from ${src}` : ""}`);
@@ -328,8 +355,8 @@ async function init() {
   if (undimensioned.length) { console.log(`\nnext: set those dimensions, then ${inf.execCmd("rustybuns plan")}`); return; }
   await generate({ adopt: false });
   // The boundary report is for `add desktop`'s spa split; a worker-mode desktop runs the whole Worker.
-  if (!astroWorker && !rrWorker) { const { modules } = await boundary(); console.log(report(modules)); }
-  console.log(astroWorker || rrWorker
+  if (!astroWorker && !rrWorker && !pagesWorker) { const { modules } = await boundary(); console.log(report(modules)); }
+  console.log(astroWorker || rrWorker || pagesWorker
     ? `\nnext: ${inf.execCmd("rustybuns build desktop --dev")} && ${inf.execCmd("rustybuns run desktop")}, or ${inf.execCmd("rustybuns plan")}`
     : `\nnext: rustybuns add desktop [--entry ./src/app/App.tsx#App]`);
 }
@@ -1050,7 +1077,7 @@ async function containersCommand(args: string[]) {
   }
 }
 
-const COMMANDS = ["init", "copy-site", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "infra", "build", "containers", "smoke", "eject", "version"];
+const COMMANDS = ["init", "copy-site", "pages-functions", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "infra", "build", "containers", "smoke", "eject", "version"];
 const isVersion = cmd === "--version" || cmd === "-v" || cmd === "version";
 if (!isVersion && !checkDisabled()) {
   const advice = await checkVersion(VERSION);
@@ -1064,6 +1091,12 @@ try {
       const [from, to] = rest;
       if (!from || !to) throw new UsageError({ message: "usage: rustybuns copy-site <from> <to>" });
       copySite(from, to); break;
+    }
+    case "pages-functions": {
+      // [functions dir], then the static output that may hold _routes.json (the config's worker.assets)
+      const cfg = existsSync("rustybuns.config.ts") ? await loadConfig().catch(() => null) : null;
+      const n = writePagesWorker(rest[0] ?? "functions", cfg?.worker?.assets);
+      console.log(`pages-functions: ${n.routes} routes, ${n.middleware} middleware -> ${PAGES_ENTRY}`); break;
     }
     case "jekyll": jekyll(rest); break;
     case "generate": await generate({ adopt: false }); break;
@@ -1166,6 +1199,8 @@ Box and ship the web app you already have. A dev dependency, never in prod.
                              its build output, on the desktop and as static files on Workers
   copy-site <from> <to>      a hand-written site's files into <to>, leaving out dotfiles and
                              Rusty Buns' own (the build init writes for plain HTML)
+  pages-functions [dir]      a Pages functions/ folder (or [dir]) as a Worker: writes .rustybuns/pages/,
+                             a route per file and the _middleware chain (the build init writes for Pages)
   jekyll <args>              jekyll <args> on Ruby 3+ (bundle exec with a Gemfile), else in a
                              ruby:3.3 Docker container (the build init writes for Jekyll)
   init --port-vite           Create React App / Vue CLI: port to Vite first, then init;
