@@ -17,7 +17,7 @@ export const halfDome: ParkSpec = {
     { parts: [fallenLog({ x: 120, z: 230, yaw: E }, { len: 18, r: 0.9 })] },
     { parts: [flatBar({ x: 130, z: 190, yaw: E }, { len: 14 }), stairSet({ x: 155, z: 190, yaw: E }, { w: 8, steps: 6, rise: 0.25, run: 0.9 })] },
     { parts: [funbox({ x: 195, z: 190, yaw: E }, { w: 10, d: 24, h: 1.2, ramp: 7 }), hip({ x: 230, z: 190 }, { w: 12, d: 12, h: 2.4 })] },
-    { parts: [quarterPipe({ x: 265, z: 190, yaw: E }, { w: 14, d: 7, h: 3.6 })] },
+    { parts: [quarterPipe({ x: 265, z: 190, yaw: W }, { w: 14, d: 7, h: 3.6 })] },
     // granite that turns to vertical on the shoulder, and a bowl on the summit flat
     { parts: [rockFace({ x: 230, z: 100, yaw: Math.PI }, { w: 12, d: 6, h: 4 })] },
     { parts: [bowl({ x: -30, z: 60 }, { w: 28, d: 20, h: 2.2, deck: 3, name: "summit bowl" })] },

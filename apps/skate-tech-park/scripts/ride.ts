@@ -68,20 +68,22 @@ export function ride(l: ParkLevel, spawns = l.spawns.length): Ride {
     const s = start(sp.x, sp.z, sp.yaw, l), walk = tour(l, sp);
     chase.snap(s, "fingerboard");
     r.stops += walk.length;
-    let i = 0, since = 0, prevBail = 0, prevGrind = -1, prevManual = 0, flicked = false, lastTrick: State["last"] = null, back = 0, backDir = 1, fast = 0;
+    let i = 0, since = 0, prevBail = 0, prevGrind = -1, prevManual = 0, flicked = false, lastTrick: State["last"] = null, back = 0, backDir = 1, stall = 0, wedges = 0;
     // a spawn with nothing in reach is just ridden straight ahead for 20 s
     for (let f = 0; f < (walk.length ? walk.length * 50 : 20) * 60 && (i < walk.length || !walk.length); f++) {
       const to = walk[i] ?? { x: s.x + Math.sin(s.yaw) * 500, z: s.z + Math.cos(s.yaw) * 500 }, aim = Math.atan2(to.x - s.x, to.z - s.z), err = wrap(aim - s.yaw);
-      if (walk.length && Math.hypot(to.x - s.x, to.z - s.z) < 4) { i++; since = 0; r.reached++; continue; }
+      if (walk.length && Math.hypot(to.x - s.x, to.z - s.z) < 4) { i++; since = 0; wedges = 0; r.reached++; continue; }
       since += 1 / 60;
       if (since > 45) { r.stuck.push(`${sp.name}: never got to (${to.x.toFixed(0)}, ${to.z.toFixed(0)}), ended at (${s.x.toFixed(0)}, ${s.z.toFixed(0)}) after ${s.t.toFixed(0)}s`); i++; since = 0; continue; }
       const near = l.gaps.find((g) => Math.hypot(s.x - g.a.x, s.z - g.a.z) < 12), rail = l.rails.find((q) => { const d = Math.hypot(s.x - q.a.x, s.z - q.a.z); return d > 8 && d < 11 && Math.abs(wrap(s.yaw - Math.atan2(q.b.x - q.a.x, q.b.z - q.a.z))) < 0.25; }), hop = !s.air && ((near && Math.hypot(s.x - near.a.x, s.z - near.a.z) < 6) || rail);
-      // wedged against something: back out and turn away for a second, then carry on
+      // wedged against something (nearly stopped for a moment): back out and turn away for a second, then carry on
       if (back > 0) back -= 1 / 60;
-      else if (!s.air && s.bail <= 0 && fast > 1 && Math.abs(s.speed) < 1.5) { back = 1; backDir = err > 0 ? -1 : 1; r.snags.push({ x: s.x, z: s.z }); }
-      fast = Math.abs(s.speed) > 8 ? 2 : Math.max(0, fast - 1 / 60);
+      else if (stall > 0.6) { stall = 0; back = Math.min(3, 1 + wedges * 0.5); backDir = (err > 0 ? -1 : 1) * (wedges++ % 2 ? -1 : 1); r.snags.push({ x: s.x, z: s.z }); }
+      stall = !s.air && s.bail <= 0 && back <= 0 && Math.abs(s.speed) < 1.5 ? stall + 1 / 60 : 0;
+      // ease off for a stop that is close or off to the side, or the board swings wide of it and ends in the scenery
+      const cruise = Math.min(24, Math.max(12, Math.hypot(to.x - s.x, to.z - s.z) * 0.8), Math.abs(err) > 0.5 ? 10 : 24);
       const inp: Input = back > 0 ? { ...IDLE, throttle: -1, steer: backDir } : {
-        ...IDLE, throttle: s.speed < 24 ? 1 : -1, boost: !s.air && s.speed < 24, steer: s.air ? 0 : Math.max(-1, Math.min(1, err * 3)), jump: !!hop,
+        ...IDLE, throttle: s.speed < cruise ? 1 : -1, boost: !s.air && s.speed < cruise, steer: s.air ? 0 : Math.max(-1, Math.min(1, err * 3)), jump: !!hop,
         flick: s.air && s.airTime > 0.25 && !flicked ? FLICKS[(r.tricks + Math.floor(s.t)) % FLICKS.length]! : null,
         manual: !s.air && s.speed > 12 && Math.abs(err) < 0.1 && Math.floor(s.t / 3) % 5 === 0 ? 1 : 0,
       };
