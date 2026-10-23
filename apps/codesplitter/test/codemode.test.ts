@@ -162,3 +162,29 @@ describe("code mode", () => {
     expect((await plain.rpc(plain.write, "initialize", { protocolVersion: "2025-06-18" })).result.instructions).not.toContain("execute");
   });
 });
+
+describe("saved programs", () => {
+  test("an agent saves a program, reruns it by name with new input, and sees only its own", async () => {
+    const { write, read, tool } = await app();
+    const code = [
+      "const f = await tools.read_file({ owner: input.owner, repo: input.repo, path: input.path });",
+      "return { todos: f.lines.filter((l) => l.text.includes('TODO')).length };",
+    ].join("\n");
+    const saved = await tool(write, "execute", { code: `return await tools.save_program({ name: 'count-todos', body: { code: ${JSON.stringify(code)}, description: 'TODOs in a file' } });` });
+    expect(saved.isError).toBe(false);
+
+    const run = await tool(read, "execute", { program: "count-todos", input: { ...where, path: "before.ts" } });
+    expect(run.isError).toBe(false);
+    expect(JSON.parse(run.content[0].text)).toEqual({ result: { todos: TODOS } });
+
+    const list = await tool(write, "execute", { code: "return await tools.list_programs({});" });
+    expect(JSON.parse(list.content[0].text).result).toEqual([expect.objectContaining({ name: "count-todos", description: "TODOs in a file" })]);
+
+    const missing = await tool(write, "execute", { program: "nope" });
+    expect(missing.isError).toBe(true);
+    expect(missing.content[0].text).toContain("no saved program nope");
+
+    const gone = await tool(write, "execute", { code: "await tools.delete_program({ name: 'count-todos' }); return (await tools.list_programs({})).length;" });
+    expect(JSON.parse(gone.content[0].text)).toEqual({ result: 0 });
+  });
+});

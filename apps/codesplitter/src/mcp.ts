@@ -83,8 +83,15 @@ async function meta(name: string, args: Record<string, unknown>, mine: Tool[], l
     case "search_tools": return result(search(mine, typeof args.query === "string" ? args.query : "", typeof args.limit === "number" ? args.limit : undefined));
     case "describe_tools": return result(describe(mine, Array.isArray(args.names) ? args.names.map(String) : []));
     case "execute": {
-      if (typeof args.code !== "string" || !args.code.trim()) return result("code is required: the body of an async function", true);
-      const r = await execute(loader, args.code, mine, run);
+      let code = args.code;
+      if (typeof args.program === "string" && args.program) {
+        const get = mine.find((t) => t.name === "get_program");
+        const got = get && await run(get, { name: args.program });
+        if (!got || got.status !== 200) return result(got?.status === 404 ? `no saved program ${args.program}: list_programs lists yours` : `${got?.status ?? 404}: ${got?.text ?? "no get_program tool for this token"}`, true);
+        code = (JSON.parse(got.text) as { code: string }).code;
+      }
+      if (typeof code !== "string" || !code.trim()) return result("code is required: the body of an async function, or the name of a saved program", true);
+      const r = await execute(loader, code, mine, run, args.input);
       return result(r.text, r.isError);
     }
     default: {

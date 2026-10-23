@@ -50,8 +50,11 @@ export const META: MetaTool[] = [
       + "The program is the body of an async function. Each tool is `await tools.<name>({...})`, with the arguments describe_tools gives; its JSON answer comes back parsed, and an error throws with its status first (`409: …`, so catch a 409, read again and retry). console.log lines come back too. "
       + "`return` a small answer: a count, ids, a few lines, never a whole file. "
       + `At most ${MAX_CALLS} tool calls, ${RUN_MS / 1000} s, ${MAX_BACK.toLocaleString("en")} characters back; no network but the tools. Your token's scope applies. Tools marked risky (they ship code, change who can get in or see what, or can't be undone) aren't callable here: use call_tool, so the person is asked. `
+      + "A program that worked can be kept: save_program({ name, body: { code, description } }), then execute { program: name, input } reruns it, and list_programs lists yours; write programs to take what varies (owner, repo, path) from `input`. "
       + `Example, with owner, repo and path as consts you set first:\n${EXAMPLE}`,
-    inputSchema: obj({ code: { type: "string", description: "the body of an async function; use `return` for the answer" } }, ["code"]),
+    inputSchema: obj({ code: { type: "string", description: "the body of an async function; use `return` for the answer" },
+      program: { type: "string", description: "the name of a program saved with save_program, to run instead of code" },
+      input: { description: "any JSON; the program reads it as `input`" } }, []),
     annotations: annotations("Run a program over the tools") },
   { name: "call_tool", title: "Call a risky tool",
     description: "Call one tool that ships code, changes who can get in or see what, or can't be undone (search_tools marks these risky). Your client asks the person before this runs. Everything else goes through execute.",
@@ -97,13 +100,14 @@ export function describe(all: Tool[], names: string[]): string {
 }
 
 /** The dynamic Worker's module: the agent's code inside a fetch handler, with `tools` over env.CS. */
-const wrap = (code: string) => `
+const wrap = (code: string, input: unknown) => `
+const INPUT = ${JSON.stringify(input ?? null)};
 const call = async (env, name, args) => {
   const r = await env.CS.call(name, JSON.stringify(args === undefined ? {} : args));
   if (r.status >= 300) { const e = new Error(r.status + ": " + r.text); e.status = r.status; throw e; }
   try { return JSON.parse(r.text); } catch { return r.text; }
 };
-const program = async ({ tools, console }) => {
+const program = async ({ tools, console, input }) => {
 ${code}
 };
 export default {
@@ -112,7 +116,7 @@ export default {
     const say = (...a) => { log.push(a.map((x) => typeof x === "string" ? x : JSON.stringify(x)).join(" ")); };
     const tools = new Proxy({}, { get: (_, name) => (args) => call(env, String(name), args) });
     try {
-      const result = await program({ tools, console: { log: say, info: say, warn: say, error: say } });
+      const result = await program({ tools, input: INPUT, console: { log: say, info: say, warn: say, error: say } });
       return Response.json({ ok: true, result: result === undefined ? null : result, log });
     } catch (e) {
       return Response.json({ ok: false, error: String(e && e.message || e), log });
@@ -154,14 +158,14 @@ const rpcBase = import("cloudflare:workers").then((m) => (m as unknown as { RpcT
 export interface Ran { text: string; isError: boolean; calls: number }
 
 /** Run `code` over `tools` as the caller (`run` makes each call), in a Worker of its own. */
-export async function execute(loader: WorkerLoaderLike, code: string, tools: Tool[], run: (t: Tool, args: Record<string, unknown>) => Promise<ToolAnswer>): Promise<Ran> {
+export async function execute(loader: WorkerLoaderLike, code: string, tools: Tool[], run: (t: Tool, args: Record<string, unknown>) => Promise<ToolAnswer>, input?: unknown): Promise<Ran> {
   if (code.length > MAX_CODE) return { text: `the program is up to ${MAX_CODE.toLocaleString("en")} characters`, isError: true, calls: 0 };
   const cs = fetcher(tools, run, await rpcBase);
   let timer: ReturnType<typeof setTimeout> | undefined, log: string[] = [], out: string, isError = false;
   try {
     // A Worker for each run: one cached by id would keep the first caller's CS, and so their token.
     const stub = loader.get(`prog:${crypto.randomUUID()}`, () => ({
-      compatibilityDate: "2026-06-01", mainModule: "program.js", modules: { "program.js": wrap(code) }, env: { CS: cs }, globalOutbound: null,
+      compatibilityDate: "2026-06-01", mainModule: "program.js", modules: { "program.js": wrap(code, input) }, env: { CS: cs }, globalOutbound: null,
     })).getEntrypoint();
     const timeout = new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error("timeout")), RUN_MS); });
     const res = await Promise.race([stub.fetch("http://program/run", { method: "POST" }), timeout]);
