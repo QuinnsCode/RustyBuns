@@ -5067,7 +5067,7 @@ const views = {
   },
   /** How a repo's dependencies stand against the registry, in two layouts behind tabs A and B. */
   async health(owner, repo) {
-    app.innerHTML = `<div class="wrap" style="padding-top:24px"><h1><a href="#/r/${owner}/${repo}" title="back to ${esc(repo)}" aria-label="back to ${esc(repo)}">${icon("arrow-left")}</a> ${icon("heart-pulse")}<b>${esc(repo)}</b></h1><div class="box"><div class="body" id="health"><span class="muted">${icon("loader")} reading the registry…</span></div></div></div>`;
+    app.innerHTML = `<div class="wrap" style="padding-top:24px"><h1><a href="#/r/${esc(owner)}/${esc(repo)}" title="back to ${esc(repo)}" aria-label="back to ${esc(repo)}">${icon("arrow-left")}</a> ${icon("heart-pulse")}<b>${esc(repo)}</b></h1><div class="box"><div class="body" id="health"><span class="muted">${icon("loader")} reading the registry…</span></div></div></div>`;
     icons();
     const h = await api(`/repos/${owner}/${repo}/deps/health`).catch((e) => ({ error: e.message }));
     const el = $("#health");

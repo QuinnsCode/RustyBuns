@@ -63,4 +63,8 @@ test("owner pushes, the crew branches, protect main holds, and agent batches wai
   expect(await status(ops("sam", "codesplitter.ci"))).toBe(403);
   await post("sam", "/api/repos/ryan/lab/branches", { name: "pol" });
   expect(await status(ops("sam", ".gitattributes", "pol"))).toBe(200);
+  // ...and a merge is no way round it: only the owner lands a branch that changes them on main.
+  const policy = await post("lee", "/api/repos/ryan/lab/branches/pol/merge", {});
+  expect(policy.status).toBe(403);
+  expect(await policy.json()).toMatchObject({ policy: true });
 });

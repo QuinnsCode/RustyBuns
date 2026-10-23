@@ -23,6 +23,7 @@ import { deployOnCommit } from "./deploy.ts";
 import { code, json, type ArtifactsRepo, type CommitMeta, type Env, type TreeEntry } from "./env.ts";
 import { emit } from "./hooks.ts";
 import { kickMirror, landPushes, mirrorsOn, pushHolds } from "./mirror.ts";
+import { policyClosed } from "./protect.ts";
 import { indexFile, unindexFile } from "./search.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 
@@ -134,6 +135,7 @@ export async function pickRoute(env: Env, owner: string, repo: string, user: str
   if (!h) return json({ error: "this repo has no git" }, 404);
   const got = await commitChanges(h.handle, sha);
   if (!got) return json({ error: `no commit ${sha} here` }, 404);
+  if (!branch) for (const c of got.changes) { const closed = policyClosed(owner, c.path, user); if (closed) return closed; }
   if (got.more) return json({ error: `it changed more than ${MAX_FILES} files: too many to ${kind === "revert" ? "revert" : "pick"} here` }, 413);
   // A push from outside reaches main's files first, so this merges into what git really has (#773).
   if (!branch && mirrorsOn(env)) await landPushes(env, owner, repo).catch(() => {});

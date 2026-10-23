@@ -38,7 +38,7 @@ import { emit } from "./hooks.ts";
 import { diffToOps, keptPairs } from "./sync.ts";
 import { unindexFile } from "./search.ts";
 import { HARNESSES, type Harness } from "./harness.ts";
-import { protectOn } from "./protect.ts";
+import { policyClosed, protectOn } from "./protect.ts";
 import { localSandbox, type Exec } from "./agent-run.ts";
 import { containerSandbox } from "./sandbox.ts";
 import { ADMINS_ONLY, adminsOnly, agentsUnavailable, hostedBudget, installedHarnesses } from "./agent-routes.ts";
@@ -746,6 +746,8 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   const stuck = (await env.DB.prepare("SELECT path, source FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND source IS NOT NULL ORDER BY path").bind(owner, repo, name).all()).results as { path: string; source: string }[];
   if (stuck.length) return json({ error: `${stuck.map((f) => f.path).join(", ")} forked from ${stuck[0]!.source}'s copies and didn't move onto main cleanly when it merged: copy your changes into a branch off main`, files: stuck.map((f) => f.path) }, 409);
   const rows = await files(), todo = rows.filter((f) => !f.merged);
+  // The path policy and the checks' commands are the owner's to change on main (#1567): a merge is no way round it.
+  for (const f of todo) { const closed = policyClosed(owner, f.path, user); if (closed) return closed; }
   // Build or deploy files on a merge the owner's next commit would ship: read them first.
   const build = todo.map((f) => f.path).filter(isBuildFile);
   // An agent's batch touching them waits for an accept whatever the deploy setting: codesplitter.ci and .gitattributes drive what runs and who may edit what.

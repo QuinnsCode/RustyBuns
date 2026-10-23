@@ -149,6 +149,7 @@ import {
 } from "./hooks.ts";
 import {
   bearer,
+  byToken,
   tokenRoutes,
 } from "./tokens.ts";
 import {
@@ -799,7 +800,9 @@ async function route(req: Request, env: Env): Promise<Response> {
         // The DO learns who this socket is, and whether it may write, from us.
         const h = new Headers(req.headers);
         h.set("x-codesplitter-user", user ?? "anon");
-        h.set("x-codesplitter-write", a.write ? "1" : "0");
+        // On a protected main (#1426) the crew's socket reads: edits go on a branch, as the HTTP routes say.
+        const frozen = a.write && !branch && await mainClosed(env, owner, repo, user);
+        h.set("x-codesplitter-write", a.write && !frozen ? "1" : "0");
         h.set("x-codesplitter-crew", a.write ? "1" : "0");
         live ? h.set("x-codesplitter-live", live) : h.delete("x-codesplitter-live");
         branch ? h.delete("x-codesplitter-file") : h.set("x-codesplitter-file", encodeURIComponent(JSON.stringify([owner, repo, path])));
@@ -840,7 +843,8 @@ async function route(req: Request, env: Env): Promise<Response> {
             head_commit: { id: git.commit, message: commit.message, timestamp: new Date().toISOString(), author: { name: user, username: user }, added: git.parent ? [] : [path], modified: git.parent ? [path] : [], removed: [] },
           });
           // The owner's commit of a file only they edited since its last commit: a hosted deploy may run it (deploy-review.ts).
-          if (user === owner && !user.startsWith("agent-") && git.deployCommit && commit.writers?.every((w) => w === owner)) await clearOwn(env, owner, repo, git.deployCommit);
+          // A token (a prompt-injected agent may hold one) is not the owner reading it, so its commits wait for an approval.
+          if (user === owner && !byToken(req) && !user.startsWith("agent-") && git.deployCommit && commit.writers?.every((w) => w === owner)) await clearOwn(env, owner, repo, git.deployCommit);
           await deployOnCommit(env, owner, repo, user);
           await startChecks(env, owner, repo, "main", git.commit, user!);
           // A mirror hands the commit upstream now, if upstream's there to take it.
