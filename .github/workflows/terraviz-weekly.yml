@@ -1,0 +1,53 @@
+# TerraViz (apps/terraviz-demo) re-checked once a week, so a change to init, pages-functions or the asset staging
+# can't break it quietly. It runs a pinned upstream commit, so a failure here is ours, not TerraViz's own churn.
+# Move the pin on purpose: bump TERRAVIZ_SHA and watch this run. The clone is outside the repo (the trial's --out).
+# A failure opens (or comments on) one issue labelled ci-terraviz; a PR is never held for it.
+name: terraviz-weekly
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: terraviz-weekly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TERRAVIZ_SHA: 8cdbb2c38eff8007f49f61ce5d140d9802936e70
+
+jobs:
+  trial:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/trial-github.ts --local --check --priority normal --out "$RUNNER_TEMP/terraviz" "zyra-project/terraviz@$TERRAVIZ_SHA"
+      - if: always()
+        run: cat "$RUNNER_TEMP/terraviz/summary.md" >> "$GITHUB_STEP_SUMMARY" || true
+
+  flag:
+    needs: trial
+    if: always() && (needs.trial.result == 'failure' || needs.trial.result == 'cancelled')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create ci-terraviz --color B60205 --description "the weekly TerraViz run" 2>/dev/null || true
+          open=$(gh issue list --label ci-terraviz --state open --json number -q '.[0].number')
+          if [ -n "$open" ]; then gh issue comment "$open" --body "Failed again: $RUN"
+          else gh issue create --label ci-terraviz --title "Weekly TerraViz run is failing" --body "TerraViz no longer runs unchanged on Rusty Buns: $RUN
+
+          Triage: open the run's summary, find which Rusty Buns change broke it (init, pages-functions, asset staging), and fix that. Repro: \`bun apps/terraviz-demo/run.ts --fresh\`."; fi
