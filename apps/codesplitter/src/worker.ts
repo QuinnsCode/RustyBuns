@@ -8,7 +8,7 @@ import { artifactMoveRoutes } from "./artifact-move.ts";
 import { featureRankRoutes } from "./feature-ranks.ts";
 import { findRoutes } from "./finds.ts";
 import { rankOf } from "./policy.ts";
-import { fromText } from "./lines.ts";
+import { fromText, text, type Doc } from "./lines.ts";
 import { mainClosed, policyClosed, protectRoute } from "./protect.ts";
 import {
   ensureCrewRemote,
@@ -820,7 +820,13 @@ async function route(req: Request, env: Env): Promise<Response> {
         url.searchParams.has("rev") ? `?${new URLSearchParams({ rev: url.searchParams.get("rev")! })}` : url.searchParams.has("since") ? `?${new URLSearchParams({ since: url.searchParams.get("since")! })}` : p[5] === "file" && (url.searchParams.has("from") || url.searchParams.has("limit")) ? `?${new URLSearchParams([...url.searchParams].filter(([k]) => k === "from" || k === "limit"))}` : "", branch);
       if (p[5] === "private" && req.method === "POST" && res.ok) {
         // From the first private line on, the crew has a remote of its own to clone and deploy from.
-        if ((JSON.parse(sent!) as { private?: boolean }).private) await ensureCrewRemote(env, owner, repo).catch(() => null);
+        if ((JSON.parse(sent!) as { private?: boolean }).private) {
+          await ensureCrewRemote(env, owner, repo).catch(() => null);
+          // Search holds the text of the last commit: put the file back in with these lines blank now, not at its next commit.
+          const open = await toFile(env, owner, repo, path, "anon", "file", { headers: { "x-codesplitter-crew": "0" } }).catch(() => null);
+          const doc = open?.ok ? (await open.json().catch(() => null)) as Doc | null : null;
+          if (doc) await indexFile(env, owner, repo, path, text(doc)).catch(() => null);
+        }
         // Open branches' copies of the file hide the same lines.
         const { results } = await env.DB.prepare("SELECT b.name FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch WHERE f.owner = ? AND f.repo = ? AND f.path = ? AND b.status = 'open'").bind(owner, repo, path).all();
         for (const { name } of results as { name: string }[]) await toFile(env, owner, repo, path, user!, "private", { method: "POST", body: sent }, "", name);
