@@ -39,11 +39,12 @@ export function liveSocket(o: LiveOpts) {
   };
   const sock = resilientSocket(o.open, {
     onMessage(data) {
-      if (typeof data === "string" && (data.includes('"deploy-soon"') || data.includes('"draining"'))) {
+      if (typeof data === "string" && (data.includes('"deploy-soon"') || data.includes('"draining"') || data.includes('"drain-over"'))) {
         let m: { t?: string; at?: number } | null = null;
         try { m = JSON.parse(data); } catch { /* not ours */ }
         if (m?.t === "deploy-soon" && typeof m.at === "number") return countdown(m.at);
         if (m?.t === "draining") { drain = true; return; }
+        if (m?.t === "drain-over") { drain = false; stopTick(); o.onNet({ kind: "ok" }); return; }
       }
       o.onMessage(data);
     },
