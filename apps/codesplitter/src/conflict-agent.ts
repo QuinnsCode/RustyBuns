@@ -11,7 +11,7 @@ import { harnessCommand, type Harness } from "./harness.ts";
 import type { Conflict, Doc } from "./lines.ts";
 import type { Sandbox } from "./agent-run.ts";
 
-const MARK = /^(<{7}|\|{7}|={7}|>{7})( |$)/m;
+export const MARK = /^(<{7}|\|{7}|={7}|>{7})( |$)/m;
 
 /** The conflict as git writes one, diff3 style, so every agent knows what it's looking at. */
 export function markers(c: Conflict) {
