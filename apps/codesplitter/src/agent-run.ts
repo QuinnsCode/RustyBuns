@@ -6,7 +6,7 @@
 // directory on this machine (localSandbox), or a container on Cloudflare (sandbox.ts).
 
 import type { Call } from "./local.ts";
-import type { Doc, Line, Op } from "./lines.ts";
+import { PROTOCOL, type Doc, type Line, type Op } from "./lines.ts";
 import { harnessCommand, taskPrompt, type Command, type Harness, type HeldLine } from "./harness.ts";
 import { diffToOps, rebase } from "./sync.ts";
 import { NOTE_ASK, tokens, tripped, usageOf, type Budget, type Trip } from "./budget.ts";
@@ -107,12 +107,24 @@ export const toDisk = (lines: { text: string }[]) => lines.length ? lines.map((l
 /** Back from disk to the lines the agent left. */
 export const fromDisk = (s: string) => s === "" ? [] : s.replace(/\n$/, "").split("\n");
 
+/**
+ * The app was updated under the run: the file's object restarted, or it is on another build than the run's.
+ * Nothing is lost (the agent's edits land only as a diff against the file as it is), so the run starts again
+ * from the file as it stands; its owner's row says "interrupted by update, retrying" (agent-routes.ts).
+ */
+export class Interrupted extends Error {
+  constructor(why: string) { super(`interrupted by update, retrying (${why})`); }
+}
+/** How a cut call is tried again before the run gives up on it: 1, 2, 4, 8 seconds. */
+const CUT_TRIES = 5;
+const cut = (res: Response) => res.status === 502 || res.status === 503 || res.status === 504;
+
 /** Re-runs notes may add to one run, so a chatty owner can't keep an agent going for ever. */
 const NOTE_RUNS = 5;
 /** How often a run renews its claim while the CLI thinks: well inside the file's 2-minute lease (file-do.ts). */
 const HEARTBEAT_MS = 30_000;
 
-export async function runAgent(call: Call, opts: {
+export async function runAgent(plain: Call, opts: {
   user: string; owner: string; repo: string; path: string;
   harness: Harness; task: string; model?: string; commit?: string;
   /** Work on this branch's copy of the file instead of main's (its claim still holds main's lines). No commit there. */
@@ -143,16 +155,35 @@ export async function runAgent(call: Call, opts: {
   heartbeat?: number;
   /** What the run was handed (its API keys, its GitHub token): an edit that writes one into a file posts nothing (leaks.ts). */
   secrets?: (string | null | undefined)[];
+  /** Told as each round of the agent lands, so a run that is cut off has said how far it got (agent-routes.ts keeps it). */
+  progress?: (p: { runs: number; applied: number; spent: number }) => void;
+  /** How it waits between tries at a cut call, in ms (default: really waits). */
+  pause?: (ms: number) => Promise<unknown>;
   exec?: Exec; log?: (s: string) => void;
 }): Promise<Result> {
   const { user, owner, repo, path } = opts;
   const log = opts.log ?? (() => {});
+  const pause = opts.pause ?? ((ms: number) => Bun.sleep(ms));
+  // An update restarts the file's object under the run. Reads and claims are safe to repeat, so a cut one is asked
+  // again a few times; an edit or a commit is not (it may have landed), so a cut one ends the round as Interrupted:
+  // the run starts again from the file as it stands, and what did land is already in the snapshot it diffs against.
+  const call: Call = async (who, url, init) => {
+    const repeat = !init?.method || init.method === "GET" || /\/claims\b/.test(url);
+    for (let i = 0; ; i++) {
+      const res = await plain(who, url, init).catch((e: unknown) => e as Error);
+      if (!(res instanceof Error) && !cut(res)) return res;
+      if (!repeat) throw new Interrupted(res instanceof Error ? res.message : `${url.split("?")[0]!.split("/").pop()}: ${res.status}`);
+      if (i + 1 >= CUT_TRIES) { if (res instanceof Error) throw new Interrupted(res.message); return res; }
+      await pause(1000 * 2 ** i);
+    }
+  };
   const sandbox = opts.sandbox ?? localSandbox(opts.exec);
   const file = `/api/repos/${owner}/${repo}/do`, onMain = `?path=${encodeURIComponent(path)}`;
   const at = (p: string) => `?path=${encodeURIComponent(p)}` + (opts.branch ? `&branch=${encodeURIComponent(opts.branch)}` : "");
   const q = at(path), also = (opts.also ?? []).filter((p) => p !== path);
   const get = async (p = path) => {
     const res = await call(user, `${file}/file${at(p)}`);
+    if (res.status === 503) throw new Interrupted(`reading ${p}`);
     if (!res.ok) throw new Error(`read ${p}: ${res.status} ${await res.text()}`);
     return (await res.json()) as Doc;
   };
@@ -163,8 +194,15 @@ export async function runAgent(call: Call, opts: {
   // run keeps the other writer's version and comes back in `conflicts`.
   const claim = opts.lines?.length ? opts.claim ?? `run-${Date.now().toString(36)}` : undefined;
   if (claim) {
-    const res = await call(user, `${file}/claims${onMain}`, { method: "POST", body: JSON.stringify({ id: claim, lines: opts.lines, task: opts.task }) });
-    if (!res.ok) throw new Error(`claiming its lines: ${((await res.json().catch(() => ({}))) as { error?: string }).error ?? res.status}`);
+    // A file that is draining for an update takes no new claims: wait as it says, a few times, then start again later.
+    for (let i = 0; ; i++) {
+      const res = await call(user, `${file}/claims${onMain}`, { method: "POST", body: JSON.stringify({ id: claim, lines: opts.lines, task: opts.task }) });
+      if (res.ok) break;
+      const body = (await res.json().catch(() => ({}))) as { error?: string; updating?: boolean; retryAfter?: number };
+      if (!body.updating && res.status !== 503) throw new Error(`claiming its lines: ${body.error ?? res.status}`);
+      if (i >= 4) throw new Interrupted("its file is being updated");
+      await pause(Math.min(body.retryAfter ?? 5, 30) * 1000);
+    }
   }
   // The claim is a lease: renewed by every edit that names it, and by this while the CLI thinks.
   const renew = () => call(user, `${file}/claims${onMain}`, { method: "POST", body: JSON.stringify({ id: claim }) })
@@ -218,15 +256,20 @@ export async function runAgent(call: Call, opts: {
       const now = (op: Op) => current.lines.find((l) => l.id === lineOf(op)) ?? null;
       const lost = [...r.skipped.map((op) => ({ op, now: now(op) })), ...[...held].map(([op, why]) => ({ op, now: now(op), held: why }))].map(tag);
       if (!r.ops.length) { conflicts.push(...lost); return current.rev; }
-      const res = await call(user, `${file}/ops${at(p)}`, { method: "POST", body: JSON.stringify({ ops: r.ops, ...(claim && mine ? { claim } : {}) }) });
+      const res = await call(user, `${file}/ops${at(p)}`, { method: "POST", body: JSON.stringify({ ops: r.ops, proto: PROTOCOL, ...(claim && mine ? { claim } : {}) }) });
+      if (res.status === 503) throw new Interrupted(`posting to ${p}`);
       if (res.ok) {
         const body = (await res.json()) as { rev: number; applied: unknown[] };
         applied += body.applied.length;
         conflicts.push(...lost);
         return body.rev;
       } else if (res.status !== 409) throw new Error(`ops: ${res.status} ${await res.text()}`);
-      else for (const c of ((await res.json()) as { conflicts?: { index: number; reason: string; claim?: string }[] }).conflicts ?? [])
-        if (c.claim && r.ops[c.index]) held.set(r.ops[c.index]!, c.reason);
+      else {
+        const body = (await res.json()) as { updating?: boolean; conflicts?: { index: number; reason: string; claim?: string }[] };
+        // This run started on another build than the file runs now: its diff is not posted through the new rules.
+        if (body.updating) throw new Interrupted("the file runs another build");
+        for (const c of body.conflicts ?? []) if (c.claim && r.ops[c.index]) held.set(r.ops[c.index]!, c.reason);
+      }
     }
     throw new Error(`${p} kept changing while ${opts.harness} worked; nothing was posted`);
   }
@@ -269,6 +312,7 @@ export async function runAgent(call: Call, opts: {
     const own = await post(path, snapshot, run.text);
     if (own) rev = own;
     for (const [i, p] of also.entries()) if (await post(p, others[i]!, run.also![p]!)) touched.add(p);
+    opts.progress?.({ runs, applied, spent });
     const fresh = (await opts.notes?.()) ?? [];
     told.push(...fresh);
     // A round whose edits moved under it failed, and says on which lines.

@@ -189,8 +189,10 @@ const OPS: Record<string, Record<string, Op>> = {
     description: "This is how an agent edits a file, on main or, with `branch`, on an open branch's copy (start_branch first; read_file with the same `branch` for the line ids; merge_branch lands it). Each set or delete names the line's rev as `base`; if it moved on, the batch is a 409 with its conflicts, unless a set changed other words of the line than the edit since did: then it lands on top of that one. `ifRev` pins the batch to the whole file's rev. "
       + "An agent editing lines it claimed names the claim, which renews it. When someone else holds a line, the 409 also has `claims` (who, task, until) and `retryAfter` (seconds; null for a person's hold, which stands till lifted): "
       + "work elsewhere in the file first, then try those lines again no sooner than retryAfter, or ask a person to lift the claim. Don't poll. "
-      + "The path's policy (the review's `live`) can refuse it too, with an `error`: on a `line` file an agent edits only lines it claimed (claim_lines, with wait to get in line), and a `locked` one (lockfiles) takes no live edits or claims: regenerate it or push it.",
-    query: { ...filePath, ...onBranch }, body: obj({ ops: arr(ref("LineOp")), ifRev: int(), claim: str("your claim's id, when you're an agent editing lines you claimed") }, ["ops"]),
+      + "The path's policy (the review's `live`) can refuse it too, with an `error`: on a `line` file an agent edits only lines it claimed (claim_lines, with wait to get in line), and a `locked` one (lockfiles) takes no live edits or claims: regenerate it or push it. "
+      + "A deploy restarts the file now and then: a 503 or a 409 with `updating: true` and `retryAfter` (seconds) means the update is in progress, not that your edit was wrong. Read the file again and retry, no sooner than retryAfter. "
+      + "Name the ops protocol you were started on as `proto` and an update to another one is that same 409, instead of an edit made by rules you didn't read.",
+    query: { ...filePath, ...onBranch }, body: obj({ ops: arr(ref("LineOp")), ifRev: int(), claim: str("your claim's id, when you're an agent editing lines you claimed"), proto: int("the ops protocol you were started on; a file on another one answers 409 `updating`") }, ["ops"]),
     ok: obj({ rev: int(), applied: arr(ref("Applied")) }) } },
   [`${repo}/do/claims`]: {
     get: { id: "list_claims", summary: "Who is working on which lines of a file right now", tag: "Files", open: true,
@@ -205,7 +207,9 @@ const OPS: Record<string, Record<string, Op>> = {
         + "`wait: true` gets in line when the lines are held (or others are already in line for them), first come first, and waits up to `timeout` seconds (20 at most): "
         + "201 with the claim if it's granted meanwhile, else 202 {queued, id, place}: ask again at once with that id and wait to keep your place (a place nobody asks for in a minute is dropped). "
         + "Granted between asks, the lines are yours for 15 seconds: claim again with the id to take them. You can't wait while you hold lines (here or in another file): let go first. release_claim with the id leaves the line. "
-        + "Waiting is for when your task needs those lines; otherwise work elsewhere.",
+        + "Waiting is for when your task needs those lines; otherwise work elsewhere. "
+        + "Before a deploy the file drains: it takes no new claims or places in line (a 409 with `draining: true`, `updating: true` and `retryAfter`; a place you already hold gets a 202 with `draining: true`), while renewals and edits go on. "
+        + "A place in line survives the update, so ask again with the same id once retryAfter has passed; so does a grant window, which starts again.",
       query: filePath, body: obj({ lines: arr(str("line id")), id: str("your claim's id: to renew it, or to name a new one"), task: str("what you're doing, shown to everyone"),
         ttl: int("ms till it lapses; an agent's defaults to 120000"), extend: bool("a person: give an agent's claim another 30 minutes past its cap"),
         soft: bool("an intent: shown, but it keeps nobody off"), wait: bool("held? get in line for the lines"), timeout: int("with wait: seconds to wait this time, 0 to 20 (default 20)") }), ok: ref("Claim") } },

@@ -49,6 +49,7 @@ import { formatOfflinePlan, plannedResources } from "./offline-plan.ts";
 import { infraGraph, infraText } from "./infra.ts";
 import { ephemeralProblem, environmentBanner, realDestroyProblem, realDestroyQuestion } from "./environment.ts";
 import { estimate, formatEstimate, loadUsage, usageFlags } from "./usage-estimate.ts";
+import { callDrain, drainFlags } from "./drain.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
 import { PROF_SECRET, boxUrl, fetchHistory, fetchMem, fetchProfile, secretProblem } from "./prof.ts";
 import { formatProfileSummary, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
@@ -877,7 +878,10 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
     if (sub !== "plan") throw new UsageError({ message: `--usage is for plan only` });
     console.log(formatEstimate(estimate(yield* step(() => loadUsage(metered.usage!)), { requestsPerDay: metered.requestsPerDay })) + "\n");
   }
-  const { on: check, checker, rest: flagged } = checkFlags(metered.rest, profiled);
+  // deploy --drain-url (drain.ts): warn the running app's busy rooms, wait out the grace, then go live.
+  const drain = drainFlags(metered.rest);
+  if (drain.url && sub !== "deploy") throw new UsageError({ message: `--drain-url is for deploy only` });
+  const { on: check, checker, rest: flagged } = checkFlags(drain.rest, profiled);
   // Ours, not Alchemy's: they waive the guards below.
   const force = flagged.includes("--force"), allowDelete = flagged.includes("--allow-delete");
   // plan --offline (#1197): against empty state, so no login, no state and no Alchemy; the build gets an empty HOME.
@@ -953,8 +957,23 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
     console.log("\n" + mode);
     return;
   }
+  // The old build's rooms hear about it before it goes: a deploy restarts every Durable Object (REFERENCE.md, "What a deploy does to live sessions").
+  const drained = drain.url && Object.values(cfg.bindings ?? {}).some((b) => b.type === "durable_object") ? drain.url : undefined;
+  if (drain.url && !drained) console.log(`--drain-url: ${cfg.name} has no Durable Objects, so a deploy drops no rooms; skipping the warning`);
+  if (drained) {
+    const secret = process.env.RB_DRAIN_SECRET;
+    if (!secret) throw new UsageError({ message: `--drain-url needs RB_DRAIN_SECRET (the app's DRAIN_SECRET) in the environment` });
+    const told = yield* step(() => callDrain(drained, secret, { in: drain.seconds }));
+    if (!told) console.warn(`warning: ${drained} didn't take the drain call (is DRAIN_SECRET set there?); deploying without the warning`);
+    else {
+      console.log(`told ${told.drained} of ${told.rooms} busy room${told.rooms === 1 ? "" : "s"} a deploy is coming; waiting ${drain.seconds}s`);
+      yield* Effect.sleep(`${drain.seconds} seconds`);
+    }
+  }
   // --yes satisfies our plan check above AND is forwarded to alchemy's own prompt.
   const code = yield* timed(prof, `alchemy ${sub}`, run([sub, "--config", ".rustybuns/alchemy.run.ts", ...args]));
+  // A deploy that failed leaves the old build running: its rooms are let off the warning.
+  if (drained && code !== 0) yield* step(() => callDrain(drained, process.env.RB_DRAIN_SECRET!, { cancel: true }));
   if (profiled) yield* step(() => prof.finish());
   if (code !== 0) throw new AlchemyFailed({ sub, exitCode: code });
   if (profiled || sub === "destroy") console.log("\n" + mode);

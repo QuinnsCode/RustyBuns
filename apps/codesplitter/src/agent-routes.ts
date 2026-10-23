@@ -54,7 +54,7 @@ import { byToken } from "./tokens.ts";
 import { charge, every, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
 import { HARNESSES, HOSTED_HARNESSES, RUNS_COMMANDS, harnessCommand, type Harness } from "./harness.ts";
-import { localSandbox, runAgent, type Conflict, type Exec, type Sandbox } from "./agent-run.ts";
+import { Interrupted, localSandbox, runAgent, type Conflict, type Exec, type Sandbox } from "./agent-run.ts";
 import { containerSandbox, LOGINS } from "./sandbox.ts";
 import { agentGithubToken } from "./github.ts";
 import { toFile } from "./archive.ts";
@@ -114,6 +114,10 @@ export interface Run {
   handoff?: { at: number; why: string; over: Over; note: string; next?: number };
   /** It took over from run `from`, its task that run's note; `hops` handoffs into the task. */
   from?: number; hops?: number;
+  /** Times an update cut the run off and it started again from the file as it stood (at most MAX_RESTARTS), and when a hosted run last said it was alive. */
+  restarts?: number; beat?: number;
+  /** How far the last round got: how many times the agent ran, the edits it had landed and the tokens it spent. */
+  progress?: { runs: number; applied: number; spent: number };
   /** On the start's answer only (#1163): open branches already rewriting its file or the ones its task names. */
   busy?: Busy[];
 }
@@ -129,6 +133,13 @@ const HELD_RETRY_S = 20;
 const HOSTED_GRACE_MS = 2 * 60_000;
 /** How many runs each repo keeps. */
 const KEEP = 50;
+/** Times a run starts over after an update cut it off, before it is left failed. */
+const MAX_RESTARTS = 2;
+/** How often a hosted run says it is alive (`beat`), and how long without one means its consumer is gone (a deploy, a crash). */
+const BEAT_MS = 20_000;
+const DEAD_MS = 75_000;
+/** How long a cut-off run waits before it goes round again, so the new build is up. */
+const RESTART_S = 10;
 /** How many of a run's log lines are kept. */
 const LOG_LINES = 50;
 /** How often a run looks for a Stop or a note in D1: a hosted one's Stop lands on another isolate. */
@@ -252,6 +263,11 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
       const result = { error: `out of time: a hosted run gets ${every(HOSTED_RUN_MS / 1000)}` };
       await env.DB.prepare("UPDATE agent_runs SET status = 'stopped', result = json_set(COALESCE(result, '{}'), '$.error', ?) WHERE id = ? AND status = 'running'").bind(result.error, r.id).run();
       Object.assign(r, { status: "stopped", result: JSON.stringify({ ...resultOf(r), ...result }) });
+    }
+    // A hosted run whose consumer an update took (no beat for DEAD_MS) goes round again, or is left failed when it has been too often.
+    if (env.AGENT_SANDBOX) for (const r of rows) if (r.status === "running" && r.picked && !alive(r)) {
+      await interrupt(env, self, url.origin, r).catch(() => {});
+      Object.assign(r, (await getRow(env, r.id)) ?? {});
     }
     await relaunch(env, rows, url.origin);
     return json(rows.map((r) => toRun(r, env)));
@@ -507,6 +523,32 @@ async function pushRebuilt(env: Env, owner: string, repo: string, branch: string
   return up ? { ok: up.pushed, ...(up.error && { error: up.error }) } : undefined;
 }
 
+/** Whether a hosted run has said it's alive lately (a run that never has is judged by when it started). */
+const alive = (r: Row) => Date.now() - (parseJson<Partial<Run>>(r.result, {}).beat ?? r.started) < DEAD_MS;
+
+/**
+ * An update cut run `row` off (its consumer is gone, or its file's object restarted or runs another build):
+ * its claim is let go at once rather than idling out its lease, and the run goes round again from the file as it
+ * stands, up to MAX_RESTARTS times; then it's left failed. The log says "interrupted by update, retrying".
+ * True when it goes round again.
+ */
+async function interrupt(env: Env, self: (req: Request) => Promise<Response>, origin: string, row: Row, why = ""): Promise<boolean> {
+  const x = parseJson<Partial<Run>>(row.result, {}), { beat: _, ...rest } = x, restarts = x.restarts ?? 0;
+  if (x.lines?.length) await caller(self, origin)(row.owner, `/api/repos/${row.owner}/${row.repo}/do/claims?path=${encodeURIComponent(row.path)}`,
+    { method: "POST", body: JSON.stringify({ id: `run-${row.id}`, release: true }) }).catch(() => {});
+  const again = restarts < MAX_RESTARTS && !!env.AGENT_SANDBOX;
+  const log = JSON.stringify([...JSON.parse(row.log), again ? "interrupted by update, retrying" : `interrupted by update${why ? `: ${why}` : ""}`].slice(-LOG_LINES));
+  if (!again) {
+    await env.DB.prepare("UPDATE agent_runs SET log = ? WHERE id = ?").bind(log, row.id).run();
+    await finish(env, row.id, "failed", { ...rest, error: `interrupted by update${restarts ? ` ${restarts + 1} times` : ""}: start it again` });
+    return false;
+  }
+  const done = await env.DB.prepare("UPDATE agent_runs SET picked = 0, log = ?, result = ? WHERE id = ? AND status = 'running'").bind(log, JSON.stringify({ ...rest, restarts: restarts + 1 }), row.id).run();
+  if (!done.meta?.changes) return false;
+  await env.JOBS.send({ agent: row.id, origin }, { delaySeconds: RESTART_S });
+  return true;
+}
+
 /** Runs the agent of run `id`, keeping its log and result in D1. Only once: a second try (the queue's retry after a cut-off consumer) fails it instead. */
 async function execute(env: Env, self: (req: Request) => Promise<Response>, origin: string, id: number): Promise<"held" | void> {
   // Hosted, a feature run (no branch of its own) takes a container only while one is left for fix tasks (#1242): else it stays queued.
@@ -514,8 +556,9 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     .bind(...env.AGENT_SANDBOX ? [id, HOSTED_FEATURE_SLOTS] : [id]).run();
   if (!claimed.meta?.changes) {
     if (env.AGENT_SANDBOX && (await env.DB.prepare("SELECT 1 AS held FROM agent_runs WHERE id = ? AND picked = 0 AND status = 'running'").bind(id).first())) return "held";
-    await env.DB.prepare("UPDATE agent_runs SET status = 'failed', result = ? WHERE id = ? AND status = 'running'")
-      .bind(JSON.stringify({ error: "the agent was cut off before it finished" }), id).run();
+    // Picked up before and still "running": the consumer that had it was cut off (an update), unless it is still saying it's alive.
+    const was = await getRow(env, id);
+    if (was?.status === "running" && !alive(was)) await interrupt(env, self, origin, was);
     return;
   }
   const row = await getRow(env, id);
@@ -539,12 +582,14 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     return r ? JSON.parse(r.notes) as Note[] : [];
   };
   const checking = setInterval(() => void peek().catch(() => {}), CHECK_MS);
+  // A hosted run says it's alive, so a listing or a retry can tell a run an update cut off from one that's still going.
+  const beating = env.AGENT_SANDBOX ? setInterval(() => void env.DB.prepare("UPDATE agent_runs SET result = json_set(COALESCE(result, '{}'), '$.beat', ?) WHERE id = ? AND status = 'running'").bind(Date.now(), id).run().catch(() => {}), BEAT_MS) : undefined;
   // A hosted run ends at its deadline, however many times its CLI has been round.
   const cutoff = env.AGENT_SANDBOX ? setTimeout(() => void env.DB.prepare("UPDATE agent_runs SET status = 'stopped', result = json_set(COALESCE(result, '{}'), '$.error', ?) WHERE id = ? AND status = 'running'")
     .bind(`out of time: a hosted run gets ${every(HOSTED_RUN_MS / 1000)}`, id).run().catch(() => {}).finally(() => stopper.abort()), Math.max(0, row.started + HOSTED_RUN_MS - Date.now())) : undefined;
   const call = caller(self, origin);
-  const { lines, also, from, hops, rebuild } = parseJson<Partial<Run>>(row.result, {});
-  const extra: Partial<Run> = { ...(lines && { lines }), ...(also && { also }), ...(from && { from, hops }), ...(rebuild && { rebuild }) };
+  const { lines, also, from, hops, rebuild, restarts } = parseJson<Partial<Run>>(row.result, {});
+  const extra: Partial<Run> = { ...(restarts && { restarts }), ...(lines && { lines }), ...(also && { also }), ...(from && { from, hops }), ...(rebuild && { rebuild }) };
   try {
     const box = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
     // A Stop between checks still keeps what the agent left from landing.
@@ -561,7 +606,8 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     }
     const log: string[] = JSON.parse(row.log);
     let logged = Promise.resolve();
-    if (own) {
+    // Started over after an update: its branch is there already, with what it landed before.
+    if (own && !(restarts && await env.DB.prepare("SELECT 1 FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, own).first())) {
       const made = await call(owner, `/api/repos/${owner}/${repo}/branches`, { method: "POST", body: JSON.stringify({ name: own }) });
       if (!made.ok) throw new Error(`making its branch ${own}: ${await made.text()}`);
     }
@@ -577,6 +623,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined, sandbox, lines, claim: `run-${id}`, signal, branch, also,
       secrets: [...LOGINS.map((k) => env[k]), gh],
       budget: { tokens: policy.budget, over: policy.over },
+      progress: (progress) => void env.DB.prepare("UPDATE agent_runs SET result = json_set(COALESCE(result, '{}'), '$.progress', json(?)) WHERE id = ? AND status = 'running'").bind(JSON.stringify(progress), id).run().catch(() => {}),
       notes: async () => { const all = await peek(); const fresh = all.slice(given).map((n) => n.text); given = all.length; return fresh; },
       log: (s) => {
         log.push(s);
@@ -616,8 +663,12 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       const stopped = await getRow(env, id);
       const was = parseJson<Partial<Run>>(stopped?.result, {});
       await env.DB.prepare("UPDATE agent_runs SET result = ? WHERE id = ? AND status = 'stopped'").bind(JSON.stringify({ ...extra, error: was.error ?? "stopped" }), id).run();
+    } else if (e instanceof Interrupted) {
+      // An update cut it off: its branch (and what it landed there) stays for the run that goes round again.
+      const again = await interrupt(env, self, origin, await getRow(env, id) ?? row, e.message);
+      if (again) return;
     } else await finish(env, id, "failed", { ...extra, error: String((e as Error)?.message ?? e).slice(-4000) });
     // Whatever it left on its branch goes with it.
     if (own) await dropBranch(env, owner, repo, own, path);
-  } finally { clearInterval(checking); clearTimeout(cutoff); if (row.branch) liveOf(env).delete(id); }
+  } finally { clearInterval(checking); clearInterval(beating); clearTimeout(cutoff); if (row.branch) liveOf(env).delete(id); }
 }

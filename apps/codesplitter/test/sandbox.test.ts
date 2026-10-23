@@ -329,18 +329,20 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     expect(runs).toHaveLength(0);
   });
 
-  test("runs are kept in D1, so any isolate sees them; a retry after a cut-off consumer fails the run rather than running it twice", async () => {
+  test("runs are kept in D1, so any isolate sees them; a redelivery after a cut-off consumer starts the run again, once per cut", async () => {
     const { call, runs, env } = await hosted(async (b) => ({ code: 0, out: "", text: b.text }));
     const run = await finished(call, { harness: "claude", path: "src/a.js", task: "x" });
     expect(run.deadline).toBe(run.started + 15 * 60_000); // the queue consumer's limit, for the page's countdown
     expect(await env.DB.prepare("SELECT status, picked FROM agent_runs WHERE id = ?").bind(run.id).first()).toEqual({ status: "done", picked: 1 });
-    // A run whose consumer was cut off mid-run: picked, still running. Its message comes again.
-    await env.DB.prepare("UPDATE agent_runs SET status = 'running', result = NULL WHERE id = ?").bind(run.id).run();
+    // A run whose consumer was cut off mid-run: picked, still running, and silent for longer than a heartbeat. Its message comes again.
+    await env.DB.prepare("UPDATE agent_runs SET status = 'running', result = ? WHERE id = ?").bind(JSON.stringify({ beat: 1 }), run.id).run();
     const before = runs.length;
     await env.JOBS.send({ agent: run.id, origin: "http://codesplitter.local" });
     let again: any;
     for (const end = performance.now() + 15_000; performance.now() < end && (again = ((await (await call("ryan-quinn", "/api/repos/ryan-quinn/r1/agents")).json()) as any[])[0]).status === "running";) await Bun.sleep(20);
-    expect(again).toMatchObject({ status: "failed", error: "the agent was cut off before it finished" });
-    expect(runs.length).toBe(before);
+    // It went round again from the file as it stood, once, and says so.
+    expect(again).toMatchObject({ status: "done", restarts: 1 });
+    expect(again.log).toContain("interrupted by update, retrying");
+    expect(runs.length).toBe(before + 1);
   });
 });
