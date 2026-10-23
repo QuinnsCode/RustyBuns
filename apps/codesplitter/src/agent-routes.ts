@@ -253,10 +253,10 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
     const { results } = await env.DB.prepare(`SELECT * FROM agent_runs WHERE owner = ? AND repo = ?${path ? " AND path = ?" : ""} ORDER BY id DESC LIMIT ${KEEP}`)
       .bind(...[owner, repo, path].filter((x) => x !== null)).all<Row>();
     const rows = results;
+    // A desktop run lives in this process, so one this process doesn't have was cut by the app quitting: it starts again from the file as it stands.
     if (!env.AGENT_SANDBOX) for (const r of rows) if (r.status === "running" && !liveOf(env).has(r.id)) {
-      const error = "the app stopped before the agent finished";
-      await finish(env, r.id, "failed", { error });
-      Object.assign(r, { status: "failed", result: JSON.stringify({ error }) });
+      await interrupt(env, self, url.origin, r, "the app stopped before the agent finished").catch(() => {});
+      Object.assign(r, (await getRow(env, r.id)) ?? {});
     }
     // A hosted run's own deadline timer lives in the consumer's isolate; if that went (a deploy, a crash), nothing else would end the row.
     if (env.AGENT_SANDBOX) for (const r of rows) if (r.status === "running" && r.started + HOSTED_RUN_MS + HOSTED_GRACE_MS < Date.now()) {
@@ -536,16 +536,18 @@ async function interrupt(env: Env, self: (req: Request) => Promise<Response>, or
   const x = parseJson<Partial<Run>>(row.result, {}), { beat: _, ...rest } = x, restarts = x.restarts ?? 0;
   if (x.lines?.length) await caller(self, origin)(row.owner, `/api/repos/${row.owner}/${row.repo}/do/claims?path=${encodeURIComponent(row.path)}`,
     { method: "POST", body: JSON.stringify({ id: `run-${row.id}`, release: true }) }).catch(() => {});
-  const again = restarts < MAX_RESTARTS && !!env.AGENT_SANDBOX;
+  const again = restarts < MAX_RESTARTS;
   const log = JSON.stringify([...JSON.parse(row.log), again ? "interrupted by update, retrying" : `interrupted by update${why ? `: ${why}` : ""}`].slice(-LOG_LINES));
   if (!again) {
     await env.DB.prepare("UPDATE agent_runs SET log = ? WHERE id = ?").bind(log, row.id).run();
-    await finish(env, row.id, "failed", { ...rest, error: `interrupted by update${restarts ? ` ${restarts + 1} times` : ""}: start it again` });
+    await finish(env, row.id, "failed", { ...rest, error: env.AGENT_SANDBOX ? `interrupted by update${restarts ? ` ${restarts + 1} times` : ""}: start it again` : `the app stopped before the agent finished${restarts ? ` (started again ${restarts} times)` : ""}` });
     return false;
   }
-  const done = await env.DB.prepare("UPDATE agent_runs SET picked = 0, log = ?, result = ? WHERE id = ? AND status = 'running'").bind(log, JSON.stringify({ ...rest, restarts: restarts + 1 }), row.id).run();
+  const done = await env.DB.prepare("UPDATE agent_runs SET picked = 0, log = ?, result = ? WHERE id = ? AND status = 'running'").bind(log, JSON.stringify({ ...rest, spent: rest.progress?.spent ?? rest.spent, restarts: restarts + 1 }), row.id).run();
   if (!done.meta?.changes) return false;
-  await env.JOBS.send({ agent: row.id, origin }, { delaySeconds: RESTART_S });
+  // On the desktop the run is this process's again at once; hosted, the queue brings it back.
+  if (env.AGENT_SANDBOX) await env.JOBS.send({ agent: row.id, origin }, { delaySeconds: RESTART_S });
+  else { liveOf(env).set(row.id, new AbortController()); void execute(env, self, origin, row.id).finally(() => liveOf(env).delete(row.id)); }
   return true;
 }
 
@@ -588,8 +590,8 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
   const cutoff = env.AGENT_SANDBOX ? setTimeout(() => void env.DB.prepare("UPDATE agent_runs SET status = 'stopped', result = json_set(COALESCE(result, '{}'), '$.error', ?) WHERE id = ? AND status = 'running'")
     .bind(`out of time: a hosted run gets ${every(HOSTED_RUN_MS / 1000)}`, id).run().catch(() => {}).finally(() => stopper.abort()), Math.max(0, row.started + HOSTED_RUN_MS - Date.now())) : undefined;
   const call = caller(self, origin);
-  const { lines, also, from, hops, rebuild, restarts } = parseJson<Partial<Run>>(row.result, {});
-  const extra: Partial<Run> = { ...(restarts && { restarts }), ...(lines && { lines }), ...(also && { also }), ...(from && { from, hops }), ...(rebuild && { rebuild }) };
+  const { lines, also, from, hops, rebuild, restarts, spent: before } = parseJson<Partial<Run>>(row.result, {});
+  const extra: Partial<Run> = { ...(restarts && { restarts }), ...(before && { spent: before }), ...(lines && { lines }), ...(also && { also }), ...(from && { from, hops }), ...(rebuild && { rebuild }) };
   try {
     const box = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
     // A Stop between checks still keeps what the agent left from landing.
@@ -622,7 +624,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     const r = await runAgent(call, {
       user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined, sandbox, lines, claim: `run-${id}`, signal, branch, also,
       secrets: [...LOGINS.map((k) => env[k]), gh],
-      budget: { tokens: policy.budget, over: policy.over },
+      budget: { tokens: policy.budget, over: policy.over }, spent: before,
       progress: (progress) => void env.DB.prepare("UPDATE agent_runs SET result = json_set(COALESCE(result, '{}'), '$.progress', json(?)) WHERE id = ? AND status = 'running'").bind(JSON.stringify(progress), id).run().catch(() => {}),
       notes: async () => { const all = await peek(); const fresh = all.slice(given).map((n) => n.text); given = all.length; return fresh; },
       log: (s) => {

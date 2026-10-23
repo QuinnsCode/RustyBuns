@@ -146,3 +146,22 @@ test("a run still saying it is alive is left alone, and an edit cut by a restart
   await expect(runAgent(dead, { user: "agent-x", owner: "ryan", repo: "lab", path: "a.js", harness: "claude", task: "x", exec, pause: async () => {} })).rejects.toBeInstanceOf(Interrupted);
   expect((await doc()).lines.map((l) => l.text)).toEqual(["one", "two", "three", "four"]);
 });
+
+test("a desktop run the app quit on starts again from the file, and its first attempt's tokens count toward the budget", async () => {
+  const { call, doc } = await app();
+  call.env.AGENT_REVIEW_MS = "0";
+  call.env.AGENT_EXEC = (async (_c, cwd) => { writeFileSync(join(cwd, "a.js"), "one\nTWO\nthree\nfour\n"); return { code: 0, out: "done" }; }) satisfies Exec;
+  // Run 1 spent 12345 tokens before the app quit; nothing in this process knows it.
+  const sql = "INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started, picked, result) VALUES ('ryan', 'lab', 'a.js', 'claude', 'shout', 'agent-x', 'running', ?, 1, ?) RETURNING id";
+  const id = (await call.env.DB.prepare(sql).bind(Date.now() - 1000, JSON.stringify({ progress: { runs: 1, applied: 0, spent: 12345 } })).first() as { id: number }).id;
+  const runs = async () => (await (await call("ryan", "/api/repos/ryan/lab/agents?path=a.js")).json() as any[]).find((r) => r.id === id);
+
+  // The app comes back and the listing finds it cut off: it goes round again instead of failing.
+  expect(await runs()).toMatchObject({ restarts: 1 });
+  for (let i = 0; i < 300 && (await runs()).status === "running"; i++) await Bun.sleep(20);
+  const done = await runs();
+  expect(done).toMatchObject({ status: "done", restarts: 1, applied: 1 });
+  expect(done.log).toContain("interrupted by update, retrying");
+  expect(done.spent).toBeGreaterThan(12345);
+  expect((await doc()).lines.map((l) => l.text)).toEqual(["one", "TWO", "three", "four"]);
+});

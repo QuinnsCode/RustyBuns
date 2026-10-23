@@ -89,11 +89,12 @@ test("a bad harness or an empty task is refused", async () => {
   expect((await post("ryan", "/api/repos/ryan/lab/agents", { path: "a.js", harness: "pi", task: "  " })).status).toBe(400);
 });
 
-test("a desktop run cut off when the app quit shows as failed, not running for ever", async () => {
+test("a desktop run cut off when the app quit, too often, shows as failed, not running for ever", async () => {
   const { call } = await app();
   await call.env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started, picked) VALUES ('ryan', 'lab', 'a.js', 'claude', 'x', 'agent-claude', 'running', 1, 1)").run();
+  await call.env.DB.prepare("UPDATE agent_runs SET result = '{\"restarts\":2}'").run();
   const runs = await (await call("ryan", "/api/repos/ryan/lab/agents")).json() as any[];
-  expect(runs[0]).toMatchObject({ status: "failed", error: "the app stopped before the agent finished" });
+  expect(runs[0]).toMatchObject({ status: "failed", error: "the app stopped before the agent finished (started again 2 times)" });
 });
 
 test("a hosted run whose consumer died shows as stopped past its deadline, not running for ever", async () => {

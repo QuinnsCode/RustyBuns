@@ -151,6 +151,8 @@ export async function runAgent(plain: Call, opts: {
   sandbox?: Sandbox;
   /** Its path's budget (#1077): past it, the same failure twice, or a third conflict round, it stops instead of going round again. */
   budget?: Budget;
+  /** Tokens the run's earlier attempts already spent (an update cut them off): they count against `budget` too. */
+  spent?: number;
   /** How often its claim is renewed while it works (default HEARTBEAT_MS). */
   heartbeat?: number;
   /** What the run was handed (its API keys, its GitHub token): an edit that writes one into a file posts nothing (leaks.ts). */
@@ -226,7 +228,7 @@ export async function runAgent(plain: Call, opts: {
 
   async function work(): Promise<Result> {
   const retries = opts.retries ?? 2, signal = opts.signal;
-  let applied = 0, changed = false, runs = 0, retried = 0, noteRuns = 0, conflicts: Conflict[] = [], rev = 0, output = "", spent = 0, trip: Trip | undefined;
+  let applied = 0, changed = false, runs = 0, retried = 0, noteRuns = 0, conflicts: Conflict[] = [], rev = 0, output = "", spent = opts.spent ?? 0, trip: Trip | undefined;
   const told: string[] = [], touched = new Set<string>(), failures: string[] = [];
   /** How many of `told` the last prompt carried. */
   let heard = 0;

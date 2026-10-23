@@ -91,8 +91,8 @@ lifts the drain. It is off unless `--drain-url` is given, and does nothing for a
 file hears `{t:"deploy-soon", at}` (epoch ms) and, when `at` comes, `{t:"draining"}`; from then on it refuses new claims and
 places in line with a 409 (`draining`, `updating`, `retryAfter`) while edits and renewals go on. If the app is cut anyway, a
 call that meets the restarting object gets a 503 `update in progress, retry` with `retryAfter`, a `claim_lines wait` keeps its
-place in line (it is in storage) and a grant window it had starts again, and a hosted agent run is released and started again
-from the file as it stands (up to twice; the run's log says "interrupted by update, retrying"). Ops carry a `proto` version: a
+place in line (it is in storage) and a grant window it had starts again, and an agent run (hosted, or on the desktop when the app comes back) is released and started again
+from the file as it stands (up to twice; the run's log says "interrupted by update, retrying"; tokens the first try spent count against the retry's budget). Ops carry a `proto` version: a
 writer started on another build gets the same 409 `updating`, so a run never lands a diff through rules it didn't read.
 
 ## Deploy to Hetzner
