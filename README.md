@@ -372,6 +372,8 @@ Every example is one codebase that runs as a desktop binary. The multiplayer one
 | [playground](apps/playground/README.md) | One page that lists every app with a way to try it: Play, Download or Source. Static assets only, so it bills nothing |
 | [tanstack-start-example](apps/tanstack-start-example/README.md) | TanStack Start on Cloudflare's Vite plugin (server functions, a server route, D1 and KV) as a desktop app, its code unchanged |
 
+**Someone else's app, unchanged:** [TerraViz](https://github.com/zyra-project/terraviz) (Apache-2.0, by the zyra-project maintainers; top committer on GitHub: Hackshaven), a Pages app with a globe, D1, KV, R2 and Vectorize, builds as a desktop binary from a fresh clone with `rustybuns init` and `rustybuns build desktop`. It drove `rustybuns pages-functions` and several Pages fixes. Its code is not in this repo.
+
 **Try one without building anything:** download the desktop binary for [Hippo Tycoon](https://github.com/QuinnsCode/RustyBuns/releases?q=hippo-tycoon-v&expanded=true), [Park Hide & Seek](https://github.com/QuinnsCode/RustyBuns/releases?q=park-hide-seek-v&expanded=true), [Splat Spray](https://github.com/QuinnsCode/RustyBuns/releases?q=splat-spray-v&expanded=true) or [FM Groovebox](https://github.com/QuinnsCode/RustyBuns/releases?q=fm-daw-v&expanded=true). Each is one file for Mac, Windows or Linux. They aren't signed yet, so the first launch takes one Terminal command on a Mac (the release page has it; [APPLE_SIGNING.md](APPLE_SIGNING.md) is the road to fixing that) and a click past SmartScreen on Windows.
 
 Want to run them from source? [EXAMPLES.md](EXAMPLES.md) is two lines per app, no experience needed.
