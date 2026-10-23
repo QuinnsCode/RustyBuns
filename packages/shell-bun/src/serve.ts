@@ -14,6 +14,9 @@
 // from the `x-rb-principal` request header ("host" | "guest"), which the shell
 // strips from incoming requests before setting it.
 //
+// Public paths: with `public` set, those read-only paths skip the gate for
+// everyone (a peer node reading a discovery document), as principal "public".
+//
 // Pairing: POST /__rb/pair from the host's own page mints a five-minute launch
 // code, so a phone that reaches this host through an HTTPS tunnel can sign in.
 
@@ -143,6 +146,12 @@ export interface ServeOptions<Env> {
   /** Remote guests: a second credential, checked only on these paths. */
   guest?: GuestOptions;
   /**
+   * Read-only paths anyone may fetch with no token or passphrase, e.g. a peer
+   * node's `/.well-known/terraviz.json`. Exact, or a prefix when it ends in `*`.
+   * GET and HEAD only; the handler sees `x-rb-principal: public`.
+   */
+  public?: string[];
+  /**
    * Routes that carry their own auth and skip the token gate: URL prefix ->
    * handler. Local Artifacts git remotes use this (git clients send a repo
    * token, not the host's cookie).
@@ -159,7 +168,7 @@ export interface GuestOptions {
   passphrase?: string | (() => string | undefined);
 }
 
-export type Principal = "host" | "guest";
+export type Principal = "host" | "guest" | "public";
 
 const ISOLATION = {
   "Cross-Origin-Opener-Policy": "same-origin",
@@ -265,6 +274,9 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
     const host = req.headers.get("host");
     return origin === `http://${host}` || origin === `https://${host}`;
   };
+  const isPublic = (req: Request, url: URL) =>
+    (req.method === "GET" || req.method === "HEAD") &&
+    (opts.public ?? []).some((p) => p.endsWith("*") ? url.pathname.startsWith(p.slice(0, -1)) : url.pathname === p);
   const gate = (req: Request, url: URL): Response | Principal => {
     if (!opts.token) return "host";
     const cookie = req.headers.get("cookie") ?? "";
@@ -280,6 +292,7 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
     if (q !== null && same(q, opts.token)) return login(url, "token");
     const l = url.searchParams.get("rb_launch");
     if (l !== null && redeem(l)) return login(url, "rb_launch");
+    if (isPublic(req, url)) return "public";
     const g = opts.guest;
     if (g && g.paths.includes(url.pathname)) {
       const pass = typeof g.passphrase === "function" ? g.passphrase() : g.passphrase;
