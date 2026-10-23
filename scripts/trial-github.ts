@@ -187,6 +187,12 @@ const tail = (s: string) => strip(s).trim().split("\n").filter((l) => !/^\s+at /
 type Net = "net" | "offline";
 const SANDBOXED = process.platform === "darwin" && !!Bun.which("sandbox-exec");
 const PROFILES = new Map<string, string>();
+/** Every folder strictly between `home` and each of `paths`, for the sandbox to let a path walk reach them. */
+export function ancestors(paths: string[], home: string): string[] {
+  const out = new Set<string>();
+  for (const p of paths) for (let d = dirname(p); d.startsWith(home + "/"); d = dirname(d)) out.add(d);
+  return [...out].sort();
+}
 function profile(net: Net, tag: string): string | undefined {
   if (!SANDBOXED) return undefined;
   const key = `${net}:${tag}`;
@@ -199,6 +205,8 @@ function profile(net: Net, tag: string): string | undefined {
     // later rules win: these stay reachable
     ...ok.map((p) => `(allow file-read* file-write* (subpath ${JSON.stringify(p)}))`),
     `(allow file-read* (literal ${JSON.stringify(realHome)}))`,
+    // the folders between home and those, metadata only: `git clone` and `mkdir -p` stat each one on the way down
+    ...ancestors(ok, realHome).map((p) => `(allow file-read-metadata (literal ${JSON.stringify(p)}))`),
     ...(net === "offline" ? [`(deny network-outbound${msg})`, '(allow network-outbound (remote ip "localhost:*"))', "(allow network-outbound (remote unix-socket))"] : []),
   ].join("\n");
   const f = join(OUT, "sandbox", `${tag.replace(/\W+/g, "_") || "harness"}-${net}.sb`);
