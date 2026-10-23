@@ -49,7 +49,7 @@ export function playerId(key = "rb_player_id"): string {
 /** "reconnecting": the socket dropped (a deploy restarts every Durable Object); a UI shows "updating, back in a moment". "offline": it kept failing. */
 export type SocketState = "connecting" | "online" | "reconnecting" | "offline";
 
-export interface ResilientSocket { readonly state: SocketState; send(data: string | ArrayBufferLike | Blob | ArrayBufferView): boolean; close(): void }
+export interface ResilientSocket { readonly state: SocketState; send(data: Parameters<WebSocket["send"]>[0]): boolean; close(): void }
 
 /**
  * A WebSocket that survives its server restarting. A deploy keeps a Durable Object's storage but drops

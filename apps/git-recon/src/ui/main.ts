@@ -15,6 +15,8 @@ import { Mirror } from "../net/mirror.ts";
 import { levelOf, NEXT_ROUND } from "../net/room.ts";
 import type { FromWorld, RosterEntry } from "../net/wire.ts";
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
+import { CAMPAIGN, chapterOf, nextChapter, opened } from "../sim/campaign.ts";
+import { createElement, Lock } from "lucide";
 import { KEYS, keyLabel, WEAPONS, type WeaponId } from "../sim/weapons.ts";
 import { isRole, nextRole, ROLE_ORDER, ROLES, type RoleId } from "../sim/roles.ts";
 import { STREAKS, VEHICLES, vehicleName } from "../sim/vehicles.ts";
@@ -69,26 +71,37 @@ const store = {
 };
 let wins = store.get<string[]>("wins", []);
 
+// The levels as the campaign's climb (campaign.ts): a chapter opens when the one before it is won.
 const list = $("levels");
-for (const def of LEVELS) {
-  const b = document.createElement("button");
-  b.className = "level";
-  b.innerHTML = `<b></b><span></span><code></code><em></em>`;
-  b.querySelector("b")!.textContent = def.name;
-  b.querySelector("span")!.textContent = def.blurb;
-  b.querySelector("em")!.textContent = briefing(missionFor(def.id));
-  b.querySelector("code")!.dataset.level = def.id;
-  b.onclick = () => start(def);
-  list.append(b);
+const levelById = (id: string) => LEVELS.find((l) => l.id === id)!;
+function showCampaign() {
+  list.innerHTML = "";
+  const open = opened(wins);
+  CAMPAIGN.forEach((ch, i) => {
+    const def = levelById(ch.level), locked = i >= open, b = document.createElement("button");
+    b.className = "level";
+    b.innerHTML = `<small></small><b></b><span></span><code></code><em></em>`;
+    b.querySelector("small")!.textContent = `${i + 1} · ${ch.height}`;
+    b.querySelector("b")!.textContent = `${ch.title}: ${def.name}`;
+    b.querySelector("span")!.textContent = ch.story;
+    b.querySelector("em")!.textContent = locked ? `Win ${CAMPAIGN[i - 1]!.title} to open` : briefing(missionFor(def.id));
+    b.querySelector("code")!.dataset.level = def.id;
+    b.title = `${ch.story} ${def.blurb}`;
+    if (locked) b.querySelector("code")!.replaceChildren(createElement(Lock));
+    b.disabled = locked;
+    b.onclick = () => start(def);
+    list.append(b);
+  });
+  showRepo();
 }
 function showRepo() {
-  for (const code of list.querySelectorAll<HTMLElement>("code[data-level]")) {
-    const r = chosen ?? LEVELS.find((l) => l.id === code.dataset.level)!.repo;
+  for (const code of list.querySelectorAll<HTMLElement>("button:not(:disabled) code[data-level]")) {
+    const r = chosen ?? levelById(code.dataset.level!).repo;
     code.textContent = `${r.name}@${r.ref}`;
   }
   $("repo-reset").hidden = !chosen;
 }
-showRepo();
+showCampaign();
 
 /* ---------------- any repo ---------------- */
 
@@ -208,7 +221,9 @@ drawRoles();
 function start(def: LevelDef) {
   const mission = missionFor(def.id), repo = chosen ?? def.repo;
   const game = Game.fromRepo(def.ground(), repo, def.seed, mission, undefined, me.role);
-  begin(def, repo, game, briefing(mission));
+  const ch = CAMPAIGN[chapterOf(def.id)];
+  begin(def, repo, game, ch ? `${ch.title}: ${briefing(mission)}` : briefing(mission));
+  if (ch) feed(ch.story);
 }
 
 /** Into a level: the scene, the camera behind you, the HUD. On your own or in a battle (net). */
@@ -223,7 +238,7 @@ function begin(def: LevelDef, repo: RepoSnapshot, game: Game, brief: string, net
   $("repo").textContent = `${repo.name}@${repo.ref}`;
   $("hosting").hidden = !net?.hosting;
   $("hosting").textContent = net?.hosting ? `join: ${net.hosting}` : "";
-  $("again").hidden = !!net;
+  $("again").hidden = !!net, $("next").hidden = true;
   $("clickme").textContent = net ? "Click to aim · Q to leave the battle" : "Click to aim · Esc to let go of the mouse";
   $("feed").innerHTML = "";
   feed(`checked out ${repo.name}. ${game.map.compounds.length} folders in conflict.`);
@@ -582,10 +597,14 @@ function waypoint(game: Game) {
   const el = $("waypoint"), to = game.waypoint();
   if (!to) return void (el.hidden = true);
   const you = game.you();
+  const dist = Math.hypot(to.x - you.x, to.z - you.z);
+  // Close in, the tag would sit on the entrance you're looking for: you've arrived, so drop it.
+  if (dist < 14) return void (el.hidden = true);
   el.hidden = false;
   el.querySelector("b")!.textContent = to.label;
-  el.querySelector("small")!.textContent = `${Math.round(Math.hypot(to.x - you.x, to.z - you.z))} m`;
-  wp.set(to.x, to.y + 2.5, to.z).project(camera);
+  el.querySelector("small")!.textContent = `${Math.round(dist)} m`;
+  // Held well above the gate, its bottom edge on the point, so the opening stays clear.
+  wp.set(to.x, to.y + 9, to.z).project(camera);
   // Behind the camera, project() mirrors the point: flip it so the arrow points the right way.
   const behind = wp.z > 1;
   let x = (behind ? -wp.x : wp.x) * 0.5 + 0.5, y = (behind ? wp.y : -wp.y) * 0.5 + 0.5;
@@ -600,7 +619,7 @@ function waypoint(game: Game) {
     el.style.setProperty("--arrow", `${Math.atan2(dy, dx)}rad`);
   }
   el.classList.toggle("edge", edge);
-  el.style.transform = `translate(${Math.round(px)}px, ${Math.round(py)}px) translate(-50%, -50%)`;
+  el.style.transform = `translate(${Math.round(px)}px, ${Math.round(py)}px) translate(-50%, ${edge ? "-50%" : "-100%"})`;
 }
 
 function feed(text: string, hot = false) {
@@ -717,7 +736,13 @@ function results(game: Game) {
     const got = addWin(wins, winKey(current!.def.id, current!.repo.name));
     wins = got.wins, store.set("wins", wins);
     if (got.head) $("results-body").textContent += ` Unlocked a head: ${got.head.name.toLowerCase()}.`;
+    showCampaign();
   }
+  // On the climb, a win leads on to the next chapter.
+  const next = won && !game.mode ? nextChapter(current!.def.id) : null;
+  $("next").hidden = !next;
+  if (next) $("next").textContent = `Next: ${next.title}`, $("next").onclick = () => start(levelById(next.level));
+  else if (won && !game.mode && chapterOf(current!.def.id) === CAMPAIGN.length - 1) $("results-body").textContent += " That's the top of the climb.";
   drawRoles();
   $("results").hidden = false;
 }
