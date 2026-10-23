@@ -303,16 +303,16 @@ const KIT: Make[] = [
 
 /** What gets cut on a hillside, given the hill's slope: null where a shape can't fit it. */
 type Cut = (at: At, r: () => number, y: number, tilt: number) => Earthwork | null;
-const HILLSIDE: Cut[] = [
-  (at, r, y, t) => hillQuarter(at, y, t, { w: between(r, 14, 20), h: between(r, 2.2, 3.6) }),
-  (at, r, y, t) => hillQuarter(at, y, t, { w: between(r, 12, 16), h: between(r, 1.8, 2.6) }),
-  (at, r, y, t) => hillHalf(at, y, t, { w: between(r, 18, 24), flat: between(r, 3, 5), low: between(r, 1, 1.5) }),
-  (at, r, y, t) => hillBank(at, y, t, { w: between(r, 14, 22), h: between(r, 1.8, 3) }),
-  (at, r, y, t) => hillBank(at, y, t, { w: between(r, 18, 26), h: between(r, 1.8, 2.8), hip: between(r, 0.3, 0.6) }),
-  (at, r, y, t) => hillSnake(at, y, t, { len: between(r, 50, 72), h: between(r, 2, 3), amp: between(r, 3, 5) }),
-  (at, r, y, t) => hillSnake(at, y, t, { len: between(r, 36, 48), h: between(r, 1.8, 2.6), amp: between(r, 2.5, 3.5), period: 24 }),
-  (at, r, y, t) => hillShelf(at, y, t, { w: between(r, 14, 20), h: between(r, 2.2, 3.4) }),
-];
+const HILLSIDE: { kind: WorkKind; cut: Cut }[] = ([
+  ["hillQuarter", (at, r, y, t) => hillQuarter(at, y, t, { w: between(r, 14, 20), h: between(r, 2.2, 3.6) })],
+  ["hillQuarter", (at, r, y, t) => hillQuarter(at, y, t, { w: between(r, 12, 16), h: between(r, 1.8, 2.6) })],
+  ["hillHalf", (at, r, y, t) => hillHalf(at, y, t, { w: between(r, 18, 24), flat: between(r, 3, 5), low: between(r, 1, 1.5) })],
+  ["hillBank", (at, r, y, t) => hillBank(at, y, t, { w: between(r, 14, 22), h: between(r, 1.8, 3) })],
+  ["hillBank", (at, r, y, t) => hillBank(at, y, t, { w: between(r, 18, 26), h: between(r, 1.8, 2.8), hip: between(r, 0.3, 0.6) })],
+  ["hillSnake", (at, r, y, t) => hillSnake(at, y, t, { len: between(r, 50, 72), h: between(r, 2, 3), amp: between(r, 3, 5) })],
+  ["hillSnake", (at, r, y, t) => hillSnake(at, y, t, { len: between(r, 36, 48), h: between(r, 1.8, 2.6), amp: between(r, 2.5, 3.5), period: 24 })],
+  ["hillShelf", (at, r, y, t) => hillShelf(at, y, t, { w: between(r, 14, 20), h: between(r, 2.2, 3.4) })],
+] as [WorkKind, Cut][]).map(([kind, cut]) => ({ kind, cut }));
 
 /** The hill's plane under a spot, fitted over a 24 m square: its height there, its gradient, and how far the real ground strays from it. */
 export function hillPlane(ground: (x: number, z: number) => number, x: number, z: number, half = 12) {
@@ -327,8 +327,9 @@ export function hillPlane(ground: (x: number, z: number) => number, x: number, z
 export const HILL = { min: 0.12, max: 0.6, off: 0.6, snakeOff: 1.2 };
 
 /** `hillMin` is the slope from which a cell gets a hillside work instead of the level kit (a park with little hill lowers it); `near` is how close to a spawn a hillside work is guaranteed to stand. */
-export type Works = { cell?: number; fill?: number; slope?: number; seed?: number; hillMin?: number; near?: number };
-export const WORKS: Required<Works> = { cell: 30, fill: 0.95, slope: 0.2, seed: 5, hillMin: HILL.min, near: 60 };
+export type Works = { cell?: number; fill?: number; slope?: number; seed?: number; hillMin?: number; near?: number; hillMax?: number };
+/** `hillMax` caps the hillside cuts in one park, so a mountain park doesn't turn into nothing but cuts. */
+export const WORKS: Required<Works> = { cell: 30, fill: 0.95, slope: 0.2, seed: 5, hillMin: HILL.min, near: 60, hillMax: 36 };
 
 /** An earthwork as circles on the ground, skirt included: a long one is a line of them, so a pump track doesn't hide a whole cell. */
 export function circles(e: Earthwork) {
@@ -338,7 +339,15 @@ export function circles(e: Earthwork) {
 
 /** Where the earthworks go: one per cell of a jittered grid over the whole bounds, on ground gentle enough to cut, clear of everything already there. */
 export function layOut(world: ScatterWorld, o: Works = {}): Earthwork[] {
-  const { cell, fill, slope, seed, hillMin, near } = { ...WORKS, ...o }, r = mulberry32(seed), b = world.bounds;
+  const { cell, fill, slope, seed, hillMin, near, hillMax } = { ...WORKS, ...o }, r = mulberry32(seed), b = world.bounds;
+  // the kind this park has the fewest of goes first (ties by chance), so every kind turns up about as often
+  const cutHill = (at: At, y: number, t: number) => {
+    const count = (k: WorkKind) => made.filter((w) => w.kind === k).length;
+    const n = HILLSIDE.length, start = Math.floor(r() * n), order = HILLSIDE.map((_, i) => HILLSIDE[(start + i) % n]!);
+    const kinds = [...new Set(order.map((c) => c.kind))].sort((p, q) => count(p) - count(q));
+    for (const kind of kinds) for (const c of order) if (c.kind === kind) { const e = c.cut(at, r, y, t); if (e) return e; }
+    return null;
+  };
   const taken = [...world.taken, ...(world.lanes ?? []).flatMap(lane), ...world.spawns.map((s) => ({ x: s.x, z: s.z, r: 16 }))], made: Earthwork[] = [];
   /** Cuts one work at a spot if it fits there; `hillOnly` insists on a hillside work. */
   const place = (x: number, z: number, hillOnly: boolean) => {
@@ -346,7 +355,8 @@ export function layOut(world: ScatterWorld, o: Works = {}): Earthwork[] {
     // a real hillside gets works cut into it, yawed so uphill is local +z; gentle ground keeps the level kit
     const hill = hillPlane(world.ground, x, z), onHill = hill.slope >= hillMin && hill.slope <= HILL.max && hill.off <= HILL.snakeOff;
     if (hillOnly ? !onHill : hill.slope > hillMin && !onHill) return false;
-    const e = onHill ? pick(r, HILLSIDE)({ ...at, yaw: hill.yaw }, r, hill.y0, hill.slope) : pick(r, KIT)(at, r, world.ground(x, z));
+    if (onHill && made.filter((w) => w.tilt).length >= hillMax) return false;
+    const e = onHill ? cutHill({ ...at, yaw: hill.yaw }, hill.y0, hill.slope) : pick(r, KIT)(at, r, world.ground(x, z));
     if (!e || (onHill && e.kind !== "hillSnake" && hill.off > HILL.off)) return false;
     const reach = e.reach, inside = reach - e.skirt + 2; // the skirt may run past the bounds; the work itself may not
     if (x - inside < b.minX || x + inside > b.maxX || z - inside < b.minZ || z + inside > b.maxZ) return false;
@@ -359,20 +369,26 @@ export function layOut(world: ScatterWorld, o: Works = {}): Earthwork[] {
     taken.push(...line);
     return true;
   };
+  // a rider should see a cut from where they start, so the spots round the spawns are tried before the grid fills them
+  const seen = () => world.spawns.some((s) => made.some((e) => e.tilt && Math.hypot(e.x - s.x, e.z - s.z) < near));
+  for (let rad = 24; rad <= near && world.spawns.length && !seen(); rad += 8)
+    for (const s of world.spawns) for (let a = 0; a < 16 && !seen(); a++) for (let k = 0; k < 3 && !seen(); k++) place(s.x + Math.sin((a / 16) * 2 * Math.PI) * rad, s.z + Math.cos((a / 16) * 2 * Math.PI) * rad, true);
+  // a nearly level park may have only a few hillside spots: sweep the map from the spawns outward for one, before the grid takes them
+  if (world.spawns.length && !made.some((e) => e.tilt)) {
+    const near2 = (x: number, z: number) => Math.min(...world.spawns.map((s) => Math.hypot(x - s.x, z - s.z))), spots: { x: number; z: number }[] = [];
+    for (let x = b.minX; x <= b.maxX; x += 10) for (let z = b.minZ; z <= b.maxZ; z += 10) spots.push({ x, z });
+    for (const q of spots.sort((p, q) => near2(p.x, p.z) - near2(q.x, q.z))) if (place(q.x, q.z, true)) break;
+  }
   for (let x0 = b.minX; x0 + cell <= b.maxX; x0 += cell) for (let z0 = b.minZ; z0 + cell <= b.maxZ; z0 += cell) {
     if (r() > fill) continue;
     // a cell tries a few spots and kits before giving up, so a crowded meadow still gets the smaller things
     for (let tries = 0; tries < 10; tries++) if (place(x0 + cell * between(r, 0.2, 0.8), z0 + cell * between(r, 0.2, 0.8), false)) break;
   }
-  // a rider should see a cut from where they start: if no spawn has one in reach, look for a hillside spot round the spawns
-  const seen = () => world.spawns.some((s) => made.some((e) => e.tilt && Math.hypot(e.x - s.x, e.z - s.z) < near));
-  for (let rad = 24; rad <= near && world.spawns.length && !seen(); rad += 8)
-    for (const s of world.spawns) for (let a = 0; a < 16 && !seen(); a++) for (let k = 0; k < 3 && !seen(); k++) place(s.x + Math.sin((a / 16) * 2 * Math.PI) * rad, s.z + Math.cos((a / 16) * 2 * Math.PI) * rad, true);
   return made;
 }
 
-/** A spawn below the nearest hillside work, facing uphill at its run-in, for a park whose own spawns have none in reach; `avoid` is what else was laid after the spawns were known (ribbons, scattered kit). */
-export function hillSpawn(works: Earthwork[], spawns: { x: number; z: number }[], avoid: { x: number; z: number; r: number }[] = [], near = WORKS.near): { name: string; x: number; z: number; yaw: number } | null {
+/** A spawn below the nearest hillside work, facing uphill at its run-in, for a park whose own spawns have none in reach; `avoid` is what else was laid after the spawns were known (ribbons, scattered kit); with `height`, the spot must also be level enough to ride off. */
+export function hillSpawn(works: Earthwork[], spawns: { x: number; z: number }[], avoid: { x: number; z: number; r: number }[] = [], near = WORKS.near, height?: (x: number, z: number) => number): { name: string; x: number; z: number; yaw: number } | null {
   const hills = works.filter((e) => e.tilt);
   if (!hills.length || spawns.some((s) => hills.some((e) => Math.hypot(e.x - s.x, e.z - s.z) < near))) return null;
   const e = hills.sort((p, q) => Math.min(...spawns.map((s) => Math.hypot(p.x - s.x, p.z - s.z))) - Math.min(...spawns.map((s) => Math.hypot(q.x - s.x, q.z - s.z))))[0]!;
@@ -380,7 +396,7 @@ export function hillSpawn(works: Earthwork[], spawns: { x: number; z: number }[]
   // far enough back to stand clear of every work's footprint and skirt, so the run still starts on open ground
   for (let back = Math.min(e.w, e.d) / 2 + e.skirt + 4; back < 70; back += 4) {
     const x = e.x - up.x * back, z = e.z - up.z * back;
-    if (works.every((q) => Math.hypot(q.x - x, q.z - z) > Math.min(q.w, q.d) / 2 + q.skirt) && avoid.every((a) => Math.hypot(a.x - x, a.z - z) > a.r)) return { name: "hillside cut", x, z, yaw: e.yaw };
+    if (works.every((q) => Math.hypot(q.x - x, q.z - z) > Math.min(q.w, q.d) / 2 + q.skirt) && avoid.every((a) => Math.hypot(a.x - x, a.z - z) > a.r) && (!height || [[1.5, 0], [-1.5, 0], [0, 1.5], [0, -1.5]].every(([dx, dz]) => Math.abs(height(x + dx!, z + dz!) - height(x, z)) < 0.6))) return { name: "hillside cut", x, z, yaw: e.yaw };
   }
   return null;
 }

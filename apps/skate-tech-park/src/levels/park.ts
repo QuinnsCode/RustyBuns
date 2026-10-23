@@ -108,9 +108,10 @@ export type ParkLevel = Level & {
 /** The ground a landmark's drawing covers, so scattered parts don't stand in the steam or the spring. */
 const landmarkCircle = (l: Landmark): Circle[] => (l.kind === "plume" ? [{ x: l.x, z: l.z, r: l.r + 4 }] : l.kind === "rings" ? [{ x: l.x, z: l.z, r: Math.max(...l.rings.map((g) => g.r)) }] : []);
 
-/** Lines scatter keeps open: each gap's flight, the way in to it from every spawn in reach, and straight ahead of every spawn. */
+/** Lines scatter keeps open: each gap's flight and 30 m of run-out past its landing, the way in to it from every spawn in reach, and straight ahead of every spawn. */
+const runOut = (g: Gap) => 30 / Math.max(1, Math.hypot(g.b.x - g.a.x, g.b.z - g.a.z));
 const lanes = (gaps: Gap[], spawns: Spawn[]): [Pt, Pt][] => [
-  ...gaps.flatMap((g) => [[g.a, g.b] as [Pt, Pt], ...spawns.filter((s) => Math.hypot(s.x - g.a.x, s.z - g.a.z) < 200).map((s) => [s, g.a] as [Pt, Pt])]),
+  ...gaps.flatMap((g) => [[g.a, { x: g.b.x + (g.b.x - g.a.x) * runOut(g), z: g.b.z + (g.b.z - g.a.z) * runOut(g) }] as [Pt, Pt], ...spawns.filter((s) => Math.hypot(s.x - g.a.x, s.z - g.a.z) < 200).map((s) => [s, g.a] as [Pt, Pt])]),
   ...spawns.map((s) => [s, { x: s.x + Math.sin(s.yaw) * 160, z: s.z + Math.cos(s.yaw) * 160 }] as [Pt, Pt]),
 ];
 
@@ -134,7 +135,7 @@ export function parkLevel(spec: ParkSpec, zone: ZoneData, real = false): ParkLev
   const land = sculpt(ground, works);
   const parts = join(kit, drape(copings(works), land.height));
   // a park with no hillside cut near its spawns starts a rider below one, on ground the ribbons and the scattered kit left open
-  const extra = hillSpawn(works, spec.spawns, [...parts.pieces.map((p) => ({ x: p.x, z: p.z, r: 6 })), ...(filled?.paths ?? []).flatMap((r) => r.path.map((p) => ({ x: p.x, z: p.z, r: 15 })))]);
+  const extra = hillSpawn(works, spec.spawns, [...parts.pieces.map((p) => ({ x: p.x, z: p.z, r: 6 })), ...(filled?.paths ?? []).flatMap((r) => r.path.map((p) => ({ x: p.x, z: p.z, r: 15 })))], undefined, land.height);
   const inner = makeLevel({ name: spec.name, pieces: parts.pieces, rails: parts.rails, obstacles: trees, spawns: extra ? [...spec.spawns, extra] : spec.spawns, bounds });
   const height = (x: number, z: number) => Math.max(land.height(x, z), inner.height(x, z));
   const obstacles = [...trees, ...postObstacles(parts.rails, height)];
