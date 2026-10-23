@@ -76,6 +76,9 @@ test("deploy-soon counts down without reaching the page, and draining is remembe
   ws0!.send(JSON.stringify({ type: "ops" }));
   await until(() => got.length === 1);
   expect(got).toEqual([JSON.stringify({ type: "ops" })]);
+  // The deploy is called off: the hold clears and the banner goes.
+  ws0!.send(JSON.stringify({ t: "drain-over" }));
+  await until(() => !live.draining && nets.at(-1)?.kind === "ok");
   live.close();
   await server.stop(true);
 });
