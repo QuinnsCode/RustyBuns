@@ -553,6 +553,17 @@ describe("shares", () => {
     expect((await post(call, "ana", "/api/repos/ana/r/branches/b1/merge", { resolve: { "a.ts": { "lint:redeclared:y": "branch" } } })).status).toBe(200);
   });
 
+  test("marking an already committed line private takes its text out of search at once", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/repos", { name: "pub" });
+    await post(call, "ana", "/api/repos/ana/pub/files", { path: "a.ts", content: "one\nkey = hunter2\nthree" });
+    await post(call, "ana", "/api/repos/ana/pub/do/commit?path=a.ts", { message: "c" });
+    expect((await (await call("bo", "/api/search?q=hunter2")).json() as any[]).length).toBe(1);
+    expect((await post(call, "ana", "/api/repos/ana/pub/do/private?path=a.ts", { lines: ["L2"], private: true })).status).toBe(200);
+    expect(await (await call("bo", "/api/search?q=hunter2")).json()).toEqual([]);
+    expect((await (await call("bo", "/api/search?q=three")).json() as any[]).length).toBe(1);
+  });
+
   test("private lines in a public repo: the crew reads them, everyone else, git and search get them blank", async () => {
     const call = await local();
     await post(call, "ana", "/api/repos", { name: "pub" });

@@ -290,6 +290,19 @@ test("a batch waits on main as its own branch's hunks: hold stops the clock, a l
   expect((await post("ryan", `/api/repos/ryan/lab/agents/${id}/accept`, {})).status).toBe(409);
 });
 
+test("only the run's agent and the owner write to its waiting branch, so what the owner reads is what lands", async () => {
+  const { call, post } = await app();
+  await post("sam", "/api/login", { name: "sam" });
+  await post("ryan", "/api/repos/ryan/lab/collaborators", { name: "sam" });
+  const { id } = await waiting(call, post);
+  const on = `/api/repos/ryan/lab/do/ops?path=a.js&branch=agent-run-${id}`;
+  const doc = await (await call("sam", `/api/repos/ryan/lab/do/file?path=a.js&branch=agent-run-${id}`)).json() as { lines: { id: string; rev: number }[] };
+  const edit = { ops: [{ kind: "set", line: doc.lines[0]!.id, base: doc.lines[0]!.rev, text: "evil()" }] };
+  expect((await post("sam", on, edit)).status).toBe(403);
+  expect((await call("sam", `/api/repos/ryan/lab/branches/agent-run-${id}/files?path=a.js`, { method: "DELETE" })).status).toBe(403);
+  expect((await post("ryan", on, edit)).status).toBe(200);
+});
+
 test("the crew see a waiting batch and can look at or hold it; landing and binning it stay the owner's", async () => {
   const { call, post } = await app();
   await post("sam", "/api/login", { name: "sam" });

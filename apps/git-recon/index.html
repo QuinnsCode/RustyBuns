@@ -14,7 +14,9 @@
       <div class="card">
         <p class="kicker">A Rusty Buns example</p>
         <h1>Git Recon</h1>
-        <p class="lede">A codebase on real ground. Its biggest folders are compounds in conflict, its files are the buildings. The campaign is a climb, from the kitchen floor up to the rim above Yosemite Valley: each chapter is a mission (merge every folder, carry a commit home, or hold main), and winning one opens the next.</p>
+        <p class="lede">A codebase on real ground. Climb from the kitchen floor to the heights: win a mission to open the next.</p>
+        <div id="levels" class="levels"></div>
+        <details class="more"><summary>More: your soldier, any repo, any place, battles, controls</summary>
         <div class="look">
           <span class="look-label">You</span>
           <div id="builds" class="chips" role="radiogroup" aria-label="Build"></div>
@@ -31,7 +33,6 @@
           <button id="repo-reset" type="button" title="Back to Rusty Buns" hidden>×</button>
           <p id="repo-status" class="repo-status" role="status"></p>
         </form>
-        <div id="levels" class="levels"></div>
         <form id="place" class="place" autocomplete="off">
           <label for="place-at">Or fight anywhere: a latitude, longitude</label>
           <div class="row"><input id="place-at" name="at" inputmode="decimal" placeholder="36.0566, -112.1251" spellcheck="false" /><button id="place-go" class="primary" title="Read the ground there and fight on it">Deploy</button></div>
@@ -66,6 +67,7 @@
           <dt>Right click</dt><dd>scope (rebase; it sways, less lying down)</dd>
           <dt>Tab</dt><dd>the scoreboard, in a battle</dd>
         </dl>
+        </details>
       </div>
     </main>
 

@@ -86,7 +86,8 @@ function showCampaign() {
     b.querySelector("span")!.textContent = ch.story;
     b.querySelector("em")!.textContent = locked ? `Win ${CAMPAIGN[i - 1]!.title} to open` : briefing(missionFor(def.id));
     b.querySelector("code")!.dataset.level = def.id;
-    if (locked) b.querySelector("code")!.replaceChildren(createElement(Lock)), b.title = def.blurb;
+    b.title = `${ch.story} ${def.blurb}`;
+    if (locked) b.querySelector("code")!.replaceChildren(createElement(Lock));
     b.disabled = locked;
     b.onclick = () => start(def);
     list.append(b);

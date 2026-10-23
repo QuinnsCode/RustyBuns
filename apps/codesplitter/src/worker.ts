@@ -8,7 +8,7 @@ import { artifactMoveRoutes } from "./artifact-move.ts";
 import { featureRankRoutes } from "./feature-ranks.ts";
 import { findRoutes } from "./finds.ts";
 import { rankOf } from "./policy.ts";
-import { fromText } from "./lines.ts";
+import { fromText, text, type Doc } from "./lines.ts";
 import { mainClosed, policyClosed, protectRoute } from "./protect.ts";
 import {
   ensureCrewRemote,
@@ -85,6 +85,7 @@ import {
   createOn,
   materializeOn,
   openBranch,
+  runBranchLocked,
   pathPolicy,
 } from "./branches.ts";
 import {
@@ -769,6 +770,8 @@ async function route(req: Request, env: Env): Promise<Response> {
       if ("error" in m) return json({ error: m.error }, m.status);
       const writes = p[5] === "ops" || p[5] === "commit" || ((p[5] === "private" || p[5] === "claims" || p[5] === "release") && req.method === "POST");
       if (writes && !a.write) return json({ error: "no write access" }, 403);
+      const runLocked = (writes || p[5] === "ws") && a.write ? await runBranchLocked(env, owner, repo, branch, user) : null;
+      if (writes && runLocked) return runLocked;
       if (writes && !branch) { const closed = await mainClosed(env, owner, repo, user); if (closed) return closed; }
       if ((writes || p[5] === "ws") && !branch && a.write) { const closed = policyClosed(owner, path, user); if (closed) return closed; }
       // On the desktop, a push to the repo's git from outside reaches main's files when they're opened or
@@ -802,7 +805,7 @@ async function route(req: Request, env: Env): Promise<Response> {
         h.set("x-codesplitter-user", user ?? "anon");
         // On a protected main (#1426) the crew's socket reads: edits go on a branch, as the HTTP routes say.
         const frozen = a.write && !branch && await mainClosed(env, owner, repo, user);
-        h.set("x-codesplitter-write", a.write && !frozen ? "1" : "0");
+        h.set("x-codesplitter-write", a.write && !frozen && !runLocked ? "1" : "0");
         h.set("x-codesplitter-crew", a.write ? "1" : "0");
         live ? h.set("x-codesplitter-live", live) : h.delete("x-codesplitter-live");
         branch ? h.delete("x-codesplitter-file") : h.set("x-codesplitter-file", encodeURIComponent(JSON.stringify([owner, repo, path])));
@@ -820,7 +823,13 @@ async function route(req: Request, env: Env): Promise<Response> {
         url.searchParams.has("rev") ? `?${new URLSearchParams({ rev: url.searchParams.get("rev")! })}` : url.searchParams.has("since") ? `?${new URLSearchParams({ since: url.searchParams.get("since")! })}` : p[5] === "file" && (url.searchParams.has("from") || url.searchParams.has("limit")) ? `?${new URLSearchParams([...url.searchParams].filter(([k]) => k === "from" || k === "limit"))}` : "", branch);
       if (p[5] === "private" && req.method === "POST" && res.ok) {
         // From the first private line on, the crew has a remote of its own to clone and deploy from.
-        if ((JSON.parse(sent!) as { private?: boolean }).private) await ensureCrewRemote(env, owner, repo).catch(() => null);
+        if ((JSON.parse(sent!) as { private?: boolean }).private) {
+          await ensureCrewRemote(env, owner, repo).catch(() => null);
+          // Search holds the text of the last commit: put the file back in with these lines blank now, not at its next commit.
+          const open = await toFile(env, owner, repo, path, "anon", "file", { headers: { "x-codesplitter-crew": "0" } }).catch(() => null);
+          const doc = open?.ok ? (await open.json().catch(() => null)) as Doc | null : null;
+          if (doc) await indexFile(env, owner, repo, path, text(doc)).catch(() => null);
+        }
         // Open branches' copies of the file hide the same lines.
         const { results } = await env.DB.prepare("SELECT b.name FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch WHERE f.owner = ? AND f.repo = ? AND f.path = ? AND b.status = 'open'").bind(owner, repo, path).all();
         for (const { name } of results as { name: string }[]) await toFile(env, owner, repo, path, user!, "private", { method: "POST", body: sent }, "", name);
