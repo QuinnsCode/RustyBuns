@@ -582,10 +582,14 @@ function waypoint(game: Game) {
   const el = $("waypoint"), to = game.waypoint();
   if (!to) return void (el.hidden = true);
   const you = game.you();
+  const dist = Math.hypot(to.x - you.x, to.z - you.z);
+  // Close in, the tag would sit on the entrance you're looking for: you've arrived, so drop it.
+  if (dist < 14) return void (el.hidden = true);
   el.hidden = false;
   el.querySelector("b")!.textContent = to.label;
-  el.querySelector("small")!.textContent = `${Math.round(Math.hypot(to.x - you.x, to.z - you.z))} m`;
-  wp.set(to.x, to.y + 2.5, to.z).project(camera);
+  el.querySelector("small")!.textContent = `${Math.round(dist)} m`;
+  // Held well above the gate, its bottom edge on the point, so the opening stays clear.
+  wp.set(to.x, to.y + 9, to.z).project(camera);
   // Behind the camera, project() mirrors the point: flip it so the arrow points the right way.
   const behind = wp.z > 1;
   let x = (behind ? -wp.x : wp.x) * 0.5 + 0.5, y = (behind ? wp.y : -wp.y) * 0.5 + 0.5;
@@ -600,7 +604,7 @@ function waypoint(game: Game) {
     el.style.setProperty("--arrow", `${Math.atan2(dy, dx)}rad`);
   }
   el.classList.toggle("edge", edge);
-  el.style.transform = `translate(${Math.round(px)}px, ${Math.round(py)}px) translate(-50%, -50%)`;
+  el.style.transform = `translate(${Math.round(px)}px, ${Math.round(py)}px) translate(-50%, ${edge ? "-50%" : "-100%"})`;
 }
 
 function feed(text: string, hot = false) {
