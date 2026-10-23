@@ -39,8 +39,14 @@ test("analytics engine: points land in sqlite", () => {
   expect(() => ae.writeDataPoint({ indexes: ["a", "b"] })).toThrow(/one index/);
 });
 
-test("workers ai: present, and says it runs only on Cloudflare", async () => {
-  await expect(new LocalAi("AI").run("@cf/baai/bge-small-en-v1.5", { text: ["hi"] })).rejects.toThrow(/AI.*only on Cloudflare/);
+test("workers ai: embeds bge text locally (shared words are near), everything else says it runs only on Cloudflare", async () => {
+  const ai = new LocalAi("AI");
+  const r: any = await ai.run("@cf/baai/bge-small-en-v1.5", { text: ["search the index", "searching indexes", "bake a cake"] });
+  expect(r.shape).toEqual([3, 384]);
+  const dot = (a: number[], b: number[]) => a.reduce((s, x, i) => s + x * b[i]!, 0);
+  expect(dot(r.data[0], r.data[1])).toBeGreaterThan(dot(r.data[0], r.data[2]));
+  expect((await ai.run("@cf/baai/bge-base-en-v1.5", { text: "x" }) as any).shape).toEqual([1, 768]);
+  await expect(ai.run("@cf/meta/llama-3-8b-instruct", { prompt: "hi" })).rejects.toThrow(/AI.*only on Cloudflare/);
 });
 
 test("worker loader: get() runs getCode once per id; fetch, RPC and a WorkerEntrypoint class", async () => {
