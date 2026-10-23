@@ -84,7 +84,16 @@ So a game keeps its session by (1) writing what must survive to storage as it go
 page reconnect with the same identity. `resilientSocket` in `@rustybuns/shell-bun/client` does the second: it backs off,
 rebuilds the URL each try (uid and all), calls `onOpen` so you can resend held state, and reports `reconnecting` so the
 page can show "Updating, back in a moment" instead of a dead game. It reports `offline` after a run of failures.
-Hippo Tycoon's `NetSocket` does the same for that game. A deploy that warns rooms first and waits for them to drain is not built yet.
+Hippo Tycoon's `NetSocket` does the same for that game. 
+`rustybuns deploy --drain-url <origin> [--drain-seconds 30]` warns first. With `RB_DRAIN_SECRET` set, it asks the running app
+to drain (codeSplitter: `POST /api/admin/drain`, bearer `DRAIN_SECRET`), waits the grace period, then deploys; a failed deploy
+lifts the drain. It is off unless `--drain-url` is given, and does nothing for an app with no Durable Objects. Each busy
+file hears `{t:"deploy-soon", at}` (epoch ms) and, when `at` comes, `{t:"draining"}`; from then on it refuses new claims and
+places in line with a 409 (`draining`, `updating`, `retryAfter`) while edits and renewals go on. If the app is cut anyway, a
+call that meets the restarting object gets a 503 `update in progress, retry` with `retryAfter`, a `claim_lines wait` keeps its
+place in line (it is in storage) and a grant window it had starts again, and a hosted agent run is released and started again
+from the file as it stands (up to twice; the run's log says "interrupted by update, retrying"). Ops carry a `proto` version: a
+writer started on another build gets the same 409 `updating`, so a run never lands a diff through rules it didn't read.
 
 ## Deploy to Hetzner
 

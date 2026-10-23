@@ -35,7 +35,7 @@ import { Tally } from "./limits.ts";
 import { lintMerge } from "./lint.ts";
 import { DocStore } from "./doc-store.ts";
 import { sha256 as sha } from "./util.ts";
-import { apply, empty, MAX_OPS, merge, mergeWords, parseOps, replay, text, type Applied, type Doc, type Line, type Op, type Resolve } from "./lines.ts";
+import { apply, empty, MAX_OPS, merge, mergeWords, parseOps, PROTOCOL, replay, text, type Applied, type Doc, type Line, type Op, type Resolve } from "./lines.ts";
 import type { Live, Rule } from "./policy.ts";
 import { pad10 } from "./util.ts";
 
@@ -72,7 +72,9 @@ type Shown = Line & { private?: true };
  * A soft claim is an intent ("rewriting 40–80"): shown and listed like any other, renewed and
  * lapsing the same way, but it keeps nobody off its lines, and other claims may overlap it.
  */
-export interface Claim { id: string; who: string; bot: boolean; lines: string[]; task?: string; at: number; until: number | null; cap?: number; soft?: true }
+export interface Claim { id: string; who: string; bot: boolean; lines: string[]; task?: string; at: number; until: number | null; cap?: number; soft?: true;
+  /** Granted to a waiter that wasn't asking: its grant window (GRANT_MS) starts again if the object restarts before it takes the lines. */
+  grant?: true }
 /** An agent's claim that ended within a lease of its cap: `who` may not claim any of `lines` again till `until`. */
 interface Rest { who: string; lines: string[]; until: number }
 /**
@@ -104,6 +106,10 @@ export const GRANT_MS = 15_000;
 export const WAIT_POLL_MS = 20_000;
 /** A waiter that hasn't asked for this long has gone: it leaves the line. Well past WAIT_POLL_MS. */
 export const WAIT_KEEP_MS = 60_000;
+/** What a refused-because-of-an-update answer says to wait, in seconds. */
+export const UPDATE_RETRY_S = 5;
+/** What every answer that was cut by an update says: the same words, so a client can match them. */
+export const UPDATING = "update in progress, retry";
 /** Presence goes out at most this often, so a thousand sockets opening at once isn't a million messages. */
 const PRESENCE_MS = 250;
 
@@ -133,6 +139,11 @@ export class FileDurableObject {
   waits: Waiter[] = [];
   /** Waiter id -> its ask that's being held open, to answer with the claim when it's granted. */
   polls = new Map<string, (c: Claim | null) => void>();
+  /** A deploy is coming (drain): when it is expected. From then on the file takes no new claims, waiters or leases. Memory only: a restart is the deploy. */
+  soon: number | null = null;
+  soonTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Whether its sockets have been told it is draining. */
+  told = false;
   /** When the alarm that lets lapsed claims go is set for, as far as this instance knows. */
   alarmAt: number | null = null;
   presenceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -174,7 +185,11 @@ export class FileDurableObject {
       this.authors = authors ? new Set(authors) : null;
       // A sweep the object was evicted in the middle of picks up where it stopped.
       if (this.trimmed) this.sweeping = this.sweep().catch(() => {});
-      for (const c of ((await ctx.storage.list({ prefix: "claim:" })) as Map<string, Claim>).values()) this.index(c);
+      for (const c of ((await ctx.storage.list({ prefix: "claim:" })) as Map<string, Claim>).values()) {
+        // A grant window the restart cut short starts again: the waiter never had its turn to take the lines.
+        if (c.grant && c.until !== null && c.until < Date.now() + GRANT_MS) { c.until = Date.now() + GRANT_MS; await ctx.storage.put("claim:" + c.id, c); }
+        this.index(c);
+      }
       this.rests = new Map([...((await ctx.storage.list({ prefix: "rest:" })) as Map<string, Rest>)].map(([k, r]) => [k.slice(5), r]));
       // Each waiter gets WAIT_KEEP_MS from now to ask again; it's been asking all along, as far as it knows.
       const now = Date.now();
@@ -244,7 +259,8 @@ export class FileDurableObject {
     }
     if (req.method === "GET" && route === "file") return json(window(this.shown(this.doc, crew), url.searchParams.get("from"), url.searchParams.get("limit")));
     if (req.method === "POST" && route === "ops") {
-      const b = (await req.json().catch(() => ({}))) as { ops?: unknown; ifRev?: unknown; claim?: unknown };
+      const b = (await req.json().catch(() => ({}))) as { ops?: unknown; ifRev?: unknown; claim?: unknown; proto?: unknown };
+      if (b.proto !== undefined && b.proto !== PROTOCOL) return json(this.stale(), 409);
       const ops = parseOps(b.ops);
       if (typeof ops === "string") return json({ error: ops }, 400);
       if (b.ifRev !== undefined && !Number.isInteger(b.ifRev)) return json({ error: "ifRev: a rev" }, 400);
@@ -287,6 +303,8 @@ export class FileDurableObject {
       return json({ ok: true });
     }
     if (req.method === "GET" && route === "here") return json(this.here());
+    // The deploy's call, through the Worker's admin route (drain.ts): { in: seconds } warns, { in: 0 } drains now, { cancel: true } lifts it.
+    if (req.method === "POST" && route === "drain") return json(await this.drain((await req.json().catch(() => ({}))) as { in?: unknown; cancel?: unknown }));
     if (req.method === "GET" && route === "claims") return json(this.live());
     if (req.method === "POST" && route === "claims") {
       // Crew only (the Worker checks). Any of the crew may lift any claim: that's how a person steers an agent off lines.
@@ -574,10 +592,11 @@ export class FileDurableObject {
    * waits on an edit that went nowhere (#659).
    */
   async webSocketMessage(ws: any, raw: string | ArrayBuffer) {
-    let msg: { type?: unknown; id?: unknown; ops?: unknown; ifRev?: unknown; claim?: unknown };
+    let msg: { type?: unknown; id?: unknown; ops?: unknown; ifRev?: unknown; claim?: unknown; proto?: unknown };
     try { msg = JSON.parse(typeof raw === "string" ? raw : new TextDecoder().decode(raw)); } catch { return; }
     if (!msg || msg.type !== "ops") return;
     const answer = (m: Record<string, unknown>) => { try { ws.send(JSON.stringify({ ...m, id: msg.id })); } catch {} };
+    if (msg.proto !== undefined && msg.proto !== PROTOCOL) return answer({ type: "nack", rev: this.doc.rev, ...this.stale() });
     const ops = parseOps(msg.ops);
     if (typeof ops === "string") return answer({ type: "nack", rev: this.doc.rev, error: ops });
     const ifRev = Number.isInteger(msg.ifRev) ? (msg.ifRev as number) : undefined, claim = typeof msg.claim === "string" ? msg.claim : undefined;
@@ -673,6 +692,12 @@ export class FileDurableObject {
     if (!lines.length) return json({ error: "lines required: ids of lines in the file" }, 400);
     // An intent keeps nobody off its lines, so nothing's in its way.
     const soft = b.soft ?? old?.soft ?? false, want = new Set(lines);
+    // A deploy is coming: no new claims or places in line. Renewals (above, `old`) and soft intents carry on; edits are never refused.
+    if (this.draining() && !old && !soft) {
+      const place = b.wait ? this.waits.findIndex((w) => w.id === b.id && w.who === by) + 1 : 0;
+      if (place) return json({ queued: true, id: b.id, place, waiting: this.waits.length, draining: true, retryAfter: UPDATE_RETRY_S }, 202);
+      return json({ ...this.stale(), draining: true }, 409);
+    }
     // An agent whose claim just ended at or near its cap can't lay a fresh one (and a fresh cap) on those lines straight away.
     const rest = old || soft ? undefined : [...this.rests.values()].filter((r) => r.who === by && r.lines.some((id) => want.has(id))).sort((a, b) => b.until - a.until)[0];
     if (rest) return json({ error: `@${by} just held these lines for ${LEASE_CAP_MS / 60_000} minutes: others get a turn first`, retryAfter: Math.max(1, Math.ceil((rest.until - now) / 1000)) }, 409);
@@ -706,6 +731,45 @@ export class FileDurableObject {
     if (old) await this.serve();
     await this.arm();
     return json(c, old ? 200 : 201);
+  }
+
+  /** The answer to a writer that met a file on another build, or one about to be replaced. */
+  stale() { return { error: UPDATING, updating: true, retryAfter: UPDATE_RETRY_S }; }
+
+  /** Whether the deploy's warning has run out: from then on the file takes no new claims, leases or places in line. */
+  draining() { return this.soon !== null && Date.now() >= this.soon; }
+
+  /**
+   * The deploy's call: `in` seconds of warning ({t:"deploy-soon", at}) and then {t:"draining"}; 0 drains now.
+   * `cancel` lifts it (the deploy failed or was called off). Memory only: the restart a deploy brings clears it.
+   * Edits keep applying throughout; draining flushes what's pending to storage and answers held-open waiters
+   * (they keep their places, in storage, for the next build).
+   */
+  async drain(b: { in?: unknown; cancel?: unknown }) {
+    if (this.soonTimer) clearTimeout(this.soonTimer);
+    this.soonTimer = null;
+    if (b.cancel) {
+      if (this.told || this.soon !== null) this.broadcast({ t: "drain-over" });
+      this.soon = null; this.told = false;
+      return { draining: false };
+    }
+    const wait = Math.max(0, Math.min(Number(b.in) || 0, 600)) * 1000, now = Date.now();
+    const at = this.soon === null ? now + wait : Math.min(this.soon, now + wait);
+    if (this.soon === null) this.broadcast({ t: "deploy-soon", at });
+    this.soon = at;
+    if (at > now) this.soonTimer = setTimeout(() => { void this.begin(); }, at - now);
+    else await this.begin();
+    return { draining: this.draining(), at, sockets: this.ctx.getWebSockets().length, claims: this.claims.size, waiting: this.waits.length };
+  }
+
+  /** The warning ran out: tell the sockets once, flush, and let held-open waiters ask again later. */
+  async begin() {
+    if (this.told) return;
+    this.told = true;
+    this.broadcast({ t: "draining" });
+    for (const id of [...this.polls.keys()]) this.answer(id, null);
+    await this.logging.catch(() => {});
+    await this.ctx.storage.sync?.();
   }
 
   /** Waiters ahead of waiter `id` (or all of them, for someone not in line) who want any of `want`. */
@@ -786,7 +850,8 @@ export class FileDurableObject {
    * in line. Waiters whose lines are all gone, or that stopped asking, leave the line.
    */
   async serve() {
-    if (!this.waits.length) return;
+    // A draining file grants nothing new: waiters keep their places (they're in storage) for the next build to serve.
+    if (!this.waits.length || this.draining()) return;
     const now = Date.now(), have = new Set(this.doc.lines.map((l) => l.id)), spoken = new Set<string>();
     for (const w of [...this.waits]) {
       if (!this.waits.includes(w)) continue;
@@ -797,7 +862,7 @@ export class FileDurableObject {
       for (const id of w.lines) spoken.add(id);
       if (!free) continue;
       const bot = w.who.startsWith("agent-");
-      const c: Claim = { id: w.id, who: w.who, bot, lines: w.lines, ...(w.task ? { task: w.task } : {}), at: now, until: asking ? (bot ? now + LEASE_MS : null) : now + GRANT_MS, ...(bot && { cap: now + LEASE_CAP_MS }) };
+      const c: Claim = { id: w.id, who: w.who, bot, lines: w.lines, ...(w.task ? { task: w.task } : {}), at: now, until: asking ? (bot ? now + LEASE_MS : null) : now + GRANT_MS, ...(bot && { cap: now + LEASE_CAP_MS }), ...(!asking && { grant: true as const }) };
       this.index(c);
       await this.unwait(w.id);
       await this.ctx.storage.put("claim:" + c.id, c);

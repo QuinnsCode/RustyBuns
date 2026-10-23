@@ -138,6 +138,7 @@ import { commitGraph, GRAPH_MAX, sharedGraph } from "./graph.ts";
 /** A share link's read token: a day unless asked, a week at most. */
 const SHARE_DEFAULT_S = 86400, SHARE_MAX_S = 7 * 86400, SHARE_CREW_PRIVATE_S = 3600;
 import { watchdogRoutes } from "./watchdog.ts";
+import { drainRoutes } from "./drain.ts";
 import { busiestFiles, fileHistory } from "./gitpath-data.ts";
 import { joinHistory, upstreamBusiest, upstreamFileHistory, type UpstreamRepo } from "./gitpath-upstream.ts";
 import { tagRoutes } from "./tags.ts";
@@ -247,6 +248,7 @@ import {
 } from "./mirror.ts";
 import { LLMS_TXT, ROBOTS_TXT } from "./discover.ts";
 export { FileDurableObject } from "./file-do.ts";
+import { UPDATE_RETRY_S, UPDATING } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
 export { UserSettings } from "./settings.ts";
@@ -296,6 +298,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // GET /api/health, POST /api/watchdog/rolled-back  the watchdog Worker's check and its rollback report (watchdog.ts)
   const dog = await watchdogRoutes(req, env, p);
   if (dog) return dog;
+  // POST /api/admin/drain  the deploy's warning to every busy room (drain.ts)
+  const draining = await drainRoutes(req, env, p);
+  if (draining) return draining;
   // A cookie-signed write from another site goes no further (security.ts).
   const foreign = crossSite(req, env);
   if (foreign) return foreign;
@@ -819,8 +824,10 @@ async function route(req: Request, env: Env): Promise<Response> {
         return fileStub(env, owner, repo, path, branch).fetch(new Request(req.url, { headers: h }));
       }
       // Only the crew reads private lines; everyone else gets placeholders.
+      // A deploy restarts every Durable Object: a call cut by it (the stub throws) is told to come back, not given a 500.
       const res = await toFile(env, owner, repo, path, user ?? "anon", p[5]!, { method: req.method, body: sent, headers: { "x-codesplitter-crew": a.write ? "1" : "0", ...(live && { "x-codesplitter-live": live }), ...(rank !== undefined && { "x-codesplitter-rank": rank }) } },
-        url.searchParams.has("rev") ? `?${new URLSearchParams({ rev: url.searchParams.get("rev")! })}` : url.searchParams.has("since") ? `?${new URLSearchParams({ since: url.searchParams.get("since")! })}` : p[5] === "file" && (url.searchParams.has("from") || url.searchParams.has("limit")) ? `?${new URLSearchParams([...url.searchParams].filter(([k]) => k === "from" || k === "limit"))}` : "", branch);
+        url.searchParams.has("rev") ? `?${new URLSearchParams({ rev: url.searchParams.get("rev")! })}` : url.searchParams.has("since") ? `?${new URLSearchParams({ since: url.searchParams.get("since")! })}` : p[5] === "file" && (url.searchParams.has("from") || url.searchParams.has("limit")) ? `?${new URLSearchParams([...url.searchParams].filter(([k]) => k === "from" || k === "limit"))}` : "", branch).catch((e: unknown) => { console.error("codeSplitter: file call failed", String((e as Error)?.message ?? e)); return null; });
+      if (!res) return json({ error: UPDATING, updating: true, retryAfter: UPDATE_RETRY_S }, 503, { "retry-after": String(UPDATE_RETRY_S) });
       if (p[5] === "private" && req.method === "POST" && res.ok) {
         // From the first private line on, the crew has a remote of its own to clone and deploy from.
         if ((JSON.parse(sent!) as { private?: boolean }).private) {
