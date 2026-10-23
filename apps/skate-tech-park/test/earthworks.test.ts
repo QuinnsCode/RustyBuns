@@ -123,6 +123,11 @@ test("a snake run stays one surface on rough ground that strays a metre from its
   expect(worst).toBeLessThan(0.5);
 });
 
+test("snake runs are common on hillsides: nearly as many as banks, not a rarity", () => {
+  const n = (kind: string) => parks.reduce((a, p) => a + p.earthworks.filter((e) => e.kind === kind).length, 0);
+  expect(n("hillSnake")).toBeGreaterThan(n("hillBank") * 0.75);
+});
+
 test("hillside cuts are capped per park and their kinds are evenly mixed", () => {
   for (const l of parks) {
     const hills = l.earthworks.filter((e) => e.tilt), kinds = ["hillQuarter", "hillHalf", "hillBank", "hillSnake", "hillShelf"].map((k) => hills.filter((e) => e.kind === k).length);

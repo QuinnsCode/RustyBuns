@@ -310,7 +310,7 @@ const HILLSIDE: { kind: WorkKind; cut: Cut }[] = ([
   ["hillBank", (at, r, y, t) => hillBank(at, y, t, { w: between(r, 14, 22), h: between(r, 1.8, 3) })],
   ["hillBank", (at, r, y, t) => hillBank(at, y, t, { w: between(r, 18, 26), h: between(r, 1.8, 2.8), hip: between(r, 0.3, 0.6) })],
   ["hillSnake", (at, r, y, t) => hillSnake(at, y, t, { len: between(r, 50, 72), h: between(r, 2, 3), amp: between(r, 3, 5) })],
-  ["hillSnake", (at, r, y, t) => hillSnake(at, y, t, { len: between(r, 36, 48), h: between(r, 1.8, 2.6), amp: between(r, 2.5, 3.5), period: 24 })],
+  ["hillSnake", (at, r, y, t) => hillSnake(at, y, t, { len: between(r, 28, 38), h: between(r, 1.6, 2.2), amp: between(r, 2, 3), period: 18, floor: 1.4 })],
   ["hillShelf", (at, r, y, t) => hillShelf(at, y, t, { w: between(r, 14, 20), h: between(r, 2.2, 3.4) })],
 ] as [WorkKind, Cut][]).map(([kind, cut]) => ({ kind, cut }));
 
@@ -391,12 +391,16 @@ export function layOut(world: ScatterWorld, o: Works = {}): Earthwork[] {
 export function hillSpawn(works: Earthwork[], spawns: { x: number; z: number }[], avoid: { x: number; z: number; r: number }[] = [], near = WORKS.near, height?: (x: number, z: number) => number): { name: string; x: number; z: number; yaw: number } | null {
   const hills = works.filter((e) => e.tilt);
   if (!hills.length || spawns.some((s) => hills.some((e) => Math.hypot(e.x - s.x, e.z - s.z) < near))) return null;
-  const e = hills.sort((p, q) => Math.min(...spawns.map((s) => Math.hypot(p.x - s.x, p.z - s.z))) - Math.min(...spawns.map((s) => Math.hypot(q.x - s.x, q.z - s.z))))[0]!;
-  const up = { x: Math.sin(e.yaw), z: Math.cos(e.yaw) };
-  // far enough back to stand clear of every work's footprint and skirt, so the run still starts on open ground
-  for (let back = Math.min(e.w, e.d) / 2 + e.skirt + 4; back < 70; back += 4) {
-    const x = e.x - up.x * back, z = e.z - up.z * back;
-    if (works.every((q) => Math.hypot(q.x - x, q.z - z) > Math.min(q.w, q.d) / 2 + q.skirt) && avoid.every((a) => Math.hypot(a.x - x, a.z - z) > a.r) && (!height || [[1.5, 0], [-1.5, 0], [0, 1.5], [0, -1.5]].every(([dx, dz]) => Math.abs(height(x + dx!, z + dz!) - height(x, z)) < 0.6))) return { name: "hillside cut", x, z, yaw: e.yaw };
+  const gap = (e: Earthwork) => Math.min(...spawns.map((s) => Math.hypot(e.x - s.x, e.z - s.z)));
+  for (const e of hills.sort((p, q) => gap(p) - gap(q))) {
+    const up = { x: Math.sin(e.yaw), z: Math.cos(e.yaw) };
+    // far enough back to stand clear of every work's footprint and skirt, so the run still starts on open ground; a step aside if the line is taken
+    for (let back = Math.min(e.w, e.d) / 2 + e.skirt + 4; back < near; back += 4) {
+      for (const side of [0, 6, -6, 12, -12]) {
+        const x = e.x - up.x * back + up.z * side, z = e.z - up.z * back - up.x * side;
+        if (works.every((q) => circles(q).every((k) => Math.hypot(k.x - x, k.z - z) > k.r)) && avoid.every((a) => Math.hypot(a.x - x, a.z - z) > a.r) && (!height || [[1.5, 0], [-1.5, 0], [0, 1.5], [0, -1.5]].every(([dx, dz]) => Math.abs(height(x + dx!, z + dz!) - height(x, z)) < 0.6))) return { name: "hillside cut", x, z, yaw: e.yaw };
+        }
+    }
   }
   return null;
 }
