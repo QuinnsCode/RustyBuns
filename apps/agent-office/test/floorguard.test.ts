@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -18,6 +18,10 @@ beforeAll(async () => {
   writeFileSync(file, floorGuardHooks(readFileSync(file, "utf8")));
   writeFileSync(path.join(srv, "rb-floorguard.js"), `export * from ${JSON.stringify(path.join(import.meta.dir, "../live/floorguard.ts"))};\n`);
   ({ officeWorkers } = await import(file));
+});
+// unset keeps home to people; most tests here send workers home as an agent, so they opt out
+beforeEach(() => {
+  process.env.AGENT_OFFICE_PEOPLE_ONLY = "";
 });
 afterEach(() => {
   delete process.env.AGENT_OFFICE_PEOPLE_ONLY;
@@ -143,6 +147,16 @@ test("AGENT_OFFICE_PEOPLE_ONLY keeps hire, tell, home and pr to people", async (
   expect(peopleOnly("/pr", "all")).toContain("keeps pr to people");
   expect(peopleOnly("/home", "")).toBe("");
   expect(peopleOnly("/nope", "all")).toBe("");
+});
+
+test("unset, AGENT_OFFICE_PEOPLE_ONLY keeps home to people: an agent can't send a worker home", async () => {
+  delete process.env.AGENT_OFFICE_PEOPLE_ONLY;
+  const { ctx, seen } = office(0);
+  const res = await call(ctx, "/home", { merged: true });
+  expect(res.status).toBe(403);
+  expect(res.body.error).toContain("keeps home to people");
+  expect(seen.homes).toEqual([]);
+  expect((await call(ctx, "/tell", { worker: "Sprocket", prompt: "hi" })).status).toBe(200);
 });
 
 const answer = (id: string, allow: 0 | 1) =>
