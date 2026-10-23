@@ -683,7 +683,22 @@ export interface RustyBunsConfig {
   };
 }
 
-export function defineConfig(c: RustyBunsConfig): RustyBunsConfig { return c; }
+/** Returns the config as written, keeping its binding names and types so `EnvOf<typeof config>` can read them. */
+export function defineConfig<C extends RustyBunsConfig>(c: C): C { return c; }
+
+/**
+ * The bindings object your fetch handler gets, read off the config: a var is a string, a secret a string
+ * (or undefined when `optional`), and every other binding is `Shapes[type]`, or `unknown` when you give none.
+ * Delete a binding from the config and every use of it fails `bun run typecheck`.
+ *   import type config from "../rustybuns.config";
+ *   type Bindings = EnvOf<typeof config, { d1: D1Database; kv: KVNamespace; r2: R2Bucket }>;
+ */
+export type EnvOf<C extends { bindings: Record<string, { type: string }> }, Shapes extends { [type: string]: unknown } = {}> = {
+  -readonly [K in keyof C["bindings"]]: C["bindings"][K] extends { type: "var" } ? string
+    : C["bindings"][K] extends { type: "secret"; optional: true } ? string | undefined
+    : C["bindings"][K] extends { type: "secret" } ? string
+    : C["bindings"][K]["type"] extends keyof Shapes ? Shapes[C["bindings"][K]["type"]] : unknown;
+};
 
 /** The Worker's name on Cloudflare: `targets.edge.workerName`, else the app's `name`. */
 export function workerName(c: Pick<RustyBunsConfig, "name" | "targets">): string { return c.targets.edge?.workerName ?? c.name; }
