@@ -205,10 +205,10 @@ Each with a test that fails without the fix (the web client and socket changes a
 ### Confirmed, still open
 
 - **User page scripts run on the app origin** (fixed). The page route now answers 403 to a script, worker or worklet load whose `Sec-Fetch-Site` is `same-origin`; the sandboxed page frame is cross-site to its own files, so it still runs. A separate origin would be stronger, and is still the long-term fix.
-- **An agent batch's accept isn't bound to what was reviewed** (medium). A pending batch records only its branch name, and any crew member can write to `agent-run-N` before the owner accepts; Accept merges the whole branch with `build_ok` forced true, workflows and policy files included. Fix: hash the branch's file set when the batch finishes, refuse branch writes to `agent-run-*` from anyone but the run's agent and the owner, show the whole branch at Accept.
-- **Marking a line private doesn't scrub committed text from search and public HEAD** (low). The toggle never re-indexes or republishes; the text stays until the file's next commit. History keeps older text regardless.
-- **A check run follows symlinks as the owner** (low). With `CODESPLITTER_CHECKS_USER` set, the owner-side runner reads `junit.xml` and writes the branch overlay through paths the sandbox user controls; a symlink makes it read an owner-only file into a run field repo readers can fetch. Fix: read through the sandbox user, or refuse symlinks.
-- **The dependency doctor's merge tests run unscrubbed** (low). `inClone` in `deps.ts` gives a branch's tests the whole environment and the real HOME, unlike checks and cuts, which use `check-env.ts`. Needs `test_merges` on a desktop repo with a non-owner writer. Overlaps #1568 and #1570.
+- **An agent batch's accept isn't bound to what was reviewed** (medium, mostly fixed). Only the run's agent and the owner can now write `agent-run-*` (ops, sockets, file delete), so no other crew member can change the branch between review and Accept. Still open: a hash of the branch's file set taken when the batch finishes and checked at Accept, and showing the whole branch there; the owner's own later edits and `hunks/reject` still move it.
+- **Marking a line private doesn't scrub committed text from search and public HEAD** (search fixed, git left). Marking now re-indexes the file with the line blank. Public git HEAD keeps the text until the file's next commit, and history keeps older text regardless.
+- **A check run follows symlinks as the owner** (fixed). `localMachine` read and write refuse a path whose folder resolves outside the clone or whose file is a symlink.
+- **The dependency doctor's merge tests run unscrubbed** (fixed). `inClone` uses `checkEnv` (an empty HOME and TMPDIR) for installs, tests and the fixer. Overlaps #1568 and #1570.
 
 ### Needs validation
 

@@ -930,6 +930,17 @@ export async function dispatchHint(env: Env, owner: string, repo: string, task: 
   return { files: guess, busy: busyOn(guess, changed) };
 }
 
+/**
+ * An agent run's batch waits on `agent-run-<id>` for its owner to accept: only that run's agent and the owner write there.
+ * Any other crew member's edit would land on main with the batch, past the owner's read of it.
+ */
+export async function runBranchLocked(env: Env, owner: string, repo: string, branch: string | undefined, user: string | null): Promise<Response | null> {
+  const id = /^agent-run-(\d+)$/.exec(branch ?? "")?.[1];
+  if (!id || user === owner) return null;
+  const row = await env.DB.prepare("SELECT agent FROM agent_runs WHERE owner = ? AND repo = ? AND id = ?").bind(owner, repo, Number(id)).first() as { agent: string } | null;
+  return row && row.agent === user ? null : json({ error: "an agent run's batch is written by its agent and the repo's owner only" }, 403);
+}
+
 export async function branchRoutes(req: Request, env: Env, p: string[], owner: string, repo: string, user: string | null, a: Access): Promise<Response | null> {
   // POST /api/repos/:o/:r/merges {branches?, build_ok?}  merge every open branch (or those named) that
   // merges clean, oldest first. Each merges against main as the last one left it, so two that change
@@ -1007,6 +1018,8 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   // DELETE /api/repos/:o/:r/branches/:b/files?path=  delete a file on the branch; merging deletes it from main.
   if (p[6] === "files" && req.method === "DELETE") {
     if (!a.write) return json({ error: "no write access" }, 403);
+    const locked = await runBranchLocked(env, owner, repo, name, user);
+    if (locked) return locked;
     if (branch.status !== "open") return json({ error: `branch is ${branch.status}` }, 409);
     const path = new URL(req.url).searchParams.get("path") ?? "";
     if (!path) return json({ error: "path?" }, 400);

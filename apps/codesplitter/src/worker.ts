@@ -85,6 +85,7 @@ import {
   createOn,
   materializeOn,
   openBranch,
+  runBranchLocked,
   pathPolicy,
 } from "./branches.ts";
 import {
@@ -769,6 +770,8 @@ async function route(req: Request, env: Env): Promise<Response> {
       if ("error" in m) return json({ error: m.error }, m.status);
       const writes = p[5] === "ops" || p[5] === "commit" || ((p[5] === "private" || p[5] === "claims" || p[5] === "release") && req.method === "POST");
       if (writes && !a.write) return json({ error: "no write access" }, 403);
+      const runLocked = (writes || p[5] === "ws") && a.write ? await runBranchLocked(env, owner, repo, branch, user) : null;
+      if (writes && runLocked) return runLocked;
       if (writes && !branch) { const closed = await mainClosed(env, owner, repo, user); if (closed) return closed; }
       if ((writes || p[5] === "ws") && !branch && a.write) { const closed = policyClosed(owner, path, user); if (closed) return closed; }
       // On the desktop, a push to the repo's git from outside reaches main's files when they're opened or
@@ -802,7 +805,7 @@ async function route(req: Request, env: Env): Promise<Response> {
         h.set("x-codesplitter-user", user ?? "anon");
         // On a protected main (#1426) the crew's socket reads: edits go on a branch, as the HTTP routes say.
         const frozen = a.write && !branch && await mainClosed(env, owner, repo, user);
-        h.set("x-codesplitter-write", a.write && !frozen ? "1" : "0");
+        h.set("x-codesplitter-write", a.write && !frozen && !runLocked ? "1" : "0");
         h.set("x-codesplitter-crew", a.write ? "1" : "0");
         live ? h.set("x-codesplitter-live", live) : h.delete("x-codesplitter-live");
         branch ? h.delete("x-codesplitter-file") : h.set("x-codesplitter-file", encodeURIComponent(JSON.stringify([owner, repo, path])));
