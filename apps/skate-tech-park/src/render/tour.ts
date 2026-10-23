@@ -33,7 +33,8 @@ export function tourStops(level: Level | ParkLevel): Stop[] {
   const b = level.bounds, step = 12;
   let best = { x: 0, z: 0, h: -Infinity };
   for (let x = b.minX; x <= b.maxX; x += step) for (let z = b.minZ; z <= b.maxZ; z += step) { const h = level.height(x, z); if (h > best.h) best = { x, z, h }; }
-  stops.push({ x: best.x, z: best.z, peak: true });
+  const rest = stops.splice(1).sort((a, c) => Math.hypot(c.x - best.x, c.z - best.z) - Math.hypot(a.x - best.x, a.z - best.z)); // closing in on the top, so the last flight never crosses the whole park
+  stops.push(...rest, { x: best.x, z: best.z, peak: true });
   return stops;
 }
 
