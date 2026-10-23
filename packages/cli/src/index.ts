@@ -281,6 +281,14 @@ async function init() {
     cfg.worker!.builtMain = `${inf.reactRouterBuild}/server/index.js`;
     cfg.worker!.assets = `${inf.reactRouterBuild}/client`;
   }
+  // TanStack Start's Cloudflare setup: the plugin builds the SSR environment as the Worker, into
+  // dist/server/ (builtEntry finds it by the wrangler.json beside it), and Start has no index.html.
+  const startWorker = inf.framework === "tanstack-start";
+  if (startWorker) {
+    cfg.worker!.builtMain = "dist/server/index.js";
+    cfg.worker!.assets = "dist/client";
+  }
+  const workerDesktop = astroWorker || rrWorker || svelteWorker || pagesWorker || startWorker;
   if (svelteWorker) {
     cfg.worker!.builtMain = SVELTE_WORKER;
     cfg.worker!.assets = SVELTE_ASSETS;
@@ -323,7 +331,7 @@ async function init() {
   // app's build runs before vite (prisma generate, codegen) runs first, as in initSpa (#403).
   const host = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
   // Astro and React Router: the desktop runs the Worker build under Bun, same bundle as the edge.
-  if (astroWorker || rrWorker || svelteWorker || pagesWorker) cfg.targets.desktop = { mode: "worker", targets: [host as any] };
+  if (workerDesktop) cfg.targets.desktop = { mode: "worker", targets: [host as any] };
   else {
     const d = cfg.targets.desktop!;
     const { preViteSteps } = await import("./glue/build-script.ts");
@@ -360,8 +368,8 @@ async function init() {
   if (undimensioned.length) { console.log(`\nnext: set those dimensions, then ${inf.execCmd("rustybuns plan")}`); return; }
   await generate({ adopt: false });
   // The boundary report is for `add desktop`'s spa split; a worker-mode desktop runs the whole Worker.
-  if (!astroWorker && !rrWorker && !pagesWorker) { const { modules } = await boundary(); console.log(report(modules)); }
-  console.log(astroWorker || rrWorker || pagesWorker
+  if (!workerDesktop) { const { modules } = await boundary(); console.log(report(modules)); }
+  console.log(workerDesktop
     ? `\nnext: ${inf.execCmd("rustybuns build desktop --dev")} && ${inf.execCmd("rustybuns run desktop")}, or ${inf.execCmd("rustybuns plan")}`
     : `\nnext: rustybuns add desktop [--entry ./src/app/App.tsx#App]`);
 }

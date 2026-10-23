@@ -636,6 +636,24 @@ test("init: React Router on @cloudflare/vite-plugin runs its Worker build, on th
   expect(existsSync(join(node.dir, "rustybuns.config.ts"))).toBe(false);
 });
 
+test("init: TanStack Start on @cloudflare/vite-plugin runs its Worker build on the desktop, with its bindings", () => {
+  const p = project({
+    "package.json": JSON.stringify({ name: "start", scripts: { build: "vite build" }, dependencies: { "@tanstack/react-start": "^1", react: "^19" }, devDependencies: { vite: "^8", "@cloudflare/vite-plugin": "^1" } }),
+    "vite.config.ts": 'import { cloudflare } from "@cloudflare/vite-plugin";\nimport { tanstackStart } from "@tanstack/react-start/plugin/vite";\nexport default { plugins: [cloudflare({ viteEnvironment: { name: "ssr" } }), tanstackStart()] };\n',
+    "wrangler.jsonc": JSON.stringify({ name: "start", main: "@tanstack/react-start/server-entry", compatibility_date: "2026-09-01", kv_namespaces: [{ binding: "VISITS", id: "x" }] }),
+    "src/router.tsx": "export {};\n", "bun.lock": "",
+  });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/detected: tanstack-start/);
+  const c = p.read("rustybuns.config.ts");
+  expect(c).toContain('"builtMain": "dist/server/index.js"');
+  expect(c).toContain('"assets": "dist/client"');
+  expect(c).toContain('"mode": "worker"');
+  expect(c).toContain('"VISITS"');
+  expect(c).not.toContain("clientBuild");
+});
+
 const CRA = {
   "package.json": JSON.stringify({ name: "cra", dependencies: { react: "^18", "react-scripts": "5", "@types/node": "^16.11.6" },
     scripts: { start: "react-scripts start", build: "react-scripts build", test: "react-scripts test" } }, null, 2),
