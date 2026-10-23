@@ -38,6 +38,7 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .level { flex: none; }
 .level span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .more { margin-top: 14px; }
+.more > summary { margin-bottom: 12px; }
 .more > summary { cursor: pointer; font: 12px var(--mono); color: var(--muted); }
 .level { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; text-align: left; padding: 12px 14px; }
 .level b { font-size: 16px; }
@@ -149,8 +150,7 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
   .repo-form label { grid-column: 1 / -1; }
   h1 { font-size: 26px; margin: 2px 0 4px; }
   .lede { display: none; }
-  .look, .repo-form { margin-bottom: 8px; }
-  .levels { max-height: 28dvh; }
+  .levels { max-height: 45dvh; }
   .level { padding: 8px 10px; }
   .health, .shield { width: 120px; }
 }
