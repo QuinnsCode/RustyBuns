@@ -188,3 +188,37 @@ Smaller caps not taken this round, each a line or two when wanted: board rows (8
 ### What the guard still can't do
 
 It runs from the worktree, so an agent that edits `.claude/hooks/guard.ts` or writes `~/.claude/settings.json` turns it off for its own session; CODEOWNERS makes the merge of such a change yours. It matches `Bash|Read|Grep|Write|Edit`, not Glob or WebFetch. It checks names, not symlink targets. It can't follow `push.default` tricks to `main`; the ruleset can. It is a speed bump, as its header says, and #667 (workers as their own user) is still the fix.
+
+## Round 5, October 23: the security-audit skill, run on codeSplitter
+
+The first run of the vendored Cloudflare security-audit skill (`.claude/skills/security-audit`, added in #2160). Profile `quick`, scoped to `apps/codesplitter`, source only (no OS-enforced sandbox on the host, so no target code ran), commit 26e223b9. Nine hunters over nine units, one coverage critic, then a fresh verifier per candidate: 15 candidates, 8 confirmed, 2 need validation, 5 rejected. 29 of a 30-agent budget. This is partial coverage: the critic named ten more units that were not reviewed (listed below). The run's report, findings and coverage ledger are outside the repo, in the owner's `~/security-audit-skill/RustyBuns/run-1/`.
+
+### Fixed in this round
+
+Each with a test that fails without the fix (the web client and socket changes are covered by typecheck only):
+
+- **A write token cleared a deploy** (medium). The commit route marked a commit made through an API, OAuth or MCP token as the owner's own, which clears it for a hosted deploy; `POST /deploy` without `approve` then ran the repo's install and config code with the provider keys in its environment. #1566 had closed `approve`, accept and `build_ok` but not this door. A token's commit no longer clears a deploy (`deploy-hosted-review.test.ts`).
+- **Crew could land `.gitattributes` and `codesplitter.ci` through a merge** (low). #1567's owner-only rule covered live edits; a branch merge, or a revert or pick onto main, went round it. Both now refuse a non-owner (`journey.test.ts`).
+- **A health-page link could inject markup** (high, with the item under Still open). `#/health/<owner>/<repo>` put the two segments into an `href` unescaped. They are escaped now. That alone ends the injection; the page-script half below is defence in depth.
+- **A protected main still took live edits over the file socket** (low). The WebSocket upgrade skipped the protect-main check the HTTP routes make, so a crew member's socket could edit main's live document. On a protected main a non-owner's socket now reads only.
+
+### Confirmed, still open
+
+- **User page scripts run on the app origin** (the other half of the high finding). Any account's public `page` repo `.js` is served from `/api/users/:name/page/*` as `text/javascript`, which `script-src 'self'` trusts. Any future HTML injection becomes script execution as the viewer. Fix: serve user pages from a separate origin.
+- **An agent batch's accept isn't bound to what was reviewed** (medium). A pending batch records only its branch name, and any crew member can write to `agent-run-N` before the owner accepts; Accept merges the whole branch with `build_ok` forced true, workflows and policy files included. Fix: hash the branch's file set when the batch finishes, refuse branch writes to `agent-run-*` from anyone but the run's agent and the owner, show the whole branch at Accept.
+- **Marking a line private doesn't scrub committed text from search and public HEAD** (low). The toggle never re-indexes or republishes; the text stays until the file's next commit. History keeps older text regardless.
+- **A check run follows symlinks as the owner** (low). With `CODESPLITTER_CHECKS_USER` set, the owner-side runner reads `junit.xml` and writes the branch overlay through paths the sandbox user controls; a symlink makes it read an owner-only file into a run field repo readers can fetch. Fix: read through the sandbox user, or refuse symlinks.
+- **The dependency doctor's merge tests run unscrubbed** (low). `inClone` in `deps.ts` gives a branch's tests the whole environment and the real HOME, unlike checks and cuts, which use `check-env.ts`. Needs `test_merges` on a desktop repo with a non-owner writer. Overlaps #1568 and #1570.
+
+### Needs validation
+
+- **Open file sockets outlive revocation.** Access is checked once at the upgrade; removing a collaborator, a privacy flip or protect-main touches no open socket. How long Cloudflare keeps a hibernated socket open after removal decides it. Local and deployed plans are in the run's `NEEDS-VALIDATION.md`.
+- **Account linking may adopt an unverified password account.** Email sign-up needs no verification and account linking is on. If Better Auth links a provider-verified sign-in onto it and keeps the password, the attacker keeps a working login on an account that earns handles, the admin handle included. Needs the library installed to read.
+
+### Rejected after verification
+
+Conflict-agent runs gated on the repo owner (the owner's own policy, capped at 30 hosted runs a day); share links outliving a privacy flip (the documented capability link; the crew-removal half is #1819); the doctor's `.npmrc` registry fetch (needs an owner action, blind GET; overlaps #1818); the identity cache key (needs a planted cookie on the deployed host); root symlink following in the doctor container (no secret reachable on that path; use `readInside` anyway).
+
+### Not reviewed (the critic's list)
+
+Check claim and pass integrity (`checks.ts`: can a crew member claim an auto-queued required check and pass it unrun?); every other path into main (cuts, beams, mirror landing); beam links (`GET /api/beams/:id`, 48-bit id, no repo access check); the `via 'job'` re-dispatch against the human-only gates; GitHub token scope; the other ~250 `innerHTML` sinks in `client.html`; game-room sockets; repo `.npmrc` hosts feeding the container egress allowlist; the route families nobody listed.
