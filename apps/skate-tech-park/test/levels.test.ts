@@ -182,3 +182,10 @@ test("a surveyed park spawns the rider facing its signature spot, near enough to
     expect(Math.hypot(sp.x, sp.z)).toBeLessThan(l.ground.R);
   }
 });
+
+test("every surveyed park has kit at its signature spot", () => {
+  for (const [id] of SURVEYED) {
+    const l = park(id), near = l.pieces.filter((p) => !p.name.startsWith("contour") && Math.hypot(p.x, p.z) < 90);
+    expect(near.length, id).toBeGreaterThan(0);
+  }
+});
