@@ -20,9 +20,9 @@ const hash = (s: string) => { let h = 2166136261; for (let i = 0; i < s.length; 
 export function embed(text: string, dims: number): number[] {
   const v = new Array<number>(dims).fill(0);
   for (const w of text.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? []) {
-    v[hash(w) % dims] += 2;
+    v[hash(w) % dims]! += 2;
     const p = `^${w}$`;
-    for (let i = 0; i + 3 <= p.length; i++) v[hash(p.slice(i, i + 3)) % dims] += 1;
+    for (let i = 0; i + 3 <= p.length; i++) v[hash(p.slice(i, i + 3)) % dims]! += 1;
   }
   const n = Math.hypot(...v) || 1;
   return v.map((x) => x / n);
@@ -34,8 +34,7 @@ export class LocalAi {
     throw new Error(`Workers AI (${this.binding}): ${what} isn't available on the desktop; it runs only on Cloudflare`);
   }
   async run(model: string, inputs?: unknown, _opts?: unknown): Promise<unknown> {
-    const dims = DIMS[model];
-    if (!dims) this.no(`run("${model}")`);
+    const dims = DIMS[model] ?? this.no(`run("${model}")`);
     const t = (inputs as { text?: string | string[] } | undefined)?.text;
     if (typeof t !== "string" && !Array.isArray(t)) throw new Error(`Workers AI (${this.binding}): run("${model}") needs { text: string | string[] }`);
     const data = (Array.isArray(t) ? t : [t]).map((s) => embed(String(s), dims));
