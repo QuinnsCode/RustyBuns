@@ -302,6 +302,11 @@ async function init() {
   if (secrets.length) console.log(`secrets:  ${secrets.join(" ")}  (names from .dev.vars)`);
   // and the ones its code reads that nothing declares: they live in Cloudflare, not in the clone
   const read = codeSecrets(pagesWorker ? [inf.srcDir ?? "src", "functions"] : inf.srcDir ?? "src", new Set([...Object.keys(cfg.bindings), ...wranglerNames(w)]), inf.framework);
+  for (const [k, type] of Object.entries(read.inferred)) {
+    if (cfg.bindings[k] || wranglerNames(w).includes(k)) continue;
+    cfg.bindings[k] = type === "ai" ? { type: "ai" } : { type: "r2", bucketName: k.toLowerCase().replace(/_/g, "-") };
+    console.log(`binding:  ${k} (${type}, used as env.${k}.${type === "ai" ? "run(" : "put("} in code but not declared; edit rustybuns.config.ts if the bucket differs)`);
+  }
   for (const k of read.required) cfg.bindings[k] = { type: "secret" };
   for (const k of read.optional) cfg.bindings[k] = { type: "secret", optional: true };
   if (read.required.length) console.log(`secrets:  ${read.required.join(" ")}  (rwsdk's session store needs it; put it in .dev.vars)`);
