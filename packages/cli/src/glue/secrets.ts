@@ -14,21 +14,23 @@ const SKIP_FILE = /\.(?:test|spec|workerd\.test)\.[cm]?[jt]sx?$|\.d\.ts$/;
 // read through env but set by a build or the platform, never a secret
 const NOT_SECRET = /^(?:VITE_|NODE_ENV$|CI$|PORT$|HOST(?:NAME)?$|HOME$|PATH$|PWD$|TZ$|MODE$|DEV$|PROD$|SSR$|BASE_URL$)/;
 
-export function codeSecrets(srcDir: string, known: Set<string>, framework?: string): { required: string[]; optional: string[] } {
+/** Calls `fn` with the text of each app source file under `dir`, tests and fixtures left out. */
+export function eachSource(dir: string, fn: (src: string) => void): void {
+  let entries;
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+  for (const e of entries) {
+    if (e.isDirectory()) { if (!SKIP_DIR.test(e.name)) eachSource(join(dir, e.name), fn); continue; }
+    if (SOURCE.test(e.name) && !SKIP_FILE.test(e.name)) fn(readFileSync(join(dir, e.name), "utf8"));
+  }
+}
+
+export function codeSecrets(srcDir: string | string[], known: Set<string>, framework?: string): { required: string[]; optional: string[] } {
   const seen = new Set<string>();
   let rwsdkAuth = false;
-  const walk = (dir: string) => {
-    let entries;
-    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      if (e.isDirectory()) { if (!SKIP_DIR.test(e.name)) walk(join(dir, e.name)); continue; }
-      if (!SOURCE.test(e.name) || SKIP_FILE.test(e.name)) continue;
-      const src = readFileSync(join(dir, e.name), "utf8");
-      for (const m of src.matchAll(/\benv(?:\.([A-Z][A-Z0-9_]*)\b|\[\s*["']([A-Z][A-Z0-9_]*)["']\s*\])/g)) seen.add((m[1] ?? m[2])!);
-      if (framework === "rwsdk" && /from\s+["']rwsdk\/auth["']/.test(src)) rwsdkAuth = true;
-    }
-  };
-  walk(srcDir);
+  for (const dir of [srcDir].flat()) eachSource(dir, (src) => {
+    for (const m of src.matchAll(/\benv(?:\.([A-Z][A-Z0-9_]*)\b|\[\s*["']([A-Z][A-Z0-9_]*)["']\s*\])/g)) seen.add((m[1] ?? m[2])!);
+    if (framework === "rwsdk" && /from\s+["']rwsdk\/auth["']/.test(src)) rwsdkAuth = true;
+  });
   const required = rwsdkAuth && !known.has("AUTH_SECRET_KEY") ? ["AUTH_SECRET_KEY"] : [];
   const optional = [...seen].filter((n) => n.length > 1 && !known.has(n) && !required.includes(n) && !NOT_SECRET.test(n)).sort();
   return { required, optional };

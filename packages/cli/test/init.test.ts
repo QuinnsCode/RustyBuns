@@ -169,6 +169,62 @@ test("init: a Vectorize index carries over, and init asks for the dimensions wra
   expect(p.read("rustybuns.config.ts")).toContain('"indexName": "docs"');
   // Until they're set, the config refuses to load rather than guess (a wrong guess replaces the index).
   expect(p.run("adopt").out).toMatch(/bindings\.V\.dimensions: missing/);
+
+  // Code that names its embedding model settles them: bge-base is 768.
+  const named = project({
+    "package.json": JSON.stringify({ name: "r", dependencies: { vite: "5" } }),
+    "wrangler.jsonc": `{ "name": "r", "main": "src/worker.ts", "vectorize": [{ "binding": "V", "index_name": "docs" }] }`,
+    "src/worker.ts": `export const MODEL = "@cf/baai/bge-base-en-v1.5"; export default {}`,
+  });
+  const n = named.run("init");
+  expect(n.out).toMatch(/V: 768 dimensions, from @cf\/baai\/bge-base-en-v1\.5/);
+  expect(n.out).not.toMatch(/todo: +bindings\.V/);
+  expect(named.read("rustybuns.config.ts")).toContain('"dimensions": 768');
+});
+
+test("init: a Pages project's functions/ runs as a Worker, ahead of its static files, with Pages' context", async () => {
+  const p = project({
+    "package.json": JSON.stringify({ name: "pg", scripts: { build: "vite build" }, dependencies: { vite: "5" } }),
+    "wrangler.toml": `name = "pg"\npages_build_output_dir = "dist"\n[[d1_databases]]\nbinding = "DB"\ndatabase_name = "pg"\ndatabase_id = "x"\n`,
+    ".dev.vars": "API_TOKEN=x\nVITE_API_ORIGIN=http://localhost\n",
+    "public/_routes.json": JSON.stringify({ version: 1, include: ["/*"], exclude: ["/assets/*"] }),
+    "src/main.ts": "",
+    "functions/_middleware.ts": `export const onRequest = async (c) => { c.data.seen = ["root"]; const r = await c.next(); r.headers.set("x-mw", "root"); return r; };`,
+    "functions/api/_middleware.ts": `export const onRequest = [async (c) => { c.data.seen.push("api"); return c.next(); }];`,
+    "functions/api/items/index.ts": `export const onRequestGet = (c) => Response.json({ list: true, seen: c.data.seen });`,
+    "functions/api/items/[id].ts": `export async function onRequestGet(c) { return Response.json({ id: c.params.id, db: typeof c.env.DB }); }\nexport const onRequestDelete = () => new Response(null, { status: 204 });`,
+    "functions/api/items/new.ts": `export const onRequest = () => Response.json({ new: true });`,
+    "functions/api/tile/[[path]].ts": `export const onRequestGet = (c) => Response.json({ path: c.params.path });`,
+    "functions/api/_lib/util.ts": `export const onRequest = () => new Response("helper, not a route");`,
+    "functions/api/items.test.ts": `export const onRequest = () => new Response("a test, not a route");`,
+  });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/pages: +functions\/ -> \.rustybuns\/pages\/index\.ts \(4 routes, 2 middleware\)/);
+  const cfg = p.read("rustybuns.config.ts");
+  expect(cfg).toContain('"main": ".rustybuns/pages/index.ts"');
+  expect(cfg).toContain('"assets": "dist"');
+  expect(cfg).toMatch(/"build": "[^"]*rustybuns pages-functions && vite build"/);
+  expect(cfg).toContain('"mode": "worker"');
+  expect(cfg).toContain('"API_TOKEN"');
+  expect(cfg).not.toContain("VITE_API_ORIGIN");   // Vite's, not the Worker's
+
+  const worker = (await import(join(p.dir, ".rustybuns/pages/index.ts"))).default;
+  const env = { DB: {}, ASSETS: { fetch: (req: Request) => new Response(`asset ${new URL(req.url).pathname}`) } };
+  const ctx = { waitUntil() {} };
+  const go = (path: string, method = "GET") => worker.fetch(new Request(`http://x${path}`, { method }), env, ctx) as Promise<Response>;
+  let res = await go("/api/items");
+  expect(await res.json()).toEqual({ list: true, seen: ["root", "api"] });   // outermost middleware first, data shared
+  expect(res.headers.get("x-mw")).toBe("root");
+  expect(await (await go("/api/items/42")).json()).toEqual({ id: "42", db: "object" });
+  expect(await (await go("/api/items/new")).json()).toEqual({ new: true });   // a static name beats [id]
+  expect((await go("/api/items/42", "DELETE")).status).toBe(204);
+  expect(await (await go("/api/items/42", "POST")).text()).toBe("asset /api/items/42");   // no handler for the method
+  expect(await (await go("/api/tile/a/b/c.jpg")).json()).toEqual({ path: ["a", "b", "c.jpg"] });
+  expect(await (await go("/api/_lib/util")).text()).toBe("asset /api/_lib/util");
+  expect(await (await go("/api/items.test")).text()).toBe("asset /api/items.test");
+  res = await go("/assets/app.js");   // _routes.json: straight to the files, no middleware
+  expect([await res.text(), res.headers.get("x-mw")]).toEqual(["asset /assets/app.js", null]);
 });
 
 test("init: wrangler.toml is read, and a missing worker entry is flagged", () => {

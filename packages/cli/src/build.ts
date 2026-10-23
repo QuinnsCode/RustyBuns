@@ -11,6 +11,7 @@ import { existsSync, statSync, readFileSync, readdirSync, rmSync, writeFileSync 
 import { join, dirname, normalize, relative, resolve } from "node:path";
 import { hyperdriveUrlEnv, desktopServers, type Binding, type DesktopOs, type RustyBunsConfig } from "./config.ts";
 import { basename } from "node:path";
+import { stageAssets } from "./stage-assets.ts";
 import { Profiler } from "./profile.ts";
 import { addonLookups, addonProblems, addonsManifest, copyTrees, serverAddons, type TargetLookup } from "./addons.ts";
 import { BUN_CHECK_MIN, compactDiagnostics, pickChecker, runCheck, type CheckerName } from "./typecheck.ts";
@@ -953,9 +954,17 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   // the first compile, so a target an addon won't load on stops the build up front.
   const serverDirs = new Map<DesktopOs, string>();
   if (d.server) for (const t of targets) serverDirs.set(t, await bundleServers(join(".rustybuns", "server", t), [t]));
+  // The client build as the binary carries it: no source maps, nothing .assetsignore names, no earlier binaries.
+  const embedAssets = assets && existsSync(assets) ? await step("stage assets", async () => {
+    const dest = join(".rustybuns", "embed", basename(assets));
+    const s = stageAssets(assets, dest, { keepMaps: d.sourceMaps, binaryPrefix: `${c.name}-` });
+    const left = [s.maps && `${s.maps} source maps`, s.ignored && `${s.ignored} in .assetsignore`, s.binaries && `${s.binaries} earlier binaries`].filter(Boolean);
+    if (left.length) console.log(`[assets] ${s.files} files; left out ${left.join(", ")}${s.maps ? " (desktop.sourceMaps: true keeps maps)" : ""}`);
+    return dest;
+  }) : assets;
   for (const t of targets) {
     const out = opts.outfile ?? `dist/${c.name}-${t}${t.startsWith("windows") ? ".exe" : ""}`;
-    const embed = [assets, ...migrationDirs, ...mountDirs, serverDirs.get(t)].filter(Boolean) as string[];
+    const embed = [embedAssets, ...migrationDirs, ...mountDirs, serverDirs.get(t)].filter(Boolean) as string[];
     const r = await step(`compile ${t}`, () => Bun.build({
       entrypoints: [entry, ...workerFiles],
       outdir: dirname(out),          // Bun.build places compile.outfile under outdir
