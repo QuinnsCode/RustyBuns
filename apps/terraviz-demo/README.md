@@ -46,3 +46,7 @@ The first run takes a few minutes. The [trial harness](../../scripts/trial-githu
 - **The same config deploys to the edge.** The `rustybuns.config.ts` that `init` wrote also describes TerraViz's Cloudflare resources, and `rustybuns plan` prices them before anything is created.
 
 Tried on upstream commit `8cdbb2c` (2026-10-22). TerraViz moves fast, so a newer commit may need a fix on our side. If it does, that's a Rusty Buns gap, not a TerraViz bug.
+
+## Kept working
+
+`.github/workflows/terraviz-weekly.yml` runs a pinned TerraViz commit (`TERRAVIZ_SHA`) through the trial every Monday and opens a `ci-terraviz` issue if it stops serving. The pin keeps TerraViz's own changes from failing it; bump the SHA on purpose. Locally: `bun scripts/trial-github.ts --local --check zyra-project/terraviz@<sha>`.
