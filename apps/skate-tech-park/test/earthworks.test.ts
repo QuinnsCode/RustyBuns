@@ -6,7 +6,7 @@ import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 import { allParks } from "./parks.ts";
-import { hillBank, hillHalf, hillPlane, hillQuarter, hillShelf, hillSnake, sculpt, type Earthwork } from "../src/levels/earthworks.ts";
+import { hillBank, hillHalf, hillPlane, hillQuarter, hillShelf, hillSnake, sculpt, WORKS, type Earthwork } from "../src/levels/earthworks.ts";
 
 const parks = await allParks();
 
@@ -126,4 +126,12 @@ test("a snake run stays one surface on rough ground that strays a metre from its
 test("snake runs are common on hillsides: nearly as many as banks, not a rarity", () => {
   const n = (kind: string) => parks.reduce((a, p) => a + p.earthworks.filter((e) => e.kind === kind).length, 0);
   expect(n("hillSnake")).toBeGreaterThan(n("hillBank") * 0.75);
+});
+
+test("hillside cuts are capped per park and their kinds are evenly mixed", () => {
+  for (const l of parks) {
+    const hills = l.earthworks.filter((e) => e.tilt), kinds = ["hillQuarter", "hillHalf", "hillBank", "hillSnake", "hillShelf"].map((k) => hills.filter((e) => e.kind === k).length);
+    expect([l.id, hills.length <= WORKS.hillMax]).toEqual([l.id, true]);
+    if (hills.length >= 15) expect([l.id, Math.max(...kinds) - Math.min(...kinds) <= 3]).toEqual([l.id, true]);
+  }
 });

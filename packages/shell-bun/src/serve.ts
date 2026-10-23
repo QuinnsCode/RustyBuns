@@ -27,6 +27,7 @@ import { timingSafeEqual } from "node:crypto";
 function kind(p: string): "file" | "dir" | null {
   try { const st = statSync(p); return st.isDirectory() ? "dir" : st.isFile() ? "file" : null; } catch { return null; }
 }
+import { assetIgnore } from "./assetsignore.ts";
 import { RELOAD_PATH, RELOAD_TAG } from "./reload.ts";
 import { installCloudflareGlobals, type LocalWebSocket } from "./bindings/durable-object.ts";
 
@@ -290,9 +291,11 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
 
   let headerRules: HeaderRule[] = [];
   let redirectRules: RedirectRule[] = [];
+  let ignored = (_rel: string) => false;
   if (opts.assets) {
     try { headerRules = parseHeaders(readFileSync(join(opts.assets, "_headers"), "utf8")); } catch {}
     try { redirectRules = parseRedirects(readFileSync(join(opts.assets, "_redirects"), "utf8")); } catch {}
+    try { ignored = assetIgnore(readFileSync(join(opts.assets, ".assetsignore"), "utf8")); } catch {}
   }
   const workerFirst = runWorkerFirstMatcher(opts.runWorkerFirst ?? []);
 
@@ -315,7 +318,8 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
       if (k === "dir") { p = join(p, "index.html"); k = kind(p); }
       // Like Cloudflare and GitHub Pages, /ops serves ops.html (a site generator's page links drop the extension).
       else if (k !== "file" && !/\.[^/]*$/.test(path) && kind(p + ".html") === "file") { p += ".html"; k = "file"; }
-      return k === "file" ? p : null;
+      // What `.assetsignore` names is left out of an upload, so it 404s here as it does on the edge.
+      return k === "file" && !ignored(p.slice(root.length).replaceAll("\\", "/").replace(/^\/+/, "")) ? p : null;
     };
     // Like Cloudflare, a 3xx redirect wins even when a file sits at the path, but a 200 rewrite
     // only fills in for a missing one: `/* /index.html 200` must not swallow /assets/main.js.
