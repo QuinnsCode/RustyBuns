@@ -1368,12 +1368,25 @@ function updateOthers(dt) {
 }
 
 // ---- multiplayer --------------------------------------------------------------------
-let ws = null, me = null, playing = false, lobbyState = null, lastScore = -1, roundSeed = null, sentDiff = false;
-const send = (m) => { try { if (ws?.readyState === 1) ws.send(JSON.stringify(m)); } catch {} };
-function connect() {
-  ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${API}/ws`);
-  ws.onmessage = (ev) => {
-    const m = JSON.parse(ev.data);
+let ws = null, live = null, me = null, playing = false, lobbyState = null, lastScore = -1, roundSeed = null, sentDiff = false;
+const send = (m) => { try { if (ws) ws.send(JSON.stringify(m)); } catch {} };
+// A deploy restarts the room and drops the socket: it comes back by itself (page-socket.ts) and the room's lobby message
+// puts everything right. `ws` is the live socket while it is up, null while it isn't, and the game plays on solo till then.
+async function connect() {
+  const { liveSocket } = await import("/page-socket.js");
+  live = liveSocket({
+    open: () => new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${API}/ws`),
+    onMessage: (data) => onRoom(JSON.parse(data)),
+    onNet(n) {
+      if (n.kind === "ok") { ws = live; return; }
+      ws = null;
+      if (n.kind === "updating") $("#lobby-msg").textContent = "Updating, back in a moment";
+      else if (n.kind === "offline") { if (hashDiff && !playing) { mode = "removed"; diff = hashDiff; renderModes(); } $("#lobby-msg").textContent = "playing solo (couldn't reach the room)"; }
+      else if (n.kind === "deploy") $("#lobby-msg").textContent = `Update coming in ${n.secs} s`;
+    },
+  });
+}
+function onRoom(m) {
     if (m.t === "lobby") {
       me = m.you; lobbyState = m;
       mode = m.mode ?? "horde"; diff = m.diff ?? null;
@@ -1399,8 +1412,6 @@ function connect() {
       player.vel.set(m.dir[0], 0, m.dir[1]).multiplyScalar(14);
       hurt(6, m.by);
     } else if (m.t === "over") showOver(m.players);
-  };
-  ws.onclose = () => { ws = null; if (hashDiff && !playing) { mode = "removed"; diff = hashDiff; renderModes(); } $("#lobby-msg").textContent = "playing solo (couldn't reach the room)"; };
 }
 function renderLobby() {
   const ps = lobbyState?.players ?? [];
