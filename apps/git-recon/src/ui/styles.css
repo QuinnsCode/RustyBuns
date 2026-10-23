@@ -36,6 +36,10 @@ h1::after { content: ""; display: inline-block; width: 12px; height: 12px; borde
 .levels { display: grid; gap: 10px; }
 .level { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; text-align: left; padding: 12px 14px; }
 .level b { font-size: 16px; }
+.level small { grid-column: 1; font: 11px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.level:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
+.level:disabled:hover { background: var(--bg); }
+.level code svg { width: 14px; height: 14px; }
 .level span { grid-column: 1; color: var(--muted); }
 .place { display: grid; gap: 6px; margin-top: 14px; }
 .place label { color: var(--muted); font-size: 13px; }

@@ -174,12 +174,12 @@ describe("codemap", () => {
     }
   });
 
-  test.each(LEVELS.map((l) => [l.id, l] as const))("%s: a soldier walks the footpath to every compound's gate", (_, l) => {
+  test.each(LEVELS.map((l) => [l.id, l] as const))("%s: a soldier walks the footpath to every compound's gate, and back to HEAD", (_, l) => {
     const m = mapRepo(l.ground(), l.repo, l.seed), g = new Game(m, l.seed);
     for (const s of g.soldiers.slice(1)) s.alive = false;
     const you = g.you();
-    for (const [ci, path] of m.trails!.entries()) {
-      Object.assign(you, { x: m.spawn.x, z: m.spawn.z, vx: 0, vz: 0, chute: false });
+    for (const [ci, there] of m.trails!.entries()) for (const path of [there, [...there].reverse()]) {
+      Object.assign(you, { x: path[0]!.x, z: path[0]!.z, vx: 0, vz: 0, chute: false });
       you.y = g.ground(you.x, you.z, Infinity);
       let at = 0, t = 0;
       // Follow the path the way a player would, eyes on the ground a little ahead, until the gate or the clock runs out.
@@ -196,7 +196,7 @@ describe("codemap", () => {
         t += 1 / 60;
       }
       const end = path[path.length - 1]!;
-      expect(Math.hypot(end.x - you.x, end.z - you.z), `${l.id}: ${m.compounds[ci]!.folder} after ${Math.round(t)} s`).toBeLessThan(3);
+      expect(Math.hypot(end.x - you.x, end.z - you.z), `${l.id}: ${m.compounds[ci]!.folder}${path === there ? "" : " back"} after ${Math.round(t)} s`).toBeLessThan(3);
     }
     expect(m.compounds.length).toBeGreaterThanOrEqual(4);
     expect(m.blocks.length).toBeGreaterThan(40);
