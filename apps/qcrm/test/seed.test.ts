@@ -1,8 +1,9 @@
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import { seedOrg, seedRows } from "../src/seed-data.ts";
 import { local, person, post } from "./app-kit.ts";
 
 const N = 100_000;
+setDefaultTimeout(120_000); // seeding 100k rows into in-memory D1 outlasts the 5 s default on a loaded runner
 
 test("seedRows(100000) yields 100,000 contacts with unique emails, the same every time", () => {
   const emails = new Set<string>();
