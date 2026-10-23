@@ -360,6 +360,13 @@ export interface DesktopTarget {
     /** Guests must send `?v=` equal to this; default the build's RB_VERSION. false skips the check. */
     version?: string | false;
   };
+  /**
+   * Read-only paths any client may GET with no token or passphrase, so a peer
+   * node can read a discovery document or catalog. Exact, or a prefix ending
+   * in `*`. Everything else stays token-only. Pair it with a public URL (tunnel).
+   *   publicPaths: ["/.well-known/terraviz.json", "/api/v1/catalog/*"]
+   */
+  publicPaths?: string[];
   /** "all" or a list. TS-only builds cross-compile; Rust cdylibs need a per-OS matrix. */
   targets?: "all" | DesktopOs[];
   window?: "app" | "tab";
