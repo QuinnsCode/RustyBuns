@@ -1,11 +1,14 @@
 // The home page's camera: every park gets a tour that never jumps, never dips into the ground, and ends on its highest point.
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
+
+setDefaultTimeout(60000); // seventy levels take a while on CI
 import { LEVELS, tourPick } from "../src/levels/index.ts";
 import { STOP_SECONDS, tourShot, tourStops } from "../src/render/tour.ts";
+import { build } from "./parks.ts";
 
-test("every park's tour is one smooth loop above the ground that climbs to the top", () => {
+test("every park's tour is one smooth loop above the ground that climbs to the top", async () => {
   for (const entry of LEVELS.filter((l) => l.id !== "plaza")) {
-    const level = entry.load(), stops = tourStops(level), loop = stops.length * STOP_SECONDS;
+    const level = await build(entry), stops = tourStops(level), loop = stops.length * STOP_SECONDS;
     expect(stops.length).toBeGreaterThan(1);
     const top = stops[stops.length - 1]!;
     expect(top.peak).toBe(true);

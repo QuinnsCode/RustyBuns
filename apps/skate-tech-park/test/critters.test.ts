@@ -3,8 +3,9 @@ import { expect, test } from "bun:test";
 import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { ALERT, Critters } from "../src/render/critters.ts";
+import { level } from "./parks.ts";
 
-const park = LEVELS.find((e) => "goals" in e.load())!.load() as ParkLevel;
+const park = (await level("el-capitan")) as ParkLevel;
 const make = () => new Critters(park.ground, park.spawns[0]);
 
 test("critters sit still until a threat comes inside their alert distance, then get farther away", () => {

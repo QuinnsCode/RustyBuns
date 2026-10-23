@@ -1,6 +1,6 @@
 // Which level the page rides (`?level=` or the menu), and the level's side of the HUD: the menu, the
 // goal list, the pickups. main.ts asks for the chosen level and calls `ui.update` each frame.
-import { Check, ChevronRight, Circle, createElement, Mountain, Play } from "lucide";
+import { Check, ChevronRight, Circle, createElement, LayoutGrid, Mountain, Play, Snowflake, Sun, TreePine, Waves, Wheat } from "lucide";
 import { Fog, type Scene } from "three";
 import type { Level } from "../level.ts";
 import type { State } from "../sim.ts";
@@ -8,14 +8,15 @@ import "./levels.css";
 import { groundMesh, props } from "./ground.ts";
 import { trackRun, type Run } from "./goals.ts";
 import { carry } from "../front/menu.ts";
-import { LEVELS, needsStartScreen, pick, tourPick, touring, wantsReal } from "./index.ts";
+import { LEVELS, needsStartScreen, pick, tourPick, touring, wantsReal, type Entry } from "./index.ts";
+import { REGIONS, type Region } from "./parks.ts";
 import { terrainCanvas } from "./thumb.ts";
 import type { Goal, ParkLevel } from "./park.ts";
 import { moodFor } from "../render/weather.ts";
 
 const entry = touring(location.search) ? tourPick(location.search) : pick(location.search);
 export const levelId = entry.id;
-export const level: Level | ParkLevel = entry.load(wantsReal(location.search));
+export const level: Level | ParkLevel = await entry.load(wantsReal(location.search));
 export const park = "goals" in level;
 /** The air over this level: its own weather, or `?weather=` (rain, snow, storm, dusk...). */
 export const mood = moodFor(location.search, park ? (level as ParkLevel).weather : undefined);
@@ -58,18 +59,60 @@ function homePage() {
 
   const parks = document.createElement("section");
   parks.className = "panel parks";
-  for (const l of LEVELS) {
-    const card = document.createElement("button"), name = document.createElement("strong"), thumb = document.createElement("div");
-    card.type = "button";
-    card.title = l.blurb;
-    card.className = l.id === entry.id ? "card here" : "card";
+  const strip = document.createElement("nav"), cards = document.createElement("div");
+  strip.className = "regions";
+  cards.className = "cards";
+  // A card paints its map when it first scrolls into view, one level built per tick, so seventy cards do not freeze the page.
+  const queue: (() => void)[] = [];
+  let busy = false;
+  const drain = () => { const job = queue.shift(); if (!job) { busy = false; return; } busy = true; job(); setTimeout(drain, 0); };
+  const seen = typeof IntersectionObserver === "undefined" ? undefined : new IntersectionObserver((hits) => {
+    for (const h of hits) if (h.isIntersecting) { seen!.unobserve(h.target); (h.target as HTMLElement & { paint?: () => void }).paint?.(); }
+  }, { root: cards, rootMargin: "0px 240px 0px 240px" });
+  const card = (l: Entry) => {
+    const c = document.createElement("button") as HTMLButtonElement & { paint?: () => void }, name = document.createElement("strong"), thumb = document.createElement("div");
+    c.type = "button";
+    c.title = l.blurb;
+    c.className = l.id === entry.id ? "card here" : "card";
     thumb.className = "thumb";
     name.textContent = l.name;
-    card.append(thumb, name);
-    setTimeout(() => thumb.append(terrainCanvas(l.load())), 0); // one map per tick so the cards fill in without freezing the page
-    card.addEventListener("click", () => { location.search = to(l.id); });
-    parks.append(card);
+    c.append(thumb, name);
+    let painted = false;
+    c.paint = () => { if (painted) return; painted = true; queue.push(() => void l.load().then((built) => thumb.append(terrainCanvas(built)))); if (!busy) drain(); };
+    c.addEventListener("click", () => { location.search = to(l.id); });
+    return c;
+  };
+  const built = LEVELS.map((l) => ({ l, node: card(l) }));
+  const icons: Record<"All" | Region, Parameters<typeof createElement>[0]> = { All: LayoutGrid, "West Coast": Waves, Southwest: Sun, Rockies: Mountain, "Plains & Midwest": Wheat, "East & Florida": TreePine, "Alaska & Islands": Snowflake };
+  const show = (pick: "All" | Region) => {
+    const groups = pick === "All" ? REGIONS : [pick];
+    const nodes: Node[] = [];
+    for (const r of groups) {
+      const here = built.filter((b) => b.l.region === r);
+      if (!here.length) continue;
+      const head = document.createElement("h2");
+      head.textContent = r;
+      nodes.push(head, ...here.map((b) => b.node));
+    }
+    if (pick === "All") nodes.unshift(...built.filter((b) => !b.l.region).map((b) => b.node));
+    cards.replaceChildren(...nodes);
+    cards.scrollLeft = 0;
+    for (const b of built) if (nodes.includes(b.node)) seen ? seen.observe(b.node) : (b.node as HTMLElement & { paint?: () => void }).paint?.();
+    for (const b of strip.children) b.setAttribute("aria-pressed", String((b as HTMLElement).dataset.region === pick));
+  };
+  for (const r of ["All", ...REGIONS] as const) {
+    const b = document.createElement("button"), n = built.filter((x) => r === "All" || x.l.region === r).length;
+    b.type = "button";
+    b.className = "region";
+    b.dataset.region = r;
+    b.title = `${r} (${n})`;
+    b.setAttribute("aria-label", `${r}, ${n} parks`);
+    b.append(createElement(icons[r], { width: 18, height: 18 }));
+    b.addEventListener("click", () => show(r));
+    strip.append(b);
   }
+  parks.append(strip, cards);
+  show("All");
   const wrap = document.createElement("div");
   wrap.className = "home-ui";
   wrap.append(hero, parks);
@@ -82,7 +125,13 @@ export function mountLevelUi(scene: Scene) {
   const menu = document.createElement("select");
   menu.className = "level-menu";
   menu.title = "Level";
-  for (const l of LEVELS) menu.add(new Option(l.name, l.id, false, l.id === entry.id));
+  for (const l of LEVELS.filter((x) => !x.region)) menu.add(new Option(l.name, l.id, false, l.id === entry.id));
+  for (const r of REGIONS) {
+    const group = document.createElement("optgroup");
+    group.label = r;
+    for (const l of LEVELS.filter((x) => x.region === r)) group.append(new Option(l.name, l.id, false, l.id === entry.id));
+    if (group.children.length) menu.append(group);
+  }
   menu.addEventListener("change", () => { location.search = to(menu.value); });
   const toggle = document.createElement("button");
   toggle.type = "button";

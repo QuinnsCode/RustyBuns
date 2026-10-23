@@ -121,7 +121,7 @@ const CLEARING_KINDS: Record<Biome, (Range & { chance: number })[]> = {
     { kind: "flower", chance: 0.25, min: 0.3, max: 0.5 },
   ],
 };
-const TREES: Set<Kind> = new Set(["pine", "aspen", "oak", "joshua", "saguaro", "palm", "snag", "sequoia"]);
+export const TREES: Set<Kind> = new Set(["pine", "aspen", "oak", "joshua", "saguaro", "palm", "snag", "sequoia"]);
 const pickKind = (table: (Range & { chance: number })[], roll: number) => { let acc = 0; return table.find((e) => roll < (acc += e.chance)) ?? table[0]!; };
 
 /** Some pine and rock spots become one of the rarer things, by a hash of where they are (so the rng stream is untouched). */

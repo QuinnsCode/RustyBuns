@@ -1,11 +1,14 @@
 // The park is cut into the ground: bowls, pumps and channels across the whole map, ridden by the same sim.
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
+
+setDefaultTimeout(60000); // seventy levels take a while on CI
 import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { IDLE, start, step } from "../src/sim.ts";
+import { allParks } from "./parks.ts";
 import { hillBank, hillHalf, hillPlane, hillQuarter, hillShelf, hillSnake, sculpt, type Earthwork } from "../src/levels/earthworks.ts";
 
-const parks = LEVELS.filter((l) => l.id !== "plaza").map((l) => l.load() as ParkLevel);
+const parks = await allParks();
 
 test("every park has earthworks spread across the map, not clumped in one corner", () => {
   for (const l of parks) {

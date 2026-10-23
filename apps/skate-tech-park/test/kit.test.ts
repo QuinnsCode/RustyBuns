@@ -9,6 +9,7 @@ import { makeLevel, toLocal } from "../src/level.ts";
 import { bowl, fallenLog, join, outcrop, rockFace } from "../src/levels/pieces.ts";
 import { KIT_BUDGETS, fitAcross, fitUp, loadKit } from "../src/render/kit.ts";
 import { levelMeshes } from "../src/render/pieces.ts";
+import { level as loadLevel } from "./parks.ts";
 
 const read = (f: string) => Bun.file(new URL(`../public/${f}`, import.meta.url)).arrayBuffer();
 const down = (m: THREE.Object3D, x: number, z: number) =>
@@ -18,7 +19,7 @@ test.each([...KIT_BUDGETS])("the %s kit dresses ramps, stairs, blocks, boulders,
   const kit = await loadKit(budget, read);
   const kinds = new Set<string>();
   for (const id of ["plaza", "yosemite-falls", "half-dome", "mariposa-grove"]) {
-    const level = LEVELS.find((e) => e.id === id)!.load(), ground = "ground" in level ? (level as ParkLevel).ground.height : undefined;
+    const level = await loadLevel(id), ground = "ground" in level ? (level as ParkLevel).ground.height : undefined;
     const group = levelMeshes(level, ground, kit);
     expect(group.children.length).toBeLessThanOrEqual(2);
     const dressed = level.pieces.filter((p) => p.look);

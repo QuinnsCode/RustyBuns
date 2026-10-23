@@ -1,13 +1,16 @@
 // The weather, headless: a park's own mood, the URL override, and falling stuff that follows the camera.
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
+
+setDefaultTimeout(60000); // seventy levels take a while on CI
 import * as THREE from "three";
 import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { Lightning, MOODS, moodFor, Precip } from "../src/render/weather.ts";
+import { build } from "./parks.ts";
 
-test("every park's weather is a real mood, ?weather= beats it, and nothing falls back to golden hour", () => {
+test("every park's weather is a real mood, ?weather= beats it, and nothing falls back to golden hour", async () => {
   for (const e of LEVELS) {
-    const l = e.load() as ParkLevel;
+    const l = (await build(e)) as ParkLevel;
     if (l.weather) expect(Object.keys(MOODS)).toContain(l.weather);
   }
   expect(moodFor("", "rain")).toBe(MOODS.rain);

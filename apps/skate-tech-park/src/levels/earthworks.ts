@@ -371,8 +371,8 @@ export function layOut(world: ScatterWorld, o: Works = {}): Earthwork[] {
   return made;
 }
 
-/** A spawn below the nearest hillside work, facing uphill at its run-in, for a park whose own spawns have none in reach. */
-export function hillSpawn(works: Earthwork[], spawns: { x: number; z: number }[], near = WORKS.near): { name: string; x: number; z: number; yaw: number } | null {
+/** A spawn below the nearest hillside work, facing uphill at its run-in, for a park whose own spawns have none in reach; `avoid` is what else was laid after the spawns were known (ribbons, scattered kit). */
+export function hillSpawn(works: Earthwork[], spawns: { x: number; z: number }[], avoid: { x: number; z: number; r: number }[] = [], near = WORKS.near): { name: string; x: number; z: number; yaw: number } | null {
   const hills = works.filter((e) => e.tilt);
   if (!hills.length || spawns.some((s) => hills.some((e) => Math.hypot(e.x - s.x, e.z - s.z) < near))) return null;
   const e = hills.sort((p, q) => Math.min(...spawns.map((s) => Math.hypot(p.x - s.x, p.z - s.z))) - Math.min(...spawns.map((s) => Math.hypot(q.x - s.x, q.z - s.z))))[0]!;
@@ -380,7 +380,7 @@ export function hillSpawn(works: Earthwork[], spawns: { x: number; z: number }[]
   // far enough back to stand clear of every work's footprint and skirt, so the run still starts on open ground
   for (let back = Math.min(e.w, e.d) / 2 + e.skirt + 4; back < 70; back += 4) {
     const x = e.x - up.x * back, z = e.z - up.z * back;
-    if (works.every((q) => Math.hypot(q.x - x, q.z - z) > Math.min(q.w, q.d) / 2 + q.skirt)) return { name: "hillside cut", x, z, yaw: e.yaw };
+    if (works.every((q) => Math.hypot(q.x - x, q.z - z) > Math.min(q.w, q.d) / 2 + q.skirt) && avoid.every((a) => Math.hypot(a.x - x, a.z - z) > a.r)) return { name: "hillside cut", x, z, yaw: e.yaw };
   }
   return null;
 }
