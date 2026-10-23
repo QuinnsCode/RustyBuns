@@ -156,6 +156,7 @@ describe("GET /api/openapi.json", () => {
     const share = await (await send("ryan", "/api/repos/ryan/lab/shares", { path: "a.ts", from: 1, to: 2 })).json() as { id: string };
     const cut = await (await send("ryan", "/api/repos/ryan/lab/cuts", { pieces: [{ path: "a.ts", from: 1, to: 1 }] })).json() as { id: string };
     const pl = await (await send("ryan", "/api/playlists", { title: "faves" })).json() as { id: number };
+    await send("ryan", "/api/me/programs/ryan", { code: "return 1;" }, "PUT");
     const run = await (await send("ryan", "/api/repos/ryan/lab/checks", { ref: "b", sha: "a".repeat(40), name: "test" })).json() as { id: number };
     const invite = await (await send("ryan", "/api/repos/ryan/lab/invites", {})).json() as { token: string };
     // A beam needs a git branch: one commit past main, made in the repo's git.

@@ -7,6 +7,7 @@ import { parseJson } from "./util.ts";
 import { artifactMoveRoutes } from "./artifact-move.ts";
 import { featureRankRoutes } from "./feature-ranks.ts";
 import { findRoutes } from "./finds.ts";
+import { programRoutes } from "./programs.ts";
 import { rankOf } from "./policy.ts";
 import { fromText, text, type Doc } from "./lines.ts";
 import { mainClosed, policyClosed, protectRoute } from "./protect.ts";
@@ -410,6 +411,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   // PUT /api/me/finds, GET /api/users/:name/finds: the hidden games found, and the badge (finds.ts)
   const finds = await findRoutes(req, env, p, user);
   if (finds) return finds;
+  // GET/PUT/DELETE /api/me/programs[/:name]: saved code-mode programs (programs.ts)
+  const programs = await programRoutes(req, env, p, user);
+  if (programs) return programs;
 
   // GET /api/feature-ranks, PUT /api/me/feature-ranks, POST /api/feature-comments (feature-ranks.ts)
   const ranks = await featureRankRoutes(req, env, p, user);
