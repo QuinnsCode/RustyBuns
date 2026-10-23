@@ -52,7 +52,7 @@ export function groundMesh(level: ParkLevel, mood?: Pick<Mood, "wet" | "snow">):
     const paint = level.paint(x, z); // the earthworks: poured concrete, packed dirt, and a pale coping stone along each lip
     if (paint.surface) {
       const tone = 0.93 + 0.07 * Math.sin(x * 0.9) * Math.cos(z * 1.1), base = paint.surface === "concrete" ? concrete : hardpack;
-      c.lerp(c2.copy(base).multiplyScalar(tone).lerp(stone, paint.coping * (paint.surface === "concrete" ? 0.75 : 0.3)), paint.k * (1 - 0.7 * snow));
+      c.lerp(c2.copy(base).multiplyScalar(tone).lerp(stone, paint.coping * (paint.surface === "concrete" ? 0.75 : 0.3)), paint.k * (1 - (paint.surface === "concrete" ? 0.3 : 0.7) * snow)); // poured concrete is swept clear of snow, packed dirt is not
     }
     const hollow = (level.ground.height(x + 3, z) + level.ground.height(x - 3, z) + level.ground.height(x, z + 3) + level.ground.height(x, z - 3)) / 4 - h; // shade hollows, so a bowl reads as a bowl
     c.multiplyScalar(1 - Math.min(0.4, Math.max(-0.08, hollow * 0.14)));
@@ -123,6 +123,8 @@ export function props(level: ParkLevel) {
       tree.add(bough);
     }
     tree.position.set(t.x, y, t.z);
+    tree.rotation.y = i * 1.7;
+    tree.userData.tree = t; // dressTrees (render/scenery.ts) swaps it for the Blender sequoia once the set loads
     tree.traverse((o) => { o.castShadow = true; });
     group.add(tree);
   });

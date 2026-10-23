@@ -1,11 +1,14 @@
 // Contour ribbons: they hold their height along the slope, stay off the hand-laid kit, and can be ridden end to end.
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
+
+setDefaultTimeout(60000); // seventy levels take a while on CI
 import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { berm, extrude, mirror, trace } from "../src/levels/ribbons.ts";
 import { IDLE, start, step } from "../src/sim.ts";
+import { allParks } from "./parks.ts";
 
-const parks = LEVELS.filter((l) => l.id !== "plaza").map((l) => l.load() as ParkLevel);
+const parks = await allParks();
 
 test("every park is filled with ribbons, each holding one height along the slope and clear of spawns", () => {
   for (const l of parks) {

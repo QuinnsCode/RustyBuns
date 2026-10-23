@@ -1,11 +1,13 @@
 // The kit room (kit.html on the dev server): every piece the Blender kit dresses, in a row on a flat floor
 // beside the board, under a slowly circling camera. For judging a model by eye after `bun run models`.
 // ?kit=hi|mid|low picks the budget, ?kit=built shows the sampled meshes; ?board= works as in the game.
+// Behind the row stands the scenery set, every kind blown up to 3 m (?scenery=hi|mid|low|built, ?at=14 frames it).
 import * as THREE from "three";
 import { makeLevel } from "./level.ts";
-import { bowl, box, fallenLog, funbox, gap, hip, join, kicker, ledge, outcrop, quarterPipe, rockFace, spine, stairSet, tabletop, type Part } from "./levels/pieces.ts";
+import { boardwalk, bowl, box, fallenLog, funbox, gap, hip, join, kicker, ledge, outcrop, picnicTable, quarterPipe, rockFace, spine, stairSet, tabletop, type Part } from "./levels/pieces.ts";
 import { BOARD_BUDGETS, type BoardBudget, dressBoard, fingerboard } from "./models.ts";
 import { KIT_BUDGETS, type KitBudget, loadKit } from "./render/kit.ts";
+import { KINDS, SCENERY_BUDGETS, type SceneryBudget, Scenery, type Spot, loadScenery } from "./render/scenery.ts";
 import { levelMeshes } from "./render/pieces.ts";
 
 const q = new URLSearchParams(location.search);
@@ -43,6 +45,8 @@ const row: ((x: number) => Part)[] = [
   (x) => bowl({ x, z: 0 }, { w: 14, d: 10, h: 1.2 }),
   (x) => fallenLog({ x, z: 0 }),
   (x) => hip({ x, z: 0 }),
+  (x) => picnicTable({ x, z: 0 }),
+  (x) => boardwalk({ x, z: 0 }, { len: 12 }),
 ];
 const part = join(...row.map((f, i) => f((i - (row.length - 1) / 2) * 16)));
 const level = makeLevel({ name: "kit room", pieces: part.pieces, rails: part.rails, spawns: [], bounds: { minX: -150, maxX: 150, minZ: -150, maxZ: 150 } });
@@ -54,6 +58,19 @@ if (KIT_BUDGETS.includes(kit as KitBudget)) {
     scene.remove(meshes);
     meshes = levelMeshes(level, undefined, k);
     scene.add(meshes);
+  });
+}
+
+// The scenery garden: one of each kind at 3 m, in a row behind the kit, so a pine's tiers and a palm's fronds can be judged.
+const garden: Spot[] = KINDS.map((kind, i) => ({ kind, x: (i - (KINDS.length - 1) / 2) * 5, z: -40, y: 0, size: 3, yaw: 0.4 }));
+const sceneryBudget = q.get("scenery") ?? "mid";
+let scenery = new Scenery(garden);
+scene.add(scenery.group);
+if (SCENERY_BUDGETS.includes(sceneryBudget as SceneryBudget)) {
+  loadScenery(sceneryBudget as SceneryBudget, async (f) => new URL(f, document.baseURI).href).then((models) => {
+    scene.remove(scenery.group);
+    scenery = new Scenery(garden, models);
+    scene.add(scenery.group);
   });
 }
 
@@ -72,11 +89,13 @@ const resize = () => {
 addEventListener("resize", resize);
 resize();
 // ?at=<index> frames one piece close up; otherwise the camera circles the whole row.
-const at = q.has("at") ? (Number(q.get("at")) - (row.length - 1) / 2) * 16 : null;
+const atN = q.has("at") ? Number(q.get("at")) : null, gardenView = atN !== null && atN >= row.length;
+const at = atN === null ? null : gardenView ? 0 : (atN - (row.length - 1) / 2) * 16;
 renderer.setAnimationLoop((ms) => {
   const a = ms / 9000;
   if (at === null) camera.position.set(Math.cos(a) * 70, 28, Math.sin(a) * 50 - 10);
+  else if (gardenView) camera.position.set(Math.cos(a * 0.5) * 24, 6, -40 + Math.sin(a * 0.5) * 24);
   else camera.position.set(at + Math.cos(a) * 16, 7, Math.sin(a) * 16);
-  camera.lookAt(at ?? 0, 1.5, 0);
+  camera.lookAt(at ?? 0, 1.5, gardenView ? -40 : 0);
   renderer.render(scene, camera);
 });

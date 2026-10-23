@@ -13,7 +13,8 @@ import { type Chaser, chase as runAfter, chaseOf, gap, release } from "./chaser.
 import { ChaserView } from "./render/chaser.ts";
 import { Barrier } from "./render/barrier.ts";
 import { dressPeak, PEAK_BUDGETS, type PeakBudget } from "./render/peak.ts";
-import { Scenery, scatter } from "./render/scenery.ts";
+import { SCENERY_BUDGETS, type SceneryBudget, Scenery, dressTrees, loadScenery, scatter } from "./render/scenery.ts";
+import { BIOMES, type Biome } from "./levels/park.ts";
 import { followCamera, sky, skyMood, skyTime } from "./render/sky.ts";
 import { comboLine } from "./render/combo.ts";
 import { Skins } from "./render/skins.ts";
@@ -70,8 +71,19 @@ const precip = new Precip(); // rain, snow, dust or drifting motes round the cam
 precip.begin(mood);
 scene.add(precip.object);
 const lightning = mood.lightning ? new Lightning() : null;
-const scenery = park ? new Scenery(scatter(level, (level as ParkLevel).ground)) : null; // small pines and rocks, for scale
+const biomeAsked = new URLSearchParams(location.search).get("biome"); // ?biome=desert previews any park's ground cover as another biome's
+const spots = park ? scatter(level, (level as ParkLevel).ground, 7, BIOMES.includes(biomeAsked as Biome) ? (biomeAsked as Biome) : undefined) : [];
+let scenery = park ? new Scenery(spots) : null; // small pines and rocks, for scale: the built primitives first, the Blender set once it loads
 if (scenery) scene.add(scenery.group);
+const sceneryBudget = new URLSearchParams(location.search).get("scenery") ?? "mid"; // ?scenery=hi|mid|low, or ?scenery=built for the primitives
+if (scenery && SCENERY_BUDGETS.includes(sceneryBudget as SceneryBudget)) {
+  loadScenery(sceneryBudget as SceneryBudget, async (f) => new URL(f, document.baseURI).href).then((models) => {
+    scene.remove(scenery!.group);
+    scenery = new Scenery(spots, models);
+    scene.add(scenery.group);
+    dressTrees(scene, models.sequoia);
+  }).catch((e) => console.warn("scenery models", e));
+}
 const peakBudget = new URLSearchParams(location.search).get("peak") ?? "mid"; // the far mountain a park may have (?peak=hi|mid|low, or ?peak=off)
 if (park && PEAK_BUDGETS.includes(peakBudget as PeakBudget)) {
   for (const l of (level as ParkLevel).landmarks) {

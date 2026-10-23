@@ -6,11 +6,12 @@ import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { piece } from "../src/level.ts";
 import { levelMeshes, pieceGeometry } from "../src/render/pieces.ts";
+import { build, level as loadLevel } from "./parks.ts";
 
 const draws = (g: THREE.Object3D) => { let n = 0; g.traverse((o) => { if ((o as THREE.Mesh).isMesh) n++; }); return n; };
 
-test.each(LEVELS.map((e) => [e.name, e.id]))("%s: every piece and rail is two draw calls", (_, id) => {
-  const level = LEVELS.find((e) => e.id === id)!.load(), park = "ground" in level ? (level as ParkLevel).ground.height : undefined;
+test.each(LEVELS.map((e) => [e.name, e.id]))("%s: every piece and rail is two draw calls", async (_, id) => {
+  const level = await loadLevel(id), park = "ground" in level ? (level as ParkLevel).ground.height : undefined;
   const group = levelMeshes(level, park);
   expect(draws(group)).toBeLessThanOrEqual(2);
   expect(group.children.some((m) => m.name === "pieces")).toBe(level.pieces.length > 0);
@@ -19,8 +20,8 @@ test.each(LEVELS.map((e) => [e.name, e.id]))("%s: every piece and rail is two dr
   expect(verts).toBeLessThan(600000);
 });
 
-test("the meshed surface sits where the piece's height says, on a kicker and a stair set", () => {
-  const plaza = LEVELS[0]!.load();
+test("the meshed surface sits where the piece's height says, on a kicker and a stair set", async () => {
+  const plaza = await build(LEVELS[0]!);
   const down = (m: THREE.Object3D, x: number, z: number) => new THREE.Raycaster(new THREE.Vector3(x, 50, z), new THREE.Vector3(0, -1, 0)).intersectObject(m, true)[0]?.point.y;
   const mesh = levelMeshes(plaza);
   for (const p of plaza.pieces) {

@@ -27,14 +27,20 @@ addEventListener("hashchange", () => location.reload());
 for (const id of ["lobby", "lock", "over", "tr", "bl", "press", "banner", "hurt", "cross"]) $(`#${id}`).hidden = true;
 document.title = `codeSplitter: @${name}'s code city`;
 document.body.insertAdjacentHTML("beforeend", `
-<div class="hud" id="city-what" hidden></div>
+<div class="hud" id="city-what" hidden style="pointer-events:auto;cursor:pointer"></div>
 <div class="hud" id="city-cross" hidden></div>
+<style>#city-read[hidden] { display: none !important; } #city-read .ln { display: grid; grid-template-columns: 44px 84px minmax(0, 1fr); font: 400 12.5px/19px var(--mono); } #city-read .ln .n { text-align: right; padding-right: 10px; color: var(--ink-2); user-select: none; } #city-read .ln .by { color: var(--ink-2); font-size: 11px; padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-right: 1px solid var(--rule); user-select: none; } #city-read .ln .t { white-space: pre; padding: 0 12px; } @media (max-width: 600px) { #city-read .ln { grid-template-columns: 40px minmax(0, 1fr); } #city-read .ln .by { display: none; } }</style>
+<div id="city-read" hidden style="position:fixed;inset:0;z-index:6;display:grid;place-items:center;background:rgba(10,14,22,.45);backdrop-filter:blur(3px)"><div class="card" style="width:min(860px,calc(100vw - 24px));max-height:calc(100vh - 32px);display:flex;flex-direction:column;padding:14px 16px;box-sizing:border-box">
+  <div class="row" style="justify-content:space-between;flex-wrap:nowrap"><b id="city-read-name" style="font:500 13px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0"></b><span class="muted" id="city-read-page" style="font:500 12px var(--mono);flex:none"></span></div>
+  <div id="city-read-code" style="flex:1;min-height:120px;overflow:auto;margin:10px 0;border:1px solid var(--rule);border-radius:6px;padding:6px 0;background:var(--paper)"></div>
+  <div class="row" style="justify-content:space-between"><span class="row"><button id="city-read-prev" aria-label="previous page">&larr; page</button><button id="city-read-next" aria-label="next page">page &rarr;</button></span><span class="row"><a class="btn" id="city-read-open" target="_blank" rel="noopener">open the file</a><button class="primary" id="city-read-close">back to the street</button></span></div>
+</div></div>
 <div class="panel" id="city-gate" style="background:transparent;backdrop-filter:none;place-items:end center;padding-bottom:9vh"><div class="card">
   <div class="label">code city</div><h1>@${esc(name)}</h1>
   <p class="muted" id="city-sum" style="margin:6px 0 0">…</p>
   <div class="legend"><span><i class="stone"></i>people's lines</span><span><i class="glass"></i>agents' lines</span><span><i class="lit"></i>lines landed lately</span></div>
   <div class="row"><button class="primary" id="city-walk">walk in</button><a class="btn" id="city-card" target="_blank" rel="noopener">postcard</a><button id="city-share">copy share link</button><span class="muted" id="city-msg"></span></div>
-  <div class="keys"><kbd>WASD</kbd> walk · <kbd>mouse</kbd> look · <kbd>shift</kbd> run · <kbd>space</kbd> jump · <kbd>esc</kbd> back up to the skyline<br>a district per public repo, a building per file: tall is long, lit is lately<br>busy streets are a week of commits; traffic chaos is failing checks</div>
+  <div class="keys"><kbd>WASD</kbd> walk · <kbd>mouse</kbd> look · <kbd>shift</kbd> run · <kbd>space</kbd> jump · <kbd>E</kbd> read the file you face · <kbd>esc</kbd> back up to the skyline<br>a district per public repo, a building per file: tall is long, lit is lately<br>busy streets are a week of commits; traffic chaos is failing checks</div>
   <p class="exits"><a href="/#/u/${encodeURIComponent(name)}">← @${esc(name)}'s profile</a></p>
 </div></div>`);
 $("#title").textContent = `@${name}'s city`;
@@ -1186,15 +1192,22 @@ function updateVisitors(dt) {
 
 // ---- looking and walking ----------------------------------------------------------------
 // Up on the skyline the camera circles the city; walk in and you're on the street.
-const EYE = 1.7 * FOLK_EYE, keys = new Set();
+// Eyes a little under the crowd's: a shop door's lintel is 0.82 of a storey, and we walk under it, not through it.
+const EYE = 1.35 * FOLK_EYE, keys = new Set();
 const player = { pos: new THREE.Vector3(0, EYE, z1 + 2), yaw: 0, pitch: 0, air: 0, vy: 0 };
 let walking = false, lastSent = 0;
 let chatNext = false;
-addEventListener("keydown", (e) => { if (e.code === "Space" && walking) e.preventDefault(); if (e.code === "KeyE" && !e.repeat) chatNext = true; keys.add(e.code); });
+addEventListener("keydown", (e) => {
+  if (reading) { // the reader has the keys: arrows flip its pages, esc puts it down
+    if (e.code === "Escape") closeRead(); else if (e.code === "ArrowLeft" || e.code === "PageUp") flip(-1); else if (e.code === "ArrowRight" || e.code === "PageDown") flip(1);
+    return;
+  }
+  if (e.code === "Space" && walking) e.preventDefault(); if (e.code === "KeyE" && !e.repeat) chatNext = true; keys.add(e.code);
+});
 addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("blur", () => keys.clear());
 addEventListener("mousemove", (e) => {
-  if (!walking) return;
+  if (!walking || reading) return;
   player.yaw -= e.movementX * 0.0022;
   player.pitch = Math.max(-1.4, Math.min(1.4, player.pitch - e.movementY * 0.0022));
 });
@@ -1206,8 +1219,46 @@ function setWalking(on) {
   $("#city-gate").hidden = walking;
   $("#city-cross").hidden = !walking;
   $("#city-touch").hidden = !(walking && touchWalk);
-  if (!walking) { $("#city-what").hidden = true; stick.x = stick.y = 0; keys.delete("Space"); }
+  if (!walking) { $("#city-what").hidden = true; stick.x = stick.y = 0; keys.delete("Space"); reading = null; $("#city-read").hidden = true; }
 }
+
+// ---- reading a file: face a building and click, tap its name or press E to flip through its code --------
+// A page at a time (the file DO windows its lines), with who wrote each line beside it; the page link opens it for real.
+const PAGE = 60;
+let reading = null, aimed = null; // {b, page, total}; the building under the crosshair
+async function readFile(b, page = 0) {
+  reading = { b, page, total: reading?.b === b ? reading.total : 0 };
+  $("#city-read").hidden = false; keys.clear(); stick.x = stick.y = 0;
+  if (document.pointerLockElement) document.exitPointerLock?.();
+  $("#city-read-name").textContent = `${b.repo}/${b.path}`;
+  $("#city-read-open").href = `/#/f/${encodeURIComponent(name)}/${encodeURIComponent(b.repo)}/${encodeURIComponent(b.path)}`;
+  const code = $("#city-read-code");
+  code.innerHTML = `<div class="muted" style="padding:8px 14px">…</div>`;
+  const r = await fetch(`/api/repos/${encodeURIComponent(name)}/${encodeURIComponent(b.repo)}/do/file?path=${encodeURIComponent(b.path)}&from=${page * PAGE}&limit=${PAGE}`).catch(() => null);
+  if (!reading || reading.b !== b || reading.page !== page) return; // put down, or flipped on, while it loaded
+  const doc = r?.ok ? await r.json().catch(() => null) : null;
+  if (!doc) { code.innerHTML = `<div class="muted" style="padding:8px 14px">couldn't read it</div>`; return; }
+  reading.total = doc.total ?? doc.lines.length;
+  const pages = Math.max(1, Math.ceil(reading.total / PAGE));
+  code.innerHTML = doc.lines.map((l, i) => `<div class="ln"><span class="n">${page * PAGE + i + 1}</span><span class="by" title="${esc(l.by ?? "")}">${esc(l.by ?? "")}</span><span class="t">${esc(l.text) || " "}</span></div>`).join("") || `<div class="muted" style="padding:8px 14px">an empty file</div>`;
+  code.scrollTop = 0;
+  $("#city-read-page").textContent = `page ${page + 1} of ${pages} · ${n(reading.total, "line")}`;
+  $("#city-read-prev").disabled = page === 0; $("#city-read-next").disabled = page >= pages - 1;
+}
+function flip(d) {
+  if (!reading) return;
+  const p = Math.max(0, Math.min(Math.max(1, Math.ceil(reading.total / PAGE)) - 1, reading.page + d));
+  if (p !== reading.page) readFile(reading.b, p);
+}
+function closeRead() {
+  if (!reading) return;
+  reading = null; $("#city-read").hidden = true;
+  if (walking && !touchWalk) renderer.domElement.requestPointerLock?.()?.catch?.(() => setWalking(false));
+}
+$("#city-read-prev").addEventListener("click", () => flip(-1));
+$("#city-read-next").addEventListener("click", () => flip(1));
+$("#city-read-close").addEventListener("click", closeRead);
+$("#city-what").addEventListener("click", () => { if (walking && aimed && !reading) readFile(aimed); });
 document.body.insertAdjacentHTML("beforeend", `<div id="city-touch" hidden style="position:fixed;inset:0;pointer-events:none;touch-action:none;user-select:none;-webkit-user-select:none;z-index:5">
   <div id="city-stick" style="position:absolute;left:max(18px,env(safe-area-inset-left));bottom:max(22px,env(safe-area-inset-bottom));width:116px;height:116px;border-radius:50%;border:1px solid rgba(230,237,248,.4);background:rgba(10,14,22,.35);pointer-events:auto;touch-action:none"><i style="position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;background:rgba(230,237,248,.7)"></i></div>
   <button id="city-jump" style="position:absolute;right:max(18px,env(safe-area-inset-right));bottom:max(30px,env(safe-area-inset-bottom));width:64px;height:64px;border-radius:50%;pointer-events:auto;touch-action:none">jump</button>
@@ -1242,7 +1293,10 @@ if (touchWalk) {
   $("#city-walk").addEventListener("click", () => setWalking(true));
 } else {
   $("#city-walk").addEventListener("click", () => renderer.domElement.requestPointerLock?.()?.catch?.(() => {}));
-  document.addEventListener("pointerlockchange", () => setWalking(document.pointerLockElement === renderer.domElement));
+  document.addEventListener("pointerlockchange", () => { if (!reading) setWalking(document.pointerLockElement === renderer.domElement); });
+  document.addEventListener("pointerlockerror", () => { if (!reading) setWalking(false); });
+  // A click while walking reads the building you face.
+  renderer.domElement.addEventListener("click", () => { if (walking && document.pointerLockElement === renderer.domElement && aimed && !reading) readFile(aimed); });
 }
 
 /** Walls round a shop: a thin box on each side, the front split round a door. */
@@ -1289,6 +1343,12 @@ function updateWalk(dt, now) {
   // Space jumps: up fast, back down under gravity.
   if (keys.has("Space") && player.air === 0 && player.vy === 0) player.vy = 6.5 * FOLK_EYE ** 0.5;
   if (player.vy !== 0 || player.air > 0) { player.vy -= 18 * dt; player.air = Math.max(0, player.air + player.vy * dt); if (player.air === 0) player.vy = 0; }
+  // Inside a shop the ceiling is low: a jump stops a hand under it.
+  if (player.air > 0) {
+    const room = rooms.find((s) => Math.abs(player.pos.x - s.b.x) < s.pw / 2 && Math.abs(player.pos.z - s.b.z) < s.pw / 2);
+    const cap = room ? Math.max(0, room.y0 + room.ph - 0.15 - EYE - floor) : Infinity;
+    if (player.air > cap) { player.air = cap; player.vy = Math.min(player.vy, 0); }
+  }
   player.pos.y += (EYE + floor + player.air - player.pos.y) * Math.min(1, dt * (player.air > 0 ? 30 : 14));
   camera.position.copy(player.pos);
   camera.rotation.set(player.pitch, player.yaw, 0);
@@ -1299,15 +1359,18 @@ function updateWalk(dt, now) {
   const what = $("#city-what");
   const bar = rooms.find((s) => s.secret && s.group?.visible && s.folks.some((f) => f.clerk && Math.hypot(f.x - player.pos.x, f.z - player.pos.z) < 1.5));
   if (bar) { // at the bar: the barkeep talks, E for the next thing he has to say
+    aimed = null;
     import("/found.js").then(({ found }) => found("bartender"));
     if (chatNext) bar.chat++;
     what.innerHTML = `<b>The barkeep</b><br>&ldquo;${esc(bar.talk[bar.chat % bar.talk.length])}&rdquo;<br><small>E to reply</small>`;
     what.hidden = false; chatNext = false;
   } else if (hit && hit.distance < 40) {
     const b = hit.object.userData;
-    what.innerHTML = `<b>${esc(b.repo)}/${esc(b.path)}</b><br>${n(b.lines, "line")} · ${b.agent >= 0.5 ? "mostly agents'" : b.agent > 0 ? "people's, agents helped" : "people's"}${b.last ? ` · last lines ${ago(b.last)}` : ""}`;
+    aimed = b;
+    what.innerHTML = `<b>${esc(b.repo)}/${esc(b.path)}</b><br>${n(b.lines, "line")} · ${b.agent >= 0.5 ? "mostly agents'" : b.agent > 0 ? "people's, agents helped" : "people's"}${b.last ? ` · last lines ${ago(b.last)}` : ""}<br><small>${touchWalk ? "tap here" : "click or E"} to read it</small>`;
     what.hidden = false;
-  } else what.hidden = true;
+    if (chatNext) readFile(b);
+  } else { what.hidden = true; aimed = null; }
   chatNext = false;
 }
 function setFov(f) { if (camera.fov !== f) { camera.fov = f; camera.updateProjectionMatrix(); } }
@@ -1323,7 +1386,7 @@ let prev = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - prev) / 1000), time = now / 1000;
   prev = now;
-  if (walking) updateWalk(dt, now); else updateSkyline(time);
+  if (walking) { if (!reading) updateWalk(dt, now); } else updateSkyline(time);
   lava.draw(time);
   updateWalkers(time);
   updateVisitors(dt);

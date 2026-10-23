@@ -20,7 +20,13 @@ body.home .hud, body.home .keys, body.home .room, body.home .trick, body.home .c
 .pill.go { background: var(--hot); color: #fff; }
 .pill.go:hover, .pill.go:focus-visible { background: #c94a22; }
 .pill.quiet { margin-left: auto; }
-.parks { padding: 12px; display: flex; gap: 10px; overflow-x: auto; scrollbar-width: thin; }
+.parks { padding: 10px 12px 12px; display: grid; gap: 8px; min-width: 0; }
+.regions { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.region { flex: 0 0 auto; display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border: 0; border-radius: 999px; color: var(--ink); background: rgba(27, 27, 31, 0.08); cursor: pointer; }
+.region:hover, .region:focus-visible { background: rgba(27, 27, 31, 0.16); outline: none; }
+.region[aria-pressed="true"] { background: var(--hot); color: #fff; }
+.cards { display: flex; align-items: stretch; gap: 10px; overflow-x: auto; scrollbar-width: thin; }
+.cards h2 { flex: 0 0 auto; align-self: center; margin: 0 2px; font: 700 11px system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; writing-mode: vertical-rl; transform: rotate(180deg); opacity: 0.6; }
 .card { flex: 0 0 148px; display: grid; gap: 6px; padding: 6px 6px 8px; text-align: left; font: inherit; font-size: 13px; color: var(--ink); background: transparent; border: 0; border-radius: 16px; cursor: pointer; }
 .card:hover, .card:focus-visible { background: rgba(27, 27, 31, 0.08); outline: none; }
 .card.here { background: rgba(226, 87, 43, 0.16); }

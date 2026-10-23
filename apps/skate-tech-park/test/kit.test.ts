@@ -9,16 +9,17 @@ import { makeLevel, toLocal } from "../src/level.ts";
 import { bowl, fallenLog, join, outcrop, rockFace } from "../src/levels/pieces.ts";
 import { KIT_BUDGETS, fitAcross, fitUp, loadKit } from "../src/render/kit.ts";
 import { levelMeshes } from "../src/render/pieces.ts";
+import { level as loadLevel } from "./parks.ts";
 
 const read = (f: string) => Bun.file(new URL(`../public/${f}`, import.meta.url)).arrayBuffer();
 const down = (m: THREE.Object3D, x: number, z: number) =>
   new THREE.Raycaster(new THREE.Vector3(x, 500, z), new THREE.Vector3(0, -1, 0)).intersectObject(m, true)[0]?.point.y;
 
-test.each([...KIT_BUDGETS])("the %s kit dresses ramps, stairs, blocks, boulders, logs and hips where the sim rides them", async (budget) => {
+test.each([...KIT_BUDGETS])("the %s kit dresses ramps, stairs, blocks, boulders, logs, hips and the picnic table where the sim rides them", async (budget) => {
   const kit = await loadKit(budget, read);
   const kinds = new Set<string>();
   for (const id of ["plaza", "yosemite-falls", "half-dome", "mariposa-grove"]) {
-    const level = LEVELS.find((e) => e.id === id)!.load(), ground = "ground" in level ? (level as ParkLevel).ground.height : undefined;
+    const level = await loadLevel(id), ground = "ground" in level ? (level as ParkLevel).ground.height : undefined;
     const group = levelMeshes(level, ground, kit);
     expect(group.children.length).toBeLessThanOrEqual(2);
     const dressed = level.pieces.filter((p) => p.look);
@@ -37,7 +38,7 @@ test.each([...KIT_BUDGETS])("the %s kit dresses ramps, stairs, blocks, boulders,
       }
     }
   }
-  expect([...kinds].sort()).toEqual(["block", "bowl", "cliff", "hip", "log", "ramp", "rock", "stairs"]);
+  expect([...kinds].sort()).toEqual(["bench", "block", "boardwalk", "bowl", "cliff", "hip", "log", "ramp", "rock", "stairs", "table"]);
 });
 
 test.each([...KIT_BUDGETS])("the %s landscape: a boulder, a rock face that turns to vertical, a log and a pool are drawn where they are ridden", async (budget) => {
