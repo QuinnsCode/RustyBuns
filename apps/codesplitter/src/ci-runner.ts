@@ -129,7 +129,7 @@ export const desktopRuns = (env: Env) => typeof Bun !== "undefined" && !env.BETT
  * scrubbed env with an empty HOME, and CI=1, as CODESPLITTER_CHECKS_USER when that's set (#1010).
  */
 export async function localMachine(user = sandboxUser(process.env.CODESPLITTER_CHECKS_USER)): Promise<Machine & { dispose(): Promise<void> }> {
-  const { chmod, mkdtemp, mkdir, rm } = await import("node:fs/promises");
+  const { chmod, lstat, mkdtemp, mkdir, realpath, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { dirname, join, relative, resolve } = await import("node:path");
   // A sandbox user can't reach the owner's own temp dir: /tmp is everyone's.
@@ -141,6 +141,13 @@ export async function localMachine(user = sandboxUser(process.env.CODESPLITTER_C
     const at = resolve(dir, p);
     if (!relative(dir, at) || relative(dir, at).startsWith("..")) throw new Error(`${p} is outside the repo`);
     return at;
+  };
+  // The command (the sandbox user) lays the clone out, so a symlink in it can point at what only the owner reads or writes:
+  // follow none. A path is good when its folder, resolved, is inside the clone and the file itself is no link.
+  const safe = async (at: string) => {
+    const root = await realpath(dir), up = await realpath(dirname(at)).catch(() => null);
+    if (!up || (up !== root && !up.startsWith(root + "/"))) return false;
+    return !(await lstat(at).then((s) => s.isSymbolicLink(), () => false));
   };
   const live = new Set<{ kill(): void }>();
   return {
@@ -157,11 +164,12 @@ export async function localMachine(user = sandboxUser(process.env.CODESPLITTER_C
         const at = inside(path);
         if (text === null) { await rm(at, { force: true }); continue; }
         await mkdir(dirname(at), { recursive: true });
+        if (!(await safe(at))) throw new Error(`${path} goes through a symlink`);
         await Bun.write(at, text);
         if (user) await chmod(at, 0o666);
       }
     },
-    read: (path) => Bun.file(inside(path)).text().catch(() => undefined),
+    read: async (path) => { const at = inside(path); return (await safe(at)) ? Bun.file(at).text().catch(() => undefined) : undefined; },
     stop() { for (const p of live) p.kill(); },
     async dispose() {
       // What the sandbox user left, as it: it may have taken its own files out of the owner's reach.
