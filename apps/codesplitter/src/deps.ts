@@ -99,6 +99,7 @@ import { access as artifactAccess, handleFor, toFile } from "./archive.ts";
 import { actingAs, isAdmin, mail, mailOn } from "./identity.ts";
 import { workspaceDirs, workspaceGlobs } from "./fit.ts";
 import { diffToOps, merge3 } from "./sync.ts";
+import { checkEnv } from "./check-env.ts";
 import { json, readBody, type Env } from "./env.ts";
 import { execCommand, fromDisk, toDisk, type Exec } from "./agent-run.ts";
 import { CLAUDE_TOOLS, FIX_HARNESSES, harnessCommand, type Command, type Harness } from "./harness.ts";
@@ -637,19 +638,22 @@ type Run = (cmd: string[], at?: string) => Promise<{ code: number; out: string }
 
 /**
  * A clone of `remote` in a temp dir with `files` swapped in, handed to `work`,
- * then deleted. `depth` 0 keeps the whole history. `bare` runs it with only
- * PATH, HOME and TMPDIR, so the repo's .npmrc can't spend the owner's
- * $NPM_TOKEN on a host it picks. Desktop only.
+ * then deleted. `depth` 0 keeps the whole history. Everything runs in the
+ * scrubbed environment of a check (check-env.ts: an empty HOME and TMPDIR), so
+ * the repo's .npmrc or tests can't spend the owner's $NPM_TOKEN or read their
+ * logins. Desktop only.
  */
-async function inClone<T>(remote: string, files: Record<string, string>, depth: number, timeoutMs: number, bare: boolean,
+async function inClone<T>(remote: string, files: Record<string, string>, depth: number, timeoutMs: number,
   work: (repo: string, run: Run) => Promise<T>, failed: (out: string) => T): Promise<T> {
   const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { dirname, join } = await import("node:path");
   const dir = mkdtempSync(join(tmpdir(), "codesplitter-deps-"));
-  const env = bare ? { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR } : { ...process.env };
+  const home = join(dir, "home"), tmp = join(dir, "tmp");
+  mkdirSync(home); mkdirSync(tmp);
+  const env = checkEnv(process.env, home, tmp);
   const run = (cwd: string): Run => async (cmd, at = cwd) => {
-    const p = Bun.spawn(cmd, { cwd: at, stdout: "pipe", stderr: "pipe", timeout: timeoutMs, env: { ...env, CI: "1", YARN_ENABLE_IMMUTABLE_INSTALLS: "false" } });
+    const p = Bun.spawn(cmd, { cwd: at, stdout: "pipe", stderr: "pipe", timeout: timeoutMs, env: { ...env, YARN_ENABLE_IMMUTABLE_INSTALLS: "false" } });
     const [o, e] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
     return { code: await p.exited, out: `$ ${cmd.join(" ")}\n${o}${e}` };
   };
@@ -692,7 +696,7 @@ async function installAndTest(run: Run, repo: string, files: Record<string, stri
 
 /** A clone in a temp dir, an install, the test script if asked and there is one, then the clone is deleted. Desktop only. */
 export const localTester = (timeoutMs = 10 * 60_000): Tester => (remote, files, { pm, lock, test, only, build }) =>
-  inClone(remote, files, 1, timeoutMs, !test, async (repo, run) => {
+  inClone(remote, files, 1, timeoutMs, async (repo, run) => {
     // No package.json: the repo's own build is the arbiter, with nothing to install first (#1407).
     if (build) { const b = await run(build); return { ok: b.code === 0, out: b.out }; }
     const { existsSync, readFileSync } = await import("node:fs");
@@ -707,13 +711,13 @@ export const localTester = (timeoutMs = 10 * 60_000): Tester => (remote, files, 
 
 /**
  * Runs a generated region's command (#1154) in a clone with `files` swapped in, from the folder `cwd`, and
- * reads back the files in `read`. A full install first, in the bare env, as the command is the repo's code.
+ * reads back the files in `read`. A full install first, in the scrubbed env, as the command is the repo's code.
  */
 export type Regenerator = (remote: string, files: Record<string, string>, opts: { pm: PM; cwd: string; command: string; read: string[] }) => Promise<{ ok: boolean; out: string; files?: Record<string, string> }>;
 
 /** The same on the desktop. */
 export const localRegenerator = (timeoutMs = 10 * 60_000): Regenerator => (remote, files, { pm, cwd, command, read }) =>
-  inClone(remote, files, 1, timeoutMs, true, async (repo, run) => {
+  inClone(remote, files, 1, timeoutMs, async (repo, run) => {
     const { existsSync, readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
     const install = await run(INSTALL[pm]);
@@ -730,7 +734,7 @@ export const localRegenerator = (timeoutMs = 10 * 60_000): Regenerator => (remot
  * deleted files restored, and the tests run again.
  */
 export const localFixer = (exec: Exec = execCommand, timeoutMs = 10 * 60_000): Fixer => (job) =>
-  inClone(job.remote, job.files, 0, timeoutMs, true, async (repo, run) => {
+  inClone(job.remote, job.files, 0, timeoutMs, async (repo, run) => {
     const { existsSync, readFileSync, writeFileSync } = await import("node:fs");
     const { join } = await import("node:path");
     // The agent needs the history, not the remote, whose URL carries a token.
