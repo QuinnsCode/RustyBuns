@@ -990,6 +990,11 @@
   .switch input:focus-visible + i { box-shadow: 0 0 0 3px rgba(10,10,10,.12); }
   .toast.fail { display: flex; align-items: center; gap: 8px; max-width: min(92vw, 560px); background: #7a1f1f; color: #fff; }
   .toast.fail .btn { color: #fff; border-color: rgba(255,255,255,.5); padding: 4px 8px; white-space: nowrap; }
+  /* The file's socket dropped (a deploy restarts it) or a deploy is coming: calm, top and centre, one line. */
+  .net { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 7px; max-width: calc(100vw - 32px); background: var(--bg); color: var(--fg); border: 1px solid var(--line, currentColor); padding: 6px 12px; border-radius: 999px; font-size: 13px; z-index: 60; white-space: nowrap; box-shadow: 0 8px 24px -10px rgba(0,0,0,.3); }
+  .net span { overflow: hidden; text-overflow: ellipsis; } .net svg { flex: none; width: 14px; height: 14px; }
+  .net.updating svg { animation: netspin 1.6s linear infinite; } @keyframes netspin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .net.updating svg { animation: none; } }
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 9px 14px; border-radius: 6px; font-size: 13px; z-index: 60; box-shadow: 0 12px 32px -8px rgba(0,0,0,.3); }
 
   /* Every feature, on a strip that scrolls sideways forever: three copies of the list,
@@ -1242,7 +1247,7 @@ const api = (path, body, method, headers = {}) => {
 const apiCall = async (path, body, method, headers = {}) => {
   const r = await fetch("/api" + path, body === undefined && !method ? {} : { method: method || "POST", headers: { "content-type": "application/json", ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw Object.assign(new Error(j.error || j.message || r.status), { failure: { status: r.status, method: method || "POST", path } });
+  if (!r.ok) throw Object.assign(new Error(j.error || j.message || r.status), { failure: { status: r.status, method: method || "POST", path }, retryAfter: j.retryAfter });
   // A place in a limit's line is an object; a deploy's own {queued: true} (a commit landing mid-run) isn't one.
   return r.status === 202 && typeof j.queued === "object" && j.queued ? inLine(j.queued) : j;
 };
@@ -1406,6 +1411,14 @@ let ctx = {};
 let lineSel = null;
 /** Say something to a screen reader, through the one polite live region. */
 function announce(msg) { const l = $("#live"); l.textContent = ""; setTimeout(() => (l.textContent = msg), 50); }
+/** The connection banner: `b` is {icon, text, kind} (page-socket.ts netBanner), null to clear it. */
+function showNet(b) {
+  let el = $("#net");
+  if (!b) return el?.remove();
+  if (!el) { el = document.createElement("div"); el.id = "net"; el.setAttribute("role", "status"); document.body.append(el); }
+  el.className = "net " + b.kind;
+  el.innerHTML = `${glyph(b.icon)}<span>${esc(b.text)}</span>`;
+}
 function toast(msg, ms = 2400) { const t = document.createElement("div"); t.className = "toast"; t.setAttribute("aria-hidden", "true"); t.textContent = msg; document.body.append(t); announce(msg); setTimeout(() => t.remove(), ms); }
 /**
  * Self-heal: a failure the person can hand to their own coding agent. The toast stays until it's closed and has a
@@ -5785,16 +5798,17 @@ const views = {
       // because someone else changed it, theirs (you've been told, and Enter saves yours over it).
       let baseRev = line.rev, busy = false;
       const say = (text, failed) => { note.hidden = false; note.classList.toggle("failed", failed); note.textContent = text; };
-      inp.addEventListener("keydown", async (e) => {
-        if (e.key === "Escape") return draw(doc);
-        if (e.key !== "Enter" || busy) return;
-        const ops = e.shiftKey ? [{ kind: "insert", after: line.id, text: "" }]
-          : inp.value === "" ? [{ kind: "delete", line: line.id, base: baseRev }]
-          : [{ kind: "set", line: line.id, base: baseRev, text: inp.value }];
+      const save = async (ops) => {
         // A save is never silent: it says it's going, and stays open with your text until it lands (#659).
         busy = true; inp.readOnly = true; say("saving…", false);
         try { await send(ops); return draw(doc); }
         catch (err) {
+          // The connection is down (a deploy restarts it): your text stays here and goes again, with the rev it was
+          // based on, once the file is back and read afresh. A conflict then takes the path below.
+          if (!err.failure && (err.offline || err instanceof TypeError) && ops[0].kind !== "insert" && inp.isConnected) {
+            say("Saving when the file is back…", false);
+            return live.later(() => inp.isConnected ? save(ops) : undefined);
+          }
           // Only the answer may have been lost: look at the file before saying it didn't land.
           doc = await api(`${base}/file${q}`).catch(() => doc);
           const now = doc.lines.find((l) => l.id === line.id);
@@ -5806,6 +5820,13 @@ const views = {
           }
           say(`Not saved: ${err.message}. Enter tries again, Esc drops it.`, true);
         }
+      };
+      inp.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") return draw(doc);
+        if (e.key !== "Enter" || busy) return;
+        save(e.shiftKey ? [{ kind: "insert", after: line.id, text: "" }]
+          : inp.value === "" ? [{ kind: "delete", line: line.id, base: baseRev }]
+          : [{ kind: "set", line: line.id, base: baseRev, text: inp.value }]);
       });
     };
     draw(doc); drawCrew(); drawActs(); drawCommits(commits); loadStamps(); sinceLast();
@@ -5885,8 +5906,14 @@ const views = {
           for (const c of new Set(ls.map((l) => claimOf.get(l.id)))) await api(`${base}/release${q}`, { id: c.id });
           toast("Let go: those lines are free again");
         } else {
-          await api(`${base}/claims${q}`, { lines: ls.map((l) => l.id) });
-          toast("Holding those lines: agents and everyone else leave them be till you let go");
+          const hold = async () => { await api(`${base}/claims${q}`, { lines: ls.map((l) => l.id) }); toast("Holding those lines: agents and everyone else leave them be till you let go"); };
+          try { await hold(); }
+          catch (err) {
+            // A deploy is draining the file: new holds wait their turn, which isn't an error. Ask again once it says to.
+            if (err.failure?.status !== 409 || err.retryAfter == null || !live?.draining) throw err;
+            toast("An update is rolling out: holding those lines in a moment");
+            live.later(() => hold().catch((e) => toast(e.message)));
+          }
         }
       } catch (err) { toast(err.message); }
     });
@@ -5953,19 +5980,20 @@ const views = {
     icons();
     // Live: every applied op from every editor arrives here, and is applied in
     // place. Our own edits go out on the same socket and wait for an ack. This view's own
-    // socket (`ws`), so an answer always finds the edit that asked; one that drops fails
-    // what's waiting on it and comes back by itself.
-    let seq = 0, ws = null, drops = 0;
+    // socket (`live`), so an answer always finds the edit that asked; one that drops (a deploy
+    // restarts it) fails what's waiting on it, says so in a banner, and comes back by itself
+    // and reads the file afresh (page-socket.ts).
+    let seq = 0, live = null;
     const pending = new Map();
     const send = (ops) => {
       // No socket: POST it, and show what landed, since no broadcast will.
-      if (ws?.readyState !== WebSocket.OPEN) return api(`${base}/ops${q}`, { ops }).then(async (r) => {
+      if (live?.state !== "online") return api(`${base}/ops${q}`, { ops }).then(async (r) => {
         if (r.applied?.[0]?.rev === doc.rev + 1) r.applied.forEach(applyLocal);
         else if (r.rev > doc.rev) doc = await api(`${base}/file${q}`);
         return r;
       });
       const id = ++seq;
-      ws.send(JSON.stringify({ type: "ops", id, ops }));
+      live.send(JSON.stringify({ type: "ops", id, ops }));
       return new Promise((ok, fail) => {
         pending.set(id, { ok, fail });
         setTimeout(() => { if (pending.delete(id)) fail(new Error("no answer from the file")); }, 8000);
@@ -5995,21 +6023,26 @@ const views = {
       };
       if (!fireTimer) tick();
     };
+    const { liveSocket, netBanner } = await import("/page-socket.js");
     const connect = () => {
-      const s = socket = ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api${base}/ws${q}`);
-      s.onmessage = onMessage;
-      s.onopen = async () => {
-        // Back after a drop: whatever landed meanwhile comes with the whole file.
-        if (!drops) return;
-        drops = 0;
-        doc = await api(`${base}/file${q}`).catch(() => doc);
-        if (viewing === null && !box.querySelector(".ln input")) draw(doc);
-      };
-      s.onclose = () => {
-        for (const [id, p] of pending) { pending.delete(id); p.fail(new Error("the connection to the file dropped")); }
-        // Still this page's socket (leaving the page clears it first): open another, backing off.
-        if (socket === s) setTimeout(() => { if (socket === s) connect(); }, Math.min(30_000, 1000 * 2 ** drops++));
-      };
+      const l = live = socket = liveSocket({
+        open: () => new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api${base}/ws${q}`),
+        onMessage: (data) => onMessage({ data }),
+        onNet: (n) => { if (socket === l) { const b = netBanner(n); showNet(b && { ...b, kind: n.kind }); } },
+        onDrop: () => { for (const [id, p] of pending) { pending.delete(id); p.fail(Object.assign(new Error("the connection to the file dropped"), { offline: true })); } },
+        // Back after a drop: whatever landed meanwhile (edits, claims, grants, commits) comes with a fresh read.
+        resync: async () => {
+          if (socket !== l) return;
+          const [d, cl, cs] = await Promise.all([api(`${base}/file${q}`).catch(() => doc), api(`${base}/claims${q}`).catch(() => null), api(`${base}/commits${q}`).catch(() => null)]);
+          if (socket !== l) return;
+          if (d.rev >= doc.rev) doc = d;
+          if (cl) setClaims(cl);
+          if (cs) drawCommits(cs);
+          const rev = $("#rev"); rev.max = doc.rev; if (viewing === null) rev.value = doc.rev;
+          if (viewing === null && !box.querySelector(".ln input")) draw(doc);
+          schedule([], false);
+        },
+      });
     };
     const onMessage = async (m) => {
       const msg = JSON.parse(m.data);
@@ -7932,7 +7965,7 @@ async function route() {
   sharedGets.clear();
   fileLeave?.(); fileLeave = null;
   followed = fetchingFollows = null;
-  socket?.close(); socket = null;
+  socket?.close(); socket = null; showNet(null);
   clearTimeout(agentTimer);
   stopIntro();
   stopStrip();
