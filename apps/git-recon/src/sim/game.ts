@@ -56,6 +56,8 @@ export interface Brain {
   lastHp: number;
   /** Sent at the branch in a defend mission: it goes there, whatever it sees. */
   raid: boolean;
+  /** How far along its yard's way to the branch a raider has got (raidRoute), as a point index. */
+  leg: number;
   /** Where it last heard a gun go off, and seconds left hunting towards it (0: not hunting). */
   heard: { x: number; z: number } | null;
   hunt: number;
@@ -494,7 +496,7 @@ export class Game {
       grounded: true, air: 0, jumpBuf: 0, crouch: false, prone: false, scoped: false, lean: 0, chute: false, tagged: 0, heat: 0, burn: 0, burnBy: -1, burnT: 0, trail: [], compound,
       brain: player ? null : {
         home: { x, z }, alert: false, wait: 0, lost: 0, seen: null, strafe: 1, strafeT: 0, burst: 0, think: 0,
-        role: "hold", side: 1, cover: null, coverT: 0, lastHp: MAX_HP, raid: false, heard: null, hunt: 0,
+        role: "hold", side: 1, cover: null, coverT: 0, lastHp: MAX_HP, raid: false, leg: 0, heard: null, hunt: 0,
       },
       score: 0, deaths: 0, respawn: 0, gone: false,
     };
@@ -925,11 +927,13 @@ export class Game {
 
   private raid(o: Extract<Objective, { kind: "defend" }>) {
     o.raids++;
-    const order = this.map.compounds.map((c, i) => ({ i, d: Math.hypot(c.x - o.x, c.z - o.z) })).filter(({ i }) => !this.cleared[i]).sort((a, b) => a.d - b.d);
+    // The nearest yard that still has guards at home: once a yard has sent everyone, the next one goes.
+    const home = (i: number) => this.soldiers.some((g) => g.alive && g.brain && g.compound === i && !g.brain.raid);
+    const order = this.map.compounds.map((c, i) => ({ i, d: Math.hypot(c.x - o.x, c.z - o.z) })).filter(({ i }) => !this.cleared[i] && home(i)).sort((a, b) => a.d - b.d);
     const next = order[0];
     if (!next) return;
     for (const g of this.soldiers) if (g.alive && g.brain && g.compound === next.i && !g.brain.raid) {
-      Object.assign(g.brain, { raid: true, alert: true, wait: 0.5, home: { x: o.x, z: o.z }, cover: null, coverT: 0 });
+      Object.assign(g.brain, { raid: true, leg: 0, alert: true, wait: 0.5, home: { x: o.x, z: o.z }, cover: null, coverT: 0 });
     }
     this.events.push({ kind: "objective", text: `${this.map.compounds[next.i]!.folder} is raiding main` });
   }
@@ -1656,8 +1660,17 @@ export class Game {
       // In cover: get there and crouch till the reload's done.
       if (to(b.cover.x, b.cover.z) < 0.8) s.crouch = true;
     } else if (b.raid) {
-      // Raiders head for the branch, shooting you if they see you on the way.
-      to(b.home.x, b.home.z);
+      // Raiders head for the branch, shooting you if they see you on the way: out of their gate and
+      // down the footpath, not straight at it over the walls and the drops.
+      // It keeps to the shelf: along the leg it's on, eyes a little ahead, the way a player walks it.
+      const route = this.raidRoute(s.compound);
+      const along = (i: number) => {
+        const a = route[i]!, c = route[Math.min(route.length - 1, i + 1)]!, ex = c.x - a.x, ez = c.z - a.z, l2 = ex * ex + ez * ez || 1;
+        return { a, ex, ez, u: ((s.x - a.x) * ex + (s.z - a.z) * ez) / l2, len: Math.sqrt(l2) };
+      };
+      while (b.leg < route.length - 1 && (along(b.leg).u >= 1 || Math.hypot(route[b.leg + 1]!.x - s.x, route[b.leg + 1]!.z - s.z) < 1.2)) b.leg++;
+      const { a, ex, ez, u, len } = along(b.leg), ahead = Math.min(1, Math.max(0, u) + 1.2 / len);
+      to(a.x + ex * ahead, a.z + ez * ahead);
     } else {
       b.cover = null;
       // Keep 12-25 m off, strafing side to side. Flankers swing out round your side first.
@@ -1688,6 +1701,23 @@ export class Game {
       this.fire(s, aim, 0.05 + Math.min(0.05, d / 1000));
       b.burst++;
     }
+  }
+
+  private routes = new Map<number, { x: number; z: number }[]>();
+  /** A yard's way to the branch (HEAD): to its gate from inside, then its footpath walked backwards. */
+  private raidRoute(ci: number): { x: number; z: number }[] {
+    let r = this.routes.get(ci);
+    if (r) return r;
+    const c = this.map.compounds[ci], { spawn } = this.map;
+    r = [];
+    if (c && c.gate !== undefined) {
+      const g = gateDir(c.gate), h = c.half ?? c.r * 0.66;
+      r.push({ x: c.x + g.x * (h - 1.5), z: c.z + g.z * (h - 1.5) });
+      r.push(...[...(this.map.trails?.[ci] ?? [])].reverse());
+    }
+    r.push({ x: spawn.x, z: spawn.z });
+    this.routes.set(ci, r);
+    return r;
   }
 
   private takeCover(s: Soldier, seconds: number) {

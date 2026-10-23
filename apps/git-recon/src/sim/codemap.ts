@@ -5,10 +5,11 @@
 //   - files from everywhere else are crates scattered across the field, cover between you and them
 //   - folders that import each other are joined by roads; a folder that changed a lot lately holds more guards
 //   - a file agents mostly wrote is black glass, not paper (codeSplitter's city does this); a failing check sets its compound on fire
-//   - a footpath is cut from HEAD to every compound's gate, so each one can be walked to, however high it sits
+//   - a gate opens on the compound's easiest side, a ramp graded out of it, and a footpath is cut from HEAD
+//     to every gate, so each one can be walked to, however high it sits and whatever drops away round it
 // The same repo on the same ground with the same seed is always the same level.
 
-import { slope, wet, withPads, withTrails, type Pad, type Terrain, type TrailPoint } from "@rustybuns/terrain";
+import { slope, smooth, wet, withPads, withTrails, type Pad, type Terrain, type TrailPoint } from "@rustybuns/terrain";
 import { mulberry32 } from "@rustybuns/util";
 export { mulberry32 };
 
@@ -82,6 +83,8 @@ export interface CodeMap {
   roads?: Road[];
   /** The footpath from HEAD to each compound's gate, by compound; cut into the terrain, drawn on the ground. */
   trails?: TrailPoint[][];
+  /** The ramp graded out of each compound's gate, by compound. */
+  ramps?: Ramp[];
 }
 
 /** Compounds a level holds at most, files shown in each, and crates out in the field. */
@@ -280,6 +283,22 @@ export function trail(t: Terrain, from: { x: number; z: number }, to: { x: numbe
   return eased.map((p, i) => ({ x: p.x, z: p.z, y: ys[i]!, gx: pts[i]!.x, gz: pts[i]!.z }));
 }
 
+/** Ground steeper than this slides a soldier back (game.ts's SLIDE). */
+const SLIDE_AT = 0.75;
+
+/** The steepest the ground climbs along a path, a half-metre step at a time. */
+export function steepest(t: Terrain, path: { x: number; z: number }[]): number {
+  let worst = 0;
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1]!, b = path[i]!, n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 0.5));
+    for (let k = 0; k < n; k++) {
+      const x0 = a.x + ((b.x - a.x) * k) / n, z0 = a.z + ((b.z - a.z) * k) / n, x1 = a.x + ((b.x - a.x) * (k + 1)) / n, z1 = a.z + ((b.z - a.z) * (k + 1)) / n;
+      worst = Math.max(worst, Math.abs(t.height(x1, z1) - t.height(x0, z0)) / (Math.hypot(x1 - x0, z1 - z0) || 1));
+    }
+  }
+  return worst;
+}
+
 /** Flat enough to build on: gentle at the centre and all round a ring of radius r. */
 function flatDisc(t: Terrain, x: number, z: number, r: number, max: number): boolean {
   if (slope(t, x, z) > max) return false;
@@ -288,6 +307,62 @@ function flatDisc(t: Terrain, x: number, z: number, r: number, max: number): boo
     if (Math.abs(t.height(px, pz) - t.height(x, z)) > r * 0.7) return false;
   }
   return true;
+}
+
+/** A graded way out of a gate: from (x, z) along (dx, dz) for `length` metres, its surface `ys` a metre apart, never steeper than RAMP. */
+export interface Ramp { x: number; z: number; dx: number; dz: number; length: number; ys: number[] }
+/** How steep a gate's ramp climbs or falls, rise per metre (under WALK, so it's an easy walk), how wide its top is, and how far it may run. */
+export const RAMP = 0.35, RAMP_WIDTH = 6, RAMP_MAX = 40;
+
+/**
+ * The ramp out of one side of a compound, and what it costs: how far it runs before it settles on
+ * the ground, plus what's left of a drop at its foot if it never does, with a little extra for facing
+ * away from HEAD. Its surface follows the ground as close as RAMP lets it, from the yard's floor out,
+ * riding over a bump or down a drop at that grade. A side whose ramp would cross another yard, run
+ * off the disc or into water costs most.
+ */
+function rampOut(t: Terrain, c: Compound, gate: number, all: Compound[], spawn: { x: number; z: number }) {
+  const g = gateDir(gate), h = c.half ?? c.r * 0.66;
+  const x0 = c.x + g.x * h, z0 = c.z + g.z * h, ys = [t.height(c.x, c.z)];
+  // At least a landing's worth past the yard's edge, so no other path runs by right across the gate.
+  let length = Math.ceil(c.r - h) + 8, miss = 0, bad = false;
+  for (let s = 1; s <= RAMP_MAX; s++) {
+    const x = x0 + g.x * s, z = z0 + g.z * s, ground = t.height(x, z), prev = ys[s - 1]!;
+    const y = Math.max(prev - RAMP, Math.min(prev + RAMP, ground)), off = Math.abs(ground - y);
+    ys.push(y);
+    if ((off > 0.05 || s < length) && (Math.hypot(x, z) > t.R - 3 || wet(t, x, z) || all.some((o) => o !== c && Math.hypot(x - o.x, z - o.z) < o.r + 2))) { bad = true; break; }
+    if (off > 0.05) length = Math.max(length, s + 2), miss = off;
+    else miss = 0;
+  }
+  length = Math.min(length, ys.length - 1);
+  const facing = (g.x * (spawn.x - c.x) + g.z * (spawn.z - c.z)) / (Math.hypot(spawn.x - c.x, spawn.z - c.z) || 1);
+  return { cost: (bad ? 1000 : 0) + length + miss * 20 + (1 - facing) * 4, ramp: { x: x0, z: z0, dx: g.x, dz: g.z, length, ys: ys.slice(0, length + 1) } };
+}
+
+/** Whether (x, z) is on a ramp, or within `margin` of its top. */
+function onRamp(r: Ramp, x: number, z: number, margin = 0): boolean {
+  const px = x - r.x, pz = z - r.z, s = px * r.dx + pz * r.dz;
+  return s >= 0 && s <= r.length && Math.abs(-px * r.dz + pz * r.dx) <= RAMP_WIDTH / 2 + margin;
+}
+
+/** Grades each ramp into the ground: along it the surface is the ramp's own, cut or built up, easing back to the ground either side. */
+export function withRamps(t: Terrain, ramps: Ramp[], skirt = 3): Terrain {
+  if (!ramps.length) return t;
+  return {
+    R: t.R,
+    water: t.water,
+    height(x, z) {
+      let h = t.height(x, z);
+      for (const r of ramps) {
+        const px = x - r.x, pz = z - r.z, s = px * r.dx + pz * r.dz, a = Math.abs(-px * r.dz + pz * r.dx);
+        if (s < 0 || s > r.length || a > RAMP_WIDTH / 2 + skirt) continue;
+        const i = Math.min(r.length - 1, Math.floor(s)), u = s - i, graded = r.ys[i]! + (r.ys[i + 1]! - r.ys[i]!) * u;
+        const k = a <= RAMP_WIDTH / 2 ? 0 : smooth((a - RAMP_WIDTH / 2) / skirt);
+        h = graded + (h - graded) * k;
+      }
+      return h;
+    },
+  };
 }
 
 export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): CodeMap {
@@ -338,15 +413,22 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
     const churn = allChurn ? Math.round((f.files.reduce((s, x) => s + (x.churn ?? 0), 0) / allChurn) * 100) / 100 : 0;
     const guards = 2 + Math.min(3, Math.floor(f.lines / 6000)) + churnGuards(churn);
     const burning = (repo.failing ?? []).some((check) => checkHits(f.folder, check));
-    // The gate faces HEAD, the way you come in.
-    const gx = spawn.x - best.x, gz = spawn.z - best.z;
-    const gate = Math.abs(gx) > Math.abs(gz) ? (gx > 0 ? 0 : 1) : gz > 0 ? 2 : 3;
-    compounds.push({ folder: f.folder, x: best.x, z: best.z, r, files: f.files.length, lines: f.lines, guards, churn, burning, half: Math.round(r * 0.66 * 10) / 10, gate });
+    compounds.push({ folder: f.folder, x: best.x, z: best.z, r, files: f.files.length, lines: f.lines, guards, churn, burning, half: Math.round(r * 0.66 * 10) / 10 });
     pads.push({ x: best.x, z: best.z, r });
     taken.push({ x: best.x, z: best.z, r });
   }
 
-  const padded = withPads(ground, pads);
+  // Each gate opens on the side with the easiest way out (never onto a drop), the side facing HEAD
+  // when two are as easy, and a ramp is graded out of it down (or up) to the ground round about.
+  // HEAD sits on a level pad of its own, so the paths all leave it from flat ground.
+  const padded0 = withPads(ground, [...pads, { x: spawn.x, z: spawn.z, r: 5 }]), ramps: Ramp[] = [];
+  for (const c of compounds) {
+    const ways = [0, 1, 2, 3].map((gate) => ({ gate, ...rampOut(padded0, c, gate, compounds, spawn) }));
+    const way = ways.reduce((a, b) => (b.cost < a.cost ? b : a));
+    c.gate = way.gate;
+    ramps.push(way.ramp);
+  }
+  const padded = withRamps(padded0, ramps);
   // A footpath from HEAD to each gate, cut into the hill, keeping out of every other yard and coming
   // into its own only down the lane in front of the gate: every compound can be walked to. Each path is
   // found on the ground with the paths before it already cut, and prefers their shelves, so where they
@@ -373,11 +455,25 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
     const g = gateDir(c.gate!), h = c.half!;
     const blocked = (x: number, z: number) => compounds.some((o, oi) => {
       const d = Math.hypot(x - o.x, z - o.z);
-      if (oi !== ci) return d < o.r + 2;
+      // Another yard, or the ramp out of its gate: a path across that would cut a shelf through the way in.
+      if (oi !== ci) return d < o.r + 2 || onRamp(ramps[oi]!, x, z, 2);
       const along = (x - c.x) * g.x + (z - c.z) * g.z, across = Math.abs(-(x - c.x) * g.z + (z - c.z) * g.x);
       return d < c.r + 1 && !(along > h + 1.5 && across < 2.4);
     });
-    const path = trail(terrain, spawn, { x: c.x + g.x * (h + 2.5), z: c.z + g.z * (h + 2.5) }, cell, { ...rules, blocked }) ?? [];
+    // The path is cut to the ramp's foot, kept off the ramp itself, and the ramp is its last leg up to the gate.
+    const ramp = ramps[ci]!, foot = ramp.length - 1;
+    const offRamp = (x: number, z: number) => {
+      const s = (x - ramp.x) * ramp.dx + (z - ramp.z) * ramp.dz;
+      return blocked(x, z) || (s < foot - 2 && onRamp(ramp, x, z, 2));
+    };
+    const up: TrailNode[] = [];
+    for (let s = foot; ; s = Math.max(2.5, s - 2)) {
+      const x = ramp.x + ramp.dx * s, z = ramp.z + ramp.dz * s;
+      up.push({ x, z, y: terrain.height(x, z), gx: x, gz: z });
+      if (s === 2.5) break;
+    }
+    const toFoot = trail(terrain, spawn, up[0]!, cell, { ...rules, blocked: offRamp });
+    const path = toFoot ? [...toFoot.slice(0, -1), ...up] : trail(terrain, spawn, { x: c.x + g.x * (h + 2.5), z: c.z + g.z * (h + 2.5) }, cell, { ...rules, blocked }) ?? [];
     trails.push(path);
     if (path.length < 2) return;
     // The shelves cut so far (a copy: this layer must not see its own, nor the ones after it).
@@ -399,6 +495,18 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
       for (let dz = -reach; dz <= reach; dz += cell) for (let dx = -reach; dx <= reach; dx += cell) if (Math.hypot(dx, dz) <= near) by[cellOf(p.gx + dx, p.gz + dz)] = 1;
     }
   });
+  // Where paths fork, each shelf was cut at its own height and the ground between can be a scramble.
+  // A last pass over the steep spots: each path's heights read off the finished ground, graded again to
+  // WALK, and cut once more, all together, wherever the ground along it still climbs faster than SLIDE.
+  const regraded = trails.map((path) => {
+    const ys = path.map((p) => terrain.height(p.x, p.z));
+    for (let pass = 0; pass < 20; pass++) for (let i = 1; i < ys.length; i++) {
+      const run = Math.hypot(path[i]!.x - path[i - 1]!.x, path[i]!.z - path[i - 1]!.z);
+      ys[i] = Math.max(ys[i - 1]! - WALK * run, Math.min(ys[i - 1]! + WALK * run, ys[i]!));
+    }
+    return path.map((p, i) => ({ x: p.x, z: p.z, y: ys[i]! }));
+  });
+  if (regraded.some((path) => steepest(terrain, path) > SLIDE_AT)) terrain = withTrails(terrain, regraded, TRAIL_WIDTH, 3);
   const onTrail = (x: number, z: number, within: number) => trails.some((t) => t.some((p) => Math.hypot(p.x - x, p.z - z) < within));
   const blocks: Block[] = [];
   const walls: Block[] = [];
@@ -514,5 +622,5 @@ export function mapRepo(ground: Terrain, repo: RepoSnapshot, seed: number): Code
     if (a !== undefined && b !== undefined) roads.push(a < b ? { a, b, weight } : { a: b, b: a, weight });
   }
   roads.sort((p, q) => p.a - q.a || p.b - q.b);
-  return { terrain, spawn, compounds, blocks, roads, trails };
+  return { terrain, spawn, compounds, blocks, roads, trails, ramps };
 }

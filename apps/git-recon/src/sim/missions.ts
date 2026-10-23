@@ -10,8 +10,12 @@ export type Mission =
 
 /** Each level's mission, by level id. A level not listed is "clear". */
 export const MISSIONS: Record<string, Mission> = {
-  "el-capitan": { kind: "carry" },
+  kitchen: { kind: "clear" },
   backyard: { kind: "defend", seconds: 120, wave: 20 },
+  garden: { kind: "carry" },
+  "el-capitan": { kind: "carry" },
+  "half-dome": { kind: "defend", seconds: 150, wave: 18 },
+  "glacier-point": { kind: "clear" },
 };
 
 export const missionFor = (levelId: string): Mission => MISSIONS[levelId] ?? { kind: "clear" };
