@@ -1,6 +1,6 @@
 import { describe, expect, setSystemTime, test } from "bun:test";
 import { local as boot } from "./app-kit.ts";
-import { bump, costOf, digUpdate, dugVersion, fillPrompt, fixCommand, fixPrompt, localFixer, npmrcHosts, osvAdvisories, outdated, packageManager, parseNpmrc, reached, registryUrl, runDoctor, satisfies, scheduledDoctor, settlePeers, whatsNew, DEFAULTS, MAX_WATCHED, type Advisories, type Fixer, type Notify, type Registry, type Report, type Tester, type Update, type Vuln } from "../src/deps.ts";
+import { bump, costOf, digUpdate, dugVersion, fillPrompt, fixCommand, fixPrompt, localFixer, localTester, npmrcHosts, osvAdvisories, outdated, packageManager, parseNpmrc, reached, registryUrl, runDoctor, satisfies, scheduledDoctor, settlePeers, whatsNew, DEFAULTS, MAX_WATCHED, type Advisories, type Fixer, type Notify, type Registry, type Report, type Tester, type Update, type Vuln } from "../src/deps.ts";
 import { AgentSandbox, type ContainerApi } from "../src/sandbox.ts";
 import { gated } from "./fake-gate.ts";
 import type { Runner } from "../src/preview.ts";
@@ -1091,3 +1091,23 @@ test("health: asks the registry for one package at a time, and once per name, so
   expect(peak).toBe(1);
   expect(calls).toBe(3);
 });
+
+test("localTester: a merge's tests run without the owner's variables or HOME", async () => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "deps-tester-test-"));
+  process.env.CS_TEST_SECRET = "hunter2";
+  try {
+    const sh = (...cmd: string[]) => Bun.spawnSync(cmd, { cwd: dir, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+    const leaks = `Boolean(process.env.CS_TEST_SECRET) || process.env.HOME === ${JSON.stringify(process.env.HOME)}`;
+    const pkg = JSON.stringify({ name: "lab", scripts: { test: `bun -e 'process.exit(${leaks} ? 1 : 0)'` } });
+    writeFileSync(join(dir, "package.json"), pkg);
+    sh("git", "init", "-q", "-b", "main"); sh("git", "add", "."); sh("git", "commit", "-qm", "lab");
+    const r = await localTester()(dir, { "package.json": pkg }, { pm: "bun", lock: null, test: true });
+    expect(r).toMatchObject({ ok: true });
+  } finally {
+    delete process.env.CS_TEST_SECRET;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 30_000);
