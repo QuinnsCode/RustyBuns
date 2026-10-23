@@ -46,6 +46,7 @@ import { scheduler, lowPriorityCommand, PERSONAS, type Persona } from "../packag
 import { staticBuild, staticTool, toolchainError } from "./trial-static.ts";
 import { installedPackages, ownInstallScripts, parseDenials, treeUsage, malicious, flagLines, USUAL_INSTALL, IDLE_CPU, BIG_RSS_MB, type Flags, type Idle } from "./trial-flags.ts";
 import { withMode } from "../packages/cli/src/smoke.ts";
+import { fetchLfs } from "./trial-lfs.ts";
 import { declaredSecrets, fakeSecret, removeCommittedSecrets } from "../packages/cli/src/fake-secrets.ts";
 
 const { values: o, positionals } = parseArgs({
@@ -70,7 +71,7 @@ for (const d of ["clones", "logs", "data", "sandbox"]) mkdirSync(join(OUT, d), {
 type App = { repo: string; sub: string; version?: string; stars?: number; pushed?: string };
 type Prof = { bootMs: number; p50: number; p95: number; max: number; rssMb: number; profile?: string };
 type ModeResult = { stage: string; status?: number; bytes?: number; text?: string; error?: string; prof?: Prof; idle?: Idle };
-type Result = App & { fakeSecrets?: string[]; traits?: string[]; pm?: string; init?: string; error?: string; flags?: Flags; modes: Record<string, ModeResult> };
+type Result = App & { fakeSecrets?: string[]; lfs?: string[]; traits?: string[]; pm?: string; init?: string; error?: string; flags?: Flags; modes: Record<string, ModeResult> };
 
 /** The version range an app's package.json gives <dep>, or undefined. */
 export function depVersion(pkg: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }, dep: string) {
@@ -312,6 +313,9 @@ async function trialSteps(app: App, slug: string, log: string, tag: string): Pro
   if (!existsSync(root)) {
     const s = await step(log, OUT, ["git", "clone", "--depth", "1", `https://github.com/${app.repo}`, root], 180e3, "net");
     if (!s.ok) return { ...r, error: `clone: ${s.tail}` };
+    // Images kept in Git LFS arrive as pointer files; the real ones are fetched here, before any app code runs.
+    const lfs = await fetchLfs(app.repo, root);
+    if (lfs.length) { r.lfs = lfs; appendFileSync(log, `\nlfs:\n${lfs.join("\n")}\n`); }
   }
   // Some repos commit their real secrets (.env with a production DATABASE_URL, .dev.vars). Nothing
   // here may use them: they go before any of the app's code runs. Examples and templates stay.
