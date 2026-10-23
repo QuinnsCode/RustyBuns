@@ -8,4 +8,4 @@ export const hawaiiVolcanoes = streetPark("hawaii-volcanoes", {
   bowl: { x: -3, z: -3 },
   gap: { at: { x: -43, z: 105, yaw: 0 }, run: { x: -43, z: 35 }, land: { x: -34, z: 169 }, rb: 24, min: 43 },
   view: { x: -23, z: 47 },
-}, { gap: "Caldera Drop", blurb: "Roll the lava benches around Kilauea's caldera and launch over the step down." });
+}, { gap: "Caldera Drop", peak: { model: "volcano", tall: 110, y: 23.3 }, blurb: "Roll the lava benches around Kilauea's caldera and launch over the step down." });

@@ -8,4 +8,4 @@ export const capitolReef = streetPark("capitol-reef", {
   bowl: { x: -3, z: -113 },
   gap: { at: { x: 68, z: 128, yaw: 3.9269908169872414 }, run: { x: 117, z: 177 }, land: { x: 12, z: 89 }, rb: 26, min: 45 },
   view: { x: 27, z: -143 },
-}, { gap: "Waterpocket Hop", blurb: "Roll the benches under the Waterpocket Fold and jump the wash." });
+}, { gap: "Waterpocket Hop", peak: { model: "mesa", tall: 120, y: 6.9 }, blurb: "Roll the benches under the Waterpocket Fold and jump the wash." });

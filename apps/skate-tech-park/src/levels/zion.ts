@@ -8,4 +8,4 @@ export const zion = streetPark("zion", {
   bowl: { x: 157, z: -13 },
   gap: { at: { x: 177, z: 203, yaw: 3.141592653589793 }, run: { x: 177, z: 273 }, land: { x: 167, z: 111 }, rb: 38, min: 60 },
   view: { x: -43, z: 157 },
-}, { gap: "Angels Drop", blurb: "Roll the canyon floor, then launch off the lip and drop to the valley below the fin of Angels Landing." });
+}, { gap: "Angels Drop", peak: { model: "mesa", tall: 150, y: 11.8 }, blurb: "Roll the canyon floor, then launch off the lip and drop to the valley below the fin of Angels Landing." });
