@@ -18,12 +18,12 @@ test("wireVersion: a failed info request throws instead of sending no version", 
 });
 
 test("resilientSocket: a server restart is reconnecting, then online again, and send says whether it went out", async () => {
-  const mk = (port: number) => Bun.serve({ port, fetch: (r, srv) => (srv.upgrade(r) ? undefined : new Response("no", { status: 400 })), websocket: { message: (w, m) => w.send(`echo ${m}`), open: (w) => w.send("hi") } });
+  const mk = (port: number) => Bun.serve({ port, fetch: (r, srv) => (srv.upgrade(r) ? undefined : new Response("no", { status: 400 })), websocket: { message: (w, m) => { w.send(`echo ${m}`); }, open: (w) => { w.send("hi"); } } });
   let s = mk(0);
-  const port = s.port;
+  const port = Number(new URL(s.url).port);
   const seen: string[] = [], got: string[] = [];
   const until = async (f: () => boolean) => { for (let i = 0; i < 200 && !f(); i++) await Bun.sleep(25); expect(f()).toBe(true); };
-  const sock = resilientSocket(() => new WebSocket(`ws://127.0.0.1:${port}`), { onMessage: (d) => got.push(String(d)), onState: (st) => { if (seen.at(-1) !== st) seen.push(st); } }, { delay: () => 50 });
+  const sock = resilientSocket(() => new WebSocket(`ws://127.0.0.1:${port}`), { onMessage: (d) => { got.push(String(d)); }, onState: (st) => { if (seen.at(-1) !== st) seen.push(st); } }, { delay: () => 50 });
   try {
     expect(sock.send("early")).toBe(false);
     await until(() => sock.state === "online");
