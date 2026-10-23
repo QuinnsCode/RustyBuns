@@ -700,6 +700,7 @@ Run on 2026-10-14: 51 promises held, 321 tests, and every stress rule and faked 
 | `DELETE /api/shares/:id` | The share link. | The lines. | `test/codesplitter-github.test.ts`: "share a few lines of a private repo: live, following the lines, nothing else leaks" |
 | `DELETE /api/beams/:id` | The beam's commit ref. | The branch it came from. | `test/beam.test.ts`: "squashes the stack onto main without its noise, keeps it under refs/beams, and hands over a patch that applies" |
 | `DELETE /api/repos/:o/:r/stamps` | Your stamp on that line. | | `test/stamps.test.ts`: "a stamp goes on a line, an agent's too, and follows it by id through edits" |
+| `DELETE /api/me/programs/:name` | The saved program, by its owner only. | | `test/codemode.test.ts`: "an agent saves a program, reruns it by name with new input, and sees only its own" |
 | `DELETE /api/follows/:id` | The follow, by the follower only. | | `test/follows.test.ts`: "unfollow is the follower's alone" |
 | `rustybuns deploy --hosted --destroy` | The site's own Worker and the stored key. | The API token, to delete in the dashboard. | By hand: it's the owner's command against the live account. |
 
