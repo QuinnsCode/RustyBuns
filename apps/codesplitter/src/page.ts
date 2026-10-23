@@ -116,6 +116,10 @@ async function pageVersion(env: Env, name: string) {
 
 const note = (text: string, status: number) => new Response(`<!doctype html><meta charset="utf-8"><meta name="color-scheme" content="light dark"><body style="font:14px system-ui;display:grid;place-items:center;height:100vh;margin:0;opacity:.6">${text}`, { status, headers: { "content-type": "text/html; charset=utf-8", "content-security-policy": PAGE_CSP, "x-frame-options": "SAMEORIGIN" } });
 
+/** Fetch destinations that run what they load. A page's sandboxed frame is cross-site to its own files, so only the app's origin is same-origin: a script tag injected there must not run a user's file as the app. */
+const RUNS = new Set(["script", "worker", "sharedworker", "serviceworker", "audioworklet", "paintworklet"]);
+export const runsAsApp = (req: Request) => req.headers.get("sec-fetch-site") === "same-origin" && RUNS.has(req.headers.get("sec-fetch-dest") ?? "");
+
 export async function pageRoutes(req: Request, env: Env, p: string[], user?: string | null): Promise<Response | null> {
   if (p[1] === "me" && p[2] === "page" && p[3] === "revert" && !p[4] && req.method === "POST") {
     if (!user) return json({ error: "sign in first" }, 401);
@@ -161,6 +165,7 @@ export async function pageRoutes(req: Request, env: Env, p: string[], user?: str
   const ext = path.split(".").pop()!.toLowerCase();
   const type = TYPES[ext];
   if (!type) return json({ error: `a page is text: ${Object.keys(TYPES).join(", ")}` }, 415);
+  if (runsAsApp(req)) return json({ error: "a page's files run only inside its own sandbox" }, 403);
   let body = await repoFile(env, name, path);
   // No page repo (or no index in it): the HTML saved on the profile is the index.
   if (body === null && path === "index.html") body = ((await env.DB.prepare("SELECT theme_html FROM users WHERE name = ?").bind(name).first()) as { theme_html: string | null } | null)?.theme_html || null;

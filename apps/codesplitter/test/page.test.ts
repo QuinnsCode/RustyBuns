@@ -58,6 +58,13 @@ describe("your page", () => {
     expect(js.headers.get("content-type")).toStartWith("text/javascript");
     expect(await js.text()).toBe("console.log(1)");
     expect((await send(null, "/api/users/ryan/page/nope.js")).status).toBe(404);
+
+    // The app's own origin never runs a page file as a script; the sandboxed frame (cross-site) still does.
+    const as = (site: string, dest: string) => call(null, "/api/users/ryan/page/world.js", { headers: { "sec-fetch-site": site, "sec-fetch-dest": dest } });
+    expect((await as("same-origin", "script")).status).toBe(403);
+    expect((await as("same-origin", "worker")).status).toBe(403);
+    expect((await as("cross-site", "script")).status).toBe(200);
+    expect((await as("same-origin", "empty")).status).toBe(200);
     expect((await send(null, "/api/users/ryan/page/pic.png")).status).toBe(415);
     expect((await (await send(null, "/api/users/ryan")).json() as any).page).toBe(true);
   });
