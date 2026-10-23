@@ -8,4 +8,4 @@ export const bryceCanyon = streetPark("bryce-canyon", {
   bowl: { x: -63, z: -63 },
   gap: { at: { x: -44, z: 157, yaw: 1.5707963267948966 }, run: { x: -114, z: 157 }, land: { x: 20, z: 165 }, rb: 25, min: 40 },
   view: { x: -23, z: -93 },
-}, { gap: "Hoodoo Hop", blurb: "Build speed along the Sunset Point rim, then jump the first gully into the amphitheater." });
+}, { gap: "Hoodoo Hop", peak: { model: "hoodoos", tall: 100, y: 9.2 }, blurb: "Build speed along the Sunset Point rim, then jump the first gully into the amphitheater." });

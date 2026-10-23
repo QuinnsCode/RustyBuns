@@ -3,7 +3,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { LEVELS, needsStartScreen, pick } from "../src/levels/index.ts";
 import { trackRun } from "../src/levels/goals.ts";
-import type { ParkLevel } from "../src/levels/park.ts";
+import type { ParkLevel, Peak } from "../src/levels/park.ts";
 import { DECK } from "../src/models.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 import { allParks, build } from "./parks.ts";
@@ -187,5 +187,18 @@ test("every surveyed park has kit at its signature spot", () => {
   for (const [id] of SURVEYED) {
     const l = park(id), near = l.pieces.filter((p) => !p.name.startsWith("contour") && Math.hypot(p.x, p.z) < 90);
     expect(near.length, id).toBeGreaterThan(0);
+  }
+});
+
+test("a far landmark stands straight ahead of the view spawn, past the park's edge, with its toe on the edge", () => {
+  const withPeak = parks.filter((l) => l.landmarks.some((m) => m.kind === "peak" && m.model !== "half-dome"));
+  expect(withPeak.length).toBeGreaterThanOrEqual(9);
+  for (const l of withPeak) {
+    const sp = l.spawns.find((p) => p.name === "view")!, m = l.landmarks.find((x): x is Peak => x.kind === "peak")!;
+    const dist = Math.hypot(m.x, m.z), toward = Math.atan2(m.x - sp.x, m.z - sp.z), off = Math.abs(Math.atan2(Math.sin(toward - sp.yaw), Math.cos(toward - sp.yaw)));
+    expect([l.id, off < 0.08]).toEqual([l.id, true]); // the spawn looks at it
+    expect(dist - 1.5 * m.tall).toBeGreaterThan(l.ground.R - 10); // standing past the edge,
+    expect(dist - 1.5 * m.tall).toBeLessThan(l.ground.R + 15); // its toe meeting it
+    expect(m.y).toBeCloseTo(l.ground.height(m.x / dist * (l.ground.R - 14), m.z / dist * (l.ground.R - 14)), 0);
   }
 });

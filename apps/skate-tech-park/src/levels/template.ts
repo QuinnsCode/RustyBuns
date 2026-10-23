@@ -3,7 +3,7 @@
 // and a spawn on level ground facing the signature spot. The plainer parks are just this plan; the others add
 // sites of their own (`extra`) or replace parts of the layout.
 import type { Spawn } from "../level.ts";
-import { type ParkSpec, type Site } from "./park.ts";
+import { type ParkSpec, type PeakModel, type Site, TERRAIN_SCALE } from "./park.ts";
 import { parkRow } from "./parks.ts";
 import { bowl, flatBar, funbox, hip, kicker, quarterPipe, skyRail, stairSet, type At } from "./pieces.ts";
 
@@ -30,9 +30,18 @@ const planPoints = (p: Plan) => {
   return [...Array.from({ length: 9 }, (_, i) => ahead(p.street, i * 19)), p.bowl, ...along(p.gap.run, p.gap.land), ...Array.from({ length: 9 }, (_, i) => ahead(p.sky, 70 + i * 12.5 - 50))];
 };
 
-export function streetPark(id: string, plan: Plan, o: { gap: string; spot?: boolean; spawns?: Spawn[]; extra?: Site[]; sites?: Site[]; goals?: ParkSpec["goals"]; blurb?: string } & Partial<ParkSpec>): ParkSpec {
+/**
+ * A far landmark (a model from blender/landmark.py) straight ahead of the view spawn, past the park's edge, its long
+ * side (the model's +x) toward the park so its toe meets the edge the way half-dome.ts has it. `y` is the ground at that edge.
+ */
+export const farPeak = (view: { x: number; z: number }, o: { model: PeakModel; tall: number; y: number }) => {
+  const len = Math.hypot(view.x, view.z), ox = -view.x / len, oz = -view.z / len, D = 1000 / TERRAIN_SCALE + 1.5 * o.tall + 4;
+  return { kind: "peak" as const, model: o.model, x: Math.round(ox * D), y: o.y, z: Math.round(oz * D), tall: o.tall, yaw: Math.round(Math.atan2(oz, -ox) * 1000) / 1000 };
+};
+
+export function streetPark(id: string, plan: Plan, o: { gap: string; peak?: { model: PeakModel; tall: number; y: number }; spot?: boolean; spawns?: Spawn[]; extra?: Site[]; sites?: Site[]; goals?: ParkSpec["goals"]; blurb?: string } & Partial<ParkSpec>): ParkSpec {
   const row = parkRow(id), { street: S, sky, gap } = plan;
-  const { gap: gapName, spot, spawns, extra = [], sites, goals, blurb, ...rest } = o;
+  const { gap: gapName, peak, spot, spawns, extra = [], sites, goals, blurb, ...rest } = o;
   const facing = Math.atan2(-plan.view.x, -plan.view.z);
   // the signature spot gets a small plaza on a levelled shelf, unless the survey already put kit within reach of it
   const at: Required<At> = { x: 0, z: 0, yaw: facing }, plaza = spot ?? planPoints(plan).every((q) => Math.hypot(q.x, q.z) > SPOT_CLEAR);
@@ -57,6 +66,7 @@ export function streetPark(id: string, plan: Plan, o: { gap: string; spot?: bool
       { name: "sky rail", ...ahead(sky, 0) },
     ],
     goals: goals ?? [{ kind: "score", target: 3000 }, { kind: "combo", target: 1200 }, { kind: "gap", name: gapName }, { kind: "collect", count: 5 }],
+    ...(peak ? { landmarks: [farPeak(plan.view, peak)] } : {}),
     pickups: [20, 45, 70, 95, 120].map((d) => ({ ...ahead(S, d), lift: 1.4 })),
     ...rest,
   };

@@ -8,4 +8,4 @@ export const arches = streetPark("arches", {
   bowl: { x: 37, z: 87 },
   gap: { at: { x: 97, z: 30, yaw: 0 }, run: { x: 97, z: -40 }, land: { x: 85, z: 101 }, rb: 20, min: 46 },
   view: { x: -103, z: 57 },
-}, { gap: "Delicate Gap", blurb: "Slickrock lines under the sun-baked bowl of Delicate Arch, and a launch off the sandstone ledge." });
+}, { gap: "Delicate Gap", peak: { model: "arch", tall: 120, y: 7.8 }, blurb: "Slickrock lines under the sun-baked bowl of Delicate Arch, and a launch off the sandstone ledge." });

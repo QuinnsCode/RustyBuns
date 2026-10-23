@@ -8,4 +8,4 @@ export const mountRainier = streetPark("mount-rainier", {
   bowl: { x: -3, z: -3 },
   gap: { at: { x: 47, z: -123, yaw: 1.5707963267948966 }, run: { x: -23, z: -123 }, land: { x: 104, z: -137 }, rb: 21, min: 39 },
   view: { x: -43, z: 87 },
-}, { gap: "Paradise Leap", blurb: "Meadow lines in the wildflowers on the flank of the mountain, and a jump off a moraine ridge." });
+}, { gap: "Paradise Leap", peak: { model: "volcano", tall: 260, y: 47.1 }, blurb: "Meadow lines in the wildflowers on the flank of the mountain, and a jump off a moraine ridge." });

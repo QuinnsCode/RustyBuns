@@ -8,4 +8,4 @@ export const canyonlands = streetPark("canyonlands", {
   bowl: { x: 37, z: 37 },
   gap: { at: { x: 96, z: 97, yaw: 1.5707963267948966 }, run: { x: 26, z: 97 }, land: { x: 165, z: 89 }, rb: 29, min: 43 },
   view: { x: 67, z: -3 },
-}, { gap: "Mesa Arch Gap", blurb: "Slickrock street lines on the Island in the Sky, and a launch off a ledge toward the canyon." });
+}, { gap: "Mesa Arch Gap", peak: { model: "mesa", tall: 130, y: 45.8 }, blurb: "Slickrock street lines on the Island in the Sky, and a launch off a ledge toward the canyon." });

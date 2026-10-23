@@ -8,4 +8,4 @@ export const lassenVolcanic = streetPark("lassen-volcanic", {
   bowl: { x: -53, z: -113 },
   gap: { at: { x: -103, z: -63, yaw: 4.71238898038469 }, run: { x: -33, z: -63 }, land: { x: -165, z: -42 }, rb: 24, min: 40 },
   view: { x: -123, z: 27 },
-}, { gap: "Bumpass Hop", blurb: "Skate the cinder flats of an old volcano and jump the ravine toward the steaming vents." });
+}, { gap: "Bumpass Hop", peak: { model: "volcano", tall: 200, y: 38.3 }, blurb: "Skate the cinder flats of an old volcano and jump the ravine toward the steaming vents." });
