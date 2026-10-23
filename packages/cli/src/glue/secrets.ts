@@ -3,6 +3,7 @@
 // binds none: an app that needs one fails at boot ("No secret key provided for session store").
 //   env.O365_OAUTH_CLIENT_SECRET in src/, not a var or binding  ->  an optional secret
 //   rwsdk's session store (rwsdk/auth) reads env.AUTH_SECRET_KEY  ->  a required one
+//   env.AI.run( or env.FILES_R2.put( (a Pages dashboard's bindings)  ->  an ai / r2 binding, not a secret
 // Names only: values come from .dev.vars, or the deploying shell, as for any secret.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -24,16 +25,21 @@ export function eachSource(dir: string, fn: (src: string) => void): void {
   }
 }
 
-export function codeSecrets(srcDir: string | string[], known: Set<string>, framework?: string): { required: string[]; optional: string[] } {
+export function codeSecrets(srcDir: string | string[], known: Set<string>, framework?: string): { required: string[]; optional: string[]; inferred: Record<string, "ai" | "r2"> } {
   const seen = new Set<string>();
+  const inferred: Record<string, "ai" | "r2"> = {};
   let rwsdkAuth = false;
   for (const dir of [srcDir].flat()) eachSource(dir, (src) => {
     for (const m of src.matchAll(/\benv(?:\.([A-Z][A-Z0-9_]*)\b|\[\s*["']([A-Z][A-Z0-9_]*)["']\s*\])/g)) seen.add((m[1] ?? m[2])!);
+    for (const m of src.matchAll(/\benv\.([A-Z][A-Z0-9_]*)\.(run|put|get|delete|list|head)\(/g)) {
+      if (m[2] === "run") inferred[m[1]!] = "ai";
+      else if (/R2|BUCKET/.test(m[1]!)) inferred[m[1]!] ??= "r2";
+    }
     if (framework === "rwsdk" && /from\s+["']rwsdk\/auth["']/.test(src)) rwsdkAuth = true;
   });
   const required = rwsdkAuth && !known.has("AUTH_SECRET_KEY") ? ["AUTH_SECRET_KEY"] : [];
-  const optional = [...seen].filter((n) => n.length > 1 && !known.has(n) && !required.includes(n) && !NOT_SECRET.test(n)).sort();
-  return { required, optional };
+  const optional = [...seen].filter((n) => n.length > 1 && !known.has(n) && !inferred[n] && !required.includes(n) && !NOT_SECRET.test(n)).sort();
+  return { required, optional, inferred };
 }
 
 /** Every binding, var and secret name a wrangler config declares, including the kinds init can't

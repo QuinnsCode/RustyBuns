@@ -13,9 +13,17 @@ test("codeSecrets: names src/ reads that nothing declares; rwsdk's session store
   writeFileSync(join(src, "app/mail.test.ts"), "env.TEST_ONLY_TOKEN;\n");
   writeFileSync(join(src, "e2e/login.ts"), "env.E2E_PASSWORD;\n");
   const known = new Set(["DB", "APP_URL", "EMAIL", ...wranglerNames({ worker_loaders: [{ binding: "LOADER" }] })]);
-  expect(codeSecrets(src, known, "rwsdk")).toEqual({ required: ["AUTH_SECRET_KEY"], optional: ["O365_OAUTH_CLIENT_SECRET"] });
+  expect(codeSecrets(src, known, "rwsdk")).toEqual({ required: ["AUTH_SECRET_KEY"], optional: ["O365_OAUTH_CLIENT_SECRET"], inferred: {} });
   // only rwsdk's own session store reads AUTH_SECRET_KEY
   expect(codeSecrets(src, known, "vite").required).toEqual([]);
+});
+
+test("codeSecrets: env.X.run( is an ai binding and env.X_R2.put( an r2 one, not secrets", () => {
+  const src = mkdtempSync(join(tmpdir(), "rb-secrets-"));
+  writeFileSync(join(src, "api.ts"), "await env.AI.run(m, p); await env.ANALYTICS_R2.put(k, v); env.MOCK_FLAG; env.TOKEN.get(1);\n");
+  const r = codeSecrets(src, new Set());
+  expect(r.inferred).toEqual({ AI: "ai", ANALYTICS_R2: "r2" });
+  expect(r.optional).toEqual(["MOCK_FLAG", "TOKEN"]);
 });
 
 test("wranglerNames: every binding, var and secret, env blocks and unsupported kinds included", () => {
