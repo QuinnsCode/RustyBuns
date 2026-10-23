@@ -74,6 +74,17 @@ The desktop and box hosts are the same generated program. The desktop build bind
 | secrets | Worker secrets | env file on the server | service variables | n/a |
 | native (FFI, `SharedArrayBuffer`) | no | yes | yes (crates built in the image) | yes |
 
+## What a deploy does to live sessions
+
+On Cloudflare a deploy goes live at once; it does not wait for games to end. A Durable Object's **storage is kept**
+(only a `deleted_classes` migration step deletes data). Every running instance restarts, so its **WebSockets drop and
+anything held only in memory is gone**. Nothing drains rooms first.
+
+So a game keeps its session by (1) writing what must survive to storage as it goes, not at game end, and (2) having its
+page reconnect with the same identity. `resilientSocket` in `@rustybuns/shell-bun/client` does the second: it backs off,
+rebuilds the URL each try (uid and all), calls `onOpen` so you can resend held state, and reports `reconnecting` so the
+page can show "Updating, back in a moment" instead of a dead game. It reports `offline` after a run of failures.
+Hippo Tycoon's `NetSocket` does the same for that game. A deploy that warns rooms first and waits for them to drain is not built yet.
 
 ## Deploy to Hetzner
 

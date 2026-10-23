@@ -46,6 +46,52 @@ export function playerId(key = "rb_player_id"): string {
   } catch { return crypto.randomUUID().replace(/-/g, ""); }
 }
 
+/** "reconnecting": the socket dropped (a deploy restarts every Durable Object); a UI shows "updating, back in a moment". "offline": it kept failing. */
+export type SocketState = "connecting" | "online" | "reconnecting" | "offline";
+
+export interface ResilientSocket { readonly state: SocketState; send(data: string | ArrayBufferLike | Blob | ArrayBufferView): boolean; close(): void }
+
+/**
+ * A WebSocket that survives its server restarting. A deploy keeps a Durable Object's storage but drops
+ * its sockets and memory, so a page that reconnects with the same identity (`open` builds the URL each
+ * time, uid and all) picks its session back up. Backoff is quick first, then slow; after `giveUp` failed
+ * tries in a row the state is "offline" (it keeps trying). `onOpen` runs on every (re)connect: resend held state.
+ * A close code in `final` stops it (the server said why, e.g. a refused version).
+ */
+export function resilientSocket(
+  open: () => WebSocket,
+  ev: { onMessage(data: MessageEvent["data"]): void; onState(s: SocketState, detail?: { tries: number; code?: number }): void; onOpen?(): void },
+  opts: { final?: number[]; giveUp?: number; delay?: (tries: number) => number } = {},
+): ResilientSocket {
+  const final = new Set(opts.final ?? [1008]), giveUp = opts.giveUp ?? 6, delay = opts.delay ?? ((n) => Math.min(500 * 2 ** n, 15_000));
+  let ws: WebSocket | null = null, timer: ReturnType<typeof setTimeout> | undefined, tries = 0, stopped = false, state: SocketState = "connecting";
+  const emit = (s: SocketState, code?: number) => { state = s; ev.onState(s, { tries, code }); };
+  const retry = (code?: number) => {
+    emit(tries >= giveUp ? "offline" : "reconnecting", code);
+    timer = setTimeout(connect, delay(tries++));
+  };
+  function connect() {
+    if (!tries) emit("connecting");
+    let w: WebSocket;
+    try { w = open(); } catch { retry(); return; }
+    ws = w;
+    w.onopen = () => { tries = 0; emit("online"); ev.onOpen?.(); };
+    w.onmessage = (e) => ev.onMessage(e.data);
+    w.onclose = (e) => {
+      if (ws === w) ws = null;
+      if (stopped) return;
+      if (final.has(e.code)) { stopped = true; emit("offline", e.code); return; }
+      retry(e.code);
+    };
+  }
+  connect();
+  return {
+    get state() { return state; },
+    send(data) { if (ws?.readyState !== WebSocket.OPEN) return false; ws.send(data); return true; },
+    close() { stopped = true; clearTimeout(timer); try { ws?.close(1000, "bye"); } catch { /* already gone */ } },
+  };
+}
+
 /** What an excluded action's proxy does: reject clearly instead of reaching a host that never imported it. */
 export function unavailable(module: string, fn: string): Promise<never> {
   return Promise.reject(new Error(`${fn} (${module}) is not available in the desktop build`));
