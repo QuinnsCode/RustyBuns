@@ -59,6 +59,25 @@ Every app is five things: **http, comms, storage, memory, identity**. Cloudflare
 
 </details>
 
+### Your bindings are typed from the config
+
+`EnvOf<typeof config>` gives your handler its bindings type, so deleting one from `rustybuns.config.ts` fails `bun run typecheck` wherever it was used.
+
+<details><summary>More</summary>
+
+`defineConfig` keeps the binding names and types you wrote. A var is a `string`, a secret a `string` (or `string | undefined` when `optional`), and any other binding is whatever you map its type to:
+
+```ts
+import type config from "../rustybuns.config";
+import type { EnvOf } from "@rustybuns/cli/config";
+
+type Bindings = EnvOf<typeof config, { d1: D1Database; kv: KVNamespace; r2: R2Bucket }>;
+```
+
+Types only: nothing is generated and nothing ships in your bundle.
+
+</details>
+
 ### Bun and Vite are the stack, the rest swaps out
 
 Bun runs your app and Vite builds it. Everything else (Alchemy, Effect, Rust, Hetzner, Railway) is an option you add when you want it and drop when you don't.

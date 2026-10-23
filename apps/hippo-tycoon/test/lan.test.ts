@@ -6,6 +6,7 @@ import { afterAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spaEntry } from "../../../packages/cli/src/build.ts";
+import type { RustyBunsConfig } from "../../../packages/cli/src/config.ts";
 import config from "../rustybuns.config.ts";
 import { CLOSE_VERSION, LAN_VERSION, PROTO_VERSION, type ServerMsg } from "../src/engine/wire.ts";
 
@@ -17,7 +18,7 @@ afterAll(() => { rmSync(dataDir, { recursive: true, force: true }); rmSync(join(
 async function launch() {
   mkdirSync(dir, { recursive: true });
   if (!existsSync(join(dir, "actions.ts"))) writeFileSync(join(dir, "actions.ts"), "export const actions: Record<string, Record<string, Function>> = {};\n");
-  const cfg = structuredClone(config) as typeof config;
+  const cfg = structuredClone(config) as RustyBunsConfig;
   cfg.targets.desktop!.dataDir = dataDir;
   writeFileSync(join(dir, "e2e-desktop.ts"), spaEntry(cfg));
   const p = Bun.spawn(["bun", ".rustybuns/e2e-desktop.ts"], { cwd: app, env: { ...process.env, RB_NO_BROWSER: "1" }, stdout: "pipe", stderr: "pipe" });
