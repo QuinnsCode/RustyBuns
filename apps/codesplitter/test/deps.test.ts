@@ -808,6 +808,9 @@ registry = "https://mirror.example/"
   expect(registryUrl([home, repo], "@acme/ui")).toEqual({ url: "https://npm.acme.dev/api/@acme%2fui", token: "s3cret" });
   expect(registryUrl([home, repo], "mitt")).toEqual({ url: "https://mirror.example/mitt" });
   expect(registryUrl([home], "mitt")).toEqual({ url: "https://registry.npmjs.org/mitt", token: "npm_x" });
+  // A repo can't aim the owner's token at plain http or a private host (#1818).
+  for (const registry of ["http://registry.npmjs.org/", "https://127.0.0.1/", "https://10.0.0.5/npm/"])
+    expect(registryUrl([home, parseNpmrc(`registry=${registry}`)], "mitt").token).toBeUndefined();
   // Its registries are what a container's install may reach besides npm's (#681).
   expect(npmrcHosts([home, repo])).toEqual(["mirror.example", "npm.acme.dev"]);
 });

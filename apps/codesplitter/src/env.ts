@@ -40,7 +40,7 @@ export interface DigMessage { dig: string; user: string | null; again?: boolean;
 export interface R2Like {
   put(key: string, value: Blob | Uint8Array): Promise<unknown>;
   get(key: string, opts?: { range?: { offset: number; length: number } }): Promise<{ arrayBuffer(): Promise<ArrayBuffer> } | null>;
-  list(opts?: { prefix?: string; cursor?: string }): Promise<{ objects: { key: string }[]; truncated: boolean; cursor?: string }>;
+  list(opts?: { prefix?: string; cursor?: string; limit?: number }): Promise<{ objects: { key: string }[]; truncated: boolean; cursor?: string }>;
   delete(keys: string | string[]): Promise<void>;
 }
 
@@ -150,6 +150,8 @@ export interface Env {
   AGENT_REVIEW_MS?: string;
   /** Tests only: stands in for running a coding agent's CLI (see agent-run.ts). */
   AGENT_EXEC?: unknown;
+  /** "on" runs the mergiraf on PATH on a file Mervin left cards in (mergiraf.ts); hosted, it runs in the agent container. Tests pass an Exec. */
+  MERGIRAF?: unknown;
   /** Tests only: stand in for npm, osv.dev, the install-and-test run and the fixer (see deps.ts). */
   DEPS_REGISTRY?: unknown;
   DEPS_ADVISORIES?: unknown;
@@ -162,6 +164,8 @@ export interface Env {
   WATCH_NEWS?: string;
   /** Tests only: stands in for fetch to the status pages, osv.dev and the news search (see watch.ts). */
   WATCH_FETCH?: unknown;
+  /** The built pages (dist/client), for the routes that serve one page under a second name (worker.ts). Unset in tests. */
+  ASSETS?: { fetch(req: Request): Promise<Response> };
   /** Where desktop deploys keep each repo's Alchemy state (deploy.ts); ~/.codesplitters/alchemy if unset. */
   DEPLOY_STATE_DIR?: string;
   /** Tests only: stands in for the commands and the fetch a preview deploy runs (see preview.ts). */

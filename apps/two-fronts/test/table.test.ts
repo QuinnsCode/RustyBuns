@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import { MAX_INPUTS, aiVote, castVote, handIn, newTable, report, tally, waitingOn, type Step, type Table } from "../src/war/table.ts";
-import { ORBIT, buildSpec, resolveTurn, type Where } from "../src/war/rules.ts";
-import { other, type BattleSpec, type SpaceBattleSpec } from "../src/battle/contract.ts";
+import { ORBIT, buildSpec, planOrders, resolveTurn, type Where } from "../src/war/rules.ts";
+import { other, type BattleSpec, type SpaceBattleSpec, type SpaceOrder } from "../src/battle/contract.ts";
+import { encodePicks, fightPicks, playRound, replayPicks, startPicks } from "../src/battle/space-picks.ts";
+import { aiSpacePick } from "../src/war/ai.ts";
 import { groundRecorder, spaceRecorder } from "../src/battle/replay.ts";
 import { run, startBattle, step } from "../src/battle/sim.ts";
 import { runSpace, startSpaceBattle, stepSpace } from "../src/battle/space.ts";
@@ -176,6 +178,58 @@ test("a space battle is played again too, left to the AI or from the hero's inpu
   const real = runSpace(p.spec).over!;
   const done = ok(report(paused, "wooka", { id: p.spec.id, winner: "defender", fleets: { attacker: 0, defender: 2 }, heroDown: false, auto: true }));
   expect(done.done!.battle).toEqual({ ...real, auto: true });
+});
+
+test("a doctored pick battle counts for nothing: the table fights it again from the hero's picks", () => {
+  const { paused } = orbitFight();
+  const p = paused.campaign.pending!;
+  if (p.kind !== "space") throw new Error("expected a space battle");
+  const inputs = encodePicks(["screen", "broadside", "screen", "broadside"]);
+  const real = replayPicks(p.spec, inputs, aiSpacePick)!;
+  const forged = { ...real, winner: other(real.winner), fleets: { attacker: 9, defender: 9 }, ground: { attacker: 0, defender: 0 }, heroDown: false, inputs };
+  expect(ok(report(paused, "wooka", forged)).done!.battle).toEqual(real);
+  // Left to the AI, it picks for both sides; and picks that aren't picks make no battle.
+  const auto = ok(report(paused, "wooka", { ...forged, auto: true, inputs: undefined }));
+  expect(auto.done!.battle).toEqual({ ...fightPicks(p.spec, [], aiSpacePick)!.over!, auto: true });
+  expect(report(paused, "wooka", { ...forged, inputs: "77" })).toEqual({ ok: false, error: "Those inputs don't make a battle" });
+  expect(report(paused, "wooka", { ...forged, picks: "yes" } as never)).toEqual({ ok: false, error: "That result doesn't add up" });
+});
+
+// The journey: the Wooka come for Corva with six ships and troops behind them. The Marines' hero
+// picks through the space battle over it, badly, and loses the orbit: the Wooka troops come down
+// on the capital, and Corva is blockaded.
+test("a hero who picks badly loses the orbit, and the landings and the blockade follow", () => {
+  const t = newTable({ marines: "human", wooka: "human" }, "short", 7);
+  const kessa = t.campaign.systems.kessa!;
+  kessa.fleets.wooka = 6;
+  for (const x of kessa.sectors) x.armies.wooka = 3;
+  const wooka = { faction: "wooka" as const, orders: [
+    { kind: "fleet" as const, from: "kessa", to: "corva", count: 6 },
+    { kind: "army" as const, from: { system: "kessa", sector: 2 }, to: { system: "corva", sector: 1 }, count: 3 },
+  ] };
+  const paused = ok(handIn(ok(handIn(t, "marines", empty("marines", { system: "corva", sector: ORBIT }))).table, "wooka", wooka)).table;
+  const p = paused.campaign.pending!;
+  if (p.kind !== "space") throw new Error("expected a space battle");
+  // The briefing's numbers: the fleets, and the Marines' muster force on Corva below.
+  expect(p.spec).toMatchObject({ hero: "defender", fleets: { attacker: 6, defender: 3 }, muster: { attacker: 0, defender: 4 }, batteries: { defender: 1 } });
+
+  // The page's side: a round at a time, the hero's pick in before the Wooka's is seen.
+  const b = startPicks(p.spec), bad: SpaceOrder[] = ["bombard", "withdraw", "bombard", "withdraw"];
+  for (const mine of bad) playRound(b, { defender: mine, attacker: aiSpacePick(b, "attacker") });
+  expect(b.over!.winner).toBe("attacker");
+  const after = ok(report(paused, "marines", { ...b.over!, inputs: encodePicks(bad) }));
+  const c = after.table.campaign;
+  expect(after.done!.battle).toMatchObject({ winner: "attacker", picks: true });
+  expect(c.systems.corva!.orbit).toBe("wooka");
+  expect(c.log).toContain("3 Wooka armies come down on Corva capital under their orbit.");
+  expect(c.log.some((l) => l.startsWith("Wooka blockade Corva"))).toBe(true);
+  // Bombarded from above while the hero turned the guns on an empty world, the capital's garrison
+  // is gone before the troops even land.
+  expect(c.log.some((l) => /^Thunder Marines lose \d+ arm(y|ies) on Corva/.test(l))).toBe(true);
+  expect(c.systems.corva!.sectors[1]!.owner).toBe("wooka");
+  // Next turn the blockade bites: nothing gets built or mustered on Corva.
+  const cannon = { system: "corva", sector: 0 };
+  expect(planOrders(c, [{ faction: "marines", orders: [{ kind: "build", unit: "army", at: cannon }] }]).errors[0]).toBe("Blockaded: the enemy holds the orbit");
 });
 
 test("attacks are declared, and the turn waits on the retreats of the sides they touch", () => {

@@ -1,11 +1,15 @@
 // The first level: an 80 m walled plaza with a kicker, a funbox, a rail and a gap.
 import { makeLevel, piece } from "../level.ts";
+import { picnicTable } from "./pieces.ts";
+
+// A giant picnic table in the quiet corner: a top to manual across, seats to grind.
+const table = picnicTable({ x: -24, z: 24, yaw: Math.PI / 2 });
 
 export const HALF = 40;
 
 // A ramp from world-space corners, as it was first written: rises along z from h0 to h1.
 const ramp = (name: string, x0: number, x1: number, z0: number, z1: number, h0: number, h1: number) =>
-  piece(h0 === h1 ? "box" : "ramp", name, (x0 + x1) / 2, (z0 + z1) / 2, 0, x1 - x0, z1 - z0, h0, h1);
+  ({ ...piece(h0 === h1 ? "box" : "ramp", name, (x0 + x1) / 2, (z0 + z1) / 2, 0, x1 - x0, z1 - z0, h0, h1), look: { kind: h0 === h1 ? "block" : "ramp" } as const });
 
 export const plaza = makeLevel({
   name: "plaza",
@@ -20,8 +24,9 @@ export const plaza = makeLevel({
     // Too far to push across on a board; the roadster's rear thrusters clear it.
     ramp("gap kicker", 22, 32, -28, -14, 0, 4),
     ramp("gap landing", 22, 32, -2, 14, 3, 0),
+    ...table.pieces,
   ],
-  rails: [{ kind: "rail", a: { x: -12, z: -10 }, b: { x: -12, z: 10 }, y: 0.9 }],
+  rails: [{ kind: "rail", a: { x: -12, z: -10 }, b: { x: -12, z: 10 }, y: 0.9 }, ...table.rails],
   spawns: [
     { name: "car", x: 27, z: -38, yaw: 0 },
     { name: "skate", x: -12, z: -20, yaw: 0 },

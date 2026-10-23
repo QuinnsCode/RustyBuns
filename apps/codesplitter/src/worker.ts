@@ -6,6 +6,7 @@
 import { parseJson } from "./util.ts";
 import { artifactMoveRoutes } from "./artifact-move.ts";
 import { featureRankRoutes } from "./feature-ranks.ts";
+import { findRoutes } from "./finds.ts";
 import { rankOf } from "./policy.ts";
 import { fromText } from "./lines.ts";
 import { mainClosed, policyClosed, protectRoute } from "./protect.ts";
@@ -134,7 +135,7 @@ import { gitState } from "./git-state.ts";
 import { commitGraph, GRAPH_MAX, sharedGraph } from "./graph.ts";
 
 /** A share link's read token: a day unless asked, a week at most. */
-const SHARE_DEFAULT_S = 86400, SHARE_MAX_S = 7 * 86400;
+const SHARE_DEFAULT_S = 86400, SHARE_MAX_S = 7 * 86400, SHARE_CREW_PRIVATE_S = 3600;
 import { watchdogRoutes } from "./watchdog.ts";
 import { busiestFiles, fileHistory } from "./gitpath-data.ts";
 import { joinHistory, upstreamBusiest, upstreamFileHistory, type UpstreamRepo } from "./gitpath-upstream.ts";
@@ -285,6 +286,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (p[0] === "install.sh" && !p[1] && req.method === "GET") return installScript(url.origin);
   // GET /agent.md  a prompt to hand your own agent so it can steer the site for you (agent-prompt.ts)
   if (p[0] === "agent.md" && !p[1] && req.method === "GET") return agentPromptResponse(url.origin);
+  // GET /demo, /why  the rush-hour subway swarm demo (swarm.html, which /swarm already serves) under two more names
+  if ((p[0] === "demo" || p[0] === "why") && !p[1] && req.method === "GET" && env.ASSETS) return env.ASSETS.fetch(new Request(new URL("/swarm", url.origin), req));
   // GET /llms.txt, /robots.txt  where an agent starting at the root is pointed at the API (discover.ts)
   if ((p[0] === "llms.txt" || p[0] === "robots.txt") && !p[1] && req.method === "GET") return new Response(p[0] === "llms.txt" ? LLMS_TXT : ROBOTS_TXT, { headers: { "content-type": "text/plain; charset=utf-8" } });
   if (p[0] !== "api") return new Response("not found", { status: 404 });
@@ -397,6 +400,10 @@ async function route(req: Request, env: Env): Promise<Response> {
   // POST /api/follows, DELETE /api/follows/:id, GET /api/me/following (follows.ts)
   const follows = await followRoutes(req, env, p, user, (o, r) => access(env, o, r, user));
   if (follows) return follows;
+  // PUT /api/me/finds, GET /api/users/:name/finds: the hidden games found, and the badge (finds.ts)
+  const finds = await findRoutes(req, env, p, user);
+  if (finds) return finds;
+
   // GET /api/feature-ranks, PUT /api/me/feature-ranks, POST /api/feature-comments (feature-ranks.ts)
   const ranks = await featureRankRoutes(req, env, p, user);
   if (ranks) return ranks;
@@ -563,11 +570,13 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (p[4] === "git-state" && req.method === "GET") return json(await gitState(env, owner, repo));
     // GET /api/repos/:o/:r/fit[?dir=apps/web]  how easily Rusty Buns could box it, or one app in it
     if (p[4] === "fit" && req.method === "GET") return repoFit(env, (r) => app.fetch(r, env), url.origin, owner, repo, user, url.searchParams.get("dir") ?? "");
-    // GET /api/repos/:o/:r/share[?branch=&ttl=]  a git clone line with a read token that lasts ttl seconds (a day by default, a week at most), to hand to someone
+    // GET /api/repos/:o/:r/share[?branch=&ttl=]  a git clone line with a read token that lasts ttl seconds (a day by default, a week at most, an hour for crew on a private repo: removing them can't recall it), to hand to someone
     if (p[4] === "share" && !p[5] && req.method === "GET") {
       const branch = url.searchParams.get("branch");
       if (branch && !/^[\w][\w./-]*$/.test(branch)) return json({ error: "that isn't a branch name" }, 400);
-      const ttl = Math.max(60, Math.min(SHARE_MAX_S, Math.floor(Number(url.searchParams.get("ttl"))) || SHARE_DEFAULT_S));
+      // A removed crew member's token can't be recalled, so on a private repo theirs lives an hour at most (#1819).
+      const cap = user !== owner && (await repoRow(env, owner, repo, "visibility"))?.visibility === "private" ? SHARE_CREW_PRIVATE_S : SHARE_MAX_S;
+      const ttl = Math.max(60, Math.min(cap, Math.floor(Number(url.searchParams.get("ttl"))) || Math.min(cap, SHARE_DEFAULT_S)));
       const h = await handleFor(env, owner, repo).catch(() => null);
       if (!h) return json({ error: "this repo has no git to share" }, 409);
       const art = await artifactAccess(h.handle, h.remote, "read", ttl);
@@ -596,7 +605,8 @@ async function route(req: Request, env: Env): Promise<Response> {
         if (!h) return json({ repo: `${owner}/${repo}`, ...(path ? { path, commits: [] } : { files: [] }) });
         // A repo dug from GitHub has only its import in its own git; what came before is read from GitHub (gitpath-upstream.ts).
         const r = await repoRow(env, owner, repo, "upstream, upstream_commit, branch") as UpstreamRepo | null;
-        const token = (await githubToken(env, user).catch(() => null))?.token;
+        // An anonymous caller never spends the site's GitHub token: they get GitHub's unauthenticated quota, if any.
+        const token = user ? (await githubToken(env, user).catch(() => null))?.token : undefined;
         if (path) {
           const own = await fileHistory(h.handle, h.branch, path, limit);
           const before = own.more ? null : await upstreamFileHistory(r, path, limit - own.commits.length, token);
@@ -885,7 +895,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     const tracks = await Promise.all(results.map(async (t: any) => {
       // A track pointing into a repo that went private just disappears for you; private lines are placeholders unless you're crew.
       const can = await access(env, t.owner, t.repo, user);
-      if (!can.read) return null;
+      if (!can.read || (token?.repo && token.repo !== `${t.owner}/${t.repo}`)) return null;
       const doc = await (await toFile(env, t.owner, t.repo, t.path, user ?? "anon", "file", { headers: { "x-codesplitter-crew": can.write ? "1" : "0" } })).json() as { lines: { id: string; text: string; by: string }[] };
       // Follow the lines by id; if either end was deleted, fall back to the numbers.
       const i = doc.lines.findIndex((l) => l.id === t.from_id), j = doc.lines.findIndex((l) => l.id === t.to_id);

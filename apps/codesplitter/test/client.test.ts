@@ -549,3 +549,24 @@ describe("game send-offs", () => {
     expect(link("ana", "dig", "top.ts", "room")).toBe("https://cs.test/play.html#r/ana/dig?room=");
   });
 });
+
+// The lobby's invite button: a link back into the same room, in the mode and folder it's in.
+describe("lobby invite link", () => {
+  const play = readFileSync(join(import.meta.dir, "../src/play.html"), "utf8");
+  const src = play.slice(play.indexOf("const inviteLink"), play.indexOf('$("#invite")'));
+  const make = (s: { room: string; mode: string; diff: unknown; here: { path: string } | null }) =>
+    new Function("location", "room", "mode", "diff", "here", `${src}; return inviteLink();`)({ origin: "https://cs.test" }, s.room, s.mode, s.diff, s.here);
+
+  test("wreck keeps its mode and the folder", () => {
+    expect(make({ room: "r/ana/dig", mode: "wreck", diff: null, here: { path: "src/a" } })).toBe("https://cs.test/play.html#r/ana/dig?mode=wreck&room=src%2Fa");
+  });
+  test("share repo links the repo's page, not the room", () => {
+    const rl = (room: string) => new Function("location", "room", `${play.slice(play.indexOf("const repoLink"), play.indexOf('$("#share-repo")'))}; return repoLink();`)({ origin: "https://cs.test" }, room);
+    expect(rl("r/ana/dig")).toBe("https://cs.test/#/r/ana/dig");
+    expect(rl("l/mitt")).toBe("https://cs.test/#/l/mitt");
+  });
+  test("horde at the root is the bare room; a smash carries its diff", () => {
+    expect(make({ room: "l/mitt", mode: "horde", diff: null, here: { path: "" } })).toBe("https://cs.test/play.html#l/mitt");
+    expect(make({ room: "r/ana/dig", mode: "removed", diff: { path: "a.ts", from: 1, to: 2 }, here: null })).toBe("https://cs.test/play.html#r/ana/dig?path=a.ts&from=1&to=2");
+  });
+});

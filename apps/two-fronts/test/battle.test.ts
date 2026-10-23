@@ -1,7 +1,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import type { BattleSpec } from "../src/battle/contract.ts";
 import {
-  CHAMP_AT, DT, SPRINT_AFTER, FLAVOR, HALF, LAYOUTS, ROLES, ROLE_STATS, STATS, STRIKE_RADIUS, TROOPERS, aimTarget, flies, heroUnit, hitChance, inCover, isVehicle, run, sees, startBattle, statsOf, step, type UnitKind, type WookaRole,
+  CHAMP_AT, DT, MOSS_HEAL, MOSS_LIGHT, MOSS_WOUND, SPRINT_AFTER, FLAVOR, HALF, LAYOUTS, ROLES, ROLE_STATS, STATS, STRIKE_RADIUS, TROOPERS, aimTarget, damage, flies, heroUnit, hitChance, inCover, isVehicle, run, sees, startBattle, statsOf, step, type Unit, type UnitKind, type WookaRole,
 } from "../src/battle/sim.ts";
 
 // Whole battles run here, and a CI runner is slower than a laptop. bunfig's timeout is ignored,
@@ -136,7 +136,7 @@ const bare = (over: Partial<BattleSpec> = {}) => {
   return b;
 };
 const unit = (b: ReturnType<typeof bare>, side: "attacker" | "defender", kind: UnitKind, x: number, z: number) => {
-  const u = { id: b.nextId++, side, kind, x, z, yaw: 0, hp: STATS[kind].hp, maxHp: STATS[kind].hp, cool: 99, jx: 0, jz: 0 };
+  const u: Unit = { id: b.nextId++, side, kind, x, z, yaw: 0, hp: STATS[kind].hp, maxHp: STATS[kind].hp, cool: 99, jx: 0, jz: 0 };
   b.units.push(u);
   return u;
 };
@@ -219,7 +219,7 @@ test("nobody ends up inside a building or rock, on any map", () => {
   for (const sector of ["capital", "canyon", "jungle"] as const) {
     const b = run(spec({ sector }), 150);
     expect(b.blocks.length).toBeGreaterThan(10);
-    for (const u of b.units) if (!flies(u)) for (const k of b.blocks) expect(Math.abs(u.x - k.x) < k.w / 2 && Math.abs(u.z - k.z) < k.d / 2).toBe(false);
+    for (const u of b.units) if (!flies(u)) for (const k of b.blocks) expect(!k.broken && Math.abs(u.x - k.x) < k.w / 2 && Math.abs(u.z - k.z) < k.d / 2).toBe(false);
   }
   expect(startBattle(spec({ sector: "canyon" })).trees).toHaveLength(0);
   expect(startBattle(spec({ sector: "jungle" })).trees.length).toBeGreaterThan(startBattle(spec()).trees.length);
@@ -233,11 +233,12 @@ const wookaOf = (b: ReturnType<typeof bare>, side: "attacker" | "defender", role
 };
 const idle = { forward: 0, right: 0, yaw: 0, fire: false };
 
-test("the horde comes in all five kinds, mostly fodder", () => {
+test("the horde comes in five kinds, mostly fodder", () => {
   const b = startBattle(spec({ armies: { attacker: 3, defender: 4 } }));
   step(b, null);
   const n = (r: WookaRole) => b.units.filter((u) => u.role === r).length;
-  for (const r of ROLES) expect(n(r)).toBeGreaterThan(0);
+  for (const r of ROLES.filter((k) => k !== "mossback")) expect(n(r)).toBeGreaterThan(0);
+  expect(n("mossback")).toBe(0); // they only come out of a surge
   expect(n("fodder")).toBeGreaterThan(n("chub"));
   expect(b.units.filter((u) => u.role).every((u) => u.kind === "wooka" && u.side === "defender")).toBe(true);
 });
@@ -270,6 +271,49 @@ test("a Sticky throws a spear and falls back", () => {
   const z = s.z;
   for (let i = 0; i < 20; i++) step(b, null);
   expect(s.z).toBeLessThan(z); // further off, towards home
+});
+
+test("Warbur spears from afar, throws his kin, then rips a head off up close", () => {
+  const b = bare();
+  const bear: Unit = unit(b, "defender", "champion", 0, -35);
+  Object.assign(bear, { champ: "warbur" as const, hp: 1100, maxHp: 1100, cool: 0, jav: 0, toss: 0 });
+  const marine = unit(b, "attacker", "assault", 0, 0);
+  const kin = [wookaOf(b, "defender", "fodder", 3, -40), wookaOf(b, "defender", "fodder", -3, -40)];
+  for (const k of kin) k.cool = 99;
+  // 35 away: a spear, no kin thrown yet.
+  step(b, null);
+  expect(b.fx.some((f) => f.kind === "spear" && f.big)).toBe(true);
+  expect(b.fx.some((f) => f.kind === "toss")).toBe(false);
+  // 12 away: kin go flying while they're healthy.
+  bear.z = -12; bear.toss = 0; bear.look = 0;
+  for (const k of kin) k.z = -12;
+  step(b, null);
+  expect(b.fx.some((f) => f.kind === "toss")).toBe(true);
+  // Beaten up kin are left alone: spears instead.
+  b.fx = []; bear.toss = 0; bear.jav = 0; bear.look = 0;
+  for (const k of kin) k.hp = 5;
+  step(b, null);
+  expect(b.fx.some((f) => f.kind === "toss")).toBe(false);
+  expect(b.fx.some((f) => f.kind === "spear")).toBe(true);
+  // Up close, the head comes off.
+  bear.x = 0; bear.z = -2; bear.cool = 0; bear.look = 0; marine.hp = STATS.assault.hp;
+  for (let i = 0; i < 200 && marine.hp > 0; i++) step(b, null);
+  expect(marine.hp).toBeLessThanOrEqual(0);
+});
+
+test("a spear pins whoever it hits to a nearby trunk", () => {
+  let pinned = 0;
+  for (let seed = 1; seed <= 12; seed++) {
+    const b = bare({ seed });
+    b.trees = [{ x: 2, z: 2, r: 1 }];
+    const marine: Unit = unit(b, "attacker", "assault", 0, 2);
+    marine.cool = 99;
+    wookaOf(b, "defender", "sticky", 0, -10).cool = 0;
+    for (let i = 0; i < 3; i++) step(b, null);
+    if (marine.hp < marine.maxHp && (marine.stun ?? 0) > 0) pinned++;
+    else expect(marine.hp < marine.maxHp).toBe(false); // every hit pins
+  }
+  expect(pinned).toBeGreaterThan(0);
 });
 
 test("three Wooka on a Marine tear them apart, and cover is no help up close", () => {
@@ -364,10 +408,66 @@ test("the hero's kills are counted, and a streak ends when they go down", () => 
   const foe = wookaOf(b, "defender", "fodder", 0, -10);
   foe.hp = 1;
   hero.cool = 0;
-  for (let i = 0; i < 10 && b.units.includes(foe); i++) step(b, { ...idle, yaw: 0, fire: true });
+  for (let i = 0; i < 90 && b.units.includes(foe); i++) step(b, { ...idle, yaw: 0, fire: true });
   expect(b.hero.kills).toBe(1);
   expect(b.hero.streak).toBe(1);
   hero.hp = 0;
   step(b, idle);
   expect(b.hero.streak).toBe(0);
+});
+
+// Nothing else going on: no guns, gunships, surges or reinforcements, so one thing can be watched.
+const quiet = (b: ReturnType<typeof bare>) => {
+  b.beat.arty = { attacker: 1e9, defender: 1e9 };
+  b.beat.nextSurge = b.beat.nextPass = 1e9;
+  b.spawnAt = { attacker: 1e9, defender: 1e9 };
+  return b;
+};
+
+test("a Mossback shrugs off light fire and mends, unless something heavy hit it lately", () => {
+  const b = quiet(bare());
+  const m = wookaOf(b, "defender", "mossback", 0, -80);
+  const max = ROLE_STATS.mossback.hp;
+  // A rifle round barely marks it.
+  damage(b, m, 8);
+  expect(m.hp).toBeCloseTo(max - 8 * MOSS_LIGHT, 5);
+  // Hurt, and nothing heavy about: it mends, slowly.
+  m.hp = max / 2;
+  for (let i = 0; i < 3 / DT; i++) step(b, null);
+  expect(m.hp).toBeCloseTo(max / 2 + MOSS_HEAL * 3, 0);
+  expect(m.hp).toBeLessThan(max / 2 + 100); // slowly: a minute to be whole, not a second
+  // A heavy hit (a blast, a rocket) lands in full, and stops it mending for a while.
+  m.hp = max / 2;
+  damage(b, m, 100, undefined, true);
+  expect(m.hp).toBe(max / 2 - 100);
+  for (let i = 0; i < (MOSS_WOUND - 1) / DT; i++) step(b, null);
+  expect(m.hp).toBe(max / 2 - 100);
+  // A single hit big enough counts as heavy whatever it came from; a pile of light ones doesn't.
+  m.wound = 0;
+  damage(b, m, 60);
+  expect(m.wound).toBe(MOSS_WOUND);
+  m.wound = 0; m.hp = max / 2;
+  for (let i = 0; i < 10; i++) damage(b, m, 20);
+  expect(m.wound).toBe(0);
+  expect(m.hp).toBeCloseTo(max / 2 - 200 * MOSS_LIGHT, 5);
+  // Once the wound has run its course it mends again.
+  m.wound = 0.2; m.hp = max / 2;
+  for (let i = 0; i < 4 / DT; i++) step(b, null);
+  expect(m.hp).toBeGreaterThan(max / 2 + MOSS_HEAL * 3);
+});
+
+test("a Mossback leaps the last few metres, swats troopers aside and goes through low cover", () => {
+  const b = quiet(bare());
+  const m = wookaOf(b, "defender", "mossback", 0, -40);
+  const a = unit(b, "attacker", "assault", 0, -48), c = unit(b, "attacker", "assault", 2, -49);
+  a.cool = c.cool = 99;
+  b.blocks.push({ x: 0, z: -44, w: 12, d: 1.3, h: 1.2, kind: "log" }, { x: 20, z: -44, w: 4, d: 4, h: 1.2, kind: "rock" });
+  const from = m.z;
+  let leapt = false;
+  for (let i = 0; i < 4 / DT && m.hp > 0; i++) { step(b, null); leapt ||= (m.leap ?? 0) > 0; }
+  expect(leapt).toBe(true);
+  expect(m.z).toBeLessThan(from); // it came for them (the defender's end is -z), not away
+  expect(b.blocks[0]!.broken).toBe(true);  // the log is rubble
+  expect(b.blocks[1]!.broken).toBeUndefined(); // a rock isn't
+  expect(a.hp).toBeLessThan(STATS.assault.hp);
 });

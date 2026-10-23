@@ -80,6 +80,27 @@ describe("figure", () => {
     expect(sideways.z).toBeGreaterThan(ahead.z);
   });
 
+  test("hanging under a parachute, both hands are up on the risers above the head", () => {
+    const f = buildFigure(0, 0.3);
+    pose(f, { pose: "hang", speed: 0, dt: 0, roll: 0, pitch: 0 });
+    f.root.updateMatrixWorld(true);
+    const head = f.head.getWorldPosition(v.clone());
+    for (const hand of ["handL", "handR"]) expect(f.root.getObjectByName(hand)!.getWorldPosition(v.clone()).y).toBeGreaterThan(head.y + 0.1);
+  });
+
+  test("leaning puts the head out to the side by LEAN_REACH and leaves the feet where they were", () => {
+    const f = buildFigure(0, 0.3);
+    const where = (lean: number) => {
+      pose(f, { pose: "stand", speed: 0, dt: 0, roll: 0, pitch: 0, lean });
+      f.root.updateMatrixWorld(true);
+      return { head: f.head.getWorldPosition(v.clone()), feet: ["footL", "footR"].map((n) => f.root.getObjectByName(n)!.getWorldPosition(v.clone())) };
+    };
+    const straight = where(0), right = where(1), left = where(-1);
+    expect(Math.abs(right.head.x - 0.6)).toBeLessThan(0.1);
+    expect(Math.abs(left.head.x + 0.6)).toBeLessThan(0.1);
+    for (const side of [right, left]) side.feet.forEach((p, i) => expect(p.distanceTo(straight.feet[i]!)).toBeLessThan(0.15));
+  });
+
   test("the gun in the hands is the weapon that's up", () => {
     const f = buildFigure(0, 0.3);
     expect(f.gun).toBe("commit");

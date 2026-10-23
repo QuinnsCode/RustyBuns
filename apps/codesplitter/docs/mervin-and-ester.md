@@ -29,6 +29,12 @@ jam rate climbed with the crowd: 18% when 0-2 other PRs were open, 51% when 10 o
 proportionally more shipped work. Past a point they meant more of one agent waiting on another. The full counts, and
 how they are measured, are in [jams.md](jams.md).
 
+You can watch that week happen. Every dot below is one of its PRs, coloured by what it was waiting on, and the red
+spike is the night of October 13, when 18 PRs sat stuck on git at once. The page behind it, `/swarm-watch.html` (also reached from "We got git problems with agent swarm" (`/git-problems.html`), which pairs it with the rush-hour station animation), lets
+you drag through the week and shows which file the stuck agents piled into (`bun scripts/swarm-week.ts` collects it).
+
+![1,000 PRs in a week, one dot each](swarm-week.svg)
+
 ## So: rethink git, sideways
 
 The fix is not a smarter agent standing in the way of the collisions. It is to take the collisions out of the path,
@@ -78,6 +84,22 @@ and Ester's share of it is the time spent working out whose failure it was. That
 scores and from this repo's counts, not a measurement of either helper on this one, and the counts are a floor:
 a jam is detected from commit titles and force pushes, so quiet ones are missed. The method and its limits are in
 [jams.md](jams.md).
+
+## The docs are code too
+
+The same idea covers the docs. They are generated and checked by scripts, and tied to the version, so they cannot
+drift as the crowd grows:
+
+- `bun run docs` fixes what it can in place: the README's version banner comes from `packages/cli`, and the examples
+  table gets a row per `apps/*` directory, so a new or deleted app updates it.
+- Every relative link and `#anchor` in the root docs must land. A broken one fails `bun run docs --check`.
+- `bun run site` builds the docs site from those files: `latest/` from the working tree, plus a folder per release tag
+  read straight from git. Each version's docs are the docs as they were at that tag.
+- codeSplitter's API reference and MCP tool list are generated from `src/openapi.ts` and `src/mcp-tools.ts`, so changing
+  an endpoint changes its docs in the same PR.
+- CI runs both checks on every pull request (`typecheck.yml`), so a PR that leaves the docs behind does not merge.
+
+Nobody has to remember to update them, and an agent that skips it is told by CI, not by a reader a month later.
 
 ## Where the AI goes
 

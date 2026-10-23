@@ -312,6 +312,8 @@ test("serve: _redirects rules apply before assets, first match wins", async () =
   writeFileSync(join(dir, "docs", "index.html"), "<p>docs</p>");
   writeFileSync(join(dir, "old.html"), "<p>old</p>");
   writeFileSync(join(dir, "app.html"), "<p>app</p>");
+  mkdirSync(join(dir, "app"));
+  writeFileSync(join(dir, "app", "main.js"), "js");
   writeFileSync(join(dir, "_redirects"), [
     "# moved",
     "/old.html /new 301",
@@ -336,10 +338,27 @@ test("serve: _redirects rules apply before assets, first match wins", async () =
   expect(r.headers.get("location")).toBe("https://example.com/x?q=1#top");
   r = await get("/app/settings/me");
   expect([r.status, await r.text()]).toEqual([200, "<p>app</p>"]);
+  // A 200 rewrite fills in only where no file is (live Pages serves /assets/main.js under `/* /index.html 200`).
+  expect(await (await get("/app/main.js")).text()).toBe("js");
+  expect((await get("/old.html")).status).toBe(301);
   expect((await get("/bad")).status).toBe(404);
   expect(await (await get("/bad")).text()).toBe("worker");
   expect(await (await get("/docs/")).text()).toBe("<p>docs</p>");
   expect(await (await get("/_redirects")).text()).toBe("worker");
+  await shell.stop();
+});
+
+test("serve: runWorkerFirst sends matches to the Worker before the files, except what a ! pattern names", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync("/tmp/rb-assets-");
+  mkdirSync(join(dir, "assets"));
+  writeFileSync(join(dir, "index.html"), "file");
+  writeFileSync(join(dir, "assets", "a.js"), "file");
+  const shell = serve({ assets: dir, runWorkerFirst: ["/*", "!/assets/*"] });
+  shell.mount({ async fetch() { return new Response("worker"); } }, {});
+  const get = async (p: string) => (await fetch(shell.url + p)).text();
+  expect([await get("/index.html"), await get("/api/x"), await get("/assets/a.js")]).toEqual(["worker", "worker", "file"]);
   await shell.stop();
 });
 
@@ -384,4 +403,20 @@ test("serve: a missing page gets the nearest 404.html with status 404, as Cloudf
   const bare = serve({ assets: mkdtempSync("/tmp/rb-assets-") });
   expect(await fetch(bare.url + "/nope").then(async (r) => [r.status, await r.text()])).toEqual([404, "not found"]);
   await bare.stop();
+});
+
+test("serve: files .assetsignore names 404 like the binary and Cloudflare, an index.html fallback included", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync("/tmp/rb-assets-");
+  mkdirSync(join(dir, "drafts"));
+  writeFileSync(join(dir, "index.html"), "home");
+  writeFileSync(join(dir, "drafts", "a.html"), "draft");
+  writeFileSync(join(dir, "notes.md"), "notes");
+  writeFileSync(join(dir, ".assetsignore"), "drafts/\n*.md\n");
+  const shell = serve({ assets: dir });
+  shell.mount({ async fetch() { return new Response("worker", { status: 404 }); } }, {});
+  expect(await (await fetch(shell.url + "/index.html")).text()).toBe("home");
+  for (const p of ["/drafts/a.html", "/drafts/a", "/notes.md"]) expect(await (await fetch(shell.url + p)).text()).toBe("worker");
+  await shell.stop();
 });

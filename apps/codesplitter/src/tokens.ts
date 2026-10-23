@@ -73,7 +73,7 @@ export async function bearer(req: Request, env: Env, p: string[]): Promise<Token
   if (!t || t.expires_at <= now) return json({ error: "this API token is expired, revoked or wrong: make one on your profile page" }, 401, { "www-authenticate": 'Bearer error="invalid_token"' });
   if (COOKIE_ONLY.has(p[1] ?? "")) return json({ error: "API tokens can't reach this: sign in on the site" }, 403);
   if (p.at(-1) === "ws") return json({ error: "API tokens don't open live sockets: use the HTTP routes" }, 403);
-  if (t.repo && !heldTo(t.repo, p, req.method)) return json({ error: `this API token is for ${t.repo} only` }, 403);
+  if (t.repo && !heldTo(t.repo, p, req.method, new URL(req.url).searchParams.get("repo"))) return json({ error: `this API token is for ${t.repo} only` }, 403);
   if (t.scope === "read" && req.method !== "GET" && req.method !== "HEAD") return json({ error: "this API token is read-only" }, 403, { "www-authenticate": 'Bearer error="insufficient_scope", scope="write"' });
   if (t.scope !== "admin" && adminRoute(p, req.method)) return json({ error: "this API token can't manage the repo itself (delete, visibility, crew, invites, CI tokens, webhooks, deploy keys, check settings): make an admin token on your profile page, or sign in on the site" }, 403, { "www-authenticate": 'Bearer error="insufficient_scope", scope="admin"' });
   // Last used, to the minute: one write a minute at most, not one a request.
@@ -81,9 +81,11 @@ export async function bearer(req: Request, env: Env, p: string[]): Promise<Token
   return { id: t.id, user: t.user, scope: t.scope, label: t.label, expires_at: t.expires_at, repo: t.repo, oauth: !!t.oauth };
 }
 
-/** Whether a token held to `repo` (owner/name) reaches this route: that repo, claiming an invite, or reading what isn't a repo. */
-const heldTo = (repo: string, p: string[], method: string) =>
+/** Whether a token held to `repo` (owner/name) reaches this route: that repo, claiming an invite, or reading what isn't a repo (search and game walls name their repo too). */
+const heldTo = (repo: string, p: string[], method: string, searchRepo: string | null) =>
   p[1] === "repos" && p[2] && p[3] ? `${p[2]}/${p[3]}` === repo
+  : p[1] === "game" && p[2] === "r" && p[3] && p[4] ? `${p[3]}/${p[4]}` === repo
+  : p[1] === "search" ? searchRepo === repo
   : (p[1] === "invites" && p[2] === "claim") || method === "GET" || method === "HEAD";
 
 /** A new token for `user`, its secret in `token` this once. */

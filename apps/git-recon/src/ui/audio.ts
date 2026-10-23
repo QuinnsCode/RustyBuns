@@ -25,6 +25,8 @@ export const VOICES: Record<WeaponId, Voice> = {
   revert: { tone: { wave: "sine", from: 1200, to: 300 }, seconds: 0.35, volume: 0.22 },
   stash: { noise: 600, tone: { wave: "triangle", from: 220, to: 160 }, seconds: 0.2, volume: 0.22 },
   blame: { tone: { wave: "square", from: 880, to: 880 }, seconds: 0.08, volume: 0.12 },
+  amend: { noise: 2200, tone: { wave: "square", from: 700, to: 250 }, seconds: 0.08, volume: 0.22 },
+  squash: { tone: { wave: "sine", from: 300, to: 900 }, seconds: 0.25, volume: 0.2 },
   reset: { noise: 120, tone: { wave: "sawtooth", from: 90, to: 30 }, seconds: 1.2, volume: 0.45 },
 };
 

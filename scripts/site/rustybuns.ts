@@ -4,7 +4,7 @@ import { configReference } from "./config-reference.ts";
 import { voteSection } from "./vote-section.ts";
 import { type Page, type Site, slug, titleOf } from "./lib.ts";
 
-const GUIDES = ["GETTING_STARTED.md", "AGENT_PROMPTS.md", "REFERENCE.md", "ADOPTION.md", "EXAMPLES.md", "COSTS.md", "FRAMEWORKS.md", "FRAMEWORK_COVERAGE.md", "SECURITY.md", "LICENSING.md", "PRIVACY.md", "ACCESSIBILITY.md", "APPLE_SIGNING.md", "WINDOWS_LINUX_SIGNING.md"];
+const GUIDES = ["GETTING_STARTED.md", "AGENT_PROMPTS.md", "REFERENCE.md", "ADOPTION.md", "EXAMPLES.md", "COSTS.md", "FRAMEWORKS.md", "FRAMEWORK_COVERAGE.md", "SECURITY.md", "LICENSING.md", "PRIVACY.md", "ACCESSIBILITY.md", "APPLE_SIGNING.md", "OPS.md", "EFFECT.md", "WINDOWS_LINUX_SIGNING.md"];
 
 export const rustybuns: Site = {
   name: "Rusty Buns",

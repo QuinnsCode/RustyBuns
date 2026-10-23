@@ -55,7 +55,7 @@ One Worker named `what-would-fantano-say` (`adopt` is on, so the workers.dev URL
 | `DAILY_REVIEWS` | var, `25000` | the budget's ceiling |
 | `REVIEW_LIMIT` | rate limit, 4 per 60 s | per-address throttle |
 | `TURNSTILE_SITE_KEY` | var, public | shows the widget; empty means no live calls |
-| `TURNSTILE_SECRET` | secret, `op://fantano/turnstile/secret` | siteverify, resolved by varlock at deploy |
+| `TURNSTILE_SECRET` | secret, `op://fantano/turnstile/password` | siteverify, resolved by varlock at deploy |
 
 Leave out any of `AI`, `BUDGET`, the site key or the secret and every review is the free estimate, which is all local dev ever gets.
 
@@ -69,7 +69,7 @@ bun test test     # analysis, clip, decode fallback, boxes and their build, judg
 
 ## Deploy
 
-The only secret is `turnstile/secret` in the 1Password vault `fantano` (`.env.schema`). Then:
+The only secret is `turnstile/password` in the 1Password vault `fantano` (`.env.schema`). Then:
 
 1. `bunx rustybuns add deploy` once, to install the pinned Alchemy set.
 2. Create a Turnstile widget for the hostname and put its site key in `turnstileSiteKey` in `rustybuns.config.ts`.

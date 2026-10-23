@@ -147,3 +147,61 @@ export function withPads(t: Terrain, pads: Pad[], skirt = 6): Terrain {
     },
   };
 }
+
+/* ---------------- trails ---------------- */
+
+/** A point on a trail, and what it's at: the ground is pulled to the trail's own profile within `width`, easing back over `skirt`. */
+export interface TrailPoint { x: number; z: number; y: number }
+
+/**
+ * Cuts footpaths into the ground: along each polyline the surface is levelled across to the trail's
+ * own profile (its points' heights, smoothed), so a path up a hill is a walkable shelf, not a scramble
+ * across the slope. The influence is rasterised onto a one-metre grid once, so height() stays O(1).
+ * `keep` (0..1) says how much of the ground underneath to leave as it is, say a shelf cut earlier.
+ */
+export function withTrails(t: Terrain, trails: TrailPoint[][], width = 3, skirt = 3, keep?: (x: number, z: number) => number): Terrain {
+  if (!trails.length) return t;
+  const cell = 1, n = Math.ceil((2 * t.R) / cell) + 1;
+  // Per cell: how far off the nearest trail it is (the blend to the real ground comes from that), and the
+  // trails' height there, every segment in reach weighing in by how near it is, so where two legs of a
+  // path meet or pass close the shelf runs smoothly from one to the other.
+  const near = new Float32Array(n * n).fill(Infinity), sumW = new Float32Array(n * n), sumWH = new Float32Array(n * n);
+  const reach = width + skirt;
+  for (const trail of trails) {
+    for (let i = 0; i + 1 < trail.length; i++) {
+      const a = trail[i]!, b = trail[i + 1]!, dx = b.x - a.x, dz = b.z - a.z, len2 = dx * dx + dz * dz || 1;
+      const c0 = Math.max(0, Math.floor((Math.min(a.x, b.x) - reach + t.R) / cell)), c1 = Math.min(n - 1, Math.ceil((Math.max(a.x, b.x) + reach + t.R) / cell));
+      const r0 = Math.max(0, Math.floor((Math.min(a.z, b.z) - reach + t.R) / cell)), r1 = Math.min(n - 1, Math.ceil((Math.max(a.z, b.z) + reach + t.R) / cell));
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+        const x = -t.R + c * cell, z = -t.R + r * cell;
+        const u = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / len2));
+        const d = Math.hypot(x - (a.x + dx * u), z - (a.z + dz * u));
+        const i2 = r * n + c;
+        if (d >= reach) continue;
+        const w = (1 - d / reach) ** 6 + 1e-6;
+        sumW[i2]! += w, sumWH[i2]! += w * (a.y + (b.y - a.y) * u);
+        if (d < near[i2]!) near[i2] = d;
+      }
+    }
+  }
+  const at = (c: number, r: number, h: number) => {
+    const i = r * n + c, d = near[i]!;
+    if (d >= reach) return h;
+    const kk = d <= width ? 0 : smooth((d - width) / skirt), floor = sumWH[i]! / sumW[i]!;
+    return floor + (h - floor) * kk;
+  };
+  return {
+    R: t.R,
+    water: t.water,
+    height(x, z) {
+      const h = t.height(x, z), fc = (x + t.R) / cell, fr = (z + t.R) / cell;
+      const c = Math.floor(fc), r = Math.floor(fr);
+      if (c < 0 || r < 0 || c >= n - 1 || r >= n - 1) return h;
+      const u = fc - c, v = fr - r;
+      const h00 = at(c, r, h), h10 = at(c + 1, r, h), h01 = at(c, r + 1, h), h11 = at(c + 1, r + 1, h);
+      const out = (h00 * (1 - u) + h10 * u) * (1 - v) + (h01 * (1 - u) + h11 * u) * v;
+      const kept = keep ? Math.max(0, Math.min(1, keep(x, z))) : 0;
+      return kept > 0 ? h * kept + out * (1 - kept) : out;
+    },
+  };
+}

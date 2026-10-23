@@ -81,6 +81,7 @@ The highest-value things, in order:
 4. **Share some lines, not the repo.** A live link to just a range, which follows those lines by id as the file changes.
    It works from a private repo, too.
 5. **Hook it to your AI in one command.**
+   With `claude` running, run this in a separate terminal, then type `/mcp` in Claude, pick codesplitter and Authenticate. Then ask it to edit your page.
    ```sh
    claude mcp add --transport http codesplitter https://codesplitter.notryanquinn.workers.dev/api/mcp
    ```
@@ -170,6 +171,11 @@ There's no downloadable build yet; that's one command from source.
 
 ## Everything else it does
 
+- **We got git problems with agent swarm.** `/git-problems.html` is the one page for both swarm demos below: the rush-hour station animation, and a way into the replay of a real week of this repo.
+- **Git at swarm speed, with dots.** `/swarm.html`, also on the landing page, is a simulation of agents getting their work into main: the old git way's one lane, merge wall and red-check wall, then codeSplitter's layers one at a time (a Durable Object, Mervin's bullet train, Ester's stations). Story mode plays it as scenes; the others are old git, layer by layer, and side by side, with faders for speed, agents, overlap and red checks.
+- **A week of the swarm, replayed.** `/swarm-watch.html` plays the week of October 7 to 14 back: 1,000 of this repo's real PRs, each a made-up agent, and what the open ones were waiting on, minute by minute. The git wall on the night of October 13 has 18 PRs stuck on conflicts at once, and the pane beside it shows the file they piled into. `bun scripts/swarm-week.ts` pulls the week (read only) a night-by-night numbers panel gives the peaks (the averages mislead), and a recorded merge round from this repo's history plays at the git wall (`bun scripts/swarm-round.ts`). `bun scripts/swarm-readme.ts` draws the animated chart below, and `--png` a still of the git wall for viewers that drop SMIL ([docs/swarm-week.png](docs/swarm-week.png)).
+
+  ![1,000 PRs in a week, one dot each](docs/swarm-week.svg)
 - **Blame and time travel for free.** The op log replays any file at any rev, so every line knows who wrote it and when.
 - **gitpath.** Make code beautiful again: a file's commit graph comes down a guitar-neck highway in real 3D (three.js), main in the middle, branches fanning out and rejoining, an orange hot path through the churn. A rail on the right is time itself (oldest at the bottom) and two date boxes crop the history. The faint controller icon turns on a game: a tiny unicyclist, back to you, rides the hot path on left and right taps (or two keys you bind) timed to the beat, while merges (a car), forks, new branches and big squash merges (a boulder) blow gusts you have to lean into. A commit that names a piece of the stack (D1, R2, Queues, Durable Objects, Containers, Artifacts, rate limiting, static assets, Workers) turns into its 3D model, and a new piece is one registry line and one model. On a repo's page the route icon in the header opens it on that repo, read live from its git (`GET /api/repos/:o/:r/gitpath`), a file at a time. `bun run gitpath`, or feed it any clone with `bun scripts/gitpath-log.ts <clone> <path>`.
 - **Live sync.** Edits go over each file's WebSocket.
@@ -178,7 +184,7 @@ There's no downloadable build yet; that's one command from source.
   An agent that needs held lines can wait in line for them, granted in turn, and a soft claim just says what someone means to rewrite, keeping nobody off.
 - **Agents have faces, lines take stamps.** An agent's profile (`#/u/agent-claude`) says who runs it, on which harness, the repos it works in, its runs and a 30-day pulse of its line edits.
   Stamp a line, not a pull request: a reaction that stays on the line by id through edits, shows on its blame and on both people's profiles, whoever wrote it, person or agent.
-- **A code city, not a contributions chart.** Every person's profile has a city: a district per public repo, a building per file, tall where it's long and lit orange where lines landed lately, white stone where people wrote it and black glass where agents did. It is a rainy night on a floating slab: ground floors are lava-lamp walls, coffee shops, libraries and bookstores, and you can jump.
+- **A code city, not a contributions chart.** Every person's profile has a city: a district per public repo, a building per file, tall where it's long and lit orange where lines landed lately, white stone where people wrote it and black glass where agents did. It is a rainy night on a floating slab: ground floors are lava-lamp walls, coffee shops, libraries and bookstores, and you can jump. Face a building and click, tap its name or press E to flip through its file a page at a time, each line with who wrote it.
 - **Make your avatar.** Click the little round you beside your name on your profile to open the full editor: face, hair, hat, glasses and clothes, with dev-flavoured extras (a rubber duck, a propeller cap, a conference lanyard). It is saved with your profile (`PUT /api/me {avatar}`) and you wear it when you walk the code city.
   Its streets run on each repo's pulse: a week of commits fills the sidewalks, crosswalks and bike lanes, and failing checks bring chaos (drivers brake-check and run reds, bikes wobble, people jaywalk, the signals go out).
   Whoever has one of its files open right now walks its streets, and you can walk them too, with its owner and their other followers (`/play.html#c/<handle>`).

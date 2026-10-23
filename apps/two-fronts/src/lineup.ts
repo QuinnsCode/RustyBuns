@@ -25,7 +25,7 @@ scene.add(floor);
 
 const rows: Record<string, { make: () => THREE.Object3D; gap: number; y?: number }[]> = {
   marines: [marine(true), marine(false, "assault"), marine(false, "heavy"), marine(false, "sniper"), marine(false, "engineer")].map((m) => ({ make: () => m, gap: 2.4 })),
-  wooka: [wooka(true), wooka(), wooka(), turret("wooka"), turret("marines")].map((m, i) => ({ make: () => m, gap: i > 2 ? 5 : 2.2 })),
+  wooka: [wooka(true), wooka(), wooka(false, "chub"), wooka(false, "mossback"), turret("wooka"), turret("marines")].map((m, i) => ({ make: () => m, gap: i === 3 ? 5.5 : i > 3 ? 5 : 2.4 })),
   vehicles: [tank(), speeder(), walker(), gunship()].map((m, i) => ({ make: () => m, gap: i === 3 ? 12 : 8, y: i === 3 ? 6 : 0 })),
   space: [fighter("marines", true), fighter("marines"), fighter("wooka", true), fighter("wooka")].map((m) => ({ make: () => m, gap: 8, y: 3 })),
 };
@@ -87,7 +87,7 @@ renderer.setAnimationLoop((now) => {
   t0 = now;
   for (const m of spin) {
     m.rotation.y = turn;
-    animate(m, { t: now / 1000, dt, moved: walk ? dt * (m.userData.model === "walker" ? 3.5 : 5) : 0, since: (now / 1000 + m.id * 0.2) % 1.5 });
+    animate(m, { t: now / 1000, dt, moved: walk ? dt * (m.userData.model === "walker" ? 3.5 : 5) : 0, since: (now / 1000 + m.id * 0.2) % 1.5, call: (now / 1000 + m.id * 0.5) % 5 });
   }
   renderer.render(scene, camera);
 });

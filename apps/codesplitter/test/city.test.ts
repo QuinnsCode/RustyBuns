@@ -71,9 +71,16 @@ test("the postcard is a PNG; the owner can switch the public city off", async ()
   expect(png.headers.get("content-type")).toBe("image/png");
   expect([...new Uint8Array(await png.arrayBuffer()).slice(1, 4)]).toEqual([80, 78, 71]);
 
+  // The share link unfurls with the postcard and sends people on to the city.
+  const share = await call(null, "/api/users/ryan/city/share");
+  const html = await share.text();
+  expect(html).toContain('og:image" content="http://codesplitter.local/api/users/ryan/city.png');
+  expect(html).toContain("/play.html#c/ryan");
+
   expect((await send("ryan", "/api/me/city", { public: false }, "PUT")).status).toBe(200);
   expect((await city("ana")).status).toBe(404);
   expect((await call(null, "/api/users/ryan/city.png")).status).toBe(404);
+  expect((await call(null, "/api/users/ryan/city/share")).status).toBe(404);
   // Its owner still sees it.
   expect((await city("ryan")).body).toMatchObject({ public: false });
   expect((await (await call("ryan", "/api/users/ryan")).json() as any).user.city_public).toBe(0);
@@ -142,4 +149,14 @@ test("pulseOf: bustle climbs with commits and saturates; chaos tops out at 1", (
   expect(pulseOf(6, 0, []).bustle).toBeLessThan(pulseOf(30, 0, []).bustle);
   expect(pulseOf(500, 0, []).bustle).toBe(1);
   expect(pulseOf(0, 0, ["a", "b", "c", "d"].map((name) => ({ name, status: "failed" }))).chaos).toBe(1);
+});
+
+test("the street reader: a public file comes a page at a time to anyone passing, a private one to no stranger", async () => {
+  const { call } = await app();
+  const r = await call(null, "/api/repos/ryan/lab/do/file?path=a.ts&from=1&limit=1");
+  expect(r.status).toBe(200);
+  const page = (await r.json()) as any;
+  expect(page).toMatchObject({ total: 3, from: 1 });
+  expect(page.lines.map((l: any) => [l.text, l.by])).toEqual([["two", "ryan"]]);
+  expect((await call(null, "/api/repos/ryan/vault/do/file?path=s.ts&from=0&limit=60")).status).toBeGreaterThanOrEqual(400);
 });

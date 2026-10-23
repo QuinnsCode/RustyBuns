@@ -4,6 +4,8 @@
 // Ranger: sweep bush to bush (preferring wherever the radio says campers could
 // be), call out now and then, run to rustles and footsteps, chase what it sees.
 // Camper: drop somewhere bushy, crouch in a bush, bolt when a ranger gets close.
+// Prop hunt: camper bots turn into the bush they hide in and drop it to run;
+// ranger bots only notice a prop that moves, or one they walk right up to.
 // Bigfoot: everyone runs for him once they see him; rangers (and the bolder
 // campers, later in the hunt) search the bushes where the circle is closing.
 
@@ -12,7 +14,7 @@ import { cellAt } from "../grid.ts";
 import { allAsks, possible, resolve, toKm, type Clue } from "../clues.ts";
 import { zoneById, type Prop, type Zone } from "../zones/zone.ts";
 import { step, wrap, type Body, type MoveInput } from "./sim.ts";
-import { circleAt, closed, type BotLevel, type Hunt, type Msg, type View } from "./game.ts";
+import { circleAt, closed, type ActorView, type BotLevel, type Hunt, type Msg, type View } from "./game.ts";
 
 // bold: the chance a camper bot goes looking for Bigfoot once the circle is closing.
 const LEVEL: Record<BotLevel, { react: number; callEvery: number; radio: boolean; panic: number; sweep: number; bold: number }> = {
@@ -38,6 +40,8 @@ export class HuntBot {
   private bold = false;
   private stuck = { x: 0, y: 0, at: 0, detourUntil: 0, dir: 0 };
   private lastTick = 0;
+  /** Where each prop-hunt camper was last seen, to notice the one that moves. */
+  private props = new Map<string, Pt>();
 
   constructor(readonly id: string, readonly level: BotLevel, seed: number) { this.rand = rng(seed); }
 
@@ -66,16 +70,16 @@ export class HuntBot {
     if (now >= this.nextThink) {
       this.nextThink = now + LEVEL[this.level].react * (0.7 + this.rand() * 0.6);
       if (you.role === "ranger") out.push(...this.thinkRanger(game, v, z, now));
-      else this.thinkCamper(v, z, now);
+      else out.push(...this.thinkCamper(v, z, now));
     }
-    if (dt > 0) out.push(this.move(z, you.role, dt, now, r!.sky.tod !== "day" && you.role === "ranger"));
+    if (dt > 0) out.push(this.move(z, you.role, dt, now, r!.sky.tod !== "day" && you.role === "ranger", !!you.disguise));
     return out;
   }
 
   private reset(id: number, now: number) {
     this.roundId = id;
     this.body = null; this.goal = null; this.running = false; this.crouching = false;
-    this.visited.clear(); this.heard.clear(); this.search = []; this.fleeUntil = 0;
+    this.visited.clear(); this.heard.clear(); this.search = []; this.fleeUntil = 0; this.props.clear();
     this.bold = this.rand() < LEVEL[this.level].bold;
     this.nextCall = now + 8000 + this.rand() * 6000;
     this.nextThink = now + 1500 + this.rand() * 4000;
@@ -83,7 +87,7 @@ export class HuntBot {
 
   // ---- movement ---------------------------------------------------------------
 
-  private move(z: Zone, role: "camper" | "ranger", dt: number, now: number, light: boolean): Msg {
+  private move(z: Zone, role: "camper" | "ranger", dt: number, now: number, light: boolean, prop: boolean): Msg {
     const b = this.body!;
     let fwd = 0;
     if (this.goal) {
@@ -100,7 +104,7 @@ export class HuntBot {
         fwd = 1;
       }
     }
-    const inp: MoveInput = { fwd, right: 0, run: this.running, crouch: this.crouching };
+    const inp: MoveInput = { fwd, right: 0, run: this.running && !prop, crouch: this.crouching || prop };
     step(z, b, role, inp, dt);
     return { t: "pos", x: b.x, y: b.y, yaw: b.yaw, pitch: 0, crouch: b.crouch, run: b.run, light };
   }
@@ -118,7 +122,17 @@ export class HuntBot {
     return best;
   }
 
-  private thinkCamper(v: View, z: Zone, now: number) {
+  private thinkCamper(v: View, z: Zone, now: number): Msg[] {
+    const out: Msg[] = [];
+    this.campThink(v, z, now);
+    // Prop hunt: be the bush you hide in; drop it to make a run for it.
+    const props = v.mode === "props", prop = !!v.round!.you!.disguise;
+    if (props && prop && this.running) out.push({ t: "disguise" });
+    else if (props && !prop && this.crouching && !this.running) out.push({ t: "disguise" });
+    return out;
+  }
+
+  private campThink(v: View, z: Zone, now: number) {
     const b = this.body!;
     const r = v.round!;
     const rangers = r.others.filter((o) => o.role === "ranger" && o.caughtAt === null);
@@ -208,7 +222,7 @@ export class HuntBot {
     for (const p of z.near(b.x, b.y, L.sweep)) if (p.kind === "bush" && Math.hypot(p.x - b.x, p.y - b.y) < L.sweep) this.visited.add(p);
 
     if (r.bigfoot && !r.bigfoot.foundBy) { this.goal = [r.bigfoot.x, r.bigfoot.y]; this.running = true; return out; }
-    const seen = r.others.filter((o) => o.role === "camper" && o.caughtAt === null);
+    const seen = r.others.filter((o) => o.role === "camper" && o.caughtAt === null && this.notice(o, b, L.sweep));
     if (seen.length) {
       let t = seen[0], td = Infinity;
       for (const c of seen) { const d = Math.hypot(c.x - b.x, c.y - b.y); if (d < td) { td = d; t = c; } }
@@ -247,6 +261,14 @@ export class HuntBot {
     }
     if (L.radio) { const ask = this.pickAsk(game, v, now); if (ask) out.push(ask); }
     return out;
+  }
+
+  /** A camper in plain sight, or a prop that moved or that we're right on top of. */
+  private notice(o: ActorView, b: Body, sweep: number): boolean {
+    if (!o.disguise) return true;
+    const was = this.props.get(o.id);
+    this.props.set(o.id, [o.x, o.y]);
+    return Math.hypot(o.x - b.x, o.y - b.y) < sweep + 1.5 || (!!was && Math.hypot(o.x - was[0], o.y - was[1]) > 0.4);
   }
 
   /** Where campers could be, per the radio (union over campers still out). */

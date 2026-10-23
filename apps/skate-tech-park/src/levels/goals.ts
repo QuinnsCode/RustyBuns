@@ -11,6 +11,8 @@ export type Run = {
   combo: number; bestCombo: number;
   gaps: Map<string, number>;
   collected: Set<number>;
+  /** Beats of each line (by name) ridden so far, in order. */
+  lines: Map<string, number>;
   /** Feed it the state after every sim step. Returns what happened this step, for the HUD. */
   update(s: State): string[];
   done(g: Goal): boolean;
@@ -20,25 +22,35 @@ export type Run = {
 
 export function trackRun(level: ParkLevel): Run {
   const run: Run = {
-    combo: 0, bestCombo: 0, gaps: new Map(), collected: new Set(),
+    combo: 0, bestCombo: 0, gaps: new Map(), collected: new Set(), lines: new Map(),
     update, done, progress,
   };
-  let air = false, takeoff = { x: 0, z: 0 }, last: State["last"] = null, score = 0, comboT = -Infinity, score0 = false, topScore = 0;
+  const lineT = new Map<string, number>();
+  let air = false, takeoff = { x: 0, z: 0 }, last: State["last"] = null, score = 0, comboT = -Infinity, score0 = false, topScore = 0, y0 = 0, topY = 0;
 
   function update(s: State) {
     const events: string[] = [];
-    if (!score0) { score = s.score; last = s.last; score0 = true; air = s.air; }
+    if (!score0) { score = s.score; last = s.last; score0 = true; air = s.air; y0 = topY = s.y; }
+    topY = Math.max(topY, s.y);
     if (s.last !== last && s.score > score) {
       if (s.t - comboT > COMBO_WINDOW) run.combo = 0;
       run.combo += s.score - score;
       comboT = s.t;
       run.bestCombo = Math.max(run.bestCombo, run.combo);
     }
-    if (s.bail > 0) run.combo = 0;
+    if (s.bail > 0) { run.combo = 0; for (const [k, n] of run.lines) if (n < (level.routes.find((r) => r.name === k)?.points.length ?? 0)) run.lines.set(k, 0); }
+    for (const r of level.routes) {
+      if (done({ kind: "line", name: r.name })) continue;
+      if (s.t - (lineT.get(r.name) ?? 0) > r.within) run.lines.set(r.name, 0);
+      const beat = run.lines.get(r.name) ?? 0, next = r.points[beat]!;
+      if (Math.hypot(s.x - next.x, s.z - next.z) > next.r) continue;
+      run.lines.set(r.name, beat + 1); lineT.set(r.name, s.t);
+      if (beat + 1 === r.points.length) events.push(`Line: ${r.name}`);
+    }
     if (!air && s.air) takeoff = { x: s.x, z: s.z };
     if (air && !s.air && s.bail <= 0) {
       for (const g of level.gaps) {
-        if (Math.hypot(takeoff.x - g.a.x, takeoff.z - g.a.z) > g.r || Math.hypot(s.x - g.b.x, s.z - g.b.z) > g.rb) continue;
+        if (Math.hypot(takeoff.x - g.a.x, takeoff.z - g.a.z) > g.r || Math.hypot(s.x - g.b.x, s.z - g.b.z) > g.rb || Math.hypot(s.x - takeoff.x, s.z - takeoff.z) < g.min) continue;
         run.gaps.set(g.name, (run.gaps.get(g.name) ?? 0) + 1);
         s.score += g.bonus; s.last = { name: `Gap: ${g.name}`, points: g.bonus };
         run.combo += g.bonus; run.bestCombo = Math.max(run.bestCombo, run.combo); comboT = s.t;
@@ -60,6 +72,8 @@ export function trackRun(level: ParkLevel): Run {
       case "combo": return run.bestCombo >= g.target;
       case "gap": return (run.gaps.get(g.name) ?? 0) > 0;
       case "collect": return run.collected.size >= (g.count ?? level.pickups.length);
+      case "line": return (run.lines.get(g.name) ?? 0) >= (level.routes.find((r) => r.name === g.name)?.points.length ?? Infinity);
+      case "climb": return topY - y0 >= g.metres;
     }
   }
 
@@ -69,6 +83,8 @@ export function trackRun(level: ParkLevel): Run {
       case "combo": return `${Math.min(run.bestCombo, g.target).toLocaleString("en-US")} / ${g.target.toLocaleString("en-US")}`;
       case "gap": return done(g) ? "cleared" : "not yet";
       case "collect": return `${run.collected.size} / ${g.count ?? level.pickups.length}`;
+      case "line": return `${run.lines.get(g.name) ?? 0} / ${level.routes.find((r) => r.name === g.name)?.points.length ?? 0}`;
+      case "climb": return `${Math.round(Math.min(g.metres, topY - y0))} / ${g.metres} m`;
     }
   }
 

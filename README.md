@@ -29,6 +29,16 @@ A brand-new release not installing? Your package manager's minimum release age i
 
 Each feature is one line. Click **More** for the long version.
 
+### Things are functions
+
+An operation is one function with a name, a schema and a permission; HTTP, MCP, WebMCP, a CLI and a skill file are thin views of it.
+
+<details><summary>More</summary>
+
+`@rustybuns/ops` has no dependencies. Auth happens at the edge, and `ops.call` checks the permission again on every run. See [OPS.md](OPS.md).
+
+</details>
+
 ### One config, three targets
 
 Your app runs as a desktop binary, a Cloudflare Worker and a Linux server, all from `rustybuns.config.ts`.
@@ -104,6 +114,16 @@ The host binds to `127.0.0.1`, gates every request on a per-launch token, and ke
 There's no `package.json` to read, so `init` looks for the site itself: an `index.html` at the top or in `docs/`, `public/`, `site/` or `www/`, a Jekyll `_config.yml` with its `_layouts/`, a `hugo.toml`, or a `mkdocs.yml`. It writes a config whose build is the generator's own (`rustybuns jekyll build`, `hugo`, `mkdocs build`), or `rustybuns copy-site` for hand-written HTML. It also writes a `package.json` that holds Rusty Buns as a dev dependency. The web side is an assets-only Worker, and both it and the desktop app answer a missing page with the nearest `404.html`.
 
 Jekyll copies every file it doesn't exclude into the site, so `init` layers `_config.rustybuns.yml` over your config. It keeps `dist/`, `desktop/` and Rusty Buns' files out, and serves from `/` rather than a Pages `baseurl`. With no `Gemfile`, GitHub Pages builds the site with plugins plain Jekyll lacks, one of which gives a page with no `layout` your `page` or `default` layout. The layer sets the same defaults, so those pages don't render bare. The others (Markdown with no front matter rendered as a page, links to `.md` files pointed at the `.html`, titles from a page's first heading, a `README.md` as its folder's index) need their gems, so `init` turns on the ones your pages look like they lean on, after your own `plugins`, and the build installs their gems. Your local Jekyll runs only when those gems are installed for it; otherwise the build runs in Docker. The Jekyll build is `rustybuns jekyll build`. It runs your own Jekyll (through `bundle exec` if there's a Gemfile) when your Ruby is 3 or later. Otherwise it runs the build in a `ruby:3.3` Docker container. macOS ships Ruby 2.6, which current Jekyll won't install on. The container's gems live in a Docker volume, so only the first build waits for the install. Hugo and MkDocs still have to be installed, and `init` says so when one isn't on your PATH. Like Cloudflare and GitHub Pages, the host serves `/ops` from `ops.html`.
+
+</details>
+
+### Pages Functions run as a Worker
+
+A Cloudflare Pages project's `functions/` folder becomes a Worker on every target, with each handler unchanged.
+
+<details><summary>More</summary>
+
+`init` spots a Pages project: a `functions/` folder with handlers in it and no Worker `main`. It sets the Worker's build to start with `rustybuns pages-functions`, which writes `.rustybuns/pages/`: one route per file (`[id].ts` is a param, `[[path]].ts` a catch-all) in Pages' order, the `_middleware` chain, and a small adapter that hands each handler Pages' own context (`request`, `env`, `params`, `data`, `next`, `waitUntil`). The Worker sees requests before the static files, as Pages Functions do, and `public/_routes.json` still sends its excludes straight to the files. A request no Function answers, or one whose method no handler exports, gets the static files. A new file under `functions/` is a new route on the next build. The adapter is copied into the app and imports nothing, so Rusty Buns stays out of the bundle. Tried on a Pages app with 100 routes, two middlewares, D1, KV, R2 and Vectorize: it boots on the desktop with no edits.
 
 </details>
 
@@ -311,6 +331,11 @@ Every example is one codebase that runs as a desktop binary. The multiplayer one
 | [borg-postgres](apps/borg-postgres/README.md) | A Postgres app keeps its database and moves its code: Hyperdrive on the edge, PGlite on the desktop. |
 | [hello-world](apps/hello-world/README.md) | The first five minutes: a twenty-line page that the welcome tour digs up, lets three agents rewrite at once, then asks why not deploy it |
 | [skate-tech-park](apps/skate-tech-park/README.md) | Skate a street spot, or take a rocket roadster with ten cold-gas thrusters over the gap: a three.js page on a pure fixed-step sim the tests drive headless |
+| [qcrm](apps/qcrm/README.md) | A CRM with MCP built in, a Rust wasm engine in the browser, office sync, signed webhooks and a desktop build; roles for a real place and hashed org ids. QNTBR-licensed. |
+| [artstewengine](apps/artstewengine/README.md) | A tiny RWSDK app on D1 with a Better Auth admin page: add who has paid, and qCRM's sealed engine gets its key only for a paid license |
+| [geoboxq](apps/geoboxq/README.md) | Shipping box fit checker with a Rust engine that packs boxes inside boxes. Private license. |
+| [geoboxq-shopify](apps/geoboxq-shopify/README.md) | A small wrapper that turns a Shopify cart into the store's own box. |
+| [playground](apps/playground/README.md) | One page that lists every app with a way to try it: Play, Download or Source. Static assets only, so it bills nothing |
 
 **Try one without building anything:** download the desktop binary for [Hippo Tycoon](https://github.com/QuinnsCode/RustyBuns/releases?q=hippo-tycoon-v&expanded=true), [Park Hide & Seek](https://github.com/QuinnsCode/RustyBuns/releases?q=park-hide-seek-v&expanded=true), [Splat Spray](https://github.com/QuinnsCode/RustyBuns/releases?q=splat-spray-v&expanded=true) or [FM Groovebox](https://github.com/QuinnsCode/RustyBuns/releases?q=fm-daw-v&expanded=true). Each is one file for Mac, Windows or Linux. They aren't signed yet, so the first launch takes one Terminal command on a Mac (the release page has it; [APPLE_SIGNING.md](APPLE_SIGNING.md) is the road to fixing that) and a click past SmartScreen on Windows ([WINDOWS_LINUX_SIGNING.md](WINDOWS_LINUX_SIGNING.md) is that road, and says Linux needs no key).
 

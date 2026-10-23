@@ -24,6 +24,17 @@ Design note for running it locally and on Cloudflare: [mervin-engine.md](mervin-
 
 Real numbers on where a swarm of PRs got stuck, and which helper each jam belongs to: [jams.md](jams.md).
 
+## Try it on your repo
+
+```sh
+bun scripts/mervin-try.ts https://github.com/you/your-repo.git   # or a local path
+```
+
+Clones the history bare (nothing checked out, nothing written to a local path) and says, in words, how many of the
+conflicts your merges hit Mervin would have settled, how many merges needed no person to stop and resolve, and how
+many fights the merge plan flagged while the PR was open. It reads merge commits, so a repo that squash-merges
+every PR has nothing to replay and the report says so.
+
 ## The live count
 
 Every merge that lands adds to a counter, and every stretch both sides changed that Mervin blended with no card and
@@ -396,7 +407,26 @@ Busy repos that keep real merge commits, cloned in full (not shallow) to a scrat
 Tried: rust-lang/cargo, which merges only green PRs through bors, so 1 of 1,600 merges was ever conflicted: no corpus.
 Tried: pingdotgg/t3code, which squash-merges: 15 merge commits in 5,473, so no corpus either.
 Still to check: a Linux subsystem tree, Django. Reference engines to compare against, not to vendor yet:
-Mergiraf (structured merge; over the 29 hunks in [merge-solutions.md](merge-solutions.md#12-mergiraf-over-the-same-hunks) it settled 6 and nothing L3 doesn't; still to try on a corpus with moved and reordered code), Spork and IntelliMerge (tree matching).
+Spork and IntelliMerge (tree matching). Mergiraf now runs behind Mervin (next section).
+
+## Mergiraf as a second opinion
+
+Over the 29 hunks in [merge-solutions.md](merge-solutions.md#12-mergiraf-over-the-same-hunks), Mergiraf settled 6 and nothing
+L3 doesn't. Its syntax trees cover some 50 languages where Mervin reads only JS, TS and HTML, and it is built for moved
+and reordered code, which those hunks never had. So it runs after Mervin rather than instead of him (`src/mergiraf.ts`):
+
+- **Only on his cards.** A file Mervin settles never starts it. A file he leaves conflicts in gets one run, at most three
+  files a merge, before any agent is asked.
+- **Never against a refusal.** Where git's own line merge settles the file, Mervin refused on purpose (a rename, a strict
+  delete), so Mergiraf isn't run.
+- **Only as picks.** Its answer becomes a `{text}` pick for each card, taken only when it keeps every line Mervin settled
+  and merging with the picks gives its text exactly. The merge then lints and tests it like any pick.
+- **Credited.** The merge answer's `mergiraf` lists the files it settled, and learning records them as `mergiraf`, so
+  every real merge is a head-to-head.
+- **Where it runs.** Hosted, in the agent container (`sandbox/Dockerfile`, a static binary). On the desktop, when
+  `MERGIRAF=on` and `mergiraf` is on PATH. A try that left conflicts isn't run again until one of the three versions moves.
+
+It is GPL-3.0, so it runs as its own program and is never linked in or bundled into the Worker.
 
 ## The live board (#1524)
 

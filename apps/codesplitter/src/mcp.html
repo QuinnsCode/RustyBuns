@@ -46,8 +46,16 @@
   <p>Your AI (Claude Code, Claude Desktop, claude.ai, Cursor, any MCP client) can use codeSplitter through these tools. Each one is a call in the <a href="/reference">API</a>, made as you. New here? <a href="/reference">Start here</a> has the steps and what level, beam, cut, stamp and crew mean.</p>
 
   <h2>Connect your AI</h2>
-  <p><b>Claude Code:</b> run this, then <code>/mcp</code> → codesplitter → <b>Authenticate</b>.</p>
+  <p><b>Claude Code</b>, in four steps:</p>
+  <ol>
+    <li>Have <code>claude</code> running in one terminal.</li>
+    <li>In a separate terminal, run this:</li>
+  </ol>
   <div class="copy"><pre id="add"></pre><button data-copy="add">Copy</button></div>
+  <ol start="3">
+    <li>Back in Claude, type <code>/mcp</code>, pick <b>codesplitter</b> and choose <b>Authenticate</b>.</li>
+    <li>Ask it to edit your page, e.g. <i>"make my codeSplitter page dark with a bigger headline"</i>.</li>
+  </ol>
   <p><b>Any other MCP client:</b> add a remote (Streamable HTTP) server with this URL. It's usually called a custom connector or MCP server.</p>
   <div class="copy"><pre id="url"></pre><button data-copy="url">Copy</button></div>
   <p>Either way, a codeSplitter page opens and asks you to say yes: <b>Read only</b> or <b>Read and write</b>. No token to copy. The app then shows under <b>Apps signed in</b> on your profile page, where you can sign it out any time.</p>

@@ -1,0 +1,70 @@
+[
+  {
+    "name": "Park Hide & Seek",
+    "line": "3D hide and seek on real Yosemite terrain; each player is sent only what they can see.",
+    "play": "https://park-hide-seek.notryanquinn.workers.dev",
+    "app": "park-hide-seek",
+    "download": "park-hide-seek-v"
+  },
+  {
+    "name": "Skate Tech Park",
+    "line": "A giant riderless fingerboard on park terrain, up to four riders.",
+    "play": "https://skatetechpark.notryanquinn.workers.dev",
+    "app": "skate-tech-park"
+  },
+  {
+    "name": "Druids Curse",
+    "line": "The live multiplayer game Rusty Buns was first built for.",
+    "play": "https://druids-curse-votv.notryanquinn.workers.dev"
+  },
+  {
+    "name": "codeSplitter",
+    "line": "A code host for agents: every line a record, real git on Cloudflare Artifacts.",
+    "play": "https://codesplitter.notryanquinn.workers.dev",
+    "app": "codesplitter"
+  },
+  {
+    "name": "Excalibrawl",
+    "line": "An hourly drawing fight between two models, refereed by a third.",
+    "play": "https://excalibrawl.notryanquinn.workers.dev",
+    "app": "excalibrawl"
+  },
+  {
+    "name": "Hippo Tycoon",
+    "line": "Four greedy oil-baron hippos race to chomp the most oil from a jungle geyser; solo, couch, LAN or online.",
+    "app": "hippo-tycoon",
+    "download": "hippo-tycoon-v"
+  },
+  {
+    "name": "FM Groovebox",
+    "line": "A twelve-track FM groovebox with a drum machine, step sequencer, piano roll and reverb.",
+    "app": "fm-daw",
+    "download": "fm-daw-v"
+  },
+  {
+    "name": "Splat Spray",
+    "line": "An I-spy game in the dark: scan a Gaussian-splat room and find 100 things in the fewest shots.",
+    "app": "splat-spray",
+    "download": "splat-spray-v"
+  },
+  {
+    "name": "Two Fronts",
+    "line": "Turn-based strategy on a forest moon, with three.js battles on the ground and in orbit.",
+    "app": "two-fronts"
+  },
+  {
+    "name": "git-recon",
+    "line": "A toy-soldier shooter fought in a codebase: the repo is the level.",
+    "app": "git-recon"
+  },
+  {
+    "name": "Auto Rig",
+    "line": "Drop in a 3D model, get a skeleton, skin weights and inverse kinematics you can drag around.",
+    "app": "auto-rig"
+  },
+  {
+    "name": "tscircuit Desktop",
+    "line": "Build circuit boards with React and see them in 3D.",
+    "app": "tscircuit-desktop"
+  }
+]

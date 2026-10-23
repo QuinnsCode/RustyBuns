@@ -10,7 +10,7 @@ import { groundAt, parsePlace } from "../levels/place.ts";
 import type { Block, RepoSnapshot } from "../sim/codemap.ts";
 import { addWin, winKey } from "../sim/heads.ts";
 import type { ZoneData } from "@rustybuns/terrain";
-import { BATTLE_SECONDS, FFA_SCORE, Game, scopeSway, SHIELD_DELAY, stanceOf, TEAM_SCORE, type GameEvent, type Input, type Mode } from "../sim/game.ts";
+import { BATTLE_SECONDS, CHUTE_MIN, FFA_SCORE, Game, LEAN_REACH, scopeSway, SHIELD_DELAY, stanceOf, TEAM_SCORE, type GameEvent, type Input, type Mode } from "../sim/game.ts";
 import { Mirror } from "../net/mirror.ts";
 import { levelOf, NEXT_ROUND } from "../net/room.ts";
 import type { FromWorld, RosterEntry } from "../net/wire.ts";
@@ -24,6 +24,7 @@ import { BUILDS, type BuildId } from "./figure.ts";
 import { Battle } from "./net.ts";
 import { headById, headCanvas, HEADS, isOpen } from "./heads.ts";
 import { buildWorld, type World } from "./scene.ts";
+import { mountTouch } from "./touch.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("view");
@@ -44,8 +45,10 @@ function resize() {
 window.addEventListener("resize", resize);
 resize();
 
-/** Captures the mouse; a page the browser won't lock (a background tab) just keeps playing without it. */
-const lock = () => void Promise.resolve(canvas.requestPointerLock?.()).catch(() => {});
+// On a touch screen the stick and buttons drive the soldier and a drag on the view aims (touch.ts).
+const touch = mountTouch(canvas, $("hud"));
+/** Captures the mouse (not on touch); a page the browser won't lock (a background tab) just keeps playing without it. */
+const lock = () => void (touch.on || Promise.resolve(canvas.requestPointerLock?.()).catch(() => {}));
 
 /* ---------------- menu ---------------- */
 
@@ -434,10 +437,10 @@ window.addEventListener("keydown", (e) => {
   const slot = KEYS.indexOf(e.code), kit = current.game.you().kit;
   if (slot >= 0 && slot < kit.length) pick = kit[slot];
   if (e.code === "KeyR" && !e.repeat) reload = true;
-  if (e.code === "KeyE" && !e.repeat) use = true;
+  if (e.code === "KeyF" && !e.repeat) use = true;
   if (e.code === "KeyN" && !e.repeat && !current.net && current.game.status === "playing") pickRole(nextRole(current.game.nextRole ?? current.game.role ?? me.role));
   if (e.code === "Escape" && current.game.status !== "playing") toMenu();
-  // Out of a battle: Q, once the mouse is let go.
+  // Out of a battle: Q, once the mouse is let go (captured, Q and E lean).
   if (e.code === "KeyQ" && current.net && document.pointerLockElement !== canvas) toMenu();
   if (e.code === "Tab" && current.net) e.preventDefault(), ($("board").hidden = false);
 });
@@ -446,7 +449,9 @@ window.addEventListener("keyup", (e) => {
   if (e.code === "Tab") $("board").hidden = true;
 });
 window.addEventListener("blur", () => (keys.clear(), (fire = false)));
-canvas.addEventListener("click", () => current && document.pointerLockElement !== canvas && lock());
+canvas.addEventListener("click", () => current && !touch.on && document.pointerLockElement !== canvas && lock());
+// The vehicle and parachute prompt can be tapped as well as keyed.
+$("prompt").addEventListener("pointerdown", () => (use = true));
 canvas.addEventListener("mousedown", (e) => {
   if (document.pointerLockElement !== canvas) return;
   if (e.button === 0) fire = true;
@@ -463,14 +468,16 @@ window.addEventListener("mousemove", (e) => {
   look.yaw -= e.movementX * k;
   look.pitch = Math.max(-1.2, Math.min(1.0, look.pitch - e.movementY * k));
 });
-window.addEventListener("wheel", (e) => {
+/** The next (or previous) gun of yours with rounds left. */
+function cycle(dir: 1 | -1) {
   if (!current) return;
   const you = current.game.you(), have = you.kit.filter((w) => you.ammo[w] !== 0);
   const i = have.indexOf(you.weapon);
-  pick = have[(i + (e.deltaY > 0 ? 1 : -1) + have.length) % have.length];
-});
+  pick = have[(i + dir + have.length) % have.length];
+}
+window.addEventListener("wheel", (e) => cycle(e.deltaY > 0 ? 1 : -1));
 document.addEventListener("pointerlockchange", () => {
-  $("clickme").hidden = document.pointerLockElement === canvas || !current;
+  $("clickme").hidden = document.pointerLockElement === canvas || !current || touch.on;
   $("clickme").textContent = current?.net ? "Click to aim · Q to leave the battle" : "Click to aim · Esc to let go of the mouse";
 });
 
@@ -518,13 +525,16 @@ function placeCamera(game: Game, dt: number) {
   // In a vehicle the camera sits higher and further back, so you see it and round it.
   const ride = game.vehicles.find((v) => v.id === you.vehicle);
   cam.height += ((ride ? (ride.kind === "heli" ? 3.2 : 2.2) : you.prone ? 0.75 : you.crouch ? 1.3 : 1.7) - cam.height) * ease(9);
-  cam.back += ((ride ? (ride.kind === "heli" ? 13 : 8.5) : sniping ? 0.4 : you.prone ? 4 : 5.2) - cam.back) * ease(sniping ? 30 : 8);
+  // A tall screen (a phone held upright) sees less to the sides, so the camera sits further back and out.
+  const tall = Math.max(1, Math.sqrt(1 / camera.aspect));
+  cam.back += ((ride ? (ride.kind === "heli" ? 13 : 8.5) : sniping ? 0.4 : you.prone ? 4 : 5.2) * tall - cam.back) * ease(sniping ? 30 : 8);
   if (cam.ready && !you.grounded && you.vy < -6) cam.dip = Math.min(0.35, cam.dip + dt * 0.8);
   cam.dip *= Math.exp(-dt * (you.grounded ? 6 : 0.5));
   const run = Math.min(1, Math.hypot(you.vx, you.vz) / 7.5);
   cam.fov += ((sniping ? 18 : 64 + (you.roll > 0 ? 8 : 0) + run * 4) - cam.fov) * ease(sniping ? 30 : 7);
   cam.ready = true;
-  const side = sniping ? 0.35 : 1.1;
+  // Leaning out round a corner takes the camera with the head, so you see round it.
+  const side = (sniping ? 0.35 : 1.1) * tall + you.lean * LEAN_REACH;
   const pivot = new THREE.Vector3(cam.x - fz * side, cam.y + cam.height - (you.grounded ? cam.dip : 0), cam.z + fx * side);
   const j = () => (Math.random() - 0.5) * shake;
   camera.position.set(pivot.x - fx * cp * cam.back + j(), pivot.y - sp * cam.back + 0.55 + j(), pivot.z - fz * cp * cam.back + j());
@@ -551,15 +561,46 @@ function hitFrom(game: Game, by: number) {
 
 /* ---------------- HUD ---------------- */
 
-/** The crosshair flashes when you hit something, harder when it goes down. */
+/** The crosshair flashes when you hit something, harder when it goes down, and an orange double ring on a headshot. */
 let markT = 0;
-function mark(kind: "hit" | "kill") {
+const MARKS = ["hit", "kill", "head"] as const;
+function mark(kind: (typeof MARKS)[number]) {
   const c = $("crosshair");
-  if (kind === "hit" && c.classList.contains("kill")) return;
-  c.classList.remove("hit", "kill");
+  if (kind === "hit" && (c.classList.contains("kill") || c.classList.contains("head"))) return;
+  c.classList.remove(...MARKS);
   c.classList.add(kind);
   clearTimeout(markT);
-  markT = window.setTimeout(() => c.classList.remove("hit", "kill"), kind === "kill" ? 260 : 90);
+  markT = window.setTimeout(() => c.classList.remove(...MARKS), kind === "hit" ? 90 : 260);
+}
+
+/**
+ * The waypoint marker: where to go next, projected onto the screen each frame. Off the screen or
+ * behind the camera it's pinned to the edge with an arrow turned toward the point. One element, reused.
+ */
+const wp = new THREE.Vector3();
+function waypoint(game: Game) {
+  const el = $("waypoint"), to = game.waypoint();
+  if (!to) return void (el.hidden = true);
+  const you = game.you();
+  el.hidden = false;
+  el.querySelector("b")!.textContent = to.label;
+  el.querySelector("small")!.textContent = `${Math.round(Math.hypot(to.x - you.x, to.z - you.z))} m`;
+  wp.set(to.x, to.y + 2.5, to.z).project(camera);
+  // Behind the camera, project() mirrors the point: flip it so the arrow points the right way.
+  const behind = wp.z > 1;
+  let x = (behind ? -wp.x : wp.x) * 0.5 + 0.5, y = (behind ? wp.y : -wp.y) * 0.5 + 0.5;
+  // The margin keeps the whole tag on the screen, whatever its width.
+  const w = innerWidth, h = innerHeight, mx = 16 + el.offsetWidth / 2, my = 16 + el.offsetHeight / 2;
+  let px = x * w, py = y * h;
+  const edge = behind || px < mx || px > w - mx || py < my || py > h - my;
+  if (edge) {
+    // Push the point out along its line from the middle until it sits on the margin.
+    const dx = px - w / 2, dy = py - h / 2, s = Math.min((w / 2 - mx) / Math.max(1e-6, Math.abs(dx)), (h / 2 - my) / Math.max(1e-6, Math.abs(dy)));
+    px = w / 2 + dx * s, py = h / 2 + dy * s;
+    el.style.setProperty("--arrow", `${Math.atan2(dy, dx)}rad`);
+  }
+  el.classList.toggle("edge", edge);
+  el.style.transform = `translate(${Math.round(px)}px, ${Math.round(py)}px) translate(-50%, -50%)`;
 }
 
 function feed(text: string, hot = false) {
@@ -621,9 +662,11 @@ function hud(game: Game, aimingAt: Block | null) {
   // A battle won on downs counts down.
   $("clock").textContent = clock(game.mode && game.mode !== "coop" ? Math.max(0, BATTLE_SECONDS - game.time) : game.time);
   const ride = game.vehicles.find((v) => v.id === you.vehicle), near = !ride && you.alive ? game.boardable(you) : null;
-  $("stance").textContent = game.mode && !you.alive ? "down: back in a moment" : ride ? `${vehicleName(ride.kind)} ${Math.ceil((ride.hp / ride.maxHp) * 100)}%${ride.kind === "roadster" ? ` · thrust ${Math.round(ride.fuel * 100)}%` : ""}` : you.burn > 0 ? "on fire: roll!" : you.reload > 0 ? "reloading" : you.prone ? "prone" : you.crouch ? "crouched" : "";
+  $("stance").textContent = game.mode && !you.alive ? "down: back in a moment" : ride ? `${vehicleName(ride.kind)} ${Math.ceil((ride.hp / ride.maxHp) * 100)}%${ride.kind === "roadster" ? ` · thrust ${Math.round(ride.fuel * 100)}%` : ""}` : you.burn > 0 ? "on fire: roll!" : you.chute ? "parachute" : you.reload > 0 ? "reloading" : you.prone ? "prone" : you.crouch ? "crouched" : "";
   $("stance").classList.toggle("hot", you.burn > 0 || (!!ride && ride.hp < ride.maxHp * 0.3));
-  $("prompt").textContent = near ? `E · get in the ${vehicleName(near.kind)}` : ride ? `E · get out${ride.kind === "heli" ? " · Space up · C down · right click rockets" : " · hold Space for thrusters"}` : "";
+  // High enough up with nothing under you, Space opens the parachute (and cuts it again).
+  const high = !ride && you.alive && !you.grounded && you.y - game.ground(you.x, you.z, Infinity) > CHUTE_MIN;
+  $("prompt").textContent = near ? `F · get in the ${vehicleName(near.kind)}` : ride ? `F · get out${ride.kind === "heli" ? " · Space up · C down · right click rockets" : " · hold Space for thrusters"}` : high ? (you.chute ? "Space · cut away" : "Space · parachute") : "";
   // Kills, and what the next streak brings.
   const next = STREAKS.find((st) => st.kills > game.kills);
   $("kills").textContent = `${game.kills} kills${next ? ` · ${vehicleName(next.kind)} at ${next.kills}` : ""}`;
@@ -714,22 +757,34 @@ function frame(now: number) {
   if (!current) return;
   const { game, world, net } = current;
   const you = game.you(), me = game.me;
+  // A finger's drag on the view turns the camera; its taps are the keys' one-shots.
+  const turn = touch.look();
+  look.yaw += turn.yaw, look.pitch = Math.max(-1.2, Math.min(1.0, look.pitch + turn.pitch));
+  if (touch.tap.delete("jump")) jump = true, prone = false;
+  if (touch.tap.delete("roll")) roll = true;
+  if (touch.tap.delete("reload")) reload = true;
+  if (touch.tap.delete("next")) cycle(1);
+  if (touch.tap.delete("leave")) return toMenu();
   placeCamera(game, dt);
   const aim = aimPoint(game, world);
+  const crouch = keys.has("KeyC") || keys.has("ControlLeft") || touch.crouch;
+  const firing = (fire && document.pointerLockElement === canvas) || touch.fire;
   const input: Input = {
-    forward: (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0),
-    right: (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0),
+    forward: (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0) || touch.forward,
+    right: (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0) || touch.right,
     yaw: look.yaw,
     pitch: look.pitch,
-    jump, roll, crouch: keys.has("KeyC") || keys.has("ControlLeft"), prone,
-    reload, use, up: keys.has("Space"), down: keys.has("KeyC") || keys.has("ControlLeft"),
+    jump, roll, crouch, prone,
+    reload, use, up: keys.has("Space") || touch.up, down: crouch,
+    // Q and E lean out while held (both at once cancel); let go of the mouse and Q leaves a battle instead.
+    lean: document.pointerLockElement === canvas ? (keys.has("KeyE") ? 1 : 0) - (keys.has("KeyQ") ? 1 : 0) : 0,
     scope: zoom,
-    fire: fire && document.pointerLockElement === canvas,
+    fire: firing,
     aim: { x: aim.point.x, y: aim.point.y, z: aim.point.z },
     weapon: pick,
   };
-  // Automatic guns fire while held; everything else once per click.
-  if (!WEAPONS[you.weapon].auto && fire && you.vehicle < 0) fire = false;
+  // Automatic guns fire while held; everything else once per click or tap.
+  if (!WEAPONS[you.weapon].auto && firing && you.vehicle < 0) fire = touch.fire = false;
   jump = roll = reload = use = false, pick = undefined;
   shake *= Math.exp(-dt * 9);
   let events: GameEvent[];
@@ -753,7 +808,10 @@ function frame(now: number) {
       shake = Math.max(shake, Math.min(0.6, e.r * 0.1) * Math.max(0, 1 - Math.hypot(e.x - you.x, e.z - you.z) / 40));
     } else if (e.kind === "razed") {
       if (e.by === me) feed(`deleted ${e.path} (${e.lines.toLocaleString()} lines)`);
-    } else if (e.kind === "hit" && e.by === me && e.target !== me) mark("hit");
+    } else if (e.kind === "hit" && e.by === me && e.target !== me) {
+      mark(e.head ? "head" : "hit");
+      if (e.head) feed("headshot");
+    }
     if (e.kind === "down" && e.by === me && e.id !== me) mark("kill");
     if (e.kind === "boom" || e.kind === "razed" || e.kind === "fire" || (e.kind === "hit" && e.by === me && e.target !== me)) continue;
     const name = (id: number) => game.soldiers[id]?.name ?? "someone";
@@ -769,7 +827,8 @@ function frame(now: number) {
     else if (e.kind === "blamed") feed(`blamed ${game.soldiers[e.id]!.name}`);
     else if (e.kind === "reverted") feed(`reverted ${game.soldiers[e.id]!.name}`);
     else if (e.kind === "objective") banner(e.text), feed(e.text, true);
-    else if (e.kind === "streak") banner(`${e.kills} kills: ${vehicleName(e.vehicle)} inbound`), feed(`${vehicleName(e.vehicle)} dropping in beside you · E to get in`, true);
+    else if (e.kind === "streak") banner(`${e.kills} kills: ${vehicleName(e.vehicle)} inbound`), feed(`${vehicleName(e.vehicle)} dropping in beside you · F to get in`, true);
+    else if (e.kind === "chute") e.id === me && feed(e.open ? "parachute open" : "cut away");
     else if (e.kind === "wrecked") feed(`${vehicleName(e.vehicle)} wrecked`, true);
     else if (e.kind === "hit" && e.target === me) {
       hitFrom(game, e.by);
@@ -778,6 +837,7 @@ function frame(now: number) {
   }
   world.sync(game, dt);
   hud(game, aim.block);
+  waypoint(game);
   renderer.render(world.scene, camera);
   // Once per ending: a battle's can arrive between frames, with a snapshot.
   if (game.status !== "playing" && !current.ended) current.ended = true, results(game);

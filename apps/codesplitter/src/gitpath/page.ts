@@ -505,6 +505,8 @@ function pedal(side: Side) {
   wake();
 }
 
+// The found.js the site serves, named by a variable so the bundler leaves it alone.
+const FOUND_JS = "/found.js";
 function setGame(on: boolean) {
   if (on === gameOn) return;
   gameOn = on; running = false; crash = null; rebinding = null; falls = 0; idleFalls = 0; taps = 0;
@@ -514,6 +516,7 @@ function setGame(on: boolean) {
   $("gamebar").hidden = !on;
   board.classList.toggle("tapzone", on);
   showKeys();
+  if (on) import(FOUND_JS).then(({ found }) => found("unicycle")).catch(() => {});
   if (on) toast(`Tap the bottom of the board, or ${keyName(binds.l)} and ${keyName(binds.r)}, left then right on the beat`);
   refresh(); wake();
 }

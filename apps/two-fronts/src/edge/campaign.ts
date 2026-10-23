@@ -111,11 +111,11 @@ export class CampaignRoom {
 
   private async create(b: unknown): Promise<Response> {
     if (this.load()) return fail("The campaign already exists", 409);
-    const { seats, galaxy = "short" } = (b ?? {}) as { seats?: Seats; galaxy?: GalaxyId };
+    const { seats, galaxy = "short", setup = false } = (b ?? {}) as { seats?: Seats; galaxy?: GalaxyId; setup?: boolean };
     const ok = (s: unknown) => s === "human" || s === "ai";
     if (!seats || !ok(seats.marines) || !ok(seats.wooka)) return fail("Say who sits in each seat");
     if (!Object.hasOwn(GALAXIES, galaxy)) return fail("No such galaxy");
-    const table = newTable({ marines: seats.marines, wooka: seats.wooka }, galaxy);
+    const table = newTable({ marines: seats.marines, wooka: seats.wooka }, galaxy, undefined, setup === true);
     if (!humans(table).length) return fail("Someone has to play");
     this.sql.exec(`CREATE TABLE IF NOT EXISTS campaign (id INTEGER PRIMARY KEY CHECK (id = 1), tbl TEXT NOT NULL, created INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS seats (faction TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE);

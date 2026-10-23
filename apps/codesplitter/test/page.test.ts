@@ -122,7 +122,7 @@ describe("binary files of your page", () => {
     const LEVEL_CHUNKS = {
       put: async (k: string, v: Uint8Array) => void store.set(k, v),
       get: async (k: string) => (store.has(k) ? { arrayBuffer: async () => store.get(k)!.buffer } : null),
-      list: async () => ({ objects: [], truncated: false }), delete: async () => {},
+      list: async ({ prefix }: { prefix: string }) => ({ objects: [...store.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key })), truncated: false }), delete: async () => {},
     };
     const call = await boot({ GH_CLI: "off", LEVEL_CHUNKS } as any);
     const put = (user: string | null, name: string, bytes: Uint8Array) => call(user, `/api/me/page/assets/${name}`, { method: "PUT", body: bytes as BodyInit });
@@ -138,5 +138,11 @@ describe("binary files of your page", () => {
     expect([...new Uint8Array(await got.arrayBuffer())]).toEqual([1, 2, 3]);
     expect((await call(null, "/api/users/ryan/page/assets/dog.png")).status).toBe(404);
     expect((await call(null, "/api/users/bob/page/assets/cat.png")).status).toBe(404);
+    expect((await put("ryan", "cat.png", new Uint8Array([4]))).status).toBe(200); // a rewrite is free
+    for (let i = 1; i < 50; i++) expect((await put("ryan", `f${i}.png`, new Uint8Array([1]))).status).toBe(200);
+    expect((await put("ryan", "one-too-many.png", new Uint8Array([1]))).status).toBe(413);
+    expect((await put("ryan", "cat.png", new Uint8Array([5]))).status).toBe(200);
+    const big = await call("ryan", "/api/me/page", { method: "PUT", body: JSON.stringify({ path: "index.html", content: "x".repeat(1_000_001) }) });
+    expect(big.status).toBe(413);
   });
 });

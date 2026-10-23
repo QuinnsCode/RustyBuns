@@ -4,17 +4,19 @@
 // is one seat at it.
 import { GALAXIES, SECTOR_NAMES, FACTION_NAMES, galaxyOf, type GalaxyId } from "./war/galaxy.ts";
 import {
-  CARDS, CARD_NAMES, COST, FACTIONS, ORBIT, TROOP_CARD, checkRetreats, enemy, fogged, handOf, heroReady, income, incomeBreakdown, keyShare, planDeploys, planOrders, regionHolder, supplied,
+  CARDS, CARD_NAMES, COST, FACTIONS, MUSTER_MAX, MUSTER_MIN, ORBIT, checkRetreats, enemy, fogged, handOf, heroReady, idleShips, income, incomeBreakdown, keyShare, musterOf, planDeploys, planOrders, regionHolder, supplied,
   type Attack, type Campaign, type Card, type Order, type Orders, type Retreat, type Where,
 } from "./war/rules.ts";
 import { aiVote, castVote, handIn, heroFaction, humans, newTable, report, tally, waitingOn, type Seats, type Table, type Vote } from "./war/table.ts";
 import { fetchView, linkInHash, pointerSocket, seatLink, sendBattle, sendOrders, sendVote, startOnline, type Online, type View } from "./net.ts";
 import { drawMap } from "./ui/map.ts";
-import { icon } from "./ui/icons.ts";
+import { icon, tip } from "./ui/icons.ts";
+import { PRESETS, PRESET_IDS, deploy, emptyDeployment, loadoutOf, placeLoadout, presetDeployment, room, totals, valueOf, type Loadout, type PresetId } from "./war/fleet.ts";
 import { MODE_INFO, voteScreen, type VoteSeat } from "./ui/vote.ts";
-import { FLAVOR, run } from "./battle/sim.ts";
-import { runSpace } from "./battle/space.ts";
-import { VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type Side, type SpaceBattleResult, type SpaceBattleSpec } from "./battle/contract.ts";
+import { run } from "./battle/sim.ts";
+import { HULL_PER_SHIP, ROUNDS, clash, encodePicks, fightPicks, playRound, startPicks, whyNot, type PickRound } from "./battle/space-picks.ts";
+import { aiSpacePick } from "./war/ai.ts";
+import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 // v2 gained the cannon sectors, v3 renamed the factions, v4 had a galaxy per campaign, v5 had
@@ -28,7 +30,7 @@ type Game = { kind: "local"; table: Table } | { kind: "online"; link: Online; vi
 const read = <T>(key: string): T | null => { try { return JSON.parse(localStorage.getItem(key) ?? "null"); } catch { return null; } };
 const write = (key: string, v: unknown) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* private window */ } };
 
-let game: Game = { kind: "local", table: read<{ table: Table }>(SAVE)?.table ?? newTable({ marines: "human", wooka: "ai" }) };
+let game: Game = { kind: "local", table: read<{ table: Table }>(SAVE)?.table ?? newTable({ marines: "human", wooka: "ai" }, "short", undefined, true) };
 let c: Campaign = game.table.campaign;
 let me: Faction = c.player;
 let mine: Orders = read<{ orders: Orders }>(SAVE)?.orders ?? { faction: me, orders: [] };
@@ -37,6 +39,8 @@ let selected: string | null = null;
 let sent = read<{ id: string; turn: number; orders: Orders }>(SENT);
 let busy = false; // a call to the server, or a battle, is under way
 let overviewOpen = true;
+// While the fleets are being chosen: how many ships and armies this seat has to place.
+let loadout: Loadout | null = null;
 
 const online = () => (game.kind === "online" ? game : null);
 const hotseat = () => game.kind === "local" && humans(game.table).length === 2;
@@ -58,10 +62,10 @@ const ownMoves = (): Orders | null => {
 const sameWhere = (a: Where, b: Where) => a.system === b.system && a.sector === b.sector;
 const myTurn = () => !c.winner && !c.pending && waiting().includes(me);
 const deploying = () => !!c.deploying && myTurn();
-const CARD_ICONS: Record<Card, string> = { guns: "crosshair", troops: "user-plus", trap: "bomb" };
+const CARD_ICONS: Record<Card, string> = { guns: "crosshair", troops: "shield-plus", trap: "bomb" };
 const CARD_TIPS: Record<Card, string> = {
   guns: "Weapon upgrade: every die your side rolls defending this sector is a d8, until it's taken",
-  troops: `Troop bonus: ${TROOP_CARD} armies here, free`,
+  troops: `Muster: free armies here, one for every two you have on this world already (${MUSTER_MIN} at least, ${MUSTER_MAX} at most)`,
   trap: "Trap: blows up half of whatever attacks here this turn, and everyone of yours there with it. For a place you hold with one army or ship",
 };
 
@@ -75,13 +79,14 @@ const placeName = (w: Where) => {
 };
 // A move into the enemy's ground or orbit is an attack, and says so.
 const attacking = (o: Order) => {
-  if (o.kind === "build" || o.kind === "card") return false;
+  if (o.kind === "build" || o.kind === "card" || o.kind === "bombard") return false;
   const foe = enemy(me), s = c.systems[o.kind === "fleet" ? o.to : o.to.system]!;
   return o.kind === "fleet" ? s.orbit === foe || s.sectors.some((x) => x.owner === foe) : s.sectors[o.to.sector]!.owner === foe;
 };
 const describe = (o: Order) => (attacking(o) ? "Attack: " : "") + (
   o.kind === "build" ? `Build ${o.unit === "fleet" ? "a ship" : "an army"} at ${placeName(o.at)}`
   : o.kind === "card" ? `${CARD_NAMES[o.card]} at ${placeName(o.at)}`
+  : o.kind === "bombard" ? `Bombard ${placeName(o.at)} with ${o.count} ${o.count === 1 ? "ship" : "ships"}`
   : o.kind === "fleet" ? `${o.count} ${o.count === 1 ? "ship" : "ships"}: ${systemDef(o.from).name} → ${systemDef(o.to).name}`
   : `${o.count} ${o.count === 1 ? "army" : "armies"}: ${placeName(o.from)} → ${placeName(o.to)}`);
 
@@ -107,11 +112,13 @@ function flash(msg: string) {
 }
 
 function render() {
-  const moving = deploying(), foe = enemy(me), g = online(), v = seen(), answering = !!c.attacks || !!c.deploying;
+  const moving = deploying(), foe = enemy(me), g = online(), answering = !!c.attacks || !!c.deploying;
+  // Before the war, the map shows this seat's fleet where it has put it.
+  const v = c.setup && mine.deployment ? deploy(seen(), me, mine.deployment) : seen();
   const draft = moving ? planDeploys(c, me, mine.deploys ?? []).c : planOrders(c, [mine]).c;
   $("map").innerHTML = drawMap(v, moving ? mine.deploys ?? [] : mine.orders, selected, mine.hero, { me, attacks: c.attacks ?? [], retreats: mine.retreats ?? [] });
   const share = keyShare(c, me), gx = galaxyOf(c);
-  const count = (f: Faction) => Object.values(c.systems).reduce((n, s) => ({ armies: n.armies + s.sectors.reduce((a, x) => a + x.armies[f], 0), ships: n.ships + s.fleets[f] }), { armies: 0, ships: 0 });
+  const count = (f: Faction) => Object.values(v.systems).reduce((n, s) => ({ armies: n.armies + s.sectors.reduce((a, x) => a + x.armies[f], 0), ships: n.ships + s.fleets[f] }), { armies: 0, ships: 0 });
   const forces = count(me), held = gx.regions.filter((r) => regionHolder(c, r.id) === me).length;
   // The bar along the top of the map: what this side has to spend and to fight with.
   $("topbar").innerHTML = `
@@ -166,20 +173,25 @@ function render() {
     const sendRow = (what: string, n: string, to: string, go: string) =>
       `<div class="act send"><span class="what">${what}</span>${n}${icon("arrow-right", 14)}${to}${go}</div>`;
     const goBtn = (attr: string, title: string) => `<button type="button" class="icon-btn go" ${attr} title="${title}" aria-label="${title}">${icon("send", 15)}</button>`;
-    const note = (text: string, warn = false) => `<p class="note${warn ? " warn" : ""}">${icon(warn ? "triangle-alert" : "info", 14)}<span>${text}</span></p>`;
+    const note = (text: string, warn = false) => tip(text, warn);
     const targets: Where[] = [
       ...s.sectors.map((_, i) => ({ system: selected!, sector: i })),
       ...neighbours(selected).flatMap((n) => c.systems[n]!.sectors.map((_, i) => ({ system: n, sector: i }))),
     ];
+    const idle = idleShips(draft, ds)[me];
+    // Their fleet gone and the sky ours: train ships on a garrison below, before the landings.
+    const bombardable = (i: number) => !c.setup && !answering && s.orbit === me && !s.fleets[foe] && s.sectors[i]!.owner === foe && ds.sectors[i]!.armies[foe] > 0 && idle > 0;
     html = `<div class="sys-head"><h2>${d.name}</h2><span class="small">${galaxyOf(c).regions.find((r) => r.id === d.region)?.name ?? ""}</span></div>
       <div class="orbit-row"><span title="Orbit held by ${s.orbit ? FACTION_NAMES[s.orbit] : "nobody"}">${icon("orbit", 15)}<i class="dot ${s.orbit ?? ""}"></i></span>
         <span class="count" title="Ships here: yours, then theirs">${icon("rocket", 14)}<b class="${me}">${s.fleets[me]}</b><b class="${foe}">${theirs(s.fleets[foe], s.orbit === foe)}</b></span>
-        ${heroButton(ORBIT, "Fly the space battle here yourself, if one happens this turn")}</div>
+        ${musterCount(s, theirs)}
+        ${heroButton(ORBIT,"Fly the space battle here yourself, if one happens this turn")}</div>
       ${s.sectors.some((x) => x.armies[me]) && !supplied(c, me).has(selected) ? note("Cut off: your armies here lose one a turn. Clear the enemy orbit on the way back to a capital.", true) : ""}
+      ${s.sectors.some((_, i) => bombardable(i)) ? note("Their fleet is gone. Train your ships on a garrison below: each kills an army before the landings, half as many through a shield. Ships that bombard don't sail.") : ""}
       ${s.sectors.some((x) => x.kind === "cannon") ? note("The cannon knocks a ship a turn out of an enemy fleet in orbit.") : ""}
       ${s.sectors.some((x) => x.kind === "canyon") ? note("The canyon's ore pays like a capital.") : ""}
       ${s.sectors.some((x) => x.kind === "jungle") ? note("The jungle's holder defends it as if they held the orbit.") : ""}
-      ${ds.fleets[me] && !answering ? sendRow(icon("rocket", 15), `<select id="ship-n" title="Ships to send">${opts(ds.fleets[me])}</select>`,
+      ${idle && !answering ? sendRow(icon("rocket", 15), `<select id="ship-n" title="Ships to send">${opts(idle)}</select>`,
         `<select id="ship-to" title="Send them to">${neighbours(selected).map((n) => `<option value="${n}">${systemDef(n).name}</option>`).join("")}</select>`,
         goBtn('id="send-ships"', "Send the ships")) : ""}
       ${moving && ds.orbit === me && ds.fleets[me] > 1 && neighbours(selected).some((n) => draft.systems[n]!.orbit === me) ? sendRow(icon("rocket", 15), `<select id="ship-n" title="Ships to move">${opts(ds.fleets[me] - 1)}</select>`,
@@ -200,6 +212,7 @@ function render() {
             <span class="count armies" title="Armies here: Marines, then Wooka">${icon("users", 14)}<b class="marines">${foe === "marines" ? theirs(x.armies.marines, x.owner === foe) : x.armies.marines}</b><b class="wooka">${foe === "wooka" ? theirs(x.armies.wooka, x.owner === foe) : x.armies.wooka}</b></span>
             ${heroButton(i, "Play the battle here yourself, if one happens this turn")}</div>
           ${builds ? `<div class="act">${builds}</div>` : ""}
+          ${bombardable(i) ? `<div class="act send"><span class="what">${icon("flame", 15)}</span><select data-bomb-n="${i}" title="Ships to train on this sector">${opts(idle)}</select>${goBtn(`data-bombard="${i}"`, "Bombard from orbit: each ship kills an army here, half as many through a shield")}</div>` : ""}
           ${here.armies[me] && x.owner === me && !answering ? sendRow(icon("users", 15), `<select data-army-n="${i}" title="Armies to send">${opts(here.armies[me])}</select>`,
             `<select data-army-to="${i}" title="Send them to">${targets.filter((t) => !(t.system === selected && t.sector === i)).map((t) => `<option value="${t.system}:${t.sector}">${placeName(t)}</option>`).join("")}</select>`,
             goBtn(`data-army-go="${i}"`, "Send the armies")) : ""}
@@ -209,10 +222,12 @@ function render() {
         </li>`;
       }).join("")}</ul>`;
   }
-  $("detail").innerHTML = (c.attacks && myTurn() ? retreatPanel() : "") + html;
+  $("detail").innerHTML = c.setup ? setupPanel(v) : (c.attacks && myTurn() ? retreatPanel() : "") + html;
 
   const rs = mine.retreats ?? [], ds = mine.deploys ?? [];
-  $("orders").innerHTML = c.deploying
+  $("orders").innerHTML = c.setup
+    ? `<li class="hint">${myTurn() ? "Choose a fleet, place it on your worlds, then deploy." : "Your fleet is in place."}</li>`
+    : c.deploying
     ? ds.length
       ? ds.map((o, i) => `<li>Move ${describe(o)} <button type="button" class="x" data-drop-deploy="${i}" title="Cancel" aria-label="Cancel">${icon("x", 14)}</button></li>`).join("")
       : `<li class="hint">${moving ? "Staying put. Move troops into what you took, or up to the front." : "Waiting for the deploys."}</li>`
@@ -226,11 +241,19 @@ function render() {
     : `<li class="hint" title="Build, send ships to take an orbit, land armies under it, and pick one battle to lead with the swords button">No orders yet.</li>`;
   $("log").innerHTML = c.log.map((l) => `<li>${esc(l)}</li>`).join("");
   const end = $("end-turn");
-  end.toggleAttribute("disabled", busy || !myTurn());
-  end.innerHTML = (moving ? (ds.length ? "Confirm moves" : "Stay put")
+  end.toggleAttribute("disabled", busy || !myTurn() || (!!c.setup && !loadout));
+  end.innerHTML = (c.setup && myTurn() ? "Deploy fleet" : moving ? (ds.length ? "Confirm moves" : "Stay put")
     : answering && myTurn() ? (rs.length ? "Confirm retreats" : "Hold everywhere")
     : g ? (myTurn() ? "Send orders" : waitingLine()) : hotseat() ? "Hand in orders" : "Next turn") + icon("chevrons-right", 18);
   if (c.winner) showModal(`<h2>${hotseat() ? `${FACTION_NAMES[c.winner]} win` : c.winner === me ? "Victory" : "Defeat"}</h2><p>${FACTION_NAMES[c.winner]} wins the war on turn ${c.turn - 1}.</p><button type="button" id="new-war" class="primary">New campaign</button>`);
+}
+
+// A world's muster force, yours then theirs: the armies on it, which feed the space battle over it.
+// Theirs is a question mark where nobody of ours is there to count it.
+function musterCount(s: Campaign["systems"][string], theirs: (n: number, there: boolean) => number | string) {
+  const foe = enemy(me), mine = musterOf(s, me), their = musterOf(s, foe);
+  const tip = `Muster force: armies on this world, yours then theirs. In the space battle over it they send boarding parties up, and a bigger muster boards harder; batteries below (yours: ${mine.batteries}) add to a screen or a bombardment. A muster card raises more where it's bigger.`;
+  return `<span class="count" title="${esc(tip)}">${icon("shield-plus", 14)}<b class="${me}">${mine.troops}</b><b class="${foe}">${theirs(their.troops, s.sectors.some((x) => x.owner === foe || x.armies[foe] > 0))}</b></span>`;
 }
 
 // Once the attacks are declared: each one against you, with where you could pull back to, and
@@ -262,14 +285,14 @@ function retreatPanel() {
   return `<div class="attacks"><h2>Attacks declared</h2>
     ${against ? `<h3>Against you</h3><ul class="sectors">${against}</ul>` : ""}
     ${ours ? `<h3>Yours</h3><ul class="sectors">${ours}</ul>` : ""}
-    <p class="small">Hold, and the fight happens. Pull out, and the ground is theirs but your troops live.</p></div>`;
+    ${tip("Hold, and the fight happens. Pull out, and the ground is theirs but your troops live.")}</div>`;
 }
 
 // The turn's six phases, the one we're in lit: draw and place happen with the orders, declare
 // while the retreats are out, combat while a hero battle waits, deploy after the fighting, and
 // collect at the turn's end.
 function phases() {
-  const now = c.pending ? 3 : c.deploying ? 4 : c.attacks ? 2 : 1;
+  const now = c.setup ? -1 : c.pending ? 3 : c.deploying ? 4 : c.attacks ? 2 : 1;
   const list: [string, string][] = [
     ["layers", "Draw: a card each turn"],
     ["map-pin", "Place: raise troops and ships, then play cards"],
@@ -295,9 +318,18 @@ function waitingLine() {
   if (c.winner) return "The war is over";
   const h = heroFaction(c);
   if (h) return h === me ? "Your hero battle" : `${FACTION_NAMES[h]} are fighting a hero battle`;
-  if (waiting().includes(me)) return c.deploying ? "Deploy" : c.attacks ? "Answer the attacks" : "Your move";
+  if (waiting().includes(me)) return c.setup ? "Place your fleet" : c.deploying ? "Deploy" : c.attacks ? "Answer the attacks" : "Your move";
   return `Waiting for the ${waiting().map((f) => FACTION_NAMES[f]).join(" and ")}${c.deploying ? " to deploy" : c.attacks ? " to answer the attacks" : ""}`;
 }
+
+// An "i" opens or closes its text.
+document.addEventListener("click", (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLElement>(".tip-btn");
+  if (!b) return;
+  const t = b.nextElementSibling as HTMLElement;
+  t.hidden = !t.hidden;
+  b.setAttribute("aria-expanded", String(!t.hidden));
+});
 
 // Clicks, delegated.
 document.addEventListener("click", (e) => {
@@ -334,6 +366,22 @@ document.addEventListener("click", (e) => {
   }
   if (t.dataset.dropRetreat) { mine.retreats?.splice(+t.dataset.dropRetreat, 1); save(); render(); return; }
   if (t.dataset.dropDeploy) { mine.deploys?.splice(+t.dataset.dropDeploy, 1); save(); render(); return; }
+  if (t.dataset.bombard) {
+    const i = t.dataset.bombard;
+    return order({ kind: "bombard", at: { system: selected!, sector: +i }, count: +document.querySelector<HTMLSelectElement>(`[data-bomb-n="${i}"]`)!.value });
+  }
+  if (t.dataset.preset) return chooseFleet(t.dataset.preset as PresetId);
+  if (t.dataset.custom) {
+    const [kind, by] = t.dataset.custom.split(":") as ["ships" | "armies", string], l = { ...(loadout ?? loadoutOf(c, me, "line")) };
+    l[kind] = Math.max(0, l[kind] + +by);
+    if (room(c, me, l) < 0) return;
+    loadout = l;
+    return pickFleet();
+  }
+  if (t.id === "custom-go") { chooseFleet(loadout ?? loadoutOf(c, me, "line")); return; }
+  if (t.id === "change-fleet") { loadout = null; return pickFleet(); }
+  if (t.id === "auto-place") { if (loadout) { mine.deployment = placeLoadout(c, me, loadout); save(); render(); } return; }
+  if (t.dataset.place) return placeUnit(t.dataset.place);
   if (t.id === "end-turn") return endTurn();
   if (t.id === "overview-toggle") { overviewOpen = !overviewOpen; render(); return; }
   if (t.id === "new-war" || t.id === "restart") return chooseGame();
@@ -341,7 +389,7 @@ document.addEventListener("click", (e) => {
   if (t.id === "invite") return showInvite();
   if (t.id === "copy-link") { void navigator.clipboard?.writeText($<HTMLInputElement>("seat-link").value); flash("Link copied"); return; }
   if (t.id === "pass-on") { hideModal(); return afterTurn(); }
-  if (t.id === "close") hideModal();
+  if (t.id === "close") { hideModal(); if (c.setup) afterTurn(); }
 });
 document.addEventListener("keydown", (e) => {
   const sys = (e.target as HTMLElement).closest?.<SVGGElement>("[data-system]");
@@ -370,7 +418,7 @@ async function startGame(kind: "ai" | "hotseat" | "online") {
   if (kind !== "online") {
     hideModal();
     try { localStorage.removeItem(ONLINE); } catch { /* private window */ }
-    useGame({ kind: "local", table: newTable(seats, galaxy) });
+    useGame({ kind: "local", table: newTable(seats, galaxy, undefined, true) });
     return hotseat() ? passTo(seatUp()) : afterTurn();
   }
   try {
@@ -391,7 +439,8 @@ function useGame(g: Game, draft?: { turn: number; orders: Orders }) {
   // Moves before the attacks are declared, retreats after, and deploys after the fighting.
   mine = c.deploying ? { faction: me, orders: [], deploys: mine.deploys ?? [] }
     : c.attacks ? { faction: me, orders: [], retreats: mine.retreats ?? [], ...(mine.hero && { hero: mine.hero }) }
-    : { faction: me, orders: mine.orders, ...(mine.hero && { hero: mine.hero }) };
+    : { faction: me, orders: mine.orders, ...(mine.hero && { hero: mine.hero }), ...(c.setup && mine.deployment && { deployment: mine.deployment }) };
+  loadout = c.setup && mine.deployment ? totals(mine.deployment) : null;
   selected = galaxyOf(c).systems.find((d) => c.systems[d.id]!.sectors.some((x) => x.owner === me))?.id ?? null;
   save(); render();
 }
@@ -431,8 +480,73 @@ async function endTurn() {
 function passTo(f: Faction) {
   const battle = heroFaction(c) === f;
   showModal(`<h2>${FACTION_NAMES[f]}, you're up</h2>
-    <p>${battle ? "Your hero has a battle to fight." : c.deploying ? "The fighting's over. Move into what you took, and move what's left." : c.attacks ? "The attacks are declared. Decide where to stand and where to pull back." : `Turn ${c.turn}: give your orders.`} Hand the screen over.</p>
+    <p>${battle ? "Your hero has a battle to fight." : c.setup ? "Choose a fleet and place it." : c.deploying ? "The fighting's over. Move into what you took, and move what's left." : c.attacks ? "The attacks are declared. Decide where to stand and where to pull back." : `Turn ${c.turn}: give your orders.`} Hand the screen over.</p>
     <button type="button" id="pass-on" class="primary">I'm the ${FACTION_NAMES[f]}</button>`);
+}
+
+// --- Choosing and placing a fleet ---
+
+// The first thing a war asks: which fleet. A preset, or a mix of your own, from a pool of value.
+function pickFleet() {
+  const l = loadout ?? loadoutOf(c, me, "line"), pool = c.pool?.[me] ?? 0, left = room(c, me, l);
+  const stepper = (kind: "ships" | "armies", name: string, ico: string, cost: number) => `<span class="stepper" title="${name}: ${cost} each">${icon(ico, 15)}
+    <button type="button" class="icon-btn" data-custom="${kind}:-1" aria-label="Fewer ${name}" ${l[kind] ? "" : "disabled"}>${icon("minus", 13)}</button><b>${l[kind]}</b>
+    <button type="button" class="icon-btn" data-custom="${kind}:1" aria-label="More ${name}" ${left >= cost ? "" : "disabled"}>${icon("plus", 13)}</button></span>`;
+  showModal(`<h2>Choose your fleet</h2>
+    <ol class="steps"><li><b>Choose</b> a fleet to fight with.</li><li><b>Place</b> it on your worlds. Where you put it is the opening move.</li>
+      <li><b>Fight</b>: each turn give orders at once with the other side. Moving into enemy space is an attack. Win the sky over a world and you can bombard its garrison; hold the ground to win the war.</li></ol>
+    <div class="presets">${PRESET_IDS.map((id) => {
+      const p = PRESETS[id], x = loadoutOf(c, me, id);
+      return `<button type="button" class="preset" data-preset="${id}" title="${esc(p.blurb)}"><span class="p-name">${icon(p.icon, 16)}${p.name}</span>
+        <span class="p-mix"><span>${icon("rocket", 13)}${x.ships}</span><span>${icon("users", 13)}${x.armies}</span></span><span class="small">${p.blurb}</span></button>`;
+    }).join("")}</div>
+    <div class="custom"><b>Your own</b>${stepper("ships", "Ships", "rocket", COST.fleet)}${stepper("armies", "Armies", "users", COST.army)}
+      <span class="small" title="What you don't spend goes to the treasury">${icon("coins", 13)} ${left} of ${pool} left</span>
+      <button type="button" id="custom-go" class="primary">Use this fleet</button></div>`);
+  $("modal-body").classList.add("wide");
+}
+
+// Takes the loadout and puts it down as the preset (or an even spread) would, to adjust from.
+function chooseFleet(from: PresetId | Loadout) {
+  const preset = typeof from === "string" ? from : null;
+  loadout = preset ? loadoutOf(c, me, preset) : from as Loadout;
+  mine.deployment = preset ? presetDeployment(c, me, preset) : placeLoadout(c, me, loadout);
+  hideModal();
+  save(); render();
+}
+
+// The setup panel: where the fleet stands, and +/- on the selected world to move it about.
+function setupPanel(v: Campaign): string {
+  const step = (n: number, text: string) => `<p class="step"><b>Step ${n} of 2</b> ${text}</p>`;
+  if (!waiting().includes(me)) return step(2, "Your fleet is in place. Waiting for the other side to place theirs.");
+  if (!loadout) return `${step(1, "Choose your fleet.")}<p><button type="button" id="change-fleet" class="primary">${icon("rocket", 15)} Choose a fleet</button></p>`;
+  const d = mine.deployment ?? emptyDeployment(), placed = totals(d), left = { ships: loadout.ships - placed.ships, armies: loadout.armies - placed.armies };
+  const gx = galaxyOf(c), mineHere = selected && v.systems[selected]!.sectors.some((x) => x.owner === me);
+  const stepBtns = (key: string, n: number, canAdd: boolean) => `<button type="button" class="icon-btn" data-place="${key}:-1" ${n ? "" : "disabled"} aria-label="Remove one">${icon("minus", 13)}</button><b>${n}</b>
+    <button type="button" class="icon-btn" data-place="${key}:1" ${canAdd ? "" : "disabled"} aria-label="Add one">${icon("plus", 13)}</button>`;
+  const sys = mineHere ? (() => {
+    const id = selected!, s = v.systems[id]!;
+    return `<div class="sys-head"><h2>${gx.system(id).name}</h2></div>
+      <div class="act place"><span class="what" title="Ships over ${gx.system(id).name}">${icon("rocket", 15)}</span>${stepBtns(`ships:${id}`, d.ships[id] ?? 0, left.ships > 0)}</div>
+      <ul class="sectors">${s.sectors.map((x, i) => x.owner !== me ? "" : `<li><div class="sector"><i class="dot ${x.owner}"></i><b>${SECTOR_NAMES[x.kind]}</b></div>
+        <div class="act place"><span class="what" title="Armies on this sector">${icon("users", 15)}</span>${stepBtns(`armies:${id}:${i}`, d.armies[`${id}:${i}`] ?? 0, left.armies > 0)}</div></li>`).join("")}</ul>`;
+  })() : `<p class="hint">Pick one of your worlds on the map to move ships and armies onto it.</p>`;
+  return `${step(2, "Place your fleet. Everything on the front hits first; everything at the back holds out longest.")}
+    <div class="loadout"><span title="Ships still to place">${icon("rocket", 15)}<b>${left.ships}</b> to place</span><span title="Armies still to place">${icon("users", 15)}<b>${left.armies}</b> to place</span>
+      <button type="button" id="auto-place" class="icon-btn" title="Spread them out again" aria-label="Spread them out again">${icon("rotate-ccw", 14)}</button>
+      <button type="button" id="change-fleet" class="link" title="Choose a different fleet">Change fleet</button></div>
+    ${left.ships || left.armies ? `<p class="small">${icon("coins", 12)} What you don't place goes to the treasury (${valueOf(left)}).</p>` : ""}
+    ${sys}`;
+}
+
+// A +1 or -1 on a system's ships or a sector's armies in the fleet being placed.
+function placeUnit(arg: string) {
+  const parts = arg.split(":"), by = +parts.pop()!, kind = parts[0] as "ships" | "armies", key = parts.slice(1).join(":");
+  const d = (mine.deployment ??= emptyDeployment()), bag = d[kind], placed = totals(d);
+  if (by > 0 && (!loadout || placed[kind] >= loadout[kind])) return;
+  bag[key] = Math.max(0, (bag[key] ?? 0) + by);
+  if (!bag[key]) delete bag[key];
+  save(); render();
 }
 
 // --- The end-of-match vote ---
@@ -490,6 +604,7 @@ function voteIfOpen(then: () => void) {
 // After anything moves the turn on: fight our hero battle if it's ours, or wait for the others.
 function afterTurn() {
   if (c.winner || busy || voting) return;
+  if (c.setup && myTurn() && !loadout) return pickFleet();
   const p = c.pending;
   if (p && heroFaction(c) === me) return p.kind === "space" ? briefSpace(p.spec, finishSpace) : brief(p.spec, finish);
   if (online() && !myTurn()) schedulePoll();
@@ -525,10 +640,10 @@ function brief(spec: BattleSpec, done: (r: BattleResult) => void) {
     return list.join(", ") || "none";
   };
   const row = (label: string, a: number | string, b: number | string) => `<tr><th>${label}</th><td>${a}</td><td>${b}</td></tr>`;
+  const role = `You ${me === "attacker" ? "attack" : "defend"} as ${spec.factions[me] === "wooka" ? "a Wooka chieftain. The armoured ones came to hunt. Show them who the forest belongs to" : "a Thunder Marine"}.${spec.mode && spec.mode !== "conquest" ? "" : " Take the command posts and run their tickets out."}`;
+  const about = `${MODE_INFO[spec.mode ?? "conquest"].blurb} ${role}${horde && spec.factions[me] === "marines" ? " You are not the hunter here. They know the trees, they know your smell, and they are already in the ferns." : ""}`;
   showModal(`<h2>Hero battle: ${spec.system}, ${SECTOR_NAMES[spec.sector].toLowerCase()}</h2>
-    <p class="mode-line">${icon(MODE_INFO[spec.mode ?? "conquest"].icon, 16)}<b>${MODE_INFO[spec.mode ?? "conquest"].name}</b> <span class="small">${MODE_INFO[spec.mode ?? "conquest"].blurb}</span></p>
-    <p>You ${me === "attacker" ? "attack" : "defend"} as ${spec.factions[me] === "wooka" ? "a Wooka chieftain. The armoured ones came to hunt. Show them who the forest belongs to" : "a Thunder Marine"}.${spec.mode && spec.mode !== "conquest" ? "" : " Take the command posts and run their tickets out."}</p>
-    ${horde ? `<p class="small">${spec.factions[me] === "marines" ? "You are not the hunter here. They know the trees, they know your smell, and they are already in the ferns." : ""}</p><p class="flavor">“${FLAVOR[Math.floor(Math.random() * FLAVOR.length)]}”</p>` : ""}
+    <p class="mode-line">${icon(MODE_INFO[spec.mode ?? "conquest"].icon, 16)}<b>${MODE_INFO[spec.mode ?? "conquest"].name}</b>${tip(about)}</p>
     <table class="spec"><tr><th></th><td>You</td><td>Enemy</td></tr>
       ${row("Armies", spec.armies[me], spec.armies[foe])}
       ${row("Tickets", spec.tickets[me], spec.tickets[foe])}
@@ -537,7 +652,7 @@ function brief(spec: BattleSpec, done: (r: BattleResult) => void) {
       ${row("Drop pods", spec.reinforcements[me] ? `+${spec.reinforcements[me]}` : "none", spec.reinforcements[foe] ? `+${spec.reinforcements[foe]}` : "none")}
       ${row("Turrets", me === "defender" ? spec.turrets : 0, me === "attacker" ? spec.turrets : 0)}
     </table>
-    <p class="small">Strikes, drop pods and gunships come from holding the orbit, and walkers from holding the world's capital. A shield generator held by the other side cuts strikes to one.</p>
+    ${tip("Strikes, drop pods and gunships come from holding the orbit, and walkers from holding the world's capital. A shield generator held by the other side cuts strikes to one.")}
     <button type="button" id="drop-in" class="primary">Drop in</button> <button type="button" id="auto-battle">Let the AI fight it</button>`);
   $("drop-in").onclick = async () => {
     hideModal();
@@ -550,16 +665,29 @@ function brief(spec: BattleSpec, done: (r: BattleResult) => void) {
   $("auto-battle").onclick = () => { hideModal(); done({ ...run(spec).over!, auto: true }); };
 }
 
-// The space battle's briefing: the fleets over the system, a cruiser for each ship.
+// The orders of a pick battle, as the hand shows them.
+const ORDER_INFO: Record<SpaceOrder, { name: string; icon: string; tip: string }> = {
+  broadside: { name: "Broadside", icon: "zap", tip: "The gun lines fire. Beats boarders crossing the gap, and a fleet bombarding" },
+  screen: { name: "Screen", icon: "shield", tip: "Fighters out front. Beats a broadside and a bombardment. Your batteries below add flak" },
+  board: { name: "Board", icon: "anchor", tip: "Close in and send troops across. Beats a screen and a bombardment, and takes prize ships. Needs troops below, a big muster boards harder, and a broadside costs half of them" },
+  bombard: { name: "Bombard", icon: "flame", tip: "Turn the guns on the world: kills their armies below, twice as many if they pull back or bombard too. But every hit lands, and none goes back" },
+  withdraw: { name: "Pull back", icon: "undo-2", tip: "Take half the fire, give none, and come back harder next round. Nobody can board you" },
+};
+
+// The space battle's briefing: the fleets over the system and the muster force below. Fight it by
+// picking orders (the default), fly it in a fighter, or leave it to the AI.
 function briefSpace(spec: SpaceBattleSpec, done: (r: SpaceBattleResult) => void) {
-  const me = spec.hero, foe = me === "attacker" ? "defender" : "attacker";
+  const me = spec.hero, foe = other(me);
   showModal(`<h2>Space battle: over ${spec.system}</h2>
-    <p>You fly a ${spec.factions[me] === "wooka" ? "Wooka log glider" : "Thunder Marine fighter"} for the orbit. Knock out their cruisers and the orbit is yours.</p>
+    <p class="mode-line">${icon("orbit", 16)}<b>${ROUNDS} rounds</b>${tip(`You command the ${spec.factions[me] === "wooka" ? "Wooka raft fleet" : "Thunder Marine line"} for the orbit. Each round you pick an order, they pick one, and you see theirs once yours is in. More hull at the end holds the orbit.`)}</p>
     <table class="spec"><tr><th></th><td>You</td><td>Enemy</td></tr>
-      <tr><th>Cruisers</th><td>${spec.fleets[me]}</td><td>${spec.fleets[foe]}</td></tr>
+      <tr><th>${icon("rocket", 13)} Ships</th><td>${spec.fleets[me]}</td><td>${spec.fleets[foe]}</td></tr>
+      <tr><th title="Armies on the world below: they board, and a bigger muster boards harder">${icon("shield-plus", 13)} Muster below</th><td>${spec.muster?.[me] ?? 0}</td><td>${spec.muster?.[foe] ?? 0}</td></tr>
+      <tr><th title="Cannons, shields and upgraded guns below: they add to a screen or a bombardment">${icon("crosshair", 13)} Batteries below</th><td>${spec.batteries?.[me] ?? 0}</td><td>${spec.batteries?.[foe] ?? 0}</td></tr>
     </table>
-    <p class="small">Each ship on the map is a cruiser here, launching its wing of fighters. A cruiser under half its hull doesn't fly on after the battle. Win the orbit and the turn's landings can come down under it.</p>
-    <button type="button" id="launch" class="primary">Launch</button> <button type="button" id="auto-battle">Let the AI fight it</button>`);
+    ${tip("Lose the orbit and the world is blockaded: nothing gets built there, supply through it is cut, their landings come down, and a fleet of two or more bombards the armies below every turn.")}
+    <button type="button" id="fight-picks" class="primary">${icon("swords", 15)} Fight it</button> <button type="button" id="launch" title="Fly a fighter in the battle yourself">${icon("rocket", 15)} Fly it</button> <button type="button" id="auto-battle">Let the AI fight it</button>`);
+  $("fight-picks").onclick = () => pickBattle(spec, done);
   $("launch").onclick = async () => {
     hideModal();
     document.body.classList.add("in-battle");
@@ -568,7 +696,56 @@ function briefSpace(spec: SpaceBattleSpec, done: (r: SpaceBattleResult) => void)
     document.body.classList.remove("in-battle");
     done(result);
   };
-  $("auto-battle").onclick = () => { hideModal(); done({ ...runSpace(spec).over!, auto: true }); };
+  $("auto-battle").onclick = () => { hideModal(); done({ ...fightPicks(spec, [], aiSpacePick)!.over!, auto: true }); };
+}
+
+// The pick battle: a round at a time, the hand of orders, the enemy's pick shown once yours is in.
+// The result carries the hero's picks, so whoever checks it can fight it again.
+function pickBattle(spec: SpaceBattleSpec, done: (r: SpaceBattleResult) => void) {
+  const b = startPicks(spec), me = spec.hero, foe = other(me), picks: SpaceOrder[] = [];
+  let last: PickRound | null = null;
+  const finish = () => { hideModal(); done({ ...b.over!, inputs: encodePicks(picks) }); };
+  const fleet = (s: Side) => `<div class="fleet-row"><span class="who"><i class="dot ${spec.factions[s]}"></i>${s === me ? "You" : "Enemy"}</span>
+    <span class="hull" title="Hull: ${b.hull[s]}"><i class="${spec.factions[s]}" style="width:${(100 * b.hull[s]) / Math.max(1, b.top[s])}%"></i></span>
+    <span class="count" title="Ships still fit to fly">${icon("rocket", 13)}<b>${Math.floor(b.hull[s] / HULL_PER_SHIP)}</b></span>
+    <span class="count" title="Muster force below: armies that can board">${icon("shield-plus", 13)}<b>${b.troops[s]}</b></span></div>`;
+  const card = (o: SpaceOrder, cls: string) => `<span class="order-card ${cls}" title="${ORDER_INFO[o].tip}">${icon(ORDER_INFO[o].icon, 18)}<span>${ORDER_INFO[o].name}</span></span>`;
+  const say = (r: PickRound) => {
+    const v = clash(r.picks[me], r.picks[foe]), out: string[] = [];
+    if (r.hit[foe]) out.push(`${r.hit[foe]} hull into theirs`);
+    if (r.hit[me]) out.push(`${r.hit[me]} into yours`);
+    if (r.prizes[me]) out.push(`${r.prizes[me]} taken as prizes`);
+    if (r.prizes[foe]) out.push(`${r.prizes[foe]} of yours taken as prizes`);
+    if (r.killed[foe]) out.push(`${r.killed[foe]} of their armies below killed`);
+    if (r.killed[me]) out.push(`${r.killed[me]} of your armies below killed`);
+    if (r.boarders[me]) out.push(`${r.boarders[me]} boarding ${r.boarders[me] === 1 ? "party" : "parties"} lost`);
+    return `<p class="verdict ${v}">${v === "win" ? "You read them right." : v === "lose" ? "They read you." : "Neither side has the edge."} ${out.join(", ") || "Nothing hits"}.</p>`;
+  };
+  const draw = () => {
+    const end = b.over && (b.over.winner === me ? `<h3>The orbit is ours</h3>` : `<h3>The orbit is lost</h3>`);
+    showModal(`<div class="picks"><h2>Over ${spec.system} <small>${b.over ? "Over" : `Round ${b.round + 1} of ${ROUNDS}`}</small></h2>
+      ${fleet(me)}${fleet(foe)}
+      ${last ? `<div class="reveal">${card(last.picks[me], "mine")}<span class="vs">vs</span>${card(last.picks[foe], "theirs flip")}</div>${say(last)}` : `<p class="small">Pick an order. They pick at the same moment, and you see theirs once yours is in.</p>`}
+      ${end || `<div class="hand">${SPACE_ORDERS.map((o) => {
+        const why = whyNot(b, me, o);
+        return `<button type="button" class="order" data-pick="${o}" ${why ? `disabled title="${esc(why)}"` : `title="${ORDER_INFO[o].tip}"`}>${icon(ORDER_INFO[o].icon, 20)}<span>${ORDER_INFO[o].name}</span></button>`;
+      }).join("")}</div>`}
+      ${b.over ? `<button type="button" id="picks-done" class="primary">Back to the war</button>` : `<button type="button" id="picks-ai" class="link">${icon("bot", 14)} Let the AI finish it</button>`}</div>`);
+    $("modal-body").classList.add("wide");
+    document.querySelectorAll<HTMLButtonElement>("[data-pick]").forEach((btn) => (btn.onclick = () => {
+      const o = btn.dataset.pick as SpaceOrder;
+      // The enemy's pick is made from what it's seen so far, never from this one.
+      last = playRound(b, { [me]: o, [foe]: aiSpacePick(b, foe) } as Record<Side, SpaceOrder>);
+      picks.push(o);
+      draw();
+    }));
+    if (b.over) $("picks-done").onclick = finish;
+    else $("picks-ai").onclick = () => {
+      while (!b.over) playRound(b, { [me]: aiSpacePick(b, me), [foe]: aiSpacePick(b, foe) } as Record<Side, SpaceOrder>);
+      finish();
+    };
+  };
+  draw();
 }
 
 // Hand the hero battle's result to the table, here or in the campaign's Durable Object.
@@ -601,9 +778,12 @@ async function finishSpace(result: SpaceBattleResult) {
   if (c.pending?.kind !== "space") return;
   const spec = c.pending.spec, won = result.winner === spec.hero;
   if (!(await sendResult(result, () => void finishSpace(result)))) return;
+  // What the orbit meant on the map: the toll below, the blockade, the landings and what they took.
+  const after = c.log.filter((l) => l.includes(spec.system) && !l.startsWith("Hero space battle"));
   showModal(`<h2>${won ? "Orbit taken" : "Orbit lost"}</h2>
     <p>${won ? `The orbit over ${spec.system} is ours.` : "The fleet went down fighting."}
-      Cruisers left: ${result.fleets[spec.hero]} to ${result.fleets[spec.hero === "attacker" ? "defender" : "attacker"]}.${result.heroDown ? " Your hero was shot down." : ""}</p>
+      Ships left: ${result.fleets[spec.hero]} to ${result.fleets[other(spec.hero)]}.${result.heroDown ? " Your hero was shot down." : ""}</p>
+    ${after.length ? `<ul class="cascade">${after.map((l) => `<li>${icon(won ? "orbit" : "triangle-alert", 14)}<span>${esc(l)}</span></li>`).join("")}</ul>` : ""}
     ${backButton(spec.factions[spec.hero])}`);
 }
 
@@ -651,11 +831,14 @@ $("orders-h").insertAdjacentHTML("afterbegin", icon("list-checks", 14));
 $("log-h").insertAdjacentHTML("afterbegin", icon("scroll-text", 14));
 $("hold-line").onclick = () => skirmish(false);
 $("be-horde").onclick = () => skirmish(true);
-// Quick play in orbit: three Marine cruisers hold the orbit against three Wooka ones.
+// Quick play in orbit: three Marine ships hold the orbit over Doren against three Wooka ones,
+// with a Marine outpost and its shield below and the Wooka horde in the ferns.
+$("dogfight").title = "Quick battle: hold the orbit over Doren, picking orders or flying a fighter";
 $("dogfight").onclick = () => {
   const spec: SpaceBattleSpec = {
     id: `dogfight-${Date.now()}`, turn: 0, system: "Doren", factions: { attacker: "wooka", defender: "marines" },
-    hero: "defender", heroLevel: 1, fleets: { attacker: 3, defender: 3 }, seed: Math.floor(Math.random() * 2 ** 31),
+    hero: "defender", heroLevel: 1, fleets: { attacker: 3, defender: 3 },
+    muster: { attacker: 4, defender: 2 }, batteries: { attacker: 0, defender: 1 }, seed: Math.floor(Math.random() * 2 ** 31),
   };
   briefSpace(spec, (r) => {
     const won = r.winner === spec.hero;
@@ -665,7 +848,7 @@ $("dogfight").onclick = () => {
   });
 };
 
-function showModal(html: string) { $("modal-body").innerHTML = html; $("modal").hidden = false; }
+function showModal(html: string) { $("modal-body").innerHTML = html; $("modal-body").className = "modal-body"; $("modal").hidden = false; }
 function hideModal() { $("modal").hidden = true; }
 
 // Back from the battle's result: the next seat, or the waiting room.

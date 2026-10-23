@@ -4,7 +4,8 @@
 import type { Env } from "./env.ts";
 import { sha256 } from "./util.ts";
 
-export type Outcome = "settled" | "asked" | "wrong";
+/** "mergiraf": Mervin left cards and Mergiraf settled the file (mergiraf.ts). */
+export type Outcome = "settled" | "asked" | "wrong" | "mergiraf";
 /** `answer`: how the card was answered ("main" | "branch" | "both" | "written" | "agent" | "mixed"), for an asked file. */
 export interface Event { path: string; outcome: Outcome; answer?: string }
 
@@ -66,7 +67,7 @@ export async function report(env: Env, owner: string, repo: string) {
   const fighting = await q<{ path_hash: string; ext: string; asked: number }>(
     "SELECT path_hash, ext, COUNT(*) AS asked FROM mervin_events WHERE owner = ? AND repo = ? AND at >= ? AND outcome = 'asked' GROUP BY path_hash, ext ORDER BY asked DESC, path_hash LIMIT 5");
   return {
-    days: 7, settled: n("settled"), asked: n("asked"), wrong: n("wrong"),
+    days: 7, settled: n("settled"), mergiraf: n("mergiraf"), asked: n("asked"), wrong: n("wrong"),
     fighting, rules_proposed: fighting.filter((f) => f.asked >= RULE_AT).length,
   };
 }

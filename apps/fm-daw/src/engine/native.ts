@@ -15,7 +15,7 @@ export const fmSymbols = {
   fm_all_off: { args: [FFIType.ptr], returns: FFIType.void },
   fm_panic: { args: [FFIType.ptr], returns: FFIType.void },
   fm_click: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.void },
-  fm_render: { args: [FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.void },
+  fm_render: { args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.u32], returns: FFIType.void },
   fm_meter: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.void },
 } as const;
 
@@ -40,7 +40,7 @@ export async function createNativeEngine(sampleRate: number): Promise<FmEngine |
     allOff: () => l.fm_all_off(h),
     panic: () => l.fm_panic(h),
     click: (a) => l.fm_click(h, a ? 1 : 0),
-    render: (out, frames) => l.fm_render(h, ptr(out), Math.min(frames, out.length >> 1)),
+    render: (out, frames, send) => l.fm_render(h, ptr(out), send ? ptr(send) : null, Math.min(frames, out.length >> 1, send ? send.length >> 1 : Infinity)),
     meter: (out) => l.fm_meter(h, ptr(out)),
     free: () => { if (alive) { alive = false; l.fm_free(h); } },
   };

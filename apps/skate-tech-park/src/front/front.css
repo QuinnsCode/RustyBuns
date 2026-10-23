@@ -1,0 +1,47 @@
+.front { position: fixed; inset: 0; z-index: 20; overflow: hidden; background: radial-gradient(ellipse at 50% 20%, #f8d9b0 0%, #e9a86c 55%, #7a4a30 100%); color: var(--ink); }
+.front::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 55%, rgba(27, 27, 31, 0.45) 100%); }
+.stage { position: absolute; left: 50%; top: 0; width: min(80vw, 460px); margin-left: calc(min(80vw, 460px) / -2); will-change: transform; }
+.logo { display: block; width: 100%; height: auto; overflow: visible; }
+.rays { position: absolute; inset: -20% -10%; background: repeating-linear-gradient(105deg, transparent 0 60px, rgba(255, 244, 214, 0.16) 60px 120px); transform-origin: 50% 0; animation: sway 9s ease-in-out infinite alternate; pointer-events: none; }
+.mist { position: absolute; left: -40%; width: 180%; height: 160px; background: radial-gradient(ellipse at center, rgba(255, 250, 240, 0.5), transparent 70%); animation: drift 16s linear infinite; pointer-events: none; }
+.m1 { top: 28%; } .m2 { top: 62%; animation-duration: 22s; animation-direction: reverse; }
+.title { position: absolute; left: 0; right: 0; bottom: 9%; height: 110px; display: grid; place-items: center; pointer-events: none; }
+.words { margin: 0; position: absolute; font: 400 clamp(28px, 7vw, 64px)/1 var(--title-font); letter-spacing: 0.04em; color: var(--paper); text-shadow: 4px 4px 0 var(--ink); white-space: nowrap; clip-path: inset(0 100% 0 0); }
+.rolls { position: absolute; left: 0; bottom: -6px; width: 84px; transform: translate(-100%, 0); }
+.rolls svg { display: block; width: 100%; height: auto; }
+.skip { position: absolute; top: 14px; right: 16px; margin: 0; font-size: 12px; color: var(--paper); text-shadow: 0 1px 3px #000a; opacity: 0.8; }
+.front.menu-open { background: none; pointer-events: none; }
+.front.menu-open::after { display: none; }
+.screen { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 20px 16px; overflow: auto; z-index: 1; animation: rise 0.6s ease-out; pointer-events: auto; }
+.head { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.head .logo { height: min(34vh, 300px); width: auto; }
+.wordmark { margin: 0; font: 400 clamp(24px, 6vw, 44px)/1 var(--title-font); letter-spacing: 0.04em; color: var(--paper); text-shadow: 3px 3px 0 var(--ink); text-align: center; }
+.choices { display: grid; gap: 10px; width: min(420px, 100%); }
+.choice { display: flex; gap: 14px; align-items: center; padding: 12px 16px; text-align: left; font: inherit; color: var(--ink); background: var(--paper); border: 2px solid var(--ink); border-radius: 8px; box-shadow: 3px 3px 0 var(--ink); cursor: pointer; }
+.choice:hover:not(:disabled), .choice:focus-visible { background: #fff; outline: 2px solid var(--hot); outline-offset: 2px; }
+.choice:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+.choice:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+.choice .text { display: grid; gap: 2px; }
+.choice strong { font-size: 18px; }
+.choice small { font-size: 13px; opacity: 0.75; }
+.back { justify-self: start; display: grid; place-items: center; width: 38px; height: 38px; background: var(--paper); border: 2px solid var(--ink); border-radius: 8px; box-shadow: 3px 3px 0 var(--ink); cursor: pointer; color: var(--ink); }
+.join { display: flex; gap: 8px; }
+.join input { flex: 1; min-width: 0; padding: 8px 10px; font: 700 16px ui-monospace, monospace; text-transform: uppercase; border: 2px solid var(--ink); border-radius: 8px; background: var(--paper); color: var(--ink); }
+.join button { padding: 0 18px; font: 700 15px system-ui, sans-serif; color: #fff; background: var(--hot); border: 2px solid var(--ink); border-radius: 8px; box-shadow: 3px 3px 0 var(--ink); cursor: pointer; }
+@keyframes sway { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
+@keyframes drift { from { transform: translateX(-12%); } to { transform: translateX(12%); } }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .rays, .mist, .screen { animation: none; } }
+
+/* Over the flying camera: the logo and the menu sit in rounded panels at 80%, and the buttons are soft, not boxed. */
+.screen .head, .screen .choices { background: rgba(251, 247, 240, 0.8); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 24px; box-shadow: 0 8px 32px rgba(27, 27, 31, 0.25); }
+.screen .head { padding: 16px 28px 18px; }
+.screen .head .logo { height: min(24vh, 220px); }
+.screen .wordmark { color: var(--ink); text-shadow: none; }
+.screen .choices { padding: 12px; width: min(440px, 100%); }
+.screen .choice { border: 0; border-radius: 18px; box-shadow: none; background: rgba(27, 27, 31, 0.06); }
+.screen .choice:hover:not(:disabled), .screen .choice:focus-visible { background: rgba(27, 27, 31, 0.14); outline: none; }
+.screen .choice:active:not(:disabled) { transform: none; }
+.screen .back { border: 0; border-radius: 50%; box-shadow: none; background: rgba(27, 27, 31, 0.08); }
+.screen .join input { border: 0; border-radius: 999px; background: rgba(27, 27, 31, 0.08); padding: 10px 16px; }
+.screen .join button { border: 0; border-radius: 999px; box-shadow: none; }

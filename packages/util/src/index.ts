@@ -11,3 +11,16 @@ export function mulberry32(seed: number) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+
+/**
+ * A thumb stick's push as two axes in [-1, 1], screen directions (x right, y down): a thumb offset from the
+ * stick's centre in pixels, clamped to the rim at `radius`, with a dead zone of `dead` of the radius round the centre.
+ */
+export function stickAxes(dx: number, dy: number, radius: number, dead = 0.18): { x: number; y: number } {
+  const len = Math.hypot(dx, dy), k = len > radius ? radius / len : 1;
+  const axis = (v: number) => {
+    const a = clamp((v * k) / radius, -1, 1);
+    return Math.abs(a) < dead ? 0 : a;
+  };
+  return { x: axis(dx) || 0, y: axis(dy) || 0 };
+}

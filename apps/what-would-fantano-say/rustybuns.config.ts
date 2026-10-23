@@ -10,7 +10,7 @@ import { defineConfig } from "@rustybuns/cli/config";
 const op = (ref: string) => ({ type: "secret" as const, op: `op://fantano/${ref}`, optional: true as const });
 
 // Cloudflare Turnstile's site key (public). Empty means no widget, and so no live calls.
-const turnstileSiteKey = "0x4AAAAAAFXIFH9esCFNqaY9";
+const turnstileSiteKey = "0x4AAAAAAFbDanQiwnc00vjp";
 
 export default defineConfig({
   name: "what-would-fantano-say",
@@ -32,7 +32,7 @@ export default defineConfig({
     // A few reviews a minute per address. Cloudflare's limiter, so it's per colo.
     REVIEW_LIMIT: { type: "ratelimit", namespaceId: "7401", simple: { limit: 4, period: 60 } },
     TURNSTILE_SITE_KEY: { type: "var", value: turnstileSiteKey },
-    TURNSTILE_SECRET: op("turnstile/secret"),
+    TURNSTILE_SECRET: op("turnstile/password"),
   },
   targets: {
     // adopt names the Worker `workerName`, so the URL is what-would-fantano-say.<subdomain>.workers.dev

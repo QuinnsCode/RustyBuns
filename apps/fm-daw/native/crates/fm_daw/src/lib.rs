@@ -1,4 +1,6 @@
-//! FM DAW engine. Mirrors src/engine/engine.ts line for line (f64 inside, f32
+//! FM DAW engine: each track is 4-op FM or the analog voice (detuned saws +
+//! sub, resonant low-pass, filter envelope, LFO, glide, drive). Mirrors
+//! src/engine/engine.ts line for line (f64 inside, f32
 //! out) so the golden test can hold both to the same output.
 //!
 //! One crate, two builds: a cdylib for the desktop host (bun:ffi, used by the
@@ -11,9 +13,9 @@
 
 use std::f64::consts::PI;
 
-pub const TRACKS: usize = 8;
+pub const TRACKS: usize = 12;
 pub const OPS: usize = 4;
-pub const NPARAMS: usize = 34;
+pub const NPARAMS: usize = 51;
 pub const VOICES: usize = 8;
 pub const CEILING: f64 = 0.891;
 pub const MOD_DEPTH: f64 = 1.5;
@@ -29,11 +31,36 @@ const P_NOISE_TONE: usize = 30;
 const P_GAIN: usize = 31;
 const P_PAN: usize = 32;
 const P_VEL: usize = 33;
+const P_MODE: usize = 34;
+const P_DETUNE: usize = 35;
+const P_SUB: usize = 36;
+const P_CUTOFF: usize = 37;
+const P_RES: usize = 38;
+const P_FENV_AMT: usize = 39;
+const P_FENV_ATTACK: usize = 40;
+const P_FENV_DECAY: usize = 41;
+const P_LFO_RATE: usize = 42;
+const P_LFO_CUT: usize = 43;
+const P_LFO_PITCH: usize = 44;
+const P_GLIDE: usize = 45;
+const P_DRIVE: usize = 46;
+const P_SEND: usize = 47;
+const P_VEL_TONE: usize = 48;
+const P_HICUT: usize = 49;
+const P_LOCUT: usize = 50;
 
 const OP_RANGES: [(f64, f64); 6] = [(0.25, 16.0), (0.0, 1.0), (0.0005, 4.0), (0.005, 8.0), (0.0, 1.0), (0.005, 8.0)];
-const TAIL_RANGES: [(f64, f64); 10] = [
+const TAIL_RANGES: [(f64, f64); 27] = [
     (0.0, 3.0), (0.0, 1.0), (0.0, 48.0), (0.005, 2.0), (0.0, 1.0),
     (0.005, 2.0), (0.0, 1.0), (0.0, 1.0), (-1.0, 1.0), (0.0, 1.0),
+    // analog: mode, detune, sub, cutoff, res, fenv amt/attack/decay, lfo rate/cut/pitch, glide, drive
+    (0.0, 1.0), (0.0, 1.0), (0.0, 1.0), (0.0, 1.0), (0.0, 1.0),
+    (-1.0, 1.0), (0.0005, 4.0), (0.005, 8.0), (0.02, 20.0), (0.0, 1.0),
+    (0.0, 1.0), (0.0, 1.0), (0.0, 1.0),
+    (0.0, 1.0), // send to Space
+    (0.0, 1.0), // velocity to tone
+    (0.0, 1.0), // hi-cut
+    (0.0, 1.0), // low-cut
 ];
 
 fn range(i: usize) -> (f64, f64) {
@@ -50,6 +77,36 @@ const GAIN_SMOOTH: f64 = 0.002;
 const MASTER_SMOOTH: f64 = 0.0005;
 const SILENT: f64 = 1e-5;
 const TAU: f64 = 2.0 * PI;
+const MAX_CUTOFF: f64 = 0.45;
+const VIB_FADE: f64 = 0.3;
+const SQRT2: f64 = std::f64::consts::SQRT_2;
+
+/// Trapezoidal SVF coefficients [a1, a2, a3] for cutoff 20 Hz * 2^(10 x).
+fn svf_coefs(x: f64, sr: f64) -> [f64; 3] {
+    let fc = (20.0 * (2.0f64).powf(10.0 * x)).min(MAX_CUTOFF * sr);
+    let g = ((PI * fc) / sr).tan();
+    let a1 = 1.0 / (1.0 + g * (g + SQRT2));
+    [a1, g * a1, g * g * a1]
+}
+
+#[inline]
+fn svf(k: &[f64; 3], s: &mut [f64; 2], x: f64) -> (f64, f64) {
+    let v3 = x - s[1];
+    let v1 = k[0] * s[0] + k[1] * v3;
+    let v2 = s[1] + k[1] * s[0] + k[2] * v3;
+    s[0] = 2.0 * v1 - s[0];
+    s[1] = 2.0 * v2 - s[1];
+    (v1, v2)
+}
+
+/// A naive saw with PolyBLEP smoothing at the wrap.
+#[inline]
+fn saw(ph: f64, dt: f64) -> f64 {
+    let mut y = 2.0 * ph - 1.0;
+    if ph < dt { let x = ph / dt; y -= x + x - x * x - 1.0; }
+    else if ph > 1.0 - dt { let x = (ph - 1.0) / dt; y -= x * x + x + x + 1.0; }
+    y
+}
 
 fn decay_coef(seconds: f64, sr: f64) -> f64 { ((0.001f64).ln() / (seconds * sr)).exp() }
 
@@ -59,6 +116,8 @@ struct Voice {
     freq: f64, amp: f64, pitch_env: f64, noise_env: f64, noise_lp: f64,
     fb1: f64, fb2: f64,
     phase: [f64; OPS], env: [f64; OPS], stage: [u8; OPS],
+    freq_now: f64, saw1: f64, saw2: f64, sub_ph: f64, ic1: f64, ic2: f64, f_env: f64, f_stage: u8,
+    vel: f64, age: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -67,6 +126,9 @@ struct Track {
     atk_inc: [f64; OPS], dec_coef: [f64; OPS], rel_coef: [f64; OPS],
     pitch_coef: f64, noise_coef: f64, pan_l: f64, pan_r: f64,
     muted: bool, gain_now: f64,
+    det_up: f64, f_atk_inc: f64, f_dec_coef: f64, glide_coef: f64, drive_g: f64, drive_norm: f64,
+    lfo_phase: f64, last_freq: f64,
+    lp_on: bool, hp_on: bool, lp_k: [f64; 3], hp_k: [f64; 3], lp_s: [f64; 2], hp_s: [f64; 2],
     voices: [Voice; VOICES],
 }
 
@@ -77,6 +139,9 @@ impl Default for Track {
             atk_inc: [0.0; OPS], dec_coef: [0.0; OPS], rel_coef: [0.0; OPS],
             pitch_coef: 0.0, noise_coef: 0.0, pan_l: 0.0, pan_r: 0.0,
             muted: false, gain_now: 0.0,
+            det_up: 0.0, f_atk_inc: 0.0, f_dec_coef: 0.0, glide_coef: 0.0, drive_g: 0.0, drive_norm: 0.0,
+            lfo_phase: 0.0, last_freq: 0.0,
+            lp_on: false, hp_on: false, lp_k: [0.0; 3], hp_k: [0.0; 3], lp_s: [0.0; 2], hp_s: [0.0; 2],
             voices: [Voice::default(); VOICES],
         }
     }
@@ -129,6 +194,13 @@ impl Engine {
             tr.pan_l = angle.cos();
             tr.pan_r = angle.sin();
         }
+        else if i == P_DETUNE { tr.det_up = (2.0f64).powf((v * 0.5) / 12.0); }
+        else if i == P_FENV_ATTACK { tr.f_atk_inc = 1.0 / (v * sr); }
+        else if i == P_FENV_DECAY { tr.f_dec_coef = decay_coef(v, sr); }
+        else if i == P_GLIDE { tr.glide_coef = if v > 0.0 { (-1.0 / (v * sr)).exp() } else { 0.0 }; }
+        else if i == P_HICUT { tr.lp_on = v > 0.001; tr.lp_k = svf_coefs(1.0 - v, sr); }
+        else if i == P_LOCUT { tr.hp_on = v > 0.001; tr.hp_k = svf_coefs(v, sr); }
+        else if i == P_DRIVE { tr.drive_g = 1.0 + 6.0 * v; tr.drive_norm = 1.0 / (1.0 + 6.0 * v).tanh(); }
     }
 
     pub fn set_mute(&mut self, t: usize, muted: bool) { if t < TRACKS { self.tracks[t].muted = muted; } }
@@ -148,11 +220,18 @@ impl Engine {
         }
         let vel = velocity.max(0.0).min(1.0);
         let vs = tr.params[P_VEL];
+        let freq = 440.0 * (2.0f64).powf((midi.max(0.0).min(127.0) - 69.0) / 12.0);
+        let freq_now = if tr.glide_coef > 0.0 && tr.last_freq > 0.0 { tr.last_freq } else { freq };
+        tr.last_freq = freq;
         let vo = &mut tr.voices[slot];
         vo.active = true; vo.gate = true; vo.id = id;
         vo.born = births;
-        vo.freq = 440.0 * (2.0f64).powf((midi.max(0.0).min(127.0) - 69.0) / 12.0);
+        vo.freq = freq;
+        vo.freq_now = freq_now;
+        vo.saw1 = 0.0; vo.saw2 = 0.5; vo.sub_ph = 0.0;
+        vo.ic1 = 0.0; vo.ic2 = 0.0; vo.f_env = 0.0; vo.f_stage = 0;
         vo.amp = 1.0 - vs + vs * vel;
+        vo.vel = vel; vo.age = 0.0;
         vo.pitch_env = 1.0; vo.noise_env = 1.0; vo.noise_lp = 0.0;
         vo.fb1 = 0.0; vo.fb2 = 0.0;
         vo.phase = [0.0; OPS]; vo.env = [0.0; OPS]; vo.stage = [0; OPS];
@@ -180,6 +259,7 @@ impl Engine {
         self.click_env = 0.0;
         self.dc_xl = 0.0; self.dc_yl = 0.0; self.dc_xr = 0.0; self.dc_yr = 0.0;
         self.lim_env = 0.0;
+        for tr in self.tracks.iter_mut() { tr.lp_s = [0.0; 2]; tr.hp_s = [0.0; 2]; }
     }
 
     pub fn click(&mut self, accent: bool) {
@@ -198,11 +278,15 @@ impl Engine {
         (x as f64 / 4294967296.0) * 2.0 - 1.0
     }
 
-    pub fn render(&mut self, out: &mut [f32], frames: usize) {
-        let n = frames.min(out.len() / 2);
+    /// Interleaved stereo into `out`; with `send`, also the Space send bus
+    /// (each track times its SEND, after pan and master).
+    pub fn render(&mut self, out: &mut [f32], mut send: Option<&mut [f32]>, frames: usize) {
+        let mut n = frames.min(out.len() / 2);
+        if let Some(s) = send.as_deref() { n = n.min(s.len() / 2); }
         let sr = self.sr;
         for f in 0..n {
             let (mut l, mut r) = (0.0f64, 0.0f64);
+            let (mut sl, mut sr2) = (0.0f64, 0.0f64);
             for t in 0..TRACKS {
                 let gain_target = if self.tracks[t].muted { 0.0 } else { self.tracks[t].params[P_GAIN] };
                 self.tracks[t].gain_now += (gain_target - self.tracks[t].gain_now) * GAIN_SMOOTH;
@@ -213,6 +297,21 @@ impl Engine {
                 let pitch_amt = self.tracks[t].params[P_PITCH_AMT];
                 let noise = self.tracks[t].params[P_NOISE];
                 let tone = 0.05 + 0.95 * self.tracks[t].params[P_NOISE_TONE];
+                let lfo = (TAU * self.tracks[t].lfo_phase).sin();
+                {
+                    let tr = &mut self.tracks[t];
+                    let mut lp = tr.lfo_phase + tr.params[P_LFO_RATE] / sr;
+                    lp -= lp.floor();
+                    tr.lfo_phase = lp;
+                }
+                let analog = self.tracks[t].params[P_MODE] >= 0.5;
+                let vib_amt = self.tracks[t].params[P_LFO_PITCH];
+                let vel_tone = self.tracks[t].params[P_VEL_TONE];
+                let cut_oct = self.tracks[t].params[P_CUTOFF] * 10.0 + self.tracks[t].params[P_LFO_CUT] * 4.0 * lfo;
+                let fenv_oct = self.tracks[t].params[P_FENV_AMT] * 6.0;
+                let k2 = 2.0 - 1.8 * self.tracks[t].params[P_RES];
+                let sub = self.tracks[t].params[P_SUB];
+                let drive = self.tracks[t].params[P_DRIVE] > 0.0;
                 let mut mono = 0.0;
                 for v in 0..VOICES {
                     if !self.tracks[t].voices[v].active { continue; }
@@ -221,7 +320,71 @@ impl Engine {
                     } else { 1.0 };
                     let pitch_coef = self.tracks[t].pitch_coef;
                     self.tracks[t].voices[v].pitch_env *= pitch_coef;
+                    if analog {
+                        let nz = if noise > 0.0 { self.next_noise() } else { 0.0 };
+                        let (y, e, attacking) = {
+                            let tr = &mut self.tracks[t];
+                            let vo = &mut tr.voices[v];
+                            let target = vo.freq;
+                            vo.freq_now = target + (vo.freq_now - target) * tr.glide_coef;
+                            let fade = (vo.age / VIB_FADE).min(1.0);
+                            vo.age += 1.0 / sr;
+                            let vib = if vib_amt > 0.0 { (2.0f64).powf((lfo * vib_amt * 0.5 * fade) / 12.0) } else { 1.0 };
+                            let base = vo.freq_now * pm * vib;
+                            let mut e = vo.env[0];
+                            let st = vo.stage[0];
+                            let mut attacking = false;
+                            if st == 0 {
+                                e += tr.atk_inc[0];
+                                if e >= 1.0 { e = 1.0; vo.stage[0] = 1; }
+                                attacking = true;
+                            } else if st == 1 {
+                                let s = tr.params[4];
+                                e = s + (e - s) * tr.dec_coef[0];
+                            } else { e *= tr.rel_coef[0]; }
+                            vo.env[0] = e;
+                            let mut fe = vo.f_env;
+                            if vo.f_stage == 0 {
+                                fe += tr.f_atk_inc;
+                                if fe >= 1.0 { fe = 1.0; vo.f_stage = 1; }
+                            } else { fe *= tr.f_dec_coef; }
+                            vo.f_env = fe;
+                            let dt1 = (base * tr.det_up) / sr;
+                            let dt2 = base / tr.det_up / sr;
+                            let s1 = saw(vo.saw1, dt1);
+                            let s2 = saw(vo.saw2, dt2);
+                            let mut q = vo.saw1 + dt1; q -= q.floor(); vo.saw1 = q;
+                            q = vo.saw2 + dt2; q -= q.floor(); vo.saw2 = q;
+                            let sv = (TAU * vo.sub_ph).sin() * sub;
+                            q = vo.sub_ph + (base * 0.5) / sr; q -= q.floor(); vo.sub_ph = q;
+                            let mut x = (s1 + s2) * 0.5 + sv;
+                            if noise > 0.0 {
+                                let nl = vo.noise_lp + tone * (nz - vo.noise_lp);
+                                vo.noise_lp = nl;
+                                x += nl * noise;
+                            }
+                            let vel_oct = vel_tone * 3.0 * (2.0 * vo.vel - 1.0);
+                            let fc = (20.0 * (2.0f64).powf(cut_oct + fenv_oct * fe + vel_oct)).max(20.0).min(MAX_CUTOFF * sr);
+                            let g = ((PI * fc) / sr).tan();
+                            let a1 = 1.0 / (1.0 + g * (g + k2));
+                            let a2 = g * a1;
+                            let a3 = g * a2;
+                            let v3 = x - vo.ic2;
+                            let v1 = a1 * vo.ic1 + a2 * v3;
+                            let v2 = vo.ic2 + a2 * vo.ic1 + a3 * v3;
+                            vo.ic1 = 2.0 * v1 - vo.ic1;
+                            vo.ic2 = 2.0 * v2 - vo.ic2;
+                            let y = if drive { (v2 * tr.drive_g).tanh() * tr.drive_norm } else { v2 };
+                            (y, e, attacking)
+                        };
+                        let level = self.tracks[t].params[1];
+                        let vo = &mut self.tracks[t].voices[v];
+                        mono += y * e * level * vo.amp;
+                        if !attacking && e < SILENT { vo.active = false; }
+                        continue;
+                    }
                     let base = self.tracks[t].voices[v].freq * pm;
+                    let mv = 1.0 + vel_tone * (2.0 * self.tracks[t].voices[v].vel - 1.0);
                     let (mut o3, mut o2, mut o1) = (0.0f64, 0.0f64, 0.0f64);
                     let mut carrier_sum = 0.0;
                     let mut loudest = 0.0;
@@ -246,6 +409,7 @@ impl Engine {
                                 else if algo == 1 { if op == 2 { o3 * MOD_DEPTH } else if op == 0 { o1 * MOD_DEPTH } else { 0.0 } }
                                 else if algo == 2 { if op == 0 { (o1 + o2 + o3) * MOD_DEPTH } else { 0.0 } }
                                 else { 0.0 };
+                            let m = m * mv;
                             let ph = vo.phase[op];
                             let y = (TAU * (ph + m)).sin() * e * tr.params[op * 6 + 1];
                             let mut np = ph + (base * tr.params[op * 6]) / sr;
@@ -272,10 +436,17 @@ impl Engine {
                     mono += (carrier_sum / nc + ns) * vo.amp;
                     if !attacking && loudest < SILENT { vo.active = false; }
                 }
-                let tr = &self.tracks[t];
+                let tr = &mut self.tracks[t];
+                if tr.lp_on { let k = tr.lp_k; let (_, low) = svf(&k, &mut tr.lp_s, mono); mono = low; }
+                if tr.hp_on { let k = tr.hp_k; let (band, low) = svf(&k, &mut tr.hp_s, mono); mono = mono - SQRT2 * band - low; }
                 mono *= tr.gain_now;
-                l += mono * tr.pan_l;
-                r += mono * tr.pan_r;
+                let ml = mono * tr.pan_l;
+                let mr = mono * tr.pan_r;
+                l += ml;
+                r += mr;
+                let sa = tr.params[P_SEND];
+                sl += ml * sa;
+                sr2 += mr * sa;
             }
             if self.click_env > SILENT {
                 let c = (TAU * self.click_phase).sin() * self.click_env;
@@ -305,6 +476,13 @@ impl Engine {
             if r.abs() > self.peak_r { self.peak_r = r.abs(); }
             out[f * 2] = l as f32;
             out[f * 2 + 1] = r as f32;
+            if let Some(s) = send.as_deref_mut() {
+                let a = sl * self.master;
+                let b = sr2 * self.master;
+                let ok = a.is_finite() && b.is_finite();
+                s[f * 2] = if ok { a.max(-1.0).min(1.0) as f32 } else { 0.0 };
+                s[f * 2 + 1] = if ok { b.max(-1.0).min(1.0) as f32 } else { 0.0 };
+            }
         }
     }
 
@@ -351,12 +529,13 @@ pub extern "C" fn fm_panic(e: *mut Engine) { with!(e, e.panic()) }
 pub extern "C" fn fm_click(e: *mut Engine, accent: u32) { with!(e, e.click(accent != 0)) }
 
 /// # Safety
-/// `out` must point to at least `frames * 2` f32s.
+/// `out`, and `send` unless null, must point to at least `frames * 2` f32s.
 #[no_mangle]
-pub unsafe extern "C" fn fm_render(e: *mut Engine, out: *mut f32, frames: u32) {
+pub unsafe extern "C" fn fm_render(e: *mut Engine, out: *mut f32, send: *mut f32, frames: u32) {
     if out.is_null() { return; }
     let buf = std::slice::from_raw_parts_mut(out, frames as usize * 2);
-    with!(e, e.render(buf, frames as usize))
+    let snd = if send.is_null() { None } else { Some(std::slice::from_raw_parts_mut(send, frames as usize * 2)) };
+    with!(e, e.render(buf, snd, frames as usize))
 }
 
 /// # Safety
@@ -392,7 +571,7 @@ mod tests {
         let mut e = Engine::new(48000.0);
         let mut out = vec![0f32; 1024];
         e.note_on(0, 1, 60.0, 1.0);
-        e.render(&mut out, 512);
+        e.render(&mut out, None, 512);
         assert!(out.iter().all(|x| *x == 0.0));
         for t in 0..TRACKS {
             e.set_param(t, P_GAIN, 1e9);
@@ -401,6 +580,6 @@ mod tests {
             for k in 0..VOICES as u32 { e.note_on(t, k, 30.0 + k as f64, 1.0); }
         }
         e.set_master(1.0);
-        for _ in 0..200 { e.render(&mut out, 512); assert!(out.iter().all(|x| x.abs() as f64 <= CEILING + 1e-6)); }
+        for _ in 0..200 { e.render(&mut out, None, 512); assert!(out.iter().all(|x| x.abs() as f64 <= CEILING + 1e-6)); }
     }
 }
