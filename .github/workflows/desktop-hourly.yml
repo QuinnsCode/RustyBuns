@@ -46,9 +46,16 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: "1.4.3" }
       # windows-arm64 installs sometimes stall for minutes and die linking a binary (ENOENT); a second try works.
-      - run: bun install --frozen-lockfile || bun install --frozen-lockfile
+      # Each try has its own short timeout: one 12-minute step timeout ate the whole retry (run 39788067989).
+      - id: install
+        run: bun install --frozen-lockfile
         working-directory: .
-        timeout-minutes: 12
+        timeout-minutes: 5
+        continue-on-error: true
+      - if: steps.install.outcome != 'success'
+        run: bun install --frozen-lockfile
+        working-directory: .
+        timeout-minutes: 8
       - run: ${{ matrix.smoke }}
 
   suite:
