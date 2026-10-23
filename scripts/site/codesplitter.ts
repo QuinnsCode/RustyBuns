@@ -187,6 +187,8 @@ function apiPages(api: Api, ref: string): Page[] {
         "",
         `\`POST /api/mcp\` is a remote MCP server. Its ${tools.length} tools are the [API reference](index.html)'s operations, one per \`operationId\` ([\`src/mcp-tools.ts\`](${github("src/mcp-tools.ts")})), so the two never drift: a tool call is that HTTP call, made with your own token. A read token lists only the reads. Risky operations are marked destructive, so your client asks before it calls them.`,
         "",
+        `The server is in code mode: it lists \`search_tools\`, \`describe_tools\`, \`execute\` and \`call_tool\`, and an agent writes one JavaScript program that calls the others (\`await tools.read_file({ owner, repo, path })\`) and returns only what it needs, so the schemas and the answers it only filters stay out of its context. A program runs in a Worker of its own with no network, as your token, and the risky tools go through \`call_tool\` so your client still asks first. Add \`?mode=tools\` to the URL, or send \`x-codesplitter-tools: all\`, for the full list below.`,
+        "",
         "```sh",
         `claude mcp add --transport http codesplitter ${LIVE}/api/mcp`,
         "```",

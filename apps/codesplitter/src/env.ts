@@ -62,8 +62,16 @@ export interface D1 {
   exec(sql: string): Promise<{ count: number; duration: number }>;
 }
 
+/** The part of a dynamic Worker's code (worker_loader) this app writes, and of the loader it calls (codemode.ts). */
+export interface WorkerLoaderLike {
+  get(id: string, code: () => { compatibilityDate?: string; mainModule: string; modules: Record<string, string>; env?: Record<string, unknown>; globalOutbound?: unknown }):
+    { getEntrypoint(): { fetch(input: string, init?: RequestInit): Promise<Response> } };
+}
+
 export interface Env {
   DB: D1;
+  /** Dynamic Workers that run an agent's program over the MCP tools (codemode.ts). Without it the MCP server lists every tool. */
+  LOADER?: WorkerLoaderLike;
   FILES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** One game room per level or repo: its lobby and multiplayer relay. */
   GAMES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
