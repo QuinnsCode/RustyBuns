@@ -1,0 +1,7 @@
+dist/
+.rustybuns/
+.wrangler/
+
+# rustybuns
+wrangler.generated.jsonc
+.alchemy/

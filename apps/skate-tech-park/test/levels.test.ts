@@ -1,6 +1,6 @@
 // Journeys over the park levels: each loads, spawns on flat ground, and every named gap can be cleared
 // by driving the sim along a scripted line.
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import { LEVELS, needsStartScreen, pick } from "../src/levels/index.ts";
 import { trackRun } from "../src/levels/goals.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
@@ -11,7 +11,8 @@ import { allParks, build } from "./parks.ts";
 // m/s held into a gap: every gap clears at any of these (a ramp's launch does not scale with the board, so the line is not divided by SCALE)
 const SPEEDS = [24, 27, 32];
 /** The parks laid out from a survey of their ground (scripts/survey.ts), and the named gap each one has. */
-const SURVEYED = [["zion", "Angels Drop"], ["arches", "Delicate Gap"], ["bryce-canyon", "Hoodoo Hop"], ["rocky-mountain", "Hallett Leap"], ["grand-teton", "Cathedral Gap"], ["glacier", "Logan Pass Leap"], ["olympic", "Ridge Hop"], ["joshua-tree", "Skull Rock Gap"], ["death-valley", "Zabriskie Drop"], ["crater-lake", "Rim Jump"], ["acadia", "Cadillac Leap"], ["badlands", "Gully Gap"], ["big-bend", "Santa Elena Leap"], ["black-canyon", "Painted Wall Gap"], ["canyonlands", "Mesa Arch Gap"], ["capitol-reef", "Waterpocket Hop"], ["carlsbad-caverns", "Sinkhole Jump"], ["great-sand-dunes", "Dune Drop"], ["great-smoky-mountains", "Clingmans Drop"], ["haleakala", "Crater Rim Leap"], ["hawaii-volcanoes", "Caldera Drop"], ["mount-rainier", "Paradise Leap"], ["lassen-volcanic", "Bumpass Hop"], ["sequoia", "Giant Forest Gap"], ["redwood", "Fern Gap"]] as const;
+const SURVEYED = [["zion", "Angels Drop"], ["arches", "Delicate Gap"], ["bryce-canyon", "Hoodoo Hop"], ["rocky-mountain", "Hallett Leap"], ["grand-teton", "Cathedral Gap"], ["glacier", "Logan Pass Leap"], ["olympic", "Ridge Hop"], ["joshua-tree", "Skull Rock Gap"], ["death-valley", "Zabriskie Drop"], ["crater-lake", "Rim Jump"], ["acadia", "Cadillac Leap"], ["badlands", "Gully Gap"], ["big-bend", "Santa Elena Leap"], ["black-canyon", "Painted Wall Gap"], ["canyonlands", "Mesa Arch Gap"], ["capitol-reef", "Waterpocket Hop"], ["carlsbad-caverns", "Sinkhole Jump"], ["great-sand-dunes", "Dune Drop"], ["great-smoky-mountains", "Clingmans Drop"], ["haleakala", "Crater Rim Leap"], ["hawaii-volcanoes", "Caldera Drop"], ["mount-rainier", "Paradise Leap"], ["lassen-volcanic", "Bumpass Hop"], ["sequoia", "Giant Forest Gap"], ["redwood", "Fern Gap"], ["american-samoa", "Ofu Ridge Drop"], ["biscayne", "Boca Chita Gap"], ["channel-islands", "Scorpion Anchorage Drop"], ["congaree", "Cedar Creek Drop"], ["cuyahoga-valley", "Brandywine Drop"], ["denali", "Wonder Lake Drop"], ["dry-tortugas", "Fort Jefferson Hop"], ["everglades", "Anhinga Trail Hop"], ["gates-of-the-arctic", "Frigid Crags Gap"], ["gateway-arch", "Grand Staircase Gap"], ["glacier-bay", "Margerie Leap"], ["great-basin", "Wheeler Peak Drop"], ["guadalupe-mountains", "El Capitan Ledge"], ["hot-springs", "Bathhouse Row Hop"], ["indiana-dunes", "Mount Baldy Drop"], ["isle-royale", "Greenstone Drop"], ["katmai", "Brooks Falls Leap"], ["kenai-fjords", "Exit Glacier Gap"], ["kings-canyon", "Zumwalt Drop"], ["kobuk-valley", "Great Kobuk Drop"], ["lake-clark", "Twin Lakes Leap"], ["mammoth-cave", "Sinkhole Drop"], ["mesa-verde", "Cliff Palace Gap"], ["new-river-gorge", "Endless Wall Leap"], ["north-cascades", "Diablo Leap"], ["petrified-forest", "Blue Mesa Drop"], ["pinnacles", "High Peaks Gap"], ["saguaro", "Signal Hill Drop"], ["shenandoah", "Stony Man Leap"], ["theodore-roosevelt", "Painted Canyon Drop"], ["virgin-islands", "Trunk Bay Drop"], ["voyageurs", "Kettle Falls Hop"], ["white-sands", "Alkali Flat Drop"], ["wind-cave", "Prairie Breath Drop"], ["wrangell-st-elias", "Kennecott Gap"]] as const;
+setDefaultTimeout(60000);
 const parks = await allParks();
 const park = (id: string) => parks.find((l) => l.id === id)!;
 
@@ -49,16 +50,17 @@ test("every park loads with finite ground, goals and spawns on rideable ground i
   }
 });
 
-test("the named gaps are cleared at any speed from 24 to 32 by driving at the launch and jumping at the lip, and a hop onto the obstacle does not count", () => {
-  for (const [id, spawn, name] of [["el-capitan", "street line", "Boulder Gap"], ["old-faithful", "vent line", "Geyser Hop"], ["mariposa-grove", "clearing", "Fallen Giant"], ["glacier-point", "plateau", "Glacier Point Gap"], ["half-dome", "dome run", "Half Dome Face"], ["yosemite-falls", "shelf", "Upper Fall"], ["yosemite-falls", "valley line", "Valley Hop"], ["grand-prismatic", "street line", "Sinter Jump"], ["grand-canyon", "rim line", "Canyon Drop"], ...SURVEYED.map(([id, gap]) => [id, `${gap} run`, gap] as const)] as const) {
+// One test per gap: each is twenty seconds of sim at three speeds, and the list is long.
+for (const [id, spawn, name] of [["el-capitan", "street line", "Boulder Gap"], ["old-faithful", "vent line", "Geyser Hop"], ["mariposa-grove", "clearing", "Fallen Giant"], ["glacier-point", "plateau", "Glacier Point Gap"], ["half-dome", "dome run", "Half Dome Face"], ["yosemite-falls", "shelf", "Upper Fall"], ["yosemite-falls", "valley line", "Valley Hop"], ["grand-prismatic", "street line", "Sinter Jump"], ["grand-canyon", "rim line", "Canyon Drop"], ...SURVEYED.map(([id, gap]) => [id, `${gap} run`, gap] as const)] as const) {
+  test(`${id}: ${name} is cleared at any speed from 24 to 32 by driving at the launch and jumping at the lip, and a hop onto the obstacle does not count`, () => {
     for (const line of SPEEDS) {
       const { s, run } = drive(park(id), spawn, 20, name, line);
       expect(run.gaps.get(name)).toBeGreaterThanOrEqual(1);
       expect(s.score).toBeGreaterThanOrEqual(park(id).gaps.find((g) => g.name === name)!.bonus);
       expect(run.bestCombo).toBeGreaterThan(0);
     }
-  }
-}, 30000);
+  });
+}
 
 test("El Capitan's talus is a quarter pipe: driving at the wall climbs it", () => {
   const l = park("el-capitan"), { s, run } = drive(l, "wall view", 8);
@@ -82,7 +84,7 @@ test("the start screen shows until a level is chosen, and a query picks its leve
   expect(needsStartScreen("?showroom")).toBe(false);
   expect(pick("?level=glacier-point").id).toBe("glacier-point");
   expect(pick("?level=nowhere").id).toBe("el-capitan");
-  expect(LEVELS.map((l) => l.id)).toEqual(["plaza", "el-capitan", "glacier-point", "old-faithful", "mariposa-grove", "half-dome", "yosemite-falls", "grand-prismatic", "grand-canyon", "zion", "arches", "bryce-canyon", "rocky-mountain", "grand-teton", "glacier", "olympic", "joshua-tree", "death-valley", "crater-lake", "acadia", "badlands", "big-bend", "black-canyon", "canyonlands", "capitol-reef", "carlsbad-caverns", "great-sand-dunes", "great-smoky-mountains", "haleakala", "hawaii-volcanoes", "mount-rainier", "lassen-volcanic", "sequoia", "redwood"]);
+  expect(LEVELS.map((l) => l.id)).toEqual(["plaza", "el-capitan", "glacier-point", "old-faithful", "mariposa-grove", "half-dome", "yosemite-falls", "grand-prismatic", "grand-canyon", "zion", "arches", "bryce-canyon", "rocky-mountain", "grand-teton", "glacier", "olympic", "joshua-tree", "death-valley", "crater-lake", "acadia", "badlands", "big-bend", "black-canyon", "canyonlands", "capitol-reef", "carlsbad-caverns", "great-sand-dunes", "great-smoky-mountains", "haleakala", "hawaii-volcanoes", "mount-rainier", "lassen-volcanic", "sequoia", "redwood", "american-samoa", "biscayne", "channel-islands", "congaree", "cuyahoga-valley", "denali", "dry-tortugas", "everglades", "gates-of-the-arctic", "gateway-arch", "glacier-bay", "great-basin", "guadalupe-mountains", "hot-springs", "indiana-dunes", "isle-royale", "katmai", "kenai-fjords", "kings-canyon", "kobuk-valley", "lake-clark", "mammoth-cave", "mesa-verde", "new-river-gorge", "north-cascades", "petrified-forest", "pinnacles", "saguaro", "shenandoah", "theodore-roosevelt", "virgin-islands", "voyageurs", "white-sands", "wind-cave", "wrangell-st-elias"]);
 });
 
 test("a short hop onto the boulder is not the Boulder Gap", () => {
@@ -138,7 +140,7 @@ test("a park runs edge to edge of its terrain, and a rider driving at the barrie
     expect(s.z).toBeGreaterThanOrEqual(l.bounds.minZ);
     expect(s.z).toBeLessThanOrEqual(l.bounds.maxZ);
   }
-}, 30000);
+}, 120000);
 
 test("a line is placed beat by beat and its goal completes when the rider rides it through, and not when they skip a beat", () => {
   const level = park("glacier-point"), route = level.routes.find((r) => r.name === "plateau line")!;
@@ -178,5 +180,12 @@ test("a surveyed park spawns the rider facing its signature spot, near enough to
     expect([id, Math.abs(Math.atan2(Math.sin(bearing - sp.yaw), Math.cos(bearing - sp.yaw))) < 0.05]).toEqual([id, true]);
     expect(Math.hypot(sp.x, sp.z)).toBeGreaterThan(40);
     expect(Math.hypot(sp.x, sp.z)).toBeLessThan(l.ground.R);
+  }
+});
+
+test("every surveyed park has kit at its signature spot", () => {
+  for (const [id] of SURVEYED) {
+    const l = park(id), near = l.pieces.filter((p) => !p.name.startsWith("contour") && Math.hypot(p.x, p.z) < 90);
+    expect(near.length, id).toBeGreaterThan(0);
   }
 });

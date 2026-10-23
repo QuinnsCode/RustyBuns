@@ -127,7 +127,7 @@ It uses Playwright Chromium and is run against both the dev host and the compile
 - [ ] Verify that `"use server"` proxies resolve in non-React client bundles.
 
 ### Phase 2: frameworks that already have a Cloudflare build
-- [ ] `apps/tanstack-start-example`, promoted from the probe.
+- [x] `apps/tanstack-start-example`: TanStack Start on `@cloudflare/vite-plugin` with D1 and KV, `init` unchanged.
 - [ ] `apps/sveltekit-example`
 - [ ] `apps/astro-example`
 - [ ] `apps/nuxt-example`

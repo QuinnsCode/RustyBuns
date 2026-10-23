@@ -1,4 +1,6 @@
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
+
+setDefaultTimeout(60000); // seventy levels take a while on CI
 import { terrainPixels } from "../src/levels/thumb.ts";
 import { plaza } from "../src/levels/plaza.ts";
 import { LEVELS } from "../src/levels/index.ts";

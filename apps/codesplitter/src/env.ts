@@ -150,6 +150,8 @@ export interface Env {
   AGENT_REVIEW_MS?: string;
   /** Tests only: stands in for running a coding agent's CLI (see agent-run.ts). */
   AGENT_EXEC?: unknown;
+  /** "on" runs the mergiraf on PATH on a file Mervin left cards in (mergiraf.ts); hosted, it runs in the agent container. Tests pass an Exec. */
+  MERGIRAF?: unknown;
   /** Tests only: stand in for npm, osv.dev, the install-and-test run and the fixer (see deps.ts). */
   DEPS_REGISTRY?: unknown;
   DEPS_ADVISORIES?: unknown;

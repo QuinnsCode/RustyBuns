@@ -65,6 +65,19 @@ describe("code that isn't the owner's waits for them (#646)", () => {
     expect(seen.env).toEqual([]);
   });
 
+  test("a write token's commit doesn't clear a deploy: a prompt-injected agent may hold one, so only a person's does", async () => {
+    const { call, send, seen } = await hosted();
+    await send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");
+    const made = (await (await send("ryan-quinn", "/api/tokens", { label: "agent", scope: "write" })).json()) as { token: string };
+    const as = (url: string, body: unknown) => call(null, url, { method: "POST", body: JSON.stringify(body), headers: { authorization: `Bearer ${made.token}` } });
+    await as("/api/repos/ryan-quinn/lab/files", { path: "rustybuns.config.ts", content: "export default { exfiltrate: true }" });
+    expect((await as("/api/repos/ryan-quinn/lab/do/commit?path=rustybuns.config.ts", { message: "from a token" })).status).toBe(200);
+    const pressed = await as(D, {});
+    expect(pressed.status).toBe(409);
+    expect(((await pressed.json()) as any).error).toContain("waiting for you");
+    expect(seen.env).toEqual([]);
+  });
+
   test("the runner checks again before it unseals the keys, and won't deploy a clone of another commit", async () => {
     const { call, send, seen, env } = await hosted();
     await send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");

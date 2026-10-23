@@ -1,5 +1,7 @@
 // The home page's camera: every park gets a tour that never jumps, never dips into the ground, and ends on its highest point.
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
+
+setDefaultTimeout(60000); // seventy levels take a while on CI
 import { LEVELS, tourPick } from "../src/levels/index.ts";
 import { STOP_SECONDS, tourShot, tourStops } from "../src/render/tour.ts";
 import { build } from "./parks.ts";

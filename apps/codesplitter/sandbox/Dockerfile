@@ -9,6 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 # bun runs a cut's tests (POST /test) and the dependency doctor's (POST /deps-test and /deps-fix, src/deps.ts).
 RUN npm install -g @anthropic-ai/claude-code @openai/codex @earendil-works/pi-coding-agent opencode-ai bun \
   && npm cache clean --force
+# Mergiraf, the structured merge a file Mervin left cards in gets (src/mergiraf.ts): one static binary, about 80 MB.
+# GPL-3.0, so it runs as its own program, never linked in. Cloudflare's containers are amd64.
+ADD https://codeberg.org/mergiraf/mergiraf/releases/download/v0.20.0/mergiraf_x86_64-unknown-linux-musl.tar.gz /tmp/mergiraf.tar.gz
+RUN tar -xzf /tmp/mergiraf.tar.gz -C /usr/local/bin mergiraf && rm /tmp/mergiraf.tar.gz && mergiraf --version
 # Two users (#646): `node` runs the agent CLI, with its logins; `runner` runs the
 # repo's git, install and tests, without them, and can't read node's processes'
 # environment or its home. Both write the clones through the `work` group. Git

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { apply, empty, explain, fromText, generatedRegions, merge, mergeWords, parseError, text, type Doc, type Resolve } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
 import { conflictPrompt, markers, settled } from "../src/conflict-agent.ts";
+import { fill } from "../src/mergiraf.ts";
 import { materializeOn, parseResolve } from "../src/branches.ts";
 import { lintMerge } from "../src/lint.ts";
 import { local as boot } from "../src/local.ts";
@@ -645,6 +646,15 @@ describe("found on git's own history (Mervin scorecard)", () => {
   });
 });
 
+test("Mergiraf's answer split into each card's text: only where it keeps every line Mervin settled, and no two cards touch", () => {
+  const split = (template: string, out: string) => fill(template.split(" "), ["M0", "M1"], out.split(" "));
+  expect(split("a M1 b M0 c", "a 1 1 b 0 c")).toEqual(["0", "1\n1"]);
+  expect(split("M0 b M1", "0 b")).toEqual(["0", ""]);
+  expect(split("a M0 b M1 c", "z 0 b 1 c")).toBeNull();
+  expect(split("a M0 b M1 c", "a 0 1 c")).toBeNull();
+  expect(split("a M0 M1 c", "a 0 1 c")).toBeNull();
+});
+
 describe("over the API", () => {
   /** ana's repo r: a.ts with `x(1)` on main changed to `x(2)` and on branch b1 to `x(3)`. */
   async function app(env: Record<string, string> = {}) {
@@ -673,6 +683,35 @@ describe("over the API", () => {
     expect(await file()).toBe("const a = 1;\nx(2);\nx(3);");
     const doc = await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json() as Doc;
     expect(doc.lines.map((l) => l.by)).toEqual(["ana", "ana", "ana"]);
+  });
+
+  test("a file Mervin left a card in gets one Mergiraf run; a clean answer lands, credited, and one it couldn't settle isn't run again", async () => {
+    const { call, post, file } = await app();
+    const merge = () => post("ana", "/api/repos/ana/r/branches/b1/merge", {});
+    let runs = 0, code = 1;
+    call.env.MERGIRAF = (async (cmd, cwd) => {
+      runs++;
+      expect(cmd.args.at(-1)).toBe("a.ts");
+      expect(["BASE", "MAIN", "BRANCH"].map((f) => readFileSync(join(cwd, f), "utf8"))).toEqual(["const a = 1;\nx(1);\n", "const a = 1;\nx(2);\n", "const a = 1;\nx(3);\n"]);
+      writeFileSync(join(cwd, "MERGED"), code ? "const a = 1;\n<<<<<<< MAIN\nx(2);\n=======\nx(3);\n>>>>>>> BRANCH\n" : "const a = 1;\nx(2, 3);\n");
+      return { code, out: "" };
+    }) as Exec;
+
+    const stuck = await merge();
+    expect(stuck.status).toBe(409);
+    expect((await stuck.json() as any).conflicts[0].conflicts[0]).toMatchObject({ line: "L2", main: "x(2);", branch: "x(3);" });
+    expect((await merge()).status).toBe(409);
+    expect(runs).toBe(1);
+
+    // Main moves, so the three versions are new: it's run again, and this time it settles.
+    await post("ana", "/api/repos/ana/r/do/ops?path=a.ts", { ops: [{ kind: "set", line: "L1", base: 1, text: "const a = 2;" }] });
+    code = 0;
+    call.env.MERGIRAF = (async (_cmd, cwd) => { runs++; writeFileSync(join(cwd, "MERGED"), "const a = 2;\nx(2, 3);\n"); return { code: 0, out: "" }; }) as Exec;
+    const landed = await merge();
+    expect(landed.status).toBe(200);
+    expect((await landed.json() as any).mergiraf).toEqual(["a.ts"]);
+    expect(await file()).toBe("const a = 2;\nx(2, 3);");
+    expect(runs).toBe(2);
   });
 
   test("both lands both lines, main's first", async () => {

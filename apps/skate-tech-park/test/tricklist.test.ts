@@ -1,11 +1,11 @@
-// Journey: the SkateBench trick list, typed into the sim in every park. From each spawn the rider rolls up to speed
+// Journey: the SkateBench trick list, typed into the sim in a sample of the parks (every one with ALL_PARKS=1, see test/parks.ts). From each spawn the rider rolls up to speed
 // on flat ground, ollies, flicks one trick in the air and lands: the trick must score under its own name, with no bail.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 import { TRICKS, type Flick } from "../src/tricks.ts";
-import { build } from "./parks.ts";
+import { build, sample } from "./parks.ts";
 
 setDefaultTimeout(60000);
 
@@ -25,7 +25,7 @@ function tryTrick(l: ParkLevel, trick: Flick) {
   return { bailed, landed, tricks: [...s.tricks], last: s.last?.name ?? "" };
 }
 
-for (const e of LEVELS.filter((l) => l.id !== "plaza")) {
+for (const e of sample(LEVELS)) {
   test(`${e.id}: every trick on the list lands from the first spawn`, async () => {
     const l = (await build(e)) as ParkLevel, failed: string[] = [];
     for (const trick of Object.keys(TRICKS) as Flick[]) {

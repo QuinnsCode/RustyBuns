@@ -21,7 +21,7 @@ export type Piece = {
  * A wooden ramp whose surface runs along z, a concrete block, stairs of `steps` treads `run` deep, a granite boulder,
  * a fallen log lying along z, or a wooden hip.
  */
-export type Look = { kind: "ramp" | "block" | "rock" | "log" | "hip" | "cliff" | "bowl" } | { kind: "stairs"; steps: number; run: number };
+export type Look = { kind: "ramp" | "block" | "rock" | "log" | "hip" | "cliff" | "bowl" | "table" | "bench" | "boardwalk" } | { kind: "stairs"; steps: number; run: number };
 
 export type RailKind = "rail" | "ledge" | "coping";
 

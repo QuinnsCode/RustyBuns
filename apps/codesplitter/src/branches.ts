@@ -38,11 +38,12 @@ import { emit } from "./hooks.ts";
 import { diffToOps, keptPairs } from "./sync.ts";
 import { unindexFile } from "./search.ts";
 import { HARNESSES, type Harness } from "./harness.ts";
-import { protectOn } from "./protect.ts";
+import { policyClosed, protectOn } from "./protect.ts";
 import { localSandbox, type Exec } from "./agent-run.ts";
 import { containerSandbox } from "./sandbox.ts";
 import { ADMINS_ONLY, adminsOnly, agentsUnavailable, hostedBudget, installedHarnesses } from "./agent-routes.ts";
 import { askAgent, cheapest } from "./conflict-agent.ts";
+import { fill, MERGIRAF, mergiraf, mergirafBox } from "./mergiraf.ts";
 import { alsoFor, fixUnavailable, guardTripped, healUnavailable, openFix, rebuildTask } from "./heal.ts";
 import { hunks, revertOps } from "./review.ts";
 import { MERVIN } from "./mervin.ts";
@@ -402,6 +403,37 @@ async function askLeftovers(env: Env, owner: string, repo: string, branch: Branc
 }
 
 /**
+ * Picks for the conflicts Mervin left in `path`, from Mergiraf's merge of the file on its syntax tree (mergiraf.ts): the
+ * text it wrote where each card is, taken only when it agrees with Mervin on every line he settled and merging with
+ * the picks gives its text exactly. Each try is kept by the three versions it saw, so a file it couldn't settle isn't
+ * run again until one of them moves. Null when there are none.
+ */
+async function mergirafPicks(env: Env, owner: string, repo: string, branch: BranchRow, path: string, conflicts: Conflict[], rule: Rule, user: string): Promise<Resolve | null> {
+  const box = mergirafBox(env);
+  if (!box) return null;
+  const doc = async (op: string, on?: string) => (await toFile(env, owner, repo, path, user, op, {}, "", on)).json() as Promise<Doc>;
+  const [main, base, ours] = await Promise.all([doc("file"), doc("base", branch.name), doc("file", branch.name)]);
+  const at = [owner, repo, branch.name, path, MERGIRAF] as const, key = (await sha256(JSON.stringify([text(base), text(main), text(ours)]))).slice(0, 32);
+  if (await env.DB.prepare("SELECT 1 AS x FROM leftover_answers WHERE owner = ? AND repo = ? AND branch = ? AND path = ? AND line = ? AND key = ?").bind(...at, key).first()) return null;
+  await env.DB.prepare(`INSERT INTO leftover_answers (owner, repo, branch, path, line, key, answer, at) VALUES (?, ?, ?, ?, ?, ?, '{}', ?)
+    ON CONFLICT (owner, repo, branch, path, line) DO UPDATE SET key = excluded.key, at = excluded.at`).bind(...at, key, Date.now()).run();
+  const merged = await mergiraf(box, path, text(base), text(main), text(ours)).catch(() => null);
+  if (merged === null) return null;
+  // The file as Mervin merges it with `resolve`; null when that leaves a conflict.
+  const mergedWith = (resolve: Resolve) => {
+    const m = merge(base, ours, main, resolve, String(branch.by), path, user, rule), d = structuredClone(main);
+    return !m.conflicts.length && apply(d, m.ops, m.by, 0, main.rev).ok ? text(d) : null;
+  };
+  // Each card stands in as a line of its own, so what's around them is Mervin's and the rest is Mergiraf's answer.
+  const marks = conflicts.map((_, i) => `\u0000${MERGIRAF} ${i}`);
+  const template = mergedWith(Object.fromEntries(conflicts.map((c, i) => [c.line, { text: marks[i]! }])));
+  const texts = template === null ? null : fill(template.split("\n"), marks, merged.split("\n"));
+  if (!texts) return null;
+  const resolve: Resolve = Object.fromEntries(conflicts.map((c, i) => [c.line, { text: texts[i]! }]));
+  return mergedWith(resolve) === merged ? resolve : null;
+}
+
+/**
  * A lockfile both sides changed, in a file whose policy gives its leftovers to CI (#1012): made again
  * from main's lockfile and the branch's manifests as merged, in a throwaway clone (deps.ts), and put on
  * the branch, so the merge takes it whole. Null when it's on the branch; else why not.
@@ -509,6 +541,21 @@ async function dryRun(env: Env, owner: string, repo: string, branch: BranchRow, 
     resolve[d.path] = { ...resolve[d.path], file: "branch" };
     Object.assign(d, await mergeFile(env, owner, repo, branch, d.path, user, resolve[d.path], true));
   }
+  // Conflicts Mervin left that nobody has picked for yet: a Mergiraf run on each such file, at most MAX_ASKED a merge.
+  const mergirafSettled: string[] = [];
+  let tried = 0;
+  for (const d of dry) {
+    if (tried >= MAX_ASKED || !d.conflicts.length || resolve[d.path] || d.policy.merge === "lock" || d.conflicts.some((c) => c.lint || c.whole)) continue;
+    tried++;
+    const picks = await mergirafPicks(env, owner, repo, branch, d.path, d.conflicts, d.policy.merge, user);
+    if (!picks) continue;
+    // The merge itself has the last word: the lint and the build, as with any pick.
+    const again = await mergeFile(env, owner, repo, branch, d.path, user, picks, true);
+    if (again.conflicts.length) continue;
+    resolve[d.path] = picks;
+    Object.assign(d, again);
+    mergirafSettled.push(d.path);
+  }
   const left = dry.filter((d) => d.conflicts.length);
   // Settling a stretch can leave code that won't build: say so, as the review (settling nothing) can't show it.
   const broken = left.flatMap((b) => b.conflicts.filter((c) => c.lint).map((c) => `${b.path}: ${c.lint}`));
@@ -529,7 +576,7 @@ async function dryRun(env: Env, owner: string, repo: string, branch: BranchRow, 
     return { blocked: { error: broken.length ? `merged, it wouldn't build: ${broken.join("; ")}` : "conflicts", conflicts: blocked, ...(fix && "id" in fix && { fix: fix.id }) } };
   }
   const failed = await testedMerge(env, owner, repo, branch, dry, resolve, user);
-  return failed ? { blocked: failed } : { dry };
+  return failed ? { blocked: failed } : { dry, mergiraf: mergirafSettled };
 }
 
 /**
@@ -699,6 +746,8 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   const stuck = (await env.DB.prepare("SELECT path, source FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND source IS NOT NULL ORDER BY path").bind(owner, repo, name).all()).results as { path: string; source: string }[];
   if (stuck.length) return json({ error: `${stuck.map((f) => f.path).join(", ")} forked from ${stuck[0]!.source}'s copies and didn't move onto main cleanly when it merged: copy your changes into a branch off main`, files: stuck.map((f) => f.path) }, 409);
   const rows = await files(), todo = rows.filter((f) => !f.merged);
+  // The path policy and the checks' commands are the owner's to change on main (#1567): a merge is no way round it.
+  for (const f of todo) { const closed = policyClosed(owner, f.path, user); if (closed) return closed; }
   // Build or deploy files on a merge the owner's next commit would ship: read them first.
   const build = todo.map((f) => f.path).filter(isBuildFile);
   // An agent's batch touching them waits for an accept whatever the deploy setting: codesplitter.ci and .gitattributes drive what runs and who may edit what.
@@ -752,7 +801,9 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     const m = await mergeFile(env, owner, repo, branch, f.path, user, resolve[f.path], false);
     if (m.status === 200) {
       merged.push({ path: f.path, rev: m.rev, ops: m.ops?.length ?? 0 }); solved += m.solved ?? 0;
-      if (resolve[f.path]) learned.push({ path: f.path, outcome: "asked", answer: answerOf(resolve[f.path]) }); else if (m.solved) learned.push({ path: f.path, outcome: "settled" });
+      if (run.mergiraf.includes(f.path)) learned.push({ path: f.path, outcome: MERGIRAF });
+      else if (resolve[f.path]) learned.push({ path: f.path, outcome: "asked", answer: answerOf(resolve[f.path]) });
+      else if (m.solved) learned.push({ path: f.path, outcome: "settled" });
       continue;
     }
     // Main moved into a conflict between the dry run and now: this file waits for another merge.
@@ -775,7 +826,7 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
     });
   }
   const docs = conflicts.length ? [] : await rebuilt(env, owner, repo, merged.filter((m) => !m.deleted && !m.binary).map((m) => m.path), run.dry, user);
-  return json({ status: conflicts.length ? "open" : "merged", merged, conflicts, ...(docs.length && { regenerated: docs }), ...(took.length && { took }) }, conflicts.length ? 409 : 200);
+  return json({ status: conflicts.length ? "open" : "merged", merged, conflicts, ...(docs.length && { regenerated: docs }), ...(run.mergiraf.length && { mergiraf: run.mergiraf }), ...(took.length && { took }) }, conflicts.length ? 409 : 200);
 }
 
 /**

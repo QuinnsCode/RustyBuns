@@ -10,9 +10,9 @@ import { DECK } from "../src/models.ts";
 import { Scenery, TREES, scatter } from "../src/render/scenery.ts";
 import { sky } from "../src/render/sky.ts";
 import { IDLE, start, step } from "../src/sim.ts";
-import { build, level as loadLevel } from "./parks.ts";
+import { build, level as loadLevel, sample } from "./parks.ts";
 
-const parks = LEVELS.filter((e) => e.id !== "plaza");
+const parks = sample(LEVELS); // scatter is deterministic code; a sample of parks keeps the suite inside CI's ten minutes
 
 test.each(parks.map((e) => [e.name, e.id]))("%s: scenery is seeded and keeps off pieces, rails and the spawn", async (_, id) => {
   const park = (await loadLevel(id)) as ParkLevel;

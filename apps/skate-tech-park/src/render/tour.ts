@@ -9,7 +9,8 @@ type Stop = { x: number; z: number; peak: boolean };
 
 /** Seconds on each stop, the last part of which is the flight to the next one. */
 export const STOP_SECONDS = 30;
-const FLIGHT = 0.5; // fraction of a stop spent flying on to the next
+const FLIGHT = 0.5; // fraction of a stop spent flying on to the next, longer when the next stop is far (the camera never cuts)
+const FLIGHT_SPEED = 60; // metres per second at most, mid-flight
 const ISO = { fov: 30, dist: 150, rise: 0.62 }; // a narrow lens from far off and 35 degrees up reads as isometric
 const PEAK = { fov: 58, up: 9 };
 const CLEAR = 4; // metres the camera keeps above the ground
@@ -51,8 +52,9 @@ function hover(level: Level, s: Stop, i: number, u: number): Shot {
 /** The camera `t` seconds into the tour, looping. */
 export function tourShot(level: Level | ParkLevel, stops: Stop[], t: number): Shot {
   const n = stops.length, k = Math.floor(t / STOP_SECONDS), i = ((k % n) + n) % n, u = (t - k * STOP_SECONDS) / STOP_SECONDS;
-  const here = hover(level, stops[i]!, i, u), w = smooth((u - (1 - FLIGHT)) / FLIGHT);
-  const next = w > 0 ? hover(level, stops[(i + 1) % n]!, (i + 1) % n, 0) : here;
+  const here = hover(level, stops[i]!, i, u), onward = hover(level, stops[(i + 1) % n]!, (i + 1) % n, 0);
+  const far = Math.hypot(onward.pos[0] - here.pos[0], onward.pos[2] - here.pos[2]), flight = Math.min(0.9, Math.max(FLIGHT, (1.5 * far) / (FLIGHT_SPEED * STOP_SECONDS)));
+  const w = smooth((u - (1 - flight)) / flight), next = w > 0 ? onward : here;
   const pos = here.pos.map((v, j) => mix(v, next.pos[j]!, w)) as Shot["pos"];
   pos[1] = Math.max(pos[1], level.height(pos[0], pos[2]) + CLEAR); // a flight up a hill follows the ground
   return { pos, look: here.look.map((v, j) => mix(v, next.look[j]!, w)) as Shot["look"], fov: mix(here.fov, next.fov, w) };

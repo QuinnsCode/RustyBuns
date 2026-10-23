@@ -33,7 +33,7 @@ hexes = {
     "joshua-bark": 0x7A6A52, "joshua-leaf": 0x6E8A52, "joshua-dead": 0xA89C7A,
     "saguaro": 0x4F7A4A, "saguaro-dark": 0x3F6A3C, "spine": 0xD8D2BC,
     "palm-trunk": 0x8A7556, "palm-frond": 0x4A8A3A, "palm-frond-dark": 0x3A7030,
-    "snag": 0x9A9082, "snag-dark": 0x6E675C, "sage": 0x8C9A80, "sage-light": 0xA3B094,
+    "snag": 0x9A9082, "snag-dark": 0x6E675C, "sage": 0x8C9A80, "sage-light": 0xA3B094, "sequoia-bark": 0x8A4A2B,
 }
 PALETTE.update({k: ((h >> 16) / 255, (h >> 8 & 255) / 255, (h & 255) / 255, 0.95, 0) for k, h in hexes.items()})
 
@@ -94,6 +94,20 @@ def pine():
         c = cone(r, 0.02, h, 10)
         ruffle(c, 0.035, 0.18, k)
         out.append(part("tier", mat, c, (0, y, 0), rot=Matrix.Rotation(k * 0.4, 4, "Y")))
+    return out
+
+
+def sequoia():
+    """A giant sequoia: a flared red trunk, bare for most of its height, with a narrow crown of flat tiers high up. Also the
+    parks' big named trees (ground.ts), scaled to their own height."""
+    out = [part("flare", "sequoia-bark", cone(0.16, 0.09, 0.14, 9))]
+    t = cone(0.09, 0.05, 0.86, 9)
+    ruffle(t, 0.008, 0.05, 9)
+    out.append(part("trunk", "sequoia-bark", t, (0, 0.12, 0)))
+    for k, (y, r, h) in enumerate([(0.42, 0.3, 0.2), (0.56, 0.27, 0.18), (0.7, 0.22, 0.17), (0.83, 0.15, 0.17)]):
+        c = cone(r, 0.04, h, 9)
+        ruffle(c, 0.02, 0.12, 20 + k)
+        out.append(part("tier", "needles-dark" if k % 2 else "needles", c, (0, y, 0), rot=Matrix.Rotation(k * 0.5, 4, "Y")))
     return out
 
 
@@ -290,9 +304,9 @@ def sage():
 
 KINDS = {
     "pine": pine, "aspen": aspen, "oak": oak, "stump": stump, "rock": rock, "cairn": cairn, "sign": sign, "bush": bush, "fern": fern,
-    "flower": flower, "tent": tent, "joshua": joshua, "saguaro": saguaro, "palm": palm, "snag": snag, "sage": sage,
+    "flower": flower, "tent": tent, "joshua": joshua, "saguaro": saguaro, "palm": palm, "snag": snag, "sage": sage, "sequoia": sequoia,
 }
-TREES = {"pine", "aspen", "oak", "joshua", "saguaro", "palm", "snag"}
+TREES = {"pine", "aspen", "oak", "joshua", "saguaro", "palm", "snag", "sequoia"}
 
 
 def main():

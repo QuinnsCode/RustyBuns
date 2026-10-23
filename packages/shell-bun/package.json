@@ -20,6 +20,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./advisories": "./src/advisories.ts",
+    "./assetsignore": "./src/assetsignore.ts",
     "./client": "./src/client.ts",
     "./cpuprof": "./src/cpuprof.ts",
     "./cron": "./src/cron.ts",

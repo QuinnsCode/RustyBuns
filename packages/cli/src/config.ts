@@ -389,6 +389,8 @@ export interface DesktopTarget {
   r2?: Record<string, string>;
   /** DO storage codec: "json" (readable) or "v8" (structured clone, keeps TypedArrays). */
   storageCodec?: "json" | "v8";
+  /** Embed the client build's .map files in the binary. Off by default: only DevTools reads them, and they can be a third of the assets. */
+  sourceMaps?: boolean;
   /**
    * URL of this app's own advisories.json: releases of the app to move off.
    * At launch (once a day, never blocking) the host checks the app's version

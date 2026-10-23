@@ -143,7 +143,8 @@ export function ghaCacheArgs(app: string, b: ContainerBinding): string[] {
 export async function buildOne(app: string, b: ContainerBinding, opts: { verbose?: boolean; log?: (s: string) => void; dir?: string; ghaCache?: boolean } = {}): Promise<{ tag: string; size: number; prevSize?: number; ms: number }> {
   const log = opts.log ?? console.log, tag = imageTag(app, b), t0 = performance.now();
   const hash = contextHash(b.context);
-  const p = Bun.spawn(["docker", "build", "--platform", "linux/amd64", "--progress=plain", ...(opts.ghaCache ? ghaCacheArgs(app, b) : []), "-f", b.dockerfile, "-t", tag, b.context], { stdout: "pipe", stderr: "pipe" });
+  // With the cache, buildx by name: plain `docker build` can fall back to the docker driver, which can't export it.
+  const p = Bun.spawn(["docker", ...(opts.ghaCache ? ["buildx", "build"] : ["build"]), "--platform", "linux/amd64", "--progress=plain", ...(opts.ghaCache ? ghaCacheArgs(app, b) : []), "-f", b.dockerfile, "-t", tag, b.context], { stdout: "pipe", stderr: "pipe" });
   const tail: string[] = [];
   const tty = process.stdout.isTTY && !opts.verbose;
   const onLine = (l: string) => {

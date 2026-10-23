@@ -2,6 +2,10 @@
 // public elevation tiles. No park data needed, so this is how Skate Tech Park gets a new location.
 //
 //   bun packages/terrain/scripts/fetch-place.ts grand-canyon "Grand Canyon" 36.0614 -112.1077 "South Rim at Mather Point"
+//   bun packages/terrain/scripts/fetch-place.ts dry-tortugas "Dry Tortugas" 24.628 -82.873 "Fort Jefferson" --water 0
+//
+// The tiles carry the sea and lake floors too, so a coast or a shore comes back as a cliff into the deep: `water`
+// (metres above sea level) flattens everything below that height to it, and the water is a floor you can ride.
 //
 // then write a level (apps/skate-tech-park/src/levels); the zone is loaded on demand by `loadZone`, nothing to register.
 // apps/skate-tech-park/scripts/fetch-parks.ts calls `fetchPlace` for every row of its park table.
@@ -11,7 +15,7 @@ import { elevation } from "./terrarium.ts";
 
 const REAL_RADIUS = 1000, N = 161;
 
-export async function fetchPlace(id: string, name: string, lat: number, lon: number, blurb = "") {
+export async function fetchPlace(id: string, name: string, lat: number, lon: number, blurb = "", water?: number) {
   const mPerDegLat = 111320, mPerDegLon = 111320 * Math.cos((lat * Math.PI) / 180);
   const t0 = Date.now(), heights = new Int16Array(N * N);
   // Row 0 is the south edge, as in the other zones.
@@ -19,7 +23,8 @@ export async function fetchPlace(id: string, name: string, lat: number, lon: num
     const ny = -REAL_RADIUS + (2 * REAL_RADIUS * r) / (N - 1);
     for (let c = 0; c < N; c++) {
       const ex = -REAL_RADIUS + (2 * REAL_RADIUS * c) / (N - 1);
-      heights[r * N + c] = Math.round(await elevation(lon + ex / mPerDegLon, lat + ny / mPerDegLat));
+      const m = Math.round(await elevation(lon + ex / mPerDegLon, lat + ny / mPerDegLat));
+      heights[r * N + c] = water !== undefined && m < water ? water : m;
     }
   }
   const lo = Math.min(...heights), hi = Math.max(...heights);
@@ -31,8 +36,9 @@ export async function fetchPlace(id: string, name: string, lat: number, lon: num
 }
 
 if (import.meta.main) {
-  const [id, name, latArg, lonArg, blurb] = process.argv.slice(2);
+  const w = process.argv.indexOf("--water"), water = w > 0 ? Number(process.argv[w + 1]) : undefined;
+  const [id, name, latArg, lonArg, blurb] = process.argv.slice(2).filter((a, i, all) => a !== "--water" && all[i - 1] !== "--water");
   const lat = Number(latArg), lon = Number(lonArg);
-  if (!id || !name || !Number.isFinite(lat) || !Number.isFinite(lon)) throw new Error("usage: fetch-place.ts <id> <name> <lat> <lon> [blurb]");
-  await fetchPlace(id, name, lat, lon, blurb);
+  if (!id || !name || !Number.isFinite(lat) || !Number.isFinite(lon)) throw new Error("usage: fetch-place.ts <id> <name> <lat> <lon> [blurb] [--water <m>]");
+  await fetchPlace(id, name, lat, lon, blurb, water);
 }

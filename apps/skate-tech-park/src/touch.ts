@@ -1,18 +1,15 @@
 // Touch controls: a left-thumb stick (steer, throttle) and hold buttons for boost and manual. The right half of
 // the screen stays the flick pad (gesture.ts). Shown only once a finger touches the page.
 import { createElement, Gauge, MoveUp } from "lucide";
+import { stickAxes as axes } from "@rustybuns/util";
 
 export const STICK_RADIUS = 56; // pixels of thumb travel for a full push
 const DEAD = 0.18; // fraction of the radius that reads as centred
 
 /** A thumb offset from the stick's centre (screen pixels, y down) as sim axes: throttle up is +1, steer left is +1. */
 export function stickAxes(dx: number, dy: number): { steer: number; throttle: number } {
-  const len = Math.hypot(dx, dy), k = len > STICK_RADIUS ? STICK_RADIUS / len : 1;
-  const axis = (v: number) => {
-    const a = Math.max(-1, Math.min(1, (v * k) / STICK_RADIUS));
-    return Math.abs(a) < DEAD ? 0 : a;
-  };
-  return { steer: -axis(dx) || 0, throttle: -axis(dy) || 0 };
+  const a = axes(dx, dy, STICK_RADIUS, DEAD);
+  return { steer: -a.x || 0, throttle: -a.y || 0 };
 }
 
 export interface Touch { steer: number; throttle: number; boost: boolean; manual: boolean; claims: (id: number) => boolean }

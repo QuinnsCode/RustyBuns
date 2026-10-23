@@ -1,5 +1,7 @@
 // The weather, headless: a park's own mood, the URL override, and falling stuff that follows the camera.
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
+
+setDefaultTimeout(60000); // seventy levels take a while on CI
 import * as THREE from "three";
 import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";

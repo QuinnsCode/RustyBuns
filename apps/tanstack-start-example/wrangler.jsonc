@@ -1,0 +1,8 @@
+{
+  "name": "tanstack-start-example",
+  "main": "@tanstack/react-start/server-entry",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [{ "binding": "DB", "database_name": "tanstack-start-example-db", "database_id": "local", "migrations_dir": "migrations" }],
+  "kv_namespaces": [{ "binding": "VISITS", "id": "local" }]
+}
