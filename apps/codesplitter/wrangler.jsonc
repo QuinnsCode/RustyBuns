@@ -100,6 +100,11 @@
       }
     ]
   },
+  "worker_loaders": [
+    {
+      "binding": "LOADER"
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {

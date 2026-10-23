@@ -1,7 +1,7 @@
 // The whole app in-process with the local twins: what the tests and the agents
 // demo run against. The only server is the git one Artifacts remotes need. The desktop build wires the same pieces.
 
-import { LocalArtifacts, applyD1Migrations, d1, durableObject, gitHttp, installCloudflareGlobals, queue } from "@rustybuns/shell-bun";
+import { LocalArtifacts, applyD1Migrations, d1, durableObject, gitHttp, installCloudflareGlobals, queue, workerLoader } from "@rustybuns/shell-bun";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -39,6 +39,8 @@ export async function local(extra: Record<string, unknown> = {}) {
   const git = Bun.serve({ port: 0, fetch: (req) => gitHttp(req, [artifacts]) });
   git.unref();
   artifacts.remoteBase = `http://127.0.0.1:${git.port}`;
+  // Code mode's programs run in the local Worker Loader. Off unless asked for (`LOADER: true`): the desktop has it on, tests that aren't about it want the plain tool list.
+  if (extra.LOADER === true) env.LOADER = workerLoader(join(dir, "loader")); else delete env.LOADER;
   await applyD1Migrations(env.DB, join(import.meta.dir, "../migrations"));
   /** Call the app as `user` (a name, or null for logged out). */
   return Object.assign((user: string | null, path: string, init: RequestInit = {}) => {

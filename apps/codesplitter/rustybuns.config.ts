@@ -118,6 +118,8 @@ export default defineConfig({
     // from the tarball (#356), so the bucket is empty. No desktop twin yet; the desktop's local
     // git takes any size anyway.
     LEVEL_CHUNKS: { type: "r2", bucketName: "codesplitter-level-chunks", protect: true },
+    // Code mode (src/codemode.ts): an agent's program over the MCP tools runs in a dynamic Worker of its own, with no network and the tools as its only reach.
+    LOADER: { type: "worker_loader" },
     // Hosted coding agents (super experimental): one container per run, each CLI
     // installed (sandbox/Dockerfile), with the logins for the harnesses you use.
     // The desktop has no twin and runs the CLIs on the machine instead.

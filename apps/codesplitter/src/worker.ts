@@ -321,7 +321,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   // POST /api/mcp  the same operations as an MCP server's tools, for a personal API token (mcp.ts)
   // GET /api/mcp/tools  every MCP tool, in words, for the /mcp page
   if (p[1] === "mcp" && p[2] === "tools" && !p[3] && req.method === "GET") return json(catalogue());
-  if (p[1] === "mcp" && !p[2]) return mcp(req, url.origin, (r) => { viaMcp.set(r, req); return app.fetch(r, env); });
+  if (p[1] === "mcp" && !p[2]) return mcp(req, url.origin, (r) => { viaMcp.set(r, req); return app.fetch(r, env); }, env.LOADER);
   // /api/gh/v3/repos/:o/:r/*  GitHub's status and check-run API for external CI, with a repo's CI token, not a personal one (gh-compat.ts)
   const gh = await ghCompatRoutes(req, env, p, url);
   if (gh) return gh;

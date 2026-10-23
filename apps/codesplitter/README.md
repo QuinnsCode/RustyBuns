@@ -87,6 +87,7 @@ The highest-value things, in order:
    ```
    It signs in with OAuth.
    Every tool is an operation in the OpenAPI spec, so the MCP server and the API never drift, and the ones that can't be undone (merge, delete, deploy) are marked so your client asks first.
+   The server is in **code mode**: it lists four tools (`search_tools`, `describe_tools`, `execute`, `call_tool`) instead of all ~130, and your agent writes one JavaScript program that calls the rest (`await tools.read_file(...)`) and returns only what it needs. Clearing 20 TODOs in a 300-line file took about 1,100 tokens that way against about 34,600 tool by tool, and listing the tools 950 against 28,000 (`test/codemode.test.ts` measures both). Programs run in a Worker of their own with no network and your token's scope; the risky tools go through `call_tool`, so your client still asks first. Add `?mode=tools` to the URL for the plain list.
    Or from your shell, no checkout needed (Bun or Node 18+):
    ```sh
    curl -fsSL https://codesplitter.notryanquinn.workers.dev/install.sh | sh

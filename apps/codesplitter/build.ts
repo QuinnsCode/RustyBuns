@@ -111,7 +111,7 @@ await buildLucide("src", "dist/client/vendor/lucide.min.js", "dist/.lucide");
 // (nodejs_compat). Without it Better Auth takes its browser build, whose stand-in
 // AsyncLocalStorage is one slot shared by every request: overlapping requests
 // clear each other's state and getSession throws "No request state found".
-const r = await Bun.build({ entrypoints: ["src/worker.ts"], outdir: "dist/worker", target: "browser", conditions: ["workerd", "worker"], external: ["node:*"], format: "esm", naming: "worker.js",
+const r = await Bun.build({ entrypoints: ["src/worker.ts"], outdir: "dist/worker", target: "browser", conditions: ["workerd", "worker"], external: ["node:*", "cloudflare:*"], format: "esm", naming: "worker.js",
   // Minified, so a cold isolate parses less; the linked map (uploaded with it, worker.sourceMaps)
   // keeps Workers Logs traces naming the source.
   minify: true, sourcemap: "linked" });
