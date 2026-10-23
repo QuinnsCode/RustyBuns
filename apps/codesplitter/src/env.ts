@@ -94,6 +94,8 @@ export interface Env {
   DEPLOY_SECRETS_KEY_OLD?: string;
   /** Shared with the watchdog Worker (watchdog/): lets it report a rollback. Unset, that route is off (watchdog.ts). */
   WATCHDOG_SECRET?: string;
+  /** Bearer for POST /api/admin/drain, which the deploy calls to warn busy rooms (drain.ts). Optional: the route is off without it. */
+  DRAIN_SECRET?: string;
   /** Logins for the agent CLIs in the sandbox (see sandbox.ts). */
   ANTHROPIC_API_KEY?: string;
   OPENAI_API_KEY?: string;

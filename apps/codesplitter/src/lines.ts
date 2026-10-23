@@ -16,6 +16,13 @@ import { parseAllDocuments } from "yaml";
 import { alike, diffToOps, keptPairs } from "./sync.ts";
 import { isManifest, mergeManifest } from "./manifest.ts";
 
+/**
+ * The ops protocol's version. A writer that names one (`proto` on an ops request) and meets a file
+ * running another gets a 409 "update in progress" instead of an edit: an agent that started on the old
+ * build never lands its diff through the new build's rules. Bump it when what an op means changes.
+ */
+export const PROTOCOL = 1;
+
 export interface Line { id: string; text: string; by: string; rev: number }
 
 export type Op =
