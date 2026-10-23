@@ -404,3 +404,19 @@ test("serve: a missing page gets the nearest 404.html with status 404, as Cloudf
   expect(await fetch(bare.url + "/nope").then(async (r) => [r.status, await r.text()])).toEqual([404, "not found"]);
   await bare.stop();
 });
+
+test("serve: files .assetsignore names 404 like the binary and Cloudflare, an index.html fallback included", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync("/tmp/rb-assets-");
+  mkdirSync(join(dir, "drafts"));
+  writeFileSync(join(dir, "index.html"), "home");
+  writeFileSync(join(dir, "drafts", "a.html"), "draft");
+  writeFileSync(join(dir, "notes.md"), "notes");
+  writeFileSync(join(dir, ".assetsignore"), "drafts/\n*.md\n");
+  const shell = serve({ assets: dir });
+  shell.mount({ async fetch() { return new Response("worker", { status: 404 }); } }, {});
+  expect(await (await fetch(shell.url + "/index.html")).text()).toBe("home");
+  for (const p of ["/drafts/a.html", "/drafts/a", "/notes.md"]) expect(await (await fetch(shell.url + p)).text()).toBe("worker");
+  await shell.stop();
+});

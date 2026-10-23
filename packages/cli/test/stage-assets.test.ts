@@ -2,7 +2,8 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assetIgnore, stageAssets } from "../src/stage-assets.ts";
+import { assetIgnore } from "@rustybuns/shell-bun/assetsignore";
+import { stageAssets } from "../src/stage-assets.ts";
 
 test("stageAssets: a binary carries the page's files, not source maps, .assetsignore's or an earlier binary", () => {
   const src = mkdtempSync(join(tmpdir(), "rb-assets-")), dest = join(mkdtempSync(join(tmpdir(), "rb-embed-")), "dist");
