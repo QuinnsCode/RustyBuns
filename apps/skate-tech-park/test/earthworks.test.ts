@@ -122,3 +122,8 @@ test("a snake run stays one surface on rough ground that strays a metre from its
   for (let x = e.x - e.reach; x < e.x + e.reach; x += h) for (let z = e.z - e.reach; z < e.z + e.reach; z += h) worst = Math.max(worst, Math.abs(land.height(x + h, z) - land.height(x, z)), Math.abs(land.height(x, z + h) - land.height(x, z)));
   expect(worst).toBeLessThan(0.5);
 });
+
+test("snake runs are common on hillsides: nearly as many as banks, not a rarity", () => {
+  const n = (kind: string) => parks.reduce((a, p) => a + p.earthworks.filter((e) => e.kind === kind).length, 0);
+  expect(n("hillSnake")).toBeGreaterThan(n("hillBank") * 0.75);
+});

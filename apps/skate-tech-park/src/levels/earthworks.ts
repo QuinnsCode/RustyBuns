@@ -310,7 +310,7 @@ const HILLSIDE: Cut[] = [
   (at, r, y, t) => hillBank(at, y, t, { w: between(r, 14, 22), h: between(r, 1.8, 3) }),
   (at, r, y, t) => hillBank(at, y, t, { w: between(r, 18, 26), h: between(r, 1.8, 2.8), hip: between(r, 0.3, 0.6) }),
   (at, r, y, t) => hillSnake(at, y, t, { len: between(r, 50, 72), h: between(r, 2, 3), amp: between(r, 3, 5) }),
-  (at, r, y, t) => hillSnake(at, y, t, { len: between(r, 36, 48), h: between(r, 1.8, 2.6), amp: between(r, 2.5, 3.5), period: 24 }),
+  (at, r, y, t) => hillSnake(at, y, t, { len: between(r, 28, 38), h: between(r, 1.6, 2.2), amp: between(r, 2, 3), period: 18, floor: 1.4 }), // short: fits where the long one doesn't
   (at, r, y, t) => hillShelf(at, y, t, { w: between(r, 14, 20), h: between(r, 2.2, 3.4) }),
 ];
 
