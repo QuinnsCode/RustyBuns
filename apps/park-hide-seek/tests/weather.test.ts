@@ -172,9 +172,9 @@ describe("rain in the hunt", () => {
       const r = g.round!;
       const ranger = r.actors.get(r.rangers[0])!, camper = [...r.actors.values()].find((a) => a.role === "camper")!;
       camper.x = ranger.x + 30; camper.y = ranger.y;
-      camper.run = true; camper.crouch = false; camper.movedAt = t;
+      camper.run = true; camper.crouch = false; camper.walkedAt = t;
       t += 500;
-      camper.movedAt = t;
+      camper.walkedAt = t;
       g.tick(t);
       expect(r.cues.some((c) => c.kind === "step")).toBe(heard);
     }

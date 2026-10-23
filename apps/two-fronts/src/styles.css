@@ -1,6 +1,7 @@
 :root {
   --bg: #0e1117; --panel: #161b24; --line: #2a3140; --text: #e5e7eb; --dim: #9aa3b2;
   --marines: #dfe6ee; --wooka: #c8833a; --accent: #ff7a1a; --gold: #ffc640;
+  --f-marines: "Grenze Gotisch", serif; --f-wooka: "Love Ya Like A Sister", cursive; --f-title: Bungee, sans-serif; --f-lore: Babylonica, cursive;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -150,6 +151,35 @@ button.x { padding: 0 6px; background: none; border: none; color: var(--dim); }
 .spec { width: 100%; border-collapse: collapse; margin: 8px 0; }
 .spec th { text-align: left; font-weight: 400; color: var(--dim); }
 .spec td { text-align: right; font-variant-numeric: tabular-nums; padding: 2px 0; }
+.spec th .icon { vertical-align: -2px; }
+.modal-body > button .icon, .picks > button .icon { vertical-align: -3px; }
+
+/* The pick battle: two hull bars, the last round's two orders face up, the hand below. */
+.modal-body.wide { max-width: 560px; }
+.picks h2 small { color: var(--dim); font-weight: 400; font-size: 14px; margin-left: 6px; }
+.fleet-row { display: grid; grid-template-columns: 76px 1fr auto auto; align-items: center; gap: 8px; margin: 6px 0; }
+.fleet-row .who { display: flex; align-items: center; gap: 6px; }
+.fleet-row .hull { height: 10px; background: #222a37; border-radius: 5px; overflow: hidden; }
+.fleet-row .hull i { display: block; height: 100%; transition: width 0.5s ease-out; }
+.fleet-row .hull i.marines { background: var(--marines); } .fleet-row .hull i.wooka { background: var(--wooka); }
+.reveal { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 14px 0 4px; }
+.reveal .vs { color: var(--dim); font-size: 12px; text-transform: uppercase; }
+.order-card { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; min-width: 92px; padding: 10px 8px; border: 1px solid var(--line); border-radius: 8px; background: #1d2430; font-size: 13px; }
+.order-card.mine { border-color: var(--accent); }
+.order-card.flip { animation: flip 0.45s ease-out; }
+@keyframes flip { from { transform: rotateY(90deg); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .order-card.flip { animation: none; } .fleet-row .hull i { transition: none; } }
+.verdict { text-align: center; margin: 6px 0 12px; font-size: 13px; }
+.verdict.win { color: var(--gold); } .verdict.lose { color: var(--wooka); }
+.hand { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 10px 0; }
+.hand .order { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px; font-size: 12px; }
+.hand .order:not(:disabled):hover { border-color: var(--accent); }
+.hand .order .icon { vertical-align: 0; }
+.picks button.link { font-size: 13px; color: var(--dim); margin-left: 8px; }
+@media (max-width: 480px) { .hand { grid-template-columns: repeat(3, 1fr); } }
+.cascade { list-style: none; padding: 0; margin: 8px 0 14px; font-size: 13px; }
+.cascade li { display: flex; gap: 6px; align-items: flex-start; padding: 3px 0; color: var(--dim); }
+.cascade .icon { flex: none; margin-top: 2px; }
 
 .battle { display: none; position: fixed; inset: 0; z-index: 10; }
 body.in-battle .battle { display: block; }
@@ -252,9 +282,21 @@ body.space-2d #battle-view { cursor: crosshair; }
 .crosshair.hit::after { transform: rotate(90deg); }
 .b-feel { position: absolute; inset: 0; pointer-events: none; }
 .b-hurt { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 55%, rgb(180 0 0 / 0.65) 100%); }
-.b-heat { position: absolute; left: 50%; top: calc(50% + 18px); width: 64px; height: 4px; margin-left: -32px; background: rgb(0 0 0 / 0.45); border-radius: 2px; overflow: hidden; opacity: 0; transition: opacity 0.2s; }
-.b-heat i { display: block; height: 100%; background: linear-gradient(90deg, #ffd65a, #ff7a1a); }
-.b-heat.hot i { background: #ff3b3b; animation: hot-blink 0.25s steps(2) infinite; }
+/* The heat gauge: ten segments on an arc under the crosshair, lit yellow, amber, then red; locked,
+   the whole arc goes red and drains as it vents. With a heavy weapon it counts the ammo. */
+.b-heat { position: absolute; left: 50%; top: 50%; width: 100px; height: 100px; margin: -50px 0 0 -50px; opacity: 0; transition: opacity 0.2s; }
+.b-heat.show { opacity: 1; }
+.b-heat svg { width: 100%; height: 100%; overflow: visible; }
+.b-heat path { fill: none; stroke: rgb(255 255 255 / 0.16); stroke-width: 6; stroke-linecap: butt; filter: drop-shadow(0 0 1px #000); }
+.b-heat path.on { stroke: #ffd65a; } .b-heat path.amber { stroke: #ff9a2a; } .b-heat path.red { stroke: #ff3b2b; }
+.b-heat path.vent { stroke: #ff2a1a; } .b-heat path.ammo { stroke: #6ad8ff; }
+.b-heat.warm path.red, .b-heat.warm path.amber { animation: hot-blink 0.3s steps(2) infinite; }
+.b-heat.hot svg { animation: vent-shake 0.08s linear infinite; }
+.b-heat-label { position: absolute; left: 50%; top: 92px; transform: translateX(-50%); white-space: nowrap; font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: #ffd65a; text-shadow: 0 1px 3px #000; }
+.b-heat.hot .b-heat-label { color: #fff; background: rgb(170 20 10 / 0.8); padding: 1px 8px; border-radius: 3px; }
+.b-heat.warm .b-heat-label { color: #ff9a2a; animation: hot-blink 0.3s steps(2) infinite; }
+.crosshair.locked { border-color: #ff3b2b; opacity: 0.5; }
+@keyframes vent-shake { 0% { transform: translate(0.6px, 0); } 50% { transform: translate(-0.6px, 0.4px); } 100% { transform: translate(0, -0.4px); } }
 @keyframes hot-blink { 50% { opacity: 0.3; } }
 .b-toast { position: absolute; left: 50%; top: 32%; transform: translateX(-50%); color: #fff; font-weight: 900; font-size: 22px; letter-spacing: 0.06em; text-transform: uppercase; text-shadow: 0 2px 6px #000, 0 0 12px rgb(255 122 26 / 0.8); opacity: 0; white-space: nowrap; }
 .b-toast.show { animation: toast 1.5s ease-out forwards; }
@@ -281,3 +323,160 @@ body.space-2d #battle-view { cursor: crosshair; }
 .vote-go { cursor: none; }
 .mode-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: #ffd27a; }
 .mode-line .small { color: inherit; opacity: 0.8; }
+
+/* Choosing and placing a fleet */
+.steps { margin: 8px 0; padding-left: 20px; font-size: 13px; color: var(--dim); }
+.steps li { margin: 3px 0; } .steps b { color: var(--text); }
+.presets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
+button.preset { white-space: normal; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left; padding: 8px 10px; }
+.preset .p-name { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.preset .p-mix { display: inline-flex; gap: 10px; font-variant-numeric: tabular-nums; }
+.preset .p-mix .icon, .loadout .icon, .stepper .icon { vertical-align: -2px; }
+.custom { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.stepper { display: inline-flex; align-items: center; gap: 6px; } .stepper b { min-width: 2ch; text-align: center; font-variant-numeric: tabular-nums; }
+.step { margin: 0 0 8px; } .step b { color: var(--gold); margin-right: 4px; }
+.loadout { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 6px 0; }
+.loadout button.link { font-size: 12px; color: var(--dim); padding: 0; }
+.act.place { gap: 8px; } .act.place b { min-width: 2ch; text-align: center; font-variant-numeric: tabular-nums; }
+/* The mission: a card top left, a waypoint over the objective (at the screen's edge, pointing,
+   when it's off screen), a red banner when you're leaving the area, and a note when it changes. */
+.b-mission { position: absolute; top: 12px; left: 16px; min-width: 210px; max-width: 280px; background: rgb(0 0 0 / 0.55); border-left: 3px solid #ffd27a; border-radius: 6px; padding: 6px 10px; display: grid; gap: 2px; }
+.b-mission small { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.7; }
+.b-mission b { display: flex; gap: 6px; align-items: center; font-size: 15px; color: #ffd27a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.b-mission span { font-size: 12px; font-variant-numeric: tabular-nums; opacity: 0.9; }
+.b-mission.in { border-color: #7ad87a; }
+.b-mission.leaving { border-color: #ff4b3e; } .b-mission.leaving span { color: #ff8a80; font-weight: 700; }
+.b-way { position: absolute; left: 0; top: 0; width: 0; height: 0; color: #ffd27a; filter: drop-shadow(0 1px 2px #000); will-change: transform; }
+.b-way-icon { position: absolute; left: -14px; top: -14px; width: 28px; height: 28px; display: grid; place-items: center; border: 2px solid currentColor; border-radius: 50%; background: rgb(0 0 0 / 0.45); }
+.b-way b { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); font-size: 11px; font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; }
+.b-way-arrow { position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; display: none; transform-origin: 50% 50%; }
+.b-way-arrow svg { position: relative; left: 24px; }
+.b-way.off .b-way-arrow { display: block; }
+.b-way.here { color: #7ad87a; opacity: 0.6; }
+.b-leave { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; background: rgb(120 0 0 / 0.7); border: 1px solid #ff4b3e; border-radius: 6px; padding: 6px 14px; color: #fff; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; opacity: 0; }
+.b-leave.show { animation: leave-blink 0.9s steps(2) infinite; }
+@keyframes leave-blink { 0% { opacity: 1; } 100% { opacity: 0.55; } }
+.b-note { position: absolute; left: 50%; top: 40%; transform: translateX(-50%); color: #ffd27a; font-weight: 800; font-size: 18px; text-shadow: 0 2px 6px #000; opacity: 0; white-space: nowrap; }
+.b-note.show { animation: toast 2.5s ease-out forwards; }
+.b-hero .muted { display: inline-flex; opacity: 0.8; }
+@media (max-width: 760px) { .b-mission { top: 92px; min-width: 0; } }
+
+.tip { display: inline-flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; vertical-align: middle; }
+.tip-btn { padding: 2px; border: 0; background: none; color: var(--dim); cursor: pointer; line-height: 0; }
+.tip-btn:hover, .tip-btn[aria-expanded="true"] { color: var(--fg, #fff); }
+.tip-btn.warn { color: #f5b14c; }
+.tip-text { flex-basis: 100%; font-size: 12px; color: var(--dim); line-height: 1.4; }
+
+/* The squad's orders along the bottom, keys 1 to 4, the one in force lit with its time left. */
+.b-orders { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; gap: 6px; }
+.b-orders .ord { position: relative; display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; background: rgb(0 0 0 / 0.5); border: 1px solid rgb(255 255 255 / 0.15); border-radius: 4px; pointer-events: auto; cursor: help; overflow: hidden; }
+.b-orders kbd { font: 700 10px ui-monospace, monospace; opacity: 0.7; }
+.b-orders .ord.on { border-color: var(--gold); color: var(--gold); }
+.b-orders .ord i { position: absolute; left: 0; bottom: 0; height: 2px; background: currentColor; }
+.b-hero .stat { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.b-hero .arm { color: #6ad8ff; font-weight: 700; text-transform: capitalize; }
+
+/* Heavy weapons out on the field: a marker over each, with its name and how far. */
+.b-cache { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 4px; margin: -10px 0 0 -10px; color: #6ad8ff; font-size: 11px; font-weight: 700; white-space: nowrap; filter: drop-shadow(0 1px 2px #000); }
+.b-cache[hidden] { display: none; }
+
+/* Speech bubbles over comrades and cutscene actors. */
+.bubbles { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.bubble { position: absolute; left: 0; top: 0; max-width: 220px; padding: 5px 10px; border-radius: 10px; background: #f4f1e8; color: #16181c; font-size: 13px; font-weight: 600; line-height: 1.25; text-shadow: none; box-shadow: 0 2px 8px rgb(0 0 0 / 0.5); white-space: normal; text-align: center; animation: bubble-in 0.18s ease-out; }
+.bubble::after { content: ""; position: absolute; left: 50%; bottom: -7px; margin-left: -7px; border: 7px solid transparent; border-bottom: 0; border-top-color: #f4f1e8; }
+.bubble[hidden] { display: none; }
+.bubble.marines { font-family: var(--imperial-text); border-radius: 2px; background: #e8e4d6; border-left: 3px solid #b8922e; }
+.bubble.wooka { font-family: var(--tribal); font-size: 15px; background: #e9d3a8; color: #3a2210; border-radius: 14px 10px 16px 9px; }
+.bubble.wooka::after { border-top-color: #e9d3a8; }
+.bubble.marines::after { border-top-color: #e8e4d6; }
+@keyframes bubble-in { from { opacity: 0; scale: 0.6; } to { opacity: 1; scale: 1; } }
+
+/* Lettering: imperial for the Thunder Marines, tribal for the Wooka. */
+:root {
+  --imperial: "Cinzel", "Trajan Pro", "Times New Roman", serif;
+  --imperial-text: "Share Tech Mono", ui-monospace, monospace;
+  --tribal: "Caesar Dressing", "Papyrus", fantasy;
+}
+
+/* The Thunder Marines' HUD: black plates with gold rules and clipped corners, Roman capitals and
+   stamped numerals, like a regiment's honours board. */
+.hud-marines .battle-hud { font-family: var(--imperial-text); }
+.hud-marines .tickets, .hud-marines .b-clock, .hud-marines .b-hero, .hud-marines .b-mission, .hud-marines .post, .hud-marines .objective, .hud-marines .b-orders .ord, .hud-marines .b-beat .chip {
+  background: linear-gradient(180deg, rgb(18 18 22 / 0.88), rgb(6 6 8 / 0.82)); border-radius: 0; border: 1px solid #8a6d24;
+  box-shadow: inset 0 0 0 1px rgb(255 214 120 / 0.08), 0 2px 6px rgb(0 0 0 / 0.5);
+  clip-path: polygon(8px 0, calc(100% - 8px) 0, 100% 8px, 100% calc(100% - 8px), calc(100% - 8px) 100%, 8px 100%, 0 calc(100% - 8px), 0 8px);
+}
+.hud-marines .tickets { width: 190px; padding: 6px 12px 8px; }
+.hud-marines .b-posts, .hud-wooka .b-posts { top: 60px; } .hud-marines .b-beat, .hud-wooka .b-beat { top: 96px; }
+.hud-marines .tickets b, .hud-wooka .tickets b { white-space: nowrap; }
+.hud-marines .tickets b, .hud-marines .b-mission small, .hud-marines .post, .hud-marines .champ, .hud-marines .champ-on, .hud-marines .objective { font-family: var(--imperial); letter-spacing: 0.12em; text-transform: uppercase; }
+.hud-marines .tickets b { font-size: 11px; color: #e8c766; }
+.hud-marines .tickets span, .hud-marines .clock { font-family: var(--imperial-text); font-size: 17px; color: #fff3cf; }
+.hud-marines .b-clock { padding: 6px 16px; border-color: #c9a13a; }
+.hud-marines .b-clock::before, .hud-marines .b-clock::after { content: "\2726"; color: #c9a13a; margin: 0 6px; font-size: 10px; vertical-align: 2px; }
+.hud-marines .b-mission { border-left: 1px solid #8a6d24; padding: 8px 14px; }
+.hud-marines .b-mission b { font-family: var(--imperial); font-weight: 800; letter-spacing: 0.06em; color: #f0d27a; }
+.hud-marines .b-mission small { color: #c9a13a; opacity: 1; }
+.hud-marines .b-mission.in { border-color: #7ad87a; } .hud-marines .b-mission.leaving { border-color: #ff4b3e; }
+.hud-marines .post { font-size: 11px; padding: 3px 10px; border-bottom: 3px solid #555; }
+.hud-marines .post.marines { border-bottom-color: #e8c766; } .hud-marines .post.wooka { border-bottom-color: #c8833a; }
+.hud-marines .objective { color: #f0d27a; font-size: 12px; }
+.hud-marines .b-hero { padding: 8px 14px; gap: 14px; }
+.hud-marines .hp { height: 10px; border-radius: 0; background: #1c1a14; border: 1px solid #5a4818; }
+.hud-marines .hp i { background: linear-gradient(90deg, #c9a13a, #f0d27a); }
+.hud-marines .champ { border-radius: 0; background: rgb(201 161 58 / 0.12); color: #e8c766; }
+.hud-marines .champ-on { border-radius: 0; background: linear-gradient(180deg, #f0d27a, #b8922e); }
+.hud-marines .b-feed li { font-size: 12px; letter-spacing: 0.02em; color: #e9e2c8; }
+.hud-marines .b-feed li::before { content: "+++ "; color: #c9a13a; }
+.hud-marines .b-orders .ord.on { border-color: #f0d27a; color: #f0d27a; }
+.hud-marines .b-note, .hud-marines .b-toast { font-family: var(--imperial); letter-spacing: 0.1em; }
+.hud-marines .b-toast { text-shadow: 0 2px 6px #000, 0 0 12px rgb(240 210 122 / 0.8); }
+
+/* The Wooka's HUD: hide and bark, lashed edges, daubed lettering. */
+.hud-wooka .battle-hud { font-family: var(--tribal); letter-spacing: 0.03em; }
+.hud-wooka .tickets, .hud-wooka .b-clock, .hud-wooka .b-hero, .hud-wooka .b-mission, .hud-wooka .post, .hud-wooka .objective, .hud-wooka .b-orders .ord, .hud-wooka .b-beat .chip {
+  background: radial-gradient(ellipse at 30% 20%, rgb(110 70 34 / 0.92), rgb(52 30 14 / 0.9)); color: #f6e2b6;
+  border: 2px dashed rgb(232 190 120 / 0.55); border-radius: 18px 8px 16px 10px; box-shadow: 0 2px 6px rgb(0 0 0 / 0.55);
+}
+.hud-wooka .tickets { width: 170px; padding: 5px 12px 7px; }
+.hud-wooka .tickets b { font-size: 15px; color: #ffd08a; }
+.hud-wooka .tickets span, .hud-wooka .clock { font-size: 19px; }
+.hud-wooka .b-mission b { color: #ffd08a; font-size: 17px; }
+.hud-wooka .b-mission small { font-size: 12px; letter-spacing: 0.08em; }
+.hud-wooka .post { font-size: 14px; border-bottom-width: 4px; }
+.hud-wooka .hp { height: 10px; border-radius: 6px; background: #2a1808; }
+.hud-wooka .hp i { background: linear-gradient(90deg, #c8833a, #ffb45a); }
+.hud-wooka .b-feed li { font-size: 15px; color: #f6e2b6; }
+.hud-wooka .champ { background: rgb(200 131 58 / 0.2); color: #ffd08a; border-radius: 10px; }
+.hud-wooka .champ-on { border-radius: 10px; background: #c8833a; color: #2a1808; }
+.hud-wooka .b-note, .hud-wooka .b-toast, .hud-wooka .b-leave { font-family: var(--tribal); }
+
+/* A cutscene: letterbox bars, a title card and a caption in the storyteller's lettering. */
+.battle.cutting .battle-hud, .battle.cutting .b-feel, .battle.cutting .crosshair { display: none; }
+.cut { position: absolute; inset: 0; pointer-events: none; z-index: 3; color: #fff; }
+.cut-bar { position: absolute; left: 0; right: 0; height: 11vh; background: #000; animation: bar-in 0.5s ease-out; }
+.cut-bar.top { top: 0; } .cut-bar.bottom { bottom: 0; }
+@keyframes bar-in { from { height: 0; } }
+.cut-title { position: absolute; left: 0; right: 0; top: 36%; text-align: center; opacity: 0; transition: opacity 0.4s; text-shadow: 0 2px 10px #000; }
+.cut-title.show { opacity: 1; }
+.cut-title b { display: block; font-size: clamp(28px, 5.2vw, 64px); letter-spacing: 0.14em; }
+.cut-title small { display: block; margin-top: 8px; font-size: clamp(12px, 1.4vw, 17px); letter-spacing: 0.2em; opacity: 0.85; }
+.cut-caption { position: absolute; left: 50%; bottom: calc(11vh + 14px); transform: translateX(-50%); max-width: min(760px, 90vw); text-align: center; opacity: 0; transition: opacity 0.25s; text-shadow: 0 1px 4px #000; }
+.cut-caption.show { opacity: 1; }
+.cut-caption b { display: block; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.8; }
+.cut-caption b:empty { display: none; }
+.cut-caption span { font-size: clamp(15px, 1.7vw, 21px); }
+.cut-skip { position: absolute; right: 18px; bottom: calc(11vh - 30px); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.55; }
+.cut.marines .cut-title b { font-family: var(--imperial); font-weight: 800; color: #f0d27a; }
+.cut.marines .cut-title b::before, .cut.marines .cut-title b::after { content: " \2726 "; font-size: 0.4em; vertical-align: 0.5em; color: #c9a13a; }
+.cut.marines .cut-title small, .cut.marines .cut-caption { font-family: var(--imperial-text); }
+.cut.marines .cut-caption b { font-family: var(--imperial); color: #e8c766; }
+.cut.wooka .cut-title b, .cut.wooka .cut-title small, .cut.wooka .cut-caption { font-family: var(--tribal); }
+.cut.wooka .cut-title b { color: #ffcf86; letter-spacing: 0.08em; transform: rotate(-2deg); }
+.cut.wooka .cut-caption b { color: #ffcf86; }
+
+/* Type: Bungee for the game's own titles, Grenze Gotisch for the Marines, Love Ya Like A Sister for the Wooka, Babylonica for troop notes. */
+.panel h1, .panel h2, .panel h3, .modal-body h2, .modal-body h3, .vote-box h2, .ov-head, button.next, .b-toast { font-family: var(--f-title); font-weight: 400; }
+.marines, .tickets.marines b { font-family: var(--f-marines); }
+.wooka, .tickets.wooka b, .tagline, .flavor { font-family: var(--f-wooka); }
+.b-feed { font-family: var(--f-lore); font-size: 18px; }

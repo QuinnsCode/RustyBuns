@@ -127,6 +127,12 @@ try {
       must((await card()) === title[c.you], `got "${await card()}"`);
     });
 
+    await check("human", `${c.id}: the scrub bar jumps back and pauses autoplay`, async () => {
+      await click(".tour [data-auto]"); await click(".tour [data-next]");
+      await page(`(() => { const r = document.querySelector(".tour-scrub"); r.value = String(+r.value - 1); r.dispatchEvent(new Event("change")); })()`);
+      await until("scrubbed", `document.querySelector(".tour b")?.textContent === ${JSON.stringify(title[0])} && !JSON.parse(sessionStorage.getItem("cs_tour")).auto`);
+    });
+
     // Autoplay: a cursor does the steps, and stops where a person must act.
     await check("autoplay", `${c.id}: Play turns it on and the cursor appears`, async () => {
       await scene(`${c.id}:1-${c.steps.length}`); await click(".tour [data-auto]");
@@ -166,9 +172,20 @@ try {
       must(await page(`!document.querySelector(".tour")`), "the card is still up");
     });
   }
+
+  // The demos page: every chapter is a card, and Play starts the tour's own autoplay on it.
+  await open();
+  await check("demos", "the page lists every chapter and Play runs the desktop one by itself", async () => {
+    await page(`location.hash = "#/demos"`);
+    await until("the cards", `document.querySelectorAll("[data-demo]").length === TOUR_CHAPTERS.length`);
+    await click(`[data-demo="desktop"]`);
+    await until("the first step", `document.querySelector(".tour b")?.textContent === "The same app on your machine"`);
+    await until("autoplay", `JSON.parse(sessionStorage.getItem("cs_tour")).auto === true`);
+    await until("step 2", `document.querySelector(".tour b")?.textContent === "It syncs out, both ways"`, 25000);
+  });
 } finally {
   ws.close(); chrome.kill(); shell.stop?.();
   if (!process.argv.includes("--keep")) rmSync(dir, { recursive: true, force: true });
 }
-console.log(failed ? `\n${failed} failed` : `\nall ${CHAPTERS.length * 9} passed`);
+console.log(failed ? `\n${failed} failed` : `\nall ${CHAPTERS.length * 9 + 1} passed`);
 process.exit(failed ? 1 : 0);

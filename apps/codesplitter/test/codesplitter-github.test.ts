@@ -245,6 +245,14 @@ describe("game", () => {
     expect(found[1]!.lines).toEqual(["const isFoo = (x: unknown): x is { a: string } =>", "  typeof x === \"object\" &&", "  x !== null;"]);
   });
 
+  test("noodles: a guard of Record<string, unknown | undefined> is the big one whatever its name", () => {
+    const found = noodles([
+      "const isBag = (x: unknown): x is Record<string, undefined> => typeof x === \"object\";",
+      "const isMap = (x: unknown): x is Record<string, string> => typeof x === \"object\";",
+    ].join("\n"));
+    expect(found.map((n) => [n.name, n.record])).toEqual([["isBag", true], ["isMap", false]]);
+  });
+
   test("the room on a level's page: lobby, start, relay, clubbing, round over", async () => {
     const call = await local();
     const join = async (user: string) => {

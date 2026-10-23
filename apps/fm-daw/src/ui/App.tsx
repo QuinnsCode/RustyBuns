@@ -10,8 +10,10 @@ import { PatchEditor } from "./PatchEditor.tsx";
 import { Keys } from "./Keys.tsx";
 import { Meter } from "./Meter.tsx";
 import { Bench } from "./Bench.tsx";
-import { apply, audible, loopBeats, BAR_CHOICES, type Note, type Op, type Project } from "../project.ts";
+import { apply, audible, loopBeats, BAR_CHOICES, BEATS_PER_BAR, type Note, type Op, type Project, type TrackDoc } from "../project.ts";
 import { demoProject, KIT, randomPatch } from "../presets.ts";
+import { GROOVES, KITS, applyGroove, applyKit } from "../drums.ts";
+import { SONGS } from "../songs.ts";
 import { GRIDS, quantize, quantizeNote } from "../quantize.ts";
 import { TsEngine, type FmEngine } from "../engine/engine.ts";
 import { WasmEngine, instantiateFm } from "../engine/wasm.ts";
@@ -28,14 +30,28 @@ import "@fontsource/ibm-plex-mono/500.css";
 import "./app.css";
 
 const UNDO_LIMIT = 100;
+const PAGE_BEATS = 8 * BEATS_PER_BAR;
+/** A song (past 32 bars) bounces once; a loop four times. */
+const bounceLoops = (p: Project) => (p.bars > 32 ? 1 : 4);
+
+function Pager(props: { page: number; pages: number; onPage(p: number): void }) {
+  const bar = props.page * 8 + 1;
+  return (
+    <div className="machine" aria-label="Page">
+      <button className="ghost" onClick={() => props.onPage(Math.max(props.page - 1, 0))} disabled={props.page === 0} title="Earlier 8 bars">‹</button>
+      <span className="silk">Bars {bar}–{bar + 7} of {props.pages * 8}</span>
+      <button className="ghost" onClick={() => props.onPage(Math.min(props.page + 1, props.pages - 1))} disabled={props.page === props.pages - 1} title="Later 8 bars">›</button>
+    </div>
+  );
+}
 const GROUP_MS = 800;
 const COUNT_IN = 4;
 
 /** Everything the worklet needs to mirror a project. */
 function loadMsg(p: Project): ToWorklet {
   return {
-    t: "load", params: p.tracks.flatMap((t) => t.params), notes: p.tracks.map((t) => t.notes),
-    bpm: p.bpm, swing: p.swing, loopBeats: loopBeats(p), audible: audible(p),
+    t: "load", params: p.tracks.flatMap((t) => t.params), notes: p.tracks.map((t) => t.notes), auto: p.tracks.map((t) => t.auto ?? []),
+    bpm: p.bpm, swing: p.swing, loopBeats: loopBeats(p), audible: audible(p), space: p.space,
   };
 }
 
@@ -45,6 +61,9 @@ function opMsg(op: Op, next: Project): ToWorklet {
     case "param": return { t: "param", track: op.track, i: op.i, v: next.tracks[op.track].params[op.i] };
     case "notes": return { t: "notes", track: op.track, notes: next.tracks[op.track].notes };
     case "track": return { t: "audible", mask: audible(next) };
+    case "global":
+      if (op.space !== undefined && op.bpm === undefined && op.swing === undefined && op.bars === undefined) return { t: "space", amount: next.space };
+      return loadMsg(next);
     default: return loadMsg(next);
   }
 }
@@ -70,6 +89,7 @@ export function App() {
   const [midiDevices, setMidiDevices] = useState<string[]>([]);
   const [netStatus, setNetStatus] = useState<NetStatus>({ state: "connecting", peers: 0 });
   const [view, setView] = useState<"pattern" | "engines">("pattern");
+  const [page, setPage] = useState(0);
   const [bounce, setBounce] = useState<{ busy: boolean; path?: string; saved?: boolean; error?: string }>({ busy: false });
   const transportOn = useTick((t) => t.playing || t.countIn > 0);
   const counting = useTick((t) => (t.countIn > 0 ? Math.ceil(t.countIn) : 0));
@@ -222,8 +242,8 @@ export function App() {
       if (e.code === "KeyR") { toggleRecord(); return; }
       if (e.code === "KeyZ") { setOctave((o) => Math.max(o - 1, -3)); return; }
       if (e.code === "KeyX") { setOctave((o) => Math.min(o + 1, 3)); return; }
-      const digit = /^Digit([1-8])$/.exec(e.code);
-      if (digit) { setSelected(Number(digit[1]) - 1); return; }
+      const digit = /^Digit([0-9])$/.exec(e.code);
+      if (digit) { setSelected(digit[1] === "0" ? 9 : Number(digit[1]) - 1); return; }
       const semi = QWERTY[e.code];
       if (semi !== undefined) {
         e.preventDefault();
@@ -270,7 +290,7 @@ export function App() {
         const bytes = await fetchWasm();
         if (bytes) e = new WasmEngine(await instantiateFm(bytes), sr);
       }
-      const pcm = renderProject(e, p, sr, loopSeconds(p, 4), dbToGain(-6));
+      const pcm = renderProject(e, p, sr, loopSeconds(p, bounceLoops(p)), dbToGain(-6));
       e.free?.();
       const wav = encodeWav(pcm, sr);
       try {
@@ -290,6 +310,14 @@ export function App() {
   const t = project.tracks[selected];
   const L = loopBeats(project);
   const grid = GRIDS[gridIdx];
+  // Long songs are edited 8 bars at a time: the grid and roll see a window of
+  // the timeline, and edits are mapped back into the whole thing.
+  const pages = Math.max(1, Math.ceil(L / PAGE_BEATS));
+  const pg = Math.min(page, pages - 1);
+  const win = { from: pg * PAGE_BEATS, span: Math.min(PAGE_BEATS, L - pg * PAGE_BEATS) };
+  const inWin = (n: Note) => n.s >= win.from && n.s < win.from + win.span;
+  const windowed = (tr: TrackDoc): TrackDoc => ({ ...tr, notes: tr.notes.filter(inWin).map((n) => ({ ...n, s: n.s - win.from })) });
+  const unwindow = (tr: TrackDoc, ns: Note[]) => [...tr.notes.filter((n) => !inWin(n)), ...ns.map((n) => ({ ...n, s: n.s + win.from }))];
   const color = TRACK_COLORS[selected];
 
   return (
@@ -297,8 +325,15 @@ export function App() {
       <header className="top">
         <div className="brand">
           <h1>FM DAW</h1>
-          <span className="dim">8 tracks · 4-op FM · Rust or TS</span>
+          <span className="dim">12 tracks · FM or analog · Rust or TS</span>
         </div>
+
+        <label className="field"><span className="silk">Song</span>
+          <select value="" onChange={(e) => { const s = SONGS[Number(e.currentTarget.value)]; if (s) commit({ t: "replace", project: s.make() }); }}>
+            <option value="" disabled>Load a song…</option>
+            {SONGS.map((s, i) => <option key={s.name} value={i}>{s.name}</option>)}
+          </select>
+        </label>
 
         <div className="transport" aria-label="Transport">
           <button className={transportOn ? "play on" : "play"} onClick={transportOn ? stop : play} disabled={!audio} title="Play / stop (Space)">
@@ -320,8 +355,13 @@ export function App() {
             <input type="range" min={0} max={60} value={Math.round(project.swing * 100)}
               onChange={(e) => commit({ t: "global", swing: Number(e.currentTarget.value) / 100 }, { group: "swing" })} />
           </label>
+          <label className="field" title="Reverb and dotted-eighth delay on everything above the bass"><span className="silk">Space {Math.round(project.space * 100)}%</span>
+            <input type="range" min={0} max={100} value={Math.round(project.space * 100)}
+              onChange={(e) => commit({ t: "global", space: Number(e.currentTarget.value) / 100 }, { group: "space" })} />
+          </label>
           <div className="field"><span className="silk">Bars</span>
             <div className="seg">
+              {!(BAR_CHOICES as readonly number[]).includes(project.bars) && <button className="on">{project.bars}</button>}
               {BAR_CHOICES.map((b) => (
                 <button key={b} className={project.bars === b ? "on" : ""} onClick={() => commit({ t: "global", bars: b })}
                   title={b < project.bars ? "Notes past the new end are removed (undo brings them back)" : undefined}>{b}</button>
@@ -352,7 +392,7 @@ export function App() {
           {project.tracks.map((tr, i) => (
             <div key={i} className={i === selected ? "track sel" : "track"} style={{ "--track": TRACK_COLORS[i] } as React.CSSProperties}>
               <button className="track-name" onClick={() => { setSelected(i); }} onDoubleClick={() => audition(i)}>
-                <kbd>{i + 1}</kbd> {tr.name}<span className="kind">{tr.kind}</span>
+                {i < 10 && <kbd>{(i + 1) % 10}</kbd>} {tr.name}<span className="kind">{tr.kind}</span>
               </button>
               <button className={tr.mute ? "ms on" : "ms"} aria-pressed={tr.mute} onClick={() => commit({ t: "track", track: i, mute: !tr.mute })} title="Mute">M</button>
               <button className={tr.solo ? "ms solo on" : "ms solo"} aria-pressed={tr.solo} onClick={() => commit({ t: "track", track: i, solo: !tr.solo })} title="Solo">S</button>
@@ -384,15 +424,32 @@ export function App() {
 
           {view === "engines" ? (
             <Bench project={project} wasm={fetchWasm} />
-          ) : t.kind === "drum" ? (
-            <DrumGrid tracks={project.tracks} colors={TRACK_COLORS} selected={selected} loopBeats={L}
+          ) : t.kind === "drum" ? (<>
+            <div className="machine" aria-label="Drum machine">
+              <span className="silk">Drum machine</span>
+              <label className="field inline"><span className="silk">Groove</span>
+                <select value="" onChange={(e) => { const g = GROOVES[Number(e.currentTarget.value)]; if (g) commit({ t: "replace", project: applyGroove(proj.current, g) }); }}>
+                  <option value="" disabled>Write a groove…</option>
+                  {GROOVES.map((g, i) => <option key={g.name} value={i}>{g.name} · {g.bpm}</option>)}
+                </select>
+              </label>
+              <label className="field inline"><span className="silk">Kit</span>
+                <select value="" onChange={(e) => { const k = KITS[Number(e.currentTarget.value)]; if (k) commit({ t: "replace", project: applyKit(proj.current, k) }); }}>
+                  <option value="" disabled>Swap the kit…</option>
+                  {KITS.map((k, i) => <option key={k.name} value={i}>{k.name}</option>)}
+                </select>
+              </label>
+            </div>
+            {pages > 1 && <Pager page={pg} pages={pages} onPage={setPage} />}
+            <DrumGrid tracks={project.tracks.map(windowed)} colors={TRACK_COLORS} selected={selected} loopBeats={win.span} from={win.from}
               onSelect={setSelected} onAudition={audition}
-              onNotes={(i, notes) => commit({ t: "notes", track: i, notes })} />
-          ) : (
-            <PianoRoll key={selected} track={t} color={color} loopBeats={L} grid={Math.min(grid.beats, 0.25)}
-              onNotes={(notes: Note[]) => commit({ t: "notes", track: selected, notes })}
+              onNotes={(i, notes) => commit({ t: "notes", track: i, notes: unwindow(project.tracks[i], notes) })} />
+          </>) : (<>
+            {pages > 1 && <Pager page={pg} pages={pages} onPage={setPage} />}
+            <PianoRoll key={selected} track={windowed(t)} color={color} loopBeats={win.span} from={win.from} grid={Math.min(grid.beats, 0.25)}
+              onNotes={(notes: Note[]) => commit({ t: "notes", track: selected, notes: unwindow(t, notes) })}
               onPreview={(m, on) => (on ? noteOn(`roll:${m}`, selected, m, 0.8) : noteOff(`roll:${m}`))} />
-          )}
+          </>)}
 
           <PatchEditor track={t} color={color}
             onParam={(i, v) => commit({ t: "param", track: selected, i, v }, { group: `p:${selected}:${i}` })}
@@ -415,7 +472,7 @@ export function App() {
         {bounce.path && <span className="dim">{bounce.path}</span>}
         {bounce.saved && <button className="ghost" onClick={() => reveal(bounce.path!)}>Show</button>}
         {bounce.error && <span className="err">{bounce.error}</span>}
-        <button className="ghost" onClick={doBounce} disabled={bounce.busy}>{bounce.busy ? "Bouncing…" : "Bounce 4 loops to WAV"}</button>
+        <button className="ghost" onClick={doBounce} disabled={bounce.busy}>{bounce.busy ? "Bouncing…" : bounceLoops(project) === 1 ? "Bounce the song to WAV" : "Bounce 4 loops to WAV"}</button>
       </footer>
 
       {!audio && (

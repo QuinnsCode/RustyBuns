@@ -2,7 +2,7 @@
 // the same indices and the same RANGES; set_param clamps to them, so no slider,
 // preset, MIDI CC or bad message can push a value outside what's been heard.
 
-export const TRACKS = 8;
+export const TRACKS = 12;
 export const OPS = 4;
 export const OP_FIELDS = 6; // ratio, level, attack, decay, sustain, release
 
@@ -23,8 +23,41 @@ export const P = {
   GAIN: 31,
   PAN: 32,
   VEL: 33,
+  // The analog voice (MODE 1): two detuned saws and a sub through a resonant
+  // low-pass, a filter envelope, one free-running LFO per track, glide and
+  // drive. Its amp envelope is operator 1's attack/decay/sustain/release and
+  // its level is operator 1's level, so note-off works the same in both modes.
+  MODE: 34,
+  DETUNE: 35,
+  SUB: 36,
+  CUTOFF: 37,
+  RES: 38,
+  FENV_AMT: 39,
+  FENV_ATTACK: 40,
+  FENV_DECAY: 41,
+  LFO_RATE: 42,
+  LFO_CUT: 43,
+  LFO_PITCH: 44,
+  GLIDE: 45,
+  DRIVE: 46,
+  /** How much of this track goes to Space (the shared reverb and delay). */
+  SEND: 47,
+  /**
+   * Velocity to tone: how much harder hits brighten the note. Analog: the
+   * cutoff moves up to 3 octaves either way. FM: modulation depth (and
+   * feedback) scales from nothing to double.
+   */
+  VEL_TONE: 48,
+  /**
+   * The track's own filters, after its voices, before gain and pan. 0 is open
+   * (and costs nothing). HICUT closes a low-pass from 20 kHz down to 20 Hz;
+   * LOCUT raises a high-pass from 20 Hz up to 20 kHz. Automate them for
+   * sweeps across sections, or set them to carve room for another part.
+   */
+  HICUT: 49,
+  LOCUT: 50,
 } as const;
-export const NPARAMS = 34;
+export const NPARAMS = 51;
 
 const OP_RANGES: [number, number][] = [[0.25, 16], [0, 1], [0.0005, 4], [0.005, 8], [0, 1], [0.005, 8]];
 export const RANGES: [number, number][] = [
@@ -39,6 +72,23 @@ export const RANGES: [number, number][] = [
   [0, 1],        // gain
   [-1, 1],       // pan
   [0, 1],        // velocity sensitivity
+  [0, 1],        // mode: 0 FM, 1 analog
+  [0, 1],        // saw detune, 0..50 cents either way
+  [0, 1],        // sub (sine, octave down) level
+  [0, 1],        // cutoff: 20 Hz * 2^(10 * x)
+  [0, 1],        // resonance
+  [-1, 1],       // filter envelope amount, +-6 octaves
+  [0.0005, 4],   // filter envelope attack, s
+  [0.005, 8],    // filter envelope decay, s
+  [0.02, 20],    // LFO rate, Hz
+  [0, 1],        // LFO to cutoff, +-4 octaves
+  [0, 1],        // LFO to pitch, +-half a semitone
+  [0, 1],        // glide, s
+  [0, 1],        // drive after the filter
+  [0, 1],        // send to Space
+  [0, 1],        // velocity to tone
+  [0, 1],        // hi-cut: 0 open, 1 closed down to 20 Hz
+  [0, 1],        // low-cut: 0 open, 1 up to 20 kHz
 ];
 
 export const clampParam = (i: number, v: number) => {

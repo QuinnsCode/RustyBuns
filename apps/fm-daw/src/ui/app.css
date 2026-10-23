@@ -102,6 +102,7 @@ h2 { font: 600 1.2rem/1.1 var(--silk); margin: 0; }
 .toolbar .check { padding: 0; }
 
 /* drum grid */
+.machine { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--edge); border-radius: 6px; }
 .grid-wrap { display: grid; gap: 6px; padding: 12px; background: var(--panel); border: 1px solid var(--edge); border-radius: 6px; overflow-x: auto; }
 .drum-row { display: grid; grid-template-columns: 76px 1fr; gap: 10px; align-items: center; min-width: 640px; }
 .row-name { text-align: left; padding: 4px 8px; border: 0; border-left: 3px solid var(--track); background: transparent; font: 600 .95rem var(--silk); letter-spacing: .03em; }

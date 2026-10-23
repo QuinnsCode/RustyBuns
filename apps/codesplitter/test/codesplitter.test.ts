@@ -414,6 +414,21 @@ describe("artifacts", () => {
     expect(week.command).toMatch(/^git clone -b main /);
     expect((await call(null, "/api/repos/ana/dig/share?branch=--upload-pack=x")).status).toBe(400);
   });
+
+  test("on a private repo a crew member's share link lasts an hour at most, the owner's a week", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/login", { name: "ana" });
+    await post(call, "bo", "/api/login", { name: "bo" });
+    await post(call, "ana", "/api/repos", { name: "dig" });
+    await post(call, "ana", "/api/repos/ana/dig/files", { path: "README", content: "found it" });
+    await post(call, "ana", "/api/repos/ana/dig/do/commit?path=README", { message: "first" });
+    await call("ana", "/api/repos/ana/dig", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ visibility: "private" }) });
+    await post(call, "ana", "/api/repos/ana/dig/collaborators", { name: "bo" });
+    const crew = await (await call("bo", "/api/repos/ana/dig/share?ttl=99999999")).json() as any;
+    expect(crew.ttl).toBe(3600);
+    expect((await (await call("bo", "/api/repos/ana/dig/share")).json() as any).ttl).toBe(3600);
+    expect((await (await call("ana", "/api/repos/ana/dig/share?ttl=99999999")).json() as any).ttl).toBe(7 * 86400);
+  });
 });
 
 describe("levels", () => {
@@ -678,6 +693,7 @@ describe("account email", () => {
     expect(ruleFor("PUT", ["", "repos", "o", "r", "deploy"])).toBeNull();
     expect(ruleFor("PUT", ["", "repos", "o", "r", "deploy", "key"])).toBeNull();
     expect(ruleFor("GET", ["", "repos", "o", "r", "preview"])).toBeNull();
+    expect(ruleFor("GET", ["", "repos", "o", "r", "gitpath"])).toBe("github");
     expect(ruleFor("PUT", ["", "repos", "o", "r", "deps"])).toBeNull();
   });
 
@@ -986,8 +1002,8 @@ describe("rate limits", () => {
       ws.onMessage(JSON.stringify({ type: "ops", id, ops }));
       for (const end = performance.now() + 15_000; performance.now() < end;) { const a = got.find((m) => m.id === id); if (a) return a; await Bun.sleep(5); }
     };
-    // An op that makes the file throw is a nack saying why, not silence.
-    expect(await edit(1, [null])).toMatchObject({ type: "nack", error: expect.stringMatching(/couldn't take it/) });
+    // An op the file can't read is a nack saying why, not silence.
+    expect(await edit(1, [null])).toMatchObject({ type: "nack", error: "ops[0]: an object" });
     // D1 down under the edit limit: the edit still lands.
     const prepare = call.env.DB.prepare.bind(call.env.DB);
     call.env.DB.prepare = (sql: string) => { if (/limit_rules/.test(sql)) throw new Error("D1 is down"); return prepare(sql); };

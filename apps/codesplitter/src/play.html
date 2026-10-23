@@ -158,7 +158,7 @@ if (location.hash.startsWith("#c/")) {
     <button data-mode="removed">smash the removed<small id="diff-name">pick a diff in a file's History</small></button>
   </div>
   <ul id="lobby-players"></ul>
-  <div class="row"><button class="primary" id="start">start now</button><button id="ready">ready</button><span class="muted" id="lobby-msg"></span></div>
+  <div class="row"><button class="primary" id="start">start now</button><button id="ready">ready</button><button id="invite" title="copy a link that drops others into this room, in this mode">invite others</button><button id="share-repo" title="copy a link to this repo's page, to share the repo itself">share repo</button><span class="muted" id="lobby-msg"></span></div>
   <div class="keys touch-only">left stick: walk (push it all the way to run) · drag anywhere else: look · <b>swat</b>: tap to swat, hold to press the README into a line · <b>jump</b><br>scraps on the floor split again when you swat them · walk into a doorway to go into that folder</div>
   <div class="keys mouse-only"><kbd>WASD</kbd> move · <kbd>mouse</kbd> look · <kbd>click</kbd> swat · <kbd>hold</kbd> press the README into a line · <kbd>space</kbd> jump · <kbd>shift</kbd> run<br>no mouse? <kbd>↑</kbd><kbd>↓</kbd> walk · <kbd>←</kbd><kbd>→</kbd> turn · <kbd>PgUp</kbd><kbd>PgDn</kbd> look · <kbd>space</kbd> swat (hold to press) · <kbd>J</kbd> jump<br>let go of a press in the orange sweet spot to split the line clean · low birds go for your legs<br>walk into a doorway to go into that folder · club other players too</div>
   <p class="exits"><a class="to-repo" href="/">← back to the site</a><a class="to-me" hidden></a></p>
@@ -176,7 +176,7 @@ if (location.hash.startsWith("#c/")) {
 import * as THREE from "three";
 
 // #c/<name> is someone's code city, a mode of its own (city.js): the backrooms never start.
-if (location.hash.startsWith("#c/")) { await import("/city.js"); await new Promise(() => {}); }
+if (location.hash.startsWith("#c/")) { import("/found.js").then(({ found }) => found("city")); await import("/city.js").catch((e) => { console.error(e); window.cityLoaded?.(); document.body.insertAdjacentHTML("beforeend", `<p style="position:fixed;inset:auto 16px 16px;color:#e6edf8;font:14px ui-monospace,monospace;text-align:center">the city couldn't start on this device</p>`); }); await new Promise(() => {}); }
 
 // ---- where we are -------------------------------------------------------------
 // #l/<level> or #r/<owner>/<repo>, and for a diff to smash ?path=&from=&to=; a send-off adds ?mode=wreck (the wrecking room)
@@ -566,6 +566,7 @@ async function enter(path, from, built) {
   const w = built ?? await fetchRoom(path).catch((e) => { banner("locked", e.message); return null; });
   if (!w) return false;
   buildRoom(path, w, w.minPanels);
+  opening = null;
   // Come in through the door you used: going down, the "../" door; going up, the folder you left.
   const door = here.doors.find((d) => !d.up && d.path === from) ?? here.doors.find((d) => d.up);
   if (door) {
@@ -1065,6 +1066,10 @@ function updateBreaking(dt) {
 const bosses = [];
 const awoken = new Set();   // "path:start" of every guard that has come for you this round
 const MAX_BOSSES = 2;
+// The opening room's welcome: one record guard comes at you at once, two when the room holds over a dozen.
+// Set when a round starts; leaving the room clears it.
+let opening = null;
+const DOZEN = 12;
 
 /** The signature, then a strand per line; a short guard is torn into strands of its own code. */
 function noodleLines(n) {
@@ -1146,9 +1151,11 @@ function snap(b, dir) {
 
 function updateBosses(dt, time) {
   // Walk into a room whose files hold guards and they wake, a couple at a time. Not in a panic room.
-  if (mode === "horde" && player.alive && here && bosses.length < MAX_BOSSES)
-    for (const f of here.files) for (const n of f.file.noodles ?? [])
-      if (bosses.length < MAX_BOSSES && !awoken.has(`${f.file.path}:${n.start}`)) awaken(f, n);
+  const cap = opening ?? MAX_BOSSES;
+  if (mode === "horde" && player.alive && here && bosses.length < cap)
+    // Record guards first.
+    for (const rec of [true, false]) for (const f of here.files) for (const n of f.file.noodles ?? [])
+      if (n.record === rec && bosses.length < cap && !awoken.has(`${f.file.path}:${n.start}`)) awaken(f, n);
   let nearest = Infinity;
   for (const b of bosses) {
     b.hurtT -= dt;
@@ -1424,6 +1431,26 @@ $("#modes").addEventListener("click", (e) => {
   if (ws) return send({ t: "mode", mode: b.dataset.mode, diff });
   mode = b.dataset.mode; renderModes();
 });
+/** A link into this very room: the same game, the mode picked, the folder you stand in (or the diff being smashed). */
+const inviteLink = () => {
+  const q = new URLSearchParams();
+  if (mode === "removed" && diff) { q.set("path", diff.path); q.set("from", diff.from); q.set("to", diff.to); }
+  else if (mode === "wreck") q.set("mode", "wreck");
+  if (here?.path) q.set("room", here.path);
+  return `${location.origin}/play.html#${room}${q.size ? `?${q}` : ""}`;
+};
+$("#invite").addEventListener("click", async () => {
+  const url = inviteLink();
+  try { await navigator.clipboard.writeText(url); $("#lobby-msg").textContent = "Invite link copied. Send it to anyone."; }
+  catch { window.prompt("Copy this invite link", url); }
+});
+/** A link to the repo's own page (or the level's), not the game room. */
+const repoLink = () => `${location.origin}/#/${room.startsWith("l/") ? "l" : "r"}/${room.slice(2)}`;
+$("#share-repo").addEventListener("click", async () => {
+  const url = repoLink();
+  try { await navigator.clipboard.writeText(url); $("#lobby-msg").textContent = "Repo link copied. Send it to anyone."; }
+  catch { window.prompt("Copy this repo link", url); }
+});
 $("#start").addEventListener("click", () => { sound.init(); ws ? send({ t: "start" }) : begin(Math.floor(Math.random() * 2 ** 31), Date.now() + 3000); });
 $("#ready").addEventListener("click", () => { sound.init(); send({ t: "ready" }); });
 $("#again").addEventListener("click", () => { $("#over").hidden = true; $("#lobby").hidden = false; });
@@ -1447,6 +1474,9 @@ async function begin(seed, startAt) {
     return;
   }
   for (const l of here.lines) if (!l.mesh.parent) l.wall.add(l.mesh);
+  const records = here.files.reduce((n, f) => n + (f.file.noodles ?? []).filter((g) => g.record).length, 0);
+  opening = records > DOZEN ? 2 : records ? 1 : null;
+  import("/found.js").then(({ found }) => found(mode)).then((r) => { if (r?.all) banner("ALL FOUND", "the badge is on your profile", 4); });
   // Whatever started the round (a button pressed with Enter, say) lets go of focus, so Space swats.
   document.activeElement?.blur?.();
   keySwat = held = false;

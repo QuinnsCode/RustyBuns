@@ -8,11 +8,11 @@ import {
   type Geometry, type Input, type Layout, type Note, type RepoRef, type RideEvent, type Side,
 } from "./gitpath.ts";
 import { createScene } from "./scene.ts";
+import { esc } from "../util.ts";
 
 declare const lucide: { createIcons(): void } | undefined;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const icon = (name: string) => `<i data-lucide="${name}"></i>`;
 const icons = () => {
   try { lucide?.createIcons(); } catch {}
@@ -505,6 +505,8 @@ function pedal(side: Side) {
   wake();
 }
 
+// The found.js the site serves, named by a variable so the bundler leaves it alone.
+const FOUND_JS = "/found.js";
 function setGame(on: boolean) {
   if (on === gameOn) return;
   gameOn = on; running = false; crash = null; rebinding = null; falls = 0; idleFalls = 0; taps = 0;
@@ -514,6 +516,7 @@ function setGame(on: boolean) {
   $("gamebar").hidden = !on;
   board.classList.toggle("tapzone", on);
   showKeys();
+  if (on) import(FOUND_JS).then(({ found }) => found("unicycle")).catch(() => {});
   if (on) toast(`Tap the bottom of the board, or ${keyName(binds.l)} and ${keyName(binds.r)}, left then right on the beat`);
   refresh(); wake();
 }

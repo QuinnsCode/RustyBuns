@@ -1,4 +1,4 @@
-// Heads you can wear on your soldier: cartoony toy takes on the tools people build with. Everyone starts with
+// Heads you can wear on your soldier: the web languages' own marks (shields and tiles, a notch off the originals) and cartoony toy takes on the other tools people build with. Everyone starts with
 // the STARTERS; every level you win (a level on a repo you haven't won it on before) unlocks the next of
 // UNLOCKABLE. Rust is a generic cog, not its logo. src/ui/characters.ts draws them, and src/ui/heads.ts
 // lists them after the heads everyone has.

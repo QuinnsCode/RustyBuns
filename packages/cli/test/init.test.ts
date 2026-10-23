@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { inferTsconfigAliases, detectPm, inferPostgres, viteProxyPaths, viteProxyTargets, proxyServers, type SiblingServer } from "../src/glue/infer.ts";
 import { parseWranglerToml, droppedWranglerKeys } from "../src/wrangler.ts";
 import { workspaceRoot } from "../src/glue/deploy-deps.ts";
-import { viteConfig } from "../src/glue/port-vite.ts";
+import { craProxy, viteConfig, vueCliProxy } from "../src/glue/port-vite.ts";
 
 // These tests spawn the CLI, which takes seconds under --parallel load; bun ignores bunfig's timeout.
 setDefaultTimeout(30_000);
@@ -169,6 +169,62 @@ test("init: a Vectorize index carries over, and init asks for the dimensions wra
   expect(p.read("rustybuns.config.ts")).toContain('"indexName": "docs"');
   // Until they're set, the config refuses to load rather than guess (a wrong guess replaces the index).
   expect(p.run("adopt").out).toMatch(/bindings\.V\.dimensions: missing/);
+
+  // Code that names its embedding model settles them: bge-base is 768.
+  const named = project({
+    "package.json": JSON.stringify({ name: "r", dependencies: { vite: "5" } }),
+    "wrangler.jsonc": `{ "name": "r", "main": "src/worker.ts", "vectorize": [{ "binding": "V", "index_name": "docs" }] }`,
+    "src/worker.ts": `export const MODEL = "@cf/baai/bge-base-en-v1.5"; export default {}`,
+  });
+  const n = named.run("init");
+  expect(n.out).toMatch(/V: 768 dimensions, from @cf\/baai\/bge-base-en-v1\.5/);
+  expect(n.out).not.toMatch(/todo: +bindings\.V/);
+  expect(named.read("rustybuns.config.ts")).toContain('"dimensions": 768');
+});
+
+test("init: a Pages project's functions/ runs as a Worker, ahead of its static files, with Pages' context", async () => {
+  const p = project({
+    "package.json": JSON.stringify({ name: "pg", scripts: { build: "vite build" }, dependencies: { vite: "5" } }),
+    "wrangler.toml": `name = "pg"\npages_build_output_dir = "dist"\n[[d1_databases]]\nbinding = "DB"\ndatabase_name = "pg"\ndatabase_id = "x"\n`,
+    ".dev.vars": "API_TOKEN=x\nVITE_API_ORIGIN=http://localhost\n",
+    "public/_routes.json": JSON.stringify({ version: 1, include: ["/*"], exclude: ["/assets/*"] }),
+    "src/main.ts": "",
+    "functions/_middleware.ts": `export const onRequest = async (c) => { c.data.seen = ["root"]; const r = await c.next(); r.headers.set("x-mw", "root"); return r; };`,
+    "functions/api/_middleware.ts": `export const onRequest = [async (c) => { c.data.seen.push("api"); return c.next(); }];`,
+    "functions/api/items/index.ts": `export const onRequestGet = (c) => Response.json({ list: true, seen: c.data.seen });`,
+    "functions/api/items/[id].ts": `export async function onRequestGet(c) { return Response.json({ id: c.params.id, db: typeof c.env.DB }); }\nexport const onRequestDelete = () => new Response(null, { status: 204 });`,
+    "functions/api/items/new.ts": `export const onRequest = () => Response.json({ new: true });`,
+    "functions/api/tile/[[path]].ts": `export const onRequestGet = (c) => Response.json({ path: c.params.path });`,
+    "functions/api/_lib/util.ts": `export const onRequest = () => new Response("helper, not a route");`,
+    "functions/api/items.test.ts": `export const onRequest = () => new Response("a test, not a route");`,
+  });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/pages: +functions\/ -> \.rustybuns\/pages\/index\.ts \(4 routes, 2 middleware\)/);
+  const cfg = p.read("rustybuns.config.ts");
+  expect(cfg).toContain('"main": ".rustybuns/pages/index.ts"');
+  expect(cfg).toContain('"assets": "dist"');
+  expect(cfg).toMatch(/"build": "[^"]*rustybuns pages-functions && vite build"/);
+  expect(cfg).toContain('"mode": "worker"');
+  expect(cfg).toContain('"API_TOKEN"');
+  expect(cfg).not.toContain("VITE_API_ORIGIN");   // Vite's, not the Worker's
+
+  const worker = (await import(join(p.dir, ".rustybuns/pages/index.ts"))).default;
+  const env = { DB: {}, ASSETS: { fetch: (req: Request) => new Response(`asset ${new URL(req.url).pathname}`) } };
+  const ctx = { waitUntil() {} };
+  const go = (path: string, method = "GET") => worker.fetch(new Request(`http://x${path}`, { method }), env, ctx) as Promise<Response>;
+  let res = await go("/api/items");
+  expect(await res.json()).toEqual({ list: true, seen: ["root", "api"] });   // outermost middleware first, data shared
+  expect(res.headers.get("x-mw")).toBe("root");
+  expect(await (await go("/api/items/42")).json()).toEqual({ id: "42", db: "object" });
+  expect(await (await go("/api/items/new")).json()).toEqual({ new: true });   // a static name beats [id]
+  expect((await go("/api/items/42", "DELETE")).status).toBe(204);
+  expect(await (await go("/api/items/42", "POST")).text()).toBe("asset /api/items/42");   // no handler for the method
+  expect(await (await go("/api/tile/a/b/c.jpg")).json()).toEqual({ path: ["a", "b", "c.jpg"] });
+  expect(await (await go("/api/_lib/util")).text()).toBe("asset /api/_lib/util");
+  expect(await (await go("/api/items.test")).text()).toBe("asset /api/items.test");
+  res = await go("/assets/app.js");   // _routes.json: straight to the files, no middleware
+  expect([await res.text(), res.headers.get("x-mw")]).toEqual(["asset /assets/app.js", null]);
 });
 
 test("init: wrangler.toml is read, and a missing worker entry is flagged", () => {
@@ -621,17 +677,17 @@ test("init --port-vite: CRA becomes a Vite app, then init goes on", () => {
 
 test("init --port-vite: Vue CLI 2 gets plugin-vue2, Vue 2.7, the @ alias and BASE_URL", () => {
   const p = project({
-    "package.json": JSON.stringify({ name: "yacht", dependencies: { vue: "^2.6.12" }, devDependencies: { "@vue/cli-service": "~4.4.0" },
+    "package.json": JSON.stringify({ name: "yacht", dependencies: { vue: "^2.6.12" }, devDependencies: { "@vue/cli-service": "~4.4.0", "vuetify-loader": "^1.7.0" },
       scripts: { serve: "vue-cli-service serve", build: "vue-cli-service build", lint: "vue-cli-service lint" } }),
     "bun.lock": "",
     "public/index.html": `<html><head><title><%= htmlWebpackPlugin.options.title %></title><link rel="icon" href="<%= BASE_URL %>favicon.ico"></head>\n<body>\n  <div id="app"></div>\n  <!-- built files will be auto injected -->\n</body></html>\n`,
     "src/main.js": `import App from "@/App";\n`,
     "src/App.vue": `<template lang="html"><div /></template>\n`,
-    "vue.config.js": `module.exports = {\n  publicPath: "./",\n  devServer: {\n    proxy: { "/api": {} },\n  },\n};\n`,
+    "vue.config.js": `module.exports = {\n  publicPath: "./",\n  devServer: {\n    proxy: { "/api": { target: "http://localhost:3000", pathRewrite: { "^/api": "" } } },\n  },\n};\n`,
   });
   const r = p.run("init", "--port-vite");
   expect(r.code).toBe(0);
-  expect(r.out).toMatch(/vue\.config\.js isn't read: port publicPath, devServer by hand/);
+  expect(r.out).toMatch(/vue\.config\.js isn't read after this: publicPath and devServer\.proxy are in vite\.config\.ts/);
   expect(r.out).toMatch(/source:\s+src\/ \(vite, aliases @->src\)/);
   const html = p.read("index.html");
   expect(html).toContain("<title>yacht</title>");
@@ -643,10 +699,23 @@ test("init --port-vite: Vue CLI 2 gets plugin-vue2, Vue 2.7, the @ alias and BAS
   expect(cfg).toContain('"process.env.BASE_URL"');
   expect(cfg).toContain('".vue"]');
   expect(cfg).toContain("template-lang-html");
+  expect(cfg).toContain("Components({ resolvers: [VuetifyResolver()] })");   // vuetify-loader's job
+  expect(cfg).toContain('base: "./"');
+  expect(cfg).toContain('"/api": { target: "http://localhost:3000", rewrite:');
   const pkg = JSON.parse(p.read("package.json"));
+  expect(pkg.devDependencies["unplugin-vue-components"]).toBeDefined();
   expect(pkg.dependencies.vue).toBe("^2.7.16");
   expect(pkg.devDependencies).toMatchObject({ vite: "^7.3.0", "@vitejs/plugin-vue2": "^2.3.0" });  // plugin-vue2 stops at Vite 7
   expect(pkg.scripts).toMatchObject({ serve: "vite", build: "vite build", lint: "vue-cli-service lint" });
+});
+
+test("port-vite: proxies come from setupProxy.js and devServer.proxy only when they are plain data", () => {
+  expect(craProxy(`app.use("/api", createProxyMiddleware({ target: "http://localhost:5000", changeOrigin: true }));`))
+    .toEqual({ "/api": { target: "http://localhost:5000", changeOrigin: true } });
+  expect(craProxy(`app.use("/api", createProxyMiddleware({ target: process.env.API }));`)).toBeUndefined();
+  expect(craProxy(`app.use(cors()); app.use("/a", proxy({ target: "http://x" }));`)).toBeUndefined();
+  expect(vueCliProxy(`module.exports = { devServer: { proxy: { "/a": "http://x" } } };`)).toEqual({ "/a": "http://x" });
+  expect(vueCliProxy(`module.exports = { devServer: { proxy: { "/a": { target: URL } } } };`)).toBeUndefined();
 });
 
 test("port-vite: a Vue 3 app gets @vitejs/plugin-vue, and nothing it doesn't need", () => {

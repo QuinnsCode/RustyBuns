@@ -230,7 +230,7 @@ export async function hookRoutes(req: Request, env: Env, p: string[], user: stri
     if (b.secret !== undefined && (typeof b.secret !== "string" || b.secret.length < 16)) return json({ error: "secret: at least 16 characters, or leave it out for one made for you" }, 400);
     if (b.github_compat !== undefined && typeof b.github_compat !== "boolean") return json({ error: "github_compat: true or false" }, 400);
     if (b.owner_only !== undefined && typeof b.owner_only !== "boolean") return json({ error: "owner_only: true or false" }, 400);
-    const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM webhooks WHERE owner = ? AND repo = ?").bind(owner, repo).first();
+    const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM webhooks WHERE owner = ? AND repo = ?").bind(owner, repo).first<{ n: number }>();
     if ((n?.n ?? 0) >= MAX_HOOKS) return json({ error: `a repo has at most ${MAX_HOOKS} webhooks` }, 400);
     const hook = { id: crypto.randomUUID().slice(0, 8), url, events: [...new Set(events)], secret: b.secret ?? hex(crypto.getRandomValues(new Uint8Array(24)).buffer), github_compat: b.github_compat ?? false, owner_only: b.owner_only ?? false, created_at: Date.now() };
     await env.DB.prepare("INSERT INTO webhooks (id, owner, repo, url, secret, events, github_compat, owner_only, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")

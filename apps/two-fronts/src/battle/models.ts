@@ -158,6 +158,11 @@ const W = {
   get silverDark() { return lazy("w.silverDark", () => std(0x6e7178, 0.9, { map: furMap() })); },
   get hex() { return lazy("w.hex", () => glow(0x7dff6a)); },        // a Shanti's magic
   get powder() { return lazy("w.powder", () => std(0x3a2a1a, 0.7, { map: grainMap() })); }, // a Boomie's keg
+  get mange() { return lazy("w.mange", () => std(0x6a5c48, 0.98, { map: furMap() })); },       // a Mossback's matted coat
+  get mangeLight() { return lazy("w.mangeLight", () => std(0x8a7d66, 0.98, { map: furMap() })); },
+  get skin() { return lazy("w.skin", () => std(0x8a7f78, 0.9, { map: furMap() })); },          // the bald, scabbed patches
+  get moss() { return lazy("w.moss", () => std(0x62982f, 1, { map: furMap() })); },             // and what grows on it
+  get mossDark() { return lazy("w.mossDark", () => std(0x2f4a1c, 1, { map: furMap() })); },
 };
 const made = new Map<string, unknown>();
 function lazy<T>(key: string, make: () => T): T {
@@ -373,7 +378,7 @@ function launcher(k: Kit, gun: THREE.Object3D, trim: Mat) {
 function buildMarine(hero: boolean, kit: Trooper) {
   const k = new Kit(), trim = hero ? M.gold : M.trim;
   const hips = k.joint("hips", k.root, 0, 0.98, 0);
-  k.add(hips, rbox(0.42, 0.22, 0.27, 0.08), M.armour, { y: 0.02 });
+  k.add(hips, rbox(0.5, 0.24, 0.32, 0.09), M.armour, { y: 0.02 });
   k.add(hips, rbox(0.47, 0.065, 0.31, 0.03), trim, { y: 0.11 });                      // belt
   k.add(hips, rbox(0.12, 0.08, 0.04, 0.02), M.gun, { y: 0.11, z: -0.16 });            // buckle
   k.pair(hips, () => rbox(0.1, 0.13, 0.09, 0.025), M.pack, { x: 0.19, y: 0.03, z: -0.12 }); // pouches
@@ -381,31 +386,38 @@ function buildMarine(hero: boolean, kit: Trooper) {
   for (const s of [-1, 1]) {
     const leg = k.joint(s < 0 ? "legL" : "legR", hips, s * 0.12, -0.04, 0);
     k.add(leg, capsule(0.1, LEG[0] + 0.06), M.suit, { y: -LEG[0] / 2 });
-    k.add(leg, rbox(0.2, 0.3, 0.22, 0.07), M.armour, { y: -0.2, z: -0.01 });            // thigh plate
+    k.add(leg, rbox(0.25, 0.34, 0.27, 0.08), M.armour, { y: -0.2, z: -0.01 });            // thigh plate
     k.add(leg, box(0.02, 0.24, 0.06), trim, { x: s * 0.1, y: -0.2 });                  // its stripe
     const knee = k.joint(s < 0 ? "kneeL" : "kneeR", leg, 0, -LEG[0], 0);
     k.add(knee, rbox(0.17, 0.15, 0.09, 0.04), trim, { z: -0.1 });                     // knee pad
     k.add(knee, capsule(0.09, LEG[1]), M.suit, { y: -LEG[1] / 2 + 0.02 });
-    k.add(knee, rbox(0.18, 0.28, 0.2, 0.07), M.armour, { y: -0.22, z: -0.01 });        // shin guard
-    k.add(knee, rbox(0.2, 0.15, 0.32, 0.06), M.armour, { y: -0.44 + 0.0, z: -0.05 });  // boot
+    k.add(knee, rbox(0.23, 0.3, 0.25, 0.08), M.armour, { y: -0.22, z: -0.01 });        // shin guard
+    k.add(knee, cone(0.04, 0.1, 5).rotateX(-Math.PI / 2), M.gold, { y: 0.0, z: -0.17 });  // knee spike
+    k.add(knee, rbox(0.26, 0.17, 0.36, 0.07), M.armour, { y: -0.44 + 0.0, z: -0.05 });  // boot, a big one
     k.add(knee, rbox(0.21, 0.04, 0.34, 0.015), M.rubber, { y: -0.52, z: -0.05 });      // sole
     k.add(knee, rbox(0.14, 0.05, 0.08, 0.02), trim, { y: -0.4, z: -0.2 });             // toe cap
   }
 
   const torso = k.joint("torso", hips, 0, 0.12, 0);
   k.add(torso, rbox(0.36, 0.24, 0.25, 0.08), M.suit, { y: 0.1 });                      // waist
-  k.add(torso, rbox(0.56, 0.4, 0.35, 0.12), M.armour, { y: 0.38 });                    // chest
-  k.add(torso, rbox(0.42, 0.18, 0.05, 0.03), trim, { y: 0.44, z: -0.165 });           // chest plate
+  k.add(torso, rbox(0.72, 0.46, 0.42, 0.14), M.armour, { y: 0.38 });                    // chest, built like a fridge
+  k.add(torso, rbox(0.52, 0.22, 0.06, 0.03), trim, { y: 0.45, z: -0.2 });           // chest plate
+  k.pair(torso, () => cone(0.035, 0.12, 5).rotateX(-Math.PI / 2), M.gold, { x: 0.2, y: 0.28, z: -0.24 }); // two studs, for the look
+  k.add(torso, rbox(0.3, 0.3, 0.03, 0.01), M.trim, { y: -0.12, z: -0.2 });          // a tabard hanging from the belt
+  k.add(torso, prism([[0.05, 0.1], [-0.05, -0.02], [0.0, -0.02], [-0.04, -0.12], [0.06, 0.0], [0.0, 0.0]], 0.02), M.orange, { y: -0.1, z: -0.225 });
   k.add(torso, rbox(0.3, 0.12, 0.05, 0.03), M.armour, { y: 0.24, z: -0.15 });         // ab plate
   // A thunderbolt on the chest, in orange (gold for the hero).
-  k.add(torso, prism([[0.03, 0.09], [-0.04, 0.0], [0.0, 0.0], [-0.03, -0.09], [0.04, 0.01], [0.0, 0.01]], 0.02), hero ? M.gold : M.orange, { y: 0.44, z: -0.195 });
-  k.add(torso, ring(0.13, 0.045, 16).rotateX(Math.PI / 2), M.armour, { y: 0.6 });     // collar
+  k.add(torso, prism([[0.05, 0.12], [-0.06, 0.0], [0.0, 0.0], [-0.05, -0.12], [0.06, 0.01], [0.0, 0.01]], 0.02), hero ? M.gold : M.orange, { y: 0.45, z: -0.235 });
+  k.add(torso, ring(0.17, 0.06, 16).rotateX(Math.PI / 2), M.armour, { y: 0.62 });     // collar
   k.pair(torso, () => rbox(0.07, 0.05, 0.42, 0.02), M.pack, { x: 0.15, y: 0.6, z: 0.08 }); // pack straps
 
   // The helmet: a dome, a white ridge front to back, and the snorkel mask on the front.
-  const head = k.joint("head", torso, 0, 0.66, 0);
+  const head = k.joint("head", torso, 0, 0.68, 0);
+  head.scale.setScalar(1.18);                                                          // a big helmet on a big man
   k.add(head, ball(0.2, 24, 16), M.armour, { y: 0.12, s: [1, 1.08, 1.06] });
   k.add(head, ring(0.215, 0.025, 20, Math.PI), trim, { y: 0.11, ry: Math.PI / 2 });   // ridge
+  k.add(head, rbox(0.04, 0.12, 0.34, 0.015), hero ? M.gold : M.orange, { y: 0.34, z: 0.02 }); // a crest down the middle
+  k.pair(head, () => cone(0.03, 0.16, 5), M.dark, { x: 0.17, y: 0.3, z: 0.0, rz: -0.5 }); // little horns
   k.add(head, rbox(0.38, 0.06, 0.3, 0.03), M.armour, { y: -0.02, z: 0.04 });          // jaw guard
   k.pair(head, () => cyl(0.07, 0.07, 0.05, 14).rotateZ(Math.PI / 2), M.armour, { x: 0.205, y: 0.08 }); // ear pieces
   k.pair(head, () => cyl(0.04, 0.04, 0.02, 14).rotateZ(Math.PI / 2), trim, { x: 0.235, y: 0.08 });
@@ -463,10 +475,11 @@ function buildMarine(hero: boolean, kit: Trooper) {
   const shoulders: Record<"L" | "R", THREE.Object3D[]> = { L: [], R: [] };
   for (const s of [-1, 1]) {
     const side = s < 0 ? "L" : "R";
-    const arm = k.joint(`arm${side}`, torso, s * 0.34, 0.52, -0.02);
+    const arm = k.joint(`arm${side}`, torso, s * 0.46, 0.54, -0.02);
     // The pauldron sits on the torso, so it stays put while the arm aims.
-    k.add(torso, dome(0.17, 18), M.armour, { x: s * 0.36, y: 0.55, z: -0.02, rz: -s * 0.35, s: [1, 0.75, 1.1] });
-    k.add(torso, ring(0.165, 0.022, 18).rotateX(Math.PI / 2), trim, { x: s * 0.36, y: 0.55, z: -0.02, rz: -s * 0.35, s: [1, 1, 1.1] });
+    k.add(torso, dome(0.27, 18), M.armour, { x: s * 0.48, y: 0.58, z: -0.02, rz: -s * 0.35, s: [1, 0.8, 1.1] });
+    k.add(torso, ring(0.265, 0.03, 18).rotateX(Math.PI / 2), trim, { x: s * 0.48, y: 0.58, z: -0.02, rz: -s * 0.35, s: [1, 1, 1.1] });
+    k.add(torso, cone(0.045, 0.2, 6), M.gold, { x: s * 0.52, y: 0.8, z: -0.02, rz: -s * 0.5 });  // a spike on each, for the meme
     k.add(arm, capsule(0.08, ARM[0]), M.suit, { y: -ARM[0] / 2 });
     k.add(arm, rbox(0.15, 0.17, 0.16, 0.05), M.armour, { y: -0.17 });
     const elbow = k.joint(`elbow${side}`, arm, 0, -ARM[0], 0);
@@ -575,9 +588,39 @@ function buildWooka(hero: boolean, role: WookaRole | "warbur" = "fodder") {
       }
     }
   }
+  // Dishevelled: matted tufts sticking out every which way, burrs and twigs caught in the fur, a
+  // lopsided pointy cap (the woodland-critter look), one ear bent over, a snaggletooth.
+  if (role !== "shanti" && !hero) {
+    for (let i = 0; i < 9; i++) {
+      const a = i * 2.4, up = 0.15 + ((i * 7) % 5) * 0.1;
+      k.add(body, cone(0.06, 0.2 + (i % 3) * 0.06, 5), fur, { x: Math.cos(a) * 0.4, y: 0.5 + Math.sin(i * 1.7) * 0.28, z: Math.sin(a) * 0.38, rz: -Math.cos(a) * (1.1 + up), rx: Math.sin(a) * (1.1 + up) });
+    }
+    for (let i = 0; i < 3; i++) k.rod(body, [0.3 - i * 0.3, 0.55 + i * 0.1, 0.33], [0.4 - i * 0.35, 0.72 + i * 0.12, 0.45], 0.012, W.wood, 4); // twigs in the back fur
+    for (const [x, y, z] of [[-0.3, 0.7, -0.33], [0.25, 0.45, -0.38], [-0.1, 0.3, 0.4]] as V3[]) k.add(body, lumpy(0.05, 1, 0.3, 4, false), W.furDark, { x, y, z }); // burrs
+    if (role === "fodder" || role === "sticky") {
+      // The cap flops over to one side, its bobble hanging off the end.
+      const capMat = role === "sticky" ? W.paint : W.hideDark;
+      k.add(head, cone(0.19, 0.4, 8), capMat, { x: 0.12, y: 0.31, z: 0.02, rz: -0.95 });
+      k.add(head, ring(0.2, 0.04, 12).rotateX(Math.PI / 2), W.rope, { y: 0.24, x: 0.02, rz: 0.1 });
+      k.add(head, ball(0.06, 8, 6), W.bone, { x: 0.38, y: 0.17, z: 0.02 });
+    }
+    k.add(head, cone(0.02, 0.07, 4), W.tooth, { x: -0.07, y: -0.16, z: -0.41, rx: Math.PI, rz: 0.2 }); // snaggletooth
+  }
+  // War flags, the Wooka's answer to the Marines' antennas: a pole lashed to the back with a ragged
+  // hide banner that streams and flaps. Chubs, Stickies and the champions carry one; Warbur's is huge.
+  if (role === "chub" || role === "sticky" || warbur || hero) {
+    const h = warbur ? 2.3 : role === "chub" ? 1.9 : 1.5, w = warbur ? 1.1 : 0.6;
+    const pole = k.joint("flag", body, 0.15, 0.5, 0.4);
+    k.add(pole, cyl(0.025, 0.035, h, 6), W.wood, { y: h / 2 });
+    k.add(pole, cone(0.045, 0.14, 5), W.bone, { y: h + 0.07 });
+    const cloth = k.joint("flagB", pole, 0, h - 0.08, 0);
+    const rag = new THREE.Shape([new THREE.Vector2(0, 0.0), new THREE.Vector2(w * 0.5, 0.04), new THREE.Vector2(w, -0.02), new THREE.Vector2(w * 0.8, -0.14), new THREE.Vector2(w, -0.28), new THREE.Vector2(w * 0.55, -0.24), new THREE.Vector2(w * 0.3, -0.34), new THREE.Vector2(0, -0.3)]);
+    k.add(cloth, new THREE.ShapeGeometry(rag), role === "sticky" ? W.hideDark : W.hide, { ry: Math.PI / 2 });
+    k.add(cloth, ball(0.07, 8, 6), W.bone, { z: -w * 0.45, y: -0.15, s: [1, 1.1, 0.5] }); // a skull sewn on
+  }
   // Feet.
   for (const s of [-1, 1]) {
-    const foot = k.joint(s < 0 ? "footL" : "footR", body, s * 0.19, 0.2, 0);
+    const foot =k.joint(s < 0 ? "footL" : "footR", body, s * 0.19, 0.2, 0);
     k.add(foot, capsule(0.1, 0.22, 8), fur, { y: -0.04 });
     k.add(foot, ball(0.12, 12, 8), W.furDark, { y: -0.13, z: -0.06, s: [1, 0.55, 1.4] });
     for (const x of [-0.05, 0, 0.05]) k.add(foot, ball(0.035, 6, 4), W.furDark, { x, y: -0.16, z: -0.21 });
@@ -599,6 +642,18 @@ function buildWooka(hero: boolean, role: WookaRole | "warbur" = "fodder") {
   }
   if (role === "chub") for (let i = 0; i < 5; i++) k.add(body, cone(0.04, 0.16, 5), W.tooth, { x: -0.24 + i * 0.12, y: 0.82 - Math.abs(i - 2) * 0.04, z: -0.4, rx: Math.PI });
   if (warbur) {
+    // The troll: hunched, tusked, a bandolier of spears across his back and a skull or two on a belt.
+    body.rotation.x = 0.18;
+    for (const x of [-1, 1]) k.add(head, cone(0.06, 0.28, 6), W.tooth, { x: x * 0.09, y: -0.12, z: -0.4, rx: Math.PI - 0.5, rz: x * 0.15 }); // tusks
+    k.add(head, lumpy(0.13, 1, 0.1, 17), W.silverDark, { x: 0.2, y: 0.28, z: -0.1, s: [1, 0.6, 1] });   // a heavy brow
+    for (let i = 0; i < 4; i++) {
+      const dx = -0.3 + i * 0.2;
+      k.rod(body, [dx, 0.2, 0.42], [dx + 0.18, 1.7, 0.5], 0.03, W.wood, 5);              // a spear slung on his back
+      k.add(body, cone(0.06, 0.25, 5), W.bone, { x: dx + 0.18, y: 1.78, z: 0.5, rz: -0.1 });
+    }
+    for (let i = 0; i < 3; i++) k.add(body, ball(0.06, 8, 6), W.bone, { x: -0.25 + i * 0.25, y: 0.3, z: -0.42 }); // skulls on a belt
+  }
+  if (warbur) {
     // A silverback's mane, and scars.
     k.add(body, lumpy(0.32, 2, 0.2, 13), W.silverDark, { y: 0.9, z: 0.1, s: [1.8, 0.7, 1.5] });
     for (const dz of [0, 0.06]) k.add(body, rbox(0.3, 0.02, 0.02, 0.005), W.paint, { x: 0.1, y: 0.62 + dz, z: -0.43, rz: 0.5 });
@@ -619,11 +674,68 @@ function buildWooka(hero: boolean, role: WookaRole | "warbur" = "fodder") {
       k.add(body, ball(0.014, 6, 4), W.nose, { x: x + 0.02, y: 0.79 - Math.abs(i - 2) * 0.03, z: z - 0.05 });
     }
   }
-  return k.bake("wooka", { hero });
+  return k.bake("wooka", { hero, role });
 }
 
 export function wooka(hero = false, role: WookaRole | "warbur" = "fodder") {
-  return cloneOf(`wooka:${hero}:${role}`, () => buildWooka(hero, role));
+  return cloneOf(`wooka:${hero}:${role}`, () => (role === "mossback" ? buildMossback() : buildWooka(hero, role)));
+}
+
+// The Mossback: a Wooka that kept growing. Big as a Marine from the shoulder, mangy and
+// matted, with moss in the back of its coat and bald scabs where it doesn't take, arms so long
+// the knuckles drag, and a heavy brow over small red eyes. It lopes on its fists. Its arms are
+// two joints each (upper arm, forearm), so it can swing them down and stretch them out in a leap.
+function buildMossback() {
+  const k = new Kit();
+  const body = k.joint("body", k.root, 0, 1.0, 0);
+  body.rotation.x = -0.45; // hunched over, head forward
+  k.add(body, lumpy(0.8, 3, 0.16, 21), W.mange, { y: 0.6, s: [1.2, 1.1, 1.05] });                    // the great matted chest
+  k.add(body, lumpy(0.55, 2, 0.12, 22), W.mangeLight, { y: 0.2, z: -0.38, s: [1.1, 1, 0.55] });     // a paler belly
+  k.add(body, lumpy(0.62, 2, 0.14, 23), W.mange, { y: 0.0, z: 0.28, s: [1.1, 0.9, 1] });             // the haunches
+  // Moss on the shoulders and the back, in clumps, and strands of it hanging off.
+  for (let i = 0; i < 22; i++) {
+    const a = (i / 22) * Math.PI * 2, r = 0.5 + ((i * 37) % 5) * 0.05;
+    k.add(body, lumpy(0.17 + ((i * 13) % 4) * 0.03, 1, 0.25, 30 + i), i % 3 ? W.moss : W.mossDark, { x: Math.cos(a) * r * 1.1, y: 0.95 + Math.sin(a * 2) * 0.12, z: 0.22 + Math.sin(a) * r * 0.7, s: [1, 0.6, 1] });
+  }
+  for (let i = 0; i < 6; i++) k.rod(body, [-0.6 + i * 0.24, 1.05, 0.5], [-0.65 + i * 0.26, 0.45 - (i % 2) * 0.2, 0.62], 0.025, W.moss, 4);
+  // Bald scabs where the coat gave out.
+  for (const [x, y, z] of [[0.45, 0.7, -0.55], [-0.5, 0.35, -0.5], [0.3, 0.1, 0.62]] as const) k.add(body, lumpy(0.2, 1, 0.1, 40 + x), W.skin, { x, y, z, s: [1.2, 1, 0.4] });
+  // Head, low and forward: a brow like a shelf, small red eyes under it, an underbite with tusks.
+  const head = k.joint("head", body, 0, 1.15, -0.6);
+  head.rotation.x = 0.5; // it carries it level though the body leans
+  k.add(head, lumpy(0.42, 3, 0.1, 25), W.mange, { s: [1.1, 0.95, 1.05] });
+  k.add(head, rbox(0.8, 0.16, 0.3, 0.05), W.mangeLight, { y: 0.1, z: -0.3, rx: 0.1 });              // the brow
+  k.add(head, ball(0.2, 14, 10), W.skin, { y: -0.08, z: -0.36, s: [1.3, 0.8, 0.7] });                // the muzzle
+  for (const s of [-1, 1]) {
+    k.add(head, ball(0.065, 10, 8), W.eye, { x: s * 0.17, y: 0.0, z: -0.4 });
+    k.add(head, ball(0.025, 6, 4), W.glint, { x: s * 0.17, y: 0.0, z: -0.45 });
+    k.add(head, cone(0.04, 0.32, 6), W.tooth, { x: s * 0.16, y: -0.2, z: -0.5, rx: -0.2, rz: -s * 0.1 }); // tusks
+    k.add(head, lumpy(0.1, 1, 0.2, 50 + s), W.mange, { x: s * 0.4, y: 0.15, z: 0.0, s: [0.7, 1, 0.5] });  // ears, chewed
+  }
+  k.add(head, rbox(0.34, 0.1, 0.2, 0.03), W.mouth, { y: -0.22, z: -0.42 });
+  for (let i = 0; i < 5; i++) k.add(head, cone(0.018, 0.07, 4), W.tooth, { x: -0.12 + i * 0.06, y: -0.19, z: -0.5, rx: Math.PI });
+  for (let i = 0; i < 4; i++) k.add(head, lumpy(0.1, 1, 0.25, 60 + i), W.moss, { x: -0.2 + i * 0.13, y: 0.4, z: 0.05, s: [1, 0.6, 1] }); // moss on the crown
+  // Arms: long. Upper arm from the shoulder, forearm from the elbow, a fist with knuckles at the end.
+  for (const s of [-1, 1]) {
+    const side = s < 0 ? "L" : "R";
+    const arm = k.joint(`arm${side}`, body, s * 0.98, 1.0, -0.05);
+    arm.rotation.z = s * 0.1;
+    k.add(arm, lumpy(0.3, 2, 0.12, 70 + s), W.mange, { y: 0.0, s: [1.1, 1, 1] });                       // the shoulder
+    k.add(arm, capsule(0.2, 1.0, 8), W.mange, { y: -0.48 });
+    k.add(arm, lumpy(0.2, 1, 0.3, 80 + s), W.moss, { x: s * 0.08, y: -0.1, z: 0.1, s: [1, 0.6, 1] });
+    const fore = k.joint(`fore${side}`, arm, 0, -0.95, 0);
+    k.add(fore, capsule(0.17, 0.8, 8), W.mangeLight, { y: -0.4 });
+    k.add(fore, lumpy(0.27, 2, 0.1, 90 + s), W.skin, { y: -0.85, s: [1, 0.9, 1.1] });                       // the fist
+    for (const x of [-0.12, 0, 0.12]) k.add(fore, ball(0.07, 6, 4), W.bone, { x, y: -1.05, z: -0.1 });  // knuckles
+  }
+  // Legs: short, bowed, big in the thigh.
+  for (const s of [-1, 1]) {
+    const leg = k.joint(s < 0 ? "legL" : "legR", k.root, s * 0.42, 0.85, 0.1);
+    k.add(leg, capsule(0.27, 0.85, 8), W.mange, { y: -0.3, rz: -s * 0.1 });
+    k.add(leg, ball(0.3, 12, 8), W.furDark, { y: -0.74, z: -0.1, s: [1, 0.5, 1.5] });
+  }
+  k.root.scale.setScalar(0.85);
+  return k.bake("mossback", {});
 }
 
 // ============================================================================================
@@ -846,15 +958,16 @@ export interface Motion {
   dt: number;     // since the last frame
   moved: number;  // metres covered since the last frame
   since: number;  // seconds since it last fired or swung
+  call?: number;  // seconds since it last bellowed (sfx.howl and the like); a Wooka rears up and beats its chest
 }
-interface Pose { base: Map<THREE.Object3D, { p: THREE.Vector3; q: THREE.Quaternion }>; joints: Record<string, THREE.Object3D>; phase: number; walk: number; speed: number }
+interface Pose { base: Map<THREE.Object3D, { p: THREE.Vector3; q: THREE.Quaternion; s: THREE.Vector3 }>; joints: Record<string, THREE.Object3D>; phase: number; walk: number; speed: number }
 const poses = new WeakMap<THREE.Object3D, Pose>();
 const e = new THREE.Euler(), dq = new THREE.Quaternion();
 function poseOf(g: THREE.Object3D): Pose {
   let p = poses.get(g);
   if (!p) {
-    const joints: Record<string, THREE.Object3D> = {}, base = new Map<THREE.Object3D, { p: THREE.Vector3; q: THREE.Quaternion }>();
-    g.traverse((o) => { if (o.name) { joints[o.name] = o; base.set(o, { p: o.position.clone(), q: o.quaternion.clone() }); } });
+    const joints: Record<string, THREE.Object3D> = {}, base = new Map<THREE.Object3D, { p: THREE.Vector3; q: THREE.Quaternion; s: THREE.Vector3 }>();
+    g.traverse((o) => { if (o.name) { joints[o.name] = o; base.set(o, { p: o.position.clone(), q: o.quaternion.clone(), s: o.scale.clone() }); } });
     poses.set(g, (p = { base, joints, phase: (g.id * 1.7) % 6.28, walk: 0, speed: 0 }));
   }
   return p;
@@ -866,6 +979,12 @@ function set(p: Pose, name: string, rx = 0, ry = 0, rz = 0, dx = 0, dy = 0, dz =
   j.position.set(b.p.x + dx, b.p.y + dy, b.p.z + dz);
   j.quaternion.copy(b.q).multiply(dq.setFromEuler(e.set(rx, ry, rz)));
 }
+// Stretches a joint to a multiple of its rest size: a squash on landing, a breath in.
+function fat(p: Pose, name: string, x = 1, y = 1, z = 1) {
+  const j = p.joints[name], b = j && p.base.get(j);
+  if (j && b) j.scale.set(b.s.x * x, b.s.y * y, b.s.z * z);
+}
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const ease = (from: number, to: number, rate: number, dt: number) => from + (to - from) * (1 - Math.exp(-rate * dt));
 
 // Poses a model from what its unit is doing this frame.
@@ -876,38 +995,91 @@ export function animate(g: THREE.Object3D, m: Motion) {
   const a = p.walk, t = m.t;
   if (model === "marine") {
     p.phase += (m.moved / 1.7) * Math.PI * 2;
-    const s = Math.sin(p.phase), c = Math.cos(p.phase);
-    set(p, "legL", s * 0.6 * a);
-    set(p, "legR", -s * 0.6 * a);
-    set(p, "kneeL", -a * (0.1 + 0.9 * Math.max(0, c)));
-    set(p, "kneeR", -a * (0.1 + 0.9 * Math.max(0, -c)));
+    const s = Math.sin(p.phase), c = Math.cos(p.phase), id = g.id, idle = 1 - a;
+    // Past a walk the Marine breaks into a run: leans in, longer strides, arms pumping.
+    const run = clamp01((p.speed - 4.5) / 3.5), stride = 0.6 + 0.35 * run;
     const kick = m.since < 0.15 ? 1 - m.since / 0.15 : 0;
-    set(p, "hips", 0, 0, 0, 0, -a * 0.06 * Math.abs(s) - a * 0.02);
-    set(p, "torso", 0.1 * a - kick * 0.06, s * 0.1 * a, 0, 0, Math.sin(t * 2) * 0.006);
-    set(p, "head", -0.08 * a, -s * 0.08 * a);
+    // Standing about, weight goes from one foot to the other.
+    const shift = Math.sin(t * 0.45 + id) * idle;
+    set(p, "legL", s * stride * a, 0, shift * 0.04);
+    set(p, "legR", -s * stride * a, 0, shift * 0.04);
+    // The knee that comes forward bends high; the firing Marine takes the recoil in the knees.
+    set(p, "kneeL", -a * (0.1 + (0.9 + 0.4 * run) * Math.max(0, c)) - kick * 0.1);
+    set(p, "kneeR", -a * (0.1 + (0.9 + 0.4 * run) * Math.max(0, -c)) - kick * 0.1);
+    // Hips turn against the shoulders as the stride goes, and drop with each footfall.
+    set(p, "hips", 0, -s * 0.1 * a, shift * 0.05 + s * 0.03 * a, 0, -a * 0.06 * Math.abs(s) - a * 0.02 - kick * 0.03 - run * 0.04);
+    set(p, "torso", -0.05 * a - 0.2 * run + kick * 0.07, s * 0.12 * a, -shift * 0.03, 0, Math.sin(t * 2 + id) * 0.007);
+    // Idle, the head scans the treeline (and does a double take); on the move it looks where it's going.
+    const scan = (Math.sin(t * 0.5 + id) + 0.5 * Math.sin(t * 1.3 + id * 2)) * 0.3 * idle;
+    set(p, "head", -0.06 * a - 0.12 * run + kick * 0.04, -s * 0.08 * a + scan, Math.sin(t * 0.7 + id) * 0.04 * idle);
     set(p, "gun", 0, 0, 0, 0, 0, kick * 0.07);
+    // The arms ride the recoil with the gun, and pump a little in a run.
+    set(p, "armL", -kick * 0.14 - s * 0.08 * run, 0, s * 0.03 * a);
+    set(p, "armR", -kick * 0.14 + s * 0.08 * run, 0, s * 0.03 * a);
+    set(p, "elbowL", -kick * 0.1);
+    set(p, "elbowR", -kick * 0.1);
     // The antennas lag behind the walk and wobble on their own.
     for (let i = 0; i < 3; i++) {
-      const w = 0.04 + 0.16 * a;
-      set(p, `ant${i}`, 0.08 * a + Math.cos(t * (4 + i)) * w * 0.7, 0, Math.sin(t * (5 + i) + i) * w);
+      const w = 0.04 + 0.16 * a + 0.1 * run;
+      set(p, `ant${i}`, 0.08 * a + kick * 0.15 + Math.cos(t * (4 + i)) * w * 0.7, 0, Math.sin(t * (5 + i) + i) * w);
       set(p, `ant${i}b`, Math.cos(t * (4 + i) - 0.6) * w, 0, Math.sin(t * (5 + i) + i - 0.6) * w * 1.4);
     }
   } else if (model === "wooka") {
-    // A waddle: short fast steps, rocking side to side, bouncing.
+    // A waddle: short fast steps, rocking side to side, bouncing. Flat out, it leans in and
+    // charges like a gorilla.
     p.phase += (m.moved / 1.0) * Math.PI * 2;
-    const s = Math.sin(p.phase);
-    set(p, "body", 0.14 * a, 0, s * 0.16 * a, 0, a * Math.abs(s) * 0.13);
+    const s = Math.sin(p.phase), id = g.id, role = g.userData.role as string, idle = 1 - a;
+    const run = clamp01((p.speed - 4.5) / 3);
+    // A call (m.call) lasts a second and a half: it rears up, throws its head back and beats its chest.
+    const call = m.call ?? 9, roar = call < 1.5 ? Math.sqrt(Math.sin(Math.PI * clamp01(call / 1.5))) : 0;
+    const beat = roar * (0.5 + 0.5 * Math.sin(call * 26));
+    // A strike: wind up, then throw the whole body at the target.
+    const swing = m.since < 0.4 ? m.since / 0.4 : 1, lunge = swing > 0.3 && swing < 1 ? Math.sin(((swing - 0.3) / 0.7) * Math.PI) : 0;
+    set(p, "body", -(0.1 * a + 0.3 * run) + 0.5 * roar - lunge * 0.3, 0, s * 0.16 * a * (1 - 0.5 * run), 0, a * Math.abs(s) * 0.13 + roar * 0.04, -lunge * 0.25);
+    // Squash and stretch: a breath standing still, a squash on every footfall, taller in the rear-up.
+    const sy = 1 + Math.sin(t * 2.2 + id) * 0.02 * idle + (Math.abs(s) - 0.5) * 0.07 * a + roar * 0.08;
+    fat(p, "body", 1 / Math.sqrt(sy), sy, 1 / Math.sqrt(sy));
     set(p, "footL", s * 0.8 * a, 0, 0, 0, Math.max(0, s) * 0.08 * a);
     set(p, "footR", -s * 0.8 * a, 0, 0, 0, Math.max(0, -s) * 0.08 * a);
-    set(p, "armL", -s * 0.6 * a - 0.2 * a);
-    // The club comes up over the head and down hard.
-    const swing = m.since < 0.4 ? m.since / 0.4 : 1, rest = 0.35 + Math.sin(t * 3 + g.id) * 0.08;
+    // The free arm swings with the stride, and drums on the chest in a call.
+    set(p, "armL", -s * 0.6 * a - 0.2 * a - roar * 0.9 - beat * 0.5, 0, roar * 0.45 + beat * 0.15);
+    // The club comes up over the head and down hard, and goes straight up for a call.
+    const rest = 0.35 + Math.sin(t * 3 + id) * 0.08;
     const club = swing < 0.35 ? rest + (2.7 - rest) * (swing / 0.35) : swing < 1 ? 2.7 - 1.9 * ((swing - 0.35) / 0.65) : rest;
-    set(p, "armR", club);
-    // The head tilts, slowly, the way a thing does when it's working out if you're food.
-    set(p, "head", -0.1 * a, Math.sin(t * 0.6 + g.id) * 0.2 * (1 - a), Math.sin(t * 0.9 + g.id) * 0.18 * (1 - a));
-    set(p, "earL", 0, 0, 0.15 + Math.sin(t * 3 + g.id) * 0.08 + s * 0.2 * a);
-    set(p, "earR", 0, 0, -0.15 - Math.sin(t * 2.6 + g.id) * 0.08 + s * 0.2 * a);
+    set(p, "armR", club + (2.7 - club) * roar);
+    if (role === "boomie" && a > 0.3) {
+      // A lit keg on its back: it runs with both arms in the air.
+      set(p, "armL", -2.5 + Math.sin(t * 16 + id) * 0.4, 0, 0.3);
+      set(p, "armR", -2.5 + Math.cos(t * 16 + id) * 0.4, 0, -0.3);
+    }
+    if (role === "shanti") set(p, "armL", -s * 0.2 * a - 1.5 * Math.sin(Math.PI * clamp01(m.since / 0.7)) - roar * 1.2, 0, 0.1 + roar * 0.2); // the staff goes up to cast
+    // The head tilts, slowly, the way a thing does when it's working out if you're food; it bobs
+    // on the run, and goes back with the roar.
+    set(p, "head", -0.1 * a - 0.12 * run + 0.75 * roar + Math.sin(p.phase * 2) * 0.05 * a, Math.sin(t * 0.6 + id) * 0.2 * idle, Math.sin(t * 0.9 + id) * 0.18 * idle);
+    // The war flag streams back behind a run and flaps in its own time.
+    set(p, "flag", 0.15 * a + 0.25 * run + Math.sin(t * 2 + id) * 0.04, 0, Math.cos(t * 2.4 + id) * 0.05);
+    set(p, "flagB", 0, Math.sin(t * 7 + id) * (0.2 + 0.3 * a), Math.sin(t * 5 + id) * 0.1);
+    set(p, "earL", 0, 0, 0.15 + Math.sin(t * 3 + id) * 0.08 + s * 0.2 * a + roar * 0.5);
+    set(p, "earR", 0, 0, -0.15 - Math.sin(t * 2.6 + id) * 0.08 + s * 0.2 * a - roar * 0.5);
+  } else if (model === "mossback") {
+    // Knuckle-running: the fists land in turn, the great back rocks, and the head stays level.
+    // Fast enough (the leap) and it stretches out, arms thrown forward and legs kicked back. A
+    // swing brings both fists up over the head and down hard.
+    p.phase += (m.moved / 2.6) * Math.PI * 2;
+    const s = Math.sin(p.phase), c = Math.cos(p.phase), leap = Math.min(1, Math.max(0, (p.speed - 14) / 6));
+    const swing = m.since < 0.7 ? m.since / 0.7 : 1;
+    const slam = swing < 0.3 ? -2.5 * (swing / 0.3) : swing < 1 ? -2.5 + 2.2 * ((swing - 0.3) / 0.7) : 0;
+    // A call: it rears up and hammers its chest with both fists, one then the other.
+    const call = m.call ?? 9, roar = call < 2 ? Math.sqrt(Math.sin(Math.PI * clamp01(call / 2))) : 0;
+    set(p, "body", (-0.12 * leap) + Math.sin(t * 1.4 + g.id) * 0.02 + 0.08 * a * s * s + 0.8 * roar, s * 0.1 * a, s * 0.06 * a, 0, a * Math.abs(c) * 0.12 + leap * 0.2 + roar * 0.15);
+    fat(p, "body", 1, 1 + Math.sin(t * 1.6 + g.id) * 0.015 * (1 - a) + roar * 0.06, 1); // it heaves, breathing
+    set(p, "head", 0.1 * leap - 0.05 * a + 0.9 * roar, Math.sin(t * 0.7 + g.id) * 0.25 * (1 - a), Math.sin(t * 1.1 + g.id) * 0.1 * (1 - a));
+    set(p, "armL", -s * 0.9 * a - 0.1 + slam - 2.4 * leap - roar * (1.5 + 0.7 * Math.sin(call * 18)), 0, roar * 0.3);
+    set(p, "armR", s * 0.9 * a - 0.1 + slam - 2.4 * leap - roar * (1.5 - 0.7 * Math.sin(call * 18)), 0, -roar * 0.3);
+    set(p, "foreL", -Math.max(0, -s) * 0.7 * a - 0.15 * (1 - leap));
+    set(p, "foreR", -Math.max(0, s) * 0.7 * a - 0.15 * (1 - leap));
+    set(p, "legL", s * 0.7 * a + leap * 1.0);
+    set(p, "legR", -s * 0.7 * a + leap * 1.0);
   } else if (model === "walker") {
     p.phase += (m.moved / 7) * Math.PI * 2;
     const s = Math.sin(p.phase), c = Math.cos(p.phase);

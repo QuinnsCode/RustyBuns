@@ -67,6 +67,10 @@ const OPS: Record<string, Record<string, Op>> = {
   "/users/{name}/city": { get: { id: "get_city", summary: "A person's code city: a district per public repo, a building per file (height from lines, glow from how lately lines landed, agent from how much agents wrote), and who's in town", tag: "Account", open: true,
     description: "Private repos are never in it. Each district carries its pulse: its week of commits and edits (bustle, 0-1, how busy its streets are) and its check runs (failing now, and chaos, 0-1, how wild its traffic is). 404 when its owner has switched the public city off, to anyone but them. The postcard is GET /api/users/{name}/city.png.",
     ok: loose("{name, public, districts: [{repo, x, z, size, buildings: [{path, lines, agent, last, glow, x, z, w, h}]}], present: [{who, repo, path, at}], files, lines, visit}") } },
+  "/users/{name}/finds": { get: { id: "get_finds", summary: "How many of the hidden games and rooms a person has found, and whether they have the badge", tag: "Account",
+    description: "Which ones (`found`) only when it is you. Find all of them and the profile wears a badge.",
+    ok: obj({ count: int("found so far"), total: int("hidden in all"), all: { type: "boolean" }, found: arr(str("which ones, only for yourself")) }) } },
+  "/me/finds": { put: { id: "set_find", summary: "Mark a hidden game or room as found", tag: "Account", body: obj({ key: str("horde, wreck, removed, unicycle, city, bartender or page") }), ok: loose("{ok, count, total, all, found}") } },
   "/me/city": { put: { id: "set_city", summary: "Switch your public code city off, or back on", tag: "Account", body: obj({ public: { type: "boolean" } }), ok: obj({ public: { type: "boolean" } }) } },
   "/me/following": { get: { id: "list_following", summary: "Everyone and everything you follow: people, agents, repos and line ranges, newest first", tag: "Following",
     description: "A private repo, and lines in one, are listed only while you're its crew.", ok: arr(ref("Follow")) } },
@@ -76,6 +80,13 @@ const OPS: Record<string, Record<string, Op>> = {
       owner: str(), repo: str(), path: str("a file in the repo, to follow lines in it"), from: int("first line number, from 1"), to: int("last line number") }),
     ok: ref("Follow"), status: 201 } },
   "/follows/{id}": { delete: { id: "unfollow", summary: "Stop following something (its follow id, from list_following)", tag: "Following", ok: ref("Ok") } },
+  "/feature-ranks": { get: { id: "feature_ranks", summary: "How people ranked codeSplitter's features, your own tiers, and the latest comments", tag: "Following",
+    description: "A feature's score is the average of the tiers it was given (S 4, A 3, B 2, C 1). `comment_after` is when you may comment next (ms), 0 if now.",
+    ok: loose("{signed_in, scores: {feature: {score, votes}}, mine: {feature: tier}, comments: [{user, text, at}], comment_after}") } },
+  "/me/feature-ranks": { put: { id: "rank_features", summary: "Rank the features in tiers S, A, B and C, replacing your last ranking", tag: "Following",
+    body: obj({ tiers: { type: "object", description: "{feature id: S|A|B|C}; leave a feature out to leave it unranked" } }), ok: loose("{tiers}") } },
+  "/feature-comments": { post: { id: "comment_on_features", summary: "Leave a comment on the features (280 characters), once every 10 minutes", tag: "Following",
+    description: "Too soon is a friendly 429 with `comment_after`, when you may try again.", body: obj({ text: str("what you think") }), ok: loose("{user, text, at, comment_after}"), status: 201 } },
   "/me/feed": { get: { id: "feed", summary: "Your home feed: line edits from the people, agents, repos and lines you follow, grouped per person or agent run, with your latest digest", tag: "Following",
     description: "Only repos you may read. Each group has a one-line summary, its files, and its raw events (who, where, how many lines, when; never the text).",
     query: { since: int("ms since the epoch; a week ago by default, 30 days at most") },
@@ -350,6 +361,7 @@ const OPS: Record<string, Record<string, Op>> = {
     description: "Conflicts merge nothing (409, with each conflict's choices); settle each one in `resolve` by its line: \"main\", \"branch\", \"both\" (main's first), " +
       "\"both:branch-first\", or {\"text\": \"...\"} (one or more lines, in its place). Lockfiles, doubled config keys and code that won't build take only main or branch. " +
       "A branch that changes build or deploy files needs `build_ok` when commits deploy. With self-healing on, a guard tripping (git's markers, a file that won't parse or build) starts a fix task on the branch, its run id in `fix`. " +
+      "A file Mervin leaves conflicts in, where git's own line merge conflicts too, gets one Mergiraf run (a structured merge on its syntax tree) first, hosted in a Cloudflare container: an answer Mervin then merges with nothing left goes onto the branch, and `mergiraf` lists those files. " +
       "Each conflicted file in the 409 says its policy's `leftover` and goes where it says: ci, a lockfile both changed is made again in a throwaway clone from main's and the merged manifests, put on the branch and taken whole (or `note` says why not); " +
       "ai, a checked agent (as suggest_resolution, on the cheapest model, where self-healing runs) answers up to three conflicts a merge on its own, each conflict's `answer` {harness, model?, text?, ok, tests, failure?, round?, note?} kept until the conflict changes: take it with {text} when ok, or fix it as a person. From the branch's third conflict round (a merge asking again about a conflict main moved under), the file's `over` says who answers, from a terse `note` of what the rounds before tried: handoff, the agent on its CLI's own model; downshift, the cheapest again; escalate, a person, as everyone after two of them, the file's `note` saying so; person, as before. " +
       "Each open branch that clashed with this one (get_merge_plan's `after`) then takes main in by itself, once, and `took` says how each went: `updated` (settled with no card, the checked agent's passing answers and a lockfile CI made again included; its files start from main's copy with its changes on top, and one that follows a branch upstream pushes there) or `cards` (left as it was, for a person). Its own checks, held while it waited, run then. " +
@@ -357,7 +369,7 @@ const OPS: Record<string, Record<string, Op>> = {
       "Generated text (lines between `<!-- generated: <command> -->` and `<!-- /generated -->`) both sides touched keeps main's copy, never a conflict; once the merge lands, each command runs from its file's folder on the merged tree in a throwaway clone, where the owner turned on test_merges, on the desktop or (for the site's admins) in a Cloudflare container, and what it rewrote goes onto main. `regenerated` lists each run, with a `note` when it didn't.",
     body: obj({ resolve: loose("{path: {line: \"main\" | \"branch\" | \"both\" | \"both:branch-first\" | {text}}}"), build_ok: bool() }),
     ok: obj({ status: str("merged or open"), merged: arr(obj({ path: str(), rev: int(), ops: int(), deleted: bool() })), conflicts: arr(loose("{path, conflicts}")), regenerated: arr(loose("{paths, command, cwd?, note?}")),
-      took: arr(obj({ branch: str(), status: str("updated, cards or failed"), files: arr(str()), pushed: bool("pushed upstream too"), error: str() })) }) } },
+      mergiraf: arr(str("a file Mergiraf settled after Mervin left it cards")), took: arr(obj({ branch: str(), status: str("updated, cards or failed"), files: arr(str()), pushed: bool("pushed upstream too"), error: str() })) }) } },
   [`${repo}/merges`]: { post: { id: "merge_clean_branches", summary: "Merge every open branch that merges clean, oldest first (the crew)", tag: "Branches", risky: true,
     description: "Each branch merges by line id against main as the one before it left it, so branches that change different lines (a README edit, a package.json bump) all land. " +
       "One with a conflict, failing or waiting required checks, or build files without `build_ok` stays open and is listed in `skipped` with why; merge it alone with merge_branch. " +

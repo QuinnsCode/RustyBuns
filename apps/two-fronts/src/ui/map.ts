@@ -134,7 +134,7 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
 
   // Orders as curved arrows, armies bowing one way and fleets the other, the count on the bend.
   const moves = orders.flatMap((o) => {
-    if (o.kind === "build" || o.kind === "card") return [];
+    if (o.kind === "build" || o.kind === "card" || o.kind === "bombard") return [];
     const from = systemDef(o.kind === "fleet" ? o.from : o.from.system), to = systemDef(o.kind === "fleet" ? o.to : o.to.system);
     if (from.id === to.id) return [`<circle cx="${from.x}" cy="${from.y}" r="${R + 3}" class="move army"/>`];
     const dx = to.x - from.x, dy = to.y - from.y, len = Math.hypot(dx, dy), k = (R + 2.5) / len, bow = (o.kind === "army" ? 1 : -1) * len * 0.18;

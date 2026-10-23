@@ -9,12 +9,13 @@
 // repeat count. The log stops when the hero hands the battle to the AI, and the replay runs the
 // rest with no input, as the page did.
 import type { BattleResult, BattleSpec, SpaceBattleResult, SpaceBattleSpec } from "./contract.ts";
-import { DT, TIME_LIMIT, startBattle, step, type Input } from "./sim.ts";
+import { DT, ORDERS, TIME_LIMIT, startBattle, step, type Input } from "./sim.ts";
 import { startSpaceBattle, stepSpace, type SpaceInput } from "./space.ts";
 
 const ANGLE = 1024;
 const SPOT = 8;
 const REPEAT = 3; // a flags byte can't end in 0b11: the key bits only go to 2
+const ORDER = 12; // nor have 0b11 in its next two bits, so this marks an order ahead of the step's flags
 const MAX_STEPS = Math.ceil(TIME_LIMIT / DT) + 1;
 
 const sign = (v: number) => Math.max(-1, Math.min(1, Math.round(v))) || 0;
@@ -88,6 +89,7 @@ function* reader<T>(log: string, read: (next: () => number, varint: () => number
 }
 
 // The ground battle. Flags: forward + 1 (2 bits), right + 1 (2 bits), fire, use, a strike, a turn.
+// A step with an order to the squad starts with ORDER, the order's index and its spot.
 export function groundRecorder() {
   const w = writer();
   let yaw = 0;
@@ -95,12 +97,15 @@ export function groundRecorder() {
     take(i: Input): Input {
       const k = Math.round(i.yaw * ANGLE), forward = sign(i.forward), right = sign(i.right);
       const strike = i.strike && { x: Math.round(i.strike.x * SPOT), z: Math.round(i.strike.z * SPOT) };
-      const rec = [(forward + 1) | ((right + 1) << 2) | (i.fire ? 16 : 0) | (i.use ? 32 : 0) | (strike ? 64 : 0) | (k !== yaw ? 128 : 0)];
+      const order = i.order && { kind: i.order.kind, x: Math.round(i.order.x * SPOT), z: Math.round(i.order.z * SPOT) };
+      const rec = order ? [ORDER, ORDERS.indexOf(order.kind)] : [];
+      if (order) { varint(rec, zigzag(order.x)); varint(rec, zigzag(order.z)); }
+      rec.push((forward + 1) | ((right + 1) << 2) | (i.fire ? 16 : 0) | (i.use ? 32 : 0) | (strike ? 64 : 0) | (k !== yaw ? 128 : 0));
       if (k !== yaw) varint(rec, zigzag(k - yaw));
       if (strike) { varint(rec, zigzag(strike.x)); varint(rec, zigzag(strike.z)); }
       w.push(rec);
       yaw = k;
-      return { forward, right, yaw: k / ANGLE, fire: !!i.fire, ...(i.use && { use: true }), ...(strike && { strike: { x: strike.x / SPOT, z: strike.z / SPOT } }) };
+      return { forward, right, yaw: k / ANGLE, fire: !!i.fire, ...(i.use && { use: true }), ...(strike && { strike: { x: strike.x / SPOT, z: strike.z / SPOT } }), ...(order && { order: { kind: order.kind, x: order.x / SPOT, z: order.z / SPOT } }) };
     },
     log: () => w.done(),
   };
@@ -109,11 +114,17 @@ export function groundRecorder() {
 export function groundInputs(log: string): Generator<Input> {
   let yaw = 0;
   return reader(log, (next, vint) => {
-    const f = next();
+    let f = next(), order: Input["order"];
+    if (f === ORDER) {
+      const kind = ORDERS[next()];
+      if (!kind) throw new Error("Not an order");
+      order = { kind, x: unzigzag(vint()) / SPOT, z: unzigzag(vint()) / SPOT };
+      f = next();
+    }
     if ((f & 3) === 3 || (f & 12) === 12) throw new Error("Not a step");
     if (f & 128) yaw += unzigzag(vint());
     const strike = f & 64 ? { x: unzigzag(vint()) / SPOT, z: unzigzag(vint()) / SPOT } : undefined;
-    return { forward: (f & 3) - 1, right: ((f >> 2) & 3) - 1, yaw: yaw / ANGLE, fire: !!(f & 16), ...(f & 32 ? { use: true } : {}), ...(strike && { strike }) };
+    return { forward: (f & 3) - 1, right: ((f >> 2) & 3) - 1, yaw: yaw / ANGLE, fire: !!(f & 16), ...(f & 32 ? { use: true } : {}), ...(strike && { strike }), ...(order && { order }) };
   });
 }
 

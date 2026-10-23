@@ -20,6 +20,7 @@
 // (private lines come back blank). Text only; the repo is the page's storage, so its history, its line
 // claims and its conflict handling are the page's too, and an agent edits it with the tools it has already.
 
+import { esc } from "./util.ts";
 import { json, readBody, type Env } from "./env.ts";
 import { toFile } from "./archive.ts";
 import type { Applied, Line, Op } from "./lines.ts";
@@ -57,6 +58,8 @@ const ASSET_TYPES: Record<string, string> = {
   glb: "model/gltf-binary", woff2: "font/woff2", woff: "font/woff", ttf: "font/ttf",
 };
 export const ASSET_MAX = 5_000_000;
+/** Files of assets one account keeps, and the text of one page file. */
+export const ASSET_FILES = 50, TEXT_MAX = 1_000_000;
 const assetKey = (owner: string, file: string) => `page/${owner}/${file}`;
 const assetName = (file: string | undefined) => (file && /^[\w][\w.-]{0,79}$/.test(file) && ASSET_TYPES[file.split(".").pop()!.toLowerCase()] ? file : null);
 
@@ -124,6 +127,7 @@ export async function pageRoutes(req: Request, env: Env, p: string[], user?: str
     const b = await readBody<"path" | "content">(req), path = pagePath(typeof b.path === "string" ? b.path.split("/") : [""]);
     if (!path || !TYPES[path.split(".").pop()!.toLowerCase()]) return json({ error: `path: a text file of the page (${Object.keys(TYPES).join(", ")})` }, 400);
     if (typeof b.content !== "string") return json({ error: "content: the file's whole text" }, 400);
+    if (b.content.length > TEXT_MAX) return json({ error: `content: up to ${TEXT_MAX / 1e6} MB of text` }, 413);
     if (!(await hasPage(env, user))) return json({ error: "no page repo yet: make a public repo named page" }, 404);
     return json({ path, changed: await setText(env, user, path, b.content) });
   }
@@ -133,6 +137,10 @@ export async function pageRoutes(req: Request, env: Env, p: string[], user?: str
     if (!file) return json({ error: `name: letters, digits, . _ -, ending in ${Object.keys(ASSET_TYPES).join(", ")}` }, 400);
     if (!env.LEVEL_CHUNKS) return json({ error: "binary files need R2, which this server has not got" }, 501);
     if (!(await hasPage(env, user))) return json({ error: "no page repo yet: make a public repo named page" }, 404);
+    // Turn a big body away before reading it, then count what the account already keeps (a rewrite of a file it has is free).
+    if (Number(req.headers.get("content-length")) > ASSET_MAX) return json({ error: `body: the file's bytes, up to ${ASSET_MAX / 1e6} MB` }, 413);
+    const held = (await env.LEVEL_CHUNKS.list({ prefix: assetKey(user, ""), limit: ASSET_FILES + 1 })).objects;
+    if (held.length >= ASSET_FILES && !held.some((o) => o.key === assetKey(user, file))) return json({ error: `an account keeps up to ${ASSET_FILES} asset files: replace one or delete another` }, 413);
     const bytes = new Uint8Array(await req.arrayBuffer());
     if (!bytes.length || bytes.length > ASSET_MAX) return json({ error: `body: the file's bytes, up to ${ASSET_MAX / 1e6} MB` }, 413);
     await env.LEVEL_CHUNKS.put(assetKey(user, file), bytes);
@@ -156,7 +164,7 @@ export async function pageRoutes(req: Request, env: Env, p: string[], user?: str
   let body = await repoFile(env, name, path);
   // No page repo (or no index in it): the HTML saved on the profile is the index.
   if (body === null && path === "index.html") body = ((await env.DB.prepare("SELECT theme_html FROM users WHERE name = ?").bind(name).first()) as { theme_html: string | null } | null)?.theme_html || null;
-  if (body === null) return path === "index.html" ? note(`@${name} hasn't made a page yet`, 404) : json({ error: "no such file" }, 404);
+  if (body === null) return path === "index.html" ? note(`@${esc(name)} hasn't made a page yet`, 404) : json({ error: "no such file" }, 404);
   if (type === "text/html" && path === "index.html") body = withData(body, await visible(env, name));
   return new Response(req.method === "HEAD" ? null : body, {
     headers: {

@@ -5,6 +5,10 @@
 
 export type Faction = "marines" | "wooka";
 export type SectorKind = "capital" | "spaceport" | "shield" | "cannon" | "canyon" | "jungle";
+// The big map each kind of sector has, if it has one (the battle lays them out: BIG_MAPS in sim.ts),
+// and how many armies between the two sides make a battle big enough to be fought on it.
+export const BIG_MAP_FOR: Partial<Record<SectorKind, string>> = { shield: "ridge", capital: "outskirts", spaceport: "yards", canyon: "gorge", jungle: "valley" };
+export const BIG_BATTLE = 6;
 // What a side can field on the ground besides its troops. Tanks and speeders come with any army;
 // walkers and gunships come from what the side holds on the map (see buildSpec in rules.ts).
 export type VehicleKind = "tank" | "walker" | "speeder" | "gunship";
@@ -38,6 +42,7 @@ export interface BattleSpec {
   reinforcements: PerSide<number>; // tickets dropped in once, at half tickets; only with orbit
   turrets: number;                 // the defender's fortifications
   mode?: MatchMode;                // conquest when absent
+  map?: string;                    // a big map for the sector (BIG_MAPS in sim.ts); its usual layout when absent
   seed: number;
 }
 
@@ -60,8 +65,18 @@ export interface SpaceBattleSpec {
   hero: Side;
   heroLevel: number;
   fleets: PerSide<number>;    // ships on each side
+  // Each side's muster force: its armies on the world below, which send boarding parties up, and
+  // its gun sectors there (cannons, shields, upgraded guns), which add to a screen or a bombard.
+  // Absent in a save from before the pick battle: none on either side.
+  muster?: PerSide<number>;
+  batteries?: PerSide<number>;
   seed: number;
 }
+
+// The space battle fought by picking (space-picks.ts): a few rounds, each side picking one order a
+// round, shown to the other only once both are in.
+export type SpaceOrder = "broadside" | "screen" | "board" | "bombard" | "withdraw";
+export const SPACE_ORDERS: SpaceOrder[] = ["broadside", "screen", "board", "bombard", "withdraw"];
 
 export interface SpaceBattleResult {
   id: string;
@@ -69,7 +84,9 @@ export interface SpaceBattleResult {
   fleets: PerSide<number>;    // cruisers still flying at the end
   heroDown: boolean;
   auto?: true;                // left to the AI, as on the ground
-  inputs?: string;            // played: the hero's input log, as on the ground
+  inputs?: string;            // played: the hero's input log, as on the ground; a pick battle's is the hero's picks
+  picks?: true;               // fought by picking orders rather than flown
+  ground?: PerSide<number>;   // a pick battle's toll on the world below: armies each side lost to bombardment or boarding
 }
 
 export const other = (s: Side): Side => (s === "attacker" ? "defender" : "attacker");

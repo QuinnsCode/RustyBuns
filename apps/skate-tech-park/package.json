@@ -1,0 +1,29 @@
+{
+  "name": "skate-tech-park",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "bun test test",
+    "models": "blender -b --factory-startup -P blender/fingerboard.py && blender -b --factory-startup -P blender/kit.py && blender -b --factory-startup -P blender/roadster.py && blender -b --factory-startup -P blender/landmark.py && blender -b --factory-startup -P blender/scenery.py && blender -b --factory-startup -P blender/landmarks.py",
+    "edge:dev": "vite build && bunx wrangler dev",
+    "deploy": "vite build && bunx wrangler deploy",
+    "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop --check"
+  },
+  "dependencies": {
+    "@rustybuns/models": "workspace:*",
+    "@rustybuns/terrain": "workspace:*",
+    "@rustybuns/util": "workspace:*",
+    "@rustybuns/shell-bun": "workspace:*",
+    "lucide": "1.55.0",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@rustybuns/cli": "workspace:*",
+    "@types/three": "^0.180.0",
+    "vite": "^6.2.6"
+  }
+}

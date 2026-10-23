@@ -40,12 +40,30 @@ export interface DigMessage { dig: string; user: string | null; again?: boolean;
 export interface R2Like {
   put(key: string, value: Blob | Uint8Array): Promise<unknown>;
   get(key: string, opts?: { range?: { offset: number; length: number } }): Promise<{ arrayBuffer(): Promise<ArrayBuffer> } | null>;
-  list(opts?: { prefix?: string; cursor?: string }): Promise<{ objects: { key: string }[]; truncated: boolean; cursor?: string }>;
+  list(opts?: { prefix?: string; cursor?: string; limit?: number }): Promise<{ objects: { key: string }[]; truncated: boolean; cursor?: string }>;
   delete(keys: string | string[]): Promise<void>;
 }
 
+/** A row as D1 hands it over: name the columns you selected with `first<Row>()` / `all<Row>()`. */
+export type Row = Record<string, unknown>;
+export interface D1Result<T = Row> { results: T[]; success: boolean; meta: { changes?: number; last_row_id?: number; rows_read?: number; rows_written?: number; duration?: number } }
+export interface D1Statement {
+  bind(...params: unknown[]): D1Statement;
+  first<T = Row>(): Promise<T | null>;
+  first<T = unknown>(column: string): Promise<T | null>;
+  all<T = Row>(): Promise<D1Result<T>>;
+  run<T = Row>(): Promise<D1Result<T>>;
+  raw<T = unknown[]>(opts?: { columnNames?: boolean }): Promise<T[]>;
+}
+/** The D1 binding (Cloudflare's in production, shell-bun's SQLite in tests and on the desktop): the part of its API this app calls. */
+export interface D1 {
+  prepare(sql: string): D1Statement;
+  batch<T = Row>(stmts: D1Statement[]): Promise<D1Result<T>[]>;
+  exec(sql: string): Promise<{ count: number; duration: number }>;
+}
+
 export interface Env {
-  DB: any;
+  DB: D1;
   FILES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
   /** One game room per level or repo: its lobby and multiplayer relay. */
   GAMES: { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
@@ -132,6 +150,8 @@ export interface Env {
   AGENT_REVIEW_MS?: string;
   /** Tests only: stands in for running a coding agent's CLI (see agent-run.ts). */
   AGENT_EXEC?: unknown;
+  /** "on" runs the mergiraf on PATH on a file Mervin left cards in (mergiraf.ts); hosted, it runs in the agent container. Tests pass an Exec. */
+  MERGIRAF?: unknown;
   /** Tests only: stand in for npm, osv.dev, the install-and-test run and the fixer (see deps.ts). */
   DEPS_REGISTRY?: unknown;
   DEPS_ADVISORIES?: unknown;
@@ -144,6 +164,8 @@ export interface Env {
   WATCH_NEWS?: string;
   /** Tests only: stands in for fetch to the status pages, osv.dev and the news search (see watch.ts). */
   WATCH_FETCH?: unknown;
+  /** The built pages (dist/client), for the routes that serve one page under a second name (worker.ts). Unset in tests. */
+  ASSETS?: { fetch(req: Request): Promise<Response> };
   /** Where desktop deploys keep each repo's Alchemy state (deploy.ts); ~/.codesplitters/alchemy if unset. */
   DEPLOY_STATE_DIR?: string;
   /** Tests only: stands in for the commands and the fetch a preview deploy runs (see preview.ts). */
@@ -169,7 +191,10 @@ export const json = (v: unknown, status = 200, headers: Record<string, string> =
 
 /** A client's JSON body: the fields a route reads, each unknown until the route checks it. Bad JSON or a non-object just has none. */
 export type Body<K extends string> = { [k in K]?: unknown };
-export const readBody = async <K extends string>(req: Request): Promise<Body<K>> => (await req.json().catch(() => null)) ?? {};
+export const readBody = async <K extends string>(req: Request): Promise<Body<K>> => {
+  const v: unknown = await req.json().catch(() => null);
+  return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Body<K>) : {};
+};
 
 // Single dashes only, so "owner--repo" names an artifact unambiguously.
 export const NAME = /^(?=.{1,39}$)[a-z0-9]+(-[a-z0-9]+)*$/;

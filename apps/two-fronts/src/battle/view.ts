@@ -1,13 +1,89 @@
 // Draws a Battle in three.js and turns the keyboard and mouse into the hero's Input.
 // Third person: WASD to move, the mouse to look, click to fire, Q for an orbital strike where
 // you're aiming, E to climb into or out of a vehicle (as a champion: Warbur's throw, or Gumpert's
-// change of kit). Things that die come apart in chunks, and blasts throw dirt.
+// change of kit). Things that die come apart in chunks, and blasts throw dirt. Blaster fire is
+// glowing bolts that fly; sound is sfx.ts (M mutes), and the mission card and waypoint, mission.ts.
+// 1 to 4 order the squad round you (forward, hold, fall back, focus fire where the gun points).
+// Heavy weapons wait out in the open under a beacon. An intro cutscene plays first, once, and
+// a sting when a Mossback walks in (cutscenes.ts). Comrades talk in bubbles over their heads.
 import * as THREE from "three";
 import { FACTION_COLORS, type BattleResult, type BattleSpec, type Side } from "./contract.ts";
 import { groundRecorder } from "./replay.ts";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { OutlinePass } from "three/addons/postprocessing/OutlinePass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { animate, gunship, marine, speeder, tank, turret, walker, wooka } from "./models.ts";
 import { buildWorld } from "./terrain.ts";
-import { CHAMP_AT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, startBattle, statsOf, step, timeLimit, vipUnit, type Fx, type Trooper, type Unit } from "./sim.ts";
+import { mission, sameMission, standing, type Mission, type Standing } from "./mission.ts";
+import { makeSfx } from "./sfx.ts";
+import { icon } from "../ui/icons.ts";
+import { makeBubbles } from "../ui/bubbles.ts";
+import { INTROS, mossbackSting } from "./cutscenes.ts";
+import { playCutscene, shouldPlay } from "./cutscene-view.ts";
+import { CHAMP_AT, HEAVY, ORDERS, ORDER_FOR, OVERHEAT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, startBattle, statsOf, step, timeLimit, vipUnit, yawTo, type Fx, type OrderKind, type Trooper, type Unit } from "./sim.ts";
+
+// The squad orders, by key, with their icons and what the HUD calls them.
+const ORDER_KEYS: Record<string, OrderKind> = { "1": "forward", "2": "hold", "3": "back", "4": "focus", f: "focus" };
+const ORDER_INFO: Record<OrderKind, { icon: string; name: string; color: number }> = {
+  forward: { icon: "chevrons-up", name: "Forward", color: 0x7ad87a },
+  hold: { icon: "shield", name: "Hold", color: 0xffd27a },
+  back: { icon: "undo-2", name: "Fall back", color: 0x9fd3ff },
+  focus: { icon: "crosshair", name: "Focus fire", color: 0xff5a3a },
+};
+// What comrades say over their heads: something daft when it's quiet, something worried when it isn't.
+const CHATTER = {
+  marines: {
+    calm: ["Is it meant to be this quiet?", "My snorkel's fogging up", "Anyone else hear humming?", "Mum said join the navy", "I signed up for the brochure", "Smells like wet dog out here", "They can't be THAT bad, right?", "Who packed my backpack? It weighs a tonne", "I think a fern just blinked",
+      "Does anyone else feel like a lamb to the slaughter? Just me?", "I'm not saying it's a trap. I'm saying there's a very polite sign saying TRAP", "Last week I picked the wrong planet to quit coffee on", "I haven't felt this alone since the bus", "If this is a jungle, where's the helicopter music?", "Is anyone else hearing a rabbit? No? Just me?", "I'd like to speak to whoever drew this map. And thank them. And never see them again.", "Sergeant says stay frosty. It's thirty-eight degrees"],
+    scared: ["THERE'S SO MANY", "It's looking at me", "Too fluffy, TOO FLUFFY", "Reloading! Cover me!", "They're in the ferns!", "I want to go home", "Don't let them near the backpacks!", "Keep shooting, keep SHOOTING",
+      "Look at the bones! LOOK AT THE BONES!", "Run away! Not you, you. Everybody else, stay!", "Surely this is not serious? It's serious. Don't call me Shirley!", "That's the third one! It keeps coming back and it keeps being small!", "I can't feel my legs. Oh, there. Good. They've gone to a better place", "Mommy! Mommy's here? Oh. It's a Wooka. Mommy's a Wooka?", "They've got my boot. They've got my other boot. They've got the foot in the boot"],
+    big: ["What IS that?!", "That one's the size of a hut", "Rockets! Who has rockets?", "I'm not paid enough for this", "That's no ordinary Wooka!", "I've seen a lot of things, and now I've seen that", "It's the one from the bones! The bones were its! Look at the BONES!", "I'm gonna need a bigger backpack. No wait, a smaller me"],
+    hurt: ["I'm hit! I'm fine. I'm hit!", "Medic? Medic?!", "It bit my ARMOUR", "'Tis but a scratch! It's a leg. It was a leg", "I've had worse. Not much worse. But, some", "Tell my squad I'm fine. They can see I'm not. Tell them anyway"],
+  },
+  wooka: {
+    calm: ["Hoo-ka?", "wub wub", "Shiny ones smell funny", "Bonk soon?", "Mine helmet. MINE.", "Kakka-takka!", "Snack?",
+      "Hoo. Hoo hoo. Hoo?", "Shiny one dropped a thing. Is a thing", "Look at bones. Lots bones. Nice bones", "Is it bonk-time? Chief said bonk-time", "Little one ate the pin. Little one is fine. Little one is not fine", "Grrrm. Grrrm-wub", "We win? We win. We lose? We also win"],
+    scared: ["HOO! HOO! HOO!", "Bonk the shiny!", "Grunna-WUB!", "Get the backpack!", "Up the tree, up the tree!",
+      "Hoo-ROOOO!", "Too many shiny! Fewer shiny please!", "WAH! WAH! WAH-WAH-WAH!", "Chief said bonk. Chief did not say THIS many"],
+    big: ["BIG ONE!", "Big one go bonk!", "Wheee-ka!", "Big one see shiny, shiny not see big one", "Hoo-ROAR! Big one say hello!"],
+    hurt: ["Ow-ka!", "Ouchy wub", "Still fluffy!", "Is only a scratch! Is a leg! Was a leg", "Bite me back! Nobody bite me back!"],
+  },
+} as const;
+
+// A few lucide icons (ISC licence) for the rhythm strip: the HUD says it with icons and a ticking clock.
+const HUD_ICONS: Record<string, string> = {
+  shovel: '<path d="M21.56 4.56a1.5 1.5 0 0 1 0 2.122l-.47.47a3 3 0 0 1-4.212-.03 3 3 0 0 1 0-4.243l.44-.44a1.5 1.5 0 0 1 2.121 0z"/><path d="M3 22a1 1 0 0 1-1-1v-3.586a1 1 0 0 1 .293-.707l3.355-3.355a1.205 1.205 0 0 1 1.704 0l3.296 3.296a1.205 1.205 0 0 1 0 1.704l-3.355 3.355a1 1 0 0 1-.707.293z"/><path d="m9 15 7.879-7.878"/>',
+  "log-out": '<path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>',
+  siren: '<path d="M7 18v-6a5 5 0 1 1 10 0v6"/><path d="M5 21a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z"/><path d="M21 12h1"/><path d="M18.5 4.5 18 5"/><path d="M2 12h1"/><path d="M12 2v1"/><path d="m4.929 4.929.707.707"/><path d="M12 12v6"/>',
+  skull: '<path d="m12.5 17-.5-1-.5 1h1z"/><path d="M15 22a1 1 0 0 0 1-1v-1a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20v1a1 1 0 0 0 1 1z"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="12" r="1"/>',
+  plane: '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>',
+};
+const hudIcon = (name: string) => `<svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${HUD_ICONS[name] ?? ""}</svg>`;
+// The strip's own rules live here, with the thing that draws it.
+const RHYTHM_CSS = `
+.b-beat { position: absolute; top: 84px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; white-space: nowrap; }
+.b-beat .chip { display: inline-flex; align-items: center; gap: 6px; background: rgb(0 0 0 / 0.55); border-radius: 6px; padding: 3px 9px; border-bottom: 3px solid #888; pointer-events: auto; cursor: help; }
+.b-beat .chip .clock { min-width: 3.2em; }
+.b-beat .chip sup { font-style: italic; opacity: 0.7; }
+.b-beat .surge { border-color: #ff9a3c; } .b-beat .dig { border-color: #ffd27a; color: #ffd27a; }
+.b-beat .fall { border-color: #ff4a3a; color: #fff; background: rgb(150 20 10 / 0.75); animation: beat-flash 0.7s ease-in-out infinite alternate; }
+.b-beat .moss { border-color: #7dff6a; color: #bfffa8; } .b-beat .air { border-color: #9fe6ff; }
+@keyframes beat-flash { from { opacity: 0.65; } to { opacity: 1; } }
+.b-feed li.cut { opacity: 0.6; font-style: italic; } .b-feed li.over { color: #ffb0a0; letter-spacing: 0.03em; }
+.b-alarm { position: absolute; inset: 0; opacity: 0; box-shadow: inset 0 0 90px 24px rgb(200 20 10 / 0.7); }
+.b-alarm.on { animation: beat-alarm 0.5s ease-in-out infinite alternate; }
+@keyframes beat-alarm { from { opacity: 0.1; } to { opacity: 0.8; } }`;
+const FEED_KEEP = /^(Surge|Dig in|Out in|Left behind|Hold |.*FALL BACK|Squad|Chieftain|Picked up)/;
+// The heat gauge under the crosshair: ten segments along an arc, lit as the blaster heats (or as
+// a heavy weapon's ammo runs down).
+const HEAT_N = 10;
+const HEAT_SEGS = Array.from({ length: HEAT_N }, (_, i) => {
+  // From lower left, round the bottom, to lower right.
+  const span = (140 / HEAT_N) * (Math.PI / 180), a0 = ((200 * Math.PI) / 180) + i * span + 0.03, a1 = a0 + span - 0.06, r = 34;
+  const pt = (a: number) => `${(Math.cos(a) * r).toFixed(2)} ${(-Math.sin(a) * r).toFixed(2)}`;
+  return `<path d="M ${pt(a0)} A ${r} ${r} 0 0 0 ${pt(a1)}"/>`;
+}).join("");
 
 export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTMLElement): Promise<BattleResult> {
   const b = startBattle(spec);
@@ -66,12 +142,35 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     return g;
   };
 
-  // Shots are one batch of line segments; blasts and strike markers are pooled meshes.
-  const shotGeo = new THREE.BufferGeometry();
-  const shots = new THREE.LineSegments(shotGeo, new THREE.LineBasicMaterial({ color: 0xfff2a8 }));
+  // Blaster bolts: a glow in the shooter's colour round a hot core, flying from muzzle to target,
+  // with a flash where they leave and a spark where they land. The sim's shot lasts a frame or
+  // two; the bolt is the view's own and takes as long as the flight does.
+  // Fast over distance, but never quicker than BOLT_MIN in the air, so a shot up close is still seen.
+  const BOLTS = 400, BOLT_SPEED = 140, BOLT_MIN = 0.12;
+  const boltGeo = new THREE.CylinderGeometry(1, 1, 1, 6, 1).rotateX(Math.PI / 2);
+  // Out of the fog and tone mapping, so a bolt stays its own colour against Doren's bright haze;
+  // the glow is solid rather than added, or it washes out pink on the mist.
+  const glowing = (color: number, add: boolean) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: add ? 1 : 0.9, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending, depthWrite: false, toneMapped: false, fog: false });
+  const additive = (color = 0xffffff) => glowing(color, true);
+  const boltGlow = new THREE.InstancedMesh(boltGeo, glowing(0xffffff, false), BOLTS), boltCore = new THREE.InstancedMesh(boltGeo, additive(0xfff4ec), BOLTS);
+  const flashes = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), additive(), BOLTS);
+  for (const m of [boltGlow, boltCore, flashes]) { m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.count = 0; m.frustumCulled = false; scene.add(m); }
+  boltCore.renderOrder = 1; // the hot core over its glow
+  // The Marines' blasters fire red; the Wooka's only "shots" are rock-chuckers, a blur of amber.
+  const BOLT_COLORS: Record<string, number> = { marines: 0xff3326, wooka: 0xd08a3a };
+  type Bolt = { a: THREE.Vector3; b: THREE.Vector3; t: number; speed: number; len: number; w: number; color: THREE.Color; hit: boolean };
+  type Flash = { p: THREE.Vector3; t: number; life: number; s: number; color: THREE.Color };
+  const bolts: Bolt[] = [], flashList: Flash[] = [];
+  const boltDir = new THREE.Vector3(), boltZ = new THREE.Vector3(0, 0, 1), boltP = new THREE.Vector3(), boltM = new THREE.Matrix4(), boltQ = new THREE.Quaternion(), boltS = new THREE.Vector3();
+  const flash = (p: THREE.Vector3, s: number, color: THREE.Color, life = 0.06) => { if (flashList.length < BOLTS) flashList.push({ p: p.clone(), t: 0, life, s, color }); };
   const throwGeo = new THREE.BufferGeometry();
   const throws = new THREE.LineSegments(throwGeo, new THREE.LineBasicMaterial({ vertexColors: true }));
-  scene.add(shots, throws);
+  scene.add(throws);
+  // Gunship tracers: pale lines from the pass down to the ground.
+  const shotGeo = new THREE.BufferGeometry();
+  const shots = new THREE.LineSegments(shotGeo, new THREE.LineBasicMaterial({ color: 0xfff2a8 }));
+  shots.frustumCulled = false;
+  scene.add(shots);
   // Chunks: voxel bits of whatever came apart, and dirt from blasts. They fly, fall and bounce.
   const CHUNKS = 1600;
   const chunkMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), new THREE.MeshStandardMaterial({ roughness: 0.8 }), CHUNKS);
@@ -107,17 +206,109 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     return pool[i]!;
   };
 
-  // Input.
+  const sfx = makeSfx();
+  sfx.wake(); // the click that dropped you in is still fresh enough to open the sound
+  const section = canvas.parentElement!;
+  section.classList.add(`hud-${spec.factions[heroSide]}`);
+  // The chaos: shells and strikes coming down out of the sky, gunships going past, trees burning,
+  // smoke and flares. All of it is for the eye. What it hurts is in the sim (b.strikes, b.passes).
+  if (!document.getElementById("rhythm-css")) {
+    const st = document.createElement("style");
+    st.id = "rhythm-css";
+    st.textContent = RHYTHM_CSS;
+    document.head.append(st);
+  }
+  const shellMat = new THREE.MeshBasicMaterial({ color: 0xffb040, side: THREE.DoubleSide, transparent: true, opacity: 0.6 });
+  const colGeo = new THREE.CylinderGeometry(1, 1, 120, 10, 1, true).translate(0, 60, 0);
+  const colMat = new THREE.MeshBasicMaterial({ color: 0xff4a30, transparent: true, opacity: 0.18, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const streakMat = new THREE.MeshBasicMaterial({ color: 0xffd58a, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending });
+  const columns: THREE.Mesh[] = [];
+  // A ring on the ground with a shaft of light over it, for where to run to and where to hold.
+  const ringMark = (color: number, r: number) => {
+    const g = new THREE.Group();
+    const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.9, r, 48), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.85, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2;
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.4, r * 0.4, 70, 16, 1, true).translate(0, 35, 0), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.14, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    g.add(ring, beam);
+    g.visible = false;
+    scene.add(g);
+    return g;
+  };
+  const fallMark = ringMark(0x6dff8a, POST_RADIUS), digMark = ringMark(0xffd27a, POST_RADIUS + 1.5);
+  // Where the last order sent the squad.
+  const orderMarks = Object.fromEntries(ORDERS.map((k) => [k, ringMark(ORDER_INFO[k].color, 5)])) as Record<OrderKind, THREE.Group>;
+  // Heavy weapons out on the field: a crate under a beacon you can see from across it.
+  const cacheMeshes = b.caches.map((c) => {
+    const g = new THREE.Group(), y = ground(c.x, c.z);
+    const crate = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.8, 1), new THREE.MeshStandardMaterial({ color: 0x2b2f36, metalness: 0.6, roughness: 0.45 }));
+    crate.position.y = 0.4;
+    crate.castShadow = true;
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(1.84, 0.12, 1.04), additive(0x6ad8ff));
+    strip.position.y = 0.55;
+    const gun = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 1.6, 8).rotateZ(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x9aa2ad, metalness: 0.8, roughness: 0.3 }));
+    gun.position.y = 1.1;
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 50, 12, 1, true).translate(0, 25, 0), new THREE.MeshBasicMaterial({ color: 0x6ad8ff, transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    g.add(crate, strip, gun, beam);
+    g.position.set(c.x, y, c.z);
+    scene.add(g);
+    return { g, gun };
+  });
+  const jets: THREE.Group[] = [];
+  // Fires: a tree struck by a blast burns for a while, some of them up where the huts are.
+  type Fire = { x: number; z: number; y: number; life: number; seed: number; emit: number };
+  const fires: Fire[] = [];
+  const flameGeo = new THREE.ConeGeometry(0.75, 2.6, 7).translate(0, 1.3, 0);
+  const flameOuter = new THREE.MeshBasicMaterial({ color: 0xff5a14, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending });
+  const flameInner = new THREE.MeshBasicMaterial({ color: 0xffd65a, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending });
+  const flamesA: THREE.Mesh[] = [], flamesB: THREE.Mesh[] = [];
+  const ignite = (x: number, z: number) => {
+    let near: { x: number; z: number } | null = null, bd = 10;
+    for (const t of b.trees) { const d = Math.hypot(t.x - x, t.z - z); if (d < bd) { bd = d; near = t; } }
+    if (!near || fires.some((f) => Math.hypot(f.x - near!.x, f.z - near!.z) < 0.5)) return;
+    if (fires.length >= 22) fires.shift();
+    fires.push({ x: near.x, z: near.z, y: ground(near.x, near.z) + (Math.random() < 0.35 ? 6 + Math.random() * 4 : 0.4), life: 14 + Math.random() * 16, seed: Math.random() * 10, emit: 0 });
+  };
+  // Smoke: grey puffs that rise, swell and thin out.
+  const SMOKES = 260;
+  const smokeMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.5, 6, 5), new THREE.MeshBasicMaterial({ color: 0x2e2c2a, transparent: true, opacity: 0.4, depthWrite: false }), SMOKES);
+  smokeMesh.count = 0;
+  smokeMesh.frustumCulled = false;
+  scene.add(smokeMesh);
+  type Puff = { p: THREE.Vector3; v: THREE.Vector3; life: number; max: number };
+  const puffs: Puff[] = [];
+  const puff = (x: number, y: number, z: number, up = 2.5) => {
+    if (puffs.length >= SMOKES) puffs.shift();
+    const max = 3 + Math.random() * 3;
+    puffs.push({ p: new THREE.Vector3(x + (Math.random() - 0.5), y, z + (Math.random() - 0.5)), v: new THREE.Vector3(1 + Math.random(), up * (0.6 + Math.random() * 0.8), (Math.random() - 0.5)), life: max, max });
+  };
+  // Flares: one rises, hangs, and comes down slowly, lighting the trees.
+  type Flare = { x: number; z: number; age: number; sway: number; color: number };
+  const flares: Flare[] = [];
+  const flareMesh = new THREE.Mesh(new THREE.SphereGeometry(0.9, 10, 8), new THREE.MeshBasicMaterial({ color: 0xfff0b8, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
+  const flareLight = new THREE.PointLight(0xffe2a0, 0, 140, 1.4);
+  flareMesh.visible = false;
+  scene.add(flareMesh, flareLight);
+  const FLARE_LIFE = 9;
+  const launchFlare = (x: number, z: number, color = 0xffe2a0) => { if (flares.length < 3) flares.push({ x, z, age: 0, sway: Math.random() * 6, color }); };
+  let nextFlare = 4, lastSurge = 0;
+  const seenBig = new Set<number>();
+  let alarmT = 0;
+  const smashPalette = [0x7a4f2a, 0x5a3b22, 0x3d4a22, 0x9b8b6a, 0x4f7a2c];
+
+  // Input. Any click or key also wakes the sound, which browsers keep shut till then.
   const keys = new Set<string>();
-  let yaw = heroSide === "attacker" ? 0 : Math.PI, pitch = -0.12, firing = false, strike = false, use = false;
+  let yaw = heroSide === "attacker" ? 0 : Math.PI, pitch = -0.12, firing = false, strike = false, use = false, order: OrderKind | null = null;
   const onKey = (e: KeyboardEvent, down: boolean) => {
     const k = e.key.toLowerCase();
+    if (down) sfx.wake();
+    if (down && k === "m" && !e.repeat) sfx.toggle();
     if (down && k === "q") strike = true;
     if (down && k === "e") use = true;
+    if (down && !e.repeat && ORDER_KEYS[k]) order = ORDER_KEYS[k]!;
     down ? keys.add(k) : keys.delete(k);
   };
   const kd = (e: KeyboardEvent) => onKey(e, true), ku = (e: KeyboardEvent) => onKey(e, false);
-  const md = (e: MouseEvent) => { if (document.pointerLockElement !== canvas) canvas.requestPointerLock(); else if (e.button === 0) firing = true; };
+  const md = (e: MouseEvent) => { sfx.wake(); if (document.pointerLockElement !== canvas) canvas.requestPointerLock(); else if (e.button === 0) firing = true; };
   const mu = (e: MouseEvent) => { if (e.button === 0) firing = false; };
   const mm = (e: MouseEvent) => {
     if (document.pointerLockElement !== canvas) return;
@@ -134,10 +325,28 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     const hit = ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -floor), new THREE.Vector3());
     return hit && hit.distanceTo(camera.position) < 160 ? { x: hit.x, z: hit.z } : null;
   };
+  const gunPoint = () => {
+    const me = heroUnit(b), f = facing(yaw);
+    return aimPoint() ?? (me ? { x: me.x + f.x * 40, z: me.z + f.z * 40 } : { x: 0, z: 0 });
+  };
 
+  // Halo-style outline on the enemy: bright where you can see them, dim where foliage or a wall
+  // is in front, so a Wooka coming through the ferns still reads.
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const outline = new OutlinePass(new THREE.Vector2(innerWidth, innerHeight), scene, camera);
+  outline.edgeStrength = 5;
+  outline.edgeThickness = 2;
+  outline.visibleEdgeColor.set(0xff5a2a);
+  outline.hiddenEdgeColor.set(0xc0381c);
+  composer.addPass(outline);
+  composer.addPass(new OutputPass());
+  const OUTLINE_RANGE = 80;
   const resize = () => {
     const w = canvas.clientWidth, h = canvas.clientHeight;
     renderer.setSize(w, h, false);
+    composer.setSize(w, h);
+    outline.resolution.set(w, h);
     camera.aspect = w / Math.max(1, h);
     camera.updateProjectionMatrix();
   };
@@ -153,14 +362,31 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const cross = document.querySelector<HTMLElement>(".crosshair");
   const feel = document.createElement("div");
   feel.className = "b-feel";
-  feel.innerHTML = `<div class="b-hurt"></div><div class="b-heat"><i></i></div><div class="b-toast"></div>`;
+  feel.innerHTML = `<div class="b-alarm"></div><div class="b-hurt"></div><div class="b-heat"><svg viewBox="-50 -50 100 100" aria-hidden="true">${HEAT_SEGS}</svg><span class="b-heat-label"></span></div><div class="b-caches"></div><div class="b-toast"></div><div class="b-leave">${icon("triangle-alert", 18)}<span></span></div><div class="b-note"></div><div class="b-way"><i class="b-way-arrow">${icon("arrow-right", 14)}</i><span class="b-way-icon"></span><b></b></div>`;
   canvas.parentElement!.append(feel);
-  const hurtEl = feel.querySelector<HTMLElement>(".b-hurt")!, heatEl = feel.querySelector<HTMLElement>(".b-heat")!, toastEl = feel.querySelector<HTMLElement>(".b-toast")!;
+  const bubbles = makeBubbles(feel);
+  const cachesEl = feel.querySelector<HTMLElement>(".b-caches")!;
+  cachesEl.innerHTML = b.caches.map(() => `<div class="b-cache">${icon("package", 14)}<b></b></div>`).join("");
+  const cacheEls = [...cachesEl.children] as HTMLElement[];
+  const segEls = [...feel.querySelectorAll<SVGPathElement>(".b-heat path")], heatLabel = feel.querySelector<HTMLElement>(".b-heat-label")!;
+  const alarmEl = feel.querySelector<HTMLElement>(".b-alarm")!, hurtEl = feel.querySelector<HTMLElement>(".b-hurt")!, heatEl = feel.querySelector<HTMLElement>(".b-heat")!, toastEl = feel.querySelector<HTMLElement>(".b-toast")!;
+  const leaveEl = feel.querySelector<HTMLElement>(".b-leave")!, noteEl = feel.querySelector<HTMLElement>(".b-note")!, wayEl = feel.querySelector<HTMLElement>(".b-way")!;
+  const wayArrow = wayEl.querySelector<HTMLElement>(".b-way-arrow")!, wayIcon = wayEl.querySelector<HTMLElement>(".b-way-icon")!, wayDist = wayEl.querySelector<HTMLElement>("b")!;
+  // The mission: what it is, where the hero stands against it, and what they're told on the way.
+  const VERB_ICON: Record<Mission["verb"], string> = { Defend: "shield", Take: "flag", Escort: "users", Stop: "crosshair", Reach: "map-pin" };
+  const IN_AREA: Record<Mission["verb"], string> = { Defend: "Hold the area", Take: "Stand in the ring till it turns", Escort: "Stay close", Stop: "Bring them down", Reach: "Step into the ring" };
+  let job: Mission | null = null, stand: Standing = "travel", jobDist = 0, warnAt = 0, noteT = 0, wayIconOf = "";
+  const noteFor = (was: Mission, now: Mission) => was.name === now.name ? (now.verb === "Defend" ? `${now.name} is ours. Hold it` : `${now.name} lost. Take it back`) : `Next: ${now.verb} ${now.name}`;
+  const wayPos = new THREE.Vector3();
   const foeHorde = isHorde(b, heroSide === "attacker" ? "defender" : "attacker");
   const STREAK: Record<number, string> = foeHorde
     ? { 2: "Two in a row", 3: "Three. Fluff everywhere", 5: "Five. They'll sing about you. Badly", 8: "Eight. The forest has gone quiet", 12: "Twelve. Command is concerned about you" }
     : { 2: "Two backpacks", 3: "Three. Start a collection", 5: "Five. The totems need helmets", 8: "Eight. The shiny ones are all crying", 12: "Twelve. The chieftain wants a word" };
-  let hurt = 0, shake = 0, lastHp = Infinity, lastKills = 0, toastT = 0, markT = 0;
+  let wasVent = false, nextTalk = 3, stung = false;
+  const noCuts = new URLSearchParams(location.search).get("cutscenes") === "off";
+  const talk: { id: number; text: string; until: number }[] = [];
+  let hurt = 0, shake = 0, lastHp = Infinity, lastKills = 0, toastT = 0, markT = 0, gruntAt = 0, chatterAt = 0;
+  let ear = { x: 0, z: 0 };
   // What the mode asks of you right now, over the posts.
   const objectiveLine = () => {
     const live = b.posts[b.live]!, vip = vipUnit(b), vipName = isHorde(b, "attacker") ? "Warbur" : "Gumpert";
@@ -172,31 +398,85 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     return text ? `<span class="objective">${text}</span>` : "";
   };
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  // The rhythm, in icons and ticking clocks: the next surge, the post to dig in at, the fall-back to run for.
+  const clock = (s: number) => `<span class="clock">${fmt(Math.max(0, s))}</span>`;
+  const beatLine = () => {
+    const beat = b.beat, chips: string[] = [], mossN = b.units.filter((u) => u.role === "mossback").length;
+    if (beat.fall) {
+      const f = beat.fall;
+      chips.push(`<span class="chip fall" title="${f.evac ? "Nowhere left to fall back to: reach the evac point" : "Overrun: get to the next post"} before the clock runs out. Out in time costs a few tickets; left behind costs a lot.">${hudIcon("log-out")}${f.evac ? "Evac" : "Fall back"}: ${f.name} ${clock(f.left)}<sup>i</sup></span>`);
+    } else if (beat.dig) {
+      chips.push(`<span class="chip dig" title="Hold this post with at least two of yours and nobody overrunning it, and the countdown runs. Held, it pays a drop of troops and tickets, then an orbital strike.">${hudIcon("shovel")}Dig in: ${b.posts[beat.dig.post]!.name} ${clock(beat.dig.left)}<sup>i</sup></span>`);
+    }
+    if (mossN) chips.push(`<span class="chip moss" title="Rifles barely mark it and it mends. Rockets, strikes and Boomies finish it.">${hudIcon("skull")}Mossback${mossN > 1 ? ` x${mossN}` : ""}</span>`);
+    if (b.passes.length) chips.push(`<span class="chip air" title="A gunship is making a run across the field.">${hudIcon("plane")}Gunship</span>`);
+    if (b.units.some((u) => u.wild) || isHorde(b, "attacker") || isHorde(b, "defender")) chips.push(`<span class="chip surge" title="The next surge of Wooka out of the treeline. Between surges the radio calls a dig-in.">${hudIcon("siren")}Surge ${beat.surge + 1} ${clock(beat.nextSurge - b.time)}<sup>i</sup></span>`);
+    return `<div class="b-beat">${chips.join("")}</div>`;
+  };
+  // The radio, with lines that land on top of each other cutting each other off.
+  const feedLines = () => {
+    const from = Math.max(0, b.events.length - 5);
+    return b.events.slice(from).map((e, k) => {
+      const i = from + k, t = b.eventAt[i] ?? 0, next = b.eventAt[i + 1];
+      const cut = !FEED_KEEP.test(e) && e.length > 24 && next !== undefined && next - t < 1;
+      const over = i > 0 && t - (b.eventAt[i - 1] ?? -9) < 1;
+      return `<li class="${cut ? "cut" : ""} ${over ? "over" : ""}">${cut ? `${e.slice(0, Math.ceil(e.length * 0.6))}--` : e}</li>`;
+    }).join("");
+  };
+  // The squad's orders, by key, the one in force lit with what's left of it.
+  const orderBar = () => {
+    const o = b.order && b.time - b.order.at < ORDER_FOR ? b.order : null;
+    return `<div class="b-orders">${ORDERS.map((k, i) => `<span class="ord${o?.kind === k ? " on" : ""}" title="${ORDER_INFO[k].name}${k === "forward" || k === "focus" ? ": where your gun points" : k === "back" ? ": towards home" : ": where they stand"}"><kbd>${i + 1}</kbd>${icon(ORDER_INFO[k].icon, 16)}${o?.kind === k ? `<i style="width:${Math.round((100 * (ORDER_FOR - (b.time - o.at))) / ORDER_FOR)}%"></i>` : ""}</span>`).join("")}</div>`;
+  };
   const drawHud = () => {
     const hero = heroUnit(b), mine = heroSide, foe = mine === "attacker" ? "defender" : "attacker";
     const riding = b.hero.inVehicle === null ? null : b.units.find((u) => u.id === b.hero.inVehicle);
-    const bar = (s: Side) => `<div class="tickets ${spec.factions[s]}"><b>${s === mine ? "You" : "Enemy"}</b><span>${Math.max(0, Math.ceil(b.tickets[s]))}</span><i style="width:${Math.min(100, (100 * Math.max(0, b.tickets[s])) / (spec.tickets[s] + spec.reinforcements[s]))}%"></i></div>`;
+    const bar = (s: Side) => `<div class="tickets ${spec.factions[s]}"><b>${spec.factions[s] === "wooka" ? "Kin" : "Marines"}</b><span>${Math.max(0, Math.ceil(b.tickets[s]))}</span><i style="width:${Math.min(100, (100 * Math.max(0, b.tickets[s])) / (spec.tickets[s] + spec.reinforcements[s]))}%"></i></div>`;
     hud.innerHTML = `
       <div class="b-top">${bar(mine)}
         <div class="b-clock" title="${b.mode === "conquest" || b.mode === "hill" ? "Time left. When it runs out, the side with more tickets wins (the defender on a tie)." : "Time left. When it runs out, the defender has held."}"><span class="clock">${fmt(Math.max(0, timeLimit(spec) - b.time))}</span><sup>i</sup></div>
         ${bar(foe)}</div>
+      ${job ? `<div class="b-mission ${stand}"><small>${spec.factions[heroSide] === "wooka" ? "The chieftain says" : "Orders of the Fleet"}</small><b>${icon(VERB_ICON[job.verb], 15)}${job.verb} ${job.name}</b><span>${stand === "travel" ? `Make it to ${job.name} · ${Math.round(jobDist)} m` : stand === "in" ? IN_AREA[job.verb] : "Leaving the area"}</span></div>` : ""}
       <div class="b-posts">${objectiveLine()}${b.posts.map((p, i) => `<span class="post ${p.owner ? spec.factions[p.owner] : ""}${inPlay(b, i) ? "" : " out"}">${p.name}</span>`).join("")}</div>
+      ${beatLine()}
       <div class="b-hero">
         ${hero ? `<div class="hp"><i style="width:${(100 * hero.hp) / hero.maxHp}%"></i></div>` : `<div class="respawn">${b.hero.lives > 0 ? `Back in ${Math.ceil(b.hero.respawn)}s` : "Your hero is down"}</div>`}
-        <span title="Lives">♥ ${b.hero.lives}</span>
-        <span title="Orbital strikes (Q)">☄ ${b.strikesLeft[mine]}</span>
-        ${riding ? `<span title="Driving a ${riding.kind} (E to get out)">▣</span>` : ""}
+        <span class="stat" title="Lives">${icon("heart", 15)}${b.hero.lives}</span>
+        <span class="stat" title="Orbital strikes (Q)">${icon("zap", 15)}${b.strikesLeft[mine]}</span>
+        ${b.hero.arm ? `<span class="stat arm" title="Heavy weapon: fires till it's empty, never overheats">${icon("package", 15)}${HEAVY[b.hero.arm.kind].name[spec.factions[mine]]} · ${b.hero.arm.ammo}</span>` : ""}
+        ${riding ? `<span class="stat" title="Driving a ${riding.kind} (E to get out)">${icon("car-front", 15)}</span>` : ""}
+        ${sfx.muted ? `<span class="muted" title="Sound off (M)">${icon("volume-x", 15)}</span>` : ""}
         ${hero?.champ ? `<span class="champ-on">${hero.champ === "warbur" ? "WARBUR · E throws a Wooka" : `GUMPERT · ${hero.kit} · E swaps kit`}</span>`
           : `<span class="champ" title="Kills till your champion takes the field">${champName}<i style="width:${Math.min(100, (100 * b.kills[mine]) / CHAMP_AT)}%"></i></span>`}
       </div>
-      <ul class="b-feed">${b.events.slice(-5).map((e) => `<li>${e}</li>`).join("")}</ul>
-      ${document.pointerLockElement === canvas ? "" : `<div class="b-help">Click the field to take control · WASD move · mouse look · click fire · Q orbital strike · E vehicle · Esc to let go<button id="b-auto" type="button">Let the AI finish it</button></div>`}`;
+      <ul class="b-feed">${feedLines()}</ul>
+      ${orderBar()}
+      ${document.pointerLockElement === canvas ? "" : `<div class="b-help">Click the field to take control · WASD move · mouse look · click fire · Q orbital strike · E vehicle · 1-4 squad orders · M sound · Esc to let go<button id="b-auto" type="button">Let the AI finish it</button></div>`}`;
   };
 
   return new Promise((resolve) => {
     let last = performance.now(), acc = 0, hudAt = 0, raf = 0;
     const rec = groundRecorder();
+    const stage = { scene, camera, render: () => composer.render(), ground, sfx, host: section };
+    // A cutscene holds the battle: the sim doesn't step and the HUD steps aside till it's over.
+    const cut = (c: Parameters<typeof playCutscene>[0], origin: Parameters<typeof playCutscene>[2]) => {
+      section.classList.add("cutting");
+      return playCutscene(c, stage, origin).then(() => {
+        section.classList.remove("cutting");
+        firing = false;
+        last = performance.now();
+        raf = requestAnimationFrame(frame);
+      });
+    };
     const frame = (now: number) => {
+      // The first Mossback of the battle gets its moment.
+      const big = !stung && !noCuts ? b.units.find((u) => u.role === "mossback" && !seenBig.has(u.id)) : undefined;
+      if (big) {
+        stung = true;
+        const me = heroUnit(b) ?? b.spawn[heroSide];
+        void cut(mossbackSting(spec.factions[heroSide]), { x: big.x, z: big.z, yaw: yawTo(big, me) });
+        return;
+      }
       const dt = Math.min(0.25, (now - last) / 1000);
       acc += dt;
       last = now;
@@ -207,8 +487,10 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
           right: (keys.has("d") ? 1 : 0) - (keys.has("a") ? 1 : 0),
           yaw, fire: firing, use,
           strike: strike ? aimPoint() ?? undefined : undefined,
+          order: order ? { kind: order, ...gunPoint() } : undefined,
         });
         strike = use = false;
+        order = null;
         step(b, input);
         acc -= DT;
       }
@@ -225,7 +507,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         // Walk cycles from how far it moved; recoil and club swings from how long since it fired.
         const last = m.userData.last as { x: number; z: number }, moved = Math.hypot(u.x - last.x, u.z - last.z);
         last.x = u.x; last.z = u.z;
-        animate(m, { t: now / 1000, dt, moved: moved < 5 ? moved : 0, since: Math.max(0, statsOf(u).cool - u.cool) });
+        animate(m, { t: now / 1000, dt, moved: moved < 5 ? moved : 0, since: Math.max(0, statsOf(u).cool - u.cool), call: (now - ((m.userData.calledAt as number | undefined) ?? -1e9)) / 1000 });
         m.visible = !(u.kind === "hero" && b.hero.inVehicle !== null);
       }
       for (const [id, m] of meshes) if (!seen.has(id)) { scene.remove(m); meshes.delete(id); }
@@ -240,8 +522,8 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         p.core.position.y = ground(post.x - 4, post.z - 4) + 2.6 + Math.sin(now / 400 + i) * 0.2;
         p.flag.rotation.y = Math.sin(now / 700 + i) * 0.25; // it flaps
       });
-      const pts: number[] = [];
-      let nb = 0;
+      let nb = 0, lasers = 0;
+      const byId = new Map(b.units.map((u) => [u.id, u]));
       const tpts: number[] = [], tcols: number[] = [];
       let nt = 0;
       for (const f of b.fx) {
@@ -249,13 +531,37 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         if (!spawned.has(f)) {
           spawned.add(f);
           const me = heroUnit(b);
-          if (f.from !== undefined && f.from === b.hero.id && (f.hit || f.kind === "blast")) markT = 0.15;
+          if (f.from !== undefined && f.from === b.hero.id && (f.hit || f.kind === "blast")) { markT = 0.15; if (f.kind !== "blast") sfx.tick(); }
+          const by = f.from === undefined ? undefined : byId.get(f.from);
+          if (f.kind === "shot") {
+            const heavy = f.big || (!!by && (isVehicle(by.kind) || by.kind === "turret")), mine = f.from === b.hero.id;
+            const a = new THREE.Vector3(f.x, (f.y ?? 0) + (heavy ? 2.2 : 1.4) + fy, f.z), z = new THREE.Vector3(f.tx, (f.ty ?? 0) + 1.2 + ground(f.tx, f.tz), f.tz);
+            const rocks = spec.factions[by?.side ?? "attacker"] === "wooka", c = new THREE.Color(BOLT_COLORS[rocks ? "wooka" : "marines"]!);
+            if (bolts.length < BOLTS) bolts.push({ a, b: z, t: 0, speed: Math.min(BOLT_SPEED, a.distanceTo(z) / BOLT_MIN), len: heavy ? 5 : mine ? 4 : 3.2, w: heavy ? 0.4 : mine ? 0.28 : 0.2, color: c, hit: !!f.hit });
+            flash(a, heavy ? 0.9 : 0.45, c);
+            // The hero's own shots always sound; the battle's, a handful a frame.
+            if (rocks) sfx.swish(f, 0.35);
+            else if (mine || lasers++ < 6) sfx.laser(mine ? null : f, heavy, mine ? 0.32 : 0.3);
+          }
+          if (f.kind === "spear" || f.kind === "hex") sfx.swish(f);
+          if (f.kind === "blast") sfx.boom(f, f.big);
+          if (f.kind === "gore") sfx.hurt(spec.factions[f.side ?? "attacker"], f, true, undefined, f.big ? 0.6 : 1);
+          if (f.kind === "toss") sfx.whoop(f);
           if (f.kind === "blast" && me) shake = Math.max(shake, (f.big ? 1.2 : 0.4) * Math.max(0, 1 - Math.hypot(f.x - me.x, f.z - me.z) / 35));
           if (f.kind === "gore") burst(f.x, fy + 0.8 + (f.y ?? 0), f.z, f.big ? 46 : 16, GORE[spec.factions[f.side ?? "attacker"]]!, f.big ? 9 : 6);
-          if (f.kind === "blast") burst(f.x, fy + 0.3, f.z, f.big ? 60 : 14, DIRT, f.big ? 14 : 7);
+          if (f.kind === "blast") {
+            burst(f.x, fy + 0.3, f.z, f.big ? 60 : 14, DIRT, f.big ? 14 : 7);
+            for (let i = 0; i < (f.big ? 6 : 1); i++) puff(f.x, fy + 0.5, f.z, 3);
+            if (f.big || Math.random() < 0.25) ignite(f.x, f.z);
+          }
+          if (f.kind === "smash") {
+            // Something big came down on the ground, or through a log: wood, earth and moss everywhere.
+            burst(f.x, fy + 0.4, f.z, f.big ? 70 : 34, smashPalette, f.big ? 12 : 8);
+            for (let i = 0; i < 3; i++) puff(f.x, fy + 0.3, f.z, 2);
+            if (me) shake = Math.max(shake, (f.big ? 1.6 : 0.7) * Math.max(0, 1 - Math.hypot(f.x - me.x, f.z - me.z) / 30));
+          }
         }
-        if (f.kind === "shot") pts.push(f.x, (f.y ?? 0) + 1.4 + fy, f.z, f.tx, (f.ty ?? 0) + 1.2 + ground(f.tx, f.tz), f.tz);
-        else if (f.kind === "spear" || f.kind === "hex") {
+        if (f.kind === "spear" || f.kind === "hex") {
           // A spear flies in an arc, a hex in a wobble; both from thrower to target over the throw.
           const c = f.kind === "spear" ? [0.55, 0.38, 0.2] : [0.5, 1, 0.42], k = 1 - f.t / 0.3, k0 = Math.max(0, k - 0.25);
           const at = (u: number) => [f.x + (f.tx - f.x) * u, fy + 1.4 + Math.sin(u * Math.PI) * (f.kind === "spear" ? 4 : 1.5), f.z + (f.tz - f.z) * u];
@@ -273,7 +579,32 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       }
       for (let i = nt; i < tossed.length; i++) tossed[i]!.visible = false;
       for (let i = nb; i < blasts.length; i++) blasts[i]!.visible = false;
-      shotGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+      // Bolts fly; one that gets there leaves a spark, a bigger one if it hit something.
+      let nbolt = 0;
+      for (let i = bolts.length - 1; i >= 0; i--) {
+        const o = bolts[i]!, d = o.a.distanceTo(o.b);
+        o.t += dt;
+        const head = Math.min(d, o.t * o.speed), tail = Math.max(0, head - Math.min(o.len, d * 0.5));
+        if (head >= d) { flash(o.b, o.hit ? 0.7 : 0.35, o.color, 0.09); bolts.splice(i, 1); continue; }
+        boltDir.subVectors(o.b, o.a).divideScalar(d || 1);
+        boltP.copy(o.a).addScaledVector(boltDir, (head + tail) / 2);
+        boltQ.setFromUnitVectors(boltZ, boltDir);
+        boltGlow.setMatrixAt(nbolt, boltM.compose(boltP, boltQ, boltS.set(o.w, o.w, head - tail)));
+        boltGlow.setColorAt(nbolt, o.color);
+        boltCore.setMatrixAt(nbolt, boltM.compose(boltP, boltQ, boltS.set(o.w * 0.35, o.w * 0.35, head - tail)));
+        nbolt++;
+      }
+      boltGlow.count = boltCore.count = nbolt;
+      let nflash = 0;
+      for (let i = flashList.length - 1; i >= 0; i--) {
+        const o = flashList[i]!;
+        if ((o.t += dt) >= o.life) { flashList.splice(i, 1); continue; }
+        flashes.setMatrixAt(nflash, boltM.compose(o.p, boltQ.identity(), boltS.setScalar(o.s * (1 - o.t / o.life * 0.5))));
+        flashes.setColorAt(nflash, o.color);
+        nflash++;
+      }
+      flashes.count = nflash;
+      for (const m of [boltGlow, boltCore, flashes]) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
       throwGeo.setAttribute("position", new THREE.Float32BufferAttribute(tpts, 3));
       throwGeo.setAttribute("color", new THREE.Float32BufferAttribute(tcols, 3));
       // The chunks fall, bounce on the floor and fade out by shrinking.
@@ -294,18 +625,137 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       chunkMesh.instanceMatrix.needsUpdate = true;
       if (chunkMesh.instanceColor) chunkMesh.instanceColor.needsUpdate = true;
       for (let i = chunks.length - 1; i >= 0; i--) if (chunks[i]!.life <= 0) { chunks.splice(i, 1); chunkCol.splice(i, 1); }
-      b.strikes.forEach((s, i) => { const m = pooled(marks, i, () => { const x = new THREE.Mesh(markGeo, markMat); x.rotation.x = -Math.PI / 2; return x; }); m.position.set(s.x, 0.15 + ground(s.x, s.z), s.z); });
-      for (let i = b.strikes.length; i < marks.length; i++) marks[i]!.visible = false;
+      // Strikes and shells: a ring on the ground. A strike has a shaft of light that swells as it lands; a shell, a streak falling.
+      b.strikes.forEach((s, i) => {
+        const m = pooled(marks, i, () => { const x = new THREE.Mesh(markGeo, markMat); x.rotation.x = -Math.PI / 2; return x; });
+        const gy = ground(s.x, s.z), r = (s.r ?? STRIKE_RADIUS) / STRIKE_RADIUS;
+        m.material = s.shell ? shellMat : markMat;
+        m.position.set(s.x, 0.15 + gy, s.z);
+        m.scale.setScalar(r);
+        const c = pooled(columns, i, () => new THREE.Mesh(colGeo, colMat));
+        c.material = s.shell ? streakMat : colMat;
+        if (s.shell) { c.scale.set(0.25, 0.25, 0.25); c.position.set(s.x, gy + Math.max(0, s.t) * 45, s.z); }
+        else { const k = 1 + Math.max(0, 2.5 - s.t); c.scale.set(STRIKE_RADIUS * 0.3 * k * 0.5, 1, STRIKE_RADIUS * 0.3 * k * 0.5); c.position.set(s.x, gy, s.z); }
+      });
+      for (let i = b.strikes.length; i < marks.length; i++) { marks[i]!.visible = false; if (columns[i]) columns[i]!.visible = false; }
+
+      // Gunships going past, firing down.
+      const pts: number[] = [];
+      b.passes.forEach((p, i) => {
+        const g = jets[i] ?? (jets[i] = gunship());
+        if (!g.parent) scene.add(g);
+        g.visible = true;
+        const k = Math.min(1, p.age / p.dur), x = p.x0 + (p.x1 - p.x0) * k, z = p.z0 + (p.z1 - p.z0) * k, gy = ground(x, z);
+        g.position.set(x, gy + 13, z);
+        g.rotation.y = Math.atan2(-(p.x1 - p.x0), -(p.z1 - p.z0));
+        animate(g, { t: now / 1000, dt, moved: 0.3, since: 1 });
+        const tx = x + (Math.random() - 0.5) * 8, tz = z + (Math.random() - 0.5) * 8;
+        pts.push(x, gy + 12, z, tx, ground(tx, tz) + 0.3, tz);
+      });
+      for (let i = b.passes.length; i < jets.length; i++) jets[i]!.visible = false;
+      shotGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+      // Fires and smoke.
+      let nf = 0;
+      for (const f of fires) {
+        f.life -= dt;
+        if (f.life <= 0) continue;
+        const flick = 0.85 + Math.sin(now / 70 + f.seed) * 0.18 + Math.sin(now / 130 + f.seed * 3) * 0.1, fade = Math.min(1, f.life / 3);
+        const a = pooled(flamesA, nf, () => new THREE.Mesh(flameGeo, flameOuter)), c = pooled(flamesB, nf, () => new THREE.Mesh(flameGeo, flameInner));
+        a.position.set(f.x, f.y, f.z); c.position.set(f.x, f.y, f.z);
+        a.scale.set(flick * fade, (1.1 + flick * 0.5) * fade, flick * fade);
+        c.scale.set(0.55 * flick * fade, 0.7 * (1 + flick * 0.4) * fade, 0.55 * flick * fade);
+        nf++;
+        if ((f.emit -= dt) <= 0) { f.emit = 0.18; puff(f.x, f.y + 2, f.z, 2.6); }
+      }
+      for (let i = nf; i < flamesA.length; i++) { flamesA[i]!.visible = false; flamesB[i]!.visible = false; }
+      for (let i = fires.length - 1; i >= 0; i--) if (fires[i]!.life <= 0) fires.splice(i, 1);
+      let np = 0;
+      for (const q of puffs) {
+        if ((q.life -= dt) <= 0) continue;
+        q.p.addScaledVector(q.v, dt);
+        const grow = 0.6 + (1 - q.life / q.max) * 2.4;
+        smokeMesh.setMatrixAt(np++, chunkM.compose(q.p, chunkQ.identity(), chunkS.setScalar(grow * Math.min(1, q.life / 0.8))));
+      }
+      smokeMesh.count = np;
+      smokeMesh.instanceMatrix.needsUpdate = true;
+      for (let i = puffs.length - 1; i >= 0; i--) if (puffs[i]!.life <= 0) puffs.splice(i, 1);
+      // Flares: now and then, and a pair of red ones over the treeline when a surge breaks.
+      const hz = heroUnit(b);
+      if ((nextFlare -= dt) <= 0) { nextFlare = 8 + Math.random() * 8; const at = hz ?? { x: 0, z: 0 }; launchFlare(at.x + (Math.random() - 0.5) * 120, at.z + (Math.random() - 0.5) * 120); }
+      if (b.beat.surge !== lastSurge) { lastSurge = b.beat.surge; for (let i = 0; i < 2; i++) launchFlare((Math.random() - 0.5) * 200, (Math.random() < 0.5 ? -1 : 1) * 60, 0xff6a50); }
+      for (const f of flares) f.age += dt;
+      for (let i = flares.length - 1; i >= 0; i--) if (flares[i]!.age > FLARE_LIFE) flares.splice(i, 1);
+      const fl = flares[flares.length - 1];
+      flareMesh.visible = !!fl;
+      if (fl) {
+        const y = fl.age < 1.2 ? 4 + (fl.age / 1.2) * 52 : 56 - (fl.age - 1.2) * 4.5, fade = Math.min(1, (FLARE_LIFE - fl.age) / 2) * Math.min(1, fl.age * 2);
+        flareMesh.position.set(fl.x + Math.sin(fl.age * 0.8 + fl.sway) * 3, y, fl.z);
+        flareMesh.scale.setScalar(0.7 + fade * 0.6);
+        (flareMesh.material as THREE.MeshBasicMaterial).color.setHex(fl.color);
+        flareLight.color.setHex(fl.color);
+        flareLight.position.copy(flareMesh.position);
+        flareLight.intensity = 5000 * fade * (0.9 + Math.sin(now / 90) * 0.1);
+      } else flareLight.intensity = 0;
+      // The fall-back's destination, and the post to dig in at.
+      const fb = b.beat.fall;
+      fallMark.visible = !!fb;
+      if (fb) { fallMark.position.set(fb.x, ground(fb.x, fb.z) + 0.2, fb.z); fallMark.scale.setScalar(1 + Math.sin(now / 160) * 0.06); }
+      const dg = b.beat.dig;
+      digMark.visible = !!dg && !fb;
+      if (dg) { const p = b.posts[dg.post]!; digMark.position.set(p.x, ground(p.x, p.z) + 0.25, p.z); digMark.scale.setScalar(1 + Math.sin(now / 220) * 0.04); }
+      // The order's spot, while it lasts.
+      const od = b.order && b.time - b.order.at < ORDER_FOR && b.order.kind !== "hold" ? b.order : null;
+      for (const k of ORDERS) orderMarks[k].visible = od?.kind === k;
+      if (od) { orderMarks[od.kind].position.set(od.x, ground(od.x, od.z) + 0.2, od.z); orderMarks[od.kind].scale.setScalar(1 + Math.sin(now / 150) * 0.08); }
+      // The heavy weapons, while they're there to take.
+      b.caches.forEach((c, i) => { const m = cacheMeshes[i]!; m.g.visible = c.ready <= b.time; m.gun.rotation.y = now / 700; m.gun.position.y = 1.1 + Math.sin(now / 300 + i) * 0.12; });
+      // A Mossback walks in: the screen goes red for a while.
+      for (const u of b.units) if (u.role === "mossback" && !seenBig.has(u.id)) { seenBig.add(u.id); alarmT = 7; shake = Math.max(shake, 0.5); }
+      alarmT = Math.max(0, alarmT - dt);
+      alarmEl.classList.toggle("on", alarmT > 0);
 
       // Feel: the hit marker, heat, the red edge, a kill toast, and the sprint's wider view.
       const me = heroUnit(b);
-      if (me) { if (me.hp < lastHp && lastHp !== Infinity) hurt = Math.min(1, hurt + (lastHp - me.hp) / 60); lastHp = me.hp; } else lastHp = Infinity;
+      if (me) {
+        if (me.hp < lastHp && lastHp !== Infinity) {
+          hurt = Math.min(1, hurt + (lastHp - me.hp) / 60);
+          if (now - gruntAt > 450) { sfx.hurt(spec.factions[heroSide], null, false, 0.4); gruntAt = now; }
+        }
+        lastHp = me.hp;
+      } else lastHp = Infinity;
+      // Now and then a Wooka near you has something to say about it.
+      if (now > chatterAt) {
+        chatterAt = now + 700 + Math.random() * 1800;
+        const near = b.units.filter((u) => u.hp > 0 && (u.role || u.champ === "warbur") && u.id !== b.hero.id && Math.hypot(u.x - ear.x, u.z - ear.z) < 60);
+        const who = near[Math.floor(Math.random() * near.length)];
+        if (who) {
+          // Bigger Wooka are lower. The Mossback howls, the Chubs roar, and the odd one beats its chest.
+          const size = who.role === "mossback" ? 0.45 : who.champ === "warbur" ? 0.55 : who.role === "chub" ? 0.8 : 1, roll = Math.random();
+          const mesh = meshes.get(who.id);
+          if (mesh && roll < 0.5) mesh.userData.calledAt = now;
+          if (size < 1 && roll < 0.35) sfx.howl(who, 0.5, size);
+          else if (size < 1 && roll < 0.5) sfx.thump(who, 0.45, size);
+          else if (roll < 0.7) sfx.chatter(who, 0.3, size);
+          else sfx.whoop(who, 0.4, size);
+        }
+      }
       hurt = Math.max(0, hurt - dt * 1.5);
       hurtEl.style.opacity = String(hurt);
       cross?.classList.toggle("hit", (markT -= dt) > 0);
-      heatEl.style.opacity = b.hero.heat > 0.05 || b.hero.overheated > 0 ? "1" : "0";
-      heatEl.classList.toggle("hot", b.hero.overheated > 0);
-      heatEl.firstElementChild!.setAttribute("style", `width:${Math.round(b.hero.heat * 100)}%`);
+      // The gauge: heat by segment, yellow to red, a warning near the top and a vent countdown
+      // once it's locked; with a heavy weapon in hand, the ammo left instead.
+      const arm = b.hero.arm, vent = b.hero.overheated > 0;
+      if (vent && !wasVent) sfx.vent();
+      wasVent = vent;
+      const fill = arm ? arm.ammo / HEAVY[arm.kind].ammo : vent ? b.hero.overheated / OVERHEAT : b.hero.heat;
+      const lit = Math.ceil(fill * HEAT_N - 0.001);
+      segEls.forEach((el, i) => el.setAttribute("class", i < lit ? (arm ? "ammo" : vent ? "vent" : i >= HEAT_N * 0.8 ? "red" : i >= HEAT_N * 0.5 ? "amber" : "on") : ""));
+      const warm = !arm && !vent && b.hero.heat >= 0.75;
+      heatEl.classList.toggle("show", !!arm || vent || b.hero.heat > 0.05);
+      heatEl.classList.toggle("hot", vent);
+      heatEl.classList.toggle("warm", warm);
+      heatLabel.textContent = arm ? `${HEAVY[arm.kind].name[spec.factions[heroSide]]} ${arm.ammo}` : vent ? `Venting ${b.hero.overheated.toFixed(1)}` : warm ? "Overheating" : "";
+      cross?.classList.toggle("locked", vent);
       if (b.hero.kills > lastKills) {
         toastEl.textContent = STREAK[b.hero.streak] ?? `+${b.hero.kills - lastKills}`;
         toastEl.classList.remove("show"); void toastEl.offsetWidth; toastEl.classList.add("show");
@@ -320,7 +770,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       // Third-person camera over the hero's shoulder (or the vehicle's), or over the spawn while down.
       const hero = heroUnit(b);
       const body = (b.hero.inVehicle !== null && b.units.find((u) => u.id === b.hero.inVehicle)) || hero;
-      const at = body ?? { x: 0, z: heroSide === "attacker" ? 100 : -100 };
+      const at = body ?? { x: 0, z: heroSide === "attacker" ? b.spawn.attacker.z : b.spawn.defender.z };
       const [back, high] = body?.champ === "warbur" ? [11, 5.5] : !body || body.kind === "hero" ? [7, 3.2] : body.kind === "walker" ? [15, 10] : body.kind === "gunship" ? [18, 6] : [13, 6];
       const floor = ground(at.x, at.z), up = high + (body ? altitude(body) : 0) + floor;
       const f = facing(yaw);
@@ -330,8 +780,75 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       camera.lookAt(at.x + f.x * 20, floor + (body ? altitude(body) : 0) + 1.6 + Math.sin(pitch) * 20, at.z + f.z * 20);
       if (shake > 0) camera.position.add(new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake));
       world.update(now / 1000, camera.position, { x: at.x + f.x * 30, z: at.z + f.z * 30 });
+      ear = { x: at.x, z: at.z };
+      sfx.hear({ x: at.x, z: at.z, rx: -f.z, rz: f.x });
 
-      renderer.render(scene, camera);
+      // The mission, and the waypoint that points at it: on it when it's on screen, at the edge
+      // pointing the way when it isn't.
+      const next = mission(b, heroSide);
+      if (job && !sameMission(job, next)) {
+        noteEl.textContent = noteFor(job, next);
+        noteEl.classList.remove("show"); void noteEl.offsetWidth; noteEl.classList.add("show");
+        noteT = 2.5;
+        stand = "travel";
+        sfx.chime();
+      }
+      job = next;
+      if ((noteT -= dt) <= 0) noteEl.classList.remove("show");
+      jobDist = Math.hypot(at.x - job.x, at.z - job.z);
+      if (body) stand = standing(job, body, stand);
+      if (stand === "leaving" && now - warnAt > 1100) { sfx.warn(); warnAt = now; }
+      leaveEl.classList.toggle("show", stand === "leaving");
+      leaveEl.lastElementChild!.textContent = `Leaving the area. Get back to ${job.name}`;
+      if (wayIconOf !== job.verb) { wayIcon.innerHTML = icon(VERB_ICON[job.verb], 16); wayIconOf = job.verb; }
+      wayDist.textContent = `${Math.round(jobDist)} m`;
+      wayPos.set(job.x, ground(job.x, job.z) + 5, job.z).project(camera);
+      const W = canvas.clientWidth, H = canvas.clientHeight, EDGE = 44, behind = wayPos.z > 1;
+      let wx = (behind ? -wayPos.x : wayPos.x) * 0.5 * W, wy = -(behind ? -wayPos.y : wayPos.y) * 0.5 * H; // from the centre
+      const off = behind || Math.abs(wx) > W / 2 - EDGE || Math.abs(wy) > H / 2 - EDGE;
+      if (off) {
+        if (behind && Math.hypot(wx, wy) < 1) wy = 1;
+        const k = Math.min((W / 2 - EDGE) / Math.max(1e-6, Math.abs(wx)), (H / 2 - EDGE) / Math.max(1e-6, Math.abs(wy)));
+        wx *= k; wy *= k;
+      }
+      wayEl.style.transform = `translate(${W / 2 + wx}px, ${H / 2 + wy}px)`;
+      wayEl.classList.toggle("off", off);
+      wayEl.classList.toggle("here", stand === "in");
+      wayArrow.style.transform = `rotate(${Math.atan2(wy, wx)}rad)`;
+      // A marker over each heavy weapon in reach, with how far it is.
+      const onScreen = (x: number, y: number, z: number) => {
+        wayPos.set(x, y, z).project(camera);
+        return wayPos.z < 1 && Math.abs(wayPos.x) < 1 && Math.abs(wayPos.y) < 1 ? { x: (wayPos.x * 0.5 + 0.5) * W, y: (-wayPos.y * 0.5 + 0.5) * H } : null;
+      };
+      b.caches.forEach((c, i) => {
+        const el = cacheEls[i]!, d = Math.hypot(at.x - c.x, at.z - c.z), p = c.ready <= b.time && d < 220 ? onScreen(c.x, ground(c.x, c.z) + 3, c.z) : null;
+        el.hidden = !p;
+        if (!p) return;
+        el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+        el.lastElementChild!.textContent = `${HEAVY[c.kind].name[spec.factions[heroSide]]} ${Math.round(d)} m`;
+      });
+      // Comrades talk: now and then one near you says something, daft when it's quiet, worried when it isn't.
+      const pals = b.units.filter((u) => u.side === heroSide && u.id !== b.hero.id && u.hp > 0 && (TROOPERS.includes(u.kind as Trooper) || !!u.role) && Math.hypot(u.x - at.x, u.z - at.z) < 30);
+      if ((nextTalk -= dt) <= 0 && talk.length < 2) {
+        nextTalk = 3 + Math.random() * 4;
+        const quiet = pals.filter((u) => !talk.some((x) => x.id === u.id)), who = quiet[Math.floor(Math.random() * quiet.length)];
+        if (who) {
+          const lines = CHATTER[spec.factions[heroSide]], foes = b.units.filter((u) => u.side !== heroSide && u.kind !== "turret" && Math.hypot(u.x - at.x, u.z - at.z) < 30).length;
+          const pool = b.units.some((u) => u.role === "mossback" && u.side !== heroSide) ? lines.big : who.hp < who.maxHp * 0.5 ? lines.hurt : foes >= 4 ? lines.scared : lines.calm;
+          talk.push({ id: who.id, text: pool[Math.floor(Math.random() * pool.length)]!, until: now + 3200 });
+        }
+      }
+      for (let i = talk.length - 1; i >= 0; i--) {
+        const x = talk[i]!, u = b.units.find((v) => v.id === x.id), m = meshes.get(x.id);
+        if (now > x.until || !u || !m) { talk.splice(i, 1); continue; }
+        bubbles.put(x.id, x.text, onScreen(m.position.x, m.position.y + (u.role ? 1.5 : 2.3), m.position.z), spec.factions[heroSide]);
+      }
+      bubbles.sweep();
+
+      // The enemy gets an outline that shows through foliage.
+      const eyeUnit = heroUnit(b);
+      outline.selectedObjects = b.units.filter((u) => u.hp > 0 && eyeUnit && u.side !== eyeUnit.side && Math.hypot(u.x - eyeUnit.x, u.z - eyeUnit.z) < OUTLINE_RANGE).map((u) => meshes.get(u.id)).filter((g): g is THREE.Group => !!g);
+      composer.render();
       if (now - hudAt > 100 || b.over) { drawHud(); hudAt = now; }
       if (b.over) {
         cancelAnimationFrame(raf);
@@ -339,7 +856,10 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         canvas.removeEventListener("mousedown", md);
         if (document.pointerLockElement === canvas) document.exitPointerLock();
         feel.remove();
+        section.classList.remove(`hud-${spec.factions[heroSide]}`, "cutting");
+        sfx.close();
         cross?.classList.remove("hit");
+        composer.dispose();
         renderer.dispose();
         hud.onpointerdown = null;
         resolve({ ...b.over, inputs: rec.log() });
@@ -347,6 +867,9 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       }
       raf = requestAnimationFrame(frame);
     };
-    raf = requestAnimationFrame(frame);
+    // The intro, once, from where the hero stands; then the battle.
+    const intro = INTROS[spec.factions[heroSide]], h0 = heroUnit(b);
+    if (h0 && shouldPlay(intro.id)) void cut(intro, { x: h0.x, z: h0.z, yaw });
+    else raf = requestAnimationFrame(frame);
   });
 }

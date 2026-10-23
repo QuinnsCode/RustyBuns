@@ -205,6 +205,9 @@ describe("GET /api/openapi.json", () => {
     const h = await (await send("ryan", "/api/tokens", { label: "held", scope: "write", repo: "ryan/lab" })).json() as { token: string };
     expect((await put(h.token, "/api/repos/ryan/lab/files", { path: "c.ts", content: "x" })).status).toBeLessThan(300);
     expect((await put(h.token, "/api/repos/ryan/other/files", { path: "c.ts", content: "x" })).status).toBe(403);
+    // Reads that name another repo are refused too; the held repo's own, and the unnamed, stay open.
+    for (const u of ["/api/search?q=x&repo=ryan/other", "/api/search?q=x", "/api/game/r/ryan/other/walls"]) expect([u, (await as(h.token, u)).status]).toEqual([u, 403]);
+    expect((await as(h.token, "/api/search?q=x&repo=ryan/lab")).status).toBe(200);
     void call;
   });
 });

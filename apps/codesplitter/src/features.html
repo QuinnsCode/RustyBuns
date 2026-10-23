@@ -39,6 +39,18 @@
   .arrows button:hover { border-color: var(--border-2); color: var(--fg); }
   .arrows svg { width: 14px; height: 14px; }
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--fg); color: #fff; padding: 9px 14px; border-radius: 6px; font-size: 13px; }
+  /* Rank a feature: S A B C under each card, faded out until you sign in. */
+  .rank { display: flex; gap: 4px; align-items: center; margin-top: 6px; transition: opacity .3s; }
+  .rank button { font: 600 12px var(--mono); width: 26px; height: 24px; border: 1px solid var(--border-2); border-radius: 4px; background: #fff; color: var(--muted); cursor: pointer; }
+  .rank button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .rank .score { font: 11px var(--mono); color: var(--faint); margin-left: 6px; }
+  .faded { opacity: .45; pointer-events: none; }
+  .talk { margin-top: 28px; padding: 16px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--paper); transition: opacity .5s; }
+  .talk h2 { font: 600 16px var(--sans); margin: 0 0 8px; }
+  .talk textarea { width: 100%; font: 14px var(--sans); padding: 8px; border: 1px solid var(--border-2); border-radius: 5px; resize: vertical; }
+  .talk .row { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
+  .talk blockquote { margin: 10px 0 0; padding: 0 0 0 10px; border-left: 2px solid var(--border-2); color: var(--muted); }
+  .talk blockquote b { color: var(--fg); font-weight: 600; }
   @media (max-width: 560px) { .wrap { padding: 20px 16px 48px; } li { grid-template-columns: 34px 1fr auto; } li::before { display: none; } }
 </style>
 </head>
@@ -53,6 +65,14 @@
     <button class="btn primary" id="copy" type="button"><i data-lucide="clipboard-copy"></i>Copy order.txt</button>
   </div>
   <ol id="list"></ol>
+  <section class="talk" id="talk" aria-labelledby="talk-h">
+    <h2 id="talk-h">What do you think?</h2>
+    <form id="say">
+      <textarea name="text" rows="2" maxlength="280" placeholder="Rank the features above, then tell us why. 280 characters." aria-label="Your comment"></textarea>
+      <div class="row"><button class="btn primary" type="submit">Send</button><span class="muted" id="said" role="status" aria-live="polite"></span></div>
+    </form>
+    <div id="heard"></div>
+  </section>
 </div>
 <script>
 const KEY = "codesplitter.features.order";
@@ -67,7 +87,7 @@ const toast = (msg) => { const t = document.createElement("div"); t.className = 
 function draw() {
   list.innerHTML = items.map((f, i) => `<li draggable="true" data-i="${i}">
     <span class="ico"><i data-lucide="${esc(f.icon)}"></i></span>
-    <div><b>${esc(f.title)}</b><span>${esc(f.what)}</span> <code>${esc(f.id)}</code></div>
+    <div><b>${esc(f.title)}</b><span>${esc(f.what)}</span> <code>${esc(f.id)}</code>${rankHtml(f)}</div>
     <div class="arrows"><button type="button" data-move="-1" title="move up" aria-label="move ${esc(f.title)} up"><i data-lucide="chevron-up"></i></button><button type="button" data-move="1" title="move down" aria-label="move ${esc(f.title)} down"><i data-lucide="chevron-down"></i></button></div>
   </li>`).join("");
   const moved = items.some((f, i) => f.id !== shipped[i]?.id);
@@ -101,6 +121,48 @@ fetch("/features.json").then((r) => r.json()).then((fs) => {
   items = order ? [...order.filter((id) => byId.has(id)).map((id) => byId.get(id)), ...fs.filter((f) => !order.includes(f.id))] : [...fs];
   draw();
 });
+
+// Ranking and comments: signed in only. Signed out, the S A B C buttons and the box fade out and say so.
+let crowd = { signed_in: false, scores: {}, mine: {}, comments: [], comment_after: 0 };
+const say = document.getElementById("say"), saidEl = document.getElementById("said"), talk = document.getElementById("talk");
+async function loadCrowd() { try { crowd = await (await fetch("/api/feature-ranks")).json(); } catch {} draw(); drawTalk(); }
+function rankHtml(f) {
+  const mine = crowd.mine[f.id], s = crowd.scores[f.id];
+  return `<div class="rank${crowd.signed_in ? "" : " faded"}" data-id="${esc(f.id)}"${crowd.signed_in ? "" : ' title="Sign in to rank"'}>${["S", "A", "B", "C"].map((t) => `<button type="button" data-tier="${t}" aria-pressed="${mine === t}" aria-label="Rank ${esc(f.title)} ${t}">${t}</button>`).join("")}<span class="score">${s ? `${s.score.toFixed(1)} from ${s.votes}` : "no votes yet"}</span></div>`;
+}
+list.addEventListener("click", async (e) => {
+  const b = e.target.closest(".rank button"); if (!b) return;
+  const id = b.closest(".rank").dataset.id, tier = b.dataset.tier;
+  if (crowd.mine[id] === tier) delete crowd.mine[id]; else crowd.mine[id] = tier;
+  try {
+    const r = await fetch("/api/me/feature-ranks", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ tiers: crowd.mine }) });
+    if (!r.ok) throw new Error();
+    await loadCrowd();
+  } catch { toast("Couldn't save your ranking"); await loadCrowd(); }
+});
+let tick = null;
+function drawTalk() {
+  const left = crowd.comment_after - Date.now();
+  const resting = !crowd.signed_in || left > 0;
+  say.classList.toggle("faded", resting);
+  say.elements.text.disabled = say.querySelector("button").disabled = resting;
+  say.style.opacity = resting ? ".45" : "";
+  clearInterval(tick);
+  if (!crowd.signed_in) saidEl.textContent = "Sign in on the home page to rank and comment.";
+  else if (left > 0) {
+    const show = () => { const m = Math.ceil((crowd.comment_after - Date.now()) / 60000); if (m <= 0) { clearInterval(tick); drawTalk(); } else saidEl.textContent = `Thanks, we heard you. You can leave another in ${m} min.`; };
+    show(); tick = setInterval(show, 15000);
+  } else if (!saidEl.dataset.keep) saidEl.textContent = "";
+  document.getElementById("heard").innerHTML = crowd.comments.map((c) => `<blockquote><b>${esc(c.user)}</b> ${esc(c.text)}</blockquote>`).join("");
+}
+say.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const r = await fetch("/api/feature-comments", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: say.elements.text.value }) });
+  const body = await r.json().catch(() => ({}));
+  if (r.ok || r.status === 429) { if (r.ok) say.elements.text.value = ""; crowd.comment_after = body.comment_after ?? crowd.comment_after; await loadCrowd(); if (!r.ok) saidEl.textContent = body.error; }
+  else saidEl.textContent = body.error ?? "Couldn't send that";
+});
+loadCrowd();
 </script>
 </body>
 </html>

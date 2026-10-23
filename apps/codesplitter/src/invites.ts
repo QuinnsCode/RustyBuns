@@ -49,7 +49,7 @@ const tokenIn = (s: string) => /csi_[A-Za-z0-9_-]+/.exec(s)?.[0] ?? (/^[0-9a-f]{
 export function mcpLines(base: string, token: string): Record<Harness, string> {
   const url = `${base}/api/mcp`, headers = { Authorization: `Bearer ${token}` };
   return {
-    claude: `claude mcp add --scope user --transport http codesplitter ${url} --header "Authorization: Bearer ${token}"`,
+    claude: `claude mcp remove --scope user codesplitter 2>/dev/null; claude mcp add --scope user --transport http codesplitter ${url} --header "Authorization: Bearer ${token}"`,
     codex: `export CODESPLITTER_TOKEN=${token} && codex mcp add codesplitter --url ${url} --bearer-token-env-var CODESPLITTER_TOKEN`,
     // pi and opencode take a config file entry, not a command. pi's is its built-in MCP's
     // (0.99+, ~/.pi/agent/mcp.json, https://pi.dev/docs/latest/mcp): a url picks streamable HTTP.
@@ -63,8 +63,8 @@ const shown = (i: Invite) => ({ id: i.id, last4: i.last4, kind: i.kind, target: 
 
 /** The repo's pending invites, for its owner's repo page. */
 export async function pendingInvites(env: Env, owner: string, repo: string) {
-  const { results } = await env.DB.prepare(`SELECT * FROM invites WHERE owner = ? AND repo = ? AND ${pendingWhere} ORDER BY created_at DESC`).bind(owner, repo, Date.now()).all();
-  return (results as Invite[]).map(shown);
+  const { results } = await env.DB.prepare(`SELECT * FROM invites WHERE owner = ? AND repo = ? AND ${pendingWhere} ORDER BY created_at DESC`).bind(owner, repo, Date.now()).all<Invite>();
+  return results.map(shown);
 }
 
 /** /api/repos/:o/:r/invites[/:id]: the owner's side. */
@@ -159,8 +159,8 @@ export async function inviteRoutes(req: Request, env: Env, p: string[], user: st
   if (p[1] !== "invites" || p[3]) return null;
   if (!p[2] && req.method === "GET") {
     if (!user) return json({ error: "sign in first" }, 401);
-    const { results } = await env.DB.prepare(`SELECT * FROM invites WHERE kind = 'handle' AND target = ? AND ${pendingWhere} ORDER BY created_at DESC`).bind(user, Date.now()).all();
-    return json((results as Invite[]).map((i) => ({ ...shown(i), owner: i.owner, repo: i.repo })));
+    const { results } = await env.DB.prepare(`SELECT * FROM invites WHERE kind = 'handle' AND target = ? AND ${pendingWhere} ORDER BY created_at DESC`).bind(user, Date.now()).all<Invite>();
+    return json(results.map((i) => ({ ...shown(i), owner: i.owner, repo: i.repo })));
   }
   if (p[2] === "claim" && req.method === "POST") return claim(req, env, user);
   if (!p[2] || req.method !== "GET") return null;

@@ -27,6 +27,7 @@ import { timingSafeEqual } from "node:crypto";
 function kind(p: string): "file" | "dir" | null {
   try { const st = statSync(p); return st.isDirectory() ? "dir" : st.isFile() ? "file" : null; } catch { return null; }
 }
+import { assetIgnore } from "./assetsignore.ts";
 import { RELOAD_PATH, RELOAD_TAG } from "./reload.ts";
 import { installCloudflareGlobals, type LocalWebSocket } from "./bindings/durable-object.ts";
 
@@ -73,6 +74,17 @@ function applyHeaders(rules: HeaderRule[], pathname: string, res: Response): Res
   }
   for (const r of hit) for (const k of r.unset) h.delete(k);
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+}
+
+/**
+ * Cloudflare's `run_worker_first` list: a path reaches the Worker before the assets when it matches
+ * a pattern and no `!` pattern. `*` is any run of characters, so `/api/*` takes `/api/a/b`.
+ */
+export function runWorkerFirstMatcher(patterns: string[]): (path: string) => boolean {
+  const re = (p: string) => new RegExp("^" + p.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
+  const yes = patterns.filter((p) => !p.startsWith("!")).map(re);
+  const no = patterns.filter((p) => p.startsWith("!")).map((p) => re(p.slice(1)));
+  return (path) => yes.some((r) => r.test(path)) && !no.some((r) => r.test(path));
 }
 
 interface RedirectRule { match: RegExp; names: string[]; to: string; status: number }
@@ -279,10 +291,13 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
 
   let headerRules: HeaderRule[] = [];
   let redirectRules: RedirectRule[] = [];
+  let ignored = (_rel: string) => false;
   if (opts.assets) {
     try { headerRules = parseHeaders(readFileSync(join(opts.assets, "_headers"), "utf8")); } catch {}
     try { redirectRules = parseRedirects(readFileSync(join(opts.assets, "_redirects"), "utf8")); } catch {}
+    try { ignored = assetIgnore(readFileSync(join(opts.assets, ".assetsignore"), "utf8")); } catch {}
   }
+  const workerFirst = runWorkerFirstMatcher(opts.runWorkerFirst ?? []);
 
   const asset = async (url: URL): Promise<Response | null> => {
     for (const [route, dir] of Object.entries(opts.mounts ?? {})) {
@@ -295,24 +310,28 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
     }
     if (!opts.assets) return null;
     if (CONFIG_FILES.has(url.pathname)) return null;
-    // Like Cloudflare, a matching redirect wins even when a file sits at the path.
-    let path = url.pathname;
-    const r = findRedirect(redirectRules, path);
-    if (r) {
-      const to = r.to.includes("?") || !url.search ? r.to : r.to.replace(/(?=#|$)/, url.search);
-      // 200 is a rewrite: serve the destination's file under the requested URL.
-      if (r.status !== 200) return new Response(null, { status: r.status, headers: { Location: to } });
-      if (!to.startsWith("/")) return null;
-      path = new URL(to, url).pathname;
-    }
     const root = normalize(opts.assets);
-    let p = normalize(join(root, decodeURIComponent(path)));
-    if (!inside(root, p)) return null;
-    let k = kind(p);
-    if (k === "dir") { p = join(p, "index.html"); k = kind(p); }
-    // Like Cloudflare and GitHub Pages, /ops serves ops.html (a site generator's page links drop the extension).
-    else if (k !== "file" && !/\.[^/]*$/.test(path) && kind(p + ".html") === "file") { p += ".html"; k = "file"; }
-    if (k !== "file") return null;
+    const file = (path: string): string | null => {
+      let p = normalize(join(root, decodeURIComponent(path)));
+      if (!inside(root, p)) return null;
+      let k = kind(p);
+      if (k === "dir") { p = join(p, "index.html"); k = kind(p); }
+      // Like Cloudflare and GitHub Pages, /ops serves ops.html (a site generator's page links drop the extension).
+      else if (k !== "file" && !/\.[^/]*$/.test(path) && kind(p + ".html") === "file") { p += ".html"; k = "file"; }
+      // What `.assetsignore` names is left out of an upload, so it 404s here as it does on the edge.
+      return k === "file" && !ignored(p.slice(root.length).replaceAll("\\", "/").replace(/^\/+/, "")) ? p : null;
+    };
+    // Like Cloudflare, a 3xx redirect wins even when a file sits at the path, but a 200 rewrite
+    // only fills in for a missing one: `/* /index.html 200` must not swallow /assets/main.js.
+    const r = findRedirect(redirectRules, url.pathname);
+    const to = r && (r.to.includes("?") || !url.search ? r.to : r.to.replace(/(?=#|$)/, url.search));
+    if (r && r.status !== 200) return new Response(null, { status: r.status, headers: { Location: to! } });
+    let p = file(url.pathname);
+    if (!p && r) {
+      if (!to!.startsWith("/")) return null;
+      p = file(new URL(to!, url).pathname);
+    }
+    if (!p) return null;
     return applyHeaders(headerRules, url.pathname, new Response(Bun.file(p)));
   };
 
@@ -363,9 +382,7 @@ export function serve<Env>(opts: ServeOptions<Env> = {}): BunShell<Env> {
       return ok ? undefined as unknown as Response : new Response("upgrade failed", { status: 500 });
     }
 
-    const workerFirst = (opts.runWorkerFirst ?? []).some((pat) =>
-      pat.endsWith("*") ? url.pathname.startsWith(pat.slice(0, -1)) : url.pathname === pat);
-    if (!workerFirst) {
+    if (!workerFirst(url.pathname)) {
       const a = await asset(url);
       if (a) return withHeaders(a);
     }

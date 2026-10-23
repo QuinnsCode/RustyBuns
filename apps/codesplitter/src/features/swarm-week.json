@@ -1,0 +1,5 @@
+{
+  "icon": "users",
+  "title": "A week of the swarm",
+  "what": "Replay the week of October 7 to 14 on this repo: 1,000 real PRs, each a made-up agent at a desk, and a backlog chart of what the open ones were waiting on (working, stuck on git, a red check, ready). Drag the playhead to the git wall on the night of October 13 and see which file the stuck agents piled into, then Mervin's and Ester's ship marks. swarm-watch.html; the data is bun scripts/swarm-week.ts, read only."
+}

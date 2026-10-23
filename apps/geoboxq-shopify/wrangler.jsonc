@@ -1,0 +1,10 @@
+{
+  "name": "geoboxq-shopify",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-09-01",
+  "vars": {
+    "GEOBOXQ_URL": "https://geoboxq.qntbr.com",
+    "STORE_BOXES": "[{\"id\":\"small\",\"name\":\"Small mailer\",\"l\":8,\"w\":6,\"h\":3},{\"id\":\"medium\",\"name\":\"Medium carton\",\"l\":12,\"w\":9,\"h\":6}]",
+    "STORE_DIMS": "{}"
+  }
+}

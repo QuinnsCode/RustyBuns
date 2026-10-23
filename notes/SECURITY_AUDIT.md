@@ -61,7 +61,7 @@ The REFERENCE notes that the 1Password path "has not been run against a real vau
 | `cst_` tokens are SHA-256 hashed, always expire, read or write scope, never admin, kept out of cookie-only routes | No Origin check on cookie POSTs, so CSRF protection is SameSite=Lax alone (#647) |
 | Private repos return 404 to non-readers; search and shares filter by access | No Turnstile; rate limits are D1 counters (#647, #623) |
 | `theme_html` renders in a scriptless sandboxed iframe; the client escapes everything | Alias login (no password) is the fallback when `BETTER_AUTH_SECRET` is missing. varlock makes it required, but the code should still fail closed on the edge (#647) |
-| Workers Logs redact query strings | No audit log for tokens, collaborators, visibility or deletes. CI tokens never expire. Invites are stored in plaintext (#648) |
+| Workers Logs redact query strings | No audit log for tokens, collaborators, visibility or deletes (#648). CI tokens expire (90 days by default) and invites are stored hashed since round 3 |
 
 ### codeSplitter MCP, CLI and invited agents
 
@@ -159,6 +159,31 @@ The first two rounds were about what an agent *holds* (secrets, the `gh` login, 
 - **#1572. Agent Office upstream**: issue and PR titles land in worker prompts unquoted, PR branch names are handed to the agent inside a shell command, the office's session secret and people's sign-ins sit on disk readable by every worker (#667), heap snapshots hold every token, and the office rebuilds its guards from the main checkout. These need the office's author.
 - **#1573. Agent Office defaults**: `ASK_FIRST` is off out of the box, and the Allow/Deny card shows 400 characters of a 20,000-character prompt.
 - **#1574. CI**: the drop job's GitHub Release wants its own job with `contents: write`, `borg-edge` holds the Cloudflare token at job level across `bun install`, and a `dry` dispatch of `desktop-drop` still attaches the `drops` environment.
+
+## Round 4, October 14: code quality and the data boundaries
+
+A sweep of `apps/codesplitter/src` for where a type was claimed rather than checked: request bodies, stored JSON, third-party answers and D1 rows. No high findings. SQL interpolations (about 40) are all constants or placeholders; every write route checks access; tokens are hashed, expire and are compared by hash; redirects go to validated URIs only; no secret reaches a response or a log.
+
+### Fixed in this round
+
+- **The file Durable Object checked nothing it was sent.** The Worker forwards a client's body to it raw, and it cast `ops`, `claims`, `private`, `release` and `commit` straight to their types. Now `parseOps` (lines.ts) checks every op over HTTP and the socket alike: the three kinds and their fields, one line per text (up to 10,000 characters), at most 5,000 ops a batch, and an unknown kind is refused instead of being taken for a delete. Claims and private lines check their ids, task text and times; a commit message is text, cut at 1,000 characters.
+- **`Env.DB` was `any`**, so every query result was untyped and the `as` casts on rows were the only typing. It is now a structural D1 type; the 44 sites that read rows as `any` name their columns with `first<Row>()` / `all<Row>()`.
+- **`readBody`** returned whatever JSON the client sent under an object type; a string or array now reads as an empty body.
+- **Stored JSON** (`agent_runs.result`, beams' files and stacks, cuts' paths, feed ids, OAuth redirect URIs, waits_on, profile top8 and hidden, board rows) is parsed with `parseJson(s, fallback)`: one bad row spoils one entry, not the whole listing with a 500.
+- **Check-run URLs** from CI tokens and from GitHub (`target_url`, `details_url`, `html_url`) keep only http(s) up to 2 KB (`httpUrl`); a `javascript:` or `data:` link was stored and rendered before (the CSP blocked it from running).
+- **Board `hits`** over 4,000 characters were cut into invalid JSON, breaking every later board read; they are now a 400.
+- **Profile `bio` and `theme_html`** have a size (1,000 characters and 64 KiB).
+- **A user name from the URL** reached the "hasn't made a page yet" note unescaped (page.ts); the file DO's `rev`/`since` query is built with `URLSearchParams` rather than pasted; a worktree's `from` can't start with `-`; GitHub's tree, OSV's results and `/user` are shaped before they're walked.
+
+### Still open, as issues
+
+- **#1818.** A repo's `.npmrc` can point the owner's home npm token at plain http or a private host (desktop).
+- **#1819.** A removed crew member's `/share` read token lives up to 7 days.
+- **#1820.** A token held to one repo reads other repos through search, game walls and playlists.
+- **#1821.** Fixed: page assets are capped at 50 files per account, a page file's text at 1 MB, an oversize body is refused on `content-length` before it is read, and `PUT /api/me/page*` counts under a new `page` rule (60 an hour).
+- **#1822.** Anonymous `gitpath` requests fan out to GitHub (about 41 calls) with no rate rule.
+
+Smaller caps not taken this round, each a line or two when wanted: board rows (8 KB each, 50 clashes), agent log lines (2,000 characters), `junit` and `external_id` on checks, a hex check on the `sha` in gh-compat paths, and `esc()` on the tier and state fields in mervin-watch.html (local feed data).
 
 ### What the guard still can't do
 

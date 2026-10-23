@@ -9,6 +9,8 @@ export { stripJsonc };
 export interface WranglerJson {
   name?: string;
   main?: string;
+  /** A Pages project's static output; its Functions are the functions/ folder beside it. */
+  pages_build_output_dir?: string;
   compatibility_date?: string;
   compatibility_flags?: string[];
   assets?: { directory?: string; binding?: string; run_worker_first?: boolean | string[]; not_found_handling?: "single-page-application" | "404-page" | "none" };
@@ -66,7 +68,7 @@ const HANDLED = new Set([
   "$schema", "name", "main", "compatibility_date", "compatibility_flags", "assets",
   "d1_databases", "kv_namespaces", "r2_buckets", "durable_objects", "migrations", "vars", "triggers", "images", "send_email", "ratelimits", "ai", "queues", "placement", "hyperdrive",
   "workflows", "analytics_engine_datasets", "worker_loaders", "vectorize", "containers", "route", "routes", "observability", "limits",
-  "account_id", "workers_dev", "preview_urls", "env",
+  "account_id", "workers_dev", "preview_urls", "env", "pages_build_output_dir",
 ]);
 
 /** Keys wrangler doesn't inherit into an `env.<name>` block: the env has only the bindings it declares. */
@@ -149,6 +151,21 @@ const freeKey = (bindings: Record<string, unknown>, key: string) => { let k = ke
  * or no build at all, a plain Worker that Alchemy bundles from its main.
  */
 export type WorkerBuilt = "rwsdk" | "vite" | null;
+
+/** Vector length of the embedding models an app names in its code, so a Vectorize index's dimensions needn't be guessed. */
+export const EMBEDDING_DIMS: Record<string, number> = {
+  "@cf/baai/bge-small-en-v1.5": 384, "@cf/baai/bge-base-en-v1.5": 768, "@cf/baai/bge-large-en-v1.5": 1024,
+  "@cf/baai/bge-m3": 1024, "@cf/google/embeddinggemma-300m": 768, "@cf/qwen/qwen3-embedding-0.6b": 1024,
+  "text-embedding-3-small": 1536, "text-embedding-ada-002": 1536,
+};
+
+/** The one vector length the embedding models in `texts` agree on, with the models named; undefined for none or a mix. */
+export function embeddingDims(texts: Iterable<string>): { dimensions: number; models: string[] } | undefined {
+  const models = new Set<string>();
+  for (const t of texts) for (const m of Object.keys(EMBEDDING_DIMS)) if (t.includes(m)) models.add(m);
+  const dims = new Set([...models].map((m) => EMBEDDING_DIMS[m]!));
+  return dims.size === 1 ? { dimensions: [...dims][0]!, models: [...models].sort() } : undefined;
+}
 
 export function wranglerToConfig(w: WranglerJson, scripts: Record<string, string> = {}, built: WorkerBuilt = "rwsdk"): RustyBunsConfig {
   const bindings: Record<string, Binding> = {};

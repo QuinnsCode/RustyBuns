@@ -92,6 +92,9 @@
   .btn[disabled] { opacity: .4; cursor: default; transform: none; }
   /* Following: the button stays as it was, only its eye goes orange (an orange button reads as a warning). */
   .btn.follow[aria-pressed="true"] svg { color: var(--accent-ink); }
+  /* Following is a state, so hovering it says what a press does: Unfollow. */
+  .btn.follow .off, .btn.follow[aria-pressed="true"]:hover .on, .btn.follow[aria-pressed="true"]:focus-visible .on { display: none; }
+  .btn.follow[aria-pressed="true"]:hover .off, .btn.follow[aria-pressed="true"]:focus-visible .off { display: inline; }
   .btn .count { background: var(--tint); border-radius: 4px; padding: 1px 5px; font-size: 11.5px; }
   .badge { display: inline-flex; align-items: center; gap: 5px; font: 500 12px/18px var(--sans); color: var(--muted); border: 1px solid var(--border-2); border-radius: 5px; padding: 1px 7px; background: var(--grain), var(--paper); }
   button.badge { cursor: pointer; } button.badge:hover { border-color: var(--edge-hi); color: var(--fg); }
@@ -116,8 +119,8 @@
   .rail a:hover, .rail button:hover { background: var(--select); color: var(--fg); }
   .rail a.on { background: var(--select); color: var(--fg); box-shadow: inset 2px 0 var(--accent); }
   .rail svg.lucide { width: 18px; height: 18px; }
-  body.railed { padding-left: 48px; } body.railed .tour { left: 64px; }
-  @media (max-width: 860px) { .rail { display: none !important; } body.railed { padding-left: 0; } body.railed .tour { left: 16px; } }
+  body.railed { padding-left: 48px; } body.railed .tour, body.railed .guide, body.railed .guide-fab { left: 64px; }
+  @media (max-width: 860px) { .rail { display: none !important; } body.railed { padding-left: 0; } body.railed .tour, body.railed .guide, body.railed .guide-fab { left: 16px; } }
 
   /* Repo pages are a workbench, edge to edge like an editor: a slim header,
      the explorer on the left, the code in the middle, details on the right,
@@ -207,7 +210,7 @@
   .dpanels > [hidden] { display: none; }
   @container (min-width: 620px) { .dpanels { columns: 300px; column-gap: 0; } .dpanels .sec { break-inside: avoid; } }
   /* The Wow me tour: a card in the corner, and a ring round whatever it's showing. */
-  .tour { position: fixed; left: 16px; bottom: 56px; z-index: 60; width: min(360px, calc(100vw - 32px)); display: grid; gap: 8px; padding: 14px; background: var(--bg); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.18); font-size: 14px; }
+  .tour { position: fixed; left: 16px; bottom: 56px; z-index: 60; width: min(360px, calc(100vw - 32px)); box-sizing: border-box; display: grid; gap: 8px; padding: 14px 16px; background: var(--bg); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.18); font-size: 14px; }
   .tour .tour-top { display: flex; align-items: center; gap: 8px; } .tour .tour-top b { flex: 1; } .tour .tour-n { font-variant-numeric: tabular-nums; }
   .tour p { margin: 0; } .tour .tour-said { font-size: 13px; color: var(--accent); min-height: 1em; }
   .guide-fab, .guide { position: fixed; left: 16px; bottom: 12px; z-index: 61; }
@@ -223,10 +226,11 @@
   .guide .octo { fill: currentColor; } .guide .gh-list { display: grid; gap: 4px; }
   .guide .guide-rows { display: grid; gap: 2px; } .guide .guide-row { display: grid; grid-template-columns: 18px 1fr 18px; align-items: center; gap: 8px; padding: 7px 8px; text-align: left; background: none; color: var(--fg); border: 0; border-radius: 6px; font: inherit; cursor: pointer; }
   .guide .guide-row:hover { background: var(--select); } .guide .guide-row > svg:last-child { color: var(--muted); } .guide .guide-row.ok { color: var(--muted); } .guide .guide-row.ok > svg:first-child { color: var(--accent); }
+  .tour .tour-scrub { width: 100%; margin: 0; accent-color: var(--accent); cursor: pointer; }
   .tour .tour-dots { display: flex; gap: 3px; } .tour .tour-dots i { flex: 1; height: 3px; border-radius: 2px; background: var(--border); } .tour .tour-dots i.on { background: var(--accent); }
-  .tour .tour-queue { display: flex; align-items: center; gap: 4px; font-size: 13px; } .tour .tour-queue .btn { padding: 0 4px; }
+  .tour .tour-queue { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 13px; } .tour .tour-queue .btn { padding: 0 4px; }
   .tour .tour-btns { display: flex; gap: 6px; } .tour .tour-btns .grow, .tour .tour-top .grow { flex: 1; }
-  .tour .tour-chs { display: flex; align-items: center; gap: 4px; font-size: 13px; } .tour .tour-chs span { margin-left: 4px; white-space: nowrap; }
+  .tour .tour-chs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 13px; } .tour .tour-chs span { margin-left: 4px; white-space: nowrap; }
   .tour .tour-chs button { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--bg); color: var(--muted); cursor: pointer; }
   .tour .tour-chs button.on { border-color: var(--accent); color: var(--accent); } .tour .tour-chs svg { width: 14px; height: 14px; }
   .tour-cursor { position: fixed; left: 0; top: 0; z-index: 70; width: 22px; height: 22px; pointer-events: none; color: var(--accent); filter: drop-shadow(0 1px 2px rgba(0,0,0,.4)); transition: transform .8s cubic-bezier(.4,0,.2,1); }
@@ -819,16 +823,19 @@
   .list .when { margin-left: auto; font: 12px var(--mono); color: var(--faint); white-space: nowrap; }
   .bar .barform { margin-left: auto; display: flex; gap: 6px; }
   .bar .barform input, .bar .barform select { padding: 2px 8px; font-size: 12.5px; } .bar .barform input { width: 150px; } .bar .barform .btn { padding: 2px 8px; font-size: 12.5px; }
+  .bar .barform .seg button { font-size: 12.5px; padding: 2px 8px; display: inline-flex; gap: 4px; align-items: center; } .bar .barform .seg .octo, .bar .barform .seg svg { width: 14px; height: 14px; } .bar .barform[data-mode=gh] input { width: 230px; }
   @media (max-width: 860px) { .prof-grid { grid-template-columns: 1fr; } .bar .barform { margin-left: 0; } }
   .photo iframe { width: 100%; height: 220px; border: 0; display: block; background: #fff; }
-  /* Full page: the page box fills the window (a circular wipe from the corner, where the browser has view transitions), and Talk to your page floats over it. */
+  /* Full page: the page box fills the window (a circular wipe from the corner, where the browser has view transitions) and the profile's cards scroll over it. */
+  .btn.danger { color: var(--del-fg); border-color: var(--del-fg); }
   .stage-x { display: none; }
-  body.staged { overflow: hidden; }
-  body.staged .photo { position: fixed; inset: 0; z-index: 50; margin: 0; border: 0; border-radius: 0; }
+  body.staged .photo { position: fixed; inset: 0; z-index: -1; margin: 0; border: 0; border-radius: 0; }
+  body.staged, body.staged main { background: transparent; }
   body.staged .photo .bar, body.staged .tour, body.staged .guide, body.staged .guide-fab { display: none; }
   body.staged .photo iframe { height: 100% !important; }
-  body.staged .stage-x { display: inline-flex; position: fixed; top: 12px; right: 12px; z-index: 52; }
-  body.staged #talk { position: fixed; z-index: 51; left: 50%; bottom: 16px; transform: translateX(-50%); width: min(560px, calc(100vw - 32px)); margin: 0; box-shadow: 0 8px 28px rgba(0,0,0,.35); }
+  body.staged .stage-x { display: block; }
+  /* Loose text gets a card of its own so it reads over the world. */
+  body.staged .prof-head, body.staged .pulse-free { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; }
   ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
   ::view-transition-new(root) { animation: stage-wipe .55s ease-in-out both; }
   @keyframes stage-wipe { from { clip-path: circle(0 at 100% 0); } to { clip-path: circle(150% at 100% 0); } }
@@ -956,6 +963,7 @@
   .insights .steps { display: inline-flex; gap: 3px; } .insights .steps i { width: 9px; height: 9px; border-radius: 2px; border: 1px solid var(--border-2); } .insights .steps i.on { background: var(--accent); border-color: var(--accent); }
   .insights .heat { display: grid; grid-template-columns: 28px repeat(24, minmax(0, 1fr)); gap: 2px; padding: 12px 16px; font-size: 10px; color: var(--muted); align-items: center; }
   .insights .heat i { aspect-ratio: 1; border-radius: 2px; background: var(--canvas); border: 1px solid var(--border); } .insights .heat i.on { background: var(--accent); border-color: transparent; }
+  .connectdlg { max-width: 520px; width: calc(100% - 32px); border: 1px solid var(--border); border-radius: 8px; padding: 0; } .connectdlg::backdrop { background: rgba(0,0,0,.4); } .connectdlg .bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); } .connectdlg ol { margin: 0; padding: 16px 16px 16px 36px; display: grid; gap: 12px; font-size: 14px; } .connectdlg li::marker { font-weight: 600; color: var(--accent-ink, var(--accent)); } .connectdlg .copyline { margin-top: 6px; }
   .usagedlg { max-width: 460px; width: calc(100% - 32px); border: 1px solid var(--border); border-radius: 8px; padding: 0; } .usagedlg .body { display: grid; gap: 10px; padding: 16px; font-size: 14px; } .usagedlg .bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
   .insights .tag { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); } .insights .tag.person { color: var(--accent-ink); border-color: var(--accent); }
   @media (max-width: 720px) { .insights .tiles, .insights .cols { grid-template-columns: 1fr; } .insights .way > div { grid-template-columns: 110px 1fr 56px; } }
@@ -1295,11 +1303,13 @@ const masked = (token) => `${token.slice(0, 4)}${"•".repeat(12)}${token.slice(
 const maskedUrl = (line) => line.replace(/(:\/\/[^:/@\s]+:)([^@\s]+)@/, (_, pre, token) => `${pre}${masked(token)}@`);
 // Connecting an AI needs no token: the MCP client signs in with OAuth (src/oauth.ts) and you say yes.
 const mcpUrl = () => `${location.origin}/api/mcp`;
-const mcpSignIn = () => `claude mcp add --scope user --transport http codesplitter ${mcpUrl()}`;
+// Re-runnable: `claude mcp add` fails with "already exists" when the URL changed (local vs deployed), so drop the old entry first.
+const mcpFresh = (cmd) => `claude mcp remove --scope user codesplitter 2>/dev/null; ${cmd}`;
+const mcpSignIn = () => mcpFresh(`claude mcp add --scope user --transport http codesplitter ${mcpUrl()}`);
 // The CLI (cli.ts), installed from this site (GET /install.sh, src/install.ts).
 const cliInstall = () => `curl -fsSL ${location.origin}/install.sh | sh`;
 const cliLogin = (token) => `codesplitter login --url ${location.origin} --token ${token}`;
-const mcpAdd = (token) => `claude mcp add --scope user --transport http codesplitter ${location.origin}/api/mcp --header "Authorization: Bearer ${token}"`;
+const mcpAdd = (token, fresh = true) => { const cmd = `claude mcp add --scope user --transport http codesplitter ${location.origin}/api/mcp --header "Authorization: Bearer ${token}"`; return fresh ? mcpFresh(cmd) : cmd; };
 // Invites (POST /api/repos/:o/:r/invites): a handle, an email, or nothing for a bare link.
 const invite = (owner, repo, who = "", note = "") => {
   who = who.trim();
@@ -1309,13 +1319,28 @@ const inviteSaid = (i) => i.kind === "email" ? (i.mailed ? `Emailed ${i.target}.
   : i.kind === "handle" ? `Only @${i.target} can use it.` : "Anyone with it can join once, a person or an agent.";
 // An agent's MCP line for each harness, from POST /api/invites/claim; the token in it stays masked here.
 const HARNESS_HOW = { claude: "Claude Code: run", codex: "Codex: run", opencode: "opencode: add to opencode.json", pi: "pi (0.99 or later): add to ~/.pi/agent/mcp.json" };
+// The four steps to hook Claude Code up, as a dialog: Claude running first, the command in a second terminal, /mcp, then ask.
+function openConnect() {
+  $("#connectdlg")?.remove();
+  document.body.insertAdjacentHTML("beforeend", `<dialog id="connectdlg" class="connectdlg"><div class="bar">${icon("plug")}<b>Connect Claude Code</b><span class="grow" style="flex:1"></span><button type="button" class="btn ghost" id="connect-x" aria-label="close" title="close">${icon("x")}</button></div>
+    <ol><li>Have <code>claude</code> running in a terminal.</li>
+      <li>In a separate terminal, run this:<div class="copyline"><input readonly value="${esc(mcpSignIn())}"><button class="btn" id="connect-step" title="copy the command">${icon("copy")}</button></div></li>
+      <li>In Claude, type <code>/mcp</code>, pick <b>codesplitter</b> and choose <b>Authenticate</b>. A page here asks you to say yes.</li>
+      <li>Ask it to edit your page, like <i>make it a night city, one tower per repo</i>.</li></ol></dialog>`);
+  const d = $("#connectdlg"); icons();
+  $("#connect-step").addEventListener("click", () => copy(mcpSignIn(), "Command copied"));
+  $("#connect-x").addEventListener("click", () => d.close());
+  d.addEventListener("click", (e) => { if (e.target === d) d.close(); });
+  d.addEventListener("close", () => d.remove());
+  d.showModal();
+}
 // The connect line shows; other clients and tokens fold under "More", which #/me/tokens opens (#729).
 async function wireTokens(made, open = !!made) {
   const el = $("#tokens .body");
   if (!el) return;
   const [list, apps] = await Promise.all([api("/tokens").catch(() => []), api("/oauth/grants").catch(() => [])]);
   const when = (t) => t.expired ? "expired" : `expires ${new Date(t.expires_at).toLocaleDateString()}`;
-  const connect = `<div style="display:grid;gap:4px;margin-bottom:10px"><span class="muted" style="font-size:12px">Paste in a terminal, then <b>/mcp</b> → Authenticate.</span>
+  const connect = `<div style="display:grid;gap:4px;margin-bottom:10px"><span class="muted" style="font-size:12px">Paste in a second terminal, then <b>/mcp</b> → Authenticate. <a href="#" id="connect-how">Step by step</a></span>
       <div class="copyline"><input readonly value="${esc(mcpSignIn())}"><button class="btn" id="connect-cmd" title="copy the command">${icon("copy")}</button></div></div>`;
   const url = `<span class="muted" style="font-size:12px">Server URL, any MCP client</span>
       <div class="copyline" style="margin:4px 0 10px"><input readonly value="${esc(mcpUrl())}"><button class="btn" id="connect-url" title="copy the server URL">${icon("copy")}</button></div>`;
@@ -1340,6 +1365,7 @@ async function wireTokens(made, open = !!made) {
   icons();
   $("#my-audit").addEventListener("toggle", (e) => { if (e.target.open) wireAudit(e.target.lastElementChild, "/tokens/audit", true); }, { once: true });
   $("#connect-cmd").addEventListener("click", () => copy(mcpSignIn(), "Command copied"));
+  $("#connect-how").addEventListener("click", (e) => { e.preventDefault(); openConnect(); });
   $("#connect-url").addEventListener("click", () => copy(mcpUrl(), "URL copied"));
   $("#token-copy")?.addEventListener("click", () => copy(made.token, "Token copied"));
   $("#token-mcp")?.addEventListener("click", () => copy(mcpAdd(made.token), "Command copied"));
@@ -1429,7 +1455,7 @@ async function copy(text, what = "Copied") {
 // for lines, first and last are the line ids shown, so a follow that keeps those lines counts.
 // Your follows are fetched once a page, the first time it draws a button.
 let followed = null, fetchingFollows = null;
-const followButton = (t) => !me() || t.name === me() ? "" : `<button class="btn follow" type="button" data-follow="${esc(JSON.stringify(t))}" aria-pressed="false" title="follow ${t.name ? "@" + esc(t.name) : t.path ? "these lines, by id, as they move" : "this repo"}">${icon("eye")}<span>Follow</span></button>`;
+const followButton = (t) => !me() || t.name === me() ? "" : `<button class="btn follow" type="button" data-follow="${esc(JSON.stringify(t))}" aria-pressed="false" title="follow ${t.name ? "@" + esc(t.name) : t.path ? "these lines, by id, as they move" : "this repo"}">${icon("eye")}<span class="on">Follow</span><span class="off">Unfollow</span></button>`;
 const followOf = (t) => (followed ?? []).find((f) => t.name ? f.name === t.name
   : f.owner === t.owner && f.repo === t.repo && (t.path ? f.kind === "lines" && f.path === t.path && f.ids.includes(t.first) && f.ids.includes(t.last) : f.kind === "repo"));
 /** One of your follows, as a link to it. */
@@ -1440,7 +1466,7 @@ async function wireFollows(root = document) {
   const btns = [...root.querySelectorAll("[data-follow]")];
   if (!btns.length) return;
   followed ??= await (fetchingFollows ??= api("/me/following").catch(() => []));
-  for (const b of btns) { const on = !!followOf(JSON.parse(b.dataset.follow)); b.setAttribute("aria-pressed", on); b.querySelector("span").textContent = on ? "Following" : "Follow"; }
+  for (const b of btns) { const on = !!followOf(JSON.parse(b.dataset.follow)); b.setAttribute("aria-pressed", on); b.querySelector(".on").textContent = on ? "Following" : "Follow"; b.dataset.was ??= b.title; b.title = on ? "stop following (press to unfollow)" : b.dataset.was; }
 }
 document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-follow]");
@@ -3529,6 +3555,11 @@ const views = {
         <span class="stat"><b id="stat-solved">·</b> clashes Mervin settled with no card</span>
       </div></div></section>
       <section class="section"><div class="wrap">
+        <div class="label">wait, let me explain with dots</div><h2>Why thirty agents jam the old git way</h2>
+        <p class="muted">Each dot is an agent with a feature to ship. Picture a subway at rush hour: one jammed staircase, a ticket gate, a test exit. Then the three layers that fix it. Try the sliders. <a href="/git-problems.html">We got git problems with agent swarm</a> has this and <a href="/swarm-watch.html">a real week of this repo replayed</a>.</p>
+        <div id="swarm-home"></div>
+      </div></section>
+      <section class="section"><div class="wrap">
         <div class="label">the whole map</div><h2>Everything it does, by what you're doing</h2>
         <p class="muted">Pick where you're standing. Every feature is on one of these tabs, with a picture of how it fits.</p>
         <div class="fmap" id="fmap"><div class="fmap-tabs" role="tablist" aria-label="Feature areas"></div><div class="fmap-body"></div></div>
@@ -3538,7 +3569,7 @@ const views = {
         <p class="muted">We aren't stuck in history. Every action is one call, and every door into it opens for a person or an agent: click it, type it, or hand it to a model. Same call, same result, same signed line.</p>
         <div class="both">
           <div><span class="ico">${icon("globe")}</span><b>WebMCP</b><p>The page itself is a toolbox. An agent in the browser calls the same commands your palette runs, as whoever is signed in.</p><span class="hand">hand: click it · eye: document.modelContext</span></div>
-          <div><span class="ico">${icon("plug")}</span><b>MCP</b><p>A remote server for Claude Code, Codex, opencode or pi. One line connects it, and every tool is a call to the API.</p><code>${esc(mcpAdd("TOKEN").split(" --header")[0])}</code></div>
+          <div><span class="ico">${icon("plug")}</span><b>MCP</b><p>A remote server for Claude Code, Codex, opencode or pi. One line connects it, and every tool is a call to the API.</p><code>${esc(mcpAdd("TOKEN", false).split(" --header")[0])}</code></div>
           <div><span class="ico">${icon("terminal")}</span><b>CLI</b><p>For the agent that would rather run a command than speak MCP, and for you at a prompt.</p><code>codesplitter tools</code></div>
           <div><span class="ico">${icon("command")}</span><b>Agentic menus</b><p>Press <kbd>⌘K</kbd> for menus that change with the page you're on, whether a finger or a model picks the item.</p><span class="hand">hand: ⌘K · eye: the same list as tools</span></div>
         </div>
@@ -3591,6 +3622,7 @@ const views = {
         <div class="levels" id="levels"></div>
         <div style="margin-top:16px">${digBox(DIG_WHY)}</div>
       </div></section>${siteFoot()}`;
+    import("/swarm-stage.js").then((m) => { const el = $("#swarm-home"); if (el && !el.children.length) m.mount(el, { embed: true }); }).catch(() => {});
     $("#hero-cmd").addEventListener("click", () => palette.open());
     $("#hero-tour").addEventListener("click", () => { tourStart(); tour(); });
     $("#hand-agent").addEventListener("click", async () => copy(await (await fetch("/agent.md")).text(), "Prompt copied: paste it to your agent, then say what you want done"));
@@ -3627,6 +3659,28 @@ const views = {
       <p>Created by <b>QNTBR</b>. Every feature it has is on <a href="/features.html">one list</a>.</p>
       <p class="quiet">Some rooms aren't on the map. The birds know where.</p>
     </div>${siteFoot()}`;
+    wireFoot();
+  },
+
+  // The demos page: every tour chapter as a card, each played by the tour's own card and cursor (the same scenes list_scenes and play_scene give an agent).
+  demos() {
+    ctx = { view: "demos" };
+    const anywhere = (id) => TOUR.filter((s) => s.ch === id).every((s) => s.on === "any");
+    app.innerHTML = `<div class="wrap about">
+      <div class="label">demos</div>
+      <h1>Watch it <em>run itself</em>.</h1>
+      <p>Each demo is a chapter of the tour: a card and a cursor that press the real buttons. It stops where a person has to act (signing in, spending, merging, shipping).</p>
+      <div class="row"><button class="btn primary" id="demo-all">${icon("play")}Play all</button><span class="muted">${TOUR_CHAPTERS.length} chapters, in order</span></div>
+      <p>${icon("siren")}<a href="/git-problems.html">We got git problems with agent swarm</a>: the rush-hour station and a real week of this repo's PRs, on one page.</p>
+      <p>${icon("train-front")}<a href="/swarm.html">Git at swarm speed</a>: why thirty agents jam the old git way, explained with dots, and the three layers that take the walls down.</p>
+      <p>${icon("users")}<a href="/swarm-watch.html">A week of the swarm</a>: 1,000 of this repo's real PRs replayed, the night the git wall went up, and where Mervin and Ester shipped.</p>
+      <div class="levels" id="demo-list">${TOUR_CHAPTERS.map(([id, ic, name]) => `<div class="box"><div class="bar">${icon(ic)}<b>${esc(name)}</b></div><div class="body">
+        <ol>${TOUR.filter((s) => s.ch === id).map((s) => `<li>${esc(s.t ?? s.panel)}</li>`).join("")}</ol>
+        <button class="btn" data-demo="${id}" title="${anywhere(id) ? "play this chapter" : "this one plays on a repo's code page"}">${icon("play")}Play</button>${anywhere(id) ? "" : `<span class="muted"> on a repo's code page</span>`}</div></div>`).join("")}</div>
+    </div>${siteFoot()}`;
+    const play = (scene, queue = []) => { tourSave({ scene, queue, i: tourSpan(scene)[0], dir: 1, auto: true }); tour(); };
+    $("#demo-all").addEventListener("click", () => { const [first, ...rest] = TOUR_CHAPTERS.map(([id]) => id); play(first, rest); });
+    $("#demo-list").addEventListener("click", (e) => { const b = e.target.closest("[data-demo]"); if (b) play(b.dataset.demo); });
     wireFoot();
   },
 
@@ -3740,7 +3794,7 @@ const views = {
     // A person's code city (play.html#c/…): a quiet door at the foot of their profile, not a box. Its owner can close it to visitors.
     const cityLink = agent || !(user.city_public || mine) || (hidden.has("city") && !mine) ? "" : `<a href="/play.html#c/${encodeURIComponent(name)}" title="walk @${esc(name)}'s code city">${icon("building")}the city</a>${mine ? `<label title="let others walk your city"><input type="checkbox" id="citypub"${user.city_public ? " checked" : ""}>open</label>` : ""}`;
     app.innerHTML = `<div class="wrap prof">
-      <div class="prof-head"><h1>${icon(agent ? "bot" : "user")}@${esc(name)}${tierStamp(user.tier)}</h1>${agent ? "" : `<button class="av-dot" id="av-dot" type="button" title="${mine ? "make your avatar" : `@${esc(name)}'s avatar`}" aria-label="${mine ? "make your avatar" : `@${esc(name)}'s avatar`}"><canvas width="88" height="88"></canvas></button>`}<span class="muted">${agent ? `a coding agent on ${esc(agent.harness)}${agent.run_by.length ? `, run by ${agent.run_by.map((o) => `<a href="#/u/${esc(o.name)}">@${esc(o.name)}</a>`).join(", ")}` : ""}` : esc(user.bio) || "no notes yet"}</span><span class="grow"></span>
+      <div class="prof-head"><h1>${icon(agent ? "bot" : "user")}@${esc(name)}${tierStamp(user.tier)}<span id="finds-badge"></span></h1>${agent ? "" : `<button class="av-dot" id="av-dot" type="button" title="${mine ? "make your avatar" : `@${esc(name)}'s avatar`}" aria-label="${mine ? "make your avatar" : `@${esc(name)}'s avatar`}"><canvas width="88" height="88"></canvas></button>`}<span class="muted">${agent ? `a coding agent on ${esc(agent.harness)}${agent.run_by.length ? `, run by ${agent.run_by.map((o) => `<a href="#/u/${esc(o.name)}">@${esc(o.name)}</a>`).join(", ")}` : ""}` : esc(user.bio) || "no notes yet"}</span><span class="grow"></span>
         <span class="stat">${agent ? `${n(shown.length, "repo")} · ${n(agent.run_count, "run")} · ${n(agent.lines, "line edit")}` : `${n(repos.length, "repo")} · ${n(playlists.length, "collection")}`} · ${following} following · ${n(followers, "follower")}</span>
         ${followButton({ name, kind: name.startsWith("agent-") ? "agent" : "user" })}
         ${mine ? `<button class="btn ghost" id="editpage">${icon("palette")}Edit page</button>` : ""}</div>
@@ -3753,7 +3807,7 @@ const views = {
       <div class="prof-grid"><div>
         ${agent ? "" : sec("top8", top8Box(user.top8 ?? [], mine))}
         ${sec("repos", `<div class="box"><div class="bar">${icon("book-marked")}<b>${agent ? "Works in" : "Repos"}</b>
-          ${mine ? `<form id="newrepo" class="barform"><input name="name" placeholder="new-repo" required><select name="visibility" aria-label="Visibility"><option value="public">Public</option><option value="private">Private</option></select><button class="btn" title="an empty repo">${icon("plus")}Create</button></form>` : ""}</div>
+          ${mine ? `<form id="newrepo" class="barform"><div class="seg" role="group" aria-label="Add a repo"><button type="button" class="on" aria-pressed="true" data-mode="new" title="Start an empty repo">${icon("plus")}Create new</button><button type="button" aria-pressed="false" data-mode="gh" title="Bring in a repo that already exists on GitHub">${OCTOCAT}Dig from GitHub</button></div><input name="name" placeholder="new-repo" required><select name="visibility" aria-label="Visibility"><option value="public">Public</option><option value="private">Private</option></select><button class="btn" title="an empty repo">${icon("plus")}Create</button></form>` : ""}</div>
           <div class="body folders">${shown.map((r) => `<a href="#/r/${r.owner}/${r.name}" title="${r.level ? `forked from ${esc(r.level)}` : esc(r.name)}">${icon(r.visibility === "private" ? "folder-lock" : "folder")}<span class="fname">${agent ? `${esc(r.owner)}/` : ""}${esc(r.name)}</span><span class="when">${ago(r.created_at)}</span></a>`).join("") || '<span class="muted">empty: dig it up?</span>'}</div></div>`)}
         ${sec("pulse", pulse ? `<div class="pulse-free" id="pulse-box"></div>` : "")}
         ${invites.length ? `<div class="box" id="invites"><div class="bar">${icon("mail")}<b>Invited to</b><span class="muted">crews waiting on you: open one to look, then join</span></div><div class="body list">${invites.map(inviteRow).join("")}</div></div>` : ""}
@@ -3762,7 +3816,7 @@ const views = {
         ${jobs.length ? `<div class="box jobs"><div class="bar">${icon("hourglass")}<b>Queued</b><span class="muted">this week's digs, previews and checks that waited in line</span></div>${jobs.map(jobRow).join("")}</div>` : ""}
       </div><aside>
         ${mine ? `${boxTop(true, "tokens", `${icon("plug")}<b>Connect your AI</b>`)}<div class="links" style="font-size:12px;padding:8px 12px 0"><a class="muted" href="/reference">the API</a> · <a class="muted" href="/mcp">MCP</a></div><div class="body"><span class="muted">…</span></div></details>` : ""}
-        ${page ? `<div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page<button type="button" class="btn ghost" id="pg-stage" title="Full page" aria-label="Full page" style="margin-left:auto">${icon("maximize-2")}</button></div><button type="button" class="btn stage-x" id="pg-unstage" title="Back to the profile (Esc)" aria-label="Back to the profile">${icon("minimize-2")}</button><iframe class="theme" sandbox="allow-scripts allow-popups allow-pointer-lock" src="/api/users/${encodeURIComponent(name)}/page/" title="${esc(name)}'s page"></iframe></div>` : ""}
+        ${page ? `<div class="box stage-x"><div class="bar">${icon("sparkles")}${esc(name)}'s page<button type="button" class="btn ghost" id="pg-unstage" title="Back to the small page (Esc)" aria-label="Back to the small page" style="margin-left:auto">${icon("minimize-2")}</button></div></div><div class="box photo"><div class="bar">${icon("sparkles")}${esc(name)}'s page<button type="button" class="btn ghost" id="pg-stage" title="Full page" aria-label="Full page" style="margin-left:auto">${icon("maximize-2")}</button></div><iframe class="theme" sandbox="allow-scripts allow-popups allow-pointer-lock" src="/api/users/${encodeURIComponent(name)}/page/" title="${esc(name)}'s page"></iframe></div>` : ""}
         ${mine && !agent ? `<form id="talk" class="box"><div class="bar">${icon("message-circle")}<b>Talk to your page</b>${page ? "" : `<button type="button" class="btn" id="pg-make" title="Make my page: start with the starter world, a tower per public repo" aria-label="Make my page">${icon("wand-sparkles")}</button>`}<button type="button" class="btn ghost" id="pg-hour" title="Put the page back to how it was an hour ago">${icon("history")}</button><button type="button" class="btn ghost" id="pg-default" title="Put the page back to the starter">${icon("rotate-ccw")}</button></div><div class="body row" style="flex-wrap:nowrap"><input name="say" placeholder="make it a night city, one tower per repo" required autocomplete="off" style="flex:1;min-width:0"><button class="btn primary" title="Send it to your coding agent">${icon("send")}</button></div></form>` : ""}
         ${agent ? "" : sec("collections", `${boxTop(mine, "collections", `${icon("library")}<b>Collections</b>${playlists.length ? `<span class="muted">${playlists.length}</span>` : ""}`)}<div class="body list">${playlists.map((p) => `<a href="#/p/${p.id}">${icon("bookmark")}${esc(p.title)}</a>`).join("") || (mine ? "" : '<span class="muted">nothing collected yet</span>')}
           ${mine ? `<form id="newpl" class="row" style="margin:8px 0 4px;flex-wrap:nowrap"><input name="title" placeholder="regexes of the lost city" required style="flex:1;min-width:0"><button class="btn">${icon("plus")}Start</button></form>` : ""}</div>${boxEnd(mine)}`)}
@@ -3771,6 +3825,12 @@ const views = {
         ${mine ? dataBox(true) : ""}
       </aside></div>${cityLink ? `<div class="city-door">${cityLink}</div>` : ""}</div>`;
     if (page) { pageStage(); pageWatch(name); }
+    // The badge for finding every hidden game and room (finds.ts); a profile with a page counts as one find for its visitor.
+    if (!agent) {
+      const wear = (f) => { const el = $("#finds-badge"); if (el && f?.all) el.innerHTML = ` <span class="tier" title="Found every hidden game and room">${icon("trophy")}Found them all</span>`; icons(); };
+      api(`/users/${encodeURIComponent(name)}/finds`).then(wear).catch(() => {});
+      if (page && me()) import("/found.js").then(({ found }) => found("page")).then((r) => { if (r?.all) { toast("You found every hidden game and room. The badge is on your profile."); if (mine) wear(r); } });
+    }
     if (mine && !agent) pageTalk(name, !!page);
     if (!agent) avatarBox(user, mine, name);
     // The pulse: a week of lines landed, beating while they type. It looks again every 15 seconds while you're here.
@@ -3794,7 +3854,20 @@ const views = {
       }, 15_000);
     }
     $("#editpage")?.addEventListener("click", () => { const f = $("#theme"); f.hidden = !f.hidden; if (!f.hidden) f.bio.focus(); });
-    $("#newrepo")?.addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target; await api("/repos", { name: f.name.value, visibility: f.visibility.value }); location.hash = `#/r/${me()}/${f.name.value}`; });
+    $("#newrepo")?.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => {
+      const f = $("#newrepo"), gh = b.dataset.mode === "gh";
+      f.dataset.mode = b.dataset.mode;
+      f.querySelectorAll("[data-mode]").forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-pressed", on); });
+      f.name.placeholder = gh ? "paste a GitHub link or owner/name" : "new-repo";
+      f.visibility.hidden = gh; f.querySelector(".btn").lastChild.textContent = gh ? "Dig" : "Create"; f.name.focus();
+    }));
+    $("#newrepo")?.addEventListener("submit", async (e) => {
+      e.preventDefault(); const f = e.target;
+      if (f.dataset.mode === "gh") { const g = openDig(); g.repo.value = f.name.value; g.repo.dispatchEvent(new Event("input", { bubbles: true })); return; }
+      if (/[\/:@]/.test(f.name.value)) return toast("That looks like a link: switch to “Dig from GitHub” to bring it in.", 5000);
+      try { await api("/repos", { name: f.name.value, visibility: f.visibility.value }); } catch (err) { return toast(err.message === "bad repo name" ? "Repo names are letters, numbers, dots, dashes and underscores." : err.message, 5000); }
+      location.hash = `#/r/${me()}/${f.name.value}`;
+    });
     wireDig();
     // The side column folds box by box, like the code page's panels; this browser keeps which are open.
     foldSide($(".prof-grid > aside"), open === "tokens" ? "tokens" : null);
@@ -6546,7 +6619,7 @@ function wireData() {
 // It makes no real compliance claim; keep it that way.
 function siteFoot() {
   return `<footer class="site-foot"><div class="wrap">
-    <nav><a href="#/">Home</a><a href="#/about">About</a><a href="/features.html">Features</a><a href="/play.html#l/mitt">Play</a><a href="#/privacy">Privacy</a>
+    <nav><a href="#/">Home</a><a href="#/about">About</a><a href="/features.html">Features</a><a href="#/demos">Demos</a><a href="/play.html#l/mitt">Play</a><a href="#/privacy">Privacy</a>
       <a href="https://github.com/QuinnsCode/RustyBuns/tree/main/apps/codesplitter" rel="noopener">Source on GitHub</a><a href="https://github.com/QuinnsCode/RustyBuns" rel="noopener">Rusty Buns</a></nav>
     <span class="grow"></span>
     <span class="by">created by <b>QNTBR</b> · <span class="yr" id="yr">© ${new Date().getFullYear()}</span></span>
@@ -7297,7 +7370,7 @@ const tourClick = (el, init = {}) => el?.dispatchEvent(new MouseEvent("mousedown
 // A small public repo to dig on the tour: the first level's.
 const TOUR_STARTER = "developit/mitt";
 // The chapters, in order. A step's `on` says where it plays: anywhere, or on the toured repo's file page.
-const TOUR_CHAPTERS = [["signin", "log-in", "Sign in"], ["dig", "shovel", "Dig a repo"], ["code", "file-code", "The code"], ["panels", "panel-right", "The right bar"], ["self", "repeat", "Edit itself"], ["queue", "list-ordered", "Mervin and Ester queue it"], ["agents", "bot", "Agents on one repo"], ["play", "gamepad-2", "Play"]];
+const TOUR_CHAPTERS = [["signin", "log-in", "Sign in"], ["dig", "shovel", "Dig a repo"], ["code", "file-code", "The code"], ["panels", "panel-right", "The right bar"], ["self", "repeat", "Edit itself"], ["queue", "list-ordered", "Mervin and Ester queue it"], ["agents", "bot", "Agents on one repo"], ["desktop", "monitor", "Desktop and web"], ["play", "gamepad-2", "Play"]];
 const TOUR = [
   { ch: "signin", ic: "log-in", t: "Sign in", at: "#who", on: "any",
     say: () => me() ? `You're in as @${me()}. Next, dig up a repo.` : "Everything you dig up, edit and collect goes under your @handle. Sign in, or make an account, at the top right.",
@@ -7404,6 +7477,16 @@ const TOUR = [
     say: () => "No agent on your machine? Run one hosted here. It is metered, so starting it is your press." },
   { ch: "agents", feat: "agents-cant-ship", ic: "shield-check", t: "Agents can't ship", at: '.dpanels > .sec[data-key="deploy"]', on: "repo",
     say: () => "An agent can edit and open a branch, but merging to main and deploying are buttons only a person has." },
+  // The desktop and the web (features: desktop, own-hardware-ci, commit-to-git). What is true today: the web app never listens to a machine's
+  // files. The desktop is its own copy of the app with its git on disk; it reaches out (mirrors, a runner that pulls, a CLI with a token).
+  { ch: "desktop", feat: "desktop", ic: "monitor", t: "The same app on your machine", at: null, on: "any",
+    say: () => "The desktop build is this app with sqlite for D1 and git on your disk, in bare repos under ~/.codesplitters. Agents run there with your own logins." },
+  { ch: "desktop", feat: "commit-to-git", ic: "arrow-up-from-line", t: "It syncs out, both ways", at: null, on: "any",
+    say: () => "A mirror keeps a repo in step with GitHub, GitLab or any git URL, in both directions, and holds at a clash instead of picking a side. The web copy hears your machine through git, not by watching its files." },
+  { ch: "desktop", feat: "own-hardware-ci", ic: "download", t: "Your machine pulls, nothing listens", at: null, on: "any",
+    say: () => "A runner on your Mac claims queued checks from the site, runs them in a scrubbed clone and reports back. It needs no open port, so the web app never reaches into your files." },
+  { ch: "desktop", ic: "smartphone", t: "Your phone, same desktop", at: null, on: "any",
+    say: () => "bun run phone puts the running desktop on HTTPS and prints a one-use pairing link with a QR code. Only a phone that opens the link gets in." },
   { ch: "play", ic: "building", t: "Your code city", at: null, on: "any", href: () => `/play.html#c/${encodeURIComponent(me())}`, open: true,
     say: () => "Every repo you own is a district, every file a building: white stone where people wrote it, black glass where agents did. It opens in a new tab." },
   { ch: "play", ic: "gamepad-2", t: "Beat up the code", at: null, on: "any", href: (t) => t.owner ? `/play.html#r/${t.owner}/${t.repo}` : "/play.html#l/mitt",
@@ -7496,6 +7579,7 @@ function tour() {
     <div class="tour-chs" role="group" aria-label="chapters">${TOUR_CHAPTERS.map(([k, ic, name]) => `<button type="button" class="${k === s.ch ? "on" : ""}" data-ch="${k}" title="${name} (${t.qm ? "queues it next" : "shift-click to queue it next"})" aria-label="${name}"${k === s.ch ? ' aria-current="step"' : ""}>${icon(ic)}</button>`).join("")}<button type="button" class="btn ghost${t.qm ? " on" : ""}" data-qm aria-pressed="${!!t.qm}" title="queue: then pick the chapters to play after this one">${icon("list-plus")}${t.qm ? "Pick chapters" : "Queue"}</button><span class="muted">${esc(ch[2])}</span></div>
     <div class="tour-top">${icon(s.ic)}<b>${esc(title)}</b><span class="muted tour-n">${n}/${mine.length}</span></div>
     <div class="tour-dots">${mine.map((_, k) => `<i class="${k < n ? "on" : ""}"></i>`).join("")}</div>
+    <input type="range" class="tour-scrub" min="0" max="${TOUR.length - 1}" value="${t.i}" aria-label="scrub the tour" title="scrub: drag back to replay any step (${t.i + 1}/${TOUR.length})">
     <p>${esc(say)}</p><p class="tour-said" aria-live="polite"></p>
     ${t.queue?.length ? `<p class="muted tour-queue">Up next: ${esc(t.queue.map(tourName).join(", "))} <button type="button" class="btn ghost" data-unqueue title="clear the queue">${icon("x")}</button></p>` : ""}
     <div class="tour-btns">${t.i > lo ? `<button class="btn" data-back title="back (←)">${icon("arrow-left")}</button>` : ""}<button class="btn" data-auto title="${t.auto ? "pause: take the wheel" : "play: a cursor does the steps for you, with real actions"}">${icon(t.auto ? "pause" : "play")}</button><span class="grow"></span>
@@ -7512,6 +7596,8 @@ function tour() {
   const step = (i, dir) => { if (i < 0 || i >= TOUR.length) return; tourSave({ ...t, i, dir }); tour(); };
   if (t.auto && !away) void tourDrive(tourGen, t, s, hot, said, () => tourGo(t), last);
   else if (t.auto) { delete t.auto; tourSave(t); }
+  // The scrub bar walks the whole tour: drag back to replay any step; autoplay pauses so it stays where you put it.
+  $(".tour-scrub", card).addEventListener("change", (e) => { const k = +e.target.value; if (k !== t.i) { const { auto, scene, ...rest } = t; tourSave({ ...rest, i: k, dir: k > t.i ? 1 : -1 }); tour(); } });
   card.addEventListener("click", async (e) => {
     const b = e.target.closest("button"); if (!b) return;
     if ("x" in b.dataset) return tourStop(true);
@@ -7745,8 +7831,17 @@ async function pageTalk(name, has) {
     try { await ensure(); toast("Your page is made"); route(); } catch (e) { toast(e.message); }
   };
   pageTools(name, ensure, reload);
-  $("#pg-hour").onclick = () => back("hour", "an hour ago");
-  $("#pg-default").onclick = () => back("default", "the starter");
+  // A first click arms the button (it says what it will do); only a second one within 4s resets the background.
+  const sure = (b, ask, go) => {
+    let t = 0, was = b.innerHTML;
+    b.onclick = () => {
+      if (t) { clearTimeout(t); t = 0; b.innerHTML = was; b.classList.remove("danger"); return go(); }
+      b.innerHTML = was + `<span> ${ask}</span>`; b.classList.add("danger");
+      t = setTimeout(() => { t = 0; b.innerHTML = was; b.classList.remove("danger"); }, 4000);
+    };
+  };
+  sure($("#pg-hour"), "Put the background back an hour? Click again", () => back("hour", "an hour ago"));
+  sure($("#pg-default"), "Are you sure you want to reset the background? Click again", () => back("default", "the starter"));
   $("#talk").onsubmit = async (e) => {
     e.preventDefault();
     const f = e.target, say = f.say.value.trim(), btn = f.querySelector("button.primary");

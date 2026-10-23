@@ -8,8 +8,9 @@
 // On the Wooka's end of the field the trees are lived in: huts up the trunks, rope bridges
 // between them, and totems wearing the helmets of Marines who came this way before.
 import * as THREE from "three";
+import { FLOORS, buildFoliage, foliageQuality, instancer, makeWind, mergeAll } from "./foliage.ts";
 import { hut, lumpy, texture, totem } from "./models.ts";
-import { EYE, HALF, POST_RADIUS, SPAWN, type Battle, type Block, type Tree } from "./sim.ts";
+import { EYE, POST_RADIUS, type Battle, type Block, type Tree } from "./sim.ts";
 
 type Woods = "redwood" | "jungle" | "canyon";
 export interface World {
@@ -137,7 +138,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
 
   // The trail the fighting wears in: from the attacker's drop, through each post, to the keep and
   // on to the defender's end, wandering a little.
-  const trail = [SPAWN.attacker, ...b.posts, SPAWN.defender];
+  const trail = [b.spawn.attacker, ...b.posts, b.spawn.defender];
   const wander = (x: number, z: number) => x + n(z / 40, 3.7) * 6;
   const onTrail = (x: number, z: number) => {
     const wx = wander(x, z);
@@ -155,7 +156,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     for (const blk of b.blocks) flat = Math.min(flat, smooth(1, 7, blockGap(blk, x, z)));
     let h = (n(x / 34, z / 34, 3) * amp + n(x / 8, z / 8, 2) * 0.25) * flat;
     h -= 0.25 * (1 - smooth(1.5, 4, onTrail(x, z)));
-    const out = Math.max(Math.abs(x), Math.abs(z)) - HALF;
+    const out = Math.max(Math.abs(x), Math.abs(z)) - b.half;
     if (out > 0) h += (woods === "canyon" ? 45 : 32) * (1 - Math.exp(-out / 40)) * (0.75 + 0.5 * n(x / 60, z / 60, 2)) + n(x / 12, z / 12) * out * 0.04;
     return h;
   };
@@ -196,16 +197,18 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   scene.add(sun, sun.target);
 
   // --- The floor ---
-  const SIZE = HALF * 5, SEG = 260;
+  const SIZE = b.half * 5, SEG = 260;
   const groundGeo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG).rotateX(-Math.PI / 2);
   const gp = groundGeo.attributes.position as THREE.BufferAttribute, gc: number[] = [];
   const base = new THREE.Color(look.ground), litter = new THREE.Color(look.litter), dirt = new THREE.Color(look.trail);
+  const mossy = new THREE.Color(0x2f4a1c);
   const paved = new THREE.Color(spec.sector === "capital" ? 0x8d8a82 : spec.sector === "spaceport" ? 0x8f8b80 : 0x86775c);
   const paves = spec.sector === "capital" || spec.sector === "spaceport" || spec.sector === "cannon";
   for (let i = 0; i < gp.count; i++) {
     const x = gp.getX(i), z = gp.getZ(i), h = heightAt(x, z);
     gp.setY(i, h);
     col.copy(base).lerp(litter, smooth(-0.3, 0.6, n(x / 14 + 40, z / 14, 3)));
+    col.lerp(mossy, smooth(-0.1, 0.7, n(x / 10 - 30, z / 10 + 8, 3)) * FLOORS[spec.sector].mossAmount);
     if (woods === "canyon") col.offsetHSL(0, 0, 0.06 * Math.sin(h * 1.7));
     const t = onTrail(x, z);
     col.lerp(dirt, 1 - smooth(1.5, 5.5, t + n(x / 3, z / 3) * 1.5));
@@ -223,41 +226,35 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   const bare = (x: number, z: number, room = 1.5) =>
     onTrail(x, z) < 3.5 || b.posts.some((post) => Math.hypot(x - post.x, z - post.z) < 5) ||
     b.blocks.some((blk) => blockGap(blk, x, z) < room) || b.trees.some((t) => Math.hypot(x - t.x, z - t.z) < t.r + 0.3);
-  const anywhere = (spread = 1) => ({ x: (r() - 0.5) * HALF * 2 * spread, z: (r() - 0.5) * HALF * 2 * spread });
-  const inst = (geo: THREE.BufferGeometry, mat: THREE.Material, count: number, cast = false) => {
-    const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, count));
-    mesh.count = 0;
-    mesh.castShadow = cast;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-    return mesh;
-  };
-  const put = (mesh: THREE.InstancedMesh, matrix: THREE.Matrix4, color?: THREE.Color) => {
-    if (mesh.count >= mesh.instanceMatrix.count) return;
-    mesh.setMatrixAt(mesh.count, matrix);
-    if (color) mesh.setColorAt(mesh.count, color);
-    mesh.count++;
-  };
+  const anywhere = (spread = 1) => ({ x: (r() - 0.5) * b.half * 2 * spread, z: (r() - 0.5) * b.half * 2 * spread });
+  const { inst, put, done } = instancer(scene);
+  const wind = makeWind(), Q = foliageQuality();
+
+  // Fern fronds, and the leaf material every frond and clump shares: it sways, and bends away from units.
+  const frond = new THREE.PlaneGeometry(0.55, 1.5, 1, 6).translate(0, 0.75, 0);
+  const fp = frond.attributes.position as THREE.BufferAttribute;
+  for (let v = 0; v < fp.count; v++) { const y = fp.getY(v), f = y / 1.5; fp.setXYZ(v, fp.getX(v), Math.sin(f * 2.1) * 0.75, -f * 1.25); }
+  const fronds: THREE.BufferGeometry[] = [];
+  const per = woods === "jungle" ? 9 : 8;
+  for (let i = 0; i < per; i++) fronds.push(frond.clone().rotateX(-0.15 * (i % 3)).rotateY((i / per) * Math.PI * 2 + (i % 2) * 0.3));
+  const fernGeo = mergeAll(fronds);
+  fernGeo.computeVertexNormals();
+  
+  const frondTex = frondMap();
+  const leafMat = wind.patch(std(0xffffff, 0.85, { map: frondTex, alphaTest: 0.45, side: THREE.DoubleSide }), { h: 1.5, amp: 0.1, bend: 1.4 });
 
   // --- The trees: the field's trunks (the sim's, which block), and more on the banks behind. ---
+  let allTrees: Tree[] = b.trees;
   if (woods !== "canyon") {
     const jungle = woods === "jungle";
     const back: Tree[] = [];
     for (let i = 0; i < (jungle ? 420 : 320); i++) {
-      const a = r() * Math.PI * 2, d = HALF + 4 + r() * HALF * 1.3;
+      const a = r() * Math.PI * 2, d = b.half + 4 + r() * b.half * 1.3;
       const x = Math.max(-1, Math.min(1, Math.cos(a) * 1.5)) * d, z = Math.max(-1, Math.min(1, Math.sin(a) * 1.5)) * d;
       back.push({ x, z, r: jungle ? 0.6 + r() : 1.4 + r() * 2.6 });
     }
     const all = [...b.trees, ...back];
-    const frond = new THREE.PlaneGeometry(0.55, 1.5, 1, 6).translate(0, 0.75, 0);
-    const fp = frond.attributes.position as THREE.BufferAttribute;
-    for (let v = 0; v < fp.count; v++) { const y = fp.getY(v), f = y / 1.5; fp.setXYZ(v, fp.getX(v), Math.sin(f * 2.1) * 0.75, -f * 1.25); }
-    const fronds: THREE.BufferGeometry[] = [];
-    const per = jungle ? 9 : 8;
-    for (let i = 0; i < per; i++) fronds.push(frond.clone().rotateX(-0.15 * (i % 3)).rotateY((i / per) * Math.PI * 2 + (i % 2) * 0.3));
-    const fernGeo = mergeAll(fronds);
-    fernGeo.computeVertexNormals();
-    const leafMat = std(0xffffff, 0.85, { map: frondMap(), alphaTest: 0.45, side: THREE.DoubleSide });
+    allTrees = all;
     const trunkGeo = jungle
       ? new THREE.LatheGeometry([[0, -0.02], [1.6, -0.02], [1.15, 0.015], [1, 0.04], [0.85, 0.5], [0.6, 1]].map(([x, y]) => new THREE.Vector2(x, y)), 10)
       : new THREE.LatheGeometry([[0, -0.02], [2.1, -0.02], [1.45, 0.008], [1.12, 0.025], [1, 0.05], [0.82, 0.55], [0.5, 1]].map(([x, y]) => new THREE.Vector2(x, y)), 16);
@@ -267,7 +264,6 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     // Boughs: thin limbs off the upper trunk, each ending in a clump of needles; a few dead twigs lower down.
     const limbs = inst(new THREE.CylinderGeometry(0.5, 1, 1, 5).translate(0, 0.5, 0), std(0x5a3622, 1), all.length * 8, true);
     const clumps = inst(fernGeo, leafMat, all.length * (jungle ? 6 : 14), true);
-    const vines = inst(new THREE.CylinderGeometry(0.08, 0.08, 1, 4).translate(0, -0.5, 0), std(0x3c4a1e, 1), jungle ? all.length * 3 : 0);
     const branch = (x: number, y: number, z: number, a: number, len: number, droop: number, rad: number) => {
       q.setFromEuler(new THREE.Euler(0, a, Math.PI / 2 - droop, "YXZ"));
       put(limbs, m.compose(p.set(x, y, z), q, k.set(rad, len, rad)));
@@ -292,17 +288,11 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       // A crown on top, lost in the haze.
       col.setHSL(0.26, 0.45, 0.22 + r() * 0.06);
       put(clumps, m.compose(p.set(t.x, y0 + h * 0.97, t.z), q.setFromAxisAngle(UP, r() * 6), k.set(t.r * 2 + 3, 4, t.r * 2 + 3)), col);
-      if (jungle) for (let v = 0; v < 3; v++) {
-        const top = new THREE.Vector3(t.x + (r() - 0.5) * 6, y0 + h * (0.7 + r() * 0.2), t.z + (r() - 0.5) * 6);
-        const low = new THREE.Vector3(top.x + (r() - 0.5) * 3, y0 + r() * 6, top.z + (r() - 0.5) * 3);
-        q.setFromUnitVectors(new THREE.Vector3(0, -1, 0), low.clone().sub(top).normalize());
-        put(vines, m.compose(top, q, k.set(1, top.distanceTo(low), 1)));
-      }
     }
-    for (const mesh of [limbs, clumps, vines, trunks, moss]) { mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; }
+    done(limbs, clumps, trunks, moss);
 
     // The undergrowth: ferns most of all, bushes, logs, stumps, mushrooms.
-    const nFerns = jungle ? 3200 : 3000;
+    const nFerns = Math.round((jungle ? 3200 : 3000) * Q);
     const ferns = inst(fernGeo, leafMat, nFerns);
     for (let i = 0; i < nFerns * 3 && ferns.count < nFerns; i++) {
       // Ferns crowd round the trunks and thin out in the open.
@@ -313,14 +303,37 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       col.setHSL(0.21 + r() * 0.08, 0.5 + r() * 0.2, 0.3 + r() * 0.16);
       put(ferns, m.compose(p.set(at.x, heightAt(at.x, at.z) - 0.05, at.z), q.setFromAxisAngle(UP, r() * 6), k.set(sz, sz * (0.8 + r() * 0.4), sz)), col);
     }
-    const bushes = inst(fernGeo, leafMat, 320, true);
-    for (let i = 0; i < 1200 && bushes.count < 320; i++) {
+    const nBush = Math.round(320 * Q), bushes = inst(fernGeo, leafMat, nBush, true);
+    for (let i = 0; i < 1200 && bushes.count < nBush; i++) {
       const at = anywhere(1.2);
       if (bare(at.x, at.z, 3)) continue;
       const w = 2.4 + r() * 2;
       col.setHSL(0.24 + r() * 0.07, 0.45, 0.2 + r() * 0.08);
       put(bushes, m.compose(p.set(at.x, heightAt(at.x, at.z) - 0.1, at.z), q.setFromAxisAngle(UP, r() * 6), k.set(w, w * 1.1, w)), col);
     }
+    // Round, cheerful bushes: lumpy green balls in bunches, some with red and yellow berries or little
+    // flowers on them, a touch toy-like. Thick enough to hide a Wooka's silhouette, never in the way.
+    const nPuff = jungle ? 90 : 150;
+    const puffGeo = lumpy(1, 2, 0.12, 21, true);
+    const puffs = inst(puffGeo, wind.patch(std(0xffffff, 0.8), { h: 2, amp: 0.06, bend: 1 }), nPuff * 4, true);
+    const dots = inst(new THREE.SphereGeometry(0.16, 6, 4), std(0xffffff, 0.5), nPuff * 10, true);
+    for (let i = 0, made = 0; i < 1200 && made < nPuff; i++) {
+      const at = anywhere(1.15);
+      if (bare(at.x, at.z, 3) || onTrail(at.x, at.z) < 3) continue;
+      made++;
+      const w = 1.1 + r() * 1.3, hue = 0.25 + r() * 0.08, fruit = r() < 0.55 ? (r() < 0.5 ? 0.0 : 0.13) : -1;
+      for (let j = 0; j < 4; j++) {
+        const px = at.x + (r() - 0.5) * w * 1.6, pz = at.z + (r() - 0.5) * w * 1.6, ps = w * (0.55 + r() * 0.45);
+        col.setHSL(hue + (r() - 0.5) * 0.03, 0.55, 0.3 + r() * 0.12);
+        put(puffs, m.compose(p.set(px, heightAt(px, pz) + ps * 0.6, pz), q.setFromAxisAngle(UP, r() * 6), k.set(ps, ps * 0.8, ps)), col);
+        if (fruit >= 0) for (let d = 0; d < 2; d++) {
+          const a = r() * 6.28, e = 0.3 + r() * 0.9;
+          col.setHSL(fruit, 0.9, 0.5);
+          put(dots, m.compose(p.set(px + Math.cos(a) * ps * 0.85 * Math.cos(e), heightAt(px, pz) + ps * (0.6 + Math.sin(e) * 0.7), pz + Math.sin(a) * ps * 0.85 * Math.cos(e)), q.identity(), k.set(1, 1, 1)), col);
+        }
+      }
+    }
+    for (const mesh of [puffs, dots]) { mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; }
     const logs = inst(new THREE.CylinderGeometry(1, 1, 1, 12), std(0x6a4128, 0.95, { map: barkMap() }), 18, true);
     const logMoss = inst(new THREE.CylinderGeometry(1.05, 1.05, 0.98, 12, 1, true, Math.PI / 2 - 0.9, 1.8), std(0x3d5520, 1, { map: barkMap() }), 18);
     for (let i = 0; i < 200 && logs.count < 18; i++) {
@@ -353,12 +366,18 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     }
   }
 
+  // The forest floor and the jungle's storeys: foliage.ts.
+  const foliage = buildFoliage({
+    scene, b, kind: spec.sector, r, n, heightAt, bare, trees: allTrees, trail, shiftAt: (z) => n(z / 40, 3.7) * 6,
+    fernGeo, frond: frondTex, bark: barkMap(), wind, fog: new THREE.Color(look.sky),
+  });
+
   // Rocks, mossy in the woods, red in the canyon.
   const rocks = inst(lumpy(1, 2, 0.22, 3, false), std(woods === "canyon" ? 0x9a5634 : 0x7d7d70, 0.95, { map: strataMap() }), woods === "canyon" ? 140 : 70, true);
   for (let i = 0; i < 1000 && rocks.count < rocks.instanceMatrix.count; i++) {
     const at = anywhere(1.3);
     if (bare(at.x, at.z, 2)) continue;
-    const out = Math.max(Math.abs(at.x), Math.abs(at.z)) > HALF;
+    const out = Math.max(Math.abs(at.x), Math.abs(at.z)) > b.half;
     const sz = out ? 2 + r() * 6 : 0.4 + r() * 1.1;
     col.setHSL(woods === "canyon" ? 0.05 : 0.15, woods === "canyon" ? 0.25 : 0.06, 0.7 + r() * 0.3);
     put(rocks, m.compose(p.set(at.x, heightAt(at.x, at.z) + sz * 0.2, at.z), q.setFromEuler(new THREE.Euler(r(), r() * 6, r())), k.set(sz * 1.3, sz * 0.8, sz)), col);
@@ -366,7 +385,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
 
   // --- The Wooka's end: huts up the trunks nearest their drop, bridges between, and totems. ---
   if (wookaSide && woods !== "canyon") {
-    const home = SPAWN[wookaSide];
+    const home = b.spawn[wookaSide];
     const near = [...b.trees].filter((t) => t.r > 1).sort((a, c) => Math.hypot(a.x - home.x, a.z - home.z) - Math.hypot(c.x - home.x, c.z - home.z)).slice(0, 6);
     const decks: THREE.Vector3[] = [];
     near.forEach((t, i) => {
@@ -411,6 +430,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   // Cover in the woods: rocks, stumps and fallen logs, and the Wooka's trench lines, earth
   // banked up behind a row of sharpened stakes leaning out at whoever's coming.
   const barkMat = std(0x5a3a26, 0.95, { map: barkMap() }), cutMat = std(0xc89a62, 0.9), dirtMat = std(0x5a3b22, 1, { flatShading: true }), stakeMat = std(0x8a6a44, 0.9);
+  const plankMat = std(0x6a4a2a, 0.95, { map: barkMap() }), bannerMat = std(0xb3261e, 0.9, { side: THREE.DoubleSide }), lanternMat = new THREE.MeshBasicMaterial({ color: 0xffb347 }), sackMat = std(0xb89a5a, 1, { flatShading: true });
   const solidAt = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, ry = 0) => {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(x, y, z);
@@ -446,6 +466,16 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
         put(stakes, m.compose(p.set(blk.x + x, y + blk.h * 0.7, blk.z + out * (blk.d / 2 + 0.4)), q.setFromAxisAngle(new THREE.Vector3(1, 0, 0), out * 0.7 + (r() - 0.5) * 0.2), k.set(1, 0.8 + r() * 0.4, 1)));
         if (r() < 0.06) solidAt(lumpy(0.22, 1, 0.05, 7, false), std(0xeee6cf, 0.6), blk.x + x, y + blk.h + 0.6, blk.z + out * (blk.d / 2 + 0.9));
       }
+      // The trench itself behind the berm: a dark cut with duckboards, a row of lashed log posts
+      // along the lip, hide banners and a lantern now and then.
+      const back = -out;
+      solidAt(new THREE.BoxGeometry(blk.w, 0.12, 1.4), plankMat, blk.x, y + 0.1, blk.z + back * (blk.d / 2 + 1.1));
+      for (let x = -blk.w / 2 + 1.2; x < blk.w / 2; x += 3.2) {
+        solidAt(new THREE.CylinderGeometry(0.14, 0.18, blk.h + 1.6, 6), barkMat, blk.x + x, y + (blk.h + 1.6) / 2, blk.z + back * (blk.d / 2 + 0.4));
+        if (r() < 0.35) solidAt(new THREE.PlaneGeometry(0.9, 1.3).translate(0, -0.65, 0), bannerMat, blk.x + x + 0.3, y + blk.h + 1.5, blk.z + back * (blk.d / 2 + 0.4), r() * 0.4);
+        if (r() < 0.2) solidAt(new THREE.SphereGeometry(0.15, 8, 6), lanternMat, blk.x + x, y + blk.h + 1.35, blk.z + back * (blk.d / 2 + 0.55));
+      }
+      for (let x = -blk.w / 2 + 0.6; x < blk.w / 2; x += 2.3) if (r() < 0.6) solidAt(lumpy(0.3, 1, 0.2, 5, false), sackMat, blk.x + x, y + blk.h * 0.55, blk.z + back * (blk.d / 2 + 0.9)); // loot sacks
     }
   }
   stakes.instanceMatrix.needsUpdate = true;
@@ -572,6 +602,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   return {
     heightAt,
     update(t, eye, at) {
+      foliage.update(t, eye);
       sun.target.position.set(at.x, heightAt(at.x, at.z), at.z);
       sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 200);
       sky.position.copy(eye);
@@ -590,18 +621,4 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       moteGeo.attributes.position!.needsUpdate = true;
     },
   };
-}
-
-function mergeAll(geos: THREE.BufferGeometry[]) {
-  const parts = geos.map((g) => (g.index ? g.toNonIndexed() : g));
-  let total = 0;
-  for (const g of parts) total += g.attributes.position!.count;
-  const out = new THREE.BufferGeometry();
-  for (const name of ["position", "uv"]) {
-    const size = parts[0]!.attributes[name]!.itemSize, arr = new Float32Array(total * size);
-    let o = 0;
-    for (const g of parts) { arr.set(g.attributes[name]!.array as Float32Array, o); o += g.attributes[name]!.array.length; }
-    out.setAttribute(name, new THREE.BufferAttribute(arr, size));
-  }
-  return out;
 }

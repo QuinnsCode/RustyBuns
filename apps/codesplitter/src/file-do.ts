@@ -35,7 +35,7 @@ import { Tally } from "./limits.ts";
 import { lintMerge } from "./lint.ts";
 import { DocStore } from "./doc-store.ts";
 import { sha256 as sha } from "./util.ts";
-import { apply, empty, merge, mergeWords, replay, text, type Applied, type Doc, type Line, type Op, type Resolve } from "./lines.ts";
+import { apply, empty, MAX_OPS, merge, mergeWords, parseOps, replay, text, type Applied, type Doc, type Line, type Op, type Resolve } from "./lines.ts";
 import type { Live, Rule } from "./policy.ts";
 import { pad10 } from "./util.ts";
 
@@ -244,8 +244,12 @@ export class FileDurableObject {
     }
     if (req.method === "GET" && route === "file") return json(window(this.shown(this.doc, crew), url.searchParams.get("from"), url.searchParams.get("limit")));
     if (req.method === "POST" && route === "ops") {
-      const { ops, ifRev, claim } = (await req.json()) as { ops: Op[]; ifRev?: number; claim?: string };
-      const r = await this.edit(by, ops, ifRev, claim, live);
+      const b = (await req.json().catch(() => ({}))) as { ops?: unknown; ifRev?: unknown; claim?: unknown };
+      const ops = parseOps(b.ops);
+      if (typeof ops === "string") return json({ error: ops }, 400);
+      if (b.ifRev !== undefined && !Number.isInteger(b.ifRev)) return json({ error: "ifRev: a rev" }, 400);
+      if (b.claim !== undefined && typeof b.claim !== "string") return json({ error: "claim: a claim id" }, 400);
+      const r = await this.edit(by, ops, b.ifRev as number | undefined, b.claim as string | undefined, live);
       return r.ok ? json({ rev: r.rev, applied: r.applied }) : json(refused(r), 409);
     }
     try {
@@ -262,8 +266,9 @@ export class FileDurableObject {
     if (req.method === "GET" && route === "private") return json([...this.secret]);
     if (req.method === "POST" && route === "private") {
       // Crew only (the Worker checks). A line keeps its id when it's edited, so it stays private.
-      const { lines, private: on } = (await req.json()) as { lines: string[]; private: boolean };
-      for (const id of lines ?? []) on ? this.secret.add(id) : this.secret.delete(id);
+      const { lines, private: on } = (await req.json().catch(() => ({}))) as { lines?: unknown; private?: unknown };
+      if (typeof on !== "boolean" || !isIds(lines)) return json({ error: "{lines: [line id], private: true|false}, please" }, 400);
+      for (const id of lines) on ? this.secret.add(id) : this.secret.delete(id);
       await this.ctx.storage.put("private", [...this.secret]);
       // Each page fetches the file again, and gets it as its reader may see it.
       this.broadcast({ type: "private", lines, private: on });
@@ -285,15 +290,16 @@ export class FileDurableObject {
     if (req.method === "GET" && route === "claims") return json(this.live());
     if (req.method === "POST" && route === "claims") {
       // Crew only (the Worker checks). Any of the crew may lift any claim: that's how a person steers an agent off lines.
-      const b = (await req.json()) as ClaimAsk & { release?: boolean };
+      const b = claimAsk(await req.json().catch(() => null));
+      if (typeof b === "string") return json({ error: b }, 400);
       if (b.release) return json({ released: await this.release(b.id ?? "") });
       if (live === "locked") return json({ error: LOCKED }, 409);
       const rank = Number(req.headers.get("x-codesplitter-rank"));
       return this.claim(by, b, req.headers.has("x-codesplitter-rank") && Number.isFinite(rank) ? rank : undefined);
     }
     if (req.method === "POST" && route === "release") {
-      const { id } = (await req.json()) as { id?: string };
-      return json({ released: await this.release(id ?? "") });
+      const { id } = (await req.json().catch(() => ({}))) as { id?: unknown };
+      return json({ released: await this.release(typeof id === "string" ? id : "") });
     }
     if (req.method === "POST" && route === "wipe") {
       // Its repo was evicted: forget everything.
@@ -347,9 +353,9 @@ export class FileDurableObject {
       return r.ok ? json({ rev: r.rev, ops: m.ops, applied: r.applied, conflicts: [], ...regen }) : json(refused(r), 409);
     }
     if (req.method === "POST" && route === "commit") {
-      const { message } = (await req.json()) as { message?: string };
+      const { message } = (await req.json().catch(() => ({}))) as { message?: unknown };
       // Commits hash their parent, so they run one at a time.
-      const done = this.queue.then(() => this.commit(by, message));
+      const done = this.queue.then(() => this.commit(by, typeof message === "string" ? message.slice(0, 1000) : undefined));
       this.queue = done.catch(() => {});
       const { commit, content, published } = await done;
       return json({ commit, content, published });
@@ -568,17 +574,20 @@ export class FileDurableObject {
    * waits on an edit that went nowhere (#659).
    */
   async webSocketMessage(ws: any, raw: string | ArrayBuffer) {
-    let msg: { type?: string; id?: number; ops?: Op[]; ifRev?: number; claim?: string };
+    let msg: { type?: unknown; id?: unknown; ops?: unknown; ifRev?: unknown; claim?: unknown };
     try { msg = JSON.parse(typeof raw === "string" ? raw : new TextDecoder().decode(raw)); } catch { return; }
-    if (msg.type !== "ops" || !Array.isArray(msg.ops)) return;
+    if (!msg || msg.type !== "ops") return;
     const answer = (m: Record<string, unknown>) => { try { ws.send(JSON.stringify({ ...m, id: msg.id })); } catch {} };
+    const ops = parseOps(msg.ops);
+    if (typeof ops === "string") return answer({ type: "nack", rev: this.doc.rev, error: ops });
+    const ifRev = Number.isInteger(msg.ifRev) ? (msg.ifRev as number) : undefined, claim = typeof msg.claim === "string" ? msg.claim : undefined;
     try {
       const who = (ws.deserializeAttachment() ?? {}) as { user?: string; write?: boolean; live?: Live; limitAs?: string | null; stepAs?: string | null };
       if (!who.write) return answer({ type: "nack", error: "no write access" });
       // The limit reads its rules from D1: if that fails, the edit goes through rather than nowhere.
       const over = who.limitAs ? await this.edits.hit(who.limitAs).catch(() => null) : null;
       if (over) return answer({ type: "nack", error: over.error, retryAfter: over.wait });
-      const r = await this.edit(who.user ?? "anon", msg.ops, msg.ifRev, msg.claim, who.live);
+      const r = await this.edit(who.user ?? "anon", ops, ifRev, claim, who.live);
       answer(r.ok ? { type: "ack", rev: r.rev } : { type: "nack", ...refused(r) });
       if (r.ok && who.stepAs) {
         ws.serializeAttachment({ ...who, stepAs: null });
@@ -931,6 +940,20 @@ export class FileDurableObject {
 
 /** What `claim_lines` takes: see `claim` and `wait`. `timeout` is seconds. */
 type ClaimAsk = { id?: string; lines?: string[]; task?: string; ttl?: number | null; extend?: boolean; soft?: boolean; wait?: boolean; timeout?: number };
+
+const isIds = (v: unknown): v is string[] => Array.isArray(v) && v.length <= MAX_OPS && v.every((x) => typeof x === "string" && x.length <= 40);
+/** `v` as a claim request, or what's wrong with it: ids and the task are short text, lines are ids, times are seconds. */
+function claimAsk(v: unknown): (ClaimAsk & { release?: boolean }) | string {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return "a claim is {lines, task?, ttl?, …}";
+  const b = v as Record<string, unknown>;
+  if (b.id !== undefined && !(typeof b.id === "string" && b.id.length <= 40)) return "id: a claim id";
+  if (b.lines !== undefined && !isIds(b.lines)) return "lines: a list of line ids";
+  if (b.task !== undefined && typeof b.task !== "string") return "task: text";
+  if (b.ttl !== undefined && b.ttl !== null && !(typeof b.ttl === "number" && Number.isFinite(b.ttl))) return "ttl: seconds";
+  if (b.timeout !== undefined && !(typeof b.timeout === "number" && Number.isFinite(b.timeout))) return "timeout: seconds";
+  for (const k of ["extend", "soft", "wait", "release"]) if (b[k] !== undefined && typeof b[k] !== "boolean") return `${k}: true or false`;
+  return b as ClaimAsk & { release?: boolean };
+}
 
 const newId = (now: number) => `c${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 

@@ -117,18 +117,21 @@ export interface CityCard {
 /** A city's postcard: a rainy night in miniature (city-scene.ts), its title and totals on dark bars. */
 export async function renderCity(city: CityCard): Promise<Uint8Array<ArrayBuffer>> {
   const c = new Canvas(glyphs("geist")), cw = GLYPH_W * S, BAR: RGB = [12, 14, 20], EDGE: RGB = [48, 54, 66];
-  if (city.districts.some((d) => d.buildings.length)) paintCity(c.px, W, H, city, 108, H - 92);
+  if (city.districts.some((d) => d.buildings.length)) paintCity(c.px, W, H, city, 100, H - 84);
   else c.rect(0, 0, W, H, BAR);
   c.rect(0, 0, W, 92, BAR);
   c.rect(0, 0, W, 8, ORANGE);
   c.rect(0, 92, W, 1, EDGE);
-  c.text(`@${city.name}'s code city`, 40, 26, [236, 239, 243], W - 40);
+  c.text(`@${city.name}'s code city`, 40, 26, [236, 239, 243], W - 40 - 13 * cw);
   if (!city.districts.some((d) => d.buildings.length)) c.text("no public repos to build with yet", 40, H / 2 - 20, MUTED);
   c.rect(0, H - 88, W, 88, BAR);
   c.rect(0, H - 88, W, 1, EDGE);
-  const n = (k: number, w: string) => `${k.toLocaleString("en-US")} ${w}${k === 1 ? "" : "s"}`;
-  const x = c.text(`${n(city.districts.length, "district")}, ${n(city.files, "building")}, ${n(city.lines, "line")}`, 40, H - 68, [150, 160, 174]);
-  c.text("codeSplitter", Math.max(x + cw, W - 40 - 13 * cw), H - 68, ORANGE);
+  const brand = W - 40 - 13 * cw;
+  const totals = (k: (v: number) => string, building: string) => `${k(city.districts.length)} district${city.districts.length === 1 ? "" : "s"}, ${k(city.files)} ${building}${city.files === 1 ? "" : "s"}, ${k(city.lines)} line${city.lines === 1 ? "" : "s"}`;
+  let line = totals((v) => v.toLocaleString("en-US"), "building");
+  if (40 + line.length * cw > brand - cw) line = totals((v) => Intl.NumberFormat("en-US", { notation: "compact" }).format(v), "file");
+  c.text(line, 40, H - 68, [150, 160, 174], brand - cw);
+  c.text("codeSplitter", brand, H - 68, ORANGE);
   return png(c.px);
 }
 

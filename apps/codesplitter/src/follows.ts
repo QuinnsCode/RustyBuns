@@ -33,8 +33,8 @@ export async function listFollows(db: Env["DB"], handle: string, viewer: string 
     SELECT f.* FROM follows f LEFT JOIN repos r ON r.owner = f.owner AND r.name = f.repo
     WHERE f.follower = ? AND (f.kind IN ('user', 'agent') OR (r.owner IS NOT NULL AND (r.expires_at IS NULL OR r.expires_at > ?)
       AND (r.visibility = 'public' OR r.owner = ? OR EXISTS (SELECT 1 FROM collaborators c WHERE c.owner = r.owner AND c.repo = r.name AND c.name = ?))))
-    ORDER BY f.created_at DESC, f.id DESC`).bind(handle, Date.now(), viewer, viewer).all();
-  return (results as Row[]).map(toFollow);
+    ORDER BY f.created_at DESC, f.id DESC`).bind(handle, Date.now(), viewer, viewer).all<Row>();
+  return results.map(toFollow);
 }
 
 /** How many follow `handle`, a person's or an agent's. */
@@ -84,9 +84,9 @@ export async function followRoutes(req: Request, env: Env, p: string[], user: st
   }
   const t = await resolve(env, user, await readBody(req), access);
   if ("error" in t) return json({ error: t.error }, t.status);
-  const had = await env.DB.prepare("SELECT * FROM follows WHERE follower = ? AND kind = ? AND target = ?").bind(user, t.kind, t.target).first();
-  if (had) return json(toFollow(had as Row));
+  const had = await env.DB.prepare("SELECT * FROM follows WHERE follower = ? AND kind = ? AND target = ?").bind(user, t.kind, t.target).first<Row>();
+  if (had) return json(toFollow(had));
   const row = await env.DB.prepare("INSERT INTO follows (follower, kind, target, owner, repo, path, ids, from_line, to_line, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *")
-    .bind(user, t.kind, t.target, t.owner, t.repo, t.path, t.ids, t.from_line, t.to_line, Date.now()).first();
-  return json(toFollow(row as Row), 201);
+    .bind(user, t.kind, t.target, t.owner, t.repo, t.path, t.ids, t.from_line, t.to_line, Date.now()).first<Row>();
+  return json(toFollow(row!), 201);
 }
