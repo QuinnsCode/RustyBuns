@@ -22,7 +22,7 @@
 // routes check who may call them all the same. No sessions and no
 // server-sent stream: each POST is one JSON-RPC request, answered as JSON.
 
-import { INSTRUCTIONS as CODE_INSTRUCTIONS, META, answer, csStub, describe, execute, search, type CSProps, type ToolAnswer } from "./codemode.ts";
+import { INSTRUCTIONS as CODE_INSTRUCTIONS, META, edge, answer, describe, execute, search, type CSProps, type ToolAnswer } from "./codemode.ts";
 import { json, type WorkerLoaderLike } from "./env.ts";
 import { tools, type Tool } from "./mcp-tools.ts";
 
@@ -91,7 +91,7 @@ async function meta(name: string, args: Record<string, unknown>, mine: Tool[], l
         code = (JSON.parse(got.text) as { code: string }).code;
       }
       if (typeof code !== "string" || !code.trim()) return result("code is required: the body of an async function, or the name of a saved program", true);
-      const r = await execute(loader, code, mine, run, args.input, csStub?.({ origin, auth, scope } satisfies CSProps));
+      const r = await execute(loader, code, mine, run, args.input, edge.stub?.({ origin, auth, scope } satisfies CSProps));
       return result(r.text, r.isError);
     }
     default: {

@@ -159,12 +159,8 @@ export default {
 /** One tool's answer: its HTTP status and body. */
 export interface ToolAnswer { status: number; text: string }
 
-/** What the runtime gives a binding: RpcTarget and WorkerEntrypoint on the edge, nothing under Bun. */
-const cf = await import("cloudflare:workers").then((m) => m as unknown as { WorkerEntrypoint: new (ctx: unknown, env: unknown) => { env: unknown; ctx: { props: unknown } }; exports: Record<string, ((o: { props: unknown }) => unknown) | undefined> }, () => null);
-
-/** The base for the edge's CS binding (worker.ts exports a class on it), and a stub of that class for one caller. */
-export const EntryBase = cf?.WorkerEntrypoint;
-export const csStub = cf && ((props: unknown) => cf.exports.CSBridge?.({ props }));
+/** Makes a stub of the worker's CSBridge entrypoint for one caller; worker.ts sets it on the edge (under Bun there is none). */
+export const edge: { stub?: (props: unknown) => unknown } = {};
 
 /** The caller a binding answers as: where to call back, with which token, and what that token may use. */
 export interface CSProps { origin: string; auth: string; scope?: string }
