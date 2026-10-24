@@ -44,12 +44,12 @@ const token = process.env.CLOUDFLARE_API_TOKEN ?? "", accountId = process.env.CL
 if (a.hosted && !(a.url && a.cookie && token && accountId)) throw new Error("--hosted needs --url, --cookie (your signed-in session), CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID");
 
 /** The throwaway app: one Worker, no bindings, the pinned Alchemy set (`rustybuns add deploy`). */
-const pins = { effect: "4.0.0-rc.112", "@effect/platform-bun": "4.0.0-rc.112", "@effect/platform-node": "4.0.0-rc.112" };
+const pins = { effect: "4.0.5", "@effect/platform-bun": "4.0.5", "@effect/platform-node": "4.0.5" };
 const APP: Record<string, string> = {
   "package.json": JSON.stringify({
     name: repo, private: true, type: "module",
     devDependencies: { "@rustybuns/cli": "0.1.9", alchemy: "2.0.0-beta.77", "@alchemy.run/frontend-frameworks": "2.0.0-beta.77", ...pins },
-    overrides: { ...pins, "@effect/platform-node-shared": "4.0.0-rc.112", "@effect/vitest": "4.0.0-rc.112" },
+    overrides: { ...pins, "@effect/platform-node-shared": "4.0.5", "@effect/vitest": "4.0.5" },
   }, null, 2) + "\n",
   "rustybuns.config.ts": `import { defineConfig } from "@rustybuns/cli/config";
 
