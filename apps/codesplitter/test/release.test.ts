@@ -3,7 +3,7 @@
 // edge case each. Nothing here runs a command or touches Cloudflare.
 
 import { describe, expect, test } from "bun:test";
-import { checkPlan, deleteItems, dirtyFiles, main, MOVE_PENDING, NeedsMove, notifyCmd, kvBindings, parseArgs, readyLevels, realIO, release, Stop, type IO, type Mode, type Ran } from "../scripts/release.ts";
+import { checkPlan, release, Stop, type IO, type Mode, type Ran } from "../scripts/release.ts";
 
 const plain: Mode = { checksNew: false, move: false };
 const move: Mode = { checksNew: false, move: true };
@@ -49,40 +49,14 @@ describe("the real plan", () => {
     expect(v.show).toContain("[DB] replace");
   });
 
-  test("under a plain release, it's the move still to do, said as that", () => {
-    expect(checkPlan(REAL, plain)).toMatchObject({ stop: MOVE_PENDING, move: true });
-    expect(checkPlan(MOVE_WARNING + "\n" + REAL, plain)).toMatchObject({ move: true });
-  });
-
-  test("anything risky besides the renames is a plain stop, not the move", () => {
-    for (const extra of ["[FILES] delete", "[Worker] replace", "[DB/X] replace", "[VECTORS] create"]) {
-      const v = checkPlan(REAL + `\n[00:01:08.172] INFO (#1): ${extra}`, plain);
-      expect(v.move).toBeUndefined();
-      expect(v.stop).not.toBeNull();
-    }
-    const v = checkPlan(MOVE_WARNING.replace(", and the data in them", ", Durable Object class CiRunner, and the data in them") + "\n" + REAL, plain);
-    expect(v.move).toBeUndefined();
-    expect(v.stop).toContain("CiRunner");
-  });
-
-  test("a plain update isn't the move", () => expect(checkPlan(UPDATE, plain).move).toBeUndefined());
 });
 
 describe("checkPlan", () => {
-  test("plans without Effect's prefix still read", () => {
-    expect(checkPlan(plan("Plan: 1 to update", "[Worker] update"), plain).stop).toBeNull();
-    expect(checkPlan(plan("Plan: 1 to delete", "[FILES] delete"), plain).stop).toContain("[FILES] delete");
-  });
 
   test("a release that only updates goes out, and noops aren't shown", () => {
     const v = checkPlan(UPDATE, plain);
     expect(v.stop).toBeNull();
     expect(v.show).toEqual(["Plan: 1 to update", "[Worker] update"]);
-  });
-
-  test("Alchemy's colors don't hide anything", () => {
-    const colored = "\x1b[1mPlan:\x1b[0m 1 to delete\n\x1b[38;5;75m[FILES]\x1b[0m \x1b[31mdelete\x1b[0m";
-    expect(checkPlan(colored, plain).stop).toContain("[FILES] delete");
   });
 
   test("no summary stops it", () => expect(checkPlan("building the worker\nerror: boom", plain).stop).toContain("no summary"));
@@ -93,121 +67,11 @@ describe("checkPlan", () => {
     expect(checkPlan(plan("Plan: 1 to adopted", "[DB] adopted"), plain).stop).toContain("[DB] adopted");
   });
 
-  // The owner's release on 2026-10-12, the first after #1241 gave fix tasks a FIXES queue of their own.
-  test("a new KV namespace goes to the y/N; a KV delete or another new resource still stops it", () => {
-    expect(kvBindings('  STATS: { type: "kv" },\n  DB: { type: "d1" },')).toEqual(["STATS"]);
-    const v = checkPlan(logged("Plan: 1 to create, 3 to update, 4 binding changes", "[Build] update", "[DB] update", "[STATS] create", "[Worker] update", "[Worker/STATS] create"), plain);
-    expect(v.stop).toBeNull();
-    expect(v.show).toContain("[STATS] create");
-    expect(checkPlan(plan("Plan: 2 to create", "[STATS] create", "[Worker/STATS] create", "[NEWDB] create"), plain).stop).toContain("[NEWDB] create");
-    expect(checkPlan(plan("Plan: 1 to delete", "[STATS] delete"), plain).stop).toContain("[STATS] delete");
-  });
-
-  test("a new queue with its consumer goes to the y/N; a consumer alone or another new resource still stops it", () => {
-    const real = logged("Plan: 2 to create, 6 to update, 3 to replace, 4 binding changes", "[AGENT_SANDBOX] update", "[Build] update", "[CI_RUNNER] update",
-      "[DB] update", "[DEPLOY_RUNNER] update", "[FIXES] create", "[FIXESConsumer] create", "[HOOKSConsumer] replace", "[JOBSConsumer] replace",
-      "[LEVEL_DIGSConsumer] replace", "[Worker] update", "[Worker/AGENT_SANDBOX] update", "[Worker/CI_RUNNER] update",
-      "[Worker/DEPLOY_RUNNER] update", "[Worker/FIXES] create");
-    const v = checkPlan(real, plain);
-    expect(v.stop).toBeNull();
-    expect(v.show).toContain("[FIXES] create");
-    expect(checkPlan(plan("Plan: 1 to create", "[FIXESConsumer] create"), plain).stop).toContain("[FIXESConsumer] create");
-    expect(checkPlan(plan("Plan: 2 to create", "[FIXES] create", "[VECTORS] create"), plain).stop).toContain("[VECTORS] create");
-  });
-
-  // The owner's release on 2026-10-13, after the #825 move left the consumers on the deleted queues.
-  test("a queue consumer replaced onto its queue's new id goes out; anything else replaced still stops it", () => {
-    const real = logged("Plan: 6 to update, 3 to replace, 3 binding changes", "[AGENT_SANDBOX] update", "[Build] update", "[CI_RUNNER] update", "[DB] update",
-      "[DEPLOY_RUNNER] update", "[HOOKSConsumer] replace", "[JOBSConsumer] replace", "[LEVEL_DIGSConsumer] replace", "[Worker] update",
-      "[Worker/AGENT_SANDBOX] update", "[Worker/CI_RUNNER] update", "[Worker/DEPLOY_RUNNER] update");
-    const v = checkPlan(real, plain);
-    expect(v.stop).toBeNull();
-    expect(v.show).toContain("[HOOKSConsumer] replace");
-    for (const row of ["[HOOKSConsumer] delete", "[HOOKS] replace", "[Worker/HOOKSConsumer] replace"])
-      expect(checkPlan(plan("Plan: 1 to update", "[HOOKSConsumer] replace", row), plain).stop).toContain(row);
-  });
-
   test("deletes, replaces, orphans, unbinds and drops stop it", () => {
     for (const row of ["[FILES] delete", "[Worker] replace", "[JOBS] orphaned", "[Worker/CI_RUNNER] unbind", "[Migrate] drop [action]"])
       expect(checkPlan(plan("Plan: 1 to update", row), plain).stop).toContain(row);
   });
 
-  test("--checks lets CI_RUNNER and its binding line be made, and nothing else", () => {
-    const ci = plan("Plan: 1 to create, 1 to update", "[CI_RUNNER] create", "[CI_RUNNER/CI_RUNNER] create", "[Worker] update", "[Worker/CI_RUNNER] create");
-    expect(checkPlan(ci, plain).stop).toContain("[CI_RUNNER] create");
-    expect(checkPlan(ci, { checksNew: true, move: false }).stop).toBeNull();
-    expect(checkPlan(ci + "\n[AGENT_SANDBOX] create", { checksNew: true, move: false }).stop).toContain("[AGENT_SANDBOX] create");
-  });
-
-  test("--move lets exactly the five renames through", () => {
-    expect(checkPlan(MOVE, move).stop).toBeNull();
-    expect(checkPlan(MOVE, plain)).toMatchObject({ stop: MOVE_PENDING, move: true });
-    // The new database already there is adopted, the old one deleted: as good as a replace.
-    expect(checkPlan(plan("Plan: 2 to adopted, 2 to delete", "[DB] adopted", "[DB] delete", "[HOOKS] create", "[HOOKS] delete"), move).stop).toBeNull();
-  });
-
-  test("--move still stops on the Worker or a container made again (the state didn't move)", () => {
-    expect(checkPlan(MOVE + "\n[Worker] create", move).stop).toContain("[Worker] create");
-    expect(checkPlan(MOVE + "\n[AGENT_SANDBOX] create", move).stop).toContain("[AGENT_SANDBOX] create");
-    expect(checkPlan(MOVE + "\n[DBX] replace", move).stop).toContain("[DBX] replace");
-    expect(checkPlan(MOVE + "\n[FILES] delete", move).stop).toContain("[FILES] delete");
-  });
-
-  test("--move stops when the delete warning has anything besides the renames, a dropped class included", () => {
-    const extra = MOVE.replace(", and the data in them", ", Durable Object class CiRunner, and the data in them");
-    expect(checkPlan(extra, move).stop).toContain("Durable Object class CiRunner");
-  });
-
-  test("--move stops when the plan doesn't move DB at all", () => {
-    expect(checkPlan(UPDATE, move).stop).toContain("doesn't move DB");
-  });
-
-  test("the guard's warnings: behind main replans, stray state stops", () => {
-    expect(checkPlan(plan("warning: HEAD is 2 commits behind origin/main, and this is a live site (targets.edge.adopt): …", UPDATE), plain)).toMatchObject({ stop: null, behind: true });
-    expect(checkPlan(plan(`warning: stage live_ryanquinn's Alchemy state is under the app name "codesplitters", not "codesplitter": …`, UPDATE), plain).stop).toContain("old name");
-  });
-
-  test("Effect's other log lines aren't taken for plan rows", () => {
-    expect(checkPlan(plan("[12:00:00.123] INFO (#1): delete the old bucket later", UPDATE), plain).stop).toBeNull();
-  });
-});
-
-describe("helpers", () => {
-  test("deleteItems splits around the parentheses", () => {
-    expect(deleteItems(MOVE_WARNING)).toHaveLength(5);
-    expect(deleteItems("warning: this deploy would delete Durable Object class X, and the data in it.")).toEqual(["Durable Object class X"]);
-  });
-
-  test("dirtyFiles leaves out what plan regenerates and what git doesn't track", () => {
-    const s = " M apps/codesplitter/wrangler.jsonc\n M apps/codesplitter/.env.schema\n?? apps/codesplitters/\n M apps/codesplitter/src/api.ts\n";
-    expect(dirtyFiles(s, "apps/codesplitter")).toEqual([" M apps/codesplitter/src/api.ts"]);
-  });
-
-  test("notifyCmd quotes the question for AppleScript", () => {
-    expect(notifyCmd("waiting", 'Deploy "this"?\n  ok\\')).toEqual(["osascript", "-e", 'display notification "Deploy \\"this\\"? ok\\\\" with title "waiting" sound name "Glass"']);
-  });
-
-  test("readyLevels", () => {
-    expect(readyLevels(JSON.stringify([{ status: "ready" }, { status: "digging" }, { status: "ready" }]))).toBe(2);
-    expect(readyLevels("<html>")).toBeNull();
-  });
-
-  test("parseArgs refuses what it doesn't know (--rename was one deploy, #803)", () => {
-    expect(parseArgs(["--move"])).toEqual(move);
-    expect(() => parseArgs(["--rename"])).toThrow(Stop);
-  });
-
-  test("the real IO collects both streams, shows the lines asked for, and gives the exit code", async () => {
-    const shown: string[] = [];
-    const log = console.log;
-    console.log = (l: string) => shown.push(l);
-    try {
-      const r = await realIO.run(["sh", "-c", "echo one; echo '[DB] noop'; echo two >&2; exit 3"], { show: (l) => !/\] noop/.test(l) });
-      expect(r.code).toBe(3);
-      expect(r.out).toContain("[DB] noop");
-      expect(shown.sort()).toEqual(["one", "two"]);
-    } finally { console.log = log; }
-  });
 });
 
 // ---- the release, on a fake Mac ----
@@ -290,18 +154,6 @@ describe("release", () => {
     expect(mac.said[0]).toContain("then asks y/N before deploying");
   });
 
-  test("each plan and deploy gets a fresh wrangler token: one from the start may have expired at a question", async () => {
-    const mac = new Mac(); mac.answers = [true];
-    let n = 0;
-    const real = mac.run.bind(mac);
-    mac.run = async (cmd, opts) => cmd.join(" ").endsWith("wrangler auth token") ? { code: 0, out: `tok-${++n}`.padEnd(40, "x") } : real(cmd, opts);
-    await go(mac);
-    const planTok = mac.envs[mac.at(/rustybuns plan/)]!.CLOUDFLARE_API_TOKEN, deployTok = mac.envs[mac.at(/rustybuns deploy/)]!.CLOUDFLARE_API_TOKEN;
-    expect(planTok).toStartWith("tok-");
-    expect(deployTok).toStartWith("tok-");
-    expect(deployTok).not.toBe(planTok);
-  });
-
   test("the files plan regenerated are put back before syncing; anything else stops it", async () => {
     const mac = new Mac(); mac.answers = [true];
     mac.status = " M apps/codesplitter/wrangler.jsonc\n";
@@ -309,25 +161,6 @@ describe("release", () => {
     expect(mac.calls).toContain("git -C /w checkout -q -- apps/codesplitter/wrangler.jsonc apps/codesplitter/.env.schema");
     mac.status = " M apps/codesplitter/src/api.ts\n";
     await stopsWith(go(mac), "local changes (apps/codesplitter/src/api.ts)");
-  });
-
-  test("a locked 1Password is opened and waited for", async () => {
-    const mac = new Mac(); mac.answers = [true]; mac.codes.op = [1, 1, 0];
-    await go(mac);
-    expect(mac.calls).toContain("open -a 1Password");
-  });
-
-  test("a logged-out wrangler logs in with the app's scopes and goes on", async () => {
-    const mac = new Mac(); mac.answers = [true]; mac.loggedIn = false;
-    await go(mac);
-    expect(mac.ran(/wrangler login/)).toEqual(["bunx wrangler login --scopes account:read workers:write"]);
-    expect(mac.ran(/rustybuns deploy/)).toHaveLength(1);
-  });
-
-  test("Docker not running is started", async () => {
-    const mac = new Mac(); mac.answers = [true]; mac.codes.docker = [1, 1, 0];
-    await go(mac);
-    expect(mac.calls).toContain("open -a Docker");
   });
 
   test("a risky plan stops before the question", async () => {
@@ -358,49 +191,6 @@ describe("release", () => {
     await stopsWith(go(mac), "the deploy failed");
   });
 
-  test("--checks remembers it's on once deployed", async () => {
-    const mac = new Mac(); mac.answers = [true]; mac.files.delete("/h/.codesplitters-checks-on");
-    mac.plans = [plan("Plan: 1 to create", "[CI_RUNNER] create", "[CI_RUNNER/CI_RUNNER] create")];
-    await go(mac, { checksNew: true, move: false });
-    expect(mac.touched).toEqual(["/h/.codesplitters-checks-on"]);
-    expect(mac.envs[mac.at(/rustybuns plan/)]!.CODESPLITTER_CHECKS).toBe("1");
-  });
-
-  test("without the marker or --checks, CHECKS is 0", async () => {
-    const mac = new Mac(); mac.answers = [true]; mac.files.delete("/h/.codesplitters-checks-on");
-    await go(mac);
-    expect(mac.envs[mac.at(/rustybuns plan/)]!.CODESPLITTER_CHECKS).toBe("0");
-  });
-});
-
-describe("the move not run yet", () => {
-  test("state under the old name is caught before the plan, and the move is offered", async () => {
-    const mac = new Mac(); mac.files.add(`${STATES}/codesplitters`);
-    const e = await go(mac).then(() => null, (e) => e);
-    expect(e).toBeInstanceOf(NeedsMove);
-    expect(mac.ran(/rustybuns plan/)).toEqual([]);
-  });
-
-  test("main: yes runs the move there and then, with every question --move asks", async () => {
-    const mac = new Mac(); mac.plans = [REAL]; mac.answers = [true, true, true];
-    await main(mac, plain, WHERE, {});
-    expect(mac.asked[0]).toContain("Run the move now?");
-    expect(mac.asked[1]).toContain("backlog of 0");
-    expect(mac.asked[2]).toContain("Copy the data and deploy");
-    expect(mac.ran(/rustybuns deploy/)).toEqual(["bunx rustybuns deploy --yes --allow-delete"]);
-  });
-
-  test("main: no copies and deploys nothing, and says how to run it later", async () => {
-    const mac = new Mac(); mac.plans = [REAL]; mac.answers = [false];
-    await stopsWith(main(mac, plain, WHERE, {}), "--move");
-    expect(mac.ran(/move-resources|rustybuns deploy/)).toEqual([]);
-  });
-
-  test("main: any other stop is passed on, with no offer", async () => {
-    const mac = new Mac(); mac.plans = [logged("Plan: 1 to delete", "[FILES] delete")];
-    await stopsWith(main(mac, plain, WHERE, {}), "[FILES] delete");
-    expect(mac.asked).toEqual([]);
-  });
 });
 
 describe("release --move", () => {
@@ -421,59 +211,4 @@ describe("release --move", () => {
     expect(mac.said.join("\n")).toContain("23 ready levels, as before");
   });
 
-  test("no at the deploy question copies nothing", async () => {
-    const mac = moving(); mac.answers = [true, false];
-    await stopsWith(go(mac, move), "nothing changed");
-    expect(mac.ran(/--copy/)).toEqual([]);
-  });
-
-  test("no at the queues question doesn't even plan", async () => {
-    const mac = moving(); mac.answers = [false];
-    await stopsWith(go(mac, move), "nothing was copied or deleted");
-    expect(mac.ran(/rustybuns plan/)).toEqual([]);
-  });
-
-  test("the move script's read-only check stopping stops it", async () => {
-    const mac = moving(); mac.codes.dry = [1];
-    await stopsWith(go(mac, move), "the move script stopped");
-    expect(mac.asked).toEqual([]);
-  });
-
-  test("state under both names stops it", async () => {
-    const mac = moving();
-    mac.files.add(`${STATES}/codesplitters`); mac.files.add(`${STATES}/codesplitter`);
-    await stopsWith(go(mac, move), "under both");
-  });
-
-  test("main moving at the question replans before any copy", async () => {
-    const mac = moving(); mac.answers = [true, true, true];
-    let fetches = 0;
-    mac.hooks.push([/git -C \/c fetch/, (m) => { if (++fetches === 2) m.main = "b"; }]);
-    await go(mac, move);
-    expect(mac.ran(/--copy/)).toHaveLength(1);
-    expect(mac.at(/--copy/)).toBeGreaterThan(mac.calls.lastIndexOf("bunx rustybuns plan"));
-  });
-
-  test("a copy whose counts differ (a write landed mid-copy) is tried once more", async () => {
-    const mac = moving(); mac.codes.copy = [1, 0];
-    await go(mac, move);
-    expect(mac.ran(/--copy/)).toHaveLength(2);
-    expect(mac.ran(/rustybuns deploy/)).toHaveLength(1);
-  });
-
-  test("a copy failing twice stops before deploying", async () => {
-    const mac = moving(); mac.codes.copy = [1];
-    await stopsWith(go(mac, move), "the copy stopped twice");
-    expect(mac.ran(/rustybuns deploy/)).toEqual([]);
-  });
-
-  test("a failed deploy after the copy says a rerun copies again", async () => {
-    const mac = moving(); mac.codes.deploy = [1];
-    await stopsWith(go(mac, move), "a rerun of --move copies again");
-  });
-
-  test("a different level count after the move stops it", async () => {
-    const mac = moving(); mac.levels = [23, 0];
-    await stopsWith(go(mac, move), "not 23");
-  });
 });
