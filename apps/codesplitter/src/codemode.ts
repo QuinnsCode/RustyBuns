@@ -10,6 +10,8 @@
 // tool's HTTP call back into this app as the token that called execute, so the program has
 // that token's scope and rate limits, and never sees the token itself. It is on only where
 // there is a loader; without one the server lists every tool, as before.
+// Before a program runs, it is read for tools that don't exist, and each call's arguments are checked
+// against the tool's schema, so a typo fails at once with what is wrong, not after a request.
 // Imports only types, like mcp-tools.ts, so the docs site can list the tools.
 
 import type { WorkerLoaderLike } from "./env.ts";
@@ -99,6 +101,33 @@ export function describe(all: Tool[], names: string[]): string {
   return JSON.stringify(out);
 }
 
+/** What is wrong with `v` against a tool's schema (type, enum, required, unknown names), as short phrases; [] when it fits. */
+export function check(schema: Schema, v: unknown, at = "", out: string[] = []): string[] {
+  if (v === null || v === undefined || out.length >= 8) return out;
+  const where = at || "arguments", t = schema.type;
+  const kind = Array.isArray(v) ? "array" : typeof v;
+  const numeric = typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v));
+  // Path and query arguments are String()ed on the way out, so "10" for a number and "true" for a boolean pass as before.
+  const fits = !t || (t === "integer" ? Number.isInteger(v) || (numeric && Number.isInteger(Number(v))) : t === "number" ? kind === "number" || numeric : t === "boolean" ? kind === "boolean" || v === "true" || v === "false" : t === "object" ? kind === "object" : kind === t);
+  if (!fits) return out.push(`${where} should be ${t}, got ${kind}`), out;
+  if (Array.isArray(schema.enum) && !schema.enum.includes(v)) out.push(`${where} must be one of ${schema.enum.join(", ")}, got ${JSON.stringify(v)}`);
+  if (kind === "object" && schema.properties) {
+    const o = v as Record<string, unknown>;
+    for (const k of schema.required ?? []) if (o[k] === undefined) out.push(`${at ? at + "." : ""}${k} is required`);
+    for (const [k, x] of Object.entries(o)) {
+      if (schema.properties[k]) check(schema.properties[k], x, `${at ? at + "." : ""}${k}`, out);
+      else if (schema.additionalProperties === false) out.push(`${at ? at + "." : ""}${k} is not an argument (${Object.keys(schema.properties).join(", ")})`);
+    }
+  } else if (Array.isArray(v) && schema.items) v.forEach((x, i) => check(schema.items, x, `${where}[${i}]`, out));
+  return out;
+}
+
+/** Tool names a program calls that no tool answers to, found by reading it, before anything runs. */
+export function unknownTools(code: string, tools: Tool[]): string[] {
+  const names = new Set(tools.map((t) => t.name));
+  return [...new Set([...code.matchAll(/\btools\.([A-Za-z_]\w*)/g)].map((m) => m[1]!))].filter((n) => !names.has(n));
+}
+
 /** The dynamic Worker's module: the agent's code inside a fetch handler, with `tools` over env.CS. */
 const wrap = (code: string, input: unknown) => `
 const INPUT = ${JSON.stringify(input ?? null)};
@@ -156,6 +185,8 @@ export async function answer(tools: Tool[], run: (t: Tool, args: Record<string, 
   let args: unknown;
   try { args = JSON.parse(json); } catch { return fail(400, "arguments must be JSON"); }
   if (!args || typeof args !== "object" || Array.isArray(args)) return fail(400, "arguments are an object");
+  const bad = check(t.inputSchema, args);
+  if (bad.length) return fail(400, `${name}: ${bad.join("; ")} (describe_tools gives the schema)`);
   return run(t, args as Record<string, unknown>);
 }
 
@@ -165,6 +196,8 @@ export interface Ran { text: string; isError: boolean; calls: number }
 /** Run `code` over `tools` as the caller (`run` makes each call), in a Worker of its own. */
 export async function execute(loader: WorkerLoaderLike, code: string, tools: Tool[], run: (t: Tool, args: Record<string, unknown>) => Promise<ToolAnswer>, input?: unknown, edge?: unknown): Promise<Ran> {
   if (code.length > MAX_CODE) return { text: `the program is up to ${MAX_CODE.toLocaleString("en")} characters`, isError: true, calls: 0 };
+  const unknown = unknownTools(code, tools);
+  if (unknown.length) return { text: JSON.stringify({ error: `no tool ${unknown.join(", ")} for this token: search_tools lists them` }), isError: true, calls: 0 };
   // On the edge the binding is a stub of the worker's own CSBridge entrypoint (a plain object can't be an env binding there);
   // under Bun, where the local loader runs the program in-process, an object will do.
   const cs = edge ?? { call: (name: string, json: string) => answer(tools, run, name, json) };

@@ -570,3 +570,10 @@ describe("lobby invite link", () => {
     expect(make({ room: "r/ana/dig", mode: "removed", diff: { path: "a.ts", from: 1, to: 2 }, here: null })).toBe("https://cs.test/play.html#r/ana/dig?path=a.ts&from=1&to=2");
   });
 });
+
+// #2208: a repo with no git history has a review with no tip; the deploy panel threw drawing it.
+test("the deploy panel doesn't wait on a review with no tip", () => {
+  const waiting = new Function(`${html.match(/const waiting = \(d\) => [^\n]+/)![0]}; return waiting;`)();
+  expect(waiting({ review: { tip: null, commits: [], more: false }, can_run: true })).toBeFalsy();
+  expect(waiting({ review: { tip: "abc1234", cleared: false }, can_run: true })).toBeTruthy();
+});

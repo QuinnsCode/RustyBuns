@@ -4,6 +4,7 @@
 //
 //   bun scripts/trial-github.ts --dep rwsdk --major 1 --local --jobs 3
 //   bun scripts/trial-github.ts --local owner/repo owner/monorepo:apps/web
+//   bun scripts/trial-github.ts --local --check owner/repo@<sha>   a pinned commit; exits 1 unless every mode works
 //
 //   --dep <name>      search for package.json files that depend on <name> (needs `gh` logged in)
 //   --major <n>       keep only apps whose <dep> version is <n>.x
@@ -25,6 +26,7 @@
 //   --fresh           ask GitHub again instead of <out>/gh-cache (search pages and repo meta keep a day,
 //                     a package.json until its repo's pushed_at moves). A search stops before it would
 //                     leave the shared core budget under 500 calls.
+//   --check           exit 1 if any app fails to install or any mode doesn't serve (a toolchain gap or skipped mode is fine)
 //   --list            print the apps a search finds (stars, last push, version) and stop
 //   --keep            keep node_modules after each app (default: removed, to bound disk use)
 //   --prof            time boot and 200 GETs of /, read the host's memory, and save a CPU profile per
@@ -54,7 +56,7 @@ const { values: o, positionals } = parseArgs({
   options: {
     dep: { type: "string" }, major: { type: "string" }, limit: { type: "string" }, sample: { type: "string" }, since: { type: "string" }, stable: { type: "boolean" }, local: { type: "boolean" },
     modes: { type: "string", default: "spa,worker" }, jobs: { type: "string", default: "2" },
-    out: { type: "string", default: ".rustybuns-trial" }, keep: { type: "boolean" }, prof: { type: "boolean" }, list: { type: "boolean" }, from: { type: "string" }, fresh: { type: "boolean" },
+    out: { type: "string", default: ".rustybuns-trial" }, keep: { type: "boolean" }, prof: { type: "boolean" }, list: { type: "boolean" }, check: { type: "boolean" }, from: { type: "string" }, fresh: { type: "boolean" },
     persona: { type: "string", default: "balanced" }, priority: { type: "string" },
   },
 });
@@ -68,7 +70,7 @@ if (PRIORITY !== "low" && PRIORITY !== "normal") throw new Error("--priority: lo
 const cache = new Cache(join(OUT, "gh-cache"), o.fresh);
 for (const d of ["clones", "logs", "data", "sandbox"]) mkdirSync(join(OUT, d), { recursive: true });
 
-type App = { repo: string; sub: string; version?: string; stars?: number; pushed?: string };
+type App = { repo: string; sub: string; ref?: string; version?: string; stars?: number; pushed?: string };
 type Prof = { bootMs: number; p50: number; p95: number; max: number; rssMb: number; profile?: string };
 type ModeResult = { stage: string; status?: number; bytes?: number; text?: string; error?: string; prof?: Prof; idle?: Idle };
 type Result = App & { fakeSecrets?: string[]; lfs?: string[]; traits?: string[]; pm?: string; init?: string; error?: string; flags?: Flags; modes: Record<string, ModeResult> };
@@ -321,6 +323,11 @@ async function trialSteps(app: App, slug: string, log: string, tag: string): Pro
   if (!existsSync(root)) {
     const s = await step(log, OUT, ["git", "clone", "--depth", "1", `https://github.com/${app.repo}`, root], 180e3, "net");
     if (!s.ok) return { ...r, error: `clone: ${s.tail}` };
+    if (app.ref) {
+      const p = await step(log, root, ["git", "fetch", "--depth", "1", "origin", app.ref], 180e3, "net");
+      const c = p.ok && await step(log, root, ["git", "checkout", "--quiet", "FETCH_HEAD"], 60e3, "net");
+      if (!c || !c.ok) return { ...r, error: `checkout ${app.ref}: ${(c || p).tail}` };
+    }
     // Images kept in Git LFS arrive as pointer files; the real ones are fetched here, before any app code runs.
     const lfs = await fetchLfs(app.repo, root);
     if (lfs.length) { r.lfs = lfs; appendFileSync(log, `\nlfs:\n${lfs.join("\n")}\n`); }
@@ -496,7 +503,7 @@ function summary(rs: Result[]) {
 }
 
 if (import.meta.main) {
-  let apps: App[] = positionals.map((p) => { const [repo, sub = ""] = p.split(":"); return { repo: repo!, sub }; });
+  let apps: App[] = positionals.map((p) => { const [spec, sub = ""] = p.split(":"); const [repo, ref] = spec!.split("@"); return { repo: repo!, sub, ref }; });
   if (o.from) for (const line of readFileSync(o.from, "utf8").split("\n")) {
     const m = line.match(/^\s*(\d*)\s+(\d{4}-\d\d-\d\d)?\s+(\S+)\s+([\w.-]+\/[\w.-]+)(?::(\S+))?\s*$/);
     if (!m || (o.since && m[2]! < o.since)) continue;
@@ -529,4 +536,8 @@ if (import.meta.main) {
   sched.stop();
   writeFileSync(join(OUT, "summary.md"), summary(results));
   console.log(`\n${join(OUT, "summary.md")}`);
+  if (o.check) {
+    const bad = results.filter((r) => r.error || MODES.some((m) => !["works", "skipped", "toolchain"].includes(r.modes[m]?.stage ?? "")));
+    if (bad.length) { console.error(`failed: ${bad.map((r) => `${r.repo}${r.ref ? `@${r.ref}` : ""} (${note(r) || "a mode did not serve"})`).join("; ")}`); process.exit(1); }
+  }
 }

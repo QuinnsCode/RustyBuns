@@ -291,6 +291,7 @@ if (guests.join !== undefined && guests.join.length < JOIN_MIN && !LOOPBACK.test
 }
 const token = ${h.token};
 const shell = serve<Record<string, unknown>>({ assets: clientDir, mounts, token, reporter: stdoutReporter, headers: ${JSON.stringify(d.headers ?? {})}${webmcpOn(c, h.box) ? ", head: WEBMCP_TAG" : ""}${h.listen},
+  public: ${JSON.stringify(d.publicPaths ?? [])},
   guest: { paths: [${JSON.stringify(worldPath)}], passphrase: () => guests.join } });
 const hostCtx = { env, dataDir, identity, reporter: stdoutReporter, shell, guests };
 ${d.server ? `// desktop.server: the app's own servers, bundled beside this host, each run as its child. They

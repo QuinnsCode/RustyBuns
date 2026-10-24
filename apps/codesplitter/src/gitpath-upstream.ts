@@ -22,6 +22,30 @@ const getJson = async <T>(path: string, token?: string): Promise<T | null> => {
   } catch { return null; }
 };
 
+const PUBLIC_FOR_MS = 3600_000, KEEP_FOR_MS = 600_000;
+const publicSeen = new Map<string, { ok: boolean; at: number }>();
+const memo = new Map<string, { at: number; value: unknown }>();
+
+/** Is the GitHub repo this one was dug from public? Asked without a token, so only a public repo says yes; remembered for an hour. */
+export async function upstreamIsPublic(r: UpstreamRepo | null): Promise<boolean> {
+  const s = source(r);
+  if (!s) return false;
+  const seen = publicSeen.get(s.repo);
+  if (seen && Date.now() - seen.at < PUBLIC_FOR_MS) return seen.ok;
+  const ok = !!(await getJson<{ private?: boolean }>(`/repos/${s.repo}`));
+  publicSeen.set(s.repo, { ok, at: Date.now() });
+  return ok;
+}
+
+/** What a public upstream said, kept ten minutes so a shared link opened by many reads GitHub once. Never kept for a private one. */
+async function remembered<T>(r: UpstreamRepo | null, key: string, read: () => Promise<T>): Promise<T> {
+  const hit = memo.get(key);
+  if (hit && Date.now() - hit.at < KEEP_FOR_MS) return hit.value as T;
+  const value = await read();
+  if (value && await upstreamIsPublic(r)) memo.set(key, { at: Date.now(), value });
+  return value;
+}
+
 export interface UpstreamRepo { upstream: string | null; upstream_commit: string | null; branch: string | null }
 
 /** Where to read, or null when the repo wasn't dug from GitHub. A dug folder's paths are prefixed with the folder. */
@@ -38,6 +62,10 @@ export function source(r: UpstreamRepo | null | undefined) {
 export async function upstreamFileHistory(r: UpstreamRepo | null, path: string, limit: number, token?: string): Promise<{ commits: Commit[]; more: boolean } | null> {
   const s = source(r);
   if (!s) return null;
+  return remembered(r, `file\n${s.repo}\n${s.sha}\n${path}\n${limit}`, () => readFileHistory(s, path, limit, token));
+}
+
+async function readFileHistory(s: NonNullable<ReturnType<typeof source>>, path: string, limit: number, token?: string): Promise<{ commits: Commit[]; more: boolean } | null> {
   const full = s.folder ? `${s.folder}/${path}` : path;
   const rows = await getJson<Row[]>(`/repos/${s.repo}/commits?sha=${s.sha}&path=${encodeURIComponent(full)}&per_page=${Math.min(100, limit + 1)}`, token);
   if (!rows) return null;
@@ -81,6 +109,10 @@ export function joinHistory(hosted: Commit[], before: Commit[]): Commit[] {
 export async function upstreamBusiest(r: UpstreamRepo | null, token?: string, commits = 30): Promise<Map<string, number> | null> {
   const s = source(r);
   if (!s) return null;
+  return remembered(r, `busiest\n${s.repo}\n${s.sha}\n${commits}`, () => readBusiest(s, token, commits));
+}
+
+async function readBusiest(s: NonNullable<ReturnType<typeof source>>, token: string | undefined, commits: number): Promise<Map<string, number> | null> {
   const rows = await getJson<Row[]>(`/repos/${s.repo}/commits?sha=${s.sha}&per_page=${commits}`, token);
   if (!rows) return null;
   const counts = new Map<string, number>();

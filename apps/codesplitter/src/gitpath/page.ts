@@ -93,6 +93,8 @@ function pick(p: string, keepRange = false) {
   const full = input?.histories[p];
   if (!full) { if (hosted && input) void loadFile(p, keepRange); return; }
   path = p;
+  // The address names the file on show, so copying it shares this file and not the repo's busiest.
+  if (hosted) try { const u = new URL(location.href); u.searchParams.set("path", p); history.replaceState(null, "", u); } catch {}
   $<HTMLSelectElement>("file").value = p;
   if (!keepRange) { from$.value = ""; to$.value = ""; }
   from$.min = to$.min = dayOf(Date.parse(full[0]!.date));

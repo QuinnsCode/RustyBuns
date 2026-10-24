@@ -115,3 +115,17 @@ describe("history from before the repo was on codeSplitter", () => {
     expect(joinHistory(hosted, [])).toBe(hosted);
   });
 });
+
+describe("a shared link for a repo dug from GitHub", () => {
+  test("only a GitHub repo that answers without a token counts as public", async () => {
+    const { upstreamIsPublic } = await import("../src/gitpath-upstream.ts");
+    const real = globalThis.fetch;
+    globalThis.fetch = (async (u: string) => new Response("{}", { status: String(u).includes("/open/") ? 200 : 404 })) as unknown as typeof fetch;
+    try {
+      const dug = (upstream: string) => ({ upstream, upstream_commit: "abc", branch: "main" });
+      expect(await upstreamIsPublic(dug("github:open/lib"))).toBe(true);
+      expect(await upstreamIsPublic(dug("github:secret/lib"))).toBe(false);
+      expect(await upstreamIsPublic(null)).toBe(false);
+    } finally { globalThis.fetch = real; }
+  });
+});

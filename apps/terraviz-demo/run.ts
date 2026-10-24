@@ -6,8 +6,9 @@
 //
 //   bun apps/terraviz-demo/run.ts            reuse the last clone if it built
 //   bun apps/terraviz-demo/run.ts --fresh    clone TerraViz's latest again
+//   bun apps/terraviz-demo/run.ts --shared   the same, plus Shared Sphere (sphere/): everyone on one globe
 import { $ } from "bun";
-import { existsSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, rmSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -23,10 +24,25 @@ if (!existsSync(join(clone, ".rustybuns/dev/desktop.js"))) {
   process.exit(1);
 }
 
+// Shared Sphere builds its own host file beside the plain one. The clone links @rustybuns/* to whichever checkout ran
+// the trial, which may be gone (an agent's worktree), so point them at this one first.
+const shared = process.argv.includes("--shared");
+let hostFile = ".rustybuns/dev/desktop.js";
+if (shared) {
+  for (const p of ["cli", "shell-bun"]) {
+    const link = join(clone, "node_modules/@rustybuns", p);
+    rmSync(link, { force: true });
+    symlinkSync(join(REPO, "packages", p), link);
+  }
+  await $`bun ${join(import.meta.dir, "sphere/build.ts")}`.cwd(clone);
+  hostFile = ".rustybuns/sphere-dev/desktop.js";
+  console.log("Shared Sphere: open the link in two windows (or add ?room=name&name=you), then press Lead in one");
+}
+
 // The same sandbox the trial booted it in on macOS: no network but localhost, nothing under your home. The globe's
 // imagery comes from NASA GIBS through your browser, which isn't sandboxed.
 const sb = existsSync(join(OUT, "sandbox")) ? readdirSync(join(OUT, "sandbox")).find((f) => f.startsWith("rbtrial") && f.endsWith("-offline.sb")) : undefined;
-const cmd = ["bun", ".rustybuns/dev/desktop.js"];
+const cmd = ["bun", hostFile];
 const host = Bun.spawn(sb ? ["sandbox-exec", "-f", join(OUT, "sandbox", sb), ...cmd] : cmd, {
   cwd: clone,
   stdio: ["inherit", "inherit", "inherit"],

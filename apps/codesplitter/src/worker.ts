@@ -19,6 +19,7 @@ import {
   listDir,
   materialize,
   pushCatalogue,
+  revokeSockets,
   toFile,
 } from "./archive.ts";
 import { repoRow } from "./repos.ts";
@@ -141,7 +142,7 @@ const SHARE_DEFAULT_S = 86400, SHARE_MAX_S = 7 * 86400, SHARE_CREW_PRIVATE_S = 3
 import { watchdogRoutes } from "./watchdog.ts";
 import { drainRoutes } from "./drain.ts";
 import { busiestFiles, fileHistory } from "./gitpath-data.ts";
-import { joinHistory, upstreamBusiest, upstreamFileHistory, type UpstreamRepo } from "./gitpath-upstream.ts";
+import { joinHistory, upstreamBusiest, upstreamFileHistory, upstreamIsPublic, type UpstreamRepo } from "./gitpath-upstream.ts";
 import { tagRoutes } from "./tags.ts";
 import { pickRoute } from "./pick.ts";
 import {
@@ -561,6 +562,10 @@ async function route(req: Request, env: Env): Promise<Response> {
       await env.DB.prepare("UPDATE repos SET visibility = ? WHERE owner = ? AND name = ?").bind(visibility, owner, repo).run();
       // The vector index's tags follow on the next hourly embed; search checks D1 till then.
       await restaleSearch(env, owner, repo).catch(() => null);
+      if (visibility === "private") {
+        const { results: crew } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all();
+        await revokeSockets(env, owner, repo, { keep: [owner, ...(crew as { name: string }[]).map((c) => c.name)] });
+      }
       await audit(env, req, { actor: user, action: "repo.visibility", owner, repo, detail: visibility });
       return json({ visibility });
     }
@@ -622,8 +627,9 @@ async function route(req: Request, env: Env): Promise<Response> {
         if (!h) return json({ repo: `${owner}/${repo}`, ...(path ? { path, commits: [] } : { files: [] }) });
         // A repo dug from GitHub has only its import in its own git; what came before is read from GitHub (gitpath-upstream.ts).
         const r = await repoRow(env, owner, repo, "upstream, upstream_commit, branch") as UpstreamRepo | null;
-        // An anonymous caller never spends the site's GitHub token: they get GitHub's unauthenticated quota, if any.
-        const token = user ? (await githubToken(env, user).catch(() => null))?.token : undefined;
+        // An anonymous caller never spends a sign-in's token. The site's own GITHUB_TOKEN reads only a GitHub repo that is public
+        // (asked without a token), so a shared link shows a visitor the same history it shows the sharer.
+        const token = user ? (await githubToken(env, user).catch(() => null))?.token : env.GITHUB_TOKEN && await upstreamIsPublic(r) ? env.GITHUB_TOKEN : undefined;
         if (path) {
           const own = await fileHistory(h.handle, h.branch, path, limit);
           const before = own.more ? null : await upstreamFileHistory(r, path, limit - own.commits.length, token);
@@ -749,6 +755,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       if (!r.meta?.changes) return json({ error: `@${p[5]} isn't in the crew` }, 404);
       // An agent's token for this repo goes with it.
       await env.DB.prepare("DELETE FROM api_tokens WHERE name = ? AND repo = ?").bind(p[5], `${owner}/${repo}`).run();
+      await revokeSockets(env, owner, repo, { user: p[5] });
       await audit(env, req, { actor: user, action: "crew.remove", owner, repo, target: p[5] });
       return json({ ok: true });
     }

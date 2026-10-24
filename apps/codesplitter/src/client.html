@@ -4463,7 +4463,7 @@ const views = {
         try { await api(`${base}/key/${b.dataset.keyRemove}`, undefined, "DELETE"); toast("Deploy key removed"); poll(true); } catch (err) { toast(err.message); }
       }));
     };
-    const waiting = (d) => d.review && !d.review.cleared && d.can_run;
+    const waiting = (d) => d.review?.tip && !d.review.cleared && d.can_run;
     const runButton = (d) => {
       const b = $("#deploy-run"), s = d.settings, run = d.run;
       b.disabled = !d.can_run || !!(run && !run.done) || !!waiting(d);

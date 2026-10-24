@@ -116,7 +116,7 @@ export function localBindings(dataDir: string) {
     workflow: (name: string) => workflow(`${dataDir}/workflows.sqlite`, name),
     /** A Vectorize index over sqlite, queried by exact scan. */
     vectorize: (indexName: string, opts?: { dimensions?: number; metric?: VectorizeMetric }) => vectorize(`${dataDir}/vectorize.sqlite`, indexName, opts),
-    /** Workers AI: present, and every call says it runs only on Cloudflare. */
+    /** Workers AI: bge text embeddings run locally (word and trigram hashing, not meaning); every other call says it runs only on Cloudflare. */
     ai,
     /** Analytics Engine: data points land in analytics.sqlite. */
     analyticsEngine: (dataset: string) => analyticsEngine(`${dataDir}/analytics.sqlite`, dataset),

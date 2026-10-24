@@ -103,7 +103,7 @@ describe("code mode", () => {
     expect((await run(read, `const f = await tools.read_file({ ...${JSON.stringify(where)}, path: "before.ts" }); return f.lines.length;`)).out).toEqual({ result: LINES });
     const w = await run(read, `return await tools.edit_lines({ ...${JSON.stringify(where)}, path: "before.ts", body: { ops: [] } });`);
     expect(w.isError).toBe(true);
-    expect(w.out.error).toContain("404");
+    expect(w.out.error).toContain("no tool edit_lines");
     const d = await run(write, `return await tools.delete_repo(${JSON.stringify(where)});`);
     expect(d.isError).toBe(true);
     expect(d.out.error).toContain("403");
@@ -134,11 +134,27 @@ describe("code mode", () => {
       try { await tools.edit_lines({ ...${JSON.stringify(where)}, path: "before.ts", body: { ops: [{ ...op, text: "two" }] } }); return "landed"; }
       catch (e) { return [e.status, e.message.slice(0, 3)]; }`);
     expect(stale.out.result).toEqual([409, "409"]);
-    expect((await run(`return await tools.nope({});`)).out.error).toContain("404");
+    expect((await run(`return await tools.nope({});`)).out.error).toContain("no tool nope");
+    expect((await run(`return await tools["nope"]({});`)).out.error).toContain("404");
     expect((await run(`await fetch("http://example.com/"); return 1;`)).out.error).toMatch(/network|outbound/i);
     const many = await run(`let n = 0; try { for (;;) { await tools.whoami({}); n++; } } catch (e) { return [n, e.status]; }`);
     expect(many.out.result).toEqual([100, 429]);
     expect((await tool(write, "execute", { code: "  " })).isError).toBe(true);
+  });
+
+  test("preflight: a wrong tool name or argument fails with what is wrong, before any request", async () => {
+    const { write, tool } = await app();
+    const run = async (code: string) => { const r = await tool(write, "execute", { code }); return JSON.parse(r.content[0].text); };
+    // An unknown tool is found by reading the program: nothing ran, so the first line never logged.
+    expect(await run(`console.log("ran"); return await tools.read_fle({});`)).toEqual({ error: "no tool read_fle for this token: search_tools lists them" });
+    const bad = await run(`try { await tools.claim_lines({ ...${JSON.stringify(where)}, path: "before.ts", body: { lines: "a" }, extra: 1 }); } catch (e) { return [e.status, e.message]; }`);
+    expect(bad.result[0]).toBe(400);
+    expect(bad.result[1]).toContain("body.lines should be array");
+    expect(bad.result[1]).toContain("extra is not an argument");
+    const missing = await run(`try { await tools.read_file({ owner: "ryan" }); } catch (e) { return e.message; }`);
+    expect(missing.result).toContain("repo is required");
+    // The lenient cases still pass: a numeric string for a number, as toRequest always allowed.
+    expect((await run(`return (await tools.read_file({ ...${JSON.stringify(where)}, path: "before.ts", from: "0", limit: "1" })).lines.length;`)).result).toBe(1);
   });
 
   test("what comes back is cut at a size, so a program that returns a file doesn't undo the point", async () => {

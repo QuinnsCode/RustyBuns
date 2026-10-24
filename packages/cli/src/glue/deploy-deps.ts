@@ -9,17 +9,17 @@ export const DEPLOY_DEPS: Record<string, string> = {
   "alchemy": "2.0.0-beta.77",
   // Alchemy's optional peer, loaded by alchemy/Railway even for a plain Service.
   "@alchemy.run/frontend-frameworks": "2.0.0-beta.77",
-  "effect": "4.0.0-rc.112",
-  "@effect/platform-bun": "4.0.0-rc.112",
-  "@effect/platform-node": "4.0.0-rc.112",
+  "effect": "4.0.5",
+  "@effect/platform-bun": "4.0.5",
+  "@effect/platform-node": "4.0.5",
 };
 /** Transitive @effect/* packages that must match `effect` exactly. */
 export const DEPLOY_OVERRIDES: Record<string, string> = {
-  "effect": "4.0.0-rc.112",
-  "@effect/platform-bun": "4.0.0-rc.112",
-  "@effect/platform-node": "4.0.0-rc.112",
-  "@effect/platform-node-shared": "4.0.0-rc.112",
-  "@effect/vitest": "4.0.0-rc.112",
+  "effect": "4.0.5",
+  "@effect/platform-bun": "4.0.5",
+  "@effect/platform-node": "4.0.5",
+  "@effect/platform-node-shared": "4.0.5",
+  "@effect/vitest": "4.0.5",
 };
 
 export function installCommand(pm: string, hasWorkspaceFile: boolean): string {

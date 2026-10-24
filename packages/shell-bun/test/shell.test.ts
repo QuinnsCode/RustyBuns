@@ -151,6 +151,19 @@ test("serve: guests reach only the listed path, with a passphrase and no redirec
   await shell.stop();
 });
 
+test("serve: public paths are readable without the token, GET only, and nothing else opens", async () => {
+  const shell = serve({ token: "t0k", public: ["/.well-known/a.json", "/api/catalog/*"] });
+  const seen: string[] = [];
+  shell.mount({ async fetch(req) { seen.push(req.headers.get("x-rb-principal")!); return new Response("ok"); } }, {});
+  expect((await fetch(shell.url + "/.well-known/a.json")).status).toBe(200);
+  expect((await fetch(shell.url + "/api/catalog/items?x=1")).status).toBe(200);
+  expect((await fetch(shell.url + "/api/catalog/items", { method: "POST" })).status).toBe(403);
+  expect((await fetch(shell.url + "/.well-known/b.json")).status).toBe(403);
+  expect((await fetch(shell.url + "/api/catalogue")).status).toBe(403);
+  expect(seen).toEqual(["public", "public"]);
+  await shell.stop();
+});
+
 test("serve: rebind keeps the port and the open sockets", async () => {
   const shell = serve({});
   shell.comms.websocket("/ws", { message: (ws, d) => ws.send("echo:" + d), close: () => {} });
