@@ -86,7 +86,7 @@ function scan(): Map<string, [number, string, string][]> {
 if (import.meta.main) {
   const mode = process.argv[2];
   const now = scan();
-  const counts = Object.fromEntries([...now].map(([f, l]) => [f, l.length]).sort(([a], [b]) => String(a).localeCompare(String(b))));
+  const counts: Record<string, number> = Object.fromEntries([...now].map(([f, l]) => [f, l.length] as const).sort(([a], [b]) => a.localeCompare(b)));
   if (mode === "--update") {
     writeFileSync(ALLOW, JSON.stringify(counts, null, 2) + "\n");
     console.log(`allowance written: ${Object.values(counts).reduce((a, b) => a + b, 0)} findings in ${Object.keys(counts).length} files`);
