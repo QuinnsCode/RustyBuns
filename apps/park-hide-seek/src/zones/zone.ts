@@ -7,25 +7,56 @@
 import { hashString, rng } from "../geo.ts";
 import type { Landmark } from "../parks/types.ts";
 import type { ZoneData } from "./types.ts";
-import { ZONE_DATA } from "@rustybuns/terrain";
+import { ZONE_DATA, loadZone, regionOf, type Region } from "@rustybuns/terrain";
+import { NATIONAL_PARKS } from "../parks/nps.ts";
+import { PARK_STATES, ZONE_INDEX, type ZoneMeta } from "./index.ts";
 
-export const ZONES = ZONE_DATA as unknown as ZoneData[];
+export type { ZoneMeta };
 
-/** The parks with zones, in lobby order. */
-export const PARKS: { code: string; name: string }[] = [
-  { code: "YOSE", name: "Yosemite" },
-  { code: "YELL", name: "Yellowstone" },
-];
+/** The surveyed zones (Yosemite and Yellowstone: landmarks, a park map), bundled, so there's always ground to stand on. */
+const SURVEYED = ZONE_DATA as unknown as ZoneData[];
+/** The ground that's here: the surveyed zones from the start, the rest as loadZoneData brings them. */
+const ground = new Map<string, ZoneData>(SURVEYED.map((z) => [z.id, z]));
+const meta = ({ id, park, name, blurb, trees }: ZoneData): ZoneMeta => ({ id, park, name, blurb, trees });
+
+/** Every drop zone, surveyed ones first in lobby order, then one per park. */
+export const ZONES: ZoneMeta[] = [...SURVEYED.map(meta), ...ZONE_INDEX];
+
+/** The parks with zones (all 63), in the lobby's order: the surveyed ones first, then by name. */
+export const PARKS: { code: string; name: string; region: Region }[] = [...new Set(ZONES.map((z) => z.park))]
+  .map((code) => ({ code, name: NATIONAL_PARKS.find((p) => p.code === code)?.name ?? code, region: regionOf(PARK_STATES[code] ?? "") }));
+/** The parks whose zones were surveyed (landmarks, a park map): the rest can be voted for. */
+export const SURVEYED_PARKS = new Set(SURVEYED.map((z) => z.park));
 
 /**
  * The zones a lobby pick can drop into: "random" is any zone, "random:YELL" any
  * in that park, otherwise the one zone. Empty when the pick names nothing.
  */
-export function zonesFor(pick: string): ZoneData[] {
+export function zonesFor(pick: string): ZoneMeta[] {
   if (pick === "random") return ZONES;
   if (pick.startsWith("random:")) return ZONES.filter((z) => z.park === pick.slice(7));
   return ZONES.filter((z) => z.id === pick);
 }
+
+/** Whether this zone's ground is here, so zoneById can build it. */
+export const zoneLoaded = (id: string): boolean => ground.has(id);
+
+const loading = new Map<string, Promise<void>>();
+/** Fetches a zone's ground (once; the surveyed ones are already here) so a round can land on it. */
+export function loadZoneData(id: string): Promise<void> {
+  if (ground.has(id)) return Promise.resolve();
+  let p = loading.get(id);
+  if (!p) {
+    const row = ZONE_INDEX.find((z) => z.id === id);
+    p = row ? loadZone(id).then((json) => { ground.set(id, { ...(json as unknown as ZoneData), ...row }); }) : Promise.reject(new Error(`no zone ${id}`));
+    p.catch(() => loading.delete(id));
+    loading.set(id, p);
+  }
+  return p;
+}
+
+/** The first zone of a pool whose ground is here (the surveyed ones always are), to stand in while the rest loads. */
+export const readyZone = (pool: ZoneMeta[]): string => pool.find((z) => ground.has(z.id))?.id ?? SURVEYED[0].id;
 
 export const SCALE = 6;
 
@@ -270,10 +301,11 @@ export class Zone {
 }
 
 const cache = new Map<string, Zone>();
+/** The built zone with this id. Ground that isn't here yet (see zoneLoaded) stands in the first surveyed zone until it is. */
 export function zoneById(id: string): Zone {
   let z = cache.get(id);
   if (!z) {
-    const data = ZONES.find((d) => d.id === id) ?? ZONES[0];
+    const data = ground.get(id) ?? SURVEYED[0];
     z = new Zone(data);
     cache.set(data.id, z);
   }

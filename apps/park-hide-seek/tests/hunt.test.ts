@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { CLIFF, PARKS, SCALE, ZONES, zoneById, zonesFor, type Zone } from "../src/zones/zone.ts";
+import { beforeAll, describe, expect, test } from "bun:test";
+import { CLIFF, PARKS, SCALE, ZONES, loadZoneData, zoneById, zoneLoaded, zonesFor, type Zone } from "../src/zones/zone.ts";
 import { MOVE, canSee, clearLine, step, type Body } from "../src/hunt/sim.ts";
 import { HUNT, Hunt, circleAt, disguiseFor, dropOk, parseMsg } from "../src/hunt/game.ts";
 import { fits, radioGrid, toKm } from "../src/clues.ts";
@@ -19,15 +19,37 @@ function openSpot(z: Zone, clear = 8): [number, number] {
   throw new Error("no open spot");
 }
 
+// Every zone's ground is fetched up front, except Zion's: the pending-round test below brings that one in.
+await Promise.all(ZONES.filter((z) => z.id !== "zion").map((z) => loadZoneData(z.id)));
+
+test("a round on ground the host hasn't got yet waits for it, then starts there", async () => {
+  expect(zoneLoaded("zion")).toBe(false);
+  const g = new Room(7).game;
+  let now = 1_000_000;
+  g.join("h", "Host", now, { host: true });
+  g.join("b", "Bo", now);
+  g.handle("h", { t: "settings", zone: "zion" }, now);
+  expect(zoneLoaded(g.view("h", now).zone)).toBe(true); // the lobby stands on ground that's here meanwhile
+  g.handle("h", { t: "start" }, now);
+  g.tick(now += TICK_MS);
+  expect(g.phase).toBe("lobby");
+  await loadZoneData("zion");
+  g.tick(now += TICK_MS);
+  expect(g.phase).toBe("drop");
+  expect(g.round?.zone).toBe("zion");
+  expect(g.view("b", now).zone).toBe("zion");
+});
+
 describe.each(ZONES.map((d) => [d.id] as const))("%s", (id) => {
-  const z = zoneById(id);
+  let z: Zone;
+  beforeAll(async () => { await loadZoneData(id); z = zoneById(id); });
 
   test("real terrain, shrunk", () => {
     let hi = 0;
     for (const h of z.h) hi = Math.max(hi, h);
     expect(z.R).toBeCloseTo(z.data.realRadius / SCALE, 6);
-    // Every zone has real relief: at least 50 m of real climb.
-    expect(hi * SCALE).toBeGreaterThan(50);
+    // Real ground, not an empty fetch: some climb (the Everglades manage a metre).
+    expect(hi * SCALE).toBeGreaterThan(0);
   });
 
   test("the cabin sits on walkable ground, with drops possible round it", () => {

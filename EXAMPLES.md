@@ -35,7 +35,7 @@ That's it. Now pick an app.
 | App | What you do | Setup |
 |---|---|---|
 | [Hippo Tycoon](#hippo-tycoon) | Be a greedy hippo and chomp the most oil money | ⭐ Easy |
-| [Park Hide & Seek](#park-hide--seek) | Hide from park rangers in real Yosemite (or be the ranger), and find Bigfoot first | ⭐ Easy |
+| [Park Hide & Seek](#park-hide--seek) | Hide from park rangers in any of the 63 national parks (or be the ranger), and find Bigfoot first | ⭐ Easy |
 | [Splat Spray](#splat-spray) | Find hidden things in a pitch-dark room with a scanner | ⭐ Easy |
 | [FM Groovebox](#fm-groovebox-fm-daw) | Make beats and songs with your computer keyboard | ⭐ Easy |
 | [Auto Rig](#auto-rig) | Give a 3D model bones, then pose it like a puppet | ⭐ Easy |
@@ -76,7 +76,7 @@ Gamepads work too.
 
 ## Park Hide & Seek
 
-**Hide and seek in a real national park.** Campers drop in and hide. Park rangers hunt them with flashlights, and at night it gets spooky. Bigfoot is hiding out there too, where the search area closes in: whoever finds him first wins the round for their side.
+**Hide and seek in a real national park, any of the 63.** Campers drop in and hide. Park rangers hunt them with flashlights, and at night it gets spooky. Bigfoot is hiding out there too, where the search area closes in: whoever finds him first wins the round for their side.
 
 **Play it online, no install:** https://park-hide-seek.notryanquinn.workers.dev. Press **Create an online room** and send friends the link, or just press **Play vs AI**.
 
