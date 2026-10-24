@@ -102,7 +102,9 @@ export function describe(all: Tool[], names: string[]): string {
 /** The dynamic Worker's module: the agent's code inside a fetch handler, with `tools` over env.CS. */
 const wrap = (code: string, input: unknown) => `
 const INPUT = ${JSON.stringify(input ?? null)};
+let calls = 0;
 const call = async (env, name, args) => {
+  if (++calls > ${MAX_CALLS}) { const e = new Error("429: a program makes at most ${MAX_CALLS} tool calls"); e.status = 429; throw e; }
   const r = await env.CS.call(name, JSON.stringify(args === undefined ? {} : args));
   if (r.status >= 300) { const e = new Error(r.status + ": " + r.text); e.status = r.status; throw e; }
   try { return JSON.parse(r.text); } catch { return r.text; }
@@ -117,9 +119,9 @@ export default {
     const tools = new Proxy({}, { get: (_, name) => (args) => call(env, String(name), args) });
     try {
       const result = await program({ tools, input: INPUT, console: { log: say, info: say, warn: say, error: say } });
-      return Response.json({ ok: true, result: result === undefined ? null : result, log });
+      return Response.json({ ok: true, result: result === undefined ? null : result, log, calls });
     } catch (e) {
-      return Response.json({ ok: false, error: String(e && e.message || e), log });
+      return Response.json({ ok: false, error: String(e && e.message || e), log, calls });
     }
   },
 };
@@ -128,40 +130,38 @@ export default {
 /** One tool's answer: its HTTP status and body. */
 export interface ToolAnswer { status: number; text: string }
 
-/**
- * The CS binding: each call is one tool's HTTP call, made as the caller. Only plain values cross, so it
- * works as an RPC stub on the edge and as an object in the local twin.
- */
-function fetcher(tools: Tool[], run: (t: Tool, args: Record<string, unknown>) => Promise<ToolAnswer>, Base: new () => object = Object) {
-  let calls = 0;
-  const fail = (status: number, error: string): ToolAnswer => ({ status, text: JSON.stringify({ error }) });
-  // On the edge the binding must be an RpcTarget; under Bun (no cloudflare:workers) a plain base does.
-  return new (class extends Base {
-    calls = () => calls;
-    async call(name: string, json: string): Promise<ToolAnswer> {
-      if (++calls > MAX_CALLS) return fail(429, `a program makes at most ${MAX_CALLS} tool calls`);
-      const t = tools.find((t) => t.name === name);
-      if (!t) return fail(404, `no tool ${name} for this token: search_tools lists them`);
-      if (t.risky) return fail(403, `${name} is risky (it ships code, changes who can get in or see what, or can't be undone): ask for it with call_tool, so the person is asked`);
-      let args: unknown;
-      try { args = JSON.parse(json); } catch { return fail(400, "arguments must be JSON"); }
-      if (!args || typeof args !== "object" || Array.isArray(args)) return fail(400, "arguments are an object");
-      return run(t, args as Record<string, unknown>);
-    }
-  })() as { calls(): number; call(name: string, json: string): Promise<ToolAnswer> };
-}
+/** What the runtime gives a binding: RpcTarget and WorkerEntrypoint on the edge, nothing under Bun. */
+const cf = await import("cloudflare:workers").then((m) => m as unknown as { WorkerEntrypoint: new (ctx: unknown, env: unknown) => { env: unknown; ctx: { props: unknown } }; exports: Record<string, ((o: { props: unknown }) => unknown) | undefined> }, () => null);
 
-/** RpcTarget where the runtime has it (the edge); undefined under Bun, where an object is enough. */
-const rpcBase = import("cloudflare:workers").then((m) => (m as unknown as { RpcTarget: new () => object }).RpcTarget, () => undefined);
+/** The base for the edge's CS binding (worker.ts exports a class on it), and a stub of that class for one caller. */
+export const EntryBase = cf?.WorkerEntrypoint;
+export const csStub = cf && ((props: unknown) => cf.exports.CSBridge?.({ props }));
+
+/** The caller a binding answers as: where to call back, with which token, and what that token may use. */
+export interface CSProps { origin: string; auth: string; scope?: string }
+
+/** One tool's answer to a program's call: the HTTP call it stands for, made as the caller. Only plain values cross. */
+export async function answer(tools: Tool[], run: (t: Tool, args: Record<string, unknown>) => Promise<ToolAnswer>, name: string, json: string): Promise<ToolAnswer> {
+  const fail = (status: number, error: string): ToolAnswer => ({ status, text: JSON.stringify({ error }) });
+  const t = tools.find((t) => t.name === name);
+  if (!t) return fail(404, `no tool ${name} for this token: search_tools lists them`);
+  if (t.risky) return fail(403, `${name} is risky (it ships code, changes who can get in or see what, or can't be undone): ask for it with call_tool, so the person is asked`);
+  let args: unknown;
+  try { args = JSON.parse(json); } catch { return fail(400, "arguments must be JSON"); }
+  if (!args || typeof args !== "object" || Array.isArray(args)) return fail(400, "arguments are an object");
+  return run(t, args as Record<string, unknown>);
+}
 
 /** What a program came to, shaped as the text `execute` answers with. */
 export interface Ran { text: string; isError: boolean; calls: number }
 
 /** Run `code` over `tools` as the caller (`run` makes each call), in a Worker of its own. */
-export async function execute(loader: WorkerLoaderLike, code: string, tools: Tool[], run: (t: Tool, args: Record<string, unknown>) => Promise<ToolAnswer>, input?: unknown): Promise<Ran> {
+export async function execute(loader: WorkerLoaderLike, code: string, tools: Tool[], run: (t: Tool, args: Record<string, unknown>) => Promise<ToolAnswer>, input?: unknown, edge?: unknown): Promise<Ran> {
   if (code.length > MAX_CODE) return { text: `the program is up to ${MAX_CODE.toLocaleString("en")} characters`, isError: true, calls: 0 };
-  const cs = fetcher(tools, run, await rpcBase);
-  let timer: ReturnType<typeof setTimeout> | undefined, log: string[] = [], out: string, isError = false;
+  // On the edge the binding is a stub of the worker's own CSBridge entrypoint (a plain object can't be an env binding there);
+  // under Bun, where the local loader runs the program in-process, an object will do.
+  const cs = edge ?? { call: (name: string, json: string) => answer(tools, run, name, json) };
+  let timer: ReturnType<typeof setTimeout> | undefined, log: string[] = [], out: string, isError = false, calls = 0;
   try {
     // A Worker for each run: one cached by id would keep the first caller's CS, and so their token.
     const stub = loader.get(`prog:${crypto.randomUUID()}`, () => ({
@@ -169,7 +169,8 @@ export async function execute(loader: WorkerLoaderLike, code: string, tools: Too
     })).getEntrypoint();
     const timeout = new Promise<never>((_, rej) => { timer = setTimeout(() => rej(new Error("timeout")), RUN_MS); });
     const res = await Promise.race([stub.fetch("http://program/run", { method: "POST" }), timeout]);
-    const r = (await res.json()) as { ok: boolean; result?: unknown; error?: string; log?: string[] };
+    const r = (await res.json()) as { ok: boolean; result?: unknown; error?: string; log?: string[]; calls?: number };
+    calls = r.calls ?? 0;
     log = Array.isArray(r.log) ? r.log : [];
     isError = !r.ok;
     out = JSON.stringify(r.ok ? { result: r.result, ...log.length && { log } } : { error: r.error, ...log.length && { log } });
@@ -179,5 +180,5 @@ export async function execute(loader: WorkerLoaderLike, code: string, tools: Too
     out = JSON.stringify({ error: m === "timeout" ? `the program took more than ${RUN_MS / 1000} s` : m });
   } finally { clearTimeout(timer); }
   if (out.length > MAX_BACK) out = out.slice(0, MAX_BACK) + `… (cut at ${MAX_BACK.toLocaleString("en")} characters: return less)`;
-  return { text: out, isError, calls: cs.calls() };
+  return { text: out, isError, calls };
 }

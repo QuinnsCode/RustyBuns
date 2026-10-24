@@ -166,8 +166,10 @@ import {
   pendingInvites,
   repoInviteRoutes,
 } from "./invites.ts";
+import { EntryBase, type CSProps } from "./codemode.ts";
 import { openapi } from "./openapi.ts";
 import {
+  bridgeCall,
   catalogue,
   mcp,
 } from "./mcp.ts";
@@ -249,6 +251,10 @@ import {
 } from "./mirror.ts";
 import { LLMS_TXT, ROBOTS_TXT } from "./discover.ts";
 export { FileDurableObject } from "./file-do.ts";
+// The CS binding of a code-mode program (codemode.ts): on the edge a stub of this class, under Bun nothing.
+export const CSBridge = EntryBase && class extends EntryBase {
+  call(name: string, json: string) { return bridgeCall(this.ctx.props as CSProps, name, json, (r) => app.fetch(r, this.env as Env)); }
+};
 import { UPDATE_RETRY_S, UPDATING } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
