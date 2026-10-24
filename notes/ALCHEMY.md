@@ -91,10 +91,10 @@ appears in the repo or docs either.
 
 ## Suggested order
 
-1. Bump to beta.84 alone, with the import rename and a plan diff on codeSplitter's stack. Set
+1. Bump to beta.84 alone ([#2235](https://github.com/QuinnsCode/RustyBuns/issues/2235)), with the import rename and a plan diff on codeSplitter's stack. Set
    `DO_NOT_TRACK=1` in the env `rustybuns` gives `alchemy`, or say in the docs that it's on.
-2. `rustybuns drift` (#1): small, read-only, and it shows whether the bump or anything else moved the account.
-3. `postgresState` on the Neon we already make (#2), then Worker Previews per PR (#3) on top.
+2. `rustybuns drift` (#1), [#2236](https://github.com/QuinnsCode/RustyBuns/issues/2236): small, read-only, and it shows whether the bump or anything else moved the account.
+3. `postgresState` on the Neon we already make (#2) ([#2237](https://github.com/QuinnsCode/RustyBuns/issues/2237)), then Worker Previews per PR (#3) ([#2238](https://github.com/QuinnsCode/RustyBuns/issues/2238)) on top.
 4. `rustybuns test` on the test harness (#4), run against those preview stages.
 5. Read `@alchemy.run/git` (#6) next to codeSplitter's merge code and file what's worth taking.
 6. The rest as the apps need them. Every row that creates resources costs money at scale; price it first and
