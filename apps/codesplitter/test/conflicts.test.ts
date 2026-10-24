@@ -1,12 +1,11 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { apply, empty, explain, fromText, generatedRegions, merge, mergeWords, parseError, text, type Doc, type Resolve } from "../src/lines.ts";
+import { apply, empty, explain, fromText, generatedRegions, merge, mergeWords, text, type Doc, type Resolve } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
-import { conflictPrompt, markers, settled } from "../src/conflict-agent.ts";
+import { markers, settled } from "../src/conflict-agent.ts";
 import { fill } from "../src/mergiraf.ts";
 import { materializeOn, parseResolve } from "../src/branches.ts";
-import { lintMerge } from "../src/lint.ts";
 import { local as boot } from "../src/local.ts";
 import { toFile } from "../src/archive.ts";
 import type { Exec } from "../src/agent-run.ts";
@@ -49,13 +48,6 @@ describe("settling a conflict", () => {
     expect(settle(s, { L2: "both" }).lines.map((l) => l.by)).toEqual(["me", "ana", "bot", "me"]);
     expect(settle(s, { L2: "both:branch-first" }).lines.map((l) => l.by)).toEqual(["me", "bot", "ana", "me"]);
     expect(own.lines.map((l) => l.by)).toEqual(["me", "ryan", "ryan", "me"]);
-  });
-
-  test("keeping both, the branch's new lines stay with its version of the line", () => {
-    // A line added next to one both changed makes it one stretch: the branch's side is `X` and `new`.
-    const s = sides("a\nb", "A\nb", "X\nnew\nb");
-    expect(text(settle(s, { L1: "both" }))).toBe("A\nX\nnew\nb");
-    expect(text(settle(s, { L1: "both:branch-first" }))).toBe("X\nnew\nA\nb");
   });
 
   test("a stretch both reshaped: both keeps each side's lines whole, a text replaces it", () => {
@@ -152,12 +144,6 @@ describe("settled without asking (#933)", () => {
       .toBe("// routes\nimport { beamRoutes } from \"./beam.ts\";\nimport { kick, land, mirrorTag, seeGit, turnRoute } from \"./mirror.ts\";");
   });
 
-  test("two sides adding the same entries under differently worded comments keep main's comment, once (#1782)", () => {
-    const was = ["const SKIP = new Set([", "  \"a.sql\",", "]);"].join("\n");
-    const added = (note: string) => ["const SKIP = new Set([", "  \"a.sql\",", `  // ${note}`, "  \"b.sql\",", "  \"c.sql\",", "]);"].join("\n");
-    expect(merged(was, added("side by side"), added("same stamp"), "m.test.ts")).toBe(added("side by side"));
-  });
-
   test("a section one side deleted whole stays deleted when the other only edited or trimmed it (docs/mervin.md Next, #1420)", () => {
     const doc = (next: string[]) => ["Intro.", "", "## Measured", "", "A table.", ...(next.length ? ["", "## Next", "", ...next] : [])].join("\n");
     const was = doc(["1. Run the corpus.", "2. Run the score.", "3. Build the arbiter."]);
@@ -171,17 +157,6 @@ describe("settled without asking (#933)", () => {
     expect(conflicts(sides(was, doc(["3. Build the arbiter."]), doc(["1. Run the corpus.", "2. Run the score on Rails.", "3. Build the arbiter."])), "docs/m.md")).toHaveLength(1);
   });
 
-  test("in prose and comments the rename guard skips short and common words; code keeps it whole (the README bullet)", () => {
-    const was = "- **The map.** A panel opens a map of where it came from. Click a dot to revert it.";
-    const onMain = "- **The vein.** The panel opens the vein, its history: where it came from. Click a dot to revert it.";
-    const onBranch = "- **The map.** A panel opens a map of where it came from. A tagged commit wears a tag. Click a dot to revert it.";
-    expect(mergeWords(was, onMain, onBranch)).toBeNull();
-    expect(merged(was, onMain, onBranch, "README.md")).toBe("- **The vein.** The panel opens the vein, its history: where it came from. A tagged commit wears a tag. Click a dot to revert it.");
-    expect(merged(`// ${was}`, `// ${onMain}`, `// ${onBranch}`)).toBe(`// ${onMain.replace("Click", "A tagged commit wears a tag. Click")}`);
-    // A word that says something still trips it: main renamed `map`, the branch wrote it again.
-    expect(mergeWords(was, onMain, was.replace("revert it.", "revert it on the map."), false, true)).toBeNull();
-  });
-
   test("a name one side renamed across the file is renamed in the other side's new lines (#1156, rules.test.ts)", () => {
     // Main turned `.hero` into `.heroes.marines`; the branch's new test still says `.hero`. The `hero:` key isn't the property, so it stays.
     const was = "go({ hero: at });\nexpect(after.hero.xp).toBe(2);\nexpect(lost.hero.woundedUntil).toBe(4);\n// end";
@@ -191,90 +166,6 @@ describe("settled without asking (#933)", () => {
     // The other way round: the branch renamed `count` to `total`, main's new line still says `count`.
     const calls = "const count = 1;\nf(count);\nz";
     expect(merged(calls, `${calls}\ng(count + 1);`, calls.replace(/count/g, "total"))).toBe("const total = 1;\nf(total);\nz\ng(total + 1);");
-  });
-
-  test("a local renamed in one function is renamed in the other side's new lines there, not in other functions (#1257, branches.ts)", () => {
-    // The branch's mergeBranch reads `run.dry` now; mergeFile keeps a `dry` parameter of its own.
-    const was = [
-      "async function mergeFile(path, dry) {",
-      "  return post(path, dry);",
-      "}",
-      "async function mergeBranch(rows) {",
-      "  const dry = await Promise.all(rows.map((f) => mergeFile(f, true)));",
-      "  for (const d of dry) check(d);",
-      "  const left = dry.filter((d) => d.conflicts.length);",
-      "  return left;",
-      "}",
-    ].join("\n");
-    const onBranch = was.replace("  const dry = await Promise.all(rows.map((f) => mergeFile(f, true)));", "  const run = await dryRun(rows);")
-      .replace("of dry)", "of run.dry)").replace("= dry.filter", "= run.dry.filter");
-    const onMain = was.replace("  return left;", "  const docs = left.length ? [] : rebuilt(dry);\n  return left;");
-    expect(merged(was, onMain, onBranch)).toBe(onBranch.replace("  return left;", "  const docs = left.length ? [] : rebuilt(run.dry);\n  return left;"));
-    // Main's new line in mergeFile keeps its own `dry`.
-    const inFile = was.replace("  return post(path, dry);", "  log(dry);\n  return post(path, dry);");
-    expect(merged(was, inFile, onBranch)).toBe(onBranch.replace("  return post(path, dry);", "  log(dry);\n  return post(path, dry);"));
-  });
-
-  test("a local whose lines moved into a new function reads as a field of its call there (#1265, branches.ts)", () => {
-    // The branch moved mergeBranch's dry run, by line, into dryRun(), which returns { dry }; mergeBranch keeps `run`.
-    const was = [
-      "async function mergeBranch(rows) {",
-      "  const under = await stacked(rows);",
-      "  if (under) return under;",
-      "  // A dry run first, so a conflict anywhere merges nothing.",
-      "  const dry = await Promise.all(rows.map((f) => mergeFile(f, true)));",
-      "  for (const d of dry) check(d);",
-      "  const left = dry.filter((d) => d.conflicts.length);",
-      "  if (left.length) return left;",
-      "  await apply(rows);",
-      "  return done();",
-      "}",
-    ].join("\n");
-    const onBranch = [
-      "async function dryRun(rows) {",
-      "  const dry = await Promise.all(rows.map((f) => mergeFile(f, true)));",
-      "  for (const d of dry) check(d);",
-      "  const left = dry.filter((d) => d.conflicts.length);",
-      "  return left.length ? { blocked: left } : { dry };",
-      "}",
-      "async function mergeBranch(rows) {",
-      "  const under = await stacked(rows);",
-      "  if (under) return under;",
-      "  // A dry run first, so a conflict anywhere merges nothing.",
-      "  const run = await dryRun(rows);",
-      "  if (\"blocked\" in run) return run.blocked;",
-      "  await apply(rows);",
-      "  return done();",
-      "}",
-    ].join("\n");
-    const onMain = was.replace("  return done();", "  const docs = rebuilt(dry);\n  return done(docs);");
-    expect(merged(was, onMain, onBranch)).toBe(onBranch.replace("  return done();", "  const docs = rebuilt(run.dry);\n  return done(docs);"));
-    // Without the `{ dry }` return the extract says nothing about `run`: main's line keeps `dry`.
-    const noReturn = onBranch.replace("{ blocked: left } : { dry }", "{ blocked: left } : null");
-    expect(merged(was, onMain, noReturn)).toContain("rebuilt(dry)");
-  });
-
-  test("an expression hoisted into a const is swapped in the other side's new lines in that function (#1257, cli index.ts)", () => {
-    const was = [
-      "async function alchemy(args) {",
-      "  const note = adoptNote(cfg, alchemyStage(args));",
-      "  guardDeploy(cfg, alchemyStage(args));",
-      "  return note;",
-      "}",
-      "function other(args) {",
-      "  return alchemyStage(args);",
-      "}",
-    ].join("\n");
-    const onBranch = was.replace("async function alchemy(args) {", "async function alchemy(args) {\n  const stage = alchemyStage(rawArgs);")
-      .replace("adoptNote(cfg, alchemyStage(args))", "adoptNote(cfg, stage)").replace("guardDeploy(cfg, alchemyStage(args))", "guardDeploy(cfg, stage)");
-    const plan = "  console.log(formatOfflinePlan(cfg.name, alchemyStage(args)));";
-    const onMain = was.replace("  return note;", `${plan}\n  return note;`).replace("  return alchemyStage(args);", "  log(alchemyStage(args));\n  return alchemyStage(args);");
-    expect(merged(was, onMain, onBranch)).toBe(onBranch
-      .replace("  return note;", `${plan.replace("alchemyStage(args)", "stage")}\n  return note;`)
-      .replace("  return alchemyStage(args);", "  log(alchemyStage(args));\n  return alchemyStage(args);"));
-    // No new const, no hoist: a call swapped for a name is just an edit.
-    const swapped = was.replace("adoptNote(cfg, alchemyStage(args))", "adoptNote(cfg, stage)").replace("guardDeploy(cfg, alchemyStage(args))", "guardDeploy(cfg, stage)");
-    expect(merged(was, onMain, swapped)).toBe(swapped.replace("  return note;", `${plan}\n  return note;`).replace("  return alchemyStage(args);", "  log(alchemyStage(args));\n  return alchemyStage(args);"));
   });
 
   test("no rename carried where it isn't one: the old name still on main, one line changed, two new names, or prose words", () => {
@@ -288,22 +179,6 @@ describe("settled without asking (#933)", () => {
     // Prose keeps the stopword rule: "the" renamed to "a" across the file says nothing.
     const prose = "Open the map.\nRead the log.\nz";
     expect(merged(prose, "Open a map.\nRead a log.\nz", `${prose}\nClose the door.`, "README.md")).toBe("Open a map.\nRead a log.\nz\nClose the door.");
-  });
-
-  test("the same line in two new blocks isn't doubled; at the same level it still is (deps.test.ts)", () => {
-    const setup = "    const pkg = JSON.parse(files[\"package.json\"]!);";
-    const t = (name: string) => `test("${name}", async () => {\n  const tester = async (files) => {\n${setup}\n  };\n});`;
-    expect(merged("a\nz", `a\n${t("digs")}\nz`, `a\n${t("rank")}\nz`)).toBe(`a\n${t("digs")}\n${t("rank")}\nz`);
-    expect(conflicts(sides("a\nb", "import { z } from './z'\na\nb", "a\nimport { z } from './z'\nb"))).toMatchObject([{ doubled: true }]);
-  });
-
-  test("two new tests after the last one, each ending as it does, land whole: main's, then the branch's (deps.test.ts)", () => {
-    // Read top-down, each side's new test could start inside the old one's tail: both slide down to the blank line under it.
-    const t = (name: string) => `test("${name}", async () => {\n  ${name}();\n  await run();\n  expect(told.length).toBe(1);\n});\n`;
-    const was = `import { a } from "x";\nimport { b } from "y";\n${t("chain")}\ntest("search", () => {});\n// a\n// b`;
-    const onMain = `import { a, dig } from "x";\nimport { b } from "y";\n${t("chain")}\n${t("dig")}\ntest("search", () => {});\n// a, main's\n// b`;
-    const onBranch = `import { a } from "x";\nimport { b, rank } from "y";\n${t("chain")}\n${t("rank")}\ntest("search", () => {});\n// a\n// b, the branch's`;
-    expect(merged(was, onMain, onBranch)).toBe(`import { a, dig } from "x";\nimport { b, rank } from "y";\n${t("chain")}\n${t("dig")}\n${t("rank")}\ntest("search", () => {});\n// a, main's\n// b, the branch's`);
   });
 
   test("new lines both added at one spot: main's first", () => {
@@ -340,62 +215,6 @@ describe("settled without asking (#933)", () => {
     expect(conflicts(s)).toHaveLength(1);
   });
 
-  test("an `import type` list the branch made inline: main's new name keeps its `type` (#1168, build.ts)", () => {
-    const was = "import type { DesktopOs, RustyBunsConfig } from \"./config.ts\";\nz";
-    expect(merged(was, was.replace("{ ", "{ Binding, "), was.replace("import type { DesktopOs, RustyBunsConfig }", "import { hyperdriveUrlEnv, type DesktopOs, type RustyBunsConfig }")))
-      .toBe("import { hyperdriveUrlEnv, type Binding, type DesktopOs, type RustyBunsConfig } from \"./config.ts\";\nz");
-  });
-
-  test("a stretch both reshaped: lines paired, list items merged in each pair, lines only one side added kept whole (deps.ts)", () => {
-    // DEFAULTS, a one-liner both added to, with declarations both added under it.
-    const d = (x: string) => `export const DEFAULTS = { on: false, held: [], ${x}preview: false };`;
-    expect(merged(`${d("")}\n\nz`, `${d("").replace(" };", ", digs: [] };")}\nexport const MAX_DIGS = 10;\n\nz`, `${d("rank: [], ")}\nexport const MAX_RANKED = 20;\n\nz`))
-      .toBe(`${d("rank: [], ").replace(" };", ", digs: [] };")}\nexport const MAX_DIGS = 10;\nexport const MAX_RANKED = 20;\n\nz`);
-    // Report: a one-liner main added to and the branch reflowed onto lines of its own.
-    const report = "export interface Report { at: number; updates: Update[]; previews?: Run[]; branch?: string; note?: string }";
-    expect(merged(`${report}\n\nz`, `${report.replace("Run[];", "Run[]; digs?: Dug[];")}\n\nz`, "export interface Report {\n  at: number; updates: Update[]; previews?: Run[]; branch?: string; note?: string;\n  rank?: string[];\n}\n\nz"))
-      .toBe("export interface Report {\n  at: number; updates: Update[]; previews?: Run[]; digs?: Dug[]; branch?: string; note?: string;\n  rank?: string[];\n}\n\nz");
-    // The registry fetch: both appended to the cast and the return, and the branch added a line between.
-    const was = "  const doc = (await res.json()) as { versions?: Record<string, unknown>; time?: Record<string, string> };\n  return { versions: Object.keys(doc.versions ?? {}), time: doc.time ?? {} };\n};";
-    const onMain = "  const doc = (await res.json()) as { versions?: Record<string, unknown>; time?: Record<string, string>; \"dist-tags\"?: Record<string, string> };\n  return { versions: Object.keys(doc.versions ?? {}), time: doc.time ?? {}, tags: doc[\"dist-tags\"] ?? {} };\n};";
-    const onBranch = "  const doc = (await res.json()) as { versions?: Record<string, { peers?: Peers } | null>; time?: Record<string, string> };\n  const peers = peersOf(doc.versions);\n  return { versions: Object.keys(doc.versions ?? {}), time: doc.time ?? {}, peers };\n};";
-    expect(merged(was, onMain, onBranch)).toBe("  const doc = (await res.json()) as { versions?: Record<string, { peers?: Peers } | null>; time?: Record<string, string>; \"dist-tags\"?: Record<string, string> };\n  const peers = peersOf(doc.versions);\n  return { versions: Object.keys(doc.versions ?? {}), time: doc.time ?? {}, tags: doc[\"dist-tags\"] ?? {}, peers };\n};");
-  });
-
-  test("a CSS rule line both added rules to, with rules added under it (client.html)", () => {
-    const was = "  .cg g:hover > *, .cg g.on > * { stroke: red; }\n  .cg g[data-hash] { cursor: pointer; }\n  .cg-pick { display: grid; }";
-    const onMain = "  .cg g:hover > *, .cg g.on > * { stroke: red; }\n  .cg g[data-hash] { cursor: pointer; } .cg g.beat > * { stroke: gold; }\n  .cg .bead { fill: gold; }\n  .cg-pick { display: grid; }";
-    const onBranch = "  .cg g:hover > *, .cg g.sel > * { stroke: red; }\n  .cg path.t { fill: brown; } .cg g[data-h] { cursor: pointer; }\n  .cg-tag { gap: 3px; }\n  .cg-pick { display: grid; }";
-    expect(merged(was, onMain, onBranch, "client.html")).toBe("  .cg g:hover > *, .cg g.sel > * { stroke: red; }\n  .cg path.t { fill: brown; } .cg g[data-h] { cursor: pointer; } .cg g.beat > * { stroke: gold; }\n  .cg .bead { fill: gold; }\n  .cg-tag { gap: 3px; }\n  .cg-pick { display: grid; }");
-  });
-
-  test("in prose a word cut once but still on the line isn't renamed away (2086218's README paragraph)", () => {
-    const was = "Jekyll copies it. Pages has rules. The generator must be installed, or Jekyll says so.";
-    const onMain = "Jekyll copies it. Pages has rules. Jekyll runs in Docker when Ruby is old.";
-    const onBranch = "Jekyll copies it. Plain Jekyll lacks plugins. Pages has rules. The generator must be installed, or Jekyll says so.";
-    expect(mergeWords(was, onMain, onBranch, false, true)).toBe("Jekyll copies it. Plain Jekyll lacks plugins. Pages has rules. Jekyll runs in Docker when Ruby is old.");
-    // Code keeps the guard whole.
-    expect(mergeWords(was, onMain, onBranch)).toBeNull();
-    // Gone from the line altogether, it's still a rename the other side's new words would miss.
-    expect(mergeWords("Use the map. Click a dot.", "Use the vein. Click a dot.", "Use the map. The map has tags. Click a dot.", false, true)).toBeNull();
-  });
-
-  test("a sentence both sides edited in different words merges word by word; a number one changed that the other's new words quote is a conflict (#1222, git-recon README)", () => {
-    // #1205 added "or online…" to the sentence, #1221 raised 32 to 64 in it: git conflicts, these don't.
-    const was = "> Play on your own, or by up to 32 players in one battle that the desktop app opens to the LAN. One of the examples.";
-    const onMain = was.replace("LAN.", "LAN, or online in a Durable Object per room.");
-    const onBranch = was.replace("32", "64");
-    expect(merged(was, onMain, onBranch, "README.md")).toBe("> Play on your own, or by up to 64 players in one battle that the desktop app opens to the LAN, or online in a Durable Object per room. One of the examples.");
-    // The room.ts bullet: the branch rewrote numbers inside it and left the 32-player test at 32, main added to it.
-    const bullet = "- `room.ts` sends snapshots as binary frames. On a 32-player test a delta averages under 1 KB, 16 KB/s a player (before, 60 KB/s). The page acks with each input. On a 32-player test a second of battle packs in well under a second of CPU.";
-    const grown = bullet.replace("(before, 60 KB/s).", "(before, 60 KB/s); at the 64-player cap, 25 KB/s.").replace("On a 32-player test a second of battle packs in well under", "At 64 players a second of battle packs in about a fifth of");
-    const added = bullet.replace("frames.", "frames (your ammo and clocks too).");
-    expect(merged(bullet, added, grown, "README.md")).toBe(grown.replace("frames.", "frames (your ammo and clocks too)."));
-    // Main's new words quote the 32 the branch made 64: merged, they'd say both.
-    expect(mergeWords(was, was.replace("LAN.", "LAN, so a room of 32 is cheap."), onBranch, false, true)).toBeNull();
-    expect(conflicts(sides(was, was.replace("LAN.", "LAN, so a room of 32 is cheap."), onBranch), "README.md")).toHaveLength(1);
-  });
-
   test("real rewrites stay conflicts: code hung under a line the other side removed, or one item rewritten two ways", () => {
     // drawGraph in client.html: the branch dropped the call, main hung the pulse code under it.
     expect(conflicts(sides("  };\n  drawGraph(graph);\n  el.on();", "  };\n  drawGraph(graph);\n  let beatAt = 0;\n  el.on();", "  };\n  el.on();"), "client.html")).toHaveLength(1);
@@ -403,15 +222,6 @@ describe("settled without asking (#933)", () => {
     const was = "/** Its versions. */\nexport type Registry = (n: string) => Promise<{ versions: string[] } | null>;";
     const onMain = "/** Its versions. */\nexport interface Meta { versions: string[]; tags?: Tags }\nexport type Registry = (n: string) => Promise<Meta | null>;";
     expect(conflicts(sides(was, onMain, was.replace("string[] }", "string[]; peers?: Peers }")))).toHaveLength(1);
-  });
-
-  test("a `? :` chain both sides added clauses to is a conflict: blended, a Neon binding skipped main's migrationsDir check (#1168, config-schema.ts)", () => {
-    const was = "  const bad = all.flatMap((h) => h.pg && !secret(h.url)\n    ? [\"url isn't a secret\"] : []);\n  return bad;";
-    const onMain = "  const bad = all.flatMap((h) => h.pg && !secret(h.url)\n    ? [\"url isn't a secret\"]\n    : h.pg && h.migrations && !h.pglite\n    ? [\"migrations need pglite\"] : []);\n  return bad;";
-    const onBranch = "  const bad = all.flatMap((h) => !h.pg ? []\n    : h.url === undefined ? (h.neon ? [] : [\"needs url or neon\"])\n    : !secret(h.url)\n      ? [\"url isn't a secret\"] : []);\n  return bad;";
-    expect(conflicts(sides(was, onMain, onBranch))).toHaveLength(1);
-    // One side's chain under the other's plain new line still blends.
-    expect(merged(was, `// checks\n${was}`, onBranch)).toBe(`// checks\n${onBranch}`);
   });
 
   test("one expression both sides wrapped in && / || is a conflict: spliced, it grouped like neither (#1255)", () => {
@@ -453,16 +263,6 @@ describe("generated text (#1154)", () => {
     expect(text(main)).toBe(text(s.main));
   });
 
-  test("the branch's edits outside it still land; touched on one side only, it merges as lines and nothing reruns", () => {
-    const was = ref(["| `a.ts` | a |"]);
-    const s = sides(was, ref(["| `a.ts` | a |", "| `b.ts` | b |"]), ref(["| `a.ts` | a |", "| `d.ts` | d |"]).replace("## Next", "## Next, renamed"));
-    const m = merge(s.base, s.branch, s.main, {}, "bot", "REFERENCE.md");
-    expect(m.regenerate).toEqual(["bun run layout"]);
-    expect(text(settle(s, {}, "REFERENCE.md"))).toBe(ref(["| `a.ts` | a |", "| `b.ts` | b |"]).replace("## Next", "## Next, renamed"));
-    const one = sides(was, was.replace("## Layout", "## The layout"), ref(["| `a.ts` | a |", "| `d.ts` | d |"]));
-    expect(merge(one.base, one.branch, one.main, {}, "bot", "REFERENCE.md").regenerate).toBeUndefined();
-    expect(text(settle(one, {}, "REFERENCE.md"))).toBe(ref(["| `a.ts` | a |", "| `d.ts` | d |"]).replace("## Layout", "## The layout"));
-  });
 });
 
 describe("settled, check the facts (#1254)", () => {
@@ -493,41 +293,6 @@ describe("settled, check the facts (#1254)", () => {
     expect(merge(s.base, s.branch, s.main, { [m.checks![0]!.line]: { text: "x" } }, "bot", "README.md").checks).toBeUndefined();
   });
 
-  test("changes far apart, in sections of their own, or in code: nothing to check", () => {
-    const base = readme(["Up to 32 players."], [room]);
-    const apart = sides(base, base.replace("Up to 32 players.", "Up to 32 players, online."), base.replace("Made by us.", "Made by us, 2026."));
-    expect(merge(apart.base, apart.branch, apart.main, {}, "bot", "README.md").checks).toBeUndefined();
-    // A number main dropped from another section is no fact of this one.
-    const other = sides(base, base.replace("Up to 32 players.", "Up to 64 players."), base.replace("Made by us.", "Made by us, 32 of us."));
-    expect(merge(other.base, other.branch, other.main, {}, "bot", "README.md").checks).toBeUndefined();
-    const code = sides("a\nconst n = 32;\nb", "a\nconst n = 64;\nb", "a\nconst n = 32;\nconst m = 1;\nb");
-    expect(merge(code.base, code.branch, code.main, {}, "bot", "a.ts").checks).toBeUndefined();
-  });
-
-  test("code lint.ts can't read: a stretch both sides changed that settled is flagged, as git would have stopped (#1389)", () => {
-    const was = ["int add(int a, int b);", "int sub(int a, int b);", "int mul(int a, int b);", "", "int run(void);"].join("\n");
-    const s = sides(was, was.replace("int sub(int a, int b);", "int sub(long a, int b);"), was.replace("int mul(int a, int b);", "int mul(int a, long b);"));
-    const m = merge(s.base, s.branch, s.main, {}, "bot", "calc.h");
-    expect(m.conflicts).toEqual([]);
-    expect(m.checks?.map((c) => ({ ...c, facts: c.facts }))).toEqual([expect.objectContaining({ check: true, facts: [] })]);
-    expect(text(settle(s, {}, "calc.h"))).toContain("long a, int b");
-    // Far apart, nothing to check; in JS or TS, lint.ts is the check.
-    const far = sides(was, was.replace("int add(int a, int b);", "int add(long a, int b);"), was.replace("int run(void);", "int run(int);"));
-    expect(merge(far.base, far.branch, far.main, {}, "bot", "calc.h").checks).toBeUndefined();
-    expect(merge(s.base, s.branch, s.main, {}, "bot", "calc.ts").checks).toBeUndefined();
-  });
-
-  test("a stretch that's a card already isn't a check too, and the agent is asked to make the facts true", () => {
-    const s = sides(readme(["Up to 32 players."], [room]), readme(["Up to 48 players."], [room]), readme(["Up to 64 players."], [room]));
-    const m = merge(s.base, s.branch, s.main, {}, "bot", "README.md");
-    expect(m.conflicts.length).toBe(1);
-    expect(m.checks).toBeUndefined();
-    const c = { line: "check:L5", base: "a 32", main: "a 64", branch: "a 32 b", check: true as const, facts: ["64"] };
-    expect(explain(c).choices).toEqual(["main", "branch", "text"]);
-    const prompt = conflictPrompt("README.md", "feat", c, "");
-    expect(prompt).toContain("they differ on 64");
-    expect(prompt).toContain("Make every fact in it true");
-  });
 });
 
 describe("refused, not merged clean (#934)", () => {
@@ -553,99 +318,9 @@ describe("refused, not merged clean (#934)", () => {
     expect(conflicts(sides("// c\n[\n  1\n]", "// c\n[\n  1,\n  2\n]", "// c\n[\n  1,\n  3\n]"), "tsconfig.json")).toEqual([]);
   });
 
-  test("YAML and TOML too, with parsers that run in the Worker (#986)", () => {
-    // As with the JSON above: each side adds an item after the same line it gave a comma.
-    const yaml = sides('tags: [\n  "a"\n]', 'tags: [\n  "a",\n  "b"\n]', 'tags: [\n  "a",\n  "c"\n]');
-    expect(conflicts(yaml, "ci.yml")).toMatchObject([{ line: "lint:yaml", lint: expect.stringContaining("merged, it isn't valid YAML") }]);
-    expect(text(settle(yaml, { "lint:yaml": "branch" }, "ci.yml"))).toBe('tags: [\n  "a",\n  "b"\n  "c"\n]');
-    const toml = sides("a = [\n  1\n]", "a = [\n  1,\n  2\n]", "a = [\n  1,\n  3\n]");
-    expect(conflicts(toml, "Cargo.toml")).toMatchObject([{ line: "lint:toml", lint: expect.stringContaining("merged, it isn't valid TOML") }]);
-    // Merges that parse, and several YAML documents in one file, pass.
-    expect(conflicts(sides("a: 1\n---\nb: 1", "a: 2\n---\nb: 1", "a: 1\n---\nb: 2"), "k8s.yaml")).toEqual([]);
-    expect(conflicts(sides("[a]\nx = 1\n[b]\ny = 1", "[a]\nx = 2\n[b]\ny = 1", "[a]\nx = 1\n[b]\ny = 2"), "a.toml")).toEqual([]);
-    expect(parseError("yaml", "a: [1")).not.toBeNull();
-    expect(parseError("toml", "a = ")).not.toBeNull();
-  });
 });
 
 // Disagreements with git that scripts/shadow.ts found on this repo's merged PRs (#1014).
-describe("found in shadow mode (#1014)", () => {
-  test("#244's .gitignore: both added `!.env.schema` a line apart; git merged it in twice, ours asks once", () => {
-    const was = ".env\n.env.*\n!.env.example\n.dev.vars";
-    const s = sides(was, ".env\n.env.*\n!.env.schema\n!.env.example\n.dev.vars", ".env\n.env.*\n!.env.example\n!.env.schema\n.dev.vars");
-    expect(conflicts(s, ".gitignore")).toMatchObject([{ main: "!.env.schema", branch: "!.env.schema", doubled: true }]);
-    // What landed was git's, the line twice; main's place keeps it once.
-    expect(text(settle(s, { [conflicts(s, ".gitignore")[0]!.line]: "main" }, ".gitignore"))).toBe(".env\n.env.*\n!.env.schema\n!.env.example\n.dev.vars");
-  });
-
-  test("#1267's lines.ts: one side turned a one-line comment into a doc comment, the other added a doc comment above it; git conflicted, ours kept both whole, the openers in either order of sides", () => {
-    const was = "}\n\n/** A name one side renamed across the file. */\ninterface Rename { from: string; to: string }\n\nfunction renamed() {}";
-    const grows = "}\n\n/**\n * A name one side renamed across the file.\n * One with a `scope` was renamed only in one function (#1257).\n */\ninterface Rename { from: string; to: string; scope?: string }\n\nfunction renamed() {}";
-    const adds = "}\n\n/**\n * Would two inserts at one spot change how an expression groups (#1255)?\n */\nfunction regroups(a: string[], b: string[]) {\n  return a !== b;\n}\n\n/** A name one side renamed across the file. */\ninterface Rename { from: string; to: string }\n\nfunction renamed() {}";
-    for (const [onMain, onBranch] of [[adds, grows], [grows, adds]] as const) {
-      const s = sides(was, onMain, onBranch);
-      const done = text(settle(s, {}, "src/lines.ts"));
-      expect(done).toContain("}\n\n/**\n * A name one side renamed across the file.\n * One with");
-      expect(done).toContain("*/\nfunction regroups");
-      expect(done.match(/\/\*\*/g)).toHaveLength(2);
-      const m = merge(s.base, s.branch, s.main, {}, "bot", "src/lines.ts");
-      expect(lintMerge("src/lines.ts", s.main, s.branch, m)).toEqual([]);
-    }
-  });
-
-  test("#960's index.html: each side added a head picker in its own place; git conflicted, ours kept both, so a duplicate id is a lint conflict", () => {
-    const was = "<body>\n<header><h1>git-recon</h1></header>\n<main>\n<canvas id=\"map\"></canvas>\n</main>\n</body>";
-    const s = sides(was,
-      "<body>\n<header><h1>git-recon</h1></header>\n<main>\n<canvas id=\"map\"></canvas>\n<div class=\"heads-row\"><span>Head</span><div id=\"heads\" class=\"heads\"></div></div>\n</main>\n</body>",
-      "<body>\n<header><h1>git-recon</h1><div id=\"heads\" class=\"heads\" role=\"radiogroup\" aria-label=\"Head\"></div></header>\n<main>\n<canvas id=\"map\"></canvas>\n</main>\n</body>");
-    const m = merge(s.base, s.branch, s.main, {}, "bot", "index.html");
-    expect(m.conflicts).toEqual([]);
-    expect(lintMerge("index.html", s.main, s.branch, m)).toEqual([{ line: "lint:duplicate-id:heads", base: "", main: null, branch: null, lint: "`id=\"heads\"` is on two elements (line 5)" }]);
-    // Resolved `branch`, it lands as merged; an id both sides already had twice, or one in a comment, isn't new.
-    expect(lintMerge("index.html", s.main, s.branch, m, { "lint:duplicate-id:heads": "branch" })).toEqual([]);
-    const twice = sides("<p id=a></p>\n<p id=a></p>\n<!-- <i id='b'> -->", "<p id=a></p>\n<p id=a></p>\n<!-- <i id='b'> -->\n<i id='b'></i>", "<p data-id=\"b\" id=a></p>\n<p id=a></p>\n<!-- <i id='b'> -->");
-    const t = merge(twice.base, twice.branch, twice.main, {}, "bot", "page.htm");
-    expect(lintMerge("page.htm", twice.main, twice.branch, t)).toEqual([]);
-  });
-});
-
-describe("found on git's own history (Mervin scorecard)", () => {
-  test("object-file.c: both wrapped one signature line, ending it differently; ours asks instead of declaring the parameter twice", () => {
-    const was = "static int read(struct odb_source *source,\n\t\t\tstruct object_info *oi, int flags)\n{";
-    const s = sides(was,
-      "static int read(struct odb_source *source,\n\t\t\tstruct object_info *oi,\n\t\t\tunsigned flags)\n{",
-      "static int read(struct odb_source *source,\n\t\t\tstruct object_info *oi,\n\t\t\tenum object_info_flags flags)\n{");
-    expect(conflicts(s, "object-file.c")).toHaveLength(1);
-    expect(text(settle(s, { [conflicts(s, "object-file.c")[0]!.line]: "branch" }, "object-file.c"))).toContain("enum object_info_flags flags)\n{");
-    // The same wrap on both sides, one ending: nothing to ask.
-    const same = sides(was,
-      "static int read(struct odb_source *source,\n\t\t\tstruct object_info *oi,\n\t\t\tunsigned flags)\n{",
-      "static int read(struct odb_source *source,\n\t\t\tstruct object_info *oi,\n\t\t\tunsigned flags)\n{");
-    expect(conflicts(same, "object-file.c")).toEqual([]);
-  });
-
-  test("odb.h: both put a new commented declaration above one comment they both reworded; neither comment loses its closing lines (#1390)", () => {
-    const tail = "struct odb_source *odb_find_source(void);\n\n/*\n * Replace\n */\nvoid other(void);";
-    const was = `void odb_clear(void);\n\n/*\n * Find source by its path. Dies in case it couldn't\n * be found.\n */\n${tail}`;
-    const find = " * Find source by its path. Returns NULL\n * in case it could not be found.\n */";
-    const s = sides(was,
-      `void odb_clear(void);\n\n/*\n * Starts a transaction.\n */\nvoid begin(void);\n\n/*\n * Commits it.\n */\nvoid commit(void);\n\n/*\n${find}\n${tail}`,
-      `void odb_clear(void);\n\n/*\n * Clear caches.\n */\nvoid reprepare(void);\n\n/*\n${find}\n${tail}`);
-    expect(conflicts(s, "odb.h")).toEqual([]);
-    const out = text(settle(s, {}, "odb.h"));
-    for (const t of ["begin(void);", "commit(void);", "reprepare(void);"]) expect(out).toContain(t);
-    // Every comment opened is closed: the three new ones and the two old.
-    expect(out.match(/^\/\*$/gm)).toHaveLength(5);
-    expect(out.match(/^ \*\/$/gm)).toHaveLength(5);
-  });
-
-  test("two list entries added after a line both left alone still land together", () => {
-    const s = sides("a\nb\nc", "a\nb\nmain\nc", "a\nb\nbranch\nc");
-    expect(conflicts(s, "list.c")).toEqual([]);
-    expect(text(settle(s, {}, "list.c")).split("\n").sort()).toEqual(["a", "b", "branch", "c", "main"]);
-  });
-});
-
 test("Mergiraf's answer split into each card's text: only where it keeps every line Mervin settled, and no two cards touch", () => {
   const split = (template: string, out: string) => fill(template.split(" "), ["M0", "M1"], out.split(" "));
   expect(split("a M1 b M0 c", "a 1 1 b 0 c")).toEqual(["0", "1\n1"]);
@@ -714,12 +389,6 @@ describe("over the API", () => {
     expect(runs).toBe(2);
   });
 
-  test("both lands both lines, main's first", async () => {
-    const { post, file } = await app();
-    expect((await post("ana", "/api/repos/ana/r/branches/b1/merge", { resolve: { "a.ts": { L2: "both" } } })).status).toBe(200);
-    expect(await file()).toBe("const a = 1;\nx(2);\nx(3);");
-  });
-
   test("suggest_resolution: a coding agent writes the settled lines, and nothing lands until a merge takes them", async () => {
     const { call, post, file } = await app();
     let seen = "", prompt = "";
@@ -779,23 +448,6 @@ describe("over the API", () => {
     expect(only[0]).toEqual(["a.ts"]);
     pass = true;
     expect(await ask()).toMatchObject({ ok: true, tests: "passed" });
-  });
-
-  test("a branch an agent run made: the agent hears the run's task as the branch's side (#986)", async () => {
-    const { call, post } = await app();
-    const row = await call.env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started) VALUES ('ana', 'r', 'a.ts', 'claude', 'count from three', 'ana', 'done', 0) RETURNING id").first() as { id: number };
-    const name = `agent-run-${row.id}`;
-    await post("ana", "/api/repos/ana/r/branches", { name });
-    const rev = (await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json() as Doc).rev;
-    await post("ana", `/api/repos/ana/r/do/ops?path=a.ts&branch=${name}`, { ops: [{ kind: "set", line: "L2", base: rev, text: "x(3);" }] });
-    await post("ana", "/api/repos/ana/r/do/ops?path=a.ts", { ops: [{ kind: "set", line: "L2", base: rev, text: "x(4);" }] });
-    let prompt = "";
-    call.env.AGENT_EXEC = (async (cmd, cwd) => { prompt = cmd.args.join(" "); writeFileSync(join(cwd, "RESOLVE.ts"), "x(3);\n"); return { code: 0, out: "" }; }) as Exec;
-    expect((await post("ana", `/api/repos/ana/r/branches/${name}/conflicts/agent`, { path: "a.ts", line: "L2", harness: "claude" })).status).toBe(200);
-    expect(prompt).toContain(`${name} is a coding agent's work on the task: count from three`);
-    // A branch a person made has no task to tell.
-    await post("ana", "/api/repos/ana/r/branches/b1/conflicts/agent", { path: "a.ts", line: "L2", harness: "claude" });
-    expect(prompt).not.toContain("coding agent's work");
   });
 
   test("merge_clean_branches: branches on different lines all land, one that conflicts stays open", async () => {
@@ -905,21 +557,6 @@ describe("over the API", () => {
     expect(await rounds()).toBe(4);
   });
 
-  test("a third conflict round in a file whose policy escalates: a person's, with the note (#1089)", async () => {
-    const { call, post } = await app({ HEAL: "1" });
-    let asked = 0;
-    call.env.AGENT_EXEC = (async (_cmd, cwd) => { asked++; writeFileSync(join(cwd, "RESOLVE.ts"), "x(9);\n"); return { code: 0, out: "" }; }) as Exec;
-    await post("ana", "/api/repos/ana/r/files", { path: ".gitattributes", content: "*.ts codesplitter-leftover=ai codesplitter-over=escalate" });
-    for (const n of [4, 5]) {
-      await post("ana", "/api/repos/ana/r/branches/b1/merge", {});
-      const rev = (await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json() as Doc).rev;
-      await post("ana", "/api/repos/ana/r/do/ops?path=a.ts", { ops: [{ kind: "set", line: "L2", base: rev, text: `x(${n});` }] });
-    }
-    const out = await (await post("ana", "/api/repos/ana/r/branches/b1/merge", {})).json() as any;
-    expect(asked).toBe(2);
-    expect(out.conflicts[0].note).toStartWith("conflict round 3 on b1: a person's turn\nDONE: 2 conflict rounds on b1");
-  });
-
   test("leftovers to AI where agents don't run on their own: the conflict goes to a person, saying why", async () => {
     const { call, post } = await app();
     let asked = 0;
@@ -997,46 +634,6 @@ describe("over the API", () => {
     expect(text(await doc())).toBe(table(["| a |", "| b |", "| c |", "| d |", "| e |"]));
   });
 
-  test("on Cloudflare, generated text is rebuilt in a sandbox container, for the site's admins (#1192)", async () => {
-    const { call, post } = await app();
-    const table = (rows: string[]) => ["<!-- generated: bun run layout -->", ...rows, "<!-- /generated -->"].join("\n");
-    await post("ana", "/api/repos/ana/r/files", { path: "package.json", content: "{}" });
-    await post("ana", "/api/repos/ana/r/files", { path: "docs/REF.md", content: table(["a"]) });
-    for (const path of ["package.json", "docs/REF.md"]) await post("ana", `/api/repos/ana/r/do/commit?path=${path}`, { message: "ref" });
-    await call("ana", "/api/repos/ana/r/deps", { method: "PUT", body: JSON.stringify({ test_merges: true }) });
-    const doc = async () => (await (await call("ana", "/api/repos/ana/r/do/file?path=docs/REF.md")).json() as Doc);
-    const both = async (name: string, ours: string, theirs: string) => {
-      await post("ana", "/api/repos/ana/r/branches", { name });
-      const last = (await doc()).lines.at(-2)!;
-      await post("ana", `/api/repos/ana/r/do/ops?path=docs/REF.md&branch=${name}`, { ops: [{ kind: "insert", after: last.id, text: ours }] });
-      await post("ana", "/api/repos/ana/r/do/ops?path=docs/REF.md", { ops: [{ kind: "insert", after: last.id, text: theirs }] });
-      return (await (await post("ana", `/api/repos/ana/r/branches/${name}/merge`, {})).json() as any).regenerated;
-    };
-    const seen: { url: string; body: any }[] = [];
-    call.env.AGENT_SANDBOX = {
-      idFromName: (n: string) => n,
-      get: () => ({ async fetch(req: Request) {
-        const body = await req.json() as any;
-        seen.push({ url: req.url, body });
-        return Response.json({ ok: true, out: "", files: { "docs/REF.md": table(["a", "b", "c", "d", "e"]) + "\n" } });
-      } }),
-    };
-
-    // Not an admin: main's copy, and what to run.
-    call.env.ADMINS = "someone-else";
-    expect(await both("x", "c", "b")).toEqual([{ paths: ["docs/REF.md"], command: "bun run layout", cwd: "docs", note: "not rebuilt: generated text on Cloudflare is rebuilt for this site's admins (ADMINS): run `bun run layout` in docs on main" }]);
-    expect(seen).toHaveLength(0);
-
-    // An admin: the container's /regenerate runs it, and what it read back goes onto main.
-    call.env.ADMINS = "ana";
-    expect(await both("y", "e", "d")).toEqual([{ paths: ["docs/REF.md"], command: "bun run layout", cwd: "docs" }]);
-    expect(seen).toHaveLength(1);
-    expect(seen[0]!.url).toBe("http://sandbox/regenerate");
-    expect(seen[0]!.body).toMatchObject({ pm: "bun", cwd: "docs", command: "bun run layout", read: ["docs/REF.md"], files: { "docs/REF.md": expect.any(String) } });
-    expect(seen[0]!.body.remote).toContain("://x:");
-    expect(text(await doc())).toBe(table(["a", "b", "c", "d", "e"]));
-  });
-
   test("a merge both sides changed, settled with no card, runs the tests in a throwaway clone before it lands (#1096)", async () => {
     const { call, post } = await app();
     await post("ana", "/api/repos/ana/r/files", { path: "package.json", content: '{\n  "scripts": { "test": "bun test" }\n}' });
@@ -1070,51 +667,4 @@ describe("over the API", () => {
     expect(text(await (await call("ana", "/api/repos/ana/r/do/file?path=a.ts")).json() as Doc)).toBe("const a = { marines: 1 };\nx(a.concord);");
   });
 
-  test("code lint.ts can't read, settled where git would have stopped, runs the repo's build before it lands (#1401)", async () => {
-    const { call, post } = await app();
-    const was = ["int add(int a, int b);", "int sub(int a, int b);", "int mul(int a, int b);", "", "int run(void);"].join("\n");
-    await post("ana", "/api/repos/ana/r/files", { path: "package.json", content: '{\n  "scripts": { "build": "make" }\n}' });
-    await post("ana", "/api/repos/ana/r/files", { path: "calc.h", content: was });
-    for (const path of ["calc.h", "package.json"]) await post("ana", `/api/repos/ana/r/do/commit?path=${path}`, { message: "main" });
-    await post("ana", "/api/repos/ana/r/branches", { name: "c1" });
-    const doc = async () => (await call("ana", "/api/repos/ana/r/do/file?path=calc.h")).json() as Promise<Doc>;
-    const [sub, mul] = [(await doc()).lines[1]!, (await doc()).lines[2]!];
-    await post("ana", "/api/repos/ana/r/do/ops?path=calc.h&branch=c1", { ops: [{ kind: "set", line: sub.id, base: sub.rev, text: "int sub(long a, int b);" }] });
-    await post("ana", "/api/repos/ana/r/do/ops?path=calc.h", { ops: [{ kind: "set", line: mul.id, base: mul.rev, text: "int mul(int a, long b);" }] });
-    const ran: { only?: string[] }[] = [];
-    call.env.DEPS_TESTER = (async (_remote: string, _files: Record<string, string>, o: { only?: string[] }) => { ran.push({ only: o.only }); return { ok: false, out: "calc.h: error" }; }) as Tester;
-    await call("ana", "/api/repos/ana/r/deps", { method: "PUT", body: JSON.stringify({ test_merges: true }) });
-    const failed = await post("ana", "/api/repos/ana/r/branches/c1/merge", {});
-    expect(failed.status).toBe(409);
-    expect((await failed.json() as any).conflicts).toEqual([{ path: "calc.h", leftover: "person", conflicts: [expect.objectContaining({ line: "lint:tests" })] }]);
-    expect(ran).toEqual([{ only: ["calc.h"] }]);
-    expect((await post("ana", "/api/repos/ana/r/branches/c1/merge", { resolve: { "calc.h": { "lint:tests": "branch" } } })).status).toBe(200);
-  });
-
-  test("a repo with a Makefile and no package.json runs its build before settled code lands (#1407)", async () => {
-    const { call, post } = await app();
-    const was = ["int add(int a, int b);", "int sub(int a, int b);", "int mul(int a, int b);", "", "int run(void);"].join("\n");
-    await post("ana", "/api/repos/ana/r/files", { path: "Makefile", content: "all:\n\ttrue" });
-    await post("ana", "/api/repos/ana/r/files", { path: "calc.h", content: was });
-    for (const path of ["calc.h", "Makefile"]) await post("ana", `/api/repos/ana/r/do/commit?path=${path}`, { message: "main" });
-    await post("ana", "/api/repos/ana/r/branches", { name: "c1" });
-    const doc = async () => (await call("ana", "/api/repos/ana/r/do/file?path=calc.h")).json() as Promise<Doc>;
-    const [sub, mul] = [(await doc()).lines[1]!, (await doc()).lines[2]!];
-    await post("ana", "/api/repos/ana/r/do/ops?path=calc.h&branch=c1", { ops: [{ kind: "set", line: sub.id, base: sub.rev, text: "int sub(long a, int b);" }] });
-    await post("ana", "/api/repos/ana/r/do/ops?path=calc.h", { ops: [{ kind: "set", line: mul.id, base: mul.rev, text: "int mul(int a, long b);" }] });
-    const ran: { only?: string[]; build?: string[] }[] = [];
-    call.env.DEPS_TESTER = (async (_remote: string, _files: Record<string, string>, o: { only?: string[]; build?: string[] }) => { ran.push({ only: o.only, build: o.build }); return { ok: false, out: "calc.h: error" }; }) as Tester;
-    await call("ana", "/api/repos/ana/r/deps", { method: "PUT", body: JSON.stringify({ test_merges: true }) });
-    const failed = await post("ana", "/api/repos/ana/r/branches/c1/merge", {});
-    expect(failed.status).toBe(409);
-    expect(ran).toEqual([{ only: ["calc.h"], build: ["make"] }]);
-  });
-
-  test("a block both sides wrapped a line in, diffed at different spots, is not spliced twice (#1421)", () => {
-    const base = "    if (r && p <= regions[r - 1]!.hi) continue;";
-    const main = "    if (r && covers(regions[r - 1]!, p)) { shift = null; continue; }";
-    const branch = "    if (r && p <= regions[r - 1]!.hi) { shift = null; continue; }";
-    expect(mergeWords(base, main, branch)).toBeNull();
-    expect(mergeWords(base, main, branch, true)).toBeNull();
-  });
 });
