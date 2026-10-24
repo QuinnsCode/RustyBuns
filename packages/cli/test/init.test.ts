@@ -997,3 +997,14 @@ test("init: SvelteKit on adapter-cloudflare runs its Worker build on the desktop
   expect(n.out).toMatch(/adapter-cloudflare.*issues\/318/);
   expect(existsSync(join(auto.dir, "rustybuns.config.ts"))).toBe(false);
 });
+
+test("drift: --repair changes the live account, so without a terminal it is refused; --repair on any other command is a usage error", () => {
+  const config = `export default { name: "shop", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] }, bindings: { KV: { type: "kv" } }, targets: { edge: { provider: "cloudflare" } } };\n`;
+  const p = project({ "package.json": VITE, "rustybuns.config.ts": config, "src/worker.ts": "export default {};\n" });
+  const repair = p.run("drift", "--repair", "--stage", "preview-1");
+  expect(repair.code).toBe(2);
+  expect(repair.out).toContain("needs a yes at the terminal");
+  const plan = p.run("plan", "--repair", "--stage", "preview-1");
+  expect(plan.code).toBe(2);
+  expect(plan.out).toContain("--repair is for drift only");
+});

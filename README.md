@@ -151,6 +151,8 @@ An operation is one function with a name, a schema and a permission. HTTP, MCP, 
 
 The deploy side is a typed Alchemy + Effect stack. Cloudflare, Hetzner and Railway are each a typed Layer, so swapping a target is one line of config and the compiler tells you what's missing before anything is created. `plan` and `deploy` print every billable resource, marked fixed or usage, and a large Hetzner box is refused unless the config says so. `destroy` removes everything it created.
 
+`plan` only diffs your config against Alchemy's state. `drift` goes the other way: it re-reads the live account and shows what changed outside the stack (a dashboard edit, a `wrangler deploy`, a deleted resource). It changes nothing; `drift --repair` puts the account back to the last deploy, after the same two-step yes as a real destroy, and is refused with no terminal.
+
 Trying someone else's repo? `plan --offline` builds and typechecks with no login at all and lists the whole stack as creates, so neither their account nor yours is touched.
 
 The monthly bill comes from the fan-out, so the desktop and box hosts count every binding call per request, cron tick and queue message. `plan --usage` turns a run of that into a monthly estimate and flags a cron that keeps a Durable Object awake around the clock ([COSTS.md](COSTS.md#what-it-would-cost-a-month-plan---usage)). See [Typed deploys](REFERENCE.md#typed-deploys-thanks-to-effect), [Deploy to Hetzner](REFERENCE.md#deploy-to-hetzner), [Deploy to Railway](REFERENCE.md#deploy-to-railway) and [COSTS.md](COSTS.md).

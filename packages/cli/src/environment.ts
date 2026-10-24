@@ -31,7 +31,7 @@ export const environmentOf = (cfg: Cfg, stage: string): Environment => (realReas
 export function environmentBanner(cfg: Cfg, stage: string, sub: string): string {
   const why = realReasons(cfg, stage);
   const head = why.length
-    ? `environment: REAL (stage ${stage}): this can hold customer data.\n${why.map((w) => `  because ${w}`).join("\n")}\n  ${sub === "destroy" ? "destroy" : "deploy"} only with a plan you have read; the report below says what survives a destroy.`
+    ? `environment: REAL (stage ${stage}): this can hold customer data.\n${why.map((w) => `  because ${w}`).join("\n")}\n  ${sub === "destroy" ? "destroy" : sub === "drift" ? "repair" : "deploy"} only with a plan you have read; the report below says what survives a destroy.`
     : `environment: EPHEMERAL (stage ${stage}): everything is made new with names Alchemy picks, nothing already on the account is looked up or changed, and \`rustybuns destroy --stage ${stage}\` removes it all.`;
   const report = protectReport(cfg, sub);
   return report ? `${head}\n${report}` : head;
@@ -52,6 +52,10 @@ export function realDestroyProblem(sub: string, cfg: Cfg, stage: string, adoptEx
   const gone = destroyedNames(cfg);
   if (!gone.length) return null;
   return `stage ${stage} is a REAL environment and this destroy deletes, with their data: ${gone.join(", ")}. Pass --real if that is what you want, or set protect: true on them and deploy once.`;
+}
+
+export function driftRepairQuestion(cfg: Cfg, stage: string): string {
+  return `drift --repair changes the live account for stage ${stage}: every resource that differs from the last deploy is put back, and one that is gone is made again (empty, if it held data).\nIt does not touch your code. Run \`rustybuns drift\` first to see what would change. Repair now? [y/N] `;
 }
 
 export function realDestroyQuestion(cfg: Cfg): string {
