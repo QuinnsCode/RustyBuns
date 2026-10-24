@@ -56,7 +56,7 @@ function resource(name: string, b: Binding, adopt: boolean): string | null {
         `});`,
       ].join("\n");
       // The origin is the secret's URL, read as the stack deploys; the password stays redacted.
-      return `export const ${id} = Cloudflare.Hyperdrive.Connection("${name}", { ${named}origin: Config.Redacted(${JSON.stringify(b.urlSecret)}).pipe(Config.map(pgOrigin))${caching} });`;
+      return `export const ${id} = Cloudflare.Hyperdrive.Connection("${name}", { ${named}origin: Config.redacted(${JSON.stringify(b.urlSecret)}).pipe(Config.map(pgOrigin))${caching} });`;
     }
     case "workflow":
       // Hosted by `main` unless scriptName says otherwise; Alchemy registers it once the Worker exists.
@@ -200,8 +200,8 @@ export function generateAlchemy(c: RustyBunsConfig): string {
           : renamedFrom ? `, transferredFrom: ${JSON.stringify(renamedFrom)}` : ""} })`);
       else if (b.type === "var") envEntries.push(`${name}: ${JSON.stringify(b.value)}`);
       else if (b.type === "secret" && !b.boxOnly) envEntries.push(minted.has(name) ? `${name}: ${ident(name)}`
-        : b.optional ? `...(process.env.${name} ? { ${name}: Config.Redacted("${name}") } : {})`
-        : `${name}: Config.Redacted("${name}")`);
+        : b.optional ? `...(process.env.${name} ? { ${name}: Config.redacted("${name}") } : {})`
+        : `${name}: Config.redacted("${name}")`);
     }
     lines.push(``);
 
