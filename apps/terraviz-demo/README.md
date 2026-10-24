@@ -47,6 +47,17 @@ The first run takes a few minutes. The [trial harness](../../scripts/trial-githu
 
 Tried on upstream commit `8cdbb2c` (2026-10-22). TerraViz moves fast, so a newer commit may need a fix on our side. If it does, that's a Rusty Buns gap, not a TerraViz bug.
 
+## Shared Sphere: everyone on one globe
+
+Rusty Buns' first addition to TerraViz rather than a port of it: `bun apps/terraviz-demo/run.ts --shared` boots the same app with the people in the room on the globe. Open the link in a second window (or another browser profile), add `?room=class-7b&name=Ada` to pick a room and a name, and:
+
+- **Everyone's pointer shows on everyone's globe**, as a coloured dot with their name, hidden when it's round the back.
+- **Anyone can press Lead.** The others' globes follow the lead's camera and load the lead's dataset with TerraViz's own loader, the way a docent drives a Science On a Sphere room. A follower who drags their own globe stops following, and one click picks the lead back up. Anyone can take the lead; it's a classroom, not a contest.
+
+Still no TerraViz file changes. [`sphere/`](sphere) wraps TerraViz's generated Worker: one path goes to a `SphereRoom` Durable Object per room, one serves the page script, and every HTML page gets one `<script>` tag (HTMLRewriter). The script finds the globe through the `window.app` TerraViz sets itself. [`sphere/build.ts`](sphere/build.ts) builds that host beside the plain one from the config `init` wrote, changed in memory (the entry, a `SPHERE` binding), so `rustybuns.config.ts` stays as it was.
+
+On the desktop the room is Rusty Buns' local Durable Object twin with hibernating WebSockets. The same class is a real Durable Object on Cloudflare, so a deployed TerraViz would put a whole class on one globe; that deploy hasn't been tried. Two limits: the desktop host still listens on loopback behind its launch token, so another machine can't join it yet, and a TerraViz release that renames `window.app`, its `viewports` or `loadDataset` would leave the panel saying "connecting" with nothing broken underneath.
+
 ## Kept working
 
 `.github/workflows/terraviz-weekly.yml` runs a pinned TerraViz commit (`TERRAVIZ_SHA`) through the trial every Monday and opens a `ci-terraviz` issue if it stops serving. The pin keeps TerraViz's own changes from failing it; bump the SHA on purpose. Locally: `bun scripts/trial-github.ts --local --check zyra-project/terraviz@<sha>`.
