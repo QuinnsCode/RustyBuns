@@ -11,7 +11,7 @@ pnpm exec rustybuns build desktop       # dist/<name>-<os>-<arch>: one file, dou
 pnpm exec rustybuns deploy              # Cloudflare, plus a Hetzner or Railway box
 ```
 
-> **Alpha, `0.1.12`.** Desktop works on macOS and Linux. The Cloudflare deploy is verified end to end. The Railway and Hetzner boxes are verified live. A brand-new release not installing? Your package manager's minimum release age is holding it back; [Getting started](GETTING_STARTED.md) has the one-minute fix.
+> **Alpha, `0.1.12`.** Build on macOS or Linux (a Linux server will do); it cross-compiles the desktop binary for Mac, Windows and Linux. The Cloudflare deploy is verified end to end. The Railway and Hetzner boxes are verified live. A brand-new release not installing? Your package manager's minimum release age is holding it back; [Getting started](GETTING_STARTED.md) has the one-minute fix.
 
 ## The idea
 
@@ -330,7 +330,8 @@ We aim for WCAG 2.2 AA. The reading settings and theme are also WebMCP tools, so
 
 ## What's the catch?
 
-- **No native menus, tray, installers, signing or auto-update yet.** If you need a native-feeling window today, use Electron or Tauri.
+- **No native menus, tray, installers or auto-update yet.** If you need a native-feeling window today, use Electron or Tauri. Mac signing and notarization are built in (`build desktop --sign`, `--notarize`) and need only an Apple Developer ID; Windows signing isn't built yet.
+- **You build on macOS or Linux, not Windows.** Windows is a target, not a build machine: build it from a Mac or a Linux server. A Rust cdylib cross-compiles only to Linux (in Docker); wasm crates go anywhere.
 - **The binary is about 60 to 110 MB**, depending on the app, because Bun is inside it. It's one file with no install step, but it isn't small.
 - **It renders in the user's Chrome** (or default browser), not a bundled one.
 - **The twins aren't workerd.** They're the production runtime for the laptop and the box, not a copy of the Workers runtime. Limits match; a few bindings (Vectorize, Workers AI, the Worker Loader) are stand-ins. `rustybuns dev` still runs workerd for edge work. The full list is in [Where the twins differ from the edge](ADOPTION.md#where-the-twins-differ-from-the-edge).
