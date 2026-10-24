@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { Budget, detectDependencyFiles, mergeTable, proveMerge, settleDeps, type Docs, type Proof } from "../src/dep-docs.ts";
+import { Budget, detectDependencyFiles, mergeTable, npmDocs, proveMerge, settleDeps, type Docs, type Proof } from "../src/dep-docs.ts";
 
 const pkg = (o: object) => JSON.stringify(o, null, 2) + "\n";
 
@@ -66,4 +66,13 @@ test("the sandbox proof tears down on success, a failed build and a throw, and r
   expect(destroyed).toBe(3);
   expect(await proveMerge(open(async () => ({ ok: true, out: "" })), {}, b)).toEqual({ ok: null, skipped: "sandbox budget spent" });
   expect(destroyed).toBe(3);
+});
+
+test("the npm registry answering with the wrong shape is no docs, not a crash", async () => {
+  for (const body of [null, [], "x", { versions: [], "dist-tags": 5, readme: 7 }, { versions: { "2.0.0": "deprecated" } }]) {
+    const docs = npmDocs((async () => Response.json(body)) as unknown as typeof fetch);
+    expect(await docs("npm", "left-pad", "1.0.0", "2.0.0")).toEqual({ breaking: [], fixes: [] });
+  }
+  const real = npmDocs((async () => Response.json({ versions: { "2.0.0": { deprecated: "use right-pad" } } })) as unknown as typeof fetch);
+  expect((await real("npm", "left-pad", "1.0.0", "2.0.0"))?.breaking).toEqual(["is deprecated: use right-pad"]);
 });

@@ -27,15 +27,16 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   if (pathname === "/health") return json({ ok: true });
   if (pathname !== "/pack") return json({ error: "not found" }, 404);
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
-  let cart: { items?: Line[]; line_items?: Line[] };
+  let cart: unknown;
   let boxes: StoreBox[];
   let dims: Record<string, Dims>;
   try {
-    cart = await req.json() as typeof cart;
+    cart = await req.json();
     boxes = JSON.parse(env.STORE_BOXES ?? "[]");
     dims = JSON.parse(env.STORE_DIMS ?? "{}");
   } catch { return json({ error: "body or store config is not JSON" }, 400); }
-  const lines = cart?.items ?? cart?.line_items;
+  const c = (cart && typeof cart === "object" ? cart : {}) as { items?: unknown; line_items?: unknown };
+  const lines = c.items ?? c.line_items;
   if (!Array.isArray(lines)) return json({ error: "send a Shopify cart: { items: [...] }" }, 400);
   const { items, missing } = toItems(lines, dims);
   if (missing.length) return json({ error: "no size for these products", missing }, 422);

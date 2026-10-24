@@ -15,7 +15,8 @@ export async function handle(req: Request, conf: Env): Promise<Response | null> 
   const { pathname } = new URL(req.url);
 
   if (pathname === "/lease" && req.method === "POST") {
-    return lease(conf, await req.json().catch(() => null) as never);
+    const body: unknown = await req.json().catch(() => null);
+    return lease(conf, body !== null && typeof body === "object" && !Array.isArray(body) ? body : null);
   }
 
   // Public and thin: up or down, nothing about who has paid. The detail is on the admin page.
