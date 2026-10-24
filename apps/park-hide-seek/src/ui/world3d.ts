@@ -24,13 +24,13 @@ interface Remote extends PropBody { ch: Character; x: number; y: number; yaw: nu
 const SKY: Record<TimeOfDay, { top: string; sky: string; fog: string; ridge: string; near: number; far: number; hemi: [string, string, number]; sun: [string, number]; elev: number; exposure: number }> = {
   day: { top: "#6fa6bd", sky: "#f1dcb0", fog: "#e2cfa4", ridge: "#6e7f6a", near: 60, far: 420, hemi: ["#fff1d6", "#5b6236", 0.95], sun: ["#ffe6bb", 2.5], elev: 0.9, exposure: 1.05 },
   dusk: { top: "#2f2549", sky: "#f2803f", fog: "#cf6a45", ridge: "#5a2c3a", near: 30, far: 240, hemi: ["#ffb48a", "#3a2430", 0.62], sun: ["#ff9a52", 1.6], elev: 0.1, exposure: 1.15 },
-  night: { top: "#02050d", sky: "#13284a", fog: "#0c1a30", ridge: "#08101f", near: 8, far: 95, hemi: ["#4f6ea8", "#0a0c14", 0.34], sun: ["#9fc0ff", 0.25], elev: 0.7, exposure: 1 },
+  night: { top: "#0a1530", sky: "#2a4678", fog: "#1d3254", ridge: "#16233d", near: 14, far: 150, hemi: ["#7f9fd8", "#1c2230", 0.85], sun: ["#b4ccff", 0.7], elev: 0.7, exposure: 1.15 },
 };
 /** What cloud and fog wash the sky towards. */
 const GREY: Record<TimeOfDay, { cloud: string; mist: string }> = {
   day: { cloud: "#8f989f", mist: "#b8bfc4" },
   dusk: { cloud: "#6e6466", mist: "#8c7f7a" },
-  night: { cloud: "#05070b", mist: "#0d1014" },
+  night: { cloud: "#1a2230", mist: "#232b38" },
 };
 /** Rain and snow fall in a box this big round the camera. */
 const PRECIP = { half: 22, height: 14, rain: 3500, snow: 2200 };
