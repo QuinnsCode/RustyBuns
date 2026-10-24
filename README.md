@@ -11,7 +11,7 @@ pnpm exec rustybuns build desktop       # dist/<name>-<os>-<arch>: one file, dou
 pnpm exec rustybuns deploy              # Cloudflare, plus a Hetzner or Railway box
 ```
 
-> **Alpha, `0.1.12`.** Desktop works on macOS and Linux. The Cloudflare deploy is verified end to end. The Railway and Hetzner boxes are verified live. A brand-new release not installing? Your package manager's minimum release age is holding it back; [Getting started](GETTING_STARTED.md) has the one-minute fix.
+> **Alpha, `0.1.12`.** Build on macOS or Linux (a Linux server will do); it cross-compiles the desktop binary for Mac, Windows and Linux. The Cloudflare deploy is verified end to end. The Railway and Hetzner boxes are verified live. A brand-new release not installing? Your package manager's minimum release age is holding it back; [Getting started](GETTING_STARTED.md) has the one-minute fix.
 
 ## The idea
 
@@ -23,7 +23,7 @@ That makes it a framework for frameworks. It doesn't replace Vite, React, RWSDK 
 
 ## Why a team can bet on it
 
-- **No lock-in.** It's a dev dependency. It never edits `src/`, never ships in your bundle, and everything it asks you to adopt is a shape Cloudflare already standardized. Leaving is a `git rm`.
+- **Your app isn't locked in.** It's a dev dependency. It never edits `src/`, never ships in your bundle, and everything it asks you to adopt is a shape Cloudflare already standardized. Leaving is a `git rm`. The tool itself is a Bun program, so building needs Bun 1.4+ even on a Node team; your users never install it.
 - **Nothing costs money until you say so.** The whole stack boots on your disk. `plan` prints every billable resource, `deploy` refuses to run without a matching plan, and `destroy` removes what it created.
 - **Typed end to end.** The config types your bindings, and the deploy is a typed stack, so a missing piece fails the compiler before a server exists.
 - **Tried on real apps.** The examples below are real apps, and [FRAMEWORK_COVERAGE.md](FRAMEWORK_COVERAGE.md) counts how many public GitHub apps per framework boot unchanged.
@@ -330,9 +330,13 @@ We aim for WCAG 2.2 AA. The reading settings and theme are also WebMCP tools, so
 
 ## What's the catch?
 
-- **No native menus, tray, installers, signing or auto-update yet.** If you need a native-feeling window today, use Electron or Tauri.
+- **No native menus, tray, installers or auto-update yet.** If you need a native-feeling window today, use Electron or Tauri. Mac signing and notarization are built in (`build desktop --sign`, `--notarize`) and need only an Apple Developer ID; Windows signing isn't built yet.
+- **You build on macOS or Linux, not Windows.** Windows is a target, not a build machine: build it from a Mac or a Linux server. A Rust cdylib cross-compiles only to Linux (in Docker); wasm crates go anywhere.
+- **Windows is the least tested.** CI boots one app with no backend on Windows on Arm; nothing with a backend runs on Windows in CI yet. If you build in WSL or run a binary on Windows (x64 or Arm), [tell us](https://github.com/QuinnsCode/RustyBuns/issues/new) what worked and what didn't.
 - **The binary is about 60 to 110 MB**, depending on the app, because Bun is inside it. It's one file with no install step, but it isn't small.
 - **It renders in the user's Chrome** (or default browser), not a bundled one.
+- **The twins aren't workerd.** They're the production runtime for the laptop and the box, not a copy of the Workers runtime. Limits match; a few bindings (Vectorize, Workers AI, the Worker Loader) are stand-ins. `rustybuns dev` still runs workerd for edge work. The full list is in [Where the twins differ from the edge](ADOPTION.md#where-the-twins-differ-from-the-edge).
+- **Alpha, one maintainer.** The examples are the test bed, not a portfolio. More in [Questions people ask](ADOPTION.md#questions-people-ask).
 
 If what you have is a web app with a backend, and you want it on a laptop, on the edge *and* on a server, nothing else does all three from one codebase.
 
