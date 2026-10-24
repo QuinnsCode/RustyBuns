@@ -167,8 +167,10 @@ import {
   pendingInvites,
   repoInviteRoutes,
 } from "./invites.ts";
+import { csProps, edge } from "./codemode.ts";
 import { openapi } from "./openapi.ts";
 import {
+  bridgeCall,
   catalogue,
   mcp,
 } from "./mcp.ts";
@@ -250,6 +252,12 @@ import {
 } from "./mirror.ts";
 import { LLMS_TXT, ROBOTS_TXT } from "./discover.ts";
 export { FileDurableObject } from "./file-do.ts";
+// The CS binding of a code-mode program (codemode.ts): on the edge a stub of this class, under Bun nothing.
+const cf = await import("cloudflare:workers").then((m) => m as unknown as { WorkerEntrypoint: new (ctx: unknown, env: unknown) => { env: unknown; ctx: { props: unknown } }; exports: Record<string, ((o: { props: unknown }) => unknown) | undefined> }, () => null);
+export const CSBridge = cf && class extends cf.WorkerEntrypoint {
+  call(name: string, json: string) { return bridgeCall(csProps(this.ctx.props), name, json, (r) => app.fetch(r, this.env as Env)); }
+};
+if (cf) edge.stub = (props) => cf.exports.CSBridge?.({ props });
 import { UPDATE_RETRY_S, UPDATING } from "./file-do.ts";
 export { GameRoom } from "./game-do.ts";
 export { RepoSearch } from "./search.ts";
