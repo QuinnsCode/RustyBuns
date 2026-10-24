@@ -77,7 +77,7 @@ export interface Prop {
 }
 
 /** Above this rise per metre the ground is a cliff: nobody walks up it. */
-export const CLIFF = 1.25;
+export const CLIFF = 0.85;
 
 export class Zone {
   readonly data: ZoneData;
