@@ -140,6 +140,13 @@ export const csStub = cf && ((props: unknown) => cf.exports.CSBridge?.({ props }
 /** The caller a binding answers as: where to call back, with which token, and what that token may use. */
 export interface CSProps { origin: string; auth: string; scope?: string }
 
+/** The props a stub arrived with, checked: they cross a process boundary, so no field is taken on trust. */
+export function csProps(x: unknown): CSProps {
+  const p = (x && typeof x === "object" ? x : {}) as { origin?: unknown; auth?: unknown; scope?: unknown };
+  if (typeof p.origin !== "string" || typeof p.auth !== "string") throw new Error("CSBridge needs the caller's origin and token");
+  return { origin: p.origin, auth: p.auth, scope: typeof p.scope === "string" ? p.scope : undefined };
+}
+
 /** One tool's answer to a program's call: the HTTP call it stands for, made as the caller. Only plain values cross. */
 export async function answer(tools: Tool[], run: (t: Tool, args: Record<string, unknown>) => Promise<ToolAnswer>, name: string, json: string): Promise<ToolAnswer> {
   const fail = (status: number, error: string): ToolAnswer => ({ status, text: JSON.stringify({ error }) });
