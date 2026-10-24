@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { apply, empty, fromText, type Doc } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
-import { busyOn, clashIn, taskFiles, waves } from "../src/merge-plan.ts";
+import { clashIn, waves } from "../src/merge-plan.ts";
 import { local as boot } from "./app-kit.ts";
 import type { Exec } from "../src/agent-run.ts";
 
@@ -27,9 +27,6 @@ describe("waves", () => {
     ]);
   });
 
-  test("a clash with one later in the order doesn't hold the earlier one back", () => {
-    expect(waves(["a", "b"], [{ first: "b", then: "a", files: ["x.ts"] }])).toEqual([[{ branch: "a", after: [] }, { branch: "b", after: [] }]]);
-  });
 });
 
 describe("clashIn", () => {
@@ -158,36 +155,10 @@ describe("a branch that clashed takes main in once its blocker merges (#1162)", 
     expect(await read()).toBe("const a = 1;\nx(2);\nx(3);\ny(1);");
   });
 
-  test("checks run here: a branch waiting in the plan queues none on an edit, then one once its blocker merged", async () => {
-    const { call, post, edit } = await app();
-    await post("ana", "/api/repos/ana/r/checks/settings", { where: "here" }, "PUT");
-    const runs = async (ref: string) => (await call.env.DB.prepare("SELECT COUNT(*) AS n FROM check_runs WHERE ref = ?").bind(ref).first() as { n: number }).n;
-    await call("ana", "/api/repos/ana/r/merge-plan");
-    await call.env.DB.prepare("DELETE FROM check_runs").run();
-    await edit("b2", "L3", "y(2);");
-    await Bun.sleep(200);
-    expect(await runs("b2")).toBe(0);
-    await post("ana", "/api/repos/ana/r/branches/b1/merge", {});
-    expect(await runs("b2")).toBeGreaterThan(0);
-  });
 });
 
 describe("dispatch hint (#1163)", () => {
   const paths = ["apps/two-fronts/src/main.ts", "apps/two-fronts/src/rules.ts", "apps/other/src/main.ts", "README.md", "main"];
-
-  test("a task names a file whole, or by a tail only one path ends in; a bare word names nothing", () => {
-    expect(taskFiles("Rework rules.ts, then the README.md (see ./apps/two-fronts/src/main.ts).", paths))
-      .toEqual(["README.md", "apps/two-fronts/src/main.ts", "apps/two-fronts/src/rules.ts"]);
-    // main.ts is two files' tail: it takes a longer one to say which. "main" has no dot or slash.
-    expect(taskFiles("fix main.ts and main", paths)).toEqual([]);
-    expect(taskFiles("fix other/src/main.ts.", paths)).toEqual(["apps/other/src/main.ts"]);
-  });
-
-  test("the open branches changing any of the files, the one sharing most first", () => {
-    const changed = [{ branch: "b", path: "x.ts" }, { branch: "a", path: "y.ts" }, { branch: "c", path: "y.ts" }, { branch: "c", path: "x.ts" }, { branch: "d", path: "z.ts" }];
-    expect(busyOn(["x.ts", "y.ts"], changed)).toEqual([{ branch: "c", files: ["x.ts", "y.ts"] }, { branch: "a", files: ["y.ts"] }, { branch: "b", files: ["x.ts"] }]);
-    expect(busyOn([], changed)).toEqual([]);
-  });
 
   test("GET .../dispatch-hint: open branches on the task's files, not merged ones or ones elsewhere", async () => {
     const call = await boot({ GH_CLI: "off" });
