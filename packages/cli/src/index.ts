@@ -47,7 +47,7 @@ import { deployedWorker, redactQueryStrings } from "./redact.ts";
 import { tidySourceMaps } from "./sourcemaps.ts";
 import { formatOfflinePlan, plannedResources } from "./offline-plan.ts";
 import { infraGraph, infraText } from "./infra.ts";
-import { ephemeralProblem, environmentBanner, realDestroyProblem, realDestroyQuestion } from "./environment.ts";
+import { driftRepairQuestion, ephemeralProblem, environmentBanner, realDestroyProblem, realDestroyQuestion } from "./environment.ts";
 import { estimate, formatEstimate, loadUsage, usageFlags } from "./usage-estimate.ts";
 import { callDrain, drainFlags } from "./drain.ts";
 import { ENV_SCHEMA, generateEnvSchema, schemaNeeds } from "./wheel.ts";
@@ -720,8 +720,8 @@ let cloudflareToken: string | undefined;
  * of the current scope: interrupted (a signal), it is stopped and waited for. `onStart` gets its pid.
  */
 const alchemyProcess = (args: string[], cfg?: RustyBunsConfig, extra: Record<string, string> = {}, onStart?: (pid: number) => void,
-  cf?: Record<string, string>) =>
-  step(() => alchemyCommand(args, cfg, extra, cf)).pipe(Effect.flatMap(({ cmd, env }) => spawnScoped(cmd, { stdio: ["inherit", "inherit", "inherit"], env }, onStart)));
+  cf?: Record<string, string>, stdin: "inherit" | "ignore" = "inherit") =>
+  step(() => alchemyCommand(args, cfg, extra, cf)).pipe(Effect.flatMap(({ cmd, env }) => spawnScoped(cmd, { stdio: [stdin, "inherit", "inherit"], env }, onStart)));
 
 /** runAlchemy outside plan/deploy/destroy (`login`). */
 const runAlchemy = (args: string[], cfg?: RustyBunsConfig) => runScoped(alchemyProcess(args, cfg));
@@ -847,7 +847,7 @@ const timed = <A, E, R>(prof: Profiler, name: string, e: Effect.Effect<A, E, R>)
 });
 
 /**
- * plan, deploy, destroy and dev, as one scope: the state lock and every child (the worker
+ * plan, deploy, destroy, drift and dev, as one scope: the state lock and every child (the worker
  * build, alchemy) belong to it, so a signal or a failure stops the children and then frees
  * the lock, in that order (lifecycle.ts).
  */
@@ -862,6 +862,8 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   const serverNote = servers.length ? ` Its own server (desktop.server, ${entries}) runs beside the desktop and box hosts only: a Worker can't run a Node server without porting it. Add targets.box to host it on a server.` : "";
   if (!cfg.worker && !cfg.targets.box) throw new Error(`desktop-only app: no edge or box stack to plan or deploy.${serverNote}`);
   const profiled = sub === "plan" || sub === "deploy";
+  // drift reads the live account against the state, so it builds like a plan but is neither priced nor guarded like a deploy.
+  const drifting = sub === "drift";
   // Deploy builds each container's image locally: say so now, before any Alchemy work.
   if (sub === "deploy" && cfg.worker && containerBindings(cfg).length) needDocker(bindingsWhy(containerBindings(cfg).length));
   if (servers.length && cfg.worker && profiled) console.warn(`[server] the edge doesn't run desktop.server (${entries}): on the web ${servers.flatMap((s) => s.paths).join(", ")} reach the Worker, not that server.\n`);
@@ -869,7 +871,7 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   if (iso.ephemeral && iso.real) throw new UsageError({ message: `--ephemeral and --real contradict each other: pick one` });
   const clash = iso.ephemeral ? ephemeralProblem(cfg, stage) : null;
   if (clash) throw new UsageError({ message: clash });
-  if (profiled || sub === "destroy") console.log(environmentBanner(cfg, stage, sub) + "\n");
+  if (profiled || drifting || sub === "destroy") console.log(environmentBanner(cfg, stage, sub) + "\n");
   if (profiled) { checkBox(cfg); checkSpend(cfg); console.log(costReport(cfg) + "\n"); }
   // plan --usage (#1224): a monthly bill from what a host's bindings did per request, cron tick and message.
   const metered = usageFlags(rawArgs);
@@ -887,7 +889,10 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   // plan --offline (#1197): against empty state, so no login, no state and no Alchemy; the build gets an empty HOME.
   const offline = flagged.includes("--offline");
   if (offline && sub !== "plan") throw new UsageError({ message: `--offline is for plan only: ${sub} works on a real account` });
-  const sandboxed = wantsSandbox(flagged.filter((a) => a !== "--force" && a !== "--allow-delete" && a !== "--offline" && !ISOLATION_ARGS.includes(a)));
+  // drift only looks unless --repair: that one is ours too, so it can ask first (below).
+  const repair = flagged.includes("--repair");
+  if (repair && !drifting) throw new UsageError({ message: `--repair is for drift only` });
+  const sandboxed = wantsSandbox(flagged.filter((a) => a !== "--force" && a !== "--allow-delete" && a !== "--offline" && a !== "--repair" && !ISOLATION_ARGS.includes(a)));
   const sandbox = sandboxed.on || offline, args = sandboxed.args;
   const prof = new Profiler(sub);
   yield* step(() => prof.step("generate", () => generate({ adopt: false, stage })));
@@ -900,8 +905,8 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   }
   // Said first and last, so "is this touching real resources?" never has to be worked out from a plan.
   const mode = modeLine(cfg, { forced: iso.fresh, offline });
-  if (profiled || sub === "destroy") console.log(mode + "\n");
-  const refuse = sub === "plan" || offline ? null : adoptProblem(sub, cfg, process.cwd(), stage, iso);
+  if (profiled || drifting || sub === "destroy") console.log(mode + "\n");
+  const refuse = sub === "plan" || drifting || offline ? null : adoptProblem(sub, cfg, process.cwd(), stage, iso);
   // ADOPT mode stops here: ask at the terminal; with no terminal (or a no), it is refused.
   if (refuse && !(yield* step(() => confirmAdopt(adoptQuestion(sub, cfg), workerName(cfg))))) {
     throw new DeployRefused({ message: refuse });
@@ -909,6 +914,10 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   const realRefuse = offline ? null : realDestroyProblem(sub, cfg, stage, iso.adoptExisting);
   if (realRefuse && !(yield* step(() => confirmAdopt(realDestroyQuestion(cfg), workerName(cfg))))) {
     throw new DeployRefused({ message: realRefuse });
+  }
+  // drift only looks unless --repair, which converges the account back to the last deploy: asked before any build or login.
+  if (drifting && repair && !(yield* step(() => confirmAdopt(driftRepairQuestion(cfg, stage), workerName(cfg))))) {
+    throw new DeployRefused({ message: `drift --repair changes the live account, so it needs a yes at the terminal. Run \`rustybuns drift\` to look without changing anything.` });
   }
   const note = profiled && !offline ? adoptNote(process.cwd(), cfg, stage) : null;
   if (note) console.log(note + "\n");
@@ -927,13 +936,13 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
   // Cloudflare's login before any build, so a missing or refused one costs a second, not a build (#1170).
   const cf = sub !== "dev" && !offline && edgeOn(cfg) ? yield* step(() => cloudflareLogin(cfg, args)) : undefined;
   // Hetzner.Service and Railway.Service hash the box directory at plan time, so it has to exist first.
-  if (profiled && cfg.targets.box) {
+  if ((profiled || drifting) && cfg.targets.box) {
     console.log(`built ${yield* step(() => prof.step("build box", () => buildBox(cfg)))}`);
   }
   // The Worker hashes (and uploads) its bundle from disk at plan time, before the
   // stack's Build runs, so build it first or it ships the previous build (#362).
   // dev builds first too: the stack's Build would run it inside alchemy, with the Cloudflare token (#1121).
-  const built = (profiled || sub === "dev") && edgeOn(cfg) && !!cfg.worker?.build;
+  const built = (profiled || drifting || sub === "dev") && edgeOn(cfg) && !!cfg.worker?.build;
   if (built) yield* timed(prof, "build worker", buildWorker(cfg.worker!.build!, sandbox));
   // Name each map's module and give it app-relative sources, as wrangler does (#799).
   if (built && cfg.worker!.sourceMaps && cfg.worker!.builtMain) {
@@ -954,6 +963,14 @@ const alchemy = (sub: string, rawArgs: string[]) => runScoped(Effect.gen(functio
     yield* step(() => prof.finish());
     if (code !== 0) throw new AlchemyFailed({ sub, exitCode: code });
     yield* step(() => Bun.write(stampFile, hash));
+    console.log("\n" + mode);
+    return;
+  }
+  if (drifting) {
+    // No stdin without --repair: Alchemy offers to repair a drift it finds when it has a terminal.
+    const code = yield* timed(prof, "alchemy drift", alchemyProcess(["drift", "--config", ".rustybuns/alchemy.run.ts", ...args, ...(repair ? ["--repair"] : [])], cfg, buildEnv, (pid) => lockBase && noteChild(lockBase, pid), cf, repair ? "inherit" : "ignore"));
+    yield* step(() => prof.finish());
+    if (code !== 0) throw new AlchemyFailed({ sub, exitCode: code });
     console.log("\n" + mode);
     return;
   }
@@ -1109,7 +1126,7 @@ async function containersCommand(args: string[]) {
   }
 }
 
-const COMMANDS = ["init", "copy-site", "pages-functions", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "infra", "build", "containers", "smoke", "eject", "version"];
+const COMMANDS = ["init", "copy-site", "pages-functions", "jekyll", "generate", "adopt", "deploy", "destroy", "plan", "drift", "login", "dev", "prof", "mem", "history", "triage", "add", "run", "boundary", "infra", "build", "containers", "smoke", "eject", "version"];
 const isVersion = cmd === "--version" || cmd === "-v" || cmd === "version";
 if (!isVersion && !checkDisabled()) {
   const advice = await checkVersion(VERSION);
@@ -1136,6 +1153,7 @@ try {
     case "deploy": await alchemy("deploy", rest); break;
     case "destroy": await alchemy("destroy", rest); break;
     case "plan": await alchemy("plan", rest); break;
+    case "drift": await alchemy("drift", rest); break;
     case "login": {
       // Connect a provider account to an Alchemy profile (~/.alchemy, shared by every app).
       const [name, ...flags] = rest;

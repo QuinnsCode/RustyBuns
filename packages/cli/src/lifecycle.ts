@@ -73,7 +73,7 @@ async function stopChild(p: Subprocess, what: string) {
  * first (an interrupt), the child is stopped and waited for before the scope's earlier
  * finalizers, like the lock, run. `onStart` gets its pid (lockState's noteChild).
  */
-export const spawnScoped = (cmd: string[], opts: SpawnOptions.OptionsObject<"inherit", "inherit", "inherit">, onStart?: (pid: number) => void): Effect.Effect<number, never, Scope.Scope> =>
+export const spawnScoped = (cmd: string[], opts: SpawnOptions.OptionsObject<"inherit" | "ignore", "inherit", "inherit">, onStart?: (pid: number) => void): Effect.Effect<number, never, Scope.Scope> =>
   Effect.acquireRelease(
     Effect.sync(() => { const p = Bun.spawn(cmd, opts); onStart?.(p.pid); return p; }),
     (p) => Effect.promise(() => stopChild(p, cmd[0]!.split("/").at(-1)!)),
