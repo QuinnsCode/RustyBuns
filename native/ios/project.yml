@@ -1,0 +1,24 @@
+# XcodeGen spec: `brew install xcodegen && xcodegen && open RustyBuns.xcodeproj`
+name: RustyBuns
+options:
+  bundleIdPrefix: com.quinnscode
+packages:
+  RustyBunsKit:
+    path: .
+targets:
+  RustyBuns:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources: [App]
+    dependencies:
+      - package: RustyBunsKit
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Rusty Buns
+        UILaunchScreen: {}
+        CFBundleURLTypes:
+          - CFBundleURLSchemes: [rustybuns]
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
