@@ -34,8 +34,8 @@ test("boxOnly secrets go to the box, not the Worker", () => {
     bindings: { RB_PROF_SECRET: { type: "secret", boxOnly: true }, API_KEY: { type: "secret" } },
     targets: { edge: { provider: "cloudflare" }, box: { provider: "railway" } },
   } as any);
-  expect(stack).toContain('API_KEY: Config.redacted("API_KEY")');
-  expect(stack).not.toContain('RB_PROF_SECRET: Config.redacted');
+  expect(stack).toContain('API_KEY: Config.Redacted("API_KEY")');
+  expect(stack).not.toContain('RB_PROF_SECRET: Config.Redacted');
   expect(stack).toContain('RB_PROF_SECRET: process.env["RB_PROF_SECRET"] ?? ""');
 });
 
