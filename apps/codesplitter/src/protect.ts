@@ -4,6 +4,7 @@
 // The owner's own work on main is untouched.
 //
 //   GET|PUT /api/repos/:o/:r/protect   {on: boolean}  (PUT: owner only)
+import { revokeSockets } from "./archive.ts";
 import { json, readBody, type Env } from "./env.ts";
 
 export async function protectOn(env: Env, owner: string, repo: string): Promise<boolean> {
@@ -33,5 +34,7 @@ export async function protectRoute(req: Request, env: Env, owner: string, repo: 
   const b = await readBody<"on">(req);
   if (typeof b.on !== "boolean") return json({ error: "{on: true|false}, please" }, 400);
   await env.DB.prepare("INSERT INTO protect_main (owner, repo, on_) VALUES (?, ?, ?) ON CONFLICT (owner, repo) DO UPDATE SET on_ = excluded.on_").bind(owner, repo, b.on ? 1 : 0).run();
+  // A crew socket checked its write flag at the upgrade: close the ones open on main so they come back read-only.
+  if (b.on) await revokeSockets(env, owner, repo, { keep: [owner] }, true);
   return json({ on: b.on });
 }
