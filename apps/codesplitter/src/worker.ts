@@ -141,7 +141,7 @@ const SHARE_DEFAULT_S = 86400, SHARE_MAX_S = 7 * 86400, SHARE_CREW_PRIVATE_S = 3
 import { watchdogRoutes } from "./watchdog.ts";
 import { drainRoutes } from "./drain.ts";
 import { busiestFiles, fileHistory } from "./gitpath-data.ts";
-import { joinHistory, upstreamBusiest, upstreamFileHistory, type UpstreamRepo } from "./gitpath-upstream.ts";
+import { joinHistory, upstreamBusiest, upstreamFileHistory, upstreamIsPublic, type UpstreamRepo } from "./gitpath-upstream.ts";
 import { tagRoutes } from "./tags.ts";
 import { pickRoute } from "./pick.ts";
 import {
@@ -616,8 +616,9 @@ async function route(req: Request, env: Env): Promise<Response> {
         if (!h) return json({ repo: `${owner}/${repo}`, ...(path ? { path, commits: [] } : { files: [] }) });
         // A repo dug from GitHub has only its import in its own git; what came before is read from GitHub (gitpath-upstream.ts).
         const r = await repoRow(env, owner, repo, "upstream, upstream_commit, branch") as UpstreamRepo | null;
-        // An anonymous caller never spends the site's GitHub token: they get GitHub's unauthenticated quota, if any.
-        const token = user ? (await githubToken(env, user).catch(() => null))?.token : undefined;
+        // An anonymous caller never spends a sign-in's token. The site's own GITHUB_TOKEN reads only a GitHub repo that is public
+        // (asked without a token), so a shared link shows a visitor the same history it shows the sharer.
+        const token = user ? (await githubToken(env, user).catch(() => null))?.token : env.GITHUB_TOKEN && await upstreamIsPublic(r) ? env.GITHUB_TOKEN : undefined;
         if (path) {
           const own = await fileHistory(h.handle, h.branch, path, limit);
           const before = own.more ? null : await upstreamFileHistory(r, path, limit - own.commits.length, token);
