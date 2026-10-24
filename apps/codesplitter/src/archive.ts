@@ -34,6 +34,15 @@ export function toFile(env: Env, owner: string, repo: string, path: string, user
   return fileStub(env, owner, repo, path, branch).fetch(new Request(`https://file/${op}${search}`, { ...init, headers }));
 }
 
+/** Close the live sockets that access was taken from: `user`'s, or everyone's but those in `keep`. A socket's access is checked once, at the upgrade. */
+export async function revokeSockets(env: Env, owner: string, repo: string, who: { user: string } | { keep: string[] }) {
+  const { results } = await env.DB.prepare("SELECT path, NULL AS branch FROM files WHERE owner = ? AND repo = ? UNION ALL SELECT path, branch FROM branch_files WHERE owner = ? AND repo = ?")
+    .bind(owner, repo, owner, repo).all();
+  const q = "user" in who ? `?user=${encodeURIComponent(who.user)}` : `?keep=${encodeURIComponent(who.keep.join(","))}`;
+  await Promise.all((results as { path: string; branch: string | null }[]).map((f) =>
+    fileStub(env, owner, repo, f.path, f.branch ?? undefined).fetch(new Request(`https://file/revoke${q}`, { method: "POST" })).catch(() => null)));
+}
+
 export interface FileLine { id: string; text: string; by: string; rev: number; private?: true }
 /** The file's lines as `user` sees them; without `crew`, private lines are placeholders. */
 export async function fileLines(env: Env, owner: string, repo: string, path: string, user: string, crew: boolean) {
