@@ -19,6 +19,7 @@ import {
   listDir,
   materialize,
   pushCatalogue,
+  revokeSockets,
   toFile,
 } from "./archive.ts";
 import { repoRow } from "./repos.ts";
@@ -555,6 +556,10 @@ async function route(req: Request, env: Env): Promise<Response> {
       await env.DB.prepare("UPDATE repos SET visibility = ? WHERE owner = ? AND name = ?").bind(visibility, owner, repo).run();
       // The vector index's tags follow on the next hourly embed; search checks D1 till then.
       await restaleSearch(env, owner, repo).catch(() => null);
+      if (visibility === "private") {
+        const { results: crew } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all();
+        await revokeSockets(env, owner, repo, { keep: [owner, ...(crew as { name: string }[]).map((c) => c.name)] });
+      }
       await audit(env, req, { actor: user, action: "repo.visibility", owner, repo, detail: visibility });
       return json({ visibility });
     }
@@ -744,6 +749,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       if (!r.meta?.changes) return json({ error: `@${p[5]} isn't in the crew` }, 404);
       // An agent's token for this repo goes with it.
       await env.DB.prepare("DELETE FROM api_tokens WHERE name = ? AND repo = ?").bind(p[5], `${owner}/${repo}`).run();
+      await revokeSockets(env, owner, repo, { user: p[5] });
       await audit(env, req, { actor: user, action: "crew.remove", owner, repo, target: p[5] });
       return json({ ok: true });
     }

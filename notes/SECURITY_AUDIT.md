@@ -212,7 +212,7 @@ Each with a test that fails without the fix (the web client and socket changes a
 
 ### Needs validation
 
-- **Open file sockets outlive revocation.** Access is checked once at the upgrade; removing a collaborator, a privacy flip or protect-main touches no open socket. How long Cloudflare keeps a hibernated socket open after removal decides it. Local and deployed plans are in the run's `NEEDS-VALIDATION.md`.
+- **Open file sockets outlive revocation** (partly fixed). Access is checked once at the upgrade. Removing a collaborator, or flipping a repo to private, now has every file's Durable Object close that person's sockets (`revokeSockets`, `revoke-sockets.test.ts`). Still open: protect-main touches no open socket (a crew socket keeps its write flag), and the deployed behaviour of a hibernated socket's close is unchecked. Local and deployed plans are in the run's `NEEDS-VALIDATION.md`.
 - **Account linking may adopt an unverified password account.** Email sign-up needs no verification and account linking is on. If Better Auth links a provider-verified sign-in onto it and keeps the password, the attacker keeps a working login on an account that earns handles, the admin handle included. Needs the library installed to read.
 
 ### Rejected after verification

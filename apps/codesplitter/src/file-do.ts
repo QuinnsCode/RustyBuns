@@ -319,6 +319,18 @@ export class FileDurableObject {
       const { id } = (await req.json().catch(() => ({}))) as { id?: unknown };
       return json({ released: await this.release(typeof id === "string" ? id : "") });
     }
+    if (req.method === "POST" && route === "revoke") {
+      // Access is checked once, at the upgrade: when it is taken back, the Worker has the sockets of `user` (or of everyone not in `keep`) closed.
+      const user = url.searchParams.get("user"), keep = new Set((url.searchParams.get("keep") ?? "").split(",").filter(Boolean));
+      let closed = 0;
+      for (const ws of this.ctx.getWebSockets()) {
+        const who = ws.deserializeAttachment?.()?.user ?? "anon";
+        if (user !== null ? who !== user : keep.has(who)) continue;
+        try { ws.close(1008, "access removed"); closed++; } catch {}
+        this.presence(ws);
+      }
+      return json({ closed });
+    }
     if (req.method === "POST" && route === "wipe") {
       // Its repo was evicted: forget everything.
       const all: Map<string, unknown> = await this.ctx.storage.list();
