@@ -72,8 +72,11 @@ weeds that out the same way. When the board's check goes red she sorts every fai
 | blocks | only the merged tree breaks it | the PRs that touched that app are named as suspects |
 
 Only `blocks` stops a merge. She also keeps a running record, so she can say which dependencies hurt, which checks
-are slowest, and what a rerun costs. These are easy, deterministic wins: nobody asks a model whether a test that fails
-on `main` is the PR's fault.
+are slowest, and what a rerun costs. And she remembers every test by id across runs: each failure stays an open incident
+until the PR that fixed it (or rewrote a test that had gone stale) is recorded against it, so over time she can say
+where failures land, which tests have never failed in many runs without being a journey through the app, and which
+files get rewritten more than they catch anything ([mervin.md](mervin.md#ester-the-tester)). These are easy,
+deterministic wins: nobody asks a model whether a test that fails on `main` is the PR's fault.
 
 ## What this adds up to
 

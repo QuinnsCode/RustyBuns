@@ -58,6 +58,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describeBlast, load, rank } from "./blast.ts";
 import { hold, hurtLines, keep, kept, packagesChanged, report, rows, triage } from "./ester.ts";
+import { fromJunit, hot, recall, recallLines, remember, resolve as resolveTest, withJunit } from "./ester-memory.ts";
 import { heal, layout } from "../layout.ts";
 import type { Lane, LaneStep, Line } from "../src/mervin-replay.ts";
 import { sandbox, shadow, testRuns, testTree, writeTree } from "./shadow.ts";
@@ -540,13 +541,23 @@ if (import.meta.main) {
     try {
       const env = sandbox(join(tmp, "home"));
       mkdirSync(env.HOME);
-      const runs = [{ dir: ".", cmd: "bun run typecheck" }, ...testRuns(readFileSync(join(out, "tree/scripts/ci-apps.ts"), "utf8"), board.written)];
+      const junit = join(out, "junit");
+      mkdirSync(junit, { recursive: true });
+      const runs = [{ dir: ".", cmd: "bun run typecheck" }, ...testRuns(readFileSync(join(out, "tree/scripts/ci-apps.ts"), "utf8"), board.written)].map((x) => withJunit(x, junit));
       const r = await testTree(join(out, "tree"), runs, env, true);
+      // Ester remembers every test the merged tree ran (scripts/ester-memory.ts), before main's rerun writes the same reports.
+      const memory = join(top, ".mervin/ester-memory.jsonl");
+      for (const x of runs) {
+        if (!x.junit || !existsSync(x.junit)) continue;
+        const read = (f: string) => { try { return hot(readFileSync(join(out, "tree", x.dir, f), "utf8")); } catch { return false; } };
+        remember(memory, fromJunit(readFileSync(x.junit, "utf8"), x.dir), `board ${main.slice(0, 9)}`, read);
+      }
       board.lanes = lanesOf(r.runs);
       writeFileSync(join(out, "board.json"), JSON.stringify(board, null, 2));
       const round = arg("round");
       if (round) { const rec = JSON.parse(readFileSync(round, "utf8")); writeFileSync(round, JSON.stringify({ ...rec, lanes: board.lanes }, null, 2)); }
       for (const x of r.runs) console.log(`${x.ok ? "pass" : "FAIL"}  ${x.dir}: ${x.cmd}  ${(x.ms / 1000).toFixed(1)}s`);
+      console.log(`${recallLines(recall(memory))[0]}  (bun scripts/ester-memory.ts recall)`);
       if (r.failed.length) {
         // The sandbox fails some tests on main too (no claude CLI, no native build): only what the board adds counts.
         writeTree(join(out, "main"), main);
@@ -557,6 +568,7 @@ if (import.meta.main) {
         const bad = runs.filter((x) => r.runs.some((d) => !d.ok && d.dir === x.dir && d.cmd === x.cmd));
         const again = new Set(added.length && bad.length ? (await testTree(join(out, "tree"), bad, env, true)).failed : added);
         const verdicts = triage(r.failed, board.stages, before, again);
+        for (const v of verdicts) if (v.owner === "flaky") resolveTest(memory, v.test, "flaky");
         console.log(report(verdicts, r.runs, again.size ? bad.map((x) => r.runs.find((d) => d.dir === x.dir && d.cmd === x.cmd)!.ms) : [], board.stages).join("\n"));
         const now = rows(board.stages, verdicts, board.clashes);
         const file = join(top, ".mervin/ester-rows.jsonl");

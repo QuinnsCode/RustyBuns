@@ -203,6 +203,19 @@ package, not the lockfile, which every bump rewrites). After a red `--check` she
 package, the PRs touching it, how many were `own` or `blocks`, and how many clashed, as a share of touches so a
 package that is only touched a lot doesn't look guilty.
 
+And she remembers tests (`scripts/ester-memory.ts`). Every `--check` runs the tests with bun's JUnit reporter, so she
+sees the passes too, and gives each test an id (ten hex chars of `app: suite > name`, the same name her verdicts use).
+The ledger (`.mervin/ester-memory.jsonl`) keeps one line per run with what passed, failed and skipped, and a verdict
+per failure once someone says what it was: `fix` (a real failure, and the PR that fixed it is the incident report),
+`stale` (the test was no longer valid and the PR rewrote or removed it) or `flaky` (she records these herself when the
+rerun passed). A failure with no verdict after it stays listed as unresolved. `bun scripts/ester-memory.ts recall` then
+answers the questions one run can't: **where failures land** (by test file, with how many were fixed, stale or flaky),
+**never failed** in five or more runs and not a journey through the running app (candidates to cut or fold; a file that
+imports the app kit counts as a journey and is kept out), and **stale-prone** files whose tests get rewritten more than
+they catch anything. Any `bun test --reporter=junit --reporter-outfile=junit.xml` feeds it too with
+`bun scripts/ester-memory.ts remember junit.xml`, and a fix PR closes its incident with `resolve <id> --pr <n>` (add
+`--stale` when the test was the thing that was wrong).
+
 The scorecard and corpus replay old merges. This one merges the board you have now, one stage per PR, onto
 `origin/main` in a temp folder, and files each file in a tier:
 

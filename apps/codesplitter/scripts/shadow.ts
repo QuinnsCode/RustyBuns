@@ -153,8 +153,8 @@ function joins(pr: Pr): Join[] | null {
   ];
 }
 
-/** One test command to run in a checked-out tree: `dir` relative to its root. */
-export interface Run { dir: string; cmd: string }
+/** One test command to run in a checked-out tree: `dir` relative to its root. With `junit`, a `bun test` run also writes its JUnit report there (Ester's memory reads it). */
+export interface Run { dir: string; cmd: string; junit?: string }
 
 /**
  * The tests CI ran for a change to `paths`, from that tree's own
@@ -227,7 +227,8 @@ export function sandbox(home: string) {
 }
 
 async function sh(root: string, run: Run, env: Record<string, string>) {
-  const p = Bun.spawn(["sh", "-c", run.cmd], { cwd: join(root, run.dir), env, stdout: "pipe", stderr: "pipe", timeout: 15 * 60_000 });
+  const cmd = run.junit ? `${run.cmd} --reporter=junit --reporter-outfile=${run.junit}` : run.cmd;
+  const p = Bun.spawn(["sh", "-c", cmd], { cwd: join(root, run.dir), env, stdout: "pipe", stderr: "pipe", timeout: 15 * 60_000 });
   const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
   return { ok: (await p.exited) === 0, out: `${out}${err}` };
 }
