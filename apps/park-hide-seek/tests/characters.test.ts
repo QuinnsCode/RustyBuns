@@ -37,7 +37,7 @@ test("characters change into the Blender model and stand on the ground", async (
 
   const all = [...HATS.map((h) => makeCharacter("camper", look(h), "c")), makeCharacter("ranger", look("none"), "r")];
   for (const ch of [early, ...all]) {
-    expect(triangles(ch)).toBeLessThan(3000);
+    expect(triangles(ch)).toBeLessThan(5000);
     expect(Math.abs(feet(ch))).toBeLessThan(0.02);
   }
   const ranger = all.at(-1)!;
@@ -45,6 +45,6 @@ test("characters change into the Blender model and stand on the ground", async (
   const big = makeBigfoot();
   expect(triangles(big)).toBeLessThan(3000);
   // every part an outfit asks for is in the file (a missing one would leave a joint bare)
-  for (const n of ["thigh", "shin", "boot", "pelvis", "torso", "rangerTorso", "pack", "head", "hair", "hairHat", "beanie",
-    "cap", "bucket", "rangerHat", "flashlight", "lens", "bfTorso", "bfHead"]) expect(names.has(n)).toBe(true);
+  for (const n of ["thigh", "shin", "boot", "pelvis", "torso", "rangerTorso", "pack", "head", "hair", "hairCurly", "hairLong",
+    "hairHat", "hairHatLong", "beanie", "cap", "bucket", "rangerHat", "hatBadge", "led", "flashlight", "lens", "bfTorso", "bfHead"]) expect(names.has(n)).toBe(true);
 });

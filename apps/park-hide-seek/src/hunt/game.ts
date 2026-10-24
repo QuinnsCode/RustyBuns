@@ -18,7 +18,7 @@
 import { rng, type Pt } from "../geo.ts";
 import { cellAt, type Grid } from "../grid.ts";
 import { NO_ASKS, RADIO, askBlocked, answerText, parseAsk, radioGrid, resolve, toKm, type Ask, type AskKind, type Clue, type RadioState } from "../clues.ts";
-import { CLIFF, zoneById, zonesFor, type Zone } from "../zones/zone.ts";
+import { CLIFF, loadZoneData, readyZone, zoneById, zoneLoaded, zonesFor, type Zone } from "../zones/zone.ts";
 import { MOVE, TAG_REACH, canSee, clearSky, resolve as pushOut, soundJitter, stepReach, type Body, type Role, type Sky, type TimeOfDay } from "./sim.ts";
 import { describe, type Weather } from "../weather.ts";
 
@@ -258,7 +258,9 @@ export class Hunt {
 
   constructor(seed = Date.now()) { this.rand = rng(seed); }
 
-  zone(): Zone { return zoneById(this.round?.zone ?? zonesFor(this.zonePick)[0].id); }
+  zone(): Zone { return zoneById(this.round?.zone ?? readyZone(zonesFor(this.zonePick))); }
+  /** The next round, waiting for its zone's ground to arrive (tick starts it then). */
+  private pending: { n: number; zone: string } | null = null;
   /** The round's conditions, or the lobby's while the live weather is on its way. */
   sky(): Sky { return this.round?.sky ?? clearSky(this.tod); }
   radioGrid(z = this.zone()): Grid {
@@ -359,6 +361,7 @@ export class Hunt {
     this.schedule = [];
     for (let i = 0; i < order.length; i += per) this.schedule.push(order.slice(i, i + per).concat(order.slice(0, Math.max(0, i + per - order.length))));
     this.round = null;
+    this.pending = null;
     this.say(`New match: ${this.schedule.length} rounds`);
     this.startRound(0, now);
   }
@@ -369,7 +372,14 @@ export class Hunt {
     if (n >= this.schedule.length || online.length < 2) { this.finish(); return; }
     const rangers = this.schedule[n].filter((id) => online.some((p) => p.id === id));
     const pool = zonesFor(this.zonePick);
-    const zone = pool[Math.floor(this.rand() * pool.length)].id;
+    const zone = this.pending?.zone ?? pool[Math.floor(this.rand() * pool.length)].id;
+    this.pending = null;
+    if (!zoneLoaded(zone)) {
+      // Its ground isn't here yet: fetch it and start this round when it is (or on ground that is, if it can't be had).
+      this.pending = { n, zone };
+      loadZoneData(zone).catch(() => { if (this.pending?.zone === zone) this.pending.zone = readyZone(pool); });
+      return;
+    }
     const z = zoneById(zone);
     const actors = new Map<string, Actor>();
     for (const p of online) {
@@ -463,6 +473,10 @@ export class Hunt {
   }
 
   tick(now: number) {
+    if (this.pending) {
+      if (zoneLoaded(this.pending.zone)) this.startRound(this.pending.n, now);
+      return;
+    }
     const r = this.round;
     if (!r) return;
     if (this.phase === "drop" && now >= this.endsAt) {

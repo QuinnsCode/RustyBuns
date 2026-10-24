@@ -10,7 +10,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { hashString, rng } from "../geo.ts";
 import { HUNT, circleAt, type ActorView, type Circle, type Cue, type Disguise, type DisguiseKind, type Look, type View } from "../hunt/game.ts";
 import { clearSky, type Sky, type TimeOfDay } from "../hunt/sim.ts";
-import { zoneById, type Prop, type PropKind, type Zone } from "../zones/zone.ts";
+import { zoneById, zoneLoaded, type Prop, type PropKind, type Zone } from "../zones/zone.ts";
 import { makeBigfoot, makeCharacter, nameTag, pose, type Character } from "./characters.ts";
 
 export const toThree = (x: number, y: number, h: number) => new THREE.Vector3(x, h, -y);
@@ -179,7 +179,7 @@ export class World3D {
   // ---- building a zone ----------------------------------------------------------
 
   setZone(id: string) {
-    if (this.zone?.data.id === id) return;
+    if (this.zone?.data.id === id || !zoneLoaded(id)) return;
     const z = zoneById(id);
     this.zone = z;
     this.zoneGroup.clear();

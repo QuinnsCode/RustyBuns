@@ -1,13 +1,14 @@
-// "Request a park": one ParkRequests Durable Object (idFromName("parks")) keeps
+// "Request a park survey": one ParkRequests Durable Object (idFromName("parks")) keeps
 // a vote count per national park, one vote per player per park. The menu shows
-// the most wanted; the owner reads the same list to pick the next park to fetch.
-// Only parks without zones can be voted for, from a fixed list (src/parks/nps.ts).
+// the most wanted; the owner reads the same list to pick the next park to survey
+// (fetch-zones.ts: landmarks, a park map, more zones). Every park has a zone already,
+// so only the unsurveyed ones can be voted for, from a fixed list (src/parks/nps.ts).
 
 import { NATIONAL_PARKS } from "../parks/nps.ts";
-import { PARKS } from "../zones/zone.ts";
+import { SURVEYED_PARKS } from "../zones/zone.ts";
 
-/** The parks you can ask for: every national park that isn't playable yet. */
-export const REQUESTABLE = NATIONAL_PARKS.filter((p) => !PARKS.some((q) => q.code === p.code));
+/** The parks you can ask for: every national park that hasn't been surveyed yet. */
+export const REQUESTABLE = NATIONAL_PARKS.filter((p) => !SURVEYED_PARKS.has(p.code));
 const CODES = new Set(REQUESTABLE.map((p) => p.code));
 
 /** The slice of Durable Object storage this needs (and a Map-backed fake in tests). */

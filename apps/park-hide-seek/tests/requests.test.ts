@@ -11,7 +11,7 @@ const memory = (): VoteStore => {
   };
 };
 
-test("request a park: one vote per player per park, only for parks that aren't playable yet", async () => {
+test("request a survey: one vote per player per park, only for parks not surveyed yet", async () => {
   expect(NATIONAL_PARKS).toHaveLength(63);
   expect(REQUESTABLE.some((p) => p.code === "YOSE")).toBe(false);
   const parks = new ParkRequests({ storage: memory() });

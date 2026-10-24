@@ -1,4 +1,5 @@
-// Campers and rangers. A camper wears their Look; a ranger wears the flat hat and carries a flashlight.
+// Campers and rangers. A camper wears their Look (jacket, pants, skin, hat, pack, and a hair style and colour
+// that follow from those); a ranger wears the campaign hat and duty belt and carries a flashlight.
 // Parts hang on real joints (hips, knees, shoulders, elbows, head), so walking and crouching bend like a
 // person. The parts are modelled in Blender (blender/characters.py -> public/models/characters.glb) and
 // recoloured per Look; until that file has loaded (or if it can't), the same joints wear parts built from
@@ -614,19 +615,26 @@ const SPECIAL: Record<string, () => THREE.Material> = {
   torch: () => mat("#2a2a2a", { metalness: 0.5, roughness: 0.4 }),
   lens: () => mat("#fff8e0", { emissive: "#fff2c4", emissiveIntensity: 1.5 }),
   bfEye: () => mat("#f2c14e", { emissive: "#5a3a00" }),
+  led: () => mat("#ff3b2f", { emissive: "#ff3b2f", emissiveIntensity: 1.2 }),
 };
+
+/** The three hair styles, picked by the Look the way its hair colour is: with no hat on, and what shows under one. */
+const HAIR_STYLES: [bare: string, under: string][] = [["hair", "hairHat"], ["hairCurly", "hairHat"], ["hairLong", "hairHatLong"]];
+const hairStyle = (look: Look) => HAIR_STYLES[(look.skin + look.pants * 2 + look.shirt) % HAIR_STYLES.length];
 
 /** Which parts hang on which joint: the same table blender/characters.py renders its previews from. */
 function outfit(ranger: boolean, look: Look): Outfit {
   const top = ranger ? "rangerHat" : look.hat;
+  const [bare, under] = hairStyle(look);
   const fit: Outfit = {
     legs0: ["thigh"], legs1: ["thigh"], knees0: ["shin", "boot"], knees1: ["shin", "boot"],
     upper: ["pelvis", ranger ? "rangerTorso" : "torso"], arms0: ["upperArm"], arms1: ["upperArm"],
     elbows0: ["forearm", "handL"], elbows1: ["forearm", "handR"],
-    head: ["head", top === "none" ? "hair" : "hairHat", ...(top === "none" ? [] : [top])],
+    head: ["head", top === "none" ? bare : under, ...(top === "none" ? [] : [top])],
   };
   if (ranger) {
-    fit.upper.push("buckle", "badge", "stripe");
+    fit.upper.push("buckle", "badge", "stripe", "led");
+    fit.head.push("hatBadge");
     fit.arms0.push("patchL");
     fit.arms1.push("patchR");
     fit.elbows1.push("flashlight", "lens");
@@ -653,7 +661,7 @@ function colors(ranger: boolean, look: Look): Record<string, string> {
     pants, pantsDark: shade(pants, 0.75), skin, skinDark: shade(skin, 0.9),
     boot, bootDark: shade(boot, 0.7), sole: "#1d1611",
     hair, brow: shade(hair, 0.8), hat, hatDark: shade(hat, 0.7), pom: "#f2efe6", band: "#3b2a1a",
-    pack, packDark: shade(pack, 0.6), strap: shade(pack, 0.45), roll: "#5a6b3a",
-    eyeWhite: "#f7f4ee", pupil: "#1b1712", mouth: "#6e2f26", belt: "#3b2a1a", patch: "#5b6b3a",
+    pack, packDark: shade(pack, 0.6), strap: shade(pack, 0.45), roll: "#5a6b3a", bottle: "#7fb3c8",
+    eyeWhite: "#f7f4ee", pupil: "#1b1712", mouth: "#6e2f26", belt: "#3b2a1a", patch: "#5b6b3a", radio: "#1e2226",
   };
 }

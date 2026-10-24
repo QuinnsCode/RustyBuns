@@ -5,7 +5,8 @@
 import { allAsks, askBlocked, askText, radioGrid, RADIO, type Ask, type Clue } from "../clues.ts";
 import { HATS, HUNT, PANTS, SHIRTS, SKINS, circleAt, closed, disguiseFor, dropOk, outside, randomLook, type BotLevel, type Look, type Mode, type Msg, type View } from "../hunt/game.ts";
 import { step, wrap, type Body } from "../hunt/sim.ts";
-import { PARKS, ZONES, zoneById, zonesFor, type Zone } from "../zones/zone.ts";
+import { PARKS, ZONES, loadZoneData, zoneById, zoneLoaded, zonesFor, type Zone } from "../zones/zone.ts";
+import { REGIONS } from "@rustybuns/terrain";
 import { describe } from "../weather.ts";
 import { CALLS, Score, place, sounds } from "./audio.ts";
 import { REQUESTABLE } from "../edge/requests.ts";
@@ -66,6 +67,8 @@ const serverNow = () => Date.now() + (session?.offset ?? 0);
 const send = (m: Msg) => session?.send(m);
 const nameOf = (v: View, id: string) => v.players.find((p) => p.id === id)?.name ?? "someone";
 const note = (text: string, ms = 2500) => { flash = { text, until: Date.now() + ms }; };
+/** The zone whose ground the page is fetching for the round under way, so it's announced once. */
+let fetching = "";
 const score = new Score();
 score.muted = store.get("music") === "off";
 
@@ -251,14 +254,16 @@ function renderLobby(v: View) {
   const dis = host ? "" : "disabled";
   // The park picked, if any: "random" roams every park.
   const park = v.zonePick === "random" ? undefined : PARKS.find((p) => p.code === zonesFor(v.zonePick)[0]?.park);
-  const parks = [`<button data-zone="random" aria-pressed="${!park}" ${dis}>Any park</button>`,
-    ...PARKS.map((p) => `<button data-zone="random:${p.code}" aria-pressed="${park === p}" ${dis}>${esc(p.name)}</button>`)].join("");
+  // Every national park, grouped by region; a park's zones show once it's picked.
+  const parkBtn = (p: (typeof PARKS)[number]) => `<button data-zone="random:${p.code}" aria-pressed="${park === p}" ${dis}>${esc(p.name)}</button>`;
+  const parks = `<div class="row-btns"><button data-zone="random" aria-pressed="${!park}" ${dis}>Any park<small>All ${PARKS.length}</small></button></div>`
+    + REGIONS.map((r) => `<h3>${r}</h3><div class="row-btns">${PARKS.filter((p) => p.region === r).map(parkBtn).join("")}</div>`).join("");
   const zones = park ? [`<button data-zone="random:${park.code}" aria-pressed="${v.zonePick === `random:${park.code}`}" ${dis}>Random drop zone<small>A new ${esc(park.name)} attraction every round</small></button>`,
     ...zonesFor(`random:${park.code}`).map((z) => `<button data-zone="${z.id}" aria-pressed="${v.zonePick === z.id}" ${dis}>${esc(z.name)}<small>${esc(z.blurb)}</small></button>`)].join("") : "";
   const modes: [Mode, string, string][] = [["classic", "Hide and seek", "Crouch in the bushes"], ["props", "Prop hunt", "Campers turn into bushes, boulders and logs"]];
   const html = `
     <section><h2>Game</h2><div class="row-btns">${modes.map(([m, label, sub]) => `<button data-mode="${m}" aria-pressed="${v.mode === m}" ${dis}>${label}<small>${sub}</small></button>`).join("")}</div></section>
-    <section><h2>${park ? `${esc(park.name)} National Park` : "National park"}</h2><div class="row-btns">${parks}</div>${park ? `<div class="zones">${zones}</div>` : `<p class="note">A random drop zone in a random park every round.</p>`}</section>
+    <section><h2>${park ? `${esc(park.name)} National Park` : "National park"}</h2>${parks}${park ? `<div class="zones">${zones}</div>` : `<p class="note">A random drop zone in a random park every round.</p>`}</section>
     <section><h2>Time of day and weather</h2><div class="row-btns"><button data-live="1" aria-pressed="${v.live}" ${dis}>Live: the park right now<small>Real weather and time of day</small></button>${(["day", "dusk", "night"] as const).map((t) => `<button data-tod="${t}" aria-pressed="${!v.live && v.tod === t}" ${dis}>${t === "day" ? "Day" : t === "dusk" ? "Dusk" : "Night (flashlights)"}</button>`).join("")}</div>${v.live ? `<p class="note">Rain hides footsteps, fog cuts how far anyone sees, wind makes rustles hard to place. If the weather can't be reached, it's ${v.tod}.</p>` : ""}</section>
     ${host ? `<section><h2>Rounds</h2><div class="row-btns"><button data-laps="1" aria-pressed="${v.laps === 1}">Everyone's a ranger once</button><button data-laps="2" aria-pressed="${v.laps === 2}">Twice</button></div></section>
     <section><h2>Add an AI player</h2><div class="row-btns"><button data-bot="easy">Easy</button><button data-bot="normal">Normal</button><button data-bot="hard">Hard</button></div></section>` : ""}
@@ -448,11 +453,19 @@ function frame() {
     return;
   }
   const now = serverNow();
+  if (v.phase !== "lobby" && v.phase !== "over" && !zoneLoaded(v.zone)) {
+    // The round landed on ground the page hasn't got yet (a park outside the bundled seven): a few seconds of the drop.
+    if (fetching !== v.zone) { fetching = v.zone; note(`Fetching the ground round ${ZONES.find((z) => z.id === v.zone)?.name ?? v.zone}…`, 4000); }
+    void loadZoneData(v.zone);
+    return;
+  }
   renderPanels();
   controls.active = v.phase !== "lobby" && v.phase !== "over";
   if (v.phase === "lobby" || v.phase === "over") {
+    // The backdrop roams the pick's zones; ground that isn't here yet is fetched, and shows next time round.
     const pool = zonesFor(v.zonePick);
-    world.setZone(pool[Math.floor(t / 15000) % pool.length].id);
+    const next = pool[Math.floor(t / 15000) % pool.length];
+    if (zoneLoaded(next.id)) world.setZone(next.id); else void loadZoneData(next.id);
     world.setTime(v.tod);
     world.orbit(t);
     if (v.phase === "lobby") preview.render(look, t);
