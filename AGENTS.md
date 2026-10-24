@@ -25,11 +25,11 @@ all apps plus `bun test packages` when `packages/` or the lockfile moved). Comma
   script like `scripts/stress.ts`) by default; units are for weird corner cases (parsers, merge edge cases, limits).
   Don't assert on source text (`expect(html).toContain(...)`, CSS rules, markup wiring): it pins how the page is
   written, not what it does, and breaks on every refactor. Test the function (eval it out of the page) or the behaviour.
-- Budget: a bug fix adds at most one test, and only if no existing test already walks that path (extend it, don't add
-  beside it). A feature adds one journey. A PR whose tests outweigh its code needs a reason in the description.
-  Don't pin a corner case because it once bit (`#1782`-style names): fix it, and keep the test only if the
-  everyday path would also have caught it. If you'd write three tests that differ only in input, write one table.
-  When you touch a test file, delete tests there that assert a rule nobody can reach from the app.
+- Test what people do, not what could happen. Cover the path a user or agent walks every day, plus a failure
+  they'd plausibly hit. Skip inputs nothing in the app produces (stack-depth limits, impossible orderings,
+  "odd numbers become zero"), and don't pin a corner case because it once bit (`#1782`-style names): fix it, and keep
+  a test only if the everyday path would also have caught it. As many tests as the feature needs, but if three differ
+  only in input, write one table. When you touch a test file, delete tests there for cases nobody can reach.
 - No native builds (`build:native`, cargo) or `desktop-drop.yml` unless the change needs it.
 
 ## Docs heal themselves
