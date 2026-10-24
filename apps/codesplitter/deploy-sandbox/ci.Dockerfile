@@ -5,8 +5,8 @@
 # image and binding (CI_RUNNER), and gets no secrets at all, so a repo's checks
 # never sit next to a deploy key or an agent's login. No Rust or Docker, so a check
 # that needs them runs on the desktop or a runner of your own instead.
-FROM node:22.21.1-bookworm-slim AS node
-FROM oven/bun:1.4-slim
+FROM node:22.23.4-bookworm-slim AS node
+FROM oven/bun:1.4.4-slim
 
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git \

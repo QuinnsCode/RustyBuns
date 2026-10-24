@@ -9,9 +9,9 @@
 # `rustybuns build box` builds them with this cargo when the repo has no
 # native/dist/<crate>/linux-x64/ build. gcc is its linker. There is no Docker,
 # so a cax (arm64) box's crates still need the desktop (src/preview.ts refuses).
-FROM node:22.21.1-bookworm-slim AS node
+FROM node:22.23.4-bookworm-slim AS node
 FROM rust:1.96.0-slim-bookworm AS rust
-FROM oven/bun:1.4-slim
+FROM oven/bun:1.4.4-slim
 
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=rust /usr/local/rustup /usr/local/rustup

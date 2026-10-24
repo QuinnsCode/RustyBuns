@@ -24,7 +24,7 @@ concurrency:
 env:
   T3_REPO: https://github.com/pingdotgg/t3code
   T3_SHA: 58d253231d83f669a2cdfefa5fe479751d22c582
-  BUN_VERSION: "1.4.3"
+  BUN_VERSION: "1.4.4"
   T3CODE_TELEMETRY_ENABLED: "false"
   DO_NOT_TRACK: "1"
   CI: "1"
@@ -130,5 +130,5 @@ jobs:
           pattern: t3-*
           path: reports
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with: { bun-version: "1.4.3" }
+        with: { bun-version: "1.4.4" }
       - run: bun .github/t3-bun/compare.ts reports | tee -a "$GITHUB_STEP_SUMMARY"

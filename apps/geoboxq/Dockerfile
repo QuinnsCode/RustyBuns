@@ -1,6 +1,6 @@
 # Railway and the AWS fallback (App Runner, Lightsail, ECS) run the same image: the built page plus
 # `bun src/serve.ts`. Build from the repo root: docker build -f apps/geoboxq/Dockerfile .
-FROM oven/bun:1
+FROM oven/bun:1.4.4
 WORKDIR /repo
 COPY . .
 RUN bun install --frozen-lockfile && cd apps/geoboxq && bun run build

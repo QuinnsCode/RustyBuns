@@ -229,7 +229,7 @@ export function runArgs(tag: string, name: string, port: number, o: { env: Recor
 
 /** Where the runtime puts its CA, which each image's CMD trusts at start. */
 export const CA_PATH = "/etc/cloudflare/certs/cloudflare-containers-ca.crt";
-const GATE_IMAGE = "oven/bun:1";
+const GATE_IMAGE = "oven/bun:1.4.4";
 
 /** `--prod-like` and `--prod-like=false` aside, the args without it. */
 export const prodLikeFlag = (args: string[]) => ({ prodLike: args.includes("--prod-like"), rest: args.filter((a) => a !== "--prod-like") });

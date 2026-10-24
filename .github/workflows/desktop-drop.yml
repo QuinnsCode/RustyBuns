@@ -57,7 +57,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with: { bun-version: "1.4.3" }
+        with: { bun-version: "1.4.4" }
       - id: p
         # Inputs go through env, never pasted into the script: a typed `$(...)` would run.
         env:
@@ -97,7 +97,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with: { bun-version: "1.4.3" }
+        with: { bun-version: "1.4.4" }
       - if: matrix.prep
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master; the toolchain is the input below
         with: { toolchain: stable, targets: wasm32-unknown-unknown }
@@ -142,7 +142,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }   # a PR's drop.ts and sign.sh run here; the write token stays out of .git/config
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with: { bun-version: "1.4.3" }
+        with: { bun-version: "1.4.4" }
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { path: bins, pattern: "${{ matrix.app }}-*", merge-multiple: true }
       - name: Every target built?

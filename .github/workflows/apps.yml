@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with: { bun-version: "1.4.3" }
+        with: { bun-version: "1.4.4" }
       # Actions stay free: standard runners only, and every job has a timeout (scripts/ci-guard.ts).
       - run: bun scripts/ci-guard.ts
       - id: p
@@ -45,7 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with: { bun-version: "1.4.3" }
+        with: { bun-version: "1.4.4" }
       - run: bun install --frozen-lockfile
       - run: bun scripts/ci-test-count.ts "bun test packages"
 
@@ -58,7 +58,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with: { bun-version: "1.4.3" }
+        with: { bun-version: "1.4.4" }
       - run: bun scripts/ci-test-count.ts "bun test ./.claude/hooks"
 
   test:
@@ -76,7 +76,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with: { bun-version: "1.4.3" }
+        with: { bun-version: "1.4.4" }
       - if: matrix.prep
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master; the toolchain is the input below
         with: { toolchain: stable, targets: wasm32-unknown-unknown }
@@ -109,7 +109,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with: { bun-version: "1.4.3" }
+        with: { bun-version: "1.4.4" }
       - run: bun install --frozen-lockfile
       - id: p
         env:
@@ -132,7 +132,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with: { bun-version: "1.4.3" }
+        with: { bun-version: "1.4.4" }
       - run: bun install --frozen-lockfile
       # BuildKit's GitHub Actions layer cache (type=gha, a scope per image) needs the docker-container driver.
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
