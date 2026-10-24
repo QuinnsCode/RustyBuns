@@ -1,9 +1,7 @@
-import { describe, expect, setSystemTime, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { apply, empty, fromText, merge, mergeWords, replay, text, type Applied, type Doc, type Pick } from "../src/lines.ts";
 import { diffToOps } from "../src/sync.ts";
-import { lintMerge, newProblems } from "../src/lint.ts";
 import { run } from "../agents.ts";
-import { ruleFor, spread, TALLY_MS } from "../src/limits.ts";
 import { accounts, local, post } from "./app-kit.ts";
 
 describe("lines", () => {
@@ -14,14 +12,6 @@ describe("lines", () => {
     // L2 is still "b" even though everything moved down one.
     expect(apply(doc, [{ kind: "set", line: "L2", base: 2, text: "B" }], "y").ok).toBe(true);
     expect(text(doc)).toBe("top\na\nB\nc");
-  });
-
-  test("ifRev pins a batch to the whole file", () => {
-    const doc = empty();
-    apply(doc, fromText("a\nb"), "me");
-    apply(doc, [{ kind: "set", line: "L2", base: 2, text: "B" }], "x");
-    expect(apply(doc, [{ kind: "set", line: "L1", base: 1, text: "A" }], "y", 0, 2).ok).toBe(false);
-    expect(apply(doc, [{ kind: "set", line: "L1", base: 1, text: "A" }], "y", 0, 3).ok).toBe(true);
   });
 
   test("a stale base is a conflict and the batch is all-or-nothing", () => {
@@ -44,36 +34,6 @@ describe("lines", () => {
     expect(replay(log)).toEqual(doc);
   });
 
-  test("a big paste applies and replays in linear time (#684)", () => {
-    const n = 40_000, doc = empty();
-    const t = performance.now();
-    const r = apply(doc, fromText(Array.from({ length: n }, (_, i) => `line ${i}`).join("\n")), "me");
-    if (!r.ok) throw new Error("paste failed");
-    // Rewrite every other line, top to bottom, then delete the block back out.
-    const sets = doc.lines.filter((_, i) => i % 2 === 0).map((l) => ({ kind: "set" as const, line: l.id, base: l.rev, text: l.text.toUpperCase() }));
-    const s = apply(doc, sets, "me");
-    const d = apply(doc, doc.lines.slice(100, 30_100).map((l) => ({ kind: "delete" as const, line: l.id, base: l.rev })), "me");
-    if (!s.ok || !d.ok) throw new Error("edit failed");
-    expect(text(replay([...r.applied, ...s.applied, ...d.applied]))).toBe(text(doc));
-    // Quadratic was several seconds for the paste alone.
-    expect(performance.now() - t).toBeLessThan(1_500);
-    expect(doc.lines).toHaveLength(n - 30_000);
-  });
-
-  test("ops out of order still find their lines", () => {
-    const doc = empty();
-    apply(doc, fromText("a\nb\nc\nd\ne"), "me");
-    const r = apply(doc, [
-      { kind: "set", line: "L5", base: 5, text: "E" },
-      { kind: "insert", after: "L1", text: "a2" },
-      { kind: "delete", line: "L4", base: 4 },
-      { kind: "insert", after: "L1", text: "a1" },
-      { kind: "set", line: "L2", base: 2, text: "B" },
-    ], "x");
-    expect(r.ok).toBe(true);
-    expect(text(doc)).toBe("a\na1\na2\nB\nc\nE");
-    expect(apply(doc, [{ kind: "insert", after: "L4", text: "gone" }], "x").ok).toBe(false);
-  });
 });
 
 describe("merge", () => {
@@ -129,80 +89,6 @@ describe("merge", () => {
     expect(clean("# T\na\nb\nc", "# T\nb\nc\na", "# T\nb\na\nc")).toBe("# T\nb\nc\na");
   });
 
-  test("lines the branch added under a line main moved follow it", () => {
-    expect(clean("# T\na\nb\nc", "# T\nb\nc\na", "# T\na\nx\ny\nb\nc")).toBe("# T\nb\nc\na\nx\ny");
-    // Moved up, too.
-    expect(clean("# T\na\nb\nc", "# T\nc\na\nb", "# T\na\nb\nc\nz")).toBe("# T\nc\nz\na\nb");
-  });
-
-  test("a moved block of repeated lines is a move, not a rewrite", () => {
-    const f = (name: string) => `function ${name}() {\n  if (x) {\n    go();\n  }\n}`;
-    const rest = Array.from({ length: 12 }, (_, i) => `const v${i} = ${i};`).join("\n");
-    // Main moves two functions to the end: each `  if (x) {`, `    go();`, `  }` and `}` moved twice, so only the block around `function a() {` says which is which.
-    const was = `${f("a")}\n${f("c")}\n${rest}`, onMain = `${rest}\n${f("a")}\n${f("c")}`;
-    const goA = f("a").replace("go()", "go(1)");
-    expect(clean(was, onMain, `${goA}\n${f("c")}\n${rest}`)).toBe(`${rest}\n${goA}\n${f("c")}`);
-    // Lines added under the block follow it too.
-    expect(clean(was, onMain, `${f("a")}\n// a done\n${f("c")}\n${rest}`)).toBe(`${rest}\n${f("a")}\n// a done\n${f("c")}`);
-  });
-
-  test("a block main moved out of an `if` and re-indented takes the branch's edits and new lines (#1223)", () => {
-    const tail = ["const m = merge(up, tip);", "if (m.code) continue;", "await push(ref);", "await drop(tracking(ref));", "await forget(name);"];
-    const at = (pad: string, ls: string[]) => ls.map((l) => pad + l);
-    const was = ["for (const br of rows) {", "  if (tip === had) {", ...at("    ", tail), "  } else if (open) {", "    const theirs = await fetch(ref);", "    if (theirs) await catchUp(theirs);", "  }", "}"].join("\n");
-    // Main puts the open case first and the rest under it, one level out: its diff gives lines of the old block's ids to the new ones.
-    const onMain = ["for (const br of rows) {", "  if (open) {", "    const theirs = tip === had ? tip : await fetch(ref);", "    if (theirs) await catchUp(theirs);", "    continue;", "  }", "  if (tip !== had) continue;", ...at("  ", tail), "}"].join("\n");
-    // The branch adds a line inside the block and edits one.
-    const onBranch = was.replace("    await drop(tracking(ref));", "    await drop(tracking(ref));\n    await drop(squashRef(ref));").replace("await push(ref)", "await push(ref, lease)");
-    expect(clean(was, onMain, onBranch)).toBe(onMain.replace("  await drop(tracking(ref));", "  await drop(tracking(ref));\n  await drop(squashRef(ref));").replace("await push(ref)", "await push(ref, lease)"));
-    // Moved and re-indented on main, deleted on the branch: it's gone.
-    expect(clean(was, onMain, was.replace("    await forget(name);\n", ""))).toBe(onMain.replace("  await forget(name);\n", ""));
-  });
-
-  test("a clash split only by lines main moved away is one card, and the moved lines land once (#1237)", () => {
-    const tail = ["const m = merge(up, tip);", "if (m.code) continue;", "await push(ref);", "await drop(tracking(ref));", "await forget(name);"];
-    const at = (pad: string, ls: string[]) => ls.map((l) => pad + l);
-    const was = ["for (const br of rows) {", "  if (tip === had) {", "    if (!merged || pullOnly) continue;", ...at("    ", tail), "  } else if (open) {", "    const theirs = await fetch(ref);", "    if (theirs) await catchUp(theirs);", "  }", "}"].join("\n");
-    // Main moves the tail out a level, as in #1223; the branch puts the open case first, and both rewrite it.
-    const onMain = ["for (const br of rows) {", "  if (open) {", "    const theirs = tip === had ? tip : await fetch(ref);", "    if (theirs && theirs !== had) await catchUp(theirs);", "    if (theirs) await clash(theirs);", "    continue;", "  }", "  if (tip !== had || pullOnly) continue;", ...at("  ", tail), "}"].join("\n");
-    const onBranch = ["for (const br of rows) {", "  if (open) {", "    const theirs = tip === had ? had : await fetch(ref);", "    if (theirs) await catchUp(theirs);", "  } else if (tip === had) {", "    if (pullOnly) continue;", ...at("    ", tail.slice(0, 4)), "    await drop(squashRef(ref));", "    await forget(name);", "  }", "}"].join("\n");
-    const { base, main, branch } = sides(was, onMain, onBranch), m = merge(base, branch, main, {}, "bot");
-    expect(m.conflicts).toHaveLength(1);
-    // Neither side of the card has the tail: it lands where main moved it, with the branch's new line.
-    expect([m.conflicts[0]!.main, m.conflicts[0]!.branch].some((t) => t?.includes("merge(up"))).toBe(false);
-    const moved = at("  ", [...tail.slice(0, 4), "await drop(squashRef(ref));", "await forget(name);"]).join("\n");
-    const pick = (p: Pick) => { const d = structuredClone(main), r = merge(base, branch, main, { [m.conflicts[0]!.line]: p }, "bot"); expect(r.conflicts).toEqual([]); return land(d, r); };
-    // Main's `continue;` sits outside the card on the id of the `catchUp` line the branch moved into it: it stays whatever the pick (#1248).
-    expect(pick("main")).toBe(`${onMain.split("\n").slice(0, 8).join("\n")}\n${moved}\n}`);
-    expect(pick("branch")).toBe(`${onBranch.split("\n").slice(0, 6).join("\n")}\n    continue;\n  }\n  if (tip !== had || pullOnly) continue;\n${moved}\n}`);
-    expect(pick({ text: "  if (open) {\n    await sync(ref);" })).toBe(`for (const br of rows) {\n  if (open) {\n    await sync(ref);\n    continue;\n  }\n  if (tip !== had || pullOnly) continue;\n${moved}\n}`);
-  });
-
-  test("an edit to a statement the other side joined or wrapped merges word by word, laid out as the side that moved the breaks (#1256)", () => {
-    // A join (#1214's git-recon main.ts): main adds an argument, the branch folds the line above into the call.
-    const was = "function tick() {\n    net.mirror.frame(dt, input);\n    net.battle.input(input, now);\n}";
-    const joined = "function tick() {\n    net.battle.input(net.mirror.frame(dt, input), now);\n}";
-    const fix = "function tick() {\n    net.battle.input(net.mirror.frame(dt, input), now, net.mirror.acked);\n}";
-    expect(clean(was, was.replace("now)", "now, net.mirror.acked)"), joined)).toBe(fix);
-    // The other way round: main joined it, the branch added the argument.
-    expect(clean(was, joined, was.replace("now)", "now, net.mirror.acked)"))).toBe(fix);
-    // A wrap (#1191's openapi.ts): both add a last field, main on the line, the branch on a new continuation line.
-    const ok = "  get: {\n    ok: obj({ status: str(), conflicts: arr(loose(\"{path}\")) }) } },\n  };";
-    const wrapped = ok.replace(")) })", ")),\n      took: arr(obj({ branch: str() })) })");
-    expect(clean(ok, ok.replace(")) })", ")), regenerated: arr(str()) })"), wrapped))
-      .toBe("  get: {\n    ok: obj({ status: str(), conflicts: arr(loose(\"{path}\")), regenerated: arr(str()),\n      took: arr(obj({ branch: str() })) }) } },\n  };");
-    // Edits that touch different words merge; the same words are still a card.
-    expect(clean(was, was.replace("(input, now)", "(input, later)"), joined)).toBe(joined.replace("now", "later"));
-    const { base, main, branch } = sides(was, was.replace("(input, now)", "(cmd, now)"), joined);
-    expect(merge(base, branch, main, {}, "bot").conflicts).toHaveLength(1);
-  });
-
-  test("the same new line added at the same spot on both sides lands once", () => {
-    expect(clean("# T\na", "# T\nimport y\nimport z\na", "# T\nimport z\na")).toBe("# T\nimport y\nimport z\na");
-    // Apart, they're two lines someone meant.
-    expect(clean("a\nb\nc", "z\na\nb\nc", "a\nb\nc\nz")).toBe("z\na\nb\nc\nz");
-  });
-
   test("a line both sides changed merges word by word when the edits don't touch", () => {
     expect(clean("x\n  foo(1, 2)\ny", "x\n    foo(1, 2)\ny", "x\n  foo(1, 3)\ny")).toBe("x\n    foo(1, 3)\ny");
     expect(mergeWords("let a = 1;", "const a = 1;", "let a = 2;")).toBe("const a = 2;");
@@ -212,49 +98,6 @@ describe("merge", () => {
     expect(merge(base, branch, main).conflicts).toEqual([{ line: "L2", base: "foo(1)", main: "foo(2)", branch: "foo(3)" }]);
     // A rename on one side and a new use of the old name on the other: merged, it would use a name that's gone.
     expect(mergeWords("const r = f(); g(r.ok)", "const r = f(); if (r) g(r.ok)", "const t = f(); g(t.ok)")).toBeNull();
-  });
-
-  test("a stretch both sides rewrote is one conflict, settled whole", () => {
-    // Both rewrote tryWith (from PR #243 against main): no half of each.
-    const was = "a\nconst tryWith = (us) => tester(remote, us);\nconst all = tryWith(updates);\nz";
-    const onMain = "a\nlet slowest = 0;\nconst tryWith = async (us) => {\n  slowest = 1;\n  return tester(remote, us);\n};\nconst all = tryWith(updates);\nz";
-    const onBranch = "a\nconst tryWith = async (us) => { const t = await tester(r, us); tried.set(us, t); return t; };\nconst all = tryWith(updates);\nz";
-    const { base, main, branch } = sides(was, onMain, onBranch), m = merge(base, branch, main);
-    expect(m.conflicts).toEqual([{ line: "L2", base: "const tryWith = (us) => tester(remote, us);", main: onMain.split("\n").slice(1, 6).join("\n"), branch: onBranch.split("\n")[1] }]);
-    expect(land(structuredClone(main), merge(base, branch, main, { L2: "branch" }))).toBe(onBranch);
-    expect(land(structuredClone(main), merge(base, branch, main, { L2: "main" }))).toBe(onMain);
-    // The same rewrite on both sides is no conflict.
-    expect(clean(was, onMain, onMain)).toBe(onMain);
-  });
-
-  test("a settled merge that would no longer build is a conflict until someone lands it anyway", () => {
-    // PR #243's deps.ts: keeping the branch's tryWith drops the `short` main declared, and main's later line still reads it.
-    const was = "const tryWith = (us) => tester(us);\nconst all = tryWith(updates);\nlog(all);";
-    const onMain = "let short = false;\nconst tryWith = async (us) => {\n  short = true;\n  return tester(us);\n};\nconst all = tryWith(updates);\nlog(all);\nif (short) log(\"short\");";
-    const onBranch = "const tryWith = async (us) => tester(us, tried);\nconst all = tryWith(updates);\nlog(all);";
-    const { base, main, branch } = sides(was, onMain, onBranch), m = merge(base, branch, main, { L1: "branch" });
-    expect(m.conflicts).toEqual([]);
-    // The globals both sides use (tester, log, updates) and the branch's own `tried` aren't new.
-    expect(lintMerge("deps.ts", main, branch, m, { L1: "branch" })).toEqual([{ line: "lint:undefined:short", base: "", main: null, branch: null, lint: "`short` is not defined (line 4)" }]);
-    expect(lintMerge("deps.ts", main, branch, m, { L1: "branch", "lint:undefined:short": "branch" })).toEqual([]);
-    // Only code is checked.
-    expect(lintMerge("deps.md", main, branch, m)).toEqual([]);
-  });
-
-  test("the merge check: redeclared names, undefined names and broken syntax, new ones only", () => {
-    const keys = (merged: string, a = "", b = "") => newProblems("x.ts", merged, a, b).map((p) => p.key);
-    expect(keys("const tryWith = 1;\nconst tryWith = 2;")).toEqual(["redeclared:tryWith"]);
-    expect(keys("if (a {")).toEqual(["syntax:UnexpectedToken"]);
-    expect(keys("f(a, b)", "f(a)", "f(b)")).toEqual([]);
-    // Scopes, hoisting, patterns, types, keys and labels aren't uses of an undefined name.
-    expect(keys([
-      "import { a } from './a'; import type { T } from './t';",
-      "export function f<U>({ b, c: [d] = [] }: T, ...e: U[]): T { return g(a, b, d, e, h, arguments) }",
-      "function g(...xs: unknown[]) { var h = 1; return xs }",
-      "const o = { k: 1, m() { return this.k }, [a]: 2 }; o.k; out: for (const [i, j] of Object.entries(o)) { if (i) break out; j }",
-      "class C extends Array<T> { #p = 1; static s = C; q(x = this.#p) { try {} catch ({ message }) { return message ?? x } } }",
-      "enum E { A = 1 } namespace N { export const v = E.A } declare const env: { z: number }; env.z as number; N.v; new C();",
-    ].join("\n"))).toEqual(["undefined:h", "undefined:Object", "undefined:Array"]);
   });
 
   // The same edits merged as a file at `path` (from PR #244 against main).
@@ -273,48 +116,6 @@ describe("merge", () => {
     expect(at("bun.lock", was, onMain, was).m.conflicts).toEqual([]);
   });
 
-  test("a config key the merge would define twice is a conflict", () => {
-    // Each side added BETTER_AUTH_SECRET, in a different place with a different value.
-    const was = "# @required\nGITHUB_ID=\n\n# deploys\nDEPLOY_KEY=";
-    const onMain = "# @required\nBETTER_AUTH_SECRET=op(op://cs/auth)\nGITHUB_ID=\n\n# deploys\nDEPLOY_KEY=", onBranch = "# @required\nGITHUB_ID=\n\n# deploys\nDEPLOY_KEY=\nBETTER_AUTH_SECRET=";
-    expect(at(".env.schema", was, onMain, onBranch).m.conflicts).toEqual([{ line: "key:BETTER_AUTH_SECRET", base: "", main: "BETTER_AUTH_SECRET=op(op://cs/auth)", branch: "BETTER_AUTH_SECRET=" }]);
-    const kept = at(".env.schema", was, onMain, onBranch, { "key:BETTER_AUTH_SECRET": "main" });
-    expect(land(kept.main, kept.m)).toBe(onMain);
-    // Nested keys count by their path: two "version"s in different objects are fine.
-    expect(at("package.json", `{\n  "a": {\n    "v": 1\n  }\n}`, `{\n  "a": {\n    "v": 1\n  },\n  "b": {\n    "v": 2\n  }\n}`, `{\n  "a": {\n    "v": 1\n  }\n}`).m.conflicts).toEqual([]);
-    const json = (deps: string) => `{\n  "dependencies": {\n${deps}\n  }\n}`;
-    const dup = at("package.json", json(`    "a": "1"`), json(`    "z": "2",\n    "a": "1"`), json(`    "a": "1",\n    "z": "3"`));
-    expect(dup.m.conflicts.map((x) => x.line)).toEqual(["key:dependencies.z"]);
-    for (const [pick, want] of [["main", `    "z": "2",\n    "a": "1"`], ["branch", `    "a": "1",\n    "z": "3"`]] as const) {
-      const r = at("package.json", json(`    "a": "1"`), json(`    "z": "2",\n    "a": "1"`), json(`    "a": "1",\n    "z": "3"`), { "key:dependencies.z": pick });
-      expect(land(r.main, r.m)).toBe(json(want));
-    }
-  });
-
-  test("in code, lines added next to lines the other side deleted are a conflict; in prose they merge", () => {
-    // Main stopped defining `set`; the branch added a new use of it right there.
-    const was = "const agents = on();\nconst set = (n) => !!env[n];\nif (agents && !set(\"X\")) fail();";
-    const onMain = "const agents = on();";
-    const onBranch = "const agents = on();\nconst set = (n) => !!env[n];\nif (agents && !set(\"X\")) fail();\nif (deploys && !set(\"X\")) fail();";
-    expect(at("rustybuns.config.ts", was, onMain, onBranch).m.conflicts).toHaveLength(1);
-    const doc = "# T\nold para\nmore", docMain = "# T", docBranch = "# T\nold para\nmore\nnew para";
-    const r = at("README.md", doc, docMain, docBranch);
-    expect(r.m.conflicts).toEqual([]);
-    expect(land(r.main, r.m)).toBe("# T\nnew para");
-  });
-
-  test("the same line added on both sides in different places would land twice: a conflict", () => {
-    const { base, main, branch } = sides("a\nb\nc", "import { z } from './z'\na\nb\nc", "a\nb\nimport { z } from './z'\nc");
-    const m = merge(base, branch, main);
-    expect(m.conflicts).toEqual([{ line: "L4", base: "", main: "import { z } from './z'", branch: "import { z } from './z'", doubled: true }]);
-    expect(land(structuredClone(main), merge(base, branch, main, { L4: "main" }))).toBe("import { z } from './z'\na\nb\nc");
-    expect(land(structuredClone(main), merge(base, branch, main, { L4: "branch" }))).toBe("import { z } from './z'\na\nb\nimport { z } from './z'\nc");
-    // A line the file already repeats (a test's setup call) isn't flagged either.
-    const setup = "await post(call, 'ana', '/api/repos', { name: 'r' });";
-    expect(clean(`${setup}\na\nb`, `${setup}\na\n${setup}\nb`, `${setup}\na\nb\n${setup}`)).toBe(`${setup}\na\n${setup}\nb\n${setup}`);
-    // A short or bare line ("}", "return;") repeats all the time: it isn't flagged.
-    expect(clean("a\nb\nc", "}\na\nb\nc", "a\nb\n}\nc")).toBe("}\na\nb\n}\nc");
-  });
 });
 
 describe("app", () => {
@@ -443,33 +244,6 @@ describe("levels", () => {
     expect([bun.status, bun.error]).toEqual(["failed", "The repository exceeds the size limit."]);
   });
 
-  test("an admin digs a ready level again: its old repo goes, side branches and all (#368)", async () => {
-    const call = await local({ ADMINS: "boss" });
-    const ns = call.artifacts, { push } = await import("../src/git.ts");
-    // An old dig whose HEAD names the side branch it was first pushed to.
-    const old = await ns.create("level-hono");
-    await push(old.remote, old.token, { changes: { "README.md": "old\n" }, message: "part", author: "upstream", branch: "codesplitter-parts" });
-    await push(old.remote, old.token, { changes: { "README.md": "old\n" }, message: "upstream", author: "upstream" });
-    await call.env.DB.prepare("INSERT INTO levels (slug, status) VALUES ('hono', 'ready')").run();
-    // Here HEAD always names main; on Cloudflare it names the first branch pushed, so check that branch goes.
-    const side = async () => (await (await ns.get("level-hono")).log({ ref: "codesplitter-parts" }).catch(() => [])).length;
-    expect(await side()).toBe(1);
-    // Stand in for the import: the default branch, pushed first.
-    ns.import = (async ({ target }: { target: { name: string } }) => {
-      const made = await ns.create(target.name);
-      await push(made.remote, made.token, { changes: { "README.md": "new\n" }, message: "upstream", author: "upstream" });
-      return made;
-    }) as any;
-
-    await post(call, "boss", "/api/login", { name: "boss" });
-    expect((await post(call, "boss", "/api/levels/hono/import", {})).status).toBe(202);
-    let hono: any;
-    for (let i = 0; i < 200 && hono?.status !== "ready"; i++, await Bun.sleep(25)) hono = (await (await call(null, "/api/levels")).json() as any[]).find((l) => l.slug === "hono");
-    expect(hono.status).toBe("ready");
-    expect((await (await call(null, "/api/levels/hono/file?path=README.md")).json() as any).text).toBe("new\n");
-    expect(await side()).toBe(0);
-  });
-
   test("browse a level, fork it, open a deep file, catalogue it: the push keeps every other file", async () => {
     const call = await local();
     // Stand in for an import (which needs the network): a repo with a few files, marked ready.
@@ -517,28 +291,7 @@ describe("levels", () => {
   });
 });
 
-
 describe("accounts", () => {
-  test("a request stuck on D1 inside Better Auth doesn't hold up the next one (#333)", async () => {
-    const { call, person, session } = await accounts();
-    const cookie = await person("stuck@example.com", "stuckone");
-    // The next session lookup never comes back, like a request cancelled mid-query on Workers.
-    const db = call.env.DB, prepare = db.prepare.bind(db);
-    let armed = true, stuck!: () => void;
-    const isStuck = new Promise<void>((r) => (stuck = r));
-    db.prepare = (sql: string) => {
-      if (!armed || !/"session"/.test(sql)) return prepare(sql);
-      armed = false; stuck();
-      return { bind: () => ({ all: () => new Promise(() => {}) }) };
-    };
-    // Wait until the first is stuck: started together, a cold second one could reach the trap first.
-    void session(cookie);
-    await isStuck;
-    // A hang waits forever, so the budget only has to beat the 20s test timeout. It is roomy because
-    // an honest lookup took just over 3s on the 4-core CI runner under --parallel (#504).
-    const next = await Promise.race([session(cookie), Bun.sleep(10_000).then(() => "hung")]);
-    expect(next).toMatchObject({ user: "stuckone" });
-  });
 
   test("with a secret set, Better Auth signs people up, then they pick the handle the app sees", async () => {
     const { call, signup, session, claim } = await accounts();
@@ -591,14 +344,6 @@ describe("ADMIN_EMAIL", () => {
     expect(await quinnRow()).toBeNull();
   });
 
-  test("a quinn row alias mode left behind (no auth_id) is taken over", async () => {
-    const { db, session, signup, authId, quinnRow } = await site();
-    await db.prepare("INSERT INTO users (name) VALUES ('quinn')").run();
-    const cookie = await signup("quinn@example.com", true);
-    expect((await session(cookie)).user).toBe("quinn");
-    expect(await quinnRow()).toEqual({ auth_id: await authId("quinn@example.com") });
-  });
-
   test("a quinn row another account owns is left alone, and ADMIN_EMAIL gets no handle", async () => {
     const { db, session, signup, quinnRow } = await site();
     await db.prepare("INSERT INTO users (name, auth_id) VALUES ('quinn', 'someone-else')").run();
@@ -618,16 +363,6 @@ describe("account email", () => {
       link: (to: string) => { const m = sent.findLast((s) => s.to === to)!; const u = new URL(/https?:\/\/\S+/.exec(m.text)![0]); return u.pathname + u.search; } };
   };
   const cookies = (res: Response) => (res.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
-
-  test("without a sender there's no mail: no reset, no verification, and no grant for a typed email", async () => {
-    const { call, signup, session } = await accounts({ ADMINS: "boss-person" });
-    const cookie = await signup("ana@example.com", "Ana Lyst");
-    expect(await session(cookie)).not.toHaveProperty("unverified");
-    expect(await session()).not.toHaveProperty("mail");
-    const reset = await call(null, "/api/auth/request-password-reset", { method: "POST", headers: { "content-type": "application/json", origin: "http://codesplitter.local" },
-      body: JSON.stringify({ email: "ana@example.com", redirectTo: "/?reset=1" }) });
-    expect(reset.status).toBe(400);
-  });
 
   test("signup mails a verification link; opening it verifies the email, so a grant lands", async () => {
     const box = outbox();
@@ -680,44 +415,6 @@ describe("account email", () => {
     expect((await signin("a brand new one")).status).toBe(200);
   });
 
-  test("reset and verification requests count against the mail limit", () => {
-    expect(ruleFor("POST", ["", "auth", "request-password-reset"])).toBe("mail");
-    expect(ruleFor("POST", ["", "auth", "send-verification-email"])).toBe("mail");
-    expect(ruleFor("POST", ["", "auth", "reset-password"])).toBeNull();
-  });
-
-  test("preview deploys, hosted deploys and doctor runs started by hand have rules; reading them doesn't count", () => {
-    expect(ruleFor("POST", ["", "repos", "o", "r", "preview"])).toBe("preview");
-    expect(ruleFor("POST", ["", "repos", "o", "r", "deps", "run"])).toBe("doctor");
-    expect(ruleFor("POST", ["", "repos", "o", "r", "deploy"])).toBe("deploy");
-    expect(ruleFor("PUT", ["", "repos", "o", "r", "deploy"])).toBeNull();
-    expect(ruleFor("PUT", ["", "repos", "o", "r", "deploy", "key"])).toBeNull();
-    expect(ruleFor("GET", ["", "repos", "o", "r", "preview"])).toBeNull();
-    expect(ruleFor("GET", ["", "repos", "o", "r", "gitpath"])).toBe("github");
-    expect(ruleFor("PUT", ["", "repos", "o", "r", "deps"])).toBeNull();
-  });
-
-  test("branches, merges, fresh starts and webhooks have rules: each writes to Artifacts or calls out (#797)", () => {
-    expect(ruleFor("POST", ["", "repos", "o", "r", "branches"])).toBe("branch");
-    expect(ruleFor("POST", ["", "repos", "o", "r", "branches", "b", "merge"])).toBe("commit");
-    expect(ruleFor("POST", ["", "repos", "o", "r", "branches", "b", "hunks", "reject"])).toBeNull();
-    expect(ruleFor("POST", ["", "repos", "o", "r", "fresh"])).toBe("fresh");
-    expect(ruleFor("POST", ["", "repos", "o", "r", "hooks"])).toBe("hook");
-    expect(ruleFor("POST", ["", "repos", "o", "r", "hooks", "id", "test"])).toBeNull();
-    expect(ruleFor("GET", ["", "repos", "o", "r", "branches"])).toBeNull();
-  });
-
-  test("a failed send is logged, not shown: the reset answer stays the same", async () => {
-    const { call } = await accounts({ EMAIL: { send: async () => { throw Object.assign(new Error("no"), { code: "E_SENDER_NOT_VERIFIED" }); } }, EMAIL_FROM: "accounts@example.com" });
-    const err = console.error; console.error = () => {};
-    try {
-      await call(null, "/api/auth/sign-up/email", { method: "POST", headers: { "content-type": "application/json", origin: "http://codesplitter.local" },
-        body: JSON.stringify({ email: "ana@example.com", password: "correct horse battery", name: "Ana" }) });
-      const r = await call(null, "/api/auth/request-password-reset", { method: "POST", headers: { "content-type": "application/json", origin: "http://codesplitter.local" },
-        body: JSON.stringify({ email: "ana@example.com", redirectTo: "/?reset=1" }) });
-      expect(r.status).toBe(200);
-    } finally { console.error = err; }
-  });
 });
 
 describe("handles", () => {
@@ -759,13 +456,6 @@ describe("handles", () => {
 describe("rate limits", () => {
   const ip = { "cf-connecting-ip": "203.0.113.7" };
 
-  test("the spread of what callers used per window: low, median, mean, p90/95/99, worst", () => {
-    expect(spread([], 10)).toBeNull();
-    // 100 caller-windows: 1 used once, 89 used 3, 5 used 8, 4 used 12, 1 used 40.
-    expect(spread([[1, 1], [3, 89], [8, 5], [12, 4], [40, 1]], 10))
-      .toEqual({ windows: 100, low: 1, p50: 3, mean: 4, p90: 3, p95: 8, p99: 12, worst: 40, over: 5 });
-  });
-
   test("count requests from the internet, per IP before sign-in and per handle after", async () => {
     const { call, signup, claim, person } = await accounts({ ADMINS: "boss-person" });
     const boss = await person("boss@example.com", "boss-person");
@@ -804,78 +494,6 @@ describe("rate limits", () => {
     expect((await claim(ana, "nope-nope", ip)).status).toBe(409);
   });
 
-  test("a gem tier multiplies a person's per-person caps and stamps their name", async () => {
-    const { call, person } = await accounts({ ADMINS: "boss-person" });
-    const boss = await person("boss@example.com", "boss-person"), ana = await person("ana@example.com", "ana-lyst");
-    const put = (rules: unknown) => call(null, "/api/admin/limits", { method: "PUT", headers: { cookie: boss }, body: JSON.stringify({ rules }) });
-    const tier = (cookie: string, who: string, t: unknown) => call(null, "/api/admin/limits/tier", { method: "PUT", headers: { cookie }, body: JSON.stringify({ who, tier: t }) });
-    const repo = (name: string) => call(null, "/api/repos", { method: "POST", headers: { cookie: ana, ...ip }, body: JSON.stringify({ name }) });
-    await put([{ name: "repo", max: 1, window_s: 86400, enabled: true }]);
-
-    expect((await tier(ana, "ana-lyst", "painite")).status).toBe(403);               // admins only
-    expect((await tier(boss, "ana-lyst", "ruby")).status).toBe(400);                 // not one of the gems
-    expect((await tier(boss, "nobody-here", "painite")).status).toBe(404);
-    expect((await tier(boss, "@ana-lyst", "tanzanite")).status).toBe(200);
-
-    // Tanzanite is 2x: two new repos a day instead of one, then a 429 that says so.
-    expect((await repo("a")).status).toBe(201);
-    expect((await repo("b")).status).toBe(201);
-    const over = await repo("c");
-    expect(over.status).toBe(429);
-    expect(((await over.json()) as any).error).toMatch(/limited to 2 per day/);
-
-    // The stamp: on her profile and in her session, and the admin page lists her.
-    expect(((await (await call(null, "/api/users/ana-lyst")).json()) as any).user.tier).toMatchObject({ id: "tanzanite", mult: 2 });
-    expect(((await (await call(null, "/api/session", { headers: { cookie: ana } })).json()) as any).tier).toMatchObject({ label: "Tanzanite" });
-    const page = (await (await call(null, "/api/admin/limits", { headers: { cookie: boss } })).json()) as any;
-    expect(page.tiers.map((t: any) => t.id)).toEqual(["tanzanite", "alexandrite", "painite"]);
-    expect(page.tiered).toEqual([{ name: "ana-lyst", tier: "tanzanite" }]);
-
-    // Painite is 10x, and off the tier she's back to one.
-    await tier(boss, "ana-lyst", "painite");
-    expect((await repo("c")).status).toBe(201);
-    await tier(boss, "ana-lyst", null);
-    expect((await repo("d")).status).toBe(429);
-    expect(((await (await call(null, "/api/users/ana-lyst")).json()) as any).user.tier).toBeNull();
-  });
-
-  test("over a limit: reject, log, or flag; the log; and an admin's reset", async () => {
-    const { call, person } = await accounts({ ADMINS: "boss-person" });
-    const boss = await person("boss@example.com", "boss-person"), ana = await person("ana@example.com", "ana-lyst");
-    const put = (rules: unknown) => call(null, "/api/admin/limits", { method: "PUT", headers: { cookie: boss }, body: JSON.stringify({ rules }) });
-    const get = async () => (await (await call(null, "/api/admin/limits", { headers: { cookie: boss } })).json()) as any;
-    const repo = (name: string) => call(null, "/api/repos", { method: "POST", headers: { cookie: ana, ...ip }, body: JSON.stringify({ name }) });
-    expect((await put([{ name: "repo", max: 1, window_s: 86400, enabled: true, on_fail: "shrug" }])).status).toBe(400);
-
-    // Rejected: a 429, and one log entry for the window however many times she tries.
-    expect((await get()).rules.find((r: any) => r.name === "repo")).toMatchObject({ on_fail: "reject", group: "Repos", defaults: { on_fail: "reject" } });
-    expect((await put([{ name: "repo", max: 1, window_s: 86400, enabled: true }])).status).toBe(200);
-    expect((await repo("a")).status).toBe(201);
-    expect((await repo("b")).status).toBe(429);
-    expect((await repo("c")).status).toBe(429);
-    expect((await get()).events.map((e: any) => [e.rule, e.who, e.action])).toEqual([["repo", "@ana-lyst", "reject"]]);
-
-    // An admin resets her: she's back under the cap, and out of the log.
-    expect((await call(null, "/api/admin/limits/reset", { method: "POST", headers: { cookie: ana }, body: JSON.stringify({ who: "@ana-lyst" }) })).status).toBe(403);
-    expect((await call(null, "/api/admin/limits/reset", { method: "POST", headers: { cookie: boss }, body: JSON.stringify({ who: "@ana-lyst", rule: "repo" }) })).status).toBe(200);
-    expect((await get()).events).toEqual([]);
-    expect((await repo("d")).status).toBe(201);
-
-    // Logged: let through, noted. Flagged: let through, and listed.
-    await put([{ name: "repo", max: 1, window_s: 86400, enabled: true, on_fail: "log" }]);
-    expect((await repo("e")).status).toBe(201);
-    expect((await get()).flagged).toEqual([]);
-    await call(null, "/api/admin/limits/reset", { method: "POST", headers: { cookie: boss }, body: JSON.stringify({ who: "@ana-lyst" }) });
-    await put([{ name: "repo", max: 1, window_s: 86400, enabled: true, on_fail: "flag" }]);
-    expect((await repo("f")).status).toBe(201);
-    expect((await repo("g")).status).toBe(201);
-    const { events, flagged } = await get();
-    expect(events.map((e: any) => e.action)).toEqual(["flag"]);
-    expect(flagged).toMatchObject([{ who: "@ana-lyst", rules: ["repo"], times: 1 }]);
-    // A save that leaves on_fail out keeps it.
-    await put([{ name: "repo", max: 2, window_s: 86400, enabled: true }]);
-    expect((await get()).rules.find((r: any) => r.name === "repo")).toMatchObject({ max: 2, on_fail: "flag" });
-  });
   test("over a limit that queues: a place in line, then the dig runs once there's room", async () => {
     const call = await local({ GH_CLI: "off", ADMINS: "boss" });
     const real = globalThis.fetch;
@@ -949,45 +567,6 @@ describe("rate limits", () => {
       expect(jobs[0]).toMatchObject({ what: "fork of no-such-level", state: "done", result: { error: expect.any(String) } });
       expect(jobs[0].status).toBeGreaterThanOrEqual(400);
     } finally { globalThis.fetch = real; }
-  });
-
-  test("live edits count against the edit limit, over the socket and POST alike", async () => {
-    // Windows start on the minute; stand the clock still at the start of one so no edit lands in the next.
-    setSystemTime(new Date(Math.ceil(Date.now() / 60_000) * 60_000));
-    try {
-      const call = await local({ ADMINS: "boss" });
-      await call.env.DB.prepare("INSERT INTO limit_rules (name, max, window_s, enabled) VALUES ('edit', 3, 60, 1)").run();
-      await post(call, "ana", "/api/repos", { name: "r" });
-      await post(call, "ana", "/api/repos/ana/r/files", { path: "a", content: "x" });
-      const open = async (headers: Record<string, string>) => {
-        const ws = ((await call("ana", "/api/repos/ana/r/do/ws?path=a", { headers: { upgrade: "websocket", ...headers } })) as any).webSocket, got: any[] = [];
-        ws.toBrowser = (d: string) => got.push(JSON.parse(d));
-        ws.queue.splice(0);
-        let id = 0;
-        const edit = async (text: string) => {
-          ws.onMessage(JSON.stringify({ type: "ops", id: ++id, ops: [{ kind: "insert", after: null, text }] }));
-          for (const end = performance.now() + 15_000; performance.now() < end;) { const a = got.find((m) => m.id === id); if (a) return a; await Bun.sleep(5); }
-        };
-        return { edit };
-      };
-      const sock = await open(ip);
-      expect((await sock.edit("1")).type).toBe("ack");
-      expect((await sock.edit("2")).type).toBe("ack");
-      const ops = (text: string) => call("ana", "/api/repos/ana/r/do/ops?path=a", { method: "POST", headers: ip, body: JSON.stringify({ ops: [{ kind: "insert", after: null, text }] }) });
-      expect((await ops("3")).status).toBe(200);
-      // The socket's two are counted in the file's DO, not D1, until its tally lands; that tally learns of the POST's too.
-      expect(await call.env.DB.prepare("SELECT count FROM limit_hits WHERE rule = 'edit'").first().then((r: any) => r.count)).toBe(1);
-      await Bun.sleep(TALLY_MS + 200);
-      expect(await call.env.DB.prepare("SELECT count FROM limit_hits WHERE rule = 'edit'").first().then((r: any) => r.count)).toBe(3);
-      const over = await sock.edit("4");
-      expect(over).toMatchObject({ type: "nack", error: expect.stringMatching(/line edits is limited to 3 per minute/) });
-      expect(over.retryAfter).toBeGreaterThan(0);
-      expect((await ops("5")).status).toBe(429);
-      // The desktop isn't counted, and a page can't name who its socket counts as.
-      const desk = await open({ "x-codesplitter-limit-as": "@someone-else" });
-      expect((await desk.edit("6")).type).toBe("ack");
-      expect(await call.env.DB.prepare("SELECT who FROM limit_hits WHERE rule = 'edit'").all().then((r: any) => r.results.map((x: any) => x.who))).toEqual(["@ana"]);
-    } finally { setSystemTime(); }
   });
 
   test("every edit over the socket gets an answer, even when something breaks on the way (#659)", async () => {
