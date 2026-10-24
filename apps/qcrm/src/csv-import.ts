@@ -58,6 +58,12 @@ const dupeKey = (entity: Entity, r: Record<string, unknown>) =>
 
 export interface ImportResult { created: number; duplicates: number; failed: number; errors: { row: number; error: string }[] }
 
+/** A column map from the request: an object of strings, or an error that makes the request a 400. */
+function stringMap(v: unknown): Record<string, string> {
+  if (!v || typeof v !== "object" || Array.isArray(v) || !Object.values(v).every((x) => typeof x === "string")) throw new Error("map is an object of strings");
+  return v as Record<string, string>;
+}
+
 export async function importCsv({ env, org, user }: Ctx, entity: Entity, text: string, map?: Record<string, string>): Promise<ImportResult | string> {
   if (text.length > MAX_IMPORT_BYTES) return `at most ${MAX_IMPORT_BYTES / 1e6} MB of CSV`;
   const [head, ...body] = parseCsv(text);
@@ -103,12 +109,13 @@ export async function importRoute(ctx: Ctx, entity: Entity): Promise<Response> {
       if (!f || typeof f === "string") return error(400, "send the CSV as a file field named file");
       text = await f.text();
     } else if (type.includes("json")) {
-      const b = await req.json() as { csv?: unknown; map?: Record<string, string> };
+      const b = (await req.json()) as { csv?: unknown; map?: unknown } | null;
       if (typeof b?.csv !== "string") return error(400, "send {\"csv\": \"…\"}");
-      text = b.csv; map = b.map;
+      text = b.csv;
+      if (b.map !== undefined) map = stringMap(b.map);
     } else text = await req.text();
     const q = url.searchParams.get("map");
-    if (q) map = JSON.parse(q);
+    if (q) map = stringMap(JSON.parse(q));
   } catch { return error(400, "couldn't read the CSV or its map"); }
   const r = await importCsv(ctx, entity, text, map);
   return typeof r === "string" ? error(400, r) : json(r, r.created ? 201 : 200);

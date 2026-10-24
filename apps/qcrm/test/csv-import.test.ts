@@ -24,4 +24,6 @@ test("import contacts and companies from a CSV: mapping, dedupe, bad rows, roles
   expect(await raw.json()).toMatchObject({ created: 1, duplicates: 1 });
 
   expect((await post(app, cookie, `${base}/contacts/import`, { csv: "nope,nada\n1,2\n" })).status).toBe(400);
+  // A column map that isn't an object of strings is refused, not trusted.
+  for (const map of [["Co"], { Co: 1 }, "name"]) expect((await post(app, cookie, `${base}/companies/import`, { csv: "Co\nAcme\n", map })).status).toBe(400);
 });

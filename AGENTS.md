@@ -42,6 +42,15 @@ codeSplitter's site (`scripts/site/codesplitter.ts`, tags `codesplitter-v*`) gen
 and MCP tool list from `apps/codesplitter/src/openapi.ts` and `src/mcp-tools.ts`, so an endpoint change
 updates its docs in the same PR. Those two files must keep importing nothing else.
 
+## Check what comes in
+
+A parsed body, fetch reply or stored string is `unknown` until something looks at it. Don't
+assert a shape onto it (`as { owner: string }`), and no `any` or `as never`: narrow each field
+(`readBody` and `parseJson` in codeSplitter, `isPlainObject` and `listOf` in its `util.ts`), and
+test the wrong shape. CI runs `bun scripts/boundary-audit.ts`, which fails on a new unchecked value
+and on a file that got better but didn't lower its count in `scripts/boundary-audit.allow.json`
+(`--update` writes it, `--list` shows every one). The allowance only goes down.
+
 ## Effect: where it fits
 
 Reach for `effect` where something must be cleaned up, cancelled, retried, or can lose state (child processes, sockets,

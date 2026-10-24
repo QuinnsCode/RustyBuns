@@ -12,7 +12,7 @@ import { importTarball, tooBigToImport } from "./tarball.ts";
 import { git, mirrorsOn, seeGit } from "./mirror.ts";
 import { wipeSearch } from "./search.ts";
 import { repoRow } from "./repos.ts";
-import { hex } from "./util.ts";
+import { hex, listOf } from "./util.ts";
 import { charge, SITE } from "./limits.ts";
 
 /** A visitor's dig lasts a day; past the cap, the oldest goes first. Admins' digs keep. */
@@ -503,7 +503,7 @@ export async function githubRoutes(req: Request, env: Env, p: string[], user: st
     if (!q) return json({ repos: [] });
     const res = await gh(`/search/repositories?per_page=12&q=${encodeURIComponent(q + " is:public")}`, t?.token);
     if (!res.ok) return json({ repos: [], error: res.status === 403 || res.status === 429 ? "GitHub's search is rate limited; try again in a minute" : `GitHub said ${res.status}` }, 200);
-    const items = ((await res.json()) as { items: any[] }).items ?? [];
+    const items = listOf(await res.json().catch(() => null), "items");
     return json({ repos: items.map((r) => ({ repo: r.full_name, description: r.description, stars: r.stargazers_count, language: r.language })) });
   }
 

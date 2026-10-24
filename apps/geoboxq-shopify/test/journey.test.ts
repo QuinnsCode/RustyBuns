@@ -25,4 +25,6 @@ test("a product with no size is named, and a wrong store key is a bad gateway, n
   expect(res.status).toBe(422);
   expect(await res.json()).toMatchObject({ missing: ["Mystery"] });
   expect((await pack({ items: [{ variant_id: 11 }] }, { ...env, GEOBOXQ_KEY: "wrong" })).status).toBe(502);
+  // A body that isn't a cart object is a 400, whatever JSON it is.
+  for (const body of [null, 5, "cart", [1], {}]) expect((await pack(body)).status).toBe(400);
 });

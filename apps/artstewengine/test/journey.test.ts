@@ -32,6 +32,8 @@ test("the whole pay-me journey: set up, add a payer, lease, revoke, restore", as
 
   expect((await call("/health")).res.status).toBe(200);
   expect((await lease("nope")).res.status).toBe(402);
+  // A body that isn't an object is no license, not a crash.
+  for (const json of [[], "x", 7]) expect((await call("/lease", { json })).res.status).toBe(402);
 
   // Only the admin's email can make the one account, and only once.
   expect((await call("/do/setup", { form: { email: "eve@example.com", password: PASSWORD } })).to).toBe("/login?e=setup");
@@ -58,7 +60,7 @@ test("the whole pay-me journey: set up, add a payer, lease, revoke, restore", as
 
   const [after] = await listLicenses(conf);
   expect(after).toMatchObject({ leases: 2, last_host: "https://buddy.example", last_version: "0.1.4" });
-  expect(await metrics(conf, [after!])).toMatchObject({ paid: 1, accounts: 1, ok24: 2, refused24: 2 });
+  expect(await metrics(conf, [after!])).toMatchObject({ paid: 1, accounts: 1, ok24: 2, refused24: 5 });
 
   // Sign out, then back in; a wrong password and a stranger's email both fail.
   const out = await call("/do/logout", { form: {}, cookie: setup.cookie });

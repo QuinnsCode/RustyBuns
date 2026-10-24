@@ -6,6 +6,7 @@
 //   mergeTable              Cargo.toml / pyproject.toml / go.mod dependency tables, merged by key like manifest.ts
 //   proveMerge              install and build the merged tree in a sandbox that is torn down whatever happens
 import { floor, higher, mergeManifest } from "./manifest.ts";
+import { isPlainObject } from "./util.ts";
 
 export type Ecosystem = "npm" | "cargo" | "python" | "go" | "ruby";
 export interface DepFile { path: string; eco: Ecosystem; kind: "manifest" | "lock"; /** The manifest a lockfile follows. */ follows?: string; /** A workspace member of the root manifest at this path. */ member?: string }
@@ -116,14 +117,25 @@ export function npmDocs(get: typeof fetch = fetch, advisories?: (name: string, v
     if (eco !== "npm") return null;
     const res = await get(`https://registry.npmjs.org/${name.replace("/", "%2F")}`);
     if (!res.ok) return null;
-    const p: any = await res.json();
+    const p = packument(await res.json().catch(() => null));
     const want = to.replace(/^[\^~>=<\s]*v?/, "");
-    const v = p.versions?.[want] ?? p.versions?.[p["dist-tags"]?.latest];
+    const v = p.versions[want] ?? p.versions[p.latest ?? ""];
     const breaking: string[] = [];
     if (v?.deprecated) breaking.push(`is deprecated: ${String(v.deprecated).slice(0, 120)}`);
-    const sec = String(p.readme ?? "").split(/^#{1,3}\s/m).find((s) => s.includes(want) && /breaking|removed|renamed/i.test(s));
+    const sec = p.readme.split(/^#{1,3}\s/m).find((s) => s.includes(want) && /breaking|removed|renamed/i.test(s));
     for (const line of (sec ?? "").split("\n")) if (/breaking|removed|renamed/i.test(line)) breaking.push(line.replace(/^[-*\s]+/, "").slice(0, 120));
     return { breaking: breaking.slice(0, 3), fixes: (await advisories?.(name, from).catch(() => [])) ?? [] };
+  };
+}
+
+/** The parts of an npm packument we read, each checked: the registry is someone else's data. */
+function packument(x: unknown): { versions: Record<string, { deprecated?: unknown } | undefined>; latest?: string; readme: string } {
+  const o = isPlainObject(x) ? x : {};
+  const tags = isPlainObject(o["dist-tags"]) ? o["dist-tags"] : {};
+  return {
+    versions: isPlainObject(o.versions) ? Object.fromEntries(Object.entries(o.versions).map(([k, v]) => [k, isPlainObject(v) ? v : undefined])) : {},
+    latest: typeof tags.latest === "string" ? tags.latest : undefined,
+    readme: typeof o.readme === "string" ? o.readme : "",
   };
 }
 

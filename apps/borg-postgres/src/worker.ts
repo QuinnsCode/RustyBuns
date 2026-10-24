@@ -34,8 +34,12 @@ async function route(sql: postgres.Sql, req: Request, url: URL): Promise<Respons
     return json({ ok: true });
   }
   if (path === "/api/notes" && req.method === "POST") {
-    const { owner, body, tags = [], meta = {} } = await req.json() as { owner: string; body: string; tags?: string[]; meta?: object };
-    const [row] = await sql`insert into notes (owner, body, tags, meta) values (${owner}, ${body}, ${pgArray(tags)}::text[], ${sql.json(meta as never)}) returning id, to_json(tags) as tags, meta`;
+    const b: { owner?: unknown; body?: unknown; tags?: unknown; meta?: unknown } = await req.json().catch(() => null) ?? {};
+    const { owner, body, tags = [], meta = {} } = b;
+    if (typeof owner !== "string" || typeof body !== "string") return json({ error: "send { owner, body } as strings" }, 400);
+    if (!Array.isArray(tags) || !tags.every((t) => typeof t === "string")) return json({ error: "tags is a list of strings" }, 400);
+    if (!meta || typeof meta !== "object" || Array.isArray(meta)) return json({ error: "meta is an object" }, 400);
+    const [row] = await sql`insert into notes (owner, body, tags, meta) values (${owner}, ${body}, ${pgArray(tags as string[])}::text[], ${sql.json(meta as Parameters<typeof sql.json>[0])}) returning id, to_json(tags) as tags, meta`;
     return json(row, 201);
   }
   if (path === "/api/notes" && req.method === "GET") {

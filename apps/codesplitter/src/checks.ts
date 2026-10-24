@@ -70,7 +70,7 @@
 //   PUT  /api/repos/:o/:r/checks/:id {status?, log?, append?, junit?, runner_label?}  a runner reports, and says it's alive (whoever claimed it, or the owner)
 //   POST /api/repos/:o/:r/checks/:id/cancel    stop one of ours that's queued or running (the crew)
 
-import { httpUrl, parseJson } from "./util.ts";
+import { httpUrl, listOf, parseJson } from "./util.ts";
 import { json, readBody, type Env } from "./env.ts";
 import { repoRow } from "./repos.ts";
 import { githubToken, parseRepo } from "./github.ts";
@@ -540,6 +540,8 @@ export const fromCheckRun = (c: { status: string; conclusion: string | null }): 
   c.status !== "completed" ? (c.status === "in_progress" ? "running" : "queued")
   : c.conclusion === "cancelled" ? "cancelled"
   : ["success", "neutral", "skipped"].includes(c.conclusion ?? "") ? "passed" : "failed";
+/** A GitHub timestamp as epoch ms, or null when it's missing. */
+const when = (v: unknown) => typeof v === "string" && v ? Date.parse(v) : null;
 export const fromState = (s: string): Status => s === "success" ? "passed" : s === "pending" ? "running" : "failed";
 
 /**
@@ -556,15 +558,15 @@ export async function importGithub(env: Env, owner: string, repo: string, ref: s
   ]);
   if (!runs.ok) return { error: `GitHub said ${runs.status} for ${sha.slice(0, 7)}'s check runs` };
   const jobs = [
-    ...((await runs.json()) as { check_runs?: any[] }).check_runs?.map((c) => ({
-      external_id: `run:${c.id}`, name: String(c.name), status: fromCheckRun(c), url: httpUrl(c.html_url),
-      started_at: c.started_at ? Date.parse(c.started_at) : null, finished_at: c.completed_at ? Date.parse(c.completed_at) : null,
-    })) ?? [],
-    ...(statuses.ok ? ((await statuses.json()) as { statuses?: any[] }).statuses ?? [] : [])
+    ...listOf(await runs.json().catch(() => null), "check_runs").map((c) => ({
+      external_id: `run:${c.id}`, name: String(c.name), status: fromCheckRun({ status: String(c.status), conclusion: typeof c.conclusion === "string" ? c.conclusion : null }), url: httpUrl(c.html_url),
+      started_at: when(c.started_at), finished_at: when(c.completed_at),
+    })),
+    ...(statuses.ok ? listOf(await statuses.json().catch(() => null), "statuses") : [])
       .filter((s) => !String(s.context).startsWith(CONTEXT))
       .map((s) => ({
-        external_id: `status:${s.context}`, name: String(s.context), status: fromState(s.state), url: httpUrl(s.target_url),
-        started_at: s.created_at ? Date.parse(s.created_at) : null, finished_at: s.state !== "pending" && s.updated_at ? Date.parse(s.updated_at) : null,
+        external_id: `status:${s.context}`, name: String(s.context), status: fromState(String(s.state)), url: httpUrl(s.target_url),
+        started_at: when(s.created_at), finished_at: s.state !== "pending" ? when(s.updated_at) : null,
       })),
   ];
   for (const j of jobs) {

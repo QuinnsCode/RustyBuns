@@ -13,6 +13,13 @@ export const sha256 = async (text: string) => hex(await digest(text));
 export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 /** "1 line", "3 lines"; pass `many` for an irregular plural. */
 export const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
+/** `v` is a JSON object: not null, not an array. What a parsed body must be before its keys are read. */
+export const isPlainObject = (v: unknown): v is { [k: string]: unknown } => typeof v === "object" && v !== null && !Array.isArray(v);
+/** The objects in `v[key]` when `v` is a JSON object holding a list: what a third-party reply gives, or nothing. */
+export const listOf = (v: unknown, key: string): { [k: string]: unknown }[] => {
+  const list = isPlainObject(v) ? v[key] : null;
+  return Array.isArray(list) ? list.filter(isPlainObject) : [];
+};
 /** A number padded so keys sort in numeric order as text. */
 export const pad10 = (n: number) => String(n).padStart(10, "0");
 /** `s` parsed as JSON, or `fallback` when it's empty or not JSON: a stored row that went bad spoils one entry, not the whole listing. */
