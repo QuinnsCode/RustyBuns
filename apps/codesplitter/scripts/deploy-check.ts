@@ -48,7 +48,7 @@ const pins = { effect: "4.0.5", "@effect/platform-bun": "4.0.5", "@effect/platfo
 const APP: Record<string, string> = {
   "package.json": JSON.stringify({
     name: repo, private: true, type: "module",
-    devDependencies: { "@rustybuns/cli": "0.1.9", alchemy: "2.0.0-beta.77", "@alchemy.run/frontend-frameworks": "2.0.0-beta.77", ...pins },
+    devDependencies: { "@rustybuns/cli": "0.1.9", alchemy: "2.0.0-beta.84", "@alchemy.run/frontend-frameworks": "2.0.0-beta.84", ...pins },
     overrides: { ...pins, "@effect/platform-node-shared": "4.0.5", "@effect/vitest": "4.0.5" },
   }, null, 2) + "\n",
   "rustybuns.config.ts": `import { defineConfig } from "@rustybuns/cli/config";

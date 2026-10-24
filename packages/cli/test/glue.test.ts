@@ -190,7 +190,7 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
 
 test("add deploy: pinned install command and overrides per package manager", async () => {
   const { installCommand, applyOverrides } = await import("../src/glue/deploy-deps.ts");
-  expect(installCommand("pnpm", true)).toMatch(/^pnpm add -Dw alchemy@2\.0\.0-beta\.77 @alchemy\.run\/frontend-frameworks@2\.0\.0-beta\.77 effect@4\.0\.5 /);
+  expect(installCommand("pnpm", true)).toMatch(/^pnpm add -Dw alchemy@2\.0\.0-beta\.84 @alchemy\.run\/frontend-frameworks@2\.0\.0-beta\.84 effect@4\.0\.5 /);
   expect(installCommand("bun", false)).toMatch(/^bun add -d /);
   const p = applyOverrides({ pnpm: { overrides: { "@types/three": "0.185.4" } } }, "pnpm");
   expect(p.changed).toBe(true);
@@ -465,7 +465,7 @@ test("box: Railway stack uploads the bundle context, sleeps by default, data on 
   const c = wranglerToConfig(parseWrangler('{"name":"b","main":"src/w.ts","compatibility_date":"2025-05-07"}'));
   c.bindings.API_KEY = { type: "secret" };
   const both = generateAlchemy({ ...c, targets: { ...c.targets, box: { provider: "railway", region: "europe-west4" } } });
-  expect(both).toContain('import * as Railway from "alchemy/Railway"');
+  expect(both).toContain('import * as Railway from "@alchemy.run/railway"');
   expect(both).toContain("declare const process");
   expect(both).toContain('export const Project = Railway.Project("Project");');
   expect(both).toContain('context: ".rustybuns/railway"');
@@ -1020,7 +1020,7 @@ test("hyperdrive origin.neon: the stack owns a Neon branch, Hyperdrive fronts it
     targets: { edge: { provider: "cloudflare" }, desktop: { mode: "worker" } },
   } as any;
   const a = generateAlchemy(c);
-  expect(a).toContain(`import * as Neon from "alchemy/Neon";`);
+  expect(a).toContain(`import * as Neon from "@alchemy.run/neon";`);
   expect(a).not.toContain("pgOrigin");
   expect(a).toContain(`export const HYPERDRIVE_NeonProject = Neon.Project("HYPERDRIVENeon", { name: "g-db", region: "aws-us-east-2", pgVersion: 17 });`);
   expect(a).toContain(`export const HYPERDRIVE_Neon = Neon.Branch("HYPERDRIVENeonBranch", { project: HYPERDRIVE_NeonProject, name: "prod" });`);

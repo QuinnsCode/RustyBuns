@@ -36,6 +36,6 @@
     "lodash": "^4.18.1"
   },
   "patchedDependencies": {
-    "alchemy@2.0.0-beta.77": "patches/alchemy@2.0.0-beta.77.patch"
+    "@alchemy.run/cloudflare@2.0.0-beta.84": "patches/@alchemy.run%2Fcloudflare@2.0.0-beta.84.patch"
   }
 }

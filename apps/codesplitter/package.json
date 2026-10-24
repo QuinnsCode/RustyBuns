@@ -34,10 +34,11 @@
     "yaml": "2.9.1"
   },
   "devDependencies": {
-    "@alchemy.run/frontend-frameworks": "2.0.0-beta.77",
+    "@alchemy.run/cloudflare": "2.0.0-beta.84",
+    "@alchemy.run/frontend-frameworks": "2.0.0-beta.84",
     "@effect/platform-bun": "^4.0.5",
     "@effect/platform-node": "^4.0.5",
-    "alchemy": "2.0.0-beta.77",
+    "alchemy": "2.0.0-beta.84",
     "effect": "^4.0.5"
   }
 }

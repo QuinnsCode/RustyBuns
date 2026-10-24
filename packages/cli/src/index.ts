@@ -726,9 +726,9 @@ const alchemyProcess = (args: string[], cfg?: RustyBunsConfig, extra: Record<str
 /** runAlchemy outside plan/deploy/destroy (`login`). */
 const runAlchemy = (args: string[], cfg?: RustyBunsConfig) => runScoped(alchemyProcess(args, cfg));
 
-/** Alchemy's env before the Cloudflare login: secret values from .dev.vars, anything exported in the shell wins. */
+/** Alchemy's env before the Cloudflare login (its CLI telemetry off): secret values from .dev.vars, anything exported in the shell wins. */
 const alchemyBaseEnv = (extra: Record<string, string> = {}, cfg?: RustyBunsConfig): Record<string, string | undefined> =>
-  withAccount(cfg, { ...readDevVars(), ...process.env, ...extra });
+  withAccount(cfg, { ...readDevVars(), ...process.env, ...extra, DO_NOT_TRACK: "1" });
 
 /** An edge stack logs in to Cloudflare through wrangler, with only the scopes it needs; {} leaves it to the shell or Alchemy's profile. */
 async function wranglerLogin(cfg: RustyBunsConfig, env: Record<string, string | undefined>): Promise<Record<string, string>> {
