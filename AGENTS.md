@@ -103,6 +103,16 @@ app exists, so changes to it must keep the entry valid:
   `rustybuns destroy --stage office-preview` and don't send home the worker driving it. The owner may also move codeSplitter
   to its own home on 2026-10-14; the meaning of that is open on the issue, so don't guess.
 
+## Finishing: say what is left, and leave nothing in your head
+
+The owner closes your worktree when you stop, to keep context small. So before you end a turn, nothing may
+be left only in chat. Every undone item (CI still running, a PR not merged, a hands-on check you can't do, a
+stacked base that may merge first) goes one of three ways: a new worker (`office-workers hire`), an issue
+(a hands-on check gets `MANUAL CHECK (not a bug):` and the `manual run` label, see below), or a question to
+the owner right then. Open your last message with "N of M done" and name each leftover with its link, or say
+"4 of 4, nothing left". "PR is open" alone is not a status. Check `gh pr view` and `gh pr checks` first, and
+base your PR on `main` unless a stack is really needed: a stacked PR closes unmerged when its base is deleted.
+
 ## Manual runs: the owner's hands, in plain sight
 
 When something needs the owner to do it (a token, a sign-in, a live run, a hands-on check), it gets its own
