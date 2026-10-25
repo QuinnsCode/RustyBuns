@@ -175,7 +175,7 @@ export const LAYOUTS: Record<SectorKind, Layout> = {
   spaceport: { name: "Spaceport", posts: [{ name: "Landing pads", x: -45, z: 35 }, { name: "Fuel depot", x: 55, z: 10 }, { name: "Hangar", x: -55, z: -30 }, { name: "Control tower", x: 50, z: -85 }] },
   cannon: { name: "Cannon battery", posts: [{ name: "Ammo depot", x: 60, z: 40 }, { name: "Spotter nest", x: -55, z: 5 }, { name: "Gun pit", x: 50, z: -30 }, { name: "Cannon", x: -35, z: -85 }] },
   canyon: { name: "Dust sea", posts: [{ name: "Well house", x: -25, z: 60 }, { name: "Farm ruins", x: 30, z: 15 }, { name: "Bone field", x: -30, z: -25 }, { name: "Wreck", x: 15, z: -85 }] },
-  jungle: { name: "Jungle temple", posts: [{ name: "Fallen idol", x: 55, z: 50 }, { name: "Rope bridge", x: -55, z: 5 }, { name: "Strangler fig", x: 50, z: -35 }, { name: "Sunken temple", x: 0, z: -95 }] },
+  jungle: { name: "Glow jungle shrine", posts: [{ name: "Spore pool", x: 55, z: 50 }, { name: "Lantern bridge", x: -55, z: 5 }, { name: "Lantern tree", x: 50, z: -35 }, { name: "Glowing shrine", x: 0, z: -95 }] },
 };
 // The big fields: the same kinds of sector, half as wide again and more, with a post or two more
 // to fight over. A spec names one with `map`; the war hands them out to the bigger battles.
@@ -184,7 +184,7 @@ export const BIG_MAPS: Record<string, Layout & { sector: SectorKind; half: numbe
   outskirts: { sector: "capital", name: "Ruined outskirts", half: 175, posts: [{ name: "Burnt farm", x: 75, z: 80 }, { name: "Wrecked station", x: -40, z: 40 }, { name: "Market ruins", x: 50, z: -20 }, { name: "Shattered palace", x: -5, z: -100 }] },
   yards: { sector: "spaceport", name: "Cargo yards", half: 250, posts: [{ name: "Cargo stacks", x: 60, z: 55 }, { name: "Landing pads", x: -40, z: 0 }, { name: "Control tower", x: 40, z: -90 }] },
   gorge: { sector: "canyon", name: "Deep gorge", half: 255, posts: [{ name: "Bone field", x: 25, z: 75 }, { name: "Well house", x: -25, z: 15 }, { name: "Wreck", x: 15, z: -95 }] },
-  valley: { sector: "jungle", name: "Temple valley", half: 270, posts: [{ name: "Waterfall", x: -70, z: 75 }, { name: "Fallen idol", x: 55, z: 35 }, { name: "Rope bridge", x: -45, z: -25 }, { name: "Sunken temple", x: 0, z: -105 }] },
+  valley: { sector: "jungle", name: "Glow valley", half: 270, posts: [{ name: "Glow falls", x: -70, z: 75 }, { name: "Spore pool", x: 55, z: 35 }, { name: "Lantern bridge", x: -45, z: -25 }, { name: "Glowing shrine", x: 0, z: -105 }] },
 };
 export const layoutOf = (spec: Pick<BattleSpec, "sector" | "map">): Layout => {
   const big = spec.map ? BIG_MAPS[spec.map] : undefined;

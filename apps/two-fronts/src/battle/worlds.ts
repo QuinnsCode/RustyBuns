@@ -26,6 +26,8 @@ export interface Look {
   twin: number | null;                                    // a second sun's colour, if the sky has one
   ripple: boolean;                                        // the floor rippled like wind-blown sand
   city: boolean;                                          // a ruined city: no moss, towers of its own
+  flora: number[] | null;                                 // an alien world's plant colours, glowing, in place of green
+  night: boolean;                                         // stars and two moons in the sky
 }
 
 const FOREST: Look = {
@@ -33,7 +35,7 @@ const FOREST: Look = {
   sun: 0xffe2a8, sunI: 2.8, hemi: [0xd2e6c0, 0x3a2a16, 1.05], ray: 0.15, rays: 40, trees: "redwood",
   amp: 1.6, bank: 32, strata: false, pave: null, rock: { color: 0x7d7d70, n: 70, h: 0.15, s: 0.06 },
   rocky: false, built: 0x9ca3aa, lowRock: false, mote: { size: 0.1, color: 0xfff0c8, fall: 0 },
-  cliff: 0xa45a36, giant: true, twin: null, ripple: false, city: false,
+  cliff: 0xa45a36, giant: true, twin: null, ripple: false, city: false, flora: null, night: false,
 };
 
 export const WORLDS: Record<SectorKind, Look> = {
@@ -49,11 +51,12 @@ export const WORLDS: Record<SectorKind, Look> = {
   },
   spaceport: { ...FOREST, pave: 0x8f8b80 },
   cannon: { ...FOREST, pave: 0x86775c, lowRock: true },
-  // The same idea, closer, wetter and full of vines.
+  // Night with colour: huge glowing trees under two moons, spores drifting, pools of light on the floor.
   jungle: {
-    ...FOREST, sky: 0x8aa284, zenith: 0x6f8f86, fog: 0.016, ground: 0x2b3a17, litter: 0x4a3a1c, trail: 0x6e4526,
-    sun: 0xf1ffc8, sunI: 2.3, hemi: [0xbfe0b0, 0x24301a, 1.0], ray: 0.16, trees: "jungle", built: 0x7f8a6a,
-    mote: { size: 0.16, color: 0xd8ffb0, fall: 0 },
+    ...FOREST, sky: 0x241552, zenith: 0x080630, fog: 0.008, ground: 0x2a2058, litter: 0x43307c, trail: 0x5a4488,
+    sun: 0xa8b8ff, sunI: 1.5, hemi: [0xc0b8ff, 0x2c1a60, 1.9], ray: 0.1, rays: 26, trees: "jungle", built: 0x4a3f7a,
+    rock: { color: 0x6a5a9a, n: 70, h: 0.72, s: 0.3 }, mote: { size: 0.3, color: 0x9ffff0, fall: 0 },
+    flora: [0x20e0c8, 0xff3fc0, 0x9a5cff, 0xa8ff3c], night: true, giant: false,
   },
   // A desert under two suns: wind-carved sandstone among dunes, sand blowing, bones and ruined farms.
   canyon: {
