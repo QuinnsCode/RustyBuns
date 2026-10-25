@@ -200,7 +200,7 @@ const WOODS: Record<SectorKind, { n: number; r: readonly [number, number]; gap: 
   shield: REDWOODS,
   capital: NONE,
   spaceport: REDWOODS,
-  cannon: REDWOODS,
+  cannon: { n: 0, r: [0, 0], gap: 0, clear: 0 }, // a beach: palms are for show, the cover is dunes, rock and driftwood
   jungle: { n: Math.round(230 * GROW), r: [0.6, 1.6], gap: 2.5, clear: 18 },
   canyon: NONE,
 };
@@ -473,6 +473,8 @@ export const vipUnit = (b: Battle) => (b.vip === null ? null : b.units.find((u) 
 const nearestOn = (k: Block, p: { x: number; z: number }) => ({ x: clamp(p.x, k.x - k.w / 2, k.x + k.w / 2), z: clamp(p.z, k.z - k.d / 2, k.z + k.d / 2) });
 const gap = (k: Block, p: { x: number; z: number }) => dist(nearestOn(k, p), p);
 // How much more ground than the usual field this one has, and how much further it runs.
+// Where the cannon sector's sand meets the sea on its east side: the shallows run on to the field's edge, so no cover stands past it.
+export const shoreX = (b: Battle) => b.half - 60;
 const area = (b: Battle) => (b.half / HALF) ** 2;
 const reach = (b: Battle) => b.half / HALF;
 
@@ -485,7 +487,7 @@ function scenery(b: Battle) {
     const n = Math.round(n0 * GROW * area(b));
     for (let placed = 0, tries = 0; placed < n && tries < n * 30; tries++) {
       const k = { x: (rand(b) - 0.5) * b.half * 1.9, z: (rand(b) - 0.5) * b.half * 1.9, w: size[0] + rand(b) * (size[1] - size[0]), d: size[0] + rand(b) * (size[1] - size[0]), h: h[0] + rand(b) * (h[1] - h[0]) };
-      if (Math.abs(k.x) < lane + k.w / 2) continue;
+      if (Math.abs(k.x) < lane + k.w / 2 || (b.spec.sector === "cannon" && k.x + k.w / 2 > shoreX(b) - 8)) continue;
       if (b.posts.some((p) => gap(k, p) < room) || [b.spawn.attacker, b.spawn.defender].some((p) => gap(k, p) < 14)) continue;
       if (b.units.some((u) => gap(k, u) < 4) || b.blocks.some((o) => dist(o, k) < Math.max(o.w, o.d) / 2 + Math.max(k.w, k.d) / 2 + 3)) continue;
       b.blocks.push(k);
@@ -520,7 +522,7 @@ function scenery(b: Battle) {
       const z0 = s === "attacker" ? depth : -depth;
       for (let x = -b.half + 6, i = 0; x < b.half - 6; x += 15, i++) {
         const k: Block = { x: x + 5, z: z0 + (i % 2 ? 2.5 : -2.5), w: 10, d: 1.4, h: 1.25, kind: "trench" };
-        if (b.posts.some((p) => gap(k, p) < POST_RADIUS + 2) || [b.spawn.attacker, b.spawn.defender].some((p) => gap(k, p) < 12)) continue;
+        if ((b.spec.sector === "cannon" && k.x + k.w / 2 > shoreX(b) - 8) || b.posts.some((p) => gap(k, p) < POST_RADIUS + 2) || [b.spawn.attacker, b.spawn.defender].some((p) => gap(k, p) < 12)) continue;
         if (b.blocks.some((o) => Math.abs(o.x - k.x) < (o.w + k.w) / 2 + 1 && Math.abs(o.z - k.z) < (o.d + k.d) / 2 + 1)) continue;
         b.blocks.push(k);
       }

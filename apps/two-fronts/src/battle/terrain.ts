@@ -14,6 +14,7 @@ import { LANDMARKS } from "./landmarks.ts";
 import { WORLDS } from "./worlds.ts";
 import { sandstone } from "./worlds/desert.ts";
 import { EYE, POST_RADIUS, type Battle, type Block, type Tree } from "./sim.ts";
+import { buildSea, coastOf, headland } from "./worlds/beach.ts";
 
 export interface World {
   heightAt(x: number, z: number): number;
@@ -144,7 +145,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
 
   // The floor: flat where the posts and the scenery stand (the sim's plain), rolling between, and
   // rising into banks past the edge of the field.
-  const amp = look.amp;
+  const amp = look.amp, sea = look.sea;
   const heightAt = (x: number, z: number) => {
     let flat = 1;
     for (const post of b.posts) flat = Math.min(flat, smooth(POST_RADIUS + 2, POST_RADIUS + 16, Math.hypot(x - post.x, z - post.z)));
@@ -152,6 +153,14 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     let h = (n(x / 34, z / 34, 3) * amp + n(x / 8, z / 8, 2) * 0.25) * flat;
     h -= 0.25 * (1 - smooth(1.5, 4, onTrail(x, z)));
     const out = Math.max(Math.abs(x), Math.abs(z)) - b.half;
+    if (sea) {
+      // The sand runs down into the shallows (ankle-deep by the edge), drops off into the sea past it,
+      // and the banks give way to open water on that side; a headland of rock stands behind the gun.
+      const coast = coastOf(b, n, x, z);
+      h = h * (1 - smooth(-25, 5, coast)) - 0.007 * Math.max(0, coast) - 7 * (1 - Math.exp(-Math.max(0, x - b.half) / 25)) + headland(b, x, z);
+      if (out > 0) h += look.bank * (1 - Math.exp(-out / 40)) * (0.75 + 0.5 * n(x / 60, z / 60, 2)) * (1 - smooth(b.half - 80, b.half, x));
+      return h;
+    }
     if (out > 0) h += look.bank * (1 - Math.exp(-out / 40)) * (0.75 + 0.5 * n(x / 60, z / 60, 2)) + n(x / 12, z / 12) * out * 0.04;
     return h;
   };
@@ -245,11 +254,19 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   const base = new THREE.Color(look.ground), litter = new THREE.Color(look.litter), dirt = new THREE.Color(look.trail);
   const mossy = new THREE.Color(look.flora ? 0x1c5a6a : 0x2f4a1c);
   const paved = new THREE.Color(look.pave ?? 0);
+  const wetSand = new THREE.Color(0x9a8660), clearSand = new THREE.Color(0xd9d09a), seabed = new THREE.Color(0x3f7c84), trench = new THREE.Color(0x174a66), cliffRock = new THREE.Color(0x9b8d74);
   for (let i = 0; i < gp.count; i++) {
     const x = gp.getX(i), z = gp.getZ(i), h = heightAt(x, z);
     gp.setY(i, h);
     col.copy(base).lerp(litter, smooth(-0.3, 0.6, n(x / 14 + 40, z / 14, 3)));
     col.lerp(mossy, smooth(-0.1, 0.7, n(x / 10 - 30, z / 10 + 8, 3)) * FLOORS[spec.sector].mossAmount);
+    if (sea) {
+      // Wet sand at the waterline, then the sea floor darkening with depth, and bare rock up the headland.
+      const depth = sea.level - h;
+      col.lerp(wetSand, smooth(sea.level + 1, sea.level, h) * smooth(-10, 0, coastOf(b, n, x, z)) * 0.85).lerp(clearSand, smooth(0, 0.6, depth) * 0.45);
+      col.lerp(seabed, smooth(0.5, 4, depth)).lerp(trench, smooth(3.5, 7, depth));
+      col.lerp(cliffRock, smooth(1.2, 4.5, headland(b, x, z)) * 0.9);
+    }
     if (look.strata) col.offsetHSL(0, 0, 0.06 * Math.sin(h * 1.7));
     if (look.ripple) col.offsetHSL(0, 0, 0.05 * Math.sin((x * 0.5 + z * 0.3) + n(x / 20, z / 20, 2) * 9) + 0.03 * smooth(0.2, 0.9, n(x / 26 + 7, z / 26, 2)));
     const t = onTrail(x, z);
@@ -266,7 +283,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
 
   // Where nothing grows: the posts' middles, the trail, the scenery and the trunks.
   const bare = (x: number, z: number, room = 1.5) =>
-    onTrail(x, z) < 3.5 || b.posts.some((post) => Math.hypot(x - post.x, z - post.z) < 5) ||
+    onTrail(x, z) < 3.5 || (sea !== null && heightAt(x, z) < sea.level + 0.35) || b.posts.some((post) => Math.hypot(x - post.x, z - post.z) < 5) ||
     b.blocks.some((blk) => blockGap(blk, x, z) < room) || b.trees.some((t) => Math.hypot(x - t.x, z - t.z) < t.r + 0.3);
   const anywhere = (spread = 1) => ({ x: (r() - 0.5) * b.half * 2 * spread, z: (r() - 0.5) * b.half * 2 * spread });
   const { inst, put, done } = instancer(scene);
@@ -501,12 +518,12 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   let nBags = 0;
   for (const blk of b.blocks) if (blk.h < EYE && !blk.kind) nBags += Math.ceil(blk.w / 0.85) * Math.ceil(blk.d / 0.55) * Math.ceil(blk.h / 0.3);
   const bags = inst(bag, std(0xffffff, 1), nBags, true);
-  const rockMat = std(look.rocky ? look.cliff : 0x8a8a7c, 0.95, { map: look.ripple ? sandstone(2) : strataMap() });
+  const rockMat = std(look.rocky ? look.cliff : look.stone, 0.95, { map: look.ripple ? sandstone(2) : strataMap() });
   const builtMat = std(look.built, 0.85, { map: concreteMap() });
   const rocky = look.rocky;
   // Cover in the woods: rocks, stumps and fallen logs, and the Wooka's trench lines, earth
   // banked up behind a row of sharpened stakes leaning out at whoever's coming.
-  const barkMat = std(0x5a3a26, 0.95, { map: barkMap() }), cutMat = std(0xc89a62, 0.9), dirtMat = std(0x5a3b22, 1, { flatShading: true }), stakeMat = std(0x8a6a44, 0.9);
+  const barkMat = std(look.wood, 0.95, { map: barkMap() }), cutMat = std(0xc89a62, 0.9), dirtMat = std(0x5a3b22, 1, { flatShading: true }), stakeMat = std(0x8a6a44, 0.9);
   const plankMat = std(0x6a4a2a, 0.95, { map: barkMap() }), bannerMat = std(0xb3261e, 0.9, { side: THREE.DoubleSide }), lanternMat = new THREE.MeshBasicMaterial({ color: 0xffb347 }), sackMat = std(0xb89a5a, 1, { flatShading: true });
   const solidAt = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, ry = 0) => {
     const mesh = new THREE.Mesh(geo, mat);
@@ -589,7 +606,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     mesh.position.set(blk.x, y, blk.z);
     mesh.castShadow = mesh.receiveShadow = true;
     scene.add(mesh);
-    if (!rocky && !look.city) {
+    if (!rocky && look.moss) {
       // Moss and vines take the tops back.
       const top = new THREE.Mesh(lumpy(1, 1, 0.3, 11, false), std(look.flora ? 0x2a9a88 : 0x4f6e2a, 1, { flatShading: true, ...(look.flora ? { emissive: 0x0a4a40 } : {}) }));
       top.scale.set(blk.w * 0.45, 0.6, blk.d * 0.45);
@@ -598,6 +615,9 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     }
   }
   bags.instanceMatrix.needsUpdate = true;
+
+  // The sea over the shallows, with its waves and surf.
+  const tide = sea ? buildSea(scene, b, n, sea.level, heightAt) : null;
 
   // The landmarks by the keep, only for show.
   const ky = heightAt(keep.x, keep.z);
@@ -652,12 +672,13 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       sun.target.position.set(at.x, heightAt(at.x, at.z), at.z);
       sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 200);
       sky.position.copy(eye);
-      giant.position.set(eye.x - 380, 420, eye.z - 620);
+      giant.position.set(eye.x - 380, 420, eye.z - 620); // (not in the scene when the world has none)
       suns.position.copy(eye);
       night.position.copy(eye);
       shaftMat.opacity = look.ray * (0.85 + 0.15 * Math.sin(t * 0.3));
       for (const [i, ray] of rays.entries()) ray.scale.x = 0.9 + 0.1 * Math.sin(t * 0.4 + ray.userData.phase + i);
       landmark?.(t);
+      tide?.(t);
       const dt = Math.min(0.1, Math.max(0, t - last)), fall = look.mote.fall * dt;
       last = t;
       for (let i = 0; i < MOTES; i++) {

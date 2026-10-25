@@ -25,9 +25,13 @@ export interface Look {
   giant: boolean;                                         // the gas giant hanging in the sky
   twin: number | null;                                    // a second sun's colour, if the sky has one
   ripple: boolean;                                        // the floor rippled like wind-blown sand
-  city: boolean;                                          // a ruined city: no moss, towers of its own
+  city: boolean;                                          // a ruined city: towers of its own
   flora: number[] | null;                                 // an alien world's plant colours, glowing, in place of green
   night: boolean;                                         // stars and two moons in the sky
+  sea: { level: number } | null;                          // shallows along the +x edge, the water's surface height
+  stone: number;                                          // the sim's rock blocks and cliffs
+  wood: number;                                           // fallen logs and stumps
+  moss: boolean;                                          // moss on the built blocks' tops
 }
 
 const FOREST: Look = {
@@ -36,6 +40,7 @@ const FOREST: Look = {
   amp: 1.6, bank: 32, strata: false, pave: null, rock: { color: 0x7d7d70, n: 70, h: 0.15, s: 0.06 },
   rocky: false, built: 0x9ca3aa, lowRock: false, mote: { size: 0.1, color: 0xfff0c8, fall: 0 },
   cliff: 0xa45a36, giant: true, twin: null, ripple: false, city: false, flora: null, night: false,
+  sea: null, stone: 0x8a8a7c, wood: 0x5a3a26, moss: true,
 };
 
 export const WORLDS: Record<SectorKind, Look> = {
@@ -47,10 +52,15 @@ export const WORLDS: Record<SectorKind, Look> = {
     ...FOREST, sky: 0x8e8985, zenith: 0x4d4c4c, fog: 0.0055, ground: 0x6a665f, litter: 0x4f4b46, trail: 0x262626,
     sun: 0xffd2ac, sunI: 2.0, hemi: [0xc8c8ca, 0x4a4643, 1.4], ray: 0.035, rays: 8, trees: null, amp: 0.5, bank: 14,
     pave: 0x302f2e, rock: { color: 0x7d7b78, n: 160, h: 0.08, s: 0.03 }, built: 0x9a958e, mote: { size: 0.16, color: 0xd6d0ca, fall: 0.9 },
-    city: true, giant: false,
+    city: true, giant: false, moss: false,
   },
   spaceport: { ...FOREST, pave: 0x8f8b80 },
-  cannon: { ...FOREST, pave: 0x86775c, lowRock: true },
+  cannon: {
+    ...FOREST, sky: 0xbfe1f2, zenith: 0x3b8ee0, fog: 0.0024, ground: 0xfff2c4, litter: 0xf0d9a2, trail: 0xe0c48c,
+    sun: 0xfff3da, sunI: 3.3, hemi: [0xcfe9ff, 0xe0c78e, 1.2], ray: 0, rays: 0, trees: null, amp: 0.6, bank: 14,
+    pave: 0xe8d6a4, rock: { color: 0xe6d9b6, n: 70, h: 0.1, s: 0.1 }, lowRock: true, built: 0xe6dcc2,
+    mote: { size: 0.07, color: 0xffffff, fall: 0 }, sea: { level: -0.02 }, stone: 0xb7a888, wood: 0xa8998a, moss: false, giant: false,
+  },
   // Night with colour: huge glowing trees under two moons, spores drifting, pools of light on the floor.
   jungle: {
     ...FOREST, sky: 0x241552, zenith: 0x080630, fog: 0.008, ground: 0x2a2058, litter: 0x43307c, trail: 0x5a4488,
