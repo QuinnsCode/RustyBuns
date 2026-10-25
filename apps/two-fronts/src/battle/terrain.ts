@@ -160,7 +160,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       // and the banks give way to open water on that side; a headland of rock stands behind the gun.
       const coast = coastOf(b, n, x, z);
       h = h * (1 - smooth(-25, 5, coast)) - 0.007 * Math.max(0, coast) - 7 * (1 - Math.exp(-Math.max(0, x - b.half) / 25)) + headland(b, x, z);
-      if (out > 0) h += look.bank * (1 - Math.exp(-out / 40)) * (0.75 + 0.5 * n(x / 60, z / 60, 2)) * (1 - smooth(b.half - 80, b.half, x));
+      if (out > 0) h += look.bank * (1 - Math.exp(-out / 40)) * (0.75 + 0.5 * n(x / 60, z / 60, 2)) * (1 - smooth(-20, 60, coast));
       return h;
     }
     if (out > 0) h += look.bank * (1 - Math.exp(-out / 40)) * (0.75 + 0.5 * n(x / 60, z / 60, 2)) + n(x / 12, z / 12) * out * 0.04;
@@ -636,7 +636,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     scene.add(mesh);
     return mesh;
   };
-  const landmark = LANDMARKS[spec.sector]({ b, keep, ky, heightAt, solid, add: (o) => scene.add(o), std, builtMat, r, n, bare, anywhere, inst: { inst, put, done } });
+  const landmark = LANDMARKS[spec.sector]({ b, keep, ky, heightAt, solid, add: (o) => scene.add(o), std, builtMat, r, n, bare, anywhere, inst: { inst, put, done }, wind });
 
   const pulse = look.station ? buildStation({ scene, b, r, ...instancer(scene), trail, shiftAt: (z) => n(z / 40, 3.7) * 6 }) : null;
 
