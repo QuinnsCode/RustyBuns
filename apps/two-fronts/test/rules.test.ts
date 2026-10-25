@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { BattleSpec } from "../src/battle/contract.ts";
-import { GALAXIES, type Galaxy, type GalaxyId } from "../src/war/galaxy.ts";
+import { GALAXIES, SECTOR_NAMES, type Galaxy, type GalaxyId } from "../src/war/galaxy.ts";
 import { aiDeploys, aiOrders } from "../src/war/ai.ts";
 import {
   ORBIT, applyBattleResult, applySpaceResult, canPushFromSurface, checkRetreats, declareAttacks, deployTurn, planDeploys, fogged, involved, diceBattle, income, incomeBreakdown, keyShare, regionHolder, newCampaign, planOrders, resolveTurn, rng, supplied, vehiclePool,
@@ -382,7 +382,7 @@ test("a defender who pulls out saves their troops and gives up the ground", () =
   const pulled = whole(c, [attackOnKessa(), out]);
   expect(kessa(pulled).sectors[0]).toMatchObject({ owner: "marines", armies: { marines: 2, wooka: 0 } });
   expect(kessa(pulled).sectors[2]!.armies.wooka).toBe(2);
-  expect(pulled.log).toContain("Wooka pull out of Kessa shield generator to Kessa ruined city.");
+  expect(pulled.log).toContain(`Wooka pull out of Kessa shield generator to Kessa ${SECTOR_NAMES.capital.toLowerCase()}.`);
   expect(hold.log.some((l) => l.startsWith("Ground battle at Kessa shield generator"))).toBe(true);
   // Only from where they're attacked, only to ground they hold, and not from nothing.
   const bad = (r: Retreat) => checkRetreats(c, { faction: "wooka", orders: [] }, [r])[0];
