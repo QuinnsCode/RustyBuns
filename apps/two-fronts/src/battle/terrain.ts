@@ -8,7 +8,7 @@
 // On the Wooka's end of the field the trees are lived in: huts up the trunks, rope bridges
 // between them, and totems wearing the helmets of Marines who came this way before.
 import * as THREE from "three";
-import { FLOORS, buildFoliage, foliageQuality, instancer, makeWind, mergeAll } from "./foliage.ts";
+import { FLOORS, buildFoliage, foliageQuality, instancer, makeWind, mergeAll, planter } from "./foliage.ts";
 import { hut, lumpy, texture, totem } from "./models.ts";
 import { LANDMARKS } from "./landmarks.ts";
 import { WORLDS } from "./worlds.ts";
@@ -126,7 +126,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   let s = (spec.seed ^ 0x9e3779b9) >>> 0;
   const r = () => ((s = (Math.imul(s, 1103515245) + 12345) >>> 0) / 4294967296);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), k = new THREE.Vector3(), col = new THREE.Color();
-  const UP = new THREE.Vector3(0, 1, 0);
+  const UP = new THREE.Vector3(0, 1, 0), WHITE = new THREE.Color(0xffffff);
   const keep = b.posts.at(-1)!;
   const wookaSide = spec.factions.attacker === "wooka" ? "attacker" : spec.factions.defender === "wooka" ? "defender" : null;
 
@@ -170,7 +170,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   sky.renderOrder = -1;
   scene.add(sky);
   // The gas giant Doren circles, banded, with a thin ring; it shows through the gaps.
-  const giant = new THREE.Group();
+  const giant = new THREE.Group(), night = new THREE.Group();
   const bands = texture("giant", 64, 128, [1, 1], (c, rr) => { for (let y = 0; y < 128; y += 4) { c.fillStyle = grey(150 + 70 * Math.sin(y * 0.2 + rr() * 2)); c.fillRect(0, y, 64, 4); } });
   giant.add(new THREE.Mesh(new THREE.SphereGeometry(120, 32, 16), new THREE.MeshBasicMaterial({ map: bands, color: 0xc9d8c8, fog: false, transparent: true, opacity: 0.55, depthWrite: false })));
   const giantRing = new THREE.Mesh(new THREE.RingGeometry(150, 200, 64), new THREE.MeshBasicMaterial({ color: 0xe8e0c8, fog: false, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false }));
@@ -179,7 +179,36 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   giant.position.set(-380, 420, -620);
   giant.rotation.set(-0.6, 0, 0.35); // its bands face the field, not its pole
   giant.children.forEach((c) => (c.renderOrder = -1));
-  scene.add(giant);
+  if (!look.night) scene.add(giant);
+
+  const nightSky = () => {
+    const stars = new THREE.BufferGeometry(), at: number[] = [], tints: number[] = [];
+    for (let i = 0; i < 1400; i++) {
+      const a = r() * Math.PI * 2, e = Math.asin(0.04 + r() * 0.96);
+      at.push(Math.cos(a) * Math.cos(e) * 860, Math.sin(e) * 860, Math.sin(a) * Math.cos(e) * 860);
+      col.setHex([0xffffff, 0xbfd4ff, 0xffc8f0, 0xc8fff0][Math.floor(r() * 4)]!).multiplyScalar(0.5 + r() * 0.5);
+      tints.push(col.r, col.g, col.b);
+    }
+    stars.setAttribute("position", new THREE.Float32BufferAttribute(at, 3));
+    stars.setAttribute("color", new THREE.Float32BufferAttribute(tints, 3));
+    night.add(new THREE.Points(stars, new THREE.PointsMaterial({ size: 3, sizeAttenuation: false, vertexColors: true, fog: false, depthWrite: false })));
+    const craters = texture("moon", 64, 64, [1, 1], (c, rr) => {
+      c.fillStyle = grey(225); c.fillRect(0, 0, 64, 64);
+      for (let i = 0; i < 26; i++) { c.fillStyle = grey(150 + rr() * 50, 0.6); c.beginPath(); c.ellipse(rr() * 64, rr() * 64, 2 + rr() * 6, 2 + rr() * 5, 0, 0, 7); c.fill(); }
+    });
+    // Two moons, each in its own halo.
+    for (const [x, y, z, rad, color] of [[-480, 340, -620, 58, 0xdfe8ff], [560, 230, -430, 30, 0xff9ae8]] as const) {
+      const moon = new THREE.Mesh(new THREE.SphereGeometry(rad, 24, 12), new THREE.MeshBasicMaterial({ map: craters, color, fog: false, depthWrite: false }));
+      moon.position.set(x, y, z);
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowMap("dapple", false), color, fog: false, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
+      halo.scale.setScalar(rad * 6);
+      halo.position.copy(moon.position);
+      night.add(halo, moon);
+    }
+    night.children.forEach((c) => (c.renderOrder = -1));
+    scene.add(night);
+  };
+  if (look.night) nightSky();
 
   scene.add(new THREE.HemisphereLight(look.hemi[0], look.hemi[1], look.hemi[2]));
   const sun = new THREE.DirectionalLight(look.sun, look.sunI);
@@ -195,7 +224,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   const groundGeo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG).rotateX(-Math.PI / 2);
   const gp = groundGeo.attributes.position as THREE.BufferAttribute, gc: number[] = [];
   const base = new THREE.Color(look.ground), litter = new THREE.Color(look.litter), dirt = new THREE.Color(look.trail);
-  const mossy = new THREE.Color(0x2f4a1c);
+  const mossy = new THREE.Color(look.flora ? 0x1c5a6a : 0x2f4a1c);
   const paved = new THREE.Color(look.pave ?? 0);
   for (let i = 0; i < gp.count; i++) {
     const x = gp.getX(i), z = gp.getZ(i), h = heightAt(x, z);
@@ -244,27 +273,36 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     for (let i = 0; i < (jungle ? 420 : 320); i++) {
       const a = r() * Math.PI * 2, d = b.half + 4 + r() * b.half * 1.3;
       const x = Math.max(-1, Math.min(1, Math.cos(a) * 1.5)) * d, z = Math.max(-1, Math.min(1, Math.sin(a) * 1.5)) * d;
-      back.push({ x, z, r: jungle ? 0.6 + r() : 1.4 + r() * 2.6 });
+      back.push({ x, z, r: jungle ? 1.6 + r() * 2.6 : 1.4 + r() * 2.6 });
     }
     const all = [...b.trees, ...back];
     allTrees = all;
+    const swell = [[0, -0.02], [1.6, -0.02], [1.15, 0.012], [1, 0.03], [0.9, 0.1], [1.5, 0.28], [2.3, 0.5], [1.6, 0.7], [0.9, 0.86], [0.55, 1]].map(([x, y]) => new THREE.Vector2(x, y));
+    // How wide an alien trunk is at a height (0 to 1), in trunk radii: its profile, read between its points.
+    const girth = (f: number) => { const i = swell.findIndex((v) => v.y >= f); if (i < 1) return 1; const a = swell[i - 1]!, c = swell[i]!; return a.x + (c.x - a.x) * ((f - a.y) / (c.y - a.y)); };
     const trunkGeo = jungle
-      ? new THREE.LatheGeometry([[0, -0.02], [1.6, -0.02], [1.15, 0.015], [1, 0.04], [0.85, 0.5], [0.6, 1]].map(([x, y]) => new THREE.Vector2(x, y)), 10)
+      ? new THREE.LatheGeometry(swell, 10)
       : new THREE.LatheGeometry([[0, -0.02], [2.1, -0.02], [1.45, 0.008], [1.12, 0.025], [1, 0.05], [0.82, 0.55], [0.5, 1]].map(([x, y]) => new THREE.Vector2(x, y)), 16);
     const mossGeo = new THREE.LatheGeometry([[2.25, -0.02], [1.55, 0.008], [1.16, 0.022], [1.03, 0.034], [0, 0.034]].map(([x, y]) => new THREE.Vector2(x, y)), 16);
-    const trunks = inst(trunkGeo, std(jungle ? 0x7a7050 : 0xa0532f, 0.95, { map: barkMap() }), all.length, true);
-    const moss = inst(mossGeo, std(0x4a6224, 1, { map: barkMap() }), all.length);
+    const trunks = inst(trunkGeo, std(jungle ? 0xffffff : 0xa0532f, 0.95, { map: barkMap(), ...(look.flora ? { emissive: 0x241450 } : {}) }), all.length, true);
+    const moss = inst(mossGeo, std(look.flora ? 0x1c6a7a : 0x4a6224, 1, { map: barkMap() }), all.length);
     // Boughs: thin limbs off the upper trunk, each ending in a clump of needles; a few dead twigs lower down.
     const limbs = inst(new THREE.CylinderGeometry(0.5, 1, 1, 5).translate(0, 0.5, 0), std(0x5a3622, 1), all.length * 8, true);
     const clumps = inst(fernGeo, leafMat, all.length * (jungle ? 6 : 14), true);
+    const plant = planter(look.flora, r, col);
     const branch = (x: number, y: number, z: number, a: number, len: number, droop: number, rad: number) => {
       q.setFromEuler(new THREE.Euler(0, a, Math.PI / 2 - droop, "YXZ"));
       put(limbs, m.compose(p.set(x, y, z), q, k.set(rad, len, rad)));
       return { x: x + Math.cos(a) * Math.cos(droop) * len, y: y - Math.sin(droop) * len, z: z - Math.sin(a) * Math.cos(droop) * len };
     };
+    // A glowing cap on each tall tree, and a pod of light hung in the trunk's swell.
+    const caps = look.flora ? inst(new THREE.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff }), all.length, false, false) : null;
+    const rings = look.flora ? inst(new THREE.TorusGeometry(1, 0.035, 5, 14).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff }), all.length * 3, false, false) : null;
+    const lamps = look.flora ? inst(new THREE.SphereGeometry(1, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }), all.length, false, false) : null;
     for (const t of all) {
-      const y0 = heightAt(t.x, t.z), h = jungle ? 22 + r() * 18 : 75 + r() * 55, turn = r() * 6;
-      put(trunks, m.compose(p.set(t.x, y0, t.z), q.setFromAxisAngle(UP, turn), k.set(t.r, h, t.r)));
+      const y0 = heightAt(t.x, t.z), h = jungle ? 36 + r() * 28 : 75 + r() * 55, turn = r() * 6;
+      if (look.flora) col.setHex(look.flora[Math.floor(r() * look.flora.length)]!).lerp(WHITE, 0.2).multiplyScalar(0.5);
+      put(trunks, m.compose(p.set(t.x, y0, t.z), q.setFromAxisAngle(UP, turn), k.set(t.r, h, t.r)), look.flora ? col : undefined);
       put(moss, m.compose(p.set(t.x, y0, t.z), q.setFromAxisAngle(UP, turn), k.set(t.r, h, t.r)));
       const limbsOn = jungle ? 3 : 8;
       for (let j = 0; j < limbsOn; j++) {
@@ -274,15 +312,28 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
         if (!jungle && f < 0.5) continue; // the low ones are bare, dead twigs
         for (let c = 0; c < (jungle ? 2 : 3); c++) {
           const w = (jungle ? 2.6 : 2 + (1 - f) * 2.5) * (0.7 + r() * 0.6);
-          col.setHSL(jungle ? 0.27 + r() * 0.06 : 0.24 + r() * 0.06, 0.5, (jungle ? 0.3 : 0.26) + r() * 0.1);
+          plant(jungle ? 0.27 + r() * 0.06 : 0.24 + r() * 0.06, 0.5, (jungle ? 0.3 : 0.26) + r() * 0.1);
           put(clumps, m.compose(p.set(end.x + (r() - 0.5) * 3, end.y - 1 + r() * 2, end.z + (r() - 0.5) * 3), q.setFromEuler(new THREE.Euler((r() - 0.5) * 0.5, r() * 6, (r() - 0.5) * 0.5)), k.set(w, w * 0.8, w)), col);
         }
       }
-      // A crown on top, lost in the haze.
-      col.setHSL(0.26, 0.45, 0.22 + r() * 0.06);
+      // A crown on top, lost in the haze; on an alien tree a glowing cap over it, a lantern slung below.
+      plant(0.26, 0.45, 0.22 + r() * 0.06);
       put(clumps, m.compose(p.set(t.x, y0 + h * 0.97, t.z), q.setFromAxisAngle(UP, r() * 6), k.set(t.r * 2 + 3, 4, t.r * 2 + 3)), col);
+      if (rings) for (let j = 0; j < 3; j++) {
+        const f = 0.22 + j * 0.22 + r() * 0.08, w = t.r * girth(f) * 1.02;
+        col.setHex(look.flora![Math.floor(r() * look.flora!.length)]!);
+        put(rings, m.compose(p.set(t.x, y0 + h * f, t.z), q.identity(), k.set(w, 1, w)), col);
+      }
+      if (caps && lamps) {
+        const w = t.r * 2 + 3 + r() * 5;
+        col.setHex(look.flora![Math.floor(r() * look.flora!.length)]!).multiplyScalar(0.8);
+        put(caps, m.compose(p.set(t.x, y0 + h, t.z), q.identity(), k.set(w, w * 0.32, w)), col);
+        col.multiplyScalar(1.2);
+        put(lamps, m.compose(p.set(t.x, y0 + h * 0.8, t.z), q.identity(), k.set(t.r * 0.9, t.r * 1.2, t.r * 0.9)), col);
+      }
     }
     done(limbs, clumps, trunks, moss);
+    if (caps && lamps && rings) done(caps, lamps, rings);
 
     // The undergrowth: ferns most of all, bushes, logs, stumps, mushrooms.
     const nFerns = Math.round((jungle ? 3200 : 3000) * Q);
@@ -293,7 +344,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       const at = nearTree ? { x: nearTree.x + (r() - 0.5) * 14, z: nearTree.z + (r() - 0.5) * 14 } : anywhere(1.15);
       if (bare(at.x, at.z)) continue;
       const sz = (jungle ? 1.1 : 0.9) + r() * 1.6;
-      col.setHSL(0.21 + r() * 0.08, 0.5 + r() * 0.2, 0.3 + r() * 0.16);
+      plant(0.21 + r() * 0.08, 0.5 + r() * 0.2, 0.3 + r() * 0.16);
       put(ferns, m.compose(p.set(at.x, heightAt(at.x, at.z) - 0.05, at.z), q.setFromAxisAngle(UP, r() * 6), k.set(sz, sz * (0.8 + r() * 0.4), sz)), col);
     }
     const nBush = Math.round(320 * Q), bushes = inst(fernGeo, leafMat, nBush, true);
@@ -301,7 +352,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       const at = anywhere(1.2);
       if (bare(at.x, at.z, 3)) continue;
       const w = 2.4 + r() * 2;
-      col.setHSL(0.24 + r() * 0.07, 0.45, 0.2 + r() * 0.08);
+      plant(0.24 + r() * 0.07, 0.45, 0.2 + r() * 0.08);
       put(bushes, m.compose(p.set(at.x, heightAt(at.x, at.z) - 0.1, at.z), q.setFromAxisAngle(UP, r() * 6), k.set(w, w * 1.1, w)), col);
     }
     // Round, cheerful bushes: lumpy green balls in bunches, some with red and yellow berries or little
@@ -309,7 +360,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     const nPuff = jungle ? 90 : 150;
     const puffGeo = lumpy(1, 2, 0.12, 21, true);
     const puffs = inst(puffGeo, wind.patch(std(0xffffff, 0.8), { h: 2, amp: 0.06, bend: 1 }), nPuff * 4, true);
-    const dots = inst(new THREE.SphereGeometry(0.16, 6, 4), std(0xffffff, 0.5), nPuff * 10, true);
+    const dots = inst(new THREE.SphereGeometry(0.16, 6, 4), look.flora ? new THREE.MeshBasicMaterial({ color: 0xffffff }) : std(0xffffff, 0.5), nPuff * 10, true);
     for (let i = 0, made = 0; i < 1200 && made < nPuff; i++) {
       const at = anywhere(1.15);
       if (bare(at.x, at.z, 3) || onTrail(at.x, at.z) < 3) continue;
@@ -317,11 +368,11 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       const w = 1.1 + r() * 1.3, hue = 0.25 + r() * 0.08, fruit = r() < 0.55 ? (r() < 0.5 ? 0.0 : 0.13) : -1;
       for (let j = 0; j < 4; j++) {
         const px = at.x + (r() - 0.5) * w * 1.6, pz = at.z + (r() - 0.5) * w * 1.6, ps = w * (0.55 + r() * 0.45);
-        col.setHSL(hue + (r() - 0.5) * 0.03, 0.55, 0.3 + r() * 0.12);
+        plant(hue + (r() - 0.5) * 0.03, 0.55, 0.3 + r() * 0.12);
         put(puffs, m.compose(p.set(px, heightAt(px, pz) + ps * 0.6, pz), q.setFromAxisAngle(UP, r() * 6), k.set(ps, ps * 0.8, ps)), col);
         if (fruit >= 0) for (let d = 0; d < 2; d++) {
           const a = r() * 6.28, e = 0.3 + r() * 0.9;
-          col.setHSL(fruit, 0.9, 0.5);
+          if (look.flora) col.setHex(look.flora[Math.floor(r() * look.flora.length)]!); else col.setHSL(fruit, 0.9, 0.5);
           put(dots, m.compose(p.set(px + Math.cos(a) * ps * 0.85 * Math.cos(e), heightAt(px, pz) + ps * (0.6 + Math.sin(e) * 0.7), pz + Math.sin(a) * ps * 0.85 * Math.cos(e)), q.identity(), k.set(1, 1, 1)), col);
         }
       }
@@ -346,14 +397,14 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       m.compose(p.set(at.x, heightAt(at.x, at.z) + h / 2 - 0.1, at.z), q.setFromAxisAngle(UP, r() * 6), k.set(rad, h, rad));
       put(stumps, m); put(stumpTops, m);
     }
-    const shrooms = inst(new THREE.SphereGeometry(0.18, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), std(0xffffff, 0.6, jungle ? { emissive: 0x2a6a5a } : {}), 240);
+    const shrooms = inst(new THREE.SphereGeometry(0.18, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), std(0xffffff, 0.6, jungle ? { emissive: 0x4a9a8a } : {}), 240);
     for (let i = 0; i < 40; i++) {
       const t = b.trees[Math.floor(r() * b.trees.length)];
       if (!t) break;
       const a = r() * 6;
       for (let j = 0; j < 6; j++) {
         const x = t.x + Math.cos(a + j * 0.25) * (t.r + 0.5 + r()), z = t.z + Math.sin(a + j * 0.25) * (t.r + 0.5 + r()), sz = 0.5 + r() * 1.3;
-        col.setHex(jungle ? 0x9ff0d8 : r() < 0.5 ? 0xd8c8a0 : 0xb8502c);
+        col.setHex(jungle ? look.flora![Math.floor(r() * look.flora!.length)]! : r() < 0.5 ? 0xd8c8a0 : 0xb8502c);
         put(shrooms, m.compose(p.set(x, heightAt(x, z) + 0.05, z), q.identity(), k.set(sz, sz * 0.7, sz)), col);
       }
     }
@@ -374,6 +425,19 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     const sz = out ? 2 + r() * 6 : 0.4 + r() * 1.1;
     col.setHSL(look.rock.h, look.rock.s, 0.7 + r() * 0.3);
     put(rocks, m.compose(p.set(at.x, heightAt(at.x, at.z) + sz * 0.2, at.z), q.setFromEuler(new THREE.Euler(r(), r() * 6, r())), k.set(sz * 1.3, sz * 0.8, sz)), col);
+  }
+
+  // Pools of light on the floor of a night world, each a soft glow in one of the plants' colours.
+  if (look.flora) {
+    const pools = inst(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: glowMap("dapple", false), transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), 34, false, false);
+    for (let i = 0; i < 400 && pools.count < 34; i++) {
+      const at = anywhere(1.15);
+      if (bare(at.x, at.z, 2) || onTrail(at.x, at.z) < 6) continue;
+      const w = 7 + r() * 14;
+      col.setHex(look.flora[Math.floor(r() * look.flora.length)]!).multiplyScalar(0.55);
+      put(pools, m.compose(p.set(at.x, heightAt(at.x, at.z) + 0.14, at.z), q.setFromAxisAngle(UP, r() * 6), k.set(w, 1, w * (0.6 + r() * 0.5))), col);
+    }
+    done(pools);
   }
 
   // --- The Wooka's end: huts up the trunks nearest their drop, bridges between, and totems. ---
@@ -505,7 +569,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     scene.add(mesh);
     if (!rocky) {
       // Moss and vines take the tops back.
-      const top = new THREE.Mesh(lumpy(1, 1, 0.3, 11, false), std(0x4f6e2a, 1, { flatShading: true }));
+      const top = new THREE.Mesh(lumpy(1, 1, 0.3, 11, false), std(look.flora ? 0x2a9a88 : 0x4f6e2a, 1, { flatShading: true, ...(look.flora ? { emissive: 0x0a4a40 } : {}) }));
       top.scale.set(blk.w * 0.45, 0.6, blk.d * 0.45);
       top.position.set(blk.x, y + blk.h, blk.z);
       scene.add(top);
@@ -566,6 +630,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 200);
       sky.position.copy(eye);
       giant.position.set(eye.x - 380, 420, eye.z - 620);
+      night.position.copy(eye);
       shaftMat.opacity = look.ray * (0.85 + 0.15 * Math.sin(t * 0.3));
       for (const [i, ray] of rays.entries()) ray.scale.x = 0.9 + 0.1 * Math.sin(t * 0.4 + ray.userData.phase + i);
       landmark?.(t);
