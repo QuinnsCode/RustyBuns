@@ -58,3 +58,13 @@ test("the cannon shore: wading depth at the edge is an ankle, and no cover or po
   expect(b.blocks.filter((k) => k.x + k.w / 2 > b.half - 68)).toEqual([]);
   expect(b.trees).toEqual([]);
 });
+
+test("the cannon shore reads from the spawn and keep: sea past both field ends and a tall headland", () => {
+  const { b, world } = build("cannon");
+  const level = -0.02, keep = b.posts.at(-1)!;
+  // Beyond each end of the field the water reaches well inland of the straight shore.
+  for (const z of [-b.half - 70, b.half + 70]) expect(level - world.heightAt(shoreX(b) - 40, z)).toBeGreaterThan(0.5);
+  // The gun stands on a rock plateau far above the beach below it.
+  expect(world.heightAt(keep.x - 12, keep.z - 42)).toBeGreaterThan(10);
+  expect(world.heightAt(keep.x - 12, keep.z - 42) - world.heightAt(keep.x - 12, keep.z - 100)).toBeGreaterThan(8);
+});

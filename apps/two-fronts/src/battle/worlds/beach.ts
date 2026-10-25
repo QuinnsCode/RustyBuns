@@ -12,17 +12,20 @@ type Noise = (x: number, z: number, octaves?: number) => number;
 const smooth = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 // How far east of the waterline a spot is (negative: inland); the waterline wanders with z.
-export const coastOf = (b: Battle, n: Noise, x: number, z: number) => x - (shoreX(b) + n(z / 50, 9) * 10);
-// The headland behind the cannon's base: a mound of rock the gun looks out from.
+// Past the field's two ends the coast bends inland, so the sea wraps round them and shows from the spawn
+// and the keep, not only at the +x edge; the field itself keeps its straight shore.
+export const shoreAt = (b: Battle, n: Noise, z: number) => shoreX(b) + n(z / 50, 9) * 10 - 150 * smooth(b.half + 5, b.half + 60, Math.abs(z));
+export const coastOf = (b: Battle, n: Noise, x: number, z: number) => x - shoreAt(b, n, z);
+// The headland behind the cannon's base: a steep-sided plateau of rock the gun looks out from.
 export const headland = (b: Battle, x: number, z: number) => {
   const keep = b.posts.at(-1)!, d = Math.hypot(x - (keep.x - 12), z - (keep.z - 42));
-  return 9 * Math.exp(-((d / 28) ** 2));
+  return 14 * Math.exp(-((d / 30) ** 4));
 };
 
 // Water lying over the shallows: clear and pale over the sand, deepening to blue, waves rolling in, a
 // few foam lines running up the beach. Returns the per-frame update.
 export function buildSea(scene: THREE.Scene, b: Battle, n: Noise, level: number, heightAt: (x: number, z: number) => number) {
-  const x0 = shoreX(b) - 40, W = 640, D = b.half * 5, SX = 128, SZ = 280;
+  const x0 = shoreX(b) - 190, W = 790, D = b.half * 5, SX = 128, SZ = 280;
   const geo = new THREE.PlaneGeometry(W, D, SX, SZ).rotateX(-Math.PI / 2).translate(x0 + W / 2, level, 0);
   const pos = geo.attributes.position as THREE.BufferAttribute, rgba: number[] = [];
   const shallow = new THREE.Color(0x6fe0d0), deep = new THREE.Color(0x0a4f8c), c = new THREE.Color();
@@ -60,7 +63,7 @@ export function buildSea(scene: THREE.Scene, b: Battle, n: Noise, level: number,
   const lines = [0, 1, 2].map((i) => {
     const ribbon = new THREE.BufferGeometry(), v: number[] = [], uv: number[] = [], idx: number[] = [];
     zs.forEach((z, j) => {
-      const x = shoreX(b) + n(z / 50, 9) * 10;
+      const x = shoreAt(b, n, z);
       v.push(x - 1.4, 0, z, x + 1.4, 0, z);
       uv.push(j / 4, 0, j / 4, 1);
       if (j) { const a = j * 2; idx.push(a - 2, a - 1, a, a - 1, a + 1, a); }
@@ -86,7 +89,7 @@ export function buildSea(scene: THREE.Scene, b: Battle, n: Noise, level: number,
 // What the shore is dressed with: palms, driftwood, tide pools, shells, tank traps on the sand, reefs
 // under the water, and the cannon on its headland. Returns what moves each frame (the gun's slow sweep).
 export function cannonCoast(k: Kit) {
-  const { b, keep, ky, heightAt, solid, std, r, bare, inst } = k;
+  const { b, keep, heightAt, solid, std, r, bare, inst, wind } = k;
   const { inst: mk, put, done } = inst;
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(), c = new THREE.Color(), e = new THREE.Euler();
   const UP = new THREE.Vector3(0, 1, 0);
@@ -124,8 +127,8 @@ export function cannonCoast(k: Kit) {
     tp.setXYZ(i, ctr.x + (tp.getX(i) - ctr.x) * ring, tp.getY(i), tp.getZ(i) * ring);
   }
   trunkGeo.computeVertexNormals();
-  const trunks = mk(trunkGeo, std(0x9a8062, 0.95), nPalms, true);
-  const crowns = mk(crownGeo, std(0xffffff, 0.8, { map: frondTex, alphaTest: 0.45, side: THREE.DoubleSide }), nPalms, true);
+  const trunks = mk(trunkGeo, wind.patch(std(0x9a8062, 0.95), { h: 10, amp: 0.12, bend: 0.3 }), nPalms, true);
+  const crowns = mk(crownGeo, wind.patch(std(0xffffff, 0.8, { map: frondTex, alphaTest: 0.45, side: THREE.DoubleSide }), { h: 5, amp: 0.4, bend: 2.5 }), nPalms, true);
   for (let i = 0; i < nPalms * 12 && trunks.count < nPalms; i++) {
     const a = spot((x, z, h) => dry(x, z, h) && (r() < 0.7 ? x > shore - 70 && x < shore - 4 : x > -b.half), 1);
     if (!a) continue;
@@ -213,7 +216,7 @@ export function cannonCoast(k: Kit) {
   done(reefRock, coral);
 
   // The gun on its base: a sandbagged ring, a long barrel on a cradle, ammunition stacked beside it, a flag.
-  const bx = keep.x - 12, bz = keep.z - 28, top = ky + 6;
+  const bx = keep.x - 12, bz = keep.z - 28, top = heightAt(bx, bz);
   const iron = std(0x4a5058, 0.45, { metalness: 0.55 }), canvas = std(0xcfc3a0, 0.95), pale = std(0xe9e1cc, 0.9);
   const ring = mk(new THREE.CapsuleGeometry(0.28, 0.9, 2, 6).rotateZ(Math.PI / 2), canvas, 120, true);
   for (let layer = 0; layer < 3; layer++) for (let i = 0; i < 28; i++) {

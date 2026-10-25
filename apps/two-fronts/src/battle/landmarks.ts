@@ -2,7 +2,7 @@
 // these dress them. Each returns what it animates each frame, if anything.
 import * as THREE from "three";
 import type { SectorKind } from "./contract.ts";
-import type { instancer } from "./foliage.ts";
+import type { instancer, Wind } from "./foliage.ts";
 import type { Battle } from "./sim.ts";
 import { desert } from "./worlds/desert.ts";
 import { ruinedCity } from "./worlds/capital.ts";
@@ -24,6 +24,7 @@ export interface Kit {
   bare(x: number, z: number, room?: number): boolean;
   anywhere(spread?: number): { x: number; z: number };
   inst: ReturnType<typeof instancer>;
+  wind: Wind; // patch a plant's material so it sways like the rest of the foliage
 }
 type Landmark = (k: Kit) => ((t: number) => void) | void;
 
