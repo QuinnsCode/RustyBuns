@@ -1,3 +1,4 @@
+import { chatterFor, radioFor } from "../src/battle/lines.ts";
 import { expect, setDefaultTimeout, test } from "bun:test";
 import type { BattleSpec } from "../src/battle/contract.ts";
 import {
@@ -127,6 +128,17 @@ test("nobody walks through a redwood", () => {
 test("the radio has opinions about the Wooka", () => {
   const b = run(horde(), 80);
   expect(b.events.some((e) => FLAVOR.includes(e))).toBe(true);
+});
+
+test("each world's radio talks about that world, not the ferns", () => {
+  for (const kind of ["capital", "spaceport", "cannon", "canyon"] as const) {
+    const pool = radioFor(kind, FLAVOR);
+    expect(pool.length).toBeGreaterThan(FLAVOR.length - 40);
+    expect(pool.some((l) => /\bferns?\b/i.test(l))).toBe(false);
+    expect(pool.some((l) => !FLAVOR.includes(l))).toBe(true);
+    expect(chatterFor(kind, "marines", { calm: ["I think a fern just blinked"], scared: ["They're in the ferns!"] }).scared.join()).not.toContain("ferns");
+  }
+  expect(radioFor("shield", FLAVOR)).toBe(FLAVOR);
 });
 
 // A bare field: no trees or scenery, nobody on it, for setting up one exchange at a time.

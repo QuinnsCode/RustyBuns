@@ -10,6 +10,7 @@
 // Kill enough of the other side and your champion takes the field: Warbur for the Wooka, Gumpert
 // for the Marines.
 // The view draws it and feeds the hero's input; the tests run it headless with the autopilot.
+import { radioFor } from "./lines.ts";
 import { atan2, cos, hypot, sin } from "./fmath.ts";
 import { VEHICLE_KINDS, other, poolSize, type BattleResult, type BattleSpec, type MatchMode, type PerSide, type SectorKind, type Side, type VehicleKind } from "./contract.ts";
 import { clamp } from "@rustybuns/util";
@@ -1535,7 +1536,8 @@ export function step(b: Battle, input: Input | null) {
     }
   }
   if (Math.floor(b.time / FLAVOR_EVERY) !== Math.floor((b.time - DT) / FLAVOR_EVERY) && sides.some((s) => isHorde(b, s))) {
-    say(b, FLAVOR[Math.floor(rand(b) * FLAVOR.length)]!);
+    const pool = radioFor(b.spec.sector, FLAVOR);
+    say(b, pool[Math.floor(rand(b) * pool.length)]!);
   }
 
   for (const f of b.fx) f.t -= DT;

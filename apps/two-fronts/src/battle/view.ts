@@ -20,6 +20,7 @@ import { makeSfx } from "./sfx.ts";
 import { isTouch, mountTouch } from "./touch.ts";
 import { icon } from "../ui/icons.ts";
 import { makeBubbles } from "../ui/bubbles.ts";
+import { chatterFor } from "./lines.ts";
 import { INTROS, mossbackSting } from "./cutscenes.ts";
 import { playCutscene, shouldPlay } from "./cutscene-view.ts";
 import { CHAMP_AT, HEAVY, ORDERS, ORDER_FOR, OVERHEAT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, startBattle, statsOf, step, timeLimit, vipUnit, yawTo, type Fx, type OrderKind, type Trooper, type Unit } from "./sim.ts";
@@ -847,7 +848,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         nextTalk = 3 + Math.random() * 4;
         const quiet = pals.filter((u) => !talk.some((x) => x.id === u.id)), who = quiet[Math.floor(Math.random() * quiet.length)];
         if (who) {
-          const lines = CHATTER[spec.factions[heroSide]], foes = b.units.filter((u) => u.side !== heroSide && u.kind !== "turret" && Math.hypot(u.x - at.x, u.z - at.z) < 30).length;
+          const side = spec.factions[heroSide], lines = chatterFor(spec.sector, side, CHATTER[side]), foes = b.units.filter((u) => u.side !== heroSide && u.kind !== "turret" && Math.hypot(u.x - at.x, u.z - at.z) < 30).length;
           const pool = b.units.some((u) => u.role === "mossback" && u.side !== heroSide) ? lines.big : who.hp < who.maxHp * 0.5 ? lines.hurt : foes >= 4 ? lines.scared : lines.calm;
           talk.push({ id: who.id, text: pool[Math.floor(Math.random() * pool.length)]!, until: now + 3200 });
         }
