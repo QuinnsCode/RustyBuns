@@ -20,7 +20,7 @@ import { makeSfx } from "./sfx.ts";
 import { isTouch, mountTouch } from "./touch.ts";
 import { icon } from "../ui/icons.ts";
 import { makeBubbles } from "../ui/bubbles.ts";
-import { INTROS, mossbackSting } from "./cutscenes.ts";
+import { introOf, mossbackSting } from "./cutscenes.ts";
 import { playCutscene, shouldPlay } from "./cutscene-view.ts";
 import { CHAMP_AT, HEAVY, ORDERS, ORDER_FOR, OVERHEAT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, startBattle, statsOf, step, timeLimit, vipUnit, yawTo, type Fx, type OrderKind, type Trooper, type Unit } from "./sim.ts";
 
@@ -883,7 +883,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       raf = requestAnimationFrame(frame);
     };
     // The intro, once, from where the hero stands; then the battle.
-    const intro = INTROS[spec.factions[heroSide]], h0 = heroUnit(b);
+    const intro = introOf(spec.factions[heroSide], spec.sector), h0 = heroUnit(b);
     if (h0 && shouldPlay(intro.id)) void cut(intro, { x: h0.x, z: h0.z, yaw });
     else raf = requestAnimationFrame(frame);
   });

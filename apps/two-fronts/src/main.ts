@@ -14,6 +14,7 @@ import { icon, tip } from "./ui/icons.ts";
 import { PRESETS, PRESET_IDS, deploy, emptyDeployment, loadoutOf, placeLoadout, presetDeployment, room, totals, valueOf, type Loadout, type PresetId } from "./war/fleet.ts";
 import { MODE_INFO, voteScreen, type VoteSeat } from "./ui/vote.ts";
 import { run } from "./battle/sim.ts";
+import { PLACES } from "./battle/cutscenes.ts";
 import { HULL_PER_SHIP, ROUNDS, clash, encodePicks, fightPicks, playRound, startPicks, whyNot, type PickRound } from "./battle/space-picks.ts";
 import { aiSpacePick } from "./war/ai.ts";
 import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
@@ -633,15 +634,15 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 // The hero battle's briefing: what the map has given each side for this fight.
 function brief(spec: BattleSpec, done: (r: BattleResult) => void) {
   const me = spec.hero, foe = me === "attacker" ? "defender" : "attacker";
-  const horde = spec.factions[foe] === "wooka";
+  const horde = spec.factions[foe] === "wooka", place = PLACES[spec.sector];
   const vehicles = (s: Side) => {
     if (spec.factions[s] === "wooka") return "none, just more Wooka";
     const list = VEHICLE_KINDS.filter((k) => spec.vehicles[s][k]).map((k) => `${spec.vehicles[s][k]} ${k}${spec.vehicles[s][k]! > 1 ? "s" : ""}`);
     return list.join(", ") || "none";
   };
   const row = (label: string, a: number | string, b: number | string) => `<tr><th>${label}</th><td>${a}</td><td>${b}</td></tr>`;
-  const role = `You ${me === "attacker" ? "attack" : "defend"} as ${spec.factions[me] === "wooka" ? "a Wooka chieftain. The armoured ones came to hunt. Show them who the forest belongs to" : "a Thunder Marine"}.${spec.mode && spec.mode !== "conquest" ? "" : " Take the command posts and run their tickets out."}`;
-  const about = `${MODE_INFO[spec.mode ?? "conquest"].blurb} ${role}${horde && spec.factions[me] === "marines" ? " You are not the hunter here. They know the trees, they know your smell, and they are already in the ferns." : ""}`;
+  const role = `You ${me === "attacker" ? "attack" : "defend"} as ${spec.factions[me] === "wooka" ? `a Wooka chieftain. The armoured ones came to hunt. Show them who the ${place.ours} belongs to` : "a Thunder Marine"}.${spec.mode && spec.mode !== "conquest" ? "" : " Take the command posts and run their tickets out."}`;
+  const about = `${MODE_INFO[spec.mode ?? "conquest"].blurb} ${role}${horde && spec.factions[me] === "marines" ? ` You are not the hunter here. They know the ${place.know}, they know your smell, and they are already ${place.lurk}.` : ""}`;
   showModal(`<h2>Hero battle: ${spec.system}, ${SECTOR_NAMES[spec.sector].toLowerCase()}</h2>
     <p class="mode-line">${icon(MODE_INFO[spec.mode ?? "conquest"].icon, 16)}<b>${MODE_INFO[spec.mode ?? "conquest"].name}</b>${tip(about)}</p>
     <table class="spec"><tr><th></th><td>You</td><td>Enemy</td></tr>

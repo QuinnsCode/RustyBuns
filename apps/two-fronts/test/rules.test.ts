@@ -382,7 +382,7 @@ test("a defender who pulls out saves their troops and gives up the ground", () =
   const pulled = whole(c, [attackOnKessa(), out]);
   expect(kessa(pulled).sectors[0]).toMatchObject({ owner: "marines", armies: { marines: 2, wooka: 0 } });
   expect(kessa(pulled).sectors[2]!.armies.wooka).toBe(2);
-  expect(pulled.log).toContain("Wooka pull out of Kessa shield generator to Kessa capital.");
+  expect(pulled.log).toContain("Wooka pull out of Kessa shield generator to Kessa ruined city.");
   expect(hold.log.some((l) => l.startsWith("Ground battle at Kessa shield generator"))).toBe(true);
   // Only from where they're attacked, only to ground they hold, and not from nothing.
   const bad = (r: Retreat) => checkRetreats(c, { faction: "wooka", orders: [] }, [r])[0];
