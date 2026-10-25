@@ -7,6 +7,7 @@ import { aiSpacePick } from "../src/war/ai.ts";
 import { groundRecorder, spaceRecorder } from "../src/battle/replay.ts";
 import { run, startBattle, step } from "../src/battle/sim.ts";
 import { runSpace, startSpaceBattle, stepSpace } from "../src/battle/space.ts";
+import { SECTOR_NAMES } from "../src/war/galaxy.ts";
 
 const ok = (s: Step): Extract<Step, { ok: true }> => {
   if (!s.ok) throw new Error(s.error);
@@ -221,7 +222,7 @@ test("a hero who picks badly loses the orbit, and the landings and the blockade 
   const c = after.table.campaign;
   expect(after.done!.battle).toMatchObject({ winner: "attacker", picks: true });
   expect(c.systems.corva!.orbit).toBe("wooka");
-  expect(c.log).toContain("3 Wooka armies come down on Corva capital under their orbit.");
+  expect(c.log).toContain(`3 Wooka armies come down on Corva ${SECTOR_NAMES.capital.toLowerCase()} under their orbit.`);
   expect(c.log.some((l) => l.startsWith("Wooka blockade Corva"))).toBe(true);
   // Bombarded from above while the hero turned the guns on an empty world, the capital's garrison
   // is gone before the troops even land.

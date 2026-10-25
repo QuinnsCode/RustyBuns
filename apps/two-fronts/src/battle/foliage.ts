@@ -262,16 +262,16 @@ interface Floor {
 export const FLOORS: Record<SectorKind, Floor> = {
   // The shield generator's clearing: open, bright, meadow-like.
   shield: { litter: 1400, needles: 500, twigs: 380, pebbles: 300, boulders: 18, shrooms: 14, moss: 240, flowers: 800, grass: 1900, nurse: 8, thickets: 14, leaf: [[0.08, 0.5, 0.28], [0.11, 0.55, 0.35], [0.14, 0.5, 0.3]], flower: [0xf6f0dc, 0xf2d34a, 0xb48be8, 0xe9a3c8], grassHue: 0.22, grassLight: 0.34, mossAmount: 0.15 },
-  // The capital's redwood duff: deep needle drifts, sorrel and pink-white blossom.
-  capital: { litter: 1300, needles: 2000, twigs: 520, pebbles: 240, boulders: 20, shrooms: 24, moss: 230, flowers: 450, grass: 900, nurse: 10, thickets: 18, leaf: [[0.05, 0.55, 0.24], [0.07, 0.6, 0.3], [0.1, 0.5, 0.26]], flower: [0xffffff, 0xf4a0c0, 0xf9e6f0], grassHue: 0.25, grassLight: 0.28, mossAmount: 0.22 },
+  // The ruined capital: ash and scorched paper over the asphalt, gravel and broken concrete, nothing alive.
+  capital: { litter: 700, needles: 0, twigs: 260, pebbles: 1500, boulders: 0, shrooms: 0, moss: 0, flowers: 0, grass: 0, nurse: 0, thickets: 0, leaf: [[0.07, 0.08, 0.2], [0.08, 0.1, 0.27], [0.06, 0.25, 0.3]], flower: [0xffffff], grassHue: 0.1, grassLight: 0.3, mossAmount: 0 },
   // The station's deck has nothing growing on it.
   spaceport: { litter: 0, needles: 0, twigs: 0, pebbles: 0, boulders: 0, shrooms: 0, moss: 0, flowers: 0, grass: 0, nurse: 0, thickets: 0, leaf: [[0, 0, 0.3]], flower: [0xffffff], grassHue: 0, grassLight: 0.3, mossAmount: 0 },
-  // The cannon battery: splinters, scorched dry grass and rubble under a few hardy flowers.
-  cannon: { litter: 700, needles: 300, twigs: 950, pebbles: 850, boulders: 26, shrooms: 4, moss: 80, flowers: 130, grass: 1100, nurse: 4, thickets: 8, leaf: [[0.07, 0.4, 0.2], [0.09, 0.35, 0.26]], flower: [0xe8c050, 0xd8602c], grassHue: 0.14, grassLight: 0.32, mossAmount: 0.05 },
-  // The mining canyon: dry tufts, grit and stones; no woods.
+  // The cannon's shore: dry beach grass and a few flowers on the dunes, sticks, shingle and wrack, no woods.
+  cannon: { litter: 160, needles: 0, twigs: 520, pebbles: 700, boulders: 0, shrooms: 0, moss: 0, flowers: 220, grass: 900, nurse: 0, thickets: 0, leaf: [[0.11, 0.35, 0.5], [0.09, 0.3, 0.42]], flower: [0xf6f0dc, 0xf08a9a, 0xf2d34a, 0xc8a0f0], grassHue: 0.15, grassLight: 0.42, mossAmount: 0 },
+  // The dust sea: dry tufts, grit and stones; no woods.
   canyon: { litter: 0, needles: 0, twigs: 160, pebbles: 950, boulders: 0, shrooms: 0, moss: 0, flowers: 0, grass: 520, nurse: 0, thickets: 0, leaf: [[0.07, 0.4, 0.3]], flower: [0xe8c050], grassHue: 0.1, grassLight: 0.4, mossAmount: 0 },
-  // The jungle: wet, thick and green over everything.
-  jungle: { litter: 3000, needles: 0, twigs: 800, pebbles: 400, boulders: 70, shrooms: 40, moss: 650, flowers: 850, grass: 2300, nurse: 16, thickets: 26, leaf: [[0.09, 0.5, 0.2], [0.2, 0.5, 0.18], [0.13, 0.55, 0.26]], flower: [0xff5a8a, 0xff9a30, 0xd070ff, 0xf5f5f5], grassHue: 0.26, grassLight: 0.28, mossAmount: 0.45 },
+  // The jungle: an alien night, every plant glowing teal, magenta, violet or lime.
+  jungle: { litter: 2400, needles: 0, twigs: 500, pebbles: 400, boulders: 70, shrooms: 70, moss: 0, flowers: 1100, grass: 2300, nurse: 16, thickets: 26, leaf: [[0.74, 0.5, 0.3], [0.5, 0.5, 0.28], [0.88, 0.5, 0.32]], flower: [0xff5ac8, 0x5af0e0, 0xb48cff, 0xd8ff5a], grassHue: 0.5, grassLight: 0.34, mossAmount: 0.45 },
 };
 
 export interface FoliageCtx {
@@ -291,6 +291,9 @@ export interface FoliageCtx {
   wind: Wind;
   fog: THREE.Color;
 }
+// A plant's colour: the world's own glowing palette if it has one (the lightness l sets how bright), else green-ish h s l.
+export const planter = (flora: number[] | null, r: () => number, col: THREE.Color) => (h: number, s: number, l: number) =>
+  flora ? col.setHex(flora[Math.floor(r() * flora.length)]!).multiplyScalar(l * 3) : col.setHSL(h, s, l);
 export interface Foliage { update(t: number, eye: THREE.Vector3): void }
 
 export function buildFoliage(ctx: FoliageCtx): Foliage {
@@ -302,7 +305,7 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), k = new THREE.Vector3(), col = new THREE.Color(), e = new THREE.Euler();
   const UP = new THREE.Vector3(0, 1, 0);
   const std = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, ...extra });
-  const leafy = (map: THREE.Texture | null, extra: THREE.MeshStandardMaterialParameters = {}) => std(0xffffff, { map, alphaTest: 0.4, side: THREE.DoubleSide, ...extra });
+  const leafy = (map: THREE.Texture | null, extra: THREE.MeshStandardMaterialParameters = {}) => std(0xffffff, { map, alphaTest: 0.4, side: THREE.DoubleSide, ...(WORLDS[kind].flora ? { emissive: 0x2a1c5a } : {}), ...extra });
   const flat = (geo: THREE.BufferGeometry) => geo.rotateX(-Math.PI / 2);
   const anywhere = (spread = 1.1) => ({ x: (r() - 0.5) * b.half * 2 * spread, z: (r() - 0.5) * b.half * 2 * spread });
   const field = trees.slice(0, b.trees.length);
@@ -318,6 +321,7 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
   const yAt = (x: number, z: number, dy = 0) => heightAt(x, z) + dy;
   const set = (x: number, y: number, z: number, ry: number, sx: number, sy = sx, sz = sx) => m.compose(p.set(x, y, z), q.setFromAxisAngle(UP, ry), k.set(sx, sy, sz));
   const hsl = (c: [number, number, number], v = 0.05) => col.setHSL(c[0] + (r() - 0.5) * 0.03, c[1], c[2] + (r() - 0.5) * v * 2);
+  const flora = WORLDS[kind].flora, tint = planter(flora, r, col);
   const decal = { polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 };
 
   const mist: THREE.InstancedMesh[] = [];
@@ -351,7 +355,7 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
       // Moss is where it's damp: in the dips, more of it.
       if (r() > 0.45 + 0.8 * fl.mossAmount + n(at.x / 9, at.z / 9, 2) * 0.5) continue;
       const s = 1.5 + r() * 4.5;
-      col.setHSL(0.22 + r() * 0.07, 0.55, 0.16 + r() * 0.1);
+      tint(0.22 + r() * 0.07, 0.55, 0.16 + r() * 0.1);
       put(mesh, set(at.x, yAt(at.x, at.z, 0.05 + r() * 0.04), at.z, r() * 6.3, s, 1, s * (0.6 + r() * 0.5)), col);
     }
     done(mesh);
@@ -390,7 +394,7 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
       const s = 0.7 + r() * 1.5, y = yAt(at.x, at.z), ry = r() * 6.3;
       col.setHSL(0.13, 0.06, 0.3 + r() * 0.2);
       put(rocks, set(at.x, y + s * 0.3, at.z, ry, s * 1.2, s * 0.8, s), col);
-      col.setHSL(0.22 + r() * 0.06, 0.55, 0.17 + r() * 0.08);
+      tint(0.22 + r() * 0.06, 0.55, 0.17 + r() * 0.08);
       put(caps, set(at.x, y + s * 0.72, at.z, ry, s * 0.9, s * 0.3, s * 0.78), col);
     }
     done(rocks, caps);
@@ -471,17 +475,17 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
       const len = 7 + r() * 9, rad = 0.45 + r() * 0.45, ry = r() * Math.PI, y = yAt(at.x, at.z, rad * 0.8);
       m.compose(p.set(at.x, y, at.z), q.setFromAxisAngle(UP, ry), k.set(len, rad, rad));
       col.setHSL(0.07, 0.4, 0.18 + r() * 0.08);
-      put(logs, m, col); put(mossy, m, col.setHex(jungle ? 0x4a6e26 : 0x55702c));
+      put(logs, m, col); put(mossy, m, col.setHex(jungle ? 0x1f7a6a : 0x55702c));
       const ax = Math.cos(ry), az = -Math.sin(ry);
       for (let j = 0; j < 7; j++) {
         const d = (r() - 0.5) * len * 0.9, x = at.x + ax * d, z = at.z + az * d, top = yAt(x, z, rad * 1.7);
-        col.setHSL(0.21 + r() * 0.08, 0.55, 0.3 + r() * 0.14);
+        tint(0.21 + r() * 0.08, 0.55, 0.3 + r() * 0.14);
         put(sprouts, set(x, top - 0.1, z, r() * 6, 0.35 + r() * 0.4), col);
       }
       for (let j = 0; j < 2; j++) {
         const d = (r() - 0.5) * len * 0.8, x = at.x + ax * d, z = at.z + az * d, top = yAt(x, z, rad * 1.7), h = 0.5 + r() * 0.7;
         put(saplingStem, set(x, top - 0.1, z, 0, 1, h, 1));
-        col.setHSL(0.27 + r() * 0.05, 0.5, 0.25 + r() * 0.08);
+        tint(0.27 + r() * 0.05, 0.5, 0.25 + r() * 0.08);
         put(saplingTop, set(x, top - 0.1 + h * 0.5, z, 0, 1, h * 0.8, 1), col);
       }
       for (let j = 0; j < 4; j++) {
@@ -512,7 +516,7 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
         const a = r() * 6.3, d = Math.sqrt(r()) * 4.2, x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
         if (bare(x, z, 1)) continue;
         const w = (1 - d / 6) * (2.2 + r() * 2);
-        col.setHSL(0.24 + r() * 0.07, 0.5, 0.17 + r() * 0.09);
+        tint(0.24 + r() * 0.07, 0.5, 0.17 + r() * 0.09);
         put(bushes, set(x, yAt(x, z, -0.1), z, r() * 6, w, w * (0.9 + r() * 0.5), w), col);
         if (berries) for (let c = 0; c < 2; c++) put(berry, set(x + (r() - 0.5) * w, yAt(x, z, 0.5 + r() * w * 0.8), z + (r() - 0.5) * w, 0, 1), col.setHex(bc));
       }
@@ -550,22 +554,24 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
     const barkMat = std(0x5d4a2e, { map: bark });
 
     // Canopy: two layers of leaf sprays overhead, holes between so the sun dapples through.
-    const upper = inst(flat(new THREE.PlaneGeometry(1, 1)), leafy(canopyMap(), { roughness: 0.9 }), cnt(170), true, true);
-    const mid = inst(flat(new THREE.PlaneGeometry(1, 1)), leafy(canopyMap(), { roughness: 0.9 }), cnt(240), true, true);
+    // The top layer is a luminous cloud of spores, in the plants' colours.
+    const upper = inst(flat(new THREE.PlaneGeometry(1, 1)), new THREE.MeshBasicMaterial({ map: glow(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }), cnt(170), false, false);
+    const mid = inst(flat(new THREE.PlaneGeometry(1, 1)), flora ? new THREE.MeshBasicMaterial({ map: glow(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }) : leafy(canopyMap(), { roughness: 0.9 }), cnt(240), !flora, !flora);
     for (let i = 0; i < 170 * 2 && upper.count < upper.instanceMatrix.count; i++) {
-      const at = anywhere(1.3), s = 14 + r() * 10;
+      const at = anywhere(1.3), s = 18 + r() * 14;
       q.setFromEuler(e.set((r() - 0.5) * 0.3, r() * 6.3, (r() - 0.5) * 0.3));
-      col.setHSL(0.27 + r() * 0.05, 0.5, 0.14 + r() * 0.08);
-      put(upper, m.compose(p.set(at.x, yAt(at.x, at.z, 30 + r() * 14), at.z), q, k.set(s, 1, s)), col);
+      tint(0.27 + r() * 0.05, 0.5, 0.1 + r() * 0.05);
+      put(upper, m.compose(p.set(at.x, yAt(at.x, at.z, 40 + r() * 16), at.z), q, k.set(s, 1, s)), col);
     }
     for (let i = 0; i < 240 * 2 && mid.count < mid.instanceMatrix.count; i++) {
-      const at = anywhere(1.2), s = 6 + r() * 6;
+      const at = anywhere(1.2), s = flora ? 10 + r() * 10 : 6 + r() * 6;
       q.setFromEuler(e.set((r() - 0.5) * 0.5, r() * 6.3, (r() - 0.5) * 0.5));
-      col.setHSL(0.25 + r() * 0.06, 0.55, 0.2 + r() * 0.1);
-      put(mid, m.compose(p.set(at.x, yAt(at.x, at.z, 12 + r() * 8), at.z), q, k.set(s, 1, s)), col);
+      tint(0.25 + r() * 0.06, 0.55, flora ? 0.08 + r() * 0.05 : 0.2 + r() * 0.1);
+      put(mid, m.compose(p.set(at.x, yAt(at.x, at.z, 16 + r() * 10), at.z), q, k.set(s, 1, s)), col);
     }
     done(upper, mid);
 
+    const glowCols = flora ?? [0x6af0d0, 0xff9a40, 0xb070ff, 0x8aff7a];
     // Lianas hang from the high boughs, and swag from trunk to trunk.
     const lianaCurve = new THREE.CatmullRomCurve3([[0, 0, 0], [0.14, -0.25, 0.1], [-0.1, -0.5, -0.05], [0.12, -0.75, 0.08], [0, -1, 0]].map(([x, y, z]) => new THREE.Vector3(x, y, z)));
     const lianaMat = wind.patch(std(0xffffff), { h: 1, amp: 0.5, bend: 1.2, hang: true });
@@ -575,22 +581,32 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
     const liane: number[] = [];
     for (const t of all) {
       if (lianas.count >= lianas.instanceMatrix.count) break;
-      const y0 = yAt(t.x, t.z), top = y0 + 18 + r() * 14;
+      const y0 = yAt(t.x, t.z), top = y0 + 26 + r() * 18;
       for (let v = 0; v < 3; v++) {
-        const x = t.x + (r() - 0.5) * 7, z = t.z + (r() - 0.5) * 7, len = 8 + r() * Math.min(26, top - y0 - 1);
-        col.setHSL(0.2 + r() * 0.12, 0.35, 0.12 + r() * 0.12);
+        const x = t.x + (r() - 0.5) * 7, z = t.z + (r() - 0.5) * 7, len = 10 + r() * Math.min(34, top - y0 - 1);
+        tint(0.2 + r() * 0.12, 0.35, 0.12 + r() * 0.12);
         put(lianas, set(x, top, z, r() * 6, 1 + r() * 2.5, len, 1 + r() * 2.5), col);
-        if (r() < 0.12) liane.push(x, top - len + 0.4, z);
+        if (r() < 0.3) liane.push(x, top - len + 0.4, z);
       }
     }
     for (let i = 0; i < 400 && swags.count < swags.instanceMatrix.count; i++) {
       const a = all[Math.floor(r() * all.length)]!, c = all[Math.floor(r() * all.length)]!, d = Math.hypot(a.x - c.x, a.z - c.z);
       if (d < 7 || d > 26) continue;
-      const y = yAt(a.x, a.z) + 8 + r() * 16, ry = Math.atan2(-(c.z - a.z), c.x - a.x);
-      col.setHSL(0.22 + r() * 0.08, 0.4, 0.14 + r() * 0.1);
+      const y = yAt(a.x, a.z) + 10 + r() * 22, ry = Math.atan2(-(c.z - a.z), c.x - a.x);
+      tint(0.22 + r() * 0.08, 0.4, 0.14 + r() * 0.1);
       put(swags, set(a.x, y, a.z, ry, d, 0.6 + r() * 0.8, 1), col);
     }
-    done(lianas, swags);
+    // Lantern pods hang off the vines' ends, each with a halo.
+    const pods = inst(new THREE.SphereGeometry(1, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }), cnt(260), false, false);
+    const podGlow: number[] = [], podCols: number[] = [];
+    for (let i = 0; i < liane.length && pods.count < pods.instanceMatrix.count; i += 3) {
+      const w = 0.35 + r() * 0.7, c = glowCols[Math.floor(r() * glowCols.length)]!;
+      col.setHex(c);
+      put(pods, set(liane[i]!, liane[i + 1]! - w, liane[i + 2]!, 0, w, w * 1.4, w), col);
+      podGlow.push(liane[i]!, liane[i + 1]! - w, liane[i + 2]!); podCols.push(col.r, col.g, col.b);
+    }
+    done(lianas, swags, pods);
+    addGlints(podGlow, podCols, 5, 0.55);
 
     // Buttress roots: thin fins flaring out from the foot of each trunk.
     const fin = new THREE.Shape();
@@ -602,12 +618,11 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
     const sp = sleeve.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < sp.count; i++) if (sp.getY(i) > 0.25) sp.setY(i, sp.getY(i) + (((i * 7919) % 13) / 13 - 0.4) * 0.12);
     sleeve.computeVertexNormals();
-    const sleeves = inst(sleeve, std(0x3e5e1e, { map: bark, roughness: 1 }), cnt(all.length), false);
+    const sleeves = inst(sleeve, std(flora ? 0x2a8a80 : 0x3e5e1e, { map: bark, roughness: 1, ...(flora ? { emissive: 0x0c4a44 } : {}) }), cnt(all.length), false);
     const shelves = inst(new THREE.CylinderGeometry(0.5, 0.5, 0.08, 8, 1, false, 0, Math.PI), new THREE.MeshBasicMaterial({ color: 0xffffff }), cnt(320), false, false);
     const sparkPos: number[] = [], sparkCols: number[] = [];
-    const glowCols = [0x6af0d0, 0xff9a40, 0xb070ff, 0x8aff7a];
     for (const [ti, t] of all.entries()) {
-      const y0 = yAt(t.x, t.z), h = 22 + (ti % 7) * 3, nFins = 3 + (ti % 3);
+      const y0 = yAt(t.x, t.z), h = 40 + (ti % 7) * 4, nFins = 3 + (ti % 3);
       for (let j = 0; j < nFins; j++) {
         const a = r() * 6.3, reach = t.r * 1.8 + 0.8 + r() * 1.5, up = 2.5 + t.r * 2.2 + r() * 2;
         put(fins, set(t.x + Math.cos(a) * t.r * 0.55, y0 - 0.05, t.z - Math.sin(a) * t.r * 0.55, a, reach, up, 0.7 + r() * 0.7));
@@ -653,12 +668,12 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
       const at = spot(1.5, 0.55); if (!at) continue;
       const y = yAt(at.x, at.z, -0.1);
       if (r() < 0.45 && broad.count < broad.instanceMatrix.count) {
-        const s = 0.7 + r() * 1.0;
-        col.setHSL(0.27 + r() * 0.06, 0.55, 0.22 + r() * 0.1);
+        const s = 1.4 + r() * 1.6;
+        tint(0.27 + r() * 0.06, 0.55, 0.22 + r() * 0.1);
         put(broad, set(at.x, y, at.z, r() * 6, s, s * (0.8 + r() * 0.5), s), col);
       } else if (bigFerns.count < bigFerns.instanceMatrix.count) {
-        const s = 0.6 + r() * 0.7;
-        col.setHSL(0.24 + r() * 0.06, 0.55, 0.22 + r() * 0.1);
+        const s = 1.2 + r() * 1.2;
+        tint(0.24 + r() * 0.06, 0.55, 0.22 + r() * 0.1);
         put(bigFerns, set(at.x, y, at.z, r() * 6, s), col);
       }
     }
@@ -677,20 +692,20 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
         col.setHSL(0.09, 0.3, 0.3 + r() * 0.1);
         put(palmTrunk, m, col);
         const top = new THREE.Vector3(0, h, 0).applyQuaternion(q).add(p.set(at.x, y, at.z));
-        col.setHSL(0.28 + r() * 0.05, 0.55, 0.24 + r() * 0.08);
+        tint(0.28 + r() * 0.05, 0.55, 0.24 + r() * 0.08);
         put(palmCrown, set(top.x, top.y - 0.2, top.z, r() * 6, 0.9 + r() * 0.5), col);
       } else if (roll < 0.75 && cycadCrown.count < cycadCrown.instanceMatrix.count) {
         const h = 0.9 + r() * 1.2, w = 0.5 + r() * 0.3;
         col.setHSL(0.09, 0.35, 0.22 + r() * 0.08);
         put(stemTrunk, set(at.x, y, at.z, r() * 6, w, h, w), col);
-        col.setHSL(0.3 + r() * 0.04, 0.5, 0.2 + r() * 0.08);
+        tint(0.3 + r() * 0.04, 0.5, 0.2 + r() * 0.08);
         put(cycadCrown, set(at.x, y + h - 0.1, at.z, r() * 6, 0.8 + r() * 0.5), col);
       } else if (bigFerns.count < bigFerns.instanceMatrix.count) {
         // A tree fern: a thin stem under a big crown.
         const h = 2 + r() * 3.5, w = 0.2 + r() * 0.12;
         col.setHSL(0.08, 0.3, 0.17 + r() * 0.06);
         put(stemTrunk, set(at.x, y, at.z, 0, w, h, w), col);
-        col.setHSL(0.26 + r() * 0.05, 0.55, 0.22 + r() * 0.1);
+        tint(0.26 + r() * 0.05, 0.55, 0.22 + r() * 0.1);
         put(bigFerns, set(at.x, y + h - 0.2, at.z, r() * 6, 0.9 + r() * 0.5), col);
       }
     }
