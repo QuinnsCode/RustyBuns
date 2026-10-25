@@ -13,6 +13,7 @@ import { hut, lumpy, texture, totem } from "./models.ts";
 import { LANDMARKS } from "./landmarks.ts";
 import { WORLDS } from "./worlds.ts";
 import { sandstone } from "./worlds/desert.ts";
+import { buildStation, deckFloor, deckMaterial, stationSky } from "./worlds/station.ts";
 import { EYE, POST_RADIUS, type Battle, type Block, type Tree } from "./sim.ts";
 import { buildSea, coastOf, headland } from "./worlds/beach.ts";
 
@@ -147,6 +148,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   // rising into banks past the edge of the field.
   const amp = look.amp, sea = look.sea;
   const heightAt = (x: number, z: number) => {
+    if (look.station) return 0; // a deck is flat
     let flat = 1;
     for (const post of b.posts) flat = Math.min(flat, smooth(POST_RADIUS + 2, POST_RADIUS + 16, Math.hypot(x - post.x, z - post.z)));
     for (const blk of b.blocks) flat = Math.min(flat, smooth(1, 7, blockGap(blk, x, z)));
@@ -168,6 +170,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   // --- Sky, haze and light ---
   scene.background = new THREE.Color(look.sky);
   scene.fog = new THREE.FogExp2(look.sky, look.fog);
+  const dome = () => {
   const skyGeo = new THREE.SphereGeometry(900, 24, 12);
   const skyCols: number[] = [];
   const pos = skyGeo.attributes.position as THREE.BufferAttribute;
@@ -180,7 +183,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   sky.renderOrder = -1;
   scene.add(sky);
   // The gas giant Doren circles, banded, with a thin ring; it shows through the gaps.
-  const giant = new THREE.Group(), night = new THREE.Group();
+  const giant = new THREE.Group();
   const bands = texture("giant", 64, 128, [1, 1], (c, rr) => { for (let y = 0; y < 128; y += 4) { c.fillStyle = grey(150 + 70 * Math.sin(y * 0.2 + rr() * 2)); c.fillRect(0, y, 64, 4); } });
   giant.add(new THREE.Mesh(new THREE.SphereGeometry(120, 32, 16), new THREE.MeshBasicMaterial({ map: bands, color: 0xc9d8c8, fog: false, transparent: true, opacity: 0.55, depthWrite: false })));
   const giantRing = new THREE.Mesh(new THREE.RingGeometry(150, 200, 64), new THREE.MeshBasicMaterial({ color: 0xe8e0c8, fog: false, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false }));
@@ -190,6 +193,11 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   giant.rotation.set(-0.6, 0, 0.35); // its bands face the field, not its pole
   giant.children.forEach((c) => (c.renderOrder = -1));
   if (look.giant) scene.add(giant);
+  return { sky, giant };
+  };
+  const { sky, giant } = look.station ? stationSky(scene, r) : dome();
+  const giantAt = look.station ? new THREE.Vector3(560, 20, -520) : new THREE.Vector3(-380, 420, -620);
+  const night = new THREE.Group();
   // A second sun: a smaller, redder disc low in the sky, lighting the shadows a faint tint from the other side.
   const suns = new THREE.Group();
   if (look.twin !== null) {
@@ -249,7 +257,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
 
   // --- The floor ---
   const SIZE = b.half * 5, SEG = 260;
-  const groundGeo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG).rotateX(-Math.PI / 2);
+  const groundGeo = look.station ? deckFloor(b) : new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG).rotateX(-Math.PI / 2);
   const gp = groundGeo.attributes.position as THREE.BufferAttribute, gc: number[] = [];
   const base = new THREE.Color(look.ground), litter = new THREE.Color(look.litter), dirt = new THREE.Color(look.trail);
   const mossy = new THREE.Color(look.flora ? 0x1c5a6a : 0x2f4a1c);
@@ -277,7 +285,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   }
   groundGeo.setAttribute("color", new THREE.Float32BufferAttribute(gc, 3));
   groundGeo.computeVertexNormals();
-  const ground = new THREE.Mesh(groundGeo, std(0xffffff, 1, { vertexColors: true, map: floorMap() }));
+  const ground = new THREE.Mesh(groundGeo, look.station ? deckMaterial() : std(0xffffff, 1, { vertexColors: true, map: floorMap() }));
   ground.receiveShadow = true;
   scene.add(ground);
 
@@ -516,7 +524,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   // --- The scenery the sim laid out: walls of sandbags, and buildings, bunkers or rock. ---
   const bag = new THREE.CapsuleGeometry(0.17, 0.45, 2, 6).rotateZ(Math.PI / 2).scale(1, 0.85, 1.4);
   let nBags = 0;
-  for (const blk of b.blocks) if (blk.h < EYE && !blk.kind) nBags += Math.ceil(blk.w / 0.85) * Math.ceil(blk.d / 0.55) * Math.ceil(blk.h / 0.3);
+  for (const blk of b.blocks) if (blk.h < EYE && !blk.kind && !look.station) nBags += Math.ceil(blk.w / 0.85) * Math.ceil(blk.d / 0.55) * Math.ceil(blk.h / 0.3);
   const bags = inst(bag, std(0xffffff, 1), nBags, true);
   const rockMat = std(look.rocky ? look.cliff : look.stone, 0.95, { map: look.ripple ? sandstone(2) : strataMap() });
   const builtMat = std(look.built, 0.85, { map: concreteMap() });
@@ -536,7 +544,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   for (const blk of b.blocks) if (blk.kind === "trench") nStakes += Math.ceil(blk.w / 0.9);
   const stakes = inst(new THREE.ConeGeometry(0.09, 1.6, 5), stakeMat, nStakes, true);
   for (const blk of b.blocks) {
-    if (!blk.kind || blk.kind === "hut" || blk.kind === "wreck" || blk.kind === "rubble") continue; // the world's landmarks draw huts, wrecks and rubble
+    if (!blk.kind || look.station || blk.kind === "hut" || blk.kind === "wreck" || blk.kind === "rubble") continue; // the world's landmarks draw these, and the station all its blocks
     const y = heightAt(blk.x, blk.z), along = blk.w >= blk.d;
     if (blk.kind === "rock") solidAt(lumpy(1, 2, 0.25, Math.floor(r() * 50), false).scale(blk.w * 0.6, blk.h * 0.75, blk.d * 0.6), rockMat, blk.x, y + blk.h * 0.35, blk.z, r() * 6);
     else if (blk.kind === "stump") {
@@ -574,7 +582,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   }
   stakes.instanceMatrix.needsUpdate = true;
   for (const blk of b.blocks) {
-    if (blk.kind) continue;
+    if (blk.kind || look.station) continue;
     const y = heightAt(blk.x, blk.z);
     if (blk.h < EYE) {
       const nx = Math.ceil(blk.w / 0.85), nz = Math.ceil(blk.d / 0.55), ny = Math.ceil(blk.h / 0.3);
@@ -630,6 +638,8 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   };
   const landmark = LANDMARKS[spec.sector]({ b, keep, ky, heightAt, solid, add: (o) => scene.add(o), std, builtMat, r, n, bare, anywhere, inst: { inst, put, done } });
 
+  const pulse = look.station ? buildStation({ scene, b, r, ...instancer(scene), trail, shiftAt: (z) => n(z / 40, 3.7) * 6 }) : null;
+
   // --- Sunlight: shafts down through the haze, the dapples they leave, and dust hanging in them. ---
   const rays: THREE.Group[] = [];
   const shaftMat = additive(glowMap("shaft", true), look.sun, look.ray);
@@ -672,13 +682,14 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       sun.target.position.set(at.x, heightAt(at.x, at.z), at.z);
       sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 200);
       sky.position.copy(eye);
-      giant.position.set(eye.x - 380, 420, eye.z - 620); // (not in the scene when the world has none)
+      giant.position.set(eye.x + giantAt.x, giantAt.y, eye.z + giantAt.z);
       suns.position.copy(eye);
       night.position.copy(eye);
       shaftMat.opacity = look.ray * (0.85 + 0.15 * Math.sin(t * 0.3));
       for (const [i, ray] of rays.entries()) ray.scale.x = 0.9 + 0.1 * Math.sin(t * 0.4 + ray.userData.phase + i);
       landmark?.(t);
       tide?.(t);
+      pulse?.(t);
       const dt = Math.min(0.1, Math.max(0, t - last)), fall = look.mote.fall * dt;
       last = t;
       for (let i = 0; i < MOTES; i++) {

@@ -264,8 +264,8 @@ export const FLOORS: Record<SectorKind, Floor> = {
   shield: { litter: 1400, needles: 500, twigs: 380, pebbles: 300, boulders: 18, shrooms: 14, moss: 240, flowers: 800, grass: 1900, nurse: 8, thickets: 14, leaf: [[0.08, 0.5, 0.28], [0.11, 0.55, 0.35], [0.14, 0.5, 0.3]], flower: [0xf6f0dc, 0xf2d34a, 0xb48be8, 0xe9a3c8], grassHue: 0.22, grassLight: 0.34, mossAmount: 0.15 },
   // The ruined capital: ash and scorched paper over the asphalt, gravel and broken concrete, nothing alive.
   capital: { litter: 700, needles: 0, twigs: 260, pebbles: 1500, boulders: 0, shrooms: 0, moss: 0, flowers: 0, grass: 0, nurse: 0, thickets: 0, leaf: [[0.07, 0.08, 0.2], [0.08, 0.1, 0.27], [0.06, 0.25, 0.3]], flower: [0xffffff], grassHue: 0.1, grassLight: 0.3, mossAmount: 0 },
-  // The spaceport's edges: weeds, wind-blown litter and loose stone round the pads.
-  spaceport: { litter: 500, needles: 400, twigs: 160, pebbles: 450, boulders: 10, shrooms: 6, moss: 100, flowers: 260, grass: 1500, nurse: 3, thickets: 6, leaf: [[0.1, 0.35, 0.3], [0.12, 0.4, 0.38]], flower: [0xf2d34a, 0xffffff], grassHue: 0.18, grassLight: 0.36, mossAmount: 0.05 },
+  // The station's deck has nothing growing on it.
+  spaceport: { litter: 0, needles: 0, twigs: 0, pebbles: 0, boulders: 0, shrooms: 0, moss: 0, flowers: 0, grass: 0, nurse: 0, thickets: 0, leaf: [[0, 0, 0.3]], flower: [0xffffff], grassHue: 0, grassLight: 0.3, mossAmount: 0 },
   // The cannon's shore: dry beach grass and a few flowers on the dunes, sticks, shingle and wrack, no woods.
   cannon: { litter: 160, needles: 0, twigs: 520, pebbles: 700, boulders: 0, shrooms: 0, moss: 0, flowers: 220, grass: 900, nurse: 0, thickets: 0, leaf: [[0.11, 0.35, 0.5], [0.09, 0.3, 0.42]], flower: [0xf6f0dc, 0xf08a9a, 0xf2d34a, 0xc8a0f0], grassHue: 0.15, grassLight: 0.42, mossAmount: 0 },
   // The dust sea: dry tufts, grit and stones; no woods.
