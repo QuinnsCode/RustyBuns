@@ -1,0 +1,19 @@
+{
+  // For `bun run typecheck` (TypeScript 7), which has dropped baseUrl. bedstack's tsconfig.json,
+  // which Bun reads for the @/ and @env aliases, stays as they wrote it.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "paths": { "@/*": ["./src/*"], "@env": ["./env.config.ts"] },
+    "types": ["bun-types"],
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src", "drizzle", "rustybuns", "test", "*.ts"]
+}

@@ -136,6 +136,30 @@ rwsdk.com is slow on the host because its star widget fetches the GitHub API wit
 
 About 10 of the apps found aren't runnable apps at all: library packages inside monorepos, templates and benchmarks. No tool would boot them.
 
+## Elysia
+
+**Run: Oct 25 2026, Elysia 1.4.30, one app by hand: [bedstack/elysia-drizzle-realworld-example](https://github.com/bedstack/elysia-drizzle-realworld-example) as [elysia-conduit](apps/elysia-conduit/RUSTYBUNS.md).** No trial-github sweep yet, because `init` doesn't recognise Elysia ([#2274](https://github.com/QuinnsCode/RustyBuns/issues/2274)).
+
+| | result |
+|---|---|
+| `src/` edits | none |
+| desktop, dev host, PGlite | the RealWorld Postman suite passes: 32 requests, 311 assertions |
+| desktop, compiled binary (109 MB) | passes too, with a Bun runtime plugin in our entry for arkenv's runtime `require` ([#2277](https://github.com/QuinnsCode/RustyBuns/issues/2277)) |
+| `rustybuns plan --offline` (Cloudflare) | clean: a Worker and a Hyperdrive |
+| Workers (local workerd) | doesn't start: five breaks ([#2278](https://github.com/QuinnsCode/RustyBuns/issues/2278)) |
+
+**Strengths.** Elysia already exposes `app.fetch`, so mounting it is a few lines. postgres.js and Drizzle talk to PGlite's socket as they would to any Postgres, and Drizzle's migration folder applies at boot. The result is a single file with its own database.
+
+**Pain.**
+
+| what | whose |
+|---|---|
+| `init` refuses it; `--force` writes a Vite SPA config | ours ([#2274](https://github.com/QuinnsCode/RustyBuns/issues/2274)) |
+| settings read from `process.env` at import (`POSTGRES_*`) need an entry that copies the PGlite port in first | ours ([#2275](https://github.com/QuinnsCode/RustyBuns/issues/2275)) |
+| a required `JWT_SECRET` with nobody to set it on the desktop | ours ([#2276](https://github.com/QuinnsCode/RustyBuns/issues/2276)) |
+| a runtime `require` that works in `--dev` and dies in the binary | arkenv's, hidden by ours ([#2277](https://github.com/QuinnsCode/RustyBuns/issues/2277)) |
+| Elysia's AOT uses `new Function`, which Workers forbid; a client built at import can't read Hyperdrive or reuse a socket across requests | Elysia's and the app's ([#2278](https://github.com/QuinnsCode/RustyBuns/issues/2278)) |
+
 ## TanStack Start
 
 **Run: Oct 12 2026, `@tanstack/react-start` 1.x, this checkout. A partial mixed sample of 16 apps.**

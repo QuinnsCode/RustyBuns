@@ -243,6 +243,16 @@ It's a code change, not a config switch: D1's `env.DB.prepare(...)` is sqlite-sh
 
 </details>
 
+### An Elysia app, unchanged, as a desktop file
+
+A real Elysia + Drizzle backend becomes one binary with its own Postgres, without editing its `src/`. It doesn't reach Cloudflare yet.
+
+<details><summary>More</summary>
+
+[elysia-conduit](apps/elysia-conduit/RUSTYBUNS.md) is bedstack's RealWorld backend (Elysia 1.4, Drizzle, postgres.js), copied in as it is. A short entry exports `new Elysia().use(setupApp)` in place of their `.listen()`, and a `hyperdrive` binding with `local: "pglite"` applies their Drizzle migrations at boot. Their own Postman suite (32 requests, 311 assertions) passes on the dev host and on the 109 MB compiled binary. The pain is listed too: `init` doesn't recognise Elysia yet, the entry has to copy the PGlite port into their `POSTGRES_*` variables, and on Workers the unchanged app breaks five ways ([#2278](https://github.com/QuinnsCode/RustyBuns/issues/2278)), starting with a Postgres client built at import time.
+
+</details>
+
 ### Rust when you need it, TypeScript always
 
 Drop in a Rust engine for the hot path. It ships with a TypeScript twin that gives the same answer, and the app falls back to it if Rust can't load.
@@ -379,6 +389,7 @@ Every example is one codebase that runs as a desktop binary. The multiplayer one
 | [geoboxq-shopify](apps/geoboxq-shopify/README.md) | A small wrapper that turns a Shopify cart into the store's own box. |
 | [playground](apps/playground/README.md) | One page that lists every app with a way to try it: Play, Download or Source. Static assets only, so it bills nothing |
 | [tanstack-start-example](apps/tanstack-start-example/README.md) | TanStack Start on Cloudflare's Vite plugin (server functions, a server route, D1 and KV) as a desktop app, its code unchanged |
+| [elysia-conduit](apps/elysia-conduit/RUSTYBUNS.md) | bedstack's RealWorld backend (Elysia, Drizzle, postgres.js) with no source edits: a desktop binary on PGlite that passes their Postman suite, and the five ways it breaks on Workers |
 
 **Someone else's app, unchanged:** [TerraViz](https://github.com/zyra-project/terraviz) by The Zyra Project, led by Eric Hackathorn (NOAA Global Systems Laboratory), Apache-2.0: a Pages app with a 3D globe, about 100 API routes, D1, KV, R2 and Vectorize. `bun apps/terraviz-demo/run.ts` clones it and runs it on Rusty Buns with none of its code changed. This is only a demonstration of how Rusty Buns maps an existing app onto its primitives. It is not a fork, and TerraViz's code is not in this repo. Credit, license and how to run it: [apps/terraviz-demo](apps/terraviz-demo/README.md).
 
