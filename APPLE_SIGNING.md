@@ -149,3 +149,14 @@ nothing and the workaround stays.
 
 Windows signing (the SmartScreen warning) is a separate certificate from a different seller and
 isn't covered here.
+
+## Signing is not the download's TLS
+
+A Developer ID signature and notarization are checked against Apple's own roots, not the
+`/etc/ssl/cert.pem` bundle that `curl` and Git use. A reported weakness in that bundle (a CA whose
+keys leaked, so an attacker can forge certificates for any host) doesn't touch a signed, notarized
+app: Gatekeeper still rejects a swapped binary. It does touch anything fetched with `curl … | sh`,
+because a forged certificate lets an on-path attacker swap the script, and `SHA256SUMS` served from
+the same host swaps with it. Two things hold up either way: ship the Mac binaries signed and
+notarized (step 7), and prefer a download that is checked against something not fetched from the
+same place (a signature, or a hash given out of band) over one that is only fetched over TLS.
