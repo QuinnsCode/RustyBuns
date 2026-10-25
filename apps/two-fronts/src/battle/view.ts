@@ -23,6 +23,7 @@ import { makeBubbles } from "../ui/bubbles.ts";
 import { chatterFor } from "./lines.ts";
 import { INTROS, mossbackSting } from "./cutscenes.ts";
 import { playCutscene, shouldPlay } from "./cutscene-view.ts";
+import { WORLDS } from "./worlds.ts";
 import { CHAMP_AT, HEAVY, ORDERS, ORDER_FOR, OVERHEAT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, startBattle, statsOf, step, timeLimit, vipUnit, yawTo, type Fx, type OrderKind, type Trooper, type Unit } from "./sim.ts";
 
 // The squad orders, by key, with their icons and what the HUD calls them.
@@ -295,7 +296,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   let nextFlare = 4, lastSurge = 0;
   const seenBig = new Set<number>();
   let alarmT = 0;
-  const smashPalette = [0x7a4f2a, 0x5a3b22, 0x3d4a22, 0x9b8b6a, 0x4f7a2c];
+  const smashPalette = WORLDS[spec.sector].debris;
 
   // Input. Any click or key also wakes the sound, which browsers keep shut till then.
   const keys = new Set<string>();
