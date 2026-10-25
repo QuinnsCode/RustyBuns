@@ -50,6 +50,34 @@ test("every kind of sector has its own map, the defender's keep ringed by its tu
   }
 });
 
+// The station is walled deck, not an open plain: from each spawn a tank can reach every post, and no
+// post or spawn sits in a block.
+test.each(["spaceport", "yards"])("on the %s a tank can get from each spawn to every post", (name) => {
+  for (const seed of [1, 2, 3, 4, 5, 6]) {
+    const b = startBattle(spec(name === "yards" ? { sector: "spaceport", map: "yards", seed } : { sector: "spaceport", seed }));
+    const body = 2.5, cell = 2, n = Math.ceil((2 * b.half) / cell) + 1;
+    const near = (k: (typeof b.blocks)[number], x: number, z: number, room: number) => Math.abs(x - k.x) < k.w / 2 + room && Math.abs(z - k.z) < k.d / 2 + room;
+    expect(b.trees).toHaveLength(0);
+    for (const p of [...b.posts, b.spawn.attacker, b.spawn.defender]) expect(b.blocks.some((k) => near(k, p.x, p.z, body))).toBe(false);
+    const open = (i: number, j: number) => !b.blocks.some((k) => near(k, i * cell - b.half, j * cell - b.half, body));
+    const idx = (p: { x: number; z: number }) => [Math.round((p.x + b.half) / cell), Math.round((p.z + b.half) / cell)] as const;
+    for (const from of [b.spawn.attacker, b.spawn.defender]) {
+      const seen = new Set<number>(), [i0, j0] = idx(from), todo = [[i0, j0]];
+      seen.add(i0 * n + j0);
+      while (todo.length) {
+        const [i, j] = todo.pop()!;
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const a = i! + di, c = j! + dj;
+          if (a < 0 || c < 0 || a >= n || c >= n || seen.has(a * n + c) || !open(a, c)) continue;
+          seen.add(a * n + c);
+          todo.push([a, c]);
+        }
+      }
+      for (const p of b.posts) { const [i, j] = idx(p); expect(seen.has(i * n + j)).toBe(true); }
+    }
+  }
+});
+
 test("the defender's fortifications are on the field", () => {
   expect(startBattle(spec({ turrets: 2 })).units.filter((u) => u.kind === "turret")).toHaveLength(2);
 });
