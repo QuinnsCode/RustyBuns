@@ -87,9 +87,11 @@ test("blocks gh calls that change merge gates, secrets or releases", () => {
   for (const c of ["gh pr merge 12 --admin", "gh api -X DELETE repos/o/r/rulesets/1", "gh api --method PUT /repos/o/r/branches/main/protection",
     "gh api repos/o/r/environments/drops -X PUT", "gh api repos/o/r -f visibility=private", "gh api -XPATCH repos/o/r",
     "gh secret set X", "gh variable delete X", "gh ruleset create", "gh repo edit --visibility private", "gh repo delete o/r",
-    "gh release create v1", "gh workflow run desktop-drop.yml --ref feat", "gh workflow run npm-publish.yml", "gh workflow disable apps.yml"])
+    "gh release create v1", "gh workflow run desktop-drop.yml --ref feat", "gh workflow run npm-publish.yml", "gh workflow disable apps.yml",
+    "gh pr create --base two-fronts/worlds-table --title x", "gh pr create -B feat", "gh pr edit 5 --base=feat"])
     expect(bash(c)).not.toBeNull();
   for (const c of ["gh pr merge 12 --auto --squash", "gh api repos/o/r/rulesets", "gh api repos/o/r/pulls/3/comments -f body=hi",
-    "gh secret list", "gh ruleset view 1", "gh release view v1", "gh workflow run apps.yml", "gh pr checks 3", "gh api repos/o/r"])
+    "gh secret list", "gh ruleset view 1", "gh release view v1", "gh workflow run apps.yml", "gh pr checks 3", "gh api repos/o/r",
+    "gh pr create --base main --title x", "gh pr create --title x", "gh pr edit 5 --base=main"])
     expect(bash(c)).toBeNull();
 });
