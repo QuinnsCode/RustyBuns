@@ -18,7 +18,7 @@ export function parseJobs(out: string): Job[] {
   for (const j of include) {
     if (typeof j !== "object" || j === null) continue;
     const { app, test, prep } = j as Record<string, unknown>;
-    if (typeof app === "string" && typeof test === "string" && typeof prep === "string" && test) jobs.push({ app, test, prep });
+    if (typeof app === "string" && typeof test === "string" && test && typeof prep === "string") jobs.push({ app, test, prep });
   }
   return jobs;
 }

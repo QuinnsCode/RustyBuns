@@ -17,6 +17,7 @@ import { animate, gunship, marine, speeder, tank, turret, walker, wooka } from "
 import { buildWorld } from "./terrain.ts";
 import { mission, sameMission, standing, type Mission, type Standing } from "./mission.ts";
 import { makeSfx } from "./sfx.ts";
+import { isTouch, mountTouch } from "./touch.ts";
 import { icon } from "../ui/icons.ts";
 import { makeBubbles } from "../ui/bubbles.ts";
 import { INTROS, mossbackSting } from "./cutscenes.ts";
@@ -317,6 +318,19 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   };
   addEventListener("keydown", kd); addEventListener("keyup", ku);
   canvas.addEventListener("mousedown", md); addEventListener("mouseup", mu); addEventListener("mousemove", mm);
+  // A phone: a stick to move, a drag to look, and buttons for the rest (touch.ts).
+  const touch = isTouch();
+  let stickF = 0, stickR = 0;
+  const unTouch = touch ? mountTouch(section, canvas, {
+    stick: (f, r) => { sfx.wake(); stickF = f; stickR = r; },
+    drag: (dx, dy) => { yaw -= dx * 0.006; pitch = Math.max(-0.9, Math.min(0.5, pitch - dy * 0.006)); },
+    buttons: [
+      { id: "fire", icon: "crosshair", label: "Fire", hold: true, on: (d) => { sfx.wake(); firing = d; } },
+      { id: "strike", icon: "zap", label: "Orbital strike", on: (d) => { if (d) strike = true; } },
+      { id: "use", icon: "car-front", label: "Vehicle or special", on: (d) => { if (d) use = true; } },
+      ...(["forward", "hold", "back", "focus"] as const).map((k) => ({ id: k, icon: ORDER_INFO[k].icon, label: `Squad: ${ORDER_INFO[k].name}`, row: true, on: (d: boolean) => { if (d) order = k; } })),
+    ],
+  }) : null;
 
   const aimPoint = () => {
     const ray = new THREE.Raycaster();
@@ -451,7 +465,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       </div>
       <ul class="b-feed">${feedLines()}</ul>
       ${orderBar()}
-      ${document.pointerLockElement === canvas ? "" : `<div class="b-help">Click the field to take control · WASD move · mouse look · click fire · Q orbital strike · E vehicle · 1-4 squad orders · M sound · Esc to let go<button id="b-auto" type="button">Let the AI finish it</button></div>`}`;
+      ${touch ? `<div class="b-help"><button id="b-auto" type="button">Let the AI finish it</button></div>` : document.pointerLockElement === canvas ? "" : `<div class="b-help">Click the field to take control · WASD move · mouse look · click fire · Q orbital strike · E vehicle · 1-4 squad orders · M sound · Esc to let go<button id="b-auto" type="button">Let the AI finish it</button></div>`}`;
   };
 
   return new Promise((resolve) => {
@@ -483,8 +497,8 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       while (handOver && !b.over) step(b, null);
       while (acc >= DT && !b.over) {
         const input = rec.take({
-          forward: (keys.has("w") ? 1 : 0) - (keys.has("s") ? 1 : 0),
-          right: (keys.has("d") ? 1 : 0) - (keys.has("a") ? 1 : 0),
+          forward: Math.max(-1, Math.min(1, (keys.has("w") ? 1 : 0) - (keys.has("s") ? 1 : 0) + stickF)),
+          right: Math.max(-1, Math.min(1, (keys.has("d") ? 1 : 0) - (keys.has("a") ? 1 : 0) + stickR)),
           yaw, fire: firing, use,
           strike: strike ? aimPoint() ?? undefined : undefined,
           order: order ? { kind: order, ...gunPoint() } : undefined,
@@ -855,6 +869,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         removeEventListener("keydown", kd); removeEventListener("keyup", ku); removeEventListener("mouseup", mu); removeEventListener("mousemove", mm); removeEventListener("resize", resize);
         canvas.removeEventListener("mousedown", md);
         if (document.pointerLockElement === canvas) document.exitPointerLock();
+        unTouch?.();
         feel.remove();
         section.classList.remove(`hud-${spec.factions[heroSide]}`, "cutting");
         sfx.close();
