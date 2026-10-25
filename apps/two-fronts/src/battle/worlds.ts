@@ -21,6 +21,10 @@ export interface Look {
   built: number;                                          // the built blocks' concrete
   lowRock: boolean;                                       // a built world's low blocks are rock anyway
   mote: { size: number; color: number };
+  cliff: number;                                          // the sim's rock blocks' colour
+  giant: boolean;                                         // the gas giant hanging in the sky
+  twin: number | null;                                    // a second sun's colour, if the sky has one
+  ripple: boolean;                                        // the floor rippled like wind-blown sand
 }
 
 const FOREST: Look = {
@@ -28,6 +32,7 @@ const FOREST: Look = {
   sun: 0xffe2a8, sunI: 2.8, hemi: [0xd2e6c0, 0x3a2a16, 1.05], ray: 0.15, rays: 40, trees: "redwood",
   amp: 1.6, bank: 32, strata: false, pave: null, rock: { color: 0x7d7d70, n: 70, h: 0.15, s: 0.06 },
   rocky: false, built: 0x9ca3aa, lowRock: false, mote: { size: 0.1, color: 0xfff0c8 },
+  cliff: 0xa45a36, giant: true, twin: null, ripple: false,
 };
 
 export const WORLDS: Record<SectorKind, Look> = {
@@ -42,10 +47,11 @@ export const WORLDS: Record<SectorKind, Look> = {
     sun: 0xf1ffc8, sunI: 2.3, hemi: [0xbfe0b0, 0x24301a, 1.0], ray: 0.16, trees: "jungle", built: 0x7f8a6a,
     mote: { size: 0.16, color: 0xd8ffb0 },
   },
-  // Red rock under an open sky, the gas giant hanging in it.
+  // A desert under two suns: wind-carved sandstone among dunes, sand blowing, bones and ruined farms.
   canyon: {
-    ...FOREST, sky: 0xe3b98e, zenith: 0x9fb4c9, fog: 0.0055, ground: 0xb07345, litter: 0x8c5534, trail: 0x9c5a35,
-    sun: 0xfff0d6, sunI: 3.0, hemi: [0xf0d6b8, 0x6a3a22, 1.1], ray: 0.04, rays: 0, trees: null, amp: 0.9, bank: 45,
-    strata: true, rock: { color: 0x9a5634, n: 140, h: 0.05, s: 0.25 }, rocky: true,
+    ...FOREST, sky: 0xeccb98, zenith: 0x9fb9c6, fog: 0.0042, ground: 0xbb8650, litter: 0x9a6636, trail: 0x93663a,
+    sun: 0xfff0cc, sunI: 2.6, hemi: [0xf2d4aa, 0x7a4a2a, 0.85], ray: 0.05, rays: 0, trees: null, amp: 1.1, bank: 30,
+    strata: true, rock: { color: 0xc58a56, n: 140, h: 0.07, s: 0.3 }, rocky: true,
+    mote: { size: 0.22, color: 0xf3d9a4 }, cliff: 0xffffff, giant: false, twin: 0xffb070, ripple: true,
   },
 };

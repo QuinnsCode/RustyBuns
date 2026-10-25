@@ -222,6 +222,9 @@ test("nobody ends up inside a building or rock, on any map", () => {
     for (const u of b.units) if (!flies(u)) for (const k of b.blocks) expect(!k.broken && Math.abs(u.x - k.x) < k.w / 2 && Math.abs(u.z - k.z) < k.d / 2).toBe(false);
   }
   expect(startBattle(spec({ sector: "canyon" })).trees).toHaveLength(0);
+  const dust = startBattle(spec({ sector: "canyon" })).blocks;
+  expect(dust.filter((k) => k.kind === "hut").length).toBeGreaterThan(0);
+  expect(dust.filter((k) => k.kind === "wreck").length).toBeGreaterThan(1); // the keep's, and others
   expect(startBattle(spec({ sector: "jungle" })).trees.length).toBeGreaterThan(startBattle(spec()).trees.length);
 });
 

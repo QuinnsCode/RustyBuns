@@ -4,6 +4,7 @@ import * as THREE from "three";
 import type { SectorKind } from "./contract.ts";
 import type { instancer } from "./foliage.ts";
 import type { Battle } from "./sim.ts";
+import { desert } from "./worlds/desert.ts";
 
 export interface Kit {
   b: Battle;
@@ -55,10 +56,7 @@ export const LANDMARKS: Record<SectorKind, Landmark> = {
   cannon: ({ keep, ky, solid, std }) => {
     solid(new THREE.CylinderGeometry(1.4, 1.8, 30, 16), std(0x5b6067, 0.4, { metalness: 0.5 }), keep.x - 12, ky + 16, keep.z - 22).rotation.x = -0.6;
   },
-  canyon: ({ keep, ky, solid, std, builtMat }) => {
-    solid(new THREE.BoxGeometry(2, 1, 30), std(0x6b5a48, 0.9), keep.x + 12, ky + 6, keep.z + 4); // the conveyor
-    solid(new THREE.BoxGeometry(3, 16, 3).translate(0, 8, 0), builtMat, keep.x + 16, ky, keep.z - 16);
-  },
+  canyon: desert,
   jungle: ({ keep, ky, solid, builtMat }) => {
     solid(new THREE.BoxGeometry(14, 4, 9), builtMat, keep.x, ky + 14, keep.z - 22);
     solid(new THREE.BoxGeometry(8, 4, 5), builtMat, keep.x, ky + 18, keep.z - 22);

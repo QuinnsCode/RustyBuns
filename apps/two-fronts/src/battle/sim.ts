@@ -106,7 +106,7 @@ export interface Tree { x: number; z: number; r: number }
 // A building, wall or rock: centred on x, z, w wide (along x), d deep (along z) and h high.
 // Anything at eye height or more blocks sight; anything lower is a wall to crouch behind. The
 // kind is only for the view: a sandbag wall unless it says otherwise.
-export interface Block { x: number; z: number; w: number; d: number; h: number; kind?: "rock" | "stump" | "log" | "trench"; broken?: boolean }
+export interface Block { x: number; z: number; w: number; d: number; h: number; kind?: "rock" | "stump" | "log" | "trench" | "hut" | "wreck"; broken?: boolean }
 
 export interface Battle {
   spec: BattleSpec;
@@ -174,7 +174,7 @@ export const LAYOUTS: Record<SectorKind, Layout> = {
   capital: { name: "Capital city", posts: [{ name: "Transit hub", x: 65, z: 55 }, { name: "Market square", x: -50, z: 15 }, { name: "Water tower", x: 60, z: -20 }, { name: "Old quarter", x: -60, z: -55 }, { name: "Palace", x: 5, z: -95 }] },
   spaceport: { name: "Spaceport", posts: [{ name: "Landing pads", x: -45, z: 35 }, { name: "Fuel depot", x: 55, z: 10 }, { name: "Hangar", x: -55, z: -30 }, { name: "Control tower", x: 50, z: -85 }] },
   cannon: { name: "Cannon battery", posts: [{ name: "Ammo depot", x: 60, z: 40 }, { name: "Spotter nest", x: -55, z: 5 }, { name: "Gun pit", x: 50, z: -30 }, { name: "Cannon", x: -35, z: -85 }] },
-  canyon: { name: "Mining canyon", posts: [{ name: "Ore crusher", x: -25, z: 60 }, { name: "Cart yard", x: 30, z: 15 }, { name: "Slag heap", x: -30, z: -25 }, { name: "Mine head", x: 15, z: -85 }] },
+  canyon: { name: "Dust sea", posts: [{ name: "Well house", x: -25, z: 60 }, { name: "Farm ruins", x: 30, z: 15 }, { name: "Bone field", x: -30, z: -25 }, { name: "Wreck", x: 15, z: -85 }] },
   jungle: { name: "Jungle temple", posts: [{ name: "Fallen idol", x: 55, z: 50 }, { name: "Rope bridge", x: -55, z: 5 }, { name: "Strangler fig", x: 50, z: -35 }, { name: "Sunken temple", x: 0, z: -95 }] },
 };
 // The big fields: the same kinds of sector, half as wide again and more, with a post or two more
@@ -183,7 +183,7 @@ export const BIG_MAPS: Record<string, Layout & { sector: SectorKind; half: numbe
   ridge: { sector: "shield", name: "Generator ridge", half: 175, posts: [{ name: "Fern hollow", x: -70, z: 70 }, { name: "Old stump", x: 45, z: 25 }, { name: "Relay mast", x: -50, z: -40 }, { name: "Generator", x: 30, z: -100 }] },
   outskirts: { sector: "capital", name: "Old city outskirts", half: 175, posts: [{ name: "Burnt farm", x: 75, z: 80 }, { name: "Transit hub", x: -40, z: 40 }, { name: "Market square", x: 50, z: -20 }, { name: "Palace", x: -5, z: -100 }] },
   yards: { sector: "spaceport", name: "Cargo yards", half: 250, posts: [{ name: "Cargo stacks", x: 60, z: 55 }, { name: "Landing pads", x: -40, z: 0 }, { name: "Control tower", x: 40, z: -90 }] },
-  gorge: { sector: "canyon", name: "Deep gorge", half: 255, posts: [{ name: "Slag heap", x: 25, z: 75 }, { name: "Ore crusher", x: -25, z: 15 }, { name: "Mine head", x: 15, z: -95 }] },
+  gorge: { sector: "canyon", name: "Deep gorge", half: 255, posts: [{ name: "Bone field", x: 25, z: 75 }, { name: "Well house", x: -25, z: 15 }, { name: "Wreck", x: 15, z: -95 }] },
   valley: { sector: "jungle", name: "Temple valley", half: 270, posts: [{ name: "Waterfall", x: -70, z: 75 }, { name: "Fallen idol", x: 55, z: 35 }, { name: "Rope bridge", x: -45, z: -25 }, { name: "Sunken temple", x: 0, z: -105 }] },
 };
 export const layoutOf = (spec: Pick<BattleSpec, "sector" | "map">): Layout => {
@@ -549,7 +549,14 @@ function scenery(b: Battle) {
         put((l - b.half) / 2, z + 8, l + b.half, 16, 30);
         put((r + b.half) / 2, z + 8, b.half - r, 16, 30);
       }
-      put(keep.x + 12, keep.z - 16, 10, 6, 8); // the mine head's rig
+      put(keep.x + 12, keep.z - 16, 10, 6, 8); // the hauler wrecked half-buried by the keep
+      b.blocks.at(-1)!.kind = "wreck";
+      // Domed huts of a ruined moisture farm and more wrecks: blocks to fight round, drawn by the desert's landmark.
+      for (const [n0, size, h, kind] of [[5, [6, 6], [1.8, 1.8], "hut"], [3, [9, 12], [2.4, 3.2], "wreck"]] as const) {
+        const at = b.blocks.length;
+        scatter(n0, [...size], [...h], POST_RADIUS + 6, 14);
+        b.blocks.slice(at).forEach((k) => { k.kind = kind; });
+      }
       scatter(14, [4, 9], [4, 10], POST_RADIUS + 6, 10);
       walls(10);
       break;

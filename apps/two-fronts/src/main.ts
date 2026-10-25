@@ -189,7 +189,7 @@ function render() {
       ${s.sectors.some((x) => x.armies[me]) && !supplied(c, me).has(selected) ? note("Cut off: your armies here lose one a turn. Clear the enemy orbit on the way back to a capital.", true) : ""}
       ${s.sectors.some((_, i) => bombardable(i)) ? note("Their fleet is gone. Train your ships on a garrison below: each kills an army before the landings, half as many through a shield. Ships that bombard don't sail.") : ""}
       ${s.sectors.some((x) => x.kind === "cannon") ? note("The cannon knocks a ship a turn out of an enemy fleet in orbit.") : ""}
-      ${s.sectors.some((x) => x.kind === "canyon") ? note("The canyon's ore pays like a capital.") : ""}
+      ${s.sectors.some((x) => x.kind === "canyon") ? note("The dust sea's ore pays like a capital.") : ""}
       ${s.sectors.some((x) => x.kind === "jungle") ? note("The jungle's holder defends it as if they held the orbit.") : ""}
       ${idle && !answering ? sendRow(icon("rocket", 15), `<select id="ship-n" title="Ships to send">${opts(idle)}</select>`,
         `<select id="ship-to" title="Send them to">${neighbours(selected).map((n) => `<option value="${n}">${systemDef(n).name}</option>`).join("")}</select>`,

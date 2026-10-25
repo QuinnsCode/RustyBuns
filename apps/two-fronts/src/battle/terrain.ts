@@ -12,6 +12,7 @@ import { FLOORS, buildFoliage, foliageQuality, instancer, makeWind, mergeAll } f
 import { hut, lumpy, texture, totem } from "./models.ts";
 import { LANDMARKS } from "./landmarks.ts";
 import { WORLDS } from "./worlds.ts";
+import { sandstone } from "./worlds/desert.ts";
 import { EYE, POST_RADIUS, type Battle, type Block, type Tree } from "./sim.ts";
 
 export interface World {
@@ -179,7 +180,25 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   giant.position.set(-380, 420, -620);
   giant.rotation.set(-0.6, 0, 0.35); // its bands face the field, not its pole
   giant.children.forEach((c) => (c.renderOrder = -1));
-  scene.add(giant);
+  if (look.giant) scene.add(giant);
+  // A second sun: a smaller, redder disc low in the sky, lighting the shadows a faint tint from the other side.
+  const suns = new THREE.Group();
+  if (look.twin !== null) {
+    const disc = (radius: number, color: number, at: THREE.Vector3) => {
+      const d = new THREE.Mesh(new THREE.CircleGeometry(radius, 32), new THREE.MeshBasicMaterial({ color, fog: false, depthWrite: false }));
+      d.position.copy(at); d.lookAt(0, 0, 0); d.renderOrder = -1;
+      suns.add(d);
+      const halo = new THREE.Mesh(new THREE.CircleGeometry(radius * 3.2, 32), new THREE.MeshBasicMaterial({ map: glowMap("dapple", false), color, fog: false, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
+      halo.position.copy(at).multiplyScalar(0.99); halo.lookAt(0, 0, 0); halo.renderOrder = -1;
+      suns.add(halo);
+    };
+    disc(34, 0xfffbe8, SUN_DIR.clone().multiplyScalar(820));
+    disc(19, look.twin, new THREE.Vector3(-0.78, 0.36, 0.5).normalize().multiplyScalar(820));
+    scene.add(suns);
+    const fill = new THREE.DirectionalLight(look.twin, 0.55);
+    fill.position.set(-0.78, 0.36, 0.5);
+    scene.add(fill);
+  }
 
   scene.add(new THREE.HemisphereLight(look.hemi[0], look.hemi[1], look.hemi[2]));
   const sun = new THREE.DirectionalLight(look.sun, look.sunI);
@@ -203,6 +222,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     col.copy(base).lerp(litter, smooth(-0.3, 0.6, n(x / 14 + 40, z / 14, 3)));
     col.lerp(mossy, smooth(-0.1, 0.7, n(x / 10 - 30, z / 10 + 8, 3)) * FLOORS[spec.sector].mossAmount);
     if (look.strata) col.offsetHSL(0, 0, 0.06 * Math.sin(h * 1.7));
+    if (look.ripple) col.offsetHSL(0, 0, 0.05 * Math.sin((x * 0.5 + z * 0.3) + n(x / 20, z / 20, 2) * 9) + 0.03 * smooth(0.2, 0.9, n(x / 26 + 7, z / 26, 2)));
     const t = onTrail(x, z);
     col.lerp(dirt, 1 - smooth(1.5, 5.5, t + n(x / 3, z / 3) * 1.5));
     if (look.pave !== null) for (const post of b.posts) col.lerp(paved, 1 - smooth(POST_RADIUS + 4, POST_RADIUS + 9, Math.hypot(x - post.x, z - post.z) + n(x / 4, z / 4) * 2));
@@ -417,7 +437,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   let nBags = 0;
   for (const blk of b.blocks) if (blk.h < EYE && !blk.kind) nBags += Math.ceil(blk.w / 0.85) * Math.ceil(blk.d / 0.55) * Math.ceil(blk.h / 0.3);
   const bags = inst(bag, std(0xffffff, 1), nBags, true);
-  const rockMat = std(look.rocky ? 0xa45a36 : 0x8a8a7c, 0.95, { map: strataMap() });
+  const rockMat = std(look.rocky ? look.cliff : 0x8a8a7c, 0.95, { map: look.ripple ? sandstone(2) : strataMap() });
   const builtMat = std(look.built, 0.85, { map: concreteMap() });
   const rocky = look.rocky;
   // Cover in the woods: rocks, stumps and fallen logs, and the Wooka's trench lines, earth
@@ -435,7 +455,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   for (const blk of b.blocks) if (blk.kind === "trench") nStakes += Math.ceil(blk.w / 0.9);
   const stakes = inst(new THREE.ConeGeometry(0.09, 1.6, 5), stakeMat, nStakes, true);
   for (const blk of b.blocks) {
-    if (!blk.kind) continue;
+    if (!blk.kind || blk.kind === "hut" || blk.kind === "wreck") continue; // the world's landmark draws huts and wrecks
     const y = heightAt(blk.x, blk.z), along = blk.w >= blk.d;
     if (blk.kind === "rock") solidAt(lumpy(1, 2, 0.25, Math.floor(r() * 50), false).scale(blk.w * 0.6, blk.h * 0.75, blk.d * 0.6), rockMat, blk.x, y + blk.h * 0.35, blk.z, r() * 6);
     else if (blk.kind === "stump") {
@@ -495,7 +515,8 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
         const vx = bp.getX(i) + blk.x, vy = bp.getY(i), vz = bp.getZ(i) + blk.z;
         if (vy < 0) continue;
         const push = 1.6 * n(vx / 5 + vy / 7, vz / 5 - vy / 9, 2);
-        bp.setXYZ(i, bp.getX(i) * (1 + push * 0.06), vy + (vy > blk.h - 1 ? push : 0), bp.getZ(i) * (1 + push * 0.06));
+        const waist = look.ripple ? 0.78 + 0.3 * Math.sin((vy / blk.h) * 2.9 + 0.3) : 1; // wind-carved: narrow low down, flaring under the cap
+        bp.setXYZ(i, bp.getX(i) * (1 + push * 0.06) * waist, vy + (vy > blk.h - 1 ? push : 0), bp.getZ(i) * (1 + push * 0.06) * waist);
       }
       geo.computeVertexNormals();
     }
@@ -522,7 +543,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     scene.add(mesh);
     return mesh;
   };
-  const landmark = LANDMARKS[spec.sector]({ b, keep, ky, heightAt, solid, add: (o) => scene.add(o), std, builtMat, r, n, bare, anywhere, inst: instancer(scene) });
+  const landmark = LANDMARKS[spec.sector]({ b, keep, ky, heightAt, solid, add: (o) => scene.add(o), std, builtMat, r, n, bare, anywhere, inst: { inst, put, done } });
 
   // --- Sunlight: shafts down through the haze, the dapples they leave, and dust hanging in them. ---
   const rays: THREE.Group[] = [];
@@ -566,6 +587,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 200);
       sky.position.copy(eye);
       giant.position.set(eye.x - 380, 420, eye.z - 620);
+      suns.position.copy(eye);
       shaftMat.opacity = look.ray * (0.85 + 0.15 * Math.sin(t * 0.3));
       for (const [i, ray] of rays.entries()) ray.scale.x = 0.9 + 0.1 * Math.sin(t * 0.4 + ray.userData.phase + i);
       landmark?.(t);
