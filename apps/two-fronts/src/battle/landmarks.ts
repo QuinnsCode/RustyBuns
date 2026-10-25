@@ -5,6 +5,7 @@ import type { SectorKind } from "./contract.ts";
 import type { instancer } from "./foliage.ts";
 import type { Battle } from "./sim.ts";
 import { desert } from "./worlds/desert.ts";
+import { ruinedCity } from "./worlds/capital.ts";
 
 export interface Kit {
   b: Battle;
@@ -39,10 +40,8 @@ export const LANDMARKS: Record<SectorKind, Landmark> = {
     }
     return (t) => { (dome.material as THREE.MeshBasicMaterial).opacity = 0.08 + 0.03 * Math.sin(t * 2); };
   },
-  capital: ({ keep, ky, solid, std, builtMat }) => {
-    solid(new THREE.BoxGeometry(8, 24, 8).translate(0, 12, 0), builtMat, keep.x, ky, keep.z - 18); // the palace's tower
-    solid(new THREE.ConeGeometry(6.5, 8, 4).rotateY(Math.PI / 4), std(0x6b3a2a, 0.8), keep.x, ky + 28, keep.z - 18);
-  },
+  // The ruined city: shattered towers, burning wrecks, fallen overpasses and smoke, all in worlds/capital.ts.
+  capital: ruinedCity,
   spaceport: ({ b, keep, ky, heightAt, solid, std }) => {
     const padMat = std(0x5d6168, 0.7), padLight = new THREE.MeshBasicMaterial({ color: 0xffb040 });
     const pads = b.posts[0]!;

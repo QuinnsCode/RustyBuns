@@ -20,38 +20,46 @@ export interface Look {
   rocky: boolean;                                         // the sim's tall blocks are rock, not built
   built: number;                                          // the built blocks' concrete
   lowRock: boolean;                                       // a built world's low blocks are rock anyway
-  mote: { size: number; color: number };
+  mote: { size: number; color: number; fall: number };    // the air's specks, and how fast they fall (ash)
   cliff: number;                                          // the sim's rock blocks' colour
   giant: boolean;                                         // the gas giant hanging in the sky
   twin: number | null;                                    // a second sun's colour, if the sky has one
   ripple: boolean;                                        // the floor rippled like wind-blown sand
+  city: boolean;                                          // a ruined city: no moss, towers of its own
 }
 
 const FOREST: Look = {
   sky: 0xb4c2a6, zenith: 0x8fa9b8, fog: 0.0105, ground: 0x3d4a22, litter: 0x5e3d22, trail: 0x8a4a2b,
   sun: 0xffe2a8, sunI: 2.8, hemi: [0xd2e6c0, 0x3a2a16, 1.05], ray: 0.15, rays: 40, trees: "redwood",
   amp: 1.6, bank: 32, strata: false, pave: null, rock: { color: 0x7d7d70, n: 70, h: 0.15, s: 0.06 },
-  rocky: false, built: 0x9ca3aa, lowRock: false, mote: { size: 0.1, color: 0xfff0c8 },
-  cliff: 0xa45a36, giant: true, twin: null, ripple: false,
+  rocky: false, built: 0x9ca3aa, lowRock: false, mote: { size: 0.1, color: 0xfff0c8, fall: 0 },
+  cliff: 0xa45a36, giant: true, twin: null, ripple: false, city: false,
 };
 
 export const WORLDS: Record<SectorKind, Look> = {
   // Doren's redwood forest: trunks going up into haze, sun coming down through the canopy in shafts.
   shield: FOREST,
-  capital: { ...FOREST, pave: 0x8d8a82, built: 0xd0c8b6 },
+  // The capital after the bombing: an ash sky, a dim orange sun through smoke, bare broken streets,
+  // and ash falling.
+  capital: {
+    ...FOREST, sky: 0x8e8985, zenith: 0x4d4c4c, fog: 0.0055, ground: 0x6a665f, litter: 0x4f4b46, trail: 0x262626,
+    sun: 0xffd2ac, sunI: 2.0, hemi: [0xc8c8ca, 0x4a4643, 1.4], ray: 0.035, rays: 8, trees: null, amp: 0.5, bank: 14,
+    pave: 0x302f2e, rock: { color: 0x7d7b78, n: 160, h: 0.08, s: 0.03 }, built: 0x9a958e, mote: { size: 0.16, color: 0xd6d0ca, fall: 0.9 },
+    city: true, giant: false,
+  },
   spaceport: { ...FOREST, pave: 0x8f8b80 },
   cannon: { ...FOREST, pave: 0x86775c, lowRock: true },
   // The same idea, closer, wetter and full of vines.
   jungle: {
     ...FOREST, sky: 0x8aa284, zenith: 0x6f8f86, fog: 0.016, ground: 0x2b3a17, litter: 0x4a3a1c, trail: 0x6e4526,
     sun: 0xf1ffc8, sunI: 2.3, hemi: [0xbfe0b0, 0x24301a, 1.0], ray: 0.16, trees: "jungle", built: 0x7f8a6a,
-    mote: { size: 0.16, color: 0xd8ffb0 },
+    mote: { size: 0.16, color: 0xd8ffb0, fall: 0 },
   },
   // A desert under two suns: wind-carved sandstone among dunes, sand blowing, bones and ruined farms.
   canyon: {
     ...FOREST, sky: 0xeccb98, zenith: 0x9fb9c6, fog: 0.0042, ground: 0xbb8650, litter: 0x9a6636, trail: 0x93663a,
     sun: 0xfff0cc, sunI: 2.6, hemi: [0xf2d4aa, 0x7a4a2a, 0.85], ray: 0.05, rays: 0, trees: null, amp: 1.1, bank: 30,
     strata: true, rock: { color: 0xc58a56, n: 140, h: 0.07, s: 0.3 }, rocky: true,
-    mote: { size: 0.22, color: 0xf3d9a4 }, cliff: 0xffffff, giant: false, twin: 0xffb070, ripple: true,
+    mote: { size: 0.22, color: 0xf3d9a4, fall: 0 }, cliff: 0xffffff, giant: false, twin: 0xffb070, ripple: true,
   },
 };

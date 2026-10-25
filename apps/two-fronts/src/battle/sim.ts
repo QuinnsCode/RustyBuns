@@ -106,7 +106,7 @@ export interface Tree { x: number; z: number; r: number }
 // A building, wall or rock: centred on x, z, w wide (along x), d deep (along z) and h high.
 // Anything at eye height or more blocks sight; anything lower is a wall to crouch behind. The
 // kind is only for the view: a sandbag wall unless it says otherwise.
-export interface Block { x: number; z: number; w: number; d: number; h: number; kind?: "rock" | "stump" | "log" | "trench" | "hut" | "wreck"; broken?: boolean }
+export interface Block { x: number; z: number; w: number; d: number; h: number; kind?: "rock" | "stump" | "log" | "trench" | "hut" | "wreck" | "rubble"; broken?: boolean }
 
 export interface Battle {
   spec: BattleSpec;
@@ -171,7 +171,7 @@ export const timeLimit = (spec: BattleSpec) => (spec.mode === "holdout" ? HOLDOU
 export interface Layout { name: string; posts: { name: string; x: number; z: number }[]; half?: number }
 export const LAYOUTS: Record<SectorKind, Layout> = {
   shield: { name: "Shield generator clearing", posts: [{ name: "Old stump", x: -60, z: 40 }, { name: "Fern hollow", x: 55, z: 5 }, { name: "Mossy ridge", x: -50, z: -40 }, { name: "Generator", x: 45, z: -80 }] },
-  capital: { name: "Capital city", posts: [{ name: "Transit hub", x: 65, z: 55 }, { name: "Market square", x: -50, z: 15 }, { name: "Water tower", x: 60, z: -20 }, { name: "Old quarter", x: -60, z: -55 }, { name: "Palace", x: 5, z: -95 }] },
+  capital: { name: "Ruined capital", posts: [{ name: "Wrecked station", x: 65, z: 55 }, { name: "Market ruins", x: -50, z: 15 }, { name: "Toppled water tower", x: 60, z: -20 }, { name: "Burnt quarter", x: -60, z: -55 }, { name: "Shattered palace", x: 5, z: -95 }] },
   spaceport: { name: "Spaceport", posts: [{ name: "Landing pads", x: -45, z: 35 }, { name: "Fuel depot", x: 55, z: 10 }, { name: "Hangar", x: -55, z: -30 }, { name: "Control tower", x: 50, z: -85 }] },
   cannon: { name: "Cannon battery", posts: [{ name: "Ammo depot", x: 60, z: 40 }, { name: "Spotter nest", x: -55, z: 5 }, { name: "Gun pit", x: 50, z: -30 }, { name: "Cannon", x: -35, z: -85 }] },
   canyon: { name: "Dust sea", posts: [{ name: "Well house", x: -25, z: 60 }, { name: "Farm ruins", x: 30, z: 15 }, { name: "Bone field", x: -30, z: -25 }, { name: "Wreck", x: 15, z: -85 }] },
@@ -181,7 +181,7 @@ export const LAYOUTS: Record<SectorKind, Layout> = {
 // to fight over. A spec names one with `map`; the war hands them out to the bigger battles.
 export const BIG_MAPS: Record<string, Layout & { sector: SectorKind; half: number }> = {
   ridge: { sector: "shield", name: "Generator ridge", half: 175, posts: [{ name: "Fern hollow", x: -70, z: 70 }, { name: "Old stump", x: 45, z: 25 }, { name: "Relay mast", x: -50, z: -40 }, { name: "Generator", x: 30, z: -100 }] },
-  outskirts: { sector: "capital", name: "Old city outskirts", half: 175, posts: [{ name: "Burnt farm", x: 75, z: 80 }, { name: "Transit hub", x: -40, z: 40 }, { name: "Market square", x: 50, z: -20 }, { name: "Palace", x: -5, z: -100 }] },
+  outskirts: { sector: "capital", name: "Ruined outskirts", half: 175, posts: [{ name: "Burnt farm", x: 75, z: 80 }, { name: "Wrecked station", x: -40, z: 40 }, { name: "Market ruins", x: 50, z: -20 }, { name: "Shattered palace", x: -5, z: -100 }] },
   yards: { sector: "spaceport", name: "Cargo yards", half: 250, posts: [{ name: "Cargo stacks", x: 60, z: 55 }, { name: "Landing pads", x: -40, z: 0 }, { name: "Control tower", x: 40, z: -90 }] },
   gorge: { sector: "canyon", name: "Deep gorge", half: 255, posts: [{ name: "Bone field", x: 25, z: 75 }, { name: "Well house", x: -25, z: 15 }, { name: "Wreck", x: 15, z: -95 }] },
   valley: { sector: "jungle", name: "Temple valley", half: 270, posts: [{ name: "Waterfall", x: -70, z: 75 }, { name: "Fallen idol", x: 55, z: 35 }, { name: "Rope bridge", x: -45, z: -25 }, { name: "Sunken temple", x: 0, z: -105 }] },
@@ -192,16 +192,17 @@ export const layoutOf = (spec: Pick<BattleSpec, "sector" | "map">): Layout => {
 };
 // The big maps there are for a kind of sector.
 export const bigMapsFor = (sector: SectorKind) => Object.keys(BIG_MAPS).filter((k) => BIG_MAPS[k]!.sector === sector);
-// The trees on each map: the redwood forest, a dense jungle of thinner trunks, none in the canyon.
+// The trees on each map: the redwood forest, a dense jungle of thinner trunks, none in the canyon or the ruined city.
 const GROW = 2.25;                 // the plain grew from 240 to 360 across: this much more ground to fill
 const REDWOODS = { n: Math.round(110 * GROW), r: [1.2, 3.4], gap: 5, clear: 26 } as const;
+const NONE = { n: 0, r: [0, 0], gap: 0, clear: 0 } as const;
 const WOODS: Record<SectorKind, { n: number; r: readonly [number, number]; gap: number; clear: number }> = {
   shield: REDWOODS,
-  capital: REDWOODS,
+  capital: NONE,
   spaceport: REDWOODS,
   cannon: REDWOODS,
   jungle: { n: Math.round(230 * GROW), r: [0.6, 1.6], gap: 2.5, clear: 18 },
-  canyon: { n: 0, r: [0, 0], gap: 0, clear: 0 },
+  canyon: NONE,
 };
 export const EYE = 1.6;            // blocks this high or more block sight
 const COVER = 2.5;                 // this close to an obstacle between you and the shooter, you're in cover
@@ -504,6 +505,13 @@ function scenery(b: Battle) {
     at = b.blocks.length; for (let i = 0; i < 8; i++) scatter(1, [7, 10], [1.0, 1.1], 4, 4);
     b.blocks.slice(at).forEach((k) => { k.d = 1.3; }); kinded(at, "log", true);
   };
+  // The city's cover: burnt-out cars (two metres by four) and heaps of fallen masonry, low and tall.
+  const ruins = () => {
+    let at = b.blocks.length; scatter(16, [4.4, 4.4], [1.1, 1.5], 4, 4);
+    b.blocks.slice(at).forEach((k) => { k.kind = "wreck"; k.w = 4.4; k.d = 1.9; if (rand(b) < 0.5) [k.w, k.d] = [k.d, k.w]; });
+    at = b.blocks.length; scatter(12, [2.4, 4], [1.0, 1.4], 4, 4); b.blocks.slice(at).forEach((k) => { k.kind = "rubble"; });
+    at = b.blocks.length; scatter(6, [4, 6], [2.2, 3.4], 6, 8); b.blocks.slice(at).forEach((k) => { k.kind = "rubble"; });
+  };
   // The Wooka dig in: trench lines across their half of the field, in short zigzag runs with gaps
   // to come through, kept off the posts and the spawns.
   const trenches = () => {
@@ -527,9 +535,9 @@ function scenery(b: Battle) {
       break;
     case "capital":
       put(keep.x, keep.z - 18, 22, 10, 12); // the palace
-      scatter(40, [6, 14], [6, 28], POST_RADIUS + 10);
+      scatter(40, [6, 14], [6, 28], POST_RADIUS + 10); // the shattered high-rises
       walls(10);
-      cover();
+      ruins();
       break;
     case "spaceport":
       put(keep.x + 10, keep.z - 10, 5, 5, 22); // the control tower
