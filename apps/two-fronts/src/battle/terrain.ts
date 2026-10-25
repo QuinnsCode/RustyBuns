@@ -179,7 +179,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   giant.position.set(-380, 420, -620);
   giant.rotation.set(-0.6, 0, 0.35); // its bands face the field, not its pole
   giant.children.forEach((c) => (c.renderOrder = -1));
-  scene.add(giant);
+  if (!look.city) scene.add(giant);
 
   scene.add(new THREE.HemisphereLight(look.hemi[0], look.hemi[1], look.hemi[2]));
   const sun = new THREE.DirectionalLight(look.sun, look.sunI);
@@ -435,7 +435,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   for (const blk of b.blocks) if (blk.kind === "trench") nStakes += Math.ceil(blk.w / 0.9);
   const stakes = inst(new THREE.ConeGeometry(0.09, 1.6, 5), stakeMat, nStakes, true);
   for (const blk of b.blocks) {
-    if (!blk.kind) continue;
+    if (!blk.kind || blk.kind === "wreck" || blk.kind === "rubble") continue; // the ruined city draws its own
     const y = heightAt(blk.x, blk.z), along = blk.w >= blk.d;
     if (blk.kind === "rock") solidAt(lumpy(1, 2, 0.25, Math.floor(r() * 50), false).scale(blk.w * 0.6, blk.h * 0.75, blk.d * 0.6), rockMat, blk.x, y + blk.h * 0.35, blk.z, r() * 6);
     else if (blk.kind === "stump") {
@@ -487,6 +487,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       }
       continue;
     }
+    if (look.city) continue; // the high-rises are the city landmark's
     // Rock, or a bunker: a box, its corners knocked about by the noise if it's rock.
     const geo = new THREE.BoxGeometry(blk.w, blk.h + 1, blk.d, rocky ? 6 : 1, rocky ? 6 : 1, rocky ? 6 : 1).translate(0, (blk.h + 1) / 2 - 1, 0);
     if (rocky) {
@@ -503,7 +504,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     mesh.position.set(blk.x, y, blk.z);
     mesh.castShadow = mesh.receiveShadow = true;
     scene.add(mesh);
-    if (!rocky) {
+    if (!rocky && !look.city) {
       // Moss and vines take the tops back.
       const top = new THREE.Mesh(lumpy(1, 1, 0.3, 11, false), std(0x4f6e2a, 1, { flatShading: true }));
       top.scale.set(blk.w * 0.45, 0.6, blk.d * 0.45);
@@ -557,6 +558,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   motes.frustumCulled = false;
   scene.add(motes);
   const drift = Float32Array.from({ length: MOTES }, () => r() * 6);
+  let last = 0;
 
   return {
     heightAt,
@@ -569,8 +571,11 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       shaftMat.opacity = look.ray * (0.85 + 0.15 * Math.sin(t * 0.3));
       for (const [i, ray] of rays.entries()) ray.scale.x = 0.9 + 0.1 * Math.sin(t * 0.4 + ray.userData.phase + i);
       landmark?.(t);
+      const dt = Math.min(0.1, Math.max(0, t - last)), fall = look.mote.fall * dt;
+      last = t;
       for (let i = 0; i < MOTES; i++) {
-        let x = motePos[i * 3]! + Math.sin(t * 0.3 + drift[i]!) * 0.004, y = motePos[i * 3 + 1]! + Math.sin(t * 0.2 + drift[i]! * 2) * 0.003, z = motePos[i * 3 + 2]!;
+        let x = motePos[i * 3]! + Math.sin(t * 0.3 + drift[i]!) * 0.004 + fall * 0.6, y = motePos[i * 3 + 1]! + Math.sin(t * 0.2 + drift[i]! * 2) * 0.003 - fall, z = motePos[i * 3 + 2]!;
+        if (y < 0) y += 18; // ash that reaches the ground comes down again from above
         // Wrap round the camera.
         x = ((((x - eye.x + BOX / 2) % BOX) + BOX) % BOX) + eye.x - BOX / 2;
         z = ((((z - eye.z + BOX / 2) % BOX) + BOX) % BOX) + eye.z - BOX / 2;

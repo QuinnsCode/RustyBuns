@@ -222,6 +222,11 @@ test("nobody ends up inside a building or rock, on any map", () => {
     for (const u of b.units) if (!flies(u)) for (const k of b.blocks) expect(!k.broken && Math.abs(u.x - k.x) < k.w / 2 && Math.abs(u.z - k.z) < k.d / 2).toBe(false);
   }
   expect(startBattle(spec({ sector: "canyon" })).trees).toHaveLength(0);
+  // The ruined city has no trunks, and its cover is wrecks and rubble, none of it on a post or a spawn.
+  const city = startBattle(spec({ sector: "capital" }));
+  expect(city.trees).toHaveLength(0);
+  for (const kind of ["wreck", "rubble"] as const) expect(city.blocks.filter((k) => k.kind === kind).length).toBeGreaterThan(5);
+  for (const k of city.blocks) for (const at of [...city.posts, city.spawn.attacker, city.spawn.defender]) if (k.kind === "wreck" || k.kind === "rubble") expect(Math.abs(at.x - k.x) < k.w / 2 && Math.abs(at.z - k.z) < k.d / 2).toBe(false);
   expect(startBattle(spec({ sector: "jungle" })).trees.length).toBeGreaterThan(startBattle(spec()).trees.length);
 });
 

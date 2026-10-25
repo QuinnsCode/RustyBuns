@@ -256,7 +256,7 @@ function hordeGalaxy(): Galaxy {
 export const GALAXIES: Record<GalaxyId, Galaxy> = { short: SHORT, full: FULL, horde: hordeGalaxy() };
 export const galaxyOf = (c: { galaxy: GalaxyId }) => GALAXIES[c.galaxy];
 
-export const SECTOR_NAMES: Record<SectorKind, string> = { capital: "Capital", spaceport: "Spaceport", shield: "Shield generator", cannon: "Anti-ship cannon", canyon: "Mining canyon", jungle: "Jungle" };
+export const SECTOR_NAMES: Record<SectorKind, string> = { capital: "Ruined city", spaceport: "Spaceport", shield: "Shield generator", cannon: "Anti-ship cannon", canyon: "Mining canyon", jungle: "Jungle" };
 // Credits a sector earns its holder each turn. The canyon's ore pays best.
 export const SECTOR_INCOME: Record<SectorKind, number> = { capital: 3, spaceport: 2, shield: 1, cannon: 1, canyon: 3, jungle: 1 };
 
