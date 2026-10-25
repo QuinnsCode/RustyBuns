@@ -99,7 +99,7 @@ const SHORT = galaxy({
 // Each side's homeworld (Aster, Fernhome) has a spaceport. The front runs down the middle of the
 // High Drift, the Narrows and the Ember Belt: a shipyard world in each outer region, a shield
 // world either side of the Narrows, and a cannon world guarding each way into a home region.
-// Tarn and Umber, in the Narrows, have a mining canyon that pays well, and Rook and Xan a jungle
+// Tarn and Umber, in the Narrows, have a dust sea of old ore diggings that pays well, and Rook and Xan a jungle
 // that the side holding it fights from.
 const FULL = galaxy({
   id: "full",
@@ -256,8 +256,8 @@ function hordeGalaxy(): Galaxy {
 export const GALAXIES: Record<GalaxyId, Galaxy> = { short: SHORT, full: FULL, horde: hordeGalaxy() };
 export const galaxyOf = (c: { galaxy: GalaxyId }) => GALAXIES[c.galaxy];
 
-export const SECTOR_NAMES: Record<SectorKind, string> = { capital: "Capital", spaceport: "Spaceport", shield: "Shield generator", cannon: "Anti-ship cannon", canyon: "Mining canyon", jungle: "Jungle" };
-// Credits a sector earns its holder each turn. The canyon's ore pays best.
+export const SECTOR_NAMES: Record<SectorKind, string> = { capital: "Ruined city", spaceport: "Space station", shield: "Shield generator", cannon: "Shore cannon", canyon: "Dust sea", jungle: "Glow jungle" };
+// Credits a sector earns its holder each turn. The dust sea's ore pays best.
 export const SECTOR_INCOME: Record<SectorKind, number> = { capital: 3, spaceport: 2, shield: 1, cannon: 1, canyon: 3, jungle: 1 };
 
 export const FACTION_NAMES: Record<Faction, string> = { marines: "Thunder Marines", wooka: "Wooka" };

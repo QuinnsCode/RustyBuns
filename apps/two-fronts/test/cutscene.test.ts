@@ -1,7 +1,7 @@
 // Cutscenes are data on a clock: these check the clock, and that every scene's cues make sense.
 import { expect, test } from "bun:test";
 import { actorsAt, cameraAt, castOf, firedBetween, lengthOf, place, wordsAt, type Cutscene } from "../src/battle/cutscene.ts";
-import { CUTSCENES, INTROS, mossbackSting } from "../src/battle/cutscenes.ts";
+import { CUTSCENES, introOf, mossbackSting } from "../src/battle/cutscenes.ts";
 
 const scene: Cutscene = {
   id: "t", faction: "wooka",
@@ -47,7 +47,7 @@ test("a scene's frame turns onto the field like the battle's yaw", () => {
 });
 
 test("every scripted scene only talks about actors it put on stage, and ends", () => {
-  for (const s of [...Object.values(CUTSCENES), ...Object.values(INTROS), mossbackSting("marines"), mossbackSting("wooka")]) {
+  for (const s of [...Object.values(CUTSCENES), ...(["marines", "wooka"] as const).flatMap((f) => (["shield", "capital", "spaceport", "cannon", "canyon", "jungle"] as const).map((k) => introOf(f, k))), mossbackSting("marines"), mossbackSting("wooka")]) {
     const cast = new Set(castOf(s).map((c) => c.id));
     for (const c of s.cues) {
       if ("id" in c && c.id && c.do !== "actor") expect(cast.has(c.id)).toBe(true);

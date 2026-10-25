@@ -3,7 +3,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import * as THREE from "three";
 import type { BattleSpec, SectorKind } from "../src/battle/contract.ts";
-import { startBattle } from "../src/battle/sim.ts";
+import { shoreX, startBattle } from "../src/battle/sim.ts";
 import { buildWorld } from "../src/battle/terrain.ts";
 
 setDefaultTimeout(30_000);
@@ -48,4 +48,23 @@ test("the jungle is the richest map, and the other woods each have a floor of th
   const n = Object.fromEntries(KINDS.map((k) => [k, count(build(k).scene).instances])) as Record<SectorKind, number>;
   for (const k of KINDS.filter((x) => x !== "jungle")) expect(n.jungle).toBeGreaterThan(n[k]);
   expect(new Set([n.shield, n.capital, n.spaceport, n.cannon]).size).toBe(4);
+});
+
+test("the cannon shore: wading depth at the edge is an ankle, and no cover or post stands in the water", () => {
+  const { b, world } = build("cannon");
+  const level = -0.02;
+  for (let z = -b.half; z <= b.half; z += 20) expect(level - world.heightAt(b.half, z)).toBeLessThan(0.6);
+  for (const p of b.posts) expect(p.x).toBeLessThan(shoreX(b) - 20);
+  expect(b.blocks.filter((k) => k.x + k.w / 2 > b.half - 68)).toEqual([]);
+  expect(b.trees).toEqual([]);
+});
+
+test("the cannon shore reads from the spawn and keep: sea past both field ends and a tall headland", () => {
+  const { b, world } = build("cannon");
+  const level = -0.02, keep = b.posts.at(-1)!;
+  // Beyond each end of the field the water reaches well inland of the straight shore.
+  for (const z of [-b.half - 70, b.half + 70]) expect(level - world.heightAt(shoreX(b) - 40, z)).toBeGreaterThan(0.5);
+  // The gun stands on a rock plateau far above the beach below it.
+  expect(world.heightAt(keep.x - 12, keep.z - 42)).toBeGreaterThan(10);
+  expect(world.heightAt(keep.x - 12, keep.z - 42) - world.heightAt(keep.x - 12, keep.z - 100)).toBeGreaterThan(8);
 });

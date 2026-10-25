@@ -107,7 +107,7 @@ export interface Tree { x: number; z: number; r: number }
 // A building, wall or rock: centred on x, z, w wide (along x), d deep (along z) and h high.
 // Anything at eye height or more blocks sight; anything lower is a wall to crouch behind. The
 // kind is only for the view: a sandbag wall unless it says otherwise.
-export interface Block { x: number; z: number; w: number; d: number; h: number; kind?: "rock" | "stump" | "log" | "trench" | "crate" | "console"; broken?: boolean }
+export interface Block { x: number; z: number; w: number; d: number; h: number; kind?: "rock" | "stump" | "log" | "trench" | "hut" | "wreck" | "rubble" | "crate" | "console"; broken?: boolean }
 
 export interface Battle {
   spec: BattleSpec;
@@ -172,20 +172,20 @@ export const timeLimit = (spec: BattleSpec) => (spec.mode === "holdout" ? HOLDOU
 export interface Layout { name: string; posts: { name: string; x: number; z: number }[]; half?: number }
 export const LAYOUTS: Record<SectorKind, Layout> = {
   shield: { name: "Shield generator clearing", posts: [{ name: "Old stump", x: -60, z: 40 }, { name: "Fern hollow", x: 55, z: 5 }, { name: "Mossy ridge", x: -50, z: -40 }, { name: "Generator", x: 45, z: -80 }] },
-  capital: { name: "Capital city", posts: [{ name: "Transit hub", x: 65, z: 55 }, { name: "Market square", x: -50, z: 15 }, { name: "Water tower", x: 60, z: -20 }, { name: "Old quarter", x: -60, z: -55 }, { name: "Palace", x: 5, z: -95 }] },
+  capital: { name: "Ruined capital", posts: [{ name: "Wrecked station", x: 65, z: 55 }, { name: "Market ruins", x: -50, z: 15 }, { name: "Toppled water tower", x: 60, z: -20 }, { name: "Burnt quarter", x: -60, z: -55 }, { name: "Shattered palace", x: 5, z: -95 }] },
   spaceport: { name: "Deep-space station", posts: [{ name: "Docking pads", x: -45, z: 35 }, { name: "Fuel depot", x: 55, z: 10 }, { name: "Hangar", x: -55, z: -30 }, { name: "Command deck", x: 50, z: -85 }] },
   cannon: { name: "Cannon battery", posts: [{ name: "Ammo depot", x: 60, z: 40 }, { name: "Spotter nest", x: -55, z: 5 }, { name: "Gun pit", x: 50, z: -30 }, { name: "Cannon", x: -35, z: -85 }] },
-  canyon: { name: "Mining canyon", posts: [{ name: "Ore crusher", x: -25, z: 60 }, { name: "Cart yard", x: 30, z: 15 }, { name: "Slag heap", x: -30, z: -25 }, { name: "Mine head", x: 15, z: -85 }] },
-  jungle: { name: "Jungle temple", posts: [{ name: "Fallen idol", x: 55, z: 50 }, { name: "Rope bridge", x: -55, z: 5 }, { name: "Strangler fig", x: 50, z: -35 }, { name: "Sunken temple", x: 0, z: -95 }] },
+  canyon: { name: "Dust sea", posts: [{ name: "Well house", x: -25, z: 60 }, { name: "Farm ruins", x: 30, z: 15 }, { name: "Bone field", x: -30, z: -25 }, { name: "Wreck", x: 15, z: -85 }] },
+  jungle: { name: "Glow jungle shrine", posts: [{ name: "Spore pool", x: 55, z: 50 }, { name: "Lantern bridge", x: -55, z: 5 }, { name: "Lantern tree", x: 50, z: -35 }, { name: "Glowing shrine", x: 0, z: -95 }] },
 };
 // The big fields: the same kinds of sector, half as wide again and more, with a post or two more
 // to fight over. A spec names one with `map`; the war hands them out to the bigger battles.
 export const BIG_MAPS: Record<string, Layout & { sector: SectorKind; half: number }> = {
   ridge: { sector: "shield", name: "Generator ridge", half: 175, posts: [{ name: "Fern hollow", x: -70, z: 70 }, { name: "Old stump", x: 45, z: 25 }, { name: "Relay mast", x: -50, z: -40 }, { name: "Generator", x: 30, z: -100 }] },
-  outskirts: { sector: "capital", name: "Old city outskirts", half: 175, posts: [{ name: "Burnt farm", x: 75, z: 80 }, { name: "Transit hub", x: -40, z: 40 }, { name: "Market square", x: 50, z: -20 }, { name: "Palace", x: -5, z: -100 }] },
+  outskirts: { sector: "capital", name: "Ruined outskirts", half: 175, posts: [{ name: "Burnt farm", x: 75, z: 80 }, { name: "Wrecked station", x: -40, z: 40 }, { name: "Market ruins", x: 50, z: -20 }, { name: "Shattered palace", x: -5, z: -100 }] },
   yards: { sector: "spaceport", name: "Docking ring", half: 250, posts: [{ name: "Cargo stacks", x: 60, z: 55 }, { name: "Docking pads", x: -40, z: 0 }, { name: "Command deck", x: 40, z: -90 }] },
-  gorge: { sector: "canyon", name: "Deep gorge", half: 255, posts: [{ name: "Slag heap", x: 25, z: 75 }, { name: "Ore crusher", x: -25, z: 15 }, { name: "Mine head", x: 15, z: -95 }] },
-  valley: { sector: "jungle", name: "Temple valley", half: 270, posts: [{ name: "Waterfall", x: -70, z: 75 }, { name: "Fallen idol", x: 55, z: 35 }, { name: "Rope bridge", x: -45, z: -25 }, { name: "Sunken temple", x: 0, z: -105 }] },
+  gorge: { sector: "canyon", name: "Deep gorge", half: 255, posts: [{ name: "Bone field", x: 25, z: 75 }, { name: "Well house", x: -25, z: 15 }, { name: "Wreck", x: 15, z: -95 }] },
+  valley: { sector: "jungle", name: "Glow valley", half: 270, posts: [{ name: "Glow falls", x: -70, z: 75 }, { name: "Spore pool", x: 55, z: 35 }, { name: "Lantern bridge", x: -45, z: -25 }, { name: "Glowing shrine", x: 0, z: -105 }] },
 };
 export const layoutOf = (spec: Pick<BattleSpec, "sector" | "map">): Layout => {
   const big = spec.map ? BIG_MAPS[spec.map] : undefined;
@@ -193,15 +193,15 @@ export const layoutOf = (spec: Pick<BattleSpec, "sector" | "map">): Layout => {
 };
 // The big maps there are for a kind of sector.
 export const bigMapsFor = (sector: SectorKind) => Object.keys(BIG_MAPS).filter((k) => BIG_MAPS[k]!.sector === sector);
-// The trees on each map: the redwood forest, a dense jungle of thinner trunks, none in the canyon.
+// The trees on each map: the redwood forest, a dense jungle of thinner trunks, none in the canyon or the ruined city.
 const GROW = 2.25;                 // the plain grew from 240 to 360 across: this much more ground to fill
 const REDWOODS = { n: Math.round(110 * GROW), r: [1.2, 3.4], gap: 5, clear: 26 } as const;
 const BARE = { n: 0, r: [0, 0], gap: 0, clear: 0 } as const;
 const WOODS: Record<SectorKind, { n: number; r: readonly [number, number]; gap: number; clear: number }> = {
   shield: REDWOODS,
-  capital: REDWOODS,
+  capital: BARE,
   spaceport: BARE,
-  cannon: REDWOODS,
+  cannon: BARE, // a beach: palms are for show, the cover is dunes, rock and driftwood
   jungle: { n: Math.round(230 * GROW), r: [0.6, 1.6], gap: 2.5, clear: 18 },
   canyon: BARE,
 };
@@ -474,6 +474,8 @@ export const vipUnit = (b: Battle) => (b.vip === null ? null : b.units.find((u) 
 const nearestOn = (k: Block, p: { x: number; z: number }) => ({ x: clamp(p.x, k.x - k.w / 2, k.x + k.w / 2), z: clamp(p.z, k.z - k.d / 2, k.z + k.d / 2) });
 const gap = (k: Block, p: { x: number; z: number }) => dist(nearestOn(k, p), p);
 // How much more ground than the usual field this one has, and how much further it runs.
+// Where the cannon sector's sand meets the sea on its east side: the shallows run on to the field's edge, so no cover stands past it.
+export const shoreX = (b: Battle) => b.half - 60;
 const area = (b: Battle) => (b.half / HALF) ** 2;
 const reach = (b: Battle) => b.half / HALF;
 
@@ -486,7 +488,7 @@ function scenery(b: Battle) {
     const n = Math.round(n0 * GROW * area(b));
     for (let placed = 0, tries = 0; placed < n && tries < n * 30; tries++) {
       const k = { x: (rand(b) - 0.5) * b.half * 1.9, z: (rand(b) - 0.5) * b.half * 1.9, w: size[0] + rand(b) * (size[1] - size[0]), d: size[0] + rand(b) * (size[1] - size[0]), h: h[0] + rand(b) * (h[1] - h[0]) };
-      if (Math.abs(k.x) < lane + k.w / 2) continue;
+      if (Math.abs(k.x) < lane + k.w / 2 || (b.spec.sector === "cannon" && k.x + k.w / 2 > shoreX(b) - 8)) continue;
       if (b.posts.some((p) => gap(k, p) < room) || [b.spawn.attacker, b.spawn.defender].some((p) => gap(k, p) < 14)) continue;
       if (b.units.some((u) => gap(k, u) < 4) || b.blocks.some((o) => dist(o, k) < Math.max(o.w, o.d) / 2 + Math.max(k.w, k.d) / 2 + 3)) continue;
       b.blocks.push(k);
@@ -506,6 +508,13 @@ function scenery(b: Battle) {
     at = b.blocks.length; for (let i = 0; i < 8; i++) scatter(1, [7, 10], [1.0, 1.1], 4, 4);
     b.blocks.slice(at).forEach((k) => { k.d = 1.3; }); kinded(at, "log", true);
   };
+  // The city's cover: burnt-out cars (two metres by four) and heaps of fallen masonry, low and tall.
+  const ruins = () => {
+    let at = b.blocks.length; scatter(16, [4.4, 4.4], [1.1, 1.5], 4, 4);
+    b.blocks.slice(at).forEach((k) => { k.kind = "wreck"; k.w = 4.4; k.d = 1.9; if (rand(b) < 0.5) [k.w, k.d] = [k.d, k.w]; });
+    at = b.blocks.length; scatter(12, [2.4, 4], [1.0, 1.4], 4, 4); b.blocks.slice(at).forEach((k) => { k.kind = "rubble"; });
+    at = b.blocks.length; scatter(6, [4, 6], [2.2, 3.4], 6, 8); b.blocks.slice(at).forEach((k) => { k.kind = "rubble"; });
+  };
   // The Wooka dig in: trench lines across their half of the field, in short zigzag runs with gaps
   // to come through, kept off the posts and the spawns.
   const trenches = () => {
@@ -514,7 +523,7 @@ function scenery(b: Battle) {
       const z0 = s === "attacker" ? depth : -depth;
       for (let x = -b.half + 6, i = 0; x < b.half - 6; x += 15, i++) {
         const k: Block = { x: x + 5, z: z0 + (i % 2 ? 2.5 : -2.5), w: 10, d: 1.4, h: 1.25, kind: "trench" };
-        if (b.posts.some((p) => gap(k, p) < POST_RADIUS + 2) || [b.spawn.attacker, b.spawn.defender].some((p) => gap(k, p) < 12)) continue;
+        if ((b.spec.sector === "cannon" && k.x + k.w / 2 > shoreX(b) - 8) || b.posts.some((p) => gap(k, p) < POST_RADIUS + 2) || [b.spawn.attacker, b.spawn.defender].some((p) => gap(k, p) < 12)) continue;
         if (b.blocks.some((o) => Math.abs(o.x - k.x) < (o.w + k.w) / 2 + 1 && Math.abs(o.z - k.z) < (o.d + k.d) / 2 + 1)) continue;
         b.blocks.push(k);
       }
@@ -529,9 +538,9 @@ function scenery(b: Battle) {
       break;
     case "capital":
       put(keep.x, keep.z - 18, 22, 10, 12); // the palace
-      scatter(40, [6, 14], [6, 28], POST_RADIUS + 10);
+      scatter(40, [6, 14], [6, 28], POST_RADIUS + 10); // the shattered high-rises
       walls(10);
-      cover();
+      ruins();
       break;
     case "spaceport": {
       // A deep-space station: the command deck and its tower at the keep, bulkheads across the deck
@@ -581,7 +590,14 @@ function scenery(b: Battle) {
         put((l - b.half) / 2, z + 8, l + b.half, 16, 30);
         put((r + b.half) / 2, z + 8, b.half - r, 16, 30);
       }
-      put(keep.x + 12, keep.z - 16, 10, 6, 8); // the mine head's rig
+      put(keep.x + 12, keep.z - 16, 10, 6, 8); // the hauler wrecked half-buried by the keep
+      b.blocks.at(-1)!.kind = "wreck";
+      // Domed huts of a ruined moisture farm and more wrecks: blocks to fight round, drawn by the desert's landmark.
+      for (const [n0, size, h, kind] of [[5, [6, 6], [1.8, 1.8], "hut"], [3, [9, 12], [2.4, 3.2], "wreck"]] as const) {
+        const at = b.blocks.length;
+        scatter(n0, [...size], [...h], POST_RADIUS + 6, 14);
+        b.blocks.slice(at).forEach((k) => { k.kind = kind; });
+      }
       scatter(14, [4, 9], [4, 10], POST_RADIUS + 6, 10);
       walls(10);
       break;
