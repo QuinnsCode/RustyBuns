@@ -10,21 +10,16 @@
 import * as THREE from "three";
 import { FLOORS, buildFoliage, foliageQuality, instancer, makeWind, mergeAll } from "./foliage.ts";
 import { hut, lumpy, texture, totem } from "./models.ts";
+import { LANDMARKS } from "./landmarks.ts";
+import { WORLDS } from "./worlds.ts";
 import { EYE, POST_RADIUS, type Battle, type Block, type Tree } from "./sim.ts";
 
-type Woods = "redwood" | "jungle" | "canyon";
 export interface World {
   heightAt(x: number, z: number): number;
   // Each frame: where the camera is and what it looks at, for the sun's shadow box and the motes.
   update(t: number, eye: THREE.Vector3, at: { x: number; z: number }): void;
 }
 
-// The light of each map. `ray` is how strong the sun shafts are; the canyon is open sky.
-const LOOKS: Record<Woods, { sky: number; zenith: number; fog: number; ground: number; litter: number; trail: number; sun: number; sunI: number; hemi: [number, number, number]; ray: number }> = {
-  redwood: { sky: 0xb4c2a6, zenith: 0x8fa9b8, fog: 0.0105, ground: 0x3d4a22, litter: 0x5e3d22, trail: 0x8a4a2b, sun: 0xffe2a8, sunI: 2.8, hemi: [0xd2e6c0, 0x3a2a16, 1.05], ray: 0.15 },
-  jungle: { sky: 0x8aa284, zenith: 0x6f8f86, fog: 0.016, ground: 0x2b3a17, litter: 0x4a3a1c, trail: 0x6e4526, sun: 0xf1ffc8, sunI: 2.3, hemi: [0xbfe0b0, 0x24301a, 1.0], ray: 0.16 },
-  canyon: { sky: 0xe3b98e, zenith: 0x9fb4c9, fog: 0.0055, ground: 0xb07345, litter: 0x8c5534, trail: 0x9c5a35, sun: 0xfff0d6, sunI: 3.0, hemi: [0xf0d6b8, 0x6a3a22, 1.1], ray: 0.04 },
-};
 const SUN_DIR = new THREE.Vector3(0.42, 0.8, 0.43).normalize();
 
 // --- Noise: value noise and its octaves, the same for a seed every time. ---
@@ -126,8 +121,7 @@ const additive = (map: THREE.Texture | null, color: number, opacity: number) =>
 
 export function buildWorld(scene: THREE.Scene, b: Battle): World {
   const spec = b.spec;
-  const woods: Woods = spec.sector === "canyon" ? "canyon" : spec.sector === "jungle" ? "jungle" : "redwood";
-  const look = LOOKS[woods];
+  const look = WORLDS[spec.sector];
   const n = noise(spec.seed | 0);
   let s = (spec.seed ^ 0x9e3779b9) >>> 0;
   const r = () => ((s = (Math.imul(s, 1103515245) + 12345) >>> 0) / 4294967296);
@@ -149,7 +143,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
 
   // The floor: flat where the posts and the scenery stand (the sim's plain), rolling between, and
   // rising into banks past the edge of the field.
-  const amp = woods === "canyon" ? 0.9 : 1.6;
+  const amp = look.amp;
   const heightAt = (x: number, z: number) => {
     let flat = 1;
     for (const post of b.posts) flat = Math.min(flat, smooth(POST_RADIUS + 2, POST_RADIUS + 16, Math.hypot(x - post.x, z - post.z)));
@@ -157,7 +151,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     let h = (n(x / 34, z / 34, 3) * amp + n(x / 8, z / 8, 2) * 0.25) * flat;
     h -= 0.25 * (1 - smooth(1.5, 4, onTrail(x, z)));
     const out = Math.max(Math.abs(x), Math.abs(z)) - b.half;
-    if (out > 0) h += (woods === "canyon" ? 45 : 32) * (1 - Math.exp(-out / 40)) * (0.75 + 0.5 * n(x / 60, z / 60, 2)) + n(x / 12, z / 12) * out * 0.04;
+    if (out > 0) h += look.bank * (1 - Math.exp(-out / 40)) * (0.75 + 0.5 * n(x / 60, z / 60, 2)) + n(x / 12, z / 12) * out * 0.04;
     return h;
   };
 
@@ -202,17 +196,16 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   const gp = groundGeo.attributes.position as THREE.BufferAttribute, gc: number[] = [];
   const base = new THREE.Color(look.ground), litter = new THREE.Color(look.litter), dirt = new THREE.Color(look.trail);
   const mossy = new THREE.Color(0x2f4a1c);
-  const paved = new THREE.Color(spec.sector === "capital" ? 0x8d8a82 : spec.sector === "spaceport" ? 0x8f8b80 : 0x86775c);
-  const paves = spec.sector === "capital" || spec.sector === "spaceport" || spec.sector === "cannon";
+  const paved = new THREE.Color(look.pave ?? 0);
   for (let i = 0; i < gp.count; i++) {
     const x = gp.getX(i), z = gp.getZ(i), h = heightAt(x, z);
     gp.setY(i, h);
     col.copy(base).lerp(litter, smooth(-0.3, 0.6, n(x / 14 + 40, z / 14, 3)));
     col.lerp(mossy, smooth(-0.1, 0.7, n(x / 10 - 30, z / 10 + 8, 3)) * FLOORS[spec.sector].mossAmount);
-    if (woods === "canyon") col.offsetHSL(0, 0, 0.06 * Math.sin(h * 1.7));
+    if (look.strata) col.offsetHSL(0, 0, 0.06 * Math.sin(h * 1.7));
     const t = onTrail(x, z);
     col.lerp(dirt, 1 - smooth(1.5, 5.5, t + n(x / 3, z / 3) * 1.5));
-    if (paves) for (const post of b.posts) col.lerp(paved, 1 - smooth(POST_RADIUS + 4, POST_RADIUS + 9, Math.hypot(x - post.x, z - post.z) + n(x / 4, z / 4) * 2));
+    if (look.pave !== null) for (const post of b.posts) col.lerp(paved, 1 - smooth(POST_RADIUS + 4, POST_RADIUS + 9, Math.hypot(x - post.x, z - post.z) + n(x / 4, z / 4) * 2));
     col.multiplyScalar(0.85 + 0.3 * n(x / 5, z / 5, 2));
     gc.push(col.r, col.g, col.b);
   }
@@ -235,7 +228,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   const fp = frond.attributes.position as THREE.BufferAttribute;
   for (let v = 0; v < fp.count; v++) { const y = fp.getY(v), f = y / 1.5; fp.setXYZ(v, fp.getX(v), Math.sin(f * 2.1) * 0.75, -f * 1.25); }
   const fronds: THREE.BufferGeometry[] = [];
-  const per = woods === "jungle" ? 9 : 8;
+  const per = look.trees === "jungle" ? 9 : 8;
   for (let i = 0; i < per; i++) fronds.push(frond.clone().rotateX(-0.15 * (i % 3)).rotateY((i / per) * Math.PI * 2 + (i % 2) * 0.3));
   const fernGeo = mergeAll(fronds);
   fernGeo.computeVertexNormals();
@@ -245,8 +238,8 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
 
   // --- The trees: the field's trunks (the sim's, which block), and more on the banks behind. ---
   let allTrees: Tree[] = b.trees;
-  if (woods !== "canyon") {
-    const jungle = woods === "jungle";
+  if (look.trees) {
+    const jungle = look.trees === "jungle";
     const back: Tree[] = [];
     for (let i = 0; i < (jungle ? 420 : 320); i++) {
       const a = r() * Math.PI * 2, d = b.half + 4 + r() * b.half * 1.3;
@@ -373,26 +366,26 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   });
 
   // Rocks, mossy in the woods, red in the canyon.
-  const rocks = inst(lumpy(1, 2, 0.22, 3, false), std(woods === "canyon" ? 0x9a5634 : 0x7d7d70, 0.95, { map: strataMap() }), woods === "canyon" ? 140 : 70, true);
+  const rocks = inst(lumpy(1, 2, 0.22, 3, false), std(look.rock.color, 0.95, { map: strataMap() }), look.rock.n, true);
   for (let i = 0; i < 1000 && rocks.count < rocks.instanceMatrix.count; i++) {
     const at = anywhere(1.3);
     if (bare(at.x, at.z, 2)) continue;
     const out = Math.max(Math.abs(at.x), Math.abs(at.z)) > b.half;
     const sz = out ? 2 + r() * 6 : 0.4 + r() * 1.1;
-    col.setHSL(woods === "canyon" ? 0.05 : 0.15, woods === "canyon" ? 0.25 : 0.06, 0.7 + r() * 0.3);
+    col.setHSL(look.rock.h, look.rock.s, 0.7 + r() * 0.3);
     put(rocks, m.compose(p.set(at.x, heightAt(at.x, at.z) + sz * 0.2, at.z), q.setFromEuler(new THREE.Euler(r(), r() * 6, r())), k.set(sz * 1.3, sz * 0.8, sz)), col);
   }
 
   // --- The Wooka's end: huts up the trunks nearest their drop, bridges between, and totems. ---
-  if (wookaSide && woods !== "canyon") {
+  if (wookaSide && look.trees) {
     const home = b.spawn[wookaSide];
     const near = [...b.trees].filter((t) => t.r > 1).sort((a, c) => Math.hypot(a.x - home.x, a.z - home.z) - Math.hypot(c.x - home.x, c.z - home.z)).slice(0, 6);
     const decks: THREE.Vector3[] = [];
     near.forEach((t, i) => {
-      const h = hut(), y = heightAt(t.x, t.z) + (woods === "jungle" ? 9 : 13) + (i % 3) * 3;
+      const h = hut(), y = heightAt(t.x, t.z) + (look.trees === "jungle" ? 9 : 13) + (i % 3) * 3;
       h.position.set(t.x, y, t.z);
       h.rotation.y = r() * 6;
-      h.scale.setScalar(woods === "jungle" ? 0.75 : 1);
+      h.scale.setScalar(look.trees === "jungle" ? 0.75 : 1);
       scene.add(h);
       decks.push(new THREE.Vector3(t.x, y + 0.2, t.z));
     });
@@ -424,9 +417,9 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   let nBags = 0;
   for (const blk of b.blocks) if (blk.h < EYE && !blk.kind) nBags += Math.ceil(blk.w / 0.85) * Math.ceil(blk.d / 0.55) * Math.ceil(blk.h / 0.3);
   const bags = inst(bag, std(0xffffff, 1), nBags, true);
-  const rockMat = std(woods === "canyon" ? 0xa45a36 : 0x8a8a7c, 0.95, { map: strataMap() });
-  const builtMat = std(spec.sector === "capital" ? 0xd0c8b6 : spec.sector === "jungle" ? 0x7f8a6a : 0x9ca3aa, 0.85, { map: concreteMap() });
-  const rocky = woods === "canyon";
+  const rockMat = std(look.rocky ? 0xa45a36 : 0x8a8a7c, 0.95, { map: strataMap() });
+  const builtMat = std(look.built, 0.85, { map: concreteMap() });
+  const rocky = look.rocky;
   // Cover in the woods: rocks, stumps and fallen logs, and the Wooka's trench lines, earth
   // banked up behind a row of sharpened stakes leaning out at whoever's coming.
   const barkMat = std(0x5a3a26, 0.95, { map: barkMap() }), cutMat = std(0xc89a62, 0.9), dirtMat = std(0x5a3b22, 1, { flatShading: true }), stakeMat = std(0x8a6a44, 0.9);
@@ -506,7 +499,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       }
       geo.computeVertexNormals();
     }
-    const mesh = new THREE.Mesh(geo, rocky || spec.sector === "cannon" && blk.h < 10 ? rockMat : builtMat);
+    const mesh = new THREE.Mesh(geo, rocky || look.lowRock && blk.h < 10 ? rockMat : builtMat);
     mesh.position.set(blk.x, y, blk.z);
     mesh.castShadow = mesh.receiveShadow = true;
     scene.add(mesh);
@@ -529,47 +522,13 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     scene.add(mesh);
     return mesh;
   };
-  let dome: THREE.Mesh | null = null;
-  if (spec.sector === "shield") {
-    dome = new THREE.Mesh(new THREE.SphereGeometry(26, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x7fd8ff, transparent: true, opacity: 0.1, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
-    dome.position.set(keep.x, ky, keep.z);
-    scene.add(dome);
-    // The dish on the generator's core, and its humming pylons.
-    solid(new THREE.SphereGeometry(5, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2.6), builtMat, keep.x - 6, ky + 11, keep.z - 6).rotation.x = Math.PI;
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2 + 0.4;
-      solid(new THREE.CylinderGeometry(0.5, 0.9, 12, 8), builtMat, keep.x + Math.cos(a) * 20, ky + 6, keep.z + Math.sin(a) * 20);
-      solid(new THREE.SphereGeometry(0.9, 12, 8), new THREE.MeshBasicMaterial({ color: 0x9fe6ff }), keep.x + Math.cos(a) * 20, ky + 12.4, keep.z + Math.sin(a) * 20);
-    }
-  } else if (spec.sector === "capital") {
-    solid(new THREE.BoxGeometry(8, 24, 8).translate(0, 12, 0), builtMat, keep.x, ky, keep.z - 18); // the palace's tower
-    solid(new THREE.ConeGeometry(6.5, 8, 4).rotateY(Math.PI / 4), std(0x6b3a2a, 0.8), keep.x, ky + 28, keep.z - 18);
-  } else if (spec.sector === "spaceport") {
-    const padMat = std(0x5d6168, 0.7), padLight = new THREE.MeshBasicMaterial({ color: 0xffb040 });
-    const pads = b.posts[0]!;
-    for (const [dx, dz] of [[-24, -18], [24, -18], [-24, 22], [24, 22]] as const) {
-      const x = pads.x + dx, z = pads.z + dz, y = heightAt(x, z);
-      solid(new THREE.CylinderGeometry(9, 9.4, 0.6, 32), padMat, x, y + 0.3, z);
-      for (let i = 0; i < 8; i++) solid(new THREE.SphereGeometry(0.25, 6, 4), padLight, x + Math.cos(i * 0.785) * 8.6, y + 0.65, z + Math.sin(i * 0.785) * 8.6);
-    }
-    solid(new THREE.BoxGeometry(10, 4, 10), std(0x2a3038, 0.3, { metalness: 0.4, emissive: 0x16303c }), keep.x + 10, ky + 24, keep.z - 10); // the tower's cab
-  } else if (spec.sector === "cannon") {
-    const barrel = solid(new THREE.CylinderGeometry(1.4, 1.8, 30, 16), std(0x5b6067, 0.4, { metalness: 0.5 }), keep.x - 12, ky + 16, keep.z - 22);
-    barrel.rotation.x = -0.6;
-  } else if (spec.sector === "canyon") {
-    solid(new THREE.BoxGeometry(2, 1, 30), std(0x6b5a48, 0.9), keep.x + 12, ky + 6, keep.z + 4); // the conveyor
-    solid(new THREE.BoxGeometry(3, 16, 3).translate(0, 8, 0), builtMat, keep.x + 16, ky, keep.z - 16);
-  } else if (spec.sector === "jungle") {
-    solid(new THREE.BoxGeometry(14, 4, 9), builtMat, keep.x, ky + 14, keep.z - 22);
-    solid(new THREE.BoxGeometry(8, 4, 5), builtMat, keep.x, ky + 18, keep.z - 22);
-    solid(new THREE.SphereGeometry(1, 10, 8), new THREE.MeshBasicMaterial({ color: 0x9ff0d8 }), keep.x, ky + 21, keep.z - 22);
-  }
+  const landmark = LANDMARKS[spec.sector]({ b, keep, ky, heightAt, solid, add: (o) => scene.add(o), std, builtMat, r, n, bare, anywhere, inst: instancer(scene) });
 
   // --- Sunlight: shafts down through the haze, the dapples they leave, and dust hanging in them. ---
   const rays: THREE.Group[] = [];
   const shaftMat = additive(glowMap("shaft", true), look.sun, look.ray);
   const dappleMat = additive(glowMap("dapple", false), look.sun, look.ray * 2.2);
-  const nRays = woods === "canyon" ? 0 : 40;
+  const nRays = look.rays;
   for (let i = 0; i < nRays; i++) {
     const at = i < 8 && i < b.posts.length + trail.length ? (i % 2 ? trail[i % trail.length]! : b.posts[i % b.posts.length]!) : anywhere(0.9);
     const x = at.x + (r() - 0.5) * 30, z = at.z + (r() - 0.5) * 30, y = heightAt(x, z), w = 4 + r() * 9, len = 150;
@@ -594,7 +553,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   for (let i = 0; i < MOTES; i++) motePos.set([(r() - 0.5) * BOX, r() * 18, (r() - 0.5) * BOX], i * 3);
   const moteGeo = new THREE.BufferGeometry();
   moteGeo.setAttribute("position", new THREE.BufferAttribute(motePos, 3));
-  const motes = new THREE.Points(moteGeo, new THREE.PointsMaterial({ size: woods === "jungle" ? 0.16 : 0.1, map: glowMap("dapple", false), color: woods === "jungle" ? 0xd8ffb0 : 0xfff0c8, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending }));
+  const motes = new THREE.Points(moteGeo, new THREE.PointsMaterial({ size: look.mote.size, map: glowMap("dapple", false), color: look.mote.color, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending }));
   motes.frustumCulled = false;
   scene.add(motes);
   const drift = Float32Array.from({ length: MOTES }, () => r() * 6);
@@ -609,7 +568,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       giant.position.set(eye.x - 380, 420, eye.z - 620);
       shaftMat.opacity = look.ray * (0.85 + 0.15 * Math.sin(t * 0.3));
       for (const [i, ray] of rays.entries()) ray.scale.x = 0.9 + 0.1 * Math.sin(t * 0.4 + ray.userData.phase + i);
-      if (dome) (dome.material as THREE.MeshBasicMaterial).opacity = 0.08 + 0.03 * Math.sin(t * 2);
+      landmark?.(t);
       for (let i = 0; i < MOTES; i++) {
         let x = motePos[i * 3]! + Math.sin(t * 0.3 + drift[i]!) * 0.004, y = motePos[i * 3 + 1]! + Math.sin(t * 0.2 + drift[i]! * 2) * 0.003, z = motePos[i * 3 + 2]!;
         // Wrap round the camera.

@@ -196,7 +196,10 @@ export const bigMapsFor = (sector: SectorKind) => Object.keys(BIG_MAPS).filter((
 const GROW = 2.25;                 // the plain grew from 240 to 360 across: this much more ground to fill
 const REDWOODS = { n: Math.round(110 * GROW), r: [1.2, 3.4], gap: 5, clear: 26 } as const;
 const WOODS: Record<SectorKind, { n: number; r: readonly [number, number]; gap: number; clear: number }> = {
-  shield: REDWOODS, capital: REDWOODS, spaceport: REDWOODS, cannon: REDWOODS,
+  shield: REDWOODS,
+  capital: REDWOODS,
+  spaceport: REDWOODS,
+  cannon: REDWOODS,
   jungle: { n: Math.round(230 * GROW), r: [0.6, 1.6], gap: 2.5, clear: 18 },
   canyon: { n: 0, r: [0, 0], gap: 0, clear: 0 },
 };
