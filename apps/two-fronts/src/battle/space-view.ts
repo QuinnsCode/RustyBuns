@@ -9,6 +9,7 @@ import { animate, cruiser, fighter, texture } from "./models.ts";
 import { spaceRecorder } from "./replay.ts";
 import { DT, LINE, SPACE_LIMIT, SPACE_STATS, heroCraft, startSpaceBattle, stepSpace } from "./space.ts";
 import { makeSfx } from "./sfx.ts";
+import { isTouch, mountTouch } from "./touch.ts";
 
 const BOLT_COLORS = { marines: 0xff4a4a, wooka: 0x8cff5a };
 
@@ -95,6 +96,16 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
   addEventListener("keydown", kd); addEventListener("keyup", ku);
   canvas.addEventListener("mousedown", md); addEventListener("mouseup", mu); addEventListener("mousemove", mm);
   canvas.addEventListener("wheel", wheel, { passive: false });
+  // A phone: a finger on the field steers towards it; buttons fire, boost and brake (touch.ts).
+  const touch = isTouch();
+  const unTouch = touch ? mountTouch(canvas.parentElement!, canvas, {
+    drag: (_dx, _dy, x, y) => { const box = canvas.getBoundingClientRect(); mouse.set(((x - box.left) / box.width) * 2 - 1, -((y - box.top) / box.height) * 2 + 1); },
+    buttons: [
+      { id: "fire", icon: "crosshair", label: "Fire", hold: true, on: (d) => { sfx.wake(); firing = d; } },
+      { id: "boost", icon: "chevrons-up", label: "Boost", hold: true, on: (d) => { d ? keys.add("w") : keys.delete("w"); } },
+      { id: "brake", icon: "octagon", label: "Brake", hold: true, on: (d) => { d ? keys.add("s") : keys.delete("s"); } },
+    ],
+  }) : null;
   document.body.classList.add("space-2d");
   const aimPoint = new THREE.Vector3(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   // Where the mouse points on the hero's level, and so where to turn.
@@ -128,7 +139,7 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
       return `<div class="tickets ${spec.factions[s]}" title="Cruisers still up, and their hull left"><b>${s === mine ? "You" : "Enemy"}</b><span>▲ ${line.length}</span><i style="width:${Math.max(0, hull) * 100}%"></i></div>`;
     };
     const boost = keys.has("w") ? "▶▶" : keys.has("s") ? "◀" : "▶";
-    const help = b.time < 10 ? `Mouse steers · hold the button to fire · W boost · S brake · wheel zooms · M sound` : "";
+    const help = b.time < 10 ? touch ? `Drag to steer · fire, boost and brake on the right` : `Mouse steers · hold the button to fire · W boost · S brake · wheel zooms · M sound` : "";
     hud.innerHTML = `
       <div class="b-top">${fleet(mine)}
         <div class="b-clock" title="Time left. When it runs out, the side with more cruiser hull left holds the orbit (the defender on a tie)."><span class="clock">${fmt(Math.max(0, SPACE_LIMIT - b.time))}</span><sup>i</sup></div>
@@ -222,6 +233,7 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
         cancelAnimationFrame(raf);
         removeEventListener("keydown", kd); removeEventListener("keyup", ku); removeEventListener("mouseup", mu); removeEventListener("mousemove", mm); removeEventListener("resize", resize);
         canvas.removeEventListener("mousedown", md); canvas.removeEventListener("wheel", wheel);
+        unTouch?.();
         document.body.classList.remove("space-2d");
         renderer.dispose();
         sfx.close();
