@@ -49,6 +49,24 @@ integration path short of a Node/Prisma shim, which is a different product.
 - Wasp ships a single typed spec with a compiler checking it; our `rustybuns.config.ts` is the same idea for deploy only.
 - RWSDK's Queues, Cron and Email are bindings we should check the local twin of ([FRAMEWORKS.md](../FRAMEWORKS.md)).
 
+## Addendum: ElysiaJS
+
+Read from elysiajs.com on 2026-10-25.
+
+- **What it is**: a backend framework built for Bun, with types inferred from code (TypeBox, or Zod, Valibot and ArkType
+  through Standard Schema), an Eden client that reuses server types with no codegen, and plugins (OpenAPI, JWT, CORS,
+  Cron, WebSocket).
+- **Runtime**: Bun first, but WinterTC-compliant, so it is a `fetch` handler that also runs on Node, Deno, Vercel and
+  Cloudflare Workers.
+- **Workers**: an experimental `CloudflareAdapter` plus `.compile()`. Bindings come from the `cloudflare:workers` import.
+  No `fs`, so `Elysia.file`, the Static plugin and OpenAPI type generation don't work there. WebSocket and Durable Objects
+  aren't covered on that page.
+- **Against Rusty Buns**: a server framework we would sit under, like Hono. It answers the Wasp question the other way:
+  an Express-free backend that already runs on Bun, on Workers, and as a `fetch` handler, which is the shape `init`
+  mounts today (ADOPTION: "a Node backend ... mount it as the `fetch` handler"). Its Cloudflare path uses the same
+  `cloudflare:workers` import that we shim, so a bound Elysia app should box with little work.
+- **Not checked**: no Elysia app was run through `init`, and FRAMEWORK_COVERAGE has no Elysia row.
+
 ## Not done
 
 No code was run against either framework. A trial of Wasp apps through `scripts/trial-github.ts` would settle
