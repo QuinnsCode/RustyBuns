@@ -1,4 +1,4 @@
 { "name": "borg", "private": true, "type": "module",
   "scripts": { "test": "bun test test", "borg": "bun borg.ts", "desktop": "bun ../../packages/cli/src/index.ts build desktop --check" },
   "dependencies": { "@rustybuns/cli": "workspace:*", "@rustybuns/shell-bun": "workspace:*" },
-  "devDependencies": { "alchemy": "2.0.0-beta.77", "effect": "^4.0.5" } }
+  "devDependencies": { "alchemy": "2.0.0-beta.77", "effect": "4.0.0-rc.112" } }

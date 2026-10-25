@@ -50,6 +50,37 @@ Anything Bun can reach, your app can reach:
 - **Rust:** a cdylib over `bun:ffi` on the host, or wasm in the page.
 - **Other processes:** `Bun.spawn` a binary, stream its stdio, or talk to it on localhost. The host reaps it on exit.
 
+## Questions people ask
+
+**"No lock-in", but I have to install Bun?** To build, yes. The promise is about your app: `src/` never imports us, and leaving leaves a `fetch` handler, a Durable Object-shaped class and D1-shaped storage. The tool is a Bun program (`bun:sqlite`, `Bun.serve`, `bun build --compile`, `bun:ffi`), and the people who run your app never install it: it's inside the binary, or in the box's `oven/bun` image. A Node host for the box is [#2244](https://github.com/QuinnsCode/RustyBuns/issues/2244).
+
+**Wrangler already gives me local twins, and they're more faithful.** For edge work, use them: `rustybuns dev` is `alchemy dev`, which runs workerd. The twins answer a different question. Miniflare is a simulator for your laptop while you develop; the twins are what runs the app for real on a laptop and on a box, in one file, with your users' data in it. What they hold to is the contract the edge enforces: its limits, with its errors, and the behaviour [borg](apps/borg/README.md) checks against a real deploy. Where they're stand-ins is listed below, so nothing differs quietly.
+
+**Nitro already does multi-target deploys. Why another layer?** Nitro builds server output for a platform. It doesn't give you a one-file desktop app, local twins that refuse what the edge refuses, a `plan` that prices the deploy before `deploy` will run, or a typed stack. And it isn't a layer under or over Rusty Buns: a Nuxt app's Nitro `cloudflare-module` output is the Worker we deploy, as it is. When a deploy breaks, the layers are Nitro (your build), Alchemy (the resources) and us (the config that wires them), and `plan` names the resource before anything runs. The one patch we carry on Alchemy is four lines: deleting a queue consumer whose queue is already gone is a no-op.
+
+**These are Cloudflare's shapes, so it's a Cloudflare tool with an offline mode.** The shapes are Cloudflare's on purpose: a `fetch` handler, a Durable Object and D1 are small, documented and already run in production, and workerd is open source. Inventing a sixth shape would be the lock-in. The twins are the proof they run off Cloudflare, on a laptop and a Hetzner or Railway box. Coming from AWS or Vercel, [The same five, elsewhere](#the-same-five-elsewhere) is the map.
+
+**Is the desktop app a real desktop app?** It's your web app, runnable offline as one file: the backend on a local host, the UI in the user's Chrome. No native menus, tray or auto-update yet. You build on macOS or Linux (a Linux server will do), and it cross-compiles for Mac, Windows and Linux. Mac signing is built in and waits only on an Apple Developer ID; Windows signing isn't built yet. If you need a native window, use Electron or Tauri. The 60 to 110 MB is the Bun runtime, not the framework; any one file that carries a JS runtime (Node's single executable apps, `deno compile`) lands in that range. The Worker ships only your code, and the box is a small bundle on `oven/bun`.
+
+**Alpha, one author, 30 examples. Breadth over depth?** It's alpha (`0.1.x`) and has one maintainer, so pin a version. The examples aren't a portfolio; they're the test bed. Each one is a real app that has to keep booting on every target, [borg](apps/borg/README.md) checks the twins against a deploy, and [FRAMEWORK_COVERAGE.md](FRAMEWORK_COVERAGE.md) counts public apps that boot unchanged. Effect sits in the deploy layer, which is opt-in, and the host's background scheduler; the bindings and their twins are plain TypeScript, so most contributions never touch it.
+
+**Why not have my agent write a 200-line Hono and sqlite server?** For one target, do. The cost comes with the second and third: a laptop build, an edge deploy and a box, each written for this app, drifting apart, each finding the edge's limits on its first deploy. Here it's one tested contract: the same config, the same limits, and a plan before any spend, and your agent gets those for free on the next app too.
+
+### Where the twins differ from the edge
+
+| Binding | Edge | Twin on the desktop and box |
+|---|---|---|
+| D1, KV, R2, DO storage, queues | Cloudflare's | sqlite and a folder, with the edge's limits and errors; borg checks both |
+| CPU and memory | per isolate | per request: RSS growth past 128 MB or CPU past `worker.cpuMs` gets the edge's 503 |
+| Vectorize | approximate nearest neighbour | a sqlite table queried by exact scan: same API, exact results |
+| Workers AI | the models | `@cf/baai/bge-*` embeddings from a small built-in embedder (shared words land near each other, not meanings); every other model says it runs only on Cloudflare |
+| Worker Loader | a sandboxed isolate | the host's own process: no sandbox, so load only code you trust |
+| Images | transforms | the original image, `info()` from its header |
+| Email sending | sent | written as an `.eml` file in the data dir |
+| Rate limits, Containers | Cloudflare's | left out of the desktop; the app runs without them |
+
+The full per-target table is [Where things run](REFERENCE.md#where-things-run).
+
 ## Adopting it in steps
 
 1. **Infer.** `rustybuns init` reads your app and writes `rustybuns.config.ts`. Nothing in `src/` changes. You can stop here and have typed deploys.

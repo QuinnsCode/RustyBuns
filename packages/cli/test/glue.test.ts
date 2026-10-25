@@ -190,13 +190,13 @@ test("deploy guardrail: refuses without a matching plan, accepts --yes", async (
 
 test("add deploy: pinned install command and overrides per package manager", async () => {
   const { installCommand, applyOverrides } = await import("../src/glue/deploy-deps.ts");
-  expect(installCommand("pnpm", true)).toMatch(/^pnpm add -Dw alchemy@2\.0\.0-beta\.77 @alchemy\.run\/frontend-frameworks@2\.0\.0-beta\.77 effect@4\.0\.5 /);
+  expect(installCommand("pnpm", true)).toMatch(/^pnpm add -Dw alchemy@2\.0\.0-beta\.77 @alchemy\.run\/frontend-frameworks@2\.0\.0-beta\.77 effect@4\.0\.0-rc\.112 /);
   expect(installCommand("bun", false)).toMatch(/^bun add -d /);
   const p = applyOverrides({ pnpm: { overrides: { "@types/three": "0.185.4" } } }, "pnpm");
   expect(p.changed).toBe(true);
   expect(p.pkg.pnpm.overrides["@types/three"]).toBe("0.185.4");
-  expect(p.pkg.pnpm.overrides["@effect/platform-node-shared"]).toBe("4.0.5");
-  expect(applyOverrides({}, "yarn").pkg.resolutions["effect"]).toBe("4.0.5");
+  expect(p.pkg.pnpm.overrides["@effect/platform-node-shared"]).toBe("4.0.0-rc.112");
+  expect(applyOverrides({}, "yarn").pkg.resolutions["effect"]).toBe("4.0.0-rc.112");
 });
 
 test("infer worker build from the release script", async () => {

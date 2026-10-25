@@ -11,7 +11,7 @@ pnpm exec rustybuns build desktop       # dist/<name>-<os>-<arch>: one file, dou
 pnpm exec rustybuns deploy              # Cloudflare, plus a Hetzner or Railway box
 ```
 
-> **Alpha, `0.1.12`.** Desktop works on macOS and Linux. The Cloudflare deploy is verified end to end. The Railway and Hetzner boxes are verified live. A brand-new release not installing? Your package manager's minimum release age is holding it back; [Getting started](GETTING_STARTED.md) has the one-minute fix.
+> **Alpha, `0.1.12`.** Build on macOS or Linux (a Linux server will do); it cross-compiles the desktop binary for Mac, Windows and Linux. The Cloudflare deploy is verified end to end. The Railway and Hetzner boxes are verified live. A brand-new release not installing? Your package manager's minimum release age is holding it back; [Getting started](GETTING_STARTED.md) has the one-minute fix.
 
 ## The idea
 
@@ -23,7 +23,7 @@ That makes it a framework for frameworks. It doesn't replace Vite, React, RWSDK 
 
 ## Why a team can bet on it
 
-- **No lock-in.** It's a dev dependency. It never edits `src/`, never ships in your bundle, and everything it asks you to adopt is a shape Cloudflare already standardized. Leaving is a `git rm`.
+- **Your app isn't locked in.** It's a dev dependency. It never edits `src/`, never ships in your bundle, and everything it asks you to adopt is a shape Cloudflare already standardized. Leaving is a `git rm`. The tool itself is a Bun program, so building needs Bun 1.4+ even on a Node team; your users never install it.
 - **Nothing costs money until you say so.** The whole stack boots on your disk. `plan` prints every billable resource, `deploy` refuses to run without a matching plan, and `destroy` removes what it created.
 - **Typed end to end.** The config types your bindings, and the deploy is a typed stack, so a missing piece fails the compiler before a server exists.
 - **Tried on real apps.** The examples below are real apps, and [FRAMEWORK_COVERAGE.md](FRAMEWORK_COVERAGE.md) counts how many public GitHub apps per framework boot unchanged.
@@ -150,6 +150,8 @@ An operation is one function with a name, a schema and a permission. HTTP, MCP, 
 <details><summary>More</summary>
 
 The deploy side is a typed Alchemy + Effect stack. Cloudflare, Hetzner and Railway are each a typed Layer, so swapping a target is one line of config and the compiler tells you what's missing before anything is created. `plan` and `deploy` print every billable resource, marked fixed or usage, and a large Hetzner box is refused unless the config says so. `destroy` removes everything it created.
+
+`plan` only diffs your config against Alchemy's state. `drift` goes the other way: it re-reads the live account and shows what changed outside the stack (a dashboard edit, a `wrangler deploy`, a deleted resource). It changes nothing; `drift --repair` puts the account back to the last deploy, after the same two-step yes as a real destroy, and is refused with no terminal.
 
 Trying someone else's repo? `plan --offline` builds and typechecks with no login at all and lists the whole stack as creates, so neither their account nor yours is touched.
 
@@ -328,9 +330,13 @@ We aim for WCAG 2.2 AA. The reading settings and theme are also WebMCP tools, so
 
 ## What's the catch?
 
-- **No native menus, tray, installers, signing or auto-update yet.** If you need a native-feeling window today, use Electron or Tauri.
+- **No native menus, tray, installers or auto-update yet.** If you need a native-feeling window today, use Electron or Tauri. Mac signing and notarization are built in (`build desktop --sign`, `--notarize`) and need only an Apple Developer ID; Windows signing isn't built yet.
+- **You build on macOS or Linux, not Windows.** Windows is a target, not a build machine: build it from a Mac or a Linux server. A Rust cdylib cross-compiles only to Linux (in Docker); wasm crates go anywhere.
+- **Windows is the least tested.** CI boots one app with no backend on Windows on Arm; nothing with a backend runs on Windows in CI yet. If you build in WSL or run a binary on Windows (x64 or Arm), [tell us](https://github.com/QuinnsCode/RustyBuns/issues/new) what worked and what didn't.
 - **The binary is about 60 to 110 MB**, depending on the app, because Bun is inside it. It's one file with no install step, but it isn't small.
 - **It renders in the user's Chrome** (or default browser), not a bundled one.
+- **The twins aren't workerd.** They're the production runtime for the laptop and the box, not a copy of the Workers runtime. Limits match; a few bindings (Vectorize, Workers AI, the Worker Loader) are stand-ins. `rustybuns dev` still runs workerd for edge work. The full list is in [Where the twins differ from the edge](ADOPTION.md#where-the-twins-differ-from-the-edge).
+- **Alpha, one maintainer.** The examples are the test bed, not a portfolio. More in [Questions people ask](ADOPTION.md#questions-people-ask).
 
 If what you have is a web app with a backend, and you want it on a laptop, on the edge *and* on a server, nothing else does all three from one codebase.
 
@@ -374,7 +380,7 @@ Every example is one codebase that runs as a desktop binary. The multiplayer one
 
 **Someone else's app, unchanged:** [TerraViz](https://github.com/zyra-project/terraviz) by The Zyra Project, led by Eric Hackathorn (NOAA Global Systems Laboratory), Apache-2.0: a Pages app with a 3D globe, about 100 API routes, D1, KV, R2 and Vectorize. `bun apps/terraviz-demo/run.ts` clones it and runs it on Rusty Buns with none of its code changed. This is only a demonstration of how Rusty Buns maps an existing app onto its primitives. It is not a fork, and TerraViz's code is not in this repo. Credit, license and how to run it: [apps/terraviz-demo](apps/terraviz-demo/README.md).
 
-**Try one without building anything:** download the desktop binary for [Hippo Tycoon](https://github.com/QuinnsCode/RustyBuns/releases?q=hippo-tycoon-v&expanded=true), [Park Hide & Seek](https://github.com/QuinnsCode/RustyBuns/releases?q=park-hide-seek-v&expanded=true), [Splat Spray](https://github.com/QuinnsCode/RustyBuns/releases?q=splat-spray-v&expanded=true) or [FM Groovebox](https://github.com/QuinnsCode/RustyBuns/releases?q=fm-daw-v&expanded=true). Each is one file for Mac, Windows or Linux. They aren't signed yet, so the first launch takes one Terminal command on a Mac (the release page has it; [APPLE_SIGNING.md](APPLE_SIGNING.md) is the road to fixing that) and a click past SmartScreen on Windows.
+**Try one without building anything:** download the desktop binary for [Hippo Tycoon](https://github.com/QuinnsCode/RustyBuns/releases?q=hippo-tycoon-v&expanded=true), [Park Hide & Seek](https://github.com/QuinnsCode/RustyBuns/releases?q=park-hide-seek-v&expanded=true), [Splat Spray](https://github.com/QuinnsCode/RustyBuns/releases?q=splat-spray-v&expanded=true) or [FM Groovebox](https://github.com/QuinnsCode/RustyBuns/releases?q=fm-daw-v&expanded=true). Each is one file for Mac, Windows or Linux. They aren't signed yet, so the first launch takes one Terminal command on a Mac (the release page has it; [APPLE_SIGNING.md](APPLE_SIGNING.md) is the road to fixing that) and a click past SmartScreen on Windows ([WINDOWS_LINUX_SIGNING.md](WINDOWS_LINUX_SIGNING.md) is that road, and says Linux needs no key).
 
 Want to run them from source? [EXAMPLES.md](EXAMPLES.md) is two lines per app, no experience needed.
 
