@@ -329,7 +329,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       ? new THREE.LatheGeometry(swell, 10)
       : new THREE.LatheGeometry([[0, -0.02], [2.1, -0.02], [1.45, 0.008], [1.12, 0.025], [1, 0.05], [0.82, 0.55], [0.5, 1]].map(([x, y]) => new THREE.Vector2(x, y)), 16);
     const mossGeo = new THREE.LatheGeometry([[2.25, -0.02], [1.55, 0.008], [1.16, 0.022], [1.03, 0.034], [0, 0.034]].map(([x, y]) => new THREE.Vector2(x, y)), 16);
-    const trunks = inst(trunkGeo, std(jungle ? 0xffffff : 0xa0532f, 0.95, { map: barkMap(), ...(look.flora ? { emissive: 0x241450 } : {}) }), all.length, true);
+    const trunks = inst(trunkGeo, std(jungle ? 0xffffff : 0xa0532f, 0.95, { map: barkMap(), ...(look.flora ? { emissive: 0x140a30 } : {}) }), all.length, true);
     const moss = inst(mossGeo, std(look.flora ? 0x1c6a7a : 0x4a6224, 1, { map: barkMap() }), all.length);
     // Boughs: thin limbs off the upper trunk, each ending in a clump of needles; a few dead twigs lower down.
     const limbs = inst(new THREE.CylinderGeometry(0.5, 1, 1, 5).translate(0, 0.5, 0), std(0x5a3622, 1), all.length * 8, true);

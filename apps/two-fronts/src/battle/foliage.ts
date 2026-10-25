@@ -305,7 +305,7 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), k = new THREE.Vector3(), col = new THREE.Color(), e = new THREE.Euler();
   const UP = new THREE.Vector3(0, 1, 0);
   const std = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, ...extra });
-  const leafy = (map: THREE.Texture | null, extra: THREE.MeshStandardMaterialParameters = {}) => std(0xffffff, { map, alphaTest: 0.4, side: THREE.DoubleSide, ...(WORLDS[kind].flora ? { emissive: 0x2a1c5a } : {}), ...extra });
+  const leafy = (map: THREE.Texture | null, extra: THREE.MeshStandardMaterialParameters = {}) => std(0xffffff, { map, alphaTest: 0.4, side: THREE.DoubleSide, ...(WORLDS[kind].flora ? { emissive: 0x160e34 } : {}), ...extra });
   const flat = (geo: THREE.BufferGeometry) => geo.rotateX(-Math.PI / 2);
   const anywhere = (spread = 1.1) => ({ x: (r() - 0.5) * b.half * 2 * spread, z: (r() - 0.5) * b.half * 2 * spread });
   const field = trees.slice(0, b.trees.length);
@@ -668,11 +668,11 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
       const at = spot(1.5, 0.55); if (!at) continue;
       const y = yAt(at.x, at.z, -0.1);
       if (r() < 0.45 && broad.count < broad.instanceMatrix.count) {
-        const s = 1.4 + r() * 1.6;
+        const s = 0.9 + r() * 0.9;
         tint(0.27 + r() * 0.06, 0.55, 0.22 + r() * 0.1);
         put(broad, set(at.x, y, at.z, r() * 6, s, s * (0.8 + r() * 0.5), s), col);
       } else if (bigFerns.count < bigFerns.instanceMatrix.count) {
-        const s = 1.2 + r() * 1.2;
+        const s = 0.9 + r() * 0.8;
         tint(0.24 + r() * 0.06, 0.55, 0.22 + r() * 0.1);
         put(bigFerns, set(at.x, y, at.z, r() * 6, s), col);
       }

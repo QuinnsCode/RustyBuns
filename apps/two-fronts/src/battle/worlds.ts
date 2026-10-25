@@ -74,7 +74,7 @@ export const WORLDS: Record<SectorKind, Look> = {
   // Night with colour: huge glowing trees under two moons, spores drifting, pools of light on the floor.
   jungle: {
     ...FOREST, sky: 0x241552, zenith: 0x080630, fog: 0.008, ground: 0x2a2058, litter: 0x43307c, trail: 0x5a4488,
-    sun: 0xa8b8ff, sunI: 1.5, hemi: [0xc0b8ff, 0x2c1a60, 1.9], ray: 0.1, rays: 26, trees: "jungle", built: 0x4a3f7a,
+    sun: 0xa8b8ff, sunI: 0.9, hemi: [0xb0a8ff, 0x201048, 0.95], ray: 0.1, rays: 26, trees: "jungle", built: 0x4a3f7a,
     rock: { color: 0x6a5a9a, n: 70, h: 0.72, s: 0.3 }, mote: { size: 0.3, color: 0x9ffff0, fall: 0 },
     flora: [0x20e0c8, 0xff3fc0, 0x9a5cff, 0xa8ff3c], night: true, giant: false,
     debris: [0x2a2058, 0x43307c, 0x20e0c8, 0xff3fc0, 0x9a5cff],
