@@ -480,3 +480,31 @@ button.preset { white-space: normal; display: flex; flex-direction: column; gap:
 .marines, .tickets.marines b { font-family: var(--f-marines); }
 .wooka, .tickets.wooka b, .tagline, .flavor { font-family: var(--f-wooka); }
 .b-feed { font-family: var(--f-lore); font-size: 18px; }
+
+/* Touch controls (battle/touch.ts): only mounted on a coarse pointer. */
+#battle-view { touch-action: none; -webkit-user-select: none; user-select: none; }
+.touch { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+.touch-stick { position: absolute; left: max(20px, env(safe-area-inset-left)); bottom: max(24px, env(safe-area-inset-bottom)); width: 120px; height: 120px; border-radius: 50%; background: rgb(0 0 0 / 0.35); border: 2px solid rgb(255 255 255 / 0.4); pointer-events: auto; touch-action: none; display: flex; align-items: center; justify-content: center; }
+.touch-stick i { width: 52px; height: 52px; border-radius: 50%; background: rgb(255 255 255 / 0.45); }
+.touch-btns { position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); display: flex; flex-direction: column-reverse; align-items: center; gap: 8px; }
+.touch-row { position: absolute; right: 110px; bottom: max(16px, env(safe-area-inset-bottom)); display: flex; gap: 8px; }
+.touch-btn { pointer-events: auto; touch-action: none; width: 48px; height: 48px; border-radius: 50%; padding: 0; display: flex; align-items: center; justify-content: center; background: rgb(0 0 0 / 0.5); border: 2px solid rgb(255 255 255 / 0.45); color: #fff; }
+.touch-btn.down { background: rgb(255 255 255 / 0.35); }
+.touch-btn[data-id="fire"] { width: 72px; height: 72px; border-color: #ff6a4a; }
+.touch-btn[data-id="fire"] svg { width: 30px; height: 30px; }
+.touch-row .touch-btn { width: 44px; height: 44px; }
+/* On a phone the HUD is slimmed and its corners left to the controls, so nothing you need is covered:
+   stick bottom-left, hero readout beside it, squad orders and fire bottom-right, the AI button top-right. */
+body.touch .b-top { top: 6px; transform: translateX(-50%) scale(0.8); transform-origin: top center; }
+body.touch .b-mission { top: 6px; left: 8px; min-width: 0; max-width: 150px; padding: 4px 8px; }
+body.touch .b-mission small, body.touch .b-mission span, body.touch .b-orders, body.touch .b-feed { display: none; }
+body.touch .b-mission b { font-size: 12px; }
+body.touch .b-posts { top: 44px; gap: 4px; font-size: 10px; white-space: nowrap; }
+body.touch .post { padding: 1px 6px; white-space: nowrap; }
+body.touch .b-hero { left: 160px; transform: none; bottom: 12px; gap: 8px; padding: 4px 8px; font-size: 12px; }
+body.touch .hp { width: 90px; }
+body.touch .champ, body.touch .champ-on { display: none; }
+body.touch .b-help { left: auto; right: 8px; top: 6px; bottom: auto; transform: none; padding: 4px 8px; }
+body.touch .b-help button { font-size: 12px; padding: 4px 8px; }
+body.touch.space-2d .b-help { left: 50%; right: auto; top: auto; bottom: 64px; transform: translateX(-50%); }
+@media (orientation: portrait) { body.touch .battle::after { content: "Turn your phone sideways to play"; position: absolute; left: 50%; top: 40%; transform: translateX(-50%); background: rgb(0 0 0 / 0.75); color: #fff; padding: 10px 16px; border-radius: 8px; pointer-events: none; z-index: 6; } }
