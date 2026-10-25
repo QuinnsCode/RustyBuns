@@ -136,6 +136,12 @@ const GH_REFS = /\/git\/refs\/(heads\/(main|master)|tags)(\/|$)|\/(desktop-drop|
 function ghAdmin(t: string[]): string | null {
   const [, a1, a2] = t;
   if (a1 === "pr" && a2 === "merge" && t.includes("--admin")) return "gh pr merge --admin";
+  // A PR on another PR's branch closes unmerged when that one merges and its branch is deleted: every PR goes on main.
+  if (a1 === "pr" && (a2 === "create" || a2 === "edit")) {
+    const k = t.findIndex((x) => x === "--base" || x === "-B");
+    const base = k >= 0 ? t[k + 1] : t.find((x) => x.startsWith("--base="))?.slice(7);
+    if (base !== undefined && base !== "main") return `a PR based on ${base} (stacked): base every PR on main`;
+  }
   if ((a1 === "secret" || a1 === "variable" || a1 === "ruleset") && a2 !== "list" && a2 !== "view" && a2 !== "check")
     return `gh ${a1} ${a2 ?? ""}`.trim();
   if (a1 === "repo" && (a2 === "edit" || a2 === "delete" || a2 === "rename" || a2 === "archive")) return `gh repo ${a2}`;
