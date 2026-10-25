@@ -42,15 +42,24 @@ export const LANDMARKS: Record<SectorKind, Landmark> = {
     solid(new THREE.BoxGeometry(8, 24, 8).translate(0, 12, 0), builtMat, keep.x, ky, keep.z - 18); // the palace's tower
     solid(new THREE.ConeGeometry(6.5, 8, 4).rotateY(Math.PI / 4), std(0x6b3a2a, 0.8), keep.x, ky + 28, keep.z - 18);
   },
-  spaceport: ({ b, keep, ky, heightAt, solid, std }) => {
-    const padMat = std(0x5d6168, 0.7), padLight = new THREE.MeshBasicMaterial({ color: 0xffb040 });
-    const pads = b.posts[0]!;
-    for (const [dx, dz] of [[-24, -18], [24, -18], [-24, 22], [24, 22]] as const) {
-      const x = pads.x + dx, z = pads.z + dz, y = heightAt(x, z);
-      solid(new THREE.CylinderGeometry(9, 9.4, 0.6, 32), padMat, x, y + 0.3, z);
-      for (let i = 0; i < 8; i++) solid(new THREE.SphereGeometry(0.25, 6, 4), padLight, x + Math.cos(i * 0.785) * 8.6, y + 0.65, z + Math.sin(i * 0.785) * 8.6);
+  // The docking pads (a lit disc and ring of lights at two posts), a beacon over the fuel depot, and the command deck's tower cab and dish.
+  spaceport: ({ b, keep, add, solid, std, inst }) => {
+    const padMat = std(0x232a31, 0.5, { metalness: 0.4 }), ring = new THREE.RingGeometry(8, 8.5, 48).rotateX(-Math.PI / 2);
+    const lights = inst.inst(new THREE.BoxGeometry(0.6, 0.12, 0.6), new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), 40, false, false);
+    const tint = new THREE.Color(), at = new THREE.Matrix4();
+    for (const [post, color] of [[b.posts[0]!, 0x40e0d0], [b.posts[2]!, 0xffa030]] as const) {
+      solid(new THREE.CylinderGeometry(10, 10.3, 0.12, 40), padMat, post.x, 0.06, post.z);
+      const edge = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({ color, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+      edge.position.set(post.x, 0.2, post.z);
+      add(edge);
+      for (let i = 0; i < 16; i++) inst.put(lights, at.makeTranslation(post.x + Math.cos(i * 0.3927) * 9.2, 0.22, post.z + Math.sin(i * 0.3927) * 9.2), tint.setHex(color));
     }
-    solid(new THREE.BoxGeometry(10, 4, 10), std(0x2a3038, 0.3, { metalness: 0.4, emissive: 0x16303c }), keep.x + 10, ky + 24, keep.z - 10); // the tower's cab
+    inst.done(lights);
+    const depot = b.posts[1]!;
+    solid(new THREE.CylinderGeometry(0.3, 0.3, 9, 8), std(0x39414a, 0.5), depot.x, 4.5, depot.z);
+    solid(new THREE.SphereGeometry(0.9, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffa030, toneMapped: false }), depot.x, 9.4, depot.z);
+    solid(new THREE.BoxGeometry(7, 3, 7), std(0x2a3038, 0.3, { metalness: 0.4, emissive: 0x16303c }), keep.x + 10, 23.5, keep.z - 10); // the tower's cab
+    solid(new THREE.SphereGeometry(4, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2.4), std(0xb8c2cc, 0.4), keep.x - 4, 9, keep.z - 24).rotation.x = Math.PI / 5; // the deck's dish
   },
   cannon: ({ keep, ky, solid, std }) => {
     solid(new THREE.CylinderGeometry(1.4, 1.8, 30, 16), std(0x5b6067, 0.4, { metalness: 0.5 }), keep.x - 12, ky + 16, keep.z - 22).rotation.x = -0.6;

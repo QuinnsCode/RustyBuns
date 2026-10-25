@@ -21,20 +21,26 @@ export interface Look {
   built: number;                                          // the built blocks' concrete
   lowRock: boolean;                                       // a built world's low blocks are rock anyway
   mote: { size: number; color: number };
+  station: boolean;                                       // a deck in space: starfield and planet for a sky, hull plating for a floor, no ground cover
 }
 
 const FOREST: Look = {
   sky: 0xb4c2a6, zenith: 0x8fa9b8, fog: 0.0105, ground: 0x3d4a22, litter: 0x5e3d22, trail: 0x8a4a2b,
   sun: 0xffe2a8, sunI: 2.8, hemi: [0xd2e6c0, 0x3a2a16, 1.05], ray: 0.15, rays: 40, trees: "redwood",
   amp: 1.6, bank: 32, strata: false, pave: null, rock: { color: 0x7d7d70, n: 70, h: 0.15, s: 0.06 },
-  rocky: false, built: 0x9ca3aa, lowRock: false, mote: { size: 0.1, color: 0xfff0c8 },
+  rocky: false, built: 0x9ca3aa, lowRock: false, mote: { size: 0.1, color: 0xfff0c8 }, station: false,
 };
 
 export const WORLDS: Record<SectorKind, Look> = {
   // Doren's redwood forest: trunks going up into haze, sun coming down through the canopy in shafts.
   shield: FOREST,
   capital: { ...FOREST, pave: 0x8d8a82, built: 0xd0c8b6 },
-  spaceport: { ...FOREST, pave: 0x8f8b80 },
+  // A deep-space station: a black starfield with a planet hanging outside, cold light on hull plating.
+  spaceport: {
+    ...FOREST, sky: 0x02040a, zenith: 0x000104, fog: 0.0014, ground: 0x7a8694, litter: 0x5e6a78, trail: 0x93a0ae,
+    sun: 0xd4e4ff, sunI: 2.8, hemi: [0xc4d6ff, 0x4a566a, 1.7], ray: 0, rays: 0, trees: null, amp: 0, bank: 0,
+    pave: 0x2d343c, rock: { color: 0x59616b, n: 0, h: 0.6, s: 0.05 }, built: 0x8792a0, mote: { size: 0.07, color: 0xbfdcff }, station: true,
+  },
   cannon: { ...FOREST, pave: 0x86775c, lowRock: true },
   // The same idea, closer, wetter and full of vines.
   jungle: {

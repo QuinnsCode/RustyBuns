@@ -12,6 +12,7 @@ import { FLOORS, buildFoliage, foliageQuality, instancer, makeWind, mergeAll } f
 import { hut, lumpy, texture, totem } from "./models.ts";
 import { LANDMARKS } from "./landmarks.ts";
 import { WORLDS } from "./worlds.ts";
+import { buildStation, deckFloor, deckMaterial, stationSky } from "./worlds/station.ts";
 import { EYE, POST_RADIUS, type Battle, type Block, type Tree } from "./sim.ts";
 
 export interface World {
@@ -145,6 +146,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   // rising into banks past the edge of the field.
   const amp = look.amp;
   const heightAt = (x: number, z: number) => {
+    if (look.station) return 0; // a deck is flat
     let flat = 1;
     for (const post of b.posts) flat = Math.min(flat, smooth(POST_RADIUS + 2, POST_RADIUS + 16, Math.hypot(x - post.x, z - post.z)));
     for (const blk of b.blocks) flat = Math.min(flat, smooth(1, 7, blockGap(blk, x, z)));
@@ -158,6 +160,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   // --- Sky, haze and light ---
   scene.background = new THREE.Color(look.sky);
   scene.fog = new THREE.FogExp2(look.sky, look.fog);
+  const dome = () => {
   const skyGeo = new THREE.SphereGeometry(900, 24, 12);
   const skyCols: number[] = [];
   const pos = skyGeo.attributes.position as THREE.BufferAttribute;
@@ -180,6 +183,10 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   giant.rotation.set(-0.6, 0, 0.35); // its bands face the field, not its pole
   giant.children.forEach((c) => (c.renderOrder = -1));
   scene.add(giant);
+  return { sky, giant };
+  };
+  const { sky, giant } = look.station ? stationSky(scene, r) : dome();
+  const giantAt = look.station ? new THREE.Vector3(560, 20, -520) : new THREE.Vector3(-380, 420, -620);
 
   scene.add(new THREE.HemisphereLight(look.hemi[0], look.hemi[1], look.hemi[2]));
   const sun = new THREE.DirectionalLight(look.sun, look.sunI);
@@ -192,7 +199,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
 
   // --- The floor ---
   const SIZE = b.half * 5, SEG = 260;
-  const groundGeo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG).rotateX(-Math.PI / 2);
+  const groundGeo = look.station ? deckFloor(b) : new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG).rotateX(-Math.PI / 2);
   const gp = groundGeo.attributes.position as THREE.BufferAttribute, gc: number[] = [];
   const base = new THREE.Color(look.ground), litter = new THREE.Color(look.litter), dirt = new THREE.Color(look.trail);
   const mossy = new THREE.Color(0x2f4a1c);
@@ -211,7 +218,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   }
   groundGeo.setAttribute("color", new THREE.Float32BufferAttribute(gc, 3));
   groundGeo.computeVertexNormals();
-  const ground = new THREE.Mesh(groundGeo, std(0xffffff, 1, { vertexColors: true, map: floorMap() }));
+  const ground = new THREE.Mesh(groundGeo, look.station ? deckMaterial() : std(0xffffff, 1, { vertexColors: true, map: floorMap() }));
   ground.receiveShadow = true;
   scene.add(ground);
 
@@ -415,7 +422,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   // --- The scenery the sim laid out: walls of sandbags, and buildings, bunkers or rock. ---
   const bag = new THREE.CapsuleGeometry(0.17, 0.45, 2, 6).rotateZ(Math.PI / 2).scale(1, 0.85, 1.4);
   let nBags = 0;
-  for (const blk of b.blocks) if (blk.h < EYE && !blk.kind) nBags += Math.ceil(blk.w / 0.85) * Math.ceil(blk.d / 0.55) * Math.ceil(blk.h / 0.3);
+  for (const blk of b.blocks) if (blk.h < EYE && !blk.kind && !look.station) nBags += Math.ceil(blk.w / 0.85) * Math.ceil(blk.d / 0.55) * Math.ceil(blk.h / 0.3);
   const bags = inst(bag, std(0xffffff, 1), nBags, true);
   const rockMat = std(look.rocky ? 0xa45a36 : 0x8a8a7c, 0.95, { map: strataMap() });
   const builtMat = std(look.built, 0.85, { map: concreteMap() });
@@ -435,7 +442,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   for (const blk of b.blocks) if (blk.kind === "trench") nStakes += Math.ceil(blk.w / 0.9);
   const stakes = inst(new THREE.ConeGeometry(0.09, 1.6, 5), stakeMat, nStakes, true);
   for (const blk of b.blocks) {
-    if (!blk.kind) continue;
+    if (!blk.kind || look.station) continue;
     const y = heightAt(blk.x, blk.z), along = blk.w >= blk.d;
     if (blk.kind === "rock") solidAt(lumpy(1, 2, 0.25, Math.floor(r() * 50), false).scale(blk.w * 0.6, blk.h * 0.75, blk.d * 0.6), rockMat, blk.x, y + blk.h * 0.35, blk.z, r() * 6);
     else if (blk.kind === "stump") {
@@ -473,7 +480,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   }
   stakes.instanceMatrix.needsUpdate = true;
   for (const blk of b.blocks) {
-    if (blk.kind) continue;
+    if (blk.kind || look.station) continue;
     const y = heightAt(blk.x, blk.z);
     if (blk.h < EYE) {
       const nx = Math.ceil(blk.w / 0.85), nz = Math.ceil(blk.d / 0.55), ny = Math.ceil(blk.h / 0.3);
@@ -524,6 +531,8 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
   };
   const landmark = LANDMARKS[spec.sector]({ b, keep, ky, heightAt, solid, add: (o) => scene.add(o), std, builtMat, r, n, bare, anywhere, inst: instancer(scene) });
 
+  const pulse = look.station ? buildStation({ scene, b, r, ...instancer(scene), trail, shiftAt: (z) => n(z / 40, 3.7) * 6 }) : null;
+
   // --- Sunlight: shafts down through the haze, the dapples they leave, and dust hanging in them. ---
   const rays: THREE.Group[] = [];
   const shaftMat = additive(glowMap("shaft", true), look.sun, look.ray);
@@ -565,10 +574,11 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       sun.target.position.set(at.x, heightAt(at.x, at.z), at.z);
       sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 200);
       sky.position.copy(eye);
-      giant.position.set(eye.x - 380, 420, eye.z - 620);
+      giant.position.set(eye.x + giantAt.x, giantAt.y, eye.z + giantAt.z);
       shaftMat.opacity = look.ray * (0.85 + 0.15 * Math.sin(t * 0.3));
       for (const [i, ray] of rays.entries()) ray.scale.x = 0.9 + 0.1 * Math.sin(t * 0.4 + ray.userData.phase + i);
       landmark?.(t);
+      pulse?.(t);
       for (let i = 0; i < MOTES; i++) {
         let x = motePos[i * 3]! + Math.sin(t * 0.3 + drift[i]!) * 0.004, y = motePos[i * 3 + 1]! + Math.sin(t * 0.2 + drift[i]! * 2) * 0.003, z = motePos[i * 3 + 2]!;
         // Wrap round the camera.

@@ -106,7 +106,7 @@ export interface Tree { x: number; z: number; r: number }
 // A building, wall or rock: centred on x, z, w wide (along x), d deep (along z) and h high.
 // Anything at eye height or more blocks sight; anything lower is a wall to crouch behind. The
 // kind is only for the view: a sandbag wall unless it says otherwise.
-export interface Block { x: number; z: number; w: number; d: number; h: number; kind?: "rock" | "stump" | "log" | "trench"; broken?: boolean }
+export interface Block { x: number; z: number; w: number; d: number; h: number; kind?: "rock" | "stump" | "log" | "trench" | "crate" | "console"; broken?: boolean }
 
 export interface Battle {
   spec: BattleSpec;
@@ -172,7 +172,7 @@ export interface Layout { name: string; posts: { name: string; x: number; z: num
 export const LAYOUTS: Record<SectorKind, Layout> = {
   shield: { name: "Shield generator clearing", posts: [{ name: "Old stump", x: -60, z: 40 }, { name: "Fern hollow", x: 55, z: 5 }, { name: "Mossy ridge", x: -50, z: -40 }, { name: "Generator", x: 45, z: -80 }] },
   capital: { name: "Capital city", posts: [{ name: "Transit hub", x: 65, z: 55 }, { name: "Market square", x: -50, z: 15 }, { name: "Water tower", x: 60, z: -20 }, { name: "Old quarter", x: -60, z: -55 }, { name: "Palace", x: 5, z: -95 }] },
-  spaceport: { name: "Spaceport", posts: [{ name: "Landing pads", x: -45, z: 35 }, { name: "Fuel depot", x: 55, z: 10 }, { name: "Hangar", x: -55, z: -30 }, { name: "Control tower", x: 50, z: -85 }] },
+  spaceport: { name: "Deep-space station", posts: [{ name: "Docking pads", x: -45, z: 35 }, { name: "Fuel depot", x: 55, z: 10 }, { name: "Hangar", x: -55, z: -30 }, { name: "Command deck", x: 50, z: -85 }] },
   cannon: { name: "Cannon battery", posts: [{ name: "Ammo depot", x: 60, z: 40 }, { name: "Spotter nest", x: -55, z: 5 }, { name: "Gun pit", x: 50, z: -30 }, { name: "Cannon", x: -35, z: -85 }] },
   canyon: { name: "Mining canyon", posts: [{ name: "Ore crusher", x: -25, z: 60 }, { name: "Cart yard", x: 30, z: 15 }, { name: "Slag heap", x: -30, z: -25 }, { name: "Mine head", x: 15, z: -85 }] },
   jungle: { name: "Jungle temple", posts: [{ name: "Fallen idol", x: 55, z: 50 }, { name: "Rope bridge", x: -55, z: 5 }, { name: "Strangler fig", x: 50, z: -35 }, { name: "Sunken temple", x: 0, z: -95 }] },
@@ -182,7 +182,7 @@ export const LAYOUTS: Record<SectorKind, Layout> = {
 export const BIG_MAPS: Record<string, Layout & { sector: SectorKind; half: number }> = {
   ridge: { sector: "shield", name: "Generator ridge", half: 175, posts: [{ name: "Fern hollow", x: -70, z: 70 }, { name: "Old stump", x: 45, z: 25 }, { name: "Relay mast", x: -50, z: -40 }, { name: "Generator", x: 30, z: -100 }] },
   outskirts: { sector: "capital", name: "Old city outskirts", half: 175, posts: [{ name: "Burnt farm", x: 75, z: 80 }, { name: "Transit hub", x: -40, z: 40 }, { name: "Market square", x: 50, z: -20 }, { name: "Palace", x: -5, z: -100 }] },
-  yards: { sector: "spaceport", name: "Cargo yards", half: 250, posts: [{ name: "Cargo stacks", x: 60, z: 55 }, { name: "Landing pads", x: -40, z: 0 }, { name: "Control tower", x: 40, z: -90 }] },
+  yards: { sector: "spaceport", name: "Docking ring", half: 250, posts: [{ name: "Cargo stacks", x: 60, z: 55 }, { name: "Docking pads", x: -40, z: 0 }, { name: "Command deck", x: 40, z: -90 }] },
   gorge: { sector: "canyon", name: "Deep gorge", half: 255, posts: [{ name: "Slag heap", x: 25, z: 75 }, { name: "Ore crusher", x: -25, z: 15 }, { name: "Mine head", x: 15, z: -95 }] },
   valley: { sector: "jungle", name: "Temple valley", half: 270, posts: [{ name: "Waterfall", x: -70, z: 75 }, { name: "Fallen idol", x: 55, z: 35 }, { name: "Rope bridge", x: -45, z: -25 }, { name: "Sunken temple", x: 0, z: -105 }] },
 };
@@ -195,13 +195,14 @@ export const bigMapsFor = (sector: SectorKind) => Object.keys(BIG_MAPS).filter((
 // The trees on each map: the redwood forest, a dense jungle of thinner trunks, none in the canyon.
 const GROW = 2.25;                 // the plain grew from 240 to 360 across: this much more ground to fill
 const REDWOODS = { n: Math.round(110 * GROW), r: [1.2, 3.4], gap: 5, clear: 26 } as const;
+const BARE = { n: 0, r: [0, 0], gap: 0, clear: 0 } as const;
 const WOODS: Record<SectorKind, { n: number; r: readonly [number, number]; gap: number; clear: number }> = {
   shield: REDWOODS,
   capital: REDWOODS,
-  spaceport: REDWOODS,
+  spaceport: BARE,
   cannon: REDWOODS,
   jungle: { n: Math.round(230 * GROW), r: [0.6, 1.6], gap: 2.5, clear: 18 },
-  canyon: { n: 0, r: [0, 0], gap: 0, clear: 0 },
+  canyon: BARE,
 };
 export const EYE = 1.6;            // blocks this high or more block sight
 const COVER = 2.5;                 // this close to an obstacle between you and the shooter, you're in cover
@@ -518,7 +519,7 @@ function scenery(b: Battle) {
       }
     }
   };
-  if (b.spec.sector !== "canyon") trenches();
+  if (b.spec.sector !== "canyon" && b.spec.sector !== "spaceport") trenches();
   switch (b.spec.sector) {
     case "shield":
       put(keep.x - 6, keep.z - 6, 7, 7, 9); // the generator's core
@@ -531,12 +532,42 @@ function scenery(b: Battle) {
       walls(10);
       cover();
       break;
-    case "spaceport":
-      put(keep.x + 10, keep.z - 10, 5, 5, 22); // the control tower
-      scatter(14, [3, 4], [2.5, 3.5], POST_RADIUS + 4); // cargo crates
+    case "spaceport": {
+      // A deep-space station: the command deck and its tower at the keep, bulkheads across the deck
+      // with doorways a tank fits through, a bay round each pad, then crates and consoles to fight from.
+      put(keep.x + 10, keep.z - 10, 5, 5, 22);
+      put(keep.x, keep.z - 24, 26, 8, 9);
+      const gaps = (z: number) => {
+        const open: [number, number][] = [[(rand(b) - 0.5) * 30 - 10, 20], [(rand(b) - 0.5) * 30 + 10, 20]];
+        for (const p of [...b.posts, b.spawn.attacker, b.spawn.defender]) if (Math.abs(p.z - z) < POST_RADIUS + 12) open.push([p.x, 2 * (POST_RADIUS + 6)]);
+        const out: [number, number][] = [];
+        for (const [c, w] of open.sort((a, d) => a[0] - d[0])) {
+          const last = out.at(-1);
+          if (last && c - w / 2 <= last[1]) last[1] = Math.max(last[1], c + w / 2); else out.push([c - w / 2, c + w / 2]);
+        }
+        return out;
+      };
+      for (let z = 66; z < b.half - 30; z += 66) for (const row of [z, -z]) {
+        let x = -b.half;
+        for (const [from, to] of [...gaps(row), [b.half, b.half] as [number, number]]) {
+          if (from - x > 3) put((x + from) / 2, row, from - x, 1.6, 3.6);
+          x = Math.max(x, to);
+        }
+      }
+      for (const pad of [b.posts[0]!, b.posts[2]!]) {
+        const out = pad.x < 0 ? 1 : -1; // the bay opens towards the middle of the deck
+        put(pad.x - out * 17, pad.z, 1.6, 34, 5);
+        for (const dz of [-15, 15]) put(pad.x - out * 10, pad.z + dz, 14, 1.6, 5);
+      }
+      const at = b.blocks.length;
+      scatter(14, [3, 4], [2.5, 3.5], POST_RADIUS + 4);
+      b.blocks.slice(at).forEach((k) => { k.kind = "crate"; });
+      const consoles = b.blocks.length;
+      scatter(10, [2, 4], [1.0, 1.2], POST_RADIUS + 3, 12);
+      b.blocks.slice(consoles).forEach((k) => { k.kind = "console"; });
       walls(6);
-      cover();
       break;
+    }
     case "cannon":
       put(keep.x - 12, keep.z - 28, 16, 16, 6); // the cannon's base
       walls(14);
