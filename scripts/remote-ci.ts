@@ -12,8 +12,15 @@ export type Job = { app: string; test: string; prep: string };
 export function parseJobs(out: string): Job[] {
   const line = out.split("\n").find((l) => l.startsWith("apps="));
   if (!line) throw new Error("no apps= line in ci-apps output");
-  const { include } = JSON.parse(line.slice(5)) as { include: Job[] };
-  return include.filter((j) => j.test);
+  const parsed: unknown = JSON.parse(line.slice(5));
+  const include = typeof parsed === "object" && parsed !== null && "include" in parsed && Array.isArray(parsed.include) ? parsed.include : [];
+  const jobs: Job[] = [];
+  for (const j of include) {
+    if (typeof j !== "object" || j === null) continue;
+    const { app, test, prep } = j as Record<string, unknown>;
+    if (typeof app === "string" && typeof test === "string" && typeof prep === "string" && test) jobs.push({ app, test, prep });
+  }
+  return jobs;
 }
 
 // Run `fn` over items with at most `cap` at a time; the result is the worst (highest) code.
