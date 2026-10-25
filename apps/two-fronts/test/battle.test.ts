@@ -1,7 +1,7 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import type { BattleSpec } from "../src/battle/contract.ts";
 import {
-  CHAMP_AT, DT, MOSS_HEAL, MOSS_LIGHT, MOSS_WOUND, SPRINT_AFTER, FLAVOR, HALF, LAYOUTS, ROLES, ROLE_STATS, STATS, STRIKE_RADIUS, TROOPERS, aimTarget, damage, flies, heroUnit, hitChance, inCover, isVehicle, run, sees, startBattle, statsOf, step, type Unit, type UnitKind, type WookaRole,
+  CHAMP_AT, DT, MOSS_HEAL, MOSS_LIGHT, MOSS_WOUND, SPRINT_AFTER, FLAVOR, HALF, LAYOUTS, ROLES, ROLE_STATS, STATS, STRIKE_RADIUS, TROOPERS, POST_RADIUS, aimTarget, damage, flies, heroUnit, hitChance, inCover, isVehicle, run, sees, startBattle, statsOf, step, type Unit, type UnitKind, type WookaRole,
 } from "../src/battle/sim.ts";
 
 // Whole battles run here, and a CI runner is slower than a laptop. bunfig's timeout is ignored,
@@ -223,6 +223,30 @@ test("nobody ends up inside a building or rock, on any map", () => {
   }
   expect(startBattle(spec({ sector: "canyon" })).trees).toHaveLength(0);
   expect(startBattle(spec({ sector: "jungle" })).trees.length).toBeGreaterThan(startBattle(spec()).trees.length);
+});
+
+// A whole AI battle on every map, both ways round: nobody ends it stranded, off every post with no
+// target and no step in 30 s (pinned on a hut, wreck, bulkhead or rock). A shanti waits behind the
+// front by design, so it does not count.
+test("on every map a battle plays out with nobody pinned in the scenery", () => {
+  for (const sector of ["shield", "capital", "spaceport", "cannon", "canyon", "jungle"] as const) for (const hero of ["attacker", "defender"] as const) {
+    const b = startBattle(spec({ sector, hero, seed: 3, tickets: { attacker: 150, defender: 150 } }));
+    const last = new Map<number, { x: number; z: number; t: number }>();
+    for (let i = 0; !b.over && b.time < 600; i++) {
+      step(b, null);
+      if (i % 30) continue;
+      for (const u of b.units) {
+        const l = last.get(u.id);
+        if (!l || Math.hypot(u.x - l.x, u.z - l.z) > 0.5 || u.target !== undefined) last.set(u.id, { x: u.x, z: u.z, t: b.time });
+      }
+    }
+    expect(b.over).not.toBeNull();
+    const stuck = b.units.filter((u) => {
+      const l = last.get(u.id);
+      return u.hp > 0 && !flies(u) && u.kind !== "turret" && u.role !== "shanti" && l && b.time - l.t > 30 && b.posts.every((p) => Math.hypot(p.x - u.x, p.z - u.z) > POST_RADIUS);
+    });
+    expect(stuck.map((u) => `${sector} ${u.kind}@${u.x.toFixed(0)},${u.z.toFixed(0)}`)).toEqual([]);
+  }
 });
 
 // One of the horde, of a given kind.
