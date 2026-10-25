@@ -108,15 +108,16 @@ app exists, so changes to it must keep the entry valid:
 The owner closes your worktree when you stop, to keep context small. So before you end a turn, nothing may
 be left only in chat. Every undone item (CI still running, a PR not merged, a hands-on check you can't do, a
 stacked base that may merge first) goes one of three ways: a new worker (`office-workers hire`), an issue
-(a hands-on check gets `MANUAL CHECK (not a bug):` and the `manual run` label, see below), or a question to
+(anything for the owner's hands gets `MANUAL RUN:` and the `manual run` label, see below), or a question to
 the owner right then. Open your last message with "N of M done" and name each leftover with its link, or say
 "4 of 4, nothing left". "PR is open" alone is not a status. Check `gh pr view` and `gh pr checks` first, and
-base your PR on `main` unless a stack is really needed: a stacked PR closes unmerged when its base is deleted.
+base every PR on `main`. Never stack one on another PR's branch: when the base merges, its branch is deleted
+and every PR on it closes unmerged.
 
 ## Manual runs: the owner's hands, in plain sight
 
 When something needs the owner to do it (a token, a sign-in, a live run, a hands-on check), it gets its own
-issue: title prefix `MANUAL RUN:` (or `MANUAL CHECK (not a bug):` when nothing is broken), the `manual run`
+issue: title prefix `MANUAL RUN:` (hands-on checks too, even when nothing is broken), the `manual run`
 label, the steps and a rough time at the top. Never fold it as a line into another open issue, #609 included:
 the owner doesn't see that board easily, so a buried line never gets done. #609 is an old roll-up; don't add
 to it. Say in your final message that you filed one, with the link. A PR that touches a manual-run issue
