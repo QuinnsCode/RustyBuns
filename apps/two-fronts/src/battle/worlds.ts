@@ -21,6 +21,11 @@ export interface Look {
   built: number;                                          // the built blocks' concrete
   lowRock: boolean;                                       // a built world's low blocks are rock anyway
   mote: { size: number; color: number };
+  sea: { level: number } | null;                          // shallows along the +x edge, the water's surface height
+  stone: number;                                          // the sim's rock blocks and cliffs
+  wood: number;                                           // fallen logs and stumps
+  giant: boolean;                                         // the gas giant in the sky
+  moss: boolean;                                          // moss on the built blocks' tops
 }
 
 const FOREST: Look = {
@@ -28,6 +33,7 @@ const FOREST: Look = {
   sun: 0xffe2a8, sunI: 2.8, hemi: [0xd2e6c0, 0x3a2a16, 1.05], ray: 0.15, rays: 40, trees: "redwood",
   amp: 1.6, bank: 32, strata: false, pave: null, rock: { color: 0x7d7d70, n: 70, h: 0.15, s: 0.06 },
   rocky: false, built: 0x9ca3aa, lowRock: false, mote: { size: 0.1, color: 0xfff0c8 },
+  sea: null, stone: 0x8a8a7c, wood: 0x5a3a26, moss: true, giant: true,
 };
 
 export const WORLDS: Record<SectorKind, Look> = {
@@ -35,7 +41,13 @@ export const WORLDS: Record<SectorKind, Look> = {
   shield: FOREST,
   capital: { ...FOREST, pave: 0x8d8a82, built: 0xd0c8b6 },
   spaceport: { ...FOREST, pave: 0x8f8b80 },
-  cannon: { ...FOREST, pave: 0x86775c, lowRock: true },
+  // Anti-ship cannon: a bright shore. Sand rolls down to ankle-deep shallows on the east edge and a sea past it.
+  cannon: {
+    ...FOREST, sky: 0xbfe1f2, zenith: 0x3b8ee0, fog: 0.0024, ground: 0xfff2c4, litter: 0xf0d9a2, trail: 0xe0c48c,
+    sun: 0xfff3da, sunI: 3.3, hemi: [0xcfe9ff, 0xe0c78e, 1.2], ray: 0, rays: 0, trees: null, amp: 0.6, bank: 14,
+    pave: 0xe8d6a4, rock: { color: 0xe6d9b6, n: 70, h: 0.1, s: 0.1 }, lowRock: true, built: 0xe6dcc2,
+    mote: { size: 0.07, color: 0xffffff }, sea: { level: -0.02 }, stone: 0xb7a888, wood: 0xa8998a, moss: false, giant: false,
+  },
   // The same idea, closer, wetter and full of vines.
   jungle: {
     ...FOREST, sky: 0x8aa284, zenith: 0x6f8f86, fog: 0.016, ground: 0x2b3a17, litter: 0x4a3a1c, trail: 0x6e4526,

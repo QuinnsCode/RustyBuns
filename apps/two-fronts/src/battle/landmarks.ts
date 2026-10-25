@@ -4,6 +4,7 @@ import * as THREE from "three";
 import type { SectorKind } from "./contract.ts";
 import type { instancer } from "./foliage.ts";
 import type { Battle } from "./sim.ts";
+import { cannonCoast } from "./worlds/beach.ts";
 
 export interface Kit {
   b: Battle;
@@ -52,9 +53,8 @@ export const LANDMARKS: Record<SectorKind, Landmark> = {
     }
     solid(new THREE.BoxGeometry(10, 4, 10), std(0x2a3038, 0.3, { metalness: 0.4, emissive: 0x16303c }), keep.x + 10, ky + 24, keep.z - 10); // the tower's cab
   },
-  cannon: ({ keep, ky, solid, std }) => {
-    solid(new THREE.CylinderGeometry(1.4, 1.8, 30, 16), std(0x5b6067, 0.4, { metalness: 0.5 }), keep.x - 12, ky + 16, keep.z - 22).rotation.x = -0.6;
-  },
+  // The cannon on its rock-clad base, a headland behind it, and the shore: worlds/beach.ts.
+  cannon: cannonCoast,
   canyon: ({ keep, ky, solid, std, builtMat }) => {
     solid(new THREE.BoxGeometry(2, 1, 30), std(0x6b5a48, 0.9), keep.x + 12, ky + 6, keep.z + 4); // the conveyor
     solid(new THREE.BoxGeometry(3, 16, 3).translate(0, 8, 0), builtMat, keep.x + 16, ky, keep.z - 16);

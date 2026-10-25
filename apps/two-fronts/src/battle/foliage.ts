@@ -266,8 +266,8 @@ export const FLOORS: Record<SectorKind, Floor> = {
   capital: { litter: 1300, needles: 2000, twigs: 520, pebbles: 240, boulders: 20, shrooms: 24, moss: 230, flowers: 450, grass: 900, nurse: 10, thickets: 18, leaf: [[0.05, 0.55, 0.24], [0.07, 0.6, 0.3], [0.1, 0.5, 0.26]], flower: [0xffffff, 0xf4a0c0, 0xf9e6f0], grassHue: 0.25, grassLight: 0.28, mossAmount: 0.22 },
   // The spaceport's edges: weeds, wind-blown litter and loose stone round the pads.
   spaceport: { litter: 500, needles: 400, twigs: 160, pebbles: 450, boulders: 10, shrooms: 6, moss: 100, flowers: 260, grass: 1500, nurse: 3, thickets: 6, leaf: [[0.1, 0.35, 0.3], [0.12, 0.4, 0.38]], flower: [0xf2d34a, 0xffffff], grassHue: 0.18, grassLight: 0.36, mossAmount: 0.05 },
-  // The cannon battery: splinters, scorched dry grass and rubble under a few hardy flowers.
-  cannon: { litter: 700, needles: 300, twigs: 950, pebbles: 850, boulders: 26, shrooms: 4, moss: 80, flowers: 130, grass: 1100, nurse: 4, thickets: 8, leaf: [[0.07, 0.4, 0.2], [0.09, 0.35, 0.26]], flower: [0xe8c050, 0xd8602c], grassHue: 0.14, grassLight: 0.32, mossAmount: 0.05 },
+  // The cannon's shore: dry beach grass and a few flowers on the dunes, sticks, shingle and wrack, no woods.
+  cannon: { litter: 160, needles: 0, twigs: 520, pebbles: 700, boulders: 0, shrooms: 0, moss: 0, flowers: 220, grass: 900, nurse: 0, thickets: 0, leaf: [[0.11, 0.35, 0.5], [0.09, 0.3, 0.42]], flower: [0xf6f0dc, 0xf08a9a, 0xf2d34a, 0xc8a0f0], grassHue: 0.15, grassLight: 0.42, mossAmount: 0 },
   // The mining canyon: dry tufts, grit and stones; no woods.
   canyon: { litter: 0, needles: 0, twigs: 160, pebbles: 950, boulders: 0, shrooms: 0, moss: 0, flowers: 0, grass: 520, nurse: 0, thickets: 0, leaf: [[0.07, 0.4, 0.3]], flower: [0xe8c050], grassHue: 0.1, grassLight: 0.4, mossAmount: 0 },
   // The jungle: wet, thick and green over everything.
