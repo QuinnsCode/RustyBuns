@@ -11,6 +11,7 @@
 // `?foliage=low|mid|high` (or a number from 0.2 to 1) in the page's address turns the density
 // down for a slow machine.
 import * as THREE from "three";
+import { WORLDS } from "./worlds.ts";
 import type { SectorKind } from "./contract.ts";
 import { lumpy, texture } from "./models.ts";
 import { HALF, STRIKE_RADIUS, altitude, isVehicle, type Battle, type Tree } from "./sim.ts";
@@ -294,7 +295,7 @@ export interface Foliage { update(t: number, eye: THREE.Vector3): void }
 
 export function buildFoliage(ctx: FoliageCtx): Foliage {
   const { scene, b, kind, r, n, heightAt, bare, trees, wind } = ctx;
-  const fl = FLOORS[kind], Q = foliageQuality(), jungle = kind === "jungle", woods = kind !== "canyon";
+  const fl = FLOORS[kind], Q = foliageQuality(), jungle = kind === "jungle", woods = WORLDS[kind].trees !== null;
   // A big map gets more of everything, though not quite as thick, to keep the frame rate.
   const cnt = (v: number) => Math.round(v * Q * Math.min(1.6, (b.half / HALF) ** 2));
   const { inst, put, done } = instancer(scene);

@@ -2,6 +2,7 @@
 // these dress them. Each returns what it animates each frame, if anything.
 import * as THREE from "three";
 import type { SectorKind } from "./contract.ts";
+import type { instancer } from "./foliage.ts";
 import type { Battle } from "./sim.ts";
 
 export interface Kit {
@@ -13,6 +14,13 @@ export interface Kit {
   add(o: THREE.Object3D): void;
   std(color: number, roughness?: number, extra?: THREE.MeshStandardMaterialParameters): THREE.MeshStandardMaterial;
   builtMat: THREE.Material;
+  // For a world's own props scattered over the field: the scenery's seeded random, its noise, whether
+  // a spot must stay clear (the trail, the posts, the blocks), and an instancer to draw them in few calls.
+  r(): number;
+  n(x: number, z: number, octaves?: number): number;
+  bare(x: number, z: number, room?: number): boolean;
+  anywhere(spread?: number): { x: number; z: number };
+  inst: ReturnType<typeof instancer>;
 }
 type Landmark = (k: Kit) => ((t: number) => void) | void;
 

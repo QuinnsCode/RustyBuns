@@ -522,7 +522,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     scene.add(mesh);
     return mesh;
   };
-  const landmark = LANDMARKS[spec.sector]({ b, keep, ky, heightAt, solid, add: (o) => scene.add(o), std, builtMat });
+  const landmark = LANDMARKS[spec.sector]({ b, keep, ky, heightAt, solid, add: (o) => scene.add(o), std, builtMat, r, n, bare, anywhere, inst: instancer(scene) });
 
   // --- Sunlight: shafts down through the haze, the dapples they leave, and dust hanging in them. ---
   const rays: THREE.Group[] = [];
