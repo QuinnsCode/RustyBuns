@@ -104,7 +104,7 @@ The highest-value things, in order:
 | The live site | [Cloudflare Artifacts](https://developers.cloudflare.com/artifacts/) | A repo per project, made by an API call, cloneable by anyone you hand a token |
 | Your desktop | Bare repos in `~/.codesplitters`, served by `git http-backend` | Any size, private GitHub repos, your own machine's credentials |
 | GitHub, GitLab, anywhere | A mirror, both ways | Two-way sync through outages, branches pushed upstream and pulled back |
-| Your agent's context | MCP, OpenAPI, WebMCP | The repo as tools: `read_file`, `edit_lines`, `start_branch`, `merge_branch`, `deploy` |
+| Your agent's context | MCP, OpenAPI, WebMCP | The repo as tools: `read_file`, `edit` (claim, wait, edit, let go), `start_branch`, `land` (merge, or the one conflict and why), `deploy` |
 | A phone | `#/m/owner/repo` | Start an agent, watch its run, review and merge its branch from the couch |
 
 ## Why Artifacts is rad
@@ -122,6 +122,8 @@ The catch is that Artifacts only takes writes as a `git push`.
 So codeSplitter builds git's objects and pack itself, in the Worker, with Web Crypto and `CompressionStream` and no git library, and speaks git's smart HTTP protocol.
 Each commit pushes only what changed on top of the parent tree, so editing one line of a big repo costs one blob, a few trees and a commit.
 Repos too big even for Artifacts (Bun, Alchemy) are kept in R2, packed into chunks and dug in parallel off a queue.
+A commit that carries an agent's lines also writes a git note in the same push, under `refs/notes/codesplitter`: the agent, its model, a hash of its prompt, how its run ended and its DONE / NEXT / BROKE / DONT note.
+The why travels with every clone (`git fetch origin refs/notes/codesplitter:refs/notes/codesplitter`, then `git log --notes=codesplitter`) and shows on the vein's commit card.
 
 ## The free desktop app: own your git, put it wherever you want
 

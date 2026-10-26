@@ -198,12 +198,15 @@ export async function materialize(env: Env, owner: string, repo: string, path: s
  * `deployCommit` is the commit on the remote deploys clone (the crew's, when there is one),
  * when that commit carries this file alone.
  */
-export function pushCatalogue(env: Env, owner: string, repo: string, path: string, files: { content: string; published: string }, author: string, message: string) {
-  return pushCatalogues(env, owner, repo, { [path]: files }, author, message);
+export function pushCatalogue(env: Env, owner: string, repo: string, path: string, files: { content: string; published: string }, author: string, message: string, note?: string | null) {
+  return pushCatalogues(env, owner, repo, { [path]: files }, author, message, note);
 }
 
-/** pushCatalogue for several files at once, as one commit (a revert, #880); null takes a file out, and bytes go in as they are (#888). */
-export async function pushCatalogues(env: Env, owner: string, repo: string, files: Record<string, { content: string; published: string } | { bytes: Uint8Array; mode?: string } | null>, author: string, message: string) {
+/**
+ * pushCatalogue for several files at once, as one commit (a revert, #880); null takes a file out, and bytes go in as they are (#888).
+ * `note` goes on the remote's commit as a git note (why.ts); the crew's copy, a commit of its own, doesn't carry it.
+ */
+export async function pushCatalogues(env: Env, owner: string, repo: string, files: Record<string, { content: string; published: string } | { bytes: Uint8Array; mode?: string } | null>, author: string, message: string, note?: string | null) {
   const paths = Object.keys(files), lines = (p: string) => { const f = files[p]; return f && "content" in f ? f : null; };
   const secret = paths.find((p) => lines(p) && lines(p)!.content !== lines(p)!.published);
   await (secret ? ensureCrewRemote(env, owner, repo, secret) : payBackfill(env, owner, repo, paths[0]));
@@ -221,7 +224,7 @@ export async function pushCatalogues(env: Env, owner: string, repo: string, file
   };
   const pending = await pendingChanges(env, owner, repo);
   const [pub, crewed] = await Promise.allSettled([
-    pushChanges(env, owner, repo, h, { ...pending, ...changes("published") }, author, message),
+    pushChanges(env, owner, repo, h, { ...pending, ...changes("published") }, author, message, note ?? undefined),
     crew?.crew ? crewPush(crew) : null,
   ]);
   if (pub.status === "rejected") throw pub.reason;
@@ -286,10 +289,10 @@ async function byline(env: Env, owner: string, repo: string, author: string, mes
 }
 
 type Handle = NonNullable<Awaited<ReturnType<typeof handleFor>>>;
-async function pushChanges(env: Env, owner: string, repo: string, h: Handle, changes: Record<string, Change>, author: string, message: string) {
+async function pushChanges(env: Env, owner: string, repo: string, h: Handle, changes: Record<string, Change>, author: string, message: string, note?: string) {
   try {
     const a = await access(h.handle, h.remote, "write", 300);
-    const r = await push(a.remote, a.token, { changes, ...(await byline(env, owner, repo, author, message)), branch: h.branch, base: h.handle });
+    const r = await push(a.remote, a.token, { changes, ...(await byline(env, owner, repo, author, message)), branch: h.branch, base: h.handle, note });
     await env.DB.batch([
       env.DB.prepare("UPDATE repos SET git_error = NULL, git_bytes = COALESCE(git_bytes, 0) + ? WHERE owner = ? AND name = ?").bind(r.bytes, owner, repo),
       ...Object.keys(changes).map((p) => env.DB.prepare("DELETE FROM git_pending WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, p)),

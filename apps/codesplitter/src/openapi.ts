@@ -176,6 +176,9 @@ const OPS: Record<string, Record<string, Op>> = {
       body: obj({ branch: str("an open branch to try; main without it"), save: bool("commit init's work to a branch as agent-rustybuns") }), ok: obj({ run: { description: "the run just started" } }), status: 202 },
   },
   [`${repo}/tags/{name}`]: { delete: { id: "delete_tag", risky: true, summary: "Delete a tag (owner only). A mirror's upstream keeps its own", tag: "Repos", ok: ref("Ok") } },
+  [`${repo}/commits/{sha}/note`]: { get: { id: "commit_note", summary: "Why a commit was made: its codeSplitter git note", tag: "Repos", open: true,
+    description: "When a commit carries an agent's lines, the push that makes it writes a git note under refs/notes/codesplitter: the agent, its harness and model, a hash of the prompt, how the run ended, and its DONE / NEXT / BROKE / DONT note (left out when the file has private lines). `git fetch origin refs/notes/codesplitter:refs/notes/codesplitter` brings them to a clone.",
+    ok: obj({ note: { type: ["string", "null"], description: "the note's text, or null when the commit has none" } }) } },
   ...Object.fromEntries((["revert", "pick"] as const).map((k) => [`${repo}/commits/{sha}/${k}`, { post: {
     id: k === "revert" ? "revert_commit" : "cherry_pick", summary: k === "revert" ? "Revert a commit: undo its changes (the crew)" : "Cherry-pick a commit onto main or an open branch (the crew)", tag: "Repos", risky: true,
     description: "Its changes against its first parent are merged into each file's lines as they are now and land as line edits, so the lines it doesn't touch keep their ids and blame. " +
@@ -204,6 +207,12 @@ const OPS: Record<string, Record<string, Op>> = {
       + "Name the ops protocol you were started on as `proto` and an update to another one is that same 409, instead of an edit made by rules you didn't read.",
     query: { ...filePath, ...onBranch }, body: obj({ ops: arr(ref("LineOp")), ifRev: int(), claim: str("your claim's id, when you're an agent editing lines you claimed"), proto: int("the ops protocol you were started on; a file on another one answers 409 `updating`") }, ["ops"]),
     ok: obj({ rev: int(), applied: arr(ref("Applied")) }) } },
+  [`${repo}/do/edit`]: { post: { id: "edit", summary: "Edit lines in one call: wait for them, apply, let go (the crew)", tag: "Files",
+    description: "claim_lines (with wait), edit_lines naming the claim, and release_claim, as one call, so an agent never forgets to let go. The lines claimed are the ones the ops name (a set's or delete's `line`, an insert's `after`). "
+      + "If they're held it waits in line up to `timeout` seconds (20 at most), then answers 202 {queued, id, place}: call edit again with that `id` to keep your place. The claim is released whatever the edit's answer, a 409 included. "
+      + "Every check of edit_lines and claim_lines applies, and the answer is edit_lines' own on failure.",
+    query: { ...filePath, ...onBranch }, body: obj({ ops: arr(ref("LineOp")), id: str("the claim's id from an earlier 202, to keep your place in line"), task: str("what you're doing, shown to everyone while you hold the lines"), ifRev: int(), timeout: int("seconds to wait in line, 0 to 20 (default 20)") }, ["ops"]),
+    ok: obj({ rev: int(), applied: arr(ref("Applied")), claim: str("the claim that was held for the edit, released now; null when the ops touched no existing line") }) } },
   [`${repo}/do/claims`]: {
     get: { id: "list_claims", summary: "Who is working on which lines of a file right now", tag: "Files", open: true,
       description: "A claimed line takes edits from its holder only. `until` is when a claim lapses (null: a person's hold, which stands till lifted). A `soft` one is an intent: it keeps nobody off.",
@@ -384,6 +393,13 @@ const OPS: Record<string, Record<string, Op>> = {
     body: obj({ resolve: loose("{path: {line: \"main\" | \"branch\" | \"both\" | \"both:branch-first\" | {text}}}"), build_ok: bool() }),
     ok: obj({ status: str("merged or open"), merged: arr(obj({ path: str(), rev: int(), ops: int(), deleted: bool() })), conflicts: arr(loose("{path, conflicts}")), regenerated: arr(loose("{paths, command, cwd?, note?}")),
       mergiraf: arr(str("a file Mergiraf settled after Mervin left it cards")), took: arr(obj({ branch: str(), status: str("updated, cards or failed"), files: arr(str()), pushed: bool("pushed upstream too"), error: str() })) }) } },
+  [`${repo}/branches/{branch}/land`]: { post: { id: "land", summary: "Land a branch: merge it, or get the one conflict left and why each side changed it (the crew)", tag: "Branches", risky: true,
+    description: "merge_branch, plus what an agent needs to settle what's left. Each conflict's kept agent `answer` that passed suggest_resolution's check (it parses, and the tests pass where test_merges is on) is taken on its own; an answer that failed never lands. "
+      + "What's still in the way comes back as one `conflict`: {path, line, base, main, branch, choices, suggestion?, answer?, leftover, note?, why: {main: [main's commit messages since the branch forked], branch: {by, task?, commits?}}}, and `left`, how many more there are. "
+      + "`leftover` says who settles it: ai (an agent, checked as suggest_resolution is), person, or ci. Settle it in `resolve` as merge_branch takes it and land again; a {text} you write is checked by the merge itself (the build, and the tests under `check: tests`). "
+      + "A branch held for another reason (checks, build files, a stack) answers as merge_branch does.",
+    body: obj({ resolve: loose("{path: {line: \"main\" | \"branch\" | \"both\" | \"both:branch-first\" | {text}}}"), build_ok: bool() }),
+    ok: obj({ status: str("merged"), merged: arr(obj({ path: str(), rev: int(), ops: int(), deleted: bool() })), took: arr(loose("as merge_branch")) }) } },
   [`${repo}/merges`]: { post: { id: "merge_clean_branches", summary: "Merge every open branch that merges clean, oldest first (the crew)", tag: "Branches", risky: true,
     description: "Each branch merges by line id against main as the one before it left it, so branches that change different lines (a README edit, a package.json bump) all land. " +
       "One with a conflict, failing or waiting required checks, or build files without `build_ok` stays open and is listed in `skipped` with why; merge it alone with merge_branch. " +

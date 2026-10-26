@@ -396,6 +396,7 @@
   .cg-pick { display: grid; gap: 6px; margin: 4px 12px 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--canvas); font-size: 12px; }
   .cg-pick .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; } .cg-pick .btn { white-space: nowrap; } .cg-pick select { max-width: 14em; }
   .cg-pick .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cg-pick .cg-note { margin: 0; max-height: 9em; overflow: auto; white-space: pre-wrap; font: 11px/1.4 var(--mono); color: var(--muted); }
   .gm-key { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 6px 12px; border-top: 1px solid var(--border); font-size: 12px; }
   .gm-key span { display: inline-flex; align-items: center; gap: 6px; } .gm-key svg { width: 28px; height: 6px; overflow: visible; }
   .gm-key path { fill: none; stroke: var(--brown); stroke-width: 1.6; stroke-linecap: round; } .gm-key path.fork { stroke-dasharray: 2 5; } .gm-key path.hot { stroke: var(--accent); }
@@ -2616,6 +2617,11 @@ async function gitMap(c) {
       <div class="gitpic-slot" data-pic="${esc(JSON.stringify(["revert", { short }]))}">${gitPic(["revert", { short }])}</div>` : `<span class="muted">The crew can revert it or cherry-pick it.</span>`}`;
     box.hidden = false;
     icons();
+    // Its why, when an agent's run left one: the git note under refs/notes/codesplitter (#1580).
+    box.dataset.hash = hash;
+    api(`/repos/${owner}/${repo}/commits/${hash}/note`).then(({ note }) => {
+      if (note && box.dataset.hash === hash && !box.hidden) box.querySelector(".row").insertAdjacentHTML("afterend", `<pre class="cg-note" title="this commit's git note: git log --notes=codesplitter">${esc(note.trim())}</pre>`);
+    }, () => {});
     box.querySelector("#cg-onto")?.addEventListener("change", (e) => {
       const b = box.querySelector('[data-cg="pick"]'), pic = JSON.stringify(["pick", { short, onto: e.target.value }]);
       b.dataset.pic = pic; box.querySelector(".gitpic-slot").dataset.pic = pic; box.querySelector(".gitpic-slot").innerHTML = gitPic(pic);

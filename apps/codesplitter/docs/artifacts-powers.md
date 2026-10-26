@@ -53,6 +53,13 @@ Ideas, roughly by payoff. Each says what we do today.
 
 ## What we use now, and what we don't
 
-Used: `create`, `fork` (digs, levels, archives, fresh start), `import`-style forks of public repos, `createToken` for downloads, and the repo as the clone-able source of truth ([agent-takeover.md](agent-takeover.md)).
+Used: `create`, `fork` (digs, levels, archives, fresh start), `import`-style forks of public repos, `createToken` for downloads and share links (a clone command whose read token lasts a day), git notes on agents' commits (`src/why.ts`), a queue consumer for push events that logs pushes from outside (`src/push-events.ts`, behind `CODESPLITTER_PUSH_EVENTS=1`), and the repo as the clone-able source of truth ([agent-takeover.md](agent-takeover.md)).
 
-Not used yet: git notes, event subscriptions, Workers Builds and `@cloudflare/ci`, ArtifactFS, per-session repos, namespace jurisdictions, read tokens for sharing, token revocation as a control. Ideas 1 and 2 are the smallest steps and unlock most of the rest.
+Not used yet: Workers Builds and `@cloudflare/ci`, ArtifactFS, per-session repos, namespace jurisdictions, token revocation as a control.
+
+What the docs said when #1580 was built (2026-10-25), for whoever takes the rest:
+
+- `triggers.events` (`cf.artifacts.repo.pushed`) in the Wrangler config starts a Workflow only, and may filter by namespace alone. A Queue gets events from an event subscription instead (`wrangler queues subscription create <queue> --source artifacts.repo --events pushed ...`), which the docs scope to one repo (`namespace` and `repo_name`). Alchemy makes neither, so the subscription is made by hand.
+- A pushed event is `{type, source: {type, namespace, repoName}, payload: {ref, before, after, commits, totalCommitsCount, commitsTruncated}, metadata}`; each commit has `id`, `message`, `messageTruncated`, `author`, `committer`, `parents`.
+- A repo handle has `revokeToken(tokenOrId)` and `listTokens()`. `createToken` answers `plaintext` and `expiresAt`, with no id documented. Agents hold no Artifacts tokens yet, so there's nothing to revoke at a budget cap until they get scoped tokens.
+- A namespace is made by the REST API (`POST /accounts/:id/artifacts/namespaces {namespace, jurisdiction?: "eu" | "us"}`), fixed for good. A Worker binding names one namespace, so a namespace per org needs either a binding each or the REST API with an account token in the Worker.

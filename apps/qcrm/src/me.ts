@@ -3,10 +3,10 @@
 //   GET    /api/me                          {user, orgs: [{id, name, role}], superAdmin}
 //   DELETE /api/me?confirm=<email>          the account, the orgs it owns and every row of them
 //   GET    /api/orgs/:org/export            every row of the org as one JSON (owner+)
-//   GET    /api/orgs/:org/audit?limit=      who did what to the org (manager+)
+//   GET    /api/orgs/:org/audit?actor=&action=&since=&cursor=&limit=   who did what to the org, newest first (manager+): {items, next}
 
 import type { User } from "./auth.ts";
-import { error, json, parseJson, type Env } from "./env.ts";
+import { b64url, error, json, parseJson, type Env } from "./env.ts";
 import { deleteOrg, ensureOwnOrg, listOrgs, orgRow, superAdmin, type Ctx } from "./orgs.ts";
 
 export async function meRoutes(req: Request, env: Env, url: URL, user: User): Promise<Response | null> {
@@ -44,15 +44,34 @@ export async function exportRoutes({ req, env, org, p, audit }: Ctx): Promise<Re
     return json(out, 200, { "content-disposition": `attachment; filename="qcrm-${org}.json"` });
   }
   if (p[0] === "audit") {
-    const limit = Math.min(500, Math.max(1, Number(new URL(req.url).searchParams.get("limit")) || 100));
+    const q = new URL(req.url).searchParams;
+    const limit = Math.min(500, Math.max(1, Number(q.get("limit")) || 100));
+    const where = ["a.org_id = ?"], args: unknown[] = [org];
+    const actor = q.get("actor"), action = q.get("action"), since = q.get("since");
+    if (actor) { where.push("(a.actor_user_id = ? OR lower(au.email) = lower(?))"); args.push(actor, actor); }
+    if (action) { where.push("(a.action = ? OR a.action LIKE ?)"); args.push(action, `${action}.%`); }
+    if (since) {
+      const t = /^\d+$/.test(since) ? Number(since) : Date.parse(since);
+      if (!Number.isFinite(t)) return error(400, "since is a millisecond timestamp or a date");
+      where.push("a.at >= ?"); args.push(t);
+    }
+    const cur = q.get("cursor");
+    if (cur) {
+      let at: unknown, id: unknown;
+      try { [at, id] = JSON.parse(atob(cur.replace(/-/g, "+").replace(/_/g, "/"))); } catch { /* falls through to the check */ }
+      if (!Number.isInteger(at) || typeof id !== "string") return error(400, "cursor is the next value of the page before");
+      where.push("(a.at < ? OR (a.at = ? AND a.id < ?))"); args.push(at, at, id);
+    }
     const { results } = await env.DB.prepare(`SELECT a.id, a.actor_user_id, au.name AS actor_name, au.email AS actor_email, a.action, a.target,
       CASE substr(a.action, 1, instr(a.action, '.') - 1)
         WHEN 'member' THEN (SELECT coalesce(u.name, u.email) FROM "user" u WHERE u.id = a.target)
         WHEN 'key' THEN (SELECT k.name FROM api_keys k WHERE k.id = a.target)
         WHEN 'webhook' THEN (SELECT w.url FROM webhooks w WHERE w.id = a.target) END AS target_name,
       substr(a.action, 1, instr(a.action || '.', '.') - 1) AS target_type, a.at, a.detail
-      FROM audit a LEFT JOIN "user" au ON au.id = a.actor_user_id WHERE a.org_id = ? ORDER BY a.at DESC LIMIT ?`).bind(org, limit).all();
-    return json(results.map((r) => ({ ...r, detail: parseJson(r.detail, null) })));
+      FROM audit a LEFT JOIN "user" au ON au.id = a.actor_user_id WHERE ${where.join(" AND ")} ORDER BY a.at DESC, a.id DESC LIMIT ?`).bind(...args, limit + 1).all();
+    const page = results.slice(0, limit), last = page[limit - 1];
+    const next = results.length > limit && last ? b64url(new TextEncoder().encode(JSON.stringify([last.at, last.id]))) : null;
+    return json({ items: page.map((r) => ({ ...r, detail: parseJson(r.detail, null) })), next });
   }
   return null;
 }
