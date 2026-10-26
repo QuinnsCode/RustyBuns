@@ -34,7 +34,7 @@ Still to do: a kicker's throw distance fixing where the next beat goes (today th
 
 ## Mobile today
 
-A left-thumb stick (steer, throttle) with hold buttons for boost and manual appears once a finger touches the page (`src/touch.ts`); the right half of the screen is the flick pad (`src/gesture.ts`) and the canvas has `touch-action: none`. Still desktop-shaped: the HUD, the parts picker and the key legend, which a phone does not need.
+A left-thumb stick (steer, throttle) with hold buttons for boost and manual appears once a finger touches the page (`src/touch.ts`); the other half of the screen is the flick pad (`src/gesture.ts`), laid out by a flick profile and drawn as footprint grip tape (`src/flick.ts`, `src/griptape.ts`) and the canvas has `touch-action: none`. Still desktop-shaped: the HUD, the parts picker and the key legend, which a phone does not need.
 
 ## Chased by something
 
