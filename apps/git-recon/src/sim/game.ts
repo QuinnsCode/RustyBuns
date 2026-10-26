@@ -154,6 +154,9 @@ export const BARREL_HP = 30, BARREL_RADIUS = 0.45, BARREL_HEIGHT = 1.1, BARRELS 
 /** A barrel's blast, and a wrecked vehicle's. */
 export const BARREL_BLAST: Weapon = { ...WEAPONS.push, damage: 110, splash: 5.5, knock: 15, wreck: 1.2 };
 export const VEHICLE_BLAST: Weapon = { ...WEAPONS.push, damage: 120, splash: 7, knock: 18, wreck: 1.5 };
+/** A strike a set piece calls in on you (director.ts): it throws you a long way and leaves you STRIKE_LEAVES HP. */
+export const STRIKE_BLAST: Weapon = { ...WEAPONS.push, damage: 140, splash: 7, knock: 26, wreck: 1.5 };
+export const STRIKE_LEAVES = 30;
 
 /** Ground steeper than this (rise over run) slides you back down. */
 export const SLIDE = 0.75;
@@ -349,6 +352,8 @@ export class Game {
   private trailT = 0;
   /** In a battle, where each soldier has been over the last MAX_REWIND seconds: [time, x, y, z, height] per tick. */
   private past = new Map<number, number[]>();
+  /** A soldier a strike throws but doesn't finish (-1: nobody). */
+  private spared = -1;
 
   constructor(map: CodeMap, seed = 1, mission: Mission = { kind: "clear" }, mode?: Mode, role: RoleId | null = null) {
     // Files get knocked down: the game's own copies, so the map it was given stays whole.
@@ -1450,6 +1455,7 @@ export class Game {
     const ride = s.vehicle >= 0 ? this.vehicles.find((v) => v.id === s.vehicle) : undefined;
     if (ride) return this.hurtVehicle(ride, damage, by);
     // The shield takes it first; what's left over comes off the HP.
+    if (s.id === this.spared) damage = Math.min(damage, Math.max(0, s.hp + s.shield - STRIKE_LEAVES));
     const soak = Math.min(s.shield, damage);
     s.shieldT = 0, s.shield -= soak;
     if (soak > 0 && s.shield <= 0) this.events.push({ kind: "shield", id: s.id, state: "broke" });
@@ -1510,13 +1516,39 @@ export class Game {
     this.cleared[ci] = true;
     // A taken yard leaves its crates behind: health and ammo.
     const c = this.map.compounds[ci]!;
-    for (const [kind, dx] of [["health", -1.5], ["ammo", 1.5]] as const) {
-      this.pickups.push({ id: this.nextId++, kind, x: c.x + dx, y: this.ground(c.x + dx, c.z, Infinity), z: c.z });
-    }
+    for (const [kind, dx] of [["health", -1.5], ["ammo", 1.5]] as const) this.crate(kind, c.x + dx, c.z);
     this.events.push({ kind: "cleared", compound: ci });
     // Every compound taken: the repo is merged, whatever the mission, unless a commit still has to get home.
     // A battle on downs goes on.
     if (this.cleared.every(Boolean) && this.objective.kind !== "carry" && (!this.mode || this.mode === "coop")) this.win();
+  }
+
+  /** A crate dropped on the ground at (x, z). */
+  crate(kind: PickupKind, x: number, z: number) {
+    this.pickups.push({ id: this.nextId++, kind, x, y: this.ground(x, z, Infinity), z });
+  }
+
+  /** A strike landing at (x, y, z): a launcher's blast from nobody, which leaves `spare` standing however near it lands. */
+  strike(x: number, y: number, z: number, spare: number) {
+    this.spared = spare;
+    this.blast(x, y, z, STRIKE_BLAST, -1, null);
+    this.spared = -1;
+  }
+
+  /**
+   * Guards sent in for compound ci, n of them round (x, z), already hunting toward the player there:
+   * they count as its guards, so it isn't merged until they're down too.
+   */
+  reinforce(ci: number, n: number, x: number, z: number): Soldier[] {
+    const c = this.map.compounds[ci]!, you = this.you(), out: Soldier[] = [];
+    for (let g = 0; g < n; g++) {
+      const a = (g / n) * Math.PI * 2 + this.rand(), gx = x + Math.cos(a) * 2, gz = z + Math.sin(a) * 2;
+      const s = this.soldier("conflict", `${c.folder} reinforcement`, gx, gz, Math.atan2(gx - you.x, gz - you.z), ci);
+      // They come in already looking: a beat before they react, and the hunt points them at you.
+      Object.assign(s.brain!, { role: g % 2 ? "flank" : "hold", side: g % 4 === 1 ? 1 : -1, alert: true, wait: 0.8 + this.rand() * 0.5, heard: { x: you.x, z: you.z }, hunt: HUNT_SECONDS });
+      this.soldiers.push(s), out.push(s);
+    }
+    return out;
   }
 
   private alarm(ci: number) {

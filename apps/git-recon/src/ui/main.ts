@@ -10,18 +10,19 @@ import { groundAt, parsePlace } from "../levels/place.ts";
 import type { Block, RepoSnapshot } from "../sim/codemap.ts";
 import { addWin, winKey } from "../sim/heads.ts";
 import type { ZoneData } from "@rustybuns/terrain";
-import { BATTLE_SECONDS, CHUTE_MIN, FFA_SCORE, Game, LEAN_REACH, scopeSway, SHIELD_DELAY, stanceOf, TEAM_SCORE, type GameEvent, type Input, type Mode } from "../sim/game.ts";
+import { BATTLE_SECONDS, CHUTE_MIN, FFA_SCORE, Game, LEAN_REACH, scopeSway, SHIELD_DELAY, stanceOf, TEAM_SCORE, type GameEvent, type Input, type Mode, type Waypoint } from "../sim/game.ts";
 import { Mirror } from "../net/mirror.ts";
 import { levelOf, NEXT_ROUND } from "../net/room.ts";
 import type { FromWorld, RosterEntry } from "../net/wire.ts";
 import { briefing, missionFor, OVERRUN } from "../sim/missions.ts";
 import { CAMPAIGN, chapterOf, nextChapter, opened } from "../sim/campaign.ts";
+import { Director, type Stage } from "../sim/director.ts";
 import { createElement, Lock } from "lucide";
 import { KEYS, keyLabel, WEAPONS, type WeaponId } from "../sim/weapons.ts";
 import { isRole, nextRole, ROLE_ORDER, ROLES, type RoleId } from "../sim/roles.ts";
 import { STREAKS, VEHICLES, vehicleName } from "../sim/vehicles.ts";
 import { weaponIcon } from "./icons.ts";
-import { FIELD, place, play, VOICES } from "./audio.ts";
+import { FIELD, muffle, place, play, VOICES } from "./audio.ts";
 import { BUILDS, type BuildId } from "./figure.ts";
 import { Battle } from "./net.ts";
 import { headById, headCanvas, HEADS, isOpen } from "./heads.ts";
@@ -56,7 +57,7 @@ const lock = () => void (touch.on || Promise.resolve(canvas.requestPointerLock?.
 
 /** A battle being played: its socket, the page's mirror of it, and the LAN address and passphrase if this machine hosts it. */
 interface Net { battle: Battle; mirror: Mirror; hosting: string | null; roster: RosterEntry[] }
-let current: { def: LevelDef; repo: RepoSnapshot; game: Game; world: World; started: number; net?: Net; ended?: boolean } | null = null;
+let current: { def: LevelDef; repo: RepoSnapshot; game: Game; world: World; director: Director; started: number; net?: Net; ended?: boolean } | null = null;
 /** A repo loaded from GitHub to fight instead of each level's own. */
 let chosen: RepoSnapshot | null = null;
 
@@ -229,7 +230,10 @@ function start(def: LevelDef) {
 /** Into a level: the scene, the camera behind you, the HUD. On your own or in a battle (net). */
 function begin(def: LevelDef, repo: RepoSnapshot, game: Game, brief: string, net?: Net) {
   const world = buildWorld(game.map, { head: me.head, build: me.build }, repo.text);
-  current = { def, repo, game, world, started: performance.now(), net };
+  // The chapter's set pieces, on your own; a battle has none.
+  const director = new Director(game, net ? undefined : CAMPAIGN[chapterOf(def.id)]);
+  current = { def, repo, game, world, director, started: performance.now(), net };
+  undaze();
   if (net) showLooks(net);
   const you = game.you();
   look.yaw = you.yaw, look.pitch = -0.05, prone = false, shake = 0, cam.ready = false;
@@ -251,6 +255,7 @@ function begin(def: LevelDef, repo: RepoSnapshot, game: Game, brief: string, net
 function toMenu() {
   const net = current?.net;
   current = null;
+  undaze();
   if (net) leaveBattle(net);
   document.exitPointerLock?.();
   $("menu").hidden = false, $("hud").hidden = true, $("results").hidden = true, $("board").hidden = true;
@@ -561,6 +566,38 @@ function placeCamera(game: Game, dt: number) {
   $("crosshair").classList.toggle("scope", sniping);
 }
 
+/** A set piece's camera (director.ts) over yours, by how much of the view it has. */
+const shotAt = new THREE.Vector3(), shotTo = new THREE.Vector3(), shotQ = new THREE.Quaternion(), shotM = new THREE.Matrix4();
+function frameShot(shot: Stage["shot"]) {
+  if (!shot || shot.mix <= 0) return;
+  shotAt.set(shot.from.x, shot.from.y, shot.from.z);
+  shotM.lookAt(shotAt, shotTo.set(shot.at.x, shot.at.y, shot.at.z), camera.up);
+  shotQ.setFromRotationMatrix(shotM);
+  camera.position.lerp(shotAt, shot.mix);
+  camera.quaternion.slerp(shotQ, shot.mix);
+}
+
+/** A set piece's overlay: letterbox bars, the radio's line, a title card, and being knocked silly (blurred, washed out, deaf). */
+let dazed = 0;
+function cinema(st: Stage) {
+  $("hud").style.setProperty("--bars", st.bars.toFixed(3));
+  // With the bars in, the shot is the beat's: the HUD's lists and markers step aside.
+  $("hud").classList.toggle("cine-on", st.bars > 0.5);
+  $("caption").hidden = !st.caption;
+  $("caption").textContent = st.caption ?? "";
+  $("title-card").hidden = !st.title;
+  if (st.title) $("title-card").querySelector("b")!.textContent = st.title.text, ($("title-card").querySelector("small")!.textContent = st.title.sub);
+  if (Math.abs(st.daze - dazed) < 0.01 && (st.daze > 0 || dazed === 0)) return;
+  dazed = st.daze;
+  canvas.style.filter = dazed > 0 ? `blur(${(dazed * 4).toFixed(1)}px) saturate(${(1 - dazed * 0.8).toFixed(2)}) contrast(${(1 + dazed * 0.15).toFixed(2)})` : "";
+  muffle(dazed);
+}
+function undaze() {
+  dazed = 0, canvas.style.filter = "", muffle(0);
+  $("hud").style.setProperty("--bars", "0");
+  $("caption").hidden = $("title-card").hidden = true;
+}
+
 /** An orange arc round the crosshair, pointing at whoever just hit you. */
 function hitFrom(game: Game, by: number) {
   const you = game.you(), s = game.soldiers[by];
@@ -593,8 +630,18 @@ function mark(kind: (typeof MARKS)[number]) {
  * behind the camera it's pinned to the edge with an arrow turned toward the point. One element, reused.
  */
 const wp = new THREE.Vector3();
-function waypoint(game: Game) {
-  const el = $("waypoint"), to = game.waypoint();
+/** The marker tags: #waypoint, and copies of it when a set piece offers more than one place to go. */
+const tags: HTMLElement[] = [];
+function waypoints(game: Game, offered: Waypoint[]) {
+  const list = offered.length ? offered : [game.waypoint()];
+  while (tags.length < list.length) {
+    const el = tags.length ? ($("waypoint").cloneNode(true) as HTMLElement) : $("waypoint");
+    if (tags.length) el.removeAttribute("id"), $("hud").append(el);
+    tags.push(el);
+  }
+  tags.forEach((el, i) => waypoint(game, el, list[i] ?? null));
+}
+function waypoint(game: Game, el: HTMLElement, to: Waypoint | null) {
   if (!to) return void (el.hidden = true);
   const you = game.you();
   const dist = Math.hypot(to.x - you.x, to.z - you.z);
@@ -780,7 +827,7 @@ function frame(now: number) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   if (!current) return;
-  const { game, world, net } = current;
+  const { game, world, director, net } = current;
   const you = game.you(), me = game.me;
   // A finger's drag on the view turns the camera; its taps are the keys' one-shots.
   const turn = touch.look();
@@ -791,6 +838,7 @@ function frame(now: number) {
   if (touch.tap.delete("next")) cycle(1);
   if (touch.tap.delete("leave")) return toMenu();
   placeCamera(game, dt);
+  frameShot(director.stage.shot);
   const aim = aimPoint(game, world);
   const crouch = keys.has("KeyC") || keys.has("ControlLeft") || touch.crouch;
   const firing = (fire && document.pointerLockElement === canvas) || touch.fire;
@@ -819,7 +867,12 @@ function frame(now: number) {
     events = net.mirror.take();
     if (net.roster !== net.mirror.roster) showLooks(net);
     if (!$("board").hidden) board(game, net);
-  } else events = game.step(dt, input);
+  } else {
+    // A set piece can hold some of your input and slow the game down.
+    events = game.step(dt * director.scale, director.steer(input));
+    director.step(dt, events);
+    for (const cue of director.cues) play(FIELD[cue], 1, 0, cue === "ring");
+  }
   for (const e of events) {
     sound(game, e);
     world.event(game, e);
@@ -860,9 +913,12 @@ function frame(now: number) {
       if (!e.shield) $("hud").classList.add("hurt"), setTimeout(() => $("hud").classList.remove("hurt"), 120);
     } else if (e.kind === "shield" && e.id === me && e.state === "broke") feed("shield down", true);
   }
-  world.sync(game, dt);
+  world.sync(game, dt * director.scale);
+  world.stage(director.stage, game.time, dt);
   hud(game, aim.block);
-  waypoint(game);
+  if (director.stage.prompt) $("prompt").textContent = director.stage.prompt;
+  cinema(director.stage);
+  waypoints(game, director.markers);
   renderer.render(world.scene, camera);
   // Once per ending: a battle's can arrive between frames, with a snapshot.
   if (game.status !== "playing" && !current.ended) current.ended = true, results(game);

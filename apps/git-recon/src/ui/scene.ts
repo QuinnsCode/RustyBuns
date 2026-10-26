@@ -15,6 +15,7 @@ import { roadster as sharedRoadster, type RoadsterLook } from "@rustybuns/models
 import * as THREE from "three";
 import { ORCHARD_HEIGHT, structureOf, WATCH_HEIGHT, type CodeMap, type RepoSnapshot, type Structure } from "../sim/codemap.ts";
 import { contourStep } from "@rustybuns/terrain";
+import type { Stage } from "../sim/director.ts";
 import type { Game, GameEvent } from "../sim/game.ts";
 import { CROUCH_HEIGHT, HEIGHT, PRONE_HEIGHT, ROLL_TIME, type Soldier } from "../sim/game.ts";
 import { WEAPONS } from "../sim/weapons.ts";
@@ -39,6 +40,8 @@ export interface World {
   sync(game: Game, dt: number): void;
   /** Draws what an event leaves behind: a blast, chips, a muzzle flash, a file coming down. */
   event(game: Game, e: GameEvent): void;
+  /** Draws a set piece's props (director.ts): the helicopter bringing you in, your gun knocked out of your hands. */
+  stage(stage: Stage, time: number, dt: number): void;
 }
 
 function label(text: string, sub: string): THREE.Sprite {
@@ -673,6 +676,13 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     return g;
   }
   const rides = new Map<number, THREE.Group>();
+  // A set piece's props: the insertion helicopter, made when it first shows, and your dropped gun,
+  // a rifle in ink with an orange stock, turning above the ground so it's easy to find.
+  let insertion: THREE.Group | null = null;
+  const dropped = new THREE.Group();
+  dropped.add(piece(new THREE.BoxGeometry(0.12, 0.16, 0.8), inkMat, 0, 0, 0, false), piece(new THREE.CylinderGeometry(0.03, 0.03, 0.6, 8).rotateX(Math.PI / 2), inkMat, 0, 0.03, -0.65, false), piece(new THREE.BoxGeometry(0.1, 0.2, 0.32), orangeMat, 0, -0.04, 0.5));
+  dropped.visible = false;
+  scene.add(dropped);
 
   const tmp = new THREE.Vector3();
   return {
@@ -896,6 +906,20 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
       for (let i = chips.length - 1; i >= 0; i--) if (chips[i]!.t > chips[i]!.life + 0.4) scene.remove(chips[i]!.m), chips.splice(i, 1);
       for (const f of flashes) f.t += dt, f.m.scale.setScalar(f.size * (0.6 + (f.t / f.life) * 0.8));
       for (let i = flashes.length - 1; i >= 0; i--) if (flashes[i]!.t > flashes[i]!.life) scene.remove(flashes[i]!.m), flashes[i]!.m.material.dispose(), flashes.splice(i, 1);
+    },
+    stage(st, time, dt) {
+      if (st.heli && !insertion) insertion = heli(), insertion.rotation.order = "YXZ", scene.add(insertion);
+      if (insertion) insertion.visible = !!st.heli;
+      if (st.heli && insertion) {
+        insertion.position.set(st.heli.x, st.heli.y, st.heli.z);
+        insertion.rotation.set(0, st.heli.yaw, st.heli.roll);
+        const u = insertion.userData;
+        (u.body as THREE.Object3D).rotation.x = -0.12;
+        (u.rotor as THREE.Object3D).rotation.y += 34 * dt;
+        (u.tail as THREE.Object3D).rotation.x += 50 * dt;
+      }
+      dropped.visible = !!st.gun;
+      if (st.gun) dropped.position.set(st.gun.x, st.gun.y + 0.35 + Math.sin(time * 3) * 0.08, st.gun.z), (dropped.rotation.y = time * 1.5);
     },
     event(game, e) {
       if (e.kind === "boom") {
