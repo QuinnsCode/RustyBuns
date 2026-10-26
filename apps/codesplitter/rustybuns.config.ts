@@ -120,6 +120,8 @@ export default defineConfig({
     ARTIFACTS: { type: "artifacts", namespace: "codesplitters" },
     // Where they move to (src/artifact-move.ts): copy into it, switch ARTIFACTS to "codesplitter", drop this.
     ARTIFACTS_NEXT: { type: "artifacts", namespace: "codesplitter" },
+    // EU storage (#2301): once the namespace exists (REST only: POST /accounts/:id/artifacts/namespaces {namespace, jurisdiction: "eu"}),
+    // bind it here as ARTIFACTS_EU and repos made with region "eu" keep their git in it. Unbound, "eu" is refused.
     // Levels too big for an Artifacts repo even from the tarball, as ~8 MB chunks of their text files
     // (src/chunks.ts), read through the Cache API. None so far: Bun and Alchemy fit in Artifacts
     // from the tarball (#356), so the bucket is empty. No desktop twin yet; the desktop's local

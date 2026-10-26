@@ -14,7 +14,7 @@
 //   GET    /api/repos/:o/:r/fresh          where it stands; takes a step while it's running
 //   DELETE /api/repos/:o/:r/fresh?artifact= (owner) delete git it moved off
 
-import { access, flushPending, handleFor, MAX_BYTES, MAX_LINES, readTree } from "./archive.ts";
+import { access, artifactsFor, flushPending, handleFor, MAX_BYTES, MAX_LINES, readTree } from "./archive.ts";
 import { copyObjects, GIT_BOT, rawObj, type Obj } from "./git.ts";
 import { digCap } from "./github.ts";
 import { usage } from "./limits.ts";
@@ -107,12 +107,13 @@ async function start(env: Env, owner: string, repo: string): Promise<Fresh | { e
     return (await row(env, owner, repo))!;
   }
   const h = await handleFor(env, owner, repo);
-  if (!h || !env.ARTIFACTS) return { error: "this repo has no git to move", status: 409 };
+  const r = await repoRow(env, owner, repo, "artifact, namespace");
+  const arts = artifactsFor(env, r?.namespace);
+  if (!h || !arts) return { error: "this repo has no git to move", status: 409 };
   const [tip] = await h.handle.log({ ref: h.branch, limit: 1 });
   if (!tip) return { error: "nothing in git yet", status: 409 };
-  const r = await repoRow(env, owner, repo, "artifact");
   const previous = r!.artifact as string;
-  const art = await env.ARTIFACTS.create(`${previous.replace(/\.f[0-9a-z]+$/, "")}.f${Date.now().toString(36)}`, { description: `${owner}/${repo}, started fresh`, setDefaultBranch: h.branch });
+  const art = await arts.create(`${previous.replace(/\.f[0-9a-z]+$/, "")}.f${Date.now().toString(36)}`, { description: `${owner}/${repo}, started fresh`, setDefaultBranch: h.branch });
   await env.DB.batch([
     env.DB.prepare(`INSERT OR REPLACE INTO fresh_starts (owner, repo, state, artifact, remote, previous, tip, tree, queue, seq, started_at)
       VALUES (?, ?, 'walking', ?, ?, ?, ?, ?, ?, 1, ?)`).bind(owner, repo, art.name, art.remote, previous, tip.hash, tip.treeHash, JSON.stringify([[tip.treeHash, TREES]]), Date.now()),
@@ -150,7 +151,8 @@ export async function advanceAll(env: Env, until = 0) {
 }
 
 async function step(env: Env, f: Fresh) {
-  const old = await env.ARTIFACTS!.get(f.previous);
+  const arts = artifactsFor(env, (await repoRow(env, f.owner, f.repo, "namespace"))?.namespace)!;
+  const old = await arts.get(f.previous);
   const tree = async (hash: string) => {
     const t = await readTree(env, old, hash);
     if (!t) throw new Error(`tree ${hash} is missing from ${f.previous}`);
@@ -203,7 +205,7 @@ async function step(env: Env, f: Fresh) {
     upTo = seq;
   }
   const last = f.done + objs.length === f.total;
-  const h = await env.ARTIFACTS!.get(f.artifact);
+  const h = await arts.get(f.artifact);
   const a = await access(h, f.remote, "write", 300);
   const branch = (await h.info().catch(() => null))?.defaultBranch ?? "main";
   const r = await copyObjects(a.remote, a.token, objs, { branch, parent: f.stage, author: GIT_BOT },

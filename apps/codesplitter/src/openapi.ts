@@ -127,7 +127,7 @@ const OPS: Record<string, Record<string, Op>> = {
     body: obj({ name: str("your repo's name; the level's slug by default") }), ok: obj({ owner: str(), name: str() }), status: 201 } },
 
   "/repos": { post: { id: "create_repo", summary: "Make an empty repo", tag: "Repos",
-    body: obj({ name: str("lowercase letters and digits, single dashes between"), visibility: { type: "string", enum: ["public", "private"] } }, ["name"]),
+    body: obj({ name: str("lowercase letters and digits, single dashes between"), visibility: { type: "string", enum: ["public", "private"] }, region: { type: "string", enum: ["eu"], description: "keep its git in the EU Artifacts namespace; fixed at creation (501 when this codeSplitter has none)" } }, ["name"]),
     ok: obj({ owner: str(), name: str(), visibility: str() }), status: 201 } },
   [repo]: {
     get: { id: "get_repo", summary: "A repo: visibility, crew, whether you can write, and a git clone command with an hour-long read token", tag: "Repos", open: true,
