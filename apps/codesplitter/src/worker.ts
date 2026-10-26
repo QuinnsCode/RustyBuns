@@ -95,6 +95,7 @@ import {
   runQueuedAgents,
   type AgentMessage,
 } from "./agent-routes.ts";
+import { editRoutes } from "./edit.ts";
 import {
   depRoutes,
   scheduledDoctor,
@@ -402,6 +403,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (cut) return cut;
   const agents = await agentRoutes(req, env, p, url, user, (o, r) => access(env, o, r, user), (r) => app.fetch(r, env));
   if (agents) return agents;
+  const edit = await editRoutes(req, p, url, user, (r) => app.fetch(r, env));
+  if (edit) return edit;
   const deps = await depRoutes(req, env, p, url, user, (r) => app.fetch(r, env));
   if (deps) return deps;
   const watch = await watchRoutes(req, env, p, user);
