@@ -1,7 +1,7 @@
 // Campers and rangers. A camper wears their Look (jacket, pants, skin, hat, pack, and a hair style and colour
 // that follow from those); a ranger wears the campaign hat and duty belt and carries a flashlight.
 // Parts hang on real joints (hips, knees, shoulders, elbows, head), so walking and crouching bend like a
-// person. The parts are modelled in Blender (blender/characters.py -> public/models/characters.glb) and
+// person. The parts are built by scripts/characters.ts (-> public/models/characters.glb) and
 // recoloured per Look; until that file has loaded (or if it can't), the same joints wear parts built from
 // primitives, and every character made meanwhile changes into the modelled parts once it arrives.
 
@@ -502,7 +502,7 @@ export function makeBigfoot(): Character {
 
 // ---- The modelled parts -------------------------------------------------------------------------------------
 
-/** A part from blender/characters.py, split by material slot ("shirt", "skin", ...). Its origin is its joint. */
+/** A part from scripts/characters.ts, split by material slot ("shirt", "skin", ...). Its origin is its joint. */
 type Part = { slot: string; geo: THREE.BufferGeometry }[];
 type Joint = "upper" | "head" | "legs0" | "legs1" | "knees0" | "knees1" | "arms0" | "arms1" | "elbows0" | "elbows1";
 type Outfit = Record<Joint, string[]>;
@@ -622,7 +622,7 @@ const SPECIAL: Record<string, () => THREE.Material> = {
 const HAIR_STYLES: [bare: string, under: string][] = [["hair", "hairHat"], ["hairCurly", "hairHat"], ["hairLong", "hairHatLong"]];
 const hairStyle = (look: Look) => HAIR_STYLES[(look.skin + look.pants * 2 + look.shirt) % HAIR_STYLES.length];
 
-/** Which parts hang on which joint: the same table blender/characters.py renders its previews from. */
+/** Which parts hang on which joint: as scripts/characters.ts builds the parts for. */
 function outfit(ranger: boolean, look: Look): Outfit {
   const top = ranger ? "rangerHat" : look.hat;
   const [bare, under] = hairStyle(look);
