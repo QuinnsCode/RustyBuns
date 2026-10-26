@@ -17,16 +17,16 @@
     "desktop:build": "rustybuns build desktop --check"
   },
   "dependencies": {
-    "better-auth": "1.7.7",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "react-server-dom-webpack": "19.2.8",
-    "rwsdk": "1.7.4"
+    "better-auth": "1.7.12",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-server-dom-webpack": "19.3.1",
+    "rwsdk": "1.7.5"
   },
   "devDependencies": {
     "@alchemy.run/frontend-frameworks": "2.0.0-beta.77",
-    "@cloudflare/vite-plugin": "1.60.2",
-    "@cloudflare/workers-types": "5.20260801.1",
+    "@cloudflare/vite-plugin": "1.65.0",
+    "@cloudflare/workers-types": "5.20261023.1",
     "@effect/platform-bun": "4.0.0-rc.112",
     "@effect/platform-node": "4.0.0-rc.112",
     "@rustybuns/cli": "workspace:*",
@@ -36,7 +36,7 @@
     "@types/react-dom": "19",
     "alchemy": "2.0.0-beta.77",
     "effect": "4.0.0-rc.112",
-    "vite": "8.3.3",
-    "wrangler": "4.141.0"
+    "vite": "8.3.5",
+    "wrangler": "4.152.0"
   }
 }

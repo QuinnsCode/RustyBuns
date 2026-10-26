@@ -9,6 +9,6 @@
     "serve": "bun src/serve.ts"
   },
   "devDependencies": {
-    "wrangler": "4.141.0"
+    "wrangler": "4.152.0"
   }
 }
