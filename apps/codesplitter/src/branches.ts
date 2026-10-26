@@ -1118,9 +1118,11 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   // GET /api/repos/:o/:r/branches/:b/hunks?path=  what the branch changed in one file, as hunks against where it forked.
   if (p[6] === "hunks" && !p[7] && req.method === "GET") {
     const path = new URL(req.url).searchParams.get("path") ?? "";
-    const f = (await files()).find((x) => x.path === path && !x.merged && !x.deleted && !x.blob);
-    if (!f) return json({ path, hunks: [] });
-    return json({ path, hunks: (await fileHunks(env, owner, repo, name, path, user ?? "anon", a.write)).hunks });
+    const all = await files(), f = all.find((x) => x.path === path && !x.merged && !x.deleted && !x.blob);
+    // The rest of the branch, which an agent batch's hash covers too: what else landing it would change.
+    const others = all.filter((x) => x.path !== path && !x.merged).map((x) => ({ path: x.path, change: x.deleted ? "deleted" : "edited" }));
+    if (!f) return json({ path, hunks: [], others });
+    return json({ path, hunks: (await fileHunks(env, owner, repo, name, path, user ?? "anon", a.write)).hunks, others });
   }
   // POST /api/repos/:o/:r/branches/:b/hunks/reject {path, key}  put one hunk back as it was where the branch forked.
   if (p[6] === "hunks" && p[7] === "reject" && req.method === "POST") {

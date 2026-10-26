@@ -69,6 +69,26 @@ describe("your page", () => {
     expect((await (await send(null, "/api/users/ryan")).json() as any).page).toBe(true);
   });
 
+  test("outside images and media load only when the page opts in, and visitors are told", async () => {
+    const call = await boot({ GH_CLI: "off" });
+    const send = (user: string | null, url: string, body?: unknown, method = body === undefined ? "GET" : "POST") =>
+      call(user, url, { method, ...(body !== undefined && { body: JSON.stringify(body) }) });
+    await send("ryan", "/api/login", { name: "ryan" });
+    await send("ryan", "/api/repos", { name: "page" });
+    const put = (content: string) => send("ryan", "/api/me/page", { path: "index.html", content }, "PUT");
+    await put("<!doctype html><head></head><img src=\"https://example.com/a.png\">");
+    const shut = await send(null, "/api/users/ryan/page/");
+    expect(shut.headers.get("content-security-policy")).toContain("img-src 'self' data: blob:;");
+    expect(shut.headers.get("content-security-policy")).toContain("media-src 'self' data: blob:;");
+    expect(await shut.text()).not.toContain("other sites");
+
+    await put("<!doctype html><head><meta name=\"codesplitter-outside-media\" content=\"allow\"></head>");
+    const open = await send(null, "/api/users/ryan/page/");
+    expect(open.headers.get("content-security-policy")).toContain("img-src 'self' data: blob: https:;");
+    expect(open.headers.get("content-security-policy")).toContain("media-src 'self' data: blob: https:;");
+    expect(await open.text()).toContain("other sites");
+  });
+
   test("falls back to the saved HTML, and says when there is no page", async () => {
     const call = await boot({ GH_CLI: "off" });
     const send = (user: string | null, url: string, body?: unknown, method = body === undefined ? "GET" : "PUT") =>

@@ -291,6 +291,17 @@ test("a batch waits on main as its own branch's hunks: hold stops the clock, a l
   expect((await post("ryan", `/api/repos/ryan/lab/agents/${id}/accept`, {})).status).toBe(409);
 });
 
+test("a waiting batch names the other files its branch changes, since accepting lands the whole branch", async () => {
+  const { call, post } = await app();
+  const { id } = await waiting(call, post);
+  const hunksUrl = `/api/repos/ryan/lab/branches/agent-run-${id}/hunks?path=a.js`;
+  expect((await (await call("ryan", hunksUrl)).json() as any).others).toEqual([]);
+  expect((await post("ryan", "/api/repos/ryan/lab/files", { path: "extra.js", content: "x\n", branch: `agent-run-${id}` })).status).toBe(201);
+  expect((await (await call("ryan", hunksUrl)).json() as any).others).toEqual([{ path: "extra.js", change: "edited" }]);
+  const seen = await (await call("ryan", "/api/repos/ryan/lab/agents/waiting?path=a.js")).json() as any;
+  expect(seen.waiting[0].others).toEqual([{ path: "extra.js", change: "edited" }]);
+});
+
 test("only the run's agent and the owner write to its waiting branch, and it lands only as the branch the owner read", async () => {
   const { call, post } = await app();
   await post("sam", "/api/login", { name: "sam" });
@@ -390,4 +401,26 @@ test("protect main: an agent's batch waits for a person instead of the timer", a
   runs = await (await call("ryan", "/api/repos/ryan/lab/agents?path=a.js")).json();
   expect(runs[0].landed).toBeUndefined();
   expect(runs[0].pending).toBeDefined();
+});
+
+test("a hosted agent runs with a write token of its own, and loses it when its run ends (#2300)", async () => {
+  const { call } = await app();
+  call.env.AGENT_SANDBOX = {};
+  const seen: { remote?: string; during?: boolean } = {};
+  const live = async (remote: string) => (await Bun.spawn(["git", "ls-remote", remote], { stdout: "ignore", stderr: "ignore" }).exited) === 0;
+  call.env.AGENT_SANDBOX = {
+    idFromName: () => ({}),
+    get: () => ({ fetch: async (req: Request) => {
+      const { cmd, text } = await req.json() as { cmd: { env?: Record<string, string> }; text: string };
+      seen.remote = cmd.env?.CODESPLITTER_GIT_REMOTE;
+      seen.during = !!seen.remote && await live(seen.remote);
+      return Response.json({ code: 0, out: "done", text: text.toUpperCase() });
+    } }),
+  };
+  const row = await call.env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started) VALUES ('ryan', 'lab', 'a.js', 'codex', 'shout', 'agent-codex', 'running', ?) RETURNING id").bind(Date.now()).first() as { id: number };
+  await call.env.JOBS.send({ agent: row.id, origin: "http://codesplitter.local" });
+  await until(async () => (await call.env.DB.prepare("SELECT status FROM agent_runs WHERE id = ?").bind(row.id).first() as { status: string }).status !== "running");
+  expect(seen.during).toBe(true);
+  expect(await live(seen.remote!)).toBe(false);
+  expect(await call.env.DB.prepare("SELECT token FROM agent_runs WHERE id = ?").bind(row.id).first()).toEqual({ token: null });
 });
