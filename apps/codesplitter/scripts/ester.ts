@@ -5,6 +5,8 @@
 //   flaky    failed once, passed on a rerun of just that run: note it, file an issue if it keeps happening.
 //   own      the failure sits in an app a PR with red CI of its own touches: that PR fixes its own CI first.
 //   wait     the same, but that PR's CI hasn't finished: hold it and rerun when its CI is done.
+//   slow     the PR waits only on checks that always take long (10 min or more): merge on the fast checks, the
+//            slow one is owed. It is not held.
 //   blocks   only the merged tree breaks it: the PRs that touched that app are the suspects, and the first stage
 //            that breaks it (--check-stages) is the one to hold back.
 //
@@ -14,9 +16,9 @@
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { Stage } from "./mervin-board.ts";
+import type { CheckTime, Stage } from "./mervin-board.ts";
 
-export type Owner = "main" | "flaky" | "own" | "wait" | "blocks";
+export type Owner = "main" | "flaky" | "own" | "wait" | "slow" | "blocks";
 export interface Verdict { test: string; owner: Owner; prs: number[]; why: string }
 
 /** `apps/foo: test name` to the app dir it ran in (`.` for repo-wide checks). */
@@ -27,11 +29,33 @@ function touching(stages: Stage[], dir: string, written: Set<string>) {
   return stages.filter((s) => s.files.some((f) => written.has(f.path) && f.tier !== "card" && (dir === "." || f.path.startsWith(`${dir}/`)))).map((s) => s.pr);
 }
 
+/** A check at or over this many seconds is slow, whatever the others take. */
+export const SLOW_SECS = 600;
+
+/**
+ * The checks that are slow: those whose median finished time across the board's PRs reaches `limit`, or sits at least
+ * five times the median of all checks. Judged by name, so a PR still running one is known slow before it finishes.
+ */
+export function slowChecks(stages: Stage[], limit = SLOW_SECS): Map<string, number> {
+  const by = new Map<string, number[]>();
+  for (const c of stages.flatMap((s) => s.checks ?? [])) if (c.done && c.secs) by.set(c.name, [...(by.get(c.name) ?? []), c.secs]);
+  const mid = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
+  const med = new Map([...by].map(([name, xs]) => [name, mid(xs)] as const));
+  const all = med.size ? mid([...med.values()]) : 0;
+  return new Map([...med].filter(([, m]) => m >= limit || (med.size > 2 && m >= all * 5 && m >= 60)));
+}
+
+/** The checks a PR is still waiting on. */
+const running = (s: Stage): CheckTime[] => (s.checks ?? []).filter((c) => !c.done);
+
+/** True when everything a PR still waits on is slow: it can merge on its fast checks. */
+export const onlySlow = (s: Stage, slow: Map<string, number>) => running(s).length > 0 && running(s).every((c) => slow.has(c.name));
+
 /**
  * Sorts `failed` (the merged tree's failures). `onMain` is what fails on main in the same sandbox, `rerun` the
  * failures left after running only the failing runs again (omit to skip flaky detection).
  */
-export function triage(failed: string[], stages: Stage[], onMain: Set<string>, rerun?: Set<string>): Verdict[] {
+export function triage(failed: string[], stages: Stage[], onMain: Set<string>, rerun?: Set<string>, slow = new Map<string, number>()): Verdict[] {
   const written = new Set(stages.flatMap((s) => s.files.filter((f) => f.tier !== "card").map((f) => f.path)));
   return failed.map((test) => {
     if (onMain.has(test)) return { test, owner: "main", prs: [], why: "fails on main in this sandbox too" };
@@ -39,7 +63,9 @@ export function triage(failed: string[], stages: Stage[], onMain: Set<string>, r
     const prs = touching(stages, dirOf(test), written);
     const red = stages.filter((s) => prs.includes(s.pr) && s.ci === "fail");
     if (red.length) return { test, owner: "own", prs: red.map((s) => s.pr), why: `PR CI is already red (${red.flatMap((s) => s.failing ?? []).join(", ") || "failing"})` };
-    const pending = stages.filter((s) => prs.includes(s.pr) && s.ci === "pending");
+    const waiting = stages.filter((s) => prs.includes(s.pr) && s.ci === "pending");
+    const pending = waiting.filter((s) => !onlySlow(s, slow));
+    if (!pending.length && waiting.length) return { test, owner: "slow", prs: waiting.map((s) => s.pr), why: "PR CI is only waiting on slow checks: merge on the fast ones, the slow one is owed" };
     if (pending.length) return { test, owner: "wait", prs: pending.map((s) => s.pr), why: "PR CI hasn't finished: hold it, rerun when it has" };
     return { test, owner: "blocks", prs, why: prs.length ? "only the merged tree breaks it" : "no stage touched this app: check the install or lockfile" };
   });
@@ -65,13 +91,25 @@ export function timing(runs: { dir: string; cmd: string; ms: number }[], reran: 
 /** Ester's report: counts first, then what needs a person, then how long it all took. */
 export function report(vs: Verdict[], runs: { dir: string; cmd: string; ms: number }[] = [], reran: number[] = [], stages: Stage[] = []): string[] {
   const n = (o: Owner) => vs.filter((v) => v.owner === o).length;
-  const out = [`Ester: ${vs.length} failing, ${n("main")} not the board's, ${n("flaky")} flaky, ${n("own")} a PR's own red, ${n("wait")} waiting on CI, ${n("blocks")} block Mervin`];
+  const out = [`Ester: ${vs.length} failing, ${n("main")} not the board's, ${n("flaky")} flaky, ${n("own")} a PR's own red, ${n("wait")} waiting on CI, ${n("slow")} on slow checks, ${n("blocks")} block Mervin`];
   for (const v of vs.filter((v) => v.owner !== "main")) out.push(`  ${v.owner.padEnd(6)} ${v.test}  ${v.why}${v.prs.length ? `  (${v.prs.map((p) => `#${p}`).join(", ")})` : ""}`);
   return [...out, ...timing(runs, reran, stages)];
 }
 
-/** The PRs to hold back from the merge wave: every PR named by an own, wait or blocks verdict. */
-export const hold = (vs: Verdict[]) => [...new Set(vs.filter((v) => v.owner !== "main" && v.owner !== "flaky").flatMap((v) => v.prs))].sort((a, b) => a - b);
+/** Where testing holds merging up, by check name: "3 PRs waiting on stress.ts (about 40 min)". Empty when nothing waits. */
+export function waitLines(stages: Stage[], slow = slowChecks(stages)): string[] {
+  const by = new Map<string, number[]>();
+  for (const s of stages) for (const c of running(s)) by.set(c.name, [...(by.get(c.name) ?? []), s.pr]);
+  const done = (name: string) => stages.flatMap((s) => s.checks ?? []).filter((c) => c.name === name && c.done && c.secs).map((c) => c.secs).sort((a, b) => a - b);
+  const lines = [...by].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0])).map(([name, prs]) => {
+    const t = done(name)[Math.floor(done(name).length / 2)];
+    return `${prs.length} PR${prs.length === 1 ? "" : "s"} waiting on ${name}${t ? ` (about ${Math.max(1, Math.round(t / 60))} min${slow.has(name) ? ", slow: merge without it" : ""})` : ""}`;
+  });
+  return lines.length ? ["Ester: where testing holds merging up", ...lines.map((l) => `  ${l}`)] : [];
+}
+
+/** The PRs to hold back from the merge wave: every PR named by an own, wait or blocks verdict (not a slow one: it merges). */
+export const hold = (vs: Verdict[]) => [...new Set(vs.filter((v) => v.owner !== "main" && v.owner !== "flaky" && v.owner !== "slow").flatMap((v) => v.prs))].sort((a, b) => a - b);
 
 /** The packages whose version range differs between two package.json texts (null for a file that doesn't exist). */
 export function packagesChanged(before: string | null, after: string | null): string[] {
