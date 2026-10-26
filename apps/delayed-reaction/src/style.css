@@ -23,6 +23,11 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
 .pad[data-lane="3"] { box-shadow: inset 0 -6px 0 #9dff5f; }
 .pad.down { transform: scale(0.96); background: rgba(255, 255, 255, 0.15); color: #fff; border-color: #fff; }
 .pad:focus-visible { outline: 2px solid #fff; }
+/* Its key is in the window: the pad takes its lane's colour. */
+.pad[data-lane="0"].due { border-color: #ff5fa2; color: #ff5fa2; box-shadow: inset 0 -6px 0 #ff5fa2, 0 0 18px #ff5fa2; }
+.pad[data-lane="1"].due { border-color: #ffc542; color: #ffc542; box-shadow: inset 0 -6px 0 #ffc542, 0 0 18px #ffc542; }
+.pad[data-lane="2"].due { border-color: #4de3ff; color: #4de3ff; box-shadow: inset 0 -6px 0 #4de3ff, 0 0 18px #4de3ff; }
+.pad[data-lane="3"].due { border-color: #9dff5f; color: #9dff5f; box-shadow: inset 0 -6px 0 #9dff5f, 0 0 18px #9dff5f; }
 @media (pointer: fine) and (min-width: 700px) { #pads { height: 120px; } }
 
 #menu { position: fixed; inset: 0; display: grid; place-content: center; gap: 12px; padding: 24px; background: rgba(0, 0, 0, 0.85); text-align: center; overflow: auto; }

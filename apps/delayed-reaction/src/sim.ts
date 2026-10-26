@@ -25,6 +25,7 @@ export type Chart = {
   level: number;
   bpm: number;
   delay: number;     // beats between a call and its answer
+  hint: number;      // how loud the call's own echo plays on the due beat (0: you carry the timing yourself)
   bars: number;      // length of the song, in bars of 4 beats
   calls: Call[];     // sorted by beat
 };
@@ -36,13 +37,15 @@ export const GOOD = 0.25;
 export const LIVES = 8;
 
 export const LEVELS = [
-  // Dub tempos: the drums are half-time, so 140 feels like 70.
-  { bpm: 132, delay: 2, bars: 16, density: 0.7, holds: 0.0 },
-  { bpm: 136, delay: 4, bars: 20, density: 0.6, holds: 0.15 },
-  { bpm: 140, delay: 4, bars: 24, density: 0.8, holds: 0.2 },
-  { bpm: 140, delay: 8, bars: 24, density: 0.8, holds: 0.25 },
-  { bpm: 144, delay: 8, bars: 32, density: 1.0, holds: 0.3 },
-  { bpm: 148, delay: 6, bars: 32, density: 1.2, holds: 0.35 },
+  // Dub tempos: the drums are half-time, so 140 feels like 70. A bar of delay is the natural first
+  // one (the answer sits where the call sat, one bar on). `hint` is the call echoing on its due beat,
+  // loud at first so the music tells you when, gone by level five so you carry it yourself.
+  { bpm: 120, delay: 4, bars: 16, density: 0.5, holds: 0.0, hint: 0.6 },
+  { bpm: 128, delay: 4, bars: 20, density: 0.6, holds: 0.15, hint: 0.45 },
+  { bpm: 136, delay: 4, bars: 24, density: 0.8, holds: 0.2, hint: 0.3 },
+  { bpm: 140, delay: 8, bars: 24, density: 0.8, holds: 0.25, hint: 0.2 },
+  { bpm: 144, delay: 8, bars: 32, density: 1.0, holds: 0.3, hint: 0 },
+  { bpm: 148, delay: 6, bars: 32, density: 1.2, holds: 0.35, hint: 0 },
 ] as const;
 
 /** A chart for a level: seeded, so the same level is the same song every time you retry it. */
@@ -75,7 +78,7 @@ export function makeChart(level: number, seed = level * 7919): Chart {
     }
   }
   calls.sort((a, b) => a.beat - b.beat);
-  return { level, bpm: spec.bpm, delay: spec.delay, bars: spec.bars, calls };
+  return { level, bpm: spec.bpm, delay: spec.delay, hint: spec.hint, bars: spec.bars, calls };
 }
 
 export type Run = {
@@ -184,6 +187,10 @@ export function release(run: Run, lane: Lane, beat: number): Judgement | null {
   reward(run, c.grade === "perfect" && g === "perfect" ? "perfect" : "good");
   return { kind: "release", call: c, grade: g };
 }
+
+/** The lanes with a pending call inside its window at `beat`: the pads to light up as "now". */
+export const dueLanes = (run: Run, beat = run.beat): Set<Lane> =>
+  new Set(run.chart.calls.filter((c) => c.state === "pending" && Math.abs(beat - c.due) <= GOOD).map((c) => c.lane));
 
 /** Calls in flight at `beat`: called, not yet answered. The queue the player is carrying. */
 export const inFlight = (run: Run, beat = run.beat) =>

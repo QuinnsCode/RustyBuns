@@ -94,14 +94,18 @@ export class Music {
       }
       this.hat(t + this.spb / 2, b < 0 ? 0.5 : 0.22);
       if (b < 0 || inBar === 1 || inBar === 3) this.hat(t, b < 0 ? 0.6 : 0.12);
-      for (const c of this.chart.calls) if (c.beat === b || c.beat === b + 0.5) this.call(this.start + c.beat * this.spb, c.lane, c.hold);
+      for (const c of this.chart.calls) {
+        if (c.beat === b || c.beat === b + 0.5) this.call(this.start + c.beat * this.spb, c.lane, c.hold);
+        // The hint: the call comes round again on its due beat, quieter. That's the beat to answer on.
+        if (this.chart.hint && (c.due === b || c.due === b + 0.5)) this.call(this.start + c.due * this.spb, c.lane, c.hold, this.chart.hint);
+      }
       this.nextBeat += 1;
     }
   }
 
   /** The keyboard calling a lane: a plucked note, held ones ring on. */
-  call(t: number, lane: Lane, hold = 0) {
-    this.tone(t, LANE_HZ[lane], hold ? hold * this.spb : 0.18, "triangle", 0.35, this.filter);
+  call(t: number, lane: Lane, hold = 0, vol = 1) {
+    this.tone(t, LANE_HZ[lane], hold ? hold * this.spb : 0.18, "triangle", 0.35 * vol, vol < 1 ? this.delay : this.filter);
   }
 
   /** The player's answer: the same note an octave up, into the dub delay. Wrong is a dull thud. */

@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
-import { advance, createRun, GOOD, inFlight, LEVELS, LIVES, makeChart, PERFECT, press, release } from "../src/sim.ts";
+import { advance, createRun, dueLanes, GOOD, inFlight, LEVELS, LIVES, makeChart, PERFECT, press, release } from "../src/sim.ts";
 
 // One run through a level, the way a player does it: every call answered on its due beat, holds
 // let go when they end. Then the same chart ignored: every call missed until the lives run out.
 test("answering every call `delay` beats after it is called wins the level; ignoring them loses it", () => {
   for (let level = 1; level <= LEVELS.length; level++) {
     const chart = makeChart(level);
-    expect(chart.calls.length).toBeGreaterThan(20);
+    expect(chart.calls.length).toBeGreaterThan(15);
     for (const c of chart.calls) expect(c.due - c.beat).toBe(chart.delay);
     expect(makeChart(level)).toEqual(chart); // the same song every retry
 
@@ -66,4 +66,14 @@ test("a hold pressed on time but let go early is dropped", () => {
   expect(j).toEqual({ kind: "release", call: hold, grade: "dropped" });
   expect(hold.state).toBe("missed");
   expect(run.lives).toBe(LIVES - 1);
+});
+
+test("the pad to light is the lane whose key is in its window, and the echo hint fades out by level five", () => {
+  const chart = makeChart(1);
+  const run = createRun(chart);
+  const first = chart.calls[0]!;
+  expect(dueLanes(run, first.beat)).toEqual(new Set());
+  expect(dueLanes(run, first.due)).toEqual(new Set([first.lane]));
+  expect(dueLanes(run, first.due + GOOD + 0.01).has(first.lane)).toBe(false);
+  expect(LEVELS.map((l) => l.hint > 0)).toEqual([true, true, true, true, false, false]);
 });

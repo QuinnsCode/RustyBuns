@@ -2,7 +2,7 @@
 // (sim.ts) decides everything; this file draws it and turns thumbs and keys into presses.
 import { Music } from "./audio.ts";
 import { burst, drawHallway, echoBursts, view, type Burst } from "./hallway.ts";
-import { advance, createRun, delayWords, LEVELS, makeChart, press, release, type Judgement, type Lane, type Run } from "./sim.ts";
+import { advance, createRun, delayWords, dueLanes, LEVELS, makeChart, press, release, type Judgement, type Lane, type Run } from "./sim.ts";
 const KEYS: Record<string, Lane> = { KeyD: 0, KeyF: 1, KeyJ: 2, KeyK: 3, ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3 };
 
 const stage = document.getElementById("stage") as HTMLCanvasElement;
@@ -47,7 +47,7 @@ async function start(level: number) {
   const chart = makeChart(level);
   run = createRun(chart);
   el("delay-words").textContent = delayWords(chart.delay);
-  hud.judge.textContent = `Answer ${delayWords(chart.delay)}`;
+  hud.judge.textContent = chart.hint ? `Answer on the echo, ${delayWords(chart.delay)}` : `Answer ${delayWords(chart.delay)}, no echo now`;
   judgeUntil = performance.now() + 2500;
   await music.play(chart);
 }
@@ -61,12 +61,13 @@ function finish() {
     best[r.chart.level] = r.score;
     try { localStorage.setItem("delayed-reaction.best", JSON.stringify(best)); } catch {}
   }
+  pads.forEach((p) => p.classList.remove("due"));
   setTimeout(() => showMenu(r), 600);
 }
 
 // ---- input ----
-// A press is judged at the beat the player heard, not the one the clock is at: the output latency
-// (big on phones) comes off first.
+// The beat the player hears, not the one the clock is at: the output latency (big on phones) comes
+// off first. Presses are judged on it and the frame draws on it.
 function heardBeat() {
   if (!music) return 0;
   const lag = ("outputLatency" in music.ctx ? music.ctx.outputLatency : 0) || music.ctx.baseLatency || 0;
@@ -147,7 +148,8 @@ resize();
 
 function frame(now: number) {
   requestAnimationFrame(frame);
-  const beat = music && run ? music.beat() : 0;
+  // Everything you see runs on the beat you hear, so the pad lights, the key lands and the judging agree.
+  const beat = music && run ? heardBeat() : 0;
   if (run && music) {
     for (const j of advance(run, beat)) show(j);
     hud.score.textContent = String(run.score);
@@ -155,6 +157,9 @@ function frame(now: number) {
     hud.lives.style.width = `${(run.lives / 8) * 100}%`;
     hud.lives.dataset.low = run.lives <= 2 ? "1" : "";
     echoBursts(bursts, beat, run.chart.delay);
+    // The pad lights in its colour while its key is in the window: a thumb can read that.
+    const due = dueLanes(run, beat);
+    pads.forEach((p, i) => p.classList.toggle("due", due.has(i as Lane)));
     if (run.over) finish();
   }
   if (now > judgeUntil) hud.judge.textContent = "";
