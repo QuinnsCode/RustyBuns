@@ -36,8 +36,8 @@ export type Part = { vx: number; vy: number; vz: number; heat: number };
 export function burst(lane: Lane, beat: number, size: number, rng = Math.random): Burst {
   // Bigger bursts throw more, up to 40, which a phone draws at 60 fps with a few echoes in flight.
   const parts = Array.from({ length: Math.min(40, Math.round(16 + 24 * size)) }, () => {
-    const a = rng() * Math.PI * 2, s = 1.5 + rng() * 3.5;
-    return { vx: Math.cos(a) * s, vy: 1 + rng() * 4, vz: Math.sin(a) * s * 0.7, heat: rng() };
+    const a = rng() * Math.PI * 2, s = 2 + rng() * 5;
+    return { vx: Math.cos(a) * s, vy: 1.5 + rng() * 5, vz: Math.sin(a) * s * 0.7, heat: rng() };
   });
   return { lane, beat, size, echoes: 0, parts };
 }
@@ -186,11 +186,11 @@ function drawBursts(g: CanvasRenderingContext2D, v: View, bursts: Burst[], beat:
       return project(v, lx + x, Math.max(0, 0.05 + y), RUNNER_Z + z);
     };
     // Each particle is a smear from where it was a moment ago to where it is now, so fast ones streak.
-    const tail = Math.max(0, age - 0.08);
+    const tail = Math.max(0, age - 0.1);
     g.strokeStyle = col;
     for (const pass of [0, 1]) {
       g.globalAlpha = fade * (pass ? 0.9 : 0.25);
-      g.lineWidth = (pass ? 2 : 6) * (0.5 + b.size * 0.7);
+      g.lineWidth = (pass ? 2.5 : 8) * (0.5 + b.size * 0.7);
       g.beginPath();
       for (const p of b.parts) {
         const [ax, ay] = at(p, tail), [bx, by] = at(p, age);
