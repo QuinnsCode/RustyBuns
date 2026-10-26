@@ -260,4 +260,4 @@ A hand review of three more units from round 6's list, source only, no target co
 
 ### Still not reviewed
 
-GitHub token scope; game-room sockets; the other ~250 `innerHTML` sinks in `client.html`; the route families nobody listed.
+Moved to #2339: GitHub token scope; game-room sockets; the other ~250 `innerHTML` sinks in `client.html`; the route families nobody listed.
