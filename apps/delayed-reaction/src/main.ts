@@ -1,7 +1,7 @@
 // The page: a canvas keyboard you run along, four thumb pads, a HUD, and a menu. The sim
 // (sim.ts) decides everything; this file draws it and turns thumbs and keys into presses.
 import { Music } from "./audio.ts";
-import { burst, drawHallway, echoBursts, view, type Burst } from "./hallway.ts";
+import { burst, drawTunnel, echoBursts, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
 import { advance, createRun, delayWords, dueLanes, LEVELS, makeChart, press, release, type Judgement, type Lane, type Run } from "./sim.ts";
 const KEYS: Record<string, Lane> = { KeyD: 0, KeyF: 1, KeyJ: 2, KeyK: 3, ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3 };
@@ -167,10 +167,11 @@ function frame(now: number) {
     if (run.over) finish();
   }
   if (now > judgeUntil) hud.judge.textContent = "";
-  // scene.speed (1 = normal) is for the tunnel to rush faster on a boost, and the runner to lean in.
-  const v = view(innerWidth, innerHeight);
-  const scene = { run, beat, down, bursts, speed: run?.speed ?? 1, missBeat, t: now / 1000 };
-  drawHallway(g, v, scene);
+  // scene.speed (1 = normal) is how fast the tunnel rushes and how far the runner leans in.
+  // Between runs the tunnel still rolls, at an idle 120 bpm, so the menu has something turning behind it.
+  const scene = { run, beat: run ? beat : now / 500, down, bursts, speed: run?.speed ?? 1, missBeat, t: now / 1000 };
+  const v = sway(view(innerWidth, innerHeight), scene.beat, !!run);
+  drawTunnel(g, v, scene);
   drawRunner(g, v, scene);
 }
 

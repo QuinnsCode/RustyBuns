@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { mulberry32 } from "@rustybuns/util";
-import { burst, echoBursts, partAt, project, view } from "../src/hallway.ts";
+import { burst, echoBursts, lanePoint, partAt, project, view } from "../src/hallway.ts";
 
 test("further down the hallway is smaller and nearer the vanishing point", () => {
   const v = view(390, 844);
@@ -23,6 +23,17 @@ test("a hit's explosion echoes once per delay, smaller each time, and then fades
   expect(bursts.map((b) => b.beat)).toEqual([22]);
   echoBursts(bursts, 26, 4);
   expect(bursts.length).toBe(0); // 0.55³ is under the floor: the echo died out
+});
+
+test("lanes are angles round the tunnel: left pads land left of right pads, all on the floor side", () => {
+  const v = view(390, 844);
+  const xs = ([0, 1, 2, 3] as const).map((lane) => lanePoint(v, lane, 4, 0));
+  for (let i = 1; i < xs.length; i++) expect(xs[i]![0]).toBeGreaterThan(xs[i - 1]![0]);
+  expect(xs[1]![0]).toBeLessThan(v.cx); // the two middle lanes straddle the middle
+  expect(xs[2]![0]).toBeGreaterThan(v.cx);
+  for (const [, y] of xs) expect(y).toBeGreaterThan(v.hy); // below the vanishing point: the floor
+  const [, farY] = lanePoint(v, 0, 20, 0);
+  expect(farY).toBeLessThan(xs[0]![1]); // a far ring sits higher on the screen than a near one
 });
 
 test("a burst's particles come from its rng, fly out, and slow to a drift within a beat", () => {
