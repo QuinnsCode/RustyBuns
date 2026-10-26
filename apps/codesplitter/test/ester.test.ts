@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hold, hurtLines, hurting, keep, kept, packagesChanged, report, rows, slowChecks, triage, waitLines } from "../scripts/ester.ts";
+import { debtLines, insight, releaseOnly, shard, hold, hurtLines, hurting, keep, kept, packagesChanged, report, rows, slowChecks, triage, waitLines } from "../scripts/ester.ts";
+import type { Row } from "../scripts/ester.ts";
 import type { Stage } from "../scripts/mervin-board.ts";
 
 const stage = (pr: number, path: string, ci?: Stage["ci"], failing?: string[]): Stage => ({ pr, head: "h", base: "b", ci, failing, files: [{ path, tier: "certain", why: "", after: [] }] });
@@ -102,5 +103,28 @@ describe("ester: slow checks", () => {
       "  1 PR waiting on typecheck (about 2 min)",
     ]);
     expect(waitLines(board.slice(0, 2))).toEqual([]);
+  });
+});
+
+describe("ester: slow-lane follow-ups", () => {
+  const row = (pr: number, over: Partial<Row> = {}): Row => ({ pr, apps: [], pkgs: [], owners: [], clashed: false, owed: [], checks: [{ name: "stress.ts", secs: 2400, done: true }, { name: "typecheck", secs: 100, done: true }], failed: [], ...over });
+
+  test("debt groups merged PRs by the slow check they skipped, once per check", () => {
+    const rs = [row(1, { owed: ["stress.ts"] }), row(2), row(3, { owed: ["stress.ts"] })];
+    expect(debtLines(rs, "abcdef1234567")).toEqual(["Ester: slow-lane debt (run once, against the last green sha)", "  stress.ts  owed by #1, #3  run it once against abcdef123"]);
+    expect(debtLines(rs, "abc", new Set([2]))).toEqual([]);
+  });
+
+  test("a long check that never catches anything is the release-only candidate, and Ester asks", () => {
+    const rs = [1, 2, 3, 4, 5].map((n) => row(n, n === 5 ? { failed: ["typecheck"] } : {}));
+    expect(releaseOnly(rs).map((c) => [c.name, c.score, c.caught])).toEqual([["stress.ts", 2400, 0], ["typecheck", 80, 1]]);
+    expect(insight(rs)).toBe("Ester: stress.ts took about 40 min over 5 PRs and caught 0 that nothing else did. Run it only at release?");
+    expect(insight(rs.slice(0, 3))).toBeNull();
+  });
+
+  test("shards balance by time", () => {
+    const ts = [["a", 900], ["b", 500], ["c", 400], ["d", 300], ["e", 200]].map(([name, ms]) => ({ name: name as string, ms: ms as number }));
+    const sums = shard(ts, 2).map((s) => s.reduce((n, t) => n + t.ms, 0));
+    expect(Math.abs(sums[0]! - sums[1]!)).toBeLessThanOrEqual(200);
   });
 });

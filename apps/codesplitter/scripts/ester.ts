@@ -124,16 +124,25 @@ export function packagesChanged(before: string | null, after: string | null): st
 }
 
 /** One row per PR on the board: the packages its manifests changed, how its failures were judged, whether it clashed. */
-export interface Row { pr: number; apps: string[]; pkgs: string[]; owners: Owner[]; clashed: boolean }
+export interface Row {
+  pr: number; apps: string[]; pkgs: string[]; owners: Owner[]; clashed: boolean;
+  /** Slow checks still unfinished when the PR was on the board: owed if it merges without them. */
+  owed?: string[];
+  /** Finished checks (name, secs) and the names that failed, so a check's catch rate can be learned across runs. */
+  checks?: CheckTime[]; failed?: string[];
+}
 
 /** Rows from a board's stages, Ester's verdicts and Mervin's clashes (each clash marks every PR in it). */
-export function rows(stages: (Stage & { pkgs?: string[] })[], vs: Verdict[], clashes: { prs: number[] }[]): Row[] {
+export function rows(stages: (Stage & { pkgs?: string[] })[], vs: Verdict[], clashes: { prs: number[] }[], slow = new Map<string, number>()): Row[] {
   return stages.map((s) => ({
     pr: s.pr,
     apps: [...new Set(s.files.filter((f) => f.tier !== "card").map((f) => f.path.match(/^apps\/[^/]+/)?.[0]).filter((a): a is string => !!a))].sort(),
     pkgs: s.pkgs ?? [],
     owners: vs.filter((v) => v.prs.includes(s.pr)).map((v) => v.owner),
     clashed: clashes.some((c) => c.prs.includes(s.pr)),
+    owed: onlySlow(s, slow) ? running(s).map((c) => c.name) : [],
+    checks: (s.checks ?? []).filter((c) => c.done && c.secs),
+    failed: s.failing ?? [],
   }));
 }
 
@@ -158,6 +167,66 @@ export function hurtLines(rs: Row[], top = 5): string[] {
   const h = hurting(rs).filter((x) => x.broke || x.clashes).slice(0, top);
   if (!h.length) return [];
   return ["Ester: dependencies that hurt", ...h.map((x) => `  ${x.pkg.padEnd(24)} ${x.touches} PR${x.touches === 1 ? "" : "s"}, ${x.broke} broke a test, ${x.clashes} clashed (${Math.round(x.rate * 100)}%)`)];
+}
+
+/**
+ * Slow-lane debt: the PRs that merged without a slow check, grouped by check. Each check is owed one run against the
+ * last green sha, not one per PR. `merged` is the PRs known to have merged (omit for every kept row).
+ */
+export function debt(rs: Row[], merged?: Set<number>): Map<string, number[]> {
+  const by = new Map<string, number[]>();
+  for (const r of rs) if (!merged || merged.has(r.pr)) for (const name of r.owed ?? []) by.set(name, [...(by.get(name) ?? []), r.pr]);
+  return by;
+}
+
+/** The debt as board lines, with the sha to run each check against. Empty when nothing is owed. */
+export function debtLines(rs: Row[], sha: string, merged?: Set<number>): string[] {
+  const d = [...debt(rs, merged)].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+  if (!d.length) return [];
+  return ["Ester: slow-lane debt (run once, against the last green sha)", ...d.map(([name, prs]) => `  ${name}  owed by ${prs.map((p) => `#${p}`).join(", ")}  run it once against ${sha.slice(0, 9)}`)];
+}
+
+export interface Candidate { name: string; secs: number; ran: number; caught: number; score: number }
+
+/**
+ * Checks that might run on release only, worst value first. A check "catches" when it is the only one that failed on
+ * a PR; the score is its median seconds x (1 - catch rate), so a long check that never catches anything leads.
+ */
+export function releaseOnly(rs: Row[], min = 5): Candidate[] {
+  const by = new Map<string, { secs: number[]; caught: number }>();
+  for (const r of rs) for (const c of r.checks ?? []) {
+    const e = by.get(c.name) ?? { secs: [], caught: 0 };
+    e.secs.push(c.secs);
+    if (r.failed?.length === 1 && r.failed[0] === c.name) e.caught++;
+    by.set(c.name, e);
+  }
+  return [...by].filter(([, e]) => e.secs.length >= min).map(([name, e]) => {
+    const secs = [...e.secs].sort((a, b) => a - b)[Math.floor(e.secs.length / 2)]!;
+    return { name, secs, ran: e.secs.length, caught: e.caught, score: Math.round(secs * (1 - e.caught / e.secs.length)) };
+  }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+}
+
+/** The insight from the record, ending in a question to the owner (null until a check has run `min` times). */
+export function insight(rs: Row[], min = 5): string | null {
+  const c = releaseOnly(rs, min)[0];
+  if (!c || c.secs < 60) return null;
+  return `Ester: ${c.name} took about ${Math.max(1, Math.round(c.secs / 60))} min over ${c.ran} PRs and caught ${c.caught} that nothing else did. Run it only at release?`;
+}
+
+export interface Timed { name: string; ms: number }
+
+/**
+ * Splits tests into `n` shards of about equal total time (longest first onto the lightest shard). Per-test times come
+ * from the ledger's junit reports (`Seen.ms`); a test with no time counts as `fallback` ms.
+ */
+export function shard(tests: Timed[], n: number, fallback = 100): Timed[][] {
+  const out: { total: number; tests: Timed[] }[] = Array.from({ length: Math.max(1, n) }, () => ({ total: 0, tests: [] }));
+  for (const t of [...tests].sort((a, b) => b.ms - a.ms || a.name.localeCompare(b.name))) {
+    const lightest = out.reduce((m, x) => (x.total < m.total ? x : m));
+    lightest.tests.push(t);
+    lightest.total += t.ms || fallback;
+  }
+  return out.map((x) => x.tests);
 }
 
 /** Appends this run's rows to the JSONL `file`, one line per PR stamped with `at`. */
