@@ -30,7 +30,7 @@
 
 import { json, type Env, readBody } from "./env.ts";
 import { audit, via } from "./audit.ts";
-import { actingAs } from "./identity.ts";
+import { actingAs, queuedByToken } from "./identity.ts";
 import { repoRow } from "./repos.ts";
 import { b64url, sha256 } from "./util.ts";
 
@@ -45,7 +45,7 @@ const COOKIE_ONLY = new Set(["admin", "auth", "login", "logout", "handle", "toke
 
 
 /** Whether a request signed in with an API or OAuth token. The gates that stand for a person reading the code (approve, accept, build_ok) refuse these. */
-export const byToken = (req: Request) => { const v = via.get(req); return v === "token" || v === "oauth"; };
+export const byToken = (req: Request) => { const v = via.get(req); return v === "token" || v === "oauth" || queuedByToken.has(req); };
 
 /** Whether a route manages a repo rather than its code: a write token is refused it, an admin one isn't. */
 export const adminRoute = (p: string[], method: string) => {

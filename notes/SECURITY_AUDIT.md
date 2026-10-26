@@ -244,3 +244,20 @@ A hand review of the first units on round 5's list, source only, no target code 
 ### Still not reviewed
 
 Cuts and mirror landing as paths into main; the `via 'job'` re-dispatch against the human-only gates; GitHub token scope; game-room sockets; the other ~250 `innerHTML` sinks in `client.html`; the route families nobody listed. The next run starts here (#2322), with saved programs (#2294).
+
+## Round 7, October 25: cuts, mirror landing and job re-dispatch (#2322)
+
+A hand review of three more units from round 6's list, source only, no target code run. Not the full skill run with a coverage ledger.
+
+### Fixed in this round
+
+- **A queued job lost its token** (low, defence in depth). A request an API token queued under a rate-limit rule (`limit_jobs`) is replayed to the app as the person (`actingAs`, via `job`), so `byToken` was false and the gates that refuse tokens (accept a batch, `build_ok`, approve a deploy, clear a deploy on commit) would have let it through. Only dig, preview and the doctor can queue today, and none sits behind those gates, so nothing was reachable; a rule made queueable later would have been. A replay of a token's job now still counts as the token's (`queued-by-token.test.ts`).
+
+### Reviewed, nothing found
+
+- **Cuts** (`cuts.ts`): a cut only writes a branch (forks of main's files), never main; it reaches main through the branch merge, which has the policy-file and protect-main rules from round 5. Running one is the owner's.
+- **Mirror landing** (`mirror.ts`): a push into the repo's own git lands as the owner, but only the owner gets a remote that writes, and the mirror, branch and tag routes are owner-only. `POST /api/mirrors` takes `file://` and local paths on purpose: it needs git on the machine, which is the desktop, whose one person is the owner.
+
+### Still not reviewed
+
+Moved to #2339: GitHub token scope; game-room sockets; the other ~250 `innerHTML` sinks in `client.html`; the route families nobody listed.

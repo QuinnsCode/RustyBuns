@@ -192,6 +192,8 @@ async function account(req: Request, env: Env) {
  * Only code in this isolate holds the Request objects, so nothing outside can claim one.
  */
 export const actingAs = new WeakMap<Request, string>();
+/** Self-requests that replay what an API token queued (limits.ts): they still count as the token's, so the gates that refuse tokens refuse them. */
+export const queuedByToken = new WeakSet<Request>();
 
 /**
  * Who a session cookie was a moment ago, per isolate (#1313). Looking it up is Better Auth's
