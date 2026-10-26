@@ -51,6 +51,13 @@ export const HUNT = {
   howlJitter: 30,
   /** Prop hunt: how close a prop has to be to turn into it. */
   disguiseReach: 4,
+  /** Climbing a tree: hold on this long at most, never in the last stretch of a round. */
+  climbSecs: 5,
+  climbLockSecs: 15,
+  climbReach: 1.5,
+  /** How far a slide down and a full-hold fall carry to rangers. */
+  slideReach: 30,
+  fallReach: 90,
 };
 
 /** The search area: a circle that closes in on a point during the hunt. */
@@ -124,7 +131,7 @@ export type Msg =
   | { t: "start" }
   | { t: "lobby" }
   | { t: "drop"; x: number; y: number }
-  | { t: "pos"; x: number; y: number; yaw: number; pitch: number; crouch: boolean; run: boolean; light: boolean }
+  | { t: "pos"; x: number; y: number; yaw: number; pitch: number; crouch: boolean; prone?: boolean; climb?: boolean; run: boolean; light: boolean }
   | { t: "call" }
   | { t: "disguise" }
   | { t: "ask"; ask: Ask };
@@ -139,13 +146,17 @@ export interface Actor extends Body {
   drop: Pt | null;
   /** Prop hunt: the prop this camper has turned into. */
   disguise: Disguise | null;
+  /** Up a tree since this server time, or null. */
+  climbAt: number | null;
+  /** The climb key was down in the last report, so a held key doesn't climb again after a fall. */
+  climbHeld: boolean;
   /** Server clock of the last accepted move, for the speed check. */
   movedAt: number;
   /** Last time they actually went somewhere (a client reports its position even standing still). */
   walkedAt: number;
 }
 
-export type CueKind = "step" | "rustle" | "call" | "caught" | "howl";
+export type CueKind = "step" | "rustle" | "call" | "caught" | "howl" | "thud";
 export interface Cue { id: number; kind: CueKind; x: number; y: number; at: number; by: string; to: "rangers" | "campers" | "all" }
 
 export interface AskLog { at: number; ask: Ask; by: string; x: number; y: number; answers: { id: string; text: string; clue: Clue }[] }
@@ -158,7 +169,7 @@ export interface BigfootView { x: number; y: number; yaw: number; foundBy: strin
 export interface PlayerView { id: string; name: string; bot: BotLevel | null; score: number; online: boolean; look: Look }
 
 /** What one player may know about another actor right now. */
-export interface ActorView { id: string; role: Role; x: number; y: number; yaw: number; pitch: number; crouch: boolean; run: boolean; light: boolean; caughtAt: number | null; disguise: Disguise | null }
+export interface ActorView { id: string; role: Role; x: number; y: number; yaw: number; pitch: number; crouch: boolean; prone: boolean; climb: boolean; run: boolean; light: boolean; caughtAt: number | null; disguise: Disguise | null }
 
 export interface View {
   me: string;
@@ -384,7 +395,7 @@ export class Hunt {
     const actors = new Map<string, Actor>();
     for (const p of online) {
       const role: Role = rangers.includes(p.id) ? "ranger" : "camper";
-      actors.set(p.id, { id: p.id, role, x: z.station.x, y: z.station.y, yaw: z.station.yaw, pitch: 0, stamina: 1, crouch: false, run: false, light: this.live || this.tod !== "day", caughtAt: null, caughtBy: null, drop: null, disguise: null, movedAt: now, walkedAt: 0 });
+      actors.set(p.id, { id: p.id, role, x: z.station.x, y: z.station.y, yaw: z.station.yaw, pitch: 0, stamina: 1, crouch: false, prone: false, climbAt: null, climbHeld: false, run: false, light: this.live || this.tod !== "day", caughtAt: null, caughtBy: null, drop: null, disguise: null, movedAt: now, walkedAt: 0 });
     }
     this.round = {
       id: ++this.rounds, n, zone, rangers, actors, cues: [], asks: [], radio: new Map(rangers.map((id) => [id, { x: 0, y: 0, cooldownUntil: 0, used: NO_ASKS(), lastAsk: null }])),
@@ -514,6 +525,7 @@ export class Hunt {
     } else if (this.phase === "hunt") {
       this.tags(r, now);
       this.footsteps(r, now);
+      this.climbs(r, now);
       this.howl(r, now);
       if (this.findBigfoot(r, now)) { this.endRound(now); return; }
       r.cues = r.cues.filter((c) => now - c.at < 6000);
@@ -533,6 +545,7 @@ export class Hunt {
     if (this.phase !== "hide" && this.phase !== "hunt") return;
     if (this.phase === "hide" && a.role === "ranger") return; // counting in the cabin
     const z = this.zone();
+    if (this.climb(a, m, now)) return;
     const dt = Math.min(1, Math.max(0.01, (now - a.movedAt) / 1000));
     const max = MOVE[a.role].run * 1.4 * dt + 0.6;
     let dx = m.x - a.x, dy = m.y - a.y;
@@ -542,7 +555,7 @@ export class Hunt {
     pushOut(z, a);
     a.yaw = m.yaw; a.pitch = Math.max(-1.4, Math.min(1.4, m.pitch));
     // A prop keeps low and quiet: no running, no footsteps.
-    a.crouch = !!m.crouch || !!a.disguise; a.run = !!m.run && !a.crouch; a.light = !!m.light && a.role === "ranger";
+    a.crouch = !!m.crouch || !!a.disguise; a.prone = a.crouch && !!m.prone && !a.disguise; a.run = !!m.run && !a.crouch; a.light = !!m.light && a.role === "ranger";
     a.movedAt = now;
     if (d > 0.05) a.walkedAt = now;
     this.touch();
@@ -558,7 +571,7 @@ export class Hunt {
         if (Math.hypot(c.x - g.x, c.y - g.y) > TAG_REACH || Math.abs(z.height(c.x, c.y) - z.height(g.x, g.y)) > 2) continue;
         c.caughtAt = now;
         c.caughtBy = id;
-        c.crouch = false;
+        c.crouch = false; c.prone = false; c.climbAt = null;
         c.disguise = null;
         this.cue(r, "caught", c.x, c.y, id, "all", now);
         this.say(`${who(id)} caught ${who(c.id)} after ${Math.round((now - r.huntStartedAt) / 1000)} s`);
@@ -606,7 +619,7 @@ export class Hunt {
   private footsteps(r: Round, now: number) {
     const sky = this.sky();
     for (const a of r.actors.values()) {
-      if (a.role !== "camper" || a.caughtAt !== null || a.crouch) continue;
+      if (a.role !== "camper" || a.caughtAt !== null || a.crouch || a.climbAt !== null) continue;
       const moving = now - a.walkedAt < 300;
       if (!moving) continue;
       // Rain drowns them out.
@@ -618,6 +631,54 @@ export class Hunt {
       const j = soundJitter(sky, 1);
       this.cue(r, "step", a.x + (this.rand() - 0.5) * 3 * j, a.y + (this.rand() - 0.5) * 3 * j, a.id, "rangers", now);
     }
+  }
+
+  /**
+   * Hold the climb key beside a tree to go up it: five seconds at most, not in the last 15 seconds of
+   * the hunt. Let go and you slide down with a scrape rangers can hear; hold on to the end and you fall.
+   * Returns true while the camper is up, when their position is not theirs to move.
+   */
+  private climb(a: Actor, m: Extract<Msg, { t: "pos" }>, now: number): boolean {
+    const r = this.round;
+    const held = a.climbHeld;
+    a.climbHeld = !!m.climb;
+    if (a.climbAt !== null) {
+      if (!m.climb && r) this.slide(r, a, now);
+      a.movedAt = now;
+      return a.climbAt !== null;
+    }
+    if (!m.climb || held || !r || a.role !== "camper" || a.disguise) return false;
+    if (this.phase === "hunt" && this.endsAt - now < HUNT.climbLockSecs * 1000) return false;
+    const tree = this.zone().near(a.x, a.y, HUNT.climbReach + 2).some((p) => (p.kind === "pine" || p.kind === "sequoia") && Math.hypot(p.x - a.x, p.y - a.y) < p.r + HUNT.climbReach);
+    if (!tree) return false;
+    a.climbAt = now; a.crouch = false; a.prone = false; a.run = false;
+    this.touch();
+    return true;
+  }
+
+  /** Down the trunk: a scrape rangers nearby hear. */
+  private slide(r: Round, a: Actor, now: number) {
+    a.climbAt = null;
+    this.noise(r, a, "step", HUNT.slideReach, now);
+    this.touch();
+  }
+
+  /** Held on for the whole five seconds: off the branch, onto your behind, heard far away. */
+  private climbs(r: Round, now: number) {
+    for (const a of r.actors.values()) {
+      if (a.climbAt === null || now - a.climbAt < HUNT.climbSecs * 1000) continue;
+      a.climbAt = null;
+      this.noise(r, a, "thud", HUNT.fallReach, now);
+      this.touch();
+    }
+  }
+
+  /** A sound at a camper's feet that rangers within `reach` (rain-hushed) hear, placed roughly. */
+  private noise(r: Round, a: Actor, kind: CueKind, reach: number, now: number) {
+    const sky = this.sky(), reachNow = stepReach(sky, reach);
+    if (!r.rangers.some((id) => { const g = r.actors.get(id)!; return Math.hypot(g.x - a.x, g.y - a.y) < reachNow; })) return;
+    const j = soundJitter(sky, kind === "thud" ? 0.5 : 1);
+    this.cue(r, kind, a.x + (this.rand() - 0.5) * 3 * j, a.y + (this.rand() - 0.5) * 3 * j, a.id, "rangers", now);
   }
 
   callBlocked(id: string, now: number): string | null {
@@ -709,7 +770,7 @@ export class Hunt {
         if (a.id === me) continue;
         if (this.phase === "drop") continue; // nobody is on the ground yet
         if (!spectator && !this.visibleTo(z, mine!, a, now, seen)) continue;
-        others.push({ id: a.id, role: a.role, x: a.x, y: a.y, yaw: a.yaw, pitch: a.pitch, crouch: a.crouch, run: a.run, light: a.light, caughtAt: a.caughtAt, disguise: a.disguise });
+        others.push({ id: a.id, role: a.role, x: a.x, y: a.y, yaw: a.yaw, pitch: a.pitch, crouch: a.crouch, prone: !!a.prone, climb: a.climbAt !== null, run: a.run, light: a.light, caughtAt: a.caughtAt, disguise: a.disguise });
       }
       const role = mine?.role;
       const cues = r.cues.filter((c) => c.at <= now && (spectator || c.to === "all" || (c.to === "rangers" ? role === "ranger" : role === "camper") || c.by === me));
@@ -759,7 +820,7 @@ export class Hunt {
     if (me.role === "camper") return Math.hypot(a.x - me.x, a.y - me.y) < HUNT.rangerVisible;
     // Outside the search area, a camper stands out like a flare.
     // A prop is in plain sight: what hides it is that it looks like one.
-    const ok = outside(this.round!.circle, now, a.x, a.y) || canSee(z, this.sky(), { ...me }, a.disguise ? { ...a, crouch: false } : a);
+    const ok = outside(this.round!.circle, now, a.x, a.y) || canSee(z, this.sky(), { ...me }, a.disguise ? { ...a, crouch: false } : { ...a, climb: a.climbAt !== null });
     if (ok) seen.set(a.id, now);
     // Linger a moment, so the edge of a flashlight doesn't strobe.
     return ok || now - (seen.get(a.id) ?? -Infinity) < 400;
@@ -778,7 +839,7 @@ export class Hunt {
 
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
-type Wire = { [k in "t" | "name" | "zone" | "tod" | "live" | "laps" | "mode" | "level" | "id" | "x" | "y" | "yaw" | "pitch" | "crouch" | "run" | "light" | "ask"]?: unknown }
+type Wire = { [k in "t" | "name" | "zone" | "tod" | "live" | "laps" | "mode" | "level" | "id" | "x" | "y" | "yaw" | "pitch" | "crouch" | "prone" | "climb" | "run" | "light" | "ask"]?: unknown }
   & { look?: { [k in "shirt" | "pants" | "skin" | "hat" | "pack"]?: unknown } | null };
 
 /** A guest's message: every field is unknown until checked here; a non-object has none. */
@@ -798,7 +859,7 @@ export function parseMsg(raw: unknown): Msg | null {
     case "start": case "lobby": case "call": case "disguise": return { t: m.t };
     case "drop": return num(m.x) && num(m.y) ? { t: "drop", x: m.x, y: m.y } : null;
     case "pos": return num(m.x) && num(m.y) && num(m.yaw) && num(m.pitch)
-      ? { t: "pos", x: m.x, y: m.y, yaw: m.yaw, pitch: m.pitch, crouch: !!m.crouch, run: !!m.run, light: !!m.light } : null;
+      ? { t: "pos", x: m.x, y: m.y, yaw: m.yaw, pitch: m.pitch, crouch: !!m.crouch, prone: !!m.prone, climb: !!m.climb, run: !!m.run, light: !!m.light } : null;
     case "ask": { const ask = parseAsk(m.ask); return ask ? { t: "ask", ask } : null; }
   }
   return null;
