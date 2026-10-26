@@ -1,0 +1,5 @@
+{
+  "headshot": "git commit --amend: that one's a clean change. Straight to the head.",
+  "reset": "git reset --hard. The one command nobody runs by accident. Command: Use it by accident.",
+  "lastLife": "Command: Last life. Nothing to revert to, so make it a good one."
+}

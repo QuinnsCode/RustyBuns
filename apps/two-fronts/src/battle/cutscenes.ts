@@ -4,20 +4,18 @@
 // sting when a Mossback walks out of the trees.
 import type { Faction, SectorKind } from "./contract.ts";
 import type { Cue, Cutscene } from "./cutscene.ts";
+import SCRIPT from "../../content/cutscenes.json";
+import PLACES_SCRIPT from "../../content/places.json";
+
+// The words live in content/ (bun run cms edits them); {detail}, {into} and {ours} take the place's.
+const fill = (line: string, p: Place) => line.replace(/\{(\w+)\}/g, (m, k: string) => (k === "detail" || k === "into" || k === "ours" ? p[k] : m));
 
 const BACK = Math.PI; // facing +z: back at the camera, or at the Marines
 
 // Where the intros happen, in their words (and the briefing's): the title over the Marines, what
 // they're there for, what the Wooka call theirs, and where they hide.
 export interface Place { title: string; detail: string; into: string; ours: string; know: string; lurk: string }
-export const PLACES: Record<SectorKind, Place> = {
-  shield: { title: "DOREN, THE FOREST MOON", detail: "Generator detail", into: "our trees", ours: "forest", know: "trees", lurk: "in the ferns" },
-  capital: { title: "THE RUINED CAPITAL", detail: "Street sweep", into: "our ruins", ours: "city", know: "streets", lurk: "in the rubble" },
-  spaceport: { title: "THE DEEP-SPACE STATION", detail: "Deck watch", into: "our station", ours: "station", know: "decks", lurk: "behind the crates" },
-  cannon: { title: "THE CANNON SHORE", detail: "Gun detail", into: "our sands", ours: "shore", know: "dunes", lurk: "in the grass" },
-  canyon: { title: "THE DUST SEA", detail: "Desert patrol", into: "our dunes", ours: "desert", know: "rocks", lurk: "in the dunes" },
-  jungle: { title: "THE GLOWING JUNGLE", detail: "Shrine detail", into: "our glowing woods", ours: "jungle", know: "trees", lurk: "in the glow" },
-};
+export const PLACES: Record<SectorKind, Place> = PLACES_SCRIPT;
 
 // The Marines' briefing: one knee-high Wooka on a stump. Nobody is worried. They should be.
 const marinesIntro = (p: Place): Cutscene => ({
@@ -30,17 +28,17 @@ const marinesIntro = (p: Place): Cutscene => ({
     { at: 0, do: "actor", id: "hale", as: { marine: "engineer" }, x: -1, z: 3.4 },
     { at: 0, do: "actor", id: "fluff", as: { wooka: "fodder" }, x: 0, z: -14, face: BACK },
     { at: 0, do: "camera", from: [6, 3, 9], to: [3, 2.2, 6], look: [0, 1.2, -6], lookTo: [0, 1, -10], dur: 4 },
-    { at: 0.2, do: "title", text: p.title, sub: `Thunder Marines · 3rd Drop · ${p.detail}`, dur: 3.4 },
-    { at: 3.4, do: "caption", who: "Sgt. Moreau", text: "Contact. One hostile. It's... knee-high. Nobody run. It can smell it.", dur: 3 },
-    { at: 4.2, do: "say", id: "rook", text: "That's it? THAT ate Second Squad?", dur: 2.4 },
-    { at: 5, do: "say", id: "diaz", text: "Sarge, it has a face. A little face.", dur: 1.8 },
+    { at: 0.2, do: "title", text: p.title, sub: fill(SCRIPT.marines.titleSub, p), dur: 3.4 },
+    { at: 3.4, do: "caption", who: SCRIPT.marines.whoMoreau, text: SCRIPT.marines.moreauContact, dur: 3 },
+    { at: 4.2, do: "say", id: "rook", text: SCRIPT.marines.rookThat, dur: 2.4 },
+    { at: 5, do: "say", id: "diaz", text: SCRIPT.marines.diazFace, dur: 1.8 },
     { at: 4.6, do: "camera", from: [1.4, 1.5, -9.5], to: [0.5, 1, -11.2], look: [0, 0.6, -14], dur: 3 },
     { at: 5.6, do: "sound", noise: "chatter", id: "fluff" },
     { at: 5.8, do: "hop", id: "fluff", dur: 0.8, height: 0.3 },
-    { at: 6.4, do: "say", id: "hale", text: "Look at its little face. I'm going to pet it.", dur: 2.2 },
-    { at: 6.8, do: "say", id: "sarge", text: "Hale. Hale, don't.", dur: 1.4 },
-    { at: 7.6, do: "caption", who: "Cpl. Diaz", text: "That's no ordinary Wooka. Look at the nail in the club, man. LOOK AT THE BONES.", dur: 3 },
-    { at: 8.2, do: "say", id: "fluff", text: "hoo-ka", dur: 1.4 },
+    { at: 6.4, do: "say", id: "hale", text: SCRIPT.marines.haleLittleFace, dur: 2.2 },
+    { at: 6.8, do: "say", id: "sarge", text: SCRIPT.marines.sargeHale, dur: 1.4 },
+    { at: 7.6, do: "caption", who: SCRIPT.marines.whoDiaz, text: SCRIPT.marines.diazBones, dur: 3 },
+    { at: 8.2, do: "say", id: "fluff", text: SCRIPT.marines.fluffHooka, dur: 1.4 },
     { at: 8.2, do: "sound", noise: "chatter", id: "fluff" },
     { at: 9.6, do: "camera", from: [-5, 2.6, 6], look: [0, 1, -2], dur: 2.5 },
     { at: 9.8, do: "walk", id: "fluff", x: -1, z: 3, dur: 0.45 },
@@ -48,18 +46,18 @@ const marinesIntro = (p: Place): Cutscene => ({
     { at: 10.25, do: "gone", id: "hale" },
     { at: 10.25, do: "sound", noise: "grunt", id: "hale" },
     { at: 10.25, do: "shake", amount: 1.2 },
-    { at: 10.4, do: "say", id: "rook", text: "IT GOT HALE", dur: 1.4 },
-    { at: 10.5, do: "caption", who: "Sgt. Moreau", text: "Hale. Hale was a good Marine. Hale was also a very small bite.", dur: 2 },
+    { at: 10.4, do: "say", id: "rook", text: SCRIPT.marines.rookGotHale, dur: 1.4 },
+    { at: 10.5, do: "caption", who: SCRIPT.marines.whoMoreau, text: SCRIPT.marines.moreauHale, dur: 2 },
     { at: 10.6, do: "hop", id: "fluff", dur: 1.4, height: 0.5 },
-    { at: 11.2, do: "say", id: "diaz", text: "RUN AWAY! RUN AWAY!", dur: 1.6 },
-    { at: 11.4, do: "say", id: "sarge", text: "Charge! No! Run! Charge! ...Run!", dur: 1.6 },
+    { at: 11.2, do: "say", id: "diaz", text: SCRIPT.marines.diazRun, dur: 1.6 },
+    { at: 11.4, do: "say", id: "sarge", text: SCRIPT.marines.sargeCharge, dur: 1.6 },
     { at: 11.6, do: "camera", from: [0, 4, 8], to: [0, 6, 12], look: [0, 1, -10], lookTo: [0, 2, -24], dur: 3 },
     ...[-9, -5, -1, 3, 7, 11].map((x, i): Cue => ({ at: 12 + i * 0.12, do: "actor", id: `eyes${i}`, as: { wooka: i % 3 ? "fodder" : "chub" }, x, z: -18 - (i % 2) * 3, face: BACK })),
     ...[0, 1, 2, 3, 4, 5].map((i): Cue => ({ at: 12.6 + i * 0.1, do: "hop", id: `eyes${i}`, dur: 1.6, height: 0.4 })),
     { at: 12.4, do: "sound", noise: "howl" },
     { at: 13.2, do: "sound", noise: "thump" },
-    { at: 13.6, do: "caption", who: "Sgt. Moreau", text: "I love the smell of Wooka in the morning. It smells like... we're done.", dur: 2 },
-    { at: 12.8, do: "title", text: "THEY ARE NOT CUDDLY", sub: "Hold the line. Surely you can't be serious. We are. Don't call us Shirley.", dur: 2.4 },
+    { at: 13.6, do: "caption", who: SCRIPT.marines.whoMoreau, text: SCRIPT.marines.moreauSmell, dur: 2 },
+    { at: 12.8, do: "title", text: SCRIPT.marines.titleEnd, sub: SCRIPT.marines.titleEndSub, dur: 2.4 },
   ],
   end: 15.6,
 });
@@ -77,32 +75,32 @@ const wookaIntro = (p: Place): Cutscene => ({
     { at: 0, do: "actor", id: "small", as: { wooka: "fodder" }, x: 3.6, z: -2 },
     { at: 0, do: "camera", from: [0, 2.2, 6], to: [0, 1.8, 3], look: [0, 1.4, -9], dur: 4.5 },
     { at: 0, do: "sound", noise: "drum" },
-    { at: 0.3, do: "title", text: "THE KIN OF DOREN", sub: `The armoured ones have come into ${p.into}`, dur: 3.2 },
+    { at: 0.3, do: "title", text: SCRIPT.wooka.titleKinHeading, sub: fill(SCRIPT.wooka.titleKin, p), dur: 3.2 },
     { at: 1.2, do: "sound", noise: "drum" },
-    { at: 3.6, do: "say", id: "chief", text: "WUBBA HOO! Kakka-takka GRUNNA!", dur: 2.4 },
+    { at: 3.6, do: "say", id: "chief", text: SCRIPT.wooka.chiefYell, dur: 2.4 },
     { at: 3.6, do: "sound", noise: "howl", id: "chief" },
-    { at: 3.8, do: "caption", who: "The chieftain", text: `The shiny ones came to hunt us. Let's show them whose ${p.ours} it is.`, dur: 2.4 },
-    { at: 6.2, do: "caption", who: "Subtitles", text: "(He said 'attack'. The rest was feelings.)", dur: 1.8 },
+    { at: 3.8, do: "caption", who: SCRIPT.wooka.whoChief, text: fill(SCRIPT.wooka.chiefCaption, p), dur: 2.4 },
+    { at: 6.2, do: "caption", who: SCRIPT.wooka.whoSubtitles, text: SCRIPT.wooka.subtitles, dur: 1.8 },
     { at: 4.4, do: "camera", from: [-6, 1.2, -1], to: [-4, 1.4, -3], look: [0, 1.2, -7], dur: 3 },
     ...kin.map((k, i): Cue => ({ at: 5.2 + (i % 4) * 0.1, do: "hop", id: k.id, dur: 2, height: 0.5 + (i % 3) * 0.15 })),
     { at: 5.3, do: "sound", noise: "hoot" },
     { at: 5.6, do: "sound", noise: "thump", id: "chief" },
-    { at: 5.6, do: "say", id: "kin1", text: "HOO! HOO! HOO!", dur: 1.6 },
-    { at: 6.0, do: "say", id: "kin5", text: "bonk-bonk!", dur: 1.4 },
-    { at: 6.3, do: "say", id: "kin3", text: "Is it bonk? Is it bonk now?", dur: 1.4 },
-    { at: 6.6, do: "say", id: "kin8", text: "Look at the bones!", dur: 1.2 },
+    { at: 5.6, do: "say", id: "kin1", text: SCRIPT.wooka.kin1, dur: 1.6 },
+    { at: 6.0, do: "say", id: "kin5", text: SCRIPT.wooka.kin5, dur: 1.4 },
+    { at: 6.3, do: "say", id: "kin3", text: SCRIPT.wooka.kin3, dur: 1.4 },
+    { at: 6.6, do: "say", id: "kin8", text: SCRIPT.wooka.kin8, dur: 1.2 },
     { at: 7.4, do: "camera", from: [9, 2.5, 4], to: [10, 4, 0], look: [3.5, 1, -2], lookTo: [0, 3, -16], dur: 3.4 },
-    { at: 7.6, do: "say", id: "big", text: "WHEEEE-KA!", dur: 1.3 },
+    { at: 7.6, do: "say", id: "big", text: SCRIPT.wooka.bigWheee, dur: 1.3 },
     { at: 7.9, do: "toss", id: "big", what: "small", x: -2, z: -17, dur: 1.4, height: 9 },
     { at: 7.9, do: "sound", noise: "whoop", id: "small" },
     { at: 9.3, do: "shake", amount: 0.5 },
     { at: 9.3, do: "sound", noise: "boom" },
     { at: 9.5, do: "hop", id: "small", dur: 1.2, height: 0.7 },
-    { at: 9.6, do: "say", id: "small", text: "AGAIN! ...ow. AGAIN!", dur: 1.8 },
-    { at: 9.8, do: "caption", who: "", text: "Nobody asked the Chub to do that. Nobody ever does. It is, to be fair, a very good throw.", dur: 3 },
+    { at: 9.6, do: "say", id: "small", text: SCRIPT.wooka.smallAgain, dur: 1.8 },
+    { at: 9.8, do: "caption", who: "", text: SCRIPT.wooka.narrator, dur: 3 },
     { at: 11, do: "camera", from: [0, 3, 7], to: [0, 5, 11], look: [0, 1, -9], dur: 2.8 },
     { at: 11.2, do: "sound", noise: "drum" },
-    { at: 11.4, do: "title", text: "THE HUNT BEGINS", sub: `Show them the ${p.ours}. Do not feed the Chub.`, dur: 2.4 },
+    { at: 11.4, do: "title", text: SCRIPT.wooka.titleHunt, sub: fill(SCRIPT.wooka.titleHuntSub, p), dur: 2.4 },
   ],
   end: 14.2,
 });
@@ -115,7 +113,7 @@ export const mossbackSting = (f: Faction): Cutscene => ({
     { at: 0, do: "camera", from: [3, 1.2, -9], to: [1.5, 1.6, -6], look: [0, 3, 0], dur: 2.6 },
     { at: 0, do: "sound", noise: f === "wooka" ? "drum" : "warn" },
     { at: 0.2, do: "shake", amount: 0.8 },
-    { at: 0.3, do: "title", text: f === "wooka" ? "OUR BIG ONE WALKS" : "MOSSBACK", sub: f === "wooka" ? "Get behind it" : "Rifles barely mark it. Rockets. Strikes. Anything heavy.", dur: 2.4 },
+    { at: 0.3, do: "title", text: f === "wooka" ? SCRIPT.mossback.wookaTitle : SCRIPT.mossback.marinesTitle, sub: f === "wooka" ? SCRIPT.mossback.wookaSub : SCRIPT.mossback.marinesSub, dur: 2.4 },
   ],
   end: 2.8,
 });

@@ -1,0 +1,45 @@
+{
+  "marines": {
+    "moreauContact": "Contact. One hostile. It's... knee-high. Nobody run. It can smell it.",
+    "rookThat": "That's it? THAT ate Second Squad?",
+    "diazFace": "Sarge, it has a face. A little face.",
+    "haleLittleFace": "Look at its little face. I'm going to pet it.",
+    "sargeHale": "Hale. Hale, don't.",
+    "diazBones": "That's no ordinary Wooka. Look at the nail in the club, man. LOOK AT THE BONES.",
+    "fluffHooka": "hoo-ka",
+    "rookGotHale": "IT GOT HALE",
+    "moreauHale": "Hale. Hale was a good Marine. Hale was also a very small bite.",
+    "diazRun": "RUN AWAY! RUN AWAY!",
+    "sargeCharge": "Charge! No! Run! Charge! ...Run!",
+    "moreauSmell": "I love the smell of Wooka in the morning. It smells like... we're done.",
+    "titleEnd": "THEY ARE NOT CUDDLY",
+    "titleEndSub": "Hold the line. Surely you can't be serious. We are. Don't call us Shirley.",
+    "titleSub": "Thunder Marines · 3rd Drop · {detail}",
+    "whoMoreau": "Sgt. Moreau",
+    "whoDiaz": "Cpl. Diaz"
+  },
+  "wooka": {
+    "chiefYell": "WUBBA HOO! Kakka-takka GRUNNA!",
+    "subtitles": "(He said 'attack'. The rest was feelings.)",
+    "kin1": "HOO! HOO! HOO!",
+    "kin5": "bonk-bonk!",
+    "kin3": "Is it bonk? Is it bonk now?",
+    "kin8": "Look at the bones!",
+    "bigWheee": "WHEEEE-KA!",
+    "smallAgain": "AGAIN! ...ow. AGAIN!",
+    "narrator": "Nobody asked the Chub to do that. Nobody ever does. It is, to be fair, a very good throw.",
+    "titleHunt": "THE HUNT BEGINS",
+    "titleKin": "The armoured ones have come into {into}",
+    "chiefCaption": "The shiny ones came to hunt us. Let's show them whose {ours} it is.",
+    "titleHuntSub": "Show them the {ours}. Do not feed the Chub.",
+    "whoChief": "The chieftain",
+    "whoSubtitles": "Subtitles",
+    "titleKinHeading": "THE KIN OF DOREN"
+  },
+  "mossback": {
+    "marinesTitle": "MOSSBACK",
+    "marinesSub": "Rifles barely mark it. Rockets. Strikes. Anything heavy.",
+    "wookaTitle": "OUR BIG ONE WALKS",
+    "wookaSub": "Get behind it"
+  }
+}

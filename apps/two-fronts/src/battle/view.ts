@@ -21,6 +21,7 @@ import { isTouch, mountTouch } from "./touch.ts";
 import { icon } from "../ui/icons.ts";
 import { makeBubbles } from "../ui/bubbles.ts";
 import { chatterFor } from "./lines.ts";
+import CHATTER_SCRIPT from "../../content/chatter.json";
 import { introOf, mossbackSting } from "./cutscenes.ts";
 import { playCutscene, shouldPlay } from "./cutscene-view.ts";
 import { WORLDS } from "./worlds.ts";
@@ -35,24 +36,7 @@ const ORDER_INFO: Record<OrderKind, { icon: string; name: string; color: number 
   focus: { icon: "crosshair", name: "Focus fire", color: 0xff5a3a },
 };
 // What comrades say over their heads: something daft when it's quiet, something worried when it isn't.
-const CHATTER = {
-  marines: {
-    calm: ["Is it meant to be this quiet?", "My snorkel's fogging up", "Anyone else hear humming?", "Mum said join the navy", "I signed up for the brochure", "Smells like wet dog out here", "They can't be THAT bad, right?", "Who packed my backpack? It weighs a tonne", "I think a fern just blinked",
-      "Does anyone else feel like a lamb to the slaughter? Just me?", "I'm not saying it's a trap. I'm saying there's a very polite sign saying TRAP", "Last week I picked the wrong planet to quit coffee on", "I haven't felt this alone since the bus", "If this is a jungle, where's the helicopter music?", "Is anyone else hearing a rabbit? No? Just me?", "I'd like to speak to whoever drew this map. And thank them. And never see them again.", "Sergeant says stay frosty. It's thirty-eight degrees"],
-    scared: ["THERE'S SO MANY", "It's looking at me", "Too fluffy, TOO FLUFFY", "Reloading! Cover me!", "They're in the ferns!", "I want to go home", "Don't let them near the backpacks!", "Keep shooting, keep SHOOTING",
-      "Look at the bones! LOOK AT THE BONES!", "Run away! Not you, you. Everybody else, stay!", "Surely this is not serious? It's serious. Don't call me Shirley!", "That's the third one! It keeps coming back and it keeps being small!", "I can't feel my legs. Oh, there. Good. They've gone to a better place", "Mommy! Mommy's here? Oh. It's a Wooka. Mommy's a Wooka?", "They've got my boot. They've got my other boot. They've got the foot in the boot"],
-    big: ["What IS that?!", "That one's the size of a hut", "Rockets! Who has rockets?", "I'm not paid enough for this", "That's no ordinary Wooka!", "I've seen a lot of things, and now I've seen that", "It's the one from the bones! The bones were its! Look at the BONES!", "I'm gonna need a bigger backpack. No wait, a smaller me"],
-    hurt: ["I'm hit! I'm fine. I'm hit!", "Medic? Medic?!", "It bit my ARMOUR", "'Tis but a scratch! It's a leg. It was a leg", "I've had worse. Not much worse. But, some", "Tell my squad I'm fine. They can see I'm not. Tell them anyway"],
-  },
-  wooka: {
-    calm: ["Hoo-ka?", "wub wub", "Shiny ones smell funny", "Bonk soon?", "Mine helmet. MINE.", "Kakka-takka!", "Snack?",
-      "Hoo. Hoo hoo. Hoo?", "Shiny one dropped a thing. Is a thing", "Look at bones. Lots bones. Nice bones", "Is it bonk-time? Chief said bonk-time", "Little one ate the pin. Little one is fine. Little one is not fine", "Grrrm. Grrrm-wub", "We win? We win. We lose? We also win"],
-    scared: ["HOO! HOO! HOO!", "Bonk the shiny!", "Grunna-WUB!", "Get the backpack!", "Up the tree, up the tree!",
-      "Hoo-ROOOO!", "Too many shiny! Fewer shiny please!", "WAH! WAH! WAH-WAH-WAH!", "Chief said bonk. Chief did not say THIS many"],
-    big: ["BIG ONE!", "Big one go bonk!", "Wheee-ka!", "Big one see shiny, shiny not see big one", "Hoo-ROAR! Big one say hello!"],
-    hurt: ["Ow-ka!", "Ouchy wub", "Still fluffy!", "Is only a scratch! Is a leg! Was a leg", "Bite me back! Nobody bite me back!"],
-  },
-} as const;
+const CHATTER = CHATTER_SCRIPT;
 
 // A few lucide icons (ISC licence) for the rhythm strip: the HUD says it with icons and a ticking clock.
 const HUD_ICONS: Record<string, string> = {

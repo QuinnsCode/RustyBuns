@@ -159,6 +159,16 @@ The monthly bill comes from the fan-out, so the desktop and box hosts count ever
 
 </details>
 
+### Edit a game's script as text
+
+A game keeps its words in `content/*.json`, and `bun run cms` in the app serves them as textarea forms that save to those files.
+
+<details><summary>More</summary>
+
+`packages/cms` reads the shape from the file itself, so a form can change text but never add, drop or retype a key, and it only listens on `127.0.0.1`. Strings get one box, lists of strings one box with a line each. [Two Fronts](apps/two-fronts/README.md) (radio, chatter, cutscene lines, places) and [Git Recon](apps/git-recon/README.md) (the director's radio, gags, chapter stories) are wired in; to add a game, move its lines into a `content/` folder, import them, and add a `cms` script like theirs.
+
+</details>
+
 ### Smoke test an app without touching it
 
 `rustybuns smoke [dir]` copies your app to a throwaway folder, installs, inits, builds and boots it on the local twins, and says whether `GET /` answered.

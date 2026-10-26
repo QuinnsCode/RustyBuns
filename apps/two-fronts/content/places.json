@@ -1,0 +1,50 @@
+{
+  "shield": {
+    "title": "DOREN, THE FOREST MOON",
+    "detail": "Generator detail",
+    "into": "our trees",
+    "ours": "forest",
+    "know": "trees",
+    "lurk": "in the ferns"
+  },
+  "capital": {
+    "title": "THE RUINED CAPITAL",
+    "detail": "Street sweep",
+    "into": "our ruins",
+    "ours": "city",
+    "know": "streets",
+    "lurk": "in the rubble"
+  },
+  "spaceport": {
+    "title": "THE DEEP-SPACE STATION",
+    "detail": "Deck watch",
+    "into": "our station",
+    "ours": "station",
+    "know": "decks",
+    "lurk": "behind the crates"
+  },
+  "cannon": {
+    "title": "THE CANNON SHORE",
+    "detail": "Gun detail",
+    "into": "our sands",
+    "ours": "shore",
+    "know": "dunes",
+    "lurk": "in the grass"
+  },
+  "canyon": {
+    "title": "THE DUST SEA",
+    "detail": "Desert patrol",
+    "into": "our dunes",
+    "ours": "desert",
+    "know": "rocks",
+    "lurk": "in the dunes"
+  },
+  "jungle": {
+    "title": "THE GLOWING JUNGLE",
+    "detail": "Shrine detail",
+    "into": "our glowing woods",
+    "ours": "jungle",
+    "know": "trees",
+    "lurk": "in the glow"
+  }
+}
