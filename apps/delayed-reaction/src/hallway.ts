@@ -32,9 +32,12 @@ export function project(v: View, x: number, y: number, z: number): [number, numb
   return [v.cx + x * s, v.hy + (CAM_Y - y) * s];
 }
 
-/** The tunnel's radius at an angle and distance: it breathes, but never under the runner's feet. */
+/** How hard the kick is hitting right now: 1 on the beat, gone a quarter-beat later. */
+const kickAt = (beat: number) => Math.max(0, 1 - (((beat % 1) + 1) % 1) * 4);
+
+/** The tunnel's radius at an angle and distance: it breathes and swells on the kick, but never under the runner's feet. */
 export function radius(theta: number, z: number, beat: number) {
-  return R * (1 + 0.07 * Math.sin(3 * theta) * Math.sin(z * 0.35 - beat * 0.9));
+  return R * (1 + 0.07 * Math.sin(3 * theta) * Math.sin(z * 0.35 - beat * 0.9)) * (1 + kickAt(beat) * 0.025);
 }
 
 /** A point on the tunnel wall, at an angle from the floor and a distance ahead, on the screen. */
@@ -85,25 +88,33 @@ export function drawTunnel(g: CanvasRenderingContext2D, v0: View, s: Scene) {
   g.lineJoin = "round";
   // The kick: the lines flash brighter on each beat and the whole tunnel lurches a touch closer,
   // and the vanishing point drifts in a slow figure, so the tunnel sways like it is breathing.
-  const kick = s.run ? Math.max(0, 1 - (((beat % 1) + 1) % 1) * 4) : 0;
+  const kick = s.run ? kickAt(beat) : 0;
   const v: View = { ...v0, f: v0.f * (1 + kick * 0.04), cx: v0.cx + Math.sin(beat * 0.37) * W * 0.02, hy: v0.hy + Math.cos(beat * 0.23) * H * 0.012 };
-  const white = (a: number) => `rgba(235,240,255,${Math.min(1, a + kick * 0.25)})`;
+  // Near-white, but the white itself drifts: a cold blue-white one minute, a warm pink-white the next.
+  const hue = 215 + Math.sin(beat * 0.045) * 110;
+  const white = (a: number) => `hsla(${hue},70%,93%,${Math.min(1, a + kick * 0.25)})`;
   g.globalCompositeOperation = "lighter";
 
-  // Long lines: a helix whose twist slowly reverses, rolling round the axis.
-  const roll = beat * 0.11, twist = Math.sin(beat * 0.07) * 0.09;
-  g.lineWidth = 1.2;
-  g.strokeStyle = white(0.55);
+  // Long lines: a helix whose twist slowly reverses, rolling round the axis. Each line twists a
+  // little differently from its neighbours, so they weave over and under each other on the way down.
+  const roll = beat * 0.11, twist = Math.sin(beat * 0.07) * 0.07;
+  // A second, fainter grid rolls the other way through the first, and where they cross the lines
+  // beat against each other: a moiré that crawls round the walls.
   g.setLineDash([]);
-  for (let k = 0; k < LINES; k++) {
-    const base = (k / LINES) * Math.PI * 2 + roll;
-    g.beginPath();
-    for (let i = 0; i <= SEGS; i++) {
-      const z = NEAR * Math.pow(FAR / NEAR, i / SEGS);
-      const [x, y] = wall(v, base + twist * z, z, beat);
-      i ? g.lineTo(x, y) : g.moveTo(x, y);
+  for (const [dir, alpha, width] of [[1, 0.55, 1.2], [-0.6, 0.16, 1]] as const) {
+    g.lineWidth = width;
+    g.strokeStyle = white(alpha);
+    for (let k = 0; k < LINES; k++) {
+      const base = (k / LINES) * Math.PI * 2 + roll * dir + (dir < 0 ? Math.PI / LINES : 0);
+      const weave = (twist + 0.03 * Math.sin(beat * 0.31 + k * 1.7)) * dir;
+      g.beginPath();
+      for (let i = 0; i <= SEGS; i++) {
+        const z = NEAR * Math.pow(FAR / NEAR, i / SEGS);
+        const [x, y] = wall(v, base + weave * z, z, beat);
+        i ? g.lineTo(x, y) : g.moveTo(x, y);
+      }
+      g.stroke();
     }
-    g.stroke();
   }
   // Cross rings every beat, so the tunnel rushes past at the song's speed. Bars are brighter.
   const first = Math.ceil(beat - RUNNER_Z / (PER_BEAT * speed));
@@ -111,7 +122,9 @@ export function drawTunnel(g: CanvasRenderingContext2D, v0: View, s: Scene) {
     const z = ringZ(b, beat, speed);
     if (z < NEAR) continue;
     const bar = ((b % 4) + 4) % 4 === 0;
-    g.strokeStyle = white((bar ? 0.6 : 0.22) * Math.min(1, 6 / z));
+    // On each bar a wave of light leaves the runner and runs down the tunnel ahead of them.
+    const wave = s.run ? Math.max(0, Math.cos((z - RUNNER_Z) * 0.25 - (((beat % 4) + 4) % 4) * 2.2)) ** 6 : 0;
+    g.strokeStyle = white((bar ? 0.6 : 0.22) * Math.min(1, 6 / z) + wave * 0.5);
     g.lineWidth = bar ? 1.6 : 1;
     ring(g, v, z, beat);
   }
@@ -174,10 +187,17 @@ function drawCall(g: CanvasRenderingContext2D, v: View, c: Call, beat: number, s
     g.globalAlpha = a;
     ring(g, v, z, beat, theta - OPEN, theta + OPEN, 8);
     if (!due) continue;
-    // The fence: a faint grid across the tunnel, open only round the lane. Spokes and two inner rings.
+    // The open part burns white-hot at its core: that is the hole you run through.
+    g.strokeStyle = "#fff";
+    g.lineWidth = 1.5 * near;
+    g.globalAlpha = a * 0.9;
+    ring(g, v, z, beat, theta - OPEN * 0.8, theta + OPEN * 0.8, 8);
+    // The fence: a dashed digital grid across the tunnel in the lane's colour, open only round the
+    // lane. Spokes from the axis and two inner rings.
+    g.setLineDash([3, 6]);
     g.lineWidth = 1;
-    g.globalAlpha = a * (c.state === "held" ? 0.45 : 0.25);
-    g.strokeStyle = c.state === "missed" ? col : "rgba(235,240,255,1)";
+    g.globalAlpha = a * (c.state === "held" ? 0.5 : 0.3);
+    g.strokeStyle = col;
     const axis = project(v, 0, R, z);
     g.beginPath();
     for (let i = 0; i < 24; i++) {
@@ -197,6 +217,7 @@ function drawCall(g: CanvasRenderingContext2D, v: View, c: Call, beat: number, s
       }
       g.stroke();
     }
+    g.setLineDash([]);
     g.strokeStyle = col;
     // A hold: the open arc stretches on to the release ring, and glows while held.
     if (c.hold) {
