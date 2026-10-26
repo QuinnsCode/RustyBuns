@@ -3,7 +3,7 @@
 // is a playlist of code you like. Plain fetch handler: it runs as a Worker on
 // Cloudflare and in-process under Bun on the desktop.
 
-import { parseJson } from "./util.ts";
+import { isPlainObject, parseJson } from "./util.ts";
 import { artifactMoveRoutes } from "./artifact-move.ts";
 import { featureRankRoutes } from "./feature-ranks.ts";
 import { findRoutes } from "./finds.ts";
@@ -871,6 +871,13 @@ async function route(req: Request, env: Env): Promise<Response> {
           const open = await toFile(env, owner, repo, path, "anon", "file", { headers: { "x-codesplitter-crew": "0" } }).catch(() => null);
           const doc = open?.ok ? (await open.json().catch(() => null)) as Doc | null : null;
           if (doc) await indexFile(env, owner, repo, path, text(doc)).catch(() => null);
+          // Git's HEAD holds the last commit's text until the file's next commit: push that commit again with these lines blank.
+          if (!branch) {
+            const hid = await toFile(env, owner, repo, path, user!, "hidden", { method: "POST", body: sent });
+            const files: unknown = hid.ok ? await hid.json().catch(() => null) : null;
+            if (isPlainObject(files) && typeof files.content === "string" && typeof files.published === "string")
+              await pushCatalogue(env, owner, repo, path, { content: files.content, published: files.published }, user!, "hide private lines").catch(() => null);
+          }
         }
         // Open branches' copies of the file hide the same lines.
         const { results } = await env.DB.prepare("SELECT b.name FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch WHERE f.owner = ? AND f.repo = ? AND f.path = ? AND b.status = 'open'").bind(owner, repo, path).all();
