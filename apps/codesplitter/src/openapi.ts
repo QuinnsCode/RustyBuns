@@ -204,6 +204,12 @@ const OPS: Record<string, Record<string, Op>> = {
       + "Name the ops protocol you were started on as `proto` and an update to another one is that same 409, instead of an edit made by rules you didn't read.",
     query: { ...filePath, ...onBranch }, body: obj({ ops: arr(ref("LineOp")), ifRev: int(), claim: str("your claim's id, when you're an agent editing lines you claimed"), proto: int("the ops protocol you were started on; a file on another one answers 409 `updating`") }, ["ops"]),
     ok: obj({ rev: int(), applied: arr(ref("Applied")) }) } },
+  [`${repo}/do/edit`]: { post: { id: "edit", summary: "Edit lines in one call: wait for them, apply, let go (the crew)", tag: "Files",
+    description: "claim_lines (with wait), edit_lines naming the claim, and release_claim, as one call, so an agent never forgets to let go. The lines claimed are the ones the ops name (a set's or delete's `line`, an insert's `after`). "
+      + "If they're held it waits in line up to `timeout` seconds (20 at most), then answers 202 {queued, id, place}: call edit again with that `id` to keep your place. The claim is released whatever the edit's answer, a 409 included. "
+      + "Every check of edit_lines and claim_lines applies, and the answer is edit_lines' own on failure.",
+    query: { ...filePath, ...onBranch }, body: obj({ ops: arr(ref("LineOp")), id: str("the claim's id from an earlier 202, to keep your place in line"), task: str("what you're doing, shown to everyone while you hold the lines"), ifRev: int(), timeout: int("seconds to wait in line, 0 to 20 (default 20)") }, ["ops"]),
+    ok: obj({ rev: int(), applied: arr(ref("Applied")), claim: str("the claim that was held for the edit, released now; null when the ops touched no existing line") }) } },
   [`${repo}/do/claims`]: {
     get: { id: "list_claims", summary: "Who is working on which lines of a file right now", tag: "Files", open: true,
       description: "A claimed line takes edits from its holder only. `until` is when a claim lapses (null: a person's hold, which stands till lifted). A `soft` one is an intent: it keeps nobody off.",
