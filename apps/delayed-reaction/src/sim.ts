@@ -1,9 +1,10 @@
-// The game, with no page in it: a chart of calls, a run that judges the player's presses against
-// each call's due beat, and nothing else. Time is in beats, so the same chart plays at any tempo.
+// The game, with no page in it: a chart of calls, a runner who stands in one of four lanes, and a
+// wall on each call's due beat with one door in it. Time is in beats, so the same chart plays at any tempo.
 //
-// The rule that names the game: a key on the keyboard calls at beat b, and you answer it `delay`
-// beats later, on the same lane. While you wait, more keys call, so you carry a queue in your head
-// (the polyphony). A long key is a hold: press on its due beat, let go when it ends.
+// The rule that names the game: a call rings in lane L at beat b, and `delay` beats later a wall
+// arrives with its door in lane L. Be standing in L when it arrives and you run through; be anywhere
+// else and you bounce. While you wait, more calls ring, so you carry a queue of doors in your head
+// (the polyphony). A long door is a hold: stay in its lane until it ends.
 import { mulberry32 } from "@rustybuns/util";
 
 export type Lane = 0 | 1 | 2 | 3;
@@ -13,8 +14,8 @@ export type Call = {
   id: number;
   lane: Lane;
   beat: number;      // when the keyboard calls it
-  due: number;       // when you answer: beat + chart.delay
-  hold: number;      // 0 for a tap; a hold wants a release at due + hold
+  due: number;       // when its wall arrives: beat + chart.delay
+  hold: number;      // 0 for a tap; a long door wants you in its lane until due + hold
   state: "pending" | "held" | "hit" | "missed";
   grade?: Grade;
 };
@@ -37,12 +38,12 @@ export const GOOD = 0.25;
 export const LIVES = 8;
 
 // Speed: how fast the world looks and sounds, never when calls are due (charts stay in beats).
-// An answer on time boosts it, a miss or a stray press hits the fence and cuts it back, and each
+// Through a door on time boosts it, a bounce off a wall cuts it back, and each
 // beat it decays toward the floor on its own, so only a run that keeps answering stays fast.
 export const SPEED_FLOOR = 1;
 export const SPEED_CEILING = 2.5;
 const BOOST = { perfect: 0.3, good: 0.12 } as const;
-const FENCE_KEEPS = 0.25;  // the share of the boost above the floor a fence hit leaves you
+const FENCE_KEEPS = 0.25;  // the share of the boost above the floor a bounce off a wall leaves you
 const DECAY = 0.96;        // the share of the boost above the floor that survives a beat
 
 export const LEVELS = [
@@ -62,7 +63,7 @@ export function makeChart(level: number, seed = level * 7919): Chart {
   const spec = LEVELS[Math.max(0, Math.min(LEVELS.length - 1, level - 1))]!;
   const rng = mulberry32(seed);
   const calls: Call[] = [];
-  let id = 0, lastLane: Lane = 1;
+  let id = 0, lastLane: Lane = 1, holdEnd = 0;
   // The first bar is a count-in, the last `delay` beats need no calls (nothing could be answered).
   for (let bar = 1; bar < spec.bars; bar++) {
     const barBeat = bar * 4;
@@ -79,11 +80,13 @@ export function makeChart(level: number, seed = level * 7919): Chart {
       const beat = barBeat + slot;
       const hold = onBeat && rng() < spec.holds ? 1 + Math.floor(rng() * 2) : 0;
       if (beat + spec.delay + hold > spec.bars * 4 - 1) continue;
+      // The runner is in one place: nothing else can be due while a long door is still open.
+      if (beat < holdEnd) continue;
       // No two calls on one lane closer than a beat: a thumb can't do that.
       const prev = calls.filter((c) => c.lane === lane).at(-1);
       if (prev && beat - (prev.beat + prev.hold) < 1) continue;
       calls.push({ id: id++, lane, beat, due: beat + spec.delay, hold, state: "pending" });
-      if (hold) break; // a hold ends the bar's phrase
+      if (hold) { holdEnd = beat + hold; break; } // a hold ends the bar's phrase
     }
   }
   calls.sort((a, b) => a.beat - b.beat);
@@ -101,18 +104,41 @@ export type Run = {
   perfects: number;
   misses: number;
   speed: number;     // SPEED_FLOOR..SPEED_CEILING, read by the renderer and the music
+  lane: Lane;        // where the runner stands across the floor
   over: "won" | "lost" | null;
+  step: { from: number; at: number };  // the sidestep under way: where it started (lane units) and when
+  bouncedAt: number;                   // the beat of the last bounce off a wall
 };
 
 export type Judgement =
-  | { kind: "hit"; call: Call; grade: Grade; offset: number }
-  | { kind: "miss"; call: Call }
-  | { kind: "early"; lane: Lane }   // a press with nothing due on that lane: a small penalty, breaks the combo
-  | { kind: "release"; call: Call; grade: Grade | "dropped" };
+  | { kind: "hit"; call: Call; grade: Grade; offset: number }   // through the door
+  | { kind: "miss"; call: Call }                                // bounced off its wall
+  | { kind: "move"; lane: Lane }                                // a sidestep: free, nothing judged
+  | { kind: "release"; call: Call; grade: Grade | "dropped" };  // the end of a long door, or leaving it early
+
+// The four places across the floor, in lane units either side of the middle.
+const laneX = (lane: Lane) => lane - 1.5;
+const STEP = 0.15;      // beats a sidestep takes
+const KNOCK = 1;        // beats a knock-back takes to settle
 
 export function createRun(chart: Chart): Run {
   for (const c of chart.calls) { c.state = "pending"; delete c.grade; }
-  return { chart, beat: 0, score: 0, combo: 0, maxCombo: 0, lives: LIVES, hits: 0, perfects: 0, misses: 0, speed: SPEED_FLOOR, over: null };
+  return {
+    chart, beat: 0, score: 0, combo: 0, maxCombo: 0, lives: LIVES, hits: 0, perfects: 0, misses: 0,
+    speed: SPEED_FLOOR, lane: 1, over: null, step: { from: laneX(1), at: -Infinity }, bouncedAt: -Infinity,
+  };
+}
+
+/** Where to draw the runner at `beat`, -1.5 (far left) to 1.5 (far right), eased over the sidestep. */
+export function runnerX(run: Run, beat: number): number {
+  const t = Math.max(0, Math.min(1, (beat - run.step.at) / STEP));
+  return run.step.from + (laneX(run.lane) - run.step.from) * (1 - (1 - t) ** 3);
+}
+
+/** How hard the runner is being thrown back at `beat`: 1 right after a bounce, 0 a beat later. */
+export function knockback(run: Run, beat: number): number {
+  const t = (beat - run.bouncedAt) / KNOCK;
+  return t < 0 || t >= 1 ? 0 : (1 - t) ** 2;
 }
 
 // Move the run's clock forward, letting the speed fall back toward the floor for the beats that passed.
@@ -121,16 +147,16 @@ function tick(run: Run, beat: number) {
   run.beat = Math.max(run.beat, beat);
 }
 
-const fence = (run: Run) => { run.speed = SPEED_FLOOR + (run.speed - SPEED_FLOOR) * FENCE_KEEPS; };
-
 const gradeOf = (offset: number): Grade | null =>
   Math.abs(offset) <= PERFECT ? "perfect" : Math.abs(offset) <= GOOD ? "good" : null;
 
+// The wall: a life, the combo, most of the speed, and a knock-back.
 function miss(run: Run, call: Call): Judgement {
   call.state = "missed";
   run.misses++;
   run.combo = 0;
-  fence(run);
+  run.speed = SPEED_FLOOR + (run.speed - SPEED_FLOOR) * FENCE_KEEPS;
+  run.bouncedAt = run.beat;
   run.lives--;
   if (run.lives <= 0) run.over = "lost";
   return { kind: "miss", call };
@@ -146,68 +172,63 @@ function reward(run: Run, grade: Grade) {
   run.score += (grade === "perfect" ? 100 : 60) * Math.min(4, 1 + Math.floor(run.combo / 10));
 }
 
-/** Move the clock to `beat`: calls whose window closed unanswered are misses, and the run ends when the song does. */
+// In the door: a tap is through it, a long door is entered and still has to be stayed in.
+function through(run: Run, c: Call, grade: Grade, offset: number): Judgement {
+  c.grade = grade;
+  if (c.hold) c.state = "held";
+  else { c.state = "hit"; reward(run, grade); }
+  return { kind: "hit", call: c, grade, offset };
+}
+
+// A long door that ran its length: graded on how you came in.
+function finishHold(run: Run, c: Call): Judgement {
+  c.state = "hit";
+  const grade = c.grade ?? "good";
+  reward(run, grade);
+  return { kind: "release", call: c, grade };
+}
+
+/** Move the clock to `beat`. Each wall that arrives lets the runner through if they're standing in its door,
+ *  and bounces them if they still aren't once its window closes. The run ends when the song does. */
 export function advance(run: Run, beat: number): Judgement[] {
   tick(run, beat);
   run.beat = beat;
   const out: Judgement[] = [];
   if (run.over) return out;
   for (const c of run.chart.calls) {
-    if (c.state === "pending" && beat > c.due + GOOD) out.push(miss(run, c));
-    else if (c.state === "held" && beat > c.due + c.hold + GOOD) {
-      // Held past the end without letting go: counts as a good release. A thumb that stays down is a thumb that stayed down.
-      c.state = "hit";
-      reward(run, "good");
-      out.push({ kind: "release", call: c, grade: "good" });
-    }
+    // Already standing in the door when the wall arrives: through, a good.
+    if (c.state === "pending" && beat >= c.due && run.lane === c.lane) out.push(through(run, c, "good", 0));
+    else if (c.state === "pending" && beat > c.due + GOOD) out.push(miss(run, c));
+    else if (c.state === "held" && beat >= c.due + c.hold) out.push(finishHold(run, c));
     if (run.over) break;
   }
   if (!run.over && beat >= run.chart.bars * 4 && run.chart.calls.every((c) => c.state === "hit" || c.state === "missed")) run.over = "won";
   return out;
 }
 
-/** A pad goes down at `beat`: answers the nearest due call on that lane, or counts as an early press. */
-export function press(run: Run, lane: Lane, beat: number): Judgement {
-  tick(run, beat);
-  if (run.over) return { kind: "early", lane };
+/** A pad goes down at `beat`: the runner sidesteps to that lane. Moving is free; arriving in a door inside its
+ *  window is graded on how close to the due beat you got there, and leaving a long door early drops it. */
+export function press(run: Run, lane: Lane, beat: number): Judgement[] {
+  const out = advance(run, beat);
+  if (run.over) return out;
+  if (lane !== run.lane) {
+    for (const c of run.chart.calls) {
+      if (c.state !== "held") continue;
+      if (beat < c.due + c.hold - GOOD) { miss(run, c); out.push({ kind: "release", call: c, grade: "dropped" }); }
+      else out.push(finishHold(run, c));
+    }
+    run.step = { from: runnerX(run, beat), at: beat };
+    run.lane = lane;
+    out.push({ kind: "move", lane });
+  }
+  // Into the door (or a tap on the beat where you already stand): graded by the offset.
   let best: Call | null = null;
   for (const c of run.chart.calls) {
-    if (c.lane !== lane || c.state !== "pending") continue;
-    if (Math.abs(beat - c.due) > GOOD) continue;
+    if (c.lane !== lane || c.state !== "pending" || Math.abs(beat - c.due) > GOOD) continue;
     if (!best || Math.abs(beat - c.due) < Math.abs(beat - best.due)) best = c;
   }
-  if (!best) {
-    run.combo = 0;
-    run.score = Math.max(0, run.score - 20);
-    fence(run);
-    return { kind: "early", lane };
-  }
-  const offset = beat - best.due;
-  const grade = gradeOf(offset)!;
-  best.grade = grade;
-  if (best.hold) {
-    best.state = "held";
-  } else {
-    best.state = "hit";
-    reward(run, grade);
-  }
-  return { kind: "hit", call: best, grade, offset };
-}
-
-/** The pad comes up at `beat`: ends a hold. Early is a drop (a miss); on time grades like a tap. */
-export function release(run: Run, lane: Lane, beat: number): Judgement | null {
-  tick(run, beat);
-  const c = run.chart.calls.find((c) => c.lane === lane && c.state === "held");
-  if (!c) return null;
-  const grade = gradeOf(beat - (c.due + c.hold));
-  if (!grade && beat < c.due + c.hold) {
-    miss(run, c);
-    return { kind: "release", call: c, grade: "dropped" };
-  }
-  c.state = "hit";
-  const g = grade ?? "good";
-  reward(run, c.grade === "perfect" && g === "perfect" ? "perfect" : "good");
-  return { kind: "release", call: c, grade: g };
+  if (best && !run.over) out.push(through(run, best, gradeOf(beat - best.due)!, beat - best.due));
+  return out;
 }
 
 /** The lanes with a pending call inside its window at `beat`: the pads to light up as "now". */

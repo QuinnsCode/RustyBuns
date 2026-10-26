@@ -1,98 +1,112 @@
 import { expect, test } from "bun:test";
-import { advance, createRun, dueLanes, GOOD, inFlight, LEVELS, LIVES, makeChart, PERFECT, press, release, SPEED_CEILING, SPEED_FLOOR, type Run } from "../src/sim.ts";
+import { advance, createRun, dueLanes, GOOD, knockback, LEVELS, LIVES, makeChart, press, runnerX, SPEED_CEILING, SPEED_FLOOR, type Call, type Judgement, type Run } from "../src/sim.ts";
 
-// One run through a level, the way a player does it: every call answered on its due beat, holds
-// let go when they end. Then the same chart ignored: every call missed until the lives run out.
-test("answering every call `delay` beats after it is called wins the level; ignoring them loses it", () => {
+// A player who walks the chart: for each wall, step into its door `offset` beats from the due beat
+// (skipping the ones `skip` says to), then let the clock run on. Returns every judgement on the way.
+function walk(run: Run, calls: Call[], offset: number, skip = (_i: number) => false) {
+  const out: Judgement[] = [];
+  for (const [i, c] of calls.entries()) {
+    out.push(...advance(run, c.due - 0.3));
+    if (!skip(i)) out.push(...press(run, c.lane, c.due + offset));
+    if (run.over) break;
+  }
+  return out;
+}
+
+// One run through a level, the way a player does it: into each door just before its wall arrives,
+// staying put through the long ones. Then the same chart with a runner who never moves.
+test("moving to each door on its due beat wins every level; standing still loses", () => {
   for (let level = 1; level <= LEVELS.length; level++) {
     const chart = makeChart(level);
     expect(chart.calls.length).toBeGreaterThan(15);
     for (const c of chart.calls) expect(c.due - c.beat).toBe(chart.delay);
     expect(makeChart(level)).toEqual(chart); // the same song every retry
+    // One runner, one place: nothing is due while a long door is still open.
+    for (const h of chart.calls.filter((c) => c.hold))
+      expect(chart.calls.some((c) => c.due > h.due && c.due < h.due + h.hold)).toBe(false);
 
     const run = createRun(chart);
-    const events = chart.calls.flatMap((c) => c.hold ? [{ at: c.due, c, down: true }, { at: c.due + c.hold, c, down: false }] : [{ at: c.due, c, down: true }]);
-    events.sort((a, b) => a.at - b.at);
-    for (const e of events) {
-      advance(run, e.at - 0.01);
-      const j = e.down ? press(run, e.c.lane, e.at + 0.03) : release(run, e.c.lane, e.at - 0.03);
-      expect(j && j.kind !== "early" && j.kind !== "miss").toBe(true);
-    }
-    advance(run, chart.bars * 4);
+    const seen = walk(run, chart.calls, -0.03);
+    seen.push(...advance(run, chart.bars * 4));
+    expect(seen.some((j) => j.kind === "miss" || (j.kind === "release" && j.grade === "dropped"))).toBe(false);
     expect(run.over).toBe("won");
-    expect(run.misses).toBe(0);
     expect(run.hits).toBe(chart.calls.length);
     expect(run.perfects).toBe(chart.calls.length);
     expect(run.lives).toBe(LIVES);
 
-    const idle = createRun(makeChart(level));
-    advance(idle, chart.bars * 4);
-    expect(idle.over).toBe("lost");
-    expect(idle.misses).toBe(LIVES);
-    expect(idle.lives).toBe(0);
+    const still = createRun(makeChart(level));
+    for (let b = 0; b <= chart.bars * 4 && !still.over; b += 0.05) advance(still, b);
+    expect(still.over).toBe("lost");
+    expect(still.lane).toBe(1);
+    expect(still.hits).toBeGreaterThan(0); // the doors that happened to be in lane 1 let them through
   }
 });
 
-test("a press is judged against its due beat, not the beat it was called on", () => {
+test("moving to a door a wall too early bounces you off the wall before it", () => {
   const chart = makeChart(1);
   const run = createRun(chart);
-  const first = chart.calls[0]!;
-  // On the call itself: nothing is due yet, so it's an early press that breaks the combo and costs 20.
-  run.score = 100; run.combo = 3;
-  expect(press(run, first.lane, first.beat)).toEqual({ kind: "early", lane: first.lane });
-  expect(run.score).toBe(80);
-  expect(run.combo).toBe(0);
-  expect(first.state).toBe("pending");
-  // A beat late is good, not perfect, and the sim says which way it was off.
-  const j = press(run, first.lane, first.due + (PERFECT + GOOD) / 2);
-  expect(j.kind).toBe("hit");
-  if (j.kind === "hit") { expect(j.grade).toBe("good"); expect(j.offset).toBeGreaterThan(0); }
-  expect(first.state).toBe("hit");
-  // The queue: everything called and not yet answered.
-  const mid = chart.calls[Math.floor(chart.calls.length / 2)]!;
-  const q = inFlight(run, mid.beat + 0.1);
-  expect(q.length).toBeGreaterThan(0);
-  for (const c of q) expect(c.beat <= mid.beat + 0.1 && c.state === "pending").toBe(true);
+  const i = chart.calls.findIndex((c, i) => i > 0 && c.lane !== chart.calls[i - 1]!.lane && c.lane !== 1 && c.due - chart.calls[i - 1]!.due >= 1);
+  const [before, door] = [chart.calls[i - 1]!, chart.calls[i]!];
+  walk(run, chart.calls.slice(0, i - 1), -0.03);
+  advance(run, before.due - 0.6);
+  const lives = run.lives, from = run.lane;
+
+  // Off to the next door while the wall before it is still coming: a free sidestep, eased over a moment.
+  const t = before.due - 0.5;
+  expect(press(run, door.lane, t)).toEqual([{ kind: "move", lane: door.lane }]);
+  expect(runnerX(run, t)).toBeCloseTo(from - 1.5);
+  expect(Math.abs(runnerX(run, t + 0.07) - (door.lane - 1.5))).toBeLessThan(Math.abs(from - door.lane));
+  expect(runnerX(run, t + 0.2)).toBe(door.lane - 1.5);
+
+  // The wall before arrives with its door somewhere else: bounced, a life gone, knocked back for a beat.
+  const j = advance(run, before.due + GOOD + 0.01);
+  expect(j).toEqual([{ kind: "miss", call: before }]);
+  expect(run.lives).toBe(lives - 1);
+  expect(knockback(run, before.due + GOOD + 0.02)).toBeGreaterThan(0.9);
+  expect(knockback(run, before.due + GOOD + 1.1)).toBe(0);
+
+  // Still standing in the right door when its own wall comes: through, a good.
+  const k = advance(run, door.due);
+  expect(k).toEqual([{ kind: "hit", call: door, grade: "good", offset: 0 }]);
 });
 
-test("a hold pressed on time but let go early is dropped", () => {
+test("a long door is stayed in until it ends; leaving early drops it", () => {
   const chart = makeChart(3);
   const run = createRun(chart);
-  const hold = chart.calls.find((c) => c.hold)!;
-  expect(press(run, hold.lane, hold.due).kind).toBe("hit");
+  const i = chart.calls.findIndex((c) => c.hold);
+  const hold = chart.calls[i]!;
+  walk(run, chart.calls.slice(0, i + 1), -0.03);
   expect(hold.state).toBe("held");
-  expect(run.hits).toBe(0); // not counted until it ends
-  const j = release(run, hold.lane, hold.due + hold.hold / 2);
-  expect(j).toEqual({ kind: "release", call: hold, grade: "dropped" });
+  expect(run.hits).toBe(i); // not counted until it ends
+  const lives = run.lives;
+  const away = ((hold.lane + 2) % 4) as typeof hold.lane;
+  const j = press(run, away, hold.due + hold.hold / 2);
+  expect(j[0]).toEqual({ kind: "release", call: hold, grade: "dropped" });
   expect(hold.state).toBe("missed");
-  expect(run.lives).toBe(LIVES - 1);
+  expect(run.lives).toBe(lives - 1);
 });
 
-test("the pad to light is the lane whose key is in its window, and the echo hint fades out by level five", () => {
+test("the pad to light is the lane whose door is in its window, and the echo hint fades out by level five", () => {
   const chart = makeChart(1);
   const run = createRun(chart);
   const first = chart.calls[0]!;
   expect(dueLanes(run, first.beat)).toEqual(new Set());
-  expect(dueLanes(run, first.due)).toEqual(new Set([first.lane]));
+  expect(dueLanes(run, first.due - 0.1)).toEqual(new Set([first.lane]));
   expect(dueLanes(run, first.due + GOOD + 0.01).has(first.lane)).toBe(false);
   expect(LEVELS.map((l) => l.hint > 0)).toEqual([true, true, true, true, false, false]);
 });
 
-// Speed: every answer on time boosts the run, every miss or stray press hits the fence and cuts it,
-// and between them it drifts back to the floor. A clean player ends up flying; a sloppy one never gets going.
+// Speed: every door taken on time boosts the run, every wall cuts it, and between them it drifts back
+// to the floor. A clean player ends up flying; one who's late and skips walls never gets going.
 test("a perfect run climbs to the speed ceiling, a sloppy one sits near the floor, and speed stays in bounds", () => {
   const play = (level: number, sloppy: boolean) => {
     const chart = makeChart(level);
     const run = createRun(chart);
     expect(run.speed).toBe(SPEED_FLOOR);
     const seen: number[] = [];
-    const watch = (r: Run) => seen.push(r.speed);
     for (const [i, c] of chart.calls.entries()) {
-      advance(run, c.due - 0.3); watch(run);
-      if (sloppy && i % 3 === 0) continue; // a third of the calls never answered
-      if (sloppy) { press(run, c.lane, c.beat + 0.5); watch(run); } // jumping in on the call, not the answer
-      press(run, c.lane, c.due + (sloppy ? GOOD - 0.02 : 0.02)); watch(run);
-      if (c.hold) { advance(run, c.due + c.hold - 0.05); release(run, c.lane, c.due + c.hold); watch(run); }
+      walk(run, [c], sloppy ? GOOD - 0.02 : -0.03, () => sloppy && i % 2 === 0);
+      seen.push(run.speed);
       if (run.over) break;
     }
     return seen;
