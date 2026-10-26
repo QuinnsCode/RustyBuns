@@ -45,6 +45,15 @@ describe("security headers", () => {
 });
 
 describe("Origin check", () => {
+  test("a socket upgrade from another site is refused: it acts as the person like a write", async () => {
+    const call = await local();
+    await call(null, "/api/login", post({ name: "ryan" }));
+    const join = (headers: Record<string, string>) => call("ryan", "/api/game/l/mitt/ws", { headers: { upgrade: "websocket", ...headers } });
+    expect((await join({ origin: "https://evil.example" })).status).toBe(403);
+    expect((await join({ "sec-fetch-site": "cross-site" })).status).toBe(403);
+    expect((await join({ origin: ORIGIN })).status).not.toBe(403);
+  });
+
   test("a cookie-signed write from another site is refused; this site's, a bare one and a bearer one aren't", async () => {
     const call = await local();
     await call(null, "/api/login", post({ name: "ryan" }));

@@ -261,3 +261,23 @@ A hand review of three more units from round 6's list, source only, no target co
 ### Still not reviewed
 
 Moved to #2339: GitHub token scope; game-room sockets; the other ~250 `innerHTML` sinks in `client.html`; the route families nobody listed.
+
+## Round 8, October 26: GitHub token scope, game sockets, `client.html` sinks (#2339)
+
+A hand review, source only, no target code run. Not the full skill run with a coverage ledger.
+
+### Fixed in this round
+
+- **A socket upgrade from another site was not refused** (low to medium). The Origin check (`crossSite`) only covered unsafe methods, and a WebSocket upgrade is a GET, so a page on any site could open a person's cookie-signed socket (a file's live edit socket, the game room) and act as them. A cross-site upgrade now gets the same 403 as a cross-site write (`security.test.ts`).
+- **Game rooms relayed whatever a player sent** (low). `pos` and `hit` passed `p`, `yaw`, `room` and `dir` to the other players unchecked, so a player could send arbitrary JSON or large strings to seven others. They are now three numbers, a number, a short path and two numbers, and anything else is dropped (`game-socket.test.ts`).
+- **Five unescaped interpolations in `client.html`** (defence in depth): a collection's owner, a search hit's owner and repo, a playlist id, a commit sha and a wait id. Each is a server-validated value today; they are escaped like the rest.
+
+### Reviewed, nothing found
+
+- **GitHub token scope**: sign-in asks for Better Auth's default GitHub scopes (`read:user`, `user:email`), never `repo`, so a stolen stored token reads only public data. Tokens are encrypted at rest (`encryptOAuthTokens`), sent only to `api.github.com` and the tarball redirect, and API tokens can't open sockets (`tokens.ts`).
+- **Game room access**: a repo's room needs read access (`canRead`), the user name comes from the Worker's header (set after the client's own is replaced), and rooms cap at 8 players.
+- **`innerHTML` sinks**: the ~175 lines that set HTML were scanned for interpolations not wrapped in `esc`, `icon` or a number; apart from the five above they are numbers, icons, class names or already-built fragments.
+
+### Still not reviewed
+
+The route families nobody listed.
