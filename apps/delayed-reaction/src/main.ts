@@ -1,9 +1,9 @@
 // The page: a canvas tunnel you run down, four thumb pads, a HUD, and a menu. The sim
 // (sim.ts) decides everything; this file draws it and turns thumbs and keys into presses.
 import { Music } from "./audio.ts";
-import { burst, drawTunnel, echoBursts, sway, view, type Burst } from "./hallway.ts";
+import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
-import { advance, createRun, delayWords, dueLanes, LEVELS, makeChart, press, type Judgement, type Lane, type Run } from "./sim.ts";
+import { advance, createRun, delayWords, dueLanes, knockback, LEVELS, makeChart, press, runnerX, type Judgement, type Lane, type Run } from "./sim.ts";
 const KEYS: Record<string, Lane> = { KeyD: 0, KeyF: 1, KeyJ: 2, KeyK: 3, ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3 };
 
 const stage = document.getElementById("stage") as HTMLCanvasElement;
@@ -96,13 +96,13 @@ function show(j: Judgement) {
   const buzz = (ms: number) => { try { navigator.vibrate?.(ms); } catch {} };
   if (j.kind === "hit") {
     music.answer(j.call.lane, j.grade, j.call.hold);
-    bursts.push(burst(j.call.lane, music.beat(), j.grade === "perfect" ? 1 : 0.6));
+    bursts.push({ ...burst(j.call.lane, music.beat(), j.grade === "perfect" ? 1 : 0.6), x: LANE_X[j.call.lane] });
     passBeat = heardBeat();
     say(j.grade === "perfect" ? "Perfect" : j.offset < 0 ? "Early" : j.offset > 0 ? "Late" : "Through");
     buzz(j.grade === "perfect" ? 12 : 6);
   } else if (j.kind === "release") {
     if (j.grade === "dropped") { music.wall(); say("Dropped"); buzz(40); missBeat = heardBeat(); }
-    else { bursts.push(burst(j.call.lane, music.beat(), j.grade === "perfect" ? 1.2 : 0.8)); say("Held"); }
+    else { bursts.push({ ...burst(j.call.lane, music.beat(), j.grade === "perfect" ? 1.2 : 0.8), x: LANE_X[j.call.lane] }); say("Held"); }
   } else if (j.kind === "miss") {
     music.wall();
     say("Miss");
@@ -165,7 +165,9 @@ function frame(now: number) {
   if (now > judgeUntil) hud.judge.textContent = "";
   // scene.speed (1 = normal) is how fast the tunnel rushes and how far the runner leans in.
   // Between runs the tunnel still rolls, at an idle 120 bpm, so the menu has something turning behind it.
-  const scene = { run, beat: run ? beat : now / 500, down, bursts, speed: run?.speed ?? 1, missBeat, passBeat, t: now / 1000 };
+  // The runner stands where the sim says (x across the floor) and reels off a wall it just hit.
+  const x = run ? runnerX(run, beat) : 0, knock = run ? knockback(run, beat) : 0;
+  const scene = { run, beat: run ? beat : now / 500, down, bursts, speed: run?.speed ?? 1, missBeat, passBeat, x, knock, t: now / 1000 };
   const v = sway(view(innerWidth, innerHeight), scene.beat, !!run);
   drawTunnel(g, v, scene);
   drawRunner(g, v, scene);

@@ -7,6 +7,7 @@ describes what shipped. What didn't ship moved to [IDEAS.md](IDEAS.md).
 ## Next: walls with a door, and a turn that never ends (2026-10-26, round 3)
 
 The owner's direction after playing the tunnel round. This section wins where it disagrees with the rest.
+Shipped: runner #2359, tunnel #2360, sim and sound #2361, wired together in the PR after them.
 
 - **The endless turn.** The tunnel never stops turning, like an impossible staircase: always rounding a
   corner, always rolling the same way, never arriving. It reads as one long bend that keeps going, not a
