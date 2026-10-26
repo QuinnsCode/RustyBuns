@@ -40,6 +40,16 @@ test("an agent's lines, committed, carry its run's why as a git note; a person's
     "DONE: upper-cased a.js",
     "NEXT: nothing",
   ]);
+  // Its checks finish: the note says how they went, and a commit without a note stays without.
+  const sha = await tip(), first = ((await (await call("ryan", "/api/repos/ryan/lab/graph")).json()) as { commits: { hash: string }[] }).commits[1]!.hash;
+  await post("/api/repos/ryan/lab/checks", { ref: "main", sha: first, name: "lint", status: "passed" });
+  await post("/api/repos/ryan/lab/checks", { ref: "main", sha, name: "test", status: "passed" });
+  expect((await noteOf(sha))?.split("\n").at(-1)).toBe("checks: passed");
+  await post("/api/repos/ryan/lab/checks", { ref: "main", sha, name: "lint", status: "failed" });
+  const after = (await noteOf(sha))!.split("\n");
+  expect(after.filter((l) => l.startsWith("checks: "))).toEqual(["checks: failed (lint)"]);
+  expect(after.slice(0, 6)).toEqual(note!.split("\n"));
+  expect(await noteOf(first)).toBeNull();
   // The commit before keeps having none: the notes tree adds, it doesn't replace.
   const commits = ((await (await call("ryan", "/api/repos/ryan/lab/graph")).json()) as { commits: { hash: string }[] }).commits;
   expect(await noteOf(commits[1]!.hash)).toBeNull();
