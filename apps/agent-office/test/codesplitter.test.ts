@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { queueAdd, stackedPrompt, taskText } from "../codesplitter/hint.ts";
+import { queueAdd, taskText } from "../codesplitter/hint.ts";
 import { fresh, summarize } from "../codesplitter/news.ts";
 import { codesplitterRoute, LIVE, site } from "../codesplitter/server.ts";
 
@@ -86,18 +86,13 @@ test("the route asks codeSplitter with the token, never hands it to the page, an
   expect(asked).toHaveLength(3);
 });
 
-test("the dispatch hint: a queued task's text goes to codeSplitter, and stacking tells the worker which branch to start from", async () => {
+test("the dispatch hint: a queued task's text goes to codeSplitter and busy branches come back", async () => {
   const msg = queueAdd(JSON.stringify({ t: "queue.add", prompt: "Work on GitHub issue #7", title: "#7 Fix the mirror", issue: 7 }))!;
   expect(msg.issue).toBe(7);
   expect(queueAdd(JSON.stringify({ t: "worker.prompt", prompt: "hi" }))).toBeUndefined();
   expect(queueAdd('{"t":"queue.add",')).toBeUndefined();
   expect(taskText(msg, "Fix the mirror\nsrc/mirror.ts drops a line")).toBe("#7 Fix the mirror\nWork on GitHub issue #7\nFix the mirror\nsrc/mirror.ts drops a line");
   expect(taskText(msg, "x".repeat(9000))).toHaveLength(4000);
-
-  const p = stackedPrompt("Work on GitHub issue #7", { branch: "fix-mirror", files: ["src/mirror.ts"] });
-  expect(p).toStartWith("Work on GitHub issue #7\n\nStack this on `fix-mirror`");
-  expect(p).toContain("origin/fix-mirror");
-  expect(p).toContain("--base fix-mirror");
 
   const asked: string[] = [];
   const route = codesplitterRoute({ url: "http://cs" }, (async (u: string) => {

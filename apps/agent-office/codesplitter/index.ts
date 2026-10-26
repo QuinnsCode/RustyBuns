@@ -4,10 +4,10 @@
 // board's twin on codeSplitter has news (news.ts); clicking the mark opens the repo there and clears its dot.
 // The news comes from the office's /__rb/codesplitter (server.ts), every 30s.
 // On, it also asks codeSplitter's dispatch hint before a task goes on the 📋 queue (#1187): when open branches already
-// change the files the task (or its issue) names, a card offers to stack it on the busiest, queue it anyway, or wait.
+// change the files the task (or its issue) names, a card offers to queue it anyway (from main; Mervin orders the merges) or wait.
 import { CanvasTexture, Group, Matrix4, Mesh, MeshBasicMaterial, PlaneGeometry, Raycaster, SRGBColorSpace, Vector2, type Camera, type Object3D, type Scene } from "three";
 import { issueText, issuesIn } from "../queue/match.ts";
-import { queueAdd, stackedPrompt, taskText, type Hint, type QueueAdd } from "./hint.ts";
+import { queueAdd, taskText, type Hint, type QueueAdd } from "./hint.ts";
 import { faviconWithDot, markCanvas, markSvg } from "./mark.ts";
 import { BOARDS, fresh, type Board, type Summary } from "./news.ts";
 
@@ -211,7 +211,7 @@ async function release(repo: string) {
   } catch {}
 }
 
-/** The message to send: as it was, stacked on a busy branch, or none (wait). Quiet and as it was if codeSplitter
+/** The message to send: as it was, or none (wait). Quiet and as it was if codeSplitter
  * doesn't answer in a few seconds. */
 async function hinted(repo: string, msg: QueueAdd): Promise<QueueAdd | null> {
   let hint: Hint | null = null;
@@ -226,7 +226,6 @@ async function hinted(repo: string, msg: QueueAdd): Promise<QueueAdd | null> {
 }
 
 function card(msg: QueueAdd, busy: Hint["busy"], done: (m: QueueAdd | null) => void) {
-  const top = busy[0]!;
   const what = msg.issue === undefined ? "This task" : `#${msg.issue}`;
   const list = el("ul", {}, ...busy.slice(0, 5).map((b) => el("li", {}, el("code", {}, b.branch), ` changes ${b.files.join(", ")}`)));
   const button = (label: string, cls: string, tip: string, then: () => QueueAdd | null) => {
@@ -237,14 +236,12 @@ function card(msg: QueueAdd, busy: Hint["busy"], done: (m: QueueAdd | null) => v
   const box = el("div", { className: "rb-hint", role: "alertdialog", ariaLabel: "codeSplitter dispatch hint" },
     el("div", { className: "rb-hint-head" }, el("span", { innerHTML: markSvg(false, 18) }), `${what} touches files open branches are changing`),
     list,
-    el("p", {}, "Its branch would likely conflict with theirs. Stack it on the first, or wait: it is queued for you once they merge."),
+    el("p", {}, "Its branch would likely touch the same lines as theirs. Queue it from main and Mervin orders the merges, or wait: it is queued for you once they merge."),
     el("div", { className: "rb-hint-buttons" },
       button("Wait", "rb-hint-wait", "Hold it on the office; it's queued once these branches have merged", () => { void hold(load().repo ?? "", msg, busy); return null; }),
-      button("Queue anyway", "rb-hint-anyway", "Queue it from main, as usual", () => msg),
-      button(`Stack on ${top.branch}`, "rb-hint-stack", `Queue it, branched from ${top.branch} with its pull request onto it`,
-        () => ({ ...msg, prompt: stackedPrompt(msg.prompt, top) }))));
+      button("Queue anyway", "rb-hint-anyway", "Queue it from main; Mervin orders the merges", () => msg)));
   document.body.append(box);
-  box.querySelector<HTMLButtonElement>(".rb-hint-stack")?.focus();
+  box.querySelector<HTMLButtonElement>(".rb-hint-anyway")?.focus();
 }
 
 // ---- the setting --------------------------------------------------------------------------------------------
@@ -291,7 +288,7 @@ function start() {
     ".rb-hint ul{margin:6px 0;padding-left:18px;max-height:8em;overflow:auto;overflow-wrap:anywhere}.rb-hint p{margin:6px 0 8px}" +
     ".rb-hint-buttons{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}" +
     ".rb-hint button{white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;border:0;border-radius:6px;padding:6px 14px;font:inherit;font-weight:600;cursor:pointer;background:#e9e4d8;color:#222}" +
-    ".rb-hint .rb-hint-stack{background:#e8a33d;color:#222}";
+    ".rb-hint .rb-hint-anyway{background:#e8a33d;color:#222}";
   document.head.append(style);
   document.querySelectorAll(".modal.settings").forEach(addTo);
   new MutationObserver((records) => {
