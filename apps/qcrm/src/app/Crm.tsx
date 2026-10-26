@@ -576,6 +576,10 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
   const [hooks, setHooks] = useState<Row[]>([]);
   const [keys, setKeys] = useState<Row[]>([]);
   const [audit, setAudit] = useState<Row[]>([]);
+  const [auditNext, setAuditNext] = useState<string | null>(null);
+  const [auditActor, setAuditActor] = useState("");
+  const [auditAction, setAuditAction] = useState("");
+  const [auditSince, setAuditSince] = useState("");
   const [fresh, setFresh] = useState("");
   const [msg, setMsg] = useState("");
   const [hookEvents, setHookEvents] = useState<string[]>([]);
@@ -589,9 +593,17 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
   const refresh = useCallback(() => {
     api(`${base}/members`).then((r) => setMembers(rowsOf(r))).catch(() => {});
     if (can("owner")) { api(`${base}/webhooks`).then((r) => { setHooks(r.webhooks ?? rowsOf(r)); if (Array.isArray(r.events)) { setHookEvents(r.events); setHookPick((p) => (p.length ? p : r.events)); } }).catch(() => {}); api(`${base}/keys`).then((r) => setKeys(rowsOf(r))).catch(() => {}); }
-    if (can("manager")) api(`${base}/audit`).then((r) => setAudit(rowsOf(r))).catch(() => {});
   }, [base, can]);
   useEffect(refresh, [refresh]);
+  const loadAudit = useCallback((cursor?: string) => {
+    const q = new URLSearchParams({ limit: "50" });
+    if (auditActor.trim()) q.set("actor", auditActor.trim());
+    if (auditAction) q.set("action", auditAction);
+    if (auditSince) q.set("since", auditSince);
+    if (cursor) q.set("cursor", cursor);
+    api(`${base}/audit?${q}`).then((r) => { setAudit((a) => (cursor ? [...a, ...rowsOf(r)] : rowsOf(r))); setAuditNext(nextOf(r)); }).catch(() => {});
+  }, [base, auditActor, auditAction, auditSince]);
+  useEffect(() => { if (can("manager")) loadAudit(); }, [can, loadAudit, hooks, keys, members]);
   const act = async (fn: () => Promise<unknown>) => { setMsg(""); try { await fn(); refresh(); } catch (e) { setMsg((e as Error).message); } };
   const mcp = useMemo(() => `claude mcp add --transport http qcrm ${location.origin}/api/mcp --header "Authorization: Bearer ${fresh || "qk_…"}"`, [fresh]);
   return (
@@ -641,9 +653,15 @@ function Settings({ me, org, role, can, reload }: { me: Me; org: { id: string; n
         <h3><Icon name="monitor" /> Look and feel</h3>
         <div className="row"><button type="button" onClick={() => theme("light")}>Cream</button><button type="button" onClick={() => theme("dark")}>Blackest black</button><button type="button" onClick={() => theme("auto")}>Follow system</button></div>
       </div>
-      {can("manager") && audit.length > 0 && <div className="card">
+      {can("manager") && (audit.length > 0 || auditActor || auditAction || auditSince) && <div className="card">
         <h3><Icon name="scroll-text" /> Audit log</h3>
-        <div className="table"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th></tr></thead><tbody>{audit.slice(0, 50).map((a) => <tr key={a.id}><td>{whenAt(a.at)}</td><td>{a.actor_name ?? a.actor_email ?? a.actor_user_id ?? "system"}{a.actor_name && <span className="muted"> {a.actor_email}</span>}</td><td>{a.action}</td><td>{a.target_name ?? a.target}{a.target_type && <span className="muted"> {a.target_type}</span>}</td></tr>)}</tbody></table></div>
+        <div className="row">
+          <input value={auditActor} onChange={(e) => setAuditActor(e.target.value)} placeholder="Who (email)" aria-label="Filter by who" />
+          <select value={auditAction} onChange={(e) => setAuditAction(e.target.value)} aria-label="Filter by action"><option value="">Any action</option>{["member", "key", "webhook", "export", "seed"].map((x) => <option key={x} value={x}>{x}</option>)}</select>
+          <input type="date" value={auditSince} onChange={(e) => setAuditSince(e.target.value)} aria-label="Since" />
+        </div>
+        <div className="table"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th></tr></thead><tbody>{audit.map((a) => <tr key={a.id}><td>{whenAt(a.at)}</td><td>{a.actor_name ?? a.actor_email ?? a.actor_user_id ?? "system"}{a.actor_name && <span className="muted"> {a.actor_email}</span>}</td><td>{a.action}</td><td>{a.target_name ?? a.target}{a.target_type && <span className="muted"> {a.target_type}</span>}</td></tr>)}</tbody></table></div>
+        {auditNext && <button type="button" onClick={() => loadAudit(auditNext)}>Load more</button>}
       </div>}
       <div className="card">
         <h3><Icon name="download" /> Your data</h3>
