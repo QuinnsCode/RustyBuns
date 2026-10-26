@@ -415,7 +415,8 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
     const needs = runner === "container" && command ? scanNeeds(command) : [];
     const run = await recordRun(env, { owner, repo, ref, sha, name, runner: needs.length ? "desktop" : runner, command }, by);
     const note = needs.length ? `${needsText(needs)} Needs desktop: ${HANDED} or a runner of your own (scripts/runner.ts).\n` : "";
-    if (why || note) await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(why + note, run.id).run();
+    const pusher = by !== owner && by !== "upstream" && by !== "codesplitters" ? PUSHED(by) : "";
+    if (pusher || why || note) await env.DB.prepare("UPDATE check_runs SET log = ? WHERE id = ?").bind(pusher + why + note, run.id).run();
   }
   await (await import("./ci-runner.ts")).kick(env, owner, repo).catch(() => null);
 }
@@ -501,6 +502,8 @@ export async function cloneUrl(env: Env, owner: string, repo: string) {
 
 /** The first line of the log of a run someone recorded by hand: claimRun keeps it from them. */
 const HAND = (user: string) => `recorded by hand by @${user}\n`;
+/** The first line of the log of a run a push queued: claimRun keeps it from whoever pushed, so a branch's editor can't pass its own required check unrun. */
+const PUSHED = (user: string) => `queued by @${user}'s push\n`;
 
 /**
  * A runner takes the oldest queued run of ours, desktop or container (`kinds` limits it: the hosted container leaves the desktop's alone; never GitHub's or an
@@ -512,11 +515,11 @@ export async function claimRun(env: Env, owner: string, repo: string, label: str
   const only = names.length ? ` AND name IN (${names.map(() => "?").join(", ")})` : "";
   // Nobody but the owner runs a check they queued by hand: record it, claim it, pass it, and a crew
   // member (or a prompt-injected agent holding a token) waves its own branch past a required check.
-  const mine = by && by !== owner ? HAND(by) : null;
-  const notMine = mine ? " AND substr(log, 1, ?) != ?" : "";
+  const mine = by && by !== owner ? [HAND(by), PUSHED(by)] : [];
+  const notMine = mine.map(() => " AND substr(log, 1, ?) != ?").join("");
   const run = await env.DB.prepare(`UPDATE check_runs SET status = 'running', started_at = ?, runner_label = ?, heartbeat_at = ?, claimed_by = ?
     WHERE id = (SELECT id FROM check_runs WHERE owner = ? AND repo = ? AND status = 'queued' AND runner IN (${kinds.map((k) => `'${k}'`).join(", ")})${only}${notMine} ORDER BY id LIMIT 1) AND status = 'queued' RETURNING *`)
-    .bind(now, label, now, by, owner, repo, ...names, ...mine ? [mine.length, mine] : []).first() as CheckRun | null;
+    .bind(now, label, now, by, owner, repo, ...names, ...mine.flatMap((m) => [m.length, m])).first() as CheckRun | null;
   if (!run) return null;
   const s = await checkSettings(env, owner, repo);
   const command = s.required.find((r) => r.name === run.name)?.command ?? (s.pinned ? undefined : run.command);

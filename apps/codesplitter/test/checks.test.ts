@@ -433,6 +433,19 @@ test("a collaborator can't queue a required check by hand, claim it and pass it:
   expect((await send("agent-y", `/api/repos/ryan/lab/checks/${queued.id}`, { runner_label: "y-box", status: "passed" }, "PUT")).status).toBe(200);
 });
 
+test("a collaborator can't claim and pass the check its own push queued: another runner does", async () => {
+  const { send, checks } = await app();
+  for (const name of ["agent-x", "agent-y"]) await send("ryan", "/api/repos/ryan/lab/collaborators", { name });
+  await send("ryan", "/api/repos/ryan/lab/checks/settings", { required: ["test"], where: "here" }, "PUT");
+  await send("agent-x", "/api/repos/ryan/lab/do/commit?path=a.ts", { message: "one" });
+  expect((await send("agent-x", "/api/repos/ryan/lab/checks/claim", { runner_label: "agent-box" })).status).toBe(204);
+  expect((await checks()).gate.ok).toBe(false);
+  const got = await (await send("agent-y", "/api/repos/ryan/lab/checks/claim", { runner_label: "y-box" })).json();
+  expect(got).toMatchObject({ name: "test" });
+  expect((await send("agent-x", `/api/repos/ryan/lab/checks/${got.id}`, { status: "passed" }, "PUT")).status).toBe(403);
+  expect((await send("agent-y", `/api/repos/ryan/lab/checks/${got.id}`, { runner_label: "y-box", status: "passed" }, "PUT")).status).toBe(200);
+});
+
 test("what runs here: codesplitter.ci says, else package.json's scripts, else one test run (#463)", () => {
   expect(planFrom(null, null)).toEqual([]);
   expect(planFrom(null, JSON.stringify({ scripts: { test: "bun test", typecheck: "tsc", dev: "vite" } }))).toEqual([
