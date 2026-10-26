@@ -47,7 +47,7 @@
 // background, so a keystroke never waits on D1.
 
 import { json, type Body, type Env, readBody } from "./env.ts";
-import { actingAs } from "./identity.ts";
+import { actingAs, queuedByToken } from "./identity.ts";
 import { TIERS, forgetTiers, multOf, tierById } from "./tiers.ts";
 
 export const ACTIONS = ["reject", "log", "flag", "queue"] as const;
@@ -332,6 +332,7 @@ async function drain(env: Env, rule: string, who: string, self: (r: Request) => 
     }
     const req = new Request("http://codesplitter.local" + j.path, { method: j.method, headers: j.body === null ? {} : { "content-type": "application/json" }, body: j.body });
     actingAs.set(req, j.user);
+    if (j.token) queuedByToken.add(req);
     let status = 500, result = JSON.stringify({ error: "the queued job failed" });
     try { const res = await self(req); status = res.status; result = await res.text(); } catch (e) { result = JSON.stringify({ error: String((e as Error)?.message ?? e) }); }
     await env.DB.prepare("UPDATE limit_jobs SET state = 'done', status = ?, result = ? WHERE id = ?").bind(status, result, j.id).run();
