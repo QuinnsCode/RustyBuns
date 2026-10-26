@@ -145,6 +145,8 @@ import { busiestFiles, fileHistory } from "./gitpath-data.ts";
 import { joinHistory, upstreamBusiest, upstreamFileHistory, upstreamIsPublic, type UpstreamRepo } from "./gitpath-upstream.ts";
 import { tagRoutes } from "./tags.ts";
 import { pickRoute } from "./pick.ts";
+import { commitNote, noteOn } from "./why.ts";
+import { artifactsEvent, logPushes, pushedEvent } from "./push-events.ts";
 import {
   deliverHooks,
   emit,
@@ -651,6 +653,12 @@ async function route(req: Request, env: Env): Promise<Response> {
     }
     // GET|POST /api/repos/:o/:r/tags, DELETE .../tags/:name  the repo's tags, made and deleted (tags.ts)
     if (p[4] === "tags") { const r = await tagRoutes(req, env, p, owner, repo, user); if (r) return r; }
+    // GET /api/repos/:o/:r/commits/:sha/note  the commit's codeSplitter git note, the why an agent's run left (why.ts)
+    if (p[4] === "commits" && p[5] && p[6] === "note" && !p[7] && req.method === "GET") {
+      // Notes are named by full hash: anything else has none, and git isn't asked.
+      const h = /^[0-9a-f]{40}$/.test(p[5]) ? await handleFor(env, owner, repo).catch(() => null) : null;
+      return json({ note: h ? await noteOn(h.handle, h.remote, p[5]).catch(() => null) : null });
+    }
     // POST /api/repos/:o/:r/commits/:sha/revert {branch?}  a commit undone, as line edits (pick.ts)
     // POST /api/repos/:o/:r/commits/:sha/pick {branch?}  a commit taken again, onto main or an open branch
     if (p[4] === "commits" && p[5] && (p[6] === "revert" || p[6] === "pick") && !p[7] && req.method === "POST") {
@@ -869,7 +877,9 @@ async function route(req: Request, env: Env): Promise<Response> {
         await env.DB.prepare("DELETE FROM uncommitted WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, path).run().catch(() => {});
         // The catalogue entry stands even if the push fails; the next push that lands carries it,
         // and if git is full, it starts fresh (fresh.ts) and the file lands there.
-        const git = await pushCatalogue(env, owner, repo, path, { content, published }, user!, commit.message).catch((e: Error) => ({ error: e.message }));
+        // An agent's lines carry its run's why as a git note (why.ts); private lines keep its words out.
+        const note = await commitNote(env, owner, repo, path, commit.writers ?? [], content === published).catch(() => null);
+        const git = await pushCatalogue(env, owner, repo, path, { content, published }, user!, commit.message, note).catch((e: Error) => ({ error: e.message }));
         await startIfFull(env, owner, repo).catch(() => null);
         // The owner's own commit ships, when they turned that on (deploy.ts).
         if (git && !("error" in git)) {
@@ -1007,7 +1017,9 @@ const app = {
   // HOOKS is one webhook try per message. A batch is all one queue's, told apart by its
   // messages, since a stage's queues may be named otherwise.
   async queue(batch: { messages: readonly { body: unknown; ack(): void }[] }, env: Env) {
-    if (batch.messages.some((m) => typeof (m.body as DigMessage)?.dig === "string")) await runDigs(batch as Parameters<typeof runDigs>[0], env);
+    // ARTIFACT_EVENTS: what Artifacts says about its repos; only pushes are heard for now (push-events.ts).
+    if (batch.messages.some((m) => artifactsEvent(m.body))) await logPushes(env, batch.messages.flatMap((m) => pushedEvent(m.body) ?? []));
+    else if (batch.messages.some((m) => typeof (m.body as DigMessage)?.dig === "string")) await runDigs(batch as Parameters<typeof runDigs>[0], env);
     else if (batch.messages.some((m) => typeof (m.body as JobMessage)?.job === "number" || typeof (m.body as AgentMessage)?.agent === "number" || typeof (m.body as DigestMessage)?.digest === "string")) {
       // JOBS: hosted agent runs (agent-routes.ts) and feed digests (feed.ts) beside queued requests.
       const agents = batch.messages.filter((m) => typeof (m.body as AgentMessage)?.agent === "number") as { body: AgentMessage; ack(): void }[];

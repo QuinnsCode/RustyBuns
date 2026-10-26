@@ -130,10 +130,18 @@ export interface Snapshot {
   to?: { ref: string; parent: string };
   /** More commits after this one, each on the one before, all in the one pack; the ref moves once, to the last (a stacked beam). */
   then?: { changes: Record<string, Change>; message: string }[];
+  /** A git note on every commit made, under NOTES_REF, in the same push: why they were made (#1580). */
+  note?: string;
 }
+
+/** Where codeSplitter's notes live: `git fetch origin refs/notes/codesplitter:refs/notes/codesplitter`, then `git log --notes=codesplitter`. */
+export const NOTES_REF = "refs/notes/codesplitter";
 
 /** The hash git uses for "no ref": the old side of a make, the new side of a delete. */
 export const ZERO = "0".repeat(40);
+
+/** Where `ref` points in a receive-pack advert's lines, or ZERO when it isn't there. */
+const tipIn = (refs: string[], ref: string) => refs.map((l) => l.split("\0")[0]!.split(" ")).find(([, r]) => r === ref)?.[0] ?? ZERO;
 
 /** A tree object's entries, read back from its body: how a commit in the pack reads the one before it, which the remote doesn't have yet. */
 function entriesOf(body: Uint8Array) {
@@ -160,7 +168,7 @@ export async function push(remote: string, token: string, snap: Snapshot, tries 
     const adv = await fetch(`${remote}/info/refs?service=git-receive-pack`, { headers: auth });
     if (!adv.ok) throw new Error(`git: ${adv.status} reading refs from ${remote}`);
     const refs = lines(new Uint8Array(await adv.arrayBuffer()));
-    const old = refs.map((l) => l.split("\0")[0]!.split(" ")).find(([, r]) => r === ref)?.[0] ?? ZERO;
+    const old = tipIn(refs, ref);
     if (snap.to && old !== ZERO) throw new Error(`git: ${ref} already exists on ${remote}`);
     const parent = snap.to?.parent ?? old;
 
@@ -187,11 +195,19 @@ export async function push(remote: string, token: string, snap: Snapshot, tries 
       tree = t.id; under = commit.id;
     }
 
+    const notesWere = snap.note ? tipIn(refs, NOTES_REF) : ZERO;
+    const notes = snap.note ? await notesCommit(snap.base, notesWere, commits, snap.note, who) : null;
+    if (notes) objs.push(...notes.objs);
+
     // A file the same in two commits is one object in the pack.
     const seen = new Set<string>();
     const packed = await pack(objs.filter((o) => !seen.has(o.id) && !!seen.add(o.id)));
-    const report = await receive(remote, auth, `${old} ${under} ${ref}`, packed);
-    if (report.includes(`ok ${ref}`)) return { commit: under, commits, parent: parent === ZERO ? null : parent, bytes: packed.length };
+    const report = await receive(remote, auth, [`${old} ${under} ${ref}`, ...notes ? [`${notesWere} ${notes.id} ${NOTES_REF}`] : []], packed);
+    if (report.includes(`ok ${ref}`)) {
+      // Another push moved the notes between our read and our write: the commit stands, so its note goes again on its own.
+      if (notes && !report.includes(`ok ${NOTES_REF}`)) await addNotes(remote, auth, snap.base, commits, snap.note!, who).catch((e: Error) => console.warn(`codesplitter: notes for ${under.slice(0, 7)}: ${e.message}`));
+      return { commit: under, commits, parent: parent === ZERO ? null : parent, bytes: packed.length };
+    }
     // Someone else pushed between our read and our write: rebuild on top of theirs.
     if (!snap.to && attempt < tries && report.some((l) => l.startsWith(`ng ${ref}`))) continue;
     throw new Error(`git: push rejected: ${report.join(" | ")}`);
@@ -310,12 +326,39 @@ export async function pushTree(remote: string, token: string, files: AsyncIterab
   return { commit: tip, objects, bytes, packs };
 }
 
-/** One receive-pack request: a ref update ("old new ref") and the pack it needs; the report-status lines. */
-async function receive(remote: string, auth: Record<string, string>, command: string, packed: Uint8Array) {
+/**
+ * The commit that moves the notes ref from `was` to a tree with `note` on each of `on`, and the objects
+ * it needs. A notes tree names each blob by the commit it's about; one already there is replaced.
+ */
+async function notesCommit(base: TreeReader | undefined, was: string, on: string[], note: string, who: string) {
+  const objs: Obj[] = [], text = note.endsWith("\n") ? note : note + "\n";
+  const tree = was !== ZERO && base ? (await base.readCommit(was))?.treeHash ?? null : null;
+  const t = (await apply(base, tree, Object.fromEntries(on.map((c) => [c, text])), objs))!;
+  const commit = await obj("commit", enc.encode(`tree ${t.id}\n${was !== ZERO ? `parent ${was}\n` : ""}author ${who}\ncommitter ${who}\n\nNotes added by codeSplitter\n`));
+  objs.push(commit);
+  return { objs, id: commit.id };
+}
+
+/** A note on commits already pushed, on whatever the notes ref holds now; tried again if another push moves it meanwhile. */
+async function addNotes(remote: string, auth: Record<string, string>, base: TreeReader | undefined, on: string[], note: string, who: string, tries = 3) {
+  for (let attempt = 1; ; attempt++) {
+    const adv = await fetch(`${remote}/info/refs?service=git-receive-pack`, { headers: auth });
+    if (!adv.ok) throw new Error(`git: ${adv.status} reading refs from ${remote}`);
+    const was = tipIn(lines(new Uint8Array(await adv.arrayBuffer())), NOTES_REF);
+    const n = await notesCommit(base, was, on, note, who);
+    const report = await receive(remote, auth, `${was} ${n.id} ${NOTES_REF}`, await pack(n.objs));
+    if (report.includes(`ok ${NOTES_REF}`)) return;
+    if (attempt >= tries) throw new Error(`git: notes rejected: ${report.join(" | ")}`);
+  }
+}
+
+/** One receive-pack request: ref updates ("old new ref", the first carrying the capabilities) and the pack they need; the report-status lines. */
+async function receive(remote: string, auth: Record<string, string>, command: string | string[], packed: Uint8Array) {
+  const [first, ...more] = typeof command === "string" ? [command] : command;
   const res = await fetch(`${remote}/git-receive-pack`, {
     method: "POST",
     headers: { ...auth, "content-type": "application/x-git-receive-pack-request", accept: "application/x-git-receive-pack-result" },
-    body: concat([pkt(`${command}\0report-status\n`), enc.encode("0000"), packed]),
+    body: concat([pkt(`${first}\0report-status\n`), ...more.map((c) => pkt(`${c}\n`)), enc.encode("0000"), packed]),
   });
   if (!res.ok) throw new Error(`git: ${res.status} pushing to ${remote}`);
   return lines(new Uint8Array(await res.arrayBuffer()));

@@ -176,6 +176,9 @@ const OPS: Record<string, Record<string, Op>> = {
       body: obj({ branch: str("an open branch to try; main without it"), save: bool("commit init's work to a branch as agent-rustybuns") }), ok: obj({ run: { description: "the run just started" } }), status: 202 },
   },
   [`${repo}/tags/{name}`]: { delete: { id: "delete_tag", risky: true, summary: "Delete a tag (owner only). A mirror's upstream keeps its own", tag: "Repos", ok: ref("Ok") } },
+  [`${repo}/commits/{sha}/note`]: { get: { id: "commit_note", summary: "Why a commit was made: its codeSplitter git note", tag: "Repos", open: true,
+    description: "When a commit carries an agent's lines, the push that makes it writes a git note under refs/notes/codesplitter: the agent, its harness and model, a hash of the prompt, how the run ended, and its DONE / NEXT / BROKE / DONT note (left out when the file has private lines). `git fetch origin refs/notes/codesplitter:refs/notes/codesplitter` brings them to a clone.",
+    ok: obj({ note: { type: ["string", "null"], description: "the note's text, or null when the commit has none" } }) } },
   ...Object.fromEntries((["revert", "pick"] as const).map((k) => [`${repo}/commits/{sha}/${k}`, { post: {
     id: k === "revert" ? "revert_commit" : "cherry_pick", summary: k === "revert" ? "Revert a commit: undo its changes (the crew)" : "Cherry-pick a commit onto main or an open branch (the crew)", tag: "Repos", risky: true,
     description: "Its changes against its first parent are merged into each file's lines as they are now and land as line edits, so the lines it doesn't touch keep their ids and blame. " +

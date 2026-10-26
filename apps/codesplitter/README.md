@@ -122,6 +122,8 @@ The catch is that Artifacts only takes writes as a `git push`.
 So codeSplitter builds git's objects and pack itself, in the Worker, with Web Crypto and `CompressionStream` and no git library, and speaks git's smart HTTP protocol.
 Each commit pushes only what changed on top of the parent tree, so editing one line of a big repo costs one blob, a few trees and a commit.
 Repos too big even for Artifacts (Bun, Alchemy) are kept in R2, packed into chunks and dug in parallel off a queue.
+A commit that carries an agent's lines also writes a git note in the same push, under `refs/notes/codesplitter`: the agent, its model, a hash of its prompt, how its run ended and its DONE / NEXT / BROKE / DONT note.
+The why travels with every clone (`git fetch origin refs/notes/codesplitter:refs/notes/codesplitter`, then `git log --notes=codesplitter`) and shows on the vein's commit card.
 
 ## The free desktop app: own your git, put it wherever you want
 
