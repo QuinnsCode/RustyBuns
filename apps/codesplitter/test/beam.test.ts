@@ -137,6 +137,16 @@ describe("beaming a branch", () => {
     expect((await (await call("bo", "/api/me/beams")).json() as any).to_you).toEqual([]);
   });
 
+  test("a repo going private closes its open beam links", async () => {
+    const { call, post, work } = await lab();
+    await stack(work);
+    const beam = await (await post("ana", "/api/repos/ana/lab/beams", { branch: "fix", title: "Bigger numbers" })).json() as any;
+    expect((await call(null, `/api/beams/${beam.id}/patch`)).status).toBe(200);
+    expect((await call("ana", "/api/repos/ana/lab", { method: "PUT", body: JSON.stringify({ visibility: "private" }) })).status).toBe(200);
+    expect((await call(null, `/api/beams/${beam.id}/patch`)).status).toBe(410);
+    expect((await (await call(null, `/api/beams/${beam.id}`)).json() as any).status).toBe("withdrawn");
+  });
+
   test("beams a codeSplitter branch: its files as they are now, on main's tip, as one commit", async () => {
     const { call, post, bare } = await lab();
     expect((await post("ana", "/api/repos/ana/lab/branches", { name: "tune" })).status).toBe(201);

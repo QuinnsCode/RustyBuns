@@ -234,7 +234,7 @@ import {
 import { worktreeRoute } from "./worktrees.ts";
 import { timed, withTiming } from "./timing.ts";
 import { cleanAvatar, PARTS } from "./avatar.ts";
-import { beamRoutes } from "./beam.ts";
+import { beamRoutes, withdrawOpenBeams } from "./beam.ts";
 import {
   kickMirror,
   landPushes,
@@ -579,6 +579,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       // The vector index's tags follow on the next hourly embed; search checks D1 till then.
       await restaleSearch(env, owner, repo).catch(() => null);
       if (visibility === "private") {
+        await withdrawOpenBeams(env, owner, repo);
         const { results: crew } = await env.DB.prepare("SELECT name FROM collaborators WHERE owner = ? AND repo = ?").bind(owner, repo).all();
         await revokeSockets(env, owner, repo, { keep: [owner, ...(crew as { name: string }[]).map((c) => c.name)] });
       }
