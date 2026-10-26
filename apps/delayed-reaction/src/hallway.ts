@@ -1,10 +1,11 @@
 // The tunnel: an infinite neon grid, thin near-white lines on black, seen from behind and above
-// the runner, who runs away from the camera down the tunnel. The tunnel rolls slowly round its axis
-// so the floor turns under the camera, its long lines twist into a helix that keeps changing its
-// mind, and its walls breathe. Lanes are four angles round the tunnel, not columns on a floor.
-// Calls are rings of colour rushing at the runner: a tail of rings, one per beat from the call to
-// its due beat, so the delay counts down in front of you. Colour only ever comes from a call or an
-// answer: the tunnel itself has none.
+// the runner, who runs away from the camera down the tunnel. The tunnel rolls round its axis, one
+// way, forever, and bends the same way as it rolls, so it is always rounding a corner and never
+// arrives: an endless turn. Lanes are four places across the turning floor. Calls are rings of
+// colour rushing at the runner: a tail of rings, one per beat from the call to its due beat, so the
+// delay counts down in front of you, and where the due beat lands a solid wall fills the tunnel with
+// one door, at the call's lane, in its colour. Colour only ever comes from a call or an answer: the
+// tunnel itself has none.
 import type { Call, Lane, Run } from "./sim.ts";
 
 export const LANE_COLOR: Record<Lane, string> = { 0: "#ff5fa2", 1: "#ffc542", 2: "#4de3ff", 3: "#9dff5f" };
@@ -13,11 +14,20 @@ export const LANE_COLOR: Record<Lane, string> = { 0: "#ff5fa2", 1: "#ffc542", 2:
 // camera, which floats 2.2 above the floor. A beat is 1.8 units of tunnel at normal speed.
 const R = 3, CAM_Y = 2.2, RUNNER_Z = 4, PER_BEAT = 1.8, FAR = 48, NEAR = 0.6;
 const LINES = 16, SEGS = 22;
+// The endless turn: the grid rolls this much a beat, always the same way, the long lines spiral
+// with it, and the tunnel ahead bends off to the side the roll is heading, so it keeps rounding a
+// corner. BEND is how far the axis has moved per unit of distance squared past the runner.
+const ROLL = 0.14, TWIST = 0.045, BEND = 0.0035;
 
-// Lanes are angles round the tunnel measured from the floor under the runner: left pads on the
-// left wall, right pads on the right. 0 is straight down, positive is clockwise as seen from behind.
-export const LANE_ANGLE: Record<Lane, number> = { 0: -0.72, 1: -0.24, 2: 0.24, 3: 0.72 };
-const OPEN = 0.3; // half-width of the open part of a fence, in radians
+// Lanes are four places across the floor, far left to far right, in lane units: -1.5, -0.5, 0.5,
+// 1.5. Each is an angle round the tunnel from the floor's lowest point: left pads on the left,
+// right pads on the right, 0 straight down, positive clockwise as seen from behind.
+export const LANE_X: Record<Lane, number> = { 0: -1.5, 1: -0.5, 2: 0.5, 3: 1.5 };
+const PER_LANE = 0.48; // radians a lane unit is round the tunnel
+export const laneAngle = (x: number) => x * PER_LANE;
+export const LANE_ANGLE: Record<Lane, number> = { 0: laneAngle(-1.5), 1: laneAngle(-0.5), 2: laneAngle(0.5), 3: laneAngle(1.5) };
+// A door is this many radians either side of its lane, and reaches this far up from the floor (a share of R).
+const DOOR = 0.24, DOOR_H = 0.55;
 
 export type View = { W: number; H: number; f: number; cx: number; hy: number };
 
@@ -37,23 +47,43 @@ const kickAt = (beat: number) => Math.max(0, 1 - (((beat % 1) + 1) % 1) * 4);
 
 /** The tunnel's radius at an angle and distance: it breathes and swells on the kick, but never under the runner's feet. */
 export function radius(theta: number, z: number, beat: number) {
-  return R * (1 + 0.07 * Math.sin(3 * theta) * Math.sin(z * 0.35 - beat * 0.9)) * (1 + kickAt(beat) * 0.025);
+  return R * (1 + 0.06 * Math.sin(3 * theta) ** 2 * Math.sin(z * 0.35 - beat * 0.9)) * (1 + kickAt(beat) * 0.025);
+}
+
+/** Where the tunnel's axis is at distance z: straight under the runner, then bending off, further
+ * the further ahead, toward wherever the roll is heading right now, so the corner keeps turning. */
+export function axis(z: number, beat: number): [number, number] {
+  const d = Math.max(0, z - RUNNER_Z), bend = BEND * d * d, way = beat * ROLL * 0.5;
+  return [Math.sin(way) * bend, R + Math.cos(way) * bend * 0.6];
 }
 
 /** A point on the tunnel wall, at an angle from the floor and a distance ahead, on the screen. */
 export function wall(v: View, theta: number, z: number, beat: number): [number, number] {
-  const r = radius(theta, z, beat);
-  return project(v, r * Math.sin(theta), R - r * Math.cos(theta), z);
+  const r = radius(theta, z, beat), [ax, ay] = axis(z, beat);
+  return project(v, ax + r * Math.sin(theta), ay - r * Math.cos(theta), z);
 }
 
-/** Where a lane's ring meets the wall at distance z. */
+/** Where the floor is at lane position x (-1.5 far left to 1.5 far right) and depth z: the screen
+ * point, and the floor's tilt there in radians (the angle of its slope on the screen, so a canvas
+ * rotated by it draws standing upright on the turning floor). Doors sit on the same points. */
+export function floorAt(v: View, x: number, z: number, beat: number): { x: number; y: number; tilt: number } {
+  const [sx, sy] = wall(v, laneAngle(x), z, beat);
+  const [lx, ly] = wall(v, laneAngle(x - 0.05), z, beat), [rx, ry] = wall(v, laneAngle(x + 0.05), z, beat);
+  return { x: sx, y: sy, tilt: Math.atan2(ry - ly, rx - lx) };
+}
+
+/** Where a lane's door meets the floor at distance z. */
 export const lanePoint = (v: View, lane: Lane, z: number, beat: number) => wall(v, LANE_ANGLE[lane], z, beat);
 
 const ringZ = (b: number, beat: number, speed: number) => RUNNER_Z + (b - beat) * PER_BEAT * speed;
 
 // A hit explodes in its lane's colour. The dub echo repeats it `delay` beats later, smaller, up to
-// three times, so what you see is what the delay line is doing.
-export type Burst = { lane: Lane; beat: number; size: number; echoes: number; parts: Part[] };
+// three times, so what you see is what the delay line is doing. A burst with an `x` goes off at the door
+// the runner went through (lane units across the floor, -1.5 far left to 1.5 far right); without one it
+// goes off on the lane's wall.
+export type Burst = { lane: Lane; beat: number; size: number; echoes: number; parts: Part[]; x?: number };
+/** A lane's width across the floor, in world units: the runner and the doors stand at x * LANE_W. */
+export const LANE_W = 0.8;
 // A particle's launch velocity in world units a beat (x across, y up, z down the corridor), and its heat:
 // the hottest ones of a perfect burn white at the core.
 export type Part = { vx: number; vy: number; vz: number; heat: number };
@@ -72,7 +102,7 @@ export function echoBursts(bursts: Burst[], beat: number, delay: number) {
   for (const b of [...bursts]) {
     if (b.echoes < 3 && beat >= b.beat + delay && b.size > 0.2) {
       b.echoes = 3; // this one is done echoing: its child carries on
-      bursts.push({ ...burst(b.lane, b.beat + delay, b.size * 0.55), echoes: 0 });
+      bursts.push({ ...burst(b.lane, b.beat + delay, b.size * 0.55), x: b.x, echoes: 0 });
     }
   }
   const alive = bursts.filter((b) => beat - b.beat < 1.2);
@@ -80,7 +110,7 @@ export function echoBursts(bursts: Burst[], beat: number, delay: number) {
   bursts.push(...alive);
 }
 
-/** speed: 1 is normal; a boost rushes the tunnel faster, a fence drags it. */
+/** speed: 1 is normal; a boost rushes the tunnel faster, a wall drags it. */
 export type Scene = { run: Run | null; beat: number; down: ReadonlySet<Lane>; bursts: Burst[]; speed: number };
 
 /** The view for this frame: on each kick the tunnel lurches a touch closer, and the vanishing point
@@ -108,22 +138,20 @@ export function drawTunnel(g: CanvasRenderingContext2D, v: View, s: Scene) {
   const white = (a: number) => `hsla(${hue},70%,93%,${Math.min(1, a + kick * 0.25)})`;
   g.globalCompositeOperation = "lighter";
 
-  // Long lines: a helix whose twist slowly reverses, rolling round the axis. Each line twists a
-  // little differently from its neighbours, so they weave over and under each other on the way down.
-  const roll = beat * 0.11, twist = Math.sin(beat * 0.07) * 0.07;
-  // A second, fainter grid rolls the other way through the first, and where they cross the lines
-  // beat against each other: a moiré that crawls round the walls.
+  // Long lines: a helix that spirals the way the tunnel rolls, always the same way, so the grid
+  // screws itself down the bend. A second, fainter grid rolls the same way at a slower rate, and
+  // where the two cross the lines beat against each other: a moiré that crawls round the walls.
+  const roll = beat * ROLL;
   g.setLineDash([]);
-  for (const [dir, alpha, width] of [[1, 0.55, 1.2], [-0.6, 0.16, 1]] as const) {
+  for (const [rate, alpha, width] of [[1, 0.55, 1.2], [0.55, 0.16, 1]] as const) {
     g.lineWidth = width;
     g.strokeStyle = white(alpha);
     for (let k = 0; k < LINES; k++) {
-      const base = (k / LINES) * Math.PI * 2 + roll * dir + (dir < 0 ? Math.PI / LINES : 0);
-      const weave = (twist + 0.03 * Math.sin(beat * 0.31 + k * 1.7)) * dir;
+      const base = (k / LINES) * Math.PI * 2 + roll * rate + (rate < 1 ? Math.PI / LINES : 0);
       g.beginPath();
       for (let i = 0; i <= SEGS; i++) {
         const z = NEAR * Math.pow(FAR / NEAR, i / SEGS);
-        const [x, y] = wall(v, base + weave * z, z, beat);
+        const [x, y] = wall(v, base + TWIST * z, z, beat);
         i ? g.lineTo(x, y) : g.moveTo(x, y);
       }
       g.stroke();
@@ -168,80 +196,113 @@ function ring(g: CanvasRenderingContext2D, v: View, z: number, beat: number, fro
 }
 
 // A call is a tail of rings: the call itself bright, under the runner when it sounds, then one ring
-// a beat ahead, dimmer each, out to the due ring `delay` beats on. The due ring is where you answer:
-// its wall is open round the lane and fenced everywhere else, and the lane's arc burns brightest.
+// a beat ahead, dimmer each, out to the due beat `delay` beats on. There, a solid wall fills the
+// tunnel, neon grid in the call's colour, with one door at the call's lane: run through the door
+// or into the wall. A hold's door stretches into a corridor until the hold ends.
 function drawCall(g: CanvasRenderingContext2D, v: View, c: Call, beat: number, speed: number, delay: number) {
   const gone = c.state === "hit" || c.state === "missed";
   const col = c.state === "missed" ? "#777" : LANE_COLOR[c.lane];
   const theta = LANE_ANGLE[c.lane];
   const n = Math.max(1, Math.round(delay));
   g.strokeStyle = col;
-  g.fillStyle = col;
-  for (let k = 0; k <= n; k++) {
+  for (let k = 0; k < n; k++) {
     const z = ringZ(c.beat + (k * delay) / n, beat, speed);
     if (z < NEAR || z > FAR) continue;
     const near = Math.min(1, 9 / z);
-    const due = k === n;
-    const fade = due ? 1 : Math.pow(0.72, k) * (k === 0 ? 1.3 : 1);
-    const a = (gone ? 0.3 : 1) * near * fade;
+    const a = (gone ? 0.3 : 1) * near * Math.pow(0.72, k) * (k === 0 ? 1.3 : 1);
     // A glowing band: wide and faint, then thin and bright, brightest round the lane.
-    g.lineWidth = (due ? 9 : 6) * near;
+    g.lineWidth = 6 * near;
     g.globalAlpha = a * 0.18;
     ring(g, v, z, beat);
-    g.lineWidth = due ? 2 : 1.4;
-    g.globalAlpha = a * (due ? 0.9 : 0.6);
+    g.lineWidth = 1.4;
+    g.globalAlpha = a * 0.6;
     ring(g, v, z, beat);
-    g.lineWidth = (due ? 5 : 3) * near;
+    g.lineWidth = 3 * near;
     g.globalAlpha = a;
-    ring(g, v, z, beat, theta - OPEN, theta + OPEN, 8);
-    if (!due) continue;
-    // The open part burns white-hot at its core: that is the hole you run through.
-    g.strokeStyle = "#fff";
-    g.lineWidth = 1.5 * near;
-    g.globalAlpha = a * 0.9;
-    ring(g, v, z, beat, theta - OPEN * 0.8, theta + OPEN * 0.8, 8);
-    // The fence: a dashed digital grid across the tunnel in the lane's colour, open only round the
-    // lane. Spokes from the axis and two inner rings.
-    g.setLineDash([3, 6]);
-    g.lineWidth = 1;
-    g.globalAlpha = a * (c.state === "held" ? 0.5 : 0.3);
-    g.strokeStyle = col;
-    const axis = project(v, 0, R, z);
-    g.beginPath();
-    for (let i = 0; i < 24; i++) {
-      const t = (i / 24) * Math.PI * 2 - Math.PI;
-      if (Math.abs(t - theta) < OPEN) continue;
-      const [x, y] = wall(v, t, z, beat);
-      g.moveTo(axis[0], axis[1]); g.lineTo(x, y);
-    }
-    g.stroke();
-    for (const r of [0.45, 0.75]) {
-      g.beginPath();
-      for (let i = 0; i <= 36; i++) {
-        const t = (i / 36) * Math.PI * 2;
-        const rr = radius(t, z, beat) * r;
-        const [x, y] = project(v, rr * Math.sin(t), R - rr * Math.cos(t), z);
-        i ? g.lineTo(x, y) : g.moveTo(x, y);
-      }
-      g.stroke();
-    }
-    g.setLineDash([]);
-    g.strokeStyle = col;
-    // A hold: the open arc stretches on to the release ring, and glows while held.
-    if (c.hold) {
-      const zEnd = Math.min(FAR, ringZ(c.due + c.hold, beat, speed));
-      g.globalAlpha = a * (c.state === "held" ? 0.7 : 0.3);
-      g.lineWidth = 4 * near;
-      g.beginPath();
-      for (const t of [theta - OPEN, theta + OPEN]) {
-        const [x0, y0] = wall(v, t, Math.max(NEAR, z), beat), [x1, y1] = wall(v, t, zEnd, beat);
-        g.moveTo(x0, y0); g.lineTo(x1, y1);
-      }
-      g.stroke();
-      if (zEnd > NEAR) ring(g, v, zEnd, beat, theta - OPEN, theta + OPEN, 8);
+    ring(g, v, z, beat, theta - DOOR, theta + DOOR, 8);
+  }
+  const z = ringZ(c.due, beat, speed);
+  if (z >= NEAR && z <= FAR) drawWall(g, v, c, z, beat, speed, col, gone);
+  g.globalAlpha = 1;
+}
+
+// The wall: spokes from the axis and rings in toward it, dense enough to read as solid, with the
+// door cut out of them: a sector of the disc round the lane, from the floor up. The door's frame
+// glows in the lane's colour, white-hot at the floor where you run through.
+function drawWall(g: CanvasRenderingContext2D, v: View, c: Call, z: number, beat: number, speed: number, col: string, gone: boolean) {
+  const theta = LANE_ANGLE[c.lane];
+  const near = Math.min(1, 9 / z), a = (gone ? 0.3 : 1) * near;
+  const inDoor = (t: number) => Math.abs(((t - theta + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI) < DOOR;
+  const at = (t: number, share: number, zz = z): [number, number] => {
+    const r = radius(t, zz, beat) * share, [ax, ay] = axis(zz, beat);
+    return project(v, ax + r * Math.sin(t), ay - r * Math.cos(t), zz);
+  };
+  // The solid: a faint fill over the whole disc, the door left clear.
+  g.fillStyle = col;
+  g.globalAlpha = a * 0.1;
+  g.beginPath();
+  for (let i = 0; i <= 72; i++) {
+    const t = theta + DOOR + ((Math.PI * 2 - DOOR * 2) * i) / 72;
+    const [x, y] = at(t, 1);
+    i ? g.lineTo(x, y) : g.moveTo(x, y);
+  }
+  for (let i = 8; i >= 0; i--) { const [x, y] = at(theta - DOOR + (DOOR * 2 * i) / 8, 1 - DOOR_H); g.lineTo(x, y); }
+  g.closePath();
+  g.fill();
+  // The grid: spokes, cut short where they would cross the door, and rings, broken at it.
+  g.strokeStyle = col;
+  g.lineWidth = 1;
+  g.globalAlpha = a * 0.55;
+  g.beginPath();
+  for (let i = 0; i < 40; i++) {
+    const t = (i / 40) * Math.PI * 2 - Math.PI;
+    const [x0, y0] = at(t, 0), [x1, y1] = at(t, inDoor(t) ? 1 - DOOR_H : 1);
+    g.moveTo(x0, y0); g.lineTo(x1, y1);
+  }
+  for (const share of [0.18, 0.36, 0.54, 0.72, 0.88]) {
+    let pen = false;
+    for (let i = 0; i <= 72; i++) {
+      const t = (i / 72) * Math.PI * 2 - Math.PI;
+      if (share > 1 - DOOR_H && inDoor(t)) { pen = false; continue; }
+      const [x, y] = at(t, share);
+      pen ? g.lineTo(x, y) : g.moveTo(x, y);
+      pen = true;
     }
   }
-  g.globalAlpha = 1;
+  g.stroke();
+  // The door frame: up one side, over the top, down the other, glowing; the sill burns white-hot.
+  const frame = (zz: number, width: number, alpha: number) => {
+    g.lineWidth = width;
+    g.globalAlpha = alpha;
+    g.beginPath();
+    const [lx, ly] = wall(v, theta - DOOR, zz, beat), [rx, ry] = wall(v, theta + DOOR, zz, beat);
+    g.moveTo(lx, ly);
+    for (let i = 0; i <= 8; i++) { const [x, y] = at(theta - DOOR + (DOOR * 2 * i) / 8, 1 - DOOR_H, zz); g.lineTo(x, y); }
+    g.lineTo(rx, ry);
+    g.stroke();
+  };
+  frame(z, 8 * near, a * 0.25);
+  frame(z, 2, a);
+  g.strokeStyle = "#fff";
+  g.lineWidth = 2 * near;
+  g.globalAlpha = a * 0.9;
+  ring(g, v, z, beat, theta - DOOR, theta + DOOR, 8);
+  // A hold: the door runs on as a corridor to the release beat, and glows while held.
+  if (c.hold) {
+    const zEnd = Math.min(FAR, ringZ(c.due + c.hold, beat, speed));
+    g.strokeStyle = col;
+    g.globalAlpha = a * (c.state === "held" ? 0.8 : 0.4);
+    g.lineWidth = 2;
+    g.beginPath();
+    for (const t of [theta - DOOR, theta + DOOR]) {
+      const [x0, y0] = wall(v, t, z, beat), [x1, y1] = wall(v, t, zEnd, beat);
+      g.moveTo(x0, y0); g.lineTo(x1, y1);
+      const [tx0, ty0] = at(t, 1 - DOOR_H), [tx1, ty1] = at(t, 1 - DOOR_H, zEnd);
+      g.moveTo(tx0, ty0); g.lineTo(tx1, ty1);
+    }
+    g.stroke();
+    if (zEnd > z) { g.lineWidth = 1.5; frame(zEnd, 1.5, a * 0.6); }
+  }
 }
 
 // Drag slows a particle to a stop within a beat or so, and a gentle pull draws it out to the wall it
@@ -262,12 +323,15 @@ function drawBursts(g: CanvasRenderingContext2D, v: View, bursts: Burst[], beat:
     const age = beat - b.beat;
     if (age < 0 || age > 1.2) continue;
     const fade = (1 - age / 1.2) ** 1.5;
-    // The wall it went off: the lane's point on the tunnel, and straight out from the axis through it.
-    const theta = LANE_ANGLE[b.lane], lx = R * Math.sin(theta), ly = R - R * Math.cos(theta), col = LANE_COLOR[b.lane];
-    const out = [Math.sin(theta), -Math.cos(theta)] as const;
+    // Where it went off: the door the runner ran through, a little ahead of them at chest height and
+    // pulled down to the floor; or, with no door, the lane's point on the wall, pulled straight out.
+    const theta = LANE_ANGLE[b.lane], col = LANE_COLOR[b.lane];
+    const door = b.x !== undefined;
+    const lx = door ? (b.x ?? 0) * LANE_W : R * Math.sin(theta), ly = door ? 0.6 : R - R * Math.cos(theta);
+    const out = door ? ([0, -1] as const) : ([Math.sin(theta), -Math.cos(theta)] as const);
     const at = (p: Part, t: number) => {
       const [x, y, z] = partAt(p, t, b.size, out);
-      return project(v, lx + x, ly + Math.max(0, 0.05 + y), RUNNER_Z + z);
+      return door ? project(v, lx + x, Math.max(0, ly + y), RUNNER_Z + 0.4 + z) : project(v, lx + x, ly + Math.max(0, 0.05 + y), RUNNER_Z + z);
     };
     // Each particle is a smear from where it was a moment ago to where it is now, so fast ones streak.
     const tail = Math.max(0, age - 0.1);

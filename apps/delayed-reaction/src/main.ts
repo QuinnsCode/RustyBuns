@@ -19,6 +19,7 @@ const bursts: Burst[] = [];
 const down = new Set<Lane>();
 let judgeUntil = 0;
 let missBeat: number | undefined; // the runner stumbles on the beat after a miss
+let passBeat: number | undefined; // and dives shoulder-first through the door on a hit
 
 function el(id: string) { return document.getElementById(id)!; }
 
@@ -96,6 +97,7 @@ function show(j: Judgement) {
   if (j.kind === "hit") {
     music.answer(j.call.lane, j.grade, j.call.hold);
     bursts.push(burst(j.call.lane, music.beat(), j.grade === "perfect" ? 1 : 0.6));
+    passBeat = heardBeat();
     say(j.grade === "perfect" ? "Perfect" : j.offset < 0 ? "Early" : j.offset > 0 ? "Late" : "Through");
     buzz(j.grade === "perfect" ? 12 : 6);
   } else if (j.kind === "release") {
@@ -163,7 +165,7 @@ function frame(now: number) {
   if (now > judgeUntil) hud.judge.textContent = "";
   // scene.speed (1 = normal) is how fast the tunnel rushes and how far the runner leans in.
   // Between runs the tunnel still rolls, at an idle 120 bpm, so the menu has something turning behind it.
-  const scene = { run, beat: run ? beat : now / 500, down, bursts, speed: run?.speed ?? 1, missBeat, t: now / 1000 };
+  const scene = { run, beat: run ? beat : now / 500, down, bursts, speed: run?.speed ?? 1, missBeat, passBeat, t: now / 1000 };
   const v = sway(view(innerWidth, innerHeight), scene.beat, !!run);
   drawTunnel(g, v, scene);
   drawRunner(g, v, scene);
