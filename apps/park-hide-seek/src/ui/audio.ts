@@ -33,6 +33,7 @@ export function place(dx: number, dy: number, yaw: number, reach: number): { vol
 
 export const sounds = {
   rustle(vol: number, pan: number) { if (vol > 0.02) { noise(0.35, vol * 0.5, pan, 3200, 0.5); setTimeout(() => noise(0.25, vol * 0.35, pan, 2400, 0.6), 120); } },
+  thud(vol: number, pan: number) { if (vol > 0.02) { noise(0.3, vol * 1.2, pan, 220, 0.8); setTimeout(() => noise(0.15, vol * 0.5, pan, 700, 0.6), 90); } },
   step(vol: number, pan: number) { if (vol > 0.02) noise(0.08, vol * 0.6, pan, 500, 1.2); },
   caught() { const a = ac(), o = a.createOscillator(), g = a.createGain(); o.frequency.setValueAtTime(660, a.currentTime); o.frequency.exponentialRampToValueAtTime(220, a.currentTime + 0.4); g.gain.setValueAtTime(0.15, a.currentTime); g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.5); o.connect(g).connect(a.destination); o.start(); o.stop(a.currentTime + 0.5); },
   call(vol: number, line: string) {

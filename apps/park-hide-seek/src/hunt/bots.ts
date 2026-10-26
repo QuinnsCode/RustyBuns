@@ -106,7 +106,7 @@ export class HuntBot {
     }
     const inp: MoveInput = { fwd, right: 0, run: this.running && !prop, crouch: this.crouching || prop };
     step(z, b, role, inp, dt);
-    return { t: "pos", x: b.x, y: b.y, yaw: b.yaw, pitch: 0, crouch: b.crouch, run: b.run, light };
+    return { t: "pos", x: b.x, y: b.y, yaw: b.yaw, pitch: 0, crouch: b.crouch, prone: false, climb: false, run: b.run, light };
   }
 
   // ---- camper -----------------------------------------------------------------
