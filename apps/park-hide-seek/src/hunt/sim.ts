@@ -41,14 +41,14 @@ export const stepReach = (sky: Sky, reach: number) => reach * (1 - WEATHER.rainH
 export const soundJitter = (sky: Sky, j: number) => j * (1 + WEATHER.windJitter * sky.wind);
 
 export const MOVE = {
-  camper: { walk: 3.2, run: 6.0, crouch: 1.4 },
+  camper: { walk: 3.2, run: 6.0, crouch: 1.4, prone: 0.6 },
   // Rangers are faster: a camper who's been spotted in the open should be caught.
-  ranger: { walk: 3.8, run: 7.6, crouch: 1.8 },
+  ranger: { walk: 3.8, run: 7.6, crouch: 1.8, prone: 0.8 },
   /** Seconds of running on a full tank, and how fast it refills. */
   stamina: { camper: 6, ranger: 8, refill: 0.35 },
 };
 
-export const EYE = { stand: 1.6, crouch: 0.9 };
+export const EYE = { stand: 1.6, crouch: 0.9, prone: 0.35 };
 export const TAG_REACH = 1.5;
 
 export interface Body {
@@ -58,6 +58,8 @@ export interface Body {
   /** 0..1 */
   stamina: number;
   crouch: boolean;
+  /** Flat on the ground: crouch, but lower, slower and harder to spot. */
+  prone?: boolean;
   run: boolean;
 }
 
@@ -67,18 +69,20 @@ export interface MoveInput {
   right: number;
   run: boolean;
   crouch: boolean;
+  prone?: boolean;
 }
 
 /** One movement step: walk, slide along cliffs and trunks, stay in the zone. */
 export function step(z: Zone, b: Body, role: Role, inp: MoveInput, dt: number) {
   const len = Math.hypot(inp.fwd, inp.right);
   b.crouch = inp.crouch;
+  b.prone = inp.crouch && !!inp.prone;
   const wantsRun = inp.run && !inp.crouch && len > 0.1;
   const cap = MOVE.stamina[role];
   b.run = wantsRun && b.stamina > 0.02;
   b.stamina = Math.max(0, Math.min(1, b.stamina + (b.run ? -dt / cap : (dt * MOVE.stamina.refill) / (len > 0.1 ? 2 : 1))));
   if (len < 0.05) return;
-  const sp = MOVE[role][b.crouch ? "crouch" : b.run ? "run" : "walk"];
+  const sp = MOVE[role][b.prone ? "prone" : b.crouch ? "crouch" : b.run ? "run" : "walk"];
   // Forward is +yaw: yaw 0 faces north (+y), increasing clockwise towards east.
   const fx = Math.sin(b.yaw), fy = Math.cos(b.yaw);
   const dx = ((fx * inp.fwd + fy * inp.right) / Math.max(1, len)) * sp * dt;
@@ -120,8 +124,8 @@ export function resolve(z: Zone, b: Body) {
   if (d > lim) { b.x *= lim / d; b.y *= lim / d; }
 }
 
-export interface Seer { x: number; y: number; yaw: number; crouch: boolean; role: Role; light: boolean }
-export interface Seen { x: number; y: number; crouch: boolean }
+export interface Seer { x: number; y: number; yaw: number; crouch: boolean; prone?: boolean; role: Role; light: boolean }
+export interface Seen { x: number; y: number; crouch: boolean; prone?: boolean; /** Up a tree, hidden in the leaves. */ climb?: boolean }
 
 export const SIGHT = {
   range: { day: 90, dusk: 45, night: 7 },
@@ -129,6 +133,9 @@ export const SIGHT = {
   /** Crouched in a bush, you can only be seen this close (or lit up nearby). */
   bush: 3.5,
   crouchFactor: 0.6,
+  proneFactor: 0.35,
+  /** Up a tree you're only seen this close. */
+  canopy: 3.5,
 };
 
 /** How far you can see in the open, and how far a flashlight reaches. */
@@ -149,13 +156,14 @@ export function canSee(z: Zone, sky: Sky | TimeOfDay, a: Seer, b: Seen): boolean
     const ang = Math.abs(wrap(Math.atan2(dx, dy) - a.yaw));
     if (ang < SIGHT.torch.halfAngle) { range = Math.max(range, reach.torch); lit = true; }
   }
-  if (b.crouch) {
+  if (b.climb) range = Math.min(range, SIGHT.canopy);
+  else if (b.crouch) {
     const bush = z.bushAt(b.x, b.y);
-    if (bush) range = Math.min(range, lit && d < 10 ? 10 : SIGHT.bush);
-    else range *= SIGHT.crouchFactor;
+    if (bush) range = Math.min(range, lit && d < 10 ? 10 : b.prone ? SIGHT.bush * 0.6 : SIGHT.bush);
+    else range *= b.prone ? SIGHT.proneFactor : SIGHT.crouchFactor;
   }
   if (d > range) return false;
-  return clearLine(z, a.x, a.y, z.height(a.x, a.y) + (a.crouch ? EYE.crouch : EYE.stand), b.x, b.y, z.height(b.x, b.y) + (b.crouch ? 0.6 : 1.1));
+  return clearLine(z, a.x, a.y, z.height(a.x, a.y) + (a.prone ? EYE.prone : a.crouch ? EYE.crouch : EYE.stand), b.x, b.y, z.height(b.x, b.y) + (b.climb ? 3 : b.prone ? 0.3 : b.crouch ? 0.6 : 1.1));
 }
 
 /** Nothing solid between two points: no ridge, trunk, boulder, tent or cabin. */
