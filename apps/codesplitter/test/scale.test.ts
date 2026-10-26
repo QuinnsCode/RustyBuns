@@ -24,6 +24,8 @@ test("admins get every card with live readings; nobody else does", async () => {
   await db.prepare(`INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started) VALUES ('ryan', 'lab', 'big.ts', 'claude', 't', 'agent-claude', 'running', ?)`).bind(Date.now()).run();
   await db.prepare(`INSERT INTO agent_runs (owner, repo, path, harness, task, agent, status, started) VALUES ('ryan', 'lab', 'big.ts', 'claude', 't', 'agent-claude', 'running', ?)`).bind(Date.now()).run();
 
+  await db.prepare("INSERT INTO traffic (day, who, kind, via, hits, errors, first_at, last_at) VALUES (0, 'ryan', 'person', 'browser', 50, 5, ?, ?)").bind(Date.now() - 1000, Date.now() - 1000).run();
+
   const r = await call("boss", "/api/admin/scale");
   expect(r.status).toBe(200);
   const d: any = await r.json();
@@ -36,6 +38,8 @@ test("admins get every card with live readings; nobody else does", async () => {
   expect(card("search").reading).toMatchObject({ value: 8192, limit: 10 * 1024 ** 3 });
   expect(card("search").reading.note).toContain("ryan/lab");
   expect(card("d1-size").reading.value).toBeGreaterThan(0);
+  // 5 server errors in 50 requests is 10%, five times the 2% line.
+  expect(card("d1-errors")).toMatchObject({ state: "bad", reading: { value: 10, limit: 2 } });
   // Two runs on a cap of two: critical, and the page leads with it.
   expect(card("agents")).toMatchObject({ state: "bad", reading: { value: 2, limit: 2 } });
   expect(card("hot-file").state).toBe("unmeasured");
