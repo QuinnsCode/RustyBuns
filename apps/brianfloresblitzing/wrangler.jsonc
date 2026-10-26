@@ -1,0 +1,8 @@
+// brianfloresblitzing: one static page as Worker assets, no Worker code. `bun run deploy` ships it.
+// observability turns on request logs and metrics for the Worker in the Cloudflare dashboard.
+{
+  "name": "brianfloresblitzing",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": "public" },
+  "observability": { "enabled": true }
+}
