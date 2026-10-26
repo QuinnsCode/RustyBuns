@@ -11,13 +11,14 @@ test("further down the hallway is smaller and nearer the vanishing point", () =>
   expect(project(v, 0, 0, 1e6)[1]).toBeCloseTo(v.hy, 0);
 });
 
-test("a hit's explosion echoes once per delay, smaller each time, and then fades", () => {
-  const bursts = [burst(2, 10, 1)];
+test("a hit's explosion echoes at its door once per delay, smaller each time, and then fades", () => {
+  const bursts = [{ ...burst(2, 10, 1), x: 0.5 }];
   echoBursts(bursts, 10.5, 4);
   expect(bursts.length).toBe(1);
   echoBursts(bursts, 14, 4);
   expect(bursts.map((b) => b.beat)).toEqual([14]); // the first has faded; its echo is alive
   expect(bursts[0]!.size).toBeCloseTo(0.55);
+  expect(bursts[0]!.x).toBe(0.5); // the echo goes off at the same door
   echoBursts(bursts, 18, 4);
   echoBursts(bursts, 22, 4);
   expect(bursts.map((b) => b.beat)).toEqual([22]);
