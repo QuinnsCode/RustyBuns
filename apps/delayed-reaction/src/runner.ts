@@ -5,10 +5,10 @@
 // pad held down, a stumble after a miss, and a forward lean with a streak behind when the run is boosted.
 // The jacket and shades carry the runner's one accent colour; the hands take a held pad's lane colour.
 import { LANE_COLOR, project, type Scene, type View } from "./hallway.ts";
-import type { Lane } from "./sim.ts";
+import { SPEED_CEILING, SPEED_FLOOR, type Lane } from "./sim.ts";
 
 export type RunnerScene = Pick<Scene, "run" | "beat" | "down"> & {
-  speed?: number;      // 1 is cruising; over 1 leans in and streaks
+  speed?: number;      // run.speed: at the floor it cruises, above it leans in and streaks
   missBeat?: number;   // the beat of the last miss: the stumble plays out over the beat after it
   t?: number;          // seconds, for the idle sway and the hair when no song is running
 };
@@ -33,7 +33,7 @@ export type Pose = {
 /** The runner's joints for this moment, in world units around (0, 0, RUNNER_Z). */
 export function pose(s: RunnerScene): Pose {
   const running = !!s.run, t = s.t ?? 0, beat = s.beat;
-  const boost = running ? clamp01((s.speed ?? 1) - 1) : 0;
+  const boost = running ? clamp01(((s.speed ?? SPEED_FLOOR) - SPEED_FLOOR) / (SPEED_CEILING - SPEED_FLOOR)) : 0;
   const since = s.missBeat === undefined ? Infinity : beat - s.missBeat;
   const stumble = running && since >= 0 && since < 1 ? Math.sin(Math.min(1, since * 4) * Math.PI / 2) * (1 - since) ** 2 : 0;
   // One footfall a beat: the left foot lands on even beats, the right on odd.

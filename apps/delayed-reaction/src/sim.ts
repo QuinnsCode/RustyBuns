@@ -36,6 +36,15 @@ export const PERFECT = 0.1;
 export const GOOD = 0.25;
 export const LIVES = 8;
 
+// Speed: how fast the world looks and sounds, never when calls are due (charts stay in beats).
+// An answer on time boosts it, a miss or a stray press hits the fence and cuts it back, and each
+// beat it decays toward the floor on its own, so only a run that keeps answering stays fast.
+export const SPEED_FLOOR = 1;
+export const SPEED_CEILING = 2.5;
+const BOOST = { perfect: 0.3, good: 0.12 } as const;
+const FENCE_KEEPS = 0.25;  // the share of the boost above the floor a fence hit leaves you
+const DECAY = 0.96;        // the share of the boost above the floor that survives a beat
+
 export const LEVELS = [
   // Dub tempos: the drums are half-time, so 140 feels like 70. A bar of delay is the natural first
   // one (the answer sits where the call sat, one bar on). `hint` is the call echoing on its due beat,
@@ -91,6 +100,7 @@ export type Run = {
   hits: number;
   perfects: number;
   misses: number;
+  speed: number;     // SPEED_FLOOR..SPEED_CEILING, read by the renderer and the music
   over: "won" | "lost" | null;
 };
 
@@ -102,8 +112,16 @@ export type Judgement =
 
 export function createRun(chart: Chart): Run {
   for (const c of chart.calls) { c.state = "pending"; delete c.grade; }
-  return { chart, beat: 0, score: 0, combo: 0, maxCombo: 0, lives: LIVES, hits: 0, perfects: 0, misses: 0, over: null };
+  return { chart, beat: 0, score: 0, combo: 0, maxCombo: 0, lives: LIVES, hits: 0, perfects: 0, misses: 0, speed: SPEED_FLOOR, over: null };
 }
+
+// Move the run's clock forward, letting the speed fall back toward the floor for the beats that passed.
+function tick(run: Run, beat: number) {
+  if (beat > run.beat) run.speed = SPEED_FLOOR + (run.speed - SPEED_FLOOR) * DECAY ** (beat - run.beat);
+  run.beat = Math.max(run.beat, beat);
+}
+
+const fence = (run: Run) => { run.speed = SPEED_FLOOR + (run.speed - SPEED_FLOOR) * FENCE_KEEPS; };
 
 const gradeOf = (offset: number): Grade | null =>
   Math.abs(offset) <= PERFECT ? "perfect" : Math.abs(offset) <= GOOD ? "good" : null;
@@ -112,6 +130,7 @@ function miss(run: Run, call: Call): Judgement {
   call.state = "missed";
   run.misses++;
   run.combo = 0;
+  fence(run);
   run.lives--;
   if (run.lives <= 0) run.over = "lost";
   return { kind: "miss", call };
@@ -122,12 +141,14 @@ function reward(run: Run, grade: Grade) {
   run.maxCombo = Math.max(run.maxCombo, run.combo);
   run.hits++;
   if (grade === "perfect") run.perfects++;
+  run.speed = Math.min(SPEED_CEILING, run.speed + BOOST[grade]);
   // A combo multiplies, capped so a long song isn't decided by one slip at the end.
   run.score += (grade === "perfect" ? 100 : 60) * Math.min(4, 1 + Math.floor(run.combo / 10));
 }
 
 /** Move the clock to `beat`: calls whose window closed unanswered are misses, and the run ends when the song does. */
 export function advance(run: Run, beat: number): Judgement[] {
+  tick(run, beat);
   run.beat = beat;
   const out: Judgement[] = [];
   if (run.over) return out;
@@ -147,7 +168,7 @@ export function advance(run: Run, beat: number): Judgement[] {
 
 /** A pad goes down at `beat`: answers the nearest due call on that lane, or counts as an early press. */
 export function press(run: Run, lane: Lane, beat: number): Judgement {
-  run.beat = Math.max(run.beat, beat);
+  tick(run, beat);
   if (run.over) return { kind: "early", lane };
   let best: Call | null = null;
   for (const c of run.chart.calls) {
@@ -158,6 +179,7 @@ export function press(run: Run, lane: Lane, beat: number): Judgement {
   if (!best) {
     run.combo = 0;
     run.score = Math.max(0, run.score - 20);
+    fence(run);
     return { kind: "early", lane };
   }
   const offset = beat - best.due;
@@ -174,7 +196,7 @@ export function press(run: Run, lane: Lane, beat: number): Judgement {
 
 /** The pad comes up at `beat`: ends a hold. Early is a drop (a miss); on time grades like a tap. */
 export function release(run: Run, lane: Lane, beat: number): Judgement | null {
-  run.beat = Math.max(run.beat, beat);
+  tick(run, beat);
   const c = run.chart.calls.find((c) => c.lane === lane && c.state === "held");
   if (!c) return null;
   const grade = gradeOf(beat - (c.due + c.hold));
