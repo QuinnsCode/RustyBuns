@@ -12,6 +12,7 @@ import { HUNT, circleAt, type ActorView, type Circle, type Cue, type Disguise, t
 import { clearSky, type Sky, type TimeOfDay } from "../hunt/sim.ts";
 import { zoneById, zoneLoaded, type Prop, type PropKind, type Zone } from "../zones/zone.ts";
 import { makeBigfoot, makeCharacter, nameTag, pose, type Character } from "./characters.ts";
+import { BUSHES, CACTI, SAGUAROS, flora, floraReady, variant } from "./flora.ts";
 
 export const toThree = (x: number, y: number, h: number) => new THREE.Vector3(x, h, -y);
 
@@ -114,6 +115,8 @@ export class World3D {
   private propMats: Record<DisguiseKind, THREE.Material>;
   private propGeos: Record<DisguiseKind, THREE.BufferGeometry>;
   private meProp: PropBody = { prop: null, propKey: "" };
+  /** The zone's props, to swap for the Blender plants when they arrive. */
+  private propObjs: THREE.Object3D[] = [];
 
   constructor(readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
@@ -145,6 +148,18 @@ export class World3D {
     this.propGeos = { bush: PROP_GEO.bush(), boulder: PROP_GEO.boulder(), log: PROP_GEO.log() };
     const pm = (k: DisguiseKind, flat: boolean) => new THREE.MeshStandardMaterial({ color: PROP_COLOR[k], roughness: 0.9, flatShading: flat });
     this.propMats = { bush: this.swaying(pm("bush", true), 0.14), boulder: pm("boulder", true), log: pm("log", false) };
+    void floraReady().then((ok) => ok && this.useFlora());
+  }
+
+  // The Blender plants are in: a bush disguise wears one, and the zone's props are drawn again with them.
+  private useFlora() {
+    this.propGeos.bush = flora()!.get(BUSHES[0])!;
+    this.propMats.bush = this.swaying(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true }), 0.14);
+    const z = this.zone;
+    if (!z) return;
+    this.zoneGroup.remove(...this.propObjs);
+    this.plumes = [];
+    this.zoneGroup.add(...(this.propObjs = this.props(z)));
   }
 
   // Bend the top of a mesh in the wind, more the higher up (k per local metre).
@@ -186,7 +201,7 @@ export class World3D {
     this.plumes = [];
     for (const r of this.remotes.values()) this.scene.remove(r.ch.root);
     this.remotes.clear();
-    this.zoneGroup.add(this.terrain(z), ...this.props(z), ...(this.ridges = this.makeRidges(z)));
+    this.zoneGroup.add(this.terrain(z), ...(this.propObjs = this.props(z)), ...(this.ridges = this.makeRidges(z)));
     this.skyKey = "";
   }
 
@@ -297,9 +312,24 @@ export class World3D {
       new THREE.DodecahedronGeometry(3.5).scale(1, 0.8, 1).translate(1.5, 35, 0.5),
       new THREE.DodecahedronGeometry(3).scale(1, 0.8, 1).translate(-1.2, 26, -1),
     ])!, swaying(m("#ffffff", { flatShading: true }), 0.01), seqs, (p) => [p.size, p.size, p.size], (_, c) => c.setHSL(0.28, 0.4, 0.2 + r() * 0.05));
-    // Bushes: soft lumps you can crouch in.
-    place(PROP_GEO.bush(), swaying(m("#ffffff", { flatShading: true }), 0.14), by.get("bush") ?? [],
-      (p) => [p.size, p.size, p.size], (_, c) => c.copy(PROP_COLOR.bush).offsetHSL((r() - 0.5) * 0.08, 0, (r() - 0.5) * 0.08), PROP_SINK.bush);
+    // Bushes you can crouch in, and in the desert saguaros and little cacti: the Blender plants once they're in
+    // (each copy tinted a shade lighter or darker, a touch greener or yellower), soft lumps and posts until then.
+    const plants = flora();
+    const shade = (_: Prop, c: THREE.Color) => c.setHSL(0.22 + (r() - 0.5) * 0.12, 0.3, 0.8 + r() * 0.2);
+    const sized = (p: Prop): [number, number, number] => [p.size, p.size, p.size];
+    const grow = (family: readonly string[], list: Prop[], material: THREE.Material, sink: number) => {
+      for (const name of family) place(plants!.get(name)!, material, list.filter((p) => variant(family, p.x, p.y) === name), sized, shade, sink);
+    };
+    if (plants) {
+      grow(BUSHES, by.get("bush") ?? [], swaying(m("#ffffff", { vertexColors: true, flatShading: true }), 0.14), PROP_SINK.bush);
+      grow(SAGUAROS, by.get("saguaro") ?? [], m("#ffffff", { vertexColors: true, flatShading: true }), 0.1);
+      grow(CACTI, by.get("cactus") ?? [], m("#ffffff", { vertexColors: true, flatShading: true }), 0.05);
+    } else {
+      place(PROP_GEO.bush(), swaying(m("#ffffff", { flatShading: true }), 0.14), by.get("bush") ?? [],
+        sized, (_, c) => c.copy(PROP_COLOR.bush).offsetHSL((r() - 0.5) * 0.08, 0, (r() - 0.5) * 0.08), PROP_SINK.bush);
+      place(new THREE.CylinderGeometry(0.3, 0.33, 7, 10).translate(0, 3.5, 0), m("#5f8a52", { flatShading: true }), by.get("saguaro") ?? [], sized, undefined, 0.1);
+      place(new THREE.SphereGeometry(0.4, 10, 6).scale(1, 0.9, 1).translate(0, 0.3, 0), m("#5f8a52", { flatShading: true }), by.get("cactus") ?? [], sized, undefined, 0.05);
+    }
     place(PROP_GEO.boulder(), m("#8b8a84", { flatShading: true }), by.get("boulder") ?? [],
       (p) => [p.size, p.size, p.size], (_, c) => c.copy(PROP_COLOR.boulder).offsetHSL(0, 0, (r() - 0.5) * 0.15), PROP_SINK.boulder);
     place(PROP_GEO.log(), m("#ffffff"), by.get("log") ?? [], (p) => [p.size, p.size, p.size], (_, c) => c.copy(PROP_COLOR.log), PROP_SINK.log);

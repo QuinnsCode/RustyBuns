@@ -7,13 +7,13 @@ import type { ZoneData } from "./types.ts";
 
 export type ZoneMeta = Pick<ZoneData, "id" | "park" | "name" | "blurb" | "trees">;
 
-const pine = "pine" as const, sequoia = "sequoia" as const;
+const pine = "pine" as const, sequoia = "sequoia" as const, desert = "desert" as const;
 export const ZONE_INDEX: ZoneMeta[] = [
   { id: "acadia", park: "ACAD", name: "Cadillac Mountain", blurb: "Pink granite ledges and low spruce, with the Atlantic spread below", trees: pine },
   { id: "american-samoa", park: "NPSA", name: "Ofu Beach", blurb: "A white beach under a rainforest ridge; the hiding is up in the trees", trees: pine },
   { id: "arches", park: "ARCH", name: "Delicate Arch", blurb: "Slickrock bowls round the arch, with sandstone fins to duck behind", trees: pine },
   { id: "badlands", park: "BADL", name: "The Wall", blurb: "Striped clay ridges and gullies, soft as sand and steep as a wall", trees: pine },
-  { id: "big-bend", park: "BIBE", name: "Santa Elena Canyon", blurb: "Where the Rio Grande cuts a 450 m limestone slot through the desert", trees: pine },
+  { id: "big-bend", park: "BIBE", name: "Santa Elena Canyon", blurb: "Where the Rio Grande cuts a 450 m limestone slot through the desert", trees: desert },
   { id: "biscayne", park: "BISC", name: "Boca Chita Key", blurb: "A flat coral island in a bay: nothing to hide behind but the bushes", trees: pine },
   { id: "black-canyon", park: "BLCA", name: "Painted Wall", blurb: "The rim over a gorge so narrow the sun barely reaches the river", trees: pine },
   { id: "bryce-canyon", park: "BRCA", name: "Sunset Point", blurb: "A rim path over the amphitheater and a thousand hoodoos below it", trees: pine },
@@ -43,7 +43,7 @@ export const ZONE_INDEX: ZoneMeta[] = [
   { id: "hot-springs", park: "HOSP", name: "Bathhouse Row", blurb: "The foot of the Ouachitas, 47 springs behind a street of ornate stone", trees: pine },
   { id: "indiana-dunes", park: "INDU", name: "Mount Baldy", blurb: "A wandering sand dune on the shore of Lake Michigan", trees: pine },
   { id: "isle-royale", park: "ISRO", name: "Rock Harbor", blurb: "An island in Lake Superior with wolves, moose and no roads at all", trees: pine },
-  { id: "joshua-tree", park: "JOTR", name: "Skull Rock", blurb: "A pile of golden granite boulders where two deserts meet", trees: pine },
+  { id: "joshua-tree", park: "JOTR", name: "Skull Rock", blurb: "A pile of golden granite boulders where two deserts meet", trees: desert },
   { id: "katmai", park: "KATM", name: "Brooks Falls", blurb: "Where the brown bears stand on the lip and catch salmon out of the air", trees: pine },
   { id: "kenai-fjords", park: "KEFJ", name: "Exit Glacier", blurb: "The end of a gravel valley, an arm of the Harding Icefield you can walk up to", trees: pine },
   { id: "kings-canyon", park: "KICA", name: "Zumwalt Meadow", blurb: "The deepest canyon in America, under granite walls 1,000 m high", trees: pine },
@@ -60,7 +60,7 @@ export const ZONE_INDEX: ZoneMeta[] = [
   { id: "pinnacles", park: "PINN", name: "High Peaks", blurb: "Spires of an old volcano split in two and carried 200 km along a fault", trees: pine },
   { id: "redwood", park: "REDW", name: "Lady Bird Johnson Grove", blurb: "The tallest trees on Earth, in a ground fog", trees: sequoia },
   { id: "rocky-mountain", park: "ROMO", name: "Dream Lake", blurb: "A glacier cirque under Hallett Peak, 3,000 m up", trees: pine },
-  { id: "saguaro", park: "SAGU", name: "Signal Hill", blurb: "A hill above a forest of saguaros, the cactus that grows nowhere else on Earth", trees: pine },
+  { id: "saguaro", park: "SAGU", name: "Signal Hill", blurb: "A hill above a forest of saguaros, the cactus that grows nowhere else on Earth", trees: desert },
   { id: "sequoia", park: "SEQU", name: "General Sherman Tree", blurb: "A grove on a Sierra slope round the largest living thing by volume", trees: sequoia },
   { id: "shenandoah", park: "SHEN", name: "Stony Man", blurb: "A Blue Ridge cliff above Skyline Drive and a valley full of fog", trees: pine },
   { id: "theodore-roosevelt", park: "THRO", name: "Painted Canyon", blurb: "North Dakota badlands, where the president ranched and found his cause", trees: pine },
