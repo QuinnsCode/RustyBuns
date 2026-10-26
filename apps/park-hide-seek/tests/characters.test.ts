@@ -1,4 +1,4 @@
-// The Blender characters on the page's joints: every part the outfits name is in the model, feet land on the
+// The modelled characters on the page's joints: every part the outfits name is in the model, feet land on the
 // ground, and a character made before the model loaded changes into it when it does.
 import { expect, test } from "bun:test";
 import * as THREE from "three";
@@ -23,7 +23,7 @@ function feet(ch: Character) {
   return box.min.y;
 }
 
-test("characters change into the Blender model and stand on the ground", async () => {
+test("characters change into the modelled parts and stand on the ground", async () => {
   const early = makeCharacter("camper", look("cap"), "early");
   const torso = (ch: Character) => (ch.upper.children.find((o) => (o as THREE.Mesh).isMesh) as THREE.Mesh).geometry;
   const before = torso(early);
