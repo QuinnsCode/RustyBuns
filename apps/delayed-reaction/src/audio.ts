@@ -1,8 +1,9 @@
 // The music, synthesized in the page: a deep dub loop on the audio clock (half-time drums, a
 // wobbling bass, a sub under it, a skank on the offbeats into the delay), a note per lane for the
 // calls, and the player's answers sent through a feedback delay set to the chart's delay, so
-// every answer echoes back on the beat it would have been due again. Nothing to license.
-import type { Chart, Lane } from "./sim.ts";
+// every answer echoes back on the beat it would have been due again. Speed (run.speed) opens the
+// master filter and brings in a hat pattern; the fence shuts it all down for a moment. Nothing to license.
+import { SPEED_CEILING, SPEED_FLOOR, type Chart, type Lane } from "./sim.ts";
 
 // A minor pentatonic over a drone: any lane after any lane sounds like it was meant.
 const LANE_HZ: Record<Lane, number> = { 0: 220, 1: 261.63, 2: 293.66, 3: 349.23 };
@@ -13,6 +14,10 @@ export class Music {
   private readonly wet: GainNode;
   private readonly delay: DelayNode;
   private readonly filter: BiquadFilterNode;
+  private readonly sweep: GainNode;
+  private speed = SPEED_FLOOR;
+  private bright = 0;          // 0 at the speed floor, 1 at the ceiling
+  private dullUntil = 0;       // after a fence hit: the hats stay out and the filter stays shut
   private start = 0;
   private nextBeat = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -26,13 +31,13 @@ export class Music {
     // One slow filter over everything, swept by an LFO: the trippy part.
     this.filter = this.ctx.createBiquadFilter();
     this.filter.type = "lowpass";
-    this.filter.frequency.value = 4000;
+    this.filter.frequency.value = 2000;
     this.filter.Q.value = 2;
     const lfo = this.ctx.createOscillator();
     lfo.frequency.value = 0.07;
-    const lfoGain = this.ctx.createGain();
-    lfoGain.gain.value = 2500;
-    lfo.connect(lfoGain).connect(this.filter.frequency);
+    this.sweep = this.ctx.createGain();
+    this.sweep.gain.value = 1200;
+    lfo.connect(this.sweep).connect(this.filter.frequency);
     lfo.start();
     this.filter.connect(this.out).connect(this.ctx.destination);
     // The dub: a delay line that feeds itself, a little darker each pass.
@@ -48,6 +53,29 @@ export class Music {
     this.delay.connect(this.wet).connect(this.filter);
   }
 
+  /** Follow the run's speed: brighter and busier as it climbs. A sudden drop is the fence: the filter slams shut,
+   *  the hats drop out and everything goes quiet for half a bar, then eases back to where the speed now sits. */
+  setSpeed(speed: number) {
+    const now = this.ctx.currentTime, f = this.filter.frequency, sw = this.sweep.gain;
+    const fenced = speed < this.speed - 0.1;
+    this.speed = speed;
+    const bright = Math.max(0, Math.min(1, (speed - SPEED_FLOOR) / (SPEED_CEILING - SPEED_FLOOR)));
+    if (!fenced && Math.abs(bright - this.bright) < 0.02) return;
+    this.bright = bright;
+    if (fenced) {
+      this.dullUntil = now + 2 * this.spb;
+      for (const p of [f, sw, this.out.gain]) p.cancelScheduledValues(now);
+      f.setValueAtTime(350, now);
+      sw.setValueAtTime(150, now);
+      this.out.gain.setValueAtTime(0.45, now);
+      this.out.gain.setTargetAtTime(0.7, this.dullUntil, this.spb);
+    }
+    // The base the slow LFO sweeps around: a dark 2 kHz at the floor, wide open at the ceiling.
+    const base = 2000 + 5500 * bright, at = Math.max(now, this.dullUntil);
+    f.setTargetAtTime(base, at, 0.3);
+    sw.setTargetAtTime(base * 0.6, at, 0.3);
+  }
+
   /** Seconds per beat of the running chart. */
   get spb() { return 60 / (this.chart?.bpm ?? 120); }
 
@@ -61,6 +89,12 @@ export class Music {
     this.chart = chart;
     await this.ctx.resume();
     this.delay.delayTime.value = chart.delay * this.spb;
+    this.speed = SPEED_FLOOR;
+    this.bright = this.dullUntil = 0;
+    for (const p of [this.filter.frequency, this.sweep.gain, this.out.gain]) p.cancelScheduledValues(0);
+    this.filter.frequency.value = 2000;
+    this.sweep.gain.value = 1200;
+    this.out.gain.value = 0.7;
     // Beat 0 is a bar away: the count-in (four hats, no kick) fills it, and nothing lands before
     // the clock's own zero, which a fresh context sits at.
     this.start = this.ctx.currentTime + 0.1 + 4 * this.spb;
@@ -92,10 +126,18 @@ export class Music {
         if (inBar === 1 || inBar === 3) this.skank(t + this.spb / 2);
         if (bar % 4 === 0 && inBar === 0) this.pad(t, [110, 130.81, 164.81]);
       }
-      this.hat(t + this.spb / 2, b < 0 ? 0.5 : 0.22);
-      if (b < 0 || inBar === 1 || inBar === 3) this.hat(t, b < 0 ? 0.6 : 0.12);
+      // Just off the fence the hats drop out; otherwise the groove's own, plus sixteenths that come in as speed climbs.
+      if (b < 0 || t >= this.dullUntil) {
+        this.hat(t + this.spb / 2, b < 0 ? 0.5 : 0.22);
+        if (b < 0 || inBar === 1 || inBar === 3) this.hat(t, b < 0 ? 0.6 : 0.12);
+        if (b >= 0 && this.bright > 0.25) for (const q of [0.25, 0.75]) this.hat(t + q * this.spb, 0.18 * this.bright);
+        if (b >= 0 && this.bright > 0.6 && inBar !== 1 && inBar !== 3) this.hat(t, 0.1 * this.bright);
+      }
       for (const c of this.chart.calls) {
         if (c.beat === b || c.beat === b + 0.5) this.call(this.start + c.beat * this.spb, c.lane, c.hold);
+        // The tail: a muted tick of the call's note every beat until it's due, fading, so the delay counts down out loud.
+        const k = Math.ceil(b - c.beat);
+        if (k >= 1 && k < this.chart.delay) this.tick(this.start + (c.beat + k) * this.spb, c.lane, 1 - k / this.chart.delay);
         // The hint: the call comes round again on its due beat, quieter. That's the beat to answer on.
         if (this.chart.hint && (c.due === b || c.due === b + 0.5)) this.call(this.start + c.due * this.spb, c.lane, c.hold, this.chart.hint);
       }
@@ -106,6 +148,11 @@ export class Music {
   /** The keyboard calling a lane: a plucked note, held ones ring on. */
   call(t: number, lane: Lane, hold = 0, vol = 1) {
     this.tone(t, LANE_HZ[lane], hold ? hold * this.spb : 0.18, "triangle", 0.35 * vol, vol < 1 ? this.delay : this.filter);
+  }
+
+  /** One ring of a call's tail: a short, soft copy of its note, dry so it doesn't smear into the echo. */
+  private tick(t: number, lane: Lane, fade: number) {
+    this.tone(t, LANE_HZ[lane], 0.05, "sine", 0.12 * fade, this.filter);
   }
 
   /** The player's answer: the same note an octave up, into the dub delay. Wrong is a dull thud. */
