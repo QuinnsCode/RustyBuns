@@ -602,6 +602,8 @@ registry = "https://mirror.example/"
     expect(registryUrl([home, parseNpmrc(`registry=${registry}`)], "mitt").token).toBeUndefined();
   // Its registries are what a container's install may reach besides npm's (#681).
   expect(npmrcHosts([home, repo])).toEqual(["mirror.example", "npm.acme.dev"]);
+  // A repo's file can't open the container to plain http, localhost or the metadata address.
+  expect(npmrcHosts([parseNpmrc("registry=http://evil.example/\n@a:registry=https://169.254.169.254/\n@b:registry=https://localhost/\n@c:registry=https://ok.example/")])).toEqual(["ok.example"]);
 });
 
 test("the lockfile says which package manager, unless packageManager does", () => {

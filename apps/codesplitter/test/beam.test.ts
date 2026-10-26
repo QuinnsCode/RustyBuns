@@ -92,6 +92,7 @@ describe("beaming a branch", () => {
     const res = await post("ana", "/api/repos/ana/lab/beams", { branch: "fix", title: "Bigger numbers", to: "bo" });
     expect(res.status).toBe(201);
     const beam = await res.json() as any;
+    expect(beam.id).toMatch(/^[0-9a-f]{32}$/);
     expect(beam).toMatchObject({ branch: "fix", by: "ana", to: "bo", title: "Bigger numbers", commits: 3, onto: { sha: main, label: "main" },
       files: [{ path: "src/a.ts", status: "M" }], page: `/#/beam/${beam.id}`, patch: `/api/beams/${beam.id}/patch` });
     expect(beam.dropped.map((d: any) => d.path).sort()).toEqual([".DS_Store", "bun.lock", "pnpm-lock.yaml"]);
