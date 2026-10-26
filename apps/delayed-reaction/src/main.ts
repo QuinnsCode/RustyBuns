@@ -3,7 +3,7 @@
 import { Music } from "./audio.ts";
 import { burst, drawTunnel, echoBursts, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
-import { advance, createRun, delayWords, dueLanes, LEVELS, makeChart, press, release, type Judgement, type Lane, type Run } from "./sim.ts";
+import { advance, createRun, delayWords, dueLanes, LEVELS, makeChart, press, type Judgement, type Lane, type Run } from "./sim.ts";
 const KEYS: Record<string, Lane> = { KeyD: 0, KeyF: 1, KeyJ: 2, KeyK: 3, ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3 };
 
 const stage = document.getElementById("stage") as HTMLCanvasElement;
@@ -82,16 +82,13 @@ function padDown(lane: Lane) {
   down.add(lane);
   pads[lane]!.classList.add("down");
   if (!run || !music || run.over) return;
-  show(press(run, lane, heardBeat()));
+  for (const j of press(run, lane, heardBeat())) show(j);
 }
 
 function padUp(lane: Lane) {
   if (!down.has(lane)) return;
   down.delete(lane);
   pads[lane]!.classList.remove("down");
-  if (!run || !music || run.over) return;
-  const j = release(run, lane, heardBeat());
-  if (j) show(j);
 }
 
 function show(j: Judgement) {
@@ -101,16 +98,13 @@ function show(j: Judgement) {
     music.answer(j.call.lane, j.grade, j.call.hold);
     bursts.push(burst(j.call.lane, music.beat(), j.grade === "perfect" ? 1 : 0.6));
     passBeat = heardBeat();
-    say(j.grade === "perfect" ? "Perfect" : j.offset < 0 ? "Early" : "Late");
+    say(j.grade === "perfect" ? "Perfect" : j.offset < 0 ? "Early" : j.offset > 0 ? "Late" : "Through");
     buzz(j.grade === "perfect" ? 12 : 6);
   } else if (j.kind === "release") {
-    if (j.grade === "dropped") { music.answer(j.call.lane, "bad"); say("Dropped"); buzz(40); missBeat = heardBeat(); }
+    if (j.grade === "dropped") { music.wall(); say("Dropped"); buzz(40); missBeat = heardBeat(); }
     else { bursts.push(burst(j.call.lane, music.beat(), j.grade === "perfect" ? 1.2 : 0.8)); say("Held"); }
-  } else if (j.kind === "early") {
-    music.answer(j.lane, "bad");
-    say("Nothing there");
-    buzz(25);
-  } else {
+  } else if (j.kind === "miss") {
+    music.wall();
     say("Miss");
     buzz(40);
     missBeat = heardBeat();

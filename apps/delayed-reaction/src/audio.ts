@@ -160,12 +160,47 @@ export class Music {
     this.tone(t, LANE_HZ[lane], 0.05, "sine", 0.12 * fade, this.filter);
   }
 
-  /** The player's answer: the same note an octave up, into the dub delay. Wrong is a dull thud. */
-  answer(lane: Lane, grade: "perfect" | "good" | "bad", hold = 0) {
+  /** Through a door: a whoosh of air past the runner, and the call's note an octave up into the dub delay. */
+  answer(lane: Lane, grade: "perfect" | "good", hold = 0) {
     const t = this.ctx.currentTime;
-    if (grade === "bad") { this.tone(t, 70, 0.12, "square", 0.25, this.filter); return; }
+    this.noise(t, 0.35, "bandpass", [500, 4000], grade === "perfect" ? 0.35 : 0.25, this.filter);
     this.tone(t, LANE_HZ[lane] * 2, hold ? hold * this.spb : 0.22, grade === "perfect" ? "sawtooth" : "triangle", 0.4, this.delay);
     this.tone(t, LANE_HZ[lane] * 2, 0.22, "triangle", 0.2, this.filter);
+  }
+
+  /** Off a wall: a dull body thud, a low drop and a muffled smack, a little of it into the delay so it echoes. */
+  wall() {
+    const t = this.ctx.currentTime;
+    if (this.muted) return;
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.frequency.setValueAtTime(110, t);
+    o.frequency.exponentialRampToValueAtTime(35, t + 0.25);
+    g.gain.setValueAtTime(0.8, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+    o.connect(g).connect(this.out);
+    g.connect(this.delay);
+    o.start(t);
+    o.stop(t + 0.45);
+    this.noise(t, 0.12, "lowpass", [600, 200], 0.5, this.out);
+  }
+
+  // A burst of noise through a filter swept from one frequency to another: the whoosh and the smack.
+  private noise(t: number, len: number, type: BiquadFilterType, [from, to]: [number, number], vol: number, dest: AudioNode) {
+    if (this.muted) return;
+    const n = this.ctx.createBufferSource(), buf = this.ctx.createBuffer(1, Math.ceil(len * this.ctx.sampleRate), this.ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.sin((Math.PI * i) / d.length);
+    n.buffer = buf;
+    const f = this.ctx.createBiquadFilter();
+    f.type = type;
+    f.Q.value = type === "bandpass" ? 1.5 : 0.7;
+    f.frequency.setValueAtTime(from, t);
+    f.frequency.exponentialRampToValueAtTime(to, t + len);
+    const g = this.ctx.createGain();
+    g.gain.value = vol;
+    n.connect(f).connect(g).connect(dest);
+    g.connect(this.delay); // every hit and bounce goes round the dub line too
+    n.start(t);
   }
 
   private tone(t: number, hz: number, len: number, type: OscillatorType, vol: number, to: AudioNode) {
