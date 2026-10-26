@@ -1,0 +1,11 @@
+[package]
+name = "agent-office-shell"
+version = "0.1.0"
+edition = "2021"
+description = "Windowless Tauri shell: gives the compiled Agent Office binary a Dock icon, a menu bar and a clean quit."
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
