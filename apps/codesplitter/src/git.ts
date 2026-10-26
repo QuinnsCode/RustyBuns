@@ -352,6 +352,12 @@ async function addNotes(remote: string, auth: Record<string, string>, base: Tree
   }
 }
 
+/** `note` as the note on commit `sha`, replacing the one there (#2302); the notes ref is read fresh, and tried again if it moves. */
+export async function setNote(remote: string, token: string, base: TreeReader | undefined, sha: string, note: string) {
+  const who = `${GIT_BOT} <${GIT_BOT}@${GIT_EMAIL_DOMAIN}> ${Math.floor(Date.now() / 1000)} +0000`;
+  await addNotes(remote, { authorization: `Bearer ${token.split("?")[0]}` }, base, [sha], note, who);
+}
+
 /** One receive-pack request: ref updates ("old new ref", the first carrying the capabilities) and the pack they need; the report-status lines. */
 async function receive(remote: string, auth: Record<string, string>, command: string | string[], packed: Uint8Array) {
   const [first, ...more] = typeof command === "string" ? [command] : command;

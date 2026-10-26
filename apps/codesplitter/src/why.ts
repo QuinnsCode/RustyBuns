@@ -2,15 +2,16 @@
 // A commit says what changed; its note says why. When a commit carries an agent's lines, the push that
 // makes it also writes a git note under refs/notes/codesplitter (git.ts NOTES_REF): which agent, its
 // harness and model, a hash of the prompt (never the prompt), how the run ended, and its DONE / NEXT /
-// BROKE / DONT note. It travels with a clone and a mirror, so the reason outlives the app:
+// BROKE / DONT note; once its checks finish on main, a closing `checks: passed | failed (name)` line (#2302). It travels with a clone and a mirror, so the reason outlives the app:
 //   git fetch origin refs/notes/codesplitter:refs/notes/codesplitter && git log --notes=codesplitter
 // The vein's commit card reads it back:
 //   GET /api/repos/:o/:r/commits/:sha/note   {note: text | null}
 
-import { access } from "./archive.ts";
+import { access, handleFor } from "./archive.ts";
 import { readNote, writeNote } from "./budget.ts";
 import type { ArtifactsRepo, Env } from "./env.ts";
-import { NOTES_REF, remoteRefs } from "./git.ts";
+import { NOTES_REF, remoteRefs, setNote } from "./git.ts";
+import { DONE, type CheckRun } from "./checks.ts";
 import { isPlainObject, parseJson, sha256 } from "./util.ts";
 
 interface RunRow { id: number; agent: string; harness: string; model: string | null; task: string; status: string; result: string | null }
@@ -50,4 +51,25 @@ export async function noteOn(handle: ArtifactsRepo, remote: string, sha: string)
   const entry = tree && (await handle.readTree(tree))?.find((e) => e.name === sha);
   const text = entry && await (await handle.readBlob(entry.hash))?.text();
   return text ? text.replace(/\n$/, "") : null;
+}
+
+/**
+ * A check on main finished: when its commit carries a note, the note gets a `checks:` line (#2302),
+ * `failed (names)` as soon as one fails, `passed` once all of that commit's checks are in. A commit
+ * without a note is left alone; the line closes the note.
+ */
+export async function noteChecks(env: Env, run: CheckRun): Promise<void> {
+  if (run.ref !== "main" || !/^[0-9a-f]{40}$/.test(run.sha) || (run.status !== "passed" && run.status !== "failed")) return;
+  const { results } = await env.DB.prepare("SELECT name, status FROM check_runs WHERE owner = ? AND repo = ? AND ref = 'main' AND sha = ? AND status != 'cancelled' ORDER BY name")
+    .bind(run.owner, run.repo, run.sha).all<{ name: string; status: CheckRun["status"] }>();
+  const failed = [...new Set(results.filter((r) => r.status === "failed").map((r) => r.name))];
+  if (!failed.length && !results.every((r) => DONE.has(r.status))) return;
+  const h = await handleFor(env, run.owner, run.repo).catch(() => null);
+  const old = h && await noteOn(h.handle, h.remote, run.sha).catch(() => null);
+  if (!h || !old) return;
+  const line = `checks: ${failed.length ? `failed (${failed.join(", ")})` : "passed"}`;
+  const lines = old.split("\n"), rest = lines.filter((l) => !l.startsWith("checks: "));
+  if (lines.at(-1) === line && rest.length === lines.length - 1) return;
+  const a = await access(h.handle, h.remote, "write", 60);
+  await setNote(a.remote, a.token, h.handle, run.sha, [...rest, line].join("\n"));
 }
