@@ -23,7 +23,6 @@ const edgeSteps = (): Step[] => [
 
 export const APPS: FattyApp[] = [
   { name: "codesplitter", dir: "apps/codesplitter", note: "queues, Artifacts, many Durable Objects; edge only", steps: edgeSteps() },
-  { name: "tscircuit-desktop", dir: "apps/tscircuit-desktop", note: "a heavy Vite app plus a Rust engine; desktop only", steps: [{ kind: "build", label: "build desktop", cmd: rb("build", "desktop", "--check") }] },
   { name: "park-hide-seek", dir: "apps/park-hide-seek", note: "Durable Objects plus big assets; its box is a Railway service, which bills until destroyed, so only the box build runs", steps: [
     { kind: "build", label: "build desktop", cmd: rb("build", "desktop", "--check") },
     { kind: "build", label: "build box", cmd: rb("build", "box") },

@@ -14,7 +14,7 @@ import { join, resolve } from "node:path";
 import { PHONES, REFERENCE, analyze, appStatus, board, mergeReports, pageAudit, shardOf, type AppResult, type Audit, type PhoneResult, type Report } from "./phone-smoke-lib.ts";
 
 /** The web apps with a plain `vite` dev page. Others (desktop hosts, redwood workers) need their own host; add them as they get a page. */
-export const WEB_APPS = ["git-recon", "hippo-tycoon", "park-hide-seek", "splat-spray", "two-fronts", "meshy-studio", "splat-desktop", "tscircuit-desktop"];
+export const WEB_APPS = ["git-recon", "hippo-tycoon", "park-hide-seek", "splat-spray", "two-fronts", "meshy-studio", "splat-desktop"];
 
 const argv = process.argv.slice(2);
 const flag = (n: string) => argv.includes(`--${n}`);

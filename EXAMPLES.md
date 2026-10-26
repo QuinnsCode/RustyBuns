@@ -222,6 +222,8 @@ bun run desktop:dev
 
 **Design real electronic circuit boards with code**, see them in 3D, and export the files a factory needs to make them.
 
+**Parked for now** (see [its README](apps/tscircuit-desktop/README.md)): tscircuit needs a zod 3 patch upstream, so it won't install.
+
 **Needs Rust first.** Install it from [rustup.rs](https://rustup.rs), then:
 ```
 cd apps/tscircuit-desktop

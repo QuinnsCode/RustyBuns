@@ -1,5 +1,7 @@
 # tscircuit desktop app
 
+> **Parked.** tscircuit still pins zod 3 and react-router 6, which `bun audit` flags, so this app is out of the workspace and its dependencies are listed under `parkedDependencies` in `package.json`. Sorry, they need to patch upstream. The steps to bring it back are in the `parked` note there.
+
 > **What it proves:** a heavy, real-world Vite app as one file, with a Rust engine up to 22x faster and a TypeScript fallback. One of the [Rusty Buns](../../README.md#see-it-work) examples; all of them are in [EXAMPLES.md](../../EXAMPLES.md).
 
 [tscircuit](https://tscircuit.com) builds circuit boards with React, and its viewer and
