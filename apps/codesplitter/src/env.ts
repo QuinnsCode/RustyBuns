@@ -110,6 +110,11 @@ export interface Env {
   CODEX_API_KEY?: string;
   /** Cloudflare Artifacts (a bare-repo twin on the desktop). Optional: without it, nothing is pushed. */
   ARTIFACTS?: Artifacts;
+  /**
+   * A second namespace made in the EU jurisdiction (REST only, fixed at creation: #2301). A repo made with `region: "eu"`
+   * keeps its git here and says so in `repos.namespace` (archive.ts `artifactsFor`). Unbound, "eu" is refused.
+   */
+  ARTIFACTS_EU?: Artifacts;
   /** The namespace the repos are moving to (artifact-move.ts, #823). Bound only while the move runs. */
   ARTIFACTS_NEXT?: Artifacts;
   /**
