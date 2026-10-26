@@ -7,6 +7,8 @@ export interface CommitMeta { hash: string; treeHash: string; message: string; p
 export interface ArtifactsRepo {
   info(): Promise<{ name: string; defaultBranch: string; remote: string; readOnly: boolean; source: string | null }>;
   createToken(scope?: "read" | "write", ttl?: number): Promise<{ plaintext: string }>;
+  /** Takes a token's plaintext or id away; false when it was not one of this repo's. */
+  revokeToken(tokenOrId: string): Promise<boolean>;
   log(opts?: { ref?: string; limit?: number; offset?: number }): Promise<CommitMeta[]>;
   readCommit(hash: string): Promise<CommitMeta | null>;
   readTree(hash: string): Promise<TreeEntry[] | null>;

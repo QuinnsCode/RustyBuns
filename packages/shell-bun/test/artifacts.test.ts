@@ -50,6 +50,10 @@ test("a real git client pushes to and clones from a local Artifacts repo, behind
   expect((await sh(["git", "clone", "-q", withToken(remote, read), join(dir, "clone")], dir)).ok).toBe(true);
   expect(await Bun.file(join(dir, "clone", "a.txt")).text()).toBe("hello\n");
   expect(await (await repo.readFile({ ref: "main", path: "a.txt" }))!.text()).toBe("hello\n");
+  const mine = await repo.createToken("write", 60);
+  expect(await repo.revokeToken(mine.plaintext)).toBe(true);
+  expect(await repo.revokeToken(mine.plaintext)).toBe(false);
+  expect((await sh(["git", "push", "-q", withToken(remote, mine.plaintext), "main"], work)).ok).toBe(false); // revoked
   expect(await repo.readFile({ ref: "main", path: "nope" })).toBeNull();
   const info = await repo.info();
   expect([info.name, info.description, info.defaultBranch, info.readOnly, info.source]).toEqual(["starter", "hi", "main", false, null]);

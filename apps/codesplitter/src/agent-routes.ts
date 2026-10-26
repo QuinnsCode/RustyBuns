@@ -53,6 +53,7 @@ import { json, type Env, readBody } from "./env.ts";
 import { byToken } from "./tokens.ts";
 import { charge, every, SITE } from "./limits.ts";
 import { accountsOn, actingAs, isAdmin } from "./identity.ts";
+import { grantRunToken, revokeRunToken } from "./run-token.ts";
 import { HARNESSES, HOSTED_HARNESSES, RUNS_COMMANDS, harnessCommand, type Harness } from "./harness.ts";
 import { Interrupted, localSandbox, runAgent, type Conflict, type Exec, type Sandbox } from "./agent-run.ts";
 import { containerSandbox, LOGINS } from "./sandbox.ts";
@@ -619,6 +620,12 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       extra.github = true;
       await env.DB.prepare("UPDATE agent_runs SET result = ? WHERE id = ?").bind(JSON.stringify(extra), id).run();
     }
+    // It also gets a write token of its own for the repo, good for its deadline and revoked as it ends (#2300).
+    const git = env.AGENT_SANDBOX && !row.branch && RUNS_COMMANDS.includes(harness) ? await grantRunToken(env, id, owner, repo, HOSTED_RUN_MS / 1000) : null;
+    if (git) {
+      const inner = sandbox;
+      sandbox = (cmd, file, sig) => inner({ ...cmd, env: { ...cmd.env, CODESPLITTER_GIT_REMOTE: git } }, file, sig);
+    }
     const log: string[] = JSON.parse(row.log);
     let logged = Promise.resolve();
     // Started over after an update: its branch is there already, with what it landed before.
@@ -636,7 +643,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     if (policy.live === "locked") throw new Error(locked(path));
     const r = await runAgent(call, {
       user: agent, owner, repo, path, harness, task: row.task, model: row.model ?? undefined, sandbox, lines, claim: `run-${id}`, signal, branch, also,
-      secrets: [...LOGINS.map((k) => env[k]), gh],
+      secrets: [...LOGINS.map((k) => env[k]), gh, git && git.replace(/^.*:\/\/x:([^@]*)@.*$/, "$1")],
       budget: { tokens: policy.budget, over: policy.over }, spent: before,
       progress: (progress) => void env.DB.prepare("UPDATE agent_runs SET result = json_set(COALESCE(result, '{}'), '$.progress', json(?)) WHERE id = ? AND status = 'running'").bind(JSON.stringify(progress), id).run().catch(() => {}),
       notes: async () => { const all = await peek(); const fresh = all.slice(given).map((n) => n.text); given = all.length; return fresh; },
@@ -647,6 +654,8 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
       },
     });
     await logged;
+    // Done or cut short by its budget, the agent's token goes before anyone takes over.
+    await revokeRunToken(env, id);
     // Cut short: a note, and who carries on from it. A fresh agent works on the branch with this one's edits.
     // Notes its owner sent that it never read, the ones since its last look too, go in the note's NEXT (#1090).
     const unheard = r.tripped ? [...r.unheard ?? [], ...(await peek().catch(() => [])).slice(given).map((n) => n.text)] : [];
@@ -686,5 +695,5 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
     } else await finish(env, id, "failed", { ...extra, error: String((e as Error)?.message ?? e).slice(-4000) });
     // Whatever it left on its branch goes with it.
     if (own) await dropBranch(env, owner, repo, own, path);
-  } finally { clearInterval(checking); clearInterval(beating); clearTimeout(cutoff); if (row.branch) liveOf(env).delete(id); }
+  } finally { await revokeRunToken(env, id); clearInterval(checking); clearInterval(beating); clearTimeout(cutoff); if (row.branch) liveOf(env).delete(id); }
 }
