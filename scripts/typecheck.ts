@@ -13,9 +13,10 @@ const cmd = (p: string) => bunCheck
   ? [process.execPath, "check", "-p", p, "--no-pretty"]
   : ["bunx", "tsgo", "-p", p, "--noEmit", "--pretty", "false"];
 
+// tscircuit-desktop is parked (its dependencies are not installed), so it is not checked.
 // An app imported unchanged keeps its own tsconfig.json for its tools; tsconfig.check.json beside it is what we check.
 const tsconfig = (a: string) => [`apps/${a}/tsconfig.check.json`, `apps/${a}/tsconfig.json`].find((p) => existsSync(p));
-const projects = ["tsconfig.json", ...readdirSync("apps").sort().flatMap((a) => tsconfig(a) ?? [])];
+const projects = ["tsconfig.json", ...readdirSync("apps").sort().filter((a) => a !== "tscircuit-desktop").flatMap((a) => tsconfig(a) ?? [])];
 // At most one checker per core. All 18 at once took the same wall time (median 2.4s vs 2.2s on
 // 8 cores, noisy) and more memory (peak ~2.2 GB vs ~1.4 GB), which counts when several worktrees
 // type check side by side. packages/cli/bench/concurrency.ts has the measurements.

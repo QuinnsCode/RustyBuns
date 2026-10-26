@@ -42,6 +42,7 @@ That's it. Now pick an app.
 | [Motion MIDI](#motion-midi) | Press play and race two music engines | ⭐ Easy |
 | [Splat Desktop](#splat-desktop) | Edit 3D scans of real places | ⭐⭐ Takes a minute |
 | [Meshy Batch Studio](#meshy-batch-studio) | Turn a folder of drawings into 3D game models | ⭐⭐ Needs a Meshy account |
+| [tscircuit Desktop](#tscircuit-desktop) | Design real circuit boards | ⭐⭐⭐ Needs Rust |
 | [Splat Rooms](#splat-rooms) | Hunt objects in photo-real 3D rooms | ⭐⭐⭐ Needs a grown-up account |
 | [Agent Office](#agent-office) | Run a 3D office where AI helpers write code at desks | ⭐⭐⭐ Needs a grown-up's Claude account |
 
@@ -217,6 +218,23 @@ bun run desktop:dev
 
 [Full guide →](apps/meshy-studio/README.md)
 
+## tscircuit Desktop
+
+**Design real electronic circuit boards with code**, see them in 3D, and export the files a factory needs to make them.
+
+**Parked for now** (see [its README](apps/tscircuit-desktop/README.md)): tscircuit needs a zod 3 patch upstream, so it won't install.
+
+**Needs Rust first.** Install it from [rustup.rs](https://rustup.rs), then:
+```
+cd apps/tscircuit-desktop
+bun native/build.ts
+bun run desktop:dev
+```
+
+**Controls:** open the `fixtures` folder inside `apps/tscircuit-desktop` to see a sample board. <kbd>⌘</kbd> + <kbd>S</kbd> (<kbd>Ctrl</kbd> + <kbd>S</kbd> on Windows) saves. Click **Compare engines** to race Rust and TypeScript on your board.
+
+[Full guide →](apps/tscircuit-desktop/README.md)
+
 ## Splat Rooms
 
 **Hunt objects in photo-real rooms, in the dark.** Each shot lights up a patch of the room.
@@ -263,6 +281,7 @@ bun run office
 
 | Example | Shows | Install size |
 |---------|-------|--------------|
+| [tscircuit desktop](apps/tscircuit-desktop/README.md) | A real, heavy Vite app as one self-contained binary, with a Rust engine and a TypeScript fallback | Large (the tscircuit toolchain) |
 | [fm-daw](apps/fm-daw/README.md) | An FM groovebox: Rust as wasm in the audio thread, the same crate over FFI on the host, a world DO that saves the project | Small |
 | [hippo-tycoon](apps/hippo-tycoon/README.md) | A four-player arcade game: solo, couch, LAN party and online rooms from one codebase; the room is a Durable Object on Cloudflare and runs in-process in the binary | Small (three.js) |
 | [auto-rig](apps/auto-rig/README.md) | Drop in a model, get a skeleton, skin weights and draggable closed-chain IK; the rigger in Rust and TypeScript with identical results | Small |
@@ -278,6 +297,12 @@ bun run office
 | [elysia-conduit](apps/elysia-conduit/RUSTYBUNS.md) | A demonstration, not ours: bedstack's RealWorld backend (MIT, Elysia + Drizzle + postgres.js) with no source edits, as a desktop binary on PGlite that passes their Postman suite; what breaks on Workers is written down | Medium (PGlite adds about 17 MB) |
 
 For demo scripts, the optional Rust engines and troubleshooting, see [DEMO.md](DEMO.md).
+
+### tscircuit desktop
+
+- **Build with Bun, ship without it.** The binary carries the UI, the backend, and both engines.
+- **Two engines, same answers.** Rust is up to 22x faster on large boards; TypeScript takes over if Rust can't load.
+- **Uses:** a plain Vite app (no Cloudflare), `desktop.host` for backend routes, `desktop.native` to embed a Rust library, `desktop.headers` for CDN assets.
 
 ### fm-daw
 

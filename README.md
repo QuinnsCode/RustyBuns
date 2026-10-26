@@ -259,7 +259,7 @@ Drop in a Rust engine for the hot path. It ships with a TypeScript twin that giv
 
 <details><summary>More</summary>
 
-Only reach for Rust when TypeScript isn't fast enough. `@rustybuns/native` loads a cdylib over `bun:ffi` on the host (or you ship it as wasm in the page), and returns null when it can't, so you take the TypeScript path. Several examples race the two side by side so you can see what Rust buys you before you commit: [fm-daw](apps/fm-daw/README.md) (bit-identical audio) and [auto-rig](apps/auto-rig/README.md).
+Only reach for Rust when TypeScript isn't fast enough. `@rustybuns/native` loads a cdylib over `bun:ffi` on the host (or you ship it as wasm in the page), and returns null when it can't, so you take the TypeScript path. Several examples race the two side by side so you can see what Rust buys you before you commit: [tscircuit-desktop](apps/tscircuit-desktop/README.md) (up to 22x), [fm-daw](apps/fm-daw/README.md) (bit-identical audio) and [auto-rig](apps/auto-rig/README.md).
 
 </details>
 
@@ -365,6 +365,7 @@ Every example is one codebase that runs as a desktop binary. The multiplayer one
 | [git-recon](apps/git-recon/README.md) | A repo as a shooter level: its folders become compounds and its files buildings on real ground (Yosemite, or any lat/long) or a plastic-army kitchen and garden, fought with git commands as weapons, in the page on your own or 32 to a battle over the LAN |
 | [codeSplitter](apps/codesplitter/README.md) | A code host for the agentic era: every file a Durable Object, agents editing line by line, real git on Cloudflare Artifacts, an MCP server, on the edge and as a desktop app from one codebase. [Try it](https://codesplitter.notryanquinn.workers.dev) |
 | [agent-office](apps/agent-office/README.md) | Someone else's Node server (PTYs, WebSockets, a 3D client) as one binary, nothing forked |
+| [tscircuit-desktop](apps/tscircuit-desktop/README.md) | A heavy, real-world Vite app as one file, with a Rust engine up to 22x faster and a TypeScript fallback |
 | [fm-daw](apps/fm-daw/README.md) | One Rust crate as wasm in the audio thread and over FFI on the host, bit-identical to the TypeScript engine |
 | [auto-rig](apps/auto-rig/README.md) | Auto-rigging a 3D model in Rust and TypeScript with identical output |
 | [motion-midi](apps/motion-midi/README.md) | One synth in Rust and in TypeScript, checked sample by sample |
