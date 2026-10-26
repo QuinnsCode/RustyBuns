@@ -72,9 +72,10 @@ const UNSAFE = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  */
 export const ownOrigin = (origin: string, url: URL) => origin === url.origin || (url.protocol === "http:" && origin === `https://${url.host}`);
 
-/** A cookie-signed write from another site: refuse it. Without an Origin header, Sec-Fetch-Site says; with neither, it isn't a browser. */
+/** A cookie-signed write from another site: refuse it. A socket upgrade is a GET that acts as the person (edits a file, plays as them), so it counts as a write. Without an Origin header, Sec-Fetch-Site says; with neither, it isn't a browser. */
 export function crossSite(req: Request, env: Env): Response | null {
-  if (!UNSAFE.has(req.method) || !req.headers.get("cookie")) return null;
+  const socket = req.headers.get("upgrade")?.toLowerCase() === "websocket";
+  if (!(UNSAFE.has(req.method) || socket) || !req.headers.get("cookie")) return null;
   if (/^(Bearer|token)\s/i.test(req.headers.get("authorization") ?? "")) return null;
   const origin = req.headers.get("origin");
   const ours = (o: string) => ownOrigin(o, new URL(req.url)) || (!!env.BETTER_AUTH_URL && o === new URL(env.BETTER_AUTH_URL).origin);

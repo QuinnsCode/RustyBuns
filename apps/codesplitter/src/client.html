@@ -5346,11 +5346,11 @@ const views = {
     const waitGhosts = () => {
       for (const { run: x, hunks, others } of waits) {
         // Landing takes the whole branch (its hash), so say what else it changes beyond this file.
-        if (others?.length) box.insertAdjacentHTML("afterbegin", `<div class="gl h" data-wait="${x.id}"><span></span><span></span><span class="t hunk-h">${icon("files")}<span class="grow">${esc(x.agent)}'s batch also changes ${others.length} other file${others.length > 1 ? "s" : ""}: ${others.map((o) => `<code>${esc(o.path)}</code>${o.change === "deleted" ? " (deleted)" : ""}`).join(", ")}</span>${hunks.length ? "" : waitControls(x, role)}</span></div>`);
+        if (others?.length) box.insertAdjacentHTML("afterbegin", `<div class="gl h" data-wait="${esc(x.id)}"><span></span><span></span><span class="t hunk-h">${icon("files")}<span class="grow">${esc(x.agent)}'s batch also changes ${others.length} other file${others.length > 1 ? "s" : ""}: ${others.map((o) => `<code>${esc(o.path)}</code>${o.change === "deleted" ? " (deleted)" : ""}`).join(", ")}</span>${hunks.length ? "" : waitControls(x, role)}</span></div>`);
         hunks.forEach((h, k) => {
         const gone = h.del.map((l) => rowOf(l.id)).filter(Boolean), rise = !ghostsShown.has(x.id) && !calm ? " rise" : "";
         gone.forEach((el) => el.classList.add("gone"));
-        const head = `<div class="gl h${rise}" data-wait="${x.id}"><span></span><span></span><span class="t hunk-h">${icon("bot")}<span class="grow">${esc(x.agent)} wants to change this ${hunkStat([h])}</span>${k === 0 ? waitControls(x, role) : ""}${role === "owner" ? `<button type="button" class="btn icon-only" data-drop="${esc(h.key)}" data-run="${x.id}" title="leave this stretch as it is: the rest still lands" aria-label="leave this stretch out">${icon("undo-2")}</button>` : ""}</span></div>`;
+        const head = `<div class="gl h${rise}" data-wait="${esc(x.id)}"><span></span><span></span><span class="t hunk-h">${icon("bot")}<span class="grow">${esc(x.agent)} wants to change this ${hunkStat([h])}</span>${k === 0 ? waitControls(x, role) : ""}${role === "owner" ? `<button type="button" class="btn icon-only" data-drop="${esc(h.key)}" data-run="${x.id}" title="leave this stretch as it is: the rest still lands" aria-label="leave this stretch out">${icon("undo-2")}</button>` : ""}</span></div>`;
         const adds = h.add.map((l) => `<div class="gl a${rise}"><span></span><span></span><span class="t">${esc(l.text) || " "}</span></div>`).join("");
         const after = rowOf(h.before);
         if (gone.length) { gone[0].insertAdjacentHTML("beforebegin", head); gone.at(-1).insertAdjacentHTML("afterend", adds); }
@@ -5796,7 +5796,7 @@ const views = {
     // The game's "smash the removed lines": a revision pair of this file.
     const smashHref = (from, to) => `/play.html#r/${owner}/${repo}?path=${encodeURIComponent(path)}&from=${from}&to=${to}`;
     // Newest first, so a commit's parent is the next one down.
-    const drawCommits = (cs) => $("#commits").innerHTML = (shownCommits = cs, "") + cs.map((c, i) => `<div class="commit"><code>${c.sha.slice(0, 7)}</code><span>${esc(c.message)}</span><span class="muted">@${esc(c.by)} · r${c.rev}${c.rev > (cs[i + 1]?.rev ?? 0) ? ` · <a href="${smashHref(cs[i + 1]?.rev ?? 0, c.rev)}" title="smash the lines this commit took out">smash</a>` : ""}</span></div>`).join("") || '<span class="muted">Not committed yet. Search only sees committed files.</span>';
+    const drawCommits = (cs) => $("#commits").innerHTML = (shownCommits = cs, "") + cs.map((c, i) => `<div class="commit"><code>${esc(c.sha.slice(0, 7))}</code><span>${esc(c.message)}</span><span class="muted">@${esc(c.by)} · r${c.rev}${c.rev > (cs[i + 1]?.rev ?? 0) ? ` · <a href="${smashHref(cs[i + 1]?.rev ?? 0, c.rev)}" title="smash the lines this commit took out">smash</a>` : ""}</span></div>`).join("") || '<span class="muted">Not committed yet. Search only sees committed files.</span>';
     const edit = (el) => {
       const held = claimOf.get(el.dataset.id);
       if (held && !mine(held)) return toast(held.bot ? `An agent is working on this line${held.task ? `: ${held.task}` : ""}. Lift its claim under Here now to take it back` : `@${held.who} is holding this line`);
@@ -5983,7 +5983,7 @@ const views = {
     if ($("#collect")) {
       popover($("#collect"));
       const { playlists } = await api("/users/" + me());
-      $("#track select").innerHTML = playlists.map((p) => `<option value="${p.id}">${esc(p.title)}</option>`).join("") || "<option disabled>start a collection on your profile first</option>";
+      $("#track select").innerHTML = playlists.map((p) => `<option value="${esc(p.id)}">${esc(p.title)}</option>`).join("") || "<option disabled>start a collection on your profile first</option>";
       $("#track").addEventListener("submit", async (e) => { e.preventDefault(); const f = e.target;
         // Each run of lines is a track of its own.
         for (const [from, to] of sel) await api(`/playlists/${f.pl.value}/tracks`, { owner, repo, path, from, to, note: f.note.value });
@@ -6282,7 +6282,7 @@ const views = {
   async p(id) {
     const pl = await api("/playlists/" + id);
     ctx = { view: "p", id };
-    app.innerHTML = `<div class="repohead"><div class="wrap"><h1>${icon("library")}<b>${esc(pl.title)}</b></h1><div class="sub">a collection by <a href="#/u/${pl.owner}">@${esc(pl.owner)}</a></div></div></div>
+    app.innerHTML = `<div class="repohead"><div class="wrap"><h1>${icon("library")}<b>${esc(pl.title)}</b></h1><div class="sub">a collection by <a href="#/u/${esc(pl.owner)}">@${esc(pl.owner)}</a></div></div></div>
       <div class="wrap cards">${pl.tracks.map((t, i) => `<div class="box"><div class="bar"><b>${i + 1}.</b><a href="#/f/${t.owner}/${t.repo}/${encodeURIComponent(t.path)}">${esc(t.owner)}/${esc(t.repo)}/${esc(t.path)}</a><span class="muted">lines ${t.from_line}–${t.to_line}</span><span class="grow"></span>${t.lines.length ? followButton({ owner: t.owner, repo: t.repo, path: t.path, from: t.from_line, to: t.to_line, first: t.lines[0].id, last: t.lines.at(-1).id }) : ""}</div>
         ${t.note ? `<div class="body" style="border-bottom:1px solid var(--border);background:var(--canvas)">${esc(t.note)}</div>` : ""}<div class="code">${codeRows(t.lines, { start: t.from_line })}</div></div>`).join("") || '<div class="box"><div class="body muted">Nothing collected yet. Open any file, select some lines, and Collect.</div></div>'}</div>`;
     icons();
@@ -6335,7 +6335,7 @@ const views = {
     q = decodeURIComponent(q || "");
     ctx = { view: "search", q };
     const hits = await api("/search?q=" + encodeURIComponent(q));
-    app.innerHTML = `<div class="wrap" style="padding-top:24px"><h1 class="page-h" style="margin:0 0 14px">${icon("search")} “${esc(q)}”</h1>${hits.map((h) => `<div class="box"><div class="bar">${icon("file-code")}<a href="#/f/${h.owner}/${h.repo}/${encodeURIComponent(h.path)}">${esc(h.owner)}/${esc(h.repo)}/${esc(h.path)}</a></div>
+    app.innerHTML = `<div class="wrap" style="padding-top:24px"><h1 class="page-h" style="margin:0 0 14px">${icon("search")} “${esc(q)}”</h1>${hits.map((h) => `<div class="box"><div class="bar">${icon("file-code")}<a href="#/f/${esc(h.owner)}/${esc(h.repo)}/${encodeURIComponent(h.path)}">${esc(h.owner)}/${esc(h.repo)}/${esc(h.path)}</a></div>
       <div class="body code">${esc(h.snippet).replace(/«/g, "<mark>").replace(/»/g, "</mark>")}</div></div>`).join("") || '<p class="muted">Nothing found. Search covers committed files only.</p>'}</div>`;
     icons();
   },

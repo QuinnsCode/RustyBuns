@@ -41,6 +41,15 @@ const asDiff = (d: any): Diff | undefined =>
   d && typeof d.path === "string" && d.path.length < 512 && Number.isInteger(d.from) && Number.isInteger(d.to) && d.from >= 0 && d.to > d.from
     ? { path: d.path, from: d.from, to: d.to } : undefined;
 
+/** A finite number from a socket, or undefined. */
+const num = (n: unknown) => (typeof n === "number" && Number.isFinite(n) ? n : undefined);
+/** `n` finite numbers from a socket (a position, a direction), or undefined. */
+export const vec = (v: unknown, n: number): number[] | undefined => {
+  if (!Array.isArray(v) || v.length !== n) return undefined;
+  const out = v.map(num);
+  return out.every((x) => x !== undefined) ? (out as number[]) : undefined;
+};
+
 const MAX_PLAYERS = 8, MAX_BROKEN = 5000;
 
 export class GameRoom {
@@ -103,11 +112,15 @@ export class GameRoom {
     const p = this.me(ws);
     if (m.t === "pos") {
       if (Date.now() - (p.seen ?? 0) > 2000) this.save(ws, { ...p, seen: Date.now() });
-      return this.others(ws, { t: "pos", id: p.id, user: p.user, p: m.p, yaw: m.yaw, room: m.room, swing: !!m.swing });
+      // Relayed to everyone else, so only what a position is: three numbers, a yaw, a room's path.
+      const at = vec(m.p, 3);
+      if (!at) return;
+      return this.others(ws, { t: "pos", id: p.id, user: p.user, p: at, yaw: num(m.yaw) ?? 0, room: typeof m.room === "string" && m.room.length < 512 ? m.room : "", swing: !!m.swing });
     }
     if (m.t === "hit" && typeof m.target === "string") {
       const target = this.sockets().find((o) => this.me(o).id === m.target);
-      if (target) this.send(target, { t: "bopped", by: p.user, dir: m.dir });
+      const dir = vec(m.dir, 2);
+      if (target && dir) this.send(target, { t: "bopped", by: p.user, dir });
       return;
     }
     const r = await this.round();
