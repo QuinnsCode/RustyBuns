@@ -435,7 +435,7 @@ const OPS: Record<string, Record<string, Op>> = {
     description: "A running CLI can't take messages, so the note goes into the prompt of its next run: when this run ends, it goes round again with every note so far (up to 5 extra runs). 409 once the run has ended.",
     body: obj({ text: str() }, ["text"]), ok: loose("the run, with its notes") } },
   [`${repo}/agents/waiting`]: { get: { id: "waiting_agent_batches", summary: "A file's agent batches waiting to land on main, with their hunks", tag: "Agents",
-    description: "Anyone who can read the file sees them: each run's id, agent, `pending` {branch, until (null: held), why} and its branch's hunks, private lines blank outside the crew. `kept`, for the crew only, lists lines where a landing in the last day kept your version, with what the agent wanted.",
+    description: "Anyone who can read the file sees them: each run's id, agent, `pending` {branch, until (null: held), why, hash} and its branch's hunks, private lines blank outside the crew. `kept`, for the crew only, lists lines where a landing in the last day kept your version, with what the agent wanted.",
     query: { path: { ...str("the file"), required: true } }, ok: obj({ waiting: arr(loose("{id, agent, pending, hunks}")), kept: arr(loose("{line, yours, wanted, agent}")) }) } },
   [`${repo}/agents/engine`]: { get: { id: "rebuild_engine_lines", summary: "What rebuild tasks said a merge rule could have settled, newest first (owner only)", tag: "Agents",
     description: "A branch that really clashes with main once the one it waited for merged gets a rebuild task, which ends with a line per clash: whether a merge rule could have settled it with no agent, and how. " +
@@ -443,8 +443,9 @@ const OPS: Record<string, Record<string, Op>> = {
     ok: arr(obj({ run: int(), branch: str(), after: str("the branch whose merge it rebuilt on"), started: int(),
       engine: arr(obj({ path: str(), line: str("a line id"), yes: bool("a merge rule could have settled it"), how: str() })) })) } },
   [`${repo}/agents/{id}/accept`]: { post: { id: "accept_agent_batch", summary: "Land a finished run's waiting batch on main now (owner only)", tag: "Agents", risky: true,
-    description: "A run's batch waits on its own branch (the run's `pending.branch`) for a few seconds before it merges into main by itself. Accept merges it now, build files and all. A line someone changed on main meanwhile keeps their version: the run's `kept` lists what the agent wanted there. 409 if the repo's required checks hold it back; it stays waiting, held.",
-    ok: obj({ landed: bool(), kept: arr(loose("{line, yours, wanted}")) }) } },
+    description: "A run's batch waits on its own branch (the run's `pending.branch`) for a few seconds before it merges into main by itself. Accept merges it now, build files and all. A line someone changed on main meanwhile keeps their version: the run's `kept` lists what the agent wanted there. 409 if the repo's required checks hold it back; it stays waiting, held. " +
+      "`hash` is the run's `pending.hash` for the batch you read: 409, held with a fresh hash, if the branch changed since the run finished or since you read it.",
+    body: obj({ hash: str("the run's pending.hash, as you read it") }, ["hash"]), ok: obj({ landed: bool(), kept: arr(loose("{line, yours, wanted}")) }) } },
   [`${repo}/agents/{id}/hold`]: { post: { id: "hold_agent_batch", summary: "Stop a waiting batch's clock: it lands only when accepted (crew)", tag: "Agents", ok: loose("the run") } },
   [`${repo}/agents/{id}/look`]: { post: { id: "look_at_agent_batch", summary: "Say someone is reading a waiting batch: it lands no sooner than a few seconds from now (crew)", tag: "Agents", ok: loose("the run") } },
   [`${repo}/agents/{id}/reject`]: { post: { id: "reject_agent_batch", summary: "Throw a waiting batch away: nothing of it lands, and its branch goes (owner only)", tag: "Agents", risky: true, ok: loose("the run") } },

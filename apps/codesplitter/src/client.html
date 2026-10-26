@@ -3027,13 +3027,13 @@ const WAIT_TIP = "When this lands on main by itself. Reading it puts that off a 
  * Reject for the owner (`role` "owner"), Hold for the crew too ("crew"), none for anyone else who reads the file (#757).
  */
 const waitControls = (x, role = "owner") => `${x.pending.until === null ? `<span class="tick" title="${esc(x.pending.why ?? (role === "owner" ? "held: it lands when you accept it" : "held: it lands when the repo's owner accepts it"))}">${icon("hand")}held</span>` : ticker(x.started, x.pending.until, WAIT_TIP)}`
-  + (role === "owner" ? `<button type="button" class="btn icon-only" data-review="accept" data-run="${x.id}" title="land it on main now" aria-label="accept ${esc(x.agent)}'s change">${icon("check")}</button>` : "")
+  + (role === "owner" ? `<button type="button" class="btn icon-only" data-review="accept" data-run="${x.id}" data-hash="${esc(x.pending.hash ?? "")}" title="land it on main now" aria-label="accept ${esc(x.agent)}'s change">${icon("check")}</button>` : "")
   + (x.pending.until === null || !role ? "" : `<button type="button" class="btn icon-only" data-review="hold" data-run="${x.id}" title="hold it: it waits till the repo's owner accepts it" aria-label="hold ${esc(x.agent)}'s change">${icon("hand")}</button>`)
   + (role === "owner" ? `<button type="button" class="btn icon-only" data-review="reject" data-run="${x.id}" title="throw it away: none of it lands" aria-label="reject ${esc(x.agent)}'s change">${icon("x")}</button>` : "");
-/** POST accept, hold, look or reject for run `id`; says what happened unless it was a look. */
-async function reviewBatch(owner, repo, id, what) {
+/** POST accept, hold, look or reject for run `id`; says what happened unless it was a look. An accept names the batch it showed (`hash`). */
+async function reviewBatch(owner, repo, id, what, hash) {
   try {
-    const r = await api(`/repos/${owner}/${repo}/agents/${id}/${what}`, {});
+    const r = await api(`/repos/${owner}/${repo}/agents/${id}/${what}`, what === "accept" ? { hash } : {});
     if (what === "accept") toast(r.kept?.length ? `Landed on main; ${r.kept.length} line${r.kept.length > 1 ? "s" : ""} kept yours` : "Landed on main");
     else if (what === "reject") toast("Rejected: none of it lands");
     else if (what === "hold") toast(owner === me() ? "Held: it lands when you accept it" : "Held: it lands when the repo's owner accepts it");
@@ -3082,7 +3082,7 @@ function drawRuns(el, rs, { owner, repo, file, scope = {}, lines, refresh, empty
   el.onclick = (e) => {
     const b = e.target.closest("button");
     if (!b) return;
-    if (b.dataset.review) { b.disabled = true; reviewBatch(owner, repo, b.dataset.run, b.dataset.review).then(refresh); }
+    if (b.dataset.review) { b.disabled = true; reviewBatch(owner, repo, b.dataset.run, b.dataset.review, b.dataset.hash).then(refresh); }
     else if (b.dataset.stop) stop({ ids: [Number(b.dataset.stop)] });
     else if (b.hasAttribute("data-stop-all")) stop({});
     else if (b.dataset.stopH) stop({ harness: b.dataset.stopH });
@@ -5368,8 +5368,10 @@ const views = {
       keptOf = new Map(kept.map((k) => [k.line, k]));
       const next = await Promise.all(ws.map(async (x) => {
         if (x.hunks) return { run: x, hunks: x.hunks };
-        if (!hunkCache.has(x.id)) hunkCache.set(x.id, api(`/repos/${owner}/${repo}/branches/${encodeURIComponent(x.pending.branch)}/hunks?path=${encodeURIComponent(path)}`).then((b) => b.hunks).catch(() => { hunkCache.delete(x.id); return []; }));
-        return { run: x, hunks: await hunkCache.get(x.id) };
+        // Keyed by the batch's hash too: a batch that changed since (and is held to be read again) is fetched again.
+        const key = `${x.id}:${x.pending.hash}`;
+        if (!hunkCache.has(key)) hunkCache.set(key, api(`/repos/${owner}/${repo}/branches/${encodeURIComponent(x.pending.branch)}/hunks?path=${encodeURIComponent(path)}`).then((b) => b.hunks).catch(() => { hunkCache.delete(key); return []; }));
+        return { run: x, hunks: await hunkCache.get(key) };
       }));
       waits = next;
       const changed = sig(waits) !== was;
@@ -5383,9 +5385,9 @@ const views = {
       if (!b) return;
       b.disabled = true;
       const w = waits.find((x) => String(x.run.id) === b.dataset.run);
-      if (b.dataset.review) await reviewBatch(owner, repo, b.dataset.run, b.dataset.review);
+      if (b.dataset.review) await reviewBatch(owner, repo, b.dataset.run, b.dataset.review, b.dataset.hash);
       else if (w) {
-        try { await rejectHunk(owner, repo, w.run.pending.branch, path, w.hunks.find((h) => h.key === b.dataset.drop)); hunkCache.delete(w.run.id); toast("Left that stretch out: the rest still lands"); }
+        try { await rejectHunk(owner, repo, w.run.pending.branch, path, w.hunks.find((h) => h.key === b.dataset.drop)); hunkCache.delete(`${w.run.id}:${w.run.pending.hash}`); toast("Left that stretch out: the rest still lands"); }
         catch (err) { toast(err.message); }
       }
       refreshWaits();
