@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ester: case file</title>
+<meta name="description" content="Ester sorts every red check by whose fault it is so agents stop fixing what they did not break. Her clinical file.">
+<link href="/fonts/geist.css" rel="stylesheet">
+<link href="/trio.css" rel="stylesheet">
+</head>
+<body>
+<div class="wrap">
+  <nav><a href="/">codeSplitter</a><a href="/mervin">Mervin</a><a href="/ester">Ester</a><a href="/dexter">Dexter</a></nav>
+  <div class="label">case file 02 / the tester</div>
+  <h1>Ester <em>the Stress-Tested</em></h1>
+  <p class="lede">Subject is a professional tester under severe stress, doing her level best not to test. Filed by the attending physician, with a detective's margin notes.</p>
+  <div class="file">
+    <section><dl>
+      <dt>Designation</dt><dd>ESTER, grown to order for one job</dd>
+      <dt>Occupation</dt><dd>Sorts the red, so nobody reads logs they do not have to</dd>
+      <dt>Made of</dt><dd>Rules and replay. No model, no prompt, no tokens spent</dd>
+      <dt>Status</dt><dd><span class="stamp">Under strain</span></dd>
+    </dl></section>
+    <section><h2>Presenting complaint</h2>
+      <p>A check goes red and an agent reads logs for ten minutes to learn it was never their fault. Ester has seen this too many times. Her one goal is to run as few tests as she possibly can and still be right.</p></section>
+    <section><h2>Observed behaviour</h2>
+      <p>Takes one look at a failure and files it: <b>main</b> (red on main too, ignore it), <b>flaky</b> (passed on a rerun), <b>own</b> (a PR's own red, so that PR fixes it first), <b>wait</b> (its CI has not finished) or <b>blocks</b> (only the merge breaks it, and she names the PRs).</p>
+      <p>Reruns only to tell flaky from real. Skips every rerun that would tell her nothing.</p></section>
+    <section><h2>Psychological profile</h2>
+      <div class="score"><span>Stress</span><span class="bar"><i style="width:96%"></i></span><span>96</span></div>
+      <div class="score"><span>Testing done</span><span class="bar"><i style="width:9%"></i></span><span>09</span></div>
+      <div class="score"><span>Blame accuracy</span><span class="bar"><i style="width:91%"></i></span><span>91</span></div>
+      <p>Subject cheerfully insists she is not testing, merely sorting. The tests are, in her words, "already running somewhere else."</p></section>
+    <section><h2>Detective's note</h2>
+      <blockquote>She has never found a bug by trying. She has found every bug by not repeating herself. A red check tells her whose it is before anyone opens a log.</blockquote></section>
+  </div>
+  <p class="muted"><a href="https://github.com/QuinnsCode/RustyBuns/blob/main/apps/codesplitter/docs/mervin.md#ester-the-tester">The full Ester guide</a> &middot; <a href="/dexter">Next patient: Dexter</a></p>
+  <footer>Three helpers, none of them a model: rules and replay, no tokens spent. Together they are <a href="https://github.com/QuinnsCode/RustyBuns/blob/main/apps/codesplitter/docs/mervin-and-ester.md">git, rethought for a swarm</a>.</footer>
+</div>
+</body>
+</html>
