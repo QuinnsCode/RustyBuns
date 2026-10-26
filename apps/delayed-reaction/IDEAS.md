@@ -8,9 +8,14 @@ The first cut (see the README) is the smallest thing that plays: a keyboard, fou
 - **Feedback as lives.** Instead of eight misses, the dub feedback is your health. Every answer you land feeds the delay line; miss and the echo dies down; miss enough and the song goes dry and stops. Lose with silence, not a buzzer.
 - **Answer the echo of an echo.** A late-level mechanic: some calls want two answers, one at `+delay` and one at `+2·delay`, quieter. The music already does this, the game asks you to do it too.
 - **Swapped lanes.** Mid-song the keyboard flips (the pads shuffle colours for a phrase) and the answer lane is the mirror of the call lane. Simon says, but you are told once.
-- **Bop It gestures.** A call shape per gesture: tap, hold, a swipe across two pads (a glissando), both outer pads at once (a chord), a flick up off the pad (a release you have to throw). Each is its own sound in the echo.
+- **Gesture calls.** A call shape per gesture: tap, hold, a swipe across two pads (a glissando), both outer pads at once (a chord), a flick up off the pad (a release you have to throw). Each is its own sound in the echo.
 
-## Mirror's-edge movement
+- **Speed you have to answer.** From VISION.md, not shipped: a boost should make the next delayed answer harder,
+  everything arriving sooner. Today speed changes only how fast the tunnel and the music feel; the charts stay in
+  beats, so the due beat never moves. The next step is a sim change that tightens the window or pulls the next
+  call's due beat in while boosted, with a journey in `test/sim.test.ts` first.
+
+## Parkour movement
 
 - **The runner is the cursor.** Keys are platforms. A hold is a slide under a low key. A swipe is a wall-run up to the top rail. The animation is what you did, so a good run looks like a parkour line through the keyboard.
 - **Momentum, not lives.** Each hit keeps the runner at speed; a miss stumbles. At full speed the keyboard tilts into a 3D tunnel (the keys are still the same beats, just further away) and the delay reads as distance.

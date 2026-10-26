@@ -104,9 +104,14 @@ export class Music {
   }
 
   stop() {
+    this.halt();
+    this.chart = null;
+  }
+
+  // Nothing more to schedule. The chart stays, so beat() keeps counting past the song's end and the run can finish.
+  private halt() {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    this.chart = null;
   }
 
   // Look-ahead scheduling: everything within the next 150 ms is placed on the clock.
@@ -115,7 +120,7 @@ export class Music {
     const horizon = this.ctx.currentTime + 0.15;
     while (this.start + this.nextBeat * this.spb < horizon) {
       const b = this.nextBeat, t = this.start + b * this.spb;
-      if (b >= this.chart.bars * 4) { this.stop(); return; }
+      if (b >= this.chart.bars * 4) { this.halt(); return; }
       const bar = Math.floor(b / 4), inBar = ((b % 4) + 4) % 4;
       if (b >= 0) {
         // Half-time: the kick on the one, the snare on the three, so 140 feels like 70.

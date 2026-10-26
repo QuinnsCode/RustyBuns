@@ -1,7 +1,8 @@
 # Delayed Reaction: where it is going
 
-The owner's direction, 2026-10-26. The first cut (README) is a dark hallway with keys on the floor. This is
-the game it is becoming. Three workers build it in parallel from `main`; the leader prompt at the bottom says who owns what.
+The owner's direction, 2026-10-26. The first cut was a dark hallway with keys on the floor; this is the game it
+became. Three workers built it in parallel from `main` (speed #2347, runner #2349, tunnel #2350) and the README
+describes what shipped. What didn't ship moved to [IDEAS.md](IDEAS.md).
 
 ## The world: a tunnel, not a hallway
 
@@ -22,9 +23,8 @@ the game it is becoming. Three workers build it in parallel from `main`; the lea
 - The **fence**: where a ring lands, part of the tunnel's wall is open and part is a "digital slow-down
   fence" (a faint grid). Answer on time and you pass through the open part and **boost**: the tunnel rushes
   faster and the music brightens. Miss and you hit the fence: a slow-down, the world drags, the sound dulls.
-- Boosting makes the next delayed answer harder (everything arrives sooner), so a perfect run gets fast and
-  thrilling and a sloppy one stays slow. Speed should sit between a floor and a ceiling, decaying back to
-  the floor on its own.
+- Speed sits between a floor and a ceiling and decays back to the floor on its own, so a perfect run gets fast
+  and thrilling and a sloppy one stays slow.
 
 ## Hits: fluid particle explosions
 
