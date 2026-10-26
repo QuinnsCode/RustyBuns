@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { burst, echoBursts, lanePoint, project, view } from "../src/hallway.ts";
+import { mulberry32 } from "@rustybuns/util";
+import { burst, echoBursts, lanePoint, partAt, project, view } from "../src/hallway.ts";
 
 test("further down the hallway is smaller and nearer the vanishing point", () => {
   const v = view(390, 844);
@@ -33,4 +34,19 @@ test("lanes are angles round the tunnel: left pads land left of right pads, all 
   for (const [, y] of xs) expect(y).toBeGreaterThan(v.hy); // below the vanishing point: the floor
   const [, farY] = lanePoint(v, 0, 20, 0);
   expect(farY).toBeLessThan(xs[0]![1]); // a far ring sits higher on the screen than a near one
+});
+
+test("a burst's particles come from its rng, fly out, and slow to a drift within a beat", () => {
+  const a = burst(1, 0, 1, mulberry32(7)), b = burst(1, 0, 1, mulberry32(7));
+  expect(a.parts).toEqual(b.parts);
+  expect(a.parts.length).toBeLessThanOrEqual(40);
+  const step = (t: number) => a.parts.map((p) => {
+    const [x0, y0, z0] = partAt(p, t, 1), [x1, y1, z1] = partAt(p, t + 0.05, 1);
+    return Math.hypot(x1 - x0, y1 - y0, z1 - z0);
+  });
+  const early = step(0), late = step(0.95);
+  early.forEach((d, i) => {
+    expect(d).toBeGreaterThan(0.05);
+    expect(late[i]!).toBeLessThan(d * 0.8);
+  });
 });

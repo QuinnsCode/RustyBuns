@@ -1,7 +1,8 @@
 // The page: a canvas keyboard you run along, four thumb pads, a HUD, and a menu. The sim
 // (sim.ts) decides everything; this file draws it and turns thumbs and keys into presses.
 import { Music } from "./audio.ts";
-import { burst, drawTunnel, echoBursts, view, type Burst } from "./hallway.ts";
+import { burst, drawTunnel, echoBursts, sway, view, type Burst } from "./hallway.ts";
+import { drawRunner } from "./runner.ts";
 import { advance, createRun, delayWords, dueLanes, LEVELS, makeChart, press, release, type Judgement, type Lane, type Run } from "./sim.ts";
 const KEYS: Record<string, Lane> = { KeyD: 0, KeyF: 1, KeyJ: 2, KeyK: 3, ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3 };
 
@@ -17,6 +18,7 @@ try { best = JSON.parse(localStorage.getItem("delayed-reaction.best") ?? "{}"); 
 const bursts: Burst[] = [];
 const down = new Set<Lane>();
 let judgeUntil = 0;
+let missBeat: number | undefined; // the runner stumbles on the beat after a miss
 
 function el(id: string) { return document.getElementById(id)!; }
 
@@ -100,7 +102,7 @@ function show(j: Judgement) {
     say(j.grade === "perfect" ? "Perfect" : j.offset < 0 ? "Early" : "Late");
     buzz(j.grade === "perfect" ? 12 : 6);
   } else if (j.kind === "release") {
-    if (j.grade === "dropped") { music.answer(j.call.lane, "bad"); say("Dropped"); buzz(40); }
+    if (j.grade === "dropped") { music.answer(j.call.lane, "bad"); say("Dropped"); buzz(40); missBeat = heardBeat(); }
     else { bursts.push(burst(j.call.lane, music.beat(), j.grade === "perfect" ? 1.2 : 0.8)); say("Held"); }
   } else if (j.kind === "early") {
     music.answer(j.lane, "bad");
@@ -109,6 +111,7 @@ function show(j: Judgement) {
   } else {
     say("Miss");
     buzz(40);
+    missBeat = heardBeat();
   }
 }
 
@@ -164,9 +167,12 @@ function frame(now: number) {
     if (run.over) finish();
   }
   if (now > judgeUntil) hud.judge.textContent = "";
-  // scene.speed (1 = normal) is how fast the tunnel rushes: a boost raises it, a fence drags it.
+  // scene.speed (1 = normal) is how fast the tunnel rushes and how far the runner leans in.
   // Between runs the tunnel still rolls, at an idle 120 bpm, so the menu has something turning behind it.
-  drawTunnel(g, view(innerWidth, innerHeight), { run, beat: run ? beat : now / 500, down, bursts, speed: run?.speed ?? 1 });
+  const scene = { run, beat: run ? beat : now / 500, down, bursts, speed: run?.speed ?? 1, missBeat, t: now / 1000 };
+  const v = sway(view(innerWidth, innerHeight), scene.beat, !!run);
+  drawTunnel(g, v, scene);
+  drawRunner(g, v, scene);
 }
 
 // Avoid the page scrolling or zooming under a thumb.
