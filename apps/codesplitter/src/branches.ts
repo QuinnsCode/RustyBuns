@@ -275,6 +275,21 @@ async function fileHunks(env: Env, owner: string, repo: string, branch: string, 
   return { doc: doc!, hunks: hunks(base ?? empty(), doc!) };
 }
 
+/** A fingerprint of everything branch `name` would land: each file's path, deletion, blob and text. An agent's batch is accepted against it. */
+export async function branchHash(env: Env, owner: string, repo: string, name: string) {
+  const rows = (await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as FileRow[];
+  const each = await Promise.all(rows.map(async (f) => [f.path, f.merged, f.deleted, f.blob, f.mode,
+    f.merged || f.deleted || f.blob ? null : listOf(await (await toFile(env, owner, repo, f.path, "upstream", "file", {}, "", name)).json(), "lines").map((l) => l.text)]));
+  return sha256(JSON.stringify(each));
+}
+/** The waiting agent batch on `name`, if any, takes the branch's current hash: its owner changed it on purpose. */
+async function rehashBatch(env: Env, owner: string, repo: string, name: string) {
+  const id = /^agent-run-(\d+)$/.exec(name)?.[1];
+  if (!id) return;
+  await env.DB.prepare("UPDATE agent_runs SET result = json_set(result, '$.pending.hash', ?) WHERE id = ? AND owner = ? AND repo = ? AND json_extract(result, '$.pending') IS NOT NULL")
+    .bind(await branchHash(env, owner, repo, name), Number(id), owner, repo).run();
+}
+
 type BranchRow = { name: string; by: string; status?: string; parent: string | null; waits_on: string | null; created_at?: unknown; upstream_ref?: unknown };
 type FileRow = { path: string; merged: number; deleted: number; blob: string | null; mode: string | null };
 /** A coding agent's answer to one conflict, checked: `ok` only when the merged file parses and the tests pass (or don't run). */
@@ -1110,6 +1125,8 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   // POST /api/repos/:o/:r/branches/:b/hunks/reject {path, key}  put one hunk back as it was where the branch forked.
   if (p[6] === "hunks" && p[7] === "reject" && req.method === "POST") {
     if (!a.write) return json({ error: "no write access" }, 403);
+    const locked = await runBranchLocked(env, owner, repo, name, user);
+    if (locked) return locked;
     if (branch.status !== "open") return json({ error: `branch is ${branch.status}` }, 409);
     const b = await readBody<"path" | "key">(req);
     const f = typeof b.path === "string" && (await files()).find((x) => x.path === b.path && !x.merged && !x.deleted && !x.blob);
@@ -1118,6 +1135,8 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     if (!f || !got || !h) return json({ error: `no change ${b.key} in ${b.path} on ${name}: read the review again` }, 404);
     const res = await toFile(env, owner, repo, f.path, user!, "ops", { method: "POST", body: JSON.stringify({ ops: revertOps(got.doc, h), ifRev: got.doc.rev }) }, "", name);
     const out = await res.json() as { rev: number };
+    // The owner leaving a stretch of their agent's batch out is still the batch they read.
+    if (res.ok && user === owner) await rehashBatch(env, owner, repo, name);
     return res.ok ? json({ path: f.path, key: h.key, rev: out.rev }) : json({ error: "the branch changed under you: read the review again", ...out }, 409);
   }
 

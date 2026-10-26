@@ -156,7 +156,7 @@ describe("POST /api/repos/:o/:r/agents with AGENT_SANDBOX bound", () => {
     expect(runs[0].text).toBe("var x = 1\nf()\n");
     // Its batch waits on main as a ghost diff; accepted, it lands.
     expect(text(await doc(call))).toBe("var x = 1\nf()");
-    expect((await call("ryan-quinn", `/api/repos/ryan-quinn/r1/agents/${run.id}/accept`, { method: "POST" })).status).toBe(200);
+    expect((await call("ryan-quinn", `/api/repos/ryan-quinn/r1/agents/${run.id}/accept`, { method: "POST", body: JSON.stringify({ hash: run.pending.hash }) })).status).toBe(200);
     const d = await doc(call);
     expect(text(d)).toBe("let x = 1\nf()");
     expect(d.lines.map((l) => l.by)).toEqual(["agent-opencode", "ryan-quinn"]);
