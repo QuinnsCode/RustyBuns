@@ -684,6 +684,17 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
   dropped.visible = false;
   scene.add(dropped);
 
+  // The hovercraft (a cushion skirt, a cab and a fan) that beaches on the lawn, and the rescue helicopter's rope ladder.
+  const craft = new THREE.Group(), skirt = piece(new THREE.CylinderGeometry(2.1, 2.4, 0.7, 24), orangeMat, 0, 0.35, 0);
+  craft.add(skirt, piece(new THREE.BoxGeometry(1.8, 0.9, 2.2), boxMat, 0, 1.0, -0.2), piece(new THREE.CylinderGeometry(0.7, 0.7, 0.08, 14), inkMat, 0, 1.55, 1.25, false));
+  craft.rotation.order = "YXZ", craft.visible = false;
+  scene.add(craft);
+  const ladder = new THREE.Group();
+  for (const side of [-0.3, 0.3]) ladder.add(piece(new THREE.CylinderGeometry(0.025, 0.025, 1, 6), inkMat, side, -0.5, 0, false));
+  for (let i = 0; i < 15; i++) ladder.add(piece(new THREE.CylinderGeometry(0.025, 0.025, 0.6, 6).rotateZ(Math.PI / 2), inkMat, 0, -(i + 0.5) / 15, 0, false));
+  ladder.visible = false;
+  scene.add(ladder);
+
   const tmp = new THREE.Vector3();
   return {
     scene,
@@ -918,6 +929,15 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         (u.rotor as THREE.Object3D).rotation.y += 34 * dt;
         (u.tail as THREE.Object3D).rotation.x += 50 * dt;
       }
+      craft.visible = !!st.craft;
+      if (st.craft) {
+        craft.position.set(st.craft.x, st.craft.y, st.craft.z);
+        craft.rotation.set(0, st.craft.yaw, st.craft.roll);
+        // Going flat: the skirt sags and the cab settles with it.
+        craft.scale.set(1 + st.craft.deflate * 0.25, 1 - st.craft.deflate * 0.7, 1 + st.craft.deflate * 0.25);
+      }
+      ladder.visible = !!st.ladder;
+      if (st.ladder) ladder.position.set(st.ladder.x, st.ladder.y, st.ladder.z), (ladder.scale.y = st.ladder.len), (ladder.rotation.y = insertion?.rotation.y ?? 0);
       dropped.visible = !!st.gun;
       if (st.gun) dropped.position.set(st.gun.x, st.gun.y + 0.35 + Math.sin(time * 3) * 0.08, st.gun.z), (dropped.rotation.y = time * 1.5);
     },

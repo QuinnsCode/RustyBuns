@@ -10,13 +10,24 @@
 //              crawl to it half-blind, and a squad comes over the wall in slow motion. Then rally on
 //              the next compound or fall back to HEAD, where a health crate is waiting.
 //
+//   jump       Hold the yard: the roadster you board leaves the ground at speed, you bail out with a
+//              dive-roll, and the empty car carries on without you.
+//   beach      Lost commit: a hovercraft comes in over the lawn, beaches, and slowly deflates.
+//   dropzone   The valley floor: a helicopter drop from high up, under a parachute, the camera on the wall.
+//   stall      The shoulders: the roadster's thrusters run dry in the air, it slides back in slow
+//              motion, and you step off.
+//   onslaught  The heights: incoming with two squads at once, from two compounds.
+//   extraction the last guard falls in slow motion, then a helicopter lowers a rope ladder and you climb out.
+//   gag        a three-second git joke on an event: a first headshot, a reset crate, your last life.
+//
 // The director runs on the page's clock (real seconds), so slow motion slows the game, not the beat.
 
 import { wet } from "@rustybuns/terrain";
 import type { Chapter } from "./campaign.ts";
-import type { Game, GameEvent, Input, Soldier, Waypoint } from "./game.ts";
+import { ROLL_TIME, type Game, type GameEvent, type Input, type Soldier, type Waypoint } from "./game.ts";
+import type { Vehicle } from "./vehicles.ts";
 
-export type BeatId = "insertion" | "incoming";
+export type BeatId = "insertion" | "incoming" | "jump" | "beach" | "dropzone" | "stall" | "onslaught" | "extraction" | "gag";
 
 interface Point { x: number; y: number; z: number }
 
@@ -37,6 +48,10 @@ export interface Stage {
   heli: (Point & { yaw: number; roll: number }) | null;
   /** Your gun on the ground, knocked out of your hands. */
   gun: Point | null;
+  /** The hovercraft on the lawn, and how flat it has gone (0..1). */
+  craft: (Point & { yaw: number; roll: number; deflate: number }) | null;
+  /** The rope ladder hanging from the helicopter at the top, this long. */
+  ladder: (Point & { len: number }) | null;
 }
 
 /** A sound the page plays once: a round whistling in, ringing ears, time slowing. */
@@ -50,17 +65,29 @@ export const SLOW_DROP = 0.35, SLOW_THROWN = 0.25, SLOW_CONTACT = 0.3;
 export const GUN_THROW = 4.5, GUN_REACH = 1.4, CRAWL_MAX = 14;
 /** The squad: how many, how far off they come in, and how long the slow motion holds for them. */
 export const SQUAD = 3, SQUAD_AT = 20, CONTACT_SECONDS = 4.5;
+/** The dropzone's height over HEAD; a jump's speed, launch and how long the bail-out is held; the stall's slide back; the ladder, and the hovercraft's life. */
+export const DROP_HIGH = 60, JUMP_SPEED = 12, JUMP_LAUNCH = 11, BAIL = 0.8, SLIDE_BACK = 5, LADDER = 7.5, CRAFT_LIFE = 40;
+/** How long a cutaway gag runs, and the game time the hovercraft turns up at. */
+export const GAG = 3, BEACH_AT = 18, SLOW_JUMP = 0.35, SLOW_LAST = 0.3, LAST_NEAR = 35;
 /** How near HEAD, or the compound you rally on, counts as there. */
 export const HOME = 14;
 
 type Phase =
   | "ride" | "fall" | "landed"
-  | "calm" | "thrown" | "crawl" | "contact" | "choice";
+  | "calm" | "thrown" | "crawl" | "contact" | "choice"
+  | "run" | "air" | "carry" | "glide" | "stall" | "slide" | "off" | "last" | "lift" | "gag";
+
+/** What a cutaway gag is about, and the line it gets. */
+const GAGS = {
+  headshot: "git commit --amend: that one's a clean change. Straight to the head.",
+  reset: "git reset --hard. The one command nobody runs by accident. Command: Use it by accident.",
+  lastLife: "Command: Last life. Nothing to revert to, so make it a good one.",
+} as const;
 
 export class Director {
   /** How fast the game runs against the clock: 1, or less in slow motion. */
   scale = 1;
-  stage: Stage = { bars: 0, daze: 0, caption: null, title: null, prompt: null, shot: null, heli: null, gun: null };
+  stage: Stage = { bars: 0, daze: 0, caption: null, title: null, prompt: null, shot: null, heli: null, gun: null, craft: null, ladder: null };
   /** Where to go instead of the game's own waypoint while a beat offers a choice. */
   markers: Waypoint[] = [];
   /** Sounds for the page to play, cleared each step. */
@@ -81,13 +108,35 @@ export class Director {
   private struck: Point | null = null;
   private from = -1;
   private squad: Soldier[] = [];
+  /** The dropzone's drop is from up high. */
+  private high = false;
+  /** Bailed out of the jumping car (Shift). */
+  private bailed = false;
+  /** The car being let go on, and the way it was going. */
+  private car: { id: number; dx: number; dz: number } | null = null;
+  /** The hovercraft: where it beaches, the way it slides in, and seconds since it started. */
+  private craft: { to: Point; dx: number; dz: number; yaw: number; t: number } | null = null;
+  /** The extraction: where the ladder comes down, and the last guard. */
+  private rescue: (Point & { yaw: number }) | null = null;
+  private last: Soldier | null = null;
+  private wonAt: number | null = null;
+  /** The gags that have run this level, and whether this chapter has any. */
+  private told = new Set<keyof typeof GAGS>();
+  private readonly gags: boolean;
 
   constructor(game: Game, chapter?: Chapter) {
     this.game = game;
     this.chapter = chapter;
     // Battles run none: they're a fight, not a film.
     this.waiting = game.mode ? [] : [...(chapter?.beats ?? [])];
-    if (this.take("insertion")) this.start("insertion", "ride"), (this.heliT = 0);
+    this.gags = this.waiting.includes("gag");
+    this.high = !this.waiting.includes("insertion") && this.waiting.includes("dropzone");
+    if (this.take("insertion") || this.take("dropzone")) this.start("insertion", "ride"), (this.heliT = 0);
+  }
+
+  /** The result screen waits while the extraction plays out. */
+  get holding(): boolean {
+    return this.beat?.id === "extraction";
   }
 
   /** Your input while a beat holds some of it: nothing in the helicopter, crawling on the ground. */
@@ -101,6 +150,12 @@ export class Director {
     // Falling you can still work the parachute; thrown, you can't do anything.
     if (phase === "fall") return still;
     if (phase === "thrown") return { ...still, jump: false };
+    if (phase === "air") {
+      if (input.roll) this.bailed = true;
+      return { ...still, jump: false, roll: false };
+    }
+    if (phase === "stall" || phase === "slide") return { ...input, forward: 0, up: false, down: false, fire: false };
+    if (phase === "lift") return still;
     if (phase === "crawl") return { ...input, prone: true, crouch: false, jump: false, roll: false, fire: false, scope: false, use: false, reload: false, weapon: undefined };
     return input;
   }
@@ -112,20 +167,95 @@ export class Director {
     if (this.heliT >= 0) this.heliT += dt;
     if (this.line && (this.line.left -= dt) <= 0) this.line = null;
     const b = this.beat;
-    // Going down, or the level ending, drops whatever was playing.
-    if (b && b.id === "incoming" && (game.status !== "playing" || !you.alive || events.some((e) => e.kind === "respawn" && e.id === game.me))) this.end();
-    else if (b) b.t += dt, b.id === "insertion" ? this.insertion(b, dt) : this.incoming(b, dt);
-    else if (game.status === "playing" && you.alive && you.vehicle < 0 && events.some((e) => e.kind === "cleared") && !game.cleared.every(Boolean) && this.take("incoming")) {
-      this.start("incoming", "calm");
-      this.say("Command: Nice work. Nothing could possibly go wrong now.", 2.6);
-    }
-    this.bars += ((this.beat && this.beat.phase !== "choice" && this.beat.phase !== "contact" ? (this.beat.phase === "crawl" ? 0.35 : 1) : 0) - this.bars) * Math.min(1, dt * 5);
+    // Going down, or the level ending, drops whatever was playing (the extraction plays on after the win).
+    const down = !you.alive || events.some((e) => e.kind === "respawn" && e.id === game.me);
+    if (b && b.id !== "insertion" && (b.id === "extraction" ? game.status === "lost" || (game.status === "playing" && down) : game.status !== "playing" || down)) this.end();
+    else if (b) b.t += dt, this.play(b, dt);
+    else this.trigger(events);
+    if (this.craft) this.craft.t += dt;
+    if (this.craft && this.craft.t > CRAFT_LIFE) this.craft = null;
+    this.bars += (this.barsFor(this.beat?.phase) - this.bars) * Math.min(1, dt * 5);
     this.daze += ((this.beat?.phase === "crawl" ? 1 : 0) - this.daze) * Math.min(1, dt * (this.beat?.phase === "crawl" ? 8 : 1.4));
     this.stage.bars = this.bars < 0.01 ? 0 : this.bars;
     this.stage.daze = this.daze < 0.01 ? 0 : this.daze;
     this.stage.caption = this.line?.text ?? null;
     this.stage.heli = this.heli();
     if (!this.stage.heli) this.heliT = -1;
+    this.stage.craft = this.hovercraft();
+  }
+
+  private play(b: { id: BeatId; phase: Phase; t: number }, dt: number) {
+    if (b.id === "insertion") this.insertion(b, dt);
+    else if (b.id === "incoming" || b.id === "onslaught") this.incoming(b, dt);
+    else if (b.id === "jump") this.jump(b, dt);
+    else if (b.id === "beach") this.beach(b, dt);
+    else if (b.id === "stall") this.stall(b, dt);
+    else if (b.id === "extraction") this.extraction(b, dt);
+    else this.gag(b, dt);
+  }
+
+  /** Nothing playing: what in the game starts a beat. */
+  private trigger(events: GameEvent[]) {
+    const game = this.game, you = game.you();
+    if (game.status !== "playing" || !you.alive) return;
+    const ride = you.vehicle >= 0 ? game.vehicles.find((v) => v.id === you.vehicle) : undefined;
+    if (you.vehicle < 0 && events.some((e) => e.kind === "cleared") && !game.cleared.every(Boolean)) {
+      const id = this.take("incoming") ? "incoming" : this.take("onslaught") ? "onslaught" : null;
+      if (id) {
+        this.start(id, "calm");
+        this.say(id === "incoming" ? "Command: Nice work. Nothing could possibly go wrong now." : "Command: Last stretch. Nothing could possibly go wrong. Again.", 2.6);
+        return;
+      }
+    }
+    if (ride?.kind === "roadster" && events.some((e) => e.kind === "board" && e.on) && this.take("jump")) {
+      this.start("jump", "run");
+      this.say("Command: Floor it. We'll call the sandbox a ramp.", 2.4);
+      return;
+    }
+    // Thrusters dry while it's up in the air.
+    if (ride?.kind === "roadster" && ride.fuel <= 0.01 && ride.y > game.terrain.height(ride.x, ride.z) + 3 && this.take("stall")) {
+      this.start("stall", "stall");
+      this.scale = 0.4;
+      this.say("Command: The gauge says empty. The gauge is usually wrong. Not today.", 3);
+      return;
+    }
+    const spot = game.time > BEACH_AT && this.waiting.includes("beach") ? this.beachSpot() : null;
+    if (spot && this.take("beach")) {
+      const { f } = axes(you.yaw), m = { x: -f.z, z: f.x };
+      this.craft = { to: spot, dx: m.x, dz: m.z, yaw: Math.atan2(-m.x, -m.z), t: 0 };
+      this.start("beach", "glide");
+      this.scale = 0.5;
+      this.say("Command: Your ride's here. Hovercraft. It's, uh, in a hurry.", 2.6);
+      return;
+    }
+    // The last guard of the last compound: a slow-motion final kill.
+    const rest = game.cleared.flatMap((c, i) => (c ? [] : [i]));
+    if (this.waiting.includes("extraction") && rest.length === 1) {
+      const guards = game.soldiers.filter((g) => g.alive && g.compound === rest[0]);
+      if (guards.length === 1) {
+        this.last = guards[0]!;
+        this.start("extraction", "last");
+        this.cues.push("slow");
+        return;
+      }
+    }
+    if (this.gags) this.tell(events);
+  }
+
+  /** A cutaway gag for the first of these to happen this level. */
+  private tell(events: GameEvent[]) {
+    const game = this.game;
+    let gag: keyof typeof GAGS | null = null;
+    for (const e of events) {
+      if (e.kind === "hit" && e.head && e.by === game.me && !game.soldiers[e.target]?.alive) gag ??= "headshot";
+      else if (e.kind === "pickup" && e.id === game.me && e.item === "reset") gag ??= "reset";
+      else if (e.kind === "respawn" && e.id === game.me && e.lives === 0) gag ??= "lastLife";
+    }
+    if (!gag || this.told.has(gag)) return;
+    this.told.add(gag);
+    this.start("gag", "gag");
+    this.scale = 0.45;
+    this.say(GAGS[gag], GAG);
   }
 
   /* ---------------- insertion ---------------- */
@@ -137,8 +267,9 @@ export class Director {
       const h = this.heli()!;
       // Riding the skid: held there whatever the game did this step.
       Object.assign(you, { x: h.x, y: h.y + 0.1, z: h.z, vx: 0, vy: 0, vz: 0, chute: false });
-      if (passed(b, dt, 0.3)) this.say("Pilot: Thirty seconds out.", 1.6);
-      if (passed(b, dt, 1.9)) this.say("Pilot: Make that five. I rounded.", 1.6);
+      if (this.high && passed(b, dt, 0.3)) this.say("Pilot: Sixty metres. Parachute's on your back. Probably.", 1.9);
+      else if (passed(b, dt, 0.3)) this.say("Pilot: Thirty seconds out.", 1.6);
+      if (!this.high && passed(b, dt, 1.9)) this.say("Pilot: Make that five. I rounded.", 1.6);
       if (passed(b, dt, APPROACH)) this.say("Pilot: This is your stop. Jump, or I tip you out.", 2.2);
       this.stage.title = ch && b.t > 0.6 ? { text: ch.title, sub: ch.height } : null;
       this.stage.prompt = "Space · jump";
@@ -154,14 +285,27 @@ export class Director {
       }
     } else if (b.phase === "fall") {
       // Slow motion all the way down, unless a parachute opened (that's slow enough already).
-      this.scale = you.chute ? 1 : SLOW_DROP;
-      this.stage.shot = this.lowShot(you, sp, g0);
+      this.scale = you.chute ? 1 : this.high ? 0.5 : SLOW_DROP;
+      this.stage.shot = this.high ? this.wallShot(you) : this.lowShot(you, sp, g0);
       if (you.grounded) b.phase = "landed", b.t = 0, this.say("Pilot: That noise was nothing. Good luck down there.", 3);
     } else {
       this.scale = Math.min(1, this.scale + dt * 1.6);
       if (this.stage.shot) this.stage.shot.mix = Math.max(0, 1 - b.t / 0.8);
+      if (this.high && passed(b, dt, 0.4)) this.say("Pilot: Told you. Probably.", 2);
       if (b.t > 0.9) this.end(false);
     }
+  }
+
+  /** From behind you as you fall, looking out past you at the wall: the far compound, high up. */
+  private wallShot(you: Soldier): Stage["shot"] {
+    const game = this.game, sp = game.map.spawn;
+    let wall: Point = { x: -sp.x, y: 0, z: -sp.z }, far = 0;
+    for (const c of game.map.compounds) {
+      const d = Math.hypot(c.x - sp.x, c.z - sp.z);
+      if (d > far) far = d, wall = { x: c.x, y: 0, z: c.z };
+    }
+    const to = norm(wall.x - you.x, wall.z - you.z);
+    return { from: { x: you.x - to.x * 9, y: you.y + 3.5, z: you.z - to.z * 9 }, at: { x: wall.x, y: game.terrain.height(wall.x, wall.z) + 55, z: wall.z }, mix: 1 };
   }
 
   /** Low on the ground by HEAD, looking up at you. */
@@ -172,6 +316,8 @@ export class Director {
 
   /** Where the helicopter is: coming in from behind HEAD, hovering over it, then off ahead with a wobble. */
   private heli(): Stage["heli"] {
+    const lift = this.rescue && this.beat?.phase === "lift" ? this.beat.t : -1;
+    if (lift >= 0) return this.rescueHeli(lift);
     const t = this.heliT;
     if (t < 0) return null;
     const game = this.game, sp = game.map.spawn, { f } = axes(sp.yaw), g0 = game.terrain.height(sp.x, sp.z);
@@ -179,7 +325,7 @@ export class Director {
     const at = this.left;
     if (!at) {
       const k = 1 - (1 - Math.min(1, t / APPROACH)) ** 3, back = (1 - k) * 70, x = sp.x - f.x * back, z = sp.z - f.z * back;
-      return { x, y: over(x, z, g0 + DROP + (1 - k) * 18), z, yaw: sp.yaw, roll: 0 };
+      return { x, y: over(x, z, g0 + (this.high ? DROP_HIGH : DROP) + (1 - k) * 18), z, yaw: sp.yaw, roll: 0 };
     }
     // Off it goes, climbing, and something clipped on the way out has it rocking.
     const since = t - at.t, x = at.x + f.x * (since * 3 + since * since * 4), z = at.z + f.z * (since * 3 + since * since * 4);
@@ -189,7 +335,7 @@ export class Director {
 
   /* ---------------- incoming ---------------- */
 
-  private incoming(b: { phase: Phase; t: number }, dt: number) {
+  private incoming(b: { id: BeatId; phase: Phase; t: number }, dt: number) {
     const game = this.game, you = game.you();
     if (b.phase === "calm") {
       if (passed(b, dt, 1.6)) this.cues.push("whistle");
@@ -224,9 +370,15 @@ export class Director {
       if (this.from < 0) return this.end();
       const at = this.squadSpot(this.from);
       this.squad = game.reinforce(this.from, SQUAD, at.x, at.z);
+      // Everything at once: another yard sends its squad in from the other side.
+      const other = b.id === "onslaught" ? this.nearestHeld(this.from) : -1;
+      if (other >= 0) {
+        const to = this.squadSpot(other);
+        this.squad.push(...game.reinforce(other, SQUAD, to.x, to.z));
+      }
       this.scale = SLOW_CONTACT;
       this.cues.push("slow");
-      if (there) this.say("Contact! Over the wall!", 2.5);
+      if (there) this.say(other >= 0 ? "Contact! Over the wall! Both walls!" : "Contact! Over the wall!", 2.5);
       b.phase = "contact", b.t = 0;
     } else if (b.phase === "contact") {
       if (b.t < CONTACT_SECONDS && this.squad.some((s) => s.alive)) return;
@@ -249,13 +401,13 @@ export class Director {
     }
   }
 
-  /** The nearest compound to you still held, by index, or -1. */
-  private nearestHeld(): number {
+  /** The nearest compound to you still held (not `but`), by index, or -1. */
+  private nearestHeld(but = -1): number {
     const game = this.game, you = game.you();
     let best = -1, bestD = Infinity;
     game.map.compounds.forEach((c, i) => {
       const d = Math.hypot(c.x - you.x, c.z - you.z);
-      if (!game.cleared[i] && d < bestD) best = i, bestD = d;
+      if (!game.cleared[i] && i !== but && d < bestD) best = i, bestD = d;
     });
     return best;
   }
@@ -287,6 +439,171 @@ export class Director {
     return Math.hypot(x, z) < game.terrain.R - 3 && !game.blockAt(x, y + 0.5, z) && !wet(game.terrain, x, z);
   }
 
+  /* ---------------- jump ---------------- */
+
+  private jump(b: { phase: Phase; t: number }, dt: number) {
+    const game = this.game, you = game.you();
+    const v = game.vehicles.find((o) => o.id === (this.car?.id ?? you.vehicle));
+    if (!v) return this.end();
+    const across = this.car ? { x: -this.car.dz, z: this.car.dx } : { x: 0, z: 0 };
+    if (b.phase === "run") {
+      const speed = Math.hypot(v.vx, v.vz);
+      if (you.vehicle < 0 || b.t > 6) return this.end(false);
+      if (speed < JUMP_SPEED) return;
+      // Off the sandbox's lip: up it goes.
+      this.car = { id: v.id, dx: v.vx / speed, dz: v.vz / speed };
+      v.vy = JUMP_LAUNCH;
+      this.bailed = false;
+      this.scale = SLOW_JUMP;
+      this.stage.prompt = "Shift · bail out";
+      this.say("Command: Is that car supposed to do that?", 2.4);
+      b.phase = "air", b.t = 0;
+    } else if (b.phase === "air") {
+      this.stage.shot = this.carShot(v, across, 1);
+      if (!this.bailed && b.t < BAIL) return;
+      // Out the side and into a dive-roll; the car doesn't know.
+      v.driver = -1, you.vehicle = -1;
+      Object.assign(you, { x: v.x + across.x * 1.8, y: v.y + 0.6, z: v.z + across.z * 1.8, vx: across.x * 5 + v.vx * 0.35, vy: 3, vz: across.z * 5 + v.vz * 0.35, grounded: false, roll: ROLL_TIME, rollCd: ROLL_TIME + 1.4, rollDir: { x: across.x, z: across.z } });
+      this.stage.prompt = null;
+      this.say("Command: Nobody was driving that. Carry on.", 2.8);
+      b.phase = "carry", b.t = 0;
+    } else {
+      // The empty car carries on: held to its heading while the camera follows it off.
+      if (b.t < 2.2) v.vx = this.car!.dx * 14, v.vz = this.car!.dz * 14;
+      this.scale = Math.min(1, this.scale + dt * 0.7);
+      this.stage.shot = this.carShot(v, across, Math.max(0, 1 - b.t / 2.5));
+      if (b.t > 2.8) this.end(false);
+    }
+  }
+
+  /** From the car's side, a little way off, looking at it. */
+  private carShot(v: Vehicle, across: { x: number; z: number }, mix: number): Stage["shot"] {
+    return { from: { x: v.x + across.x * 9, y: v.y + 1.6, z: v.z + across.z * 9 }, at: { x: v.x, y: v.y + 0.8, z: v.z }, mix };
+  }
+
+  /* ---------------- beach ---------------- */
+
+  /** Open lawn ahead of you for the hovercraft to settle on, or null. */
+  private beachSpot(): Point | null {
+    const game = this.game, you = game.you(), { f } = axes(you.yaw);
+    for (const turn of [0, 0.5, -0.5, 1, -1]) {
+      const c = Math.cos(turn), s = Math.sin(turn), x = you.x + (f.x * c - f.z * s) * 24, z = you.z + (f.x * s + f.z * c) * 24, y = game.terrain.height(x, z);
+      if (this.open(x, y, z) && Math.abs(y - you.y) < 3) return { x, y, z };
+    }
+    return null;
+  }
+
+  /** The hovercraft, sliding in on its cushion, skidding to a stop, and then slowly going flat. */
+  private hovercraft(): Stage["craft"] {
+    const c = this.craft;
+    if (!c) return null;
+    const k = 1 - (1 - Math.min(1, c.t / 3.2)) ** 3, off = (1 - k) * 45, x = c.to.x - c.dx * off, z = c.to.z - c.dz * off;
+    const deflate = Math.min(1, Math.max(0, (c.t - 4) / 9));
+    return { x, y: this.game.terrain.height(x, z) + 0.7 * (1 - deflate), z, yaw: c.yaw + Math.sin(c.t * 5) * 0.25 * (1 - k), roll: Math.sin(c.t * 7) * 0.18 * (1 - k), deflate };
+  }
+
+  private beach(b: { phase: Phase; t: number }, dt: number) {
+    const game = this.game, you = game.you(), c = this.craft;
+    if (!c) return this.end();
+    const h = this.hovercraft()!, to = norm(you.x - c.to.x, you.z - c.to.z);
+    this.stage.shot = { from: { x: c.to.x + to.x * 11, y: c.to.y + 1.8, z: c.to.z + to.z * 11 }, at: { x: h.x, y: h.y + 0.8, z: h.z }, mix: Math.min(1, Math.max(0, 6.5 - b.t)) };
+    if (b.t > 3.2) this.scale = Math.min(1, this.scale + dt * 0.8);
+    if (passed(b, dt, 4.2)) this.say("Command: It's losing air. Ignore that.", 2.4);
+    if (b.t > 6.5) this.end(false);
+  }
+
+  /* ---------------- stall ---------------- */
+
+  private stall(b: { phase: Phase; t: number }, dt: number) {
+    const game = this.game, you = game.you(), v = game.vehicles.find((o) => o.id === (this.car?.id ?? you.vehicle));
+    if (!v) return this.end();
+    this.car ??= { id: v.id, dx: 0, dz: 0 };
+    const { f, side } = axes(v.yaw);
+    this.stage.shot = this.carShot(v, side, b.phase === "off" ? Math.max(0, 1 - b.t / 0.8) : 1);
+    if (b.phase === "stall") {
+      if (v.y > game.terrain.height(v.x, v.z) + 0.2) return;
+      b.phase = "slide", b.t = 0;
+      this.stage.prompt = "F · step off";
+      this.say("Command: Well. That's one way down.", 2.6);
+    } else if (b.phase === "slide") {
+      // Rolling back down the way it came, at a walking pace.
+      v.vx = -f.x * SLIDE_BACK, v.vz = -f.z * SLIDE_BACK;
+      if (you.vehicle >= 0 && b.t < 4) return;
+      if (you.vehicle >= 0) this.eject(v, side);
+      this.stage.prompt = null;
+      this.say("Command: Walk it off. Uphill.", 2.6);
+      b.phase = "off", b.t = 0;
+    } else {
+      this.scale = Math.min(1, this.scale + dt * 2);
+      if (b.t > 1) this.end(false);
+    }
+  }
+
+  /** Out of a car onto your feet, beside it. */
+  private eject(v: Vehicle, side: { x: number; z: number }) {
+    const you = this.game.you();
+    v.driver = -1, you.vehicle = -1;
+    Object.assign(you, { x: v.x + side.x * 2.2, y: v.y + 0.6, z: v.z + side.z * 2.2, vx: 0, vy: 0, vz: 0, grounded: false });
+  }
+
+  /* ---------------- extraction ---------------- */
+
+  private extraction(b: { phase: Phase; t: number }, dt: number) {
+    const game = this.game, you = game.you(), g = this.last;
+    if (b.phase === "last") {
+      // The last guard of the last yard, in slow motion until it falls.
+      if (!g) return this.end();
+      const to = norm(g.x - you.x, g.z - you.z), across = { x: -to.z, z: to.x };
+      const near = Math.hypot(g.x - you.x, g.z - you.z) < LAST_NEAR;
+      this.scale = near ? SLOW_LAST : 1;
+      this.stage.shot = { from: { x: g.x + across.x * 3.5 - to.x * 1.5, y: g.y + 1.3, z: g.z + across.z * 3.5 - to.z * 1.5 }, at: { x: g.x, y: g.y + 1, z: g.z }, mix: near ? 0.9 : 0 };
+      if (game.status !== "won") return;
+      // The repo is merged. Let the guard fall, then the helicopter comes for you.
+      this.wonAt ??= b.t;
+      if (b.t - this.wonAt < 1.4) return;
+      this.take("extraction");
+      this.rescue = { x: you.x, y: game.terrain.height(you.x, you.z), z: you.z, yaw: you.yaw };
+      this.scale = 1;
+      this.say("Pilot: Taxi for one. Ladder's down.", 2.6);
+      b.phase = "lift", b.t = 0;
+    } else {
+      const r = this.rescue!, h = this.rescueHeli(b.t)!, { side } = axes(r.yaw);
+      // Up the ladder, then off with the helicopter.
+      const climb = Math.min(1, Math.max(0, (b.t - 3.2) / 2.4));
+      Object.assign(you, b.t < 3.2 ? { x: r.x, y: r.y, z: r.z } : { x: h.x, y: climb < 1 ? r.y + climb * LADDER : h.y - 0.5, z: h.z }, { vx: 0, vy: 0, vz: 0, grounded: climb <= 0 });
+      this.stage.shot = { from: { x: r.x + side.x * 15, y: r.y + 4, z: r.z + side.z * 15 }, at: { x: h.x, y: Math.max(r.y + 3, (h.y + r.y) / 2), z: h.z }, mix: 1 };
+      this.stage.ladder = { x: h.x, y: h.y - 0.5, z: h.z, len: LADDER };
+      if (passed(b, dt, 5.6)) this.say("Pilot: Everybody in? Good. Nobody else was coming.", 2.6);
+      if (b.t > 9) this.end(false), this.rescue = null;
+    }
+  }
+
+  /** The rescue helicopter: in from behind to hover over where you stand, then away with you on the ladder. */
+  private rescueHeli(t: number): Stage["heli"] {
+    const r = this.rescue;
+    if (!r) return null;
+    const { f } = axes(r.yaw), k = 1 - (1 - Math.min(1, t / 3.2)) ** 3, back = (1 - k) * 60, away = Math.max(0, t - 5.6);
+    const x = r.x - f.x * back + f.x * (away * 3 + away * away * 4), z = r.z - f.z * back + f.z * (away * 3 + away * away * 4);
+    return { x, y: r.y + LADDER + 0.5 + (1 - k) * 14 + away * away * 1.2, z, yaw: r.yaw, roll: Math.sin(t * 2) * 0.04 };
+  }
+
+  /* ---------------- gag ---------------- */
+
+  private gag(b: { phase: Phase; t: number }, dt: number) {
+    const you = this.game.you(), { side } = axes(you.yaw);
+    // A low turn round the soldier for three seconds, time easing back up in the last of it.
+    const a = b.t * 0.6;
+    this.stage.shot = { from: { x: you.x + side.x * Math.cos(a) * 3.5 - side.z * Math.sin(a) * 3.5, y: you.y + 1.1, z: you.z + side.z * Math.cos(a) * 3.5 + side.x * Math.sin(a) * 3.5 }, at: { x: you.x, y: you.y + 1.2, z: you.z }, mix: Math.min(0.9, Math.max(0, GAG - b.t)) };
+    this.scale = b.t < GAG - 1 ? 0.45 : Math.min(1, this.scale + dt * 1.5);
+    if (b.t >= GAG) this.end(false);
+  }
+
+  /** How far the letterbox bars are in for a phase. */
+  private barsFor(phase: Phase | undefined): number {
+    if (!phase || phase === "choice" || phase === "contact" || phase === "run" || phase === "off") return 0;
+    return phase === "crawl" ? 0.35 : 1;
+  }
+
   /* ---------------- plumbing ---------------- */
 
   private take(id: BeatId): boolean {
@@ -302,8 +619,8 @@ export class Director {
 
   /** The beat's over: time back to normal and the camera yours. Cut short, the radio goes quiet too. */
   private end(cut = true) {
-    this.beat = null, this.scale = 1, this.markers = [], this.squad = [];
-    Object.assign(this.stage, { title: null, prompt: null, shot: null, gun: null });
+    this.beat = null, this.scale = 1, this.markers = [], this.squad = [], this.car = null, this.last = null, this.wonAt = null;
+    Object.assign(this.stage, { title: null, prompt: null, shot: null, gun: null, ladder: null });
     if (cut) this.line = null;
   }
 
