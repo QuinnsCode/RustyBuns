@@ -649,7 +649,15 @@ describe("shares", () => {
     // A repo from before the crew remote: its git has a.ts blank, and no crew remote.
     await call.artifacts.delete!("ana--old--crew");
     await call.env.DB.prepare("UPDATE repos SET crew_artifact = NULL, crew_remote = NULL WHERE owner = 'ana' AND name = 'old'").run();
-    const read = async (name: string, path: string) => (await (await call.artifacts.get(name)).readFile({ ref: "main", path }))!.text();
+    // Each repo is real git behind a local HTTP server; on a busy runner a pushed file can take a moment to show.
+    const read = async (name: string, path: string) => {
+      for (let i = 0; i < 40; i++) {
+        const file = await (await call.artifacts.get(name)).readFile({ ref: "main", path });
+        if (file) return file.text();
+        await Bun.sleep(50);
+      }
+      throw new Error(`${name}:${path} never appeared on main`);
+    };
     expect(await read("ana--old", "a.ts")).toBe("one\n");
 
     // Marking a line private makes the crew remote and tries the backfill; git fails it once.
