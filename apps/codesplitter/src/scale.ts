@@ -33,7 +33,15 @@ export const CARDS: Card[] = [
     shows: "Edits lag everywhere at once, even on different files; D1 overloaded errors and 5xx on Insights",
     here: "Yes. Edits are counted in the file's DO and tallied to D1 once a second per typist, off the edit path (#623); traffic is gathered per isolate and written once a second per caller, not per request (#638)",
     box: "SQLite on local NVMe takes 10–100× the writes, no network hop",
-    next: "If traffic tallies still weigh, move them to Analytics Engine and point Insights at its SQL API",
+    next: "If traffic tallies still weigh, move them to Analytics Engine and point Insights at its SQL API; past that, move the append-heavy tables to PlanetScale Postgres (notes/PLANETSCALE.md)",
+  },
+  {
+    id: "d1-errors", name: "Server errors", where: "Every answered request (the traffic tally Insights reads)",
+    wall: "2% of requests answered 5xx in a day, where Insights turns amber; D1 'overloaded' is the usual cause once writes pass the single writer",
+    shows: "Errors on edits, sign-ins and Insights at the busiest hour, while quiet hours are fine",
+    here: "Watched, not fixed: the reading is all 5xx, so check the Worker logs for 'overloaded' before blaming D1",
+    box: "Local SQLite has no overloaded error; the same 5xx count still reads",
+    next: "If 'overloaded' is the cause on a normal day, that is the signal to try PlanetScale (notes/PLANETSCALE.md)",
   },
   {
     id: "d1-size", name: "D1's 10 GB cap", where: "D1, the whole database",
@@ -41,7 +49,7 @@ export const CARDS: Card[] = [
     shows: "Writes start failing: new repos, digs, commits, sign-ins",
     here: "Yes. Search is out of D1 now (#626); keep line_events short, split per owner if it comes to that",
     box: "Disk is the cap: hundreds of GB for a few euros",
-    next: "Split D1 per owner if it nears the cap",
+    next: "Split D1 per owner if it nears the cap, or move the biggest tables to PlanetScale Postgres (notes/PLANETSCALE.md)",
   },
   {
     id: "search", name: "Search keeps every file", where: "RepoSearch: FTS5 in one Durable Object per repo (search.ts)",
@@ -124,6 +132,8 @@ export async function readings(env: Env, now = Date.now()): Promise<Record<strin
   const search = await first("SELECT owner, repo, size_bytes AS bytes FROM repo_search ORDER BY size_bytes DESC LIMIT 1");
   // The most edited file in the 30 days of line_events: ops added to its log.
   const hot = await first("SELECT owner, repo, path, SUM(sets + inserts + deletes) AS ops FROM line_events GROUP BY owner, repo, path ORDER BY ops DESC LIMIT 1");
+  // 5xx as a share of the last day's requests, from the tally Insights reads.
+  const errs = await first("SELECT SUM(hits) AS hits, SUM(errors) AS errors FROM traffic WHERE last_at >= ?", now - 86_400_000);
   const runs = await first("SELECT COUNT(*) AS c FROM agent_runs WHERE status = 'running'");
   const deploys = await first("SELECT COUNT(*) AS c FROM deploys WHERE status = 'running'");
   const size = await dbBytes(env);
@@ -131,6 +141,8 @@ export async function readings(env: Env, now = Date.now()): Promise<Record<strin
   return {
     "d1-writes": { value: n(edits.peak) / 60, limit: 500, unit: "writes/s", note: "edit tallies in the busiest minute of the last day; traffic and feed writes come on top" },
     "d1-size": { value: size, limit: 10 * GB, unit: "bytes", note: size === null ? "D1 didn't say" : "the whole database" },
+    "d1-errors": { value: n(errs.hits) ? Math.round(n(errs.errors) / n(errs.hits) * 1000) / 10 : 0, limit: 2, unit: "% 5xx",
+      note: `${n(errs.errors).toLocaleString()} server errors in ${n(errs.hits).toLocaleString()} requests, last 24 hours` },
     "search": { value: n(search.bytes), limit: 10 * GB, unit: "bytes",
       note: search.repo ? `${search.owner}/${search.repo}, the biggest repo's index` : "no repo indexed yet" },
     "big-file": { value: n(big.bytes) + n(big.lines) * 70, limit: 64 * MB, unit: "bytes", note: big.path ? `${where(big)}, ${n(big.lines).toLocaleString()} lines` : "no files yet" },
