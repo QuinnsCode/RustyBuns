@@ -31,30 +31,35 @@ export const CAMPAIGN: Chapter[] = [
     title: "Hold the yard",
     height: "Out the back door",
     story: "Main is yours, by the sandbox. The folders want it back and they'll come in waves. Hold it till they give up.",
+    beats: ["jump", "gag"],
   },
   {
     level: "garden",
     title: "Lost commit",
     height: "Across the lawn",
     story: "A commit got dropped in a yard past the pond. Fetch it and bring it home to HEAD before the rows close up.",
+    beats: ["beach", "gag"],
   },
   {
     level: "el-capitan",
     title: "The valley floor",
     height: "Yosemite, 1,200 m",
     story: "Out of the house and into real ground. The big wall stands over the meadow, and the commit is in its farthest yard. Carry it back.",
+    beats: ["dropzone", "gag"],
   },
   {
     level: "half-dome",
     title: "The shoulders",
     height: "Half Dome, 2,000 m",
     story: "Up on the granite now, with the valley a long way down. Hold main on the dome's shoulder while they climb up after you.",
+    beats: ["stall", "gag"],
   },
   {
     level: "glacier-point",
     title: "The heights",
     height: "Glacier Point, 2,200 m",
     story: "The rim, the top of the climb. Every folder up here is dug in with the drop at its back. Merge them all and the repo is yours.",
+    beats: ["onslaught", "extraction", "gag"],
   },
 ];
 

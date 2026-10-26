@@ -921,7 +921,7 @@ function frame(now: number) {
   waypoints(game, director.markers);
   renderer.render(world.scene, camera);
   // Once per ending: a battle's can arrive between frames, with a snapshot.
-  if (game.status !== "playing" && !current.ended) current.ended = true, results(game);
+  if (game.status !== "playing" && !director.holding && !current.ended) current.ended = true, results(game);
 }
 requestAnimationFrame(frame);
 
