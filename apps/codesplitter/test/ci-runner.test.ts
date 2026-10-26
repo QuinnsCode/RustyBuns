@@ -235,8 +235,8 @@ test("with CI_RUNNER bound, queued checks run in a container of their own, with 
   expect(seen.internet).toEqual([false]);
   expect(seen.lists[0]).toEqual(["127.0.0.1", "registry.npmjs.org", "registry.yarnpkg.com", "repo.yarnpkg.com"]);
   expect(seen.ran[0]).toStartWith("git clone --quiet http://");
-  expect(seen.destroyed).toBeGreaterThanOrEqual(1);
   await holder.ci.idle();
+  expect(seen.destroyed).toBeGreaterThanOrEqual(1);
 });
 
 test("container checks count against the owner's `checks` limit: one over it is cancelled, saying why (#750)", async () => {
