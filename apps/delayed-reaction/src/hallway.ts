@@ -158,9 +158,6 @@ export function drawTunnel(g: CanvasRenderingContext2D, v: View, s: Scene) {
   drawBursts(g, v, s.bursts, beat);
 }
 
-/** @deprecated the hallway became a tunnel; main.ts imports drawTunnel. */
-export const drawHallway = drawTunnel;
-
 function ring(g: CanvasRenderingContext2D, v: View, z: number, beat: number, from = 0, to = Math.PI * 2, n = 48) {
   g.beginPath();
   for (let i = 0; i <= n; i++) {

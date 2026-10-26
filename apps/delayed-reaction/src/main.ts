@@ -1,4 +1,4 @@
-// The page: a canvas keyboard you run along, four thumb pads, a HUD, and a menu. The sim
+// The page: a canvas tunnel you run down, four thumb pads, a HUD, and a menu. The sim
 // (sim.ts) decides everything; this file draws it and turns thumbs and keys into presses.
 import { Music } from "./audio.ts";
 import { burst, drawTunnel, echoBursts, sway, view, type Burst } from "./hallway.ts";
