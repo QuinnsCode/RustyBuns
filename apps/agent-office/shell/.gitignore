@@ -1,3 +1,4 @@
 target
 binaries
 Cargo.lock
+gen
