@@ -291,6 +291,17 @@ test("a batch waits on main as its own branch's hunks: hold stops the clock, a l
   expect((await post("ryan", `/api/repos/ryan/lab/agents/${id}/accept`, {})).status).toBe(409);
 });
 
+test("a waiting batch names the other files its branch changes, since accepting lands the whole branch", async () => {
+  const { call, post } = await app();
+  const { id } = await waiting(call, post);
+  const hunksUrl = `/api/repos/ryan/lab/branches/agent-run-${id}/hunks?path=a.js`;
+  expect((await (await call("ryan", hunksUrl)).json() as any).others).toEqual([]);
+  expect((await post("ryan", "/api/repos/ryan/lab/files", { path: "extra.js", content: "x\n", branch: `agent-run-${id}` })).status).toBe(201);
+  expect((await (await call("ryan", hunksUrl)).json() as any).others).toEqual([{ path: "extra.js", change: "edited" }]);
+  const seen = await (await call("ryan", "/api/repos/ryan/lab/agents/waiting?path=a.js")).json() as any;
+  expect(seen.waiting[0].others).toEqual([{ path: "extra.js", change: "edited" }]);
+});
+
 test("only the run's agent and the owner write to its waiting branch, and it lands only as the branch the owner read", async () => {
   const { call, post } = await app();
   await post("sam", "/api/login", { name: "sam" });
