@@ -4,6 +4,20 @@ The owner's direction, 2026-10-26. The first cut was a dark hallway with keys on
 became. Three workers built it in parallel from `main` (speed #2347, runner #2349, tunnel #2350) and the README
 describes what shipped. What didn't ship moved to [IDEAS.md](IDEAS.md).
 
+## Next: round the pipe, camera strapped on (2026-10-26, round 4)
+
+The owner's direction after playing round 3. Wins where it disagrees with what follows.
+Shipped: chase camera and lanes round the pipe #2363, the runner's bank #2364.
+
+- **You circle the pipe.** The four places are spread far round the tube: far left and far right are well
+  up its sides, so a long move takes you up the wall toward the roof, like a supercar in a tunnel driving
+  on the side and then upside down, through a wormhole of harmonics that only the delay gets you out of.
+- **The camera is strapped to the runner.** Third person, behind and above, and it rolls with the runner:
+  the runner stays bottom-centre and the whole tube swings round them on a move, then settles. You feel
+  the lateral move as the world swinging, not as the runner sliding across the screen.
+- **The body sells the swing.** The runner banks into a move like a car on a banked curve, harder for a
+  longer jump, then comes upright as the camera catches up.
+
 ## Next: walls with a door, and a turn that never ends (2026-10-26, round 3)
 
 The owner's direction after playing the tunnel round. This section wins where it disagrees with the rest.
