@@ -77,7 +77,12 @@ const make = (env: Env, origin: string) => betterAuth({
   } : {}),
   // GitHub tokens sit encrypted at rest (with the auth secret), and a person can link
   // more than one GitHub, personal and work, under any email (github.ts picks which digs).
-  account: { encryptOAuthTokens: true, accountLinking: { enabled: true, allowDifferentEmails: true } },
+  account: { encryptOAuthTokens: true, accountLinking: {
+    enabled: true, allowDifferentEmails: true,
+    // Pinned: sign-up needs no verification, so a provider sign-in must never link onto a password account
+    // nobody proved the inbox of, or whoever signed up first keeps a working password on it (#2297).
+    requireLocalEmailVerified: true,
+  } },
   socialProviders: {
     // select_account: GitHub asks which of your accounts, so linking a second one is a click, not a sign-out.
     ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET ? { github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET, prompt: "select_account" as const } } : {}),
