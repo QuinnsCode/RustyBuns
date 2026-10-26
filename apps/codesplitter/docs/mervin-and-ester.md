@@ -69,6 +69,7 @@ weeds that out the same way. When the board's check goes red she sorts every fai
 | flaky | passed when only the failing run was repeated | noted, retried |
 | own | an app a PR with its own red CI touches | that PR fixes its own CI first |
 | wait | the same, but that CI is still running | held until it finishes |
+| slow | the PR waits only on checks that always take 10 min or more | not held: merge on the fast checks, the slow one is owed |
 | blocks | only the merged tree breaks it | the PRs that touched that app are named as suspects |
 
 Only `blocks` stops a merge. She also keeps a running record, so she can say which dependencies hurt, which checks

@@ -100,7 +100,7 @@ describe("mervin board", () => {
 
   test("a PR's own CI: red when any check failed, pending while one runs", () => {
     const pr = (rollup: BoardPr["statusCheckRollup"]) => ciOf({ number: 1, headRefOid: "x", statusCheckRollup: rollup });
-    expect(pr([{ name: "typecheck", conclusion: "SUCCESS", status: "COMPLETED" }, { name: "test codesplitter", conclusion: "FAILURE", status: "COMPLETED", startedAt: "2026-10-14T10:00:00Z", completedAt: "2026-10-14T10:06:00Z" }])).toEqual({ ci: "fail", failing: ["test codesplitter"], ciSecs: 360 });
+    expect(pr([{ name: "typecheck", conclusion: "SUCCESS", status: "COMPLETED" }, { name: "test codesplitter", conclusion: "FAILURE", status: "COMPLETED", startedAt: "2026-10-14T10:00:00Z", completedAt: "2026-10-14T10:06:00Z" }])).toMatchObject({ ci: "fail", failing: ["test codesplitter"], ciSecs: 360 });
     expect(pr([{ name: "typecheck", conclusion: "", status: "IN_PROGRESS" }]).ci).toBe("pending");
     expect(pr([{ name: "typecheck", conclusion: "SKIPPED", status: "COMPLETED" }]).ci).toBe("pass");
     expect(pr([]).ci).toBe("none");

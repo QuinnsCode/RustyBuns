@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hold, hurtLines, hurting, keep, kept, packagesChanged, report, rows, triage } from "../scripts/ester.ts";
+import { hold, hurtLines, hurting, keep, kept, packagesChanged, report, rows, slowChecks, triage, waitLines } from "../scripts/ester.ts";
 import type { Stage } from "../scripts/mervin-board.ts";
 
 const stage = (pr: number, path: string, ci?: Stage["ci"], failing?: string[]): Stage => ({ pr, head: "h", base: "b", ci, failing, files: [{ path, tier: "certain", why: "", after: [] }] });
@@ -25,7 +25,7 @@ describe("ester", () => {
   test("without a rerun nothing is called flaky, and the report leaves main's failures out", () => {
     expect(triage(["apps/a: t5"], stages, new Set())[0]!.owner).toBe("blocks");
     const lines = report(vs);
-    expect(lines[0]).toContain("5 failing, 1 not the board's, 1 flaky, 1 a PR's own red, 0 waiting on CI, 2 block Mervin");
+    expect(lines[0]).toContain("5 failing, 1 not the board's, 1 flaky, 1 a PR's own red, 0 waiting on CI, 0 on slow checks, 2 block Mervin");
     expect(lines.join("\n")).not.toContain("apps/d: t4");
   });
 
@@ -74,5 +74,33 @@ describe("ester: rows kept across runs", () => {
       expect(rs.map((r) => r.pr)).toEqual([1, 2]);
       expect(hurting(rs).map((h) => [h.pkg, h.touches, h.broke, h.clashes])).toEqual([["zod", 2, 1, 1]]);
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe("ester: slow checks", () => {
+  const done = (name: string, secs: number) => ({ name, secs, done: true });
+  const board: Stage[] = [
+    { ...stage(1, "apps/a/x.ts", "pass"), checks: [done("typecheck", 120), done("stress.ts", 2400)] },
+    { ...stage(2, "apps/a/y.ts", "pass"), checks: [done("typecheck", 130), done("stress.ts", 2300)] },
+    { ...stage(3, "apps/a/z.ts", "pending"), checks: [done("typecheck", 125), { name: "stress.ts", secs: 0, done: false }] },
+    { ...stage(4, "apps/a/w.ts", "pending"), checks: [{ name: "typecheck", secs: 0, done: false }, { name: "stress.ts", secs: 0, done: false }] },
+  ];
+
+  test("a PR waiting only on a slow check is not held, one still on a fast check is", () => {
+    const slow = slowChecks(board);
+    expect([...slow.keys()]).toEqual(["stress.ts"]);
+    const vs = triage(["apps/a: t"], board, new Set(), undefined, slow);
+    expect(vs[0]).toMatchObject({ owner: "wait", prs: [4] });
+    expect(triage(["apps/a: t"], board.slice(0, 3), new Set(), undefined, slow)[0]).toMatchObject({ owner: "slow", prs: [3] });
+    expect(hold(triage(["apps/a: t"], board.slice(0, 3), new Set(), undefined, slow))).toEqual([]);
+  });
+
+  test("the board line names the check, how many PRs wait and how long it takes", () => {
+    expect(waitLines(board)).toEqual([
+      "Ester: where testing holds merging up",
+      "  2 PRs waiting on stress.ts (about 40 min, slow: merge without it)",
+      "  1 PR waiting on typecheck (about 2 min)",
+    ]);
+    expect(waitLines(board.slice(0, 2))).toEqual([]);
   });
 });

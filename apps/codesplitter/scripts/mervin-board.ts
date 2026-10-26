@@ -57,7 +57,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describeBlast, load, rank } from "./blast.ts";
-import { hold, hurtLines, keep, kept, packagesChanged, report, rows, triage } from "./ester.ts";
+import { hold, hurtLines, keep, kept, packagesChanged, report, rows, slowChecks, triage, waitLines } from "./ester.ts";
 import { fromJunit, hot, recall, recallLines, remember, resolve as resolveTest, withJunit } from "./ester-memory.ts";
 import { heal, layout } from "../layout.ts";
 import type { Lane, LaneStep, Line } from "../src/mervin-replay.ts";
@@ -86,18 +86,21 @@ export interface BoardPr {
   statusCheckRollup?: { name?: string; conclusion?: string | null; status?: string; startedAt?: string; completedAt?: string }[];
 }
 /** The PR's own CI: red on its own means a failure in the merged tree may be the PR's, not the merge's. */
+/** One CI check on a PR: how long it ran (0 when GitHub gave no times) and whether it has finished. */
+export interface CheckTime { name: string; secs: number; done: boolean }
 export type Ci = "pass" | "fail" | "pending" | "none";
-export function ciOf(pr: BoardPr): { ci: Ci; failing: string[]; ciSecs: number } {
+export function ciOf(pr: BoardPr): { ci: Ci; failing: string[]; ciSecs: number; checks: CheckTime[] } {
   const checks = pr.statusCheckRollup ?? [];
   const failing = checks.filter((c) => ["FAILURE", "TIMED_OUT", "CANCELLED", "ERROR"].includes(c.conclusion ?? "")).map((c) => c.name ?? "?");
   const ci: Ci = failing.length ? "fail" : !checks.length ? "none" : checks.some((c) => c.status && c.status !== "COMPLETED") ? "pending" : "pass";
   // GitHub stamps each check with start and end: the slowest one is how long the PR waits on CI.
   const ciSecs = Math.max(0, ...checks.map((c) => (c.startedAt && c.completedAt ? Math.round((Date.parse(c.completedAt) - Date.parse(c.startedAt)) / 1000) : 0)));
-  return { ci, failing, ciSecs };
+  const times = checks.map((c) => ({ name: c.name ?? "?", secs: c.startedAt && c.completedAt ? Math.round((Date.parse(c.completedAt) - Date.parse(c.startedAt)) / 1000) : 0, done: !c.status || c.status === "COMPLETED" }));
+  return { ci, failing, ciSecs, checks: times };
 }
 /** `main` is true when the PR conflicts with main's own copy of the file, whatever earlier stages did. */
 export interface FileRow { path: string; tier: Tier; why: string; after: number[]; main?: boolean; lines?: Line[] }
-export interface Stage { pkgs?: string[]; ms?: number; cached?: boolean; pr: number; title?: string; head: string; base: string; stackedOn?: number; ci?: Ci; failing?: string[]; ciSecs?: number; files: FileRow[] }
+export interface Stage { pkgs?: string[]; ms?: number; cached?: boolean; pr: number; title?: string; head: string; base: string; stackedOn?: number; ci?: Ci; failing?: string[]; ciSecs?: number; checks?: CheckTime[]; files: FileRow[] }
 /** A clash between files (or PRs) that merges clean as text: `prs` lists the PRs, `main` is true when main holds one side. */
 export interface Clash {
   kind: "migration" | "export" | "route"; key: string; prs: number[]; main?: boolean;
@@ -567,7 +570,7 @@ if (import.meta.main) {
         // Ester: rerun only the failing runs once to catch flaky ones, then sort by owner.
         const bad = runs.filter((x) => r.runs.some((d) => !d.ok && d.dir === x.dir && d.cmd === x.cmd));
         const again = new Set(added.length && bad.length ? (await testTree(join(out, "tree"), bad, env, true)).failed : added);
-        const verdicts = triage(r.failed, board.stages, before, again);
+        const verdicts = triage(r.failed, board.stages, before, again, slowChecks(board.stages));
         for (const v of verdicts) if (v.owner === "flaky") resolveTest(memory, v.test, "flaky");
         console.log(report(verdicts, r.runs, again.size ? bad.map((x) => r.runs.find((d) => d.dir === x.dir && d.cmd === x.cmd)!.ms) : [], board.stages).join("\n"));
         const now = rows(board.stages, verdicts, board.clashes);
@@ -575,6 +578,8 @@ if (import.meta.main) {
         keep(file, now);
         const hurt = hurtLines(kept(file));
         if (hurt.length) console.log(hurt.join("\n"));
+        const waits = waitLines(board.stages);
+        if (waits.length) console.log(waits.join("\n"));
         if (hold(verdicts).length) console.log(`Ester says hold: ${hold(verdicts).map((n) => `#${n}`).join(", ")}`);
         const mine = new Set(verdicts.filter((v) => v.owner === "blocks").map((v) => v.test));
         const red = board.stages.filter((s) => s.ci === "fail").map((s) => `#${s.pr} (${s.failing!.join(", ")})`);
