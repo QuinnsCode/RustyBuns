@@ -1,0 +1,309 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>One Team in 32</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one column. Headline, units note, slider + 32 bars, share of blitzes, side-by-side bars, calculator. */
+:root {
+  --bg: #edf0f4;
+  --surface: #ffffff;
+  --ink: #121b26;
+  --muted: #566475;
+  --line: #d5dce5;
+  --bar: #b3bfcc;
+  --accent: #2358e6;
+  --accent-soft: #dfe8fd;
+  --gold: #a86a00;
+  --font-display: "Barlow Condensed", "Arial Narrow", Arial, sans-serif;
+  --font-body: "Source Sans 3", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e141b; --surface: #151d26; --ink: #e7ecf2; --muted: #92a0b0; --line: #263241;
+    --bar: #3a4a5c; --accent: #6c93ff; --accent-soft: #1b2a4d; --gold: #f0b53c; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e141b; --surface: #151d26; --ink: #e7ecf2; --muted: #92a0b0; --line: #263241;
+  --bar: #3a4a5c; --accent: #6c93ff; --accent-soft: #1b2a4d; --gold: #f0b53c; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 17px; line-height: 1.5;
+  padding-block: 28px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(2.2rem, 7vw, 3.6rem); line-height: 1.02; margin: 0 0 12px; text-wrap: balance; }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 1.6rem; line-height: 1.1; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+.lede { font-size: 1.12rem; max-width: 62ch; display: flex; flex-direction: column; gap: 8px; }
+.units { border-left: 4px solid var(--gold); background: var(--surface); border-radius: 0 8px 8px 0; padding: 12px 16px; font-size: 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.control { display: flex; flex-direction: column; gap: 8px; }
+.control label { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-weight: 600; }
+output, .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+button.chip {
+  font: inherit; font-size: 14px; color: var(--ink); background: transparent; border: 1px solid var(--line);
+  border-radius: 999px; padding: 6px 12px; cursor: pointer;
+}
+button.chip:hover { background: var(--accent-soft); }
+button.chip:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+svg { width: 100%; height: auto; display: block; }
+svg text { font-family: var(--font-mono); font-size: 13px; fill: var(--muted); }
+svg .tick { stroke: var(--line); stroke-width: 1; }
+svg .bar { fill: var(--bar); }
+svg .team { fill: var(--accent); }
+svg .before { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
+svg .after { stroke: var(--gold); stroke-width: 2; }
+svg text.gold { fill: var(--gold); }
+svg text.blue { fill: var(--accent); font-weight: 500; }
+svg text.cap { fill: var(--ink); }
+.sentence { font-size: 1.05rem; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 0; }
+.stats div { border-top: 3px solid var(--line); padding-top: 8px; min-width: 0; }
+.stats div.hl { border-top-color: var(--accent); }
+.stats div.gl { border-top-color: var(--gold); }
+.stats dt { font-size: 14px; color: var(--muted); }
+.stats dd { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 2.1rem; line-height: 1.1; }
+.stats dd small, .eq small { font-family: var(--font-body); font-weight: 400; font-size: 13px; color: var(--muted); display: block; line-height: 1.3; }
+.scale { display: flex; flex-direction: column; gap: 14px; }
+.scale .row { display: flex; flex-direction: column; gap: 4px; }
+.scale .lab { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 15px; }
+.track { background: var(--bg); border-radius: 4px; height: 26px; overflow: hidden; }
+.track.big { height: 34px; }
+.fill { height: 100%; min-width: 3px; border-radius: 4px; transition: width .25s ease; }
+.fill.a { background: var(--accent); }
+.fill.g { background: var(--gold); }
+.eq { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 14px; }
+.eq > div { flex: 1 1 140px; min-width: 0; border-top: 3px solid var(--line); padding-top: 8px; }
+.eq > div.res { border-top-color: var(--gold); }
+.eq .eqn { display: block; font-family: var(--font-display); font-weight: 700; font-size: 2.1rem; line-height: 1.1; }
+.eq .op { font-family: var(--font-display); font-weight: 700; font-size: 2rem; line-height: 1.3; color: var(--muted); padding-top: 4px; }
+.inputs { display: flex; flex-wrap: wrap; gap: 16px; }
+.inputs label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--muted); }
+.inputs input {
+  font-family: var(--font-mono); font-size: 16px; width: 120px; padding: 8px 10px; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+}
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+th { font-weight: 600; color: var(--muted); font-size: 13px; }
+td.num { white-space: nowrap; }
+td.no { color: var(--muted); }
+tr.cur td { background: var(--accent-soft); }
+.note { font-size: 14px; color: var(--muted); max-width: 66ch; }
+@media (prefers-reduced-motion: reduce) { .fill { transition: none; } }
+</style>
+
+<main class="wrap">
+  <header>
+    <p class="eyebrow">NFL blitz rate, 2026</p>
+    <h1>One team in 32 can move the whole league average</h1>
+    <div class="lede">
+      <p>There are 32 teams. Each one counts once in the league average. That is 1 out of 32, or 3.1%.</p>
+      <p>The Vikings blitz way more than everyone else. So they drag the average up. By a lot.</p>
+    </div>
+  </header>
+
+  <p class="units"><strong>Percentage points, not game points.</strong> A team that blitzes 70% of the time and a team that blitzes 30% of the time are 40 percentage points apart. Nothing to do with the scoreboard.</p>
+
+  <section class="card" aria-labelledby="play">
+    <h2 id="play">Drag the Vikings' blitz rate</h2>
+    <div class="control">
+      <label for="rate">Vikings blitz rate <output id="rateOut"></output></label>
+      <input type="range" id="rate" min="30.1" max="90" step="0.1" value="70.4">
+    </div>
+    <div class="chips" id="chips"></div>
+    <svg id="chart" viewBox="0 0 560 300" role="img" aria-label="Thirty-two bars of blitz rate. Thirty-one bars sit at about 30 percent. The Vikings bar is much taller."></svg>
+    <p class="sentence" id="sentence" aria-live="polite"></p>
+    <dl class="stats" aria-live="polite">
+      <div class="hl"><dt>Vikings vs. a typical team</dt><dd id="sGap"></dd><small>percentage points higher</small></div>
+      <div class="gl"><dt>League average goes up</dt><dd id="sShift"></dd><small id="sRel"></small></div>
+      <div><dt>Gap vs. move</dt><dd id="sMult"></dd><small>the gap is this many times the move</small></div>
+    </dl>
+    <p class="note">The other 31 teams are shown as one group at their average, about 30.1%. Data: muffed.ai 2026 blitz rate table.</p>
+  </section>
+
+  <section class="card" aria-labelledby="share">
+    <h2 id="share">3% of the teams is not 3% of the blitzes</h2>
+    <p>Every team counts once in the average. That is the 3%. But a team that blitzes more throws more blitzes. Look at who supplies them.</p>
+    <div class="scale">
+      <div class="row">
+        <div class="lab"><span>Vikings' share of the teams</span><span class="num" id="shTeams"></span></div>
+        <div class="track big"><div class="fill a" id="segTeams"></div></div>
+      </div>
+      <div class="row">
+        <div class="lab"><span>Vikings' share of the blitzes</span><span class="num" id="shBlitz"></span></div>
+        <div class="track big"><div class="fill a" id="segBlitz"></div></div>
+      </div>
+    </div>
+    <p class="sentence" id="shSentence" aria-live="polite"></p>
+    <div class="eq" aria-live="polite">
+      <div><span class="eqn" id="eqW"></span><small>their weight in the average (1 of 32)</small></div>
+      <span class="op" aria-hidden="true">&times;</span>
+      <div><span class="eqn" id="eqD"></span><small>percentage points above a typical team</small></div>
+      <span class="op" aria-hidden="true">=</span>
+      <div class="res"><span class="eqn" id="eqP"></span><small>percentage points the league average moves</small></div>
+    </div>
+    <p>The 3.1% never changes. The gap does. A big gap makes a big move.</p>
+    <p class="note">Blitz shares assume every team has about the same number of dropbacks. Real counts vary a bit, so treat the share as close, not exact.</p>
+  </section>
+
+  <section class="card" aria-labelledby="scale">
+    <h2 id="scale">The gap and the move, side by side</h2>
+    <div class="scale">
+      <div class="row">
+        <div class="lab"><span>Vikings above a typical team</span><span class="num" id="lblGap"></span></div>
+        <div class="track"><div class="fill a" id="fGap"></div></div>
+      </div>
+      <div class="row">
+        <div class="lab"><span>League average moves</span><span class="num" id="lblShift"></span></div>
+        <div class="track"><div class="fill g" id="fShift"></div></div>
+      </div>
+    </div>
+    <p>The top bar is 32 times longer. The other 31 teams hold the average in place. So one team has to go 32 times as far as the average goes.</p>
+  </section>
+
+  <section class="card" aria-labelledby="calc">
+    <h2 id="calc">Try your own numbers</h2>
+    <p id="classroom"></p>
+    <div class="inputs">
+      <label for="teams">Teams in the league
+        <input type="number" id="teams" min="2" max="100" step="1" value="32" inputmode="numeric">
+      </label>
+      <label for="target">Average moves up (percentage points)
+        <input type="number" id="target" min="0" step="0.05" value="1.26" inputmode="decimal">
+      </label>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>League average moves up (percentage points)</th><th>One team must blitz this much more than the rest (percentage points)</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="note">Assumes the other teams stay the same. The gap needed is the move you want times the number of teams.</p>
+  </section>
+</main>
+
+<script>
+(function () {
+  var BASE = 30.07;      // average blitz rate of the other 31 teams, shown as about 30.1%
+  var N = 32;
+  var rate = 70.4;
+  var $ = function (id) { return document.getElementById(id); };
+  function fmt(x, d) { return String(+x.toFixed(d)); }
+  function clamp(x, lo, hi) { return Math.min(hi, Math.max(lo, x)); }
+
+  var CHIPS = [
+    { label: "Typical team 30.1%", v: BASE },
+    { label: "Commanders (#2) 45.5%", v: 45.5 },
+    { label: "Vikings season 70.4%", v: 70.4 },
+    { label: "Vikings vs. Colts 85.2%", v: 85.2 }
+  ];
+  var chipsEl = $("chips");
+  CHIPS.forEach(function (c) {
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "chip"; b.textContent = c.label;
+    b.addEventListener("click", function () { rate = c.v; sync(); });
+    chipsEl.appendChild(b);
+  });
+
+  function drawChart() {
+    var W = 560, H = 300, padL = 36, padR = 8, padT = 26, padB = 40;
+    var pw = W - padL - padR, ph = H - padT - padB;
+    var slot = pw / N, bw = slot * 0.68;
+    var y = function (v) { return padT + ph - (v / 100) * ph; };
+    var avg = (BASE * (N - 1) + rate) / N;
+    var s = "";
+    [0, 25, 50, 75, 100].forEach(function (g) {
+      s += '<line class="tick" x1="' + padL + '" x2="' + (W - padR) + '" y1="' + y(g) + '" y2="' + y(g) + '"/>';
+      s += '<text x="' + (padL - 6) + '" y="' + (y(g) + 4) + '" text-anchor="end">' + g + '%</text>';
+    });
+    for (var i = 0; i < N; i++) {
+      var v = i === 0 ? rate : BASE;
+      var x = padL + i * slot + (slot - bw) / 2;
+      s += '<rect class="' + (i === 0 ? "team" : "bar") + '" x="' + x.toFixed(2) + '" y="' + y(v).toFixed(2) +
+           '" width="' + bw.toFixed(2) + '" height="' + (y(0) - y(v)).toFixed(2) + '"/>';
+    }
+    s += '<line class="before" x1="' + padL + '" x2="' + (W - padR) + '" y1="' + y(BASE) + '" y2="' + y(BASE) + '"/>';
+    s += '<line class="after" x1="' + padL + '" x2="' + (W - padR) + '" y1="' + y(avg) + '" y2="' + y(avg) + '"/>';
+    s += '<text class="blue" x="' + (padL + (slot - bw) / 2) + '" y="' + (y(rate) - 7) + '">Vikings ' + fmt(rate, 1) + '%</text>';
+    s += '<text class="gold" x="' + (W - padR) + '" y="' + (y(avg) - 24) + '" text-anchor="end">league average ' + fmt(avg, 1) + '%</text>';
+    s += '<text class="cap" x="' + (padL + (slot - bw) / 2) + '" y="' + (H - 16) + '">Vikings</text>';
+    s += '<text x="' + (padL + slot + (pw - slot) / 2) + '" y="' + (H - 16) + '" text-anchor="middle">the other 31 teams, unchanged</text>';
+    $("chart").innerHTML = s;
+  }
+
+  function sync() {
+    rate = clamp(rate, BASE, 90);
+    var gap = rate - BASE;
+    var shift = gap / N;
+    var avg = (BASE * (N - 1) + rate) / N;
+    $("rate").value = rate;
+    $("rateOut").textContent = fmt(rate, 1) + "%";
+    drawChart();
+    $("sentence").textContent = "One team is " + fmt(100 / N, 1) + "% of the league. At " + fmt(rate, 1) +
+      "%, the Vikings blitz " + fmt(gap, 1) + " percentage points more than a typical team. The league average goes up " +
+      fmt(shift, 2) + " percentage points, to " + fmt(avg, 1) + "%.";
+    $("sGap").textContent = "+" + fmt(gap, 1);
+    $("sShift").textContent = "+" + fmt(shift, 2);
+    $("sRel").textContent = "percentage points. That is " + fmt(shift / BASE * 100, 1) + "% more than before.";
+    $("sMult").textContent = "×" + N;
+    $("lblGap").textContent = "+" + fmt(gap, 1) + " percentage points";
+    $("lblShift").textContent = "+" + fmt(shift, 2) + " percentage points";
+    var top = 60; // scale: full track = 60 percentage points
+    $("fGap").style.width = clamp(gap / top * 100, 0, 100) + "%";
+    $("fShift").style.width = clamp(shift / top * 100, 0, 100) + "%";
+
+    var tot = BASE * (N - 1) + rate;
+    var shB = rate / tot * 100, shT = 100 / N, typ = BASE / tot * 100;
+    $("shTeams").textContent = fmt(shT, 1) + "%";
+    $("shBlitz").textContent = fmt(shB, 1) + "%";
+    $("segTeams").style.width = shT + "%";
+    $("segBlitz").style.width = shB + "%";
+    $("shSentence").textContent = "Out of every 100 blitzes in the league, the Vikings throw " + fmt(shB, 1) +
+      ". A typical team throws " + fmt(typ, 1) + ". One team can throw anywhere from 0 to about " +
+      fmt(100 / (BASE * (N - 1) + 100) * 100, 1) + ". So 3% is a typical share. It is not a cap.";
+    $("eqW").textContent = fmt(shT, 1) + "%";
+    $("eqD").textContent = "+" + fmt(gap, 1);
+    $("eqP").textContent = "+" + fmt(shift, 2);
+    renderCalc();
+  }
+
+  function renderCalc() {
+    var n = clamp(parseInt($("teams").value, 10) || 32, 2, 100);
+    var t = parseFloat($("target").value);
+    if (!(t >= 0)) t = 0;
+    var need = t * n, needRate = BASE + need;
+    var maxMove = (100 - BASE) / n;
+    $("classroom").textContent = n + " teams. The other " + (n - 1) + " blitz about " + fmt(BASE, 1) +
+      "% of the time. One team wants to move the league average up " + fmt(t, 2) + " percentage points. It has to blitz " +
+      fmt(need, 1) + " percentage points more than the rest. That is a " + fmt(needRate, 1) + "% blitz rate." +
+      (needRate > 100 ? " Not possible. No team blitzes more than 100%." : "") +
+      " The most one team could ever move the average is " + fmt(maxMove, 1) + " percentage points, by blitzing on every dropback.";
+    var shifts = [0.5, 1, 1.26, 2, 3], html = "";
+    function row(sv, cur) {
+      var nr = BASE + sv * n, bad = nr > 100;
+      return '<tr' + (cur ? ' class="cur"' : '') + '><td class="num">+' + fmt(sv, 2) + '</td><td class="num' + (bad ? ' no' : '') + '">+' +
+        fmt(sv * n, 1) + (bad ? ' (not possible)' : '') + '</td></tr>';
+    }
+    shifts.forEach(function (sv) { html += row(sv, Math.abs(sv - t) < 0.005); });
+    if (shifts.every(function (sv) { return Math.abs(sv - t) >= 0.005; })) html += row(t, true);
+    $("rows").innerHTML = html;
+  }
+
+  $("rate").addEventListener("input", function () { rate = parseFloat(this.value); sync(); });
+  $("teams").addEventListener("input", renderCalc);
+  $("target").addEventListener("input", renderCalc);
+  sync();
+})();
+</script>
+
+</body></html>
