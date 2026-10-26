@@ -118,12 +118,41 @@ test("the audit log names who and what; the last admin can't demote or remove th
   const bob = await person(app, "bob@qcrm.test");
   const org = alice.org;
   await post(app, alice.cookie, `/api/orgs/${org}/members`, { email: "bob@qcrm.test", role: "employee" });
-  const log = await (await app(alice.cookie, `/api/orgs/${org}/audit`)).json();
+  const { items: log } = await (await app(alice.cookie, `/api/orgs/${org}/audit`)).json();
   expect(log[0]).toMatchObject({ actor_email: "alice@qcrm.test", target_type: "member", target_name: expect.any(String) });
   const members = await (await app(alice.cookie, `/api/orgs/${org}/members`)).json();
   expect(members.find((m: { user_id: string }) => m.user_id === bob.user.id).email).toBe("bob@qcrm.test");
   expect((await post(app, alice.cookie, `/api/orgs/${org}/members/${alice.user.id}`, { role: "manager" }, "PUT")).status).toBe(409);
   expect((await app(alice.cookie, `/api/orgs/${org}/members/${alice.user.id}`, { method: "DELETE" })).status).toBe(409);
+});
+
+test("the audit log filters by who, what and when, and pages with a cursor", async () => {
+  const app = await local();
+  const alice = await person(app, "alice@qcrm.test");
+  await person(app, "bob@qcrm.test");
+  const org = alice.org;
+  await post(app, alice.cookie, `/api/orgs/${org}/members`, { email: "bob@qcrm.test", role: "employee" });
+  for (let i = 0; i < 2; i++) await app(alice.cookie, `/api/orgs/${org}/export`);
+  const get = async (qs: string) => (await app(alice.cookie, `/api/orgs/${org}/audit${qs}`)).json();
+  const all = (await get("")).items;
+  expect(all).toHaveLength(3);
+  expect((await get("?actor=alice@qcrm.test")).items).toHaveLength(all.length);
+  expect((await get("?actor=bob@qcrm.test")).items).toEqual([]);
+  expect((await get("?action=member")).items).toHaveLength(1);
+  expect((await get("?action=export")).items).toHaveLength(2);
+  expect((await get("?action=key")).items).toEqual([]);
+  expect((await get(`?since=${Date.now() + 60_000}`)).items).toEqual([]);
+  expect((await app(alice.cookie, `/api/orgs/${org}/audit?since=nope`)).status).toBe(400);
+  const seen: string[] = [];
+  let cursor = "";
+  for (let i = 0; i < 10; i++) {
+    const page = await get(`?limit=1${cursor ? `&cursor=${cursor}` : ""}`);
+    seen.push(...page.items.map((r: { id: string }) => r.id));
+    if (!page.next) break;
+    cursor = page.next;
+  }
+  expect(seen).toEqual(all.map((r: { id: string }) => r.id));
+  expect((await app(alice.cookie, `/api/orgs/${org}/audit?cursor=junk`)).status).toBe(400);
 });
 
 test("the sign-in form learns which social providers are on, signed out", async () => {
