@@ -36,6 +36,7 @@ export const APPS: Record<string, App> = {
   "example":           { boot: true, drop: false },
   "fm-daw":            { test: "bun test test", prep: "bun run build:native", perOs: true, check: true, boot: true },
   "codesplitter":     { test: "bun test --parallel test", boot: true },
+  "delayed-reaction":  { test: "bun test test", drop: false },
   "git-recon":         { test: "bun test", drop: false },
   "hippo-tycoon":      { test: "bun test --parallel test", prep: "bun run build:native", check: true, boot: true },
   "meshy-studio":      { test: "bun test --parallel tests", check: true, boot: true },

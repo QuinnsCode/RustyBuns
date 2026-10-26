@@ -390,6 +390,7 @@ Every example is one codebase that runs as a desktop binary. The multiplayer one
 | [playground](apps/playground/README.md) | One page that lists every app with a way to try it: Play, Download or Source. Static assets only, so it bills nothing |
 | [tanstack-start-example](apps/tanstack-start-example/README.md) | TanStack Start on Cloudflare's Vite plugin (server functions, a server route, D1 and KV) as a desktop app, its code unchanged |
 | [elysia-conduit](apps/elysia-conduit/RUSTYBUNS.md) | bedstack's RealWorld backend (Elysia, Drizzle, postgres.js) with no source edits: a desktop binary on PGlite that passes their Postman suite, and the five ways it breaks on Workers |
+| [delayed-reaction](apps/delayed-reaction/README.md) | A phone-first rhythm game: the keyboard you run along calls a note, you answer it a bar later on one of four thumb pads, and your answers echo back through a dub delay; the sim plays in beats with no page, so a test runs every level |
 
 **Someone else's app, unchanged:** [TerraViz](https://github.com/zyra-project/terraviz) by The Zyra Project, led by Eric Hackathorn (NOAA Global Systems Laboratory), Apache-2.0: a Pages app with a 3D globe, about 100 API routes, D1, KV, R2 and Vectorize. `bun apps/terraviz-demo/run.ts` clones it and runs it on Rusty Buns with none of its code changed. This is only a demonstration of how Rusty Buns maps an existing app onto its primitives. It is not a fork, and TerraViz's code is not in this repo. Credit, license and how to run it: [apps/terraviz-demo](apps/terraviz-demo/README.md).
 
