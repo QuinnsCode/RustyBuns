@@ -62,6 +62,6 @@ export const TAIL: Record<Skin, number> = { fingerboard: 1.9, roadster: 1.45 };
 
 /** An ollie's pop on the view: the nose `up` radians, turned about the tail so the tail stays on the floor as it snaps. */
 export function popPose(up: number, skin: Skin, pivotY: number): Tilt {
-  if (up <= 0) return { pitch: 0, roll: 0, lift: 0 };
-  return { pitch: -up, roll: 0, lift: pivotY * (Math.cos(up) - 1) + TAIL[skin] * Math.sin(up) };
+  if (up === 0) return { pitch: 0, roll: 0, lift: 0 };
+  return { pitch: -up, roll: 0, lift: pivotY * (Math.cos(up) - 1) + TAIL[skin] * Math.sin(Math.abs(up)) }; // a nollie (up < 0) stands on its nose the same way
 }

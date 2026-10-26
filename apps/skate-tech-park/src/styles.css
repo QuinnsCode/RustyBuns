@@ -50,6 +50,26 @@ kbd { display: inline-block; min-width: 1.6em; padding: 0 4px; margin: 0 2px; bo
 .hold.boost { bottom: max(20px, env(safe-area-inset-bottom)); }
 .hold.manual { bottom: calc(max(20px, env(safe-area-inset-bottom)) + 68px); }
 .hold[data-on] { background: var(--hot); color: #fff; }
+[data-pad="left"] .stick { left: auto; right: max(20px, env(safe-area-inset-right)); }
+[data-pad="left"] .hold { right: auto; left: max(16px, env(safe-area-inset-left)); }
+.touch > .grip { pointer-events: none; position: fixed; top: 50%; right: max(96px, calc(env(safe-area-inset-right) + 80px)); width: calc(min(300px, 52vh) / 3); height: min(300px, 52vh); transform: translateY(-46%); }
+[data-pad="left"] .touch > .grip { right: auto; left: max(96px, calc(env(safe-area-inset-left) + 80px)); }
+.grip svg { width: 100%; height: 100%; overflow: visible; }
+.grip .deck { fill: rgba(27, 27, 31, 0.28); stroke: rgba(251, 247, 240, 0.7); stroke-width: 1.5; }
+.grip .zone { fill: rgba(251, 247, 240, 0.08); }
+.grip .pad { fill: rgba(251, 247, 240, 0.32); stroke: var(--paper); stroke-width: 1.2; stroke-dasharray: 2 3; }
+.grip .path { color: var(--paper); opacity: 0.6; transition: opacity 0.4s; }
+.grip .path.ollie, .grip .path.nollie { color: var(--hot); }
+.grip .path line { stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 0.1 7; }
+.grip .path .head { fill: currentColor; }
+.grip .path .tap-ring { fill: none; stroke: currentColor; stroke-width: 2; stroke-dasharray: 4 4; }
+.grip .path text { fill: currentColor; font: 700 9px system-ui, sans-serif; text-anchor: middle; paint-order: stroke; stroke: rgba(27, 27, 31, 0.7); stroke-width: 2.5; }
+.grip .path text.beside { text-anchor: start; }
+.grip .path.hit { animation: grip-hit 0.6s ease-out; }
+@keyframes grip-hit { from { opacity: 1; color: #fff; filter: drop-shadow(0 0 4px var(--hot)); } }
+.grip-name { position: absolute; top: -34px; left: 50%; transform: translateX(-50%); padding: 2px 8px; border: 2px solid var(--ink); border-radius: 8px; background: var(--paper); font-weight: 700; white-space: nowrap; opacity: 0; transition: opacity 0.4s; }
+.grip-name[data-on] { opacity: 1; }
+.grip-pick { pointer-events: auto; position: absolute; bottom: -48px; left: 50%; transform: translateX(-50%); display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 2px solid var(--ink); border-radius: 50%; background: var(--paper); color: var(--ink); box-shadow: 2px 2px 0 var(--ink); }
 .pause { position: fixed; inset: 0; z-index: 15; display: grid; place-items: center; background: rgba(27, 27, 31, 0.5); }
 .pause[hidden] { display: none; }
 .pause-panel { display: grid; gap: 10px; width: min(320px, 90vw); padding: 18px; background: var(--paper); border: 2px solid var(--ink); border-radius: 8px; box-shadow: 4px 4px 0 var(--ink); }

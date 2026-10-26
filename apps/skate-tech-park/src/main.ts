@@ -25,6 +25,9 @@ import { HALF } from "./levels/plaza.ts";
 import type { ParkLevel } from "./levels/park.ts";
 import { TRICKS } from "./tricks.ts";
 import { Gestures } from "./gesture.ts";
+import { pickProfile } from "./flick.ts";
+import { PROFILES } from "./flick-profiles.ts";
+import { mountGrip } from "./griptape.ts";
 import { mountTouch } from "./touch.ts";
 import { level, levelId, mood, mountLevelUi, park, spawn } from "./levels/picker.ts";
 import { touring as isTouring } from "./levels/index.ts";
@@ -203,18 +206,36 @@ window.addEventListener("keydown", (e) => {
 });
 window.addEventListener("keyup", (e) => keys.delete(e.code));
 window.addEventListener("blur", () => keys.clear());
-// The mouse and the right stick: a drag up is an ollie, across or down is a flick trick (see gesture.ts).
-const gestures = new Gestures();
-// On a touch screen the left thumb drives (touch.ts), so only the right half of the screen is the flick pad.
+// The mouse and the right stick: a drag up is an ollie, across or down is a flick trick, as the flick profile lays
+// them out (flick.ts, the library in flick-profiles.ts). `?flick=<name>` or `?flick=<profile JSON>` picks one, and
+// the footprints button on the pad steps through the library; the last one picked is kept in the browser.
+const FLICK_KEY = "skate-flick";
+const stored = () => { try { return localStorage.getItem(FLICK_KEY); } catch { return null; } };
+const gestures = new Gestures(pickProfile(PROFILES, new URLSearchParams(location.search).get("flick"), stored()));
+// On a touch screen one thumb drives (touch.ts), so only the profile's half of the screen is the flick pad.
 const touch = mountTouch();
+const grip = mountGrip(touch.root, () => {
+  const p = PROFILES[(PROFILES.findIndex((x) => x.name === gestures.profile.name) + 1) % PROFILES.length];
+  gestures.profile = p;
+  try { localStorage.setItem(FLICK_KEY, p.name); } catch { /* private window: the pick lasts this visit */ }
+  return p;
+});
+grip.show(gestures.profile);
+const onPad = (x: number) => (gestures.profile.side === "left" ? x < innerWidth / 2 : x >= innerWidth / 2);
 let flicking = -1; // the pointer the gesture follows
 canvas.addEventListener("pointerdown", (e) => {
-  if (flicking >= 0 || touch.claims(e.pointerId) || (e.pointerType === "touch" && e.clientX < innerWidth / 2)) return;
+  const touching = e.pointerType === "touch";
+  if (flicking >= 0 || touch.claims(e.pointerId) || (touching && !onPad(e.clientX))) return;
   flicking = e.pointerId;
-  gestures.down(e.clientX, e.clientY, performance.now() / 1000);
+  gestures.down(e.clientX, e.clientY, performance.now() / 1000, touching ? grip.along(e.clientX, e.clientY) : null);
 });
 window.addEventListener("pointermove", (e) => { if (e.pointerId === flicking) gestures.move(e.clientX, e.clientY); });
-const lift = (e: PointerEvent) => { if (e.pointerId === flicking) { flicking = -1; gestures.up(e.clientX, e.clientY); } };
+const lift = (e: PointerEvent) => {
+  if (e.pointerId !== flicking) return;
+  flicking = -1;
+  gestures.up(e.clientX, e.clientY, performance.now() / 1000);
+  grip.hit(gestures.last?.stroke ?? null);
+};
 window.addEventListener("pointerup", lift);
 window.addEventListener("pointercancel", lift);
 // G and V are the plain flicks beside F's kickflip; the compound tricks sit on the row above (see tricks.ts).
@@ -224,6 +245,7 @@ const input = (): Input => ({
   throttle: (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0) || touch.throttle,
   steer: (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0) - (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) || touch.steer,
   jump: keys.has("Space"),
+  nollie: keys.has("KeyN"),
   boost: keys.has("ShiftLeft") || keys.has("ShiftRight") || touch.boost,
   flip: keys.has("KeyF"),
   flick: FLICK_KEYS.find(([code]) => keys.has(code))?.[1] ?? null,
@@ -252,7 +274,7 @@ help.id = "help";
 help.title = "All the controls";
 help.append(icon(Info));
 const tip = $("tip");
-tip.innerHTML = "<p><kbd>W</kbd><kbd>S</kbd> push, <kbd>A</kbd><kbd>D</kbd> steer, and spin in the air</p><p><kbd>Space</kbd> ollie, <kbd>F</kbd> kickflip, <kbd>G</kbd> heelflip, <kbd>V</kbd> shove-it</p><p><kbd>R</kbd> varial, <kbd>O</kbd> varial heel, <kbd>U</kbd> hardflip, <kbd>I</kbd> inward heel, <kbd>T</kbd> tre flip, <kbd>Y</kbd> laser flip</p><p>Or drag the mouse or push the right stick: up ollies, across and down flick, diagonals are the compound tricks, a long one down a double turn</p><p><kbd>Shift</kbd> rear jets and pump a transition, <kbd>E</kbd> suction fan</p><p><kbd>Q</kbd> hold a manual, <kbd>Z</kbd> a nose manual: <kbd>W</kbd> and <kbd>S</kbd> hold the balance, or hold the mouse still (nudged down for the nose), or use the pad's right and left triggers</p><p><kbd>Tab</kbd> swap board and roadster, <kbd>R</kbd> reset</p>";
+tip.innerHTML = "<p><kbd>W</kbd><kbd>S</kbd> push, <kbd>A</kbd><kbd>D</kbd> steer, and spin in the air</p><p><kbd>Space</kbd> ollie, <kbd>N</kbd> nollie, <kbd>F</kbd> kickflip, <kbd>G</kbd> heelflip, <kbd>V</kbd> shove-it</p><p><kbd>R</kbd> varial, <kbd>O</kbd> varial heel, <kbd>U</kbd> hardflip, <kbd>I</kbd> inward heel, <kbd>T</kbd> tre flip, <kbd>Y</kbd> laser flip</p><p>Or drag the mouse or push the right stick: up ollies, across and down flick, diagonals are the compound tricks, a long one down a double turn. On a touch screen the flick pad shows its paths on a board like footprint grip tape; the footprints button picks another of twenty layouts</p><p><kbd>Shift</kbd> rear jets and pump a transition, <kbd>E</kbd> suction fan</p><p><kbd>Q</kbd> hold a manual, <kbd>Z</kbd> a nose manual: <kbd>W</kbd> and <kbd>S</kbd> hold the balance, or hold the mouse still (nudged down for the nose), or use the pad's right and left triggers</p><p><kbd>Tab</kbd> swap board and roadster, <kbd>R</kbd> reset</p>";
 help.addEventListener("click", () => { tip.hidden = !tip.hidden; help.blur(); });
 function hud() {
   swapBtn.replaceChildren(icon(mode === "car" ? RectangleHorizontal : Car));
