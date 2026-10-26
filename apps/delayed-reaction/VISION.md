@@ -4,6 +4,26 @@ The owner's direction, 2026-10-26. The first cut was a dark hallway with keys on
 became. Three workers built it in parallel from `main` (speed #2347, runner #2349, tunnel #2350) and the README
 describes what shipped. What didn't ship moved to [IDEAS.md](IDEAS.md).
 
+## Next: walls with a door, and a turn that never ends (2026-10-26, round 3)
+
+The owner's direction after playing the tunnel round. This section wins where it disagrees with the rest.
+
+- **The endless turn.** The tunnel never stops turning, like an impossible staircase: always rounding a
+  corner, always rolling the same way, never arriving. It reads as one long bend that keeps going, not a
+  slow wobble back and forth. Same near-white neon grid.
+- **Walls, not fences.** Where a call is due, a solid wall fills the tunnel. It has one door, a gap at the
+  call's lane, glowing in that lane's colour. The rest of the wall is solid neon grid.
+- **You run to the door.** The runner is no longer fixed in the middle: the four pads are four places across
+  the floor, far left, left, right and far right. A pad moves the runner there, with a quick sidestep.
+- **Through or bounced.** Be in the door's lane on the due beat and you run through it: the boost. Be
+  anywhere else and you hit the wall and get knocked back: the runner rebounds, the world slows, the music
+  dulls, and it costs a life as a miss does now. A game-show door wall, never named.
+- **The delay still rules.** The call is still a ring far down the tunnel and its tail counts down; the wall
+  with that colour's door arrives `delay` beats later. Move too early and the wall before it, whose door is
+  somewhere else, knocks you back: you carry the queue of doors in your head and move on each due beat.
+- **Holds are a corridor.** A hold is a long door: stay in its lane until it ends.
+- **The pads still light and the call still echoes.** The timing is hard to read; both stay.
+
 ## The world: a tunnel, not a hallway
 
 - An infinite tunnel, lit like a neon grid: thin glowing lines on black, 80s computer-world and rain-soaked
