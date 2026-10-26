@@ -118,7 +118,7 @@ Show a small preview next to each scene.
 
 Only once a real file makes you wait. Measure with the biggest scene you have first.
 
-- **Pattern:** `apps/tscircuit-desktop` has the full recipe:
+- **Pattern:** `apps/auto-rig` has the full recipe:
   - a crate in `native/crates/`,
   - `loadNative()` in `desktop/native.ts`,
   - `native: ["your_crate"]` in `rustybuns.config.ts`,

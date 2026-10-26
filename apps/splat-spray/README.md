@@ -52,7 +52,7 @@ A shot against 585,000 splats takes about 6–15 ms; a million splats takes abou
 1. **More realism.** The lighting bake got objects most of the way; the rest is either more shape detail per object (bevels, thickness, wear) or real captured objects, which brings licensing, downloads and the problem that a capture has no object tags.
 2. **Harder prompts.** Ask by description ("something you drink from") rather than by name.
 3. **A second room.** The kit and slot layout are separate from the contents, so a garage or a kitchen is a new list of things.
-4. **The Rust engine.** Move `spray()` into a crate with a spatial index and all cores, with the TypeScript version as fallback and a parity test (the `apps/tscircuit-desktop` recipe).
+4. **The Rust engine.** Move `spray()` into a crate with a spatial index and all cores, with the TypeScript version as fallback and a parity test (the `apps/auto-rig` recipe).
 5. **Daily room.** One seed a day for everyone, scores as "found all 100 in 214 shots", with a web build on Cloudflare.
 
 ## Known limits

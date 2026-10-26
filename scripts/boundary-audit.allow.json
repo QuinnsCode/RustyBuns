@@ -99,8 +99,6 @@
   "apps/splat-rooms/scripts/fetch-scenes.ts": 1,
   "apps/splat-rooms/src/game/score.ts": 1,
   "apps/terraviz-demo/prove.ts": 6,
-  "apps/tscircuit-desktop/desktop/host.ts": 1,
-  "apps/tscircuit-desktop/scripts/licenses.ts": 1,
   "apps/two-fronts/src/edge/worker.ts": 1,
   "apps/what-would-fantano-say/src/api.ts": 2,
   "apps/what-would-fantano-say/src/app/Critic.tsx": 1,

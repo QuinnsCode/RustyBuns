@@ -5,8 +5,8 @@ import { sweep } from "../src/edge.ts";
 import { APPS, builtPaths, deployBlocker, fattyStage, formatRun } from "../src/fatty.ts";
 
 describe("fatty borg", () => {
-  test("covers the four chunky examples, and only an edge app deploys", () => {
-    expect(APPS.map((a) => a.name)).toEqual(["codesplitter", "tscircuit-desktop", "park-hide-seek", "agent-office"]);
+  test("covers the three chunky examples, and only an edge app deploys", () => {
+    expect(APPS.map((a) => a.name)).toEqual(["codesplitter", "park-hide-seek", "agent-office"]);
     expect(APPS.filter((a) => a.steps.some((s) => s.kind === "deploy")).map((a) => a.name)).toEqual(["codesplitter"]);
     const edge = APPS[0]!.steps.map((s) => s.kind);
     expect(edge).toEqual(["plan", "deploy", "smoke", "destroy"]);

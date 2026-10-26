@@ -22,7 +22,6 @@ body:
         - label: splat-desktop
         - label: splat-rooms
         - label: splat-spray
-        - label: tscircuit-desktop
   - type: checkboxes
     id: os
     attributes:

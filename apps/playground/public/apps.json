@@ -61,10 +61,5 @@
     "name": "Auto Rig",
     "line": "Drop in a 3D model, get a skeleton, skin weights and inverse kinematics you can drag around.",
     "app": "auto-rig"
-  },
-  {
-    "name": "tscircuit Desktop",
-    "line": "Build circuit boards with React and see them in 3D.",
-    "app": "tscircuit-desktop"
   }
 ]

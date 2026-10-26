@@ -64,12 +64,11 @@ Slim borg checks each primitive once. What's left for it: the edge run on a Free
 
 ## Fatty borg
 
-`bun fatty.ts [app...]` lists the steps for codeSplitter, tscircuit-desktop, park-hide-seek and agent-office and runs nothing. `bun fatty.ts --run` does them, on demand or weekly, never per PR, because it costs money.
+`bun fatty.ts [app...]` lists the steps for codeSplitter, park-hide-seek and agent-office and runs nothing. `bun fatty.ts --run` does them, on demand or weekly, never per PR, because it costs money.
 
 | App | Steps |
 |---|---|
 | codeSplitter | `plan`, cost cap, `deploy` to a `fatty<unix seconds>` stage, smoke check, `destroy` |
-| tscircuit-desktop | `build desktop` |
 | park-hide-seek | `build desktop`, `build box` (its Railway box bills until destroyed, so it isn't deployed) |
 | agent-office | `build desktop` (PTYs: desktop and box only) |
 

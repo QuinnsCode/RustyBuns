@@ -50,7 +50,6 @@ export const APPS: Record<string, App> = {
   "two-fronts":        { test: "bun test test", drop: false },
   "terraviz-demo":     { test: "bun test test", drop: false },
   "tanstack-start-example": { test: "bun test test", boot: true },
-  "tscircuit-desktop": { test: "bun test", prep: "bun run native", perOs: true, boot: true },
   "what-would-fantano-say": { test: "bun test test", drop: false },
 };
 
