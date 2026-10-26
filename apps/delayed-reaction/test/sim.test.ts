@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { advance, createRun, dueLanes, GOOD, inFlight, LEVELS, LIVES, makeChart, PERFECT, press, release } from "../src/sim.ts";
+import { advance, createRun, dueLanes, GOOD, inFlight, LEVELS, LIVES, makeChart, PERFECT, press, release, SPEED_CEILING, SPEED_FLOOR, type Run } from "../src/sim.ts";
 
 // One run through a level, the way a player does it: every call answered on its due beat, holds
 // let go when they end. Then the same chart ignored: every call missed until the lives run out.
@@ -76,4 +76,33 @@ test("the pad to light is the lane whose key is in its window, and the echo hint
   expect(dueLanes(run, first.due)).toEqual(new Set([first.lane]));
   expect(dueLanes(run, first.due + GOOD + 0.01).has(first.lane)).toBe(false);
   expect(LEVELS.map((l) => l.hint > 0)).toEqual([true, true, true, true, false, false]);
+});
+
+// Speed: every answer on time boosts the run, every miss or stray press hits the fence and cuts it,
+// and between them it drifts back to the floor. A clean player ends up flying; a sloppy one never gets going.
+test("a perfect run climbs to the speed ceiling, a sloppy one sits near the floor, and speed stays in bounds", () => {
+  const play = (level: number, sloppy: boolean) => {
+    const chart = makeChart(level);
+    const run = createRun(chart);
+    expect(run.speed).toBe(SPEED_FLOOR);
+    const seen: number[] = [];
+    const watch = (r: Run) => seen.push(r.speed);
+    for (const [i, c] of chart.calls.entries()) {
+      advance(run, c.due - 0.3); watch(run);
+      if (sloppy && i % 3 === 0) continue; // a third of the calls never answered
+      if (sloppy) { press(run, c.lane, c.beat + 0.5); watch(run); } // jumping in on the call, not the answer
+      press(run, c.lane, c.due + (sloppy ? GOOD - 0.02 : 0.02)); watch(run);
+      if (c.hold) { advance(run, c.due + c.hold - 0.05); release(run, c.lane, c.due + c.hold); watch(run); }
+      if (run.over) break;
+    }
+    return seen;
+  };
+  for (let level = 1; level <= LEVELS.length; level++) {
+    const clean = play(level, false), messy = play(level, true);
+    for (const s of [...clean, ...messy]) { expect(s).toBeGreaterThanOrEqual(SPEED_FLOOR); expect(s).toBeLessThanOrEqual(SPEED_CEILING); }
+    expect(Math.max(...clean)).toBe(SPEED_CEILING);
+    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    expect(mean(messy)).toBeLessThan(SPEED_FLOOR + 0.3);
+    expect(mean(clean)).toBeGreaterThan(mean(messy) + 0.5);
+  }
 });
