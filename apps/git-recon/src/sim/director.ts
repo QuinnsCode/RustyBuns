@@ -26,6 +26,8 @@ import { wet } from "@rustybuns/terrain";
 import type { Chapter } from "./campaign.ts";
 import { ROLL_TIME, type Game, type GameEvent, type Input, type Soldier, type Waypoint } from "./game.ts";
 import type { Vehicle } from "./vehicles.ts";
+import LINES from "../../content/radio.json";
+import GAGS_SCRIPT from "../../content/gags.json";
 
 export type BeatId = "insertion" | "incoming" | "jump" | "beach" | "dropzone" | "stall" | "onslaught" | "extraction" | "gag";
 
@@ -78,11 +80,7 @@ type Phase =
   | "run" | "air" | "carry" | "glide" | "stall" | "slide" | "off" | "last" | "lift" | "gag";
 
 /** What a cutaway gag is about, and the line it gets. */
-const GAGS = {
-  headshot: "git commit --amend: that one's a clean change. Straight to the head.",
-  reset: "git reset --hard. The one command nobody runs by accident. Command: Use it by accident.",
-  lastLife: "Command: Last life. Nothing to revert to, so make it a good one.",
-} as const;
+const GAGS = GAGS_SCRIPT;
 
 export class Director {
   /** How fast the game runs against the clock: 1, or less in slow motion. */
@@ -203,20 +201,20 @@ export class Director {
       const id = this.take("incoming") ? "incoming" : this.take("onslaught") ? "onslaught" : null;
       if (id) {
         this.start(id, "calm");
-        this.say(id === "incoming" ? "Command: Nice work. Nothing could possibly go wrong now." : "Command: Last stretch. Nothing could possibly go wrong. Again.", 2.6);
+        this.say(id === "incoming" ? LINES.commandNiceWorkNothing : LINES.commandLastStretchNothing, 2.6);
         return;
       }
     }
     if (ride?.kind === "roadster" && events.some((e) => e.kind === "board" && e.on) && this.take("jump")) {
       this.start("jump", "run");
-      this.say("Command: Floor it. We'll call the sandbox a ramp.", 2.4);
+      this.say(LINES.commandFloorItWell, 2.4);
       return;
     }
     // Thrusters dry while it's up in the air.
     if (ride?.kind === "roadster" && ride.fuel <= 0.01 && ride.y > game.terrain.height(ride.x, ride.z) + 3 && this.take("stall")) {
       this.start("stall", "stall");
       this.scale = 0.4;
-      this.say("Command: The gauge says empty. The gauge is usually wrong. Not today.", 3);
+      this.say(LINES.commandTheGaugeSays, 3);
       return;
     }
     const spot = game.time > BEACH_AT && this.waiting.includes("beach") ? this.beachSpot() : null;
@@ -225,7 +223,7 @@ export class Director {
       this.craft = { to: spot, dx: m.x, dz: m.z, yaw: Math.atan2(-m.x, -m.z), t: 0 };
       this.start("beach", "glide");
       this.scale = 0.5;
-      this.say("Command: Your ride's here. Hovercraft. It's, uh, in a hurry.", 2.6);
+      this.say(LINES.commandYourRidesHere, 2.6);
       return;
     }
     // The last guard of the last compound: a slow-motion final kill.
@@ -267,10 +265,10 @@ export class Director {
       const h = this.heli()!;
       // Riding the skid: held there whatever the game did this step.
       Object.assign(you, { x: h.x, y: h.y + 0.1, z: h.z, vx: 0, vy: 0, vz: 0, chute: false });
-      if (this.high && passed(b, dt, 0.3)) this.say("Pilot: Sixty metres. Parachute's on your back. Probably.", 1.9);
-      else if (passed(b, dt, 0.3)) this.say("Pilot: Thirty seconds out.", 1.6);
-      if (!this.high && passed(b, dt, 1.9)) this.say("Pilot: Make that five. I rounded.", 1.6);
-      if (passed(b, dt, APPROACH)) this.say("Pilot: This is your stop. Jump, or I tip you out.", 2.2);
+      if (this.high && passed(b, dt, 0.3)) this.say(LINES.pilotSixtyMetresParachutes, 1.9);
+      else if (passed(b, dt, 0.3)) this.say(LINES.pilotThirtySecondsOut, 1.6);
+      if (!this.high && passed(b, dt, 1.9)) this.say(LINES.pilotMakeThatFive, 1.6);
+      if (passed(b, dt, APPROACH)) this.say(LINES.pilotThisIsYour, 2.2);
       this.stage.title = ch && b.t > 0.6 ? { text: ch.title, sub: ch.height } : null;
       this.stage.prompt = "Space · jump";
       // Coming in, a wide shot from off to the side; over HEAD, low on the ground looking up.
@@ -287,11 +285,11 @@ export class Director {
       // Slow motion all the way down, unless a parachute opened (that's slow enough already).
       this.scale = you.chute ? 1 : this.high ? 0.5 : SLOW_DROP;
       this.stage.shot = this.high ? this.wallShot(you) : this.lowShot(you, sp, g0);
-      if (you.grounded) b.phase = "landed", b.t = 0, this.say("Pilot: That noise was nothing. Good luck down there.", 3);
+      if (you.grounded) b.phase = "landed", b.t = 0, this.say(LINES.pilotThatNoiseWas, 3);
     } else {
       this.scale = Math.min(1, this.scale + dt * 1.6);
       if (this.stage.shot) this.stage.shot.mix = Math.max(0, 1 - b.t / 0.8);
-      if (this.high && passed(b, dt, 0.4)) this.say("Pilot: Told you. Probably.", 2);
+      if (this.high && passed(b, dt, 0.4)) this.say(LINES.pilotToldYouProbably, 2);
       if (b.t > 0.9) this.end(false);
     }
   }
@@ -354,16 +352,16 @@ export class Director {
       if ((you.grounded && b.t > 0.3) || b.t > 3.5) {
         this.stage.gun = this.gunSpot(away);
         this.cues.push("ring");
-        this.say("Command: Get to your weapon, soldier.", 3);
+        this.say(LINES.commandGetToYour, 3);
         b.phase = "crawl", b.t = 0;
       }
     } else if (b.phase === "crawl") {
       this.scale = Math.min(1, this.scale + dt * 1.6);
       if (this.stage.shot) this.stage.shot.mix = Math.max(0, this.stage.shot.mix - dt * 1.6);
-      if (passed(b, dt, 5)) this.say("Command: Any time now. We're on a budget.", 3);
+      if (passed(b, dt, 5)) this.say(LINES.commandAnyTimeNow, 3);
       const g = this.stage.gun!, there = Math.hypot(g.x - you.x, g.z - you.z) < GUN_REACH;
       if (!there && b.t < CRAWL_MAX) return;
-      if (!there) this.say("Command: Fine. We'll mail it to you.", 2.5);
+      if (!there) this.say(LINES.commandFineWellMail, 2.5);
       this.stage.gun = null, this.stage.shot = null;
       // Over the wall: the squad from the nearest compound still held, coming in where they'd be seen.
       this.from = this.nearestHeld();
@@ -378,7 +376,7 @@ export class Director {
       }
       this.scale = SLOW_CONTACT;
       this.cues.push("slow");
-      if (there) this.say(other >= 0 ? "Contact! Over the wall! Both walls!" : "Contact! Over the wall!", 2.5);
+      if (there) this.say(other >= 0 ? LINES.contactOverWalls : LINES.contactOverWall, 2.5);
       b.phase = "contact", b.t = 0;
     } else if (b.phase === "contact") {
       if (b.t < CONTACT_SECONDS && this.squad.some((s) => s.alive)) return;
@@ -388,15 +386,15 @@ export class Director {
       const home = Math.hypot(spawn.x - you.x, spawn.z - you.z) < HOME;
       this.markers = home ? [] : [{ x: spawn.x, y: game.terrain.height(spawn.x, spawn.z), z: spawn.z, label: "fall back: HEAD", kind: "head" }];
       if (rally && rally.kind === "compound") this.markers.unshift({ ...rally, label: `rally: ${rally.label}` });
-      this.say(home ? `Command: Health crate at HEAD, right behind you. Then rally on ${c?.folder ?? "the next one"}.`
-        : c ? `Command: Your call. Rally on ${c.folder}, or fall back to HEAD and patch up.` : "Command: Fall back to HEAD and patch up.", 5);
+      this.say(home ? LINES.choiceHome.replace("{folder}", c?.folder ?? "the next one")
+        : c ? LINES.choiceCall.replace("{folder}", c.folder) : LINES.choiceFallBack, 5);
       b.phase = "choice", b.t = 0;
     } else {
       this.scale = Math.min(1, this.scale + dt * 2);
       const back = this.markers.find((m) => m.kind === "head"), home = !!back && Math.hypot(back.x - you.x, back.z - you.z) < HOME;
       const rally = this.markers.find((m) => m.kind === "compound"), there = !!rally && Math.hypot(rally.x - you.x, rally.z - you.z) < HOME;
-      if (home) this.say("Command: Patch up. We'll call it the plan.", 3);
-      else if (there) this.say("Command: Bold. Noted.", 2.5);
+      if (home) this.say(LINES.commandPatchUpWell, 3);
+      else if (there) this.say(LINES.commandBoldNoted, 2.5);
       if (home || there || b.t > 40) this.end(false);
     }
   }
@@ -456,7 +454,7 @@ export class Director {
       this.bailed = false;
       this.scale = SLOW_JUMP;
       this.stage.prompt = "Shift · bail out";
-      this.say("Command: Is that car supposed to do that?", 2.4);
+      this.say(LINES.commandIsThatCar, 2.4);
       b.phase = "air", b.t = 0;
     } else if (b.phase === "air") {
       this.stage.shot = this.carShot(v, across, 1);
@@ -465,7 +463,7 @@ export class Director {
       v.driver = -1, you.vehicle = -1;
       Object.assign(you, { x: v.x + across.x * 1.8, y: v.y + 0.6, z: v.z + across.z * 1.8, vx: across.x * 5 + v.vx * 0.35, vy: 3, vz: across.z * 5 + v.vz * 0.35, grounded: false, roll: ROLL_TIME, rollCd: ROLL_TIME + 1.4, rollDir: { x: across.x, z: across.z } });
       this.stage.prompt = null;
-      this.say("Command: Nobody was driving that. Carry on.", 2.8);
+      this.say(LINES.commandNobodyWasDriving, 2.8);
       b.phase = "carry", b.t = 0;
     } else {
       // The empty car carries on: held to its heading while the camera follows it off.
@@ -508,7 +506,7 @@ export class Director {
     const h = this.hovercraft()!, to = norm(you.x - c.to.x, you.z - c.to.z);
     this.stage.shot = { from: { x: c.to.x + to.x * 11, y: c.to.y + 1.8, z: c.to.z + to.z * 11 }, at: { x: h.x, y: h.y + 0.8, z: h.z }, mix: Math.min(1, Math.max(0, 6.5 - b.t)) };
     if (b.t > 3.2) this.scale = Math.min(1, this.scale + dt * 0.8);
-    if (passed(b, dt, 4.2)) this.say("Command: It's losing air. Ignore that.", 2.4);
+    if (passed(b, dt, 4.2)) this.say(LINES.commandItsLosingAir, 2.4);
     if (b.t > 6.5) this.end(false);
   }
 
@@ -524,14 +522,14 @@ export class Director {
       if (v.y > game.terrain.height(v.x, v.z) + 0.2) return;
       b.phase = "slide", b.t = 0;
       this.stage.prompt = "F · step off";
-      this.say("Command: Well. That's one way down.", 2.6);
+      this.say(LINES.commandWellThatsOne, 2.6);
     } else if (b.phase === "slide") {
       // Rolling back down the way it came, at a walking pace.
       v.vx = -f.x * SLIDE_BACK, v.vz = -f.z * SLIDE_BACK;
       if (you.vehicle >= 0 && b.t < 4) return;
       if (you.vehicle >= 0) this.eject(v, side);
       this.stage.prompt = null;
-      this.say("Command: Walk it off. Uphill.", 2.6);
+      this.say(LINES.commandWalkItOff, 2.6);
       b.phase = "off", b.t = 0;
     } else {
       this.scale = Math.min(1, this.scale + dt * 2);
@@ -564,7 +562,7 @@ export class Director {
       this.take("extraction");
       this.rescue = { x: you.x, y: game.terrain.height(you.x, you.z), z: you.z, yaw: you.yaw };
       this.scale = 1;
-      this.say("Pilot: Taxi for one. Ladder's down.", 2.6);
+      this.say(LINES.pilotTaxiForOne, 2.6);
       b.phase = "lift", b.t = 0;
     } else {
       const r = this.rescue!, h = this.rescueHeli(b.t)!, { side } = axes(r.yaw);
@@ -573,7 +571,7 @@ export class Director {
       Object.assign(you, b.t < 3.2 ? { x: r.x, y: r.y, z: r.z } : { x: h.x, y: climb < 1 ? r.y + climb * LADDER : h.y - 0.5, z: h.z }, { vx: 0, vy: 0, vz: 0, grounded: climb <= 0 });
       this.stage.shot = { from: { x: r.x + side.x * 15, y: r.y + 4, z: r.z + side.z * 15 }, at: { x: h.x, y: Math.max(r.y + 3, (h.y + r.y) / 2), z: h.z }, mix: 1 };
       this.stage.ladder = { x: h.x, y: h.y - 0.5, z: h.z, len: LADDER };
-      if (passed(b, dt, 5.6)) this.say("Pilot: Everybody in? Good. Nobody else was coming.", 2.6);
+      if (passed(b, dt, 5.6)) this.say(LINES.pilotEverybodyInGood, 2.6);
       if (b.t > 9) this.end(false), this.rescue = null;
     }
   }

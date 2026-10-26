@@ -110,3 +110,7 @@ What a room costs (Workers Paid, priced 2026-10-12 from [Cloudflare's DO pricing
 - `src/ui/` draws it in codeSplitter's paper style (contours spaced for each level's relief, rock faces hatched), feeds it the mouse and keys, and plays its events through `audio.ts`, a synthesized voice per weapon in Park Hide & Seek's style.
 
 The repo is a snapshot: `bun scripts/snapshot.ts <repo-dir> <name>` writes the path and line count of its biggest tracked source files to `src/levels/repos/<name>.json`, with the imports between folders, the last hundred commits' churn, and the opening lines of the biggest scripts (`excerpts()` in `src/sim/intel.ts`) that the ground is printed with, and, when its origin is on GitHub and `gh` is signed in, the checks failing at HEAD, which set their compounds on fire. The levels use this repo, Rusty Buns itself.
+
+## Editing the script
+
+The game's words (radio, gags and stories) live in `content/*.json`. `bun run cms` serves them as textareas on localhost and saves back to the files; reload the game to see them.

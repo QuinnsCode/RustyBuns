@@ -11,6 +11,7 @@
 // for the Marines.
 // The view draws it and feeds the hero's input; the tests run it headless with the autopilot.
 import { radioFor } from "./lines.ts";
+import RADIO_SCRIPT from "../../content/radio.json";
 import { atan2, cos, hypot, sin } from "./fmath.ts";
 import { VEHICLE_KINDS, other, poolSize, type BattleResult, type BattleSpec, type MatchMode, type PerSide, type SectorKind, type Side, type VehicleKind } from "./contract.ts";
 import { clamp } from "@rustybuns/util";
@@ -256,55 +257,8 @@ export const OVERHEAT = 1.8;
 export const SPRINT_AFTER = 0.8;   // seconds running straight ahead, not firing, before you sprint
 export const SPRINT = 1.55;
 
-// What the Marines' radio says about the Wooka. They are not cuddly.
-export const FLAVOR = [
-  "Something in the ferns is humming.",
-  "Command reminds you: they are not cuddly. Do not attempt to cuddle.",
-  "Look at those eyes. There's nothing behind them. Nothing.",
-  "That club has a nail in it. On purpose.",
-  "Intel called them basically harmless. Intel has stopped answering.",
-  "Private Okafor swears one of them waved. Then it ate his radio.",
-  "The forest has gone quiet. It is never quiet.",
-  "Do not feed them. Do not make eye contact. Keep them off the backpacks.",
-  "They've started singing. Nobody likes it when they sing.",
-  "We came to hunt them. Somewhere along the way it went the other way round.",
-  "Found Sergeant Vance's helmet. On a pole. Facing us.",
-  "Two eyes in the ferns. Then six. Then none, which is worse.",
-  "Whatever you do, don't run. They like it when you run.",
-  "They've never seen anything but war since we landed. They've decided they like it.",
-  "That one's wearing a Marine's dog tags. All of them. As a skirt.",
-  "The little one with the bow on its head bit through a tank tread. Then it smiled.",
-  "Chaplain says they pray before battle. Chaplain won't say what to.",
-  "Something is drumming in the trees. It's using a helmet. There's still a head in it.",
-  "If you hear giggling, it's already too late.",
-  "Reminder: the fluffy ones are the dangerous ones. They are all the fluffy ones.",
-  "A Boomie waved at Corporal Diaz before it went off. Diaz waved back. Briefly.",
-  "The Shanti are chanting again. Our dead are getting up. Theirs are getting up faster.",
-  "Look at the bones! LOOK at the BONES! Somebody should really stop looking at the bones.",
-  "Command says it's just a Wooka. Command is eleven light years away and has never been bitten.",
-  "That's no ordinary Wooka. That's an ordinary Wooka with a plan. Somehow worse.",
-  "Command: do not engage the cute ones. Us: which ones are the cute ones? Command: all of them. Us: ...",
-  "The medic would like everyone to know she is a medic, and not a snack.",
-  "Sergeant Moreau says stay calm. Sergeant Moreau is standing on a tree. Nobody knows how.",
-  "Radio check. Radio check. Radio. Why is the radio humming back?",
-  "I love the smell of bug spray in the morning. It smells like... nothing is working.",
-  "Intel says the enemy has no air support. Intel has not seen the one throwing the other one.",
-  "Casualty report: forty-one wounded, nine missing, one very small bite. The bite is the problem.",
-  "We are going to need a bigger fence. Also a smaller fence, for the little ones.",
-  "Private Kowalski asks what we're fighting for. The Sergeant says: the backpacks. Kowalski nods.",
-  "Good news: we've stopped them. Bad news: they were just reloading.",
-  "I've got a good feeling about this. Disregard. The feeling was gas.",
-  "Hold your fire, they might be friendly. Cancel that. It ate Hale's fire.",
-  "Nobody panic. Repeat, nobody panic. Okafor, put the backpack down. We are not panicking and neither is the backpack.",
-  "Surely you can't be serious. I am serious. And stop calling me Shirley, Private.",
-  "Looks like I picked the wrong planet to quit napping on.",
-  "Is anyone else seeing a rabbit? No? Then why does the Sergeant keep shouting for the Holy Hand Grenade?",
-  "There's a Wooka in the supply tent. It's wearing the quartermaster's glasses. Sir, it's doing the inventory.",
-  "I'm too old for this, said the Sergeant, who is twenty-six.",
-  "Reminder: in the event of a Wooka, remain calm, remain together, and remain in the helicopter. There is no helicopter. Remain anyway.",
-  "Charge! Run away! Charge again! Sir, make up your mind, they're keeping score.",
-  "The forest is on the radio. It says 'hoo'. We said 'roger'. It said 'hoo'. I think we're losing.",
-]; // radio gags in the key of a deadpan disaster film
+// What the Marines' radio says about the Wooka. They are not cuddly. (content/radio.json)
+export const FLAVOR: readonly string[] = RADIO_SCRIPT.shield;
 
 // What a Marine says on the way out, when a mob gets them. The radio picks it all up.
 const SCREAMS = [

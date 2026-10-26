@@ -66,3 +66,7 @@ In a space battle: your fighter turns towards the mouse. Hold the button to fire
 - `src/ui/vote.ts`: the end-of-match vote screen. The vote itself is on the table (`castVote` in `table.ts`), so the page and the Durable Object count it the same way, and the picked mode goes into the next `BattleSpec`.
 - `src/edge/`: the Worker (`worker.ts`) and `CampaignRoom`, one Durable Object per campaign. Its SQLite holds the table as one row and every resolved turn as another (`turns`: the orders, the hero battle's result, the log). Each human side gets a secret seat token when the campaign starts. The link carries the token in its `#fragment`, and the object keeps only its hash. A seat sees the map through its own fog of war and who's still to move, never the other side's orders before the turn resolves. While the retreats are out, it sees the declared attacks but not their numbers. `GET /api/campaigns/<id>/history` reads the turns back.
 - `src/main.ts`: the map, the orders panel, and the screens between them. A game against the AI or hotseat is saved in the browser's localStorage. An online game lives in its Durable Object (`src/net.ts` calls it).
+
+## Editing the script
+
+The game's words (radio, chatter, cutscenes and places) live in `content/*.json`. `bun run cms` serves them as textareas on localhost and saves back to the files; reload the game to see them.

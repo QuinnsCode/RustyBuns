@@ -5,6 +5,7 @@
   "version": "0.0.1",
   "scripts": {
     "dev": "vite",
+    "cms": "bun ../../packages/cms/src/cli.ts content --title \"Git Recon\" --port 4702",
     "build": "vite build",
     "test": "bun test",
     "snapshot": "bun scripts/snapshot.ts",
