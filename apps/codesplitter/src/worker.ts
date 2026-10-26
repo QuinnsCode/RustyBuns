@@ -3,7 +3,7 @@
 // is a playlist of code you like. Plain fetch handler: it runs as a Worker on
 // Cloudflare and in-process under Bun on the desktop.
 
-import { parseJson } from "./util.ts";
+import { isPlainObject, parseJson } from "./util.ts";
 import { artifactMoveRoutes } from "./artifact-move.ts";
 import { featureRankRoutes } from "./feature-ranks.ts";
 import { findRoutes } from "./finds.ts";
@@ -869,8 +869,9 @@ async function route(req: Request, env: Env): Promise<Response> {
           // Git's HEAD holds the last commit's text until the file's next commit: push that commit again with these lines blank.
           if (!branch) {
             const hid = await toFile(env, owner, repo, path, user!, "hidden", { method: "POST", body: sent });
-            const files = hid.ok ? await hid.json().catch(() => null) as { content: string; published: string } | null : null;
-            if (files) await pushCatalogue(env, owner, repo, path, files, user!, "hide private lines").catch(() => null);
+            const files: unknown = hid.ok ? await hid.json().catch(() => null) : null;
+            if (isPlainObject(files) && typeof files.content === "string" && typeof files.published === "string")
+              await pushCatalogue(env, owner, repo, path, { content: files.content, published: files.published }, user!, "hide private lines").catch(() => null);
           }
         }
         // Open branches' copies of the file hide the same lines.
