@@ -1,4 +1,4 @@
-:root { color-scheme: dark; --bg: #0b0714; --ink: #f3ecff; }
+:root { color-scheme: dark; --bg: #000; --ink: #fff; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 16px/1.4 system-ui, sans-serif; overflow: hidden; overscroll-behavior: none; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 #stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
@@ -10,24 +10,27 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); 
 #judge[data-kind="perfect"] { color: #9dff5f; }
 #judge[data-kind="early"], #judge[data-kind="late"], #judge[data-kind="held"] { color: #ffc542; }
 #judge[data-kind="miss"], #judge[data-kind="dropped"], #judge[data-kind="nothing"] { color: #ff5fa2; }
+#lives-track { grid-column: 1 / -1; height: 2px; margin-top: 6px; background: rgba(255, 255, 255, 0.15); }
+#lives { height: 100%; width: 100%; background: #fff; transition: width 200ms; }
+#lives[data-low="1"] { background: #ff5fa2; }
 
 /* Four thumb pads, each at least a quarter of the width and a fifth of the height: a thumb never misses. */
 #pads { position: fixed; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 8px 8px calc(8px + env(safe-area-inset-bottom)); height: min(28vh, 220px); }
-.pad { border: 0; border-radius: 16px; background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.5); font: 700 22px system-ui, sans-serif; touch-action: none; transition: transform 60ms, background 60ms; }
+.pad { border: 1.5px solid rgba(255, 255, 255, 0.7); border-radius: 16px; background: #000; color: rgba(255, 255, 255, 0.5); font: 700 22px system-ui, sans-serif; touch-action: none; transition: transform 60ms, background 60ms; }
 .pad[data-lane="0"] { box-shadow: inset 0 -6px 0 #ff5fa2; }
 .pad[data-lane="1"] { box-shadow: inset 0 -6px 0 #ffc542; }
 .pad[data-lane="2"] { box-shadow: inset 0 -6px 0 #4de3ff; }
 .pad[data-lane="3"] { box-shadow: inset 0 -6px 0 #9dff5f; }
-.pad.down { transform: scale(0.96); background: rgba(255, 255, 255, 0.25); color: #fff; }
+.pad.down { transform: scale(0.96); background: rgba(255, 255, 255, 0.15); color: #fff; border-color: #fff; }
 .pad:focus-visible { outline: 2px solid #fff; }
 @media (pointer: fine) and (min-width: 700px) { #pads { height: 120px; } }
 
-#menu { position: fixed; inset: 0; display: grid; place-content: center; gap: 12px; padding: 24px; background: rgba(11, 7, 20, 0.92); text-align: center; overflow: auto; }
+#menu { position: fixed; inset: 0; display: grid; place-content: center; gap: 12px; padding: 24px; background: rgba(0, 0, 0, 0.85); text-align: center; overflow: auto; }
 #menu[hidden] { display: none; }
 #menu h1 { margin: 0; font-size: clamp(32px, 9vw, 56px); letter-spacing: -0.02em; background: linear-gradient(90deg, #ff5fa2, #ffc542, #4de3ff, #9dff5f); -webkit-background-clip: text; background-clip: text; color: transparent; }
 #menu p { margin: 0; max-width: 32ch; }
 #levels { display: grid; gap: 8px; }
-#levels button { font: inherit; padding: 14px 18px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 12px; background: rgba(255, 255, 255, 0.06); color: var(--ink); text-align: left; min-height: 48px; }
+#levels button { font: inherit; padding: 14px 18px; border: 1.5px solid rgba(255, 255, 255, 0.7); border-radius: 12px; background: #000; color: var(--ink); text-align: left; min-height: 48px; }
 #levels button b { display: inline-block; width: 1.6em; }
 #levels button:active { background: rgba(255, 255, 255, 0.2); }
 .result { color: #ffc542; }

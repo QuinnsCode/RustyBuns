@@ -1,21 +1,20 @@
 // The page: a canvas keyboard you run along, four thumb pads, a HUD, and a menu. The sim
 // (sim.ts) decides everything; this file draws it and turns thumbs and keys into presses.
 import { Music } from "./audio.ts";
-import { advance, createRun, delayWords, inFlight, LANES, LEVELS, makeChart, press, release, type Judgement, type Lane, type Run } from "./sim.ts";
-
-const LANE_COLOR: Record<Lane, string> = { 0: "#ff5fa2", 1: "#ffc542", 2: "#4de3ff", 3: "#9dff5f" };
+import { burst, drawHallway, echoBursts, view, type Burst } from "./hallway.ts";
+import { advance, createRun, delayWords, LEVELS, makeChart, press, release, type Judgement, type Lane, type Run } from "./sim.ts";
 const KEYS: Record<string, Lane> = { KeyD: 0, KeyF: 1, KeyJ: 2, KeyK: 3, ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3 };
 
 const stage = document.getElementById("stage") as HTMLCanvasElement;
 const g = stage.getContext("2d")!;
-const hud = { score: el("score"), combo: el("combo"), judge: el("judge") };
+const hud = { score: el("score"), combo: el("combo"), judge: el("judge"), lives: el("lives") };
 const menu = el("menu"), levels = el("levels"), pads = [...document.querySelectorAll<HTMLButtonElement>(".pad")];
 
 let music: Music | null = null;
 let run: Run | null = null;
 let best: Record<number, number> = {};
 try { best = JSON.parse(localStorage.getItem("delayed-reaction.best") ?? "{}"); } catch { best = {}; }
-const flashes: { lane: Lane; at: number; grade: string }[] = [];
+const bursts: Burst[] = [];
 const down = new Set<Lane>();
 let judgeUntil = 0;
 
@@ -96,12 +95,12 @@ function show(j: Judgement) {
   const buzz = (ms: number) => { try { navigator.vibrate?.(ms); } catch {} };
   if (j.kind === "hit") {
     music.answer(j.call.lane, j.grade, j.call.hold);
-    flashes.push({ lane: j.call.lane, at: performance.now(), grade: j.grade });
+    bursts.push(burst(j.call.lane, music.beat(), j.grade === "perfect" ? 1 : 0.6));
     say(j.grade === "perfect" ? "Perfect" : j.offset < 0 ? "Early" : "Late");
     buzz(j.grade === "perfect" ? 12 : 6);
   } else if (j.kind === "release") {
     if (j.grade === "dropped") { music.answer(j.call.lane, "bad"); say("Dropped"); buzz(40); }
-    else { flashes.push({ lane: j.call.lane, at: performance.now(), grade: j.grade }); say("Held"); }
+    else { bursts.push(burst(j.call.lane, music.beat(), j.grade === "perfect" ? 1.2 : 0.8)); say("Held"); }
   } else if (j.kind === "early") {
     music.answer(j.lane, "bad");
     say("Nothing there");
@@ -148,114 +147,18 @@ resize();
 
 function frame(now: number) {
   requestAnimationFrame(frame);
-  const W = innerWidth, H = innerHeight;
   const beat = music && run ? music.beat() : 0;
   if (run && music) {
     for (const j of advance(run, beat)) show(j);
     hud.score.textContent = String(run.score);
     hud.combo.textContent = run.combo >= 5 ? `${run.combo}x` : "";
+    hud.lives.style.width = `${(run.lives / 8) * 100}%`;
+    hud.lives.dataset.low = run.lives <= 2 ? "1" : "";
+    echoBursts(bursts, beat, run.chart.delay);
     if (run.over) finish();
   }
   if (now > judgeUntil) hud.judge.textContent = "";
-
-  // Background pulses with the kick: a dark room with a light that breathes.
-  const pulse = run ? Math.max(0, 1 - (((beat % 1) + 1) % 1) * 3) : 0;
-  g.fillStyle = `rgb(${11 + pulse * 10}, ${7 + pulse * 4}, ${20 + pulse * 18})`;
-  g.fillRect(0, 0, W, H);
-
-  const padTop = H - (pads[0]?.getBoundingClientRect().height ?? 0) - 16;
-  const stripTop = H * 0.18, stripH = Math.min(padTop - stripTop - 24, H * 0.5);
-  const laneH = stripH / 4;
-  const runnerX = W * 0.28;
-  const delay = run?.chart.delay ?? 4;
-  const pxPerBeat = (W - runnerX) / delay;
-
-  // The keyboard: four rails, the lowest lane at the bottom. Keys slide left; the runner stands
-  // at the echo line, and a key is answered when it reaches them.
-  for (const lane of LANES) {
-    const y = stripTop + (3 - lane) * laneH;
-    g.fillStyle = "rgba(255,255,255,0.05)";
-    g.fillRect(0, y + laneH * 0.15, W, laneH * 0.7);
-    g.fillStyle = LANE_COLOR[lane];
-    g.globalAlpha = down.has(lane) ? 0.9 : 0.35;
-    g.fillRect(0, y + laneH * 0.82, runnerX, 3);
-    g.globalAlpha = 1;
-  }
-  // Lives as a thin bar along the top of the strip.
-  if (run) {
-    g.fillStyle = run.lives <= 2 ? "#ff5fa2" : "rgba(255,255,255,0.5)";
-    g.fillRect(0, stripTop - 10, (W * run.lives) / 8, 3);
-  }
-
-  if (run) {
-    for (const c of run.chart.calls) {
-      const x = runnerX + (c.due - beat) * pxPerBeat;
-      const w = Math.max(laneH * 0.6, c.hold * pxPerBeat);
-      if (x + w < -20 || x > W + 20 || c.beat > beat + 0.02) continue;
-      const y = stripTop + (3 - c.lane) * laneH;
-      const gone = c.state === "hit" || c.state === "missed";
-      g.globalAlpha = gone ? 0.15 : c.state === "held" ? 0.9 : 0.8;
-      g.fillStyle = c.state === "missed" ? "#664" : LANE_COLOR[c.lane];
-      roundRect(x - laneH * 0.3, y + laneH * 0.2, w, laneH * 0.6, 6);
-      if (c.hold && !gone) {
-        g.globalAlpha = 0.35;
-        g.fillStyle = "#fff";
-        g.fillRect(x - laneH * 0.3 + 6, y + laneH * 0.45, w - 12, 3);
-      }
-      g.globalAlpha = 1;
-    }
-  }
-
-  // The echo line and the runner: a figure that bobs on the beat and stomps a lane's colour when it answers.
-  g.strokeStyle = "rgba(255,255,255,0.35)";
-  g.setLineDash([6, 8]);
-  g.beginPath(); g.moveTo(runnerX, stripTop - 14); g.lineTo(runnerX, stripTop + stripH + 10); g.stroke();
-  g.setLineDash([]);
-  const bob = run ? Math.abs(Math.sin(beat * Math.PI)) * 8 : 0;
-  const fy = stripTop - 20 - bob;
-  const recent = flashes.filter((f) => now - f.at < 220).at(-1);
-  g.strokeStyle = recent ? LANE_COLOR[recent.lane] : "#fff";
-  g.lineWidth = 3;
-  g.lineCap = "round";
-  g.beginPath();
-  g.arc(runnerX, fy - 34, 8, 0, Math.PI * 2);
-  g.moveTo(runnerX, fy - 26); g.lineTo(runnerX, fy - 4);
-  const swing = run ? Math.sin(beat * Math.PI) * 10 : 0;
-  g.moveTo(runnerX, fy - 4); g.lineTo(runnerX - 8 + swing, fy + 12);
-  g.moveTo(runnerX, fy - 4); g.lineTo(runnerX + 8 - swing, fy + 12);
-  g.moveTo(runnerX, fy - 20); g.lineTo(runnerX - 10 - swing, fy - 8);
-  g.moveTo(runnerX, fy - 20); g.lineTo(runnerX + 10 + swing, fy - 8);
-  g.stroke();
-  g.lineWidth = 1;
-
-  // Flashes: a ring that grows out of the answered lane.
-  for (const f of flashes) {
-    const age = (now - f.at) / 400;
-    if (age > 1) continue;
-    const y = stripTop + (3 - f.lane) * laneH + laneH / 2;
-    g.strokeStyle = LANE_COLOR[f.lane];
-    g.globalAlpha = 1 - age;
-    g.lineWidth = f.grade === "perfect" ? 4 : 2;
-    g.beginPath(); g.arc(runnerX, y, 10 + age * laneH, 0, Math.PI * 2); g.stroke();
-    g.globalAlpha = 1;
-    g.lineWidth = 1;
-  }
-  while (flashes.length && now - flashes[0]!.at > 400) flashes.shift();
-
-  // The queue you're carrying: one dot per call in flight, in its lane colour, under the strip.
-  if (run) {
-    const q = inFlight(run, beat);
-    q.forEach((c, i) => {
-      g.fillStyle = LANE_COLOR[c.lane];
-      g.beginPath(); g.arc(16 + i * 18, stripTop + stripH + 18, 5, 0, Math.PI * 2); g.fill();
-    });
-  }
-}
-
-function roundRect(x: number, y: number, w: number, h: number, r: number) {
-  g.beginPath();
-  g.roundRect(x, y, w, h, r);
-  g.fill();
+  drawHallway(g, view(innerWidth, innerHeight), { run, beat, down, bursts });
 }
 
 // Avoid the page scrolling or zooming under a thumb.

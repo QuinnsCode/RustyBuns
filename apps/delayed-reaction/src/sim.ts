@@ -29,19 +29,20 @@ export type Chart = {
   calls: Call[];     // sorted by beat
 };
 
-// Hit windows either side of the due beat. Half a beat at 120 bpm is 250 ms, so these are
-// 40 ms and 100 ms: forgiving on the phone, where the pad's own latency eats some of it.
-export const PERFECT = 0.08;
-export const GOOD = 0.2;
+// Hit windows either side of the due beat. A beat at 140 bpm is 430 ms, so these are about
+// 43 ms and 107 ms: forgiving on the phone, where the pad's own latency eats some of it.
+export const PERFECT = 0.1;
+export const GOOD = 0.25;
 export const LIVES = 8;
 
 export const LEVELS = [
-  { bpm: 104, delay: 2, bars: 16, density: 0.7, holds: 0.0 },
-  { bpm: 112, delay: 4, bars: 20, density: 0.6, holds: 0.15 },
-  { bpm: 120, delay: 4, bars: 24, density: 0.8, holds: 0.2 },
-  { bpm: 126, delay: 8, bars: 24, density: 0.8, holds: 0.25 },
-  { bpm: 132, delay: 8, bars: 32, density: 1.0, holds: 0.3 },
-  { bpm: 138, delay: 6, bars: 32, density: 1.2, holds: 0.35 },
+  // Dub tempos: the drums are half-time, so 140 feels like 70.
+  { bpm: 132, delay: 2, bars: 16, density: 0.7, holds: 0.0 },
+  { bpm: 136, delay: 4, bars: 20, density: 0.6, holds: 0.15 },
+  { bpm: 140, delay: 4, bars: 24, density: 0.8, holds: 0.2 },
+  { bpm: 140, delay: 8, bars: 24, density: 0.8, holds: 0.25 },
+  { bpm: 144, delay: 8, bars: 32, density: 1.0, holds: 0.3 },
+  { bpm: 148, delay: 6, bars: 32, density: 1.2, holds: 0.35 },
 ] as const;
 
 /** A chart for a level: seeded, so the same level is the same song every time you retry it. */
