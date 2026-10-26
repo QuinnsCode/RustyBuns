@@ -157,13 +157,16 @@ function frame(now: number) {
     hud.lives.style.width = `${(run.lives / 8) * 100}%`;
     hud.lives.dataset.low = run.lives <= 2 ? "1" : "";
     echoBursts(bursts, beat, run.chart.delay);
+    music.setSpeed(run.speed);
     // The pad lights in its colour while its key is in the window: a thumb can read that.
     const due = dueLanes(run, beat);
     pads.forEach((p, i) => p.classList.toggle("due", due.has(i as Lane)));
     if (run.over) finish();
   }
   if (now > judgeUntil) hud.judge.textContent = "";
-  drawHallway(g, view(innerWidth, innerHeight), { run, beat, down, bursts });
+  // scene.speed (1 = normal) is for the tunnel to rush faster on a boost.
+  const scene = { run, beat, down, bursts, speed: run?.speed ?? 1 };
+  drawHallway(g, view(innerWidth, innerHeight), scene);
 }
 
 // Avoid the page scrolling or zooming under a thumb.
