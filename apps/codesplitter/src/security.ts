@@ -19,14 +19,14 @@ export const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
 
 // What the pages load: their own inline scripts (by hash) and styles, the vendored scripts and fonts,
 // images from anywhere (avatars, data: and blob: previews), and the file sockets on this host.
-export const csp = (scriptHashes: string[] = []) => [
+export const csp = (scriptHashes: string[] = [], pagesOrigin = "") => [
   "default-src 'self'",
   ["script-src 'self'", ...scriptHashes.map((h) => `'${h}'`), TURNSTILE_ORIGIN].join(" "),
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self'",
   "connect-src 'self'",
-  `frame-src 'self' blob: ${TURNSTILE_ORIGIN}`,
+  `frame-src 'self' blob: ${TURNSTILE_ORIGIN} ${pagesOrigin}`.trim(),
   "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",
@@ -50,8 +50,8 @@ export const SECURITY_HEADERS: Record<string, string> = {
 };
 
 /** The static pages' copy of the headers, in Cloudflare's _headers format, with their inline scripts' hashes. */
-export const headersFile = (scriptHashes: string[] = []) =>
-  `/*\n${Object.entries({ ...SECURITY_HEADERS, "content-security-policy": csp(scriptHashes) }).map(([k, v]) => `  ${k}: ${v}`).join("\n")}\n`;
+export const headersFile = (scriptHashes: string[] = [], pagesOrigin = "") =>
+  `/*\n${Object.entries({ ...SECURITY_HEADERS, "content-security-policy": csp(scriptHashes, pagesOrigin) }).map(([k, v]) => `  ${k}: ${v}`).join("\n")}\n`;
 
 /** `res` with the headers it doesn't set itself (the OAuth consent page has its own, stricter CSP). A socket's 101 is left be. */
 export function secured(res: Response): Response {
