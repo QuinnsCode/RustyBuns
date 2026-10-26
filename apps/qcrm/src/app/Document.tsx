@@ -1,7 +1,7 @@
 import { VERSION } from "../env.ts";
 import styles from "./styles.css?url";
 
-export const TAG = `qCRM-v${VERSION.replaceAll(".", "")}`;
+export const TAG = `qCRM-v${VERSION}`;
 const DESCRIPTION = "qCRM: the CRM your agents can use. MCP built in, a Rust engine for analysis in your browser, office sync, signed webhooks, a desktop app, and every row yours to export or delete.";
 
 // One document for every page. The hero copy, feature list and demo banner are server-rendered

@@ -17,7 +17,7 @@ export const toThree = (x: number, y: number, h: number) => new THREE.Vector3(x,
 
 /** A prop-hunt camper is drawn as the prop they've turned into. */
 interface PropBody { prop: THREE.Mesh | null; propKey: string }
-interface Remote extends PropBody { ch: Character; x: number; y: number; yaw: number; pitch: number; tx: number; ty: number; tyaw: number; crouch: boolean; seenAt: number; speed: number; light: boolean; caught: boolean; disguise: Disguise | null }
+interface Remote extends PropBody { ch: Character; x: number; y: number; yaw: number; pitch: number; tx: number; ty: number; tyaw: number; crouch: boolean; prone: boolean; climb: boolean; seenAt: number; speed: number; light: boolean; caught: boolean; disguise: Disguise | null }
 
 // top: the sky overhead; sky: at the horizon, which is also the fog, so far ridges melt into it.
 // ridge: the nearest silhouette ridge (the farther ones fade towards the horizon).
@@ -43,6 +43,8 @@ interface Plume { steam: THREE.Mesh; water: THREE.Mesh; size: number; period: nu
 const ERUPTS = 14;
 /** How far bushes sit into the ground. */
 const BUSH_SINK = 0.1;
+/** How far up the trunk a climbing camper is drawn. */
+const CLIMB_HEIGHT = 3;
 
 // Bushes, boulders and logs: placed by the thousand in a zone, or one at a time as a prop-hunt camper.
 const PROP_GEO: Record<DisguiseKind, () => THREE.BufferGeometry> = {
@@ -501,7 +503,7 @@ export class World3D {
    * Draw a frame. `me` is your own body (moved locally, so it never lags); the
    * view brings everyone else you're allowed to see.
    */
-  frame(v: View, me: { x: number; y: number; yaw: number; pitch: number; crouch: boolean; speed: number; light: boolean } | null, look: Look, cam: { mode: "first" | "third"; dist: number }, now: number, follow: { x: number; y: number; yaw: number } | null = null) {
+  frame(v: View, me: { x: number; y: number; yaw: number; pitch: number; crouch: boolean; prone: boolean; climb: boolean; speed: number; light: boolean } | null, look: Look, cam: { mode: "first" | "third"; dist: number }, now: number, follow: { x: number; y: number; yaw: number } | null = null) {
     const dt = Math.min(0.1, this.clock.getDelta());
     const z = this.zone;
     if (!z || !this.tod) return;
@@ -521,10 +523,10 @@ export class World3D {
         const p = v.players.find((q) => q.id === a.id);
         const ch = makeCharacter(a.role, p?.look ?? look, p?.name ?? "?");
         this.scene.add(ch.root);
-        rem = { ch, x: a.x, y: a.y, yaw: a.yaw, pitch: a.pitch, tx: a.x, ty: a.y, tyaw: a.yaw, crouch: a.crouch, seenAt: now, speed: 0, light: a.light, caught: false, disguise: null, prop: null, propKey: "" };
+        rem = { ch, x: a.x, y: a.y, yaw: a.yaw, pitch: a.pitch, tx: a.x, ty: a.y, tyaw: a.yaw, crouch: a.crouch, prone: a.prone, climb: a.climb, seenAt: now, speed: 0, light: a.light, caught: false, disguise: null, prop: null, propKey: "" };
         this.remotes.set(a.id, rem);
       }
-      rem.tx = a.x; rem.ty = a.y; rem.tyaw = a.yaw; rem.pitch = a.pitch; rem.crouch = a.crouch; rem.light = a.light; rem.caught = a.caughtAt !== null; rem.disguise = a.disguise;
+      rem.tx = a.x; rem.ty = a.y; rem.tyaw = a.yaw; rem.pitch = a.pitch; rem.crouch = a.crouch; rem.prone = a.prone; rem.climb = a.climb; rem.light = a.light; rem.caught = a.caughtAt !== null; rem.disguise = a.disguise;
     }
     for (const [id, rem] of this.remotes) if (!live.has(id)) { this.scene.remove(rem.ch.root); this.dress(rem, null, z, 0, 0); this.remotes.delete(id); }
     for (const rem of this.remotes.values()) {
@@ -533,7 +535,7 @@ export class World3D {
       rem.x += (rem.tx - rem.x) * k; rem.y += (rem.ty - rem.y) * k;
       rem.yaw += Math.atan2(Math.sin(rem.tyaw - rem.yaw), Math.cos(rem.tyaw - rem.yaw)) * k;
       rem.speed = Math.hypot(rem.x - ox, rem.y - oy) / Math.max(dt, 1e-3);
-      this.placeChar(rem.ch, z, rem.x, rem.y, rem.yaw, rem.pitch, rem.crouch, rem.speed, rem.light, dt, rem.caught);
+      this.placeChar(rem.ch, z, rem.x, rem.y, rem.yaw, rem.pitch, rem.crouch, rem.speed, rem.light, dt, rem.caught, rem.climb);
       rem.ch.root.visible = !this.dress(rem, rem.disguise, z, rem.x, rem.y);
     }
 
@@ -563,7 +565,7 @@ export class World3D {
       const third = cam.mode === "third";
       this.me.root.traverse((o) => { if ((o as THREE.Mesh).isMesh || (o as THREE.Sprite).isSprite) o.visible = third; });
       this.me.tag.visible = false;
-      this.placeChar(this.me, z, me.x, me.y, me.yaw, me.pitch, me.crouch, me.speed, me.light, dt, false);
+      this.placeChar(this.me, z, me.x, me.y, me.yaw, me.pitch, me.crouch, me.speed, me.light, dt, false, me.climb);
       // Your own flashlight works in first person too.
       if (this.me.light) { this.me.light.castShadow = true; this.me.light.shadow.mapSize.set(1024, 1024); }
       if (this.me.beam && !third) this.me.beam.visible = false;
@@ -607,8 +609,8 @@ export class World3D {
     return r ? { x: r.x, y: r.y, yaw: r.yaw } : null;
   }
 
-  private placeChar(ch: Character, z: Zone, x: number, y: number, yaw: number, pitch: number, crouch: boolean, speed: number, light: boolean, dt: number, caught: boolean) {
-    ch.root.position.copy(toThree(x, y, z.height(x, y)));
+  private placeChar(ch: Character, z: Zone, x: number, y: number, yaw: number, pitch: number, crouch: boolean, speed: number, light: boolean, dt: number, caught: boolean, climb = false) {
+    ch.root.position.copy(toThree(x, y, z.height(x, y) + (climb ? CLIMB_HEIGHT : 0)));
     ch.root.rotation.y = Math.PI - yaw;
     pose(ch, speed, crouch, pitch, dt);
     // Crouched in a bush, your head and hat still poke out of the top. You're only drawn for someone
@@ -629,10 +631,10 @@ export class World3D {
   }
 
   /** Where the camera goes: your eyes, or behind your shoulder. */
-  private place(z: Zone, me: { x: number; y: number; yaw: number; pitch: number; crouch: boolean } | null, cam: { mode: "first" | "third"; dist: number }) {
+  private place(z: Zone, me: { x: number; y: number; yaw: number; pitch: number; crouch: boolean; prone?: boolean; climb?: boolean } | null, cam: { mode: "first" | "third"; dist: number }) {
     if (!me) return;
-    const eye = me.crouch ? 0.95 : 1.6;
-    const head = toThree(me.x, me.y, z.height(me.x, me.y) + eye);
+    const eye = me.prone ? 0.4 : me.crouch ? 0.95 : 1.6;
+    const head = toThree(me.x, me.y, z.height(me.x, me.y) + eye + (me.climb ? CLIMB_HEIGHT : 0));
     const fwd = new THREE.Vector3(Math.sin(me.yaw) * Math.cos(me.pitch), Math.sin(me.pitch), -Math.cos(me.yaw) * Math.cos(me.pitch));
     if (cam.mode === "first") {
       this.camera.position.copy(head).addScaledVector(fwd, 0.15);
@@ -675,13 +677,13 @@ export class World3D {
       if (c.kind === "caught" && c.by === v.me) continue;
       live.add(c.id);
       if (this.cueMeshes.has(c.id)) continue;
-      const color = c.kind === "rustle" ? "#9be36b" : c.kind === "step" ? "#f2d17b" : c.kind === "call" ? "#ffb347" : c.kind === "howl" ? "#c08cff" : "#ff5a4a";
+      const color = c.kind === "rustle" ? "#9be36b" : c.kind === "step" ? "#f2d17b" : c.kind === "thud" ? "#ff8a3d" : c.kind === "call" ? "#ffb347" : c.kind === "howl" ? "#c08cff" : "#ff5a4a";
       const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 40), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, fog: false }));
       ring.rotation.x = -Math.PI / 2;
       const g = new THREE.Group();
       g.add(ring);
-      if (c.kind === "rustle" || c.kind === "step" || c.kind === "howl") {
-        const mark = nameTag(c.kind === "rustle" ? "rustle?" : c.kind === "howl" ? "a howl?" : "footsteps", color);
+      if (c.kind === "rustle" || c.kind === "step" || c.kind === "howl" || c.kind === "thud") {
+        const mark = nameTag(c.kind === "rustle" ? "rustle?" : c.kind === "howl" ? "a howl?" : c.kind === "thud" ? "a thud!" : "footsteps", color);
         mark.position.y = 2.2;
         g.add(mark);
       }

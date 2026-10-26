@@ -493,3 +493,72 @@ test("parseMsg rejects junk from the wire", () => {
   expect(parseMsg({ t: "disguise" })).toEqual({ t: "disguise" });
   expect(parseMsg({ t: "settings", tod: "dusk" })).toMatchObject({ tod: "dusk" });
 });
+
+describe("prone and tree climbing", () => {
+  const camper = (z: Zone) => {
+    const g = new Room(11).game;
+    let now = 1_000_000;
+    g.join("h", "Host", now, { host: true });
+    g.join("b", "Bo", now);
+    g.handle("h", { t: "start" }, now);
+    g.tick(now += TICK_MS);
+    while (g.phase !== "hunt") g.tick(now += 500);
+    const c = g.round!.actors.get("h")!.role === "camper" ? "h" : "b";
+    return { g, c, now, z: zoneById(g.round!.zone) };
+  };
+  const pos = (g: Hunt, id: string, now: number, x: number, y: number, over: Record<string, boolean> = {}) =>
+    g.handle(id, { t: "pos", x, y, yaw: 0, pitch: 0, crouch: false, prone: false, climb: false, run: false, light: false, ...over }, now);
+
+  test("lying flat is seen from a lot less far than crouching in the open", () => {
+    const z = zoneById("el-capitan");
+    const [x, y] = openSpot(z, 3);
+    const ranger = { x: x - 40, y, yaw: Math.PI / 2, crouch: false, role: "ranger" as const, light: false };
+    expect(canSee(z, "day", ranger, { x, y, crouch: true })).toBe(true);
+    expect(canSee(z, "day", ranger, { x, y, crouch: true, prone: true })).toBe(false);
+  });
+
+  test("hold climb by a tree: up for five seconds, a scrape on letting go, a thud if you hold the lot", () => {
+    const { g, c, z, now: t0 } = camper(zoneById(ZONES[0]!.id));
+    const r = g.round!, a = r.actors.get(c)!;
+    const tree = z.near(a.x, a.y, 400).find((p) => (p.kind === "pine" || p.kind === "sequoia") && dropOk(z, p.x + p.r + 1, p.y))!;
+    let now = t0;
+    // Park a ranger in earshot.
+    const ranger = r.actors.get(r.rangers[0]!)!;
+    const x = tree.x + tree.r + 1;
+    ranger.x = x + 5; ranger.y = tree.y;
+    a.x = x; a.y = tree.y;
+    pos(g, c, now += 100, x, tree.y);
+    pos(g, c, now += 100, x, tree.y, { climb: true });
+    expect(a.climbAt).not.toBeNull();
+    expect(g.view("h", now).round!.you!.climbAt !== undefined).toBe(true);
+    // Let go early: down, with a scrape.
+    pos(g, c, now += 1000, x, tree.y, { climb: false });
+    expect(a.climbAt).toBeNull();
+    expect(r.cues.some((q) => q.kind === "step" && q.by === c)).toBe(true);
+    // Hold the whole time: the fall.
+    pos(g, c, now += 100, x, tree.y, { climb: true });
+    expect(a.climbAt).not.toBeNull();
+    g.tick(now += HUNT.climbSecs * 1000 + 100);
+    expect(a.climbAt).toBeNull();
+    expect(r.cues.some((q) => q.kind === "thud" && q.by === c)).toBe(true);
+    // Still holding the key after the fall doesn't send you straight back up.
+    pos(g, c, now += 100, x, tree.y, { climb: true });
+    expect(a.climbAt).toBeNull();
+  });
+
+  test("no climbing with 15 seconds left, or away from a tree", () => {
+    const { g, c, z, now: t0 } = camper(zoneById(ZONES[0]!.id));
+    const a = g.round!.actors.get(c)!;
+    const [ox, oy] = openSpot(z, 3);
+    a.x = ox; a.y = oy;
+    pos(g, c, t0 + 100, ox, oy);
+    pos(g, c, t0 + 200, ox, oy, { climb: true });
+    expect(a.climbAt).toBeNull();
+    const tree = z.near(a.x, a.y, 400).find((p) => (p.kind === "pine" || p.kind === "sequoia") && dropOk(z, p.x + p.r + 1, p.y))!;
+    const now = g.endsAt - 10_000;
+    a.x = tree.x + tree.r + 1; a.y = tree.y;
+    pos(g, c, now, a.x, a.y);
+    pos(g, c, now + 100, tree.x + tree.r + 1, tree.y, { climb: true });
+    expect(a.climbAt).toBeNull();
+  });
+});

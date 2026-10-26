@@ -1,7 +1,11 @@
 // Keyboard and mouse. Click the view to capture the mouse (Esc lets go).
-//   WASD / arrows  move        Shift  run         C  crouch
+//   WASD / arrows  move        Shift  run         C  crouch (hold: go prone)
+//   X  hold to climb a tree
 //   mouse          look        V      first/third person
 //   F  flashlight (rangers)    Q  call out (rangers)   M  map / radio
+
+/** How long crouch is held before it becomes prone. */
+export const PRONE_HOLD_MS = 450;
 
 export class Controls {
   yaw = 0;
@@ -18,6 +22,9 @@ export class Controls {
   private stick = { x: 0, y: 0 };
   private runBtn = false;
   crouchToggle = false;
+  /** When the crouch key or button went down, while it's still down (hold it to go prone). */
+  private crouchDownAt = 0;
+  private climbBtn = false;
   /** One-shot presses, read and cleared by the game loop. */
   private pressed = new Set<string>();
   sensitivity = 0.0022;
@@ -37,11 +44,11 @@ export class Controls {
       if (!this.keys.has(k)) this.pressed.add(k);
       this.keys.add(k);
       // Not Ctrl: Ctrl+W, pressed to crouch and walk, closes the tab.
-      if (k === "KeyC" && !e.repeat) this.crouchToggle = !this.crouchToggle;
+      if (k === "KeyC" && !e.repeat) { this.crouchToggle = !this.crouchToggle; this.crouchDownAt = performance.now(); }
       if (["Space", "ArrowUp", "ArrowDown", "Tab"].includes(k)) e.preventDefault();
     });
-    window.addEventListener("keyup", (e) => this.keys.delete(e.code));
-    window.addEventListener("blur", () => this.keys.clear());
+    window.addEventListener("keyup", (e) => { this.keys.delete(e.code); if (e.code === "KeyC") this.crouchDownAt = 0; });
+    window.addEventListener("blur", () => { this.keys.clear(); this.crouchDownAt = 0; });
     if (matchMedia("(pointer: coarse)").matches) this.touchControls(el);
   }
 
@@ -82,7 +89,12 @@ export class Controls {
       pad.append(b); return b;
     };
     btn("Run", 18, 24, 64, (b) => { this.runBtn = !this.runBtn; b.style.background = this.runBtn ? "rgba(120,200,90,.8)" : "rgba(20,24,30,.55)"; });
-    btn("Crouch", 92, 24, 64, (b) => { this.crouchToggle = !this.crouchToggle; b.style.background = this.crouchToggle ? "rgba(120,200,90,.8)" : "rgba(20,24,30,.55)"; });
+    const crouchBtn = btn("Crouch", 92, 24, 64, (b) => { this.crouchToggle = !this.crouchToggle; this.crouchDownAt = performance.now(); b.style.background = this.crouchToggle ? "rgba(120,200,90,.8)" : "rgba(20,24,30,.55)"; });
+    const crouchUp = () => { this.crouchDownAt = 0; };
+    crouchBtn.addEventListener("touchend", crouchUp); crouchBtn.addEventListener("touchcancel", crouchUp);
+    const climb = btn("Climb", 150, 24, 64, () => { this.climbBtn = true; climb.style.background = "rgba(120,200,90,.8)"; });
+    const climbUp = () => { this.climbBtn = false; climb.style.background = "rgba(20,24,30,.55)"; };
+    climb.addEventListener("touchend", climbUp); climb.addEventListener("touchcancel", climbUp);
     btn("Map", 18, 98, 56, () => this.pressed.add("KeyM"));
     btn("Cam", 84, 98, 56, () => this.pressed.add("KeyV"));
     btn("Light", 18, 164, 56, () => this.pressed.add("KeyF"));
@@ -113,7 +125,10 @@ export class Controls {
     let fwd = (this.held("KeyW", "ArrowUp") ? 1 : 0) - (this.held("KeyS", "ArrowDown") ? 1 : 0);
     let right = (this.held("KeyD", "ArrowRight") ? 1 : 0) - (this.held("KeyA", "ArrowLeft") ? 1 : 0);
     if (this.stick.x || this.stick.y) { fwd = -this.stick.y; right = this.stick.x; }
-    return { fwd, right, run: this.held("ShiftLeft", "ShiftRight") || this.runBtn, crouch: this.crouchToggle };
+    // Holding crouch for a moment lies you flat; let go and you're back to a crouch.
+    const prone = this.crouchDownAt > 0 && performance.now() - this.crouchDownAt > PRONE_HOLD_MS;
+    if (prone) this.crouchToggle = true;
+    return { fwd, right, run: this.held("ShiftLeft", "ShiftRight") || this.runBtn, crouch: this.crouchToggle, prone, climb: this.held("KeyX") || this.climbBtn };
   }
 
   release() { if (this.locked) document.exitPointerLock(); }

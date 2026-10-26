@@ -503,7 +503,9 @@ function frame() {
       if (!corrected) { controls.yaw = you!.yaw; controls.pitch = 0; controls.crouchToggle = false; }
       sent = [];
     }
-    const inp = mapOpen ? { fwd: 0, right: 0, run: false, crouch: body.crouch } : controls.move();
+    const inp = mapOpen ? { fwd: 0, right: 0, run: false, crouch: body.crouch, prone: false, climb: false } : controls.move();
+    // Up a tree you hold on: the host won't move you, so don't walk off in the meantime.
+    if (you!.climbAt != null) { inp.fwd = 0; inp.right = 0; }
     // A prop shuffles: crouch speed, never a run.
     if (you!.disguise) { inp.crouch = true; inp.run = false; }
     if (propKey && v.mode === "props" && !ranger) {
@@ -518,7 +520,7 @@ function frame() {
     if (ranger && callKey && v.phase === "hunt") { send({ t: "call" }); sounds.call(0.8, CALLS[Math.floor(Math.random() * CALLS.length)]); }
     if (t - lastSend > 50) {
       lastSend = t;
-      send({ t: "pos", x: body.x, y: body.y, yaw: body.yaw, pitch: body.pitch, crouch: body.crouch, run: body.run, light: ranger && light });
+      send({ t: "pos", x: body.x, y: body.y, yaw: body.yaw, pitch: body.pitch, crouch: body.crouch, prone: !!body.prone, climb: inp.climb, run: body.run, light: ranger && light });
       sent.push([body.x, body.y]);
       if (sent.length > 60) sent.shift();
     }
@@ -536,7 +538,7 @@ function frame() {
       follow = (o && world.drawnAt(o.id)) ?? (you ? { x: you.x, y: you.y, yaw: you.yaw } : { x: 0, y: 0, yaw: 0 });
     }
   }
-  world.frame(v, body && { x: body.x, y: body.y, yaw: body.yaw, pitch: body.pitch, crouch: body.crouch, speed: body.speed, light: ranger && light }, look, { mode: camMode, dist: 4.2 }, now, follow);
+  world.frame(v, body && { x: body.x, y: body.y, yaw: body.yaw, pitch: body.pitch, crouch: body.crouch, prone: !!body.prone, climb: you!.climbAt != null, speed: body.speed, light: ranger && light }, look, { mode: camMode, dist: 4.2 }, now, follow);
 
   // Sounds for new cues.
   for (const c of r.cues) {
@@ -547,6 +549,7 @@ function frame() {
     const p = place(c.x - me.x, c.y - me.y, me.yaw, c.kind === "call" ? 120 : c.kind === "howl" ? 400 : 60);
     if (c.kind === "rustle") sounds.rustle(p.vol, p.pan);
     else if (c.kind === "step") sounds.step(p.vol, p.pan);
+    else if (c.kind === "thud") sounds.thud(p.vol, p.pan);
     else if (c.kind === "call" && c.by !== v.me) sounds.call(p.vol, CALLS[c.id % CALLS.length]);
     else if (c.kind === "caught") sounds.caught();
     else if (c.kind === "howl") sounds.howl(Math.max(0.25, p.vol), p.pan);
@@ -603,7 +606,7 @@ function hud(v: View, z: Zone, now: number) {
     ? "<kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>Q</kbd> call out · <kbd>F</kbd> flashlight · <kbd>M</kbd> radio · <kbd>V</kbd> camera · <kbd>N</kbd> music"
     : v.mode === "props"
       ? `<kbd>WASD</kbd> move · <kbd>E</kbd> ${you?.disguise ? "drop the disguise" : "turn into the prop next to you"} · <kbd>Shift</kbd> run · <kbd>M</kbd> map · <kbd>V</kbd> camera · <kbd>N</kbd> music`
-      : "<kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>C</kbd> crouch (hide in bushes) · <kbd>M</kbd> map · <kbd>V</kbd> camera · <kbd>N</kbd> music";
+      : "<kbd>WASD</kbd> move · <kbd>Shift</kbd> run · <kbd>C</kbd> crouch (hold: lie flat) · <kbd>X</kbd> hold to climb a tree · <kbd>M</kbd> map · <kbd>V</kbd> camera · <kbd>N</kbd> music";
   if ($("hints").innerHTML !== hints) $("hints").innerHTML = hints;
   $("crosshair").hidden = !body;
   $("clickme").hidden = !body || controls.locked || mapOpen;
