@@ -28,10 +28,17 @@ const keyZ = (due: number, beat: number) => RUNNER_Z + (due - beat) * PER_BEAT;
 
 // A hit explodes in its lane's colour. The dub echo repeats it `delay` beats later, smaller, up to
 // three times, so what you see is what the delay line is doing.
-export type Burst = { lane: Lane; beat: number; size: number; echoes: number; parts: { a: number; v: number; up: number }[] };
+export type Burst = { lane: Lane; beat: number; size: number; echoes: number; parts: Part[] };
+// A particle's launch velocity in world units a beat (x across, y up, z down the corridor), and its heat:
+// the hottest ones of a perfect burn white at the core.
+export type Part = { vx: number; vy: number; vz: number; heat: number };
 
 export function burst(lane: Lane, beat: number, size: number, rng = Math.random): Burst {
-  const parts = Array.from({ length: 18 }, () => ({ a: rng() * Math.PI * 2, v: 0.5 + rng() * 1.5, up: 1 + rng() * 2.5 }));
+  // Bigger bursts throw more, up to 40, which a phone draws at 60 fps with a few echoes in flight.
+  const parts = Array.from({ length: Math.min(40, Math.round(16 + 24 * size)) }, () => {
+    const a = rng() * Math.PI * 2, s = 1.5 + rng() * 3.5;
+    return { vx: Math.cos(a) * s, vy: 1 + rng() * 4, vz: Math.sin(a) * s * 0.7, heat: rng() };
+  });
   return { lane, beat, size, echoes: 0, parts };
 }
 
@@ -104,7 +111,6 @@ export function drawHallway(g: CanvasRenderingContext2D, v: View, s: Scene) {
   }
 
   drawBursts(g, v, s.bursts, beat);
-  drawRunner(g, v, s);
 }
 
 function ring(g: CanvasRenderingContext2D, v: View, z: number) {
@@ -154,81 +160,64 @@ function drawKey(g: CanvasRenderingContext2D, v: View, c: Call, beat: number) {
   g.globalAlpha = 1;
 }
 
+// Drag slows a particle to a stop within a beat or so, and a gentle pull draws it out to the wall it
+// came off. Both are closed form, so a frame needs only the age, not last frame's state.
+const DRAG = 3.5, PULL = 3;
+
+/** Where a burst's particle is, relative to where it went off, `age` beats after. */
+export function partAt(p: Part, age: number, size: number, out: readonly [number, number] = [0, -1]): [number, number, number] {
+  const k = (1 - Math.exp(-DRAG * age)) / DRAG, ax = out[0] * PULL, ay = out[1] * PULL;
+  // x(t) = (a/d) t + (v0 - a/d)(1 - e^(-d t)) / d: the velocity decays toward the drift the pull settles at.
+  const at = (v: number, a: number) => (a / DRAG) * age + (v - a / DRAG) * k;
+  return [at(p.vx, ax) * size, at(p.vy, ay) * size, at(p.vz, 0) * size];
+}
+
 function drawBursts(g: CanvasRenderingContext2D, v: View, bursts: Burst[], beat: number) {
+  g.globalCompositeOperation = "lighter";
   for (const b of bursts) {
     const age = beat - b.beat;
     if (age < 0 || age > 1.2) continue;
-    const fade = 1 - age / 1.2;
-    const lx = laneX(b.lane);
-    g.strokeStyle = LANE_COLOR[b.lane];
-    g.fillStyle = LANE_COLOR[b.lane];
-    // A ring on the floor, then sparks thrown up and out, pulled back down.
-    g.globalAlpha = fade * 0.8;
-    g.lineWidth = 2 + b.size * 2;
-    const r = (0.2 + age * 1.6) * b.size;
-    g.beginPath();
-    for (let i = 0; i <= 24; i++) {
-      const a = (i / 24) * Math.PI * 2;
-      const [x, y] = project(v, lx + Math.cos(a) * r, 0.02, RUNNER_Z + Math.sin(a) * r * 0.6);
-      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    const fade = (1 - age / 1.2) ** 1.5;
+    const lx = laneX(b.lane), col = LANE_COLOR[b.lane];
+    // The wall it went off: straight out from the corridor's middle through the lane.
+    const ox = lx, oy = -WALL / 2, len = Math.hypot(ox, oy), out = [ox / len, oy / len] as const;
+    const at = (p: Part, t: number) => {
+      const [x, y, z] = partAt(p, t, b.size, out);
+      return project(v, lx + x, Math.max(0, 0.05 + y), RUNNER_Z + z);
+    };
+    // Each particle is a smear from where it was a moment ago to where it is now, so fast ones streak.
+    const tail = Math.max(0, age - 0.08);
+    g.strokeStyle = col;
+    for (const pass of [0, 1]) {
+      g.globalAlpha = fade * (pass ? 0.9 : 0.25);
+      g.lineWidth = (pass ? 2 : 6) * (0.5 + b.size * 0.7);
+      g.beginPath();
+      for (const p of b.parts) {
+        const [ax, ay] = at(p, tail), [bx, by] = at(p, age);
+        g.moveTo(ax, ay); g.lineTo(bx + 0.01, by);
+      }
+      g.stroke();
     }
-    g.stroke();
-    for (const p of b.parts) {
-      const d = p.v * age * b.size, h = Math.max(0, p.up * age - 2.2 * age * age) * b.size;
-      const [x, y] = project(v, lx + Math.cos(p.a) * d, h, RUNNER_Z + Math.sin(p.a) * d * 0.6);
-      g.beginPath(); g.arc(x, y, 2.5 * b.size * fade + 0.5, 0, Math.PI * 2); g.fill();
+    // A perfect burns white at the core: the hottest particles get a thin white line over their colour.
+    if (b.size >= 1) {
+      g.strokeStyle = "#fff";
+      g.globalAlpha = fade;
+      g.lineWidth = 1.5;
+      g.beginPath();
+      for (const p of b.parts) {
+        if (p.heat < 0.5) continue;
+        const [ax, ay] = at(p, Math.max(0, age - 0.05)), [bx, by] = at(p, age);
+        g.moveTo(ax, ay); g.lineTo(bx + 0.01, by);
+      }
+      g.stroke();
     }
     // The flash: the walls catch the colour for a moment.
     if (age < 0.15) {
-      g.globalAlpha = (0.15 - age) * 2 * b.size;
+      g.fillStyle = col;
+      g.globalAlpha = (0.15 - age) * 1.5 * b.size;
       g.fillRect(0, 0, v.W, v.H);
     }
-    g.globalAlpha = 1;
   }
-}
-
-// The runner, from behind: an outline with a bob and a stride on the beat, who reaches out to the
-// lane being pressed. White, except the hands, which take the colour of a pad held down.
-function drawRunner(g: CanvasRenderingContext2D, v: View, s: Scene) {
-  const beat = s.beat, run = !!s.run;
-  const bob = run ? Math.abs(Math.sin(beat * Math.PI)) * 0.08 : 0;
-  const stride = run ? Math.sin(beat * Math.PI) : 0;
-  const z = RUNNER_Z;
-  const P = (x: number, y: number, dz = 0) => project(v, x, y + bob, z + dz);
-  g.strokeStyle = "#fff";
-  g.lineWidth = 2.5;
-  g.beginPath();
-  const [hx, hy] = P(0, 1.55);
-  g.arc(hx, hy, v.f / z * 0.11, 0, Math.PI * 2);
-  line(g, P(0, 1.42), P(0, 0.85));
-  line(g, P(-0.2, 1.35), P(0.2, 1.35)); // shoulders
-  line(g, P(-0.14, 0.85), P(0.14, 0.85)); // hips
-  // Legs: one forward, one back, in the stride.
-  line(g, P(-0.14, 0.85), P(-0.17, 0.02, stride * 0.35));
-  line(g, P(0.14, 0.85), P(0.17, 0.02, -stride * 0.35));
-  g.stroke();
-  // Arms: swing against the legs, or reach to a pressed lane.
-  const reach = [...s.down].at(-1);
-  for (const side of [-1, 1] as const) {
-    const sx = side * 0.2;
-    g.strokeStyle = "#fff";
-    g.beginPath();
-    if (reach !== undefined && (side < 0 ? reach <= 1 : reach >= 2)) {
-      const tx = laneX(reach) * 0.9;
-      line(g, P(sx, 1.35), P(tx, 0.7, 0.4));
-      g.stroke();
-      g.strokeStyle = LANE_COLOR[reach];
-      g.beginPath();
-      const [fx, fy] = P(tx, 0.7, 0.4);
-      g.arc(fx, fy, 4, 0, Math.PI * 2);
-    } else {
-      line(g, P(sx, 1.35), P(sx * 1.4, 0.9, -side * stride * 0.3));
-    }
-    g.stroke();
-  }
-}
-
-function line(g: CanvasRenderingContext2D, a: [number, number], b: [number, number]) {
-  g.moveTo(a[0], a[1]);
-  g.lineTo(b[0], b[1]);
+  g.globalAlpha = 1;
+  g.globalCompositeOperation = "source-over";
 }
