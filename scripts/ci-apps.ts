@@ -43,7 +43,7 @@ export const APPS: Record<string, App> = {
   "park-hide-seek":    { test: "bun test", boot: true },
   "playground":        { test: "bun test test", drop: false },
   "qcrm":              { test: "bun test test", drop: false },
-  "skate-tech-park":   { test: "bun test test", drop: false },
+  "skate-tech-park":   { test: "bun test --parallel --timeout 30000 test", drop: false },
   "splat-desktop":     { test: "bun test", boot: true },
   "splat-rooms":       { test: "bun test test", boot: true },
   "splat-spray":       { test: "bun test --parallel", boot: true, bootOn: ["windows-arm64"] },

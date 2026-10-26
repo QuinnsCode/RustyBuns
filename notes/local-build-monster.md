@@ -4,7 +4,7 @@ Drafted as a GitHub issue (filing was blocked); lives here until it is filed.
 
 The goal: build the box, let the agents play in it. Tests are the bottleneck, so we stack safe changes, isolate risky ones, and run on assets we already own. Free hosted Actions stay the final gate; the Macs stay builders we drive, never self-hosted runners on this public repo (a fork PR could run code on them).
 
-Related: #1242 (parked: hosted fix lane), #1252 (closed: 3 containers, about +$21/mo worst case), #818 (Dockerfiles first-class), #897, #1479 / #1484 (Mervin merges the board in a sandbox, stage by stage).
+Related: [VPS_TEST_RUNNER.md](VPS_TEST_RUNNER.md) (rented Hetzner box, priced), #1242 (parked: hosted fix lane), #1252 (closed: 3 containers, about +$21/mo worst case), #818 (Dockerfiles first-class), #897, #1479 / #1484 (Mervin merges the board in a sandbox, stage by stage).
 
 ## Inversion of control
 
