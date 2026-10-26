@@ -3,6 +3,7 @@
 // its mission (missions.ts), with a few lines of story, and opens when the one before it is won.
 // Battles and "fight anywhere" still play any level; only the menu's list is the climb.
 
+import type { BeatId } from "./director.ts";
 import { missionFor, type Mission } from "./missions.ts";
 
 export interface Chapter {
@@ -13,6 +14,8 @@ export interface Chapter {
   height: string;
   /** What's going on: shown on the menu and when the chapter starts. */
   story: string;
+  /** Its set pieces (director.ts): how you're brought in, and what goes wrong on the way. */
+  beats?: BeatId[];
 }
 
 export const CAMPAIGN: Chapter[] = [
@@ -21,6 +24,7 @@ export const CAMPAIGN: Chapter[] = [
     title: "Boot camp",
     height: "The floor",
     story: "Every toy soldier starts on the kitchen floor. The repo's folders have dug in between the table legs; merge them and the back door's open.",
+    beats: ["insertion", "incoming"],
   },
   {
     level: "backyard",

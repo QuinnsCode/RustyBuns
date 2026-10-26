@@ -45,13 +45,28 @@ export const FIELD = {
   shieldBroke: { noise: 2400, tone: { wave: "square", from: 900, to: 120 }, seconds: 0.35, volume: 0.22 },
   shieldCharge: { tone: { wave: "triangle", from: 220, to: 880 }, seconds: 0.9, volume: 0.1 },
   shieldFull: { tone: { wave: "sine", from: 880, to: 1320 }, seconds: 0.15, volume: 0.1 },
+  /** Set pieces (director.ts): a round whistling in, ringing ears after it lands, time slowing down. */
+  whistle: { tone: { wave: "sine", from: 2600, to: 700 }, seconds: 0.8, volume: 0.14 },
+  ring: { tone: { wave: "sine", from: 3900, to: 3700 }, seconds: 2.6, volume: 0.06 },
+  slow: { noise: 180, tone: { wave: "sawtooth", from: 260, to: 50 }, seconds: 1.3, volume: 0.3 },
 } satisfies Record<string, Voice>;
 
-let ctx: AudioContext | null = null;
+let ctx: AudioContext | null = null, out: BiquadFilterNode | null = null;
 const ac = () => (ctx ??= new AudioContext());
+/** Everything plays through one low-pass, wide open until a blast leaves you deaf (muffle). */
+const master = () => {
+  if (!out) out = ac().createBiquadFilter(), out.type = "lowpass", out.frequency.value = 20000, out.connect(ac().destination);
+  return out;
+};
 
-/** Plays a voice; vol 0..1 scales it (by distance), pan -1..1 puts it left or right. */
-export function play(v: Voice, vol = 1, pan = 0) {
+/** 0: hearing fine; 1: half deaf, everything dull and far away. */
+export function muffle(k: number) {
+  if (!out) return;
+  out.frequency.value = 20000 * (1 - k) + 350 * k;
+}
+
+/** Plays a voice; vol 0..1 scales it (by distance), pan -1..1 puts it left or right. In your head (ringing ears), a muffle doesn't dull it. */
+export function play(v: Voice, vol = 1, pan = 0, inHead = false) {
   if (vol <= 0.02 || typeof AudioContext === "undefined") return;
   const a = ac(), t = a.currentTime;
   if (a.state === "suspended") void a.resume();
@@ -59,7 +74,7 @@ export function play(v: Voice, vol = 1, pan = 0) {
   g.gain.setValueAtTime(v.volume * vol, t);
   g.gain.exponentialRampToValueAtTime(0.001, t + v.seconds);
   p.pan.value = Math.max(-1, Math.min(1, pan));
-  g.connect(p).connect(a.destination);
+  g.connect(p).connect(inHead ? a.destination : master());
   if (v.tone) {
     const o = a.createOscillator();
     o.type = v.tone.wave;
