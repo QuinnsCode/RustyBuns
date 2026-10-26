@@ -7,6 +7,7 @@ import { setCommonHeaders } from "./app/headers.ts";
 import { App } from "./app/pages/App.tsx";
 import { Demo } from "./app/pages/Demo.tsx";
 import { Home } from "./app/pages/Home.tsx";
+import { NotFound } from "./app/pages/NotFound.tsx";
 import { Privacy } from "./app/pages/Privacy.tsx";
 import { hourly } from "./demo.ts";
 import { VERSION, type Env as AppEnv } from "./env.ts";
@@ -55,19 +56,20 @@ const app = defineApp([
     return handleApi(request, await e(request), (work) => cf.waitUntil(work));
   }),
   route("/.well-known/*", async ({ request }) => handleApi(request, await e(request))),
-  route("/robots.txt", () => cached("User-agent: *\nAllow: /\nDisallow: /app\nDisallow: /api\nSitemap: /sitemap.xml\n", "text/plain")),
+  route("/robots.txt", ({ request }) => cached(`User-agent: *\nAllow: /\nDisallow: /app\nDisallow: /api\nSitemap: ${new URL(request.url).origin}/sitemap.xml\n`, "text/plain")),
   route("/sitemap.xml", ({ request }) => {
     const o = new URL(request.url).origin;
     const urls = ["/", "/demo", "/privacy"].map((p) => `<url><loc>${o}${p}</loc></url>`).join("");
     return cached(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`, "application/xml");
   }),
-  route("/version", () => cached(`qCRM-v${VERSION.replaceAll(".", "")}\n`, "text/plain")),
+  route("/version", () => cached(`${VERSION}\n`, "text/plain")),
   render(Document, [
     route("/", () => <Home />),
     route("/demo", () => <Demo />),
     route("/privacy", () => <Privacy />),
     route("/app", () => <App />),
     route("/app/*", () => <App />),
+    route("/*", ({ response }) => { response.status = 404; return <NotFound />; }),
   ]),
 ]);
 

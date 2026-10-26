@@ -5,7 +5,9 @@
 // carry `x-qcrm-risky: true`, so a client asks a person before calling them. That is advice;
 // the server's own checks are what hold.
 //
-// It imports nothing, so a docs page can load it from any version.
+// It imports only env.ts (which imports nothing), so a docs page can load it from any version.
+
+import { VERSION } from "./env.ts";
 
 type Schema = Record<string, unknown>;
 const ref = (name: string): Schema => ({ $ref: `#/components/schemas/${name}` });
@@ -183,7 +185,7 @@ export function openapi(origin: string) {
   return {
     openapi: "3.1.0",
     info: {
-      title: "qCRM", version: "1",
+      title: "qCRM", version: VERSION,
       description: "A small CRM for teams and the agents that work for them. Sign in on the site, or send an org API key (an owner makes one) as `Authorization: Bearer qk_…`: "
         + "it acts as the person who made it, inside that org. Roles: seasonal < employee < manager < owner < admin; each operation says the least role it takes (`x-qcrm-role`). "
         + "Everything under /orgs/{org} answers 404 to anyone who isn't a member, so an id never says whether it exists. "
