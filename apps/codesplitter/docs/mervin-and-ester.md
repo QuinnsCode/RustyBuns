@@ -72,6 +72,11 @@ weeds that out the same way. When the board's check goes red she sorts every fai
 | slow | the PR waits only on checks that always take 10 min or more | not held: merge on the fast checks, the slow one is owed |
 | blocks | only the merged tree breaks it | the PRs that touched that app are named as suspects |
 
+A slow verdict is a debt, not a pass: she lists each slow check owed by the PRs that merged without it (one run
+against the last green sha settles them all), scores checks for release-only by median time x (1 - catch rate), and
+ends with a question to the owner when one looks worth moving. Long test files can be sharded by the per-test times
+the ledger already keeps.
+
 Only `blocks` stops a merge. She also keeps a running record, so she can say which dependencies hurt, which checks
 are slowest, and what a rerun costs. And she remembers every test by id across runs: each failure stays an open incident
 until the PR that fixed it (or rewrote a test that had gone stale) is recorded against it, so over time she can say

@@ -57,7 +57,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describeBlast, load, rank } from "./blast.ts";
-import { hold, hurtLines, keep, kept, packagesChanged, report, rows, slowChecks, triage, waitLines } from "./ester.ts";
+import { debtLines, hold, hurtLines, insight, keep, kept, packagesChanged, report, rows, slowChecks, triage, waitLines } from "./ester.ts";
 import { fromJunit, hot, recall, recallLines, remember, resolve as resolveTest, withJunit } from "./ester-memory.ts";
 import { heal, layout } from "../layout.ts";
 import type { Lane, LaneStep, Line } from "../src/mervin-replay.ts";
@@ -573,11 +573,15 @@ if (import.meta.main) {
         const verdicts = triage(r.failed, board.stages, before, again, slowChecks(board.stages));
         for (const v of verdicts) if (v.owner === "flaky") resolveTest(memory, v.test, "flaky");
         console.log(report(verdicts, r.runs, again.size ? bad.map((x) => r.runs.find((d) => d.dir === x.dir && d.cmd === x.cmd)!.ms) : [], board.stages).join("\n"));
-        const now = rows(board.stages, verdicts, board.clashes);
+        const now = rows(board.stages, verdicts, board.clashes, slowChecks(board.stages));
         const file = join(top, ".mervin/ester-rows.jsonl");
         keep(file, now);
         const hurt = hurtLines(kept(file));
         if (hurt.length) console.log(hurt.join("\n"));
+        const owed = debtLines(kept(file), main);
+        if (owed.length) console.log(owed.join("\n"));
+        const ask = insight(kept(file));
+        if (ask) console.log(ask);
         const waits = waitLines(board.stages);
         if (waits.length) console.log(waits.join("\n"));
         if (hold(verdicts).length) console.log(`Ester says hold: ${hold(verdicts).map((n) => `#${n}`).join(", ")}`);
