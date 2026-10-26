@@ -502,6 +502,24 @@ async function beamableLines(env: Env, owner: string, repo: string) {
   return results as { name: string; by: string; parent: string | null; files: number }[];
 }
 
+/** Withdrawn: the commit's ref goes from the repo, then the row says so. */
+async function withdraw(env: Env, b: BeamRow) {
+  const g = await bareOf(env, b.owner, b.repo);
+  if (!("error" in g)) await git(["update-ref", "-d", `refs/beams/${b.id}`], g.dir);
+  else if (!localGit(env)) {
+    // Hosted: the ref goes from the repo's Artifacts remote. One that won't go only keeps a commit nobody can reach from here.
+    const h = await handleFor(env, b.owner, b.repo);
+    if (h) await artifactAccess(h.handle, h.remote, "write", 300).then((a) => setRef(a.remote, a.token, `refs/beams/${b.id}`, b.sha, ZERO)).catch(() => {});
+  }
+  await env.DB.prepare("UPDATE beams SET status = 'withdrawn' WHERE id = ?").bind(b.id).run();
+}
+
+/** A repo went private: its open beams were capability links, so they all close. */
+export async function withdrawOpenBeams(env: Env, owner: string, repo: string) {
+  const { results } = await env.DB.prepare("SELECT * FROM beams WHERE owner = ? AND repo = ? AND status = 'open'").bind(owner, repo).all();
+  for (const b of results as unknown as BeamRow[]) await withdraw(env, b);
+}
+
 export async function beamRoutes(req: Request, env: Env, p: string[], user: string | null, access: Access): Promise<Response | null> {
   // /api/repos/:o/:r/beams
   if (p[1] === "repos" && p[4] === "beams" && !p[5]) {
@@ -540,14 +558,7 @@ export async function beamRoutes(req: Request, env: Env, p: string[], user: stri
   if (!b) return json({ error: "no such beam" }, 404);
   if (req.method === "DELETE" && !p[3]) {
     if (user !== b.by && user !== b.owner) return json({ error: "only whoever beamed it, or the repo's owner" }, 403);
-    const g = await bareOf(env, b.owner, b.repo);
-    if (!("error" in g)) await git(["update-ref", "-d", `refs/beams/${b.id}`], g.dir);
-    else if (!localGit(env)) {
-      // Hosted: the ref goes from the repo's Artifacts remote. One that won't go only keeps a commit nobody can reach from here.
-      const h = await handleFor(env, b.owner, b.repo);
-      if (h) await artifactAccess(h.handle, h.remote, "write", 300).then((a) => setRef(a.remote, a.token, `refs/beams/${b.id}`, b.sha, ZERO)).catch(() => {});
-    }
-    await env.DB.prepare("UPDATE beams SET status = 'withdrawn' WHERE id = ?").bind(b.id).run();
+    await withdraw(env, b);
     return json({ ok: true });
   }
   if (req.method !== "GET") return null;
