@@ -107,7 +107,7 @@ describe("ester: slow checks", () => {
 });
 
 describe("ester: slow-lane follow-ups", () => {
-  const row = (pr: number, over: Partial<Row> = {}): Row => ({ pr, apps: [], pkgs: [], owners: [], clashed: false, owed: [], checks: [{ name: "stress.ts", secs: 2400 }, { name: "typecheck", secs: 100 }], failed: [], ...over });
+  const row = (pr: number, over: Partial<Row> = {}): Row => ({ pr, apps: [], pkgs: [], owners: [], clashed: false, owed: [], checks: [{ name: "stress.ts", secs: 2400, done: true }, { name: "typecheck", secs: 100, done: true }], failed: [], ...over });
 
   test("debt groups merged PRs by the slow check they skipped, once per check", () => {
     const rs = [row(1, { owed: ["stress.ts"] }), row(2), row(3, { owed: ["stress.ts"] })];
