@@ -866,6 +866,12 @@ async function route(req: Request, env: Env): Promise<Response> {
           const open = await toFile(env, owner, repo, path, "anon", "file", { headers: { "x-codesplitter-crew": "0" } }).catch(() => null);
           const doc = open?.ok ? (await open.json().catch(() => null)) as Doc | null : null;
           if (doc) await indexFile(env, owner, repo, path, text(doc)).catch(() => null);
+          // Git's HEAD holds the last commit's text until the file's next commit: push that commit again with these lines blank.
+          if (!branch) {
+            const hid = await toFile(env, owner, repo, path, user!, "hidden", { method: "POST", body: sent });
+            const files = hid.ok ? await hid.json().catch(() => null) as { content: string; published: string } | null : null;
+            if (files) await pushCatalogue(env, owner, repo, path, files, user!, "hide private lines").catch(() => null);
+          }
         }
         // Open branches' copies of the file hide the same lines.
         const { results } = await env.DB.prepare("SELECT b.name FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch WHERE f.owner = ? AND f.repo = ? AND f.path = ? AND b.status = 'open'").bind(owner, repo, path).all();

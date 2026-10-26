@@ -564,6 +564,22 @@ describe("shares", () => {
     expect((await (await call("bo", "/api/search?q=three")).json() as any[]).length).toBe(1);
   });
 
+  test("marking an already committed line private blanks it in public git HEAD at once, keeping uncommitted edits out", async () => {
+    const call = await local();
+    await post(call, "ana", "/api/repos", { name: "pub" });
+    await post(call, "ana", "/api/repos/ana/pub/files", { path: "a.ts", content: "one\nkey = hunter2\nthree" });
+    await post(call, "ana", "/api/repos/ana/pub/do/commit?path=a.ts", { message: "c" });
+    const repo = await call.artifacts.get("ana--pub");
+    expect(await (await repo.readFile({ ref: "main", path: "a.ts" }))!.text()).toContain("hunter2");
+    // An edit nobody committed yet stays out of git.
+    await post(call, "ana", "/api/repos/ana/pub/do/ops?path=a.ts", { ops: [{ kind: "set", line: "L3", base: 3, text: "draft" }] });
+    expect((await post(call, "ana", "/api/repos/ana/pub/do/private?path=a.ts", { lines: ["L2"], private: true })).status).toBe(200);
+    expect(await (await repo.readFile({ ref: "main", path: "a.ts" }))!.text()).toBe("one\n\nthree\n");
+    // The crew's remote still has the real text.
+    const crew = await call.artifacts.get("ana--pub--crew");
+    expect(await (await crew.readFile({ ref: "main", path: "a.ts" }))!.text()).toBe("one\nkey = hunter2\nthree\n");
+  });
+
   test("private lines in a public repo: the crew reads them, everyone else, git and search get them blank", async () => {
     const call = await local();
     await post(call, "ana", "/api/repos", { name: "pub" });
