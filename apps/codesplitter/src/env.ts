@@ -153,6 +153,8 @@ export interface Env {
   /** Workers Rate Limiting in front of the per-IP rules (security.ts); edge only. */
   AUTH_LIMIT?: { limit(o: { key: string }): Promise<{ success: boolean }> };
   BETTER_AUTH_URL?: string;
+  /** Where profile pages are served from, a host of their own such as https://pages.example.com (page.ts). Unset: from this site, sandboxed. */
+  PAGES_ORIGIN?: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
   GOOGLE_CLIENT_ID?: string;

@@ -128,7 +128,22 @@ const note = (text: string, status: number) => new Response(`<!doctype html><met
 const RUNS = new Set(["script", "worker", "sharedworker", "serviceworker", "audioworklet", "paintworklet"]);
 export const runsAsApp = (req: Request) => req.headers.get("sec-fetch-site") === "same-origin" && RUNS.has(req.headers.get("sec-fetch-dest") ?? "");
 
-export async function pageRoutes(req: Request, env: Env, p: string[], user?: string | null): Promise<Response | null> {
+/** A read of a page's file or asset, by anyone: GET /api/users/:name/page[/path]. */
+export const isPageRead = (req: Request, p: string[]) => p[0] === "api" && p[1] === "users" && !!p[2] && p[3] === "page" && (req.method === "GET" || req.method === "HEAD");
+
+/**
+ * With PAGES_ORIGIN set, pages live on a host of their own: scripts there share no origin, cookie or API with the app (#2292).
+ * "pages" is a request to that host, which answers page reads and nothing else; a Response is a page read on the app's host sent over, or a 404.
+ */
+export function pagesHost(req: Request, env: Env, p: string[]): Response | "pages" | null {
+  if (!env.PAGES_ORIGIN) return null;
+  const url = new URL(req.url), pages = new URL(env.PAGES_ORIGIN);
+  if (url.host === pages.host) return isPageRead(req, p) ? "pages" : new Response("not found", { status: 404 });
+  if (!isPageRead(req, p) || runsAsApp(req)) return null;
+  return Response.redirect(pages.origin + url.pathname + url.search, 302);
+}
+
+export async function pageRoutes(req: Request, env: Env, p: string[], user?: string | null, onPagesHost = false): Promise<Response | null> {
   if (p[1] === "me" && p[2] === "page" && p[3] === "revert" && !p[4] && req.method === "POST") {
     if (!user) return json({ error: "sign in first" }, 401);
     const b = await readBody<"to">(req);
@@ -173,7 +188,7 @@ export async function pageRoutes(req: Request, env: Env, p: string[], user?: str
   const ext = path.split(".").pop()!.toLowerCase();
   const type = TYPES[ext];
   if (!type) return json({ error: `a page is text: ${Object.keys(TYPES).join(", ")}` }, 415);
-  if (runsAsApp(req)) return json({ error: "a page's files run only inside its own sandbox" }, 403);
+  if (!onPagesHost && runsAsApp(req)) return json({ error: "a page's files run only inside its own sandbox" }, 403);
   let body = await repoFile(env, name, path);
   // No page repo (or no index in it): the HTML saved on the profile is the index.
   if (body === null && path === "index.html") body = ((await env.DB.prepare("SELECT theme_html FROM users WHERE name = ?").bind(name).first()) as { theme_html: string | null } | null)?.theme_html || null;

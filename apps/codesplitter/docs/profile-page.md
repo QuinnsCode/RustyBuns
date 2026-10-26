@@ -29,6 +29,7 @@ On your own profile, **Talk to your page** sends what you type to a coding agent
 Scripts run, in a box with nothing in it:
 
 - **No origin.** The response is sandboxed (`Content-Security-Policy: sandbox allow-scripts`), so it has no cookies, no storage and no reach into the app or the API as anyone, even when opened on its own.
+- **Its own host (optional).** Set `PAGES_ORIGIN` (say `https://pages.example.com`, routed to the same Worker, and set at build time too so the app's `frame-src` allows it) and the app redirects page reads there. That host answers only `GET /api/users/:name/page/...`, with no sign-in, so a page script can never reach the app's cookies or API. Unset, pages stay on the app's origin behind the sandbox.
 - **No network.** `connect-src 'self'`: it can fetch its own files, nothing else. Forms go nowhere.
 - **Libraries** load from `cdn.jsdelivr.net`, `cdnjs.cloudflare.com`, `unpkg.com` or `esm.sh`; pin a version. Images, fonts and media may come from any `https:` host.
 - **Public data only.** The page can read `JSON.parse(document.getElementById("profile").textContent)`: `{name, bio, repos}`, as a signed-out visitor sees it.

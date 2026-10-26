@@ -219,7 +219,7 @@ import {
 } from "./search.ts";
 import { pulseRoutes } from "./pulse.ts";
 import { askUsage, forget, sweepConflicts } from "./usage.ts";
-import { hasPage, pageRoutes } from "./page.ts";
+import { hasPage, pageRoutes, pagesHost } from "./page.ts";
 import { seenRoutes } from "./seen.ts";
 import { settingsRoutes } from "./settings.ts";
 import { agentPromptResponse } from "./agent-prompt.ts";
@@ -295,6 +295,10 @@ const HOURLY = "0 * * * *", MIRRORS = "*/5 * * * *";
 async function route(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const p = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  // PAGES_ORIGIN: its host answers only page reads, with no sign-in; the app's host sends them there (page.ts)
+  const pages = pagesHost(req, env, p);
+  if (pages === "pages") return (await pageRoutes(req, env, p, null, true)) ?? json({ error: "no such file" }, 404);
+  if (pages) return pages;
   // GET /.well-known/oauth-*  where apps and MCP clients find OAuth sign-in (oauth.ts)
   const known = wellKnown(req, p, url.origin);
   if (known) return known;
