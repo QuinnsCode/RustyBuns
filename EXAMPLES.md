@@ -292,6 +292,7 @@ bun run office
 | [spa-example](apps/spa-example/README.md) | A test fixture, not an app: a slice of a real RWSDK game that `glue.test.ts` uses to check `init` and the boundary report | None (never built) |
 | [example](apps/example/README.md) | Worker mode: a hand-written Worker with D1, KV and a Durable Object as a binary, plus a probe for the sample Rust crate | Small |
 | [TerraViz](apps/terraviz-demo/README.md) | A demonstration, not ours: The Zyra Project's Pages app (Apache-2.0, led by Eric Hackathorn), cloned and run with its code unchanged by `bun apps/terraviz-demo/run.ts`. It drove `rustybuns pages-functions` and several Pages fixes | Large (its own toolchain) |
+| [elysia-conduit](apps/elysia-conduit/RUSTYBUNS.md) | A demonstration, not ours: bedstack's RealWorld backend (MIT, Elysia + Drizzle + postgres.js) with no source edits, as a desktop binary on PGlite that passes their Postman suite; what breaks on Workers is written down | Medium (PGlite adds about 17 MB) |
 
 For demo scripts, the optional Rust engines and troubleshooting, see [DEMO.md](DEMO.md).
 
