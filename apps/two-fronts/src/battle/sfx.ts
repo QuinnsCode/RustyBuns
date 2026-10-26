@@ -1,4 +1,4 @@
-// Battle sound, all of it made on the spot with Web Audio: no files to fetch. Blaster bolts are a
+// Battle sound, all of it made on the spot with Web Audio: no files to fetch. Everything sits an octave down: blaster bolts are a
 // falling pitch, blasts are filtered noise over a thump, Marines grunt low through their masks and
 // the Wooka hoot, bark and howl like gorillas and howler monkeys, rough in the throat, with a
 // chest-beat now and then. Each sound is placed: quieter with distance, panned to the side it came
@@ -70,22 +70,22 @@ export function makeSfx(far = 1) {
   const laser = (at: At | null, heavy = false, loud = 0.35) => {
     const c = place(at, loud, heavy ? 45 : 28);
     if (!c) return;
-    const { out, t } = c, len = heavy ? 0.32 : 0.16, top = (heavy ? 900 : 1900) * (0.9 + Math.random() * 0.2);
+    const { out, t } = c, len = heavy ? 0.32 : 0.16, top = (heavy ? 450 : 950) * (0.9 + Math.random() * 0.2);
     const g = ctx!.createGain();
     env(g.gain, t, 1, 0.004, len);
-    const lp = filter("lowpass", heavy ? 2400 : 5200);
+    const lp = filter("lowpass", heavy ? 1200 : 2600);
     g.connect(lp).connect(out);
     for (const [type, k] of [["sawtooth", 1], ["square", 1.012]] as const) {
       const o = osc(type, g);
       o.frequency.setValueAtTime(top * k, t);
-      o.frequency.exponentialRampToValueAtTime((heavy ? 60 : 160) * k, t + len);
+      o.frequency.exponentialRampToValueAtTime((heavy ? 30 : 80) * k, t + len);
       o.start(t); o.stop(t + len + 0.02);
       hold(o);
     }
     if (heavy) {
       const ng = ctx!.createGain();
       env(ng.gain, t, 0.6, 0.003, 0.18);
-      ng.connect(filter("lowpass", 500)).connect(out);
+      ng.connect(filter("lowpass", 250)).connect(out);
       const n = noiseSrc(ng);
       n.start(t); n.stop(t + 0.25);
       hold(n);
@@ -115,8 +115,8 @@ export function makeSfx(far = 1) {
     env(tg.gain, t, big ? 1.4 : 0.9, 0.005, big ? 1.1 : 0.45);
     tg.connect(out);
     const thump = osc("sine", tg);
-    thump.frequency.setValueAtTime(big ? 110 : 140, t);
-    thump.frequency.exponentialRampToValueAtTime(big ? 28 : 40, t + (big ? 1 : 0.4));
+    thump.frequency.setValueAtTime(big ? 55 : 70, t);
+    thump.frequency.exponentialRampToValueAtTime(big ? 14 : 20, t + (big ? 1 : 0.4));
     thump.start(t); thump.stop(t + (big ? 1.2 : 0.5));
     hold(thump);
   };
@@ -182,7 +182,7 @@ export function makeSfx(far = 1) {
   const OO: [number, number] = [340, 760], AH: [number, number] = [760, 1180], UH: [number, number] = [560, 1050];
   // A gorilla's hoot: "hoo, hoo, hoo-hoo-hoohoo", each shorter than the last and climbing.
   const hoot = (at: At | null, loud = 0.4, size = 1) => {
-    const n = 3 + Math.floor(Math.random() * 4), base = r(170, 230) * size, out: Syllable[] = [];
+    const n = 3 + Math.floor(Math.random() * 4), base = r(85, 115) * size, out: Syllable[] = [];
     for (let i = 0; i < n; i++) {
       const p = base * (1 + i * 0.06), len = 0.2 * Math.pow(0.82, i) + 0.05;
       out.push({ f0: [p * 0.92, p * 1.08], f1: [OO[0] * 0.95, OO[0]], f2: [OO[1], OO[1] * 0.9], len, gap: len * 0.5 });
@@ -191,12 +191,12 @@ export function makeSfx(far = 1) {
   };
   // A short sharp bark, "WAH": a warning, or a Wooka picking its target.
   const bark = (at: At | null, loud = 0.45, size = 1) => {
-    const p = r(260, 340) * size;
+    const p = r(130, 170) * size;
     speak(at, loud, [{ f0: [p * 1.2, p * 0.75], f1: [AH[0] * 0.9, AH[0]], f2: [AH[1], AH[1] * 0.9], len: r(0.1, 0.16), gap: 0 }], false, 0.7);
   };
   // A howler monkey's roar: a deep pulsing "RO-O-O-OAH" that carries across the whole forest.
   const howl = (at: At | null, loud = 0.6, size = 1) => {
-    const p = r(150, 190) * size;
+    const p = r(75, 95) * size;
     speak(at, loud, [
       { f0: [p, p * 1.5], f1: [OO[0], UH[0]], f2: [OO[1], UH[1]], len: 0.28, gap: 0.03 },
       { f0: [p * 1.5, p * 1.7], f1: [UH[0], AH[0]], f2: [UH[1], AH[1]], len: 0.32, gap: 0.03 },
@@ -215,7 +215,7 @@ export function makeSfx(far = 1) {
       env(g.gain, s, 0.6 + i * 0.12, 0.003, 0.13);
       g.connect(c.out);
       const o = osc("sine", g);
-      o.frequency.setValueAtTime(95 * size, s); o.frequency.exponentialRampToValueAtTime(48 * size, s + 0.1);
+      o.frequency.setValueAtTime(48 * size, s); o.frequency.exponentialRampToValueAtTime(24 * size, s + 0.1);
       o.start(s); o.stop(s + 0.16);
       hold(o);
       const ng = ctx!.createGain();
@@ -231,7 +231,7 @@ export function makeSfx(far = 1) {
     const roll = Math.random();
     if (roll < 0.4) return hoot(at, loud, size);
     if (roll < 0.65) return bark(at, loud, size);
-    const n = 2 + Math.floor(Math.random() * 3), base = r(190, 280) * size, out: Syllable[] = [];
+    const n = 2 + Math.floor(Math.random() * 3), base = r(95, 140) * size, out: Syllable[] = [];
     for (let i = 0; i < n; i++) {
       const a = vowel(), b = vowel(), p = base * r(0.85, 1.2);
       out.push({ f0: [p, p * r(0.8, 1.15)], f1: [a[0] * 0.95, b[0] * 0.95], f2: [a[1] * 0.95, b[1] * 0.95], len: r(0.09, 0.16), gap: r(0.02, 0.07) });
@@ -240,12 +240,12 @@ export function makeSfx(far = 1) {
   };
   // A Wooka hit or dying: a gorilla's scream, harsh, starting high and falling away to a growl.
   const squeal = (at: At | null, loud = 0.45, size = 1) => {
-    const p = r(520, 700) * size;
+    const p = r(260, 350) * size;
     speak(at, loud, [{ f0: [p, p * 0.4], f1: [AH[0], 700], f2: [AH[1], 1300], len: r(0.35, 0.5), gap: 0 }], false, 0.8);
   };
   // A Wooka on the charge or thrown: a rising whoop that breaks into a roar.
   const whoop = (at: At | null, loud = 0.4, size = 1) => {
-    const p = r(230, 300) * size;
+    const p = r(115, 150) * size;
     speak(at, loud, [
       { f0: [p, p * 1.9], f1: [OO[0], AH[0]], f2: [OO[1], AH[1]], len: 0.2, gap: 0.02 },
       { f0: [p * 1.9, p * 1.2], f1: [AH[0], UH[0]], f2: [AH[1], UH[1]], len: 0.26, gap: 0 },
@@ -253,8 +253,8 @@ export function makeSfx(far = 1) {
   };
   // A Marine: one low "uh" or "hngh", through the mask. Dying, it's longer and falls further.
   const grunt = (at: At | null, dying = false, loud = 0.5) => {
-    const p = r(105, 140), [f1, f2] = dying ? [700, 1150] : [560, 1000];
-    speak(at, loud, [{ f0: [p * 1.15, p * (dying ? 0.7 : 0.9)], f1: [f1, f1 * 0.85], f2: [f2, f2 * 0.9], len: dying ? r(0.35, 0.5) : r(0.14, 0.2), gap: 0 }], true);
+    const p = r(52, 70), [f1, f2] = dying ? [700, 1150] : [560, 1000];
+    speak(at, loud, [{ f0: [p * 1.15, p * (dying ? 0.7 : 0.9)], f1: [f1, f1 * 0.85], f2: [f2, f2 * 0.9], len: dying ? r(0.35, 0.5) : r(0.14, 0.2), gap: 0 }], true, 0.6);
   };
   const hurt = (who: Voice, at: At | null, dying = false, loud?: number, size = 1) => (who === "wooka" ? squeal(at, loud, size) : grunt(at, dying, loud));
 
@@ -285,14 +285,14 @@ export function makeSfx(far = 1) {
       hold(o);
     });
   };
-  const tick = () => beep([2400], 0.04, "square", 0.08);
-  const chime = () => beep([660, 990], 0.14, "triangle", 0.3);
-  const warn = () => beep([220, 220], 0.12, "square", 0.12);
+  const tick = () => beep([1200], 0.04, "square", 0.08);
+  const chime = () => beep([330, 495], 0.14, "triangle", 0.3);
+  const warn = () => beep([110, 110], 0.12, "square", 0.12);
   // A war drum: a hide skin hit hard, a low thump that falls, twice.
   const drum = () => {
     const c = place(null, 0.7, 1);
     if (!c) return;
-    for (const [i, f] of [[0, 90], [0.22, 70]] as const) {
+    for (const [i, f] of [[0, 45], [0.22, 35]] as const) {
       const g = ctx!.createGain(), s = c.t + i;
       env(g.gain, s, 1, 0.004, 0.35);
       g.connect(c.out);
