@@ -12,6 +12,7 @@ import { HUNT, circleAt, type ActorView, type Circle, type Cue, type Disguise, t
 import { clearSky, type Sky, type TimeOfDay } from "../hunt/sim.ts";
 import { zoneById, zoneLoaded, type Prop, type PropKind, type Zone } from "../zones/zone.ts";
 import { makeBigfoot, makeCharacter, nameTag, pose, type Character } from "./characters.ts";
+import { plants, variant } from "./flora.ts";
 
 export const toThree = (x: number, y: number, h: number) => new THREE.Vector3(x, h, -y);
 
@@ -46,17 +47,15 @@ const BUSH_SINK = 0.1;
 /** How far up the trunk a climbing camper is drawn. */
 const CLIMB_HEIGHT = 3;
 
-// Bushes, boulders and logs: placed by the thousand in a zone, or one at a time as a prop-hunt camper.
-const PROP_GEO: Record<DisguiseKind, () => THREE.BufferGeometry> = {
-  bush: () => new THREE.IcosahedronGeometry(1, 1).scale(1, 0.75, 1).translate(0, 0.55, 0),
+// Boulders and logs: placed by the thousand in a zone, or one at a time as a prop-hunt camper (bushes are plants).
+const PROP_GEO: Record<Exclude<DisguiseKind, "bush">, () => THREE.BufferGeometry> = {
   boulder: () => new THREE.DodecahedronGeometry(1, 0).scale(1, 0.75, 1.1),
   log: () => new THREE.CylinderGeometry(0.35, 0.4, 4, 9).rotateZ(Math.PI / 2).translate(0, 0.3, 0),
 };
 /** How far each sits into the ground. */
 const PROP_SINK: Record<DisguiseKind, number> = { bush: BUSH_SINK, boulder: -0.1, log: 0 };
-/** A disguise's colour: the middle of what that kind is tinted in a zone. */
-const PROP_COLOR: Record<DisguiseKind, THREE.Color> = {
-  bush: new THREE.Color().setHSL(0.24, 0.42, 0.28),
+/** A disguise's colour: the middle of what that kind is tinted in a zone. A bush's colours are in its geometry. */
+const PROP_COLOR: Record<Exclude<DisguiseKind, "bush">, THREE.Color> = {
   boulder: new THREE.Color().setHSL(0.07, 0.08, 0.5),
   log: new THREE.Color("#6b432a"),
 };
@@ -144,9 +143,9 @@ export class World3D {
       new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false }));
     this.wall.renderOrder = 5;
     this.scene.add(this.wall, this.dome);
-    this.propGeos = { bush: PROP_GEO.bush(), boulder: PROP_GEO.boulder(), log: PROP_GEO.log() };
-    const pm = (k: DisguiseKind, flat: boolean) => new THREE.MeshStandardMaterial({ color: PROP_COLOR[k], roughness: 0.9, flatShading: flat });
-    this.propMats = { bush: this.swaying(pm("bush", true), 0.14), boulder: pm("boulder", true), log: pm("log", false) };
+    this.propGeos = { bush: plants().bush[0], boulder: PROP_GEO.boulder(), log: PROP_GEO.log() };
+    const pm = (k: Exclude<DisguiseKind, "bush">, flat: boolean) => new THREE.MeshStandardMaterial({ color: PROP_COLOR[k], roughness: 0.9, flatShading: flat });
+    this.propMats = { bush: this.swaying(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true }), 0.14), boulder: pm("boulder", true), log: pm("log", false) };
   }
 
   // Bend the top of a mesh in the wind, more the higher up (k per local metre).
@@ -299,9 +298,16 @@ export class World3D {
       new THREE.DodecahedronGeometry(3.5).scale(1, 0.8, 1).translate(1.5, 35, 0.5),
       new THREE.DodecahedronGeometry(3).scale(1, 0.8, 1).translate(-1.2, 26, -1),
     ])!, swaying(m("#ffffff", { flatShading: true }), 0.01), seqs, (p) => [p.size, p.size, p.size], (_, c) => c.setHSL(0.28, 0.4, 0.2 + r() * 0.05));
-    // Bushes: soft lumps you can crouch in.
-    place(PROP_GEO.bush(), swaying(m("#ffffff", { flatShading: true }), 0.14), by.get("bush") ?? [],
-      (p) => [p.size, p.size, p.size], (_, c) => c.copy(PROP_COLOR.bush).offsetHSL((r() - 0.5) * 0.08, 0, (r() - 0.5) * 0.08), PROP_SINK.bush);
+    // Bushes you can crouch in, and in the desert saguaros and little cacti: a few of each kind, every copy
+    // tinted a shade lighter or darker, a touch greener or yellower.
+    const grown = plants();
+    const shade = (_: Prop, c: THREE.Color) => c.setHSL(0.22 + (r() - 0.5) * 0.12, 0.3, 0.8 + r() * 0.2);
+    const sized = (p: Prop): [number, number, number] => [p.size, p.size, p.size];
+    const grow = (kinds: THREE.BufferGeometry[], list: Prop[], material: THREE.Material, sink: number) =>
+      kinds.forEach((geo, i) => place(geo, material, list.filter((p) => variant(kinds.length, p.x, p.y) === i), sized, shade, sink));
+    grow(grown.bush, by.get("bush") ?? [], this.propMats.bush, PROP_SINK.bush);
+    grow(grown.saguaro, by.get("saguaro") ?? [], m("#ffffff", { vertexColors: true, flatShading: true }), 0.1);
+    grow(grown.cactus, by.get("cactus") ?? [], m("#ffffff", { vertexColors: true, flatShading: true }), 0.05);
     place(PROP_GEO.boulder(), m("#8b8a84", { flatShading: true }), by.get("boulder") ?? [],
       (p) => [p.size, p.size, p.size], (_, c) => c.copy(PROP_COLOR.boulder).offsetHSL(0, 0, (r() - 0.5) * 0.15), PROP_SINK.boulder);
     place(PROP_GEO.log(), m("#ffffff"), by.get("log") ?? [], (p) => [p.size, p.size, p.size], (_, c) => c.copy(PROP_COLOR.log), PROP_SINK.log);

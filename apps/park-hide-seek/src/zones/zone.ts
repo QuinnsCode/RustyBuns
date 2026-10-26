@@ -60,7 +60,7 @@ export const readyZone = (pool: ZoneMeta[]): string => pool.find((z) => ground.h
 
 export const SCALE = 6;
 
-export type PropKind = "pine" | "sequoia" | "bush" | "boulder" | "tent" | "log" | "cabin" | "outhouse" | "table" | "sign" | "geyser" | "pool";
+export type PropKind = "pine" | "sequoia" | "saguaro" | "cactus" | "bush" | "boulder" | "tent" | "log" | "cabin" | "outhouse" | "table" | "sign" | "geyser" | "pool";
 
 export interface Prop {
   kind: PropKind;
@@ -256,9 +256,10 @@ export class Zone {
     }
     // Nothing grows on the hot ground round them.
     const scalded = (x: number, y: number) => hot.some((p) => Math.hypot(p.x - x, p.y - y) < p.r + 10);
-    // Trees, bushes, boulders and logs, thinning out on steep rock.
-    const sequoia = this.data.trees === "sequoia";
-    const target = { tree: sequoia ? 160 : 520, bush: 320, boulder: 140, log: 50 };
+    // Trees, bushes, boulders and logs, thinning out on steep rock. In the desert the trees are saguaros, standing
+    // apart, with barrel cacti and prickly pear between them.
+    const sequoia = this.data.trees === "sequoia", desert = this.data.trees === "desert";
+    const target = { tree: sequoia ? 160 : desert ? 150 : 520, cactus: desert ? 220 : 0, bush: 320, boulder: 140, log: desert ? 0 : 50 };
     const tries = (kind: keyof typeof target, place: (x: number, y: number, s: number) => boolean) => {
       for (let k = 0, n = 0; k < target[kind] * 12 && n < target[kind]; k++) {
         const a = r() * Math.PI * 2, d = Math.sqrt(r()) * R;
@@ -270,12 +271,25 @@ export class Zone {
     const forest = (x: number, y: number) => clumps.reduce((m, [cx, cy, cr]) => Math.max(m, 1 - Math.hypot(x - cx, y - cy) / cr), 0);
     tries("tree", (x, y, s) => {
       if (s > 0.9 || r() > 0.15 + forest(x, y) * 0.85 || scalded(x, y)) return false;
+      if (desert) {
+        const size = 0.75 + r() * 0.45;
+        if (!this.free(x, y, 3)) return false;
+        this.add({ kind: "saguaro", x, y, r: 0.35 * size, tall: 7 * size, rot: r() * Math.PI * 2, size });
+        return true;
+      }
       const big = sequoia && r() < 0.55;
       const kind: PropKind = big ? "sequoia" : "pine";
       const size = big ? 0.8 + r() * 0.6 : 0.7 + r() * 0.6;
       const rad = big ? 1.6 * size : 0.35 * size;
       if (!this.free(x, y, rad + 1)) return false;
       this.add({ kind, x, y, r: rad, tall: big ? 40 * size : 14 * size, rot: r() * Math.PI * 2, size });
+      return true;
+    });
+    tries("cactus", (x, y, s) => {
+      if (s > 0.6) return false;
+      const size = 0.8 + r() * 0.6;
+      if (!this.free(x, y, size)) return false;
+      this.add({ kind: "cactus", x, y, r: 0.45 * size, tall: 0.8 * size, rot: r() * Math.PI * 2, size });
       return true;
     });
     tries("bush", (x, y, s) => {

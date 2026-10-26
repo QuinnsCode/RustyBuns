@@ -53,6 +53,8 @@ bun run deploy           # build and deploy (wrangler deploy)
 
 **Your camper:** the lobby has a customizer (jacket, pants, skin, hat, backpack) with a live preview; it's saved in the browser and everyone in a LAN game sees it. The hair colour and style (short, curly or long) follow from the picks. Campers wear a quilted jacket with a hood on its back and cargo pants over laced boots; rangers wear the campaign hat, a shirt with pleated pockets, epaulettes, a tie, a badge and a name plate, and a duty belt with a radio and a shoulder mic that blinks red at night. The parts are modelled in Blender (`blender/characters.py` writes `public/models/characters.glb`; `--render out/` draws a lineup) and hang on the same joints the page animates, so walking and crouching bend them like a person.
 
+**The plants:** bushes, saguaros, barrel cacti and prickly pear are grown from seeds in TypeScript by the shared `@rustybuns/models` package (`packages/models/src/flora.ts`), so any app can use them. Bushes are clumps of leaves, darker inside and lighter on top: six of them, round, wide and low, or with berries. The desert parks (Saguaro, Joshua Tree, Big Bend) grow saguaros where other parks grow pines, with little cacti between them. Each plant is one geometry with its colours baked in, so a zone draws every copy of it in one call.
+
 To try a LAN game on one machine, run two copies on different ports. Each instance has its own token cookie, so they coexist:
 
 ```

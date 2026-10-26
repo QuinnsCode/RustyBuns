@@ -57,6 +57,7 @@ export class ZoneMap {
       const [x, y] = at(p.x, p.y);
       if (p.kind === "bush") { g.fillStyle = "rgba(60, 110, 40, 0.9)"; g.beginPath(); g.arc(x, y, Math.max(1.2, p.size * k), 0, 7); g.fill(); }
       else if (p.kind === "pine" || p.kind === "sequoia") { g.fillStyle = p.kind === "pine" ? "rgba(25, 55, 25, 0.75)" : "rgba(120, 50, 25, 0.85)"; g.beginPath(); g.arc(x, y, Math.max(1.5, (p.kind === "pine" ? 2.2 : 4) * p.size * k), 0, 7); g.fill(); }
+      else if (p.kind === "saguaro" || p.kind === "cactus") { g.fillStyle = "rgba(70, 110, 60, 0.9)"; g.beginPath(); g.arc(x, y, Math.max(1, (p.kind === "saguaro" ? 1.2 : 0.6) * p.size * k), 0, 7); g.fill(); }
       else if (p.kind === "boulder") { g.fillStyle = "rgba(110, 108, 100, 0.9)"; g.beginPath(); g.arc(x, y, Math.max(1, p.r * k), 0, 7); g.fill(); }
       else if (p.kind === "tent") { g.fillStyle = "#e0702b"; g.fillRect(x - 2, y - 2, 4, 4); }
       else if (p.kind === "pool") { g.fillStyle = "rgba(50, 140, 200, 0.9)"; g.beginPath(); g.arc(x, y, Math.max(2, p.r * k), 0, 7); g.fill(); }
