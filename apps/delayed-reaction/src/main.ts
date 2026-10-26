@@ -1,7 +1,7 @@
 // The page: a canvas keyboard you run along, four thumb pads, a HUD, and a menu. The sim
 // (sim.ts) decides everything; this file draws it and turns thumbs and keys into presses.
 import { Music } from "./audio.ts";
-import { burst, drawHallway, echoBursts, view, type Burst } from "./hallway.ts";
+import { burst, drawTunnel, echoBursts, view, type Burst } from "./hallway.ts";
 import { advance, createRun, delayWords, dueLanes, LEVELS, makeChart, press, release, type Judgement, type Lane, type Run } from "./sim.ts";
 const KEYS: Record<string, Lane> = { KeyD: 0, KeyF: 1, KeyJ: 2, KeyK: 3, ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3 };
 
@@ -163,7 +163,8 @@ function frame(now: number) {
     if (run.over) finish();
   }
   if (now > judgeUntil) hud.judge.textContent = "";
-  drawHallway(g, view(innerWidth, innerHeight), { run, beat, down, bursts });
+  // Between runs the tunnel still rolls, at an idle 120 bpm, so the menu has something turning behind it.
+  drawTunnel(g, view(innerWidth, innerHeight), { run, beat: run ? beat : now / 500, down, bursts, speed: 1 });
 }
 
 // Avoid the page scrolling or zooming under a thumb.
