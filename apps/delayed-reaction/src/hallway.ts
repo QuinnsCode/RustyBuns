@@ -1,5 +1,7 @@
 // The tunnel: an infinite neon grid, thin near-white lines on black, seen from behind and above
-// the runner, who runs away from the camera down the tunnel. The tunnel rolls round its axis, one
+// the runner, who runs away from the camera down the tunnel. The camera is strapped to the runner:
+// as they run up the side of the pipe the whole pipe spins round them and they stay at the bottom
+// of the screen. On top of that the tunnel rolls round its axis, one
 // way, forever, and bends the same way as it rolls, so it is always rounding a corner and never
 // arrives: an endless turn. Lanes are four places across the turning floor. Calls are rings of
 // colour rushing at the runner: a tail of rings, one per beat from the call to its due beat, so the
@@ -23,7 +25,7 @@ const ROLL = 0.14, TWIST = 0.045, BEND = 0.0035;
 // 1.5. Each is an angle round the tunnel from the floor's lowest point: left pads on the left,
 // right pads on the right, 0 straight down, positive clockwise as seen from behind.
 export const LANE_X: Record<Lane, number> = { 0: -1.5, 1: -0.5, 2: 0.5, 3: 1.5 };
-const PER_LANE = 0.48; // radians a lane unit is round the tunnel
+const PER_LANE = 1.4; // radians a lane unit is round the pipe: left and right about 40° up the sides, far left and far right about 120°, nearly on the roof
 export const laneAngle = (x: number) => x * PER_LANE;
 export const LANE_ANGLE: Record<Lane, number> = { 0: laneAngle(-1.5), 1: laneAngle(-0.5), 2: laneAngle(0.5), 3: laneAngle(1.5) };
 // A door is this many radians either side of its lane, and reaches this far up from the floor (a share of R).
@@ -45,27 +47,60 @@ export function project(v: View, x: number, y: number, z: number): [number, numb
 /** How hard the kick is hitting right now: 1 on the beat, gone a quarter-beat later. */
 const kickAt = (beat: number) => Math.max(0, 1 - (((beat % 1) + 1) % 1) * 4);
 
-/** The tunnel's radius at an angle and distance: it breathes and swells on the kick, but never under the runner's feet. */
+// The chase camera: strapped to the runner, behind and above, so the runner is always at the
+// bottom of the screen and the whole pipe spins round them as they move up its sides. `cam` is the
+// roll of the pipe on the screen, chasing minus the runner's lane angle on a slightly underdamped
+// spring, so a sidestep swings the world round and then settles with a little overshoot.
+let cam = 0, camVel = 0, camBeat: number | undefined;
+const CHASE = 70, DAMP = 12; // spring stiffness and damping, per beat
+
+/** Advance the camera toward the runner's lane position x at `beat`; returns the pipe's roll. */
+export function chase(x: number, beat: number): number {
+  const target = -laneAngle(x);
+  let dt = camBeat === undefined ? 0 : Math.min(0.5, Math.max(0, beat - camBeat));
+  camBeat = beat;
+  while (dt > 0) {
+    const h = Math.min(dt, 1 / 60);
+    camVel += (CHASE * (target - cam) - DAMP * camVel) * h;
+    cam += camVel * h;
+    dt -= h;
+  }
+  return cam;
+}
+
+/** Put the camera straight on the runner's lane position x, no swing. */
+export function snapCamera(x: number) {
+  cam = -laneAngle(x);
+  camVel = 0;
+  camBeat = undefined;
+}
+
+/** A tunnel angle as the screen sees it, once the camera has rolled the pipe. */
+const seen = (theta: number) => theta + cam;
+
+/** The tunnel's radius at a screen angle and distance: it breathes and swells on the kick, but never at the bottom of the screen, under the runner's feet. */
 export function radius(theta: number, z: number, beat: number) {
   return R * (1 + 0.06 * Math.sin(3 * theta) ** 2 * Math.sin(z * 0.35 - beat * 0.9)) * (1 + kickAt(beat) * 0.025);
 }
 
 /** Where the tunnel's axis is at distance z: straight under the runner, then bending off, further
- * the further ahead, toward wherever the roll is heading right now, so the corner keeps turning. */
+ * the further ahead, toward wherever the roll is heading right now, so the corner keeps turning.
+ * The bend rolls with the camera, like the rest of the pipe. */
 export function axis(z: number, beat: number): [number, number] {
-  const d = Math.max(0, z - RUNNER_Z), bend = BEND * d * d, way = beat * ROLL * 0.5;
+  const d = Math.max(0, z - RUNNER_Z), bend = BEND * d * d, way = beat * ROLL * 0.5 + cam;
   return [Math.sin(way) * bend, R + Math.cos(way) * bend * 0.6];
 }
 
-/** A point on the tunnel wall, at an angle from the floor and a distance ahead, on the screen. */
+/** A point on the tunnel wall, at an angle from the runner's floor and a distance ahead, on the screen. */
 export function wall(v: View, theta: number, z: number, beat: number): [number, number] {
-  const r = radius(theta, z, beat), [ax, ay] = axis(z, beat);
-  return project(v, ax + r * Math.sin(theta), ay - r * Math.cos(theta), z);
+  const t = seen(theta), r = radius(t, z, beat), [ax, ay] = axis(z, beat);
+  return project(v, ax + r * Math.sin(t), ay - r * Math.cos(t), z);
 }
 
 /** Where the floor is at lane position x (-1.5 far left to 1.5 far right) and depth z: the screen
  * point, and the floor's tilt there in radians (the angle of its slope on the screen, so a canvas
- * rotated by it draws standing upright on the turning floor). Doors sit on the same points. */
+ * rotated by it draws standing upright on the turning floor). Doors sit on the same points, and
+ * with the camera chasing x this lands at the bottom of the screen, level. */
 export function floorAt(v: View, x: number, z: number, beat: number): { x: number; y: number; tilt: number } {
   const [sx, sy] = wall(v, laneAngle(x), z, beat);
   const [lx, ly] = wall(v, laneAngle(x - 0.05), z, beat), [rx, ry] = wall(v, laneAngle(x + 0.05), z, beat);
@@ -108,8 +143,9 @@ export function echoBursts(bursts: Burst[], beat: number, delay: number) {
   bursts.push(...alive);
 }
 
-/** speed: 1 is normal; a boost rushes the tunnel faster, a wall drags it. */
-export type Scene = { run: Run | null; beat: number; down: ReadonlySet<Lane>; bursts: Burst[]; speed: number };
+/** speed: 1 is normal; a boost rushes the tunnel faster, a wall drags it. x: the runner's lane
+ * position, -1.5 far left to 1.5 far right, which the camera chases. */
+export type Scene = { run: Run | null; beat: number; down: ReadonlySet<Lane>; bursts: Burst[]; speed: number; x?: number };
 
 /** The view for this frame: on each kick the tunnel lurches a touch closer, and the vanishing point
  * drifts in a slow figure, so the whole thing sways like it is breathing. The runner shares it, so
@@ -122,6 +158,7 @@ export function sway(v: View, beat: number, running: boolean): View {
 export function drawTunnel(g: CanvasRenderingContext2D, v: View, s: Scene) {
   const { W, H } = v;
   const beat = s.beat, speed = s.speed || 1;
+  chase(s.x ?? 0, beat);
   // The last frame stays as a ghost: everything that moves leaves a trail. Faster means longer trails.
   g.globalAlpha = 1;
   g.globalCompositeOperation = "source-over";
@@ -231,8 +268,8 @@ function drawWall(g: CanvasRenderingContext2D, v: View, c: Call, z: number, beat
   const theta = LANE_ANGLE[c.lane];
   const near = Math.min(1, 9 / z), a = (gone ? 0.3 : 1) * near;
   const inDoor = (t: number) => Math.abs(((t - theta + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI) < DOOR;
-  const at = (t: number, share: number, zz = z): [number, number] => {
-    const r = radius(t, zz, beat) * share, [ax, ay] = axis(zz, beat);
+  const at = (t0: number, share: number, zz = z): [number, number] => {
+    const t = seen(t0), r = radius(t, zz, beat) * share, [ax, ay] = axis(zz, beat);
     return project(v, ax + r * Math.sin(t), ay - r * Math.cos(t), zz);
   };
   // The solid: a faint fill over the whole disc, the door left clear.
@@ -323,7 +360,7 @@ function drawBursts(g: CanvasRenderingContext2D, v: View, bursts: Burst[], beat:
     const fade = (1 - age / 1.2) ** 1.5;
     // Where it went off: the door the runner ran through, a little ahead of them at chest height; or,
     // with no door, the lane's point on the wall. Either way it is pulled straight back out to the wall.
-    const door = b.x !== undefined, theta = door ? laneAngle(b.x ?? 0) : LANE_ANGLE[b.lane], col = LANE_COLOR[b.lane];
+    const door = b.x !== undefined, theta = seen(door ? laneAngle(b.x ?? 0) : LANE_ANGLE[b.lane]), col = LANE_COLOR[b.lane];
     const out = [Math.sin(theta), -Math.cos(theta)] as const, lift = door ? R - 0.6 : R;
     const lx = lift * out[0], ly = R + lift * out[1], dz = door ? 0.4 : 0;
     const at = (p: Part, t: number) => {

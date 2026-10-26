@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { mulberry32 } from "@rustybuns/util";
-import { burst, echoBursts, floorAt, partAt, project, view } from "../src/hallway.ts";
+import { burst, echoBursts, floorAt, partAt, project, snapCamera, view } from "../src/hallway.ts";
 
 test("further down the hallway is smaller and nearer the vanishing point", () => {
   const v = view(390, 844);
@@ -26,18 +26,20 @@ test("a hit's explosion echoes at its door once per delay, smaller each time, an
   expect(bursts.length).toBe(0); // 0.55³ is under the floor: the echo died out
 });
 
-test("the floor's four places run far left to far right, below the vanishing point, and tilt with the turn", () => {
+test("the camera chases the runner: their floor is bottom-centre and level from every lane, and another lane's door is off to the side", () => {
   const v = view(390, 844);
-  const spots = [-1.5, -0.5, 0.5, 1.5].map((x) => floorAt(v, x, 4, 0));
-  for (let i = 1; i < spots.length; i++) expect(spots[i]!.x).toBeGreaterThan(spots[i - 1]!.x);
-  expect(spots[1]!.x).toBeLessThan(v.cx); // the two middle places straddle the middle
-  expect(spots[2]!.x).toBeGreaterThan(v.cx);
-  for (const { y } of spots) expect(y).toBeGreaterThan(v.hy); // the floor is below the vanishing point
-  // The floor curves up either side: far left slopes down toward the middle, far right up away from it.
-  expect(spots[0]!.tilt).toBeGreaterThan(0.3);
-  expect(spots[3]!.tilt).toBeLessThan(-0.3);
-  expect(Math.abs(floorAt(v, 0, 4, 0).tilt)).toBeLessThan(0.05);
-  expect(floorAt(v, -1.5, 20, 0).y).toBeLessThan(spots[0]!.y); // further down the tunnel sits higher on the screen
+  for (const x of [-1.5, -0.5, 0.5, 1.5]) {
+    snapCamera(x);
+    const here = floorAt(v, x, 4, 0);
+    expect(Math.abs(here.x - v.cx)).toBeLessThan(1);
+    expect(here.y).toBeGreaterThan(v.hy);
+    expect(Math.abs(here.tilt)).toBeLessThan(0.05);
+    const other = floorAt(v, x > 0 ? x - 1 : x + 1, 4, 0);
+    expect(Math.abs(other.x - v.cx)).toBeGreaterThan(60);
+    expect(other.y).toBeLessThan(here.y); // up the side of the pipe
+    expect(floorAt(v, x, 20, 0).y).toBeLessThan(here.y); // further down the tunnel sits higher on the screen
+  }
+  snapCamera(0);
 });
 
 test("a burst's particles come from its rng, fly out, and slow to a drift within a beat", () => {
