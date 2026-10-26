@@ -1,20 +1,21 @@
 // The runner, from behind and above: a lean neon-outlined silhouette in a padded jacket, shades on and
 // hair in the wind, sprinting away from the camera. Lines and curves on the canvas, no images.
 //
-// The pose comes from the scene: a sway while idle, a stride on the beat while running, a sidestep with a
-// lean into it when the runner moves across the floor, a reach toward a pad held down, a shoulder-first dive
+// The camera rides behind the runner, so a lane change swings the tunnel round them rather than moving
+// them on the screen: the body sells the move instead, banking into it like a car on a banked curve.
+// The pose comes from the scene: a sway while idle, a stride on the beat while running, that bank on a
+// lane change, a reach toward a pad held down, a shoulder-first dive
 // through a door, thrown back off a wall on a knock, a stumble after a miss, and a forward lean with a
 // streak behind when the run is boosted.
 // The jacket and shades carry the runner's one accent colour; the hands take a held pad's lane colour.
 import { floorAt, LANE_COLOR, project, type Scene, type View } from "./hallway.ts";
-import { SPEED_CEILING, SPEED_FLOOR, type Lane } from "./sim.ts";
+import { runnerX, SPEED_CEILING, SPEED_FLOOR, type Lane, type Run } from "./sim.ts";
 
 export type RunnerScene = Pick<Scene, "run" | "beat" | "down"> & {
   speed?: number;      // run.speed: at the floor it cruises, above it leans in and streaks
   missBeat?: number;   // the beat of the last miss: the stumble plays out over the beat after it
   t?: number;          // seconds, for the idle sway and the hair when no song is running
   x?: number;          // where across the floor, in lanes: -1.5 far left to 1.5 far right
-  vx?: number;         // how fast x is changing, lanes a beat; drawRunner works it out from x when it is missing
   knock?: number;      // 0..1: 1 is just bounced off a wall, falling back to 0 as the runner recovers
   passBeat?: number;   // the beat the runner last went through a door: the dive plays out over half a beat
 };
@@ -34,7 +35,7 @@ export type Pose = {
   hip: P3; neck: P3; head: P3; lean: number;
   legs: { side: -1 | 1; hip: P3; knee: P3; foot: P3; toe: P3 }[];
   arms: { side: -1 | 1; shoulder: P3; elbow: P3; hand: P3; lane?: Lane }[];
-  boost: number; stumble: number; move: number; dive: number; knock: number; wind: number; t: number;
+  boost: number; stumble: number; bank: number; dive: number; knock: number; wind: number; t: number;
 };
 
 /** The runner's joints for this moment, in world units around their own feet at (0, 0, RUNNER_Z). */
@@ -43,8 +44,7 @@ export function pose(s: RunnerScene): Pose {
   const boost = running ? clamp01(((s.speed ?? SPEED_FLOOR) - SPEED_FLOOR) / (SPEED_CEILING - SPEED_FLOOR)) : 0;
   const since = s.missBeat === undefined ? Infinity : beat - s.missBeat;
   const stumble = running && since >= 0 && since < 1 ? Math.sin(Math.min(1, since * 4) * Math.PI / 2) * (1 - since) ** 2 : 0;
-  // A sidestep: -1 moving hard left, 1 hard right. A lane in a quarter-beat is flat out.
-  const move = clamp((s.vx ?? 0) / 4, -1, 1);
+  const bank = running && s.run ? bankOf(s.run, beat) : 0;
   // Through a door: head down, shoulder first, over the half-beat after the pass.
   const passed = s.passBeat === undefined ? Infinity : beat - s.passBeat;
   const dive = running && passed >= 0 && passed < 0.5 ? Math.sin((passed / 0.5) * Math.PI) : 0;
@@ -55,10 +55,10 @@ export function pose(s: RunnerScene): Pose {
   const sway = running ? 0 : Math.sin(t * 1.7) * 0.03;
   const lean = running ? 0.2 + 0.35 * boost - 0.5 * stumble + 0.5 * dive - 1.0 * knock : 0.04;
   const roll = (running ? Math.sin(phi) * 0.04 : sway * 0.6) + stumble * 0.35 * (Math.floor(s.missBeat ?? 0) % 2 ? 1 : -1)
-    + move * 0.4 + lead * dive * 0.3;
+    + bank * 0.45 + lead * dive * 0.3;
   const bob = running ? 0.07 * Math.abs(Math.sin(phi)) - 0.14 * stumble - 0.14 * dive - 0.06 * knock : 0.008 * Math.sin(t * 2.4);
-  // Knocked: the hips are thrown back toward the camera.
-  const hip: P3 = [sway - move * 0.05, 0.92 + bob, -0.4 * knock];
+  // Knocked: the hips are thrown back toward the camera. Banked: they swing out from the turn and drop.
+  const hip: P3 = [sway - bank * 0.12, 0.92 + bob - Math.abs(bank) * 0.08, -0.4 * knock];
   const up: P3 = [Math.sin(roll), Math.cos(lean) * Math.cos(roll), Math.sin(lean)];
   const neck = add(hip, up, 0.52), head = add(neck, up, 0.17);
 
@@ -69,9 +69,10 @@ export function pose(s: RunnerScene): Pose {
     const thigh = running ? 0.8 * Math.sin(p) * (1 - knock) + lean * 0.3 + knock * (side < 0 ? 1.3 : 0.5) : 0.02;
     const bend = running ? (0.2 + 1.4 * Math.max(0, Math.cos(p))) * (1 - 0.6 * knock) : 0.08;
     const h = add(hip, [side * 0.11, 0, 0]);
-    // A sidestep: the leading foot reaches out into the move, the trailing one pushes off under the body.
-    const reachOut = move * (Math.sign(move) === side ? 0.3 : 0.08);
-    const splay = side * (0.04 + stumble * 0.16) + reachOut;
+    // Banked: the outside leg is long and pushing off out wide, the inside one tucked under the body.
+    const outside = Math.sign(bank) === -side;
+    const push = Math.abs(bank) * (outside ? -0.42 : -0.06) * Math.sign(bank);
+    const splay = side * (0.04 + stumble * 0.16) + push;
     const knee = add(h, [splay * 0.5, -Math.cos(thigh) * 0.46, Math.sin(thigh) * 0.46]);
     const shin = thigh - bend;
     const foot = add(knee, [splay * 0.5, -Math.cos(shin) * 0.46, Math.sin(shin) * 0.46]);
@@ -103,9 +104,9 @@ export function pose(s: RunnerScene): Pose {
       elbow = mix(elbow, add(shoulder, [side * 0.28, 0.04, -0.06]), stumble);
       hand = mix(hand, add(shoulder, [side * 0.46, 0.3, -0.1]), stumble);
     }
-    if (move !== 0) {
-      // Arms out to the side away from the move, for balance.
-      const out = Math.abs(move) * (Math.sign(move) === side ? 0.3 : 1);
+    if (bank !== 0) {
+      // The outside arm flung out for balance, the inside one held in.
+      const out = Math.abs(bank) * (Math.sign(bank) === side ? 0.3 : 1);
       elbow = mix(elbow, add(shoulder, [side * 0.22, -0.12, 0]), out * 0.6);
       hand = mix(hand, add(shoulder, [side * 0.42, -0.05, 0.05]), out * 0.6);
     }
@@ -125,17 +126,23 @@ export function pose(s: RunnerScene): Pose {
     return { side, shoulder, elbow, hand, lane };
   });
 
-  return { hip, neck, head, lean, legs, arms, boost, stumble, move, dive, knock, wind: running ? 1 + boost : 0.25, t: running ? beat : t };
+  return { hip, neck, head, lean, legs, arms, boost, stumble, bank, dive, knock, wind: running ? 1 + boost : 0.25, t: running ? beat : t };
 }
 
-// The last frame's place, to tell how fast the runner is moving when the scene doesn't say.
-let last = { x: 0, beat: 0, vx: 0 };
+/** How hard the runner banks into a lane change at `beat`: signed toward the move, 1 for a jump across all
+ * three lanes and about half that for one. It swings in over the sidestep and settles upright over the
+ * next two-thirds of a beat, as the camera catches up behind. */
+export function bankOf(run: Run, beat: number): number {
+  const since = beat - run.step.at;
+  if (!(since >= 0 && since < 1)) return 0;
+  const jump = runnerX(run, Infinity) - run.step.from, size = Math.min(3, Math.abs(jump));
+  const hard = size <= 1 ? 0.45 * size : 0.45 + 0.275 * (size - 1);
+  return Math.sign(jump) * hard * (1 - Math.exp(-since / 0.04)) * Math.exp(-Math.max(0, since - 0.12) * 4.5);
+}
 
 export function drawRunner(g: CanvasRenderingContext2D, v: View, s: RunnerScene) {
-  const x = s.x ?? 0, dt = s.beat - last.beat;
-  const vx = s.vx ?? (dt > 0 && dt < 0.5 ? last.vx + ((x - last.x) / dt - last.vx) * 0.5 : 0);
-  last = { x, beat: s.beat, vx };
-  const q = pose({ ...s, vx });
+  const x = s.x ?? 0;
+  const q = pose(s);
   // The pose is drawn round the middle of the floor and moved onto the spot the runner stands on.
   const P = (p: P3) => project(v, p[0], p[1], RUNNER_Z + p[2]);
   const px = v.f / RUNNER_Z; // pixels per world unit at the runner
@@ -144,6 +151,8 @@ export function drawRunner(g: CanvasRenderingContext2D, v: View, s: RunnerScene)
   g.save();
   g.translate(at.x, at.y);
   g.rotate(at.tilt);
+  // Banked into a lane change, the whole body tips over its feet toward the move.
+  g.rotate(q.bank * 0.4);
   g.translate(-bx, -by);
   g.lineCap = "round";
   g.lineJoin = "round";
@@ -168,17 +177,23 @@ export function drawRunner(g: CanvasRenderingContext2D, v: View, s: RunnerScene)
     g.stroke();
     g.globalAlpha = 1;
   }
-  // Sidestepping: a few short smears trailing off the side it is moving away from.
-  if (Math.abs(q.move) > 0.2) {
+  // Banking: streaks across the direction of travel, curving up the tube wall the runner swung off,
+  // longer for a bigger jump.
+  if (Math.abs(q.bank) > 0.08) {
+    const b = q.bank, len = 0.5 + Math.abs(b) * 1.4;
     g.strokeStyle = ACCENT;
-    g.lineWidth = 2;
-    g.globalAlpha = 0.6 * Math.abs(q.move);
-    g.beginPath();
-    for (const y of [0.3, 0.75, 1.2]) {
-      const [ax, ay] = P([q.hip[0] - q.move * 0.2, y, 0]), [ex, ey] = P([q.hip[0] - q.move * 0.75, y, -0.05]);
-      g.moveTo(ax, ay); g.lineTo(ex, ey);
+    for (const [w, a] of [[6, 0.18], [2, 0.7]] as const) {
+      g.lineWidth = w;
+      g.globalAlpha = a * Math.min(1, Math.abs(b) * 1.6);
+      g.beginPath();
+      for (const y of [0.25, 0.6, 0.95, 1.3]) {
+        const x0 = q.hip[0] - Math.sign(b) * 0.25;
+        const [ax, ay] = P([x0, y, 0]), [cx, cy] = P([x0 - b * len * 0.6, y, -0.05]);
+        const [ex, ey] = P([x0 - Math.sign(b) * len, y + len * len * 0.12, -0.1]);
+        g.moveTo(ax, ay); g.quadraticCurveTo(cx, cy, ex, ey);
+      }
+      g.stroke();
     }
-    g.stroke();
     g.globalAlpha = 1;
   }
 
