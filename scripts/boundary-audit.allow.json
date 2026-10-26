@@ -32,7 +32,7 @@
   "apps/codesplitter/src/agent-run.ts": 5,
   "apps/codesplitter/src/archive.ts": 7,
   "apps/codesplitter/src/beam.ts": 1,
-  "apps/codesplitter/src/branches.ts": 24,
+  "apps/codesplitter/src/branches.ts": 23,
   "apps/codesplitter/src/checks.ts": 2,
   "apps/codesplitter/src/ci-runner.ts": 2,
   "apps/codesplitter/src/city.ts": 3,

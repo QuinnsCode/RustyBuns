@@ -104,7 +104,7 @@ The highest-value things, in order:
 | The live site | [Cloudflare Artifacts](https://developers.cloudflare.com/artifacts/) | A repo per project, made by an API call, cloneable by anyone you hand a token |
 | Your desktop | Bare repos in `~/.codesplitters`, served by `git http-backend` | Any size, private GitHub repos, your own machine's credentials |
 | GitHub, GitLab, anywhere | A mirror, both ways | Two-way sync through outages, branches pushed upstream and pulled back |
-| Your agent's context | MCP, OpenAPI, WebMCP | The repo as tools: `read_file`, `edit_lines`, `start_branch`, `merge_branch`, `deploy` |
+| Your agent's context | MCP, OpenAPI, WebMCP | The repo as tools: `read_file`, `edit` (claim, wait, edit, let go), `start_branch`, `land` (merge, or the one conflict and why), `deploy` |
 | A phone | `#/m/owner/repo` | Start an agent, watch its run, review and merge its branch from the couch |
 
 ## Why Artifacts is rad
