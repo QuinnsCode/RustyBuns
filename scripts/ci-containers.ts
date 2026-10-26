@@ -59,7 +59,8 @@ async function baseSize(app: string, b: ContainerBinding, base: string): Promise
 async function plan(base: string) {
   const changed = (await Bun.$`git diff --name-only ${base}...HEAD`.text()).split("\n").filter(Boolean);
   const include: { app: string; bindings: string }[] = [];
-  for (const app of readdirSync("apps").filter((d) => existsSync(`apps/${d}/rustybuns.config.ts`))) {
+  // A parked app (tscircuit-desktop) has no installed dependencies, so its config can't load.
+  for (const app of readdirSync("apps").filter((d) => d !== "tscircuit-desktop" && existsSync(`apps/${d}/rustybuns.config.ts`))) {
     const hit = touched(containerBindings(await configOf(app)), changed, `apps/${app}`);
     if (hit.length) include.push({ app, bindings: hit.join(" ") });
   }
