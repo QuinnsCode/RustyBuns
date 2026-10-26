@@ -204,16 +204,16 @@ Each with a test that fails without the fix (the web client and socket changes a
 
 ### Confirmed, still open
 
-- **User page scripts run on the app origin** (fixed). The page route now answers 403 to a script, worker or worklet load whose `Sec-Fetch-Site` is `same-origin`; the sandboxed page frame is cross-site to its own files, so it still runs. A separate origin would be stronger, and is still the long-term fix.
-- **An agent batch's accept isn't bound to what was reviewed** (medium, mostly fixed). Only the run's agent and the owner can now write `agent-run-*` (ops, sockets, file delete), so no other crew member can change the branch between review and Accept. Still open: a hash of the branch's file set taken when the batch finishes and checked at Accept, and showing the whole branch there; the owner's own later edits and `hunks/reject` still move it.
-- **Marking a line private doesn't scrub committed text from search and public HEAD** (search fixed, git left). Marking now re-indexes the file with the line blank. Public git HEAD keeps the text until the file's next commit, and history keeps older text regardless.
+- **User page scripts run on the app origin** (fixed). The page route now answers 403 to a script, worker or worklet load whose `Sec-Fetch-Site` is `same-origin`; the sandboxed page frame is cross-site to its own files, so it still runs. A separate origin would be stronger, and is still the long-term fix (#2292). Images and media now load from the page's own files, uploads and data URLs only; a page that wants outside `https:` images adds `<meta name="codesplitter-outside-media" content="allow">` to its index.html, and visitors then see a notice (#2291).
+- **An agent batch's accept isn't bound to what was reviewed** (medium, fixed). Only the run's agent and the owner can write `agent-run-*` (ops, sockets, file delete, and now `hunks/reject`, which skipped the lock). When the batch finishes, the run keeps a hash of its whole branch (`pending.hash`, `branchHash` in `branches.ts`); Accept sends the hash of the batch it showed, and it lands only when the branch still matches both. A branch that changed since (the agent wrote it again, or the owner edited it by hand) waits, held, with a fresh hash, to be read again; the timer won't land it either. The owner leaving a stretch out takes the new hash, as they read it. Still open: Accept on a file page shows that file's hunks, not the whole branch (#2296).
+- **Marking a line private doesn't scrub committed text from search and public HEAD** (search fixed, git left). Marking now re-indexes the file with the line blank. Public git HEAD keeps the text until the file's next commit (#2293), and history keeps older text regardless.
 - **A check run follows symlinks as the owner** (fixed). `localMachine` read and write refuse a path whose folder resolves outside the clone or whose file is a symlink.
 - **The dependency doctor's merge tests run unscrubbed** (fixed). `inClone` uses `checkEnv` (an empty HOME and TMPDIR) for installs, tests and the fixer. Overlaps #1568 and #1570.
 
 ### Needs validation
 
-- **Open file sockets outlive revocation** (partly fixed). Access is checked once at the upgrade. Removing a collaborator, or flipping a repo to private, now has every file's Durable Object close that person's sockets (`revokeSockets`, `revoke-sockets.test.ts`). Turning protect-main on closes everyone else's sockets on main's files, so they reconnect read-only. Still open: the deployed behaviour of a hibernated socket's close is unchecked. Local and deployed plans are in the run's `NEEDS-VALIDATION.md`.
-- **Account linking may adopt an unverified password account.** Email sign-up needs no verification and account linking is on. If Better Auth links a provider-verified sign-in onto it and keeps the password, the attacker keeps a working login on an account that earns handles, the admin handle included. Needs the library installed to read.
+- **Open file sockets outlive revocation** (partly fixed). Access is checked once at the upgrade. Removing a collaborator, or flipping a repo to private, now has every file's Durable Object close that person's sockets (`revokeSockets`, `revoke-sockets.test.ts`). Turning protect-main on closes everyone else's sockets on main's files, so they reconnect read-only. Still open: the deployed behaviour of a hibernated socket's close is unchecked (MANUAL RUN #2290). Local and deployed plans are in the run's `NEEDS-VALIDATION.md`.
+- **Account linking may adopt an unverified password account.** Email sign-up needs no verification and account linking is on. If Better Auth links a provider-verified sign-in onto it and keeps the password, the attacker keeps a working login on an account that earns handles, the admin handle included. Needs the library installed to read (#2297).
 
 ### Rejected after verification
 
@@ -221,4 +221,26 @@ Conflict-agent runs gated on the repo owner (the owner's own policy, capped at 3
 
 ### Not reviewed (the critic's list)
 
-Check claim and pass integrity (`checks.ts`: can a crew member claim an auto-queued required check and pass it unrun?); every other path into main (cuts, beams, mirror landing); beam links (`GET /api/beams/:id`, 48-bit id, no repo access check); the `via 'job'` re-dispatch against the human-only gates; GitHub token scope; the other ~250 `innerHTML` sinks in `client.html`; game-room sockets; repo `.npmrc` hosts feeding the container egress allowlist; the route families nobody listed.
+Check claim and pass integrity (`checks.ts`: can a crew member claim an auto-queued required check and pass it unrun?); every other path into main (cuts, beams, mirror landing); beam links (`GET /api/beams/:id`, 48-bit id, no repo access check); the `via 'job'` re-dispatch against the human-only gates; GitHub token scope; the other ~250 `innerHTML` sinks in `client.html`; game-room sockets; repo `.npmrc` hosts feeding the container egress allowlist; the route families nobody listed. The next run starts from this list (#2295), and saved programs (#2195), which shipped after the run, get their own review (#2294).
+
+## Round 6, October 25: the units round 5's critic didn't review (#2295)
+
+A hand review of the first units on round 5's list, source only, no target code run. Not the full skill run with a coverage ledger; the rest of the list is still unreviewed and stays below.
+
+### Fixed in this round
+
+- **A repo's `.npmrc` could open the doctor container to any host** (low). `npmrcHosts` fed every registry host a repo named into the egress allowlist, including plain http, localhost and the metadata address. Only https hosts that aren't private are allowed now (`deps.test.ts`). A public host a repo names is still reachable; that is what a private registry needs.
+- **Beam ids were 48 bits** (low). A beam link is its only key. New ids are 128 bits; old ones still resolve (`beam.test.ts`).
+
+### Reviewed, open as issues
+
+- **Claim and pass integrity** (medium): https://github.com/QuinnsCode/RustyBuns/issues/2320. Hand-queued runs are safe (#645 and its follow-up); auto-queued ones are not.
+- **Beam links outlive a privacy flip**: https://github.com/QuinnsCode/RustyBuns/issues/2321.
+
+### Reviewed, nothing found
+
+`GET /api/beams/:id` does not leak across repos (the row is joined to its live repo); `DELETE` is limited to the beamer and the owner; `POST .../checks` refuses a non-owner's non-queued status; a stale runner can't report after its claim lapses.
+
+### Still not reviewed
+
+Cuts and mirror landing as paths into main; the `via 'job'` re-dispatch against the human-only gates; GitHub token scope; game-room sockets; the other ~250 `innerHTML` sinks in `client.html`; the route families nobody listed. The next run starts here (#2322), with saved programs (#2294).

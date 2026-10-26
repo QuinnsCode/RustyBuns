@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { VERSION } from "../src/env.ts";
 import { openapi } from "../src/openapi.ts";
 import { local, person, post } from "./app-kit.ts";
 
@@ -15,6 +16,8 @@ test("tools/list has every operation of the spec; tools/call runs one as the API
 
   const info = await (await app("", "/api/mcp")).json();
   expect(info.claude).toContain("/api/mcp");
+  expect(info.version).toBe(VERSION);
+  expect(openapi("").info.version).toBe(VERSION);
   const ops = Object.values(openapi("").paths).reduce((n, m) => n + Object.keys(m).length, 0);
   expect(info.tools).toBe(ops);
   expect(info.note).toContain(`${ops} tools, one per operation`);

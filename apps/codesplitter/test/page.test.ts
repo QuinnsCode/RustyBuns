@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { local as boot } from "./app-kit.ts";
 import { pagePath, withData } from "../src/page.ts";
+import worker from "../src/worker.ts";
 
 describe("putting your page back", () => {
   test("default restores the starter and empties the rest; an hour back empties what is newer than that", async () => {
@@ -67,6 +68,26 @@ describe("your page", () => {
     expect((await as("same-origin", "empty")).status).toBe(200);
     expect((await send(null, "/api/users/ryan/page/pic.png")).status).toBe(415);
     expect((await (await send(null, "/api/users/ryan")).json() as any).page).toBe(true);
+  });
+
+  test("outside images and media load only when the page opts in, and visitors are told", async () => {
+    const call = await boot({ GH_CLI: "off" });
+    const send = (user: string | null, url: string, body?: unknown, method = body === undefined ? "GET" : "POST") =>
+      call(user, url, { method, ...(body !== undefined && { body: JSON.stringify(body) }) });
+    await send("ryan", "/api/login", { name: "ryan" });
+    await send("ryan", "/api/repos", { name: "page" });
+    const put = (content: string) => send("ryan", "/api/me/page", { path: "index.html", content }, "PUT");
+    await put("<!doctype html><head></head><img src=\"https://example.com/a.png\">");
+    const shut = await send(null, "/api/users/ryan/page/");
+    expect(shut.headers.get("content-security-policy")).toContain("img-src 'self' data: blob:;");
+    expect(shut.headers.get("content-security-policy")).toContain("media-src 'self' data: blob:;");
+    expect(await shut.text()).not.toContain("other sites");
+
+    await put("<!doctype html><head><meta name=\"codesplitter-outside-media\" content=\"allow\"></head>");
+    const open = await send(null, "/api/users/ryan/page/");
+    expect(open.headers.get("content-security-policy")).toContain("img-src 'self' data: blob: https:;");
+    expect(open.headers.get("content-security-policy")).toContain("media-src 'self' data: blob: https:;");
+    expect(await open.text()).toContain("other sites");
   });
 
   test("falls back to the saved HTML, and says when there is no page", async () => {
@@ -151,5 +172,33 @@ describe("binary files of your page", () => {
     expect((await put("ryan", "cat.png", new Uint8Array([5]))).status).toBe(200);
     const big = await call("ryan", "/api/me/page", { method: "PUT", body: JSON.stringify({ path: "index.html", content: "x".repeat(1_000_001) }) });
     expect(big.status).toBe(413);
+  });
+});
+
+describe("pages on their own origin", () => {
+  test("the app sends page reads to PAGES_ORIGIN, whose host serves pages and nothing else", async () => {
+    const call = await boot({ GH_CLI: "off" });
+    const send = (user: string | null, url: string, body?: unknown) =>
+      call(user, url, { method: body === undefined ? "GET" : "POST", ...(body !== undefined && { body: JSON.stringify(body) }) });
+    await send("ryan", "/api/login", { name: "ryan" });
+    await send("ryan", "/api/repos", { name: "page" });
+    await send("ryan", "/api/repos/ryan/page/files", { path: "index.html", content: "<h1>mine</h1>" });
+    call.env.PAGES_ORIGIN = "https://pages.example.com";
+    const there = (path: string, init: RequestInit = {}) => worker.fetch(new Request("https://pages.example.com" + path, init), call.env);
+
+    const sent = await call(null, "/api/users/ryan/page/?t=1", { redirect: "manual" });
+    expect(sent.status).toBe(302);
+    expect(sent.headers.get("location")).toBe("https://pages.example.com/api/users/ryan/page/?t=1");
+    // A page's script load from the app origin is still refused, not sent over.
+    expect((await call(null, "/api/users/ryan/page/index.html", { headers: { "sec-fetch-site": "same-origin", "sec-fetch-dest": "script" } })).status).toBe(403);
+
+    const page = await there("/api/users/ryan/page/");
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain("mine");
+    // On the pages host a script load is the page's own, and the app's API and cookies are out of reach.
+    expect((await there("/api/users/ryan/page/index.html", { headers: { "sec-fetch-site": "same-origin", "sec-fetch-dest": "script" } })).status).toBe(200);
+    expect((await there("/api/session", { headers: { cookie: "cs_user=ryan" } })).status).toBe(404);
+    expect((await there("/api/me", { headers: { cookie: "cs_user=ryan" } })).status).toBe(404);
+    expect((await there("/api/users/ryan/page/index.html", { method: "PUT", headers: { cookie: "cs_user=ryan" } })).status).toBe(404);
   });
 });

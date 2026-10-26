@@ -781,6 +781,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/patch.ts` | a unified diff and a `git format-patch` mail written in JS, for beams on the hosted site where there's no git to run |
 | `src/policy.ts` | policy per path: how live edits go, the merge rule, who settles what is left, how a settled merge is checked, an agent's budget; defaults under the repo's `.gitattributes` |
 | `src/protect.ts` | protect main (#1426): an owner setting that keeps crew and agents off main. |
+| `src/push-events.ts` | Artifacts push events (#1580): a push that didn't come from codeSplitter goes in the repo's audit log |
 | `src/sandbox.ts` | the container Durable Object hosted agents run in |
 | `src/swarm.ts` | digging a big level in parts off the `LEVEL_DIGS` queue, side by side |
 | `src/sync.ts` | an agent's text edit to line ops: a Myers diff that keeps line ids, and a rebase onto the file as it is now |
@@ -788,6 +789,7 @@ These keep growth to whole lines, which merge as plain inserts (#935):
 | `src/tokens.ts` | personal API tokens: make, revoke, and who a bearer token acts as |
 | `src/try-out.ts` | try Rusty Buns on a repo or an agent's branch: init, then an offline plan |
 | `src/util.ts` | small helpers every file may use: hex, base64url, SHA-256, HTML escaping, plurals, batching |
+| `src/why.ts` | git notes as the "why" of a commit (#1580): what an agent's commit says about its run, written and read back |
 | `src/worker.ts` | routes, visibility, profiles, playlists, search |
 | `src/worktrees.ts` | real checkouts (`git worktree add`) off a desktop repo's bare git, per branch or per run, cleaned up when done |
 

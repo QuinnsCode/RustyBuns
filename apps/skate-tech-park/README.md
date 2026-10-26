@@ -10,6 +10,12 @@ Tricks score when you land them: air time, every 180 you spin, kickflips, grinds
 
 A flick trick is data (`src/tricks.ts`): how far the board turns under the rider and which way it flips, the same grid [SkateBench](https://github.com/T3-Content/skatebench) (MIT) asks models to name. Nine tricks: kickflip (`F`), heelflip (`G`), shove-it (`V`), varial (`R`), varial heel (`O`), hardflip (`U`), inward heel (`I`), tre flip (`T`) and laser flip (`Y`). With the mouse or right stick the diagonals are the compound ones (up-right varial, up-left varial heel, down-right hardflip, down-left inward heel) and a long diagonal drag down is a double turn. A tre flip with a half turn of the rider on top lands as a big flip. The approach angle and side name seven grinds (50-50, 5-0, nosegrind, smith, feeble, boardslide, lipslide), on rails and ledges alike.
 
+## Flick the tricks on a phone
+
+On a touch screen one thumb drives the stick and the other flicks on a board drawn on the flick pad, nose up. Like footprint grip tape, it shows where the fingers go and a dotted path for each stroke out of them, named at its tip; orange paths pop. The path a stroke matched lights up. Start on the nose to nollie (`N` on the keyboard): the front foot pops it, the back foot levels it, and it lands as "nollie kickflip" and the like.
+
+Which stroke does which trick is a flick profile (`src/flick.ts`): a list of strokes, each "from the nose, tail or anywhere, this way (or a tap), at least this far" and what it does (pop an ollie or a nollie, flick a trick, or both), plus which half of the screen is the pad and how long a still press waits before it is a manual. `src/flick-profiles.ts` holds twenty: classic and its goofy mirror, fingerboard (tap the tail to ollie, flick off the nose's edges), short-thumb and long-throw sizes, tap pop, compass, nollie first, pull pop, one swipe, nose flicks, tail scoop, first five, fine lines, quick and slow manuals, and lefty pads. The footprints button under the pad steps through them and the browser keeps the pick. `?flick=<name>` picks one, and `?flick=` with a profile as JSON (or base64url JSON) rides one of your own; anything it leaves out comes from classic.
+
 ## Rails bend and drop
 
 `railLine` (`src/levels/pieces.ts`) extrudes one rail along a path with a profile (`kink`, `curve`, `s`, `wave`), and a grind rides on from segment to segment round the bend or down the drop. How we plan to fill out the levels, what mobile has today and a chasing animal for timed runs are in [LEVEL_DESIGN.md](LEVEL_DESIGN.md).

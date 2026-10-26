@@ -396,6 +396,7 @@
   .cg-pick { display: grid; gap: 6px; margin: 4px 12px 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--canvas); font-size: 12px; }
   .cg-pick .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; } .cg-pick .btn { white-space: nowrap; } .cg-pick select { max-width: 14em; }
   .cg-pick .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cg-pick .cg-note { margin: 0; max-height: 9em; overflow: auto; white-space: pre-wrap; font: 11px/1.4 var(--mono); color: var(--muted); }
   .gm-key { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 6px 12px; border-top: 1px solid var(--border); font-size: 12px; }
   .gm-key span { display: inline-flex; align-items: center; gap: 6px; } .gm-key svg { width: 28px; height: 6px; overflow: visible; }
   .gm-key path { fill: none; stroke: var(--brown); stroke-width: 1.6; stroke-linecap: round; } .gm-key path.fork { stroke-dasharray: 2 5; } .gm-key path.hot { stroke: var(--accent); }
@@ -2616,6 +2617,11 @@ async function gitMap(c) {
       <div class="gitpic-slot" data-pic="${esc(JSON.stringify(["revert", { short }]))}">${gitPic(["revert", { short }])}</div>` : `<span class="muted">The crew can revert it or cherry-pick it.</span>`}`;
     box.hidden = false;
     icons();
+    // Its why, when an agent's run left one: the git note under refs/notes/codesplitter (#1580).
+    box.dataset.hash = hash;
+    api(`/repos/${owner}/${repo}/commits/${hash}/note`).then(({ note }) => {
+      if (note && box.dataset.hash === hash && !box.hidden) box.querySelector(".row").insertAdjacentHTML("afterend", `<pre class="cg-note" title="this commit's git note: git log --notes=codesplitter">${esc(note.trim())}</pre>`);
+    }, () => {});
     box.querySelector("#cg-onto")?.addEventListener("change", (e) => {
       const b = box.querySelector('[data-cg="pick"]'), pic = JSON.stringify(["pick", { short, onto: e.target.value }]);
       b.dataset.pic = pic; box.querySelector(".gitpic-slot").dataset.pic = pic; box.querySelector(".gitpic-slot").innerHTML = gitPic(pic);
@@ -3027,13 +3033,13 @@ const WAIT_TIP = "When this lands on main by itself. Reading it puts that off a 
  * Reject for the owner (`role` "owner"), Hold for the crew too ("crew"), none for anyone else who reads the file (#757).
  */
 const waitControls = (x, role = "owner") => `${x.pending.until === null ? `<span class="tick" title="${esc(x.pending.why ?? (role === "owner" ? "held: it lands when you accept it" : "held: it lands when the repo's owner accepts it"))}">${icon("hand")}held</span>` : ticker(x.started, x.pending.until, WAIT_TIP)}`
-  + (role === "owner" ? `<button type="button" class="btn icon-only" data-review="accept" data-run="${x.id}" title="land it on main now" aria-label="accept ${esc(x.agent)}'s change">${icon("check")}</button>` : "")
+  + (role === "owner" ? `<button type="button" class="btn icon-only" data-review="accept" data-run="${x.id}" data-hash="${esc(x.pending.hash ?? "")}" title="land it on main now" aria-label="accept ${esc(x.agent)}'s change">${icon("check")}</button>` : "")
   + (x.pending.until === null || !role ? "" : `<button type="button" class="btn icon-only" data-review="hold" data-run="${x.id}" title="hold it: it waits till the repo's owner accepts it" aria-label="hold ${esc(x.agent)}'s change">${icon("hand")}</button>`)
   + (role === "owner" ? `<button type="button" class="btn icon-only" data-review="reject" data-run="${x.id}" title="throw it away: none of it lands" aria-label="reject ${esc(x.agent)}'s change">${icon("x")}</button>` : "");
-/** POST accept, hold, look or reject for run `id`; says what happened unless it was a look. */
-async function reviewBatch(owner, repo, id, what) {
+/** POST accept, hold, look or reject for run `id`; says what happened unless it was a look. An accept names the batch it showed (`hash`). */
+async function reviewBatch(owner, repo, id, what, hash) {
   try {
-    const r = await api(`/repos/${owner}/${repo}/agents/${id}/${what}`, {});
+    const r = await api(`/repos/${owner}/${repo}/agents/${id}/${what}`, what === "accept" ? { hash } : {});
     if (what === "accept") toast(r.kept?.length ? `Landed on main; ${r.kept.length} line${r.kept.length > 1 ? "s" : ""} kept yours` : "Landed on main");
     else if (what === "reject") toast("Rejected: none of it lands");
     else if (what === "hold") toast(owner === me() ? "Held: it lands when you accept it" : "Held: it lands when the repo's owner accepts it");
@@ -3082,7 +3088,7 @@ function drawRuns(el, rs, { owner, repo, file, scope = {}, lines, refresh, empty
   el.onclick = (e) => {
     const b = e.target.closest("button");
     if (!b) return;
-    if (b.dataset.review) { b.disabled = true; reviewBatch(owner, repo, b.dataset.run, b.dataset.review).then(refresh); }
+    if (b.dataset.review) { b.disabled = true; reviewBatch(owner, repo, b.dataset.run, b.dataset.review, b.dataset.hash).then(refresh); }
     else if (b.dataset.stop) stop({ ids: [Number(b.dataset.stop)] });
     else if (b.hasAttribute("data-stop-all")) stop({});
     else if (b.dataset.stopH) stop({ harness: b.dataset.stopH });
@@ -5338,7 +5344,10 @@ const views = {
     const hunkCache = new Map(), calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const rowOf = (id) => id && box.querySelector(`.ln[data-id="${CSS.escape(id)}"]`);
     const waitGhosts = () => {
-      for (const { run: x, hunks } of waits) hunks.forEach((h, k) => {
+      for (const { run: x, hunks, others } of waits) {
+        // Landing takes the whole branch (its hash), so say what else it changes beyond this file.
+        if (others?.length) box.insertAdjacentHTML("afterbegin", `<div class="gl h" data-wait="${x.id}"><span></span><span></span><span class="t hunk-h">${icon("files")}<span class="grow">${esc(x.agent)}'s batch also changes ${others.length} other file${others.length > 1 ? "s" : ""}: ${others.map((o) => `<code>${esc(o.path)}</code>${o.change === "deleted" ? " (deleted)" : ""}`).join(", ")}</span>${hunks.length ? "" : waitControls(x, role)}</span></div>`);
+        hunks.forEach((h, k) => {
         const gone = h.del.map((l) => rowOf(l.id)).filter(Boolean), rise = !ghostsShown.has(x.id) && !calm ? " rise" : "";
         gone.forEach((el) => el.classList.add("gone"));
         const head = `<div class="gl h${rise}" data-wait="${x.id}"><span></span><span></span><span class="t hunk-h">${icon("bot")}<span class="grow">${esc(x.agent)} wants to change this ${hunkStat([h])}</span>${k === 0 ? waitControls(x, role) : ""}${role === "owner" ? `<button type="button" class="btn icon-only" data-drop="${esc(h.key)}" data-run="${x.id}" title="leave this stretch as it is: the rest still lands" aria-label="leave this stretch out">${icon("undo-2")}</button>` : ""}</span></div>`;
@@ -5347,7 +5356,8 @@ const views = {
         if (gone.length) { gone[0].insertAdjacentHTML("beforebegin", head); gone.at(-1).insertAdjacentHTML("afterend", adds); }
         else if (after) after.insertAdjacentHTML("afterend", head + adds);
         else box.insertAdjacentHTML("afterbegin", head + adds);
-      });
+        });
+      }
       for (const [id, k] of keptOf) {
         const t = rowOf(id)?.querySelector(".t");
         if (t) t.insertAdjacentHTML("beforeend", `<span class="kept" title="kept yours: ${esc(k.agent)} wanted ${k.wanted === null ? "this line gone" : `“${esc(k.wanted)}”`}">${icon("shield-check")}</span>`);
@@ -5364,12 +5374,14 @@ const views = {
     /** Batches waiting on main (with their hunks, from pollWaits, or fetched here) and the lines a landing kept yours on. */
     const setWaits = async (ws, kept) => {
       if (branch) return;
-      const sig = (ws) => JSON.stringify([ws.map((w) => [w.run.id, w.run.pending, w.hunks.map((h) => h.key)]), [...keptOf.keys()]]), was = sig(waits);
+      const sig = (ws) => JSON.stringify([ws.map((w) => [w.run.id, w.run.pending, w.hunks.map((h) => h.key), (w.others ?? []).map((o) => o.path)]), [...keptOf.keys()]]), was = sig(waits);
       keptOf = new Map(kept.map((k) => [k.line, k]));
       const next = await Promise.all(ws.map(async (x) => {
-        if (x.hunks) return { run: x, hunks: x.hunks };
-        if (!hunkCache.has(x.id)) hunkCache.set(x.id, api(`/repos/${owner}/${repo}/branches/${encodeURIComponent(x.pending.branch)}/hunks?path=${encodeURIComponent(path)}`).then((b) => b.hunks).catch(() => { hunkCache.delete(x.id); return []; }));
-        return { run: x, hunks: await hunkCache.get(x.id) };
+        if (x.hunks) return { run: x, hunks: x.hunks, others: x.others ?? [] };
+        // Keyed by the batch's hash too: a batch that changed since (and is held to be read again) is fetched again.
+        const key = `${x.id}:${x.pending.hash}`;
+        if (!hunkCache.has(key)) hunkCache.set(key, api(`/repos/${owner}/${repo}/branches/${encodeURIComponent(x.pending.branch)}/hunks?path=${encodeURIComponent(path)}`).catch(() => { hunkCache.delete(key); return { hunks: [], others: [] }; }));
+        return { run: x, ...(await hunkCache.get(key)) };
       }));
       waits = next;
       const changed = sig(waits) !== was;
@@ -5383,9 +5395,9 @@ const views = {
       if (!b) return;
       b.disabled = true;
       const w = waits.find((x) => String(x.run.id) === b.dataset.run);
-      if (b.dataset.review) await reviewBatch(owner, repo, b.dataset.run, b.dataset.review);
+      if (b.dataset.review) await reviewBatch(owner, repo, b.dataset.run, b.dataset.review, b.dataset.hash);
       else if (w) {
-        try { await rejectHunk(owner, repo, w.run.pending.branch, path, w.hunks.find((h) => h.key === b.dataset.drop)); hunkCache.delete(w.run.id); toast("Left that stretch out: the rest still lands"); }
+        try { await rejectHunk(owner, repo, w.run.pending.branch, path, w.hunks.find((h) => h.key === b.dataset.drop)); hunkCache.delete(`${w.run.id}:${w.run.pending.hash}`); toast("Left that stretch out: the rest still lands"); }
         catch (err) { toast(err.message); }
       }
       refreshWaits();

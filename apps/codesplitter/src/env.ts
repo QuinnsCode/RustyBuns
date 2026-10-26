@@ -7,6 +7,8 @@ export interface CommitMeta { hash: string; treeHash: string; message: string; p
 export interface ArtifactsRepo {
   info(): Promise<{ name: string; defaultBranch: string; remote: string; readOnly: boolean; source: string | null }>;
   createToken(scope?: "read" | "write", ttl?: number): Promise<{ plaintext: string }>;
+  /** Takes a token's plaintext or id away; false when it was not one of this repo's. */
+  revokeToken(tokenOrId: string): Promise<boolean>;
   log(opts?: { ref?: string; limit?: number; offset?: number }): Promise<CommitMeta[]>;
   readCommit(hash: string): Promise<CommitMeta | null>;
   readTree(hash: string): Promise<TreeEntry[] | null>;
@@ -110,6 +112,11 @@ export interface Env {
   CODEX_API_KEY?: string;
   /** Cloudflare Artifacts (a bare-repo twin on the desktop). Optional: without it, nothing is pushed. */
   ARTIFACTS?: Artifacts;
+  /**
+   * A second namespace made in the EU jurisdiction (REST only, fixed at creation: #2301). A repo made with `region: "eu"`
+   * keeps its git here and says so in `repos.namespace` (archive.ts `artifactsFor`). Unbound, "eu" is refused.
+   */
+  ARTIFACTS_EU?: Artifacts;
   /** The namespace the repos are moving to (artifact-move.ts, #823). Bound only while the move runs. */
   ARTIFACTS_NEXT?: Artifacts;
   /**
@@ -146,6 +153,8 @@ export interface Env {
   /** Workers Rate Limiting in front of the per-IP rules (security.ts); edge only. */
   AUTH_LIMIT?: { limit(o: { key: string }): Promise<{ success: boolean }> };
   BETTER_AUTH_URL?: string;
+  /** Where profile pages are served from, a host of their own such as https://pages.example.com (page.ts). Unset: from this site, sandboxed. */
+  PAGES_ORIGIN?: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
   GOOGLE_CLIENT_ID?: string;

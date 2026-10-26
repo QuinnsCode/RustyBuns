@@ -28,6 +28,7 @@ export type Input = {
   throttle: number; // -1..1
   steer: number; // -1..1, left is +
   jump: boolean; // ollie, on press
+  nollie: boolean; // the ollie off the nose: the front foot pops it and the back foot drags it level (on press)
   boost: boolean; // rear jets: speed on the ground and along the heading in the air, and a pump through a transition (held)
   flip: boolean; // board: kickflip (on press, in the air); shorthand for flick "kickflip"
   flick: Flick | null; // board: a flick trick, on press, in the air (the gesture layer resolves a drag or stick into this)
@@ -35,7 +36,7 @@ export type Input = {
   manual: -1 | 0 | 1; // held on the ground: 1 balances on the back wheels (manual), -1 on the front (nose manual)
 };
 
-export const IDLE: Input = { throttle: 0, steer: 0, jump: false, boost: false, flip: false, flick: null, fan: false, manual: 0 };
+export const IDLE: Input = { throttle: 0, steer: 0, jump: false, nollie: false, boost: false, flip: false, flick: null, fan: false, manual: 0 };
 
 // Pushing is gentle and tops out at a speed you can steer at (about 70 km/h at SCALE 2). The jets and
 // a downhill carry the board past it, up to the jets' own top speed, and the board sheds the extra
@@ -115,6 +116,7 @@ const SPIN_EASE = 0.12; // seconds for a spin in the air to build to what the st
  * `angle` radians in `snap` seconds, then the front foot drags up the grip and levels it out over
  * `level` seconds. The board flattens itself; nobody has to catch it. */
 export const POP = { angle: 0.5, snap: 0.07 * T, level: 0.32 * T };
+const NOLLIE_BONUS = 100; // popping off the nose is the harder way round
 const CATCH = 0.3; // land with less than this share of a flick left and the board is caught flat, not a bail
 const CHAIN_WINDOW = 3; // seconds on the ground between tricks before the chain ends
 const CHAIN_MAX = 8;
@@ -180,6 +182,7 @@ export type State = {
   jetT: number; // seconds the lift jets still burn (an ollie, a landing)
   firing: Firing;
   popT: number; // seconds since the last ollie's pop, or -1 once the board is level again
+  nollie: boolean; // this air was popped off the nose
   feet: Foot[]; // what the feet did this step, for the view
   plateDown: boolean;
   bail: number; // seconds left on the floor
@@ -196,25 +199,26 @@ export function start(x = 0, z = -20, yaw = 0, level: Level = plaza): State {
     t: 0, x, y: level.height(x, z), z, vx: 0, vy: 0, vz: 0, yaw, lip: 0, pitch: 0, roll: 0, speed: 0,
     air: false, airTime: 0, spun: 0, spin: 0, flipT: 0, flipKind: "kickflip", tricks: [], grind: -1, grindTime: 0,
     grindKind: "50-50", grindOff: 0, balance: 0, manual: 0, manualTime: 0, chain: 0, chainT: 0, combo: [], comboScore: 0, comboKind: null, fan: false, jetT: 0,
-    firing: { rear: false, lift: false, spin: 0, roll: 0 }, popT: -1, feet: [], plateDown: false,
+    firing: { rear: false, lift: false, spin: 0, roll: 0 }, popT: -1, nollie: false, feet: [], plateDown: false,
     bail: 0, tumbleDir: 1, score: 0, last: null, prevJump: false, prevFlip: false, prevFlick: false,
   };
 }
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
-/** How far the board's nose is up over its path from an ollie's pop: up fast as the tail snaps, then eased level. */
-export function noseUp(s: Pick<State, "popT">): number {
+/** How far the board's nose is up over its path from an ollie's pop: up fast as the tail snaps, then eased level. A nollie is the same pop the other way: the tail kicks up (negative). */
+export function noseUp(s: Pick<State, "popT" | "nollie">): number {
   if (s.popT < 0) return 0;
-  if (s.popT < POP.snap) return POP.angle * (s.popT / POP.snap);
+  const way = s.nollie ? -1 : 1;
+  if (s.popT < POP.snap) return way * POP.angle * (s.popT / POP.snap);
   const u = (s.popT - POP.snap) / POP.level;
-  return u >= 1 ? 0 : POP.angle * (1 - u) ** 2;
+  return u >= 1 ? 0 : way * POP.angle * (1 - u) ** 2;
 }
 
-/** The ollie: the tail snaps, the lift jets burn, and the board leaves the ground. */
-function pop(s: State) {
-  s.vy = Math.max(0, s.vy) + OLLIE; s.jetT = JETS.pop; s.popT = 0; // off a kicker's lip the pop adds to the climb
-  s.feet.push({ foot: "back", at: "tail" });
+/** The ollie: the tail snaps (the nose, on a nollie), the lift jets burn, and the board leaves the ground. */
+function pop(s: State, nollie: boolean) {
+  s.vy = Math.max(0, s.vy) + OLLIE; s.jetT = JETS.pop; s.popT = 0; s.nollie = nollie; // off a kicker's lip the pop adds to the climb
+  s.feet.push(nollie ? { foot: "front", at: "nose" } : { foot: "back", at: "tail" });
   takeOff(s);
 }
 
@@ -292,6 +296,7 @@ function land(s: State, level: Level) {
   const vx = s.vx + gx * into, vz = s.vz + gz * into, vy = s.vy - into;
   s.vx = vx; s.vz = vz; // a fall slides on along the ground
   s.y = level.height(s.x, s.z); s.vy = 0; s.air = false; s.popT = -1;
+  const nollie = s.nollie; s.nollie = false;
   if (s.airTime > 0.2) s.jetT = JETS.landBurst;
   const fx = Math.sin(s.yaw), fz = Math.cos(s.yaw), a = gx * fx + gz * fz;
   s.pitch = Math.atan(a); s.roll = Math.atan(gx * fz - gz * fx);
@@ -312,7 +317,8 @@ function land(s: State, level: Level) {
     parts.push(n > 1 ? `${n}x ${t}` : t);
   }
   if (s.speed < 0) parts.push("fakie");
-  const points = Math.round(s.airTime * 100 + (turns / 180) * 250 + s.tricks.reduce((n, t) => n + TRICKS[t].points, 0));
+  if (nollie) parts.unshift("nollie");
+  const points = Math.round(s.airTime * 100 + (turns / 180) * 250 + s.tricks.reduce((n, t) => n + TRICKS[t].points, 0) + (nollie ? NOLLIE_BONUS : 0));
   award(s, parts.length ? parts.join(" ") : "Air", points, "air");
 }
 
@@ -334,18 +340,18 @@ function skid(s: State, level: Level) {
 /** One fixed step on `level` (the plaza unless told otherwise). Mutates and returns `s`. */
 export function step(s: State, inp: Input, level: Level = plaza): State {
   const tune = TUNE;
-  const pressed = inp.jump && !s.prevJump;
+  const pops = inp.jump || inp.nollie, pressed = pops && !s.prevJump;
   const flipPressed = inp.flip && !s.prevFlip;
   const flick = inp.flick ?? (flipPressed ? "kickflip" : null);
   const flickPressed = flick !== null && (!inp.flick || !s.prevFlick);
-  s.prevJump = inp.jump; s.prevFlip = inp.flip; s.prevFlick = inp.flick !== null;
+  s.prevJump = pops; s.prevFlip = inp.flip; s.prevFlick = inp.flick !== null;
   s.t += DT;
   s.firing = { rear: false, lift: false, spin: 0, roll: 0 };
   s.feet = [];
   if (s.popT >= 0) {
     const was = s.popT;
     s.popT += DT;
-    if (was < POP.snap && s.popT >= POP.snap) s.feet.push({ foot: "front", at: "nose" }); // the front foot drags it level
+    if (was < POP.snap && s.popT >= POP.snap) s.feet.push(s.nollie ? { foot: "back", at: "tail" } : { foot: "front", at: "nose" }); // the other foot drags it level
     if (s.popT > POP.snap + POP.level) s.popT = -1;
   }
 
@@ -396,7 +402,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       s.grind = -1;
       s.vx = fx * s.speed; s.vz = fz * s.speed;
       s.vy = 0;
-      if (pressed) pop(s); else takeOff(s);
+      if (pressed) pop(s, inp.nollie); else takeOff(s);
     }
     return s;
   }
@@ -485,11 +491,11 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       if (Math.abs(s.speed * DT) > 0.01) s.pitch = Math.atan(slope * dir);
       else { const [gx, gz] = gradient(level, s.x, s.z); s.pitch = Math.atan(gx * sx + gz * sz); } // standing still: the ground's own slope
     }
-    if (!s.air && pressed) pop(s);
+    if (!s.air && pressed) pop(s, inp.nollie);
   }
 
   if (s.air) {
-    if (pressed && s.popT < 0 && s.airTime < COYOTE && s.flipT <= 0 && !s.tricks.length) pop(s); // the wheels only just left a bump or a lip: the tail still reaches it
+    if (pressed && s.popT < 0 && s.airTime < COYOTE && s.flipT <= 0 && !s.tricks.length) pop(s, inp.nollie); // the wheels only just left a bump or a lip: the tail still reaches it
     s.airTime += DT;
     if (s.lip) s.lip = Math.max(0, Math.min(s.lip, Math.atan2(s.vy, Math.hypot(s.vx, s.vz)))); // nose along its path off the wall, levelling as it turns over
     s.vy -= (G + (s.fan ? JETS.fanPull : 0)) * DT;

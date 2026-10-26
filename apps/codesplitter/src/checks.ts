@@ -183,6 +183,7 @@ export const get = (env: Env, id: number) => env.DB.prepare("SELECT * FROM check
 async function told(env: Env, run: CheckRun, action: "created" | "completed", by: string) {
   await emit(env, run.owner, run.repo, "check_run", by, { action, check_run: shaped(run) });
   if (run.runner !== "github") await postStatus(env, run).catch(() => null);
+  if (action === "completed") await (await import("./why.ts")).noteChecks(env, run).catch(() => null);
   if (action === "completed" && run.status === "failed" && run.ref !== "main") await (await import("./heal.ts")).checkFailed(env, run, by).catch(() => null);
 }
 

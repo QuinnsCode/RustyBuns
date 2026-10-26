@@ -275,9 +275,9 @@ export function registryUrl(rcs: Npmrc[], name: string): { url: string; token?: 
   return { url: base + name.replace("/", "%2f"), ...(host ? { token: tokens[host] } : {}) };
 }
 
-/** The registry hosts .npmrc files name, which a container's install has to reach (#681). */
+/** The registry hosts .npmrc files name, which a container's install has to reach (#681). Plain http and private addresses are never opened: a repo's file picks them. */
 export const npmrcHosts = (rcs: Npmrc[]): string[] =>
-  [...new Set(rcs.flatMap((rc) => [rc.registry, ...Object.values(rc.scopes)]).map((u) => u && URL.canParse(u) ? new URL(u).hostname : "").filter(Boolean))];
+  [...new Set(rcs.flatMap((rc) => [rc.registry, ...Object.values(rc.scopes)]).map((u) => u && URL.canParse(u) && new URL(u).protocol === "https:" && !privateHost(new URL(u).hostname) ? new URL(u).hostname : "").filter(Boolean))];
 
 export const npmrcRegistry = (rcs: Npmrc[]): Registry => async (name) => {
   const { url, token } = registryUrl(rcs, name);

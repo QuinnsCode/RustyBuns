@@ -290,6 +290,17 @@ export class FileDurableObject {
       this.broadcast({ type: "private", lines, private: on });
       return json([...this.secret]);
     }
+    if (req.method === "POST" && route === "hidden") {
+      // Lines just went private: if the last commit holds text for any of them, git's copy
+      // of that commit with them blank (null when there is nothing to take out).
+      const { lines } = (await req.json().catch(() => ({}))) as { lines?: unknown };
+      if (!isIds(lines) || !this.commits) return json(null);
+      const last: Commit | undefined = await this.ctx.storage.get("commit:" + pad10(this.commits));
+      if (!last) return json(null);
+      const doc = await this.at(last.rev), ids = new Set(lines);
+      if (!doc.lines.some((l) => ids.has(l.id) && l.text)) return json(null);
+      return json({ content: text(doc), published: text(this.shown(doc, false)) });
+    }
     if (req.method === "POST" && route === "pushclash") {
       // A push to the repo's git clashed with edits here, or that was settled (mirror.ts, #788).
       // Just a ping: each page asks the repo whether it's still held.

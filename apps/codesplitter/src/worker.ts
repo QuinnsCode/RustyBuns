@@ -3,7 +3,7 @@
 // is a playlist of code you like. Plain fetch handler: it runs as a Worker on
 // Cloudflare and in-process under Bun on the desktop.
 
-import { parseJson } from "./util.ts";
+import { isPlainObject, parseJson } from "./util.ts";
 import { artifactMoveRoutes } from "./artifact-move.ts";
 import { featureRankRoutes } from "./feature-ranks.ts";
 import { findRoutes } from "./finds.ts";
@@ -12,6 +12,7 @@ import { rankOf } from "./policy.ts";
 import { fromText, text, type Doc } from "./lines.ts";
 import { mainClosed, policyClosed, protectRoute } from "./protect.ts";
 import {
+  artifactsFor,
   ensureCrewRemote,
   fileStub,
   handleFor,
@@ -95,6 +96,7 @@ import {
   runQueuedAgents,
   type AgentMessage,
 } from "./agent-routes.ts";
+import { editRoutes } from "./edit.ts";
 import {
   depRoutes,
   scheduledDoctor,
@@ -145,6 +147,8 @@ import { busiestFiles, fileHistory } from "./gitpath-data.ts";
 import { joinHistory, upstreamBusiest, upstreamFileHistory, upstreamIsPublic, type UpstreamRepo } from "./gitpath-upstream.ts";
 import { tagRoutes } from "./tags.ts";
 import { pickRoute } from "./pick.ts";
+import { commitNote, noteOn } from "./why.ts";
+import { artifactsEvent, logPushes, pushedEvent } from "./push-events.ts";
 import {
   deliverHooks,
   emit,
@@ -215,7 +219,7 @@ import {
 } from "./search.ts";
 import { pulseRoutes } from "./pulse.ts";
 import { askUsage, forget, sweepConflicts } from "./usage.ts";
-import { hasPage, pageRoutes } from "./page.ts";
+import { hasPage, pageRoutes, pagesHost } from "./page.ts";
 import { seenRoutes } from "./seen.ts";
 import { settingsRoutes } from "./settings.ts";
 import { agentPromptResponse } from "./agent-prompt.ts";
@@ -291,6 +295,10 @@ const HOURLY = "0 * * * *", MIRRORS = "*/5 * * * *";
 async function route(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const p = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  // PAGES_ORIGIN: its host answers only page reads, with no sign-in; the app's host sends them there (page.ts)
+  const pages = pagesHost(req, env, p);
+  if (pages === "pages") return (await pageRoutes(req, env, p, null, true)) ?? json({ error: "no such file" }, 404);
+  if (pages) return pages;
   // GET /.well-known/oauth-*  where apps and MCP clients find OAuth sign-in (oauth.ts)
   const known = wellKnown(req, p, url.origin);
   if (known) return known;
@@ -402,6 +410,8 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (cut) return cut;
   const agents = await agentRoutes(req, env, p, url, user, (o, r) => access(env, o, r, user), (r) => app.fetch(r, env));
   if (agents) return agents;
+  const edit = await editRoutes(req, p, url, user, (r) => app.fetch(r, env));
+  if (edit) return edit;
   const deps = await depRoutes(req, env, p, url, user, (r) => app.fetch(r, env));
   if (deps) return deps;
   const watch = await watchRoutes(req, env, p, user);
@@ -510,13 +520,17 @@ async function route(req: Request, env: Env): Promise<Response> {
   // POST /api/repos {name, visibility}
   if (p[1] === "repos" && !p[2] && req.method === "POST") {
     if (!user) return json({ error: "sign in first" }, 401);
-    const { name, visibility = "public" } = await body<"name" | "visibility">();
+    const { name, visibility = "public", region } = await body<"name" | "visibility" | "region">();
     if (typeof name !== "string" || !NAME.test(name)) return json({ error: "bad repo name" }, 400);
     if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
-    await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, branch) VALUES (?, ?, ?, ?, 'main')").bind(user, name, visibility, Date.now()).run();
-    if (env.ARTIFACTS) {
+    if (region !== undefined && region !== "eu") return json({ error: "region: eu, or leave it out" }, 400);
+    if (region === "eu" && !env.ARTIFACTS_EU) return json({ error: "this codeSplitter has no EU storage" }, 501);
+    const namespace = region ?? null;
+    await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, branch, namespace) VALUES (?, ?, ?, ?, 'main', ?)").bind(user, name, visibility, Date.now(), namespace).run();
+    const arts = artifactsFor(env, namespace);
+    if (arts) {
       // One artifact repo per excavation; "--" can't appear in either name, so it can't collide.
-      const art = await env.ARTIFACTS.create(`${user}--${name}`, { description: `codeSplitter ${user}/${name}`, setDefaultBranch: "main" });
+      const art = await arts.create(`${user}--${name}`, { description: `codeSplitter ${user}/${name}`, setDefaultBranch: "main" });
       await env.DB.prepare("UPDATE repos SET artifact = ?, artifact_remote = ? WHERE owner = ? AND name = ?").bind(art.name, art.remote, user, name).run();
       // On the desktop its git takes pushes from the start: land them from here on (#788).
       await seeGit(env, user, name);
@@ -651,6 +665,12 @@ async function route(req: Request, env: Env): Promise<Response> {
     }
     // GET|POST /api/repos/:o/:r/tags, DELETE .../tags/:name  the repo's tags, made and deleted (tags.ts)
     if (p[4] === "tags") { const r = await tagRoutes(req, env, p, owner, repo, user); if (r) return r; }
+    // GET /api/repos/:o/:r/commits/:sha/note  the commit's codeSplitter git note, the why an agent's run left (why.ts)
+    if (p[4] === "commits" && p[5] && p[6] === "note" && !p[7] && req.method === "GET") {
+      // Notes are named by full hash: anything else has none, and git isn't asked.
+      const h = /^[0-9a-f]{40}$/.test(p[5]) ? await handleFor(env, owner, repo).catch(() => null) : null;
+      return json({ note: h ? await noteOn(h.handle, h.remote, p[5]).catch(() => null) : null });
+    }
     // POST /api/repos/:o/:r/commits/:sha/revert {branch?}  a commit undone, as line edits (pick.ts)
     // POST /api/repos/:o/:r/commits/:sha/pick {branch?}  a commit taken again, onto main or an open branch
     if (p[4] === "commits" && p[5] && (p[6] === "revert" || p[6] === "pick") && !p[7] && req.method === "POST") {
@@ -855,6 +875,13 @@ async function route(req: Request, env: Env): Promise<Response> {
           const open = await toFile(env, owner, repo, path, "anon", "file", { headers: { "x-codesplitter-crew": "0" } }).catch(() => null);
           const doc = open?.ok ? (await open.json().catch(() => null)) as Doc | null : null;
           if (doc) await indexFile(env, owner, repo, path, text(doc)).catch(() => null);
+          // Git's HEAD holds the last commit's text until the file's next commit: push that commit again with these lines blank.
+          if (!branch) {
+            const hid = await toFile(env, owner, repo, path, user!, "hidden", { method: "POST", body: sent });
+            const files: unknown = hid.ok ? await hid.json().catch(() => null) : null;
+            if (isPlainObject(files) && typeof files.content === "string" && typeof files.published === "string")
+              await pushCatalogue(env, owner, repo, path, { content: files.content, published: files.published }, user!, "hide private lines").catch(() => null);
+          }
         }
         // Open branches' copies of the file hide the same lines.
         const { results } = await env.DB.prepare("SELECT b.name FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch WHERE f.owner = ? AND f.repo = ? AND f.path = ? AND b.status = 'open'").bind(owner, repo, path).all();
@@ -869,7 +896,9 @@ async function route(req: Request, env: Env): Promise<Response> {
         await env.DB.prepare("DELETE FROM uncommitted WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, path).run().catch(() => {});
         // The catalogue entry stands even if the push fails; the next push that lands carries it,
         // and if git is full, it starts fresh (fresh.ts) and the file lands there.
-        const git = await pushCatalogue(env, owner, repo, path, { content, published }, user!, commit.message).catch((e: Error) => ({ error: e.message }));
+        // An agent's lines carry its run's why as a git note (why.ts); private lines keep its words out.
+        const note = await commitNote(env, owner, repo, path, commit.writers ?? [], content === published).catch(() => null);
+        const git = await pushCatalogue(env, owner, repo, path, { content, published }, user!, commit.message, note).catch((e: Error) => ({ error: e.message }));
         await startIfFull(env, owner, repo).catch(() => null);
         // The owner's own commit ships, when they turned that on (deploy.ts).
         if (git && !("error" in git)) {
@@ -1007,7 +1036,9 @@ const app = {
   // HOOKS is one webhook try per message. A batch is all one queue's, told apart by its
   // messages, since a stage's queues may be named otherwise.
   async queue(batch: { messages: readonly { body: unknown; ack(): void }[] }, env: Env) {
-    if (batch.messages.some((m) => typeof (m.body as DigMessage)?.dig === "string")) await runDigs(batch as Parameters<typeof runDigs>[0], env);
+    // ARTIFACT_EVENTS: what Artifacts says about its repos; only pushes are heard for now (push-events.ts).
+    if (batch.messages.some((m) => artifactsEvent(m.body))) await logPushes(env, batch.messages.flatMap((m) => pushedEvent(m.body) ?? []));
+    else if (batch.messages.some((m) => typeof (m.body as DigMessage)?.dig === "string")) await runDigs(batch as Parameters<typeof runDigs>[0], env);
     else if (batch.messages.some((m) => typeof (m.body as JobMessage)?.job === "number" || typeof (m.body as AgentMessage)?.agent === "number" || typeof (m.body as DigestMessage)?.digest === "string")) {
       // JOBS: hosted agent runs (agent-routes.ts) and feed digests (feed.ts) beside queued requests.
       const agents = batch.messages.filter((m) => typeof (m.body as AgentMessage)?.agent === "number") as { body: AgentMessage; ack(): void }[];

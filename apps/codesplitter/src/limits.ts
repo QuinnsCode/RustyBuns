@@ -116,7 +116,7 @@ export function ruleFor(method: string, p: string[]): string | null {
   if (p[1] === "repos" && p[4] === "files") return "file";
   if (p[1] === "repos" && (p[4] === "shares" || p[4] === "stamps")) return "share";
   if (p[1] === "repos" && p[4] === "branches" && !p[5]) return "branch";
-  if (p[1] === "repos" && p[4] === "branches" && p[6] === "merge" && !p[7]) return "commit";
+  if (p[1] === "repos" && p[4] === "branches" && (p[6] === "merge" || p[6] === "land") && !p[7]) return "commit";
   if (p[1] === "repos" && p[4] === "merges" && !p[5]) return "commit";
   if (p[1] === "repos" && p[4] === "fresh" && !p[5]) return "fresh";
   if (p[1] === "repos" && p[4] === "hooks" && !p[5]) return "hook";
@@ -126,7 +126,7 @@ export function ruleFor(method: string, p: string[]): string | null {
   if (p[1] === "repos" && p[4] === "deps" && p[5] === "run") return "doctor";
   if (p[1] === "repos" && p[4] === "do" && p[5] === "commit") return "commit";
   if (p[1] === "repos" && p[4] === "commits" && (p[6] === "revert" || p[6] === "pick") && !p[7]) return "commit";
-  if (p[1] === "repos" && p[4] === "do" && p[5] === "ops") return "edit";
+  if (p[1] === "repos" && p[4] === "do" && (p[5] === "ops" || p[5] === "edit")) return "edit";
   return null;
 }
 

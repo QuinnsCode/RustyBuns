@@ -49,7 +49,7 @@ import { hunks, revertOps } from "./review.ts";
 import { MERVIN } from "./mervin.ts";
 import { noteConflict } from "./usage.ts";
 import { busyOn, clashIn, taskFiles, waves, type Busy, type Clash, type Side } from "./merge-plan.ts";
-import { parseJson, sha256 } from "./util.ts";
+import { isPlainObject, listOf, parseJson, sha256 } from "./util.ts";
 import { countMerge } from "./stats.ts";
 import { answerOf, deleteLearning, hashesPaths, learningOn, learningState, pathKey, recordEvents, setLearning, type Event as LearnEvent } from "./mervin-learning.ts";
 import { answerRows, fightRows, fightWeights, suggestions, weightOrder } from "./mervin-learn.ts";
@@ -275,6 +275,21 @@ async function fileHunks(env: Env, owner: string, repo: string, branch: string, 
   return { doc: doc!, hunks: hunks(base ?? empty(), doc!) };
 }
 
+/** A fingerprint of everything branch `name` would land: each file's path, deletion, blob and text. An agent's batch is accepted against it. */
+export async function branchHash(env: Env, owner: string, repo: string, name: string) {
+  const rows = (await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as FileRow[];
+  const each = await Promise.all(rows.map(async (f) => [f.path, f.merged, f.deleted, f.blob, f.mode,
+    f.merged || f.deleted || f.blob ? null : listOf(await (await toFile(env, owner, repo, f.path, "upstream", "file", {}, "", name)).json(), "lines").map((l) => l.text)]));
+  return sha256(JSON.stringify(each));
+}
+/** The waiting agent batch on `name`, if any, takes the branch's current hash: its owner changed it on purpose. */
+async function rehashBatch(env: Env, owner: string, repo: string, name: string) {
+  const id = /^agent-run-(\d+)$/.exec(name)?.[1];
+  if (!id) return;
+  await env.DB.prepare("UPDATE agent_runs SET result = json_set(result, '$.pending.hash', ?) WHERE id = ? AND owner = ? AND repo = ? AND json_extract(result, '$.pending') IS NOT NULL")
+    .bind(await branchHash(env, owner, repo, name), Number(id), owner, repo).run();
+}
+
 type BranchRow = { name: string; by: string; status?: string; parent: string | null; waits_on: string | null; created_at?: unknown; upstream_ref?: unknown };
 type FileRow = { path: string; merged: number; deleted: number; blob: string | null; mode: string | null };
 /** A coding agent's answer to one conflict, checked: `ok` only when the merged file parses and the tests pass (or don't run). */
@@ -292,6 +307,21 @@ async function cleanMerged(env: Env, owner: string, repo: string, branch: Branch
   return Object.fromEntries(clean.filter((x) => !!x)) as Record<string, string>;
 }
 
+/** Why each side changed `path`: what the checked agent reads, and what land shows with a conflict (#1013). */
+async function reasons(env: Env, owner: string, repo: string, branch: BranchRow, path: string, user: string) {
+  // Why main changed the file since the branch forked: its commit messages. A branch doesn't commit.
+  const log: unknown = await (await toFile(env, owner, repo, path, user, "commits")).json().catch(() => []);
+  const said = (Array.isArray(log) ? log : []).filter(isPlainObject).filter((x) => Number(x.at) >= Number(branch.created_at) && typeof x.message === "string" && x.message !== "commit").map((x) => String(x.message)).slice(0, 10);
+  // Why the branch changed it: the task of the agent run that made it (agent-routes.ts runBranch), if one did.
+  const run = /^agent-run-(\d+)$/.exec(branch.name);
+  const task = run ? (await env.DB.prepare("SELECT task FROM agent_runs WHERE owner = ? AND repo = ? AND id = ?").bind(owner, repo, Number(run[1])).first())?.task : undefined;
+  const meant = typeof task === "string" ? task : undefined;
+  // Or, for one that follows a branch upstream, that branch's commit messages to the file (#990).
+  const ref = branch.upstream_ref as string | null | undefined;
+  const theirs = ref ? await (await import("./mirror.ts")).upstreamMessages(env, owner, repo, ref, path) : [];
+  return { said, meant, theirs };
+}
+
 /**
  * A coding agent writes the settled text for conflict `c` in `path`, and it's checked (#934): offered as
  * settled only if the merged file parses and the tests pass; otherwise a person gets it with the failure.
@@ -307,15 +337,7 @@ async function checkedAnswer(env: Env, owner: string, repo: string, branch: Bran
     const m = merge(base, ours, main, resolve, String(branch.by), path, user, rule), d = structuredClone(main);
     return { m, d, ok: apply(d, m.ops, m.by, 0, main.rev).ok };
   };
-  // Why main changed the file since the branch forked: its commit messages. A branch doesn't commit.
-  const log = await (await toFile(env, owner, repo, path, user, "commits")).json().catch(() => []) as { at: number; message: string }[];
-  const said = (Array.isArray(log) ? log : []).filter((x) => x.at >= Number(branch.created_at) && x.message !== "commit").map((x) => x.message).slice(0, 10);
-  // Why the branch changed it: the task of the agent run that made it (agent-routes.ts runBranch), if one did.
-  const run = /^agent-run-(\d+)$/.exec(name);
-  const meant = run ? ((await env.DB.prepare("SELECT task FROM agent_runs WHERE owner = ? AND repo = ? AND id = ?").bind(owner, repo, Number(run[1])).first()) as { task: string } | null)?.task : undefined;
-  // Or, for one that follows a branch upstream, that branch's commit messages to the file (#990).
-  const ref = branch.upstream_ref as string | null | undefined;
-  const theirs = ref ? await (await import("./mirror.ts")).upstreamMessages(env, owner, repo, ref, path) : [];
+  const { said, meant, theirs } = await reasons(env, owner, repo, branch, path, user);
   const box = env.AGENT_SANDBOX ? containerSandbox(env.AGENT_SANDBOX) : localSandbox(env.AGENT_EXEC as Exec | undefined);
   const r = await askAgent(box, { ...ask, path, branch: name, conflict: c, merged: mergedWith({}).d, said, meant, theirs }, signal);
   if ("error" in r) return r;
@@ -830,6 +852,39 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
 }
 
 /**
+ * Land a branch (#1013): merge it, taking each conflict's kept agent answer that passed suggest_resolution's
+ * check (it parses, and the tests pass where test_merges is on), or answer with the one conflict left: both
+ * sides, why each changed it, and who its policy's `leftover` gives it to. Settle that with `resolve` and land again.
+ */
+async function land(env: Env, owner: string, repo: string, branch: BranchRow, user: string, body: { resolve?: unknown; build_ok?: unknown }, req: Request): Promise<Response> {
+  const resolve = parseResolve(body.resolve);
+  if (typeof resolve === "string") return json({ error: resolve }, 400);
+  let res = await mergeBranch(env, owner, repo, branch, user, { ...body, resolve }, req);
+  if (res.status !== 409) return res;
+  let out: unknown = await res.clone().json();
+  const passed = listOf(out, "conflicts").flatMap((f) => listOf(f, "conflicts").flatMap((c) => {
+    const a = c.answer;
+    return typeof f.path === "string" && typeof c.line === "string" && !resolve[f.path]?.[c.line] && isPlainObject(a) && a.ok === true && typeof a.text === "string" ? [{ path: f.path, line: c.line, text: a.text }] : [];
+  }));
+  if (passed.length) {
+    for (const p of passed) resolve[p.path] = { ...resolve[p.path], [p.line]: { text: p.text } };
+    res = await mergeBranch(env, owner, repo, branch, user, { ...body, resolve }, req);
+    if (res.status !== 409) return res;
+    out = await res.clone().json();
+  }
+  // Held for another reason (checks, build files, a stack): as merge_branch says it.
+  const files = listOf(out, "conflicts"), f = files[0], c = f && listOf(f, "conflicts")[0];
+  if (!f || !c || typeof f.path !== "string" || !isPlainObject(out)) return res;
+  const { said, meant, theirs } = await reasons(env, owner, repo, branch, f.path, user);
+  const left = files.reduce((n, x) => n + listOf(x, "conflicts").length, 0) - 1;
+  return json({
+    ...out, status: "open", conflicts: undefined, left,
+    conflict: { path: f.path, leftover: f.leftover, ...(typeof f.note === "string" && { note: f.note }), ...c,
+      why: { main: said, branch: { by: branch.by, ...(meant && { task: meant }), ...(theirs.length && { commits: theirs }) } } },
+  }, 409);
+}
+
+/**
  * Which of the open branches in `order` clash, on the files two or more of them change (merge-plan.ts): each pair
  * in that order, the first merging first. With `first`, only that branch's clashes with the others.
  */
@@ -1063,13 +1118,17 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
   // GET /api/repos/:o/:r/branches/:b/hunks?path=  what the branch changed in one file, as hunks against where it forked.
   if (p[6] === "hunks" && !p[7] && req.method === "GET") {
     const path = new URL(req.url).searchParams.get("path") ?? "";
-    const f = (await files()).find((x) => x.path === path && !x.merged && !x.deleted && !x.blob);
-    if (!f) return json({ path, hunks: [] });
-    return json({ path, hunks: (await fileHunks(env, owner, repo, name, path, user ?? "anon", a.write)).hunks });
+    const all = await files(), f = all.find((x) => x.path === path && !x.merged && !x.deleted && !x.blob);
+    // The rest of the branch, which an agent batch's hash covers too: what else landing it would change.
+    const others = all.filter((x) => x.path !== path && !x.merged).map((x) => ({ path: x.path, change: x.deleted ? "deleted" : "edited" }));
+    if (!f) return json({ path, hunks: [], others });
+    return json({ path, hunks: (await fileHunks(env, owner, repo, name, path, user ?? "anon", a.write)).hunks, others });
   }
   // POST /api/repos/:o/:r/branches/:b/hunks/reject {path, key}  put one hunk back as it was where the branch forked.
   if (p[6] === "hunks" && p[7] === "reject" && req.method === "POST") {
     if (!a.write) return json({ error: "no write access" }, 403);
+    const locked = await runBranchLocked(env, owner, repo, name, user);
+    if (locked) return locked;
     if (branch.status !== "open") return json({ error: `branch is ${branch.status}` }, 409);
     const b = await readBody<"path" | "key">(req);
     const f = typeof b.path === "string" && (await files()).find((x) => x.path === b.path && !x.merged && !x.deleted && !x.blob);
@@ -1078,6 +1137,8 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     if (!f || !got || !h) return json({ error: `no change ${b.key} in ${b.path} on ${name}: read the review again` }, 404);
     const res = await toFile(env, owner, repo, f.path, user!, "ops", { method: "POST", body: JSON.stringify({ ops: revertOps(got.doc, h), ifRev: got.doc.rev }) }, "", name);
     const out = await res.json() as { rev: number };
+    // The owner leaving a stretch of their agent's batch out is still the batch they read.
+    if (res.ok && user === owner) await rehashBatch(env, owner, repo, name);
     return res.ok ? json({ path: f.path, key: h.key, rev: out.rev }) : json({ error: "the branch changed under you: read the review again", ...out }, 409);
   }
 
@@ -1110,10 +1171,11 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
 
   // POST /api/repos/:o/:r/branches/:b/merge {resolve?: {path: {lineId: pick}}}, a pick being
   // "main", "branch", "both", "both:branch-first" or {text}
-  if (p[6] === "merge" && req.method === "POST") {
+  // POST /api/repos/:o/:r/branches/:b/land, the same body: merge, or the one conflict left and why (#1013)
+  if ((p[6] === "merge" || p[6] === "land") && req.method === "POST") {
     if (!a.write) return json({ error: "no write access" }, 403);
     if (branch.status !== "open") return json({ error: `branch is ${branch.status}` }, 409);
-    return mergeBranch(env, owner, repo, branch, user!, await readBody<"resolve" | "build_ok">(req), req);
+    return (p[6] === "land" ? land : mergeBranch)(env, owner, repo, branch, user!, await readBody<"resolve" | "build_ok">(req), req);
   }
   return null;
 }

@@ -18,6 +18,8 @@ const egress = (...hosts: (readonly string[])[]) => ({ module: "src/egress.ts", 
 //                          billed by use, see REFERENCE.md. No secrets go in.
 //   CODESPLITTER_VECTORS=1 search across repos through one Vectorize index, embedded with
 //                          Workers AI (src/search.ts); billed by use, see REFERENCE.md
+//   CODESPLITTER_PUSH_EVENTS=1 a queue that hears Artifacts' push events and logs pushes made
+//                          outside the app (src/push-events.ts); its subscription is made by hand, below
 //   CODESPLITTER_WATCH_NEWS=1 the supply-chain watch's daily news search for compromised
 //                          packages (src/watch.ts): one Claude run with web search a day,
 //                          on ANTHROPIC_API_KEY; billed by use, see REFERENCE.md
@@ -30,6 +32,7 @@ const deploys = flag("DEPLOYS") === "1";
 const vectors = flag("VECTORS") === "1";
 const checks = flag("CHECKS") === "1";
 const news = flag("WATCH_NEWS") === "1";
+const pushEvents = flag("PUSH_EVENTS") === "1";
 const mailFrom = flag("MAIL_FROM")?.trim();
 // A change to the privacy page that matters goes here first, as "YYYY-MM-DD what changes"
 // (the day it applies), and ships before that day: the site shows it as a banner (src/privacy.ts).
@@ -108,11 +111,17 @@ export default defineConfig({
     // Level digs: an import's first step, then a big level's parts (src/swarm.ts), one
     // message each, several at once. maxConcurrency caps how hard GitHub gets hit.
     LEVEL_DIGS: { type: "queue", queueName: "codesplitter-level-digs", renamedFrom: "codesplitters-level-digs", consumer: { batchSize: 1, maxWaitTimeMs: 1000, maxRetries: 3, retryDelay: 20, maxConcurrency: 8 } },
+    // Artifacts' events about its repos (src/push-events.ts): a push from outside the app goes in the
+    // repo's audit log. The deploy makes the queue; the subscription that fills it is made once by hand:
+    //   wrangler queues subscription create codesplitter-artifact-events --source artifacts.repo --events pushed ...
+    ...(pushEvents ? { ARTIFACT_EVENTS: { type: "queue", queueName: "codesplitter-artifact-events", consumer: { batchSize: 10, maxWaitTimeMs: 1000 } } as const } : {}),
     // One git repo per excavation; cataloguing pushes to it.
     // Still the old name: each repo's remote, stored in D1, names it, so it moves on its own (#823).
     ARTIFACTS: { type: "artifacts", namespace: "codesplitters" },
     // Where they move to (src/artifact-move.ts): copy into it, switch ARTIFACTS to "codesplitter", drop this.
     ARTIFACTS_NEXT: { type: "artifacts", namespace: "codesplitter" },
+    // EU storage (#2301): once the namespace exists (REST only: POST /accounts/:id/artifacts/namespaces {namespace, jurisdiction: "eu"}),
+    // bind it here as ARTIFACTS_EU and repos made with region "eu" keep their git in it. Unbound, "eu" is refused.
     // Levels too big for an Artifacts repo even from the tarball, as ~8 MB chunks of their text files
     // (src/chunks.ts), read through the Cache API. None so far: Bun and Alchemy fit in Artifacts
     // from the tarball (#356), so the bucket is empty. No desktop twin yet; the desktop's local

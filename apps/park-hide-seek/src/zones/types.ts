@@ -7,7 +7,8 @@ export interface ZoneData {
   park: string;
   name: string;
   blurb: string;
-  trees: "pine" | "sequoia";
+  /** What grows tallest: pines, giant sequoias, or saguaros with little cacti between them. */
+  trees: "pine" | "sequoia" | "desert";
   /** [lon, lat] of the zone centre. */
   center: [number, number];
   /** The zone centre in the park map's km coordinates, for the 2D drop map. */

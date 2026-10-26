@@ -127,7 +127,7 @@ describe("GET /api/openapi.json", () => {
         expect(o.parameters.filter((p: any) => p.in === "path").map((p: any) => p.name)).toEqual([...path.matchAll(/\{(\w+)\}/g)].map((m) => m[1]));
     // Executor's policy keys off these.
     const risky = Object.values(s.paths).flatMap((m: any) => Object.values(m).filter((o: any) => o["x-codesplitter-risky"]).map((o: any) => o.operationId)).sort();
-    expect(risky).toEqual(["accept_agent_batch", "beam_branch", "cherry_pick", "claim_invite", "commit_file", "create_ci_token", "create_invite", "delete_branch_file", "delete_mervin_learning", "delete_repo", "delete_share", "delete_tag", "deploy", "invite",
+    expect(risky).toEqual(["accept_agent_batch", "beam_branch", "cherry_pick", "claim_invite", "commit_file", "create_ci_token", "create_invite", "delete_branch_file", "delete_mervin_learning", "delete_repo", "delete_share", "delete_tag", "deploy", "invite", "land",
       "make_tag", "merge_branch", "merge_clean_branches", "record_check", "reject_agent_batch", "remove_collaborator", "revert_commit", "revoke_ci_token", "revoke_invite", "run_cut", "set_check_settings", "set_mervin_learning", "set_private_lines",
       "set_protect_main", "set_repo_visibility", "share_lines", "start_agent", "stop_agents", "take_upstream", "update_check", "withdraw_beam"]);
   });

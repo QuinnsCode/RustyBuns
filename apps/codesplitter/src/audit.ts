@@ -12,6 +12,7 @@
 //   repo.visibility / repo.delete
 //   hook.create / hook.delete              a webhook (hooks.ts)
 //   deploy_key.set / deploy_key.delete     a hosted deploy's key (deploy-keys.ts)
+//   git.push                               a push to the repo's git from outside the app (push-events.ts)
 //
 //   GET /api/repos/:o/:r/audit   the repo's last 100 (owner only), on its settings
 //   GET /api/tokens/audit        what you did, the last 100 (cookie only), on your tokens page
@@ -27,12 +28,12 @@ export interface Entry { actor: string | null; action: string; owner?: string; r
 const LIMIT = 100;
 const COLUMNS = "id, at, actor, via, action, owner, repo, target, detail, country";
 
-/** Log one. Never in the way of what happened: a failed write is only reported. */
-export async function audit(env: Env, req: Request, e: Entry) {
-  const country = (req as { cf?: { country?: string } }).cf?.country ?? req.headers.get("cf-ipcountry");
+/** Log one (`req` null for what a queue heard, which has no country). Never in the way of what happened: a failed write is only reported. */
+export async function audit(env: Env, req: Request | null, e: Entry) {
+  const country = req && ((req as { cf?: { country?: string } }).cf?.country ?? req.headers.get("cf-ipcountry"));
   try {
     await env.DB.prepare("INSERT INTO audit (at, actor, via, action, owner, repo, target, detail, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(Date.now(), e.actor, e.via ?? via.get(req) ?? "cookie", e.action, e.owner ?? null, e.repo ?? null, e.target ?? null, e.detail ?? null, country || null).run();
+      .bind(Date.now(), e.actor, e.via ?? (req && via.get(req)) ?? "cookie", e.action, e.owner ?? null, e.repo ?? null, e.target ?? null, e.detail ?? null, country || null).run();
   } catch (err) {
     console.error("codeSplitter: audit write failed", e.action, String((err as Error)?.message ?? err));
   }

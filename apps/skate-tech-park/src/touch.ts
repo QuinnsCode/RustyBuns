@@ -1,5 +1,5 @@
-// Touch controls: a left-thumb stick (steer, throttle) and hold buttons for boost and manual. The right half of
-// the screen stays the flick pad (gesture.ts). Shown only once a finger touches the page.
+// Touch controls: a thumb stick (steer, throttle) and hold buttons for boost and manual. The other half of the
+// screen is the flick pad (gesture.ts, with its grip tape from griptape.ts); the flick profile says which half. Shown only once a finger touches the page.
 import { createElement, Gauge, MoveUp } from "lucide";
 import { stickAxes as axes } from "@rustybuns/util";
 
@@ -12,12 +12,12 @@ export function stickAxes(dx: number, dy: number): { steer: number; throttle: nu
   return { steer: -a.x || 0, throttle: -a.y || 0 };
 }
 
-export interface Touch { steer: number; throttle: number; boost: boolean; manual: boolean; claims: (id: number) => boolean }
+export interface Touch { steer: number; throttle: number; boost: boolean; manual: boolean; claims: (id: number) => boolean; root: HTMLElement }
 
 export function mountTouch(): Touch {
-  const t: Touch = { steer: 0, throttle: 0, boost: false, manual: false, claims: (id) => owned.has(id) };
   const owned = new Set<number>(); // pointers that belong to a control, not to the flick pad
   const root = document.createElement("div");
+  const t: Touch = { steer: 0, throttle: 0, boost: false, manual: false, claims: (id) => owned.has(id), root };
   root.className = "touch";
   root.hidden = true;
   const base = document.createElement("div"), nub = document.createElement("div");

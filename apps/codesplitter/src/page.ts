@@ -31,20 +31,26 @@ export const PAGE_REPO = "page";
 /** Where a page may load libraries from: pinned versions are the author's job. */
 export const LIBRARY_HOSTS = ["https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://unpkg.com", "https://esm.sh"];
 
-export const PAGE_CSP = [
+/** A page loads images and media from outside only when its index.html says so with this tag; visitors are told. */
+export const OUTSIDE_MEDIA = /<meta\s+name=["']codesplitter-outside-media["']\s+content=["']allow["']\s*\/?>/i;
+
+const pageCsp = (outside: boolean) => [
   "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-pointer-lock",
   "default-src 'none'",
   `script-src 'self' 'unsafe-inline' ${LIBRARY_HOSTS.join(" ")}`,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
-  "img-src 'self' data: blob: https:",
-  "media-src 'self' data: blob: https:",
+  `img-src 'self' data: blob:${outside ? " https:" : ""}`,
+  `media-src 'self' data: blob:${outside ? " https:" : ""}`,
   "connect-src 'self'",
   "worker-src blob:",
   "form-action 'none'",
   "base-uri 'self'",
   "frame-ancestors 'self'",
 ].join("; ");
+
+/** The default: a page's own files, uploads and data URLs only, so its script can't carry what it reads out in an image URL. */
+export const PAGE_CSP = pageCsp(false);
 
 const TYPES: Record<string, string> = {
   html: "text/html", htm: "text/html", js: "text/javascript", mjs: "text/javascript", css: "text/css", json: "application/json",
@@ -114,13 +120,30 @@ async function pageVersion(env: Env, name: string) {
   return revs.join(" ");
 }
 
+const OUTSIDE_NOTICE = `<div style="position:fixed;left:0;right:0;bottom:0;padding:4px 8px;font:12px system-ui;background:#000c;color:#fff;text-align:center;z-index:2147483647">This page loads images or media from other sites, which can see your address.</div>`;
+
 const note = (text: string, status: number) => new Response(`<!doctype html><meta charset="utf-8"><meta name="color-scheme" content="light dark"><body style="font:14px system-ui;display:grid;place-items:center;height:100vh;margin:0;opacity:.6">${text}`, { status, headers: { "content-type": "text/html; charset=utf-8", "content-security-policy": PAGE_CSP, "x-frame-options": "SAMEORIGIN" } });
 
 /** Fetch destinations that run what they load. A page's sandboxed frame is cross-site to its own files, so only the app's origin is same-origin: a script tag injected there must not run a user's file as the app. */
 const RUNS = new Set(["script", "worker", "sharedworker", "serviceworker", "audioworklet", "paintworklet"]);
 export const runsAsApp = (req: Request) => req.headers.get("sec-fetch-site") === "same-origin" && RUNS.has(req.headers.get("sec-fetch-dest") ?? "");
 
-export async function pageRoutes(req: Request, env: Env, p: string[], user?: string | null): Promise<Response | null> {
+/** A read of a page's file or asset, by anyone: GET /api/users/:name/page[/path]. */
+export const isPageRead = (req: Request, p: string[]) => p[0] === "api" && p[1] === "users" && !!p[2] && p[3] === "page" && (req.method === "GET" || req.method === "HEAD");
+
+/**
+ * With PAGES_ORIGIN set, pages live on a host of their own: scripts there share no origin, cookie or API with the app (#2292).
+ * "pages" is a request to that host, which answers page reads and nothing else; a Response is a page read on the app's host sent over, or a 404.
+ */
+export function pagesHost(req: Request, env: Env, p: string[]): Response | "pages" | null {
+  if (!env.PAGES_ORIGIN) return null;
+  const url = new URL(req.url), pages = new URL(env.PAGES_ORIGIN);
+  if (url.host === pages.host) return isPageRead(req, p) ? "pages" : new Response("not found", { status: 404 });
+  if (!isPageRead(req, p) || runsAsApp(req)) return null;
+  return Response.redirect(pages.origin + url.pathname + url.search, 302);
+}
+
+export async function pageRoutes(req: Request, env: Env, p: string[], user?: string | null, onPagesHost = false): Promise<Response | null> {
   if (p[1] === "me" && p[2] === "page" && p[3] === "revert" && !p[4] && req.method === "POST") {
     if (!user) return json({ error: "sign in first" }, 401);
     const b = await readBody<"to">(req);
@@ -165,15 +188,17 @@ export async function pageRoutes(req: Request, env: Env, p: string[], user?: str
   const ext = path.split(".").pop()!.toLowerCase();
   const type = TYPES[ext];
   if (!type) return json({ error: `a page is text: ${Object.keys(TYPES).join(", ")}` }, 415);
-  if (runsAsApp(req)) return json({ error: "a page's files run only inside its own sandbox" }, 403);
+  if (!onPagesHost && runsAsApp(req)) return json({ error: "a page's files run only inside its own sandbox" }, 403);
   let body = await repoFile(env, name, path);
   // No page repo (or no index in it): the HTML saved on the profile is the index.
   if (body === null && path === "index.html") body = ((await env.DB.prepare("SELECT theme_html FROM users WHERE name = ?").bind(name).first()) as { theme_html: string | null } | null)?.theme_html || null;
   if (body === null) return path === "index.html" ? note(`@${esc(name)} hasn't made a page yet`, 404) : json({ error: "no such file" }, 404);
+  const outside = type === "text/html" && path === "index.html" && OUTSIDE_MEDIA.test(body);
   if (type === "text/html" && path === "index.html") body = withData(body, await visible(env, name));
+  if (outside) body += OUTSIDE_NOTICE;
   return new Response(req.method === "HEAD" ? null : body, {
     headers: {
-      "content-type": `${type}; charset=utf-8`, "content-security-policy": PAGE_CSP, "x-frame-options": "SAMEORIGIN", "cache-control": "no-cache",
+      "content-type": `${type}; charset=utf-8`, "content-security-policy": pageCsp(outside), "x-frame-options": "SAMEORIGIN", "cache-control": "no-cache",
       // The page's origin is opaque, so its module scripts and fetches are cross-origin to its own files.
       "access-control-allow-origin": "*",
     },

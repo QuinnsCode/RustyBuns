@@ -127,7 +127,7 @@ const OPS: Record<string, Record<string, Op>> = {
     body: obj({ name: str("your repo's name; the level's slug by default") }), ok: obj({ owner: str(), name: str() }), status: 201 } },
 
   "/repos": { post: { id: "create_repo", summary: "Make an empty repo", tag: "Repos",
-    body: obj({ name: str("lowercase letters and digits, single dashes between"), visibility: { type: "string", enum: ["public", "private"] } }, ["name"]),
+    body: obj({ name: str("lowercase letters and digits, single dashes between"), visibility: { type: "string", enum: ["public", "private"] }, region: { type: "string", enum: ["eu"], description: "keep its git in the EU Artifacts namespace; fixed at creation (501 when this codeSplitter has none)" } }, ["name"]),
     ok: obj({ owner: str(), name: str(), visibility: str() }), status: 201 } },
   [repo]: {
     get: { id: "get_repo", summary: "A repo: visibility, crew, whether you can write, and a git clone command with an hour-long read token", tag: "Repos", open: true,
@@ -176,6 +176,9 @@ const OPS: Record<string, Record<string, Op>> = {
       body: obj({ branch: str("an open branch to try; main without it"), save: bool("commit init's work to a branch as agent-rustybuns") }), ok: obj({ run: { description: "the run just started" } }), status: 202 },
   },
   [`${repo}/tags/{name}`]: { delete: { id: "delete_tag", risky: true, summary: "Delete a tag (owner only). A mirror's upstream keeps its own", tag: "Repos", ok: ref("Ok") } },
+  [`${repo}/commits/{sha}/note`]: { get: { id: "commit_note", summary: "Why a commit was made: its codeSplitter git note", tag: "Repos", open: true,
+    description: "When a commit carries an agent's lines, the push that makes it writes a git note under refs/notes/codesplitter: the agent, its harness and model, a hash of the prompt, how the run ended, and its DONE / NEXT / BROKE / DONT note (left out when the file has private lines). `git fetch origin refs/notes/codesplitter:refs/notes/codesplitter` brings them to a clone.",
+    ok: obj({ note: { type: ["string", "null"], description: "the note's text, or null when the commit has none" } }) } },
   ...Object.fromEntries((["revert", "pick"] as const).map((k) => [`${repo}/commits/{sha}/${k}`, { post: {
     id: k === "revert" ? "revert_commit" : "cherry_pick", summary: k === "revert" ? "Revert a commit: undo its changes (the crew)" : "Cherry-pick a commit onto main or an open branch (the crew)", tag: "Repos", risky: true,
     description: "Its changes against its first parent are merged into each file's lines as they are now and land as line edits, so the lines it doesn't touch keep their ids and blame. " +
@@ -204,6 +207,12 @@ const OPS: Record<string, Record<string, Op>> = {
       + "Name the ops protocol you were started on as `proto` and an update to another one is that same 409, instead of an edit made by rules you didn't read.",
     query: { ...filePath, ...onBranch }, body: obj({ ops: arr(ref("LineOp")), ifRev: int(), claim: str("your claim's id, when you're an agent editing lines you claimed"), proto: int("the ops protocol you were started on; a file on another one answers 409 `updating`") }, ["ops"]),
     ok: obj({ rev: int(), applied: arr(ref("Applied")) }) } },
+  [`${repo}/do/edit`]: { post: { id: "edit", summary: "Edit lines in one call: wait for them, apply, let go (the crew)", tag: "Files",
+    description: "claim_lines (with wait), edit_lines naming the claim, and release_claim, as one call, so an agent never forgets to let go. The lines claimed are the ones the ops name (a set's or delete's `line`, an insert's `after`). "
+      + "If they're held it waits in line up to `timeout` seconds (20 at most), then answers 202 {queued, id, place}: call edit again with that `id` to keep your place. The claim is released whatever the edit's answer, a 409 included. "
+      + "Every check of edit_lines and claim_lines applies, and the answer is edit_lines' own on failure.",
+    query: { ...filePath, ...onBranch }, body: obj({ ops: arr(ref("LineOp")), id: str("the claim's id from an earlier 202, to keep your place in line"), task: str("what you're doing, shown to everyone while you hold the lines"), ifRev: int(), timeout: int("seconds to wait in line, 0 to 20 (default 20)") }, ["ops"]),
+    ok: obj({ rev: int(), applied: arr(ref("Applied")), claim: str("the claim that was held for the edit, released now; null when the ops touched no existing line") }) } },
   [`${repo}/do/claims`]: {
     get: { id: "list_claims", summary: "Who is working on which lines of a file right now", tag: "Files", open: true,
       description: "A claimed line takes edits from its holder only. `until` is when a claim lapses (null: a person's hold, which stands till lifted). A `soft` one is an intent: it keeps nobody off.",
@@ -384,6 +393,13 @@ const OPS: Record<string, Record<string, Op>> = {
     body: obj({ resolve: loose("{path: {line: \"main\" | \"branch\" | \"both\" | \"both:branch-first\" | {text}}}"), build_ok: bool() }),
     ok: obj({ status: str("merged or open"), merged: arr(obj({ path: str(), rev: int(), ops: int(), deleted: bool() })), conflicts: arr(loose("{path, conflicts}")), regenerated: arr(loose("{paths, command, cwd?, note?}")),
       mergiraf: arr(str("a file Mergiraf settled after Mervin left it cards")), took: arr(obj({ branch: str(), status: str("updated, cards or failed"), files: arr(str()), pushed: bool("pushed upstream too"), error: str() })) }) } },
+  [`${repo}/branches/{branch}/land`]: { post: { id: "land", summary: "Land a branch: merge it, or get the one conflict left and why each side changed it (the crew)", tag: "Branches", risky: true,
+    description: "merge_branch, plus what an agent needs to settle what's left. Each conflict's kept agent `answer` that passed suggest_resolution's check (it parses, and the tests pass where test_merges is on) is taken on its own; an answer that failed never lands. "
+      + "What's still in the way comes back as one `conflict`: {path, line, base, main, branch, choices, suggestion?, answer?, leftover, note?, why: {main: [main's commit messages since the branch forked], branch: {by, task?, commits?}}}, and `left`, how many more there are. "
+      + "`leftover` says who settles it: ai (an agent, checked as suggest_resolution is), person, or ci. Settle it in `resolve` as merge_branch takes it and land again; a {text} you write is checked by the merge itself (the build, and the tests under `check: tests`). "
+      + "A branch held for another reason (checks, build files, a stack) answers as merge_branch does.",
+    body: obj({ resolve: loose("{path: {line: \"main\" | \"branch\" | \"both\" | \"both:branch-first\" | {text}}}"), build_ok: bool() }),
+    ok: obj({ status: str("merged"), merged: arr(obj({ path: str(), rev: int(), ops: int(), deleted: bool() })), took: arr(loose("as merge_branch")) }) } },
   [`${repo}/merges`]: { post: { id: "merge_clean_branches", summary: "Merge every open branch that merges clean, oldest first (the crew)", tag: "Branches", risky: true,
     description: "Each branch merges by line id against main as the one before it left it, so branches that change different lines (a README edit, a package.json bump) all land. " +
       "One with a conflict, failing or waiting required checks, or build files without `build_ok` stays open and is listed in `skipped` with why; merge it alone with merge_branch. " +
@@ -435,7 +451,7 @@ const OPS: Record<string, Record<string, Op>> = {
     description: "A running CLI can't take messages, so the note goes into the prompt of its next run: when this run ends, it goes round again with every note so far (up to 5 extra runs). 409 once the run has ended.",
     body: obj({ text: str() }, ["text"]), ok: loose("the run, with its notes") } },
   [`${repo}/agents/waiting`]: { get: { id: "waiting_agent_batches", summary: "A file's agent batches waiting to land on main, with their hunks", tag: "Agents",
-    description: "Anyone who can read the file sees them: each run's id, agent, `pending` {branch, until (null: held), why} and its branch's hunks, private lines blank outside the crew. `kept`, for the crew only, lists lines where a landing in the last day kept your version, with what the agent wanted.",
+    description: "Anyone who can read the file sees them: each run's id, agent, `pending` {branch, until (null: held), why, hash} and its branch's hunks, private lines blank outside the crew. `kept`, for the crew only, lists lines where a landing in the last day kept your version, with what the agent wanted.",
     query: { path: { ...str("the file"), required: true } }, ok: obj({ waiting: arr(loose("{id, agent, pending, hunks}")), kept: arr(loose("{line, yours, wanted, agent}")) }) } },
   [`${repo}/agents/engine`]: { get: { id: "rebuild_engine_lines", summary: "What rebuild tasks said a merge rule could have settled, newest first (owner only)", tag: "Agents",
     description: "A branch that really clashes with main once the one it waited for merged gets a rebuild task, which ends with a line per clash: whether a merge rule could have settled it with no agent, and how. " +
@@ -443,8 +459,9 @@ const OPS: Record<string, Record<string, Op>> = {
     ok: arr(obj({ run: int(), branch: str(), after: str("the branch whose merge it rebuilt on"), started: int(),
       engine: arr(obj({ path: str(), line: str("a line id"), yes: bool("a merge rule could have settled it"), how: str() })) })) } },
   [`${repo}/agents/{id}/accept`]: { post: { id: "accept_agent_batch", summary: "Land a finished run's waiting batch on main now (owner only)", tag: "Agents", risky: true,
-    description: "A run's batch waits on its own branch (the run's `pending.branch`) for a few seconds before it merges into main by itself. Accept merges it now, build files and all. A line someone changed on main meanwhile keeps their version: the run's `kept` lists what the agent wanted there. 409 if the repo's required checks hold it back; it stays waiting, held.",
-    ok: obj({ landed: bool(), kept: arr(loose("{line, yours, wanted}")) }) } },
+    description: "A run's batch waits on its own branch (the run's `pending.branch`) for a few seconds before it merges into main by itself. Accept merges it now, build files and all. A line someone changed on main meanwhile keeps their version: the run's `kept` lists what the agent wanted there. 409 if the repo's required checks hold it back; it stays waiting, held. " +
+      "`hash` is the run's `pending.hash` for the batch you read: 409, held with a fresh hash, if the branch changed since the run finished or since you read it.",
+    body: obj({ hash: str("the run's pending.hash, as you read it") }, ["hash"]), ok: obj({ landed: bool(), kept: arr(loose("{line, yours, wanted}")) }) } },
   [`${repo}/agents/{id}/hold`]: { post: { id: "hold_agent_batch", summary: "Stop a waiting batch's clock: it lands only when accepted (crew)", tag: "Agents", ok: loose("the run") } },
   [`${repo}/agents/{id}/look`]: { post: { id: "look_at_agent_batch", summary: "Say someone is reading a waiting batch: it lands no sooner than a few seconds from now (crew)", tag: "Agents", ok: loose("the run") } },
   [`${repo}/agents/{id}/reject`]: { post: { id: "reject_agent_batch", summary: "Throw a waiting batch away: nothing of it lands, and its branch goes (owner only)", tag: "Agents", risky: true, ok: loose("the run") } },

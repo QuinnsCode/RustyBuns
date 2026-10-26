@@ -50,16 +50,22 @@ export async function fileLines(env: Env, owner: string, repo: string, path: str
   return ((await res.json()) as { lines: FileLine[] }).lines;
 }
 
+/** The Artifacts binding a repo's git lives in: `namespace` is the repo row's (null for the default). */
+export function artifactsFor(env: Env, namespace?: unknown) {
+  return namespace === "eu" ? env.ARTIFACTS_EU : env.ARTIFACTS;
+}
+
 /**
  * The repo row's artifact handle and branch, or null when it has none. With
  * `crew`, the crew's remote when the repo has one (it holds private lines'
  * real text): what previews, deploys and the crew's own clone use.
  */
 export async function handleFor(env: Env, owner: string, repo: string, crew = false) {
-  const r = await repoRow<any>(env, owner, repo, "artifact, artifact_remote, crew_artifact, crew_remote, branch");
-  if (!env.ARTIFACTS || !r?.artifact) return null;
+  const r = await repoRow<any>(env, owner, repo, "artifact, artifact_remote, crew_artifact, crew_remote, branch, namespace");
+  const arts = artifactsFor(env, r?.namespace);
+  if (!arts || !r?.artifact) return null;
   const [name, remote] = crew && r.crew_artifact ? [r.crew_artifact, r.crew_remote] : [r.artifact, r.artifact_remote];
-  return { handle: await env.ARTIFACTS.get(name), branch: (r.branch ?? "main") as string, remote: remote as string, crew: name !== r.artifact };
+  return { handle: await arts.get(name), branch: (r.branch ?? "main") as string, remote: remote as string, crew: name !== r.artifact };
 }
 
 /**
@@ -70,18 +76,19 @@ export async function handleFor(env: Env, owner: string, repo: string, crew = fa
  * `except`, which its caller is about to push), tried again until it lands.
  */
 export async function ensureCrewRemote(env: Env, owner: string, repo: string, except?: string) {
-  const r = await repoRow<any>(env, owner, repo, "artifact, crew_artifact, crew_backfill, branch");
-  if (!env.ARTIFACTS || !r?.artifact) return;
+  const r = await repoRow<any>(env, owner, repo, "artifact, crew_artifact, crew_backfill, branch, namespace");
+  const arts = artifactsFor(env, r?.namespace);
+  if (!arts || !r?.artifact) return;
   if (r.crew_artifact) return r.crew_backfill ? payBackfill(env, owner, repo, except) : undefined;
   const name = `${r.artifact}--crew`, branch = (r.branch ?? "main") as string, description = `codeSplitter ${owner}/${repo}, the crew's copy`;
-  const pub = await env.ARTIFACTS.get(r.artifact);
+  const pub = await arts.get(r.artifact);
   let mine = true;
   const made = await (async () => {
     const [tip] = await pub.log({ ref: branch, limit: 1 }).catch(() => []);
-    return tip ? pub.fork(name, { description, defaultBranchOnly: true }) : env.ARTIFACTS!.create(name, { description, setDefaultBranch: branch });
+    return tip ? pub.fork(name, { description, defaultBranchOnly: true }) : arts.create(name, { description, setDefaultBranch: branch });
   })().catch(async (e: Error) => {
     // Someone else made it a moment ago.
-    const info = await (await env.ARTIFACTS!.get(name)).info().catch(() => null);
+    const info = await (await arts.get(name)).info().catch(() => null);
     if (!info) throw e;
     mine = false;
     return info;
@@ -198,12 +205,15 @@ export async function materialize(env: Env, owner: string, repo: string, path: s
  * `deployCommit` is the commit on the remote deploys clone (the crew's, when there is one),
  * when that commit carries this file alone.
  */
-export function pushCatalogue(env: Env, owner: string, repo: string, path: string, files: { content: string; published: string }, author: string, message: string) {
-  return pushCatalogues(env, owner, repo, { [path]: files }, author, message);
+export function pushCatalogue(env: Env, owner: string, repo: string, path: string, files: { content: string; published: string }, author: string, message: string, note?: string | null) {
+  return pushCatalogues(env, owner, repo, { [path]: files }, author, message, note);
 }
 
-/** pushCatalogue for several files at once, as one commit (a revert, #880); null takes a file out, and bytes go in as they are (#888). */
-export async function pushCatalogues(env: Env, owner: string, repo: string, files: Record<string, { content: string; published: string } | { bytes: Uint8Array; mode?: string } | null>, author: string, message: string) {
+/**
+ * pushCatalogue for several files at once, as one commit (a revert, #880); null takes a file out, and bytes go in as they are (#888).
+ * `note` goes on the remote's commit as a git note (why.ts); the crew's copy, a commit of its own, doesn't carry it.
+ */
+export async function pushCatalogues(env: Env, owner: string, repo: string, files: Record<string, { content: string; published: string } | { bytes: Uint8Array; mode?: string } | null>, author: string, message: string, note?: string | null) {
   const paths = Object.keys(files), lines = (p: string) => { const f = files[p]; return f && "content" in f ? f : null; };
   const secret = paths.find((p) => lines(p) && lines(p)!.content !== lines(p)!.published);
   await (secret ? ensureCrewRemote(env, owner, repo, secret) : payBackfill(env, owner, repo, paths[0]));
@@ -221,7 +231,7 @@ export async function pushCatalogues(env: Env, owner: string, repo: string, file
   };
   const pending = await pendingChanges(env, owner, repo);
   const [pub, crewed] = await Promise.allSettled([
-    pushChanges(env, owner, repo, h, { ...pending, ...changes("published") }, author, message),
+    pushChanges(env, owner, repo, h, { ...pending, ...changes("published") }, author, message, note ?? undefined),
     crew?.crew ? crewPush(crew) : null,
   ]);
   if (pub.status === "rejected") throw pub.reason;
@@ -286,10 +296,10 @@ async function byline(env: Env, owner: string, repo: string, author: string, mes
 }
 
 type Handle = NonNullable<Awaited<ReturnType<typeof handleFor>>>;
-async function pushChanges(env: Env, owner: string, repo: string, h: Handle, changes: Record<string, Change>, author: string, message: string) {
+async function pushChanges(env: Env, owner: string, repo: string, h: Handle, changes: Record<string, Change>, author: string, message: string, note?: string) {
   try {
     const a = await access(h.handle, h.remote, "write", 300);
-    const r = await push(a.remote, a.token, { changes, ...(await byline(env, owner, repo, author, message)), branch: h.branch, base: h.handle });
+    const r = await push(a.remote, a.token, { changes, ...(await byline(env, owner, repo, author, message)), branch: h.branch, base: h.handle, note });
     await env.DB.batch([
       env.DB.prepare("UPDATE repos SET git_error = NULL, git_bytes = COALESCE(git_bytes, 0) + ? WHERE owner = ? AND name = ?").bind(r.bytes, owner, repo),
       ...Object.keys(changes).map((p) => env.DB.prepare("DELETE FROM git_pending WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, p)),

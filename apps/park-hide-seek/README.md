@@ -44,7 +44,7 @@ bun run deploy           # build and deploy (wrangler deploy)
 | Move · run · look | `WASD` · `Shift` · mouse (click the view to capture it, `Esc` to let go) |
 | Camera | `V` switches first and third person |
 | Map | `M` (the radio map, for rangers) |
-| Camper | `C` crouch. Crouched in a bush you can't be seen from more than a few metres, unless a flashlight finds you close up. In prop hunt, `E` turns you into the bush, boulder or log next to you (and back) |
+| Camper | `C` crouch; hold it to lie flat (prone: slower, seen from even less far). Hold `X` beside a tree to climb it: hidden in the leaves, but five seconds at most, never in the last 15 s of the hunt. Let go and you slide down with a scrape rangers nearby hear; hold on to the end and you fall with a thud they hear from far off. On a phone the Crouch button works the same held down, and there's a Climb button. Crouched in a bush you can't be seen from more than a few metres, unless a flashlight finds you close up. In prop hunt, `E` turns you into the bush, boulder or log next to you (and back) |
 | Music | `N` mutes or unmutes it |
 | Ranger | `F` flashlight, `Q` call out (10 s cooldown) |
 | Spectating | `Tab` cycles who you follow once you're caught |
@@ -52,6 +52,8 @@ bun run deploy           # build and deploy (wrangler deploy)
 **Scoring:** campers get a point per second they last in the hunt, plus 30 for camping out (lasting the whole thing, or still being out when a camper finds Bigfoot). Rangers get 40 per catch. Finding Bigfoot is worth 100 to whoever does it.
 
 **Your camper:** the lobby has a customizer (jacket, pants, skin, hat, backpack) with a live preview; it's saved in the browser and everyone in a LAN game sees it. The hair colour and style (short, curly or long) follow from the picks. Campers wear a quilted jacket with a hood on its back and cargo pants over laced boots; rangers wear the campaign hat, a shirt with pleated pockets, epaulettes, a tie, a badge and a name plate, and a duty belt with a radio and a shoulder mic that blinks red at night. The parts are modelled in Blender (`blender/characters.py` writes `public/models/characters.glb`; `--render out/` draws a lineup) and hang on the same joints the page animates, so walking and crouching bend them like a person.
+
+**The plants:** bushes, saguaros, barrel cacti and prickly pear are grown from seeds in TypeScript by the shared `@rustybuns/models` package (`packages/models/src/flora.ts`), so any app can use them. Bushes are clumps of leaves, darker inside and lighter on top: six of them, round, wide and low, or with berries. The desert parks (Saguaro, Joshua Tree, Big Bend) grow saguaros where other parks grow pines, with little cacti between them. Each plant is one geometry with its colours baked in, so a zone draws every copy of it in one call.
 
 To try a LAN game on one machine, run two copies on different ports. Each instance has its own token cookie, so they coexist:
 

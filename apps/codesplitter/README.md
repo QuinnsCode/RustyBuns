@@ -104,7 +104,7 @@ The highest-value things, in order:
 | The live site | [Cloudflare Artifacts](https://developers.cloudflare.com/artifacts/) | A repo per project, made by an API call, cloneable by anyone you hand a token |
 | Your desktop | Bare repos in `~/.codesplitters`, served by `git http-backend` | Any size, private GitHub repos, your own machine's credentials |
 | GitHub, GitLab, anywhere | A mirror, both ways | Two-way sync through outages, branches pushed upstream and pulled back |
-| Your agent's context | MCP, OpenAPI, WebMCP | The repo as tools: `read_file`, `edit_lines`, `start_branch`, `merge_branch`, `deploy` |
+| Your agent's context | MCP, OpenAPI, WebMCP | The repo as tools: `read_file`, `edit` (claim, wait, edit, let go), `start_branch`, `land` (merge, or the one conflict and why), `deploy` |
 | A phone | `#/m/owner/repo` | Start an agent, watch its run, review and merge its branch from the couch |
 
 ## Why Artifacts is rad
@@ -122,6 +122,8 @@ The catch is that Artifacts only takes writes as a `git push`.
 So codeSplitter builds git's objects and pack itself, in the Worker, with Web Crypto and `CompressionStream` and no git library, and speaks git's smart HTTP protocol.
 Each commit pushes only what changed on top of the parent tree, so editing one line of a big repo costs one blob, a few trees and a commit.
 Repos too big even for Artifacts (Bun, Alchemy) are kept in R2, packed into chunks and dug in parallel off a queue.
+A commit that carries an agent's lines also writes a git note in the same push, under `refs/notes/codesplitter`: the agent, its model, a hash of its prompt, how its run ended and its DONE / NEXT / BROKE / DONT note.
+The why travels with every clone (`git fetch origin refs/notes/codesplitter:refs/notes/codesplitter`, then `git log --notes=codesplitter`) and shows on the vein's commit card.
 
 ## The free desktop app: own your git, put it wherever you want
 
@@ -172,6 +174,7 @@ There's no downloadable build yet; that's one command from source.
 
 ## Everything else it does
 
+- **Meet the trio.** `/mervin`, `/ester` and `/dexter` are a case file each for the three helpers (merges, red checks, token bloat), written like a cloning-lab doctor's psych report.
 - **We got git problems with agent swarm.** `/git-problems.html` is the one page for both swarm demos below: the rush-hour station animation, and a way into the replay of a real week of this repo.
 - **Git at swarm speed, with dots.** `/swarm.html`, also on the landing page, is a simulation of agents getting their work into main: the old git way's one lane, merge wall and red-check wall, then codeSplitter's layers one at a time (a Durable Object, Mervin's bullet train, Ester's stations). Story mode plays it as scenes; the others are old git, layer by layer, and side by side, with faders for speed, agents, overlap and red checks.
 - **A week of the swarm, replayed.** `/swarm-watch.html` plays the week of October 7 to 14 back: 1,000 of this repo's real PRs, each a made-up agent, and what the open ones were waiting on, minute by minute. The git wall on the night of October 13 has 18 PRs stuck on conflicts at once, and the pane beside it shows the file they piled into. `bun scripts/swarm-week.ts` pulls the week (read only) a night-by-night numbers panel gives the peaks (the averages mislead), and a recorded merge round from this repo's history plays at the git wall (`bun scripts/swarm-round.ts`). `bun scripts/swarm-readme.ts` draws the animated chart below, and `--png` a still of the git wall for viewers that drop SMIL ([docs/swarm-week.png](docs/swarm-week.png)).
@@ -284,6 +287,7 @@ What would take someone else the longest to build:
 - **A safety model for agents that ship.** Agents get branches, containers and their own keys, never deploy keys.
   Deploy keys are write-only and sealed; only a person deploys.
   Hosted agents run in throwaway containers that bill nothing while idle.
+- **An MCP server that costs your agent almost nothing.** Code mode lists four tools instead of ~130: listing them costs about 950 tokens against 28,000, and clearing 20 TODOs in a file about 1,100 against 34,600 (`test/codemode.test.ts` measures both).
 - **One API, every surface.** The palette, REST, OpenAPI, tokens, OAuth, WebMCP and MCP all come from one list, and a test fails if they drift.
 
 > **⚠️ Super experimental.** Coding agents run real CLIs that can edit files and run shell commands, and hosted runs spend real API keys.

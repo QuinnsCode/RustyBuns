@@ -5,7 +5,9 @@
 // carry `x-qcrm-risky: true`, so a client asks a person before calling them. That is advice;
 // the server's own checks are what hold.
 //
-// It imports nothing, so a docs page can load it from any version.
+// It imports only env.ts (which imports nothing), so a docs page can load it from any version.
+
+import { VERSION } from "./env.ts";
 
 type Schema = Record<string, unknown>;
 const ref = (name: string): Schema => ({ $ref: `#/components/schemas/${name}` });
@@ -115,7 +117,7 @@ const OPS: Record<string, Record<string, Op>> = {
   [`${org}/seed`]: { post: { id: "seed_org", summary: "Fill the org with realistic fake data: n contacts and their companies, deals and activities", tag: "Org", role: "owner", body: obj({ n: int("1 to 100000"), seed: int("same seed, same data") }, ["n"]), ok: obj({ contacts: int(), companies: int(), deals: int(), activities: int() }), status: 201 } },
   [`${org}/insights`]: { get: { id: "get_insights", summary: "Counts, deals per stage, win rate over 90 days, activities per week, top companies by open pipeline", tag: "Org", role: "seasonal", ok: loose("{counts, deals_by_stage, last_90_days, activities_per_week, top_companies_by_open_pipeline}") } },
   [`${org}/export`]: { get: { id: "export_org", summary: "Every row of the org as one JSON", tag: "Org", role: "owner", risky: true, ok: loose("{org, contacts, companies, deals, activities, memberships, webhooks, audit}") } },
-  [`${org}/audit`]: { get: { id: "list_audit", summary: "Who did what to the org itself (members, keys, webhooks, exports, seeds)", tag: "Org", role: "manager", query: { limit: int("1 to 500, default 100") }, ok: arr(ref("AuditEntry")) } },
+  [`${org}/audit`]: { get: { id: "list_audit", summary: "Who did what to the org itself (members, keys, webhooks, exports, seeds)", tag: "Org", role: "manager", query: { actor: str("a user id or email"), action: str("`member` for every member.* entry, or one exact action like `member.role`"), since: str("entries at or after this: a millisecond timestamp or a date"), cursor: str("`next` from the page before"), limit: int("1 to 500, default 100") }, ok: obj({ items: arr(ref("AuditEntry")), next: { type: ["string", "null"], description: "cursor for the next page" } }) } },
   [`${org}/scripts`]: {
     get: { id: "list_scripts", summary: "The org's scripts", tag: "Scripts", role: "seasonal", ok: arr(ref("Script")) },
     post: { id: "create_script", summary: "Keep a script: JavaScript, the inside of `async ({ input, qcrm, log }) => { … }`", tag: "Scripts", role: "manager",
@@ -183,7 +185,7 @@ export function openapi(origin: string) {
   return {
     openapi: "3.1.0",
     info: {
-      title: "qCRM", version: "1",
+      title: "qCRM", version: VERSION,
       description: "A small CRM for teams and the agents that work for them. Sign in on the site, or send an org API key (an owner makes one) as `Authorization: Bearer qk_…`: "
         + "it acts as the person who made it, inside that org. Roles: seasonal < employee < manager < owner < admin; each operation says the least role it takes (`x-qcrm-role`). "
         + "Everything under /orgs/{org} answers 404 to anyone who isn't a member, so an id never says whether it exists. "
