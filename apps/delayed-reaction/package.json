@@ -1,0 +1,22 @@
+{
+  "name": "delayed-reaction",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "test": "bun test test",
+    "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop --check",
+    "deploy": "vite build && bunx wrangler deploy"
+  },
+  "dependencies": {
+    "@rustybuns/util": "workspace:*",
+    "@rustybuns/shell-bun": "workspace:*"
+  },
+  "devDependencies": {
+    "@rustybuns/cli": "workspace:*",
+    "vite": "^6.2.6"
+  }
+}

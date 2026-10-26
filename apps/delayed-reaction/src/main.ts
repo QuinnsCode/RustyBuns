@@ -1,0 +1,174 @@
+// The page: a canvas keyboard you run along, four thumb pads, a HUD, and a menu. The sim
+// (sim.ts) decides everything; this file draws it and turns thumbs and keys into presses.
+import { Music } from "./audio.ts";
+import { burst, drawHallway, echoBursts, view, type Burst } from "./hallway.ts";
+import { advance, createRun, delayWords, dueLanes, LEVELS, makeChart, press, release, type Judgement, type Lane, type Run } from "./sim.ts";
+const KEYS: Record<string, Lane> = { KeyD: 0, KeyF: 1, KeyJ: 2, KeyK: 3, ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3 };
+
+const stage = document.getElementById("stage") as HTMLCanvasElement;
+const g = stage.getContext("2d")!;
+const hud = { score: el("score"), combo: el("combo"), judge: el("judge"), lives: el("lives") };
+const menu = el("menu"), levels = el("levels"), pads = [...document.querySelectorAll<HTMLButtonElement>(".pad")];
+
+let music: Music | null = null;
+let run: Run | null = null;
+let best: Record<number, number> = {};
+try { best = JSON.parse(localStorage.getItem("delayed-reaction.best") ?? "{}"); } catch { best = {}; }
+const bursts: Burst[] = [];
+const down = new Set<Lane>();
+let judgeUntil = 0;
+
+function el(id: string) { return document.getElementById(id)!; }
+
+// ---- menu ----
+function showMenu(result?: Run) {
+  levels.replaceChildren();
+  if (result) {
+    const p = document.createElement("p");
+    p.className = "result";
+    p.textContent = result.over === "won"
+      ? `Level ${result.chart.level}: ${result.score} points, ${result.perfects} perfect, best combo ${result.maxCombo}.`
+      : `Lost it at bar ${Math.floor(result.beat / 4)}: ${result.score} points.`;
+    levels.append(p);
+  }
+  LEVELS.forEach((spec, i) => {
+    const b = document.createElement("button");
+    const n = i + 1;
+    b.innerHTML = `<b>${n}</b> ${spec.bpm} bpm · ${delayWords(spec.delay)}${best[n] ? ` · best ${best[n]}` : ""}`;
+    b.addEventListener("click", () => start(n));
+    levels.append(b);
+  });
+  menu.hidden = false;
+}
+
+async function start(level: number) {
+  menu.hidden = true;
+  music ??= new Music();
+  const chart = makeChart(level);
+  run = createRun(chart);
+  el("delay-words").textContent = delayWords(chart.delay);
+  hud.judge.textContent = chart.hint ? `Answer on the echo, ${delayWords(chart.delay)}` : `Answer ${delayWords(chart.delay)}, no echo now`;
+  judgeUntil = performance.now() + 2500;
+  await music.play(chart);
+}
+
+function finish() {
+  if (!run || !music) return;
+  const r = run;
+  run = null;
+  music.stop();
+  if (r.over === "won" && r.score > (best[r.chart.level] ?? 0)) {
+    best[r.chart.level] = r.score;
+    try { localStorage.setItem("delayed-reaction.best", JSON.stringify(best)); } catch {}
+  }
+  pads.forEach((p) => p.classList.remove("due"));
+  setTimeout(() => showMenu(r), 600);
+}
+
+// ---- input ----
+// The beat the player hears, not the one the clock is at: the output latency (big on phones) comes
+// off first. Presses are judged on it and the frame draws on it.
+function heardBeat() {
+  if (!music) return 0;
+  const lag = ("outputLatency" in music.ctx ? music.ctx.outputLatency : 0) || music.ctx.baseLatency || 0;
+  return music.beat() - lag / music.spb;
+}
+
+function padDown(lane: Lane) {
+  if (down.has(lane)) return;
+  down.add(lane);
+  pads[lane]!.classList.add("down");
+  if (!run || !music || run.over) return;
+  show(press(run, lane, heardBeat()));
+}
+
+function padUp(lane: Lane) {
+  if (!down.has(lane)) return;
+  down.delete(lane);
+  pads[lane]!.classList.remove("down");
+  if (!run || !music || run.over) return;
+  const j = release(run, lane, heardBeat());
+  if (j) show(j);
+}
+
+function show(j: Judgement) {
+  if (!music) return;
+  const buzz = (ms: number) => { try { navigator.vibrate?.(ms); } catch {} };
+  if (j.kind === "hit") {
+    music.answer(j.call.lane, j.grade, j.call.hold);
+    bursts.push(burst(j.call.lane, music.beat(), j.grade === "perfect" ? 1 : 0.6));
+    say(j.grade === "perfect" ? "Perfect" : j.offset < 0 ? "Early" : "Late");
+    buzz(j.grade === "perfect" ? 12 : 6);
+  } else if (j.kind === "release") {
+    if (j.grade === "dropped") { music.answer(j.call.lane, "bad"); say("Dropped"); buzz(40); }
+    else { bursts.push(burst(j.call.lane, music.beat(), j.grade === "perfect" ? 1.2 : 0.8)); say("Held"); }
+  } else if (j.kind === "early") {
+    music.answer(j.lane, "bad");
+    say("Nothing there");
+    buzz(25);
+  } else {
+    say("Miss");
+    buzz(40);
+  }
+}
+
+function say(text: string) {
+  hud.judge.textContent = text;
+  hud.judge.dataset.kind = text.toLowerCase().split(" ")[0];
+  judgeUntil = performance.now() + 500;
+}
+
+pads.forEach((pad) => {
+  const lane = Number(pad.dataset.lane) as Lane;
+  pad.addEventListener("pointerdown", (e) => { e.preventDefault(); pad.setPointerCapture(e.pointerId); padDown(lane); });
+  pad.addEventListener("pointerup", () => padUp(lane));
+  pad.addEventListener("pointercancel", () => padUp(lane));
+  pad.addEventListener("lostpointercapture", () => padUp(lane));
+  pad.addEventListener("contextmenu", (e) => e.preventDefault());
+});
+window.addEventListener("keydown", (e) => {
+  if (e.repeat) return;
+  const lane = KEYS[e.code];
+  if (lane !== undefined) { e.preventDefault(); padDown(lane); }
+  if (e.code === "KeyM" && music) music.muted = !music.muted;
+  if (e.code === "Escape" && run) { run.over = "lost"; finish(); }
+});
+window.addEventListener("keyup", (e) => { const lane = KEYS[e.code]; if (lane !== undefined) padUp(lane); });
+window.addEventListener("blur", () => { for (const l of [...down]) padUp(l); });
+
+// ---- drawing ----
+function resize() {
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  stage.width = Math.floor(innerWidth * dpr);
+  stage.height = Math.floor(innerHeight * dpr);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener("resize", resize);
+resize();
+
+function frame(now: number) {
+  requestAnimationFrame(frame);
+  // Everything you see runs on the beat you hear, so the pad lights, the key lands and the judging agree.
+  const beat = music && run ? heardBeat() : 0;
+  if (run && music) {
+    for (const j of advance(run, beat)) show(j);
+    hud.score.textContent = String(run.score);
+    hud.combo.textContent = run.combo >= 5 ? `${run.combo}x` : "";
+    hud.lives.style.width = `${(run.lives / 8) * 100}%`;
+    hud.lives.dataset.low = run.lives <= 2 ? "1" : "";
+    echoBursts(bursts, beat, run.chart.delay);
+    // The pad lights in its colour while its key is in the window: a thumb can read that.
+    const due = dueLanes(run, beat);
+    pads.forEach((p, i) => p.classList.toggle("due", due.has(i as Lane)));
+    if (run.over) finish();
+  }
+  if (now > judgeUntil) hud.judge.textContent = "";
+  drawHallway(g, view(innerWidth, innerHeight), { run, beat, down, bursts });
+}
+
+// Avoid the page scrolling or zooming under a thumb.
+document.addEventListener("touchmove", (e) => { if (!menu.hidden) return; e.preventDefault(); }, { passive: false });
+
+showMenu();
+requestAnimationFrame(frame);
+

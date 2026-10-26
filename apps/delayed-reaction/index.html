@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0b0714">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Delayed Reaction</title>
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+  <canvas id="stage" aria-label="The keyboard you run along"></canvas>
+  <div id="hud">
+    <div id="score" aria-live="off">0</div>
+    <div id="combo"></div>
+    <div id="judge" aria-live="polite"></div>
+    <div id="lives-track"><div id="lives"></div></div>
+  </div>
+  <div id="pads" role="group" aria-label="Pads">
+    <button class="pad" data-lane="0" aria-label="Pad 1 (D)"><span>D</span></button>
+    <button class="pad" data-lane="1" aria-label="Pad 2 (F)"><span>F</span></button>
+    <button class="pad" data-lane="2" aria-label="Pad 3 (J)"><span>J</span></button>
+    <button class="pad" data-lane="3" aria-label="Pad 4 (K)"><span>K</span></button>
+  </div>
+  <div id="menu">
+    <h1>Delayed Reaction</h1>
+    <p>A dark hallway. The floor calls a note; you answer <b id="delay-words">a bar later</b>, when the call echoes and the pad lights. Hold the long keys. Every answer explodes in colour, and echoes.</p>
+    <div id="levels"></div>
+    <p class="hint">Pads at the bottom, or <kbd>D</kbd> <kbd>F</kbd> <kbd>J</kbd> <kbd>K</kbd>. Sound on.</p>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
