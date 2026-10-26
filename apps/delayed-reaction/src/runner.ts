@@ -6,7 +6,7 @@
 // through a door, thrown back off a wall on a knock, a stumble after a miss, and a forward lean with a
 // streak behind when the run is boosted.
 // The jacket and shades carry the runner's one accent colour; the hands take a held pad's lane colour.
-import { LANE_COLOR, LANE_W, project, type Scene, type View } from "./hallway.ts";
+import { floorAt, LANE_COLOR, project, type Scene, type View } from "./hallway.ts";
 import { SPEED_CEILING, SPEED_FLOOR, type Lane } from "./sim.ts";
 
 export type RunnerScene = Pick<Scene, "run" | "beat" | "down"> & {
@@ -15,7 +15,6 @@ export type RunnerScene = Pick<Scene, "run" | "beat" | "down"> & {
   t?: number;          // seconds, for the idle sway and the hair when no song is running
   x?: number;          // where across the floor, in lanes: -1.5 far left to 1.5 far right
   vx?: number;         // how fast x is changing, lanes a beat; drawRunner works it out from x when it is missing
-  at?: { x: number; y: number; tilt: number }; // the screen point the runner stands on and the floor's tilt there (radians)
   knock?: number;      // 0..1: 1 is just bounced off a wall, falling back to 0 as the runner recovers
   passBeat?: number;   // the beat the runner last went through a door: the dive plays out over half a beat
 };
@@ -141,7 +140,7 @@ export function drawRunner(g: CanvasRenderingContext2D, v: View, s: RunnerScene)
   const P = (p: P3) => project(v, p[0], p[1], RUNNER_Z + p[2]);
   const px = v.f / RUNNER_Z; // pixels per world unit at the runner
   const [bx, by] = P([0, 0, 0]);
-  const at = s.at ?? { x: project(v, x * LANE_W, 0, RUNNER_Z)[0], y: by, tilt: 0 };
+  const at = floorAt(v, x, RUNNER_Z, s.beat);
   g.save();
   g.translate(at.x, at.y);
   g.rotate(at.tilt);
