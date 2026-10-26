@@ -376,7 +376,7 @@ async function relaunch(env: Env, rows: Row[], origin: string) {
 }
 
 /** A batch waiting on main, as anyone who reads the file sees it: no task, log or output, which can quote the agent's chatter. */
-export interface Waiting { id: number; agent: string; started: number; pending: NonNullable<Run["pending"]>; hunks: unknown[] }
+export interface Waiting { id: number; agent: string; started: number; pending: NonNullable<Run["pending"]>; hunks: unknown[]; others: unknown[] }
 
 /**
  * Path's batches waiting on main (#757), each with its branch's hunks (private lines blank
@@ -393,7 +393,8 @@ async function waitingOn(env: Env, self: (req: Request) => Promise<Response>, ur
     const p = resultOf(r).pending;
     return p ? [(async () => {
       const res = await call(user, `/api/repos/${owner}/${repo}/branches/${encodeURIComponent(p.branch)}/hunks?path=${encodeURIComponent(path)}`);
-      return { id: r.id, agent: r.agent, started: r.started, pending: p, hunks: res.ok ? ((await res.json()) as { hunks: unknown[] }).hunks : [] };
+      const got = res.ok ? ((await res.json()) as { hunks: unknown[]; others?: unknown[] }) : null;
+      return { id: r.id, agent: r.agent, started: r.started, pending: p, hunks: got?.hunks ?? [], others: got?.others ?? [] };
     })()] : [];
   }));
   const kept = crew ? rows.flatMap((r) => { const x = resultOf(r); return x.landed && x.landed.at > day ? (x.kept ?? []).map((k) => ({ ...k, agent: r.agent })) : []; }) : [];
