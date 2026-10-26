@@ -52,8 +52,12 @@ export const lanePoint = (v: View, lane: Lane, z: number, beat: number) => wall(
 const ringZ = (b: number, beat: number, speed: number) => RUNNER_Z + (b - beat) * PER_BEAT * speed;
 
 // A hit explodes in its lane's colour. The dub echo repeats it `delay` beats later, smaller, up to
-// three times, so what you see is what the delay line is doing.
-export type Burst = { lane: Lane; beat: number; size: number; echoes: number; parts: Part[] };
+// three times, so what you see is what the delay line is doing. A burst with an `x` goes off at the door
+// the runner went through (lane units across the floor, -1.5 far left to 1.5 far right); without one it
+// goes off on the lane's wall.
+export type Burst = { lane: Lane; beat: number; size: number; echoes: number; parts: Part[]; x?: number };
+/** A lane's width across the floor, in world units: the runner and the doors stand at x * LANE_W. */
+export const LANE_W = 0.8;
 // A particle's launch velocity in world units a beat (x across, y up, z down the corridor), and its heat:
 // the hottest ones of a perfect burn white at the core.
 export type Part = { vx: number; vy: number; vz: number; heat: number };
@@ -72,7 +76,7 @@ export function echoBursts(bursts: Burst[], beat: number, delay: number) {
   for (const b of [...bursts]) {
     if (b.echoes < 3 && beat >= b.beat + delay && b.size > 0.2) {
       b.echoes = 3; // this one is done echoing: its child carries on
-      bursts.push({ ...burst(b.lane, b.beat + delay, b.size * 0.55), echoes: 0 });
+      bursts.push({ ...burst(b.lane, b.beat + delay, b.size * 0.55), x: b.x, echoes: 0 });
     }
   }
   const alive = bursts.filter((b) => beat - b.beat < 1.2);
@@ -262,12 +266,15 @@ function drawBursts(g: CanvasRenderingContext2D, v: View, bursts: Burst[], beat:
     const age = beat - b.beat;
     if (age < 0 || age > 1.2) continue;
     const fade = (1 - age / 1.2) ** 1.5;
-    // The wall it went off: the lane's point on the tunnel, and straight out from the axis through it.
-    const theta = LANE_ANGLE[b.lane], lx = R * Math.sin(theta), ly = R - R * Math.cos(theta), col = LANE_COLOR[b.lane];
-    const out = [Math.sin(theta), -Math.cos(theta)] as const;
+    // Where it went off: the door the runner ran through, a little ahead of them at chest height and
+    // pulled down to the floor; or, with no door, the lane's point on the wall, pulled straight out.
+    const theta = LANE_ANGLE[b.lane], col = LANE_COLOR[b.lane];
+    const door = b.x !== undefined;
+    const lx = door ? (b.x ?? 0) * LANE_W : R * Math.sin(theta), ly = door ? 0.6 : R - R * Math.cos(theta);
+    const out = door ? ([0, -1] as const) : ([Math.sin(theta), -Math.cos(theta)] as const);
     const at = (p: Part, t: number) => {
       const [x, y, z] = partAt(p, t, b.size, out);
-      return project(v, lx + x, ly + Math.max(0, 0.05 + y), RUNNER_Z + z);
+      return door ? project(v, lx + x, Math.max(0, ly + y), RUNNER_Z + 0.4 + z) : project(v, lx + x, ly + Math.max(0, 0.05 + y), RUNNER_Z + z);
     };
     // Each particle is a smear from where it was a moment ago to where it is now, so fast ones streak.
     const tail = Math.max(0, age - 0.1);
