@@ -222,3 +222,25 @@ Conflict-agent runs gated on the repo owner (the owner's own policy, capped at 3
 ### Not reviewed (the critic's list)
 
 Check claim and pass integrity (`checks.ts`: can a crew member claim an auto-queued required check and pass it unrun?); every other path into main (cuts, beams, mirror landing); beam links (`GET /api/beams/:id`, 48-bit id, no repo access check); the `via 'job'` re-dispatch against the human-only gates; GitHub token scope; the other ~250 `innerHTML` sinks in `client.html`; game-room sockets; repo `.npmrc` hosts feeding the container egress allowlist; the route families nobody listed. The next run starts from this list (#2295), and saved programs (#2195), which shipped after the run, get their own review (#2294).
+
+## Round 6, October 25: the units round 5's critic didn't review (#2295)
+
+A hand review of the first units on round 5's list, source only, no target code run. Not the full skill run with a coverage ledger; the rest of the list is still unreviewed and stays below.
+
+### Fixed in this round
+
+- **A repo's `.npmrc` could open the doctor container to any host** (low). `npmrcHosts` fed every registry host a repo named into the egress allowlist, including plain http, localhost and the metadata address. Only https hosts that aren't private are allowed now (`deps.test.ts`). A public host a repo names is still reachable; that is what a private registry needs.
+- **Beam ids were 48 bits** (low). A beam link is its only key. New ids are 128 bits; old ones still resolve (`beam.test.ts`).
+
+### Reviewed, open as issues
+
+- **Claim and pass integrity** (medium): https://github.com/QuinnsCode/RustyBuns/issues/2320. Hand-queued runs are safe (#645 and its follow-up); auto-queued ones are not.
+- **Beam links outlive a privacy flip**: https://github.com/QuinnsCode/RustyBuns/issues/2321.
+
+### Reviewed, nothing found
+
+`GET /api/beams/:id` does not leak across repos (the row is joined to its live repo); `DELETE` is limited to the beamer and the owner; `POST .../checks` refuses a non-owner's non-queued status; a stale runner can't report after its claim lapses.
+
+### Still not reviewed
+
+Cuts and mirror landing as paths into main; the `via 'job'` re-dispatch against the human-only gates; GitHub token scope; game-room sockets; the other ~250 `innerHTML` sinks in `client.html`; the route families nobody listed. The next run starts here (#2295 stays open for them), with saved programs (#2294).

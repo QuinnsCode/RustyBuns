@@ -312,7 +312,8 @@ export async function makeBeam(env: Env, owner: string, repo: string, user: stri
     commits: kind === "git" ? top.log.length : 0, files, dropped, stack });
 }
 
-const newId = () => crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+// The link is the only key to a beam: 128 bits, not guessable by walking ids (older 12-character ids still resolve).
+const newId = () => crypto.randomUUID().replace(/-/g, "");
 
 /** Keep a beam that's been built, start its checks, and answer with it. */
 async function record(env: Env, b: { id: string; owner: string; repo: string; branch: string; kind: string; user: string; to: string | null; title: string; message: string;
