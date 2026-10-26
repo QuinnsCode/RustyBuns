@@ -1,0 +1,26 @@
+/* The case files for Mervin, Ester and Dexter (/mervin, /ester, /dexter): one stylesheet, three pages, no script. */
+:root { --bg: #fff; --fg: #0a0a0a; --muted: #6b6b6b; --border: #e6e6e6; --border-2: #cfcfcf; --paper: #fcfbf8; --accent: #e8590c;
+  --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, monospace; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0e0e0e; --fg: #f2f2f2; --muted: #a0a0a0; --border: #2a2a2a; --border-2: #3d3d3d; --paper: #151515; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 var(--sans); }
+a { color: var(--accent); }
+.wrap { max-width: 820px; margin: 0 auto; padding: 24px 16px 64px; }
+nav { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 22px; font-weight: 600; }
+nav a:first-child { color: var(--fg); text-decoration: none; letter-spacing: -.02em; margin-right: auto; }
+.label { font: 600 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+h1 { font: 600 clamp(32px, 6vw, 52px)/1.05 var(--sans); letter-spacing: -.045em; margin: 6px 0 8px; } h1 em { font-style: normal; color: var(--accent); }
+h2 { font: 600 13px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 6px; }
+.lede { color: var(--muted); font-size: 16px; margin: 0 0 22px; }
+.file { border: 1px solid var(--border-2); border-top: 4px solid var(--accent); border-radius: 8px; background: var(--paper); padding: 6px 20px 18px; }
+.file section { padding: 14px 0; border-bottom: 1px dashed var(--border-2); } .file section:last-child { border-bottom: 0; padding-bottom: 0; }
+.file p { margin: 0 0 8px; } .file p:last-child { margin: 0; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+dt { font: 600 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; padding-top: 3px; } dd { margin: 0; }
+.score { display: grid; grid-template-columns: 11ch 1fr max-content; gap: 10px; align-items: center; margin: 6px 0; font: 13px var(--mono); }
+.bar { height: 8px; border: 1px solid var(--border-2); border-radius: 4px; overflow: hidden; background: var(--bg); } .bar i { display: block; height: 100%; background: var(--accent); }
+blockquote { margin: 0; padding: 2px 0 2px 14px; border-left: 3px solid var(--accent); font-style: italic; }
+pre.verse { margin: 0; font: italic 15px/1.55 var(--sans); white-space: pre-wrap; }
+.stamp { display: inline-block; font: 700 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); border: 2px solid var(--accent); border-radius: 4px; padding: 2px 8px; transform: rotate(-2deg); }
+footer { margin-top: 28px; font-size: 13px; color: var(--muted); }
+.muted { color: var(--muted); }
