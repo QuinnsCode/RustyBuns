@@ -84,6 +84,8 @@ await copyFile("src/swarm-round.json", "dist/client/swarm-round.json");
 await copyFile("src/swarm.html", "dist/client/swarm.html");
 // The page that frames both swarm demos, "We got git problems with agent swarm" (/git-problems.html).
 await copyFile("src/git-problems.html", "dist/client/git-problems.html");
+// The helpers' case files: /mervin, /ester and /dexter (a page each, one shared stylesheet, no script).
+for (const f of ["mervin.html", "ester.html", "dexter.html", "trio.css"]) await copyFile(`src/${f}`, `dist/client/${f}`);
 const ss = await Bun.build({ entrypoints: ["src/swarm-stage.js"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "swarm-stage.js" });
 if (!ss.success) { for (const l of ss.logs) console.error(l); process.exit(1); }
 // The pages' security headers, the same ones the Worker puts on its answers (src/security.ts),

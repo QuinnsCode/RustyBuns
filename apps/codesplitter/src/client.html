@@ -5344,7 +5344,10 @@ const views = {
     const hunkCache = new Map(), calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
     const rowOf = (id) => id && box.querySelector(`.ln[data-id="${CSS.escape(id)}"]`);
     const waitGhosts = () => {
-      for (const { run: x, hunks } of waits) hunks.forEach((h, k) => {
+      for (const { run: x, hunks, others } of waits) {
+        // Landing takes the whole branch (its hash), so say what else it changes beyond this file.
+        if (others?.length) box.insertAdjacentHTML("afterbegin", `<div class="gl h" data-wait="${x.id}"><span></span><span></span><span class="t hunk-h">${icon("files")}<span class="grow">${esc(x.agent)}'s batch also changes ${others.length} other file${others.length > 1 ? "s" : ""}: ${others.map((o) => `<code>${esc(o.path)}</code>${o.change === "deleted" ? " (deleted)" : ""}`).join(", ")}</span>${hunks.length ? "" : waitControls(x, role)}</span></div>`);
+        hunks.forEach((h, k) => {
         const gone = h.del.map((l) => rowOf(l.id)).filter(Boolean), rise = !ghostsShown.has(x.id) && !calm ? " rise" : "";
         gone.forEach((el) => el.classList.add("gone"));
         const head = `<div class="gl h${rise}" data-wait="${x.id}"><span></span><span></span><span class="t hunk-h">${icon("bot")}<span class="grow">${esc(x.agent)} wants to change this ${hunkStat([h])}</span>${k === 0 ? waitControls(x, role) : ""}${role === "owner" ? `<button type="button" class="btn icon-only" data-drop="${esc(h.key)}" data-run="${x.id}" title="leave this stretch as it is: the rest still lands" aria-label="leave this stretch out">${icon("undo-2")}</button>` : ""}</span></div>`;
@@ -5353,7 +5356,8 @@ const views = {
         if (gone.length) { gone[0].insertAdjacentHTML("beforebegin", head); gone.at(-1).insertAdjacentHTML("afterend", adds); }
         else if (after) after.insertAdjacentHTML("afterend", head + adds);
         else box.insertAdjacentHTML("afterbegin", head + adds);
-      });
+        });
+      }
       for (const [id, k] of keptOf) {
         const t = rowOf(id)?.querySelector(".t");
         if (t) t.insertAdjacentHTML("beforeend", `<span class="kept" title="kept yours: ${esc(k.agent)} wanted ${k.wanted === null ? "this line gone" : `“${esc(k.wanted)}”`}">${icon("shield-check")}</span>`);
@@ -5370,14 +5374,14 @@ const views = {
     /** Batches waiting on main (with their hunks, from pollWaits, or fetched here) and the lines a landing kept yours on. */
     const setWaits = async (ws, kept) => {
       if (branch) return;
-      const sig = (ws) => JSON.stringify([ws.map((w) => [w.run.id, w.run.pending, w.hunks.map((h) => h.key)]), [...keptOf.keys()]]), was = sig(waits);
+      const sig = (ws) => JSON.stringify([ws.map((w) => [w.run.id, w.run.pending, w.hunks.map((h) => h.key), (w.others ?? []).map((o) => o.path)]), [...keptOf.keys()]]), was = sig(waits);
       keptOf = new Map(kept.map((k) => [k.line, k]));
       const next = await Promise.all(ws.map(async (x) => {
-        if (x.hunks) return { run: x, hunks: x.hunks };
+        if (x.hunks) return { run: x, hunks: x.hunks, others: x.others ?? [] };
         // Keyed by the batch's hash too: a batch that changed since (and is held to be read again) is fetched again.
         const key = `${x.id}:${x.pending.hash}`;
-        if (!hunkCache.has(key)) hunkCache.set(key, api(`/repos/${owner}/${repo}/branches/${encodeURIComponent(x.pending.branch)}/hunks?path=${encodeURIComponent(path)}`).then((b) => b.hunks).catch(() => { hunkCache.delete(key); return []; }));
-        return { run: x, hunks: await hunkCache.get(key) };
+        if (!hunkCache.has(key)) hunkCache.set(key, api(`/repos/${owner}/${repo}/branches/${encodeURIComponent(x.pending.branch)}/hunks?path=${encodeURIComponent(path)}`).catch(() => { hunkCache.delete(key); return { hunks: [], others: [] }; }));
+        return { run: x, ...(await hunkCache.get(key)) };
       }));
       waits = next;
       const changed = sig(waits) !== was;

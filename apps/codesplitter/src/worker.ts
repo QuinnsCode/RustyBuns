@@ -12,6 +12,7 @@ import { rankOf } from "./policy.ts";
 import { fromText, text, type Doc } from "./lines.ts";
 import { mainClosed, policyClosed, protectRoute } from "./protect.ts";
 import {
+  artifactsFor,
   ensureCrewRemote,
   fileStub,
   handleFor,
@@ -515,13 +516,17 @@ async function route(req: Request, env: Env): Promise<Response> {
   // POST /api/repos {name, visibility}
   if (p[1] === "repos" && !p[2] && req.method === "POST") {
     if (!user) return json({ error: "sign in first" }, 401);
-    const { name, visibility = "public" } = await body<"name" | "visibility">();
+    const { name, visibility = "public", region } = await body<"name" | "visibility" | "region">();
     if (typeof name !== "string" || !NAME.test(name)) return json({ error: "bad repo name" }, 400);
     if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
-    await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, branch) VALUES (?, ?, ?, ?, 'main')").bind(user, name, visibility, Date.now()).run();
-    if (env.ARTIFACTS) {
+    if (region !== undefined && region !== "eu") return json({ error: "region: eu, or leave it out" }, 400);
+    if (region === "eu" && !env.ARTIFACTS_EU) return json({ error: "this codeSplitter has no EU storage" }, 501);
+    const namespace = region ?? null;
+    await env.DB.prepare("INSERT INTO repos (owner, name, visibility, created_at, branch, namespace) VALUES (?, ?, ?, ?, 'main', ?)").bind(user, name, visibility, Date.now(), namespace).run();
+    const arts = artifactsFor(env, namespace);
+    if (arts) {
       // One artifact repo per excavation; "--" can't appear in either name, so it can't collide.
-      const art = await env.ARTIFACTS.create(`${user}--${name}`, { description: `codeSplitter ${user}/${name}`, setDefaultBranch: "main" });
+      const art = await arts.create(`${user}--${name}`, { description: `codeSplitter ${user}/${name}`, setDefaultBranch: "main" });
       await env.DB.prepare("UPDATE repos SET artifact = ?, artifact_remote = ? WHERE owner = ? AND name = ?").bind(art.name, art.remote, user, name).run();
       // On the desktop its git takes pushes from the start: land them from here on (#788).
       await seeGit(env, user, name);

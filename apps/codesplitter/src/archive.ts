@@ -50,16 +50,22 @@ export async function fileLines(env: Env, owner: string, repo: string, path: str
   return ((await res.json()) as { lines: FileLine[] }).lines;
 }
 
+/** The Artifacts binding a repo's git lives in: `namespace` is the repo row's (null for the default). */
+export function artifactsFor(env: Env, namespace?: unknown) {
+  return namespace === "eu" ? env.ARTIFACTS_EU : env.ARTIFACTS;
+}
+
 /**
  * The repo row's artifact handle and branch, or null when it has none. With
  * `crew`, the crew's remote when the repo has one (it holds private lines'
  * real text): what previews, deploys and the crew's own clone use.
  */
 export async function handleFor(env: Env, owner: string, repo: string, crew = false) {
-  const r = await repoRow<any>(env, owner, repo, "artifact, artifact_remote, crew_artifact, crew_remote, branch");
-  if (!env.ARTIFACTS || !r?.artifact) return null;
+  const r = await repoRow<any>(env, owner, repo, "artifact, artifact_remote, crew_artifact, crew_remote, branch, namespace");
+  const arts = artifactsFor(env, r?.namespace);
+  if (!arts || !r?.artifact) return null;
   const [name, remote] = crew && r.crew_artifact ? [r.crew_artifact, r.crew_remote] : [r.artifact, r.artifact_remote];
-  return { handle: await env.ARTIFACTS.get(name), branch: (r.branch ?? "main") as string, remote: remote as string, crew: name !== r.artifact };
+  return { handle: await arts.get(name), branch: (r.branch ?? "main") as string, remote: remote as string, crew: name !== r.artifact };
 }
 
 /**
@@ -70,18 +76,19 @@ export async function handleFor(env: Env, owner: string, repo: string, crew = fa
  * `except`, which its caller is about to push), tried again until it lands.
  */
 export async function ensureCrewRemote(env: Env, owner: string, repo: string, except?: string) {
-  const r = await repoRow<any>(env, owner, repo, "artifact, crew_artifact, crew_backfill, branch");
-  if (!env.ARTIFACTS || !r?.artifact) return;
+  const r = await repoRow<any>(env, owner, repo, "artifact, crew_artifact, crew_backfill, branch, namespace");
+  const arts = artifactsFor(env, r?.namespace);
+  if (!arts || !r?.artifact) return;
   if (r.crew_artifact) return r.crew_backfill ? payBackfill(env, owner, repo, except) : undefined;
   const name = `${r.artifact}--crew`, branch = (r.branch ?? "main") as string, description = `codeSplitter ${owner}/${repo}, the crew's copy`;
-  const pub = await env.ARTIFACTS.get(r.artifact);
+  const pub = await arts.get(r.artifact);
   let mine = true;
   const made = await (async () => {
     const [tip] = await pub.log({ ref: branch, limit: 1 }).catch(() => []);
-    return tip ? pub.fork(name, { description, defaultBranchOnly: true }) : env.ARTIFACTS!.create(name, { description, setDefaultBranch: branch });
+    return tip ? pub.fork(name, { description, defaultBranchOnly: true }) : arts.create(name, { description, setDefaultBranch: branch });
   })().catch(async (e: Error) => {
     // Someone else made it a moment ago.
-    const info = await (await env.ARTIFACTS!.get(name)).info().catch(() => null);
+    const info = await (await arts.get(name)).info().catch(() => null);
     if (!info) throw e;
     mine = false;
     return info;
