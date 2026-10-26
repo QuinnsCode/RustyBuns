@@ -74,6 +74,14 @@ export class LocalArtifacts {
     return { id, plaintext: `art_v1_${id}?expires=${Math.floor(expiresAt / 1000)}`, scope, expiresAt: new Date(expiresAt).toISOString() };
   }
 
+  /** Revokes a repo's token, given its plaintext or id. False when no live token of that repo matches. */
+  revoke(repo: string, tokenOrId: string) {
+    const t = this.tokens.get(tokenOrId.split("?")[0]!.replace(/^art_v1_/, ""));
+    if (!t || t.repo !== repo || t.revoked) return false;
+    t.revoked = true;
+    return true;
+  }
+
   /** Is `secret` (the part before "?expires=") good for this repo and access? */
   check(repo: string, secret: string, write: boolean) {
     const t = this.tokens.get(secret.replace(/^art_v1_/, ""));
@@ -211,6 +219,7 @@ export class LocalArtifactsRepo {
   async info() { return this.infoSync(); }
 
   async createToken(scope: "read" | "write" = "write", ttl = 86400) { return this.ns.mint(this.name, scope, ttl); }
+  async revokeToken(tokenOrId: string) { return this.ns.revoke(this.name, tokenOrId); }
 
   async log(opts: { ref?: string; limit?: number; offset?: number } = {}) {
     // --end-of-options: a ref like `--output=x` is a ref, not an option.
