@@ -7,12 +7,16 @@
 //   GET  /__rb/heap             the heap snapshots the office and the pty hosts wrote over their ceiling
 //   GET  /__rb/history          the office's runs, one per start, newest first: memory slope, profiles, ceiling restarts
 //   GET  /__rb/context          Dexter's watch on live sessions' context size: `sessions` with each one's context, total used and latest turn (and `lines` of them, written out); `over` the warn lines now, and `fresh` crossings since the last ask (each once); `code` the sessions that ran a code-mode program since the last ask, with their code-mode, tool-load and direct MCP counts
-//   GET  /__rb/helpers          Ester's and Mervin's runs of the board script (ester/run.ts): phase, the tail they printed, PRs to hold
+//   GET  /__rb/helpers          Ester's and Mervin's runs of the board script (ester/run.ts): phase, the tail they printed, PRs to hold,
+//                               and Mervin's running tally of conflicts avoided when one is kept (`tally`)
+//   GET  /__rb/line             the floor's open PRs and the ones merged in the last day (gh), for the gitpath screen (screens/)
 //   GET  /__rb/reload           what the page is running and whether the server's code moved on (live/reload.ts)
 //   POST /__rb/reload/restart   restart the office (SIGTERM; the workers keep running) when office:mama is minding it
-//   POST /__rb/helpers/<name>   start one (ester, mervin or dexter) in the floor's repo that has its script, unless it is on it already
+//   POST /__rb/helpers/<name>   start one (ester, mervin or dexter) in the floor's repo that has its script, unless it is on it already.
+//                               Ester with ?each=1 tests PR by PR (--check-stages) instead of the whole stack in one run; Mervin
+//                               with ?keep=1 adds the run to his tally (<data>/mervin-tally.jsonl), which the person allows
 // A POST from the page needs an X-RB-Triage header, which a form on another site can't send.
-import { existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { cpuProfile, PROF_MAX_MS, profiling } from "@rustybuns/shell-bun/cpuprof";
@@ -21,7 +25,9 @@ import { historyRuns } from "@rustybuns/shell-bun/history";
 import { officeHistory, officeMem } from "../live/mem.ts";
 import { officeReload } from "../live/reload.ts";
 import { ContextWatch, Meter, ModeWatch, nameOf, sessionLines } from "../ester/dexter.ts";
-import { createHelpers, HELPERS, isHelper, repoWith } from "../ester/run.ts";
+import { createHelpers, HELPERS, isHelper, repoWith, type EsterState } from "../ester/run.ts";
+import { mervinBoard, tallyRows, tallySum } from "../screens/read.ts";
+import { lineOf, type Gh } from "../screens/line.ts";
 
 export const TRIAGE_HEADER = "x-rb-triage";
 
@@ -41,11 +47,20 @@ export function officeTriage(
   floors: () => Iterable<{ id: string; dir: string }>,
   reload = officeReload(PUBLIC_DIR, SERVER_DIR, BIN_DIR, !!process.env.AGENT_OFFICE_RB_MAMA, () => process.kill(process.pid, "SIGTERM")),
   projects = path.join(homedir(), ".claude/projects"),
+  gh?: Gh,
 ) {
   const mem = officeMem(dataDir, floors);
   const hist = officeHistory(dataDir);
   const profDir = path.join(dataDir, "prof");
   const helpers = createHelpers();
+  const tallyFile = path.join(dataDir, "mervin-tally.jsonl");
+  const tally = () => (existsSync(tallyFile) ? tallySum(readFileSync(tallyFile, "utf8")) : null);
+  const keep = (s: EsterState) => {
+    if (s.phase !== "green" && s.phase !== "red") return;
+    const rows = tallyRows(mervinBoard(s.lines), Date.now());
+    if (rows.length) appendFileSync(tallyFile, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+  };
+  const lines = lineOf(gh);
   const context = new ContextWatch(), modes = new ModeWatch(), meter = new Meter();
   return async (method: string, url: URL, trusted: boolean): Promise<TriageAnswer | null> => {
     const p = url.pathname;
@@ -67,7 +82,12 @@ export function officeTriage(
       return { status: 200, body: { snapshots } };
     }
     if (p === "/__rb/context") return method === "GET" ? { status: 200, body: (() => { const sessions = meter.scan(projects); return { sessions: sessions.map((c) => ({ ...c, name: nameOf(c) })), lines: sessionLines(sessions), ...context.check(sessions), code: modes.check(sessions) }; })() } : only("GET");
-    if (p === "/__rb/helpers") return method === "GET" ? { status: 200, body: { ester: helpers.ester.state(), mervin: helpers.mervin.state(), dexter: helpers.dexter.state() } } : only("GET");
+    if (p === "/__rb/helpers") return method === "GET" ? { status: 200, body: { ester: helpers.ester.state(), mervin: helpers.mervin.state(), dexter: helpers.dexter.state(), tally: tally() } } : only("GET");
+    if (p === "/__rb/line") {
+      if (method !== "GET") return only("GET");
+      const dir = [...floors()][0]?.dir;
+      return dir ? { status: 200, body: await lines(dir) } : { status: 404, body: { error: "No floor to read" } };
+    }
     if (p.startsWith("/__rb/helpers/")) {
       const name = p.slice("/__rb/helpers/".length);
       if (!isHelper(name)) return { status: 404, body: { error: "Ester, Mervin or Dexter" } };
@@ -77,7 +97,8 @@ export function officeTriage(
       if (!dirs.length) return { status: 404, body: { error: "No floor to run in" } };
       const repo = repoWith(HELPERS[name].script, dirs);
       if (!repo) return { status: 404, body: { error: `This helper works from ${HELPERS[name].script}, and none of the floors' repos have it (looked in ${dirs.join(", ")})` } };
-      const refused = helpers[name].start(repo);
+      const args = name === "ester" && url.searchParams.get("each") === "1" ? ["--check-stages"] : HELPERS[name].args;
+      const refused = helpers[name].start(repo, args, name === "mervin" && url.searchParams.get("keep") === "1" ? keep : undefined);
       return refused ? { status: refused.status, body: { error: refused.error } } : { status: 202, body: helpers[name].state() };
     }
     if (p === "/__rb/prof") {
