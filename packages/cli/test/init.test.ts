@@ -1050,6 +1050,30 @@ test("init: SvelteKit on adapter-cloudflare runs its Worker build on the desktop
   expect(existsSync(join(auto.dir, "rustybuns.config.ts"))).toBe(false);
 });
 
+test("init: Qwik City on the cloudflare-pages adapter runs dist/_worker.js on the desktop; without the adapter config it's refused", () => {
+  const qwik = (extra: Record<string, string> = {}) => project({
+    "package.json": JSON.stringify({ name: "qk", scripts: { build: "qwik build" }, dependencies: { "@builder.io/qwik": "^1", "@builder.io/qwik-city": "^1" }, devDependencies: { vite: "^7" } }),
+    "vite.config.ts": 'import { qwikVite } from "@builder.io/qwik/optimizer";\nexport default {};\n', "src/routes/index.tsx": "", "bun.lock": "", ...extra,
+  });
+  const p = qwik({ "adapters/cloudflare-pages/vite.config.ts": "export default {};\n", "src/entry.cloudflare-pages.tsx": "" });   // no wrangler config: the adapter's defaults
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/detected: qwik/);
+  const c = p.read("rustybuns.config.ts");
+  expect(c).toContain('"main": "dist/_worker.js"');
+  expect(c).toContain('"builtMain": "dist/_worker.js"');
+  expect(c).toContain('"assets": "dist"');
+  expect(c).toContain('"build": "bunx vite build && bunx vite build -c adapters/cloudflare-pages/vite.config.ts"');
+  expect(c).toContain('"mode": "worker"');
+  expect(c).not.toContain("clientBuild");
+
+  const bare = qwik();
+  const n = bare.run("init");
+  expect(n.code).not.toBe(0);
+  expect(n.out).toMatch(/qwik add cloudflare-pages/);
+  expect(existsSync(join(bare.dir, "rustybuns.config.ts"))).toBe(false);
+});
+
 test("drift: --repair changes the live account, so without a terminal it is refused; --repair on any other command is a usage error", () => {
   const config = `export default { name: "shop", worker: { main: "src/worker.ts", compatibilityDate: "2026-06-01", compatibilityFlags: [] }, bindings: { KV: { type: "kv" } }, targets: { edge: { provider: "cloudflare" } } };\n`;
   const p = project({ "package.json": VITE, "rustybuns.config.ts": config, "src/worker.ts": "export default {};\n" });

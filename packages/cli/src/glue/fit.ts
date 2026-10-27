@@ -17,7 +17,8 @@ export type Stack =
 /** SvelteKit counts only with @sveltejs/adapter-cloudflare, which builds the Worker; see `inits`. */
 /** Nuxt builds its Worker with Nitro's cloudflare-module preset (.output/server/index.mjs plus .output/public). */
 /** SolidStart 2 (a Vite plugin with Nitro behind it): its Cloudflare preset builds the module Worker init runs. */
-export const SUPPORTED: Stack[] = ["rwsdk", "tanstack-start", "astro", "react-router", "sveltekit", "nuxt", "solidstart", "vite-react", "vite"];
+/** Qwik City: its `cloudflare-pages` adapter builds dist/_worker.js, a module Worker; `init` checks the adapter config is there. */
+export const SUPPORTED: Stack[] = ["rwsdk", "tanstack-start", "astro", "react-router", "sveltekit", "nuxt", "solidstart", "qwik", "vite-react", "vite"];
 
 const LABEL: Record<Stack, string> = {
   rwsdk: "RedwoodSDK", "tanstack-start": "TanStack Start", "vite-react": "Vite + React", vite: "Vite",
@@ -31,7 +32,7 @@ const LABEL: Record<Stack, string> = {
  * Cloudflare build (ranked in FRAMEWORKS.md), #404 for CRA and Vue CLI (`init --port-vite`), #849 for custom webpack.
  */
 const TRACKED: Partial<Record<Stack, number>> = {
-  next: 318, sveltekit: 318, "react-router": 318, qwik: 318, angular: 318, gatsby: 318,
+  next: 318, sveltekit: 318, "react-router": 318, angular: 318, gatsby: 318,
   cra: 404, "vue-cli": 404, webpack: 849,
 };
 const ISSUES = "https://github.com/QuinnsCode/RustyBuns/issues/";

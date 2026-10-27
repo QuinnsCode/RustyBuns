@@ -110,6 +110,10 @@ test("SolidStart is ready: init reads its Nitro Cloudflare build", () => {
   expect(fit({ pkg: pkg({ "@solidjs/start": "2", "solid-js": "1", vite: "8" }), files: ["wrangler.jsonc"] })).toMatchObject({ verdict: "ready", stack: "solidstart" });
 });
 
+test("Qwik City is ready: init reads its cloudflare-pages adapter's Worker", () => {
+  expect(fit({ pkg: pkg({ "@builder.io/qwik": "1", "@builder.io/qwik-city": "1", vite: "7" }), files: [] })).toMatchObject({ verdict: "ready", stack: "qwik" });
+});
+
 test("SvelteKit is ready with adapter-cloudflare, needs work without it", () => {
   const sk = { "@sveltejs/kit": "2", svelte: "5", vite: "7" };
   expect(fit({ pkg: pkg({ ...sk, "@sveltejs/adapter-cloudflare": "7" }), files: [] })).toMatchObject({ verdict: "ready", stack: "sveltekit" });
