@@ -360,6 +360,14 @@ We aim for WCAG 2.2 AA. The reading settings and theme are also WebMCP tools, so
 
 </details>
 
+## Nerdy things RustyBuns gets you
+
+The parts a team would be glad to find in the stack, each in its own entry above:
+
+- **A machine that stays yours.** [Background work that steps aside](#background-work-that-steps-aside-experimental) runs low work under a CPU and memory budget and backs off when the machine is busy. [Two Fronts' balance sim](#thousands-of-battles-on-a-fifth-of-your-machine) plays thousands of headless battles on a fifth of your cores at the lowest priority, then hands back a heatmap and a replay with a time slider. Today that cap lives in the app's own script, with a move onto the scheduler tracked in #2408.
+- **A fast loop with receipts.** [Build timings](#a-fast-loop-and-it-tells-you-how-fast) saved per step, so a checker or Bun upgrade shows what it really saved.
+- **Free local twins.** [Every Cloudflare binding has a local twin](#every-cloudflare-binding-has-a-local-twin), and [plans come before anything costs money](#plan-before-anything-costs-money).
+
 ## What's the catch?
 
 - **No native menus, tray, installers or auto-update yet.** If you need a native-feeling window today, use Electron or Tauri. Mac signing and notarization are built in (`build desktop --sign`, `--notarize`) and need only an Apple Developer ID; Windows signing isn't built yet.
