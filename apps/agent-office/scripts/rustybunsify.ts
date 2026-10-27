@@ -214,7 +214,10 @@ async function prepare(tag: string) {
   // (the card is a page script, asks/), with the office-workers command waiting long enough for the answer
   const bin = path.resolve(srv, "../../../bin/office-workers.js");
   writeFileSync(bin, floorGuardBin(readFileSync(bin, "utf8")));
-  prepend("http/router.js", "import { asksRoute as __rbAsks } from '../rb-floorguard.js';\n");
+  prepend("http/router.js", "import { asksRoute as __rbAsks, outboundRoute as __rbOut } from '../rb-floorguard.js';\n");
+  // the box's egress proxy has no session: it asks about an outbound host here with the box's own token (live/floorguard.ts)
+  patch("http/router.js", "            const session = auth.fromRequest(req);",
+    "            if (p === '/__rb/outbound') {\n                const chunks = [];\n                for await (const c of req)\n                    chunks.push(c);\n                const body = await Promise.resolve().then(() => JSON.parse(Buffer.concat(chunks).toString())).catch(() => undefined);\n                const out = await __rbOut(req.method, url, req.headers.authorization, body);\n                return out ? send(res, out.status, out.body) : send(res, 404, { error: 'No such route' });\n            }\n            const session = auth.fromRequest(req);");
   patch("http/router.js", "const __rb = p.startsWith('/__rb/') && (await __rbCsRoute(req.method, url)",
     "const __rb = p.startsWith('/__rb/') && (__rbAsks(req.method, url, req.headers['x-rb-ask'] === '1', session.account?.name) ?? await __rbCsRoute(req.method, url)");
 

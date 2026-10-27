@@ -3,6 +3,7 @@
 // Edits go to box.json and reach the running box when it is started again (`bun run office:box up`).
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { logFile, parseCamera, recent } from "../live/camera.ts";
 import { boxHealth, edit, hostCapacity, limits, parsePerms, permsFile, savePerms, type Edit, type Perms } from "./box.ts";
 
 const dir = () => process.env.OFFICE_BOX_DIR ?? path.join(process.cwd(), "sandbox");
@@ -21,6 +22,10 @@ export function editOf(q: URLSearchParams): Edit | string {
   if (what === "network") { const v = q.get("value"); return v === "open" || v === "allowlist" || v === "offline" ? { network: v } : 'network should be "allowlist", "open" or "offline"'; }
   if (what === "allow") return { allow: { host: q.get("value") ?? "", on: q.get("on") !== "0" } };
   if (what === "port") return { port: Number(q.get("value")) };
+  if (what === "ask") return { ask: q.get("on") !== "0" };
+  if (what === "log") {
+    try { return { log: parseCamera({ maxMb: Number(q.get("maxMb")), keepDays: Number(q.get("keepDays")) }) }; } catch (e) { return e instanceof Error ? e.message : String(e); }
+  }
   if (what === "env") return { env: { name: q.get("value") ?? "", on: q.get("on") !== "0" } };
   return "unknown change";
 }
@@ -39,7 +44,7 @@ export function boxRoute(d: () => string = dir) {
       } else if (method !== "GET") return null;
       const host = await hostCapacity().catch(() => null);
       const health = await boxHealth(perms).catch(() => ({ running: false as const }));
-      return { status: 200, body: { from, perms, limits: host && limits(perms, host), health, docker: host !== null } };
+      return { status: 200, body: { from, perms, limits: host && limits(perms, host), health, docker: host !== null, log: recent(logFile(d()), 15, perms.log) } };
     } catch (e) {
       return { status: 400, body: { error: e instanceof Error ? e.message : String(e) } };
     }
