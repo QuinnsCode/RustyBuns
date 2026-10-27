@@ -38,7 +38,7 @@ async function servingUrl(host: ReturnType<typeof Bun.spawn>, buf: () => string)
   }
 }
 
-export async function smoke(src: string, o: { keep?: boolean; version: string; cli: string; log?: (line: string) => void }): Promise<SmokeResult> {
+export async function smoke(src: string, o: { keep?: boolean; edgeLike?: boolean; version: string; cli: string; log?: (line: string) => void }): Promise<SmokeResult> {
   const say = o.log ?? (() => {});
   const t0 = performance.now(), ms = () => Math.round(performance.now() - t0);
   const root = mkdtempSync(join(tmpdir(), "rb-smoke-"));
@@ -103,7 +103,7 @@ export async function smoke(src: string, o: { keep?: boolean; version: string; c
 
       say("boot: on the local twins");
       const host = Bun.spawn(hostCommand(".rustybuns/dev/desktop.js", [], { sandbox: true, cwd: dir }), {
-        cwd: dir, stdout: "pipe", stderr: "pipe", env: { ...hostEnv(env), ...fakes, HOME: home, RB_NO_BROWSER: "1" },
+        cwd: dir, stdout: "pipe", stderr: "pipe", env: { ...hostEnv(env), ...fakes, HOME: home, RB_NO_BROWSER: "1", ...(o.edgeLike ? { RB_EDGE_LIKE: "1" } : {}) },
       });
       let buf = "";
       for (const stream of [host.stdout, host.stderr]) void (async () => { for await (const c of stream) buf += new TextDecoder().decode(c); })();

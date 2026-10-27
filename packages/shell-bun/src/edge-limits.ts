@@ -50,3 +50,23 @@ const exceeded = (why: string) => {
   console.warn(`[edge-limits] request refused: ${why}`);
   return new Response(`Error 1102: Worker exceeded resource limits (${why})`, { status: 503 });
 };
+
+/** The edge's idle time before it evicts a Durable Object. */
+export const EDGE_DO_IDLE_MS = 70_000;
+
+/** RB_EDGE_LIKE: unset or 0 is off, 1 the edge's 70 s, any other number the idle seconds. */
+export function edgeLike(env: Record<string, string | undefined> = process.env): { idleMs: number } | undefined {
+  const v = Number(env.RB_EDGE_LIKE);
+  return v > 0 ? { idleMs: v === 1 ? EDGE_DO_IDLE_MS : v * 1000 } : undefined;
+}
+
+/** Until the returned stop() runs, say each process.env key read (once): on the edge it is empty while the Worker loads. */
+export function watchEnvAtImport(warn: (msg: string) => void = console.warn): () => void {
+  const real = process.env, seen = new Set<string>();
+  const proxy = new Proxy(real, { get(t, k, r) {
+    if (typeof k === "string" && !seen.has(k)) { seen.add(k); warn(`[edge-like] process.env.${k} read at import: on the edge it is empty then; read it from env inside fetch()`); }
+    return Reflect.get(t, k, r);
+  } });
+  try { Object.defineProperty(process, "env", { value: proxy, configurable: true, writable: true }); } catch { return () => {}; }
+  return () => { Object.defineProperty(process, "env", { value: real, configurable: true, writable: true }); };
+}

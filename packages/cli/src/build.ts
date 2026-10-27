@@ -590,7 +590,7 @@ export function desktopEntry(c: RustyBunsConfig, host: HostKind = "desktop"): st
 // with sqlite standing in for D1/KV. Same fetch(), same env shape.
 // First: workerd's globalThis.Cloudflare, read by nodejs_compat builds as they load.
 import "@rustybuns/shell-bun/workerd-global";
-import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch, within, metered, usageSnapshot, capped, edgeLimits${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
+import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch, within, metered, usageSnapshot, capped, edgeLimits, edgeLike, watchEnvAtImport${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${artifacts.length ? ", gitHttp" : ""}${crons.length ? ", schedule" : ""} } from "@rustybuns/shell-bun";
 // Bun's own process: a Worker built with nodejs_compat (unenv) swaps globalThis.process for
 // one whose cwd() is "/" and argv is empty, and that would move assets and flags (#741).
 import process from "node:process";
@@ -645,7 +645,9 @@ const doLater = (name: string) => {
 ${dos.map((d) => `env.${d.name} = doLater(${JSON.stringify(d.name)});`).join("\n")}
 // workerd logs a rejected waitUntil, cron or queue promise and keeps serving; Bun would exit.
 process.on("unhandledRejection", (e) => console.error("[worker] unhandled rejection:", e));
+const stopEnvWatch = edgeLike() ? watchEnvAtImport() : () => {};
 const { default: worker, ${[...new Set([...dos, ...workflows].map((d) => d.className))].map((n) => `${n}, `).join("")}} = await import(${JSON.stringify("../" + entry)});
+stopEnvWatch();
 // into this same env, because a DO's constructor receives it (a DO can use DB, KV, other DOs)
 ${dos.map((d) => `(env.${d.name} as any).__rbBind(local.durableObject(${d.className} as any, env, ${JSON.stringify(d.name)}));`).join("\n")}${workflows.length ? `
 // Workflows: create() before now queued its instance; bind() starts those and resumes any the last run left going.
