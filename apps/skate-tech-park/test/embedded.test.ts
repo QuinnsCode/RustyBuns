@@ -12,7 +12,7 @@ setDefaultTimeout(60_000);
 /** Put a rider on the first segment of a run of chained rails, steering to hold the balance, and say which segments the grind rode in order. */
 function grindRun(lv: Level, rails: Rail[]) {
   const first = rails[0]!, yaw = Math.atan2(first.b.x - first.a.x, first.b.z - first.a.z), sk = start(first.a.x + Math.sin(yaw) * 0.2, first.a.z + Math.cos(yaw) * 0.2, yaw, lv);
-  sk.grind = lv.rails.indexOf(first); sk.y = first.y; sk.speed = 16; sk.air = true; // on the bar's first end, as a grind entry leaves a rider
+  sk.grind = lv.rails.indexOf(first); sk.y = first.y; sk.speed = 26; sk.air = true; // on the bar's first end, as a grind entry leaves a rider
   const base = lv.rails.indexOf(first), seen: number[] = [];
   for (let i = 0; i < 8 / DT; i++) {
     step(sk, { ...IDLE, steer: Math.max(-1, Math.min(1, sk.balance * 3)) }, lv);

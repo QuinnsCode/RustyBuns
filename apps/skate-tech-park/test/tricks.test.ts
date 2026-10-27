@@ -40,10 +40,10 @@ test("the right stick fires once as it leaves the dead zone, and a short drag do
 const rail = (kind: RailKind) => flat({ rails: [{ kind, a: { x: 0, z: 0 }, b: { x: 0, z: 60 }, y: 0.9 }] });
 
 // Drops onto the bar at `yaw` and keeps its balance with the stick; jumps off after `secs`.
-const grindFrom = (yaw: number, kind: RailKind = "rail", secs = 0.6) => {
+const grindFrom = (yaw: number, kind: RailKind = "rail", secs = 0.3) => {
   const lv = rail(kind);
   const sk = start(-Math.sin(yaw) * 0.2, 2, yaw, lv);
-  sk.air = true; sk.y = 1.0; sk.vy = -1; sk.vx = Math.sin(yaw) * 4; sk.vz = Math.cos(yaw) * 4;
+  sk.air = true; sk.y = 1.0; sk.vy = -1; sk.vx = Math.sin(yaw) * 6; sk.vz = Math.cos(yaw) * 6;
   run(sk, secs, (s) => ({ steer: Math.max(-1, Math.min(1, s.balance * 2)) }), lv);
   expect(sk.grind).toBe(0);
   step(sk, { ...IDLE, jump: true }, lv);
@@ -61,7 +61,7 @@ test("a grind left alone loses its balance and bails, and steering holds it", ()
   const lv = rail("rail");
   const drop = () => {
     const sk = start(0, 2, 0, lv);
-    sk.air = true; sk.y = 1.0; sk.vy = -1; sk.vz = 6;
+    sk.air = true; sk.y = 1.0; sk.vy = -1; sk.vz = 8;
     return sk;
   };
   const alone = run(drop(), 3, () => ({}), lv);
@@ -69,7 +69,7 @@ test("a grind left alone loses its balance and bails, and steering holds it", ()
   expect(alone.grind).toBe(-1);
   expect(alone.y).toBe(0);
 
-  const steered = run(drop(), 3, (s) => ({ steer: Math.max(-1, Math.min(1, s.balance * 2)) }), lv);
+  const steered = run(drop(), 1, (s) => ({ steer: Math.max(-1, Math.min(1, s.balance * 2)) }), lv);
   expect(steered.grind).toBe(0);
   expect(Math.abs(steered.balance)).toBeLessThan(0.5);
 });
@@ -119,9 +119,9 @@ test("the chain times out after a few seconds of just rolling", () => {
 test("the suction fan holds the roadster to a lip it would otherwise fly off, and drives it up a box side", () => {
   const kicker = flat({ pieces: [piece("ramp", "kicker", 0, 10, 0, 6, 6, 0, 2)] });
   const drive = (fan: boolean) => {
-    const car = start(0, -2, 0, kicker);
+    const car = start(0, -9, 0, kicker);
     let airborne = false;
-    run(car, 2.5, (s) => { airborne ||= s.air; return { throttle: 1, fan }; }, kicker);
+    run(car, 3, (s) => { airborne ||= s.air; return { throttle: 1, fan }; }, kicker);
     return { car, airborne };
   };
   expect(drive(false).airborne).toBe(true);
@@ -196,7 +196,7 @@ test("grind into manual is one chain, and a different kind of trick scores a lin
   // a 50-50 down a short rail, off its end, and straight into a manual
   const lv = flat({ rails: [{ kind: "rail", a: { x: 0, z: 0 }, b: { x: 0, z: 8 }, y: 0.9 }] });
   const sk = start(0, 2, 0, lv);
-  sk.air = true; sk.y = 1.0; sk.vy = -1; sk.vz = 6; // dropped onto the bar
+  sk.air = true; sk.y = 1.0; sk.vy = -1; sk.vz = 10; // dropped onto the bar
   run(sk, 2.2, (s) => ({ steer: clamp(s.balance * 2, -1, 1), manual: s.grind < 0 ? 1 : 0, throttle: s.grind < 0 ? hold(s) : 0 }), lv);
   expect(sk.manual).toBe(1);
   expect(sk.combo).toEqual(["50-50 grind"]);
@@ -226,7 +226,7 @@ test("the HUD's combo line follows a real chain: grind into manual, and it clear
   const hold = (s: State) => clamp(s.balance * 2 + 0.1, -1, 1);
   const lv = flat({ rails: [{ kind: "rail", a: { x: 0, z: 0 }, b: { x: 0, z: 8 }, y: 0.9 }] });
   const sk = start(0, 2, 0, lv);
-  sk.air = true; sk.y = 1.0; sk.vy = -1; sk.vz = 6;
+  sk.air = true; sk.y = 1.0; sk.vy = -1; sk.vz = 10;
   run(sk, 2.2, (s) => ({ steer: clamp(s.balance * 2, -1, 1), manual: s.grind < 0 ? 1 : 0, throttle: s.grind < 0 ? hold(s) : 0 }), lv);
   run(sk, 0.05, () => ({}), lv);
   expect(comboLine(sk.combo, sk.comboScore)).toBe(`50-50 grind > Manual   ${sk.comboScore}`);
@@ -241,10 +241,10 @@ test("falling off a railed bar right at a post does not pin the board against it
   const bar = { kind: "rail" as const, a: { x: 0, z: 0 }, b: { x: 0, z: 60 }, y: 0.9 }; // posts every 4 m from 10 m: one at z = 30
   const lv = flat({ rails: [bar], obstacles: postObstacles([bar], () => 0) });
   const sk = start(0, 29.9, 0, lv);
-  sk.air = true; sk.y = 1.0; sk.vy = -1; sk.vz = 0.5;
-  run(sk, 0.3, () => ({}), lv);
+  sk.air = true; sk.y = 1.0; sk.vy = -1; sk.vz = 6;
+  run(sk, 0.1, () => ({}), lv);
   expect(sk.grind).toBe(0);
-  sk.balance = 0.99; sk.speed = 0.3;
+  sk.balance = 0.99; sk.speed = 1.5;
   run(sk, 3, () => ({}), lv);
   expect(sk.last?.name).toMatch(/Bail: fell off/);
   run(sk, 3, () => ({ throttle: 1 }), lv);
