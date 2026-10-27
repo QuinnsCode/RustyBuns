@@ -1,0 +1,6 @@
+dist/
+.astro/
+.rustybuns/
+.wrangler/
+wrangler.generated.jsonc
+.alchemy/

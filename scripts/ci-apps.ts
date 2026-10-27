@@ -32,6 +32,7 @@ export const APPS: Record<string, App> = {
   "artstewengine":     { test: "bun test test", drop: false },
   "geoboxq":            { test: "bun test test", drop: false },
   "geoboxq-shopify":   { test: "bun test test", drop: false },
+  "astro-example":     { test: "bun test test", boot: true },
   "borg":              { test: "bun test test", drop: false },
   "borg-postgres":     { test: "bun test test", drop: false },
   "excalibrawl":       { test: "bun test test", drop: false },

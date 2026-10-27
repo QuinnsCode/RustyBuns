@@ -29,7 +29,7 @@ Most frameworks already have a Cloudflare build that outputs a module exporting 
 | RWSDK | `spa` from `init`; `worker` by hand | `dist/worker/index.js` | `Cloudflare.Worker` | ✅ live; 153 of 180 GitHub apps ([coverage](FRAMEWORK_COVERAGE.md#rwsdk)) |
 | TanStack Start | `worker` | `dist/server/server.js` | `Cloudflare.Website.Vite` | ✅ desktop, 🧪 edge; 8 of 13 sampled GitHub apps ([coverage](FRAMEWORK_COVERAGE.md#tanstack-start)) |
 | SvelteKit | `worker` | adapter-cloudflare: `.svelte-kit/cloudflare/_worker.js` + assets | `Cloudflare.Website.SvelteKit` | ✅ `init`; 🧪 desktop run |
-| Astro | `worker` (adapter), `spa` (static) | @astrojs/cloudflare 14: `dist/server/entry.mjs` + `dist/client` | `Cloudflare.Worker` + assets | ✅ `init`, desktop, box and edge (sample app, Oct 9) |
+| Astro | `worker` (adapter), `spa` (static) | @astrojs/cloudflare 14: `dist/server/entry.mjs` + `dist/client` | `Cloudflare.Worker` + assets | ✅ `init`, desktop, box and edge (sample app, Oct 9); `apps/astro-example` on the contract, `init` unchanged (Oct 27) |
 | Nuxt | `worker` | Nitro `cloudflare-module` preset | `Cloudflare.Website.Nuxt` | 🧪 |
 | React Router v7 | `worker` | `@cloudflare/vite-plugin`: `build/server/index.js` + `build/client` | `Cloudflare.Worker` + assets | ✅ `init` and desktop (Cloudflare template, Oct 12); 🔧 `cloudflareDevProxy` |
 | SolidStart | `worker` | Nitro CF preset or Vite plugin output | `Cloudflare.Website.Vite` | 🔧 |
@@ -92,7 +92,7 @@ Easiest first, judged by each framework's Cloudflare build and a `fit` sweep ove
 
 ## The sample app contract
 
-The check is [`scripts/counter.ts`](scripts/counter.ts): one HTTP journey (no browser) that every example's `test/desktop.test.ts` calls in one line. Done so far: [`apps/hono-example`](apps/hono-example), [`apps/elysia-example`](apps/elysia-example).
+The check is [`scripts/counter.ts`](scripts/counter.ts): one HTTP journey (no browser) that every example's `test/desktop.test.ts` calls in one line. Done so far: [`apps/hono-example`](apps/hono-example), [`apps/elysia-example`](apps/elysia-example), [`apps/astro-example`](apps/astro-example).
 
 Every `apps/<fw>-example` does the same small thing, so a single smoke test covers them all:
 
@@ -132,7 +132,7 @@ It uses Playwright Chromium and is run against both the dev host and the compile
 ### Phase 2: frameworks that already have a Cloudflare build
 - [x] `apps/tanstack-start-example`: TanStack Start on `@cloudflare/vite-plugin` with D1 and KV, `init` unchanged.
 - [ ] `apps/sveltekit-example`
-- [ ] `apps/astro-example`
+- [x] `apps/astro-example`: Astro 7 on `@astrojs/cloudflare` 14 (`output: "server"`, a page and an API route on KV through `cloudflare:workers`), `init` unchanged.
 - [ ] `apps/nuxt-example`
 - [ ] For each: `init` detects it and writes `worker.builtMain` and `worker.assets` automatically.
 

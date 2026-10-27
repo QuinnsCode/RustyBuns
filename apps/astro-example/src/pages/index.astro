@@ -1,0 +1,20 @@
+---
+// The page reads the count on the server from the Worker's KV binding. Nothing here knows
+// about Rusty Buns: `cloudflare:workers` is what Astro's Cloudflare guide imports, and the
+// desktop host shims it to its own KV (a folder under ~/.astro-example).
+import { env } from "cloudflare:workers";
+
+const n = Number((await env.COUNTER.get("count")) ?? 0);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>astro-example</title>
+  </head>
+  <body>
+    <h1 id="count">count: {n}</h1>
+    <form method="post" action="/increment"><button type="submit">+1</button></form>
+  </body>
+</html>

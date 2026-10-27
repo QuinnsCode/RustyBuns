@@ -426,6 +426,7 @@ Every example is one codebase that runs as a desktop binary. The multiplayer one
 | [brianfloresblitzing](apps/brianfloresblitzing/README.md) | One static page ("One Team in 32") served from a Cloudflare Worker as plain assets, no Worker code |
 | [hono-example](apps/hono-example/README.md) | A Hono Worker from Hono's own docs (one KV binding) as a desktop app with no edits: the sample app contract every framework example meets, checked by one shared HTTP journey |
 | [elysia-example](apps/elysia-example/README.md) | An Elysia Worker as Elysia's Cloudflare guide writes it (`aot: false`, `cloudflare:workers`) as a desktop app with no edits, and `init` now reads Elysia |
+| [astro-example](apps/astro-example/README.md) | An Astro site on `@astrojs/cloudflare` (a server page and an API route counting in KV through `cloudflare:workers`) as a desktop app with no edits, and `init` reads it as it is |
 
 **Someone else's app, unchanged:** [TerraViz](https://github.com/zyra-project/terraviz) by The Zyra Project, led by Eric Hackathorn (NOAA Global Systems Laboratory), Apache-2.0: a Pages app with a 3D globe, about 100 API routes, D1, KV, R2 and Vectorize. `bun apps/terraviz-demo/run.ts` clones it and runs it on Rusty Buns with none of its code changed. This is only a demonstration of how Rusty Buns maps an existing app onto its primitives. It is not a fork, and TerraViz's code is not in this repo. Credit, license and how to run it: [apps/terraviz-demo](apps/terraviz-demo/README.md).
 
