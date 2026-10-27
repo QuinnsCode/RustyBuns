@@ -149,6 +149,7 @@ export function mountLevelUi(scene: Scene) {
   if (scene.fog instanceof Fog) { scene.fog.near = 120; scene.fog.far = 420; } // the park is a few hundred metres across
   const panel = document.createElement("ul");
   panel.className = "goals";
+  panel.addEventListener("click", () => panel.classList.toggle("open"));
   document.body.append(panel);
   const rows = p.goals.map((g) => {
     const li = document.createElement("li"), mark = document.createElement("span"), text = document.createElement("span"), prog = document.createElement("small");
@@ -162,8 +163,10 @@ export function mountLevelUi(scene: Scene) {
     const sig = rows.map((r) => run.progress(r.g)).join("|") + run.collected.size;
     if (sig === shown) return;
     shown = sig;
+    const next = rows.find((r) => !run.done(r.g)) ?? rows[rows.length - 1];
     for (const r of rows) {
       const done = run.done(r.g);
+      r.li.classList.toggle("next", r === next);
       r.li.classList.toggle("done", done);
       r.mark.replaceChildren(createElement(done ? Check : Circle, { width: 14, height: 14 }));
       r.prog.textContent = last ? run.progress(r.g) : "";

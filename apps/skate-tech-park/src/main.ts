@@ -360,7 +360,7 @@ function frame(now: number) {
   while (acc >= DT) {
     const was = sim.air, vy = sim.vy;
     before = poseOf(sim);
-    step(sim, { ...inp, ...gestures.take() }, level); // a gesture is one step's press
+    step(sim, { ...inp, ...gestures.take(sim.air) }, level); // a gesture is one step's press
     if (online && !pve) bump(sim, online.riders);
     ui.update(sim); acc -= DT;
     if (hunter) { runAfter(hunter, sim, level.height, level.bounds, DT); if (hunter.caught) { caughtAt = now; reset(); } }

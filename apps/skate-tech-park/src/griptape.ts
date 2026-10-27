@@ -76,7 +76,8 @@ export function mountGrip(parent: HTMLElement, next: () => Profile): Grip {
     name.textContent = p.name;
     name.dataset.on = "1";
     clearTimeout(nameT);
-    nameT = window.setTimeout(() => { delete name.dataset.on; }, 2500);
+    root.dataset.hint = "1"; // the labels show for a few seconds, then leave the park clear
+    nameT = window.setTimeout(() => { delete name.dataset.on; delete root.dataset.hint; }, 4000);
   };
 
   pick.addEventListener("pointerdown", (e) => e.stopPropagation());
