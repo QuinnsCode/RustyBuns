@@ -42,8 +42,8 @@ test("ready: supported frameworks, Workers and fetch-handler servers", () => {
 });
 
 test("needs work: a framework init doesn't infer yet links its issue", () => {
-  const f = fit({ pkg: pkg({ "@solidjs/start": "1", vite: "7" }), files: ["tsconfig.json"] });
-  expect(f).toMatchObject({ verdict: "needs-work", stack: "solidstart", label: "SolidStart, TypeScript" });
+  const f = fit({ pkg: pkg({ "@angular/core": "20" }), files: ["tsconfig.json"] });
+  expect(f).toMatchObject({ verdict: "needs-work", stack: "angular", label: "Angular, TypeScript" });
   expect(f.issue).toMatch(/issues\/318$/);
 });
 

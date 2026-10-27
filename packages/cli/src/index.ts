@@ -298,7 +298,7 @@ async function init() {
   }
   // A package entry (@astrojs/cloudflare/entrypoints/server) resolves through node_modules, not a file here.
   const isFile = (m: string) => m.startsWith(".") || m.startsWith("/") || /\.[mc]?[jt]sx?$/.test(m);
-  if (!(astroWorker && !w.main) && isFile(cfg.worker!.main!) && !/^(\.\/)?dist\//.test(cfg.worker!.main!) && !(svelteWorker && cfg.worker!.main!.includes(".svelte-kit/")) && !((nuxtWorker || solidWorker || nextWorker) && cfg.worker!.main!.includes(".output/") || cfg.worker!.main!.includes(".open-next/"))) && !existsSync(cfg.worker!.main!)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
+  if (!(astroWorker && !w.main) && isFile(cfg.worker!.main!) && !/^(\.\/)?dist\//.test(cfg.worker!.main!) && !(svelteWorker && cfg.worker!.main!.includes(".svelte-kit/")) && !((nuxtWorker || solidWorker || nextWorker) && (cfg.worker!.main!.includes(".output/") || cfg.worker!.main!.includes(".open-next/"))) && !existsSync(cfg.worker!.main!)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
   { const { inferWorkerBuild } = await import("./glue/build-script.ts"); const b = inferWorkerBuild(inf.scripts, null);
     console.log(!cfg.worker!.build ? `build:    none (a plain Worker: Alchemy bundles ${cfg.worker!.main})`
       : `build:    ${cfg.worker!.build}  (${b.from === "default" || b.build !== cfg.worker!.build ? "no build script found; using the default" : `from "${b.from}" script`})`); }
