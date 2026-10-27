@@ -80,8 +80,8 @@ test("RB_CPU_MS wins over the config's cpuMs", () => {
 
 test("edge-like: an idle DO is evicted and rebuilt from storage, a busy one stays, import-time env reads are named", async () => {
   expect(edgeLike({})).toBeUndefined();
-  expect(edgeLike({ RB_EDGE_LIKE: "1" })).toEqual({ idleMs: 70_000 });
-  expect(edgeLike({ RB_EDGE_LIKE: "2" })).toEqual({ idleMs: 2000 });
+  expect(edgeLike({ RB_EDGE_LIKE: "1" })).toMatchObject({ idleMs: 70_000 });
+  expect(edgeLike({ RB_EDGE_LIKE: "2" })).toMatchObject({ idleMs: 2000 });
 
   let built = 0;
   class Counter {

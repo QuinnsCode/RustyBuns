@@ -173,7 +173,7 @@ A game keeps its words in `content/*.json`, and `bun run cms` in the app serves 
 
 ### Smoke test an app without touching it
 
-`rustybuns smoke [dir]` copies your app to a throwaway folder, installs, inits, builds and boots it on the local twins, and says whether `GET /` answered. `--edge-like` also evicts idle Durable Objects after 70 s and names `process.env` reads at import (`RB_EDGE_LIKE=1` does the same for any host).
+`rustybuns smoke [dir]` copies your app to a throwaway folder, installs, inits, builds and boots it on the local twins, and says whether `GET /` answered. `--edge-like` also evicts idle Durable Objects after 70 s, names `process.env` reads at import, and restarts the host every 100 requests so module globals reset (`RB_EDGE_LIKE=1` does the same for any host; `RB_EDGE_RECYCLE=N` sets the count, 0 never).
 
 <details><summary>More</summary>
 
