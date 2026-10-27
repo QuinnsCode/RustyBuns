@@ -15,7 +15,8 @@ export type Stack =
 
 /** React Router counts only when it builds through @cloudflare/vite-plugin; see `inits`. */
 /** SvelteKit counts only with @sveltejs/adapter-cloudflare, which builds the Worker; see `inits`. */
-export const SUPPORTED: Stack[] = ["rwsdk", "tanstack-start", "astro", "react-router", "sveltekit", "vite-react", "vite"];
+/** Nuxt builds its Worker with Nitro's cloudflare-module preset (.output/server/index.mjs plus .output/public). */
+export const SUPPORTED: Stack[] = ["rwsdk", "tanstack-start", "astro", "react-router", "sveltekit", "nuxt", "vite-react", "vite"];
 
 const LABEL: Record<Stack, string> = {
   rwsdk: "RedwoodSDK", "tanstack-start": "TanStack Start", "vite-react": "Vite + React", vite: "Vite",
@@ -29,7 +30,7 @@ const LABEL: Record<Stack, string> = {
  * Cloudflare build (ranked in FRAMEWORKS.md), #404 for CRA and Vue CLI (`init --port-vite`), #849 for custom webpack.
  */
 const TRACKED: Partial<Record<Stack, number>> = {
-  next: 318, sveltekit: 318, "react-router": 318, nuxt: 318, solidstart: 318, qwik: 318, angular: 318, gatsby: 318,
+  next: 318, sveltekit: 318, "react-router": 318, solidstart: 318, qwik: 318, angular: 318, gatsby: 318,
   cra: 404, "vue-cli": 404, webpack: 849,
 };
 const ISSUES = "https://github.com/QuinnsCode/RustyBuns/issues/";

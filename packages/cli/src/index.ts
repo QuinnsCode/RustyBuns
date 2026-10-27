@@ -27,6 +27,9 @@ import { unsupported } from "./glue/fit.ts";
 // @sveltejs/adapter-cloudflare builds the Worker and the static assets into one directory.
 const SVELTE_ASSETS = ".svelte-kit/cloudflare";
 const SVELTE_WORKER = `${SVELTE_ASSETS}/_worker.js`;
+// Nitro's cloudflare-module preset (Nuxt) builds the Worker and the client next to each other in .output/.
+const NUXT_WORKER = ".output/server/index.mjs";
+const NUXT_ASSETS = ".output/public";
 import { planPort } from "./glue/port-vite.ts";
 import { jekyllDefaults, jekyllExcludes, jekyllPagesPlugins, jekyllPlugins, staticBuild, type StaticSite } from "./glue/static-site.ts";
 import { copySite, jekyllSiteFiles, staticSiteAt } from "./glue/site-files.ts";
@@ -220,7 +223,9 @@ async function init() {
   // index.html, so a SPA build serves nothing. The desktop runs its production server instead.
   if (inf.framework === "tanstack-start" && !src && !spa) { await initStart(inf); return; }
   const svelteWorker = inf.framework === "sveltekit" && !spa;
-  if ((!src && !astroWorker && !svelteWorker) || spa) {
+  // Nuxt: Nitro's cloudflare-module preset builds the Worker; the desktop runs it.
+  const nuxtWorker = inf.framework === "nuxt" && !spa;
+  if ((!src && !astroWorker && !svelteWorker && !nuxtWorker) || spa) {
     if (src && spa) console.log(`ignoring ${src} (--spa): desktop-only config. Remove the flag to carry its bindings over.`);
     await initSpa(inf); return;
   }
@@ -236,7 +241,7 @@ async function init() {
   // Cloudflare Pages: no Worker main, a functions/ folder routed by file name. The Worker is the one
   // `rustybuns pages-functions` writes from that folder, its build writes it first, and it sees every
   // request before the static files, as Pages Functions do (_routes.json sends the rest straight there).
-  const pagesWorker = !w.main && !astroWorker && !svelteWorker && hasPagesFunctions();
+  const pagesWorker = !w.main && !astroWorker && !svelteWorker && !nuxtWorker && hasPagesFunctions();
   if (pagesWorker) {
     // vite's outDir is relative to its root (root: "src", outDir: "../dist" builds into dist/)
     const viteOut = inf.vite.outDir ? join(inf.vite.root ?? ".", inf.vite.outDir).split("\\").join("/") : null;
@@ -257,9 +262,12 @@ async function init() {
   // SvelteKit: adapter-cloudflare builds the Worker and its assets into .svelte-kit/cloudflare.
   if (svelteWorker && !w.main) cfg.worker!.main = SVELTE_WORKER;
   if (svelteWorker && !cfg.worker!.build) cfg.worker!.build = `${inf.execCmd("vite")} build`;
+  // Nuxt: `nuxt build` with the cloudflare-module preset writes .output/server/index.mjs and .output/public.
+  if (nuxtWorker) cfg.worker!.main = (w.main ?? NUXT_WORKER).replace(/^\.\//, "");
+  if (nuxtWorker && !cfg.worker!.build) cfg.worker!.build = `${inf.execCmd("nuxt")} build`;
   // A package entry (@astrojs/cloudflare/entrypoints/server) resolves through node_modules, not a file here.
   const isFile = (m: string) => m.startsWith(".") || m.startsWith("/") || /\.[mc]?[jt]sx?$/.test(m);
-  if (!(astroWorker && !w.main) && isFile(cfg.worker!.main!) && !/^(\.\/)?dist\//.test(cfg.worker!.main!) && !(svelteWorker && cfg.worker!.main!.includes(".svelte-kit/")) && !existsSync(cfg.worker!.main!)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
+  if (!(astroWorker && !w.main) && isFile(cfg.worker!.main!) && !/^(\.\/)?dist\//.test(cfg.worker!.main!) && !(svelteWorker && cfg.worker!.main!.includes(".svelte-kit/")) && !(nuxtWorker && cfg.worker!.main!.startsWith(".output/")) && !existsSync(cfg.worker!.main!)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
   { const { inferWorkerBuild } = await import("./glue/build-script.ts"); const b = inferWorkerBuild(inf.scripts, null);
     console.log(!cfg.worker!.build ? `build:    none (a plain Worker: Alchemy bundles ${cfg.worker!.main})`
       : `build:    ${cfg.worker!.build}  (${b.from === "default" || b.build !== cfg.worker!.build ? "no build script found; using the default" : `from "${b.from}" script`})`); }
@@ -292,10 +300,14 @@ async function init() {
   // A plain Worker with no client build (Hono, Elysia, itty-router, a hand-written fetch handler): the desktop
   // runs the Worker itself; a Vite SPA split would have nothing to serve.
   const plainWorker = !!w.main && inf.framework === "unknown" && !inf.vite.configPath && !pagesWorker;
-  const workerDesktop = astroWorker || rrWorker || svelteWorker || pagesWorker || startWorker || plainWorker;
+  const workerDesktop = astroWorker || rrWorker || svelteWorker || nuxtWorker || pagesWorker || startWorker || plainWorker;
   if (svelteWorker) {
     cfg.worker!.builtMain = SVELTE_WORKER;
     cfg.worker!.assets = SVELTE_ASSETS;
+  }
+  if (nuxtWorker) {
+    cfg.worker!.builtMain = cfg.worker!.main!;
+    cfg.worker!.assets = (w.assets?.directory ?? NUXT_ASSETS).replace(/^\.\//, "");
   }
   if (astroWorker) {
     // Older adapters (and their wrangler files) build dist/_worker.js and serve dist/; newer ones dist/server + dist/client.

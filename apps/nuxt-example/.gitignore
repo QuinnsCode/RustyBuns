@@ -1,0 +1,8 @@
+dist/
+.rustybuns/
+.wrangler/
+wrangler.generated.jsonc
+.alchemy/
+.output/
+.nuxt/
+.data/

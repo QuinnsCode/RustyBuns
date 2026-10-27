@@ -98,6 +98,13 @@ test("a static site with no app: plain HTML is ready, a generator's site likely"
   expect(fit({ pkg: { dependencies: { vite: "6" } }, files: ["index.html"] }).label).not.toContain("static");
 });
 
+test("Nuxt is ready: init reads what Nitro's cloudflare-module preset builds", () => {
+  const f = fit({ pkg: pkg({ nuxt: "4", vue: "3" }), files: ["nuxt.config.ts"] });
+  expect(f).toMatchObject({ verdict: "ready", stack: "nuxt", label: "Nuxt, TypeScript" });
+  expect(f.reasons[0]).toContain("`rustybuns init` reads it as is");
+  expect(f.issue).toBeUndefined();
+});
+
 test("SvelteKit is ready with adapter-cloudflare, needs work without it", () => {
   const sk = { "@sveltejs/kit": "2", svelte: "5", vite: "7" };
   expect(fit({ pkg: pkg({ ...sk, "@sveltejs/adapter-cloudflare": "7" }), files: [] })).toMatchObject({ verdict: "ready", stack: "sveltekit" });

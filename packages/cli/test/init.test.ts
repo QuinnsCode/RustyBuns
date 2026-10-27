@@ -657,6 +657,35 @@ test("init: TanStack Start on @cloudflare/vite-plugin runs its Worker build on t
   expect(c).not.toContain("clientBuild");
 });
 
+test("init: Nuxt on Nitro's cloudflare-module preset runs its Worker build on the desktop, with its bindings", () => {
+  const nuxt = (extra: Record<string, string> = {}) => project({
+    "package.json": JSON.stringify({ name: "nx", scripts: { build: "nuxt build" }, dependencies: { nuxt: "^4", vue: "^3" } }),
+    "nuxt.config.ts": 'export default defineNuxtConfig({ nitro: { preset: "cloudflare-module" } });\n',
+    "app/app.vue": "<template><NuxtPage /></template>\n", "bun.lock": "", ...extra,
+  });
+  // As Nuxt's Cloudflare docs write it: a wrangler.jsonc naming the built Worker and its assets.
+  const p = nuxt({ "wrangler.jsonc": JSON.stringify({ name: "nx", main: "./.output/server/index.mjs", compatibility_date: "2026-09-01", assets: { directory: "./.output/public", binding: "ASSETS" }, kv_namespaces: [{ binding: "COUNTER", id: "local" }] }) });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/detected: nuxt/);
+  expect(r.out).not.toMatch(/does not exist/);
+  const c = p.read("rustybuns.config.ts");
+  expect(c).toContain('"builtMain": ".output/server/index.mjs"');
+  expect(c).toContain('"assets": ".output/public"');
+  expect(c).toContain('"build": "nuxt build"');
+  expect(c).toContain('"mode": "worker"');
+  expect(c).toContain('"COUNTER"');
+  expect(c).not.toContain("clientBuild");
+
+  // No wrangler file yet: the same Worker, from what the preset builds.
+  const bare = nuxt();
+  expect(bare.run("init").code).toBe(0);
+  const b = bare.read("rustybuns.config.ts");
+  expect(b).toContain('"builtMain": ".output/server/index.mjs"');
+  expect(b).toContain('"assets": ".output/public"');
+  expect(b).toContain('"mode": "worker"');
+});
+
 const CRA = {
   "package.json": JSON.stringify({ name: "cra", dependencies: { react: "^18", "react-scripts": "5", "@types/node": "^16.11.6" },
     scripts: { start: "react-scripts start", build: "react-scripts build", test: "react-scripts test" } }, null, 2),
