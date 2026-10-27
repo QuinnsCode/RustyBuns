@@ -8,4 +8,7 @@ description = "Windowless Tauri shell: gives the compiled Agent Office binary a 
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-updater = "2"
+serde_json = "1"
