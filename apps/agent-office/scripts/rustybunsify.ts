@@ -58,7 +58,7 @@ const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7).split("
 // is tree-shaken and minified into main-*.js, never exported or put on window (window.__THREE__ is just "186"), and
 // our scripts run first anyway. Using it would mean matching ~110 minified names per release for ~92 KB gzipped.
 // Should a release ever expose it (window.THREE, or a chunk of its own), use that when it's there.
-const SHARED = ["codesplitter/index.ts", ...(skin === "druids" ? ["druids/index.ts"] : [])];
+const SHARED = ["codesplitter/index.ts", "screens/index.ts", ...(skin === "druids" ? ["druids/index.ts"] : [])];
 let shared: Promise<Map<string, string>> | undefined;
 // (sharedBuild() below; up here because the top-level build runs before the rest of the file is reached)
 const stamp = path.join(office, ".rustybuns");
@@ -357,6 +357,8 @@ async function buildPageScripts() {
   await buildPageScript("power/index.ts", "rb-power", ["index"]);
   // AGENT_OFFICE_ASK_FIRST's Allow / Deny card, for an agent's request waiting on a person (#727)
   await buildPageScript("asks/index.ts", "rb-asks", ["index", "lite"]);
+  // the gitpath, Mervin and Ester screens over the boards, in the 3D office only, off until Settings › You turns one on
+  await buildPageScript("screens/index.ts", "rb-screens", ["index"]);
   // Ester and Mervin, the helper badges in the corner (ester/)
   await buildPageScript("ester/index.ts", "rb-ester", ["index", "lite"]);
   // refresh when the office's code changes, and say when the server has to restart (reload/, live/reload.ts)
