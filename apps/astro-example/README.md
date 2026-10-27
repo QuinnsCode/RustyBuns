@@ -15,4 +15,4 @@ bunx rustybuns plan --offline   # the edge: a Worker, the build, two KV namespac
 
 The test is [`scripts/counter.ts`](../../scripts/counter.ts), shared by every `apps/<framework>-example`: it finds the count and the form in the page over HTTP, so a framework can render them however it likes.
 
-What hurt: Astro 7.4 refuses to build on Node older than 22.23.4 (`astro build` runs under Node, not Bun), so with an older Node on your PATH the build step fails before Rusty Buns does anything. `nvm use 22.23.4` (or newer) fixes it; CI's runners are newer already.
+What hurt: Astro 7.4 refuses to build on Node older than 22.23.4 (`astro build` runs under Node, not Bun), newer than CI's runners carry, so this example pins Astro 7.3.5 with adapter 14.3.1 (Node >= 22.12). Bump both together once CI's Node moves.
