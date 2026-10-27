@@ -856,9 +856,11 @@ const squadCover = (b: Battle, v: Unit) => {
   return h && dist(h, v) < COVER_R ? COVER_BY : 1;
 };
 export const toughness = (b: Battle, side: Side) => b.tough[side];
-// The defender's fortified ground (DUG_IN, KEEP_WALLS): nothing on a hill, which is nobody's.
+// The defender's fortified ground (DUG_IN, KEEP_WALLS): nothing on a hill, which is nobody's. It is
+// the AI defender's: a human holding has the assist (squadCover, settle) and the handicap on the foe
+// instead, and with the ground on top the scripted player never lost.
 export function dugIn(b: Battle, v: Unit) {
-  if (v.side !== "defender" || flies(v) || b.mode === "hill") return 1;
+  if (v.side !== "defender" || flies(v) || b.mode === "hill" || (b.played && b.spec.hero === "defender")) return 1;
   const keep = b.posts.at(-1)!;
   if (keep.owner === "defender" && dist(v, keep) < KEEP_R) return KEEP_WALLS;
   return b.posts.some((p) => p.owner === "defender" && dist(v, p) < DUG_R) ? DUG_IN : 1;

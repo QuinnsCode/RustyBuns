@@ -1,6 +1,6 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
 import { SECTORS, marineWins, play, specFor } from "../scripts/balance.ts";
-import { HUMAN_HANDICAP, forHuman, handicapped } from "../src/battle/handicap.ts";
+import { ATTACKER_HANDICAP, HUMAN_HANDICAP, forHuman, handicapped } from "../src/battle/handicap.ts";
 import { DUG_IN, KEEP_WALLS, dugIn, settle, startBattle, step, toughness } from "../src/battle/sim.ts";
 
 // Whole battles, thirty-odd of them: slow, and a CI runner is slower than a laptop.
@@ -29,14 +29,16 @@ test("the defender's ground: dug in near a post of theirs, behind walls at the k
   expect(dugIn(b, at("defender", b.posts[0]!.x + 10, b.posts[0]!.z))).toBe(DUG_IN);
 });
 
-test("a human is worth about half an army again: the AI side fields the handicap more, armies and tickets only", () => {
+test("a human holding is worth half an army again on the AI attacker; a human attacking a dug-in defender gets no handicap against them", () => {
   const spec = specFor("canyon", 1, "wooka", "defender");
   const h = forHuman(spec);
   expect(HUMAN_HANDICAP).toBeGreaterThan(0.3);
   expect(h.armies).toEqual({ attacker: Math.round(3 * (1 + HUMAN_HANDICAP)), defender: 3 });
   expect(h.tickets).toEqual({ attacker: Math.round(150 * (1 + HUMAN_HANDICAP)), defender: 150 });
-  expect({ ...h, armies: spec.armies, tickets: spec.tickets }).toEqual(spec);
+  expect({ ...h, armies: spec.armies, tickets: spec.tickets }).toEqual(spec); // armies and tickets only
   expect(handicapped(spec, "attacker", 0)).toBe(spec);
+  const attacking = specFor("canyon", 1, "wooka", "attacker");
+  expect(forHuman(attacking)).toEqual(handicapped(attacking, "defender", ATTACKER_HANDICAP));
 });
 
 test("Marines attacking the station take posts: its bulkheads don't pin them at the first wall", () => {
