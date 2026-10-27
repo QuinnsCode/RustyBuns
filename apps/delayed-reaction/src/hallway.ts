@@ -208,7 +208,7 @@ export function drawTunnel(g: CanvasRenderingContext2D, v: View, s: Scene) {
   if (s.run) {
     // Calls: far ones first so near ones draw over them.
     const calls = s.run.chart.calls.filter((c) => c.beat <= beat + 0.02 && c.due + c.hold - beat > -0.6 && ringZ(c.beat, beat, speed) < FAR);
-    for (const c of calls.sort((a, b) => b.due - a.due)) drawCall(g, v, c, beat, speed, s.run.chart.delay);
+    for (const c of calls.sort((a, b) => b.due - a.due)) drawCall(g, v, c, beat, speed);
     // The queue you carry: a dot per call in flight, hovering over the runner's head in order.
     const inFlight = s.run.chart.calls.filter((c) => c.beat <= beat && (c.state === "pending" || c.state === "held"));
     inFlight.forEach((c, i) => {
@@ -234,7 +234,8 @@ function ring(g: CanvasRenderingContext2D, v: View, z: number, beat: number, fro
 // a beat ahead, dimmer each, out to the due beat `delay` beats on. There, a solid wall fills the
 // tunnel, neon grid in the call's colour, with one door at the call's lane: run through the door
 // or into the wall. A hold's door stretches into a corridor until the hold ends.
-function drawCall(g: CanvasRenderingContext2D, v: View, c: Call, beat: number, speed: number, delay: number) {
+function drawCall(g: CanvasRenderingContext2D, v: View, c: Call, beat: number, speed: number) {
+  const delay = c.due - c.beat;
   const gone = c.state === "hit" || c.state === "missed";
   const col = c.state === "missed" ? "#777" : LANE_COLOR[c.lane];
   const theta = LANE_ANGLE[c.lane];
