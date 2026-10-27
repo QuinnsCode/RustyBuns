@@ -3574,6 +3574,15 @@ const views = {
         <span class="stat"><b id="stat-solved">·</b> clashes Mervin settled with no card</span>
       </div></div></section>
       <section class="section"><div class="wrap">
+        <div class="label">why not let the AI do it?</div><h2>Spend the AI on the what, not the how</h2>
+        <p class="muted">We do use AI, and we want the most out of it. A merge, a red check, a bloated prompt: plain code already solved those, so paying a model to solve them again costs tokens, time and the features it could have built. It compounds like interest: every solved problem is one no agent pays for again, so each round goes further on less. Less intelligence fussing over the HOW, straight to the WHAT, because the WHY is already solved. By who? RustyBuns.</p>
+        <div class="both" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))">
+          <div><span class="ico">${icon("wrench")}</span><b>HOW: plain code</b><p><a href="/mervin">Mervin</a> merges, <a href="/ester">Ester</a> sorts the red, <a href="/dexter">Dexter</a> trims the context. Rules and replay, no model, no tokens.</p></div>
+          <div><span class="ico">${icon("book-open")}</span><b>WHY: shared rules</b><p>Every agent starts from the same rules, so the model reads them from cache. Over 25 days of this repo's own agents, 97.8% of 8.27 billion input tokens were cached re-reads.</p></div>
+          <div><span class="ico">${icon("sparkles")}</span><b>WHAT: the feature</b><p>Where the model's thinking goes. Those same 25 days shipped 1,490 changes to main.</p></div>
+        </div>
+      </div></section>
+      <section class="section"><div class="wrap">
         <div class="label">wait, let me explain with dots</div><h2>Why thirty agents jam the old git way</h2>
         <p class="muted">Each dot is an agent with a feature to ship. Picture a subway at rush hour: one jammed staircase, a ticket gate, a test exit. Then the three layers that fix it. Try the sliders. <a href="/git-problems.html">We got git problems with agent swarm</a> has this and <a href="/swarm-watch.html">a real week of this repo replayed</a>.</p>
         <div id="swarm-home"></div>
