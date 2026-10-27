@@ -25,3 +25,5 @@ wrangler.generated.jsonc
 .fatty/
 .wrangler/
 __pycache__/
+
+apps/agent-office/sandbox/box.json

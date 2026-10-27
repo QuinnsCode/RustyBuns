@@ -1,0 +1,11 @@
+{
+  "port": 4600,
+  "memory": "4g",
+  "cpus": 2,
+  "network": "open",
+  "repos": [
+    { "path": "~/projects/my-app", "access": "rw" },
+    { "path": "~/projects/reference-docs", "access": "ro" }
+  ],
+  "env": ["ANTHROPIC_API_KEY"]
+}

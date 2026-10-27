@@ -9,6 +9,7 @@
     "office:update": "bun scripts/update.ts",
     "office:mama": "bun scripts/mama.ts",
     "office:dev": "bun scripts/dev.ts",
+    "office:box": "bun sandbox/box.ts",
     "office:phone": "bun scripts/phone.ts",
     "desktop:build": "bun scripts/rustybunsify.ts compile --check",
     "desktop:build:all": "bun scripts/rustybunsify.ts compile --all --check",
