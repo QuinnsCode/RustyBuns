@@ -11,7 +11,7 @@
 import { CanvasTexture, Group, Matrix4, Mesh, MeshBasicMaterial, PlaneGeometry, Raycaster, SRGBColorSpace, Vector2, Vector3, type Camera, type Object3D, type Scene } from "three";
 import type { EsterState } from "../ester/run.ts";
 import {
-  SCREENS, STATIONS, avoided, clock, esterStack, fixPrompt, helperState, line, mergedPrs, mervinBoard, openPrs, slots, tallyOf,
+  SCREENS, STATIONS, avoided, clock, esterStack, fixPrompt, helperState, line, mergedPrs, mervinBoard, openPrs, preventedOf, slots, tallyOf,
   type MergedPr, type OpenPr, type Screen, type Tally,
 } from "./read.ts";
 
@@ -28,6 +28,7 @@ const FPS = 8; // gitpath's cars chug; the other two redraw when their data move
 
 let helpers: { ester: EsterState; mervin: EsterState } = { ester: IDLE, mervin: IDLE };
 let tally: Tally | null = null;
+let prevented = 0; // tasks Mervin held for the repo codeSplitter's card watches, before their branches clashed
 let open: OpenPr[] = [], merged: MergedPr[] = [], lineError = "";
 /** Where the last frame drew what can be clicked, in canvas px. */
 let cars: { x: number; y: number; w: number; h: number; url: string }[] = [];
@@ -128,20 +129,36 @@ function wheels(ctx: CanvasRenderingContext2D, x: number, y: number, w: number) 
 const TIER_COLOR = { certain: GREY, agree: GREY, mervin: ORANGE, differ: "#b7791f", card: RED };
 const base = (p: string) => p.split("/").pop()!;
 
+/** An agent robot carrying a PR over to Mervin's side of the screen, on a loop, ending at `x` (the tiles' left edge). */
+function robot(ctx: CanvasRenderingContext2D, t: number, x: number, y: number) {
+  const k = (t * 0.25) % 1, rx = 36 + (x - 120) * k, bob = Math.sin(t * 8) * 2;
+  ctx.fillStyle = PAPER;
+  ctx.beginPath(); ctx.roundRect(rx, y + bob - 20, 30, 22, 6); ctx.fill();          // head
+  ctx.fillStyle = INK;
+  for (const dx of [8, 22]) { ctx.beginPath(); ctx.arc(rx + dx, y + bob - 9, 3, 0, Math.PI * 2); ctx.fill(); }
+  ctx.strokeStyle = PAPER; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(rx + 15, y + bob - 20); ctx.lineTo(rx + 15, y + bob - 27); ctx.stroke(); // antenna
+  ctx.fillStyle = ORANGE;
+  ctx.beginPath(); ctx.roundRect(rx + 36, y + bob - 18, 34, 20, 4); ctx.fill();        // the PR it carries
+  ctx.fillStyle = INK; ctx.font = "700 14px system-ui,sans-serif"; ctx.textBaseline = "middle";
+  ctx.fillText("PR", rx + 44, y + bob - 8, 22);
+}
+
 /** Mervin: the share of conflicts he settled, big on the left; the contested files as tiles on the right. */
-function drawMervin(ctx: CanvasRenderingContext2D) {
-  const s = helpers.mervin, b = mervinBoard(s.lines), a = avoided(b);
+function drawMervin(ctx: CanvasRenderingContext2D, t: number) {
+  const s = helpers.mervin, b = mervinBoard(s.lines), a = avoided(b, prevented);
   const all = tally && tally.total ? `all-time ${Math.round((100 * tally.avoided) / tally.total)}% of ${tally.total} · ${tally.prs} PRs` : phase(s);
   frame(ctx, `Mervin  ${b.stages.length ? `${b.stages.length} PRs in merge order` : "merge order"}`, all);
   if (s.error) return note(ctx, s.error, RED);
   if (!b.stages.length) return note(ctx, s.lines.at(-1) ?? (s.phase === "running" ? "Reading the open PRs" : "Click to call on Mervin"));
+  robot(ctx, t, 440, 236);
   ctx.textBaseline = "top";
   ctx.fillStyle = a.total && a.avoided < a.total ? ORANGE : GREEN;
   ctx.font = "700 112px system-ui,sans-serif";
   ctx.fillText(a.total ? `${Math.round((100 * a.avoided) / a.total)}%` : "0", 36, 86, 320);
   ctx.font = "30px system-ui,sans-serif";
   ctx.fillStyle = DIM;
-  ctx.fillText(a.total ? `${a.avoided} of ${a.total} conflicts avoided` : "conflicts on this board", 36, 206, 380);
+  ctx.fillText(a.total ? `${a.avoided} of ${a.total} conflicts avoided${prevented ? `, ${prevented} held early` : ""}` : "conflicts on this board", 36, 206, 380);
   // a tile a file more than one side wrote to, worst first; with none, the merge order as chips
   const x0 = 440, room = W - 36 - x0;
   const files = [...b.files].sort((p, q) => Object.keys(TIER_COLOR).indexOf(q.tier) - Object.keys(TIER_COLOR).indexOf(p.tier));
@@ -313,6 +330,10 @@ async function pollHelpers() {
       }
     } catch {}
     draw();
+  }
+  const repo = (() => { try { return JSON.parse(localStorage.getItem("rb.codesplitter") ?? "{}").repo; } catch { return undefined; } })();
+  if (on.mervin && typeof repo === "string" && repo) {
+    try { const r = await fetch(`/__rb/codesplitter/hold?repo=${encodeURIComponent(repo)}`); if (r.ok) prevented = preventedOf(await r.json()); } catch {}
   }
   const busy = helpers.ester.phase === "running" || helpers.mervin.phase === "running";
   timer = setTimeout(pollHelpers, busy ? 2000 : 10_000);

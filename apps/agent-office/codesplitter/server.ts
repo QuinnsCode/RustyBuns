@@ -59,6 +59,7 @@ export function codesplitterRoute(s: Site = site(), get: typeof fetch = fetch) {
   // Tasks the hint card's Wait is holding (#1287), per repo, until the branches they wait on have merged. Held here,
   // not in the page, so a reload keeps them; the page sends the queue.add itself once one is ready (take).
   const held = new Map<string, Held & { repo: string }>();
+  const prevented = new Map<string, number>(); // per repo, every hold since the server started: a conflict that never happened
   const ready = async (repo: string): Promise<Held[]> => {
     const mine = [...held.values()].filter((h) => h.repo === repo);
     if (!mine.length) return [];
@@ -84,7 +85,7 @@ export function codesplitterRoute(s: Site = site(), get: typeof fetch = fetch) {
     if (method === "GET") {
       if (!REPO.test(repo)) return { status: 400, body: { error: "repo is owner/name" } };
       const now = await ready(repo);
-      return { status: 200, body: { held: [...held.values()].filter((h) => h.repo === repo).map(({ repo: _, ...h }) => h), ready: now.map((h) => h.id) } };
+      return { status: 200, body: { held: [...held.values()].filter((h) => h.repo === repo).map(({ repo: _, ...h }) => h), prevented: prevented.get(repo) ?? 0, ready: now.map((h) => h.id) } };
     }
     if (method === "DELETE") return { status: 200, body: { dropped: held.delete(id) } };
     if (method !== "POST") return { status: 405, body: { error: `GET, POST or DELETE ${url.pathname}` } };
@@ -102,6 +103,7 @@ export function codesplitterRoute(s: Site = site(), get: typeof fetch = fetch) {
       return { status: 400, body: { error: "repo, msg (a queue.add under 8KB) and branches" } };
     const h = { id: crypto.randomUUID(), repo, msg, branches, at: Date.now() };
     held.set(h.id, h);
+    prevented.set(repo, (prevented.get(repo) ?? 0) + 1);
     return { status: 201, body: { id: h.id } };
   };
   return async (method: string, url: URL): Promise<{ status: number; body: unknown } | null> => {

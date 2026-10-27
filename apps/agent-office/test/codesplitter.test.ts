@@ -116,7 +116,7 @@ test("Wait holds the task on the office until its busy branches have merged, and
 
   expect((await call("POST", "hold", "repo=ryan/lab&msg=nope&branches=a")).status).toBe(400);
   const { id } = (await call("POST", "hold", q.toString())).body as { id: string };
-  const list = async () => (await call("GET", "hold", "repo=ryan/lab")).body as { held: unknown[]; ready: string[] };
+  const list = async () => (await call("GET", "hold", "repo=ryan/lab")).body as { held: unknown[]; ready: string[]; prevented: number };
   expect((await list()).held).toHaveLength(1);
   expect((await list()).ready).toEqual([]);
   expect((await call("POST", "hold/take", `id=${id}`)).status).toBe(409);
@@ -128,4 +128,5 @@ test("Wait holds the task on the office until its busy branches have merged, and
   expect((await call("POST", "hold/take", `id=${id}`)).body).toEqual(JSON.parse(msg));
   expect((await call("POST", "hold/take", `id=${id}`)).status).toBe(409);
   expect((await list()).held).toEqual([]);
+  expect((await list()).prevented).toBe(1); // the hold stays counted as a conflict that never happened after release
 });

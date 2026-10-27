@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { EsterState } from "../ester/run.ts";
-import { avoided, esterStack, fixPrompt, helperState, line, mergedPrs, mervinBoard, openPrs, slots, tallyRows, tallySum } from "../screens/read.ts";
+import { avoided, preventedOf, esterStack, fixPrompt, helperState, line, mergedPrs, mervinBoard, openPrs, slots, tallyRows, tallySum } from "../screens/read.ts";
 import { officeTriage } from "../triage/server.ts";
 
 // what mervin-board.ts prints for two PRs that both touched apps/x.ts, one settled and one carded, plus two clashes
@@ -23,6 +23,9 @@ test("Mervin's screen: the files two sides wrote to, the clashes, and the share 
   expect(b.files).toEqual([{ path: "apps/y.ts", tier: "mervin", prs: [12], main: true }, { path: "apps/x.ts", tier: "card", prs: [12, 15], main: false }]);
   expect(b.clashes.map((c) => [c.kind, c.prs, c.settled])).toEqual([["migration", [12, 15], true], ["export", [12, 15], false]]);
   expect(avoided(b)).toEqual({ avoided: 2, total: 4 }); // y.ts and the migration, of y.ts, x.ts and both clashes
+  // two tasks held on busy branches never became conflicts at all
+  expect(avoided(b, preventedOf({ prevented: 2, held: [] }))).toEqual({ avoided: 4, total: 6 });
+  expect(preventedOf({ error: "nope" })).toBe(0);
 });
 
 test("his running tally counts each PR once, however often he is called on", () => {
