@@ -276,8 +276,9 @@ test("nobody ends up inside a building or rock, on any map", () => {
 // A whole AI battle on every map, both ways round: nobody ends it stranded, off every post with no
 // target and no step in 30 s (pinned on a hut, wreck, bulkhead or rock). A shanti waits behind the
 // front by design, so it does not count.
-test("on every map a battle plays out with nobody pinned in the scenery", () => {
-  for (const sector of ["shield", "capital", "spaceport", "cannon", "canyon", "jungle"] as const) for (const hero of ["attacker", "defender"] as const) {
+// One test per map, so no single test sits near the timeout on a slow runner.
+for (const sector of ["shield", "capital", "spaceport", "cannon", "canyon", "jungle"] as const) test(`on ${sector} a battle plays out with nobody pinned in the scenery`, () => {
+  for (const hero of ["attacker", "defender"] as const) {
     const b = startBattle(spec({ sector, hero, seed: 3, tickets: { attacker: 150, defender: 150 } }));
     const last = new Map<number, { x: number; z: number; t: number }>();
     for (let i = 0; !b.over && b.time < 600; i++) {
