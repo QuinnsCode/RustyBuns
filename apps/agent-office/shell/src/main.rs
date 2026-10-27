@@ -10,6 +10,7 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, RunEvent, State};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+use tauri_plugin_updater::UpdaterExt;
 
 struct Office(Mutex<Option<Child>>);
 
@@ -33,9 +34,20 @@ fn show_office() {
     let _ = Command::new("open").args(["-a", "Google Chrome"]).spawn();
 }
 
+// Download and install a newer build if one is published, then restart into it. The binary dies with us (stop on Exit).
+async fn update(app: tauri::AppHandle) {
+    let Ok(updater) = app.updater() else { return };
+    if let Ok(Some(found)) = updater.check().await {
+        if found.download_and_install(|_, _| {}, || {}).await.is_ok() {
+            app.restart();
+        }
+    }
+}
+
 fn main() {
     let child = Command::new(binary()).spawn().expect("could not start the agent-office binary");
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .manage(Office(Mutex::new(Some(child))))
         .setup(|app| {
@@ -43,14 +55,18 @@ fn main() {
             let launch = app.autolaunch();
             let open = MenuItem::with_id(app, "open", "Open Agent Office", true, None::<&str>)?;
             let login = CheckMenuItem::with_id(app, "login", "Launch at login", true, launch.is_enabled().unwrap_or(false), None::<&str>)?;
+            let check = MenuItem::with_id(app, "update", "Check for updates", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, Some("Cmd+Q"))?;
-            let menu = Menu::with_items(app, &[&open, &login, &PredefinedMenuItem::separator(app)?, &quit])?;
+            let menu = Menu::with_items(app, &[&open, &login, &check, &PredefinedMenuItem::separator(app)?, &quit])?;
             let mut tray = TrayIconBuilder::new().menu(&menu).on_menu_event(move |app, event| match event.id().as_ref() {
                 "open" => show_office(),
                 "login" => {
                     let l = app.autolaunch();
                     let _ = if l.is_enabled().unwrap_or(false) { l.disable() } else { l.enable() };
                     let _ = login.set_checked(l.is_enabled().unwrap_or(false));
+                }
+                "update" => {
+                    tauri::async_runtime::spawn(update(app.clone()));
                 }
                 "quit" => app.exit(0),
                 _ => {}

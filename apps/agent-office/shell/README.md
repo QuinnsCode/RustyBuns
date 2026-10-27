@@ -5,7 +5,10 @@ Chrome with `--app`. The shell adds a Dock icon, a menu bar, Cmd-Q that stops th
 brings the Chrome window forward. A menu bar (tray) icon offers Open Agent Office, Launch at login (a macOS
 LaunchAgent via `tauri-plugin-autostart`) and Quit.
 
-Auto-update is not wired: Tauri's updater needs a minisign keypair and a hosted manifest, which are the owner's.
+Updates: "Check for updates" in the tray reads `latest.json` from the `agent-office-latest` release and installs a
+build signed with the minisign key whose public half is in `tauri.conf.json`. The private key and its password
+(`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) stay with the owner; `cargo tauri build` needs them
+because `createUpdaterArtifacts` is on. Publishing the release is not wired into `desktop-drop.yml` yet.
 `cargo check` needs a placeholder file at `binaries/agent-office-<target triple>` (gitignored) for the build script.
 
 ```sh
