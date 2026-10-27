@@ -7,7 +7,7 @@
 //   bun run office:box logs      follow the box's log
 //   bun run office:box down      stop and remove the box (its home volume, with logins and the office's data, stays)
 //   --perms file.json            another permission set (default: sandbox/box.json, else sandbox/box.example.json)
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -93,18 +93,70 @@ export function dockerArgs(p: Perms, host: Host, image = NAME): string[] {
   ];
 }
 
+export type Edit =
+  | { grant: { path: string; access: "rw" | "ro" } }
+  | { revoke: string }
+  | { network: "open" | "offline" }
+  | { port: number }
+  | { env: { name: string; on: boolean } };
+
+// One change to a permission set, checked like a file would be: the result is what parsePerms would have read.
+// A mount has to be a folder that exists, so a typo can't become an empty directory Docker creates as root.
+export function edit(p: Perms, e: Edit, isDir: (dir: string) => boolean = (d) => { try { return statSync(d).isDirectory(); } catch { return false; } }): Perms {
+  const next = structuredClone(p);
+  if ("grant" in e) {
+    const dir = e.grant.path.trim();
+    if (!(dir === "~" || dir.startsWith("~/") || path.isAbsolute(dir))) throw new Error(`${dir || "that path"} should start with / or ~/`);
+    if (!isDir(expand(dir))) throw new Error(`${dir} isn't a folder on this machine`);
+    const at = next.repos.findIndex((r) => expand(r.path) === expand(dir));
+    if (at >= 0) next.repos[at] = { path: next.repos[at]!.path, access: e.grant.access };
+    else next.repos.push({ path: dir, access: e.grant.access });
+  } else if ("revoke" in e) {
+    next.repos = next.repos.filter((r) => expand(r.path) !== expand(e.revoke));
+  } else if ("network" in e) {
+    next.network = e.network;
+  } else if ("port" in e) {
+    next.port = e.port;
+  } else {
+    next.env = next.env.filter((n) => n !== e.env.name);
+    if (e.env.on) next.env.push(e.env.name);
+  }
+  return parsePerms(next);
+}
+
+/** Where the permission set is edited and saved: the one in use, or a new sandbox/box.json copied from the example. */
+export const permsFile = (dir = here) => path.join(dir, "box.json");
+export function savePerms(p: Perms, dir = here) {
+  writeFileSync(permsFile(dir), `${JSON.stringify(p, null, 2)}\n`);
+}
+
+/** What the box is doing: its state, Docker's health check if it has one, and (when it publishes a port) whether the port answers. */
+export async function boxHealth(p: Perms) {
+  const state = await docker(["inspect", "-f", "{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}", NAME], { quiet: true });
+  if (state.code) return { running: false as const };
+  const [status = "", health = ""] = state.out.split(" ");
+  const answers = p.network === "open" && await fetch(`http://127.0.0.1:${p.port}/login`, { signal: AbortSignal.timeout(3000) }).then((r) => r.ok, () => false);
+  const mounted = (await docker(["inspect", "-f", '{{range .Mounts}}{{.Source}} {{.Destination}} {{.RW}}{{"\\n"}}{{end}}', NAME], { quiet: true })).out
+    .split("\n").map((l) => l.split(" ")).filter((l) => l[1]?.startsWith("/work/")).map((l) => `${l[1]!.slice(6)}:${l[2] === "true" ? "rw" : "ro"}`);
+  const granted = p.repos.map((r) => `${mountName(r.path)}:${r.access}`);
+  const healthy = status === "running" && (p.network !== "open" || answers);
+  // grants only reach the box when it's started again, so say when the running one isn't what the file says
+  const restart = granted.length !== mounted.length || granted.some((g) => !mounted.includes(g));
+  return { running: true as const, status, health, answers, healthy, restart };
+}
+
 export function loadPerms(file?: string): { perms: Perms; from: string } {
   const from = file ?? [path.join(here, "box.json"), path.join(here, "box.example.json")].find(existsSync)!;
   return { perms: parsePerms(JSON.parse(readFileSync(from, "utf8"))), from };
 }
 
-async function docker(args: string[], opts: { env?: Record<string, string>; quiet?: boolean } = {}) {
+export async function docker(args: string[], opts: { env?: Record<string, string>; quiet?: boolean } = {}) {
   const p = Bun.spawn(["docker", ...args], { env: { ...process.env, ...opts.env }, stdout: opts.quiet ? "pipe" : "inherit", stderr: opts.quiet ? "pipe" : "inherit" });
   const out = opts.quiet ? await new Response(p.stdout).text() : "";
   return { code: await p.exited, out: out.trim() };
 }
 
-async function hostCapacity(): Promise<Host> {
+export async function hostCapacity(): Promise<Host> {
   const [cpus, memBytes] = (await docker(["info", "--format", "{{.NCPU}} {{.MemTotal}}"], { quiet: true })).out.split(" ").map(Number);
   if (!cpus || !memBytes) throw new Error("docker didn't say how much it has: is it running?");
   return { cpus, memBytes };
@@ -127,16 +179,14 @@ async function main(argv: string[]) {
     if ((await docker(dockerArgs(perms, await hostCapacity()), { env: { OFFICE_PASSWORD: password }, quiet: true })).code) process.exit(1);
     console.log(`🐳 the office is starting in ${NAME}\n   http://localhost:${perms.port}   password: ${password}\n   bun run office:box status`);
   } else if (cmd === "status") {
-    const state = (await docker(["inspect", "-f", "{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}", NAME], { quiet: true }));
     console.log(`permission set ${path.relative(process.cwd(), from)}:`);
     console.log(`  repos    ${perms.repos.map((r) => `${r.path} (${r.access})`).join(", ") || "none"}`);
     console.log(`  env      ${perms.env.join(", ") || "none"}`);
     console.log(`  network  ${perms.network}   port ${perms.network === "offline" ? "none" : `127.0.0.1:${perms.port}`}   ${(({ memory, cpus }) => `${memory}, ${cpus} cpus`)(limits(perms, await hostCapacity()))}`);
-    if (state.code) { console.log("box      not running (bun run office:box up)"); return; }
-    const [status, health = ""] = state.out.split(" ");
-    const answers = perms.network === "open" && await fetch(`http://127.0.0.1:${perms.port}/login`, { signal: AbortSignal.timeout(3000) }).then((r) => r.ok, () => false);
-    console.log(`box      ${status}${health ? `, ${health}` : ""}${perms.network === "open" ? `; port ${perms.port} ${answers ? "answers" : "does not answer"}` : ""}`);
-    if (status !== "running" || (perms.network === "open" && !answers)) process.exitCode = 1;
+    const h = await boxHealth(perms);
+    if (!h.running) { console.log("box      not running (bun run office:box up)"); return; }
+    console.log(`box      ${h.status}${h.health ? `, ${h.health}` : ""}${perms.network === "open" ? `; port ${perms.port} ${h.answers ? "answers" : "does not answer"}` : ""}${h.restart ? "\n         the running box has other grants than the file (bun run office:box up)" : ""}`);
+    if (!h.healthy) process.exitCode = 1;
   } else if (cmd === "logs") {
     await docker(["logs", "-f", "--tail", "100", NAME]);
   } else if (cmd === "down") {
