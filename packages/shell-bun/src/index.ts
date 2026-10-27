@@ -22,7 +22,7 @@ export { webMcpRoute, webMcpScript, WEBMCP_PATH, WEBMCP_TAG } from "./webmcp.ts"
 export { appServer, proxyMatcher, type AppServer, type AppServerOptions } from "./app-server.ts";
 export { schedule, parseCron, cronMatches, type ScheduledController } from "./cron.ts";
 export { scheduler, hostScheduler, adapt, machineLoad, lowPriorityCommand, memoryCapCommand, processTreeMb, treeMb, JobStopped, PERSONAS, type JobContext, type EffectJobContext, type RunOptions, type SpawnOptions, type WorkerOptions, type Priority, type Persona, type Budget, type Load, type SchedulerOptions, type SchedulerStats, type Scheduler } from "./priority.ts";
-export { capped, edgeLimits, EDGE_MEMORY_MB, type EdgeLimits } from "./edge-limits.ts";
+export { capped, edgeLimits, edgeLike, watchEnvAtImport, EDGE_MEMORY_MB, EDGE_DO_IDLE_MS, type EdgeLimits } from "./edge-limits.ts";
 export { within, count, metered, usageSnapshot, resetUsage, type UsageSnapshot, type CauseUsage } from "./usage.ts";
 export { workflow, LocalWorkflow, LocalWorkflowInstance, durationMs, type WorkflowCtor, type WorkflowEvent, type WorkflowStep, type WorkflowStepConfig, type InstanceStatus } from "./bindings/workflow.ts";
 export { vectorize, LocalVectorize, type VectorizeMetric, type VectorizeVector, type VectorizeMatch, type VectorizeQueryOptions } from "./bindings/vectorize.ts";
@@ -50,6 +50,7 @@ import { ai } from "./bindings/ai.ts";
 import { analyticsEngine } from "./bindings/analytics.ts";
 import { workerLoader } from "./bindings/worker-loader.ts";
 import { sendEmail } from "./bindings/email.ts";
+import { edgeLike } from "./edge-limits.ts";
 
 export const caps: MemoryPort["caps"] = { sab: true, ffi: true, fs: true, gpu: false };
 
@@ -125,6 +126,6 @@ export function localBindings(dataDir: string) {
     /** The Dynamic Worker Loader, in this process (not a sandbox). */
     workerLoader: (name: string) => workerLoader(`${dataDir}/loader/${name}`),
     durableObject: <Env>(Ctor: DurableObjectCtor<Env>, env: Env, binding: string, opts?: { codec?: "json" | "v8" }) =>
-      durableObject(Ctor, env, { name: binding, storage: (id) => storage(`${dataDir}/do_${binding}_${id}.sqlite`, { codec: opts?.codec }) }),
+      durableObject(Ctor, env, { name: binding, idleMs: edgeLike()?.idleMs, storage: (id) => storage(`${dataDir}/do_${binding}_${id}.sqlite`, { codec: opts?.codec }) }),
   };
 }

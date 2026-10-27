@@ -198,6 +198,9 @@ export class LocalDurableObjectState {
   }
   /** Drop a socket from the live list (bridge close). */
   _detach(ws: LocalWebSocket) { this.slot.sockets.delete(ws); }
+  /** Storage calls or queued events still running: not idle. */
+  busy() { return this.inflight > 0 || this.waiting.length > 0; }
+
   /** Called by the namespace on eviction. */
   _evict() { this.dead = true; }
 
@@ -230,12 +233,28 @@ export interface NamespaceOptions {
   storage?: (id: string) => StoragePort;
   /** The binding's name: with it, every event counts toward usage.ts (requests, objects, busyMs). */
   name?: string;
+  /** Evict an instance that has had no event for this many ms, as the edge does (~70 s). Unset: never. */
+  idleMs?: number;
 }
 
 export class LocalDurableObjectNamespace<Env> {
   private slots = new Map<string, Slot>();
-  private instances = new Map<string, { obj: DurableObjectLike; state: LocalDurableObjectState }>();
-  constructor(private Ctor: DurableObjectCtor<Env>, private env: Env, private opts: NamespaceOptions = {}) {}
+  private instances = new Map<string, { obj: DurableObjectLike; state: LocalDurableObjectState; lastUsed: number }>();
+  constructor(private Ctor: DurableObjectCtor<Env>, private env: Env, private opts: NamespaceOptions = {}) {
+    const idle = opts.idleMs;
+    if (idle) setInterval(() => this.evictIdle(idle), Math.max(10, Math.min(5_000, idle / 2))).unref();
+  }
+
+  /** Evict every instance idle for `ms` or more; how many went. */
+  evictIdle(ms: number, now = Date.now()): number {
+    let n = 0;
+    for (const [key, inst] of [...this.instances]) {
+      if (now - inst.lastUsed < ms || inst.state.busy()) continue;
+      this.instances.delete(key); inst.state._evict(); n++;
+    }
+    if (n && this.opts.name) console.log(`[edge-like] ${this.opts.name}: evicted ${n} idle Durable Object${n > 1 ? "s" : ""}; the next event builds a new instance`);
+    return n;
+  }
 
   idFromName(name: string) { return new DurableObjectId(name, Bun.hash(name).toString(16).padStart(16, "0")); }
   idFromString(hex: string) {
@@ -257,7 +276,7 @@ export class LocalDurableObjectNamespace<Env> {
       }
       // The alarm lives in the slot, so it fires into whichever instance is live then.
       const state = new LocalDurableObjectState(id, slot, () => { void this.deliver(id, (obj) => obj.alarm?.()); });
-      inst = { obj: new this.Ctor(state, this.env), state };
+      inst = { obj: new this.Ctor(state, this.env), state, lastUsed: Date.now() };
       this.instances.set(key, inst);
     }
     return inst;
@@ -265,7 +284,9 @@ export class LocalDurableObjectNamespace<Env> {
 
   /** Run one event against the live instance, after its constructor gate. */
   private async deliver<T>(id: DurableObjectId, fn: (obj: DurableObjectLike) => T): Promise<Awaited<T>> {
-    const { obj, state } = this.instance(id);
+    const live = this.instance(id);
+    live.lastUsed = Date.now();
+    const { obj, state } = live;
     await state.ready();
     // Awaiting an open gate would yield, and every queued event would slip through together.
     while (state.gated()) await state.gateOpen();

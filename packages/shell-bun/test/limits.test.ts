@@ -6,7 +6,7 @@ import { kv } from "../src/bindings/kv.ts";
 import { LocalQueue } from "../src/bindings/queue.ts";
 import { storage } from "../src/bindings/storage.ts";
 import { DO_MAX_VALUE_BYTES, LocalDurableObjectNamespace, LocalDurableObjectState } from "../src/bindings/durable-object.ts";
-import { capped, edgeLimits } from "../src/edge-limits.ts";
+import { capped, edgeLike, edgeLimits, watchEnvAtImport } from "../src/edge-limits.ts";
 
 test("D1: 100 bound parameters pass, 101 are refused", async () => {
   const db = d1();
@@ -76,4 +76,32 @@ test("RB_CPU_MS wins over the config's cpuMs", () => {
   expect(edgeLimits(30_000, { RB_CPU_MS: "10" }).cpuMs).toBe(10);
   expect(edgeLimits(30_000, {}).cpuMs).toBe(30_000);
   expect(edgeLimits(undefined, {}).cpuMs).toBeUndefined();
+});
+
+test("edge-like: an idle DO is evicted and rebuilt from storage, a busy one stays, import-time env reads are named", async () => {
+  expect(edgeLike({})).toBeUndefined();
+  expect(edgeLike({ RB_EDGE_LIKE: "1" })).toEqual({ idleMs: 70_000 });
+  expect(edgeLike({ RB_EDGE_LIKE: "2" })).toEqual({ idleMs: 2000 });
+
+  let built = 0;
+  class Counter {
+    mem = 0;
+    constructor(private ctx: LocalDurableObjectState) { built++; }
+    async fetch() { this.mem++; await this.ctx.storage.put("n", ((await this.ctx.storage.get<number>("n")) ?? 0) + 1); return Response.json({ mem: this.mem, stored: await this.ctx.storage.get("n") }); }
+  }
+  const ns = new LocalDurableObjectNamespace(Counter as any, {}, { idleMs: 60_000 });
+  const stub = ns.get(ns.idFromName("a"));
+  await stub.fetch("http://x/");
+  expect(ns.evictIdle(60_000)).toBe(0);
+  expect(ns.evictIdle(60_000, Date.now() + 61_000)).toBe(1);
+  const again = await (await stub.fetch("http://x/")).json();
+  expect(again).toEqual({ mem: 1, stored: 2 });
+  expect(built).toBe(2);
+
+  const seen: string[] = [];
+  const stop = watchEnvAtImport((m) => seen.push(m));
+  process.env.HOME; process.env.HOME; process.env.RB_EDGE_TEST;
+  stop();
+  process.env.NODE_ENV;
+  expect(seen.map((m) => m.match(/process\.env\.(\w+)/)![1])).toEqual(["HOME", "RB_EDGE_TEST"]);
 });

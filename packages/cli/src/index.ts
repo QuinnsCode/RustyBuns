@@ -1214,7 +1214,7 @@ try {
     case "smoke": {
       // Does this app run on Rusty Buns? A throwaway copy, installed, initialised, built and booted on the local twins.
       const dir = rest.find((a) => !a.startsWith("--")) ?? ".";
-      const r = await smoke(dir, { keep: rest.includes("--keep"), version: VERSION, cli: fileURLToPath(import.meta.url), log: (l) => console.log(`  ${l}`) });
+      const r = await smoke(dir, { keep: rest.includes("--keep"), edgeLike: rest.includes("--edge-like"), version: VERSION, cli: fileURLToPath(import.meta.url), log: (l) => console.log(`  ${l}`) });
       console.log(r.stage === "works" ? `works: GET / answered ${r.status} in ${r.mode} mode (${(r.ms / 1000).toFixed(1)}s)` : `stopped at ${r.stage}${r.mode ? ` (${r.mode} mode)` : ""}:\n${r.error}`);
       if (r.kept) console.log(`kept: ${r.kept}`);
       if (r.stage !== "works") process.exitCode = 1;
