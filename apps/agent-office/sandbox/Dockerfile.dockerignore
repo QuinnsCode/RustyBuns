@@ -1,0 +1,8 @@
+**/node_modules
+.git
+.agent-office
+**/dist
+**/.cache
+**/.alchemy
+.env*
+**/.dev.vars*

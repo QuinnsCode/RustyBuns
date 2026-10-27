@@ -37,6 +37,11 @@ network you don't trust: the office runs shells and agents as you, and over plai
 cookie cross the wire in the clear. For HTTPS, voice and teams, follow its README; its `deploy/` scripts
 install Node and `npm ci`, and this binary can stand in for that step.
 
+## 🐳 In a sandbox
+
+To run the office in a container that can only touch the repos, variables and port you list, see
+[SANDBOX.md](SANDBOX.md): `bun run office:box up`.
+
 ## 📱 From your phone
 
 Agent Office already has a phone view: **`/lite`** is the office without the 3D. It shows every worker and what
