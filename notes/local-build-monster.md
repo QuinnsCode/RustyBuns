@@ -18,6 +18,12 @@ Needs the owner at the machines.
 - MacBook Pro M1 Max 64GB: Docker builder swarm.
 - MacBook Pro M1 Pro 16GB: daily machine, or overflow test builder.
 
+Doing it (2026-10-27): on the 64GB machine run `scripts/builder-setup.sh` (one curl line at its top). It turns on
+stay-awake, checks SSH and Docker, makes warm checkouts in `~/builder/slot-N`, times one suite, and prints the two
+lines to run on the office Mac. Agents then use `bun run builder` (`scripts/remote-ci.ts`): each run claims a free
+slot, pushes the working tree straight to it over SSH (not via GitHub) and runs the tests there. Steps 1, 6 and 7
+below are done by that; the rest stay open in #2330.
+
 Steps
 1. 64GB machine: raise the Docker Desktop memory limit (default about half of RAM; aim for about 48GB). Keep it awake on power.
 2. Build and smoke the three codeSplitter images locally (`sandbox/`, `deploy-sandbox/`, `deploy-sandbox/ci.Dockerfile`). #818 Part 1 will do it; until then plain `docker build -f ... <context>`.
