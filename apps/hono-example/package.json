@@ -11,7 +11,7 @@
     "test": "bun test test"
   },
   "dependencies": {
-    "hono": "4.12.25"
+    "hono": "4.13.11"
   },
   "devDependencies": {
     "@rustybuns/cli": "workspace:*",
