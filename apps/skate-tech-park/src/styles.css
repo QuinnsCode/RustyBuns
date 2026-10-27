@@ -14,6 +14,10 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #f2c49a; fon
 .trick { position: fixed; top: 22%; left: 50%; transform: translateX(-50%); font-size: 34px; font-weight: 900; letter-spacing: 0.02em; color: var(--paper); text-shadow: 3px 3px 0 var(--ink); white-space: pre; transition: opacity 0.4s; pointer-events: none; }
 .combo { position: fixed; top: calc(22% + 52px); left: 50%; transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 2px 10px; border: 2px solid var(--ink); border-radius: 8px; background: var(--paper); font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; pointer-events: none; }
 .combo:empty { display: none; }
+.balance { position: fixed; top: calc(22% + 88px); left: 50%; transform: translateX(-50%); width: 160px; height: 10px; border: 2px solid var(--ink); border-radius: 8px; background: var(--paper); opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+.balance.on { opacity: 1; }
+.balance::before { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 2px; background: var(--ink); }
+.balance i { position: absolute; top: -4px; width: 12px; height: 14px; margin-left: -6px; border: 2px solid var(--ink); border-radius: 4px; background: var(--hot); left: calc(50% + var(--lean, 0) * 46%); }
 .trick.bail { color: var(--hot); }
 .keys { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); background: rgba(251, 247, 240, 0.9); border: 2px solid var(--ink); border-radius: 8px; padding: 6px 12px; white-space: nowrap; font-size: 13px; max-width: calc(100vw - 32px); overflow: hidden; display: flex; align-items: center; gap: 2px; }
 .keys #help { display: grid; place-items: center; margin-left: 8px; padding: 2px; border: 1.5px solid var(--ink); border-radius: 6px; background: #fff; cursor: pointer; }
