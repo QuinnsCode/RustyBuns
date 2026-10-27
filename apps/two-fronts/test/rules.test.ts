@@ -3,7 +3,7 @@ import type { BattleSpec } from "../src/battle/contract.ts";
 import { GALAXIES, SECTOR_NAMES, type Galaxy, type GalaxyId } from "../src/war/galaxy.ts";
 import { aiDeploys, aiOrders } from "../src/war/ai.ts";
 import {
-  ORBIT, applyBattleResult, applySpaceResult, canPushFromSurface, checkRetreats, declareAttacks, deployTurn, planDeploys, fogged, involved, diceBattle, income, incomeBreakdown, keyShare, regionHolder, newCampaign, planOrders, resolveTurn, rng, supplied, vehiclePool,
+  ORBIT, applyBattleResult, applySpaceResult, canPushFromSurface, checkRetreats, declareAttacks, deployTurn, planDeploys, fogged, involved, diceBattle, groundEdges, income, incomeBreakdown, keyShare, regionHolder, newCampaign, planOrders, resolveTurn, rng, supplied, vehiclePool,
   type Campaign, type Order, type Orders, type Retreat, type Where,
 } from "../src/war/rules.ts";
 
@@ -532,4 +532,40 @@ test("taking places opens the deploy phase, and three or more earn a card", () =
   expect(done.log).toContain("Thunder Marines took 3 places and earns a card.");
   expect(done.hands!.marines).toHaveLength(2); // the bonus, and turn 2's draw
   expect(done.hands!.wooka).toHaveLength(1);
+});
+
+test("holding most of a region gives your troops cover across it, and it tells over a war", () => {
+  const edges = (setup: (c: Campaign) => void, at: Where) => {
+    const c = newCampaign();
+    setup(c);
+    return groundEdges(c, at);
+  };
+  const brill = { system: "brill", sector: 0 }, corva = { system: "corva", sector: 1 };
+  const takeWest = (c: Campaign) => { for (const id of ["aster", "brill"]) c.systems[id]!.sectors[0]!.owner = "wooka"; };
+  // [setup, where the fight is, cover for [attacker, holder], guns for [holder]]
+  const table: [string, (c: Campaign) => void, Where, [boolean, boolean], boolean][] = [
+    ["home region, no orbit: the holder has cover", () => {}, brill, [false, true], false],
+    ["an enemy with most of the region has cover; the holder keeps its orbit", takeWest, corva, [true, true], false],
+    ["orbit gives the attacker cover as well", (c) => { c.systems.brill!.orbit = "wooka"; }, brill, [true, true], false],
+    ["a split region gives neither side the area", (c) => { c.systems.kessa!.orbit = null; }, { system: "kessa", sector: 0 }, [false, false], false],
+    ["upgraded guns fire for the holder", (c) => { c.systems.kessa!.orbit = null; c.systems.kessa!.sectors[0]!.guns = true; }, { system: "kessa", sector: 0 }, [false, false], true],
+  ];
+  for (const [label, setup, at, [att, def], guns] of table) {
+    const e = edges(setup, at);
+    expect([label, !!e.cover.att, !!e.cover.def, !!e.guns.def]).toEqual([label, att, def, guns]);
+  }
+  // The same landing across many wars: a fight inside a region the holder has most of is lost more often.
+  let held = 0, open = 0;
+  for (let seed = 1; seed <= 400; seed++) {
+    for (const region of [true, false]) {
+      const c = newCampaign(seed);
+      if (!region) for (const [id, i] of [["aster", 0], ["corva", 1]] as const) Object.assign(c.systems[id]!.sectors[i]!, { owner: "wooka", armies: { marines: 0, wooka: 0 } });
+      c.systems.brill!.sectors[0]!.armies = { marines: 3, wooka: 3 };
+      c.systems.brill!.fleets.marines = 0; // no orbit: the region is the only edge
+      c.systems.brill!.orbit = null;
+      const x = resolveTurn(c, none(c)).systems.brill!.sectors[0]!;
+      if (x.owner === "marines") region ? held++ : open++;
+    }
+  }
+  expect(held).toBeGreaterThan(open);
 });
