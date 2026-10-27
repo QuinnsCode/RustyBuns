@@ -18,7 +18,7 @@ import { run } from "./battle/sim.ts";
 import { PLACES } from "./battle/cutscenes.ts";
 import { HULL_PER_SHIP, ROUNDS, clash, encodePicks, fightPicks, playRound, startPicks, whyNot, type PickRound } from "./battle/space-picks.ts";
 import { aiSpacePick } from "./war/ai.ts";
-import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
+import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type SectorKind, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
 
 mountControlsPanel();
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -802,9 +802,13 @@ async function finish(result: BattleResult) {
 
 // Quick play, outside the campaign, on Doren, the forest moon: the Marines came to hunt and found
 // themselves the quarry. Hold the line as a Thunder Marine, or be the horde that stalks them.
+// `?world=canyon` (or capital, cannon, spaceport, jungle) plays the same fight on another sector's map.
+const WORLDS: readonly SectorKind[] = ["shield", "canyon", "capital", "cannon", "spaceport", "jungle"];
+const asked = new URLSearchParams(location.search).get("world");
+const world = WORLDS.find((w) => w === asked) ?? "shield";
 function skirmish(asWooka: boolean, mode: MatchMode = "conquest") {
   const spec: BattleSpec = {
-    id: `skirmish-${Date.now()}`, turn: 0, system: "Doren", sector: "shield",
+    id: `skirmish-${Date.now()}`, turn: 0, system: "Doren", sector: world,
     factions: { attacker: "wooka", defender: "marines" }, hero: asWooka ? "attacker" : "defender", heroLevel: 1,
     armies: { attacker: 4, defender: 3 }, tickets: { attacker: 200, defender: 150 },
     vehicles: { attacker: { tank: 1 }, defender: { walker: 1, speeder: 1 } }, strikes: { attacker: 0, defender: 2 },
