@@ -28,6 +28,7 @@ const zero = (): Count => ({ marines: 0, wooka: 0 });
 export interface Sector { kind: SectorKind; owner: Faction; armies: Count; guns?: true }
 export interface SystemState {
   id: string; orbit: Faction | null; fleets: Count; sectors: Sector[];
+  held?: number; // turns in a row the orbit's holder has held it: a long blockade squeezes the other side's landings
   fog?: true; // in a seat's view: the enemy's numbers here are hidden (and zeroed), as nobody of theirs is here to see
 }
 export interface Hero { level: number; xp: number; woundedUntil: number }
@@ -395,6 +396,7 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
       s.fleets[att] = a; s.fleets[def] = b;
     }
     s.orbit = s.fleets.marines ? "marines" : s.fleets.wooka ? "wooka" : null;
+    s.held = s.orbit && s.orbit === startOrbit[s.id] ? (s.held ?? 0) + 1 : 0;
     if (s.orbit && startOrbit[s.id] === enemy(s.orbit)) took(c, s.orbit);
   }
 
