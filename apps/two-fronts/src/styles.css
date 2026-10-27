@@ -140,6 +140,7 @@ button.next:disabled { background: #2a3350; color: #9aa3b2; opacity: 1; }
 .war { display: flex; justify-content: space-between; height: 8px; background: #2a3140; border-radius: 4px; overflow: hidden; margin: 6px 0 2px; }
 .war i { display: block; height: 100%; }
 .war .marines { background: var(--marines); } .war .wooka { background: var(--wooka); }
+.credit { margin: 14px 0 0; color: var(--dim); font-size: 12px; text-align: center; }
 .detail { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
 .orbit { margin: 0 0 6px; color: var(--dim); }
 .warn { margin: 0 0 6px; color: #f5b14c; font-size: 13px; }
