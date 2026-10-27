@@ -3,7 +3,7 @@ import type { BattleSpec } from "../src/battle/contract.ts";
 import { GALAXIES, SECTOR_NAMES, type Galaxy, type GalaxyId } from "../src/war/galaxy.ts";
 import { aiDeploys, aiOrders } from "../src/war/ai.ts";
 import {
-  ORBIT, applyBattleResult, applySpaceResult, canPushFromSurface, checkRetreats, declareAttacks, deployTurn, planDeploys, fogged, involved, diceBattle, income, incomeBreakdown, keyShare, regionHolder, newCampaign, planOrders, resolveTurn, rng, supplied, vehiclePool,
+  ORBIT, enemy, applyBattleResult, applySpaceResult, canPushFromSurface, checkRetreats, declareAttacks, deployTurn, planDeploys, fogged, involved, diceBattle, groundEdges, income, incomeBreakdown, keyShare, regionHolder, newCampaign, planOrders, resolveTurn, rng, supplied, vehiclePool,
   type Campaign, type Order, type Orders, type Retreat, type Where,
 } from "../src/war/rules.ts";
 
@@ -127,7 +127,7 @@ test("dice battles end with one side gone, and air cover helps", () => {
   expect(withCover).toBeGreaterThan(without);
 });
 
-test("troops land only under their own orbit", () => {
+test("troops land under their own orbit; a rush through the enemy fleet only trickles in", () => {
   const c = newCampaign();
   const lands = whole(c, [{ faction: "marines", orders: [
     { kind: "fleet", from: "lumen", to: "kessa", count: 1 },
@@ -135,7 +135,7 @@ test("troops land only under their own orbit", () => {
   ] }]);
   // One ship against two: the landing almost always turns back.
   if (lands.systems.kessa!.orbit !== "marines") {
-    expect(lands.systems.corva!.sectors[0]!.armies.marines).toBe(2);
+    expect(lands.systems.corva!.sectors[0]!.armies.marines).toBeGreaterThan(0);
     expect(lands.log.some((l) => l.includes("turned back"))).toBe(true);
   }
   const won = newCampaign();
@@ -221,7 +221,7 @@ test("the hero can fly the space battle instead: the landings wait on who wins t
   const at = { system: "kessa", sector: 0 };
   const orders: Orders[] = [{ faction: "marines", hero: { system: "kessa", sector: ORBIT }, orders: [
     { kind: "fleet", from: "corva", to: "kessa", count: 3 },
-    { kind: "army", from: { system: "corva", sector: 0 }, to: at, count: 2 },
+    { kind: "army", from: { system: "corva", sector: 0 }, to: at, count: 3 },
   ] }];
   const paused = whole(c, orders);
   expect(paused.pending?.kind).toBe("space");
@@ -243,8 +243,8 @@ test("the hero can fly the space battle instead: the landings wait on who wins t
   // Lose it: the troops turn back, and the hero, shot down, sits out three turns.
   const lost = applySpaceResult(paused, { id: spec.id, winner: "defender", fleets: { attacker: 0, defender: 0 }, heroDown: true });
   expect(lost.systems.kessa!).toMatchObject({ orbit: "wooka", fleets: { marines: 0, wooka: 1 } });
-  expect(lost.log).toContain("Thunder Marines troops for Kessa shield generator turned back: no orbit there.");
-  expect(lost.systems.corva!.sectors[0]!.armies.marines).toBe(3);
+  expect(lost.log).toContain("Thunder Marines troops for Kessa shield generator turned back: only 2 could land.");
+  expect(lost.systems.corva!.sectors[0]!.armies.marines).toBe(1);
   expect(lost.heroes.marines.woundedUntil).toBe(4);
 });
 
@@ -512,7 +512,7 @@ test("taking places opens the deploy phase, and three or more earn a card", () =
   c.hands = { marines: [], wooka: [] };
   const k = kessa(c);
   k.orbit = "marines";
-  k.fleets = { marines: 1, wooka: 0 };
+  k.fleets = { marines: 3, wooka: 0 }; // a big fleet above: the front can be wide
   for (const x of k.sectors) x.armies.wooka = 0;
   c.systems.corva!.sectors[1]!.armies.marines = 6;
   const orders: Order[] = [0, 1, 2].map((sector) => ({ kind: "army", from: { system: "corva", sector: 1 }, to: { system: "kessa", sector }, count: 2 }));
@@ -532,4 +532,54 @@ test("taking places opens the deploy phase, and three or more earn a card", () =
   expect(done.log).toContain("Thunder Marines took 3 places and earns a card.");
   expect(done.hands!.marines).toHaveLength(2); // the bonus, and turn 2's draw
   expect(done.hands!.wooka).toHaveLength(1);
+});
+
+test("holding most of a region gives your troops cover across it, and it tells over a war", () => {
+  const edges = (setup: (c: Campaign) => void, at: Where) => {
+    const c = newCampaign();
+    setup(c);
+    return groundEdges(c, at);
+  };
+  const brill = { system: "brill", sector: 0 }, corva = { system: "corva", sector: 1 };
+  const takeWest = (c: Campaign) => { for (const id of ["aster", "brill"]) c.systems[id]!.sectors[0]!.owner = "wooka"; };
+  // [setup, where the fight is, cover for [attacker, holder], guns for [holder]]
+  const table: [string, (c: Campaign) => void, Where, [boolean, boolean], boolean][] = [
+    ["home region, no orbit: the holder has cover", () => {}, brill, [false, true], false],
+    ["an enemy with most of the region has cover; the holder keeps its orbit", takeWest, corva, [true, true], false],
+    ["orbit gives the attacker cover as well", (c) => { c.systems.brill!.orbit = "wooka"; }, brill, [true, true], false],
+    ["a split region gives neither side the area", (c) => { c.systems.kessa!.orbit = null; }, { system: "kessa", sector: 0 }, [false, false], false],
+    ["upgraded guns fire for the holder", (c) => { c.systems.kessa!.orbit = null; c.systems.kessa!.sectors[0]!.guns = true; }, { system: "kessa", sector: 0 }, [false, false], true],
+  ];
+  for (const [label, setup, at, [att, def], guns] of table) {
+    const e = edges(setup, at);
+    expect([label, !!e.cover.att, !!e.cover.def, !!e.guns.def]).toEqual([label, att, def, guns]);
+  }
+  // The same landing across many wars: a fight inside a region the holder has most of is lost more often.
+  let held = 0, open = 0;
+  for (let seed = 1; seed <= 400; seed++) {
+    for (const region of [true, false]) {
+      const c = newCampaign(seed);
+      if (!region) for (const [id, i] of [["aster", 0], ["corva", 1]] as const) Object.assign(c.systems[id]!.sectors[i]!, { owner: "wooka", armies: { marines: 0, wooka: 0 } });
+      c.systems.brill!.sectors[0]!.armies = { marines: 3, wooka: 3 };
+      c.systems.brill!.fleets.marines = 0; // no orbit: the region is the only edge
+      c.systems.brill!.orbit = null;
+      const x = resolveTurn(c, none(c)).systems.brill!.sectors[0]!;
+      if (x.owner === "marines") region ? held++ : open++;
+    }
+  }
+  expect(held).toBeGreaterThan(open);
+});
+
+test("Dig in gives the side that played it cover across the whole region for the turn, and then it's gone", () => {
+  const c = newCampaign();
+  const kessa = { system: "kessa", sector: 0 };
+  c.systems.kessa!.orbit = null;
+  const owner = c.systems.kessa!.sectors[0]!.owner, foe = enemy(owner);
+  expect(groundEdges(c, kessa).cover).toEqual({ att: false, def: false });
+  c.hands = { marines: [], wooka: [], [owner]: ["dugin"] } as Campaign["hands"];
+  const d = planOrders(c, [{ faction: owner, orders: [{ kind: "card", card: "dugin", at: kessa }, { kind: "card", card: "dugin", at: kessa }] }]);
+  expect(d.errors[0]).toBeNull();
+  expect(d.errors[1]).toBe("That card isn't in your hand");
+  expect(groundEdges(d.c, kessa).cover).toEqual({ att: false, def: true });
+  expect(resolveTurn(c, [{ faction: owner, orders: [{ kind: "card", card: "dugin", at: kessa }] }, { faction: foe, orders: [] }]).dugIn ?? null).toBeNull();
 });

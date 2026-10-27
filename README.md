@@ -295,6 +295,16 @@ A desktop build takes about a second, and every build and deploy prints how long
 
 </details>
 
+### Thousands of battles on a fifth of your machine
+
+Two Fronts plays thousands of headless battles to balance itself, on at most 20% of your cores at the lowest priority, and hands back a report you can scrub.
+
+<details><summary>More</summary>
+
+`bun apps/two-fronts/scripts/sim.ts --n 1000 --hero both --handicap 0,0.3,0.6` plays the battles on worker threads, with a scripted player in the hero's seat if you ask for one. It never uses more than a fifth of the machine's cores (`--jobs` can only go lower, and one core is the floor) and runs at nice 19, so the desk stays usable while it works. Nothing leaves your machine and nothing is billed. It writes `dist/balance/report.json` and a self-contained `report.html`: win rates by sector, how often the hero beats a foe with 30% or 60% more, a heatmap of where each side stood with a time slider, and a replay of sampled battles to scrub. The cap is in the script itself; the scheduler above is the general version for other tools.
+
+</details>
+
 ### Background work that steps aside (experimental)
 
 Work on a host can be realtime, high, normal or low priority, and low work backs off while your machine is busy.
@@ -349,6 +359,14 @@ The docs site works with a screen reader and a keyboard alone, and has reading s
 We aim for WCAG 2.2 AA. The reading settings and theme are also WebMCP tools, so an agent can change them for you. See [ACCESSIBILITY.md](ACCESSIBILITY.md) for what's covered and how to report a barrier.
 
 </details>
+
+## Nerdy things RustyBuns gets you
+
+The parts a team would be glad to find in the stack, each in its own entry above:
+
+- **A machine that stays yours.** [Background work that steps aside](#background-work-that-steps-aside-experimental) runs low work under a CPU and memory budget and backs off when the machine is busy. [Two Fronts' balance sim](#thousands-of-battles-on-a-fifth-of-your-machine) plays thousands of headless battles on a fifth of your cores at the lowest priority, then hands back a heatmap and a replay with a time slider. Today that cap lives in the app's own script, with a move onto the scheduler tracked in #2408.
+- **A fast loop with receipts.** [Build timings](#a-fast-loop-and-it-tells-you-how-fast) saved per step, so a checker or Bun upgrade shows what it really saved.
+- **Free local twins.** [Every Cloudflare binding has a local twin](#every-cloudflare-binding-has-a-local-twin), and [plans come before anything costs money](#plan-before-anything-costs-money).
 
 ## What's the catch?
 

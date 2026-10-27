@@ -16,6 +16,7 @@
 import type { BattleResult, BattleSpec, Faction, MatchMode, SectorKind, SpaceBattleResult, SpaceBattleSpec, VehicleKind, VehiclePool } from "../battle/contract.ts";
 import { BIG_BATTLE, BIG_MAP_FOR, other as otherSide } from "../battle/contract.ts";
 import { mulberry32 } from "@rustybuns/util";
+import { admitLandings } from "./landing.ts";
 import { FACTION_NAMES, GALAXIES, SECTOR_INCOME, SECTOR_NAMES, galaxyOf, type GalaxyId } from "./galaxy.ts";
 
 export type Count = Record<Faction, number>;
@@ -27,6 +28,7 @@ const zero = (): Count => ({ marines: 0, wooka: 0 });
 export interface Sector { kind: SectorKind; owner: Faction; armies: Count; guns?: true }
 export interface SystemState {
   id: string; orbit: Faction | null; fleets: Count; sectors: Sector[];
+  held?: number; // turns in a row the orbit's holder has held it: a long blockade squeezes the other side's landings
   fog?: true; // in a seat's view: the enemy's numbers here are hidden (and zeroed), as nobody of theirs is here to see
 }
 export interface Hero { level: number; xp: number; woundedUntil: number }
@@ -39,16 +41,18 @@ interface Transit { faction: Faction; from: Where; to: Where; count: number }
 // more where your muster force on the world is bigger (between MUSTER_MIN and MUSTER_MAX, so it
 // can't snowball), and a trap, set on a sector or orbit you hold for the turn, blows up half of whatever
 // attacks it, and everyone of yours there with it. It's for a place you hold with one army or ship.
-export type Card = "guns" | "troops" | "trap";
-export const CARDS: Card[] = ["guns", "troops", "trap"];
+// Dig in, played on a sector you hold, gives your side cover in every ground fight across that sector's region for the turn.
+export type Card = "guns" | "troops" | "trap" | "dugin";
+export const CARDS: Card[] = ["guns", "troops", "trap", "dugin"];
 // "troops" is the muster card: the id stays as old saves have it.
-export const CARD_NAMES: Record<Card, string> = { guns: "Weapon upgrade", troops: "Muster", trap: "Trap" };
+export const CARD_NAMES: Record<Card, string> = { guns: "Weapon upgrade", troops: "Muster", trap: "Trap", dugin: "Dig in" };
 export const HAND_MAX = 5;
 export const MUSTER_MIN = 2, MUSTER_MAX = 4;
 // The armies a muster raises on a world where the side has `force` armies already: one for every
 // two there, from MUSTER_MIN up to MUSTER_MAX.
 export const musterRaise = (force: number) => Math.max(MUSTER_MIN, Math.min(MUSTER_MAX, Math.floor(force / 2)));
 export const BONUS_PLACES = 3; // take this many places in a turn and earn a card
+export interface DugIn { faction: Faction; region: string }
 export interface Trap { faction: Faction; at: Where }
 // Ships trained on a sector from an orbit their side holds alone, once the enemy's last ship there
 // is gone: each kills an army below at the turn's landings, half as many through a shield.
@@ -73,6 +77,7 @@ export interface Campaign {
   attacks?: Attack[] | null;
   hands?: Record<Faction, Card[]>; // each side's cards, unplayed
   traps?: Trap[] | null;           // set this turn, sprung or cleared by its end
+  dugIn?: DugIn[] | null;          // regions a side has dug in across this turn
   taken?: Count | null;            // places each side has taken this turn
   // Set while the turn waits on the deploy phase: the sides that took somewhere and get to move.
   deploying?: Faction[] | null;
@@ -256,6 +261,7 @@ function check(d: Draft, f: Faction, o: Order): string | null {
     if (!x) return "No such sector";
     if (x.owner !== f) return "You don't hold that sector";
     if (o.card === "guns") return x.guns ? "The guns there are upgraded already" : null;
+    if (o.card === "dugin") return (c.dugIn ?? []).some((d) => d.faction === f && d.region === galaxyOf(c).system(o.at.system).region) ? "You've dug in across that region already" : null;
     if (o.card === "troops") return s.orbit === enemy(f) ? "Blockaded: the enemy holds the orbit" : null;
     return (c.traps ?? []).some((t) => same(t.at, o.at)) ? "There's a trap there already" : null;
   }
@@ -300,6 +306,7 @@ function apply(d: Draft, f: Faction, o: Order) {
     hand.splice(hand.indexOf(o.card), 1);
     if (o.card === "guns") sectorAt(c, o.at)!.guns = true;
     else if (o.card === "troops") sectorAt(c, o.at)!.armies[f] += musterRaise(musterOf(c.systems[o.at.system]!, f).troops);
+    else if (o.card === "dugin") (c.dugIn ??= []).push({ faction: f, region: galaxyOf(c).system(o.at.system).region });
     else (c.traps ??= []).push({ faction: f, at: { system: o.at.system, sector: o.at.sector } });
   } else if (o.kind === "bombard") {
     (c.bombards ??= []).push({ faction: f, at: { system: o.at.system, sector: o.at.sector }, count: o.count });
@@ -335,6 +342,27 @@ export function diceBattle(att: number, def: number, r: () => number, cover: Sid
     for (let i = 0; i < Math.min(a.length, b.length); i++) a[i]! >= b[i]! ? def-- : att--;
   }
   return [att, def] as const;
+}
+
+// What tips a ground fight's dice, for the side that attacks and the side that holds the sector.
+// Cover (+1 on its best die): orbit gives either side cover from above, a jungle gives the holder
+// cover in the trees, and a side with most of a region's worlds has it over the whole region (area-wide).
+// Guns (every die a d8): upgraded guns, a card played on that one sector, fire for its holder.
+export function regionControl(c: Campaign, system: string): Faction | null {
+  const region = galaxyOf(c).system(system).region, ids = galaxyOf(c).systems.filter((d) => d.region === region).map((d) => d.id);
+  return FACTIONS.find((f) => ids.filter((id) => holds(c.systems[id]!, f)).length * 2 > ids.length) ?? null;
+}
+// Who has cover across a region: the side that played Dig in there this turn, else the side holding most of it.
+export function regionCover(c: Campaign, region: string): Faction | null {
+  const dug = FACTIONS.filter((f) => (c.dugIn ?? []).some((d) => d.faction === f && d.region === region));
+  return dug.length === 1 ? dug[0]! : regionControl(c, galaxyOf(c).systems.find((d) => d.region === region)!.id);
+}
+export function groundEdges(c: Campaign, at: Where): { cover: Sides; guns: Sides } {
+  const s = c.systems[at.system]!, x = s.sectors[at.sector]!, att = enemy(x.owner), area = regionCover(c, galaxyOf(c).system(at.system).region);
+  return {
+    cover: { att: s.orbit === att || area === att, def: s.orbit === x.owner || x.kind === "jungle" || area === x.owner },
+    guns: { def: !!x.guns },
+  };
 }
 
 const name = (c: Campaign, id: string) => galaxyOf(c).system(id).name;
@@ -378,6 +406,7 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
       s.fleets[att] = a; s.fleets[def] = b;
     }
     s.orbit = s.fleets.marines ? "marines" : s.fleets.wooka ? "wooka" : null;
+    s.held = s.orbit && s.orbit === startOrbit[s.id] ? (s.held ?? 0) + 1 : 0;
     if (s.orbit && startOrbit[s.id] === enemy(s.orbit)) took(c, s.orbit);
   }
 
@@ -403,13 +432,15 @@ function landAndFight(c: Campaign, landings: Transit[], picks: Orders[], r: () =
     x.armies[foe] -= kills;
     c.log.push(`${FACTION_NAMES[f]} bombards ${where(c, b.at)} from orbit${holdsShield(s, foe) ? ", through the shield" : ""}: ${kills} ${kills === 1 ? "army" : "armies"} killed.`);
   }
-  // Troops land only under their own orbit; the rest turn back.
+  // Troops land through the sky: the orbit's holder lands freely, a rush through a fleet gets a
+  // trickle into one place (see landing.ts). The rest turn back.
+  const across = landings.filter((t) => t.from.system !== t.to.system), admitted = admitLandings(c.systems, across);
   for (const t of landings) {
-    const same = t.from.system === t.to.system;
-    if (same || c.systems[t.to.system]!.orbit === t.faction) sectorAt(c, t.to)!.armies[t.faction] += t.count;
-    else {
-      sectorAt(c, t.from)!.armies[t.faction] += t.count;
-      c.log.push(`${FACTION_NAMES[t.faction]} troops for ${where(c, t.to)} turned back: no orbit there.`);
+    const land = t.from.system === t.to.system ? t.count : admitted[across.indexOf(t)]!;
+    sectorAt(c, t.to)!.armies[t.faction] += land;
+    if (land < t.count) {
+      sectorAt(c, t.from)!.armies[t.faction] += t.count - land;
+      c.log.push(`${FACTION_NAMES[t.faction]} troops for ${where(c, t.to)} turned back: ${land ? `only ${land} could land` : "no way through the sky"}.`);
     }
   }
 
@@ -435,9 +466,8 @@ function landAndFight(c: Campaign, landings: Transit[], picks: Orders[], r: () =
       c.pending = { kind: "ground", spec: buildSpec(c, at, Math.floor(r() * 2 ** 31), pick.faction), at };
       return;
     }
-    // Orbit gives either side cover from above; a jungle gives the side that holds it cover in the trees.
-    // Upgraded guns fire for the side holding the sector.
-    const [a, b] = diceBattle(x.armies[att], x.armies[x.owner], r, { att: s.orbit === att, def: s.orbit === x.owner || x.kind === "jungle" }, { def: x.guns });
+    const { cover, guns } = groundEdges(c, at);
+    const [a, b] = diceBattle(x.armies[att], x.armies[x.owner], r, cover, guns);
     c.log.push(`Ground battle at ${where(c, at)}: ${FACTION_NAMES[a ? att : x.owner]} wins.`);
     x.armies[att] = a; x.armies[x.owner] = b;
     if (a) capture(c, x, att);
@@ -618,6 +648,7 @@ export function fogged(c: Campaign, f: Faction): Campaign {
   // Their cards and traps are their own.
   if (v.hands) v.hands = { ...v.hands, [foe]: [] };
   if (v.traps) v.traps = v.traps.filter((t) => t.faction === f);
+  if (v.dugIn) v.dugIn = v.dugIn.filter((d) => d.faction === f);
   if (v.bombards) v.bombards = v.bombards.filter((b) => b.faction === f);
   return v;
 }
@@ -805,6 +836,7 @@ function upkeep(c: Campaign): Campaign {
     c.log.push(`${FACTION_NAMES[f]} took ${n} places and earns a card.`);
   }
   c.traps = null;
+  c.dugIn = null;
   c.bombards = null;
   c.taken = null;
   for (const f of FACTIONS) {

@@ -93,6 +93,8 @@ button.next:disabled { background: #2a3350; color: #9aa3b2; opacity: 1; }
 .badge text { fill: #9aa3b2; font-size: 2.2px; font-weight: 700; text-anchor: middle; }
 .badge.held.marines path { fill: var(--marines); stroke: #fff; } .badge.held.marines text { fill: #111; }
 .badge.held.wooka path { fill: var(--wooka); stroke: #ffd29a; } .badge.held.wooka text { fill: #111; }
+.cover circle { stroke-width: 0.3; fill: #141b30; } .cover text { font-size: 1.7px; font-weight: 700; text-anchor: middle; fill: #111; }
+.cover.marines circle { fill: var(--marines); stroke: #fff; } .cover.wooka circle { fill: var(--wooka); stroke: #ffd29a; }
 .system { cursor: pointer; outline: none; }
 .system .orbit { fill: none; stroke-width: 0.3; opacity: 0.8; }
 .system.selected .orbit, .system:focus-visible .orbit { stroke: var(--accent); stroke-width: 0.6; opacity: 1; }
@@ -141,6 +143,7 @@ button.next:disabled { background: #2a3350; color: #9aa3b2; opacity: 1; }
 .war { display: flex; justify-content: space-between; height: 8px; background: #2a3140; border-radius: 4px; overflow: hidden; margin: 6px 0 2px; }
 .war i { display: block; height: 100%; }
 .war .marines { background: var(--marines); } .war .wooka { background: var(--wooka); }
+.credit { margin: 14px 0 0; color: var(--dim); font-size: 12px; text-align: center; }
 .detail { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
 .orbit { margin: 0 0 6px; color: var(--dim); }
 .warn { margin: 0 0 6px; color: #f5b14c; font-size: 13px; }

@@ -394,7 +394,7 @@ test("three Wooka on a Marine tear them apart, and cover is no help up close", (
   const mob = [[1.5, 0], [-1.5, 0], [0, 1.5]].map(([x, z]) => Object.assign(wookaOf(b, "defender", "fodder", x!, z!), { cool: 0 }));
   b.blocks.push({ x: 0, z: -1, w: 4, d: 0.5, h: 1.2 });
   expect(hitChance(b, mob[0]!, m)).toBeCloseTo(statsOf(mob[0]!).aim - (1.5 / statsOf(mob[0]!).range) * 0.35);
-  for (let i = 0; i < 120 && b.units.includes(m); i++) step(b, null);
+  for (let i = 0; i < 600 && b.units.includes(m); i++) step(b, null); // armour buys a Marine seconds, not the fight
   expect(b.units.includes(m)).toBe(false);
   expect(b.fx.some((f) => f.kind === "gore" && f.big)).toBe(true);
 });

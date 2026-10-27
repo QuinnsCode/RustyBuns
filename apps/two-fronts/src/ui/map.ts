@@ -7,7 +7,7 @@
 // pieces, front-line lanes run hot, and this turn's orders are arrows.
 import { FACTION_COLORS as COLORS, type Faction } from "../battle/contract.ts";
 import { galaxyOf } from "../war/galaxy.ts";
-import { ORBIT, enemy, holds, regionHolder, type Attack, type Campaign, type Order, type Retreat } from "../war/rules.ts";
+import { ORBIT, enemy, holds, regionCover, regionHolder, type Attack, type Campaign, type Order, type Retreat } from "../war/rules.ts";
 
 const hex = (f: Faction | null) => (f ? `#${COLORS[f].toString(16).padStart(6, "0")}` : "none");
 // The empire colours on the star map: a side's sweep of territory and its border.
@@ -124,7 +124,9 @@ export function drawMap(c: Campaign, orders: Order[], selected: string | null, h
   }).join("");
   const regions = g.regions.map((r) => {
     const [x, y] = r.label, holder = regionHolder(c, r.id), up = y < 50 ? 1 : -1;
-    return `<g class="region-tag"><text x="${x}" y="${y + up * 0.6}" class="region">${r.name}</text>${badge(x + r.name.length * 0.95 + 4, y - 0.4 + up * 0.6, r.bonus, holder, r.name)}</g>`;
+    const cover = regionCover(c, r.id), dug = (c.dugIn ?? []).some((d) => d.faction === cover && d.region === r.id);
+    const shield = cover ? `<g class="cover ${cover}"><title>${r.name}: ${cover === "marines" ? "Thunder Marines" : "Wooka"} fight with cover here${dug ? " (dug in this turn)" : ", holding most of it"}</title><circle cx="${x - r.name.length * 0.95 - 3}" cy="${y - 0.4 + up * 0.6}" r="1.7"/><text x="${x - r.name.length * 0.95 - 3}" y="${y + 0.5 + up * 0.6}">+1</text></g>` : "";
+    return `<g class="region-tag"><text x="${x}" y="${y + up * 0.6}" class="region">${r.name}</text>${shield}${badge(x + r.name.length * 0.95 + 4, y - 0.4 + up * 0.6, r.bonus, holder, r.name)}</g>`;
   }).join("");
 
   const lanes = g.lanes.map(([a, b]) => {
