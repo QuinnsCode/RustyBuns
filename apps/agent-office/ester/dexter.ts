@@ -7,12 +7,15 @@
 // DEXTER_HOURS=168 adds the week: spend per day, what each helper's job costs, and what it saves at growing PR counts.
 // He also watches how big each live session's context has grown (what its next turn carries), and says when one should
 // write a handoff and start fresh: warn at CONTEXT.warn, and again at CONTEXT.handoff, once each per session.
+// And how each session reaches tools (`modeOf`): code mode (one program through an MCP server's execute, only its answer comes
+// back), loading tool schemas into the context (ToolSearch), or calling MCP tools one by one. The CLI and the card count each,
+// and a session's first code-mode program in a while is an event (`ModeWatch`) the page shows on his card.
 // Run: bun apps/agent-office/ester/dexter.ts
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
-type Block = { type?: string; id?: string; name?: string; tool_use_id?: string; input?: { command?: string }; content?: unknown; text?: string };
+type Block = { type?: string; id?: string; name?: string; tool_name?: string; tool_use_id?: string; input?: { command?: string }; content?: unknown; text?: string };
 type Line = { type?: string; timestamp?: string; sessionId?: string; cwd?: string; message?: { id?: string; usage?: Record<string, number>; content?: unknown } };
 
 export interface Report {
@@ -27,6 +30,22 @@ export interface Report {
   helpers: { mervin: number; ester: number; dexter: number };
   /** Units spent on turns between a merge conflict showing up in a result and the commit that settled it. */
   fights: number;
+  /** Calls and result tokens by how the tool was reached (`modeOf`). */
+  modes: Modes;
+}
+
+export type Mode = "code" | "load" | "direct";
+type Use = { calls: number; tokens: number };
+/** A load's result names the tools it loaded (`tool_reference`); their schemas' size isn't in the transcript, so loads count tools, not tokens. */
+export type Modes = { code: Use; load: { calls: number; tools: number }; direct: Use };
+export const noModes = (): Modes => ({ code: { calls: 0, tokens: 0 }, load: { calls: 0, tools: 0 }, direct: { calls: 0, tokens: 0 } });
+/** Code mode's four tools (apps/codesplitter/src/codemode.ts), on any MCP server that has them. */
+const CODE_TOOLS = /^(execute|search_tools|describe_tools|call_tool)$/;
+/** How a tool call reached its tool: `code` through a code-mode server, `load` putting tool schemas in the context, `direct` an MCP tool called by name. Built-in tools (Read, Bash) are none. */
+export function modeOf(name: string): Mode | null {
+  if (name === "ToolSearch") return "load";
+  if (!name.startsWith("mcp__")) return null;
+  return CODE_TOOLS.test(name.split("__")[2] ?? "") ? "code" : "direct";
 }
 
 /** Spend in input-token equivalents, at the API price ratios: output 5x, cache write 1.25x, cache read 0.1x. Model-independent. */
@@ -51,7 +70,7 @@ const kind = (name: string) => (name.startsWith("mcp__") ? `mcp:${name.split("__
 
 /** Adds one transcript's lines to the report. A reply is logged once per message id; a result is counted by the call it answers. */
 export function tally(lines: Iterable<string>, r: Report) {
-  const names = new Map<string, string>(), seen = new Set<string>(), cats = new Map<string, "mervin" | "ester">();
+  const names = new Map<string, string>(), modes = new Map<string, Mode>(), seen = new Set<string>(), cats = new Map<string, "mervin" | "ester">();
   const results: { tokens: number; at: number; cat?: "mervin" | "ester" }[] = [];
   let turn = 0, fighting = false, settled = false;
   for (const raw of lines) {
@@ -62,6 +81,8 @@ export function tally(lines: Iterable<string>, r: Report) {
       for (const b of blocks)
         if (b.type === "tool_use" && b.id && b.name) {
           names.set(b.id, kind(b.name));
+          const m = modeOf(b.name);
+          if (m) { modes.set(b.id, m); r.modes[m].calls++; }
           const cmd = b.input?.command ?? b.name;
           if (SETTLED.test(cmd)) settled = true;
           const cat0 = cmd, cat = MERVIN.test(cat0) ? "mervin" : ESTER.test(cat0) ? "ester" : undefined;
@@ -88,6 +109,9 @@ export function tally(lines: Iterable<string>, r: Report) {
         const t = r.tools.get(tool) ?? { calls: 0, tokens: 0, worst: 0 };
         t.calls++; t.tokens += tokens; t.worst = Math.max(t.worst, tokens);
         r.tools.set(tool, t);
+        const m = modes.get(b.tool_use_id);
+        if (m === "load") r.modes.load.tools += Array.isArray(b.content) ? (b.content as Block[]).filter((x) => x.type === "tool_reference").length : 0;
+        else if (m) r.modes[m].tokens += tokens;
         results.push({ tokens, at: turn, cat: cats.get(b.tool_use_id) });
       }
     }
@@ -139,7 +163,17 @@ export function render(r: Report): string[] {
   if (!top.length) return [...out, "No tool results. Nothing to trim."];
   out.push("Biggest results kept in context:");
   for (const [tool, t] of top) out.push(`  ${tool}: ${k(t.tokens)} over ${t.calls} calls, worst ${k(t.worst)}. ${tip(tool)}`);
+  out.push(...modeLines(r.modes));
   out.push("Say less: short words, no preamble, no recap. Keep jargon that steers.");
+  return out;
+}
+
+/** How tools were reached: code-mode programs against tool schemas loaded and MCP tools called one by one, with what their results added. */
+export function modeLines(m: Modes): string[] {
+  if (!(m.code.calls + m.load.calls + m.direct.calls)) return [];
+  const one = (x: Use) => `${x.calls} (${k(x.tokens)} tokens)`;
+  const out = [`Code mode ${one(m.code)}, tool loads ${m.load.calls} (${m.load.tools} schemas into the context), direct MCP calls ${one(m.direct)}.`];
+  if (m.direct.calls > m.code.calls) out.push("  More MCP calls go one by one than through code mode: where a server has execute, one program that returns only the answer is cheaper.");
   return out;
 }
 
@@ -149,18 +183,18 @@ export const CONTEXT = { warn: 150_000, handoff: 250_000, total: { warn: 10_000_
 const ACTIVE_HOURS = 1;
 
 /** One live session: the context it carries now, what it has used in all, and what its latest turn took (tokens). */
-export interface Context { session: string; cwd: string; tokens: number; total: number; turn: number }
+export interface Context { session: string; cwd: string; tokens: number; total: number; turn: number; modes: Record<Mode, number> }
 
 /** Reads sessions' transcripts without re-reading them: each scan takes only the lines added since the last one. */
 export class Meter {
-  private files = new Map<string, { pos: number; seen: Set<string>; total: number; now: Omit<Context, "total"> | null }>();
+  private files = new Map<string, { pos: number; seen: Set<string>; total: number; modes: Record<Mode, number>; now: Omit<Context, "total" | "modes"> | null }>();
 
   /** Every session touched in the last hour. A reply counts once by message id, in the total and as the latest turn. */
   scan(root: string, now = Date.now()): Context[] {
     return recent(root, ACTIVE_HOURS, now).flatMap((f) => {
       let st = this.files.get(f);
       const size = statSync(f).size;
-      if (!st || size < st.pos) this.files.set(f, (st = { pos: 0, seen: new Set(), total: 0, now: null })); // a new file, or one that was rewritten
+      if (!st || size < st.pos) this.files.set(f, (st = { pos: 0, seen: new Set(), total: 0, modes: { code: 0, load: 0, direct: 0 }, now: null })); // a new file, or one that was rewritten
       if (size > st.pos) {
         const buf = Buffer.alloc(size - st.pos), fd = openSync(f, "r");
         try { readSync(fd, buf, 0, buf.length, st.pos); } finally { closeSync(fd); }
@@ -170,6 +204,8 @@ export class Meter {
           let l: Line;
           try { l = JSON.parse(raw); } catch { continue; }
           const u = l.type === "assistant" ? l.message?.usage : undefined, id = l.message?.id;
+          if (l.type === "assistant" && Array.isArray(l.message?.content))
+            for (const b of l.message.content as Block[]) { const m = b.type === "tool_use" && b.name ? modeOf(b.name) : null; if (m) st.modes[m]++; }
           if (!u || (id && st.seen.has(id))) continue;
           if (id) st.seen.add(id);
           const turn = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.output_tokens ?? 0);
@@ -177,7 +213,7 @@ export class Meter {
           st.now = { session: l.sessionId ?? path.basename(f, ".jsonl"), cwd: l.cwd ?? "", turn, tokens: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) };
         }
       }
-      return st.now ? [{ ...st.now, total: st.total }] : [];
+      return st.now ? [{ ...st.now, total: st.total, modes: { ...st.modes } }] : [];
     });
   }
 }
@@ -217,9 +253,25 @@ export class ContextWatch {
   }
 }
 
+export interface ModeEvent { session: string; name: string; code: number; load: number; direct: number; message: string }
+
+/** Remembers each session's code-mode count, so a new program is an event once. A session seen for the first time with programs already run is one too. */
+export class ModeWatch {
+  private told = new Map<string, number>();
+  check(sessions: Context[], name: (c: Context) => string = nameOf): ModeEvent[] {
+    return sessions.flatMap((c) => {
+      const { code, load, direct } = c.modes, before = this.told.get(c.session) ?? 0;
+      this.told.set(c.session, code);
+      if (code <= before) return [];
+      const who = name(c);
+      return [{ session: c.session, name: who, code, load, direct, message: `${who} used code mode: ${code} program${code === 1 ? "" : "s"} in this session, against ${load} tool load${load === 1 ? "" : "s"} and ${direct} direct MCP call${direct === 1 ? "" : "s"}.` }];
+    });
+  }
+}
+
 /** What each live session is carrying and has used (biggest total first), for the card and the CLI. */
 export const sessionLines = (sessions: Context[], name: (c: Context) => string = nameOf): string[] =>
-  [...sessions].sort((a, b) => b.total - a.total).map((c) => `${name(c)}: context ${k(c.tokens)}, ${k(c.total)} used in all, latest turn ${k(c.turn)}`);
+  [...sessions].sort((a, b) => b.total - a.total).map((c) => `${name(c)}: context ${k(c.tokens)}, ${k(c.total)} used in all, latest turn ${k(c.turn)}${c.modes.code + c.modes.load + c.modes.direct ? `; code mode ${c.modes.code}, tool loads ${c.modes.load}, direct MCP ${c.modes.direct}` : ""}`);
 
 /** The CLI's lines: every session active in the last hour with its numbers, then the ones to hand off. */
 export function contextLines(sessions: Context[], name: (c: Context) => string = nameOf): string[] {
@@ -297,7 +349,7 @@ export function recent(root: string, hours: number, now = Date.now()): string[] 
 
 if (import.meta.main) {
   const files = recent(path.join(homedir(), ".claude/projects"), Number(process.env.DEXTER_HOURS) || 24);
-  const r: Report = { sessions: files.length, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0 };
+  const r: Report = { sessions: files.length, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0, modes: noModes() };
   for (const f of files) tally(readFileSync(f, "utf8").split("\n"), r);
   console.log([...render(r), ...contextLines(new Meter().scan(path.join(homedir(), ".claude/projects"))), ...(Number(process.env.DEXTER_HOURS) >= 168 ? week(r, Number(process.env.DEXTER_GROWTH) || 1.5) : []), "", ...propose(standing(process.cwd(), path.join(homedir(), ".claude/projects")))].join("\n"));
 }
