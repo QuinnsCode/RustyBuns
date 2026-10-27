@@ -191,7 +191,7 @@ export function rideDown(story: Story, n: number): Cutscene {
     { at: 0, do: "actor", id: "acrossA", as: { marine: "engineer" }, x: 1.4, z: -1.3, face: R },
     { at: 0, do: "actor", id: "acrossB", as: { marine: "assault" }, x: 1.4, z: 1.3, face: R },
     { at: 0, do: "sound", noise: "rotor" },
-    { at: 0, do: "camera", from: [-7, 1.4, 7], to: [-5.5, 1.7, 5], look: [0, 2.4, 0], dur: 2 },
+    { at: 0, do: "camera", from: [-3.8, 1.3, 4.2], to: [-3.2, 1.6, 3.4], look: [0.4, 2.2, 0], dur: 2 },
     { at: 0.1, do: "title", text: RIDE.kinds[kind].toUpperCase(), sub: pick(RIDE.seat, n).replace("{who}", story.who), dur: 2 },
     { at: 0.4, do: "caption", who: RIDE.whoPilot, text: pick(RIDE.pilot, n), dur: 1.9 },
   ];
