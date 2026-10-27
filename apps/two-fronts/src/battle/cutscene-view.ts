@@ -29,6 +29,16 @@ export function shouldPlay(id: string) {
   return true;
 }
 
+// Which ride down this is, counted per browser, so each battle gets the next seat's story.
+export function nextRide() {
+  let n = 0;
+  try {
+    n = Number(localStorage.getItem("two-fronts:ride")) || 0;
+    localStorage.setItem("two-fronts:ride", String(n + 1));
+  } catch { n = Math.floor(Math.random() * 1000); }
+  return n;
+}
+
 export function playCutscene(cut: Cutscene, stage: Stage, origin: Origin): Promise<void> {
   const { scene, camera, render, ground, sfx, host } = stage;
   const len = lengthOf(cut);

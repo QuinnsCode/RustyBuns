@@ -4,8 +4,10 @@
 // sting when a Mossback walks out of the trees.
 import type { Faction, SectorKind } from "./contract.ts";
 import type { Cue, Cutscene } from "./cutscene.ts";
+import type { Trooper } from "./sim.ts";
 import SCRIPT from "../../content/cutscenes.json";
 import PLACES_SCRIPT from "../../content/places.json";
+import STORIES_SCRIPT from "../../content/stories.json";
 
 // The words live in content/ (bun run cms edits them); {detail}, {into} and {ours} take the place's.
 const fill = (line: string, p: Place) => line.replace(/\{(\w+)\}/g, (m, k: string) => (k === "detail" || k === "into" || k === "ours" ? p[k] : m));
@@ -164,6 +166,57 @@ export const mossbackSting = (f: Faction): Cutscene => ({
   ],
   end: 2.8,
 });
+
+// The ride down: the Thunder Marines on two benches under the dropship, and whoever is in the seat
+// across tells you a story. A bad one, a weird one, a scary one or a revenge one, and every one
+// of them is about the Wooka being awful, never about what the Thunder Marines did first. Each
+// battle it's the next seat and the next story: the one across walks off down the line at the
+// end, and the seat note says who sat there before. A clip runs about as long as its words.
+const TROOPERS: readonly Trooper[] = ["assault", "heavy", "sniper", "engineer"];
+const RIDE = STORIES_SCRIPT.ride;
+export const STORIES = Object.entries(STORIES_SCRIPT.stories).map(([id, s]) => ({ id, ...s, as: TROOPERS.find((t) => t === s.as) ?? "assault" }));
+export type Story = (typeof STORIES)[number];
+const KIND_NOISE = { bad: "thump", weird: "chime", scary: "howl", revenge: "warn" } as const;
+const kindOf = (k: string) => (k === "bad" || k === "weird" || k === "scary" || k === "revenge" ? k : "bad");
+const said = (text: string) => Math.min(3, Math.max(1.5, 0.7 + text.split(/\s+/).length * 0.24)); // seconds to read a bubble
+const pick = <T>(list: readonly T[], n: number) => list[((n % list.length) + list.length) % list.length]!;
+
+export function rideDown(story: Story, n: number): Cutscene {
+  const L = -Math.PI / 2, R = Math.PI / 2, kind = kindOf(story.kind); // facing +x (our bench) and -x (theirs)
+  const cues: Cue[] = [
+    { at: 0, do: "actor", id: "ship", as: { prop: "dropship" }, x: 0, y: 4.6, z: 0 },
+    { at: 0, do: "actor", id: "left", as: { marine: "heavy" }, x: -1.4, z: -1.3, face: L },
+    { at: 0, do: "actor", id: "right", as: { marine: "sniper" }, x: -1.4, z: 1.3, face: L },
+    { at: 0, do: "actor", id: "teller", as: { marine: story.as }, x: 1.4, z: 0, face: R },
+    { at: 0, do: "actor", id: "acrossA", as: { marine: "engineer" }, x: 1.4, z: -1.3, face: R },
+    { at: 0, do: "actor", id: "acrossB", as: { marine: "assault" }, x: 1.4, z: 1.3, face: R },
+    { at: 0, do: "sound", noise: "rotor" },
+    { at: 0, do: "camera", from: [-7, 1.4, 7], to: [-5.5, 1.7, 5], look: [0, 2.4, 0], dur: 2 },
+    { at: 0.1, do: "title", text: RIDE.kinds[kind].toUpperCase(), sub: pick(RIDE.seat, n).replace("{who}", story.who), dur: 2 },
+    { at: 0.4, do: "caption", who: RIDE.whoPilot, text: pick(RIDE.pilot, n), dur: 1.9 },
+  ];
+  // The story, over your shoulder from your seat, the camera leaning in as it goes.
+  let t = 2.2;
+  const start = t;
+  story.lines.forEach((line, i) => {
+    if (i === story.lines.length - 1) cues.push({ at: t, do: "sound", noise: KIND_NOISE[kind] });
+    cues.push({ at: t, do: "say", id: "teller", text: line, dur: said(line) });
+    t += said(line) + 0.1;
+  });
+  cues.push({ at: start, do: "camera", from: [-1.8, 1.55, 0.4], to: [kind === "scary" ? -0.4 : -1, 1.5, 0.15], look: [1.4, 1.5, 0], dur: t - start });
+  // The bench answers, from the end of the line; then the last word, and the seat empties.
+  cues.push({ at: t, do: "camera", from: [0.4, 1.7, 6], to: [0.2, 1.9, 7.5], look: [0, 1.4, 0], dur: 3.4 });
+  cues.push({ at: t, do: "say", id: "right", text: story.back, dur: said(story.back) });
+  t += said(story.back) - 0.3;
+  cues.push({ at: t, do: "caption", who: "", text: story.tag, dur: 2.4 });
+  cues.push({ at: t + 0.3, do: "walk", id: "teller", x: 1.6, z: -10, dur: 2.2 });
+  for (let s = 1.2; s < t + 2.4; s += 2.4) cues.push({ at: s, do: "shake", amount: 0.12 });
+  cues.push({ at: t + 0.4, do: "sound", noise: "rotor" });
+  cues.push({ at: 0, do: "fly", id: "ship", x: 0, y: 4.8, z: 0, dur: t + 2.4, wobble: 0.3 });
+  return { id: `ride-${story.id}`, faction: "marines", cues, end: t + 2.4 };
+}
+// The next ride's story: each battle moves one seat along, so it goes round them all.
+export const rideOf = (n: number) => rideDown(pick(STORIES, n), n);
 
 export const introOf = (f: Faction, sector: SectorKind): Cutscene => (f === "marines" ? marinesIntro : wookaIntro)(PLACES[sector]);
 // What plays before the briefing: the Thunder Marines drop in; the Wooka are already home.
