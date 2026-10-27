@@ -14,6 +14,9 @@ function saved(feed: string): Place | null {
   } catch {}
   return null;
 }
+const EVERYWHERE = "rb-podcast-everywhere"; // per user: hear the podcast at full volume anywhere in the office
+export function everywhere(): boolean { try { return localStorage.getItem(EVERYWHERE) === "1"; } catch { return false; } }
+function setEverywhere(on: boolean) { try { localStorage.setItem(EVERYWHERE, on ? "1" : "0"); } catch {} }
 function save(feed: string, p: Place) { try { localStorage.setItem(key(feed), JSON.stringify(p)); } catch {} }
 
 export class Podcast {
@@ -25,12 +28,14 @@ export class Podcast {
   private episodes: Episode[] = [];
   private ep: Episode | null = null;
   private saveAt = 0;
+  private button: HTMLButtonElement | null = null;
 
-  constructor(private ctx: AudioContext, into: AudioNode) {
+  constructor(private ctx: AudioContext, private into: AudioNode) {
     this.out = ctx.createGain();
     this.out.gain.setValueAtTime(0, ctx.currentTime);
     this.out.gain.linearRampToValueAtTime(1, ctx.currentTime + 1.5);
-    this.out.connect(into);
+    this.route();
+    this.addButton();
     // with CORS the sound goes through the office's buses; a feed whose audio sends none still plays, unrouted
     this.audio.crossOrigin = "anonymous";
     this.audio.preload = "auto";
@@ -38,6 +43,29 @@ export class Podcast {
     this.audio.addEventListener("ended", () => this.advance());
     this.audio.addEventListener("error", () => this.advance());
     void this.open();
+  }
+
+  /** Through the jukebox's bus (fades with distance), or straight to the speakers when you chose full volume anywhere. */
+  private route() {
+    this.out.disconnect();
+    this.out.connect(everywhere() ? this.ctx.destination : this.into);
+  }
+
+  private addButton() {
+    if (typeof document === "undefined") return;
+    const b = document.createElement("button");
+    const paint = () => {
+      const on = everywhere();
+      b.title = on ? "Podcast: full volume everywhere (click for jukebox distance)" : "Podcast: fades with distance (click for full volume everywhere)";
+      b.setAttribute("aria-pressed", String(on));
+      b.style.opacity = on ? "1" : "0.6";
+    };
+    b.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>`;
+    b.style.cssText = "position:fixed;right:12px;bottom:12px;z-index:50;padding:6px;border-radius:6px;border:1px solid #888;background:#222;color:#fff;cursor:pointer";
+    b.onclick = () => { setEverywhere(!everywhere()); this.route(); paint(); };
+    paint();
+    document.body.append(b);
+    this.button = b;
   }
 
   private async open() {
@@ -90,6 +118,7 @@ export class Podcast {
   stop() {
     if (this.stopped) return;
     this.stopped = true;
+    this.button?.remove();
     this.remember();
     const now = this.ctx.currentTime;
     this.out.gain.cancelScheduledValues(now);
