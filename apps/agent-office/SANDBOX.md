@@ -45,7 +45,8 @@ not on your machine. A `GH_TOKEN` passed through `env` is the other way, and it 
 
 - **`open` means the whole internet.** Allowing only the model API, GitHub and your registry needs an egress
   proxy beside the box.
-- **No UI.** The permission set is a JSON file and `status` is a command. A page in the office for editing grants,
-  seeing port health and approving a new mount is the next step.
+- **Edits reach the box on its next start.** Settings › You has a Box section (run from the host, where `sandbox/` is):
+  approve or revoke a mount, set its access, switch the network, pass a variable, and see the container and port
+  health. It saves `sandbox/box.json`, and says when the running box differs; `bun run office:box up` applies it.
 - A mounted `rw` repo is writable by the agents, including its `.git` and any hooks in it. Mount what you'd let them edit.
 - Docker on a Mac runs in a VM, which is part of the isolation; Linux hosts share a kernel with the box.
