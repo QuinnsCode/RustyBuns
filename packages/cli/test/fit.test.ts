@@ -10,6 +10,7 @@ test("stackOf: specific frameworks win over the vite they pull in", () => {
   expect(stackOf({ vite: "6", react: "19", "@react-router/dev": "7" })).toBe("react-router");
   expect(stackOf({ "@remix-run/node": "2" })).toBe("react-router");
   expect(stackOf({ next: "15", react: "19" })).toBe("next");
+  expect(stackOf({ vite: "8", "solid-js": "1", "@solidjs/start": "2" })).toBe("solidstart");
   expect(stackOf({ vite: "6" }, ["rwsdk"])).toBe("rwsdk");
   expect(stackOf({ lodash: "4" })).toBe("unknown");
 });
@@ -103,6 +104,10 @@ test("Nuxt is ready: init reads what Nitro's cloudflare-module preset builds", (
   expect(f).toMatchObject({ verdict: "ready", stack: "nuxt", label: "Nuxt, TypeScript" });
   expect(f.reasons[0]).toContain("`rustybuns init` reads it as is");
   expect(f.issue).toBeUndefined();
+});
+
+test("SolidStart is ready: init reads its Nitro Cloudflare build", () => {
+  expect(fit({ pkg: pkg({ "@solidjs/start": "2", "solid-js": "1", vite: "8" }), files: ["wrangler.jsonc"] })).toMatchObject({ verdict: "ready", stack: "solidstart" });
 });
 
 test("SvelteKit is ready with adapter-cloudflare, needs work without it", () => {

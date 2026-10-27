@@ -222,9 +222,14 @@ async function init() {
   // TanStack Start off Cloudflare (Vercel, Netlify, Node) renders on its server and has no
   // index.html, so a SPA build serves nothing. The desktop runs its production server instead.
   if (inf.framework === "tanstack-start" && !src && !spa) { await initStart(inf); return; }
+  // SolidStart 2 builds through Nitro too: with no wrangler file its build is the same production server.
+  if (inf.framework === "solidstart" && !src && !spa) { await initStart(inf); return; }
   const svelteWorker = inf.framework === "sveltekit" && !spa;
   // Nuxt: Nitro's cloudflare-module preset builds the Worker; the desktop runs it.
   const nuxtWorker = inf.framework === "nuxt" && !spa;
+  // SolidStart on Nitro's cloudflare_module preset: wrangler's main is the built Worker (.output/server/index.mjs)
+  // and its assets the built static files (.output/public); the desktop runs that same build.
+  const solidWorker = inf.framework === "solidstart" && !spa;
   if ((!src && !astroWorker && !svelteWorker && !nuxtWorker) || spa) {
     if (src && spa) console.log(`ignoring ${src} (--spa): desktop-only config. Remove the flag to carry its bindings over.`);
     await initSpa(inf); return;
@@ -267,7 +272,7 @@ async function init() {
   if (nuxtWorker && !cfg.worker!.build) cfg.worker!.build = `${inf.execCmd("nuxt")} build`;
   // A package entry (@astrojs/cloudflare/entrypoints/server) resolves through node_modules, not a file here.
   const isFile = (m: string) => m.startsWith(".") || m.startsWith("/") || /\.[mc]?[jt]sx?$/.test(m);
-  if (!(astroWorker && !w.main) && isFile(cfg.worker!.main!) && !/^(\.\/)?dist\//.test(cfg.worker!.main!) && !(svelteWorker && cfg.worker!.main!.includes(".svelte-kit/")) && !(nuxtWorker && cfg.worker!.main!.startsWith(".output/")) && !existsSync(cfg.worker!.main!)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
+  if (!(astroWorker && !w.main) && isFile(cfg.worker!.main!) && !/^(\.\/)?dist\//.test(cfg.worker!.main!) && !(svelteWorker && cfg.worker!.main!.includes(".svelte-kit/")) && !((nuxtWorker || solidWorker) && cfg.worker!.main!.includes(".output/")) && !existsSync(cfg.worker!.main!)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
   { const { inferWorkerBuild } = await import("./glue/build-script.ts"); const b = inferWorkerBuild(inf.scripts, null);
     console.log(!cfg.worker!.build ? `build:    none (a plain Worker: Alchemy bundles ${cfg.worker!.main})`
       : `build:    ${cfg.worker!.build}  (${b.from === "default" || b.build !== cfg.worker!.build ? "no build script found; using the default" : `from "${b.from}" script`})`); }
@@ -300,7 +305,14 @@ async function init() {
   // A plain Worker with no client build (Hono, Elysia, itty-router, a hand-written fetch handler): the desktop
   // runs the Worker itself; a Vite SPA split would have nothing to serve.
   const plainWorker = !!w.main && inf.framework === "unknown" && !inf.vite.configPath && !pagesWorker;
-  const workerDesktop = astroWorker || rrWorker || svelteWorker || nuxtWorker || pagesWorker || startWorker || plainWorker;
+  const workerDesktop = astroWorker || rrWorker || svelteWorker || nuxtWorker || solidWorker || pagesWorker || startWorker || plainWorker;
+  if (solidWorker) {
+    const main = (w.main ?? ".output/server/index.mjs").replace(/^\.\//, "");
+    cfg.worker!.main = main;
+    cfg.worker!.builtMain = main;
+    cfg.worker!.assets = (w.assets?.directory ?? ".output/public").replace(/^\.\//, "");
+    if (!cfg.worker!.build) cfg.worker!.build = `${inf.execCmd("vite")} build`;
+  }
   if (svelteWorker) {
     cfg.worker!.builtMain = SVELTE_WORKER;
     cfg.worker!.assets = SVELTE_ASSETS;
@@ -436,7 +448,7 @@ async function initStart(inf: ReturnType<typeof infer>) {
     targets: { desktop: { mode: "worker", targets: [hostTag] } },
   };
   await Bun.write("rustybuns.config.ts", `import { defineConfig } from "@rustybuns/cli/config";\n\nexport default defineConfig(${JSON.stringify(cfg, null, 2)});\n`);
-  console.log(`wrote rustybuns.config.ts (TanStack Start: the desktop runs its production server, ${l.builtMain})`);
+  console.log(`wrote rustybuns.config.ts (${inf.framework === "solidstart" ? "SolidStart" : "TanStack Start"}: the desktop runs its production server, ${l.builtMain})`);
   console.log(`build:    ${build}`);
   if (l.warn) console.log(`warning:  ${l.warn}`);
   console.log(`\nnext: ${inf.execCmd("rustybuns build desktop --dev")} && ${inf.execCmd("rustybuns run desktop")}`);

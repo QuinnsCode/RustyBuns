@@ -36,7 +36,7 @@ Most frameworks already have a Cloudflare build that outputs a module exporting 
 | React Router v7 | `worker` | `@cloudflare/vite-plugin`: `build/server/index.js` + `build/client` | `Cloudflare.Worker` + assets | ✅ `init` and desktop (Cloudflare template, Oct 12); ✅ [`apps/react-router-example`](apps/react-router-example) on the sample app contract (Oct 27); 🔧 `cloudflareDevProxy` |
 | Nuxt | `worker` | Nitro `cloudflare-module` preset: `.output/server/index.mjs` + `.output/public` | `Cloudflare.Worker` + assets | ✅ `init` and desktop (`apps/nuxt-example`, Oct 27); 🧪 edge |
 | React Router v7 | `worker` | `@cloudflare/vite-plugin`: `build/server/index.js` + `build/client` | `Cloudflare.Worker` + assets | ✅ `init` and desktop (Cloudflare template, Oct 12); 🔧 `cloudflareDevProxy` |
-| SolidStart | `worker` | Nitro CF preset or Vite plugin output | `Cloudflare.Website.Vite` | 🔧 |
+| SolidStart | `worker` | SolidStart 2 (a Vite plugin) on Nitro 3's `cloudflare_module` preset: `.output/server/index.mjs` + `.output/public` | `Cloudflare.Worker` + assets | ✅ `init`, desktop, plan: `apps/solidstart-example` on the contract (Oct 27) |
 | Qwik City | `worker` | `cloudflare-pages` adapter (a Pages Functions shape) | `Cloudflare.Worker` + assets | 🔧 |
 | Angular | `worker` | `AngularAppEngine` fetch handler from `@angular/ssr` | `Cloudflare.Worker` + assets | 🔧 |
 | Next.js | `worker`, or sidecar | OpenNext `worker.js`; fallback: `standalone` server as a child process | `Cloudflare.Website.Nextjs` | ⏳ |
@@ -67,6 +67,7 @@ Support links to the row in the [matrix](#matrix), and to [FRAMEWORK_COVERAGE.md
 | SvelteKit | `+server.ts` endpoints, `load`, form actions | `platform.env` | a Durable Object exported beside the handler | ✅ `init`, 🧪 desktop run: [matrix](#matrix) | [#318](https://github.com/QuinnsCode/RustyBuns/issues/318), [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+sveltekit) |
 | Nuxt | Nitro `server/api` routes | `event.context.cloudflare.env`; Nitro's `useStorage()` on a KV binding | Nitro WebSocket handlers on a Durable Object | ✅ [matrix](#matrix) | [#318](https://github.com/QuinnsCode/RustyBuns/issues/318), [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+nuxt) |
 | SolidStart | API routes, `"use server"` functions | Nitro's `useStorage()`, or `env` from `cloudflare:workers` | Nitro WebSocket handlers | 🔧 [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+solidstart) |
+| SolidStart | API routes, `"use server"` functions | `env` from `cloudflare:workers` (Nitro's `useStorage()` untried) | Nitro WebSocket handlers | ✅ `init`, desktop: [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+solidstart) |
 | Qwik City | `routeLoader$`, `routeAction$`, `server$`, endpoints | `platform.env` | a Durable Object in a wrapping Worker | 🔧 [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+qwik) |
 | Angular | `AngularAppEngine`'s fetch handler | `env` from `cloudflare:workers` in server code | a Durable Object exported beside the handler | 🔧 [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+angular) |
 | Next.js | route handlers, server actions, middleware | OpenNext's `getCloudflareContext().env`; its cache on R2 or KV | a Durable Object exported beside the handler | ⏳ [matrix](#matrix) | [#318](https://github.com/QuinnsCode/RustyBuns/issues/318), [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+next.js) |
@@ -89,7 +90,7 @@ Easiest first, judged by each framework's Cloudflare build and a `fit` sweep ove
 | 2 | React Router 7 | Done for `@cloudflare/vite-plugin`. Next: `cloudflareDevProxy` apps (2 of 5 sampled), where wrangler bundles `workers/app.ts` over `build/server`. |
 | 3 | SvelteKit | `init` reads it (Oct 14). `adapter-cloudflare` builds a module Worker (`.svelte-kit/cloudflare/_worker.js`) plus assets, the shape the desktop already runs. 4 of 5 sampled repos are single apps. |
 | 4 | Nuxt | Nitro's `cloudflare-module` preset builds `.output/server/index.mjs` plus `.output/public`. 4 of 5 sampled repos are monorepo roots, so expect `init` to run in a subfolder. |
-| 5 | SolidStart | Nitro too (v1) or a Vite plugin (v2), so it follows Nuxt. Most sampled repos are libraries. |
+| 5 | SolidStart | `init` reads it (Oct 27). SolidStart 2 is a Vite plugin with Nitro 3 behind it; the `cloudflare_module` preset builds `.output/server/index.mjs` plus `.output/public`, the Nuxt shape. Most sampled repos are libraries. |
 | 6 | Qwik City | Its Cloudflare adapter targets Pages Functions, not a module Worker, so it needs a small wrapper. |
 | 7 | Angular | `@angular/ssr`'s `AngularAppEngine` is a fetch handler, but 4 of 5 sampled apps serve it through Express. |
 | 8 | Next.js | OpenNext works, but it's the heaviest build, and both sampled apps carry native addons (`sharp`, Prisma). |
@@ -98,7 +99,7 @@ Easiest first, judged by each framework's Cloudflare build and a `fit` sweep ove
 
 ## The sample app contract
 
-The check is [`scripts/counter.ts`](scripts/counter.ts): one HTTP journey (no browser) that every example's `test/desktop.test.ts` calls in one line. Done so far: [`apps/hono-example`](apps/hono-example), [`apps/elysia-example`](apps/elysia-example), [`apps/astro-example`](apps/astro-example), [`apps/react-router-example`](apps/react-router-example), [`apps/sveltekit-example`](apps/sveltekit-example), [`apps/nuxt-example`](apps/nuxt-example).
+The check is [`scripts/counter.ts`](scripts/counter.ts): one HTTP journey (no browser) that every example's `test/desktop.test.ts` calls in one line. Done so far: [`apps/hono-example`](apps/hono-example), [`apps/elysia-example`](apps/elysia-example), [`apps/astro-example`](apps/astro-example), [`apps/react-router-example`](apps/react-router-example), [`apps/sveltekit-example`](apps/sveltekit-example), [`apps/nuxt-example`](apps/nuxt-example), [`apps/solidstart-example`](apps/solidstart-example).
 
 Every `apps/<fw>-example` does the same small thing, so a single smoke test covers them all:
 
@@ -147,6 +148,8 @@ It uses Playwright Chromium and is run against both the dev host and the compile
 ### Phase 3: frameworks that need an adapter
 - [x] `apps/react-router-example` (Oct 27). No generated entry was needed: Cloudflare's template `workers/app.ts` is the fetch handler, and `@cloudflare/vite-plugin` builds it into `build/server/index.js`.
 - [ ] `apps/solidstart-example`
+- [ ] `apps/react-router-example`, plus a generated entry that wraps the server build in a fetch handler.
+- [x] `apps/solidstart-example`: SolidStart 2.1 on Nitro 3's `cloudflare_module` preset (a `"use server"` query and an API route on KV through `cloudflare:workers`); `init` reads it as a Worker.
 
 ### Phase 4: Next.js
 - [ ] `apps/nextjs-example`. Try the OpenNext `worker.js` in `worker` mode first.

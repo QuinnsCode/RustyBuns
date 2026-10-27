@@ -686,6 +686,26 @@ test("init: Nuxt on Nitro's cloudflare-module preset runs its Worker build on th
   expect(b).toContain('"mode": "worker"');
 });
 
+test("init: SolidStart on Nitro's Cloudflare preset runs the built Worker on the desktop, with its bindings", () => {
+  const p = project({
+    "package.json": JSON.stringify({ name: "solid", scripts: { build: "vite build", deploy: "vite build && wrangler deploy" }, dependencies: { "@solidjs/start": "^2", "solid-js": "^1", nitro: "^3", vite: "^8" } }),
+    "vite.config.ts": 'import { solidStart } from "@solidjs/start/config";\nimport { nitro } from "nitro/vite";\nexport default { plugins: [solidStart(), nitro({ preset: "cloudflare_module" })] };\n',
+    "wrangler.jsonc": JSON.stringify({ name: "solid", main: ".output/server/index.mjs", compatibility_date: "2026-09-01", assets: { directory: ".output/public", binding: "ASSETS" }, kv_namespaces: [{ binding: "COUNTER", id: "local" }] }),
+    "src/app.tsx": "export {};\n", "bun.lock": "",
+  });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/detected: solidstart/);
+  expect(r.out).not.toContain("does not exist");
+  const c = p.read("rustybuns.config.ts");
+  expect(c).toContain('"builtMain": ".output/server/index.mjs"');
+  expect(c).toContain('"assets": ".output/public"');
+  expect(c).toContain('"build": "vite build"');
+  expect(c).toContain('"mode": "worker"');
+  expect(c).toContain('"COUNTER"');
+  expect(c).not.toContain("clientBuild");
+});
+
 const CRA = {
   "package.json": JSON.stringify({ name: "cra", dependencies: { react: "^18", "react-scripts": "5", "@types/node": "^16.11.6" },
     scripts: { start: "react-scripts start", build: "react-scripts build", test: "react-scripts test" } }, null, 2),

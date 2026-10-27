@@ -1,0 +1,8 @@
+dist/
+.output/
+.vinxi/
+.nitro/
+.rustybuns/
+.wrangler/
+wrangler.generated.jsonc
+.alchemy/
