@@ -81,6 +81,22 @@ Anything Bun can reach, your app can reach:
 
 The full per-target table is [Where things run](REFERENCE.md#where-things-run).
 
+### Where the same code stops being the same
+
+A binding that swaps is easy. The hard cases are where the target changes what your app's own logic has to assume. None of these show up as a compile error, and most pass on the desktop first.
+
+| Assumption | Desktop and box | Edge | What to do |
+|---|---|---|---|
+| **State lives as long as the process** | one long process: module globals, in-memory caches, `setInterval` and Durable Objects stay put (the shell never evicts a DO unless a test calls `evict()`) | isolates come and go, and an idle DO is evicted after a minute or two | keep anything that must survive in storage or DO storage; a cache in a global is a cache, not a record |
+| **One copy of each Durable Object** | one per process, so a second box replica means two "singletons" | one per id, worldwide | run one box per app, or put the coordination on the edge |
+| **Who the user is** | a per-launch token (one person) on the desktop, a guest id on the box | your Worker's auth or Cloudflare Access (many people) | write permission checks against `X-User-Id` from day one; a desktop app that never checks is a multi-user bug on the edge |
+| **Where the data is** | a sqlite file on this laptop or volume | D1 in Cloudflare | they never sync. Desktop and edge copies of an app are separate databases unless the app syncs them itself |
+| **Rust on the hot path** | the cdylib over FFI | no FFI: wasm, or the TypeScript twin | test the twin as hard as the Rust; on the edge it may be the only path that runs |
+| **Settings at import** | `process.env` is there before your modules load | `env` arrives with the request | read config inside the handler, not at a module's top level ([#2278](https://github.com/QuinnsCode/RustyBuns/issues/2278) is what this looks like) |
+| **What npm can do** | Bun: native addons (after a rebuild), `Bun.*`, `bun:sqlite`, `new Function` | Workers: none of those | keep `Bun.*` behind the host; check the edge with `rustybuns dev` before you lean on a package |
+
+The frameworks add one more: a framework that doesn't build a Worker (Next.js without OpenNext, Angular on Express, Gatsby's Functions) has no edge column yet. See the [matrix](FRAMEWORKS.md#matrix).
+
 ## Adopting it in steps
 
 1. **Infer.** `rustybuns init` reads your app and writes `rustybuns.config.ts`. Nothing in `src/` changes. You can stop here and have typed deploys.
