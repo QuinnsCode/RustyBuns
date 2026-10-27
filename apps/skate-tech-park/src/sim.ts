@@ -95,18 +95,36 @@ function deckInFace(level: Level, x: number, z: number, yaw: number) {
   return false;
 }
 
+/** The steepest the face gets over the last `back` metres the board rode to (x, z), along the heading: where a
+ * transition curves up to the coping, so a board leaving it is thrown along the face at the lip, not along the coarse
+ * average of its last stride (which reads a vertical lip as 70 degrees and throws the board out over the deck). */
+function faceAngle(level: Level, x: number, z: number, sx: number, sz: number, back: number) {
+  const d = 0.02, from = level.height(x - sx * back, z - sz * back);
+  if (level.height(x, z) - from < 2 * back) return 0; // a kerb or stair riser is a step, not a face: a face keeps rising
+  let best = 0, prev = from;
+  for (let u = -back + d; u <= 1e-9; u += d) { // only what it has ridden: a stair riser just ahead is a wall to meet, not a lip to fly off
+    const h = level.height(x + sx * u, z + sz * u);
+    best = Math.max(best, Math.atan2(h - prev, d));
+    prev = h;
+  }
+  return best;
+}
+
 const MAX_SLOPE = 3; // a rise steeper than this (about 72 degrees) in one stride is a wall, not a ramp
 const CARVE = 0.8; // how much speed stiffens the board's turn: at top speed it turns 1/(1+CARVE) as tight
 const CARVE_DRAG = 0.5; // a hard carve at speed scrubs this share of it per second
 const DRIFT = 0.8; // rad/s the board falls toward downhill per unit of cross slope
+const LEG_PUMP = 0.1; // the same with legs alone: a held push through a transition, about a tenth more speed out of a quarter pipe
 const PUMP = 0.6; // board: speed gained per radian the ground curves up ahead, as a share of speed, while pumping
 const WALL = 0.8; // radians: a rider this far up a curve who meets a sharper rise is on a wall, and flies off it
 const LIP_PUSH = 0.3; // share of its speed a pushing board keeps toward the deck as it leaves a vertical wall, so it clears the coping instead of climbing the face
 const VERT = 1.35; // radians: a wall this steep is vertical
-const LEAN = 0.04; // share of its speed a board leaves a vertical wall leaning back toward it
+const LEAN = 0.2; // m/s a board leaves a vertical wall drifting back toward it: whatever the air, it comes down on the face just under the coping
 const SHEER = 1.25; // radians: a face this steep (a vertical ramp, a cliff) stops a board in the air; anything gentler it lands on and climbs
 const STEP = 0.2; // a kerb or stair this low is always rideable
 const COYOTE = 0.12; // seconds after the wheels leave the ground that an ollie still pops
+const ROLL_OVER = 2.5 * SCALE; // metres: pushing on carries the board over the coping onto the deck only when it would rise no higher than this above it; faster is a vert air
+const PUSH_STEEP = 0.6; // radians: a transition steeper than this can't be pushed up, only pumped (a foot can't reach the ground on a wall)
 
 export const FLICK_TIME = 0.45 * T;
 /** How long a flick takes: a 360 comes round slower. */
@@ -414,8 +432,12 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     }
     const push = s.fan ? tune.top * JETS.fanTop : tune.top; // what pushing alone reaches
     const top = s.fan ? push : BOOST_TOP; // the most a downhill or the jets can carry it to
-    if (inp.throttle < 0 && s.speed > 0) s.speed += inp.throttle * tune.brake * DT;
-    else if (inp.throttle > 0 ? s.speed < push : inp.throttle < 0 && s.speed > -push * 0.5) s.speed += inp.throttle * tune.accel * DT; // pushing fakie only goes so fast
+    const fakie = s.speed < -1, foot = Math.abs(s.pitch) < PUSH_STEEP; // a foot only reaches the ground off a wall
+    if (fakie) { // rolling backwards (back down off a wall): push on the way it rolls, and S brakes
+      if (inp.throttle < 0) s.speed = Math.min(0, s.speed - inp.throttle * tune.brake * DT);
+      else if (inp.throttle > 0 && foot && s.speed > -push * 0.5) s.speed -= inp.throttle * tune.accel * DT; // pushing fakie only goes so fast
+    } else if (inp.throttle < 0 && s.speed > 0) s.speed += inp.throttle * tune.brake * DT;
+    else if (foot && (inp.throttle > 0 ? s.speed < push : inp.throttle < 0 && s.speed > -push * 0.5)) s.speed += inp.throttle * tune.accel * DT;
     if (boosting) s.speed += BOOST * DT;
     else if (Math.abs(s.speed) > push) s.speed -= Math.sign(s.speed) * (Math.abs(s.speed) - push) * tune.over * DT;
     if (!inp.throttle && !boosting) s.speed -= Math.sign(s.speed) * Math.min(Math.abs(s.speed), (ROLL + DRAG * s.speed * s.speed) * DT);
@@ -426,7 +448,8 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     const pitched = Math.atan(along) - s.pitch;
     s.roll = Math.atan(across); // (pitch is the wheels' own track, kept from the last step: it follows a curve where the gradient overshoots)
     // pumping: weight the board as the floor curves up under it and the curve gives back speed
-    if (inp.boost) s.speed += dir * PUMP * Math.abs(s.speed) * Math.max(0, pitched * dir);
+    const pump = inp.boost ? PUMP : inp.throttle > 0 ? LEG_PUMP : 0; // held through a transition, a push is a pump (the jets pump far harder than legs)
+    if (pump) s.speed += dir * pump * Math.abs(s.speed) * Math.max(0, pitched * dir);
     const yaw0 = s.yaw; // where the footprint was before it turned: turning into a wall is meeting the wall
     { // the board carves: weight over the trucks, tighter when fast, and it falls toward downhill
       const load = Math.abs(s.speed) / tune.top;
@@ -447,8 +470,10 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     let slope = Math.tan(s.pitch) * dir; // the rise per metre along the path the board is riding
     let vy = s.vy;
     const kerb = s.fan ? JETS.fanStep : STEP; // the fan sucks it up a kerb or box side this high
-    const offTheLip = (v: number, steep: number) => { // up the face and out over the coping: it keeps a share of its speed toward the deck, so it clears the lip instead of climbing the face
-      const c = steep > VERT && !inp.throttle ? -LEAN : Math.max(Math.cos(steep), LIP_PUSH); // a true vert wall throws it straight up and a hair back over the face so it drops back in; pushing on carries it over the coping onto the deck
+    const offTheLip = (v: number, steep0: number) => { // up the face and out over the coping: it keeps a share of its speed toward the deck, so it clears the lip instead of climbing the face
+      const face = faceAngle(level, s.x, s.z, sx * dir, sz * dir, 0.3), steep = Math.max(steep0, face); // vert is the face it rode, not a riser it met
+      const roll = inp.throttle > 0 && (v * Math.sin(steep)) ** 2 / (2 * G) <= ROLL_OVER; // only just reaching the coping, a push rolls it over onto the deck
+      const c = face > VERT && !roll ? -LEAN / Math.max(v, 1) : Math.max(Math.cos(steep), LIP_PUSH); // a true vert wall throws it straight up and a hair back over the face so it drops back in
       s.vx = sx * v * c * dir; s.vz = sz * v * c * dir; s.vy = v * Math.sqrt(1 - c * c);
       takeOff(s);
       s.lip = Math.min(steep, 1.4) * dir;
@@ -486,7 +511,10 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       if (Math.abs(s.speed * DT) > 0.01) s.pitch = Math.atan(slope * dir);
       else { const [gx, gz] = gradient(level, s.x, s.z); s.pitch = Math.atan(gx * sx + gz * sz); } // standing still: the ground's own slope
     }
-    if (!s.air && pressed) pop(s, inp.nollie);
+    if (!s.air && pressed) {
+      if (s.pitch * dir >= WALL && s.speed * dir > 0) { s.speed += dir * OLLIE * 0.5; s.jetT = JETS.pop; s.popT = 0; s.feet.push({ foot: "back", at: "tail" }); } // up a steep wall the pop drives it on up the face, for a higher air off the lip
+      else pop(s, inp.nollie);
+    }
   }
 
   if (s.air) {
@@ -517,6 +545,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     { // dropping onto a rail starts a grind; a bar climbing faster than you fall meets you from below just the same
       const i = level.rails.findIndex((r) => {
         const o = onRail(r, s.x, s.z), climb = (((r.y2 ?? r.y) - r.y) / o.len) * (s.vx * o.dx + s.vz * o.dz); // the bar's own rise under you, m/s
+        if (r.kind === "coping" && Math.abs(s.vx * o.dx + s.vz * o.dz) < 2) return false; // straight back down a vert wall it drops past the coping, not onto it
         return s.vy < Math.max(0, climb) && landing(r, s.x, s.z, s.yaw, 1) !== null && Math.abs(s.y - railY(r, o.t)) < 0.25 + Math.max(0, climb - s.vy) * DT;
       });
       if (i >= 0 && s.flipT <= 0) {
@@ -553,7 +582,8 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       }
     }
     if (s.y <= h && s.vy <= 0) {
-      if (deckInFace(level, s.x, s.z, s.yaw)) { // landed with the deck in a steep face: slide back out along it, stopped against it
+      const [gx, gz] = gradient(level, s.x, s.z);
+      if (Math.atan(Math.hypot(gx, gz)) < WALL && deckInFace(level, s.x, s.z, s.yaw)) { // (back onto a transition's own face the deck lies along the wall: that's a re-entry) // landed with the deck in a steep face: slide back out along it, stopped against it
         const hs = Math.hypot(s.vx, s.vz), bx = hs > 0.01 ? -s.vx / hs : -Math.sin(s.yaw), bz = hs > 0.01 ? -s.vz / hs : -Math.cos(s.yaw);
         for (let i = 0; i < 80 && deckInFace(level, s.x, s.z, s.yaw); i++) { s.x += bx * 0.1; s.z += bz * 0.1; }
         s.vx = s.vz = 0;

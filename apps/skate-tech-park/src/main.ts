@@ -20,6 +20,7 @@ import { comboLine } from "./render/combo.ts";
 import { Skins } from "./render/skins.ts";
 import { Taps } from "./render/feet.ts";
 import { lieOnGround, manualPose, rideableRise, popPose, TiltEase } from "./render/tilt.ts";
+import { Driver, mountAgent } from "./agent.ts";
 import { DT, type Flick, flickTime, IDLE, type Input, type Mode, noseUp, start, step, type State, tumble } from "./sim.ts";
 import { HALF } from "./levels/plaza.ts";
 import { grindLift } from "./grinds.ts";
@@ -33,7 +34,7 @@ import { mountTouch } from "./touch.ts";
 import { type Controls, loadControls, saveControls, tuned } from "./controls.ts";
 import { mountControlsPanel } from "./controls-panel.ts";
 import { level, levelId, mood, mountLevelUi, park, spawn } from "./levels/picker.ts";
-import { touring as isTouring } from "./levels/index.ts";
+import { LEVELS, touring as isTouring } from "./levels/index.ts";
 import { tourShot, tourStops } from "./render/tour.ts";
 import { newRoomCode, Online, roomCode, pveMode } from "./net/client.ts";
 import { bump } from "./net/bump.ts";
@@ -281,6 +282,20 @@ const swapBtn = $("swap") as HTMLButtonElement;
 $("reset").append(icon(RotateCcw));
 $("reset").addEventListener("click", () => { reset(); (document.activeElement as HTMLElement)?.blur(); });
 swapBtn.addEventListener("click", () => { swap(); swapBtn.blur(); });
+// An agent in the browser can ride too (WebMCP, agent.ts): its moves go through the same step as the keys.
+const driver = new Driver();
+void mountAgent({
+  driver, state: () => sim, level, park: { id: levelId, spawns: level.spawns.map((p) => p.name) },
+  parks: () => LEVELS.map((l) => ({ id: l.id, name: l.name })),
+  go: (id, at) => { location.search = `?${new URLSearchParams({ level: id, ...(at ? { spawn: at } : {}) })}`; },
+  reset, swap: () => { swap(); return mode === "car" ? "roadster" : "fingerboard"; },
+  snapshot: () => { // drawn and read in the same task, so the buffer isn't cleared yet; 640 px wide keeps it small enough to hand an agent
+    renderer.render(scene, camera);
+    const small = Object.assign(document.createElement("canvas"), { width: 640, height: Math.round((640 * canvas.height) / canvas.width) });
+    small.getContext("2d")?.drawImage(canvas, 0, 0, small.width, small.height);
+    return small.toDataURL("image/jpeg", 0.8);
+  },
+});
 function swap() {
   mode = mode === "car" ? "skate" : "car"; // a skin: the ride carries on as it was
   hud();
@@ -295,7 +310,7 @@ help.id = "help";
 help.title = "All the controls";
 help.append(icon(Info));
 const tip = $("tip");
-tip.innerHTML = "<p><kbd>W</kbd><kbd>S</kbd> push, <kbd>A</kbd><kbd>D</kbd> steer, and spin in the air</p><p><kbd>Space</kbd> ollie, <kbd>N</kbd> nollie, <kbd>F</kbd> kickflip, <kbd>G</kbd> heelflip, <kbd>V</kbd> shove-it</p><p><kbd>R</kbd> varial, <kbd>O</kbd> varial heel, <kbd>U</kbd> hardflip, <kbd>I</kbd> inward heel, <kbd>T</kbd> tre flip, <kbd>Y</kbd> laser flip</p><p>Or drag the mouse or push the right stick: up ollies, across and down flick, diagonals are the compound tricks, a long one down a double turn. On a touch screen the flick pad shows its paths on a board like footprint grip tape; the footprints button picks another of twenty layouts</p><p><kbd>Shift</kbd> rear jets and pump a transition, <kbd>E</kbd> suction fan</p><p><kbd>Q</kbd> hold a manual, <kbd>Z</kbd> a nose manual: <kbd>W</kbd> and <kbd>S</kbd> hold the balance, or hold the mouse still (nudged down for the nose), or use the pad's right and left triggers</p><p><kbd>Tab</kbd> swap board and roadster, <kbd>R</kbd> reset</p>";
+tip.innerHTML = "<p><kbd>W</kbd><kbd>S</kbd> push, <kbd>A</kbd><kbd>D</kbd> steer, and spin in the air</p><p><kbd>Space</kbd> ollie, <kbd>N</kbd> nollie, <kbd>F</kbd> kickflip, <kbd>G</kbd> heelflip, <kbd>V</kbd> shove-it</p><p><kbd>R</kbd> varial, <kbd>O</kbd> varial heel, <kbd>U</kbd> hardflip, <kbd>I</kbd> inward heel, <kbd>T</kbd> tre flip, <kbd>Y</kbd> laser flip</p><p>Or drag the mouse or push the right stick: up ollies, across and down flick, diagonals are the compound tricks, a long one down a double turn. On a touch screen the flick pad shows its paths on a board like footprint grip tape; the footprints button picks another of twenty layouts</p><p><kbd>Shift</kbd> rear jets and pump a transition, <kbd>E</kbd> suction fan</p><p><kbd>Q</kbd> hold a manual, <kbd>Z</kbd> a nose manual: <kbd>W</kbd> and <kbd>S</kbd> hold the balance, or hold the mouse still (nudged down for the nose), or use the pad's right and left triggers</p><p><kbd>Tab</kbd> swap board and roadster, <kbd>R</kbd> reset</p><p>An agent in the browser can ride it too: WebMCP tools named skate_*</p>";
 help.addEventListener("click", () => { tip.hidden = !tip.hidden; help.blur(); });
 function hud() {
   swapBtn.replaceChildren(icon(mode === "car" ? RectangleHorizontal : Car));
@@ -381,7 +396,7 @@ function frame(now: number) {
   while (acc >= DT) {
     const was = sim.air, vy = sim.vy;
     before = poseOf(sim);
-    step(sim, { ...inp, ...gestures.take(sim.air) }, level); // a gesture is one step's press
+    step(sim, { ...inp, ...gestures.take(sim.air), ...driver.next() }, level); // a gesture is one step's press; an agent's move (agent.ts) is held like keys
     if (online && !pve) bump(sim, online.riders);
     ui.update(sim); acc -= DT;
     if (hunter) { runAfter(hunter, sim, level.height, level.bounds, DT); if (hunter.caught) { caughtAt = now; reset(); } }

@@ -118,6 +118,41 @@ export function railGeometry(r: Rail, ground: Ground = () => 0, seed = 1): THREE
   return out;
 }
 
+const colored = (g: THREE.BufferGeometry, color: THREE.Color) => {
+  const n = g.attributes.position.count, c = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) c.set([color.r, color.g, color.b], i * 3);
+  g.setAttribute("color", new THREE.BufferAttribute(c, 3));
+  return g;
+};
+
+/** The runs of chained segments that meet end to end, in order: a bent or embedded bar is one of these. */
+export function chainRuns(rails: Rail[]): number[][] {
+  const runs: number[][] = [];
+  rails.forEach((r, i) => {
+    const prev = runs[runs.length - 1], last = prev && rails[prev[prev.length - 1]!]!;
+    if (r.chain && last?.chain && Math.hypot(last.b.x - r.a.x, last.b.z - r.a.z) < 0.05) prev!.push(i);
+    else runs.push([i]);
+  });
+  return runs;
+}
+
+/** A chained bar as one smooth tube through its joints (not a kink at each), with wax streaks and a post where the segments say. */
+function chainGeometry(rs: Rail[], ground: Ground, seed: number): THREE.BufferGeometry[] {
+  const first = rs[0]!, radius = first.kind === "rail" ? 0.04 : first.kind === "coping" ? 0.07 : 0.05, rng = mulberry32(seed);
+  const pts = [new THREE.Vector3(first.a.x, first.y, first.a.z), ...rs.map((r) => new THREE.Vector3(r.b.x, r.y2 ?? r.y, r.b.z))];
+  const curve = new THREE.CatmullRomCurve3(pts, false, "centripetal"), len = curve.getLength(), n = Math.max(8, Math.ceil(len * 3));
+  const out = [colored(new THREE.TubeGeometry(curve, n, radius, 8, false), STEEL)];
+  for (let k = 0, m = Math.max(1, Math.round(len / 3)); k < m; k++) {
+    const t0 = rng() * 0.8, t1 = Math.min(1, t0 + (0.4 + rng() * 0.8) / len), span = Math.max(2, Math.ceil((t1 - t0) * n));
+    out.push(colored(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(Array.from({ length: span + 1 }, (_, i) => curve.getPointAt(t0 + ((t1 - t0) * i) / span)), false, "centripetal"), span, radius + 0.008, 6, false), WAX));
+  }
+  for (const p of rs.flatMap(railPosts)) {
+    const foot = ground(p.x, p.z);
+    if (p.y - foot > 0.05) out.push(strut(new THREE.Vector3(p.x, foot, p.z), new THREE.Vector3(p.x, p.y, p.z), 0.035, STEEL));
+  }
+  return out;
+}
+
 /** Every piece and rail of a level, as two meshes. `ground` is the terrain under them (0 on a plaza floor). */
 export function levelMeshes(level: Level, ground?: Ground, kit?: Kit) {
   const group = new THREE.Group();
@@ -140,7 +175,7 @@ export function levelMeshes(level: Level, ground?: Ground, kit?: Kit) {
     group.add(m);
   }
   if (level.rails.length) {
-    const m = new THREE.Mesh(mergeGeometries(level.rails.flatMap((r, i) => railGeometry(r, ground, i + 1)))!, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.7 }));
+    const m = new THREE.Mesh(mergeGeometries(chainRuns(level.rails).flatMap((run) => (run.length > 1 ? chainGeometry(run.map((i) => level.rails[i]!), ground ?? (() => 0), run[0]! + 1) : railGeometry(level.rails[run[0]!]!, ground, run[0]! + 1))))!, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.7 }));
     m.castShadow = true;
     m.name = "rails";
     group.add(m);
