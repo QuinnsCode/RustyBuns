@@ -10,14 +10,61 @@ import PLACES_SCRIPT from "../../content/places.json";
 // The words live in content/ (bun run cms edits them); {detail}, {into} and {ours} take the place's.
 const fill = (line: string, p: Place) => line.replace(/\{(\w+)\}/g, (m, k: string) => (k === "detail" || k === "into" || k === "ours" ? p[k] : m));
 
-const BACK = Math.PI; // facing +z: back at the camera, or at the Marines
+const BACK = Math.PI; // facing +z: back at the camera, or at the Thunder Marines
 
-// Where the intros happen, in their words (and the briefing's): the title over the Marines, what
+// Where the intros happen, in their words (and the briefing's): the title over the Thunder Marines, what
 // they're there for, what the Wooka call theirs, and where they hide.
 export interface Place { title: string; detail: string; into: string; ours: string; know: string; lurk: string }
 export const PLACES: Record<SectorKind, Place> = PLACES_SCRIPT;
 
-// The Marines' briefing: one knee-high Wooka on a stump. Nobody is worried. They should be.
+// The Thunder Marines' drop: the saga's title card, a dropship that is mostly flying, and two
+// supply crates kicked out of it. One chute opens. The other crate had the snacks. It plays
+// turned round: the squad looks back up at open sky, away from whatever they are here to hold,
+// and the crates come down behind them where the hero's own ground is clear.
+const marinesDrop = (p: Place): Cutscene => ({
+  id: "marines-drop",
+  faction: "marines",
+  cues: [
+    { at: 0, do: "actor", id: "sarge", as: { marine: "assault" }, x: 0, z: 0, face: BACK },
+    { at: 0, do: "actor", id: "rook", as: { marine: "sniper" }, x: -2.6, z: -1.4, face: BACK },
+    { at: 0, do: "actor", id: "diaz", as: { marine: "heavy" }, x: 2.8, z: -1.8, face: BACK },
+    { at: 0, do: "actor", id: "ship", as: { prop: "dropship" }, x: -12, y: 26, z: 52 },
+    { at: 0, do: "camera", from: [-4, 1.0, -6], to: [-3, 1.2, -5], look: [0, 14, 40], lookTo: [0, 12, 8], dur: 6 },
+    { at: 0, do: "sound", noise: "rotor" },
+    { at: 0, do: "fly", id: "ship", x: 0, y: 16, z: 6, dur: 6.2, wobble: 0.6 },
+    { at: 0.3, do: "title", text: SCRIPT.drop.title, sub: fill(SCRIPT.drop.titleSub, p), dur: 3.2 },
+    { at: 2.4, do: "sound", noise: "rotor" },
+    { at: 2.6, do: "caption", who: SCRIPT.drop.whoPilot, text: SCRIPT.drop.pilotFlying, dur: 2.6 },
+    { at: 3.4, do: "say", id: "sarge", text: SCRIPT.drop.sargeBoth, dur: 1.8 },
+    { at: 4.4, do: "say", id: "diaz", text: SCRIPT.drop.diazPacked, dur: 1.6 },
+    { at: 5.2, do: "say", id: "rook", text: SCRIPT.drop.rookHale, dur: 1.6 },
+    { at: 4.8, do: "sound", noise: "rotor" },
+    // Crates away. The ship carries on over the camera, still rattling.
+    { at: 6.2, do: "actor", id: "crateA", as: { prop: "crate" }, x: -1.4, y: 15, z: 6, face: 0.4 },
+    { at: 6.2, do: "actor", id: "crateB", as: { prop: "crate" }, x: 1.4, y: 15, z: 6, face: -0.3 },
+    { at: 6.2, do: "fly", id: "ship", x: 9, y: 22, z: -44, dur: 5.5, wobble: 0.8 },
+    { at: 6.2, do: "drop", id: "crateA", dur: 5.4, height: 15, x: -4.5, z: 5, chute: 0.9 },
+    { at: 6.2, do: "drop", id: "crateB", dur: 1.6, height: 15, x: 3.6, z: 4.5 },
+    { at: 6.2, do: "camera", from: [-8, 2.4, -2], to: [-7, 2, -1], look: [0, 13, 6], lookTo: [0, 1, 4.5], dur: 5.8 },
+    { at: 6.5, do: "say", id: "diaz", text: SCRIPT.drop.diazChute, dur: 1.1 },
+    { at: 7.1, do: "sound", noise: "warn" },
+    { at: 7.2, do: "say", id: "rook", text: SCRIPT.drop.rookChute, dur: 1.0 },
+    { at: 7.7, do: "sound", noise: "boom" },
+    { at: 7.7, do: "shake", amount: 1.4 },
+    { at: 8.0, do: "caption", who: SCRIPT.drop.whoDiaz, text: SCRIPT.drop.diazSnacks, dur: 2.2 },
+    { at: 8.6, do: "say", id: "sarge", text: SCRIPT.drop.sargeHalesChute, dur: 1.6 },
+    { at: 9.4, do: "say", id: "diaz", text: SCRIPT.drop.diazHale, dur: 1.4 },
+    { at: 10.3, do: "caption", who: SCRIPT.drop.whoPilot, text: SCRIPT.drop.pilotOneChute, dur: 2.6 },
+    { at: 11.6, do: "sound", noise: "thump" },
+    { at: 11.6, do: "shake", amount: 0.3 },
+    { at: 11.8, do: "say", id: "rook", text: SCRIPT.drop.rookFine, dur: 1.4 },
+    { at: 12.2, do: "camera", from: [1, 3, -8], to: [0, 4.5, -11], look: [0, 1, 3], dur: 2.8 },
+    { at: 12.4, do: "title", text: SCRIPT.drop.titleEnd, sub: SCRIPT.drop.titleEndSub, dur: 2.4 },
+  ],
+  end: 15,
+});
+
+// The Thunder Marines' briefing: one knee-high Wooka on a stump. Nobody is worried. They should be.
 const marinesIntro = (p: Place): Cutscene => ({
   id: "marines-intro",
   faction: "marines",
@@ -119,4 +166,6 @@ export const mossbackSting = (f: Faction): Cutscene => ({
 });
 
 export const introOf = (f: Faction, sector: SectorKind): Cutscene => (f === "marines" ? marinesIntro : wookaIntro)(PLACES[sector]);
-export const CUTSCENES: Record<string, Cutscene> = Object.fromEntries((["marines", "wooka"] as const).map((f) => introOf(f, "shield")).map((c) => [c.id, c]));
+// What plays before the briefing: the Thunder Marines drop in; the Wooka are already home.
+export const prologueOf = (f: Faction, sector: SectorKind): Cutscene | null => (f === "marines" ? marinesDrop(PLACES[sector]) : null);
+export const CUTSCENES: Record<string, Cutscene> = Object.fromEntries([marinesDrop(PLACES.shield), ...(["marines", "wooka"] as const).map((f) => introOf(f, "shield"))].map((c) => [c.id, c]));

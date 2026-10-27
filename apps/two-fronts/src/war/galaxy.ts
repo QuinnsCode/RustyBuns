@@ -199,9 +199,9 @@ const FULL = galaxy({
 });
 
 
-// The Horde: sixty worlds, twelve columns of five, the Marines' half to the west and the Wooka's to
+// The Horde: sixty worlds, twelve columns of five, the Thunder Marines' half to the west and the Wooka's to
 // the east. The map is point-symmetric like the others, but the forces aren't: the Wooka come in
-// force, two or three armies to a world against the Marines' one or two, and the Marines hold the
+// force, two or three armies to a world against the Thunder Marines' one or two, and the Thunder Marines hold the
 // sky with more ships. Fend them off, then push back. Doren, the forest moon, is the Wooka's home.
 const HORDE_NAMES = [
   ["Brill", "Corva", "Pell", "Quarry", "Halden", "Vesk", "Rook", "Sable", "Bracken", "Nyx", "Orin", "Thistle"],

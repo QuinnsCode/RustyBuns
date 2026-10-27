@@ -8,7 +8,7 @@
 // that is overrun gets a fall-back to the next one, or an evac point, with a short window.
 // Artillery and gunship passes land across the whole field, not only on one side.
 // Kill enough of the other side and your champion takes the field: Warbur for the Wooka, Gumpert
-// for the Marines.
+// for the Thunder Marines.
 // The view draws it and feeds the hero's input; the tests run it headless with the autopilot.
 import { radioFor } from "./lines.ts";
 import RADIO_SCRIPT from "../../content/radio.json";
@@ -141,7 +141,7 @@ export interface Battle {
   spawnAt: PerSide<number>;
   kills: PerSide<number>;    // what each side has killed of the other's, counted in tickets
   champ: PerSide<boolean>;   // whether each side has earned its champion yet
-  screamAt: number;          // when a dying Marine last got a line in the feed
+  screamAt: number;          // when a dying Thunder Marine last got a line in the feed
   mode: MatchMode;
   live: number;              // assault and hill: the one post in play
   phase: number;             // assault: seconds left holding the live post (0 while taking it); hill: till it moves on
@@ -220,7 +220,7 @@ const HERO_LIVES = 3;
 const AGGRO = 35;                  // how far a Wooka will charge at someone it can smell
 const FLAVOR_EVERY = 30;
 export const CHAMP_AT = 70;        // tickets' worth of kills a side needs to earn its champion
-const MOB = 3;                     // this many Wooka on one Marine and they tear them apart
+const MOB = 3;                     // this many Wooka on one Thunder Marine and they tear them apart
 const MAUL = 20;                   // hp a second a mob takes off whoever it's on, on top of the clubs
 const HEAL = 6;                    // hp a second a Shanti puts back into each Wooka near it
 const FLANK = 30;                  // how wide a flanking pack swings
@@ -257,10 +257,10 @@ export const OVERHEAT = 1.8;
 export const SPRINT_AFTER = 0.8;   // seconds running straight ahead, not firing, before you sprint
 export const SPRINT = 1.55;
 
-// What the Marines' radio says about the Wooka. They are not cuddly. (content/radio.json)
+// What the Thunder Marines' radio says about the Wooka. They are not cuddly. (content/radio.json)
 export const FLAVOR: readonly string[] = RADIO_SCRIPT.shield;
 
-// What a Marine says on the way out, when a mob gets them. The radio picks it all up.
+// What a Thunder Marine says on the way out, when a mob gets them. The radio picks it all up.
 const SCREAMS = [
   "It's in my armour! IT'S IN MY ARMOUR!",
   "Tell my mother I... no, it's eating the radio...",
@@ -313,7 +313,7 @@ export const ROLE_STATS: Record<WookaRole, (typeof STATS)[UnitKind]> = {
 // The mix a wave comes in. A Mossback is never in it: they only walk out of a surge.
 export const ROLE_MIX: Record<WookaRole, number> = { fodder: 0.5, chub: 0.17, sticky: 0.15, boomie: 0.1, shanti: 0.08, mossback: 0 };
 // The champions. Warbur is a silverback, half Wooka and half bear, who throws Wooka at people.
-// Gumpert is the Marines' own, in whichever kit he's carrying.
+// Gumpert is the Thunder Marines' own, in whichever kit he's carrying.
 export const CHAMP_STATS: Record<Champ | Kit, (typeof STATS)[UnitKind]> = {
   warbur: { hp: 1100, speed: 8.5, range: 3.8, cool: 0.7, dmg: 55, aim: 0.95, cost: 6 },
   gumpert: { hp: 800, speed: 8, range: 60, cool: 1.3, dmg: 55, aim: 0.9, cost: 6 },
@@ -330,7 +330,7 @@ const melee = (u: Unit) => statsOf(u).range < 5;
 const SPLASH: Partial<Record<UnitKind | Champ | Kit, number>> = { tank: 4, walker: 5, gunship: 3, rockets: 5, warbur: 3 };
 const splashOf = (u: Unit) => SPLASH[u.champ ? (u.champ === "gumpert" ? u.kit ?? "rockets" : u.champ) : u.kind];
 const ARMOUR_BANE = 4;
-// Each wave's Marines come in this mix of classes.
+// Each wave's Thunder Marines come in this mix of classes.
 export const CLASS_MIX: Record<Trooper, number> = { assault: 0.5, heavy: 0.2, sniper: 0.15, engineer: 0.15 };
 export const isVehicle = (k: UnitKind): k is VehicleKind => (VEHICLE_KINDS as UnitKind[]).includes(k);
 const isTrooper = (k: UnitKind): k is Trooper => (TROOPERS as UnitKind[]).includes(k);
@@ -634,7 +634,7 @@ function spawnHero(b: Battle) {
   if (b.champ[b.spec.hero]) crown(b, u);
 }
 
-// Makes a unit its side's champion: Warbur for the Wooka, Gumpert for the Marines, at full health.
+// Makes a unit its side's champion: Warbur for the Wooka, Gumpert for the Thunder Marines, at full health.
 function crown(b: Battle, u: Unit) {
   u.champ = isHorde(b, u.side) ? "warbur" : "gumpert";
   if (u.champ === "gumpert") u.kit ??= "rockets";
@@ -642,7 +642,7 @@ function crown(b: Battle, u: Unit) {
   u.toss = 0;
 }
 
-// Marines field troopers of four classes and the vehicles they brought. The Wooka field a
+// Thunder Marines field troopers of four classes and the vehicles they brought. The Wooka field a
 // horde: more of them, and no vehicles, so their share of the pool comes as yet more Wooka.
 export const isHorde = (b: Battle, side: Side) => b.spec.factions[side] === "wooka";
 const baseCap = (b: Battle, side: Side) =>
@@ -1455,7 +1455,7 @@ export function step(b: Battle, input: Input | null) {
     if (hero) { hero.hp -= 150; unstick(b, hero); }
     say(b, `Your ${wreck.kind} is destroyed`);
   }
-  // A mob on a Marine tears into them, on top of the clubs.
+  // A mob on a Thunder Marine tears into them, on top of the clubs.
   for (const u of b.units) {
     if (u.hp <= 0 || isHorde(b, u.side) || armoured(u.kind) || flies(u) || hidden(b, u)) continue;
     if (mob(b, u) >= MOB) u.hp -= MAUL * DT;
@@ -1557,7 +1557,7 @@ export function step(b: Battle, input: Input | null) {
 // How many of the horde are right on top of someone.
 const mob = (b: Battle, u: Unit) => b.units.filter((v) => v.side !== u.side && v.hp > 0 && v.role && v.role !== "sticky" && v.role !== "shanti" && dist(u, v) < 3).length;
 
-// Something dies: it comes apart in its side's colours. A Marine with a mob on them is torn
+// Something dies: it comes apart in its side's colours. A Thunder Marine with a mob on them is torn
 // apart, and sometimes gets a last word in on the radio.
 function die(b: Battle, u: Unit) {
   const torn = !isHorde(b, u.side) && !armoured(u.kind) && mob(b, u) >= MOB;
@@ -1585,7 +1585,7 @@ function champion(b: Battle, s: Side) {
   }
   say(b, warbur
     ? `${mine ? "You are" : "Something big is coming. It's"} WARBUR: half Wooka, half bear, all silverback.${mine ? " E throws a Wooka." : ""}`
-    : `${mine ? "You are" : "The Marines have"} GUMPERT.${mine ? " E swaps kit: rockets, stun baton, jetpack." : ""}`);
+    : `${mine ? "You are" : "The Thunder Marines have"} GUMPERT.${mine ? " E swaps kit: rockets, stun baton, jetpack." : ""}`);
 }
 
 // The modes' own objectives, a step at a time. The side that has just won by them, if one has.

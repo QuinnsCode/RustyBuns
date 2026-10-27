@@ -6,7 +6,7 @@
 // canyon is red rock under an open sky with the gas giant hanging in it.
 //
 // On the Wooka's end of the field the trees are lived in: huts up the trunks, rope bridges
-// between them, and totems wearing the helmets of Marines who came this way before.
+// between them, and totems wearing the helmets of Thunder Marines who came this way before.
 import * as THREE from "three";
 import { FLOORS, buildFoliage, foliageQuality, instancer, makeWind, mergeAll, planter } from "./foliage.ts";
 import { hut, lumpy, texture, totem } from "./models.ts";

@@ -4,7 +4,7 @@
 // Space, Enter, Esc or a click skips it. The battle doesn't step while it plays.
 import * as THREE from "three";
 import { actorsAt, cameraAt, castOf, firedBetween, lengthOf, place, wordsAt, type Cutscene, type Noise, type Origin } from "./cutscene.ts";
-import { animate, marine, wooka } from "./models.ts";
+import { animate, crate, dropship, marine, wooka } from "./models.ts";
 import type { Sfx } from "./sfx.ts";
 import { makeBubbles } from "../ui/bubbles.ts";
 
@@ -34,8 +34,9 @@ export function playCutscene(cut: Cutscene, stage: Stage, origin: Origin): Promi
   const len = lengthOf(cut);
   const meshes = new Map<string, THREE.Group>();
   for (const c of castOf(cut)) {
-    const g = "marine" in c.as ? marine(false, c.as.marine) : wooka(false, c.as.wooka);
+    const g = "marine" in c.as ? marine(false, c.as.marine) : "wooka" in c.as ? wooka(false, c.as.wooka) : c.as.prop === "dropship" ? dropship() : crate();
     g.userData.last = null;
+    g.userData.chute = g.getObjectByName("chute") ?? null;
     g.visible = false;
     scene.add(g);
     meshes.set(c.id, g);
@@ -86,6 +87,7 @@ export function playCutscene(cut: Cutscene, stage: Stage, origin: Origin): Promi
       else if (n === "grunt") sfx.hurt("marines", p, true, 0.6);
       else if (n === "boom") sfx.boom(p ?? { x: origin.x, z: origin.z }, false);
       else if (n === "drum") sfx.drum();
+      else if (n === "rotor") sfx.rotor();
       else if (n === "warn") sfx.warn();
       else sfx.chime();
     };
@@ -112,7 +114,9 @@ export function playCutscene(cut: Cutscene, stage: Stage, origin: Origin): Promi
         g.userData.last = p.clone();
         g.position.copy(p);
         g.scale.setScalar(a.scale);
-        g.rotation.set(a.flying ? now / 90 : 0, a.yaw + origin.yaw, a.flying ? now / 130 : 0);
+        g.rotation.set(a.flying ? now / 90 : 0, a.yaw + origin.yaw, a.flying ? now / 130 : a.roll);
+        const chute = g.userData.chute as THREE.Object3D | null;
+        if (chute) chute.visible = a.chute;
         animate(g, { t: now / 1000, dt, moved: a.moving && moved < 3 ? moved : 0, since: 1, call: (performance.now() - ((g.userData.calledAt as number | undefined) ?? -1e9)) / 1000 });
       }
       const cam = cameraAt(cut, t);
