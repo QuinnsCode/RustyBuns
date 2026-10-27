@@ -1265,7 +1265,7 @@ const HORDE_SURGE_LINES = [
   "Hoo-HOO-hoo! Everybody, bonk! Bonk the shiny!", "Chief says 'attack'. Chief says it with his whole face", "Up the tree, down the tree, over the shiny one, bonk",
   "Look at the bones! Cheers for the bones! Bring more bones!", "Hoo hoo hoo HOO. Translation: yes, all of it",
 ];
-const PANIC = [
+export const PANIC = [
   "BIG ONE, BIG ONE, BIG ONE",
   "That's not a Wooka, that's a landslide with arms!",
   "It's running on its HANDS--",
