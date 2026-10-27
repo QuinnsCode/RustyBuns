@@ -489,7 +489,7 @@ Every file Mergiraf called clean was read: no wrong answers. The 6 it settled:
 
 **Where they agree.** Both refuse `features.json` while main's markers are in it: Mergiraf prints `left side contains conflict markers, falling back to Git` and returns git's conflict. codeSplitter used to merge it "clean" with the markers carried through (§7), and now refuses it too. Neither settles the 3 D hunks (`drawGraph`, `depUpdate`, `Registry`/`Meta`); those still need the AI and the build check.
 
-**Verdict.** On these hunks Mergiraf settles nothing that L3 does not, and L3 settles 19 it leaves. Nothing here argues for vendoring it. Its tree match would earn its place on code where lines are *reordered or moved*, which these hunks don't exercise; that is a test for a corpus (`mervin-corpus.ts`), not for 29 append-heavy hunks. The same caveat applies the other way: 29 hunks from one app is a small sample.
+**Verdict.** On these hunks Mergiraf settles nothing that L3 does not, and L3 settles 19 it leaves. That says these hunks are line-shaped, not that Mergiraf isn't useful: its tree match shines on code where lines are *reordered or moved*, which these hunks don't exercise, and it reads some 50 languages where Mervin reads three. And 29 hunks from one app is a small sample either way. So it didn't replace anything; it joined: Mervin now runs it as a second check on the files he leaves cards in ([Mergiraf in Mervin's toolbelt](mervin.md#mergiraf-in-mervins-toolbelt)).
 
 ## Next steps
 
