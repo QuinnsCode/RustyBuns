@@ -114,7 +114,7 @@ const MAX_SLOPE = 3; // a rise steeper than this (about 72 degrees) in one strid
 const CARVE = 0.8; // how much speed stiffens the board's turn: at top speed it turns 1/(1+CARVE) as tight
 const CARVE_DRAG = 0.5; // a hard carve at speed scrubs this share of it per second
 const DRIFT = 0.8; // rad/s the board falls toward downhill per unit of cross slope
-const LEG_PUMP = 0.1; // the same with legs alone: a held push through a transition, about a tenth more speed out of a quarter pipe
+const LEG_PUMP = 0.25; // the same with legs alone: a held push through a transition, about a tenth more speed out of a quarter pipe
 const PUMP = 0.6; // board: speed gained per radian the ground curves up ahead, as a share of speed, while pumping
 const WALL = 0.8; // radians: a rider this far up a curve who meets a sharper rise is on a wall, and flies off it
 const LIP_PUSH = 0.3; // share of its speed a pushing board keeps toward the deck as it leaves a vertical wall, so it clears the coping instead of climbing the face
@@ -122,11 +122,12 @@ const VERT = 1.35; // radians: a wall this steep is vertical
 const LEAN = 0.2; // m/s a board leaves a vertical wall drifting back toward it: whatever the air, it comes down on the face just under the coping
 const SHEER = 1.25; // radians: a face this steep (a vertical ramp, a cliff) stops a board in the air; anything gentler it lands on and climbs
 const STEP = 0.2; // a kerb or stair this low is always rideable
+const CURVED = 0.02; // 1/m: ground curving up this tightly along the heading is a transition, where a foot can't push (a plain slope is no curve)
 const COYOTE = 0.12; // seconds after the wheels leave the ground that an ollie still pops
-const ROLL_OVER = 2.5 * SCALE; // metres: pushing on carries the board over the coping onto the deck only when it would rise no higher than this above it; faster is a vert air
+const ROLL_OVER = 1.5 * SCALE; // metres: pushing on carries the board over the coping onto the deck only when it would rise no higher than this above it; faster is a vert air
 const PUSH_STEEP = 0.6; // radians: a transition steeper than this can't be pushed up, only pumped (a foot can't reach the ground on a wall)
 
-export const FLICK_TIME = 0.45 * T;
+export const FLICK_TIME = 0.24 * T;
 /** How long a flick takes: a 360 comes round slower. */
 export const flickTime = (k: Flick) => FLICK_TIME * (flickLong(k) ? 1.4 : 1);
 const OLLIE = 7 * T; // m/s up off the tail
@@ -143,7 +144,7 @@ const SLOPE = 1.5; // lean the bar's grade pulls toward, per unit of grade
 const LINK = 1.5; // a trick of a different kind from the last in the chain (grind, manual, air) scores this much more
 
 export { grindKind, type GrindKind } from "./grinds.ts";
-const ROLL = 0.3; // m/s² the wheels lose rolling with nobody pushing
+const ROLL = 0.18; // m/s² the wheels lose rolling with nobody pushing
 const DRAG = 0.002; // per metre: the air's share, growing with the square of speed
 const MANUAL_MIN = 2; // m/s: slower than this and the board just drops back onto its wheels
 const MANUAL_POINTS = 150; // a second
@@ -384,7 +385,8 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     const r = level.rails[s.grind];
     const ledge = r.kind === "ledge"; // a ledge is smooth: it slides further and forgives more
     s.grindTime += DT;
-    s.speed *= 1 - (ledge ? 0.05 : 0.15) * DT;
+    const slide = (ledge ? 0.12 : 0.25) * G * DT; // sliding friction: a constant deceleration, not a share of speed
+    s.speed = Math.abs(s.speed) <= slide ? 0 : s.speed - Math.sign(s.speed) * slide;
     { // a lean to hold: the kind sets where it balances and how it tips, the bar's slope pulls it, speed steadies it
       const o = onRail(r, s.x, s.z), grade = (((r.y2 ?? r.y) - r.y) / o.len) * (fx * o.dx + fz * o.dz);
       leanStep(s, s.grindSide * restOf(s.grindKind) - Math.max(-0.5, Math.min(0.5, SLOPE * grade)), tippiness(s.grindKind) * (ledge ? 0.5 : 1), s.speed, inp.steer, DT);
@@ -413,6 +415,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     if (pressed || t < 0 || t > 1 || Math.abs(s.speed) < 0.5) { // off either end, popped off, or stalled on a climbing bar
       if (s.grindTime > 0.2) award(s, (ledge ? LEDGE_NAME : GRIND_NAME)[s.grindKind], Math.round(s.grindTime * GRIND_POINTS[s.grindKind]), "grind");
       s.grind = -1;
+      if (!pressed && t >= 0 && t <= 1) { const side = (Math.sign(s.balance) || 1) * (BOARD.halfWid + 0.2); s.x += fz * side; s.z -= fx * side; } // stalled on the bar: it steps off the side rather than dropping back onto it
       s.vx = fx * s.speed; s.vz = fz * s.speed;
       s.vy = 0;
       if (pressed) pop(s, inp.nollie); else takeOff(s);
@@ -432,7 +435,8 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     }
     const push = s.fan ? tune.top * JETS.fanTop : tune.top; // what pushing alone reaches
     const top = s.fan ? push : BOOST_TOP; // the most a downhill or the jets can carry it to
-    const fakie = s.speed < -1, foot = Math.abs(s.pitch) < PUSH_STEEP; // a foot only reaches the ground off a wall
+    const fakie = s.speed < -1, k = 0.5, curve = (level.height(s.x + fx * k, s.z + fz * k) - 2 * level.height(s.x, s.z) + level.height(s.x - fx * k, s.z - fz * k)) / (k * k),
+      foot = Math.abs(s.pitch) < PUSH_STEEP && curve < CURVED; // a foot only reaches the ground off a wall, or a curve up one
     if (fakie) { // rolling backwards (back down off a wall): push on the way it rolls, and S brakes
       if (inp.throttle < 0) s.speed = Math.min(0, s.speed - inp.throttle * tune.brake * DT);
       else if (inp.throttle > 0 && foot && s.speed > -push * 0.5) s.speed -= inp.throttle * tune.accel * DT; // pushing fakie only goes so fast

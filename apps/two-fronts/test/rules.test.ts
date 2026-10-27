@@ -3,7 +3,7 @@ import type { BattleSpec } from "../src/battle/contract.ts";
 import { GALAXIES, SECTOR_NAMES, type Galaxy, type GalaxyId } from "../src/war/galaxy.ts";
 import { aiDeploys, aiOrders } from "../src/war/ai.ts";
 import {
-  LOST_TURNS, ORBIT, applyBattleResult, applySpaceResult, canPushFromSurface, checkRetreats, declareAttacks, deployTurn, planDeploys, fogged, involved, diceBattle, groundEdges, income, incomeBreakdown, keyShare, regionHolder, newCampaign, planOrders, resolveTurn, rng, supplied, vehiclePool,
+  LOST_TURNS, ORBIT, enemy, applyBattleResult, applySpaceResult, canPushFromSurface, checkRetreats, declareAttacks, deployTurn, planDeploys, fogged, involved, diceBattle, groundEdges, income, incomeBreakdown, keyShare, regionHolder, newCampaign, planOrders, resolveTurn, rng, supplied, vehiclePool,
   type Campaign, type Order, type Orders, type Retreat, type Where,
 } from "../src/war/rules.ts";
 
@@ -591,4 +591,18 @@ test("holding most of a region gives your troops cover across it, and it tells o
     }
   }
   expect(held).toBeGreaterThan(open);
+});
+
+test("Dig in gives the side that played it cover across the whole region for the turn, and then it's gone", () => {
+  const c = newCampaign();
+  const kessa = { system: "kessa", sector: 0 };
+  c.systems.kessa!.orbit = null;
+  const owner = c.systems.kessa!.sectors[0]!.owner, foe = enemy(owner);
+  expect(groundEdges(c, kessa).cover).toEqual({ att: false, def: false });
+  c.hands = { marines: [], wooka: [], [owner]: ["dugin"] } as Campaign["hands"];
+  const d = planOrders(c, [{ faction: owner, orders: [{ kind: "card", card: "dugin", at: kessa }, { kind: "card", card: "dugin", at: kessa }] }]);
+  expect(d.errors[0]).toBeNull();
+  expect(d.errors[1]).toBe("That card isn't in your hand");
+  expect(groundEdges(d.c, kessa).cover).toEqual({ att: false, def: true });
+  expect(resolveTurn(c, [{ faction: owner, orders: [{ kind: "card", card: "dugin", at: kessa }] }, { faction: foe, orders: [] }]).dugIn ?? null).toBeNull();
 });

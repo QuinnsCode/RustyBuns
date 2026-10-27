@@ -16,7 +16,7 @@ const drop = (yaw: number, at: number) => {
   // put the deck's `at` point on the bar: the bar is x = 0, the point sits `reach` along the heading from the board's middle
   sk.x = -Math.sin(yaw) * reach;
   sk.z = 2 - Math.cos(yaw) * reach;
-  sk.air = true; sk.y = 1.0; sk.vy = -1; sk.vx = Math.sin(yaw) * 4; sk.vz = Math.cos(yaw) * 4;
+  sk.air = true; sk.y = 1.0; sk.vy = -1; sk.vx = 0; sk.vz = 20; // coming down the bar at speed, whichever way the board points
   return sk;
 };
 const hold = (s: State) => ({ steer: clamp(s.balance * 2, -1, 1) });
@@ -41,7 +41,7 @@ test("the part of the deck that lands on the bar names the grind", () => {
 
 test("a grind is held by correcting the lean, and falls off when left alone", () => {
   for (const [yaw, at] of [[0, 0], [0.7, 0.8], [Math.PI / 2, -0.9], [Math.PI / 2, 0]] as const) {
-    const held = run(drop(yaw, at), 6, hold, bar);
+    const held = run(drop(yaw, at), 2, hold, bar); // 20 m/s at 5 m/s² slides for 4 s
     expect([yaw, at, held.grind]).toEqual([yaw, at, 0]);
     const alone = run(drop(yaw, at), 6, () => ({}), bar);
     expect(alone.grind).toBe(-1);

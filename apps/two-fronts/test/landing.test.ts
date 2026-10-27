@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { GALAXIES } from "../src/war/galaxy.ts";
 import { admitLandings, landingCap } from "../src/war/landing.ts";
+import { aiDeploys, aiOrders } from "../src/war/ai.ts";
 import { deployTurn, newCampaign, resolveTurn, type Campaign, type Orders } from "../src/war/rules.ts";
 
 const turn = (c: Campaign, marines: Orders["orders"]) => {
@@ -54,4 +55,21 @@ test("a beachhead is one place; extra transports and other sectors turn back", (
   const systems = { x: sky(null, 0, 0) } as Record<string, never>;
   const at = (sector: number, count: number) => ({ faction: "marines" as const, to: { system: "x", sector }, count });
   expect(admitLandings(systems, [at(0, 3), at(1, 1), at(0, 3)])).toEqual([3, 0, 1]);
+});
+
+test("holding the orbit for turns squeezes the other side's landings", () => {
+  const s = sky("wooka", 0, 2) as { held?: number };
+  const caps = [0, 2, 4, 6].map((held) => { s.held = held; return landingCap(s as never, "marines").troops; });
+  expect(caps).toEqual([1, 0, 0, 0]);
+});
+
+test("the AI plays whole wars on the intro world, and they end with a winner", () => {
+  for (const seed of [1, 2, 3, 4, 5, 6]) {
+    let c = newCampaign(seed, "marines", "intro");
+    for (let i = 0; i < 60 && !c.winner; i++) {
+      c = resolveTurn(c, (["marines", "wooka"] as const).map((f) => aiOrders(c, f)));
+      if (c.deploying) c = deployTurn(c, c.deploying.map((f) => ({ faction: f, orders: [], deploys: aiDeploys(c, f) })));
+    }
+    expect(c.winner, `seed ${seed}`).not.toBeNull();
+  }
 });

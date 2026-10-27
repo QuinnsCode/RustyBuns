@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { stillBusy, type Held, type Hint, type QueueAdd } from "./hint.ts";
+import { busiest } from "../screens/read.ts";
 import { summarize, type AgentRun, type Branch, type CheckRun, type Summary } from "./news.ts";
 
 export const LIVE = "https://codesplitter.notryanquinn.workers.dev";
@@ -18,6 +19,8 @@ const REPO = /^[\w.-]+\/[\w.-]+$/;
 const FRESH_MS = 15_000;
 const HOLD_MAX = 8000;   // a held task rides in the query string, and the office has no body to read here
 const HOLD_DAYS = 14;
+const PATH_MS = 60_000;
+const PATH_FILES = 3;
 
 export interface Site { url: string; token?: string; cookie?: string }
 
@@ -75,6 +78,12 @@ export function codesplitterRoute(s: Site = site(), get: typeof fetch = fetch) {
     const none = !branches && !checks && !runs;
     return { site: s.url, repo, boards: none ? null : summarize(branches, checks?.runs ?? null, runs) };
   };
+  const paths = new Map<string, { at: number; body: Promise<unknown> }>();
+  const gitpath = async (repo: string) => {
+    const files = busiest(await api<unknown>(`/repos/${repo}/gitpath`)).slice(0, PATH_FILES);
+    const histories = await Promise.all(files.map((f) => api<unknown>(`/repos/${repo}/gitpath?path=${encodeURIComponent(f)}&limit=40`)));
+    return { site: s.url, repo, histories: histories.filter(Boolean) };
+  };
   // GET /__rb/codesplitter/hold?repo=  what's held for the repo and what's ready to queue now.
   // POST .../hold?repo=&msg=<queue.add json>&branches=a,b  hold a task. POST .../hold/take?id=  claim a ready one
   // (once; it's gone after) or DELETE .../hold?id= to drop it.
@@ -105,7 +114,7 @@ export function codesplitterRoute(s: Site = site(), get: typeof fetch = fetch) {
     return { status: 201, body: { id: h.id } };
   };
   return async (method: string, url: URL): Promise<{ status: number; body: unknown } | null> => {
-    if (!/^\/__rb\/codesplitter(\/hint|\/hold|\/hold\/take)?$/.test(url.pathname)) return null;
+    if (!/^\/__rb\/codesplitter(\/hint|\/hold|\/hold\/take|\/gitpath)?$/.test(url.pathname)) return null;
     if (url.pathname.includes("/hold")) return hold(method, url);
     if (method !== "GET") return { status: 405, body: { error: `GET ${url.pathname}` } };
     const repo = url.searchParams.get("repo") ?? "";
@@ -115,6 +124,16 @@ export function codesplitterRoute(s: Site = site(), get: typeof fetch = fetch) {
       if (!REPO.test(repo)) return { status: 400, body: { error: "repo is owner/name" } };
       const task = (url.searchParams.get("task") ?? "").slice(0, 4000);
       return { status: 200, body: await api<Hint>(`/repos/${repo}/dispatch-hint?task=${encodeURIComponent(task)}`) ?? { files: [], busy: [] } };
+    }
+    // GET /__rb/codesplitter/gitpath?repo=  the wall screen's gitpath (screens/): the repo's busiest files and the
+    // histories of the top few, as codeSplitter's /gitpath answers them
+    if (url.pathname.endsWith("/gitpath")) {
+      if (!REPO.test(repo)) return { status: 400, body: { error: "repo is owner/name" } };
+      const hit = paths.get(repo);
+      if (hit && Date.now() - hit.at < PATH_MS) return { status: 200, body: await hit.body };
+      const body = gitpath(repo);
+      paths.set(repo, { at: Date.now(), body });
+      return { status: 200, body: await body };
     }
     if (!repo) return { status: 200, body: { site: s.url, repo: null, boards: null } };
     if (!REPO.test(repo)) return { status: 400, body: { error: "repo is owner/name" } };
