@@ -19,7 +19,7 @@ export function connectTarget(head: string): { host: string; port: number } | nu
 if (import.meta.main) {
   const list = (process.env.ALLOW ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   net.createServer((client) => {
-    client.once("data", (chunk) => {
+    client.once("data", (chunk: Buffer) => {
       const head = chunk.toString("latin1");
       const t = connectTarget(head);
       if (!t || t.port !== 443 || !allowed(t.host, list)) {
