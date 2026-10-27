@@ -411,7 +411,7 @@ function frame(now: number) {
   // Both skins ride the same pose; a flip or a grind turns whichever one is showing.
   const rider = skins.root, pivot = skins.pivot();
   rider.position.set(shown.x, shown.y, shown.z);
-  grindRise += ((sim.grind >= 0 ? grindLift(sim.grindKind) : 0) - grindRise) * (1 - Math.exp(-30 * dt)); // the board sits on the bar by its deck or its trucks, not its wheels
+  grindRise += ((sim.grind >= 0 ? grindLift(sim.grindKind, skins.current) : 0) - grindRise) * (1 - Math.exp(-30 * dt)); // the board sits on the bar by its deck or its trucks, not its wheels
   rider.position.y += grindRise;
   if (sim.grind >= 0) { // the bar is under the part of the deck it landed on, not always the middle
     const turn = shown.yaw + sim.grindOff;
