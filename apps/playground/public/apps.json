@@ -44,17 +44,20 @@
   {
     "name": "Splat Spray",
     "line": "An I-spy game in the dark: scan a Gaussian-splat room and find 100 things in the fewest shots.",
+    "play": "https://splat-spray.notryanquinn.workers.dev",
     "app": "splat-spray",
     "download": "splat-spray-v"
   },
   {
     "name": "Two Fronts",
     "line": "Turn-based strategy on a forest moon, with three.js battles on the ground and in orbit.",
+    "play": "https://two-fronts.notryanquinn.workers.dev",
     "app": "two-fronts"
   },
   {
     "name": "git-recon",
     "line": "A toy-soldier shooter fought in a codebase: the repo is the level.",
+    "play": "https://git-recon.notryanquinn.workers.dev",
     "app": "git-recon"
   },
   {
