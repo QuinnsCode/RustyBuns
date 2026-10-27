@@ -173,7 +173,7 @@ export async function release(io: IO, mode: Mode, where: Where, env: Record<stri
   const checks = mode.checksNew || io.exists(checksOn);
   // A Cloudflare token left exported in the terminal would beat the wrangler login; drop them all.
   const base: Record<string, string | undefined> = { ...env, CLOUDFLARE_API_TOKEN: undefined, CLOUDFLARE_ACCOUNT_ID: undefined, CF_API_TOKEN: undefined, CF_ACCOUNT_ID: undefined };
-  const flags = { CODESPLITTER_DEPLOYS: "1", CODESPLITTER_AGENTS: "1", CODESPLITTER_CHECKS: checks ? "1" : "0" };
+  const flags = { CODESPLITTER_DEPLOYS: "1", CODESPLITTER_AGENTS: "1", CODESPLITTER_PUSH_EVENTS: "1", CODESPLITTER_CHECKS: checks ? "1" : "0" };
   const git = (...args: string[]) => io.run(["git", "-C", wt, ...args]);
 
   // The plan runs first, always, and the deploy waits on a y/N after it: say so up front, since that's the step that gets left.
