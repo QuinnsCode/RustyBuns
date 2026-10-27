@@ -125,7 +125,7 @@ the camera is Qoa's eyes: look down and you see his body. ⚙️ Settings switch
 | Who's who, which clip | [`druids/cast.ts`](druids/cast.ts) (pure, tested in `test/druids.test.ts`) |
 | Workers → enemies (skeletons, Voidmires, void wolves, the Bound Druid) | [`druids/skin.ts`](druids/skin.ts) |
 | The merge gong (the totem's cure spell), the jukebox's Ambiance of the Vale | [`druids/audio.ts`](druids/audio.ts) |
-| The jukebox's **Podcast** station: any RSS feed, episode after episode, resuming where you left off. List feeds in `~/.config/agent-office/podcasts.json` (`{ "feeds": [{ "id", "title", "url", "order": "oldest" \| "newest" }] }`); the first plays | [`podcast/`](podcast/) (`feed.ts` reads the RSS at `/__rb/podcast`, `player.ts` plays it, tested in `test/podcast.test.ts`) |
+| The jukebox's **Podcast** station: any RSS feed, episode after episode, resuming where you left off. List feeds in `~/.config/agent-office/podcasts.json` (`{ "feeds": [{ "id", "title", "url", "order": "oldest" \| "newest" }] }`); the first plays; a speaker button (bottom right) while it plays keeps it at full volume anywhere in the office, your choice, remembered per browser | [`podcast/`](podcast/) (`feed.ts` reads the RSS at `/__rb/podcast`, `player.ts` plays it, tested in `test/podcast.test.ts`) |
 | People → Qoa, and your first-person body | [`druids/people.ts`](druids/people.ts) |
 | Druid Panels, loot, the village | [`druids/council.ts`](druids/council.ts) |
 | Palms, ivy, vines, grass | [`druids/jungle.ts`](druids/jungle.ts), all procedural and instanced (hippo-tycoon's palms, the game's grass blade) |
