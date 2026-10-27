@@ -338,6 +338,22 @@ export function diceBattle(att: number, def: number, r: () => number, cover: Sid
   return [att, def] as const;
 }
 
+// What tips a ground fight's dice, for the side that attacks and the side that holds the sector.
+// Cover (+1 on its best die): orbit gives either side cover from above, a jungle gives the holder
+// cover in the trees, and a side with most of a region's worlds has it over the whole region (area-wide).
+// Guns (every die a d8): upgraded guns, a card played on that one sector, fire for its holder.
+export function regionControl(c: Campaign, system: string): Faction | null {
+  const region = galaxyOf(c).system(system).region, ids = galaxyOf(c).systems.filter((d) => d.region === region).map((d) => d.id);
+  return FACTIONS.find((f) => ids.filter((id) => holds(c.systems[id]!, f)).length * 2 > ids.length) ?? null;
+}
+export function groundEdges(c: Campaign, at: Where): { cover: Sides; guns: Sides } {
+  const s = c.systems[at.system]!, x = s.sectors[at.sector]!, att = enemy(x.owner), area = regionControl(c, at.system);
+  return {
+    cover: { att: s.orbit === att || area === att, def: s.orbit === x.owner || x.kind === "jungle" || area === x.owner },
+    guns: { def: !!x.guns },
+  };
+}
+
 const name = (c: Campaign, id: string) => galaxyOf(c).system(id).name;
 const where = (c: Campaign, w: Where) => {
   const s = c.systems[w.system]!;
@@ -438,9 +454,8 @@ function landAndFight(c: Campaign, landings: Transit[], picks: Orders[], r: () =
       c.pending = { kind: "ground", spec: buildSpec(c, at, Math.floor(r() * 2 ** 31), pick.faction), at };
       return;
     }
-    // Orbit gives either side cover from above; a jungle gives the side that holds it cover in the trees.
-    // Upgraded guns fire for the side holding the sector.
-    const [a, b] = diceBattle(x.armies[att], x.armies[x.owner], r, { att: s.orbit === att, def: s.orbit === x.owner || x.kind === "jungle" }, { def: x.guns });
+    const { cover, guns } = groundEdges(c, at);
+    const [a, b] = diceBattle(x.armies[att], x.armies[x.owner], r, cover, guns);
     c.log.push(`Ground battle at ${where(c, at)}: ${FACTION_NAMES[a ? att : x.owner]} wins.`);
     x.armies[att] = a; x.armies[x.owner] = b;
     if (a) capture(c, x, att);
