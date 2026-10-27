@@ -23,7 +23,8 @@ import { lieOnGround, manualPose, rideableRise, popPose, TiltEase } from "./rend
 import { Driver, mountAgent } from "./agent.ts";
 import { DT, type Flick, flickTime, IDLE, type Input, type Mode, noseUp, start, step, type State, tumble } from "./sim.ts";
 import { HALF } from "./levels/plaza.ts";
-import type { ParkLevel } from "./levels/park.ts";
+import { grindLift } from "./grinds.ts";
+import { BOARD } from "./level.ts";import type { ParkLevel } from "./levels/park.ts";
 import { TRICKS } from "./tricks.ts";
 import { Gestures } from "./gesture.ts";
 import { pickProfile } from "./flick.ts";
@@ -173,6 +174,7 @@ if (ROADSTER_BUDGETS.includes(carBudget as RoadsterBudget)) {
   dressRoadster(car, new URL(`models/roadster-${carBudget}.glb`, document.baseURI).href).catch((e) => console.warn("roadster model", e));
 }
 const showroom = new URLSearchParams(location.search).has("showroom");
+let grindRise = 0; // how far the board is lifted onto the bar's contact, eased
 const PIVOT_Y = { fingerboard: 0.45, roadster: 0.6 }; // what a flip turns about
 const board = fingerboard();
 // The Blender model at a polygon budget (?board=hi|mid|low, or ?board=built for the three.js one alone).
@@ -409,6 +411,12 @@ function frame(now: number) {
   // Both skins ride the same pose; a flip or a grind turns whichever one is showing.
   const rider = skins.root, pivot = skins.pivot();
   rider.position.set(shown.x, shown.y, shown.z);
+  grindRise += ((sim.grind >= 0 ? grindLift(sim.grindKind) : 0) - grindRise) * (1 - Math.exp(-30 * dt)); // the board sits on the bar by its deck or its trucks, not its wheels
+  rider.position.y += grindRise;
+  if (sim.grind >= 0) { // the bar is under the part of the deck it landed on, not always the middle
+    const turn = shown.yaw + sim.grindOff;
+    rider.position.x -= Math.sin(turn) * sim.grindAt * BOARD.halfLen; rider.position.z -= Math.cos(turn) * sim.grindAt * BOARD.halfLen;
+  }
   const grounded = !sim.air && sim.bail <= 0 && sim.grind < 0, k = 1 - Math.exp(-40 * dt);
   const lie = grounded ? lieOnGround(...groundRise(shown.x, shown.z), shown.yaw) : sim.lip ? lieOnGround(Math.tan(sim.lip) * Math.sin(shown.yaw), Math.tan(sim.lip) * Math.cos(shown.yaw), shown.yaw) : { x: 0, z: 0 }; // along the ground, level again in the air (nose up the wall it just left)
   slope.x += (lie.x - slope.x) * k;
@@ -469,7 +477,11 @@ function frame(now: number) {
   if (sim.last !== shownTrick) { shownTrick = sim.last; trickAt = now; }
   const trick = $("trick");
   trick.textContent = shownTrick ? (shownTrick.points ? `${shownTrick.name}  +${shownTrick.points}` : shownTrick.name) : "";
-  if (sim.grind >= 0) trick.textContent = `${sim.grindKind}  balance ${"<".repeat(Math.max(0, Math.round(-sim.balance * 4)))}|${">".repeat(Math.max(0, Math.round(sim.balance * 4)))}`, trickAt = now;
+  if (sim.grind >= 0) trick.textContent = sim.grindKind, trickAt = now;
+  const leaning = sim.grind >= 0 || sim.manual !== 0, meter = $("balance");
+  meter.classList.toggle("on", leaning);
+  if (leaning) meter.style.setProperty("--lean", String(Math.max(-1, Math.min(1, sim.balance))));
+
   trick.classList.toggle("bail", !!shownTrick && !shownTrick.points);
   trick.style.opacity = (shownTrick || sim.grind >= 0) && (sim.grind >= 0 || now - trickAt < 2200) ? "1" : "0";
 

@@ -6,6 +6,7 @@
 // the tricks. `firing` is derived from the board's state after each step and never feeds back, so
 // swapping skins changes nothing in the ride.
 import { clamp } from "@rustybuns/util";
+import { across, GRIND_NAME, GRIND_POINTS, type GrindKind, grindFor, LEDGE_NAME, landing, leanStep, restOf, tippiness } from "./grinds.ts";
 import { BOARD, FOOT, hitObstacle, type Level, nextRail, onRail, railY } from "./level.ts";
 import { plaza } from "./levels/plaza.ts";
 import { type Flick, flickLong, TRICKS } from "./tricks.ts";
@@ -138,27 +139,14 @@ const NOLLIE_BONUS = 100; // popping off the nose is the harder way round
 const CATCH = 0.3; // land with less than this share of a flick left and the board is caught flat, not a bail
 const CHAIN_WINDOW = 3; // seconds on the ground between tricks before the chain ends
 const CHAIN_MAX = 8;
+const SLOPE = 1.5; // lean the bar's grade pulls toward, per unit of grade
 const LINK = 1.5; // a trick of a different kind from the last in the chain (grind, manual, air) scores this much more
 
-export type GrindKind = "50-50" | "boardslide" | "lipslide" | "nosegrind" | "5-0" | "smith" | "feeble";
-const GRIND_POINTS: Record<GrindKind, number> = { "50-50": 300, "5-0": 350, nosegrind: 400, boardslide: 450, lipslide: 500, smith: 500, feeble: 500 };
-const LEDGE_NAME: Record<GrindKind, string> = { "50-50": "50-50 slide", "5-0": "5-0 slide", nosegrind: "Nose slide", boardslide: "Boardslide", lipslide: "Lipslide", smith: "Smith slide", feeble: "Feeble slide" };
-const GRIND_NAME: Record<GrindKind, string> = { "50-50": "50-50 grind", "5-0": "5-0 grind", nosegrind: "Nosegrind", boardslide: "Boardslide", lipslide: "Lipslide", smith: "Smith grind", feeble: "Feeble grind" };
-const BALANCE_DRIFT = 1.1; // how fast a grind pulls off balance per unit of lean, per second
+export { grindKind, type GrindKind } from "./grinds.ts";
 const ROLL = 0.3; // m/s² the wheels lose rolling with nobody pushing
 const DRAG = 0.002; // per metre: the air's share, growing with the square of speed
 const MANUAL_MIN = 2; // m/s: slower than this and the board just drops back onto its wheels
 const MANUAL_POINTS = 150; // a second
-const BALANCE_PUSH = 3.2; // how hard steering pulls it back
-
-/** What the approach to a rail makes of the grind: `off` is the angle between the rider and the bar, `side` +1 if coming in from its left. */
-export function grindKind(off: number, side: number): GrindKind {
-  const a = off > Math.PI / 2 ? Math.PI - off : off; // riding the bar backwards is the same trick
-  if (a < 0.35) return "50-50";
-  if (a > 1.1) return side > 0 ? "boardslide" : "lipslide"; // across the bar: which truck is over it
-  if (a > 0.85) return side > 0 ? "smith" : "feeble"; // nearly across: the back truck hangs over, then the front
-  return side > 0 ? "nosegrind" : "5-0";
-}
 
 /** Which thruster groups burn this step: all derived from the board. `roll` is the corner jets firing unevenly through a flip (+1 kickflip, -1 heelflip). */
 export type Firing = { rear: boolean; lift: boolean; spin: -1 | 0 | 1; roll: -1 | 0 | 1 };
@@ -189,6 +177,10 @@ export type State = {
   grindKind: GrindKind;
   grindOff: number; // radians the board sits across the bar (boardslide), for the view
   balance: number; // -1..1 on a grind or a manual; at either end the rider falls off
+  lean: number; // how fast it is tipping, per second
+  push: number; // the correction the body has made so far, lagging the stick
+  grindAt: number; // -1 tail tip to 1 nose tip: the part of the deck over the bar
+  grindSide: number; // which way the grind rests over
   manual: -1 | 0 | 1; // which manual is being held, if any
   manualTime: number; // seconds in it
   chain: number; // tricks landed in a row; the score multiplier
@@ -216,7 +208,7 @@ export function start(x = 0, z = -20, yaw = 0, level: Level = plaza): State {
   return {
     t: 0, x, y: level.height(x, z), z, vx: 0, vy: 0, vz: 0, yaw, lip: 0, pitch: 0, roll: 0, speed: 0,
     air: false, airTime: 0, spun: 0, spin: 0, flipT: 0, flipKind: "kickflip", tricks: [], grind: -1, grindTime: 0,
-    grindKind: "50-50", grindOff: 0, balance: 0, manual: 0, manualTime: 0, chain: 0, chainT: 0, combo: [], comboScore: 0, comboKind: null, fan: false, jetT: 0,
+    grindKind: "50-50", grindOff: 0, balance: 0, lean: 0, push: 0, grindAt: 0, grindSide: 1, manual: 0, manualTime: 0, chain: 0, chainT: 0, combo: [], comboScore: 0, comboKind: null, fan: false, jetT: 0,
     firing: { rear: false, lift: false, spin: 0, roll: 0 }, popT: -1, nollie: false, feet: [], plateDown: false,
     bail: 0, tumbleDir: 1, score: 0, last: null, prevJump: false, prevFlip: false, prevFlick: false,
   };
@@ -393,7 +385,10 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     const ledge = r.kind === "ledge"; // a ledge is smooth: it slides further and forgives more
     s.grindTime += DT;
     s.speed *= 1 - (ledge ? 0.05 : 0.15) * DT;
-    s.balance += (BALANCE_DRIFT * (ledge ? 0.5 : 1) * (s.balance + (s.balance >= 0 ? 0.15 : -0.15)) - BALANCE_PUSH * inp.steer) * DT;
+    { // a lean to hold: the kind sets where it balances and how it tips, the bar's slope pulls it, speed steadies it
+      const o = onRail(r, s.x, s.z), grade = (((r.y2 ?? r.y) - r.y) / o.len) * (fx * o.dx + fz * o.dz);
+      leanStep(s, s.grindSide * restOf(s.grindKind) - Math.max(-0.5, Math.min(0.5, SLOPE * grade)), tippiness(s.grindKind) * (ledge ? 0.5 : 1), s.speed, inp.steer, DT);
+    }
     s.x += fx * s.speed * DT; s.z += fz * s.speed * DT;
     const t = onRail(r, s.x, s.z).t, y0 = s.y;
     s.y = railY(r, t);
@@ -427,11 +422,11 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
 
   if (!s.air) {
     // a manual: balance on two wheels. It drifts toward tipping over; push or brake to hold it
-    if (inp.manual && !s.manual && Math.abs(s.speed) > MANUAL_MIN) { s.manual = inp.manual; s.manualTime = 0; s.balance = 0; }
+    if (inp.manual && !s.manual && Math.abs(s.speed) > MANUAL_MIN) { s.manual = inp.manual; s.manualTime = 0; s.balance = 0; s.lean = 0.6; s.push = 0; } // the pop that lifts the wheels tips it a little
     if (s.manual) {
       s.manualTime += DT;
       s.speed *= 1 - 0.1 * DT;
-      s.balance += (BALANCE_DRIFT * (s.balance + (s.balance >= 0 ? 0.15 : -0.15)) - BALANCE_PUSH * inp.throttle * s.manual) * DT;
+      leanStep(s, 0.05, 1, s.speed, inp.throttle * s.manual, DT); // pushing or braking tips the nose and tail back
       if (inp.manual !== s.manual || Math.abs(s.speed) < MANUAL_MIN) endManual(s);
       else if (Math.abs(s.balance) >= 1) { s.vx = fx * s.speed; s.vz = fz * s.speed; bail(s, `Bail: lost the ${s.manual > 0 ? "manual" : "nose manual"}`); return s; }
     }
@@ -551,16 +546,18 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
       const i = level.rails.findIndex((r) => {
         const o = onRail(r, s.x, s.z), climb = (((r.y2 ?? r.y) - r.y) / o.len) * (s.vx * o.dx + s.vz * o.dz); // the bar's own rise under you, m/s
         if (r.kind === "coping" && Math.abs(s.vx * o.dx + s.vz * o.dz) < 2) return false; // straight back down a vert wall it drops past the coping, not onto it
-        return s.vy < Math.max(0, climb) && o.off < 0.45 && o.t > 0 && o.t < 1 && Math.abs(s.y - railY(r, o.t)) < 0.25 + Math.max(0, climb - s.vy) * DT;
+        return s.vy < Math.max(0, climb) && landing(r, s.x, s.z, s.yaw, 1) !== null && Math.abs(s.y - railY(r, o.t)) < 0.25 + Math.max(0, climb - s.vy) * DT;
       });
       if (i >= 0 && s.flipT <= 0) {
         const r = level.rails[i], o = onRail(r, s.x, s.z);
         const dir = s.vx * o.dx + s.vz * o.dz >= 0 ? 1 : -1; // ride the way you came in
-        // the approach angle names the grind: along the bar is a 50-50, across it a boardslide, between a nosegrind or 5-0
-        const rel = wrap(s.yaw - Math.atan2(dir * o.dx, dir * o.dz));
-        s.grindKind = grindKind(Math.abs(rel), Math.sign(rel) || 1);
-        s.grindOff = s.grindKind === "boardslide" || s.grindKind === "lipslide" ? Math.PI / 2 : 0;
-        s.balance = s.grindKind === "50-50" ? 0 : Math.sign(rel) * 0.3;
+        // the angle and the part of the deck over the bar name the grind
+        const lg = landing(r, s.x, s.z, s.yaw, dir)!, rel = lg.rel;
+        s.grindKind = grindFor(rel, lg.at); s.grindAt = lg.at;
+        s.grindOff = across(s.grindKind) ? Math.PI / 2 : 0;
+        s.grindSide = Math.sign(rel) || 1;
+        const d = o.dx * (s.z - r.a.z) - o.dz * (s.x - r.a.x); // landing off the bar's line starts it rocking that way
+        s.balance = 0; s.push = 0; s.lean = 0.5 * s.grindSide + 0.4 * Math.max(-1, Math.min(1, d / BOARD.halfWid));
         s.grind = i; s.grindTime = 0; s.popT = -1; s.spin = 0; // locked onto the bar, flat
         s.x = r.a.x + (r.b.x - r.a.x) * o.t; s.z = r.a.z + (r.b.z - r.a.z) * o.t;
         s.y = railY(r, o.t); s.vy = 0;
