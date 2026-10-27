@@ -29,11 +29,11 @@ export class Online {
   private sentAt = 0;
   private retry = 0;
 
-  constructor(readonly room: string, private level: string, private pve: boolean, private onChange: () => void) { this.connect(); }
+  constructor(readonly room: string, private level: string, private pve: boolean, private real: boolean, private onChange: () => void) { this.connect(); }
 
   private connect() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const q = new URLSearchParams({ room: this.room, level: this.level, uid: uid(), ...(this.pve ? { pve: "1" } : {}) });
+    const q = new URLSearchParams({ room: this.room, level: this.level, uid: uid(), ...(this.pve ? { pve: "1" } : {}), ...(this.real ? { real: "1" } : {}) });
     const ws = new WebSocket(`${proto}://${location.host}/ws?${q}`);
     this.ws = ws;
     ws.onopen = () => { this.status = "in"; this.retry = 0; this.onChange(); };

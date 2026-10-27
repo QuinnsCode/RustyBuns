@@ -34,7 +34,7 @@ import { mountTouch } from "./touch.ts";
 import { type Controls, loadControls, saveControls, tuned } from "./controls.ts";
 import { mountControlsPanel } from "./controls-panel.ts";
 import { level, levelId, mood, mountLevelUi, park, spawn } from "./levels/picker.ts";
-import { LEVELS, touring as isTouring } from "./levels/index.ts";
+import { LEVELS, touring as isTouring, wantsReal } from "./levels/index.ts";
 import { tourShot, tourStops } from "./render/tour.ts";
 import { newRoomCode, Online, roomCode, pveMode } from "./net/client.ts";
 import { bump } from "./net/bump.ts";
@@ -326,11 +326,11 @@ function hud() {
 const ghosts = new Ghosts(scene);
 const code = roomCode(location.search);
 const pve = pveMode(location.search); // PvE: boards pass through each other
-const online = code ? new Online(code, levelId, pve, () => { ghosts.set(online!.riders); hud(); }) : null;
+const online = code ? new Online(code, levelId, pve, wantsReal(location.search), () => { ghosts.set(online!.riders); hud(); }) : null;
 const togetherBtn = $("together") as HTMLButtonElement;
 togetherBtn.append(icon(Users));
 togetherBtn.addEventListener("click", () => {
-  if (!code) { location.search = `?${new URLSearchParams({ level: levelId, room: newRoomCode() })}`; return; }
+  if (!code) { location.search = `?${new URLSearchParams({ level: levelId, room: newRoomCode(), ...(wantsReal(location.search) ? { real: "" } : {}) })}`; return; }
   navigator.clipboard?.writeText(location.href).catch(() => {});
   togetherBtn.title = "Link copied";
   togetherBtn.blur();
