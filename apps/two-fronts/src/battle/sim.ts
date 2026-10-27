@@ -148,7 +148,12 @@ export interface Battle {
   vip: number | null;        // escort: the attacker's champion, while they live
   order: Order | null;       // the hero's last order to their squad
   caches: Cache[];           // heavy weapons out on the field
+  played: boolean;           // a human is at the controls (a step with input), not just the AI
+  tough: PerSide<number>;    // how much of a hit each side feels: see settle
+  bulkheads: Bulkhead[];     // the station's long walls across the deck, with the doorways in each
 }
+// A bulkhead row across the deck at z, and the x-spans left open in it.
+export interface Bulkhead { z: number; doors: [number, number][] }
 
 export const DT = 1 / 30;
 export const HALF = 180;           // the plain runs -HALF..HALF on x and z
@@ -382,7 +387,7 @@ export function startBattle(spec: BattleSpec): Battle {
     aiStrikeAt: { attacker: 20, defender: 25 },
     spawnAt: { attacker: 0, defender: 0 },
     kills: { attacker: 0, defender: 0 }, champ: { attacker: false, defender: false }, screamAt: -99,
-    mode, live: 0, phase: mode === "hill" ? HILL_EVERY : 0, vip: null, order: null, caches: [],
+    mode, live: 0, phase: mode === "hill" ? HILL_EVERY : 0, vip: null, order: null, caches: [], bulkheads: [], played: false, tough: { attacker: 1, defender: 1 },
   };
   // The turrets ring the keep; in a hold-out, every post.
   for (const gen of mode === "holdout" ? b.posts : [b.posts.at(-1)!]) for (let i = 0; i < spec.turrets; i++) {
@@ -390,6 +395,8 @@ export function startBattle(spec: BattleSpec): Battle {
     add(b, "defender", "turret", gen.x + cos(a) * 18, gen.z + sin(a) * 18);
   }
   scenery(b);
+  b.bulkheads = bulkheadsOf(b);
+  settle(b);
   // The woods: trees everywhere except on the posts, the spawns, the keep's ring and the scenery.
   caches(b);
   const w = WOODS[spec.sector], clear = [...b.posts, b.spawn.attacker, b.spawn.defender, ...b.caches], n = Math.round(w.n * Math.min(2, area(b)));
@@ -802,9 +809,43 @@ export function damage(b: Battle, v: Unit, dmg: number, from?: number, heavy = f
     if (heavy || dmg >= MOSS_HEAVY) v.wound = MOSS_WOUND;
     else dmg *= MOSS_LIGHT;
   }
-  v.hp -= dmg;
+  v.hp -= dmg * toughness(b, v.side) * (isHorde(b, v.side) ? 1 : heavy ? BLAST_ARMOUR : MARINE_ARMOUR) * squadCover(b, v); // armour turns bullets and clubs far better than blasts
   if (from !== undefined) v.hitBy = from;
 }
+
+// How much of a hit a side feels (1 = all of it), settled every step. The Marines' armour (MARINE_ARMOUR,
+// against bullets and clubs but not blasts) evens them with the horde's numbers. In a played battle it leans a little each way, all quietly:
+//  - the human's side gets an edge from their hero's own kills, squadmates near the hero take
+//    less of each hit (stay together and keep them alive), and its AI picks up the slack
+//    when the fight is going badly, so the human can't be left to lose it alone;
+//  - the AI side eases off when the human is well ahead and digs in a bit when they're behind
+//    (a soft rubber band on how hard the guns bite, nothing they can see);
+//  - against a human Marine the horde bites a little less; a human Wooka feels the Marines' guns a little more.
+export const BLAST_ARMOUR = 0.75;
+export const MARINE_ARMOUR = 0.12;
+const HERO_EDGE = 0.006, HERO_EDGE_MAX = 0.12; // per kill, and most, off the damage the hero's side takes
+const SLACK = 0.12;                            // the hero's side, behind: up to this much less damage taken
+const BAND = 0.2;                              // the AI side, behind or ahead: up to this much tougher or softer
+const VS_MARINE_HERO = 0.9, VS_WOOKA_HERO = 1.12;
+export function settle(b: Battle) {
+  const t = { attacker: 1, defender: 1 } as PerSide<number>;
+  if (b.played) {
+    const me = b.spec.hero, foe = other(me), share = (s: Side) => b.tickets[s] / Math.max(1, b.spec.tickets[s] + b.spec.reinforcements[s]);
+    const lead = clamp(share(me) - share(foe), -1, 1);
+    t[me] *= (1 - Math.min(HERO_EDGE_MAX, HERO_EDGE * b.hero.kills)) * (1 + SLACK * Math.min(0, lead));
+    t[foe] *= lead > 0 ? 1 - BAND * lead : 1 - BAND * 0.5 * lead;
+    t[me] *= isHorde(b, me) ? VS_WOOKA_HERO : VS_MARINE_HERO;
+  }
+  b.tough = t;
+}
+// A human who sticks with their people keeps them alive: squadmates close to the hero feel less of each hit.
+const COVER_R = 30, COVER_BY = 0.8;
+const squadCover = (b: Battle, v: Unit) => {
+  if (!b.played || v.side !== b.spec.hero || v.id === b.hero.id) return 1;
+  const h = heroUnit(b);
+  return h && dist(h, v) < COVER_R ? COVER_BY : 1;
+};
+export const toughness = (b: Battle, side: Side) => b.tough[side];
 
 // A Mossback mends, slowly, unless something heavy has hit it lately.
 export function tend(u: Unit, dt = DT) {
@@ -815,6 +856,33 @@ export function tend(u: Unit, dt = DT) {
 
 // The side the player isn't on, and the player's own squadmates, think for themselves. Every so
 // often each looks round for the nearest enemy it can see, and shoots at that till it's gone.
+// The station's bulkheads, found among the blocks: long, thin and tall enough to block sight.
+function bulkheadsOf(b: Battle): Bulkhead[] {
+  if (b.spec.sector !== "spaceport") return [];
+  const rows = new Map<number, Block[]>();
+  for (const k of b.blocks) if (!k.kind && k.w > 30 && k.d < 2) rows.set(k.z, [...(rows.get(k.z) ?? []), k]);
+  return [...rows].map(([z, ks]) => {
+    const doors: [number, number][] = [];
+    let x = -b.half;
+    for (const k of ks.sort((a, c) => a.x - c.x)) {
+      if (k.x - k.w / 2 - x > 4) doors.push([x, k.x - k.w / 2]);
+      x = Math.max(x, k.x + k.w / 2);
+    }
+    if (b.half - x > 4) doors.push([x, b.half]);
+    return { z, doors };
+  });
+}
+// Where to head for a goal across a bulkhead: the doorway in the nearest wall in the way, rather
+// than pressing on the wall (or sliding the wrong way along it) till the ends of the deck.
+function viaDoor(b: Battle, u: Unit, goal: { x: number; z: number }) {
+  let wall: Bulkhead | null = null;
+  for (const w of b.bulkheads) if ((u.z - w.z) * (goal.z - w.z) < 0 && (!wall || Math.abs(u.z - w.z) < Math.abs(u.z - wall.z))) wall = w;
+  if (!wall || !wall.doors.length) return goal;
+  const mid = (u.x + goal.x) / 2, dir = Math.sign(goal.z - u.z);
+  const [lo, hi] = wall.doors.reduce((best, d) => (Math.abs(clamp(mid, d[0], d[1]) - mid) < Math.abs(clamp(mid, best[0], best[1]) - mid) ? d : best));
+  const x = clamp(mid, lo + 3, Math.max(lo + 3, hi - 3));
+  return Math.abs(u.z - wall.z) > 5 || Math.abs(u.x - x) > 3 ? { x, z: Math.abs(u.z - wall.z) > 5 ? wall.z - dir * 4 : wall.z + dir * 6 } : { x, z: wall.z + dir * 8 };
+}
 function think(b: Battle, u: Unit) {
   const s = statsOf(u);
   u.cool -= DT;
@@ -891,8 +959,9 @@ function think(b: Battle, u: Unit) {
     if (fix && dist(u, fix) < 6) { fix.hp = Math.min(fix.maxHp, fix.hp + REPAIR * DT); return; }
     if (fix) return move(b, u, fix.x - u.x, fix.z - u.z, s.speed);
   }
-  const goal = u.guard ? guardPost(b, u.side) ?? objective(b, u.side) : objective(b, u.side);
-  let gx = goal.x + u.jx, gz = goal.z + u.jz;
+  const aim = u.guard ? guardPost(b, u.side) ?? objective(b, u.side) : objective(b, u.side);
+  const goal = flies(u) ? aim : viaDoor(b, u, aim);
+  let gx = goal.x + (goal === aim ? u.jx : 0), gz = goal.z + (goal === aim ? u.jz : 0);
   // The flanking packs swing wide of the straight line in, and close in once they're near.
   if (u.pack && dist(u, goal) > FLANK) {
     const d = dist(u, goal), side = u.pack === 1 ? 1 : -1;
@@ -1385,6 +1454,8 @@ function rhythm(b: Battle) {
 export function step(b: Battle, input: Input | null) {
   if (b.over) return;
   b.time += DT;
+  if (input) b.played = true;
+  settle(b);
   const sides: Side[] = ["attacker", "defender"];
   const hero = heroUnit(b), ride = heroVehicle(b);
 
@@ -1458,7 +1529,7 @@ export function step(b: Battle, input: Input | null) {
   // A mob on a Marine tears into them, on top of the clubs.
   for (const u of b.units) {
     if (u.hp <= 0 || isHorde(b, u.side) || armoured(u.kind) || flies(u) || hidden(b, u)) continue;
-    if (mob(b, u) >= MOB) u.hp -= MAUL * DT;
+    if (mob(b, u) >= MOB) u.hp -= MAUL * DT * MARINE_ARMOUR * b.tough[u.side];
   }
   // Boomies go off when they die, however they die, and can set each other off.
   for (let again = true; again;) {

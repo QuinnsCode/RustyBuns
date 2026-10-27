@@ -295,6 +295,16 @@ A desktop build takes about a second, and every build and deploy prints how long
 
 </details>
 
+### Thousands of battles on a fifth of your machine
+
+Two Fronts plays thousands of headless battles to balance itself, on at most 20% of your cores at the lowest priority, and hands back a report you can scrub.
+
+<details><summary>More</summary>
+
+`bun apps/two-fronts/scripts/sim.ts --n 1000 --hero both --handicap 0,0.3,0.6` plays the battles on worker threads, with a scripted player in the hero's seat if you ask for one. It never uses more than a fifth of the machine's cores (`--jobs` can only go lower, and one core is the floor) and runs at nice 19, so the desk stays usable while it works. Nothing leaves your machine and nothing is billed. It writes `dist/balance/report.json` and a self-contained `report.html`: win rates by sector, how often the hero beats a foe with 30% or 60% more, a heatmap of where each side stood with a time slider, and a replay of sampled battles to scrub. The cap is in the script itself; the scheduler above is the general version for other tools.
+
+</details>
+
 ### Background work that steps aside (experimental)
 
 Work on a host can be realtime, high, normal or low priority, and low work backs off while your machine is busy.
