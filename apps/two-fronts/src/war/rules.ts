@@ -16,6 +16,7 @@
 import type { BattleResult, BattleSpec, Faction, MatchMode, SectorKind, SpaceBattleResult, SpaceBattleSpec, VehicleKind, VehiclePool } from "../battle/contract.ts";
 import { BIG_BATTLE, BIG_MAP_FOR, other as otherSide } from "../battle/contract.ts";
 import { mulberry32 } from "@rustybuns/util";
+import { admitLandings } from "./landing.ts";
 import { FACTION_NAMES, GALAXIES, SECTOR_INCOME, SECTOR_NAMES, galaxyOf, type GalaxyId } from "./galaxy.ts";
 
 export type Count = Record<Faction, number>;
@@ -403,13 +404,15 @@ function landAndFight(c: Campaign, landings: Transit[], picks: Orders[], r: () =
     x.armies[foe] -= kills;
     c.log.push(`${FACTION_NAMES[f]} bombards ${where(c, b.at)} from orbit${holdsShield(s, foe) ? ", through the shield" : ""}: ${kills} ${kills === 1 ? "army" : "armies"} killed.`);
   }
-  // Troops land only under their own orbit; the rest turn back.
+  // Troops land through the sky: the orbit's holder lands freely, a rush through a fleet gets a
+  // trickle into one place (see landing.ts). The rest turn back.
+  const across = landings.filter((t) => t.from.system !== t.to.system), admitted = admitLandings(c.systems, across);
   for (const t of landings) {
-    const same = t.from.system === t.to.system;
-    if (same || c.systems[t.to.system]!.orbit === t.faction) sectorAt(c, t.to)!.armies[t.faction] += t.count;
-    else {
-      sectorAt(c, t.from)!.armies[t.faction] += t.count;
-      c.log.push(`${FACTION_NAMES[t.faction]} troops for ${where(c, t.to)} turned back: no orbit there.`);
+    const land = t.from.system === t.to.system ? t.count : admitted[across.indexOf(t)]!;
+    sectorAt(c, t.to)!.armies[t.faction] += land;
+    if (land < t.count) {
+      sectorAt(c, t.from)!.armies[t.faction] += t.count - land;
+      c.log.push(`${FACTION_NAMES[t.faction]} troops for ${where(c, t.to)} turned back: ${land ? `only ${land} could land` : "no way through the sky"}.`);
     }
   }
 

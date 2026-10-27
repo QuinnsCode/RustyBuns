@@ -18,7 +18,7 @@ export interface RegionDef { id: string; name: string; bonus: number; label: [nu
 // Armies are per sector.
 export interface Start { owner: Faction; fleets: number; armies: number }
 
-export type GalaxyId = "short" | "full" | "horde";
+export type GalaxyId = "intro" | "short" | "full" | "horde";
 
 export interface GalaxyDef {
   id: GalaxyId;
@@ -53,6 +53,28 @@ function galaxy(def: GalaxyDef): Galaxy {
     },
   };
 }
+
+// The intro world: ours, theirs, and an empty place in the middle, a reach of open space with no
+// ground to hold. A new player learns capital-ship fighting over the Gap before landing anywhere.
+// The Gap's start owner is only a formality: it starts with no ships or armies.
+const INTRO = galaxy({
+  id: "intro",
+  name: "First contact",
+  blurb: "3 places: learn space fighting, then land",
+  width: 100,
+  regions: [{ id: "gap", name: "The Gap", bonus: 0, label: [50, 98] }],
+  systems: [
+    { id: "haven", name: "Haven", region: "gap", x: 12, y: 50, sectors: ["spaceport", "capital", "capital"] },
+    { id: "gap", name: "Gap", region: "gap", x: 50, y: 20, sectors: [] },
+    { id: "ridge", name: "Ridge", region: "gap", x: 88, y: 50, sectors: ["spaceport", "capital", "capital"] },
+  ],
+  lanes: [["haven", "gap"], ["gap", "ridge"], ["haven", "ridge"]], // the direct lane is the rush
+  start: {
+    haven: { owner: "marines", fleets: 3, armies: 2 },
+    gap: { owner: "marines", fleets: 0, armies: 0 },
+    ridge: { owner: "wooka", fleets: 3, armies: 2 },
+  },
+});
 
 // Most worlds are one capital sector. Kessa and Lumen, the two worlds of the Narrows, are whole
 // planets of three sectors, and Corva and Morrow each guard the way into their side's home region
@@ -253,7 +275,7 @@ function hordeGalaxy(): Galaxy {
   return galaxy({ id: "horde", name: "The Horde", blurb: "60 worlds, and the Wooka come in force", width: W, pay: 0.3, regions, systems, lanes, start });
 }
 
-export const GALAXIES: Record<GalaxyId, Galaxy> = { short: SHORT, full: FULL, horde: hordeGalaxy() };
+export const GALAXIES: Record<GalaxyId, Galaxy> = { intro: INTRO, short: SHORT, full: FULL, horde: hordeGalaxy() };
 export const galaxyOf = (c: { galaxy: GalaxyId }) => GALAXIES[c.galaxy];
 
 export const SECTOR_NAMES: Record<SectorKind, string> = { capital: "Ruined city", spaceport: "Space station", shield: "Shield generator", cannon: "Shore cannon", canyon: "Dust sea", jungle: "Glow jungle" };
