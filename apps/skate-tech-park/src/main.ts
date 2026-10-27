@@ -22,6 +22,7 @@ import { Taps } from "./render/feet.ts";
 import { lieOnGround, manualPose, rideableRise, popPose, TiltEase } from "./render/tilt.ts";
 import { DT, type Flick, flickTime, IDLE, type Input, type Mode, noseUp, start, step, type State, tumble } from "./sim.ts";
 import { HALF } from "./levels/plaza.ts";
+import { grindLift } from "./grinds.ts";
 import { BOARD } from "./level.ts";import type { ParkLevel } from "./levels/park.ts";
 import { TRICKS } from "./tricks.ts";
 import { Gestures } from "./gesture.ts";
@@ -172,6 +173,7 @@ if (ROADSTER_BUDGETS.includes(carBudget as RoadsterBudget)) {
   dressRoadster(car, new URL(`models/roadster-${carBudget}.glb`, document.baseURI).href).catch((e) => console.warn("roadster model", e));
 }
 const showroom = new URLSearchParams(location.search).has("showroom");
+let grindRise = 0; // how far the board is lifted onto the bar's contact, eased
 const PIVOT_Y = { fingerboard: 0.45, roadster: 0.6 }; // what a flip turns about
 const board = fingerboard();
 // The Blender model at a polygon budget (?board=hi|mid|low, or ?board=built for the three.js one alone).
@@ -394,6 +396,8 @@ function frame(now: number) {
   // Both skins ride the same pose; a flip or a grind turns whichever one is showing.
   const rider = skins.root, pivot = skins.pivot();
   rider.position.set(shown.x, shown.y, shown.z);
+  grindRise += ((sim.grind >= 0 ? grindLift(sim.grindKind) : 0) - grindRise) * (1 - Math.exp(-30 * dt)); // the board sits on the bar by its deck or its trucks, not its wheels
+  rider.position.y += grindRise;
   if (sim.grind >= 0) { // the bar is under the part of the deck it landed on, not always the middle
     const turn = shown.yaw + sim.grindOff;
     rider.position.x -= Math.sin(turn) * sim.grindAt * BOARD.halfLen; rider.position.z -= Math.cos(turn) * sim.grindAt * BOARD.halfLen;

@@ -47,6 +47,10 @@ export function grindFor(rel: number, at: number): GrindKind {
 /** Across the bar: the deck lies over it, and the view turns the board a quarter turn. */
 export const across = (k: GrindKind) => k === "boardslide" || k === "lipslide" || k === "tailslide" || k === "noseslide";
 
+/** How far the board rides above its wheels' plane on the bar (model units): across the bar it is the deck's underside that slides, along it the truck's hanger. */
+export const GRIND_LIFT = { deck: 0.42, truck: 0.16 };
+export const grindLift = (k: GrindKind) => (across(k) ? GRIND_LIFT.deck : GRIND_LIFT.truck);
+
 // How far over each grind rests, and how hard it tips: a 50-50 is stable, a nosegrind tips forward, a crooked to one side, a tailslide has one point to stand on.
 const REST: Record<GrindKind, number> = { "50-50": 0, "5-0": 0.12, nosegrind: 0.28, boardslide: 0.1, lipslide: 0.14, smith: 0.2, feeble: 0.2, crooked: 0.34, tailslide: 0.3, noseslide: 0.36 };
 const TIPPY: Record<GrindKind, number> = { "50-50": 1, "5-0": 1.2, nosegrind: 1.5, boardslide: 1, lipslide: 1.2, smith: 1.4, feeble: 1.4, crooked: 1.6, tailslide: 1.6, noseslide: 1.8 };
