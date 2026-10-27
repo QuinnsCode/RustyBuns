@@ -4,7 +4,7 @@
 // is one seat at it.
 import { GALAXIES, SECTOR_NAMES, FACTION_NAMES, galaxyOf, type GalaxyId } from "./war/galaxy.ts";
 import {
-  CARDS, CARD_NAMES, COST, FACTIONS, MUSTER_MAX, MUSTER_MIN, ORBIT, checkRetreats, enemy, fogged, handOf, heroReady, idleShips, income, incomeBreakdown, keyShare, musterOf, planDeploys, planOrders, regionHolder, supplied,
+  CARDS, CARD_NAMES, COST, FACTIONS, MUSTER_MAX, LOST_TURNS, MUSTER_MIN, ORBIT, canBreakOut, checkRetreats, enemy, fogged, handOf, heroReady, idleShips, income, incomeBreakdown, keyShare, musterOf, planDeploys, planOrders, regionHolder, supplied,
   type Attack, type Campaign, type Card, type Order, type Orders, type Retreat, type Where,
 } from "./war/rules.ts";
 import { aiVote, castVote, handIn, heroFaction, humans, newTable, report, tally, waitingOn, type Seats, type Table, type Vote } from "./war/table.ts";
@@ -321,7 +321,13 @@ function battlesPanel() {
       <div class="act"><button type="button" data-auto="${key(b)}" class="${fight ? "" : "on"}" title="Quick: the dice settle it, with a little luck">${icon("dices", 15)} Auto-resolve</button>
         <button type="button" data-fight="${key(b)}" class="${fight ? "on" : ""}" ${ready ? "" : "disabled"} title="${ready ? "Fight this one yourself, on the ground or in orbit (one a turn)" : "Your hero is wounded"}">${icon("swords", 15)} Fight it</button></div></li>`;
   };
-  return `<div class="battles"><h2>Battles</h2>${fights.length ? `<ul class="sectors">${fights.map(card).join("")}</ul>
+  const breakouts = Object.values(seen().systems).filter((x) => !x.fog && canBreakOut(x, me)).map((x) => {
+    const on = !!mine.hero && sameWhere(mine.hero, { system: x.id, sector: ORBIT });
+    return `<li><div><b>Breakout: ${systemDef(x.id).name}</b>
+        <div class="small">${icon("rocket", 12)} one ship against ${x.fleets[enemy(me)]} · very hard, and a lost hero is out ${LOST_TURNS} turns</div></div>
+      <div class="act"><button type="button" data-fight="${x.id}:${ORBIT}" class="${on ? "on" : ""}" ${ready ? "" : "disabled"} title="${ready ? "Your hero flies up from the surface to break the blockade (one battle a turn)" : "Your hero is wounded"}">${icon("swords", 15)} Break out</button></div></li>`;
+  });
+  return `<div class="battles"><h2>Battles</h2>${breakouts.length ? `<ul class="sectors">${breakouts.join("")}</ul>` : ""}${fights.length ? `<ul class="sectors">${fights.map(card).join("")}</ul>
     ${fights.length > 1 ? `<div class="act"><button type="button" data-auto="all" title="Let the dice settle every fight">${icon("dices", 15)} Auto-resolve all</button></div>` : ""}`
     : `<p class="hint">No fights this turn. End your turn to collect income and see what the other side did.</p>`}
     ${tip("Odds are an estimate from the troops you commit against what you can see. They may commit more or less, and you will not know until the dice roll.")}</div>`;

@@ -65,6 +65,7 @@ export interface SpaceBattleSpec {
   hero: Side;
   heroLevel: number;
   fleets: PerSide<number>;    // ships on each side
+  breakout?: true;            // the hero's side has no fleet here: one ship flies up from the surface against the blockade
   // Each side's muster force: its armies on the world below, which send boarding parties up, and
   // its gun sectors there (cannons, shields, upgraded guns), which add to a screen or a bombard.
   // Absent in a save from before the pick battle: none on either side.

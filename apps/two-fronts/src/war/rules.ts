@@ -34,6 +34,10 @@ export interface Hero { level: number; xp: number; woundedUntil: number }
 export interface Where { system: string; sector: number }
 // A hero pick with this sector flies in the space battle over the system instead.
 export const ORBIT = -1;
+// A hero who loses the orbit goes down with the flagship and is out this many turns, not three.
+export const LOST_TURNS = 6;
+// A hero breaking out from the surface against a blockade gets one ship out of the garrison, no more.
+export const BREAKOUT_SHIPS = 1;
 interface Transit { faction: Faction; from: Where; to: Where; count: number }
 // A paused space battle holds the turn's landings: where they can land waits on who wins the orbit.
 // The cards. A weapon upgrade arms a sector you hold for good, a muster raises armies for free,
@@ -383,6 +387,11 @@ export function resolveTurn(c0: Campaign, all: Orders[]): Campaign {
       s.fleets[foe] -= blown;
       s.fleets[f] = 0;
     }
+    const breaker = c.pending ? undefined : picks.find((o) => o.hero!.system === s.id && o.hero!.sector === ORBIT && canBreakOut(s, o.faction));
+    if (breaker) {
+      c.pending = { kind: "space", spec: buildSpaceSpec(c, s.id, enemy(breaker.faction), Math.floor(r() * 2 ** 31), breaker.faction, true), system: s.id, landings: [] };
+      continue;
+    }
     if (s.fleets.marines && s.fleets.wooka) {
       const def = startOrbit[s.id] ?? (r() < 0.5 ? "marines" : "wooka"), att = enemy(def);
       const pick = c.pending ? undefined : picks.find((o) => o.hero!.system === s.id && o.hero!.sector === ORBIT);
@@ -701,21 +710,26 @@ export function applyBattleResult(c0: Campaign, res: BattleResult): Campaign {
 }
 
 // Each side's fleet over the system becomes a line of cruisers; the defender held the orbit.
-export function buildSpaceSpec(c: Campaign, system: string, def: Faction, seed: number, heroOf: Faction = c.player): SpaceBattleSpec {
+export function buildSpaceSpec(c: Campaign, system: string, def: Faction, seed: number, heroOf: Faction = c.player, breakout = false): SpaceBattleSpec {
   const s = c.systems[system]!, att = enemy(def);
   return {
+    ...(breakout && { breakout: true as const }),
     id: `${c.turn}-${system}-orbit`,
     turn: c.turn,
     system: name(c, system),
     factions: { attacker: att, defender: def },
     hero: att === heroOf ? "attacker" : "defender",
     heroLevel: c.heroes[heroOf].level,
-    fleets: { attacker: s.fleets[att], defender: s.fleets[def] },
+    fleets: { attacker: breakout ? BREAKOUT_SHIPS : s.fleets[att], defender: s.fleets[def] },
     muster: { attacker: musterOf(s, att).troops, defender: musterOf(s, def).troops },
     batteries: { attacker: musterOf(s, att).batteries, defender: musterOf(s, def).batteries },
     seed,
   };
 }
+
+// A side with armies on a world but no ships over it, under the enemy's blockade, can send its hero
+// up to break out: one ship against the whole fleet.
+export const canBreakOut = (s: SystemState, f: Faction) => !s.fleets[f] && s.fleets[enemy(f)] > 0 && s.sectors.some((x) => x.armies[f] > 0);
 
 // The winner's cruisers still fit to fly keep the orbit (one at least, and boarding can bring
 // prizes home); the loser's fleet there is gone. A pick battle's toll on the world below comes off
@@ -724,7 +738,7 @@ export function applySpaceResult(c0: Campaign, res: SpaceBattleResult): Campaign
   const p = c0.pending;
   if (p?.kind !== "space" || p.spec.id !== res.id) throw new Error("that isn't the battle being fought");
   const c = structuredClone(c0), spec = p.spec, s = c.systems[p.system]!;
-  const win = res.winner, lose = otherSide(win), kept = Math.max(1, Math.min(spec.fleets.attacker + spec.fleets.defender, res.fleets[win]));
+  const win = res.winner, lose = otherSide(win), kept = Math.max(1, Math.min(spec.breakout ? spec.fleets[win] : spec.fleets.attacker + spec.fleets.defender, res.fleets[win]));
   const winner = spec.factions[win], loser = spec.factions[lose];
   s.fleets[winner] = kept;
   s.fleets[loser] = 0;
@@ -746,6 +760,11 @@ export function applySpaceResult(c0: Campaign, res: SpaceBattleResult): Campaign
     c.log.push(`${t.count} ${FACTION_NAMES[t.faction]} ${t.count === 1 ? "army comes" : "armies come"} down on ${where(c, t.to)} under their orbit.`);
   }
   heroBack(c, spec.factions[spec.hero], win === spec.hero, res.heroDown);
+  if (win !== spec.hero) {
+    const hero = c.heroes[spec.factions[spec.hero]];
+    hero.woundedUntil = Math.max(hero.woundedUntil, c.turn + LOST_TURNS);
+    c.log.push(`${FACTION_NAMES[spec.factions[spec.hero]]}'s hero is lost with the flagship over ${name(c, p.system)}, out until turn ${hero.woundedUntil}.`);
+  }
   c.pending = null;
   return landAndFight(c, p.landings, [], rng((c.seed * 1000 + c.turn) ^ 0x2545f491));
 }

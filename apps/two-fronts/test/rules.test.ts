@@ -3,7 +3,7 @@ import type { BattleSpec } from "../src/battle/contract.ts";
 import { GALAXIES, SECTOR_NAMES, type Galaxy, type GalaxyId } from "../src/war/galaxy.ts";
 import { aiDeploys, aiOrders } from "../src/war/ai.ts";
 import {
-  ORBIT, applyBattleResult, applySpaceResult, canPushFromSurface, checkRetreats, declareAttacks, deployTurn, planDeploys, fogged, involved, diceBattle, groundEdges, income, incomeBreakdown, keyShare, regionHolder, newCampaign, planOrders, resolveTurn, rng, supplied, vehiclePool,
+  LOST_TURNS, ORBIT, applyBattleResult, applySpaceResult, canPushFromSurface, checkRetreats, declareAttacks, deployTurn, planDeploys, fogged, involved, diceBattle, groundEdges, income, incomeBreakdown, keyShare, regionHolder, newCampaign, planOrders, resolveTurn, rng, supplied, vehiclePool,
   type Campaign, type Order, type Orders, type Retreat, type Where,
 } from "../src/war/rules.ts";
 
@@ -240,12 +240,35 @@ test("the hero can fly the space battle instead: the landings wait on who wins t
   expect(won.log.some((l) => l.startsWith("Ground battle at Kessa shield generator"))).toBe(true);
   expect(won.heroes.marines.xp).toBe(2);
 
-  // Lose it: the troops turn back, and the hero, shot down, sits out three turns.
+  // Lose it: the troops turn back, and the hero goes down with the flagship and sits out six.
   const lost = applySpaceResult(paused, { id: spec.id, winner: "defender", fleets: { attacker: 0, defender: 0 }, heroDown: true });
   expect(lost.systems.kessa!).toMatchObject({ orbit: "wooka", fleets: { marines: 0, wooka: 1 } });
   expect(lost.log).toContain("Thunder Marines troops for Kessa shield generator turned back: only 2 could land.");
   expect(lost.systems.corva!.sectors[0]!.armies.marines).toBe(1);
-  expect(lost.heroes.marines.woundedUntil).toBe(4);
+  expect(lost.heroes.marines.woundedUntil).toBe(1 + LOST_TURNS);
+});
+
+test("a hero on a world under blockade can break out: one ship against the fleet, and a loss costs the hero for good measure", () => {
+  const c = newCampaign();
+  const k = kessa(c);
+  k.sectors[0]!.armies.marines = 2;
+  k.fleets = { marines: 0, wooka: 3 };
+  k.orbit = "wooka";
+  const flyer = (o: Orders[]) => whole(c, o);
+  // Nothing to break out of for a hero with no troops below, or on a world nobody blockades.
+  expect(flyer([{ faction: "marines", hero: { system: "corva", sector: ORBIT }, orders: [] }]).pending).toBeNull();
+  const paused = flyer([{ faction: "marines", hero: { system: "kessa", sector: ORBIT }, orders: [] }]);
+  expect(paused.pending?.kind).toBe("space");
+  const spec = paused.pending!.spec;
+  expect(spec).toMatchObject({ breakout: true, hero: "attacker", factions: { attacker: "marines", defender: "wooka" }, fleets: { attacker: 1, defender: 3 } });
+
+  const won = applySpaceResult(paused, { id: spec.id, winner: "attacker", fleets: { attacker: 1, defender: 0 }, heroDown: false });
+  expect(won.systems.kessa!).toMatchObject({ orbit: "marines", fleets: { marines: 1, wooka: 0 } });
+
+  const lost = applySpaceResult(paused, { id: spec.id, winner: "defender", fleets: { attacker: 0, defender: 3 }, heroDown: false });
+  expect(lost.systems.kessa!).toMatchObject({ orbit: "wooka", fleets: { marines: 0, wooka: 3 } });
+  expect(lost.heroes.marines.woundedUntil).toBe(1 + LOST_TURNS);
+  expect(lost.log.some((l) => l.includes("hero is lost with the flagship"))).toBe(true);
 });
 
 test("an anti-ship cannon knocks a ship a turn out of a blockade, and can break it", () => {
