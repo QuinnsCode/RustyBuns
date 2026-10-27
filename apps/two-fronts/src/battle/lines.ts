@@ -9,7 +9,7 @@ const GREEN = /\b(ferns?|trees?|forest)\b/i;
 
 // The words are in content/ (bun run cms edits them): radio.json has the shield world's pool under
 // "shield" and the others' own lines beside it; chatter.json has each side's pools and, under "worlds",
-// what each other world's troops say over their heads: [Marines calm, Marines scared, Wooka scared].
+// what each other world's troops say over their heads: [Thunder Marines calm, Thunder Marines scared, Wooka scared].
 const RADIO: Partial<Record<SectorKind, string[]>> = RADIO_SCRIPT;
 const CHAT: Partial<Record<SectorKind, { marinesCalm: string[]; marinesScared: string[]; wookaScared: string[] }>> = CHATTER_SCRIPT.worlds;
 

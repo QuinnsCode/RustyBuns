@@ -5,7 +5,7 @@
   "version": "0.0.1",
   "scripts": {
     "dev": "vite",
-    "cms": "bun ../../packages/cms/src/cli.ts content --title \"Two Fronts\" --port 4701",
+    "cms": "bun ../../packages/cms/src/cli.ts content --title \"Two Fronts: Thunderwooka Saga\" --port 4701",
     "build": "vite build",
     "test": "bun test test",
     "desktop:dev": "rustybuns build desktop --dev --check && rustybuns run desktop",

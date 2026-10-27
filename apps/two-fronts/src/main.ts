@@ -216,7 +216,7 @@ function render() {
         const deployTo = moving && x.owner === me && here.armies[me] > 1 ? targets.filter((t) => !sameWhere(t, at) && draft.systems[t.system]!.sectors[t.sector]!.owner === me && !planDeploys(draft, me, [{ kind: "army", from: at, to: t, count: 1 }]).errors[0]) : [];
         return `<li>
           <div class="sector"><i class="dot ${x.owner}"></i><b>${SECTOR_NAMES[x.kind]}</b>${x.guns ? `<i class="mark" title="Upgraded guns: its holder rolls d8s defending it">${icon("crosshair", 13)}</i>` : ""}${(v.traps ?? []).some((t) => sameWhere(t.at, at)) ? `<i class="mark" title="Your trap is set here">${icon("bomb", 13)}</i>` : ""}
-            <span class="count armies" title="Armies here: Marines, then Wooka">${icon("users", 14)}<b class="marines">${foe === "marines" ? theirs(x.armies.marines, x.owner === foe) : x.armies.marines}</b><b class="wooka">${foe === "wooka" ? theirs(x.armies.wooka, x.owner === foe) : x.armies.wooka}</b></span></div>
+            <span class="count armies" title="Armies here: Thunder Marines, then Wooka">${icon("users", 14)}<b class="marines">${foe === "marines" ? theirs(x.armies.marines, x.owner === foe) : x.armies.marines}</b><b class="wooka">${foe === "wooka" ? theirs(x.armies.wooka, x.owner === foe) : x.armies.wooka}</b></span></div>
           ${builds ? `<div class="act">${builds}</div>` : ""}
           ${bombardable(i) ? `<div class="act send"><span class="what">${icon("flame", 15)}</span><select data-bomb-n="${i}" title="Ships to train on this sector">${opts(idle)}</select>${goBtn(`data-bombard="${i}"`, "Bombard from orbit: each ship kills an army here, half as many through a shield")}</div>` : ""}
           ${here.armies[me] && x.owner === me && !answering && sendTo(i).length ? sendRow(icon("users", 15), `<select data-army-n="${i}" title="Armies to send">${opts(here.armies[me])}</select>`,
@@ -432,7 +432,7 @@ const SIDES: { id: Faction; pitch: string }[] = [
 ];
 function chooseGame(first = false) {
   if (first) $("modal").classList.add("fresh");
-  showModal(`<h2>${first ? "Two Fronts" : "New campaign"}</h2>
+  showModal(`<h2>${first ? "Two Fronts: Thunderwooka Saga" : "New campaign"}</h2>
     ${first ? "" : `<p class="small">${game.kind === "local" ? "The campaign in this browser will be lost." : "You can come back to the online one from its link."}</p>`}
     <h3>Choose your side</h3>
     <div class="sides">${SIDES.map((s, i) => `<label class="side ${s.id}"><input type="radio" name="side" value="${s.id}"${i ? "" : " checked"} />
@@ -850,7 +850,7 @@ async function finish(result: BattleResult) {
     ${backButton(spec.factions[spec.hero])}`);
 }
 
-// Quick play, outside the campaign, on Doren, the forest moon: the Marines came to hunt and found
+// Quick play, outside the campaign, on Doren, the forest moon: the Thunder Marines came to hunt and found
 // themselves the quarry. Hold the line as a Thunder Marine, or be the horde that stalks them.
 // `?world=canyon` (or capital, cannon, spaceport, jungle) plays the same fight on another sector's map.
 const WORLDS: readonly SectorKind[] = ["shield", "canyon", "capital", "cannon", "spaceport", "jungle"];
@@ -871,7 +871,7 @@ function skirmish(asWooka: boolean, mode: MatchMode = "conquest") {
     const votes: Partial<Record<Faction, MatchMode>> = { [theirs]: aiVote(spec.id, theirs, mode) };
     const screen = voteScreen($("vote"), {
       title: asWooka ? (won ? "The hunt is over" : "Driven back into the ferns") : won ? "Still breathing" : "Hunted down",
-      text: asWooka ? (won ? "The generator is in pieces, the armoured ones are running, and someone is wearing a backpack as a hat." : "The Marines held. The forest remembers their smell.") : won ? "You came to Doren to hunt. You leave knowing what it is to be hunted. They'll be back. They always come back." : "Nobody heard them coming. They got into the backpacks.",
+      text: asWooka ? (won ? "The generator is in pieces, the armoured ones are running, and someone is wearing a backpack as a hat." : "The Thunder Marines held. The forest remembers their smell.") : won ? "You came to Doren to hunt. You leave knowing what it is to be hunted. They'll be back. They always come back." : "Nobody heard them coming. They got into the backpacks.",
       seats: [{ faction: mine, who: "here" }, { faction: theirs, who: "ai", vote: votes[theirs] }],
       leave: { label: "Back to the map", title: "No rematch" },
       cast(f, m) { votes[f] = m; screen.update(votes, tally(spec.id, votes)); },
@@ -888,8 +888,8 @@ $("orders-h").insertAdjacentHTML("afterbegin", icon("list-checks", 14));
 $("log-h").insertAdjacentHTML("afterbegin", icon("scroll-text", 14));
 $("hold-line").onclick = () => skirmish(false);
 $("be-horde").onclick = () => skirmish(true);
-// Quick play in orbit: three Marine ships hold the orbit over Doren against three Wooka ones,
-// with a Marine outpost and its shield below and the Wooka horde in the ferns.
+// Quick play in orbit: three Thunder Marine ships hold the orbit over Doren against three Wooka ones,
+// with a Thunder Marine outpost and its shield below and the Wooka horde in the ferns.
 $("dogfight").title = "Quick battle: hold the orbit over Doren, picking orders or flying a fighter";
 $("dogfight").onclick = () => {
   const spec: SpaceBattleSpec = {

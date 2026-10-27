@@ -2,7 +2,7 @@
 // Models stand on y = 0 and face -z, the way yaw 0 faces in the sim.
 //
 // Each model is a rig: named joints (groups) with the parts hanging off them merged into one mesh
-// per material, so a Marine is a couple of dozen draw calls, not a hundred. A model is built once
+// per material, so a Thunder Marine is a couple of dozen draw calls, not a hundred. A model is built once
 // and cloned after that, sharing its geometry. `animate` poses a clone every frame from what its
 // unit is doing: walk cycles, the Wooka's waddle and club swing, recoil, wobbling antennas.
 import * as THREE from "three";
@@ -127,7 +127,7 @@ const M = {
   get engineCore() { return lazy("m.engineCore", () => glow(0xfff1c2)); },
   get plume() { return lazy("m.plume", () => new THREE.MeshBasicMaterial({ color: 0xff9a3a, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending })); },
 };
-// The Wooka: round, fluffy, knee-high to a Marine, with big black eyes that have nothing behind
+// The Wooka: round, fluffy, knee-high to a Thunder Marine, with big black eyes that have nothing behind
 // them and a club with a nail in it. On purpose.
 const W = {
   get fur() { return lazy("w.fur", () => std(0x9a6438, 0.95, { map: furMap() })); },
@@ -606,7 +606,7 @@ function buildWooka(hero: boolean, role: WookaRole | "warbur" = "fodder") {
     }
     k.add(head, cone(0.02, 0.07, 4), W.tooth, { x: -0.07, y: -0.16, z: -0.41, rx: Math.PI, rz: 0.2 }); // snaggletooth
   }
-  // War flags, the Wooka's answer to the Marines' antennas: a pole lashed to the back with a ragged
+  // War flags, the Wooka's answer to the Thunder Marines' antennas: a pole lashed to the back with a ragged
   // hide banner that streams and flaps. Chubs, Stickies and the champions carry one; Warbur's is huge.
   if (role === "chub" || role === "sticky" || warbur || hero) {
     const h = warbur ? 2.3 : role === "chub" ? 1.9 : 1.5, w = warbur ? 1.1 : 0.6;
@@ -681,7 +681,7 @@ export function wooka(hero = false, role: WookaRole | "warbur" = "fodder") {
   return cloneOf(`wooka:${hero}:${role}`, () => (role === "mossback" ? buildMossback() : buildWooka(hero, role)));
 }
 
-// The Mossback: a Wooka that kept growing. Big as a Marine from the shoulder, mangy and
+// The Mossback: a Wooka that kept growing. Big as a Thunder Marine from the shoulder, mangy and
 // matted, with moss in the back of its coat and bald scabs where it doesn't take, arms so long
 // the knuckles drag, and a heavy brow over small red eyes. It lopes on its fists. Its arms are
 // two joints each (upper arm, forearm), so it can swing them down and stretch them out in a leap.
@@ -739,7 +739,7 @@ function buildMossback() {
 }
 
 // ============================================================================================
-// Vehicles and fortifications. All Marine-built: the Wooka's share comes as more Wooka.
+// Vehicles and fortifications. All Thunder Marine-built: the Wooka's share comes as more Wooka.
 // ============================================================================================
 function buildTank() {
   const k = new Kit();
@@ -802,7 +802,7 @@ function buildWalker() {
   }
   k.add(body, cyl(0.4, 0.4, 2.8, 12).rotateZ(Math.PI / 2), M.gun, { y: -0.7, z: 0.4 });  // hip axle
   for (let i = 0; i < 4; i++) k.add(body, box(2.2, 0.06, 0.12), M.dark, { y: 1.85, z: 0.2 + i * 0.3 });
-  k.rod(body, [0.9, 1.9, 1.2], [0.9, 4.2, 1.5], 0.04, M.dark);                         // a mast: it's a Marine machine
+  k.rod(body, [0.9, 1.9, 1.2], [0.9, 4.2, 1.5], 0.04, M.dark);                         // a mast: it's a Thunder Marine machine
   k.add(body, ball(0.12, 8, 6), M.red, { x: 0.9, y: 4.2, z: 1.5 });
   for (const s of [-1, 1]) {
     const side = s < 0 ? "L" : "R";
@@ -904,6 +904,58 @@ function buildGunship() {
 }
 export const gunship = () => cloneOf("gunship", buildGunship);
 
+// The dropship: the bad helicopter the Thunder Marines arrive in. A slab of a hull with a blunt
+// nose, a glass chin, an open rear ramp, two rotors on stalks that shake with the airframe, and
+// skids. It only ever appears in cutscenes, so it is built for one good silhouette against sky.
+function buildDropship() {
+  const k = new Kit();
+  const hull = k.joint("hull");
+  k.add(hull, profile([[-4.4, -0.4], [-3.9, 1.1], [-2.4, 1.7], [3.2, 1.7], [4.6, 1.2], [5.0, 0.2], [3.4, -1.2], [-3.2, -1.2]], 3.0, 0.18), M.armour);
+  k.add(hull, profile([[-4.42, -0.4], [-3.92, 1.1], [-3.6, 1.2], [-4.1, -0.5]], 2.6), M.trim);                 // nose band
+  k.add(hull, profile([[-4.3, 0.4], [-3.85, 1.15], [-2.5, 1.55], [-2.8, 0.6]], 2.4), M.glass);                 // canopy
+  k.add(hull, rbox(3.3, 0.14, 4.6, 0.05), M.trim, { y: 0.3, z: 0.6 });                                          // the roof's white stripe
+  k.add(hull, rbox(0.14, 1.3, 2.4, 0.05), M.dark, { x: 1.55, y: 0.1, z: 0.4 });                                 // side doors
+  k.add(hull, rbox(0.14, 1.3, 2.4, 0.05), M.dark, { x: -1.55, y: 0.1, z: 0.4 });
+  k.add(hull, rbox(2.4, 0.16, 2.6, 0.05), M.gun, { y: -1.0, z: 5.6, rx: -0.55 });                              // the rear ramp, down
+  k.add(hull, rbox(2.2, 1.6, 0.1, 0.05), M.dark, { y: -0.3, z: 4.3 });                                         // the dark hold behind it
+  k.pair(hull, () => ball(0.14, 8, 6), M.red, { x: 1.3, y: 0.9, z: 4.9 });                                      // tail lights
+  k.pair(hull, () => ball(0.14, 8, 6), M.green, { x: 1.5, y: 0.2, z: -4.0 });
+  for (const s of [-1, 1]) {
+    k.add(hull, slab([[-0.3, -2.6], [0.3, -2.6], [0.3, 2.8], [-0.3, 2.8]], 0.16), M.gun, { x: s * 1.1, y: -1.9 }); // skids
+    k.rod(hull, [s * 1.1, -1.9, -1.8], [s * 1.1, -1.2, -1.6], 0.08, M.gun);
+    k.rod(hull, [s * 1.1, -1.9, 1.8], [s * 1.1, -1.2, 1.6], 0.08, M.gun);
+    // A rotor on a stalk at each end; the stalks lean outwards like it was built in a hurry.
+    const z = s < 0 ? -1.4 : 2.6;
+    k.rod(hull, [0, 1.6, z], [0, 2.7, z], 0.16, M.pack);
+    const rotor = k.joint(s < 0 ? "rotorF" : "rotorB", hull, 0, 2.75, z);
+    k.add(rotor, cyl(0.3, 0.36, 0.3, 10), M.dark);
+    for (const a of [0, Math.PI / 2]) k.add(rotor, rbox(7.4, 0.06, 0.34, 0.02), M.suit, { y: 0.1, ry: a });
+    k.add(rotor, rbox(7.46, 0.02, 0.1, 0.01), M.trim, { y: 0.14 });
+  }
+  const chin = k.joint("chin", hull, 0, -1.25, -3.2);
+  k.add(chin, dome(0.55, 12).rotateX(Math.PI), M.glass);
+  return k.bake("dropship");
+}
+export const dropship = () => cloneOf("dropship", buildDropship);
+
+// A supply crate: a shipping container in Thunder Marine black and white with an orange hazard
+// band, and a parachute folded above it (the `chute` joint, shown when it has opened).
+function buildCrate() {
+  const k = new Kit();
+  const body = k.joint("body");
+  k.add(body, rbox(1.6, 1.5, 2.3, 0.06), M.armour, { y: 0.75 });
+  for (const z of [-0.9, 0, 0.9]) k.add(body, rbox(1.66, 1.56, 0.12, 0.02), M.trim, { y: 0.75, z });         // ribs
+  k.add(body, rbox(1.7, 0.3, 2.36, 0.02), M.orange, { y: 0.75 });                                             // the hazard band
+  k.pair(body, () => rbox(0.1, 0.7, 0.7, 0.02), M.dark, { x: 0.82, y: 0.75 });                                // the doors' dark panel
+  k.pair(body, () => ball(0.06, 8, 6), M.green, { x: 0.86, y: 1.2, z: 0.9 });
+  const chute = k.joint("chute", body, 0, 1.5, 0);
+  k.add(chute, dome(2.6, 14), M.trim, { y: 3.0 });
+  for (const a of [0, 1, 2, 3]) k.add(chute, dome(2.62, 14).rotateY(a * Math.PI / 2), M.orange, { y: 3.0, s: [0.35, 1, 1] }); // orange gores
+  for (const [x, z] of [[-0.8, -1.1], [0.8, -1.1], [-0.8, 1.1], [0.8, 1.1]] as const) k.rod(chute, [x, 0, z], [x * 1.8, 3.0, z * 1.8], 0.025, M.dark, 5);
+  return k.bake("crate");
+}
+export const crate = () => cloneOf("crate", buildCrate);
+
 function buildTurret(f: Faction) {
   const k = new Kit();
   if (f === "wooka") {
@@ -927,7 +979,7 @@ function buildTurret(f: Faction) {
     k.add(k.root, ball(0.16, 10, 8), W.bone, { x: 0.9, y: 2.7, z: 0 });               // a skull on the frame
     return k.bake("rockChucker");
   }
-  // A Marine gun tower: a ringed bunker base, a head that turns, twin barrels.
+  // A Thunder Marine gun tower: a ringed bunker base, a head that turns, twin barrels.
   k.add(k.root, cyl(1.3, 1.6, 2.0, 18), M.armour, { y: 1.0 });
   k.add(k.root, cyl(1.32, 1.32, 0.15, 18), M.trim, { y: 1.75 });
   k.add(k.root, cyl(1.65, 1.7, 0.25, 18), M.gun, { y: 0.12 });
@@ -996,14 +1048,14 @@ export function animate(g: THREE.Object3D, m: Motion) {
   if (model === "marine") {
     p.phase += (m.moved / 1.7) * Math.PI * 2;
     const s = Math.sin(p.phase), c = Math.cos(p.phase), id = g.id, idle = 1 - a;
-    // Past a walk the Marine breaks into a run: leans in, longer strides, arms pumping.
+    // Past a walk the Thunder Marine breaks into a run: leans in, longer strides, arms pumping.
     const run = clamp01((p.speed - 4.5) / 3.5), stride = 0.6 + 0.35 * run;
     const kick = m.since < 0.15 ? 1 - m.since / 0.15 : 0;
     // Standing about, weight goes from one foot to the other.
     const shift = Math.sin(t * 0.45 + id) * idle;
     set(p, "legL", s * stride * a, 0, shift * 0.04);
     set(p, "legR", -s * stride * a, 0, shift * 0.04);
-    // The knee that comes forward bends high; the firing Marine takes the recoil in the knees.
+    // The knee that comes forward bends high; the firing Thunder Marine takes the recoil in the knees.
     set(p, "kneeL", -a * (0.1 + (0.9 + 0.4 * run) * Math.max(0, c)) - kick * 0.1);
     set(p, "kneeR", -a * (0.1 + (0.9 + 0.4 * run) * Math.max(0, -c)) - kick * 0.1);
     // Hips turn against the shoulders as the stride goes, and drop with each footfall.
@@ -1101,6 +1153,11 @@ export function animate(g: THREE.Object3D, m: Motion) {
     set(p, "hull", 0.08 * a, 0, Math.sin(t * 0.8 + g.id) * 0.04, 0, Math.sin(t * 1.4 + g.id) * 0.3);
     set(p, "podL", -0.5 * a + 0.2);
     set(p, "podR", -0.5 * a + 0.2);
+  } else if (model === "dropship") {
+    // Rotors spin; the whole airframe shivers like something is loose.
+    set(p, "rotorF", 0, t * 40);
+    set(p, "rotorB", 0, -t * 40);
+    set(p, "hull", Math.sin(t * 9) * 0.012, 0, Math.sin(t * 13) * 0.01, 0, Math.sin(t * 17) * 0.03);
   } else if (model === "gunTower") {
     const kick = m.since < 0.25 ? 1 - m.since / 0.25 : 0;
     set(p, "barrel", 0, 0, 0, 0, 0, kick * 0.4);
@@ -1117,7 +1174,7 @@ export function animate(g: THREE.Object3D, m: Motion) {
 }
 
 // ============================================================================================
-// The Wooka's side of the woods (the forest itself is terrain.ts): trophy totems, a Marine's
+// The Wooka's side of the woods (the forest itself is terrain.ts): trophy totems, a Thunder Marine's
 // helmet on a spike over carved faces, and the huts they keep up in the trunks.
 // ============================================================================================
 function buildTotem() {
@@ -1211,7 +1268,7 @@ class Voxels {
 // A repeatable scatter, for greebles.
 const seeded = (s: number) => () => ((s = (s * 1103515245 + 12345) >>> 0) / 4294967296);
 
-// A Marine fighter: a black dart with white-tipped wings, a lit canopy, twin fins and two
+// A Thunder Marine fighter: a black dart with white-tipped wings, a lit canopy, twin fins and two
 // engines. The hero's has gold trim.
 function buildMarineFighter(hero: boolean) {
   const k = new Kit(), v = new Voxels(), trim = hero ? V.gold : V.trim;
@@ -1253,7 +1310,7 @@ function buildWookaFighter(hero: boolean) {
 
 export const fighter = (f: Faction, hero = false) => cloneOf(`fighter:${f}:${hero}`, () => (f === "wooka" ? buildWookaFighter(hero) : buildMarineFighter(hero)));
 
-// A Marine capital ship: a long wedge stepped up in tiers like a ziggurat, black with white trim
+// A Thunder Marine capital ship: a long wedge stepped up in tiers like a ziggurat, black with white trim
 // along its edges, rows of lit windows in each step, turrets on the deck, a command tower at the
 // back with a bridge across its top, and a bank of engines.
 function buildMarineCruiser() {

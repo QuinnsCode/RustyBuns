@@ -1,4 +1,23 @@
 {
+  "drop": {
+    "title": "THUNDERWOOKA SAGA",
+    "titleSub": "Two Fronts · Thunder Marines · 3rd Drop · {detail}",
+    "whoPilot": "Drop Two",
+    "pilotFlying": "This is Drop Two. We are... mostly flying. Crates away in ten. Nine. Several.",
+    "sargeBoth": "Both chutes this time, Diaz.",
+    "diazPacked": "I packed both chutes, Sarge.",
+    "rookHale": "You packed Hale's chute.",
+    "diazChute": "Chute.",
+    "rookChute": "...chute?",
+    "whoDiaz": "Cpl. Diaz",
+    "diazSnacks": "That one had the snacks.",
+    "sargeHalesChute": "Hale's chute, Diaz.",
+    "diazHale": "Hale's chute, Sarge.",
+    "pilotOneChute": "Drop Two, crates away. One good chute, one... sudden. You're welcome. Leaving before the fluffy ones.",
+    "rookFine": "That one's fine. We're fine.",
+    "titleEnd": "ONE CHUTE",
+    "titleEndSub": "Thunder Marines never leave a crate behind. Even that one."
+  },
   "marines": {
     "moreauContact": "Contact. One hostile. It's... knee-high. Nobody run. It can smell it.",
     "rookThat": "That's it? THAT ate Second Squad?",

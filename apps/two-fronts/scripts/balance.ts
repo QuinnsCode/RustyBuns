@@ -1,5 +1,5 @@
 // Headless balance runner: `bun scripts/balance.ts [human]`. Plays every sector, seeds 1-3, both
-// ways round (Marines attack, then Wooka attack), and prints who won. "human" puts a simple scripted
+// ways round (Thunder Marines attack, then Wooka attack), and prints who won. "human" puts a simple scripted
 // player (charges the nearest foe, fires) in the hero's seat, once per side.
 import type { BattleSpec, Faction, SectorKind, Side } from "../src/battle/contract.ts";
 import { heroUnit, startBattle, step, timeLimit, type Battle, type Input } from "../src/battle/sim.ts";
@@ -41,7 +41,7 @@ export function play(spec: BattleSpec, human: boolean): Played {
   return { winner: o.winner, time: Math.round(b.time), tickets: { attacker: Math.round(b.tickets.attacker), defender: Math.round(b.tickets.defender) }, taken: everHeld.size };
 }
 
-// Marines' share of wins across every sector and seed, with Marines attacking and defending.
+// Thunder Marines' share of wins across every sector and seed, with Thunder Marines attacking and defending.
 export function marineWins(human: "none" | "marines" | "wooka", seeds = SEEDS) {
   let wins = 0, n = 0;
   const rows: string[] = [], bySector: Partial<Record<SectorKind, number>> = {};
@@ -61,6 +61,6 @@ if (import.meta.main) {
   const kinds = mode === "human" ? (["marines", "wooka"] as const) : (["none"] as const);
   for (const k of kinds) {
     const r = marineWins(k);
-    console.log(`--- hero: ${k}\n${r.rows.join("\n")}\nMarines won ${r.wins}/${r.n}`);
+    console.log(`--- hero: ${k}\n${r.rows.join("\n")}\nThunder Marines won ${r.wins}/${r.n}`);
   }
 }

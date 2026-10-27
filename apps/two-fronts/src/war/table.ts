@@ -54,7 +54,7 @@ export const MAX_INPUTS = 192 * 1024;
 // With `setup`, the war opens with each side picking a fleet and placing it (src/war/fleet.ts).
 export function newTable(seats: Seats, galaxy: GalaxyId = "short", seed = Math.floor(Math.random() * 1e9), setup = false): Table {
   // The rules' `player` is the side whose hero sits at the table against the AI. With two
-  // humans it's the Marines, and each side's hero comes from its own orders.
+  // humans it's the Thunder Marines, and each side's hero comes from its own orders.
   const player = seats.marines === "human" || seats.wooka !== "human" ? "marines" : "wooka";
   return { seats, campaign: newCampaign(seed, player, galaxy, setup), handedIn: {}, resolving: null };
 }

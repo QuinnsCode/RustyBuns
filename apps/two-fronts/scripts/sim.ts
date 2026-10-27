@@ -40,7 +40,7 @@ await new Promise<void>((done) => {
 });
 const secs = (performance.now() - started) / 1000;
 
-// Marines' wins, by sector and by handicap on the hero's foe.
+// Thunder Marines' wins, by sector and by handicap on the hero's foe.
 const marinesWon = (r: Result) => (r.winner === "attacker") === (r.job.attacker === "marines");
 const heroWon = (r: Result) => r.job.hero !== null && r.winner === r.job.hero;
 const rate = (rs: Result[], f: (r: Result) => boolean) => (rs.length ? Math.round((1000 * rs.filter(f).length) / rs.length) / 10 : null);
@@ -82,8 +82,8 @@ canvas{width:100%;max-width:520px;aspect-ratio:1;background:var(--line);border-r
 <script>
 const D=${JSON.stringify(data).replace(/</g, "\\u003c")};const $=i=>document.getElementById(i);
 const col=n=>getComputedStyle(document.documentElement).getPropertyValue(n);
-const s=D.summary;$("sum").textContent=s.battles+" battles in "+s.seconds+"s; hero: "+s.hero+"; Marines won "+s.marinesWinPct+"%";
-$("sect").innerHTML="<tr><th>Sector</th><th>Battles</th><th>Marines win %</th><th>Marines attacking</th><th>Wooka attacking</th><th>Posts the attacker took</th></tr>"+Object.entries(s.bySector).map(([k,v])=>"<tr><td>"+k+"</td><td>"+v.n+"</td><td>"+v.marinesWinPct+"</td><td>"+v.marinesAttackPct+"</td><td>"+v.wookaAttackPct+"</td><td>"+v.avgPostsTakenByAttacker+"</td></tr>").join("");
+const s=D.summary;$("sum").textContent=s.battles+" battles in "+s.seconds+"s; hero: "+s.hero+"; Thunder Marines won "+s.marinesWinPct+"%";
+$("sect").innerHTML="<tr><th>Sector</th><th>Battles</th><th>Thunder Marines win %</th><th>Thunder Marines attacking</th><th>Wooka attacking</th><th>Posts the attacker took</th></tr>"+Object.entries(s.bySector).map(([k,v])=>"<tr><td>"+k+"</td><td>"+v.n+"</td><td>"+v.marinesWinPct+"</td><td>"+v.marinesAttackPct+"</td><td>"+v.wookaAttackPct+"</td><td>"+v.avgPostsTakenByAttacker+"</td></tr>").join("");
 const hs=Object.entries(s.byHandicap).filter(([,v])=>v.n);
 if(hs.length)$("hand").innerHTML="<h2>The human hero against a bigger foe</h2><table><tr><th>Foe has this much more</th><th>Battles</th><th>Hero wins %</th></tr>"+hs.map(([k,v])=>"<tr><td>+"+Math.round(k*100)+"%</td><td>"+v.n+"</td><td>"+v.heroWinPct+"</td></tr>").join("")+"</table>";
 const G=D.grid,B=D.bins;

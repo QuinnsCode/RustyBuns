@@ -1,5 +1,5 @@
 // Battle sound, all of it made on the spot with Web Audio: no files to fetch. Everything sits an octave down: blaster bolts are a
-// falling pitch, blasts are filtered noise over a thump, Marines grunt low through their masks and
+// falling pitch, blasts are filtered noise over a thump, Thunder Marines grunt low through their masks and
 // the Wooka hoot, bark and howl like gorillas and howler monkeys, rough in the throat, with a
 // chest-beat now and then. Each sound is placed: quieter with distance, panned to the side it came
 // from. M mutes, and the choice is remembered.
@@ -122,7 +122,7 @@ export function makeSfx(far = 1) {
   };
 
   // A voiced sound through two vowel formants that glide syllable by syllable: the base of both
-  // the Wooka's chatter and the Marines' grunts.
+  // the Wooka's chatter and the Thunder Marines' grunts.
   type Syllable = { f0: [number, number]; f1: [number, number]; f2: [number, number]; len: number; gap: number };
   const speak = (at: At | null, loud: number, syllables: Syllable[], mask: boolean, grit = 0) => {
     const c = place(at, loud, 26);
@@ -141,7 +141,7 @@ export function makeSfx(far = 1) {
     wobAmt.connect(src.frequency);
     wob.frequency.value = 7 + Math.random() * 4;
     g.connect(f1).connect(mix); g.connect(f2).connect(mix);
-    // A Marine talks through a full-face mask: boxed in and a little crushed.
+    // A Thunder Marine talks through a full-face mask: boxed in and a little crushed.
     if (mask) { const m = filter("bandpass", 900, 1.4); mix.gain.value = 2.2; mix.connect(m).connect(out); } else { mix.gain.value = 2.6; mix.connect(out); }
     let s = t;
     for (const y of syllables) {
@@ -251,7 +251,7 @@ export function makeSfx(far = 1) {
       { f0: [p * 1.9, p * 1.2], f1: [AH[0], UH[0]], f2: [AH[1], UH[1]], len: 0.26, gap: 0 },
     ], false, 0.65);
   };
-  // A Marine: one low "uh" or "hngh", through the mask. Dying, it's longer and falls further.
+  // A Thunder Marine: one low "uh" or "hngh", through the mask. Dying, it's longer and falls further.
   const grunt = (at: At | null, dying = false, loud = 0.5) => {
     const p = r(52, 70), [f1, f2] = dying ? [700, 1150] : [560, 1000];
     speak(at, loud, [{ f0: [p * 1.15, p * (dying ? 0.7 : 0.9)], f1: [f1, f1 * 0.85], f2: [f2, f2 * 0.9], len: dying ? r(0.35, 0.5) : r(0.14, 0.2), gap: 0 }], true, 0.6);
@@ -302,6 +302,23 @@ export function makeSfx(far = 1) {
       hold(o);
     }
   };
+  // A dropship overhead: a low rotor beat, lumpy, that swells and goes past.
+  const rotor = (len = 3) => {
+    const c = place(null, 0.5, 1);
+    if (!c) return;
+    const g = ctx!.createGain(), lp = filter("lowpass", 260, 1.2);
+    env(g.gain, c.t, 1, len * 0.3, len * 0.7);
+    g.connect(lp).connect(c.out);
+    const o = osc("sawtooth", g);
+    o.frequency.setValueAtTime(38, c.t); o.frequency.linearRampToValueAtTime(44, c.t + len * 0.5); o.frequency.linearRampToValueAtTime(34, c.t + len);
+    const beat = ctx!.createGain(), lfo = ctx!.createOscillator();
+    lfo.type = "square"; lfo.connect(beat.gain);
+    lfo.frequency.value = 11;
+    beat.gain.value = 0.5;
+    g.connect(beat).connect(lp);
+    o.start(c.t); o.stop(c.t + len); lfo.start(c.t); lfo.stop(c.t + len);
+    hold(o);
+  };
   // The blaster venting: a hiss of steam that dies away.
   const vent = () => {
     const c = place(null, 0.22, 1);
@@ -321,7 +338,7 @@ export function makeSfx(far = 1) {
   };
 
   return {
-    wake, laser, boom, chatter, hoot, bark, howl, thump, squeal, whoop, grunt, hurt, swish, tick, chime, warn, drum, vent,
+    wake, laser, boom, chatter, hoot, bark, howl, thump, squeal, whoop, grunt, hurt, swish, tick, chime, warn, drum, rotor, vent,
     hear: (e: Ear) => { ear = e; },
     get muted() { return muted; },
     toggle: () => setMuted(!muted),

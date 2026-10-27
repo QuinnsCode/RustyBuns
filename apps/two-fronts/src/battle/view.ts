@@ -4,8 +4,8 @@
 // change of kit). Things that die come apart in chunks, and blasts throw dirt. Blaster fire is
 // glowing bolts that fly; sound is sfx.ts (M mutes), and the mission card and waypoint, mission.ts.
 // 1 to 4 order the squad round you (forward, hold, fall back, focus fire where the gun points).
-// Heavy weapons wait out in the open under a beacon. An intro cutscene plays first, once, and
-// a sting when a Mossback walks in (cutscenes.ts). Comrades talk in bubbles over their heads.
+// Heavy weapons wait out in the open under a beacon. The intro cutscenes play first, once each,
+// and a sting when a Mossback walks in (cutscenes.ts). Comrades talk in bubbles over their heads.
 import * as THREE from "three";
 import { FACTION_COLORS, type BattleResult, type BattleSpec, type Side } from "./contract.ts";
 import { groundRecorder } from "./replay.ts";
@@ -23,7 +23,7 @@ import { icon } from "../ui/icons.ts";
 import { makeBubbles } from "../ui/bubbles.ts";
 import { chatterFor } from "./lines.ts";
 import CHATTER_SCRIPT from "../../content/chatter.json";
-import { introOf, mossbackSting } from "./cutscenes.ts";
+import { introOf, mossbackSting, prologueOf } from "./cutscenes.ts";
 import { playCutscene, shouldPlay } from "./cutscene-view.ts";
 import { WORLDS } from "./worlds.ts";
 import { CHAMP_AT, HEAVY, ORDERS, ORDER_FOR, OVERHEAT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, startBattle, statsOf, step, timeLimit, vipUnit, yawTo, type Fx, type OrderKind, type Trooper, type Unit } from "./sim.ts";
@@ -144,7 +144,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const flashes = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), additive(), BOLTS);
   for (const m of [boltGlow, boltCore, flashes]) { m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.count = 0; m.frustumCulled = false; scene.add(m); }
   boltCore.renderOrder = 1; // the hot core over its glow
-  // The Marines' blasters fire red; the Wooka's only "shots" are rock-chuckers, a blur of amber.
+  // The Thunder Marines' blasters fire red; the Wooka's only "shots" are rock-chuckers, a blur of amber.
   const BOLT_COLORS: Record<string, number> = { marines: 0xff3326, wooka: 0xd08a3a };
   type Bolt = { a: THREE.Vector3; b: THREE.Vector3; t: number; speed: number; len: number; w: number; color: THREE.Color; hit: boolean };
   type Flash = { p: THREE.Vector3; t: number; life: number; s: number; color: THREE.Color };
@@ -434,7 +434,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const drawHud = () => {
     const hero = heroUnit(b), mine = heroSide, foe = mine === "attacker" ? "defender" : "attacker";
     const riding = b.hero.inVehicle === null ? null : b.units.find((u) => u.id === b.hero.inVehicle);
-    const bar = (s: Side) => `<div class="tickets ${spec.factions[s]}"><b>${spec.factions[s] === "wooka" ? "Kin" : "Marines"}</b><span>${Math.max(0, Math.ceil(b.tickets[s]))}</span><i style="width:${Math.min(100, (100 * Math.max(0, b.tickets[s])) / (spec.tickets[s] + spec.reinforcements[s]))}%"></i></div>`;
+    const bar = (s: Side) => `<div class="tickets ${spec.factions[s]}"><b>${spec.factions[s] === "wooka" ? "Kin" : "Thunder Marines"}</b><span>${Math.max(0, Math.ceil(b.tickets[s]))}</span><i style="width:${Math.min(100, (100 * Math.max(0, b.tickets[s])) / (spec.tickets[s] + spec.reinforcements[s]))}%"></i></div>`;
     hud.innerHTML = `
       <div class="b-top">${bar(mine)}
         <div class="b-clock" title="${b.mode === "conquest" || b.mode === "hill" ? "Time left. When it runs out, the side with more tickets wins (the defender on a tie)." : "Time left. When it runs out, the defender has held."}"><span class="clock">${fmt(Math.max(0, timeLimit(spec) - b.time))}</span><sup>i</sup></div>
@@ -461,10 +461,11 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     let last = performance.now(), acc = 0, hudAt = 0, raf = 0;
     const rec = groundRecorder();
     const stage = { scene, camera, render: () => composer.render(), ground, sfx, host: section };
-    // A cutscene holds the battle: the sim doesn't step and the HUD steps aside till it's over.
-    const cut = (c: Parameters<typeof playCutscene>[0], origin: Parameters<typeof playCutscene>[2]) => {
+    // Cutscenes hold the battle: the sim doesn't step and the HUD steps aside till they're over.
+    const cut = (cs: Parameters<typeof playCutscene>[0] | Parameters<typeof playCutscene>[0][], origin: Parameters<typeof playCutscene>[2]) => {
       section.classList.add("cutting");
-      return playCutscene(c, stage, origin).then(() => {
+      const list = Array.isArray(cs) ? cs : [cs];
+      return list.reduce((p, c) => p.then(() => playCutscene(c, stage, origin)), Promise.resolve()).then(() => {
         section.classList.remove("cutting");
         firing = false;
         last = performance.now();
@@ -871,9 +872,11 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       }
       raf = requestAnimationFrame(frame);
     };
-    // The intro, once, from where the hero stands; then the battle.
-    const intro = introOf(spec.factions[heroSide], spec.sector), h0 = heroUnit(b);
-    if (h0 && shouldPlay(intro.id)) void cut(intro, { x: h0.x, z: h0.z, yaw });
+    // The intros, once each, from where the hero stands: the drop (the Thunder Marines'), then the
+    // briefing; then the battle.
+    const h0 = heroUnit(b), f = spec.factions[heroSide];
+    const intros = h0 ? [prologueOf(f, spec.sector), introOf(f, spec.sector)].filter((c): c is NonNullable<typeof c> => !!c && shouldPlay(c.id)) : [];
+    if (h0 && intros.length) void cut(intros, { x: h0.x, z: h0.z, yaw });
     else raf = requestAnimationFrame(frame);
   });
 }

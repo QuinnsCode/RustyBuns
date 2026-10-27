@@ -68,7 +68,7 @@ export interface Campaign {
   turn: number;
   seed: number;
   galaxy: GalaxyId;
-  player: Faction; // the human side against the AI; in a two-player game, the Marines
+  player: Faction; // the human side against the AI; in a two-player game, the Thunder Marines
   credits: Count;
   systems: Record<string, SystemState>;
   heroes: Record<Faction, Hero>; // each side's hero, though only the human sides send one in

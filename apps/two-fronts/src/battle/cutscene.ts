@@ -8,14 +8,18 @@
 import type { Faction } from "./contract.ts";
 import type { WookaRole, Trooper } from "./sim.ts";
 
-// What an actor is drawn as: a Marine of a class, or a Wooka of a kind.
-export type Actor = { marine: Trooper } | { wooka: WookaRole | "warbur" };
+// What an actor is drawn as: a Thunder Marine of a class, a Wooka of a kind, or a prop (the
+// dropship that brings the Thunder Marines in, and the supply crates it kicks out).
+export type Prop = "dropship" | "crate";
+export type Actor = { marine: Trooper } | { wooka: WookaRole | "warbur" } | { prop: Prop };
 export type Vec = [number, number, number]; // x, height, z
-export type Noise = "chatter" | "hoot" | "bark" | "howl" | "thump" | "whoop" | "squeal" | "grunt" | "boom" | "chime" | "warn" | "drum";
+export type Noise = "chatter" | "hoot" | "bark" | "howl" | "thump" | "whoop" | "squeal" | "grunt" | "boom" | "chime" | "warn" | "drum" | "rotor";
 
 export type Cue =
-  | { at: number; do: "actor"; id: string; as: Actor; x: number; z: number; face?: number; scale?: number }
+  | { at: number; do: "actor"; id: string; as: Actor; x: number; z: number; y?: number; face?: number; scale?: number }
   | { at: number; do: "walk"; id: string; x: number; z: number; dur: number }
+  | { at: number; do: "fly"; id: string; x: number; y: number; z: number; dur: number; wobble?: number } // through the air; wobble rattles it like a bad helicopter
+  | { at: number; do: "drop"; id: string; dur: number; height: number; x?: number; z?: number; chute?: number } // falls from height; a chute opens `chute` seconds in, or never
   | { at: number; do: "face"; id: string; yaw: number }
   | { at: number; do: "hop"; id: string; dur: number; height?: number }          // bounces on the spot, excited
   | { at: number; do: "toss"; id: string; what: string; x: number; z: number; dur: number; height?: number } // id throws what to x, z
@@ -44,15 +48,17 @@ export const firedBetween = (s: Cutscene, t0: number, t1: number) =>
 const ease = (k: number) => (k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k));
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 
-export interface ActorState { id: string; as: Actor; x: number; y: number; z: number; yaw: number; scale: number; moving: boolean; flying: boolean }
+export interface ActorState { id: string; as: Actor; x: number; y: number; z: number; yaw: number; roll: number; scale: number; moving: boolean; flying: boolean; chute: boolean }
 
 // Where every actor on stage is at t, and what it's doing. Walks and throws run one after
 // another in the order they're cued; a thrown actor flies along an arc and lands where it's sent.
+// A dropped one falls faster and faster and tumbles, unless its chute opens: then it hangs
+// under it, sways, and takes the rest of the time to come down.
 export function actorsAt(s: Cutscene, t: number): ActorState[] {
   const out = new Map<string, ActorState>();
   const cues = s.cues.filter((c) => c.at <= t).sort((a, c) => a.at - c.at);
   for (const c of cues) {
-    if (c.do === "actor") out.set(c.id, { id: c.id, as: c.as, x: c.x, y: 0, z: c.z, yaw: c.face ?? 0, scale: c.scale ?? 1, moving: false, flying: false });
+    if (c.do === "actor") out.set(c.id, { id: c.id, as: c.as, x: c.x, y: c.y ?? 0, z: c.z, yaw: c.face ?? 0, roll: 0, scale: c.scale ?? 1, moving: false, flying: false, chute: false });
     const a = "id" in c && c.id ? out.get(c.id) : undefined;
     if (!a) continue;
     if (c.do === "gone") out.delete(c.id);
@@ -63,6 +69,22 @@ export function actorsAt(s: Cutscene, t: number): ActorState[] {
       if (Math.hypot(c.x - x0, c.z - z0) > 1e-3) a.yaw = Math.atan2(-(c.x - x0), -(c.z - z0));
       a.x = lerp(x0, c.x, ease(k)); a.z = lerp(z0, c.z, ease(k));
       a.moving = k < 1;
+    } else if (c.do === "fly") {
+      const k = Math.min(1, (t - c.at) / Math.max(1e-6, c.dur)), x0 = a.x, y0 = a.y, z0 = a.z;
+      if (Math.hypot(c.x - x0, c.z - z0) > 1e-3) a.yaw = Math.atan2(-(c.x - x0), -(c.z - z0));
+      a.x = lerp(x0, c.x, ease(k)); a.y = lerp(y0, c.y, ease(k)); a.z = lerp(z0, c.z, ease(k));
+      a.moving = k < 1;
+      if (c.wobble) { a.y += Math.sin(t * 7.3) * c.wobble * 0.5; a.roll = Math.sin(t * 3.1) * c.wobble * 0.35 + Math.sin(t * 11) * c.wobble * 0.08; }
+    } else if (c.do === "drop") {
+      const dt = t - c.at, k = Math.min(1, dt / Math.max(1e-6, c.dur)), x0 = a.x, z0 = a.z;
+      const open = c.chute !== undefined && dt >= c.chute, tc = c.chute ?? c.dur;
+      if (c.chute === undefined) a.y = c.height * (1 - k * k);                                   // a brick
+      else if (!open) a.y = c.height * (1 - 0.3 * (dt / tc) * (dt / tc));                       // the first stretch, before the chute catches
+      else a.y = c.height * 0.7 * (1 - Math.min(1, (dt - tc) / Math.max(1e-6, c.dur - tc)));   // then floating down
+      a.x = lerp(x0, c.x ?? x0, ease(k)); a.z = lerp(z0, c.z ?? z0, ease(k));
+      a.flying = k < 1 && !open;
+      a.chute = open && k < 1;
+      if (a.chute) { a.x += Math.sin(dt * 2.1) * 0.6; a.roll = Math.sin(dt * 2.1) * 0.12; }
     } else if (c.do === "hop") {
       const k = (t - c.at) / Math.max(1e-6, c.dur);
       if (k < 1) a.y = Math.abs(Math.sin(k * Math.PI * 4)) * (c.height ?? 0.6);
