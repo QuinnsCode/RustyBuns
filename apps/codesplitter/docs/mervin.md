@@ -422,11 +422,29 @@ Tried: pingdotgg/t3code, which squash-merges: 15 merge commits in 5,473, so no c
 Still to check: a Linux subsystem tree, Django. Reference engines to compare against, not to vendor yet:
 Spork and IntelliMerge (tree matching). Mergiraf now runs behind Mervin (next section).
 
-## Mergiraf as a second opinion
+## Mergiraf in Mervin's toolbelt
 
-Over the 29 hunks in [merge-solutions.md](merge-solutions.md#12-mergiraf-over-the-same-hunks), Mergiraf settled 6 and nothing
-L3 doesn't. Its syntax trees cover some 50 languages where Mervin reads only JS, TS and HTML, and it is built for moved
-and reordered code, which those hunks never had. So it runs after Mervin rather than instead of him (`src/mergiraf.ts`):
+We love Mergiraf and we use it. It is a structured merge driver: it parses a file's three versions into syntax trees and
+merges the trees, deterministically, in some 50 languages where Mervin reads only JS, TS and HTML. Mervin pulls it out of
+his toolbelt as a handy double partial checker: a second deterministic pair of eyes on a file he left cards in. Where they
+overlap, that is extra mindfulness, not waste. Determinism and AI both: use it all to do it all.
+
+**How they differ.** Mergiraf answers one question very well: given these three versions of one file, what is the merge?
+That is solved work, and Mergiraf solves it. Mervin is there for the harder work around it, so the AI gets to spend its
+thinking on that rather than on the solved part:
+
+- **Before the clash.** The merge plan reads every open PR, orders them into waves and holds the ones that would fight,
+  so many conflicts never happen.
+- **Across rebases.** Lines keep an id, so a moved block someone else edited is still the same block on the next merge.
+- **What's left goes to an agent with context.** A conflict becomes a card (keep main's, the branch's, both, or write it),
+  with a suggestion where he can make one, and an agent's answer is offered only once the file parses and its tests
+  pass (when that check is on).
+- **It learns.** An answered card can become a rule for the repo, so the next one is settled with no model at all.
+- **Ester checks the result.** A merge that is clean as text but red in CI is sorted out by Ester, not shipped.
+
+Over the 29 hunks in [merge-solutions.md](merge-solutions.md#12-mergiraf-over-the-same-hunks), Mergiraf settled 6, all of
+which L3 settles too. It is built for moved and reordered code, which those hunks never had, so it runs after Mervin as a
+second opinion rather than instead of him (`src/mergiraf.ts`):
 
 - **Only on his cards.** A file Mervin settles never starts it. A file he leaves conflicts in gets one run, at most three
   files a merge, before any agent is asked.
