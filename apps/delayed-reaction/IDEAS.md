@@ -10,10 +10,9 @@ The first cut (see the README) is the smallest thing that plays: a keyboard, fou
 - **Swapped lanes.** Mid-song the keyboard flips (the pads shuffle colours for a phrase) and the answer lane is the mirror of the call lane. Simon says, but you are told once.
 - **Gesture calls.** A call shape per gesture: tap, hold, a swipe across two pads (a glissando), both outer pads at once (a chord), a flick up off the pad (a release you have to throw). Each is its own sound in the echo.
 
-- **Speed you have to answer.** From VISION.md, not shipped: a boost should make the next delayed answer harder,
-  everything arriving sooner. Today speed changes only how fast the tunnel and the music feel; the charts stay in
-  beats, so the due beat never moves. The next step is a sim change that tightens the window or pulls the next
-  call's due beat in while boosted, with a journey in `test/sim.test.ts` first.
+- **Speed you have to answer.** Shipped: a call that rings while you're boosted has its wall pulled in, up to 40% of
+  its delay at the speed ceiling, in half beats so the echo hint and the lit pads land on the new beat. Next:
+  whether the hit window should tighten too, once someone plays it.
 
 ## Parkour movement
 

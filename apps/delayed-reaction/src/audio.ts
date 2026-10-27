@@ -142,7 +142,8 @@ export class Music {
         if (c.beat === b || c.beat === b + 0.5) this.call(this.start + c.beat * this.spb, c.lane, c.hold);
         // The tail: a muted tick of the call's note every beat until it's due, fading, so the delay counts down out loud.
         const k = Math.ceil(b - c.beat);
-        if (k >= 1 && k < this.chart.delay) this.tick(this.start + (c.beat + k) * this.spb, c.lane, 1 - k / this.chart.delay);
+        const span = c.due - c.beat;
+        if (k >= 1 && k < span) this.tick(this.start + (c.beat + k) * this.spb, c.lane, 1 - k / span);
         // The hint: the call comes round again on its due beat, quieter. That's the beat to answer on.
         if (this.chart.hint && (c.due === b || c.due === b + 0.5)) this.call(this.start + c.due * this.spb, c.lane, c.hold, this.chart.hint);
       }

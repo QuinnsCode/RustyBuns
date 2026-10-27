@@ -14,9 +14,10 @@ export type Call = {
   id: number;
   lane: Lane;
   beat: number;      // when the keyboard calls it
-  due: number;       // when its wall arrives: beat + chart.delay
+  due: number;       // when its wall arrives: beat + chart.delay, pulled in by the speed when the call rings
   hold: number;      // 0 for a tap; a long door wants you in its lane until due + hold
   state: "pending" | "held" | "hit" | "missed";
+  rung?: true;       // the call has rung and its due beat is fixed
   grade?: Grade;
 };
 
@@ -37,7 +38,8 @@ export const PERFECT = 0.1;
 export const GOOD = 0.25;
 export const LIVES = 8;
 
-// Speed: how fast the world looks and sounds, never when calls are due (charts stay in beats).
+// Speed: how fast the world looks and sounds, and how soon the next answer is due: a call that rings
+// while you're fast has its wall pulled in (see `ring`), so the boost makes the run harder as well as faster.
 // Through a door on time boosts it, a bounce off a wall cuts it back, and each
 // beat it decays toward the floor on its own, so only a run that keeps answering stays fast.
 export const SPEED_FLOOR = 1;
@@ -45,6 +47,7 @@ export const SPEED_CEILING = 2.5;
 const BOOST = { perfect: 0.3, good: 0.12 } as const;
 const FENCE_KEEPS = 0.25;  // the share of the boost above the floor a bounce off a wall leaves you
 const DECAY = 0.96;        // the share of the boost above the floor that survives a beat
+const PULL = 0.4;          // the share of its delay a call loses when it rings at the speed ceiling
 
 export const LEVELS = [
   // Dub tempos: the drums are half-time, so 140 feels like 70. A bar of delay is the natural first
@@ -122,7 +125,7 @@ const STEP = 0.15;      // beats a sidestep takes
 const KNOCK = 1;        // beats a knock-back takes to settle
 
 export function createRun(chart: Chart): Run {
-  for (const c of chart.calls) { c.state = "pending"; delete c.grade; }
+  for (const c of chart.calls) { c.state = "pending"; c.due = c.beat + chart.delay; delete c.grade; delete c.rung; }
   return {
     chart, beat: 0, score: 0, combo: 0, maxCombo: 0, lives: LIVES, hits: 0, perfects: 0, misses: 0,
     speed: SPEED_FLOOR, lane: 1, over: null, step: { from: laneX(1), at: -Infinity }, bouncedAt: -Infinity,
@@ -145,6 +148,19 @@ export function knockback(run: Run, beat: number): number {
 function tick(run: Run, beat: number) {
   if (beat > run.beat) run.speed = SPEED_FLOOR + (run.speed - SPEED_FLOOR) * DECAY ** (beat - run.beat);
   run.beat = Math.max(run.beat, beat);
+}
+
+// A call rings: fix when its wall arrives. The faster you're running, the sooner, in half beats so the
+// echo hint still lands on the music's grid. Never closer than the chart's own spacing to the walls
+// before it, so a boost can't stack two walls on one beat or put one inside a long door.
+function ring(run: Run, c: Call) {
+  c.rung = true;
+  const t = (run.speed - SPEED_FLOOR) / (SPEED_CEILING - SPEED_FLOOR);
+  let due = c.beat + run.chart.delay - Math.round(run.chart.delay * PULL * t * 2) / 2;
+  for (const o of run.chart.calls) {
+    if (o !== c && o.rung && o.beat <= c.beat) due = Math.max(due, o.due + o.hold + (o.lane === c.lane ? 1 : 0.5));
+  }
+  c.due = Math.min(due, c.beat + run.chart.delay);
 }
 
 const gradeOf = (offset: number): Grade | null =>
@@ -195,6 +211,7 @@ export function advance(run: Run, beat: number): Judgement[] {
   run.beat = beat;
   const out: Judgement[] = [];
   if (run.over) return out;
+  for (const c of run.chart.calls) if (!c.rung && beat >= c.beat) ring(run, c);
   for (const c of run.chart.calls) {
     // Already standing in the door when the wall arrives: through, a good.
     if (c.state === "pending" && beat >= c.due && run.lane === c.lane) out.push(through(run, c, "good", 0));

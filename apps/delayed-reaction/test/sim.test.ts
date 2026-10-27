@@ -6,7 +6,8 @@ import { advance, createRun, dueLanes, GOOD, knockback, LEVELS, LIVES, makeChart
 function walk(run: Run, calls: Call[], offset: number, skip = (_i: number) => false) {
   const out: Judgement[] = [];
   for (const [i, c] of calls.entries()) {
-    out.push(...advance(run, c.due - 0.3));
+    out.push(...advance(run, Math.max(run.beat, c.beat))); // the call rings; its due beat is fixed now
+    out.push(...advance(run, Math.max(run.beat, c.due - 0.3)));
     if (!skip(i)) out.push(...press(run, c.lane, c.due + offset));
     if (run.over) break;
   }
@@ -118,5 +119,55 @@ test("a perfect run climbs to the speed ceiling, a sloppy one sits near the floo
     const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
     expect(mean(messy)).toBeLessThan(SPEED_FLOOR + 0.3);
     expect(mean(clean)).toBeGreaterThan(mean(messy) + 0.5);
+  }
+});
+
+// A boost pulls the next answer in: a call that rings while you're fast is due sooner, in half beats, and the
+// pad light and the echo hint (both read the due beat) land on the new one. A call that rang slow keeps its beat.
+test("a call that rings at speed is due sooner, on the half beat, and the lit pad follows it", () => {
+  const chart = makeChart(3);
+  const run = createRun(chart);
+  const taps = chart.calls.filter((c) => !c.hold);
+  const slow = taps[0]!;
+  advance(run, slow.beat);
+  expect(slow.due).toBe(slow.beat + chart.delay); // rang at the floor: no pull
+
+  // A call well after the first wall has passed, rung at full speed.
+  const fast = taps.find((c) => c.beat > slow.due + 2)!;
+  advance(run, fast.beat - 0.01);
+  run.speed = SPEED_CEILING;
+  advance(run, fast.beat);
+  const pull = fast.beat + chart.delay - fast.due;
+  expect(pull).toBeGreaterThan(0);
+  expect(pull * 2).toBe(Math.round(pull * 2));
+  const nominal = fast.beat + chart.delay;
+  expect(dueLanes(run, fast.due).has(fast.lane)).toBe(true);
+  expect(dueLanes(run, nominal - 0.1).has(fast.lane)).toBe(false);
+
+  // The wall arrives on the pulled-in beat: step into its door then and you're through.
+  const lives = run.lives; // the walls skipped on the way here already cost theirs
+  advance(run, fast.due - 0.3);
+  const before = run.lives;
+  press(run, fast.lane, fast.due);
+  expect(lives).toBeGreaterThanOrEqual(before);
+  expect(fast.state).toBe("hit");
+  expect(run.lives).toBe(before);
+});
+
+test("a run that keeps boosting is harder: walls come sooner, never stacked or inside a long door", () => {
+  for (let level = 1; level <= LEVELS.length; level++) {
+    const chart = makeChart(level);
+    const run = createRun(chart);
+    walk(run, chart.calls, -0.03);
+    advance(run, chart.bars * 4);
+    expect(run.over).toBe("won"); // still answerable by someone who keeps up
+    const pulled = chart.calls.filter((c) => c.due < c.beat + chart.delay);
+    expect(pulled.length).toBeGreaterThan(chart.calls.length / 4);
+    const sorted = [...chart.calls].sort((a, b) => a.due - b.due);
+    for (const [i, c] of sorted.entries()) {
+      expect(c.due).toBeGreaterThan(c.beat + 1);
+      const prev = sorted[i - 1];
+      if (prev) expect(c.due).toBeGreaterThanOrEqual(prev.due + prev.hold + 0.5);
+    }
   }
 });

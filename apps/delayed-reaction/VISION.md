@@ -59,7 +59,7 @@ Shipped: runner #2359, tunnel #2360, sim and sound #2361, wired together in the 
   fence" (a faint grid). Answer on time and you pass through the open part and **boost**: the tunnel rushes
   faster and the music brightens. Miss and you hit the fence: a slow-down, the world drags, the sound dulls.
 - Speed sits between a floor and a ceiling and decays back to the floor on its own, so a perfect run gets fast
-  and thrilling and a sloppy one stays slow.
+  and thrilling and a sloppy one stays slow. A call that rings while you're fast is due sooner (`ring` in `src/sim.ts`), so fast is also harder.
 
 ## Hits: fluid particle explosions
 
