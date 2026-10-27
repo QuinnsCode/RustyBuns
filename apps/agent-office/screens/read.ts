@@ -48,12 +48,18 @@ export function mervinBoard(lines: string[]): Board {
 }
 
 /**
- * The conflicts Mervin took off the agents: every file git would have stopped on (Mervin settled it, or carded it) and
+ * The conflicts Mervin took off the agents (`prevented` of them before any branch was written): every file git would have stopped on (Mervin settled it, or carded it) and
  * every clash between PRs that merges clean as text but breaks later. `avoided` are the ones no agent had to touch.
  */
-export function avoided(b: Board): { avoided: number; total: number } {
+export function avoided(b: Board, prevented = 0): { avoided: number; total: number } {
   const n = (t: Tier) => b.stages.reduce((k, s) => k + s.tiers[t], 0);
-  return { avoided: n("mervin") + b.clashes.filter((c) => c.settled).length, total: n("mervin") + n("card") + b.clashes.length };
+  return { avoided: prevented + n("mervin") + b.clashes.filter((c) => c.settled).length, total: prevented + n("mervin") + n("card") + b.clashes.length };
+}
+
+/** `GET /__rb/codesplitter/hold`'s `prevented`: tasks Mervin held (the dispatch hint's Wait) because open branches already
+ * changed their files, so the two never met at merge time. Counted as conflicts avoided. 0 when the answer isn't a count. */
+export function preventedOf(body: unknown): number {
+  return isObject(body) && typeof body.prevented === "number" && body.prevented > 0 ? Math.floor(body.prevented) : 0;
 }
 
 /** One row of Mervin's running tally per PR and per clash: a later run of the same PR replaces its row, so reruns don't count twice. */
