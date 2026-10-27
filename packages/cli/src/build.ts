@@ -206,7 +206,7 @@ export function spaEntry(c: RustyBunsConfig, host: HostKind = "desktop"): string
 // as a Durable Object with sqlite storage, vouches the local identity at ${worldPath}.
 // Guests (other machines) reach ${worldPath} alone, with ?join=<passphrase>&uid=&name=&v=.
 // Replaces desktop_host.ts + desktop_gen_embed.ts.
-${reflectMetadataImport()}import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${d.server ? ", appServer" : ""}, type GuestState } from "@rustybuns/shell-bun";
+${reflectMetadataImport()}import { serve, openBrowser, writeDesktopFile, mintToken, localBindings, stdoutReporter, applyD1Migrations, launchCheck, memWatch, edgeLike${h.box ? ", cpuProfile, profRoute, history, summarizeProfile" : ""}${webmcpOn(c, h.box) ? ", webMcpRoute, WEBMCP_TAG" : ""}${appImport(c)}${d.server ? ", appServer" : ""}, type GuestState } from "@rustybuns/shell-bun";
 ${hasWorld ? `import World from ${JSON.stringify("../" + (d.world || "packages/desktop/world.ts"))};` : "// no world (desktop.world: false)"}
 ${d.host ? `import host from ${JSON.stringify("../" + d.host)};` : "const host: any = null;"}
 import { homedir, networkInterfaces } from "node:os";
