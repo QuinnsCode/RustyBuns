@@ -21,9 +21,10 @@ const query = (e: Edit) => {
 
 async function call(e?: Edit): Promise<State> {
   const r = await fetch(`/__rb/box${e ? `?${new URLSearchParams(query(e))}` : ""}`, { method: e ? "POST" : "GET" });
-  const body = await r.json();
-  if (!r.ok) throw new Error(typeof body?.error === "string" ? body.error : "The box didn't answer");
-  return body;
+  const body: unknown = await r.json();
+  const error = typeof body === "object" && body !== null && "error" in body ? body.error : null;
+  if (!r.ok) throw new Error(typeof error === "string" ? error : "The box didn't answer");
+  return body as State;
 }
 
 export function healthLine(s: State): string {
