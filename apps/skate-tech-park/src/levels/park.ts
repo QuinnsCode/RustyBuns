@@ -8,6 +8,7 @@ import { type Bounds, type Level, makeLevel, postObstacles, type Spawn } from ".
 import { drape, type Gap, join, lift, type Part, type Route } from "./pieces.ts";
 import { type Circle, footprint, scatter, type Scatter } from "./scatter.ts";
 import { circles, copings, hillSpawn, layOut, paintAt, sculpt, type Earthwork, type Paint, type Works } from "./earthworks.ts";
+import { embedded } from "./embedded.ts";
 import { type Fill, fillContours, keepOut, type Pt } from "./ribbons.ts";
 
 /** Real terrain is shrunk this many times across (a 1 km zone becomes a ~333 m disc). One constant for the whole game. */
@@ -133,7 +134,9 @@ export function parkLevel(spec: ParkSpec, zone: ZoneData, real = false): ParkLev
   const spread = spec.scatter === false ? [] : scatter({ bounds, R: ground.R, ground: ground.height, spawns: spec.spawns, lanes: lanes(gaps, spec.spawns), taken: [...footprint(placed), ...trees, ...landmarks, ...works.flatMap(circles)] }, spec.scatter).map((p) => drape(p, ground.height));
   const kit = join(placed, ...spread);
   const land = sculpt(ground, works);
-  const parts = join(kit, drape(copings(works), land.height));
+  // long smooth bars set into the hillsides the kit left, laid on the finished ground so they sit flush
+  const burrowed = embedded({ bounds, R: ground.R, ground: land.height, spawns: spec.spawns, lanes: lanes(gaps, spec.spawns), taken: [...footprint(kit), ...trees, ...landmarks, ...works.flatMap(circles)] });
+  const parts = join(kit, drape(copings(works), land.height), ...burrowed);
   // a park with no hillside cut near its spawns starts a rider below one, on ground the ribbons and the scattered kit left open
   const extra = hillSpawn(works, spec.spawns, [...parts.pieces.map((p) => ({ x: p.x, z: p.z, r: 6 })), ...(filled?.paths ?? []).flatMap((r) => r.path.map((p) => ({ x: p.x, z: p.z, r: 15 })))], undefined, land.height);
   const inner = makeLevel({ name: spec.name, pieces: parts.pieces, rails: parts.rails, obstacles: trees, spawns: extra ? [...spec.spawns, extra] : spec.spawns, bounds });
