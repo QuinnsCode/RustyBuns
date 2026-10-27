@@ -6,6 +6,7 @@ import type { SystemState, Where } from "./rules.ts";
 
 export const WIDE_ORBIT = 3;   // ships that hold the sky over a world widen the front to every sector
 export const OPEN_SKY = 4;     // transports a side can land under a sky nobody holds
+export const SIEGE_TURNS = 2;  // every this many turns a side keeps the orbit, its landings through it shrink by one more
 export const SEALED_BY = 3;    // enemy ships over a world that shut its landings out altogether
 
 export interface Cap { troops: number; wide: boolean }
@@ -15,7 +16,7 @@ export interface Cap { troops: number; wide: boolean }
 export function landingCap(s: SystemState, f: Faction): Cap {
   const foe = f === "marines" ? "wooka" : "marines";
   if (s.orbit === f) return { troops: Infinity, wide: s.fleets[f] >= WIDE_ORBIT };
-  if (s.orbit === foe) return { troops: Math.max(0, SEALED_BY - s.fleets[foe]), wide: false };
+  if (s.orbit === foe) return { troops: Math.max(0, SEALED_BY - s.fleets[foe] - Math.floor((s.held ?? 0) / SIEGE_TURNS)), wide: false };
   return { troops: OPEN_SKY, wide: false };
 }
 
