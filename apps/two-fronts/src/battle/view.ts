@@ -338,8 +338,10 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const outline = new OutlinePass(new THREE.Vector2(innerWidth, innerHeight), scene, camera);
   outline.edgeStrength = 5;
   outline.edgeThickness = 2;
-  outline.visibleEdgeColor.set(0xff5a2a);
-  outline.hiddenEdgeColor.set(0xc0381c);
+  // Orange is lost against sand, so the desert and the beach get a cold cyan instead.
+  const sandy = spec.sector === "canyon" || spec.sector === "cannon";
+  outline.visibleEdgeColor.set(sandy ? 0x2ee6ff : 0xff5a2a);
+  outline.hiddenEdgeColor.set(sandy ? 0x1590b8 : 0xc0381c);
   composer.addPass(outline);
   composer.addPass(new OutputPass());
   const OUTLINE_RANGE = 80;
