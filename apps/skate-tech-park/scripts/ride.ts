@@ -83,7 +83,8 @@ export function ride(l: ParkLevel, spawns = l.spawns.length): Ride {
       // ease off for a stop that is close or off to the side, or the board swings wide of it and ends in the scenery
       const cruise = Math.min(24, Math.max(12, Math.hypot(to.x - s.x, to.z - s.z) * 0.8), Math.abs(err) > 0.5 ? 10 : 24);
       const inp: Input = back > 0 ? { ...IDLE, throttle: -1, steer: backDir } : {
-        ...IDLE, throttle: s.speed < cruise ? 1 : -1, boost: !s.air && s.speed < cruise, steer: s.air ? 0 : Math.max(-1, Math.min(1, err * 3)), jump: !!hop,
+        ...IDLE, throttle: s.manual ? Math.max(-1, Math.min(1, s.balance * 2 * s.manual)) : s.speed < cruise ? 1 : -1, boost: !s.air && !s.manual && s.speed < cruise,
+        steer: s.grind >= 0 ? Math.max(-1, Math.min(1, s.balance * 2)) : s.air ? 0 : Math.max(-1, Math.min(1, err * 3)), jump: !!hop, // a grind and a manual are held by their lean
         flick: s.air && s.airTime > 0.25 && !flicked ? FLICKS[(r.tricks + Math.floor(s.t)) % FLICKS.length]! : null,
         manual: !s.air && s.speed > 12 && Math.abs(err) < 0.1 && Math.floor(s.t / 3) % 5 === 0 ? 1 : 0,
       };
