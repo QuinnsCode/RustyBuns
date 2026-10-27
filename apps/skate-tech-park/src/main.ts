@@ -29,6 +29,8 @@ import { pickProfile } from "./flick.ts";
 import { PROFILES } from "./flick-profiles.ts";
 import { mountGrip } from "./griptape.ts";
 import { mountTouch } from "./touch.ts";
+import { type Controls, loadControls, saveControls, tuned } from "./controls.ts";
+import { mountControlsPanel } from "./controls-panel.ts";
 import { level, levelId, mood, mountLevelUi, park, spawn } from "./levels/picker.ts";
 import { touring as isTouring } from "./levels/index.ts";
 import { tourShot, tourStops } from "./render/tour.ts";
@@ -211,16 +213,33 @@ window.addEventListener("blur", () => keys.clear());
 // the footprints button on the pad steps through the library; the last one picked is kept in the browser.
 const FLICK_KEY = "skate-flick";
 const stored = () => { try { return localStorage.getItem(FLICK_KEY); } catch { return null; } };
-const gestures = new Gestures(pickProfile(PROFILES, new URLSearchParams(location.search).get("flick"), stored()));
+let chosen = pickProfile(PROFILES, new URLSearchParams(location.search).get("flick"), stored());
+let controls = loadControls();
+const gestures = new Gestures(tuned(chosen, controls));
 // On a touch screen one thumb drives (touch.ts), so only the profile's half of the screen is the flick pad.
 const touch = mountTouch();
-const grip = mountGrip(touch.root, () => {
-  const p = PROFILES[(PROFILES.findIndex((x) => x.name === gestures.profile.name) + 1) % PROFILES.length];
-  gestures.profile = p;
-  try { localStorage.setItem(FLICK_KEY, p.name); } catch { /* private window: the pick lasts this visit */ }
-  return p;
+const grip = mountGrip(touch.root);
+// Every control setting applies live: the pad's side, size and labels, the stick's dead zone and inversion, the flick reach.
+const applyControls = (c: Controls) => {
+  controls = c;
+  saveControls(c);
+  const root = document.documentElement.style;
+  root.setProperty("--pad-scale", String(c.size));
+  root.setProperty("--pad-op", String(c.opacity));
+  document.body.dataset.labels = c.labels;
+  Object.assign(touch, { invertX: c.invertX, invertY: c.invertY, dead: c.dead });
+  gestures.profile = tuned(chosen, c);
+  grip.show(gestures.profile);
+};
+mountControlsPanel(document.querySelector(".hud .buttons")!, {
+  controls, profiles: PROFILES, layout: () => chosen.name, onChange: applyControls,
+  onLayout: (name) => {
+    chosen = PROFILES.find((p) => p.name === name) ?? chosen;
+    try { localStorage.setItem(FLICK_KEY, chosen.name); } catch { /* private window: the pick lasts this visit */ }
+    applyControls(controls);
+  },
 });
-grip.show(gestures.profile);
+applyControls(controls);
 const onPad = (x: number) => (gestures.profile.side === "left" ? x < innerWidth / 2 : x >= innerWidth / 2);
 let flicking = -1; // the pointer the gesture follows
 canvas.addEventListener("pointerdown", (e) => {
