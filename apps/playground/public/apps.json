@@ -64,5 +64,11 @@
     "name": "Auto Rig",
     "line": "Drop in a 3D model, get a skeleton, skin weights and inverse kinematics you can drag around.",
     "app": "auto-rig"
+  },
+  {
+    "name": "Hello World",
+    "line": "The smallest Rusty Buns app: one page, static assets only.",
+    "play": "https://hello-world.notryanquinn.workers.dev",
+    "app": "hello-world"
   }
 ]
