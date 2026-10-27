@@ -146,7 +146,7 @@ describe("release", () => {
     expect(r.site).toBe("https://codesplitter.example.dev");
     expect(mac.ran(/rustybuns deploy/)).toEqual(["bunx rustybuns deploy --yes"]);
     const deployEnv = mac.envs[mac.at(/rustybuns deploy/)]!;
-    expect(deployEnv).toMatchObject({ CODESPLITTER_CHECKS: "1", CODESPLITTER_DEPLOYS: "1", CODESPLITTER_AGENTS: "1", CLOUDFLARE_API_TOKEN: "x".repeat(40) });
+    expect(deployEnv).toMatchObject({ CODESPLITTER_CHECKS: "1", CODESPLITTER_DEPLOYS: "1", CODESPLITTER_AGENTS: "1", CODESPLITTER_PUSH_EVENTS: "1", CLOUDFLARE_API_TOKEN: "x".repeat(40) });
     // The token left in the terminal never reaches wrangler's login check.
     expect(mac.envs[mac.at(/wrangler whoami/)]!.CLOUDFLARE_API_TOKEN).toBeUndefined();
     expect(mac.ran(/move-resources/)).toEqual([]);
