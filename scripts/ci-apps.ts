@@ -35,6 +35,7 @@ export const APPS: Record<string, App> = {
   "borg":              { test: "bun test test", drop: false },
   "borg-postgres":     { test: "bun test test", drop: false },
   "excalibrawl":       { test: "bun test test", drop: false },
+  "elysia-example":    { test: "bun test test", boot: true },
   "elysia-conduit":    { test: "bun test ./test", drop: false },   // ./: "test" alone is a name filter and would run their src/ unit tests, which need their .env
   "example":           { boot: true, drop: false },
   "fm-daw":            { test: "bun test test", prep: "bun run build:native", perOs: true, check: true, boot: true },

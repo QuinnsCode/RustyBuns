@@ -38,7 +38,7 @@ Most frameworks already have a Cloudflare build that outputs a module exporting 
 | Next.js | `worker`, or sidecar | OpenNext `worker.js`; fallback: `standalone` server as a child process | `Cloudflare.Website.Nextjs` | ⏳ |
 | Gatsby | `spa` | none: a static site in `public/` | `Cloudflare.Worker` + assets | ⏳ |
 | CRA, Vue CLI | `spa` after `init --port-vite` | none | same as Vite | ✅ `init` (Flame, Yacht, Oct 12) |
-| Hono, Elysia, itty-router (a plain Worker) | `worker` | none: Alchemy bundles the wrangler `main` | `Cloudflare.Worker` | ✅ `init`, desktop, plan: `apps/hono-example` (Oct 27) |
+| Hono, Elysia, itty-router (a plain Worker) | `worker` | none: Alchemy bundles the wrangler `main` | `Cloudflare.Worker` | ✅ `init`, desktop, plan: `apps/hono-example`, `apps/elysia-example` (Oct 27) |
 | custom webpack | `spa` after a Vite port by hand | none | same as Vite | ⏳ `init --port-vite` lists what to port and drafts the config |
 
 The server output paths in this table come from each framework's usual layout. Record the real path when you build each sample app.
@@ -92,7 +92,7 @@ Easiest first, judged by each framework's Cloudflare build and a `fit` sweep ove
 
 ## The sample app contract
 
-The check is [`scripts/counter.ts`](scripts/counter.ts): one HTTP journey (no browser) that every example's `test/desktop.test.ts` calls in one line. Done so far: [`apps/hono-example`](apps/hono-example).
+The check is [`scripts/counter.ts`](scripts/counter.ts): one HTTP journey (no browser) that every example's `test/desktop.test.ts` calls in one line. Done so far: [`apps/hono-example`](apps/hono-example), [`apps/elysia-example`](apps/elysia-example).
 
 Every `apps/<fw>-example` does the same small thing, so a single smoke test covers them all:
 
