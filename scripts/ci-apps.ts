@@ -12,6 +12,7 @@
 // Prints `key=json` lines for $GITHUB_OUTPUT.
 type App = {
   test?: string;        // run in apps/<name>
+  shards?: number;      // split test's files over this many jobs by their time (apps/<name>/test-times.json, scripts/test-times.ts)
   prep?: string;        // before test and build: cargo for native/ (cdylib or wasm)
   perOs?: boolean;      // Rust cdylibs don't cross-compile: one runner per OS
   build?: string;       // default: rustybuns build desktop --target <t>, for each target
@@ -21,6 +22,8 @@ type App = {
   boot?: boolean;       // borg tier 1: build the dev host and boot it on the local twins (scripts/boot.ts)
   bootOn?: string[];    // build the release binary on these targets' own runners and boot it (boot.ts --bin), when the app changes
 };
+
+import { shard } from "../apps/codesplitter/scripts/ester.ts";
 
 export const APPS: Record<string, App> = {
   "agent-demo":        { test: "bun test test", drop: false },
@@ -35,7 +38,7 @@ export const APPS: Record<string, App> = {
   "elysia-conduit":    { test: "bun test ./test", drop: false },   // ./: "test" alone is a name filter and would run their src/ unit tests, which need their .env
   "example":           { boot: true, drop: false },
   "fm-daw":            { test: "bun test test", prep: "bun run build:native", perOs: true, check: true, boot: true },
-  "codesplitter":     { test: "bun test --parallel test", boot: true },
+  "codesplitter":     { test: "bun test --parallel test", shards: 3, boot: true },
   "delayed-reaction":  { test: "bun test test", drop: false },
   "git-recon":         { test: "bun test", drop: false },
   "hippo-tycoon":      { test: "bun test --parallel test", prep: "bun run build:native", check: true, boot: true },
@@ -72,6 +75,21 @@ const binFile = (app: string, t: string) => `dist/${app}-${t}${t.startsWith("win
 function buildCmd(app: string, a: App, targets: string[]) {
   if (a.build) return a.build;
   return targets.map((t) => `${CLI}${a.check ? " --check" : ""} --target ${t} --outfile ${binFile(app, t)}`).join(" && ");
+}
+
+// `test` run as one `bun test ...` per shard, each over the files Ester's shard() gives it. A file's weight is its recorded
+// ms, or its size when it has none, so a new file still lands somewhere sensible.
+async function shardedTests(app: string, test: string, n: number): Promise<string[]> {
+  const dir = `apps/${app}`;
+  const [root = "test"] = test.split(/\s+/).slice(-1);
+  const times: Record<string, unknown> = await Bun.file(`${dir}/test-times.json`).json().catch(() => ({}));
+  const files = [...new Bun.Glob("**/*.test.ts").scanSync({ cwd: `${dir}/${root}` })].map((f) => `${root}/${f}`).sort();
+  const timed = await Promise.all(files.map(async (name) => {
+    const ms = times[name];
+    return { name, ms: typeof ms === "number" ? ms : Math.round(Bun.file(`${dir}/${name}`).size / 20) };
+  }));
+  const prefix = test.slice(0, test.lastIndexOf(root)).trim();
+  return shard(timed, n).filter((s) => s.length).map((s) => `${prefix} ${s.map((t) => `./${t.name}`).sort().join(" ")}`);
 }
 
 const [cmd, arg = "", base = ""] = process.argv.slice(2);
@@ -131,7 +149,13 @@ if (cmd === "drop") {
     || (changed.includes("package.json") && await rootDepsChanged(arg));
   const touched = new Set([...changed.map((f) => f.match(/^apps\/([^/]+)\//)?.[1]).filter(Boolean), ...(rows === "all" ? [] : rows)]);
   const names = Object.keys(APPS).filter((n) => (APPS[n]!.test || APPS[n]!.boot) && (shared || touched.has(n)));
-  out("apps", { include: names.map((app) => ({ app, test: APPS[app]!.test ?? "", boot: !!APPS[app]!.boot, prep: APPS[app]!.prep ?? "", cargo: cargo(app) })) });
+  const include = (await Promise.all(names.map(async (app) => {
+    const a = APPS[app]!, row = { app, boot: !!a.boot, prep: a.prep ?? "", cargo: cargo(app) };
+    if (!a.test || !a.shards) return [{ ...row, test: a.test ?? "", shard: "" }];
+    // Boot runs once, with the first shard.
+    return (await shardedTests(app, a.test, a.shards)).map((test, i, all) => ({ ...row, boot: row.boot && i === 0, test, shard: `${i + 1}/${all.length}` }));
+  }))).flat();
+  out("apps", { include });
   out("any", names.length > 0);
   out("packages", changed.some((f) => f.startsWith("packages/")));
   // bun test skips dot directories, so the agent guard hook's tests (.claude/hooks) get their own job.
