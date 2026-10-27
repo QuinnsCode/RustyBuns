@@ -1,7 +1,7 @@
 // The fight's rhythm through whole battles: surges, dig-ins, and the fall-back when a post is overrun.
 import { expect, setDefaultTimeout, test } from "bun:test";
 import type { BattleSpec, MatchMode } from "../src/battle/contract.ts";
-import { DT, POST_RADIUS, startBattle, step, type Battle } from "../src/battle/sim.ts";
+import { DT, PANIC, POST_RADIUS, startBattle, step, type Battle } from "../src/battle/sim.ts";
 
 setDefaultTimeout(30_000);
 
@@ -113,7 +113,7 @@ test("a Mossback walks out of the later surges, the radio panics over itself, an
   expect(m.side).toBe("attacker");
   // The lines come one on top of the next.
   for (let i = 0; i < 2 / DT; i++) step(b, null);
-  const at = b.events.map((e, i) => [e, b.eventAt[i]!] as const).filter(([e]) => e.includes("BIG ONE") || e.includes("landslide") || e.includes("HANDS") || e.includes("Rockets") || e.includes("LIKES") || e.includes("oh no") || e.includes("breaking up"));
+  const at = b.events.map((e, i) => [e, b.eventAt[i]!] as const).filter(([e]) => PANIC.includes(e));
   expect(at.length).toBeGreaterThanOrEqual(2);
   expect(Math.abs(at[1]![1] - at[0]![1])).toBeLessThan(1);
   // Fell, it's no ticket for them: surge Wooka cost their side nothing.

@@ -220,6 +220,7 @@ const GUNSHIP_ALT = 12;            // gunships fly over everything: nothing bloc
 export const STRIKE_RADIUS = 10;
 const STRIKE_DELAY = 2.5;
 const WAVE_EVERY = 8;              // seconds between reinforcement waves
+const GARRISON = 2;                // the defender fields this many more at once from the same tickets: the keep's own
 const BLEED_EVERY = 4;             // seconds per ticket the side with fewer posts loses
 const HERO_LIVES = 3;
 const AGGRO = 35;                  // how far a Wooka will charge at someone it can smell
@@ -301,7 +302,7 @@ export const STATS: Record<UnitKind, { hp: number; speed: number; range: number;
   walker: { hp: 900, speed: 3.5, range: 70, cool: 3, dmg: 60, aim: 0.75, cost: 7 },
   speeder: { hp: 180, speed: 15, range: 35, cool: 0.35, dmg: 6, aim: 0.6, cost: 2 },
   gunship: { hp: 450, speed: 10, range: 65, cool: 1.6, dmg: 28, aim: 0.8, cost: 6 },
-  turret: { hp: 350, speed: 0, range: 55, cool: 1.2, dmg: 10, aim: 0.75, cost: 0 },
+  turret: { hp: 450, speed: 0, range: 55, cool: 1.1, dmg: 14, aim: 0.8, cost: 0 }, // the keep's guns: they hold the ring till the rockets come
   hero: { hp: 300, speed: 8, range: 55, cool: 0.3, dmg: 9, aim: 0.9, cost: 3 },
   champion: { hp: 800, speed: 8, range: 60, cool: 1.3, dmg: 55, aim: 0.9, cost: 6 }, // an AI side's champion: see CHAMP_STATS
 };
@@ -625,8 +626,10 @@ function add(b: Battle, side: Side, kind: UnitKind, x: number, z: number, role?:
 }
 
 // Fresh troops come in at the spawn, or at a held post nearer the fight that isn't under attack.
+// The defender's keep is its barracks: fresh defenders come out there while it's theirs, under attack or not.
 function spawnPoint(b: Battle, side: Side) {
-  const held = b.posts.filter((p) => p.owner === side && !b.units.some((u) => u.side !== side && u.kind !== "turret" && dist(u, p) < 30));
+  const keep = b.posts.at(-1)!;
+  const held = b.posts.filter((p) => p.owner === side && ((side === "defender" && p === keep) || !b.units.some((u) => u.side !== side && u.kind !== "turret" && dist(u, p) < 30)));
   const home = b.spawn[side], foe = b.spawn[other(side)];
   const p = held.sort((a, c) => dist(a, foe) - dist(c, foe))[0];
   const base = p && dist(p, foe) < dist(home, foe) ? { x: p.x, z: p.z + (side === "attacker" ? 8 : -8) } : home;
@@ -656,7 +659,7 @@ const baseCap = (b: Battle, side: Side) =>
   isHorde(b, side) ? Math.min(24, 7 + b.spec.armies[side] * 4 + poolSize(b.spec.vehicles[side]) * 3) : Math.min(14, 4 + b.spec.armies[side] * 3);
 // In a hold-out the attacker's waves start small and grow as the clock runs, to twice the usual by the end.
 const troopCap = (b: Battle, side: Side) =>
-  b.mode === "holdout" && side === "attacker" ? Math.min(32, Math.max(2, Math.round(baseCap(b, side) * (0.5 + (1.5 * b.time) / HOLDOUT_TIME)))) : baseCap(b, side);
+  b.mode === "holdout" && side === "attacker" ? Math.min(32, Math.max(2, Math.round(baseCap(b, side) * (0.5 + (1.5 * b.time) / HOLDOUT_TIME)))) : baseCap(b, side) + (side === "defender" ? GARRISON : 0);
 // The Wooka kind the horde is furthest short of, against its mix.
 function nextRole(b: Battle, side: Side): WookaRole {
   const n = { fodder: 0, chub: 0, sticky: 0, boomie: 0, shanti: 0, mossback: 0 };
@@ -809,7 +812,7 @@ export function damage(b: Battle, v: Unit, dmg: number, from?: number, heavy = f
     if (heavy || dmg >= MOSS_HEAVY) v.wound = MOSS_WOUND;
     else dmg *= MOSS_LIGHT;
   }
-  v.hp -= dmg * toughness(b, v.side) * (isHorde(b, v.side) ? 1 : heavy ? BLAST_ARMOUR : MARINE_ARMOUR) * squadCover(b, v); // armour turns bullets and clubs far better than blasts
+  v.hp -= dmg * toughness(b, v.side) * (isHorde(b, v.side) ? 1 : heavy ? BLAST_ARMOUR : MARINE_ARMOUR) * squadCover(b, v) * dugIn(b, v); // armour turns bullets and clubs far better than blasts
   if (from !== undefined) v.hitBy = from;
 }
 
@@ -823,6 +826,13 @@ export function damage(b: Battle, v: Unit, dmg: number, from?: number, heavy = f
 //  - against a human Thunder Marine the horde bites a little less; a human Wooka feels the Thunder Marines' guns a little more.
 export const BLAST_ARMOUR = 0.75;
 export const MARINE_ARMOUR = 0.12;
+// The defender was here first and dug in: near a post of theirs they feel this much of a hit, and
+// at the keep, behind its walls and under its turrets, this much. With the garrison (GARRISON) and
+// the keep as the defender's barracks (spawnPoint), the attacker gets no such ground: at equal
+// forces the defender holds about 60/40, and it takes a third more to shift them (scripts/sim.ts).
+export const DUG_IN = 0.85;
+export const KEEP_WALLS = 0.65;
+const DUG_R = 26, KEEP_R = 22;   // how far from a held post the lines run, and the keep's walls
 const HERO_EDGE = 0.006, HERO_EDGE_MAX = 0.12; // per kill, and most, off the damage the hero's side takes
 const SLACK = 0.12;                            // the hero's side, behind: up to this much less damage taken
 const BAND = 0.2;                              // the AI side, behind or ahead: up to this much tougher or softer
@@ -846,6 +856,15 @@ const squadCover = (b: Battle, v: Unit) => {
   return h && dist(h, v) < COVER_R ? COVER_BY : 1;
 };
 export const toughness = (b: Battle, side: Side) => b.tough[side];
+// The defender's fortified ground (DUG_IN, KEEP_WALLS): nothing on a hill, which is nobody's. It is
+// the AI defender's: a human holding has the assist (squadCover, settle) and the handicap on the foe
+// instead, and with the ground on top the scripted player never lost.
+export function dugIn(b: Battle, v: Unit) {
+  if (v.side !== "defender" || flies(v) || b.mode === "hill" || (b.played && b.spec.hero === "defender")) return 1;
+  const keep = b.posts.at(-1)!;
+  if (keep.owner === "defender" && dist(v, keep) < KEEP_R) return KEEP_WALLS;
+  return b.posts.some((p) => p.owner === "defender" && dist(v, p) < DUG_R) ? DUG_IN : 1;
+}
 
 // A Mossback mends, slowly, unless something heavy has hit it lately.
 export function tend(u: Unit, dt = DT) {
@@ -1246,7 +1265,7 @@ const HORDE_SURGE_LINES = [
   "Hoo-HOO-hoo! Everybody, bonk! Bonk the shiny!", "Chief says 'attack'. Chief says it with his whole face", "Up the tree, down the tree, over the shiny one, bonk",
   "Look at the bones! Cheers for the bones! Bring more bones!", "Hoo hoo hoo HOO. Translation: yes, all of it",
 ];
-const PANIC = [
+export const PANIC = [
   "BIG ONE, BIG ONE, BIG ONE",
   "That's not a Wooka, that's a landslide with arms!",
   "It's running on its HANDS--",
@@ -1529,7 +1548,7 @@ export function step(b: Battle, input: Input | null) {
   // A mob on a Thunder Marine tears into them, on top of the clubs.
   for (const u of b.units) {
     if (u.hp <= 0 || isHorde(b, u.side) || armoured(u.kind) || flies(u) || hidden(b, u)) continue;
-    if (mob(b, u) >= MOB) u.hp -= MAUL * DT * MARINE_ARMOUR * b.tough[u.side];
+    if (mob(b, u) >= MOB) u.hp -= MAUL * DT * MARINE_ARMOUR * b.tough[u.side] * dugIn(b, u);
   }
   // Boomies go off when they die, however they die, and can set each other off.
   for (let again = true; again;) {

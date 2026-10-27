@@ -4,7 +4,7 @@ import { bot, specFor } from "./balance.ts";
 import { startBattle, step, timeLimit } from "../src/battle/sim.ts";
 import type { Faction, SectorKind, Side } from "../src/battle/contract.ts";
 
-export interface Job { i: number; sector: SectorKind; seed: number; attacker: Faction; hero: Side | null; handicap: number; record: boolean }
+export interface Job { i: number; sector: SectorKind; seed: number; attacker: Faction; hero: Side | null; handicap: number; orders: boolean; record: boolean }
 export const GRID = 24, BINS = 30, BIN_S = 10; // heat: GRID x GRID cells over the field, one layer per 10 s
 export interface Result {
   job: Job; winner: Side; time: number; tickets: Record<Side, number>; posts: number;
@@ -21,7 +21,7 @@ function play(job: Job): Result {
   const held = new Set<number>();
   let n = 0;
   while (!b.over && b.time < timeLimit(spec)) {
-    step(b, human ? bot(b) : null);
+    step(b, human ? bot(b, job.orders) : null);
     b.posts.forEach((p, i) => { if (p.owner === "attacker") held.add(i); });
     if (++n % 30) continue;
     const bin = Math.min(BINS - 1, Math.floor(b.time / BIN_S));

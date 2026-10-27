@@ -15,6 +15,7 @@
 // turn played online replays the same.
 import type { BattleResult, BattleSpec, Faction, MatchMode, SectorKind, SpaceBattleResult, SpaceBattleSpec, VehicleKind, VehiclePool } from "../battle/contract.ts";
 import { BIG_BATTLE, BIG_MAP_FOR, other as otherSide } from "../battle/contract.ts";
+import { forHuman } from "../battle/handicap.ts";
 import { mulberry32 } from "@rustybuns/util";
 import { admitLandings } from "./landing.ts";
 import { FACTION_NAMES, GALAXIES, SECTOR_INCOME, SECTOR_NAMES, galaxyOf, type GalaxyId } from "./galaxy.ts";
@@ -666,12 +667,13 @@ export const heroReady = (c: Campaign, f: Faction = c.player) => c.heroes[f].wou
 
 // --- The hero battle, through the contract ---
 
+// The AI side fields the human handicap more (handicap.ts): a human is worth about half an army again.
 export function buildSpec(c: Campaign, at: Where, seed: number, heroOf: Faction = c.player): BattleSpec {
   const s = c.systems[at.system]!, x = s.sectors[at.sector]!;
   const def = x.owner, att = enemy(def);
   const strikes = (f: Faction) => (s.orbit !== f ? 0 : holdsShield(s, enemy(f)) ? 1 : 3);
   const reinf = (f: Faction) => (s.orbit === f ? Math.min(40, s.fleets[f] * 8) : 0);
-  return {
+  return forHuman({
     id: `${c.turn}-${at.system}-${at.sector}`,
     turn: c.turn,
     system: name(c, at.system),
@@ -688,7 +690,7 @@ export function buildSpec(c: Campaign, at: Where, seed: number, heroOf: Faction 
     ...(c.mode && c.mode !== "conquest" && { mode: c.mode }),
     ...(x.armies[att] + x.armies[def] >= BIG_BATTLE && BIG_MAP_FOR[x.kind] && { map: BIG_MAP_FOR[x.kind] }),
     seed,
-  };
+  });
 }
 
 // The vehicles a side brings to a hero battle: one per two armies, up to three. Tanks and speeders
@@ -706,13 +708,14 @@ export function vehiclePool(s: SystemState, f: Faction, armies: number): Vehicle
 }
 
 // The battle's survivors stay on the map, scaled by the tickets left; the loser's army there is gone.
+// The armies on the map, not the spec's: the AI side fought with the human handicap on top.
 export function applyBattleResult(c0: Campaign, res: BattleResult): Campaign {
   const p = c0.pending;
   if (p?.kind !== "ground" || p.spec.id !== res.id) throw new Error("that isn't the battle being fought");
   const c = structuredClone(c0), spec = p.spec, x = sectorAt(c, p.at)!;
   const win = res.winner, lose = otherSide(win);
-  const start = spec.tickets[win] + spec.reinforcements[win];
-  const survivors = Math.max(1, Math.min(spec.armies[win], Math.round((spec.armies[win] * res.tickets[win]) / Math.max(1, start))));
+  const start = spec.tickets[win] + spec.reinforcements[win], had = x.armies[spec.factions[win]];
+  const survivors = Math.max(1, Math.min(had, Math.round((had * res.tickets[win]) / Math.max(1, start))));
   x.armies[spec.factions[win]] = survivors;
   x.armies[spec.factions[lose]] = 0;
   if (x.owner !== spec.factions[win]) capture(c, x, spec.factions[win]);
