@@ -803,6 +803,10 @@ export async function buildDesktop(c: RustyBunsConfig, opts: BuildOpts = {}) {
   const bins: string[] = [];
   for (let d = process.cwd(); ; d = dirname(d)) { bins.push(join(d, "node_modules", ".bin")); if (dirname(d) === d) break; }
   const bin = { ...process.env, PATH: [...bins, process.env.PATH ?? ""].join(process.platform === "win32" ? ";" : ":") };
+  // A test runner's NODE_ENV=test (bun test sets it) would leak into the app's build: Vite then builds a
+  // non-production bundle (SolidStart's dev overlay pulls shiki's grammars into the Worker). The build is
+  // a release build whoever started it.
+  if (bin.NODE_ENV === "test") delete bin.NODE_ENV;
   // A monorepo app's workspace packages that ship as source with a build step are built first.
   for (const pre of workspacePrebuild(process.cwd())) {
     console.log(`building a workspace dependency: ${pre}`);

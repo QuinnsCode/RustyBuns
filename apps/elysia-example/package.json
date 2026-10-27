@@ -1,0 +1,23 @@
+{
+  "name": "elysia-example",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "desktop:dev": "rustybuns build desktop --dev && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop",
+    "test": "bun test test"
+  },
+  "dependencies": {
+    "elysia": "1.4.30"
+  },
+  "devDependencies": {
+    "@rustybuns/cli": "workspace:*",
+    "@rustybuns/shell-bun": "workspace:*",
+    "alchemy": "2.0.0-beta.77",
+    "effect": "4.0.0-rc.112",
+    "wrangler": "4.141.0"
+  }
+}

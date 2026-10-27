@@ -10,6 +10,7 @@ test("stackOf: specific frameworks win over the vite they pull in", () => {
   expect(stackOf({ vite: "6", react: "19", "@react-router/dev": "7" })).toBe("react-router");
   expect(stackOf({ "@remix-run/node": "2" })).toBe("react-router");
   expect(stackOf({ next: "15", react: "19" })).toBe("next");
+  expect(stackOf({ vite: "8", "solid-js": "1", "@solidjs/start": "2" })).toBe("solidstart");
   expect(stackOf({ vite: "6" }, ["rwsdk"])).toBe("rwsdk");
   expect(stackOf({ lodash: "4" })).toBe("unknown");
 });
@@ -41,9 +42,20 @@ test("ready: supported frameworks, Workers and fetch-handler servers", () => {
 });
 
 test("needs work: a framework init doesn't infer yet links its issue", () => {
-  const f = fit({ pkg: pkg({ next: "15", react: "19" }), files: ["tsconfig.json"] });
-  expect(f).toMatchObject({ verdict: "needs-work", stack: "next", label: "Next.js, TypeScript" });
+  const f = fit({ pkg: pkg({ "@angular/core": "20" }), files: ["tsconfig.json"] });
+  expect(f).toMatchObject({ verdict: "needs-work", stack: "angular", label: "Angular, TypeScript" });
   expect(f.issue).toMatch(/issues\/318$/);
+});
+
+test("Next.js is ready with @opennextjs/cloudflare, needs work without it", () => {
+  const next = { next: "16", react: "19", "react-dom": "19" };
+  const f = fit({ pkg: pkg({ ...next, "@opennextjs/cloudflare": "1" }), files: ["open-next.config.ts", "tsconfig.json"] });
+  expect(f).toMatchObject({ verdict: "ready", stack: "next", label: "Next.js, TypeScript" });
+  expect(f.issue).toBeUndefined();
+  const plain = fit({ pkg: pkg(next), files: ["tsconfig.json"] });
+  expect(plain).toMatchObject({ verdict: "needs-work", stack: "next" });
+  expect(plain.reasons[0]).toContain("@opennextjs/cloudflare");
+  expect(plain.issue).toMatch(/issues\/318$/);
 });
 
 test("React Router is ready built as a Worker (@cloudflare/vite-plugin), needs work on Node", () => {
@@ -96,6 +108,21 @@ test("a static site with no app: plain HTML is ready, a generator's site likely"
   expect(fit({ pkg: null, files: ["mkdocs.yml", "docs/index.md"] }).label).toBe("MkDocs site");
   // a Vite app's index.html is the app's entry, not a static site
   expect(fit({ pkg: { dependencies: { vite: "6" } }, files: ["index.html"] }).label).not.toContain("static");
+});
+
+test("Nuxt is ready: init reads what Nitro's cloudflare-module preset builds", () => {
+  const f = fit({ pkg: pkg({ nuxt: "4", vue: "3" }), files: ["nuxt.config.ts"] });
+  expect(f).toMatchObject({ verdict: "ready", stack: "nuxt", label: "Nuxt, TypeScript" });
+  expect(f.reasons[0]).toContain("`rustybuns init` reads it as is");
+  expect(f.issue).toBeUndefined();
+});
+
+test("SolidStart is ready: init reads its Nitro Cloudflare build", () => {
+  expect(fit({ pkg: pkg({ "@solidjs/start": "2", "solid-js": "1", vite: "8" }), files: ["wrangler.jsonc"] })).toMatchObject({ verdict: "ready", stack: "solidstart" });
+});
+
+test("Qwik City is ready: init reads its cloudflare-pages adapter's Worker", () => {
+  expect(fit({ pkg: pkg({ "@builder.io/qwik": "1", "@builder.io/qwik-city": "1", vite: "7" }), files: [] })).toMatchObject({ verdict: "ready", stack: "qwik" });
 });
 
 test("SvelteKit is ready with adapter-cloudflare, needs work without it", () => {

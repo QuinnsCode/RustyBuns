@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "target": "ESNext", "module": "ESNext", "moduleResolution": "bundler",
+    "jsx": "react-jsx", "jsxImportSource": "@builder.io/qwik",
+    "strict": true, "skipLibCheck": true, "noEmit": true, "allowImportingTsExtensions": true, "noUncheckedIndexedAccess": true,
+    "resolveJsonModule": true, "isolatedModules": true,
+    "types": ["bun", "vite/client"], "lib": ["ESNext", "DOM", "DOM.Iterable"]
+  },
+  "include": ["src", "test", "adapters", "vite.config.ts"]
+}

@@ -1,0 +1,29 @@
+{
+  "name": "solidstart-example",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "deploy": "vite build && wrangler deploy",
+    "desktop:dev": "rustybuns build desktop --dev && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop",
+    "test": "bun test test"
+  },
+  "dependencies": {
+    "@solidjs/meta": "0.29.4",
+    "@solidjs/router": "1.0.0",
+    "@solidjs/start": "2.1.0",
+    "nitro": "3.0.260903-beta",
+    "solid-js": "1.9.17",
+    "vite": "8.3.5"
+  },
+  "devDependencies": {
+    "@rustybuns/cli": "workspace:*",
+    "@rustybuns/shell-bun": "workspace:*",
+    "alchemy": "2.0.0-beta.77",
+    "effect": "4.0.0-rc.112",
+    "wrangler": "4.141.0"
+  }
+}

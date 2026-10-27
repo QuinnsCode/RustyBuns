@@ -1,0 +1,6 @@
+dist/
+.rustybuns/
+.wrangler/
+.svelte-kit/
+wrangler.generated.jsonc
+.alchemy/

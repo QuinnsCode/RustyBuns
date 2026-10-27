@@ -539,6 +539,9 @@ test("init: a plain Worker from wrangler gets no RWSDK build; a Vite-plugin one 
   expect(r.out).toMatch(/build:    none \(a plain Worker: Alchemy bundles src\/index\.ts\)/);
   const c = w.read("rustybuns.config.ts");
   for (const k of ['"builtMain"', '"assets"', '"build"']) expect(c).not.toContain(k);
+  // No client build to split off, so the desktop runs the Worker itself (a Hono app looks the same).
+  expect(c).toContain('"mode": "worker"');
+  expect(c).not.toContain("vite.desktop.config.ts");
   expect(w.read(".rustybuns/alchemy.run.ts")).toContain('main: "src/index.ts"');
 
   const v = project({
@@ -652,6 +655,94 @@ test("init: TanStack Start on @cloudflare/vite-plugin runs its Worker build on t
   expect(c).toContain('"mode": "worker"');
   expect(c).toContain('"VISITS"');
   expect(c).not.toContain("clientBuild");
+});
+
+test("init: Nuxt on Nitro's cloudflare-module preset runs its Worker build on the desktop, with its bindings", () => {
+  const nuxt = (extra: Record<string, string> = {}) => project({
+    "package.json": JSON.stringify({ name: "nx", scripts: { build: "nuxt build" }, dependencies: { nuxt: "^4", vue: "^3" } }),
+    "nuxt.config.ts": 'export default defineNuxtConfig({ nitro: { preset: "cloudflare-module" } });\n',
+    "app/app.vue": "<template><NuxtPage /></template>\n", "bun.lock": "", ...extra,
+  });
+  // As Nuxt's Cloudflare docs write it: a wrangler.jsonc naming the built Worker and its assets.
+  const p = nuxt({ "wrangler.jsonc": JSON.stringify({ name: "nx", main: "./.output/server/index.mjs", compatibility_date: "2026-09-01", assets: { directory: "./.output/public", binding: "ASSETS" }, kv_namespaces: [{ binding: "COUNTER", id: "local" }] }) });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/detected: nuxt/);
+  expect(r.out).not.toMatch(/does not exist/);
+  const c = p.read("rustybuns.config.ts");
+  expect(c).toContain('"builtMain": ".output/server/index.mjs"');
+  expect(c).toContain('"assets": ".output/public"');
+  expect(c).toContain('"build": "nuxt build"');
+  expect(c).toContain('"mode": "worker"');
+  expect(c).toContain('"COUNTER"');
+  expect(c).not.toContain("clientBuild");
+
+  // No wrangler file yet: the same Worker, from what the preset builds.
+  const bare = nuxt();
+  expect(bare.run("init").code).toBe(0);
+  const b = bare.read("rustybuns.config.ts");
+  expect(b).toContain('"builtMain": ".output/server/index.mjs"');
+  expect(b).toContain('"assets": ".output/public"');
+  expect(b).toContain('"mode": "worker"');
+});
+
+test("init: SolidStart on Nitro's Cloudflare preset runs the built Worker on the desktop, with its bindings", () => {
+  const p = project({
+    "package.json": JSON.stringify({ name: "solid", scripts: { build: "vite build", deploy: "vite build && wrangler deploy" }, dependencies: { "@solidjs/start": "^2", "solid-js": "^1", nitro: "^3", vite: "^8" } }),
+    "vite.config.ts": 'import { solidStart } from "@solidjs/start/config";\nimport { nitro } from "nitro/vite";\nexport default { plugins: [solidStart(), nitro({ preset: "cloudflare_module" })] };\n',
+    "wrangler.jsonc": JSON.stringify({ name: "solid", main: ".output/server/index.mjs", compatibility_date: "2026-09-01", assets: { directory: ".output/public", binding: "ASSETS" }, kv_namespaces: [{ binding: "COUNTER", id: "local" }] }),
+    "src/app.tsx": "export {};\n", "bun.lock": "",
+  });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/detected: solidstart/);
+  expect(r.out).not.toContain("does not exist");
+  const c = p.read("rustybuns.config.ts");
+  expect(c).toContain('"builtMain": ".output/server/index.mjs"');
+  expect(c).toContain('"assets": ".output/public"');
+  expect(c).toContain('"build": "vite build"');
+  expect(c).toContain('"mode": "worker"');
+  expect(c).toContain('"COUNTER"');
+  expect(c).not.toContain("clientBuild");
+});
+
+test("init: Next.js on @opennextjs/cloudflare runs the Worker OpenNext builds on the desktop, with its bindings", () => {
+  const next = (deps: Record<string, string>, extra: Record<string, string> = {}) => project({
+    "package.json": JSON.stringify({ name: "nx", scripts: { build: "next build" }, dependencies: { next: "^16", react: "^19", "react-dom": "^19", ...deps } }),
+    "app/page.tsx": "export default function Page() { return <h1>hi</h1>; }\n", "bun.lock": "", ...extra,
+  });
+  const openNext = { "@opennextjs/cloudflare": "^1" };
+  // As OpenNext's docs write it: a wrangler.jsonc naming the built Worker and its assets, and an open-next.config.ts.
+  const p = next(openNext, {
+    "open-next.config.ts": 'import { defineCloudflareConfig } from "@opennextjs/cloudflare";\nexport default defineCloudflareConfig();\n',
+    "wrangler.jsonc": JSON.stringify({ name: "nx", main: ".open-next/worker.js", compatibility_date: "2026-09-01", compatibility_flags: ["nodejs_compat"], assets: { directory: ".open-next/assets", binding: "ASSETS" }, kv_namespaces: [{ binding: "COUNTER", id: "local" }] }),
+  });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/detected: next/);
+  expect(r.out).not.toMatch(/does not exist/);
+  const c = p.read("rustybuns.config.ts");
+  expect(c).toContain('"builtMain": ".open-next/worker.js"');
+  expect(c).toContain('"assets": ".open-next/assets"');
+  // `next build` is not the Worker build: OpenNext's command runs it and then writes .open-next/.
+  expect(c).toContain('"build": "bunx opennextjs-cloudflare build"');
+  expect(c).toContain('"mode": "worker"');
+  expect(c).toContain('"COUNTER"');
+  expect(c).not.toContain("clientBuild");
+
+  // No wrangler file yet: the same Worker, from what OpenNext builds.
+  const bare = next(openNext);
+  expect(bare.run("init").code).toBe(0);
+  const b = bare.read("rustybuns.config.ts");
+  expect(b).toContain('"builtMain": ".open-next/worker.js"');
+  expect(b).toContain('"assets": ".open-next/assets"');
+  expect(b).toContain('"mode": "worker"');
+
+  // Plain Next.js with no OpenNext: refused, with the fix.
+  const plain = next({}).run("init");
+  expect(plain.code).not.toBe(0);
+  expect(plain.out).toContain("@opennextjs/cloudflare");
+  expect(plain.out).toMatch(/issues\/318/);
 });
 
 const CRA = {
@@ -996,6 +1087,30 @@ test("init: SvelteKit on adapter-cloudflare runs its Worker build on the desktop
   expect(n.code).not.toBe(0);
   expect(n.out).toMatch(/adapter-cloudflare.*issues\/318/);
   expect(existsSync(join(auto.dir, "rustybuns.config.ts"))).toBe(false);
+});
+
+test("init: Qwik City on the cloudflare-pages adapter runs dist/_worker.js on the desktop; without the adapter config it's refused", () => {
+  const qwik = (extra: Record<string, string> = {}) => project({
+    "package.json": JSON.stringify({ name: "qk", scripts: { build: "qwik build" }, dependencies: { "@builder.io/qwik": "^1", "@builder.io/qwik-city": "^1" }, devDependencies: { vite: "^7" } }),
+    "vite.config.ts": 'import { qwikVite } from "@builder.io/qwik/optimizer";\nexport default {};\n', "src/routes/index.tsx": "", "bun.lock": "", ...extra,
+  });
+  const p = qwik({ "adapters/cloudflare-pages/vite.config.ts": "export default {};\n", "src/entry.cloudflare-pages.tsx": "" });   // no wrangler config: the adapter's defaults
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/detected: qwik/);
+  const c = p.read("rustybuns.config.ts");
+  expect(c).toContain('"main": "dist/_worker.js"');
+  expect(c).toContain('"builtMain": "dist/_worker.js"');
+  expect(c).toContain('"assets": "dist"');
+  expect(c).toContain('"build": "bunx vite build && bunx vite build -c adapters/cloudflare-pages/vite.config.ts"');
+  expect(c).toContain('"mode": "worker"');
+  expect(c).not.toContain("clientBuild");
+
+  const bare = qwik();
+  const n = bare.run("init");
+  expect(n.code).not.toBe(0);
+  expect(n.out).toMatch(/qwik add cloudflare-pages/);
+  expect(existsSync(join(bare.dir, "rustybuns.config.ts"))).toBe(false);
 });
 
 test("drift: --repair changes the live account, so without a terminal it is refused; --repair on any other command is a usage error", () => {

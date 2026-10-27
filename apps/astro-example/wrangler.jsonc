@@ -1,0 +1,8 @@
+{
+  "name": "astro-example",
+  "main": "@astrojs/cloudflare/entrypoints/server",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": "dist/client", "binding": "ASSETS" },
+  "kv_namespaces": [{ "binding": "COUNTER", "id": "local" }]
+}
