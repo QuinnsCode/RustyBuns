@@ -358,6 +358,7 @@ We aim for WCAG 2.2 AA. The reading settings and theme are also WebMCP tools, so
 - **The binary is about 60 to 110 MB**, depending on the app, because Bun is inside it. It's one file with no install step, but it isn't small.
 - **It renders in the user's Chrome** (or default browser), not a bundled one.
 - **The twins aren't workerd.** They're the production runtime for the laptop and the box, not a copy of the Workers runtime. Limits match; a few bindings (Vectorize, Workers AI, the Worker Loader) are stand-ins. `rustybuns dev` still runs workerd for edge work. The full list is in [Where the twins differ from the edge](ADOPTION.md#where-the-twins-differ-from-the-edge).
+- **Same code, different assumptions.** A long-lived process, one user and a local sqlite file on the desktop; isolates that come and go, many users and D1 on the edge, with no sync between them. Those change app logic, not just bindings: [Where the same code stops being the same](ADOPTION.md#where-the-same-code-stops-being-the-same).
 - **Alpha, one maintainer.** The examples are the test bed, not a portfolio. More in [Questions people ask](ADOPTION.md#questions-people-ask).
 
 If what you have is a web app with a backend, and you want it on a laptop, on the edge *and* on a server, nothing else does all three from one codebase.
