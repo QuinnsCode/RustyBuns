@@ -18,6 +18,9 @@ CI runs `bun run typecheck` repo-wide (`typecheck.yml`) and the tests of each ap
 all apps plus `bun test packages` when `packages/` or the lockfile moved). Commands: `scripts/ci-apps.ts`.
 
 - Run only the test files you changed: `cd apps/<app> && bun test test/foo.test.ts`. Typecheck just that app if you like.
+- The 64 GB builder Mac runs them faster and off this machine: `bun run builder run apps/<app> bun test test/foo.test.ts`
+  sends your working tree as it is (no commit or push needed); `bun run builder origin/main` runs every suite you touched.
+  If it says `BUILDER_HOST is not set`, there is no builder yet: run the test here. Setting one up: [MAC_SETUP.md](MAC_SETUP.md#part-4-a-builder-20-min-plus-the-first-installs).
 - No root `bun test`, no whole-app suites, no repo-wide typecheck "to be safe". Push; CI does it.
 - Don't rerun a passing test or loop on a flaky one. Note it; file an issue if real.
 - After pushing: `gh pr checks <n>` (or `--watch`). On failure, fix that and rerun only its test.

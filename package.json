@@ -12,6 +12,7 @@
     "docs": "bun scripts/docs.ts",
     "site": "bun scripts/site.ts",
     "test": "bun test",
+    "builder": "bun scripts/remote-ci.ts",
     "publish:all": "bun scripts/check-release.ts && echo 'npm publishing runs in CI now (.github/workflows/npm-publish.yml): push the tag v<version> to publish.'",
     "deprecate:bad": "bun scripts/deprecate-bad.ts"
   },
