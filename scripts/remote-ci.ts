@@ -69,8 +69,9 @@ async function stream(p: ReturnType<typeof remote>, label: string, quiet = false
   let out = "";
   const pipe = async (s: ReadableStream<Uint8Array>) => {
     let rest = "";
-    for await (const chunk of s.pipeThrough(new TextDecoderStream())) {
-      const lines = (rest + chunk).split("\n");
+    const dec = new TextDecoder();
+    for await (const chunk of s) {
+      const lines = (rest + dec.decode(chunk, { stream: true })).split("\n");
       rest = lines.pop()!;
       for (const line of lines) { out += line + "\n"; if (!quiet) console.log(`[${label}] ${line}`); }
     }
