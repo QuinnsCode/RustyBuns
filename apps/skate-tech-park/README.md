@@ -56,6 +56,21 @@ A bare address opens on the logo: a redwood whose trunk runs down into the end o
 
 With no level in the address there is no rider: a slow camera tours a park chosen at random (`?tour=half-dome` picks one, `?at=40` starts forty seconds in) behind the title menu and the park picker, whose text sits in rounded, 80% opaque panels. It sweeps round the spawn, the park's landmark and its biggest pieces from a high, narrow, near-isometric angle, then flies up the hill to the highest ground for one wide pan over everything (`src/render/tour.ts`, a pure function of time). It is the live game scene, so nothing is recorded or served as video. On the picker, **Ride** starts the park on show, **Next park** flies over another, and a card per park starts that one.
 
+## An agent can ride it
+
+For fun: in a browser with WebMCP (`document.modelContext`), the page hands an agent the board. `src/agent.ts` registers
+tools that hold inputs the way keys do and answer with what the board did: `skate_look` (where it is, speed, what it's
+doing, score and combo, the ground and rails ahead), `skate_ride` (one move held for some seconds), `skate_line` (code
+mode: a whole run as a list of moves in one call), `skate_snapshot` (a 640 px JPEG of the chase camera), `skate_reset`,
+`skate_swap`, `skate_parks` and `skate_go`. The moves go through the same step as the keyboard, so an agent rides the
+same sim a player does. Nothing registers without modelContext.
+
+```js
+await skate_line({ moves: [{ push: 1, seconds: 3 }, { ollie: true, seconds: 0.15 }, { trick: "tre flip", seconds: 2 }] })
+// { tricks: [{ name: "tre flip", points: 743 }], now: { kmh: 55, doing: "rolling", ahead: { rails: [...] }, ... } }
+await skate_snapshot() // { image: "data:image/jpeg;base64,..." }
+```
+
 ## Run it
 
 ```
