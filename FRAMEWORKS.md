@@ -31,7 +31,7 @@ Most frameworks already have a Cloudflare build that outputs a module exporting 
 | SvelteKit | `worker` | adapter-cloudflare: `.svelte-kit/cloudflare/_worker.js` + assets | `Cloudflare.Website.SvelteKit` | ✅ `init`; 🧪 desktop run |
 | Astro | `worker` (adapter), `spa` (static) | @astrojs/cloudflare 14: `dist/server/entry.mjs` + `dist/client` | `Cloudflare.Worker` + assets | ✅ `init`, desktop, box and edge (sample app, Oct 9); `apps/astro-example` on the contract, `init` unchanged (Oct 27) |
 | Nuxt | `worker` | Nitro `cloudflare-module` preset | `Cloudflare.Website.Nuxt` | 🧪 |
-| React Router v7 | `worker` | `@cloudflare/vite-plugin`: `build/server/index.js` + `build/client` | `Cloudflare.Worker` + assets | ✅ `init` and desktop (Cloudflare template, Oct 12); 🔧 `cloudflareDevProxy` |
+| React Router v7 | `worker` | `@cloudflare/vite-plugin`: `build/server/index.js` + `build/client` | `Cloudflare.Worker` + assets | ✅ `init` and desktop (Cloudflare template, Oct 12); ✅ [`apps/react-router-example`](apps/react-router-example) on the sample app contract (Oct 27); 🔧 `cloudflareDevProxy` |
 | SolidStart | `worker` | Nitro CF preset or Vite plugin output | `Cloudflare.Website.Vite` | 🔧 |
 | Qwik City | `worker` | `cloudflare-pages` adapter (a Pages Functions shape) | `Cloudflare.Worker` + assets | 🔧 |
 | Angular | `worker` | `AngularAppEngine` fetch handler from `@angular/ssr` | `Cloudflare.Worker` + assets | 🔧 |
@@ -92,7 +92,7 @@ Easiest first, judged by each framework's Cloudflare build and a `fit` sweep ove
 
 ## The sample app contract
 
-The check is [`scripts/counter.ts`](scripts/counter.ts): one HTTP journey (no browser) that every example's `test/desktop.test.ts` calls in one line. Done so far: [`apps/hono-example`](apps/hono-example), [`apps/elysia-example`](apps/elysia-example), [`apps/astro-example`](apps/astro-example).
+The check is [`scripts/counter.ts`](scripts/counter.ts): one HTTP journey (no browser) that every example's `test/desktop.test.ts` calls in one line. Done so far: [`apps/hono-example`](apps/hono-example), [`apps/elysia-example`](apps/elysia-example), [`apps/astro-example`](apps/astro-example), [`apps/react-router-example`](apps/react-router-example).
 
 Every `apps/<fw>-example` does the same small thing, so a single smoke test covers them all:
 
@@ -137,7 +137,7 @@ It uses Playwright Chromium and is run against both the dev host and the compile
 - [ ] For each: `init` detects it and writes `worker.builtMain` and `worker.assets` automatically.
 
 ### Phase 3: frameworks that need an adapter
-- [ ] `apps/react-router-example`, plus a generated entry that wraps the server build in a fetch handler.
+- [x] `apps/react-router-example` (Oct 27). No generated entry was needed: Cloudflare's template `workers/app.ts` is the fetch handler, and `@cloudflare/vite-plugin` builds it into `build/server/index.js`.
 - [ ] `apps/solidstart-example`
 
 ### Phase 4: Next.js
