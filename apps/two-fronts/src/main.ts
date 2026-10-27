@@ -70,11 +70,12 @@ const ownMoves = (): Orders | null => {
 const sameWhere = (a: Where, b: Where) => a.system === b.system && a.sector === b.sector;
 const myTurn = () => !c.winner && !c.pending && waiting().includes(me);
 const deploying = () => !!c.deploying && myTurn();
-const CARD_ICONS: Record<Card, string> = { guns: "crosshair", troops: "shield-plus", trap: "bomb" };
+const CARD_ICONS: Record<Card, string> = { guns: "crosshair", troops: "shield-plus", trap: "bomb", dugin: "shovel" };
 const CARD_TIPS: Record<Card, string> = {
   guns: "Weapon upgrade: every die your side rolls defending this sector is a d8, until it's taken",
   troops: `Muster: free armies here, one for every two you have on this world already (${MUSTER_MIN} at least, ${MUSTER_MAX} at most)`,
   trap: "Trap: blows up half of whatever attacks here this turn, and everyone of yours there with it. For a place you hold with one army or ship",
+  dugin: "Dig in: your side has cover in every ground fight across this sector's region this turn, attacking or holding",
 };
 
 const systemDef = (id: string) => galaxyOf(c).system(id), neighbours = (id: string) => galaxyOf(c).neighbours(id);
