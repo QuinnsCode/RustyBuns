@@ -14,12 +14,22 @@ import { fileURLToPath } from "node:url";
 
 export type Perms = {
   port: number;
-  memory: string;
-  cpus: number;
+  memory?: string; // unset: a fifth of what Docker has
+  cpus?: number;
   network: "open" | "offline";
   repos: { path: string; access: "rw" | "ro" }[];
   env: string[];
 };
+
+// Open lanes: unless the permission set says otherwise, the box gets a fifth of the CPUs and memory Docker has.
+export const SHARE = 0.2;
+export type Host = { cpus: number; memBytes: number };
+export function limits(p: Perms, host: Host) {
+  return {
+    cpus: p.cpus ?? Math.max(0.5, Math.round(host.cpus * SHARE * 10) / 10),
+    memory: p.memory ?? `${Math.max(512, Math.floor((host.memBytes * SHARE) / 2 ** 20))}m`,
+  };
+}
 
 export const NAME = "agent-office-box";
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -35,10 +45,10 @@ export function parsePerms(raw: unknown): Perms {
   if (!isObject(raw)) throw new Error("the permission set must be a JSON object");
   const port = raw.port ?? 4600;
   if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`port ${String(port)} isn't a port`);
-  const memory = raw.memory ?? "4g";
-  if (typeof memory !== "string" || !/^\d+[mg]$/.test(memory)) throw new Error(`memory ${String(memory)} should look like 512m or 4g`);
-  const cpus = raw.cpus ?? 2;
-  if (typeof cpus !== "number" || !(cpus > 0)) throw new Error("cpus must be a number above 0");
+  const memory = raw.memory;
+  if (memory !== undefined && (typeof memory !== "string" || !/^\d+[mg]$/.test(memory))) throw new Error(`memory ${String(memory)} should look like 512m or 4g`);
+  const cpus = raw.cpus;
+  if (cpus !== undefined && (typeof cpus !== "number" || !(cpus > 0))) throw new Error("cpus must be a number above 0");
   const network = raw.network ?? "open";
   if (network !== "open" && network !== "offline") throw new Error(`network ${String(network)} should be "open" or "offline"`);
   const repos = (Array.isArray(raw.repos) ? raw.repos : []).map((r: unknown, i) => {
@@ -60,19 +70,23 @@ export const mountName = (p: string) => path.basename(expand(p)).replace(/[^A-Za
 
 // Everything the box can reach is on this line: no other mount, no other port, no variable not listed.
 // An env name goes in as `-e NAME`, so its value comes from the host's environment and never shows in the command.
-export function dockerArgs(p: Perms, image = NAME): string[] {
+export function dockerArgs(p: Perms, host: Host, image = NAME): string[] {
+  const lim = limits(p, host);
   const names = p.repos.map((r) => mountName(r.path));
+  const floor = p.repos.findIndex((r) => r.access === "rw");
   const dup = names.find((n, i) => names.indexOf(n) !== i);
   if (dup) throw new Error(`two repos are both called ${dup}: they'd land on one path in the box`);
   return [
     "run", "-d", "--name", NAME, "--restart", "unless-stopped",
     "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--read-only",
     "--tmpfs", "/tmp:rw,size=1g", "--pids-limit", "512",
-    "--memory", p.memory, "--cpus", String(p.cpus),
+    "--memory", lim.memory, "--cpus", String(lim.cpus),
     "--network", p.network === "offline" ? "none" : "bridge",
     ...(p.network === "offline" ? [] : ["-p", `127.0.0.1:${p.port}:4600`]),
     "-v", `${NAME}-home:/home/office`,
-    ...p.repos.flatMap((r, i) => ["-v", `${expand(r.path)}:/home/office/projects/local/${names[i]}:${r.access}`]),
+    ...p.repos.flatMap((r, i) => ["-v", `${expand(r.path)}:/work/${names[i]}:${r.access}`]),
+    // the first writable repo is the office's floor: it keeps its data in that repo's .agent-office
+    ...(floor < 0 ? [] : ["-e", `OFFICE_FLOOR=/work/${names[floor]}`]),
     ...p.env.flatMap((n) => ["-e", n]),
     "-e", "OFFICE_PASSWORD",
     image,
@@ -90,12 +104,18 @@ async function docker(args: string[], opts: { env?: Record<string, string>; quie
   return { code: await p.exited, out: out.trim() };
 }
 
+async function hostCapacity(): Promise<Host> {
+  const [cpus, memBytes] = (await docker(["info", "--format", "{{.NCPU}} {{.MemTotal}}"], { quiet: true })).out.split(" ").map(Number);
+  if (!cpus || !memBytes) throw new Error("docker didn't say how much it has: is it running?");
+  return { cpus, memBytes };
+}
+
 async function main(argv: string[]) {
   const at = argv.indexOf("--perms");
   const { perms, from } = loadPerms(at >= 0 ? argv[at + 1] : undefined);
   const cmd = argv.find((a, i) => !a.startsWith("--") && (at < 0 || i !== at + 1)) ?? "status";
   if (cmd === "plan") {
-    console.log(`# permission set: ${path.relative(process.cwd(), from)}\ndocker ${dockerArgs(perms).map((a) => (/[^\w@%+=:,./-]/.test(a) ? `'${a}'` : a)).join(" ")}`);
+    console.log(`# permission set: ${path.relative(process.cwd(), from)}\ndocker ${dockerArgs(perms, await hostCapacity()).map((a) => (/[^\w@%+=:,./-]/.test(a) ? `'${a}'` : a)).join(" ")}`);
   } else if (cmd === "up") {
     const have = await docker(["image", "inspect", NAME], { quiet: true });
     if (have.code) {
@@ -104,14 +124,14 @@ async function main(argv: string[]) {
     }
     await docker(["rm", "-f", NAME], { quiet: true });
     const password = crypto.randomUUID();
-    if ((await docker(dockerArgs(perms), { env: { OFFICE_PASSWORD: password }, quiet: true })).code) process.exit(1);
+    if ((await docker(dockerArgs(perms, await hostCapacity()), { env: { OFFICE_PASSWORD: password }, quiet: true })).code) process.exit(1);
     console.log(`🐳 the office is starting in ${NAME}\n   http://localhost:${perms.port}   password: ${password}\n   bun run office:box status`);
   } else if (cmd === "status") {
     const state = (await docker(["inspect", "-f", "{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}", NAME], { quiet: true }));
     console.log(`permission set ${path.relative(process.cwd(), from)}:`);
     console.log(`  repos    ${perms.repos.map((r) => `${r.path} (${r.access})`).join(", ") || "none"}`);
     console.log(`  env      ${perms.env.join(", ") || "none"}`);
-    console.log(`  network  ${perms.network}   port ${perms.network === "offline" ? "none" : `127.0.0.1:${perms.port}`}   ${perms.memory}, ${perms.cpus} cpus`);
+    console.log(`  network  ${perms.network}   port ${perms.network === "offline" ? "none" : `127.0.0.1:${perms.port}`}   ${(({ memory, cpus }) => `${memory}, ${cpus} cpus`)(limits(perms, await hostCapacity()))}`);
     if (state.code) { console.log("box      not running (bun run office:box up)"); return; }
     const [status, health = ""] = state.out.split(" ");
     const answers = perms.network === "open" && await fetch(`http://127.0.0.1:${perms.port}/login`, { signal: AbortSignal.timeout(3000) }).then((r) => r.ok, () => false);
