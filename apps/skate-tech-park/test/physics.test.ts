@@ -27,9 +27,9 @@ test("rolling across a halfpipe it rides wall to wall, each wall a little lower"
   expect(p[1]).toBeLessThan(p[0]); // and nothing comes for free
 });
 
-test("fast up a vert wall the board keeps its speed all the way up and flies out over the coping onto the deck", () => {
+test("up a vert wall the board keeps its speed all the way up, and pushed with a little to spare it rolls out over the coping onto the deck", () => {
   const level = flat({ pieces: quarterPipe({ x: 0, z: 0 }, { w: 6, d: 4, h: 2, deck: 3 }).pieces });
-  const s = Object.assign(start(0, -12, 0, level), { speed: 15 });
+  const s = Object.assign(start(0, -12, 0, level), { speed: 11 });
   let top = 0;
   run(s, 3, level, () => ({ throttle: 1 }), (st) => { top = Math.max(top, st.y); }); // pushing on carries it over rather than dropping it back in
   expect(top).toBeGreaterThan(4.5); // the wall is 4 m tall, and 15 m/s still has speed to spare at the lip

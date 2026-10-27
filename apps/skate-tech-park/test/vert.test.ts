@@ -23,3 +23,26 @@ test("off a halfpipe's vert wall the board drops back in, not out onto the flat"
     expect(far).toBeLessThan(18); // never flew out onto the deck
   }
 });
+
+test("in a halfpipe, holding push pumps wall to wall in vert airs that land back on the face, and an ollie up the wall stays in the pipe", () => {
+  const hp = halfpipe({ x: 0, z: 0 }, { w: 20, d: 40, h: 3 });
+  const level = flat(hp.pieces), lip = Math.max(...hp.rails.map((r) => r.y)), coping = Math.abs(hp.rails[0]!.a.x);
+  for (const ride of ["push", "ollie"] as const) {
+    const s = Object.assign(start(0, 0, Math.PI / 2, level), { speed: 18 });
+    let airs = 0, wasAir = false, far = 0, peak = 0;
+    for (let i = 0; i < 15 / DT; i++) {
+      const outward = Math.sign(s.x) === Math.sign(s.vx) && s.y > lip * 0.7; // climbing, high on the wall
+      step(s, { ...IDLE, throttle: 1, jump: ride === "ollie" && !s.air && outward }, level);
+      far = Math.max(far, Math.abs(s.x));
+      if (s.air) peak = Math.max(peak, s.y - lip);
+      if (wasAir && !s.air && Math.abs(s.x) > coping - 3) airs++;
+      wasAir = s.air;
+      expect(s.bail).toBeLessThanOrEqual(0);
+    }
+    expect(far).toBeLessThan(coping + 0.5); // never out onto the deck
+    if (ride === "push") {
+      expect(airs).toBeGreaterThanOrEqual(4); // wall after wall, the pump keeping it going
+      expect(peak).toBeGreaterThan(3);
+    }
+  }
+});

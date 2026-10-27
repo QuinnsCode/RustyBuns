@@ -213,14 +213,25 @@ test("the board never passes through a vertical ramp, slow or fast: it rides the
   }
 });
 
-test("a board that reaches the vertical lip flies out over the coping onto the deck, nose up the wall, instead of hanging on the face", () => {
-  for (const speed of [8, 12, 20]) {
+test("pushed up to the vertical lip with little to spare, the board rolls out over the coping onto the deck, nose up the wall, instead of hanging on the face", () => {
+  for (const speed of [8, 12]) {
     const sk = Object.assign(start(0, -12, 0, pipeLevel), { speed });
     let lip = 0, apexZ = 0, apex = 0;
     run(sk, 2, (s) => { lip = Math.max(lip, s.lip); if (s.y > apex) { apex = s.y; apexZ = s.z; } return { throttle: 1 }; }, pipeLevel);
     expect(lip).toBeGreaterThan(1); // the view tips it up the wall instead of snapping it level
     expect(apexZ).toBeGreaterThan(0.75); // the apex is past the coping, over the deck
   }
+});
+
+test("fast up a vert wall the board airs straight up, even pushing on, and comes back down onto the face fakie", () => {
+  const sk = Object.assign(start(0, -12, 0, pipeLevel), { speed: 20 });
+  let apex = 0, apexZ = 0, landed = false;
+  run(sk, 4, (s) => { if (s.y > apex) { apex = s.y; apexZ = s.z; } if (s.t > 0.5 && !s.air && s.y > 1) landed = true; return { throttle: 1 }; }, pipeLevel);
+  expect(apex).toBeGreaterThan(8); // well over the 4 m coping
+  expect(apexZ).toBeLessThan(0.75); // over the face, not the deck
+  expect(landed).toBe(true); // came back down onto the wall
+  expect(sk.z).toBeLessThan(0); // and rolled back in
+  expect(sk.last?.name ?? "").not.toMatch(/Bail/);
 });
 
 test("a bigger board is a bigger toy: an ollie goes SCALE times as high and hangs sqrt(SCALE) times as long", () => {
