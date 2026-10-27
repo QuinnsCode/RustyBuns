@@ -30,7 +30,8 @@ describe("a room", () => {
 });
 
 describe("the worker", () => {
-  const env = { ASSETS: { fetch: async () => new Response("page") }, WORLD: { idFromName: (n: string) => n, get: () => ({ fetch: async (r: Request) => new Response(r.headers.get("X-User-Id")) }) } };
+  let named = "";
+  const env = { ASSETS: { fetch: async () => new Response("page") }, WORLD: { idFromName: (n: string) => (named = n), get: () => ({ fetch: async (r: Request) => new Response(r.headers.get("X-User-Id")) }) } };
   const ws = (q: string, headers: Record<string, string> = {}) => worker.fetch(new Request(`https://stp.example/ws?${q}`, { headers: { Upgrade: "websocket", ...headers } }), env as never);
 
   test("serves the page, vouches its own identity and checks the door", async () => {
@@ -40,6 +41,13 @@ describe("the worker", () => {
     expect((await ws("room=ab&level=el-capitan&uid=abcdefgh1234")).status).toBe(400);
     expect((await ws("room=ABCD&level=../x&uid=abcdefgh1234")).status).toBe(400);
     expect((await ws("room=ABCD&level=el-capitan&uid=abcdefgh1234", { Origin: "https://evil.example" })).status).toBe(403);
+  });
+
+  test("real-height and squashed riders are in different rooms, so nobody is drawn buried or floating", async () => {
+    const room = async (q: string) => { await ws(`room=ABCD&level=el-capitan&uid=abcdefgh1234${q}`); return named; };
+    const plain = await room(""), real = await room("&real=1");
+    expect(real).not.toBe(plain);
+    expect(await room("")).toBe(plain);
   });
 });
 
