@@ -133,11 +133,11 @@ async function prepare(tag: string) {
 
   // 7. the office and each floor's pty host watch their own memory (live/mem.ts), served at /__rb/mem with the
   // office's CPU profiles and heap snapshots (triage/server.ts): signed in, and to workers on the hook port
-  prepend("http/router.js", "import { officeTriage as __rbTriage } from '../rb-triage.js';\nimport { codesplitterRoute as __rbCs } from '../rb-codesplitter.js';\n");
+  prepend("http/router.js", "import { officeTriage as __rbTriage } from '../rb-triage.js';\nimport { codesplitterRoute as __rbCs } from '../rb-codesplitter.js';\nimport { podcastRoute as __rbPod } from '../rb-podcast.js';\n");
   patch("http/router.js", "const signedIn = routes.filter((r) => r.auth === 'session');",
-    "const signedIn = routes.filter((r) => r.auth === 'session');\n    const __rbRoutes = __rbTriage(ctx.cfg.dataDir, () => ctx.floors.values());\n    const __rbCsRoute = __rbCs();");
+    "const signedIn = routes.filter((r) => r.auth === 'session');\n    const __rbRoutes = __rbTriage(ctx.cfg.dataDir, () => ctx.floors.values());\n    const __rbCsRoute = __rbCs();\n    const __rbPodRoute = __rbPod();");
   patch("http/router.js", "            for (const route of signedIn)\n",
-    "            const __rb = p.startsWith('/__rb/') && (await __rbCsRoute(req.method, url) ?? await __rbRoutes(req.method, url, req.headers['x-rb-triage'] === '1'));\n" +
+    "            const __rb = p.startsWith('/__rb/') && (await __rbCsRoute(req.method, url) ?? await __rbPodRoute(req.method, url) ?? await __rbRoutes(req.method, url, req.headers['x-rb-triage'] === '1'));\n" +
     "            if (__rb)\n                return send(res, __rb.status, __rb.body);\n            for (const route of signedIn)\n");
   prepend("hooks/server.js", "import { officeTriage as __rbTriage } from '../rb-triage.js';\n");
   patch("hooks/server.js", "        if (url.pathname === '/office/queue')\n",
@@ -251,9 +251,9 @@ async function druids(cache: string) {
     cpSync(cached, path.join(dir, file));
   }
 
-  // the jukebox has one tune now, the Ambiance of the Vale (druids/audio.ts plays it): on the server, which keeps
-  // what's on, and in the client chunk its menu reads the list from
-  const vale = "{ id: 'vale', title: 'Ambiance of the Vale', mood: 'the forest, breathing' }";
+  // the jukebox has two tunes now, the Ambiance of the Vale and your podcast feed (druids/audio.ts plays them): on the
+  // server, which keeps what's on, and in the client chunk its menu reads the list from
+  const vale = "{ id: 'vale', title: 'Ambiance of the Vale', mood: 'the forest, breathing' }, { id: 'podcast', title: 'Podcast', mood: 'your feed, episode after episode' }";
   const tunes = path.join(office, "dist/server/shared/jukebox.js");
   const server = readFileSync(tunes, "utf8");
   const serverList = /export const JUKEBOX_TUNES = \[\n[^\]]*\];/;
@@ -264,7 +264,7 @@ async function druids(cache: string) {
   const client = readFileSync(path.join(pub, dom), "utf8");
   const clientList = /\[\{id:`rainy-window`[^\]]*\]/;
   if (!clientList.test(client)) throw new Error("Agent Office changed: the jukebox's tunes moved in " + dom);
-  writeFileSync(path.join(pub, dom), client.replace(clientList, "[{id:`vale`,title:`Ambiance of the Vale`,mood:`the forest, breathing`}]"));
+  writeFileSync(path.join(pub, dom), client.replace(clientList, "[{id:`vale`,title:`Ambiance of the Vale`,mood:`the forest, breathing`},{id:`podcast`,title:`Podcast`,mood:`your feed, episode after episode`}]"));
   // renames main-*.js too, which imports it
   rehash(pub, dom);
 
@@ -330,7 +330,7 @@ async function buildSkin(dir: string) {
 // next to the server code they hook into, rebuilt every start like the skin
 async function buildLive() {
   for (const [entry, out] of [["live/github.ts", "rb-live.js"], ["live/mem.ts", "rb-mem.js"], ["live/hosts.ts", "rb-hosts.js"], ["live/env.ts", "rb-env.js"], ["live/floorguard.ts", "rb-floorguard.js"], ["checks/server.ts", "rb-checks.js"], ["external/server.ts", "rb-external.js"], ["triage/server.ts", "rb-triage.js"],
-    ["codesplitter/server.ts", "rb-codesplitter.js"], ["live/brawl.ts", "rb-brawl.js"],
+    ["codesplitter/server.ts", "rb-codesplitter.js"], ["podcast/feed.ts", "rb-podcast.js"], ["live/brawl.ts", "rb-brawl.js"],
     // beside bin/office-workers.js, the workers' MCP server
     ["triage/mcp.ts", "../../../bin/rb-triage.js"]]) {
     const built = await Bun.build({ entrypoints: [path.join(root, entry!)], target: "bun" });
