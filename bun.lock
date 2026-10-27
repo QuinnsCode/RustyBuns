@@ -330,7 +330,7 @@
       "name": "hono-example",
       "version": "0.1.0",
       "dependencies": {
-        "hono": "4.12.25",
+        "hono": "4.13.11",
       },
       "devDependencies": {
         "@rustybuns/cli": "workspace:*",
