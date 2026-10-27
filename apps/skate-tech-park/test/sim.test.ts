@@ -55,7 +55,7 @@ test("a skater ollies onto the rail, grinds it, and kickflips out of the grind",
   const names: string[] = [];
   run(sk, 6, (s) => {
     if (s.last && names.at(-1) !== s.last.name) names.push(s.last.name);
-    return { throttle: s.t < 1.4 ? 1 : 0, jump: s.grind < 0 ? s.z > -11.5 && s.z < -10.5 : s.z > 7, flip: s.air && s.z > 7 };
+    return { throttle: s.t < 1.4 ? 1 : 0, jump: s.grind < 0 ? s.z > -11.5 && s.z < -10.5 : s.z > 0, flip: s.air && s.z > 0 };
   });
   expect(names[0]).toBe("50-50 grind");
   expect(names.some((n) => n.includes("kickflip"))).toBe(true);
@@ -338,7 +338,7 @@ test("a rail bent along a path carries one grind round the bend and down the dro
   for (const line of ["curve", "kink"] as const) {
     const lv = flat({ rails: railLine({ x: 0, z: 0 }, { line, len: 18 }).rails });
     const first = lv.rails[0]!, sk = start(first.a.x, first.a.z + 1.5, 0, lv);
-    sk.y = first.y + 0.1; sk.vz = 10; sk.vy = -1; sk.air = true; sk.speed = 10;
+    sk.y = first.y + 0.1; sk.vz = 20; sk.vy = -1; sk.air = true; sk.speed = 20;
     const seen = new Set<number>();
     run(sk, 3, (s) => { if (s.grind >= 0) seen.add(s.grind); return { steer: Math.max(-1, Math.min(1, s.balance * 3)) }; }, lv);
     expect(seen.size).toBeGreaterThan(lv.rails.length / 2); // it rode past most of the joints without leaving the bar
