@@ -9,6 +9,7 @@ import { animate, cruiser, fighter, texture } from "./models.ts";
 import { spaceRecorder } from "./replay.ts";
 import { DT, LINE, SPACE_LIMIT, SPACE_STATS, heroCraft, startSpaceBattle, stepSpace } from "./space.ts";
 import { makeSfx } from "./sfx.ts";
+import { settings } from "../settings.ts";
 import { isTouch, mountTouch } from "./touch.ts";
 
 const BOLT_COLORS = { marines: 0xff4a4a, wooka: 0x8cff5a };
@@ -85,7 +86,7 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
   let aimYaw = heroSide === "attacker" ? 0 : Math.PI, aimPitch = 0, firing = false, zoom = 1;
   // Sound: bolts and blasts, as on the ground (sfx.ts), carrying further. M mutes.
   const sfx = makeSfx(6), heard = new WeakSet<object>();
-  const kd = (e: KeyboardEvent) => { sfx.wake(); if (e.key.toLowerCase() === "m" && !e.repeat) sfx.toggle(); keys.add(e.key.toLowerCase()); }, ku = (e: KeyboardEvent) => keys.delete(e.key.toLowerCase());
+  const kd = (e: KeyboardEvent) => { sfx.wake(); if (e.key.toLowerCase() === settings.keys.mute && !e.repeat) sfx.toggle(); keys.add(e.key.toLowerCase()); }, ku = (e: KeyboardEvent) => keys.delete(e.key.toLowerCase());
   const md = (e: MouseEvent) => { sfx.wake(); if (e.button === 0) firing = true; };
   const mu = (e: MouseEvent) => { if (e.button === 0) firing = false; };
   const mm = (e: MouseEvent) => {
@@ -102,8 +103,8 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
     drag: (_dx, _dy, x, y) => { const box = canvas.getBoundingClientRect(); mouse.set(((x - box.left) / box.width) * 2 - 1, -((y - box.top) / box.height) * 2 + 1); },
     buttons: [
       { id: "fire", icon: "crosshair", label: "Fire", hold: true, on: (d) => { sfx.wake(); firing = d; } },
-      { id: "boost", icon: "chevrons-up", label: "Boost", hold: true, on: (d) => { d ? keys.add("w") : keys.delete("w"); } },
-      { id: "brake", icon: "octagon", label: "Brake", hold: true, on: (d) => { d ? keys.add("s") : keys.delete("s"); } },
+      { id: "boost", icon: "chevrons-up", label: "Boost", hold: true, on: (d) => { d ? keys.add(settings.keys.forward) : keys.delete(settings.keys.forward); } },
+      { id: "brake", icon: "octagon", label: "Brake", hold: true, on: (d) => { d ? keys.add(settings.keys.back) : keys.delete(settings.keys.back); } },
     ],
   }) : null;
   document.body.classList.add("space-2d");
@@ -138,7 +139,7 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
       const hull = line.reduce((n, u) => n + u.hp, 0) / Math.max(1, spec.fleets[s] * SPACE_STATS.cruiser.hp);
       return `<div class="tickets ${spec.factions[s]}" title="Cruisers still up, and their hull left"><b>${s === mine ? "You" : "Enemy"}</b><span>▲ ${line.length}</span><i style="width:${Math.max(0, hull) * 100}%"></i></div>`;
     };
-    const boost = keys.has("w") ? "▶▶" : keys.has("s") ? "◀" : "▶";
+    const boost = keys.has(settings.keys.forward) ? "▶▶" : keys.has(settings.keys.back) ? "◀" : "▶";
     const help = b.time < 10 ? touch ? `Drag to steer · fire, boost and brake on the right` : `Mouse steers · hold the button to fire · W boost · S brake · wheel zooms · M sound` : "";
     hud.innerHTML = `
       <div class="b-top">${fleet(mine)}
@@ -162,7 +163,7 @@ export function playSpaceBattle(spec: SpaceBattleSpec, canvas: HTMLCanvasElement
       last = now;
       while (handOver && !b.over) stepSpace(b, null);
       while (acc >= DT && !b.over) {
-        const input = rec.take({ yaw: aimYaw, pitch: aimPitch, throttle: (keys.has("w") ? 1 : 0) - (keys.has("s") ? 1 : 0), fire: firing });
+        const input = rec.take({ yaw: aimYaw, pitch: aimPitch, throttle: (keys.has(settings.keys.forward) ? 1 : 0) - (keys.has(settings.keys.back) ? 1 : 0), fire: firing });
         stepSpace(b, input);
         acc -= DT;
       }
