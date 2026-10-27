@@ -1,4 +1,5 @@
-// Mass headless simulator: `bun scripts/sim.ts --n 1000 --jobs 2 --hero none|marines|wooka|both --handicap 0,0.3,0.6`
+// Mass headless simulator: `bun scripts/sim.ts --n 1000 --jobs 2 --hero none|marines|wooka|both --handicap 0,0.3,0.6 --orders`
+// --handicap with no hero gives the attacker that much more (the force-edge check); --orders has the scripted player lead its squad.
 // Plays thousands of Two Fronts ground battles on local cores (no cloud, nothing billed), then writes
 // dist/balance/report.json and a self-contained report.html: win rates by sector and handicap, a
 // heatmap of where each side stood with a time slider, and a replay of sampled battles to scrub.
@@ -10,7 +11,7 @@ import type { Faction, Side } from "../src/battle/contract.ts";
 
 const arg = (k: string, d: string) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1] ?? d : d; };
 const N = Number(arg("n", "120")), CAP = Math.max(1, Math.floor(cpus().length * 0.2)), JOBS = Math.min(CAP, Math.max(1, Number(arg("jobs", String(CAP))))), HERO = arg("hero", "none");
-const HANDICAPS = arg("handicap", "0").split(",").map(Number), OUT = arg("out", "dist/balance"), REPLAYS = Number(arg("replays", "2"));
+const HANDICAPS = arg("handicap", "0").split(",").map(Number), OUT = arg("out", "dist/balance"), REPLAYS = Number(arg("replays", "2")), ORDERS = process.argv.includes("--orders");
 
 const jobs: Job[] = [];
 for (let i = 0; i < N; i++) {
@@ -18,7 +19,7 @@ for (let i = 0; i < N; i++) {
   const heroFaction = HERO === "both" ? (i >> 4) % 2 ? "wooka" : "marines" : HERO;
   const hero: Side | null = heroFaction === "none" ? null : heroFaction === attacker ? "attacker" : "defender";
   const seen = jobs.filter((j) => j.sector === sector).length;
-  jobs.push({ i, sector, seed: 1 + i, attacker, hero, handicap: HANDICAPS[i % HANDICAPS.length]!, record: seen < REPLAYS });
+  jobs.push({ i, sector, seed: 1 + i, attacker, hero, handicap: HANDICAPS[i % HANDICAPS.length]!, orders: ORDERS, record: seen < REPLAYS });
 }
 
 // Never more than a fifth of the machine's cores (--jobs can only go lower), at the lowest priority, so the desk stays responsive.
@@ -43,12 +44,13 @@ const secs = (performance.now() - started) / 1000;
 // Thunder Marines' wins, by sector and by handicap on the hero's foe.
 const marinesWon = (r: Result) => (r.winner === "attacker") === (r.job.attacker === "marines");
 const heroWon = (r: Result) => r.job.hero !== null && r.winner === r.job.hero;
+const attackerWon = (r: Result) => r.winner === "attacker";
 const rate = (rs: Result[], f: (r: Result) => boolean) => (rs.length ? Math.round((1000 * rs.filter(f).length) / rs.length) / 10 : null);
 const summary = {
-  battles: results.length, seconds: Math.round(secs), perBattle: Math.round((secs / results.length) * JOBS * 100) / 100, hero: HERO,
-  marinesWinPct: rate(results, marinesWon),
-  bySector: Object.fromEntries(SECTORS.map((s) => { const rs = results.filter((r) => r.job.sector === s); return [s, { n: rs.length, marinesWinPct: rate(rs, marinesWon), marinesAttackPct: rate(rs.filter((r) => r.job.attacker === "marines"), marinesWon), wookaAttackPct: rate(rs.filter((r) => r.job.attacker === "wooka"), marinesWon), avgPostsTakenByAttacker: Math.round((rs.reduce((t, r) => t + r.posts, 0) / Math.max(1, rs.length)) * 10) / 10 }]; })),
-  byHandicap: Object.fromEntries(HANDICAPS.map((h) => { const rs = results.filter((r) => r.job.handicap === h && r.job.hero); return [String(h), { n: rs.length, heroWinPct: rate(rs, heroWon) }]; })),
+  battles: results.length, seconds: Math.round(secs), perBattle: Math.round((secs / results.length) * JOBS * 100) / 100, hero: HERO, orders: ORDERS,
+  marinesWinPct: rate(results, marinesWon), attackerWinPct: rate(results, attackerWon),
+  bySector: Object.fromEntries(SECTORS.map((s) => { const rs = results.filter((r) => r.job.sector === s); return [s, { n: rs.length, marinesWinPct: rate(rs, marinesWon), attackerWinPct: rate(rs, attackerWon), marinesAttackPct: rate(rs.filter((r) => r.job.attacker === "marines"), marinesWon), wookaAttackPct: rate(rs.filter((r) => r.job.attacker === "wooka"), marinesWon), avgPostsTakenByAttacker: Math.round((rs.reduce((t, r) => t + r.posts, 0) / Math.max(1, rs.length)) * 10) / 10 }]; })),
+  byHandicap: Object.fromEntries(HANDICAPS.map((h) => { const rs = results.filter((r) => r.job.handicap === h); return [String(h), { n: rs.length, heroWinPct: rate(rs.filter((r) => r.job.hero), heroWon), attackerWinPct: rate(rs, attackerWon) }]; })),
 };
 // Where each side stood, per sector, summed over every battle: heat[sector][side*BINS+bin][cell].
 const heat: Record<string, number[][]> = {};
@@ -83,9 +85,9 @@ canvas{width:100%;max-width:520px;aspect-ratio:1;background:var(--line);border-r
 const D=${JSON.stringify(data).replace(/</g, "\\u003c")};const $=i=>document.getElementById(i);
 const col=n=>getComputedStyle(document.documentElement).getPropertyValue(n);
 const s=D.summary;$("sum").textContent=s.battles+" battles in "+s.seconds+"s; hero: "+s.hero+"; Thunder Marines won "+s.marinesWinPct+"%";
-$("sect").innerHTML="<tr><th>Sector</th><th>Battles</th><th>Thunder Marines win %</th><th>Thunder Marines attacking</th><th>Wooka attacking</th><th>Posts the attacker took</th></tr>"+Object.entries(s.bySector).map(([k,v])=>"<tr><td>"+k+"</td><td>"+v.n+"</td><td>"+v.marinesWinPct+"</td><td>"+v.marinesAttackPct+"</td><td>"+v.wookaAttackPct+"</td><td>"+v.avgPostsTakenByAttacker+"</td></tr>").join("");
+$("sect").innerHTML="<tr><th>Sector</th><th>Battles</th><th>Thunder Marines win %</th><th>Attacker win %</th><th>Thunder Marines attacking</th><th>Wooka attacking</th><th>Posts the attacker took</th></tr>"+Object.entries(s.bySector).map(([k,v])=>"<tr><td>"+k+"</td><td>"+v.n+"</td><td>"+v.marinesWinPct+"</td><td>"+v.attackerWinPct+"</td><td>"+v.marinesAttackPct+"</td><td>"+v.wookaAttackPct+"</td><td>"+v.avgPostsTakenByAttacker+"</td></tr>").join("");
 const hs=Object.entries(s.byHandicap).filter(([,v])=>v.n);
-if(hs.length)$("hand").innerHTML="<h2>The human hero against a bigger foe</h2><table><tr><th>Foe has this much more</th><th>Battles</th><th>Hero wins %</th></tr>"+hs.map(([k,v])=>"<tr><td>+"+Math.round(k*100)+"%</td><td>"+v.n+"</td><td>"+v.heroWinPct+"</td></tr>").join("")+"</table>";
+if(hs.length>1||s.hero!=="none")$("hand").innerHTML=(s.hero==="none"?"<h2>The attacker with a bigger force</h2><table><tr><th>Attacker has this much more</th><th>Battles</th><th>Attacker wins %</th></tr>":"<h2>The human hero against a bigger foe</h2><table><tr><th>Foe has this much more</th><th>Battles</th><th>Hero wins %</th></tr>")+hs.map(([k,v])=>"<tr><td>+"+Math.round(k*100)+"%</td><td>"+v.n+"</td><td>"+(s.hero==="none"?v.attackerWinPct:v.heroWinPct)+"</td></tr>").join("")+"</table>";
 const G=D.grid,B=D.bins;
 for(const k of Object.keys(D.heat))$("hs").add(new Option(k,k));
 function heat(){const k=$("hs").value,b=+$("hr").value,h=D.heat[k],c=$("hc").getContext("2d"),W=c.canvas.width,w=W/G;c.clearRect(0,0,W,W);
