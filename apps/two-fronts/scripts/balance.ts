@@ -6,6 +6,7 @@ import { handicapped } from "../src/battle/handicap.ts";
 import { COMMAND, FOCUS_R, ORDER_FOR, POST_RADIUS, heroUnit, startBattle, step, timeLimit, type Battle, type Input, type OrderKind } from "../src/battle/sim.ts";
 
 export const SECTORS: SectorKind[] = ["shield", "capital", "spaceport", "cannon", "canyon", "jungle"];
+const STAND_OFF = 20; // metres the scripted player keeps from the nearest foe
 export const SEEDS = [1, 2, 3];
 
 // handicap: the hero's foe fields that much more (0.4 = 40% more armies and tickets); with no
@@ -32,9 +33,12 @@ export function bot(b: Battle, orders = false): Input | null {
   for (const u of b.units) if (u.side !== h.side && u.hp > 0 && near(u) < best) { best = near(u); foe = u; }
   const post = b.posts.filter((p) => p.owner !== h.side).sort((p, q) => near(p) - near(q))[0] ?? b.posts[0]!;
   const to = foe ?? post, yaw = Math.atan2(-(to.x - h.x), -(to.z - h.z));
-  // The hero outruns its troopers: with nobody near and nobody to shoot, it waits for them rather than arriving alone.
-  const alone = !foe && !b.units.some((u) => u.side === h.side && u.id !== h.id && u.kind !== "turret" && near(u) < 20);
-  const input: Input = { forward: alone || (foe && best < 12) ? 0 : 1, right: 0, yaw, fire: !!foe };
+  // Fights from the squad's side: it stands off the foe and shoots rather than charging into clubs, backs off
+  // when one closes, and with nobody to shoot it waits until a few of its troopers are alongside before moving on.
+  const mates = b.units.filter((u) => u.side === h.side && u.id !== h.id && u.hp > 0 && u.kind !== "turret" && near(u) < 25).length;
+  const hurt = h.hp < h.maxHp * 0.4;
+  const forward = foe ? (hurt && best < STAND_OFF ? -1 : best < 12 ? 0 : 1) : mates >= 1 ? 1 : 0;
+  const input: Input = { forward, right: 0, yaw, fire: !!foe };
   if (orders && ((b.order?.at ?? -ORDER_FOR) + ORDER_FOR / 2 <= b.time || !b.units.some((u) => b.order!.ids.includes(u.id) && near(u) < COMMAND))) {
     const held = b.posts.find((p) => p.owner === h.side && near(p) < POST_RADIUS);
     const kind: OrderKind = foe && held ? "hold" : foe && best < FOCUS_R * 2 ? "focus" : "forward";
