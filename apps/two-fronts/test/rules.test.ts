@@ -127,7 +127,7 @@ test("dice battles end with one side gone, and air cover helps", () => {
   expect(withCover).toBeGreaterThan(without);
 });
 
-test("troops land only under their own orbit", () => {
+test("troops land under their own orbit; a rush through the enemy fleet only trickles in", () => {
   const c = newCampaign();
   const lands = whole(c, [{ faction: "marines", orders: [
     { kind: "fleet", from: "lumen", to: "kessa", count: 1 },
@@ -135,7 +135,7 @@ test("troops land only under their own orbit", () => {
   ] }]);
   // One ship against two: the landing almost always turns back.
   if (lands.systems.kessa!.orbit !== "marines") {
-    expect(lands.systems.corva!.sectors[0]!.armies.marines).toBe(2);
+    expect(lands.systems.corva!.sectors[0]!.armies.marines).toBeGreaterThan(0);
     expect(lands.log.some((l) => l.includes("turned back"))).toBe(true);
   }
   const won = newCampaign();
@@ -221,7 +221,7 @@ test("the hero can fly the space battle instead: the landings wait on who wins t
   const at = { system: "kessa", sector: 0 };
   const orders: Orders[] = [{ faction: "marines", hero: { system: "kessa", sector: ORBIT }, orders: [
     { kind: "fleet", from: "corva", to: "kessa", count: 3 },
-    { kind: "army", from: { system: "corva", sector: 0 }, to: at, count: 2 },
+    { kind: "army", from: { system: "corva", sector: 0 }, to: at, count: 3 },
   ] }];
   const paused = whole(c, orders);
   expect(paused.pending?.kind).toBe("space");
@@ -243,8 +243,8 @@ test("the hero can fly the space battle instead: the landings wait on who wins t
   // Lose it: the troops turn back, and the hero, shot down, sits out three turns.
   const lost = applySpaceResult(paused, { id: spec.id, winner: "defender", fleets: { attacker: 0, defender: 0 }, heroDown: true });
   expect(lost.systems.kessa!).toMatchObject({ orbit: "wooka", fleets: { marines: 0, wooka: 1 } });
-  expect(lost.log).toContain("Thunder Marines troops for Kessa shield generator turned back: no orbit there.");
-  expect(lost.systems.corva!.sectors[0]!.armies.marines).toBe(3);
+  expect(lost.log).toContain("Thunder Marines troops for Kessa shield generator turned back: only 2 could land.");
+  expect(lost.systems.corva!.sectors[0]!.armies.marines).toBe(1);
   expect(lost.heroes.marines.woundedUntil).toBe(4);
 });
 
@@ -512,7 +512,7 @@ test("taking places opens the deploy phase, and three or more earn a card", () =
   c.hands = { marines: [], wooka: [] };
   const k = kessa(c);
   k.orbit = "marines";
-  k.fleets = { marines: 1, wooka: 0 };
+  k.fleets = { marines: 3, wooka: 0 }; // a big fleet above: the front can be wide
   for (const x of k.sectors) x.armies.wooka = 0;
   c.systems.corva!.sectors[1]!.armies.marines = 6;
   const orders: Order[] = [0, 1, 2].map((sector) => ({ kind: "army", from: { system: "corva", sector: 1 }, to: { system: "kessa", sector }, count: 2 }));
