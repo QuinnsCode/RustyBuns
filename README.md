@@ -13,6 +13,8 @@ pnpm exec rustybuns deploy              # Cloudflare, plus a Hetzner or Railway 
 
 > **Alpha, `0.1.12`.** Build on macOS or Linux (a Linux server will do); it cross-compiles the desktop binary for Mac, Windows and Linux. The Cloudflare deploy is verified end to end. The Railway and Hetzner boxes are verified live. A brand-new release not installing? Your package manager's minimum release age is holding it back; [Getting started](GETTING_STARTED.md) has the one-minute fix.
 
+**Try it live:** the [Playground](https://rustybuns-playground.notryanquinn.workers.dev) lists every example app with a way to play it, download it or read its source, all deployed by Rusty Buns.
+
 ## The idea
 
 1. **Every web app with a backend is five things.** A way in (http), a way to talk live (comms), a place to keep data (storage), a place to think (memory) and a way to know who's who (identity).
