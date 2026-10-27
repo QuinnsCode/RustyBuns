@@ -1,0 +1,253 @@
+{
+  "ride": {
+    "title": "THE RIDE DOWN",
+    "whoPilot": "Drop Two",
+    "whoBench": "The bench",
+    "kinds": {
+      "bad": "A bad story",
+      "weird": "A weird story",
+      "scary": "A scary story",
+      "revenge": "A revenge story"
+    },
+    "pilot": [
+      "Drop Two. Ninety seconds to the moon. Get your stories in.",
+      "Drop Two. Little turbulence. That's the bears waving.",
+      "Drop Two. Whoever's crying, it's echoing up front.",
+      "Drop Two. Ramp down in two minutes. Somebody talk, the quiet's worse.",
+      "Drop Two. Reminder: the Thunder Marines are the good guys. Carry on."
+    ],
+    "seat": [
+      "Seat across: {who}. Last week: Pvt. Bell. Bears.",
+      "Seat across: {who}. The name tag's been crossed out four times.",
+      "Seat across: {who}. Third one in that seat this week.",
+      "Seat across: {who}. Previous occupant left half an antenna.",
+      "Seat across: {who}. Seat freshly wiped. Don't ask.",
+      "Seat across: {who}. Before that: Hale."
+    ],
+    "next": "Ramp down. Next seat, next story."
+  },
+  "stories": {
+    "landscaping": {
+      "kind": "bad",
+      "who": "Pvt. Okafor",
+      "as": "assault",
+      "lines": [
+        "Third moon I've liberated. Liberated it right down to the bedrock.",
+        "Command calls it landscaping.",
+        "Then the locals got upset. Over TREES."
+      ],
+      "back": "Unbelievable. Some people.",
+      "tag": "Okafor did not see the problem. Okafor is no longer in a position to see anything."
+    },
+    "the-cook": {
+      "kind": "bad",
+      "who": "Cpl. Vance",
+      "as": "heavy",
+      "lines": [
+        "Lost my whole squad on Doren Two.",
+        "Not to the Wooka. To the cook.",
+        "Then the Wooka got the cook."
+      ],
+      "back": "Honestly? Fair.",
+      "tag": "Lunch today is rations. Nobody is sure who made them."
+    },
+    "perfect-shot": {
+      "kind": "bad",
+      "who": "Pvt. Lindqvist",
+      "as": "sniper",
+      "lines": [
+        "Perfect shot. Chieftain, two clicks, no wind.",
+        "Then something tugged my boot.",
+        "Something knee-high. It had been there the whole time."
+      ],
+      "back": "...and?",
+      "tag": "Lindqvist aims with the other eye now."
+    },
+    "off-switch": {
+      "kind": "bad",
+      "who": "Tech Ruiz",
+      "as": "engineer",
+      "lines": [
+        "I built the orbital strike's off switch.",
+        "In six years nobody's asked me where it is.",
+        "Anyway. Bears ate the manual."
+      ],
+      "back": "Good. Bears. Classic bears.",
+      "tag": "There is no off switch. Ruiz knows. Ruiz sleeps fine."
+    },
+    "little-hats": {
+      "kind": "weird",
+      "who": "Pvt. Ashby",
+      "as": "engineer",
+      "lines": [
+        "Found a Wooka village. Empty. Little hats on every door.",
+        "Little hats. Little HELMETS, actually.",
+        "Ours. Snorkels still on."
+      ],
+      "back": "...whose snorkels?",
+      "tag": "The Wooka do not make hats. They collect them."
+    },
+    "the-gift": {
+      "kind": "weird",
+      "who": "Pvt. Moss",
+      "as": "assault",
+      "lines": [
+        "One followed me for three days. Just watching.",
+        "Day two it brought me a fish.",
+        "Day three it brought me Cpl. Benn's helmet. I think it was being nice."
+      ],
+      "back": "Was Benn being nice?",
+      "tag": "Moss still has the fish."
+    },
+    "the-humming": {
+      "kind": "weird",
+      "who": "Lt. Farrow",
+      "as": "sniper",
+      "lines": [
+        "They hum. All night. In harmony.",
+        "Someone recorded it. Top of the charts back home.",
+        "Royalties go to a stump on Doren. Legal is furious."
+      ],
+      "back": "I've got it on my playlist.",
+      "tag": "Still number one. The Wooka have not been told."
+    },
+    "counting": {
+      "kind": "weird",
+      "who": "Sgt. Pell",
+      "as": "heavy",
+      "lines": [
+        "Wooka don't count past four.",
+        "One, two, three, four, lots, then 'shiny ones'.",
+        "Linguists say 'shiny ones' also means 'lunch'."
+      ],
+      "back": "We're a NUMBER to them?",
+      "tag": "We are not a number. We are a menu."
+    },
+    "the-backpack": {
+      "kind": "scary",
+      "who": "Pvt. Kett",
+      "as": "sniper",
+      "lines": [
+        "Night watch. Quiet. Too quiet. Then: hoo-ka.",
+        "Not from the trees. From INSIDE my backpack.",
+        "Never found out how. Never opened it again."
+      ],
+      "back": "Is that... the backpack you're wearing?",
+      "tag": "It is. It hums sometimes."
+    },
+    "six-voices": {
+      "kind": "scary",
+      "who": "Pvt. Orr",
+      "as": "engineer",
+      "lines": [
+        "Squad went into the ferns. Comms fine. Everyone checking in.",
+        "Six voices on the net. Five Marines.",
+        "The sixth was REALLY good at it."
+      ],
+      "back": "Which one came back?",
+      "tag": "Orr checks in every ten minutes now. Nobody checks Orr."
+    },
+    "antennas": {
+      "kind": "scary",
+      "who": "Cpl. Dace",
+      "as": "assault",
+      "lines": [
+        "They don't take prisoners.",
+        "They take antennas. Then helmets. Then whatever's left.",
+        "Then they come back for the antennas they missed."
+      ],
+      "back": "I have SO many antennas.",
+      "tag": "Field Manual, page one: remove antennas before landing. Added last Tuesday."
+    },
+    "many-bites": {
+      "kind": "scary",
+      "who": "Medic Yates",
+      "as": "heavy",
+      "lines": [
+        "I've patched blaster burns. A walker on someone's foot.",
+        "Wooka bites don't patch.",
+        "They're very small. There are just very MANY of them."
+      ],
+      "back": "How many is many?",
+      "tag": "Lots. Then shiny ones."
+    },
+    "unprovoked": {
+      "kind": "revenge",
+      "who": "Pvt. Hollis",
+      "as": "assault",
+      "lines": [
+        "We torched their nesting grove. Orders. Standard stuff.",
+        "So they came for our barracks.",
+        "Unprovoked. Out of NOWHERE."
+      ],
+      "back": "Animals.",
+      "tag": "High Command remains baffled by the Wooka's attitude."
+    },
+    "the-helmet": {
+      "kind": "revenge",
+      "who": "Cpl. Strand",
+      "as": "heavy",
+      "lines": [
+        "A Wooka took my brother's helmet. With my brother in it.",
+        "Nine years I've hunted that Wooka.",
+        "It still wears the helmet. It looks GOOD in it."
+      ],
+      "back": "Does it know you're coming?",
+      "tag": "It does. It's been polishing the helmet."
+    },
+    "the-salt": {
+      "kind": "revenge",
+      "who": "Pvt. Quill",
+      "as": "sniper",
+      "lines": [
+        "We salted their fields so they'd move on.",
+        "They moved on. Onto our supply depot.",
+        "Ate the salt. Then the depot."
+      ],
+      "back": "Ungrateful.",
+      "tag": "Command calls it unrest. The Wooka call it Tuesday."
+    },
+    "her-stump": {
+      "kind": "revenge",
+      "who": "Lt. Garnet",
+      "as": "engineer",
+      "lines": [
+        "Remember Second Squad? The ONE fluffy one?",
+        "They'd paved over its mum's stump. For a landing pad.",
+        "She's still out there. She remembers our helmets."
+      ],
+      "back": "Which helmets?",
+      "tag": "All of them."
+    },
+    "retiring": {
+      "kind": "bad",
+      "who": "Pvt. Dunn",
+      "as": "heavy",
+      "lines": [
+        "I retire next week."
+      ],
+      "back": "...retire?",
+      "tag": "Dunn retires today. Bit early."
+    },
+    "the-name": {
+      "kind": "weird",
+      "who": "Pvt. Sato",
+      "as": "engineer",
+      "lines": [
+        "A Wooka took my tags. There's a Wooka called Sato now."
+      ],
+      "back": "Is he nice?",
+      "tag": "He has a better record than Sato."
+    },
+    "under-the-bench": {
+      "kind": "scary",
+      "who": "Cpl. Reyes",
+      "as": "assault",
+      "lines": [
+        "Don't look under the bench."
+      ],
+      "back": "Why not?",
+      "tag": "Nobody looks under the bench."
+    }
+  }
+}

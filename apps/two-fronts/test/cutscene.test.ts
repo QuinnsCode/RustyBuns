@@ -1,7 +1,7 @@
 // Cutscenes are data on a clock: these check the clock, and that every scene's cues make sense.
 import { expect, test } from "bun:test";
 import { actorsAt, cameraAt, castOf, firedBetween, lengthOf, place, wordsAt, type Cutscene } from "../src/battle/cutscene.ts";
-import { CUTSCENES, introOf, mossbackSting, prologueOf } from "../src/battle/cutscenes.ts";
+import { CUTSCENES, introOf, mossbackSting, prologueOf, rideOf, STORIES } from "../src/battle/cutscenes.ts";
 
 const scene: Cutscene = {
   id: "t", faction: "wooka",
@@ -82,7 +82,8 @@ test("every scripted scene only talks about actors it put on stage, and ends", (
   const intros = (["marines", "wooka"] as const).flatMap((f) => kinds.flatMap((k) => [introOf(f, k), prologueOf(f, k)]));
   expect(prologueOf("marines", "shield")?.id).toBe("marines-drop");
   expect(prologueOf("wooka", "shield")).toBeNull();
-  for (const s of [...Object.values(CUTSCENES), ...intros.filter((c): c is Cutscene => !!c), mossbackSting("marines"), mossbackSting("wooka")]) {
+  const rides = STORIES.map((_, n) => rideOf(n));
+  for (const s of [...Object.values(CUTSCENES), ...intros.filter((c): c is Cutscene => !!c), ...rides, mossbackSting("marines"), mossbackSting("wooka")]) {
     const cast = new Set(castOf(s).map((c) => c.id));
     for (const c of s.cues) {
       if ("id" in c && c.id && c.do !== "actor") expect(cast.has(c.id)).toBe(true);
@@ -90,5 +91,18 @@ test("every scripted scene only talks about actors it put on stage, and ends", (
     }
     expect(lengthOf(s)).toBeGreaterThan(2);
     expect(lengthOf(s)).toBeLessThan(20);
+  }
+});
+
+test("each ride down is the next seat's story, a short clip, and they go round them all", () => {
+  const rides = STORIES.map((_, n) => rideOf(n));
+  expect(new Set(rides.map((r) => r.id)).size).toBe(STORIES.length);
+  expect(rideOf(STORIES.length).id).toBe(rides[0]!.id);
+  expect(new Set(STORIES.map((s) => s.kind))).toEqual(new Set(["bad", "weird", "scary", "revenge"]));
+  for (const r of rides) {
+    expect(lengthOf(r)).toBeGreaterThanOrEqual(5);
+    expect(lengthOf(r)).toBeLessThanOrEqual(15);
+    // The one across has walked off down the line by the end.
+    expect(actorsAt(r, lengthOf(r) - 0.01).find((a) => a.id === "teller")!.z).toBeLessThan(-5);
   }
 });

@@ -23,8 +23,8 @@ import { icon } from "../ui/icons.ts";
 import { makeBubbles } from "../ui/bubbles.ts";
 import { chatterFor } from "./lines.ts";
 import CHATTER_SCRIPT from "../../content/chatter.json";
-import { introOf, mossbackSting, prologueOf } from "./cutscenes.ts";
-import { playCutscene, shouldPlay } from "./cutscene-view.ts";
+import { introOf, mossbackSting, prologueOf, rideOf } from "./cutscenes.ts";
+import { nextRide, playCutscene, shouldPlay } from "./cutscene-view.ts";
 import { WORLDS } from "./worlds.ts";
 import { CHAMP_AT, HEAVY, ORDERS, ORDER_FOR, OVERHEAT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, startBattle, statsOf, step, timeLimit, vipUnit, yawTo, type Fx, type OrderKind, type Trooper, type Unit } from "./sim.ts";
 
@@ -873,9 +873,11 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       raf = requestAnimationFrame(frame);
     };
     // The intros, once each, from where the hero stands: the drop (the Thunder Marines'), then the
-    // briefing; then the battle.
+    // briefing; then the battle. Once those are seen, a Thunder Marine battle opens on the ride
+    // down instead: the next seat across, the next story.
     const h0 = heroUnit(b), f = spec.factions[heroSide];
     const intros = h0 ? [prologueOf(f, spec.sector), introOf(f, spec.sector)].filter((c): c is NonNullable<typeof c> => !!c && shouldPlay(c.id)) : [];
+    if (h0 && f === "marines" && !noCuts && (!intros.length || new URLSearchParams(location.search).get("cutscenes") === "always")) intros.push(rideOf(nextRide()));
     if (h0 && intros.length) void cut(intros, { x: h0.x, z: h0.z, yaw });
     else raf = requestAnimationFrame(frame);
   });
