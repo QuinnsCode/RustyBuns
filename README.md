@@ -1,8 +1,23 @@
-# 🥐 Rusty Buns
+# 🥐 Rusty Buns - My Idea Engine for Agents and Humans alike
 
-**Write a web app once. Ship it as a desktop binary, a Cloudflare Worker and a Linux server.**
+**Write your app logic in Rust and/or Typescript client and/or server. Deploy it nearly anywhere in the cloud. Get desktop binaries along the way just because we can!**
 
-You already have a web app. Rusty Buns is a tool you add to the project, not to the app. From one small config file it packs that app three ways: a file anyone can double-click, a Cloudflare Worker, and a server you rent. Your code doesn't change, and nothing of ours ships inside it.
+**You own your code; Rusty Buns is just a dev dependency trying to wrap primitives allowing easy deployments and minimal rewrites!**
+
+**Maximize the interopability of your app code while being flexible across as many platforms as possible/wanted/necessary.**
+
+**Maximimum scalability, maximum flexibility, maximum interopability**
+
+You already have a web app maybe or an Electron app or a Tauri app. Cloudflare app. Almost any cloud provider app.
+Well, Rusty Buns is a dev dependency that wants you to wrap the app in some easy simple common, normal primitives.
+
+When we map those onto a preferred stack of **Vite, Bun, Typescript, Rust, Alchemy, EffectTS** we can achieve a lot of interopability core app logic overlap.
+
+Basically write it once ship it not quite everywhere because I am not trying to be mobile thought a Rust wasm worker on cloudflare edge can be great experience there with some thin SwiftUi wrapper or Kotlin wrapper so even great options there!
+
+From one small config file it packs that app three ways: a file anyone can double-click for desktops, edge-deployed/serverless Worker-style app, and a server app. Your code doesn't change, and nothing of ours ships inside it.
+
+Try it out with the setup commands!:
 
 ```sh
 pnpm add -D @rustybuns/cli @rustybuns/shell-bun
@@ -11,17 +26,19 @@ pnpm exec rustybuns build desktop       # dist/<name>-<os>-<arch>: one file, dou
 pnpm exec rustybuns deploy              # Cloudflare, plus a Hetzner or Railway box
 ```
 
-> **Alpha, `0.1.12`.** Build on macOS or Linux (a Linux server will do); it cross-compiles the desktop binary for Mac, Windows and Linux. The Cloudflare deploy is verified end to end. The Railway and Hetzner boxes are verified live. A brand-new release not installing? Your package manager's minimum release age is holding it back; [Getting started](GETTING_STARTED.md) has the one-minute fix.
+> **Alpha, `0.1.12`.** Windows and Bun can have problems, but it is easy to run a linux server to run this for windows. Talk with me if you struggle on this!!! The Cloudflare deploy is verified end to end. The Railway and Hetzner boxes are verified live. A brand-new release not installing? Your package manager's minimum release age is holding it back possibly; [Getting started](GETTING_STARTED.md) has the one-minute fix.
 
 **Try it live:** the [Playground](https://rustybuns-playground.notryanquinn.workers.dev) lists every example app with a way to play it, download it or read its source, all deployed by Rusty Buns.
 
-## The idea
+## The Primitives and why you should do this with or without Rusty Buns; good architecture.
 
-1. **Every web app with a backend is five things.** A way in (http), a way to talk live (comms), a place to keep data (storage), a place to think (memory) and a way to know who's who (identity).
+1. **Every web app with a backend is five things.** A simple not needed to be fast way in (http), a way to talk live and faster (comms), a place to keep data and store (storage), a place to think and be faster but volatile store (memory) and a way to know who's who (identity).
 2. **Cloudflare already gave each of the five a small, standard shape.** A `fetch` handler, Durable Objects, D1, KV and R2.
-3. **Rusty Buns gives each shape a local twin on Bun and sqlite.** So the same app runs on a laptop with no cloud account, on a rented server as the same binary, and on Cloudflare from a deploy generated from the same list of bindings.
+3. **Rusty Buns gives each shape a local twin on Bun and sqlite (or pg sqlite just easier off the bat).** So the same app runs on a laptop with no cloud account, on a rented server as the same binary, and on Cloudflare from a deploy generated from the same list of bindings.
 
-That makes it a framework for frameworks. It doesn't replace Vite, React, RWSDK or TanStack Start; it sits on top of them, and on top of the three places your app can run. Underneath, it's a Bun program.
+That makes it a meta metaframework; a framework for frameworks of sorts haha.
+
+It doesn't replace Vite, React, RWSDK or TanStack Start, Elysia, Wasp, Solid; it sits on top of them, and on top of the three places your app can run. Underneath, it's a Bun program.
 
 ## Why a team can bet on it
 
@@ -54,15 +71,15 @@ More in [The five primitives](ADOPTION.md#the-five-primitives) and [How it works
 
 </details>
 
-### Five primitives, and where each one lands
+### How I map resources to services based on setup
 
-Every app is http, comms, storage, memory and identity. Here's what each one becomes on each target.
+Every app is http, comms, storage, memory and identity
 
-<details><summary>More</summary>
+<details><summary>See how they deploy!</summary>
 
 | Primitive | Cloudflare | Railway or Hetzner box | Desktop |
 |---|---|---|---|
-| **http** | a Worker's `fetch` | `Bun.serve()` | `Bun.serve()` on localhost |
+| **http** | CF Worker's `fetch` | `Bun.serve()` | `Bun.serve()` or localhost offline |
 | **comms** | Durable Object WebSockets | the same class, in-process | the same class, in-process |
 | **storage** | D1, KV, R2 | sqlite and a folder on a volume | sqlite and a folder in `~/.<app-name>/` |
 | **memory** | per-request isolate, no FFI | the whole process, Rust over FFI | the whole process, Rust over FFI |
@@ -72,11 +89,11 @@ You write against the left-hand shape once. What each primitive would be on AWS,
 
 </details>
 
-### Every Cloudflare binding has a local twin
+### Every Cloudflare binding has an easy local twin
 
-D1, KV, R2 and Durable Objects run on sqlite and a folder on your disk, so the whole stack boots with no cloud account and no bill.
+D1, KV, R2 & Durable Objects run on sqlite and a folder on your disk. Whole stack boots with no cloud account & no bill.
 
-<details><summary>More</summary>
+<details><summary>More Info</summary>
 
 Bun is the one runtime that has every piece built in:
 
@@ -88,11 +105,11 @@ Bun is the one runtime that has every piece built in:
 | `bun:ffi` | Rust cdylibs called directly, with a TypeScript fallback |
 | `Bun.spawn` with a terminal | real PTYs without node-gyp (see [agent-office](apps/agent-office/README.md)) |
 
-**The twins refuse what the edge refuses**, with the edge's error: more than 100 bound parameters in a D1 query, a KV key over 512 bytes, a queue message over 128 KB, a Durable Object value over 2 MiB. A query that works locally doesn't fail on the first deploy. The desktop and box hosts also measure each request: one that grows the process by more than 128 MB, or uses more CPU than `worker.cpuMs` (`RB_CPU_MS=10` tries the Free plan's), gets the edge's 503.
+**The twins refuse what the edge refuses**, with the edge's error: more than 100 bound parameters in a D1 query, a KV key over 512 bytes, a queue message over 128 KB, Durable Object value over 2 MiB. A query that works locally doesn't fail on the first deploy. Desktop and Box hosts also measure each request: one that grows the process by more than 128 MB, or uses more CPU than `worker.cpuMs` (`RB_CPU_MS=10` tries the Free plan's), gets the edge's 503.
 
-**Postgres apps keep their database.** A `hyperdrive` binding puts Cloudflare Hyperdrive in front of it on the edge, and the desktop and box connect to the same `DATABASE_URL` directly. `init` adds one when the app uses `pg`, `postgres`, or Drizzle or Prisma on postgresql. With `local: "pglite"` an offline desktop gets Postgres too: PGlite runs in the data dir with your migrations applied at boot. Or the stack owns the database: `origin: { neon: { branch: "prod" } }` makes a Neon project and branch at deploy.
+**Postgres apps keep their database.** A `hyperdrive` binding puts Cloudflare Hyperdrive in front of it on the Edge. The Desktop and Box connect to the same `DATABASE_URL` directly. `init` adds one when the app uses `pg`, `postgres`, or Drizzle or Prisma on postgresql. With `local: "pglite"` an offline desktop gets Postgres too: PGlite runs in the data dir with your migrations applied at boot. Or the stack owns the database: `origin: { neon: { branch: "prod" } }` makes a Neon project and branch at deploy.
 
-**An app already on wrangler keeps what its config declares.** `init` carries over its bindings (Workflows, Vectorize, Analytics Engine, Worker Loaders and Containers among them), queue consumers with their dead-letter queues, routes, custom domains and observability. Each `env.<name>` block becomes a stage, deployed with `--stage <name>`. On the desktop, Workflows run in-process with their steps, sleeps and events kept in sqlite, so a run cut off by a restart picks up where it was. A Vectorize index is a sqlite table queried by exact scan, Analytics Engine points land in `analytics.sqlite`, and the Worker Loader runs its code in the host's own process (not a sandbox). Workers AI has no model locally: `env.AI` answers `@cf/baai/bge-*` embeddings with a small built-in embedder (shared words and word stems land near each other, not meanings), and every other call says it runs only on Cloudflare. Email sending, rate limits and Containers are left out of the desktop, and the app runs without them. An outbound `fetch` with `cf: { cacheTtl }` or `cacheEverything` is answered from an in-process cache for that TTL, as the edge cache would.
+**An app already on wrangler keeps what its config declares.** `init` carries over its bindings (Workflows, Vectorize, Analytics Engine, Worker Loaders & Containers among them), queue consumers with their dead-letter queues, routes, custom domains and observability. Each `env.<name>` block becomes a stage, deployed with `--stage <name>`. On the desktop, Workflows run in-process with their steps, sleeps and events kept in sqlite, so a run cut off by a restart picks up where it was. A Vectorize index is a sqlite table queried by exact scan, Analytics Engine points land in `analytics.sqlite`, and the Worker Loader runs its code in the host's own process (not a sandbox). Workers AI has no model locally: `env.AI` answers `@cf/baai/bge-*` embeddings with a small built-in embedder (shared words and word stems land near each other, not meanings), and every other call says it runs only on Cloudflare. Email sending, rate limits and Containers are left out of the desktop, and the app runs without them. An outbound `fetch` with `cf: { cacheTtl }` or `cacheEverything` is answered from an in-process cache for that TTL, as the edge cache would.
 
 D1 migrations apply at boot, and `"use server"` functions run for real against sqlite. It adds up to [a full-stack framework, by accident](REFERENCE.md#a-full-stack-framework-by-accident).
 
@@ -104,11 +121,14 @@ D1 migrations apply at boot, and `"use server"` functions run for real against s
 
 <details><summary>More</summary>
 
-**Why not Electron?** Electron makes you write two programs (a Node main process and a renderer) that talk over IPC, and ships a whole Chromium with every app. That backend can't go to the edge, and moving it to a server is a rewrite. Rusty Buns has no main process. Your backend is a plain `fetch` handler, the same one Cloudflare runs. On a laptop it serves your page to the Chrome you already have. On a server it serves it to everyone.
+**Why not Electron?** Electron makes you write two programs (a Node main process and a renderer) that talk over IPC. It ships a whole Chromium with every app. That backend can't go to the edge. Moving it to a server is a rewrite. Rusty Buns has no main process. Your backend is a plain web standards-forward `fetch` handler.
+
+Same one Cloudflare runs. On a laptop it serves your page to the Chrome you already have. On a server it serves it to everyone.
 
 **Why not Tauri?** Tauri is lighter, but your backend becomes Rust commands, and your UI runs in whatever webview the OS has (WebKit on macOS and Linux, WebView2 on Windows), each with its own gaps. Rusty Buns keeps the backend in TypeScript and renders in real Chrome, so `SharedArrayBuffer`, WebGPU, AudioWorklets and Web MIDI just work.
+THO we do use Tauri to be a thin wrapper to get our systems items we want. We love them and aren't trying to be them. Makes it also easy on desktop to just be a Tauri app if you want all rust backend and the webview can abadnon the TS and Bun pieces! Like we say ultimate flexibility maximal interop. We just value the transportability of app core logic over implementation logic.
 
-The host binds to `127.0.0.1`, gates every request on a per-launch token, and keeps your data in `~/.<app-name>/`. Your users never install Bun: it's inside the binary. Details in [The host](REFERENCE.md#the-host).
+In Rusty Buns the host binds to `127.0.0.1`, gates every request on a per-launch token, and keeps your data in `~/.<app-name>/`. Your users never install Bun: it's inside the binary. Details in [The host](REFERENCE.md#the-host).
 
 **Bring your own server.** A Vite frontend whose dev server proxies `/api` to a Node server of its own keeps that server. `targets.desktop.server` bundles it into the binary, and the host runs it beside itself, with its data in the app's data dir, WebSockets included. A proxy that sends `/api` to one server and `/img` to another runs both. Native addons (`sharp`, `better-sqlite3`) ship with it, with a build for each target; one it can't carry stops the build with its name, not the app at launch. `init` sets it up when it finds the servers. Desktop and box only, since a Worker can't run a Node server.
 
@@ -145,9 +165,9 @@ An operation is one function with a name, a schema and a permission. HTTP, MCP, 
 
 </details>
 
-### Plan before anything costs money
+### PLAN STEP: Plan before anything costs money; See the resource matrix
 
-`plan` typechecks the generated stack and shows what it would create and bill. `deploy` refuses to run without a plan for that exact config, then asks.
+`plan` typechecks the generated stack and shows what it would create & bill. `deploy` refuses to run without a plan for that exact config, then asks.
 
 <details><summary>More</summary>
 
@@ -161,9 +181,9 @@ The monthly bill comes from the fan-out, so the desktop and box hosts count ever
 
 </details>
 
-### Edit a game's script as text
+### Why not just add in a CMS engine? I did.
 
-A game keeps its words in `content/*.json`, and `bun run cms` in the app serves them as textarea forms that save to those files.
+Script pieces are kept in `content/*.json`, and `bun run cms` in the app serves them as textarea forms that save to those files.
 
 <details><summary>More</summary>
 
@@ -171,13 +191,14 @@ A game keeps its words in `content/*.json`, and `bun run cms` in the app serves 
 
 </details>
 
-### Smoke test an app without touching it
+### Smoke test an app without laying a finger on it (help test it out more and report back!)
 
 `rustybuns smoke [dir]` copies your app to a throwaway folder, installs, inits, builds and boots it on the local twins, and says whether `GET /` answered. `--edge-like` also evicts idle Durable Objects after 70 s, names `process.env` reads at import, and restarts the host every 100 requests so module globals reset (`RB_EDGE_LIKE=1` does the same for any host; `RB_EDGE_RECYCLE=N` sets the count, 0 never).
 
 <details><summary>More</summary>
 
-The copy has no `.env` or `.dev.vars`, gets a fake for every secret the app names, runs with an empty HOME and no cloud logins, and the host runs in Seatbelt on macOS. It tries the mode `init` picks, then the app's own Worker build if it has one, prints where it stopped when it fails (`install`, `init`, `build`, `boot` or `request`), and deletes everything afterwards unless you pass `--keep`. Nothing is deployed and no account is read, so it costs nothing. The same steps run over public GitHub repos in [FRAMEWORK_COVERAGE.md](FRAMEWORK_COVERAGE.md).
+The copy has no `.env` or `.dev.vars`. It gets a fake for every secret the app names. It then runs with an empty HOME & no cloud logins while the host runs in Seatbelt on macOS. It tries the mode `init` picks, then the app's own Worker build if it has one, prints where it stopped when it fails (`install`, `init`, `build`, `boot` or `request`), and deletes everything afterwards unless you pass `--keep`.
+Nothing is deployed and no account is read, so it costs nothing. The same steps run over public GitHub repos in [FRAMEWORK_COVERAGE.md](FRAMEWORK_COVERAGE.md).
 
 </details>
 
@@ -188,12 +209,13 @@ Test stacks mint their own secrets on create and drop them on destroy. Prod secr
 <details><summary>More</summary>
 
 Set `experimental.wheel` to `"agent"` and CI and agents can spin stacks up as often as they like with nothing to rotate. Set it to `"human"` and prod secrets resolve from 1Password at deploy time. Either way a committed `.env.schema` lists every secret by name, never value, so any machine knows what's needed. The 1Password path is untested so far; see [Who holds the keys](REFERENCE.md#who-holds-the-keys-experimental).
+Tell me if more support for more things is wanted here!
 
 </details>
 
-### Leaving is a `git rm`
+### Leaving is a `git rm` away though we would be sad
 
-Rusty Buns is a dev dependency. It never edits `src/`, never ships in your bundle, and everything you adopt is a shape Cloudflare already standardized.
+Rusty Buns is a dev dependency. It's some lines in package json. It never edits `src/` beyond wanting some framework choices on certain platforms to maximize access to systems level perf when needed while letting me write my app logic once and get it **manywhere**
 
 <details><summary>More</summary>
 
@@ -203,7 +225,7 @@ There's no framework API to unwind: your app stays a `fetch` handler with D1, KV
 
 ### Defaults you can take over
 
-The defaults are a starting point, the way a copied component is: swap a piece, or `eject` the deploy program and own it.
+The defaults are a starting point, the way a copied component is: swap a piece, or `eject` the deploy program and own it. Like a Better Auth, Like a ShadCN it's trying to have great defaults to let your ideate not framework toil and spoil.
 
 <details><summary>More</summary>
 
@@ -211,9 +233,9 @@ Rusty Buns generates the host, the wrangler config and the Alchemy stack from `r
 
 </details>
 
-### Bun and Vite are the stack, the rest swaps out
+### Rusty Buns is a joke name because you need neither
 
-Bun runs your app and Vite builds it. Everything else (Alchemy, Effect, Rust, Hetzner, Railway) is an option you add when you want it and drop when you don't.
+Typescript is best interop. Bun gets a TS Node engine that can run your app, but it can also FFI Rust. Rust can run on client w/ WASM workers. Vite is the king client ecosystem. Bun is now king backend ecosystem. Everything in there (Alchemy, Effect, Cloudflare, Bun, Rust, Hetzner, Railway) is an option, a target. You add when you want it and drop when you don't. Your code, your choice, I just try to maximize your coverage for minimal buy in.
 
 <details><summary>More</summary>
 
@@ -367,7 +389,8 @@ The parts a team would be glad to find in the stack, each in its own entry above
 
 - **A machine that stays yours.** [Background work that steps aside](#background-work-that-steps-aside-experimental) runs low work under a CPU and memory budget and backs off when the machine is busy. [Two Fronts' balance sim](#thousands-of-battles-on-a-fifth-of-your-machine) plays thousands of headless battles on a fifth of your cores at the lowest priority, then hands back a heatmap and a replay with a time slider. Today that cap lives in the app's own script, with a move onto the scheduler tracked in #2408.
 - **A fast loop with receipts.** [Build timings](#a-fast-loop-and-it-tells-you-how-fast) saved per step, so a checker or Bun upgrade shows what it really saved.
-- **Free local twins.** [Every Cloudflare binding has a local twin](#every-cloudflare-binding-has-a-local-twin), and [plans come before anything costs money](#plan-before-anything-costs-money).
+- **Free local twins.** [Every Cloudflare binding has an easy local twin](#every-cloudflare-binding-has-an-easy-local-twin), and [plans 
+  come before anything costs money](#plan-step-plan-before-anything-costs-money-see-the-resource-matrix).
 
 ## What's the catch?
 
