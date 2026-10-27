@@ -18,12 +18,12 @@ select { font: inherit; color: inherit; background: #222a37; border: 1px solid v
 
 .war-room { display: grid; grid-template-columns: 1fr 360px; height: 100vh; }
 .map { position: relative; min-width: 0; background: radial-gradient(ellipse at 50% 40%, #0d1226 0%, #04050c 75%); overflow: hidden; }
-.map-view { display: flex; align-items: center; justify-content: center; height: 100%; padding: 52px 16px 64px 254px; }
+.map-view { display: flex; align-items: center; justify-content: center; height: 100%; padding: 90px 16px 64px 254px; }
 .galaxy { width: 100%; height: 100%; max-height: calc(100vh - 116px); border-radius: 10px; }
 .icon { flex: none; pointer-events: none; }
 /* The HUD over the star map: bevelled dark-glass plates, like a space empire's command screen. */
 .topbar, .overview, .turnbox { position: absolute; background: linear-gradient(180deg, rgb(26 34 58 / 0.92), rgb(12 16 30 / 0.92)); border: 1px solid #34406a; box-shadow: 0 2px 12px rgb(0 0 0 / 0.5); }
-.topbar { top: 0; left: 0; right: 0; display: flex; gap: 18px; align-items: center; padding: 6px 14px; border-width: 0 0 1px; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
+.topbar { top: 38px; left: 0; right: 0; display: flex; gap: 18px; align-items: center; padding: 6px 14px; border-width: 0 0 1px; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
 .res { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; color: #c9d4ee; cursor: default; }
 .res .icon { color: var(--gold); }
 .res b { font-variant-numeric: tabular-nums; color: #fff; }
@@ -31,14 +31,29 @@ select { font: inherit; color: inherit; background: #222a37; border: 1px solid v
 .res.bad .icon, .res.bad b { color: #f5734c; }
 .res.score .war { width: 90px; margin: 0; }
 .res.card .icon { color: var(--accent); }
-/* The turn's six phases: done ones dim, the one we're in lit. */
-.phases { display: flex; gap: 4px; margin: 0 0 8px; }
-.phases span { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 24px; border: 1px solid var(--line); border-radius: 6px; color: var(--dim); opacity: 0.5; cursor: default; }
-.phases span.done { opacity: 0.8; }
-.phases span.on { opacity: 1; color: #fff; border-color: var(--accent); background: #3a2414; }
+/* The turn's five phases along the top of the map: the one we're in lit, the rest greyed. */
+.phasebar { position: absolute; top: 0; left: 0; right: 0; z-index: 2; display: flex; gap: 4px; padding: 5px 14px; background: rgb(8 10 20 / 0.94); border-bottom: 1px solid #34406a; }
+.phasebar button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 44px; height: 28px; padding: 0 8px; color: var(--dim); opacity: 0.5; }
+.phasebar button b { font-size: 12px; font-variant-numeric: tabular-nums; }
+.phasebar button span { display: none; }
+.phasebar button.done { opacity: 0.8; }
+.phasebar button.on { opacity: 1; color: #fff; border-color: var(--accent); background: #3a2414; }
+.phasebar button.on span { display: inline; }
+.phasebar button:disabled { cursor: default; }
+.phase-say { margin: 0 0 8px; line-height: 1.4; }
+.battles li { display: flex; flex-direction: column; gap: 6px; }
+.battles button.on { background: var(--gold); border-color: var(--gold); color: #111; }
+.battles .act button { flex: 1; }
+.recap { padding-left: 18px; line-height: 1.6; }
+.modal.fresh { background: var(--bg); }
+.sides { display: grid; gap: 8px; margin: 8px 0 12px; }
+.side { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.side b { font-size: 15px; }
+.side .small { grid-column: 2; }
+.side:has(input:checked) { border-color: var(--accent); background: #3a2414; }
 .sector .mark { display: inline-flex; color: var(--accent); font-style: normal; }
 button.card .icon { color: var(--accent); }
-.overview { top: 52px; left: 12px; width: 230px; max-height: calc(100% - 140px); display: flex; flex-direction: column; border-radius: 4px 14px 4px 4px; overflow: hidden; }
+.overview { top: 90px; left: 12px; width: 230px; max-height: calc(100% - 140px); display: flex; flex-direction: column; border-radius: 4px 14px 4px 4px; overflow: hidden; }
 .ov-head { display: flex; align-items: center; gap: 6px; background: none; border: none; border-bottom: 1px solid #34406a; border-radius: 0; padding: 6px 10px; text-transform: uppercase; letter-spacing: 0.08em; font-size: 12px; color: #a7b4d0; }
 .ov-head small { color: var(--dim); }
 .ov-head .icon { margin-left: auto; }
@@ -210,7 +225,8 @@ body.in-battle .war-room { display: none; }
   .map-view { padding: 52px 8px 8px; }
   .galaxy { max-height: 60vh; }
   .map { display: flex; flex-direction: column; }
-  .topbar { flex-wrap: wrap; gap: 10px; position: relative; order: -1; }
+  .phasebar { position: relative; order: -2; padding: 5px 8px; }
+  .topbar { flex-wrap: wrap; gap: 10px; position: relative; top: 0; order: -1; }
   .overview { position: relative; top: 0; left: 0; width: auto; margin: 0 8px 8px; max-height: 40vh; }
   .turnbox { position: relative; right: 0; bottom: 0; margin: 0 8px 8px; } button.next { flex: 1; min-width: 0; }
   .map-view { padding: 8px; }
