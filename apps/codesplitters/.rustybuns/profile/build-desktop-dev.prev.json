@@ -1,0 +1,20 @@
+{
+  "command": "build desktop --dev",
+  "at": "2026-10-11T12:21:43.748Z",
+  "bun": "1.4.3",
+  "totalMs": 249.56320899999997,
+  "steps": [
+    {
+      "name": "boundary glue",
+      "ms": 16.957124999999998
+    },
+    {
+      "name": "client build",
+      "ms": 165.67125000000001
+    },
+    {
+      "name": "bundle dev host",
+      "ms": 55.28741599999998
+    }
+  ]
+}

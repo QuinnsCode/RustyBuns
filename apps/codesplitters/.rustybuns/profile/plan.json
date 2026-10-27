@@ -1,0 +1,21 @@
+{
+  "command": "plan",
+  "at": "2026-10-10T00:45:06.206Z",
+  "bun": "1.4.2",
+  "totalMs": 9135.198083000001,
+  "steps": [
+    {
+      "name": "generate",
+      "ms": 1.6132919999999977
+    },
+    {
+      "name": "typecheck stack",
+      "ms": 4573.353125000001,
+      "note": "tsc"
+    },
+    {
+      "name": "alchemy plan",
+      "ms": 4556.009167
+    }
+  ]
+}
