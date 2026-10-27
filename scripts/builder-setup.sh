@@ -1,6 +1,6 @@
 #!/bin/sh
 # Make this Mac the build and test machine the agents drive over SSH (scripts/remote-ci.ts, #2329, #2330).
-# Run it on the builder (the 64 GB MacBook Pro), from anywhere:
+# The whole checklist, updates and installs first, is MAC_SETUP.md (Part 4). Run this on the builder, from anywhere:
 #
 #   curl -fsSL https://raw.githubusercontent.com/QuinnsCode/RustyBuns/main/scripts/builder-setup.sh | sh -s -- 3
 #
@@ -25,6 +25,9 @@ sudo pmset -c sleep 0 disablesleep 1 && echo "on power it never sleeps, lid clos
 say "Bun"
 command -v bun >/dev/null || curl -fsSL https://bun.sh/install | bash
 bun --version
+
+say "Rust (the apps with native code build with it)"
+if command -v cargo >/dev/null; then cargo --version; else echo "missing: install it from rustup.rs, or those apps' suites fail here"; fi
 
 say "Docker"
 if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
