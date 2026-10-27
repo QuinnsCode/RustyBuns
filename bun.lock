@@ -297,6 +297,20 @@
         "vite": "^6.2.6",
       },
     },
+    "apps/hono-example": {
+      "name": "hono-example",
+      "version": "0.1.0",
+      "dependencies": {
+        "hono": "4.12.25",
+      },
+      "devDependencies": {
+        "@rustybuns/cli": "workspace:*",
+        "@rustybuns/shell-bun": "workspace:*",
+        "alchemy": "2.0.0-beta.77",
+        "effect": "4.0.0-rc.112",
+        "wrangler": "4.141.0",
+      },
+    },
     "apps/meshy-studio": {
       "name": "meshy-studio",
       "version": "0.1.0",
@@ -1893,6 +1907,8 @@
     "hippo-tycoon": ["hippo-tycoon@workspace:apps/hippo-tycoon"],
 
     "hono": ["hono@4.13.13", "", {}, "sha512-CQ46U0ZkAGmbT/4UxdzzGJpacP2IeKgY4a5/tOI9AABbpOMfK739wfDXmv1usCk+3RkKj1hQy4/fjhiwa2xlrA=="],
+
+    "hono-example": ["hono-example@workspace:apps/hono-example"],
 
     "http-reasons": ["http-reasons@0.1.0", "", {}, "sha512-P6kYh0lKZ+y29T2Gqz+RlC9WBLhKe8kDmcJ+A+611jFfxdPsbMRQ5aNmFRM3lENqFkK+HTTL+tlQviAiv0AbLQ=="],
 

@@ -30,6 +30,8 @@ export interface Inferred {
   hasBetterAuth: boolean;
   /** What says the app talks to Postgres (`pg`, `postgres`, Drizzle's or Prisma's postgresql), or null. */
   postgres: string | null;
+  /** A fetch-handler server it depends on (hono, elysia, itty-router): a Worker already, with no client build. */
+  fetchServer: string | null;
   /** Node server frameworks it depends on (express, socket.io, ...): its frontend alone isn't the app. */
   serverDeps: string[];
   scripts: Record<string, string>;
@@ -373,6 +375,7 @@ export function inferPostgres(root: string, deps: Record<string, string>): strin
   return null;
 }
 
+const FETCH_SERVERS = ["hono", "elysia", "itty-router"];
 const SERVER_DEPS = ["express", "fastify", "koa", "socket.io", "@hono/node-server", "@nestjs/core", "@hapi/hapi"];
 
 export function infer(root = process.cwd()): Inferred {
@@ -410,6 +413,7 @@ export function infer(root = process.cwd()): Inferred {
     hasBetterAuth: !!deps["better-auth"],
     postgres: inferPostgres(root, deps),
     serverDeps: SERVER_DEPS.filter((d) => deps[d]),
+    fetchServer: FETCH_SERVERS.find((d) => deps[d]) ?? null,
     scripts: pkg.scripts ?? {},
     prebuild: staticBuild.pre,
     vite, astro: inferAstro(root), reactRouterBuild: inferReactRouterBuild(root), wranglerPath, srcDir, aliases, srcDirSource, workerEntry,

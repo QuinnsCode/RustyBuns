@@ -200,7 +200,7 @@ async function init() {
   if (inf.framework === "unknown" && !src && !force)
     throw new Error(`no vite or rwsdk dependency in package.json, so this does not look like a web app Rusty Buns can box.${goTo || " Pass --force to write a config anyway."}`);
   console.log(`rustybuns ${(await Bun.file(new URL("../package.json", import.meta.url)).json()).version}`);
-  console.log(`detected: ${inf.framework} app "${inf.name}" (${inf.pm}${inf.hasReact ? ", react" : ""}${inf.hasThree ? ", three" : ""}${inf.hasPrisma ? ", prisma" : ""}${inf.hasBetterAuth ? ", better-auth" : ""}${inf.postgres ? ", postgres" : ""})`);
+  console.log(`detected: ${inf.framework === "unknown" && inf.fetchServer ? `${inf.fetchServer} Worker` : inf.framework} app "${inf.name}" (${inf.pm}${inf.hasReact ? ", react" : ""}${inf.hasThree ? ", three" : ""}${inf.hasPrisma ? ", prisma" : ""}${inf.hasBetterAuth ? ", better-auth" : ""}${inf.postgres ? ", postgres" : ""})`);
   console.log(`source:   ${inf.srcDir}/ (${inf.srcDirSource}${Object.keys(inf.aliases).length ? `, aliases ${Object.entries(inf.aliases).map(([a, d]) => `${a}->${d}`).join(" ")}` : ""})`);
   if (inf.srcDirSource === "guess") {
     console.log(inf.srcDir === "."
@@ -289,7 +289,10 @@ async function init() {
     cfg.worker!.builtMain = "dist/server/index.js";
     cfg.worker!.assets = "dist/client";
   }
-  const workerDesktop = astroWorker || rrWorker || svelteWorker || pagesWorker || startWorker;
+  // A plain Worker with no client build (Hono, Elysia, itty-router, a hand-written fetch handler): the desktop
+  // runs the Worker itself; a Vite SPA split would have nothing to serve.
+  const plainWorker = !!w.main && inf.framework === "unknown" && !inf.vite.configPath && !pagesWorker;
+  const workerDesktop = astroWorker || rrWorker || svelteWorker || pagesWorker || startWorker || plainWorker;
   if (svelteWorker) {
     cfg.worker!.builtMain = SVELTE_WORKER;
     cfg.worker!.assets = SVELTE_ASSETS;

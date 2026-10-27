@@ -41,6 +41,7 @@ export const APPS: Record<string, App> = {
   "codesplitter":     { test: "bun test --parallel test", shards: 3, boot: true },
   "delayed-reaction":  { test: "bun test test", drop: false },
   "git-recon":         { test: "bun test", drop: false },
+  "hono-example":      { test: "bun test test", boot: true },
   "hippo-tycoon":      { test: "bun test --parallel test", prep: "bun run build:native", check: true, boot: true },
   "meshy-studio":      { test: "bun test --parallel tests", check: true, boot: true },
   "motion-midi":       { test: "bun test test", prep: "bun run build:native", perOs: true, check: true, boot: true },

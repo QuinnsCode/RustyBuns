@@ -539,6 +539,9 @@ test("init: a plain Worker from wrangler gets no RWSDK build; a Vite-plugin one 
   expect(r.out).toMatch(/build:    none \(a plain Worker: Alchemy bundles src\/index\.ts\)/);
   const c = w.read("rustybuns.config.ts");
   for (const k of ['"builtMain"', '"assets"', '"build"']) expect(c).not.toContain(k);
+  // No client build to split off, so the desktop runs the Worker itself (a Hono app looks the same).
+  expect(c).toContain('"mode": "worker"');
+  expect(c).not.toContain("vite.desktop.config.ts");
   expect(w.read(".rustybuns/alchemy.run.ts")).toContain('main: "src/index.ts"');
 
   const v = project({
