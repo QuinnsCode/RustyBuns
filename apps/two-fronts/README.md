@@ -72,4 +72,4 @@ In a space battle: your fighter turns towards the mouse. Hold the button to fire
 
 ## Editing the script
 
-The game's words (radio, chatter, cutscenes, the ride-down stories and places) live in `content/*.json`. `bun run cms` serves them as textareas on localhost and saves back to the files; reload the game to see them.
+The game's words (radio, chatter, cutscenes, the ride-down stories (`dialogStories.json`) and places) live in `content/*.json`. `bun run cms` serves them as textareas on localhost and saves back to the files; reload the game to see them.

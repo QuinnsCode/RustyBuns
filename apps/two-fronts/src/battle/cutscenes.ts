@@ -7,7 +7,7 @@ import type { Cue, Cutscene } from "./cutscene.ts";
 import type { Trooper } from "./sim.ts";
 import SCRIPT from "../../content/cutscenes.json";
 import PLACES_SCRIPT from "../../content/places.json";
-import STORIES_SCRIPT from "../../content/stories.json";
+import DIALOG_STORIES from "../../content/dialogStories.json";
 
 // The words live in content/ (bun run cms edits them); {detail}, {into} and {ours} take the place's.
 const fill = (line: string, p: Place) => line.replace(/\{(\w+)\}/g, (m, k: string) => (k === "detail" || k === "into" || k === "ours" ? p[k] : m));
@@ -173,8 +173,8 @@ export const mossbackSting = (f: Faction): Cutscene => ({
 // battle it's the next seat and the next story: the one across walks off down the line at the
 // end, and the seat note says who sat there before. A clip runs about as long as its words.
 const TROOPERS: readonly Trooper[] = ["assault", "heavy", "sniper", "engineer"];
-const RIDE = STORIES_SCRIPT.ride;
-export const STORIES = Object.entries(STORIES_SCRIPT.stories).map(([id, s]) => ({ id, ...s, as: TROOPERS.find((t) => t === s.as) ?? "assault" }));
+const RIDE = DIALOG_STORIES.ride;
+export const STORIES = Object.entries(DIALOG_STORIES.stories).map(([id, s]) => ({ id, ...s, as: TROOPERS.find((t) => t === s.as) ?? "assault" }));
 export type Story = (typeof STORIES)[number];
 const KIND_NOISE = { bad: "thump", weird: "chime", scary: "howl", revenge: "warn" } as const;
 const kindOf = (k: string) => (k === "bad" || k === "weird" || k === "scary" || k === "revenge" ? k : "bad");
