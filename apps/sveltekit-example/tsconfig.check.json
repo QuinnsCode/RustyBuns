@@ -1,0 +1,11 @@
+{
+  // What `bun run typecheck` checks. tsconfig.json is SvelteKit's and extends ./.svelte-kit/tsconfig.json, which only
+  // exists after `svelte-kit sync` (a build), so a fresh checkout checks the .ts files on their own. The .svelte
+  // files are the compiler's.
+  "compilerOptions": {
+    "target": "ESNext", "module": "ESNext", "moduleResolution": "bundler",
+    "strict": true, "skipLibCheck": true, "noEmit": true, "allowImportingTsExtensions": true, "noUncheckedIndexedAccess": true,
+    "types": ["bun"], "lib": ["ESNext", "DOM", "DOM.Iterable"]
+  },
+  "include": ["src/**/*.ts", "test", "vite.config.ts"]
+}

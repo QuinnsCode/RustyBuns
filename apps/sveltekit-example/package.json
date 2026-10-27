@@ -1,0 +1,26 @@
+{
+  "name": "sveltekit-example",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "wrangler dev",
+    "desktop:dev": "rustybuns build desktop --dev && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop",
+    "test": "bun test test"
+  },
+  "devDependencies": {
+    "@rustybuns/cli": "workspace:*",
+    "@rustybuns/shell-bun": "workspace:*",
+    "@sveltejs/adapter-cloudflare": "8.0.1",
+    "@sveltejs/kit": "3.1.0",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "alchemy": "2.0.0-beta.77",
+    "effect": "4.0.0-rc.112",
+    "svelte": "5.57.2",
+    "vite": "8.3.5",
+    "wrangler": "4.141.0"
+  }
+}

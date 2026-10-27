@@ -30,6 +30,8 @@ Most frameworks already have a Cloudflare build that outputs a module exporting 
 | TanStack Start | `worker` | `dist/server/server.js` | `Cloudflare.Website.Vite` | ✅ desktop, 🧪 edge; 8 of 13 sampled GitHub apps ([coverage](FRAMEWORK_COVERAGE.md#tanstack-start)) |
 | SvelteKit | `worker` | adapter-cloudflare: `.svelte-kit/cloudflare/_worker.js` + assets | `Cloudflare.Website.SvelteKit` | ✅ `init`; 🧪 desktop run |
 | Astro | `worker` (adapter), `spa` (static) | @astrojs/cloudflare 14: `dist/server/entry.mjs` + `dist/client` | `Cloudflare.Worker` + assets | ✅ `init`, desktop, box and edge (sample app, Oct 9); `apps/astro-example` on the contract, `init` unchanged (Oct 27) |
+| SvelteKit | `worker` | adapter-cloudflare: `.svelte-kit/cloudflare/_worker.js` + assets | `Cloudflare.Website.SvelteKit` | ✅ `apps/sveltekit-example` (`init` unchanged, desktop with a form action and KV, Oct 27) |
+| Astro | `worker` (adapter), `spa` (static) | @astrojs/cloudflare 14: `dist/server/entry.mjs` + `dist/client` | `Cloudflare.Worker` + assets | ✅ `init`, desktop, box and edge (sample app, Oct 9) |
 | Nuxt | `worker` | Nitro `cloudflare-module` preset | `Cloudflare.Website.Nuxt` | 🧪 |
 | React Router v7 | `worker` | `@cloudflare/vite-plugin`: `build/server/index.js` + `build/client` | `Cloudflare.Worker` + assets | ✅ `init` and desktop (Cloudflare template, Oct 12); ✅ [`apps/react-router-example`](apps/react-router-example) on the sample app contract (Oct 27); 🔧 `cloudflareDevProxy` |
 | SolidStart | `worker` | Nitro CF preset or Vite plugin output | `Cloudflare.Website.Vite` | 🔧 |
@@ -58,7 +60,7 @@ Support links to the row in the [matrix](#matrix), and to [FRAMEWORK_COVERAGE.md
 | TanStack Start | server routes, `createServerFn` | `env` from `cloudflare:workers` | a Durable Object exported beside the handler | ✅ desktop, 🧪 edge: [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+tanstack) |
 | Astro, EmDash | pages, API routes (`src/pages/api/*`), Actions, middleware | `env` from `cloudflare:workers`; sessions on a KV binding; `/_image` on `IMAGES`; EmDash's content in D1 and R2 | a Durable Object exported beside the handler | ✅ `init`, desktop, box, edge: [matrix](#matrix) | [#845](https://github.com/QuinnsCode/RustyBuns/issues/845), [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+astro) |
 | React Router 7 | loaders, actions, resource routes | `context.cloudflare.env` | a Durable Object exported beside the handler | ✅ `init`, desktop; 🔧 `cloudflareDevProxy`: [matrix](#matrix) | [#318](https://github.com/QuinnsCode/RustyBuns/issues/318), [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+%22react+router%22) |
-| SvelteKit | `+server.ts` endpoints, `load`, form actions | `platform.env` | a Durable Object exported beside the handler | ✅ `init`, 🧪 desktop run: [matrix](#matrix) | [#318](https://github.com/QuinnsCode/RustyBuns/issues/318), [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+sveltekit) |
+| SvelteKit | `+server.ts` endpoints, `load`, form actions | `env` from `cloudflare:workers` (Kit 3 on adapter-cloudflare 8; `platform.env` before) | a Durable Object exported beside the handler | ✅ `init` and desktop ([`apps/sveltekit-example`](apps/sveltekit-example), Oct 27): [matrix](#matrix) | [#318](https://github.com/QuinnsCode/RustyBuns/issues/318), [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+sveltekit) |
 | Nuxt | Nitro `server/api` routes | `event.context.cloudflare.env`; Nitro's `useStorage()` on a KV binding | Nitro WebSocket handlers on a Durable Object | 🧪 [matrix](#matrix) | [#318](https://github.com/QuinnsCode/RustyBuns/issues/318), [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+nuxt) |
 | SolidStart | API routes, `"use server"` functions | Nitro's `useStorage()`, or `env` from `cloudflare:workers` | Nitro WebSocket handlers | 🔧 [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+solidstart) |
 | Qwik City | `routeLoader$`, `routeAction$`, `server$`, endpoints | `platform.env` | a Durable Object in a wrapping Worker | 🔧 [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+qwik) |
@@ -92,7 +94,7 @@ Easiest first, judged by each framework's Cloudflare build and a `fit` sweep ove
 
 ## The sample app contract
 
-The check is [`scripts/counter.ts`](scripts/counter.ts): one HTTP journey (no browser) that every example's `test/desktop.test.ts` calls in one line. Done so far: [`apps/hono-example`](apps/hono-example), [`apps/elysia-example`](apps/elysia-example), [`apps/astro-example`](apps/astro-example), [`apps/react-router-example`](apps/react-router-example).
+The check is [`scripts/counter.ts`](scripts/counter.ts): one HTTP journey (no browser) that every example's `test/desktop.test.ts` calls in one line. Done so far: [`apps/hono-example`](apps/hono-example), [`apps/elysia-example`](apps/elysia-example), [`apps/astro-example`](apps/astro-example), [`apps/react-router-example`](apps/react-router-example), [`apps/sveltekit-example`](apps/sveltekit-example).
 
 Every `apps/<fw>-example` does the same small thing, so a single smoke test covers them all:
 
@@ -133,6 +135,8 @@ It uses Playwright Chromium and is run against both the dev host and the compile
 - [x] `apps/tanstack-start-example`: TanStack Start on `@cloudflare/vite-plugin` with D1 and KV, `init` unchanged.
 - [ ] `apps/sveltekit-example`
 - [x] `apps/astro-example`: Astro 7 on `@astrojs/cloudflare` 14 (`output: "server"`, a page and an API route on KV through `cloudflare:workers`), `init` unchanged.
+- [x] `apps/sveltekit-example`: SvelteKit 3 on `@sveltejs/adapter-cloudflare` 8 with KV and a form action, `init` unchanged (Oct 27). Kit 3 moved the config into `sveltekit({...})` in `vite.config.ts` and hands bindings out through `import { env } from "cloudflare:workers"`; `event.platform` is gone from the built Worker.
+- [ ] `apps/astro-example`
 - [ ] `apps/nuxt-example`
 - [ ] For each: `init` detects it and writes `worker.builtMain` and `worker.assets` automatically.
 
