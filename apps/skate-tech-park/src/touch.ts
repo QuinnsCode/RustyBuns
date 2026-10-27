@@ -7,17 +7,17 @@ export const STICK_RADIUS = 56; // pixels of thumb travel for a full push
 const DEAD = 0.18; // fraction of the radius that reads as centred
 
 /** A thumb offset from the stick's centre (screen pixels, y down) as sim axes: throttle up is +1, steer left is +1. */
-export function stickAxes(dx: number, dy: number): { steer: number; throttle: number } {
-  const a = axes(dx, dy, STICK_RADIUS, DEAD);
+export function stickAxes(dx: number, dy: number, dead = DEAD): { steer: number; throttle: number } {
+  const a = axes(dx, dy, STICK_RADIUS, dead);
   return { steer: -a.x || 0, throttle: -a.y || 0 };
 }
 
-export interface Touch { steer: number; throttle: number; boost: boolean; manual: boolean; claims: (id: number) => boolean; root: HTMLElement }
+export interface Touch { steer: number; throttle: number; boost: boolean; manual: boolean; claims: (id: number) => boolean; root: HTMLElement; invertX: boolean; invertY: boolean; dead: number }
 
 export function mountTouch(): Touch {
   const owned = new Set<number>(); // pointers that belong to a control, not to the flick pad
   const root = document.createElement("div");
-  const t: Touch = { steer: 0, throttle: 0, boost: false, manual: false, claims: (id) => owned.has(id), root };
+  const t: Touch = { steer: 0, throttle: 0, boost: false, manual: false, claims: (id) => owned.has(id), root, invertX: false, invertY: false, dead: DEAD };
   root.className = "touch";
   root.hidden = true;
   const base = document.createElement("div"), nub = document.createElement("div");
@@ -51,8 +51,8 @@ export function mountTouch(): Touch {
     drag(e);
   };
   const drag = (e: PointerEvent) => {
-    const a = stickAxes(e.clientX - ox, e.clientY - oy);
-    t.steer = a.steer; t.throttle = a.throttle;
+    const a = stickAxes(e.clientX - ox, e.clientY - oy, t.dead);
+    t.steer = t.invertX ? -a.steer || 0 : a.steer; t.throttle = t.invertY ? -a.throttle || 0 : a.throttle;
     const k = Math.min(1, STICK_RADIUS / Math.max(1, Math.hypot(e.clientX - ox, e.clientY - oy)));
     nub.style.transform = `translate(${(e.clientX - ox) * k}px, ${(e.clientY - oy) * k}px)`;
   };

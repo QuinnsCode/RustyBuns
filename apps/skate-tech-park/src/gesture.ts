@@ -9,6 +9,8 @@ export function resolve(dx: number, dy: number, profile: Profile = PROFILES[0], 
   return strokeInput(matchStroke(profile, zone, dx, dy, secs));
 }
 
+const FLICK_GRACE = 20; // steps (a third of a second): a flick that follows the ollie stroke straight on still lands in the air
+
 /** Collects a drag or a stick push and hands back what it resolved to, once. */
 export class Gestures {
   private start: [number, number] | null = null;
@@ -18,6 +20,7 @@ export class Gestures {
   private zone: Zone = "mid";
   private cur: [number, number] = [0, 0];
   private triggers: -1 | 0 | 1 = 0;
+  private waited = 0; // steps a flick has waited for the board to leave the ground
   /** The stroke the last press matched (or null for none), with the zone it started in: the pad lights its path. */
   last: { stroke: Stroke | null; zone: Zone } | null = null;
 
@@ -51,10 +54,13 @@ export class Gestures {
     if (!this.start || t - this.at < p.hold || Math.hypot(this.cur[0] - this.start[0], this.cur[1] - this.start[1]) >= p.minDrag) return 0;
     return this.cur[1] - this.start[1] > p.nudge ? -1 : 1;
   }
-  /** What the gesture asked for since the last call. The caller applies it to one step only. */
-  take(): Resolved {
+  /** What the gesture asked for since the last call. The caller applies it to one step only. A flick lifted right after
+   * the ollie, while the board is still on the ground (`air` false), waits up to FLICK_GRACE steps for it to leave. */
+  take(air = true): Resolved {
     const p = this.pending ?? {};
     this.pending = null;
+    if (p.flick && !air && this.waited++ < FLICK_GRACE) { this.pending = { flick: p.flick }; const { flick: _, ...rest } = p; return rest; }
+    this.waited = 0;
     return p;
   }
 }

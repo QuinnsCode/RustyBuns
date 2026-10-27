@@ -34,3 +34,11 @@ body.home .hud, body.home .keys, body.home .room, body.home .trick, body.home .c
 .card .thumb { aspect-ratio: 16 / 9; overflow: hidden; border-radius: 12px; background: #405638; }
 .card .thumb canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
 @media (max-width: 560px) { .hero { padding: 18px 20px; } .hero p:not(.now) { font-size: 14px; } }
+
+/* A phone: the goals fold to the next one still to do (tap to open them all), clear of the level menu. */
+@media (pointer: coarse) {
+  .level-menu { top: 48px; right: 8px; font-size: 12px; padding: 2px 4px; opacity: 0.85; }
+  button.level-menu { top: 76px; }
+  .goals { top: 48px; left: 8px; max-width: calc(100vw - 150px); padding: 4px 8px; font-size: 12px; opacity: 0.85; }
+  .goals:not(.open) li:not(.next) { display: none; }
+}

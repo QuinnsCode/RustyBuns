@@ -1,8 +1,7 @@
 // The flick pad's grip tape: a board drawn on the touch screen's flick half, nose up, with the profile's strokes
 // printed on it like footprint grip tape: a pad where each finger goes and a dotted path for each stroke out of it,
 // named at its tip. The stroke a press just matched lights up. It never takes a touch (the canvas under it does);
-// only the footprints button, which steps to the next profile, is pressable.
-import { createElement, Footprints } from "lucide";
+// the layout is picked in the Controls panel (controls-panel.ts).
 import type { Profile, Stroke } from "./flick.ts";
 import type { Flick } from "./tricks.ts";
 
@@ -22,13 +21,11 @@ const origin = (p: Profile, from: Stroke["from"]): [number, number] =>
 
 export type Grip = { along: (x: number, y: number) => number | null; show: (p: Profile) => void; hit: (s: Stroke | null) => void };
 
-export function mountGrip(parent: HTMLElement, next: () => Profile): Grip {
+export function mountGrip(parent: HTMLElement): Grip {
   const root = Object.assign(document.createElement("div"), { className: "grip" });
   const svg = document.createElementNS(NS, "svg");
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   const name = Object.assign(document.createElement("div"), { className: "grip-name" });
-  const pick = Object.assign(document.createElement("button"), { type: "button", className: "grip-pick" });
-  pick.append(createElement(Footprints, { width: 20, height: 20 }));
   let shown: Profile | null = null, nameT = 0;
   const paths = new Map<Stroke, SVGGElement>();
   const el = <K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number>, into: Element = svg) => {
@@ -44,8 +41,6 @@ export function mountGrip(parent: HTMLElement, next: () => Profile): Grip {
     paths.clear();
     root.dataset.side = p.side;
     document.body.dataset.pad = p.side; // the stick and hold buttons move to the other side
-    pick.title = `Flick layout: ${p.name} (tap for the next)`;
-    pick.setAttribute("aria-label", pick.title);
     el("rect", { class: "deck", x: 4, y: 2, width: W - 8, height: H - 4, rx: (W - 8) / 2 });
     el("rect", { class: "zone", x: 4, y: 2, width: W - 8, height: p.nose * H, rx: (W - 8) / 2 });
     el("rect", { class: "zone", x: 4, y: H - 2 - p.tail * H, width: W - 8, height: p.tail * H, rx: (W - 8) / 2 });
@@ -76,12 +71,11 @@ export function mountGrip(parent: HTMLElement, next: () => Profile): Grip {
     name.textContent = p.name;
     name.dataset.on = "1";
     clearTimeout(nameT);
-    nameT = window.setTimeout(() => { delete name.dataset.on; }, 2500);
+    root.dataset.hint = "1"; // the labels show for a few seconds, then leave the park clear
+    nameT = window.setTimeout(() => { delete name.dataset.on; delete root.dataset.hint; }, 4000);
   };
 
-  pick.addEventListener("pointerdown", (e) => e.stopPropagation());
-  pick.addEventListener("click", () => { show(next()); pick.blur(); });
-  root.append(svg, name, pick);
+  root.append(svg, name);
   parent.append(root);
 
   return {

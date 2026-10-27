@@ -58,3 +58,12 @@ test("a profile can be handed in by name or as JSON; a wrong shape falls back to
   const base: Profile = PROFILES[0];
   expect(parseProfile({ strokes: [{ from: "any", dir: 400, pop: "ollie" }] }, base)).toBeNull(); // off the compass
 });
+
+test("a flick lifted straight after the ollie stroke waits for the board to leave the ground and still lands", () => {
+  const g = new Gestures();
+  const sk = Object.assign(start(0, 0, 0, flat), { speed: 6 });
+  g.down(200, 300, 0); g.up(200, 200, 0.1); // up: ollie
+  g.down(200, 300, 0.1); g.up(280, 300, 0.15); // right: kickflip, lifted in the same breath
+  for (let i = 0; i < 120; i++) step(sk, { ...IDLE, ...g.take(sk.air) }, flat);
+  expect(sk.last?.name).toBe("kickflip");
+});
