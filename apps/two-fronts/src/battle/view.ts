@@ -18,6 +18,7 @@ import { buildWorld } from "./terrain.ts";
 import { mission, sameMission, standing, type Mission, type Standing } from "./mission.ts";
 import { makeSfx } from "./sfx.ts";
 import { isTouch, mountTouch } from "./touch.ts";
+import { keyName, lookTurn, settings } from "../settings.ts";
 import { icon } from "../ui/icons.ts";
 import { makeBubbles } from "../ui/bubbles.ts";
 import { chatterFor } from "./lines.ts";
@@ -84,7 +85,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 2000);
+  const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.1, 2000);
   // Doren's haze and light, the floor, the trees and everything on it: terrain.ts.
   const world = buildWorld(scene, b);
   const ground = world.heightAt;
@@ -288,19 +289,19 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const onKey = (e: KeyboardEvent, down: boolean) => {
     const k = e.key.toLowerCase();
     if (down) sfx.wake();
-    if (down && k === "m" && !e.repeat) sfx.toggle();
-    if (down && k === "q") strike = true;
-    if (down && k === "e") use = true;
+    if (down && k === settings.keys.mute && !e.repeat) sfx.toggle();
+    if (down && k === settings.keys.strike) strike = true;
+    if (down && k === settings.keys.use) use = true;
     if (down && !e.repeat && ORDER_KEYS[k]) order = ORDER_KEYS[k]!;
     down ? keys.add(k) : keys.delete(k);
   };
   const kd = (e: KeyboardEvent) => onKey(e, true), ku = (e: KeyboardEvent) => onKey(e, false);
-  const md = (e: MouseEvent) => { sfx.wake(); if (document.pointerLockElement !== canvas) canvas.requestPointerLock(); else if (e.button === 0) firing = true; };
-  const mu = (e: MouseEvent) => { if (e.button === 0) firing = false; };
+  const md = (e: MouseEvent) => { sfx.wake(); if (document.pointerLockElement !== canvas) canvas.requestPointerLock(); else if (e.button === 0) firing = settings.fireToggle ? !firing : true; };
+  const mu = (e: MouseEvent) => { if (e.button === 0 && !settings.fireToggle) firing = false; };
   const mm = (e: MouseEvent) => {
     if (document.pointerLockElement !== canvas) return;
-    yaw -= e.movementX * 0.0025;
-    pitch = Math.max(-0.9, Math.min(0.5, pitch - e.movementY * 0.0025));
+    const t = lookTurn(e.movementX, e.movementY, "mouse");
+    yaw += t.yaw; pitch = Math.max(-0.9, Math.min(0.5, pitch + t.pitch));
   };
   addEventListener("keydown", kd); addEventListener("keyup", ku);
   canvas.addEventListener("mousedown", md); addEventListener("mouseup", mu); addEventListener("mousemove", mm);
@@ -309,9 +310,9 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   let stickF = 0, stickR = 0;
   const unTouch = touch ? mountTouch(section, canvas, {
     stick: (f, r) => { sfx.wake(); stickF = f; stickR = r; },
-    drag: (dx, dy) => { yaw -= dx * 0.006; pitch = Math.max(-0.9, Math.min(0.5, pitch - dy * 0.006)); },
+    drag: (dx, dy) => { const t = lookTurn(dx, dy, "touch"); yaw += t.yaw; pitch = Math.max(-0.9, Math.min(0.5, pitch + t.pitch)); },
     buttons: [
-      { id: "fire", icon: "crosshair", label: "Fire", hold: true, on: (d) => { sfx.wake(); firing = d; } },
+      { id: "fire", icon: "crosshair", label: "Fire", hold: true, on: (d) => { sfx.wake(); firing = settings.fireToggle ? (d ? !firing : firing) : d; } },
       { id: "strike", icon: "zap", label: "Orbital strike", on: (d) => { if (d) strike = true; } },
       { id: "use", icon: "car-front", label: "Vehicle or special", on: (d) => { if (d) use = true; } },
       ...(["forward", "hold", "back", "focus"] as const).map((k) => ({ id: k, icon: ORDER_INFO[k].icon, label: `Squad: ${ORDER_INFO[k].name}`, row: true, on: (d: boolean) => { if (d) order = k; } })),
@@ -451,7 +452,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       </div>
       <ul class="b-feed">${feedLines()}</ul>
       ${orderBar()}
-      ${touch ? `<div class="b-help"><button id="b-auto" type="button">Let the AI finish it</button></div>` : document.pointerLockElement === canvas ? "" : `<div class="b-help">Click the field to take control · WASD move · mouse look · click fire · Q orbital strike · E vehicle · 1-4 squad orders · M sound · Esc to let go<button id="b-auto" type="button">Let the AI finish it</button></div>`}`;
+      ${touch ? `<div class="b-help"><button id="b-auto" type="button">Let the AI finish it</button></div>` : document.pointerLockElement === canvas ? "" : `<div class="b-help">Click the field to take control · ${keyName(settings.keys.forward)}${keyName(settings.keys.left)}${keyName(settings.keys.back)}${keyName(settings.keys.right)} move · mouse look · click fire · ${keyName(settings.keys.strike)} orbital strike · ${keyName(settings.keys.use)} vehicle · 1-4 squad orders · ${keyName(settings.keys.mute)} sound · Esc to let go, then the gear for Controls<button id="b-auto" type="button">Let the AI finish it</button></div>`}`;
   };
 
   return new Promise((resolve) => {
@@ -483,8 +484,8 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       while (handOver && !b.over) step(b, null);
       while (acc >= DT && !b.over) {
         const input = rec.take({
-          forward: Math.max(-1, Math.min(1, (keys.has("w") ? 1 : 0) - (keys.has("s") ? 1 : 0) + stickF)),
-          right: Math.max(-1, Math.min(1, (keys.has("d") ? 1 : 0) - (keys.has("a") ? 1 : 0) + stickR)),
+          forward: Math.max(-1, Math.min(1, (keys.has(settings.keys.forward) ? 1 : 0) - (keys.has(settings.keys.back) ? 1 : 0) + stickF)),
+          right: Math.max(-1, Math.min(1, (keys.has(settings.keys.right) ? 1 : 0) - (keys.has(settings.keys.left) ? 1 : 0) + stickR)),
           yaw, fire: firing, use,
           strike: strike ? aimPoint() ?? undefined : undefined,
           order: order ? { kind: order, ...gunPoint() } : undefined,
@@ -763,7 +764,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       }
       lastKills = b.hero.kills;
       if ((toastT -= dt) <= 0) toastEl.classList.remove("show");
-      const fov = b.hero.run > SPRINT_AFTER ? 74 : 65;
+      const fov = settings.fov + (b.hero.run > SPRINT_AFTER ? 9 : 0);
       if (Math.abs(camera.fov - fov) > 0.1) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 6); camera.updateProjectionMatrix(); }
       shake = Math.max(0, shake - dt * 2.5);
 

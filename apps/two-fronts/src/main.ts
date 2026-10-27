@@ -9,6 +9,7 @@ import {
 } from "./war/rules.ts";
 import { aiVote, castVote, handIn, heroFaction, humans, newTable, report, tally, waitingOn, type Seats, type Table, type Vote } from "./war/table.ts";
 import { fetchView, linkInHash, pointerSocket, seatLink, sendBattle, sendOrders, sendVote, startOnline, type Online, type View } from "./net.ts";
+import { mountControlsPanel } from "./ui/controls-panel.ts";
 import { drawMap } from "./ui/map.ts";
 import { icon, tip } from "./ui/icons.ts";
 import { PRESETS, PRESET_IDS, deploy, emptyDeployment, loadoutOf, placeLoadout, presetDeployment, room, totals, valueOf, type Loadout, type PresetId } from "./war/fleet.ts";
@@ -19,6 +20,7 @@ import { HULL_PER_SHIP, ROUNDS, clash, encodePicks, fightPicks, playRound, start
 import { aiSpacePick } from "./war/ai.ts";
 import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
 
+mountControlsPanel();
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 // v2 gained the cannon sectors, v3 renamed the factions, v4 had a galaxy per campaign, v5 had
 // canyon and jungle sectors and a vehicle pool per battle, v6 was a table with seats and a hero a
