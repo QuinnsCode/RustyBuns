@@ -129,6 +129,9 @@ export function playCutscene(cut: Cutscene, stage: Stage, origin: Origin): Promi
         if (chute) chute.visible = a.chute;
         animate(g, { t: now / 1000, dt, moved: a.moving && moved < 3 ? moved : 0, since: 1, call: (performance.now() - ((g.userData.calledAt as number | undefined) ?? -1e9)) / 1000 });
       }
+      // Shots are framed for a wide screen. On a tall one, open the view up so the sides stay in.
+      const wide = camera.aspect < 1.2 ? Math.min(100, (2 * Math.atan(Math.tan((fov * Math.PI) / 360) * (1.2 / camera.aspect)) * 180) / Math.PI) : fov;
+      if (camera.fov !== wide) { camera.fov = wide; camera.updateProjectionMatrix(); }
       const cam = cameraAt(cut, t);
       if (cam) {
         const [px, py, pz] = cam.pos, [lx, ly, lz] = cam.look;
