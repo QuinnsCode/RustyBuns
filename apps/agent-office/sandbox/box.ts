@@ -16,7 +16,8 @@ export type Perms = {
   port: number;
   memory?: string; // unset: a fifth of what Docker has
   cpus?: number;
-  network: "open" | "offline";
+  network: "open" | "allowlist" | "offline";
+  allow: string[]; // hosts the box may reach when the network is "allowlist"
   repos: { path: string; access: "rw" | "ro" }[];
   env: string[];
 };
@@ -32,6 +33,10 @@ export function limits(p: Perms, host: Host) {
 }
 
 export const NAME = "agent-office-box";
+export const PROXY = `${NAME}-proxy`;
+export const NET = `${NAME}-net`;
+/** The model API, GitHub (and its git and release hosts) and the package registry: what the agents need and nothing else. */
+export const DEFAULT_ALLOW = ["api.anthropic.com", "claude.ai", "github.com", "api.github.com", "codeload.github.com", "objects.githubusercontent.com", "registry.npmjs.org"];
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -49,8 +54,13 @@ export function parsePerms(raw: unknown): Perms {
   if (memory !== undefined && (typeof memory !== "string" || !/^\d+[mg]$/.test(memory))) throw new Error(`memory ${String(memory)} should look like 512m or 4g`);
   const cpus = raw.cpus;
   if (cpus !== undefined && (typeof cpus !== "number" || !(cpus > 0))) throw new Error("cpus must be a number above 0");
-  const network = raw.network ?? "open";
-  if (network !== "open" && network !== "offline") throw new Error(`network ${String(network)} should be "open" or "offline"`);
+  const network = raw.network ?? "allowlist";
+  if (network !== "open" && network !== "allowlist" && network !== "offline") throw new Error(`network ${String(network)} should be "allowlist", "open" or "offline"`);
+  const allow = (Array.isArray(raw.allow) ? raw.allow : DEFAULT_ALLOW).map((h: unknown, i) => {
+    const host = text(h, `allow[${i}]`).toLowerCase();
+    if (!/^(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host)) throw new Error(`allow[${i}] ${host} should be a host like registry.npmjs.org or *.example.com`);
+    return host;
+  });
   const repos = (Array.isArray(raw.repos) ? raw.repos : []).map((r: unknown, i) => {
     if (!isObject(r)) throw new Error(`repos[${i}] must be an object`);
     const access = r.access ?? "ro";
@@ -62,7 +72,7 @@ export function parsePerms(raw: unknown): Perms {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`env[${i}] ${name} isn't a variable name`);
     return name;
   });
-  return { port, memory, cpus, network, repos, env };
+  return { port, memory, cpus, network, allow, repos, env };
 }
 
 const expand = (p: string) => (p === "~" || p.startsWith("~/") ? path.join(homedir(), p.slice(1)) : path.resolve(p));
@@ -81,8 +91,10 @@ export function dockerArgs(p: Perms, host: Host, image = NAME): string[] {
     "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--read-only",
     "--tmpfs", "/tmp:rw,size=1g", "--pids-limit", "512",
     "--memory", lim.memory, "--cpus", String(lim.cpus),
-    "--network", p.network === "offline" ? "none" : "bridge",
-    ...(p.network === "offline" ? [] : ["-p", `127.0.0.1:${p.port}:4600`]),
+    // allowlist: an internal network with no route out; the proxy beside the box is the only way through
+    "--network", p.network === "offline" ? "none" : p.network === "allowlist" ? NET : "bridge",
+    ...(p.network === "open" ? ["-p", `127.0.0.1:${p.port}:4600`] : []),
+    ...(p.network === "allowlist" ? ["-e", `HTTPS_PROXY=http://${PROXY}:3128`, "-e", `HTTP_PROXY=http://${PROXY}:3128`, "-e", `NO_PROXY=localhost,127.0.0.1`] : []),
     "-v", `${NAME}-home:/home/office`,
     ...p.repos.flatMap((r, i) => ["-v", `${expand(r.path)}:/work/${names[i]}:${r.access}`]),
     // the first writable repo is the office's floor: it keeps its data in that repo's .agent-office
@@ -93,10 +105,23 @@ export function dockerArgs(p: Perms, host: Host, image = NAME): string[] {
   ];
 }
 
+/** The proxy container: on the host's network for the way out, and on the box's internal one for the way in. */
+export function proxyArgs(p: Perms, proxyFile = path.join(here, "proxy.ts")): string[] {
+  return [
+    "run", "-d", "--name", PROXY, "--restart", "unless-stopped", "--network", "bridge",
+    "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--read-only", "--memory", "128m", "--pids-limit", "64",
+    "-p", `127.0.0.1:${p.port}:4600`,
+    "-v", `${proxyFile}:/proxy.ts:ro`,
+    "-e", `ALLOW=${p.allow.join(",")}`, "-e", `FORWARD=${NAME}:4600`,
+    "oven/bun:1", "bun", "/proxy.ts",
+  ];
+}
+
 export type Edit =
   | { grant: { path: string; access: "rw" | "ro" } }
   | { revoke: string }
-  | { network: "open" | "offline" }
+  | { network: "open" | "allowlist" | "offline" }
+  | { allow: { host: string; on: boolean } }
   | { port: number }
   | { env: { name: string; on: boolean } };
 
@@ -115,6 +140,9 @@ export function edit(p: Perms, e: Edit, isDir: (dir: string) => boolean = (d) =>
     next.repos = next.repos.filter((r) => expand(r.path) !== expand(e.revoke));
   } else if ("network" in e) {
     next.network = e.network;
+  } else if ("allow" in e) {
+    next.allow = next.allow.filter((h) => h !== e.allow.host.trim().toLowerCase());
+    if (e.allow.on) next.allow.push(e.allow.host);
   } else if ("port" in e) {
     next.port = e.port;
   } else {
@@ -135,11 +163,11 @@ export async function boxHealth(p: Perms) {
   const state = await docker(["inspect", "-f", "{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}", NAME], { quiet: true });
   if (state.code) return { running: false as const };
   const [status = "", health = ""] = state.out.split(" ");
-  const answers = p.network === "open" && await fetch(`http://127.0.0.1:${p.port}/login`, { signal: AbortSignal.timeout(3000) }).then((r) => r.ok, () => false);
+  const answers = p.network !== "offline" && await fetch(`http://127.0.0.1:${p.port}/login`, { signal: AbortSignal.timeout(3000) }).then((r) => r.ok, () => false);
   const mounted = (await docker(["inspect", "-f", '{{range .Mounts}}{{.Source}} {{.Destination}} {{.RW}}{{"\\n"}}{{end}}', NAME], { quiet: true })).out
     .split("\n").map((l) => l.split(" ")).filter((l) => l[1]?.startsWith("/work/")).map((l) => `${l[1]!.slice(6)}:${l[2] === "true" ? "rw" : "ro"}`);
   const granted = p.repos.map((r) => `${mountName(r.path)}:${r.access}`);
-  const healthy = status === "running" && (p.network !== "open" || answers);
+  const healthy = status === "running" && (p.network === "offline" || answers);
   // grants only reach the box when it's started again, so say when the running one isn't what the file says
   const restart = granted.length !== mounted.length || granted.some((g) => !mounted.includes(g));
   return { running: true as const, status, health, answers, healthy, restart };
@@ -167,14 +195,22 @@ async function main(argv: string[]) {
   const { perms, from } = loadPerms(at >= 0 ? argv[at + 1] : undefined);
   const cmd = argv.find((a, i) => !a.startsWith("--") && (at < 0 || i !== at + 1)) ?? "status";
   if (cmd === "plan") {
-    console.log(`# permission set: ${path.relative(process.cwd(), from)}\ndocker ${dockerArgs(perms, await hostCapacity()).map((a) => (/[^\w@%+=:,./-]/.test(a) ? `'${a}'` : a)).join(" ")}`);
+    const line = (a: string[]) => `docker ${a.map((x) => (/[^\w@%+=:,./-]/.test(x) ? `'${x}'` : x)).join(" ")}`;
+    console.log(`# permission set: ${path.relative(process.cwd(), from)}`);
+    if (perms.network === "allowlist") console.log(`docker network create --internal ${NET}\n${line(proxyArgs(perms))}\ndocker network connect ${NET} ${PROXY}`);
+    console.log(line(dockerArgs(perms, await hostCapacity())));
   } else if (cmd === "up") {
     const have = await docker(["image", "inspect", NAME], { quiet: true });
     if (have.code) {
       const root = path.resolve(here, "../../..");
       if ((await docker(["build", "-f", path.join(here, "Dockerfile"), "-t", NAME, root])).code) process.exit(1);
     }
-    await docker(["rm", "-f", NAME], { quiet: true });
+    await docker(["rm", "-f", NAME, PROXY], { quiet: true });
+    if (perms.network === "allowlist") {
+      await docker(["network", "create", "--internal", NET], { quiet: true }); // already there on a second start: fine
+      if ((await docker(proxyArgs(perms), { quiet: true })).code) process.exit(1);
+      await docker(["network", "connect", NET, PROXY], { quiet: true }); // the box reaches the proxy by its name
+    }
     const password = crypto.randomUUID();
     if ((await docker(dockerArgs(perms, await hostCapacity()), { env: { OFFICE_PASSWORD: password }, quiet: true })).code) process.exit(1);
     console.log(`🐳 the office is starting in ${NAME}\n   http://localhost:${perms.port}   password: ${password}\n   bun run office:box status`);
@@ -182,6 +218,7 @@ async function main(argv: string[]) {
     console.log(`permission set ${path.relative(process.cwd(), from)}:`);
     console.log(`  repos    ${perms.repos.map((r) => `${r.path} (${r.access})`).join(", ") || "none"}`);
     console.log(`  env      ${perms.env.join(", ") || "none"}`);
+    if (perms.network === "allowlist") console.log(`  allowed  ${perms.allow.join(", ") || "nothing"}`);
     console.log(`  network  ${perms.network}   port ${perms.network === "offline" ? "none" : `127.0.0.1:${perms.port}`}   ${(({ memory, cpus }) => `${memory}, ${cpus} cpus`)(limits(perms, await hostCapacity()))}`);
     const h = await boxHealth(perms);
     if (!h.running) { console.log("box      not running (bun run office:box up)"); return; }
@@ -190,7 +227,7 @@ async function main(argv: string[]) {
   } else if (cmd === "logs") {
     await docker(["logs", "-f", "--tail", "100", NAME]);
   } else if (cmd === "down") {
-    await docker(["rm", "-f", NAME]);
+    await docker(["rm", "-f", NAME, PROXY]);
   } else {
     throw new Error(`office:box ${cmd}? try plan, up, status, logs or down`);
   }
