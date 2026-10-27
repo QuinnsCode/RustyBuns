@@ -37,8 +37,8 @@ body.home .hud, body.home .keys, body.home .room, body.home .trick, body.home .c
 
 /* A phone: the goals fold to the next one still to do (tap to open them all), clear of the level menu. */
 @media (pointer: coarse) {
-  .level-menu { top: 48px; right: 8px; font-size: 12px; padding: 2px 4px; opacity: 0.85; }
-  button.level-menu { top: 76px; }
-  .goals { top: 48px; left: 8px; max-width: calc(100vw - 150px); padding: 4px 8px; font-size: 12px; opacity: 0.85; }
+  .level-menu { top: 60px; right: 8px; font-size: 12px; padding: 2px 4px; opacity: 0.85; }
+  button.level-menu { top: 96px; padding: 6px 8px; }
+  .goals { top: 60px; left: 8px; max-width: calc(100vw - 160px); padding: 4px 8px; font-size: 12px; opacity: 0.85; }
   .goals:not(.open) li:not(.next) { display: none; }
 }
