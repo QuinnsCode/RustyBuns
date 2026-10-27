@@ -6,7 +6,7 @@
 //   GET  /__rb/prof/<id>        a saved profile's summary (?top=N frames)
 //   GET  /__rb/heap             the heap snapshots the office and the pty hosts wrote over their ceiling
 //   GET  /__rb/history          the office's runs, one per start, newest first: memory slope, profiles, ceiling restarts
-//   GET  /__rb/context          Dexter's watch on live sessions' context size: `sessions` with each one's context, total used and latest turn (and `lines` of them, written out); `over` the warn lines now, and `fresh` crossings since the last ask (each once)
+//   GET  /__rb/context          Dexter's watch on live sessions' context size: `sessions` with each one's context, total used and latest turn (and `lines` of them, written out); `over` the warn lines now, and `fresh` crossings since the last ask (each once); `code` the sessions that ran a code-mode program since the last ask, with their code-mode, tool-load and direct MCP counts
 //   GET  /__rb/helpers          Ester's and Mervin's runs of the board script (ester/run.ts): phase, the tail they printed, PRs to hold
 //   GET  /__rb/reload           what the page is running and whether the server's code moved on (live/reload.ts)
 //   POST /__rb/reload/restart   restart the office (SIGTERM; the workers keep running) when office:mama is minding it
@@ -20,7 +20,7 @@ import { listSaved, summarizeProfile } from "@rustybuns/shell-bun/profsummary";
 import { historyRuns } from "@rustybuns/shell-bun/history";
 import { officeHistory, officeMem } from "../live/mem.ts";
 import { officeReload } from "../live/reload.ts";
-import { ContextWatch, Meter, nameOf, sessionLines } from "../ester/dexter.ts";
+import { ContextWatch, Meter, ModeWatch, nameOf, sessionLines } from "../ester/dexter.ts";
 import { createHelpers, HELPERS, isHelper, repoWith } from "../ester/run.ts";
 
 export const TRIAGE_HEADER = "x-rb-triage";
@@ -46,7 +46,7 @@ export function officeTriage(
   const hist = officeHistory(dataDir);
   const profDir = path.join(dataDir, "prof");
   const helpers = createHelpers();
-  const context = new ContextWatch(), meter = new Meter();
+  const context = new ContextWatch(), modes = new ModeWatch(), meter = new Meter();
   return async (method: string, url: URL, trusted: boolean): Promise<TriageAnswer | null> => {
     const p = url.pathname;
     const only = (m: string) => ({ status: 405, body: { error: `${m} ${p}` } });
@@ -66,7 +66,7 @@ export function officeTriage(
       ].sort((a, b) => b.at.localeCompare(a.at));
       return { status: 200, body: { snapshots } };
     }
-    if (p === "/__rb/context") return method === "GET" ? { status: 200, body: (() => { const sessions = meter.scan(projects); return { sessions: sessions.map((c) => ({ ...c, name: nameOf(c) })), lines: sessionLines(sessions), ...context.check(sessions) }; })() } : only("GET");
+    if (p === "/__rb/context") return method === "GET" ? { status: 200, body: (() => { const sessions = meter.scan(projects); return { sessions: sessions.map((c) => ({ ...c, name: nameOf(c) })), lines: sessionLines(sessions), ...context.check(sessions), code: modes.check(sessions) }; })() } : only("GET");
     if (p === "/__rb/helpers") return method === "GET" ? { status: 200, body: { ester: helpers.ester.state(), mervin: helpers.mervin.state(), dexter: helpers.dexter.state() } } : only("GET");
     if (p.startsWith("/__rb/helpers/")) {
       const name = p.slice("/__rb/helpers/".length);

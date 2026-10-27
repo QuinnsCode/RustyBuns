@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ContextWatch, Meter, contextLines, project, propose, standing, render, tally, trimDiff, trimLine, week, type Report } from "../ester/dexter.ts";
+import { ContextWatch, Meter, ModeWatch, contextLines, noModes, project, propose, standing, render, tally, trimDiff, trimLine, week, type Report } from "../ester/dexter.ts";
 
-const fresh = (): Report => ({ sessions: 1, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0 });
+const fresh = (): Report => ({ sessions: 1, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: new Map(), turns: 0, days: new Map(), helpers: { mervin: 0, ester: 0, dexter: 0 }, fights: 0, modes: noModes() });
 const j = (o: unknown) => JSON.stringify(o);
 
 test("tokens add up once per message, and each result is charged to the tool that made it", () => {
@@ -155,4 +155,29 @@ test("Dexter names a session once as its context, and then everything it has use
   const cli = contextLines(meter.scan(root)).join("\n");
   expect(cli).toMatch(/sprocket-b93a: context 260k, 2\d\.\dM used in all, latest turn 260k/);
   expect(cli).toContain("Hand off:");
+});
+
+test("Dexter counts code mode against tool loads and direct MCP calls, and a new program is an event once", () => {
+  const call = (id: string, name: string, mid: string) => j({ type: "assistant", sessionId: "s-code", cwd: "/x/.agent-office/worktrees/gizmo-1a2b", message: { id: mid, usage: { input_tokens: 1 }, content: [{ type: "tool_use", id, name }] } }) + "\n";
+  const result = (id: string, n: number) => j({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content: "z".repeat(n * 4) }] } }) + "\n";
+  const loaded = j({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "a", content: [{ type: "tool_reference", tool_name: "Monitor" }, { type: "tool_reference", tool_name: "WebFetch" }] }] } }) + "\n";
+  const lines = [call("a", "ToolSearch", "m1"), loaded, call("b", "mcp__codesplitter__read_file", "m2"), result("b", 3000),
+    call("c", "mcp__codesplitter__read_file", "m3"), result("c", 3000), call("d", "mcp__codesplitter__execute", "m4"), result("d", 40), call("e", "Read", "m5"), result("e", 10)];
+
+  const r = fresh();
+  tally(lines.join("").split("\n"), r);
+  expect(r.modes).toEqual({ code: { calls: 1, tokens: 40 }, load: { calls: 1, tools: 2 }, direct: { calls: 2, tokens: 6000 } });
+  expect(render(r).join("\n")).toContain("Code mode 1 (40 tokens), tool loads 1 (2 schemas into the context), direct MCP calls 2 (6k tokens).");
+
+  const root = mkdtempSync(path.join(tmpdir(), "rb-dexter-mode-")), dir = path.join(root, "-x-RustyBuns"), f = path.join(dir, "s-code.jsonl");
+  mkdirSync(dir);
+  const meter = new Meter(), watch = new ModeWatch();
+  writeFileSync(f, lines.slice(0, 6).join(""));
+  expect(watch.check(meter.scan(root))).toEqual([]); // loads and direct calls only: no event
+  appendFileSync(f, lines.slice(6).join(""));
+  const [e, ...rest] = watch.check(meter.scan(root));
+  expect(rest).toEqual([]);
+  expect(e!.message).toBe("gizmo-1a2b used code mode: 1 program in this session, against 1 tool load and 2 direct MCP calls.");
+  expect(watch.check(meter.scan(root))).toEqual([]); // once
+  expect(contextLines(meter.scan(root)).join("\n")).toContain("code mode 1, tool loads 1, direct MCP 2");
 });
