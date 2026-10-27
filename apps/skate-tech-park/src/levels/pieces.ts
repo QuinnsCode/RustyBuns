@@ -217,9 +217,14 @@ export const RAIL_LINES = {
  * segments that meet end to end, so a grind carries round the bend or down the drop instead of ending at each joint.
  */
 export const railLine = (at: At, o: { line?: keyof typeof RAIL_LINES; len?: number } = {}): Part => {
-  const f = RAIL_LINES[o.line ?? "kink"], len = (o.len ?? 18) * L, n = Math.max(2, Math.round(len / 2.5)), pt = (i: number) => { const u = i / n, p = f(u); return { lx: p.x * K, lz: (u - 0.5) * len, y: p.y * K }; };
-  return part({ rails: Array.from({ length: n }, (_, i) => { const a = pt(i), b = pt(i + 1); return { ...bar("rail", at, a.lx, a.lz, b.lx, b.lz, a.y, b.y), chain: true as const }; }) });
+  const f = RAIL_LINES[o.line ?? "kink"], len = (o.len ?? 18) * L, n = Math.max(2, Math.round(len / CHAIN_STEP)), pt = (i: number) => { const u = i / n, p = f(u); return { lx: p.x * K, lz: (u - 0.5) * len, y: p.y * K }; };
+  return part({ rails: Array.from({ length: n }, (_, i) => { const a = pt(i), b = pt(i + 1); return { ...bar("rail", at, a.lx, a.lz, b.lx, b.lz, a.y, b.y), chain: true as const, ...(i > 0 && i % POST_EVERY === 0 ? { post: true as const } : {}) }; }) });
 };
+
+/** A chained bar is cut into segments this long (m), short enough that the straight sim follows the smooth tube the view draws through its joints. */
+export const CHAIN_STEP = 1.5;
+/** A chained bar has a post under every this-many segments. */
+export const POST_EVERY = 3;
 
 /** A low rail on the flat. */
 export const flatBar = (at: At, o: { len?: number } = {}): Part => handrail(at, { len: o.len ?? 6, y: 0.45 });

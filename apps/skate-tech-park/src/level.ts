@@ -32,6 +32,7 @@ export type Rail = {
   y: number; // height of the bar or lip at `a`
   y2?: number; // height at `b` when the bar slopes (a handrail down stairs); `y` when absent
   chain?: true; // one segment of a bar bent along a path: a grind runs on into the segment that meets its end
+  post?: true; // a chained bar stands on a post under its `a` end (the other joints stand on the bar's own stiffness)
 };
 
 /** Something solid standing on the ground (a sequoia): the rider can't pass below its top. */
@@ -43,7 +44,7 @@ export const railY = (r: Rail, t: number) => r.y + ((r.y2 ?? r.y) - r.y) * Math.
 /** Where a rail's posts stand: a post every 4 m, none within 10 m of either end so the bar can be entered and left from the ground. */
 export function railPosts(r: Rail): { x: number; y: number; z: number }[] {
   if (r.kind !== "rail") return [];
-  if (r.chain) return [{ x: r.a.x, y: r.y, z: r.a.z }]; // a bent bar stands on a post at each joint
+  if (r.chain) return r.post ? [{ x: r.a.x, y: r.y, z: r.a.z }] : []; // a bent bar stands on a post every few joints
   const len = Math.hypot(r.b.x - r.a.x, r.b.z - r.a.z) || 1, out = [];
   for (let d = 10; d <= len - 10; d += 4) out.push({ x: r.a.x + ((r.b.x - r.a.x) * d) / len, y: railY(r, d / len), z: r.a.z + ((r.b.z - r.a.z) * d) / len });
   return out;

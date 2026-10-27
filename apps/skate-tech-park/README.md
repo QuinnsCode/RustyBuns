@@ -18,7 +18,7 @@ Which stroke does which trick is a flick profile (`src/flick.ts`): a list of str
 
 ## Rails bend and drop
 
-`railLine` (`src/levels/pieces.ts`) extrudes one rail along a path with a profile (`kink`, `curve`, `s`, `wave`), and a grind rides on from segment to segment round the bend or down the drop. How we plan to fill out the levels, what mobile has today and a chasing animal for timed runs are in [LEVEL_DESIGN.md](LEVEL_DESIGN.md).
+`railLine` (`src/levels/pieces.ts`) extrudes one rail along a path with a profile (`kink`, `curve`, `s`, `wave`), and a grind rides on from segment to segment round the bend or down the drop. The view draws a bent bar as one smooth tube through its joints, with a post only every few metres. `embedded.ts` sets long smooth bars and steel-edged ledges into the hillsides of every park (3 or 4 each), laid on the finished ground so they sit flush: one that follows a slope's contour, one that dips to the earth mid-run and climbs back out, a ledge cut along a bank, and a bar that leaves the hill and stands clear on posts where the ground falls away. Each lifts clear of the ground at both ends so it can be ollied onto, and a rider grinds it from end to end. How we plan to fill out the levels, what mobile has today and a chasing animal for timed runs are in [LEVEL_DESIGN.md](LEVEL_DESIGN.md).
 
 ## Weather
 
