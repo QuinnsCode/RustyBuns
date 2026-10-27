@@ -11,6 +11,7 @@ import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { type Camera, parseCamera } from "../live/camera.ts";
 
 export type Perms = {
   port: number;
@@ -20,6 +21,8 @@ export type Perms = {
   allow: string[]; // hosts the box may reach when the network is "allowlist"
   repos: { path: string; access: "rw" | "ro" }[];
   env: string[];
+  ask: boolean; // allowlist: a host not on the list waits for a person's Allow / Deny (default), instead of being refused
+  log: Camera; // the local record of those asks: its disk budget and how long to keep it
 };
 
 // Open lanes: unless the permission set says otherwise, the box gets a fifth of the CPUs and memory Docker has.
@@ -72,7 +75,9 @@ export function parsePerms(raw: unknown): Perms {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`env[${i}] ${name} isn't a variable name`);
     return name;
   });
-  return { port, memory, cpus, network, allow, repos, env };
+  const ask = raw.ask ?? true;
+  if (typeof ask !== "boolean") throw new Error("ask should be true or false");
+  return { port, memory, cpus, network, allow, repos, env, ask, log: parseCamera(raw.log) };
 }
 
 const expand = (p: string) => (p === "~" || p.startsWith("~/") ? path.join(homedir(), p.slice(1)) : path.resolve(p));
@@ -94,7 +99,7 @@ export function dockerArgs(p: Perms, host: Host, image = NAME): string[] {
     // allowlist: an internal network with no route out; the proxy beside the box is the only way through
     "--network", p.network === "offline" ? "none" : p.network === "allowlist" ? NET : "bridge",
     ...(p.network === "open" ? ["-p", `127.0.0.1:${p.port}:4600`] : []),
-    ...(p.network === "allowlist" ? ["-e", `HTTPS_PROXY=http://${PROXY}:3128`, "-e", `HTTP_PROXY=http://${PROXY}:3128`, "-e", `NO_PROXY=localhost,127.0.0.1`] : []),
+    ...(p.network === "allowlist" ? ["-e", `HTTPS_PROXY=http://${PROXY}:3128`, "-e", `HTTP_PROXY=http://${PROXY}:3128`, "-e", `NO_PROXY=localhost,127.0.0.1`, ...(p.ask ? ["-e", "OUTBOUND_TOKEN"] : [])] : []),
     "-v", `${NAME}-home:/home/office`,
     ...p.repos.flatMap((r, i) => ["-v", `${expand(r.path)}:/work/${names[i]}:${r.access}`]),
     // the first writable repo is the office's floor: it keeps its data in that repo's .agent-office
@@ -113,6 +118,7 @@ export function proxyArgs(p: Perms, proxyFile = path.join(here, "proxy.ts")): st
     "-p", `127.0.0.1:${p.port}:4600`,
     "-v", `${proxyFile}:/proxy.ts:ro`,
     "-e", `ALLOW=${p.allow.join(",")}`, "-e", `FORWARD=${NAME}:4600`,
+    ...(p.ask ? ["-e", `ASK_URL=http://${NAME}:4600/__rb/outbound`, "-e", "OUTBOUND_TOKEN"] : []),
     "oven/bun:1", "bun", "/proxy.ts",
   ];
 }
@@ -123,7 +129,9 @@ export type Edit =
   | { network: "open" | "allowlist" | "offline" }
   | { allow: { host: string; on: boolean } }
   | { port: number }
-  | { env: { name: string; on: boolean } };
+  | { env: { name: string; on: boolean } }
+  | { ask: boolean }
+  | { log: Camera };
 
 // One change to a permission set, checked like a file would be: the result is what parsePerms would have read.
 // A mount has to be a folder that exists, so a typo can't become an empty directory Docker creates as root.
@@ -145,6 +153,10 @@ export function edit(p: Perms, e: Edit, isDir: (dir: string) => boolean = (d) =>
     if (e.allow.on) next.allow.push(e.allow.host);
   } else if ("port" in e) {
     next.port = e.port;
+  } else if ("ask" in e) {
+    next.ask = e.ask;
+  } else if ("log" in e) {
+    next.log = e.log;
   } else {
     next.env = next.env.filter((n) => n !== e.env.name);
     if (e.env.on) next.env.push(e.env.name);
@@ -206,19 +218,21 @@ async function main(argv: string[]) {
       if ((await docker(["build", "-f", path.join(here, "Dockerfile"), "-t", NAME, root])).code) process.exit(1);
     }
     await docker(["rm", "-f", NAME, PROXY], { quiet: true });
+    const token = crypto.randomUUID(); // the proxy's key to ask the office, held by the two containers only
     if (perms.network === "allowlist") {
       await docker(["network", "create", "--internal", NET], { quiet: true }); // already there on a second start: fine
-      if ((await docker(proxyArgs(perms), { quiet: true })).code) process.exit(1);
+      if ((await docker(proxyArgs(perms), { env: { OUTBOUND_TOKEN: token }, quiet: true })).code) process.exit(1);
       await docker(["network", "connect", NET, PROXY], { quiet: true }); // the box reaches the proxy by its name
     }
     const password = crypto.randomUUID();
-    if ((await docker(dockerArgs(perms, await hostCapacity()), { env: { OFFICE_PASSWORD: password }, quiet: true })).code) process.exit(1);
+    if ((await docker(dockerArgs(perms, await hostCapacity()), { env: { OFFICE_PASSWORD: password, OUTBOUND_TOKEN: token }, quiet: true })).code) process.exit(1);
     console.log(`🐳 the office is starting in ${NAME}\n   http://localhost:${perms.port}   password: ${password}\n   bun run office:box status`);
   } else if (cmd === "status") {
     console.log(`permission set ${path.relative(process.cwd(), from)}:`);
     console.log(`  repos    ${perms.repos.map((r) => `${r.path} (${r.access})`).join(", ") || "none"}`);
     console.log(`  env      ${perms.env.join(", ") || "none"}`);
-    if (perms.network === "allowlist") console.log(`  allowed  ${perms.allow.join(", ") || "nothing"}`);
+    if (perms.network === "allowlist") console.log(`  allowed  ${perms.allow.join(", ") || "nothing"}${perms.ask ? "; any other host asks first" : ""}`);
+    console.log(`  log      ${perms.log.maxMb} MB, kept ${perms.log.keepDays} days (sandbox/outbound.log)`);
     console.log(`  network  ${perms.network}   port ${perms.network === "offline" ? "none" : `127.0.0.1:${perms.port}`}   ${(({ memory, cpus }) => `${memory}, ${cpus} cpus`)(limits(perms, await hostCapacity()))}`);
     const h = await boxHealth(perms);
     if (!h.running) { console.log("box      not running (bun run office:box up)"); return; }

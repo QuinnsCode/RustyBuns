@@ -14,8 +14,10 @@
 //   office and /lite, asks/index.ts), then goes ahead, or gets a 403 if someone said no or nobody answered in two
 //   minutes.
 
+import { boxDir, cameraOf, logFile, record } from "./camera.ts";
+
 /** What AGENT_OFFICE_PEOPLE_ONLY can hold, by the endpoint's action (the path after /office/workers). */
-const ACTIONS: Record<string, string> = { "": "hire", "/home": "home", "/tell": "tell", "/pr": "pr", "/queue": "queue" };
+const ACTIONS: Record<string, string> = { "": "hire", "/home": "home", "/tell": "tell", "/pr": "pr", "/queue": "queue", "/outbound": "outbound" };
 
 /** The action's word if `setting` (a comma list, or all) holds it, else ''. */
 function listed(action: string, setting: string) {
@@ -66,6 +68,7 @@ export function askDetail(action: string, body: any) {
     return `send ${them || "nobody"} home${b.cleanup ? ` (cleanup: ${clip(b.cleanup, 16)})` : ""}`;
   }
   if (action === "/pr") return b.pr === undefined || b.pr === null ? `say ${clip(b.worker, 64) || "it"} has no pull request` : `say PR #${clip(b.pr, 12)} is ${b.worker ? `${clip(b.worker, 64)}'s` : "its own"}`;
+  if (action === "/outbound") return `let the box reach ${clip(b.host, 253)}:${clip(b.port, 5)}`;
   if (action === "/queue") return `queue a task${b.issue ? ` for issue #${clip(b.issue, 12)}` : ""} "${clip(b.title, 80)}": ${full(b.prompt)}`;
   return `hire a worker${b.issue ? ` for issue #${clip(b.issue, 12)}` : ""}: ${full(b.prompt)}`;
 }
@@ -99,6 +102,24 @@ export function answerAsk(id: string, allow: boolean, by = "A person") {
   if (!a) return false;
   a.answer(allow ? "" : `${by} in the office said no to: ${clip(a.detail, 120)}`);
   return true;
+}
+
+/**
+ * The box's egress proxy (sandbox/proxy.ts) asks here before it tunnels to a host: POST /__rb/outbound {host, port, listed}
+ * with the box's OUTBOUND_TOKEN. A host on the allowlist goes through and is only logged; any other waits on the same
+ * Allow / Deny card as an agent's request. Every answer lands in the local log (live/camera.ts). Null for any other path.
+ */
+export async function outboundRoute(method: string, url: URL, auth: string | undefined, body: unknown,
+  { token = process.env.OUTBOUND_TOKEN, dir = boxDir(), ms = ASK_MS } = {}) {
+  if (url.pathname !== "/__rb/outbound") return null;
+  if (!token || auth !== `Bearer ${token}`) return { status: 401, body: { error: "Send the box's OUTBOUND_TOKEN as the bearer token" } };
+  if (method !== "POST") return { status: 405, body: { error: `POST ${url.pathname}` } };
+  const b = typeof body === "object" && body !== null ? body : {};
+  const host = "host" in b ? b.host : undefined, port = "port" in b ? b.port : undefined, listed = "listed" in b && b.listed === true;
+  if (typeof host !== "string" || typeof port !== "number") return { status: 400, body: { error: "host and port" } };
+  const why = listed ? "" : await askFirst("/outbound", "box", "The box", { host, port }, () => {}, { setting: "outbound", ms });
+  record(logFile(dir), { kind: "outbound", who: "box", what: `${clip(host, 253)}:${port}`, verdict: listed ? "listed" : !why ? "allowed" : why.startsWith("Nobody") ? "timed out" : "denied" }, cameraOf(dir));
+  return { status: 200, body: { allow: !why } };
 }
 
 export const ASK_HEADER = "x-rb-ask";

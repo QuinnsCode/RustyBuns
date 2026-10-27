@@ -1,6 +1,7 @@
 // The egress proxy beside the box (network: "allowlist"): the box has no route out, so everything it reaches goes through here.
 // Runs in its own container (`bun /proxy.ts`, mounted read-only by box.ts), with no imports so it needs nothing installed.
 //   ALLOW=host,*.suffix   the only hosts a CONNECT may name (HTTPS only: that is what the model, GitHub and registries speak)
+//   ASK_URL, OUTBOUND_TOKEN   ask the office (live/floorguard.ts outboundRoute) about hosts not on the list, and report the ones that are
 //   FORWARD=host:port     also relays the port the host published to the box, so the page stays reachable on 127.0.0.1
 import net from "node:net";
 
@@ -16,13 +17,31 @@ export function connectTarget(head: string): { host: string; port: number } | nu
   return m && Number(m[2]) <= 65535 ? { host: m[1]!, port: Number(m[2]) } : null;
 }
 
+/**
+ * Whether the box may tunnel to `host`. With the office to ask (ASK_URL), a listed host goes through and is only reported
+ * for the log; any other waits on a person's Allow / Deny there, and is turned down if the office can't be reached.
+ */
+export async function mayReach(host: string, port: number, list: string[], office?: { url: string; token: string }): Promise<boolean> {
+  const listed = allowed(host, list);
+  if (!office) return listed;
+  try {
+    const res = await fetch(office.url, { method: "POST", headers: { authorization: `Bearer ${office.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ host, port, listed }), signal: AbortSignal.timeout(130_000) });
+    const answer: unknown = await res.json();
+    return listed || (typeof answer === "object" && answer !== null && "allow" in answer && answer.allow === true);
+  } catch {
+    return listed;
+  }
+}
+
 if (import.meta.main) {
+  const office = process.env.ASK_URL && process.env.OUTBOUND_TOKEN ? { url: process.env.ASK_URL, token: process.env.OUTBOUND_TOKEN } : undefined;
   const list = (process.env.ALLOW ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   net.createServer((client) => {
-    client.once("data", (chunk: Buffer) => {
+    client.once("data", async (chunk: Buffer) => {
       const head = chunk.toString("latin1");
       const t = connectTarget(head);
-      if (!t || t.port !== 443 || !allowed(t.host, list)) {
+      if (!t || t.port !== 443 || !(await mayReach(t.host, t.port, list, office))) {
         console.log(`denied ${head.split("\r")[0]?.slice(0, 120)}`);
         client.end("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n");
         return;
