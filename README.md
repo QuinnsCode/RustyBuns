@@ -342,6 +342,7 @@ The same things that make it simple for a person make it safe to hand to an agen
 - **One file to reason about.** Change one line of `rustybuns.config.ts` and the rest is generated.
 - **Runs locally.** sqlite stands in for every cloud binding, so an agent can boot, test and break the real app with no cloud account.
 - **It can see the app.** It renders in Chrome, which agents already drive: click, screenshot, read the console.
+- **Small context, more tokens for the work.** codeSplitter's MCP server in code mode lists its 138 tools for 1,054 tokens instead of 30,240, and pages hand agents their buttons over WebMCP instead of screenshots. Numbers and guard rails in [WEBMCP.md](WEBMCP.md).
 - **Guard rails.** `plan` and `deploy` catch a mistake before a server exists. `protect: true` on a database, bucket, queue or vector index makes `destroy` leave it, and `plan`, `deploy` and `destroy` print a `[KEPT]` / `[REMOVED]` list first. See [Keep a resource through destroy](REFERENCE.md#config).
 - **A host that can't reach your keys.** The dev host starts without your `.env`, auto-install or credential env vars, and `run desktop --sandbox` puts it in a macOS Seatbelt jail, kept out of `~/.ssh`, cloud logins and keychains. `plan`, `deploy` and `dev` keep the Cloudflare token and other deploy logins out of the Worker build too. See [Running code you didn't write](REFERENCE.md#running-code-you-didnt-write).
 - **Rust without risk.** An agent can write the Rust engine and prove it matches the TypeScript one, sample by sample.

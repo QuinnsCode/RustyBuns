@@ -84,13 +84,15 @@ await copyFile("src/swarm-round.json", "dist/client/swarm-round.json");
 await copyFile("src/swarm.html", "dist/client/swarm.html");
 // The page that frames both swarm demos, "We got git problems with agent swarm" (/git-problems.html).
 await copyFile("src/git-problems.html", "dist/client/git-problems.html");
+// What code mode and WebMCP save an agent, measured (/webmcp).
+await copyFile("src/webmcp.html", "dist/client/webmcp.html");
 // The helpers' case files: /mervin, /ester and /dexter (a page each, one shared stylesheet, no script).
 for (const f of ["mervin.html", "ester.html", "dexter.html", "trio.css"]) await copyFile(`src/${f}`, `dist/client/${f}`);
 const ss = await Bun.build({ entrypoints: ["src/swarm-stage.js"], outdir: "dist/client", target: "browser", format: "esm", minify: true, naming: "swarm-stage.js" });
 if (!ss.success) { for (const l of ss.logs) console.error(l); process.exit(1); }
 // The pages' security headers, the same ones the Worker puts on its answers (src/security.ts),
 // with the hashes of the pages' inline scripts: the enforced CSP runs those and no others.
-const pages = ["index.html", "play.html", "features.html", "reference.html", "mcp.html", "map.html", "mervin-watch.html", "swarm-watch.html", "swarm.html", "git-problems.html"];
+const pages = ["index.html", "play.html", "features.html", "reference.html", "mcp.html", "map.html", "mervin-watch.html", "swarm-watch.html", "swarm.html", "git-problems.html", "webmcp.html"];
 const hashes = new Set<string>();
 for (const page of pages) for (const h of inlineScriptHashes(await readFile(`dist/client/${page}`, "utf8"))) hashes.add(h);
 // What a cold agent finds at the root (src/discover.ts): llms.txt, robots.txt and a Link header on /.

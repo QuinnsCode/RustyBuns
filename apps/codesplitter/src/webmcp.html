@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebMCP and code mode</title>
+<meta name="description" content="How codeSplitter's code mode and WebMCP keep an agent's context small: 138 tools listed for 1,054 tokens instead of 30,240, a 20-edit job for 1,220 instead of 36,822, and the guard rails around both.">
+<link href="/fonts/geist.css" rel="stylesheet">
+<script src="/vendor/lucide.min.js"></script>
+<style>
+  :root { --bg: #fff; --fg: #0a0a0a; --muted: #6b6b6b; --border: #e6e6e6; --border-2: #cfcfcf; --paper: #fcfbf8; --accent: #e8590c; --grey: #b8b8b8;
+    --sans: "Geist", ui-sans-serif, system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, monospace; }
+  :root[data-theme="dark"] { --bg: #0e0e0e; --fg: #f2f2f2; --muted: #a0a0a0; --border: #2a2a2a; --border-2: #3d3d3d; --paper: #151515; --grey: #4a4a4a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 var(--sans); }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  header a { color: var(--fg); text-decoration: none; font-weight: 600; letter-spacing: -.02em; }
+  header .grow { flex: 1; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; color: var(--fg); border: 1px solid var(--border-2); border-radius: 5px; background: var(--paper); cursor: pointer; }
+  .btn svg { width: 15px; height: 15px; }
+  .label { font: 600 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  h1 { font: 600 clamp(30px, 5vw, 46px)/1.05 var(--sans); letter-spacing: -.045em; margin: 6px 0 10px; } h1 em, h2 em { font-style: normal; color: var(--accent); }
+  .lede { color: var(--muted); max-width: 68ch; margin: 0 0 20px; font-size: 16px; }
+  h2 { font: 600 24px/1.15 var(--sans); letter-spacing: -.035em; margin: 48px 0 8px; display: flex; gap: 8px; align-items: center; }
+  h2 svg { width: 20px; height: 20px; color: var(--accent); flex: none; }
+  p { max-width: 72ch; }
+  a { color: var(--accent); }
+  code { font: 13px var(--mono); background: var(--paper); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+  .muted { color: var(--muted); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 24px 0 8px; }
+  .stats > div { background: var(--paper); padding: 16px 18px; }
+  .stats b { display: block; font: 600 30px/1.1 var(--sans); letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+  .stats span { color: var(--muted); font-size: 13px; }
+  .bars { border: 1px solid var(--border); border-radius: 8px; background: var(--paper); padding: 16px 18px; margin: 14px 0; }
+  .bars h3 { margin: 0 0 10px; font: 600 15px var(--sans); }
+  .bar { display: grid; grid-template-columns: 120px 1fr 90px; gap: 10px; align-items: center; margin: 6px 0; font-size: 13px; }
+  .bar .track { height: 14px; }
+  .bar .fill { height: 100%; border-radius: 3px; background: var(--grey); min-width: 3px; }
+  .bar.new .fill { background: var(--accent); }
+  .bar .n { text-align: right; font: 13px var(--mono); font-variant-numeric: tabular-nums; }
+  .ways { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 14px; }
+  .way { border: 1px solid var(--border); border-radius: 8px; background: var(--paper); padding: 14px 16px; }
+  .way h3 { margin: 0 0 6px; font: 600 15px var(--sans); display: flex; gap: 8px; align-items: center; } .way h3 svg { width: 16px; height: 16px; color: var(--accent); }
+  .way p { margin: 0; color: var(--muted); font-size: 14px; }
+  pre { font: 12.5px/1.55 var(--mono); background: var(--paper); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+  .tbl { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; margin: 12px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; min-width: 560px; }
+  th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-top: 1px solid var(--border); }
+  thead th { border-top: 0; background: var(--paper); color: var(--muted); font-weight: 500; font-size: 12px; }
+  ul { padding-left: 20px; max-width: 72ch; } li { margin: 0 0 6px; }
+  .note { border-left: 3px solid var(--border-2); padding: 2px 0 2px 12px; color: var(--muted); }
+  footer { margin-top: 48px; font-size: 13px; }
+  @media (max-width: 560px) { .bar { grid-template-columns: 88px 1fr 70px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><a href="/">codeSplitter</a><span class="grow"></span><button class="btn" id="theme" title="Light or dark"><i data-lucide="sun-moon"></i></button></header>
+  <div class="label">code mode · webmcp · measured</div>
+  <h1>Your agent's context is the budget. <em>We stopped spending it on plumbing.</em></h1>
+  <p class="lede">Every token an agent spends reading tool schemas, screenshots or a whole file it only needed three lines of is a token it doesn't spend on the feature or on checking its work. codeSplitter gives agents three ways in, each built to hand back as little as the job needs. These are the numbers we can show, and how to get them yourself.</p>
+
+  <div class="stats">
+    <div><b>29× less</b><span>to list the MCP tools: 1,054 tokens in code mode against 30,240 for all 138</span></div>
+    <div><b>30× less</b><span>to clear 20 TODOs in a 300-line file: 1,220 tokens as one program against 36,822 tool by tool</span></div>
+    <div><b>35% → 1.2%</b><span>of a typical session's peak context (86k tokens, the median here) taken by the tool list alone</span></div>
+    <div><b>97.8%</b><span>of 8.27B input tokens across 1,687 sessions this month came from cache</span></div>
+  </div>
+
+  <h2><i data-lucide="square-code"></i>Code mode: four tools, one program</h2>
+  <p>codeSplitter's MCP server has 138 tools. Listing them all puts every schema in the agent's context before it does anything, and every call hands a whole answer back through the model: a 300-line file comes back with every line, every time. In code mode the server lists four tools instead: <code>search_tools</code> and <code>describe_tools</code> find and explain the rest on demand, <code>execute</code> runs a JavaScript program the agent writes, and <code>call_tool</code> is the door to the risky ones. The file's lines stay in the program; only what it returns comes back.</p>
+  <div class="bars">
+    <h3>Listing the tools</h3>
+    <div class="bar"><span>every tool</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="n">30,240</span></div>
+    <div class="bar new"><span>code mode</span><div class="track"><div class="fill" style="width:3.5%"></div></div><span class="n">1,054</span></div>
+  </div>
+  <div class="bars">
+    <h3>Clearing 20 TODOs in a 300-line file (listing included)</h3>
+    <div class="bar"><span>tool by tool</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="n">36,822</span></div>
+    <div class="bar new"><span>one program</span><div class="track"><div class="fill" style="width:3.3%"></div></div><span class="n">1,220</span></div>
+  </div>
+<pre>const f = await tools.read_file({ owner, repo, path });
+const todo = f.lines.filter((l) => l.text.includes('TODO'));
+const c = await tools.claim_lines({ owner, repo, path, body: { lines: todo.map((l) => l.id), task: 'clearing TODOs' } });
+try { await tools.edit_lines({ owner, repo, path, body: { claim: c.id, ops: todo.map((l) =>
+  ({ kind: 'set', line: l.id, base: l.rev, text: l.text.replace('TODO', 'DONE') })) } }); }
+finally { await tools.release_claim({ owner, repo, path, body: { id: c.id } }); }
+return { edited: todo.length };   // the only thing that enters the agent's context</pre>
+  <p class="muted">A program that worked can be saved by name (<code>save_program</code>) and rerun with new input, so the next agent doesn't write it again.</p>
+
+  <h2><i data-lucide="mouse-pointer-click"></i>WebMCP: the page hands over its own buttons</h2>
+  <p>An agent driving a browser usually works by looking: take a screenshot, find the button, click, take another to check. A screenshot costs roughly width × height / 750 tokens on Claude, so a 1280 × 800 look is about 1,400 tokens, and it can't be searched or diffed. With <a href="https://webmachinelearning.github.io/webmcp/">WebMCP</a> (<code>document.modelContext</code>), the page registers its actions as tools, and an agent calls them and reads a small JSON answer instead.</p>
+  <ul>
+    <li><b>If you can click it, your agent can call it.</b> Every ⌘K palette command on the page you're on becomes a tool (<code>share_lines</code>, <code>commit_this_file</code>, <code>merge_a_branch</code>…), plus <code>current_page</code>, <code>open_page</code>, <code>list_files</code>, <code>read_file</code>, the line-picking tools and <code>list_conflicts</code> / <code>settle_conflict</code>.</li>
+    <li><b>Only this page's tools.</b> They're registered again on every route, so an agent on a file page sees the file's commands and not the admin pages'. Fewer tools listed is fewer tokens, the same idea as code mode.</li>
+    <li><b>As you, with nothing to hand over.</b> The tools run in your signed-in page, so the agent never gets a token or a password. Commands that ship code or can't be undone are marked <code>destructiveHint</code>, so your agent's client can ask you first.</li>
+  </ul>
+
+  <h2><i data-lucide="layers"></i>The same idea across Rusty Buns</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Where</th><th>WebMCP tools</th><th>What it saves</th></tr></thead>
+    <tbody>
+      <tr><td>codeSplitter</td><td>18 page tools, plus each palette command on the current page</td><td>Screenshots and DOM poking to find, pick, edit and merge lines</td></tr>
+      <tr><td>Agent Office</td><td><code>mem_stats</code>, <code>mem_history</code>, <code>take_cpu_profile</code>, <code>list_profiles</code>, <code>read_profile</code>, <code>heap_snapshots</code></td><td>A CPU profile answers as its hottest frames in text; the <code>.cpuprofile</code> itself, far too big for context, stays a file</td></tr>
+      <tr><td>Skate Tech Park</td><td>8 tools; <code>skate_line</code> rides a whole line of moves in one call</td><td>Code mode for a game: one call for a line of tricks instead of one per keypress, and a 640 px snapshot only when asked</td></tr>
+      <tr><td>Any Rusty Buns server (<code>webmcp: true</code>)</td><td><code>mem_stats</code>, <code>take_cpu_profile</code>, <code>mem_history</code></td><td>Triage a live box from its own page; the profiling secret stays in the tab and the agent never sees it</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2><i data-lucide="route"></i>Three ways in, cheapest first</h2>
+  <div class="ways">
+    <div class="way"><h3><i data-lucide="terminal"></i>The CLI</h3><p>One shell line, an answer sized for a terminal. The prompt we hand agents (<a href="/agent.md">/agent.md</a>) puts it first. In this repo, agents made 62,749 shell calls this month against 774 on-demand tool loads.</p></div>
+    <div class="way"><h3><i data-lucide="square-code"></i>MCP, in code mode</h3><p>Four tools listed, one program per job, a small answer back. For agents with no shell, or work across many files.</p></div>
+    <div class="way"><h3><i data-lucide="mouse-pointer-click"></i>WebMCP</h3><p>Only for what needs your signed-in page: it acts as you, so you see what it does as it does it.</p></div>
+  </div>
+
+  <h2><i data-lucide="shield-check"></i>The tokens we save buy checks, and the checks are built in</h2>
+  <p>Context an agent doesn't spend on plumbing goes to reading the diff, running the test and reviewing its own change. And making the agent this capable was only worth it with guard rails it can't talk its way past:</p>
+  <ul>
+    <li><b>A program has no network.</b> It runs in a Worker of its own with <code>globalOutbound: null</code>; its only way out is the tools.</li>
+    <li><b>It acts as the token that ran it, and never sees the token.</b> A read token's program can read and not write; rate limits apply as usual.</li>
+    <li><b>Risky tools aren't callable from a program.</b> Anything that ships code, changes who can get in or see what, or can't be undone goes through <code>call_tool</code>, so the person is asked.</li>
+    <li><b>Mistakes fail before anything runs.</b> A program naming a tool that doesn't exist is refused at once, and every call's arguments are checked against its schema.</li>
+    <li><b>Hard limits.</b> 100 tool calls, 20 seconds and 20,000 characters back per program; 64,000 characters of code.</li>
+  </ul>
+
+  <h2><i data-lucide="flask-conical"></i>How we measured, and what we haven't</h2>
+  <ul>
+    <li><b>Code mode</b>: <code>bun test test/codemode.test.ts</code> in <code>apps/codesplitter</code> prints both comparisons on every run (run on 27 October 2026). It counts tokens as characters ÷ 4, a common rough rate, on the exact JSON that goes over the wire.</li>
+    <li><b>Sessions and cache</b>: the <a href="https://github.com/QuinnsCode/RustyBuns/blob/main/notes/TOKEN_LEDGER.md">token ledger</a>, every assistant turn's usage from 2 to 27 October 2026, 1,490 commits on main over the same days.</li>
+    <li><b>Screenshots</b>: an estimate from the published image-token rate, not a measured run.</li>
+  </ul>
+  <p class="note">Not yet shown: a live, side-by-side run of one browser task done with screenshots and then with WebMCP. The tool-by-tool walk of every view is still open (<a href="https://github.com/QuinnsCode/RustyBuns/issues/1424">#1424</a>). And in this repo the shell does most of code mode's job: locally it was called twice. Code mode is for agents that reach codeSplitter over MCP.</p>
+
+  <footer class="muted">Read more: <a href="https://github.com/QuinnsCode/RustyBuns/blob/main/WEBMCP.md">WebMCP and code mode in Rusty Buns</a> · <a href="/mcp">Connect your AI over MCP</a> · <a href="/agent.md">A prompt for your agent</a></footer>
+</div>
+<script>
+try { const t = localStorage.getItem("map-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+if (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches) document.documentElement.dataset.theme = "dark";
+document.getElementById("theme").onclick = () => { const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark"; document.documentElement.dataset.theme = t; try { localStorage.setItem("map-theme", t); } catch {} };
+lucide.createIcons();
+</script>
+</body>
+</html>
