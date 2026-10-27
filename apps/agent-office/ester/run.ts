@@ -69,8 +69,9 @@ export function createHelper(h: { script: string; cwd: string; args: readonly st
   let s: EsterState = { phase: "idle", lines: [], hold: [] };
   return {
     state: (): EsterState => ({ ...s, lines: [...s.lines], hold: [...s.hold] }),
-    /** Starts the run in `repo`. It goes on after this answers; null when it did start. */
-    start(repo: string): { status: number; error: string } | null {
+    /** Starts the run in `repo` (with `args` in place of the helper's own). It goes on after this answers; null when it
+     * did start. `done` hears how it ended. */
+    start(repo: string, args: readonly string[] = h.args, done?: (s: EsterState) => void): { status: number; error: string } | null {
       if (s.phase === "running") return { status: 409, error: "Already on it" };
       if (!existsSync(path.join(repo, h.script))) return { status: 404, error: `This helper works from ${h.script}, and ${repo} doesn't have it` };
       s = { phase: "running", lines: [], hold: [], startedAt: Date.now() };
@@ -79,7 +80,7 @@ export function createHelper(h: { script: string; cwd: string; args: readonly st
         mine.lines.push(line);
         if (mine.lines.length > KEEP) mine.lines.shift();
       };
-      const run = () => spawn([bun, path.join(repo, h.script), ...h.args], path.join(repo, h.cwd), push);
+      const run = () => spawn([bun, path.join(repo, h.script), ...args], path.join(repo, h.cwd), push);
       const install = () => spawn([bun, "install"], repo, push);
       // a fresh checkout has no node_modules, and a stale one lacks packages added since: install first, or once on "Cannot find module"
       (existsSync(path.join(repo, "node_modules"))
@@ -88,7 +89,7 @@ export function createHelper(h: { script: string; cwd: string; args: readonly st
       ).then(
         (code) => Object.assign(mine, { phase: code === 0 ? "green" : code === 1 ? "red" : "error", hold: holdFrom(mine.lines), endedAt: Date.now() }, code > 1 ? { error: `stopped with exit ${code}` } : {}),
         (err: Error) => Object.assign(mine, { phase: "error", endedAt: Date.now(), error: err.message }),
-      );
+      ).then(() => done?.(mine));
       return null;
     },
   };

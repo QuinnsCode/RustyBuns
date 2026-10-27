@@ -47,6 +47,15 @@ test("a run goes one at a time, keeps what it printed, and says hold when the bo
   expect(seen).toEqual([[expect.stringMatching(/mervin-board\.ts$/), "--check"], [expect.stringMatching(/mervin-board\.ts$/)]]);
 });
 
+test("PR by PR is Ester's --check-stages, and whoever started a run hears how it ended", async () => {
+  const seen: string[][] = [], ended: string[] = [];
+  const { ester } = createHelpers(async (cmd, _cwd, onLine) => (seen.push(cmd.slice(2)), onLine("stage 1 #3: ok"), 0));
+  ester.start(repo(), ["--check-stages"], (s) => ended.push(`${s.phase} ${s.lines.join()}`));
+  await settle();
+  expect(seen).toEqual([["--check-stages"]]);
+  expect(ended).toEqual(["green stage 1 #3: ok"]);
+});
+
 test("a crash or a repo without the board script is an error, not a hang", async () => {
   const { ester } = createHelpers(async () => 2);
   expect(ester.start(mkdtempSync(path.join(tmpdir(), "rb-ester-")))!.status).toBe(404);

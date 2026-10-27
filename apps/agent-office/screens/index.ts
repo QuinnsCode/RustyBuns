@@ -1,24 +1,38 @@
 // Three thin screens on the wall above the PR board and the task board beside it, each turned on in Settings › You (kept in this
-// browser, like the codeSplitter mark): gitpath (the busiest files' commit paths, from codeSplitter), Mervin (his
-// merge order, live while he runs) and Ester (her test runs and what she says to hold). Each keeps its slot whether
-// or not the others are on. Clicking Mervin or Ester calls on them, like their badges (ester/); clicking gitpath opens
-// it on codeSplitter. The data: /__rb/helpers (ester/run.ts) every few seconds, /__rb/codesplitter/gitpath every minute.
+// browser, like the codeSplitter mark):
+//   gitpath  every open PR as a car on one line, left to right: open › CI › Mervin › Ester › main, and how many merged
+//            in the last day. Moving, ready, or stuck red where it stopped. Click a car to open its PR.
+//   Mervin   the share of conflicts he took off the agents, the files more than one side wrote to (one tile each, like
+//            codeSplitter's file objects), and, when the person lets him keep one, his running tally across boards.
+//   Ester    her test stack: the PRs in Mervin's order as one big run, or PR by PR (a setting). A PR that breaks it gets
+//            a button that queues a cheap worker (Haiku, low effort) on the fix, so the frontier models stay on the work.
+// Each keeps its slot whether or not the others are on. Clicking Mervin or Ester calls on them, like their badges (ester/).
+// The data: /__rb/helpers (ester/run.ts) every few seconds, /__rb/line every minute.
 import { CanvasTexture, Group, Matrix4, Mesh, MeshBasicMaterial, PlaneGeometry, Raycaster, SRGBColorSpace, Vector2, Vector3, type Camera, type Object3D, type Scene } from "three";
 import type { EsterState } from "../ester/run.ts";
-import { SCREENS, clock, esterRuns, filePath, helperState, mervinBoard, slots, type FilePath, type Screen } from "./read.ts";
+import {
+  SCREENS, STATIONS, avoided, clock, esterStack, fixPrompt, helperState, line, mergedPrs, mervinBoard, openPrs, slots, tallyOf,
+  type MergedPr, type OpenPr, type Screen, type Tally,
+} from "./read.ts";
 
 const KEY = "rb.screens";
-type Saved = Partial<Record<Screen, boolean>>;
+/** Which screens are on, Ester's mode (`each`: PR by PR) and whether Mervin may keep his tally (`keep`). */
+type Saved = Partial<Record<Screen | "each" | "keep", boolean>>;
 const load = (): Saved => { try { return JSON.parse(localStorage.getItem(KEY) ?? "{}"); } catch { return {}; } };
 const save = (s: Saved) => { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch {} };
-const repo = (): string | undefined => { try { return JSON.parse(localStorage.getItem("rb.codesplitter") ?? "{}").repo; } catch { return undefined; } };
 
 const W = 1536, H = 256, HIGH = 0.8, GAP = 0.3, LIFT = 0.95; // canvas px; screen height, gap and lift over the boards' tops, in metres
 const INK = "#16181d", PAPER = "#f4f1ea", DIM = "#8a8f98", ORANGE = "#e8a33d", GREEN = "#2f8f46", RED = "#c0392b", GREY = "#6b7280";
 const IDLE: EsterState = { phase: "idle", lines: [], hold: [] };
+const FPS = 8; // gitpath's cars chug; the other two redraw when their data moves
 
 let helpers: { ester: EsterState; mervin: EsterState } = { ester: IDLE, mervin: IDLE };
-let paths: FilePath[] = [], site = "", turn = 0;
+let tally: Tally | null = null;
+let open: OpenPr[] = [], merged: MergedPr[] = [], lineError = "";
+/** Where the last frame drew what can be clicked, in canvas px. */
+let cars: { x: number; y: number; w: number; h: number; url: string }[] = [];
+let fixButton: { x: number; w: number; pr: number } | null = null;
+const fixed = new Set<string>(); // `${run start}:${pr}`, so one red run queues one fixer per PR
 
 // ---- drawing ------------------------------------------------------------------------------------------------
 
@@ -30,81 +44,158 @@ function frame(ctx: CanvasRenderingContext2D, title: string, right: string) {
   ctx.font = "600 52px system-ui,sans-serif";
   ctx.textBaseline = "top";
   ctx.fillStyle = PAPER;
-  ctx.fillText(title, 36, 18, W - 360);
+  ctx.fillText(title, 36, 18, W - 520);
   ctx.textAlign = "right";
   ctx.fillStyle = DIM;
-  ctx.fillText(right, W - 32, 18);
+  ctx.font = "44px system-ui,sans-serif";
+  ctx.fillText(right, W - 32, 24, 460);
   ctx.textAlign = "left";
 }
 
-const note = (ctx: CanvasRenderingContext2D, text: string, color = DIM) => {
+const note = (ctx: CanvasRenderingContext2D, text: string, color = DIM, y = 128) => {
   ctx.font = "44px system-ui,sans-serif";
   ctx.fillStyle = color;
-  ctx.fillText(text, 36, 128, W - 72);
+  ctx.fillText(text, 36, y, W - 72);
 };
 
 const phase = (s: EsterState) => (s.phase === "running" ? `on it ${clock(s.startedAt)}` : s.phase === "idle" ? "idle" : `${s.phase} ${clock(s.startedAt, s.endedAt)}`);
 
-function drawGitpath(ctx: CanvasRenderingContext2D) {
-  const f = paths.length ? paths[turn % paths.length]! : undefined;
-  frame(ctx, f ? `gitpath  ${f.path}` : "gitpath", f ? `${f.commits.length} commits` : "");
-  if (!repo()) return note(ctx, "Set a codeSplitter repo in Settings › You");
-  if (!f) return note(ctx, "No history yet");
-  // one dot per commit along the path, oldest left; lines added rise orange above it, removed hang grey below
-  const n = f.commits.length, step = (W - 80) / Math.max(1, n - 1), y = 172;
-  const most = Math.max(1, ...f.commits.map((c) => Math.max(c.added, c.removed)));
-  const bar = (v: number) => (Math.log1p(v) / Math.log1p(most)) * 70;
-  ctx.strokeStyle = GREY;
-  ctx.lineWidth = 6;
-  ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(W - 40, y); ctx.stroke();
-  f.commits.forEach((c, i) => {
-    const x = n === 1 ? W / 2 : 40 + i * step;
-    ctx.fillStyle = ORANGE;
-    ctx.fillRect(x - 6, y - 10 - bar(c.added), 12, bar(c.added));
-    ctx.fillStyle = GREY;
-    ctx.fillRect(x - 6, y + 10, 12, bar(c.removed));
-    ctx.beginPath();
-    ctx.arc(x, y, c.joins ? 13 : 9, 0, Math.PI * 2);
-    ctx.fillStyle = c.joins ? INK : PAPER;
-    ctx.fill();
-    if (c.joins) { ctx.strokeStyle = ORANGE; ctx.lineWidth = 3; ctx.stroke(); }
+function box(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, label: string, fill: string, ink = PAPER, ring?: string) {
+  ctx.fillStyle = fill;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 12); ctx.fill();
+  if (ring) { ctx.strokeStyle = ring; ctx.lineWidth = 5; ctx.stroke(); }
+  ctx.fillStyle = ink;
+  ctx.font = `600 ${Math.min(36, h - 16)}px system-ui,sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, x + w / 2, y + h / 2 + 2, w - 12);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+}
+
+/** gitpath: the line. Five stations in equal stretches; each PR sits in the stretch of the station it reached, the
+ * furthest along at the right. The sleepers scroll, the moving cars bob, and the last day's merges roll on past main. */
+function drawGitpath(ctx: CanvasRenderingContext2D, t: number) {
+  const day = merged.length;
+  frame(ctx, `gitpath  ${open.length} open → main`, `${day} merged in 24h`);
+  const left = 36, colW = (W - left - 24) / STATIONS.length, rail = 196;
+  // the rails, and sleepers sliding left, so the line itself reads as moving right
+  ctx.fillStyle = GREY;
+  const off = (t * 60) % 40;
+  for (let x = left - off; x < W - 24; x += 40) ctx.fillRect(x, rail - 4, 8, 16);
+  ctx.fillStyle = DIM;
+  ctx.fillRect(left, rail - 2, W - left - 24, 4);
+  ctx.fillRect(left, rail + 8, W - left - 24, 4);
+  ctx.font = "30px system-ui,sans-serif";
+  STATIONS.forEach((name, i) => {
+    const x = left + (i + 1) * colW - 8;
+    ctx.fillStyle = i === STATIONS.length - 1 ? ORANGE : PAPER;
+    ctx.fillRect(x, 88, 4, rail - 88);
+    ctx.textAlign = "right";
+    ctx.fillText(name, x - 10, rail + 20);
+    ctx.textAlign = "left";
+  });
+  cars = [];
+  if (lineError && !open.length) return note(ctx, lineError, RED, 110);
+  // cars bunch toward the next station, two rows to a stretch before they start to overlap
+  const cw = 104, ch = 40, rows = [138, 88], all = line(open, helpers.mervin, helpers.ester);
+  for (let i = 0; i < STATIONS.length - 1; i++) {
+    const here = all.filter((c) => c.at === i), room = colW - 30, fit = Math.max(1, Math.floor((room - cw) / (cw + 6)) + 1);
+    const per = Math.max(fit, Math.ceil(here.length / 2)), step = per > 1 ? Math.min(cw + 6, (room - cw) / (per - 1)) : 0;
+    here.forEach((c, k) => {
+      const x = left + (i + 1) * colW - 22 - cw - (k % per) * step, y = rows[Math.floor(k / per)]!;
+      const bob = c.state === "moving" ? Math.sin(t * 9 + c.pr) * 3 : 0;
+      const nudge = c.state === "moving" ? ((t * 14 + c.pr * 7) % 18) - 9 : 0;
+      wheels(ctx, x + nudge, y + ch, cw);
+      box(ctx, x + nudge, y + bob, cw, ch, String(c.pr), c.state === "stuck" ? RED : c.state === "ready" ? ORANGE : PAPER, c.state === "moving" ? INK : PAPER);
+      cars.push({ x, y, w: cw, h: ch, url: c.url });
+    });
+  }
+  // past main: the last day's two newest merges roll off the end of the line, grey
+  const last = merged.slice(0, 2), x0 = left + (STATIONS.length - 1) * colW + 6, run = colW - cw - 20;
+  last.forEach((m, k) => {
+    const x = x0 + ((t * 30 + (k * run) / 2) % run);
+    wheels(ctx, x, rows[0]! + ch, cw);
+    box(ctx, x, rows[0]!, cw, ch, String(m.number), GREY);
   });
 }
 
-function chip(ctx: CanvasRenderingContext2D, x: number, w: number, label: string, fill: string, ring?: string) {
-  ctx.fillStyle = fill;
-  ctx.beginPath(); ctx.roundRect(x, 96, w, 96, 14); ctx.fill();
-  if (ring) { ctx.strokeStyle = ring; ctx.lineWidth = 5; ctx.stroke(); }
-  ctx.fillStyle = PAPER;
-  ctx.font = "600 40px system-ui,sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText(label, x + w / 2, 122, w - 16);
-  ctx.textAlign = "left";
+function wheels(ctx: CanvasRenderingContext2D, x: number, y: number, w: number) {
+  ctx.fillStyle = DIM;
+  for (const dx of [20, w - 20]) { ctx.beginPath(); ctx.arc(x + dx, y + 3, 7, 0, Math.PI * 2); ctx.fill(); }
 }
 
+const TIER_COLOR = { certain: GREY, agree: GREY, mervin: ORANGE, differ: "#b7791f", card: RED };
+const base = (p: string) => p.split("/").pop()!;
+
+/** Mervin: the share of conflicts he settled, big on the left; the contested files as tiles on the right. */
 function drawMervin(ctx: CanvasRenderingContext2D) {
-  const s = helpers.mervin, b = mervinBoard(s.lines);
-  frame(ctx, `Mervin  ${b.stages.length ? `${b.stages.length} PRs in merge order` : "merge order"}`, phase(s));
+  const s = helpers.mervin, b = mervinBoard(s.lines), a = avoided(b);
+  const all = tally && tally.total ? `all-time ${Math.round((100 * tally.avoided) / tally.total)}% of ${tally.total} · ${tally.prs} PRs` : phase(s);
+  frame(ctx, `Mervin  ${b.stages.length ? `${b.stages.length} PRs in merge order` : "merge order"}`, all);
   if (s.error) return note(ctx, s.error, RED);
   if (!b.stages.length) return note(ctx, s.lines.at(-1) ?? (s.phase === "running" ? "Reading the open PRs" : "Click to call on Mervin"));
-  // a chip a stage, left to right in merge order: orange while unsure, grey when certain, ringed red if Ester says hold
-  const w = Math.min(230, (W - 72) / b.stages.length - 10);
-  b.stages.forEach((st, i) => chip(ctx, 36 + i * (w + 10), w, `#${st.pr} ${st.certain}%`, st.certain === 100 ? GREY : ORANGE, helpers.ester.hold.includes(st.pr) ? RED : undefined));
-  if (b.clashes) { ctx.font = "34px system-ui,sans-serif"; ctx.fillStyle = b.cards ? RED : DIM; ctx.fillText(`${b.clashes} clashes, ${b.cards} want a card`, 36, 204); }
+  ctx.textBaseline = "top";
+  ctx.fillStyle = a.total && a.avoided < a.total ? ORANGE : GREEN;
+  ctx.font = "700 112px system-ui,sans-serif";
+  ctx.fillText(a.total ? `${Math.round((100 * a.avoided) / a.total)}%` : "0", 36, 86, 320);
+  ctx.font = "30px system-ui,sans-serif";
+  ctx.fillStyle = DIM;
+  ctx.fillText(a.total ? `${a.avoided} of ${a.total} conflicts avoided` : "conflicts on this board", 36, 206, 380);
+  // a tile a file more than one side wrote to, worst first; with none, the merge order as chips
+  const x0 = 440, room = W - 36 - x0;
+  const files = [...b.files].sort((p, q) => Object.keys(TIER_COLOR).indexOf(q.tier) - Object.keys(TIER_COLOR).indexOf(p.tier));
+  if (!files.length) {
+    const w = Math.min(230, room / b.stages.length - 10);
+    b.stages.forEach((st, i) => box(ctx, x0 + i * (w + 10), 96, w, 96, `#${st.pr} ${st.certain}%`, st.certain === 100 ? GREY : ORANGE, PAPER, helpers.ester.hold.includes(st.pr) ? RED : undefined));
+    return;
+  }
+  const n = Math.min(files.length, 6), w = room / n - 10;
+  files.slice(0, n).forEach((f, i) => {
+    const x = x0 + i * (w + 10);
+    ctx.fillStyle = TIER_COLOR[f.tier];
+    ctx.beginPath(); ctx.roundRect(x, 92, w, 140, 12); ctx.fill();
+    if (f.main) { ctx.strokeStyle = PAPER; ctx.lineWidth = 4; ctx.stroke(); }
+    ctx.fillStyle = PAPER;
+    ctx.font = "600 32px system-ui,sans-serif";
+    ctx.fillText(i === n - 1 && files.length > n ? `+${files.length - n + 1} more` : base(f.path), x + 14, 106, w - 28);
+    ctx.font = "28px system-ui,sans-serif";
+    ctx.fillText(f.tier === "mervin" ? "settled" : f.tier, x + 14, 150, w - 28);
+    ctx.fillText([...(f.main ? ["main"] : []), ...f.prs.map((p) => `#${p}`)].join(" "), x + 14, 190, w - 28);
+  });
 }
 
-function drawEster(ctx: CanvasRenderingContext2D) {
-  const s = helpers.ester, runs = esterRuns(s.lines);
-  const failed = runs.filter((r) => !r.ok).length;
-  frame(ctx, `Ester  ${runs.length ? `${runs.length - failed} of ${runs.length} pass` : "board check"}`, phase(s));
+/** Ester: her stack of PRs, one bracket round them all for one run or a box each for PR by PR, and the fix button. */
+function drawEster(ctx: CanvasRenderingContext2D, t: number) {
+  const s = helpers.ester, st = esterStack(s);
+  const n = st.blocks.length;
+  frame(ctx, `Ester  ${n ? (st.mode === "each" ? `${n} PRs, one run each` : `${n} PRs stacked, one run`) : "test stack"}`, phase(s));
+  fixButton = null;
   if (s.error) return note(ctx, s.error, RED);
-  if (!runs.length) return note(ctx, s.hold.length ? `hold ${s.hold.map((n) => `#${n}`).join(", ")}` : s.lines.at(-1) ?? (s.phase === "running" ? "Building the merged tree" : "Click to call on Ester"));
-  const w = Math.min(260, (W - 72) / runs.length - 10);
-  runs.forEach((r, i) => chip(ctx, 36 + i * (w + 10), w, r.dir.split("/").pop()!, r.ok ? GREEN : RED));
-  if (s.hold.length) { ctx.font = "600 34px system-ui,sans-serif"; ctx.fillStyle = RED; ctx.fillText(`hold ${s.hold.map((n) => `#${n}`).join(", ")}`, 36, 204); }
+  if (!n) return note(ctx, s.lines.at(-1) ?? (s.phase === "running" ? "Merging the stack" : `Click to test ${load().each ? "PR by PR" : "the stack in one run"}`));
+  const each = st.mode === "each", gap = each ? 16 : 3, x0 = 44, room = W - 80;
+  const w = Math.min(200, (room - gap * (n - 1)) / n);
+  if (!each) { ctx.strokeStyle = s.phase === "red" ? RED : s.phase === "green" ? GREEN : PAPER; ctx.lineWidth = 4; ctx.beginPath(); ctx.roundRect(x0 - 8, 88, n * w + (n - 1) * gap + 16, 92, 14); ctx.stroke(); }
+  st.blocks.forEach((bl, i) => {
+    const pulse = bl.state === "wait" && s.phase === "running" ? 0.55 + 0.45 * Math.abs(Math.sin(t * 3 + i * 0.6)) : 1;
+    ctx.globalAlpha = pulse;
+    box(ctx, x0 + i * (w + gap), 96, w, 76, `#${bl.pr}`, bl.state === "ok" ? GREEN : bl.state === "broke" ? RED : GREY);
+    ctx.globalAlpha = 1;
+  });
+  const pr = st.broke[0];
+  if (pr === undefined) {
+    if (s.phase === "green" || s.phase === "red") note(ctx, s.phase === "green" ? "the stack is green: merge them together" : "red, but none of it is these PRs' (main, flaky or slow)", s.phase === "green" ? GREEN : DIM, 198);
+    return;
+  }
+  ctx.font = "600 34px system-ui,sans-serif";
+  ctx.fillStyle = RED;
+  ctx.fillText(`#${pr} breaks the stack${st.broke.length > 1 ? ` (and ${st.broke.slice(1).map((p) => `#${p}`).join(", ")})` : ""}`, 36, 204, W - 560);
+  const sent = fixed.has(`${s.startedAt}:${pr}`), bw = 470, bx = W - 36 - bw;
+  box(ctx, bx, 188, bw, 56, sent ? `queued Haiku on #${pr}` : `Cheap fix: Haiku on #${pr}`, sent ? GREY : ORANGE, sent ? PAPER : INK);
+  if (!sent) fixButton = { x: bx, w: bw, pr };
 }
 
-const DRAW: Record<Screen, (ctx: CanvasRenderingContext2D) => void> = { gitpath: drawGitpath, mervin: drawMervin, ester: drawEster };
+const DRAW: Record<Screen, (ctx: CanvasRenderingContext2D, t: number) => void> = { gitpath: drawGitpath, mervin: drawMervin, ester: drawEster };
 
 // ---- the 3D office: three screens over the boards ---------------------------------------------------------
 
@@ -178,11 +269,11 @@ function place() {
   draw();
 }
 
-function draw() {
-  const on = load();
+function draw(only?: Screen) {
+  const on = load(), t = performance.now() / 1000;
   for (const [name, s] of screens) {
-    if (!on[name]) continue;
-    DRAW[name](s.ctx);
+    if (!on[name] || (only && name !== only)) continue;
+    DRAW[name](s.ctx, t);
     s.tex.needsUpdate = true;
   }
 }
@@ -196,8 +287,11 @@ function clicked(e: MouseEvent, a: App) {
   ray.setFromCamera(at, a.camera);
   const hit = ray.intersectObjects((wall.children as Object3D[]).filter((m) => m.visible), false)[0];
   if (!hit || hit.distance > 25) return;
-  const name = hit.object.userData.screen as Screen;
-  if (name === "gitpath") { const r = repo(); if (site && r) window.open(`${site}/gitpath?repo=${encodeURIComponent(r)}`, "_blank", "noopener"); }
+  const name = hit.object.userData.screen as Screen, x = (hit.uv?.x ?? 0) * W, y = (1 - (hit.uv?.y ?? 0)) * H;
+  if (name === "gitpath") {
+    const car = cars.find((c) => x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h);
+    if (car?.url) window.open(car.url, "_blank", "noopener");
+  } else if (name === "ester" && fixButton && x >= fixButton.x && x <= fixButton.x + fixButton.w) fix(fixButton.pr);
   else if (helpers[name].phase !== "running") void call(name);
 }
 
@@ -207,12 +301,15 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 async function pollHelpers() {
   clearTimeout(timer);
   const on = load();
-  if (on.mervin || on.ester) {
+  if (on.mervin || on.ester || on.gitpath) {
     try {
       const r = await fetch("/__rb/helpers", { credentials: "same-origin" });
       if (r.ok && !r.redirected) {
         const body: unknown = await r.json();
-        if (typeof body === "object" && body && "ester" in body && "mervin" in body) helpers = { ester: helperState(body.ester), mervin: helperState(body.mervin) };
+        if (typeof body === "object" && body && "ester" in body && "mervin" in body) {
+          helpers = { ester: helperState(body.ester), mervin: helperState(body.mervin) };
+          tally = "tally" in body ? tallyOf(body.tally) : null;
+        }
       }
     } catch {}
     draw();
@@ -222,22 +319,41 @@ async function pollHelpers() {
 }
 
 async function call(name: "mervin" | "ester") {
-  try { await fetch(`/__rb/helpers/${name}`, { method: "POST", credentials: "same-origin", headers: { "x-rb-triage": "1" } }); } catch {}
+  const on = load(), q = name === "ester" ? (on.each ? "?each=1" : "") : on.keep ? "?keep=1" : "";
+  try { await fetch(`/__rb/helpers/${name}${q}`, { method: "POST", credentials: "same-origin", headers: { "x-rb-triage": "1" } }); } catch {}
   void pollHelpers();
 }
 
-async function pollGitpath() {
-  const r = repo();
-  if (!load().gitpath || !r) return draw();
+async function pollLine() {
+  if (!load().gitpath) return;
   try {
-    const res = await fetch(`/__rb/codesplitter/gitpath?repo=${encodeURIComponent(r)}`);
-    const body: unknown = res.ok ? await res.json() : null;
-    if (typeof body === "object" && body && "histories" in body && Array.isArray(body.histories)) {
-      paths = body.histories.map(filePath).filter((f): f is FilePath => !!f && f.commits.length > 0);
-      site = "site" in body && typeof body.site === "string" ? body.site : site;
+    const res = await fetch("/__rb/line", { credentials: "same-origin" });
+    const body: unknown = res.ok && !res.redirected ? await res.json() : null;
+    if (typeof body === "object" && body && "open" in body && "merged" in body) {
+      open = openPrs(body.open);
+      merged = mergedPrs(body.merged);
+      lineError = "error" in body && typeof body.error === "string" ? body.error : "";
     }
   } catch {}
-  draw();
+}
+
+// The office's socket, kept so Ester's fix button can queue a task on it like the 📋 queue's own form does.
+let sock: WebSocket | undefined;
+const Native = window.WebSocket;
+window.WebSocket = class extends Native {
+  constructor(url: string | URL, protocols?: string | string[]) {
+    super(url, protocols);
+    sock = this;
+  }
+};
+
+/** Queues the fix of `pr` for the cheapest worker: Haiku at low effort, with what Ester saw. */
+function fix(pr: number) {
+  const s = helpers.ester;
+  if (!sock || sock.readyState !== Native.OPEN) return;
+  sock.send(JSON.stringify({ t: "queue.add", title: `Fix #${pr} for Ester`, prompt: fixPrompt(pr, s.lines), provider: "claude", model: "haiku", effort: "low" }));
+  fixed.add(`${s.startedAt}:${pr}`);
+  draw("ester");
 }
 
 // ---- the setting --------------------------------------------------------------------------------------------
@@ -249,22 +365,22 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEl
 };
 
 const LABEL: Record<Screen, string> = { gitpath: "gitpath", mervin: "Mervin", ester: "Ester" };
+function check(name: keyof Saved, label: string, then: () => void, title = "") {
+  const box = el("input", { type: "checkbox", checked: !!load()[name] });
+  box.addEventListener("change", () => { save({ ...load(), [name]: box.checked }); then(); });
+  return el("label", { style: "margin-right:14px", title }, box, ` ${label}`);
+}
 function setting() {
-  const boxes = SCREENS.map((name) => {
-    const box = el("input", { type: "checkbox", checked: !!load()[name] });
-    box.addEventListener("change", () => {
-      save({ ...load(), [name]: box.checked });
-      place();
-      void pollHelpers();
-      if (name === "gitpath") void pollGitpath();
-    });
-    return el("label", { style: "margin-right:14px" }, box, ` ${LABEL[name]}`);
-  });
+  const turned = () => { place(); void pollHelpers(); void pollLine().then(() => draw()); };
+  const boxes = SCREENS.map((name) => check(name, LABEL[name], turned));
+  const ways = el("div", { style: "margin-top:6px" },
+    check("each", "Ester tests PR by PR", () => draw("ester"), "Off: the whole stack in one run, the fastest when it's green. On: a run per PR, which names the one that breaks it"),
+    check("keep", "Mervin keeps a running tally", () => draw("mervin"), "Each run he's called on from the screen adds to his all-time share of conflicts avoided, kept on the office server"));
   const scope = el("span", { className: "scope you", title: "Only for you, kept in this browser" }, "Just you");
   const note = el("p", { className: "setting-note" },
-    "Three screens over the task and PR boards: gitpath's busiest files (in the codeSplitter setting's repo), " +
-    "Mervin's merge order and Ester's tests as they run. Click Mervin or Ester to call on them.");
-  return el("div", { className: "setting rb-screens" }, el("div", { className: "setting-head" }, el("h4", {}, "Wall screens"), scope), el("div", {}, ...boxes), note);
+    "Three screens over the task and PR boards: gitpath runs every open PR down one line to main, Mervin shows the conflicts " +
+    "he took off the agents, Ester her test stack, with a button that puts a cheap worker on a PR that breaks it. Click Mervin or Ester to call on them.");
+  return el("div", { className: "setting rb-screens" }, el("div", { className: "setting-head" }, el("h4", {}, "Wall screens"), scope), el("div", {}, ...boxes), ways, note);
 }
 
 function addTo(modal: Element) {
@@ -282,10 +398,12 @@ function start() {
     }
   }).observe(document.body, { childList: true, subtree: true });
   void pollHelpers();
-  void pollGitpath();
-  setInterval(pollGitpath, 60_000);
-  // the next busiest file every 20s, and the boards may move (a floor change, a new skin): place them again
-  setInterval(() => { turn++; place(); }, 20_000);
+  void pollLine();
+  setInterval(pollLine, 60_000);
+  // gitpath chugs, and Ester's waiting blocks pulse while she runs; the rest only on new data
+  setInterval(() => { if (wall?.visible && document.visibilityState !== "hidden") { draw("gitpath"); if (helpers.ester.phase === "running") draw("ester"); } }, 1000 / FPS);
+  // the boards may move (a floor change, a new skin): place them again
+  setInterval(() => place(), 20_000);
   setInterval(() => office && (!wall || wall.parent !== office.scene) && place(), 2000);
 }
 
