@@ -40,10 +40,10 @@ test("the right stick fires once as it leaves the dead zone, and a short drag do
 const rail = (kind: RailKind) => flat({ rails: [{ kind, a: { x: 0, z: 0 }, b: { x: 0, z: 60 }, y: 0.9 }] });
 
 // Drops onto the bar at `yaw` and keeps its balance with the stick; jumps off after `secs`.
-const grindFrom = (yaw: number, kind: RailKind = "rail", secs = 0.3) => {
+const grindFrom = (yaw: number, kind: RailKind = "rail", secs = 0.6) => {
   const lv = rail(kind);
   const sk = start(-Math.sin(yaw) * 0.2, 2, yaw, lv);
-  sk.air = true; sk.y = 1.0; sk.vy = -1; sk.vx = Math.sin(yaw) * 6; sk.vz = Math.cos(yaw) * 6;
+  sk.air = true; sk.y = 1.0; sk.vy = -1; sk.vx = 0; sk.vz = 12;
   run(sk, secs, (s) => ({ steer: Math.max(-1, Math.min(1, s.balance * 2)) }), lv);
   expect(sk.grind).toBe(0);
   step(sk, { ...IDLE, jump: true }, lv);

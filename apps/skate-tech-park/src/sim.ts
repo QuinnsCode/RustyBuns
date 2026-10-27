@@ -114,7 +114,7 @@ const MAX_SLOPE = 3; // a rise steeper than this (about 72 degrees) in one strid
 const CARVE = 0.8; // how much speed stiffens the board's turn: at top speed it turns 1/(1+CARVE) as tight
 const CARVE_DRAG = 0.5; // a hard carve at speed scrubs this share of it per second
 const DRIFT = 0.8; // rad/s the board falls toward downhill per unit of cross slope
-const LEG_PUMP = 0.1; // the same with legs alone: a held push through a transition, about a tenth more speed out of a quarter pipe
+const LEG_PUMP = 0.25; // the same with legs alone: a held push through a transition, about a tenth more speed out of a quarter pipe
 const PUMP = 0.6; // board: speed gained per radian the ground curves up ahead, as a share of speed, while pumping
 const WALL = 0.8; // radians: a rider this far up a curve who meets a sharper rise is on a wall, and flies off it
 const LIP_PUSH = 0.3; // share of its speed a pushing board keeps toward the deck as it leaves a vertical wall, so it clears the coping instead of climbing the face
@@ -122,9 +122,10 @@ const VERT = 1.35; // radians: a wall this steep is vertical
 const LEAN = 0.2; // m/s a board leaves a vertical wall drifting back toward it: whatever the air, it comes down on the face just under the coping
 const SHEER = 1.25; // radians: a face this steep (a vertical ramp, a cliff) stops a board in the air; anything gentler it lands on and climbs
 const STEP = 0.2; // a kerb or stair this low is always rideable
+const CURVED = 0.02; // 1/m: ground curving up this tightly along the heading is a transition, where a foot can't push (a plain slope is no curve)
 const COYOTE = 0.12; // seconds after the wheels leave the ground that an ollie still pops
-const ROLL_OVER = 1 * SCALE; // metres: pushing on carries the board over the coping onto the deck only when it would rise no higher than this above it; faster is a vert air
-const PUSH_STEEP = 0.08; // radians: a transition steeper than this can't be pushed up, only pumped (a foot can't reach the ground on a wall)
+const ROLL_OVER = 1.5 * SCALE; // metres: pushing on carries the board over the coping onto the deck only when it would rise no higher than this above it; faster is a vert air
+const PUSH_STEEP = 0.6; // radians: a transition steeper than this can't be pushed up, only pumped (a foot can't reach the ground on a wall)
 
 export const FLICK_TIME = 0.24 * T;
 /** How long a flick takes: a 360 comes round slower. */
@@ -434,7 +435,8 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     }
     const push = s.fan ? tune.top * JETS.fanTop : tune.top; // what pushing alone reaches
     const top = s.fan ? push : BOOST_TOP; // the most a downhill or the jets can carry it to
-    const fakie = s.speed < -1, foot = Math.abs(s.pitch) < PUSH_STEEP; // a foot only reaches the ground off a wall
+    const fakie = s.speed < -1, k = 0.5, curve = (level.height(s.x + fx * k, s.z + fz * k) - 2 * level.height(s.x, s.z) + level.height(s.x - fx * k, s.z - fz * k)) / (k * k),
+      foot = Math.abs(s.pitch) < PUSH_STEEP && curve < CURVED; // a foot only reaches the ground off a wall, or a curve up one
     if (fakie) { // rolling backwards (back down off a wall): push on the way it rolls, and S brakes
       if (inp.throttle < 0) s.speed = Math.min(0, s.speed - inp.throttle * tune.brake * DT);
       else if (inp.throttle > 0 && foot && s.speed > -push * 0.5) s.speed -= inp.throttle * tune.accel * DT; // pushing fakie only goes so fast
