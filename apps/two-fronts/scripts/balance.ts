@@ -53,19 +53,19 @@ export function play(spec: BattleSpec, human: boolean, orders = false): Played {
   return { winner: o.winner, time: Math.round(b.time), tickets: { attacker: Math.round(b.tickets.attacker), defender: Math.round(b.tickets.defender) }, taken: everHeld.size };
 }
 
-// Thunder Marines' share of wins across every sector and seed, with Thunder Marines attacking and defending.
+// Thunder Marines' share of wins across every sector and seed, with Thunder Marines attacking and defending, and the attacker's.
 export function marineWins(human: "none" | "marines" | "wooka", seeds = SEEDS) {
-  let wins = 0, n = 0;
+  let wins = 0, attackerWins = 0, n = 0;
   const rows: string[] = [], bySector: Partial<Record<SectorKind, number>> = {};
   for (const sector of SECTORS) for (const seed of seeds) for (const att of ["marines", "wooka"] as Faction[]) {
     const heroSide: Side | null = human === "none" ? null : (att === human) === true ? "attacker" : "defender";
     const r = play(specFor(sector, seed, att, heroSide), heroSide !== null);
     const marinesWon = (r.winner === "attacker") === (att === "marines");
-    wins += marinesWon ? 1 : 0; n++;
+    wins += marinesWon ? 1 : 0; attackerWins += r.winner === "attacker" ? 1 : 0; n++;
     bySector[sector] = (bySector[sector] ?? 0) + (marinesWon ? 1 : 0);
     rows.push(`${sector.padEnd(10)} ${seed} ${att.padEnd(7)} attacks: ${marinesWon ? "Marines" : "Wooka  "} win  t:${String(r.time).padStart(4)} att-posts:${r.taken}`);
   }
-  return { wins, n, rows, bySector };
+  return { wins, attackerWins, n, rows, bySector };
 }
 
 if (import.meta.main) {
@@ -73,6 +73,6 @@ if (import.meta.main) {
   const kinds = mode === "human" ? (["marines", "wooka"] as const) : (["none"] as const);
   for (const k of kinds) {
     const r = marineWins(k);
-    console.log(`--- hero: ${k}\n${r.rows.join("\n")}\nThunder Marines won ${r.wins}/${r.n}`);
+    console.log(`--- hero: ${k}\n${r.rows.join("\n")}\nThunder Marines won ${r.wins}/${r.n}, the attacker ${r.attackerWins}/${r.n}`);
   }
 }

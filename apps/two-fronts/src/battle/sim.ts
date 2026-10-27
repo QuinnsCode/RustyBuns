@@ -220,8 +220,7 @@ const GUNSHIP_ALT = 12;            // gunships fly over everything: nothing bloc
 export const STRIKE_RADIUS = 10;
 const STRIKE_DELAY = 2.5;
 const WAVE_EVERY = 8;              // seconds between reinforcement waves
-const DEFENDER_WAVE = 6;           // the defender's come faster: it's their ground, the barracks are here
-const GARRISON = 1;                // and it fields this many more at once from the same tickets: the keep's own
+const GARRISON = 2;                // the defender fields this many more at once from the same tickets: the keep's own
 const BLEED_EVERY = 4;             // seconds per ticket the side with fewer posts loses
 const HERO_LIVES = 3;
 const AGGRO = 35;                  // how far a Wooka will charge at someone it can smell
@@ -827,9 +826,10 @@ export function damage(b: Battle, v: Unit, dmg: number, from?: number, heavy = f
 //  - against a human Thunder Marine the horde bites a little less; a human Wooka feels the Thunder Marines' guns a little more.
 export const BLAST_ARMOUR = 0.75;
 export const MARINE_ARMOUR = 0.12;
-// The defender was here first and dug in: on a post of theirs they feel this much of a hit, and
-// at the keep, behind its walls and under its turrets, this much. The attacker gets no such ground:
-// at equal forces the defender should hold (about 60/40), and it takes a third more to shift them.
+// The defender was here first and dug in: near a post of theirs they feel this much of a hit, and
+// at the keep, behind its walls and under its turrets, this much. With the garrison (GARRISON) and
+// the keep as the defender's barracks (spawnPoint), the attacker gets no such ground: at equal
+// forces the defender holds about 60/40, and it takes a third more to shift them (scripts/sim.ts).
 export const DUG_IN = 0.85;
 export const KEEP_WALLS = 0.65;
 const DUG_R = 26, KEEP_R = 22;   // how far from a held post the lines run, and the keep's walls
@@ -1613,7 +1613,7 @@ export function step(b: Battle, input: Input | null) {
     }
     // Troops come in waves, so a side doesn't feed itself in one at a time.
     if (b.tickets[s] <= 0 || b.time < b.spawnAt[s]) continue;
-    b.spawnAt[s] = b.time + (s === "defender" ? DEFENDER_WAVE : WAVE_EVERY);
+    b.spawnAt[s] = b.time + WAVE_EVERY;
     const horde = isHorde(b, s), alive = (f: (k: UnitKind) => boolean) => b.units.filter((u) => u.side === s && !u.wild && f(u.kind)).length;
     // Two vehicles out at a time, of whichever kind the side has most of left.
     const left = b.vehiclesLeft[s], next = VEHICLE_KINDS.reduce((a, k) => (left[k] > left[a] ? k : a));

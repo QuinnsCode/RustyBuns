@@ -188,7 +188,8 @@ test("the hero battle pauses the turn on a BattleSpec and the result writes back
   expect(paused.pending?.kind).toBe("ground");
   const spec = paused.pending!.spec as BattleSpec;
   expect(paused.turn).toBe(1);
-  expect(spec).toMatchObject({ sector: "shield", hero: "attacker", factions: { attacker: "marines", defender: "wooka" }, armies: { attacker: 2, defender: 1 }, tickets: { attacker: 100, defender: 50 } });
+  // The AI side fields the human handicap more: 50 tickets become 73, one army stays one.
+  expect(spec).toMatchObject({ sector: "shield", hero: "attacker", factions: { attacker: "marines", defender: "wooka" }, armies: { attacker: 2, defender: 1 }, tickets: { attacker: 100, defender: 73 } });
   // Orbit means strikes and drop pods; the defender's shield cuts the strikes to one.
   expect(spec.strikes).toEqual({ attacker: 1, defender: 0 });
   expect(spec.reinforcements).toEqual({ attacker: 24, defender: 0 });
