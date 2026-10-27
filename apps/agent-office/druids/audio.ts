@@ -2,8 +2,9 @@
 //
 // rustybunsify.ts points two lines of the office's sound code here: its gong (`globalThis.__rbGong`, which falls
 // back to the office's synthesized gong until the sample has loaded) and the tune the jukebox builds for a track
-// (`globalThis.__rbTune`, for `vale`, the one tune the jukebox now has). Both play through the office's own
+// (`globalThis.__rbTune`, for `vale` and `podcast` (podcast/), the two tunes the jukebox now has). Both play through the office's own
 // buses, so its volume settings, muting and the jukebox fading with distance all still apply.
+import { Podcast } from "../podcast/player.ts";
 import { SOUNDS, soundUrl } from "./assets.ts";
 
 type Vec = { x: number; y: number; z: number };
@@ -143,7 +144,7 @@ class Vale {
 
 const g = globalThis as {
   __rbGong?: (a: Sound, why: string) => boolean;
-  __rbTune?: (ctx: AudioContext, into: AudioNode, track: string) => Vale | undefined;
+  __rbTune?: (ctx: AudioContext, into: AudioNode, track: string) => Vale | Podcast | undefined;
 };
 g.__rbGong = gong;
-g.__rbTune = (ctx, into, track) => (track === "vale" ? new Vale(ctx, into) : undefined);
+g.__rbTune = (ctx, into, track) => (track === "vale" ? new Vale(ctx, into) : track === "podcast" ? new Podcast(ctx, into) : undefined);
