@@ -3701,6 +3701,7 @@ const views = {
       <div class="row"><button class="btn primary" id="demo-all">${icon("play")}Play all</button><span class="muted">${TOUR_CHAPTERS.length} chapters, in order</span></div>
       <p>${icon("siren")}<a href="/git-problems.html">We got git problems with agent swarm</a>: the rush-hour station and a real week of this repo's PRs, on one page.</p>
       <p>${icon("train-front")}<a href="/swarm.html">Git at swarm speed</a>: why thirty agents jam the old git way, explained with dots, and the three layers that take the walls down.</p>
+      <p>${icon("gauge")}<a href="/webmcp">WebMCP and code mode, measured</a>: how codeSplitter keeps your agent's context small, so its tokens go to the feature and its checks.</p>
       <p>${icon("users")}<a href="/swarm-watch.html">A week of the swarm</a>: 1,000 of this repo's real PRs replayed, the night the git wall went up, and where Mervin and Ester shipped.</p>
       <div class="levels" id="demo-list">${TOUR_CHAPTERS.map(([id, ic, name]) => `<div class="box"><div class="bar">${icon(ic)}<b>${esc(name)}</b></div><div class="body">
         <ol>${TOUR.filter((s) => s.ch === id).map((s) => `<li>${esc(s.t ?? s.panel)}</li>`).join("")}</ol>

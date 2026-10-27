@@ -87,7 +87,7 @@ The highest-value things, in order:
    ```
    It signs in with OAuth.
    Every tool is an operation in the OpenAPI spec, so the MCP server and the API never drift, and the ones that can't be undone (merge, delete, deploy) are marked so your client asks first.
-   The server is in **code mode**: it lists four tools (`search_tools`, `describe_tools`, `execute`, `call_tool`) instead of all ~130, and your agent writes one JavaScript program that calls the rest (`await tools.read_file(...)`) and returns only what it needs. Clearing 20 TODOs in a 300-line file took about 1,100 tokens that way against about 34,600 tool by tool, and listing the tools 950 against 28,000 (`test/codemode.test.ts` measures both). Programs run in a Worker of their own with no network and your token's scope; the risky tools go through `call_tool`, so your client still asks first. Add `?mode=tools` to the URL for the plain list.
+   The server is in **code mode**: it lists four tools (`search_tools`, `describe_tools`, `execute`, `call_tool`) instead of all 138, and your agent writes one JavaScript program that calls the rest (`await tools.read_file(...)`) and returns only what it needs. Clearing 20 TODOs in a 300-line file took about 1,200 tokens that way against about 36,800 tool by tool, and listing the tools 1,050 against 30,200 (`test/codemode.test.ts` measures both; `/webmcp` shows them). Programs run in a Worker of their own with no network and your token's scope; the risky tools go through `call_tool`, so your client still asks first. Add `?mode=tools` to the URL for the plain list.
    Or from your shell, no checkout needed (Bun or Node 18+):
    ```sh
    curl -fsSL https://codesplitter.notryanquinn.workers.dev/install.sh | sh
@@ -287,7 +287,8 @@ What would take someone else the longest to build:
 - **A safety model for agents that ship.** Agents get branches, containers and their own keys, never deploy keys.
   Deploy keys are write-only and sealed; only a person deploys.
   Hosted agents run in throwaway containers that bill nothing while idle.
-- **An MCP server that costs your agent almost nothing.** Code mode lists four tools instead of ~130: listing them costs about 950 tokens against 28,000, and clearing 20 TODOs in a file about 1,100 against 34,600 (`test/codemode.test.ts` measures both).
+- **An MCP server that costs your agent almost nothing.** Code mode lists four tools instead of 138: listing them costs about 1,050 tokens against 30,200, and clearing 20 TODOs in a file about 1,200 against 36,800 (`test/codemode.test.ts` measures both).
+- **WebMCP and code mode, measured.** `/webmcp` puts the numbers on one page: what code mode and the page's own WebMCP tools save an agent's context, the guard rails around both, and what we haven't measured yet.
 - **One API, every surface.** The palette, REST, OpenAPI, tokens, OAuth, WebMCP and MCP all come from one list, and a test fails if they drift.
 
 > **⚠️ Super experimental.** Coding agents run real CLIs that can edit files and run shell commands, and hosted runs spend real API keys.
