@@ -9,6 +9,7 @@ import {
 } from "./war/rules.ts";
 import { aiVote, castVote, handIn, heroFaction, humans, newTable, report, tally, waitingOn, type Seats, type Table, type Vote } from "./war/table.ts";
 import { fetchView, linkInHash, pointerSocket, seatLink, sendBattle, sendOrders, sendVote, startOnline, type Online, type View } from "./net.ts";
+import { LAST, PHASES, attacking as attackingOrder, forecast, phaseOf, standing, summary, won, type Battle, type PhaseNo, type Standing } from "./war/phases.ts";
 import { mountControlsPanel } from "./ui/controls-panel.ts";
 import { drawMap } from "./ui/map.ts";
 import { icon, tip } from "./ui/icons.ts";
@@ -33,6 +34,7 @@ type Game = { kind: "local"; table: Table } | { kind: "online"; link: Online; vi
 const read = <T>(key: string): T | null => { try { return JSON.parse(localStorage.getItem(key) ?? "null"); } catch { return null; } };
 const write = (key: string, v: unknown) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* private window */ } };
 
+const firstVisit = read(SAVE) === null;
 let game: Game = { kind: "local", table: read<{ table: Table }>(SAVE)?.table ?? newTable({ marines: "human", wooka: "ai" }, "short", undefined, true) };
 let c: Campaign = game.table.campaign;
 let me: Faction = c.player;
@@ -44,6 +46,9 @@ let busy = false; // a call to the server, or a battle, is under way
 let overviewOpen = true;
 // While the fleets are being chosen: how many ships and armies this seat has to place.
 let loadout: Loadout | null = null;
+// The phase of the turn this screen is in while orders are given, and what the turn started with.
+let phase: PhaseNo = 1, phaseTurn = 0;
+let turnStart: { turn: number; me: Faction; at: Standing; fights: Battle[] } | null = null;
 
 const online = () => (game.kind === "online" ? game : null);
 const hotseat = () => game.kind === "local" && humans(game.table).length === 2;
@@ -81,11 +86,10 @@ const placeName = (w: Where) => {
   return d.sectors.length > 1 ? `${d.name} · ${SECTOR_NAMES[d.sectors[w.sector]!]}` : d.name;
 };
 // A move into the enemy's ground or orbit is an attack, and says so.
-const attacking = (o: Order) => {
-  if (o.kind === "build" || o.kind === "card" || o.kind === "bombard") return false;
-  const foe = enemy(me), s = c.systems[o.kind === "fleet" ? o.to : o.to.system]!;
-  return o.kind === "fleet" ? s.orbit === foe || s.sectors.some((x) => x.owner === foe) : s.sectors[o.to.sector]!.owner === foe;
-};
+const attacking = (o: Order) => attackingOrder(c, me, o);
+// Where the turn is: the phase picked while orders are given, the last once attacks are declared,
+// and Deploy again after the fighting. 0 while the fleets are being placed.
+const nowPhase = (): number => (c.setup ? 0 : c.attacks ? LAST : c.deploying ? 2 : phase);
 const describe = (o: Order) => (attacking(o) ? "Attack: " : "") + (
   o.kind === "build" ? `Build ${o.unit === "fleet" ? "a ship" : "an army"} at ${placeName(o.at)}`
   : o.kind === "card" ? `${CARD_NAMES[o.card]} at ${placeName(o.at)}`
@@ -115,7 +119,8 @@ function flash(msg: string) {
 }
 
 function render() {
-  const moving = deploying(), foe = enemy(me), g = online(), answering = !!c.attacks || !!c.deploying;
+  const moving = deploying(), foe = enemy(me), g = online(), answering = !!c.attacks || !!c.deploying, ph = nowPhase();
+  turnStart ??= c.setup ? null : { turn: c.turn, me, at: standing(c, me), fights: [] };
   // Before the war, the map shows this seat's fleet where it has put it.
   const v = c.setup && mine.deployment ? deploy(seen(), me, mine.deployment) : seen();
   const draft = moving ? planDeploys(c, me, mine.deploys ?? []).c : planOrders(c, [mine]).c;
@@ -146,8 +151,9 @@ function render() {
         <span class="ov-n" title="Your ships here">${icon("rocket", 12)}${s.fleets[me]}</span></li>`;
     }).join("")}</ul>` : ""}`;
   $("turn-n").textContent = `Turn ${c.turn}`;
+  $("phasebar").innerHTML = phaseBar(ph);
   $("status").innerHTML = `
-    ${phases()}
+    ${phaseLine()}
     ${reinforcements()}
     ${g || hotseat() ? `<div class="row small seat"><span><i class="dot ${me}"></i>${g ? "Online" : "Hotseat"}: ${FACTION_NAMES[me]}</span>
       ${g ? `<span>${waitingLine()}</span>${g.link.invite ? `<button type="button" id="invite" class="icon-btn" title="The other side's link" aria-label="The other side's link">${icon("link")}</button>` : ""}` : ""}</div>` : ""}`;
@@ -160,11 +166,6 @@ function render() {
     const theirs = (n: number, there: boolean) => (s.fog && there ? "?" : n);
     const opts = (n: number) => Array.from({ length: n }, (_, i) => `<option${i === n - 1 ? " selected" : ""}>${i + 1}</option>`).join("");
     const can = (o: Order) => planOrders(c, [{ ...mine, orders: [...mine.orders, o] }]).errors.at(-1);
-    // One hero battle a turn: a sector's ground battle, or the space battle over the system.
-    const heroButton = (sector: number, title: string) => {
-      const on = mine.hero?.system === selected && mine.hero.sector === sector;
-      return `<button type="button" class="hero${on ? " on" : ""}" data-hero="${sector}" ${heroReady(c, me) ? "" : "disabled"} title="${heroReady(c, me) ? title : "Your hero is wounded"}" aria-label="Hero battle">${icon("swords", 15)}</button>`;
-    };
     const btn = (label: string, o: Order, extra = "") => {
       const err = can(o);
       return `<button type="button" data-order="${esc(JSON.stringify(o))}" ${err ? `disabled title="${esc(err)}"` : ""} ${extra}>${label}</button>`;
@@ -182,28 +183,30 @@ function render() {
       ...neighbours(selected).flatMap((n) => c.systems[n]!.sectors.map((_, i) => ({ system: n, sector: i }))),
     ];
     const idle = idleShips(draft, ds)[me];
+    // Armies go to ground you hold in Deploy, and to the enemy's in Commit.
+    const ownerAt = (t: Where) => c.systems[t.system]!.sectors[t.sector]!.owner;
+    const sendTo = (i: number) => targets.filter((t) => !(t.system === selected && t.sector === i) && (ph === 2 ? ownerAt(t) === me : ph === 4 && ownerAt(t) === foe));
     // Their fleet gone and the sky ours: train ships on a garrison below, before the landings.
-    const bombardable = (i: number) => !c.setup && !answering && s.orbit === me && !s.fleets[foe] && s.sectors[i]!.owner === foe && ds.sectors[i]!.armies[foe] > 0 && idle > 0;
+    const bombardable = (i: number) => !c.setup && !answering && ph === 3 && s.orbit === me && !s.fleets[foe] && s.sectors[i]!.owner === foe && ds.sectors[i]!.armies[foe] > 0 && idle > 0;
     html = `<div class="sys-head"><h2>${d.name}</h2><span class="small">${galaxyOf(c).regions.find((r) => r.id === d.region)?.name ?? ""}</span></div>
       <div class="orbit-row"><span title="Orbit held by ${s.orbit ? FACTION_NAMES[s.orbit] : "nobody"}">${icon("orbit", 15)}<i class="dot ${s.orbit ?? ""}"></i></span>
         <span class="count" title="Ships here: yours, then theirs">${icon("rocket", 14)}<b class="${me}">${s.fleets[me]}</b><b class="${foe}">${theirs(s.fleets[foe], s.orbit === foe)}</b></span>
-        ${musterCount(s, theirs)}
-        ${heroButton(ORBIT,"Fly the space battle here yourself, if one happens this turn")}</div>
+        ${musterCount(s, theirs)}</div>
       ${s.sectors.some((x) => x.armies[me]) && !supplied(c, me).has(selected) ? note("Cut off: your armies here lose one a turn. Clear the enemy orbit on the way back to a capital.", true) : ""}
       ${s.sectors.some((_, i) => bombardable(i)) ? note("Their fleet is gone. Train your ships on a garrison below: each kills an army before the landings, half as many through a shield. Ships that bombard don't sail.") : ""}
       ${s.sectors.some((x) => x.kind === "cannon") ? note("The cannon knocks a ship a turn out of an enemy fleet in orbit.") : ""}
       ${s.sectors.some((x) => x.kind === "canyon") ? note("The dust sea's ore pays like a capital.") : ""}
       ${s.sectors.some((x) => x.kind === "jungle") ? note("The jungle's holder defends it as if they held the orbit.") : ""}
-      ${idle && !answering ? sendRow(icon("rocket", 15), `<select id="ship-n" title="Ships to send">${opts(idle)}</select>`,
+      ${idle && !answering && ph === 3 ? sendRow(icon("rocket", 15), `<select id="ship-n" title="Ships to send">${opts(idle)}</select>`,
         `<select id="ship-to" title="Send them to">${neighbours(selected).map((n) => `<option value="${n}">${systemDef(n).name}</option>`).join("")}</select>`,
         goBtn('id="send-ships"', "Send the ships")) : ""}
       ${moving && ds.orbit === me && ds.fleets[me] > 1 && neighbours(selected).some((n) => draft.systems[n]!.orbit === me) ? sendRow(icon("rocket", 15), `<select id="ship-n" title="Ships to move">${opts(ds.fleets[me] - 1)}</select>`,
         `<select id="ship-to" title="Move them to">${neighbours(selected).filter((n) => draft.systems[n]!.orbit === me).map((n) => `<option value="${n}">${systemDef(n).name}</option>`).join("")}</select>`,
         goBtn('id="send-ships"', "Move the ships")) : ""}
-      ${s.orbit === me && !answering ? `<div class="act">${cardButtons({ system: selected, sector: ORBIT }, ["trap"])}</div>` : ""}
+      ${s.orbit === me && !answering && ph === 1 ? `<div class="act">${cardButtons({ system: selected, sector: ORBIT }, ["trap"])}</div>` : ""}
       <ul class="sectors">${s.sectors.map((x, i) => {
         const at = { system: selected!, sector: i }, here = ds.sectors[i]!;
-        const builds = x.owner === me && !answering ? [
+        const builds = x.owner === me && !answering && ph === 1 ? [
           (x.kind === "spaceport" || (x.kind === "capital" && !s.sectors.some((y) => y.kind === "spaceport"))) && btn(`${icon("plus", 13)}${icon("rocket", 15)}<small>${icon("coins", 12)}${COST.fleet}</small>`, { kind: "build", unit: "fleet", at }, `class="build" title="Build a ship for ${COST.fleet} credits" aria-label="Build a ship"`),
           x.kind === "capital" && btn(`${icon("plus", 13)}${icon("users", 15)}<small>${icon("coins", 12)}${COST.army}</small>`, { kind: "build", unit: "army", at }, `class="build" title="Raise an army for ${COST.army} credits" aria-label="Raise an army"`),
           cardButtons(at, CARDS),
@@ -212,12 +215,11 @@ function render() {
         const deployTo = moving && x.owner === me && here.armies[me] > 1 ? targets.filter((t) => !sameWhere(t, at) && draft.systems[t.system]!.sectors[t.sector]!.owner === me && !planDeploys(draft, me, [{ kind: "army", from: at, to: t, count: 1 }]).errors[0]) : [];
         return `<li>
           <div class="sector"><i class="dot ${x.owner}"></i><b>${SECTOR_NAMES[x.kind]}</b>${x.guns ? `<i class="mark" title="Upgraded guns: its holder rolls d8s defending it">${icon("crosshair", 13)}</i>` : ""}${(v.traps ?? []).some((t) => sameWhere(t.at, at)) ? `<i class="mark" title="Your trap is set here">${icon("bomb", 13)}</i>` : ""}
-            <span class="count armies" title="Armies here: Marines, then Wooka">${icon("users", 14)}<b class="marines">${foe === "marines" ? theirs(x.armies.marines, x.owner === foe) : x.armies.marines}</b><b class="wooka">${foe === "wooka" ? theirs(x.armies.wooka, x.owner === foe) : x.armies.wooka}</b></span>
-            ${heroButton(i, "Play the battle here yourself, if one happens this turn")}</div>
+            <span class="count armies" title="Armies here: Marines, then Wooka">${icon("users", 14)}<b class="marines">${foe === "marines" ? theirs(x.armies.marines, x.owner === foe) : x.armies.marines}</b><b class="wooka">${foe === "wooka" ? theirs(x.armies.wooka, x.owner === foe) : x.armies.wooka}</b></span></div>
           ${builds ? `<div class="act">${builds}</div>` : ""}
           ${bombardable(i) ? `<div class="act send"><span class="what">${icon("flame", 15)}</span><select data-bomb-n="${i}" title="Ships to train on this sector">${opts(idle)}</select>${goBtn(`data-bombard="${i}"`, "Bombard from orbit: each ship kills an army here, half as many through a shield")}</div>` : ""}
-          ${here.armies[me] && x.owner === me && !answering ? sendRow(icon("users", 15), `<select data-army-n="${i}" title="Armies to send">${opts(here.armies[me])}</select>`,
-            `<select data-army-to="${i}" title="Send them to">${targets.filter((t) => !(t.system === selected && t.sector === i)).map((t) => `<option value="${t.system}:${t.sector}">${placeName(t)}</option>`).join("")}</select>`,
+          ${here.armies[me] && x.owner === me && !answering && sendTo(i).length ? sendRow(icon("users", 15), `<select data-army-n="${i}" title="Armies to send">${opts(here.armies[me])}</select>`,
+            `<select data-army-to="${i}" title="Send them to">${sendTo(i).map((t) => `<option value="${t.system}:${t.sector}">${placeName(t)}</option>`).join("")}</select>`,
             goBtn(`data-army-go="${i}"`, "Send the armies")) : ""}
           ${deployTo.length ? sendRow(icon("users", 15), `<select data-army-n="${i}" title="Armies to move">${opts(here.armies[me] - 1)}</select>`,
             `<select data-army-to="${i}" title="Move them to">${deployTo.map((t) => `<option value="${t.system}:${t.sector}">${placeName(t)}</option>`).join("")}</select>`,
@@ -225,7 +227,7 @@ function render() {
         </li>`;
       }).join("")}</ul>`;
   }
-  $("detail").innerHTML = c.setup ? setupPanel(v) : (c.attacks && myTurn() ? retreatPanel() : "") + html;
+  $("detail").innerHTML = c.setup ? setupPanel(v) : (c.attacks && myTurn() ? retreatPanel() : "") + (ph === LAST && !c.deploying && !c.winner ? battlesPanel() : html);
 
   const rs = mine.retreats ?? [], ds = mine.deploys ?? [];
   $("orders").innerHTML = c.setup
@@ -247,7 +249,7 @@ function render() {
   end.toggleAttribute("disabled", busy || !myTurn() || (!!c.setup && !loadout));
   end.innerHTML = (c.setup && myTurn() ? "Deploy fleet" : moving ? (ds.length ? "Confirm moves" : "Stay put")
     : answering && myTurn() ? (rs.length ? "Confirm retreats" : "Hold everywhere")
-    : g ? (myTurn() ? "Send orders" : waitingLine()) : hotseat() ? "Hand in orders" : "Next turn") + icon("chevrons-right", 18);
+    : !c.setup && ph < LAST ? "Next phase" : g ? (myTurn() ? "Send orders" : waitingLine()) : hotseat() ? "Hand in orders" : "Next turn") + icon("chevrons-right", 18);
   if (c.winner) showModal(`<h2>${hotseat() ? `${FACTION_NAMES[c.winner]} win` : c.winner === me ? "Victory" : "Defeat"}</h2><p>${FACTION_NAMES[c.winner]} wins the war on turn ${c.turn - 1}.</p><button type="button" id="new-war" class="primary">New campaign</button>`);
 }
 
@@ -291,20 +293,38 @@ function retreatPanel() {
     ${tip("Hold, and the fight happens. Pull out, and the ground is theirs but your troops live.")}</div>`;
 }
 
-// The turn's six phases, the one we're in lit: draw and place happen with the orders, declare
-// while the retreats are out, combat while a hero battle waits, deploy after the fighting, and
-// collect at the turn's end.
-function phases() {
-  const now = c.setup ? -1 : c.pending ? 3 : c.deploying ? 4 : c.attacks ? 2 : 1;
-  const list: [string, string][] = [
-    ["layers", "Draw: a card each turn"],
-    ["map-pin", "Place: raise troops and ships, then play cards"],
-    ["megaphone", "Declare: move, and answer the attacks declared"],
-    ["dices", "Combat: cannon barrages. The leader rolls a d8, the rest d6s, highest against highest, ties to the attacker"],
-    ["move", "Deploy: move into what you took, and move what's left"],
-    ["gift", "Collect: income, region bonuses, and a card for taking 3 or more places"],
-  ];
-  return `<div class="phases" role="list">${list.map(([name, tip], i) => `<span role="listitem" class="${i === now ? "on" : i < now ? "done" : ""}" title="${tip}">${icon(name, 14)}</span>`).join("")}</div>`;
+// The phase bar: the five phases of a turn, the one we're in lit and the rest greyed. A click goes
+// back to a phase while orders are being given; once attacks are declared or the fighting is done
+// the engine sets the phase.
+function phaseBar(now: number) {
+  const free = !c.setup && !c.attacks && !c.deploying && myTurn();
+  return PHASES.map((p, i) => `<button type="button" data-phase="${i + 1}" class="${i + 1 === now ? "on" : i + 1 < now ? "done" : ""}" title="${i + 1} ${esc(p.tip)}" aria-label="${i + 1} ${p.name}" ${free ? "" : "disabled"}${i + 1 === now ? ' aria-current="step"' : ""}>${icon(p.icon, 15)}<b>${i + 1}</b><span>${p.name}</span></button>`).join("");
+}
+// One plain sentence on what to do now.
+function phaseLine() {
+  const say = c.setup ? "Choose a fleet and place it on your worlds." : c.attacks ? "Attacks are declared. Pull out of fights you would rather skip, or hold and fight."
+    : c.deploying ? "The fighting is over. Move troops into what you took, or up to the front."
+    : PHASES[phase - 1]!.say;
+  return `<p class="phase-say"><b>${c.setup || c.attacks || c.deploying ? "" : `${phase} ${PHASES[phase - 1]!.name}: `}</b>${say}</p>`;
+}
+
+// The Battles phase: every fight this side's orders start, with its odds, and the choice of letting
+// the dice settle it or fighting it as the hero (one a turn).
+function battlesPanel() {
+  const own = c.attacks ? ownMoves()?.orders ?? [] : mine.orders, fights = forecast(seen(), me, own), ready = heroReady(c, me);
+  const key = (b: Battle) => `${b.to.system}:${b.to.sector}`;
+  const card = (b: Battle) => {
+    const fight = !!mine.hero && sameWhere(mine.hero, b.to);
+    const odds = b.win === null ? `Their strength is hidden: a gamble` : `${Math.round(b.win * 100)}% to win`;
+    return `<li><div><b>${b.space ? "Space battle" : "Ground battle"}: ${placeName(b.to)}</b>
+        <div class="small">${icon(b.space ? "rocket" : "users", 12)} ${b.attackers} against ${b.defenders ?? "?"} · ${odds}</div></div>
+      <div class="act"><button type="button" data-auto="${key(b)}" class="${fight ? "" : "on"}" title="Quick: the dice settle it, with a little luck">${icon("dices", 15)} Auto-resolve</button>
+        <button type="button" data-fight="${key(b)}" class="${fight ? "on" : ""}" ${ready ? "" : "disabled"} title="${ready ? "Fight this one yourself, on the ground or in orbit (one a turn)" : "Your hero is wounded"}">${icon("swords", 15)} Fight it</button></div></li>`;
+  };
+  return `<div class="battles"><h2>Battles</h2>${fights.length ? `<ul class="sectors">${fights.map(card).join("")}</ul>
+    ${fights.length > 1 ? `<div class="act"><button type="button" data-auto="all" title="Let the dice settle every fight">${icon("dices", 15)} Auto-resolve all</button></div>` : ""}`
+    : `<p class="hint">No fights this turn. End your turn to collect income and see what the other side did.</p>`}
+    ${tip("Odds are an estimate from the troops you commit against what you can see. They may commit more or less, and you will not know until the dice roll.")}</div>`;
 }
 
 // Next turn's income, counted out like reinforcements: sectors, each region held, broken morale.
@@ -340,16 +360,18 @@ document.addEventListener("click", (e) => {
   const t = ((e.target as HTMLElement).closest?.("button") ?? e.target) as HTMLElement;
   const sys = t.closest<SVGGElement>("[data-system]");
   if (sys) { selected = sys.dataset.system!; render(); return; }
+  if (t.dataset.phase) { phase = +t.dataset.phase as PhaseNo; render(); return; }
+  if (t.dataset.fight) {
+    const [system, sector] = t.dataset.fight.split(":");
+    mine.hero = { system: system!, sector: +sector! };
+    save(); render(); return;
+  }
+  if (t.dataset.auto) { if (t.dataset.auto === "all" || t.dataset.auto === (mine.hero && `${mine.hero.system}:${mine.hero.sector}`)) mine.hero = undefined; save(); render(); return; }
   if (t.dataset.order) return order(JSON.parse(t.dataset.order));
   if (t.id === "send-ships") return order({ kind: "fleet", from: selected!, to: $<HTMLSelectElement>("ship-to").value, count: +$<HTMLSelectElement>("ship-n").value });
   if (t.dataset.armyGo) {
     const i = t.dataset.armyGo, [system, sector] = document.querySelector<HTMLSelectElement>(`[data-army-to="${i}"]`)!.value.split(":");
     return order({ kind: "army", from: { system: selected!, sector: +i }, to: { system: system!, sector: +sector! }, count: +document.querySelector<HTMLSelectElement>(`[data-army-n="${i}"]`)!.value });
-  }
-  if (t.dataset.hero) {
-    const at = { system: selected!, sector: +t.dataset.hero };
-    mine.hero = mine.hero?.system === at.system && mine.hero.sector === at.sector ? undefined : at;
-    save(); render(); return;
   }
   if (t.dataset.drop) {
     if (t.dataset.drop === "hero") mine.hero = undefined;
@@ -401,23 +423,36 @@ document.addEventListener("keydown", (e) => {
 
 // --- Games ---
 
-function chooseGame() {
-  showModal(`<h2>New campaign</h2>
-    <p>${game.kind === "local" ? "The campaign in this browser will be lost." : "You can come back to the online one from its link."}
-      The short war is an evening, the full campaign several.</p>
+// The first thing a war asks: which side, then how big and who against. `first` is the opening
+// screen of a browser with no war yet, with no campaign to go back to.
+const SIDES: { id: Faction; pitch: string }[] = [
+  { id: "marines", pitch: "Armoured and precise: walkers, gunships and orbital strikes. Win the sky, then land." },
+  { id: "wooka", pitch: "A furry horde that knows every fern: outnumber them, hide in the jungle, spring traps." },
+];
+function chooseGame(first = false) {
+  if (first) $("modal").classList.add("fresh");
+  showModal(`<h2>${first ? "Two Fronts" : "New campaign"}</h2>
+    ${first ? "" : `<p class="small">${game.kind === "local" ? "The campaign in this browser will be lost." : "You can come back to the online one from its link."}</p>`}
+    <h3>Choose your side</h3>
+    <div class="sides">${SIDES.map((s, i) => `<label class="side ${s.id}"><input type="radio" name="side" value="${s.id}"${i ? "" : " checked"} />
+      <b>${FACTION_NAMES[s.id]}</b><span class="small">${s.pitch}</span></label>`).join("")}</div>
+    <h3>Choose the war</h3>
     <div class="choices">${Object.values(GALAXIES).map((g, i) =>
       `<label title="${esc(g.blurb)}"><input type="radio" name="galaxy" value="${g.id}"${i ? "" : " checked"} /> ${g.name} <small>${g.systems.length} systems</small></label>`).join("")}</div>
+    <p class="small">The short war is an evening, the full campaign several.</p>
     <div class="choices">
-      <button type="button" data-start="ai" class="primary" title="The Thunder Marines against the Wooka AI">🤖 Against the AI</button>
-      <button type="button" data-start="hotseat" title="Two players taking turns at this screen">👥 Hotseat</button>
-      <button type="button" data-start="online" title="Two players, a turn at a time, each from their own link">🔗 Online</button>
+      <button type="button" data-start="ai" class="primary" title="Your side against the AI">${icon("bot", 15)} Against the AI</button>
+      <button type="button" data-start="hotseat" title="Two players taking turns at this screen">${icon("users", 15)} Hotseat</button>
+      <button type="button" data-start="online" title="Two players, a turn at a time, each from their own link">${icon("link", 15)} Online</button>
     </div>
-    <button type="button" id="close" class="link">Keep playing</button>`);
+    ${first ? "" : `<button type="button" id="close" class="link">Keep playing</button>`}`);
 }
 
 async function startGame(kind: "ai" | "hotseat" | "online") {
-  const seats: Seats = { marines: "human", wooka: kind === "ai" ? "ai" : "human" };
   const galaxy = (document.querySelector<HTMLInputElement>('input[name="galaxy"]:checked')?.value ?? "short") as GalaxyId;
+  const side = (document.querySelector<HTMLInputElement>('input[name="side"]:checked')?.value ?? "marines") as Faction, foe = enemy(side);
+  turnStart = null; phase = 1; $("modal").classList.remove("fresh");
+  const seats: Seats = { marines: "human", wooka: "human", [foe]: kind === "ai" ? "ai" : "human" };
   if (kind !== "online") {
     hideModal();
     try { localStorage.removeItem(ONLINE); } catch { /* private window */ }
@@ -426,7 +461,7 @@ async function startGame(kind: "ai" | "hotseat" | "online") {
   }
   try {
     const { id, tokens } = await startOnline(seats, galaxy);
-    const link = { id, token: tokens.marines!, invite: tokens.wooka };
+    const link = { id, token: tokens[side]!, invite: tokens[foe] };
     useGame({ kind: "online", link, view: await fetchView(link) });
     showInvite();
   } catch (e) {
@@ -445,14 +480,25 @@ function useGame(g: Game, draft?: { turn: number; orders: Orders }) {
     : { faction: me, orders: mine.orders, ...(mine.hero && { hero: mine.hero }), ...(c.setup && mine.deployment && { deployment: mine.deployment }) };
   loadout = c.setup && mine.deployment ? totals(mine.deployment) : null;
   selected = galaxyOf(c).systems.find((d) => c.systems[d.id]!.sectors.some((x) => x.owner === me))?.id ?? null;
+  if (phaseTurn !== c.turn) { phase = 1; phaseTurn = c.turn; }
+  const last = turnStart;
+  turnStart = c.setup ? null : last && last.turn === c.turn && last.me === me ? last : { turn: c.turn, me, at: standing(c, me), fights: [] };
   save(); render();
+  if (last && last.turn < c.turn && last.me === me && !c.winner && !hotseat()) showSummary(last);
+}
+
+// What the turn that just ended changed, in a few lines.
+function showSummary(from: NonNullable<typeof turnStart>) {
+  const lines = summary(from.at, standing(c, me), from.fights.map((b) => ({ label: `the ${b.space ? "space" : "ground"} battle at ${placeName(b.to)}`, win: b.win, won: won(c, me, b) })));
+  showModal(`<h2>Turn ${from.turn} done</h2><ul class="recap">${lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>
+    <button type="button" id="close" class="primary">Turn ${c.turn}</button>`);
 }
 
 function showInvite() {
   const g = online();
   if (!g?.link.invite) return;
   showModal(`<h2>Your war, online</h2>
-    <p>You're the Thunder Marines. Send this link to whoever plays the Wooka. Keep it to yourselves: the link is their seat.</p>
+    <p>You're the ${FACTION_NAMES[g.view.seat]}. Send this link to whoever plays the ${FACTION_NAMES[enemy(g.view.seat)]}. Keep it to yourselves: the link is their seat.</p>
     <input id="seat-link" class="seat-link" readonly value="${esc(seatLink(g.link.id, g.link.invite))}" />
     <p><button type="button" id="copy-link">Copy link</button></p>
     <p class="small">Your own link, to play from another device: <a href="${esc(seatLink(g.link.id, g.link.token))}">this one</a>.</p>
@@ -460,6 +506,9 @@ function showInvite() {
 }
 
 async function endTurn() {
+  if (!c.setup && !c.attacks && !c.deploying && phase < LAST) { phase++; return render(); }
+  // The odds on this turn's fights, to set beside how they went.
+  if (turnStart && !c.attacks && !c.deploying) turnStart.fights = forecast(seen(), me, mine.orders);
   const g = online();
   if (g) {
     busy = true; render();
@@ -880,6 +929,7 @@ async function boot() {
     }
   }
   useGame(game, { turn: c.turn, orders: mine });
+  if (firstVisit && !fromHash) return chooseGame(true);
   if (hotseat() && !c.winner) return passTo(seatUp());
   afterTurn();
 }
