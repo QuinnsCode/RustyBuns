@@ -49,7 +49,8 @@ export const across = (k: GrindKind) => k === "boardslide" || k === "lipslide" |
 
 /** How far the board rides above its wheels' plane on the bar (model units): across the bar it is the deck's underside that slides, along it the truck's hanger. */
 export const GRIND_LIFT = { deck: 0.42, truck: 0.16 };
-export const grindLift = (k: GrindKind) => (across(k) ? GRIND_LIFT.deck : GRIND_LIFT.truck);
+export const ROADSTER_LIFT = 0.24; // the roadster slides on its dark sill, whichever way it lies over the bar
+export const grindLift = (k: GrindKind, skin: "fingerboard" | "roadster" = "fingerboard") => (skin === "roadster" ? ROADSTER_LIFT : across(k) ? GRIND_LIFT.deck : GRIND_LIFT.truck);
 
 // How far over each grind rests, and how hard it tips: a 50-50 is stable, a nosegrind tips forward, a crooked to one side, a tailslide has one point to stand on.
 const REST: Record<GrindKind, number> = { "50-50": 0, "5-0": 0.12, nosegrind: 0.28, boardslide: 0.1, lipslide: 0.14, smith: 0.2, feeble: 0.2, crooked: 0.34, tailslide: 0.3, noseslide: 0.36 };
