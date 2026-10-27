@@ -1,0 +1,119 @@
+# The Agent Office Mac shell (apps/agent-office/shell) and its auto-update feed.
+# A stable tag agent-office-v<x.y.z> builds the windowless Tauri shell for Apple silicon and Intel, signs the update
+# bundles with the minisign key (TAURI_SIGNING_PRIVATE_KEY, no password), and publishes them plus latest.json to the
+# rolling `agent-office-latest` release: that is the endpoint in the shell's tauri.conf.json, so the tray's
+# "Check for updates" finds it. A beta tag (agent-office-v1.3.0-beta.1) builds nothing here.
+# A PR that changes the shell or this file builds the shell unsigned and publishes nothing, so a broken build shows before merge.
+# The Apple Developer ID signing and notarization of the .app is not wired yet (see the shell's README).
+name: agent-office-shell
+on:
+  push:
+    tags: ["agent-office-v*"]
+  pull_request:
+    paths: [".github/workflows/agent-office-shell.yml", "apps/agent-office/shell/**", "apps/agent-office/scripts/update-manifest.ts"]
+
+concurrency:
+  group: agent-office-shell-${{ github.ref }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    outputs:
+      ship: ${{ steps.v.outputs.ship }}
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - id: v
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            echo "ship=true" >> "$GITHUB_OUTPUT"; echo "version=0.0.0" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          v="${GITHUB_REF_NAME##*-v}"
+          # Only x.y.z ships: the updater compares versions, and a beta would be offered to everyone.
+          if [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then ship=true; else ship=false; echo "::notice::$GITHUB_REF_NAME is not a stable x.y.z tag: nothing built"; fi
+          echo "ship=$ship" >> "$GITHUB_OUTPUT"; echo "version=$v" >> "$GITHUB_OUTPUT"
+      - if: steps.v.outputs.ship == 'true'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - if: steps.v.outputs.ship == 'true'
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master; the toolchain is the input below
+        with: { toolchain: stable, targets: "aarch64-apple-darwin,x86_64-apple-darwin" }
+      - if: steps.v.outputs.ship == 'true'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with: { workspaces: apps/agent-office/shell }
+      - if: steps.v.outputs.ship == 'true'
+        run: bun install --frozen-lockfile
+      - name: Compile the Bun binary for both Macs
+        if: steps.v.outputs.ship == 'true'
+        working-directory: apps/agent-office
+        run: bun scripts/rustybunsify.ts compile --all
+      - name: Build the shell
+        if: steps.v.outputs.ship == 'true'
+        working-directory: apps/agent-office/shell
+        run: |
+          mkdir -p binaries ../out
+          cp ../dist/agent-office-darwin-arm64 binaries/agent-office-aarch64-apple-darwin
+          cp ../dist/agent-office-darwin-x64 binaries/agent-office-x86_64-apple-darwin
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            cfg='{"bundle":{"createUpdaterArtifacts":false}}'   # a PR has no signing key: it only proves the shell builds
+          else
+            cfg="{\"version\":\"$VERSION\"}"                      # the app's version is the tag's: the updater compares it
+          fi
+          for pair in aarch64-apple-darwin:darwin-aarch64 x86_64-apple-darwin:darwin-x86_64; do
+            triple="${pair%%:*}"; platform="${pair##*:}"
+            bunx --bun @tauri-apps/cli@2.9.0 build --target "$triple" --bundles app --config "$cfg"
+            bundle="target/$triple/release/bundle/macos"
+            [[ "$GITHUB_EVENT_NAME" == pull_request ]] && { test -d "$bundle/Agent Office.app"; continue; }
+            cp "$bundle/Agent Office.app.tar.gz"     "../out/agent-office-$platform.app.tar.gz"
+            cp "$bundle/Agent Office.app.tar.gz.sig" "../out/agent-office-$platform.app.tar.gz.sig"
+          done
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          # A PR gets no secrets at all: it runs its own build scripts. The key has no password; Tauri wants it set, empty.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ github.event_name != 'pull_request' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+      - if: github.event_name == 'push' && steps.v.outputs.ship == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: agent-office-shell
+          path: apps/agent-office/out/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # The only job that can write to the repo, and it never runs a PR's code: it takes the signed bundles the build
+  # job made and moves the rolling `agent-office-latest` release to them.
+  publish:
+    needs: build
+    if: ${{ github.event_name == 'push' && needs.build.outputs.ship == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write   # the GitHub Release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with: { bun-version: "1.4.3" }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { path: out, name: agent-office-shell }
+      - name: Publish to agent-office-latest
+        run: |
+          ls -la out
+          bun apps/agent-office/scripts/update-manifest.ts --version "$VERSION" --repo "$GITHUB_REPOSITORY" --tag agent-office-latest --dir out > latest.json
+          cat latest.json
+          # --latest=false: the repo's "latest" release stays the npm packages' one.
+          gh release view agent-office-latest > /dev/null 2>&1 || gh release create agent-office-latest \
+            --title "Agent Office updates" --latest=false \
+            --notes "The feed the Agent Office shell's Check for updates reads. Rewritten on every stable agent-office-v tag; don't download from here, use the agent-office-v release."
+          # The bundles first, the manifest last: a client never sees latest.json pointing at a file that isn't there yet.
+          gh release upload agent-office-latest out/* --clobber
+          gh release upload agent-office-latest latest.json --clobber
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.build.outputs.version }}

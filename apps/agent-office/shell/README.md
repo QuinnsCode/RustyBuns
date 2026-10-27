@@ -6,9 +6,11 @@ brings the Chrome window forward. A menu bar (tray) icon offers Open Agent Offic
 LaunchAgent via `tauri-plugin-autostart`) and Quit.
 
 Updates: "Check for updates" in the tray reads `latest.json` from the `agent-office-latest` release and installs a
-build signed with the minisign key whose public half is in `tauri.conf.json`. The private key and its password
-(`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) stay with the owner; `cargo tauri build` needs them
-because `createUpdaterArtifacts` is on. Publishing the release is not wired into `desktop-drop.yml` yet.
+build signed with the minisign key whose public half is in `tauri.conf.json`. The private key (`TAURI_SIGNING_PRIVATE_KEY`, a repo secret; it has no password) stays with the owner;
+`cargo tauri build` needs it because `createUpdaterArtifacts` is on.
+`.github/workflows/agent-office-shell.yml` does the rest: a stable `agent-office-v<x.y.z>` tag builds the shell for both
+Macs with that version, signs the update bundles and moves the rolling `agent-office-latest` release (bundles, then
+`latest.json` from `scripts/update-manifest.ts`) to them. A PR that touches the shell builds it unsigned and publishes nothing.
 `cargo check` needs a placeholder file at `binaries/agent-office-<target triple>` (gitignored) for the build script.
 
 ```sh
@@ -28,4 +30,5 @@ under the hardened runtime, so give Tauri an entitlements file (`bundle.macOS.en
 `allow-jit`, `allow-unsigned-executable-memory` and `disable-library-validation`. If the app ships updates
 through Tauri's updater, that has its own minisign key, separate from Apple's.
 
-Not wired into `scripts/ci-apps.ts` or `desktop-drop.yml` yet.
+The Apple Developer ID signing and notarization of the `.app` is not wired into `agent-office-shell.yml` yet, so a
+fresh download is blocked by Gatekeeper; an update through the tray is not (the updater's download carries no quarantine flag).
