@@ -1,0 +1,32 @@
+{
+  "name": "nextjs-example",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "build:worker": "opennextjs-cloudflare build",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "desktop:dev": "rustybuns build desktop --dev && rustybuns run desktop",
+    "desktop:build": "rustybuns build desktop",
+    "test": "bun test test"
+  },
+  "dependencies": {
+    "@opennextjs/cloudflare": "1.20.13",
+    "next": "16.4.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@rustybuns/cli": "workspace:*",
+    "@rustybuns/shell-bun": "workspace:*",
+    "@types/node": "25.9.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "alchemy": "2.0.0-beta.77",
+    "effect": "4.0.0-rc.112",
+    "typescript": "5.9.3",
+    "wrangler": "4.141.0"
+  }
+}

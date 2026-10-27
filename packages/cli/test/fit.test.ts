@@ -42,9 +42,20 @@ test("ready: supported frameworks, Workers and fetch-handler servers", () => {
 });
 
 test("needs work: a framework init doesn't infer yet links its issue", () => {
-  const f = fit({ pkg: pkg({ next: "15", react: "19" }), files: ["tsconfig.json"] });
-  expect(f).toMatchObject({ verdict: "needs-work", stack: "next", label: "Next.js, TypeScript" });
+  const f = fit({ pkg: pkg({ "@solidjs/start": "1", vite: "7" }), files: ["tsconfig.json"] });
+  expect(f).toMatchObject({ verdict: "needs-work", stack: "solidstart", label: "SolidStart, TypeScript" });
   expect(f.issue).toMatch(/issues\/318$/);
+});
+
+test("Next.js is ready with @opennextjs/cloudflare, needs work without it", () => {
+  const next = { next: "16", react: "19", "react-dom": "19" };
+  const f = fit({ pkg: pkg({ ...next, "@opennextjs/cloudflare": "1" }), files: ["open-next.config.ts", "tsconfig.json"] });
+  expect(f).toMatchObject({ verdict: "ready", stack: "next", label: "Next.js, TypeScript" });
+  expect(f.issue).toBeUndefined();
+  const plain = fit({ pkg: pkg(next), files: ["tsconfig.json"] });
+  expect(plain).toMatchObject({ verdict: "needs-work", stack: "next" });
+  expect(plain.reasons[0]).toContain("@opennextjs/cloudflare");
+  expect(plain.issue).toMatch(/issues\/318$/);
 });
 
 test("React Router is ready built as a Worker (@cloudflare/vite-plugin), needs work on Node", () => {

@@ -1,0 +1,8 @@
+dist/
+.rustybuns/
+.wrangler/
+wrangler.generated.jsonc
+.alchemy/
+.next/
+.open-next/
+next-env.d.ts

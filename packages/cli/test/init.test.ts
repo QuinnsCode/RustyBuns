@@ -706,6 +706,45 @@ test("init: SolidStart on Nitro's Cloudflare preset runs the built Worker on the
   expect(c).not.toContain("clientBuild");
 });
 
+test("init: Next.js on @opennextjs/cloudflare runs the Worker OpenNext builds on the desktop, with its bindings", () => {
+  const next = (deps: Record<string, string>, extra: Record<string, string> = {}) => project({
+    "package.json": JSON.stringify({ name: "nx", scripts: { build: "next build" }, dependencies: { next: "^16", react: "^19", "react-dom": "^19", ...deps } }),
+    "app/page.tsx": "export default function Page() { return <h1>hi</h1>; }\n", "bun.lock": "", ...extra,
+  });
+  const openNext = { "@opennextjs/cloudflare": "^1" };
+  // As OpenNext's docs write it: a wrangler.jsonc naming the built Worker and its assets, and an open-next.config.ts.
+  const p = next(openNext, {
+    "open-next.config.ts": 'import { defineCloudflareConfig } from "@opennextjs/cloudflare";\nexport default defineCloudflareConfig();\n',
+    "wrangler.jsonc": JSON.stringify({ name: "nx", main: ".open-next/worker.js", compatibility_date: "2026-09-01", compatibility_flags: ["nodejs_compat"], assets: { directory: ".open-next/assets", binding: "ASSETS" }, kv_namespaces: [{ binding: "COUNTER", id: "local" }] }),
+  });
+  const r = p.run("init");
+  expect(r.code).toBe(0);
+  expect(r.out).toMatch(/detected: next/);
+  expect(r.out).not.toMatch(/does not exist/);
+  const c = p.read("rustybuns.config.ts");
+  expect(c).toContain('"builtMain": ".open-next/worker.js"');
+  expect(c).toContain('"assets": ".open-next/assets"');
+  // `next build` is not the Worker build: OpenNext's command runs it and then writes .open-next/.
+  expect(c).toContain('"build": "bunx opennextjs-cloudflare build"');
+  expect(c).toContain('"mode": "worker"');
+  expect(c).toContain('"COUNTER"');
+  expect(c).not.toContain("clientBuild");
+
+  // No wrangler file yet: the same Worker, from what OpenNext builds.
+  const bare = next(openNext);
+  expect(bare.run("init").code).toBe(0);
+  const b = bare.read("rustybuns.config.ts");
+  expect(b).toContain('"builtMain": ".open-next/worker.js"');
+  expect(b).toContain('"assets": ".open-next/assets"');
+  expect(b).toContain('"mode": "worker"');
+
+  // Plain Next.js with no OpenNext: refused, with the fix.
+  const plain = next({}).run("init");
+  expect(plain.code).not.toBe(0);
+  expect(plain.out).toContain("@opennextjs/cloudflare");
+  expect(plain.out).toMatch(/issues\/318/);
+});
+
 const CRA = {
   "package.json": JSON.stringify({ name: "cra", dependencies: { react: "^18", "react-scripts": "5", "@types/node": "^16.11.6" },
     scripts: { start: "react-scripts start", build: "react-scripts build", test: "react-scripts test" } }, null, 2),

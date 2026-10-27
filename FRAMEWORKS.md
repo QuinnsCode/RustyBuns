@@ -41,7 +41,7 @@ Most frameworks already have a Cloudflare build that outputs a module exporting 
 | SolidStart | `worker` | Nitro CF preset or Vite plugin output | `Cloudflare.Website.Vite` | 🔧 |
 | Qwik City | `worker` | `cloudflare-pages` adapter: `dist/_worker.js` (a module Worker over `server/entry.cloudflare-pages.js`) + `dist` | `Cloudflare.Worker` + assets | ✅ `init` and desktop: `apps/qwik-example` on the contract (Oct 27); 🧪 edge (`plan --offline` only) |
 | Angular | `worker` | `AngularAppEngine` fetch handler from `@angular/ssr` | `Cloudflare.Worker` + assets | 🔧 |
-| Next.js | `worker`, or sidecar | OpenNext `worker.js`; fallback: `standalone` server as a child process | `Cloudflare.Website.Nextjs` | ⏳ |
+| Next.js | `worker` | `@opennextjs/cloudflare`: `.open-next/worker.js` + `.open-next/assets` | `Cloudflare.Worker` + assets | ✅ `init` and desktop; ✅ [`apps/nextjs-example`](apps/nextjs-example) on the sample app contract (Oct 27). The sidecar fallback (`standalone` server) was not needed. |
 | Gatsby | `spa` | none: a static site in `public/` | `Cloudflare.Worker` + assets | ⏳ |
 | CRA, Vue CLI | `spa` after `init --port-vite` | none | same as Vite | ✅ `init` (Flame, Yacht, Oct 12) |
 | Hono, Elysia, itty-router (a plain Worker) | `worker` | none: Alchemy bundles the wrangler `main` | `Cloudflare.Worker` | ✅ `init`, desktop, plan: `apps/hono-example`, `apps/elysia-example` (Oct 27) |
@@ -73,7 +73,7 @@ Support links to the row in the [matrix](#matrix), and to [FRAMEWORK_COVERAGE.md
 | Qwik City | `routeLoader$`, `routeAction$`, `server$`, endpoints | `platform.env` | a Durable Object in a wrapping Worker | 🔧 [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+qwik) |
 | Qwik City | `routeLoader$`, `routeAction$`, `server$`, endpoints | `platform.env` | a Durable Object exported beside the handler | ✅ `init`, desktop: [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+qwik) |
 | Angular | `AngularAppEngine`'s fetch handler | `env` from `cloudflare:workers` in server code | a Durable Object exported beside the handler | 🔧 [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+angular) |
-| Next.js | route handlers, server actions, middleware | OpenNext's `getCloudflareContext().env`; its cache on R2 or KV | a Durable Object exported beside the handler | ⏳ [matrix](#matrix) | [#318](https://github.com/QuinnsCode/RustyBuns/issues/318), [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+next.js) |
+| Next.js | route handlers, server actions, middleware | OpenNext's `getCloudflareContext().env`; its cache on R2 or KV | a Durable Object exported beside the handler | ✅ [matrix](#matrix), with `@opennextjs/cloudflare` | [#318](https://github.com/QuinnsCode/RustyBuns/issues/318), [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+next.js) |
 | Gatsby | none: a static site (its Functions don't build for Workers) | none | none | ⏳ [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+gatsby) |
 | CRA, Vue CLI, custom webpack | as a Vite SPA, after `init --port-vite` | as a Vite SPA | as a Vite SPA | ✅ CRA and Vue CLI, ⏳ webpack: [matrix](#matrix) | [#849](https://github.com/QuinnsCode/RustyBuns/issues/849), [#850](https://github.com/QuinnsCode/RustyBuns/issues/850), [#851](https://github.com/QuinnsCode/RustyBuns/issues/851) |
 
@@ -104,7 +104,7 @@ Easiest first, judged by each framework's Cloudflare build and a `fit` sweep ove
 
 ## The sample app contract
 
-The check is [`scripts/counter.ts`](scripts/counter.ts): one HTTP journey (no browser) that every example's `test/desktop.test.ts` calls in one line. Done so far: [`apps/hono-example`](apps/hono-example), [`apps/elysia-example`](apps/elysia-example), [`apps/astro-example`](apps/astro-example), [`apps/react-router-example`](apps/react-router-example), [`apps/sveltekit-example`](apps/sveltekit-example), [`apps/nuxt-example`](apps/nuxt-example), [`apps/solidstart-example`](apps/solidstart-example), [`apps/qwik-example`](apps/qwik-example).
+The check is [`scripts/counter.ts`](scripts/counter.ts): one HTTP journey (no browser) that every example's `test/desktop.test.ts` calls in one line. Done so far: [`apps/hono-example`](apps/hono-example), [`apps/elysia-example`](apps/elysia-example), [`apps/astro-example`](apps/astro-example), [`apps/react-router-example`](apps/react-router-example), [`apps/sveltekit-example`](apps/sveltekit-example), [`apps/nuxt-example`](apps/nuxt-example), [`apps/solidstart-example`](apps/solidstart-example), [`apps/qwik-example`](apps/qwik-example), [`apps/nextjs-example`](apps/nextjs-example).
 
 Every `apps/<fw>-example` does the same small thing, so a single smoke test covers them all:
 
@@ -159,8 +159,8 @@ It uses Playwright Chromium and is run against both the dev host and the compile
 - [x] `apps/solidstart-example`: SolidStart 2.1 on Nitro 3's `cloudflare_module` preset (a `"use server"` query and an API route on KV through `cloudflare:workers`); `init` reads it as a Worker.
 
 ### Phase 4: Next.js
-- [ ] `apps/nextjs-example`. Try the OpenNext `worker.js` in `worker` mode first.
-- [ ] If that fails, fall back to the `standalone` server as a sidecar (this reuses the `caps.spawn` work).
+- [x] `apps/nextjs-example`: Next.js 16 on `@opennextjs/cloudflare` 1.20 with KV, the OpenNext `worker.js` in `worker` mode; `init` reads it when `@opennextjs/cloudflare` is a dependency (Oct 27). The host needed no change: the bundle's `node:*` imports and `globalThis.process` are what `nodejs_compat` promises, and the host already has them.
+- [ ] ~~If that fails, fall back to the `standalone` server as a sidecar~~ (not needed).
 
 ### Phase 5: edge column
 - [ ] Make `plan` emit `Cloudflare.Website.<Fw>` based on `framework`.

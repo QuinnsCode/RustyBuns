@@ -11,7 +11,7 @@ import { workspaceRoot } from "./deploy-deps.ts";
 import { inits, stackOf, vitePlugins, type Stack } from "./fit.ts";
 import { inferStaticBuild } from "./build-script.ts";
 
-export type Framework = "rwsdk" | "tanstack-start" | "astro" | "react-router" | "sveltekit" | "nuxt" | "solidstart" | "qwik" | "vite-react" | "vite" | "unknown";
+export type Framework = "rwsdk" | "tanstack-start" | "astro" | "react-router" | "sveltekit" | "nuxt" | "next" | "solidstart" | "qwik" | "vite-react" | "vite" | "unknown";
 export type PackageManager = "bun" | "pnpm" | "npm" | "yarn";
 
 export interface Inferred {

@@ -18,7 +18,8 @@ export type Stack =
 /** Nuxt builds its Worker with Nitro's cloudflare-module preset (.output/server/index.mjs plus .output/public). */
 /** SolidStart 2 (a Vite plugin with Nitro behind it): its Cloudflare preset builds the module Worker init runs. */
 /** Qwik City: its `cloudflare-pages` adapter builds dist/_worker.js, a module Worker; `init` checks the adapter config is there. */
-export const SUPPORTED: Stack[] = ["rwsdk", "tanstack-start", "astro", "react-router", "sveltekit", "nuxt", "solidstart", "qwik", "vite-react", "vite"];
+/** Next.js counts only with @opennextjs/cloudflare, whose build writes .open-next/worker.js and .open-next/assets; see `inits`. */
+export const SUPPORTED: Stack[] = ["rwsdk", "tanstack-start", "astro", "react-router", "sveltekit", "nuxt", "next", "solidstart", "qwik", "vite-react", "vite"];
 
 const LABEL: Record<Stack, string> = {
   rwsdk: "RedwoodSDK", "tanstack-start": "TanStack Start", "vite-react": "Vite + React", vite: "Vite",
@@ -80,12 +81,13 @@ export function stackOf(deps: Record<string, unknown>, plugins: string[] = []): 
 
 /**
  * Whether `init` reads this app. React Router only as a Worker (its Cloudflare template's
- * @cloudflare/vite-plugin), SvelteKit only with @sveltejs/adapter-cloudflare.
+ * @cloudflare/vite-plugin), SvelteKit only with @sveltejs/adapter-cloudflare, Next.js only with @opennextjs/cloudflare.
  */
 export const inits = (stack: Stack, plugins: string[], deps: Record<string, unknown> = {}) =>
   SUPPORTED.includes(stack)
   && (stack !== "react-router" || plugins.includes("cloudflare"))
-  && (stack !== "sveltekit" || !!deps["@sveltejs/adapter-cloudflare"]);
+  && (stack !== "sveltekit" || !!deps["@sveltejs/adapter-cloudflare"])
+  && (stack !== "next" || !!deps["@opennextjs/cloudflare"]);
 
 export type Verdict = "ready" | "likely" | "needs-work" | "poor";
 
@@ -159,6 +161,8 @@ export function fit({ pkg, files, viteConfig }: FitInput): Fit {
       ? "React Router: `rustybuns init` reads it when @cloudflare/vite-plugin builds it (Cloudflare's current template), not through cloudflareDevProxy or a Node server."
       : stack === "sveltekit"
       ? "SvelteKit: `rustybuns init` reads it with @sveltejs/adapter-cloudflare, which builds the Worker; add it (`npm i -D @sveltejs/adapter-cloudflare`) in svelte.config.js."
+      : stack === "next"
+      ? "Next.js: `rustybuns init` reads it with @opennextjs/cloudflare, which builds the Worker; add it (`npm i @opennextjs/cloudflare`) with an open-next.config.ts."
       : TRACKED[stack] === 404 || stack === "webpack"
         ? stack === "webpack"
           ? "A custom webpack build: ported to Vite by hand, `rustybuns init` reads it (`init --port-vite` lists what to port)."
