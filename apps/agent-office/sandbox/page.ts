@@ -15,6 +15,7 @@ const query = (e: Edit) => {
   if ("grant" in e) return { do: "grant", path: e.grant.path, access: e.grant.access };
   if ("revoke" in e) return { do: "revoke", path: e.revoke };
   if ("network" in e) return { do: "network", value: e.network };
+  if ("allow" in e) return { do: "allow", value: e.allow.host, on: e.allow.on ? "1" : "0" };
   if ("port" in e) return { do: "port", value: String(e.port) };
   return { do: "env", value: e.env.name, on: e.env.on ? "1" : "0" };
 };
@@ -31,7 +32,7 @@ export function healthLine(s: State): string {
   const h = s.health;
   if (!s.docker) return "Docker isn't answering here, so the box can't be checked";
   if (!h.running) return "The box isn't running (bun run office:box up)";
-  const port = s.perms.network === "open" ? `; port ${s.perms.port} ${h.answers ? "answers" : "does not answer"}` : "; offline, no port";
+  const port = s.perms.network !== "offline" ? `; port ${s.perms.port} ${h.answers ? "answers" : "does not answer"}` : "; offline, no port";
   return `${h.status}${h.health ? `, ${h.health}` : ""}${port}`;
 }
 
@@ -50,8 +51,10 @@ function section() {
     const path = el("input", { placeholder: "~/projects/app", ariaLabel: "Folder to mount" });
     const access = el("select", { ariaLabel: "Access for the new mount" }, el("option", { value: "ro" }, "read only"), el("option", { value: "rw" }, "read and write"));
     const add = el("button", { onclick: () => void apply({ grant: { path: path.value, access: access.value as "rw" | "ro" } }) }, "Approve mount");
-    const network = Object.assign(el("select", { ariaLabel: "Network" }, el("option", { value: "open" }, "open (port on this machine only)"), el("option", { value: "offline" }, "offline")),
-      { value: s.perms.network, onchange: (ev: Event) => void apply({ network: (ev.target as HTMLSelectElement).value as "open" | "offline" }) });
+    const network = Object.assign(el("select", { ariaLabel: "Network" }, el("option", { value: "allowlist" }, "only the hosts below"), el("option", { value: "open" }, "open (the whole internet)"), el("option", { value: "offline" }, "offline")),
+      { value: s.perms.network, onchange: (ev: Event) => void apply({ network: (ev.target as HTMLSelectElement).value as "open" | "allowlist" | "offline" }) });
+    const hostName = el("input", { placeholder: "registry.npmjs.org", ariaLabel: "Host to allow" });
+    const hosts = s.perms.allow.map((h) => el("button", { title: "Stop allowing this host", onclick: () => void apply({ allow: { host: h, on: false } }) }, h));
     const envName = el("input", { placeholder: "ANTHROPIC_API_KEY", ariaLabel: "Variable to pass in" });
     const env = s.perms.env.map((n) => el("button", { title: "Stop passing this variable", onclick: () => void apply({ env: { name: n, on: false } }) }, n));
     root.replaceChildren(
@@ -61,6 +64,7 @@ function section() {
       ...(repos.length ? repos : [el("p", { className: "setting-note" }, "No folders are mounted.")]),
       el("div", { className: "rb-box-row" }, path, access, add),
       el("div", { className: "rb-box-row" }, "Network", network, s.limits ? `${s.limits.memory}, ${s.limits.cpus} cpus` : ""),
+      ...(s.perms.network === "allowlist" ? [el("div", { className: "rb-box-row" }, "Allowed hosts", ...hosts, hostName, el("button", { onclick: () => void apply({ allow: { host: hostName.value, on: true } }) }, "Allow"))] : []),
       el("div", { className: "rb-box-row" }, "Variables", ...env, envName, el("button", { onclick: () => void apply({ env: { name: envName.value, on: true } }) }, "Pass in")),
       note);
   };

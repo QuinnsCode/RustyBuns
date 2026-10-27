@@ -23,7 +23,8 @@ bun run office:box down      # remove the box; the home volume (logins, the offi
 | `repos` | none | `{ "path": "~/projects/app", "access": "rw" \| "ro" }`: each shows up at `/work/<folder name>`. `ro` is the default, so write access is something you type. The first `rw` repo is the office's floor (it keeps its data in that repo's `.agent-office`, so git-ignore that folder); the rest are there for the agents to read or edit. With no `rw` repo there is no floor: add projects from the elevator, cloned into the box's volume. |
 | `env` | none | Variable names to pass in from your shell, e.g. `["ANTHROPIC_API_KEY"]`. Only the name goes on the command line; the value never does. The office also keeps secret-looking names from its workers ([`live/env.ts`](live/env.ts)). |
 | `port` | `4600` | Published on your machine's `127.0.0.1` only, never the LAN. Reach it from a phone with [`office:phone`](README.md#-from-your-phone). |
-| `network` | `open` | `open` lets the agents reach the model and GitHub. `offline` cuts the network and publishes no port (for reading code you don't trust). |
+| `network` | `allowlist` | `allowlist`: the box has no route out except an egress proxy beside it, which tunnels HTTPS only to the hosts in `allow`. `open` reaches the whole internet. `offline` cuts the network and publishes no port (for reading code you don't trust). |
+| `allow` | model API, GitHub, npm | Hosts for `allowlist` (`registry.npmjs.org`, or `*.example.com` for subdomains). Add your own registry here; `office:box status` and the Box page list them. |
 | `memory`, `cpus` | a fifth of what Docker has | Ceilings that leave the other four fifths free, so a runaway agent can't hog the machine. Set `"memory": "3g", "cpus": 4` to give it more. |
 
 Whatever isn't listed isn't there: your home folder, your SSH keys, your other repos, your `gh` login.
@@ -43,8 +44,8 @@ not on your machine. A `GH_TOKEN` passed through `env` is the other way, and it 
 
 ## What it doesn't do (yet)
 
-- **`open` means the whole internet.** Allowing only the model API, GitHub and your registry needs an egress
-  proxy beside the box.
+- **The allowlist is HTTPS-only and by host name.** The proxy sees the name in `CONNECT`, not the traffic, and plain
+  HTTP and other protocols (git over ssh) have no way out. Use `https://` remotes.
 - **Edits reach the box on its next start.** Settings › You has a Box section (run from the host, where `sandbox/` is):
   approve or revoke a mount, set its access, switch the network, pass a variable, and see the container and port
   health. It saves `sandbox/box.json`, and says when the running box differs; `bun run office:box up` applies it.

@@ -1,6 +1,7 @@
 {
   "port": 4600,
-  "network": "open",
+  "network": "allowlist",
+  "allow": ["api.anthropic.com", "claude.ai", "github.com", "api.github.com", "codeload.github.com", "objects.githubusercontent.com", "registry.npmjs.org"],
   "repos": [
     { "path": "~/projects/my-app", "access": "rw" },
     { "path": "~/projects/reference-docs", "access": "ro" }

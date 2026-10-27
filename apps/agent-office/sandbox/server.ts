@@ -18,7 +18,8 @@ export function editOf(q: URLSearchParams): Edit | string {
   const what = q.get("do"), arg = q.get("path") ?? "", access = q.get("access");
   if (what === "grant") return access === "rw" || access === "ro" ? { grant: { path: arg, access } } : "access should be rw or ro";
   if (what === "revoke") return { revoke: arg };
-  if (what === "network") return q.get("value") === "open" || q.get("value") === "offline" ? { network: q.get("value") as "open" | "offline" } : 'network should be "open" or "offline"';
+  if (what === "network") { const v = q.get("value"); return v === "open" || v === "allowlist" || v === "offline" ? { network: v } : 'network should be "allowlist", "open" or "offline"'; }
+  if (what === "allow") return { allow: { host: q.get("value") ?? "", on: q.get("on") !== "0" } };
   if (what === "port") return { port: Number(q.get("value")) };
   if (what === "env") return { env: { name: q.get("value") ?? "", on: q.get("on") !== "0" } };
   return "unknown change";

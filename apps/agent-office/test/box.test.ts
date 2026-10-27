@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { dockerArgs, limits, parsePerms } from "../sandbox/box.ts";
+import { dockerArgs, edit, limits, parsePerms, proxyArgs } from "../sandbox/box.ts";
+import { allowed, connectTarget } from "../sandbox/proxy.ts";
 
 const host = { cpus: 10, memBytes: 16 * 2 ** 30 };
 const joined = (a: string[]) => a.join(" ");
@@ -9,7 +10,9 @@ test("a permission set makes a locked-down box that mounts only what it lists", 
   const text = joined(args);
   expect(text).toContain("-v /code/app:/work/app:rw");
   expect(text).toContain("-v /code/docs:/work/docs:ro"); // read-only unless asked otherwise
-  expect(text).toContain("-p 127.0.0.1:4600:4600"); // the host's loopback, never the LAN
+  expect(text).toContain("--network agent-office-box-net"); // no route out but the proxy
+  expect(text).not.toContain("-p "); // the proxy publishes the port, on the host's loopback, never the LAN
+  expect(joined(proxyArgs(parsePerms({})))).toContain("-p 127.0.0.1:4600:4600");
   expect(text).toContain("-e OFFICE_FLOOR=/work/app"); // the first writable repo is the floor
   expect(text).toContain("--cap-drop ALL");
   expect(args.filter((a) => a === "-v")).toHaveLength(3); // two repos and the home volume
@@ -22,6 +25,29 @@ test("offline publishes nothing and cuts the network", () => {
   expect(text).not.toContain("-p ");
 });
 
+test("the allowlist names the model, GitHub and the registry, and the proxy gets exactly that list", () => {
+  const perms = parsePerms({});
+  expect(perms.network).toBe("allowlist");
+  expect(perms.allow).toEqual(expect.arrayContaining(["api.anthropic.com", "github.com", "registry.npmjs.org"]));
+  expect(joined(dockerArgs(perms, host))).toContain("HTTPS_PROXY=http://agent-office-box-proxy:3128");
+  expect(joined(proxyArgs(parsePerms({ allow: ["a.example.com", "*.b.dev"] })))).toContain("ALLOW=a.example.com,*.b.dev");
+  expect(joined(dockerArgs(parsePerms({ network: "open" }), host))).toContain("-p 127.0.0.1:4600:4600");
+  expect(edit(perms, { allow: { host: "Pkg.Example.com", on: true } }, () => true).allow).toContain("pkg.example.com");
+  expect(edit(perms, { allow: { host: "github.com", on: false } }, () => true).allow).not.toContain("github.com");
+  expect(() => parsePerms({ allow: ["not a host"] })).toThrow("allow[0]");
+});
+
+test("the proxy tunnels HTTPS to listed hosts and refuses the rest", () => {
+  const list = ["github.com", "*.npmjs.org"];
+  expect(allowed("github.com", list)).toBe(true);
+  expect(allowed("registry.npmjs.org", list)).toBe(true);
+  expect(allowed("evil-github.com", list)).toBe(false);
+  expect(allowed("github.com.evil.io", list)).toBe(false);
+  expect(allowed("npmjs.org", list)).toBe(false); // *.x is subdomains only
+  expect(connectTarget("CONNECT github.com:443 HTTP/1.1\r\nHost: github.com:443\r\n\r\n")).toEqual({ host: "github.com", port: 443 });
+  expect(connectTarget("GET http://github.com/ HTTP/1.1\r\n\r\n")).toBeNull();
+});
+
 test("the box takes a fifth of the machine unless told otherwise", () => {
   expect(limits(parsePerms({}), host)).toEqual({ cpus: 2, memory: "3276m" });
   expect(limits(parsePerms({ cpus: 1, memory: "1g" }), host)).toEqual({ cpus: 1, memory: "1g" });
@@ -31,7 +57,7 @@ test("the box takes a fifth of the machine unless told otherwise", () => {
 test("a bad permission set says which field", () => {
   expect(() => parsePerms({ port: "nope" })).toThrow("isn't a port");
   expect(() => parsePerms({ memory: "lots" })).toThrow("512m or 4g");
-  expect(() => parsePerms({ network: "lan" })).toThrow('"open" or "offline"');
+  expect(() => parsePerms({ network: "lan" })).toThrow('"allowlist", "open" or "offline"');
   expect(() => parsePerms({ repos: [{ path: "/a", access: "all" }] })).toThrow("repos[0].access");
   expect(() => parsePerms({ env: ["BAD NAME"] })).toThrow("variable name");
   expect(() => parsePerms([])).toThrow("JSON object");
