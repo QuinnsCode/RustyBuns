@@ -54,6 +54,25 @@ In a ground battle: click the field to take control, WASD to move, the mouse to 
 
 In a space battle: your fighter turns towards the mouse. Hold the button to fire, W to boost, S to brake, and the wheel to zoom.
 
+## Jump to the state
+
+Add `?battle=1` to the dev URL (`bun run dev`, then `http://localhost:5173/?battle=1&...`) and the page drops straight into a quick-play ground battle, no menus, no cutscenes. Every option is optional:
+
+| Param | Values | Default |
+| --- | --- | --- |
+| `world` | `forest`, `desert`, `city`, `beach`, `station` (or `shield`, `canyon`, `capital`, `cannon`, `spaceport`, `jungle`) | forest |
+| `side` | `attacker`, `defender` | defender |
+| `hero` | `marines`, `wooka` | wooka attacking, marines defending |
+| `assist` | `off` turns the balance assist off: no handicap on the AI, no squad cover or slack in the sim | on |
+| `near` | `1` (or a number of seconds): the AI has already fought that long (45 s for `1`), so units are in play around the posts | from the spawn |
+| `end` | `win` or `loss`, `after=N` seconds (3 by default): finishes the battle so you land on the result and rematch vote | play on |
+| `map` | a big map for the world, e.g. `yards` on the station | the usual layout |
+| `mode` | `conquest`, `assault`, `hill`, `holdout`, `escort` | conquest |
+| `brief` | `1` shows the briefing first | straight in |
+| `seed` | a number, to replay the same fight | random |
+
+Agents and the console get the same from `window.twoFronts`: `jump({ world: "station", side: "attacker" })` starts one, `end("win")` or `end("loss")` finishes the battle on screen, and `state()` says what is on screen (world, side, hero, assist, time, tickets). The page logic is `src/jump.ts`; `test/jump.test.ts` plays the links.
+
 ## How it's built
 
 - `src/battle/contract.ts`: `BattleSpec` (what the map gives the battle) and `BattleResult` (what comes back), and `SpaceBattleSpec` and `SpaceBattleResult` for a fight over the orbit. It's the only file both layers import.
