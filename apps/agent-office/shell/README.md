@@ -30,5 +30,6 @@ under the hardened runtime, so give Tauri an entitlements file (`bundle.macOS.en
 `allow-jit`, `allow-unsigned-executable-memory` and `disable-library-validation`. If the app ships updates
 through Tauri's updater, that has its own minisign key, separate from Apple's.
 
-The Apple Developer ID signing and notarization of the `.app` is not wired into `agent-office-shell.yml` yet, so a
-fresh download is blocked by Gatekeeper; an update through the tray is not (the updater's download carries no quarantine flag).
+`agent-office-shell.yml` signs and notarizes the `.app` when the Apple secrets from APPLE_SIGNING.md step 7 are set
+(`APPLE_DEVELOPER_ID_P12` and the rest, in the `drops` environment); without them a fresh download is blocked by
+Gatekeeper, but an update through the tray is not (the updater's download carries no quarantine flag).
