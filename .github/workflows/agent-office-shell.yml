@@ -24,7 +24,7 @@ jobs:
     runs-on: macos-latest
     # The tag run's secrets live in the `drops` environment, which waits for the owner's approval; a PR gets none.
     environment: ${{ github.event_name == 'push' && 'drops' || '' }}
-    timeout-minutes: 45
+    timeout-minutes: 120   # notarization waits on Apple: the first submission from an account took over 45 minutes
     outputs:
       ship: ${{ steps.v.outputs.ship }}
       version: ${{ steps.v.outputs.version }}
