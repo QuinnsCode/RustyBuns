@@ -87,6 +87,17 @@ out. Keep quick tunnels short.
 
 Tip: add `/lite` to your phone's home screen and it opens like an app.
 
+## Jump to the state
+
+`bun run demo --scenario <name>` serves the office's own pages (setup cards, GitHub writes card, ask card, wall screens, Ester) on `http://127.0.0.1:4720` in a chosen state, with a fake GitHub, a temp-folder keychain and a replayed Ester run behind them: no GitHub app, 1Password, Touch ID or LLM, and none of the real office's files are read. It is not in the shipped binary. `bun run demo --list` prints the names. On the page, the select switches state, `/?scenario=<name>` opens one, and `window.rbDemo` (`go`, `push`, `typeCode`, `state`) does the same for an agent.
+
+| Scenario | Shows | Serves |
+| --- | --- | --- |
+| `setup-first-run`, `setup-no-client-id`, `setup-sign-in-code` | signed out; sign-in off; a code waiting | #2513 |
+| `setup-signed-in`, `setup-two-accounts`, `setup-test-red`, `setup-builder-down` | accounts, Test, Revoke, the build Mac | #2513 |
+| `writes-ask-pending`, `writes-grants` | a held `git push` card; the grants list | #2520, #2513 |
+| `wall-gitpath`, `wall-mervin`, `wall-ester-running`, `wall-ester-red` | the wall screens, Ester mid-run, the Haiku fix | #2425, #2430 |
+
 ## How
 
 Nothing is forked. `scripts/rustybunsify.ts` downloads a pinned release tarball and checks its sha256

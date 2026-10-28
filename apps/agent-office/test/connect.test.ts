@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { connections, githubToken, type Deps, type State } from "../connect/github.ts";
 import { fileSecrets } from "../connect/keychain.ts";
-import { fakeGitHub } from "./fake-github.ts";
+import { fakeGitHub } from "../demo/fake-github.ts";
 
 setDefaultTimeout(10_000);
 

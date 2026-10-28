@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { connections } from "../connect/github.ts";
 import { fileSecrets } from "../connect/keychain.ts";
 import { LIGHT, accessWords, act, connectGithub, isFirstRun, loadBuilder, loadSetup, nightlyLine, parseSetup } from "../setup/model.ts";
-import { fakeGitHub } from "./fake-github.ts";
+import { fakeGitHub } from "../demo/fake-github.ts";
 
 setDefaultTimeout(10_000);
 
