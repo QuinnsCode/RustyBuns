@@ -15,10 +15,15 @@ export async function callAction<T = unknown>(module: string, fn: string, args: 
  * LAN target is not mixed content; an https page could only open wss://.
  */
 export function worldSocket(target = "/ws", params: Record<string, string | undefined> = {}): WebSocket {
+  return new WebSocket(worldUrl(target, params));
+}
+
+/** The address `worldSocket` opens, for a page that keeps the socket itself (`connectSocket` in `@rustybuns/util/socket`). */
+export function worldUrl(target = "/ws", params: Record<string, string | undefined> = {}): URL {
   const u = /^[a-z]+:\/\//i.test(target) ? new URL(target) : new URL(target, location.href);
   u.protocol = u.protocol === "https:" || u.protocol === "wss:" ? "wss:" : "ws:";
   for (const [k, v] of Object.entries(params)) if (v !== undefined) u.searchParams.set(k, v);
-  return new WebSocket(u);
+  return u;
 }
 
 /**

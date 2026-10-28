@@ -43,8 +43,10 @@ test("the same player again replaces their older socket and stays in the game", 
 class Sock {
   readyState = 1;
   sent: any[] = [];
+  closed: number | null = null;
   private att: unknown;
   send(s: string) { this.sent.push(JSON.parse(s)); }
+  close(code = 1000) { this.closed = code; this.readyState = 3; }
   serializeAttachment(a: unknown) { this.att = a; }
   deserializeAttachment() { return this.att; }
   get view() { return this.sent.at(-1).view; }
@@ -54,7 +56,7 @@ class FakePair { 0 = new Sock(); 1 = new Sock(); }
 const worlds: World[] = [];
 function world() {
   const socks: Sock[] = [];
-  const w = new World({ acceptWebSocket: (s: Sock) => socks.push(s), getWebSockets: () => socks, storage: {} }, {});
+  const w = new World({ acceptWebSocket(s: Sock) { socks.push(s); }, getWebSockets: () => socks, storage: { setAlarm: async () => {} } }, {});
   worlds.push(w);
   const join = async (uid: string, name: string) => {
     const res = await w.fetch(new Request("https://world/ws", { headers: { Upgrade: "websocket", "X-User-Id": uid, "X-User-Name": name, "X-RB-Principal": "guest" } }));

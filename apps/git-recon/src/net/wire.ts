@@ -13,7 +13,7 @@ import type { GameEvent, Input, Mode, Objective, Pickup, PickupKind, Soldier, Te
 import type { ZoneData } from "@rustybuns/terrain";
 import type { VehicleKind } from "../sim/vehicles.ts";
 import { ORDER, type WeaponId } from "../sim/weapons.ts";
-import { bool, check, int, maybe, num, obj, oneOf } from "@rustybuns/util/guard";
+import { bool, check, int, maybe, num, obj, oneOf, raw } from "@rustybuns/util/guard";
 
 /** Snapshots a second, and players a room holds. */
 export const SNAP_HZ = 20, MAX_PLAYERS = 64;
@@ -46,6 +46,19 @@ export type ToWorld =
   | { t: "setup"; setup: Setup }
   /** ack: the newest snapshot this page has applied, to send the next ones against. */
   | { t: "in"; i: Input; ack?: number };
+
+/**
+ * A page's message as the world first sees it: the envelope is checked here, the input and the
+ * setup by `cleanInput` and `cleanSetup` where they are used.
+ */
+export type ToWorldRaw = { t: "setup"; setup: unknown } | { t: "in"; i: unknown; ack?: number };
+export function decodeToWorld(v: unknown): ToWorldRaw | null {
+  if (typeof v !== "object" || v === null || !("t" in v)) return null;
+  if (v.t === "setup") return { t: "setup", setup: "setup" in v ? v.setup : null };
+  if (v.t !== "in") return null;
+  const ack = "ack" in v ? v.ack : undefined;
+  return { t: "in", i: "i" in v ? v.i : null, ...(typeof ack === "number" ? { ack } : {}) };
+}
 
 export type FromWorld =
   | { t: "wait" }
@@ -387,4 +400,14 @@ export function decodeSnap(bytes: ArrayBuffer | Uint8Array): Snap | null {
   } catch {
     return null;
   }
+}
+
+/** The world's JSON frames as the page first sees them: the envelope is checked, the payloads are the world's own. */
+export function decodeFromWorld(v: unknown): FromWorld | null {
+  if (typeof v !== "object" || v === null || !("t" in v)) return null;
+  if (v.t === "wait") return { t: "wait" };
+  if (v.t !== "welcome") return null;
+  const w = check(obj({ me: int(0, MAX_PLAYERS), setup: raw, roster: raw, files: raw, snap: raw }), v);
+  if (!w || typeof w.setup !== "object" || !Array.isArray(w.roster) || !Array.isArray(w.files) || typeof w.snap !== "object" || !w.snap) return null;
+  return { t: "welcome", me: w.me, setup: w.setup as Setup, roster: w.roster, files: w.files, snap: w.snap as Snap };
 }

@@ -3,9 +3,8 @@
 // packages/desktop/world.ts) the Rusty Buns in-process world. It does only what
 // the platform owns: the upgrade handshake and handing sockets to the Room.
 import { Room } from "./engine/room.ts";
-
-// Provided by workerd and by the Rusty Buns host.
-declare const WebSocketPair: { new (): Record<0 | 1, any> };
+import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
+import type { EngineCtx } from "./engine/ports.ts";
 
 const clean = (s: string | null, max: number) => (s ?? "").replace(/\p{C}/gu, "").trim().slice(0, max);
 
@@ -17,9 +16,11 @@ export class World {
    */
   static sim: WebAssembly.Module | null = null;
   private room: Room;
+  private sockets: Sockets<null>;
 
-  constructor(private ctx: any, _env: unknown) {
+  constructor(ctx: RoomCtx & EngineCtx & { blockConcurrencyWhile(f: () => Promise<void>): void }, _env: unknown) {
     this.room = new Room(ctx, { sim: World.sim, report: (where, err) => console.error(`[hippo-tycoon ${where}]`, err) });
+    this.sockets = new Sockets(ctx);
     ctx.blockConcurrencyWhile(() => this.room.restore());
   }
 
@@ -34,15 +35,15 @@ export class World {
     // past every seat and the gallery, refuse before accepting: a socket never said hello still costs
     if (!this.room.admits(uid)) return new Response("This room is full", { status: 503 });
     const name = own || clean(request.headers.get("X-User-Name"), 24) || "Tycoon";
-    const [client, server] = Object.values(new WebSocketPair()) as any[];
-    this.ctx.acceptWebSocket(server);
+    // The Room writes the socket's attachment itself at hello, so it is accepted with none.
+    const { server, response } = this.sockets.upgrade(null);
     this.room.onConnect(server, uid, name, clean(request.headers.get("X-Room"), 16));
-    return new Response(null, { status: 101, webSocket: client } as ResponseInit);
+    return response;
   }
 
-  webSocketMessage(ws: any, m: string | ArrayBuffer) { this.room.webSocketMessage(ws, m); }
-  webSocketClose(ws: any) { this.room.webSocketClose(ws); }
-  webSocketError(ws: any) { this.room.webSocketError(ws); }
+  webSocketMessage(ws: RoomSocket, m: string | ArrayBuffer) { this.room.webSocketMessage(ws, m); }
+  webSocketClose(ws: RoomSocket) { this.room.webSocketClose(ws); }
+  webSocketError(ws: RoomSocket) { this.room.webSocketError(ws); }
   alarm() { this.room.alarm(); }
 }
 
