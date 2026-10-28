@@ -9,6 +9,7 @@
 // relative to its home (default builder). BUILDER_WORKERS caps the suites one run starts at once (default 4).
 // Exits with the worst code. Only send your own branches: the builder runs what it gets.
 import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 
 export type Job = { app: string; test: string; prep: string };
 
@@ -40,7 +41,7 @@ export async function pool<T>(items: T[], cap: number, fn: (item: T) => Promise<
 export async function snapshot(cwd: string): Promise<string> {
   const git = (...args: string[]) => Bun.$`git ${args}`.cwd(cwd).quiet();
   const scratch = `${tmpdir()}/remote-ci-index-${process.pid}-${Date.now()}`;
-  await Bun.write(scratch, Bun.file(`${cwd}/${(await git("rev-parse", "--git-path", "index")).text().trim()}`));
+  await Bun.write(scratch, Bun.file(resolve(cwd, (await git("rev-parse", "--git-path", "index")).text().trim())));
   try {
     const env = { ...process.env, GIT_INDEX_FILE: scratch };
     await Bun.$`git add -A`.cwd(cwd).env(env).quiet();

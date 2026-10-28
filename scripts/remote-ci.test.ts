@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { main, parseJobs, pool } from "./remote-ci.ts";
+import { main, parseJobs, pool, snapshot } from "./remote-ci.ts";
 
 test("reads the touched suites and skips apps with no test command", () => {
   const out = `apps=${JSON.stringify({ include: [{ app: "a", test: "bun test", prep: "" }, { app: "b", test: "", prep: "" }] })}\nany=true\n`;
@@ -44,3 +44,13 @@ test("a run sends the working tree, untracked files too, to a free slot and give
     process.env = saved;
   }
 }, 30000);
+
+// Every agent works in a linked worktree, where git gives the index path in full, not relative to the folder.
+test("a snapshot works from a linked worktree and sees its untracked files", async () => {
+  const root = mkdtempSync(`${tmpdir()}/snap-`);
+  const sh = (cwd: string, cmd: string) => Bun.$`sh -c ${cmd}`.cwd(cwd).quiet();
+  await sh(root, "git init -q main && cd main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && git worktree add -q ../wt");
+  await Bun.write(`${root}/wt/new.txt`, "hi");
+  const commit = await snapshot(`${root}/wt`);
+  expect((await sh(`${root}/main`, `git show ${commit}:new.txt`)).text()).toBe("hi");
+});
