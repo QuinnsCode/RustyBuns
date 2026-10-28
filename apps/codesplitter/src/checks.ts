@@ -77,7 +77,7 @@ import { repoRow } from "./repos.ts";
 import { githubToken, parseRepo } from "./github.ts";
 import { emit } from "./hooks.ts";
 import { LOCKFILES as LOCKFILE_NAMES } from "./lockfiles.ts";
-import { NEED_LABEL, scanNeeds, needsText, type Need } from "./needs.ts";
+import { NEED_LABEL, imageCaps, scanNeeds, needsText, type Need } from "./needs.ts";
 import type { RepoRef } from "./repos";
 
 export const RUNNERS = ["desktop", "container", "github", "external"] as const;
@@ -418,7 +418,7 @@ async function queueHere(env: Env, owner: string, repo: string, ref: string, sha
       : await env.DB.prepare("SELECT 1 FROM check_runs WHERE owner = ? AND repo = ? AND ref = ? AND sha = ? AND name = ? AND runner != 'github' AND status IN ('queued', 'running')").bind(owner, repo, ref, sha, name).first();
     if (live) continue;
     // A check the hosted image can't run (Docker, cargo) is queued for the desktop or a runner of the owner's own.
-    const needs = runner === "container" && command ? scanNeeds(command) : [];
+    const needs = runner === "container" && command ? scanNeeds(command, {}, imageCaps(env.CI_IMAGE_CAPS)) : [];
     const run = await recordRun(env, { owner, repo, ref, sha, name, runner: needs.length ? "desktop" : runner, command }, by);
     const note = needs.length ? `${needsText(needs)} Needs desktop: ${HANDED} or a runner of your own (scripts/runner.ts).\n` : "";
     const pusher = by !== owner && by !== "upstream" && by !== "codesplitters" ? PUSHED(by) : "";

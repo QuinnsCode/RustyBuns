@@ -42,6 +42,9 @@ const privacyNotice = "";
 // crew (src/security.ts). Set it once the widget exists for this hostname; its secret is then
 // required from 1Password (codesplitter/turnstile/secret). Empty means no bot check.
 const turnstileSiteKey = "0x4AAAAAAFTyaxcLpAqRT0pg";
+// What the check image provides (deploy-sandbox/ci.Dockerfile has git, bun and node). A check whose command
+// needs a tool set false here is queued for the desktop or the owner's runner instead (src/needs.ts).
+const IMAGE_CAPS = { docker: false, rust: false };
 const op = (ref: string, optional?: true) => ({ type: "secret" as const, op: `op://codesplitter/${ref}`, optional });
 
 // Everything below was named codesplitters until #809. On Cloudflare the names moved together,
@@ -158,6 +161,7 @@ export default defineConfig({
     // container (deploy-sandbox/ci.Dockerfile: git, bun and the deploy image's small server),
     // with no secrets at all. Two at once across the site caps the spend.
     ...(checks ? { CI_RUNNER: { type: "container", className: "CiRunner", dockerfile: "deploy-sandbox/ci.Dockerfile", maxInstances: 2, instanceType: "basic", egress: egress(REGISTRIES, GITHUB_HOSTS) } as const } : {}),
+    ...(checks ? { CI_IMAGE_CAPS: { type: "var", value: JSON.stringify(IMAGE_CAPS) } as const } : {}),
     // Accounts (Better Auth), GitHub and Google sign-in.
     BETTER_AUTH_SECRET: op("better-auth/secret"),
     BETTER_AUTH_URL: { type: "var", value: "https://codesplitter.notryanquinn.workers.dev" },

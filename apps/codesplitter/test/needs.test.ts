@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { armBox, missingTool, needsText, scanNeeds } from "../src/needs.ts";
+import { armBox, imageCaps, missingTool, needsText, scanNeeds } from "../src/needs.ts";
 
 test("the scan finds Docker and Rust in a command, or in the package script it runs", () => {
   expect(scanNeeds("cargo test")).toEqual(["rust"]);
@@ -23,4 +23,10 @@ test("an arm64 box is read out of the config", () => {
   expect(armBox(`targets: { box: { provider: "hetzner", serverType: "cax11" } }`)).toBe(true);
   expect(armBox(`targets: { box: { serverType: "cx22" } }`)).toBe(false);
   expect(armBox(`targets: { edge: {} }`)).toBe(false);
+});
+
+test("the image's tools come from the bound var, and an unreadable one assumes none", () => {
+  expect(imageCaps('{"rust":true}')).toEqual({ docker: false, rust: true });
+  expect(imageCaps("not json")).toEqual({ docker: false, rust: false });
+  expect(imageCaps()).toEqual({ docker: false, rust: false });
 });
