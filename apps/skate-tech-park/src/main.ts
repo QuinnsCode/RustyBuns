@@ -32,7 +32,8 @@ import { PROFILES } from "./flick-profiles.ts";
 import { mountGrip } from "./griptape.ts";
 import { mountTouch } from "./touch.ts";
 import { type Controls, loadControls, saveControls, tuned } from "./controls.ts";
-import { mountControlsPanel } from "./controls-panel.ts";
+import { DEFAULTS as CTL_DEFAULTS, mountControls } from "@rustybuns/game-controls";
+import { controlsExtras } from "./controls-extras.ts";
 import { level, levelId, mood, mountLevelUi, park, spawn } from "./levels/picker.ts";
 import { LEVELS, touring as isTouring, wantsReal } from "./levels/index.ts";
 import { tourShot, tourStops } from "./render/tour.ts";
@@ -222,6 +223,9 @@ const gestures = new Gestures(tuned(chosen, controls));
 // On a touch screen one thumb drives (touch.ts), so only the profile's half of the screen is the flick pad.
 const touch = mountTouch();
 const grip = mountGrip(touch.root);
+// The cog's look speeds scale the stick (X steer, Y throttle, invert Y) and, as touch, how far a flick drag must go.
+let look = { ...CTL_DEFAULTS };
+let cogOpen = false; // the Controls dialog is open: the ride waits
 // Every control setting applies live: the pad's side, size and labels, the stick's dead zone and inversion, the flick reach.
 const applyControls = (c: Controls) => {
   controls = c;
@@ -230,19 +234,27 @@ const applyControls = (c: Controls) => {
   root.setProperty("--pad-scale", String(c.size));
   root.setProperty("--pad-op", String(c.opacity));
   document.body.dataset.labels = c.labels;
-  Object.assign(touch, { invertX: c.invertX, invertY: c.invertY, dead: c.dead });
-  gestures.profile = tuned(chosen, c);
+  Object.assign(touch, { invertX: c.invertX, invertY: look.invertY, dead: c.dead });
+  gestures.profile = tuned(chosen, c, look.touch);
   grip.show(gestures.profile);
 };
-mountControlsPanel(document.querySelector(".hud .buttons")!, {
-  controls, profiles: PROFILES, layout: () => chosen.name, onChange: applyControls,
-  onLayout: (name) => {
-    chosen = PROFILES.find((p) => p.name === name) ?? chosen;
-    try { localStorage.setItem(FLICK_KEY, chosen.name); } catch { /* private window: the pick lasts this visit */ }
-    applyControls(controls);
-  },
+let extra: ReturnType<typeof controlsExtras> | undefined;
+mountControls({
+  key: "skate-tech-park.controls", parent: document.querySelector<HTMLElement>(".hud .buttons")!,
+  keys: [["W A S D / arrows", "Throttle and steer"], ["Left stick (touch)", "Throttle and steer"], ["Space", "Jump"], ["F G V R T Y U I O", "Flick tricks"], ["Drag on the pad", "Flick tricks (touch)"], ["Esc", "Pause"]],
+  onChange: (s) => { look = s; applyControls(controls); },
+  onToggle: (open) => { cogOpen = open; keys.clear(); if (open) extra?.sync(); },
+  onReset: () => { extra?.reset(); extra?.sync(); },
+  extras: (card) => { extra = controlsExtras(card, {
+    controls: () => controls, profiles: PROFILES, layout: () => chosen.name, onChange: applyControls,
+    onLayout: (name) => {
+      chosen = PROFILES.find((p) => p.name === name) ?? chosen;
+      try { localStorage.setItem(FLICK_KEY, chosen.name); } catch { /* private window: the pick lasts this visit */ }
+      applyControls(controls);
+    },
+  }); },
 });
-applyControls(controls);
+const scale = (v: number, k: number) => Math.max(-1, Math.min(1, v * k));
 const onPad = (x: number) => (gestures.profile.side === "left" ? x < innerWidth / 2 : x >= innerWidth / 2);
 let flicking = -1; // the pointer the gesture follows
 canvas.addEventListener("pointerdown", (e) => {
@@ -264,8 +276,8 @@ window.addEventListener("pointercancel", lift);
 const FLICK_KEYS: [string, Flick][] = [["KeyG", "heelflip"], ["KeyV", "shove-it"], ["KeyR", "varial"], ["KeyT", "tre flip"], ["KeyY", "laser flip"], ["KeyU", "hardflip"], ["KeyI", "inward heel"], ["KeyO", "varial heel"]];
 const input = (): Input => ({
   ...IDLE,
-  throttle: (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0) || touch.throttle,
-  steer: (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0) - (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) || touch.steer,
+  throttle: (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0) || scale(touch.throttle, look.lookY),
+  steer: (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0) - (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) || scale(touch.steer, look.lookX),
   jump: keys.has("Space"),
   nollie: keys.has("KeyN"),
   boost: keys.has("ShiftLeft") || keys.has("ShiftRight") || touch.boost,
@@ -386,7 +398,7 @@ const pause = touring || showFront(location.search) ? null : mountPause(reset, (
 
 function frame(now: number) {
   if (touring) { tourFrame(now); requestAnimationFrame(frame); return; }
-  if (pause?.paused()) { then = lastFrame = critterAt = now; keys.clear(); renderer.render(scene, camera); requestAnimationFrame(frame); return; }
+  if (pause?.paused() || cogOpen) { then = lastFrame = critterAt = now; keys.clear(); renderer.render(scene, camera); requestAnimationFrame(frame); return; }
   acc = Math.min(acc + (now - then) / 1000, 0.25);
   then = now;
   const inp = input();

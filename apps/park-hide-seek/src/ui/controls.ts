@@ -28,6 +28,9 @@ export class Controls {
   /** One-shot presses, read and cleared by the game loop. */
   private pressed = new Set<string>();
   sensitivity = 0.0022;
+  /** The cog's look speeds (1 as shipped): mouse X/Y, touch drag, and Y flipped. */
+  look = { lookX: 1, lookY: 1, touch: 1, invertY: false };
+  private ySign() { return this.look.invertY ? -1 : 1; }
 
   constructor(private el: HTMLElement) {
     // Chrome refuses a new lock for a moment after Esc; the next click tries again.
@@ -35,8 +38,8 @@ export class Controls {
     document.addEventListener("pointerlockchange", () => { this.locked = document.pointerLockElement === el; });
     document.addEventListener("mousemove", (e) => {
       if (!this.locked) return;
-      this.yaw += e.movementX * this.sensitivity;
-      this.pitch = Math.max(-1.3, Math.min(1.2, this.pitch - e.movementY * this.sensitivity));
+      this.yaw += e.movementX * this.sensitivity * this.look.lookX;
+      this.pitch = Math.max(-1.3, Math.min(1.2, this.pitch - e.movementY * this.sensitivity * this.look.lookY * this.ySign()));
     });
     window.addEventListener("keydown", (e) => {
       if (!this.active || (e.target as HTMLElement).closest?.("input, textarea, select")) return;
@@ -107,8 +110,8 @@ export class Controls {
     view.addEventListener("touchmove", (e) => {
       e.preventDefault();
       for (const t of e.changedTouches) if (t.identifier === lid) {
-        this.yaw += (t.clientX - lx) * this.sensitivity * 1.6;
-        this.pitch = Math.max(-1.3, Math.min(1.2, this.pitch - (t.clientY - ly) * this.sensitivity * 1.6));
+        this.yaw += (t.clientX - lx) * this.sensitivity * 1.6 * this.look.touch * this.look.lookX;
+        this.pitch = Math.max(-1.3, Math.min(1.2, this.pitch - (t.clientY - ly) * this.sensitivity * 1.6 * this.look.touch * this.look.lookY * this.ySign()));
         lx = t.clientX; ly = t.clientY;
       }
     }, { passive: false });

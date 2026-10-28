@@ -9,6 +9,7 @@
     "desktop:dev": "bunx rustybuns build desktop --dev --check && bunx rustybuns run desktop"
   },
   "dependencies": {
+    "@rustybuns/game-controls": "workspace:*",
     "@rustybuns/cli": "workspace:*",
     "@rustybuns/shell-bun": "workspace:*",
     "@fontsource/barlow-condensed": "^5.2.5",

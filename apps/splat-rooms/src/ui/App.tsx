@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listScenes, type SceneSummary } from "../actions/scenes.ts";
 import { loadRecords, type Records } from "../game/score.ts";
 import { Browser } from "./Browser.tsx";
+import { mountCog } from "./controls.ts";
 import { Game } from "./Game.tsx";
 import { HowTo, Menu, RoomSelect } from "./Menu.tsx";
 import "./app.css";
@@ -32,9 +33,20 @@ export function App(_: { netPath?: string }) {
     listScenes().then((r) => { setScenes(r.scenes); setDir(r.dir); setError(r.error ?? null); }, (e) => setError(String(e.message ?? e)));
   }, [screen.to]);
 
+  const cogHost = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (cogHost.current) mountCog(cogHost.current); }, []);
+
   const menu = () => setScreen({ to: "menu" });
   const play = (sceneId: string | null) => sceneId && setScreen({ to: "play", sceneId });
 
+  return (
+    <>
+      {screenFor()}
+      <div id="controls-host" ref={cogHost} />
+    </>
+  );
+
+  function screenFor() {
   switch (screen.to) {
     case "rooms": return <RoomSelect scenes={scenes ?? []} records={records} onPick={play} onBack={menu} />;
     case "howto": return <HowTo onBack={menu} />;
@@ -59,5 +71,6 @@ export function App(_: { netPath?: string }) {
           onBrowse={() => setScreen({ to: "browse" })}
           onHowTo={() => setScreen({ to: "howto" })} />
       );
+  }
   }
 }

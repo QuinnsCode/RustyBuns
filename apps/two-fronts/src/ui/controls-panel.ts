@@ -1,15 +1,41 @@
-// The Controls panel: a gear in the corner of every screen opens a sheet of everything in settings.ts. Each change
-// applies at once and is saved; Reset puts the defaults back. Click a key row, then press the key you want.
-import { ACTIONS, type Action, keyName, onSettings, rebind, resetSettings, setSettings, settings, type Settings } from "../settings.ts";
-import { icon } from "./icons.ts";
+// The Controls cog is the shared one (@rustybuns/game-controls: look speeds, invert Y, saved). This adds the rows only this
+// game has: invert left/right, field of view, click-to-fire, left-handed touch and rebinding. Click a key row, then press the key.
+import { mountControls } from "@rustybuns/game-controls";
+import { ACTIONS, type Action, keyName, onSettings, rebind, resetSettings, setLook, setSettings, settings, type Settings } from "../settings.ts";
 
-type Flag = "invertX" | "invertY" | "fireToggle" | "leftHanded";
-type Level = "mouse" | "touch" | "fov";
+type Flag = "invertX" | "fireToggle" | "leftHanded";
+type Level = "fov";
+
+/** Once: carry an older save's mouse and touch speeds and invert Y over to the shared cog's key. */
+function migrate() {
+  try {
+    if (localStorage.getItem(KEY) !== null) return;
+    const old: unknown = JSON.parse(localStorage.getItem("two-fronts-controls") ?? "null");
+    if (typeof old !== "object" || old === null) return;
+    const o = Object.fromEntries(Object.entries(old));
+    const n = (v: unknown) => (typeof v === "number" ? v : 1);
+    localStorage.setItem(KEY, JSON.stringify({ lookX: n(o.mouse), lookY: n(o.mouse), touch: n(o.touch), invertY: o.invertY === true }));
+  } catch { /* no storage: the defaults */ }
+}
+const KEY = "two-fronts.controls";
 
 export function mountControlsPanel() {
-  const btn = Object.assign(document.createElement("button"), { type: "button", id: "controls-btn", title: "Controls", ariaLabel: "Controls" });
-  btn.innerHTML = icon("settings", 18);
-  const panel = Object.assign(document.createElement("div"), { id: "controls", hidden: true, role: "dialog", ariaLabel: "Controls" });
+  migrate();
+  const host = Object.assign(document.createElement("div"), { id: "controls-host" });
+  document.body.append(host);
+  mountControls({
+    key: KEY, parent: host,
+    keys: [["Mouse", "Look (click the field first)"], ["Click", "Fire"], ["1 to 4, F", "Squad orders"], ["Esc", "Let go of the mouse"]],
+    onChange: setLook,
+    onToggle: (open) => { if (open && document.pointerLockElement) document.exitPointerLock(); },
+    extras,
+    onReset: () => { stop(); resetSettings(); },
+  });
+  onSettings(() => { document.body.classList.toggle("lefty", settings.leftHanded); });
+}
+
+let stop = () => {};
+function extras(panel: HTMLElement) {
   const syncs: (() => void)[] = [];
   const row = (label: string, input: HTMLElement) => {
     const l = document.createElement("label");
@@ -30,10 +56,7 @@ export function mountControlsPanel() {
   };
   const note = Object.assign(document.createElement("p"), { className: "controls-note" });
 
-  check("Invert look up/down", "invertY");
   check("Invert look left/right", "invertX");
-  range("Mouse sensitivity", "mouse", 0.2, 3, 0.05);
-  range("Touch look sensitivity", "touch", 0.2, 3, 0.05);
   range("Field of view", "fov", 50, 100, 1);
   check("Click to start and stop firing", "fireToggle");
   check("Left-handed (touch)", "leftHanded");
@@ -41,7 +64,7 @@ export function mountControlsPanel() {
   let waiting: Action | null = null;
   const keyBtns = new Map<Action, HTMLButtonElement>();
   const paintKeys = () => { for (const a of ACTIONS) keyBtns.get(a.id)!.textContent = waiting === a.id ? "press a key…" : keyName(settings.keys[a.id]); };
-  const stop = () => { waiting = null; paintKeys(); };
+  stop = () => { waiting = null; paintKeys(); };
   for (const a of ACTIONS) {
     const b = Object.assign(document.createElement("button"), { type: "button", className: "keycap", name: a.id });
     b.addEventListener("click", () => { waiting = waiting === a.id ? null : a.id; note.textContent = ""; paintKeys(); });
@@ -59,15 +82,5 @@ export function mountControlsPanel() {
     if (!bad) stop();
   }, true);
 
-  const reset = Object.assign(document.createElement("button"), { type: "button", id: "controls-reset", textContent: "Reset to defaults" });
-  reset.addEventListener("click", () => { stop(); note.textContent = ""; resetSettings(); });
-  panel.append(reset);
-
-  btn.addEventListener("click", () => {
-    panel.hidden = !panel.hidden;
-    if (!panel.hidden && document.pointerLockElement) document.exitPointerLock();
-    stop(); btn.blur();
-  });
-  document.body.append(btn, panel);
-  onSettings(() => { syncs.forEach((f) => f()); paintKeys(); document.body.classList.toggle("lefty", settings.leftHanded); });
+  onSettings(() => { syncs.forEach((f) => f()); paintKeys(); });
 }

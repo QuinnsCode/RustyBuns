@@ -78,7 +78,7 @@ export function HowTo({ onBack }: { onBack: () => void }) {
         <h1>How to play</h1>
         <ol>
           <li>The room goes dark and you're told what to find.</li>
-          <li><b>Drag</b> to look around. <b>Space</b> fires one splat; <b>Shift+Space</b> sprays twenty. Every hit lights that patch of the room for good.</li>
+          <li><b>Drag</b> to look around (the cog sets look speed). <b>Space</b> fires one splat; <b>Shift+Space</b> sprays twenty. Every hit lights that patch of the room for good.</li>
           <li>Charge holds twelve and refills one every 1.5 s, so sprays cost you time.</li>
           <li>Spotted it? Press <b>P</b> for pick mode and click it. A wrong pick costs four charge.</li>
           <li><b>Esc</b> pauses.</li>
