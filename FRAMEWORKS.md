@@ -40,9 +40,9 @@ Most frameworks already have a Cloudflare build that outputs a module exporting 
 | Qwik City | `worker` | `cloudflare-pages` adapter (a Pages Functions shape) | `Cloudflare.Worker` + assets | 🔧 |
 | SolidStart | `worker` | Nitro CF preset or Vite plugin output | `Cloudflare.Website.Vite` | 🔧 |
 | Qwik City | `worker` | `cloudflare-pages` adapter: `dist/_worker.js` (a module Worker over `server/entry.cloudflare-pages.js`) + `dist` | `Cloudflare.Worker` + assets | ✅ `init` and desktop: `apps/qwik-example` on the contract (Oct 27); 🧪 edge (`plan --offline` only) |
-| Angular | `worker` | `AngularAppEngine` fetch handler from `@angular/ssr` | `Cloudflare.Worker` + assets | 🔧 |
-| Next.js | `worker` | `@opennextjs/cloudflare`: `.open-next/worker.js` + `.open-next/assets` | `Cloudflare.Worker` + assets | ✅ `init` and desktop; ✅ [`apps/nextjs-example`](apps/nextjs-example) on the sample app contract (Oct 27). The sidecar fallback (`standalone` server) was not needed. |
-| Gatsby | `spa` | none: a static site in `public/` | `Cloudflare.Worker` + assets | ⏳ |
+| Angular | `worker` | `AngularAppEngine` fetch handler from `@angular/ssr` | `Cloudflare.Worker` + assets | ⛔ out of scope for `init`: [why](#out-of-scope-angular-and-gatsby) |
+| Next.js | `worker` | `@opennextjs/cloudflare`: `.open-next/worker.js` + `.open-next/assets` | `Cloudflare.Worker` + assets | ✅ `init` and desktop; ✅ [`apps/nextjs-example`](apps/nextjs-example) on the sample app contract (Oct 27). The sidecar fallback (`standalone` server) was not needed. vinext is the other route: [a soft try](#nextjs-on-vinext-a-soft-try). |
+| Gatsby | `spa` | none: a static site in `public/` | `Cloudflare.Worker` + assets | ⛔ out of scope for `init`: [why](#out-of-scope-angular-and-gatsby) |
 | CRA, Vue CLI | `spa` after `init --port-vite` | none | same as Vite | ✅ `init` (Flame, Yacht, Oct 12) |
 | Hono, Elysia, itty-router (a plain Worker) | `worker` | none: Alchemy bundles the wrangler `main` | `Cloudflare.Worker` | ✅ `init`, desktop, plan: `apps/hono-example`, `apps/elysia-example` (Oct 27) |
 | custom webpack | `spa` after a Vite port by hand | none | same as Vite | ⏳ `init --port-vite` lists what to port and drafts the config |
@@ -72,12 +72,31 @@ Support links to the row in the [matrix](#matrix), and to [FRAMEWORK_COVERAGE.md
 | SolidStart | API routes, `"use server"` functions | `env` from `cloudflare:workers` (Nitro's `useStorage()` untried) | Nitro WebSocket handlers | ✅ `init`, desktop: [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+solidstart) |
 | Qwik City | `routeLoader$`, `routeAction$`, `server$`, endpoints | `platform.env` | a Durable Object in a wrapping Worker | 🔧 [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+qwik) |
 | Qwik City | `routeLoader$`, `routeAction$`, `server$`, endpoints | `platform.env` | a Durable Object exported beside the handler | ✅ `init`, desktop: [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+qwik) |
-| Angular | `AngularAppEngine`'s fetch handler | `env` from `cloudflare:workers` in server code | a Durable Object exported beside the handler | 🔧 [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+angular) |
+| Angular | `AngularAppEngine`'s fetch handler | `env` from `cloudflare:workers` in server code | a Durable Object exported beside the handler | ⛔ [out of scope](#out-of-scope-angular-and-gatsby) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+angular) |
 | Next.js | route handlers, server actions, middleware | OpenNext's `getCloudflareContext().env`; its cache on R2 or KV | a Durable Object exported beside the handler | ✅ [matrix](#matrix), with `@opennextjs/cloudflare` | [#318](https://github.com/QuinnsCode/RustyBuns/issues/318), [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+next.js) |
-| Gatsby | none: a static site (its Functions don't build for Workers) | none | none | ⏳ [matrix](#matrix) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+gatsby) |
+| Gatsby | none: a static site (its Functions don't build for Workers) | none | none | ⛔ [out of scope](#out-of-scope-angular-and-gatsby) | [search](https://github.com/QuinnsCode/RustyBuns/issues?q=is%3Aissue+is%3Aopen+gatsby) |
 | CRA, Vue CLI, custom webpack | as a Vite SPA, after `init --port-vite` | as a Vite SPA | as a Vite SPA | ✅ CRA and Vue CLI, ⏳ webpack: [matrix](#matrix) | [#849](https://github.com/QuinnsCode/RustyBuns/issues/849), [#850](https://github.com/QuinnsCode/RustyBuns/issues/850), [#851](https://github.com/QuinnsCode/RustyBuns/issues/851) |
 
 The 🧪, 🔧 and ⏳ rows describe what each framework's Cloudflare build offers, not something Rusty Buns has run. Each row gets checked, and corrected here, when its sample app lands.
+
+## Next.js on vinext: a soft try
+
+[vinext](https://github.com/cloudflare/vinext) 1.4.0 reimplements the Next.js App Router as a Vite plugin, the other Cloudflare route besides OpenNext. A throwaway copy of `apps/nextjs-example` (Oct 28) took the same `app/` folder, with `getCloudflareContext()` swapped for the binding object from `cloudflare:workers` and a `vite.config.ts` with `vinext()` plus `@cloudflare/vite-plugin`:
+
+- `vinext build` finished in about 15 s and wrote `dist/server/index.js` (a module Worker), `dist/server/wrangler.json` and `dist/client`.
+- `wrangler dev -c dist/server/wrangler.json` served `/` (200, server-rendered with the KV read) and `POST /increment` (303 back to `/`).
+- Not tried: the desktop host, the compiled binary, a deploy, or a real app. It needs Vite 8, `@vitejs/plugin-rsc` and `react-server-dom-webpack` beside React 19.3.
+
+So the build output is the shape the desktop already mounts. `init` still reads Next.js only with `@opennextjs/cloudflare`; teaching it vinext (a `vinext` dependency, `dist/server/index.js` plus `dist/client`) is a follow-up if people ask.
+
+## Out of scope: Angular and Gatsby
+
+Both stay named in `stackOf()` (so `fit` says what they are) and neither gets an `init` reader.
+
+- **Angular.** `@angular/ssr`'s `AngularAppEngine` is a fetch handler, but the Angular CLI builds it with its own esbuild pipeline and has no Cloudflare target, and the sampled apps serve it through Express (`node:http`), which no Worker runs. `init` would have to write the app's Worker entry, so it has nothing to infer. An Angular app that already has a Worker entry is read as a plain Cloudflare Worker.
+- **Gatsby.** It builds a static site into `public/`. Its Functions and SSR don't build for Workers, and the top repos are Gatsby itself or libraries. A built `public/` folder is boxed as a static site already, so `init` adds nothing.
+
+Reopen either if a real app asks and a sample app can be written on the contract.
 
 ## Real apps from GitHub
 
@@ -97,9 +116,9 @@ Easiest first, judged by each framework's Cloudflare build and a `fit` sweep ove
 | 6 | Qwik City | Its Cloudflare adapter targets Pages Functions, not a module Worker, so it needs a small wrapper. |
 | 5 | SolidStart | Nitro too (v1) or a Vite plugin (v2), so it follows Nuxt. Most sampled repos are libraries. |
 | 6 | Qwik City | `init` reads it (Oct 27). Its `cloudflare-pages` adapter no longer writes Pages Functions: since 1.x it builds `dist/_worker.js`, a module Worker over `server/entry.cloudflare-pages.js`, the SvelteKit shape, so no wrapper was needed. |
-| 7 | Angular | `@angular/ssr`'s `AngularAppEngine` is a fetch handler, but 4 of 5 sampled apps serve it through Express. |
+| 7 | Angular | Out of scope for `init` ([why](#out-of-scope-angular-and-gatsby)). `@angular/ssr`'s `AngularAppEngine` is a fetch handler, but 4 of 5 sampled apps serve it through Express. |
 | 8 | Next.js | OpenNext works, but it's the heaviest build, and both sampled apps carry native addons (`sharp`, Prisma). |
-| 9 | Gatsby | Static output only, so it fits the `spa` path. The top repos are mostly Gatsby itself or libraries, not apps. |
+| 9 | Gatsby | Out of scope for `init` ([why](#out-of-scope-angular-and-gatsby)). Static output only, so it fits the `spa` path. The top repos are mostly Gatsby itself or libraries, not apps. |
 | 10 | CRA, Vue CLI, webpack | CRA and Vue CLI done: `init --port-vite`. Custom webpack configs are ported by hand from the list it prints (#849), which has been run on AdGuard Home, CyberChef and jellyfin-web. |
 
 ## The sample app contract
