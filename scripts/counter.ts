@@ -54,7 +54,7 @@ export function formIn(html: string): { action: string; body: URLSearchParams } 
   return { action, body };
 }
 
-export async function counterJourney(app: string, opts: { build?: boolean } = {}): Promise<void> {
+export async function counterJourney(app: string, opts: { build?: boolean; spa?: string } = {}): Promise<void> {
   if (opts.build !== false) {
     const build = Bun.spawn(["bun", cli, "build", "desktop", "--dev"], { cwd: app, stdout: "pipe", stderr: "pipe" });
     if (await build.exited) throw new Error(`build desktop --dev failed:\n${await new Response(build.stdout).text()}\n${await new Response(build.stderr).text()}`);
@@ -66,6 +66,7 @@ export async function counterJourney(app: string, opts: { build?: boolean } = {}
     const page = async () => await (await get("/")).text();
     const bare = await fetch(host.url + "/");
     if (bare.status !== 403) throw new Error(`no token: HTTP ${bare.status}, want 403`);
+    if (opts.spa) return await spaJourney(host, opts.spa, async () => { await stop(host); host = await start(app, home); return host; });
     const first = await get("/");
     if (first.status !== 200) throw new Error(`with the token: HTTP ${first.status}, want 200\n${(await first.text()).slice(0, 1000)}`);
     const html = await first.text();
@@ -85,4 +86,24 @@ export async function counterJourney(app: string, opts: { build?: boolean } = {}
     await stop(host);
     rmSync(home, { recursive: true, force: true });
   }
+}
+
+// A client-only app (a Vite SPA) has no server render and no form: the page is a shell and the count lives
+// in a "use server" action the desktop host runs. `action` is that module's path (`src/actions/counter.ts`);
+// it exports getCount() and increment(), reached the way the page reaches them, through /__rb/action.
+async function spaJourney(host: Host, action: string, restart: () => Promise<Host>): Promise<void> {
+  const call = async (h: Host, fn: string) => {
+    const res = await fetch(h.url + "/__rb/action", { method: "POST", headers: { cookie: h.cookie, "content-type": "application/json", origin: h.url }, body: JSON.stringify({ module: action, fn, args: [] }) });
+    if (!res.ok) throw new Error(`${fn}: HTTP ${res.status}\n${(await res.text()).slice(0, 1000)}`);
+    return await res.json();
+  };
+  const page = await fetch(host.url + "/", { headers: { cookie: host.cookie } });
+  const html = await page.text();
+  if (page.status !== 200 || !/<script[^>]*type="module"/.test(html)) throw new Error(`/ should be the built shell (HTTP ${page.status}):\n${html.slice(0, 1000)}`);
+  if (await call(host, "getCount") !== 0) throw new Error("fresh data dir, but getCount() is not 0");
+  await call(host, "increment");
+  const two = await call(host, "increment");
+  if (two !== 2) throw new Error(`after two increments the action says ${two}, want 2`);
+  const again = await call(await restart(), "getCount");
+  if (again !== 2) throw new Error(`after a restart getCount() is ${again}, want 2`);
 }
