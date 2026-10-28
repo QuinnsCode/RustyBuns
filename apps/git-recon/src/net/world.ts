@@ -13,6 +13,7 @@
 
 import { cleanSetup, Room } from "./room.ts";
 import { encodeSnap, SNAP_HZ, type FromWorld, type Look } from "./wire.ts";
+import { TokenBucket } from "@rustybuns/util/limits";
 
 // Provided by workerd and by the Rusty Buns host.
 declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
@@ -33,23 +34,11 @@ const LOOK = /^[a-z0-9-]{1,24}$/;
 
 interface Who { key: string; name: string; look: Look; host: boolean }
 
-class Bucket {
-  private tokens = MSG_BURST;
-  constructor(private at: number) {}
-  take(now: number): boolean {
-    this.tokens = Math.min(MSG_BURST, this.tokens + Math.max(0, now - this.at) * MSG_RATE / 1000);
-    this.at = now;
-    if (this.tokens < 1) return false;
-    this.tokens -= 1;
-    return true;
-  }
-}
-
 export default class World {
   room: Room | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private rounds = new WeakMap<object, number>();
-  private buckets = new WeakMap<object, Bucket>();
+  private buckets = new WeakMap<object, TokenBucket>();
   /** Online: the key of whoever picked the battle. */
   private owner: string | null = null;
   private lastInput = Date.now();
@@ -84,7 +73,7 @@ export default class World {
     const who = this.who(ws), now = Date.now();
     if (!who) return;
     let b = this.buckets.get(ws);
-    if (!b) this.buckets.set(ws, (b = new Bucket(now)));
+    if (!b) this.buckets.set(ws, (b = new TokenBucket(MSG_RATE, MSG_BURST, now)));
     if (!b.take(now)) return;
     let m: any;
     try { m = JSON.parse(raw); } catch { return; }

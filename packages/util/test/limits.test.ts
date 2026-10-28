@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { RoomMintGate, TokenBucket, originAllowed } from "../src/engine/limits.ts";
+import { RoomMintGate, TokenBucket, originAllowed } from "../src/limits.ts";
 
 test("token bucket: a burst, then the refill rate", () => {
   const b = new TokenBucket(10, 5, 0);
@@ -24,11 +24,11 @@ test("room mint gate: distinct rooms per key per window; rejoining is free", () 
 });
 
 test("origin: same origin, localhost and LAN pass; another site does not; no Origin is not a browser", () => {
-  const url = new URL("https://hippo-tycoon.example.workers.dev/ws?room=ABCD");
+  const url = new URL("https://game.example.workers.dev/ws?room=ABCD");
   expect(originAllowed(null, url)).toBe(true);
-  expect(originAllowed("https://hippo-tycoon.example.workers.dev", url)).toBe(true);
+  expect(originAllowed("https://game.example.workers.dev", url)).toBe(true);
   for (const o of ["http://localhost:5173", "http://127.0.0.1:8787", "http://[::1]:3000", "http://192.168.1.20:4000", "http://10.0.0.5", "http://172.20.1.1:80", "http://box.local:4000", "http://app.localhost"])
     expect(originAllowed(o, url)).toBe(true);
-  for (const o of ["https://evil.example", "http://hippo-tycoon.example.workers.dev.evil.example", "null", "http://172.32.0.1", "http://8.8.8.8", "not a url"])
+  for (const o of ["https://evil.example", "http://game.example.workers.dev.evil.example", "null", "http://172.32.0.1", "http://8.8.8.8", "not a url"])
     expect(originAllowed(o, url)).toBe(false);
 });

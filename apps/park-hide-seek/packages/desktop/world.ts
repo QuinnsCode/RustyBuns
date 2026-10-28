@@ -8,7 +8,7 @@
 // So it never enters the game. Each player plays under publicId(uid), a hash
 // of it, and that is the id views carry, so nobody can lift another's login.
 import { Room, TICK_MS } from "../../src/room.ts";
-import { TokenBucket } from "../../src/edge/limits.ts";
+import { TokenBucket } from "@rustybuns/util/limits";
 import { QUICK } from "../../src/edge/match.ts";
 import { parseMsg, type ServerMsg } from "../../src/hunt/game.ts";
 import { fetchWeather } from "../../src/weather.ts";

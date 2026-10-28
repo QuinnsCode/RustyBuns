@@ -1,6 +1,28 @@
-// Abuse limits for playing online, pure and clock-injected so tests drive them by hand (the same
-// ones park-hide-seek uses). RoomMintGate and originAllowed guard the Worker's door; the world
-// keeps its own per-socket bucket.
+// Abuse limits for a game played online, pure and clock-injected so tests drive them by hand.
+// TokenBucket guards one socket's messages in the world; RoomMintGate and originAllowed guard
+// the Worker's door.
+
+/**
+ * `rate` tokens a second, up to `burst` saved. take() is false once it runs dry; a message can
+ * cost more than one (a big one, say). Set `rate` and `burst` to change them for the next take.
+ */
+export class TokenBucket {
+  private tokens: number;
+  private at: number;
+
+  constructor(public rate: number, public burst: number, now: number) {
+    this.tokens = burst;
+    this.at = now;
+  }
+
+  take(now: number, cost = 1): boolean {
+    this.tokens = Math.min(this.burst, this.tokens + Math.max(0, now - this.at) * this.rate / 1000);
+    this.at = now;
+    if (this.tokens < cost) return false;
+    this.tokens -= cost;
+    return true;
+  }
+}
 
 /**
  * How many distinct rooms one client (by address) may open in a window.
