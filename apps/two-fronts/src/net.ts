@@ -7,6 +7,7 @@ import type { GalaxyId } from "./war/galaxy.ts";
 import type { Orders } from "./war/rules.ts";
 import type { Seats, Vote } from "./war/table.ts";
 import { decodeOut, type PointerIn, type PointerOut } from "./pointer-wire.ts";
+import { connectSocket } from "@rustybuns/util/socket";
 
 export type { View };
 export interface Online { id: string; token: string; invite?: string } // invite: the other side's token, kept by whoever started it
@@ -31,26 +32,23 @@ export const sendVote = (g: Online, match: string, mode: MatchMode) => call<View
 // The vote screen's live line to the other seat: where each pointer is, and the votes as they land.
 // The token goes in the first message, not the URL. Coordinates are 0..1 across the vote screen.
 export function pointerSocket(g: Online, on: (m: PointerOut) => void) {
-  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/campaigns/${g.id}/pointers`);
   let ready = false, last = 0, later: ReturnType<typeof setTimeout> | undefined;
-  ws.onopen = () => ws.send(JSON.stringify({ t: "hello", token: g.token } satisfies PointerIn));
-  ws.onmessage = (e) => {
-    let m: PointerOut | null = null;
-    try { m = decodeOut(JSON.parse(String(e.data))); } catch { /* not ours */ }
-    if (m?.t === "hi") ready = true;
-    else if (m) on(m);
-  };
+  const link = connectSocket<PointerOut, PointerIn>(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/campaigns/${g.id}/pointers`, {
+    decode: decodeOut,
+    onOpen: () => { link.send({ t: "hello", token: g.token }); },
+    onMessage: (m) => { if (m.t === "hi") ready = true; else on(m); },
+  });
   return {
     // At most twenty a second, and the last one always goes.
     at(x: number, y: number) {
       clearTimeout(later);
       const wait = 50 - (performance.now() - last);
       if (wait > 0) { later = setTimeout(() => this.at(x, y), wait); return; }
-      if (!ready || ws.readyState !== WebSocket.OPEN) return;
+      if (!ready || !link.open) return;
       last = performance.now();
-      ws.send(JSON.stringify({ t: "at", x, y }));
+      link.send({ t: "at", x, y });
     },
-    close: () => { clearTimeout(later); ws.close(); },
+    close: () => { clearTimeout(later); link.close(); },
   };
 }
 
