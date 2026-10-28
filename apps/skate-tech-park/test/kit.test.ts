@@ -8,7 +8,7 @@ import type { ParkLevel } from "../src/levels/park.ts";
 import { makeLevel, toLocal } from "../src/level.ts";
 import { bowl, fallenLog, join, outcrop, rockFace } from "../src/levels/pieces.ts";
 import { KIT_BUDGETS, fitAcross, fitUp, loadKit } from "../src/render/kit.ts";
-import { levelMeshes } from "../src/render/pieces.ts";
+import { TILE, levelMeshes } from "../src/render/pieces.ts";
 import { level as loadLevel } from "./parks.ts";
 
 const read = (f: string) => Bun.file(new URL(`../public/${f}`, import.meta.url)).arrayBuffer();
@@ -21,7 +21,7 @@ test.each([...KIT_BUDGETS])("the %s kit dresses ramps, stairs, blocks, boulders,
   for (const id of ["plaza", "yosemite-falls", "half-dome", "mariposa-grove"]) {
     const level = await loadLevel(id), ground = "ground" in level ? (level as ParkLevel).ground.height : undefined;
     const group = levelMeshes(level, ground, kit);
-    expect(group.children.length).toBeLessThanOrEqual(2);
+    expect(group.children.length).toBeLessThanOrEqual(2 * Math.ceil(1000 / TILE) ** 2); // two meshes a 60 m tile
     const dressed = level.pieces.filter((p) => p.look);
     expect(dressed.length).toBeGreaterThan(0);
     for (const p of dressed) {
@@ -47,7 +47,7 @@ test.each([...KIT_BUDGETS])("the %s landscape: a boulder, a rock face that turns
   expect(part.pieces.every((p) => p.look)).toBe(true);
   const level = makeLevel({ name: "landscape", pieces: part.pieces, rails: part.rails, spawns: [], bounds: { minX: -100, maxX: 100, minZ: -40, maxZ: 40 } });
   const group = levelMeshes(level, undefined, kit);
-  expect(group.children.length).toBeLessThanOrEqual(2);
+  expect(group.children.length).toBeLessThanOrEqual(8); // two meshes a 60 m tile, and this landscape spans four tiles
   const [rock, face, log, pool] = part.pieces as [typeof part.pieces[0], ...typeof part.pieces];
   // The crest of the boulder and of the log, the shelf behind the face's lip, and the pool's floor and deck.
   const spots: [number, number][] = [

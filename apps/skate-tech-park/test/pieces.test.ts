@@ -5,15 +5,17 @@ import * as THREE from "three";
 import { LEVELS } from "../src/levels/index.ts";
 import type { ParkLevel } from "../src/levels/park.ts";
 import { piece } from "../src/level.ts";
-import { levelMeshes, pieceGeometry } from "../src/render/pieces.ts";
+import { TILE, levelMeshes, pieceGeometry } from "../src/render/pieces.ts";
 import { build, level as loadLevel } from "./parks.ts";
 
 const draws = (g: THREE.Object3D) => { let n = 0; g.traverse((o) => { if ((o as THREE.Mesh).isMesh) n++; }); return n; };
 
-test.each(LEVELS.map((e) => [e.name, e.id]))("%s: every piece and rail is two draw calls", async (_, id) => {
+test.each(LEVELS.map((e) => [e.name, e.id]))("%s: every piece and rail is two draw calls a tile", async (_, id) => {
   const level = await loadLevel(id), park = "ground" in level ? (level as ParkLevel).ground.height : undefined;
   const group = levelMeshes(level, park);
-  expect(draws(group)).toBeLessThanOrEqual(2);
+  const tiles = new Set(group.children.map((m) => m.name === "pieces" || m.name === "rails" ? m.name : "?"));
+  expect(tiles.has("?")).toBe(false);
+  expect(draws(group)).toBeLessThanOrEqual(2 * Math.ceil(2 * 700 / TILE) ** 2); // a few dozen at most, however many pieces
   expect(group.children.some((m) => m.name === "pieces")).toBe(level.pieces.length > 0);
   // The look costs vertices, not draw calls: a park stays a few hundred thousand.
   const verts = group.children.reduce((n, m) => n + (m as THREE.Mesh).geometry.attributes.position.count, 0);
@@ -49,4 +51,17 @@ test("a block is a closed solid whose sides face outward", () => {
     expect(nor.getX(i) * pos.getX(i) + nor.getZ(i) * pos.getZ(i)).toBeGreaterThan(0);
   }
   expect(walls).toBeGreaterThan(10);
+});
+
+test("a park's pieces are split into tiles, so the camera and the sun's shadow box can drop the far ones", async () => {
+  const level = await loadLevel("el-capitan"), group = levelMeshes(level, (level as ParkLevel).ground.height);
+  const pieces = group.children.filter((m) => m.name === "pieces") as THREE.Mesh[];
+  expect(pieces.length).toBeGreaterThan(1);
+  const rider = level.spawns[0]!, cam = new THREE.OrthographicCamera(-60, 60, 60, -60, 0.1, 200);
+  cam.position.set(rider.x, 100, rider.z);
+  cam.lookAt(rider.x, 0, rider.z);
+  cam.updateMatrixWorld(true);
+  const frustum = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+  const seen = pieces.filter((m) => frustum.intersectsObject(m)).length;
+  expect(seen).toBeLessThan(pieces.length);
 });
