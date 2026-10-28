@@ -161,6 +161,10 @@ Current limits on the box:
 
   The Docker build, the staging, the cross check and the box image all skip it, so an app whose crates all opt out cross-compiles like pure TS without Docker (hippo-tycoon's `native/` works this way). `desktop.native: false` still keeps all of `native/` out of the binary (and the box image) from the app config.
 
+## DigitalOcean (untried)
+
+The Railway box's Docker context (`.rustybuns/railway/`) should run unchanged on DigitalOcean App Platform or a Droplet, with a volume mounted at `/data`. Nobody has tried it; see [#2482](https://github.com/QuinnsCode/RustyBuns/issues/2482). Until then the supported boxes are Hetzner and Railway.
+
 ## Azure (not a deploy target yet)
 
 Alchemy has no Azure provider: none in `2.0.0-beta.77` (ours), `2.0.0-beta.84`, or the last 0.x, and no `@alchemy.run/azure` package. So `targets.box.provider` is `hetzner` or `railway` only. What Azure can do today:
