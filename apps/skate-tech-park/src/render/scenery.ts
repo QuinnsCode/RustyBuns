@@ -279,7 +279,7 @@ export const SQUASH = 3; // metres
 export const squash = (spot: Spot, d: number) => (d >= SQUASH ? 1 : Math.max(0, d / SQUASH) ** 2);
 
 /** Metres across one tile of instances: each kind is one instanced mesh per tile, so three culls (and the sun's shadow box drops) the far ones. */
-export const SCENERY_TILE = 80;
+export const SCENERY_TILE = 160;
 
 type Patch = { mesh: THREE.InstancedMesh; mine: Spot[]; shrunk: Set<number>; box: { x0: number; x1: number; z0: number; z1: number } };
 
