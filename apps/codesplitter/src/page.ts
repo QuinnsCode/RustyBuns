@@ -24,7 +24,7 @@ import { esc } from "./util.ts";
 import { json, readBody, type Env } from "./env.ts";
 import { toFile } from "./archive.ts";
 import type { Applied, Line, Op } from "./lines.ts";
-import { repoRow } from "./repos.ts";
+import { repoRow, live } from "./repos.ts";
 /** The public repo whose files are the page. */
 export const PAGE_REPO = "page";
 
@@ -79,7 +79,7 @@ export function pagePath(rest: string[]): string | null {
 /** What a signed-out visitor may be told about the owner: their handle, bio and public repos. */
 async function visible(env: Env, name: string) {
   const user = await env.DB.prepare("SELECT name, bio FROM users WHERE name = ?").bind(name).first<{ name: string; bio: string | null }>();
-  const { results } = await env.DB.prepare("SELECT name FROM repos WHERE owner = ? AND visibility = 'public' AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC").bind(name, Date.now()).all<{ name: string }>();
+  const { results } = await env.DB.prepare(`SELECT name FROM repos WHERE owner = ? AND visibility = 'public' AND ${live()} ORDER BY created_at DESC`).bind(name, Date.now()).all<{ name: string }>();
   return { name, bio: user?.bio ?? "", repos: results.map((r) => r.name) };
 }
 

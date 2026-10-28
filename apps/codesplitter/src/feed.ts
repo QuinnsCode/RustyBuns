@@ -25,6 +25,7 @@ import { KEEP_MS } from "./line-events.ts";
 import { containerSandbox } from "./sandbox.ts";
 import { ADMINS_ONLY, adminsOnly, agentsUnavailable, hostedBudget, installedHarnesses } from "./agent-routes.ts";
 import { parseJson, plural } from "./util.ts";
+import { liveRepo } from "./repos.ts";
 
 const WEEK = 7 * 24 * 3600_000;
 /** Events one feed read looks at. */
@@ -89,7 +90,7 @@ export async function feedFor(env: Env, handle: string, since: number, follows?:
   const repos = follows.flatMap((f) => f.kind === "repo" ? [`${f.owner}/${f.repo}`] : []);
   const files = follows.flatMap((f) => f.kind === "lines" ? [`${f.owner}/${f.repo}/${f.path}`] : []);
   // Readable is checked here, against the repo as it is now: a repo gone private drops out of feeds that aren't its crew's.
-  const readable = `JOIN repos r ON r.owner = e.owner AND r.name = e.repo AND (r.expires_at IS NULL OR r.expires_at > ?1)
+  const readable = `${liveRepo("e", "?1")}
     AND (r.visibility = 'public' OR r.owner = ?2 OR EXISTS (SELECT 1 FROM collaborators c WHERE c.owner = e.owner AND c.repo = e.repo AND c.name = ?2))`;
   // Stamps (stamps.ts): given by, or on lines written by, who you follow; in the repos you follow; on the lines you follow.
   const { results: stamped } = await env.DB.prepare(`SELECT e.owner, e.repo, e.path, e.line, e.stamp, e.by, e.author, e.created_at FROM stamps e ${readable}

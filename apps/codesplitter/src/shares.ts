@@ -7,7 +7,7 @@
 
 import { fileLines, materialize } from "./archive.ts";
 import { json, type Body, type Env } from "./env.ts";
-import { repoRow } from "./repos.ts";
+import { repoRow, liveRepo } from "./repos.ts";
 
 /** Who may share from a repo: anyone who can read a public one; only its crew for a private one. */
 export async function createShare(env: Env, owner: string, repo: string, user: string | null, access: { read: boolean; write: boolean }, private_: boolean, body: Body<"path" | "from" | "to" | "note">) {
@@ -28,7 +28,7 @@ export async function createShare(env: Env, owner: string, repo: string, user: s
 
 export async function shareRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (p[1] !== "shares" || !p[2]) return null;
-  const s = await env.DB.prepare("SELECT s.* FROM shares s JOIN repos r ON r.owner = s.owner AND r.name = s.repo WHERE s.id = ? AND (r.expires_at IS NULL OR r.expires_at > ?)").bind(p[2], Date.now()).first<{ id: string; owner: string; repo: string; path: string; ids: string; by: string; note: string; created_at: number }>();
+  const s = await env.DB.prepare(`SELECT s.* FROM shares s ${liveRepo("s")} WHERE s.id = ?`).bind(Date.now(), p[2]).first<{ id: string; owner: string; repo: string; path: string; ids: string; by: string; note: string; created_at: number }>();
   if (!s) return json({ error: "this share was revoked, or never was" }, 404);
   if (req.method === "DELETE") {
     if (user !== s.by && user !== s.owner) return json({ error: "only whoever shared it, or the repo's owner" }, 403);

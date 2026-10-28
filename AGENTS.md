@@ -90,8 +90,9 @@ A PR that deletes more than it adds is the goal.
 - `clamp`, `clamp01`, `lerp`, `esc`, `mulberry32` and `nextRandom` (a seeded stream kept on a sim's own state) are in
   `@rustybuns/util`: import them. A game world's `TokenBucket`, `RoomMintGate` and `originAllowed` are `@rustybuns/util/limits`. Still copied between `apps/*`: `json` Response helpers (a shared package is the fix,
   not a fifth copy).
-- When a table is always read together with another (`repos` and `branches` are joined by hand in many places), add a
-  view or one query helper rather than another hand-written join.
+- When a table is always read together with another, add one query helper rather than another hand-written join:
+  "the repo is still live" is `live(alias)`, joining it is `liveRepo(t)`, and a branch's row beside its files is
+  `branchOf(t)`, all in `apps/codesplitter/src/repos.ts`.
 
 ## codeSplitter is the Cloudflare git competition entry
 
