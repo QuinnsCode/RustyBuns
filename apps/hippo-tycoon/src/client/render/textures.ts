@@ -2,7 +2,8 @@
 // moss. Canvas 2D, a seeded RNG, no files.
 import * as THREE from "three";
 
-function rng(seed: number) {
+/** A quick seeded LCG for decoration (the sim uses mulberry32, sim/rng.ts). */
+export function rng(seed: number) {
   let x = seed >>> 0;
   return () => ((x = (Math.imul(x, 1664525) + 1013904223) >>> 0) / 4294967296);
 }

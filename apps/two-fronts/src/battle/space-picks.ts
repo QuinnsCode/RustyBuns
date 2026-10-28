@@ -19,6 +19,7 @@
 // with none left is gone. It's a pure function of the spec, its seed and the picks, so the table
 // plays a result again from the hero's picks with the AI picking for the other side.
 import { other, SPACE_ORDERS, type PerSide, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./contract.ts";
+import { nextRandom } from "@rustybuns/util";
 
 export const ROUNDS = 4;
 export const HULL_PER_SHIP = 10;
@@ -116,12 +117,7 @@ export function exchange(b: PickBattle, picks: PerSide<SpaceOrder>, roll: () => 
   return r;
 }
 
-const rand = (b: PickBattle) => {
-  let t = (b.seed = (b.seed + 0x6d2b79f5) >>> 0);
-  t = Math.imul(t ^ (t >>> 15), t | 1);
-  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-};
+const rand = (b: PickBattle) => nextRandom(b, "seed");
 
 // One round: both picks in, then the exchange. Throws on an order a side can't pick.
 export function playRound(b: PickBattle, picks: PerSide<SpaceOrder>): PickRound {
