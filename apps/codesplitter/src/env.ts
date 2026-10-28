@@ -1,5 +1,6 @@
 // The Worker's bindings, and the slice of Cloudflare's Artifacts types we use
 // (copied from @cloudflare/workers-types so the app needs no extra package).
+import { Bad, type Guard } from "@rustybuns/util/guard";
 
 export interface TreeEntry { name: string; mode: string; hash: string; type: "tree" | "blob" | "symlink" | "gitlink" | "exec" }
 export interface CommitMeta { hash: string; treeHash: string; message: string; parents: string[]; author: { name: string; email: string }; authoredAt: number }
@@ -213,6 +214,11 @@ export type Body<K extends string> = { [k in K]?: unknown };
 export const readBody = async <K extends string>(req: Request): Promise<Body<K>> => {
   const v: unknown = await req.json().catch(() => null);
   return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Body<K>) : {};
+};
+
+/** A body through a guard (`@rustybuns/util/guard`): the value typed, or a 400 saying what's wrong, in `why`'s words when given. */
+export const need = <T>(v: unknown, g: Guard<T>, why?: string): T | Response => {
+  try { return g(v); } catch (e) { if (e instanceof Bad) return json({ error: why ?? e.message }, 400); throw e; }
 };
 
 // Single dashes only, so "owner--repo" names an artifact unambiguously.

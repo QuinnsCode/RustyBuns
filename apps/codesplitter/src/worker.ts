@@ -28,10 +28,12 @@ import {
   code,
   json,
   NAME,
+  need,
   readBody,
   type DigMessage,
   type Env,
 } from "./env.ts";
+import { arr, bool, obj, oneOf, opt, str } from "@rustybuns/util/guard";
 import {
   accountsOn,
   actingAs,
@@ -469,24 +471,17 @@ async function route(req: Request, env: Env): Promise<Response> {
     let warning: string | undefined;
     if (req.method === "PUT") {
       // Only what's sent changes, so turning the pulse off leaves the bio be.
-      const b = await body<"bio" | "theme_html" | "pulse" | "git_truth" | "avatar" | "share_usage" | "hidden" | "top8">();
-      if (b.top8 !== undefined) {
-        const names = b.top8 as unknown;
-        let ok = Array.isArray(names) && names.length <= TOP_FRIENDS && names.every((h) => typeof h === "string" && h !== user);
-        for (const h of ok ? (names as string[]) : []) ok &&= !!(await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(h).first());
-        if (!ok) return json({ error: `top8: up to ${TOP_FRIENDS} other people who have a profile` }, 400);
-      }
-      if (b.hidden !== undefined && (!Array.isArray(b.hidden) || b.hidden.some((h) => !PROFILE_SECTIONS.includes(h as never)))) return json({ error: `hidden: a list of ${PROFILE_SECTIONS.join(", ")}` }, 400);
-      if (b.share_usage !== undefined && typeof b.share_usage !== "boolean") return json({ error: "share_usage: true or false" }, 400);
-      if (b.pulse !== undefined && typeof b.pulse !== "boolean") return json({ error: "pulse: true or false" }, 400);
-      if (b.git_truth !== undefined && !TRUTHS.includes(b.git_truth as Truth)) return json({ error: `git_truth: ${TRUTHS.join(", ")}` }, 400);
-      if ((b.bio !== undefined && typeof b.bio !== "string") || (b.theme_html !== undefined && typeof b.theme_html !== "string")) return json({ error: "bio and theme_html: text" }, 400);
-      if ((b.bio?.length ?? 0) > BIO_MAX || (b.theme_html?.length ?? 0) > THEME_MAX) return json({ error: `bio: up to ${BIO_MAX} characters; theme_html: up to ${THEME_MAX}` }, 400);
+      const raw = await body<"avatar">();
+      const b = need(raw, obj({ bio: opt(str(BIO_MAX, { min: 0 })), theme_html: opt(str(THEME_MAX, { min: 0 })), pulse: opt(bool()), git_truth: opt(oneOf(TRUTHS)),
+        share_usage: opt(bool()), hidden: opt(arr(oneOf(PROFILE_SECTIONS), 100)), top8: opt(arr(str(), TOP_FRIENDS)) }));
+      if (b instanceof Response) return b;
+      for (const h of b.top8 ?? []) if (h === user || !(await env.DB.prepare("SELECT 1 FROM users WHERE name = ?").bind(h).first()))
+        return json({ error: `top8: up to ${TOP_FRIENDS} other people who have a profile` }, 400);
       // avatar: the parts (src/avatar.ts), or null to take it off.
-      const avatar = b.avatar === undefined ? null : b.avatar === null ? "" : cleanAvatar(b.avatar);
-      if (avatar === null && b.avatar !== undefined) return json({ error: `avatar: every part (${Object.keys(PARTS).join(", ")}), each one of its options, colors as #rrggbb` }, 400);
+      const avatar = raw.avatar === undefined ? null : raw.avatar === null ? "" : cleanAvatar(raw.avatar);
+      if (avatar === null && raw.avatar !== undefined) return json({ error: `avatar: every part (${Object.keys(PARTS).join(", ")}), each one of its options, colors as #rrggbb` }, 400);
       await env.DB.prepare("UPDATE users SET bio = COALESCE(?, bio), theme_html = COALESCE(?, theme_html), pulse = COALESCE(?, pulse), git_truth = COALESCE(?, git_truth), avatar = COALESCE(?, avatar), share_usage = COALESCE(?, share_usage), hidden = COALESCE(?, hidden), top8 = COALESCE(?, top8) WHERE name = ?")
-        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, avatar === null ? null : avatar === "" ? "" : JSON.stringify(avatar), b.share_usage === undefined ? null : b.share_usage ? 1 : 0, b.hidden === undefined ? null : JSON.stringify([...new Set(b.hidden)]), b.top8 === undefined ? null : JSON.stringify([...new Set(b.top8 as string[])]), user).run();
+        .bind(b.bio ?? null, b.theme_html ?? null, b.pulse === undefined ? null : b.pulse ? 1 : 0, b.git_truth ?? null, avatar === null ? null : avatar === "" ? "" : JSON.stringify(avatar), b.share_usage === undefined ? null : b.share_usage ? 1 : 0, b.hidden === undefined ? null : JSON.stringify([...new Set(b.hidden)]), b.top8 === undefined ? null : JSON.stringify([...new Set(b.top8)]), user).run();
       // Saying no (or changing your mind) takes back what was shared (usage.ts).
       if (b.share_usage === false) await forget(env, user).run();
       // A public page repo wins over the saved theme_html, so saving it would otherwise change nothing you can see.

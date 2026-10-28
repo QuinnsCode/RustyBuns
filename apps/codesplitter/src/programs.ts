@@ -7,7 +7,8 @@
 //   DELETE /api/me/programs/:name
 // `execute` takes { program: name, input? } in place of code; the program reads its `input`.
 
-import { json, readBody, type Env } from "./env.ts";
+import { json, need, readBody, type Env } from "./env.ts";
+import { obj, str } from "@rustybuns/util/guard";
 
 export const MAX_PROGRAMS = 50;
 const MAX_CODE = 64_000;
@@ -32,10 +33,10 @@ export async function programRoutes(req: Request, env: Env, p: string[], user: s
   }
   if (req.method !== "PUT") return null;
   if (!NAME.test(name)) return json({ error: "name: lower-case letters, digits, - and _, up to 48, starting with a letter or digit" }, 400);
-  const b = await readBody<"code" | "description">(req);
-  if (typeof b.code !== "string" || !b.code.trim()) return json({ error: "code is required: the body of an async function" }, 400);
-  if (b.code.length > MAX_CODE) return json({ error: `code is up to ${MAX_CODE.toLocaleString("en")} characters` }, 400);
-  const description = typeof b.description === "string" ? b.description.slice(0, 300) : "";
+  const b = need(await readBody(req), obj({ code: str(MAX_CODE, { re: /\S/ }), description: str(300, { min: 0, dflt: "" }) }),
+    `code is required: the body of an async function, up to ${MAX_CODE.toLocaleString("en")} characters`);
+  if (b instanceof Response) return b;
+  const { description } = b;
   const had = await env.DB.prepare("SELECT 1 AS x FROM programs WHERE owner = ? AND name = ?").bind(user, name).first();
   if (!had) {
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM programs WHERE owner = ?").bind(user).first<{ n: number }>();

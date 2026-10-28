@@ -11,7 +11,8 @@
 //   DELETE /api/repos/:o/:r/tags/:name    (owner)
 
 import { access, handleFor } from "./archive.ts";
-import { branchNameError, code, json, readBody, type Env } from "./env.ts";
+import { branchNameError, code, json, need, readBody, type Env } from "./env.ts";
+import { obj, opt, str } from "@rustybuns/util/guard";
 import { remoteRefs, setRef, ZERO } from "./git.ts";
 
 export interface Tag { name: string; commit: string }
@@ -64,14 +65,13 @@ export async function tagRoutes(req: Request, env: Env, p: string[], owner: stri
     }
 
     if (name) return null;
-    const b = await readBody<"name" | "commit">(req);
-    const tag = typeof b.name === "string" ? b.name.trim() : "";
-    const bad = tagNameError(tag);
+    const b = need(await readBody(req), obj({ name: str(Infinity, { min: 0, dflt: "" }), commit: opt(str(64, { re: /^[0-9a-f]{40,64}$/ })) }), "commit: a full commit hash");
+    if (b instanceof Response) return b;
+    const tag = b.name.trim(), bad = tagNameError(tag);
     if (bad) return json({ error: bad }, 400);
-    if (b.commit !== undefined && (typeof b.commit !== "string" || !/^[0-9a-f]{40,64}$/.test(b.commit))) return json({ error: "commit: a full commit hash" }, 400);
     const at = refs.get(`refs/tags/${tag}`);
     if (at) return json({ error: `there's already a tag ${tag}` }, 409);
-    const commit = (b.commit as string | undefined) ?? (await g.h.handle.log({ ref: g.h.branch, limit: 1 }))[0]?.hash;
+    const commit = b.commit ?? (await g.h.handle.log({ ref: g.h.branch, limit: 1 }))[0]?.hash;
     if (!commit) return json({ error: "this repo has no commits yet" }, 409);
     if (b.commit && !(await g.h.handle.readCommit(commit).catch(() => null))) return json({ error: `no commit ${commit.slice(0, 7)} in this repo` }, 404);
     const why = await setRef(g.remote, g.token, `refs/tags/${tag}`, ZERO, commit);
