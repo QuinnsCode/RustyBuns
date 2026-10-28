@@ -22,7 +22,7 @@ import { checksBarClient, checkTallyServer, SERVER_IMPORT } from "../checks/patc
 import { EXTERNAL_IMPORT, externalServer } from "../external/patch.ts";
 import { openNewFirstClient } from "./board.ts";
 import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
-import { floorGuardBin, floorGuardClaude, floorGuardHooks, floorGuardQueue } from "./floorguard.ts";
+import { floorGuardBin, floorGuardClaude, floorGuardClicks, floorGuardHooks, floorGuardQueue } from "./floorguard.ts";
 import { hookTokensManager, hookTokensPersist, hookTokensUtil } from "./hooktokens.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
 import { POWER_PATCHES } from "../power/patch.ts";
@@ -210,6 +210,8 @@ async function prepare(tag: string) {
   // 12b. the agent-to-agent endpoint stops trusting every worker on the floor (#644, live/floorguard.ts): a forced
   // send_home keeps another worker's uncommitted work, tell_worker says who it's from, AGENT_OFFICE_PEOPLE_ONLY
   writeFileSync(path.join(srv, "hooks/office-workers.js"), floorGuardHooks(readFileSync(path.join(srv, "hooks/office-workers.js"), "utf8")));
+  // a person's send-home click is logged beside an agent's (#2201)
+  writeFileSync(path.join(srv, "ws/handlers/workers.js"), floorGuardClicks(readFileSync(path.join(srv, "ws/handlers/workers.js"), "utf8")));
   // and a Claude worker's GitHub writes ask first (#2498, askfirst/): a second PreToolUse hook in its settings, the grants list's route below
   writeFileSync(path.join(srv, "providers/claude.js"), floorGuardClaude(readFileSync(path.join(srv, "providers/claude.js"), "utf8")));
   // a board agent's queued tasks too: the same mark and the same guards, under the word `queue`
