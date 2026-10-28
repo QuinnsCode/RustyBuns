@@ -102,9 +102,10 @@ function grantsSection() {
     } catch (err) { note.textContent = err instanceof Error ? err.message : String(err); }
   };
   let kinds = ["push", "open", "merge", "comment", "close", "edit", "api"];
+  const row = (...kids: (Node | string)[]) => Object.assign(el("div", { className: "rb-box-row" }, ...kids), { style: "display:flex;flex-wrap:wrap;gap:8px;align-items:center" });
   const draw = (grants: Grant[], known: string[]) => {
     kinds = known;
-    const rows = grants.map((g) => el("div", { className: "rb-box-row" }, el("code", {}, g.repo), g.kind, g.who === "*" ? "any worker" : g.who,
+    const rows = grants.map((g) => row(el("code", {}, g.repo), g.kind, g.who === "*" ? "any worker" : g.who,
       el("button", { title: "Ask again before this write", ariaLabel: `Revoke ${g.kind} on ${g.repo} for ${g.who}`, onclick: () => void apply({ do: "revoke", repo: g.repo, kind: g.kind, who: g.who }) }, "Revoke")));
     const repo = el("input", { placeholder: "owner/name", ariaLabel: "Repo to allow writes to" });
     const kind = el("select", { ariaLabel: "Kind of write" }, ...known.map((k) => el("option", { value: k }, k)));
@@ -113,7 +114,7 @@ function grantsSection() {
       el("div", { className: "setting-head" }, el("h4", {}, "GitHub writes")),
       el("p", { className: "setting-note" }, "Workers read freely. Each kind of write (push, open or merge a PR, comment, close, edit, api) asks first; Always on its card, or a grant here, stops the asking for that repo."),
       ...(rows.length ? rows : [el("p", { className: "setting-note" }, "Nothing is allowed always: every write asks.")]),
-      el("div", { className: "rb-box-row" }, repo, kind, who, el("button", { onclick: () => void apply({ do: "grant", repo: repo.value, kind: kind.value, who: who.value }) }, "Allow always")),
+      row(repo, kind, who, el("button", { onclick: () => void apply({ do: "grant", repo: repo.value, kind: kind.value, who: who.value }) }, "Allow always")),
       note);
   };
   void apply();
