@@ -5,6 +5,7 @@
 //   F  flashlight (rangers)    Q  call out (rangers)   M  map / radio
 
 import type { Settings } from "@rustybuns/game-controls";
+import { bind } from "./bindings.ts";
 
 /** How long crouch is held before it becomes prone. */
 export const PRONE_HOLD_MS = 450;
@@ -45,14 +46,14 @@ export class Controls {
     });
     window.addEventListener("keydown", (e) => {
       if (!this.active || (e.target as HTMLElement).closest?.("input, textarea, select")) return;
-      const k = e.code;
+      const k = bind.canon(e.code);
       if (!this.keys.has(k)) this.pressed.add(k);
       this.keys.add(k);
       // Not Ctrl: Ctrl+W, pressed to crouch and walk, closes the tab.
       if (k === "KeyC" && !e.repeat) { this.crouchToggle = !this.crouchToggle; this.crouchDownAt = performance.now(); }
       if (["Space", "ArrowUp", "ArrowDown", "Tab"].includes(k)) e.preventDefault();
     });
-    window.addEventListener("keyup", (e) => { this.keys.delete(e.code); if (e.code === "KeyC") this.crouchDownAt = 0; });
+    window.addEventListener("keyup", (e) => { const k = bind.canon(e.code); this.keys.delete(k); if (k === "KeyC") this.crouchDownAt = 0; });
     window.addEventListener("blur", () => { this.keys.clear(); this.crouchDownAt = 0; });
     if (matchMedia("(pointer: coarse)").matches) this.touchControls(el);
   }

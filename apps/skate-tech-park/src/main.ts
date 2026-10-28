@@ -33,6 +33,7 @@ import { mountGrip } from "./griptape.ts";
 import { mountTouch } from "./touch.ts";
 import { type Controls, loadControls, saveControls, tuned } from "./controls.ts";
 import { DEFAULTS as CTL_DEFAULTS, mountControls } from "@rustybuns/game-controls";
+import { bind, hint, KEY } from "./bindings.ts";
 import { controlsExtras } from "./controls-extras.ts";
 import { level, levelId, mood, mountLevelUi, park, spawn } from "./levels/picker.ts";
 import { LEVELS, touring as isTouring, wantsReal } from "./levels/index.ts";
@@ -205,12 +206,13 @@ const reset = () => {
 // Keys → input. Space is the ollie on the board and the lift thrusters in the car.
 const keys = new Set<string>();
 window.addEventListener("keydown", (e) => {
-  if (e.code === "Tab") { e.preventDefault(); swap(); return; }
-  if (e.code === "KeyR") reset();
-  keys.add(e.code);
-  if (e.code === "Space") e.preventDefault();
+  const code = bind.canon(e.code); // a key you moved arrives as the code the game knows the action by
+  if (code === "Tab") { e.preventDefault(); swap(); return; }
+  if (code === "KeyR") reset();
+  keys.add(code);
+  if (code === "Space") e.preventDefault();
 });
-window.addEventListener("keyup", (e) => keys.delete(e.code));
+window.addEventListener("keyup", (e) => keys.delete(bind.canon(e.code)));
 window.addEventListener("blur", () => keys.clear());
 // The mouse and the right stick: a drag up is an ollie, across or down is a flick trick, as the flick profile lays
 // them out (flick.ts, the library in flick-profiles.ts). `?flick=<name>` or `?flick=<profile JSON>` picks one, and
@@ -241,15 +243,17 @@ const applyControls = (c: Controls) => {
 };
 const viewSet = { zoom: 1, tilt: 0 }; // shared with the chase camera, which is built further down
 let extra: ReturnType<typeof controlsExtras> | undefined;
+let hintsReady = false; // the cog reports its settings on mount, before the HUD below exists
 mountControls({
-  key: "skate-tech-park.controls", parent: document.querySelector<HTMLElement>(".hud .buttons")!,
-  keys: [["W A S D / arrows", "Throttle and steer"], ["Left stick (touch)", "Throttle and steer"], ["Space", "Jump"], ["F G V R T Y U I O", "Flick tricks"], ["Drag on the pad", "Flick tricks (touch)"], ["Esc", "Pause"]],
+  key: KEY, bindings: bind, parent: document.querySelector<HTMLElement>(".hud .buttons")!,
+  keys: [["Left stick (touch)", "Throttle and steer"], ["Drag on the pad", "Flick tricks (touch)"], ["Esc", "Pause"]],
   show: ["touchAxes", "view"],
   onChange: (s) => {
     look = s;
     canvas.style.filter = s.brightness === 1 ? "" : `brightness(${s.brightness})`;
     Object.assign(viewSet, { zoom: s.zoom, tilt: s.tilt });
     applyControls(controls);
+    if (hintsReady) { hud(); tipText(); } // the key caps on screen follow a rebind
   },
   onToggle: (open) => { cogOpen = open; keys.clear(); if (open) extra?.sync(); },
   onReset: () => { extra?.reset(); extra?.sync(); },
@@ -323,14 +327,18 @@ function swap() {
 const ESSENTIALS = () => {
   const k = (t: string) => Object.assign(document.createElement("kbd"), { textContent: t });
   const w = (t: string) => document.createTextNode(` ${t} `);
-  return [k("W"), k("S"), w("push"), k("A"), k("D"), w("steer"), k("Space"), w("ollie"), k("F"), k("G"), k("V"), w("flips"), k("Q"), k("Z"), w("manuals")];
+  return [k(hint("push")), k(hint("brake")), w("push"), k(hint("left")), k(hint("right")), w("steer"), k(hint("ollie")), w("ollie"), k(hint("kickflip")), k(hint("heelflip")), k(hint("shoveit")), w("flips"), k(hint("manual")), k(hint("noseManual")), w("manuals")];
 };
 const help = document.createElement("button");
 help.id = "help";
 help.title = "All the controls";
 help.append(icon(Info));
 const tip = $("tip");
-tip.innerHTML = "<p><kbd>W</kbd><kbd>S</kbd> push, <kbd>A</kbd><kbd>D</kbd> steer, and spin in the air</p><p><kbd>Space</kbd> ollie, <kbd>N</kbd> nollie, <kbd>F</kbd> kickflip, <kbd>G</kbd> heelflip, <kbd>V</kbd> shove-it</p><p><kbd>R</kbd> varial, <kbd>O</kbd> varial heel, <kbd>U</kbd> hardflip, <kbd>I</kbd> inward heel, <kbd>T</kbd> tre flip, <kbd>Y</kbd> laser flip</p><p>Or drag the mouse or push the right stick: up ollies, across and down flick, diagonals are the compound tricks, a long one down a double turn. On a touch screen the flick pad shows its paths on a board like footprint grip tape; the footprints button picks another of twenty layouts</p><p><kbd>Shift</kbd> rear jets and pump a transition, <kbd>E</kbd> suction fan</p><p><kbd>Q</kbd> hold a manual, <kbd>Z</kbd> a nose manual: <kbd>W</kbd> and <kbd>S</kbd> hold the balance, or hold the mouse still (nudged down for the nose), or use the pad's right and left triggers</p><p><kbd>Tab</kbd> swap board and roadster, <kbd>R</kbd> reset</p><p>An agent in the browser can ride it too: WebMCP tools named skate_*</p>";
+const tipText = () => {
+  tip.innerHTML = "<p><kbd data-a=\"push\"></kbd><kbd data-a=\"brake\"></kbd> push, <kbd data-a=\"left\"></kbd><kbd data-a=\"right\"></kbd> steer, and spin in the air</p><p><kbd data-a=\"ollie\"></kbd> ollie, <kbd data-a=\"nollie\"></kbd> nollie, <kbd data-a=\"kickflip\"></kbd> kickflip, <kbd data-a=\"heelflip\"></kbd> heelflip, <kbd data-a=\"shoveit\"></kbd> shove-it</p><p><kbd data-a=\"varial\"></kbd> varial, <kbd data-a=\"varialHeel\"></kbd> varial heel, <kbd data-a=\"hardflip\"></kbd> hardflip, <kbd data-a=\"inward\"></kbd> inward heel, <kbd data-a=\"tre\"></kbd> tre flip, <kbd data-a=\"laser\"></kbd> laser flip</p><p>Or drag the mouse or push the right stick: up ollies, across and down flick, diagonals are the compound tricks, a long one down a double turn. On a touch screen the flick pad shows its paths on a board like footprint grip tape; the footprints button picks another of twenty layouts</p><p><kbd data-a=\"boost\"></kbd> rear jets and pump a transition, <kbd data-a=\"fan\"></kbd> suction fan</p><p><kbd data-a=\"manual\"></kbd> hold a manual, <kbd data-a=\"noseManual\"></kbd> a nose manual: <kbd data-a=\"push\"></kbd> and <kbd data-a=\"brake\"></kbd> hold the balance, or hold the mouse still (nudged down for the nose), or use the pad's right and left triggers</p><p><kbd data-a=\"swap\"></kbd> swap board and roadster, <kbd data-a=\"varial\"></kbd> reset</p><p>An agent in the browser can ride it too: WebMCP tools named skate_*</p>";
+  for (const el of tip.querySelectorAll<HTMLElement>("kbd[data-a]")) el.textContent = hint(el.dataset.a ?? "");
+};
+tipText();
 help.addEventListener("click", () => { tip.hidden = !tip.hidden; help.blur(); });
 function hud() {
   swapBtn.replaceChildren(icon(mode === "car" ? RectangleHorizontal : Car));
@@ -356,6 +364,7 @@ togetherBtn.addEventListener("click", () => {
   togetherBtn.blur();
 });
 hud();
+hintsReady = true;
 const pveBtn = $("pve") as HTMLButtonElement;
 pveBtn.hidden = !online;
 pveBtn.append(icon(pve ? ShieldOff : Shield));

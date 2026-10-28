@@ -1,7 +1,8 @@
 // A cog button that opens a Controls dialog: the key list, then look sensitivity (X, Y, touch), invert Y and Reset.
 // Changes apply at once and are saved under `key`. The dialog is a bottom sheet on a narrow screen, a card on a
 // wide one, and scrolls when the screen is short.
-import { createElement, Settings as Cog, X } from "lucide";
+import { createElement, RotateCcw, Settings as Cog, Undo2, X } from "lucide";
+import { type Action, type BindingSet, createBindings, keyName } from "./bindings.ts";
 import { DEFAULTS, RANGES, type NumKey, type Settings, parseSettings } from "./settings.ts";
 
 export interface Opts {
@@ -13,6 +14,8 @@ export interface Opts {
   title?: string;
   /** Key and gesture rows, e.g. ["WASD", "Move"]. */
   keys?: [string, string][];
+  /** Rebindable keys: make the set with `loadBindings`, read pressed keys through its `canon`. Each gets a row: click it, press a key. */
+  bindings?: BindingSet;
   /** Rows that make no sense for the game (no vertical look, say); their saved values stay in the settings. */
   hide?: (keyof Settings)[];
   /** Optional groups of rows a game opts into: per-axis touch trims, audio (loudness, on/off, `sounds`), view (brightness, zoom, tilt). */
@@ -31,12 +34,18 @@ export interface Opts {
   onReset?: () => void;
 }
 
+/** The game's key bindings, restored from what this browser saved under the same `key` the cog uses. */
+export function loadBindings(key: string, actions: Action[]): BindingSet {
+  try { return createBindings(actions, JSON.parse(localStorage.getItem(`${key}.keys`) ?? "null")); } catch { return createBindings(actions); }
+}
+
 const read = (key: string): Settings => {
   try { return parseSettings(JSON.parse(localStorage.getItem(key) ?? "null")); } catch { return { ...DEFAULTS }; }
 };
 
 export function mountControls(o: Opts) {
   let s = read(o.key);
+  let keyHook: (e: KeyboardEvent) => boolean = () => false;
   const btn = Object.assign(document.createElement("button"), { type: "button", title: "Controls", ariaLabel: "Controls", className: "gc-cog" });
   btn.append(createElement(Cog, { width: 20, height: 20 }));
   const dlg = Object.assign(document.createElement("div"), { className: "gc-dialog", hidden: true, role: "dialog", ariaLabel: "Controls" });
@@ -57,6 +66,52 @@ export function mountControls(o: Opts) {
   }
 
   const syncs: (() => void)[] = [];
+  let listening: string | null = null;
+  const note = Object.assign(document.createElement("p"), { className: "gc-note", hidden: true });
+  const undoBtn = Object.assign(document.createElement("button"), { type: "button", title: "Undo the last key change", ariaLabel: "Undo the last key change", className: "gc-icon" });
+  undoBtn.append(createElement(Undo2, { width: 18, height: 18 }));
+  const say = (t: string) => { note.textContent = t; note.hidden = !t; };
+  const bind = o.bindings;
+  const saveKeys = () => { try { localStorage.setItem(`${o.key}.keys`, JSON.stringify(bind?.toJSON() ?? {})); } catch {} };
+  if (bind) {
+    const list = document.createElement("div");
+    list.className = "gc-binds";
+    const cells: (() => void)[] = [];
+    const changed = () => { cells.forEach((f) => f()); undoBtn.disabled = !bind.canUndo(); o.onChange?.({ ...s }); };
+    for (const a of bind.actions) {
+      const name = Object.assign(document.createElement("span"), { textContent: a.label });
+      const cap = Object.assign(document.createElement("button"), { type: "button", className: "gc-key", name: `bind-${a.id}` });
+      const def = Object.assign(document.createElement("button"), { type: "button", className: "gc-icon", title: `${a.label}: back to ${a.keys.map(keyName).join(" / ")}`, ariaLabel: `${a.label}: back to default` });
+      def.append(createElement(RotateCcw, { width: 16, height: 16 }));
+      const paint = () => {
+        cap.textContent = listening === a.id ? "Press a key..." : bind.get(a.id).map(keyName).join(" / ");
+        cap.classList.toggle("on", listening === a.id);
+        def.disabled = bind.isDefault(a.id);
+      };
+      cap.addEventListener("click", () => { listening = listening === a.id ? null : a.id; say(listening ? `Press the new key for ${a.label}, or Esc to cancel.` : ""); cells.forEach((f) => f()); });
+      def.addEventListener("click", () => {
+        const r = bind.resetOne(a.id);
+        say(r.ok ? "" : `${keyName(a.keys[0])} is ${a.label}'s own key, but ${r.why === "clash" ? r.with : "another action"} uses it now. Move that first.`);
+        saveKeys(); changed();
+      });
+      cells.push(paint);
+      list.append(name, cap, def);
+    }
+    undoBtn.addEventListener("click", () => { if (bind.undo()) { say(""); saveKeys(); } changed(); });
+    syncs.push(() => { listening = null; cells.forEach((f) => f()); undoBtn.disabled = !bind.canUndo(); });
+    // The next key pressed while a row waits becomes its key.
+    keyHook = (e) => {
+      if (!listening) return false;
+      e.preventDefault();
+      if (e.code === "Escape") { listening = null; say(""); changed(); return true; }
+      const r = bind.set(listening, e.code);
+      if (r.ok) { listening = null; say(""); saveKeys(); }
+      else say(r.why === "reserved" ? "Esc can't be a game key." : `${keyName(e.code)} is already ${r.with}. Pick another key, or change ${r.with} first.`);
+      changed();
+      return true;
+    };
+    card.append(list, note);
+  }
   const save = () => {
     try { localStorage.setItem(o.key, JSON.stringify(s)); } catch {}
     o.onChange?.({ ...s });
@@ -116,8 +171,13 @@ export function mountControls(o: Opts) {
   const extra = o.extras?.(card);
   if (extra) syncs.push(extra.sync);
   const reset = Object.assign(document.createElement("button"), { type: "button", className: "gc-reset", textContent: "Reset to defaults" });
-  reset.addEventListener("click", () => { s = { ...DEFAULTS }; o.onReset?.(); syncs.forEach((f) => f()); save(); });
-  card.append(reset);
+  reset.addEventListener("click", () => { s = { ...DEFAULTS }; bind?.resetAll(); saveKeys(); say(""); o.onReset?.(); syncs.forEach((f) => f()); save(); });
+  if (bind) {
+    const bar = document.createElement("div");
+    bar.className = "gc-bar";
+    bar.append(undoBtn, reset);
+    card.append(bar);
+  } else card.append(reset);
 
   const toggle = (open: boolean) => {
     if (dlg.hidden !== open) return;
@@ -128,7 +188,7 @@ export function mountControls(o: Opts) {
   btn.addEventListener("click", () => { toggle(dlg.hidden); btn.blur(); });
   close.addEventListener("click", () => toggle(false));
   dlg.addEventListener("pointerdown", (e) => { if (e.target === dlg) toggle(false); });
-  dlg.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.code === "Escape") toggle(false); });
+  dlg.addEventListener("keydown", (e) => { e.stopPropagation(); if (keyHook(e)) return; if (e.code === "Escape") toggle(false); });
   dlg.append(card);
   o.parent.append(btn);
   document.body.append(dlg);
@@ -150,6 +210,10 @@ function addStyle() {
 .gc-card label{display:grid;grid-template-columns:1fr 1.4fr 3.5em;align-items:center;gap:8px;min-height:44px}
 .gc-card input[type=range]{width:100%;min-width:0}.gc-card input[type=checkbox]{width:22px;height:22px;justify-self:start}
 .gc-card output{text-align:right;opacity:.8}
+.gc-binds{display:grid;grid-template-columns:1fr 1.4fr auto;align-items:center;gap:6px 8px}
+.gc-key{min-height:36px;border:1px solid #fff4;border-radius:8px;background:#222;color:#fff;cursor:pointer;font:inherit}.gc-key.on{border-color:#f90;color:#f90}
+.gc-icon{display:inline-grid;place-items:center;width:36px;height:36px;border:1px solid #fff4;border-radius:8px;background:#222;color:#fff;cursor:pointer}.gc-icon:disabled{opacity:.35;cursor:default}
+.gc-note{margin:0;color:#f90}.gc-bar{display:grid;grid-template-columns:auto 1fr;gap:8px}.gc-bar .gc-icon{width:44px;height:44px}
 .gc-reset{min-height:44px;border:1px solid #fff4;border-radius:10px;background:#222;color:#fff;cursor:pointer}
 @media (max-width:520px){.gc-dialog{align-items:end}.gc-card{border-radius:14px 14px 0 0}}
 ` }));

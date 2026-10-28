@@ -28,6 +28,7 @@ import { Battle } from "./net.ts";
 import { headById, headCanvas, HEADS, isOpen } from "./heads.ts";
 import { buildWorld, type World } from "./scene.ts";
 import { mountTouch } from "./touch.ts";
+import { bind, KEY } from "./bindings.ts";
 import { DEFAULTS, mountControls, volumeOf } from "@rustybuns/game-controls";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -448,26 +449,29 @@ let shake = 0;
 
 window.addEventListener("keydown", (e) => {
   if (!current) return;
-  keys.add(e.code);
-  if (e.code === "Space") jump = true, prone = false, e.preventDefault();
+  // A key you moved arrives as the code the game knows the action by.
+  const code = e.code === "Escape" ? e.code : bind.canon(e.code);
+  keys.add(code);
+  if (code === "Space") jump = true, prone = false, e.preventDefault();
   // Z drops you prone and gets you up again; crouching or jumping gets you up too.
-  if (e.code === "KeyZ" && !e.repeat) prone = !prone;
-  if (e.code === "KeyC" || e.code === "ControlLeft") prone = false;
-  if (e.code === "ShiftLeft" || e.code === "ShiftRight") roll = true;
+  if (code === "KeyZ" && !e.repeat) prone = !prone;
+  if (code === "KeyC" || code === "ControlLeft") prone = false;
+  if (code === "ShiftLeft" || code === "ShiftRight") roll = true;
   // The number keys pick from what your role carries, in its order.
-  const slot = KEYS.indexOf(e.code), kit = current.game.you().kit;
+  const slot = KEYS.indexOf(code), kit = current.game.you().kit;
   if (slot >= 0 && slot < kit.length) pick = kit[slot];
-  if (e.code === "KeyR" && !e.repeat) reload = true;
-  if (e.code === "KeyF" && !e.repeat) use = true;
-  if (e.code === "KeyN" && !e.repeat && !current.net && current.game.status === "playing") pickRole(nextRole(current.game.nextRole ?? current.game.role ?? me.role));
+  if (code === "KeyR" && !e.repeat) reload = true;
+  if (code === "KeyF" && !e.repeat) use = true;
+  if (code === "KeyN" && !e.repeat && !current.net && current.game.status === "playing") pickRole(nextRole(current.game.nextRole ?? current.game.role ?? me.role));
   if (e.code === "Escape" && current.game.status !== "playing") toMenu();
   // Out of a battle: Q, once the mouse is let go (captured, Q and E lean).
-  if (e.code === "KeyQ" && current.net && document.pointerLockElement !== canvas) toMenu();
-  if (e.code === "Tab" && current.net) e.preventDefault(), ($("board").hidden = false);
+  if (code === "KeyQ" && current.net && document.pointerLockElement !== canvas) toMenu();
+  if (code === "Tab" && current.net) e.preventDefault(), ($("board").hidden = false);
 });
 window.addEventListener("keyup", (e) => {
-  keys.delete(e.code);
-  if (e.code === "Tab") $("board").hidden = true;
+  const code = bind.canon(e.code);
+  keys.delete(code);
+  if (code === "Tab") $("board").hidden = true;
 });
 window.addEventListener("blur", () => (keys.clear(), (fire = false)));
 canvas.addEventListener("click", () => current && !touch.on && document.pointerLockElement !== canvas && lock());
@@ -493,10 +497,10 @@ window.addEventListener("mousemove", (e) => {
 let ctl = { ...DEFAULTS };
 let dazed = 0; // how knocked silly the view is, 0..1 (cinema)
 mountControls({
-  key: "git-recon.controls", parent: $("controls-host"), title: "Controls",
+  key: KEY, bindings: bind, parent: $("controls-host"), title: "Controls",
   show: ["touchAxes", "audio", "view"], hide: ["music", "musicOn"],
   sounds: [["guns", "Gunfire"], ["blasts", "Blasts and falling files"], ["hits", "Hits and kills"], ["shield", "Shield"], ["pickups", "Pickups"], ["setpieces", "Set-piece cues"]],
-  keys: [["W A S D", "Move"], ["Mouse", "Aim"], ["Click / Right click", "Fire / Zoom"], ["Space", "Jump"], ["Q / E", "Lean"], ["Wheel", "Swap gun"], ["Esc", "Let go of the mouse"]],
+  keys: [["Mouse", "Aim"], ["Click / Right click", "Fire / Zoom"], ["Wheel", "Swap gun"], ["Esc", "Let go of the mouse"]],
   onChange: (s) => { ctl = s; paint(); },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
