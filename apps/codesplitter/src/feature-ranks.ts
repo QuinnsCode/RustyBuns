@@ -43,7 +43,7 @@ export async function featureRankRoutes(req: Request, env: Env, p: string[], use
     }
     for (const s of Object.values(scores)) s.score = Math.round((s.score / s.votes) * 100) / 100;
     const mine: Record<string, string> = {};
-    if (user) for (const r of ((await env.DB.prepare("SELECT feature, tier FROM feature_ranks WHERE user = ?").bind(user).all()).results as { feature: string; tier: string }[])) mine[r.feature] = r.tier;
+    if (user) for (const r of ((await env.DB.prepare("SELECT feature, tier FROM feature_ranks WHERE user = ?").bind(user).all<{ feature: string; tier: string }>()).results)) mine[r.feature] = r.tier;
     const { results: said } = await env.DB.prepare("SELECT user, text, at FROM feature_comments ORDER BY at DESC, id DESC LIMIT ?").bind(SHOWN).all();
     const next = user ? Math.max(0, (await lastComment(env.DB, user)) + COMMENT_GAP_MS) : 0;
     return json({ signed_in: !!user, scores, mine, comments: said, comment_after: next > now ? next : 0 });

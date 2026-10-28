@@ -77,7 +77,7 @@ export async function ciTokenRoutes(req: Request, env: Env, p: string[], owner: 
 async function ciToken(req: Request, env: Env, owner: string, repo: string) {
   const secret = /^(?:token|bearer)\s+(\S+)$/i.exec(req.headers.get("authorization") ?? "")?.[1];
   if (!secret) return null;
-  const t = await env.DB.prepare("SELECT id, label, last_used_at FROM ci_tokens WHERE hash = ? AND owner = ? AND repo = ? AND expires_at > ?").bind(await sha256(secret), owner, repo, Date.now()).first() as { id: string; label: string; last_used_at: number | null } | null;
+  const t = await env.DB.prepare("SELECT id, label, last_used_at FROM ci_tokens WHERE hash = ? AND owner = ? AND repo = ? AND expires_at > ?").bind(await sha256(secret), owner, repo, Date.now()).first<{ id: string; label: string; last_used_at: number | null }>();
   // Last used, to the minute.
   if (t && (!t.last_used_at || Date.now() - t.last_used_at > 60_000)) await env.DB.prepare("UPDATE ci_tokens SET last_used_at = ? WHERE id = ?").bind(Date.now(), t.id).run();
   return t;
@@ -139,7 +139,7 @@ export async function ghCompatRoutes(req: Request, env: Env, p: string[], url: U
     const context = String(b.context ?? "default").slice(0, 100), status = fromState(state);
     const target = httpUrl(b.target_url), about = typeof b.description === "string" ? b.description.slice(0, 140) : "";
     const had = await env.DB.prepare("SELECT * FROM check_runs WHERE owner = ? AND repo = ? AND sha = ? AND external_id = ? AND runner = 'external' ORDER BY id DESC LIMIT 1")
-      .bind(owner, repo, sha, `status:${context}`).first() as CheckRun | null;
+      .bind(owner, repo, sha, `status:${context}`).first<CheckRun>();
     const run = had && !DONE.has(had.status)
       ? await updateRun(env, had, { status, url: target, log: about }, by)
       : await recordRun(env, { owner, repo, ref: await refOf(env, owner, repo, sha), sha, name: context, runner: "external", runner_label: t.label, status, url: target, external_id: `status:${context}` }, by)
@@ -178,9 +178,9 @@ export async function ghCompatRoutes(req: Request, env: Env, p: string[], url: U
 
   // GET commits/:sha/status and commits/:sha/check-runs: what they wrote, read back.
   if (rest[0] === "commits" && rest[1] && !rest[3] && req.method === "GET" && (rest[2] === "status" || rest[2] === "check-runs")) {
-    const { results } = await env.DB.prepare("SELECT * FROM check_runs WHERE owner = ? AND repo = ? AND sha = ? ORDER BY id").bind(owner, repo, rest[1]).all();
+    const { results } = await env.DB.prepare("SELECT * FROM check_runs WHERE owner = ? AND repo = ? AND sha = ? ORDER BY id").bind(owner, repo, rest[1]).all<CheckRun>();
     const latest = new Map<string, CheckRun>();
-    for (const r of results as unknown as CheckRun[]) latest.set(r.name, r);
+    for (const r of results) latest.set(r.name, r);
     const runs = [...latest.values()];
     if (rest[2] === "check-runs") {
       const checks = runs.filter((r) => !r.external_id?.startsWith("status:"));

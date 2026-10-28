@@ -37,9 +37,9 @@ export function toFile(env: Env, owner: string, repo: string, path: string, user
 /** Close the live sockets that access was taken from: `user`'s, or everyone's but those in `keep` (`mainOnly`: only on main's files). A socket's access is checked once, at the upgrade. */
 export async function revokeSockets(env: Env, owner: string, repo: string, who: { user: string } | { keep: string[] }, mainOnly = false) {
   const { results } = await env.DB.prepare(`SELECT path, NULL AS branch FROM files WHERE owner = ? AND repo = ?${mainOnly ? "" : " UNION ALL SELECT path, branch FROM branch_files WHERE owner = ? AND repo = ?"}`)
-    .bind(...(mainOnly ? [owner, repo] : [owner, repo, owner, repo])).all();
+    .bind(...(mainOnly ? [owner, repo] : [owner, repo, owner, repo])).all<{ path: string; branch: string | null }>();
   const q = "user" in who ? `?user=${encodeURIComponent(who.user)}` : `?keep=${encodeURIComponent(who.keep.join(","))}`;
-  await Promise.all((results as { path: string; branch: string | null }[]).map((f) =>
+  await Promise.all(results.map((f) =>
     fileStub(env, owner, repo, f.path, f.branch ?? undefined).fetch(new Request(`https://file/revoke${q}`, { method: "POST" })).catch(() => null)));
 }
 
@@ -117,9 +117,9 @@ export async function payBackfill(env: Env, owner: string, repo: string, except?
 async function backfillCrew(env: Env, owner: string, repo: string, except?: string) {
   const crew = await handleFor(env, owner, repo, true);
   if (!crew?.crew) return;
-  const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, repo).all();
+  const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ path: string }>();
   const changes: Record<string, string> = {};
-  for (const { path } of results as { path: string }[]) {
+  for (const { path } of results) {
     if (path === except) continue;
     if (!((await (await toFile(env, owner, repo, path, "codesplitters", "private")).json()) as string[]).length) continue;
     const [last] = (await (await toFile(env, owner, repo, path, "codesplitters", "commits")).json()) as { rev: number }[];
@@ -320,9 +320,9 @@ const pend = (env: Env, owner: string, repo: string, paths: string[]) =>
 
 /** Each waiting file as it was last catalogued, private lines blank, as git gets it; null for one deleted since. */
 async function pendingChanges(env: Env, owner: string, repo: string): Promise<Record<string, string | null>> {
-  const { results } = await env.DB.prepare("SELECT path FROM git_pending WHERE owner = ? AND repo = ?").bind(owner, repo).all();
+  const { results } = await env.DB.prepare("SELECT path FROM git_pending WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ path: string }>();
   const out: Record<string, string | null> = {};
-  for (const { path } of results as { path: string }[]) {
+  for (const { path } of results) {
     if (!(await env.DB.prepare("SELECT 1 FROM files WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, path).first())) { out[path] = null; continue; }
     const [last] = (await (await toFile(env, owner, repo, path, "codesplitters", "commits")).json()) as { rev: number }[];
     if (!last) continue;

@@ -55,6 +55,7 @@ import { logEnd, logStart, preview, STEPS as PREVIEW_STEPS, type Run, type Runne
 import { portFetch, type ContainerApi } from "./sandbox.ts";
 import { CRATES, gate, hostList, hostOf, PROVIDER_HOSTS, REGISTRIES, type GateExports } from "./egress.ts";
 import { sha256 } from "./util.ts";
+import type { RepoRef } from "./repos";
 
 interface Job { owner: string; repo: string; run: Run; production: boolean; dir?: string; flags?: DeployFlags; again?: string; started?: number; preview?: { key: string; tip: string; files: Record<string, string> } }
 
@@ -216,7 +217,7 @@ export class DeployRunner {
   async fetch(req: Request): Promise<Response> {
     const path = new URL(req.url).pathname;
     if (path === "/reseal") {
-      const { owner, repo } = (await req.json()) as { owner: string; repo: string };
+      const { owner, repo } = (await req.json()) as RepoRef;
       return json(await this.reseal(owner, repo));
     }
     if (path === "/preview" && req.method === "GET") { const job = await this.load(); return json({ run: job?.preview ? job.run : null }); }

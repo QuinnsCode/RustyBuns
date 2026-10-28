@@ -21,7 +21,7 @@ export const pathKey = async (owner: string, repo: string, path: string, hash = 
 
 /** Whether the repo hashes paths in its events (the default); false when it opted out. */
 export const hashesPaths = async (env: Env, owner: string, repo: string): Promise<boolean> =>
-  ((await env.DB.prepare("SELECT hash_paths FROM mervin_learning WHERE owner = ? AND repo = ?").bind(owner, repo).first()) as { hash_paths: number } | null)?.hash_paths !== 0;
+  ((await env.DB.prepare("SELECT hash_paths FROM mervin_learning WHERE owner = ? AND repo = ?").bind(owner, repo).first<{ hash_paths: number }>()))?.hash_paths !== 0;
 
 const WEEK = 7 * 24 * 3600 * 1000;
 /** A path asked this many times in the week is worth a .gitattributes rule for a person to approve. */

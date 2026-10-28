@@ -22,7 +22,7 @@ export async function findRoutes(req: Request, env: Env, p: string[], user: stri
 }
 
 async function findsOf(env: Env, name: string, self: boolean) {
-  const { results } = await env.DB.prepare("SELECT key FROM finds WHERE name = ?").bind(name).all();
-  const found = (results as { key: string }[]).map((r) => r.key).filter((k) => SPOTS.includes(k as (typeof SPOTS)[number]));
+  const { results } = await env.DB.prepare("SELECT key FROM finds WHERE name = ?").bind(name).all<{ key: string }>();
+  const found = results.map((r) => r.key).filter((k) => SPOTS.includes(k as (typeof SPOTS)[number]));
   return { count: found.length, total: SPOTS.length, all: found.length === SPOTS.length, ...(self && { found }) };
 }

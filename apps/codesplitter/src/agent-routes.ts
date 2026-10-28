@@ -161,7 +161,7 @@ export const runBranch = (id: number) => `agent-run-${id}`;
 interface Row { id: number; owner: string; repo: string; path: string; harness: Harness; task: string; model: string | null; agent: string; status: Run["status"]; started: number; picked: number; log: string; result: string | null; notes: string; branch?: string | null }
 
 const toRun = (r: Row, env: Env): Run => ({ ...(env.AGENT_SANDBOX ? { deadline: r.started + HOSTED_RUN_MS } : {}), ...(r.branch ? { branch: r.branch } : {}), id: r.id, owner: r.owner, repo: r.repo, path: r.path, harness: r.harness, task: r.task, agent: r.agent, status: r.status, started: r.started, log: JSON.parse(r.log), notes: JSON.parse(r.notes ?? "[]"), ...(r.result ? JSON.parse(r.result) : {}) });
-const getRow = (env: Env, id: number) => env.DB.prepare("SELECT * FROM agent_runs WHERE id = ?").bind(id).first() as Promise<Row | null>;
+const getRow = (env: Env, id: number) => env.DB.prepare("SELECT * FROM agent_runs WHERE id = ?").bind(id).first<Row>();
 /** Ends a run that's still going: one stopped meanwhile stays stopped. */
 const finish = (env: Env, id: number, status: "done" | "failed", result: Partial<Run>) =>
   env.DB.prepare("UPDATE agent_runs SET status = ?, result = ? WHERE id = ? AND status = 'running'").bind(status, JSON.stringify(result), id).run();
@@ -301,8 +301,8 @@ export async function agentRoutes(req: Request, env: Env, p: string[], url: URL,
 
   const model_ = model?.trim() || null;
   // The lines ride in the result until the run's own result replaces them.
-  const row = await env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, model, agent, status, started, result) VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?) RETURNING *")
-    .bind(owner, repo, path, harness, task.trim().slice(0, 2000), model_, agent, Date.now(), lines?.length ? JSON.stringify({ lines: lines.slice(0, 5000) }) : null).first() as Row;
+  const row = (await env.DB.prepare("INSERT INTO agent_runs (owner, repo, path, harness, task, model, agent, status, started, result) VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?) RETURNING *")
+    .bind(owner, repo, path, harness, task.trim().slice(0, 2000), model_, agent, Date.now(), lines?.length ? JSON.stringify({ lines: lines.slice(0, 5000) }) : null).first<Row>())!;
   await env.DB.prepare(`DELETE FROM agent_runs WHERE owner = ? AND repo = ? AND id NOT IN (SELECT id FROM agent_runs WHERE owner = ? AND repo = ? ORDER BY id DESC LIMIT ${KEEP})`)
     .bind(owner, repo, owner, repo).run();
   // Heads up if an open branch is already rewriting its files: its batch will likely meet that one at merge.
@@ -524,8 +524,8 @@ async function resume(env: Env, origin: string, id: number, wait: number) {
  */
 async function engineSaid(env: Env, owner: string, repo: string) {
   const { results } = await env.DB.prepare("SELECT id, branch, started, result FROM agent_runs WHERE owner = ? AND repo = ? AND json_extract(result, '$.engine') IS NOT NULL ORDER BY id DESC")
-    .bind(owner, repo).all();
-  return (results as { id: number; branch: string; started: number; result: string }[]).map((r) => {
+    .bind(owner, repo).all<{ id: number; branch: string; started: number; result: string }>();
+  return results.map((r) => {
     const x = parseJson<Partial<Run>>(r.result, {});
     return { run: r.id, branch: r.branch, after: x.rebuild, started: r.started, engine: x.engine! };
   });
@@ -593,7 +593,7 @@ async function execute(env: Env, self: (req: Request) => Promise<Response>, orig
   if (!env.AGENT_SANDBOX && !liveOf(env).has(id)) liveOf(env).set(id, stopper);
   let given = 0;
   const peek = async () => {
-    const r = await env.DB.prepare("SELECT status, notes FROM agent_runs WHERE id = ?").bind(id).first() as Pick<Row, "status" | "notes"> | null;
+    const r = await env.DB.prepare("SELECT status, notes FROM agent_runs WHERE id = ?").bind(id).first<Pick<Row, "status" | "notes">>();
     if (r?.status !== "running") stopper.abort();
     return r ? JSON.parse(r.notes) as Note[] : [];
   };

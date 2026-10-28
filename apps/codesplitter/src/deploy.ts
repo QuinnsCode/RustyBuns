@@ -87,7 +87,7 @@ export async function finish(env: Env, run: Run) {
   await logEnd(env, run);
   const ok = run.steps.every((x) => x.status === "done");
   // Desktop or hosted, the repo's webhooks hear how it went.
-  const d = await env.DB.prepare("SELECT owner, repo, by, trigger FROM deploys WHERE id = ?").bind(run.id).first() as { owner: string; repo: string; by: string; trigger: string } | null;
+  const d = await env.DB.prepare("SELECT owner, repo, by, trigger FROM deploys WHERE id = ?").bind(run.id).first<{ owner: string; repo: string; by: string; trigger: string }>();
   if (d) await emit(env, d.owner, d.repo, "deploy.finished", d.by, {
     deployment: { id: run.id, sha: run.commit ?? null, environment: run.stage, task: d.trigger, creator: { login: d.by } },
     deployment_status: { state: ok ? "success" : "failure", environment: run.stage, environment_url: run.url ?? null, description: run.note ?? null },

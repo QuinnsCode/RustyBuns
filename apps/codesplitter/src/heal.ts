@@ -53,8 +53,8 @@ async function attempts(env: Env, owner: string, repo: string, branch: string) {
   const open = await env.DB.prepare("SELECT created_at FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, branch).first();
   if (!open) return null;
   const { results } = await env.DB.prepare("SELECT id, path, harness, task, status, started, result FROM agent_runs WHERE owner = ? AND repo = ? AND branch = ? AND started >= ? ORDER BY id")
-    .bind(owner, repo, branch, open.created_at as number).all();
-  return { since: open.created_at as number, runs: results as { id: number; path: string; harness: string; task: string; status: string; started: number; result: string | null }[] };
+    .bind(owner, repo, branch, open.created_at as number).all<{ id: number; path: string; harness: string; task: string; status: string; started: number; result: string | null }>();
+  return { since: open.created_at as number, runs: results };
 }
 
 /** What self-healing has done for `branch`, for its checks: the attempts, and whether it's a person's turn now. */
@@ -92,7 +92,7 @@ export async function openFix(env: Env, owner: string, repo: string, branch: str
   const no = await fixUnavailable(env, owner, repo, branch);
   if (no) return { skipped: no };
   // These start on the site's keys with no one's click, so a crew member's branch can't spend them: its author has to be an admin.
-  const by = (await env.DB.prepare("SELECT by FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, branch).first())?.by as string | undefined;
+  const by = await env.DB.prepare("SELECT by FROM branches WHERE owner = ? AND repo = ? AND name = ? AND status = 'open'").bind(owner, repo, branch).first<string>("by");
   if (adminsOnly(env, by ?? null)) return { skipped: "hosted fix tasks start only on an admin's branches (ADMINS)" };
   const a = (await attempts(env, owner, repo, branch))!;
   const last = a.runs.at(-1);
@@ -126,8 +126,8 @@ export async function openFix(env: Env, owner: string, repo: string, branch: str
 
 /** The branch's files a fix can edit: text it changed and still has, not yet merged. */
 async function editable(env: Env, owner: string, repo: string, branch: string) {
-  const { results } = await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND deleted = 0 AND blob IS NULL ORDER BY path").bind(owner, repo, branch).all();
-  return (results as { path: string }[]).map((r) => r.path);
+  const { results } = await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND deleted = 0 AND blob IS NULL ORDER BY path").bind(owner, repo, branch).all<{ path: string }>();
+  return results.map((r) => r.path);
 }
 
 /** `paths` by how often a failing log names them, most first; ties keep their order. */

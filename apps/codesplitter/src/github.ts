@@ -58,8 +58,8 @@ export async function githubToken(env: Env, user: string | null): Promise<{ toke
  */
 export async function githubAccounts(env: Env, user: string) {
   const { results } = await env.DB.prepare(`SELECT a.id, a.accessToken, u.github_account AS pick, u.agent_github AS agent FROM account a JOIN users u ON u.auth_id = a.userId
-    WHERE u.name = ? AND a.providerId = 'github' AND a.accessToken IS NOT NULL ORDER BY a.createdAt, a.id`).bind(user).all();
-  const rows = results as { id: string; accessToken: string; pick: string | null; agent: string | null }[];
+    WHERE u.name = ? AND a.providerId = 'github' AND a.accessToken IS NOT NULL ORDER BY a.createdAt, a.id`).bind(user).all<{ id: string; accessToken: string; pick: string | null; agent: string | null }>();
+  const rows = results;
   const active = rows.find((r) => r.id === r.pick)?.id ?? rows.at(-1)?.id;
   return rows.map((r) => ({ id: r.id, active: r.id === active, agent: r.id === r.agent, token: () => openToken(env, r.accessToken) }));
 }
@@ -359,8 +359,8 @@ export async function importRepo(env: Env, src: { repo: string; branch: string; 
 
 /** Drop the expired digs, then, to make room for `more`, the oldest past the cap. */
 async function makeRoom(env: Env, more: number) {
-  const { results } = await env.DB.prepare("SELECT owner, name, expires_at FROM repos WHERE expires_at IS NOT NULL ORDER BY expires_at").all();
-  const live = results as { owner: string; name: string; expires_at: number }[];
+  const { results } = await env.DB.prepare("SELECT owner, name, expires_at FROM repos WHERE expires_at IS NOT NULL ORDER BY expires_at").all<{ owner: string; name: string; expires_at: number }>();
+  const live = results;
   const expired = live.filter((r) => r.expires_at <= Date.now()).length;
   const drop = Math.max(expired, live.length - digCap(env) + more);
   for (const r of live.slice(0, drop)) await evict(env, r.owner, r.name);

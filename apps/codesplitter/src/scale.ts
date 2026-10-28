@@ -115,8 +115,8 @@ async function dbBytes(env: Env): Promise<number | null> {
   const r: any = await env.DB.prepare("SELECT 1").run().catch(() => null);
   if (typeof r?.meta?.size_after === "number") return r.meta.size_after;
   try {
-    const pages = n((await env.DB.prepare("PRAGMA page_count").first() as any)?.page_count);
-    const size = n((await env.DB.prepare("PRAGMA page_size").first() as any)?.page_size);
+    const pages = n(await env.DB.prepare("PRAGMA page_count").first("page_count"));
+    const size = n(await env.DB.prepare("PRAGMA page_size").first("page_size"));
     return pages && size ? pages * size : null;
   } catch { return null; }
 }

@@ -29,7 +29,7 @@ export interface Pulse { name: string; hours: number[]; from: number; total: num
 /** Whether `name`'s pulse is out of sight for `viewer`: they turned it off and aren't looking at their own. */
 async function hidden(env: Env, name: string, viewer: string | null) {
   if (name === viewer) return false;
-  const u = await env.DB.prepare("SELECT pulse FROM users WHERE name = ?").bind(name).first() as { pulse: number } | null;
+  const u = await env.DB.prepare("SELECT pulse FROM users WHERE name = ?").bind(name).first<{ pulse: number }>();
   return u ? !u.pulse : false;   // an agent has no row: its pulse is public
 }
 

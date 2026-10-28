@@ -20,6 +20,7 @@ import { digCap } from "./github.ts";
 import { usage } from "./limits.ts";
 import { json, type Env } from "./env.ts";
 import { repoRow } from "./repos.ts";
+import type { RepoRef } from "./repos";
 
 /** Cloudflare's caps (developers.cloudflare.com/artifacts/platform/limits). */
 export const REPO_CAP = 1024 ** 3, BLOB_CAP = 32 * 1024 ** 2;
@@ -35,7 +36,7 @@ const FULL = /storage|quota|too large|exceed|size limit|limit exceeded|no space/
 type Fresh = { owner: string; repo: string; state: string; artifact: string; remote: string; previous: string; tip: string; tree: string; queue: string | null; stage: string | null; seq: number; done: number; total: number; bytes: number; error: string | null; started_at: number; finished_at: number | null };
 
 const row = (env: Env, owner: string, repo: string) =>
-  env.DB.prepare("SELECT * FROM fresh_starts WHERE owner = ? AND repo = ?").bind(owner, repo).first() as Promise<Fresh | null>;
+  env.DB.prepare("SELECT * FROM fresh_starts WHERE owner = ? AND repo = ?").bind(owner, repo).first<Fresh>();
 const running = (f: Fresh | null) => f?.state === "walking" || f?.state === "copying";
 
 /** /api/repos/:o/:r/limits and /fresh. `a.write` doesn't matter here: only the owner moves git. */
@@ -127,7 +128,7 @@ async function start(env: Env, owner: string, repo: string): Promise<Fresh | { e
 export async function advance(env: Env, owner: string, repo: string) {
   const now = Date.now();
   const got = await env.DB.prepare("UPDATE fresh_starts SET lease = ? WHERE owner = ? AND repo = ? AND state IN ('walking', 'copying') AND (lease IS NULL OR lease < ?) RETURNING *")
-    .bind(now, owner, repo, now - 60_000).first() as Fresh | null;
+    .bind(now, owner, repo, now - 60_000).first<Fresh>();
   if (got) {
     try { await step(env, got); }
     catch (e) { await env.DB.prepare("UPDATE fresh_starts SET state = 'failed', error = ? WHERE owner = ? AND repo = ?").bind(String((e as Error).message ?? e), owner, repo).run(); }
@@ -143,8 +144,8 @@ export async function advance(env: Env, owner: string, repo: string) {
  */
 export async function advanceAll(env: Env, until = 0) {
   for (;;) {
-    const { results } = await env.DB.prepare("SELECT owner, repo FROM fresh_starts WHERE state IN ('walking', 'copying')").all();
-    for (const { owner, repo } of results as { owner: string; repo: string }[]) await advance(env, owner, repo);
+    const { results } = await env.DB.prepare("SELECT owner, repo FROM fresh_starts WHERE state IN ('walking', 'copying')").all<RepoRef>();
+    for (const { owner, repo } of results) await advance(env, owner, repo);
     if (!results.length || Date.now() >= until) return;
     await new Promise((r) => setTimeout(r, 1000));
   }
@@ -173,8 +174,8 @@ async function step(env: Env, f: Fresh) {
       for (let i = 0; i < rows.length; i += 1000) {
         const { results } = await env.DB.prepare(`INSERT INTO fresh_objects (owner, repo, hash, type, seq) VALUES ${rows.slice(i, i + 1000).join(", ")}
           ON CONFLICT (owner, repo, hash) DO UPDATE SET seq = excluded.seq WHERE fresh_objects.type = 'tree' AND fresh_objects.seq >= ?3
-          RETURNING hash, type, seq`).bind(f.owner, f.repo, at).all();
-        for (const r of results as { hash: string; type: string; seq: number }[]) if (r.type === "tree") queue.push([r.hash, r.seq]);
+          RETURNING hash, type, seq`).bind(f.owner, f.repo, at).all<{ hash: string; type: string; seq: number }>();
+        for (const r of results) if (r.type === "tree") queue.push([r.hash, r.seq]);
       }
     }
     if (queue.length) {
@@ -187,10 +188,10 @@ async function step(env: Env, f: Fresh) {
   }
 
   // Copying: the next objects in order, as long as the step has room.
-  const { results } = await env.DB.prepare("SELECT hash, type, seq FROM fresh_objects WHERE owner = ? AND repo = ? AND seq > ? ORDER BY seq LIMIT ?").bind(f.owner, f.repo, f.seq, STEP.reads).all();
+  const { results } = await env.DB.prepare("SELECT hash, type, seq FROM fresh_objects WHERE owner = ? AND repo = ? AND seq > ? ORDER BY seq LIMIT ?").bind(f.owner, f.repo, f.seq, STEP.reads).all<{ hash: string; type: string; seq: number }>();
   const objs: Obj[] = [];
   let size = 0, upTo = f.seq;
-  for (const { hash, type, seq } of results as { hash: string; type: string; seq: number }[]) {
+  for (const { hash, type, seq } of results) {
     let o: Obj;
     if (type === "blob") {
       const blob = await old.readBlob(hash);

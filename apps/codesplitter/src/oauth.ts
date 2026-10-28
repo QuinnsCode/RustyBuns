@@ -98,7 +98,7 @@ async function client(env: Env, clientId: string, redirectUri: string): Promise<
   if (!clientId || clientId.length > 80 || /[\x00-\x1f<>]/.test(clientId)) return "client_id is missing or odd";
   if (!redirect || redirect.hash) return "redirect_uri is missing or not a URL";
   if (clientId.startsWith("csc_")) {
-    const c = await env.DB.prepare("SELECT name, redirect_uris FROM oauth_clients WHERE id = ?").bind(clientId).first() as { name: string; redirect_uris: string } | null;
+    const c = await env.DB.prepare("SELECT name, redirect_uris FROM oauth_clients WHERE id = ?").bind(clientId).first<{ name: string; redirect_uris: string }>();
     if (!c) return "no such client: register again";
     if (!parseJson<string[]>(c.redirect_uris, []).some((r) => sameRedirect(r, redirectUri))) return "that redirect_uri isn't one this client registered";
     return { name: c.name, local: loopback(redirect), registered: true };
@@ -185,7 +185,7 @@ async function authorizeForm(req: Request, env: Env, url: URL) {
   if (req.headers.has("authorization") || (origin && !ownOrigin(origin, url))) return page("Can't sign in", "<h1>Say yes on codeSplitter itself</h1>", 403);
   const f = await fields(req);
   const user = await identify(req, env);
-  const r = user && f.request ? await env.DB.prepare("SELECT * FROM oauth_requests WHERE id = ? AND name = ? AND code_hash IS NULL AND expires_at > ?").bind(f.request, user, Date.now()).first() as { id: string; redirect_uri: string; state: string | null } | null : null;
+  const r = user && f.request ? await env.DB.prepare("SELECT * FROM oauth_requests WHERE id = ? AND name = ? AND code_hash IS NULL AND expires_at > ?").bind(f.request, user, Date.now()).first<{ id: string; redirect_uri: string; state: string | null }>() : null;
   if (!r) return page("Can't sign in", "<h1>That sign-in has expired</h1><p>Start again from the app.</p>", 400);
   if (f.decision !== "allow") {
     await env.DB.prepare("DELETE FROM oauth_requests WHERE id = ?").bind(r.id).run();
@@ -201,8 +201,7 @@ async function token(req: Request, env: Env) {
   const f = await fields(req), now = Date.now();
   if (f.grant_type === "authorization_code") {
     if (!f.code || !f.code_verifier) return oauthError("invalid_request", "code and code_verifier are required");
-    const r = await env.DB.prepare("SELECT * FROM oauth_requests WHERE code_hash = ?").bind(await sha256(f.code)).first() as
-      { id: string; name: string; client_id: string; client_name: string; redirect_uri: string; code_challenge: string; scope: string; expires_at: number } | null;
+    const r = await env.DB.prepare("SELECT * FROM oauth_requests WHERE code_hash = ?").bind(await sha256(f.code)).first<{ id: string; name: string; client_id: string; client_name: string; redirect_uri: string; code_challenge: string; scope: string; expires_at: number }>();
     // Once only, right or wrong.
     if (r) await env.DB.prepare("DELETE FROM oauth_requests WHERE id = ?").bind(r.id).run();
     if (!r || r.expires_at <= now) return oauthError("invalid_grant", "that code is expired, used or wrong");
@@ -218,11 +217,10 @@ async function token(req: Request, env: Env) {
   if (f.grant_type === "refresh_token") {
     if (!f.refresh_token) return oauthError("invalid_request", "refresh_token is required");
     const h = await sha256(f.refresh_token);
-    const g = await env.DB.prepare("SELECT * FROM oauth_grants WHERE refresh_hash = ?").bind(h).first() as
-      { id: string; name: string; client_id: string; client_name: string; scope: string; created_at: number; expires_at: number } | null;
+    const g = await env.DB.prepare("SELECT * FROM oauth_grants WHERE refresh_hash = ?").bind(h).first<{ id: string; name: string; client_id: string; client_name: string; scope: string; created_at: number; expires_at: number }>();
     if (!g) {
       // A refresh token already swapped, shown again: someone else has it. End the grant.
-      const stolen = await env.DB.prepare("SELECT id FROM oauth_grants WHERE prev_hash = ?").bind(h).first() as { id: string } | null;
+      const stolen = await env.DB.prepare("SELECT id FROM oauth_grants WHERE prev_hash = ?").bind(h).first<{ id: string }>();
       if (stolen) await revokeGrant(env, stolen.id);
       return oauthError("invalid_grant", "that refresh token is expired, revoked or wrong: sign in again");
     }
@@ -252,7 +250,7 @@ async function revoke(req: Request, env: Env) {
   const { token: t } = await fields(req);
   if (t) {
     const h = await sha256(t);
-    const g = await env.DB.prepare("SELECT id FROM oauth_grants WHERE refresh_hash = ? OR prev_hash = ?").bind(h, h).first() as { id: string } | null;
+    const g = await env.DB.prepare("SELECT id FROM oauth_grants WHERE refresh_hash = ? OR prev_hash = ?").bind(h, h).first<{ id: string }>();
     if (g) await revokeGrant(env, g.id);
     else await env.DB.prepare("DELETE FROM api_tokens WHERE hash = ?").bind(h).run();
   }
@@ -282,7 +280,7 @@ export async function oauthRoutes(req: Request, env: Env, p: string[], url: URL)
       return json(results);
     }
     if (p[3] && !p[4] && req.method === "DELETE") {
-      const g = await env.DB.prepare("SELECT id FROM oauth_grants WHERE id = ? AND name = ?").bind(p[3], user).first() as { id: string } | null;
+      const g = await env.DB.prepare("SELECT id FROM oauth_grants WHERE id = ? AND name = ?").bind(p[3], user).first<{ id: string }>();
       if (!g) return json({ error: "no such app" }, 404);
       await revokeGrant(env, g.id);
       return json({ ok: true });

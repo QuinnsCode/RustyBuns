@@ -95,8 +95,8 @@ export async function pruneWorktrees(env: Env, owner: string, repo: string, now 
   const lg = localGit(env), r = await repoOf(env, owner, repo);
   if (!lg || !r?.artifact) return;
   const bare = lg.path(r.artifact);
-  const { results } = await env.DB.prepare("SELECT name, branch, sha, base, path, created_at FROM worktrees WHERE owner = ? AND repo = ?").bind(owner, repo).all();
-  for (const w of results as Row[]) {
+  const { results } = await env.DB.prepare("SELECT name, branch, sha, base, path, created_at FROM worktrees WHERE owner = ? AND repo = ?").bind(owner, repo).all<Row>();
+  for (const w of results) {
     if (!(await finished(bare, w, r.branch ?? "main", now))) continue;
     await removeWorktree(bare, w.path);
     await env.DB.prepare("DELETE FROM worktrees WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, w.name).run();

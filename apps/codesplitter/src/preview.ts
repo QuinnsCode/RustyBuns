@@ -126,10 +126,10 @@ export async function logEnd(env: Env, run: Run) {
  */
 export async function history(env: Env, owner: string, repo: string, previews: boolean, live: () => Run | null | Promise<Run | null>) {
   const { results } = await env.DB.prepare(`SELECT id, stage, by, trigger, status, commit_hash, url, at, ms, note, out, runner, key_last4 FROM deploys
-    WHERE owner = ? AND repo = ? AND trigger ${previews ? "= 'preview'" : "!= 'preview'"} ORDER BY at DESC LIMIT 20`).bind(owner, repo).all();
+    WHERE owner = ? AND repo = ? AND trigger ${previews ? "= 'preview'" : "!= 'preview'"} ORDER BY at DESC LIMIT 20`).bind(owner, repo).all<any>();
   const run = await live();
   const died = (d: any) => d.status === "running" && run?.id !== d.id && !(run && d.at > run.at);
-  return { run, history: (results as any[]).map((d) => died(d) ? { ...d, status: "interrupted" } : d) };
+  return { run, history: results.map((d) => died(d) ? { ...d, status: "interrupted" } : d) };
 }
 
 /** The deployed URL from Alchemy's printed outputs: `url: "https://..."`, else the last workers.dev or railway one. */

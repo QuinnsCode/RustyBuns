@@ -643,7 +643,7 @@ async function route(req: Request, env: Env): Promise<Response> {
         const h = await handleFor(env, owner, repo);
         if (!h) return json({ repo: `${owner}/${repo}`, ...(path ? { path, commits: [] } : { files: [] }) });
         // A repo dug from GitHub has only its import in its own git; what came before is read from GitHub (gitpath-upstream.ts).
-        const r = await repoRow(env, owner, repo, "upstream, upstream_commit, branch") as UpstreamRepo | null;
+        const r = await repoRow<UpstreamRepo>(env, owner, repo, "upstream, upstream_commit, branch");
         // An anonymous caller never spends a sign-in's token. The site's own GITHUB_TOKEN reads only a GitHub repo that is public
         // (asked without a token), so a shared link shows a visitor the same history it shows the sharer.
         const token = user ? (await githubToken(env, user).catch(() => null))?.token : env.GITHUB_TOKEN && await upstreamIsPublic(r) ? env.GITHUB_TOKEN : undefined;
@@ -697,7 +697,7 @@ async function route(req: Request, env: Env): Promise<Response> {
         throw e;
       }
       const under = (dir ? dir.replace(/[%_\\]/g, "\\$&") + "/" : "") + "%";
-      const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? AND path LIKE ? ESCAPE '\\'").bind(owner, repo, under).all();
+      const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? AND path LIKE ? ESCAPE '\\'").bind(owner, repo, under).all<{ path: string }>();
       // ?branch=: the branch's own files show too, and the ones it deleted don't (#734); so do the files of the
       // branches it's stacked on, nearest first, so its own rows win, then its parent's, and so on (#1039).
       const branch = url.searchParams.get("branch");
@@ -705,7 +705,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       if (branch && await openBranch(env, owner, repo, branch)) {
         const had = new Set<string>();
         for (const b of [branch, ...await ancestors(env, owner, repo, branch)])
-          for (const f of (await env.DB.prepare("SELECT path, deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND path LIKE ? ESCAPE '\\'").bind(owner, repo, b, under).all()).results as { path: string; deleted: number }[])
+          for (const f of (await env.DB.prepare("SELECT path, deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND path LIKE ? ESCAPE '\\'").bind(owner, repo, b, under).all<{ path: string; deleted: number }>()).results)
             if (!had.has(f.path)) { had.add(f.path); own.push(f); }
       }
       const gone = new Set(own.filter((f) => f.deleted).map((f) => f.path));
@@ -719,7 +719,7 @@ async function route(req: Request, env: Env): Promise<Response> {
       };
       if (gone.size && h) for (const e of [...entries]) if (e.type === "dir" && await emptied(e.path).catch(() => false)) entries.splice(entries.indexOf(e), 1);
       const seen = new Set(entries.map((e) => e.name));
-      for (const { path } of [...results as { path: string }[], ...own.filter((f) => !f.deleted)]) {
+      for (const { path } of [...results, ...own.filter((f) => !f.deleted)]) {
         if (gone.has(path)) continue;
         const rest = dir ? path.slice(dir.length + 1) : path, name = rest.split("/")[0]!;
         if (seen.has(name)) continue;
@@ -885,8 +885,8 @@ async function route(req: Request, env: Env): Promise<Response> {
           }
         }
         // Open branches' copies of the file hide the same lines.
-        const { results } = await env.DB.prepare("SELECT b.name FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch WHERE f.owner = ? AND f.repo = ? AND f.path = ? AND b.status = 'open'").bind(owner, repo, path).all();
-        for (const { name } of results as { name: string }[]) await toFile(env, owner, repo, path, user!, "private", { method: "POST", body: sent }, "", name);
+        const { results } = await env.DB.prepare("SELECT b.name FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch WHERE f.owner = ? AND f.repo = ? AND f.path = ? AND b.status = 'open'").bind(owner, repo, path).all<{ name: string }>();
+        for (const { name } of results) await toFile(env, owner, repo, path, user!, "private", { method: "POST", body: sent }, "", name);
         return res;
       }
       if (p[5] === "commit" && res.ok) {

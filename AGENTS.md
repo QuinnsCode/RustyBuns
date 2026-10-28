@@ -59,6 +59,11 @@ test the wrong shape. CI runs `bun scripts/boundary-audit.ts`, which fails on a 
 and on a file that got better but didn't lower its count in `scripts/boundary-audit.allow.json`
 (`--update` writes it, `--list` shows every one). The allowance only goes down.
 
+Where a type is known, pass it forward through a generic instead of casting the result: D1's
+`first<Row>()`, `first<number>("n")` and `all<Row>()`, `repoRow<Row>(...)`, `storage.get<T>()`.
+A helper that hands back rows takes a type parameter rather than returning `Record<string, unknown>`
+for every caller to cast. Declare a shape once (`RepoRef` in codeSplitter's `repos.ts`) and import it.
+
 ## Effect: where it fits
 
 Reach for `effect` where something must be cleaned up, cancelled, retried, or can lose state (child processes, sockets,
