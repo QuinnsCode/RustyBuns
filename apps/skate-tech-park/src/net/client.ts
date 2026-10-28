@@ -1,6 +1,6 @@
 // The page's side of a room: `?room=ABCD` joins one, and it sends our pose and hears everyone else's.
 // No room in the address, or no server behind /ws (the dev server, the desktop app), and it stays single player.
-import type { Pose, Rider, View } from "./room.ts";
+import { decodeServer, type Pose, type Rider } from "./room.ts";
 
 const SEND_MS = 50;
 
@@ -39,8 +39,8 @@ export class Online {
     ws.onopen = () => { this.status = "in"; this.retry = 0; this.onChange(); };
     ws.onmessage = (e) => {
       try {
-        const m = JSON.parse(String(e.data)) as { t: string; view: View };
-        if (m.t === "view") { this.riders = m.view.riders; this.onChange(); }
+        const m = decodeServer(JSON.parse(String(e.data)));
+        if (m?.t === "view") { this.riders = m.view.riders; this.onChange(); }
       } catch {}
     };
     ws.onclose = (e) => {
