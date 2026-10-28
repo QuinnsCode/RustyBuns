@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { mulberry32 } from "@rustybuns/util";
-import { burst, echoBursts, floorAt, partAt, project, snapCamera, view } from "../src/hallway.ts";
+import { burst, echoBursts, floorAt, partAt, project, snapCamera, sway, view } from "../src/hallway.ts";
 
 test("further down the hallway is smaller and nearer the vanishing point", () => {
   const v = view(390, 844);
@@ -55,4 +55,13 @@ test("a burst's particles come from its rng, fly out, and slow to a drift within
     expect(d).toBeGreaterThan(0.05);
     expect(late[i]!).toBeLessThan(d * 0.8);
   });
+});
+
+test("the Controls look speeds scale the view's sway and invert flips it up and down", () => {
+  const v = view(390, 844), beat = 3;
+  const base = sway(v, beat, false), fast = sway(v, beat, false, { x: 2, y: 2 }), flip = sway(v, beat, false, { x: 1, y: -1 });
+  expect(fast.cx - v.cx).toBeCloseTo((base.cx - v.cx) * 2);
+  expect(fast.hy - v.hy).toBeCloseTo((base.hy - v.hy) * 2);
+  expect(flip.hy - v.hy).toBeCloseTo(-(base.hy - v.hy));
+  expect(sway(v, beat, false, { x: 0, y: 0 })).toMatchObject({ cx: v.cx, hy: v.hy });
 });

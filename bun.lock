@@ -139,6 +139,7 @@
       "name": "delayed-reaction",
       "version": "0.0.1",
       "dependencies": {
+        "@rustybuns/game-controls": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
         "@rustybuns/util": "workspace:*",
       },

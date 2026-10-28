@@ -12,6 +12,7 @@
     "deploy": "vite build && bunx wrangler deploy"
   },
   "dependencies": {
+    "@rustybuns/game-controls": "workspace:*",
     "@rustybuns/util": "workspace:*",
     "@rustybuns/shell-bun": "workspace:*"
   },
