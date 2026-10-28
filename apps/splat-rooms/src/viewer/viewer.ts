@@ -5,6 +5,7 @@
 // rotated -90 about X. Picking happens in DATA space: the camera ray is
 // transformed by the root's inverse, so boxes need no conversion.
 import * as pc from "playcanvas";
+import { onQuality, pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { toObb, rayObb, BOX_EDGES, type Obb, type Vec3 } from "./boxes.ts";
 import type { SceneObject } from "../actions/scenes.ts";
 
@@ -38,6 +39,8 @@ export class Viewer {
     });
     this.app.setCanvasFillMode(pc.FILLMODE_NONE);
     this.app.setCanvasResolution(pc.RESOLUTION_AUTO);
+    this.app.graphicsDevice.maxPixelRatio = QUALITY[pickQuality().quality].pixelRatio; // the shared graphics tier: splats are fill-bound
+    this.detach.push(onQuality((q) => { this.app.graphicsDevice.maxPixelRatio = QUALITY[q].pixelRatio; }));
 
     this.camera = new pc.Entity("camera");
     this.camera.addComponent("camera", { clearColor: new pc.Color(0.03, 0.04, 0.05), farClip: 200, fov: 60 });

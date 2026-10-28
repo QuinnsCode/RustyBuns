@@ -869,6 +869,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         sfx.close();
         cross?.classList.remove("hit");
         composer.dispose();
+        auto.dispose();
         renderer.dispose();
         hud.onpointerdown = null;
         resolve({ ...b.over, inputs: rec.log() });

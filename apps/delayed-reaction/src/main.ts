@@ -1,6 +1,7 @@
 // The page: a canvas tunnel you run down, four thumb pads, a HUD, and a menu. The sim
 // (sim.ts) decides everything; this file draws it and turns thumbs and keys into presses.
 import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
+import { onQuality, pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { Music } from "./audio.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
@@ -141,7 +142,7 @@ window.addEventListener("blur", () => { for (const l of [...down]) padUp(l); });
 
 // ---- controls ----
 mountControls({
-  key: "delayed-reaction.controls", parent: el("controls-host"),
+  key: "delayed-reaction.controls", parent: el("controls-host"), show: ["graphics"],
   keys: [["D F J K", "Pads 1 to 4"], ["Arrow keys", "Pads 1 to 4"], ["Hold", "Long notes"], ["M", "Mute"], ["Esc", "Leave the run"]],
   onChange: (s) => { ctl = s; },
   onToggle: (open) => {
@@ -154,12 +155,13 @@ mountControls({
 
 // ---- drawing ----
 function resize() {
-  const dpr = Math.min(2, devicePixelRatio || 1);
+  const dpr = Math.min(QUALITY[pickQuality().quality].pixelRatio, devicePixelRatio || 1); // the shared graphics tier: a 2D canvas is fill-bound too
   stage.width = Math.floor(innerWidth * dpr);
   stage.height = Math.floor(innerHeight * dpr);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 window.addEventListener("resize", resize);
+onQuality(resize); // the Graphics row changed the pixel ratio
 resize();
 
 function frame(now: number) {

@@ -79,6 +79,30 @@ export function saveQuality(q: Quality, store: Pick<Storage, "setItem"> | null =
   try { store?.setItem(STORE_KEY, q); } catch { /* private window */ }
 }
 
+/** What the player chose: a tier, or "auto" when the machine decides. */
+export type Choice = Quality | "auto";
+export function savedChoice(store: Pick<Storage, "getItem"> | null = safeStore()): Choice {
+  try { const v = store?.getItem(STORE_KEY); return isQuality(v) ? v : "auto"; } catch { return "auto"; }
+}
+
+const listeners = new Set<(q: Quality, choice: Choice) => void>();
+/**
+ * The shared Graphics row (packages/game-controls) calls this; every live `autoQuality` in the page applies it.
+ * "auto" forgets the saved tier and goes back to the machine's guess.
+ */
+export function setQuality(choice: Choice, store: Pick<Storage, "setItem" | "removeItem"> | null = safeStore()) {
+  if (choice === "auto") try { store?.removeItem(STORE_KEY); } catch { /* fine */ }
+  else saveQuality(choice, store);
+  const q = choice === "auto" ? guessQuality(sniffMachine()) : choice;
+  for (const l of listeners) l(q, choice);
+  return q;
+}
+/** Hear every `setQuality`; returns the unsubscribe. */
+export function onQuality(l: (q: Quality, choice: Choice) => void) {
+  listeners.add(l);
+  return () => void listeners.delete(l);
+}
+
 function safeStore(): Storage | null {
   try { return typeof localStorage === "undefined" ? null : localStorage; } catch { return null; }
 }
@@ -149,17 +173,18 @@ export function autoQuality(renderer: QualityRenderer, lights: ShadowLight[], op
   let quality = opts.quality ?? pickQuality({ search: opts.search }).quality;
   applyQuality(quality, renderer, lights);
   const watch = opts.watch ?? new FrameWatch();
+  const go = (q: Quality) => { quality = q; applyQuality(q, renderer, lights); opts.onChange?.(q); watch.reset(); };
+  const off = onQuality(go); // the Graphics row in the shared menu
   return {
     get quality() { return quality; },
     tick(now: number) {
       if (watch.tick(now) !== "drop") return;
       const next = stepDown(quality);
       if (!next) return;
-      quality = next;
-      applyQuality(quality, renderer, lights);
-      saveQuality(quality);
-      opts.onChange?.(quality);
-      watch.reset();
+      saveQuality(next);
+      go(next);
     },
+    /** Stop listening to the menu (a view that is torn down). */
+    dispose: off,
   };
 }

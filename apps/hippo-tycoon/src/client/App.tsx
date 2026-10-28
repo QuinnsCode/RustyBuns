@@ -3,7 +3,8 @@ import { LocalDriver, type Driver } from "./driver.ts";
 import type { Ctl } from "./input.ts";
 import { closeLan, hostInfo, lanSocket, makeJoinCode, onlineSocket, openLan, ownWorldSocket, type HostInfo } from "./lan.ts";
 import { NetDriver } from "./netDriver.ts";
-import { loadSettings, motionReduced, nameOf, saveSettings, systemPrefersReducedMotion, viewOf, type Settings } from "./settings.ts";
+import { loadSettings, motionReduced, nameOf, presetOf, saveSettings, systemPrefersReducedMotion, viewOf, type Settings } from "./settings.ts";
+import { onQuality } from "@rustybuns/util/quality";
 import { Backdrop } from "./ui/Backdrop.tsx";
 import { Game } from "./ui/Game.tsx";
 import { JoinLan, JoinOnline } from "./ui/Join.tsx";
@@ -38,6 +39,8 @@ export function App() {
   useEffect(() => { document.documentElement.dataset.motion = reduced ? "reduced" : "full"; }, [reduced]);
   const view = useMemo(() => viewOf(settings, system), [settings, system]);
   const update = (s: Settings) => { setSettings(s); saveSettings(s); };
+  // The Graphics row in the shared cog menu sets the tier for every game; this app's preset follows it.
+  useEffect(() => onQuality((q) => setSettings((s) => { const n = { ...s, quality: presetOf(q) }; saveSettings(n); return n; })), []);
   const cfg = useMemo(() => ({ secs: settings.secs, difficulty: settings.difficulty }), [settings.secs, settings.difficulty]);
   const name = nameOf(settings);
 

@@ -4,6 +4,7 @@
 import { createElement, RotateCcw, Settings as Cog, Undo2, X } from "lucide";
 import { type Action, type BindingSet, createBindings, keyName } from "./bindings.ts";
 import { DEFAULTS, RANGES, type NumKey, type Settings, parseSettings } from "./settings.ts";
+import { type Choice, guessQuality, QUALITIES, savedChoice, setQuality, sniffMachine } from "@rustybuns/util/quality";
 
 export interface Opts {
   /** localStorage key, one per game. */
@@ -18,12 +19,12 @@ export interface Opts {
   bindings?: BindingSet;
   /** Rows that make no sense for the game (no vertical look, say); their saved values stay in the settings. */
   hide?: (keyof Settings)[];
-  /** Optional groups of rows a game opts into: per-axis touch trims, audio (loudness, on/off, `sounds`), view (brightness, zoom, tilt). */
-  show?: ("touchAxes" | "audio" | "view")[];
+  /** Optional groups of rows a game opts into: per-axis touch trims, audio (loudness, on/off, `sounds`), view (brightness, zoom, tilt), graphics (the quality tier). */
+  show?: ("touchAxes" | "audio" | "view" | "graphics")[];
   /** Sound pieces the player can switch off one by one, e.g. ["steps", "Footsteps"]; needs `show: ["audio"]`. */
   sounds?: [string, string][];
   /** Row names for a game whose look is not a look ("Stick sensitivity" for a slide game). */
-  labels?: Partial<Record<NumKey, string>>;
+  labels?: Partial<Record<NumKey | "quality", string>>;
   /** Called with the saved settings on mount and after every change. */
   onChange?: (s: Settings) => void;
   /** Called when the dialog opens or closes, so a game can pause or let go of the mouse. */
@@ -168,6 +169,20 @@ export function mountControls(o: Opts) {
     slider(o.labels?.zoom ?? "Camera zoom", "zoom");
     slider(o.labels?.tilt ?? "Camera tilt", "tilt");
   }
+  if (o.show?.includes("graphics")) {
+    // One tier for pixel ratio, antialias, shadows and model budgets (packages/util/src/quality.ts), shared by every
+    // game on this browser. Auto is the machine's guess, and a run that stays slow steps down on its own.
+    const guess = guessQuality(sniffMachine());
+    const sel = Object.assign(document.createElement("select"), { name: "quality" });
+    const names: Record<Choice, string> = { auto: `Auto (${guess} on this machine)`, low: "Low: no shadows, 1x pixels", mid: "Mid: soft shadows, 1.5x pixels", high: "High: everything, 2x pixels" };
+    for (const v of ["auto", ...QUALITIES] as Choice[]) sel.append(Object.assign(document.createElement("option"), { value: v, textContent: names[v] }));
+    sel.addEventListener("change", () => { setQuality(sel.value as Choice); o.onChange?.({ ...s }); });
+    syncs.push(() => { sel.value = savedChoice(); });
+    const l = document.createElement("label");
+    l.className = "gc-wide";
+    l.append(Object.assign(document.createElement("span"), { textContent: o.labels?.quality ?? "Graphics quality" }), sel);
+    card.append(l);
+  }
   const extra = o.extras?.(card);
   if (extra) syncs.push(extra.sync);
   const reset = Object.assign(document.createElement("button"), { type: "button", className: "gc-reset", textContent: "Reset to defaults" });
@@ -210,6 +225,7 @@ function addStyle() {
 .gc-card label{display:grid;grid-template-columns:1fr 1.4fr 3.5em;align-items:center;gap:8px;min-height:44px}
 .gc-card input[type=range]{width:100%;min-width:0}.gc-card input[type=checkbox]{width:22px;height:22px;justify-self:start}
 .gc-card output{text-align:right;opacity:.8}
+.gc-card label.gc-wide{grid-template-columns:1fr 2.2fr}.gc-card select{min-height:36px;min-width:0;border:1px solid #fff4;border-radius:8px;background:#222;color:#fff;font:inherit;padding:0 8px}
 .gc-binds{display:grid;grid-template-columns:1fr 1.4fr auto;align-items:center;gap:6px 8px}
 .gc-key{min-height:36px;border:1px solid #fff4;border-radius:8px;background:#222;color:#fff;cursor:pointer;font:inherit}.gc-key.on{border-color:#f90;color:#f90}
 .gc-icon{display:inline-grid;place-items:center;width:36px;height:36px;border:1px solid #fff4;border-radius:8px;background:#222;color:#fff;cursor:pointer}.gc-icon:disabled{opacity:.35;cursor:default}

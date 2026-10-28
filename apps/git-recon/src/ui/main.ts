@@ -503,7 +503,7 @@ let ctl = { ...DEFAULTS };
 let dazed = 0; // how knocked silly the view is, 0..1 (cinema)
 mountControls({
   key: KEY, bindings: bind, parent: $("controls-host"), title: "Controls",
-  show: ["touchAxes", "audio", "view"], hide: ["music", "musicOn"],
+  show: ["touchAxes", "audio", "view", "graphics"], hide: ["music", "musicOn"],
   sounds: [["guns", "Gunfire"], ["blasts", "Blasts and falling files"], ["hits", "Hits and kills"], ["shield", "Shield"], ["pickups", "Pickups"], ["setpieces", "Set-piece cues"]],
   keys: [["Mouse", "Aim"], ["Click / Right click", "Fire / Zoom"], ["Wheel", "Swap gun"], ["Esc", "Let go of the mouse"]],
   onChange: (s) => { ctl = s; paint(); },

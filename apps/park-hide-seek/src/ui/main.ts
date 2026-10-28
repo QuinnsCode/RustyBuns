@@ -69,7 +69,7 @@ const controls = new Controls($<HTMLCanvasElement>("view"));
 mountControls({
   key: KEY, bindings: bind, parent: $("controls-host"),
   keys: [["Mouse", "Look (click the view first)"], ["Esc", "Let go of the mouse"]],
-  show: ["touchAxes", "audio", "view"], sounds: SOUND_PIECES,
+  show: ["touchAxes", "audio", "view", "graphics"], sounds: SOUND_PIECES,
   onChange: (s) => {
     controls.look = s; setMix(s); world.viewSettings = { zoom: s.zoom, tilt: s.tilt };
     $<HTMLCanvasElement>("view").style.filter = s.brightness === 1 ? "" : `brightness(${s.brightness})`;

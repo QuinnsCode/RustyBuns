@@ -8,11 +8,12 @@ import { buildRoom, roomSlots } from "./levels/room.ts";
 import { fillPackedSplats, placeObjects, shuffled, type SpyObject, type SpyScene } from "./levels/scene.ts";
 import { rng } from "./levels/kit.ts";
 import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
+import { autoQuality } from "@rustybuns/util/quality";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("view");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const auto = autoQuality(renderer, []); // the pixel ratio follows the shared graphics tier (no lights or shadows here)
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
 const camera = new THREE.PerspectiveCamera(55, 1, 0.05, 500);
@@ -301,6 +302,7 @@ setScore();
 nextTarget();
 
 renderer.setAnimationLoop(() => {
+  auto.tick(performance.now());
   if (trigger) {
     const t = performance.now();
     for (let i = due(GUN, trigger, t); i > 0; i--) fireAt(trigger.x, trigger.y, spreadOf(GUN, trigger, t));
@@ -328,7 +330,7 @@ Object.assign(globalThis, {
 
 /** The cog next to the tools: look speeds, invert and the key list, saved for next time. Opening it lets go of the trigger. */
 mountControls({
-  key: "splat-spray.controls", parent: $("tools"),
+  key: "splat-spray.controls", parent: $("tools"), show: ["graphics"],
   keys: [["Left button (hold)", "Scan and fire"], ["Right-drag / one finger", "Look around"], ["Arrow keys", "Look around"], ["Wheel", "Zoom"], ["Shift + click", "Pick what you spy"], ["Space", "Next find"]],
   onChange: (s) => { ctl = s; applySpeed(); },
   onToggle: (open) => { if (open) trigger = null; },

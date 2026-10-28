@@ -254,7 +254,7 @@ let hintsReady = false; // the cog reports its settings on mount, before the HUD
 mountControls({
   key: KEY, bindings: bind, parent: document.querySelector<HTMLElement>(".hud .buttons")!,
   keys: [["Left stick (touch)", "Throttle and steer"], ["Drag on the pad", "Flick tricks (touch)"], ["Esc", "Pause"]],
-  show: ["touchAxes", "view"],
+  show: ["touchAxes", "view", "graphics"],
   onChange: (s) => {
     look = s;
     canvas.style.filter = s.brightness === 1 ? "" : `brightness(${s.brightness})`;

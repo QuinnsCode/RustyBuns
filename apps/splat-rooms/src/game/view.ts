@@ -7,6 +7,7 @@
 // splat we reveal around.
 import { look } from "../ui/controls.ts";
 import * as pc from "playcanvas";
+import { onQuality, pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { rayObb, BOX_EDGES, type Obb, type Vec3 } from "../viewer/boxes.ts";
 import type { Candidate, Round } from "./round.ts";
 
@@ -48,6 +49,8 @@ export class GameView {
     });
     this.app.setCanvasFillMode(pc.FILLMODE_NONE);
     this.app.setCanvasResolution(pc.RESOLUTION_AUTO);
+    this.app.graphicsDevice.maxPixelRatio = QUALITY[pickQuality().quality].pixelRatio; // the shared graphics tier: splats are fill-bound
+    this.detach.push(onQuality((q) => { this.app.graphicsDevice.maxPixelRatio = QUALITY[q].pixelRatio; }));
 
     this.camera = new pc.Entity("camera");
     this.camera.addComponent("camera", { clearColor: new pc.Color(0, 0, 0), farClip: 200, fov: FOV });

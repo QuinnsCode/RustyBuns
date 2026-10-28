@@ -48,10 +48,9 @@ export function loadSettings(): Settings {
 }
 
 /** The preset the machine deserves: the shared tier guess, in this app's names. */
-export function guessedQuality(m = sniffMachine()): Quality {
-  const g = guessQuality(m);
-  return g === "mid" ? "medium" : g;
-}
+export const guessedQuality = (m = sniffMachine()): Quality => presetOf(guessQuality(m));
+/** The shared tier (packages/util/src/quality.ts) in this app's preset names. */
+export const presetOf = (g: "low" | "mid" | "high"): Quality => (g === "mid" ? "medium" : g);
 export function saveSettings(s: Settings) {
   try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* private window: fine */ }
 }

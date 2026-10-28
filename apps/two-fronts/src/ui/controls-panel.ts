@@ -24,7 +24,7 @@ export function mountControlsPanel() {
   const host = Object.assign(document.createElement("div"), { id: "controls-host" });
   document.body.append(host);
   mountControls({
-    key: KEY, parent: host,
+    key: KEY, parent: host, show: ["graphics"],
     keys: [["Mouse", "Look (click the field first)"], ["Click", "Fire"], ["1 to 4, F", "Squad orders"], ["Esc", "Let go of the mouse"]],
     onChange: setLook,
     onToggle: (open) => { if (open && document.pointerLockElement) document.exitPointerLock(); },

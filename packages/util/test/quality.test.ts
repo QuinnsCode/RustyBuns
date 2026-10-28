@@ -72,3 +72,19 @@ describe("FrameWatch", () => {
     expect(stepDown("low")).toBeNull();
   });
 });
+
+describe("setQuality", () => {
+  test("tells every listener, saves a tier and forgets it on auto", async () => {
+    const { onQuality, savedChoice, setQuality } = await import("../src/quality.ts");
+    const store = mem(), heard: string[] = [];
+    const off = onQuality((_q, choice) => heard.push(choice));
+    expect(setQuality("low", store)).toBe("low");
+    expect(savedChoice(store)).toBe("low");
+    setQuality("auto", store);
+    expect(savedChoice(store)).toBe("auto");
+    expect(heard).toEqual(["low", "auto"]);
+    off();
+    setQuality("high", store);
+    expect(heard).toHaveLength(2);
+  });
+});
