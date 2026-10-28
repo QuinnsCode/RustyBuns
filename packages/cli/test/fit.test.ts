@@ -48,7 +48,8 @@ test("needs work: a framework init doesn't infer yet links its issue", () => {
 });
 
 test("Angular and Gatsby say they are out of scope, not 'not yet'", () => {
-  for (const dep of [{ "@angular/core": "20" }, { gatsby: "5", react: "18" }]) {
+  const deps: Record<string, string>[] = [{ "@angular/core": "20" }, { gatsby: "5", react: "18" }];
+  for (const dep of deps) {
     const f = fit({ pkg: pkg(dep), files: [] });
     expect(f.reasons.join(" ")).toContain("out of scope");
   }
