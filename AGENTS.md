@@ -88,7 +88,7 @@ A PR that deletes more than it adds is the goal.
   Durable Object at once is `stubAll`; lockfile names are `lockfiles.ts`. Request bodies go through `readBody`, not
   `req.json().catch(() => null)`.
 - `clamp`, `clamp01`, `lerp`, `esc`, `mulberry32` and `nextRandom` (a seeded stream kept on a sim's own state) are in
-  `@rustybuns/util`: import them. Still copied between `apps/*`: `json` Response helpers (a shared package is the fix,
+  `@rustybuns/util`: import them. A game world's `TokenBucket`, `RoomMintGate` and `originAllowed` are `@rustybuns/util/limits`. Still copied between `apps/*`: `json` Response helpers (a shared package is the fix,
   not a fifth copy).
 - When a table is always read together with another (`repos` and `branches` are joined by hand in many places), add a
   view or one query helper rather than another hand-written join.

@@ -1,7 +1,7 @@
 // Cloudflare entry for playing together. Serves the built page, and routes /ws?room=ABCD&level=el-capitan
 // to that room's World Durable Object. Up to 4 riders a room. Everyone is a guest: the Worker checks the
 // player's id and name from the query, strips any identity headers the client sent, and vouches its own.
-import { RoomMintGate, originAllowed } from "./limits.ts";
+import { RoomMintGate, originAllowed } from "@rustybuns/util/limits";
 import { Purchases, handlePay, type PayEnv } from "./pay.ts";
 import { World } from "./world.ts";
 export { World, Purchases };

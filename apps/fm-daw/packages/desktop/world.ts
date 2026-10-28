@@ -3,7 +3,7 @@
 // class is a Durable Object, so everyone in a room edits one groove live.
 // A class with a Durable Object's shape and no base class.
 import { apply, decodeClient, sanitize, type Project, type ServerMsg } from "../../src/project.ts";
-import { TokenBucket } from "../../src/limits.ts";
+import { TokenBucket } from "@rustybuns/util/limits";
 
 // Provided by workerd and by the Rusty Buns host.
 declare const WebSocketPair: { new (): Record<0 | 1, unknown> };

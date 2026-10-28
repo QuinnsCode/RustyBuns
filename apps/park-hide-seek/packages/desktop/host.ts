@@ -8,7 +8,7 @@
 import type { HostContext } from "@rustybuns/shell-bun";
 import { networkInterfaces } from "node:os";
 import { QuickMatch } from "../../src/edge/match.ts";
-import { RoomMintGate } from "../../src/edge/limits.ts";
+import { RoomMintGate } from "@rustybuns/util/limits";
 
 const UID = /^[A-Za-z0-9_-]{8,64}$/;
 const quick = new QuickMatch();

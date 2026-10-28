@@ -1,7 +1,7 @@
 // One Durable Object per room: the riders' sockets and their latest poses. It relays, it does not simulate.
 // The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
 import { MAX_RIDERS, parsePose, Room, type ServerMsg } from "../net/room.ts";
-import { TokenBucket } from "./limits.ts";
+import { TokenBucket } from "@rustybuns/util/limits";
 
 declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
 
