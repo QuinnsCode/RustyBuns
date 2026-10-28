@@ -92,7 +92,6 @@
   "apps/qcrm/src/scripts.ts": 2,
   "apps/qcrm/src/worker.tsx": 1,
   "apps/skate-tech-park/src/edge/pay.ts": 3,
-  "apps/skate-tech-park/src/net/client.ts": 1,
   "apps/skate-tech-park/src/shop.ts": 2,
   "apps/splat-desktop/desktop/host.ts": 1,
   "apps/splat-desktop/scripts/licenses.ts": 1,
