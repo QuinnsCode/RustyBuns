@@ -18,6 +18,7 @@
   "dependencies": {
     "@rustybuns/models": "workspace:*",
     "@rustybuns/terrain": "workspace:*",
+    "@rustybuns/game-controls": "workspace:*",
     "@rustybuns/util": "workspace:*",
     "@rustybuns/shell-bun": "workspace:*",
     "lucide": "1.55.0",

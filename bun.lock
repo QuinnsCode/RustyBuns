@@ -279,6 +279,7 @@
       "name": "git-recon",
       "version": "0.0.1",
       "dependencies": {
+        "@rustybuns/game-controls": "workspace:*",
         "@rustybuns/models": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
         "@rustybuns/terrain": "workspace:*",
@@ -696,6 +697,13 @@
     "packages/cms": {
       "name": "@rustybuns/cms",
       "version": "0.0.0",
+    },
+    "packages/game-controls": {
+      "name": "@rustybuns/game-controls",
+      "version": "0.0.0",
+      "dependencies": {
+        "lucide": "1.55.0",
+      },
     },
     "packages/models": {
       "name": "@rustybuns/models",
@@ -1675,6 +1683,8 @@
     "@rustybuns/cli": ["@rustybuns/cli@workspace:packages/cli"],
 
     "@rustybuns/cms": ["@rustybuns/cms@workspace:packages/cms"],
+
+    "@rustybuns/game-controls": ["@rustybuns/game-controls@workspace:packages/game-controls"],
 
     "@rustybuns/models": ["@rustybuns/models@workspace:packages/models"],
 

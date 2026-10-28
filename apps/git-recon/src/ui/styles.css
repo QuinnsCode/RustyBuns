@@ -227,3 +227,6 @@ html.touch .bl { bottom: 156px; }
   .feed { max-width: 55vw; }
   .feed li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 }
+
+/* The Controls cog: fixed in the top-right corner over the menu and the HUD. */
+.controls-host{position:fixed;top:max(8px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));z-index:900}

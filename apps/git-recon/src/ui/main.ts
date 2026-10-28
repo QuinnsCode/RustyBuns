@@ -28,6 +28,7 @@ import { Battle } from "./net.ts";
 import { headById, headCanvas, HEADS, isOpen } from "./heads.ts";
 import { buildWorld, type World } from "./scene.ts";
 import { mountTouch } from "./touch.ts";
+import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("view");
@@ -485,8 +486,16 @@ canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 window.addEventListener("mousemove", (e) => {
   if (document.pointerLockElement !== canvas) return;
   const k = zoom && current?.game.you().weapon === "rebase" ? 0.0007 : 0.0022;
-  look.yaw -= e.movementX * k;
-  look.pitch = Math.max(-1.2, Math.min(1.0, look.pitch - e.movementY * k));
+  look.yaw -= e.movementX * k * ctl.lookX;
+  look.pitch = Math.max(-1.2, Math.min(1.0, look.pitch - e.movementY * k * ctl.lookY * (ctl.invertY ? -1 : 1)));
+});
+/** The cog in the corner: look speeds, invert and the key list, saved for next time. Opening it lets go of the mouse. */
+let ctl = { ...DEFAULTS };
+mountControls({
+  key: "git-recon.controls", parent: $("controls-host"), title: "Controls",
+  keys: [["W A S D", "Move"], ["Mouse", "Aim"], ["Click / Right click", "Fire / Zoom"], ["Space", "Jump"], ["Q / E", "Lean"], ["Wheel", "Swap gun"], ["Esc", "Let go of the mouse"]],
+  onChange: (s) => { ctl = s; },
+  onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
 /** The next (or previous) gun of yours with rounds left. */
 function cycle(dir: 1 | -1) {
@@ -831,7 +840,7 @@ function frame(now: number) {
   const you = game.you(), me = game.me;
   // A finger's drag on the view turns the camera; its taps are the keys' one-shots.
   const turn = touch.look();
-  look.yaw += turn.yaw, look.pitch = Math.max(-1.2, Math.min(1.0, look.pitch + turn.pitch));
+  look.yaw += turn.yaw * ctl.touch, look.pitch = Math.max(-1.2, Math.min(1.0, look.pitch + turn.pitch * ctl.touch * ctl.lookY * (ctl.invertY ? -1 : 1)));
   if (touch.tap.delete("jump")) jump = true, prone = false;
   if (touch.tap.delete("roll")) roll = true;
   if (touch.tap.delete("reload")) reload = true;
