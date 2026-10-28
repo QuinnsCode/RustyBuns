@@ -148,11 +148,11 @@ export function echoBursts(bursts: Burst[], beat: number, delay: number) {
 export type Scene = { run: Run | null; beat: number; down: ReadonlySet<Lane>; bursts: Burst[]; speed: number; x?: number };
 
 /** The view for this frame: on each kick the tunnel lurches a touch closer, and the vanishing point
- * drifts in a slow figure, so the whole thing sways like it is breathing. The runner shares it, so
+ * drifts in a slow figure (`look` scales the drift across and up/down: the Controls sensitivities), so the whole thing sways like it is breathing. The runner shares it, so
  * they stay on the floor while it moves. */
-export function sway(v: View, beat: number, running: boolean): View {
+export function sway(v: View, beat: number, running: boolean, look = { x: 1, y: 1 }): View {
   const kick = running ? kickAt(beat) : 0;
-  return { ...v, f: v.f * (1 + kick * 0.04), cx: v.cx + Math.sin(beat * 0.37) * v.W * 0.02, hy: v.hy + Math.cos(beat * 0.23) * v.H * 0.012 };
+  return { ...v, f: v.f * (1 + kick * 0.04), cx: v.cx + Math.sin(beat * 0.37) * v.W * 0.02 * look.x, hy: v.hy + Math.cos(beat * 0.23) * v.H * 0.012 * look.y };
 }
 
 export function drawTunnel(g: CanvasRenderingContext2D, v: View, s: Scene) {

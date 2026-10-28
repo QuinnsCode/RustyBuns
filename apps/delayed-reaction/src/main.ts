@@ -1,5 +1,6 @@
 // The page: a canvas tunnel you run down, four thumb pads, a HUD, and a menu. The sim
 // (sim.ts) decides everything; this file draws it and turns thumbs and keys into presses.
+import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
 import { Music } from "./audio.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
@@ -11,6 +12,9 @@ const g = stage.getContext("2d")!;
 const hud = { score: el("score"), combo: el("combo"), judge: el("judge"), lives: el("lives") };
 const menu = el("menu"), levels = el("levels"), pads = [...document.querySelectorAll<HTMLButtonElement>(".pad")];
 
+// The game has no mouse or drag look, so the cog's look speeds scale how far the tunnel's view sways (X across, Y up and down).
+let ctl = { ...DEFAULTS };
+let paused = false; // the Controls dialog is open: the run waits and the music holds
 let music: Music | null = null;
 let run: Run | null = null;
 let best: Record<number, number> = {};
@@ -135,6 +139,19 @@ window.addEventListener("keydown", (e) => {
 window.addEventListener("keyup", (e) => { const lane = KEYS[e.code]; if (lane !== undefined) padUp(lane); });
 window.addEventListener("blur", () => { for (const l of [...down]) padUp(l); });
 
+// ---- controls ----
+mountControls({
+  key: "delayed-reaction.controls", parent: el("controls-host"),
+  keys: [["D F J K", "Pads 1 to 4"], ["Arrow keys", "Pads 1 to 4"], ["Hold", "Long notes"], ["M", "Mute"], ["Esc", "Leave the run"]],
+  onChange: (s) => { ctl = s; },
+  onToggle: (open) => {
+    paused = open;
+    for (const l of [...down]) padUp(l);
+    if (!music) return;
+    if (open) void music.ctx.suspend(); else void music.ctx.resume();
+  },
+});
+
 // ---- drawing ----
 function resize() {
   const dpr = Math.min(2, devicePixelRatio || 1);
@@ -149,7 +166,7 @@ function frame(now: number) {
   requestAnimationFrame(frame);
   // Everything you see runs on the beat you hear, so the pad lights, the key lands and the judging agree.
   const beat = music && run ? heardBeat() : 0;
-  if (run && music) {
+  if (run && music && !paused) {
     for (const j of advance(run, beat)) show(j);
     hud.score.textContent = String(run.score);
     hud.combo.textContent = run.combo >= 5 ? `${run.combo}x` : "";
@@ -168,7 +185,7 @@ function frame(now: number) {
   // The runner stands where the sim says (x across the floor) and reels off a wall it just hit.
   const x = run ? runnerX(run, beat) : 0, knock = run ? knockback(run, beat) : 0;
   const scene = { run, beat: run ? beat : now / 500, down, bursts, speed: run?.speed ?? 1, missBeat, passBeat, x, knock, t: now / 1000 };
-  const v = sway(view(innerWidth, innerHeight), scene.beat, !!run);
+  const v = sway(view(innerWidth, innerHeight), scene.beat, !!run, { x: ctl.lookX, y: ctl.lookY * (ctl.invertY ? -1 : 1) });
   drawTunnel(g, v, scene);
   drawRunner(g, v, scene);
 }
