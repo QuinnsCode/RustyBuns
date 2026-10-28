@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { order, run, score, TIERS, type Board, type BoardPr, type Stage } from "./mervin-board.ts";
 import { writeTree } from "./shadow.ts";
-import type { BoardRow, Hits } from "../src/board.ts";
+import { roundOf, type BoardRow, type Hits, type Round } from "../src/board.ts";
 
 const MANIFESTS = /^(package\.json|bun\.lock)$/;
 const appOf = (path: string) => path.match(/^apps\/([^/]+)\//)?.[1];
@@ -73,6 +73,8 @@ if (import.meta.main) {
   const top = sh(["git", "rev-parse", "--show-toplevel"])!.trim();
   const url = arg("url")?.replace(/\/$/, ""), repo = arg("repo"), token = process.env.CODESPLITTER_TOKEN;
   const dry = args.includes("--dry");
+  // Off unless the repo says so (#1521): `--record` keeps each scored round on the server, no flag keeps none.
+  const record = args.includes("--record");
   if (!dry && (!url || !repo || !token)) { console.error("need --url, --repo owner/name and CODESPLITTER_TOKEN (or --dry)"); process.exit(2); }
   const every = Number(arg("every") ?? 30) * 1000;
   const mainRef = arg("main") ?? "origin/main";
@@ -93,10 +95,10 @@ if (import.meta.main) {
     seen = fp;
 
     // The PRs that landed since the last board: score it against main now, then stage again.
-    let scored = false;
+    let scored = false, round: Round | null = null;
     if (kept && kept.main !== main && kept.stages.some((s) => !prs.some((p) => p.number === s.pr))) {
       const r = score(top, kept, join(keptDir, "tree"), main);
-      if (r.landed.length) { addHits(hits, r.rows); scored = true; }
+      if (r.landed.length) { addHits(hits, r.rows); scored = true; round = roundOf(r.landed, r.rows); }
     }
     const workers = arg("workers") ? JSON.parse(await Bun.file(arg("workers")!).text()) : JSON.parse(sh(["office-workers", "list", "--json"]) || "[]");
     const owners = ownersOf(workers);
@@ -122,8 +124,8 @@ if (import.meta.main) {
     });
     const changed = rows.filter((r) => posted.get(r.pr) !== JSON.stringify(r));
     const drop = [...posted.keys()].filter((n) => !rows.some((r) => r.pr === n));
-    if (dry) console.log(JSON.stringify({ main, prs: changed, drop, hits }, null, 2));
-    else if (changed.length || drop.length || scored) await post({ main, prs: changed, drop, ...(!kept && { replace: true }), ...(scored && { hits }) });
+    if (dry) console.log(JSON.stringify({ main, prs: changed, drop, hits, ...(round && record && { round }) }, null, 2));
+    else if (changed.length || drop.length || scored) await post({ main, prs: changed, drop, ...(!kept && { replace: true }), ...(scored && { hits }), ...(record && { record: true, ...(round && { round }) }) });
     posted = new Map(rows.map((r) => [r.pr, JSON.stringify(r)]));
     console.log(`${new Date().toISOString()} board: ${rows.length} PRs, ${changed.length} changed, ${drop.length} dropped${scored ? ", scored the last board" : ""}`);
 

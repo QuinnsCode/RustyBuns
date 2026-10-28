@@ -22,6 +22,58 @@ export interface BoardRow {
 /** How often each tier's files landed exactly as the sandbox wrote them, after real merges (`--score`). */
 export type Hits = Record<string, { exact: number; of: number }>;
 
+/** One scored merge round: the PRs that landed, each tier's verdicts, and the files the sandbox got wrong (each is a fixture owed to test/conflicts.test.ts). */
+export interface Round {
+  landed: number[];
+  verdicts: Record<string, Record<string, number>>;
+  wrongs: { path: string; tiers: string[] }[];
+}
+
+const VERDICTS = ["exact", "close", "wrong", "asked"];
+
+/** A round off `score()`'s rows: counts per tier of the file's last tier, `moved` and `waiting` left out. */
+export function roundOf(landed: number[], rows: { path: string; score: string; tiers: string[] }[]): Round {
+  const verdicts: Round["verdicts"] = {};
+  for (const r of rows) {
+    if (!VERDICTS.includes(r.score)) continue;
+    const t = (verdicts[r.tiers.at(-1) ?? "none"] ??= {});
+    t[r.score] = (t[r.score] ?? 0) + 1;
+  }
+  return { landed, verdicts, wrongs: rows.filter((r) => r.score === "wrong").map((r) => ({ path: r.path, tiers: r.tiers })) };
+}
+
+/** Is `x` a round the board keeps? A round that is, or what's wrong with it. */
+export function parseRound(x: unknown): Round | string {
+  const r = x as Partial<Round> | null;
+  if (!r || typeof r !== "object") return "round: {landed, verdicts, wrongs}";
+  if (!Array.isArray(r.landed) || !r.landed.every((n) => Number.isInteger(n))) return "landed: [PR numbers]";
+  const v = r.verdicts;
+  if (!v || typeof v !== "object" || Array.isArray(v)) return "verdicts: {tier: {exact, close, wrong, asked}}";
+  const verdicts: Round["verdicts"] = {};
+  for (const [tier, counts] of Object.entries(v)) {
+    if (!counts || typeof counts !== "object") return "verdicts: {tier: {exact, close, wrong, asked}}";
+    const c: Record<string, number> = {};
+    for (const [k, n] of Object.entries(counts)) {
+      if (!VERDICTS.includes(k) || !Number.isInteger(n) || (n as number) < 0) return `verdicts.${tier}: counts of ${VERDICTS.join(", ")}`;
+      c[k] = n as number;
+    }
+    verdicts[tier] = c;
+  }
+  if (!Array.isArray(r.wrongs)) return "wrongs: [{path, tiers}]";
+  const wrongs = r.wrongs.slice(0, 200).flatMap((w) => (w && typeof w.path === "string" ? [{ path: w.path.slice(0, 300), tiers: Array.isArray(w.tiers) ? w.tiers.map(String).slice(0, 8) : [] }] : []));
+  return { landed: r.landed.slice(0, 200), verdicts, wrongs };
+}
+
+/** Every recorded round's verdicts added up: files that landed exactly as written, over those that landed (exact, close or wrong). */
+export function roundsHit(rounds: Round[]): { exact: number; of: number; wrong: number; rounds: number } {
+  let exact = 0, of = 0, wrong = 0;
+  for (const r of rounds) for (const t of Object.values(r.verdicts)) {
+    exact += t.exact ?? 0; wrong += t.wrong ?? 0;
+    of += (t.exact ?? 0) + (t.close ?? 0) + (t.wrong ?? 0);
+  }
+  return { exact, of, wrong, rounds: rounds.length };
+}
+
 export interface Blocker { pr: number; why: string }
 
 /** What holds `row` up: the PR it's stacked on, an earlier PR it clashes with, its own CI, and cards Mervin asked. */

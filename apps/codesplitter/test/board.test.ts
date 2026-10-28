@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ask, brief, canMerge, pick, hitRate, parseRow, waves, whoShouldTake, whyNot, type BoardRow } from "../src/board.ts";
+import { ask, brief, canMerge, pick, hitRate, parseRound, parseRow, roundOf, waves, whoShouldTake, whyNot, type BoardRow } from "../src/board.ts";
 import { addHits, ownersOf, reach, rowOf } from "../scripts/mervin-live.ts";
 import { local as boot } from "./app-kit.ts";
 
@@ -97,5 +97,38 @@ describe("GET/POST /api/repos/:o/:r/board", () => {
     expect((b as unknown as { hits: unknown }).hits).toEqual({ agree: 75 });
     expect((await post("ana", u, { main: "m3", prs: [{ pr: 1 }] })).status).toBe(400);
     expect((await call("ana", `${u}?pr=9`)).status).toBe(404);
+  });
+});
+
+describe("recorded rounds (#1521)", () => {
+  const rows = [
+    { path: "a.ts", score: "exact", tiers: ["certain"] }, { path: "b.ts", score: "exact", tiers: ["agree"] },
+    { path: "c.ts", score: "wrong", tiers: ["agree", "mervin"] }, { path: "d.md", score: "asked", tiers: ["card"] }, { path: "e.ts", score: "waiting", tiers: ["certain"] },
+  ];
+  test("a scored round counts verdicts by the file's last tier and names the wrongs", () => {
+    const r = roundOf([4, 5], rows);
+    expect(r.verdicts).toEqual({ certain: { exact: 1 }, agree: { exact: 1 }, mervin: { wrong: 1 }, card: { asked: 1 } });
+    expect(r.wrongs).toEqual([{ path: "c.ts", tiers: ["agree", "mervin"] }]);
+    expect(parseRound(r)).toEqual(r);
+    expect(parseRound({ landed: [1], verdicts: { x: { fine: 1 } }, wrongs: [] })).toBe("verdicts.x: counts of exact, close, wrong, asked");
+  });
+
+  test("nothing is kept until the repo opts in; opting out forgets", async () => {
+    const call = await boot({ GH_CLI: "off" });
+    const post = (body: unknown) => call("ana", "/api/repos/ana/r/board", { method: "POST", body: JSON.stringify(body) });
+    const get = async () => (await (await call("ana", "/api/repos/ana/r/board")).json()) as { recording: boolean; rounds?: { exact: number; of: number; rounds: number; wrongs: { path: string }[] } };
+    await call("ana", "/api/login", { method: "POST", body: JSON.stringify({ name: "ana" }) });
+    await call("ana", "/api/repos", { method: "POST", body: JSON.stringify({ name: "r" }) });
+    const round = roundOf([4], rows);
+    await post({ main: "m1", prs: [], round });
+    expect(await get()).toMatchObject({ recording: false });
+    expect((await get()).rounds).toBeUndefined();
+    await post({ main: "m2", prs: [], record: true, round });
+    expect((await get()).rounds).toMatchObject({ exact: 2, of: 3, rounds: 1, wrongs: [{ path: "c.ts" }] });
+    expect((await post({ main: "m3", prs: [], round: { landed: "x" } })).status).toBe(400);
+    await post({ main: "m4", prs: [], record: false });
+    expect(await get()).toMatchObject({ recording: false });
+    await post({ main: "m5", prs: [], record: true });
+    expect((await get()).rounds).toMatchObject({ of: 0, rounds: 0 });
   });
 });
