@@ -161,6 +161,21 @@ Current limits on the box:
 
   The Docker build, the staging, the cross check and the box image all skip it, so an app whose crates all opt out cross-compiles like pure TS without Docker (hippo-tycoon's `native/` works this way). `desktop.native: false` still keeps all of `native/` out of the binary (and the box image) from the app config.
 
+## Azure (not a deploy target yet)
+
+Alchemy has no Azure provider: none in `2.0.0-beta.77` (ours), `2.0.0-beta.84`, or the last 0.x, and no `@alchemy.run/azure` package. So `targets.box.provider` is `hetzner` or `railway` only. What Azure can do today:
+
+- **Run the builder on an Azure VM**: [A Linux builder](MAC_SETUP.md#a-linux-builder-azure-or-any-cloud-vm). No Alchemy involved.
+- **Sign Windows builds**: [WINDOWS_LINUX_SIGNING.md](WINDOWS_LINUX_SIGNING.md).
+
+To deploy an app there, the routes are:
+
+1. **An Azure VM as a `box` provider, like Hetzner (chosen).** `rustybuns build box` already makes the Linux binary and its launcher. What is missing is a custom Alchemy resource that creates the VM, network and disk through the Azure API, then the same systemd unit and `/health` wait as Hetzner. It fits "things are functions" and a deploy can be planned and destroyed.
+2. **AKS through `Kubernetes.*`.** Alchemy deploys into a cluster that already exists (kubeconfig, token or the `kubelogin` plugin). Only EKS can be created by Alchemy, so the AKS cluster would be made by hand with `az` or the portal and cost money while idle. Not chosen.
+3. **A full custom Azure provider (Container Apps or App Service).** The most work, and ours to maintain forever. Not chosen.
+
+Before route 1 is built: price the smallest VM size and disk first, destroy after checking it works, and the owner sets up Azure credentials through varlock and 1Password (names go in `.env.schema`). That hands-on step is its own `MANUAL RUN:` issue.
+
 ## Deploy to Railway
 
 Same box, different provider:
