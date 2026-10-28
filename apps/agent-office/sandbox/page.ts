@@ -1,5 +1,6 @@
 // Settings › You gets a "Box" section when the office is run by `office:box`'s permission set (sandbox/server.ts):
 // what the box may mount, its network, its variables, and whether the container and its port are healthy.
+import { Check, ScrollText, ShieldCheck, X, createElement, type IconNode } from "lucide";
 import type { Entry } from "../live/camera.ts";
 import type { Edit, Perms } from "./box.ts";
 
@@ -11,6 +12,45 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEl
   e.append(...kids);
   return e;
 };
+
+// an icon button: the word is the tooltip and the accessible name, so nothing wraps on a narrow screen
+const iconButton = (node: IconNode, word: string, onclick: () => void) => el("button", { title: word, ariaLabel: word, onclick, style: "display:inline-flex;align-items:center;justify-content:center;min-width:32px;min-height:32px" }, createElement(node));
+
+/** A page over the office (its own screen, not a line in Settings): a title, the body, and a close button. */
+function page(title: string, ...kids: (Node | string)[]) {
+  const shell = el("div", { className: "rb-box-page", role: "dialog", ariaLabel: title,
+    style: "position:fixed;inset:0;z-index:2147483000;overflow:auto;background:rgba(0,0,0,.6);display:flex;justify-content:center;padding:16px" });
+  const close = () => shell.remove();
+  const panel = el("div", { style: "background:#1c1c1e;color:#eee;max-width:720px;width:100%;height:fit-content;padding:16px 20px;border-radius:10px" },
+    el("div", { style: "display:flex;align-items:center;gap:8px" }, el("h3", { style: "flex:1;margin:0" }, title), iconButton(X, "Close", close)), ...kids);
+  shell.append(panel);
+  shell.onclick = (ev) => { if (ev.target === shell) close(); };
+  document.body.append(shell);
+  return close;
+}
+
+/** The first-run page: how outbound works here and the two questions the log needs. Saving writes the permission set. */
+function firstRun(s: State, save: (maxMb: number, keepDays: 1 | 3 | 7 | 30) => Promise<void>) {
+  const size = el("input", { type: "number", min: "1", value: String(s.perms.log.maxMb), ariaLabel: "Disk space for the log, in MB" });
+  const keep = Object.assign(el("select", { ariaLabel: "How long to keep the log" }, ...[[1, "a day"], [3, "3 days"], [7, "a week"], [30, "a month"]].map(([d, t]) => el("option", { value: String(d) }, String(t)))), { value: String(s.perms.log.keepDays) });
+  const row = (...kids: (Node | string)[]) => el("div", { style: "display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0" }, ...kids);
+  const close = page("Set up the box",
+    el("p", {}, "Everything the box reaches on the internet asks you first, with an Allow, Always or Deny card in the office. Always adds the host to the allowed list, so it isn't asked again."),
+    el("p", {}, "What was asked, when, and what you answered is written to a log on this machine only. Requests to send a worker home go in the same log."),
+    el("p", { className: "setting-note" }, "Only HTTPS to a host and port goes through the box's proxy. Plain HTTP and other protocols have no way out, so they aren't asked about."),
+    row("The log may use", size, "MB of disk; the oldest lines go first."),
+    row("Keep records for", keep),
+    row(iconButton(Check, "Save and finish", () => void save(Number(size.value), Number(keep.value) as 1 | 3 | 7 | 30).then(() => close()))));
+}
+
+/** The whole log in one page, newest first. */
+async function wholeLog() {
+  const r = await fetch("/__rb/box?log=all");
+  const body: unknown = await r.json();
+  const log = typeof body === "object" && body !== null && "log" in body && Array.isArray(body.log) ? body.log as Entry[] : [];
+  const rows = log.map((l) => el("tr", {}, el("td", {}, new Date(l.at).toLocaleString()), el("td", {}, l.kind === "home" ? "send home" : "outbound"), el("td", {}, l.who), el("td", { style: "overflow-wrap:anywhere" }, el("code", {}, l.what)), el("td", {}, l.verdict)));
+  page(`Log (${log.length})`, log.length ? el("table", { style: "width:100%;font-size:13px;border-collapse:collapse" }, ...rows) : el("p", {}, "Nothing has been logged yet."));
+}
 
 const query = (e: Edit) => {
   if ("grant" in e) return { do: "grant", path: e.grant.path, access: e.grant.access };
@@ -64,11 +104,10 @@ function section() {
     const ask = el("input", { type: "checkbox", checked: s.perms.ask, ariaLabel: "Ask before the box reaches a host that isn't allowed", onchange: (ev: Event) => void apply({ ask: (ev.target as HTMLInputElement).checked }) });
     const size = el("input", { type: "number", min: "1", value: String(s.perms.log.maxMb), ariaLabel: "Disk space for the log, in MB" });
     const keep = Object.assign(el("select", { ariaLabel: "How long to keep the log" }, ...[[1, "a day"], [3, "3 days"], [7, "a week"], [30, "a month"]].map(([d, t]) => el("option", { value: String(d) }, String(t)))), { value: String(s.perms.log.keepDays) });
-    const save = () => void apply({ log: { maxMb: Number(size.value), keepDays: Number(keep.value) as 1 | 3 | 7 | 30 } });
-    size.onchange = keep.onchange = save;
+    size.onchange = keep.onchange = () => void apply({ log: { maxMb: Number(size.value), keepDays: Number(keep.value) as 1 | 3 | 7 | 30 } });
     const rows = s.log.map((l) => el("div", { className: "rb-box-row" }, new Date(l.at).toLocaleString(), el("code", {}, l.what), l.verdict));
     root.replaceChildren(
-      ...(first ? [el("p", { className: "setting-note" }, "First run: everything outbound asks first, and what was asked is logged on this machine only. Pick how much disk the log may use and how long it keeps records (saving this creates your permission set).", el("button", { onclick: save }, "Save these"))] : []),
+      ...(first ? [el("p", { className: "setting-note" }, "First run: everything outbound asks first, and what was asked is logged on this machine only.", iconButton(ShieldCheck, "Set up the box", () => firstRun(s, async (maxMb, keepDays) => apply({ log: { maxMb, keepDays } }))))] : []),
       el("div", { className: "setting-head" }, el("h4", {}, "Box"), el("span", { className: "scope", title: `Read from ${s.from}` }, ok ? "Healthy" : "Needs a look")),
       el("p", { className: "setting-note" }, healthLine(s)),
       ...(s.health.running && s.health.restart ? [el("p", { className: "setting-note" }, "The running box has other grants than this list. They apply when it starts again: bun run office:box up")] : []),
@@ -78,7 +117,7 @@ function section() {
       ...(s.perms.network === "allowlist" ? [el("div", { className: "rb-box-row" }, "Allowed hosts", ...hosts, hostName, el("button", { onclick: () => void apply({ allow: { host: hostName.value, on: true } }) }, "Allow"))] : []),
       el("div", { className: "rb-box-row" }, "Variables", ...env, envName, el("button", { onclick: () => void apply({ env: { name: envName.value, on: true } }) }, "Pass in")),
       ...(s.perms.network === "allowlist" ? [el("div", { className: "rb-box-row" }, ask, "Ask before reaching any other host")] : []),
-      el("div", { className: "rb-box-row" }, "Outbound log", size, "MB, keep", keep),
+      el("div", { className: "rb-box-row" }, "Log", size, "MB, keep", keep, iconButton(ScrollText, "Show the whole log", () => void wholeLog().catch((err) => { note.textContent = err instanceof Error ? err.message : String(err); }))),
       ...(rows.length ? rows : [el("p", { className: "setting-note" }, "Nothing outbound has been asked yet.")]),
       note);
   };
