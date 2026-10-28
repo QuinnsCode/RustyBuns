@@ -62,6 +62,13 @@ let wasCaught = false;
 let lastThreat = 0;
 
 const world = new World3D($<HTMLCanvasElement>("view"));
+world.onContextLost = () => {
+  const note = document.createElement("div");
+  note.setAttribute("role", "alert");
+  note.style.cssText = "position:fixed;inset:auto 16px 16px 16px;padding:12px 16px;background:#1b1b1b;color:#fff;border-radius:8px;z-index:50;text-align:center";
+  note.textContent = "The graphics card gave out. Reload to play again, with ?quality=low if it keeps happening.";
+  document.body.append(note);
+};
 const zmap = new ZoneMap($<HTMLCanvasElement>("zonemap"));
 const preview = new Preview($<HTMLCanvasElement>("preview"));
 const controls = new Controls($<HTMLCanvasElement>("view"));

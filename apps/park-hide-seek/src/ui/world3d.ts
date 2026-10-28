@@ -36,6 +36,8 @@ const GREY: Record<TimeOfDay, { cloud: string; mist: string }> = {
   night: { cloud: "#1a2230", mist: "#232b38" },
 };
 /** Rain and snow fall in a box this big round the camera. */
+/** Rain is re-uploaded every frame, so weaker tiers draw a share of it. */
+const PRECIP_SHARE = { low: 0.3, mid: 0.6, high: 1 };
 const PRECIP = { half: 22, height: 14, rain: 3500, snow: 2200 };
 
 interface Precip { obj: THREE.LineSegments | THREE.Points; pos: Float32Array; n: number; snow: boolean; wind: number }
@@ -128,10 +130,14 @@ export class World3D {
   private propGeos: Record<DisguiseKind, THREE.BufferGeometry>;
   private meProp: PropBody = { prop: null, propKey: "" };
 
+  /** Set by the page: called once if the GPU context is lost. */
+  onContextLost: () => void = () => {};
+
   constructor(readonly canvas: HTMLCanvasElement) {
     // ?quality=low|mid|high, else the remembered tier, else a guess from the GPU; a slow run steps itself down.
     const tier = pickQuality().quality;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY[tier].antialias, powerPreference: "high-performance" });
+    canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); this.onContextLost(); });
     this.auto = autoQuality(this.renderer, [this.sun], { quality: tier });
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -273,7 +279,7 @@ export class World3D {
     const by = new Map<PropKind, Prop[]>();
     for (const p of z.props) { if (!by.has(p.kind)) by.set(p.kind, []); by.get(p.kind)!.push(p); }
     const m = (c: string, o: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9, ...o });
-    const place = (geo: THREE.BufferGeometry, material: THREE.Material, list: Prop[], scale: (p: Prop) => [number, number, number], tint?: (p: Prop, c: THREE.Color) => void, sink = 0) => {
+    const place = (geo: THREE.BufferGeometry, material: THREE.Material, list: Prop[], scale: (p: Prop) => [number, number, number], tint?: (p: Prop, c: THREE.Color) => void, sink = 0, cast = true) => {
       if (!list.length) return;
       const mesh = new THREE.InstancedMesh(geo, material, list.length);
       const o = new THREE.Object3D(), col = new THREE.Color();
@@ -285,7 +291,7 @@ export class World3D {
         mesh.setMatrixAt(i, o.matrix);
         if (tint) { tint(p, col); mesh.setColorAt(i, col); }
       });
-      mesh.castShadow = true; mesh.receiveShadow = true;
+      mesh.castShadow = cast; mesh.receiveShadow = true;
       out.push(mesh);
     };
     const swaying = <M extends THREE.Material>(mat: M, k: number) => this.swaying(mat, k);
@@ -315,13 +321,13 @@ export class World3D {
     const shade = (_: Prop, c: THREE.Color) => c.setHSL(0.22 + (r() - 0.5) * 0.12, 0.3, 0.8 + r() * 0.2);
     const sized = (p: Prop): [number, number, number] => [p.size, p.size, p.size];
     const grow = (kinds: THREE.BufferGeometry[], list: Prop[], material: THREE.Material, sink: number) =>
-      kinds.forEach((geo, i) => place(geo, material, list.filter((p) => variant(kinds.length, p.x, p.y) === i), sized, shade, sink));
+      kinds.forEach((geo, i) => place(geo, material, list.filter((p) => variant(kinds.length, p.x, p.y) === i), sized, shade, sink, false));
     grow(grown.bush, by.get("bush") ?? [], this.propMats.bush, PROP_SINK.bush);
     grow(grown.saguaro, by.get("saguaro") ?? [], m("#ffffff", { vertexColors: true, flatShading: true }), 0.1);
     grow(grown.cactus, by.get("cactus") ?? [], m("#ffffff", { vertexColors: true, flatShading: true }), 0.05);
     place(PROP_GEO.boulder(), m("#8b8a84", { flatShading: true }), by.get("boulder") ?? [],
       (p) => [p.size, p.size, p.size], (_, c) => c.copy(PROP_COLOR.boulder).offsetHSL(0, 0, (r() - 0.5) * 0.15), PROP_SINK.boulder);
-    place(PROP_GEO.log(), m("#ffffff"), by.get("log") ?? [], (p) => [p.size, p.size, p.size], (_, c) => c.copy(PROP_COLOR.log), PROP_SINK.log);
+    place(PROP_GEO.log(), m("#ffffff"), by.get("log") ?? [], (p) => [p.size, p.size, p.size], (_, c) => c.copy(PROP_COLOR.log), PROP_SINK.log, false);
     place(new THREE.ConeGeometry(1.6, 2.1, 4).translate(0, 1.05, 0), m("#ffffff"), by.get("tent") ?? [], () => [1, 1, 1],
       (_, c) => c.set(["#e0702b", "#2b78c2", "#e3b52b", "#3f8f4a"][Math.floor(r() * 4)]));
     place(mergeGeometries([new THREE.BoxGeometry(1.8, 0.08, 0.8).translate(0, 0.75, 0), new THREE.BoxGeometry(1.8, 0.06, 0.3).translate(0, 0.45, 0.55), new THREE.BoxGeometry(1.8, 0.06, 0.3).translate(0, 0.45, -0.55), new THREE.BoxGeometry(0.1, 0.75, 1.4).translate(0.7, 0.37, 0), new THREE.BoxGeometry(0.1, 0.75, 1.4).translate(-0.7, 0.37, 0)])!,
@@ -477,7 +483,7 @@ export class World3D {
   /** Rain as falling streaks, snow as drifting flakes, in a box that follows the camera. */
   private makePrecip(sky: Sky): Precip {
     const { half, height } = PRECIP;
-    const n = Math.round((sky.snow ? PRECIP.snow : PRECIP.rain) * Math.min(1, sky.rain));
+    const n = Math.round((sky.snow ? PRECIP.snow : PRECIP.rain) * Math.min(1, sky.rain) * PRECIP_SHARE[this.auto.quality]);
     const r = rng(11);
     const per = sky.snow ? 3 : 6;
     const pos = new Float32Array(n * per);
@@ -584,7 +590,11 @@ export class World3D {
       this.me.tag.visible = false;
       this.placeChar(this.me, z, me.x, me.y, me.yaw, me.pitch, me.crouch, me.speed, me.light, dt, false, me.climb);
       // Your own flashlight works in first person too.
-      if (this.me.light) { this.me.light.castShadow = true; this.me.light.shadow.mapSize.set(1024, 1024); }
+      if (this.me.light) {
+        const on = this.auto.quality === "high";
+        if (on && !this.me.light.castShadow) this.me.light.shadow.mapSize.set(1024, 1024);
+        this.me.light.castShadow = on;
+      }
       if (this.me.beam && !third) this.me.beam.visible = false;
       // As a prop you see the prop in third person; in first person it would wrap the camera.
       const d = r?.you?.disguise ?? null;
