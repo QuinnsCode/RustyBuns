@@ -1,15 +1,24 @@
 export const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+export const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+export const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
+/** Text made safe to put in HTML, attributes included. */
+export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+/**
+ * The next number in [0, 1) of a mulberry32 stream whose state is `o[key]`, a uint32 kept on the object that
+ * owns it, so a snapshot of a sim includes its randomness.
+ */
+export function nextRandom<K extends string>(o: Record<K, number>, key: K): number {
+  let t = (o[key] = (o[key] + 0x6d2b79f5) >>> 0);
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
 
 /** Seeded PRNG: the same seed always gives the same stream of numbers in [0, 1). */
 export function mulberry32(seed: number) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+  const s = { a: seed >>> 0 };
+  return () => nextRandom(s, "a");
 }
 
 /**

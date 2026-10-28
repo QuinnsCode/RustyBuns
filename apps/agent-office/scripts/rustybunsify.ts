@@ -62,7 +62,7 @@ const SHARED = ["codesplitter/index.ts", "screens/index.ts", ...(skin === "druid
 let shared: Promise<Map<string, string>> | undefined;
 // (sharedBuild() below; up here because the top-level build runs before the rest of the file is reached)
 const stamp = path.join(office, ".rustybuns");
-if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst` && !process.argv.includes("--fresh")) {
+if (existsSync(stamp) && readFileSync(stamp, "utf8").trim() === `${tag} ${skin} lucide live clock mem pulls checks triage vale podcast codesplitter connect hosts hooktokens env ticks power board guard asks brawl ester dexter reload external box builder askfirst setup` && !process.argv.includes("--fresh")) {
   console.log(`🥐 Agent Office ${tag} already Rusty Buns-ified in ./office`);
   // the skin is ours and changes far more often than the release, so it's rebuilt every start
   if (skin === "druids" && (!only || only.includes("skin"))) { await buildSkin(path.join(office, "dist/public/druids")); lap("skin (druids + shared chunk)"); }
@@ -364,8 +364,8 @@ async function buildPageScripts() {
   await buildPageScript("power/index.ts", "rb-power", ["index"]);
   // the Box section of Settings (sandbox/), which reads and edits the box's permission set
   await buildPageScript("sandbox/page.ts", "rb-box", ["index"]);
-  // the Build computer card next to it (builder/)
-  await buildPageScript("builder/page.ts", "rb-builder", ["index"]);
+  // Settings › Connections (setup/): GitHub accounts and the Build computer, one card each
+  await buildPageScript("setup/page.ts", "rb-setup", ["index"]);
   // AGENT_OFFICE_ASK_FIRST's Allow / Deny card, for an agent's request waiting on a person (#727)
   await buildPageScript("asks/index.ts", "rb-asks", ["index", "lite"]);
   // the gitpath, Mervin and Ester screens over the boards, in the 3D office only, off until Settings › You turns one on

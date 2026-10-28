@@ -6,6 +6,7 @@
 import type { Level } from "./level.ts";
 import { DT, type Input, type State } from "./sim.ts";
 import { type Flick, TRICKS } from "./tricks.ts";
+import { bool, num, obj, raw } from "@rustybuns/util/guard";
 
 /** One held stretch of input, in sim steps. */
 export type Hold = { input: Partial<Input>; steps: number };
@@ -37,24 +38,20 @@ export class Driver {
   stop() { for (const q of this.queue.splice(0)) q.done?.(); }
 }
 
-const num = (v: unknown, lo: number, hi: number, d: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isFlick = (v: unknown): v is Flick => typeof v === "string" && v in TRICKS;
+const flag = bool(false), axis = num(-1, 1, 0);
+const HOLD = obj({ seconds: num(DT, MAX_SECONDS, 0.5), push: axis, steer: axis, ollie: flag, nollie: flag, jets: flag, fan: flag, trick: raw, manual: raw });
 
 /** A tool's move ({ seconds, push, steer, ollie, ... }) as a hold. Anything unknown or out of range is dropped or clamped. */
 export function holdOf(v: unknown): Hold {
-  const m = isRecord(v) ? v : {};
+  const m = HOLD(isRecord(v) ? v : {});
   const input: Partial<Input> = {
-    throttle: num(m.push, -1, 1, 0),
-    steer: num(m.steer, -1, 1, 0),
-    jump: m.ollie === true,
-    nollie: m.nollie === true,
+    throttle: m.push, steer: m.steer, jump: m.ollie, nollie: m.nollie, boost: m.jets, fan: m.fan,
     flick: isFlick(m.trick) ? m.trick : null,
-    boost: m.jets === true,
-    fan: m.fan === true,
     manual: m.manual === "tail" ? 1 : m.manual === "nose" ? -1 : 0,
   };
-  return { input, steps: Math.max(1, Math.round(num(m.seconds, DT, MAX_SECONDS, 0.5) / DT)) };
+  return { input, steps: Math.max(1, Math.round(m.seconds / DT)) };
 }
 
 /** What an agent reads of the ride: where, how fast, what it's doing, the score, and what lies ahead. */

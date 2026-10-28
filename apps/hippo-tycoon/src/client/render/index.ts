@@ -13,12 +13,11 @@ import { DropLayer } from "./drops.ts";
 import { Particles, Popups } from "./fx.ts";
 import { HippoRig } from "./hippo.ts";
 import type { Event } from "../../sim/types.ts";
+import { clamp01, lerp } from "@rustybuns/util";
 
 const TICK_MS = 1000 / TICK_HZ;
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const KIND_COLOR = [0x303030, 0xffc933, 0x6b4a22, 0xb5bcc4, 0x55b6ff];
 const ease = (x: number) => x * x * (3 - 2 * x);
-const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 /** The gameplay shot (scaled up on narrow screens): a touch lower than it was, so the sunset and the peaks show over the far rim. */
 const CAM = { y: 14.2, z: 26.5, lookY: 1.6, lookZ: -3.5 };
 export interface RendererOpts {

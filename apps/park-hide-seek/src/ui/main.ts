@@ -2,7 +2,7 @@
 // hunt, the radio map, and results. Solo games run the Room right here; LAN
 // and online games talk to a world (see session.ts).
 
-import { cheese } from "@rustybuns/util";
+import { cheese, esc } from "@rustybuns/util";
 import { allAsks, askBlocked, askText, radioGrid, RADIO, type Ask, type Clue } from "../clues.ts";
 import { HATS, HUNT, PANTS, SHIRTS, SKINS, circleAt, closed, disguiseFor, dropOk, outside, randomLook, type BotLevel, type Look, type Mode, type Msg, type View } from "../hunt/game.ts";
 import { step, wrap, type Body } from "../hunt/sim.ts";
@@ -24,7 +24,6 @@ import "@fontsource/gloria-hallelujah/latin-400.css";
 void document.fonts?.load("46px Lacquer");
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const store = {
   get(k: string) { try { return localStorage.getItem(`phs.${k}`) ?? ""; } catch { return ""; } },
   set(k: string, v: string) { try { localStorage.setItem(`phs.${k}`, v); } catch {} },

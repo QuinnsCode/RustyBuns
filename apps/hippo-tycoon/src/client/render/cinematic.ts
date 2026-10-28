@@ -9,6 +9,7 @@ import { at } from "./arena.ts";
 import type { Particles } from "./fx.ts";
 import type { HippoRig } from "./hippo.ts";
 import type { Hippo } from "../../sim/types.ts";
+import { clamp01 } from "@rustybuns/util";
 
 export type Sfx = "bell" | "whoosh" | "slam" | "boing" | "splat" | "ding" | "crowd";
 export type Style = "spin" | "slam" | "punt" | "star";
@@ -48,7 +49,6 @@ export interface CineOpts {
 export interface Shot { focus: THREE.Vector3; push: number }
 
 const ease = (x: number) => x * x * (3 - 2 * x);
-const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 const SHOUT = (seat: number): Hippo => ({ seat, slide: 0, gulp: -1, cooldown: 0, sputter: 0, sore: 0, flooded: false, dud: false, score: 0, bellow: 9 });
 const UP = new THREE.Vector3(0, 1, 0);
 

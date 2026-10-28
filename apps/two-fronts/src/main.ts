@@ -20,6 +20,7 @@ import { PLACES } from "./battle/cutscenes.ts";
 import { HULL_PER_SHIP, ROUNDS, clash, encodePicks, fightPicks, playRound, startPicks, whyNot, type PickRound } from "./battle/space-picks.ts";
 import { aiSpacePick } from "./war/ai.ts";
 import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type SectorKind, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
+import { esc } from "@rustybuns/util";
 
 mountControlsPanel();
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -80,7 +81,6 @@ const CARD_TIPS: Record<Card, string> = {
 
 const systemDef = (id: string) => galaxyOf(c).system(id), neighbours = (id: string) => galaxyOf(c).neighbours(id);
 
-const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 const placeName = (w: Where) => {
   const d = systemDef(w.system);
   if (w.sector === ORBIT) return `${d.name} · Orbit`;
