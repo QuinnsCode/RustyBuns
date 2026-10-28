@@ -31,6 +31,7 @@ export const yosemiteFalls: ParkSpec = {
     { name: "shelf", x: -285, z: -220, yaw: E },
     { name: "valley line", x: -20, z: 60, yaw: E },
     { name: "sky rail", x: -5, z: 215, yaw: E },
+    { name: "creek halfpipe", x: 100, z: -40, yaw: E },
   ],
   landmarks: [{ kind: "falls", from: { x: -195, z: -220 }, to: { x: -135, z: -220 }, width: 18 }],
   goals: [
