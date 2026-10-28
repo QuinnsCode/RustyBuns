@@ -296,7 +296,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     onTrail(x, z) < 3.5 || (sea !== null && heightAt(x, z) < sea.level + 0.35) || b.posts.some((post) => Math.hypot(x - post.x, z - post.z) < 5) ||
     b.blocks.some((blk) => blockGap(blk, x, z) < room) || b.trees.some((t) => Math.hypot(x - t.x, z - t.z) < t.r + 0.3);
   const anywhere = (spread = 1) => ({ x: (r() - 0.5) * b.half * 2 * spread, z: (r() - 0.5) * b.half * 2 * spread });
-  const { inst, put, done } = instancer(scene);
+  const { inst, put, done, tiled } = instancer(scene);
   const wind = makeWind(), Q = foliageQuality();
 
   // Fern fronds, and the leaf material every frond and clump shares: it sways, and bends away from units.
@@ -335,7 +335,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     const moss = inst(mossGeo, std(look.flora ? 0x1c6a7a : 0x4a6224, 1, { map: barkMap() }), all.length);
     // Boughs: thin limbs off the upper trunk, each ending in a clump of needles; a few dead twigs lower down.
     const limbs = inst(new THREE.CylinderGeometry(0.5, 1, 1, 5).translate(0, 0.5, 0), std(0x5a3622, 1), all.length * 8, true);
-    const clumps = inst(fernGeo, leafMat, all.length * (jungle ? 6 : 14), true);
+    const clumps = inst(fernGeo, leafMat, all.length * (jungle ? 6 : 14));
     const plant = planter(look.flora, r, col);
     const branch = (x: number, y: number, z: number, a: number, len: number, droop: number, rad: number) => {
       q.setFromEuler(new THREE.Euler(0, a, Math.PI / 2 - droop, "YXZ"));
@@ -379,7 +379,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
         put(lamps, m.compose(p.set(t.x, y0 + h * 0.8, t.z), q.identity(), k.set(t.r * 0.9, t.r * 1.2, t.r * 0.9)), col);
       }
     }
-    done(limbs, clumps, trunks, moss);
+    tiled(limbs, clumps, trunks, moss);
     if (caps && lamps && rings) done(caps, lamps, rings);
 
     // The undergrowth: ferns most of all, bushes, logs, stumps, mushrooms.
@@ -394,7 +394,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       plant(0.21 + r() * 0.08, 0.5 + r() * 0.2, 0.3 + r() * 0.16);
       put(ferns, m.compose(p.set(at.x, heightAt(at.x, at.z) - 0.05, at.z), q.setFromAxisAngle(UP, r() * 6), k.set(sz, sz * (0.8 + r() * 0.4), sz)), col);
     }
-    const nBush = Math.round(320 * Q), bushes = inst(fernGeo, leafMat, nBush, true);
+    const nBush = Math.round(320 * Q), bushes = inst(fernGeo, leafMat, nBush);
     for (let i = 0; i < 1200 && bushes.count < nBush; i++) {
       const at = anywhere(1.2);
       if (bare(at.x, at.z, 3)) continue;
@@ -402,12 +402,13 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
       plant(0.24 + r() * 0.07, 0.45, 0.2 + r() * 0.08);
       put(bushes, m.compose(p.set(at.x, heightAt(at.x, at.z) - 0.1, at.z), q.setFromAxisAngle(UP, r() * 6), k.set(w, w * 1.1, w)), col);
     }
+    tiled(ferns, bushes);
     // Round, cheerful bushes: lumpy green balls in bunches, some with red and yellow berries or little
     // flowers on them, a touch toy-like. Thick enough to hide a Wooka's silhouette, never in the way.
     const nPuff = jungle ? 90 : 150;
     const puffGeo = lumpy(1, 2, 0.12, 21, true);
-    const puffs = inst(puffGeo, wind.patch(std(0xffffff, 0.8), { h: 2, amp: 0.06, bend: 1 }), nPuff * 4, true);
-    const dots = inst(new THREE.SphereGeometry(0.16, 6, 4), look.flora ? new THREE.MeshBasicMaterial({ color: 0xffffff }) : std(0xffffff, 0.5), nPuff * 10, true);
+    const puffs = inst(puffGeo, wind.patch(std(0xffffff, 0.8), { h: 2, amp: 0.06, bend: 1 }), nPuff * 4);
+    const dots = inst(new THREE.SphereGeometry(0.16, 6, 4), look.flora ? new THREE.MeshBasicMaterial({ color: 0xffffff }) : std(0xffffff, 0.5), nPuff * 10);
     for (let i = 0, made = 0; i < 1200 && made < nPuff; i++) {
       const at = anywhere(1.15);
       if (bare(at.x, at.z, 3) || onTrail(at.x, at.z) < 3) continue;
@@ -424,7 +425,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
         }
       }
     }
-    for (const mesh of [puffs, dots]) { mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; }
+    tiled(puffs); done(dots);
     const logs = inst(new THREE.CylinderGeometry(1, 1, 1, 12), std(0x6a4128, 0.95, { map: barkMap() }), 18, true);
     const logMoss = inst(new THREE.CylinderGeometry(1.05, 1.05, 0.98, 12, 1, true, Math.PI / 2 - 0.9, 1.8), std(0x3d5520, 1, { map: barkMap() }), 18);
     for (let i = 0; i < 200 && logs.count < 18; i++) {
@@ -638,7 +639,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
     scene.add(mesh);
     return mesh;
   };
-  const landmark = LANDMARKS[spec.sector]({ b, keep, ky, heightAt, solid, add: (o) => scene.add(o), std, builtMat, r, n, bare, anywhere, inst: { inst, put, done }, wind });
+  const landmark = LANDMARKS[spec.sector]({ b, keep, ky, heightAt, solid, add: (o) => scene.add(o), std, builtMat, r, n, bare, anywhere, inst: { inst, put, done, tiled }, wind });
 
   const pulse = look.station ? buildStation({ scene, b, r, ...instancer(scene), trail, shiftAt: (z) => n(z / 40, 3.7) * 6 }) : null;
 

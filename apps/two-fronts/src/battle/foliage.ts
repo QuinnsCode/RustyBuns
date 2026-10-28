@@ -8,9 +8,10 @@
 // and the jungle's extra storeys (canopy, lianas, buttress roots, broad leaves, palms and cycads,
 // glowing fungi, low mist). Everything is instanced or merged, and textures are drawn on a canvas.
 //
-// `?foliage=low|mid|high` (or a number from 0.2 to 1) in the page's address turns the density
-// down for a slow machine.
+// `?foliage=low|mid|high` (or a number from 0.2 to 1) in the page's address sets the density;
+// without it the density follows the quality tier (low 0.35, mid 0.7, high 1).
 import * as THREE from "three";
+import { pickQuality, type Quality } from "@rustybuns/util/quality";
 import { WORLDS } from "./worlds.ts";
 import type { SectorKind } from "./contract.ts";
 import { lumpy, texture } from "./models.ts";
@@ -20,13 +21,16 @@ type Noise = (x: number, z: number, octaves?: number) => number;
 type Mat = THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
 
 // --- The quality knob: a multiplier on how many of everything is scattered. ---
+const TIER_DENSITY: Record<Quality, number> = { low: 0.35, mid: 0.7, high: 1 };
 export function foliageQuality() {
   let v = 1;
   try {
     const q = typeof location === "undefined" ? null : new URLSearchParams(location.search).get("foliage");
     if (q === "low") v = 0.3;
     else if (q === "mid") v = 0.6;
+    else if (q === "high") v = 1;
     else if (q && Number.isFinite(+q)) v = Math.min(1, Math.max(0.2, +q));
+    else v = TIER_DENSITY[pickQuality().quality];
   } catch { /* no address to read */ }
   return v;
 }
@@ -50,8 +54,42 @@ export function instancer(scene: THREE.Scene) {
   const done = (...meshes: THREE.InstancedMesh[]) => {
     for (const mesh of meshes) { mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true; }
   };
-  return { inst, put, done };
+  // Like `done`, then splits each mesh into one mesh per TILE-metre square of the map, so the
+  // camera culls the squares it cannot see (one mesh spanning the map is always on screen).
+  // Only for meshes nobody animates or edits afterwards.
+  const tiled = (...meshes: THREE.InstancedMesh[]) => {
+    done(...meshes);
+    for (const mesh of meshes) {
+      if (mesh.count < 2) continue;
+      const cells = new Map<string, number[]>(), m = new THREE.Matrix4();
+      for (let i = 0; i < mesh.count; i++) {
+        mesh.getMatrixAt(i, m);
+        const key = `${Math.floor(m.elements[12]! / TILE)},${Math.floor(m.elements[14]! / TILE)}`;
+        (cells.get(key) ?? cells.set(key, []).get(key)!).push(i);
+      }
+      if (cells.size < 2) continue;
+      const c = new THREE.Color();
+      for (const ids of cells.values()) {
+        const part = new THREE.InstancedMesh(mesh.geometry, mesh.material, ids.length);
+        part.castShadow = mesh.castShadow;
+        part.receiveShadow = mesh.receiveShadow;
+        part.renderOrder = mesh.renderOrder;
+        ids.forEach((from, to) => {
+          mesh.getMatrixAt(from, m);
+          part.setMatrixAt(to, m);
+          if (mesh.instanceColor) { mesh.getColorAt(from, c); part.setColorAt(to, c); }
+        });
+        part.instanceMatrix.needsUpdate = true;
+        if (part.instanceColor) part.instanceColor.needsUpdate = true;
+        scene.add(part);
+      }
+      scene.remove(mesh);
+      mesh.dispose();
+    }
+  };
+  return { inst, put, done, tiled };
 }
+const TILE = 120;
 
 // Pieces joined into one geometry (positions and uvs only; the normals are made again).
 export function mergeAll(geos: THREE.BufferGeometry[]) {
@@ -301,7 +339,7 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
   const fl = FLOORS[kind], Q = foliageQuality(), jungle = kind === "jungle", woods = WORLDS[kind].trees !== null;
   // A big map gets more of everything, though not quite as thick, to keep the frame rate.
   const cnt = (v: number) => Math.round(v * Q * Math.min(1.6, (b.half / HALF) ** 2));
-  const { inst, put, done } = instancer(scene);
+  const { inst, put, done, tiled } = instancer(scene);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), k = new THREE.Vector3(), col = new THREE.Color(), e = new THREE.Euler();
   const UP = new THREE.Vector3(0, 1, 0);
   const std = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0, ...extra });
@@ -336,7 +374,7 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
       hsl(fl.leaf[Math.floor(r() * fl.leaf.length)]!);
       put(mesh, set(at.x, yAt(at.x, at.z, 0.035 + r() * 0.03), at.z, r() * 6.3, s), col);
     }
-    done(mesh);
+    tiled(mesh);
   }
   if (fl.needles) {
     const mesh = inst(flat(new THREE.PlaneGeometry(1, 1)), leafy(needleMap(), decal), cnt(fl.needles), false);
@@ -346,7 +384,7 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
       col.setHSL(0.06 + r() * 0.04, 0.6, 0.3 + r() * 0.15);
       put(mesh, set(at.x, yAt(at.x, at.z, 0.06 + r() * 0.03), at.z, r() * 6.3, s), col);
     }
-    done(mesh);
+    tiled(mesh);
   }
   if (fl.moss) {
     const mesh = inst(flat(new THREE.PlaneGeometry(1, 1)), leafy(mossMap(), { alphaTest: 0.5, roughness: 1, ...decal }), cnt(fl.moss), false);
@@ -358,7 +396,7 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
       tint(0.22 + r() * 0.07, 0.55, 0.16 + r() * 0.1);
       put(mesh, set(at.x, yAt(at.x, at.z, 0.05 + r() * 0.04), at.z, r() * 6.3, s, 1, s * (0.6 + r() * 0.5)), col);
     }
-    done(mesh);
+    tiled(mesh);
   }
   if (fl.twigs) {
     const mesh = inst(new THREE.CylinderGeometry(0.014, 0.022, 1, 3).rotateZ(Math.PI / 2), std(0xffffff), cnt(fl.twigs), false);
@@ -438,7 +476,7 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
       col.setHSL(fl.grassHue + (r() - 0.5) * 0.05, 0.5, fl.grassLight + (r() - 0.5) * 0.12);
       put(mesh, set(at.x, yAt(at.x, at.z, -0.02), at.z, r() * 6, s, s * (0.7 + r() * 0.9), s), col);
     }
-    done(mesh);
+    tiled(mesh);
   }
   if (fl.flowers) {
     const nF = cnt(fl.flowers);
@@ -458,7 +496,7 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
       col.setHex(fl.flower[r() < 0.8 ? drift : Math.floor(r() * fl.flower.length)]!);
       put(blooms, set(at.x, yAt(at.x, at.z, -0.02), at.z, ry, s), col);
     }
-    done(tufts, blooms);
+    tiled(tufts, blooms);
   }
 
   // --- Nurse logs: fallen trunks with ferns, saplings and mushrooms growing off them. ---
@@ -521,7 +559,7 @@ export function buildFoliage(ctx: FoliageCtx): Foliage {
         if (berries) for (let c = 0; c < 2; c++) put(berry, set(x + (r() - 0.5) * w, yAt(x, z, 0.5 + r() * w * 0.8), z + (r() - 0.5) * w, 0, 1), col.setHex(bc));
       }
     }
-    done(bushes, berry);
+    tiled(bushes, berry);
   }
 
   // --- Dry tufts and grit are all the canyon gets; the rest is the woods'. ---

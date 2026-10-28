@@ -89,6 +89,13 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.1, 2000);
   // Doren's haze and light, the floor, the trees and everything on it: terrain.ts.
   const world = buildWorld(scene, b);
+  canvas.addEventListener("webglcontextlost", (e) => {
+    e.preventDefault();
+    const note = document.createElement("div");
+    note.textContent = "The graphics card gave out. Reload to carry on, with ?quality=low if it keeps happening.";
+    note.style.cssText = "position:fixed;inset:40% 10% auto;padding:14px;text-align:center;background:#000c;color:#fff;font:16px sans-serif;z-index:99";
+    document.body.append(note);
+  });
   const auto = autoQuality(renderer, [world.sun], { quality: tier, onChange: (q) => { outline.enabled = q !== "low"; } });
   const ground = world.heightAt;
 
