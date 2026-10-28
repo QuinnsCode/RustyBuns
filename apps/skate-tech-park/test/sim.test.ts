@@ -344,3 +344,13 @@ test("a rail bent along a path carries one grind round the bend and down the dro
     expect(seen.size).toBeGreaterThan(lv.rails.length / 2); // it rode past most of the joints without leaving the bar
   }
 });
+
+test("held jets keep a fast board gaining speed in the air, and stop at the jets' top", () => {
+  const s = start(0, 0, 0);
+  s.air = true; s.y = 50; s.vz = 30; s.vy = 0; s.speed = 30;
+  const before = Math.hypot(s.vx, s.vz);
+  run(s, 0.5, () => ({ boost: true }));
+  expect(Math.hypot(s.vx, s.vz)).toBeGreaterThan(before + 16); // more than the flat 32 m/s² would add
+  run(s, 3, () => ({ boost: true }));
+  expect(Math.hypot(s.vx, s.vz)).toBeLessThan(80);
+});
