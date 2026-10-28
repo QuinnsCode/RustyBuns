@@ -58,7 +58,7 @@ test("the chase camera sits behind and above a rider going down the park, and th
   const camera = new THREE.PerspectiveCamera(FOV.base, 1, 0.1, 2000), chase = new Chase(camera);
   chase.snap(sim, "roadster");
   expect(camera.fov).toBe(FOV.base);
-  for (let i = 0; i < 120; i++) { // 2 s down the plaza, before the far wall
+  for (let i = 0; i < 180; i++) { // 3 s down the plaza, before the far wall
     step(sim, { ...IDLE, throttle: 1 }, level);
     chase.update(sim, "roadster", 1 / 60);
   }

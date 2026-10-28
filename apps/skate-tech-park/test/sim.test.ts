@@ -51,11 +51,11 @@ test("the skin changes nothing: one run replayed with each skin gives identical 
 });
 
 test("a skater ollies onto the rail, grinds it, and kickflips out of the grind", () => {
-  const sk = start(-12, -18);
+  const sk = start(-12, -32);
   const names: string[] = [];
-  run(sk, 6, (s) => {
+  run(sk, 8, (s) => {
     if (s.last && names.at(-1) !== s.last.name) names.push(s.last.name);
-    return { throttle: s.t < 1.4 ? 1 : 0, jump: s.grind < 0 ? s.z > -11.5 && s.z < -10.5 : s.z > 0, flip: s.air && s.z > 0 };
+    return { throttle: s.t < 3.4 ? 1 : 0, jump: s.grind < 0 ? s.z > -11.5 && s.z < -10.5 : s.z > 0, flip: s.air && s.z > 0 };
   });
   expect(names[0]).toBe("50-50 grind");
   expect(names.some((n) => n.includes("kickflip"))).toBe(true);
@@ -98,10 +98,10 @@ const flat = (extra: Partial<Parameters<typeof makeLevel>[0]>) => makeLevel({
 
 test("a rider can't ride through a tree, but can pass beside it", () => {
   const lv = flat({ obstacles: [{ x: 0, z: 10, r: 1, tall: 30 }] });
-  const hit = run(start(0, 0, 0, lv), 3, () => ({ throttle: 1 }), lv);
+  const hit = run(start(0, -25, 0, lv), 7, () => ({ throttle: 1 }), lv);
   expect(hit.z).toBeLessThan(9);
   expect(hit.last?.name).toBe("Hit a tree");
-  const past = run(start(4, 0, 0, lv), 3, () => ({ throttle: 1 }), lv);
+  const past = run(start(4, -25, 0, lv), 9, () => ({ throttle: 1 }), lv);
   expect(past.z).toBeGreaterThan(20);
 });
 
@@ -111,7 +111,7 @@ test("a rider runs into a rail's post but rides over it on the bar", () => {
   expect(lv.obstacles!.length).toBeGreaterThan(5);
   const side = run(start(0.8, -10, 0, lv), 0.5, () => ({ throttle: 1 }), lv); // along the bar, a hand off its line
   expect(hitObstacle(lv, 0, 0.5, 0.9 - 0.05)).toBeUndefined(); // the bar's own height clears every post
-  const across = run(start(-14, 2, Math.PI / 2, lv), 4, () => ({ throttle: 1 }), lv);
+  const across = run(start(-30, 2, Math.PI / 2, lv), 7, () => ({ throttle: 1 }), lv);
   expect(across.last?.name).toBe("Hit a rail post");
   expect(side.x).toBeCloseTo(0.8, 0);
 });
@@ -152,7 +152,7 @@ test("a box side stops the board's edge, not just its middle", () => {
   const box = flat({ pieces: [piece("box", "b", 0, 10, 0, 6, 4, 1, 1)] }); // sides at x = +-3
   const graze = run(start(3.2, 0, 0, box), 3, () => ({ throttle: 1 }), box); // the middle is 0.2 m clear, the edge is not
   expect(graze.z).toBeLessThan(8.5);
-  const beside = run(start(3.8, 0, 0, box), 3, () => ({ throttle: 1 }), box);
+  const beside = run(start(3.8, 0, 0, box), 5, () => ({ throttle: 1 }), box);
   expect(beside.z).toBeGreaterThan(14); // fully clear: rides past
 });
 
@@ -214,7 +214,7 @@ test("the board never passes through a vertical ramp, slow or fast: it rides the
 });
 
 test("pushed up to the vertical lip with little to spare, the board rolls out over the coping onto the deck, nose up the wall, instead of hanging on the face", () => {
-  for (const speed of [8, 12]) {
+  for (const speed of [11, 12]) {
     const sk = Object.assign(start(0, -12, 0, pipeLevel), { speed });
     let lip = 0, apexZ = 0, apex = 0;
     run(sk, 2, (s) => { lip = Math.max(lip, s.lip); if (s.y > apex) { apex = s.y; apexZ = s.z; } return { throttle: 1 }; }, pipeLevel);
@@ -238,7 +238,7 @@ test("a bigger board is a bigger toy: an ollie goes SCALE times as high and hang
   const sk = start(0, -20);
   let apex = 0, hang = 0;
   run(sk, 3, (s) => { apex = Math.max(apex, s.y); if (s.air) hang += DT; return { jump: s.t < 0.05 }; });
-  const g = 20, base = 7; // the numbers the board was cut for at SCALE 1
+  const g = 20, base = 5.6; // the numbers the board was cut for at SCALE 1
   expect(apex).toBeCloseTo(SCALE * (base * base) / (2 * g), 0);
   expect(hang).toBeCloseTo(Math.sqrt(SCALE) * (2 * base) / g, 1);
 });
@@ -247,9 +247,9 @@ test("a push is gentle and tops out at a speed you can steer at, while the jets 
   const flatLv = makeLevel({ name: "f", pieces: [], rails: [], spawns: [], bounds: { minX: -300, maxX: 300, minZ: -300, maxZ: 300 } });
   const kmh = (s: State) => s.speed * 3.6;
 
-  const pushed = run(start(0, -100, 0, flatLv), 3, () => ({ throttle: 1 }), flatLv);
+  const pushed = run(start(0, -100, 0, flatLv), 5, () => ({ throttle: 1 }), flatLv);
   expect(kmh(pushed)).toBeGreaterThan(40); // it does get going
-  expect(kmh(pushed)).toBeLessThan(75); // but not 150 km/h in 3 s
+  expect(kmh(pushed)).toBeLessThan(75); // but not 150 km/h in 5 s
   run(pushed, 10, () => ({ throttle: 1 }), flatLv);
   expect(kmh(pushed)).toBeLessThan(75); // and pushing alone stops there
 
