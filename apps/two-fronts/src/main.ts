@@ -21,6 +21,7 @@ import { HULL_PER_SHIP, ROUNDS, clash, encodePicks, fightPicks, playRound, start
 import { aiSpacePick } from "./war/ai.ts";
 import { SPACE_ORDERS, VEHICLE_KINDS, other, type BattleResult, type BattleSpec, type Faction, type MatchMode, type SectorKind, type Side, type SpaceBattleResult, type SpaceBattleSpec, type SpaceOrder } from "./battle/contract.ts";
 import { esc } from "@rustybuns/util";
+import { jumpSpec, parseJump, sectorOf, type Jump } from "./jump.ts";
 
 mountControlsPanel();
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -665,7 +666,7 @@ function afterTurn() {
   if (c.winner || busy || voting) return;
   if (c.setup && myTurn() && !loadout) return pickFleet();
   const p = c.pending;
-  if (p && heroFaction(c) === me) return p.kind === "space" ? briefSpace(p.spec, finishSpace) : brief(p.spec, finish);
+  if (p && heroFaction(c) === me) return p.kind === "space" ? briefSpace(p.spec, finishSpace) : brief(p.spec, undefined, finish);
   if (online() && !myTurn()) schedulePoll();
 }
 
@@ -690,7 +691,7 @@ async function poll() {
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && online()) void poll(); });
 
 // The hero battle's briefing: what the map has given each side for this fight.
-function brief(spec: BattleSpec, done: (r: BattleResult) => void) {
+function brief(spec: BattleSpec, jump: Jump | undefined, done: (r: BattleResult) => void) {
   const me = spec.hero, foe = me === "attacker" ? "defender" : "attacker";
   const horde = spec.factions[foe] === "wooka", place = PLACES[spec.sector];
   const vehicles = (s: Side) => {
@@ -713,14 +714,18 @@ function brief(spec: BattleSpec, done: (r: BattleResult) => void) {
     </table>
     ${tip("Strikes, drop pods and gunships come from holding the orbit, and walkers from holding the world's capital. A shield generator held by the other side cuts strikes to one.")}
     <button type="button" id="drop-in" class="primary">Drop in</button> <button type="button" id="auto-battle">Let the AI fight it</button>`);
-  $("drop-in").onclick = async () => {
+  const dropIn = async () => {
     hideModal();
     document.body.classList.add("in-battle");
-    const { playBattle } = await import("./battle/view.ts");
-    const result = await playBattle(spec, $<HTMLCanvasElement>("battle-view"), $("battle-hud"));
+    const { playBattle, endLiveBattle } = await import("./battle/view.ts");
+    // A jump may start the fight already under way, skip the intros, and end itself for the win or loss screen.
+    if (jump?.end) setTimeout(() => endLiveBattle(jump.end === "win" ? spec.hero : other(spec.hero)), jump.endAfter * 1000);
+    const result = await playBattle(spec, $<HTMLCanvasElement>("battle-view"), $("battle-hud"), jump && { warm: jump.near, cuts: false });
     document.body.classList.remove("in-battle");
     done(result);
   };
+  $("drop-in").onclick = dropIn;
+  if (jump && !jump.brief) void dropIn();
   $("auto-battle").onclick = () => { hideModal(); done({ ...run(spec).over!, auto: true }); };
 }
 
@@ -859,19 +864,15 @@ async function finish(result: BattleResult) {
 // Quick play, outside the campaign, on Doren, the forest moon: the Thunder Marines came to hunt and found
 // themselves the quarry. Hold the line as a Thunder Marine, or be the horde that stalks them.
 // `?world=canyon` (or capital, cannon, spaceport, jungle) plays the same fight on another sector's map.
-const WORLDS: readonly SectorKind[] = ["shield", "canyon", "capital", "cannon", "spaceport", "jungle"];
 const asked = new URLSearchParams(location.search).get("world");
-const world = WORLDS.find((w) => w === asked) ?? "shield";
-function skirmish(asWooka: boolean, mode: MatchMode = "conquest") {
-  const spec: BattleSpec = {
-    id: `skirmish-${Date.now()}`, turn: 0, system: "Doren", sector: world,
-    factions: { attacker: "wooka", defender: "marines" }, hero: asWooka ? "attacker" : "defender", heroLevel: 1,
-    armies: { attacker: 4, defender: 3 }, tickets: { attacker: 200, defender: 150 },
-    vehicles: { attacker: { tank: 1 }, defender: { walker: 1, speeder: 1 } }, strikes: { attacker: 0, defender: 2 },
-    reinforcements: { attacker: 0, defender: 30 }, turrets: 2, ...(mode !== "conquest" && { mode }), seed: Math.floor(Math.random() * 2 ** 31),
-  };
-  brief(spec, (r) => {
+const world = sectorOf(asked) ?? "shield";
+// `jump`: a battle arrived at from the address or `window.twoFronts.jump` (jump.ts); the quick-play buttons have none.
+function skirmish(wookaSide: boolean, mode: MatchMode = "conquest", jump?: Jump) {
+  const side: Side = wookaSide ? "attacker" : "defender";
+  const spec = jump ? jumpSpec(jump) : jumpSpec({ world, side, hero: wookaSide ? "wooka" : "marines", assist: true, handicap: false, mode, seed: Math.floor(Math.random() * 2 ** 31) });
+  brief(spec, jump, (r) => {
     const won = r.winner === spec.hero;
+    const asWooka = spec.factions[spec.hero] === "wooka";
     // The result, and the vote for a rematch against the AI, whose pointer wanders over too.
     const mine = spec.factions[spec.hero], theirs = spec.factions[other(spec.hero)];
     const votes: Partial<Record<Faction, MatchMode>> = { [theirs]: aiVote(spec.id, theirs, mode) };
@@ -881,7 +882,7 @@ function skirmish(asWooka: boolean, mode: MatchMode = "conquest") {
       seats: [{ faction: mine, who: "here" }, { faction: theirs, who: "ai", vote: votes[theirs] }],
       leave: { label: "Back to the map", title: "No rematch" },
       cast(f, m) { votes[f] = m; screen.update(votes, tally(spec.id, votes)); },
-      done(picked) { if (picked) skirmish(asWooka, picked); },
+      done(picked) { if (picked) skirmish(asWooka, picked, jump && { ...jump, mode: picked, near: 0, seed: Math.floor(Math.random() * 2 ** 31) }); },
     });
   });
 }
@@ -921,6 +922,30 @@ document.addEventListener("click", (e) => {
   else if (id === "back-to-map") { hideModal(); voteIfOpen(afterTurn); }
 });
 
+// Jump to a state (jump.ts): `?battle=1&world=desert&side=attacker&hero=wooka&assist=off&near=1&end=win` from the
+// address, or the same from a script or an agent: `twoFronts.jump({ world: "station", side: "attacker" })`,
+// `twoFronts.end("win")` to finish the battle on screen, `twoFronts.state()` for what is on screen.
+Object.assign(window, {
+  twoFronts: {
+    jump(over: Record<string, string | number | boolean> = {}) {
+      const q = new URLSearchParams({ battle: "1", ...Object.fromEntries(Object.entries(over).map(([k, v]) => [k, String(v)])) });
+      const j = parseJump(`?${q}`)!;
+      hideModal();
+      skirmish(j.side === "attacker", j.mode, j);
+      return jumpSpec(j);
+    },
+    async end(winner: "win" | "loss" = "win") {
+      const { endLiveBattle, liveBattle } = await import("./battle/view.ts");
+      const b = liveBattle();
+      return !!b && endLiveBattle(winner === "win" ? b.spec.hero : other(b.spec.hero));
+    },
+    async state() {
+      const b = (await import("./battle/view.ts")).liveBattle();
+      return b && { world: b.spec.sector, side: b.spec.hero, hero: b.spec.factions[b.spec.hero], assist: b.spec.assist !== false, time: Math.round(b.time), tickets: b.tickets, over: !!b.over };
+    },
+  },
+});
+
 // Boot: a seat link in the address wins, then the online game this browser was last at, then the table.
 async function boot() {
   const fromHash = linkInHash();
@@ -936,6 +961,8 @@ async function boot() {
     }
   }
   useGame(game, { turn: c.turn, orders: mine });
+  const jump = parseJump(location.search);
+  if (jump) return void skirmish(jump.side === "attacker", jump.mode, jump);
   if (firstVisit && !fromHash) return chooseGame(true);
   if (hotseat() && !c.winner) return passTo(seatUp());
   afterTurn();

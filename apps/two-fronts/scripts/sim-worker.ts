@@ -1,4 +1,4 @@
-// One thread of the mass simulator (sim.ts): plays the jobs it is handed and posts back the results.
+// One thread of the mass simulator (sim.ts): plays the job it is handed and posts back the result.
 import { isMainThread } from "bun";
 import { bot, specFor } from "./balance.ts";
 import { startBattle, step, timeLimit } from "../src/battle/sim.ts";
@@ -42,8 +42,5 @@ function play(job: Job): Result {
 
 declare const self: Worker;
 if (!isMainThread) {
-  self.onmessage = (e: MessageEvent<Job[]>) => {
-    for (const job of e.data) self.postMessage(play(job));
-    self.postMessage("done");
-  };
+  self.onmessage = (e: MessageEvent<Job>) => self.postMessage(play(e.data));
 }

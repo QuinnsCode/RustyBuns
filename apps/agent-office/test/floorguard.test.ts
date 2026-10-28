@@ -1,14 +1,17 @@
 import { afterEach, beforeAll, beforeEach, expect, setDefaultTimeout, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
+import { logFile, recent, DEFAULT_CAMERA } from "../live/camera.ts";
 import { askDetail, askFirst, asksRoute, bodyOf, cleanPrompt, fromWorker, hireLocked, pendingAsks, peopleOnly, rebuildOf, rebuildPrompt } from "../live/floorguard.ts";
-import { floorGuardBin, floorGuardHooks, floorGuardQueue } from "../scripts/floorguard.ts";
+import { floorGuardBin, floorGuardClicks, floorGuardHooks, floorGuardQueue } from "../scripts/floorguard.ts";
 import { unpackPinned } from "./pinned.ts";
 
 // the first run downloads the pinned release into .cache, as rustybunsify.ts does
 setDefaultTimeout(60_000);
 
+let workerHandlers: Record<string, (ctx: unknown, c: unknown, msg: unknown) => void>;
 let officeWorkers: (ctx: unknown, req: unknown, res: unknown, url: URL) => Promise<void>;
 let pkg: string;
 beforeAll(async () => {
@@ -18,14 +21,26 @@ beforeAll(async () => {
   writeFileSync(file, floorGuardHooks(readFileSync(file, "utf8")));
   writeFileSync(path.join(srv, "rb-floorguard.js"), `export * from ${JSON.stringify(path.join(import.meta.dir, "../live/floorguard.ts"))};\n`);
   ({ officeWorkers } = await import(file));
+  const ws = path.join(srv, "ws/handlers/workers.js");
+  // the rest of the handlers' imports pull in the terminal stack; the kill handler only needs workerOf, which the test supplies
+  const clicks = floorGuardClicks(readFileSync(ws, "utf8")).replace(/^import (?!\* as __rbGuard).*$/gm, "");
+  writeFileSync(ws, clicks);
+  (globalThis as Record<string, unknown>).workerOf = (ctx: { floors: Map<string, { workers: { get(id: string): { id: string } | undefined } }> }, id: string) => {
+    const floor = ctx.floors.get("f")!;
+    return { floor, info: floor.workers.get(id), wid: id };
+  };
+  ({ workerHandlers } = await import(ws));
 });
 // unset keeps home to people; most tests here send workers home as an agent, so they opt out
 beforeEach(() => {
   process.env.AGENT_OFFICE_PEOPLE_ONLY = "";
+  // every send-home is logged (#2201): into a temp folder, not the app's sandbox/
+  process.env.OFFICE_BOX_DIR = mkdtempSync(path.join(tmpdir(), "rb-box-"));
 });
 afterEach(() => {
   delete process.env.AGENT_OFFICE_PEOPLE_ONLY;
   delete process.env.AGENT_OFFICE_ASK_FIRST;
+  delete process.env.OFFICE_BOX_DIR;
 });
 
 const worker = (id: string, name: string) =>
@@ -297,4 +312,26 @@ test("control characters in a title or worker name are flagged and pictured too"
   const [ask] = await waiting();
   expect(ask).toMatchObject({ size: 4, odd: 2 });
   expect(await going).toContain("Nobody");
+});
+
+test("every send-home request lands in the local log: an agent's refusal and a person's click", async () => {
+  const box = process.env.OFFICE_BOX_DIR!;
+  {
+    const { ctx } = office(0);
+    // an agent asks while send-home is people-only: refused, and on the record with the worker it named
+    delete process.env.AGENT_OFFICE_PEOPLE_ONLY;
+    expect((await call(ctx, "/home", { workers: ["Sprocket"], cleanup: "all" })).status).toBe(403);
+    // a person clicks 'send home' in the office
+    const floor = (ctx as { floors: Map<string, { workers: { list(): unknown[] } }> }).floors.get("f")!;
+    const sprocket = floor.workers.list()[1] as { id: string };
+    const toasts: string[] = [];
+    const click = { workerId: sprocket.id, cleanup: "worktree" };
+    (workerHandlers["worker.kill"] as (...a: unknown[]) => void)(
+      { ...(ctx as object), toastFloor: (_f: unknown, m: string) => toasts.push(m),
+        floors: new Map([["f", Object.assign(floor, { sendHome: async () => ({ note: "Deleted its worktree" }) })]]) }, { peer: { name: "Ryan" } }, click);
+    await Bun.sleep(50);
+    const log = recent(logFile(box), 10, DEFAULT_CAMERA).map((e) => [e.kind, e.who, e.what, e.verdict]);
+    expect(log).toContainEqual(["home", "Pixel", expect.stringContaining("Sprocket (cleanup: all)"), "denied"]);
+    expect(log).toContainEqual(["home", "Ryan", expect.stringContaining("Deleted its worktree"), "allowed"]);
+  }
 });

@@ -14,7 +14,8 @@ export function stickAxes(dx: number, dy: number, dead = DEAD): { steer: number;
 
 export interface Touch { steer: number; throttle: number; boost: boolean; manual: boolean; claims: (id: number) => boolean; root: HTMLElement; invertX: boolean; invertY: boolean; dead: number }
 
-export function mountTouch(): Touch {
+/** `show`: "touch" puts the controls up at once, "desktop" never shows them; else they appear on the first touch (or at once on a coarse pointer). */
+export function mountTouch(show: "touch" | "desktop" | null = null): Touch {
   const owned = new Set<number>(); // pointers that belong to a control, not to the flick pad
   const root = document.createElement("div");
   const t: Touch = { steer: 0, throttle: 0, boost: false, manual: false, claims: (id) => owned.has(id), root, invertX: false, invertY: false, dead: DEAD };
@@ -65,7 +66,8 @@ export function mountTouch(): Touch {
   base.addEventListener("pointermove", (e) => { if (e.pointerId === pad) drag(e); });
   base.addEventListener("pointerup", release);
   base.addEventListener("pointercancel", release);
+  if (show === "desktop") return t;
   window.addEventListener("touchstart", () => { root.hidden = false; }, { once: true, passive: true });
-  if (matchMedia("(pointer: coarse)").matches) root.hidden = false;
+  if (show === "touch" || matchMedia("(pointer: coarse)").matches) root.hidden = false;
   return t;
 }

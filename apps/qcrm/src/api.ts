@@ -3,7 +3,7 @@
 //
 //   /api/auth/*          Better Auth (rate limited: 20 a minute per IP, across isolates)
 //   /api/openapi.json    the spec            /api/mcp   the MCP server
-//   /api/demo            a throwaway account
+//   /api/demo            a throwaway account   /api/scenario   the same on a populated workspace (local only)
 //   /api/me, /api/admin/*, /api/orgs, /api/orgs/:org/*   signed in (key or cookie)
 //
 // Under /api/orgs/:org everything is 404 to a non-member, so an id never says whether it exists.
@@ -22,6 +22,7 @@ import { openapi } from "./openapi.ts";
 import { orgListRoutes, orgRoutes, orgRow, roleIn, writeAudit, type Ctx } from "./orgs.ts";
 import { can, type Action } from "./rbac.ts";
 import { scriptRoutes } from "./scripts.ts";
+import { scenarioRoute } from "./scenario.ts";
 import { seedRoutes } from "./seed-data.ts";
 import { engineKey } from "@rustybuns/seal";
 import { syncRoutes } from "./sync.ts";
@@ -61,6 +62,7 @@ async function route(req: Request, env: Env, defer?: Defer): Promise<Response> {
   // Which sign-in methods the form offers: public, it has to load before anyone is signed in.
   if (p[1] === "providers" && !p[2] && req.method === "GET") return json(providers(env));
   if (p[1] === "demo" && !p[2]) return demoRoute(req, env, defer);
+  if (p[1] === "scenario" && !p[2]) return scenarioRoute(req, env);
   const oauth = await oauthRoutes(req, env, p, url, origin);
   if (oauth) return oauth;
 

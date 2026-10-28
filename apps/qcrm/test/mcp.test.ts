@@ -18,12 +18,12 @@ test("tools/list has every operation of the spec; tools/call runs one as the API
   expect(info.claude).toContain("/api/mcp");
   expect(info.version).toBe(VERSION);
   expect(openapi("").info.version).toBe(VERSION);
-  const ops = Object.values(openapi("").paths).reduce((n, m) => n + Object.keys(m).length, 0);
+  const ops = Object.values(openapi("").paths).reduce((n, m) => n + Object.values(m as Record<string, any>).filter((o) => !o["x-qcrm-cookie-only"]).length, 0);
   expect(info.tools).toBe(ops);
   expect(info.note).toContain(`${ops} tools, one per operation`);
 
   const list = await (await app("", "/api/mcp", { method: "POST", headers: bearer, body: rpc("tools/list") })).json();
-  const ids = Object.values(openapi("").paths).flatMap((m) => Object.values(m).map((op) => (op as { operationId: string }).operationId)).sort();
+  const ids = Object.values(openapi("").paths).flatMap((m) => Object.values(m).filter((o) => !(o as Record<string, unknown>)["x-qcrm-cookie-only"]).map((o) => (o as { operationId: string }).operationId)).sort();
   expect(list.result.tools.map((t: { name: string }) => t.name).sort()).toEqual(ids);
   const del = list.result.tools.find((t: { name: string }) => t.name === "delete_contact");
   expect(del.annotations.destructiveHint).toBe(true);
