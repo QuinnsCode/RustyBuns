@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Runs scripts/mac/ship-shell.sh on the builder twice a day (see apps/agent-office/shell/README.md for loading it).
+     YOU is the builder's user name. A launchd agent runs in the logged-in session, so the keychain is open to it. -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>dev.rustybuns.ship-shell</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>git -C /Users/YOU/builder/ship/src pull -q origin main 2>/dev/null; exec /bin/bash /Users/YOU/builder/ship/src/scripts/mac/ship-shell.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+</dict></plist>
