@@ -86,9 +86,45 @@ function section() {
   return root;
 }
 
+type Grant = { repo: string; kind: string; who: string };
+
+/** GitHub writes a person said "always" to (askfirst/): every other write asks first. Per worker, or for any worker. */
+function grantsSection() {
+  const root = el("div", { className: "setting rb-grants" });
+  const note = el("p", { className: "setting-note" });
+  const apply = async (q?: Record<string, string>) => {
+    try {
+      note.textContent = "";
+      const r = await fetch(`/__rb/grants${q ? `?${new URLSearchParams(q)}` : ""}`, { method: q ? "POST" : "GET", headers: q ? { "x-rb-ask": "1" } : {} });
+      const body: unknown = await r.json();
+      if (!r.ok) throw new Error(typeof body === "object" && body !== null && "error" in body && typeof body.error === "string" ? body.error : "The office didn't answer");
+      draw(typeof body === "object" && body !== null && "grants" in body && Array.isArray(body.grants) ? body.grants as Grant[] : [], typeof body === "object" && body !== null && "kinds" in body && Array.isArray(body.kinds) ? body.kinds as string[] : kinds);
+    } catch (err) { note.textContent = err instanceof Error ? err.message : String(err); }
+  };
+  let kinds = ["push", "open", "merge", "comment", "close", "edit", "api"];
+  const row = (...kids: (Node | string)[]) => Object.assign(el("div", { className: "rb-box-row" }, ...kids), { style: "display:flex;flex-wrap:wrap;gap:8px;align-items:center" });
+  const draw = (grants: Grant[], known: string[]) => {
+    kinds = known;
+    const rows = grants.map((g) => row(el("code", {}, g.repo), g.kind, g.who === "*" ? "any worker" : g.who,
+      el("button", { title: "Ask again before this write", ariaLabel: `Revoke ${g.kind} on ${g.repo} for ${g.who}`, onclick: () => void apply({ do: "revoke", repo: g.repo, kind: g.kind, who: g.who }) }, "Revoke")));
+    const repo = el("input", { placeholder: "owner/name", ariaLabel: "Repo to allow writes to" });
+    const kind = el("select", { ariaLabel: "Kind of write" }, ...known.map((k) => el("option", { value: k }, k)));
+    const who = el("input", { placeholder: "any worker", ariaLabel: "Worker the grant is for" });
+    root.replaceChildren(
+      el("div", { className: "setting-head" }, el("h4", {}, "GitHub writes")),
+      el("p", { className: "setting-note" }, "Workers read freely. Each kind of write (push, open or merge a PR, comment, close, edit, api) asks first; Always on its card, or a grant here, stops the asking for that repo."),
+      ...(rows.length ? rows : [el("p", { className: "setting-note" }, "Nothing is allowed always: every write asks.")]),
+      row(repo, kind, who, el("button", { onclick: () => void apply({ do: "grant", repo: repo.value, kind: kind.value, who: who.value }) }, "Allow always")),
+      note);
+  };
+  void apply();
+  return root;
+}
+
 function addTo(modal: Element) {
   const pane = modal.querySelector<HTMLElement>('section.settings-pane[aria-label="You"]');
   if (pane && !pane.querySelector(".rb-box")) pane.append(section());
+  if (pane && !pane.querySelector(".rb-grants")) pane.append(grantsSection());
 }
 
 if (typeof document !== "undefined") {
