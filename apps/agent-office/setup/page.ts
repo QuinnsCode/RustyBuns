@@ -65,7 +65,8 @@ function section() {
   };
   const run = async (what: "test" | "revoke" | "cancel", id: string) => {
     busy = id; draw();
-    try { await act(what, id); } catch (e) { say(e); }
+    // the builder isn't on the connections route: its Test is just asking /__rb/builder again
+    try { if (id !== "builder") await act(what, id); } catch (e) { say(e); }
     busy = null;
     await refresh();
   };
