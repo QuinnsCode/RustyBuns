@@ -201,6 +201,45 @@ function structure(kind: Structure, w: number, h: number, d: number): THREE.Buff
   return new THREE.BoxGeometry(w, h, d);
 }
 
+/** A file's building as drawn: its slot in its kind's InstancedMesh and its slice of the edge list. */
+interface FileBlock {
+  b: CodeMap["blocks"][number];
+  tall: number;
+  h: number;
+  kind: Structure;
+  slot: number;
+  mesh?: THREE.InstancedMesh;
+  seg?: THREE.LineSegments;
+  /** The edge positions this file owns in `lines`, from `at`, copied from `unit` and scaled. */
+  lines?: Float32Array;
+  unit?: Float32Array;
+  at: number;
+}
+
+const placed = new THREE.Matrix4(), size = new THREE.Vector3(), spot = new THREE.Vector3(), noTurn = new THREE.Quaternion();
+
+/** Sets a file's instance matrix and edges to its current height; a file with no lines left collapses to nothing. */
+function placeFile(f: FileBlock): void {
+  const { b } = f, gone = f.h <= 0;
+  size.set(gone ? 0 : b.w, gone ? 0 : f.h, gone ? 0 : b.d);
+  spot.set(b.x, b.y + f.h / 2, b.z);
+  f.mesh!.setMatrixAt(f.slot, placed.compose(spot, noTurn, size));
+  f.mesh!.instanceMatrix.needsUpdate = true;
+  const unit = f.unit!, out = f.lines!;
+  for (let i = 0; i < unit.length; i += 3) {
+    out[f.at + i] = b.x + unit[i]! * size.x;
+    out[f.at + i + 1] = spot.y + unit[i + 1]! * size.y;
+    out[f.at + i + 2] = b.z + unit[i + 2]! * size.z;
+  }
+  f.seg!.geometry.getAttribute("position").needsUpdate = true;
+}
+
+/** The file block a raycast hit is on, if it hit one. */
+export function blockOf(hit: THREE.Intersection): CodeMap["blocks"][number] | null {
+  const blocks = hit.object.userData.blocks as CodeMap["blocks"] | undefined;
+  return (hit.instanceId !== undefined ? blocks?.[hit.instanceId] : undefined) ?? (hit.object.userData.block as CodeMap["blocks"][number] | undefined) ?? null;
+}
+
 /** How long a downed soldier kneels with its hands up, then sinks away. */
 const SURRENDER = 1.4, SINK = 0.8;
 /** Half the width of ground the sun's shadows cover, round you. */
@@ -353,7 +392,8 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
   const glassMat = new THREE.MeshStandardMaterial({ color: 0x16191c, roughness: 0.18, metalness: 0.6 });
   const edgeInk = new THREE.LineBasicMaterial({ color: INK }), edgeGrey = new THREE.LineBasicMaterial({ color: GREY });
   const compoundEdges = map.compounds.map(() => new THREE.LineBasicMaterial({ color: ORANGE }));
-  const files: { b: (typeof map.blocks)[number]; m: THREE.Mesh; tall: number; h: number }[] = [];
+  const files: FileBlock[] = [];
+  const fileKinds = new Map<string, FileBlock[]>();
   const mud = new THREE.MeshLambertMaterial({ color: 0xc9ae82 }), mudEdge = new THREE.LineBasicMaterial({ color: 0x8a6d44 });
   const wallBoxes: THREE.BufferGeometry[] = [];
   for (const b of map.blocks) {
@@ -369,16 +409,10 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
       }
       continue;
     }
-    const box = structure(structureOf(b.path), b.w, b.h, b.d);
-    const m = new THREE.Mesh(box, b.agent ? glassMat : boxMat);
-    m.position.set(b.x, b.y + b.h / 2, b.z);
-    m.castShadow = m.receiveShadow = true;
-    m.userData.block = b;
-    files.push({ b, m, tall: b.h, h: b.h });
-    const e = new THREE.LineSegments(new THREE.EdgesGeometry(box, 30), b.compound >= 0 ? compoundEdges[b.compound]! : b.agent ? edgeGrey : edgeInk);
-    m.add(e);
-    scene.add(m);
-    solids.push(m);
+    const kind = structureOf(b.path), key = `${kind}|${b.agent ? 1 : 0}`;
+    const list = fileKinds.get(key) ?? [];
+    list.push({ b, tall: b.h, h: b.h, slot: list.length, kind, at: 0 });
+    fileKinds.set(key, list);
   }
   if (wallBoxes.length) {
     const { solid, edges } = slabs(wallBoxes);
@@ -389,6 +423,37 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     solids.push(walls);
     for (const g of wallBoxes) g.dispose();
   }
+  // File blocks: one InstancedMesh per kind of building and glass-or-paper, one LineSegments per edge colour.
+  // The geometry is a unit building and each instance's matrix is the file's size, so a file that sinks only
+  // rewrites its own matrix and its own slice of edges.
+  const edgeSets = new Map<THREE.Material, FileBlock[]>();
+  for (const list of fileKinds.values()) {
+    const first = list[0]!, unit = structure(first.kind, 1, 1, 1);
+    const mesh = new THREE.InstancedMesh(unit, first.b.agent ? glassMat : boxMat, list.length);
+    mesh.castShadow = mesh.receiveShadow = true;
+    mesh.userData.blocks = list.map((f) => f.b);
+    for (const f of list) {
+      f.mesh = mesh;
+      const mat = f.b.compound >= 0 ? compoundEdges[f.b.compound]! : f.b.agent ? edgeGrey : edgeInk;
+      edgeSets.set(mat, [...(edgeSets.get(mat) ?? []), f]);
+      files.push(f);
+    }
+    scene.add(mesh);
+    solids.push(mesh);
+  }
+  for (const [mat, list] of edgeSets) {
+    const units = new Map<Structure, Float32Array>();
+    for (const f of list) if (!units.has(f.kind)) units.set(f.kind, new THREE.EdgesGeometry(structure(f.kind, 1, 1, 1), 30).getAttribute("position").array as Float32Array);
+    const total = list.reduce((n, f) => n + units.get(f.kind)!.length, 0);
+    const lines = new THREE.BufferGeometry(), pos = new Float32Array(total);
+    let at = 0;
+    for (const f of list) f.lines = pos, f.at = at, at += units.get(f.kind)!.length, f.unit = units.get(f.kind)!;
+    lines.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const seg = new THREE.LineSegments(lines, mat);
+    for (const f of list) f.seg = seg;
+    scene.add(seg);
+  }
+  for (const f of files) placeFile(f);
   map.compounds.forEach((c) => {
     const s = label(c.folder, `${c.files} files · ${c.lines.toLocaleString()} lines${c.burning ? " · checks failing" : ""}`);
     s.position.set(c.x, map.terrain.height(c.x, c.z) + 13, c.z);
@@ -861,14 +926,7 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
       for (const f of files) {
         if (f.b.h === f.h) continue;
         f.h = f.b.h;
-        if (f.h <= 0) {
-          scene.remove(f.m);
-          const i = solids.indexOf(f.m);
-          if (i >= 0) solids.splice(i, 1);
-          continue;
-        }
-        f.m.scale.y = f.h / f.tall;
-        f.m.position.y = f.b.y + f.h / 2;
+        placeFile(f);
       }
       const live = new Set<number>();
       for (const p of shots) {
