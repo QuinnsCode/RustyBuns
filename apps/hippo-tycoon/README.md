@@ -131,6 +131,8 @@ Solo accepts both keyboard layouts. In **Couch**, pick who sits where; a gamepad
 
 Every drop has its own shape as well as its own colour. Press <kbd>H</kbd> in a round (or **How to play** on the menu) for the controls and this legend on screen; it also shows itself for the countdown and the first seconds.
 
+The **cog** in the top-right corner opens Controls: the key list and sliders for stick and touch-drag sensitivity, saved in the browser (the game has no vertical look, so there is no Y or invert row).
+
 A gold drop nobody eats for 6 s splatters into a slick that makes nearby drops skate faster. A round is 30, 60 or 90 seconds; the drip rate ramps up and the last 10 seconds are **Overflow** (twice the drips, more gold, more bolts). The richest hippo wins; ties share. Then comes the **finale**: the winner straps on a championship belt, bellows, and wrestles the losers out of the basin one at a time, last place first (an airplane spin, a mud slam, a punt, and the runner-up launched at the stars), into the jungle. Every number is in `src/sim/rules.ts`.
 
 | Overflow, then the podium | The podium |

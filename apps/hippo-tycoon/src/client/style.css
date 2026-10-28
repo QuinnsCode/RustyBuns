@@ -116,3 +116,7 @@ button.link { border: 0; padding: 0; background: none; color: var(--cyan); text-
 :root[data-motion="reduced"] .btn, :root[data-motion="reduced"] .seg button { transition: none; }
 :root[data-motion="reduced"] .btn:hover:not(:disabled) { transform: none; }
 @keyframes fade { 0%, 70% { opacity: 1; } to { opacity: 0; } }
+
+/* The Controls cog (game-controls): top-right, over the menu, the HUD and the couch screens. */
+.cog-host { position: fixed; top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); z-index: 40; }
+@media (max-width: 700px) { .hud { padding-right: 62px; } }

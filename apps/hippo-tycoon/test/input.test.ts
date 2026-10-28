@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { Controls } from "../src/client/input.ts";
+import { Controls, tuning } from "../src/client/input.ts";
 
 /** A window stand-in: just enough EventTarget for the keyboard. */
 function rig() {
@@ -69,4 +69,18 @@ test("a networked player is controlled from any seat the server gives them", asy
   const couch = [["kb1"], ["kb2"], [], ["pad0"]] as const;
   expect(controlsFor(couch as never, 1)).toEqual(["kb2"]);
   expect(controlsFor(couch as never, 3)).toEqual(["pad0"]);
+});
+
+test("the Controls cog's touch and stick sensitivity scale the slide", () => {
+  const el = new EventTarget(), c = new Controls();
+  c.attachTouch(el as unknown as HTMLElement);
+  const ptr = (type: string, x: number) => el.dispatchEvent(Object.defineProperties(new Event(type), { pointerId: { value: 1 }, pointerType: { value: "touch" }, clientX: { value: x }, timeStamp: { value: 0 } }));
+  const drag = (px: number) => { ptr("pointerdown", 0); ptr("pointermove", px); const m = c.sample(["touch"]).move; ptr("pointerup", px); return m; };
+  try {
+    expect(drag(30)).toBeCloseTo(0.5);
+    tuning.touch = 0.5;
+    expect(drag(30)).toBeCloseTo(0.25);
+    tuning.touch = 3;
+    expect(drag(60)).toBe(1);                          // never past full slide
+  } finally { tuning.touch = 1; }
 });
