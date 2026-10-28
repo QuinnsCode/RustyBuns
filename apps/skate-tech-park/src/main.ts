@@ -69,7 +69,7 @@ scene.background = new THREE.Color(mood.haze);
 scene.fog = new THREE.Fog(mood.haze, 60, 140);
 renderer.toneMappingExposure = mood.exposure;
 const camera = new THREE.PerspectiveCamera(66, 1, 0.1, 2000);
-const air = sky();
+const air = sky(undefined, tier === "low");
 scene.add(air);
 
 // The mood's light (golden hour unless the park says otherwise): a low sun and a sky fill.
