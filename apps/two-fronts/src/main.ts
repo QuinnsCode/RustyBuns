@@ -946,6 +946,22 @@ Object.assign(window, {
   },
 });
 
+// The same three as WebMCP tools, where the browser has them.
+const mc: unknown = Reflect.get(document, "modelContext") ?? Reflect.get(navigator, "modelContext");
+if (mc && typeof (mc as { registerTool?: unknown }).registerTool === "function") {
+  const reg = (mc as { registerTool: (t: object) => unknown }).registerTool.bind(mc);
+  const hook = Reflect.get(window, "twoFronts") as { jump(o?: object): unknown; end(w?: "win" | "loss"): Promise<boolean>; state(): Promise<unknown> };
+  try {
+    reg({ name: "tf_jump", title: "Jump into a battle", description: "Drop straight into a ground battle: sector (forest, desert, city, beach, station), side (marines or wooka), assist (false for off), near (seconds the AI has fought), end (win or loss), mode, seed.",
+      inputSchema: { type: "object", properties: { sector: { type: "string" }, side: { type: "string" }, assist: { type: "boolean" }, near: { type: "number" }, end: { type: "string" }, mode: { type: "string" }, seed: { type: "number" } } },
+      execute: async (a: object) => { const { assist, ...rest } = a as Record<string, string | number | boolean>; return hook.jump({ ...rest, ...(assist === false && { assist: "off" }) }); } });
+    reg({ name: "tf_end", title: "End the battle", description: "Finish the battle on screen as a win or loss for the hero.",
+      inputSchema: { type: "object", properties: { result: { type: "string", enum: ["win", "loss"] } } }, execute: async (a: object) => ({ ended: await hook.end((a as { result?: "win" | "loss" }).result) }) });
+    reg({ name: "tf_state", title: "Look at the battle", description: "World, side, hero, assist, time and tickets of the battle on screen.",
+      inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true }, execute: async () => (await hook.state()) ?? { battle: false } });
+  } catch { /* a browser whose registerTool has another shape: the window hook still works */ }
+}
+
 // Boot: a seat link in the address wins, then the online game this browser was last at, then the table.
 async function boot() {
   const fromHash = linkInHash();

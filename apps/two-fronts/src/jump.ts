@@ -7,7 +7,7 @@ import { forHuman } from "./battle/handicap.ts";
 export const WORLDS: readonly SectorKind[] = ["shield", "canyon", "capital", "cannon", "spaceport", "jungle"];
 // The names people use for the worlds, beside the sim's own.
 const ALIASES: Record<string, SectorKind> = {
-  forest: "shield", desert: "canyon", city: "capital", ruins: "capital", beach: "cannon", station: "spaceport", space: "spaceport",
+  forest: "shield", desert: "canyon", city: "capital", "ruined-city": "capital", ruins: "capital", beach: "cannon", station: "spaceport", space: "spaceport",
 };
 export const sectorOf = (name: string | null | undefined): SectorKind | null =>
   WORLDS.find((w) => w === name) ?? (name ? ALIASES[name] ?? null : null);
@@ -30,16 +30,19 @@ export interface Jump {
 
 export const NEAR_SECONDS = 45;
 
+// `?battle=1&sector=desert&side=wooka` also works.
 // `?battle=1&world=desert&side=attacker&hero=wooka&assist=off&near=1&end=win`. Null when the address asks for no battle.
 export function parseJump(search: string): Jump | null {
   const q = new URLSearchParams(search);
   if (!q.has("battle")) return null;
-  const side: Side = q.get("side") === "attacker" ? "attacker" : "defender";
+  // `side` is a position (attacker, defender) or the faction fought as (wooka attacks, marines hold).
+  const asked = q.get("side"), fought = asked === "wooka" || asked === "marines" ? asked : null;
+  const side: Side = asked === "attacker" || fought === "wooka" ? "attacker" : "defender";
   const near = q.get("near");
   const mode = q.get("mode"), end = q.get("end"), seed = Number(q.get("seed")), after = Number(q.get("after"));
   return {
-    world: sectorOf(q.get("world")) ?? "shield", side,
-    hero: q.get("hero") === "wooka" ? "wooka" : q.get("hero") === "marines" ? "marines" : side === "attacker" ? "wooka" : "marines",
+    world: sectorOf(q.get("world") ?? q.get("sector")) ?? "shield", side,
+    hero: fought ?? (q.get("hero") === "wooka" ? "wooka" : q.get("hero") === "marines" ? "marines" : side === "attacker" ? "wooka" : "marines"),
     assist: q.get("assist") !== "off",
     near: near === null || near === "0" || near === "off" ? 0 : Number(near) > 1 ? Number(near) : NEAR_SECONDS,
     mode: MODES.find((m) => m === mode) ?? "conquest",
