@@ -7,6 +7,8 @@ import type { Level } from "./level.ts";
 import { DT, type Input, type State } from "./sim.ts";
 import { type Flick, TRICKS } from "./tricks.ts";
 import { bool, num, obj, raw } from "@rustybuns/util/guard";
+import type { Link } from "./scenario.ts";
+import type { Perf } from "./perf.ts";
 
 /** One held stretch of input, in sim steps. */
 export type Hold = { input: Partial<Input>; steps: number };
@@ -78,8 +80,13 @@ export type Game = {
   state: () => State;
   level: Level;
   park: { id: string; spawns: string[] };
+  /** Every start this park offers: its spawn names, plus the spots found on it (rail, balance, vert). */
+  spots: string[];
+  /** Put the board at a spawn name or spot without reloading; false when the park has no such start. */
+  start: (name: string) => boolean;
+  perf: () => Perf;
   parks: () => { id: string; name: string }[];
-  go: (park: string, spawn?: string) => void;
+  go: (park: string, extra?: Omit<Link, "level">) => void;
   reset: () => void;
   swap: () => string;
   snapshot: () => string;
@@ -110,7 +117,7 @@ export function tools(g: Game) {
   };
   return [
     { name: "skate_look", title: "Look at the ride", description: "Where the board is, its speed, what it is doing, score and combo, and the ground and rails ahead.",
-      inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true }, execute: async () => ({ park: g.park, ...report(g.state(), g.level) }) },
+      inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true }, execute: async () => ({ park: g.park, starts: g.spots, ...report(g.state(), g.level) }) },
     { name: "skate_ride", title: "Ride a move", description: "Hold one move for some seconds, like holding keys, then report the tricks landed and where the board is.",
       inputSchema: { type: "object", properties: MOVE }, execute: async (m: unknown) => rideFor([holdOf(m)]) },
     { name: "skate_line", title: "Ride a line", description: "Code mode: a whole line as a list of moves ridden back to back in one call, e.g. push 3 s, ollie, kickflip, land, grind.",
@@ -127,15 +134,33 @@ export function tools(g: Game) {
     { name: "skate_swap", title: "Swap skin", description: "Swap between the fingerboard and the rocket roadster. It rides the same either way.",
       inputSchema: { type: "object", properties: {} }, execute: async () => ({ skin: g.swap() }) },
     { name: "skate_parks", title: "List the parks", description: "Every park's id and name, and this park's spawns.",
-      inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true }, execute: async () => ({ here: g.park, parks: g.parks() }) },
-    { name: "skate_go", title: "Go to a park", description: "Load another park (the page reloads and the tools register again there), optionally at a named spawn.",
-      inputSchema: { type: "object", properties: { park: { type: "string" }, spawn: { type: "string" } }, required: ["park"] },
+      inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true }, execute: async () => ({ here: g.park, starts: g.spots, parks: g.parks() }) },
+    { name: "skate_go", title: "Go to a park", description: "Load another park (the page reloads and the tools register again there), optionally at a named spawn or a spot (rail, balance, vert), on a quality tier, with phone or desktop controls, on a simulated weak machine and with the frame readout.",
+      inputSchema: { type: "object", properties: { park: { type: "string" }, spawn: { type: "string", description: "A spawn name, or rail, balance or vert" },
+        quality: { type: "string", enum: ["low", "mid", "high", "auto"] }, controls: { type: "string", enum: ["touch", "desktop"] },
+        weak: { type: "number", description: "Burn this many ms every frame, like a slow GPU (0 for none)" }, fps: { type: "boolean" } }, required: ["park"] },
       execute: async (a: unknown) => {
         const m = isRecord(a) ? a : {}, id = typeof m.park === "string" ? m.park : "";
         if (!g.parks().some((p) => p.id === id)) return { error: `No park "${id}". skate_parks lists them.` };
-        g.go(id, typeof m.spawn === "string" ? m.spawn : undefined);
+        const q = m.quality, c = m.controls;
+        g.go(id, {
+          ...(typeof m.spawn === "string" ? { spawn: m.spawn } : {}),
+          ...(q === "low" || q === "mid" || q === "high" || q === "auto" ? { quality: q } : {}),
+          ...(c === "touch" || c === "desktop" ? { controls: c } : {}),
+          ...(typeof m.weak === "number" ? { weak: m.weak } : {}), ...(m.fps === true ? { fps: true } : {}),
+        });
         return { going: id };
       } },
+    { name: "skate_start", title: "Start somewhere", description: "Put the board, stopped, at one of this park's starts: a spawn name or a spot found on it (rail, balance, vert). skate_look lists them.",
+      inputSchema: { type: "object", properties: { at: { type: "string" } }, required: ["at"] },
+      execute: async (a: unknown) => {
+        const at = isRecord(a) && typeof a.at === "string" ? a.at : "";
+        if (!g.start(at)) return { error: `No start "${at}" here. Starts: ${g.spots.join(", ")}.` };
+        g.driver.stop();
+        return report(g.state(), g.level);
+      } },
+    { name: "skate_perf", title: "Frame time", description: "Frames per second, frame and worst frame in ms, the quality tier now (it steps down on slow frames) and the pixel ratio.",
+      inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true }, execute: async () => g.perf() },
   ];
 }
 

@@ -6,6 +6,19 @@ A street skating spot at golden hour: a kicker, a funbox, a rail, and a gap no b
 
 Tricks score when you land them: air time, every 180 you spin, kickflips, grinds, and riding away fakie or in reverse. Land sideways or mid-flip and you bail: you keep your momentum, slide and tumble across the ground, then stand back up.
 
+## Jump to the state
+
+`/scenarios.html` builds a link for any state and lists all 63 parks one tap each. The same keys work on the game's own address, and agents get them as `skate_go`, `skate_start` and `skate_perf`.
+
+| Key | Does |
+| --- | --- |
+| `?level=<id>` | the park |
+| `?spawn=rail` / `balance` / `vert` | start 14 m before the nearest bar, before the longest gentle bar, or 12 m from the tallest rideable wall, facing it (or any spawn name) |
+| `?quality=low\|mid\|high\|auto` | force a tier (remembered; `auto` forgets) |
+| `?weak[=ms]` | burn that many ms a frame (45 by default) like a slow GPU; start on `high` and watch it step down |
+| `?fps` | frame-time readout with the live tier (always on with `?weak`) |
+| `?controls=touch\|desktop` | show the thumb stick and flick pad and let a mouse drag them, or hide them on a phone |
+
 ## The trick compendium
 
 A flick trick is data (`src/tricks.ts`): how far the board turns under the rider and which way it flips, the same grid [SkateBench](https://github.com/T3-Content/skatebench) (MIT) asks models to name. Nine tricks: kickflip (`F`), heelflip (`G`), shove-it (`V`), varial (`R`), varial heel (`O`), hardflip (`U`), inward heel (`I`), tre flip (`T`) and laser flip (`Y`). With the mouse or right stick the diagonals are the compound ones (up-right varial, up-left varial heel, down-right hardflip, down-left inward heel) and a long diagonal drag down is a double turn. A tre flip with a half turn of the rider on top lands as a big flip. Where the deck lands on the bar and the approach angle name ten grinds (50-50, 5-0, nosegrind, smith, feeble, crooked, boardslide, lipslide, tailslide, noseslide), on rails and ledges alike; the tail or nose tip over the bar still catches. Balance is a lean you hold, on grinds and manuals: each grind rests over a different amount and tips at its own rate, speed steadies it, a sloped bar pulls it, and the stick takes a moment to act, so it rocks before it settles. A small meter under the combo shows it (`src/grinds.ts`).
