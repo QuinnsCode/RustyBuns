@@ -1,0 +1,171 @@
+{
+  "scaling": {
+    "rule": "Froude scaling: each world is measured in its own board length L and its own gravity g. Lengths in L, times in sqrt(L/g), speeds in sqrt(g L), accelerations in g. Pure ratios (roll-away, speed kept) need no conversion.",
+    "real": {
+      "L_m": 0.8,
+      "g": 9.81,
+      "t0_s": 0.2856,
+      "v0_mps": 2.801,
+      "note": "31-32 in deck"
+    },
+    "game": {
+      "L": "2 * BOARD.halfLen from src/level.ts (4.4 m)",
+      "g": "measured by dropping the board in the sim (G in src/sim.ts, 20)"
+    },
+    "score": "|game - target| <= tol scores 100, falling linearly to 0 at 3 * tol"
+  },
+  "clips": {
+    "ollie1": {
+      "file": "https://commons.wikimedia.org/wiki/File:Ollie_1.ogv",
+      "license": "CC BY-SA 3.0",
+      "fps": 24
+    },
+    "ollie2": {
+      "file": "https://commons.wikimedia.org/wiki/File:Ollie_2.ogv",
+      "license": "CC BY-SA 3.0",
+      "fps": 24
+    },
+    "kickflip": {
+      "file": "https://commons.wikimedia.org/wiki/File:Kickflip.ogv",
+      "license": "CC BY-SA 3.0",
+      "fps": 24
+    },
+    "vert360flat": {
+      "file": "https://commons.wikimedia.org/wiki/File:Flatflip_360_Vert_Skating.ogv",
+      "license": "CC BY-SA 3.0",
+      "fps": 29.97,
+      "note": "slow motion of unknown factor: heights only, no timing"
+    },
+    "vert720": {
+      "file": "https://commons.wikimedia.org/wiki/File:720_Vert_Skating.ogv",
+      "license": "CC BY-SA 3.0",
+      "fps": 29.97,
+      "note": "slow motion, panning: heights only"
+    },
+    "street09889": {
+      "file": "https://commons.wikimedia.org/wiki/File:Skateboarding-Street-World-Championship-Tokyo-Japan-2023-12-17_09889-09972.webm",
+      "license": "CC BY 4.0",
+      "fps": 24,
+      "note": "handrail grind is a slow-motion multi-angle replay: rejected for timing"
+    }
+  },
+  "metrics": {
+    "ollieAir": {
+      "target": 1.34,
+      "tol": 0.3,
+      "unit": "sqrt(L/g)",
+      "weight": 14,
+      "kind": "measured",
+      "source": "ollie1 f32-41 (9 fr, 0.375 s), ollie2 f52-62 (10 fr, 0.417 s), kickflip f77-85.5 (8.5 fr, 0.354 s); mean 0.382 s = 0.18 m pop. +/-1 frame each. Young riders: adult ollies run higher, hence the wide band.",
+      "license": "CC BY-SA 3.0"
+    },
+    "rollAway": {
+      "target": 1.0,
+      "tol": 0.1,
+      "unit": "speed after landing / speed before pop",
+      "weight": 14,
+      "kind": "measured",
+      "source": "board travel in board lengths per frame, static camera: ollie1 f24-30 vs f45-51 = 0.15 vs 0.155 L/fr (1.03); kickflip f72-76 vs f88-93 (about 1.1, noisy); ollie2 0.69 rejected (rider moving toward camera, foreshortened).",
+      "license": "CC BY-SA 3.0"
+    },
+    "flipTime": {
+      "target": 0.74,
+      "tol": 0.2,
+      "unit": "sqrt(L/g)",
+      "weight": 8,
+      "kind": "measured",
+      "source": "kickflip f77-82: one full roll of the board in about 5 frames (0.21 s +/- 0.04).",
+      "license": "CC BY-SA 3.0"
+    },
+    "coastDistance": {
+      "target": 53,
+      "tol": 18,
+      "unit": "L, coasting from 1.43 sqrt(gL) (4 m/s real) to a stop on flat",
+      "weight": 10,
+      "kind": "cited, not measured",
+      "source": "Kogelbauer, Koyama, Callan, Shinomoto, 'Mechanical Optimization of Skateboard Pumping', arXiv:2312.17671 (Phys. Rev. Research 2024): effective friction mu ~ 0.02 at 3 m/s (dv 0.2 m/s over 1 s). Split as rolling 0.016 g + air 0.004 v^2 per m, integrated from 4 m/s: 43 m = 53 L.",
+      "license": "arXiv CC BY 4.0"
+    },
+    "pushTop": {
+      "target": 1.61,
+      "tol": 0.4,
+      "unit": "sqrt(gL)",
+      "weight": 8,
+      "kind": "cited, not measured",
+      "source": "Crockett & Jensen 2007, 'Kinematic analysis and muscular activity of skateboard propulsion in experienced participants', ISBS proceedings (ojs.ub.uni-konstanz.de/cpa/article/view/555): pushing studied at 8-14 km/h; target a hard push top of 4.5 m/s +/- 1.1.",
+      "license": "citation"
+    },
+    "pushAccel": {
+      "target": 0.1,
+      "tol": 0.05,
+      "unit": "g, mean from rest to half push top",
+      "weight": 5,
+      "kind": "estimate (no clip, no paper number)",
+      "source": "about 0.7 m/s per stroke at about 1 stroke per 0.7 s, consistent with the cadences in Crockett & Jensen 2007. Low weight.",
+      "license": "citation"
+    },
+    "pushGrade": {
+      "target": 1.0,
+      "tol": 0.15,
+      "unit": "push acceleration up a 6 deg grade plus g sin 6, over the same on flat, from 0.5 sqrt(gL)",
+      "weight": 6,
+      "kind": "guard (geometry)",
+      "source": "added by the round-1 judge: a foot reaches the ground on any street grade a rider can stand on, so the push force is the same up a 10% hill as on flat (only gravity is added). Stops PUSH_STEEP-style cut-offs that fix the pipe metrics by disabling pushing on hills.",
+      "license": "none"
+    },
+    "carveLateral": {
+      "target": 0.7,
+      "tol": 0.2,
+      "unit": "g, full steer at push top speed",
+      "weight": 8,
+      "kind": "cited, not measured",
+      "source": "a rider leaning about 35 deg into a carve holds tan(35) = 0.7 g; Hubbard, 'Lateral dynamics and stability of the skateboard', J. Appl. Mech. 46 (1979) for the lean-steer coupling.",
+      "license": "citation"
+    },
+    "carveRadiusSlow": {
+      "target": 1.0,
+      "tol": 0.4,
+      "unit": "L, full steer at 0.54 sqrt(gL) (1.5 m/s real)",
+      "weight": 5,
+      "kind": "cited, not measured",
+      "source": "truck geometry (Hubbard 1979): wheelbase ~0.36 m, ~15 deg effective steer per truck at full lean gives R = WB / (2 tan d) ~ 0.67-0.8 m.",
+      "license": "citation"
+    },
+    "grindKeep": {
+      "target": 0.51,
+      "tol": 0.13,
+      "unit": "speed kept after 3 L of flat rail, entered at 1.43 sqrt(gL)",
+      "weight": 10,
+      "kind": "cited, not measured",
+      "source": "Coulomb sliding of an aluminium truck on a steel rail, mu 0.25 +/- 0.1 (engineering tables: aluminium on steel 0.47 dry, waxed far lower): v^2 = 16 - 2 * 0.25 * 9.81 * 2.4 at 4 m/s real.",
+      "license": "citation"
+    },
+    "pipeDecay": {
+      "target": 0.83,
+      "tol": 0.06,
+      "unit": "peak height ratio, wall to next wall, no input, from half wall height",
+      "weight": 6,
+      "kind": "derived from cited mu",
+      "source": "mu 0.02 (Kogelbauer et al.) over the ~4.7 m real path between walls of the game's own pipe scaled to L: dh 0.094 m on a 0.55 m peak.",
+      "license": "arXiv CC BY 4.0"
+    },
+    "pumpGain": {
+      "target": 1.25,
+      "tol": 0.15,
+      "unit": "first-wall peak / start height (half the wall), pumping on the transitions only, capped at the coping",
+      "weight": 6,
+      "kind": "estimate",
+      "source": "half-pipe amplitude law of Kogelbauer et al. (exponent 5 in r_max/r_min) with a 0.1-0.15 r centre-of-mass stroke; skilled riders go half height to coping in about 3 walls. Wide band.",
+      "license": "arXiv CC BY 4.0"
+    },
+    "vertAir": {
+      "target": 0.35,
+      "tol": 0.15,
+      "unit": "best air above coping / wall height, held push, 15 s",
+      "weight": 6,
+      "kind": "measured (height only, slow motion clips)",
+      "source": "vert360flat and vert720: at the peak the board is roughly 1-1.5 m above a ~3.4 m vert coping (about 0.35 of the wall), judged against the rider's height (1.75 m); camera pans, so +/-0.15.",
+      "license": "CC BY-SA 3.0"
+    }
+  }
+}
