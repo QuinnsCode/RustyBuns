@@ -21,6 +21,21 @@ You sprint down an endless neon grid tunnel that rolls slowly round you, near-wh
 
 Built with the Web Audio API, a canvas and [Rusty Buns](../../README.md). The wild ideas that haven't landed yet are in [IDEAS.md](IDEAS.md); the owner's direction for it is in [VISION.md](VISION.md).
 
+## Jump to the state
+
+A link lands on the menu with one extra button, **Go**, that starts that exact state (a tap, because the browser wants one before it plays sound). Every field is optional and out-of-range values are clamped:
+
+| Param | Meaning |
+|---|---|
+| `level` | 1 to 6: the song |
+| `beat` | start this far into the song; walls already due are answered |
+| `speed` | 1 to 2.5, the boost you arrive with |
+| `delay` | beats between a call and its wall (a bar is 4) |
+| `bpm`, `hint` | tempo, and how loud the echo on the due beat is (`0` = by ear) |
+| `lane` | 0 to 3, where the runner stands |
+
+For example `?level=5&beat=40&speed=2&delay=6&hint=0&lane=3`. An agent gets the same setter as `window.delayedReaction.start({ level, beat, ... })` (it answers with the link) and `window.delayedReaction.state()`, and as the WebMCP tools `dr_start` and `dr_state` where the browser has them. The parsing is `src/scenario.ts`.
+
 ## Run it
 
 ```
