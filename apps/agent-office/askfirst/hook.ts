@@ -22,3 +22,20 @@ export const WRITE_HOOK = [
   'echo "${msg:-The office answered no, so this GitHub command was held}" >&2',
   'exit 2',
 ].join("\n");
+
+/**
+ * The shell command in a worker's tool call, whichever agent sent it: Claude Code, Codex and Cursor say
+ * `tool_input.command`, Grok `toolInput.command`, and Cursor's shell hook a bare `command`.
+ */
+export function commandOf(call: unknown): string | undefined {
+  const field = (o: unknown, k: string) => (typeof o === "object" && o !== null && k in o ? (o as Record<string, unknown>)[k] : undefined);
+  for (const c of [field(field(call, "tool_input"), "command"), field(field(call, "toolInput"), "command"), field(call, "command")])
+    if (typeof c === "string") return c;
+  return undefined;
+}
+
+/** `script` as a command line any agent's hooks can run, with `args` as its $1, $2, ... (its $0 is `name`). */
+export function shellCommand(script: string, name: string, ...args: string[]) {
+  const q = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
+  return ["sh -c", ...[script, name, ...args].map(q)].join(" ");
+}

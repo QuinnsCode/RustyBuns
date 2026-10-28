@@ -3,10 +3,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { writeCheck } from "../askfirst/ask.ts";
-import { WRITE_HOOK } from "../askfirst/hook.ts";
+import { commandOf, shellCommand, WRITE_HOOK } from "../askfirst/hook.ts";
 import { writesOf } from "../askfirst/kinds.ts";
 import { grantsRoute } from "../askfirst/server.ts";
 import { asksRoute, pendingAsks } from "../live/floorguard.ts";
+import { floorGuardCodex, floorGuardCursor, floorGuardGrok } from "../scripts/floorguard.ts";
 
 const dir = mkdtempSync(path.join(tmpdir(), "rb-askfirst-"));
 const grants = grantsRoute(() => dir);
@@ -114,6 +115,26 @@ test("while the office is down (a restart) reads still go ahead and only a write
     expect(r.code).toBe(2);
     expect(r.err).toContain("did not answer");
   }
+});
+
+test("Codex, Cursor and Grok workers get the same hook, as each upstream file writes its settings", () => {
+  const codex = floorGuardCodex("const config = `hooks.${event}=[{hooks=[{type=\"command\",command=${JSON.stringify(command)},timeout=3}]}]`;");
+  expect(codex).toContain("event === 'PreToolUse'");
+  const grok = floorGuardGrok("        hooks[event] = [{ hooks: [{ type: 'command', command, timeout: 3 }] }];\n");
+  expect(grok).toContain("event === 'PreToolUse'");
+  const cursor = floorGuardCursor("        config.hooks[event] = [...entries, { command, timeout: HOOK_TIMEOUT_S }];\n");
+  expect(cursor).toContain("event === 'preToolUse'");
+  // upstream moving its code fails loudly rather than leaving a worker unasked
+  expect(() => floorGuardGrok("nothing")).toThrow("Agent Office changed");
+});
+
+test("the command is read from each agent's payload, and runs through sh -c with the worker's id as $1", async () => {
+  expect(commandOf({ tool_input: { command: "git push" } })).toBe("git push");
+  expect(commandOf({ toolInput: { command: "gh pr merge 1" } })).toBe("gh pr merge 1");
+  expect(commandOf({ command: "git push" })).toBe("git push");
+  expect(commandOf({ tool_input: { file_path: "x" } })).toBeUndefined();
+  const run = Bun.spawn(["sh", "-c", shellCommand("echo \"it's $1\"", "name", "w 1")], { stdout: "pipe" });
+  expect((await new Response(run.stdout).text()).trim()).toBe("it's w 1");
 });
 
 test("a connection's access flag settles a write before any card: write goes through, read is refused, none still asks", async () => {
