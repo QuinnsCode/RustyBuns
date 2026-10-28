@@ -102,6 +102,22 @@ Then on the Mac you work on:
 From then on the agents run their tests there with `bun run builder` (see [AGENTS.md](AGENTS.md#tests-ci-runs-the-suite)).
 The builder only runs branches sent from your own office; GitHub's CI is still what a merge has to pass.
 
+### A Linux builder (Azure, or any cloud VM)
+
+The builder doesn't have to be a Mac. `bun run builder` only needs SSH, git and Bun on the other end, so an Ubuntu VM
+on Azure (or anywhere) works. Bun's Windows rough edges don't come into it: Linux builds every target, Windows `.exe`
+included, the same way `desktop-drop.yml` does from one Linux job. Two things still need their own OS, and stay on
+GitHub's runners: apps with Rust cdylibs (`perOs` in `scripts/ci-apps.ts`), and signing the Mac binaries.
+
+- [ ] **Make the VM.** Ubuntu 24.04, 8 cores and 32 GB is a fair start (on Azure, a `D8as_v5`-class size). An always-on
+      VM that size costs a few hundred dollars a month, so check the price page, and **Stop (deallocate)** it when
+      nobody is working, because Azure charges a VM that is only shut down from inside.
+- [ ] **Reach it.** Put it and the office Mac on Tailscale (`tailscale up` on both) so SSH needs no open port. Use an SSH key, not a password.
+- [ ] **Run the setup** on the VM: `sudo apt-get install -y git curl unzip build-essential`, then the same
+      `curl ... builder-setup.sh | sh -s -- 3` line as above. It skips the Mac-only steps and prints the `BUILDER_HOST` line.
+      Add Rust (rustup.rs) and Docker (`docker.io`) if you want those suites there too.
+- [ ] Then the same three steps on the Mac you work on, with the VM's Tailscale name as `BUILDER_HOST`.
+
 ## Part 5: Keep it up to date (about 10 min, weekly)
 
 ```sh

@@ -1,6 +1,7 @@
 #!/bin/sh
-# Make this Mac the build and test machine the agents drive over SSH (scripts/remote-ci.ts, #2329, #2330).
-# The whole checklist, updates and installs first, is MAC_SETUP.md (Part 4). Run this on the builder, from anywhere:
+# Make this Mac, or a Linux box (a cloud VM on Azure or anywhere), the build and test machine the agents drive
+# over SSH (scripts/remote-ci.ts, #2329, #2330). The whole checklist, updates and installs first, is MAC_SETUP.md
+# (Part 4, and "A Linux builder" under it). Run this on the builder, from anywhere:
 #
 #   curl -fsSL https://raw.githubusercontent.com/QuinnsCode/RustyBuns/main/scripts/builder-setup.sh | sh -s -- 3
 #
@@ -12,15 +13,22 @@ ROOT="$HOME/builder"
 REPO=https://github.com/QuinnsCode/RustyBuns.git
 export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 say() { printf '\n== %s\n' "$*"; }
+MAC=; [ "$(uname -s)" = Darwin ] && MAC=1
 
-say "Remote Login (SSH)"
-if nc -z -G 2 localhost 22 2>/dev/null; then echo "on"; else
-  echo "off: System Settings > General > Sharing > Remote Login, turn it on, then run this again"
-  exit 1
+if [ "$MAC" ]; then
+  say "Remote Login (SSH)"
+  if nc -z -G 2 localhost 22 2>/dev/null; then echo "on"; else
+    echo "off: System Settings > General > Sharing > Remote Login, turn it on, then run this again"
+    exit 1
+  fi
+
+  say "Stay awake on power (asks for your password)"
+  sudo pmset -c sleep 0 disablesleep 1 && echo "on power it never sleeps, lid closed included"
+else
+  say "Tools Bun and the clones need"
+  for t in git curl unzip; do command -v "$t" >/dev/null || { echo "missing $t: sudo apt-get install -y git curl unzip build-essential, then run this again"; exit 1; }; done
+  echo "git, curl, unzip"
 fi
-
-say "Stay awake on power (asks for your password)"
-sudo pmset -c sleep 0 disablesleep 1 && echo "on power it never sleeps, lid closed included"
 
 say "Bun"
 command -v bun >/dev/null || curl -fsSL https://bun.sh/install | bash
@@ -33,9 +41,9 @@ say "Docker"
 if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
   gb=$(( $(docker info --format '{{.MemTotal}}') / 1073741824 ))
   echo "Docker has ${gb} GB"
-  [ "$gb" -ge 40 ] || echo "raise it: Docker Desktop > Settings > Resources, memory about 48 GB, all CPUs, disk 120 GB+"
+  if [ "$MAC" ] && [ "$gb" -lt 40 ]; then echo "raise it: Docker Desktop > Settings > Resources, memory about 48 GB, all CPUs, disk 120 GB+"; fi
 else
-  echo "not running: tests don't need it, container builds do (Docker Desktop, then run this again)"
+  echo "not running: tests don't need it, container builds do (Docker Desktop, or docker.io on Linux, then run this again)"
 fi
 
 say "$SLOTS slots in $ROOT"
@@ -54,10 +62,13 @@ done
 say "One timing: codesplitter's suite on slot-1"
 start=$(date +%s)
 (cd "$ROOT/slot-1/apps/codesplitter" && bun test --parallel test >/dev/null 2>&1) && r=passed || r=failed
-echo "$r in $(( $(date +%s) - start ))s on $(sysctl -n hw.ncpu) cores, $(( $(sysctl -n hw.memsize) / 1073741824 )) GB"
+if [ "$MAC" ]; then cores=$(sysctl -n hw.ncpu); gb=$(( $(sysctl -n hw.memsize) / 1073741824 ))
+else cores=$(nproc); gb=$(( $(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1048576 )); fi
+echo "$r in $(( $(date +%s) - start ))s on $cores cores, $gb GB"
 
 say "Last step, on the office Mac"
-name="$(whoami)@$(scutil --get LocalHostName).local"
+# A cloud VM has no .local name: use its Tailscale name (tailscale up), or its public address.
+if [ "$MAC" ]; then name="$(whoami)@$(scutil --get LocalHostName).local"; else name="$(whoami)@$(hostname)"; fi
 echo "1. ssh-copy-id $name        (once, so agents get in without a password)"
 echo "2. echo 'export BUILDER_HOST=$name' >> ~/.zshenv   then restart the office"
 echo "3. bun run builder run scripts bun test ./ci-tier.test.ts   (from a RustyBuns checkout, to check)"
