@@ -282,6 +282,9 @@ export class Forward {
   }
 }
 
+/** The office's own GitHub sign-in (connect/, kept in the keychain), once it lands; null until then or when there is none. */
+export const officeToken: { read: () => Promise<string | null> } = { read: async () => null };
+
 function ghToken(cwd: string) {
   return new Promise<string>((resolve, reject) =>
     execFile("gh", ["auth", "token"], { cwd, timeout: 10_000 }, (err, out) => {
@@ -309,7 +312,8 @@ export function liveGitHub(floor: Floor, dir: string) {
     refreshIssues: () => floor.github.refreshIssues(),
     refreshPulls: () => floor.github.refreshPulls(),
     repo: () => floor.github.repoInfo().then((r) => r.nameWithOwner),
-    token: () => ghToken(dir),
+    // the office's own sign-in first, so the board works where gh's keyring is out of reach
+    token: async () => (await officeToken.read().catch(() => null)) ?? ghToken(dir),
     active: () => floor.active(),
     pendingHeads: () =>
       floor.github.pulls.items.flatMap((p) => (p.state === "OPEN" && p.checks === "pending" && p.headRefOid ? [p.headRefOid] : [])),
