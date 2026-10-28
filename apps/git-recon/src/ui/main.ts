@@ -4,6 +4,7 @@
 // mirror of it (src/net/mirror.ts), sending the same input over the socket.
 
 import * as THREE from "three";
+import { applyQuality, autoQuality, pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { loadRepoCached, LoadError, parseSlug } from "../levels/github.ts";
 import { LEVELS, placeLevel, type LevelDef } from "../levels/levels.ts";
 import { groundAt, parsePlace } from "../levels/place.ts";
@@ -33,9 +34,11 @@ import { DEFAULTS, mountControls, volumeOf } from "@rustybuns/game-controls";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("view");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(2, devicePixelRatio));
-renderer.shadowMap.enabled = true;
+// ?quality=low|mid|high, else the remembered tier, else a guess from the GPU; a slow run steps itself down.
+const tier = pickQuality().quality;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY[tier].antialias, powerPreference: "high-performance" });
+const suns: THREE.DirectionalLight[] = []; // each level's sun, once built
+const auto = autoQuality(renderer, suns, { quality: tier });
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 // A filmic curve keeps the orange flashes and lit ground from clipping flat.
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -232,6 +235,8 @@ function start(def: LevelDef) {
 /** Into a level: the scene, the camera behind you, the HUD. On your own or in a battle (net). */
 function begin(def: LevelDef, repo: RepoSnapshot, game: Game, brief: string, net?: Net) {
   const world = buildWorld(game.map, { head: me.head, build: me.build }, repo.text);
+  suns.splice(0, suns.length, world.sun);
+  applyQuality(auto.quality, renderer, suns);
   // The chapter's set pieces, on your own; a battle has none.
   const director = new Director(game, net ? undefined : CAMPAIGN[chapterOf(def.id)]);
   current = { def, repo, game, world, director, started: performance.now(), net };
@@ -946,6 +951,7 @@ function frame(now: number) {
   cinema(director.stage);
   waypoints(game, director.markers);
   renderer.render(world.scene, camera);
+  auto.tick(performance.now());
   // Once per ending: a battle's can arrive between frames, with a snapshot.
   if (game.status !== "playing" && !director.holding && !current.ended) current.ended = true, results(game);
 }

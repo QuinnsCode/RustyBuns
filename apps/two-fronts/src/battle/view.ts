@@ -7,6 +7,7 @@
 // Heavy weapons wait out in the open under a beacon. The intro cutscenes play first, once each,
 // and a sting when a Mossback walks in (cutscenes.ts). Comrades talk in bubbles over their heads.
 import * as THREE from "three";
+import { autoQuality, pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { FACTION_COLORS, type BattleResult, type BattleSpec, type Side } from "./contract.ts";
 import { groundRecorder } from "./replay.ts";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
@@ -78,9 +79,9 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const heroSide = spec.hero;
   const color = (s: Side) => FACTION_COLORS[spec.factions[s]];
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-  renderer.shadowMap.enabled = true;
+  // ?quality=low|mid|high, else the remembered tier, else a guess from the GPU; a slow run steps itself down.
+  const tier = pickQuality().quality;
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY[tier].antialias, powerPreference: "high-performance" });
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
@@ -88,6 +89,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.1, 2000);
   // Doren's haze and light, the floor, the trees and everything on it: terrain.ts.
   const world = buildWorld(scene, b);
+  const auto = autoQuality(renderer, [world.sun], { quality: tier, onChange: (q) => { outline.enabled = q !== "low"; } });
   const ground = world.heightAt;
 
   // Command posts: a ring on the ground, a banner on a pole, and a column of light in the
@@ -342,6 +344,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const sandy = spec.sector === "canyon" || spec.sector === "cannon";
   outline.visibleEdgeColor.set(sandy ? 0x2ee6ff : 0xff5a2a);
   outline.hiddenEdgeColor.set(sandy ? 0x1590b8 : 0xc0381c);
+  outline.enabled = tier !== "low"; // the outline pass re-renders the scene and blurs it full-screen: too much for a weak GPU
   composer.addPass(outline);
   composer.addPass(new OutputPass());
   const OUTLINE_RANGE = 80;
@@ -853,6 +856,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       const eyeUnit = heroUnit(b);
       outline.selectedObjects = b.units.filter((u) => u.hp > 0 && eyeUnit && u.side !== eyeUnit.side && Math.hypot(u.x - eyeUnit.x, u.z - eyeUnit.z) < OUTLINE_RANGE).map((u) => meshes.get(u.id)).filter((g): g is THREE.Group => !!g);
       composer.render();
+      auto.tick(now);
       if (now - hudAt > 100 || b.over) { drawHud(); hudAt = now; }
       if (b.over) {
         cancelAnimationFrame(raf);

@@ -6,6 +6,7 @@
 // fog colour is the sky's horizon colour and far things melt into it.
 
 import * as THREE from "three";
+import { autoQuality, pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { loopShot } from "@rustybuns/util";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { hashString, rng } from "../geo.ts";
@@ -99,6 +100,7 @@ export class World3D {
   private zoneGroup = new THREE.Group();
   private hemi = new THREE.HemisphereLight();
   private sun = new THREE.DirectionalLight();
+  private auto: ReturnType<typeof autoQuality>;
   private stars: THREE.Points | null = null;
   private remotes = new Map<string, Remote>();
   private tmp = new THREE.Vector3();
@@ -127,15 +129,14 @@ export class World3D {
   private meProp: PropBody = { prop: null, propKey: "" };
 
   constructor(readonly canvas: HTMLCanvasElement) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
-    this.renderer.shadowMap.enabled = true;
+    // ?quality=low|mid|high, else the remembered tier, else a guess from the GPU; a slow run steps itself down.
+    const tier = pickQuality().quality;
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY[tier].antialias, powerPreference: "high-performance" });
+    this.auto = autoQuality(this.renderer, [this.sun], { quality: tier });
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.scene.add(this.zoneGroup, this.hemi, this.sun, this.sun.target);
-    this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
     const sc = this.sun.shadow.camera;
     sc.left = sc.bottom = -70; sc.right = sc.top = 70; sc.near = 1; sc.far = 600;
     this.sun.shadow.bias = -0.0005;
@@ -599,6 +600,7 @@ export class World3D {
     this.fall(dt);
     this.dome.position.copy(this.camera.position);
     this.renderer.render(this.scene, this.camera);
+    this.auto.tick(now);
   }
 
   /** Draw a disguised camper as their prop (true), or take the prop away (false). */

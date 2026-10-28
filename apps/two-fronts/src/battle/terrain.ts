@@ -19,6 +19,8 @@ import { buildSea, coastOf, headland } from "./worlds/beach.ts";
 
 export interface World {
   heightAt(x: number, z: number): number;
+  /** The one shadow-casting light, for the quality tier to size or switch off. */
+  sun: THREE.DirectionalLight;
   // Each frame: where the camera is and what it looks at, for the sun's shadow box and the motes.
   update(t: number, eye: THREE.Vector3, at: { x: number; z: number }): void;
 }
@@ -677,6 +679,7 @@ export function buildWorld(scene: THREE.Scene, b: Battle): World {
 
   return {
     heightAt,
+    sun,
     update(t, eye, at) {
       foliage.update(t, eye);
       sun.target.position.set(at.x, heightAt(at.x, at.z), at.z);
