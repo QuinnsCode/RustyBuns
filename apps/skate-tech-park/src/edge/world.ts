@@ -1,6 +1,6 @@
 // One Durable Object per room: the riders' sockets and their latest poses. It relays, it does not simulate.
 // The Worker (worker.ts) is the only place identity is decided; it vouches X-User-Id and X-User-Name.
-import { MAX_RIDERS, parsePose, Room } from "../net/room.ts";
+import { MAX_RIDERS, parsePose, Room, type ServerMsg } from "../net/room.ts";
 import { TokenBucket } from "./limits.ts";
 
 declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
@@ -80,7 +80,7 @@ export class World {
     this.dirty = false;
     for (const ws of this.open()) {
       const { id } = ws.deserializeAttachment() as { id: string };
-      try { ws.send(JSON.stringify({ t: "view", view: this.room.view(id) })); } catch {}
+      try { ws.send(JSON.stringify({ t: "view", view: this.room.view(id) } satisfies ServerMsg)); } catch {}
     }
   }
 }

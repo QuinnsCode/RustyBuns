@@ -11,6 +11,7 @@
 import type { BattleResult, Faction, MatchMode, SpaceBattleResult } from "../battle/contract.ts";
 import { GALAXIES, type GalaxyId } from "../war/galaxy.ts";
 import { fogged, type Campaign, type Orders } from "../war/rules.ts";
+import { decodeIn, type PointerIn, type PointerOut } from "../pointer-wire.ts";
 import { castVote, handIn, humans, newTable, report, waitingOn, type Seats, type Step, type Table, type TurnRecord, type Vote } from "../war/table.ts";
 
 // Cloudflare's SqlStorage, and the in-process one Rusty Buns hosts locally, as far as this uses them.
@@ -68,7 +69,7 @@ export class CampaignRoom {
       const v = (await body(req)) as { match?: unknown; mode?: unknown } | null;
       if (typeof v?.match !== "string" || typeof v.mode !== "string") return fail("That isn't a vote");
       const res = this.step(seat, castVote(table, seat, v.match, v.mode as MatchMode));
-      if (res.ok) this.broadcast(JSON.stringify({ t: "vote", vote: this.load()!.vote }));
+      if (res.ok && this.load()?.vote) this.broadcast(JSON.stringify({ t: "vote", vote: this.load()!.vote! } satisfies PointerOut));
       return res;
     }
     return fail("Not found", 404);
@@ -85,18 +86,17 @@ export class CampaignRoom {
   // A pointer socket's frames: hello with the seat token first, then where its pointer is.
   async webSocketMessage(ws: Socket, m: string | ArrayBuffer) {
     if (typeof m !== "string" || m.length > MAX_FRAME) return ws.close(1009, "Too big");
-    let msg: { t?: unknown; token?: unknown; x?: unknown; y?: unknown };
-    try { msg = JSON.parse(m); } catch { return ws.close(1003, "Not JSON"); }
+    let msg: PointerIn | null;
+    try { msg = decodeIn(JSON.parse(m)); } catch { return ws.close(1003, "Not JSON"); }
     const seat = (ws.deserializeAttachment() as { seat?: Faction } | null)?.seat;
     if (!seat) {
-      const found = msg.t === "hello" && typeof msg.token === "string" && /^\S{16,128}$/.test(msg.token) ? await this.seatFor(msg.token) : null;
+      const found = msg?.t === "hello" ? await this.seatFor(msg.token) : null;
       if (!found) return ws.close(4003, "Not a seat at this campaign");
       ws.serializeAttachment({ seat: found });
-      return ws.send(JSON.stringify({ t: "hi", seat: found }));
+      return ws.send(JSON.stringify({ t: "hi", seat: found } satisfies PointerOut));
     }
-    if (msg.t !== "at" || typeof msg.x !== "number" || typeof msg.y !== "number") return;
-    const unit = (n: number) => Math.round(Math.max(0, Math.min(1, n)) * 1000) / 1000;
-    this.broadcast(JSON.stringify({ t: "at", seat, x: unit(msg.x), y: unit(msg.y) }), ws);
+    if (msg?.t !== "at") return;
+    this.broadcast(JSON.stringify({ t: "at", seat, x: msg.x, y: msg.y } satisfies PointerOut), ws);
   }
   webSocketClose(ws: Socket) { try { ws.close(1000); } catch { /* already closed */ } }
   webSocketError() {}

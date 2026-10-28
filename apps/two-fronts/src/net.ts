@@ -6,6 +6,7 @@ import type { View } from "./edge/campaign.ts";
 import type { GalaxyId } from "./war/galaxy.ts";
 import type { Orders } from "./war/rules.ts";
 import type { Seats, Vote } from "./war/table.ts";
+import { decodeOut, type PointerIn, type PointerOut } from "./pointer-wire.ts";
 
 export type { View };
 export interface Online { id: string; token: string; invite?: string } // invite: the other side's token, kept by whoever started it
@@ -29,17 +30,15 @@ export const sendVote = (g: Online, match: string, mode: MatchMode) => call<View
 
 // The vote screen's live line to the other seat: where each pointer is, and the votes as they land.
 // The token goes in the first message, not the URL. Coordinates are 0..1 across the vote screen.
-export type PointerMsg = { t: "at"; seat: Faction; x: number; y: number } | { t: "vote"; vote: Vote };
-export function pointerSocket(g: Online, on: (m: PointerMsg) => void) {
+export function pointerSocket(g: Online, on: (m: PointerOut) => void) {
   const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/campaigns/${g.id}/pointers`);
   let ready = false, last = 0, later: ReturnType<typeof setTimeout> | undefined;
-  ws.onopen = () => ws.send(JSON.stringify({ t: "hello", token: g.token }));
+  ws.onopen = () => ws.send(JSON.stringify({ t: "hello", token: g.token } satisfies PointerIn));
   ws.onmessage = (e) => {
-    try {
-      const m = JSON.parse(e.data as string);
-      if (m.t === "hi") ready = true;
-      else on(m);
-    } catch { /* not ours */ }
+    let m: PointerOut | null = null;
+    try { m = decodeOut(JSON.parse(String(e.data))); } catch { /* not ours */ }
+    if (m?.t === "hi") ready = true;
+    else if (m) on(m);
   };
   return {
     // At most twenty a second, and the last one always goes.
