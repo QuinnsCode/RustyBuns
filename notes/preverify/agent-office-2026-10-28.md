@@ -10,7 +10,7 @@ One real bug found and fixed in this PR (ester/index.ts): `GET /__rb/helpers` re
 Ester's badge poll merged the whole reply into its three states, then threw on `null.phase` when it rescheduled itself, so after
 the first poll **her, Mervin's and Dexter's badges stopped refreshing** (no live dot, no "On it", no card update) on every office
 that has no `mervin-tally.jsonl`. It showed in the demo as one unhandled rejection per page load, on all 13 scenarios. Fixed by
-reading only the three helpers, through `helperState` (screens/read.ts). After the fix the rejection is gone.
+reading only the three helpers, through `helperState` (screens/read.ts). After the fix, wall-ester-running polled `/__rb/context` 4 times in 7 s (every 2 s while a run is going) and Ester's badge showed `running`; before, it polled once.
 
 ## #2513 setup page
 
