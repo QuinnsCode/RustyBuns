@@ -78,9 +78,9 @@ export function pagePath(rest: string[]): string | null {
 
 /** What a signed-out visitor may be told about the owner: their handle, bio and public repos. */
 async function visible(env: Env, name: string) {
-  const user = await env.DB.prepare("SELECT name, bio FROM users WHERE name = ?").bind(name).first() as { name: string; bio: string | null } | null;
-  const { results } = await env.DB.prepare("SELECT name FROM repos WHERE owner = ? AND visibility = 'public' AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC").bind(name, Date.now()).all();
-  return { name, bio: user?.bio ?? "", repos: (results as { name: string }[]).map((r) => r.name) };
+  const user = await env.DB.prepare("SELECT name, bio FROM users WHERE name = ?").bind(name).first<{ name: string; bio: string | null }>();
+  const { results } = await env.DB.prepare("SELECT name FROM repos WHERE owner = ? AND visibility = 'public' AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC").bind(name, Date.now()).all<{ name: string }>();
+  return { name, bio: user?.bio ?? "", repos: results.map((r) => r.name) };
 }
 
 /** A JSON block the page reads with JSON.parse(document.getElementById("profile").textContent). `<` is escaped so the data can't close it. */
@@ -112,8 +112,8 @@ async function repoFile(env: Env, name: string, path: string) {
 /** Every public file of the page with the rev it is at, or "" when there is no page repo: the same string until a file changes. */
 async function pageVersion(env: Env, name: string) {
   if (!(await hasPage(env, name))) return "";
-  const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? ORDER BY path").bind(name, PAGE_REPO).all();
-  const revs = await Promise.all((results as { path: string }[]).map(async ({ path }) => {
+  const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ? ORDER BY path").bind(name, PAGE_REPO).all<{ path: string }>();
+  const revs = await Promise.all(results.map(async ({ path }) => {
     const res = await toFile(env, name, PAGE_REPO, path, "anon", "file", { headers: { "x-codesplitter-crew": "0" } }).catch(() => null);
     return `${path}:${res?.ok ? ((await res.json().catch(() => null)) as { rev?: number } | null)?.rev ?? 0 : 0}`;
   }));
@@ -191,7 +191,7 @@ export async function pageRoutes(req: Request, env: Env, p: string[], user?: str
   if (!onPagesHost && runsAsApp(req)) return json({ error: "a page's files run only inside its own sandbox" }, 403);
   let body = await repoFile(env, name, path);
   // No page repo (or no index in it): the HTML saved on the profile is the index.
-  if (body === null && path === "index.html") body = ((await env.DB.prepare("SELECT theme_html FROM users WHERE name = ?").bind(name).first()) as { theme_html: string | null } | null)?.theme_html || null;
+  if (body === null && path === "index.html") body = ((await env.DB.prepare("SELECT theme_html FROM users WHERE name = ?").bind(name).first<{ theme_html: string | null }>()))?.theme_html || null;
   if (body === null) return path === "index.html" ? note(`@${esc(name)} hasn't made a page yet`, 404) : json({ error: "no such file" }, 404);
   const outside = type === "text/html" && path === "index.html" && OUTSIDE_MEDIA.test(body);
   if (type === "text/html" && path === "index.html") body = withData(body, await visible(env, name));
@@ -266,8 +266,8 @@ export const HOUR_MS = 3_600_000;
 export async function revertPage(env: Env, owner: string, to: unknown, now = Date.now()) {
   if (to !== "hour" && to !== "default") return json({ error: 'to: "hour" or "default"' }, 400);
   if (!(await hasPage(env, owner))) return json({ error: "no page repo yet: make a public repo named page" }, 404);
-  const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, PAGE_REPO).all();
-  const paths = [...new Set([...(results as { path: string }[]).map((r) => r.path), ...(to === "default" ? Object.keys(STARTER) : [])])];
+  const { results } = await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, PAGE_REPO).all<{ path: string }>();
+  const paths = [...new Set([...results.map((r) => r.path), ...(to === "default" ? Object.keys(STARTER) : [])])];
   const changed: string[] = [], unreachable: string[] = [];
   for (const path of paths) {
     const want = to === "default" ? STARTER[path] ?? "" : await textAt(env, owner, path, now - HOUR_MS);

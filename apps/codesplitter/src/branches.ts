@@ -77,19 +77,19 @@ export function parseResolve(raw: unknown): Record<string, Resolve> | string {
 interface Access { read: boolean; write: boolean }
 
 export async function openBranch(env: Env, owner: string, repo: string, name: string) {
-  const b = await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first() as BranchRow | null;
+  const b = await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first<BranchRow>();
   return b?.status === "open" ? b : null;
 }
 
 /** Every open branch of the repo, oldest first. */
 async function openBranches(env: Env, owner: string, repo: string) {
-  return (await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND status = 'open' ORDER BY created_at, name").bind(owner, repo).all()).results as BranchRow[];
+  return (await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND status = 'open' ORDER BY created_at, name").bind(owner, repo).all<BranchRow>()).results;
 }
 
 /** The open branches `branch` is stacked on, nearest first: its parent, that one's, and on down. One that merged has its work on main, and ends it. */
 export async function ancestors(env: Env, owner: string, repo: string, branch: string): Promise<string[]> {
-  const { results } = await env.DB.prepare("SELECT name, parent, status FROM branches WHERE owner = ? AND repo = ?").bind(owner, repo).all();
-  const all = new Map((results as { name: string; parent: string | null; status: string }[]).map((b) => [b.name, b]));
+  const { results } = await env.DB.prepare("SELECT name, parent, status FROM branches WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ name: string; parent: string | null; status: string }>();
+  const all = new Map(results.map((b) => [b.name, b]));
   const out: string[] = [];
   for (let p = all.get(branch)?.parent; p && all.get(p)?.status === "open" && p !== branch && !out.includes(p); p = all.get(p)?.parent) out.push(p);
   return out;
@@ -251,8 +251,8 @@ export function restack(base: Doc, copy: Doc, onto: Doc, by: string, path: strin
  */
 async function restackChildren(env: Env, owner: string, repo: string, from: string) {
   const { results } = await env.DB.prepare(`SELECT f.branch, f.path, f.deleted, f.blob, b.by FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch
-    WHERE f.owner = ? AND f.repo = ? AND f.source = ? AND f.merged = 0 AND b.status = 'open'`).bind(owner, repo, from).all();
-  for (const f of results as { branch: string; path: string; deleted: number; blob: string | null; by: string }[]) {
+    WHERE f.owner = ? AND f.repo = ? AND f.source = ? AND f.merged = 0 AND b.status = 'open'`).bind(owner, repo, from).all<{ branch: string; path: string; deleted: number; blob: string | null; by: string }>();
+  for (const f of results) {
     const done = () => env.DB.prepare("UPDATE branch_files SET source = NULL WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, f.branch, f.path).run();
     // A deletion or a binary file has no lines to line up.
     if (f.deleted || f.blob) { await done(); continue; }
@@ -277,7 +277,7 @@ async function fileHunks(env: Env, owner: string, repo: string, branch: string, 
 
 /** A fingerprint of everything branch `name` would land: each file's path, deletion, blob and text. An agent's batch is accepted against it. */
 export async function branchHash(env: Env, owner: string, repo: string, name: string) {
-  const rows = (await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as FileRow[];
+  const rows = (await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all<FileRow>()).results;
   const each = await Promise.all(rows.map(async (f) => [f.path, f.merged, f.deleted, f.blob, f.mode,
     f.merged || f.deleted || f.blob ? null : listOf(await (await toFile(env, owner, repo, f.path, "upstream", "file", {}, "", name)).json(), "lines").map((l) => l.text)]));
   return sha256(JSON.stringify(each));
@@ -364,8 +364,8 @@ async function conflictKey(c: Conflict) {
 
 /** The answers kept for the branch's conflicts, by `path\nline`, with the conflict each was for. */
 async function keptAnswers(env: Env, owner: string, repo: string, branch: string) {
-  const { results } = await env.DB.prepare("SELECT path, line, key, answer FROM leftover_answers WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, branch).all();
-  return new Map((results as { path: string; line: string; key: string; answer: string }[]).map((r) => [`${r.path}\n${r.line}`, { key: r.key, answer: JSON.parse(r.answer) as Answer }]));
+  const { results } = await env.DB.prepare("SELECT path, line, key, answer FROM leftover_answers WHERE owner = ? AND repo = ? AND branch = ?").bind(owner, repo, branch).all<{ path: string; line: string; key: string; answer: string }>();
+  return new Map(results.map((r) => [`${r.path}\n${r.line}`, { key: r.key, answer: JSON.parse(r.answer) as Answer }]));
 }
 
 /** The kept answer to `c`, if it was for this conflict as it stands. */
@@ -634,7 +634,7 @@ export async function takeMainUpstream(env: Env, owner: string, repo: string, na
   const b = await openBranch(env, owner, repo, name);
   if (!b?.upstream_ref || b.waits_on || (await ancestors(env, owner, repo, name)).length) return null;
   if (await env.DB.prepare("SELECT 1 FROM agent_runs WHERE owner = ? AND repo = ? AND branch = ? AND status = 'running' AND json_extract(result, '$.rebuild') IS NOT NULL").bind(owner, repo, name).first()) return null;
-  const rows = (await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND deleted = 0 AND blob IS NULL ORDER BY path").bind(owner, repo, name).all()).results as { path: string }[];
+  const rows = (await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND deleted = 0 AND blob IS NULL ORDER BY path").bind(owner, repo, name).all<{ path: string }>()).results;
   for (const f of rows) if ((await mergeFile(env, owner, repo, b, f.path, b.by, undefined, true)).conflicts.length) return null;
   return takeMain(env, owner, repo, b, b.by, { push: true });
 }
@@ -646,7 +646,7 @@ export async function takeMainUpstream(env: Env, owner: string, repo: string, na
 async function takeMain(env: Env, owner: string, repo: string, b: BranchRow, user: string, o: { push?: boolean; rebuild?: string } = {}): Promise<Took> {
   const name = b.name;
   if ((await ancestors(env, owner, repo, name)).length) return { branch: name, status: "failed", error: "stacked on an open branch: it moves onto main when that one merges" };
-  const rows = (await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as FileRow[];
+  const rows = (await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all<FileRow>()).results;
   const resolve: Record<string, Resolve> = {};
   let run = await dryRun(env, owner, repo, b, rows, resolve, user);
   // Every card left has a checked agent's answer that passed: settle each with it.
@@ -758,14 +758,14 @@ async function mergeBranch(env: Env, owner: string, repo: string, branch: Branch
   // so without this any crew member could pass it off as "someone other than the author" and land a held batch.
   const agentRun = /^agent-run-\d+$/.test(name);
   if (agentRun && user !== owner) return json({ error: "an agent run's batch lands when its owner accepts it (or its timer runs out), not on a crew merge" }, 403);
-  const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as FileRow[]);
+  const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all<FileRow>()).results);
   // build_ok is a reader's word: the owner's, or someone other than the branch's author.
   const resolve = parseResolve(body.resolve), build_ok = body.build_ok && (user === owner || user !== branch.by);
   if (typeof resolve === "string") return json({ error: resolve }, 400);
   // Stacked on a branch that's still open: that one's changes are in this one's copies, so it goes first.
   const under = (await ancestors(env, owner, repo, name))[0];
   if (under) return json({ error: `${name} is stacked on ${under}: merge ${under} first` }, 409);
-  const stuck = (await env.DB.prepare("SELECT path, source FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND source IS NOT NULL ORDER BY path").bind(owner, repo, name).all()).results as { path: string; source: string }[];
+  const stuck = (await env.DB.prepare("SELECT path, source FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND source IS NOT NULL ORDER BY path").bind(owner, repo, name).all<{ path: string; source: string }>()).results;
   if (stuck.length) return json({ error: `${stuck.map((f) => f.path).join(", ")} forked from ${stuck[0]!.source}'s copies and didn't move onto main cleanly when it merged: copy your changes into a branch off main`, files: stuck.map((f) => f.path) }, 409);
   const rows = await files(), todo = rows.filter((f) => !f.merged);
   // The path policy and the checks' commands are the owner's to change on main (#1567): a merge is no way round it.
@@ -889,7 +889,7 @@ async function land(env: Env, owner: string, repo: string, branch: BranchRow, us
  * in that order, the first merging first. With `first`, only that branch's clashes with the others.
  */
 async function clashesIn(env: Env, owner: string, repo: string, order: string[], user: string, first?: string): Promise<Clash[]> {
-  const rows = (await env.DB.prepare("SELECT branch, path, deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND merged = 0").bind(owner, repo).all()).results as { branch: string; path: string; deleted: number; blob: string | null }[];
+  const rows = (await env.DB.prepare("SELECT branch, path, deleted, blob FROM branch_files WHERE owner = ? AND repo = ? AND merged = 0").bind(owner, repo).all<{ branch: string; path: string; deleted: number; blob: string | null }>()).results;
   const on = new Map<string, typeof rows>();
   for (const r of rows) if (order.includes(r.branch) && !r.deleted) on.set(r.path, [...on.get(r.path) ?? [], r]);
   const clashes = new Map<string, Clash>();
@@ -978,8 +978,8 @@ async function mergePlan(env: Env, owner: string, repo: string, user: string) {
  * hold the task till those merge, or stack it on the first (POST .../branches {name, parent}).
  */
 export async function dispatchHint(env: Env, owner: string, repo: string, task: string, files: string[] = []): Promise<{ files: string[]; busy: Busy[] }> {
-  const changed = (await env.DB.prepare("SELECT b.name AS branch, f.path FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch WHERE f.owner = ? AND f.repo = ? AND f.merged = 0 AND b.status = 'open'").bind(owner, repo).all()).results as { branch: string; path: string }[];
-  const onMain = (await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, repo).all()).results as { path: string }[];
+  const changed = (await env.DB.prepare("SELECT b.name AS branch, f.path FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch WHERE f.owner = ? AND f.repo = ? AND f.merged = 0 AND b.status = 'open'").bind(owner, repo).all<{ branch: string; path: string }>()).results;
+  const onMain = (await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ path: string }>()).results;
   const paths = [...new Set([...onMain.map((f) => f.path), ...changed.map((c) => c.path)])];
   const guess = [...new Set([...files, ...taskFiles(task, paths)])].sort();
   return { files: guess, busy: busyOn(guess, changed) };
@@ -992,7 +992,7 @@ export async function dispatchHint(env: Env, owner: string, repo: string, task: 
 export async function runBranchLocked(env: Env, owner: string, repo: string, branch: string | undefined, user: string | null): Promise<Response | null> {
   const id = /^agent-run-(\d+)$/.exec(branch ?? "")?.[1];
   if (!id || user === owner) return null;
-  const row = await env.DB.prepare("SELECT agent FROM agent_runs WHERE owner = ? AND repo = ? AND id = ?").bind(owner, repo, Number(id)).first() as { agent: string } | null;
+  const row = await env.DB.prepare("SELECT agent FROM agent_runs WHERE owner = ? AND repo = ? AND id = ?").bind(owner, repo, Number(id)).first<{ agent: string }>();
   return row && row.agent === user ? null : json({ error: "an agent run's batch is written by its agent and the repo's owner only" }, 403);
 }
 
@@ -1013,7 +1013,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     for (const br of todo) {
       const name = br.name;
       // A branch with nothing on it yet is someone's work about to start: leave it open.
-      const left = await env.DB.prepare("SELECT COUNT(*) AS n FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0").bind(owner, repo, name).first() as { n: number } | null;
+      const left = await env.DB.prepare("SELECT COUNT(*) AS n FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0").bind(owner, repo, name).first<{ n: number }>();
       if (!left?.n) { skipped.push({ branch: name, error: "nothing to merge" }); continue; }
       const res = await mergeBranch(env, owner, repo, br, user!, { build_ok: b.build_ok }, req);
       const out = (await res.json()) as { error?: string; conflicts?: { path: string }[]; build?: string[] };
@@ -1068,7 +1068,7 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
 
   const branch = name && await env.DB.prepare("SELECT * FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, name).first<BranchRow>();
   if (!branch) return json({ error: "no such branch" }, 404);
-  const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all()).results as { path: string; merged: number; deleted: number; blob: string | null; mode: string | null }[]);
+  const files = async () => ((await env.DB.prepare("SELECT path, merged, deleted, blob, mode FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? ORDER BY path").bind(owner, repo, name).all<{ path: string; merged: number; deleted: number; blob: string | null; mode: string | null }>()).results);
 
   // DELETE /api/repos/:o/:r/branches/:b/files?path=  delete a file on the branch; merging deletes it from main.
   if (p[6] === "files" && req.method === "DELETE") {

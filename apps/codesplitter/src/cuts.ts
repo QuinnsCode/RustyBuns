@@ -375,7 +375,7 @@ export async function cutRoutes(req: Request, env: Env, p: string[], url: URL, u
   if (p[1] !== "cuts" || !p[2]) return null;
   // Like a shared range, the link is the key: it shows only the cut's lines, even from a private repo.
   const c = await env.DB.prepare(`SELECT c.*, b.status FROM cuts c JOIN repos r ON r.owner = c.owner AND r.name = c.repo
-    JOIN branches b ON b.owner = c.owner AND b.repo = c.repo AND b.name = c.branch WHERE c.id = ? AND (r.expires_at IS NULL OR r.expires_at > ?)`).bind(p[2], Date.now()).first() as CutRow | null;
+    JOIN branches b ON b.owner = c.owner AND b.repo = c.repo AND b.name = c.branch WHERE c.id = ? AND (r.expires_at IS NULL OR r.expires_at > ?)`).bind(p[2], Date.now()).first<CutRow>();
   if (!c) return json({ error: "no such cut" }, 404);
   const run: CutRun | null = c.run ? JSON.parse(c.run) : null;
 

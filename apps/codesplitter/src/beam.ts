@@ -164,13 +164,13 @@ type StackFile = { branch: string; path: string; deleted: number; blob: string |
  * one's files in path order. 404 or 409 when it isn't an open branch, or when a copy is stale (below).
  */
 async function stackFiles(env: Env, owner: string, repo: string, branch: string): Promise<{ error: Response } | { by: string; chain: string[]; rows: StackFile[] }> {
-  const br = await env.DB.prepare("SELECT by, status FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, branch).first() as { by: string; status: string } | null;
+  const br = await env.DB.prepare("SELECT by, status FROM branches WHERE owner = ? AND repo = ? AND name = ?").bind(owner, repo, branch).first<{ by: string; status: string }>();
   if (!br) return { error: json({ error: `this repo has no codeSplitter branch ${branch}` }, 404) };
   if (br.status !== "open") return { error: json({ error: `${branch} is ${br.status} already: nothing to beam` }, 409) };
   const chain = [...(await ancestors(env, owner, repo, branch)).reverse(), branch];
   const marks = chain.map(() => "?").join(", ");
   const rows = (await env.DB.prepare(`SELECT f.branch, f.path, f.deleted, f.blob, f.mode, f.source, b.by FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch
-    WHERE f.owner = ? AND f.repo = ? AND f.merged = 0 AND f.branch IN (${marks}) ORDER BY f.path`).bind(owner, repo, ...chain).all()).results as StackFile[];
+    WHERE f.owner = ? AND f.repo = ? AND f.merged = 0 AND f.branch IN (${marks}) ORDER BY f.path`).bind(owner, repo, ...chain).all<StackFile>()).results;
   // A copy a branch made before the one under it touched that file has none of that one's change: laid
   // over it, it would take that change back out. Merging handles it line by line; a beam can't.
   const stale = rows.filter((f) => !f.deleted && !f.blob).filter((f) => {
@@ -469,7 +469,7 @@ interface BeamRow {
 }
 const beamRow = (env: Env, id: string) =>
   env.DB.prepare("SELECT b.* FROM beams b JOIN repos r ON r.owner = b.owner AND r.name = b.repo WHERE b.id = ? AND (r.expires_at IS NULL OR r.expires_at > ?)")
-    .bind(id, Date.now()).first() as Promise<BeamRow | null>;
+    .bind(id, Date.now()).first<BeamRow>();
 
 const view = (b: BeamRow | null) => b && ({
   id: b.id, owner: b.owner, repo: b.repo, branch: b.branch, kind: b.kind, by: b.by, to: b.to_user, title: b.title, message: b.message,
@@ -498,8 +498,8 @@ async function beamable(dir: string, main: string) {
 /** The repo's open codeSplitter branches with files of their own, newest first: each with how many. */
 async function beamableLines(env: Env, owner: string, repo: string) {
   const { results } = await env.DB.prepare(`SELECT b.name, b.by, b.parent, COUNT(f.path) AS files FROM branches b JOIN branch_files f ON f.owner = b.owner AND f.repo = b.repo AND f.branch = b.name AND f.merged = 0
-    WHERE b.owner = ? AND b.repo = ? AND b.status = 'open' GROUP BY b.name ORDER BY COALESCE(b.changed_at, b.created_at) DESC LIMIT ?`).bind(owner, repo, BRANCHES).all();
-  return results as { name: string; by: string; parent: string | null; files: number }[];
+    WHERE b.owner = ? AND b.repo = ? AND b.status = 'open' GROUP BY b.name ORDER BY COALESCE(b.changed_at, b.created_at) DESC LIMIT ?`).bind(owner, repo, BRANCHES).all<{ name: string; by: string; parent: string | null; files: number }>();
+  return results;
 }
 
 /** Withdrawn: the commit's ref goes from the repo, then the row says so. */
@@ -516,8 +516,8 @@ async function withdraw(env: Env, b: BeamRow) {
 
 /** A repo went private: its open beams were capability links, so they all close. */
 export async function withdrawOpenBeams(env: Env, owner: string, repo: string) {
-  const { results } = await env.DB.prepare("SELECT * FROM beams WHERE owner = ? AND repo = ? AND status = 'open'").bind(owner, repo).all();
-  for (const b of results as unknown as BeamRow[]) await withdraw(env, b);
+  const { results } = await env.DB.prepare("SELECT * FROM beams WHERE owner = ? AND repo = ? AND status = 'open'").bind(owner, repo).all<BeamRow>();
+  for (const b of results) await withdraw(env, b);
 }
 
 export async function beamRoutes(req: Request, env: Env, p: string[], user: string | null, access: Access): Promise<Response | null> {
@@ -532,8 +532,8 @@ export async function beamRoutes(req: Request, env: Env, p: string[], user: stri
       return makeBeam(env, owner, repo, user, await readBody(req));
     }
     if (req.method !== "GET") return null;
-    const { results } = await env.DB.prepare("SELECT * FROM beams WHERE owner = ? AND repo = ? ORDER BY created_at DESC LIMIT 100").bind(owner, repo).all();
-    const beams = (results as unknown as BeamRow[]).map(summary);
+    const { results } = await env.DB.prepare("SELECT * FROM beams WHERE owner = ? AND repo = ? ORDER BY created_at DESC LIMIT 100").bind(owner, repo).all<BeamRow>();
+    const beams = results.map(summary);
     if (!a.write) return json({ beams });
     const b = await bareOf(env, owner, repo);
     // Hosted, there are no git branches, and codeSplitter's are beamed by the Worker's git.
@@ -546,10 +546,10 @@ export async function beamRoutes(req: Request, env: Env, p: string[], user: stri
     if (!user) return json({ error: "sign in first" }, 401);
     const live = "JOIN repos r ON r.owner = b.owner AND r.name = b.repo WHERE (r.expires_at IS NULL OR r.expires_at > ?)";
     const [to, from] = await Promise.all([
-      env.DB.prepare(`SELECT b.* FROM beams b ${live} AND b.to_user = ? AND b.status = 'open' ORDER BY b.created_at DESC LIMIT 50`).bind(Date.now(), user).all(),
-      env.DB.prepare(`SELECT b.* FROM beams b ${live} AND b.by = ? ORDER BY b.created_at DESC LIMIT 50`).bind(Date.now(), user).all(),
+      env.DB.prepare(`SELECT b.* FROM beams b ${live} AND b.to_user = ? AND b.status = 'open' ORDER BY b.created_at DESC LIMIT 50`).bind(Date.now(), user).all<BeamRow>(),
+      env.DB.prepare(`SELECT b.* FROM beams b ${live} AND b.by = ? ORDER BY b.created_at DESC LIMIT 50`).bind(Date.now(), user).all<BeamRow>(),
     ]);
-    return json({ to_you: (to.results as unknown as BeamRow[]).map(summary), yours: (from.results as unknown as BeamRow[]).map(summary) });
+    return json({ to_you: to.results.map(summary), yours: from.results.map(summary) });
   }
 
   // /api/beams/:id[/patch]

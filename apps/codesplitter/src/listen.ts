@@ -48,7 +48,7 @@ export function upstreamOf(upstream: string, branch: string | null) {
 }
 
 const fork = (env: Env, owner: string, repo: string) =>
-  env.DB.prepare(`SELECT ${COLS} FROM repos WHERE owner = ? AND name = ? AND ${LISTENS}`).bind(owner, repo).first() as Promise<Fork | null>;
+  env.DB.prepare(`SELECT ${COLS} FROM repos WHERE owner = ? AND name = ? AND ${LISTENS}`).bind(owner, repo).first<Fork>();
 
 const status = (f: Fork, error?: string) => {
   const up = upstreamOf(f.upstream, f.branch);
@@ -89,8 +89,8 @@ export async function hear(env: Env, f: Fork, now = Date.now()): Promise<{ fork:
 /** The hourly cron: forks not heard in the last 50 minutes, longest unheard first, a few dozen at a time. */
 export async function hearDue(env: Env, now = Date.now()) {
   const { results } = await env.DB.prepare(`SELECT ${COLS} FROM repos WHERE ${LISTENS} AND (upstream_heard_at IS NULL OR upstream_heard_at < ?) ORDER BY upstream_heard_at IS NOT NULL, upstream_heard_at LIMIT 40`)
-    .bind(now - 50 * 60_000).all();
-  for (const f of results as unknown as Fork[]) await hear(env, f, now).catch(() => null);
+    .bind(now - 50 * 60_000).all<Fork>();
+  for (const f of results) await hear(env, f, now).catch(() => null);
 }
 
 /** `path` at `sha` on GitHub, as text; null when it isn't there (or isn't text). */

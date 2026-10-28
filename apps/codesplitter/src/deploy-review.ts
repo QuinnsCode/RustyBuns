@@ -62,8 +62,8 @@ export async function review(env: Env, owner: string, repo: string): Promise<Rev
     for (let i = 0; i < shas.length; i += 90) {
       const part = shas.slice(i, i + 90);
       const { results } = await env.DB.prepare(`SELECT sha, kind FROM deploy_cleared WHERE owner = ? AND repo = ? AND sha IN (${part.map(() => "?").join(", ")})`)
-        .bind(owner, repo, ...part).all();
-      for (const r of results as { sha: string; kind: string }[]) kinds.set(r.sha, r.kind);
+        .bind(owner, repo, ...part).all<{ sha: string; kind: string }>();
+      for (const r of results) kinds.set(r.sha, r.kind);
     }
   };
   await look([...known.keys()]);

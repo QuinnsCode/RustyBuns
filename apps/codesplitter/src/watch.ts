@@ -130,8 +130,8 @@ export function hitsIn(manifests: Map<string, { pkg: Record<string, any> }>, mal
 export async function checkRepo(env: Env, call: Call, owner: string, repo: string, mal: Map<string, Mal[]>, now = Date.now()): Promise<Hit[]> {
   const found = await readManifests(call, owner, repo);
   const hits = "note" in found ? [] : hitsIn(found.manifests, mal);
-  const { results } = await env.DB.prepare("SELECT path, name, id, found_at FROM mal_hits WHERE owner = ? AND repo = ?").bind(owner, repo).all();
-  const was = new Map((results as any[]).map((h) => [`${h.path}\0${h.name}\0${h.id}`, h.found_at as number]));
+  const { results } = await env.DB.prepare("SELECT path, name, id, found_at FROM mal_hits WHERE owner = ? AND repo = ?").bind(owner, repo).all<any>();
+  const was = new Map(results.map((h) => [`${h.path}\0${h.name}\0${h.id}`, h.found_at as number]));
   const out = hits.map((h) => ({ owner, repo, ...h, found_at: was.get(`${h.path}\0${h.name}\0${h.id}`) ?? now }));
   await env.DB.batch([
     env.DB.prepare("DELETE FROM mal_hits WHERE owner = ? AND repo = ?").bind(owner, repo),
@@ -168,9 +168,9 @@ export async function takeNewMal(env: Env, s: State, now = Date.now()): Promise<
 }
 
 async function allMal(env: Env): Promise<Map<string, Mal[]>> {
-  const { results } = await env.DB.prepare("SELECT id, name, summary, versions FROM watch_mal").all();
+  const { results } = await env.DB.prepare("SELECT id, name, summary, versions FROM watch_mal").all<any>();
   const out = new Map<string, Mal[]>();
-  for (const r of results as any[]) out.set(r.name, [...(out.get(r.name) ?? []), { id: r.id, name: r.name, summary: r.summary, versions: r.versions ? JSON.parse(r.versions) : null }]);
+  for (const r of results) out.set(r.name, [...(out.get(r.name) ?? []), { id: r.id, name: r.name, summary: r.summary, versions: r.versions ? JSON.parse(r.versions) : null }]);
   return out;
 }
 
@@ -280,7 +280,7 @@ export async function takeNews(env: Env, now = Date.now()): Promise<number | nul
 }
 
 export const newsLines = async (env: Env): Promise<News[]> =>
-  ((await env.DB.prepare("SELECT * FROM watch_news ORDER BY at DESC, published DESC LIMIT 20").all()).results as any[])
+  ((await env.DB.prepare("SELECT * FROM watch_news ORDER BY at DESC, published DESC LIMIT 20").all<any>()).results)
     .map((n) => ({ ...n, packages: JSON.parse(n.packages) }));
 
 /** The hourly cron: the status pages, new advisories, a sweep of the repos while there's time, and the daily news search. */
@@ -294,9 +294,9 @@ export async function scheduledWatch(env: Env, self: (r: Request) => Promise<Res
     const mal = await allMal(env);
     const call = caller(self, "http://codesplitter.local");
     const [o, n] = s.after;
-    const { results } = await env.DB.prepare("SELECT owner, name FROM repos WHERE owner > ? OR (owner = ? AND name > ?) ORDER BY owner, name").bind(o, o, n).all();
+    const { results } = await env.DB.prepare("SELECT owner, name FROM repos WHERE owner > ? OR (owner = ? AND name > ?) ORDER BY owner, name").bind(o, o, n).all<{ owner: string; name: string }>();
     let finished = true;
-    for (const r of results as { owner: string; name: string }[]) {
+    for (const r of results) {
       if (Date.now() >= deadline) { finished = false; break; }
       // One that can't be read (the Worker's out of requests, say) is where the next hour starts.
       if (!(await checkRepo(env, call, r.owner, r.name, mal, now).then(() => true, () => false))) { finished = false; break; }
@@ -309,11 +309,11 @@ export async function scheduledWatch(env: Env, self: (r: Request) => Promise<Res
 }
 
 export const statusLines = async (env: Env) =>
-  ((await env.DB.prepare("SELECT name, url, indicator, description, checked_at FROM watch_status").all()).results as unknown as Status[])
+  ((await env.DB.prepare("SELECT name, url, indicator, description, checked_at FROM watch_status").all<Status>()).results)
     .sort((a, b) => STATUS_PAGES.findIndex((p) => p.name === a.name) - STATUS_PAGES.findIndex((p) => p.name === b.name));
 
 export const hitsFor = async (env: Env, owner: string, repo?: string) =>
-  (await env.DB.prepare(`SELECT * FROM mal_hits WHERE owner = ?${repo ? " AND repo = ?" : ""} ORDER BY found_at DESC`).bind(...(repo ? [owner, repo] : [owner])).all()).results as unknown as Hit[];
+  (await env.DB.prepare(`SELECT * FROM mal_hits WHERE owner = ?${repo ? " AND repo = ?" : ""} ORDER BY found_at DESC`).bind(...(repo ? [owner, repo] : [owner])).all<Hit>()).results;
 
 export async function watchRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (!(p[1] === "watch" && !p[2] && req.method === "GET")) return null;

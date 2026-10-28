@@ -135,8 +135,8 @@ let cache: { at: number; env: object; rules: Map<string, Rule & { enabled: boole
 const isAction = (a: unknown): a is Action => ACTIONS.includes(a as Action);
 async function rules(env: Env) {
   if (cache && cache.env === env && Date.now() - cache.at < 30_000) return cache.rules;
-  const { results } = await env.DB.prepare("SELECT name, max, window_s, enabled, on_fail FROM limit_rules").all();
-  const saved = new Map((results as { name: string; max: number; window_s: number; enabled: number; on_fail: string }[]).map((r) => [r.name, r]));
+  const { results } = await env.DB.prepare("SELECT name, max, window_s, enabled, on_fail FROM limit_rules").all<{ name: string; max: number; window_s: number; enabled: number; on_fail: string }>();
+  const saved = new Map(results.map((r) => [r.name, r]));
   const out = new Map(RULES.map((r) => {
     const s = saved.get(r.name);
     return [r.name, { ...r, ...(s ? { max: s.max, window_s: s.window_s, on_fail: isAction(s.on_fail) ? s.on_fail : r.on_fail } : {}), enabled: s ? !!s.enabled : true }];
@@ -268,7 +268,7 @@ export async function limit(req: Request, env: Env, rule: string | null, user: s
   if ("error" in over) return json({ error: over.error }, 429, { "retry-after": String(over.wait) });
   const r = over.queue, span = r.window_s * 1000;
   // The line holds one window's worth; past that, it's a 429 like any other.
-  const ahead = (await env.DB.prepare("SELECT COUNT(*) AS n FROM limit_jobs WHERE rule = ? AND who = ? AND state != 'done'").bind(r.name, who).first())?.n as number;
+  const ahead = await env.DB.prepare("SELECT COUNT(*) AS n FROM limit_jobs WHERE rule = ? AND who = ? AND state != 'done'").bind(r.name, who).first<number>("n") ?? 0;
   if (ahead >= r.max) {
     const wait = Math.ceil((over.win + span - Date.now()) / 1000);
     return json({ error: `Slow down: ${r.label.toLowerCase()} is limited to ${r.max} per ${every(r.window_s)}, and your line is full. Try again in ${every(wait)}.` }, 429, { "retry-after": String(wait) });
@@ -298,13 +298,13 @@ type Job = { id: number; rule: string; who: string; user: string; method: string
 
 /** Where a job stands: its place in its caller's line and about when it runs, or how it came out. */
 async function place(env: Env, id: number) {
-  const j = await env.DB.prepare("SELECT * FROM limit_jobs WHERE id = ?").bind(id).first() as Job | null;
+  const j = await env.DB.prepare("SELECT * FROM limit_jobs WHERE id = ?").bind(id).first<Job>();
   if (!j) return null;
   const out = { id: j.id, rule: j.rule, state: j.state };
   if (j.state === "done") return { ...out, status: j.status, result: j.result ? JSON.parse(j.result) : null };
   if (j.state === "running") return out;
   const r = (await rules(env)).get(j.rule)!, span = r.window_s * 1000, win = Math.floor(Date.now() / span) * span;
-  const n = (await env.DB.prepare("SELECT COUNT(*) AS n FROM limit_jobs WHERE rule = ? AND who = ? AND state = 'waiting' AND id <= ?").bind(j.rule, j.who, j.id).first())?.n as number;
+  const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM limit_jobs WHERE rule = ? AND who = ? AND state = 'waiting' AND id <= ?").bind(j.rule, j.who, j.id).first<number>("n") ?? 0;
   // Each window lets `max` through: the first `max` in line go when this one ends, the next when the one after does.
   return { ...out, place: n, label: r.label, eta: win + span * (1 + Math.floor((n - 1) / r.max)) };
 }
@@ -314,7 +314,7 @@ async function drain(env: Env, rule: string, who: string, self: (r: Request) => 
   const r = (await rules(env)).get(rule);
   if (!r) return;
   for (;;) {
-    const j = await env.DB.prepare("SELECT * FROM limit_jobs WHERE rule = ? AND who = ? AND state = 'waiting' ORDER BY id LIMIT 1").bind(rule, who).first() as Job | null;
+    const j = await env.DB.prepare("SELECT * FROM limit_jobs WHERE rule = ? AND who = ? AND state = 'waiting' ORDER BY id LIMIT 1").bind(rule, who).first<Job>();
     if (!j) return;
     // Two polls can race for the same job; whoever marks it running runs it.
     const claimed = await env.DB.prepare("UPDATE limit_jobs SET state = 'running', started = ? WHERE id = ? AND state = 'waiting'").bind(Date.now(), j.id).run();
@@ -345,7 +345,7 @@ async function drain(env: Env, rule: string, who: string, self: (r: Request) => 
  */
 export async function runJobs(batch: { messages: readonly { body: JobMessage; ack(): void }[] }, env: Env, self: (r: Request) => Promise<Response>) {
   for (const m of batch.messages) {
-    const j = await env.DB.prepare("SELECT rule, who FROM limit_jobs WHERE id = ? AND state = 'waiting'").bind(m.body.job).first() as Pick<Job, "rule" | "who"> | null;
+    const j = await env.DB.prepare("SELECT rule, who FROM limit_jobs WHERE id = ? AND state = 'waiting'").bind(m.body.job).first<Pick<Job, "rule" | "who">>();
     if (j) {
       await drain(env, j.rule, j.who, self);
       await book(env, await place(env, m.body.job));
@@ -356,8 +356,8 @@ export async function runJobs(batch: { messages: readonly { body: JobMessage; ac
 
 /** The hourly cron's backstop: run every line that has room, in case a message went missing. */
 export async function drainJobs(env: Env, self: (r: Request) => Promise<Response>) {
-  const { results } = await env.DB.prepare("SELECT DISTINCT rule, who FROM limit_jobs WHERE state = 'waiting'").all();
-  for (const { rule, who } of results as { rule: string; who: string }[]) await drain(env, rule, who, self);
+  const { results } = await env.DB.prepare("SELECT DISTINCT rule, who FROM limit_jobs WHERE state = 'waiting'").all<{ rule: string; who: string }>();
+  for (const { rule, who } of results) await drain(env, rule, who, self);
 }
 
 /** The repo a queued preview or dependency check runs on, from its path. */
@@ -385,9 +385,9 @@ export async function jobRoutes(req: Request, env: Env, p: string[], user: strin
     if (!user) return json({ error: "sign in first" }, 401);
     const { results: lines } = await env.DB.prepare("SELECT DISTINCT rule, who FROM limit_jobs WHERE user = ? AND state = 'waiting'").bind(user).all();
     for (const { rule, who } of lines as { rule: string; who: string }[]) await drain(env, rule, who, self);
-    const { results } = await env.DB.prepare("SELECT id, path, body, at FROM limit_jobs WHERE user = ? ORDER BY id DESC LIMIT 50").bind(user).all();
+    const { results } = await env.DB.prepare("SELECT id, path, body, at FROM limit_jobs WHERE user = ? ORDER BY id DESC LIMIT 50").bind(user).all<Pick<Job, "id" | "path" | "body" | "at">>();
     const jobs = [];
-    for (const j of results as Pick<Job, "id" | "path" | "body" | "at">[]) {
+    for (const j of results) {
       const pl = await place(env, j.id);
       if (!pl) continue;
       // A finished job keeps only what the page links to, not the whole response.
@@ -400,7 +400,7 @@ export async function jobRoutes(req: Request, env: Env, p: string[], user: strin
     }
     return json({ jobs });
   }
-  const j = await env.DB.prepare("SELECT rule, who, user FROM limit_jobs WHERE id = ?").bind(Number(p[2])).first() as Pick<Job, "rule" | "who" | "user"> | null;
+  const j = await env.DB.prepare("SELECT rule, who, user FROM limit_jobs WHERE id = ?").bind(Number(p[2])).first<Pick<Job, "rule" | "who" | "user">>();
   if (!j || (j.user !== user && !admin)) return json({ error: "not found" }, 404);
   await drain(env, j.rule, j.who, self);
   return json(await place(env, Number(p[2])));

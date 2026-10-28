@@ -40,6 +40,7 @@ import { charge, SITE } from "./limits.ts";
 import { portFetch, type ContainerApi } from "./sandbox.ts";
 import { missingTool } from "./needs.ts";
 import { sha256 } from "./util.ts";
+import type { RepoRef } from "./repos";
 
 /** A run as claimRun hands it out. */
 export type Job = NonNullable<Awaited<ReturnType<typeof claimRun>>>;
@@ -58,9 +59,9 @@ export interface Machine {
 
 /** A branch's own files as they are now, null for one it deleted: what goes over main's clone. */
 export async function branchFiles(env: Env, owner: string, repo: string, ref: string) {
-  const { results } = await env.DB.prepare("SELECT path, deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0").bind(owner, repo, ref).all();
+  const { results } = await env.DB.prepare("SELECT path, deleted FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0").bind(owner, repo, ref).all<{ path: string; deleted: number }>();
   const files: Record<string, string | null> = {};
-  for (const { path, deleted } of results as { path: string; deleted: number }[]) {
+  for (const { path, deleted } of results) {
     if (path.split("/").some((s) => s === ".." || s === "")) throw new Error(`${path} is outside the repo`);
     if (deleted) { files[path] = null; continue; }
     const text = await readAt(env, owner, repo, ref, path);
@@ -315,7 +316,7 @@ export class CiRunner {
       const { owner, repo, files } = (await req.json()) as { owner: string; repo: string; files: Record<string, string> };
       return json(await this.doctor(owner, repo, files));
     }
-    const { owner, repo } = (await req.json()) as { owner: string; repo: string };
+    const { owner, repo } = (await req.json()) as RepoRef;
     await this.ctx.storage.put("repo", { owner, repo });
     await this.ctx.storage.setAlarm(Date.now());
     return json({ kicked: true });
@@ -332,7 +333,7 @@ export class CiRunner {
       }
       return;
     }
-    const at = await this.ctx.storage.get<{ owner: string; repo: string }>("repo");
+    const at = await this.ctx.storage.get<RepoRef>("repo");
     if (!at) return;
     const { owner, repo } = at, c = this.ctx.container;
     const job = await claimRun(this.env, owner, repo, LABEL, [], Date.now(), null, ["container"]);
@@ -374,8 +375,8 @@ export async function kick(env: Env, owner: string, repo: string) {
 /** The cron: wake the runner of every repo with runs of ours still queued, in case a kick went missing. */
 export async function kickQueued(env: Env) {
   if (!env.CI_RUNNER && !desktopRuns(env)) return 0;
-  const { results } = await env.DB.prepare("SELECT DISTINCT owner, repo FROM check_runs WHERE status = 'queued' AND runner IN ('desktop', 'container')").all();
-  for (const r of results as { owner: string; repo: string }[]) await kick(env, r.owner, r.repo).catch(() => null);
+  const { results } = await env.DB.prepare("SELECT DISTINCT owner, repo FROM check_runs WHERE status = 'queued' AND runner IN ('desktop', 'container')").all<RepoRef>();
+  for (const r of results) await kick(env, r.owner, r.repo).catch(() => null);
   return results.length;
 }
 

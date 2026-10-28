@@ -19,6 +19,7 @@
 import { json, type Env } from "./env.ts";
 import { repoRow } from "./repos.ts";
 import { digest, hex } from "./util.ts";
+import type { RepoRef } from "./repos";
 
 /** The most repos one search across repos asks without the vector index. */
 export const FAN_OUT = 50;
@@ -207,9 +208,9 @@ async function embedRepo(env: Env, owner: string, repo: string, limit: number) {
 /** The hourly cron, and search-embed: embed up to `budget` stale files, the most recently committed repos first. */
 export async function embedDue(env: Env, budget = 200) {
   if (!vectorsOn(env)) return { embedded: 0, left: 0 };
-  const { results } = await env.DB.prepare("SELECT owner, repo FROM repo_search WHERE stale > 0 ORDER BY updated_at DESC LIMIT 20").all();
+  const { results } = await env.DB.prepare("SELECT owner, repo FROM repo_search WHERE stale > 0 ORDER BY updated_at DESC LIMIT 20").all<RepoRef>();
   let embedded = 0;
-  for (const r of results as { owner: string; repo: string }[]) {
+  for (const r of results) {
     if (embedded >= budget) break;
     embedded += await embedRepo(env, r.owner, r.repo, Math.min(50, budget - embedded)).catch(() => 0);
   }
@@ -322,8 +323,8 @@ async function fanOut(env: Env, user: string | null, q: string, limit: number): 
   const { results } = await env.DB.prepare(`
     SELECT s.owner, s.repo FROM repo_search s JOIN repos r ON r.owner = s.owner AND r.name = s.repo
     WHERE s.files > 0 AND (r.expires_at IS NULL OR r.expires_at > ?) AND (r.visibility = 'public' OR ${mine})
-    ORDER BY ${mine} DESC, s.updated_at DESC LIMIT ?`).bind(Date.now(), user, user, user, user, FAN_OUT).all();
-  const each = await Promise.all((results as { owner: string; repo: string }[]).map((r) => inRepo(env, r.owner, r.repo, q, limit).catch(() => [])));
+    ORDER BY ${mine} DESC, s.updated_at DESC LIMIT ?`).bind(Date.now(), user, user, user, user, FAN_OUT).all<RepoRef>();
+  const each = await Promise.all(results.map((r) => inRepo(env, r.owner, r.repo, q, limit).catch(() => [])));
   return each.flat().sort((a, b) => a.rank - b.rank).slice(0, limit).map(strip);
 }
 

@@ -29,6 +29,7 @@ import { audit } from "./audit.ts";
 import { json, readBody, type Env } from "./env.ts";
 import { accountsOn, isAdmin } from "./identity.ts";
 import { repoRow } from "./repos.ts";
+import type { RepoRef } from "./repos";
 
 export interface DeployKey { token: string; account_id?: string }
 export type Provider = "cloudflare" | "railway" | "hetzner";
@@ -109,9 +110,9 @@ export const resealState = (env: Env, owner: string, repo: string, sealed: strin
 
 /** The repo's keys, unsealed: for a deploy run only. A stale one is sealed again as it's read, as the run's state is after it. */
 export async function deployKeys(env: Env, owner: string, repo: string): Promise<Partial<Record<Provider, DeployKey & { last4: string }>>> {
-  const { results } = await env.DB.prepare("SELECT provider, sealed, last4 FROM deploy_keys WHERE owner = ? AND repo = ?").bind(owner, repo).all();
+  const { results } = await env.DB.prepare("SELECT provider, sealed, last4 FROM deploy_keys WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ provider: Provider; sealed: string; last4: string }>();
   const out: Partial<Record<Provider, DeployKey & { last4: string }>> = {};
-  for (const r of results as { provider: Provider; sealed: string; last4: string }[]) {
+  for (const r of results) {
     if (!isProvider(r.provider)) continue;
     const what = keyWhat(owner, repo, r.provider), { text, stale } = await open(env, what, r.sealed);
     if (stale) await env.DB.prepare("UPDATE deploy_keys SET sealed = ? WHERE owner = ? AND repo = ? AND provider = ? AND sealed = ?")
@@ -188,7 +189,7 @@ export async function resealAll(env: Env) {
   }
   // Any repo that ever deployed from the site may have state, its key removed since or not.
   const { results: repos } = await env.DB.prepare("SELECT owner, repo FROM deploy_keys UNION SELECT owner, repo FROM deploys WHERE runner = 'hosted'").all();
-  for (const r of repos as { owner: string; repo: string }[]) {
+  for (const r of repos as RepoRef[]) {
     const stub = env.DEPLOY_RUNNER?.get(env.DEPLOY_RUNNER.idFromName(`${r.owner}/${r.repo}`));
     if (!stub) break;
     const res = await stub.fetch(new Request("http://deploy/reseal", { method: "POST", body: JSON.stringify({ owner: r.owner, repo: r.repo }) })).catch(() => null);

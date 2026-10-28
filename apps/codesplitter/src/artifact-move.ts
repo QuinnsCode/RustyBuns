@@ -35,7 +35,7 @@ export async function copyPage(env: Env, after = "") {
   if (!from || !to) throw new Error("bind both ARTIFACTS and ARTIFACTS_NEXT");
   const names = ((await env.DB.prepare(
     "SELECT n AS name FROM (SELECT artifact AS n FROM repos UNION SELECT crew_artifact FROM repos) WHERE n IS NOT NULL AND n > ? ORDER BY n LIMIT ?",
-  ).bind(after, PAGE).all()).results as { name: string }[]).map((r) => r.name);
+  ).bind(after, PAGE).all<{ name: string }>()).results).map((r) => r.name);
   const out = { copied: [] as string[], skipped: [] as string[], failed: [] as { name: string; error: string }[], next: names.length < PAGE ? null : names.at(-1)! };
   for (const name of names) {
     try {
@@ -60,8 +60,8 @@ export async function rewriteRemotes(env: Env) {
     env.DB.prepare("UPDATE repos SET artifact_remote = (SELECT remote FROM artifact_moves WHERE name = repos.artifact) WHERE artifact IN (SELECT name FROM artifact_moves)"),
     env.DB.prepare("UPDATE repos SET crew_remote = (SELECT remote FROM artifact_moves WHERE name = repos.crew_artifact) WHERE crew_artifact IN (SELECT name FROM artifact_moves)"),
   ]);
-  const rows = (await env.DB.prepare("SELECT artifact, crew_artifact FROM repos").all()).results as { artifact: string | null; crew_artifact: string | null }[];
-  const moved = new Set(((await env.DB.prepare("SELECT name FROM artifact_moves").all()).results as { name: string }[]).map((r) => r.name));
+  const rows = (await env.DB.prepare("SELECT artifact, crew_artifact FROM repos").all<{ artifact: string | null; crew_artifact: string | null }>()).results;
+  const moved = new Set(((await env.DB.prepare("SELECT name FROM artifact_moves").all<{ name: string }>()).results).map((r) => r.name));
   return { rewritten: { artifact_remote: main!.meta.changes, crew_remote: crew!.meta.changes }, notCopied: namesOf(rows).filter((n) => !moved.has(n)) };
 }
 

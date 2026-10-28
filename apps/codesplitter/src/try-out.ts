@@ -37,7 +37,7 @@ const MAX_OUT = 60_000;
 
 /** The branch's changed text files (not deleted, not binary, not merged yet), as the branch has them. */
 export async function branchFiles(env: Env, owner: string, repo: string, branch: string, user: string): Promise<Record<string, string>> {
-  const rows = (await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND deleted = 0 AND blob IS NULL ORDER BY path").bind(owner, repo, branch).all()).results as { path: string }[];
+  const rows = (await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND merged = 0 AND deleted = 0 AND blob IS NULL ORDER BY path").bind(owner, repo, branch).all<{ path: string }>()).results;
   const out: Record<string, string> = {};
   for (const { path } of rows) {
     const res = await toFile(env, owner, repo, path, user, "file", {}, "", branch);

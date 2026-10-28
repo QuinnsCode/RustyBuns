@@ -10,7 +10,7 @@ import { ask, brief, canMerge, pick, hitRate, parseRow, waves, type BoardRow, ty
 const MAX_ROWS = 500, MAX_HITS = 4000;
 
 export async function boardRoutes(req: Request, env: Env, owner: string, repo: string, write: boolean): Promise<Response> {
-  const rows = async () => ((await env.DB.prepare("SELECT row, updated_at FROM board_prs WHERE owner = ? AND repo = ? ORDER BY pr").bind(owner, repo).all()).results as { row: string; updated_at: number }[])
+  const rows = async () => ((await env.DB.prepare("SELECT row, updated_at FROM board_prs WHERE owner = ? AND repo = ? ORDER BY pr").bind(owner, repo).all<{ row: string; updated_at: number }>()).results)
     .flatMap((r) => { const row = parseJson<BoardRow | null>(r.row, null); return row ? [{ ...row, at: r.updated_at }] : []; });
 
   if (req.method === "POST") {
@@ -37,7 +37,7 @@ export async function boardRoutes(req: Request, env: Env, owner: string, repo: s
   }
 
   const all = await rows();
-  const meta = await env.DB.prepare("SELECT main, hits, updated_at FROM board_meta WHERE owner = ? AND repo = ?").bind(owner, repo).first() as { main: string; hits: string; updated_at: number } | null;
+  const meta = await env.DB.prepare("SELECT main, hits, updated_at FROM board_meta WHERE owner = ? AND repo = ?").bind(owner, repo).first<{ main: string; hits: string; updated_at: number }>();
   const q = new URL(req.url).searchParams;
   const n = Number(q.get("pr"));
   if (n) {

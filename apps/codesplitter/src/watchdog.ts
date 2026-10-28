@@ -42,7 +42,7 @@ export async function watchdogRoutes(req: Request, env: Env, p: string[]): Promi
  */
 export async function rollbackFix(env: Env, owner: string, repo: string, shipped: string | null, from: string, to: string) {
   if (!shipped) return null;
-  const changed = ((await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND deleted = 0 AND blob IS NULL ORDER BY path LIMIT 20").bind(owner, repo, shipped).all()).results as { path: string }[]).map((r) => r.path);
+  const changed = ((await env.DB.prepare("SELECT path FROM branch_files WHERE owner = ? AND repo = ? AND branch = ? AND deleted = 0 AND blob IS NULL ORDER BY path LIMIT 20").bind(owner, repo, shipped).all<{ path: string }>()).results).map((r) => r.path);
   if (!changed.length) return null;
   const name = `rollback-${to.replace(/[^\w.-]/g, "").slice(0, 12) || "v"}`;
   await env.DB.prepare("INSERT OR IGNORE INTO branches (owner, repo, name, by, status, created_at) VALUES (?, ?, ?, ?, 'open', ?)").bind(owner, repo, name, owner, Date.now()).run();

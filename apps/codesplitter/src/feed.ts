@@ -168,7 +168,7 @@ export const digestPrompt = (handle: string) => [
 export interface DigestMessage { digest: string }
 
 type Row = { name: string; harness: Harness; status: string; since: number; through: number; text: string | null; error: string | null; at: number };
-const digestOf = (env: Env, handle: string) => env.DB.prepare("SELECT name, harness, status, since, through, text, error, at FROM feed_digests WHERE name = ?").bind(handle).first() as Promise<Row | null>;
+const digestOf = (env: Env, handle: string) => env.DB.prepare("SELECT name, harness, status, since, through, text, error, at FROM feed_digests WHERE name = ?").bind(handle).first<Row>();
 
 export async function feedRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null): Promise<Response | null> {
   if (!(p[1] === "me" && p[2] === "feed")) return null;

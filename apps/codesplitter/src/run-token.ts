@@ -23,7 +23,7 @@ export async function grantRunToken(env: Env, id: number, owner: string, repo: s
 
 /** Revokes run `id`'s token and forgets it. Safe to call twice; false when it held none or Artifacts refused. */
 export async function revokeRunToken(env: Env, id: number): Promise<boolean> {
-  const row = await env.DB.prepare("SELECT owner, repo, token FROM agent_runs WHERE id = ?").bind(id).first() as { owner: string; repo: string; token: string | null } | null;
+  const row = await env.DB.prepare("SELECT owner, repo, token FROM agent_runs WHERE id = ?").bind(id).first<{ owner: string; repo: string; token: string | null }>();
   if (!row?.token) return false;
   try {
     const h = await handleFor(env, row.owner, row.repo);

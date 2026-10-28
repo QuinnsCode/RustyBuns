@@ -17,13 +17,12 @@ import { repoRow } from "./repos.ts";
 const NAMED = 30;
 
 export async function gitState(env: Env, owner: string, repo: string) {
-  const r = await repoRow(env, owner, repo, "upstream, upstream_commit, upstream_tip, upstream_behind, upstream_heard_at, git_error, git_clash") as
-    { upstream: string | null; upstream_commit: string | null; upstream_tip: string | null; upstream_behind: number | null; upstream_heard_at: number | null; git_error: string | null; git_clash: string | null } | null;
+  const r = await repoRow<{ upstream: string | null; upstream_commit: string | null; upstream_tip: string | null; upstream_behind: number | null; upstream_heard_at: number | null; git_error: string | null; git_clash: string | null }>(env, owner, repo, "upstream, upstream_commit, upstream_tip, upstream_behind, upstream_heard_at, git_error, git_clash");
   const [mirror, count, named, waiting] = await Promise.all([
     mirrorStatus(env, owner, repo).catch(() => null),
-    env.DB.prepare("SELECT COUNT(*) AS n FROM uncommitted u JOIN files f ON f.owner = u.owner AND f.repo = u.repo AND f.path = u.path WHERE u.owner = ? AND u.repo = ?").bind(owner, repo).first() as Promise<{ n: number } | null>,
-    env.DB.prepare("SELECT u.path, u.since FROM uncommitted u JOIN files f ON f.owner = u.owner AND f.repo = u.repo AND f.path = u.path WHERE u.owner = ? AND u.repo = ? ORDER BY u.since DESC LIMIT ?").bind(owner, repo, NAMED).all(),
-    env.DB.prepare("SELECT path FROM git_pending WHERE owner = ? AND repo = ? ORDER BY path").bind(owner, repo).all(),
+    env.DB.prepare("SELECT COUNT(*) AS n FROM uncommitted u JOIN files f ON f.owner = u.owner AND f.repo = u.repo AND f.path = u.path WHERE u.owner = ? AND u.repo = ?").bind(owner, repo).first<{ n: number }>(),
+    env.DB.prepare("SELECT u.path, u.since FROM uncommitted u JOIN files f ON f.owner = u.owner AND f.repo = u.repo AND f.path = u.path WHERE u.owner = ? AND u.repo = ? ORDER BY u.since DESC LIMIT ?").bind(owner, repo, NAMED).all<{ path: string; since: number }>(),
+    env.DB.prepare("SELECT path FROM git_pending WHERE owner = ? AND repo = ? ORDER BY path").bind(owner, repo).all<{ path: string }>(),
   ]);
   let pushClash: string[] = [];
   try { pushClash = Object.keys(r?.git_clash ? JSON.parse(r.git_clash) : {}); } catch {}
@@ -37,8 +36,8 @@ export async function gitState(env: Env, owner: string, repo: string) {
       ahead: mirror.ahead, behind: mirror.behind, syncedAt: mirror.syncedAt, downSince: mirror.downSince, error: mirror.error,
     },
     dug,
-    uncommitted: { count: count?.n ?? 0, files: (named.results as { path: string; since: number }[]) },
-    waitingForGit: (waiting.results as { path: string }[]).map((x) => x.path),
+    uncommitted: { count: count?.n ?? 0, files: named.results },
+    waitingForGit: waiting.results.map((x) => x.path),
     gitError: r?.git_error ?? null,
     conflicts: { mirror: mirror && (mirror.state === "clash" || mirror.state === "rewritten") ? { state: mirror.state, files: mirror.clash } : null, push: pushClash },
   };
