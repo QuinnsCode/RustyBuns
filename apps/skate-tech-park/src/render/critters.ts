@@ -31,7 +31,7 @@ export type Critter = {
 const FUSED = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true });
 const WING = new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true });
 const blob = (r: number, color: number, sx = 1, sy = 1, sz = 1, x = 0, y = 0, z = 0) => {
-  const g = new THREE.IcosahedronGeometry(r, 0).toNonIndexed();
+  const g = new THREE.IcosahedronGeometry(r, 0);
   g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion(), new THREE.Vector3(sx, sy, sz)));
   const c = new THREE.Color(color), n = g.getAttribute("position").count;
   g.setAttribute("color", new THREE.Float32BufferAttribute(Array.from({ length: n }, () => [c.r, c.g, c.b]).flat(), 3));
