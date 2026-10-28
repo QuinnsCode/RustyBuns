@@ -13,6 +13,7 @@ import { REGIONS, type Region } from "./parks.ts";
 import { terrainCanvas } from "./thumb.ts";
 import type { Goal, ParkLevel } from "./park.ts";
 import { moodFor } from "../render/weather.ts";
+import { isSpot, spotFor } from "../scenario.ts";
 
 const entry = touring(location.search) ? tourPick(location.search) : pick(location.search);
 export const levelId = entry.id;
@@ -21,10 +22,11 @@ export const park = "goals" in level;
 /** The air over this level: its own weather, or `?weather=` (rain, snow, storm, dusk...). */
 export const mood = moodFor(location.search, park ? (level as ParkLevel).weather : undefined);
 
-/** Where a ride starts: `?spawn=<name>` (e.g. `view`, which faces the far peak), else the spawn named "skate", else the first. The skin never moves the start. */
+/** Where a ride starts: `?spawn=rail|balance|vert` (a spot found on the park, scenario.ts), `?spawn=<name>` (e.g. `view`, which faces the far peak), else the spawn named "skate", else the first. The skin never moves the start. */
 export function spawn(l: Level, search = location.search) {
   const asked = new URLSearchParams(search).get("spawn");
-  return l.spawns.find((s) => s.name === asked) ?? l.spawns.find((s) => s.name === "skate") ?? l.spawns[0]!;
+  const spot = isSpot(asked) ? spotFor(l, asked) : null;
+  return spot ?? l.spawns.find((s) => s.name === asked) ?? l.spawns.find((s) => s.name === "skate") ?? l.spawns[0]!;
 }
 
 const label = (g: Goal) => g.kind === "score" ? `Score ${g.target.toLocaleString("en-US")}` : g.kind === "combo" ? `Combo ${g.target.toLocaleString("en-US")}` : g.kind === "gap" ? `Gap: ${g.name}` : g.kind === "line" ? `Line: ${g.name}` : g.kind === "climb" ? `Climb ${g.name}: ${g.metres} m` : "Collect the rings";

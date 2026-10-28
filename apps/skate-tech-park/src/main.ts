@@ -33,6 +33,8 @@ import { pickProfile } from "./flick.ts";
 import { PROFILES } from "./flick-profiles.ts";
 import { mountGrip } from "./griptape.ts";
 import { mountTouch } from "./touch.ts";
+import { linkOf, scenarioOf, SPOTS, spotFor } from "./scenario.ts";
+import { mountPerf } from "./perf.ts";
 import { type Controls, loadControls, saveControls, tuned } from "./controls.ts";
 import { DEFAULTS as CTL_DEFAULTS, mountControls } from "@rustybuns/game-controls";
 import { bind, hint, KEY } from "./bindings.ts";
@@ -230,7 +232,8 @@ let chosen = pickProfile(PROFILES, new URLSearchParams(location.search).get("fli
 let controls = loadControls();
 const gestures = new Gestures(tuned(chosen, controls));
 // On a touch screen one thumb drives (touch.ts), so only the profile's half of the screen is the flick pad.
-const touch = mountTouch();
+const scenario = scenarioOf(location.search); // ?controls=touch|desktop, ?weak, ?fps (scenario.ts)
+const touch = mountTouch(scenario.controls);
 const grip = mountGrip(touch.root);
 // The cog's look speeds scale the stick (X steer, Y throttle, invert Y; the touch X and Y trims too) and, as touch, how far a flick drag must go.
 // The game makes no sound, so the cog has no audio rows.
@@ -277,7 +280,7 @@ const scale = (v: number, k: number) => Math.max(-1, Math.min(1, v * k));
 const onPad = (x: number) => (gestures.profile.side === "left" ? x < innerWidth / 2 : x >= innerWidth / 2);
 let flicking = -1; // the pointer the gesture follows
 canvas.addEventListener("pointerdown", (e) => {
-  const touching = e.pointerType === "touch";
+  const touching = e.pointerType === "touch" || scenario.controls === "touch"; // ?controls=touch lets a mouse stand in for a thumb
   if (flicking >= 0 || touch.claims(e.pointerId) || (touching && !onPad(e.clientX))) return;
   flicking = e.pointerId;
   gestures.down(e.clientX, e.clientY, performance.now() / 1000, touching ? grip.along(e.clientX, e.clientY) : null);
@@ -315,10 +318,20 @@ $("reset").addEventListener("click", () => { reset(); (document.activeElement as
 swapBtn.addEventListener("click", () => { swap(); swapBtn.blur(); });
 // An agent in the browser can ride too (WebMCP, agent.ts): its moves go through the same step as the keys.
 const driver = new Driver();
+const isSpotName = (n: string): n is (typeof SPOTS)[number] => SPOTS.some((k) => k === n);
+const perf = mountPerf(scenario.fps && !isTouring(location.search), () => auto.quality, () => renderer.getPixelRatio());
 void mountAgent({
   driver, state: () => sim, level, park: { id: levelId, spawns: level.spawns.map((p) => p.name) },
   parks: () => LEVELS.map((l) => ({ id: l.id, name: l.name })),
-  go: (id, at) => { location.search = `?${new URLSearchParams({ level: id, ...(at ? { spawn: at } : {}) })}`; },
+  go: (id, extra) => { location.search = linkOf({ level: id, ...extra }); },
+  start: (name) => {
+    const p = isSpotName(name) ? spotFor(level, name) : level.spawns.find((s) => s.name === name);
+    if (!p) return false;
+    sim = start(p.x, p.z, p.yaw, level); before = poseOf(sim); chase.snap(sim, skins.current); ui.reset();
+    return true;
+  },
+  perf: () => perf.read(),
+  spots: [...level.spawns.map((p) => p.name), ...SPOTS.filter((k) => spotFor(level, k))],
   reset, swap: () => { swap(); return mode === "car" ? "roadster" : "fingerboard"; },
   snapshot: () => { // drawn and read in the same task, so the buffer isn't cleared yet; 640 px wide keeps it small enough to hand an agent
     renderer.render(scene, camera);
@@ -546,6 +559,8 @@ function frame(now: number) {
   ghosts.update(dt, camera);
   taps.update(dt, pivot, skins.current, camera);
   renderer.render(scene, camera);
+  if (scenario.weak) for (const end = performance.now() + scenario.weak; performance.now() < end;); // a slow machine, on demand
+  perf.frame(now);
   auto.tick(now);
   requestAnimationFrame(frame);
 }
