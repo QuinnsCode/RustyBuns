@@ -16,6 +16,7 @@ import { execFile, spawn } from "node:child_process";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { githubToken } from "../connect/github.ts";
 import type { Secrets } from "../connect/keychain.ts";
+import { GH_API_WRITE, GH_WRITE, GIT_PUSH } from "../askfirst/kinds.ts";
 
 /** How often a busy floor asks GitHub whether anything changed. */
 export const WATCH_MS = 10_000;
@@ -36,10 +37,6 @@ export interface Touch {
   issues: boolean;
   pulls: boolean;
 }
-
-const GH_WRITE = /\bgh\s+(pr|issue)\s+(create|merge|close|reopen|edit|comment|review|ready|lock|unlock|delete|transfer|develop|pin|unpin)\b/g;
-const GH_API_WRITE = /\bgh\s+api\b[^\n;&|]*(?:-X|--method)[\s=]*(POST|PATCH|PUT|DELETE)\b/i;
-const GIT_PUSH = /(?:^|[\s;&|(])git\s+(?:-C\s+\S+\s+)?push\b/;
 
 /** Which boards a worker's shell command can have changed, or undefined for none. */
 export function touches(command: unknown): Touch | undefined {

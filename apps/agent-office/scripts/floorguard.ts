@@ -1,5 +1,6 @@
 // #644: the guards of live/floorguard.ts (built to server/rb-floorguard.js), in the handler every agent-to-agent
 // path lands in: the MCP tools, the office-workers command and a bare curl to the hook port.
+import { WRITE_HOOK } from "../askfirst/hook.ts";
 import { ASK_MS } from "../live/floorguard.ts";
 
 /** server/hooks/office-workers.js: people-only actions, ask-first ones held for a person (#727), forced send-homes that keep work, tell_worker marked as from its worker, and a told rebuild made its own task (#1235). */
@@ -10,6 +11,11 @@ export function floorGuardHooks(js: string) {
   // ask-first: once upstream's own checks have passed, so a request that would fail anyway never waits on a person
   const ask = (indent: string, body: string) => `${indent}const __rbNo = await __rbGuard.askFirst(action, floor.id, who, ${body}, (m) => ctx.toastFloor(floor, m));\n` +
     `${indent}if (__rbNo)\n${indent}    return send(res, 403, { error: __rbNo });\n`;
+  // #2498: a Claude worker's PreToolUse hook (askfirst/hook.ts) asks here before it runs a GitHub write
+  js = once(js, rel, "['', '/home', '/tell', '/pr'].includes(action)", "['', '/home', '/tell', '/pr', '/write'].includes(action)");
+  js = once(js, rel, "    if (action === '/home') {\n",
+    "    if (action === '/write') {\n        const out = await __rbGuard.writeCheck(ctx.cfg.dataDir, floor.def.repo, floor.id, who, { command: body?.tool_input?.command }, (m) => ctx.toastFloor(floor, m));\n" +
+    "        res.writeHead(out.allow ? 200 : 403, { 'content-type': 'text/plain' });\n        return res.end(out.error ?? 'ok');\n    }\n    if (action === '/home') {\n");
   const home = "        // One at a time: git takes a lock on the repository's refs to delete a branch.\n";
   js = once(js, rel, home, "        if (going.length) {\n" + ask("            ", "{ workers: going.map((g) => g.w.name), cleanup: ask.cleanup }") + "        }\n" + home);
   const pr = "        const err = floor.workers.linkPr(w.id, pr);\n";
@@ -38,6 +44,17 @@ export function floorGuardHooks(js: string) {
     "        ctx.toastFloor(floor, __rbGuard.toldToast(who, w.name, text));\n" +
     "        return send(res, 200, { ok: true, worker: row(w.id) });\n");
   return "import * as __rbGuard from '../rb-floorguard.js';\nimport { describeWork as __rbDescribeWork } from '../worktrees.js';\n" + js;
+}
+
+/**
+ * server/providers/claude.js: each Claude worker's hook settings get a second PreToolUse hook on Bash (askfirst/hook.ts),
+ * which waits for a person's say-so before a GitHub write. The first one stays: it only tells the office what happened.
+ * Its timeout (seconds) is longer than the ask's, or Claude Code would kill the hook at 60 s.
+ */
+export function floorGuardClaude(js: string) {
+  const mark = "    // Looking at the office's workers doesn't need anyone's say-so; hiring and sending home still asks.\n";
+  return once(js, "providers/claude.js", mark,
+    `    hooks.PreToolUse.push({ matcher: 'Bash', hooks: [{ type: 'command', timeout: ${ASK_MS / 1000 + 10}, command: ${JSON.stringify(WRITE_HOOK)} }] });\n` + mark);
 }
 
 /**
