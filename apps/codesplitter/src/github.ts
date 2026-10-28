@@ -6,7 +6,7 @@
 
 import { symmetricDecrypt } from "better-auth/crypto";
 import { accountsOn, isAdmin } from "./identity.ts";
-import { fileStub } from "./archive.ts";
+import { stubAll } from "./archive.ts";
 import { json, NAME, need, type Env, readBody } from "./env.ts";
 import { obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { importTarball, tooBigToImport } from "./tarball.ts";
@@ -132,10 +132,7 @@ export async function branchAndPath(repo: string, rest: string, token?: string):
 /** Forget a repo: its rows, its files' Durable Objects, and its git. An expired dig goes this way, and so does a repo its owner deletes. */
 export async function evict(env: Env, owner: string, name: string) {
   const r = await repoRow(env, owner, name, "artifact, crew_artifact, old_artifacts");
-  const { results: files } = await env.DB.prepare("SELECT path, NULL AS branch FROM files WHERE owner = ? AND repo = ? UNION ALL SELECT path, branch FROM branch_files WHERE owner = ? AND repo = ?")
-    .bind(owner, name, owner, name).all();
-  await Promise.all((files as { path: string; branch: string | null }[]).map((f) =>
-    fileStub(env, owner, name, f.path, f.branch ?? undefined).fetch(new Request("https://file/wipe", { method: "POST" })).catch(() => null)));
+  await stubAll(env, owner, name, "wipe");
   await wipeSearch(env, owner, name);
   // Checkouts off its git, on the desktop (worktrees.ts).
   await (await import("./worktrees.ts")).dropWorktrees(env, owner, name).catch(() => {});

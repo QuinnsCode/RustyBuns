@@ -34,9 +34,9 @@ export async function featureRankRoutes(req: Request, env: Env, p: string[], use
   const comment = p[1] === "feature-comments" && !p[2] && req.method === "POST";
   if (!view && !rank && !comment) return null;
   if (view) {
-    const { results: crowd } = await env.DB.prepare("SELECT feature, tier, COUNT(*) AS n FROM feature_ranks GROUP BY feature, tier").all();
+    const { results: crowd } = await env.DB.prepare("SELECT feature, tier, COUNT(*) AS n FROM feature_ranks GROUP BY feature, tier").all<{ feature: string; tier: string; n: number }>();
     const scores: Record<string, { score: number; votes: number }> = {};
-    for (const r of crowd as { feature: string; tier: string; n: number }[]) {
+    for (const r of crowd) {
       const s = (scores[r.feature] ??= { score: 0, votes: 0 });
       s.score += POINTS[r.tier]! * r.n;
       s.votes += r.n;

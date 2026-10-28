@@ -383,8 +383,8 @@ export async function jobRoutes(req: Request, env: Env, p: string[], user: strin
   if (p[1] !== "jobs" || p[3] || req.method !== "GET") return null;
   if (!p[2]) {
     if (!user) return json({ error: "sign in first" }, 401);
-    const { results: lines } = await env.DB.prepare("SELECT DISTINCT rule, who FROM limit_jobs WHERE user = ? AND state = 'waiting'").bind(user).all();
-    for (const { rule, who } of lines as { rule: string; who: string }[]) await drain(env, rule, who, self);
+    const { results: lines } = await env.DB.prepare("SELECT DISTINCT rule, who FROM limit_jobs WHERE user = ? AND state = 'waiting'").bind(user).all<{ rule: string; who: string }>();
+    for (const { rule, who } of lines) await drain(env, rule, who, self);
     const { results } = await env.DB.prepare("SELECT id, path, body, at FROM limit_jobs WHERE user = ? ORDER BY id DESC LIMIT 50").bind(user).all<Pick<Job, "id" | "path" | "body" | "at">>();
     const jobs = [];
     for (const j of results) {
@@ -498,14 +498,14 @@ export async function limitRoutes(req: Request, env: Env, p: string[], admin: bo
     const span = r.window_s * 1000, win = Math.floor(now / span) * span;
     const s = await env.DB.prepare("SELECT COUNT(*) AS callers, COALESCE(SUM(count), 0) AS hits, COALESCE(SUM(count > ?), 0) AS blocked FROM limit_hits WHERE rule = ? AND win = ?")
       .bind(r.max, r.name, win).first();
-    const { results: hist } = await env.DB.prepare("SELECT count, COUNT(*) AS n, MIN(win) AS since FROM limit_hits WHERE rule = ? GROUP BY count ORDER BY count").bind(r.name).all();
-    const h = hist as { count: number; n: number; since: number }[], since = h.length ? Math.min(...h.map((x) => x.since)) : null;
+    const { results: hist } = await env.DB.prepare("SELECT count, COUNT(*) AS n, MIN(win) AS since FROM limit_hits WHERE rule = ? GROUP BY count ORDER BY count").bind(r.name).all<{ count: number; n: number; since: number }>();
+    const h = hist, since = h.length ? Math.min(...h.map((x) => x.since)) : null;
     const { name, label, what, group, per, max, window_s, enabled, on_fail, queueable = false } = r;
     out.push({ name, label, what, group, per, max, window_s, enabled, on_fail, queueable, defaults: RULES.find((d) => d.name === name), now: s,
       spread: since === null ? null : { ...spread(h.map((x) => [x.count, x.n]), max)!, since } });
   }
   const { results: events } = await env.DB.prepare("SELECT rule, who, win, action, at FROM limit_events ORDER BY at DESC, id DESC LIMIT 100").all();
-  const { results: flagged } = await env.DB.prepare("SELECT who, GROUP_CONCAT(DISTINCT rule) AS rules, MAX(at) AS last, COUNT(*) AS times FROM limit_events WHERE action = 'flag' GROUP BY who ORDER BY last DESC").all();
-  const { results: tiered } = await env.DB.prepare("SELECT name, tier FROM users WHERE tier IS NOT NULL ORDER BY name").all();
-  return json({ tiers: TIERS, tiered: (tiered as { name: string; tier: string }[]).filter((u) => tierById(u.tier)), rules: out, events, flagged: (flagged as { who: string; rules: string; last: number; times: number }[]).map((f) => ({ ...f, rules: f.rules.split(",") })) });
+  const { results: flagged } = await env.DB.prepare("SELECT who, GROUP_CONCAT(DISTINCT rule) AS rules, MAX(at) AS last, COUNT(*) AS times FROM limit_events WHERE action = 'flag' GROUP BY who ORDER BY last DESC").all<{ who: string; rules: string; last: number; times: number }>();
+  const { results: tiered } = await env.DB.prepare("SELECT name, tier FROM users WHERE tier IS NOT NULL ORDER BY name").all<{ name: string; tier: string }>();
+  return json({ tiers: TIERS, tiered: tiered.filter((u) => tierById(u.tier)), rules: out, events, flagged: flagged.map((f) => ({ ...f, rules: f.rules.split(",") })) });
 }

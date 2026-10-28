@@ -109,7 +109,7 @@ export async function feedFor(env: Env, handle: string, since: number, follows?:
   // Who came along after, on the same files: anyone, followed or not (the files are readable already).
   const touched = [...new Set(events.map((e) => `${e.owner}/${e.repo}/${e.path}`))];
   const { results: later } = await env.DB.prepare(`SELECT owner, repo, path, who, run, first_at FROM line_events
-    WHERE last_at > ? AND (owner || '/' || repo || '/' || path) IN (SELECT value FROM json_each(?))`).bind(since, JSON.stringify(touched)).all();
+    WHERE last_at > ? AND (owner || '/' || repo || '/' || path) IN (SELECT value FROM json_each(?))`).bind(since, JSON.stringify(touched)).all<{ owner: string; repo: string; path: string; who: string; run: string | null; first_at: number }>();
 
   const groups = new Map<string, Omit<Group, "summary">>();
   for (const e of events) {
@@ -127,7 +127,7 @@ export async function feedFor(env: Env, handle: string, since: number, follows?:
   for (const g of groups.values()) {
     for (const f of g.files) {
       const done = Math.max(...g.events.filter((e) => e.owner === f.owner && e.repo === f.repo && e.path === f.path).map((e) => e.last_at));
-      const next = (later as { owner: string; repo: string; path: string; who: string; run: string | null; first_at: number }[])
+      const next = (later)
         .filter((x) => x.owner === f.owner && x.repo === f.repo && x.path === f.path && x.first_at >= done && (x.run ?? x.who) !== g.key);
       f.after = {
         people: [...new Set(next.filter((x) => !x.who.startsWith("agent-")).map((x) => x.who))],

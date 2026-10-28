@@ -27,7 +27,7 @@ export async function agentProfile(env: Env, agent: string, viewer: string | nul
   const now = Date.now();
   const { results: repos } = await env.DB.prepare(
     `SELECT r.owner, r.name, r.visibility, r.level, r.created_at, r.expires_at FROM collaborators k JOIN repos r ON r.owner = k.owner AND r.name = k.repo WHERE k.name = ? AND ${SEEN} ORDER BY r.created_at DESC`)
-    .bind(agent, now, viewer, viewer).all();
+    .bind(agent, now, viewer, viewer).all<{ owner: string }>();
   const { results } = await env.DB.prepare(
     `SELECT a.id, a.owner, a.repo, a.path, a.harness, a.task, a.status, a.started, a.result FROM agent_runs a JOIN repos r ON r.owner = a.owner AND r.name = a.repo WHERE a.agent = ? AND ${SEEN} ORDER BY a.started DESC, a.id DESC`)
     .bind(agent, now, viewer, viewer).all<RunRow>();
@@ -47,7 +47,7 @@ export async function agentProfile(env: Env, agent: string, viewer: string | nul
   }
   // Who runs it: the owners whose repos it works in, busiest first.
   const by = new Map<string, number>();
-  for (const r of repos as { owner: string }[]) by.set(r.owner, by.get(r.owner) ?? 0);
+  for (const r of repos) by.set(r.owner, by.get(r.owner) ?? 0);
   for (const r of runs) by.set(r.owner, (by.get(r.owner) ?? 0) + 1);
   return {
     harness: rows[0]?.harness ?? harnessOf(agent),
