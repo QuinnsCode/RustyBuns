@@ -3,13 +3,12 @@
 // trees, reading files, turning a file into a live Durable Object on first
 // open, and pushing a catalogue as a commit.
 
-import { fromText, type Doc } from "./lines.ts";
+import { fromText, isDoc, type Doc } from "./lines.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN, push, type Change } from "./git.ts";
 import { localGit, mirrorIdentity } from "./mirror.ts";
 import { noodles, type Noodle } from "./noodles.ts";
 import type { ArtifactsRepo, Env, TreeEntry } from "./env.ts";
 import { repoRow } from "./repos.ts";
-import { isPlainObject } from "./util.ts";
 
 /**
  * A file's DO; on a branch, the branch's own copy of it ("@" can't appear in a repo name).
@@ -41,8 +40,6 @@ export async function fileDoc(env: Env, owner: string, repo: string, path: strin
   if (!isDoc(v)) throw new Error(`${path}: its ${op} isn't a lines doc`);
   return v;
 }
-/** Our own Durable Object's answer, checked as far as a doc's frame: a rev and a list of lines (theirs it hands on whole). */
-const isDoc = (v: unknown): v is Doc => isPlainObject(v) && Number.isInteger(v.rev) && Array.isArray(v.lines);
 
 /** Close the live sockets that access was taken from: `user`'s, or everyone's but those in `keep` (`mainOnly`: only on main's files). A socket's access is checked once, at the upgrade. */
 export async function revokeSockets(env: Env, owner: string, repo: string, who: { user: string } | { keep: string[] }, mainOnly = false) {

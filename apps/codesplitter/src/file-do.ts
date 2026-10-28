@@ -36,7 +36,7 @@ import { Tally } from "./limits.ts";
 import { lintMerge } from "./lint.ts";
 import { DocStore } from "./doc-store.ts";
 import { sha256 as sha } from "./util.ts";
-import { apply, empty, MAX_OPS, merge, mergeWords, parseOps, PROTOCOL, replay, text, type Applied, type Doc, type Line, type Op, type Resolve } from "./lines.ts";
+import { apply, empty, MAX_OPS, merge, MERGE_ASK, mergeWords, parseOps, PROTOCOL, replay, text, type Applied, type Doc, type Line, type MergeReply, type Op, type Resolve } from "./lines.ts";
 import type { Live, Rule } from "./policy.ts";
 import { pad10 } from "./util.ts";
 
@@ -382,16 +382,18 @@ export class FileDurableObject {
     if (req.method === "POST" && route === "merge") {
       // Main's copy merges a branch into itself: computed and applied with no
       // await between, so nothing lands in the middle and the ids line up.
-      const { base, branch, resolve, dry, deleter, path, writer, rule } = (await req.json()) as { base: Doc; branch: Doc; resolve?: Resolve; dry?: boolean; deleter?: string; path?: string; writer?: string; rule?: Rule };
+      const ask = need(await readBody(req), MERGE_ASK);
+      if (ask instanceof Response) return ask;
+      const { base, branch, resolve, dry, deleter, path, writer, rule } = ask;
       const m = merge(base, branch, this.doc, resolve, deleter, path, writer, rule);
       // Every line settled: check the merged code still builds before it lands.
       if (!m.conflicts.length && path) m.conflicts = lintMerge(path, this.doc, branch, m, resolve);
       // Generated text both sides touched kept main's copy: its command runs once the merge lands.
       // Prose that settled but may say something untrue now goes back as checks for the review (#1254).
       const regen = { ...m.regenerate && { regenerate: m.regenerate }, ...m.checks && { checks: m.checks }, ...m.solved && { solved: m.solved } };
-      if (m.conflicts.length || dry || !m.ops.length) return json({ rev: this.doc.rev, ops: m.ops, conflicts: m.conflicts, ...regen }, m.conflicts.length && !dry ? 409 : 200);
+      if (m.conflicts.length || dry || !m.ops.length) return json({ rev: this.doc.rev, ops: m.ops, conflicts: m.conflicts, ...regen } satisfies MergeReply, m.conflicts.length && !dry ? 409 : 200);
       const r = await this.edit(m.by, m.ops);
-      return r.ok ? json({ rev: r.rev, ops: m.ops, applied: r.applied, conflicts: [], ...regen }) : json(refused(r), 409);
+      return r.ok ? json({ rev: r.rev, ops: m.ops, applied: r.applied, conflicts: [], ...regen } satisfies MergeReply) : json(refused(r), 409);
     }
     if (req.method === "POST" && route === "commit") {
       const { message } = (await req.json().catch(() => ({}))) as { message?: unknown };

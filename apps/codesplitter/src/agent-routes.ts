@@ -59,7 +59,8 @@ import { Interrupted, localSandbox, runAgent, type Conflict, type Exec, type San
 import { containerSandbox, LOGINS } from "./sandbox.ts";
 import { agentGithubToken } from "./github.ts";
 import { toFile } from "./archive.ts";
-import { text, type Doc } from "./lines.ts";
+import { MERGE_CONFLICTS, text, type Doc } from "./lines.ts";
+import { check } from "@rustybuns/util/guard";
 import { policyOf, type Over, type Policy } from "./policy.ts";
 import { HANDOFFS, handoffTask, noteFor, short } from "./budget.ts";
 import { cheapest } from "./conflict-agent.ts";
@@ -440,7 +441,7 @@ async function land(env: Env, self: (req: Request) => Promise<Response>, origin:
   const merge = () => call(row.owner, url, { method: "POST", body: JSON.stringify({ resolve, build_ok: by !== "auto" }) });
   let res = await merge();
   for (let i = 0; i < 3 && res.status === 409; i++) {
-    const body = await res.clone().json() as { conflicts?: { path: string; conflicts: { line: string; main: string | null; branch: string | null }[] }[] };
+    const body = check(MERGE_CONFLICTS, await res.clone().json()) ?? {};
     const fresh = (body.conflicts ?? []).flatMap((f) => f.conflicts.map((c) => ({ path: f.path, c }))).filter(({ path, c }) => !resolve[path]?.[c.line]);
     if (!fresh.length) break;
     for (const { path, c } of fresh) { (resolve[path] ??= {})[c.line] = "main"; kept.push({ line: c.line, yours: c.main, wanted: c.branch }); }

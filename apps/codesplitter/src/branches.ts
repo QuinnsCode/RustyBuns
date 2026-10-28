@@ -23,7 +23,7 @@
 // When it really clashes, a rebuild task merges main in for it, both sides kept (#1219, rebuildOnMain).
 // So does one that follows a branch upstream and clashes with main only in git, at the next sync (#1190, takeMainUpstream).
 
-import { apply, empty, explain, fromText, merge, PICKS, text, type Conflict, type Doc, type Line, type Op, type Pick, type Resolve } from "./lines.ts";
+import { apply, empty, explain, fromText, isMergeReply, merge, PICK, PICKS, text, type Conflict, type Doc, type Line, type Op, type Pick, type Resolve } from "./lines.ts";
 import { lintMerge } from "./lint.ts";
 import { policyOf, type Policy, type Rule } from "./policy.ts";
 import { conflictNote, conflictRound } from "./budget.ts";
@@ -33,7 +33,7 @@ import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { branchEdited, mergeBlock, refChecks, waiting } from "./checks.ts";
 import { settings as deploySettings } from "./deploy.ts";
 import { branchNameError, json, type Env, need, readBody } from "./env.ts";
-import { obj, oneOf, opt, str } from "@rustybuns/util/guard";
+import { Bad, obj, oneOf, opt, rec, str } from "@rustybuns/util/guard";
 import { byToken } from "./tokens.ts";
 import { emit } from "./hooks.ts";
 import { diffToOps, keptPairs } from "./sync.ts";
@@ -56,25 +56,11 @@ import { answerOf, deleteLearning, hashesPaths, learningOn, learningState, pathK
 import { answerRows, fightRows, fightWeights, suggestions, weightOrder } from "./mervin-learn.ts";
 import { boardRoutes } from "./board-routes.ts";
 
-const TEXT_MAX = 20_000;
-
 /** `resolve` as a merge sends it, {path: {line: pick}}, checked; or what's wrong with it. */
 export function parseResolve(raw: unknown): Record<string, Resolve> | string {
-  if (raw === undefined || raw === null) return {};
-  if (typeof raw !== "object" || Array.isArray(raw)) return "resolve: {path: {line: pick}}";
-  const out: Record<string, Resolve> = {};
-  for (const [path, lines] of Object.entries(raw)) {
-    if (!lines || typeof lines !== "object" || Array.isArray(lines)) return `resolve.${path}: {line: pick}`;
-    out[path] = {};
-    for (const [line, v] of Object.entries(lines as Record<string, unknown>)) {
-      const ok = (PICKS as readonly unknown[]).includes(v) ||
-        (!!v && typeof v === "object" && typeof (v as { text?: unknown }).text === "string" && (v as { text: string }).text.length <= TEXT_MAX);
-      if (!ok) return `resolve.${path}.${line}: ${PICKS.map((p) => JSON.stringify(p)).join(", ")} or {"text": "..."} (up to ${TEXT_MAX} characters)`;
-      out[path]![line] = (typeof v === "object" ? { text: (v as { text: string }).text.replace(/\r\n?/g, "\n") } : v) as Pick;
-    }
-  }
-  return out;
+  try { return RESOLVES(raw) ?? {}; } catch (e) { if (e instanceof Bad) return `${["resolve", ...e.path].join(".")}: ${e.path.length < 2 ? ["{path: {line: pick}}", "{line: pick}"][e.path.length] : e.why}`; throw e; }
 }
+const RESOLVES = opt(rec(rec(PICK)));
 interface Access { read: boolean; write: boolean }
 
 export async function openBranch(env: Env, owner: string, repo: string, name: string) {
@@ -221,7 +207,9 @@ async function mergeFile(env: Env, owner: string, repo: string, branch: { name: 
   const [base, doc, policy] = await Promise.all([read("base"), read("file"), pathPolicy(env, owner, repo, path, user)]);
   // Text the merger writes is theirs; deleted lines are the branch's doing.
   const res = await toFile(env, owner, repo, path, user, "merge", { method: "POST", body: JSON.stringify({ base, branch: doc, resolve, dry, deleter: branch.by, path, writer: user, rule: policy.merge }) });
-  return { status: res.status, policy, ...(await res.json() as { rev: number; ops?: Op[]; conflicts: Conflict[]; checks?: Conflict[]; regenerate?: string[]; solved?: number }) };
+  const reply: unknown = await res.json();
+  if (!isMergeReply(reply)) throw new Error(`merging ${path}: main's copy answered ${res.status} with no merge`);
+  return { status: res.status, policy, ...reply };
 }
 
 /**
