@@ -32,14 +32,14 @@ export const CAMPAIGN: Chapter[] = [
     title: "Hold the yard",
     height: "Out the back door",
     story: STORIES.backyard,
-    beats: ["jump", "gag"],
+    beats: ["sweep", "jump", "gag"],
   },
   {
     level: "garden",
     title: "Lost commit",
     height: "Across the lawn",
     story: STORIES.garden,
-    beats: ["beach", "gag"],
+    beats: ["sweep", "beach", "gag"],
   },
   {
     level: "el-capitan",
@@ -53,14 +53,14 @@ export const CAMPAIGN: Chapter[] = [
     title: "The shoulders",
     height: "Half Dome, 2,000 m",
     story: STORIES["half-dome"],
-    beats: ["stall", "gag"],
+    beats: ["sweep", "stall", "gag"],
   },
   {
     level: "glacier-point",
     title: "The heights",
     height: "Glacier Point, 2,200 m",
     story: STORIES["glacier-point"],
-    beats: ["onslaught", "extraction", "gag"],
+    beats: ["sweep", "onslaught", "extraction", "gag"],
   },
 ];
 

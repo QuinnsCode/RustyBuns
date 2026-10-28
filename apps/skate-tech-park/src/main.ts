@@ -1,6 +1,7 @@
 // The page: draws the sim, turns keys into its input, and keeps the chase camera behind the rider.
 import { Car, createElement, Info, RectangleHorizontal, RotateCcw, Shield, ShieldOff, Users } from "lucide";
 import * as THREE from "three";
+import { cheese, sweepShot } from "@rustybuns/util";
 import { mountPartsPicker } from "./parts-picker.ts";
 import { BOARD_BUDGETS, type BoardBudget, dressBoard, dressRoadster, fingerboard, ROADSTER_BUDGETS, type RoadsterBudget, roadster, type Thruster } from "./models.ts";
 import { levelMeshes } from "./render/pieces.ts";
@@ -379,6 +380,17 @@ if (touring) {
   sun.shadow.camera.updateProjectionMatrix();
 }
 const tourAt = Number(new URLSearchParams(location.search).get("at")) || 0; // ?at=40 starts forty seconds in, for a still
+
+// The opening shot: a slow, cheesy sweep round the rider with a narrator's line, then the camera is yours. Any key,
+// touch or agent move skips it. Not in a room, on the title screen, or on the home-page tour (?nosweep turns it off).
+const SWEEP_SECONDS = 9, sweepAt = new THREE.Vector3(), sweepTo = new THREE.Vector3();
+const sweep = { t: 0, on: !touring && !online && !showFront(location.search) && !new URLSearchParams(location.search).has("nosweep") };
+const sweepEnd = () => { sweep.on = false; cine.hidden = true; };
+const cine = $("cine");
+cine.hidden = !sweep.on;
+$("cine-line").textContent = cheese("skate", [...levelId].reduce((n, c) => n + c.charCodeAt(0), 0));
+window.addEventListener("keydown", () => sweepEnd(), { once: true, capture: true });
+window.addEventListener("pointerdown", () => sweepEnd(), { once: true, capture: true });
 function tourFrame(now: number) {
   const dt = Math.min((now - lastFrame) / 1000, 0.1);
   lastFrame = now;
@@ -410,7 +422,8 @@ function frame(now: number) {
   if (pause?.paused() || cogOpen) { then = lastFrame = critterAt = now; keys.clear(); renderer.render(scene, camera); requestAnimationFrame(frame); return; }
   acc = Math.min(acc + (now - then) / 1000, 0.25);
   then = now;
-  const inp = input();
+  if (sweep.on && driver.driving) sweepEnd();
+  const inp = sweep.on ? IDLE : input();
   landVy = 0;
   const pad = navigator.getGamepads?.().find((g) => g);
   if (pad) { gestures.stick(pad.axes[2] ?? 0, pad.axes[3] ?? 0); gestures.shoulders(pad.buttons[6]?.value ?? 0, pad.buttons[7]?.value ?? 0); }
@@ -475,6 +488,14 @@ function frame(now: number) {
     chase.look.set(sim.x, sim.y + 0.6, sim.z);
   }
   chase.apply(level.bounds, level.height); // stay inside the walls
+  if (sweep.on) { // the opening shot over the chase camera, handing the view back as it ends
+    sweep.t += dt;
+    const shot = sweepShot(sweep.t, { x: sim.x, y: sim.y, z: sim.z }, { seconds: SWEEP_SECONDS, radius: 14, height: 6 });
+    chase.pos.lerp(sweepAt.set(shot.from.x, shot.from.y, shot.from.z), shot.mix);
+    chase.look.lerp(sweepTo.set(shot.at.x, shot.at.y, shot.at.z), shot.mix);
+    cine.style.setProperty("--bars", shot.mix.toFixed(3));
+    if (sweep.t >= SWEEP_SECONDS) sweepEnd();
+  }
   followCamera(air, camera);
   precip.update(dt, camera.position);
   const flash = lightning?.update(dt) ?? 0;
