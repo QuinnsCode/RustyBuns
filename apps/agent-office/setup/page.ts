@@ -8,6 +8,8 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEl
   e.append(...kids);
   return e;
 };
+// a card carries its kind, id and status as data-attributes (dataset is read-only, so it can't go through el's props)
+const data = <E extends HTMLElement>(e: E, d: Record<string, string>) => { Object.assign(e.dataset, d); return e; };
 const icon = (node: IconNode) => createElement(node);
 // an icon button: the word is the tooltip and the accessible name, so nothing wraps on a narrow screen
 const button = (node: IconNode, word: string, onclick: () => void) => el("button", { className: "rb-setup-btn", title: word, ariaLabel: word, onclick }, icon(node));
@@ -27,7 +29,7 @@ const STYLE = `
 function card(c: Connection, busy: string | null, run: (what: "test" | "revoke", id: string) => void) {
   const light = LIGHT[c.status];
   const ico = c.kind === "builder" ? Hammer : c.kind === "github" ? KeyRound : Plug;
-  return el("div", { className: "rb-setup-card", dataset: { kind: c.kind, id: c.id, status: c.status } },
+  return data(el("div", { className: "rb-setup-card" },
     el("span", { className: `rb-setup-light ${light.tone}`, title: light.words, role: "img", ariaLabel: light.words }),
     icon(ico),
     el("span", { className: "grow" }, el("strong", {}, c.kind), " ", c.account || "(none)"),
@@ -35,15 +37,15 @@ function card(c: Connection, busy: string | null, run: (what: "test" | "revoke",
     busy === c.id ? el("span", { className: "setting-note" }, "Working…") : "",
     button(RefreshCw, `Test ${c.kind} ${c.account}`, () => run("test", c.id)),
     // the builder is the office's own setting (BUILDER_HOST): nothing here to revoke
-    ...(c.kind === "builder" ? [] : [button(Trash2, `Revoke ${c.kind} ${c.account}`, () => run("revoke", c.id))]));
+    ...(c.kind === "builder" ? [] : [button(Trash2, `Revoke ${c.kind} ${c.account}`, () => run("revoke", c.id))])), { kind: c.kind, id: c.id, status: c.status });
 }
 
 function waiting(p: Pending, cancel: () => void) {
-  return el("div", { className: "rb-setup-card", dataset: { kind: "pending", id: p.id } },
+  return data(el("div", { className: "rb-setup-card" },
     el("span", { className: `rb-setup-light ${LIGHT.pending.tone}`, title: LIGHT.pending.words, role: "img", ariaLabel: LIGHT.pending.words }),
     el("span", { className: "grow" }, "Enter ", el("span", { className: "rb-setup-code" }, p.userCode), " at ",
       el("a", { href: p.uri, target: "_blank", rel: "noopener" }, p.uri.replace(/^https?:\/\//, "")), ". This page updates when you're done."),
-    button(Trash2, "Cancel this sign-in", cancel));
+    button(Trash2, "Cancel this sign-in", cancel)), { kind: "pending", id: p.id });
 }
 
 function section() {
