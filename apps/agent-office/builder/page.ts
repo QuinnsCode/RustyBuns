@@ -23,16 +23,25 @@ export function nightlyLine(n: Nightly | null): string {
   return `${new Date(n.at).toLocaleString()}: ${n.results.length - bad.length} of ${n.results.length} built${bad.length ? `, failed: ${bad.join(", ")}` : ""}`;
 }
 
+/** The setup command in a block that wraps on a narrow screen. */
+function setupLine(text: string) {
+  const code = el("code", {}, text);
+  code.style.cssText = "display:block;white-space:pre-wrap;overflow-wrap:anywhere";
+  return code;
+}
+
 function section() {
   const root = el("div", { className: "setting rb-builder" });
   const draw = (s: State) => {
     const c = s.connections[0];
     const ok = c?.status === "ok";
+    const setup = el("code", {}, s.setup);
+    setup.style.cssText = "display:block;white-space:pre-wrap;overflow-wrap:anywhere";
     root.replaceChildren(
       el("div", { className: "setting-head" }, el("h4", {}, "Build computer"), el("span", { className: "scope", title: c?.status ?? "unset" }, createElement(Hammer), ok ? "Reachable" : "Needs a look")),
       el("p", { className: "setting-note" }, statusLine(s)),
       ...(ok ? [el("p", { className: "setting-note" }, nightlyLine(s.nightly))]
-        : [el("p", { className: "setting-note" }, "On the build Mac, run:"), el("code", { style: "display:block;white-space:pre-wrap;overflow-wrap:anywhere" }, s.setup), el("p", { className: "setting-note" }, "then, here: echo 'export BUILDER_HOST=you@Your-Mac.local' >> ~/.zshenv, and restart the office")]));
+        : [el("p", { className: "setting-note" }, "On the build Mac, run:"), setup, el("p", { className: "setting-note" }, "then, here: echo 'export BUILDER_HOST=you@Your-Mac.local' >> ~/.zshenv, and restart the office")]));
   };
   fetch("/__rb/builder").then((r) => r.json()).then((b: State) => draw(b)).catch(() => root.replaceChildren(el("p", { className: "setting-note" }, "The build computer's card did not load")));
   return root;
