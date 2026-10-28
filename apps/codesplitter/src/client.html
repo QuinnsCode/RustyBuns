@@ -4679,8 +4679,8 @@ const views = {
     const runBar = () => {
       const busy = t?.run && !t.run.done, open = branches;
       return `<div class="row"><select id="ship-branch"${busy ? " disabled" : ""} title="main, or an agent's branch: its files are laid over the clone"><option value="">main</option>${open.map((b) => `<option value="${esc(b.name)}"${b.name === branch ? " selected" : ""}>${esc(b.name)}</option>`).join("")}</select>
-        <button class="btn primary" id="ship-try"${!t?.can_run || busy ? " disabled" : ""} title="${t?.can_run ? "" : "Runs on the desktop app"}">${icon("flask-conical")}${busy ? "Running…" : t?.run ? "Build and plan again" : "Build and plan"}</button>
-        <button class="btn" id="ship-save"${!t?.can_run || busy ? " disabled" : ""} title="${t?.can_run ? "Run rustybuns init and commit its config and deploy dependencies to a branch as agent-rustybuns, for you to review and merge" : "Runs on the desktop app"}">${icon("git-pull-request")}Init on a branch</button></div>`;
+        <button class="btn primary" id="ship-try"${!t?.can_run || busy ? " disabled" : ""} title="${t?.can_run ? "" : t?.why || "Runs on the desktop app"}">${icon("flask-conical")}${busy ? "Running…" : t?.run ? "Build and plan again" : "Build and plan"}</button>
+        <button class="btn" id="ship-save"${!t?.can_run || t?.hosted || busy ? " disabled" : ""} title="${t?.hosted ? "Init runs on the desktop app" : t?.can_run ? "Run rustybuns init and commit its config and deploy dependencies to a branch as agent-rustybuns, for you to review and merge" : "Runs on the desktop app"}">${icon("git-pull-request")}Init on a branch</button></div>`;
     };
     /** The CLI's `--allow-delete` and `--force`: per deploy, never saved, cleared once pressed. Each names what it would put at risk. */
     const deployFlags = (g, s) => {
