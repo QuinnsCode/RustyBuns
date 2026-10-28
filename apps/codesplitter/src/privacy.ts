@@ -49,6 +49,7 @@ export async function exportFor(env: Env, handle: string) {
     collaborating_on: await all(env, "SELECT owner, repo FROM collaborators WHERE name = ?", handle),
     collections: await Promise.all((await all(env, "SELECT id, title FROM playlists WHERE owner = ?", handle)).map(async (p: any) =>
       ({ ...p, tracks: await all(env, "SELECT owner, repo, path, from_line, to_line, note FROM tracks WHERE playlist = ?", p.id) }))),
+    programs: await all(env, "SELECT name, description, code, updated_at FROM programs WHERE owner = ?", handle),
     shares: await all(env, "SELECT * FROM shares WHERE by = ?", handle),
     beams: await all(env, "SELECT id, owner, repo, branch, to_user, title, sha, status, created_at FROM beams WHERE by = ?", handle),
     // Who and what you follow; a private repo's only while you're its crew, as in the app.
@@ -172,6 +173,7 @@ export async function eraseUser(env: Env, handle: string, { scrub = false } = {}
   await env.DB.batch([
     by("DELETE FROM tracks WHERE playlist IN (SELECT id FROM playlists WHERE owner = ?)", handle),
     by("DELETE FROM playlists WHERE owner = ?", handle),
+    by("DELETE FROM programs WHERE owner = ?", handle),
     by("DELETE FROM collaborators WHERE name = ?", handle),
     by("DELETE FROM shares WHERE by = ?", handle),
     by("DELETE FROM beams WHERE by = ?", handle),

@@ -36,6 +36,16 @@ describe("your data", () => {
     expect(JSON.stringify(out)).not.toContain("hash");
   });
 
+  test("saved programs are yours alone, in the export, and gone with the account", async () => {
+    const { call, send } = await app();
+    expect((await send("ryan", "/api/me/programs/count", { code: "return 1", description: "d" }, "PUT")).status).toBe(201);
+    expect(await (await call("mia", "/api/me/programs")).json()).toEqual([]);
+    expect((await call("mia", "/api/me/programs/count")).status).toBe(404);
+    expect(((await (await call("ryan", "/api/me/export")).json()) as any).programs).toEqual([expect.objectContaining({ name: "count", code: "return 1" })]);
+    await call("ryan", "/api/me?confirm=ryan", { method: "DELETE" });
+    expect(await call.env.DB.prepare("SELECT 1 FROM programs WHERE owner = 'ryan'").first()).toBeNull();
+  });
+
   test("a token can't export or delete; only the person can", async () => {
     const { bearer } = await app();
     expect((await bearer("/api/me/export")).status).toBe(403);
