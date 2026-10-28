@@ -4,7 +4,8 @@
 
 import { parseJson } from "./util.ts";
 import type { Env } from "./env.ts";
-import { json, readBody } from "./env.ts";
+import { json, need, readBody } from "./env.ts";
+import { arr, Bad, bool, int, obj, opt, raw, str } from "@rustybuns/util/guard";
 import { ask, brief, canMerge, pick, hitRate, parseRow, waves, type BoardRow, type Hits } from "./board.ts";
 
 const MAX_ROWS = 500, MAX_HITS = 4000;
@@ -15,18 +16,16 @@ export async function boardRoutes(req: Request, env: Env, owner: string, repo: s
 
   if (req.method === "POST") {
     if (!write) return json({ error: "no write access" }, 403);
-    const b = await readBody<"main" | "prs" | "drop" | "replace" | "hits">(req);
-    if (typeof b.main !== "string" || !b.main) return json({ error: "main: the commit the board was staged on" }, 400);
-    if (!Array.isArray(b.prs) || b.prs.length > MAX_ROWS) return json({ error: `prs: [row] (up to ${MAX_ROWS})` }, 400);
-    const parsed: BoardRow[] = [];
-    for (const x of b.prs) { const r = parseRow(x); if (typeof r === "string") return json({ error: r }, 400); parsed.push(r); }
-    if (b.drop !== undefined && !(Array.isArray(b.drop) && b.drop.every((n) => Number.isInteger(n)))) return json({ error: "drop: [pr number]" }, 400);
+    const row = (x: unknown) => { const r = parseRow(x); if (typeof r === "string") throw new Bad(r); return r; };
+    const b = need(await readBody(req), obj({ main: str(), prs: arr(row, MAX_ROWS), drop: opt(arr(int(0, Infinity), MAX_ROWS)), replace: opt(bool()), hits: raw }));
+    if (b instanceof Response) return b;
+    const parsed = b.prs;
     const now = Date.now();
     const gone = b.replace ? (await rows()).map((r) => r.pr).filter((n) => !parsed.some((p) => p.pr === n)) : [];
     const stmts = [
       ...parsed.map((r) => env.DB.prepare("INSERT INTO board_prs (owner, repo, pr, row, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (owner, repo, pr) DO UPDATE SET row = excluded.row, updated_at = excluded.updated_at")
         .bind(owner, repo, r.pr, JSON.stringify(r), now)),
-      ...[...((b.drop as number[] | undefined) ?? []), ...gone].map((n) => env.DB.prepare("DELETE FROM board_prs WHERE owner = ? AND repo = ? AND pr = ?").bind(owner, repo, n)),
+      ...[...(b.drop ?? []), ...gone].map((n) => env.DB.prepare("DELETE FROM board_prs WHERE owner = ? AND repo = ? AND pr = ?").bind(owner, repo, n)),
     ];
     const hits = b.hits && typeof b.hits === "object" && !Array.isArray(b.hits) ? JSON.stringify(b.hits) : null;
     if (hits && hits.length > MAX_HITS) return json({ error: `hits: up to ${MAX_HITS} characters` }, 400);

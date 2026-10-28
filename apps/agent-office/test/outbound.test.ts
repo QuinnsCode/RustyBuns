@@ -72,3 +72,18 @@ test("the box route saves the first-run answers", async () => {
   expect((saved?.body as { perms: { log: unknown } }).perms.log).toEqual({ maxMb: 50, keepDays: 7 });
   expect((await route("POST", new URL("http://x/__rb/box?do=log&maxMb=50&keepDays=5")))?.status).toBe(400); // not one of the four choices
 });
+
+test("a first ask in a box whose log folder doesn't exist yet is still answered", async () => {
+  const fresh = path.join(dir, "not-yet");
+  const out = await outboundRoute("POST", new URL("http://x/__rb/outbound"), `Bearer ${TOKEN}`, { host: "github.com", port: 443, listed: true }, { token: TOKEN, dir: fresh, ms: 50 });
+  expect(out?.status).toBe(200);
+  expect(readFileSync(logFile(fresh), "utf8")).toContain("github.com:443");
+});
+
+test("three connections to one unlisted host at once raise one card, and the answer holds for the next", async () => {
+  const three = Promise.all([ask("platform.claude.com"), ask("platform.claude.com"), ask("platform.claude.com")]);
+  await answer(true);
+  expect(await three).toEqual([true, true, true]);
+  expect(pendingAsks()).toHaveLength(0);
+  expect(await ask("platform.claude.com")).toBe(true);
+});

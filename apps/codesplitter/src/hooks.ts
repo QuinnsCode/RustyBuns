@@ -37,7 +37,8 @@
 //   POST   /api/repos/:o/:r/hooks/:id/deliveries/:d/redeliver
 
 import { audit } from "./audit.ts";
-import { json, type Env, readBody } from "./env.ts";
+import { json, type Env, need, readBody } from "./env.ts";
+import { arr, bool, obj, oneOf, opt, raw, str } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
 import { hex } from "./util.ts";
 
@@ -222,14 +223,10 @@ export async function hookRoutes(req: Request, env: Env, p: string[], user: stri
     return json({ events: EVENTS, hooks: results.map((h) => ({ ...h, events: h.events.split(","), github_compat: !!h.github_compat, owner_only: !!h.owner_only, last: h.last ? JSON.parse(h.last) : null })) });
   }
   if (!id && req.method === "POST") {
-    const b = await readBody<"url" | "events" | "secret" | "github_compat" | "owner_only">(req);
-    const url = checkUrl(b.url);
+    const b = need(await readBody(req), obj({ url: raw, events: opt(arr(oneOf(EVENTS), 100, { min: 1 })), secret: opt(str(1000, { min: 16 })), github_compat: opt(bool()), owner_only: opt(bool()) }));
+    if (b instanceof Response) return b;
+    const url = checkUrl(b.url), events = b.events ?? [...EVENTS];
     if (!url) return json({ error: "url: an http(s) URL out on the internet (not a private or loopback address), without a password in it" }, 400);
-    const events = b.events ?? [...EVENTS];
-    if (!Array.isArray(events) || !events.length || events.some((e) => !EVENTS.includes(e as Event))) return json({ error: `events: some of ${EVENTS.join(", ")}` }, 400);
-    if (b.secret !== undefined && (typeof b.secret !== "string" || b.secret.length < 16)) return json({ error: "secret: at least 16 characters, or leave it out for one made for you" }, 400);
-    if (b.github_compat !== undefined && typeof b.github_compat !== "boolean") return json({ error: "github_compat: true or false" }, 400);
-    if (b.owner_only !== undefined && typeof b.owner_only !== "boolean") return json({ error: "owner_only: true or false" }, 400);
     const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM webhooks WHERE owner = ? AND repo = ?").bind(owner, repo).first<{ n: number }>();
     if ((n?.n ?? 0) >= MAX_HOOKS) return json({ error: `a repo has at most ${MAX_HOOKS} webhooks` }, 400);
     const hook = { id: crypto.randomUUID().slice(0, 8), url, events: [...new Set(events)], secret: b.secret ?? hex(crypto.getRandomValues(new Uint8Array(24)).buffer), github_compat: b.github_compat ?? false, owner_only: b.owner_only ?? false, created_at: Date.now() };

@@ -55,7 +55,9 @@ updates its docs in the same PR. Those two files must keep importing nothing els
 A parsed body, fetch reply or stored string is `unknown` until something looks at it. Don't
 assert a shape onto it (`as { owner: string }`), and no `any` or `as never`: narrow each field
 (`readBody` and `parseJson` in codeSplitter, `isPlainObject` and `listOf` in its `util.ts`), and
-test the wrong shape. CI runs `bun scripts/boundary-audit.ts`, which fails on a new unchecked value
+test the wrong shape. For a whole body or message, write its guard with `@rustybuns/util/guard`
+(`obj`, `str`, `num`, `oneOf`, `arr`, `opt`; `type X = Of<typeof X>`), and in a codeSplitter route
+`need(body, guard)` for the typed value or a 400. CI runs `bun scripts/boundary-audit.ts`, which fails on a new unchecked value
 and on a file that got better but didn't lower its count in `scripts/boundary-audit.allow.json`
 (`--update` writes it, `--list` shows every one). The allowance only goes down.
 

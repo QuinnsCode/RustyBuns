@@ -27,7 +27,8 @@
 // time travel and the live socket. A commit hands back that public text too,
 // for git and search, so the real text never leaves the app.
 
-import { json, type Env } from "./env.ts";
+import { json, need, readBody, type Env } from "./env.ts";
+import { arr, bool, check, int, num, obj, opt, raw, str, type Of } from "@rustybuns/util/guard";
 import { recordEdits, type Recent } from "./line-events.ts";
 import { noteStep } from "./insights.ts";
 import { branchEdited } from "./checks.ts";
@@ -259,13 +260,12 @@ export class FileDurableObject {
     }
     if (req.method === "GET" && route === "file") return json(window(this.shown(this.doc, crew), url.searchParams.get("from"), url.searchParams.get("limit")));
     if (req.method === "POST" && route === "ops") {
-      const b = (await req.json().catch(() => ({}))) as { ops?: unknown; ifRev?: unknown; claim?: unknown; proto?: unknown };
+      const b = need(await readBody(req), obj({ ops: raw, ifRev: opt(int(-Infinity, Infinity)), claim: opt(str()), proto: raw }));
+      if (b instanceof Response) return b;
       if (b.proto !== undefined && b.proto !== PROTOCOL) return json(this.stale(), 409);
       const ops = parseOps(b.ops);
       if (typeof ops === "string") return json({ error: ops }, 400);
-      if (b.ifRev !== undefined && !Number.isInteger(b.ifRev)) return json({ error: "ifRev: a rev" }, 400);
-      if (b.claim !== undefined && typeof b.claim !== "string") return json({ error: "claim: a claim id" }, 400);
-      const r = await this.edit(by, ops, b.ifRev as number | undefined, b.claim as string | undefined, live);
+      const r = await this.edit(by, ops, b.ifRev, b.claim, live);
       return r.ok ? json({ rev: r.rev, applied: r.applied }) : json(refused(r), 409);
     }
     try {
@@ -319,8 +319,8 @@ export class FileDurableObject {
     if (req.method === "GET" && route === "claims") return json(this.live());
     if (req.method === "POST" && route === "claims") {
       // Crew only (the Worker checks). Any of the crew may lift any claim: that's how a person steers an agent off lines.
-      const b = claimAsk(await req.json().catch(() => null));
-      if (typeof b === "string") return json({ error: b }, 400);
+      const b = need(await readBody(req), CLAIM_ASK);
+      if (b instanceof Response) return b;
       if (b.release) return json({ released: await this.release(b.id ?? "") });
       if (live === "locked") return json({ error: LOCKED }, 409);
       const rank = Number(req.headers.get("x-codesplitter-rank"));
@@ -1027,21 +1027,12 @@ export class FileDurableObject {
 }
 
 /** What `claim_lines` takes: see `claim` and `wait`. `timeout` is seconds. */
-type ClaimAsk = { id?: string; lines?: string[]; task?: string; ttl?: number | null; extend?: boolean; soft?: boolean; wait?: boolean; timeout?: number };
-
-const isIds = (v: unknown): v is string[] => Array.isArray(v) && v.length <= MAX_OPS && v.every((x) => typeof x === "string" && x.length <= 40);
-/** `v` as a claim request, or what's wrong with it: ids and the task are short text, lines are ids, times are seconds. */
-function claimAsk(v: unknown): (ClaimAsk & { release?: boolean }) | string {
-  if (!v || typeof v !== "object" || Array.isArray(v)) return "a claim is {lines, task?, ttl?, …}";
-  const b = v as Record<string, unknown>;
-  if (b.id !== undefined && !(typeof b.id === "string" && b.id.length <= 40)) return "id: a claim id";
-  if (b.lines !== undefined && !isIds(b.lines)) return "lines: a list of line ids";
-  if (b.task !== undefined && typeof b.task !== "string") return "task: text";
-  if (b.ttl !== undefined && b.ttl !== null && !(typeof b.ttl === "number" && Number.isFinite(b.ttl))) return "ttl: seconds";
-  if (b.timeout !== undefined && !(typeof b.timeout === "number" && Number.isFinite(b.timeout))) return "timeout: seconds";
-  for (const k of ["extend", "soft", "wait", "release"]) if (b[k] !== undefined && typeof b[k] !== "boolean") return `${k}: true or false`;
-  return b as ClaimAsk & { release?: boolean };
-}
+/** A claim request: ids and the task are short text, lines are ids, times are seconds (a ttl of null says so on purpose). */
+const IDS = arr(str(40, { min: 0 }), MAX_OPS), isIds = (v: unknown): v is string[] => check(IDS, v) !== null;
+const seconds = opt(num(-Infinity, Infinity)), flag = opt(bool());
+const CLAIM_ASK = obj({ id: opt(str(40)), lines: opt(IDS), task: opt(str(Infinity, { min: 0 })),
+  ttl: (v: unknown) => v === null ? null : seconds(v), timeout: seconds, extend: flag, soft: flag, wait: flag, release: flag });
+type ClaimAsk = Of<typeof CLAIM_ASK>;
 
 const newId = (now: number) => `c${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
