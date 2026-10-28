@@ -32,6 +32,14 @@ test("no battle param, no jump; assist off drops the handicap and the sim's help
   expect(tough(on)).not.toBe(1);
 });
 
+test("the harness spelling: sector and side=marines|wooka", () => {
+  const spec = jumpSpec(parseJump("?battle=1&sector=ruined-city&side=wooka&seed=2")!);
+  expect(spec.sector).toBe("capital");
+  expect([spec.hero, spec.factions.attacker]).toEqual(["attacker", "wooka"]);
+  const m = jumpSpec(parseJump("?battle=1&sector=beach&side=marines&seed=2")!);
+  expect([m.sector, m.hero, m.factions.defender]).toEqual(["cannon", "defender", "marines"]);
+});
+
 test("near and end come through", () => {
   expect(parseJump("?battle=1&near=1&end=win&after=5")).toMatchObject({ near: 45, end: "win", endAfter: 5 });
   expect(parseJump("?battle=1")).toMatchObject({ near: 0, end: undefined, assist: true });
