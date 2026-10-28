@@ -14,7 +14,7 @@
 //   office and /lite, asks/index.ts), then goes ahead, or gets a 403 if someone said no or nobody answered in two
 //   minutes.
 
-import { boxDir, cameraOf, logFile, record } from "./camera.ts";
+import { boxDir, cameraOf, logFile, record, type Entry } from "./camera.ts";
 
 // #2498: a worker's GitHub write asks first; the hook port and the router reach these through this one module
 export { writeCheck } from "../askfirst/ask.ts";
@@ -127,6 +127,31 @@ export async function outboundRoute(method: string, url: URL, auth: string | und
   const why = listed ? "" : await askFirst("/outbound", "box", "The box", { host, port }, () => {}, { setting: "outbound", ms });
   record(logFile(dir), { kind: "outbound", who: "box", what: `${clip(host, 253)}:${port}`, verdict: listed ? "listed" : !why ? "allowed" : why.startsWith("Nobody") ? "timed out" : "denied" }, cameraOf(dir));
   return { status: 200, body: { allow: !why } };
+}
+
+/** The workers and cleanup a send-home body names, for a refusal that never parsed it. */
+function homeBody(raw: string): { names: string[]; cleanup?: unknown } {
+  try {
+    const b: unknown = JSON.parse(raw);
+    if (typeof b !== "object" || b === null) return { names: [] };
+    const cleanup = "cleanup" in b ? b.cleanup : undefined;
+    if ("merged" in b && b.merged) return { names: ["every merged worker"], cleanup };
+    return { names: "workers" in b && Array.isArray(b.workers) ? b.workers.map((w) => clip(w, 64)) : [], cleanup };
+  } catch { return { names: [] }; }
+}
+
+/**
+ * #2201: one line in the local log for every send-home request, a person's click or an agent's call, refused or not:
+ * who asked, which workers, the cleanup, and what happened to the worktree. Logging never gets in the request's way.
+ */
+export function logHome(who: string, workers: string[] | string, cleanup: unknown, verdict: Entry["verdict"], note = "", dir = boxDir()) {
+  try {
+    const parsed = typeof workers === "string" ? homeBody(workers) : { names: workers, cleanup };
+    const names = parsed.names;
+    cleanup = parsed.cleanup;
+    const how = typeof cleanup === "string" && cleanup ? ` (cleanup: ${clip(cleanup, 16)})` : "";
+    record(logFile(dir), { kind: "home", who: clip(who, 64), what: `${names.join(", ") || "nobody"}${how}${note ? `: ${clip(note, 160)}` : ""}`, verdict }, cameraOf(dir));
+  } catch { /* the log is a record, not a gate */ }
 }
 
 export const ASK_HEADER = "x-rb-ask";
