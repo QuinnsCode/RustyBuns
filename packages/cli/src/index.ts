@@ -198,7 +198,7 @@ async function init() {
   if (later && !force && inf.stack === "react-router")
     throw new Error(`this React Router app doesn't build with @cloudflare/vite-plugin; Rusty Buns runs the Worker that plugin builds (Cloudflare's React Router template). cloudflareDevProxy, Remix v2 and the Node server are ${later.issue}. Pass --force to write a config anyway.`);
   if (inf.stack === "sveltekit" && inf.framework === "unknown" && !force)
-    throw new Error(`this SvelteKit app has no @sveltejs/adapter-cloudflare; Rusty Buns runs the Worker it builds. Add it (\`${inf.pm === "npm" ? "npm i" : inf.pm + " add"} -D @sveltejs/adapter-cloudflare\`) and use it in svelte.config.js, then re-run init (${unsupported("sveltekit")!.issue}). Pass --force to write a config anyway.`);
+    throw new Error(`this SvelteKit app has no @sveltejs/adapter-cloudflare; Rusty Buns runs the Worker it builds. Add it (\`${inf.pm === "npm" ? "npm i" : inf.pm + " add"} -D @sveltejs/adapter-cloudflare\`) and use it (in svelte.config.js, or the sveltekit() plugin in vite.config on SvelteKit 3), then re-run init (${unsupported("sveltekit")!.issue}). Pass --force to write a config anyway.`);
   if (inf.stack === "next" && inf.framework === "unknown" && !force)
     throw new Error(`this Next.js app has no @opennextjs/cloudflare; Rusty Buns runs the Worker it builds. Add it (\`${inf.pm === "npm" ? "npm i" : inf.pm + " add"} @opennextjs/cloudflare\`) with an open-next.config.ts, then re-run init (${unsupported("next")!.issue}). Pass --force to write a config anyway.`);
   if (later && !force && (inf.stack === "cra" || inf.stack === "vue-cli"))
@@ -301,7 +301,7 @@ async function init() {
   if (!(astroWorker && !w.main) && isFile(cfg.worker!.main!) && !/^(\.\/)?dist\//.test(cfg.worker!.main!) && !(svelteWorker && cfg.worker!.main!.includes(".svelte-kit/")) && !((nuxtWorker || solidWorker || nextWorker) && (cfg.worker!.main!.includes(".output/") || cfg.worker!.main!.includes(".open-next/"))) && !existsSync(cfg.worker!.main!)) console.log(`warning:  worker entry "${cfg.worker!.main}" ${w.main ? "(wrangler main)" : "(wrangler has no main; assumed)"} does not exist`);
   { const { inferWorkerBuild } = await import("./glue/build-script.ts"); const b = inferWorkerBuild(inf.scripts, null);
     console.log(!cfg.worker!.build ? `build:    none (a plain Worker: Alchemy bundles ${cfg.worker!.main})`
-      : `build:    ${cfg.worker!.build}  (${b.from === "default" || b.build !== cfg.worker!.build ? "no build script found; using the default" : `from "${b.from}" script`})`); }
+      : `build:    ${cfg.worker!.build}  (${b.from === "default" ? "no build script found; using the default" : b.build !== cfg.worker!.build ? `replaces the "${b.from}" script` : `from "${b.from}" script`})`); }
   // D1: wrangler's own default migrations dir is ./migrations when migrations_dir is unset.
   for (const b of Object.values(cfg.bindings)) {
     if (b.type === "d1" && !b.migrationsDir && existsSync("migrations")) b.migrationsDir = "migrations";
