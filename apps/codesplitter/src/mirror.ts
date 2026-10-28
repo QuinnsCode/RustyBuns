@@ -73,7 +73,7 @@ import { branchAndPath, githubToken, parseFolder, parseRepo } from "./github.ts"
 import { postOrder, startChecks, upstreamMoved, upstreamTaken } from "./checks.ts";
 import { diffToOps, merge3 } from "./sync.ts";
 import { branchNameError, json, NAME, need, type Env, readBody } from "./env.ts";
-import { arr, bool, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
+import { arr, bool, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
 import type { Doc } from "./lines.ts";
 import { depsRef, depsTree, folderPath, graft, sendBranch, sourceRef, split, splitFromRef, workspaceDeps } from "./folder-mirror.ts";
@@ -1534,11 +1534,11 @@ async function turnable(env: Env, owner: string, repo: string): Promise<Turn | {
 export async function turnRoute(req: Request, env: Env, owner: string, repo: string, user: string | null) {
   if (user !== owner) return json({ error: "owner only" }, 403);
   if (req.method !== "GET" && req.method !== "POST") return json({ error: "GET or POST" }, 405);
-  const b = need(req.method === "POST" ? await readBody(req) : {}, obj({ ahead: opt(num(0, Infinity)), pullOnly: opt(bool()) }));
-  if (b instanceof Response) return b;
+  const b = req.method === "POST" ? await readBody<"ahead" | "pullOnly">(req) : {};
   const turned = await serial(owner, repo, async () => {
     const t = await turnable(env, owner, repo);
     if ("error" in t) return json({ error: t.error }, t.status);
+    if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
     if (req.method === "GET") return json({ url: shownUrl(t.url), branch: t.branch, commit: t.commit, ahead: t.ahead });
     // What goes up is what the owner was shown: a commit made since (or a POST that never looked) asks again.
     if (!b.pullOnly && b.ahead !== t.ahead) return json({ error: `${t.ahead} commit${t.ahead === 1 ? "" : "s"} made here would go up: say {ahead: ${t.ahead}} to send ${t.ahead === 1 ? "it" : "them"}`, ahead: t.ahead }, 409);
