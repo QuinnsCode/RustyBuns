@@ -1,5 +1,7 @@
 // The grants list's route (built into rb-askfirst.js): GET /__rb/grants lists them, POST /__rb/grants?do=grant|revoke
 // &repo=o/n&kind=push&who=* changes one. Signed-in people only, and a POST needs the X-RB-Ask header like an answer to a card.
+// the hook port's /office/workers/write reads the worker's command with this
+export { commandOf } from "./hook.ts";
 import { addGrants, readGrants, removeGrant } from "./grants.ts";
 import { isKind, KINDS } from "./kinds.ts";
 

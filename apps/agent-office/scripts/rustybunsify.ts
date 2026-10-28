@@ -22,7 +22,7 @@ import { checksBarClient, checkTallyServer, SERVER_IMPORT } from "../checks/patc
 import { EXTERNAL_IMPORT, externalServer } from "../external/patch.ts";
 import { openNewFirstClient } from "./board.ts";
 import { pullsFollowUpClient, pullsFollowUpServer } from "./briefs.ts";
-import { floorGuardBin, floorGuardClaude, floorGuardHooks, floorGuardQueue } from "./floorguard.ts";
+import { floorGuardBin, floorGuardClaude, floorGuardCodex, floorGuardCursor, floorGuardGrok, floorGuardHooks, floorGuardQueue } from "./floorguard.ts";
 import { hookTokensManager, hookTokensPersist, hookTokensUtil } from "./hooktokens.ts";
 import { PINNED, REPO, releaseTarball } from "./release.ts";
 import { POWER_PATCHES } from "../power/patch.ts";
@@ -212,6 +212,9 @@ async function prepare(tag: string) {
   writeFileSync(path.join(srv, "hooks/office-workers.js"), floorGuardHooks(readFileSync(path.join(srv, "hooks/office-workers.js"), "utf8")));
   // and a Claude worker's GitHub writes ask first (#2498, askfirst/): a second PreToolUse hook in its settings, the grants list's route below
   writeFileSync(path.join(srv, "providers/claude.js"), floorGuardClaude(readFileSync(path.join(srv, "providers/claude.js"), "utf8")));
+  // and Codex, Cursor and Grok workers' (Muse's hooks aren't known to block a call yet)
+  for (const [rel, change] of [["codex.js", floorGuardCodex], ["cursor.js", floorGuardCursor], ["grok.js", floorGuardGrok]] as const)
+    writeFileSync(path.join(srv, rel), change(readFileSync(path.join(srv, rel), "utf8")));
   // a board agent's queued tasks too: the same mark and the same guards, under the word `queue`
   writeFileSync(path.join(srv, "hooks/office-queue.js"), floorGuardQueue(readFileSync(path.join(srv, "hooks/office-queue.js"), "utf8")));
   // and AGENT_OFFICE_ASK_FIRST holds an agent's request for a person's Allow / Deny (#727): asked at /__rb/asks
