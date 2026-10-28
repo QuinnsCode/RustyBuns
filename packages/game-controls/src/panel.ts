@@ -2,7 +2,7 @@
 // Changes apply at once and are saved under `key`. The dialog is a bottom sheet on a narrow screen, a card on a
 // wide one, and scrolls when the screen is short.
 import { createElement, Settings as Cog, X } from "lucide";
-import { DEFAULTS, RANGE, type Settings, parseSettings } from "./settings.ts";
+import { DEFAULTS, RANGES, type NumKey, type Settings, parseSettings } from "./settings.ts";
 
 export interface Opts {
   /** localStorage key, one per game. */
@@ -15,8 +15,12 @@ export interface Opts {
   keys?: [string, string][];
   /** Rows that make no sense for the game (no vertical look, say); their saved values stay in the settings. */
   hide?: (keyof Settings)[];
+  /** Optional groups of rows a game opts into: per-axis touch trims, audio (loudness, on/off, `sounds`), view (brightness, zoom, tilt). */
+  show?: ("touchAxes" | "audio" | "view")[];
+  /** Sound pieces the player can switch off one by one, e.g. ["steps", "Footsteps"]; needs `show: ["audio"]`. */
+  sounds?: [string, string][];
   /** Row names for a game whose look is not a look ("Stick sensitivity" for a slide game). */
-  labels?: Partial<Record<"lookX" | "lookY" | "touch", string>>;
+  labels?: Partial<Record<NumKey, string>>;
   /** Called with the saved settings on mount and after every change. */
   onChange?: (s: Settings) => void;
   /** Called when the dialog opens or closes, so a game can pause or let go of the mouse. */
@@ -63,21 +67,52 @@ export function mountControls(o: Opts) {
     if (out) l.append(out);
     card.append(l);
   };
-  const slider = (label: string, k: "lookX" | "lookY" | "touch") => {
+  const slider = (label: string, k: NumKey) => {
     if (o.hide?.includes(k)) return;
-    const i = Object.assign(document.createElement("input"), { type: "range", name: k, min: String(RANGE.min), max: String(RANGE.max), step: String(RANGE.step) });
+    const r = RANGES[k];
+    const text = (v: number) => (r.unit === "%" ? `${Math.round(v * 100)}%` : r.unit === "deg" ? `${v > 0 ? "+" : ""}${v}\u00b0` : `${v.toFixed(2)}x`);
+    const i = Object.assign(document.createElement("input"), { type: "range", name: k, min: String(r.min), max: String(r.max), step: String(r.step) });
     const out = document.createElement("output");
-    i.addEventListener("input", () => { s = { ...s, [k]: Number(i.value) }; out.textContent = `${s[k].toFixed(2)}x`; save(); });
-    syncs.push(() => { i.value = String(s[k]); out.textContent = `${s[k].toFixed(2)}x`; });
+    i.addEventListener("input", () => { s = { ...s, [k]: Number(i.value) }; out.textContent = text(s[k]); save(); });
+    syncs.push(() => { i.value = String(s[k]); out.textContent = text(s[k]); });
     row(label, i, out);
+  };
+  const check = (label: string, k: "musicOn" | "sfxOn") => {
+    if (o.hide?.includes(k)) return;
+    const c = Object.assign(document.createElement("input"), { type: "checkbox", name: k });
+    c.addEventListener("change", () => { s = { ...s, [k]: c.checked }; save(); });
+    syncs.push(() => { c.checked = s[k]; });
+    row(label, c);
+  };
+  const piece = (id: string, label: string) => {
+    const c = Object.assign(document.createElement("input"), { type: "checkbox", name: `sound-${id}` });
+    c.addEventListener("change", () => { s = { ...s, muted: c.checked ? s.muted.filter((m) => m !== id) : [...s.muted.filter((m) => m !== id), id] }; save(); });
+    syncs.push(() => { c.checked = !s.muted.includes(id); });
+    row(label, c);
   };
   slider(o.labels?.lookX ?? "Look X sensitivity", "lookX");
   slider(o.labels?.lookY ?? "Look Y sensitivity", "lookY");
   slider(o.labels?.touch ?? "Touch sensitivity", "touch");
+  if (o.show?.includes("touchAxes")) {
+    slider(o.labels?.touchX ?? "Touch X sensitivity", "touchX");
+    slider(o.labels?.touchY ?? "Touch Y sensitivity", "touchY");
+  }
   const inv = Object.assign(document.createElement("input"), { type: "checkbox", name: "invertY" });
   inv.addEventListener("change", () => { s = { ...s, invertY: inv.checked }; save(); });
   syncs.push(() => { inv.checked = s.invertY; });
   if (!o.hide?.includes("invertY")) row("Invert Y", inv);
+  if (o.show?.includes("audio")) {
+    slider(o.labels?.music ?? "Music volume", "music");
+    check("Music on", "musicOn");
+    slider(o.labels?.sfx ?? "Effects volume", "sfx");
+    check("Effects on", "sfxOn");
+    for (const [id, label] of o.sounds ?? []) piece(id, label);
+  }
+  if (o.show?.includes("view")) {
+    slider(o.labels?.brightness ?? "Brightness", "brightness");
+    slider(o.labels?.zoom ?? "Camera zoom", "zoom");
+    slider(o.labels?.tilt ?? "Camera tilt", "tilt");
+  }
   const extra = o.extras?.(card);
   if (extra) syncs.push(extra.sync);
   const reset = Object.assign(document.createElement("button"), { type: "button", className: "gc-reset", textContent: "Reset to defaults" });

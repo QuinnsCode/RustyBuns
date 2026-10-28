@@ -8,7 +8,7 @@ import { step, wrap, type Body } from "../hunt/sim.ts";
 import { PARKS, ZONES, loadZoneData, zoneById, zoneLoaded, zonesFor, type Zone } from "../zones/zone.ts";
 import { REGIONS } from "@rustybuns/terrain";
 import { describe } from "../weather.ts";
-import { CALLS, Score, place, sounds } from "./audio.ts";
+import { CALLS, SOUND_PIECES, Score, place, setMix, sounds } from "./audio.ts";
 import { REQUESTABLE } from "../edge/requests.ts";
 import { mountControls } from "@rustybuns/game-controls";
 import { Controls } from "./controls.ts";
@@ -68,7 +68,11 @@ const controls = new Controls($<HTMLCanvasElement>("view"));
 mountControls({
   key: "park-hide-seek.controls", parent: $("controls-host"),
   keys: [["W A S D / arrows", "Move"], ["Shift", "Run"], ["C / X", "Crouch (hold: prone) / climb a tree"], ["Mouse", "Look (click the view first)"], ["V", "First or third person"], ["F / Q", "Flashlight / call out (rangers)"], ["E", "Become a prop (prop hunt)"], ["M / N", "Map and radio / music"], ["Tab", "Follow someone (spectating)"], ["Esc", "Let go of the mouse"]],
-  onChange: (s) => { controls.look = s; },
+  show: ["touchAxes", "audio", "view"], sounds: SOUND_PIECES,
+  onChange: (s) => {
+    controls.look = s; setMix(s); world.viewSettings = { zoom: s.zoom, tilt: s.tilt };
+    $<HTMLCanvasElement>("view").style.filter = s.brightness === 1 ? "" : `brightness(${s.brightness})`;
+  },
   onToggle: (open) => { if (open) controls.release(); },
 });
 const serverNow = () => Date.now() + (session?.offset ?? 0);

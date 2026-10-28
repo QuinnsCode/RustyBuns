@@ -16,6 +16,8 @@ const MARGIN = 0.8; // metres the camera keeps above the ground or a piece
 export class Chase {
   readonly pos = new THREE.Vector3();
   readonly look = new THREE.Vector3();
+  /** The player's view settings: zoom above 1 brings the camera in, tilt rolls it, in degrees. */
+  view = { zoom: 1, tilt: 0 };
   private rel = new THREE.Vector3();
   private board = new THREE.Vector3(); // where the board was when the camera last moved
   private want = new THREE.Vector3();
@@ -40,7 +42,7 @@ export class Chase {
     const fast = Math.min(1, Math.hypot(s.vx, s.vz) / 30);
     this.camera.fov += (FOV.base + (FOV.fast - FOV.base) * fast - this.camera.fov) * k;
     this.camera.updateProjectionMatrix();
-    const zoom = fitDistance(this.camera.fov);
+    const zoom = fitDistance(this.camera.fov) / this.view.zoom;
     const rel = this.rel.copy(this.pos).sub(this.board); // the rig, relative to where the board was
     this.board.set(s.x, s.y, s.z);
     rel.lerp(this.want.set(-Math.sin(dir) * r.back * zoom, r.up * zoom, -Math.cos(dir) * r.back * zoom), k);
@@ -56,6 +58,7 @@ export class Chase {
     if (height) this.clear(height);
     this.camera.position.copy(this.pos);
     this.camera.lookAt(this.look);
+    if (this.view.tilt) this.camera.rotateZ(THREE.MathUtils.degToRad(this.view.tilt));
   }
 
   private clear(height: (x: number, z: number) => number) {

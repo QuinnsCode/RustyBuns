@@ -85,6 +85,15 @@ export class World3D {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(70, 1, 0.1, 1200);
+  /** The cog's camera settings: zoom above 1 is closer, tilt is roll in degrees. 1 and 0 leave the view as shipped. */
+  viewSettings = { zoom: 1, tilt: 0 };
+  /** Field of view for a zoom, so 2x halves what the lens sees rather than halving the angle. */
+  private setZoom(zoom: number) {
+    const fov = (2 * Math.atan(Math.tan((70 * Math.PI) / 360) / zoom) * 180) / Math.PI;
+    if (Math.abs(this.camera.fov - fov) < 1e-6) return;
+    this.camera.fov = fov;
+    this.camera.updateProjectionMatrix();
+  }
   zone: Zone | null = null;
   private zoneGroup = new THREE.Group();
   private hemi = new THREE.HemisphereLight();
@@ -654,6 +663,8 @@ export class World3D {
       this.camera.position.copy(back);
     }
     this.camera.lookAt(head.clone().addScaledVector(fwd, 20));
+    this.setZoom(this.viewSettings.zoom);
+    this.camera.rotateZ((this.viewSettings.tilt * Math.PI) / 180);
     // Keep the sun's shadow box centred on you.
     this.sun.position.copy(head).add(new THREE.Vector3(-60, 80 * SKY[this.tod ?? "day"].elev + 20, 40));
     this.sun.target.position.copy(head);
@@ -737,6 +748,7 @@ export class World3D {
     for (let i = 0; i < z.h.length; i += 37) hMax = Math.max(hMax, z.h[i]);
     this.camera.position.set(Math.cos(a) * d, hMax + 45, Math.sin(a) * d);
     this.camera.lookAt(target);
+    this.setZoom(1);
     this.sun.position.set(-80, 150, 60);
     this.sun.target.position.set(0, 0, 0);
     this.dome.position.copy(this.camera.position);

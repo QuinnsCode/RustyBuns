@@ -2,6 +2,18 @@
 // (a radio squelch, then a recorded line from public/voices, quieter the farther
 // away it is; the browser's speech synthesis if the clip can't load). Score is the music: a low dread bed that tightens as rangers close in.
 
+import { DEFAULTS, type Settings, volumeOf } from "@rustybuns/game-controls";
+
+/** The cog's loudness, on/off and per-piece mutes. Defaults leave every sound as shipped. */
+let mix: Settings = { ...DEFAULTS };
+export function setMix(s: Settings) { mix = s; }
+const sfx = (piece: string) => volumeOf(mix, "sfx", piece);
+/** The sound pieces the cog lists, so a player can switch each off. */
+export const SOUND_PIECES: [string, string][] = [
+  ["steps", "Footsteps"], ["bushes", "Rustling bushes"], ["thuds", "Thuds"], ["calls", "Ranger calls"],
+  ["howl", "Bigfoot howl"], ["caught", "Caught sound"], ["heartbeat", "Heartbeat"], ["crickets", "Crickets"], ["stingers", "Scare stingers"],
+];
+
 let ctx: AudioContext | null = null;
 const ac = () => (ctx ??= new AudioContext());
 
@@ -32,11 +44,12 @@ export function place(dx: number, dy: number, yaw: number, reach: number): { vol
 }
 
 export const sounds = {
-  rustle(vol: number, pan: number) { if (vol > 0.02) { noise(0.35, vol * 0.5, pan, 3200, 0.5); setTimeout(() => noise(0.25, vol * 0.35, pan, 2400, 0.6), 120); } },
-  thud(vol: number, pan: number) { if (vol > 0.02) { noise(0.3, vol * 1.2, pan, 220, 0.8); setTimeout(() => noise(0.15, vol * 0.5, pan, 700, 0.6), 90); } },
-  step(vol: number, pan: number) { if (vol > 0.02) noise(0.08, vol * 0.6, pan, 500, 1.2); },
-  caught() { const a = ac(), o = a.createOscillator(), g = a.createGain(); o.frequency.setValueAtTime(660, a.currentTime); o.frequency.exponentialRampToValueAtTime(220, a.currentTime + 0.4); g.gain.setValueAtTime(0.15, a.currentTime); g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.5); o.connect(g).connect(a.destination); o.start(); o.stop(a.currentTime + 0.5); },
+  rustle(vol: number, pan: number) { vol *= sfx("bushes"); if (vol > 0.02) { noise(0.35, vol * 0.5, pan, 3200, 0.5); setTimeout(() => noise(0.25, vol * 0.35, pan, 2400, 0.6), 120); } },
+  thud(vol: number, pan: number) { vol *= sfx("thuds"); if (vol > 0.02) { noise(0.3, vol * 1.2, pan, 220, 0.8); setTimeout(() => noise(0.15, vol * 0.5, pan, 700, 0.6), 90); } },
+  step(vol: number, pan: number) { vol *= sfx("steps"); if (vol > 0.02) noise(0.08, vol * 0.6, pan, 500, 1.2); },
+  caught() { const k = sfx("caught"); if (k <= 0) return; const a = ac(), o = a.createOscillator(), g = a.createGain(); o.frequency.setValueAtTime(660, a.currentTime); o.frequency.exponentialRampToValueAtTime(220, a.currentTime + 0.4); g.gain.setValueAtTime(0.15 * k, a.currentTime); g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.5); o.connect(g).connect(a.destination); o.start(); o.stop(a.currentTime + 0.5); },
   call(vol: number, line: string) {
+    vol *= sfx("calls");
     if (vol <= 0.03) return;
     squelch(vol);
     const i = CALLS.indexOf(line);
@@ -50,6 +63,7 @@ export const sounds = {
   },
   /** Bigfoot: a long, low whoop that rises and falls. */
   howl(vol: number, pan: number) {
+    vol *= sfx("howl");
     if (vol <= 0.02) return;
     const a = ac(), t = a.currentTime;
     if (a.state === "suspended") void a.resume();
@@ -127,7 +141,7 @@ export class Score {
   private build() {
     const a = ac();
     this.bus = a.createGain();
-    this.bus.gain.value = this.muted ? 0 : 0.8;
+    this.bus.gain.value = this.level();
     this.bus.connect(a.destination);
     // Drone: a root and a flat fifth under a slowly breathing lowpass.
     this.filter = a.createBiquadFilter();
@@ -175,9 +189,12 @@ export class Score {
     sg.connect(this.strings).connect(this.bus);
   }
 
+  /** Bus loudness: 0.8 as shipped, scaled by the cog's music volume, and silent when music is muted (N) or off in the cog. */
+  private level() { return this.muted ? 0 : 0.8 * volumeOf(mix, "music"); }
+
   setMuted(m: boolean) {
     this.muted = m;
-    if (this.bus) this.bus.gain.setTargetAtTime(m ? 0 : 0.8, ac().currentTime, 0.2);
+    if (this.bus) this.bus.gain.setTargetAtTime(this.level(), ac().currentTime, 0.2);
   }
 
   update(m: Mood) {
@@ -193,12 +210,13 @@ export class Score {
     this.filter!.frequency.setTargetAtTime(220 + 500 * th, t, 0.5);
     this.air!.gain.setTargetAtTime(m.on ? 0.05 : 0, t, 1.5);
     this.strings!.gain.setTargetAtTime(m.on ? 0.035 * th * th : 0, t, 0.6);
+    this.bus!.gain.setTargetAtTime(this.level(), t, 0.2);
     if (!m.on || this.muted) return;
-    if (m.heart && th > 0.15 && t >= this.nextBeat) {
+    if (m.heart && volumeOf(mix, "music", "heartbeat") > 0 && th > 0.15 && t >= this.nextBeat) {
       this.beat(t, 0.25 + 0.5 * th);
       this.nextBeat = t + 60 / (52 + 80 * th);
     }
-    if (m.night && t >= this.nextChirp) {
+    if (m.night && volumeOf(mix, "music", "crickets") > 0 && t >= this.nextChirp) {
       this.chirp(t);
       // Crickets hush when someone's close.
       this.nextChirp = t + (0.6 + Math.random() * 1.6) * (1 + th * 6);
@@ -237,11 +255,11 @@ export class Score {
 
   /** The jolt when a ranger gets close: a scrape of noise and a swelling dissonant cluster. */
   stinger() {
-    if (!this.bus || this.muted) return;
+    if (!this.bus || this.muted || volumeOf(mix, "music", "stingers") <= 0) return;
     const a = ac(), t = a.currentTime;
     if (t - this.lastSting < 8) return;
     this.lastSting = t;
-    noise(0.6, 0.18, 0, 2600, 0.3);
+    noise(0.6, 0.18 * volumeOf(mix, "music"), 0, 2600, 0.3);
     const g = a.createGain(), lp = a.createBiquadFilter();
     lp.type = "lowpass"; lp.frequency.setValueAtTime(400, t); lp.frequency.exponentialRampToValueAtTime(3000, t + 0.4);
     g.gain.setValueAtTime(0.0001, t);
@@ -258,7 +276,7 @@ export class Score {
 
   /** Caught: one deep hit that rings out. */
   boom() {
-    if (!this.bus || this.muted) return;
+    if (!this.bus || this.muted || volumeOf(mix, "music", "stingers") <= 0) return;
     const a = ac(), t = a.currentTime, o = a.createOscillator(), g = a.createGain();
     o.frequency.setValueAtTime(90, t);
     o.frequency.exponentialRampToValueAtTime(30, t + 1.2);
@@ -266,7 +284,7 @@ export class Score {
     g.gain.exponentialRampToValueAtTime(0.0001, t + 2.5);
     o.connect(g).connect(this.bus);
     o.start(t); o.stop(t + 2.6);
-    noise(0.9, 0.2, 0, 180, 0.6);
+    noise(0.9, 0.2 * volumeOf(mix, "music"), 0, 180, 0.6);
   }
 }
 

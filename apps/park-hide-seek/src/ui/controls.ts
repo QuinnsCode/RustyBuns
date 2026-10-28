@@ -4,6 +4,8 @@
 //   mouse          look        V      first/third person
 //   F  flashlight (rangers)    Q  call out (rangers)   M  map / radio
 
+import type { Settings } from "@rustybuns/game-controls";
+
 /** How long crouch is held before it becomes prone. */
 export const PRONE_HOLD_MS = 450;
 
@@ -29,7 +31,7 @@ export class Controls {
   private pressed = new Set<string>();
   sensitivity = 0.0022;
   /** The cog's look speeds (1 as shipped): mouse X/Y, touch drag, and Y flipped. */
-  look = { lookX: 1, lookY: 1, touch: 1, invertY: false };
+  look: Pick<Settings, "lookX" | "lookY" | "touch" | "touchX" | "touchY" | "invertY"> = { lookX: 1, lookY: 1, touch: 1, touchX: 1, touchY: 1, invertY: false };
   private ySign() { return this.look.invertY ? -1 : 1; }
 
   constructor(private el: HTMLElement) {
@@ -110,8 +112,8 @@ export class Controls {
     view.addEventListener("touchmove", (e) => {
       e.preventDefault();
       for (const t of e.changedTouches) if (t.identifier === lid) {
-        this.yaw += (t.clientX - lx) * this.sensitivity * 1.6 * this.look.touch * this.look.lookX;
-        this.pitch = Math.max(-1.3, Math.min(1.2, this.pitch - (t.clientY - ly) * this.sensitivity * 1.6 * this.look.touch * this.look.lookY * this.ySign()));
+        this.yaw += (t.clientX - lx) * this.sensitivity * 1.6 * this.look.touch * this.look.touchX * this.look.lookX;
+        this.pitch = Math.max(-1.3, Math.min(1.2, this.pitch - (t.clientY - ly) * this.sensitivity * 1.6 * this.look.touch * this.look.touchY * this.look.lookY * this.ySign()));
         lx = t.clientX; ly = t.clientY;
       }
     }, { passive: false });
