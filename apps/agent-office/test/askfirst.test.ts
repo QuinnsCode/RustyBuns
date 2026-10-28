@@ -28,11 +28,11 @@ const office = Bun.serve({
 afterAll(() => office.stop(true));
 
 /** Claude Code runs the hook with the tool call on stdin: what the worker's shell gets. */
-async function hook(command: string) {
+async function hook(command: string, url = `http://127.0.0.1:${office.port}`) {
   const p = Bun.spawn(["sh", "-c", WRITE_HOOK], {
     stdin: new TextEncoder().encode(JSON.stringify({ tool_name: "Bash", tool_input: { command }, cwd: dir })),
     stdout: "pipe", stderr: "pipe",
-    env: { ...process.env, AGENT_OFFICE_WORKER_ID: "w1", AGENT_OFFICE_HOOK_TOKEN: "t", AGENT_OFFICE_HOOK_URL: `http://127.0.0.1:${office.port}` },
+    env: { ...process.env, AGENT_OFFICE_WORKER_ID: "w1", AGENT_OFFICE_HOOK_TOKEN: "t", AGENT_OFFICE_HOOK_URL: url },
   });
   return { done: p.exited.then(async (code) => ({ code, err: await new Response(p.stderr).text() })) };
 }
@@ -104,4 +104,14 @@ test("the owner revokes a grant from the list, and a bad request to the list is 
   expect((await other).code).toBe(2);
   expect((await people("do=grant&repo=a/b&kind=comment&who=Gizmo")).status).toBe(200);
   expect((await (await hook("gh issue comment 3 -b hi")).done).code).toBe(0);
+});
+
+test("while the office is down (a restart) reads still go ahead and only a write is held", async () => {
+  const dead = "http://127.0.0.1:1"; // nothing listens there
+  for (const read of ["git status", "git diff", "gh pr view 5", "gh api repos/a/b/pulls"]) expect((await (await hook(read, dead)).done).code).toBe(0);
+  for (const write of ["git push origin x", "git -C /tmp/x push", "gh pr merge 5 --squash", "gh issue comment 3 -b hi", "gh api repos/a/b/issues -X POST"]) {
+    const r = await (await hook(write, dead)).done;
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("did not answer");
+  }
 });
