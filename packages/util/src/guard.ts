@@ -73,6 +73,9 @@ export const arr = <T>(of: Guard<T>, max: number, o: { drop?: boolean; min?: num
 /** Left out (undefined or null) is fine and reads as undefined; otherwise through `g`. */
 export const opt = <T>(g: Guard<T>): Guard<T | undefined> => (v) => (v === undefined || v === null ? undefined : g(v));
 
+/** Through `g`, or undefined when it's wrong: a field a game drops rather than refusing the whole message. */
+export const maybe = <T>(g: Guard<T>): Guard<T | undefined> => (v) => check(g, v) ?? undefined;
+
 /** Runs `g` on a field, naming the field in what it throws. */
 const at = <T>(key: string | number, g: Guard<T>, v: unknown): T => {
   try { return g(v); } catch (e) { throw e instanceof Bad ? new Bad(`${key}${e.message.includes(": ") ? "." : ": "}${e.message}`) : e; }
