@@ -83,6 +83,12 @@ Shipped: runner #2359, tunnel #2360, sim and sound #2361, wired together in the 
   delay line (in `src/audio.ts`). Stay in that lane: slow, heavy, spacious, the tail of every sound audible.
 - Speed changes the tempo of the tunnel, not the music's bpm. Boost opens the filter and adds a hat
   pattern; the fence closes the filter and drops the hats.
+- The reference sound is the "Tactical Breach" 24/7 radio by Cyberpunk Coding Music
+  (https://www.youtube.com/watch?v=sjSnCKudqj0, channel https://www.youtube.com/@Cyberpunk_Coding_Music):
+  minimal, deep, dubby. In its own words: slow muted breakbeats, tactical downtempo, deep controlled sub-bass,
+  cold digital textures, nothing busy, every transition seamless. Before touching `src/audio.ts`, put it on
+  and match against it: the drums sit back and muted, the sub carries the weight, the delay tail is the
+  texture, and nothing ever gets bright or crowded. Listening is the test; there is no numeric target.
 
 ## Non-negotiables
 
