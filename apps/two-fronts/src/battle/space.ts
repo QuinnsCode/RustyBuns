@@ -5,7 +5,7 @@
 // you lose the orbit. The view draws it and feeds the hero's input; the tests run it headless.
 import { acos, atan2, cos, hypot, sin } from "./fmath.ts";
 import { other, type PerSide, type Side, type SpaceBattleResult, type SpaceBattleSpec } from "./contract.ts";
-import { clamp } from "@rustybuns/util";
+import { clamp, nextRandom } from "@rustybuns/util";
 
 export type CraftKind = "fighter" | "cruiser" | "hero";
 export interface Craft {
@@ -58,12 +58,7 @@ export const SPACE_STATS: Record<CraftKind, { hp: number; speed: number; turn: n
   hero: { hp: 160, speed: 46, turn: 2.4, range: 130, cool: 0.16, dmg: 12, aim: 0.9 },
 };
 
-const rand = (b: SpaceBattle) => {
-  let t = (b.seed = (b.seed + 0x6d2b79f5) >>> 0);
-  t = Math.imul(t ^ (t >>> 15), t | 1);
-  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-};
+const rand = (b: SpaceBattle) => nextRandom(b, "seed");
 type P = { x: number; y: number; z: number };
 const dist = (a: P, b: P) => hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 const wrap = (a: number) => atan2(sin(a), cos(a));

@@ -10,6 +10,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Faction } from "./contract.ts";
 import type { Trooper, WookaRole } from "./sim.ts";
+import { clamp01 } from "@rustybuns/util";
 
 type V3 = [number, number, number];
 type Mat = THREE.Material;
@@ -1036,7 +1037,6 @@ function fat(p: Pose, name: string, x = 1, y = 1, z = 1) {
   const j = p.joints[name], b = j && p.base.get(j);
   if (j && b) j.scale.set(b.s.x * x, b.s.y * y, b.s.z * z);
 }
-const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const ease = (from: number, to: number, rate: number, dt: number) => from + (to - from) * (1 - Math.exp(-rate * dt));
 
 // Poses a model from what its unit is doing this frame.

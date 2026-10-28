@@ -14,7 +14,7 @@ import { radioFor } from "./lines.ts";
 import RADIO_SCRIPT from "../../content/radio.json";
 import { atan2, cos, hypot, sin } from "./fmath.ts";
 import { VEHICLE_KINDS, other, poolSize, type BattleResult, type BattleSpec, type MatchMode, type PerSide, type SectorKind, type Side, type VehicleKind } from "./contract.ts";
-import { clamp } from "@rustybuns/util";
+import { clamp, nextRandom } from "@rustybuns/util";
 
 export type Trooper = "assault" | "heavy" | "sniper" | "engineer";
 export const TROOPERS: Trooper[] = ["assault", "heavy", "sniper", "engineer"];
@@ -347,12 +347,7 @@ export const flies = (u: { kind: UnitKind; champ?: Champ; kit?: Kit }) => u.kind
 export const altitude = (u: { kind: UnitKind; champ?: Champ; kit?: Kit }) => (u.kind === "gunship" ? GUNSHIP_ALT : jets(u) ? 5 : 0);
 const bodyOf = (u: Unit) => (u.kind === "tank" ? 2.5 : u.kind === "walker" ? 2.2 : u.kind === "speeder" ? 1.4 : u.champ === "warbur" ? 1.4 : u.role === "mossback" ? 1.5 : u.role === "chub" ? 0.9 : 0.6);
 
-const rand = (b: Battle) => {
-  let t = (b.seed = (b.seed + 0x6d2b79f5) >>> 0);
-  t = Math.imul(t ^ (t >>> 15), t | 1);
-  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-};
+const rand = (b: Battle) => nextRandom(b, "seed");
 const dist = (a: { x: number; z: number }, b: { x: number; z: number }) => hypot(a.x - b.x, a.z - b.z);
 // A line on the radio, with the time it was said.
 function say(b: Battle, text: string) {

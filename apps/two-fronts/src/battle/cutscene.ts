@@ -7,6 +7,7 @@
 // spawn, or round a Mossback that has just walked out of the trees. cutscene-view.ts plays them.
 import type { Faction } from "./contract.ts";
 import type { WookaRole, Trooper } from "./sim.ts";
+import { lerp } from "@rustybuns/util";
 
 // What an actor is drawn as: a Thunder Marine of a class, a Wooka of a kind, or a prop (the
 // dropship that brings the Thunder Marines in, and the supply crates it kicks out).
@@ -46,7 +47,6 @@ export const firedBetween = (s: Cutscene, t0: number, t1: number) =>
   s.cues.filter((c) => (c.do === "sound" || c.do === "shake") && c.at > t0 && c.at <= t1);
 
 const ease = (k: number) => (k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k));
-const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 
 export interface ActorState { id: string; as: Actor; x: number; y: number; z: number; yaw: number; roll: number; scale: number; moving: boolean; flying: boolean; chute: boolean }
 

@@ -4,12 +4,8 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { WALL_R } from "../../sim/rules.ts";
 import { FLAME } from "./industry.ts";
-import { bark, frond } from "./textures.ts";
+import { rng, bark, frond } from "./textures.ts";
 
-function rng(seed: number) {
-  let x = seed >>> 0;
-  return () => ((x = (Math.imul(x, 1664525) + 1013904223) >>> 0) / 4294967296);
-}
 
 // ---- the forest --------------------------------------------------------------
 // Everything beyond the clearing is instanced: a handful of palm shapes, bushes

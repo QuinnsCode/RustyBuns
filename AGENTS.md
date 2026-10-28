@@ -86,8 +86,9 @@ A PR that deletes more than it adds is the goal.
 - One repo's row comes from `repoRow` in `apps/codesplitter/src/repos.ts`, not another inline `FROM repos WHERE owner = ? AND name = ?`.
 - Known repeats still to pull up (check before adding another): `toFile(...)` plus `.json()` wrappers (`fileLines` in
   `stamps.ts` and `shares.ts`), the lockfile list (`buildfiles.ts`, `checks.ts`, `deps.ts`), `.catch(() => null)` on
-  `req.json()` (use `readBody`), and `clamp`, seeded `rng`, `escapeHtml` and `json` helpers copied between `apps/*`
-  (a shared package is the fix, not a fifth copy).
+  `req.json()` (use `readBody`), and `json` Response helpers copied between `apps/*` (a shared package is the fix, not
+  a fifth copy). `clamp`, `clamp01`, `lerp`, `esc`, `mulberry32` and `nextRandom` (a seeded stream kept on a sim's
+  own state) are in `@rustybuns/util`: import them.
 - When a table is always read together with another (`repos` and `branches` are joined by hand in many places), add a
   view or one query helper rather than another hand-written join.
 
