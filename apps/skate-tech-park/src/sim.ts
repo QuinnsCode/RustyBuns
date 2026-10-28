@@ -114,7 +114,8 @@ const MAX_SLOPE = 3; // a rise steeper than this (about 72 degrees) in one strid
 const CARVE = 0.8; // how much speed stiffens the board's turn: at top speed it turns 1/(1+CARVE) as tight
 const CARVE_DRAG = 0.5; // a hard carve at speed scrubs this share of it per second
 const DRIFT = 0.8; // rad/s the board falls toward downhill per unit of cross slope
-const LEG_PUMP = 0.15; // the same with legs alone: a held push through a transition, about a tenth more speed out of a quarter pipe
+const LEG_PUMP = 0.5;
+const LEG_PUMP_CAP = 9; // m/s: a leg's push through a transition gains in proportion to speed only up to here; a faster board is heaved no harder (a held push at vert entry speed stays a couple of airs, not a rocket) // the same with legs alone: a held push through a transition, about a tenth more speed out of a quarter pipe
 const PUMP = 0.6; // board: speed gained per radian the ground curves up ahead, as a share of speed, while pumping
 const WALL = 0.8; // radians: a rider this far up a curve who meets a sharper rise is on a wall, and flies off it
 const LIP_PUSH = 0.3; // share of its speed a pushing board keeps toward the deck as it leaves a vertical wall, so it clears the coping instead of climbing the face
@@ -453,7 +454,7 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     s.roll = Math.atan(across); // (pitch is the wheels' own track, kept from the last step: it follows a curve where the gradient overshoots)
     // pumping: weight the board as the floor curves up under it and the curve gives back speed
     const pump = inp.boost ? PUMP : inp.throttle > 0 ? LEG_PUMP : 0; // held through a transition, a push is a pump (the jets pump far harder than legs)
-    if (pump) s.speed += dir * pump * Math.abs(s.speed) * Math.max(0, pitched * dir);
+    if (pump) s.speed += dir * pump * (inp.boost ? Math.abs(s.speed) : Math.min(Math.abs(s.speed), LEG_PUMP_CAP)) * Math.max(0, pitched * dir);
     const yaw0 = s.yaw; // where the footprint was before it turned: turning into a wall is meeting the wall
     { // the board carves: weight over the trucks, tighter when fast, and it falls toward downhill
       const load = Math.abs(s.speed) / tune.top;
