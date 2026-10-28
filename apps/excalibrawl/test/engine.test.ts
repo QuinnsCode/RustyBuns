@@ -5,7 +5,8 @@ import { MODELS, PEN_EVERY, finished, judgeMatch, newMatch, playTurn, regionOf, 
 import { parsePlan } from "../src/engine/plan.ts";
 import { penTurn } from "../src/engine/pen.ts";
 import { encodePng, rasterize, snapshot } from "../src/engine/raster.ts";
-import type { SkeletonEl } from "../src/engine/types.ts";
+import { applyOps } from "../src/engine/ops.ts";
+import type { Op, SkeletonEl } from "../src/engine/types.ts";
 
 const region = { x: 350, y: 0, w: 350, h: 700 };
 const blank = (over: Partial<TurnInput> = {}): TurnInput => ({ prompt: "a very long cat", turn: 1, turns: 20, scene: [], region, image: "data:image/png;base64,AA", ...over });
@@ -351,5 +352,23 @@ describe("the planner", () => {
     expect(plans).toBe(1);
     expect(m.done).toEqual([3]);
     expect(m.log.map((e) => e.decision?.part ?? e.decision?.action)).toEqual(["body", "head", "eye", "add"]);
+  });
+});
+
+describe("elements a fighter adds", () => {
+  const region = { x: 0, y: 0, w: 100, h: 100 };
+  test.each([
+    ["a box without a size", { id: "a", type: "rectangle", x: 1, y: 1 }],
+    ["a line with one point", { id: "a", type: "line", x: 1, y: 1, points: [[0, 0]] }],
+    ["a position that isn't finite", { id: "a", type: "ellipse", x: Number.NaN, y: 1, width: 5, height: 5 }],
+    ["a type nobody draws", { id: "a", type: "star", x: 1, y: 1 }],
+  ])("%s is rejected", (_, element) => {
+    const r = applyOps(new Map(), [{ op: "add", element } as Op], region);
+    expect(r.rejected.map((x) => x.reason)).toEqual(["invalid element shape"]);
+  });
+  test("a good box lands, junk fields dropped and a bad colour left off", () => {
+    const element = { id: "a", type: "rectangle", x: 1, y: 1, width: 5, height: 5, strokeColor: "red", evil: 1 };
+    const r = applyOps(new Map(), [{ op: "add", element } as Op], region);
+    expect(r.scene.get("a")).toEqual({ id: "a", type: "rectangle", x: 1, y: 1, width: 5, height: 5 });
   });
 });

@@ -33,6 +33,8 @@ export interface Look { head: HeadDef; build: BuildId }
 export interface World {
   scene: THREE.Scene;
   terrainMesh: THREE.Mesh;
+  /** The shadow-casting sun, for the quality tier to size or switch off. */
+  sun: THREE.DirectionalLight;
   /** Everything a shot can be aimed at: ground and blocks. */
   solids: THREE.Object3D[];
   /** In a battle, how each player looks, by soldier id; anyone not in it wears the plain ball. */
@@ -699,6 +701,7 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
   return {
     scene,
     terrainMesh,
+    sun,
     solids,
     looks,
     sync(game, dt) {

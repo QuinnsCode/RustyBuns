@@ -17,6 +17,7 @@ import { cleanAvatar, type Avatar } from "./avatar.ts";
 import { renderCity } from "./card.ts";
 import { json, readBody, type Env } from "./env.ts";
 import { esc, plural } from "./util.ts";
+import { live } from "./repos.ts";
 
 /** Districts and buildings a city holds at most, and how many files of a repo's git it looks through. */
 const DISTRICTS = 9, BUILDINGS = 36, WALK = 400;
@@ -195,7 +196,7 @@ async function districtsOf(env: Env, name: string, now: number): Promise<Distric
   const kept = await env.DB.prepare("SELECT body FROM city_cache WHERE name = ? AND built_at > ?").bind(name, now - KEEP_MS).first<{ body: string }>();
   if (kept) try { return JSON.parse(kept.body) as District[]; } catch {}
   const { results } = await env.DB.prepare(
-    "SELECT name FROM repos WHERE owner = ? AND visibility = 'public' AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC LIMIT ?").bind(name, now, DISTRICTS).all<{ name: string }>();
+    `SELECT name FROM repos WHERE owner = ? AND visibility = 'public' AND ${live()} ORDER BY created_at DESC LIMIT ?`).bind(name, now, DISTRICTS).all<{ name: string }>();
   const built = await Promise.all(results.map(async ({ name: repo }) => ({ repo, ...await buildings(env, name, repo, now) })));
   const districts = layout(built.filter((d) => d.buildings.length));
   await env.DB.prepare("INSERT OR REPLACE INTO city_cache (name, built_at, body) VALUES (?, ?, ?)").bind(name, now, JSON.stringify(districts)).run().catch(() => {});

@@ -10,6 +10,7 @@
 
 import { materialize, toFile } from "./archive.ts";
 import { json, type Env, readBody, type Body } from "./env.ts";
+import { live } from "./repos.ts";
 
 export type Follow = { id: number; created_at: number } & (
   | { kind: "user" | "agent"; name: string }
@@ -31,7 +32,7 @@ const toFollow = (r: Row): Follow =>
 export async function listFollows(db: Env["DB"], handle: string, viewer: string | null = handle): Promise<Follow[]> {
   const { results } = await db.prepare(`
     SELECT f.* FROM follows f LEFT JOIN repos r ON r.owner = f.owner AND r.name = f.repo
-    WHERE f.follower = ? AND (f.kind IN ('user', 'agent') OR (r.owner IS NOT NULL AND (r.expires_at IS NULL OR r.expires_at > ?)
+    WHERE f.follower = ? AND (f.kind IN ('user', 'agent') OR (r.owner IS NOT NULL AND ${live("r")}
       AND (r.visibility = 'public' OR r.owner = ? OR EXISTS (SELECT 1 FROM collaborators c WHERE c.owner = r.owner AND c.repo = r.name AND c.name = ?))))
     ORDER BY f.created_at DESC, f.id DESC`).bind(handle, Date.now(), viewer, viewer).all<Row>();
   return results.map(toFollow);

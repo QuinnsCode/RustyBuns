@@ -3,6 +3,7 @@
 // ?kit=hi|mid|low picks the budget, ?kit=built shows the sampled meshes; ?board= works as in the game.
 // Behind the row stands the scenery set, every kind blown up to 3 m (?scenery=hi|mid|low|built, ?at=14 frames it).
 import * as THREE from "three";
+import { applyQuality, pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { makeLevel } from "./level.ts";
 import { boardwalk, bowl, box, fallenLog, funbox, gap, hip, join, kicker, ledge, outcrop, picnicTable, quarterPipe, rockFace, spine, stairSet, tabletop, type Part } from "./levels/pieces.ts";
 import { BOARD_BUDGETS, type BoardBudget, dressBoard, fingerboard } from "./models.ts";
@@ -12,9 +13,8 @@ import { levelMeshes } from "./render/pieces.ts";
 
 const q = new URLSearchParams(location.search);
 const canvas = document.getElementById("view") as HTMLCanvasElement;
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
+const tier = pickQuality().quality;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY[tier].antialias });
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xc9c3bb);
@@ -22,7 +22,7 @@ scene.add(new THREE.HemisphereLight(0xdfe8f0, 0x8a7f72, 1.2));
 const sun = new THREE.DirectionalLight(0xfff2dc, 2.4);
 sun.position.set(30, 50, 20);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+applyQuality(tier, renderer, [sun]); // pixel ratio, shadows and shadow map size follow the tier
 Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, far: 200 });
 scene.add(sun);
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(300, 300).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x9a948c, roughness: 1 }));

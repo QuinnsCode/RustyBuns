@@ -1,8 +1,9 @@
 // Pure: skeleton element schema + op validation + region clamping, from excalibrawl.com.
 // No I/O, no Cloudflare, no Excalidraw import.
+import { arr, check, maybe, num as num_, obj, oneOf, str, type Guard } from "@rustybuns/util/guard";
 import type {
   SkeletonEl, Scene, Op, OpLimits, Rejection, ApplyResult,
-  Bounds, BoxEl, LinearEl, ElementType, FillStyle,
+  Bounds, BoxEl, LinearEl, ElementType,
 } from "./types.ts";
 
 type BaseEl = Omit<BoxEl, "width" | "height" | "type"> & { type: ElementType };
@@ -27,15 +28,8 @@ export const PALETTE = [
 ] as const;
 
 const HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
-const FILL_STYLES: FillStyle[] = ["solid", "hachure", "cross-hatch"];
-const TYPES: ElementType[] = [
-  "rectangle",
-  "ellipse",
-  "diamond",
-  "line",
-  "arrow",
-  "text",
-];
+const FILL_STYLES = ["solid", "hachure", "cross-hatch"] as const;
+const TYPES = ["rectangle", "ellipse", "diamond", "line", "arrow", "text"] as const;
 
 const num = (v: unknown): v is number =>
   typeof v === "number" && Number.isFinite(v);
@@ -151,24 +145,33 @@ export function clampToRegion(el: SkeletonEl, r: Bounds): SkeletonEl {
 // --- op validation + application --------------------------------------------
 
 
-function validElementShape(e: unknown): e is SkeletonEl {
-  if (!e || typeof e !== "object") return false;
-  const el = e as Record<string, unknown>;
-  if (typeof el.id !== "string" || !el.id) return false;
-  if (typeof el.type !== "string" || !TYPES.includes(el.type as ElementType))
-    return false;
-  if (!num(el.x) || !num(el.y)) return false;
-  if (el.type === "text") return typeof el.text === "string";
-  if (el.type === "line" || el.type === "arrow")
-    return (
-      Array.isArray(el.points) &&
-      el.points.length >= 2 &&
-      el.points.every(
-        (p) => Array.isArray(p) && p.length === 2 && num(p[0]) && num(p[1]),
-      )
-    );
-  return num(el.width) && num(el.height); // box
-}
+const finite = num_(-Infinity, Infinity);
+const Point: Guard<[number, number]> = (v) => {
+  const [px, py] = arr(finite, 2, { min: 2 })(v);
+  return [px!, py!];
+};
+const Base = obj({
+  id: str(),
+  type: oneOf(TYPES),
+  x: finite,
+  y: finite,
+  strokeColor: maybe(str(9, { re: HEX })),
+  backgroundColor: maybe(str(9, { re: HEX })),
+  fillStyle: maybe(oneOf(FILL_STYLES)),
+  strokeWidth: maybe(finite),
+  roughness: maybe(finite),
+});
+const Box = obj({ width: finite, height: finite });
+const Linear = obj({ points: arr(Point, Infinity, { min: 2 }) });
+const Text = obj({ text: str(Infinity, { min: 0 }), fontSize: maybe(finite) });
+
+// What a fighter's `add` carries, checked field by field; anything else on it is dropped.
+const Element: Guard<SkeletonEl> = (v) => {
+  const base = Base(v);
+  if (base.type === "text") return { ...base, type: base.type, ...Text(v) };
+  if (base.type === "line" || base.type === "arrow") return { ...base, type: base.type, ...Linear(v) };
+  return { ...base, type: base.type, ...Box(v) };
+};
 
 function normalizeAdd(el: SkeletonEl, r: Bounds, lim: OpLimits): SkeletonEl {
   let e = sanitizeStyle(el);
@@ -191,11 +194,12 @@ export function applyOps(
 
   for (const op of ops.slice(0, limits.maxOpsPerTurn)) {
     if (op.op === "add") {
-      if (!validElementShape(op.element)) {
+      const added = check(Element, op.element);
+      if (!added) {
         rejected.push({ op, reason: "invalid element shape" });
         continue;
       }
-      if (scene.has(op.element.id)) {
+      if (scene.has(added.id)) {
         rejected.push({ op, reason: "id already exists" });
         continue;
       }
@@ -203,7 +207,7 @@ export function applyOps(
         rejected.push({ op, reason: "element cap reached" });
         continue;
       }
-      const el = normalizeAdd(op.element, region, limits);
+      const el = normalizeAdd(added, region, limits);
       scene.set(el.id, el);
       applied.push({ op: "add", element: el });
     } else if (op.op === "update") {

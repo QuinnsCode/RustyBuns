@@ -27,6 +27,7 @@ import { json, type Body, type Env } from "./env.ts";
 import { isAdmin } from "./identity.ts";
 import type { Doc, Line } from "./lines.ts";
 import { parseJson, esc } from "./util.ts";
+import { liveRepo, branchOf } from "./repos.ts";
 
 export type Mark = "pass" | "fail";
 export interface CutRun { at: number; code: number; passed: number; failed: number; out: string; marks: Record<string, Record<string, Mark>>; note?: string }
@@ -374,8 +375,7 @@ const summary = (run: CutRun | null) => !run ? "not run yet" : run.note ?? `${ru
 export async function cutRoutes(req: Request, env: Env, p: string[], url: URL, user: string | null): Promise<Response | null> {
   if (p[1] !== "cuts" || !p[2]) return null;
   // Like a shared range, the link is the key: it shows only the cut's lines, even from a private repo.
-  const c = await env.DB.prepare(`SELECT c.*, b.status FROM cuts c JOIN repos r ON r.owner = c.owner AND r.name = c.repo
-    JOIN branches b ON b.owner = c.owner AND b.repo = c.repo AND b.name = c.branch WHERE c.id = ? AND (r.expires_at IS NULL OR r.expires_at > ?)`).bind(p[2], Date.now()).first<CutRow>();
+  const c = await env.DB.prepare(`SELECT c.*, b.status FROM cuts c ${liveRepo("c")} ${branchOf("c")} WHERE c.id = ?`).bind(Date.now(), p[2]).first<CutRow>();
   if (!c) return json({ error: "no such cut" }, 404);
   const run: CutRun | null = c.run ? JSON.parse(c.run) : null;
 

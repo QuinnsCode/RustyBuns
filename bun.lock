@@ -213,6 +213,7 @@
       "name": "excalibrawl",
       "version": "0.0.1",
       "dependencies": {
+        "@rustybuns/util": "workspace:*",
         "react": "19.2.8",
         "react-dom": "19.2.8",
         "react-server-dom-webpack": "19.2.8",

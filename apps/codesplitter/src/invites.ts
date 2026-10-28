@@ -28,7 +28,7 @@ import { HARNESSES, type Harness } from "./harness.ts";
 import { isAdmin, isAgentHandle, mail, mailOn, slug } from "./identity.ts";
 import { mint } from "./tokens.ts";
 import { turnstile } from "./security.ts";
-import { repoRow } from "./repos.ts";
+import { repoRow, liveRepo } from "./repos.ts";
 import { b64url, sha256 } from "./util.ts";
 
 export const INVITE_DAYS = 7, MAX_INVITE_DAYS = 30, AGENT_TOKEN_DAYS = 30;
@@ -121,10 +121,9 @@ export async function repoInviteRoutes(req: Request, env: Env, p: string[], owne
  * made out to `user`'s handle: anyone else needs the link.
  */
 async function live(env: Env, ref: string, user: string | null = null): Promise<Invite | { error: string; status: number }> {
-  const repoLive = "JOIN repos r ON r.owner = i.owner AND r.name = i.repo WHERE (r.expires_at IS NULL OR r.expires_at > ?)";
   const i = (ref.startsWith("csi_")
-    ? await env.DB.prepare(`SELECT i.* FROM invites i ${repoLive} AND i.hash = ?`).bind(Date.now(), await sha256(ref)).first()
-    : user ? await env.DB.prepare(`SELECT i.* FROM invites i ${repoLive} AND i.id = ? AND i.kind = 'handle' AND i.target = ?`).bind(Date.now(), ref, user).first() : null) as Invite | null;
+    ? await env.DB.prepare(`SELECT i.* FROM invites i ${liveRepo("i")} WHERE i.hash = ?`).bind(Date.now(), await sha256(ref)).first()
+    : user ? await env.DB.prepare(`SELECT i.* FROM invites i ${liveRepo("i")} WHERE i.id = ? AND i.kind = 'handle' AND i.target = ?`).bind(Date.now(), ref, user).first() : null) as Invite | null;
   if (!i) return { error: "this invite was revoked, or never was", status: 404 };
   if (i.claimed_by) return { error: `this invite was already used, by @${i.claimed_by}: ask @${i.by} for another`, status: 410 };
   if (i.expires_at <= Date.now()) return { error: `this invite expired: ask @${i.by} for another`, status: 410 };

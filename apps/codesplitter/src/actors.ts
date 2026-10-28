@@ -8,12 +8,13 @@
 import { parseJson } from "./util.ts";
 import { HARNESSES } from "./harness.ts";
 import type { Env } from "./env.ts";
+import { live } from "./repos.ts";
 
 /** How many of its runs, and days of its pulse, a profile shows. */
 const RUNS = 30, DAYS = 30, DAY = 86_400_000;
 
 /** Repos `viewer` may read, as SQL on alias `r`: bind (now, viewer, viewer). */
-const SEEN = "(r.expires_at IS NULL OR r.expires_at > ?) AND (r.visibility = 'public' OR r.owner = ? OR EXISTS (SELECT 1 FROM collaborators c WHERE c.owner = r.owner AND c.repo = r.name AND c.name = ?))";
+const SEEN = `${live("r")} AND (r.visibility = 'public' OR r.owner = ? OR EXISTS (SELECT 1 FROM collaborators c WHERE c.owner = r.owner AND c.repo = r.name AND c.name = ?))`;
 
 /** What drives `agent`: a CLI harness, or one of codeSplitter' own (agent-deps is the dependency doctor). */
 export function harnessOf(agent: string) {

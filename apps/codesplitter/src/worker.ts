@@ -23,7 +23,7 @@ import {
   revokeSockets,
   toFile,
 } from "./archive.ts";
-import { repoRow } from "./repos.ts";
+import { repoRow, live, branchOf } from "./repos.ts";
 import {
   code,
   json,
@@ -504,7 +504,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     const top8 = (row.top8 ? parseJson<string[]>(row.top8 as string, []) : (await listFollows(env.DB, p[2], null)).flatMap((f) => f.kind === "user" ? [f.name] : [])).slice(0, TOP_FRIENDS);
     const u = { ...row, tier: tierById(row.tier), hidden: parseJson<string[]>(row.hidden as string, []), top8 };
     const { results: repos } = await env.DB.prepare(
-      "SELECT owner, name, visibility, level, created_at, expires_at FROM repos WHERE owner = ? AND (visibility = 'public' OR owner = ?) AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC").bind(p[2], user, Date.now()).all();
+      `SELECT owner, name, visibility, level, created_at, expires_at FROM repos WHERE owner = ? AND (visibility = 'public' OR owner = ?) AND ${live()} ORDER BY created_at DESC`).bind(p[2], user, Date.now()).all();
     const { results: playlists } = await env.DB.prepare("SELECT * FROM playlists WHERE owner = ? ORDER BY id DESC").bind(p[2]).all();
     const [given, got, agent] = await Promise.all([recentStamps(env, user, p[2], "by"), recentStamps(env, user, p[2], "author"),
       isAgentHandle(p[2]) ? agentProfile(env, p[2], user) : null]);
@@ -880,7 +880,7 @@ async function route(req: Request, env: Env): Promise<Response> {
           }
         }
         // Open branches' copies of the file hide the same lines.
-        const { results } = await env.DB.prepare("SELECT b.name FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch WHERE f.owner = ? AND f.repo = ? AND f.path = ? AND b.status = 'open'").bind(owner, repo, path).all<{ name: string }>();
+        const { results } = await env.DB.prepare(`SELECT b.name FROM branch_files f ${branchOf("f")} WHERE f.owner = ? AND f.repo = ? AND f.path = ? AND b.status = 'open'`).bind(owner, repo, path).all<{ name: string }>();
         for (const { name } of results) await toFile(env, owner, repo, path, user!, "private", { method: "POST", body: sent }, "", name);
         return res;
       }
