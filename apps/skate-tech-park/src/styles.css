@@ -114,5 +114,6 @@ body[data-labels="always"] .grip .path text { opacity: 1; }
 body[data-labels="never"] .grip[data-hint] .path text { opacity: 0; }
 
 /* The shared Controls cog sits in the HUD buttons, dressed like the other icon buttons; its dialog scrolls on a short screen. */
-.gc-cog { width: 38px; height: 38px; background: var(--paper); color: var(--ink); border: 2px solid var(--ink); border-radius: 8px; box-shadow: 3px 3px 0 var(--ink); }
-@media (max-width: 700px) { .gc-cog { width: 36px; height: 36px; box-shadow: 2px 2px 0 var(--ink); opacity: 0.8; } }
+.buttons .gc-cog { width: 38px; height: 38px; background: var(--paper); color: var(--ink); border: 2px solid var(--ink); border-radius: 8px; box-shadow: 3px 3px 0 var(--ink); }
+@media (max-width: 520px) { #speed { display: none; } .buttons { min-width: 0; flex-wrap: wrap; justify-content: flex-end; } }
+@media (max-width: 700px) { .buttons .gc-cog { width: 36px; height: 36px; box-shadow: 2px 2px 0 var(--ink); opacity: 0.8; } }
