@@ -3,6 +3,11 @@
 // calls, and the player's answers sent through a feedback delay set to the chart's delay, so
 // every answer echoes back on the beat it would have been due again. Speed (run.speed) opens the
 // master filter and brings in a hat pattern; the fence shuts it all down for a moment. Nothing to license.
+//
+// The mix, after the reference radio in VISION.md: drums, sub and the bass sit dead centre and dry.
+// Only the synths (skank, pad, calls and answers) go into the dub line, and the dub line is a
+// ping-pong, left then right, so the synths are the wide part. Once every 64 bars the bass moves;
+// once every 16 it rests a bar, and the delay tail is all that's left.
 import { SPEED_CEILING, SPEED_FLOOR, type Chart, type Lane } from "./sim.ts";
 
 // A minor pentatonic over a drone: any lane after any lane sounds like it was meant.
@@ -12,7 +17,8 @@ export class Music {
   readonly ctx: AudioContext;
   private readonly out: GainNode;
   private readonly wet: GainNode;
-  private readonly delay: DelayNode;
+  private readonly delay: DelayNode;   // the left tap; its echo crosses to the right tap and back
+  private readonly delayR: DelayNode;
   private readonly filter: BiquadFilterNode;
   private readonly sweep: GainNode;
   private speed = SPEED_FLOOR;
@@ -40,17 +46,25 @@ export class Music {
     lfo.connect(this.sweep).connect(this.filter.frequency);
     lfo.start();
     this.filter.connect(this.out).connect(this.ctx.destination);
-    // The dub: a delay line that feeds itself, a little darker each pass.
+    // The dub: two delay taps feeding each other, left then right, a little darker each pass.
     this.delay = this.ctx.createDelay(4);
-    const fb = this.ctx.createGain();
-    fb.gain.value = 0.55;
-    const dark = this.ctx.createBiquadFilter();
-    dark.type = "lowpass";
-    dark.frequency.value = 1800;
+    this.delayR = this.ctx.createDelay(4);
     this.wet = this.ctx.createGain();
     this.wet.gain.value = 0.5;
-    this.delay.connect(dark).connect(fb).connect(this.delay);
-    this.delay.connect(this.wet).connect(this.filter);
+    const cross = (from: DelayNode, to: DelayNode, pan: number) => {
+      const dark = this.ctx.createBiquadFilter();
+      dark.type = "lowpass";
+      dark.frequency.value = 1800;
+      const fb = this.ctx.createGain();
+      fb.gain.value = 0.6;
+      from.connect(dark).connect(fb).connect(to);
+      const side = this.ctx.createStereoPanner();
+      side.pan.value = pan;
+      from.connect(side).connect(this.wet);
+    };
+    cross(this.delay, this.delayR, -0.8);
+    cross(this.delayR, this.delay, 0.8);
+    this.wet.connect(this.filter);
   }
 
   /** Follow the run's speed: brighter and busier as it climbs. A sudden drop is the fence: the filter slams shut,
@@ -88,7 +102,7 @@ export class Music {
   async play(chart: Chart) {
     this.chart = chart;
     await this.ctx.resume();
-    this.delay.delayTime.value = chart.delay * this.spb;
+    this.delay.delayTime.value = this.delayR.delayTime.value = chart.delay * this.spb;
     this.speed = SPEED_FLOOR;
     this.bright = this.dullUntil = 0;
     for (const p of [this.filter.frequency, this.sweep.gain, this.out.gain]) p.cancelScheduledValues(0);
@@ -126,10 +140,13 @@ export class Music {
         // Half-time: the kick on the one, the snare on the three, so 140 feels like 70.
         if (inBar === 0 || (bar % 4 === 3 && inBar === 3)) this.kick(t);
         if (inBar === 2) this.snare(t);
-        // The wobble: a bass note a bar long whose filter shakes at a rate the bar picks.
-        if (inBar === 0) this.wobble(t, bar % 8 < 4 ? 36.71 : 41.2, [2, 3, 4, 1.5][bar % 4]!);
-        if (inBar === 1 || inBar === 3) this.skank(t + this.spb / 2);
-        if (bar % 4 === 0 && inBar === 0) this.pad(t, [110, 130.81, 164.81]);
+        // The wobble: a bass note a bar long whose filter shakes at a rate the bar picks. The note
+        // moves once a 64-bar phrase (up for the last eight bars) and every 16th bar the bass rests,
+        // skank and all, so the dub tail has a bar to itself.
+        const rest = bar % 16 === 15;
+        if (inBar === 0 && !rest) this.wobble(t, bar % 64 < 56 ? 36.71 : 41.2, [2, 3, 4, 1.5][bar % 4]!);
+        if ((inBar === 1 || inBar === 3) && !rest) this.skank(t + this.spb / 2);
+        if (bar % 32 === 0 && inBar === 0) this.pad(t, [110, 130.81, 164.81]);
       }
       // Just off the fence the hats drop out; otherwise the groove's own, plus sixteenths that come in as speed climbs.
       if (b < 0 || t >= this.dullUntil) {
@@ -169,7 +186,7 @@ export class Music {
     this.tone(t, LANE_HZ[lane] * 2, 0.22, "triangle", 0.2, this.filter);
   }
 
-  /** Off a wall: a dull body thud, a low drop and a muffled smack, a little of it into the delay so it echoes. */
+  /** Off a wall: a dull body thud, a low drop and a muffled smack. Dry: hits don't go round the dub line. */
   wall() {
     const t = this.ctx.currentTime;
     if (this.muted) return;
@@ -179,7 +196,6 @@ export class Music {
     g.gain.setValueAtTime(0.8, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
     o.connect(g).connect(this.out);
-    g.connect(this.delay);
     o.start(t);
     o.stop(t + 0.45);
     this.noise(t, 0.12, "lowpass", [600, 200], 0.5, this.out);
@@ -200,11 +216,10 @@ export class Music {
     const g = this.ctx.createGain();
     g.gain.value = vol;
     n.connect(f).connect(g).connect(dest);
-    g.connect(this.delay); // every hit and bounce goes round the dub line too
     n.start(t);
   }
 
-  private tone(t: number, hz: number, len: number, type: OscillatorType, vol: number, to: AudioNode) {
+  private tone(t: number, hz: number, len: number, type: OscillatorType, vol: number, to: AudioNode, pan = 0) {
     if (this.muted) return;
     const o = this.ctx.createOscillator(), g = this.ctx.createGain();
     o.type = type;
@@ -212,7 +227,12 @@ export class Music {
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(vol, t + 0.01);
     g.gain.setTargetAtTime(0, t + len, 0.06);
-    o.connect(g).connect(to);
+    o.connect(g);
+    if (pan) {
+      const side = this.ctx.createStereoPanner();
+      side.pan.value = pan;
+      g.connect(side).connect(to);
+    } else g.connect(to);
     o.start(t);
     o.stop(t + len + 0.4);
   }
@@ -244,35 +264,38 @@ export class Music {
     n.start(t);
   }
 
-  // Two saws a hair apart and a sine an octave under, through a lowpass an LFO opens and shuts
-  // `rate` times a beat. The rate is the wobble; the sub is what the phone's speaker can't do but
-  // headphones can.
+  // Two saws a hair apart, one each side, and a sine an octave under in the middle, through lowpasses
+  // one LFO opens and shuts `rate` times a beat. The rate is the wobble; the sub is what the phone's
+  // speaker can't do but headphones can. Only the saws are wide: the weight stays mono.
   private wobble(t: number, hz: number, rate: number) {
     if (this.muted) return;
     const len = this.spb * 4;
-    const lp = this.ctx.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.Q.value = 8;
-    lp.frequency.value = 200;
     const lfo = this.ctx.createOscillator(), depth = this.ctx.createGain();
     lfo.frequency.value = rate / this.spb;
     depth.gain.value = 900;
-    lfo.connect(depth).connect(lp.frequency);
+    lfo.connect(depth);
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(0.28, t + 0.02);
     g.gain.setValueAtTime(0.28, t + len - 0.1);
     g.gain.linearRampToValueAtTime(0, t + len);
-    for (const detune of [-7, 7]) {
+    for (const [detune, pan] of [[-7, -0.5], [7, 0.5]] as const) {
+      const lp = this.ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.Q.value = 8;
+      lp.frequency.value = 200;
+      depth.connect(lp.frequency);
+      const side = this.ctx.createStereoPanner();
+      side.pan.value = pan;
       const o = this.ctx.createOscillator();
       o.type = "sawtooth";
       o.frequency.value = hz * 2;
       o.detune.value = detune;
-      o.connect(lp);
+      o.connect(lp).connect(side).connect(g);
       o.start(t);
       o.stop(t + len);
     }
-    lp.connect(g).connect(this.filter);
+    g.connect(this.filter);
     lfo.start(t);
     lfo.stop(t + len);
     this.tone(t, hz, len - 0.05, "sine", 0.5, this.out);
@@ -295,12 +318,16 @@ export class Music {
     const g = this.ctx.createGain();
     g.gain.value = 0.5;
     n.connect(bp).connect(g).connect(this.out);
-    n.connect(bp).connect(this.delay);
     n.start(t);
     this.tone(t, 180, 0.08, "triangle", 0.4, this.out);
   }
 
+  /** The pad: three sines spread across the field, a hair out of tune, and the same into the dub. */
   private pad(t: number, hzs: number[]) {
-    for (const hz of hzs) this.tone(t, hz * (1 + (Math.random() - 0.5) * 0.004), this.spb * 7, "sine", 0.08, this.delay);
+    hzs.forEach((hz, i) => {
+      const drift = hz * (1 + (Math.random() - 0.5) * 0.004);
+      this.tone(t, drift, this.spb * 7, "sine", 0.06, this.filter, (i - 1) * 0.7);
+      this.tone(t, drift, this.spb * 7, "sine", 0.05, this.delay);
+    });
   }
 }

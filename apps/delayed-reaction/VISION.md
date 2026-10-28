@@ -89,6 +89,10 @@ Shipped: runner #2359, tunnel #2360, sim and sound #2361, wired together in the 
   cold digital textures, nothing busy, every transition seamless. Before touching `src/audio.ts`, put it on
   and match against it: the drums sit back and muted, the sub carries the weight, the delay tail is the
   texture, and nothing ever gets bright or crowded. Listening is the test; there is no numeric target.
+- The mix rules, from the owner's listen: drums, sub and bass are mono and dry, dead centre. Synths are the
+  wide part: the wobble's saws sit one each side, the pad is spread, and the dub delay is a ping-pong that
+  only synths go into (skank, pad, calls, answers). Hits never go round the delay. The groove breathes:
+  the bass note moves once a 64-bar phrase, rests one bar in sixteen, and the pad comes once in 32.
 
 ## Non-negotiables
 
