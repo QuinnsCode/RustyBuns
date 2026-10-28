@@ -3,7 +3,8 @@
 // trees, reading files, turning a file into a live Durable Object on first
 // open, and pushing a catalogue as a commit.
 
-import { fromText, isDoc, type Doc } from "./lines.ts";
+import { fromText, isDoc, text, type Doc } from "./lines.ts";
+import { isPlainObject } from "./util.ts";
 import { GIT_BOT, GIT_EMAIL_DOMAIN, push, type Change } from "./git.ts";
 import { localGit, mirrorIdentity } from "./mirror.ts";
 import { noodles, type Noodle } from "./noodles.ts";
@@ -39,6 +40,20 @@ export async function fileDoc(env: Env, owner: string, repo: string, path: strin
   const v: unknown = await (await toFile(env, owner, repo, path, user, op, {}, "", branch)).json();
   if (!isDoc(v)) throw new Error(`${path}: its ${op} isn't a lines doc`);
   return v;
+}
+
+/** A file Durable Object's reply as a lines doc, or null when it isn't one (not found, an error body). */
+export const docIn = async (res: Response): Promise<Doc | null> => {
+  const v: unknown = await res.json().catch(() => null);
+  return isDoc(v) ? v : null;
+};
+
+/** The file as of its latest commit (private lines blank when `crew` is "0"), or null when it has none. */
+async function lastDoc(env: Env, owner: string, repo: string, path: string, crew = "1"): Promise<Doc | null> {
+  const commits: unknown = await (await toFile(env, owner, repo, path, "codesplitters", "commits")).json();
+  const last = Array.isArray(commits) ? commits[0] : null;
+  if (!isPlainObject(last) || typeof last.rev !== "number") return null;
+  return docIn(await toFile(env, owner, repo, path, "codesplitters", "at", { headers: { "x-codesplitter-crew": crew } }, `?rev=${last.rev}`));
 }
 
 /** Close the live sockets that access was taken from: `user`'s, or everyone's but those in `keep` (`mainOnly`: only on main's files). A socket's access is checked once, at the upgrade. */
@@ -132,10 +147,9 @@ async function backfillCrew(env: Env, owner: string, repo: string, except?: stri
   for (const { path } of results) {
     if (path === except) continue;
     if (!((await (await toFile(env, owner, repo, path, "codesplitters", "private")).json()) as string[]).length) continue;
-    const [last] = (await (await toFile(env, owner, repo, path, "codesplitters", "commits")).json()) as { rev: number }[];
-    if (!last) continue;
-    const doc = (await (await toFile(env, owner, repo, path, "codesplitters", "at", {}, `?rev=${last.rev}`)).json()) as { lines: { text: string }[] };
-    const real = (t => t.endsWith("\n") ? t : t + "\n")(doc.lines.map((l) => l.text).join("\n"));
+    const doc = await lastDoc(env, owner, repo, path);
+    if (!doc) continue;
+    const real = (t => t.endsWith("\n") ? t : t + "\n")(text(doc));
     if ((await (await crew.handle.readFile({ ref: crew.branch, path }).catch(() => null))?.text()) !== real) changes[path] = real;
   }
   if (!Object.keys(changes).length) return;
@@ -334,10 +348,8 @@ async function pendingChanges(env: Env, owner: string, repo: string): Promise<Re
   const out: Record<string, string | null> = {};
   for (const { path } of results) {
     if (!(await env.DB.prepare("SELECT 1 FROM files WHERE owner = ? AND repo = ? AND path = ?").bind(owner, repo, path).first())) { out[path] = null; continue; }
-    const [last] = (await (await toFile(env, owner, repo, path, "codesplitters", "commits")).json()) as { rev: number }[];
-    if (!last) continue;
-    const doc = (await (await toFile(env, owner, repo, path, "codesplitters", "at", { headers: { "x-codesplitter-crew": "0" } }, `?rev=${last.rev}`)).json()) as { lines: { text: string }[] };
-    out[path] = doc.lines.map((l) => l.text).join("\n") + "\n";
+    const doc = await lastDoc(env, owner, repo, path, "0");
+    if (doc) out[path] = text(doc) + "\n";
   }
   return out;
 }
