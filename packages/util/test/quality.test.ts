@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { autoQuality, FrameWatch, guessQuality, pickQuality, STORE_KEY, stepDown, type Machine } from "../src/quality.ts";
+import { autoQuality, FrameWatch, guessQuality, pickQuality, type Quality, STORE_KEY, stepDown, type Machine } from "../src/quality.ts";
 
 describe("autoQuality", () => {
   test("applies the picked tier, then steps down and remembers when frames stay slow", () => {
@@ -26,7 +26,7 @@ const mem = () => {
 const nvidia: Machine = { gpu: "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)", webgl2: true, cores: 12, memory: 8 };
 
 describe("guessQuality", () => {
-  test.each<[string, Machine, string]>([
+  test.each<[string, Machine, Quality]>([
     ["no WebGL", { gpu: "", webgl2: false }, "low"],
     ["software rasteriser", { gpu: "Google SwiftShader", webgl2: true, cores: 8, memory: 8 }, "low"],
     ["old Intel HD", { gpu: "ANGLE (Intel, Intel(R) HD Graphics 4000 Direct3D11 vs_5_0 ps_5_0, D3D11)", webgl2: true, cores: 4, memory: 8 }, "low"],
