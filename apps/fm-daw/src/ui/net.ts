@@ -2,7 +2,7 @@
 // saves the project to sqlite. On Cloudflare it's a Durable Object per room, so
 // everyone in the room edits one groove. With no world (plain `vite dev`), the
 // app still works; it just doesn't save.
-import type { Op, Project } from "../project.ts";
+import { decodeServer, type ClientMsg, type Op, type Project } from "../project.ts";
 
 export type NetStatus = { state: "connecting" | "online" | "offline"; peers: number };
 
@@ -33,11 +33,11 @@ export function connect(opts: {
     ws = new WebSocket(url);
     ws.onopen = () => { tries = 0; for (const m of queue.splice(0)) ws!.send(m); };
     ws.onmessage = (e) => {
-      let m: any;
-      try { m = JSON.parse(e.data); } catch { return; }
-      if (m.t === "snapshot") { opts.onSnapshot(m.project ?? null); opts.onStatus({ state: "online", peers }); }
-      else if (m.t === "op") opts.onOp(m.op);
-      else if (m.t === "peers") { peers = m.n; opts.onStatus({ state: "online", peers }); }
+      let m;
+      try { m = decodeServer(JSON.parse(String(e.data))); } catch { return; }
+      if (m?.t === "snapshot") { opts.onSnapshot(m.project); opts.onStatus({ state: "online", peers }); }
+      else if (m?.t === "op") opts.onOp(m.op);
+      else if (m?.t === "peers") { peers = m.n; opts.onStatus({ state: "online", peers }); }
     };
     ws.onclose = () => {
       ws = null;
@@ -50,7 +50,7 @@ export function connect(opts: {
   };
   open();
 
-  const raw = (m: unknown) => {
+  const raw = (m: ClientMsg) => {
     const s = JSON.stringify(m);
     if (ws?.readyState === WebSocket.OPEN) ws.send(s);
     else if (queue.length < 200) queue.push(s);

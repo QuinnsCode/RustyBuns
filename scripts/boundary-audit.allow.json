@@ -69,7 +69,7 @@
   "apps/codesplitter/src/watch.ts": 1,
   "apps/codesplitter/src/worker.ts": 6,
   "apps/codesplitter/watchdog/worker.ts": 2,
-  "apps/excalibrawl/src/app/viewer.ts": 3,
+  "apps/excalibrawl/src/app/viewer.ts": 2,
   "apps/excalibrawl/src/arena.ts": 2,
   "apps/geoboxq-shopify/src/worker.ts": 1,
   "apps/geoboxq/src/engine.ts": 1,

@@ -10,7 +10,7 @@
 import { Room, TICK_MS } from "../../src/room.ts";
 import { TokenBucket } from "../../src/edge/limits.ts";
 import { QUICK } from "../../src/edge/match.ts";
-import { parseMsg } from "../../src/hunt/game.ts";
+import { parseMsg, type ServerMsg } from "../../src/hunt/game.ts";
 import { fetchWeather } from "../../src/weather.ts";
 
 // Provided by workerd and by the Rusty Buns host.
@@ -126,6 +126,6 @@ export default class World {
   }
 
   private send(ws: any, id: string, now: number) {
-    try { ws.send(JSON.stringify({ t: "view", view: this.room.game.view(id, now) })); this.sent.set(ws, { v: this.room.game.version, at: now }); } catch {}
+    try { ws.send(JSON.stringify({ t: "view", view: this.room.game.view(id, now) } satisfies ServerMsg)); this.sent.set(ws, { v: this.room.game.version, at: now }); } catch {}
   }
 }

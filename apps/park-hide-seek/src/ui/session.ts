@@ -3,7 +3,7 @@
 // this machine's or a friend's or an online room's, and views arrive over a WebSocket.
 
 import { worldSocket, playerId } from "@rustybuns/shell-bun/client";
-import type { Look, Msg, View } from "../hunt/game.ts";
+import { isServerMsg, type Look, type Msg, type View } from "../hunt/game.ts";
 import { Room, TICK_MS } from "../room.ts";
 import { fetchWeather } from "../weather.ts";
 
@@ -66,9 +66,9 @@ export class NetSession implements Session {
     this.onStatus({ state: "connecting" });
     this.ws.onopen = () => { for (const m of this.queue.splice(0)) this.ws.send(m); this.onStatus({ state: "online" }); };
     this.ws.onmessage = (e) => {
-      let m: any;
-      try { m = JSON.parse(e.data); } catch { return; }
-      if (m.t !== "view") return;
+      let m: unknown;
+      try { m = JSON.parse(String(e.data)); } catch { return; }
+      if (!isServerMsg(m)) return;
       this.seen = true;
       this.offset = m.view.now - Date.now();
       this.onView(m.view);
