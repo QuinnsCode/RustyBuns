@@ -23,6 +23,8 @@ export class Puffs {
   private size = new Float32Array(SIZE);
   private alpha = new Float32Array(SIZE);
   private next = 0;
+  /** Something is alive (or just died and still needs its zero uploaded); an idle pool skips the loop and the upload. */
+  private busy = false;
 
   constructor() {
     const g = new THREE.BufferGeometry();
@@ -40,6 +42,7 @@ export class Puffs {
     this.pos.set([x, y, z], i * 3);
     this.vel.set([vx, vy, vz], i * 3);
     this.age[i] = 0; this.life[i] = life; this.size0[i] = size;
+    this.busy = true;
   }
 
   get live() {
@@ -49,15 +52,19 @@ export class Puffs {
   }
 
   update(dt: number) {
+    if (!this.busy) return;
+    let alive = false;
     const drag = Math.exp(-3 * dt);
     for (let i = 0; i < SIZE; i++) {
       const t = (this.age[i] += dt) / this.life[i];
       if (t >= 1) { this.size[i] = 0; this.alpha[i] = 0; continue; }
+      alive = true;
       for (let k = 0; k < 3; k++) { this.vel[i * 3 + k] *= drag; this.pos[i * 3 + k] += this.vel[i * 3 + k] * dt; }
       this.size[i] = this.size0[i] * (1 + 4 * t);
       this.alpha[i] = 0.6 * (1 - t) ** 1.5;
     }
     for (const a of ["position", "aSize", "aAlpha"]) (this.points.geometry.getAttribute(a) as THREE.BufferAttribute).needsUpdate = true;
+    this.busy = alive;
   }
 }
 
