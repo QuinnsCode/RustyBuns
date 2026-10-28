@@ -14,20 +14,27 @@ const DEMO_CONTACTS = 2000;
 const FIRST_PAGE = 200; // seeded before the response, so the frame has rows at once; the rest follows it
 const DEMO_TTL = 24 * 3600_000;
 
+/** A throwaway account, signed in: the user and the headers that carry its session cookie. */
+export async function throwaway(req: Request, env: Env, name: string, prefix = "demo") {
+  const id = b64url(crypto.getRandomValues(new Uint8Array(9))).toLowerCase().replace(/[^a-z0-9]/g, "x");
+  const email = `${prefix}-${id}@qcrm.local`;
+  const password = b64url(crypto.getRandomValues(new Uint8Array(24)));
+  const { headers, response } = await authFor(req, env).api.signUpEmail({ body: { email, password, name }, returnHeaders: true });
+  if (!response?.user) return null;
+  return { user: { id: response.user.id, email, name } satisfies User, headers };
+}
+
 export async function demoRoute(req: Request, env: Env, defer?: Defer): Promise<Response> {
   if (req.method !== "POST") return error(405, "POST to make a demo account");
-  const id = b64url(crypto.getRandomValues(new Uint8Array(9))).toLowerCase().replace(/[^a-z0-9]/g, "x");
-  const email = `demo-${id}@qcrm.local`;
-  const password = b64url(crypto.getRandomValues(new Uint8Array(24)));
-  const { headers, response } = await authFor(req, env).api.signUpEmail({ body: { email, password, name: "Demo" }, returnHeaders: true });
-  if (!response?.user) return error(500, "could not make the demo account");
-  const user: User = { id: response.user.id, email, name: "Demo" };
+  const made = await throwaway(req, env, "Demo");
+  if (!made) return error(500, "could not make the demo account");
+  const { user, headers } = made;
   const org = await createOrg(env, user, "Demo Co", "demo");
   const seed = Date.now() % 100_000;
   const seeded = await seedOrg(env, org.id, user.id, FIRST_PAGE, seed);
   const rest = seedOrg(env, org.id, user.id, DEMO_CONTACTS - FIRST_PAGE, seed + 1);
   if (defer) defer(rest.catch(() => {})); else await rest;
-  const res = json({ org: { ...org, role: "admin", seeded }, user: { id: user.id, email, name: user.name } }, 201);
+  const res = json({ org: { ...org, role: "admin", seeded }, user }, 201);
   for (const c of headers.getSetCookie()) res.headers.append("set-cookie", c);
   return res;
 }
@@ -36,7 +43,12 @@ export async function demoRoute(req: Request, env: Env, defer?: Defer): Promise<
 export async function hourly(env: Env): Promise<void> {
   const { results } = await env.DB.prepare("SELECT id, owner_user_id FROM orgs WHERE plan = 'demo' AND created_at < ?").bind(Date.now() - DEMO_TTL).all<{ id: string; owner_user_id: string }>();
   for (const o of results) {
+    // Scenario orgs (scenario.ts) have throwaway members too.
+    const members = await env.DB.prepare('SELECT u.id FROM memberships m JOIN "user" u ON u.id = m.user_id WHERE m.org_id = ? AND u.email LIKE ?').bind(o.id, "scenario-%@qcrm.local").all<{ id: string }>();
     await deleteOrg(env, o.id);
+    for (const m of members.results) await env.DB.batch([
+      env.DB.prepare('DELETE FROM "session" WHERE "userId" = ?').bind(m.id), env.DB.prepare('DELETE FROM "account" WHERE "userId" = ?').bind(m.id), env.DB.prepare('DELETE FROM "user" WHERE id = ?').bind(m.id),
+    ]);
     await env.DB.batch([
       env.DB.prepare("DELETE FROM memberships WHERE user_id = ?").bind(o.owner_user_id),
       env.DB.prepare('DELETE FROM "session" WHERE "userId" = ?').bind(o.owner_user_id),

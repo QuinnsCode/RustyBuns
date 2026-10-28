@@ -101,7 +101,7 @@ function checkScript(b: { name?: unknown; body?: unknown; enabled?: unknown } | 
   return out;
 }
 
-async function insert(env: Env, org: string, by: string, name: string, body: string) {
+export async function insert(env: Env, org: string, by: string, name: string, body: string) {
   const now = Date.now();
   const s = { id: crypto.randomUUID(), org_id: org, name, body, lang: "js", created_by: by, created_at: now, updated_at: now, enabled: true };
   await env.DB.prepare("INSERT INTO scripts (id, org_id, name, body, lang, created_by, created_at, updated_at, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)").bind(s.id, org, name, body, "js", by, now, now).run();

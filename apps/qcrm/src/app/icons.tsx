@@ -22,6 +22,8 @@ const PATHS: Record<string, string> = {
   upload: "M12 3v12M17 8l-5-5-5 5M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4",
   "log-out": "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
   plus: "M5 12h14M12 5v14",
+  "rotate-ccw": "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5",
+  "chevron-down": "m6 9 6 6 6-6",
   copy: "M8 8h12v12H8zM4 16V4h12",
   check: "M20 6 9 17l-5-5",
   search: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35",
