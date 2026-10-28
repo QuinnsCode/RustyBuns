@@ -4,6 +4,7 @@ import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
 import { Music } from "./audio.ts";
 import { burst, drawTunnel, echoBursts, LANE_X, sway, view, type Burst } from "./hallway.ts";
 import { drawRunner } from "./runner.ts";
+import { fromSearch, runOf, Scenario, toSearch } from "./scenario.ts";
 import { advance, createRun, delayWords, dueLanes, knockback, LEVELS, makeChart, press, runnerX, type Judgement, type Lane, type Run } from "./sim.ts";
 const KEYS: Record<string, Lane> = { KeyD: 0, KeyF: 1, KeyJ: 2, KeyK: 3, ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3 };
 
@@ -25,6 +26,9 @@ let judgeUntil = 0;
 let missBeat: number | undefined; // the runner stumbles on the beat after a miss
 let passBeat: number | undefined; // and dives shoulder-first through the door on a hit
 
+// ?level=5&beat=40&speed=2&delay=8&bpm=140&hint=0&lane=3 lands in that state; a tap starts it (audio needs a tap).
+const asked = fromSearch(location.search);
+
 function el(id: string) { return document.getElementById(id)!; }
 
 // ---- menu ----
@@ -45,18 +49,26 @@ function showMenu(result?: Run) {
     b.addEventListener("click", () => start(n));
     levels.append(b);
   });
+  if (asked) {
+    const b = document.createElement("button");
+    b.id = "scenario";
+    b.innerHTML = `<b>Go</b> ${toSearch(asked)}`;
+    b.addEventListener("click", () => start(asked.level, asked));
+    levels.prepend(b);
+  }
   menu.hidden = false;
 }
 
-async function start(level: number) {
+async function start(level: number, scene?: Scenario) {
   menu.hidden = true;
   music ??= new Music();
-  const chart = makeChart(level);
-  run = createRun(chart);
+  const made = scene ? runOf(scene) : null;
+  const chart = made?.chart ?? makeChart(level);
+  run = made?.run ?? createRun(chart);
   el("delay-words").textContent = delayWords(chart.delay);
   hud.judge.textContent = chart.hint ? `Answer on the echo, ${delayWords(chart.delay)}` : `Answer ${delayWords(chart.delay)}, no echo now`;
   judgeUntil = performance.now() + 2500;
-  await music.play(chart);
+  await music.play(chart, scene?.beat);
 }
 
 function finish() {
@@ -192,6 +204,24 @@ function frame(now: number) {
 
 // Avoid the page scrolling or zooming under a thumb.
 document.addEventListener("touchmove", (e) => { if (!menu.hidden) return; e.preventDefault(); }, { passive: false });
+
+// The same state setter for an agent: window.delayedReaction, and the WebMCP tools where the browser has them.
+const hook = {
+  start: (o: unknown) => { const sc = Scenario(o ?? {}); void start(sc.level, sc); return toSearch(sc); },
+  state: () => run && { level: run.chart.level, beat: Math.round(run.beat * 100) / 100, score: run.score, combo: run.combo, lives: run.lives, speed: run.speed, lane: run.lane, over: run.over },
+};
+Reflect.set(window, "delayedReaction", hook);
+const mc: unknown = Reflect.get(document, "modelContext") ?? Reflect.get(navigator, "modelContext");
+if (mc && typeof (mc as { registerTool?: unknown }).registerTool === "function") {
+  const reg = (mc as { registerTool: (t: object) => unknown }).registerTool.bind(mc);
+  const props = { level: { type: "integer" }, bpm: { type: "number" }, delay: { type: "integer" }, hint: { type: "number" }, beat: { type: "number" }, speed: { type: "number" }, lane: { type: "integer" } };
+  try {
+    reg({ name: "dr_start", title: "Start in a state", description: "Start a run at a level, tempo, delay, beat, speed and lane. Returns the link that lands in the same state.",
+      inputSchema: { type: "object", properties: props }, execute: async (a: unknown) => ({ link: hook.start(a) }) });
+    reg({ name: "dr_state", title: "Look at the run", description: "Score, combo, lives, speed, lane and beat of the run now.",
+      inputSchema: { type: "object", properties: {} }, annotations: { readOnlyHint: true }, execute: async () => hook.state() ?? { menu: true } });
+  } catch { /* a browser whose registerTool has another shape: the window hook still works */ }
+}
 
 showMenu();
 requestAnimationFrame(frame);
