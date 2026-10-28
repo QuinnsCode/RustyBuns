@@ -117,7 +117,7 @@ select { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-
 .hints { font-size: 12px; opacity: 0.9; }
 .hints kbd { font: 600 11px ui-monospace, Menlo, monospace; background: rgba(255, 255, 255, 0.18); border-radius: 3px; padding: 0 4px; }
 .feed { position: absolute; right: 16px; bottom: 16px; list-style: none; margin: 0; padding: 0; text-align: right; font-size: 13px; display: grid; gap: 2px; max-width: 40vw; }
-.scores { position: absolute; right: 16px; top: 12px; list-style: none; margin: 0; padding: 8px 10px; background: rgba(20, 16, 10, 0.5); border-radius: 8px; font-size: 12px; display: grid; gap: 2px; min-width: 150px; }
+.scores { position: absolute; right: 16px; top: 60px; list-style: none; margin: 0; padding: 8px 10px; background: rgba(20, 16, 10, 0.5); border-radius: 8px; font-size: 12px; display: grid; gap: 2px; min-width: 150px; }
 .scores li { display: flex; justify-content: space-between; gap: 10px; }
 .scores .out { opacity: 0.5; text-decoration: line-through; }
 .clickme { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); background: rgba(20, 16, 10, 0.6); padding: 6px 12px; border-radius: 6px; font-size: 13px; }
@@ -156,3 +156,9 @@ select { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-
 
 /* The Controls cog, top right, above the menu and the HUD (whose top bar is centred). */
 #controls-host { position: fixed; top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); z-index: 30; }
+/* On a phone the top bar is as wide as the screen, so it drops below the cog row, and the banner and scores follow. */
+@media (max-width: 520px) {
+  .topbar { top: 60px; max-width: calc(100vw - 16px); overflow: hidden; }
+  .banner { top: 106px; }
+  .scores { top: 176px; }
+}
