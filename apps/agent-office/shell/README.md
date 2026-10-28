@@ -33,3 +33,15 @@ through Tauri's updater, that has its own minisign key, separate from Apple's.
 `agent-office-shell.yml` signs and notarizes the `.app` when the Apple secrets from APPLE_SIGNING.md step 7 are set
 (`APPLE_DEVELOPER_ID_P12` and the rest, in the `drops` environment); without them a fresh download is blocked by
 Gatekeeper, but an update through the tray is not (the updater's download carries no quarantine flag).
+
+## Releasing from the builder Mac
+
+Apple's notarization can take longer than a GitHub job may run (the cap is 60 minutes), so the builder Mac can do the
+release instead: `scripts/mac/ship-shell.sh` builds the newest stable `agent-office-v<x.y.z>` tag when it is newer than
+the `latest.json` on the `agent-office-latest` release, signs with the Developer ID certificate in that Mac's keychain,
+waits for Apple as long as it takes, and publishes the same files `agent-office-shell.yml` does. It exits at once when
+nothing is newer. `scripts/mac/dev.rustybuns.ship-shell.plist` runs it at 06:00 and 18:00 (edit `YOU`, copy to
+`~/Library/LaunchAgents`, `launchctl load` it); its log is `~/builder/ship/log`. The builder needs `gh` signed in,
+`~/.tauri/agent-office.key`, and `~/.appstoreconnect/AuthKey.p8` plus an `ids` file with `APPLE_API_KEY=` (Key ID) and
+`APPLE_API_ISSUER=` (Issuer ID). `scripts/mac/apple-secrets.sh p12|notary` puts the Apple files on GitHub for the workflow
+instead (it reads the newest file in `~/Downloads`, checks the password and asks nothing else).
