@@ -8,7 +8,9 @@
 //   const n = Note(raw);               // throws Bad("s: a number from 0 to 16") when s isn't one
 
 /** What a guard found wrong, with the field it was in: "name: text up to 100 characters". */
-export class Bad extends Error {}
+export class Bad extends Error {
+  constructor(readonly why: string, readonly path: (string | number)[] = []) { super(path.length ? `${path.join(".")}: ${why}` : why); }
+}
 
 export type Guard<T> = (v: unknown) => T;
 /** The type a guard hands back. */
@@ -78,7 +80,7 @@ export const maybe = <T>(g: Guard<T>): Guard<T | undefined> => (v) => check(g, v
 
 /** Runs `g` on a field, naming the field in what it throws. */
 const at = <T>(key: string | number, g: Guard<T>, v: unknown): T => {
-  try { return g(v); } catch (e) { throw e instanceof Bad ? new Bad(`${key}${e.message.includes(": ") ? "." : ": "}${e.message}`) : e; }
+  try { return g(v); } catch (e) { throw e instanceof Bad ? new Bad(e.why, [key, ...e.path]) : e; }
 };
 
 type Shape = Record<string, Guard<unknown>>;
@@ -96,6 +98,17 @@ export const obj = <S extends Shape>(shape: S): Guard<Flat<Built<S>>> => (v) => 
   }
   return out as Flat<Built<S>>;
 };
+
+/** A map of up to `max` keys to values each through `of`, as `{ [key]: T }`. */
+export const rec = <T>(of: Guard<T>, max = Infinity): Guard<Record<string, T>> => (v) => {
+  const o = typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : fail("an object");
+  const keys = Object.keys(o);
+  if (keys.length > max) fail(`up to ${max} keys`);
+  return Object.fromEntries(keys.map((k) => [k, at(k, of, o[k])]));
+};
+
+/** null as null, anything else through `g`: a field that says "none" on purpose. */
+export const nul = <T>(g: Guard<T>): Guard<T | null> => (v) => (v === null ? null : g(v));
 
 /** `g`'s value, or null when it throws `Bad`: for a message that's dropped rather than answered. */
 export const check = <T>(g: Guard<T>, v: unknown): T | null => {
