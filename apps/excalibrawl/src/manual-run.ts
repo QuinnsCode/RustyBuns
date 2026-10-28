@@ -1,10 +1,10 @@
 // The dry run for the migration's manual run (#967): where each step stands, without a deploy or a billed call.
 // Pure: the CLI (scripts/dry-run.ts) hands it the config's cron, the cap and a fetch.
-import { arr, num, obj, opt, str } from "@rustybuns/util/guard";
+import { arr, check, num, obj, str, type Of } from "@rustybuns/util/guard";
 
 export interface Step { step: string; state: "done" | "todo" | "unknown"; note: string }
 
-const Index = arr(obj({ id: str(), startedAt: num(0, Infinity), shapes: arr(num(0, Infinity)), turns: opt(num(0, Infinity)) }));
+const Index = arr(obj({ id: str(), shapes: arr(num(0, 1e6), 8) }), 1000);
 
 /** The next time an "M * * * *" cron fires after `now` (hourly crons are all this app has). */
 export function nextFire(cron: string, now: number): Date {
@@ -17,13 +17,14 @@ export function nextFire(cron: string, now: number): Date {
 
 export async function dryRun(o: { site: string; cron: string; dailyCalls: number; now: number; fetch: typeof fetch }): Promise<Step[]> {
   const out: Step[] = [];
-  let index: ReturnType<typeof Index> | null = null, reach = "";
+  let index: Of<typeof Index> | null = null, reach = "";
   try {
     const r = await o.fetch(`${o.site}/api/matches`);
     if (!r.ok) reach = `${o.site}/api/matches answered ${r.status}`;
     else {
       const body: unknown = await r.json().catch(() => null);
-      try { index = Index(body); } catch { reach = `${o.site}/api/matches is not the new Worker's index (the old site, or not deployed)`; }
+      index = check(Index, body);
+      if (!index) { reach = `${o.site}/api/matches is not the new Worker's index (the old site, or not deployed)`; }
     }
   } catch (e) { reach = `${o.site} is unreachable: ${e instanceof Error ? e.message : String(e)}`; }
 
