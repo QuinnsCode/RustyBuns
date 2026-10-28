@@ -126,8 +126,10 @@ async function prepare(tag: string) {
   lap("server bundles (live)");
   prepend("floor.js", "import { liveGitHub as __rbLive } from './rb-live.js';\n");
   patch("floor.js", "        void this.github.refresh();\n        // A floor with people on it",
-    "        void this.github.refresh();\n        this.__rbLive = __rbLive(this, def.dir);\n        // A floor with people on it");
-  patch("floor.js", "this.github.stop();", "this.github.stop();\n        this.__rbLive?.stop();");
+    "        void this.github.refresh();\n        this.__rbLive = __rbLive(this, def.dir, ctx.__rbDataDir);\n        // A floor with people on it");
+  // the board's token comes from the office's own GitHub sign-in first (connect/), which lives in the office's data folder
+  patch("office/floors.js", "        agentCmd: cfg.agentCmd,\n", "        agentCmd: cfg.agentCmd,\n        __rbDataDir: cfg.dataDir,\n");
+  patch("floor.js", "this.github.stop();","this.github.stop();\n        this.__rbLive?.stop();");
   patch("workers/manager.js", "notePr: (command, output) => this.prs.noteOwn(w, command, output),",
     "notePr: (command, output) => {\n                this.prs.noteOwn(w, command, output);\n                this.__rbOnGh?.(command);\n            },");
 

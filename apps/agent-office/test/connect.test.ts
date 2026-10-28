@@ -1,5 +1,5 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { connections, githubToken, type Deps, type State } from "../connect/github.ts";
 import { fileSecrets } from "../connect/keychain.ts";
@@ -81,4 +81,15 @@ test("without the GitHub app's client ID, sign-in says how to set it up", async 
   const r = (await route("POST", new URL("http://office/__rb/connections?do=github")))!;
   expect(r.status).toBe(400);
   expect(r.body).toMatchObject({ ready: false, error: expect.stringContaining("AGENT_OFFICE_GITHUB_CLIENT_ID") });
+});
+
+test("the boards use the office's own sign-in, and gh's only when there is none", async () => {
+  const { boardToken } = await import("../live/github.ts");
+  const dir = mkdtempSync(`${tmpdir()}/connect-`);
+  const secrets = fileSecrets(dir);
+  writeFileSync(`${dir}/connections.json`, JSON.stringify([{ account: "octo-work", access: "read" }]));
+  await secrets.set("octo-work", "tok_office");
+  expect(await boardToken(dir, dir, secrets)).toBe("tok_office");
+  await secrets.remove("octo-work"); // nothing in the keychain: falls back to gh (which may or may not be signed in here)
+  expect(await boardToken(dir, dir, secrets).catch(() => "gh")).not.toBe("tok_office");
 });

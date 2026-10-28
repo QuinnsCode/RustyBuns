@@ -14,6 +14,8 @@
 //   above stands down, and when it can't start or drops, the watch carries on and it tries again later.
 import { execFile, spawn } from "node:child_process";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { githubToken } from "../connect/github.ts";
+import type { Secrets } from "../connect/keychain.ts";
 
 /** How often a busy floor asks GitHub whether anything changed. */
 export const WATCH_MS = 10_000;
@@ -282,8 +284,10 @@ export class Forward {
   }
 }
 
-/** The office's own GitHub sign-in (connect/, kept in the keychain), once it lands; null until then or when there is none. */
-export const officeToken: { read: () => Promise<string | null> } = { read: async () => null };
+/** The boards' token: the office's own GitHub sign-in (connect/) first, so they work where gh's keyring is out of reach, then gh's. */
+export async function boardToken(dir: string, officeDir?: string, secrets?: Secrets): Promise<string> {
+  return (officeDir && (await githubToken(officeDir, undefined, secrets).catch(() => null))) || ghToken(dir);
+}
 
 function ghToken(cwd: string) {
   return new Promise<string>((resolve, reject) =>
@@ -307,13 +311,12 @@ interface Floor {
 }
 
 /** Hooks a floor up: called from its constructor (see scripts/rustybunsify.ts). */
-export function liveGitHub(floor: Floor, dir: string) {
+export function liveGitHub(floor: Floor, dir: string, officeDir?: string) {
   const live = new LiveGitHub({
     refreshIssues: () => floor.github.refreshIssues(),
     refreshPulls: () => floor.github.refreshPulls(),
     repo: () => floor.github.repoInfo().then((r) => r.nameWithOwner),
-    // the office's own sign-in first, so the board works where gh's keyring is out of reach
-    token: async () => (await officeToken.read().catch(() => null)) ?? ghToken(dir),
+    token: () => boardToken(dir, officeDir),
     active: () => floor.active(),
     pendingHeads: () =>
       floor.github.pulls.items.flatMap((p) => (p.state === "OPEN" && p.checks === "pending" && p.headRefOid ? [p.headRefOid] : [])),
