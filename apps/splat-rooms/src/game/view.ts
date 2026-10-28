@@ -5,6 +5,7 @@
 // A shot is a ray from the crosshair against the round's blockers (object boxes
 // and walls), so the hit point is the first surface along it: the centre of the
 // splat we reveal around.
+import { look } from "../ui/controls.ts";
 import * as pc from "playcanvas";
 import { rayObb, BOX_EDGES, type Obb, type Vec3 } from "../viewer/boxes.ts";
 import type { Candidate, Round } from "./round.ts";
@@ -131,8 +132,10 @@ export class GameView {
       const dx = e.clientX - lx, dy = e.clientY - ly;
       lx = e.clientX; ly = e.clientY;
       moved += Math.abs(dx) + Math.abs(dy);
-      this.yaw -= dx * 0.18;
-      this.pitch = Math.max(-80, Math.min(80, this.pitch - dy * 0.18));
+      // Touch has its own speed; a mouse drag uses X and Y. Invert Y flips up and down.
+      const touch = e.pointerType === "touch", k = touch ? look.touch : 1;
+      this.yaw -= dx * 0.18 * k * (touch ? 1 : look.lookX);
+      this.pitch = Math.max(-80, Math.min(80, this.pitch - dy * 0.18 * k * (touch ? 1 : look.lookY) * (look.invertY ? -1 : 1)));
     };
     const up = (e: PointerEvent) => {
       dragging = false;

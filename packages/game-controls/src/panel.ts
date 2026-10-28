@@ -21,6 +21,10 @@ export interface Opts {
   onChange?: (s: Settings) => void;
   /** Called when the dialog opens or closes, so a game can pause or let go of the mouse. */
   onToggle?: (open: boolean) => void;
+  /** Game-specific rows (rebinding, field of view...), appended after Invert Y and before Reset. */
+  extras?: (card: HTMLElement) => void | { sync: () => void };
+  /** Called when Reset to defaults is pressed, so a game can reset its own extras. */
+  onReset?: () => void;
 }
 
 const read = (key: string): Settings => {
@@ -74,8 +78,10 @@ export function mountControls(o: Opts) {
   inv.addEventListener("change", () => { s = { ...s, invertY: inv.checked }; save(); });
   syncs.push(() => { inv.checked = s.invertY; });
   if (!o.hide?.includes("invertY")) row("Invert Y", inv);
+  const extra = o.extras?.(card);
+  if (extra) syncs.push(extra.sync);
   const reset = Object.assign(document.createElement("button"), { type: "button", className: "gc-reset", textContent: "Reset to defaults" });
-  reset.addEventListener("click", () => { s = { ...DEFAULTS }; syncs.forEach((f) => f()); save(); });
+  reset.addEventListener("click", () => { s = { ...DEFAULTS }; o.onReset?.(); syncs.forEach((f) => f()); save(); });
   card.append(reset);
 
   const toggle = (open: boolean) => {

@@ -422,6 +422,7 @@
       "dependencies": {
         "@fontsource/gloria-hallelujah": "^5.3.0",
         "@fontsource/lacquer": "^5.3.0",
+        "@rustybuns/game-controls": "workspace:*",
         "@rustybuns/models": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
         "@rustybuns/terrain": "workspace:*",
@@ -512,6 +513,7 @@
       "name": "skate-tech-park",
       "version": "0.0.1",
       "dependencies": {
+        "@rustybuns/game-controls": "workspace:*",
         "@rustybuns/models": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
         "@rustybuns/terrain": "workspace:*",
@@ -582,6 +584,7 @@
         "@fontsource/barlow-condensed": "^5.2.5",
         "@fontsource/ibm-plex-sans": "^5.2.5",
         "@rustybuns/cli": "workspace:*",
+        "@rustybuns/game-controls": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
         "playcanvas": "^2.22.2",
         "react": "19.2.8",
@@ -597,6 +600,7 @@
       "name": "splat-spray",
       "version": "0.0.1",
       "dependencies": {
+        "@rustybuns/game-controls": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
         "@sparkjsdev/spark": "2.2.0",
         "three": "^0.180.0",
@@ -647,6 +651,7 @@
       "name": "two-fronts",
       "version": "0.0.1",
       "dependencies": {
+        "@rustybuns/game-controls": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
         "@rustybuns/util": "workspace:*",
         "three": "^0.180.0",

@@ -7,6 +7,7 @@ import { DEFAULT_GUN, due, pull, spreadOf, type Trigger } from "./gun.ts";
 import { buildRoom, roomSlots } from "./levels/room.ts";
 import { fillPackedSplats, placeObjects, shuffled, type SpyObject, type SpyScene } from "./levels/scene.ts";
 import { rng } from "./levels/kit.ts";
+import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("view");
@@ -22,6 +23,30 @@ controls.enableDamping = true;
 // left button is the trigger, so looking around is right-drag or the arrow keys
 controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE } as any;
 controls.listenToKeyEvents(window);
+
+// The cog's look speeds: rotateSpeed carries X (mouse) or touch (finger); Y is the up/down angle change rescaled to match.
+let ctl = { ...DEFAULTS };
+let pointerKind = "mouse";
+const applySpeed = () => { controls.rotateSpeed = pointerKind === "touch" ? ctl.touch : ctl.lookX; };
+const orbit = new THREE.Spherical();
+const polarOf = () => orbit.setFromVector3(camera.position.clone().sub(controls.target)).phi;
+let lastPolar = 0;
+controls.addEventListener("change", () => {
+  const phi = polarOf();
+  if (!flight) {
+    const speed = pointerKind === "touch" ? ctl.touch : ctl.lookX;
+    const k = (ctl.lookY / speed) * (ctl.invertY ? -1 : 1);
+    if (k !== 1) {
+      const next = Math.min(Math.PI - 0.01, Math.max(0.01, lastPolar + (phi - lastPolar) * k));
+      orbit.phi = next;
+      camera.position.copy(controls.target).add(new THREE.Vector3().setFromSpherical(orbit));
+      camera.lookAt(controls.target);
+      lastPolar = next;
+      return;
+    }
+  }
+  lastPolar = phi;
+});
 
 const GUN = { ...DEFAULT_GUN };
 const HOME = { eye: new THREE.Vector3(0, 1.7, 6.4), target: new THREE.Vector3(0, 1.2, -0.6) };
@@ -197,6 +222,7 @@ function setPicking(on: boolean) {
   $("pick").setAttribute("aria-pressed", String(on));
 }
 
+canvas.addEventListener("pointerdown", (e) => { pointerKind = e.pointerType; applySpeed(); }, { capture: true });
 canvas.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   canvas.setPointerCapture(e.pointerId);
@@ -298,4 +324,12 @@ Object.assign(globalThis, {
     get target() { return target; },
     get found() { return [...found]; },
   },
+});
+
+/** The cog next to the tools: look speeds, invert and the key list, saved for next time. Opening it lets go of the trigger. */
+mountControls({
+  key: "splat-spray.controls", parent: $("tools"),
+  keys: [["Left button (hold)", "Scan and fire"], ["Right-drag / one finger", "Look around"], ["Arrow keys", "Look around"], ["Wheel", "Zoom"], ["Shift + click", "Pick what you spy"], ["Space", "Next find"]],
+  onChange: (s) => { ctl = s; applySpeed(); },
+  onToggle: (open) => { if (open) trigger = null; },
 });

@@ -153,3 +153,6 @@ select { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-
   .lobby-look { width: min(460px, 100%); }
   .mapview { grid-template-columns: 1fr; grid-template-rows: 60vh auto; overflow: auto; }
 }
+
+/* The Controls cog, top right, above the menu and the HUD (whose top bar is centred). */
+#controls-host { position: fixed; top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); z-index: 30; }

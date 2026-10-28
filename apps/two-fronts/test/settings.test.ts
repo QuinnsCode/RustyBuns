@@ -1,27 +1,25 @@
+import { DEFAULTS } from "@rustybuns/game-controls";
 import { expect, test } from "bun:test";
-import { RESERVED, lookTurn, parseSettings, rebind, resetSettings, setSettings, settings } from "../src/settings.ts";
+import { RESERVED, lookTurn, parseSettings, rebind, resetSettings, setLook, settings } from "../src/settings.ts";
 
 // The browser's storage, as a map.
 const store = new Map<string, string>();
 Object.assign(globalThis, { localStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) } });
 
-// A player flips invert Y, closes the tab and comes back: the mouse look runs the other way, and Reset puts it right.
-test("invert Y flips which way the mouse looks, survives a reload, and Reset undoes it", () => {
+// A player flips invert Y and slows the mouse in the cog: the look runs the other way and slower.
+test("the cog's invert Y and look speeds change how a drag turns the view", () => {
+  setLook({ ...DEFAULTS });
   const up = lookTurn(0, -10, "mouse").pitch; // the mouse moved up: look up
   expect(up).toBeGreaterThan(0);
-  setSettings({ invertY: true });
+  setLook({ ...DEFAULTS, invertY: true });
   expect(lookTurn(0, -10, "mouse").pitch).toBe(-up);
   expect(lookTurn(10, 0, "mouse").yaw).toBeLessThan(0); // left/right unchanged
   expect(lookTurn(0, -10, "touch").pitch).toBeLessThan(0);
 
-  const reloaded = parseSettings(store.get("two-fronts-controls") ?? null);
-  expect(reloaded.invertY).toBe(true);
-
-  setSettings({ mouse: 2 });
-  expect(lookTurn(0, -10, "mouse").pitch).toBe(-2 * up);
-
-  resetSettings();
-  expect(lookTurn(0, -10, "mouse").pitch).toBe(up);
+  setLook({ ...DEFAULTS, lookY: 2, touch: 0.5 });
+  expect(lookTurn(0, -10, "mouse").pitch).toBe(2 * up);
+  expect(lookTurn(0, -10, "touch").pitch).toBeCloseTo(0.5 * 0.006 * 10);
+  setLook({ ...DEFAULTS });
 });
 
 test("rebinding a key moves the action, and a key already in use or kept by the game is refused", () => {

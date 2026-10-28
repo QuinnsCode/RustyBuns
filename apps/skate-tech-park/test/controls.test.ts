@@ -5,7 +5,7 @@ import { matchStroke } from "../src/flick.ts";
 import { PROFILES } from "../src/flick-profiles.ts";
 
 test("settings read back as saved; nothing, junk and out-of-range values fall back to the defaults", () => {
-  const mine = { ...DEFAULT_CONTROLS, swap: true, invertY: true, size: 1.2, labels: "never" as const, sens: 1.5 };
+  const mine = { ...DEFAULT_CONTROLS, swap: true, invertX: true, size: 1.2, labels: "never" as const };
   expect(parseControls(JSON.stringify(mine))).toEqual(mine);
   expect(parseControls(null)).toEqual(DEFAULT_CONTROLS);
   expect(parseControls("{nope")).toEqual(DEFAULT_CONTROLS);
@@ -16,5 +16,5 @@ test("left-handed puts the pad on the left, and a higher sensitivity makes a sho
   const classic = PROFILES[0];
   expect(tuned(classic, { ...DEFAULT_CONTROLS, swap: true }).side).toBe("left");
   expect(matchStroke(classic, "mid", 20, 0, 0.1)).toBeNull();
-  expect(matchStroke(tuned(classic, { ...DEFAULT_CONTROLS, sens: 2 }), "mid", 20, 0, 0.1)?.flick).toBe("kickflip");
+  expect(matchStroke(tuned(classic, DEFAULT_CONTROLS, 2), "mid", 20, 0, 0.1)?.flick).toBe("kickflip");
 });

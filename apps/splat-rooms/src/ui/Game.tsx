@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { readScene, type SceneDetail } from "../actions/scenes.ts";
 import { planRound, type Candidate, type Round } from "../game/round.ts";
 import { record, stars, type Records } from "../game/score.ts";
+import { onControlsToggle } from "./controls.ts";
 import { GameView } from "../game/view.ts";
 
 const CAPACITY = 12;
@@ -103,6 +104,8 @@ export function Game({ sceneId, records, onRecords, onAnotherRoom, onRooms, onQu
   }
 
   useEffect(() => { judgeRef.current = judge; });
+  // Opening the Controls dialog pauses the hunt, so the clock stops while you adjust.
+  useEffect(() => onControlsToggle((open) => { if (open) pause(); }));
 
   function judge(c: Candidate | null) {
     if (!round || phase !== "hunting") return;

@@ -8,7 +8,7 @@ Two things: a hunting game in photoreal splat rooms, and a browser for [Interior
 
 The app opens on a menu: **Quick hunt** drops you in a random room, **Choose a room** shows every room with your best score, **Room browser** is the object viewer below, and **How to play** has the controls.
 
-In a hunt, the room blacks out and you're told what to find. Drag to look, space fires one splat, shift-space sprays twenty. Each shot lights the patch of room it lands on, permanently: this is a map you build, not a torch you sweep. Charge holds twelve and refills one every 1.5 s, so a spray costs you the next nine seconds; far hits light less than close ones. When you think you've spotted the thing, hit **P** and click it. A wrong pick tells you what you actually clicked and costs four charge. **Esc** pauses.
+In a hunt, the room blacks out and you're told what to find. Drag to look, space fires one splat, shift-space sprays twenty. Each shot lights the patch of room it lands on, permanently: this is a map you build, not a torch you sweep. Charge holds twelve and refills one every 1.5 s, so a spray costs you the next nine seconds; far hits light less than close ones. When you think you've spotted the thing, hit **P** and click it. A wrong pick tells you what you actually clicked and costs four charge. **Esc** pauses. The cog in the top right opens Controls: look X, Y and touch speed, invert Y and the key list, saved between visits; opening it pauses the hunt.
 
 A find scores 1000, minus 4 per second, 8 per splat and 120 per wrong pick (`src/game/score.ts`); 750+ is three stars. Bests per room live in the app's localStorage.
 

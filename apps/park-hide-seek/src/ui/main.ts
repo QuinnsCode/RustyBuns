@@ -10,6 +10,7 @@ import { REGIONS } from "@rustybuns/terrain";
 import { describe } from "../weather.ts";
 import { CALLS, Score, place, sounds } from "./audio.ts";
 import { REQUESTABLE } from "../edge/requests.ts";
+import { mountControls } from "@rustybuns/game-controls";
 import { Controls } from "./controls.ts";
 import { Preview } from "./preview.ts";
 import { LocalSession, NetSession, playerId, tabPlayerId, type Session } from "./session.ts";
@@ -63,6 +64,13 @@ const world = new World3D($<HTMLCanvasElement>("view"));
 const zmap = new ZoneMap($<HTMLCanvasElement>("zonemap"));
 const preview = new Preview($<HTMLCanvasElement>("preview"));
 const controls = new Controls($<HTMLCanvasElement>("view"));
+// The cog, top right in the menu and in play: look speeds, invert Y and the key list. Opening it lets go of the mouse.
+mountControls({
+  key: "park-hide-seek.controls", parent: $("controls-host"),
+  keys: [["W A S D / arrows", "Move"], ["Shift", "Run"], ["C / X", "Crouch (hold: prone) / climb a tree"], ["Mouse", "Look (click the view first)"], ["V", "First or third person"], ["F / Q", "Flashlight / call out (rangers)"], ["E", "Become a prop (prop hunt)"], ["M / N", "Map and radio / music"], ["Tab", "Follow someone (spectating)"], ["Esc", "Let go of the mouse"]],
+  onChange: (s) => { controls.look = s; },
+  onToggle: (open) => { if (open) controls.release(); },
+});
 const serverNow = () => Date.now() + (session?.offset ?? 0);
 const send = (m: Msg) => session?.send(m);
 const nameOf = (v: View, id: string) => v.players.find((p) => p.id === id)?.name ?? "someone";

@@ -67,7 +67,7 @@ h2 { font: 600 1.2rem/1 var(--silk); margin: 0 0 10px; }
 .cross span:first-child { left: 50%; top: 0; width: 1px; height: 100%; margin-left: -0.5px; }
 .cross span:last-child { top: 50%; left: 0; height: 1px; width: 100%; margin-top: -0.5px; }
 
-.game-hud { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 12px;
+.game-hud { position: absolute; top: 12px; left: 12px; right: 68px; display: flex; flex-wrap: wrap; gap: 12px;
   align-items: center; background: #0b0d10cc; border: 1px solid var(--edge); border-radius: 6px; padding: 9px 12px; }
 .target { font: 600 1.4rem/1 var(--silk); }
 .charge { display: flex; gap: 3px; }
@@ -133,3 +133,6 @@ code { font: .85em ui-monospace, Menlo, monospace; background: #1c2026; border: 
 .stars .on { color: #f2c94c; }
 .points { margin: 0; font: 600 3rem/1 var(--silk); font-variant-numeric: tabular-nums; }
 .badge { margin-left: 10px; vertical-align: middle; padding: 2px 7px; border-radius: 4px; background: var(--accent); color: #0e1013; font: 600 .85rem var(--silk); text-transform: uppercase; }
+
+/* The cog sits top right on every screen; the in-game HUD stops short of it. */
+#controls-host { position: fixed; top: 12px; right: 12px; z-index: 5; }

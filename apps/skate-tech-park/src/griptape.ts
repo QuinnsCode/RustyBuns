@@ -1,7 +1,7 @@
 // The flick pad's grip tape: a board drawn on the touch screen's flick half, nose up, with the profile's strokes
 // printed on it like footprint grip tape: a pad where each finger goes and a dotted path for each stroke out of it,
 // named at its tip. The stroke a press just matched lights up. It never takes a touch (the canvas under it does);
-// the layout is picked in the Controls panel (controls-panel.ts).
+// the layout is picked in the Controls cog (controls-extras.ts).
 import type { Profile, Stroke } from "./flick.ts";
 import type { Flick } from "./tricks.ts";
 
