@@ -56,21 +56,22 @@ function section() {
   let state: Setup | null = null, builder: Builder | null = null, busy: string | null = null, timer: ReturnType<typeof setTimeout> | undefined;
 
   const say = (e: unknown) => { note.textContent = e instanceof Error ? e.message : String(e); };
-  const refresh = async () => {
+  // the builder card costs an ssh, so it reloads on open and on its own Test, not on every look at a waiting sign-in
+  const refresh = async (withBuilder = true) => {
     clearTimeout(timer);
-    try { state = await loadSetup(); builder = await loadBuilder(); note.textContent = state.error ?? ""; } catch (e) { say(e); }
+    try { state = await loadSetup(); if (withBuilder) builder = await loadBuilder(); note.textContent = state.error ?? ""; } catch (e) { say(e); }
     draw();
     // while a sign-in waits, look again until the account shows up
-    if (root.isConnected && state?.pending.length) timer = setTimeout(() => void refresh(), 3000);
+    if (root.isConnected && state?.pending.length) timer = setTimeout(() => void refresh(false), 3000);
   };
   const run = async (what: "test" | "revoke" | "cancel", id: string) => {
     busy = id; draw();
     // the builder isn't on the connections route: its Test is just asking /__rb/builder again
     try { if (id !== "builder") await act(what, id); } catch (e) { say(e); }
     busy = null;
-    await refresh();
+    await refresh(id === "builder");
   };
-  const connect = async () => { try { await connectGithub(); } catch (e) { say(e); } await refresh(); };
+  const connect = async () => { try { await connectGithub(); } catch (e) { say(e); } await refresh(false); };
 
   const draw = () => {
     if (!state) return body.replaceChildren(el("p", { className: "setting-note" }, "Loading…"));
