@@ -55,6 +55,7 @@ export const JETS = {
 };
 const BOOST = JETS.boost;
 const BOOST_TOP = JETS.boostTop;
+const AIR_BOOST = 1.2; // 1/s: in the air the jets add this share of the speed each second (the ground's pump scales with speed too), so a fast launch keeps flying
 /** How far the ground pokes up through the leading half of the deck (the nose, or the tail riding fakie, and both edges). The deck is the
  * plane through the wheels at `y` rising `pitch` per metre ahead, tilted across as the ground under its two halves is (the
  * gentler half, so a box side under one edge is not taken for a sidehill), and tilted it covers less ground. On an even slope
@@ -528,7 +529,10 @@ export function step(s: State, inp: Input, level: Level = plaza): State {
     if (s.lip) s.lip = Math.max(0, Math.min(s.lip, Math.atan2(s.vy, Math.hypot(s.vx, s.vz)))); // nose along its path off the wall, levelling as it turns over
     s.vy -= (G + (s.fan ? JETS.fanPull : 0)) * DT;
     if (!s.lip) s.pitch *= Math.exp(-DT / 0.12); // the nose comes level in the air instead of keeping the wall's angle until it lands
-    if (boosting) { s.vx += fx * BOOST * DT; s.vz += fz * BOOST * DT; s.firing.rear = true; }
+    if (boosting) { // the jets hold their push in the air: as hard as the pump that carried it up the ramp, never less than the ground's, up to the jets' top
+      const hs = Math.hypot(s.vx, s.vz), a = Math.max(BOOST, AIR_BOOST * hs) * Math.max(0, Math.min(1, (BOOST_TOP - hs) / BOOST));
+      s.vx += fx * a * DT; s.vz += fz * a * DT; s.firing.rear = true;
+    }
     s.spin += (inp.steer * tune.airSpin - s.spin) * Math.min(1, DT / SPIN_EASE); // the board has weight: a spin winds up and winds down
     s.yaw += s.spin * DT; s.spun += s.spin * DT;
     if (inp.steer) s.firing.spin = inp.steer > 0 ? 1 : -1;
