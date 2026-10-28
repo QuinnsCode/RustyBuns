@@ -57,3 +57,19 @@ export const SCENARIOS: Record<string, Scenario> = {
 
 export const names = () => Object.keys(SCENARIOS);
 export const isScenario = (n: string) => Object.hasOwn(SCENARIOS, n);
+
+/** Short links for the states a MANUAL RUN lands in: `#setup=github-signin`, `#settings=grants`. */
+export const HASHES: Record<string, string> = {
+  "setup=github-signin": "setup-sign-in-code",
+  "setup=signed-in": "setup-signed-in",
+  "settings=grants": "writes-grants",
+  "writes=ask": "writes-ask-pending",
+};
+
+/** The scenario a link's hash asks for (`#setup=github-signin`, `#scenario=<name>`), or null. */
+export function fromHash(hash: string): string | null {
+  const h = hash.replace(/^#/, "");
+  if (Object.hasOwn(HASHES, h)) return HASHES[h]!;
+  const n = h.startsWith("scenario=") ? h.slice(9) : "";
+  return isScenario(n) ? n : null;
+}
