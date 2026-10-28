@@ -55,6 +55,7 @@ import { countMerge } from "./stats.ts";
 import { answerOf, deleteLearning, hashesPaths, learningOn, learningState, pathKey, recordEvents, setLearning, type Event as LearnEvent } from "./mervin-learning.ts";
 import { answerRows, fightRows, fightWeights, suggestions, weightOrder } from "./mervin-learn.ts";
 import { boardRoutes } from "./board-routes.ts";
+import { branchOf } from "./repos.ts";
 
 /** `resolve` as a merge sends it, {path: {line: pick}}, checked; or what's wrong with it. */
 export function parseResolve(raw: unknown): Record<string, Resolve> | string {
@@ -239,7 +240,7 @@ export function restack(base: Doc, copy: Doc, onto: Doc, by: string, path: strin
  * so they merge into main by its line ids. One that won't settle keeps its source, and its merge says so.
  */
 async function restackChildren(env: Env, owner: string, repo: string, from: string) {
-  const { results } = await env.DB.prepare(`SELECT f.branch, f.path, f.deleted, f.blob, b.by FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch
+  const { results } = await env.DB.prepare(`SELECT f.branch, f.path, f.deleted, f.blob, b.by FROM branch_files f ${branchOf("f")}
     WHERE f.owner = ? AND f.repo = ? AND f.source = ? AND f.merged = 0 AND b.status = 'open'`).bind(owner, repo, from).all<{ branch: string; path: string; deleted: number; blob: string | null; by: string }>();
   for (const f of results) {
     const done = () => env.DB.prepare("UPDATE branch_files SET source = NULL WHERE owner = ? AND repo = ? AND branch = ? AND path = ?").bind(owner, repo, f.branch, f.path).run();
@@ -967,7 +968,7 @@ async function mergePlan(env: Env, owner: string, repo: string, user: string) {
  * hold the task till those merge, or stack it on the first (POST .../branches {name, parent}).
  */
 export async function dispatchHint(env: Env, owner: string, repo: string, task: string, files: string[] = []): Promise<{ files: string[]; busy: Busy[] }> {
-  const changed = (await env.DB.prepare("SELECT b.name AS branch, f.path FROM branch_files f JOIN branches b ON b.owner = f.owner AND b.repo = f.repo AND b.name = f.branch WHERE f.owner = ? AND f.repo = ? AND f.merged = 0 AND b.status = 'open'").bind(owner, repo).all<{ branch: string; path: string }>()).results;
+  const changed = (await env.DB.prepare(`SELECT b.name AS branch, f.path FROM branch_files f ${branchOf("f")} WHERE f.owner = ? AND f.repo = ? AND f.merged = 0 AND b.status = 'open'`).bind(owner, repo).all<{ branch: string; path: string }>()).results;
   const onMain = (await env.DB.prepare("SELECT path FROM files WHERE owner = ? AND repo = ?").bind(owner, repo).all<{ path: string }>()).results;
   const paths = [...new Set([...onMain.map((f) => f.path), ...changed.map((c) => c.path)])];
   const guess = [...new Set([...files, ...taskFiles(task, paths)])].sort();
