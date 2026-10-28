@@ -38,7 +38,7 @@ Read-only pass over 31 open issues for the Issues agent: code on `origin/main`, 
 
 ## Counts
 
-DONE 2 (#1428, #1494). PARTLY 16. STILL OPEN 6 (#1400, #1052, #897, #823, #2328, #2237) plus #2241 and #2285 flagged separately. BLOCKED 6 (#1771, #1572, #840, #2346, #2216, and #740's domain step). Rows overlap in places; #740 and #2285 are counted once in the table, not here.
+DONE 2 (#1428, #1494). PARTLY 16. STILL OPEN 8 (#1400, #1052, #897, #823, #2328, #2241, #2237, #2285). BLOCKED 5 (#1771, #1572, #840, #2346, #2216). Total 31.
 
 ## Fan out right now (ready prompt lines)
 
