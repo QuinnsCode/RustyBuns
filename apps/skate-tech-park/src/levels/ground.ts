@@ -34,40 +34,66 @@ function grain() {
   return t;
 }
 
-export function groundMesh(level: ParkLevel, mood?: Pick<Mood, "wet" | "snow">): THREE.Mesh {
-  const R = level.ground.R, n = Math.round((2 * R) / STEP) + 1;
-  const pos = new Float32Array(n * n * 3), uv = new Float32Array(n * n * 2), col = new Float32Array(n * n * 3), idx: number[] = [];
+/** Metres across one ground tile, and how far from the camera a tile gives way to its coarse version. */
+export const GROUND_TILE = 64, GROUND_FAR = 120, FAR_STEP = 8;
+
+/**
+ * The park's ground as a LOD per 64 m tile: the 2 m heightfield near the camera, a 8 m one past 120 m. Tiles frustum-cull,
+ * and normals come from the height function, not the mesh, so neighbouring tiles (of either detail) shade without a seam.
+ */
+export function groundMesh(level: ParkLevel, mood?: Pick<Mood, "wet" | "snow">): THREE.Group {
+  const R = level.ground.R;
   const wet = mood?.wet ?? 0, snow = mood?.snow ?? 0;
   const grass = new THREE.Color(0x6f8250), dry = new THREE.Color(0xb4a05a), moss = new THREE.Color(0x4b6b3e).multiplyScalar(1 - 0.35 * wet), rock = new THREE.Color(0xbfb8ab).multiplyScalar(1 - 0.3 * wet), white = new THREE.Color(0xf2f6fb), concrete = new THREE.Color(0xc4bfb4).multiplyScalar(1 - 0.25 * wet), hardpack = new THREE.Color(0xad8658).multiplyScalar(1 - 0.35 * wet), stone = new THREE.Color(0xeeeadf), c = new THREE.Color(), c2 = new THREE.Color();
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-    const x = -R + i * STEP, z = -R + j * STEP, h = level.ground.height(x, z), k = (j * n + i) * 3;
-    pos.set([x, h, z], k);
-    uv.set([x / DETAIL, z / DETAIL], (j * n + i) * 2);
-    const slope = Math.hypot(level.ground.height(x + 1, z) - level.ground.height(x - 1, z), level.ground.height(x, z + 1) - level.ground.height(x, z - 1)) / 2;
-    c.copy(grass).lerp(rock, Math.min(1, Math.max(Math.max(0, slope - 0.6) * 2.5, (h - level.granite) / 12))); // steep ground is bare granite
-    const warm = 0.5 + 0.5 * Math.sin(x * 0.037 + 0.6) * Math.sin(z * 0.041 - 1.1); // broad drifts of dry gold meadow and deep green moss
-    c.lerp(dry, Math.max(0, warm - 0.45) * 1.1 * (1 - wet) * (1 - snow)).lerp(moss, Math.max(0, 0.4 - warm) * 0.9);
-    const patch = 0.5 + 0.5 * Math.sin(x * 0.11 + 1.7) * Math.cos(z * 0.09), flat = 1 - Math.min(1, slope * 1.4); // snow settles in hollows and on flats, and blows off steep rock
-    c.lerp(white, Math.min(1, snow * (0.55 + 0.45 * patch) * (0.35 + 0.65 * flat)));
-    const paint = level.paint(x, z); // the earthworks: poured concrete, packed dirt, and a pale coping stone along each lip
-    if (paint.surface) {
-      const tone = 0.93 + 0.07 * Math.sin(x * 0.9) * Math.cos(z * 1.1), base = paint.surface === "concrete" ? concrete : hardpack;
-      c.lerp(c2.copy(base).multiplyScalar(tone).lerp(stone, paint.coping * (paint.surface === "concrete" ? 0.75 : 0.3)), paint.k * (1 - (paint.surface === "concrete" ? 0.3 : 0.7) * snow)); // poured concrete is swept clear of snow, packed dirt is not
+  const h = level.ground.height;
+  /** One tile `w` by `d` from (x0, z0), a vertex every `step` metres or so. */
+  const tile = (x0: number, z0: number, w: number, d: number, step: number) => {
+    const nx = Math.max(1, Math.round(w / step)), nz = Math.max(1, Math.round(d / step)), count = (nx + 1) * (nz + 1);
+    const pos = new Float32Array(count * 3), nor = new Float32Array(count * 3), uv = new Float32Array(count * 2), col = new Float32Array(count * 3), idx: number[] = [];
+    for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
+      const x = x0 + (i / nx) * w, z = z0 + (j / nz) * d, y = h(x, z), v = j * (nx + 1) + i, k = v * 3;
+      pos.set([x, y, z], k);
+      uv.set([x / DETAIL, z / DETAIL], v * 2);
+      const gx = (h(x + 1, z) - h(x - 1, z)) / 2, gz = (h(x, z + 1) - h(x, z - 1)) / 2, slope = Math.hypot(gx, gz), len = Math.hypot(gx, 1, gz);
+      nor.set([-gx / len, 1 / len, -gz / len], k);
+      c.copy(grass).lerp(rock, Math.min(1, Math.max(Math.max(0, slope - 0.6) * 2.5, (y - level.granite) / 12))); // steep ground is bare granite
+      const warm = 0.5 + 0.5 * Math.sin(x * 0.037 + 0.6) * Math.sin(z * 0.041 - 1.1); // broad drifts of dry gold meadow and deep green moss
+      c.lerp(dry, Math.max(0, warm - 0.45) * 1.1 * (1 - wet) * (1 - snow)).lerp(moss, Math.max(0, 0.4 - warm) * 0.9);
+      const patch = 0.5 + 0.5 * Math.sin(x * 0.11 + 1.7) * Math.cos(z * 0.09), flat = 1 - Math.min(1, slope * 1.4); // snow settles in hollows and on flats, and blows off steep rock
+      c.lerp(white, Math.min(1, snow * (0.55 + 0.45 * patch) * (0.35 + 0.65 * flat)));
+      const paint = level.paint(x, z); // the earthworks: poured concrete, packed dirt, and a pale coping stone along each lip
+      if (paint.surface) {
+        const tone = 0.93 + 0.07 * Math.sin(x * 0.9) * Math.cos(z * 1.1), base = paint.surface === "concrete" ? concrete : hardpack;
+        c.lerp(c2.copy(base).multiplyScalar(tone).lerp(stone, paint.coping * (paint.surface === "concrete" ? 0.75 : 0.3)), paint.k * (1 - (paint.surface === "concrete" ? 0.3 : 0.7) * snow)); // poured concrete is swept clear of snow, packed dirt is not
+      }
+      const hollow = (h(x + 3, z) + h(x - 3, z) + h(x, z + 3) + h(x, z - 3)) / 4 - y; // shade hollows, so a bowl reads as a bowl
+      c.multiplyScalar(1 - Math.min(0.4, Math.max(-0.08, hollow * 0.14)));
+      col.set([c.r, c.g, c.b], k);
+      if (i < nx && j < nz) idx.push(v, v + nx + 1, v + 1, v + 1, v + nx + 1, v + nx + 2);
     }
-    const hollow = (level.ground.height(x + 3, z) + level.ground.height(x - 3, z) + level.ground.height(x, z + 3) + level.ground.height(x, z - 3)) / 4 - h; // shade hollows, so a bowl reads as a bowl
-    c.multiplyScalar(1 - Math.min(0.4, Math.max(-0.08, hollow * 0.14)));
-    col.set([c.r, c.g, c.b], k);
-    if (i < n - 1 && j < n - 1) { const a = j * n + i; idx.push(a, a + n, a + 1, a + 1, a + n, a + n + 1); }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+    geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    return geo;
+  };
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, map: grain(), roughness: 1 - 0.6 * wet, metalness: 0 });
+  const group = new THREE.Group();
+  for (let z0 = -R; z0 < R; z0 += GROUND_TILE) for (let x0 = -R; x0 < R; x0 += GROUND_TILE) {
+    const w = Math.min(GROUND_TILE, R - x0), d = Math.min(GROUND_TILE, R - z0), lod = new THREE.LOD();
+    for (const [step, from] of [[STEP, 0], [FAR_STEP, GROUND_FAR]] as const) {
+      const m = new THREE.Mesh(tile(x0, z0, w, d, step), mat);
+      m.receiveShadow = true;
+      lod.addLevel(m, from);
+    }
+    // LOD measures to its origin, so put that at the middle of the tile (the geometry is in world coordinates).
+    lod.position.set(x0 + w / 2, 0, z0 + d / 2);
+    for (const m of lod.children) m.position.set(-(x0 + w / 2), 0, -(z0 + d / 2));
+    group.add(lod);
   }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
-  geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
-  geo.setIndex(idx);
-  geo.computeVertexNormals();
-  const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, map: grain(), roughness: 1 - 0.6 * wet, metalness: 0 }));
-  m.receiveShadow = true;
-  return m;
+  return group;
 }
 
 /** One landmark as meshes, standing on the ground where it is placed. */
