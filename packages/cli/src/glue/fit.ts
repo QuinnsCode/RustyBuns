@@ -160,7 +160,7 @@ export function fit({ pkg, files, viteConfig }: FitInput): Fit {
     reasons.push(stack === "react-router"
       ? "React Router: `rustybuns init` reads it when @cloudflare/vite-plugin builds it (Cloudflare's current template), not through cloudflareDevProxy or a Node server."
       : stack === "sveltekit"
-      ? "SvelteKit: `rustybuns init` reads it with @sveltejs/adapter-cloudflare, which builds the Worker; add it (`npm i -D @sveltejs/adapter-cloudflare`) in svelte.config.js."
+      ? "SvelteKit: `rustybuns init` reads it with @sveltejs/adapter-cloudflare, which builds the Worker; add it (`npm i -D @sveltejs/adapter-cloudflare`) in svelte.config.js (or the sveltekit() plugin in vite.config on SvelteKit 3)."
       : stack === "next"
       ? "Next.js: `rustybuns init` reads it with @opennextjs/cloudflare, which builds the Worker; add it (`npm i @opennextjs/cloudflare`) with an open-next.config.ts."
       : TRACKED[stack] === 404 || stack === "webpack"
