@@ -7425,7 +7425,7 @@ const tourClick = (el, init = {}) => el?.dispatchEvent(new MouseEvent("mousedown
 // A small public repo to dig on the tour: the first level's.
 const TOUR_STARTER = "developit/mitt";
 // The chapters, in order. A step's `on` says where it plays: anywhere, or on the toured repo's file page.
-const TOUR_CHAPTERS = [["signin", "log-in", "Sign in"], ["dig", "shovel", "Dig a repo"], ["code", "file-code", "The code"], ["panels", "panel-right", "The right bar"], ["self", "repeat", "Edit itself"], ["queue", "list-ordered", "Mervin and Ester queue it"], ["agents", "bot", "Agents on one repo"], ["desktop", "monitor", "Desktop and web"], ["play", "gamepad-2", "Play"]];
+const TOUR_CHAPTERS = [["signin", "log-in", "Sign in"], ["dig", "shovel", "Dig a repo"], ["code", "file-code", "The code"], ["panels", "panel-right", "The right bar"], ["self", "repeat", "Edit itself"], ["queue", "list-ordered", "Mervin and Ester queue it"], ["agents", "bot", "Agents on one repo"], ["history", "git-graph", "Your repo, your history"], ["together", "users-round", "Together, line by line"], ["desktop", "monitor", "Desktop and web"], ["play", "gamepad-2", "Play"]];
 const TOUR = [
   { ch: "signin", ic: "log-in", t: "Sign in", at: "#who", on: "any",
     say: () => me() ? `You're in as @${me()}. Next, dig up a repo.` : "Everything you dig up, edit and collect goes under your @handle. Sign in, or make an account, at the top right.",
@@ -7532,6 +7532,24 @@ const TOUR = [
     say: () => "No agent on your machine? Run one hosted here. It is metered, so starting it is your press." },
   { ch: "agents", feat: "agents-cant-ship", ic: "shield-check", t: "Agents can't ship", at: '.dpanels > .sec[data-key="deploy"]', on: "repo",
     say: () => "An agent can edit and open a branch, but merging to main and deploying are buttons only a person has." },
+  // Your repo, your history (features: rethink-repo, own-history, git-truth, repo-builds-itself, deploy-all-over).
+  { ch: "history", feat: "rethink-repo", ic: "git-graph", t: "A new way to think about a repo", at: "#lines", on: "repo",
+    say: () => "Not a pile of files and commits: living lines, each with its own author and history, that close back up as plain git whenever you like." },
+  { ch: "history", feat: "own-history", ic: "archive", t: "Own your git history", at: null, on: "any",
+    say: () => "Every line, author and rev is yours, in a real git repo you can clone anywhere. Nobody upstream gets a say." },
+  { ch: "history", feat: "git-truth", ic: "scale", t: "Say where git truth lives", at: null, on: "any", you: "Where git truth lives decides which side wins a clash, so you choose it.",
+    say: () => "Pick git truth: here, in the artifact or on GitHub. Mirrors sync both ways and settle clashes your way, and whichever side wins, nothing is lost." },
+  { ch: "history", feat: "repo-builds-itself", ic: "refresh-ccw-dot", t: "A repo that builds itself", at: null, on: "any",
+    say: () => "Its code, deploy config, dependency doctor and agents in one place: agents propose on branches, the doctor keeps it fresh, previews prove it, and your commit ships it." },
+  { ch: "history", feat: "deploy-all-over", ic: "globe", t: "Deploy all over", at: null, on: "any",
+    say: () => "One config ships the same app as a desktop binary, a Cloudflare Worker, and a server on Hetzner or Railway." },
+  // Together, line by line (features: multiplayer, live-together, private-lines).
+  { ch: "together", feat: "multiplayer", ic: "users-round", t: "Multiplayer, every which way", at: null, on: "any",
+    say: () => "Human to human, human to AI, AI to AI: everyone in the same repo at once, live, line by line, and every line says who." },
+  { ch: "together", feat: "live-together", ic: "pencil-line", t: "Edit live, together", at: "#lines", on: "repo",
+    say: () => "Lines have stable ids, so agents editing different lines never collide. Edits stream to every open page." },
+  { ch: "together", feat: "private-lines", ic: "eye-off", t: "Private lines in a public repo", at: "#lines", on: "repo", you: "Hiding lines changes who can see them, so you choose which.",
+    say: () => "Hide some lines from everyone but the crew: on the page, in blame, in shares, and blank in git." },
   // The desktop and the web (features: desktop, own-hardware-ci, commit-to-git). What is true today: the web app never listens to a machine's
   // files. The desktop is its own copy of the app with its git on disk; it reaches out (mirrors, a runner that pulls, a CLI with a token).
   { ch: "desktop", feat: "desktop", ic: "monitor", t: "The same app on your machine", at: null, on: "any",
