@@ -2,7 +2,7 @@
 // 🐳 Agent Office in a box: runs the office in a container that can only touch what a permission set grants.
 //
 //   bun run office:box plan      print the docker command the permission set makes, run nothing
-//   bun run office:box up        build the image if it's missing, start the box, print the link and password
+//   bun run office:box up        build the image (cached layers), start the box, print the link and password
 //   bun run office:box status    what's granted, and whether the box and its port are healthy
 //   bun run office:box logs      follow the box's log
 //   bun run office:box down      stop and remove the box (its home volume, with logins and the office's data, stays)
@@ -99,7 +99,7 @@ export function dockerArgs(p: Perms, host: Host, image = NAME): string[] {
     // allowlist: an internal network with no route out; the proxy beside the box is the only way through
     "--network", p.network === "offline" ? "none" : p.network === "allowlist" ? NET : "bridge",
     ...(p.network === "open" ? ["-p", `127.0.0.1:${p.port}:4600`] : []),
-    ...(p.network === "allowlist" ? ["-e", `HTTPS_PROXY=http://${PROXY}:3128`, "-e", `HTTP_PROXY=http://${PROXY}:3128`, "-e", `NO_PROXY=localhost,127.0.0.1`, ...(p.ask ? ["-e", "OUTBOUND_TOKEN"] : [])] : []),
+    ...(p.network === "allowlist" ? ["-e", `HTTPS_PROXY=http://${PROXY}:3128`, "-e", `HTTP_PROXY=http://${PROXY}:3128`, "-e", `NO_PROXY=localhost,127.0.0.1`, ...(p.ask ? ["-e", "OUTBOUND_TOKEN", "-e", `AGENT_OFFICE_ALLOWED_HOSTS=${NAME}`] : [])] : []),
     "-v", `${NAME}-home:/home/office`,
     ...p.repos.flatMap((r, i) => ["-v", `${expand(r.path)}:/work/${names[i]}:${r.access}`]),
     // the first writable repo is the office's floor: it keeps its data in that repo's .agent-office
@@ -212,11 +212,9 @@ async function main(argv: string[]) {
     if (perms.network === "allowlist") console.log(`docker network create --internal ${NET}\n${line(proxyArgs(perms))}\ndocker network connect ${NET} ${PROXY}`);
     console.log(line(dockerArgs(perms, await hostCapacity())));
   } else if (cmd === "up") {
-    const have = await docker(["image", "inspect", NAME], { quiet: true });
-    if (have.code) {
-      const root = path.resolve(here, "../../..");
-      if ((await docker(["build", "-f", path.join(here, "Dockerfile"), "-t", NAME, root])).code) process.exit(1);
-    }
+    // always build: layers are cached, so an unchanged tree is a no-op, and a changed one never runs a stale office
+    const root = path.resolve(here, "../../..");
+    if ((await docker(["build", "-f", path.join(here, "Dockerfile"), "-t", NAME, root])).code) process.exit(1);
     await docker(["rm", "-f", NAME, PROXY], { quiet: true });
     const token = crypto.randomUUID(); // the proxy's key to ask the office, held by the two containers only
     if (perms.network === "allowlist") {

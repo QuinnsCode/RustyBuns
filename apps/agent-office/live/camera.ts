@@ -1,7 +1,7 @@
 // The security-camera log (#2201 sends home, the box's outbound asks): one JSON line per event in a file on this
 // machine, never sent anywhere. Like a camera it has a disk budget, and when the file reaches it the oldest lines go;
 // lines older than the retention the person picked (a day, 3 days, a week, a month) go too.
-import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 export const KEEP_DAYS = [1, 3, 7, 30] as const;
@@ -52,6 +52,7 @@ const pruned = new Map<string, number>();
 
 /** Appends one event; the file is trimmed as soon as it passes its budget, and past-retention lines go once an hour. */
 export function record(file: string, e: Omit<Entry, "at">, cam: Camera, now = Date.now()) {
+  mkdirSync(path.dirname(file), { recursive: true });
   appendFileSync(file, `${JSON.stringify({ at: now, ...e })}\n`);
   if (statSync(file).size > cam.maxMb * 2 ** 20 || now - (pruned.get(file) ?? 0) > 3_600_000) {
     trim(file, cam, now);
