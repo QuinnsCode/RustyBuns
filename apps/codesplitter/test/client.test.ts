@@ -216,3 +216,17 @@ describe("lobby invite link", () => {
   });
 });
 
+
+// A manual run opens on a link: ?repo=&branch=&file= lands on the repo, its branch's merge page or the file.
+describe("jump links", () => {
+  const src = html.slice(html.indexOf("/** The hash a jump link asks for"), html.indexOf("/** Land where a manual run"));
+  const { jumpHash } = new Function(`${src}; return { jumpHash };`)();
+
+  test.each([
+    ["?repo=ann/hono", "#/r/ann/hono"],
+    ["?repo=ann/hono&branch=fix%2Flogin", "#/b/ann/hono/fix%2Flogin"],
+    ["?repo=ann/hono&file=src/app.ts&branch=x", "#/f/ann/hono/src%2Fapp.ts"],
+    ["?repo=ann", null],
+    ["?verified=1", null],
+  ])("%s", (search, hash) => expect(jumpHash(search)).toBe(hash));
+});
