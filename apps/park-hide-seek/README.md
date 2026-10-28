@@ -42,7 +42,7 @@ bun run deploy           # build and deploy (wrangler deploy)
 | | |
 |---|---|
 | Move · run · look | `WASD` · `Shift` · mouse (click the view to capture it, `Esc` to let go) |
-| Controls | The cog, top right: look X, Y and touch speed, invert Y and the key list, saved between visits |
+| Controls | The cog, top right: look X, Y and touch speed (and per touch axis), invert Y, music and effects volume and on/off (and each sound on its own), brightness, camera zoom and tilt, and the key list, saved between visits |
 | Camera | `V` switches first and third person |
 | Map | `M` (the radio map, for rangers) |
 | Camper | `C` crouch; hold it to lie flat (prone: slower, seen from even less far). Hold `X` beside a tree to climb it: hidden in the leaves, but five seconds at most, never in the last 15 s of the hunt. Let go and you slide down with a scrape rangers nearby hear; hold on to the end and you fall with a thud they hear from far off. On a phone the Crouch button works the same held down, and there's a Climb button. Crouched in a bush you can't be seen from more than a few metres, unless a flashlight finds you close up. In prop hunt, `E` turns you into the bush, boulder or log next to you (and back) |

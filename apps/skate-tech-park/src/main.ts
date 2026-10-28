@@ -223,7 +223,8 @@ const gestures = new Gestures(tuned(chosen, controls));
 // On a touch screen one thumb drives (touch.ts), so only the profile's half of the screen is the flick pad.
 const touch = mountTouch();
 const grip = mountGrip(touch.root);
-// The cog's look speeds scale the stick (X steer, Y throttle, invert Y) and, as touch, how far a flick drag must go.
+// The cog's look speeds scale the stick (X steer, Y throttle, invert Y; the touch X and Y trims too) and, as touch, how far a flick drag must go.
+// The game makes no sound, so the cog has no audio rows.
 let look = { ...CTL_DEFAULTS };
 let cogOpen = false; // the Controls dialog is open: the ride waits
 // Every control setting applies live: the pad's side, size and labels, the stick's dead zone and inversion, the flick reach.
@@ -238,11 +239,18 @@ const applyControls = (c: Controls) => {
   gestures.profile = tuned(chosen, c, look.touch);
   grip.show(gestures.profile);
 };
+const viewSet = { zoom: 1, tilt: 0 }; // shared with the chase camera, which is built further down
 let extra: ReturnType<typeof controlsExtras> | undefined;
 mountControls({
   key: "skate-tech-park.controls", parent: document.querySelector<HTMLElement>(".hud .buttons")!,
   keys: [["W A S D / arrows", "Throttle and steer"], ["Left stick (touch)", "Throttle and steer"], ["Space", "Jump"], ["F G V R T Y U I O", "Flick tricks"], ["Drag on the pad", "Flick tricks (touch)"], ["Esc", "Pause"]],
-  onChange: (s) => { look = s; applyControls(controls); },
+  show: ["touchAxes", "view"],
+  onChange: (s) => {
+    look = s;
+    canvas.style.filter = s.brightness === 1 ? "" : `brightness(${s.brightness})`;
+    Object.assign(viewSet, { zoom: s.zoom, tilt: s.tilt });
+    applyControls(controls);
+  },
   onToggle: (open) => { cogOpen = open; keys.clear(); if (open) extra?.sync(); },
   onReset: () => { extra?.reset(); extra?.sync(); },
   extras: (card) => { extra = controlsExtras(card, {
@@ -276,8 +284,8 @@ window.addEventListener("pointercancel", lift);
 const FLICK_KEYS: [string, Flick][] = [["KeyG", "heelflip"], ["KeyV", "shove-it"], ["KeyR", "varial"], ["KeyT", "tre flip"], ["KeyY", "laser flip"], ["KeyU", "hardflip"], ["KeyI", "inward heel"], ["KeyO", "varial heel"]];
 const input = (): Input => ({
   ...IDLE,
-  throttle: (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0) || scale(touch.throttle, look.lookY),
-  steer: (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0) - (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) || scale(touch.steer, look.lookX),
+  throttle: (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0) || scale(touch.throttle, look.lookY * look.touchY),
+  steer: (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0) - (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) || scale(touch.steer, look.lookX * look.touchX),
   jump: keys.has("Space"),
   nollie: keys.has("KeyN"),
   boost: keys.has("ShiftLeft") || keys.has("ShiftRight") || touch.boost,
@@ -354,6 +362,7 @@ pveBtn.append(icon(pve ? ShieldOff : Shield));
 pveBtn.title = pve ? "PvE: boards pass through each other (click for collisions)" : "Collisions on (click for PvE)";
 pveBtn.addEventListener("click", () => { const q = new URLSearchParams(location.search); if (pve) q.delete("pve"); else q.set("pve", "1"); location.search = `?${q}`; }); // a room is one mode, so this moves you to the other room
 const chase = new Chase(camera);
+chase.view = viewSet;
 const manualEase = new TiltEase();
 const taps = new Taps($("taps")); // rings where the feet pop, drag and flick
 const groundRise = (x: number, z: number): [number, number] => { const e = 0.25; return rideableRise((level.height(x + e, z) - level.height(x - e, z)) / (2 * e), (level.height(x, z + e) - level.height(x, z - e)) / (2 * e)); };

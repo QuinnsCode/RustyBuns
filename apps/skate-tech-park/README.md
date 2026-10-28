@@ -14,6 +14,8 @@ A flick trick is data (`src/tricks.ts`): how far the board turns under the rider
 
 On a touch screen one thumb drives the stick and the other flicks on a board drawn on the flick pad, nose up. Like footprint grip tape, it shows where the fingers go and a dotted path for each stroke out of them, named at its tip; orange paths pop. The path a stroke matched lights up. Start on the nose to nollie (`N` on the keyboard): the front foot pops it, the back foot levels it, and it lands as "nollie kickflip" and the like.
 
+The cog (top right of the HUD) opens the Controls: look and touch speeds (the stick's X and Y trims included), invert Y, brightness, camera zoom and tilt, and the pad's own settings. They are saved in the browser. The game makes no sound, so there are no audio rows.
+
 Which stroke does which trick is a flick profile (`src/flick.ts`): a list of strokes, each "from the nose, tail or anywhere, this way (or a tap), at least this far" and what it does (pop an ollie or a nollie, flick a trick, or both), plus which half of the screen is the pad and how long a still press waits before it is a manual. `src/flick-profiles.ts` holds twenty: classic and its goofy mirror, fingerboard (tap the tail to ollie, flick off the nose's edges), short-thumb and long-throw sizes, tap pop, compass, nollie first, pull pop, one swipe, nose flicks, tail scoop, first five, fine lines, quick and slow manuals, and lefty pads. The footprints button under the pad steps through them and the browser keeps the pick. `?flick=<name>` picks one, and `?flick=` with a profile as JSON (or base64url JSON) rides one of your own; anything it leaves out comes from classic.
 
 ## Rails bend and drop

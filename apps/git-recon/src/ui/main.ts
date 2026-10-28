@@ -22,13 +22,13 @@ import { KEYS, keyLabel, WEAPONS, type WeaponId } from "../sim/weapons.ts";
 import { isRole, nextRole, ROLE_ORDER, ROLES, type RoleId } from "../sim/roles.ts";
 import { STREAKS, VEHICLES, vehicleName } from "../sim/vehicles.ts";
 import { weaponIcon } from "./icons.ts";
-import { FIELD, muffle, place, play, VOICES } from "./audio.ts";
+import { FIELD, muffle, place, play, VOICES, type Voice } from "./audio.ts";
 import { BUILDS, type BuildId } from "./figure.ts";
 import { Battle } from "./net.ts";
 import { headById, headCanvas, HEADS, isOpen } from "./heads.ts";
 import { buildWorld, type World } from "./scene.ts";
 import { mountTouch } from "./touch.ts";
-import { DEFAULTS, mountControls } from "@rustybuns/game-controls";
+import { DEFAULTS, mountControls, volumeOf } from "@rustybuns/game-controls";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("view");
@@ -491,10 +491,13 @@ window.addEventListener("mousemove", (e) => {
 });
 /** The cog in the corner: look speeds, invert and the key list, saved for next time. Opening it lets go of the mouse. */
 let ctl = { ...DEFAULTS };
+let dazed = 0; // how knocked silly the view is, 0..1 (cinema)
 mountControls({
   key: "git-recon.controls", parent: $("controls-host"), title: "Controls",
+  show: ["touchAxes", "audio", "view"], hide: ["music", "musicOn"],
+  sounds: [["guns", "Gunfire"], ["blasts", "Blasts and falling files"], ["hits", "Hits and kills"], ["shield", "Shield"], ["pickups", "Pickups"], ["setpieces", "Set-piece cues"]],
   keys: [["W A S D", "Move"], ["Mouse", "Aim"], ["Click / Right click", "Fire / Zoom"], ["Space", "Jump"], ["Q / E", "Lean"], ["Wheel", "Swap gun"], ["Esc", "Let go of the mouse"]],
-  onChange: (s) => { ctl = s; },
+  onChange: (s) => { ctl = s; paint(); },
   onToggle: (open) => { if (open) document.exitPointerLock?.(); },
 });
 /** The next (or previous) gun of yours with rounds left. */
@@ -571,7 +574,10 @@ function placeCamera(game: Game, dt: number) {
   const floor = game.terrain.height(camera.position.x, camera.position.z) + 0.4;
   if (camera.position.y < floor) camera.position.y = floor;
   camera.lookAt(pivot.x + fx * cp * 50, pivot.y + sp * 50, pivot.z + fz * cp * 50);
-  if (Math.abs(camera.fov - cam.fov) > 0.01) camera.fov = cam.fov, camera.updateProjectionMatrix();
+  // The cog's zoom narrows or widens the view; its tilt rolls it about the line of sight, so aim is unchanged.
+  const fov = cam.fov / ctl.zoom;
+  if (Math.abs(camera.fov - fov) > 0.01) camera.fov = fov, camera.updateProjectionMatrix();
+  if (ctl.tilt) camera.rotateZ(ctl.tilt * Math.PI / 180);
   $("crosshair").classList.toggle("scope", sniping);
 }
 
@@ -587,7 +593,11 @@ function frameShot(shot: Stage["shot"]) {
 }
 
 /** A set piece's overlay: letterbox bars, the radio's line, a title card, and being knocked silly (blurred, washed out, deaf). */
-let dazed = 0;
+/** The canvas filter: the cog's brightness, then being knocked silly (blurred, washed out) on top. */
+function paint() {
+  const parts = [ctl.brightness !== 1 ? `brightness(${ctl.brightness})` : "", dazed > 0 ? `blur(${(dazed * 4).toFixed(1)}px) saturate(${(1 - dazed * 0.8).toFixed(2)}) contrast(${(1 + dazed * 0.15).toFixed(2)})` : ""];
+  canvas.style.filter = parts.filter(Boolean).join(" ");
+}
 function cinema(st: Stage) {
   $("hud").style.setProperty("--bars", st.bars.toFixed(3));
   // With the bars in, the shot is the beat's: the HUD's lists and markers step aside.
@@ -598,11 +608,11 @@ function cinema(st: Stage) {
   if (st.title) $("title-card").querySelector("b")!.textContent = st.title.text, ($("title-card").querySelector("small")!.textContent = st.title.sub);
   if (Math.abs(st.daze - dazed) < 0.01 && (st.daze > 0 || dazed === 0)) return;
   dazed = st.daze;
-  canvas.style.filter = dazed > 0 ? `blur(${(dazed * 4).toFixed(1)}px) saturate(${(1 - dazed * 0.8).toFixed(2)}) contrast(${(1 + dazed * 0.15).toFixed(2)})` : "";
+  paint();
   muffle(dazed);
 }
 function undaze() {
-  dazed = 0, canvas.style.filter = "", muffle(0);
+  dazed = 0, paint(), muffle(0);
   $("hud").style.setProperty("--bars", "0");
   $("caption").hidden = $("title-card").hidden = true;
 }
@@ -805,26 +815,29 @@ function results(game: Game) {
 
 /* ---------------- sound ---------------- */
 
+/** A sound through the cog's effects settings: loudness, effects on or off, and the piece switched off. */
+const sfx = (piece: string, v: Voice, vol = 1, pan = 0, inHead = false) => play(v, vol * volumeOf(ctl, "sfx", piece), pan, inHead);
+
 function sound(game: Game, e: GameEvent) {
   const you = game.you(), me = game.me;
   const at = (x: number, z: number) => place(x - you.x, z - you.z, look.yaw);
   if (e.kind === "fire") {
     const s = game.soldiers[e.id]!, { vol, pan } = at(s.x, s.z);
-    play(VOICES[e.weapon], vol, pan);
+    sfx("guns", VOICES[e.weapon], vol, pan);
   } else if (e.kind === "boom") {
     const { vol, pan } = at(e.x, e.z);
-    play(FIELD.boom, vol, pan);
+    sfx("blasts", FIELD.boom, vol, pan);
   } else if (e.kind === "razed") {
     const { vol, pan } = at(e.x, e.z);
-    play(FIELD.raze, vol, pan);
-  } else if (e.kind === "pickup") e.id === me && play(FIELD.pickup);
-  else if (e.kind === "hit" && e.target === me) play(e.shield ? FIELD.shieldHit : FIELD.hurt);
-  else if (e.kind === "shield" && e.id === me) play(e.state === "broke" ? FIELD.shieldBroke : e.state === "charging" ? FIELD.shieldCharge : FIELD.shieldFull);
-  else if (e.kind === "hit" && e.by === me) play(FIELD.hitmark);
+    sfx("blasts", FIELD.raze, vol, pan);
+  } else if (e.kind === "pickup") e.id === me && sfx("pickups", FIELD.pickup);
+  else if (e.kind === "hit" && e.target === me) sfx(e.shield ? "shield" : "hits", e.shield ? FIELD.shieldHit : FIELD.hurt);
+  else if (e.kind === "shield" && e.id === me) sfx("shield", e.state === "broke" ? FIELD.shieldBroke : e.state === "charging" ? FIELD.shieldCharge : FIELD.shieldFull);
+  else if (e.kind === "hit" && e.by === me) sfx("hits", FIELD.hitmark);
   else if (e.kind === "down") {
-    if (e.by === me && e.id !== me) play(FIELD.kill);
+    if (e.by === me && e.id !== me) sfx("hits", FIELD.kill);
     const s = game.soldiers[e.id]!, { vol, pan } = at(s.x, s.z);
-    play(FIELD.down, vol, pan);
+    sfx("hits", FIELD.down, vol, pan);
   }
 }
 
@@ -840,7 +853,7 @@ function frame(now: number) {
   const you = game.you(), me = game.me;
   // A finger's drag on the view turns the camera; its taps are the keys' one-shots.
   const turn = touch.look();
-  look.yaw += turn.yaw * ctl.touch, look.pitch = Math.max(-1.2, Math.min(1.0, look.pitch + turn.pitch * ctl.touch * ctl.lookY * (ctl.invertY ? -1 : 1)));
+  look.yaw += turn.yaw * ctl.touch * ctl.touchX, look.pitch = Math.max(-1.2, Math.min(1.0, look.pitch + turn.pitch * ctl.touch * ctl.touchY * ctl.lookY * (ctl.invertY ? -1 : 1)));
   if (touch.tap.delete("jump")) jump = true, prone = false;
   if (touch.tap.delete("roll")) roll = true;
   if (touch.tap.delete("reload")) reload = true;
@@ -880,7 +893,7 @@ function frame(now: number) {
     // A set piece can hold some of your input and slow the game down.
     events = game.step(dt * director.scale, director.steer(input));
     director.step(dt, events);
-    for (const cue of director.cues) play(FIELD[cue], 1, 0, cue === "ring");
+    for (const cue of director.cues) sfx("setpieces", FIELD[cue], 1, 0, cue === "ring");
   }
   for (const e of events) {
     sound(game, e);
