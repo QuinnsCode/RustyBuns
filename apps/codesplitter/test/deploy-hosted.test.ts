@@ -267,7 +267,7 @@ describe("rotating DEPLOY_SECRETS_KEY", () => {
     // Rotated: the new key, and the old one beside it.
     Object.assign(env, { DEPLOY_SECRETS_KEY: NEW, DEPLOY_SECRETS_KEY_OLD: SECRETS });
     expect((await (await call("pat-person", "/api/admin/deploy-keys/reseal", { method: "POST" })).status)).toBe(403);
-    expect(await (await call("ryan-quinn", "/api/admin/deploy-keys")).json()).toEqual({ hosted: true, rotating: true, keys: 2 });
+    expect(await (await call("ryan-quinn", "/api/admin/deploy-keys")).json()).toMatchObject({ hosted: true, rotating: true, keys: 2, legacy: 0 });
     // Still deploys before the re-seal.
     await send("ryan-quinn", D, {});
     expect((await settle(call, 2)).history[0]).toMatchObject({ status: "done" });
@@ -326,6 +326,27 @@ test("what was sealed before the rename still opens, and is sealed again as code
   expect(await (await call("ryan-quinn", "/api/admin/deploy-keys/reseal", { method: "POST" })).json()).toEqual({ keys: 0, states: 1, failed: [] });
   expect(await (await call("ryan-quinn", "/api/admin/deploy-keys/reseal", { method: "POST" })).json()).toEqual({ keys: 0, states: 0, failed: [] });
   expect(await unsealState(env, "ryan-quinn", "lab", await runner.ctx.storage.get("state~apps~web"))).toEqual({ "web/prod/Worker.json": "{}" });
+});
+
+test("the admin page counts keys sealed before the rename, and DEPLOY_LEGACY_AAD=0 stops opening them once none are left", async () => {
+  const { call, send, env } = await hosted();
+  await send("ryan-quinn", K, { token: TOKEN, account_id: ACCOUNT }, "PUT");
+  const old = await oldSeal(SECRETS, "deploy key ryan-quinn/lab", { token: TOKEN, account_id: ACCOUNT });
+  await env.DB.prepare("UPDATE deploy_keys SET sealed = ?").bind(old).run();
+  const gate = async () => (await (await call("ryan-quinn", "/api/admin/deploy-keys")).json()) as { legacy: number; legacyAad: boolean };
+  expect(await gate()).toMatchObject({ legacy: 1, legacyAad: true });
+
+  // Off while one is left: it no longer opens.
+  env.DEPLOY_LEGACY_AAD = "0";
+  await expect(unseal(env, "ryan-quinn", "lab", old)).rejects.toThrow();
+  env.DEPLOY_LEGACY_AAD = undefined;
+
+  // The re-seal clears the count, and then switching it off loses nothing.
+  expect(await (await call("ryan-quinn", "/api/admin/deploy-keys/reseal", { method: "POST" })).json()).toMatchObject({ keys: 1, failed: [] });
+  env.DEPLOY_LEGACY_AAD = "0";
+  expect(await gate()).toMatchObject({ legacy: 0, legacyAad: false });
+  const now = (await env.DB.prepare("SELECT sealed FROM deploy_keys").first()) as { sealed: string };
+  expect(await unseal(env, "ryan-quinn", "lab", now.sealed)).toEqual({ token: TOKEN, account_id: ACCOUNT });
 });
 
 test("an agent container never gets the deploy secrets", async () => {
