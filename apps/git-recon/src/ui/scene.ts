@@ -20,6 +20,7 @@ import type { Game, GameEvent } from "../sim/game.ts";
 import { CROUCH_HEIGHT, HEIGHT, PRONE_HEIGHT, ROLL_TIME, type Soldier } from "../sim/game.ts";
 import { WEAPONS } from "../sim/weapons.ts";
 import { buildFigure, inked, pose, setGun, setHead, type BuildId, type Figure, type Pose } from "./figure.ts";
+import { QUALITY, type Quality } from "@rustybuns/util/quality";
 import { buildHead, HEADS, type HeadDef } from "./heads.ts";
 import { BRANCH_RADIUS, HEAD_RADIUS } from "../sim/missions.ts";
 
@@ -158,6 +159,16 @@ function joined(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
   return g;
 }
 
+/** Boxes (already placed in the world) as one geometry, and their hairline edges as one position list. */
+function slabs(boxes: THREE.BufferGeometry[]): { solid: THREE.BufferGeometry; edges: THREE.BufferGeometry } {
+  const lines = boxes.map((b) => new THREE.EdgesGeometry(b).getAttribute("position").array as Float32Array);
+  const out = new Float32Array(lines.reduce((n, a) => n + a.length, 0));
+  lines.reduce((at, a) => (out.set(a, at), at + a.length), 0);
+  const edges = new THREE.BufferGeometry();
+  edges.setAttribute("position", new THREE.BufferAttribute(out, 3));
+  return { solid: joined(boxes), edges };
+}
+
 /** A file's building, w by h by d and centred on the origin, inside the box that is its hitbox. */
 function structure(kind: Structure, w: number, h: number, d: number): THREE.BufferGeometry {
   if (kind === "house") {
@@ -199,18 +210,20 @@ const BLEND = 14;
 
 /** How many metres of ground one printing of the code covers before it repeats. */
 const TEXT_TILE = 44;
+/** Point lights that flash with muzzles and blasts: none on the low tier, where each one is a cost on every ground pixel. */
+const LAMPS = { low: 0, mid: 2, high: 4 } as const satisfies Record<Quality, number>;
 
 /**
  * The ground's print: the repo's own code, a few lines from each of its biggest files under an
  * orange header with the file's path, in columns like a newspaper page. Without any text (an
  * old cached load) it prints the file paths and line counts instead.
  */
-function codePrint(map: CodeMap, text: RepoSnapshot["text"]): THREE.CanvasTexture {
-  const n = 2048, c = document.createElement("canvas"), g = c.getContext("2d")!;
+function codePrint(map: CodeMap, text: RepoSnapshot["text"], q: Quality): THREE.CanvasTexture {
+  const n = q === "low" ? 1024 : 2048, c = document.createElement("canvas"), g = c.getContext("2d")!;
   c.width = c.height = n;
   g.fillStyle = "#ffffff";
   g.fillRect(0, 0, n, n);
-  const cols = 4, lh = 16, rows = n / lh, colW = n / cols, perCol = rows;
+  const cols = 4, lh = n / 128, rows = n / lh, colW = n / cols, perCol = rows;
   const files = text?.length ? text : [{ path: "files", lines: map.blocks.filter((b) => !b.wall).map((b) => `${b.path}  ${b.lines.toLocaleString()} lines`) }];
   const each = Math.max(4, Math.floor((cols * perCol) / files.length) - 2);
   const out: { s: string; head: boolean }[] = [];
@@ -222,18 +235,18 @@ function codePrint(map: CodeMap, text: RepoSnapshot["text"]): THREE.CanvasTextur
   g.textBaseline = "top";
   out.slice(0, cols * perCol).forEach((line, i) => {
     const col = Math.floor(i / perCol), row = i % perCol;
-    g.font = `${line.head ? 600 : 400} 13px ui-monospace, SFMono-Regular, Menlo, monospace`;
+    g.font = `${line.head ? 600 : 400} ${n / 158}px ui-monospace, SFMono-Regular, Menlo, monospace`;
     g.fillStyle = line.head ? "#e8590c" : "#3a3a3a";
     g.fillText(line.s, col * colW + 10, row * lh + 1, colW - 16);
   });
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = QUALITY[q].anisotropy;
   return tex;
 }
 
-export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "average" }, text?: RepoSnapshot["text"]): World {
+export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "average" }, text?: RepoSnapshot["text"], quality: Quality = "high"): World {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(PAPER);
   scene.fog = new THREE.Fog(PAPER, 70, 230);
@@ -253,13 +266,14 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
   scene.add(hemi, sun, sun.target);
   // Muzzles and blasts light up what's near them: a small pool of lights, always there and dark
   // when idle, so the shaders never rebuild for a light coming or going.
-  const lamps = Array.from({ length: 4 }, () => {
+  const lamps = Array.from({ length: LAMPS[quality] }, () => {
     const l = new THREE.PointLight(ORANGE, 0, 10, 1.6);
     scene.add(l);
     return { l, t: 1, life: 1, peak: 0 };
   });
   let nextLamp = 0;
   function flare(x: number, y: number, z: number, peak: number, reach: number, life: number) {
+    if (!lamps.length) return;
     const k = lamps[nextLamp++ % lamps.length]!;
     k.l.position.set(x, y, z), k.l.distance = reach;
     Object.assign(k, { t: 0, life, peak });
@@ -307,7 +321,7 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     sh.uniforms.uR = { value: R };
     sh.uniforms.uStep = { value: contourStep(lo, hi) };
     sh.uniforms.uWater = { value: map.terrain.water ?? -1e6 };
-    sh.uniforms.uText = { value: codePrint(map, text) };
+    sh.uniforms.uText = { value: codePrint(map, text, quality) };
     sh.uniforms.uTile = { value: TEXT_TILE };
   };
   const terrainMesh = new THREE.Mesh(geo, mat);
@@ -341,25 +355,18 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
   const compoundEdges = map.compounds.map(() => new THREE.LineBasicMaterial({ color: ORANGE }));
   const files: { b: (typeof map.blocks)[number]; m: THREE.Mesh; tall: number; h: number }[] = [];
   const mud = new THREE.MeshLambertMaterial({ color: 0xc9ae82 }), mudEdge = new THREE.LineBasicMaterial({ color: 0x8a6d44 });
+  const wallBoxes: THREE.BufferGeometry[] = [];
   for (const b of map.blocks) {
     if (b.wall) {
       // Mud-brick: a plain slab. The curtain and inner walls get a lip of battlements, the towers a flat
       // cap (the watchtower a wider one); the stair's steps and the low orchard walls are bare blocks.
-      const m = new THREE.Mesh(new THREE.BoxGeometry(b.w, b.h, b.d), mud);
-      m.position.set(b.x, b.y + b.h / 2, b.z);
-      m.castShadow = m.receiveShadow = true;
-      m.add(new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), mudEdge));
+      // All of them are joined below into one mesh and one set of edges.
+      wallBoxes.push(new THREE.BoxGeometry(b.w, b.h, b.d).translate(b.x, b.y + b.h / 2, b.z));
       const step = b.h < 3 && b.w < 1.2 && b.d < 1.2, low = b.h <= ORCHARD_HEIGHT + 0.01;
       if (!step && !low) {
         const tower = b.h > 4, watch = b.h >= WATCH_HEIGHT - 0.01, out = watch ? 0.8 : tower ? 0.5 : 0.2, thick = watch ? 0.45 : 0.35;
-        const cap = new THREE.Mesh(new THREE.BoxGeometry(b.w + out, thick, b.d + out), mud);
-        cap.position.y = b.h / 2 + thick / 2 - 0.01;
-        cap.castShadow = true;
-        cap.add(new THREE.LineSegments(new THREE.EdgesGeometry(cap.geometry), mudEdge));
-        m.add(cap);
+        wallBoxes.push(new THREE.BoxGeometry(b.w + out, thick, b.d + out).translate(b.x, b.y + b.h + thick / 2 - 0.01, b.z));
       }
-      scene.add(m);
-      solids.push(m);
       continue;
     }
     const box = structure(structureOf(b.path), b.w, b.h, b.d);
@@ -372,6 +379,15 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
     m.add(e);
     scene.add(m);
     solids.push(m);
+  }
+  if (wallBoxes.length) {
+    const { solid, edges } = slabs(wallBoxes);
+    const walls = new THREE.Mesh(solid, mud);
+    walls.castShadow = walls.receiveShadow = true;
+    walls.add(new THREE.LineSegments(edges, mudEdge));
+    scene.add(walls);
+    solids.push(walls);
+    for (const g of wallBoxes) g.dispose();
   }
   map.compounds.forEach((c) => {
     const s = label(c.folder, `${c.files} files · ${c.lines.toLocaleString()} lines${c.burning ? " · checks failing" : ""}`);
@@ -451,6 +467,8 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
   // Bullets are tracers, a streak along their flight; the rest are balls; the flamethrower's puffs grow and fade.
   const tracerGeo = new THREE.BoxGeometry(0.05, 0.05, 2.4).translate(0, 0, 1.2), bigShotGeo = new THREE.SphereGeometry(0.22, 12, 8);
   const puffGeo = new THREE.IcosahedronGeometry(0.3, 0);
+  // Each puff fades on its own, so each needs a material; they are handed back, not cloned and disposed every frame.
+  const puffMats: THREE.MeshBasicMaterial[] = [];
   const inkShot = new THREE.MeshBasicMaterial({ color: INK });
   const shotMat = { you: inkShot, ours: inkShot, theirs: new THREE.MeshBasicMaterial({ color: SLATE }), conflict: new THREE.MeshBasicMaterial({ color: ORANGE }) };
   const looks = new Map<number, Look>(), plain: Look = { head: HEADS[0]!, build: "average" };
@@ -858,7 +876,7 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
         let m = shotMeshes.get(p.id);
         if (!m) {
           const flame = p.weapon === "clean";
-          m = new THREE.Mesh(flame ? puffGeo : tracer(p.weapon) ? tracerGeo : bigShotGeo, flame ? flameMat.clone() : shotMat[p.team]);
+          m = new THREE.Mesh(flame ? puffGeo : tracer(p.weapon) ? tracerGeo : bigShotGeo, flame ? (puffMats.pop() ?? flameMat.clone()) : shotMat[p.team]);
           shotMeshes.set(p.id, m), scene.add(m);
         }
         m.position.set(p.x, p.y, p.z);
@@ -878,7 +896,7 @@ export function buildWorld(map: CodeMap, you: Look = { head: HEADS[0]!, build: "
       }
       for (const [id, m] of shotMeshes) if (!live.has(id)) {
         scene.remove(m), shotMeshes.delete(id);
-        if (m.geometry === puffGeo) (m.material as THREE.Material).dispose();
+        if (m.geometry === puffGeo) puffMats.push(m.material as THREE.MeshBasicMaterial);
       }
       cleared.forEach((done, i) => compoundEdges[i]!.color.setHex(done ? INK : ORANGE));
       fires.forEach((g, i) => {

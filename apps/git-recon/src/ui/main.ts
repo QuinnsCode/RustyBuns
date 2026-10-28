@@ -40,6 +40,12 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY[tier].anti
 const suns: THREE.DirectionalLight[] = []; // each level's sun, once built
 const auto = autoQuality(renderer, suns, { quality: tier });
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+canvas.addEventListener("webglcontextlost", (e) => {
+  e.preventDefault();
+  const note = $("caption");
+  note.textContent = "The graphics card gave out. Reload to play again, with ?quality=low if it keeps happening.";
+  note.hidden = false, $("hud").hidden = false;
+});
 // A filmic curve keeps the orange flashes and lit ground from clipping flat.
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.15;
@@ -234,7 +240,7 @@ function start(def: LevelDef) {
 
 /** Into a level: the scene, the camera behind you, the HUD. On your own or in a battle (net). */
 function begin(def: LevelDef, repo: RepoSnapshot, game: Game, brief: string, net?: Net) {
-  const world = buildWorld(game.map, { head: me.head, build: me.build }, repo.text);
+  const world = buildWorld(game.map, { head: me.head, build: me.build }, repo.text, auto.quality);
   suns.splice(0, suns.length, world.sun);
   applyQuality(auto.quality, renderer, suns);
   // The chapter's set pieces, on your own; a battle has none.
