@@ -1,6 +1,7 @@
 // Shared Sphere's room and Worker wrapper, without TerraViz: a fake page stands in for its router, and fake sockets
 // for the browsers. The real thing is checked by hand with `bun apps/terraviz-demo/run.ts --shared`.
 import { expect, test } from "bun:test";
+import { jumpFromSearch } from "../sphere/client.ts";
 import { SphereRoom, type Socket } from "../sphere/room.ts";
 import { CLIENT_PATH, WS_PATH, roomName, sphere } from "../sphere/worker.ts";
 
@@ -91,4 +92,13 @@ test("the wrapper routes the room, serves the client and adds it to TerraViz's p
   // the client is one self-contained script that parses
   const js = await (await w.fetch(new Request(`http://x${CLIENT_PATH}`), env, {})).text();
   expect(() => new Function(js)).not.toThrow();
+});
+
+test("a link lands in a state: dataset, camera and lead, clamped, and nothing when it asks for none", () => {
+  expect(jumpFromSearch("?dataset=sea-surface-temperature&lon=139.7&lat=35.7&zoom=3&lead=1"))
+    .toEqual({ dataset: "sea-surface-temperature", lon: 139.7, lat: 35.7, zoom: 3, lead: true });
+  expect(jumpFromSearch("?lat=200&zoom=abc&room=x")).toEqual({ lat: 85 });
+  expect(jumpFromSearch("?room=class-7b&name=Ada")).toBeNull();
+  // the served script carries the parser and is valid JavaScript
+  expect(() => new Function(`${jumpFromSearch}`)).not.toThrow();
 });

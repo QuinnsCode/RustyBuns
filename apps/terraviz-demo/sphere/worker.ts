@@ -2,7 +2,7 @@
 // other request goes to TerraViz untouched, and its HTML pages get one <script> tag that puts the people on the globe.
 // `run.ts --shared` writes the entry that hands this TerraViz's generated router, so no TerraViz file changes.
 import { clean } from "./room.ts";
-import { sphereClient } from "./client.ts";
+import { jumpFromSearch, sphereClient } from "./client.ts";
 
 type Namespace = { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };
 type Env = { SPHERE: Namespace } & Record<string, unknown>;
@@ -10,7 +10,7 @@ type Inner = { fetch(req: Request, env: any, ctx: any): Response | Promise<Respo
 
 export const WS_PATH = "/__sphere/ws";
 export const CLIENT_PATH = "/__sphere/client.js";
-const CLIENT = `(${sphereClient.toString()})(${JSON.stringify(WS_PATH)});\n`;
+const CLIENT = `(${sphereClient.toString()})(${JSON.stringify(WS_PATH)}, ${jumpFromSearch.toString()});\n`;
 
 /** A room name from the query: lowercase letters, digits and dashes, "lobby" when there is none. */
 export const roomName = (s: string | null) => clean(s, 32).toLowerCase().replace(/[^a-z0-9-]/g, "") || "lobby";
