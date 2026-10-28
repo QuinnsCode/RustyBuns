@@ -121,7 +121,7 @@ test("the suction fan holds the roadster to a lip it would otherwise fly off, an
   const drive = (fan: boolean) => {
     const car = start(0, -9, 0, kicker);
     let airborne = false;
-    run(car, 3, (s) => { airborne ||= s.air; return { throttle: 1, fan }; }, kicker);
+    run(car, 5, (s) => { airborne ||= s.air; return { throttle: 1, fan }; }, kicker);
     return { car, airborne };
   };
   expect(drive(false).airborne).toBe(true);

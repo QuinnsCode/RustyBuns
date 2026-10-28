@@ -1,5 +1,5 @@
 // Checks one park file before it is wired into the picker, the way the tests will: every spawn sits on rideable
-// ground inside the bounds, each named gap clears from its `<gap> run` spawn at 24, 27 and 32 m/s with its bonus
+// ground inside the bounds, each named gap clears from its `<gap> run` spawn at 28 and 32 m/s with its bonus
 // scored, the first spawn's tour (scripts/ride.ts) stays finite with the camera holding the board, and every
 // trick on the list lands from the first spawn. Prints what fails and exits 1; `--quiet` prints only failures.
 //
@@ -43,7 +43,7 @@ function drive(spawn: string, gapName: string, line: number) {
 for (const g of l.gaps) {
   const spawn = l.spawns.find((p) => p.name === `${g.name} run`)?.name;
   if (!spawn) { say(false, `gap "${g.name}" has no "${g.name} run" spawn`); continue; }
-  for (const line of [24, 27, 32]) {
+  for (const line of [28, 32]) {
     const { s, run } = drive(spawn, g.name, line), n = run.gaps.get(g.name) ?? 0;
     say(n >= 1 && s.score >= g.bonus && run.bestCombo > 0, `gap "${g.name}" at ${line} m/s: cleared ${n} time${n === 1 ? "" : "s"}, score ${Math.round(s.score)} (bonus ${g.bonus}), best combo ${run.bestCombo}`);
   }

@@ -42,7 +42,7 @@ export const IDLE: Input = { throttle: 0, steer: 0, jump: false, nollie: false, 
 // Pushing is gentle and tops out at a speed you can steer at (about 70 km/h at SCALE 2). The jets and
 // a downhill carry the board past it, up to the jets' own top speed, and the board sheds the extra
 // slowly once they stop.
-const TUNE = { accel: 6, brake: 14, top: 14 * T, over: 0.5, turn: 2.2 / T, airSpin: 7 / T };
+const TUNE = { accel: 3, brake: 14, top: 11.5 * T, over: 0.5, turn: 2.2 / T, airSpin: 7 / T };
 // The rocket jets, in the board's own numbers.
 export const JETS = {
   boost: 32, // m/s² from the rear jets
@@ -114,7 +114,7 @@ const MAX_SLOPE = 3; // a rise steeper than this (about 72 degrees) in one strid
 const CARVE = 0.8; // how much speed stiffens the board's turn: at top speed it turns 1/(1+CARVE) as tight
 const CARVE_DRAG = 0.5; // a hard carve at speed scrubs this share of it per second
 const DRIFT = 0.8; // rad/s the board falls toward downhill per unit of cross slope
-const LEG_PUMP = 0.25; // the same with legs alone: a held push through a transition, about a tenth more speed out of a quarter pipe
+const LEG_PUMP = 0.15; // the same with legs alone: a held push through a transition, about a tenth more speed out of a quarter pipe
 const PUMP = 0.6; // board: speed gained per radian the ground curves up ahead, as a share of speed, while pumping
 const WALL = 0.8; // radians: a rider this far up a curve who meets a sharper rise is on a wall, and flies off it
 const LIP_PUSH = 0.3; // share of its speed a pushing board keeps toward the deck as it leaves a vertical wall, so it clears the coping instead of climbing the face
@@ -130,7 +130,7 @@ const PUSH_STEEP = 0.6; // radians: a transition steeper than this can't be push
 export const FLICK_TIME = 0.24 * T;
 /** How long a flick takes: a 360 comes round slower. */
 export const flickTime = (k: Flick) => FLICK_TIME * (flickLong(k) ? 1.4 : 1);
-const OLLIE = 7 * T; // m/s up off the tail
+const OLLIE = 5.6 * T; // m/s up off the tail
 const SPIN_EASE = 0.12; // seconds for a spin in the air to build to what the steering asks, or to slow when let go
 /** An ollie's pop, in the board's own time: the back foot snaps the tail down so the nose kicks up
  * `angle` radians in `snap` seconds, then the front foot drags up the grip and levels it out over
