@@ -35,13 +35,11 @@ function section() {
   const draw = (s: State) => {
     const c = s.connections[0];
     const ok = c?.status === "ok";
-    const setup = el("code", {}, s.setup);
-    setup.style.cssText = "display:block;white-space:pre-wrap;overflow-wrap:anywhere";
     root.replaceChildren(
       el("div", { className: "setting-head" }, el("h4", {}, "Build computer"), el("span", { className: "scope", title: c?.status ?? "unset" }, createElement(Hammer), ok ? "Reachable" : "Needs a look")),
       el("p", { className: "setting-note" }, statusLine(s)),
       ...(ok ? [el("p", { className: "setting-note" }, nightlyLine(s.nightly))]
-        : [el("p", { className: "setting-note" }, "On the build Mac, run:"), setup, el("p", { className: "setting-note" }, "then, here: echo 'export BUILDER_HOST=you@Your-Mac.local' >> ~/.zshenv, and restart the office")]));
+        : [el("p", { className: "setting-note" }, "On the build Mac, run:"), setupLine(s.setup), el("p", { className: "setting-note" }, "then, here: echo 'export BUILDER_HOST=you@Your-Mac.local' >> ~/.zshenv, and restart the office")]));
   };
   fetch("/__rb/builder").then((r) => r.json()).then((b: State) => draw(b)).catch(() => root.replaceChildren(el("p", { className: "setting-note" }, "The build computer's card did not load")));
   return root;
