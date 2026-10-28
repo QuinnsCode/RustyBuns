@@ -310,6 +310,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@rustybuns/cli": "workspace:*",
+        "@rustybuns/game-controls": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
         "@rustybuns/util": "workspace:*",
         "react": "19.2.8",

@@ -13,6 +13,7 @@
     "desktop:build": "bunx rustybuns build desktop --check"
   },
   "dependencies": {
+    "@rustybuns/game-controls": "workspace:*",
     "@rustybuns/util": "workspace:*",
     "@rustybuns/cli": "workspace:*",
     "@rustybuns/shell-bun": "workspace:*",

@@ -13,6 +13,10 @@ export interface Opts {
   title?: string;
   /** Key and gesture rows, e.g. ["WASD", "Move"]. */
   keys?: [string, string][];
+  /** Rows that make no sense for the game (no vertical look, say); their saved values stay in the settings. */
+  hide?: (keyof Settings)[];
+  /** Row names for a game whose look is not a look ("Stick sensitivity" for a slide game). */
+  labels?: Partial<Record<"lookX" | "lookY" | "touch", string>>;
   /** Called with the saved settings on mount and after every change. */
   onChange?: (s: Settings) => void;
   /** Called when the dialog opens or closes, so a game can pause or let go of the mouse. */
@@ -60,19 +64,20 @@ export function mountControls(o: Opts) {
     card.append(l);
   };
   const slider = (label: string, k: "lookX" | "lookY" | "touch") => {
+    if (o.hide?.includes(k)) return;
     const i = Object.assign(document.createElement("input"), { type: "range", name: k, min: String(RANGE.min), max: String(RANGE.max), step: String(RANGE.step) });
     const out = document.createElement("output");
     i.addEventListener("input", () => { s = { ...s, [k]: Number(i.value) }; out.textContent = `${s[k].toFixed(2)}x`; save(); });
     syncs.push(() => { i.value = String(s[k]); out.textContent = `${s[k].toFixed(2)}x`; });
     row(label, i, out);
   };
-  slider("Look X sensitivity", "lookX");
-  slider("Look Y sensitivity", "lookY");
-  slider("Touch sensitivity", "touch");
+  slider(o.labels?.lookX ?? "Look X sensitivity", "lookX");
+  slider(o.labels?.lookY ?? "Look Y sensitivity", "lookY");
+  slider(o.labels?.touch ?? "Touch sensitivity", "touch");
   const inv = Object.assign(document.createElement("input"), { type: "checkbox", name: "invertY" });
   inv.addEventListener("change", () => { s = { ...s, invertY: inv.checked }; save(); });
   syncs.push(() => { inv.checked = s.invertY; });
-  row("Invert Y", inv);
+  if (!o.hide?.includes("invertY")) row("Invert Y", inv);
   const extra = o.extras?.(card);
   if (extra) syncs.push(extra.sync);
   const reset = Object.assign(document.createElement("button"), { type: "button", className: "gc-reset", textContent: "Reset to defaults" });
@@ -95,7 +100,7 @@ export function mountControls(o: Opts) {
   addStyle();
   syncs.forEach((f) => f());
   o.onChange?.({ ...s });
-  return { get: () => ({ ...s }), open: () => toggle(true), close: () => toggle(false), isOpen: () => !dlg.hidden };
+  return { get: () => ({ ...s }), open: () => toggle(true), close: () => toggle(false), isOpen: () => !dlg.hidden, destroy: () => { btn.remove(); dlg.remove(); } };
 }
 
 function addStyle() {

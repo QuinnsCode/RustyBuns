@@ -21,6 +21,9 @@ const UI_CODES = new Set(["Space", "Enter", "NumpadEnter"]);
 export const onControl = (t: EventTarget | null): boolean =>
   !!t && typeof (t as Element).closest === "function" && !!(t as Element).closest("button, a[href], select, textarea, input, [role=button]");
 
+/** Sensitivities from the Controls cog (1 as shipped): the stick's slide speed and the touch drag's. */
+export const tuning = { pad: 1, touch: 1 };
+
 export interface AttachOpts {
   /** True when Space/Enter should go to the focused control instead of the game (a podium, a lobby, an open dialog). */
   uiKeys?: (e: KeyboardEvent) => boolean;
@@ -59,7 +62,7 @@ export class Controls {
     const pm = (e: PointerEvent) => {
       if (e.pointerId !== active) return;
       const dx = e.clientX - startX; moved = Math.max(moved, Math.abs(dx));
-      this.touchMove = Math.abs(dx) < 10 ? 0 : Math.max(-1, Math.min(1, dx / 60));
+      this.touchMove = Math.abs(dx) < 10 ? 0 : Math.max(-1, Math.min(1, (dx / 60) * tuning.touch));
     };
     const pu = (e: PointerEvent) => {
       if (e.pointerId !== active) return;
@@ -105,6 +108,7 @@ export class Controls {
         if (!p) continue;
         let m = p.axes[0] ?? 0;
         if (Math.abs(m) < DEADZONE) m = 0;
+        m = Math.max(-1, Math.min(1, m * tuning.pad));
         if (p.buttons[14]?.pressed) m = -1;
         if (p.buttons[15]?.pressed) m = 1;
         merge(m, !!this.padEdge[i]?.gulp, !!this.padEdge[i]?.bellow);
