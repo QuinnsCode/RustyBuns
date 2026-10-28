@@ -1,8 +1,9 @@
 // The look of the skate pieces. One generic mesher samples a piece's own `height(localX, localZ)` into a
 // solid (so no piece kind has geometry written by hand), paints it in colour blocks (planks of painted
-// wood on the ramps, concrete on the bowls and landings, a bright band round each edge), and every piece
-// of a level merges into one mesh. Rails, ledge edges and coping merge into a second: steel, with pale
-// grind wax rubbed onto it in streaks. Two draw calls for a whole park, however many pieces it has.
+// wood on the ramps, concrete on the bowls and landings, a bright band round each edge), and the pieces
+// of a level merge into one mesh per 60 m tile. Rails, ledge edges and coping merge likewise: steel, with pale
+// grind wax rubbed onto it in streaks. Two draw calls per tile, however many pieces it has, and three's
+// frustum culling (the camera's and the sun's shadow box) drops the tiles nobody sees.
 // Given the Blender kit (kit.ts), ramps, stairs and blocks wear its modules instead of the sampled mesh.
 import { mulberry32 } from "@rustybuns/util";
 import * as THREE from "three";
@@ -153,7 +154,16 @@ function chainGeometry(rs: Rail[], ground: Ground, seed: number): THREE.BufferGe
   return out;
 }
 
-/** Every piece and rail of a level, as two meshes. `ground` is the terrain under them (0 on a plaza floor). */
+/** Metres across one tile of merged pieces and rails: the unit three culls (and the sun's 120 m shadow box drops) at. */
+export const TILE = 60;
+const tileOf = (x: number, z: number) => `${Math.floor(x / TILE)},${Math.floor(z / TILE)}`;
+const inTiles = <T>(items: T[], at: (t: T) => [number, number]) => {
+  const tiles = new Map<string, T[]>();
+  for (const t of items) { const k = tileOf(...at(t)); tiles.set(k, [...(tiles.get(k) ?? []), t]); }
+  return tiles;
+};
+
+/** Every piece and rail of a level, as a "pieces" and a "rails" mesh per 60 m tile. `ground` is the terrain under them (0 on a plaza floor). */
 export function levelMeshes(level: Level, ground?: Ground, kit?: Kit) {
   const group = new THREE.Group();
   const low = (p: Piece) => { // a piece hangs from its pad's floor: the lowest ground under its footprint
@@ -166,16 +176,19 @@ export function levelMeshes(level: Level, ground?: Ground, kit?: Kit) {
     }
     return m;
   };
-  if (level.pieces.length) {
-    const detail = Math.min(1, DETAIL_PIECES / level.pieces.length);
-    const mesh = (p: Piece) => (kit && kitGeometry(p, kit, low(p))) || pieceGeometry(p, low(p), detail);
-    const m = new THREE.Mesh(mergeGeometries(level.pieces.map(mesh))!, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
+  const detail = Math.min(1, DETAIL_PIECES / Math.max(1, level.pieces.length));
+  const mesh = (p: Piece) => (kit && kitGeometry(p, kit, low(p))) || pieceGeometry(p, low(p), detail);
+  const wood = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
+  for (const ps of inTiles(level.pieces, (p) => [p.x, p.z]).values()) {
+    const m = new THREE.Mesh(mergeGeometries(ps.map(mesh))!, wood);
     m.castShadow = m.receiveShadow = true;
     m.name = "pieces";
     group.add(m);
   }
-  if (level.rails.length) {
-    const m = new THREE.Mesh(mergeGeometries(chainRuns(level.rails).flatMap((run) => (run.length > 1 ? chainGeometry(run.map((i) => level.rails[i]!), ground ?? (() => 0), run[0]! + 1) : railGeometry(level.rails[run[0]!]!, ground, run[0]! + 1))))!, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.7 }));
+  const steel = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.7 });
+  // a chained bar stays whole in the tile its first segment starts in
+  for (const runs of inTiles(chainRuns(level.rails), (run) => [level.rails[run[0]!]!.a.x, level.rails[run[0]!]!.a.z]).values()) {
+    const m = new THREE.Mesh(mergeGeometries(runs.flatMap((run) => (run.length > 1 ? chainGeometry(run.map((i) => level.rails[i]!), ground ?? (() => 0), run[0]! + 1) : railGeometry(level.rails[run[0]!]!, ground, run[0]! + 1))))!, steel);
     m.castShadow = true;
     m.name = "rails";
     group.add(m);

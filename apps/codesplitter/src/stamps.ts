@@ -9,6 +9,7 @@
 
 import { fileLines, materialize, toFile, type FileLine } from "./archive.ts";
 import { json, readBody, type Env } from "./env.ts";
+import { liveRepo } from "./repos.ts";
 
 export const STAMPS = ["+1", "heart", "binoculars", "shovel", "gem", "skull", "lgtm"] as const;
 /** How many lines one stamp may go on at once. */
@@ -79,9 +80,9 @@ export async function stampRoutes(req: Request, env: Env, p: string[], url: URL,
 export async function recentStamps(env: Env, viewer: string | null, who: string, side: "by" | "author", limit = 20) {
   const { results } = await env.DB.prepare(`
     SELECT s.owner, s.repo, s.path, s.line, s.stamp, s.by, s.author, s.created_at
-    FROM stamps s JOIN repos r ON r.owner = s.owner AND r.name = s.repo
-    WHERE s.${side} = ? AND (r.expires_at IS NULL OR r.expires_at > ?) AND (r.visibility = 'public' OR r.owner = ?
+    FROM stamps s ${liveRepo("s")}
+    WHERE s.${side} = ? AND (r.visibility = 'public' OR r.owner = ?
       OR EXISTS (SELECT 1 FROM collaborators c WHERE c.owner = r.owner AND c.repo = r.name AND c.name = ?))
-    ORDER BY s.created_at DESC, s.rowid DESC LIMIT ?`).bind(who, Date.now(), viewer, viewer, limit).all();
+    ORDER BY s.created_at DESC, s.rowid DESC LIMIT ?`).bind(Date.now(), who, viewer, viewer, limit).all();
   return results;
 }

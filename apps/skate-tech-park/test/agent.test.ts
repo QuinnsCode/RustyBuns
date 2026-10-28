@@ -5,15 +5,16 @@ import { plaza } from "../src/levels/plaza.ts";
 import { IDLE, start, step } from "../src/sim.ts";
 
 const game = () => {
-  const driver = new Driver();
+  const driver = new Driver(), went: Record<string, unknown>[] = [];
   let sim = start(0, -40, 0, plaza);
   const loop = setInterval(() => { for (let i = 0; i < 30; i++) step(sim, { ...IDLE, ...driver.next() }, plaza); }, 1);
   const t = tools({
     driver, state: () => sim, level: plaza, park: { id: "plaza", spawns: [] }, parks: () => [{ id: "plaza", name: "Plaza" }],
-    go: () => {}, reset: () => { sim = start(0, -40, 0, plaza); }, swap: () => "roadster", snapshot: () => "data:image/png;base64,",
+    go: (park, extra) => { went.push({ park, ...extra }); }, spots: ["rail"], start: (n) => n === "rail" && ((sim = start(5, -40, 0, plaza)), true), perf: () => ({ fps: 60, frameMs: 16.7, worstMs: 20, tier: "mid", pixelRatio: 1.5 }),
+    reset: () => { sim = start(0, -40, 0, plaza); }, swap: () => "roadster", snapshot: () => "data:image/png;base64,",
   });
   const call = (name: string, args: unknown = {}) => t.find((x) => x.name === name)!.execute(args);
-  return { call, stop: () => clearInterval(loop) };
+  return { call, went, stop: () => clearInterval(loop) };
 };
 
 test("an agent pushes off, ollies and kickflips in one line, and reads the trick back", async () => {
@@ -38,5 +39,18 @@ test("a move it can't make is clamped or dropped, not obeyed: no trick named 'mo
     expect(out.tricks).toEqual([]);
     expect(out.now.kmh).toBeLessThan(25); // one second of a full push, not fifty
     expect(await g.call("skate_go", { park: "nowhere" })).toHaveProperty("error");
+  } finally { g.stop(); }
+});
+
+test("an agent jumps to a start, reads the frame time, and loads a park on a weak low tier", async () => {
+  const g = game();
+  try {
+    expect(await g.call("skate_start", { at: "nowhere" })).toHaveProperty("error");
+    const at = await g.call("skate_start", { at: "rail" });
+    expect("at" in at && at.at.x).toBe(5);
+    expect(await g.call("skate_perf")).toMatchObject({ tier: "mid", fps: 60 });
+    await g.call("skate_go", { park: "plaza", spawn: "vert", quality: "low", controls: "touch", weak: 40, fps: true });
+    await g.call("skate_go", { park: "plaza", quality: "ultra", controls: "tablet" });
+    expect(g.went).toEqual([{ park: "plaza", spawn: "vert", quality: "low", controls: "touch", weak: 40, fps: true }, { park: "plaza" }]);
   } finally { g.stop(); }
 });

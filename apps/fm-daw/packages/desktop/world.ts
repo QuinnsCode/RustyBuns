@@ -3,30 +3,37 @@
 // class is a Durable Object, so everyone in a room edits one groove live.
 // A class with a Durable Object's shape and no base class.
 import { apply, decodeClient, sanitize, type Project, type ServerMsg } from "../../src/project.ts";
-import { TokenBucket } from "../../src/limits.ts";
-
-// Provided by workerd and by the Rusty Buns host.
-declare const WebSocketPair: { new (): Record<0 | 1, unknown> };
+import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 
 const SAVE_AFTER_MS = 500;
-const MAX_MESSAGE = 256 * 1024;
 // A room holds this many sockets; past it an upgrade is refused.
 export const MAX_SOCKETS = 32;
-// Per socket: a knob drag sends an op per pointer move; a big message costs more.
-const MSG_RATE = 120, MSG_BURST = 240, BYTES_PER_TOKEN = 16 * 1024;
 // Over budget the socket is closed; the client reconnects and takes the snapshot.
 export const CLOSE_FLOOD = 4008;
+// Per socket: a knob drag sends an op per pointer move; a big message costs more.
+const BYTES_PER_TOKEN = 16 * 1024;
+const LIMITS = {
+  maxBytes: 256 * 1024, rate: 120, burst: 240,
+  cost: (bytes: number) => 1 + Math.floor(bytes / BYTES_PER_TOKEN),
+  onFlood: (ws: RoomSocket) => { try { ws.close(CLOSE_FLOOD, "too many messages"); } catch { /* closing */ } },
+};
+
+interface Ctx extends RoomCtx {
+  storage: { get(k: string): Promise<unknown>; put(k: string, v: unknown): Promise<void>; delete(k: string): Promise<unknown>; setAlarm(at: number): Promise<void>; deleteAlarm(): Promise<void> };
+  blockConcurrencyWhile(f: () => Promise<void>): void;
+}
 
 export default class World {
   private project: Project | null = null;
   private dirty = false;
-  private buckets = new WeakMap<object, TokenBucket>();
+  private sockets: Sockets<{ userId: string }, ServerMsg>;
   // Online only (the Worker says how long): a room left empty this long is deleted.
   // The desktop never sets it, so your own groove stays.
   private idleMs = 0;
   private idleAt = 0;
 
-  constructor(private ctx: any, private env: any) {
+  constructor(private ctx: Ctx, _env: unknown) {
+    this.sockets = new Sockets(ctx, LIMITS);
     ctx.blockConcurrencyWhile(async () => {
       this.project = sanitize(await ctx.storage.get("project"));
       this.idleMs = Number(await ctx.storage.get("idleMs")) || 0;
@@ -38,35 +45,28 @@ export default class World {
     if (request.headers.get("Upgrade") !== "websocket") return new Response("websocket only", { status: 400 });
     const userId = request.headers.get("X-User-Id");
     if (!userId) return new Response("Unauthenticated", { status: 401 });
-    if (this.open().length >= MAX_SOCKETS) return new Response("This room is full", { status: 503 });
+    if (this.sockets.open().length >= MAX_SOCKETS) return new Response("This room is full", { status: 503 });
     const idle = Number(request.headers.get("X-Room-Idle-Ms"));
     if (idle > 0) this.idleMs = idle;
-    const pair = new WebSocketPair();
-    const [client, server] = Object.values(pair) as any[];
-    this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ userId });
-    server.send(JSON.stringify({ t: "snapshot", project: this.project } satisfies ServerMsg));
+    const { server, response } = this.sockets.upgrade({ userId });
+    this.sockets.send(server, { t: "snapshot", project: this.project });
     this.broadcastPeers();
-    return new Response(null, { status: 101, webSocket: client } as any);
+    return response;
   }
 
-  webSocketMessage(ws: any, raw: string | ArrayBuffer) {
-    if (typeof raw !== "string" || raw.length > MAX_MESSAGE) return;
-    const now = Date.now();
-    let b = this.buckets.get(ws);
-    if (!b) this.buckets.set(ws, (b = new TokenBucket(MSG_RATE, MSG_BURST, now)));
-    if (!b.take(now, 1 + Math.floor(raw.length / BYTES_PER_TOKEN))) { try { ws.close(CLOSE_FLOOD, "too many messages"); } catch {} return; }
-    let msg;
-    try { msg = decodeClient(JSON.parse(raw)); } catch { return; }
-    if (msg?.t === "init") {
+  webSocketMessage(ws: RoomSocket, raw: string | ArrayBuffer) {
+    const frame = this.sockets.frame(ws, raw);
+    const msg = frame && decodeClient(frame.value);
+    if (!msg) return;
+    if (msg.t === "init") {
       // first client in an empty world seeds it; later ones get the snapshot instead
-      if (this.project) { ws.send(JSON.stringify({ t: "snapshot", project: this.project } satisfies ServerMsg)); return; }
+      if (this.project) { this.sockets.send(ws, { t: "snapshot", project: this.project }); return; }
       this.project = msg.project;
       this.save();
       this.broadcast({ t: "op", op: { t: "replace", project: msg.project } }, ws);
       return;
     }
-    if (msg?.t !== "op" || !this.project) return;
+    if (msg.t !== "op" || !this.project) return;
     const next = apply(this.project, msg.op);
     if (next === this.project) return;
     this.project = next;
@@ -76,12 +76,12 @@ export default class World {
     this.broadcast({ t: "op", op }, ws);
   }
 
-  webSocketClose(ws: any) { this.left(ws); }
-  webSocketError(ws: any) { this.left(ws); }
+  webSocketClose(ws: RoomSocket) { this.left(ws); }
+  webSocketError(ws: RoomSocket) { this.left(ws); }
 
-  private left(ws: any) {
+  private left(ws: RoomSocket) {
     this.broadcastPeers();
-    if (this.open().some((w) => w !== ws)) return;
+    if (this.sockets.open().some((w) => w !== ws)) return;
     // the last one out: save now, and start the idle clock
     void this.alarm(true);
   }
@@ -92,7 +92,7 @@ export default class World {
       this.dirty = false;
       await s.put("project", this.project);
     }
-    if (!this.idleMs || this.open().length) return;
+    if (!this.idleMs || this.sockets.open().length) return;
     if (!lastOut && this.idleAt && Date.now() >= this.idleAt) {
       // nobody came back: the room goes, groove and all
       await s.deleteAlarm();
@@ -116,17 +116,9 @@ export default class World {
     void this.ctx.storage.setAlarm(Date.now() + SAVE_AFTER_MS);
   }
 
-  private broadcast(m: ServerMsg, except?: unknown) {
-    const s = JSON.stringify(m);
-    for (const ws of this.ctx.getWebSockets()) if (ws !== except) try { ws.send(s); } catch {}
-  }
-
-  private open(): any[] {
-    // getWebSockets can still list a closing socket; count open ones only
-    return this.ctx.getWebSockets().filter((w: any) => w.readyState === undefined || w.readyState === 1);
-  }
+  private broadcast(m: ServerMsg, except?: RoomSocket) { this.sockets.broadcast(m, except); }
 
   private broadcastPeers() {
-    this.broadcast({ t: "peers", n: this.open().length });
+    this.broadcast({ t: "peers", n: this.sockets.open().length });
   }
 }

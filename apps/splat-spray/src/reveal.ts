@@ -36,6 +36,8 @@ export class RevealField {
   private readonly focusItem = new dyno.DynoFloat({ key: "focusItem", value: -1 });
   private readonly focusOn = new dyno.DynoFloat({ key: "focusOn", value: 0 });
   painted = 0;
+  /** Splats regenerate only until this time: while paint is still fading, or just after anything else changed. */
+  private busyUntil = 0;
 
   constructor(readonly count: number, itemOf?: Int32Array) {
     const height = Math.max(1, Math.ceil(count / WIDTH));
@@ -53,7 +55,13 @@ export class RevealField {
     this.focusItem.uniform.value = item;
     this.focusOn.value = item >= 0 ? 1 : 0;
     this.focusOn.uniform.value = this.focusOn.value;
+    this.touch();
   }
+
+  private touch(until = now() + 0.2) { this.busyUntil = Math.max(this.busyUntil, until); }
+
+  /** True while the shader's output still changes, so the mesh must regenerate; false when it can sit idle. */
+  animating(t = now()) { return t < this.busyUntil; }
 
   /** Paint every splat of one object, e.g. when it's been found. */
   paintObject(first: number, count: number, at = now()) {
@@ -74,18 +82,21 @@ export class RevealField {
       if (this.data[i] !== ALWAYS) this.data[i] = at;
     }
     this.texture.needsUpdate = true;
+    this.touch(at + LOOK.hold + LOOK.fade + 1);
   }
 
   revealAll() {
     this.data.fill(ALWAYS, 0, this.count);
     this.painted = this.count;
     this.texture.needsUpdate = true;
+    this.touch();
   }
 
   reset() {
     this.data.fill(NEVER);
     this.painted = 0;
     this.texture.needsUpdate = true;
+    this.touch();
   }
 }
 

@@ -9,6 +9,7 @@ class Sock {
   send(s: string) { this.sent.push(JSON.parse(s)); }
   close(code: number) { this.closed = code; this.readyState = 3; }
   serializeAttachment(v: unknown) { this.att = v; }
+  deserializeAttachment() { return this.att; }
 }
 // Swapped in for these tests only: bun test runs every file in one process, so a fake left
 // behind breaks later files that use the real ones (shell-bun's DO tests).
@@ -34,7 +35,7 @@ async function setup() {
       deleteAlarm: async () => { ctx.alarmAt = null; },
     },
     getWebSockets: () => ctx.sockets.filter((s) => s.readyState === 1),
-    acceptWebSocket: (s: Sock) => { ctx.sockets.push(s); },
+    acceptWebSocket(s: Sock) { ctx.sockets.push(s); },
     gate: Promise.resolve() as Promise<unknown>,
     blockConcurrencyWhile: (f: () => Promise<unknown>) => (ctx.gate = f()),
   };

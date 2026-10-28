@@ -2,13 +2,9 @@
 // Cloudflare DurableObjectState, the Rusty Buns in-process one, and the fakes
 // in the tests all satisfy these without wrapper objects.
 
-export interface EngineSocket {
-  send(data: string): void;
-  close(code?: number, reason?: string): void;
-  /** Per-connection state that must outlive the DO's memory (CF hibernation). */
-  serializeAttachment(value: unknown): void;
-  deserializeAttachment(): unknown;
-}
+import type { RoomSocket } from "@rustybuns/util/room";
+
+export type EngineSocket = RoomSocket;
 
 export interface EngineStorage {
   get<T = unknown>(key: string): Promise<T | undefined>;

@@ -2,6 +2,7 @@
 import { Car, createElement, Info, RectangleHorizontal, RotateCcw, Shield, ShieldOff, Users } from "lucide";
 import * as THREE from "three";
 import { cheese, sweepShot } from "@rustybuns/util";
+import { autoQuality, pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { mountPartsPicker } from "./parts-picker.ts";
 import { BOARD_BUDGETS, type BoardBudget, dressBoard, dressRoadster, fingerboard, ROADSTER_BUDGETS, type RoadsterBudget, roadster, type Thruster } from "./models.ts";
 import { levelMeshes } from "./render/pieces.ts";
@@ -32,6 +33,8 @@ import { pickProfile } from "./flick.ts";
 import { PROFILES } from "./flick-profiles.ts";
 import { mountGrip } from "./griptape.ts";
 import { mountTouch } from "./touch.ts";
+import { linkOf, scenarioOf, SPOTS, spotFor } from "./scenario.ts";
+import { mountPerf } from "./perf.ts";
 import { type Controls, loadControls, saveControls, tuned } from "./controls.ts";
 import { DEFAULTS as CTL_DEFAULTS, mountControls } from "@rustybuns/game-controls";
 import { bind, hint, KEY } from "./bindings.ts";
@@ -49,10 +52,16 @@ import { showFront } from "./front/menu.ts";
 import { mountPause } from "./pause.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#view")!;
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
+// The quality tier (?quality=low|mid|high, else the last one, else a guess from the GPU) sets the canvas's pixel
+// ratio, antialias, shadows and the default model budgets; a run that stays slow steps itself down a tier.
+const tier = pickQuality().quality;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY[tier].antialias, powerPreference: "high-performance" });
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); notice("The graphics card gave out. Reload to ride again, with ?quality=low if it keeps happening."); });
+function notice(text: string) {
+  const p = Object.assign(document.createElement("p"), { className: "gpu-notice", textContent: text });
+  document.body.append(p);
+}
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
 const scene = new THREE.Scene();
@@ -60,7 +69,7 @@ scene.background = new THREE.Color(mood.haze);
 scene.fog = new THREE.Fog(mood.haze, 60, 140);
 renderer.toneMappingExposure = mood.exposure;
 const camera = new THREE.PerspectiveCamera(66, 1, 0.1, 2000);
-const air = sky();
+const air = sky(undefined, tier === "low");
 scene.add(air);
 
 // The mood's light (golden hour unless the park says otherwise): a low sun and a sky fill.
@@ -69,8 +78,7 @@ scene.add(fill);
 const sun = new THREE.DirectionalLight(mood.sunColor, mood.sunPower);
 const sunAt = new THREE.Vector3(...mood.sun);
 sun.position.copy(sunAt);
-sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+const auto = autoQuality(renderer, [sun], { quality: tier }); // sets the pixel ratio, shadows and shadow map size, and steps down on slow frames
 Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, far: 200 });
 scene.add(sun, sun.target);
 skyMood(air, mood);
@@ -85,7 +93,7 @@ const biomeAsked = new URLSearchParams(location.search).get("biome"); // ?biome=
 const spots = park ? scatter(level, (level as ParkLevel).ground, 7, BIOMES.includes(biomeAsked as Biome) ? (biomeAsked as Biome) : undefined) : [];
 let scenery = park ? new Scenery(spots) : null; // small pines and rocks, for scale: the built primitives first, the Blender set once it loads
 if (scenery) scene.add(scenery.group);
-const sceneryBudget = new URLSearchParams(location.search).get("scenery") ?? "mid"; // ?scenery=hi|mid|low, or ?scenery=built for the primitives
+const sceneryBudget = new URLSearchParams(location.search).get("scenery") ?? QUALITY[auto.quality].detail; // ?scenery=hi|mid|low, or ?scenery=built for the primitives
 if (scenery && SCENERY_BUDGETS.includes(sceneryBudget as SceneryBudget)) {
   loadScenery(sceneryBudget as SceneryBudget, async (f) => new URL(f, document.baseURI).href).then((models) => {
     scene.remove(scenery!.group);
@@ -94,7 +102,7 @@ if (scenery && SCENERY_BUDGETS.includes(sceneryBudget as SceneryBudget)) {
     dressTrees(scene, models.sequoia);
   }).catch((e) => console.warn("scenery models", e));
 }
-const peakBudget = new URLSearchParams(location.search).get("peak") ?? "mid"; // the far mountain a park may have (?peak=hi|mid|low, or ?peak=off)
+const peakBudget = new URLSearchParams(location.search).get("peak") ?? QUALITY[auto.quality].detail; // the far mountain a park may have (?peak=hi|mid|low, or ?peak=off)
 if (park && PEAK_BUDGETS.includes(peakBudget as PeakBudget)) {
   for (const l of (level as ParkLevel).landmarks) {
     if (l.kind === "peak") dressPeak(l, new URL(`models/landmark-${l.model}-${peakBudget}.glb`, document.baseURI).href, mood.haze).then((g) => scene.add(g)).catch((e) => console.warn("peak model", e));
@@ -145,7 +153,7 @@ decor.add(floor);
 const groundOf = park ? (level as ParkLevel).ground.height : undefined;
 let pieceMeshes = levelMeshes(level, groundOf);
 scene.add(pieceMeshes);
-const kitBudget = new URLSearchParams(location.search).get("kit") ?? "mid";
+const kitBudget = new URLSearchParams(location.search).get("kit") ?? QUALITY[auto.quality].detail;
 if (KIT_BUDGETS.includes(kitBudget as KitBudget)) {
   loadKit(kitBudget as KitBudget, async (f) => new URL(f, document.baseURI).href).then((kit) => {
     scene.remove(pieceMeshes);
@@ -172,7 +180,7 @@ for (let i = 0; i < 28; i++) {
 
 const car = roadster();
 // The Blender roadster at a polygon budget (?car=hi|mid|low, or ?car=built for the shared one).
-const carBudget = new URLSearchParams(location.search).get("car") ?? "mid";
+const carBudget = new URLSearchParams(location.search).get("car") ?? QUALITY[auto.quality].detail;
 if (ROADSTER_BUDGETS.includes(carBudget as RoadsterBudget)) {
   dressRoadster(car, new URL(`models/roadster-${carBudget}.glb`, document.baseURI).href).catch((e) => console.warn("roadster model", e));
 }
@@ -181,7 +189,7 @@ let grindRise = 0; // how far the board is lifted onto the bar's contact, eased
 const PIVOT_Y = { fingerboard: 0.45, roadster: 0.6 }; // what a flip turns about
 const board = fingerboard();
 // The Blender model at a polygon budget (?board=hi|mid|low, or ?board=built for the three.js one alone).
-const budget = new URLSearchParams(location.search).get("board") ?? "mid";
+const budget = new URLSearchParams(location.search).get("board") ?? QUALITY[auto.quality].detail;
 if (BOARD_BUDGETS.includes(budget as BoardBudget)) {
   dressBoard(board, new URL(`models/fingerboard-${budget}.glb`, document.baseURI).href).catch((e) => console.warn("board model", e));
 }
@@ -224,7 +232,8 @@ let chosen = pickProfile(PROFILES, new URLSearchParams(location.search).get("fli
 let controls = loadControls();
 const gestures = new Gestures(tuned(chosen, controls));
 // On a touch screen one thumb drives (touch.ts), so only the profile's half of the screen is the flick pad.
-const touch = mountTouch();
+const scenario = scenarioOf(location.search); // ?controls=touch|desktop, ?weak, ?fps (scenario.ts)
+const touch = mountTouch(scenario.controls);
 const grip = mountGrip(touch.root);
 // The cog's look speeds scale the stick (X steer, Y throttle, invert Y; the touch X and Y trims too) and, as touch, how far a flick drag must go.
 // The game makes no sound, so the cog has no audio rows.
@@ -271,7 +280,7 @@ const scale = (v: number, k: number) => Math.max(-1, Math.min(1, v * k));
 const onPad = (x: number) => (gestures.profile.side === "left" ? x < innerWidth / 2 : x >= innerWidth / 2);
 let flicking = -1; // the pointer the gesture follows
 canvas.addEventListener("pointerdown", (e) => {
-  const touching = e.pointerType === "touch";
+  const touching = e.pointerType === "touch" || scenario.controls === "touch"; // ?controls=touch lets a mouse stand in for a thumb
   if (flicking >= 0 || touch.claims(e.pointerId) || (touching && !onPad(e.clientX))) return;
   flicking = e.pointerId;
   gestures.down(e.clientX, e.clientY, performance.now() / 1000, touching ? grip.along(e.clientX, e.clientY) : null);
@@ -309,10 +318,20 @@ $("reset").addEventListener("click", () => { reset(); (document.activeElement as
 swapBtn.addEventListener("click", () => { swap(); swapBtn.blur(); });
 // An agent in the browser can ride too (WebMCP, agent.ts): its moves go through the same step as the keys.
 const driver = new Driver();
+const isSpotName = (n: string): n is (typeof SPOTS)[number] => SPOTS.some((k) => k === n);
+const perf = mountPerf(scenario.fps && !isTouring(location.search), () => auto.quality, () => renderer.getPixelRatio());
 void mountAgent({
   driver, state: () => sim, level, park: { id: levelId, spawns: level.spawns.map((p) => p.name) },
   parks: () => LEVELS.map((l) => ({ id: l.id, name: l.name })),
-  go: (id, at) => { location.search = `?${new URLSearchParams({ level: id, ...(at ? { spawn: at } : {}) })}`; },
+  go: (id, extra) => { location.search = linkOf({ level: id, ...extra }); },
+  start: (name) => {
+    const p = isSpotName(name) ? spotFor(level, name) : level.spawns.find((s) => s.name === name);
+    if (!p) return false;
+    sim = start(p.x, p.z, p.yaw, level); before = poseOf(sim); chase.snap(sim, skins.current); ui.reset();
+    return true;
+  },
+  perf: () => perf.read(),
+  spots: [...level.spawns.map((p) => p.name), ...SPOTS.filter((k) => spotFor(level, k))],
   reset, swap: () => { swap(); return mode === "car" ? "roadster" : "fingerboard"; },
   snapshot: () => { // drawn and read in the same task, so the buffer isn't cleared yet; 640 px wide keeps it small enough to hand an agent
     renderer.render(scene, camera);
@@ -540,6 +559,9 @@ function frame(now: number) {
   ghosts.update(dt, camera);
   taps.update(dt, pivot, skins.current, camera);
   renderer.render(scene, camera);
+  if (scenario.weak) for (const end = performance.now() + scenario.weak; performance.now() < end;); // a slow machine, on demand
+  perf.frame(now);
+  auto.tick(now);
   requestAnimationFrame(frame);
 }
 

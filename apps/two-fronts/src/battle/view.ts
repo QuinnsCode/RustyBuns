@@ -7,6 +7,7 @@
 // Heavy weapons wait out in the open under a beacon. The intro cutscenes play first, once each,
 // and a sting when a Mossback walks in (cutscenes.ts). Comrades talk in bubbles over their heads.
 import * as THREE from "three";
+import { autoQuality, pickQuality, QUALITY } from "@rustybuns/util/quality";
 import { FACTION_COLORS, type BattleResult, type BattleSpec, type Side } from "./contract.ts";
 import { groundRecorder } from "./replay.ts";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
@@ -26,7 +27,7 @@ import CHATTER_SCRIPT from "../../content/chatter.json";
 import { introOf, mossbackSting, prologueOf, rideOf } from "./cutscenes.ts";
 import { nextRide, playCutscene, shouldPlay } from "./cutscene-view.ts";
 import { WORLDS } from "./worlds.ts";
-import { CHAMP_AT, HEAVY, ORDERS, ORDER_FOR, OVERHEAT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, startBattle, statsOf, step, timeLimit, vipUnit, yawTo, type Fx, type OrderKind, type Trooper, type Unit } from "./sim.ts";
+import { CHAMP_AT, HEAVY, ORDERS, ORDER_FOR, OVERHEAT, SPRINT_AFTER, DT, POST_RADIUS, STRIKE_RADIUS, TROOPERS, altitude, facing, heroUnit, inPlay, isHorde, isVehicle, startBattle, statsOf, step, timeLimit, vipUnit, yawTo, type Battle, type Fx, type OrderKind, type Trooper, type Unit } from "./sim.ts";
 
 // The squad orders, by key, with their icons and what the HUD calls them.
 const ORDER_KEYS: Record<string, OrderKind> = { "1": "forward", "2": "hold", "3": "back", "4": "focus", f: "focus" };
@@ -73,14 +74,29 @@ const HEAT_SEGS = Array.from({ length: HEAT_N }, (_, i) => {
   return `<path d="M ${pt(a0)} A ${r} ${r} 0 0 0 ${pt(a1)}"/>`;
 }).join("");
 
-export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTMLElement): Promise<BattleResult> {
+// The battle on screen, if one is: what `window.twoFronts` (jump.ts's hooks) reads and ends.
+let battleOnShow: Battle | null = null;
+export const liveBattle = () => battleOnShow;
+// Finish the battle on screen for `winner` by running the other side's tickets out; the next step ends it.
+export function endLiveBattle(winner: Side): boolean {
+  if (!battleOnShow || battleOnShow.over) return false;
+  const loser = winner === "attacker" ? "defender" : "attacker";
+  battleOnShow.reinforced[loser] = true; // or the drop pods would top the tickets back up
+  battleOnShow.tickets[loser] = 0;
+  return true;
+}
+
+// `warm`: seconds the AI fights before the hero drops in (a jump's "near the fight"); `cuts: false` skips the intros.
+export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTMLElement, opts: { warm?: number; cuts?: boolean } = {}): Promise<BattleResult> {
   const b = startBattle(spec);
+  for (let i = 0; i < (opts.warm ?? 0) * 30 && !b.over; i++) step(b, null);
+  battleOnShow = b;
   const heroSide = spec.hero;
   const color = (s: Side) => FACTION_COLORS[spec.factions[s]];
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-  renderer.shadowMap.enabled = true;
+  // ?quality=low|mid|high, else the remembered tier, else a guess from the GPU; a slow run steps itself down.
+  const tier = pickQuality().quality;
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY[tier].antialias, powerPreference: "high-performance" });
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
@@ -88,6 +104,14 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const camera = new THREE.PerspectiveCamera(settings.fov, 1, 0.1, 2000);
   // Doren's haze and light, the floor, the trees and everything on it: terrain.ts.
   const world = buildWorld(scene, b);
+  canvas.addEventListener("webglcontextlost", (e) => {
+    e.preventDefault();
+    const note = document.createElement("div");
+    note.textContent = "The graphics card gave out. Reload to carry on, with ?quality=low if it keeps happening.";
+    note.style.cssText = "position:fixed;inset:40% 10% auto;padding:14px;text-align:center;background:#000c;color:#fff;font:16px sans-serif;z-index:99";
+    document.body.append(note);
+  });
+  const auto = autoQuality(renderer, [world.sun], { quality: tier, onChange: (q) => { outline.enabled = q !== "low"; } });
   const ground = world.heightAt;
 
   // Command posts: a ring on the ground, a banner on a pole, and a column of light in the
@@ -342,6 +366,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
   const sandy = spec.sector === "canyon" || spec.sector === "cannon";
   outline.visibleEdgeColor.set(sandy ? 0x2ee6ff : 0xff5a2a);
   outline.hiddenEdgeColor.set(sandy ? 0x1590b8 : 0xc0381c);
+  outline.enabled = tier !== "low"; // the outline pass re-renders the scene and blurs it full-screen: too much for a weak GPU
   composer.addPass(outline);
   composer.addPass(new OutputPass());
   const OUTLINE_RANGE = 80;
@@ -386,7 +411,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     ? { 2: "Two in a row", 3: "Three. Fluff everywhere", 5: "Five. They'll sing about you. Badly", 8: "Eight. The forest has gone quiet", 12: "Twelve. Command is concerned about you" }
     : { 2: "Two backpacks", 3: "Three. Start a collection", 5: "Five. The totems need helmets", 8: "Eight. The shiny ones are all crying", 12: "Twelve. The chieftain wants a word" };
   let wasVent = false, nextTalk = 3, stung = false;
-  const noCuts = new URLSearchParams(location.search).get("cutscenes") === "off";
+  const noCuts = opts.cuts === false || new URLSearchParams(location.search).get("cutscenes") === "off";
   const talk: { id: number; text: string; until: number }[] = [];
   let hurt = 0, shake = 0, lastHp = Infinity, lastKills = 0, toastT = 0, markT = 0, gruntAt = 0, chatterAt = 0;
   let ear = { x: 0, z: 0 };
@@ -853,6 +878,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
       const eyeUnit = heroUnit(b);
       outline.selectedObjects = b.units.filter((u) => u.hp > 0 && eyeUnit && u.side !== eyeUnit.side && Math.hypot(u.x - eyeUnit.x, u.z - eyeUnit.z) < OUTLINE_RANGE).map((u) => meshes.get(u.id)).filter((g): g is THREE.Group => !!g);
       composer.render();
+      auto.tick(now);
       if (now - hudAt > 100 || b.over) { drawHud(); hudAt = now; }
       if (b.over) {
         cancelAnimationFrame(raf);
@@ -867,6 +893,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
         composer.dispose();
         renderer.dispose();
         hud.onpointerdown = null;
+        battleOnShow = null;
         resolve({ ...b.over, inputs: rec.log() });
         return;
       }
@@ -876,7 +903,7 @@ export function playBattle(spec: BattleSpec, canvas: HTMLCanvasElement, hud: HTM
     // briefing; then the battle. Once those are seen, a Thunder Marine battle opens on the ride
     // down instead: the next seat across, the next story.
     const h0 = heroUnit(b), f = spec.factions[heroSide];
-    const intros = h0 ? [prologueOf(f, spec.sector), introOf(f, spec.sector)].filter((c): c is NonNullable<typeof c> => !!c && shouldPlay(c.id)) : [];
+    const intros = h0 && !noCuts ? [prologueOf(f, spec.sector), introOf(f, spec.sector)].filter((c): c is NonNullable<typeof c> => !!c && shouldPlay(c.id)) : [];
     if (h0 && f === "marines" && !noCuts && (!intros.length || new URLSearchParams(location.search).get("cutscenes") === "always")) intros.push(rideOf(nextRide()));
     if (h0 && intros.length) void cut(intros, { x: h0.x, z: h0.z, yaw });
     else raf = requestAnimationFrame(frame);

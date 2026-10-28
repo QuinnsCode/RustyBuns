@@ -214,6 +214,10 @@ function drawEster(ctx: CanvasRenderingContext2D, t: number) {
 
 const DRAW: Record<Screen, (ctx: CanvasRenderingContext2D, t: number) => void> = { gitpath: drawGitpath, mervin: drawMervin, ester: drawEster };
 
+/** One screen onto any canvas of `SIZE`: how the demo stage (demo/) shows the wall without a 3D office. */
+export const paint = (name: Screen, ctx: CanvasRenderingContext2D, t: number) => DRAW[name](ctx, t);
+export const SIZE = { w: W, h: H };
+
 // ---- the 3D office: three screens over the boards ---------------------------------------------------------
 
 interface App { scene: Scene; camera: Camera; canvas: HTMLCanvasElement; office: { boardMeshes?: Partial<Record<string, Mesh>> } }
@@ -304,7 +308,11 @@ function clicked(e: MouseEvent, a: App) {
   ray.setFromCamera(at, a.camera);
   const hit = ray.intersectObjects((wall.children as Object3D[]).filter((m) => m.visible), false)[0];
   if (!hit || hit.distance > 25) return;
-  const name = hit.object.userData.screen as Screen, x = (hit.uv?.x ?? 0) * W, y = (1 - (hit.uv?.y ?? 0)) * H;
+  press(hit.object.userData.screen as Screen, (hit.uv?.x ?? 0) * W, (1 - (hit.uv?.y ?? 0)) * H);
+}
+
+/** A click at canvas px (x, y) on a screen: open a car's PR, queue Ester's cheap fix, or call on Mervin or Ester. */
+export function press(name: Screen, x: number, y: number) {
   if (name === "gitpath") {
     const car = cars.find((c) => x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h);
     if (car?.url) window.open(car.url, "_blank", "noopener");

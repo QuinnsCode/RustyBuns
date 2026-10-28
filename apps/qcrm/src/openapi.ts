@@ -28,6 +28,8 @@ interface Op {
   open?: true;
   /** Changes who can get in or see what, can't be undone, or hands out the whole org. */
   risky?: true;
+  /** Refuses API keys on purpose: only a signed-in browser may call it, so an agent should not try. */
+  cookieOnly?: true;
   /** The least role that may call it, for the docs. */
   role?: string;
 }
@@ -68,12 +70,12 @@ const ACTIVITY_BODY = obj({ type: ACTIVITY, contact_id: str(), deal_id: str(), b
 const OPS: Record<string, Record<string, Op>> = {
   "/me": {
     get: { id: "get_me", summary: "Who you are, your orgs and your role in each", tag: "Account", ok: obj({ user: obj({ id: str(), email: str(), name: str() }), orgs: arr(obj({ id: str(), name: str(), role: ROLE })), superAdmin: bool() }) },
-    delete: { id: "delete_me", summary: "Delete your account, the orgs you own and every row of them", tag: "Account", risky: true, query: { confirm: { ...str("your email, to be sure"), required: true } }, ok: obj({ ok: bool(), orgs_deleted: int() }) },
+    delete: { id: "delete_me", summary: "Delete your account, the orgs you own and every row of them", tag: "Account", risky: true, cookieOnly: true, query: { confirm: { ...str("your email, to be sure"), required: true } }, ok: obj({ ok: bool(), orgs_deleted: int() }) },
   },
   "/demo": { post: { id: "make_demo", summary: "A throwaway account signed in on the spot, owning Demo Co with 2,000 seeded contacts; gone after a day", tag: "Account", open: true, status: 201, ok: obj({ org: ref("Org"), user: obj({ id: str(), email: str(), name: str() }) }) } },
   "/orgs": {
     get: { id: "list_orgs", summary: "Your orgs with your role in each", tag: "Org", ok: arr(obj({ id: str(), name: str(), plan: str(), role: ROLE })) },
-    post: { id: "create_org", summary: "A new org you own", tag: "Org", body: obj({ name: str() }, ["name"]), ok: ref("Org"), status: 201 },
+    post: { id: "create_org", summary: "A new org you own", tag: "Org", cookieOnly: true, body: obj({ name: str() }, ["name"]), ok: ref("Org"), status: 201 },
   },
   [org]: {
     get: { id: "get_org", summary: "The org and your role in it", tag: "Org", role: "seasonal", ok: ref("Org") },
@@ -109,14 +111,15 @@ const OPS: Record<string, Record<string, Op>> = {
     delete: { id: "delete_webhook", summary: "Remove a webhook and its deliveries", tag: "Webhooks", role: "owner", risky: true, ok: ref("Ok") },
   },
   [`${org}/webhooks/{id}/deliveries`]: { get: { id: "list_deliveries", summary: "A webhook's last 50 deliveries", tag: "Webhooks", role: "owner", risky: true, ok: arr(ref("Delivery")) } },
+  [`${org}/webhooks/{id}/deliveries/{delivery}/replay`]: { post: { id: "replay_delivery", summary: "Send a delivery again, with the same payload, as a fresh first try", tag: "Webhooks", role: "owner", risky: true, description: "Refused (409) while the delivery is still waiting for a try.", ok: ref("Ok") } },
   [`${org}/keys`]: {
-    get: { id: "list_keys", summary: "The org's API keys, by prefix", tag: "Keys", role: "owner", risky: true, ok: arr(ref("Key")) },
-    post: { id: "create_key", summary: "A new API key (qk_…): the secret is shown this once", tag: "Keys", role: "owner", risky: true, description: "From a signed-in browser only; a key can't make keys.", body: obj({ name: str() }, ["name"]), ok: ref("Key"), status: 201 },
+    get: { id: "list_keys", summary: "The org's API keys, by prefix", tag: "Keys", role: "owner", risky: true, cookieOnly: true, ok: arr(ref("Key")) },
+    post: { id: "create_key", summary: "A new API key (qk_…): the secret is shown this once", tag: "Keys", role: "owner", risky: true, cookieOnly: true, description: "From a signed-in browser only; a key can't make keys.", body: obj({ name: str() }, ["name"]), ok: ref("Key"), status: 201 },
   },
-  [`${org}/keys/{id}`]: { delete: { id: "revoke_key", summary: "Revoke an API key", tag: "Keys", role: "owner", risky: true, ok: ref("Ok") } },
+  [`${org}/keys/{id}`]: { delete: { id: "revoke_key", summary: "Revoke an API key", tag: "Keys", role: "owner", risky: true, cookieOnly: true, ok: ref("Ok") } },
   [`${org}/seed`]: { post: { id: "seed_org", summary: "Fill the org with realistic fake data: n contacts and their companies, deals and activities", tag: "Org", role: "owner", body: obj({ n: int("1 to 100000"), seed: int("same seed, same data") }, ["n"]), ok: obj({ contacts: int(), companies: int(), deals: int(), activities: int() }), status: 201 } },
   [`${org}/insights`]: { get: { id: "get_insights", summary: "Counts, deals per stage, win rate over 90 days, activities per week, top companies by open pipeline", tag: "Org", role: "seasonal", ok: loose("{counts, deals_by_stage, last_90_days, activities_per_week, top_companies_by_open_pipeline}") } },
-  [`${org}/export`]: { get: { id: "export_org", summary: "Every row of the org as one JSON", tag: "Org", role: "owner", risky: true, ok: loose("{org, contacts, companies, deals, activities, memberships, webhooks, audit}") } },
+  [`${org}/export`]: { get: { id: "export_org", summary: "Every row of the org as one JSON; deleted rows are left out unless deleted=1", tag: "Org", role: "owner", risky: true, query: { deleted: str("1 to include soft-deleted rows (deleted_at set)") }, ok: loose("{org, contacts, companies, deals, activities, memberships, webhooks, audit}") } },
   [`${org}/audit`]: { get: { id: "list_audit", summary: "Who did what to the org itself (members, keys, webhooks, exports, seeds)", tag: "Org", role: "manager", query: { actor: str("a user id or email"), action: str("`member` for every member.* entry, or one exact action like `member.role`"), since: str("entries at or after this: a millisecond timestamp or a date"), cursor: str("`next` from the page before"), limit: int("1 to 500, default 100") }, ok: obj({ items: arr(ref("AuditEntry")), next: { type: ["string", "null"], description: "cursor for the next page" } }) } },
   [`${org}/scripts`]: {
     get: { id: "list_scripts", summary: "The org's scripts", tag: "Scripts", role: "seasonal", ok: arr(ref("Script")) },
@@ -171,9 +174,10 @@ export function openapi(origin: string) {
         operationId: o.id, summary: o.summary, tags: [o.tag], ...(o.description && { description: o.description }),
         parameters: params(path, o.query),
         ...(o.body && { requestBody: { required: true, content: { "application/json": { schema: o.body } } } }),
-        security: o.open ? [{}] : [{ key: [] }, { cookie: [] }],
+        security: o.open ? [{}] : o.cookieOnly ? [{ cookie: [] }] : [{ key: [] }, { cookie: [] }],
         ...(o.role && { "x-qcrm-role": o.role }),
         ...(o.risky && { "x-qcrm-risky": true }),
+        ...(o.cookieOnly && { "x-qcrm-cookie-only": true }),
         responses: {
           [String(o.status ?? 200)]: { description: "OK", content: { "application/json": { schema: o.ok ?? ref("Ok") } } },
           400: err("bad input"), 401: err("signed out, or a bad key"), 403: err("your role can't do this"),

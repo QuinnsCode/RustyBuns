@@ -7,7 +7,7 @@ import { ASK_MS } from "../live/floorguard.ts";
 export function floorGuardHooks(js: string) {
   const rel = "hooks/office-workers.js";
   const refused = "        return send(res, 405, { error: 'GET /office/workers, or POST to /office/workers, /office/workers/home, /office/workers/tell or /office/workers/pr' });\n";
-  js = once(js, rel, refused, refused + "    const __rbLocked = __rbGuard.peopleOnly(action);\n    if (__rbLocked)\n        return send(res, 403, { error: __rbLocked });\n");
+  js = once(js, rel, refused, refused + "    const __rbLocked = __rbGuard.peopleOnly(action);\n    if (__rbLocked) {\n        // #2201: a refused send-home is logged too (the body is read here, since the refusal returns before it is parsed)\n        if (action === '/home')\n            __rbGuard.logHome(who, await readBody(req).catch(() => ''), undefined, 'denied', __rbLocked);\n        return send(res, 403, { error: __rbLocked });\n    }\n");
   // ask-first: once upstream's own checks have passed, so a request that would fail anyway never waits on a person
   const ask = (indent: string, body: string) => `${indent}const __rbNo = await __rbGuard.askFirst(action, floor.id, who, ${body}, (m) => ctx.toastFloor(floor, m));\n` +
     `${indent}if (__rbNo)\n${indent}    return send(res, 403, { error: __rbNo });\n`;
@@ -17,7 +17,10 @@ export function floorGuardHooks(js: string) {
     "    if (action === '/write') {\n        const out = await __rbGuard.writeCheck(ctx.cfg.dataDir, floor.def.repo, floor.id, who, { command: __rbCommandOf(body) }, (m) => ctx.toastFloor(floor, m));\n" +
     "        res.writeHead(out.allow ? 200 : 403, { 'content-type': 'text/plain' });\n        return res.end(out.error ?? 'ok');\n    }\n    if (action === '/home') {\n");
   const home = "        // One at a time: git takes a lock on the repository's refs to delete a branch.\n";
-  js = once(js, rel, home, "        if (going.length) {\n" + ask("            ", "{ workers: going.map((g) => g.w.name), cleanup: ask.cleanup }") + "        }\n" + home);
+  js = once(js, rel, home, "        if (going.length) {\n" +
+    "            const __rbNo = await __rbGuard.askFirst(action, floor.id, who, { workers: going.map((g) => g.w.name), cleanup: ask.cleanup }, (m) => ctx.toastFloor(floor, m));\n" +
+    "            if (__rbNo) {\n                __rbGuard.logHome(who, going.map((g) => g.w.name), ask.cleanup, __rbNo.startsWith('Nobody') ? 'timed out' : 'denied', __rbNo);\n                return send(res, 403, { error: __rbNo });\n            }\n" +
+    "        }\n" + home);
   const pr = "        const err = floor.workers.linkPr(w.id, pr);\n";
   js = once(js, rel, pr, ask("        ", "{ worker: w.id === me.id ? undefined : w.name, pr: pr?.number ?? null }") + pr);
   const hire = "        return send(res, 409, { error: 'Every desk and bean bag is taken: send someone home first' });\n";
@@ -26,7 +29,8 @@ export function floorGuardHooks(js: string) {
   js = once(js, rel, "            const { note, error } = await floor.sendHome(w.id, ask.cleanup);\n",
     "            const __rbHeld = await __rbGuard.forcedHome(floor, w, ask.cleanup, __rbDescribeWork);\n" +
     "            if (__rbHeld)\n                ctx.toastFloor(floor, __rbHeld, 'warn');\n" +
-    "            const { note, error } = await floor.sendHome(w.id, __rbHeld ? undefined : ask.cleanup);\n");
+    "            const { note, error } = await floor.sendHome(w.id, __rbHeld ? undefined : ask.cleanup);\n" +
+    "            __rbGuard.logHome(who, [w.name], ask.cleanup, 'allowed', error || __rbHeld || note);\n");
   js = once(js, rel, "            results.push({ worker: w.name, id: w.id, went: true, ...(note ? { note } : {}), ...(error ? { error } : {}) });\n",
     "            results.push({ worker: w.name, id: w.id, went: true, ...(__rbHeld ? { held: __rbHeld } : {}), ...(note ? { note } : {}), ...(error ? { error } : {}) });\n");
   js = once(js, rel, "        let err = floor.workers.prompt(w.id, text, who);\n",
@@ -44,6 +48,14 @@ export function floorGuardHooks(js: string) {
     "        ctx.toastFloor(floor, __rbGuard.toldToast(who, w.name, text));\n" +
     "        return send(res, 200, { ok: true, worker: row(w.id) });\n");
   return "import * as __rbGuard from '../rb-floorguard.js';\nimport { commandOf as __rbCommandOf } from '../rb-askfirst.js';\nimport { describeWork as __rbDescribeWork } from '../worktrees.js';\n" + js;
+}
+
+/** server/ws/handlers/workers.js: a person's send-home click lands in the same local log as an agent's request (#2201). */
+export function floorGuardClicks(js: string) {
+  const rel = "ws/handlers/workers.js";
+  js = once(js, rel, "        void done.then(({ note, error }) => {\n",
+    "        void done.then(({ note, error }) => {\n            __rbGuard.logHome(who, [info.name], msg.cleanup, 'allowed', error || note);\n");
+  return "import * as __rbGuard from '../../rb-floorguard.js';\n" + js;
 }
 
 /**

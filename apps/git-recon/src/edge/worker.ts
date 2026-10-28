@@ -5,7 +5,7 @@
 // world (with ONLINE set) lets whoever picks the battle first own the room. /__rb/info tells the
 // page it's online, so the battle menu deals in room codes instead of addresses.
 import World from "../net/world.ts";
-import { originAllowed, RoomMintGate } from "./limits.ts";
+import { originAllowed, RoomMintGate } from "@rustybuns/util/limits";
 export { World };
 
 type DONamespace = { idFromName(n: string): unknown; get(id: unknown): { fetch(r: Request): Promise<Response> } };

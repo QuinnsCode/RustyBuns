@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { writeCheck } from "../askfirst/ask.ts";
@@ -135,4 +135,28 @@ test("the command is read from each agent's payload, and runs through sh -c with
   expect(commandOf({ tool_input: { file_path: "x" } })).toBeUndefined();
   const run = Bun.spawn(["sh", "-c", shellCommand("echo \"it's $1\"", "name", "w 1")], { stdout: "pipe" });
   expect((await new Response(run.stdout).text()).trim()).toBe("it's w 1");
+});
+
+test("a connection's access flag settles a write before any card: write goes through, read is refused, none still asks", async () => {
+  const conn = (access: string) => writeFileSync(path.join(dir, "connections.json"), JSON.stringify([{ account: "a", access }]));
+  const push = "git push origin feature";
+  try {
+    conn("read");
+    const refused = await (await hook(push)).done;
+    expect(refused.code).toBe(2);
+    expect(refused.err).toContain("read-only");
+    expect(pendingAsks()).toEqual([]);
+    expect((await (await hook("gh pr view 1")).done).code).toBe(0); // reads are never held
+
+    conn("write");
+    expect((await (await hook(push)).done).code).toBe(0);
+    expect(pendingAsks()).toEqual([]);
+
+    rmSync(path.join(dir, "connections.json"));
+    const asked = (await hook(push)).done;
+    await answer("allow=0");
+    expect((await asked).code).toBe(2);
+  } finally {
+    rmSync(path.join(dir, "connections.json"), { force: true });
+  }
 });

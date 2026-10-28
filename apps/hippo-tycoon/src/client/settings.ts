@@ -1,4 +1,5 @@
 import { DEFAULT_ROUND_SECS, type Difficulty } from "../sim/rules.ts";
+import { guessQuality, sniffMachine } from "@rustybuns/util/quality";
 
 export type Quality = "low" | "medium" | "high";
 export const QUALITIES: readonly Quality[] = ["low", "medium", "high"];
@@ -39,7 +40,17 @@ export function parseSettings(raw: string | null): Settings {
 }
 
 export function loadSettings(): Settings {
-  try { return parseSettings(localStorage.getItem(KEY)); } catch { return { ...DEFAULTS }; }
+  let raw: string | null = null;
+  try { raw = localStorage.getItem(KEY); } catch { /* private window: defaults */ }
+  const s = parseSettings(raw);
+  if (!/"quality"/.test(raw ?? "")) s.quality = guessedQuality(); // nothing chosen yet: start where this GPU can keep up
+  return s;
+}
+
+/** The preset the machine deserves: the shared tier guess, in this app's names. */
+export function guessedQuality(m = sniffMachine()): Quality {
+  const g = guessQuality(m);
+  return g === "mid" ? "medium" : g;
 }
 export function saveSettings(s: Settings) {
   try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* private window: fine */ }

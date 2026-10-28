@@ -13,13 +13,13 @@ import { GALAXIES, type GalaxyId } from "../war/galaxy.ts";
 import { fogged, type Campaign, type Orders } from "../war/rules.ts";
 import { decodeIn, type PointerIn, type PointerOut } from "../pointer-wire.ts";
 import { castVote, handIn, humans, newTable, report, waitingOn, type Seats, type Step, type Table, type TurnRecord, type Vote } from "../war/table.ts";
+import { Sockets, type RoomCtx, type RoomSocket } from "@rustybuns/util/room";
 
 // Cloudflare's SqlStorage, and the in-process one Rusty Buns hosts locally, as far as this uses them.
 interface Sql { exec<T = Record<string, unknown>>(query: string, ...bindings: unknown[]): { toArray(): T[] } }
-interface State { storage: { sql: Sql }; acceptWebSocket(ws: Socket): void; getWebSockets(): Socket[] }
-interface Socket { send(m: string): void; close(code?: number, reason?: string): void; serializeAttachment(v: unknown): void; deserializeAttachment(): unknown }
-// Provided by workerd and by the Rusty Buns host.
-declare const WebSocketPair: { new (): Record<0 | 1, Socket> };
+interface State extends RoomCtx { storage: { sql: Sql } }
+/** A pointer socket carries its seat once it has said hello. */
+type Pointer = { seat: Faction } | null;
 
 export interface View {
   seat: Faction;
@@ -44,9 +44,11 @@ const newToken = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Ui
 
 export class CampaignRoom {
   private sql: Sql;
+  private sockets: Sockets<Pointer, PointerOut>;
 
   constructor(private ctx: State, _env: unknown) {
     this.sql = ctx.storage.sql;
+    this.sockets = new Sockets(ctx);
   }
 
   async fetch(req: Request): Promise<Response> {
@@ -69,7 +71,7 @@ export class CampaignRoom {
       const v = (await body(req)) as { match?: unknown; mode?: unknown } | null;
       if (typeof v?.match !== "string" || typeof v.mode !== "string") return fail("That isn't a vote");
       const res = this.step(seat, castVote(table, seat, v.match, v.mode as MatchMode));
-      if (res.ok && this.load()?.vote) this.broadcast(JSON.stringify({ t: "vote", vote: this.load()!.vote! } satisfies PointerOut));
+      if (res.ok && this.load()?.vote) this.broadcast({ t: "vote", vote: this.load()!.vote! });
       return res;
     }
     return fail("Not found", 404);
@@ -78,35 +80,31 @@ export class CampaignRoom {
   private pointers(req: Request): Response {
     if (req.headers.get("Upgrade") !== "websocket") return fail("WebSocket only", 426);
     if (this.ctx.getWebSockets().length >= MAX_SOCKETS) return fail("Too many screens on this vote", 503);
-    const [client, server] = Object.values(new WebSocketPair()) as [Socket, Socket];
-    this.ctx.acceptWebSocket(server);
-    return new Response(null, { status: 101, webSocket: client } as ResponseInit);
+    return this.sockets.upgrade(null).response;
   }
 
   // A pointer socket's frames: hello with the seat token first, then where its pointer is.
-  async webSocketMessage(ws: Socket, m: string | ArrayBuffer) {
+  async webSocketMessage(ws: RoomSocket, m: string | ArrayBuffer) {
     if (typeof m !== "string" || m.length > MAX_FRAME) return ws.close(1009, "Too big");
-    let msg: PointerIn | null;
-    try { msg = decodeIn(JSON.parse(m)); } catch { return ws.close(1003, "Not JSON"); }
-    const seat = (ws.deserializeAttachment() as { seat?: Faction } | null)?.seat;
+    const frame = this.sockets.frame(ws, m);
+    if (!frame) return ws.close(1003, "Not JSON");
+    const msg: PointerIn | null = decodeIn(frame.value);
+    const seat = this.sockets.who(ws)?.seat;
     if (!seat) {
       const found = msg?.t === "hello" ? await this.seatFor(msg.token) : null;
       if (!found) return ws.close(4003, "Not a seat at this campaign");
-      ws.serializeAttachment({ seat: found });
-      return ws.send(JSON.stringify({ t: "hi", seat: found } satisfies PointerOut));
+      this.sockets.attach(ws, { seat: found });
+      return this.sockets.send(ws, { t: "hi", seat: found });
     }
     if (msg?.t !== "at") return;
-    this.broadcast(JSON.stringify({ t: "at", seat, x: msg.x, y: msg.y } satisfies PointerOut), ws);
+    this.broadcast({ t: "at", seat, x: msg.x, y: msg.y }, ws);
   }
-  webSocketClose(ws: Socket) { try { ws.close(1000); } catch { /* already closed */ } }
+  webSocketClose(ws: RoomSocket) { try { ws.close(1000); } catch { /* already closed */ } }
   webSocketError() {}
 
   // To every seat's pointer socket that has said hello, but the one it came from.
-  private broadcast(m: string, from?: Socket) {
-    for (const ws of this.ctx.getWebSockets()) {
-      if (ws === from || !(ws.deserializeAttachment() as { seat?: Faction } | null)?.seat) continue;
-      try { ws.send(m); } catch { /* gone */ }
-    }
+  private broadcast(m: PointerOut, from?: RoomSocket) {
+    this.sockets.broadcast(m, from, (a) => a !== null);
   }
 
   private async create(b: unknown): Promise<Response> {

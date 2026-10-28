@@ -9,6 +9,7 @@ import { look } from "../ui/controls.ts";
 import * as pc from "playcanvas";
 import { rayObb, BOX_EDGES, type Obb, type Vec3 } from "../viewer/boxes.ts";
 import type { Candidate, Round } from "./round.ts";
+import { pickQuality, QUALITY } from "@rustybuns/util/quality";
 
 export interface Reveal { point: Vec3; radius: number }
 export interface ShotResult { reveals: Reveal[]; hit: boolean }
@@ -34,6 +35,9 @@ export class GameView {
   private mask: CanvasRenderingContext2D | null;
   private pickMode = false;
   private highlight: Candidate | null = null;
+  /** What the mask was last drawn for; it repaints only when this changes (a look, a shot, a resize). */
+  private maskKey = "";
+  private pixelRatio = QUALITY[pickQuality().quality].pixelRatio;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -48,6 +52,7 @@ export class GameView {
     });
     this.app.setCanvasFillMode(pc.FILLMODE_NONE);
     this.app.setCanvasResolution(pc.RESOLUTION_AUTO);
+    this.app.graphicsDevice.maxPixelRatio = this.pixelRatio;
 
     this.camera = new pc.Entity("camera");
     this.camera.addComponent("camera", { clearColor: new pc.Color(0, 0, 0), farClip: 200, fov: FOV });
@@ -92,6 +97,9 @@ export class GameView {
     const ctx = this.mask;
     if (!ctx) return;
     const { width: w, height: h } = this.maskCanvas;
+    const key = `${this.yaw}|${this.pitch}|${this.reveals.length}|${this.revealed}|${w}x${h}`;
+    if (key === this.maskKey) return;
+    this.maskKey = key;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, w, h);
     if (this.revealed) return;
@@ -241,6 +249,7 @@ export class GameView {
   async startRound(round: Round, plyUrl: string | null) {
     this.round = round;
     this.reveals = [];
+    this.maskKey = "";
     this.revealed = false;
     this.highlight = null;
     this.yaw = round.yaw;
@@ -267,7 +276,7 @@ export class GameView {
 
   resize(w: number, h: number) {
     this.app.resizeCanvas(w, h);
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = Math.min(this.pixelRatio, window.devicePixelRatio || 1);
     this.maskCanvas.width = Math.round(w * dpr);
     this.maskCanvas.height = Math.round(h * dpr);
   }

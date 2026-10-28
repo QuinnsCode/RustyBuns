@@ -7,7 +7,7 @@
 // It is also the front door against abuse: a browser upgrade from someone
 // else's page is refused (Origin), and one address can only open so many new
 // rooms a minute (each new code is a new Durable Object).
-import { RoomMintGate, originAllowed } from "./engine/limits.ts";
+import { RoomMintGate, originAllowed } from "@rustybuns/util/limits";
 import { World } from "./room-do.ts";
 export { World };
 

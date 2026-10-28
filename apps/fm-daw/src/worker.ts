@@ -3,7 +3,7 @@
 // is one shared groove. Visitors are anonymous: the Worker vouches a random id,
 // the way the desktop host vouches its one local user.
 import World from "../packages/desktop/world.ts";
-import { RoomMintGate } from "./limits.ts";
+import { RoomMintGate } from "@rustybuns/util/limits";
 export { World };
 
 // A room nobody has opened for this long is deleted, groove and all.

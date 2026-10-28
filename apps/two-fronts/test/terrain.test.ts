@@ -28,8 +28,8 @@ const build = (kind: SectorKind) => {
 };
 
 const KINDS: SectorKind[] = ["shield", "capital", "spaceport", "cannon", "canyon", "jungle"];
-// Measured at full quality (the jungle is the most, 711 draws once main's bushes and trench dressing joined the PR's floor), with room to grow a little. The plain is 360 across (2.25x the ground), so the budget grew with it.
-const BUDGET = { draws: 1300, instances: 60_000 };
+// Measured at full quality (the jungle is the most, 711 draws once main's bushes and trench dressing joined the PR's floor), with room to grow a little. Foliage is split into map tiles that cull, so the scene holds more meshes than a frame draws. The plain is 360 across (2.25x the ground), so the budget grew with it.
+const BUDGET = { draws: 1500, instances: 60_000 };
 
 test.each(KINDS)("%s scenery builds, sways and stays in budget", (kind) => {
   const { b, scene, world } = build(kind);
@@ -67,4 +67,22 @@ test("the cannon shore reads from the spawn and keep: sea past both field ends a
   // The gun stands on a rock plateau far above the beach below it.
   expect(world.heightAt(keep.x - 12, keep.z - 42)).toBeGreaterThan(10);
   expect(world.heightAt(keep.x - 12, keep.z - 42) - world.heightAt(keep.x - 12, keep.z - 100)).toBeGreaterThan(8);
+});
+
+test("foliage tiles cull: a camera facing away draws a fraction of the foliage, and no instance is lost", () => {
+  const { scene } = build("jungle");
+  scene.updateMatrixWorld(true);
+  const cam = new THREE.PerspectiveCamera(60, 1, 0.1, 2000);
+  cam.position.set(0, 20, 150); cam.lookAt(0, 0, 400); cam.updateMatrixWorld(true);
+  const frustum = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+  let all = 0, seen = 0;
+  scene.traverse((o) => {
+    const mesh = o as THREE.InstancedMesh;
+    if (!mesh.isInstancedMesh || mesh.count < 2 || !mesh.frustumCulled) return;
+    mesh.computeBoundingSphere();
+    all += mesh.count;
+    if (frustum.intersectsSphere(mesh.boundingSphere!.clone().applyMatrix4(mesh.matrixWorld))) seen += mesh.count;
+  });
+  expect(all).toBeGreaterThan(5000);
+  expect(seen).toBeLessThan(all * 0.7);
 });

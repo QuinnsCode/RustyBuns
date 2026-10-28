@@ -213,6 +213,7 @@
       "name": "excalibrawl",
       "version": "0.0.1",
       "dependencies": {
+        "@rustybuns/util": "workspace:*",
         "react": "19.2.8",
         "react-dom": "19.2.8",
         "react-server-dom-webpack": "19.2.8",
@@ -587,6 +588,7 @@
         "@rustybuns/cli": "workspace:*",
         "@rustybuns/game-controls": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/util": "workspace:*",
         "playcanvas": "^2.22.2",
         "react": "19.2.8",
         "react-dom": "19.2.8",
@@ -603,6 +605,7 @@
       "dependencies": {
         "@rustybuns/game-controls": "workspace:*",
         "@rustybuns/shell-bun": "workspace:*",
+        "@rustybuns/util": "workspace:*",
         "@sparkjsdev/spark": "2.2.0",
         "three": "^0.180.0",
       },
