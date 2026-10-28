@@ -11,11 +11,12 @@ import { Game, MAX_REWIND, type GameEvent, type Input } from "../sim/game.ts";
 import { missionFor } from "../sim/missions.ts";
 import type { ZoneData } from "@rustybuns/terrain";
 import { ORDER } from "../sim/weapons.ts";
+import { arr, check, int, num, obj, oneOf, opt, raw, str } from "@rustybuns/util/guard";
 import { cleanInput, diffShot, diffSoldier, fly, KEPT, MAX_PLAYERS, packSoldier, VIEW, type FileState, type Look, type RosterEntry, type Setup, type ShotState, type Snap, type SoldierDelta, type SoldierState, type StashState } from "./wire.ts";
 
 /** Seconds the result stays up before the next round. */
 export const NEXT_ROUND = 10;
-const MODES = ["coop", "ffa", "teams"];
+const MODES = ["coop", "ffa", "teams"] as const;
 /** Snapshots a player's kept to be acked against: past this many unacked, the next goes whole. */
 const HISTORY = 64;
 
@@ -25,22 +26,29 @@ interface Sent { time: number; soldiers: Map<number, SoldierState>; shots: Map<n
 interface Line { acked: number; sent: Map<number, Sent> }
 
 /** A setup off the wire, checked: a level the world has (or a lat/long one with its ground), a mode, and a repo shaped like one. */
-export function cleanSetup(raw: unknown): Setup | null {
-  if (!raw || typeof raw !== "object") return null;
-  const s = raw as Record<string, any>, repo = s.repo;
-  if (!MODES.includes(s.mode)) return null;
-  if (!repo || typeof repo.name !== "string" || typeof repo.ref !== "string" || !Array.isArray(repo.files) || repo.files.length > 5000) return null;
-  if (!repo.files.every((f: any) => f && typeof f.path === "string" && f.path.length < 400 && typeof f.lines === "number" && Number.isFinite(f.lines))) return null;
-  if (LEVELS.some((l) => l.id === s.level)) return { level: s.level, mode: s.mode, repo };
+export function cleanSetup(v: unknown): Setup | null {
+  const s = check(SETUP, v);
+  if (!s) return null;
+  const { level, mode, repo } = s;
+  if (LEVELS.some((l) => l.id === level)) return { level, mode, repo };
   const zone = cleanZone(s.zone);
-  if (!zone || s.level !== `place:${zone.id}`) return null;
+  if (!zone || level !== `place:${zone.id}`) return null;
   try {
-    levelOf({ level: s.level, mode: s.mode, repo, zone });
+    levelOf({ level, mode, repo, zone });
   } catch {
     return null;
   }
-  return { level: s.level, mode: s.mode, repo, zone };
+  return { level, mode, repo, zone };
 }
+
+const finite = num(-Infinity, Infinity), text = str(Infinity, { min: 0 });
+const LINK = (v: unknown): [string, string, number] => { const [a, b, n] = arr(raw, 3, { min: 3 })(v); return [text(a), text(b), finite(n)]; };
+const REPO = obj({
+  name: text, ref: text,
+  files: arr(obj({ path: str(399, { min: 0 }), lines: finite, churn: opt(finite), agent: opt(finite) }), 5000),
+  links: opt(arr(LINK, 10_000)), failing: opt(arr(text, 1000)), text: opt(arr(obj({ path: text, lines: arr(text, 10_000) }), 1000)),
+});
+const SETUP = obj({ level: text, mode: oneOf(MODES), repo: REPO, zone: raw });
 
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
@@ -48,13 +56,11 @@ const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
  * A lat/long level's ground off the wire: a place on the map, a sane size, and exactly n*n
  * heights. Its id and name are made again from the place, never taken from the sender.
  */
-export function cleanZone(raw: unknown): ZoneData | null {
-  if (!raw || typeof raw !== "object") return null;
-  const z = raw as Record<string, any>, [lon, lat] = Array.isArray(z.center) ? z.center : [];
-  if (typeof lat !== "number" || typeof lon !== "number" || !(Math.abs(lat) <= 84) || !(Math.abs(lon) <= 180)) return null;
-  if (typeof z.realRadius !== "number" || !(z.realRadius >= 100 && z.realRadius <= 10_000)) return null;
-  if (!Number.isInteger(z.n) || z.n < 2 || z.n > 257) return null;
-  if (typeof z.heights !== "string" || z.heights.length !== 4 * Math.ceil((z.n * z.n * 2) / 3) || !BASE64.test(z.heights)) return null;
+const ZONE = obj({ center: arr(num(-180, 180), 2, { min: 2 }), realRadius: num(100, 10_000), n: int(2, 257), heights: str(Infinity, { re: BASE64 }) });
+
+export function cleanZone(v: unknown): ZoneData | null {
+  const z = check(ZONE, v), [lon = 0, lat = 0] = z?.center ?? [];
+  if (!z || !(Math.abs(lat) <= 84) || z.heights.length !== 4 * Math.ceil((z.n * z.n * 2) / 3)) return null;
   return { id: `${lat.toFixed(4)},${lon.toFixed(4)}`, name: placeName(lat, lon), center: [lon, lat], realRadius: z.realRadius, n: z.n, heights: z.heights };
 }
 
