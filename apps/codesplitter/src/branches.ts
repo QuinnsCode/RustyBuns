@@ -32,7 +32,8 @@ import { catalogueBlob, handleFor, materialize, toFile, uncatalogue } from "./ar
 import { changedLines, isBuildFile } from "./buildfiles.ts";
 import { branchEdited, mergeBlock, refChecks, waiting } from "./checks.ts";
 import { settings as deploySettings } from "./deploy.ts";
-import { branchNameError, json, type Env, readBody } from "./env.ts";
+import { branchNameError, json, type Env, need, readBody } from "./env.ts";
+import { obj, oneOf, opt, str } from "@rustybuns/util/guard";
 import { byToken } from "./tokens.ts";
 import { emit } from "./hooks.ts";
 import { diffToOps, keptPairs } from "./sync.ts";
@@ -1149,12 +1150,10 @@ export async function branchRoutes(req: Request, env: Env, p: string[], owner: s
     const why = agentsUnavailable(env);
     if (why) return json({ error: why }, 501);
     if (adminsOnly(env, user)) return json({ error: ADMINS_ONLY }, 403);
-    const b = await readBody<"path" | "line" | "harness" | "model">(req);
-    const harness = HARNESSES.find((x) => x === b.harness);
-    if (!harness) return json({ error: `harness: ${HARNESSES.join(", ")}` }, 400);
+    const b = need(await readBody(req), obj({ harness: oneOf(HARNESSES), path: str(4096), line: str(), model: opt(str(200, { min: 0 })) }));
+    if (b instanceof Response) return b;
+    const { harness } = b;
     if (!installedHarnesses(env).includes(harness)) return json({ error: `${harness} isn't installed on this machine` }, 400);
-    if (typeof b.path !== "string" || typeof b.line !== "string" || !b.path || !b.line) return json({ error: "path and line: a conflict the review lists" }, 400);
-    if (b.model !== undefined && b.model !== null && typeof b.model !== "string") return json({ error: "model: text" }, 400);
     const rows = await files();
     const f = rows.find((x) => x.path === b.path && !x.merged && !x.deleted && !x.blob);
     const m = f && await mergeFile(env, owner, repo, branch, f.path, user!, undefined, true);

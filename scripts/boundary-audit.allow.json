@@ -67,7 +67,7 @@
   "apps/codesplitter/src/try-out.ts": 1,
   "apps/codesplitter/src/tv-limits.ts": 1,
   "apps/codesplitter/src/watch.ts": 1,
-  "apps/codesplitter/src/worker.ts": 7,
+  "apps/codesplitter/src/worker.ts": 6,
   "apps/codesplitter/watchdog/worker.ts": 2,
   "apps/excalibrawl/src/app/viewer.ts": 3,
   "apps/excalibrawl/src/arena.ts": 2,

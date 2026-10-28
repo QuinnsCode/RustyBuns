@@ -72,7 +72,8 @@ import { GIT_BOT, GIT_EMAIL_DOMAIN } from "./git.ts";
 import { branchAndPath, githubToken, parseFolder, parseRepo } from "./github.ts";
 import { postOrder, startChecks, upstreamMoved, upstreamTaken } from "./checks.ts";
 import { diffToOps, merge3 } from "./sync.ts";
-import { branchNameError, json, NAME, type Env, readBody } from "./env.ts";
+import { branchNameError, json, NAME, need, type Env, readBody } from "./env.ts";
+import { arr, bool, num, obj, oneOf, opt, str, type Of } from "@rustybuns/util/guard";
 import { repoRow } from "./repos.ts";
 import type { Doc } from "./lines.ts";
 import { depsRef, depsTree, folderPath, graft, sendBranch, sourceRef, split, splitFromRef, workspaceDeps } from "./folder-mirror.ts";
@@ -727,17 +728,13 @@ export async function mirrorStatus(env: Env, owner: string, repo: string) {
 export async function mirrorRepoRoute(req: Request, env: Env, owner: string, repo: string, user: string | null) {
   if (req.method === "POST") {
     if (user !== owner) return json({ error: "owner only" }, 403);
-    const b = await readBody<"resolve" | "pushCrew" | "primary" | "pullOnly">(req);
-    const resolve = (["mine", "upstream", "rebase"] as const).find((r) => r === b.resolve);
-    if (b.resolve !== undefined && !resolve) return json({ error: "resolve: mine, upstream or rebase" }, 400);
-    if (b.pushCrew !== undefined && typeof b.pushCrew !== "boolean") return json({ error: "pushCrew: true or false" }, 400);
-    if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
-    if (b.primary !== undefined && !PRIMARIES.includes(b.primary as Primary)) return json({ error: "primary: here or upstream" }, 400);
+    const b = need(await readBody(req), obj({ resolve: opt(oneOf(["mine", "upstream", "rebase"])), pushCrew: opt(bool()), pullOnly: opt(bool()), primary: opt(oneOf(PRIMARIES)) }));
+    if (b instanceof Response) return b;
     if (b.primary === "here" && await folderOf(env, owner, repo)) return json({ error: "a folder mirror can't lead: upstream's main takes its work through a pull request" }, 409);
     if (b.primary !== undefined) await env.DB.prepare("UPDATE repos SET mirror_primary = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.primary === "here" ? "here" : null, owner, repo).run();
     if (b.pullOnly !== undefined) await env.DB.prepare("UPDATE repos SET mirror_pull_only = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.pullOnly ? 1 : null, owner, repo).run();
     if (b.pushCrew !== undefined) await env.DB.prepare("UPDATE repos SET mirror_push_crew = ? WHERE owner = ? AND name = ? AND mirror_url IS NOT NULL").bind(b.pushCrew ? 1 : null, owner, repo).run();
-    await syncMirror(env, owner, repo, { resolve });
+    await syncMirror(env, owner, repo, { resolve: b.resolve });
   }
   const s = await mirrorStatus(env, owner, repo);
   return s ? json(s) : json({ error: "not a mirror" }, 404);
@@ -1299,9 +1296,9 @@ export async function mirrorBranchRoute(req: Request, env: Env, p: string[], own
   if (user !== owner) return json({ error: "owner only" }, 403);
   let run: () => Promise<Response | undefined>;
   if (!p[6]) {
-    const b = await readBody<"ref" | "name">(req);
-    if (typeof b.ref !== "string" || (b.name !== undefined && typeof b.name !== "string")) return json({ error: "give the upstream branch as ref" }, 400);
-    run = () => openUpstreamBranch(env, owner, repo, b.ref as string, user, b.name as string | undefined);
+    const b = need(await readBody(req), obj({ ref: str(255), name: opt(str(255)) }), "give the upstream branch as ref");
+    if (b instanceof Response) return b;
+    run = () => openUpstreamBranch(env, owner, repo, b.ref, user, b.name);
   } else if (p[7] === "push" && !p[8]) run = () => pushBranch(env, owner, repo, p[6]!);
   else if (p[7] === "pull" && !p[8]) run = () => pullBranch(env, owner, repo, p[6]!);
   else return null;
@@ -1389,9 +1386,10 @@ export async function mirrorTagRoute(req: Request, env: Env, p: string[], owner:
   else if (req.method !== "POST") return null;
   else if (user !== owner) return json({ error: "owner only" }, 403);
   else if (!p[6]) {
-    const b = await readBody<"names">(req);
-    if (b.names !== undefined && !(Array.isArray(b.names) && b.names.every((n) => typeof n === "string" && !tagNameError(n)))) return json({ error: "names: a list of tag names" }, 400);
-    run = () => fetchTags(env, owner, repo, b.names as string[] | undefined);
+    const b = need(await readBody(req), obj({ names: opt(arr(str(255), Infinity)) }), "names: a list of tag names");
+    if (b instanceof Response) return b;
+    if (b.names?.some(tagNameError)) return json({ error: "names: a list of tag names" }, 400);
+    run = () => fetchTags(env, owner, repo, b.names);
   } else if (p.at(-1) === "push" && p.length > 7) {
     const name = p.slice(6, -1).join("/"), bad = tagNameError(name);
     if (bad) return json({ error: bad }, 400);
@@ -1413,30 +1411,31 @@ function remoteOf(s: string): { url: string; upstream: string; name: string } | 
   return { url: v, upstream: shownUrl(v), name: last };
 }
 
+/** POST /api/mirrors's body: `url` is checked as a remote after, so a bad one gets the long message. */
+const MIRROR_BODY = obj({ url: str(4096, { min: 0, dflt: "" }), name: opt(str(100)), visibility: opt(oneOf(["public", "private"])), pullOnly: opt(bool()), path: opt(str(1000)), branch: opt(str(255)) });
+
 /** POST /api/mirrors {url, name?, visibility?}: clone any git remote into a repo you own that keeps in step with it. */
 export async function mirrorRoutes(req: Request, env: Env, p: string[], user: string | null): Promise<Response | null> {
   if (p[1] !== "mirrors" || p[2] || req.method !== "POST") return null;
   if (!user) return json({ error: "sign in first" }, 401);
   const lg = localGit(env);
   if (!lg) return json({ error: "mirrors need git on your machine: dig it up in the desktop app" }, 501);
-  const b = await readBody<"url" | "name" | "visibility" | "pullOnly" | "path" | "branch">(req);
-  const src = typeof b.url === "string" ? remoteOf(b.url) : null;
+  const b = need(await readBody(req), MIRROR_BODY);
+  if (b instanceof Response) return b;
+  const src = remoteOf(b.url);
   if (!src) return json({ error: "give a git remote: a GitHub owner/name, an https or ssh URL, or git@host:path" }, 400);
-  if (b.name !== undefined && typeof b.name !== "string") return json({ error: "bad repo name" }, 400);
   // One folder of it (folder-mirror.ts): {path}, or a GitHub folder URL (.../tree/<branch>/<path>).
   let path: string | null = null, want: string | null = null;
-  const folder = typeof b.url === "string" ? parseFolder(b.url) : null;
+  const folder = parseFolder(b.url);
   if (folder) ({ branch: want, path } = await branchAndPath(src.upstream.replace(/^github:/, ""), folder));
-  if (b.path !== undefined) path = b.path as string;
-  if (b.branch !== undefined) want = typeof b.branch === "string" && !branchNameError(b.branch) ? b.branch : "";
+  if (b.path !== undefined) path = b.path;
+  if (b.branch !== undefined) want = branchNameError(b.branch) ? "" : b.branch;
   if (want === "") return json({ error: "bad branch name" }, 400);
   if (path !== null && !(path = folderPath(path))) return json({ error: "path: a folder of the repo, like apps/web" }, 400);
   if (path) return folderMirror(env, lg, user, src, path, want, b);
   const name = b.name || src.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
   const visibility = b.visibility ?? "public";
-  if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
-  if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
   if (await repoRow(env, user, name, "1")) return json({ error: "you already have a repo with that name" }, 409);
 
   // Shallow, like a dig: upstream's history stays upstream, and our commits build on its tip.
@@ -1457,12 +1456,10 @@ export async function mirrorRoutes(req: Request, env: Env, p: string[], user: st
 }
 
 /** POST /api/mirrors with a folder: a repo of upstream's folder alone, its history split out from here on. */
-async function folderMirror(env: Env, lg: LocalGit, user: string, src: { url: string; upstream: string; name: string }, path: string, want: string | null, b: Record<string, unknown>) {
-  const name = (b.name as string) || path.split("/").pop()!.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+async function folderMirror(env: Env, lg: LocalGit, user: string, src: { url: string; upstream: string; name: string }, path: string, want: string | null, b: Of<typeof MIRROR_BODY>) {
+  const name = b.name || path.split("/").pop()!.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   if (!NAME.test(name)) return json({ error: "bad repo name" }, 400);
   const visibility = b.visibility ?? "public";
-  if (visibility !== "public" && visibility !== "private") return json({ error: "visibility: public or private" }, 400);
-  if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
   if (await repoRow(env, user, name, "1")) return json({ error: "you already have a repo with that name" }, 409);
   const art = `${user}--${name}`, dir = lg.path(art), net = await remoteEnv(env, user, src.url);
   rmSync(dir, { recursive: true, force: true });   // no row owns this name, so anything here is an orphan
@@ -1537,11 +1534,11 @@ async function turnable(env: Env, owner: string, repo: string): Promise<Turn | {
 export async function turnRoute(req: Request, env: Env, owner: string, repo: string, user: string | null) {
   if (user !== owner) return json({ error: "owner only" }, 403);
   if (req.method !== "GET" && req.method !== "POST") return json({ error: "GET or POST" }, 405);
-  const b = req.method === "POST" ? await readBody<"ahead" | "pullOnly">(req) : {};
+  const b = need(req.method === "POST" ? await readBody(req) : {}, obj({ ahead: opt(num(0, Infinity)), pullOnly: opt(bool()) }));
+  if (b instanceof Response) return b;
   const turned = await serial(owner, repo, async () => {
     const t = await turnable(env, owner, repo);
     if ("error" in t) return json({ error: t.error }, t.status);
-    if (b.pullOnly !== undefined && typeof b.pullOnly !== "boolean") return json({ error: "pullOnly: true or false" }, 400);
     if (req.method === "GET") return json({ url: shownUrl(t.url), branch: t.branch, commit: t.commit, ahead: t.ahead });
     // What goes up is what the owner was shown: a commit made since (or a POST that never looked) asks again.
     if (!b.pullOnly && b.ahead !== t.ahead) return json({ error: `${t.ahead} commit${t.ahead === 1 ? "" : "s"} made here would go up: say {ahead: ${t.ahead}} to send ${t.ahead === 1 ? "it" : "them"}`, ahead: t.ahead }, 409);
